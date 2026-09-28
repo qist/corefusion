@@ -17,6 +17,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/healthcheck"
+	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 )
 
@@ -986,6 +987,15 @@ func (m *Manager) monitor(p *managedProcess, g entity.ProcessGuardian) {
 	m.crashRepo.Create(nil, crashLog)
 
 	log.Printf("service %d crashed: %v (restarts: %d/%d)", p.ServiceID, err, g.CurrentRestarts, g.MaxRestartCount)
+
+	// 核心进程异常告警：admin 模板「核心进程异常告警」未启用时 NotifyTemplate 静默 no-op
+	go systemSvc.NotifyTemplate(context.Background(), "核心进程异常告警", map[string]string{
+		"core":     p.CoreType,
+		"restarts": fmt.Sprintf("%d", g.CurrentRestarts),
+		"max":      fmt.Sprintf("%d", g.MaxRestartCount),
+		"message":  fmt.Sprintf("%v", err),
+		"time":     time.Now().Format("2006-01-02 15:04:05"),
+	})
 
 	// Update guardian
 	g.ProcessStatus = "crashed"

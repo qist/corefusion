@@ -25,9 +25,21 @@ import (
 	"corefusion/internal/runtime/process"
 
 	"corefusion/internal/model/entity"
+	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
+
+// notifyProxyCrash 把代理进程（Caddy/Nginx）崩溃接到 admin 模板「核心进程异常告警」
+// （未启用时 NotifyTemplate 静默 no-op，与核心进程崩溃通知共用同一模板）。
+func notifyProxyCrash(core string, attempt, maxRestarts int) {
+	go systemSvc.NotifyTemplate(context.Background(), "核心进程异常告警", map[string]string{
+		"core":     core,
+		"restarts": fmt.Sprintf("%d", attempt),
+		"max":      fmt.Sprintf("%d", maxRestarts),
+		"time":     time.Now().Format("2006-01-02 15:04:05"),
+	})
+}
 
 // ProxyGuardianConfig holds persisted guardian settings for a proxy.
 type ProxyGuardianConfig struct {
@@ -1436,6 +1448,7 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 		if m.crashLogRepo != nil {
 			m.crashLogRepo.InsertCrashLog(context.Background(), name, attempt, maxRestarts)
 		}
+		notifyProxyCrash(name, attempt, maxRestarts)
 	})
 	// Stop old guardian (if any) before registering the new one.
 	// This prevents duplicate monitorLoop goroutines when StartProxy is
@@ -1844,6 +1857,7 @@ func (m *Manager) attachGuardian(proxyType ProxyType, pid int) {
 		if m.crashLogRepo != nil {
 			m.crashLogRepo.InsertCrashLog(context.Background(), name, attempt, maxRestarts)
 		}
+		notifyProxyCrash(name, attempt, maxRestarts)
 	})
 	// Stop old guardian (if any) before registering the new one.
 	var oldGuardian *healthcheck.Guardian

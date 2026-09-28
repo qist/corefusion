@@ -3347,6 +3347,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 订阅者通知扫描（订阅到期/余额不足，发给客户本人邮箱；与面板使用者通知分离）
 	go systemSvc.StartSubscriberNotifyLoop(context.Background(), database, systemSettingSvc)
 
+	// 证书到期监控（每日扫描 7 天内到期的证书，发「证书到期提醒」admin 模板）
+	go systemSvc.StartCertExpiryMonitor(context.Background(), database)
+
 	// 节点健康监控（按频率检查心跳，状态变化才发告警，正常静默跳过）
 	go systemSvc.StartNodeHealthMonitor(context.Background(), database, systemSettingSvc)
 

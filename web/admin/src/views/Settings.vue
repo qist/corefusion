@@ -288,12 +288,48 @@
               </tbody>
             </table>
 
+            <h3>{{ t('settings.templates.doc.backupTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.backupDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{backup_file}</code></td><td>{{ t('settings.templates.doc.opsBackupFile') }}</td><td>scheduled_daily-20260928-0900.tar.gz</td></tr>
+                <tr><td><code>{size}</code></td><td>{{ t('settings.templates.doc.opsSize') }}</td><td>128.50 MB</td></tr>
+                <tr><td><code>{message}</code></td><td>{{ t('settings.templates.doc.backupMessage') }}</td><td>upload failed: HTTP 500</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.certTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.certDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{domain}</code></td><td>{{ t('settings.templates.doc.opsDomain') }}</td><td>panel.example.com</td></tr>
+                <tr><td><code>{expire_date}</code></td><td>{{ t('settings.templates.doc.certExpireDate') }}</td><td>2026-10-05</td></tr>
+                <tr><td><code>{days}</code></td><td>{{ t('settings.templates.doc.expireDays') }}</td><td>7</td></tr>
+              </tbody>
+            </table>
+
+            <h3>{{ t('settings.templates.doc.crashTitle') }}</h3>
+            <p>{{ t('settings.templates.doc.crashDesc') }}</p>
+            <table>
+              <thead><tr><th>{{ t('settings.templates.doc.colVar') }}</th><th>{{ t('settings.templates.doc.colDesc') }}</th><th>{{ t('settings.templates.doc.colExample') }}</th></tr></thead>
+              <tbody>
+                <tr><td><code>{core}</code></td><td>{{ t('settings.templates.doc.crashCore') }}</td><td>xray</td></tr>
+                <tr><td><code>{restarts}</code> / <code>{max}</code></td><td>{{ t('settings.templates.doc.crashRestarts') }}</td><td>2 / 5</td></tr>
+                <tr><td><code>{message}</code></td><td>{{ t('settings.templates.doc.crashMessage') }}</td><td>exit status 1</td></tr>
+              </tbody>
+            </table>
+
             <h3>{{ t('settings.templates.doc.rulesTitle') }}</h3>
             <ul>
               <li>{{ t('settings.templates.doc.ruleExpire') }}</li>
               <li>{{ t('settings.templates.doc.ruleBalance') }}</li>
               <li>{{ t('settings.templates.doc.ruleNodeMonitor') }}</li>
               <li>{{ t('settings.templates.doc.ruleQuota') }}</li>
+              <li>{{ t('settings.templates.doc.ruleBackup') }}</li>
+              <li>{{ t('settings.templates.doc.ruleCert') }}</li>
+              <li>{{ t('settings.templates.doc.ruleCrash') }}</li>
               <li>{{ t('settings.templates.doc.ruleDedup') }}</li>
               <li>{{ t('settings.templates.doc.ruleSilent') }}</li>
             </ul>
@@ -1207,15 +1243,17 @@ const templatePresets = [
   { key: 'sys_announce', type: 'telegram', audience: 'admin', cron: '' },
   { key: 'user_register', type: 'telegram', audience: 'admin', cron: '' },
   { key: 'node_quota', type: 'telegram', audience: 'admin', cron: '' },
+  { key: 'process_crash', type: 'telegram', audience: 'admin', cron: '' },
   { key: 'sub_expire', type: 'email', audience: 'subscriber', eventKey: 'subscription_expire', cron: '' },
   { key: 'balance_low_sub', type: 'email', audience: 'subscriber', eventKey: 'balance_low', cron: '' },
 ]
 const selectedPreset = ref('')
 
-// 监控类模板：由节点健康监控/流量配额检查自动触发，Cron 不适用（频率在「监控设置」里配置）
-const monitorTemplateNames = ['节点离线告警', '节点恢复通知', '节点流量配额告警']
+// 监控类模板：由节点健康监控/流量配额检查/备份任务/进程守护自动触发，Cron 不适用
+// （监控频率在「监控设置」里配置；备份/进程崩溃由事件即时触发）
+const monitorTemplateNames = ['节点离线告警', '节点恢复通知', '节点流量配额告警', '核心进程异常告警', '备份失败告警', '每日备份报告']
 const isMonitorTemplate = computed(() =>
-  (selectedPreset.value && ['node_down', 'node_recovered', 'node_quota'].includes(selectedPreset.value)) ||
+  (selectedPreset.value && ['node_down', 'node_recovered', 'node_quota', 'process_crash', 'backup_failed', 'backup_daily'].includes(selectedPreset.value)) ||
   monitorTemplateNames.includes(tmplForm.value.name)
 )
 

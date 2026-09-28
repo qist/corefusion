@@ -91,10 +91,10 @@ import (
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
-oauthService "corefusion/internal/service/oauth"
-outboundconfigSvc "corefusion/internal/service/outboundconfig"
-passkeySvc "corefusion/internal/service/passkey"
-planSvc "corefusion/internal/service/plan"
+	oauthService "corefusion/internal/service/oauth"
+	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	passkeySvc "corefusion/internal/service/passkey"
+	planSvc "corefusion/internal/service/plan"
 	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
 	rateLimitSvc "corefusion/internal/service/ratelimit"
@@ -611,10 +611,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 在 sing-box 上会直接 FATAL，纯 JSON 语法检查发现不了。
 	coreConfigSvc.SetBinaryValidator(binariesSvc.NewValidator(binaryResolver))
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
-// 存量明文敏感配置（SMTP 密码 / Telegram token / OAuth secret）统一 AES-256-GCM 加密落库，幂等
-if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
-	log.Printf("[router] encrypt existing secrets skipped: %v", serr)
-}
+	// 存量明文敏感配置（SMTP 密码 / Telegram token / OAuth secret）统一 AES-256-GCM 加密落库，幂等
+	if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
+		log.Printf("[router] encrypt existing secrets skipped: %v", serr)
+	}
 
 	// ── Start background schedulers with configurable intervals ──
 	// All intervals are read from system_settings (scheduler.* prefix).
@@ -930,6 +930,14 @@ if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr !
 		publicSubH.SetNetworkTracker(tracker)
 	}
 	clientH := clientHandler.NewHandler(clientSvcInst)
+	// 删除客户时**级联清理余额/流水** ✓（不清理会变孤儿 ✗ → 新号撞同 ID 继承旧余额 ✗）
+	clientSvcInst.SetBalanceCleaner(struct {
+		*repository.ClientBalanceRepository
+		*repository.BalanceTransactionRepository
+	}{
+		ClientBalanceRepository:      repository.NewClientBalanceRepository(database),
+		BalanceTransactionRepository: repository.NewBalanceTransactionRepository(database),
+	})
 	clientauthH := clientauthHandler.NewHandler(clientauthSvcInst)
 	clientauthH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync, clientRepo, planTmplRepo)
 	commerceSvcInst := clientauthSvc.NewCommerceService(
@@ -1329,21 +1337,21 @@ if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr !
 		// user_id read from the context is silently 0.
 		authGroup := v1.Group("/auth")
 		{
-		authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
-		authGroup.POST("/refresh", authH.Refresh)
-		// 2FA 第二步：密码通过后凭一次性登录票据验证 TOTP/恢复码换取 token。
-		// ⚠ 与密码登录同享登录限流：动态码也是可爆破对象。
-		authGroup.POST("/login/2fa", middleware.LoginRateLimit(), twofaH.Login2FA)
-		// 登录页查询指定用户名是否已启用 2FA（公开）——据此把输入框切换为
-		// "密码"或"动态码/恢复码"。只返回 enabled 布尔，不泄露账号存在性。
-		authGroup.GET("/login/2fa-status", authH.Login2FAStatus)
-		// Passkey（无密码登录）：
-		//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
-		//   - login/begin + login/finish：discoverable 登录仪式。
-		// ⚠ 这些接口**不**放在 AuthRequired 后面 —— passkey 本身就是登录入口。
-		authGroup.GET("/passkey/status", passkeyH.Status)
-		authGroup.POST("/passkey/login/begin", passkeyH.LoginBegin)
-		authGroup.POST("/passkey/login/finish", passkeyH.LoginFinish)
+			authGroup.POST("/login", middleware.LoginRateLimit(), authH.Login)
+			authGroup.POST("/refresh", authH.Refresh)
+			// 2FA 第二步：密码通过后凭一次性登录票据验证 TOTP/恢复码换取 token。
+			// ⚠ 与密码登录同享登录限流：动态码也是可爆破对象。
+			authGroup.POST("/login/2fa", middleware.LoginRateLimit(), twofaH.Login2FA)
+			// 登录页查询指定用户名是否已启用 2FA（公开）——据此把输入框切换为
+			// "密码"或"动态码/恢复码"。只返回 enabled 布尔，不泄露账号存在性。
+			authGroup.GET("/login/2fa-status", authH.Login2FAStatus)
+			// Passkey（无密码登录）：
+			//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
+			//   - login/begin + login/finish：discoverable 登录仪式。
+			// ⚠ 这些接口**不**放在 AuthRequired 后面 —— passkey 本身就是登录入口。
+			authGroup.GET("/passkey/status", passkeyH.Status)
+			authGroup.POST("/passkey/login/begin", passkeyH.LoginBegin)
+			authGroup.POST("/passkey/login/finish", passkeyH.LoginFinish)
 		}
 
 		// Auth (authenticated): operates on the calling user.
@@ -3608,12 +3616,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		log.Printf("[router] portal security patch skipped: %v", perr)
 	}
 
-systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
-portalTmplSvc.WithSettingStore(systemSettingSvc)
-// 存量明文敏感配置统一加密落库（幂等，主面板引擎已执行过则这里直接跳过）
-if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
-	log.Printf("[router] portal: encrypt existing secrets skipped: %v", serr)
-}
+	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
+	portalTmplSvc.WithSettingStore(systemSettingSvc)
+	// 存量明文敏感配置统一加密落库（幂等，主面板引擎已执行过则这里直接跳过）
+	if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
+		log.Printf("[router] portal: encrypt existing secrets skipped: %v", serr)
+	}
 
 	// Client auth handler
 	clientRepo := repository.NewClientRepository(database)
@@ -4279,4 +4287,3 @@ func (a eabConfigAdapter) ResolveEABConfig(ctx context.Context, id int64) (*cert
 		MACKey:     cfg.MACKey,
 	}, nil
 }
-

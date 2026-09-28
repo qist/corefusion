@@ -53,6 +53,20 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </el-form>
             </el-tab-pane>
           </el-tabs>
+          <!-- OAuth 登录（第三方登录 ✓：后台启用哪个 provider 就显示哪个 ✓） -->
+          <div class="oauth-block" v-if="oauthProviders && oauthProviders.length > 0">
+            <div class="oauth-divider">或</div>
+            <div class="oauth-buttons">
+              <button v-if="isOAuthEnabled('github')" class="oauth-btn" @click="oauthLogin('github')">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.525.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.655.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                GitHub
+              </button>
+              <button v-if="isOAuthEnabled('google')" class="oauth-btn" @click="oauthLogin('google')">
+                <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                Google
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1030,6 +1044,16 @@ body {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-light);
 }
+
+/* OAuth 登录按钮（第三方登录 ✓：启用哪个显示哪个 ✓） */
+.oauth-divider { display: flex; align-items: center; margin: 20px 0 16px; color: var(--text-muted); font-size: 13px; }
+.oauth-divider::before, .oauth-divider::after { content: ''; flex: 1; border-bottom: 1px solid var(--border); }
+.oauth-divider::before { margin-right: 12px; }
+.oauth-divider::after { margin-left: 12px; }
+.oauth-buttons { display: flex; gap: 12px; }
+.oauth-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--glass-bg); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text-primary); transition: all 0.2s; }
+.oauth-btn:hover { border-color: var(--accent); background: var(--accent-light); }
+.oauth-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
 
 .btn-block {
   width: 100%;
@@ -3372,6 +3396,9 @@ var showPromoInput = ref(false) // promo code fold
       registrationEnabled.value = PORTAL_CONFIG.registration_enabled
     }
 
+    // OAuth 登录（第三方登录 ✓）：后台启用哪个 provider，登录页就显示哪个按钮 ✓
+    var oauthProviders = ref([])
+
     // Portal editor: modules & navigation from PORTAL_CONFIG
     var portalModules = ref([])
     var portalNavItems = ref([])
@@ -3441,7 +3468,12 @@ var showPromoInput = ref(false) // promo code fold
         handleLogin: handleLogin,
         handleRegister: handleRegister,
         t: t,
-        
+
+        // OAuth（第三方登录 ✓：登录按钮按后台启用状态显隐 ✓，ref 透传保响应式 ✓）
+        oauthProviders: oauthProviders,
+        isOAuthEnabled: isOAuthEnabled,
+        oauthLogin: oauthLogin,
+
         // Config data
         data: region.data || {},
         
@@ -3572,14 +3604,16 @@ var showPromoInput = ref(false) // promo code fold
         { id: 'nav-nodes', label: t('nav.nodes'), icon: 'List', target: 'nodes', enabled: true },
         { id: 'nav-tutorial', label: t('nav.tutorial'), icon: 'Reading', target: 'tutorial', enabled: true },
         { id: 'nav-tickets', label: t('nav.support'), icon: 'Service', target: 'support', enabled: true },
-        { id: 'nav-referral', label: t('nav.referral'), icon: 'Gift', target: 'referral', enabled: true },
+        { id: 'nav-referral', label: t('nav.referral'), icon: 'Gift', target: 'referral', enabled: false },
         { id: 'nav-profile', label: t('nav.profile'), icon: 'User', target: 'profile', enabled: true },
         { id: 'nav-logs', label: t('nav.logs'), icon: 'Document', target: 'logs', enabled: false }
       ]
     }
     // Modules for the current page (filtered by activeTab)
+    // ⚠ visible 开关必须在这里生效 ✓：编辑器里把模块"隐藏"（visible=false）后，
+    // 运行时也要真的不渲染 ✓（此前只按 page 过滤 ✗ → 隐藏开关形同虚设 ✗）。
     var currentModules = computed(function() {
-      return portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value })
+      return portalModules.value.filter(function(m) { return (m.page || 'overview') === activeTab.value && m.visible !== false })
     })
 
     // Client visible nodes (from /nodes API — only for user's current plan, provides links)
@@ -3829,6 +3863,48 @@ var showPromoInput = ref(false) // promo code fold
         client.value = res.client || {}
         ElMessage.success(t('auth.register_success'))
       }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { loading.value = false })
+    }
+
+    // ── OAuth 登录（第三方登录 ✓）────────────────────────────────────────────
+    // 后台"系统设置 → OAuth"启用 GitHub/Google 后 ✓，登录页自动出现对应按钮 ✓。
+    // 流程：跳 /oauth/<provider> → CA 验证 → 回调页带回 token（postMessage 或 URL）✓。
+    var fetchOAuthProviders = function() {
+      fetch('/api/v1/client-auth/oauth/providers').then(function(r) { return r.json() }).then(function(d) {
+        var list = (d.data && d.data.providers) || d.providers || []
+        oauthProviders.value = list.filter(function(p) { return p.enabled })
+      }).catch(function() {})
+    }
+    var isOAuthEnabled = function(provider) {
+      return oauthProviders.value.some(function(p) { return p.provider === provider })
+    }
+    var oauthLogin = function(provider) {
+      window.location.href = '/api/v1/client-auth/oauth/' + provider
+    }
+    // 兜底：回调以 /p?access_token=... 方式回来时（无 opener 的整页跳转 ✓）直接收 token ✓
+    var handleOAuthCallback = function() {
+      var params = new URLSearchParams(window.location.search)
+      var at = params.get('access_token')
+      if (!at) return
+      var rt = params.get('refresh_token') || ''
+      token.value = at
+      refreshToken.value = rt
+      localStorage.setItem('client_token', at)
+      if (rt) localStorage.setItem('client_refresh_token', rt)
+      window.history.replaceState({}, '', '/p')
+      ElMessage.success(t('auth.login_success'))
+      fetchMe(); fetchEndpoints()
+    }
+    // 弹窗回调：回调页通过 postMessage 把 token 发回本页 ✓（只认同源消息 ✓，防 token 外泄 ✓）
+    var oauthMsgHandler = function(event) {
+      if (event.origin !== window.location.origin) return
+      if (!event.data || event.data.type !== 'oauth-callback' || !event.data.data) return
+      var d = event.data.data
+      token.value = d.access_token
+      refreshToken.value = d.refresh_token || ''
+      localStorage.setItem('client_token', d.access_token)
+      if (d.refresh_token) localStorage.setItem('client_refresh_token', d.refresh_token)
+      ElMessage.success(t('auth.login_success'))
+      fetchMe(); fetchEndpoints()
     }
 
     // Check for referral code in URL (before compileAuthRegion so auth module can pick it up)
@@ -4787,6 +4863,10 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
 
     onMounted(function() {
       fetchPortalConfig(false)
+      // OAuth：拉启用列表（显隐按钮 ✓）+ 收回调 token + 监听弹窗 postMessage ✓
+      fetchOAuthProviders()
+      handleOAuthCallback()
+      window.addEventListener('message', oauthMsgHandler)
       // Refetch config when the tab becomes visible again so builder changes
       // show up without a manual reload
       document.addEventListener('visibilitychange', function() {
@@ -4838,7 +4918,10 @@ if (initHasNodeList) fetchNodes()
       if (v) { setTimeout(checkAutoAnnouncementPopup, 800); fetchAnnouncements() }
     })
 
-    onUnmounted(function() { if (refreshTimer) clearInterval(refreshTimer) })
+    onUnmounted(function() {
+      if (refreshTimer) clearInterval(refreshTimer)
+      window.removeEventListener('message', oauthMsgHandler)
+    })
 
     watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer) } })
 
@@ -5083,6 +5166,8 @@ return {
       loginForm: loginForm, registerForm: registerForm, client: client,
       handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,
       toggleTheme: toggleTheme,
+      // OAuth（第三方登录 ✓：登录页按启用 provider 显隐按钮 ✓）
+      oauthProviders: oauthProviders, isOAuthEnabled: isOAuthEnabled, oauthLogin: oauthLogin,
       // Navigation & modules
       currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
       renderMd: renderMd, renderMdUntrusted: renderMdUntrusted, moduleComponents: moduleComponents,

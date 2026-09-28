@@ -3,9 +3,8 @@ package oauth
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -158,57 +157,28 @@ func (h *Handler) Callback(c *gin.Context) {
 	}
 
 	// Generate JWT tokens for the client
-	accessToken, err := h.jwt.GenerateAccessToken(result.ClientID, result.Email, "client")
+	// ⚠ 必须带**客户当前令牌版本** ✗：不带（tv=0）时 /me 校验 `tv != DB` 401 ✗
+	// → 门户"显示登录成功却被弹回登录页" ✗（与密码登录 GenerateAccessTokenWithVersion 同口径 ✓）。
+	tv := h.oauthSvc.ClientTokenVersion(c.Request.Context(), result.ClientID)
+	accessToken, err := h.jwt.GenerateAccessTokenWithVersion(result.ClientID, result.Email, "client", tv)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
 		return
 	}
-	refreshToken, err := h.jwt.GenerateRefreshToken(result.ClientID, result.Email, "client")
+	refreshToken, err := h.jwt.GenerateRefreshTokenWithVersion(result.ClientID, result.Email, "client", tv)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
 		return
 	}
 
-	// Return HTML page that posts the tokens to the parent window (for popup-based OAuth)
-	// or redirect to the portal with tokens as query params.
-	// S-6 fix: restrict postMessage target origin to the panel's own origin
-	// to prevent token leakage to malicious opener windows.
-	panelOrigin := scheme + "://" + host
-	responseHTML := `<!DOCTYPE html>
-<html>
-<head><title>OAuth Login</title></head>
-<body>
-<script>
-(function() {
-  var data = ` + jsonEscape(accessToken, refreshToken, result) + `;
-  var targetOrigin = ` + fmt.Sprintf("%q", panelOrigin) + `;
-  if (window.opener) {
-    window.opener.postMessage({ type: 'oauth-callback', data: data }, targetOrigin);
-    window.close();
-  } else {
-    window.location.href = '/p?access_token=' + encodeURIComponent(data.access_token) + '&refresh_token=' + encodeURIComponent(data.refresh_token);
-  }
-})();
-</script>
-</body>
-</html>`
-
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(responseHTML))
-}
-
-// jsonEscape safely produces a JSON string for embedding in HTML.
-func jsonEscape(accessToken, refreshToken string, result *oauthSvc.OAuthResult) string {
-	data := gin.H{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
-		"is_new_user":   result.IsNewUser,
-		"client_id":     result.ClientID,
-		"email":         result.Email,
-		"provider":      result.Provider,
-		"provider_name": result.ProviderName,
-	}
-	b, _ := json.Marshal(data)
-	return string(b)
+	// ── 统一**整页跳回门户** ✓（/p 的 onMounted 会收 URL 里的 token 并进入登录态 ✓）──
+	// ⚠ 不走 window.opener / postMessage 分支 ✗：门户标签可能本身是被别的页面打开的
+	// （例如管理端预览、外链 _blank）✗ → opener 残留时 token 会 postMessage 给
+	// **不监听的页面** 然后 window.close() ✗ → 标签直接关闭、登录凭空丢失 ✗
+	// （真机现象：客户账号创建了、门户标签却关了 ✓）。
+	// 门户侧登录按钮是整页跳转发起的 ✓ → 回调用 302 跳回 /p 是同一语义 ✓。
+	c.Redirect(http.StatusFound, "/p?access_token="+url.QueryEscape(accessToken)+
+		"&refresh_token="+url.QueryEscape(refreshToken))
 }
 
 // ProvidersStatus handles GET /api/v1/client-auth/oauth/providers

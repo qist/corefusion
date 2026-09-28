@@ -378,7 +378,8 @@ func (h *Handler) SendTemplateTest(c *gin.Context) {
 }
 
 // BroadcastTemplate handles POST /api/v1/system/notification-templates/:id/broadcast.
-// 订阅者模板手动群发（营销/召回类）。scope: active（默认，仅正常账号）/ all（全部，含禁用，广告类）/ suspended（仅禁用）。
+// 订阅者模板手动群发（营销/召回类）。emails 显式指定收件客户优先；否则按 scope：
+// active（默认，仅正常账号）/ all（全部，含禁用，广告类）/ suspended（仅禁用）。
 // 后台异步发送，返回预计发送人数。
 func (h *Handler) BroadcastTemplate(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -387,11 +388,12 @@ func (h *Handler) BroadcastTemplate(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Scope string `json:"scope"`
+		Scope  string   `json:"scope"`
+		Emails []string `json:"emails"`
 	}
 	_ = c.ShouldBindJSON(&req)
 
-	count, err := h.settingSvc.BroadcastSubscriberTemplate(c.Request.Context(), h.db, id, req.Scope)
+	count, err := h.settingSvc.BroadcastSubscriberTemplate(c.Request.Context(), h.db, id, req.Scope, req.Emails)
 	if err != nil {
 		response.InternalError(c, "BROADCAST_FAILED", err.Error())
 		return

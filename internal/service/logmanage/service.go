@@ -526,7 +526,13 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 		logDir := filepath.Join(s.dataDir, "logs")
 		filePath := wCfg.FilePath
 		if filePath == "" {
-			filePath = fmt.Sprintf("logs/%s-stdout.log", pType)
+			if pType == "waf" {
+				// ⚠ WAF 按日期写文件（logs/<date>_waf.log），没有 stdout capture
+				// 概念——通用默认值 logs/waf-stdout.log 是错的（界面上误导）。
+				filePath = fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02"))
+			} else {
+				filePath = fmt.Sprintf("logs/%s-stdout.log", pType)
+			}
 		}
 		if w, ok := s.writers[pType]; ok {
 			logDir = w.GetLogDir()
@@ -584,10 +590,15 @@ func (s *Service) ListWriterFiles(proxyType string) []LogFileInfo {
 }
 
 func (s *Service) loadWriterConfig(proxyType string) LogWriterConfig {
+	// waf 无 stdout capture 概念：WAF 按日期写文件（logs/<date>_waf.log）
+	defaultPath := fmt.Sprintf("logs/%s-stdout.log", proxyType)
+	if proxyType == "waf" {
+		defaultPath = fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02"))
+	}
 	cfg := LogWriterConfig{
 		ProxyType:  proxyType,
 		Mode:       "file",
-		FilePath:   fmt.Sprintf("logs/%s-stdout.log", proxyType),
+		FilePath:   defaultPath,
 		RetainDays: 30,
 		Compress:   false,
 		MaxSizeMB:  100,

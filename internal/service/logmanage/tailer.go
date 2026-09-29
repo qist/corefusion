@@ -239,6 +239,7 @@ func (s *Service) readNewContent(path string, lastSize int64, lastMod time.Time)
 }
 
 // readLastLines reads the last N lines from a file efficiently.
+// 反向分块读取，收集时用 append（最后 reverse）——禁止逐行 prepend（O(n²)）。
 func readLastLines(f *os.File, n int) ([]string, error) {
 	stat, err := f.Stat()
 	if err != nil {
@@ -251,11 +252,11 @@ func readLastLines(f *os.File, n int) ([]string, error) {
 
 	// Read backwards to find N newlines
 	bufSize := int64(64 * 1024) // 64KB chunks
-	var lines []string
+	rev := make([]string, 0, n) // 逆文件序收集（最后 reverse）
 	var offset int64 = fileSize
 	var leftover []byte
 
-	for len(lines) < n+1 && offset > 0 {
+	for len(rev) < n+1 && offset > 0 {
 		readSize := bufSize
 		if offset < readSize {
 			readSize = offset
@@ -278,9 +279,9 @@ func readLastLines(f *os.File, n int) ([]string, error) {
 					line = line[:len(line)-1]
 				}
 				if line != "" {
-					lines = append([]string{line}, lines...)
+					rev = append(rev, line)
 				}
-				if len(lines) >= n {
+				if len(rev) >= n {
 					break
 				}
 				data = data[:i]
@@ -288,27 +289,30 @@ func readLastLines(f *os.File, n int) ([]string, error) {
 		}
 		leftover = data
 
-		if len(lines) >= n {
+		if len(rev) >= n {
 			break
 		}
 	}
 
 	// Handle remaining data (beginning of file)
-	if len(leftover) > 0 && len(lines) < n {
+	if len(leftover) > 0 && len(rev) < n {
 		line := string(leftover)
 		if len(line) > 0 && line[len(line)-1] == '\r' {
 			line = line[:len(line)-1]
 		}
 		if line != "" {
-			lines = append([]string{line}, lines...)
+			rev = append(rev, line)
 		}
 	}
 
-	// Trim to exactly N lines
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+	// rev 是逆文件序 → 反转成文件序，并只保留最后 n 行
+	if len(rev) > n {
+		rev = rev[:n]
+	}
+	for i, j := 0, len(rev)-1; i < j; i, j = i+1, j-1 {
+		rev[i], rev[j] = rev[j], rev[i]
 	}
 
-	log.Printf("logmanage tailer: read %d lines from file", len(lines))
-	return lines, nil
+	log.Printf("logmanage tailer: read %d lines from file", len(rev))
+	return rev, nil
 }

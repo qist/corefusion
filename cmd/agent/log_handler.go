@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -28,6 +29,12 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 	lastLines := int(req.LastLines)
 	if lastLines <= 0 {
 		lastLines = 500
+	}
+
+	// 增量读（tail -F）：offset > 0 表示从该字节偏移读取新增内容。
+	// 只推进到最后一个完整行（\n），半行留待下次——面板侧无需再做差分。
+	if req.Offset > 0 {
+		return a.readLogIncremental(req, lastLines)
 	}
 
 	// Extract client-log-package filter parameters.
@@ -90,10 +97,16 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 			}
 		}
 
+		// tail 模式也回传当前文件大小 → 面板从锚点开始增量轮询
+		nextOffset := int64(0)
+		if fi, err := f.Stat(); err == nil {
+			nextOffset = fi.Size()
+		}
 		return &agentpb.ReadLogFileResponse{
-			Success: true,
-			Lines:   agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
-			LogPath: logPath,
+			Success:    true,
+			Lines:      agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
+			LogPath:    logPath,
+			NextOffset: nextOffset,
 		}
 	}
 
@@ -156,10 +169,16 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 		}
 	}
 
+	// tail 模式也回传当前文件大小 → 面板从锚点开始增量轮询
+	nextOffset := int64(0)
+	if fi, err := f.Stat(); err == nil {
+		nextOffset = fi.Size()
+	}
 	return &agentpb.ReadLogFileResponse{
-		Success: true,
-		Lines:   agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
-		LogPath: logPath,
+		Success:    true,
+		Lines:      agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter),
+		LogPath:    logPath,
+		NextOffset: nextOffset,
 	}
 }
 
@@ -386,6 +405,108 @@ func (a *AgentApp) handlePackageLogs(req *agentpb.PackageLogsRequest) *agentpb.P
 		DownloadToken: fmt.Sprintf("pkg_%d", time.Now().Unix()),
 	}
 }
+
+// readLogIncremental serves the offset-based incremental read (tail -F) for the
+// panel's SSE log streams. next_offset always lands after the last COMPLETE
+// newline, so no line is ever split or lost across polls. If the file was
+// truncated/rotated (size < offset), it falls back to a fresh tail and flags
+// truncated=true so the panel can re-anchor.
+func (a *AgentApp) readLogIncremental(req *agentpb.ReadLogFileRequest, lastLines int) *agentpb.ReadLogFileResponse {
+	logPath := req.GetLogPath()
+	if logPath != "" {
+		logPath = a.resolveRelPath(logPath)
+		if logPath == "" {
+			return &agentpb.ReadLogFileResponse{Success: false, Error: "invalid log path"}
+		}
+	} else {
+		logPath = a.resolveLogFilePath(req.LogType)
+	}
+	if logPath == "" {
+		return &agentpb.ReadLogFileResponse{Success: false, Error: fmt.Sprintf("unknown log type: %s", req.LogType)}
+	}
+
+	resp := &agentpb.ReadLogFileResponse{LogPath: logPath}
+
+	info, err := os.Stat(logPath)
+	if err != nil {
+		// 文件消失（轮转/清理）→ 让面板重新 tail 锚定
+		resp.Success = true
+		resp.Truncated = true
+		return resp
+	}
+
+	// 截断/轮转：文件比记录的 offset 还小 → 重新 tail 锚定
+	if info.Size() < req.Offset {
+		f, err := os.Open(logPath)
+		if err != nil {
+			resp.Success = false
+			resp.Error = fmt.Sprintf("open log file: %v", err)
+			return resp
+		}
+		defer f.Close()
+		lines, err := readLastLinesFromFile(f, lastLines)
+		if err != nil {
+			resp.Success = false
+			resp.Error = fmt.Sprintf("read log file: %v", err)
+			return resp
+		}
+		resp.Success = true
+		resp.Lines = lines
+		resp.NextOffset = info.Size()
+		resp.Truncated = true
+		return resp
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		resp.Success = false
+		resp.Error = fmt.Sprintf("open log file: %v", err)
+		return resp
+	}
+	defer f.Close()
+
+	if _, err := f.Seek(req.Offset, io.SeekStart); err != nil {
+		resp.Success = false
+		resp.Error = fmt.Sprintf("seek log file: %v", err)
+		return resp
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxIncrementalReadBytes))
+	if err != nil {
+		resp.Success = false
+		resp.Error = fmt.Sprintf("read log file: %v", err)
+		return resp
+	}
+
+	// 只消费到最后一个完整 \n；半行留在文件里，下次 offset 不越过它
+	nextOffset := req.Offset
+	lines := []string{}
+	if cut := bytes.LastIndexByte(data, '\n'); cut >= 0 {
+		nextOffset = req.Offset + int64(cut) + 1
+		body := strings.TrimSuffix(string(data[:cut+1]), "\n")
+		if body != "" {
+			lines = strings.Split(body, "\n")
+		}
+	}
+
+	filterEmails := req.GetFilterEmails()
+	hasFilter := len(filterEmails) > 0 || req.StartTime > 0 || req.EndTime > 0
+	var filterStart, filterEnd time.Time
+	if req.StartTime > 0 {
+		filterStart = time.Unix(req.StartTime, 0)
+	}
+	if req.EndTime > 0 {
+		filterEnd = time.Unix(req.EndTime, 0)
+	}
+
+	resp.Success = true
+	resp.Lines = agentFilterLines(lines, filterEmails, filterStart, filterEnd, hasFilter)
+	resp.NextOffset = nextOffset
+	return resp
+}
+
+// maxIncrementalReadBytes caps one incremental read (16 MB) — a stream left
+// open for a long time on a hot file will be served in bounded chunks.
+const maxIncrementalReadBytes = 16 << 20
 
 // resolveLogFilePath resolves the log file path for a given log type.
 // In stdout mode, the log is persisted to logs/{type}-stdout.log by LogWriter.
@@ -618,6 +739,8 @@ func (a *AgentApp) deriveCoreLogMode(coreType string) string {
 }
 
 // readLastLinesFromFile reads the last N lines from an open file.
+// 反向分块读取，收集时用 append（最后 reverse）——禁止逐行 prepend（O(n²)，
+// 5 万行 = 上十亿次元素拷贝，会把请求卡到超时）。
 func readLastLinesFromFile(f *os.File, n int) ([]string, error) {
 	stat, err := f.Stat()
 	if err != nil {
@@ -629,11 +752,11 @@ func readLastLinesFromFile(f *os.File, n int) ([]string, error) {
 	}
 
 	bufSize := int64(64 * 1024)
-	var lines []string
+	rev := make([]string, 0, n) // 逆文件序收集（最后 reverse）
 	var offset int64 = fileSize
 	var leftover []byte
 
-	for len(lines) < n+1 && offset > 0 {
+	for len(rev) < n+1 && offset > 0 {
 		readSize := bufSize
 		if offset < readSize {
 			readSize = offset
@@ -653,34 +776,38 @@ func readLastLinesFromFile(f *os.File, n int) ([]string, error) {
 					line = line[:len(line)-1]
 				}
 				if line != "" {
-					lines = append([]string{line}, lines...)
+					rev = append(rev, line)
 				}
-				if len(lines) >= n {
+				if len(rev) >= n {
 					break
 				}
 				data = data[:i]
 			}
 		}
 		leftover = data
-		if len(lines) >= n {
+		if len(rev) >= n {
 			break
 		}
 	}
 
-	if len(leftover) > 0 && len(lines) < n {
+	if len(leftover) > 0 && len(rev) < n {
 		line := string(leftover)
 		if len(line) > 0 && line[len(line)-1] == '\r' {
 			line = line[:len(line)-1]
 		}
 		if line != "" {
-			lines = append([]string{line}, lines...)
+			rev = append(rev, line)
 		}
 	}
 
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+	// rev 是逆文件序 → 反转成文件序，并只保留最后 n 行
+	if len(rev) > n {
+		rev = rev[:n]
 	}
-	return lines, nil
+	for i, j := 0, len(rev)-1; i < j; i, j = i+1, j-1 {
+		rev[i], rev[j] = rev[j], rev[i]
+	}
+	return rev, nil
 }
 
 // isInTimeRange checks if a log line's timestamp falls within the given range.

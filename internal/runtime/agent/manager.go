@@ -2270,6 +2270,43 @@ func (m *NodeServerManager) RotateLogOnServer(ctx context.Context, serverID int6
 	return resp.RotatedFiles, resp.CleanedFiles, resp.FreedBytes, nil
 }
 
+// ReadLogFileOnServerIncremental reads only the content appended after the
+// given byte offset (tail -F). The agent advances next_offset to the last
+// complete newline, so no line is split or lost across polls. truncated=true
+// means the file was rotated/truncated on the node and lines hold a fresh tail.
+func (m *NodeServerManager) ReadLogFileOnServerIncremental(ctx context.Context, serverID int64, logType, logPath string, offset int64, lastLines int) ([]string, int64, bool, error) {
+	if m.isLocalServer(serverID) {
+		return nil, 0, false, fmt.Errorf("local incremental reads should be handled by the API handler")
+	}
+
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ReadLogFile{
+			ReadLogFile: &agentpb.ReadLogFileRequest{
+				LogType:   logType,
+				LogPath:   logPath,
+				LastLines: int32(lastLines),
+				Offset:    offset,
+			},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, 0, false, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ReadLogFileResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, 0, false, fmt.Errorf("unmarshal read_log_file response: %w", err)
+	}
+	if !resp.Success {
+		return nil, 0, false, fmt.Errorf("%s", resp.Error)
+	}
+	return resp.Lines, resp.NextOffset, resp.Truncated, nil
+}
+
 // PackageLogsOnServer packages logs from a node within a time range.
 func (m *NodeServerManager) PackageLogsOnServer(ctx context.Context, serverID int64, logType string, startTime, endTime int64, includeRotated, desensitize bool) (string, int64, string, error) {
 	if m.isLocalServer(serverID) {

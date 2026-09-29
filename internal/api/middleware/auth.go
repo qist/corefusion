@@ -65,7 +65,10 @@ var ticketRouteScopes = []struct {
 	scope    string
 }{
 	{"/log-manage/", "/stdout-log", authsvc.TicketScopeLogs},
-	{"/log-manage/", "/stdout-stream", authsvc.TicketScopeLogs},
+	// "/stream" 同时覆盖 /proxy|core/<type>/stdout-stream 与 /nodes/<id>/logs/<type>/stream
+	{"/log-manage/", "/stream", authsvc.TicketScopeLogs},
+	// 策略"查看日志"对话框的 SSE（/policies/<id>/log-stream）
+	{"/log-manage/", "/log-stream", authsvc.TicketScopeLogs},
 	{"/backups/", "/download", authsvc.TicketScopeBackupDownload},
 	// 证书下载 ✓：/api/v1/certificates/<id>/download 与 /api/v1/certificates/export ✓
 	{"/certificates/", "/download", authsvc.TicketScopeCertDownload},

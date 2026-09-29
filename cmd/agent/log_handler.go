@@ -131,10 +131,18 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 
 	f, err := os.Open(logPath)
 	if err != nil {
-		return &agentpb.ReadLogFileResponse{
-			Success: false,
-			Error:   fmt.Sprintf("open log file: %v", err),
-			LogPath: logPath,
+		// stdout capture 文件不存在（writer 未启用）时，回退读核心进程的 tee 文件
+		//（data/logs/<type>.log — 核心进程 stderr/stdout 的落地文件）。
+		altPath := filepath.Join(a.dataDir, "logs", logType+".log")
+		if f2, err2 := os.Open(altPath); err2 == nil {
+			f = f2
+			logPath = altPath
+		} else {
+			return &agentpb.ReadLogFileResponse{
+				Success: false,
+				Error:   fmt.Sprintf("open log file: %v", err),
+				LogPath: logPath,
+			}
 		}
 	}
 	defer f.Close()
@@ -396,7 +404,15 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 	// File mode (or off): return the process's default log file path
 	switch logType {
 	case "xray":
-		return filepath.Join(logDir, "xray.log")
+		// ⚠ 用户活动行（accepted + email:）只写入 **access** 日志，error 日志里
+		//   只有警告 → 打包/查看用户日志必须读 access 日志（真机验证踩到：
+		//   xray-access.log 12 万行 email 记录、xray.log 0 行）。优先用运行时
+		//   配置里声明的 access 路径，兜底默认名。
+		accessPath, _ := a.readXrayLogPaths()
+		if accessPath != "" {
+			return accessPath
+		}
+		return filepath.Join(logDir, "xray-access.log")
 	case "singbox":
 		return filepath.Join(logDir, "singbox.log")
 	case "hysteria2":
@@ -669,11 +685,13 @@ func readLastLinesFromFile(f *os.File, n int) ([]string, error) {
 
 // isInTimeRange checks if a log line's timestamp falls within the given range.
 // Lines without a parseable timestamp are always included.
+// ⚠ 必须用 ParseInLocation（本地时区）：日志行写的是节点本地时间，按 UTC 解析会把
+// 时间平移时区差（+08 → 全部"落在未来"）→ 过滤后一行不剩（真机验证踩到）。
 func isInTimeRange(line string, start, end time.Time) bool {
 	// Try to parse common timestamp formats from the beginning of the line
 	// Format: 2026/07/08 16:00:00 ...
 	if len(line) >= 19 {
-		t, err := time.Parse("2006/01/02 15:04:05", line[:19])
+		t, err := time.ParseInLocation("2006/01/02 15:04:05", line[:19], time.Local)
 		if err == nil {
 			return !t.Before(start) && !t.After(end)
 		}

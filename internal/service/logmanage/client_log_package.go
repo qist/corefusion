@@ -476,7 +476,16 @@ func (s *Service) collectLocalNodeLogs(ctx context.Context, logType string, star
 	case "off":
 		return nil, fmt.Errorf("logging is off for %s", logType)
 	default:
-		logPath = s.resolveLogPath(fmt.Sprintf("logs/%s.log", logType))
+		if logType == "xray" {
+			// 用户活动行（accepted + email:）只写 access 日志，error 日志（xray.log）
+			// 里只有警告 → 打包用户日志必须读 access（与 Agent 端同款修复）。
+			logPath = s.resolveLogPath("logs/xray-access.log")
+			if _, err := os.Stat(logPath); err != nil {
+				logPath = s.resolveLogPath(fmt.Sprintf("logs/%s.log", logType))
+			}
+		} else {
+			logPath = s.resolveLogPath(fmt.Sprintf("logs/%s.log", logType))
+		}
 	}
 
 	// Also check for rotated files
@@ -573,17 +582,19 @@ func readLinesFromLocalFile(path string, maxLines int) ([]string, error) {
 
 // isLogInTimeRange checks if a log line's timestamp falls within the given range.
 // Lines without a parseable timestamp are included.
+// ⚠ 必须用 ParseInLocation（本地时区）：日志行写的是服务器本地时间，按 UTC 解析会
+// 把时间平移时区差 → 时间过滤全部排除（与 Agent 端 isInTimeRange 同款修复）。
 func isLogInTimeRange(line string, start, end time.Time) bool {
 	// Try common timestamp formats from the beginning of the line
 	if len(line) >= 19 {
 		// Format: 2026/07/08 16:00:00 ...
-		if t, err := time.Parse("2006/01/02 15:04:05", line[:19]); err == nil {
+		if t, err := time.ParseInLocation("2006/01/02 15:04:05", line[:19], time.Local); err == nil {
 			return !t.Before(start) && !t.After(end)
 		}
 	}
 	if len(line) >= 25 {
 		// Format: 2026-07-08T16:00:00Z ...
-		if t, err := time.Parse("2006-01-02T15:04:05Z", line[:20]); err == nil {
+		if t, err := time.ParseInLocation("2006-01-02T15:04:05Z", line[:20], time.UTC); err == nil {
 			return !t.Before(start) && !t.After(end)
 		}
 	}

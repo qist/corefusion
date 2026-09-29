@@ -326,6 +326,39 @@ func (h *Handler) SyncPolicies(c *gin.Context) {
 	if serverID == 0 {
 		serverID = 1
 	}
+
+	// Remote node: discover via gRPC first — svc.DiscoverLogsForServer only
+	// scans the panel's local node, so without this branch remote sync silently
+	// created 0 policies.
+	if serverID > 1 {
+		if nodeLogMgr == nil {
+			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
+			return
+		}
+		logs, err := nodeLogMgr.DiscoverLogsOnServer(c.Request.Context(), serverID)
+		if err != nil {
+			response.InternalError(c, "DISCOVER_FAILED", err.Error())
+			return
+		}
+		discovered := make([]logmanage.DiscoveredLog, 0, len(logs))
+		for _, l := range logs {
+			discovered = append(discovered, logmanage.DiscoveredLog{
+				SourceType: l.SourceType,
+				Domain:     l.Domain,
+				LogPath:    l.LogPath,
+				LogFormat:  l.LogFormat,
+				HasPolicy:  l.HasPolicy,
+			})
+		}
+		created, err := h.svc.CreatePoliciesFromDiscovered(c.Request.Context(), serverID, discovered)
+		if err != nil {
+			response.InternalError(c, "SYNC_FAILED", err.Error())
+			return
+		}
+		response.OK(c, gin.H{"created": created})
+		return
+	}
+
 	created, err := h.svc.SyncPoliciesForServer(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())

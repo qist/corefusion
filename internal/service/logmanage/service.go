@@ -1013,7 +1013,14 @@ func (s *Service) SyncPoliciesForServer(ctx context.Context, serverID int64) (in
 	if err != nil {
 		return 0, err
 	}
+	return s.CreatePoliciesFromDiscovered(ctx, serverID, discovered)
+}
 
+// CreatePoliciesFromDiscovered creates rotation policies for already-discovered
+// logs (skipping ones that have a policy). It is the shared tail of
+// SyncPoliciesForServer — remote nodes resolve "discovered" via gRPC in the
+// handler and call this directly.
+func (s *Service) CreatePoliciesFromDiscovered(ctx context.Context, serverID int64, discovered []DiscoveredLog) (int, error) {
 	created := 0
 	for _, d := range discovered {
 		// Check if policy already exists for this log path on this server

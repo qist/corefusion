@@ -573,7 +573,10 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 				}
 			}
 		}
-		return filepath.Join(logDir, "caddy-access.log")
+		// 兜底：无启日志站点时读 Caddy 全局日志（与 Caddyfile 生成的
+		// "output file logs/caddy_access.log" 同名，下划线——此前误用横线
+		// caddy-access.log 导致"日志文件不存在"）。
+		return filepath.Join(logDir, "caddy_access.log")
 	default:
 		return ""
 	}
@@ -1065,26 +1068,35 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	if caddyMode == "stdout" {
 		// skip
 	} else if caddyMode != "off" {
-		// Read caddy site configs from database for actual log paths
+		// 全局统一 access 日志（与 Caddyfile 生成的 "output file logs/caddy_access.log"
+		// 同名，面板本地的 discoverCaddyLogs 也始终包含它）——站点表为空时兜底。
+		logs = append(logs, &agentpb.DiscoveredLogInfo{
+			SourceType: "caddy",
+			Domain:     "access",
+			LogPath:    a.resolveRelPath("logs/caddy_access.log"),
+			LogFormat:  "json",
+		})
+		// Per-site custom log paths (sites that override the global logger)
 		if a.caddySiteRepo != nil {
 			sites, err := a.caddySiteRepo.List(ctx, 1)
 			if err == nil {
+				globalPath := a.resolveRelPath("logs/caddy_access.log")
 				for _, site := range sites {
 					// Skip L4 and SNI sites — they don't have HTTP-level logs
 					if site.Template == "l4" || site.Template == "sni" {
 						continue
 					}
-					if !site.LogEnabled {
+					if !site.LogEnabled || site.LogPath == "" {
 						continue
 					}
-					logPath := site.LogPath
-					if logPath == "" {
-						logPath = fmt.Sprintf("logs/%s.log", sanitizeDomainForLog(site.Domain))
+					logPath := a.resolveRelPath(site.LogPath)
+					if logPath == globalPath {
+						continue // 已在全局条目里
 					}
 					logs = append(logs, &agentpb.DiscoveredLogInfo{
 						SourceType: "caddy",
 						Domain:     site.Domain,
-						LogPath:    a.resolveRelPath(logPath),
+						LogPath:    logPath,
 						LogFormat:  site.LogFormat,
 					})
 				}

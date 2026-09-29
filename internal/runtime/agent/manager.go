@@ -2184,7 +2184,8 @@ func (m *NodeServerManager) ReadLogFileOnServerWithPathFiltered(ctx context.Cont
 		case "nginx":
 			resolved = filepath.Join(m.localAgent.GetDataDir(), "logs", "nginx-error.log")
 		case "caddy":
-			resolved = filepath.Join(m.localAgent.GetDataDir(), "logs", "caddy-access.log")
+			// 与 Caddyfile 生成的全局日志同名（logs/caddy_access.log，下划线）
+			resolved = filepath.Join(m.localAgent.GetDataDir(), "logs", "caddy_access.log")
 		}
 		data, err := os.ReadFile(resolved)
 		if err != nil {

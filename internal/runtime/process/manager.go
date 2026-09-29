@@ -400,12 +400,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// Determine log mode
 	logMode := m.getLogMode(coreType)
 
-	// Stop old LogBroker if any
-	if oldBroker, ok := m.logBrokers[coreType]; ok {
-		oldBroker.Stop()
-		delete(m.logBrokers, coreType)
-	}
-
 	// Use relative paths from dataDir (same as proxy)
 	relBinPath, _ := filepath.Rel(m.dataDir, binaryPath)
 	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
@@ -448,13 +442,22 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	cmd.Dir = m.dataDir
 
 	// Configure process output based on log mode
+	//
+	// 复用 LogBroker：订阅者（LogWriter capture、实时日志 SSE）在启动时对 broker
+	// 实例建立订阅——旧实现每次 Start 停旧建新，核心一重启所有订阅全部失效
+	// （stdout capture 永远空文件、实时日志断流，真机踩到 v0.12.232）。
+	broker, ok := m.logBrokers[coreType]
+	if !ok || broker == nil {
+		broker = NewLogBroker()
+		m.logBrokers[coreType] = broker
+	}
+
 	var logFile *os.File
 	switch logMode {
 	case "stdout":
 		// stdout mode: LogBroker captures process output via io.Pipe
-		broker := NewLogBroker()
+		// （可能此前是 file 模式在 tail——AttachCmd 内部先停 tailer）
 		broker.AttachCmd(cmd)
-		m.logBrokers[coreType] = broker
 		log.Printf("process: started %s in stdout mode (LogBroker attached)", coreType)
 
 	case "off":
@@ -465,6 +468,7 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 			cmd.Stderr = devNull
 			// Store to close later (not tracked in managedProcess, will be GC'd)
 		}
+		broker.stopTailer()
 		log.Printf("process: started %s in off mode (output discarded)", coreType)
 
 	default:
@@ -477,10 +481,9 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 
-		// Create LogBroker and tail the log file for real-time viewing
-		broker := NewLogBroker()
+		// Tail the log file for real-time viewing（TailFile 可重入：内部先停
+		// 旧 tailer，复用同一 broker 不产生重复 tail，订阅者不丢）
 		broker.TailFile(logPath)
-		m.logBrokers[coreType] = broker
 		log.Printf("process: started %s in file mode (log: %s)", coreType, logPath)
 	}
 	// Set resource path for geoip/geosite files

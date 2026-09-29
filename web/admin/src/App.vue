@@ -46,5 +46,10 @@ body {
   .el-table .cell { padding: 0 6px; }
   /* 表头按钮区允许换行 */
   .el-header { padding: 0 12px; }
+  /* 页面工具行（标题+按钮的 space-between 行）允许换行，避免横向溢出 */
+  .el-main div[style*="justify-content:space-between"] { flex-wrap: wrap; row-gap: 8px; }
+  /* 弹窗内表单：窄屏标签上置，避免 100-140px 的 label 挤压内容 */
+  .el-dialog .el-form-item { display: block; }
+  .el-dialog .el-form-item__label { display: block; width: auto !important; text-align: left; padding-bottom: 4px; }
 }
 </style>

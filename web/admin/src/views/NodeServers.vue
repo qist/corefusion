@@ -18,7 +18,7 @@
           <el-button type="primary" size="small" @click="showCreateDialog">+ {{ t('nodeServer.addServer') }}</el-button>
         </div>
 
-        <el-table :data="servers" v-loading="loading" stripe size="small">
+        <el-table v-if="!isMobile" :data="servers" v-loading="loading" stripe size="small">
           <el-table-column prop="id" label="ID" width="45" />
           <el-table-column prop="name" :label="t('common.name')" min-width="115" show-overflow-tooltip />
           <el-table-column prop="hostname" :label="t('nodeServer.hostname')" min-width="130" show-overflow-tooltip />
@@ -36,23 +36,23 @@
             <template #default="{row}">
               <div v-if="row.node_type === 'mirror' && row.partner_server_id" style="display:flex;align-items:center;gap:4px;font-size:12px">
                 <el-tag size="small" type="warning" effect="plain">{{ t('nodeServer.mirrorOf') }}</el-tag>
-                <el-link type="primary" :underline="false" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
+                <el-link type="primary" underline="never" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
               </div>
               <div v-else-if="row.node_type === 'primary_backup' && row.partner_server_id" style="display:flex;align-items:center;gap:4px;font-size:12px">
                 <el-tag size="small" :type="row.failover_role === 'primary' ? 'danger' : 'info'" effect="plain">{{ row.failover_role === 'primary' ? t('nodeServer.failoverPrimary') : t('nodeServer.failoverBackup') }}</el-tag>
                 <span style="color:#909399">⇄</span>
-                <el-link type="primary" :underline="false" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
+                <el-link type="primary" underline="never" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
               </div>
               <div v-else-if="row.chain_entry_for && row.chain_entry_for.length" style="display:flex;align-items:center;gap:4px;font-size:12px;flex-wrap:wrap">
                 <el-tag size="small" type="success" effect="plain">{{ t('nodeServer.chainEntry') }}</el-tag>
                 <template v-for="exitId in row.chain_entry_for" :key="'e'+exitId">
-                  <el-link type="primary" :underline="false" @click="goToPartner(exitId)" style="font-size:12px">{{ serverMap[exitId] || ('#'+exitId) }}</el-link>
+                  <el-link type="primary" underline="never" @click="goToPartner(exitId)" style="font-size:12px">{{ serverMap[exitId] || ('#'+exitId) }}</el-link>
                 </template>
               </div>
               <div v-else-if="row.chain_exit_for && row.chain_exit_for.length" style="display:flex;align-items:center;gap:4px;font-size:12px;flex-wrap:wrap">
                 <el-tag size="small" type="success" effect="plain">{{ t('nodeServer.chainExit') }}</el-tag>
                 <template v-for="entryId in row.chain_exit_for" :key="'x'+entryId">
-                  <el-link type="primary" :underline="false" @click="goToPartner(entryId)" style="font-size:12px">{{ serverMap[entryId] || ('#'+entryId) }}</el-link>
+                  <el-link type="primary" underline="never" @click="goToPartner(entryId)" style="font-size:12px">{{ serverMap[entryId] || ('#'+entryId) }}</el-link>
                 </template>
               </div>
               <el-tag v-else-if="row.node_type === 'chain_entry'" size="small" type="success" effect="plain">{{ t('nodeServer.chainEntry') }}</el-tag>
@@ -162,6 +162,34 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards
+          v-else
+          :rows="servers"
+          title-field="name"
+          :fields="serverCardFields"
+        >
+          <template #actions="{ row }">
+            <el-button size="small" type="primary" @click="goToDetail(row)">{{ t('nodeServer.detail') }}</el-button>
+            <el-dropdown trigger="click" @command="(cmd) => handleServerAction(cmd, row)" size="small">
+              <el-button size="small">{{ t('nodeServer.actions') }} <el-icon><ArrowDown /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="deploy" v-if="row.bootstrap_required && $can('admin')">{{ t('nodeServer.deployCommand') }}</el-dropdown-item>
+                  <el-dropdown-item command="status" divided>{{ t('nodeServer.realtimeStatus') }}</el-dropdown-item>
+                  <el-dropdown-item command="control" v-if="$can('super_admin')">{{ t('nodeServer.controlCore') }}</el-dropdown-item>
+                  <el-dropdown-item command="sync" v-if="$can('super_admin')">{{ t('nodeServer.syncConfig') }}</el-dropdown-item>
+                  <el-dropdown-item command="tags" divided>{{ t('nodeServer.tags') }}</el-dropdown-item>
+                  <el-dropdown-item command="revoke" v-if="row.agent_cert_expires_at && $can('admin')">{{ t('nodeServer.revokeCert') }}</el-dropdown-item>
+                  <el-dropdown-item command="reconnect" v-if="$can('admin')">{{ t('nodeServer.forceReconnect') }}</el-dropdown-item>
+                  <el-dropdown-item command="resumeTraffic" v-if="row.traffic_suspended" divided style="color:#e6a23c">⚠ {{ t('nodeServer.resumeTraffic') }}</el-dropdown-item>
+                  <el-dropdown-item command="updateAgent" v-if="!row.is_local && $can('admin')" divided>{{ t('nodeServer.updateAgent') }}</el-dropdown-item>
+                  <el-dropdown-item command="edit" divided>{{ t('common.edit') }}</el-dropdown-item>
+                  <el-dropdown-item command="delete" v-if="!row.is_local && $can('admin')">{{ t('common.delete') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+        </MobileCards>
         <PaginationBar v-model:page="serverPage" v-model:page-size="serverPageSize" :total="serverTotal" @change="loadServers" />
       </el-tab-pane>
 
@@ -740,7 +768,9 @@ import {
 } from '../api/nodeServer'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -1528,6 +1558,30 @@ function statusLabel(status) {
   const map = { online: t('nodeServer.online'), offline: t('nodeServer.offline'), degraded: t('nodeServer.degraded') }
   return map[status] || status
 }
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与桌面服务器列表列对应）
+function relationText(row) {
+  const name = (id) => serverMap.value?.[id] || ('#' + id)
+  if (row.node_type === 'mirror' && row.partner_server_id) return `${t('nodeServer.mirrorOf')} → ${name(row.partner_server_id)}`
+  if (row.node_type === 'primary_backup' && row.partner_server_id) return `${row.failover_role === 'primary' ? t('nodeServer.failoverPrimary') : t('nodeServer.failoverBackup')} ⇄ ${name(row.partner_server_id)}`
+  if (row.chain_entry_for?.length) return `${t('nodeServer.chainEntry')} → ${row.chain_entry_for.map(name).join(', ')}`
+  if (row.chain_exit_for?.length) return `${t('nodeServer.chainExit')} ← ${row.chain_exit_for.map(name).join(', ')}`
+  if (row.node_type === 'chain_entry') return t('nodeServer.chainEntry')
+  if (row.node_type === 'chain_exit') return t('nodeServer.chainExit')
+  return '-'
+}
+const serverCardFields = computed(() => [
+  { label: t('nodeServer.hostname'), text: (row) => row.hostname || '-' },
+  { label: t('nodeServer.region'), text: (row) => row.region || '-' },
+  { label: t('nodeServer.nodeType'), text: (row) => nodeTypeLabel(row.node_type) },
+  { label: t('nodeServer.relationship'), text: relationText },
+  { label: t('nodeServer.agentStatus'), text: (row) => statusLabel(row.agent_status) + (row.agent_version ? ' · ' + row.agent_version : '') },
+  { label: 'CPU / ' + t('dashboard.memory') + ' / ' + t('dashboard.disk'), text: (row) => row.resource_usage ? `${row.resource_usage.cpu_usage?.toFixed(1) || 0}% / ${row.resource_usage.mem_usage?.toFixed(1) || 0}% / ${row.resource_usage.disk_usage?.toFixed(1) || 0}%` : '-' },
+  { label: t('nodeServer.monthlyTraffic'), text: (row) => row.traffic_quota_bytes > 0 ? `${formatBytes(row.traffic_used_bytes)} / ${formatBytes(row.traffic_quota_bytes)}` : (row.traffic_suspended ? t('nodeServer.trafficSuspended') : '-') },
+  { label: t('nodeServer.lastHeartbeat'), text: (row) => row.last_heartbeat_at ? formatAgo(row.last_heartbeat_at) : '-' },
+  { label: t('nodeServer.onlineSubscriptions'), text: (row) => String(onlineSummary.value?.[row.id]?.online_subscriptions ?? 0) },
+])
 
 function statusTag(status) {
   const map = { online: 'success', offline: 'danger', degraded: 'warning' }

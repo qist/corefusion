@@ -5,7 +5,7 @@
       <!-- Subscriptions -->
       <el-tab-pane :label="t('subscription.authTitle')" name="subscriptions">
         <el-card>
-          <el-table :data="subscriptions" v-loading="subLoading" stripe>
+          <el-table v-if="!isMobile" :data="subscriptions" v-loading="subLoading" stripe>
             <el-table-column prop="id" :label="t('common.id')" width="60" />
             <el-table-column :label="t('subscription.clientEmail')" min-width="180">
               <template #default="{row}">{{ clientEmail(row.client_id) }}</template>
@@ -22,6 +22,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards
+            v-else
+            :rows="subscriptions"
+            :title-fn="(row) => clientEmail(row.client_id)"
+            :fields="subscriptionCardFields"
+          >
+            <template #actions="{ row }">
+              <el-button size="small" @click="handleRotate(row)" :disabled="row.status==='revoked'">{{ t('subscription.rotate') }}</el-button>
+              <el-button size="small" type="danger" @click="handleRevoke(row)" :disabled="row.status==='revoked'">{{ t('subscription.revoke') }}</el-button>
+              <el-button v-if="row.status==='revoked'" size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
           <PaginationBar v-model:page="subPage" v-model:page-size="subPageSize" :total="subTotal" @change="fetchSubscriptions" />
         </el-card>
       </el-tab-pane>
@@ -281,7 +293,9 @@ import MihomoConfig from './protocols/sections/MihomoConfig.vue'
 import SubscriptionBillingTemplates from '../components/subscription/SubscriptionBillingTemplates.vue'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { page: fmtPage, pageSize: fmtSize, total: fmtTotal, limit: fmtLimit, offset: fmtOffset } = usePagination({ pageKey: 'scfmtPage', pageSizeKey: 'scfmtSize' })
 const { page: epPage, pageSize: epSize, total: epTotal, limit: epLimit, offset: epOffset } = usePagination({ pageKey: 'scepPage', pageSizeKey: 'scepSize' })
@@ -358,6 +372,15 @@ const epForm = ref({ domain: '', path: '/', description: '', enabled: true })
 const quotaType = (s) => ({ normal: 'success', near_limit: 'warning', over_limit_soft: 'danger', over_limit_hard: 'danger', suspended: 'danger', expired_days: 'warning' }[s] || 'info')
 function fmtBytes(b) { if (!b) return '0 B'; const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++ } return b.toFixed(1) + ' ' + u[i] }
 const clientEmail = (id) => clientsList.value.find(c => c.id === id)?.email || `#${id}`
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与订阅授权表列对应）
+const subscriptionCardFields = computed(() => [
+  { label: t('subscription.token'), text: (row) => row.token_masked },
+  { label: t('common.status'), text: (row) => row.status },
+  { label: t('subscription.quotaState'), text: (row) => row.quota_state },
+  { label: `${t('subscription.usedBytes')} / ${t('subscription.quotaBytes')}`, text: (row) => `${fmtBytes(row.used_bytes_cache)} / ${row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited')}` },
+])
 
 // Fetch
 async function fetchSubscriptions() {

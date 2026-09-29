@@ -44,7 +44,7 @@
 
     <!-- 主表 -->
     <el-card shadow="never">
-      <el-table :data="users" v-loading="loading" border stripe size="small" row-key="rowKey">
+      <el-table v-if="!isMobile" :data="users" v-loading="loading" border stripe size="small" row-key="rowKey">
         <el-table-column type="expand">
           <template #default="{row}">
             <el-table :data="row.sessions || []" size="mini" border>
@@ -109,6 +109,18 @@
           <el-empty :description="t('onlineUsers.noOnline')" />
         </template>
       </el-table>
+      <MobileCards
+        v-else
+        :rows="users"
+        :title-fn="(row) => row.client_name || row.email"
+        :fields="onlineCardFields"
+      >
+        <template #actions="{ row }">
+          <span style="font-size:12px;color:#909399">{{ t('onlineUsers.node') }}:
+            <el-link type="primary" @click="goNode(row.server_id)">{{ row.node_name }}</el-link>
+          </span>
+        </template>
+      </MobileCards>
       <div class="pager-wrap">
         <el-pagination
           v-model:current-page="page"
@@ -131,6 +143,8 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Search, Refresh } from '@element-plus/icons-vue'
 import client from '../api/client'
+import { useIsMobile } from '../composables/useIsMobile'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -201,6 +215,20 @@ async function loadData() {
 }
 
 function goNode(id) { router.push(`/node-servers/${id}/detail`) }
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与在线用户表列对应）
+const onlineCardFields = computed(() => [
+  { label: t('onlineUsers.client'), text: (row) => row.email },
+  { label: t('onlineUsers.plan'), text: (row) => row.plan_name || '-' },
+  { label: t('onlineUsers.devices'), text: (row) => String(row.session_count ?? 0) },
+  { label: t('onlineUsers.upRate'), text: (row) => formatRate(row.uplink_rate) },
+  { label: t('onlineUsers.downRate'), text: (row) => formatRate(row.downlink_rate) },
+  { label: t('onlineUsers.totalUpDown'), text: (row) => `↑${formatBytes(row.uplink_bytes)} ↓${formatBytes(row.downlink_bytes)}` },
+  { label: t('onlineUsers.speedLimit'), text: (row) => ((row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0) ? `↓${row.speed_limit_down_mbps || 0} / ↑${row.speed_limit_up_mbps || 0} Mbps` : t('onlineUsers.unlimited') },
+  { label: t('onlineUsers.lastActive'), text: (row) => formatAgo(row.last_seen) },
+  { label: t('onlineUsers.duration'), text: (row) => formatDuration((row.last_seen || 0) - (row.first_seen || 0)) },
+])
 
 function formatRate(bps) {
   if (!bps || bps <= 0) return '0 B/s'

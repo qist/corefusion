@@ -610,32 +610,31 @@ func initDataDir(dataDir string) {
 // initTrustedProxies configures the trusted proxy list for netutil.GetRealIP.
 // Reads from database setting panel.trusted_proxies only (CF_TRUSTED_PROXIES env removed).
 // Format: comma-separated IPs/CIDRs, or "cloudflare" for all Cloudflare ranges.
-// If not set, no headers are trusted (only RemoteAddr is used — safest default).
+// Loopback (127.0.0.1, ::1) is ALWAYS trusted: the panel manages a same-host
+// Caddy/Nginx reverse proxy by design, and without it audit logs would record
+// 127.0.0.1 for every request. User-configured entries are appended.
 func initTrustedProxies(settings map[string]string) {
+	// 回环始终可信：同机反代（Caddy/Nginx）是面板标准部署形态。
+	proxies := []string{"127.0.0.1", "::1"}
+
 	raw := settings["trusted_proxies"]
 	if raw == "" {
-		log.Println("[netutil] no trusted proxies configured — only RemoteAddr will be used for IP extraction")
-		return
-	}
-
-	entries := strings.Split(raw, ",")
-	var proxies []string
-	for _, e := range entries {
-		e = strings.TrimSpace(e)
-		if e == "" {
-			continue
-		}
-		if strings.EqualFold(e, "cloudflare") {
-			proxies = append(proxies, netutil.CloudflareProxyRanges()...)
-			continue
-		}
-		proxies = append(proxies, e)
-	}
-	if len(proxies) > 0 {
-		netutil.SetTrustedProxies(proxies)
+		log.Println("[netutil] no extra trusted proxies configured — loopback (127.0.0.1, ::1) trusted for same-host reverse proxy")
 	} else {
-		log.Println("[netutil] trusted_proxies set but no valid entries found")
+		entries := strings.Split(raw, ",")
+		for _, e := range entries {
+			e = strings.TrimSpace(e)
+			if e == "" {
+				continue
+			}
+			if strings.EqualFold(e, "cloudflare") {
+				proxies = append(proxies, netutil.CloudflareProxyRanges()...)
+				continue
+			}
+			proxies = append(proxies, e)
+		}
 	}
+	netutil.SetTrustedProxies(proxies)
 }
 
 // readSettings reads all panel settings from database.

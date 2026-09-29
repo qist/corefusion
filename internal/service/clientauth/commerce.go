@@ -1653,22 +1653,6 @@ func resolveSiteSecretPrev(site *entity.ChargeSite) string {
 	return ""
 }
 
-// raiseCallbackAlert creates a SecurityAlert record for callback anomalies.
-func (s *CommerceService) raiseCallbackAlert(siteID int64, alertType, severity, title, message string) {
-	alert := &entity.SecurityAlert{
-		AlertType:   "charge_callback_" + alertType,
-		Severity:    severity,
-		DedupKey:    fmt.Sprintf("charge_callback:%d:%s:%d", siteID, alertType, time.Now().Unix()/3600), // 每小时去重
-		Title:       title,
-		Message:     message,
-		Status:      "active",
-		TriggeredAt: time.Now(),
-	}
-	if err := s.db.Create(alert).Error; err != nil {
-		log.Printf("[callback] failed to create security alert: %v", err)
-	}
-}
-
 // enqueueCallbackRetry stores a failed callback for retry processing.
 // Only transient errors should be retried; non-retryable errors are logged but not enqueued.
 func (s *CommerceService) enqueueCallbackRetry(ctx context.Context, siteID int64, requestID, tradeNo, remoteIP, payloadHash, errorCode, errMsg string, retryable bool) {

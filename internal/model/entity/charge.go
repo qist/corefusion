@@ -319,7 +319,7 @@ func (ChargeCallbackRetry) TableName() string { return "charge_callback_retries"
 
 // ============================================================
 // Charge Security Events — 充值风控事件（v3.2 新增）
-// 用于 Grafana/Loki 告警，与 SecurityAlert 互补
+// 用于 Grafana/Loki 告警与风控审计
 // ============================================================
 
 // Charge security event severity levels.

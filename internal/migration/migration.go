@@ -59,8 +59,6 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Security & Audit
 		&entity.SecurityAuditEvent{},
-		&entity.SecurityAlert{},
-		&entity.AlertChannel{},
 
 		// Runtime
 		&entity.RuntimeSnapshot{},
@@ -1041,7 +1039,6 @@ func seedDefaultLogCleanupRules(db *gorm.DB) {
 		{Category: "audit", Table: "subscription_access_logs", DisplayName: "Subscription Access Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "audit", Table: "subscription_rotations", DisplayName: "Subscription Token Rotations", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "audit", Table: "security_audit_events", DisplayName: "Security Audit Events", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
-		{Category: "audit", Table: "security_alerts", DisplayName: "Security Alerts (resolved)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "audit", Table: "node_audit_logs", DisplayName: "Node Audit Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "audit", Table: "charge_security_events", DisplayName: "Charge Security Events", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 

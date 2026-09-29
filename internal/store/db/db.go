@@ -595,8 +595,6 @@ func allEntityModels() []interface{} {
 		&entity.TrafficSession{},
 		&entity.TrafficQuotaResetLog{},
 		&entity.SecurityAuditEvent{},
-		&entity.SecurityAlert{},
-		&entity.AlertChannel{},
 		&entity.RuntimeSnapshot{},
 		&entity.RuntimeApplyJob{},
 		&entity.RuntimeApplyJobTarget{},

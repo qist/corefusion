@@ -36,6 +36,19 @@ type RawDataProvider interface {
 	ListNodeServers(ctx context.Context) ([]entity.NodeServer, error)
 	// ListExternalNodes returns all enabled external_nodes (外部出口).
 	ListExternalNodes(ctx context.Context) ([]entity.ExternalNode, error)
+	// ListCoreGuardians returns core guardian settings (auto_start/auto_restart)
+	// for all services of a server, keyed by core_type. Synced so the Agent's
+	// local Reconcile (boot auto-start) and Guardian (crash restart) honor the
+	// toggles set in the panel UI.
+	ListCoreGuardians(ctx context.Context, serverID int64) ([]CoreGuardianRow, error)
+}
+
+// CoreGuardianRow represents a core guardian setting for one core type.
+type CoreGuardianRow struct {
+	CoreType        string
+	AutoStart       bool
+	AutoRestart     bool
+	MaxRestartCount int
 }
 
 // CoreConfigRow represents a row from core_configs table.
@@ -68,6 +81,8 @@ type RepositoryDataProvider struct {
 	systemSettingRepo  *repository.SystemSettingRepository
 	chainLinkRepo      *repository.ChainLinkRepository
 	extNodeRepo        *repository.ExternalNodeRepository
+	svcRepo            *repository.ServiceRepository
+	guardRepo          *repository.ProcessGuardianRepository
 }
 
 // NewRepositoryDataProvider creates a new RawDataProvider backed by repositories.
@@ -121,8 +136,47 @@ func (p *RepositoryDataProvider) WithChainRepos(chainLinkRepo *repository.ChainL
 	return p
 }
 
+// WithCoreGuardianRepos injects service and process-guardian repositories for
+// collecting core guardian settings (auto_start/auto_restart) during SyncData.
+func (p *RepositoryDataProvider) WithCoreGuardianRepos(svcRepo *repository.ServiceRepository, guardRepo *repository.ProcessGuardianRepository) *RepositoryDataProvider {
+	p.svcRepo = svcRepo
+	p.guardRepo = guardRepo
+	return p
+}
+
 func (p *RepositoryDataProvider) ListCoreConfigs(ctx context.Context, serverID int64) ([]CoreConfigRow, error) {
 	return p.coreConfigRepo.ListRows(ctx, serverID)
+}
+
+// ListCoreGuardians collects per-core guardian settings (auto_start/auto_restart/
+// max_restart_count) for all services of a server, one row per core_type.
+func (p *RepositoryDataProvider) ListCoreGuardians(ctx context.Context, serverID int64) ([]CoreGuardianRow, error) {
+	if p.svcRepo == nil || p.guardRepo == nil {
+		return nil, nil
+	}
+	services, _, err := p.svcRepo.List(ctx, serverID, "", 100, 0)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	var rows []CoreGuardianRow
+	for _, svc := range services {
+		if seen[svc.CoreType] {
+			continue // one guardian setting per core_type
+		}
+		g, err := p.guardRepo.GetByServiceID(ctx, svc.ID)
+		if err != nil || g == nil {
+			continue // no guardian row — Agent keeps its local default
+		}
+		seen[svc.CoreType] = true
+		rows = append(rows, CoreGuardianRow{
+			CoreType:        svc.CoreType,
+			AutoStart:       g.AutoStart,
+			AutoRestart:     g.AutoRestart,
+			MaxRestartCount: g.MaxRestartCount,
+		})
+	}
+	return rows, nil
 }
 
 func (p *RepositoryDataProvider) ListInboundConfigs(ctx context.Context, serverID int64) ([]InboundConfigRow, error) {
@@ -593,6 +647,23 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 		log.Printf("[DataSyncBuilder] server %d: guardian settings: nginx(auto_start=%v,auto_restart=%v,max=%d) caddy(auto_start=%v,auto_restart=%v,max=%d)",
 			serverID, req.NginxAutoStart, req.NginxAutoRestart, req.NginxMaxRestarts,
 			req.CaddyAutoStart, req.CaddyAutoRestart, req.CaddyMaxRestarts)
+
+		// Core guardian settings (开机启动/崩溃重启 per core type) — sync so the
+		// Agent's local Reconcile/Guardian honor the toggles set in the panel UI.
+		coreGuardians, err := b.rawProvider.ListCoreGuardians(ctx, settingsServerID)
+		if err != nil {
+			log.Printf("[DataSyncBuilder] server %d: failed to list core guardians: %v", serverID, err)
+		} else {
+			for _, cg := range coreGuardians {
+				req.CoreGuardians = append(req.CoreGuardians, &agentpb.CoreGuardianEntry{
+					CoreType:        cg.CoreType,
+					AutoStart:       cg.AutoStart,
+					AutoRestart:     cg.AutoRestart,
+					MaxRestartCount: int32(cg.MaxRestartCount),
+				})
+			}
+			log.Printf("[DataSyncBuilder] server %d: %d core guardian entries", serverID, len(req.CoreGuardians))
+		}
 	}
 
 	// Log summary

@@ -395,6 +395,41 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		saveProxyGuardianSetting(ctx, a.settingRepo, "caddy", "max_restarts", fmt.Sprintf("%d", req.CaddyMaxRestarts))
 	}
 
+	// Save core guardian settings (开机启动/崩溃重启 per core type).
+	// The panel UI writes these to the PANEL's process_guardians table; without
+	// this sync the Agent's local guardians stay at default 0 → Reconcile
+	// (boot auto-start) and Guardian (crash restart) never fire on remote nodes.
+	// Matched by core_type: the Agent's local services are server_id=1 seed rows
+	// whose IDs differ from the panel's.
+	for _, cg := range req.CoreGuardians {
+		if a.svcRepo == nil || a.procMgr == nil {
+			break
+		}
+		services, _, err := a.svcRepo.List(ctx, 1, cg.CoreType, 1, 0)
+		if err != nil || len(services) == 0 {
+			log.Printf("[Agent] SyncData: no local service for core %s, guardian setting skipped", cg.CoreType)
+			continue
+		}
+		if err := a.procMgr.UpdateGuardian(ctx, services[0].ID, cg.AutoStart, cg.AutoRestart, int(cg.MaxRestartCount)); err != nil {
+			log.Printf("[Agent] SyncData: update guardian for %s failed: %v", cg.CoreType, err)
+			continue
+		}
+		log.Printf("[Agent] SyncData: guardian for %s updated (auto_start=%v, auto_restart=%v, max=%d)",
+			cg.CoreType, cg.AutoStart, cg.AutoRestart, cg.MaxRestartCount)
+		// 补开机启动：Agent 重启后的 Reconcile 跑在收到 SyncData 之前（当时本地
+		// guardian 还是旧值 0，看不到面板设置），auto_start=1 的核心在这里补启动。
+		// 手动停止的核心不拉起（与 Reconcile 的 ListAutoStart 语义一致）。
+		if cg.AutoStart && !a.procMgr.IsRunning(services[0].ID) {
+			if g, gerr := a.procMgr.GetGuardian(ctx, services[0].ID); gerr == nil && g != nil && g.ManuallyStopped {
+				log.Printf("[Agent] SyncData: %s manually stopped, skipping auto-start", cg.CoreType)
+			} else if err := a.procMgr.Start(ctx, services[0].ID, cg.CoreType); err != nil {
+				log.Printf("[Agent] SyncData: auto-start %s failed: %v", cg.CoreType, err)
+			} else {
+				log.Printf("[Agent] SyncData: %s auto-started (auto_start=1, was not running)", cg.CoreType)
+			}
+		}
+	}
+
 	// 6. Prune stale records that no longer exist on the panel.
 	// SyncData uses upsert (ON CONFLICT) which only adds or updates rows —
 	// it never deletes. Without pruning, outbounds/inbounds deleted on the

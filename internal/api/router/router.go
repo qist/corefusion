@@ -2090,7 +2090,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo).WithChainRepos(
 						repository.NewChainLinkRepository(database),
 						repository.NewExternalNodeRepository(database),
-					),
+					).WithCoreGuardianRepos(svcRepo, guardianRepo),
 				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo).WithChainLinkProvider(
 					agent.NewChainLinkGenerator(
 						repository.NewChainLinkRepository(database),

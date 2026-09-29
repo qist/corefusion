@@ -31,10 +31,32 @@ client.interceptors.request.use((config) => {
   return config
 })
 
+// Refresh 静默续期：401 时用 refresh_token 换新 token 并重放原请求。
+// 并发去重：多个请求同时 401 只发一次 refresh，其余排队等待结果。
+let refreshingPromise = null
+function tryRefresh() {
+  const rt = localStorage.getItem('refresh_token')
+  if (!rt) return Promise.resolve(false)
+  if (!refreshingPromise) {
+    // 用裸 axios（不带本文件的拦截器），避免递归 401
+    refreshingPromise = axios.post('/api/v1/auth/refresh', { refresh_token: rt })
+      .then((res) => {
+        const data = res.data?.data ?? res.data
+        if (!data?.access_token) return false
+        localStorage.setItem('access_token', data.access_token)
+        localStorage.setItem('refresh_token', data.refresh_token)
+        return true
+      })
+      .catch(() => false)
+      .finally(() => { refreshingPromise = null })
+  }
+  return refreshingPromise
+}
+
 // Response interceptor
 client.interceptors.response.use(
   (response) => response.data?.data ?? response.data,
-  (error) => {
+  async (error) => {
     const t = i18n.global.t
     const suppressErrorMessage = error.config?.suppressErrorMessage === true
     if (error.response) {
@@ -46,6 +68,14 @@ client.interceptors.response.use(
         const reqUrl = error.config?.url || ''
         const isAuthFlow = reqUrl.includes('/auth/login') || reqUrl.includes('/auth/passkey/login') || reqUrl.includes('/auth/2fa/')
         if (!isAuthFlow) {
+          // 先尝试静默续期；成功则重放原请求（停留在当前页面，不再丢位置）
+          if (!error.config.__retried && await tryRefresh()) {
+            const cfg = error.config
+            cfg.__retried = true
+            cfg.headers = cfg.headers || {}
+            cfg.headers.Authorization = `Bearer ${localStorage.getItem('access_token')}`
+            return client.request(cfg)
+          }
           localStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
           window.location.href = basePath + '/login'

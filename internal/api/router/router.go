@@ -1203,6 +1203,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// SPA fallback + static asset serving
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
+		// 尾斜杠归一化：/clients/ 与 /clients 视为同一 SPA 路由，避免刷新时 404
+		if len(path) > 1 {
+			path = strings.TrimRight(path, "/")
+			if path == "" {
+				path = "/"
+			}
+		}
 
 		// API routes always accessible
 		if strings.HasPrefix(path, "/api/") {

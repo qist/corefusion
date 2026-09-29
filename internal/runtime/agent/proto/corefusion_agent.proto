@@ -810,6 +810,21 @@ message SyncDataRequest {
   repeated ChainLinkEntry chain_links = 25;
   repeated NodeServerEntry node_servers = 27;
   repeated ExternalNodeEntry external_nodes = 28;
+
+  // --- Core Guardian 设置（面板→Agent 同步） ---
+  // core（xray/singbox/hysteria2/tuic）的"开机启动/崩溃重启"开关存放在面板 DB 的
+  // process_guardians 表，此前从未同步到 Agent → Agent 重启后 Reconcile（开机启动）
+  // 与 Guardian（崩溃重启）读到的都是本地默认 0，远程节点两个开关全部失效。
+  // 按 core_type 对齐（Agent 本地 services 是 server_id=1 的 seed 行，id 与面板不同）。
+  repeated CoreGuardianEntry core_guardians = 29;
+}
+
+// CoreGuardianEntry 表示某个核心的开机启动/崩溃重启设置（按 core_type 对齐）。
+message CoreGuardianEntry {
+  string core_type         = 1;
+  bool   auto_start        = 2;
+  bool   auto_restart      = 3;
+  int32  max_restart_count = 4;
 }
 
 // ChainLinkEntry 表示一条 chain_links 记录（入口→出口链路）。
@@ -1002,6 +1017,7 @@ message ReadLogFileRequest {
   repeated string filter_emails = 4;  // 仅返回包含这些 email 标识的日志行（用于订阅用户日志打包）
   int64  start_time = 5;  // 时间范围起始（Unix 时间戳，0 表示不限制）
   int64  end_time = 6;    // 时间范围结束（Unix 时间戳，0 表示不限制）
+  int64  offset = 7;      // 增量读：从该字节偏移读取新增内容（0 = 按 last_lines tail）
 }
 
 message ReadLogFileResponse {
@@ -1009,6 +1025,8 @@ message ReadLogFileResponse {
   string error = 2;
   repeated string lines = 3;
   string log_path = 4;    // 实际读取的文件路径
+  int64  next_offset = 5; // 增量读：下一次轮询的字节偏移（= 读取完成时的文件大小）
+  bool   truncated = 6;   // 文件被截断/轮转（size < offset）→ lines 为重新 tail 的结果
 }
 
 // 远程触发日志轮转

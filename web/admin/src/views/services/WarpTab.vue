@@ -28,16 +28,18 @@
         </el-table-column>
         <el-table-column prop="address_ipv4" :label="t('service.warp.addressIPv4')" width="140" />
         <el-table-column prop="address_ipv6" :label="t('service.warp.addressIPv6')" width="180" />
-        <el-table-column prop="endpoint" :label="t('service.warp.endpoint')" width="200" />
+        <el-table-column prop="endpoint" :label="t('service.warp.endpoint')" min-width="200" />
         <el-table-column prop="registration_at" :label="t('service.warp.registrationAt')" width="180" />
         <el-table-column :label="t('common.actions')" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
-              {{ t('service.warp.generateConfig') }}
-            </el-button>
-            <el-button size="small" type="danger" @click="handleDelete(row)">
-              {{ t('common.delete') }}
-            </el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
+                {{ t('service.warp.generateConfig') }}
+              </el-button>
+              <el-button size="small" type="danger" @click="handleDelete(row)">
+                {{ t('common.delete') }}
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

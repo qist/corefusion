@@ -72,7 +72,7 @@
           </el-form>
           <el-table :data="usageList" v-loading="loadingUsage" stripe>
             <el-table-column prop="server_id" label="ID" width="80" />
-            <el-table-column :label="t('trafficQuota.periodStart')" width="180">
+            <el-table-column :label="t('trafficQuota.periodStart')" min-width="180">
               <template #default="{row}">{{ formatDate(row.period_start) }}</template>
             </el-table-column>
             <el-table-column :label="t('trafficQuota.periodEnd')" width="180">
@@ -117,7 +117,7 @@
           </el-form>
           <el-table :data="historyList" v-loading="loadingHistory" stripe max-height="520">
             <el-table-column prop="server_id" label="ID" width="80" />
-            <el-table-column :label="t('trafficQuota.periodStart')" width="180">
+            <el-table-column :label="t('trafficQuota.periodStart')" min-width="180">
               <template #default="{row}">{{ formatDate(row.period_start) }}</template>
             </el-table-column>
             <el-table-column :label="t('trafficQuota.periodEnd')" width="180">
@@ -155,7 +155,7 @@
             <el-table-column :label="t('trafficQuota.periodStart')" width="180">
               <template #default="{row}">{{ formatDate(row.period_start) }}</template>
             </el-table-column>
-            <el-table-column prop="trigger_source" :label="t('trafficQuota.triggerSource')" width="120" />
+            <el-table-column prop="trigger_source" :label="t('trafficQuota.triggerSource')" min-width="120" />
             <el-table-column prop="operator_id" :label="t('trafficQuota.operatorId')" width="100" />
             <el-table-column :label="t('common.createdAt')" width="180">
               <template #default="{row}">{{ formatDate(row.created_at) }}</template>

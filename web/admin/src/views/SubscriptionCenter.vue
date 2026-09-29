@@ -7,13 +7,13 @@
         <el-card>
           <el-table :data="subscriptions" v-loading="subLoading" stripe>
             <el-table-column prop="id" :label="t('common.id')" width="60" />
-            <el-table-column :label="t('subscription.clientEmail')" width="180">
+            <el-table-column :label="t('subscription.clientEmail')" min-width="180">
               <template #default="{row}">{{ clientEmail(row.client_id) }}</template>
             </el-table-column>
-            <el-table-column :label="t('subscription.token')" width="160"><template #default="{row}"><span style="font-family:monospace;font-size:12px">{{ row.token_masked }}</span></template></el-table-column>
+            <el-table-column :label="t('subscription.token')" min-width="160"><template #default="{row}"><span style="font-family:monospace;font-size:12px">{{ row.token_masked }}</span></template></el-table-column>
             <el-table-column :label="t('common.status')" width="80"><template #default="{row}"><el-tag :type="{active:'success',revoked:'danger',expired:'warning'}[row.status]" size="small">{{ row.status }}</el-tag></template></el-table-column>
             <el-table-column :label="t('subscription.quotaState')" width="100"><template #default="{row}"><el-tag :type="quotaType(row.quota_state)" size="small">{{ row.quota_state }}</el-tag></template></el-table-column>
-            <el-table-column :label="`${t('subscription.usedBytes')}/${t('subscription.quotaBytes')}`" width="140"><template #default="{row}">{{ fmtBytes(row.used_bytes_cache) }} / {{ row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited') }}</template></el-table-column>
+            <el-table-column :label="`${t('subscription.usedBytes')}/${t('subscription.quotaBytes')}`" min-width="140"><template #default="{row}">{{ fmtBytes(row.used_bytes_cache) }} / {{ row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited') }}</template></el-table-column>
             <el-table-column :label="t('common.actions')" width="240">
               <template #default="{row}">
                 <el-button size="small" @click="handleRotate(row)" :disabled="row.status==='revoked'">{{ t('subscription.rotate') }}</el-button>
@@ -60,9 +60,11 @@
               <el-table-column :label="t('common.status')" width="70"><template #default="{row}"><el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'✓':'✗' }}</el-tag></template></el-table-column>
               <el-table-column :label="t('common.actions')" width="200">
                 <template #default="{row}">
-                  <el-button v-if="selectedFormatType==='mihomo_yaml'" size="small" @click="showFormatRules(row)">{{ t('subfmt.rules') }}</el-button>
-                  <el-button size="small" @click="showEditFormat(row)">{{ t('common.edit') }}</el-button>
-                  <el-button size="small" type="danger" @click="deleteFormat(row)">{{ t('common.delete') }}</el-button>
+                  <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                    <el-button v-if="selectedFormatType==='mihomo_yaml'" size="small" @click="showFormatRules(row)">{{ t('subfmt.rules') }}</el-button>
+                    <el-button size="small" @click="showEditFormat(row)">{{ t('common.edit') }}</el-button>
+                    <el-button size="small" type="danger" @click="deleteFormat(row)">{{ t('common.delete') }}</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -91,8 +93,10 @@
             <el-table-column :label="t('common.status')" width="70"><template #default="{row}"><el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?'✓':'✗' }}</el-tag></template></el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
               <template #default="{row}">
-                <el-button size="small" @click="showEditEndpoint(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="deleteEndpoint(row)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" @click="showEditEndpoint(row)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="danger" @click="deleteEndpoint(row)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>

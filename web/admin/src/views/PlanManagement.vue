@@ -37,8 +37,10 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="120">
             <template #default="{row}">
-              <el-button size="small" @click="showEditTrafficPack(row)">{{ t('common.edit') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteTrafficPack(row)">{{ t('common.delete') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showEditTrafficPack(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteTrafficPack(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -124,9 +126,11 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="200">
             <template #default="{row}">
-              <el-button size="small" @click="showMembersDialog(row)">{{ t('plan.memberManagement') }}</el-button>
-              <el-button size="small" @click="showEditGroup(row)">{{ t('common.edit') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteGroup(row)">{{ t('common.delete') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showMembersDialog(row)">{{ t('plan.memberManagement') }}</el-button>
+                <el-button size="small" @click="showEditGroup(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteGroup(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -141,7 +145,7 @@
         <el-table :data="promotions" v-loading="promoLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
           <el-table-column prop="code" :label="t('plan.promotionsTab')" width="150" />
-          <el-table-column prop="name" :label="t('common.name')" width="150" />
+          <el-table-column prop="name" :label="t('common.name')" min-width="150" />
           <el-table-column :label="t('common.type')" width="100">
             <template #default="{row}">
               {{ row.discount_type === 'percentage' ? row.discount_value + '%' : '¥' + (row.discount_value/100).toFixed(2) }}
@@ -172,8 +176,10 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="120">
             <template #default="{row}">
-              <el-button size="small" @click="showEditPromo(row)">{{ t('common.edit') }}</el-button>
-              <el-button size="small" type="danger" @click="deletePromo(row)">{{ t('common.delete') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showEditPromo(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="deletePromo(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -207,7 +213,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="promotion_code" :label="t('plan.promotionsTab')" width="120" />
+          <el-table-column prop="promotion_code" :label="t('plan.promotionsTab')" min-width="120" />
           <el-table-column :label="t('plan.effectiveTime')" width="160">
             <template #default="{row}">{{ row.effective_from?.substring(0,16).replace('T',' ') }}</template>
           </el-table-column>
@@ -287,13 +293,13 @@
     </el-dialog>
 
     <!-- 规格管理弹窗 -->
-    <el-dialog v-model="variantsDialog" :title="currentTemplate?.name + ' - ' + t('plan.manageVariants')" width="750px">
+    <el-dialog v-model="variantsDialog" :title="currentTemplate?.name + ' - ' + t('plan.manageVariants')" width="880px">
       <div style="margin-bottom:12px;text-align:right">
         <el-button type="primary" size="small" @click="showCreateVariant">{{ t('plan.addVariant') }}</el-button>
       </div>
       <el-table :data="variants" stripe size="small">
         <el-table-column prop="name" :label="t('common.name')" width="80" />
-        <el-table-column :label="t('common.type')" width="90">
+        <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
             <el-tag :type="row.variant_type==='traffic_pack'?'warning':''" size="small">{{ row.variant_type==='traffic_pack'?t('plan.trafficPack'):t('plan.planType') }}</el-tag>
           </template>
@@ -301,14 +307,14 @@
         <el-table-column :label="t('plan.billingCycle')" width="80">
           <template #default="{row}">{{ cycleLabel(row.billing_cycle) }}</template>
         </el-table-column>
-        <el-table-column :label="t('plan.price')" width="100">
+        <el-table-column :label="t('plan.price')" width="90">
           <template #default="{row}">¥{{ (row.price/100).toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column :label="t('plan.originalPrice')" width="100">
+        <el-table-column :label="t('plan.originalPrice')" width="90">
           <template #default="{row}">{{ row.original_price > 0 ? '¥' + (row.original_price/100).toFixed(2) : '—' }}</template>
         </el-table-column>
         <el-table-column prop="duration_days" :label="t('plan.durationDays')" width="60" />
-        <el-table-column :label="t('plan.quota')" width="100">
+        <el-table-column :label="t('plan.quota')" min-width="100">
           <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('plan.modeSamePlan') }}</template>
         </el-table-column>
         <el-table-column :label="t('plan.tag')" width="80">
@@ -319,8 +325,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" @click="showEditVariant(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="deleteVariant(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" @click="showEditVariant(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteVariant(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

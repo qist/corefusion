@@ -19,20 +19,20 @@
         </div>
 
         <el-table :data="servers" v-loading="loading" stripe size="small">
-          <el-table-column prop="id" label="ID" width="50" />
-          <el-table-column prop="name" :label="t('common.name')" width="140" show-overflow-tooltip />
-          <el-table-column prop="hostname" :label="t('nodeServer.hostname')" width="160" show-overflow-tooltip />
-          <el-table-column :label="t('nodeServer.region')" width="90">
+          <el-table-column prop="id" label="ID" width="45" />
+          <el-table-column prop="name" :label="t('common.name')" min-width="115" show-overflow-tooltip />
+          <el-table-column prop="hostname" :label="t('nodeServer.hostname')" min-width="130" show-overflow-tooltip />
+          <el-table-column :label="t('nodeServer.region')" width="62">
             <template #default="{row}">
               <el-tag size="small" type="info">{{ row.region || '-' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.nodeType')" width="110">
+          <el-table-column :label="t('nodeServer.nodeType')" width="88" show-overflow-tooltip>
             <template #default="{row}">
               <el-tag size="small" :type="nodeTypeTag(row.node_type)">{{ nodeTypeLabel(row.node_type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.relationship')" width="200" show-overflow-tooltip>
+          <el-table-column :label="t('nodeServer.relationship')" min-width="135" show-overflow-tooltip>
             <template #default="{row}">
               <div v-if="row.node_type === 'mirror' && row.partner_server_id" style="display:flex;align-items:center;gap:4px;font-size:12px">
                 <el-tag size="small" type="warning" effect="plain">{{ t('nodeServer.mirrorOf') }}</el-tag>
@@ -43,12 +43,24 @@
                 <span style="color:#909399">⇄</span>
                 <el-link type="primary" :underline="false" @click="goToPartner(row.partner_server_id)" style="font-size:12px">{{ serverMap[row.partner_server_id] || ('#'+row.partner_server_id) }}</el-link>
               </div>
+              <div v-else-if="row.chain_entry_for && row.chain_entry_for.length" style="display:flex;align-items:center;gap:4px;font-size:12px;flex-wrap:wrap">
+                <el-tag size="small" type="success" effect="plain">{{ t('nodeServer.chainEntry') }}</el-tag>
+                <template v-for="exitId in row.chain_entry_for" :key="'e'+exitId">
+                  <el-link type="primary" :underline="false" @click="goToPartner(exitId)" style="font-size:12px">{{ serverMap[exitId] || ('#'+exitId) }}</el-link>
+                </template>
+              </div>
+              <div v-else-if="row.chain_exit_for && row.chain_exit_for.length" style="display:flex;align-items:center;gap:4px;font-size:12px;flex-wrap:wrap">
+                <el-tag size="small" type="success" effect="plain">{{ t('nodeServer.chainExit') }}</el-tag>
+                <template v-for="entryId in row.chain_exit_for" :key="'x'+entryId">
+                  <el-link type="primary" :underline="false" @click="goToPartner(entryId)" style="font-size:12px">{{ serverMap[entryId] || ('#'+entryId) }}</el-link>
+                </template>
+              </div>
               <el-tag v-else-if="row.node_type === 'chain_entry'" size="small" type="success" effect="plain">{{ t('nodeServer.chainEntry') }}</el-tag>
               <el-tag v-else-if="row.node_type === 'chain_exit'" size="small" type="success" effect="plain">{{ t('nodeServer.chainExit') }}</el-tag>
               <span v-else style="color:#c0c4cc;font-size:12px">{{ t('nodeServer.noPartner') }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.agentStatus')" width="100">
+          <el-table-column :label="t('nodeServer.agentStatus')" width="72">
             <template #default="{row}">
               <el-tag size="small" :type="statusTag(row.agent_status)">
                 <span :class="['status-dot', row.agent_status]"></span>
@@ -56,8 +68,8 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="agent_version" :label="t('nodeServer.agentVersion')" width="90" show-overflow-tooltip />
-          <el-table-column label="CPU" width="100">
+          <el-table-column prop="agent_version" :label="t('nodeServer.agentVersion')" width="78" show-overflow-tooltip />
+          <el-table-column label="CPU" width="76">
             <template #default="{row}">
               <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
@@ -68,7 +80,7 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('dashboard.memory')" width="100">
+          <el-table-column :label="t('dashboard.memory')" width="76">
             <template #default="{row}">
               <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
@@ -79,7 +91,7 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('dashboard.disk')" width="100">
+          <el-table-column :label="t('dashboard.disk')" width="76">
             <template #default="{row}">
               <div v-if="row.resource_usage" style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
@@ -90,7 +102,7 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.monthlyTraffic')" width="130">
+          <el-table-column :label="t('nodeServer.monthlyTraffic')" width="95">
             <template #default="{row}">
               <div v-if="row.traffic_quota_bytes > 0" style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:6px;background:#f0f0f0;border-radius:3px;overflow:hidden">
@@ -102,13 +114,13 @@
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.lastHeartbeat')" width="155">
+          <el-table-column :label="t('nodeServer.lastHeartbeat')" width="88">
             <template #default="{row}">
-              <span v-if="row.last_heartbeat_at" style="font-size:12px;color:#909399">{{ formatTime(row.last_heartbeat_at) }}</span>
+              <span v-if="row.last_heartbeat_at" :title="formatTime(row.last_heartbeat_at)" style="font-size:12px;color:#909399">{{ formatAgo(row.last_heartbeat_at) }}</span>
               <span v-else style="color:#c0c4cc">-</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('nodeServer.certStatus')" width="120">
+          <el-table-column :label="t('nodeServer.certStatus')" width="62">
             <template #default="{row}">
               <div v-if="row.agent_cert_expires_at" style="font-size:12px">
                 <el-tag size="small" :type="certExpiringSoon(row.agent_cert_expires_at) ? 'warning' : 'success'">
@@ -118,7 +130,7 @@
               <span v-else style="color:#c0c4cc;font-size:12px">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="在线订阅" width="100" align="center">
+          <el-table-column :label="t('nodeServer.onlineSubscriptions')" width="55" align="center">
             <template #default="{row}">
               <el-tag v-if="onlineSummary[row.id] && onlineSummary[row.id].online_subscriptions > 0" type="success" size="small" effect="dark">
                 {{ onlineSummary[row.id].online_subscriptions }}
@@ -126,7 +138,7 @@
               <span v-else style="color:#c0c4cc;font-size:12px">0</span>
             </template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="320" fixed="right">
+          <el-table-column :label="t('common.actions')" width="140" fixed="right">
             <template #default="{row}">
               <el-button size="small" type="primary" @click="goToDetail(row)">{{ t('nodeServer.detail') }}</el-button>
               <el-dropdown trigger="click" @command="(cmd) => handleServerAction(cmd, row)" size="small">
@@ -226,9 +238,16 @@
             <el-col :span="12">
               <el-card shadow="hover">
                 <template #header><span>{{ t('nodeServer.trafficStats') }}</span></template>
-                <div v-if="trafficStats && trafficStats.enabled" style="font-size:13px;line-height:2">
+                <div v-if="trafficStats && trafficStats.enabled" style="padding:2px 0">
                   <div v-if="trafficStats.stats">
-                    <div v-for="(val, key) in trafficStats.stats" :key="key">{{ key }}: {{ val }}</div>
+                    <div v-for="(val, key) in trafficStats.stats" :key="key" style="margin-bottom:12px">
+                      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:4px">
+                        <span style="color:#606266;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px">{{ key }}</span>
+                        <span style="color:#303133;font-weight:500;white-space:nowrap">{{ val }}</span>
+                      </div>
+                      <el-progress :percentage="trafficPercent(val)" :show-text="false" :stroke-width="8"
+                        :color="trafficPercent(val) >= 100 ? '#f56c6c' : '#409eff'" />
+                    </div>
                   </div>
                 </div>
                 <el-empty v-else :description="t('common.noData')" :image-size="60" />
@@ -1540,6 +1559,36 @@ function formatTime(time, fmt) {
   if (isNaN(d)) return String(time)
   if (fmt === 'MM-DD') return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
+
+// formatAgo 相对时间（心跳列窄列显示，hover title 显示完整时间）
+function formatAgo(time) {
+  if (!time) return ''
+  const d = new Date(time)
+  if (isNaN(d)) return String(time)
+  const diff = Date.now() - d.getTime()
+  if (diff < 0) return t('nodeServer.justNow')
+  if (diff < 60e3) return Math.max(1, Math.floor(diff / 1e3)) + t('nodeServer.secondsAgo')
+  if (diff < 3600e3) return Math.floor(diff / 60e3) + t('nodeServer.minutesAgo')
+  if (diff < 86400e3) return Math.floor(diff / 3600e3) + t('nodeServer.hoursAgo')
+  return Math.floor(diff / 86400e3) + t('nodeServer.daysAgo')
+}
+
+// ─── 流量统计条形图：解析 "16.28 GB" → bytes，条长相对最大值 ───
+function parseTrafficBytes(s) {
+  if (typeof s !== 'string') return 0
+  const m = s.match(/^([\d.]+)\s*(B|KB|MB|GB|TB|PB)$/i)
+  if (!m) return 0
+  const units = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4, PB: 1024 ** 5 }
+  return parseFloat(m[1]) * (units[m[2].toUpperCase()] || 1)
+}
+
+function trafficPercent(val) {
+  if (!trafficStats.value?.stats) return 0
+  const max = Math.max(...Object.values(trafficStats.value.stats).map(parseTrafficBytes), 1)
+  const b = parseTrafficBytes(val)
+  if (b <= 0) return 0
+  return Math.max(2, Math.min(Math.round((b / max) * 100), 100))
 }
 
 function formatUptime(seconds) {

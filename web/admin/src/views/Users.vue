@@ -9,7 +9,7 @@
         <el-table-column prop="role" :label="t('user.role')" width="120"><template #default="{row}"><el-tag size="small">{{ roleLabel(row.role) }}</el-tag></template></el-table-column>
         <el-table-column :label="t('common.status')" width="80"><template #default="{row}"><el-tag :type="row.status===1?'success':'danger'" size="small">{{ row.status===1?t('common.enabled'):t('common.disabled') }}</el-tag></template></el-table-column>
         <el-table-column :label="t('common.actions')" width="160">
-          <template #default="{row}"><el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button><el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button></template>
+          <template #default="{row}"><div style="display:flex;gap:2px;align-items:center;white-space:nowrap"><el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button><el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button></div></template>
         </el-table-column>
       </el-table>
     </el-card>

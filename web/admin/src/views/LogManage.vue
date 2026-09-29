@@ -279,15 +279,17 @@
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="220" fixed="right">
               <template #default="{row}">
-                <el-button size="small" type="primary" @click="showStdoutViewer(row.proxy_type)">
-                  <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
-                </el-button>
-                <el-button size="small" type="warning" @click="showWriterConfig(row.proxy_type)">
-                  <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
-                </el-button>
-                <el-button size="small" @click="showWriterFiles(row.proxy_type)">
-                  <el-icon><FolderOpened /></el-icon>
-                </el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" type="primary" @click="showStdoutViewer(row.proxy_type)">
+                    <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
+                  </el-button>
+                  <el-button size="small" type="warning" @click="showWriterConfig(row.proxy_type)">
+                    <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
+                  </el-button>
+                  <el-button size="small" @click="showWriterFiles(row.proxy_type)">
+                    <el-icon><FolderOpened /></el-icon>
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -392,15 +394,17 @@
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="320" fixed="right">
               <template #default="{row}">
-                <el-button size="small" type="success" @click="showLogViewer(row)">
-                  <el-icon><View /></el-icon>{{ t('logManage.viewLog') }}
-                </el-button>
-                <el-button size="small" type="primary" @click="handleRotate(row)" :loading="rotatingId === row.id">
-                  <el-icon><RefreshRight /></el-icon>{{ t('logManage.rotate') }}
-                </el-button>
-                <el-button size="small" @click="showJobs(row)">{{ t('logManage.history') }}</el-button>
-                <el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" type="success" @click="showLogViewer(row)">
+                    <el-icon><View /></el-icon>{{ t('logManage.viewLog') }}
+                  </el-button>
+                  <el-button size="small" type="primary" @click="handleRotate(row)" :loading="rotatingId === row.id">
+                    <el-icon><RefreshRight /></el-icon>{{ t('logManage.rotate') }}
+                  </el-button>
+                  <el-button size="small" @click="showJobs(row)">{{ t('logManage.history') }}</el-button>
+                  <el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>

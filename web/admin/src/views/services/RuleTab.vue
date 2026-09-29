@@ -27,10 +27,12 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="300">
           <template #default="{row}">
-            <el-button size="small" :disabled="row.repo_url.startsWith('http')" @click="showFetchAssets(row)">{{ t('service.rules.browseFiles') }}</el-button>
-            <el-button size="small" type="success" @click="handleSyncSource(row)" :loading="row._syncing">{{ t('service.rules.sync') }}</el-button>
-            <el-button size="small" @click="showEditSource(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteSource(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" :disabled="row.repo_url.startsWith('http')" @click="showFetchAssets(row)">{{ t('service.rules.browseFiles') }}</el-button>
+              <el-button size="small" type="success" @click="handleSyncSource(row)" :loading="row._syncing">{{ t('service.rules.sync') }}</el-button>
+              <el-button size="small" @click="showEditSource(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteSource(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -43,7 +45,7 @@
     </div>
     <el-card>
       <el-table :data="files" v-loading="filesLoading" stripe>
-        <el-table-column prop="name" label="File" width="250" />
+        <el-table-column prop="name" label="File" min-width="250" />
         <el-table-column :label="t('service.rules.fileSize')" width="120">
           <template #default="{row}">{{ row.file_size ? formatSize(row.file_size) : '-' }}</template>
         </el-table-column>
@@ -60,8 +62,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="200">
           <template #default="{row}">
-            <el-button size="small" type="primary" @click="handleDownload(row)" :loading="row._loading">{{ t('service.rules.download') }}</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteFile(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" type="primary" @click="handleDownload(row)" :loading="row._loading">{{ t('service.rules.download') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteFile(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

@@ -864,18 +864,23 @@ func (h *Handler) StreamLog(c *gin.Context) {
 			return
 		}
 
-		// Send initial snapshot
-		logLines, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, lines)
+		// Send initial snapshot (tail) and anchor the incremental offset
+		logLines, nextOffset, _, err := nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, 0, lines)
 		if err != nil {
-			// Send friendly error as log content instead of HTTP 500
-			resolvedPath := policy.LogPath
-			if resolvedPath == "" {
-				resolvedPath = policy.SourceType
+			// 增量读失败（旧版 Agent 不支持 offset）→ 回退到普通 tail 读，走差分轮询
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, lines)
+			nextOffset = 0
+			if err != nil {
+				// Send friendly error as log content instead of HTTP 500
+				resolvedPath := policy.LogPath
+				if resolvedPath == "" {
+					resolvedPath = policy.SourceType
+				}
+				c.SSEvent("log", fmt.Sprintf("[日志文件不存在] %s", resolvedPath))
+				c.SSEvent("log", fmt.Sprintf("[提示] %s", err.Error()))
+				c.Writer.Flush()
+				return
 			}
-			c.SSEvent("log", fmt.Sprintf("[日志文件不存在] %s", resolvedPath))
-			c.SSEvent("log", fmt.Sprintf("[提示] %s", err.Error()))
-			c.Writer.Flush()
-			return
 		}
 		if len(logLines) > 0 {
 			for _, line := range logLines {
@@ -884,8 +889,8 @@ func (h *Handler) StreamLog(c *gin.Context) {
 			c.Writer.Flush()
 		}
 
-		// Poll for new lines every 2 seconds
-		ticker := time.NewTicker(2 * time.Second)
+		// Poll for new lines every 1 second (tail -F via byte offsets)
+		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
 		prevLines := logLines
@@ -895,6 +900,25 @@ func (h *Handler) StreamLog(c *gin.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if nextOffset > 0 {
+					// 增量模式：只读新增字节
+					newLines, off, truncated, err := nodeLogMgr.ReadLogFileOnServerIncremental(ctx, policy.ServerID, policy.SourceType, policy.LogPath, nextOffset, lines)
+					if err != nil {
+						continue
+					}
+					if truncated && len(newLines) > 0 {
+						c.SSEvent("log", "[日志已被轮转/截断，已重新定位]")
+					}
+					for _, line := range newLines {
+						c.SSEvent("log", line)
+					}
+					if len(newLines) > 0 {
+						c.Writer.Flush()
+					}
+					nextOffset = off
+					continue
+				}
+				// 差分模式（无锚点回退）
 				newRead, _, err := nodeLogMgr.ReadLogFileOnServerWithPath(ctx, policy.ServerID, policy.SourceType, policy.LogPath, lines)
 				if err != nil || len(newRead) == 0 {
 					continue
@@ -938,6 +962,7 @@ type NodeLogManager interface {
 	ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error)
 	ReadLogFileOnServerWithPath(ctx context.Context, serverID int64, logType, logPath string, lastLines int) ([]string, string, error)
 	RotateLogOnServer(ctx context.Context, serverID int64, logType string, logPath string) (int32, int32, int64, error)
+	ReadLogFileOnServerIncremental(ctx context.Context, serverID int64, logType, logPath string, offset int64, lastLines int) ([]string, int64, bool, error)
 	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
 	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error
 	GetWriterStatusOnServer(ctx context.Context, serverID int64) ([]map[string]interface{}, error)
@@ -1110,12 +1135,22 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		return
 	}
 
-	// First, send existing lines
+	// First, send existing lines (tail) and anchor the incremental offset
 	var logLines []string
+	var nextOffset int64
 	if logPath != "" {
-		logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, 500)
+		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, logPath, 0, 500)
 	} else {
-		logLines, _, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, 500)
+		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, "", 0, 500)
+	}
+	if err != nil {
+		// 增量读失败（旧版 Agent 不支持 offset）→ 回退到普通 tail 读，走差分轮询
+		if logPath != "" {
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, 500)
+		} else {
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, 500)
+		}
+		nextOffset = 0 // 0 = 无锚点 → 差分轮询模式
 	}
 	if err == nil && len(logLines) > 0 {
 		for _, line := range logLines {
@@ -1124,8 +1159,8 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		c.Writer.Flush()
 	}
 
-	// Then poll for new lines every 2 seconds
-	ticker := time.NewTicker(2 * time.Second)
+	// Then poll for new lines every 1 second (tail -F via byte offsets)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	prevLines := logLines
@@ -1136,6 +1171,25 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 			return
 		case <-ticker.C:
 			var lines []string
+			if nextOffset > 0 {
+				// 增量模式：每次只读新增字节，Agent 保证不切半行、不丢行
+				newLines, off, truncated, err := nodeLogMgr.ReadLogFileOnServerIncremental(ctx, serverID, logType, logPath, nextOffset, 500)
+				if err != nil {
+					continue
+				}
+				if truncated && len(newLines) > 0 {
+					c.SSEvent("log", "[日志已被轮转/截断，已重新定位]")
+				}
+				for _, line := range newLines {
+					c.SSEvent("log", line)
+				}
+				if len(newLines) > 0 {
+					c.Writer.Flush()
+				}
+				nextOffset = off
+				continue
+			}
+			// 差分模式（无锚点回退）
 			if logPath != "" {
 				lines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(ctx, serverID, logType, logPath, 500)
 			} else {

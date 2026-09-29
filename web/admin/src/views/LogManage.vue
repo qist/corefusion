@@ -1649,40 +1649,33 @@ async function showLogViewer(row) {
   } finally {
     viewerLoading.value = false
   }
-  // Start SSE for this policy
+  // Start SSE for this policy（EventSource 无法带 Authorization 头，必须先换一次性票据）
   closeLogStream()
-  const url = logApi.buildSSEUrl(`/log-manage/policies/${row.id}/log-stream`, { lines: 0 })
-  eventSource = logApi.createSSE(url)
-  eventSource.addEventListener('log', (e) => {
-    const line = e.data
-    // Skip placeholder messages from SSE
-    if (line && !line.includes('[无可用日志源]')) {
-      logLines.value.push(line)
-      if (logLines.value.length > 5000) logLines.value = logLines.value.slice(-3000)
-      if (logAutoScroll.value) nextTick(scrollToBottom)
-    }
-  })
-  eventSource.onopen = () => { logStreamConnected.value = true }
-  eventSource.onerror = () => {
-    logStreamConnected.value = false
-    setTimeout(() => {
-      if (logViewerVisible.value) {
-        closeLogStream()
-        const url2 = logApi.buildSSEUrl(`/log-manage/policies/${row.id}/log-stream`, { lines: 0 })
-        eventSource = logApi.createSSE(url2)
-        eventSource.addEventListener('log', (e) => {
-          const line = e.data
-          if (line && !line.includes('[无可用日志源]')) {
-            logLines.value.push(line)
-            if (logLines.value.length > 5000) logLines.value = logLines.value.slice(-3000)
-            if (logAutoScroll.value) nextTick(scrollToBottom)
-          }
-        })
-        eventSource.onopen = () => { logStreamConnected.value = true }
-        eventSource.onerror = () => { logStreamConnected.value = false }
+  const startStream = async () => {
+    const ticket = await logApi.requestTicket('logs')
+    const url = logApi.buildSSEUrl(`/log-manage/policies/${row.id}/log-stream`, { lines: 0 }, ticket)
+    eventSource = logApi.createSSE(url)
+    eventSource.addEventListener('log', (e) => {
+      const line = e.data
+      // Skip placeholder messages from SSE
+      if (line && !line.includes('[无可用日志源]')) {
+        logLines.value.push(line)
+        if (logLines.value.length > 5000) logLines.value = logLines.value.slice(-3000)
+        if (logAutoScroll.value) nextTick(scrollToBottom)
       }
-    }, 3000)
+    })
+    eventSource.onopen = () => { logStreamConnected.value = true }
+    eventSource.onerror = () => {
+      logStreamConnected.value = false
+      setTimeout(() => {
+        if (logViewerVisible.value) {
+          closeLogStream()
+          startStream()
+        }
+      }, 3000)
+    }
   }
+  startStream()
 }
 
 // ═══════════════ Log Display Utilities ═══════════════

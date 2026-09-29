@@ -51,7 +51,12 @@ func NewLogWriter(cfg LogWriterConfig, dataDir string) *LogWriter {
 	}
 	filePath := cfg.FilePath
 	if filePath == "" {
-		filePath = fmt.Sprintf("logs/%s-stdout.log", cfg.ProxyType)
+		if cfg.ProxyType == "waf" {
+			// WAF 按日期写文件（logs/<date>_waf.log），无 stdout capture 概念
+			filePath = fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02"))
+		} else {
+			filePath = fmt.Sprintf("logs/%s-stdout.log", cfg.ProxyType)
+		}
 	}
 	return &LogWriter{
 		proxyType:  cfg.ProxyType,

@@ -127,13 +127,25 @@ func (b *LogBroker) tailLoop(path string) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	// tail -F 语义：不从文件头扫全量——大文件从末尾回退一个窗口开始，
+	// 只把最近的行喂给 ring buffer（1000 行），跳过 seek 点所在的半行。
+	const tailWindow = 256 * 1024
+	var scanner *bufio.Scanner
+	if info, err := f.Stat(); err == nil && info.Size() > tailWindow {
+		f.Seek(-tailWindow, io.SeekEnd)
+		br := bufio.NewReader(f)
+		br.ReadString('\n')
+		scanner = bufio.NewScanner(br)
+	} else {
+		scanner = bufio.NewScanner(f)
+	}
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		b.append(scanner.Text())
 	}
 
-	offset, _ := f.Seek(0, io.SeekCurrent)
+	// Get current position (file end at snapshot time)
+	offset, _ := f.Seek(0, io.SeekEnd)
 
 	for {
 		select {
@@ -154,7 +166,7 @@ func (b *LogBroker) tailLoop(path string) {
 			if err != nil {
 				return
 			}
-			defer f.Close()
+			// 不用 defer：轮询循环内存活期不确定，defer 会累积到函数退出才关闭
 		}
 
 		if info.Size() > offset {

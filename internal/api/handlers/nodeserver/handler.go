@@ -26,6 +26,7 @@ import (
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	nodeserverSvc "corefusion/internal/service/nodeserver"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
+	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
 
@@ -38,6 +39,7 @@ type Handler struct {
 	endpointConfigSvc *endpointconfigSvc.Service
 	proxyH            *system.ProxyHandler
 	geoRuleSvc        *geoRuleSvc.Service
+	chainLinkRepo     *repository.ChainLinkRepository
 }
 
 // LandLocalCertFilesFn 由 router 注入 ✓：把"**关联到本机节点**的证书"落地到面板磁盘 ✓。
@@ -50,6 +52,12 @@ var LandLocalCertFilesFn func(ctx context.Context, certID int64) error
 // NewHandler creates a new node server handler.
 func NewHandler(svc *nodeserverSvc.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetChainLinkRepository injects the chain link repository so the list API can
+// report each node's chain-proxy role (entry→exits / exit←entries).
+func (h *Handler) SetChainLinkRepository(repo *repository.ChainLinkRepository) {
+	h.chainLinkRepo = repo
 }
 
 // SetCoreConfigService sets the core config service for protocol management.
@@ -106,6 +114,38 @@ func (h *Handler) List(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
+	}
+
+	// 链式代理角色（chain_links 驱动）：入口=有 enabled chain_links 的节点，
+	// 出口=作为 exit_server_id 出现的节点。链式入口/出口不再是节点类型，
+	// 前端关系列需要这两个集合才能显示"入口→出口 / 出口←入口"。
+	if h.chainLinkRepo != nil {
+		if links, lerr := h.chainLinkRepo.ListAll(c.Request.Context()); lerr == nil {
+			entryFor := make(map[int64][]int64)
+			exitFor := make(map[int64][]int64)
+			seen := make(map[string]bool)
+			for _, l := range links {
+				if !l.Enabled {
+					continue
+				}
+				ek := fmt.Sprintf("%d->%d", l.EntryServerID, l.ExitServerID)
+				xk := fmt.Sprintf("%d<-%d", l.ExitServerID, l.EntryServerID)
+				if !seen[ek] {
+					seen[ek] = true
+					entryFor[l.EntryServerID] = append(entryFor[l.EntryServerID], l.ExitServerID)
+				}
+				if !seen[xk] {
+					seen[xk] = true
+					exitFor[l.ExitServerID] = append(exitFor[l.ExitServerID], l.EntryServerID)
+				}
+			}
+			for i := range items {
+				items[i].ChainEntryFor = entryFor[items[i].ID]
+				items[i].ChainExitFor = exitFor[items[i].ID]
+			}
+		} else {
+			log.Printf("[nodeserver] list chain links for relationship column failed: %v", lerr)
+		}
 	}
 
 	response.OK(c, gin.H{

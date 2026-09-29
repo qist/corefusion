@@ -6650,18 +6650,20 @@ func (x *WarpConfigEntry) GetRemark() string {
 }
 
 type ShareDomainConfigEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
-	Value         string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
-	Port          int32                  `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
-	Ports         string                 `protobuf:"bytes,5,opt,name=ports,proto3" json:"ports,omitempty"`
-	Enabled       bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	SortOrder     int32                  `protobuf:"varint,7,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
-	ServerId      int64                  `protobuf:"varint,8,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
-	Region        string                 `protobuf:"bytes,9,opt,name=region,proto3" json:"region,omitempty"`
-	CreatedAt     int64                  `protobuf:"varint,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     int64                  `protobuf:"varint,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
+	Type      string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	Value     string                 `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
+	Port      int32                  `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
+	Ports     string                 `protobuf:"bytes,5,opt,name=ports,proto3" json:"ports,omitempty"`
+	Enabled   bool                   `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	SortOrder int32                  `protobuf:"varint,7,opt,name=sort_order,json=sortOrder,proto3" json:"sort_order,omitempty"`
+	ServerId  int64                  `protobuf:"varint,8,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	Region    string                 `protobuf:"bytes,9,opt,name=region,proto3" json:"region,omitempty"`
+	CreatedAt int64                  `protobuf:"varint,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt int64                  `protobuf:"varint,11,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 多节点绑定：JSON 数组文本（如 "[2,11]"）；空 = 仅按 server_id 语义
+	ServerIds     string `protobuf:"bytes,12,opt,name=server_ids,json=serverIds,proto3" json:"server_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6771,6 +6773,13 @@ func (x *ShareDomainConfigEntry) GetUpdatedAt() int64 {
 		return x.UpdatedAt
 	}
 	return 0
+}
+
+func (x *ShareDomainConfigEntry) GetServerIds() string {
+	if x != nil {
+		return x.ServerIds
+	}
+	return ""
 }
 
 type SyncDataResponse struct {
@@ -9353,7 +9362,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"updated_at\x18\x12 \x01(\x03R\tupdatedAt\x12\x1b\n" +
 	"\tserver_id\x18\x13 \x01(\x03R\bserverId\x12\x1b\n" +
 	"\tcore_type\x18\x14 \x01(\tR\bcoreType\x12\x16\n" +
-	"\x06remark\x18\x15 \x01(\tR\x06remark\"\xa8\x02\n" +
+	"\x06remark\x18\x15 \x01(\tR\x06remark\"\xc7\x02\n" +
 	"\x16ShareDomainConfigEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x14\n" +
@@ -9369,7 +9378,9 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"created_at\x18\n" +
 	" \x01(\x03R\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\v \x01(\x03R\tupdatedAt\"\x88\x05\n" +
+	"updated_at\x18\v \x01(\x03R\tupdatedAt\x12\x1d\n" +
+	"\n" +
+	"server_ids\x18\f \x01(\tR\tserverIds\"\x88\x05\n" +
 	"\x10SyncDataResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x120\n" +

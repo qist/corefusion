@@ -2206,6 +2206,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerH.SetEndpointConfigService(endpointConfigSvc)
 			nodeServerH.SetProxyHandler(proxyH)
 			nodeServerH.SetGeoRuleService(geoRuleSvcInst)
+			nodeServerH.SetChainLinkRepository(repository.NewChainLinkRepository(database))
 
 			// Wire up NodeOperator so proxy/caddy/nginx handlers can route
 			// operations (start/stop/restart/reload, config sync, status)

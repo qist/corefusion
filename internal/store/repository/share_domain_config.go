@@ -107,12 +107,13 @@ func (r *ShareDomainConfigRepository) ListByServerID(ctx context.Context, server
 }
 
 // ListEffectiveForServer returns share domain configs effective for a server.
-// This includes both server-specific configs (server_id = serverID) and
-// global configs (server_id = 0), filtered by region if specified.
+// This includes server-specific configs (server_id = serverID), multi-node
+// bindings (server_ids JSON containing serverID) and global configs
+// (server_id = 0), filtered by region if specified.
 func (r *ShareDomainConfigRepository) ListEffectiveForServer(ctx context.Context, serverID int64, region string) ([]entity.ShareDomainConfig, error) {
 	var configs []entity.ShareDomainConfig
 	query := r.db.WithContext(ctx).
-		Where("server_id IN ? AND enabled = ?", []int64{0, serverID}, true).
+		Where("enabled = ?", true).
 		Order("server_id DESC, sort_order ASC, id ASC") // server-specific first
 
 	if region != "" {
@@ -120,8 +121,17 @@ func (r *ShareDomainConfigRepository) ListEffectiveForServer(ctx context.Context
 		query = query.Where("region = ? OR region = ?", region, "")
 	}
 
-	err := query.Find(&configs).Error
-	return configs, err
+	if err := query.Find(&configs).Error; err != nil {
+		return nil, err
+	}
+	// 多节点绑定（server_ids JSON）无法用跨库兼容的 SQL 表达，统一内存过滤
+	out := make([]entity.ShareDomainConfig, 0, len(configs))
+	for _, c := range configs {
+		if c.MatchServer(serverID) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // ListByRegion returns share domain configs for a specific region.

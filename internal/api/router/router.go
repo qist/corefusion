@@ -2720,21 +2720,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			}
 
-			// Security — admin only (audit, alerts, channels).
+			// Security — admin only (audit events).
 			securityGroup := protected.Group("/security").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				securityGroup.GET("/audit-events", securityH.ListAuditEvents)
 				// 导出 CSV：前端 Security.vue "导出"按钮调的就是这个（原先后端没有 → 404）✓
 				securityGroup.GET("/audit-events/export", securityH.ExportAuditEvents)
-				securityGroup.GET("/alerts", securityH.ListAlerts)
-				securityGroup.GET("/alert-channels", securityH.ListAlertChannels)
-				securityGroup.POST("/alert-channels", securityH.CreateAlertChannel)
-				securityGroup.PUT("/alert-channels/:id", securityH.UpdateAlertChannel)
-				securityGroup.DELETE("/alert-channels/:id", securityH.DeleteAlertChannel)
-				securityGroup.POST("/alerts/:id/resolve", securityH.ResolveAlert)
-				// "全部标记已解决"：前端调 /alerts/resolve（原先后端没有 → 404）✓
-				// 与上面的 /alerts/:id/resolve 同级 static + param 共存（gin v1.12 支持，已实测 ✓）
-				securityGroup.POST("/alerts/resolve", securityH.ResolveAllAlerts)
 			}
 
 			// Backups — admin for read/manage; destructive restore/delete/upload

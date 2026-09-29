@@ -71,33 +71,3 @@ type SecurityAuditEvent struct {
 }
 
 func (SecurityAuditEvent) TableName() string { return "security_audit_events" }
-
-// SecurityAlert is the GORM model for security alerts.
-type SecurityAlert struct {
-	ID          int64      `json:"id" gorm:"primaryKey;autoIncrement"`
-	AlertType   string     `json:"alert_type" gorm:"size:64;not null"`
-	Severity    string     `json:"severity" gorm:"size:16;not null"`
-	ServiceID   *int64     `json:"service_id"`
-	EndpointID  *int64     `json:"endpoint_id"`
-	DedupKey    string     `json:"dedup_key" gorm:"size:128;index"`
-	Title       string     `json:"title" gorm:"size:255;not null"`
-	Message     string     `json:"message" gorm:"type:longtext"`
-	Status      string     `json:"status" gorm:"size:32;not null;default:active"`
-	TriggeredAt time.Time  `json:"triggered_at" gorm:"not null"`
-	ResolvedAt  *time.Time `json:"resolved_at"`
-}
-
-func (SecurityAlert) TableName() string { return "security_alerts" }
-
-// AlertChannel is the GORM model for alert notification channels.
-type AlertChannel struct {
-	ID          int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name        string    `json:"name" gorm:"size:128;not null"`
-	ChannelType string    `json:"channel_type" gorm:"size:32;not null"`
-	ConfigJSON  string    `json:"config_json" gorm:"type:longtext;not null"`
-	Status      int       `json:"status" gorm:"not null;default:1"`
-	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt   time.Time `json:"updated_at" gorm:"not null"`
-}
-
-func (AlertChannel) TableName() string { return "alert_channels" }

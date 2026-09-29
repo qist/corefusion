@@ -144,14 +144,6 @@ func (s *LogCleanupService) cleanupTable(rule entity.LogCleanupRule) int64 {
 		}
 		return total
 
-	case "security_alerts":
-		// Only resolved alerts
-		r := s.db.Table(table).Where("status = ? AND resolved_at < ?", "resolved", cutoff).Delete(nil)
-		if r.RowsAffected > 0 {
-			log.Printf("[LogCleanup] deleted %d %s (retention=%d days)", r.RowsAffected, table, rule.RetainDays)
-		}
-		return r.RowsAffected
-
 	case "runtime_apply_jobs", "update_jobs", "certificate_jobs", "backup_cleanup_jobs":
 		// Only completed/failed/cancelled jobs
 		timeCol := "finished_at"

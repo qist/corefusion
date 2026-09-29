@@ -125,23 +125,50 @@ func (s *Service) rotateFile(policy *entity.LogRotationPolicy) (int, error) {
 		}
 	}
 
-	// Rename the current log file
-	if err := os.Rename(logPath, rotatedPath); err != nil {
-		return 0, fmt.Errorf("rename %s -> %s: %w", logPath, rotatedPath, err)
-	}
-
-	// Create a new empty log file with same permissions
-	newFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, info.Mode())
-	if err != nil {
-		// Try to restore the original file
-		_ = os.Rename(rotatedPath, logPath)
-		return 0, fmt.Errorf("create new %s: %w", logPath, err)
-	}
-	newFile.Close()
-
-	// For nginx, send reopen signal
+	// nginx is the only source with a reopen signal (nginx -s reopen):
+	// rename the file, recreate it, then ask nginx to reopen its FDs.
 	if policy.SourceType == "nginx" {
+		if err := os.Rename(logPath, rotatedPath); err != nil {
+			return 0, fmt.Errorf("rename %s -> %s: %w", logPath, rotatedPath, err)
+		}
+		newFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, info.Mode())
+		if err != nil {
+			// Try to restore the original file
+			_ = os.Rename(rotatedPath, logPath)
+			return 0, fmt.Errorf("create new %s: %w", logPath, err)
+		}
+		newFile.Close()
 		s.signalNginxReopen()
+	} else {
+		// All other sources (caddy, xray, singbox, hysteria2, tuic, waf, ...)
+		// write via their own O_APPEND file handles and have NO reopen signal
+		// (Caddy v2 dropped SIGUSR1; the cores have none either).
+		// A plain rename would leave the process writing into the rotated
+		// file while the fresh file stays empty forever.
+		// → copy-truncate (logrotate copytruncate mode): archive a copy,
+		// then truncate the original in place. The writer's O_APPEND handle
+		// stays valid and new logs keep flowing into the current file.
+		src, err := os.Open(logPath)
+		if err != nil {
+			return 0, fmt.Errorf("open %s: %w", logPath, err)
+		}
+		dst, err := os.OpenFile(rotatedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			src.Close()
+			return 0, fmt.Errorf("create %s: %w", rotatedPath, err)
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			src.Close()
+			dst.Close()
+			return 0, fmt.Errorf("copy %s -> %s: %w", logPath, rotatedPath, err)
+		}
+		src.Close()
+		dst.Close()
+
+		// Truncate the original in place — O_APPEND writers continue at EOF (0).
+		if err := os.Truncate(logPath, 0); err != nil {
+			return 0, fmt.Errorf("truncate %s: %w", logPath, err)
+		}
 	}
 
 	// Compress if configured

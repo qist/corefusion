@@ -7116,6 +7116,7 @@ func (x *ReadLogFileResponse) GetLogPath() string {
 type RotateLogRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"` // 要轮转的日志类型
+	LogPath       string                 `protobuf:"bytes,2,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"` // 具体日志文件路径（优先于 log_type 的默认解析路径）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -7153,6 +7154,13 @@ func (*RotateLogRequest) Descriptor() ([]byte, []int) {
 func (x *RotateLogRequest) GetLogType() string {
 	if x != nil {
 		return x.LogType
+	}
+	return ""
+}
+
+func (x *RotateLogRequest) GetLogPath() string {
+	if x != nil {
+		return x.LogPath
 	}
 	return ""
 }
@@ -9290,9 +9298,10 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12\x14\n" +
 	"\x05lines\x18\x03 \x03(\tR\x05lines\x12\x19\n" +
-	"\blog_path\x18\x04 \x01(\tR\alogPath\"-\n" +
+	"\blog_path\x18\x04 \x01(\tR\alogPath\"H\n" +
 	"\x10RotateLogRequest\x12\x19\n" +
-	"\blog_type\x18\x01 \x01(\tR\alogType\"\xae\x01\n" +
+	"\blog_type\x18\x01 \x01(\tR\alogType\x12\x19\n" +
+	"\blog_path\x18\x02 \x01(\tR\alogPath\"\xae\x01\n" +
 	"\x11RotateLogResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\x12#\n" +

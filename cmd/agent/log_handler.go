@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -155,8 +156,29 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 }
 
 // handleRotateLog triggers log rotation for a specific log type on the agent node.
+// req.LogPath (a rotation policy's concrete file path) takes precedence over the
+// per-type default resolution.
+//
+// Rotation semantics must match the writer process:
+//   - nginx: rename + recreate, then "nginx -s reopen" so nginx reopens its FDs
+//   - everything else (caddy/xray/singbox/hysteria2/tuic): the writer holds an
+//     O_APPEND handle and has NO reopen signal (Caddy v2 dropped SIGUSR1) — a
+//     plain rename would leave it writing into the rotated archive while the
+//     fresh file stays empty forever. Use copy-truncate instead: archive a copy,
+//     then truncate the original in place; the O_APPEND handle stays valid.
 func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.RotateLogResponse {
-	logPath := a.resolveLogFilePath(req.LogType)
+	logPath := req.GetLogPath()
+	if logPath != "" {
+		logPath = a.resolveRelPath(logPath)
+		if logPath == "" {
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   "invalid log path",
+			}
+		}
+	} else {
+		logPath = a.resolveLogFilePath(req.LogType)
+	}
 	if logPath == "" {
 		return &agentpb.RotateLogResponse{
 			Success: false,
@@ -189,7 +211,7 @@ func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.Rotat
 		}
 	}
 
-	// Rotate: rename with date suffix
+	// Rotate with date suffix (append counter on same-day duplicates)
 	dateSuffix := time.Now().Format("20060102")
 	rotatedPath := fmt.Sprintf("%s.%s", logPath, dateSuffix)
 	if _, err := os.Stat(rotatedPath); err == nil {
@@ -201,22 +223,67 @@ func (a *AgentApp) handleRotateLog(req *agentpb.RotateLogRequest) *agentpb.Rotat
 		}
 	}
 
-	if err := os.Rename(logPath, rotatedPath); err != nil {
-		return &agentpb.RotateLogResponse{
-			Success: false,
-			Error:   fmt.Sprintf("rename log file: %v", err),
+	if req.LogType == "nginx" {
+		// nginx supports a reopen signal: rename + recreate, then reopen FDs.
+		if err := os.Rename(logPath, rotatedPath); err != nil {
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("rename log file: %v", err),
+			}
 		}
-	}
+		newFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, info.Mode())
+		if err != nil {
+			_ = os.Rename(rotatedPath, logPath)
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("create new log file: %v", err),
+			}
+		}
+		newFile.Close()
 
-	newFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY, info.Mode())
-	if err != nil {
-		_ = os.Rename(rotatedPath, logPath)
-		return &agentpb.RotateLogResponse{
-			Success: false,
-			Error:   fmt.Sprintf("create new log file: %v", err),
+		if nginxPath, err := exec.LookPath("nginx"); err == nil {
+			if out, err := exec.Command(nginxPath, "-s", "reopen").CombinedOutput(); err != nil {
+				log.Printf("[Agent] nginx -s reopen failed: %v, output: %s", err, string(out))
+			}
+		} else {
+			log.Printf("[Agent] nginx not found in PATH, skipping reopen signal")
+		}
+	} else {
+		// No reopen support → copy-truncate: archive a copy, truncate in place.
+		// The writer's O_APPEND handle keeps working on the truncated file.
+		src, err := os.Open(logPath)
+		if err != nil {
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("open log file: %v", err),
+			}
+		}
+		dst, err := os.OpenFile(rotatedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			src.Close()
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("create rotated file: %v", err),
+			}
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			src.Close()
+			dst.Close()
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("copy log file: %v", err),
+			}
+		}
+		src.Close()
+		dst.Close()
+
+		if err := os.Truncate(logPath, 0); err != nil {
+			return &agentpb.RotateLogResponse{
+				Success: false,
+				Error:   fmt.Sprintf("truncate log file: %v", err),
+			}
 		}
 	}
-	newFile.Close()
 
 	return &agentpb.RotateLogResponse{
 		Success:      true,

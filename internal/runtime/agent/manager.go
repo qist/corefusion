@@ -2235,7 +2235,9 @@ func (m *NodeServerManager) ReadLogFileOnServerWithPathFiltered(ctx context.Cont
 }
 
 // RotateLogOnServer triggers log rotation on a node (local or remote).
-func (m *NodeServerManager) RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error) {
+// logPath is the policy's concrete file path; empty falls back to the
+// agent's per-type default resolution (backward compatible with old agents).
+func (m *NodeServerManager) RotateLogOnServer(ctx context.Context, serverID int64, logType string, logPath string) (int32, int32, int64, error) {
 	if m.isLocalServer(serverID) {
 		// For local: we don't have direct access to logmanage.Service here
 		// This should be handled by the API handler directly
@@ -2247,6 +2249,7 @@ func (m *NodeServerManager) RotateLogOnServer(ctx context.Context, serverID int6
 		Command: &agentpb.PanelCommand_RotateLog{
 			RotateLog: &agentpb.RotateLogRequest{
 				LogType: logType,
+				LogPath: logPath,
 			},
 		},
 	}

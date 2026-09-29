@@ -1014,6 +1014,7 @@ message ReadLogFileResponse {
 // 远程触发日志轮转
 message RotateLogRequest {
   string log_type = 1;    // 要轮转的日志类型
+  string log_path = 2;    // 具体日志文件路径（优先于 log_type 的默认解析路径）
 }
 
 message RotateLogResponse {

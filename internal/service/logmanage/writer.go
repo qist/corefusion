@@ -264,7 +264,19 @@ func (w *LogWriter) rotate(currentPath string) {
 		return
 	}
 
-	os.WriteFile(currentPath, []byte{}, 0644)
+	// Reopen the file handle: after the rename the old FD points at the
+	// rotated file, and without reopening, every subsequent line would be
+	// appended to the ARCHIVE instead of the fresh current file.
+	if w.logFile != nil {
+		w.logFile.Close()
+		w.logFile = nil
+	}
+	f, err := os.OpenFile(currentPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("logwriter %s: reopen after rotate failed: %v", w.proxyType, err)
+	} else {
+		w.logFile = f
+	}
 
 	if w.compress {
 		go w.compressFile(rotatedPath)

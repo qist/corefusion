@@ -226,7 +226,7 @@ func (h *Handler) Rotate(c *gin.Context) {
 			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
 			return
 		}
-		rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), policy.ServerID, policy.SourceType)
+		rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath)
 		if err != nil {
 			response.InternalError(c, "ROTATE_FAILED", err.Error())
 			return
@@ -937,7 +937,7 @@ func fileExists(path string) bool {
 type NodeLogManager interface {
 	ReadLogFileOnServer(ctx context.Context, serverID int64, logType string, lastLines int) ([]string, string, error)
 	ReadLogFileOnServerWithPath(ctx context.Context, serverID int64, logType, logPath string, lastLines int) ([]string, string, error)
-	RotateLogOnServer(ctx context.Context, serverID int64, logType string) (int32, int32, int64, error)
+	RotateLogOnServer(ctx context.Context, serverID int64, logType string, logPath string) (int32, int32, int64, error)
 	DiscoverLogsOnServer(ctx context.Context, serverID int64) ([]*agentpb.DiscoveredLogInfo, error)
 	SyncLogConfigToServer(ctx context.Context, serverID int64, coreLogConfig, proxyLogConfig, nginxSettings string) error
 	GetWriterStatusOnServer(ctx context.Context, serverID int64) ([]map[string]interface{}, error)
@@ -1197,7 +1197,7 @@ func (h *Handler) RotateNodeLog(c *gin.Context) {
 		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
 		return
 	}
-	rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), serverID, logType)
+	rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), serverID, logType, c.Query("log_path"))
 	if err != nil {
 		response.InternalError(c, "ROTATE_FAILED", err.Error())
 		return

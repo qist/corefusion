@@ -344,7 +344,7 @@
         </div>
         <el-table :data="sharedAccounts" v-loading="sharedAccountsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" :label="t('clientExt.name')" width="150" />
+          <el-table-column prop="name" :label="t('clientExt.name')" min-width="150" />
           <el-table-column :label="t('clientExt.type')" width="100">
             <template #default="{row}">
               <el-tag size="small">{{ sharedAccountTypeLabel(row.type) }}</el-tag>
@@ -437,13 +437,15 @@
         <el-table :data="ipWhitelistEntries" v-loading="ipWhitelistLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="100" />
-          <el-table-column prop="ip_address" :label="t('clientExt.ipAddress')" width="160" />
+          <el-table-column prop="ip_address" :label="t('clientExt.ipAddress')" min-width="160" />
           <el-table-column :label="t('clientExt.source')" width="100">
             <template #default="{row}">
               <el-tag :type="row.source==='auto'?'success':'warning'" size="small">{{ row.source==='auto'?t('clientExt.autoAdded'):t('clientExt.manualAdded') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" :label="t('clientExt.addedTime')" width="170" />
+          <el-table-column :label="t('clientExt.addedTime')" width="170">
+            <template #default="{row}">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
         </el-table>
         <PaginationBar v-model:page="ipPage" v-model:page-size="ipSize" :total="ipTotal" @change="fetchIPWhitelists" />
       </el-tab-pane>
@@ -465,8 +467,10 @@
               <el-tag size="small">{{ row.provider }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="provider_user_id" :label="t('clientExt.thirdPartyUserId')" width="200" show-overflow-tooltip />
-          <el-table-column prop="created_at" :label="t('clientExt.bindingTime')" width="170" />
+          <el-table-column prop="provider_user_id" :label="t('clientExt.thirdPartyUserId')" min-width="200" show-overflow-tooltip />
+          <el-table-column :label="t('clientExt.bindingTime')" width="170">
+            <template #default="{row}">{{ formatTime(row.created_at) }}</template>
+          </el-table-column>
         </el-table>
         <PaginationBar v-model:page="oaPage" v-model:page-size="oaSize" :total="oaTotal" @change="fetchOAuthBindings" />
       </el-tab-pane>
@@ -809,6 +813,14 @@ async function viewRepairLogs(row) {
 function sharedAccountTypeLabel(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: t('clientExt.other') }[t] || t }
 
 // ════════════ IP Whitelist ════════════
+function formatTime(ts) {
+  if (!ts) return '-'
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
 const ipWhitelistEntries = ref([])
 const { page: ipPage, pageSize: ipSize, total: ipTotal, limit: ipLimit, offset: ipOffset } = usePagination({ pageKey: 'clxIpPage', pageSizeKey: 'clxIpSize' })
 const ipWhitelistLoading = ref(false)

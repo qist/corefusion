@@ -34,12 +34,14 @@
           <el-table-column prop="sort_order" :label="t('charge.sortOrder')" width="60" />
           <el-table-column :label="t('common.actions')" width="350">
             <template #default="{row}">
-              <el-button size="small" @click="showEditSite(row)">{{ t('common.edit') }}</el-button>
-              <el-button size="small" type="primary" @click="showVerifyDialog(row)">{{ t('charge.verify') }}</el-button>
-              <el-button size="small" type="warning" @click="rotateSiteSecret(row)">{{ t('charge.rotateSecret') }}</el-button>
-              <el-button size="small" type="info" @click="showIntegrationDoc(row)">{{ t('charge.doc') }}</el-button>
-              <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?t('common.disabled'):t('common.enabled') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showEditSite(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="primary" @click="showVerifyDialog(row)">{{ t('charge.verify') }}</el-button>
+                <el-button size="small" type="warning" @click="rotateSiteSecret(row)">{{ t('charge.rotateSecret') }}</el-button>
+                <el-button size="small" type="info" @click="showIntegrationDoc(row)">{{ t('charge.doc') }}</el-button>
+                <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?t('common.disabled'):t('common.enabled') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -94,8 +96,10 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="140">
             <template #default="{row}">
-              <el-button size="small" @click="showOrderDetail(row)">{{ t('charge.detail') }}</el-button>
-              <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">{{ t('charge.refund') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showOrderDetail(row)">{{ t('charge.detail') }}</el-button>
+                <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">{{ t('charge.refund') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -134,7 +138,7 @@
         </div>
         <el-table :data="cards" v-loading="cardsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column :label="t('charge.cardCode')" width="200">
+          <el-table-column :label="t('charge.cardCode')" min-width="200">
             <template #default="{row}">
               <span style="font-family:monospace">{{ row.card_code_masked || row.card_code }}</span>
             </template>
@@ -178,8 +182,10 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="150">
             <template #default="{row}">
-              <el-button size="small" @click="showCardUsages(row)">{{ t('charge.usageRecord') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteCard(row)">{{ t('common.delete') }}</el-button>
+              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <el-button size="small" @click="showCardUsages(row)">{{ t('charge.usageRecord') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteCard(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -567,7 +573,7 @@
 
     <!-- ═══════════════════════════════════════════════ -->
     <!-- 充值卡使用记录弹窗 -->
-    <el-dialog v-model="usageDialog" :title="t('charge.usageRecordTitle', { id: usageCardId })" width="750px">
+    <el-dialog v-model="usageDialog" :title="t('charge.usageRecordTitle', { id: usageCardId })" width="920px">
       <el-alert v-if="usageItems.length === 0 && !usageLoading" type="info" :closable="false">
         <template #title>{{ t('charge.cardNotUsed') }}</template>
       </el-alert>
@@ -621,7 +627,7 @@
         <template #title>{{ t('charge.batchResultMsg', { count: batchResult.length, batchId: batchResultBatchId }) }}</template>
       </el-alert>
       <el-table :data="batchResult" stripe size="small" max-height="400">
-        <el-table-column prop="card_code" :label="t('charge.cardCode')" width="220" />
+        <el-table-column prop="card_code" :label="t('charge.cardCode')" min-width="220" />
         <el-table-column :label="t('currency.amount')" width="200" show-overflow-tooltip>
           <template #default="{row}">{{ batchResultType==='balance' ? formatAmount(row.value, batchResultCurrency) : findVariantName(row.value) }}</template>
         </el-table-column>

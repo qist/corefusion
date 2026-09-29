@@ -19,7 +19,7 @@
       <el-table-column :label="t('service.process.mem')" width="70">
         <template #default="{row}">{{ row.mem ? formatSize(row.mem) : '-' }}</template>
       </el-table-column>
-      <el-table-column :label="t('service.process.version')" width="120">
+      <el-table-column :label="t('service.process.version')" min-width="120">
         <template #default="{row}">
           <span v-if="!row.binary_installed" style="color:#f56c6c;cursor:pointer;font-size:12px" @click="showVersions(row)">
             {{ t('service.process.binaryNotInstalled') }}
@@ -53,10 +53,12 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="180">
         <template #default="{row}">
-          <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleStart(row)" :disabled="managementOnly" :loading="row._loading">{{ t('service.start') }}</el-button>
-          <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
-          <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
-          <el-button size="small" @click="handleRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || managementOnly">{{ t('service.restart') }}</el-button>
+          <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+            <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleStart(row)" :disabled="managementOnly" :loading="row._loading">{{ t('service.start') }}</el-button>
+            <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
+            <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
+            <el-button size="small" @click="handleRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || managementOnly">{{ t('service.restart') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -78,7 +80,7 @@
       <el-table-column :label="t('service.process.mem')" width="70">
         <template #default="{row}">{{ row.mem ? formatSize(row.mem) : '-' }}</template>
       </el-table-column>
-      <el-table-column :label="t('service.process.version')" width="140">
+      <el-table-column :label="t('service.process.version')" min-width="140">
         <template #default="{row}">
           <span v-if="!row.installed" style="color:#f56c6c;cursor:pointer;font-size:12px" @click="showProxyVersions(row)">
             {{ t('service.process.binaryNotInstalled') }}
@@ -112,10 +114,12 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="180">
         <template #default="{row}">
-          <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed">{{ t('service.start') }}</el-button>
-          <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleProxyStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
-          <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
-          <el-button size="small" @click="handleProxyRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || !row.installed">{{ t('service.restart') }}</el-button>
+          <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+            <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed">{{ t('service.start') }}</el-button>
+            <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleProxyStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
+            <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
+            <el-button size="small" @click="handleProxyRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || !row.installed">{{ t('service.restart') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

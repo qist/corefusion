@@ -10,7 +10,7 @@
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.importSources') }}</div>
       <el-table :data="sourcesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="name" :label="t('common.name')" width="180" />
+        <el-table-column prop="name" :label="t('common.name')" min-width="180" />
         <el-table-column prop="source_type" :label="t('common.type')" width="80">
           <template #default="{row}"><el-tag size="small">{{ row.source_type }}</el-tag></template>
         </el-table-column>
@@ -31,7 +31,7 @@
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.allNodesHint') }}</div>
       <el-table :data="nodesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column prop="name" :label="t('common.name')" width="160" />
+        <el-table-column prop="name" :label="t('common.name')" min-width="160" />
         <el-table-column prop="protocol" :label="t('externalNodes.protocol')" width="80">
           <template #default="{row}"><el-tag size="small">{{ row.protocol }}</el-tag></template>
         </el-table-column>
@@ -41,20 +41,22 @@
         <el-table-column label="TLS" width="60">
           <template #default="{row}"><el-tag v-if="row.tls" size="small" type="success">TLS</el-tag></template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="100">
+        <el-table-column :label="t('common.status')" width="120">
           <template #default="{row}">
-            <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+            <div style="display:flex;gap:4px;align-items:center;white-space:nowrap">
               <el-switch v-model="row.enabled" size="small" @change="updateNode(row)" />
               <el-tag v-if="registeredNodeIds.has(row.id)" size="small" type="success">{{ t('externalNodes.registered') }}</el-tag>
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="180">
+        <el-table-column :label="t('common.actions')" width="220">
           <template #default="{row}">
-            <el-button size="small" text @click="editNode(row)">{{ t('common.edit') }}</el-button>
-            <el-button v-if="!registeredNodeIds.has(row.id)" size="small" type="success" text @click="registerAsEntry(row)">{{ t('externalNodes.registerAsEntry') }}</el-button>
-            <el-button v-else size="small" type="warning" text @click="unregisterEntry(row)">{{ t('externalNodes.unregisterEntry') }}</el-button>
-            <el-button size="small" type="danger" text @click="deleteNode(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" text @click="editNode(row)">{{ t('common.edit') }}</el-button>
+              <el-button v-if="!registeredNodeIds.has(row.id)" size="small" type="success" text @click="registerAsEntry(row)">{{ t('externalNodes.registerAsEntry') }}</el-button>
+              <el-button v-else size="small" type="warning" text @click="unregisterEntry(row)">{{ t('externalNodes.unregisterEntry') }}</el-button>
+              <el-button size="small" type="danger" text @click="deleteNode(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

@@ -39,9 +39,11 @@
       <el-table-column prop="updated_at" :label="t('common.updatedAt')" width="170" />
       <el-table-column :label="t('common.actions')" width="200">
         <template #default="{row}">
-          <el-button size="small" @click="viewTicket(row)">{{ t('ticket.viewReply') }}</el-button>
-          <el-button size="small" type="primary" @click="assignTicketTo(row)" v-if="row.status!=='closed'">{{ t('ticket.assign') }}</el-button>
-          <el-button size="small" type="danger" @click="closeTicket(row)" v-if="row.status!=='closed'">{{ t('ticket.close') }}</el-button>
+          <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+            <el-button size="small" @click="viewTicket(row)">{{ t('ticket.viewReply') }}</el-button>
+            <el-button size="small" type="primary" @click="assignTicketTo(row)" v-if="row.status!=='closed'">{{ t('ticket.assign') }}</el-button>
+            <el-button size="small" type="danger" @click="closeTicket(row)" v-if="row.status!=='closed'">{{ t('ticket.close') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>

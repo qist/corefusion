@@ -117,34 +117,36 @@
         </div>
       </el-alert>
       <el-table :data="globalRules" stripe style="width:100%" @row-click="openRuleEditor" class="rules-table">
-        <el-table-column prop="name" :label="t('proxy.wafRule')" width="180" />
-        <el-table-column :label="t('proxy.wafMergeMode')" width="120">
+        <el-table-column prop="name" :label="t('proxy.wafRule')" width="150" />
+        <el-table-column :label="t('proxy.wafMergeMode')" width="100">
           <template #default="{ row }">
             <el-tag :type="row.merge_mode === 'append' ? 'warning' : 'info'" size="small">
               {{ row.merge_mode || 'replace' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="t('proxy.wafRuleDesc')" min-width="200">
+        <el-table-column :label="t('proxy.wafRuleDesc')" min-width="160">
           <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
         </el-table-column>
-        <el-table-column :label="t('proxy.wafSize')" width="100">
-          <template #default="{ row }">{{ row.content ? row.content.length + ' B' : '-' }}</template>
+        <el-table-column :label="t('proxy.wafSize')" width="90">
+          <template #default="{ row }">{{ formatWafSize(row.content ? row.content.length : 0) }}</template>
         </el-table-column>
-        <el-table-column :label="t('proxy.wafHash')" width="120">
+        <el-table-column :label="t('proxy.wafHash')" width="110">
           <template #default="{ row }">
             <span style="font-family:monospace;font-size:11px;color:#909399">
               {{ row.hash ? row.hash.substring(0, 12) + '...' : '-' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column prop="updated_at" :label="t('common.updatedAt')" width="180">
+        <el-table-column prop="updated_at" :label="t('common.updatedAt')" width="150">
           <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="100" fixed="right">
+        <el-table-column :label="t('common.actions')" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" text @click.stop="openRuleEditor(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" text type="danger" @click.stop="deleteRule(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" text @click.stop="openRuleEditor(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" text type="danger" @click.stop="deleteRule(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -291,6 +293,14 @@ function formatTime(ts) {
   if (!ts) return '-'
   const d = new Date(ts)
   return d.toLocaleString()
+}
+
+// 规则内容大小格式化：<1KB 显示 B，否则 KB
+function formatWafSize(n) {
+  if (!n && n !== 0) return '-'
+  if (n < 1024) return n + ' B'
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+  return (n / (1024 * 1024)).toFixed(2) + ' MB'
 }
 
 async function loadRules() {

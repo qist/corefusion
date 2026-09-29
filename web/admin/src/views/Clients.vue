@@ -12,8 +12,8 @@
     </div>
     <el-table :data="clients" v-loading="clientLoading" stripe size="small">
       <el-table-column prop="id" label="ID" width="50" />
-      <el-table-column prop="email" :label="t('client.email')" width="180" />
-      <el-table-column :label="t('client.plan')" width="180">
+      <el-table-column prop="email" :label="t('client.email')" min-width="180" />
+      <el-table-column :label="t('client.plan')" min-width="120" show-overflow-tooltip>
         <template #default="{row}">
           {{ templateName(row.plan_id) }}
           <span v-if="row.plan_variant_id" style="color:#909399;font-size:12px">
@@ -45,20 +45,22 @@
         <template #default="{row}">{{ row.expires_at ? row.expires_at.substring(0,10) : '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('common.status')" width="80">
-        <template #default="{row}"><el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag></template>
+        <template #default="{row}"><el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="520">
+      <el-table-column :label="t('common.actions')" width="640">
         <template #default="{row}">
-          <el-button size="small" type="primary" @click="showRenewDialog(row)">{{ t('client.renew') }}</el-button>
-          <el-button size="small" type="success" @click="showUpgradeDialog(row)">{{ t('client.upgrade') }}</el-button>
-          <el-button size="small" @click="showDowngradeDialog(row)">{{ t('client.downgrade') }}</el-button>
-          <el-button size="small" @click="showOrdersDialog(row)">{{ t('client.orders') }}</el-button>
-          <el-button v-if="row.status==='active'" size="small" type="warning" @click="suspendClient(row)">{{ t('client.suspend') }}</el-button>
-          <el-button v-if="row.status==='suspended'" size="small" type="success" @click="restoreClient(row)">{{ t('client.restore') }}</el-button>
-          <el-button size="small" @click="resetUsage(row)">{{ t('client.resetUsage') }}</el-button>
-          <el-button size="small" @click="showResetPwd(row)">{{ t('client.resetPwd') }}</el-button>
-          <el-button size="small" @click="showEditClient(row)">{{ t('common.edit') }}</el-button>
-          <el-button size="small" type="danger" @click="deleteClient(row)">{{ t('common.delete') }}</el-button>
+          <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+            <el-button size="small" type="primary" @click="showRenewDialog(row)">{{ t('client.renew') }}</el-button>
+            <el-button size="small" type="success" @click="showUpgradeDialog(row)">{{ t('client.upgrade') }}</el-button>
+            <el-button size="small" @click="showDowngradeDialog(row)">{{ t('client.downgrade') }}</el-button>
+            <el-button size="small" @click="showOrdersDialog(row)">{{ t('client.orders') }}</el-button>
+            <el-button v-if="row.status==='active'" size="small" type="warning" @click="suspendClient(row)">{{ t('client.suspend') }}</el-button>
+            <el-button v-if="row.status==='suspended'" size="small" type="success" @click="restoreClient(row)">{{ t('client.restore') }}</el-button>
+            <el-button size="small" @click="resetUsage(row)">{{ t('client.resetUsage') }}</el-button>
+            <el-button size="small" @click="showResetPwd(row)">{{ t('client.resetPwd') }}</el-button>
+            <el-button size="small" @click="showEditClient(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteClient(row)">{{ t('common.delete') }}</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -175,7 +177,7 @@
     </el-dialog>
 
     <!-- Order History Dialog -->
-    <el-dialog v-model="ordersDialog" :title="t('client.orderHistory')" width="750px">
+    <el-dialog v-model="ordersDialog" :title="t('client.orderHistory')" width="860px">
       <el-table :data="clientOrders" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column :label="t('common.type')" width="80">
@@ -187,7 +189,7 @@
         <el-table-column :label="t('client.amount')" width="120">
           <template #default="{row}">¥{{ (row.paid_amount/100).toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column prop="promotion_code" :label="t('client.promotionCode')" width="100" />
+        <el-table-column prop="promotion_code" :label="t('client.promotionCode')" min-width="100" />
         <el-table-column :label="t('client.effectiveTime')" width="150">
           <template #default="{row}">{{ row.effective_from?.substring(0,10) }}</template>
         </el-table-column>
@@ -339,6 +341,7 @@ const formatBytes = (b) => {
 const usagePercent = (row) => row.quota_bytes > 0 ? Math.min(100, Math.round(row.used_bytes / row.quota_bytes * 100)) : 0
 const usageColor = (row) => usagePercent(row) > 80 ? '#f56c6c' : '#409eff'
 const statusType = (s) => ({ active: 'success', suspended: 'danger', expired: 'warning' }[s] || 'info')
+const statusLabel = (s) => ({ active: t('client.statusActive'), suspended: t('client.statusSuspended'), expired: t('client.statusExpired') }[s] || s)
 
 // Fetch
 async function fetchPlanTemplates() {

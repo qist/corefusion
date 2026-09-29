@@ -202,28 +202,30 @@
             </div>
           </div>
           <el-table :data="templates" stripe>
-            <el-table-column prop="name" :label="t('common.name')" width="150" />
-            <el-table-column prop="type" label="Type" width="80">
+            <el-table-column prop="name" :label="t('common.name')" min-width="150" />
+            <el-table-column prop="type" :label="t('settings.templates.tplType')" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
             </el-table-column>
-            <el-table-column :label="t('settings.templates.audience')" width="90">
+            <el-table-column :label="t('settings.templates.audience')" width="110">
               <template #default="{row}">
                 <el-tag size="small" :type="row.audience === 'subscriber' ? 'warning' : 'info'">
                   {{ row.audience === 'subscriber' ? t('settings.templates.audienceSubscriber') : t('settings.templates.audienceAdmin') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="subject" label="Subject" width="150" />
-            <el-table-column prop="cron" label="Cron" width="120" />
-            <el-table-column label="Enabled" width="80">
+            <el-table-column prop="subject" :label="t('settings.templates.tplSubject')" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="cron" :label="t('settings.templates.tplCron')" width="120" />
+            <el-table-column :label="t('settings.templates.tplEnabled')" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="220">
+            <el-table-column :label="t('common.actions')" width="240">
               <template #default="{row}">
-                <el-button size="small" @click="showEditTemplate(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="success" plain @click="handleSendTemplate(row)" :title="t('settings.templates.sendHint')">{{ t('settings.templates.send') }}</el-button>
-                <el-button v-if="row.audience === 'subscriber'" size="small" type="warning" plain @click="showBroadcastDialog(row)" :title="t('settings.templates.broadcastHint')">{{ t('settings.templates.broadcast') }}</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" @click="showEditTemplate(row)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="success" plain @click="handleSendTemplate(row)" :title="t('settings.templates.sendHint')">{{ t('settings.templates.send') }}</el-button>
+                  <el-button v-if="row.audience === 'subscriber'" size="small" type="warning" plain @click="showBroadcastDialog(row)" :title="t('settings.templates.broadcastHint')">{{ t('settings.templates.broadcast') }}</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -436,7 +438,7 @@
         <el-card style="margin-bottom:20px">
           <template #header><span>{{ t('settings.backup.list') }}</span></template>
           <el-table :data="backups" v-loading="backupsLoading" stripe>
-<el-table-column prop="name" :label="t('common.name')" width="200">
+<el-table-column prop="name" :label="t('common.name')" min-width="200">
 <template #default="{row}">
 {{ row.name }}
 <el-tag v-if="row.remote_only" size="small" type="warning" style="margin-left:4px">Remote Only</el-tag>
@@ -453,6 +455,7 @@
 </el-table-column>
 <el-table-column :label="t('common.actions')" width="400">
 <template #default="{row}">
+<div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
 <el-button v-if="!row.remote_only" size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
 <el-button v-if="!row.remote_only" size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
 <el-button v-if="row.remote_only" size="small" type="warning" disabled title="Use Remote Restore below">Local Restore</el-button>
@@ -467,6 +470,7 @@
 </template>
 </el-dropdown>
 <el-button size="small" type="danger" @click="handleDeleteBackup(row)">{{ t('common.delete') }}</el-button>
+</div>
 </template>
 </el-table-column>
           </el-table>
@@ -481,7 +485,7 @@
             </div>
           </template>
           <el-table :data="schedules" stripe>
-            <el-table-column prop="name" :label="t('common.name')" width="150" />
+            <el-table-column prop="name" :label="t('common.name')" min-width="150" />
             <el-table-column prop="cron" label="Cron" width="140" />
             <el-table-column :label="t('settings.backup.remoteStorage')" width="150">
               <template #default="{row}">
@@ -495,8 +499,10 @@
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
               <template #default="{row}">
-                <el-button size="small" @click="showEditSchedule(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteSchedule(row)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" @click="showEditSchedule(row)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteSchedule(row)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -511,7 +517,7 @@
             </div>
           </template>
           <el-table :data="storages" stripe>
-            <el-table-column prop="name" :label="t('common.name')" width="150" />
+            <el-table-column prop="name" :label="t('common.name')" min-width="150" />
             <el-table-column prop="type" label="Type" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
             </el-table-column>
@@ -520,8 +526,10 @@
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
               <template #default="{row}">
-                <el-button size="small" @click="showEditStorage(row)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteStorage(row)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" @click="showEditStorage(row)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteStorage(row)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -723,8 +731,10 @@
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
               <template #default="{row, $index}">
-                <el-button size="small" @click="showEditDomain(row, $index)">{{ t('common.edit') }}</el-button>
-                <el-button size="small" type="danger" @click="handleDeleteDomain($index)">{{ t('common.delete') }}</el-button>
+                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                  <el-button size="small" @click="showEditDomain(row, $index)">{{ t('common.edit') }}</el-button>
+                  <el-button size="small" type="danger" @click="handleDeleteDomain($index)">{{ t('common.delete') }}</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>

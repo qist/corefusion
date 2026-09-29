@@ -65,7 +65,7 @@
       <!-- Topology node detail table (below graph) -->
       <el-table v-if="topoNodes.length > 0" :data="topoNodes" stripe size="small" style="margin-top:12px">
         <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column prop="name" :label="t('common.name')" width="180" />
+        <el-table-column prop="name" :label="t('common.name')" min-width="180" />
         <el-table-column prop="type" :label="t('common.type')" width="90">
           <template #default="{row}">
             <el-tag size="small" :type="row.type==='external' ? 'warning' : 'primary'">{{ row.type }}</el-tag>
@@ -90,7 +90,7 @@
         <el-table-column :label="t('chainProxy.exitNode')" width="160">
           <template #default="{row}">{{ exitName(row) }}</template>
         </el-table-column>
-        <el-table-column :label="t('chainProxy.exitInboundCol')" width="200">
+        <el-table-column :label="t('chainProxy.exitInboundCol')" min-width="200">
           <template #default="{row}">
             <span v-if="row.exit_external_id">—</span>
             <span v-else>{{ linkExitInboundLabel(row) }}</span>
@@ -107,8 +107,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" text @click="editLink(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" text @click="removeLink(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" text @click="editLink(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" text @click="removeLink(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -120,7 +122,7 @@
       <template #header>{{ t('chainProxy.externalEntryServers') }}</template>
       <el-table :data="externalServers" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
-        <el-table-column prop="name" :label="t('common.name')" width="160" />
+        <el-table-column prop="name" :label="t('common.name')" min-width="160" />
         <el-table-column prop="hostname" :label="t('common.host')" width="160" />
         <el-table-column prop="region" :label="t('chainProxy.region')" width="100" />
         <el-table-column prop="region_label" :label="t('chainProxy.regionLabel')" width="100" />
@@ -147,7 +149,7 @@
       </template>
       <el-table :data="healthData" stripe size="small" v-loading="healthLoading">
         <el-table-column prop="link_id" label="ID" width="60" />
-        <el-table-column :label="t('chainProxy.entryNode')" width="160">
+        <el-table-column :label="t('chainProxy.entryNode')" min-width="160">
           <template #default="{row}">{{ serverName(row.entry_server_id) }}</template>
         </el-table-column>
         <el-table-column :label="t('chainProxy.exitNode')" width="160">

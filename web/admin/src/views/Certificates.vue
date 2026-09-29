@@ -61,22 +61,24 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="430">
           <template #default="{row}">
-            <!-- 下载：浏览器无法自定义请求头 ✗ → 先换一次性票据再拼 ?ticket= ✓（scope=cert_download ✓）-->
-            <el-dropdown size="small" trigger="click" style="margin-right:8px" @command="(f) => downloadCert(row, f)">
-              <el-button size="small" plain :disabled="row.has_content === false">{{ t('certificate.download') }}</el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="zip">{{ t('certificate.downloadZip') }}</el-dropdown-item>
-                  <el-dropdown-item command="cert">{{ t('certificate.downloadCertOnly') }}</el-dropdown-item>
-                  <el-dropdown-item command="fullchain">{{ t('certificate.downloadFullchain') }}</el-dropdown-item>
-                  <el-dropdown-item command="key">{{ t('certificate.downloadKey') }}</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-            <el-button size="small" type="primary" plain :disabled="row.has_content === false" :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
-            <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
-            <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
-            <el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <!-- 下载：浏览器无法自定义请求头 ✗ → 先换一次性票据再拼 ?ticket= ✓（scope=cert_download ✓）-->
+              <el-dropdown size="small" trigger="click" style="margin-right:8px" @command="(f) => downloadCert(row, f)">
+                <el-button size="small" plain :disabled="row.has_content === false">{{ t('certificate.download') }}</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="zip">{{ t('certificate.downloadZip') }}</el-dropdown-item>
+                    <el-dropdown-item command="cert">{{ t('certificate.downloadCertOnly') }}</el-dropdown-item>
+                    <el-dropdown-item command="fullchain">{{ t('certificate.downloadFullchain') }}</el-dropdown-item>
+                    <el-dropdown-item command="key">{{ t('certificate.downloadKey') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button size="small" type="primary" plain :disabled="row.has_content === false" :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
+              <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
+              <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
+              <el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -209,8 +211,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="150">
           <template #default="{row}">
-            <el-button size="small" @click="showEditEAB(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteEAB(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" @click="showEditEAB(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteEAB(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -306,8 +310,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" @click="showEditChannel(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteChannel(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" @click="showEditChannel(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteChannel(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -349,8 +355,10 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="120">
           <template #default="{row}">
-            <el-button size="small" @click="showEditEmail(row)">{{ t('common.edit') }}</el-button>
-            <el-button size="small" type="danger" @click="handleDeleteEmail(row)">{{ t('common.delete') }}</el-button>
+            <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <el-button size="small" @click="showEditEmail(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteEmail(row)">{{ t('common.delete') }}</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>

@@ -16,11 +16,12 @@ const coreLogBufferMaxLines = 1000
 // This mirrors the proxy.LogBroker but lives in the process package
 // to avoid import cycles.
 type LogBroker struct {
-	mu     sync.Mutex
-	lines  []string
-	subs   map[int]chan string
-	nextID int
-	stopCh chan struct{}
+	mu       sync.Mutex
+	lines    []string
+	subs     map[int]chan string
+	nextID   int
+	stopCh   chan struct{}
+	tailStop chan struct{} // 当前 tail goroutine 的停止信号（TailFile 可重入）
 }
 
 // NewLogBroker creates a new LogBroker.
@@ -81,6 +82,9 @@ func (b *LogBroker) Subscribe() (<-chan string, func()) {
 
 // AttachCmd pipes cmd.Stdout and cmd.Stderr through the broker.
 func (b *LogBroker) AttachCmd(cmd *exec.Cmd) {
+	// 可能此前是 file 模式在 tail 同一核心的日志——先停，避免双份写入
+	b.stopTailer()
+
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw
@@ -94,27 +98,50 @@ func (b *LogBroker) AttachCmd(cmd *exec.Cmd) {
 	}()
 }
 
+// stopTailer 停止当前 tail goroutine（若有）。broker 跨核心重启复用时调用，
+// 保证换模式（file→stdout）或重新 TailFile 时不产生重复 tail。
+func (b *LogBroker) stopTailer() {
+	b.mu.Lock()
+	if b.tailStop != nil {
+		close(b.tailStop)
+		b.tailStop = nil
+	}
+	b.mu.Unlock()
+}
+
 // TailFile starts tailing a log file and feeding lines to the broker.
+// 可重入：每次调用先停掉上一次的 tail goroutine（核心重启复用 broker 时，
+// 订阅者 channel 保持有效，不丢订阅）。
 func (b *LogBroker) TailFile(path string) {
+	b.stopTailer()
+	b.mu.Lock()
+	b.tailStop = make(chan struct{})
+	stop := b.tailStop
+	b.mu.Unlock()
+
 	go func() {
 		for {
 			select {
+			case <-stop:
+				return
 			case <-b.stopCh:
 				return
 			default:
 			}
-			b.tailLoop(path)
+			b.tailLoop(path, stop)
 			time.Sleep(1 * time.Second)
 		}
 	}()
 }
 
-func (b *LogBroker) tailLoop(path string) {
+func (b *LogBroker) tailLoop(path string, stop chan struct{}) {
 	for {
 		if _, err := os.Stat(path); err == nil {
 			break
 		}
 		select {
+		case <-stop:
+			return
 		case <-b.stopCh:
 			return
 		case <-time.After(1 * time.Second):
@@ -149,6 +176,8 @@ func (b *LogBroker) tailLoop(path string) {
 
 	for {
 		select {
+		case <-stop:
+			return
 		case <-b.stopCh:
 			return
 		case <-time.After(300 * time.Millisecond):

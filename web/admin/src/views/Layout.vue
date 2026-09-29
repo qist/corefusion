@@ -1,6 +1,6 @@
 <template>
   <el-container style="height:100vh">
-    <el-aside width="220px" style="background:#304156">
+    <el-aside v-if="!isMobile" width="220px" style="background:#304156">
       <h2 style="color:#fff;text-align:center;padding:20px 0;margin:0;font-size:18px">{{ t('common.appName') }}</h2>
       <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router>
         <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
@@ -8,8 +8,20 @@
         </el-menu-item>
       </el-menu>
     </el-aside>
+    <!-- 移动端：侧栏改为抽屉，点汉堡按钮展开 -->
+    <el-drawer v-if="isMobile" v-model="drawerOpen" direction="ltr" size="230px" :with-header="false" class="mobile-menu-drawer">
+      <div style="background:#304156;min-height:100%">
+        <h2 style="color:#fff;text-align:center;padding:20px 0;margin:0;font-size:18px">{{ t('common.appName') }}</h2>
+        <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router @select="drawerOpen=false">
+          <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon><span>{{ t(item.title) }}</span>
+          </el-menu-item>
+        </el-menu>
+      </div>
+    </el-drawer>
     <el-container>
       <el-header style="background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;justify-content:flex-end;gap:16px">
+        <el-icon v-if="isMobile" size="22" style="cursor:pointer;margin-right:auto" @click="drawerOpen=true"><Fold /></el-icon>
         <el-dropdown @command="changeLocale">
           <span style="cursor:pointer;color:#409eff">{{ currentLocaleName }}</span>
           <template #dropdown>
@@ -151,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -180,7 +192,18 @@ const currentLocaleName = computed(() => {
 })
 
 // 挂载时预取 2FA 状态，供下拉菜单动态显示「开启/关闭 2FA」。
-onMounted(() => { loadTwofaStatus() })
+// 移动端适配：≤768px 视为手机，侧栏改抽屉。
+const isMobile = ref(window.innerWidth <= 768)
+const drawerOpen = ref(false)
+const onViewportResize = () => {
+  isMobile.value = window.innerWidth <= 768
+  if (!isMobile.value) drawerOpen.value = false
+}
+onMounted(() => {
+  loadTwofaStatus()
+  window.addEventListener('resize', onViewportResize)
+})
+onBeforeUnmount(() => { window.removeEventListener('resize', onViewportResize) })
 
 // `role` is the minimum role required to see the menu entry (fail-closed:
 // entries without a role default to admin so ordinary operators/viewers don't

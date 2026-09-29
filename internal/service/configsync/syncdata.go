@@ -467,6 +467,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				Enabled:   c.Enabled,
 				SortOrder: int32(c.SortOrder),
 				ServerId:  c.ServerID,
+				ServerIds: c.ServerIDs,
 				Region:    c.Region,
 				CreatedAt: c.CreatedAt.Unix(),
 				UpdatedAt: c.UpdatedAt.Unix(),

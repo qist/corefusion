@@ -102,14 +102,25 @@ func (r *WarpRepository) ListRows(ctx context.Context, serverID int64) ([]WarpCo
 }
 
 // ListRows returns effective share domain config rows for a server.
-// This includes both global (server_id=0) and server-specific configs.
+// This includes global (server_id=0), server-specific (server_id=serverID)
+// and multi-node bindings (server_ids JSON containing serverID).
 func (r *ShareDomainConfigRepository) ListRows(ctx context.Context, serverID int64) ([]ShareDomainConfigRow, error) {
 	var rows []ShareDomainConfigRow
 	err := r.db.WithContext(ctx).
-		Where("server_id IN ? AND enabled = ?", []int64{0, serverID}, true).
+		Where("enabled = ?", true).
 		Order("server_id DESC, sort_order ASC, id ASC").
 		Find(&rows).Error
-	return rows, err
+	if err != nil {
+		return nil, err
+	}
+	// 多节点绑定（server_ids JSON）统一内存过滤（跨 SQLite/MySQL 兼容）
+	out := make([]ShareDomainConfigRow, 0, len(rows))
+	for _, row := range rows {
+		if row.MatchServer(serverID) {
+			out = append(out, row)
+		}
+	}
+	return out, nil
 }
 
 // Ensure UnusedDB is available for type compatibility.

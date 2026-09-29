@@ -14,9 +14,9 @@
           <el-switch v-model="item.enabled" @change="updateItem(item)" />
           <el-input v-model="item.value" :placeholder="t('service.shareDomain.domainOrIP')" style="flex:1;min-width:180px" @change="updateItem(item)" />
           <el-input-number v-model="item.port" :min="1" :max="65535" style="width:110px" @change="updateItem(item)" />
-          <!-- Node binding selector (only in global mode) -->
-          <el-select v-if="!isNodeMode" v-model="item.server_id" :placeholder="t('service.shareDomain.bindNode')" style="width:160px" @change="updateItem(item)">
-            <el-option :label="t('service.shareDomain.allNodes')" :value="0" />
+          <!-- Node binding selector (only in global mode)；支持多选节点，空=全局 -->
+          <el-select v-if="!isNodeMode" v-model="item.server_ids_arr" multiple collapse-tags collapse-tags-tooltip
+            :placeholder="t('service.shareDomain.bindNode')" style="width:180px" @change="updateItem(item)">
             <el-option v-for="s in nodeServers" :key="s.id" :label="s.name" :value="s.id" />
           </el-select>
           <!-- Read-only node tag (in node mode) -->
@@ -110,13 +110,25 @@ async function fetchItems() {
     const raw = Array.isArray(data) ? data : (data?.items || [])
     items.value = raw.map(item => ({
       ...item,
-      ports: item.ports ? JSON.parse(item.ports) : [item.port || 443]
+      ports: item.ports ? JSON.parse(item.ports) : [item.port || 443],
+      // 多节点绑定：server_ids JSON → 数组；旧单节点数据回填为 [server_id]
+      server_ids_arr: parseServerIds(item)
     }))
   } catch {
     items.value = []
   } finally {
     loading.value = false
   }
+}
+
+function parseServerIds(item) {
+  if (item.server_ids) {
+    try {
+      const arr = JSON.parse(item.server_ids)
+      if (Array.isArray(arr)) return arr
+    } catch {}
+  }
+  return item.server_id > 0 ? [item.server_id] : []
 }
 
 async function addItem(type) {
@@ -141,7 +153,8 @@ async function updateItem(item) {
       port: item.ports && item.ports.length ? item.ports[0] : 443,
       ports: JSON.stringify(item.ports || []),
       enabled: item.enabled,
-      server_id: item.server_id ?? 0
+      server_id: item.server_id ?? 0,
+      server_ids: (item.server_ids_arr || []).filter(id => id > 0)
     })
   } catch (e) {
     ElMessage.error(t('common.failed'))

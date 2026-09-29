@@ -181,6 +181,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			Enabled:   entry.Enabled,
 			SortOrder: int(entry.SortOrder),
 			ServerID:  entry.ServerId,
+			ServerIDs: entry.ServerIds,
 			Region:    entry.Region,
 		}
 		// Do NOT set record.ID — use ON CONFLICT for upsert
@@ -192,8 +193,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 		result := database.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"type", "value", "port", "ports", "enabled", "sort_order", "server_id", "region", "updated_at"}),
-		}).Select("type", "value", "port", "ports", "enabled", "sort_order", "server_id", "region", "created_at", "updated_at").Create(&record)
+			DoUpdates: clause.AssignmentColumns([]string{"type", "value", "port", "ports", "enabled", "sort_order", "server_id", "server_ids", "region", "updated_at"}),
+		}).Select("type", "value", "port", "ports", "enabled", "sort_order", "server_id", "server_ids", "region", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.ShareDomainConfigsApplied++
 		} else {

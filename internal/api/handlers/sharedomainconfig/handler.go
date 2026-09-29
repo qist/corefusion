@@ -1,12 +1,14 @@
 package sharedomainconfig
 
 import (
+	"encoding/json"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/service/sharedomainconfig"
 )
 
@@ -54,11 +56,12 @@ func (h *Handler) ListByServer(c *gin.Context) {
 // POST /api/v1/node-servers/:id/share-domains.
 func (h *Handler) Create(c *gin.Context) {
 	var req struct {
-		Type     string `json:"type" binding:"required"`
-		Value    string `json:"value"`
-		Port     int    `json:"port"`
-		Ports    string `json:"ports"`
-		ServerID int64  `json:"server_id"`
+		Type      string  `json:"type" binding:"required"`
+		Value     string  `json:"value"`
+		Port      int     `json:"port"`
+		Ports     string  `json:"ports"`
+		ServerID  int64   `json:"server_id"`
+		ServerIDs []int64 `json:"server_ids"` // 多节点绑定；空 = 全局
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -78,7 +81,30 @@ func (h *Handler) Create(c *gin.Context) {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
+	if req.ServerIDs != nil {
+		applyServerIDs(config, req.ServerIDs)
+		if err := h.svc.Save(c.Request.Context(), config); err != nil {
+			response.InternalError(c, "CREATE_FAILED", err.Error())
+			return
+		}
+	}
 	response.OK(c, config)
+}
+
+// applyServerIDs 把多节点绑定列表写入实体（JSON 文本）；同时把 ServerID 同步为
+// 第一个节点（旧语义字段兼容：单节点时非 0，多节点/全局时为 0）。
+func applyServerIDs(config *entity.ShareDomainConfig, ids []int64) {
+	if len(ids) == 0 {
+		config.ServerIDs = ""
+		return
+	}
+	if b, err := json.Marshal(ids); err == nil {
+		config.ServerIDs = string(b)
+	}
+	config.ServerID = 0
+	if len(ids) == 1 {
+		config.ServerID = ids[0]
+	}
 }
 
 // Update handles PUT /api/v1/share-domains/:id and
@@ -94,12 +120,13 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type     string `json:"type"`
-		Value    string `json:"value"`
-		Port     int    `json:"port"`
-		Ports    string `json:"ports"`
-		Enabled  *bool  `json:"enabled"`
-		ServerID *int64 `json:"server_id"`
+		Type      string  `json:"type"`
+		Value     string  `json:"value"`
+		Port      int     `json:"port"`
+		Ports     string  `json:"ports"`
+		Enabled   *bool   `json:"enabled"`
+		ServerID  *int64  `json:"server_id"`
+		ServerIDs []int64 `json:"server_ids"` // 多节点绑定；空数组 = 清除多选（回退 server_id 语义）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -117,6 +144,12 @@ func (h *Handler) Update(c *gin.Context) {
 	// Update server_id binding if provided
 	if req.ServerID != nil {
 		config.ServerID = *req.ServerID
+		config.UpdatedAt = time.Now()
+		_ = h.svc.Save(c.Request.Context(), config)
+	}
+	// 多节点绑定：显式传 server_ids 字段时以它为准
+	if req.ServerIDs != nil {
+		applyServerIDs(config, req.ServerIDs)
 		config.UpdatedAt = time.Now()
 		_ = h.svc.Save(c.Request.Context(), config)
 	}

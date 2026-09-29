@@ -968,6 +968,8 @@ message ShareDomainConfigEntry {
   string region = 9;
   int64  created_at = 10;
   int64  updated_at = 11;
+  // 多节点绑定：JSON 数组文本（如 "[2,11]"）；空 = 仅按 server_id 语义
+  string server_ids = 12;
 }
 
 message SyncDataResponse {

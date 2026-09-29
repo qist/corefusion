@@ -54,6 +54,10 @@ type NodeServerResponse struct {
 	TrafficUsedBytes     int64      `json:"traffic_used_bytes"`
 	TrafficPeriodStart   *time.Time `json:"traffic_period_start,omitempty"`
 
+	// ── 链式代理角色（chain_links 驱动；链式入口/出口不再是节点类型）──
+	ChainEntryFor []int64 `json:"chain_entry_for,omitempty"` // 作为链式入口时，通往的出口节点 ID
+	ChainExitFor  []int64 `json:"chain_exit_for,omitempty"`  // 作为链式出口时，来自的入口节点 ID
+
 	// Resource usage — populated from the latest server_metric
 	ResourceUsage *ResourceUsage `json:"resource_usage,omitempty"`
 }

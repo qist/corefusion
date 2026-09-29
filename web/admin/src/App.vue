@@ -26,4 +26,25 @@ const elLocale = computed(() => lang.value === 'en' ? enUs : zhCn)
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* ── 移动端全局适配（≤768px）── */
+@media (max-width: 768px) {
+  /* 弹窗/消息框不超出屏幕 */
+  .el-dialog { max-width: 94vw !important; }
+  .el-message-box { max-width: 92vw !important; }
+  .el-message { max-width: 92vw; box-sizing: border-box; }
+  /* 主内容区收紧内边距（覆盖 el-main 行内 20px） */
+  .el-main { padding: 10px !important; }
+  /* 卡片内边距收紧 */
+  .el-card__body { padding: 12px; }
+  /* 统计卡片（span=4 的列）每行两张 */
+  .el-col-4 { flex: 0 0 50%; max-width: 50%; }
+  /* 移动端菜单抽屉去内边距 */
+  .mobile-menu-drawer .el-drawer__body { padding: 0; }
+  /* 表格更紧凑：按钮间距/单元格内边距缩小 */
+  .el-table .el-button + .el-button { margin-left: 6px; }
+  .el-table .cell { padding: 0 6px; }
+  /* 表头按钮区允许换行 */
+  .el-header { padding: 0 12px; }
+}
 </style>

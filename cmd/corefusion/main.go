@@ -26,12 +26,14 @@ import (
 	"corefusion/internal/constants"
 	"corefusion/internal/migration"
 	"corefusion/internal/runtime/agent"
+	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
 	certService "corefusion/internal/service/certificate"
 	planSvc "corefusion/internal/service/plan"
+	ratelimitsvc "corefusion/internal/service/ratelimit"
 	sysService "corefusion/internal/service/system"
 	usersync "corefusion/internal/service/usersync"
 	"corefusion/internal/store/db"
@@ -253,7 +255,26 @@ func runServer(args []string) {
 	// not through gRPC. The Agent's role is to GUARD (守护) core processes,
 	// and process.Manager + Guardian already implements this completely.
 	localAgent := agent.NewLocalAgent(dataDir, processMgr, svcRepo)
+
+	// 本地节点限速（in-process Agent）：挂载限速管理器，与远程节点同一套
+	// 探测/启用/IP 关联路径（此前限速只覆盖远程节点 ✗）。
+	// 初始化（iface 探测/恢复/清理循环）在 ratelimitsvc.InitLocalBackend；
+	// ⚠ router 的 fallback LocalAgent 构造路径也必须挂载（见 router.go）。
+	localAgent = localAgent.WithRateLimitManager(ratelimit.NewManager(""))
+	localAgent = localAgent.WithRateLimitInitFunc(func(ctx context.Context, maxDown, maxUp int32) error {
+		return ratelimitsvc.InitLocalBackend(ctx, db.DB, localAgent, maxDown, maxUp)
+	})
+	// 面板启动时若本地限速已启用 → 自动初始化
+	go func() {
+		if err := ratelimitsvc.InitLocalBackend(context.Background(), db.DB, localAgent, 0, 0); err != nil {
+			log.Printf("[RateLimitService] local rate limit not initialized at startup: %v", err)
+		}
+	}()
 	nodeMgr.SetLocalAgent(localAgent)
+	// 同步给 router 包：确保 HTTP API / 订阅推送路径与 gRPC 侧使用**同一个** LocalAgent。
+	// 否则 router 的 fallback 会创建第二个实例（旧版本无限速管理器）并通过
+	// SetLocalAgent 覆盖 nodeMgr 的实例 → 本地 IP 关联报 "rate limit manager not configured"。
+	router.SetLocalAgent(localAgent)
 
 	// Initialize Cert Revocation List (CRL)
 	revocationRepo := repository.NewCertRevocationRepository(db.DB)

@@ -69,6 +69,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	agentratelimit "corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/healthcheck"
@@ -98,6 +99,7 @@ import (
 	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
 	rateLimitSvc "corefusion/internal/service/ratelimit"
+	ratelimitsvc "corefusion/internal/service/ratelimit"
 	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
@@ -1858,6 +1860,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					localAgent = agent.NewLocalAgent(dataDir, processMgr, svcRepo)
 					localAgent = localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
 					localAgent = localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
+					// 本地节点限速：fallback 实例同样要挂载管理器与初始化回调，
+					// 否则 AssociateIP/ApplyLimits 报 "rate limit manager not configured"。
+					localAgent = localAgent.WithRateLimitManager(agentratelimit.NewManager(""))
+					localAgent = localAgent.WithRateLimitInitFunc(func(ctx context.Context, maxDown, maxUp int32) error {
+						return ratelimitsvc.InitLocalBackend(ctx, database, localAgent, maxDown, maxUp)
+					})
+					go func() {
+						if err := ratelimitsvc.InitLocalBackend(context.Background(), database, localAgent, 0, 0); err != nil {
+							log.Printf("[RateLimitService] local rate limit not initialized at startup: %v", err)
+						}
+					}()
 				}
 				nodeMgrForCRL.SetLocalAgent(localAgent)
 				// Also update the shared NodeServerManager's LocalAgent so the gRPC
@@ -3583,6 +3596,18 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	planSvcInst2 := planSvc.NewService(database, planTmplRepo2, planVariantRepo2, nodeGroupRepo2, nodeGroupMemberRepo2, promoRepo2, planOrderRepo2, clientRepo, inboundRepo, extNodeRepo2)
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
+
+	// 订阅拉取触发的 IP 关联推送：8081 引擎的 PublicHandler 也必须接 RateLimitPusher。
+	// ⚠ 此前漏接 → 用户订阅实际走 8081，h.rateLimitPusher == nil，
+	// pushRateLimitAssociation 静默 return，本地/远程节点的 IP 关联从未被触发。
+	nodeServerRepoForSub := repository.NewNodeServerRepository(database)
+	if sharedNodeMgr != nil {
+		subRateLimitSvc := rateLimitSvc.NewService(repository.NewRateLimitConfigRepository(database))
+		subRateLimitSvc.SetNodeOperator(sharedNodeMgr)
+		publicSubH.SetRateLimitPusher(subRateLimitSvc, nodeServerRepoForSub)
+	} else {
+		log.Printf("[SubscriptionEngine] warning: sharedNodeMgr is nil, rate limit IP association disabled")
+	}
 
 	// Subscription at root path - no /sub prefix needed
 	r.GET("/:token", middleware.SubscribeRateLimit(), publicSubH.ServeSubscription)

@@ -697,9 +697,17 @@ func (b *NftTcBackend) initIFB() error {
 		return fmt.Errorf("load ifb module: %w", err)
 	}
 
-	// 2. 启动 ifb0 设备
+	// 2. 启动 ifb0 设备。部分内核（如 WSL2）modprobe ifb 后**不会**自动创建设备，
+	// 需要 `ip link add` 手动创建；创建的设备重启后消失，但本函数在每次 Init 时都会
+	// 重新执行，所以代码级兜底即是持久化方案。
 	if err := runCmd("ip", "link", "set", "dev", b.ifbDevice, "up"); err != nil {
-		return fmt.Errorf("bring up %s: %w", b.ifbDevice, err)
+		if cerr := runCmd("ip", "link", "add", b.ifbDevice, "type", "ifb"); cerr != nil {
+			return fmt.Errorf("bring up %s: %w (auto-create also failed: %v)", b.ifbDevice, err, cerr)
+		}
+		if err := runCmd("ip", "link", "set", "dev", b.ifbDevice, "up"); err != nil {
+			return fmt.Errorf("bring up %s after create: %w", b.ifbDevice, err)
+		}
+		log.Printf("[NftTcBackend] auto-created missing device %s", b.ifbDevice)
 	}
 
 	// 3. 在主网卡添加 ingress qdisc，将 ingress 流量重定向到 ifb0
@@ -714,7 +722,9 @@ func (b *NftTcBackend) initIFB() error {
 		log.Printf("[NftTcBackend] ingress redirect filter note: %v", err)
 	}
 
-	// 5. 在 ifb0 上建 HTB（控制上传）
+	// 5. 在 ifb0 上建 HTB（控制上传）。先清掉遗留 root qdisc（如系统自动挂的
+	// fq_codel）——否则 add 失败只打 note，HTB 建不上，后续 class 全部无效。
+	runCmd("tc", "qdisc", "del", "dev", b.ifbDevice, "root")
 	if err := runCmd("tc", "qdisc", "add", "dev", b.ifbDevice, "root",
 		"handle", "2:", "htb", "default", strconv.Itoa(defaultClassID)); err != nil {
 		log.Printf("[NftTcBackend] ifb root qdisc add note: %v", err)

@@ -460,7 +460,7 @@
         </div>
         <el-table v-if="!isMobile" :data="ipWhitelistEntries" v-loading="ipWhitelistLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="100" />
+          <el-table-column prop="client_email" :label="t('clientExt.clientEmail')" min-width="200" show-overflow-tooltip />
           <el-table-column prop="ip_address" :label="t('clientExt.ipAddress')" min-width="160" />
           <el-table-column :label="t('clientExt.source')" width="100">
             <template #default="{row}">
@@ -942,7 +942,8 @@ const repairLogCardFields = computed(() => [
 
 const ipCardFields = computed(() => [
   { label: 'ID', text: row => row.id ?? '-' },
-  { label: t('clientExt.clientId'), text: row => row.client_id ?? '-' },
+  { label: t('clientExt.clientEmail'), text: row => row.client_email || `#${row.client_id ?? '-'}` },
+  { label: t('clientExt.ipAddress'), text: row => row.ip_address || '-' },
   { label: t('clientExt.source'), text: row => row.source === 'auto' ? t('clientExt.autoAdded') : t('clientExt.manualAdded') },
   { label: t('clientExt.addedTime'), text: row => formatTime(row.created_at) },
 ])

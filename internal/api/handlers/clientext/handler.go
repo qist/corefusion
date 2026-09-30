@@ -13,6 +13,7 @@ import (
 	"corefusion/internal/service/clientauth"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -345,6 +346,7 @@ func (h *Handler) ResetSubscription(c *gin.Context) {
 }
 
 // AdminListAllIPWhitelists handles GET /api/v1/ip-whitelists (admin: list all client IP whitelists).
+// v2: 附带 client_email（管理端表格"客户"列显示邮箱而非裸 ID，见 ClientExtManagement 白名单 tab）。
 func (h *Handler) AdminListAllIPWhitelists(c *gin.Context) {
 	limit, offset := getLimitOffset(c)
 	clientIDStr := c.Query("client_id")
@@ -362,7 +364,35 @@ func (h *Handler) AdminListAllIPWhitelists(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "total": total})
+	// 批量取本页客户的邮箱（一次查询，避免 N+1）
+	ids := make([]int64, 0, len(items))
+	for _, it := range items {
+		ids = append(ids, it.ClientID)
+	}
+	emailByID := map[int64]string{}
+	if len(ids) > 0 {
+		var clients []entity.Client
+		if err := h.db.WithContext(c.Request.Context()).
+			Select("id, email").
+			Where("id IN ?", ids).
+			Find(&clients).Error; err == nil {
+			for _, cl := range clients {
+				emailByID[cl.ID] = cl.Email
+			}
+		}
+	}
+	out := make([]gin.H, 0, len(items))
+	for _, it := range items {
+		out = append(out, gin.H{
+			"id":           it.ID,
+			"client_id":    it.ClientID,
+			"client_email": emailByID[it.ClientID],
+			"ip_address":   it.IPAddress,
+			"source":       it.Source,
+			"created_at":   it.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out, "total": total})
 }
 
 // AdminUpdateIPWhitelistConfig handles PUT /api/v1/ip-whitelist-config (admin: update global IP whitelist config).

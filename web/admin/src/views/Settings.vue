@@ -663,6 +663,20 @@
             </el-form-item>
           </el-form>
         </el-card>
+
+        <!-- IP 黑名单（运维配置的面板级策略：拦截订阅拉取/门户登录注册等客户端面） -->
+        <el-card style="margin-top:20px">
+          <template #header><span>{{ t('settings.security.ipBlacklistTitle') }}</span></template>
+          <el-form label-width="180px" style="max-width:600px">
+            <el-form-item :label="t('settings.security.ipBlacklistList')">
+              <el-input v-model="ipBlacklistForm.raw" type="textarea" :rows="6" :placeholder="t('settings.security.ipBlacklistPlaceholder')" style="font-family:monospace" />
+              <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.security.ipBlacklistHint') }}</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="ipBlacklistSaving" @click="saveIPBlacklist">{{ t('common.save') }}</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
       </el-tab-pane>
 
       <!-- Currency Config -->
@@ -1744,6 +1758,27 @@ async function fetchJWTSecretStatus() {
     if (d) jwtSecretStatus.value = { configured: d.configured || false, preview: d.preview || '' }
   } catch (e) { /* ignore */ }
 }
+
+// IP 黑名单（运维配置的面板级策略：panel.ip_blacklist，30s 缓存生效）
+const ipBlacklistForm = ref({ raw: '' })
+const ipBlacklistSaving = ref(false)
+async function fetchIPBlacklist() {
+  try {
+    const d = await client.get('/system/settings', { params: { prefix: 'panel.ip_blacklist' } })
+    if (d && d.items && d.items.length > 0) {
+      ipBlacklistForm.value.raw = d.items[0].value || ''
+    }
+  } catch (e) { /* ignore */ }
+}
+async function saveIPBlacklist() {
+  ipBlacklistSaving.value = true
+  try {
+    await client.put('/system/settings/batch', {
+      items: [{ key: 'panel.ip_blacklist', value: ipBlacklistForm.value.raw || '' }]
+    })
+    ElMessage.success(t('common.success'))
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { ipBlacklistSaving.value = false }
+}
 async function regenerateJWTSecret() {
   try {
     await ElMessageBox.confirm(t('settings.security.regenerateJwtConfirm'), t('common.confirm'), { type: 'warning' })
@@ -1909,7 +1944,7 @@ const remoteRestoreCardFields = computed(() => [
   { label: 'Size', text: row => formatSize(row.size) },
 ])
 
-onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchIPBlacklist(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
 </script>
 
 <style scoped>

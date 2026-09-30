@@ -102,6 +102,10 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 	middleware.DefaultClientLoginLimiter().RecordSuccess(netutil.GetRealIP(c.Request))
+	if result.Client == nil { // 防御：自解封分支理论上会带最小 Client 信息，失败关闭
+		response.InternalError(c, "LOGIN_FAILED", "login returned no client info")
+		return
+	}
 	audit.Record(audit.Event{
 		Category: "auth", EventType: "client_login", Result: "success",
 		UserID: result.Client.ID, RemoteIP: netutil.GetRealIP(c.Request),
@@ -432,6 +436,20 @@ func ClientAuthMiddleware(svc *clientauth.Service) gin.HandlerFunc {
 		// 放行管理端 token（其 user_id 被当成 client_id）✗ → 管理端身份就能冒充任意客户端。
 		clientID, err := svc.ValidateClientAccessToken(parts[1])
 		if err != nil {
+			// 自助解封专用 token（typ=self_unban，登录解封分支签发）：
+			// **只能**访问 POST /self-unban，其它端点一律 401 —— 封禁账号
+			// 借专用 token 拿不到工单/资料等门户能力（M2 语义不破）。
+			if clientID2, serr := svc.ValidateSelfUnbanToken(parts[1]); serr == nil {
+				if c.Request.Method == http.MethodPost && strings.HasSuffix(c.Request.URL.Path, "/self-unban") {
+					c.Set("client_id", clientID2)
+					c.Next()
+					return
+				}
+				c.JSON(http.StatusForbidden, gin.H{"code": "SELF_UNBAN_TOKEN_SCOPE",
+					"message": "this token is only valid for self-unban"})
+				c.Abort()
+				return
+			}
 			c.JSON(http.StatusUnauthorized, gin.H{"code": "UNAUTHORIZED", "message": "invalid or expired token"})
 			c.Abort()
 			return

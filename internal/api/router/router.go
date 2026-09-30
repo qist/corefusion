@@ -1002,6 +1002,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		repository.NewClientSelfUnbanLogRepository(database),
 		clientRepo, systemSettingSvc,
 	)
+	// 自助解封补全：解封前校验订阅状态；解封后向核心重新下发凭据恢复流量；
+	// 登录侧据此对"超流自动封禁"账号放行受限解封分支。
+	selfUnbanSvcInst.SetSubRepo(subRepo)
+	if sharedUserSyncer != nil {
+		selfUnbanSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
+	clientauthSvcInst.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
 	clientExtH := clientextHandler.NewHandler(
@@ -3053,6 +3060,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 		// OAuth2 login routes (public — no auth required)
 		oauthSvcInst := oauthService.NewService(systemSettingSvc, repository.NewClientOAuthBindingRepository(database), clientRepo)
+		// OAuth 登录同样要过自解封判定（suspended 账号不得经 OAuth 绕过封禁，见密码登录同段注释）
+		oauthSvcInst.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 		oauthH := oauthHandler.NewHandler(oauthSvcInst, jwtSecret)
 		clientAuthGroup.GET("/oauth/providers", oauthH.ProvidersStatus)
 		clientAuthGroup.GET("/oauth/:provider", oauthH.Authorize)
@@ -3763,6 +3772,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		repository.NewClientSelfUnbanLogRepository(database),
 		clientRepo, systemSettingSvc,
 	)
+	// 门户引擎同上：自解封依赖注入（见主引擎同段注释）
+	selfUnbanSvcInst.SetSubRepo(subRepo)
+	if sharedUserSyncer != nil {
+		selfUnbanSvcInst.SetUserSyncer(sharedUserSyncer)
+	}
+	clientauthSvcInst.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo2 := repository.NewSubscriptionEndpointRepository(database)
 

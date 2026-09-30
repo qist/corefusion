@@ -179,6 +179,23 @@ func (h *Handler) Callback(c *gin.Context) {
 	// ⚠ 必须带**客户当前令牌版本** ✗：不带（tv=0）时 /me 校验 `tv != DB` 401 ✗
 	// → 门户"显示登录成功却被弹回登录页" ✗（与密码登录 GenerateAccessTokenWithVersion 同口径 ✓）。
 	tv := h.oauthSvc.ClientTokenVersion(c.Request.Context(), result.ClientID)
+
+	// ── 自助解封分支（与密码登录 service.go Login 同语义）──
+	// 账号 suspended 但符合自解封条件：**不签发**常规 token（M2 语义不破），
+	// 改签 typ=self_unban 专用 token（中间件只放行 POST /self-unban），
+	// 经 fragment 带回门户显示解封卡；解封成功后用户重新走 OAuth 登录即可。
+	if result.RequireSelfUnban {
+		suToken, terr := h.jwt.GenerateSelfUnbanToken(result.ClientID, result.Email, "client", tv)
+		if terr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})
+			return
+		}
+		c.Redirect(http.StatusFound, h.portalPath+"#require_self_unban=1"+
+			"&self_unban_token="+url.QueryEscape(suToken)+
+			"&self_unban_hint="+url.QueryEscape(result.SelfUnbanHint))
+		return
+	}
+
 	accessToken, err := h.jwt.GenerateAccessTokenWithVersion(result.ClientID, result.Email, "client", tv)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate tokens"})

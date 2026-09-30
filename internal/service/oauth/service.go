@@ -26,6 +26,9 @@ type Service struct {
 	settingSvc SettingStore
 	oAuthRepo  *repository.ClientOAuthBindingRepository
 	clientRepo *repository.ClientRepository
+	// selfUnbanCheck 由 SelfUnbanService.CanSelfUnban 注入（router 接线，避免循环依赖）。
+	// 与密码登录同一套判定：suspended + auto_quota + 功能开启 → 允许走解封分支。
+	selfUnbanCheck func(ctx context.Context, client *entity.Client) (bool, string)
 }
 
 // NewService creates a new OAuth service.
@@ -35,6 +38,11 @@ func NewService(settingSvc SettingStore, oAuthRepo *repository.ClientOAuthBindin
 		oAuthRepo:  oAuthRepo,
 		clientRepo: clientRepo,
 	}
+}
+
+// SetSelfUnbanChecker 注入自解封资格判定（与 clientauth.Service.SetSelfUnbanChecker 同源）。
+func (s *Service) SetSelfUnbanChecker(fn func(ctx context.Context, client *entity.Client) (bool, string)) {
+	s.selfUnbanCheck = fn
 }
 
 // OAuthUserInfo contains the user information returned by an OAuth provider.
@@ -54,6 +62,11 @@ type OAuthResult struct {
 	Provider       string
 	ProviderUserID string
 	ProviderName   string
+	// 自助解封分支（与密码登录 service.go Login 同语义）：账号 suspended 但符合
+	// 自解封条件时不报错、也不允许签发常规 token，由 handler 签发 typ=self_unban
+	// 专用 token 并跳回门户显示解封卡。
+	RequireSelfUnban bool
+	SelfUnbanHint    string
 }
 
 // getGitHubConfig creates an OAuth2 config for GitHub using settings from the database.
@@ -195,6 +208,10 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 		if err != nil {
 			return nil, fmt.Errorf("bound client not found: %w", err)
 		}
+		// ⚠ 与密码登录同口径：非 active 账号不得经 OAuth 拿到常规 token（M2 语义）。
+		if client.Status != "active" {
+			return s.nonActiveResult(ctx, client)
+		}
 		// Update name if changed
 		if existing.ProviderName != userInfo.Name {
 			existing.ProviderName = userInfo.Name
@@ -222,6 +239,10 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 	// 给 client 0 签 JWT ✗（真机现象：回调 200 但登录是坏的，绑定表 client_id 全是 0 ✓）。
 	existingClient, err := s.clientRepo.GetByEmail(ctx, email)
 	if err == nil && existingClient != nil && existingClient.ID > 0 {
+		// ⚠ 与密码登录同口径：非 active 账号不得经 OAuth 绑定+登录拿到常规 token（M2 语义）。
+		if existingClient.Status != "active" {
+			return s.nonActiveResult(ctx, existingClient)
+		}
 		// Email exists — bind OAuth to existing account
 		binding := &entity.ClientOAuthBinding{
 			ClientID:       existingClient.ID,
@@ -277,6 +298,26 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 		ProviderUserID: userInfo.ProviderUserID,
 		ProviderName:   userInfo.Name,
 	}, nil
+}
+
+// nonActiveResult 处理非 active 账号的 OAuth 登录：符合自解封条件（suspended+auto_quota+
+// 功能开启，与密码登录同一套 CanSelfUnban 判定）→ 返回解封分支结果；否则返回与
+// clientauth.ensureClientActive 同语义的失败关闭错误（到期引导续费，其余引导联系客服）。
+func (s *Service) nonActiveResult(ctx context.Context, client *entity.Client) (*OAuthResult, error) {
+	if client.Status == "suspended" && s.selfUnbanCheck != nil {
+		if ok, hint := s.selfUnbanCheck(ctx, client); ok {
+			return &OAuthResult{
+				ClientID:         client.ID,
+				Email:            client.Email,
+				RequireSelfUnban: true,
+				SelfUnbanHint:    hint,
+			}, nil
+		}
+	}
+	if client.SuspendReason == "auto_expired" {
+		return nil, fmt.Errorf("订阅已到期，请续费后重新登录")
+	}
+	return nil, fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
 }
 
 // fetchGitHubUserInfo fetches user info from GitHub REST API.

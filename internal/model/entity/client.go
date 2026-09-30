@@ -49,6 +49,12 @@ type Client struct {
 	PlanVariantID  int64  `gorm:"not null;default:0;index" json:"plan_variant_id"` // new: links to PlanVariant
 	SubscriptionID *int64 `gorm:"index" json:"subscription_id"`
 	Status         string `gorm:"size:32;not null;default:active" json:"status"`
+	// SuspendReason 封禁原因：决定能否自助解封。
+	//   "auto_quota"   — 流量超额自动封禁（可自解）
+	//   "auto_expired" — 订阅到期自动封禁（不可自解，续费才有意义）
+	//   "admin"        — 管理员手动封禁（不可自解）
+	//   空             — 升级前遗留数据，保守视为不可自解
+	SuspendReason string `gorm:"size:32;not null;default:''" json:"suspend_reason"`
 	// TokenVersion：登出/踢下线时 +1，使该客户端此前签发的**所有** token（含 refresh）立即失效
 	// （与 users.token_version 同一套机制；审计 v5 M8 的管理端方案，M8 遗留的客户端侧补齐）。
 	TokenVersion     int        `gorm:"not null;default:0" json:"-"`

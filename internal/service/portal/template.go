@@ -26,7 +26,14 @@ const defaultPortalHTML = `<!DOCTYPE html>
           </div>
           <h1 class="auth-title">{{ siteName }}</h1>
           <p class="auth-subtitle">{{ registrationEnabled ? t('auth.welcome_login') : t('auth.login_title') }}</p>
-          <el-tabs v-model="authTab" class="auth-tabs">
+          <!-- 自助解封卡 ✓：流量超额被自动封禁的账号登录时返回 require_self_unban，
+               凭登录签发的受限专用 token（仅可调 /self-unban）一键恢复，无需联系客服 -->
+          <div class="self-unban-card" v-if="selfUnban.visible">
+            <el-alert type="warning" :title="t('auth.self_unban_title')" :description="selfUnban.hint || t('auth.self_unban_desc')" show-icon :closable="false" style="margin-bottom:14px" />
+            <el-button type="warning" class="btn-block" :loading="selfUnban.loading" @click="handleSelfUnban" size="large">{{ t('auth.self_unban_btn') }}</el-button>
+            <el-button class="btn-block" text @click="selfUnban.visible = false">{{ t('auth.self_unban_cancel') }}</el-button>
+          </div>
+          <el-tabs v-if="!selfUnban.visible" v-model="authTab" class="auth-tabs">
             <el-tab-pane :label="t('auth.login')" name="login">
               <el-form :model="loginForm" class="auth-form">
                 <el-form-item>
@@ -3490,6 +3497,10 @@ var showPromoInput = ref(false) // promo code fold
         // Methods
         handleLogin: handleLogin,
         handleRegister: handleRegister,
+        // 自助解封卡 ✓（解封卡 HTML 在 auth 区域内编译，ref/方法必须透传进 authCtx，
+        // 否则渲染时 selfUnban undefined 直接报错 ✗）
+        selfUnban: selfUnban,
+        handleSelfUnban: handleSelfUnban,
         t: t,
 
         // OAuth（第三方登录 ✓：登录按钮按后台启用状态显隐 ✓，ref 透传保响应式 ✓）
@@ -3870,9 +3881,38 @@ var showPromoInput = ref(false) // promo code fold
       }).then(function() { done() }).catch(function() { done() })
     }
 
+    // ── 自助解封 ✓ ────────────────────────────────────────────────────────────
+    // 登录返回 require_self_unban（仅"流量超额自动封禁"+功能开启时）→ 显示解封卡，
+    // 点击后凭专用 token 调 POST /self-unban 恢复账号与节点凭据，成功后重新登录。
+    var selfUnban = ref({ visible: false, token: '', hint: '', loading: false })
+    var handleSelfUnban = function() {
+      selfUnban.value.loading = true
+      fetch('/api/v1/client-auth/self-unban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + selfUnban.value.token }
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d } }) })
+        .then(function(x) {
+          if (x.ok) {
+            ElMessage.success(t('auth.self_unban_success'))
+            selfUnban.value = { visible: false, token: '', hint: '', loading: false }
+          } else {
+            ElMessage.error((x.data && (x.data.message || x.data.error)) || t('auth.self_unban_failed'))
+          }
+        })
+        .catch(function() { ElMessage.error(t('auth.self_unban_failed')) })
+        .finally(function() { selfUnban.value.loading = false })
+    }
+
     var handleLogin = function() {
       loading.value = true
       api('POST', '/login', loginForm.value).then(function(res) {
+        // 自助解封分支：被封但可自解 → 不发常规 token，显示解封卡
+        if (res.require_self_unban) {
+          selfUnban.value = { visible: true, token: res.self_unban_token || '', hint: res.self_unban_hint || '', loading: false }
+          ElMessage.warning(res.self_unban_hint || t('auth.self_unban_desc'))
+          return
+        }
         token.value = res.access_token
         refreshToken.value = res.refresh_token
         localStorage.setItem('client_token', token.value)
@@ -3935,6 +3975,21 @@ var showPromoInput = ref(false) // promo code fold
     // 浏览器历史，query 串会把长效 JWT 散播到各处 ✗。
     var handleOAuthCallback = function() {
       var params = new URLSearchParams(window.location.hash.slice(1))
+      // 自助解封分支：OAuth 回调带 require_self_unban=1（账号 suspended 但符合自解封条件，
+      // 后端只发了 typ=self_unban 专用 token）→ 清理地址栏并显示解封卡，**不进入登录态**。
+      // 解封成功后用户重新点 OAuth 登录即可（此时账号已 active）。
+      if (params.get('require_self_unban') === '1') {
+        var suToken = params.get('self_unban_token') || ''
+        var suHint = params.get('self_unban_hint') || ''
+        window.history.replaceState({}, '', window.location.pathname)
+        if (suToken) {
+          selfUnban.value = { visible: true, token: suToken, hint: suHint, loading: false }
+          ElMessage.warning(suHint || t('auth.self_unban_desc'))
+        } else {
+          ElMessage.error(t('auth.self_unban_failed'))
+        }
+        return
+      }
       var at = params.get('access_token')
       if (!at) return
       var rt = params.get('refresh_token') || ''
@@ -5221,6 +5276,7 @@ return {
       isDark: isDark, registrationEnabled: registrationEnabled,
       loginForm: loginForm, registerForm: registerForm, client: client,
       handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,
+      selfUnban: selfUnban, handleSelfUnban: handleSelfUnban,
       toggleTheme: toggleTheme,
       // OAuth（第三方登录 ✓：登录页按启用 provider 显隐按钮 ✓）
       oauthProviders: oauthProviders, isOAuthEnabled: isOAuthEnabled, oauthLogin: oauthLogin,

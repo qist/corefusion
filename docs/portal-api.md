@@ -194,6 +194,12 @@
 | DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 删除（旧版别名） |
 | POST | `/api/v1/client-auth/self-unban` | 自助解封（按策略限制次数） |
 
+**自解封流程**：仅 `auto_quota`（流量超额自动封禁）+ 管理端 `self_unban.enabled` 开启时可用。
+登录（密码或 OAuth 回调）返回 `require_self_unban=true` + `self_unban_token`（typ=self_unban，
+15 分钟有效，**只能**调 `POST /self-unban`，访问其它端点一律 403/`SELF_UNBAN_TOKEN_SCOPE`）；
+门户据此显示解封卡，解封成功后重新登录。OAuth 回调经 URL fragment 下发
+`#require_self_unban=1&self_unban_token=..&self_unban_hint=..`。
+
 ## 16. 错误码摘录
 
 | code | 场景 |

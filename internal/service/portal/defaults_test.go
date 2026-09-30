@@ -25,6 +25,13 @@ func TestBuiltInTemplateDefaults(t *testing.T) {
 	if html, _ := region["html"].(string); !strings.Contains(html, "oauth-btn") {
 		t.Fatalf("默认 auth 区域缺少 OAuth 登录按钮 ✗")
 	}
+	// P3-3：默认 auth 区域（真正渲染的登录卡）必须自带解封卡 + ctx 透传 ✓
+	if html, _ := region["html"].(string); !strings.Contains(html, "self-unban-card") || !strings.Contains(html, `v-if="!selfUnban.visible"`) {
+		t.Fatalf("默认 auth 区域缺少自助解封卡 ✗")
+	}
+	if js, _ := region["js"].(string); !strings.Contains(js, "selfUnban: ctx.selfUnban") {
+		t.Fatalf("默认 auth 区域 JS 未透传 selfUnban/handleSelfUnban ✗")
+	}
 	if js, _ := region["js"].(string); !strings.Contains(js, "isOAuthEnabled: ctx.isOAuthEnabled") {
 		t.Fatalf("默认 auth 区域 JS 未透传 OAuth 能力 ✗")
 	}

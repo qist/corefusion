@@ -94,7 +94,7 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 			continue
 		}
 		if sub.SuspendOnQuotaExhausted == 1 && sub.ClientID != 0 {
-			s.blockClient(ctx, sub.ClientID)
+			s.blockClient(ctx, sub.ClientID, "auto_quota")
 		}
 	}
 
@@ -112,7 +112,7 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 			continue
 		}
 		if sub.ClientID != 0 {
-			s.blockClient(ctx, sub.ClientID)
+			s.blockClient(ctx, sub.ClientID, "auto_expired")
 		}
 	}
 
@@ -121,7 +121,8 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 
 // blockClient suspends the client (if still active) and removes its credentials from all
 // proxy cores, effectively cutting off traffic for the subscription.
-func (s *Service) blockClient(ctx context.Context, clientID int64) {
+// reason 会写入 clients.suspend_reason，决定该账号能否自助解封（auto_quota 可解）。
+func (s *Service) blockClient(ctx context.Context, clientID int64, reason string) {
 	client, err := s.clientRepo.GetByID(ctx, clientID)
 	if err != nil {
 		log.Printf("[quota-enforce] get client %d failed: %v", clientID, err)
@@ -133,6 +134,7 @@ func (s *Service) blockClient(ctx context.Context, clientID int64) {
 	now := time.Now()
 	client.Status = "suspended"
 	client.SuspendedAt = &now
+	client.SuspendReason = reason
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		log.Printf("[quota-enforce] suspend client %d failed: %v", clientID, err)
 		return

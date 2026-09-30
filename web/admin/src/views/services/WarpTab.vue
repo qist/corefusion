@@ -10,7 +10,7 @@
       </template>
 
       <!-- WARP config list -->
-      <el-table v-if="warpConfigs.length > 0" :data="warpConfigs" border style="width: 100%">
+      <el-table v-if="!isMobile && warpConfigs.length > 0" :data="warpConfigs" border style="width: 100%">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="core_type" :label="t('service.warp.coreType')" width="100">
           <template #default="{ row }">
@@ -43,6 +43,16 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else-if="warpConfigs.length > 0" :rows="warpConfigs" title-field="remark" :fields="warpCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
+            {{ t('service.warp.generateConfig') }}
+          </el-button>
+          <el-button size="small" type="danger" @click="handleDelete(row)">
+            {{ t('common.delete') }}
+          </el-button>
+        </template>
+      </MobileCards>
 
       <el-empty v-else :description="t('service.warp.notRegistered')" />
 
@@ -79,18 +89,31 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
+import { useIsMobile } from '../../composables/useIsMobile'
+import MobileCards from '../../components/MobileCards.vue'
 
 const props = defineProps({
   serverId: { type: Number, required: true }
 })
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const loading = ref(false)
 const registerLoading = ref(false)
 const warpConfigs = ref([])
 const currentConfig = ref('')
 const showRegisterDialog = ref(false)
 const registerForm = ref({ core_type: '', remark: '' })
+
+// 手机端卡片字段（与桌面表格列对应）
+const warpCardFields = computed(() => [
+  { label: t('service.warp.coreType'), text: (row) => row.core_type || '-' },
+  { label: t('service.warp.status'), text: (row) => row.status === 'active' ? t('service.warp.active') : t('service.warp.registered') },
+  { label: t('service.warp.addressIPv4'), text: (row) => row.address_ipv4 || '-' },
+  { label: t('service.warp.addressIPv6'), text: (row) => row.address_ipv6 || '-' },
+  { label: t('service.warp.endpoint'), text: (row) => row.endpoint || '-' },
+  { label: t('service.warp.registrationAt'), text: (row) => row.registration_at || '-' },
+])
 
 const warpBase = computed(() => `/node-servers/${props.serverId}/warp`)
 

@@ -63,7 +63,7 @@
         <el-empty v-else :description="t('chainProxy.noTopology')" />
       </div>
       <!-- Topology node detail table (below graph) -->
-      <el-table v-if="topoNodes.length > 0" :data="topoNodes" stripe size="small" style="margin-top:12px">
+      <el-table v-if="topoNodes.length > 0 && !isMobile" :data="topoNodes" stripe size="small" style="margin-top:12px">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" :label="t('common.name')" min-width="180" />
         <el-table-column prop="type" :label="t('common.type')" width="90">
@@ -71,18 +71,19 @@
             <el-tag size="small" :type="row.type==='external' ? 'warning' : 'primary'">{{ row.type }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="role" :label="t('chainProxy.role')" width="130">
+        <el-table-column :label="t('chainProxy.role')" width="130">
           <template #default="{row}">
             <el-tag size="small" :type="roleTagType(row.role)">{{ roleLabel(row.role) }}</el-tag>
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else-if="topoNodes.length > 0" :rows="topoNodes" title-field="name" :fields="topoNodeCardFields" />
     </el-card>
 
     <!-- Chain Links -->
     <el-card style="margin-bottom:16px">
       <template #header>{{ t('chainProxy.linksTitle') }}</template>
-      <el-table :data="links" stripe size="small" v-loading="linksLoading">
+      <el-table v-if="!isMobile" :data="links" stripe size="small" v-loading="linksLoading">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column :label="t('chainProxy.entryNode')" width="160">
           <template #default="{row}">{{ serverName(row.entry_server_id) }}</template>
@@ -114,13 +115,20 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="links" :title-fn="linkCardTitle" :fields="chainLinkCardFields">
+        <template #actions="{ row }">
+          <el-switch v-model="row.enabled" size="small" @change="toggleLink(row)" />
+          <el-button size="small" text @click="editLink(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" text @click="removeLink(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
 
 
     <!-- External Node Servers (§12.3) -->
     <el-card style="margin-top:16px">
       <template #header>{{ t('chainProxy.externalEntryServers') }}</template>
-      <el-table :data="externalServers" stripe size="small">
+      <el-table v-if="!isMobile" :data="externalServers" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column prop="name" :label="t('common.name')" min-width="160" />
         <el-table-column prop="hostname" :label="t('common.host')" width="160" />
@@ -137,6 +145,11 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="externalServers" title-field="name" :fields="extServerCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" type="danger" text @click="removeExtServer(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
 
     <!-- Chain Health Status -->
@@ -147,7 +160,7 @@
           <el-button text size="small" @click="fetchHealth" :icon="Refresh">{{ t('common.refresh') }}</el-button>
         </div>
       </template>
-      <el-table :data="healthData" stripe size="small" v-loading="healthLoading">
+      <el-table v-if="!isMobile" :data="healthData" stripe size="small" v-loading="healthLoading">
         <el-table-column prop="link_id" label="ID" width="60" />
         <el-table-column :label="t('chainProxy.entryNode')" min-width="160">
           <template #default="{row}">{{ serverName(row.entry_server_id) }}</template>
@@ -171,6 +184,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="healthData" :title-fn="healthCardTitle" :fields="healthCardFields" />
     </el-card>
 
     <!-- Create Chain Proxy Wizard Dialog (see design doc §12.2) -->
@@ -318,8 +332,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import * as chainApi from '../api/chainlink'
 import { listNodeServers, getInboundConfigs } from '../api/nodeServer'
+import { useIsMobile } from '../composables/useIsMobile'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 // ── Health helpers ──
 function healthTagType(status) {
@@ -614,6 +631,41 @@ function roleTagType(role) {
   }
   return map[role] || ''
 }
+
+// ── 移动端卡片字段（与桌面列一一对应）──
+const topoNodeCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('common.type'), text: (row) => row.type || '-' },
+  { label: t('chainProxy.role'), text: (row) => roleLabel(row.role) || '-' },
+])
+const linkCardTitle = (row) => `${serverName(row.entry_server_id)} → ${exitName(row)}`
+const chainLinkCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('chainProxy.entryNode'), text: (row) => serverName(row.entry_server_id) },
+  { label: t('chainProxy.exitNode'), text: (row) => exitName(row) },
+  { label: t('chainProxy.exitInboundCol'), text: (row) => row.exit_external_id ? '—' : linkExitInboundLabel(row) },
+  { label: t('chainProxy.exitTag'), text: (row) => row.exit_tag || '-' },
+  { label: t('chainProxy.priority'), text: (row) => String(row.priority ?? '-') },
+  { label: t('chainProxy.weight'), text: (row) => String(row.weight ?? '-') },
+  { label: t('chainProxy.sortOrder'), text: (row) => String(row.sort_order ?? '-') },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
+])
+const extServerCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('common.host'), text: (row) => row.hostname || '-' },
+  { label: t('chainProxy.region'), text: (row) => row.region || '-' },
+  { label: t('chainProxy.regionLabel'), text: (row) => row.region_label || '-' },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
+])
+const healthCardTitle = (row) => `${serverName(row.entry_server_id)} → ${row.exit_external_id ? extServerName(row.exit_external_id) : serverName(row.exit_server_id)}`
+const healthCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.link_id ?? '-') },
+  { label: t('chainProxy.entryNode'), text: (row) => serverName(row.entry_server_id) },
+  { label: t('chainProxy.exitNode'), text: (row) => row.exit_external_id ? extServerName(row.exit_external_id) : serverName(row.exit_server_id) },
+  { label: t('chainProxy.entryOnline'), text: (row) => row.entry_online ? '✓' : '✗' },
+  { label: t('chainProxy.exitOnline'), text: (row) => row.exit_online ? '✓' : '✗' },
+  { label: t('common.status'), text: (row) => healthLabel(row.status) || '-' },
+])
 
 // ── Fetch ──
 async function fetchAll() {

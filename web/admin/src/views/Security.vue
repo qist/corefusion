@@ -30,7 +30,7 @@
             </el-form-item>
           </el-form>
 
-          <el-table :data="auditList" v-loading="auditLoading" border stripe size="default">
+          <el-table v-if="!isMobile" :data="auditList" v-loading="auditLoading" border stripe size="default">
             <el-table-column prop="created_at" :label="t('common.time')" width="180" />
             <el-table-column prop="user" :label="t('security.user')" width="140" show-overflow-tooltip />
             <el-table-column prop="remote_ip" :label="t('security.remoteIp')" width="140" />
@@ -45,6 +45,12 @@
             </el-table-column>
             <el-table-column prop="detail" :label="t('security.detail')" min-width="220" show-overflow-tooltip />
           </el-table>
+          <MobileCards
+            v-else
+            :rows="auditList"
+            title-field="event_type"
+            :fields="auditCardFields"
+          />
 
           <div class="pager">
             <el-pagination
@@ -81,7 +87,7 @@
             </el-form-item>
           </el-form>
 
-          <el-table :data="nodeAuditList" v-loading="nodeAuditLoading" border stripe size="default">
+          <el-table v-if="!isMobile" :data="nodeAuditList" v-loading="nodeAuditLoading" border stripe size="default">
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column :label="t('nodeServer.serverId')" min-width="140">
               <template #default="{ row }">{{ row.server_name || row.server_id || '-' }}</template>
@@ -101,6 +107,12 @@
               <template #default="{ row }">{{ formatNodeAuditTime(row.created_at) }}</template>
             </el-table-column>
           </el-table>
+          <MobileCards
+            v-else
+            :rows="nodeAuditList"
+            title-field="action"
+            :fields="nodeAuditCardFields"
+          />
 
           <div class="pager">
             <el-pagination
@@ -120,14 +132,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   listAuditEvents, exportAuditEvents,
 } from '../api/security'
 import { listNodeAuditLogs, exportNodeAuditLogs, listNodeServers } from '../api/nodeServer'
+import { useIsMobile } from '../composables/useIsMobile'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const activeTab = ref('audit')
 
 const auditCategories = ['auth', 'subscription', 'access', 'security', 'order', 'client', 'system']
@@ -270,6 +285,25 @@ function formatNodeAuditTime(time) {
   if (isNaN(d)) return String(time)
   return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
+
+// 手机端卡片字段（与桌面表格列对应）
+const auditCardFields = computed(() => [
+  { label: t('common.time'), text: (row) => row.created_at || '-' },
+  { label: t('security.user'), text: (row) => row.user || '-' },
+  { label: t('security.remoteIp'), text: (row) => row.remote_ip || '-' },
+  { label: t('security.category'), text: (row) => row.category || '-' },
+  { label: t('security.result'), text: (row) => row.result || '-' },
+  { label: t('security.detail'), text: (row) => row.detail || '-' },
+])
+const nodeAuditCardFields = computed(() => [
+  { label: 'ID', text: (row) => (row.id ?? '-') },
+  { label: t('nodeServer.serverId'), text: (row) => row.server_name || row.server_id || '-' },
+  { label: t('nodeServer.adminId'), text: (row) => row.admin_name || row.admin_id || '-' },
+  { label: t('security.detail'), text: (row) => row.detail || '-' },
+  { label: t('security.remoteIp'), text: (row) => row.source_ip || '-' },
+  { label: t('common.status'), text: (row) => (row.success ? '✓' : '✗') },
+  { label: t('common.time'), text: (row) => formatNodeAuditTime(row.created_at) || '-' },
+])
 
 onMounted(() => { loadAudit(1) })
 

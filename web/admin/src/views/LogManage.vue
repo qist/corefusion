@@ -151,7 +151,7 @@
               </el-button>
             </div>
           </template>
-          <el-table :data="coreOutputList" stripe>
+          <el-table v-if="!isMobile" :data="coreOutputList" stripe>
             <el-table-column :label="t('common.name')" width="140">
               <template #default="{row}">
                 <span style="font-weight:600">{{ row.label }}</span>
@@ -180,6 +180,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="coreOutputList" title-field="label" :fields="coreOutputCardFields">
+            <template #actions="{ row }">
+              <el-input
+                v-model="row.cfg.capture_path"
+                size="small"
+                :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}.log`"
+                :disabled="row.cfg.mode !== 'stdout'"
+                style="max-width:300px"
+              />
+              <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Proxy Log Output Config -->
@@ -195,7 +207,7 @@
               </el-button>
             </div>
           </template>
-          <el-table :data="proxyOutputList" stripe>
+          <el-table v-if="!isMobile" :data="proxyOutputList" stripe>
             <el-table-column :label="t('common.name')" width="140">
               <template #default="{row}">
                 <span style="font-weight:600">{{ row.label }}</span>
@@ -224,6 +236,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="proxyOutputList" title-field="label" :fields="proxyOutputCardFields">
+            <template #actions="{ row }">
+              <el-input
+                v-model="row.cfg.capture_path"
+                size="small"
+                :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}-access.log`"
+                :disabled="row.cfg.mode !== 'stdout'"
+                style="max-width:300px"
+              />
+              <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Writer Status (local + remote) -->
@@ -236,7 +260,7 @@
               </el-button>
             </div>
           </template>
-          <el-table :data="writerStatuses" stripe size="small" style="width:100%">
+          <el-table v-if="!isMobile" :data="writerStatuses" stripe size="small" style="width:100%">
             <el-table-column prop="proxy_type" :label="t('common.type')" width="100">
               <template #default="{row}">
                 <el-tag size="small" :type="isCoreType(row.proxy_type) ? 'info' : 'success'">{{ row.proxy_type }}</el-tag>
@@ -293,6 +317,19 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="writerStatuses" title-field="proxy_type" :fields="writerCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" type="primary" @click="showStdoutViewer(row.proxy_type)">
+                <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
+              </el-button>
+              <el-button size="small" type="warning" @click="showWriterConfig(row.proxy_type)">
+                <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
+              </el-button>
+              <el-button size="small" @click="showWriterFiles(row.proxy_type)">
+                <el-icon><FolderOpened /></el-icon>
+              </el-button>
+            </template>
+          </MobileCards>
         </el-card>
       </el-tab-pane>
 
@@ -322,7 +359,7 @@
                 <el-button text size="small" @click="discoveredLogs = []">{{ t('common.close') }}</el-button>
               </div>
             </template>
-            <el-table :data="discPagedList" size="small" stripe>
+            <el-table v-if="!isMobile" :data="discPagedList" size="small" stripe>
               <el-table-column prop="source_type" :label="t('logManage.sourceType')" width="100">
                 <template #default="{row}">
                   <el-tag :type="sourceTagType(row.source_type)" size="small">{{ row.source_type }}</el-tag>
@@ -352,13 +389,29 @@
                 </template>
               </el-table-column>
             </el-table>
+            <MobileCards v-else :rows="discPagedList" title-field="log_path" :fields="discCardFields">
+              <template #actions="{ row }">
+                <el-button
+                  v-if="!row.has_policy"
+                  type="primary"
+                  size="small"
+                  :loading="addingPath === row.log_path"
+                  @click="handleAddFromDiscover(row)"
+                >
+                  <el-icon><Plus /></el-icon>{{ t('logManage.addToPolicy') }}
+                </el-button>
+                <el-tag v-else type="success" size="small">
+                  <el-icon><CircleCheck /></el-icon>{{ t('logManage.alreadyInPolicy') }}
+                </el-tag>
+              </template>
+            </MobileCards>
             <PaginationBar v-model:page="discPage" v-model:page-size="discSize" :total="discTotal" />
           </el-card>
         </el-collapse-transition>
 
         <!-- Policies Table -->
         <el-card>
-          <el-table :data="polPagedList" v-loading="loading" stripe>
+          <el-table v-if="!isMobile" :data="polPagedList" v-loading="loading" stripe>
             <el-table-column prop="id" :label="t('common.id')" width="60" />
             <el-table-column :label="t('logManage.nodeLabel')" width="100">
               <template #default>
@@ -408,6 +461,19 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="polPagedList" title-field="name" :fields="logPolicyCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" type="success" @click="showLogViewer(row)">
+                <el-icon><View /></el-icon>{{ t('logManage.viewLog') }}
+              </el-button>
+              <el-button size="small" type="primary" @click="handleRotate(row)" :loading="rotatingId === row.id">
+                <el-icon><RefreshRight /></el-icon>{{ t('logManage.rotate') }}
+              </el-button>
+              <el-button size="small" @click="showJobs(row)">{{ t('logManage.history') }}</el-button>
+              <el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
           <PaginationBar v-model:page="polPage" v-model:page-size="polSize" :total="polTotal" />
         </el-card>
       </el-tab-pane>
@@ -552,7 +618,7 @@
             </el-select>
           </div>
 
-          <el-table :data="cleanupFilteredRules" v-loading="cleanupLoading" stripe size="small">
+          <el-table v-if="!isMobile" :data="cleanupFilteredRules" v-loading="cleanupLoading" stripe size="small">
             <el-table-column prop="id" label="ID" width="50" />
             <el-table-column prop="category" :label="t('common.type')" width="100">
               <template #default="{row}">
@@ -605,6 +671,33 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="cleanupFilteredRules" title-field="display_name" :fields="cleanupCardFields">
+            <template #actions="{ row }">
+              <el-input-number
+                v-model="row.retain_days"
+                :min="1"
+                :max="365"
+                size="small"
+                style="width:100px"
+                @change="handleCleanupRuleChange(row)"
+              />
+              <el-select v-model="row.cleanup_cron" size="small" style="width:130px" @change="handleCleanupRuleChange(row)">
+                <el-option :label="t('logManage.cleanupInterval6h')" value="0 */6 * * *" />
+                <el-option :label="t('logManage.cleanupInterval12h')" value="0 */12 * * *" />
+                <el-option :label="t('logManage.cleanupIntervalDaily')" value="0 0 * * *" />
+                <el-option :label="t('logManage.cleanupIntervalWeekly')" value="0 0 * * 0" />
+              </el-select>
+              <el-switch v-model="row.enabled" @change="handleCleanupRuleChange(row)" />
+              <el-button
+                size="small"
+                type="warning"
+                :loading="cleanupTableLoading === row.table_name"
+                @click="handleCleanupTable(row)"
+              >
+                <el-icon><Delete /></el-icon>{{ t('logManage.cleanupTable') }}
+              </el-button>
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Scheduler Interval Config -->
@@ -625,7 +718,7 @@
               </div>
             </div>
           </template>
-          <el-table :data="schedulerItems" v-loading="schedulerLoading" stripe size="small">
+          <el-table v-if="!isMobile" :data="schedulerItems" v-loading="schedulerLoading" stripe size="small">
             <el-table-column prop="label" :label="t('logManage.schedulerColName')" min-width="280" />
             <el-table-column :label="t('logManage.schedulerColInterval')" width="180">
               <template #default="{row}">
@@ -645,6 +738,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="schedulerItems" title-field="label" :fields="schedulerCardFields">
+            <template #actions="{ row }">
+              <el-input-number
+                v-model="row.value"
+                :min="1"
+                :max="10080"
+                size="small"
+                style="width:120px"
+              />
+              <span style="font-size:12px;color:#909399">{{ t('logManage.schedulerUnitMin') }}</span>
+            </template>
+          </MobileCards>
           <div style="margin-top:8px;font-size:11px;color:#909399">
             {{ t('logManage.schedulerRestartHint') }}
           </div>
@@ -726,7 +831,7 @@
 
     <!-- Job History Dialog -->
     <el-dialog v-model="jobsVisible" :title="t('logManage.jobHistory')" width="760">
-      <el-table :data="jobPagedList" v-loading="jobsLoading" stripe size="small">
+      <el-table v-if="!isMobile" :data="jobPagedList" v-loading="jobsLoading" stripe size="small">
         <el-table-column prop="id" :label="t('common.id')" width="60" />
         <el-table-column prop="status" :label="t('common.status')" width="80">
           <template #default="{row}">
@@ -743,6 +848,7 @@
         </el-table-column>
         <el-table-column prop="error_message" :label="t('logManage.error')" min-width="150" show-overflow-tooltip />
       </el-table>
+      <MobileCards v-else :rows="jobPagedList" :title-fn="logJobCardTitle" :fields="logJobCardFields" />
       <PaginationBar v-model:page="jobPage" v-model:page-size="jobSize" :total="jobTotal" />
     </el-dialog>
 
@@ -807,7 +913,7 @@
 
     <!-- Writer Files Dialog -->
     <el-dialog v-model="writerFilesVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerFiles')" width="660">
-      <el-table :data="wfPagedList" stripe size="small">
+      <el-table v-if="!isMobile" :data="wfPagedList" stripe size="small">
         <el-table-column prop="name" :label="t('common.name')" min-width="200" show-overflow-tooltip />
         <el-table-column prop="size" :label="t('logManage.maxSizeMB')" width="120">
           <template #default="{row}">{{ formatBytes(row.size) }}</template>
@@ -816,6 +922,7 @@
           <template #default="{row}">{{ formatTime(row.modified) }}</template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="wfPagedList" title-field="name" :fields="writerFileCardFields" />
       <PaginationBar v-model:page="wfPage" v-model:page-size="wfSize" :total="wfTotal" />
       <div v-if="writerFiles.length === 0" class="log-empty">{{ t('logManage.writerNoFiles') }}</div>
     </el-dialog>
@@ -860,9 +967,12 @@ import {
 import * as logApi from '../api/logManage'
 import { listNodeServers } from '../api/nodeServer'
 import { useClientPagination } from '../composables/useClientPagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 // ──────────── Active Tab (persisted via URL query) ────────────
 const route = useRoute()
@@ -1049,6 +1159,57 @@ function formatTime(ts) {
   if (!ts) return ''
   return new Date(ts).toLocaleString()
 }
+
+// ──────────── 移动端卡片字段 ────────────
+const coreOutputCardFields = computed(() => [
+  { label: t('logManage.mode'), text: (row) => modeLabel(row.cfg.mode) + ' · ' + t('logManage.modeControlledByProtocol') },
+])
+const proxyOutputCardFields = computed(() => [
+  { label: t('logManage.mode'), text: (row) => modeLabel(row.cfg.mode) + ' · ' + t('logManage.modeControlledByProtocol') },
+])
+const writerCardFields = computed(() => [
+  { label: t('common.status'), text: (row) => row.mode === 'off' ? t('logManage.modeOff') : row.mode === 'file' ? t('logManage.modeFile') : (row.active && !row.paused) ? t('logManage.writerActive') : row.paused ? t('logManage.writerPaused') : t('common.disabled') },
+  { label: t('logManage.mode'), text: (row) => modeLabel(row.mode) },
+  { label: t('logManage.managed'), text: (row) => row.managed ? t('common.yes') : t('common.no') },
+  { label: t('logManage.filePath'), text: (row) => row.mode === 'off' ? '-' : (row.file_path || '-') },
+  { label: t('logManage.maxSizeMB'), text: (row) => (row.max_size_mb || 100) + ' MB' },
+  { label: t('logManage.retainDays'), text: (row) => row.retain_days ?? '-' },
+  { label: t('logManage.compress'), text: (row) => row.compress ? t('common.yes') : t('common.no') },
+])
+const discCardFields = computed(() => [
+  { label: t('logManage.sourceType'), text: (row) => row.source_type || '-' },
+  { label: t('logManage.domain'), text: (row) => row.domain || '-' },
+  { label: t('logManage.logFormat'), text: (row) => row.log_format || '-' },
+])
+const logPolicyCardFields = computed(() => [
+  { label: t('logManage.nodeLabel'), text: () => selectedServerName.value },
+  { label: t('logManage.sourceType'), text: (row) => row.source_type || '-' },
+  { label: t('logManage.logPath'), text: (row) => row.log_path || '-' },
+  { label: t('common.status'), text: (row) => row.enabled ? t('common.enabled') : t('common.disabled') },
+  { label: t('logManage.maxSizeMB'), text: (row) => row.max_size ? formatBytes(row.max_size) : t('common.unlimited') },
+  { label: t('logManage.retainDays'), text: (row) => row.retain_days ?? '-' },
+  { label: t('logManage.compress'), text: (row) => row.compress ? t('common.yes') : t('common.no') },
+])
+const cleanupCardFields = computed(() => [
+  { label: t('common.type'), text: (row) => row.category || '-' },
+  { label: t('logManage.cleanupColDbTable'), text: (row) => row.table_name || '-' },
+])
+const schedulerCardFields = computed(() => [
+  { label: t('logManage.schedulerColDefault'), text: (row) => row.default != null ? row.default + ' ' + t('logManage.schedulerUnitMin') : '-' },
+])
+const logJobCardTitle = (row) => row.id != null ? '#' + row.id : ''
+const logJobCardFields = computed(() => [
+  { label: t('common.status'), text: (row) => row.status || '-' },
+  { label: t('logManage.rotatedFiles'), text: (row) => row.rotated_files ?? '-' },
+  { label: t('logManage.cleanedFiles'), text: (row) => row.cleaned_files ?? '-' },
+  { label: t('logManage.freedSpace'), text: (row) => formatBytes(row.freed_bytes) },
+  { label: t('logManage.startedAt'), text: (row) => row.started_at ? formatTime(row.started_at) : '-' },
+  { label: t('logManage.error'), text: (row) => row.error_message || '-' },
+])
+const writerFileCardFields = computed(() => [
+  { label: t('logManage.maxSizeMB'), text: (row) => formatBytes(row.size) },
+  { label: t('logManage.startedAt'), text: (row) => row.modified ? formatTime(row.modified) : '-' },
+])
 
 // ═══════════════ Data Fetching ═══════════════
 

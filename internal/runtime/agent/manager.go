@@ -107,6 +107,15 @@ type NodeServerManager struct {
 
 	// GeoRule syncer: pushes geo rule files (geoip.dat, geosite.dat) to Agent on reconnect
 	geoRuleSyncer GeoRuleSyncer
+
+	// IP 黑名单提供者：返回当前面板级黑名单条目（panel.ip_blacklist 解析后）。
+	// Agent 重连时经 SetIPBlacklist 重新下发（节点重装/重启后内核规则丢失 → 补推）。
+	ipBlacklistProvider func() []string
+}
+
+// SetIPBlacklistProvider 注入黑名单条目提供者（router 接线：读 panel.ip_blacklist 并解析）。
+func (m *NodeServerManager) SetIPBlacklistProvider(p func() []string) {
+	m.ipBlacklistProvider = p
 }
 
 // WAFSyncer syncs WAF files (rules, configs, domain.json) to a remote Agent.
@@ -510,6 +519,31 @@ func (m *NodeServerManager) ApplyLimits(ctx context.Context, serverID int64, req
 		return m.localAgent.ApplyLimits(ctx, req)
 	}
 	return m.ApplyLimitsOnServer(ctx, serverID, req)
+}
+
+// SetIPBlacklist 把面板级 IP 黑名单下发到节点（entries 为空 = 清空）。
+// 本地节点 in-process 直调；远程节点走 set_ip_blacklist 同步命令（等 Agent 回执）。
+func (m *NodeServerManager) SetIPBlacklist(ctx context.Context, serverID int64, entries []string) error {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.SetIPBlacklist(ctx, entries)
+	}
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_SetIpBlacklist{
+			SetIpBlacklist: &agentpb.SetIPBlacklistRequest{Entries: entries},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("%s", result.Error)
+	}
+	return nil
 }
 
 // GetStatusForServer queries the status of a server's cores.
@@ -1752,6 +1786,19 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 				log.Printf("[NodeServerManager] geo rule sync to server %d on connect failed: %v", serverID, err)
 			} else {
 				log.Printf("[NodeServerManager] geo rule sync to server %d on connect: success", serverID)
+			}
+		}
+
+		// 7. Push panel-level IP blacklist to the remote node.
+		//    节点重装/重启后内核 nft 规则丢失 → 重连时补推（与设置变更推送同一条链路）。
+		if m.ipBlacklistProvider != nil && serverID != m.localServerID {
+			entries := m.ipBlacklistProvider()
+			blCtx, blCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer blCancel()
+			if err := m.SetIPBlacklist(blCtx, serverID, entries); err != nil {
+				log.Printf("[NodeServerManager] IP blacklist push to server %d on connect failed: %v", serverID, err)
+			} else {
+				log.Printf("[NodeServerManager] IP blacklist push to server %d on connect: %d entries", serverID, len(entries))
 			}
 		}
 	}()

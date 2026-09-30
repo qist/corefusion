@@ -288,6 +288,22 @@ var caService *agent.CertificateAuthority
 // the HTTP API (status queries, commands) use the same instance.
 var sharedNodeMgr *agent.NodeServerManager
 
+// parseIPBlacklistEntries 解析 panel.ip_blacklist 设置原文为条目列表
+// （每行/逗号分隔，支持单 IP 与 CIDR，# 注释；与 middleware 黑名单解析同语义）。
+func parseIPBlacklistEntries(raw string) []string {
+	var entries []string
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ' ' || r == ';'
+	}) {
+		entry := strings.TrimSpace(part)
+		if entry == "" || strings.HasPrefix(entry, "#") {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 // SetCAService sets the CA service for the router (called from main.go before NewWithFullConfig).
 func SetCAService(ca *agent.CertificateAuthority) {
 	caService = ca
@@ -1132,6 +1148,28 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 	// 客户限速变更 → 推送节点立即生效（Agent action=update）
 	clientSvcInst.SetRateLimitUpdater(rateLimitSvcInst)
+
+	// ── 面板级 IP 黑名单下发（节点核心 nft 拦截，与面板面中间件互补）──
+	// 提供者：读取并解析 panel.ip_blacklist（Agent 重连补推用，见 manager.go on-connect 步骤 7）
+	if sharedNodeMgr != nil {
+		sharedNodeMgr.SetIPBlacklistProvider(func() []string {
+			raw, _ := systemSettingSvc.GetByKey(context.Background(), "panel.ip_blacklist")
+			return parseIPBlacklistEntries(raw)
+		})
+	}
+	// 设置保存钩子：panel.ip_blacklist 变更 → 异步同步到所有启用节点（含本地节点）
+	systemH.SetIPBlacklistChangeHook(func(ctx context.Context, raw string) {
+		entries := parseIPBlacklistEntries(raw)
+		rateLimitSvcInst.SyncIPBlacklistToAll(ctx, nodeServerRepoForSync, entries)
+	})
+	// 面板启动兜底：本地节点没有 on-connect 事件、启动早于远程节点连接
+	// → 延迟推一次全节点（重复下发幂等，Agent 端 flush+重写集合）。
+	go func() {
+		time.Sleep(30 * time.Second)
+		raw, _ := systemSettingSvc.GetByKey(context.Background(), "panel.ip_blacklist")
+		rateLimitSvcInst.SyncIPBlacklistToAll(context.Background(), nodeServerRepoForSync, parseIPBlacklistEntries(raw))
+	}()
+
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	rateLimitH := rateLimitHandler.NewHandler(rateLimitSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)

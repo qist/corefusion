@@ -126,6 +126,8 @@ type NodeOperator interface {
 	IsOnline(serverID int64) bool
 	// GetRateLimitStatus 查询节点**实时**限速状态与能力探测（内核/依赖是否支持）。
 	GetRateLimitStatus(ctx context.Context, serverID int64, subID int64) (*dto.AgentRateLimitStatus, error)
+	// SetIPBlacklist 下发面板级 IP 黑名单（空列表 = 清空）。
+	SetIPBlacklist(ctx context.Context, serverID int64, entries []string) error
 }
 
 // NewService creates a new rate limit service.
@@ -391,6 +393,32 @@ func (s *Service) PushSubscriptionRateUpdate(ctx context.Context, subID int64, m
 // NodeServerLister lists node servers for batch operations.
 type NodeServerLister interface {
 	ListEnabled(ctx context.Context) ([]entity.NodeServer, error)
+}
+
+// SyncIPBlacklistToAll 把面板级 IP 黑名单同步到**所有启用节点**（含本地节点）。
+// 运维在设置里变更 panel.ip_blacklist 后调用；entries 为空 = 全节点清空。
+// 单节点失败只记日志不中断（离线节点的 on-connect 补推兜底）。
+func (s *Service) SyncIPBlacklistToAll(ctx context.Context, lister NodeServerLister, entries []string) (pushed, failed int) {
+	if s.nodeOp == nil || lister == nil {
+		return 0, 0
+	}
+	servers, err := lister.ListEnabled(ctx)
+	if err != nil {
+		log.Printf("[RateLimitService] list servers for blacklist sync failed: %v", err)
+		return 0, 0
+	}
+	for _, server := range servers {
+		if err := s.nodeOp.SetIPBlacklist(ctx, server.ID, entries); err != nil {
+			log.Printf("[RateLimitService] IP blacklist push to server %d (%s) failed: %v", server.ID, server.Name, err)
+			failed++
+			continue
+		}
+		pushed++
+	}
+	if pushed > 0 || failed > 0 {
+		log.Printf("[RateLimitService] IP blacklist synced to %d node(s), %d failed (%d entries)", pushed, failed, len(entries))
+	}
+	return pushed, failed
 }
 
 // PushIPAssociationToAll pushes an IP association to all enabled server Agents.

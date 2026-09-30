@@ -444,6 +444,12 @@ func (a *LocalAgent) applyLimitsViaManager(ctx context.Context, req *agentpb.App
 	}
 }
 
+// SetIPBlacklist 应用面板级 IP 黑名单到本机 nft（同步执行，nft 命令毫秒级）。
+// 不依赖 ratelimit.Manager 初始化 —— 限速未启用的节点同样要能拦黑名单。
+func (a *LocalAgent) SetIPBlacklist(ctx context.Context, entries []string) error {
+	return ratelimit.ApplyIPBlacklist(entries)
+}
+
 // ============================================================
 // 同步查询操作 — 纯读，不走 TaskQueue
 // ============================================================

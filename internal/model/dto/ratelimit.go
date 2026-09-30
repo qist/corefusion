@@ -35,6 +35,10 @@ type RateLimitConfigVO struct {
 	NftAvailable       bool   `json:"nft_available"`
 	TcAvailable        bool   `json:"tc_available"`
 	IfbAvailable       bool   `json:"ifb_available"`
+	// 内核/conntrack 能力（Agent 实时探测，非 DB 静态值）
+	ConnTrackAvailable bool   `json:"conntrack_available"`
+	KernelSupported    bool   `json:"kernel_supported"`
+	UnsupportedReason  string `json:"unsupported_reason"`
 	ActiveEntries      int    `json:"active_entries"`
 	CreatedAt          string `json:"created_at"`
 	UpdatedAt          string `json:"updated_at"`
@@ -51,8 +55,48 @@ type RateLimitEntryVO struct {
 }
 
 // RateLimitAvailability represents the backend availability.
+// 全部来自 Agent 的**实时探测**（功能探测 + 内核版本 + conntrack），不是 DB 静态值。
 type RateLimitAvailability struct {
-	NftAvailable bool `json:"nft_available"`
-	TcAvailable  bool `json:"tc_available"`
-	IfbAvailable bool `json:"ifb_available"`
+	NftAvailable       bool   `json:"nft_available"`
+	TcAvailable        bool   `json:"tc_available"`
+	IfbAvailable       bool   `json:"ifb_available"`
+	ConnTrackAvailable bool   `json:"conntrack_available"`
+	KernelSupported    bool   `json:"kernel_supported"`
+	UnsupportedReason  string `json:"unsupported_reason"`
+}
+
+// OverallSupported 限速功能整体可用（下载/上传限速的最小依赖：nft + tc）。
+func (a RateLimitAvailability) OverallSupported() bool {
+	return a.NftAvailable && a.TcAvailable
+}
+
+// ConnLimitSupported 账号并发计数可用（nft 动态集合 + ct count + conntrack）。
+func (a RateLimitAvailability) ConnLimitSupported() bool {
+	return a.NftAvailable && a.ConnTrackAvailable && a.KernelSupported
+}
+
+// AgentRateLimitStatus is the agent's live rate limit status
+// (get_rate_limit_status 同步查询的返回：活跃条目 + 实时能力探测)。
+// ⚠ Agent 端 sendSyncResult 的是**扁平** map（能力字段在顶层，不在 availability 里）。
+type AgentRateLimitStatus struct {
+	Entries []RateLimitEntryVO `json:"entries"`
+
+	NftAvailable       bool   `json:"nft_available"`
+	TcAvailable        bool   `json:"tc_available"`
+	IfbAvailable       bool   `json:"ifb_available"`
+	ConnTrackAvailable bool   `json:"conntrack_available"`
+	KernelSupported    bool   `json:"kernel_supported"`
+	UnsupportedReason  string `json:"unsupported_reason"`
+}
+
+// Availability 把扁平字段装配成 RateLimitAvailability。
+func (s *AgentRateLimitStatus) Availability() RateLimitAvailability {
+	return RateLimitAvailability{
+		NftAvailable:       s.NftAvailable,
+		TcAvailable:        s.TcAvailable,
+		IfbAvailable:       s.IfbAvailable,
+		ConnTrackAvailable: s.ConnTrackAvailable,
+		KernelSupported:    s.KernelSupported,
+		UnsupportedReason:  s.UnsupportedReason,
+	}
 }

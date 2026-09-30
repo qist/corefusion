@@ -713,12 +713,19 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		req := c.GetRateLimitStatus
 		mgr := a.localAgent.GetRateLimitManager()
 		if mgr == nil {
+			// 管理器未初始化（限速从未启用）：仍然返回**真实能力探测**结果，
+			// UI 才能显示"该节点支持/不支持限流"，而不是永远 false。
+			// 注意 err 传 nil —— 传 err 会走 TASK_FAILED，面板拿不到 DetailJson。
+			avail := ratelimit.DetectAvailability()
 			sendSyncResult("get_rate_limit_status", map[string]interface{}{
-				"entries":       []interface{}{},
-				"nft_available": false,
-				"tc_available":  false,
-				"ifb_available": false,
-			}, fmt.Errorf("rate limit manager not configured"))
+				"entries":             []interface{}{},
+				"nft_available":       avail.NftAvailable,
+				"tc_available":        avail.TcAvailable,
+				"ifb_available":       avail.IfbAvailable,
+				"conntrack_available": avail.ConnTrackAvailable,
+				"kernel_supported":    avail.KernelSupported,
+				"unsupported_reason":  avail.UnsupportedReason,
+			}, nil)
 			break
 		}
 		entries := mgr.GetStatus(req.SubscriptionId)
@@ -747,10 +754,13 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			})
 		}
 		sendSyncResult("get_rate_limit_status", map[string]interface{}{
-			"entries":       jsonEntries,
-			"nft_available": avail.NftAvailable,
-			"tc_available":  avail.TcAvailable,
-			"ifb_available": avail.IfbAvailable,
+			"entries":             jsonEntries,
+			"nft_available":       avail.NftAvailable,
+			"tc_available":        avail.TcAvailable,
+			"ifb_available":       avail.IfbAvailable,
+			"conntrack_available": avail.ConnTrackAvailable,
+			"kernel_supported":    avail.KernelSupported,
+			"unsupported_reason":  avail.UnsupportedReason,
 		}, nil)
 
 	case *agentpb.PanelCommand_ApplyLimits:

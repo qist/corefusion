@@ -21,7 +21,9 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/peer"
 
+	"corefusion/internal/model/dto"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/store/repository"
 )
 
@@ -540,6 +542,77 @@ func (m *NodeServerManager) AlterUsersOnServer(ctx context.Context, serverID int
 		},
 	}
 	return m.SendCommand(ctx, serverID, cmd)
+}
+
+// GetRateLimitStatus 实现 ratelimitsvc.NodeOperator 接口（见 GetRateLimitStatusOnServer）。
+func (m *NodeServerManager) GetRateLimitStatus(ctx context.Context, serverID int64, subID int64) (*dto.AgentRateLimitStatus, error) {
+	return m.GetRateLimitStatusOnServer(ctx, serverID, subID)
+}
+
+// GetRateLimitStatusOnServer queries a server's **live** rate limit status
+// (active entries + real-time capability probe: nft/tc/ifb binaries, kernel
+// dynamic-set/ct-count support, conntrack). Falls back to detection-only when
+// the rate limit manager was never initialized. Local servers query in-process;
+// remote servers go through the get_rate_limit_status sync command.
+func (m *NodeServerManager) GetRateLimitStatusOnServer(ctx context.Context, serverID int64, subID int64) (*dto.AgentRateLimitStatus, error) {
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		mgr := m.localAgent.GetRateLimitManager()
+		var avail ratelimit.Availability
+		var entries []ratelimit.RateLimitEntry
+		if mgr != nil {
+			avail = mgr.IsAvailable()
+			entries = mgr.GetStatus(subID)
+		} else {
+			avail = ratelimit.DetectAvailability()
+		}
+		return toAgentRateLimitStatus(entries, avail), nil
+	}
+
+	// Remote: sync command over the heartbeat stream
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_GetRateLimitStatus{
+			GetRateLimitStatus: &agentpb.GetRateLimitStatusRequest{SubscriptionId: subID},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 15*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp dto.AgentRateLimitStatus
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal get_rate_limit_status response: %w", err)
+	}
+	return &resp, nil
+}
+
+func toAgentRateLimitStatus(entries []ratelimit.RateLimitEntry, avail ratelimit.Availability) *dto.AgentRateLimitStatus {
+	status := &dto.AgentRateLimitStatus{
+		Entries:            make([]dto.RateLimitEntryVO, 0, len(entries)),
+		NftAvailable:       avail.NftAvailable,
+		TcAvailable:        avail.TcAvailable,
+		IfbAvailable:       avail.IfbAvailable,
+		ConnTrackAvailable: avail.ConnTrackAvailable,
+		KernelSupported:    avail.KernelSupported,
+		UnsupportedReason:  avail.UnsupportedReason,
+	}
+	for _, e := range entries {
+		status.Entries = append(status.Entries, dto.RateLimitEntryVO{
+			SubscriptionID: e.SubscriptionID,
+			IP:             e.IP,
+			Mark:           e.Mark,
+			MaxDownMbps:    e.MaxDownMbps,
+			MaxUpMbps:      e.MaxUpMbps,
+			LastSeen:       e.LastSeen,
+		})
+	}
+	return status
 }
 
 // ApplyLimitsOnServer sends an ApplyLimits command to a remote server's Agent via stream.

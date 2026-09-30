@@ -18,8 +18,8 @@
       <!-- Enable/Disable -->
       <el-form :model="form" label-width="160px" style="max-width:700px">
         <el-form-item :label="t('rateLimit.enableLabel')">
-          <el-switch v-model="form.enabled" active-text="" inactive-text="" />
-          <span style="margin-left:12px;font-size:12px;color:#909399">{{ t('rateLimit.enableHint') }}</span>
+          <el-switch v-model="form.enabled" active-text="" inactive-text="" :disabled="!overallSupported" />
+          <span style="margin-left:12px;font-size:12px;color:#909399">{{ overallSupported ? t('rateLimit.enableHint') : t('rateLimit.enableBlockedHint') }}</span>
         </el-form-item>
 
         <el-divider content-position="left">{{ t('rateLimit.networkConfig') }}</el-divider>
@@ -81,17 +81,39 @@
       <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:8px">
           <el-tag :type="status.nft_available ? 'success' : 'danger'" size="small">nftables</el-tag>
-          <span style="font-size:13px">{{ status.nft_available ? t('rateLimit.available') : t('rateLimit.unavailable') }}</span>
+          <span style="font-size:13px">{{ status.nft_available ? t('rateLimit.available') : t('rateLimit.notSupported') }}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <el-tag :type="status.tc_available ? 'success' : 'danger'" size="small">tc (htb)</el-tag>
-          <span style="font-size:13px">{{ status.tc_available ? t('rateLimit.available') : t('rateLimit.unavailable') }}</span>
+          <span style="font-size:13px">{{ status.tc_available ? t('rateLimit.available') : t('rateLimit.notSupported') }}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <el-tag :type="status.ifb_available ? 'success' : 'danger'" size="small">IFB</el-tag>
-          <span style="font-size:13px">{{ status.ifb_available ? t('rateLimit.available') : t('rateLimit.unavailable') }}</span>
+          <span style="font-size:13px">{{ status.ifb_available ? t('rateLimit.available') : t('rateLimit.notSupported') }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <el-tag :type="status.conntrack_available ? 'success' : 'danger'" size="small">{{ t('rateLimit.conntrackLabel') }}</el-tag>
+          <span style="font-size:13px">{{ status.conntrack_available ? t('rateLimit.available') : t('rateLimit.notSupported') }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <el-tag :type="status.kernel_supported ? 'success' : 'danger'" size="small">{{ t('rateLimit.kernelLabel') }}</el-tag>
+          <span style="font-size:13px">{{ status.kernel_supported ? t('rateLimit.available') : t('rateLimit.notSupported') }}</span>
         </div>
       </div>
+
+      <!-- 不支持的原因 + 启用拦截 -->
+      <el-alert
+        v-if="!overallSupported"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom:16px"
+      >
+        <template #title>{{ t('rateLimit.enableBlockedHint') }}</template>
+        <div v-if="status.unsupported_reason" style="font-size:12px">
+          {{ t('rateLimit.unsupportedReason') }}: {{ status.unsupported_reason }}
+        </div>
+      </el-alert>
 
       <!-- Active Entries -->
       <el-divider content-position="left">{{ t('rateLimit.activeEntries') }} ({{ activeEntries.length }})</el-divider>
@@ -132,10 +154,16 @@ const { isMobile } = useIsMobile()
 const loading = ref(false)
 const saving = ref(false)
 const config = ref(null)
-const status = ref({ nft_available: false, tc_available: false, ifb_available: false })
+const status = ref({
+  nft_available: false, tc_available: false, ifb_available: false,
+  conntrack_available: false, kernel_supported: false, unsupported_reason: '',
+})
 const activeEntries = ref([])
 const interfaceOptions = ref([])
 const interfacesLoading = ref(false)
+
+// 限速整体可用 = nft + tc（上传限速还依赖 IFB；账号并发计数另需 conntrack + 内核支持）
+const overallSupported = computed(() => !!(status.value.nft_available && status.value.tc_available))
 
 const form = ref({
   enabled: false,
@@ -168,6 +196,9 @@ async function fetchConfig() {
       nft_available: data.nft_available || false,
       tc_available: data.tc_available || false,
       ifb_available: data.ifb_available || false,
+      conntrack_available: data.conntrack_available || false,
+      kernel_supported: data.kernel_supported || false,
+      unsupported_reason: data.unsupported_reason || '',
     }
   } catch {
     config.value = null

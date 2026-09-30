@@ -18,11 +18,20 @@ type Service struct {
 	nodeOp NodeOperator
 }
 
+// ErrNodeUnsupported 表示节点的内核/依赖不支持限流（启用被拒绝时返回，Handler 映射为 400）。
+type ErrNodeUnsupported struct{ Reason string }
+
+func (e *ErrNodeUnsupported) Error() string {
+	return "node does not support rate limiting: " + e.Reason
+}
+
 // NodeOperator is a minimal interface for sending commands to nodes.
 type NodeOperator interface {
 	AssociateIP(ctx context.Context, serverID int64, req *agentpb.AssociateIPRequest) error
 	ApplyLimits(ctx context.Context, serverID int64, req *agentpb.ApplyLimitsRequest) error
 	IsOnline(serverID int64) bool
+	// GetRateLimitStatus 查询节点**实时**限速状态与能力探测（内核/依赖是否支持）。
+	GetRateLimitStatus(ctx context.Context, serverID int64, subID int64) (*dto.AgentRateLimitStatus, error)
 }
 
 // NewService creates a new rate limit service.
@@ -37,11 +46,12 @@ func (s *Service) SetNodeOperator(op NodeOperator) {
 
 // GetConfig retrieves the rate limit config for a server.
 // If no config exists, returns a default (disabled) config.
+// Availability 字段来自 Agent **实时探测**（在线时；离线/查询失败回退 DB 值）。
 func (s *Service) GetConfig(ctx context.Context, serverID int64) (*dto.RateLimitConfigVO, error) {
 	config, err := s.repo.GetByServerID(ctx, serverID)
 	if err != nil {
 		// No config found — return default
-		return &dto.RateLimitConfigVO{
+		config = &entity.RateLimitConfig{
 			ServerID:           serverID,
 			Enabled:            false,
 			Iface:              "",
@@ -51,9 +61,24 @@ func (s *Service) GetConfig(ctx context.Context, serverID int64) (*dto.RateLimit
 			IdleTTLSeconds:     3600,
 			CleanupInterval:    300,
 			BackendType:        "nft_tc",
-		}, nil
+		}
 	}
-	return configToVO(config), nil
+	vo := configToVO(config)
+
+	// 实时探测：DB 里的 availability 是静态值（从不刷新），不能作为"支持/不支持"依据
+	if s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
+			avail := live.Availability()
+			vo.NftAvailable = avail.NftAvailable
+			vo.TcAvailable = avail.TcAvailable
+			vo.IfbAvailable = avail.IfbAvailable
+			vo.ConnTrackAvailable = avail.ConnTrackAvailable
+			vo.KernelSupported = avail.KernelSupported
+			vo.UnsupportedReason = avail.UnsupportedReason
+			vo.ActiveEntries = len(live.Entries)
+		}
+	}
+	return vo, nil
 }
 
 // UpdateConfig creates or updates the rate limit config for a server.
@@ -103,6 +128,20 @@ func (s *Service) UpdateConfig(ctx context.Context, serverID int64, req *dto.Rat
 	}
 	config.UpdatedAt = time.Now()
 
+	// 启用前 fail-close：节点**实时探测**不支持限流（缺 nft/tc 或内核太旧）→ 拒绝保存，
+	// 避免"开关打开了但节点上什么都不会发生"的假配置。
+	if config.Enabled && s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
+			if !live.Availability().OverallSupported() {
+				reason := live.UnsupportedReason
+				if reason == "" {
+					reason = "missing required tools (nft/tc)"
+				}
+				return nil, &ErrNodeUnsupported{Reason: reason}
+			}
+		}
+	}
+
 	if err := s.repo.Upsert(ctx, config); err != nil {
 		return nil, fmt.Errorf("save rate limit config: %w", err)
 	}
@@ -139,9 +178,15 @@ func (s *Service) GetStatus(ctx context.Context, serverID int64) (*dto.RateLimit
 		},
 	}
 
-	// Active entries would be populated from Agent's MarkRegistry
-	// via the RATE_LIMIT_STATUS heartbeat report.
-	// For now, return empty until the Agent reporting is implemented.
+	// 实时查询在线 Agent：能力探测 + 活跃条目（DB 里的 availability 是静态值，从不刷新 ✗）
+	if s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
+			resp.Availability = live.Availability()
+			resp.ActiveEntries = live.Entries
+		} else if err != nil {
+			log.Printf("[RateLimitService] live status query for server %d failed, fallback to DB: %v", serverID, err)
+		}
+	}
 
 	return resp, nil
 }

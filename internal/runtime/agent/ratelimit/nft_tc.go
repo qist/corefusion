@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -49,12 +50,105 @@ func NewNftTcBackend() *NftTcBackend {
 	return &NftTcBackend{
 		ifbDevice:   "ifb0",
 		ifbSrcPrefs: map[string]uint32{},
-		available: Availability{
-			NftAvailable: isCommandAvailable("nft"),
-			TcAvailable:  isCommandAvailable("tc"),
-			IfbAvailable: isIFBModuleAvailable(),
-		},
+		available:   DetectAvailability(),
 	}
+}
+
+// DetectAvailability 全面检测限速能力（二进制 / 内核 / conntrack / 功能探测）。
+// 探测在一次性临时表里真实执行"动态集合 + ct count"规则 —— 这是账号并发计数的
+// 最小功能单元，探测通过即代表内核真正支持（比只看命令是否存在可靠得多）。
+// 结果缓存（构造时调用一次，Agent 生命周期内有效；装完依赖重启 Agent 即可刷新）。
+func DetectAvailability() Availability {
+	avail := Availability{
+		NftAvailable: isCommandAvailable("nft"),
+		TcAvailable:  isCommandAvailable("tc"),
+		IfbAvailable: isIFBModuleAvailable(),
+	}
+	avail.ConnTrackAvailable = isConnTrackAvailable()
+	if !avail.ConnTrackAvailable {
+		avail.UnsupportedReason = "kernel conntrack (nf_conntrack) not available"
+	}
+	// 功能探测：临时表里真实执行 ct count 规则（需要 nft ≥0.9 + 内核 ≥4.18）
+	if avail.NftAvailable {
+		ok, reason := probeNftConnLimitSupport()
+		avail.KernelSupported = ok
+		if !ok {
+			avail.UnsupportedReason = reason
+		}
+	} else {
+		avail.KernelSupported = false
+		avail.UnsupportedReason = "nftables binary not found"
+	}
+	return avail
+}
+
+// isConnTrackAvailable 检查内核 conntrack 是否可用（账号并发计数依赖它）。
+func isConnTrackAvailable() bool {
+	// 已加载（proc 接口存在）或模块在内存里
+	if _, err := os.Stat("/proc/net/nf_conntrack"); err == nil {
+		return true
+	}
+	if isCommandAvailable("lsmod") {
+		if out, err := exec.Command("lsmod").Output(); err == nil && strings.Contains(string(out), "nf_conntrack") {
+			return true
+		}
+	}
+	// 未加载但可加载
+	if isCommandAvailable("modprobe") {
+		if err := exec.Command("modprobe", "--dry-run", "nf_conntrack").Run(); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// kernelAtLeast 解析 uname -r 并比较 (major, minor) 是否不低于目标版本。
+func kernelAtLeast(major, minor int) (bool, string) {
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return false, "cannot read kernel version"
+	}
+	ver := strings.TrimSpace(string(out))
+	// "5.14.0-364.el9.x86_64" → 5.14
+	parts := strings.SplitN(ver, ".", 3)
+	if len(parts) < 2 {
+		return false, "unparseable kernel version: " + ver
+	}
+	maj, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	min, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil {
+		return false, "unparseable kernel version: " + ver
+	}
+	return maj > major || (maj == major && min >= minor), ver
+}
+
+// probeNftConnLimitSupport 在一次性临时表里真实执行"动态集合 + ct count"规则，
+// 全部成功才认定内核支持账号并发计数。失败原因原样返回（供 UI 展示）。
+func probeNftConnLimitSupport() (bool, string) {
+	// 内核版本预检（ct count / nft 动态集合需要 ≥4.18）
+	if ok, ver := kernelAtLeast(4, 18); !ok {
+		return false, "kernel " + ver + " too old for nft dynamic sets / ct count (need >= 4.18)"
+	}
+	tbl := "corefusion_ratelimit_probe"
+	cleanup := func() { _ = exec.Command("nft", "delete", "table", "inet", tbl).Run() }
+	cleanup()
+	defer cleanup()
+
+	steps := [][]string{
+		{"add", "table", "inet", tbl},
+		// ⚠ set 规格必须用花括号包裹（与 initNftTable 同一口径）
+		{"add", "set", "inet", tbl, "probe_set", "{", "typeof", "meta", "mark", ";", "flags", "dynamic", ";", "}"},
+		{"add", "chain", "inet", tbl, "probe_chain", "{", "type", "filter", "hook", "prerouting", "priority", "-145", ";", "policy", "accept", ";", "}"},
+		{"add", "rule", "inet", tbl, "probe_chain", "meta", "mark", "0x00000001", "ct", "state", "new",
+			"add", "@probe_set", "{", "meta", "mark", "ct", "count", "over", "1", "}", "counter", "drop"},
+	}
+	for _, args := range steps {
+		if out, err := exec.Command("nft", args...).CombinedOutput(); err != nil {
+			return false, fmt.Sprintf("kernel probe failed at `nft %s`: %s",
+				strings.Join(args, " "), strings.TrimSpace(string(out)))
+		}
+	}
+	return true, ""
 }
 
 // IsAvailable 检查后端依赖是否可用。
@@ -358,8 +452,9 @@ func (b *NftTcBackend) initNftTable() error {
 		log.Printf("[NftTcBackend] nft connacct chain create note: %v (may already exist)", err)
 	}
 	// 创建账号并发计数集合：按 meta mark 聚合 conntrack 计数（flags dynamic）。
+	// ⚠ set 规格必须用花括号包裹 —— 无花括号会被 nft 当语法错误（静默失败 → 集合不存在）
 	if err := runCmd("nft", "add", "set", "inet", nftTable, nftConnAcctSet,
-		"typeof", "meta", "mark", "flags", "dynamic"); err != nil {
+		"{", "typeof", "meta", "mark", ";", "flags", "dynamic", ";", "}"); err != nil {
 		log.Printf("[NftTcBackend] nft connacct set create note: %v (may already exist)", err)
 	}
 	// 清理旧版本的按 IP connlimit 链（语法本就无效且已被账号维度计数取代）

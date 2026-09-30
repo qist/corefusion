@@ -31,7 +31,7 @@
     <el-tabs v-model="activeTab" type="border-card">
       <!-- Overview Tab -->
       <el-tab-pane :label="t('nodeServer.overview')" name="overview">
-        <el-descriptions v-if="server" :column="3" border>
+        <el-descriptions v-if="server" :column="isMobile ? 1 : 3" border>
           <el-descriptions-item :label="t('common.name')">{{ server.name }}</el-descriptions-item>
           <el-descriptions-item :label="t('nodeServer.hostname')">{{ server.hostname }}</el-descriptions-item>
           <el-descriptions-item :label="t('nodeServer.region')">{{ server.region || '-' }}</el-descriptions-item>
@@ -184,7 +184,7 @@
           <el-alert type="info" :closable="false" style="margin-bottom:12px;font-size:12px">
             {{ t('nodeServer.certAutoDetectHint') }}
           </el-alert>
-          <el-table :data="certPagedList" v-loading="certLoading" stripe size="small">
+          <el-table v-if="!isMobile" :data="certPagedList" v-loading="certLoading" stripe size="small">
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column prop="domain" :label="t('nodeServer.certDomain')" min-width="140" />
             <el-table-column :label="t('nodeServer.certSource')" min-width="180">
@@ -226,6 +226,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards
+            v-else
+            :rows="certPagedList"
+            title-field="domain"
+            :fields="certCardFields"
+          >
+            <template #actions="{ row }">
+              <el-button size="small" type="primary" plain :loading="syncingCertId === row.id" @click="syncCertToNode(row)">
+                {{ t('nodeServer.syncCert') }}
+              </el-button>
+            </template>
+          </MobileCards>
           <PaginationBar v-model:page="certPage" v-model:page-size="certSize" :total="certTotal" />
           <div v-if="certificates.length === 0 && !certLoading" style="text-align:center;padding:40px;color:#909399">
             {{ t('nodeServer.noCerts') }}
@@ -270,7 +282,7 @@
 
           <el-alert v-if="onlineError" type="error" :closable="false" style="margin-bottom:12px">{{ onlineError }}</el-alert>
 
-          <el-table :data="onlineData?.users || []" v-loading="onlineLoading" row-key="subscription_id" border stripe size="small">
+          <el-table v-if="!isMobile" :data="onlineData?.users || []" v-loading="onlineLoading" row-key="subscription_id" border stripe size="small">
             <el-table-column type="expand">
               <template #default="{row}">
                 <el-table :data="row.sessions || []" size="mini" border>
@@ -327,6 +339,12 @@
               <template #default="{row}">{{ formatDuration((row.last_seen || 0) - (row.first_seen || 0)) }}</template>
             </el-table-column>
           </el-table>
+          <MobileCards
+            v-else
+            :rows="onlineData?.users || []"
+            title-field="email"
+            :fields="onlineCardFields"
+          />
 
           <el-empty v-if="!onlineLoading && (!onlineData?.users || onlineData.users.length === 0)" :description="t('onlineUsers.noOnline')" style="margin-top:20px" />
 
@@ -357,7 +375,9 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, Refresh, Upload, Search } from '@element-plus/icons-vue'
 import client from '../api/client'
 import { useClientPagination } from '../composables/useClientPagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
@@ -692,6 +712,31 @@ function startOnlinePolling() {
 function stopOnlinePolling() {
   if (onlineTimer) { clearInterval(onlineTimer); onlineTimer = null }
 }
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与桌面表格列对应；证书表）
+const certCardFields = computed(() => [
+  { label: 'ID', text: (row) => (row.id ?? '-') },
+  { label: t('nodeServer.certSource'), text: (row) => (row.sources && row.sources.length) ? row.sources.map(sourceLabel).join(' / ') : '-' },
+  { label: 'Issuer', text: (row) => row.issuer || '-' },
+  { label: t('nodeServer.certProvider'), text: (row) => row.provider_type || '-' },
+  { label: t('nodeServer.certAutoRenew'), text: (row) => (row.auto_renew ? t('common.yes') : t('common.no')) },
+  { label: t('nodeServer.certExpiry'), text: (row) => (row.expires_at ? formatTime(row.expires_at) : '-') },
+  { label: t('nodeServer.certPath'), text: (row) => row.cert_path || '-' },
+])
+// 在线用户卡片（桌面端展开列的会话明细在手机端不展示，设备数保留）
+const onlineCardFields = computed(() => [
+  { label: t('onlineUsers.subscription'), text: (row) => (row.subscription_id != null ? 'ID: ' + row.subscription_id : '-') },
+  { label: t('onlineUsers.clientPlan'), text: (row) => (row.client_name || row.email || '-') + (row.plan_name ? ' / ' + row.plan_name : '') },
+  { label: t('onlineUsers.devices'), text: (row) => String((row.sessions || []).length) },
+  { label: t('onlineUsers.speedLimit'), text: (row) => ((row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0) ? '↓' + (row.speed_limit_down_mbps || 0) + ' / ↑' + (row.speed_limit_up_mbps || 0) + ' Mbps' : t('onlineUsers.unlimited') },
+  { label: t('onlineUsers.upRate'), text: (row) => formatRate(row.uplink_rate) },
+  { label: t('onlineUsers.downRate'), text: (row) => formatRate(row.downlink_rate) },
+  { label: t('onlineUsers.totalUp'), text: (row) => formatBytes(row.uplink_bytes) },
+  { label: t('onlineUsers.totalDown'), text: (row) => formatBytes(row.downlink_bytes) },
+  { label: t('onlineUsers.lastActive'), text: (row) => formatAgo(row.last_seen) },
+  { label: t('onlineUsers.duration'), text: (row) => formatDuration((row.last_seen || 0) - (row.first_seen || 0)) },
+])
 
 onMounted(() => {
   loadServer()

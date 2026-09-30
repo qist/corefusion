@@ -628,6 +628,12 @@ export default {
 .top-name { width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .top-bar { flex: 1; }
 .top-val { width: 42px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+@media (max-width: 768px) {
+  /* 手机端：节点名占满剩余宽度，负载条收窄成指示条，避免名称被截断 */
+  .top-name { flex: 1; min-width: 0; width: auto; }
+  .top-bar { flex: none; width: 56px; }
+  .top-val { width: 36px; }
+}
 
 /* Alerts */
 .alert-grid { display: flex; flex-direction: column; gap: 14px; }

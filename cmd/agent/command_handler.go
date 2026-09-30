@@ -797,6 +797,12 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					if err := mgr.AssociateIP(ctx, req.Ip, req.SubscriptionId, rate); err != nil {
 						return nil, err
 					}
+				case "update":
+					// 管理端修改客户限速后"立即生效"推送：更新 tc class 速率
+					// （0=不限 → 重置为默认 class）并重建该订阅全部已关联 IP 的 connlimit。
+					if err := mgr.UpdateRate(ctx, req.SubscriptionId, rate); err != nil {
+						return nil, err
+					}
 				case "remove":
 					if err := mgr.RemoveIP(ctx, req.Ip); err != nil {
 						return nil, err

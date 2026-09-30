@@ -32,7 +32,7 @@ type Manager struct {
 	cleanupTTL    time.Duration // 归属有效期，0=不清理
 
 	// 持久化回调：当 IP 映射变更时调用（Agent 侧注入 DB 持久化逻辑）
-	persistFunc func(ip string, subID int64, maxDownMbps, maxUpMbps int32)
+	persistFunc func(ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32)
 	removeFunc  func(ip string)
 }
 
@@ -62,7 +62,7 @@ func (m *Manager) WithCleanupTTL(ttl time.Duration) *Manager {
 // WithPersistFunc sets the persistence callback.
 // When set, AssociateIP will persist the IP mapping to DB,
 // and RemoveIP will delete the persisted entry.
-func (m *Manager) WithPersistFunc(persist func(ip string, subID int64, maxDownMbps, maxUpMbps int32), remove func(ip string)) *Manager {
+func (m *Manager) WithPersistFunc(persist func(ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32), remove func(ip string)) *Manager {
 	m.persistFunc = persist
 	m.removeFunc = remove
 	return m
@@ -111,15 +111,22 @@ func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate 
 			}
 			// 仍然持久化记录，便于后续检查
 			if m.persistFunc != nil {
-				go m.persistFunc(ip, subID, rate.MaxDownMbps, rate.MaxUpMbps)
+				go m.persistFunc(ip, subID, rate.MaxDownMbps, rate.MaxUpMbps, rate.ConnLimit, rate.DeviceLimit)
 			}
 			return nil
 		}
 	}
 
-	// 3. 应用 nft + tc 规则（包括 connlimit）
+	// 3. 应用 nft + tc 规则（限速/打标）
 	if err := m.backend.ApplyRule(ctx, ip, mark, rate); err != nil {
 		return fmt.Errorf("apply rate limit rule for ip=%s sub=%d mark=0x%x: %w", ip, subID, mark, err)
+	}
+
+	// 4. 应用**账号（订阅）维度**的并发连接限制（按 mark 聚合该订阅全部设备的连接数；
+	// 幂等重建，ConnLimit=0 时等价于移除限制）
+	if err := m.backend.ApplyConnLimit(ctx, mark, rate.ConnLimit); err != nil {
+		log.Printf("[RateLimitManager] apply account connlimit for sub=%d (conn=%d): %v",
+			subID, rate.ConnLimit, err)
 	}
 
 	log.Printf("[RateLimitManager] associated ip=%s → sub=%d mark=0x%x rate=↓%dMbps/↑%dMbps conn=%d device=%d",
@@ -127,7 +134,7 @@ func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate 
 
 	// Persist to local DB for restart recovery
 	if m.persistFunc != nil {
-		go m.persistFunc(ip, subID, rate.MaxDownMbps, rate.MaxUpMbps)
+		go m.persistFunc(ip, subID, rate.MaxDownMbps, rate.MaxUpMbps, rate.ConnLimit, rate.DeviceLimit)
 	}
 
 	return nil
@@ -191,6 +198,10 @@ func (m *Manager) RemoveSubscription(ctx context.Context, subID int64) error {
 		}
 	}
 
+	// 移除**账号（订阅）维度**的并发计数规则（该订阅已无关联 IP）
+	mark := m.registry.GetOrCreateMark(subID)
+	_ = m.backend.RemoveConnLimit(ctx, mark)
+
 	log.Printf("[RateLimitManager] removed subscription %d (%d IPs)", subID, len(ips))
 	return nil
 }
@@ -224,6 +235,9 @@ func (m *Manager) TouchIP(ctx context.Context, ip string, subID int64) error {
 
 // UpdateRate 更新一个订阅的限速速率。
 // 适用于用户修改限速配置后，不需要重建 nft 规则，只需更新 tc class。
+// 安全提示：除 tc class 外还必须重建该订阅**所有已关联 IP** 的 connlimit 规则
+// （管理端"改完立即生效"的推送走这里），ApplyConnLimit 幂等（先删后加），
+// ConnLimit=0 时等价于移除限制。
 func (m *Manager) UpdateRate(ctx context.Context, subID int64, rate *RateConfig) error {
 	if !m.initialized {
 		return fmt.Errorf("rate limit manager not initialized")
@@ -240,8 +254,14 @@ func (m *Manager) UpdateRate(ctx context.Context, subID int64, rate *RateConfig)
 		return fmt.Errorf("update rate for sub=%d mark=0x%x: %w", subID, mark, err)
 	}
 
-	log.Printf("[RateLimitManager] updated rate for sub=%d mark=0x%x rate=↓%dMbps/↑%dMbps",
-		subID, mark, rate.MaxDownMbps, rate.MaxUpMbps)
+	// 重建**账号（订阅）维度**的并发限制规则（一次即可覆盖该订阅全部设备的 IP）
+	if err := m.backend.ApplyConnLimit(ctx, mark, rate.ConnLimit); err != nil {
+		log.Printf("[RateLimitManager] re-apply account connlimit for sub=%d (conn=%d): %v",
+			subID, rate.ConnLimit, err)
+	}
+
+	log.Printf("[RateLimitManager] updated rate for sub=%d mark=0x%x rate=↓%dMbps/↑%dMbps conn=%d device=%d",
+		subID, mark, rate.MaxDownMbps, rate.MaxUpMbps, rate.ConnLimit, rate.DeviceLimit)
 	return nil
 }
 
@@ -272,6 +292,11 @@ func (m *Manager) RestoreFromDB(ctx context.Context, ip string, subID int64, rat
 	// Apply nft + tc rules
 	if err := m.backend.ApplyRule(ctx, ip, mark, rate); err != nil {
 		return fmt.Errorf("restore rate limit rule for ip=%s sub=%d mark=0x%x: %w", ip, subID, mark, err)
+	}
+
+	// 重建**账号（订阅）维度**的并发限制规则（幂等，多 IP 重复调用安全）
+	if err := m.backend.ApplyConnLimit(ctx, mark, rate.ConnLimit); err != nil {
+		log.Printf("[RateLimitManager] restore account connlimit for sub=%d (conn=%d): %v", subID, rate.ConnLimit, err)
 	}
 
 	// NOTE: no persistFunc call — data already in DB

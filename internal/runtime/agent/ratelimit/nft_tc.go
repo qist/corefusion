@@ -32,14 +32,16 @@ type NftTcBackend struct {
 }
 
 const (
-	nftTable        = "corefusion_ratelimit"
-	nftChain        = "prerouting"      // 上行 mark 链（priority mangle = -150）
-	nftPostChain    = "postrouting"     // 下行 mark 链：按 daddr 给"发给客户端的包"打标
-	nftConnChain    = "connlimit_chain" // connlimit 链（priority -155，在 mark 链之前）
-	nftBlockChain   = "blocked_chain"   // 设备阻断链（priority -160，在 connlimit 链之前）
-	ifbSrcPrefBase  = 100               // ifb 上 u32 源 IP filter 的 pref 起点（避开 fw filter 的 49152）
-	defaultClassID  = 9999              // 默认 class（无限速）
-	defaultRateMbps = 10000             // 默认速率 10Gbps（实际不限）
+	nftTable         = "corefusion_ratelimit"
+	nftChain         = "prerouting"      // 上行 mark 链（priority mangle = -150）
+	nftPostChain     = "postrouting"     // 下行 mark 链：按 daddr 给"发给客户端的包"打标
+	nftConnAcctChain = "connacct_chain"  // 账号并发计数链（priority -145，在 mark 链之后）
+	nftConnAcctSet   = "acct_connacct"   // 账号并发计数集合（按 meta mark 聚合 ct count）
+	nftConnChain     = "connlimit_chain" // 旧版按 IP connlimit 链（已废弃，Init 时删除）
+	nftBlockChain    = "blocked_chain"   // 设备阻断链（priority -160，在 mark 链之前）
+	ifbSrcPrefBase   = 100               // ifb 上 u32 源 IP filter 的 pref 起点（避开 fw filter 的 49152）
+	defaultClassID   = 9999              // 默认 class（无限速）
+	defaultRateMbps  = 10000             // 默认速率 10Gbps（实际不限）
 )
 
 // NewNftTcBackend 创建一个新的 nft+tc 限速后端。
@@ -121,12 +123,8 @@ func (b *NftTcBackend) ApplyRule(ctx context.Context, ip string, mark uint32, ra
 		return fmt.Errorf("add nft mark rule for %s: %w", ip, err)
 	}
 
-	// 1b. 如果有并发连接限制，添加 connlimit 规则
-	if rate.ConnLimit > 0 {
-		if err := b.addNftConnLimitRule(ip, rate.ConnLimit); err != nil {
-			log.Printf("[NftTcBackend] add connlimit rule for %s: %v", ip, err)
-		}
-	}
+	// 并发连接限制是**账号（订阅）维度**的，由 Manager 统一调 ApplyConnLimit(mark)
+	// 按 mark 聚合计数 —— 不在这里按 IP 加（多设备会翻倍额度）。
 
 	// 2. tc: 添加 egress class (下载限速)
 	if err := b.addTcClass(b.iface, 1, mark, rate.MaxDownMbps); err != nil {
@@ -160,6 +158,8 @@ func (b *NftTcBackend) ApplyRule(ctx context.Context, ip string, mark uint32, ra
 }
 
 // UpdateRate 更新一个订阅的限速速率。
+// 速率为 0（不限速）时把 class 速率重置为默认不限速值 —— 否则旧 class 残留，
+// "从 100Mbps 改为不限"不会生效。
 func (b *NftTcBackend) UpdateRate(ctx context.Context, mark uint32, rate *RateConfig) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -168,16 +168,22 @@ func (b *NftTcBackend) UpdateRate(ctx context.Context, mark uint32, rate *RateCo
 		return fmt.Errorf("backend not initialized")
 	}
 
-	// 更新下载限速
-	if rate.MaxDownMbps > 0 {
-		if err := b.replaceTcClass(b.iface, 1, mark, rate.MaxDownMbps); err != nil {
-			return fmt.Errorf("update download rate for mark 0x%x: %w", mark, err)
-		}
+	// 更新下载限速（0=不限 → 重置为默认不限速 class）
+	downRate := rate.MaxDownMbps
+	if downRate <= 0 {
+		downRate = defaultRateMbps
+	}
+	if err := b.replaceTcClass(b.iface, 1, mark, downRate); err != nil {
+		return fmt.Errorf("update download rate for mark 0x%x: %w", mark, err)
 	}
 
 	// 更新上传限速
-	if b.available.IfbAvailable && rate.MaxUpMbps > 0 {
-		if err := b.replaceTcClass(b.ifbDevice, 2, mark, rate.MaxUpMbps); err != nil {
+	if b.available.IfbAvailable {
+		upRate := rate.MaxUpMbps
+		if upRate <= 0 {
+			upRate = defaultRateMbps
+		}
+		if err := b.replaceTcClass(b.ifbDevice, 2, mark, upRate); err != nil {
 			log.Printf("[NftTcBackend] update upload rate failed for mark 0x%x: %v", mark, err)
 		}
 	}
@@ -194,9 +200,8 @@ func (b *NftTcBackend) RemoveRule(ctx context.Context, ip string, mark uint32) e
 		return nil
 	}
 
-	// 1. 删除 nft 规则（mark + connlimit + block）
+	// 1. 删除 nft 规则（mark + block；并发计数规则是账号维度，见 ApplyConnLimit）
 	b.deleteNftMarkRule(ip)
-	b.deleteNftConnLimitRule(ip)
 	b.deleteNftBlockRule(ip)
 
 	// 2. 删除 tc egress class + filter
@@ -263,9 +268,10 @@ func (b *NftTcBackend) Close() error {
 	return nil
 }
 
-// ApplyConnLimit 为一个 IP 添加 nftables connlimit 规则（并发连接限制）。
-// connLimit = 0 表示移除限制。
-func (b *NftTcBackend) ApplyConnLimit(ctx context.Context, ip string, mark uint32, connLimit int32) error {
+// ApplyConnLimit 应用**账号（订阅）维度**的并发连接限制。
+// 按 meta mark（订阅唯一标记）聚合 conntrack 计数：该订阅所有设备的并发连接
+// 合计超过 connLimit 才丢弃新连接。connLimit = 0 表示移除限制（不限并发）。
+func (b *NftTcBackend) ApplyConnLimit(ctx context.Context, mark uint32, connLimit int32) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -273,21 +279,21 @@ func (b *NftTcBackend) ApplyConnLimit(ctx context.Context, ip string, mark uint3
 		return fmt.Errorf("backend not initialized")
 	}
 
-	// 先删除旧的 connlimit 规则（如果有）
-	b.deleteNftConnLimitRule(ip)
-
 	if connLimit > 0 {
-		if err := b.addNftConnLimitRule(ip, connLimit); err != nil {
-			return fmt.Errorf("add connlimit rule for %s: %w", ip, err)
+		if err := b.addNftConnAcctRule(mark, connLimit); err != nil {
+			return fmt.Errorf("add connacct rule for mark 0x%x: %w", mark, err)
 		}
-		log.Printf("[NftTcBackend] applied connlimit for ip=%s limit=%d", ip, connLimit)
+		log.Printf("[NftTcBackend] applied account connlimit for mark=0x%x limit=%d", mark, connLimit)
+	} else {
+		// 0 = 不限并发：移除计数规则
+		b.deleteNftConnAcctRule(mark)
 	}
 
 	return nil
 }
 
-// RemoveConnLimit 移除一个 IP 的 connlimit 规则。
-func (b *NftTcBackend) RemoveConnLimit(ctx context.Context, ip string, mark uint32) error {
+// RemoveConnLimit 移除一个订阅的并发连接限制规则。
+func (b *NftTcBackend) RemoveConnLimit(ctx context.Context, mark uint32) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -295,8 +301,8 @@ func (b *NftTcBackend) RemoveConnLimit(ctx context.Context, ip string, mark uint
 		return nil
 	}
 
-	b.deleteNftConnLimitRule(ip)
-	log.Printf("[NftTcBackend] removed connlimit for ip=%s", ip)
+	b.deleteNftConnAcctRule(mark)
+	log.Printf("[NftTcBackend] removed account connlimit for mark=0x%x", mark)
 	return nil
 }
 
@@ -345,11 +351,19 @@ func (b *NftTcBackend) initNftTable() error {
 	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftChain, markChainDef); err != nil {
 		log.Printf("[NftTcBackend] nft mark chain create note: %v (may already exist)", err)
 	}
-	// 创建 connlimit 链：priority -155（在 mark 链之前执行，drop 的包不会到达 mark 链）
-	connChainDef := "{ type filter hook prerouting priority -155 ; policy accept ; }"
-	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftConnChain, connChainDef); err != nil {
-		log.Printf("[NftTcBackend] nft connlimit chain create note: %v (may already exist)", err)
+	// 创建账号并发计数链：priority -145（在 mark 链 -150 **之后**执行 ——
+	// 并发计数按 meta mark（订阅维度）聚合，必须等 mark 先打好）。
+	connAcctChainDef := "{ type filter hook prerouting priority -145 ; policy accept ; }"
+	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftConnAcctChain, connAcctChainDef); err != nil {
+		log.Printf("[NftTcBackend] nft connacct chain create note: %v (may already exist)", err)
 	}
+	// 创建账号并发计数集合：按 meta mark 聚合 conntrack 计数（flags dynamic）。
+	if err := runCmd("nft", "add", "set", "inet", nftTable, nftConnAcctSet,
+		"typeof", "meta", "mark", "flags", "dynamic"); err != nil {
+		log.Printf("[NftTcBackend] nft connacct set create note: %v (may already exist)", err)
+	}
+	// 清理旧版本的按 IP connlimit 链（语法本就无效且已被账号维度计数取代）
+	runCmd("nft", "delete", "chain", "inet", nftTable, nftConnChain)
 	// 创建 postrouting 链：给**下行**方向打标。
 	// 客户端"下载"的报文源地址是**节点自身**（不是客户端），prerouting 里按 saddr 匹配不到 →
 	// 必须在 postrouting 按 daddr 再打一次标，eth0 egress 的 htb 才能分流。
@@ -358,11 +372,18 @@ func (b *NftTcBackend) initNftTable() error {
 	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftPostChain, postChainDef); err != nil {
 		log.Printf("[NftTcBackend] nft postrouting chain create note: %v (may already exist)", err)
 	}
-	// 创建 blocked 链：priority -160（在 connlimit 链之前执行，阻断的包直接丢弃）
+	// 创建 blocked 链：priority -160（在 mark 链之前执行，阻断的包直接丢弃）
 	blockChainDef := "{ type filter hook prerouting priority -160 ; policy accept ; }"
 	if err := runCmd("nft", "add", "chain", "inet", nftTable, nftBlockChain, blockChainDef); err != nil {
 		log.Printf("[NftTcBackend] nft blocked chain create note: %v (may already exist)", err)
 	}
+	// 清空 mark / postrouting / 账号计数链：这些链完全由本子系统所有，内核里的
+	// 残留规则会跨 Agent 重启存活（registry 已清空、没人再删它们）→ Init 后由
+	// restoreIPEntries 按持久化 DB **精确重建**，保证内核状态与 DB 一致。
+	// （blocked_chain 不清：设备阻断规则不在恢复流程里重建，清了会放行超限设备。）
+	runCmd("nft", "flush", "chain", "inet", nftTable, nftChain)
+	runCmd("nft", "flush", "chain", "inet", nftTable, nftPostChain)
+	runCmd("nft", "flush", "chain", "inet", nftTable, nftConnAcctChain)
 	return nil
 }
 
@@ -390,22 +411,50 @@ func (b *NftTcBackend) deleteNftMarkRule(ip string) {
 	b.deleteNftRuleByIP(nftPostChain, ip)
 }
 
-// addNftConnLimitRule 在 connlimit 链中添加并发连接限制规则。
-// 使用 nftables connlimit 表达式：当某 IP 的并发连接数超过 connLimit 时，丢弃新连接。
+// addNftConnAcctRule 添加**账号（订阅）维度**的并发连接限制规则。
+// 用 nft 动态集合按 meta mark（订阅唯一标记）聚合 conntrack 计数：该订阅所有
+// 设备的新建连接**合计**超过 connLimit 时丢弃。相比按 IP 计数，多设备不会翻倍额度。
 //
-//	nft add rule inet corefusion_ratelimit connlimit_chain \
-//	    ip saddr <ip> ct state new connlimit count <N> over counter drop
-func (b *NftTcBackend) addNftConnLimitRule(ip string, connLimit int32) error {
-	b.deleteNftConnLimitRule(ip) // 幂等：避免重复规则累积
-	return runCmd("nft", "add", "rule", "inet", nftTable, nftConnChain,
-		"ip", "saddr", ip,
+//	nft add rule inet corefusion_ratelimit connacct_chain \
+//	    meta mark <mark> ct state new add @acct_connacct { meta mark ct count over <N> } counter drop
+//
+// ⚠ 两个语法要点（实测 Rocky9 nft）：
+//   - 计数表达式是 **ct count over <N>**（"connlimit count N over" 不是合法 nft 语法）；
+//   - 链优先级必须在 mark 链（-150）**之后**（-145），否则读到 mark=0 聚合错桶。
+func (b *NftTcBackend) addNftConnAcctRule(mark uint32, connLimit int32) error {
+	// 幂等：先删掉该订阅已有的计数规则再添加
+	b.deleteNftConnAcctRule(mark)
+	markPadded := fmt.Sprintf("0x%08x", mark)
+	return runCmd("nft", "add", "rule", "inet", nftTable, nftConnAcctChain,
+		"meta", "mark", markPadded,
 		"ct", "state", "new",
-		"connlimit", "count", fmt.Sprintf("%d", connLimit), "over",
+		"add", "@"+nftConnAcctSet, "{", "meta", "mark", "ct", "count", "over", fmt.Sprintf("%d", connLimit), "}",
 		"counter", "drop")
 }
 
-func (b *NftTcBackend) deleteNftConnLimitRule(ip string) {
-	b.deleteNftRuleByIP(nftConnChain, ip)
+func (b *NftTcBackend) deleteNftConnAcctRule(mark uint32) {
+	// 规则行形如 "meta mark 0x00001010 ct state new ..."，用定宽 mark + 后缀匹配，
+	// 避免相近 mark（0x1010 与 0x10100）前缀误删。
+	b.deleteNftRuleByMatch(nftConnAcctChain, fmt.Sprintf("meta mark 0x%08x ct state", mark))
+}
+
+// deleteNftRuleByMatch 在指定链中删除所有包含 match 子串的规则（按 handle 删除）。
+func (b *NftTcBackend) deleteNftRuleByMatch(chain, match string) {
+	out, err := exec.Command("nft", "-a", "list", "chain", "inet", nftTable, chain).Output()
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, match) {
+			continue
+		}
+		handleIdx := strings.LastIndex(line, "handle ")
+		if handleIdx < 0 {
+			continue
+		}
+		handleStr := strings.TrimSpace(line[handleIdx+7:])
+		runCmd("nft", "delete", "rule", "inet", nftTable, chain, "handle", handleStr)
+	}
 }
 
 // addNftBlockRule 在 blocked 链中添加阻断规则（丢弃该 IP 的所有流量）。

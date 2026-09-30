@@ -122,18 +122,8 @@ func (s *Service) applyDowngrade(ctx context.Context, order *entity.PlanOrder) e
 	if quotaBytes > 0 {
 		client.QuotaBytes = quotaBytes
 	}
-	if tmpl.DeviceLimit > 0 {
-		client.DeviceLimit = tmpl.DeviceLimit
-	}
-	if tmpl.SpeedLimitMbps > 0 {
-		client.SpeedLimitMbps = tmpl.SpeedLimitMbps
-	}
-	if tmpl.SpeedLimitUpMbps > 0 {
-		client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
-	}
-	if tmpl.ConcurrentLimit > 0 {
-		client.ConcurrentLimit = tmpl.ConcurrentLimit
-	}
+	// 限速三字段与设备数不物化模板值（含降级到"不限速"模板的情况）：
+	// 0=订阅拉取时实时继承模板，非 0=个人覆盖（push 回退见 public.go）。
 	client.UpdatedAt = now
 
 	if err := s.clientRepo.Update(ctx, client); err != nil {

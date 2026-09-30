@@ -1121,6 +1121,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// Wire rate limit service so PushIPAssociation can reach remote Agents.
 		rateLimitSvcInst.SetNodeOperator(sharedNodeMgr)
 	}
+	// 客户限速变更 → 推送节点立即生效（Agent action=update）
+	clientSvcInst.SetRateLimitUpdater(rateLimitSvcInst)
 	warpH := warpHandler.NewHandler(warpSvcInst)
 	rateLimitH := rateLimitHandler.NewHandler(rateLimitSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)

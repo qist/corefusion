@@ -17,24 +17,26 @@ type RateLimitBackend interface {
 	//   2. tc: 创建 htb class (rate=maxDownMbps)
 	//   3. tc: 创建 filter (handle mark Y → classid 1:Y)
 	//   4. tc/ifb: 创建上传限速 class + filter
-	//   5. 如果 rate.ConnLimit > 0，添加 nft connlimit 规则
+	//   （并发连接限制是**账号/订阅维度**，见 ApplyConnLimit —— 不在这里按 IP 加）
 	ApplyRule(ctx context.Context, ip string, mark uint32, rate *RateConfig) error
 
 	// UpdateRate 更新一个订阅的限速速率（只改 tc class rate，不改 nft 规则）。
 	UpdateRate(ctx context.Context, mark uint32, rate *RateConfig) error
 
-	// RemoveRule 移除一个 IP 的限速规则（删除 nft 规则 + tc class + filter + connlimit）。
+	// RemoveRule 移除一个 IP 的限速规则（删除 nft 规则 + tc class + filter）。
 	RemoveRule(ctx context.Context, ip string, mark uint32) error
 
 	// RemoveSubscription 移除一个订阅的所有限速规则。
 	RemoveSubscription(ctx context.Context, mark uint32) error
 
-	// ApplyConnLimit 为一个 IP 添加 nftables connlimit 规则（并发连接限制）。
-	// connLimit = 0 表示移除限制。
-	ApplyConnLimit(ctx context.Context, ip string, mark uint32, connLimit int32) error
+	// ApplyConnLimit 应用**账号（订阅）维度**的并发连接限制：
+	// 用 nft 动态集合按 meta mark（= 订阅唯一标记）聚合 conntrack 计数，
+	// 该订阅所有设备的并发连接**合计**超过 connLimit 时丢弃新连接。
+	// connLimit = 0 表示移除限制（不限并发）。
+	ApplyConnLimit(ctx context.Context, mark uint32, connLimit int32) error
 
-	// RemoveConnLimit 移除一个 IP 的 connlimit 规则。
-	RemoveConnLimit(ctx context.Context, ip string, mark uint32) error
+	// RemoveConnLimit 移除一个订阅的并发连接限制。
+	RemoveConnLimit(ctx context.Context, mark uint32) error
 
 	// BlockIP 在 nftables 中阻断一个 IP 的所有流量（用于设备数限制实时拦截）。
 	BlockIP(ctx context.Context, ip string, mark uint32) error

@@ -1359,20 +1359,8 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	}
 	client.UpdatedAt = now
 
-	// Inherit features from template
-	tmpl, _ := s.tmplRepo.GetByID(ctx, variant.TemplateID)
-	if tmpl != nil {
-		if client.SpeedLimitMbps == 0 {
-			client.SpeedLimitMbps = tmpl.SpeedLimitMbps
-		}
-		if client.SpeedLimitUpMbps == 0 {
-			client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
-		}
-		if client.ConcurrentLimit == 0 {
-			client.ConcurrentLimit = tmpl.ConcurrentLimit
-		}
-		client.DeviceLimit = tmpl.DeviceLimit
-	}
+	// 限速三字段与设备数不在此物化模板值：0=订阅拉取时实时继承模板，
+	// 非 0=个人覆盖（续费/换套餐不冲掉管理员给客户设置的个人覆盖）。
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return nil, fmt.Errorf("update client: %w", err)
 	}

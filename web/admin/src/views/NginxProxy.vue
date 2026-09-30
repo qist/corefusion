@@ -393,7 +393,7 @@
           </div>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.wafRules')" name="rules">
-          <el-table :data="wafRules" stripe @row-click="openWAFRule" style="cursor:pointer">
+          <el-table v-if="!isMobile" :data="wafRules" stripe @row-click="openWAFRule" style="cursor:pointer">
             <el-table-column prop="name" :label="t('proxy.wafRule')" width="180" />
             <el-table-column :label="t('proxy.wafRuleDesc')" min-width="200">
               <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
@@ -405,6 +405,11 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="wafRules" title-field="name" :fields="wafRuleCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" @click.stop="openWAFRule(row)">{{ t('common.edit') }}</el-button>
+            </template>
+          </MobileCards>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -498,7 +503,7 @@
               <el-option :label="t('proxy.wafRuleCustom')" value="custom" />
             </el-select>
           </el-form-item>
-<el-table v-if="siteWAFRuleMode==='custom'" :data="siteWAFDomainRules" stripe size="small">
+<el-table v-if="siteWAFRuleMode==='custom' && !isMobile" :data="siteWAFDomainRules" stripe size="small">
 <el-table-column prop="name" :label="t('proxy.wafRule')" width="140" />
 <el-table-column :label="t('proxy.wafRuleDesc')" min-width="180">
 <template #default="{ row }">{{ wafRuleDesc(row.name) }}</template>
@@ -510,6 +515,11 @@
 </template>
 </el-table-column>
 </el-table>
+<MobileCards v-else-if="siteWAFRuleMode==='custom'" :rows="siteWAFDomainRules" title-field="name" :fields="wafRuleCardFields">
+<template #actions="{ row }">
+<el-button size="small" @click="openSiteWAFDomainRule(row)">{{ t('common.edit') }}</el-button>
+</template>
+</MobileCards>
         </el-tab-pane>
       </el-tabs>
       <template #footer>
@@ -587,7 +597,7 @@
             <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="3s" />
           </div>
         </div>
-        <el-table :data="sniPagedList" stripe size="small">
+        <el-table v-if="!isMobile" :data="sniPagedList" stripe size="small">
           <el-table-column :label="t('common.status')" width="70">
             <template #default="{row}">
               <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
@@ -609,6 +619,14 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="sniPagedList" title-field="domain" :fields="sniCardFields">
+          <template #actions="{ row }">
+            <span style="font-size:12px;color:#909399">{{ t('common.enabled') }}</span>
+            <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+            <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
         <PaginationBar v-model:page="sniPage" v-model:page-size="sniSize" :total="sniTotal" />
         <div style="margin-top:12px;font-size:12px;color:#909399">
           {{ t('proxy.sniFallback') }}: 127.0.0.1:{{ sniLocalPort }}
@@ -624,7 +642,7 @@
           <el-button size="small" @click="showAddSite('l4')">+ L4</el-button>
         </div>
       </template>
-      <el-table :data="l4PagedList" stripe size="small">
+      <el-table v-if="!isMobile" :data="l4PagedList" stripe size="small">
         <el-table-column :label="t('common.status')" width="70">
           <template #default="{row}">
             <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
@@ -651,6 +669,14 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="l4PagedList" title-field="domain" :fields="l4CardFields">
+        <template #actions="{ row }">
+          <span style="font-size:12px;color:#909399">{{ t('common.enabled') }}</span>
+          <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+          <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
       <PaginationBar v-model:page="l4Page" v-model:page-size="l4Size" :total="l4Total" />
     </el-card>
 
@@ -668,7 +694,7 @@
           </div>
         </div>
       </template>
-      <el-table :data="httpPagedList" stripe>
+      <el-table v-if="!isMobile" :data="httpPagedList" stripe>
         <el-table-column :label="t('common.status')" width="70">
           <template #default="{row}">
             <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
@@ -712,6 +738,22 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="httpPagedList" title-field="domain" :fields="httpSiteCardFields">
+        <template #actions="{ row }">
+          <span style="font-size:12px;color:#909399">{{ t('common.enabled') }}</span>
+          <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
+          <template v-if="wafMasterEnabled">
+            <span style="font-size:12px;color:#909399">WAF</span>
+            <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
+            <el-tag v-if="row._waf_status === 'site'" type="success" size="small">{{ t('proxy.wafStatusSite') }}</el-tag>
+            <el-tag v-else-if="row._waf_status === 'off'" type="danger" size="small">{{ t('proxy.wafStatusOff') }}</el-tag>
+            <el-tag v-else type="info" size="small">{{ t('proxy.wafStatusGlobal') }}</el-tag>
+            <el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+          </template>
+          <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
       <PaginationBar v-model:page="httpPage" v-model:page-size="httpSize" :total="httpTotal" />
     </el-card>
 
@@ -965,7 +1007,9 @@ import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
 import client from '../api/client'
 import { useClientPagination } from '../composables/useClientPagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
 const emit = defineEmits(['back'])
@@ -1006,6 +1050,33 @@ const sniRules = computed(() => allSites.value.filter(s => s.template === 'sni')
 const { paged: sniPagedList, page: sniPage, pageSize: sniSize, total: sniTotal } = useClientPagination(sniRules, { pageKey: 'sniPage', pageSizeKey: 'sniSize' })
 const { paged: l4PagedList, page: l4Page, pageSize: l4Size, total: l4Total } = useClientPagination(l4Sites, { pageKey: 'l4Page', pageSizeKey: 'l4Size' })
 const { paged: httpPagedList, page: httpPage, pageSize: httpSize, total: httpTotal } = useClientPagination(httpSites, { pageKey: 'httpPage', pageSizeKey: 'httpSize' })
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与桌面表格列对应）
+const sniCardFields = computed(() => [
+  { label: 'Target', text: (row) => row.sni_target || row.upstream || '-' },
+  { label: 'PP', text: (row) => row.proxy_protocol ? 'v2' : '-' },
+])
+const l4CardFields = computed(() => [
+  { label: 'Upstream', text: (row) => row.upstream || '-' },
+  { label: 'Port', text: (row) => ':' + (row.listen_port || row.path || '-') },
+  { label: 'Protocol', text: (row) => (row.l4_protocol || '').toUpperCase() || '-' },
+])
+const httpSiteCardFields = computed(() => [
+  { label: 'Upstream', text: (row) => row.upstream || '-' },
+  { label: 'Path', text: (row) => {
+      const parts = []
+      if (row.listen_port) parts.push(':' + row.listen_port)
+      if (row.path) parts.push(row.path)
+      return parts.length ? parts.join(' ') : '/'
+    } },
+  { label: t('proxy.template'), text: (row) => row.template || '-' },
+  { label: 'TLS', text: (row) => row.cert_path ? '✓' : '-' },
+])
+const wafRuleCardFields = computed(() => [
+  { label: t('proxy.wafRuleDesc'), text: (row) => wafRuleDesc(row.name) },
+  { label: t('proxy.wafSize'), text: (row) => row.size ?? '-' },
+])
 
 // Inbound association: filter by template type
 const showInboundSelect = computed(() => {

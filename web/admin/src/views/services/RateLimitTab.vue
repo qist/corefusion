@@ -95,7 +95,7 @@
 
       <!-- Active Entries -->
       <el-divider content-position="left">{{ t('rateLimit.activeEntries') }} ({{ activeEntries.length }})</el-divider>
-      <el-table v-if="activeEntries.length > 0" :data="activeEntries" border size="small" style="width:100%">
+      <el-table v-if="!isMobile && activeEntries.length > 0" :data="activeEntries" border size="small" style="width:100%">
         <el-table-column prop="subscription_id" :label="t('rateLimit.subId')" width="120" />
         <el-table-column prop="ip" :label="t('rateLimit.ip')" width="160" />
         <el-table-column prop="max_down_mbps" :label="t('rateLimit.downMbps')" width="120">
@@ -106,6 +106,7 @@
         </el-table-column>
         <el-table-column prop="mark" :label="t('rateLimit.mark')" width="100" />
       </el-table>
+      <MobileCards v-else-if="activeEntries.length > 0" :rows="activeEntries" title-field="ip" :fields="rateLimitCardFields" />
       <el-empty v-else :description="t('rateLimit.noActiveEntries')" :image-size="40" />
     </template>
 
@@ -119,12 +120,15 @@ import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { getRateLimitConfig, updateRateLimitConfig, getRateLimitStatus } from '../../api/rateLimit'
 import { listInterfaces } from '../../api/nodeServer'
+import { useIsMobile } from '../../composables/useIsMobile'
+import MobileCards from '../../components/MobileCards.vue'
 
 const props = defineProps({
   serverId: { type: Number, required: true }
 })
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const loading = ref(false)
 const saving = ref(false)
 const config = ref(null)
@@ -213,6 +217,14 @@ async function handleSave() {
     saving.value = false
   }
 }
+
+// 手机端卡片字段（与桌面表格列对应）
+const rateLimitCardFields = computed(() => [
+  { label: t('rateLimit.subId'), text: (row) => row.subscription_id || '-' },
+  { label: t('rateLimit.downMbps'), text: (row) => row.max_down_mbps || '-' },
+  { label: t('rateLimit.upMbps'), text: (row) => row.max_up_mbps || '-' },
+  { label: t('rateLimit.mark'), text: (row) => row.mark || '-' },
+])
 
 onMounted(() => {
   fetchConfig()

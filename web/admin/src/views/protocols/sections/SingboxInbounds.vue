@@ -27,7 +27,7 @@
     </div>
 
     <!-- Table List -->
-    <el-table :data="inbPaged" stripe style="width:100%" size="small">
+    <el-table v-if="!isMobile" :data="inbPaged" stripe style="width:100%" size="small">
       <el-table-column label="#" width="50" align="right">
         <template #default="{ $index }">
           <span style="font-size:11px;opacity:0.6">{{ $index + 1 }}</span>
@@ -120,6 +120,36 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="inbPaged" title-field="tag" :fields="sbInboundCardFields">
+      <template #actions="{ row }">
+        <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
+        <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
+          <el-icon style="font-size:18px;cursor:pointer"><MoreFilled /></el-icon>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit">
+                <el-icon><Edit /></el-icon> {{ t('common.edit') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasShareableUsers(row)" command="qrcode" divided>
+                <el-icon><View /></el-icon> {{ t('protoCenter.inbounds.qrCode') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasUsers(row)" command="reset-traffic">
+                <el-icon><RefreshRight /></el-icon> {{ t('protoCenter.inbounds.resetTraffic') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="USER_PROTOCOLS.includes(row.type)" command="add-user" divided>
+                <el-icon><Plus /></el-icon> {{ t('protoCenter.inbounds.addUser') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasUserList(row)" command="manage-users">
+                <el-icon><User /></el-icon> {{ t('protoCenter.inbounds.manageUsers') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="delete" divided>
+                <span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
+    </MobileCards>
     <PaginationBar v-model:page="inbPage" v-model:page-size="inbSize" :total="inbTotal" />
     <div v-if="!form.length" style="text-align:center;color:#909399;padding:24px">{{ t('singbox.inbound.noInbounds') }}</div>
 
@@ -449,6 +479,8 @@ import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
+import MobileCards from '../../../components/MobileCards.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 import { buildInbound, parseInbound } from './singbox/utils/singboxBuild'
 import {
@@ -476,6 +508,7 @@ const emitFn = defineEmits(['update'])
 
 const form = reactive([])
 const { paged: inbPaged, page: inbPage, pageSize: inbSize, total: inbTotal } = useClientPagination(computed(() => form), { pageKey: 'sbInbPage', pageSizeKey: 'sbInbSize' })
+const { isMobile } = useIsMobile()
 
 const PROTOCOL_COMPS = {
   shadowsocks: SingboxShadowsocks, hysteria2: SingboxHysteria2, tuic: SingboxTuic,
@@ -1040,6 +1073,22 @@ function hasShareableUsers(ib) {
 function hasUserList(ib) {
   return (ib.users?.length || 0) > 0
 }
+
+// 手机端卡片字段（与桌面表格列一一对应；启用开关在 actions 插槽里）
+const sbInboundCardFields = computed(() => [
+  { label: t('protoCenter.inbounds.remark'), text: (row) => row._remark || row.tag || '-' },
+  { label: t('singbox.inbound.tag'), text: (row) => row.tag || '-' },
+  { label: t('singbox.inbound.port'), text: (row) => row.listen_port || '-' },
+  { label: t('singbox.inbound.protocol'), text: (row) => [(row.type || '').toUpperCase(), row._transportType || '', row._tlsEnabled ? 'TLS' : '', row._realityEnabled ? 'Reality' : ''].filter(Boolean).join(', ') || '-' },
+  { label: t('singbox.inbound.users'), text: (row) => {
+    const parts = [String(getUserCount(row))]
+    if (getActiveUserCount(row) > 0) parts.push(String(getActiveUserCount(row)))
+    if (getExpiredUserCount(row) > 0) parts.push(String(getExpiredUserCount(row)))
+    return parts.join(' / ')
+  } },
+  { label: t('protoCenter.inbounds.traffic'), text: (row) => '↑ ' + formatTraffic(getTotalTraffic(row, 'up')) + ' / ↓ ' + formatTraffic(getTotalTraffic(row, 'down')) },
+  { label: t('protoCenter.inbounds.expiry'), text: (row) => getExpiryDisplay(row) },
+])
 
 // ==================== Clipboard ====================
 

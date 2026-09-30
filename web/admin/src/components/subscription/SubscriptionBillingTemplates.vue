@@ -332,6 +332,12 @@ loadData()
   gap: 16px;
 }
 
+@media (max-width: 768px) {
+  /* 手机端：左列表 + 右编辑器双栏改为上下堆叠，避免编辑区被挤成竖条 */
+  .plan-layout { grid-template-columns: 1fr; }
+  .plan-list-card, .plan-editor-card { min-height: auto; }
+}
+
 .plan-list-card,
 .plan-editor-card {
   min-height: 520px;

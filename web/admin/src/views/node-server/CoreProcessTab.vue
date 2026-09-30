@@ -4,7 +4,7 @@
     <el-alert v-if="managementOnly" type="warning" :title="t('nodeServer.managementOnlyNotice')" :closable="false" show-icon style="margin-bottom:16px" />
     <!-- Core Process Table -->
     <h3 style="margin-bottom:16px">{{ t('service.tabs.process') }}</h3>
-    <el-table :data="processes" v-loading="loading" stripe size="small" style="margin-bottom:24px">
+    <el-table v-if="!isMobile" :data="processes" v-loading="loading" stripe size="small" style="margin-bottom:24px">
       <el-table-column prop="core_type" :label="t('nodeServer.coreType')" width="100">
         <template #default="{row}"><el-tag size="small">{{ row.core_type }}</el-tag></template>
       </el-table-column>
@@ -62,10 +62,33 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="processes" title-field="core_type" :fields="processCardFields">
+      <template #actions="{ row }">
+        <span style="display:flex;gap:12px;align-items:center;font-size:12px;flex-wrap:wrap">
+          <span style="color:#909399">{{ t('service.process.guardian') }}</span>
+          <el-tooltip :content="t('service.process.autoStartHint')">
+            <span>
+              <el-switch v-model="row.auto_start" size="small" @change="updateGuardian(row)" />
+              <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
+            </span>
+          </el-tooltip>
+          <el-tooltip :content="t('service.process.autoRestartHint')">
+            <span>
+              <el-switch v-model="row.auto_restart" size="small" @change="updateGuardian(row)" />
+              <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
+            </span>
+          </el-tooltip>
+        </span>
+        <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleStart(row)" :disabled="managementOnly" :loading="row._loading">{{ t('service.start') }}</el-button>
+        <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
+        <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
+        <el-button size="small" @click="handleRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || managementOnly">{{ t('service.restart') }}</el-button>
+      </template>
+    </MobileCards>
 
     <!-- Proxy Binaries -->
     <h3 style="margin-bottom:16px">{{ t('nodeServer.proxyBinaries') }}</h3>
-    <el-table :data="proxyRows" v-loading="proxyStatusLoading" stripe size="small" style="margin-bottom:24px">
+    <el-table v-if="!isMobile" :data="proxyRows" v-loading="proxyStatusLoading" stripe size="small" style="margin-bottom:24px">
       <el-table-column prop="name" :label="t('nodeServer.proxyType')" width="100">
         <template #default="{row}"><el-tag size="small">{{ row.name }}</el-tag></template>
       </el-table-column>
@@ -123,6 +146,29 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="proxyRows" title-field="name" :fields="proxyCardFields">
+      <template #actions="{ row }">
+        <span style="display:flex;gap:12px;align-items:center;font-size:12px;flex-wrap:wrap">
+          <span style="color:#909399">{{ t('service.process.guardian') }}</span>
+          <el-tooltip :content="t('service.process.autoStartHint')">
+            <span>
+              <el-switch v-model="row.auto_start" size="small" @change="updateProxyGuardian(row)" />
+              <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
+            </span>
+          </el-tooltip>
+          <el-tooltip :content="t('service.process.autoRestartHint')">
+            <span>
+              <el-switch v-model="row.auto_restart" size="small" @change="updateProxyGuardian(row)" />
+              <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
+            </span>
+          </el-tooltip>
+        </span>
+        <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed">{{ t('service.start') }}</el-button>
+        <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleProxyStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
+        <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
+        <el-button size="small" @click="handleProxyRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || !row.installed">{{ t('service.restart') }}</el-button>
+      </template>
+    </MobileCards>
 
     <!-- Version Select Dialog -->
     <el-dialog v-model="versionVisible" :title="t('service.process.selectVersion')" width="620">
@@ -163,13 +209,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 import { getProxyStatus, startProxy, stopProxy, restartProxy, updateProxyGuardian as updateProxyGuardianApi, getProxyReleases, downloadProxyVersion } from '../../api/nodeServer'
+import { useIsMobile } from '../../composables/useIsMobile'
+import MobileCards from '../../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const props = defineProps({ serverId: { type: Number, required: true } })
 
 const processes = ref([])
@@ -220,6 +269,25 @@ function formatSize(bytes) {
   if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
   return (bytes / 1048576).toFixed(1) + ' MB'
 }
+
+// 手机端卡片字段（与桌面表格列对应；guardian 开关列放 actions 插槽）
+const processCardFields = computed(() => [
+  { label: t('service.process.state'), text: (row) => t('service.process.' + row.state, row.state) },
+  { label: t('service.process.cpu'), text: (row) => row.cpu ? row.cpu.toFixed(1) + '%' : '-' },
+  { label: t('service.process.mem'), text: (row) => row.mem ? formatSize(row.mem) : '-' },
+  { label: t('service.process.version'), text: (row) => !row.binary_installed ? t('service.process.binaryNotInstalled') : (row.version || '...') },
+  { label: t('service.process.pid'), text: (row) => row.pid || '-' },
+  { label: t('service.process.uptime'), text: (row) => row.state === 'running' ? formatUptime(row.uptime) : '-' },
+])
+
+const proxyCardFields = computed(() => [
+  { label: t('service.process.state'), text: (row) => t('service.process.' + row.state, row.state) },
+  { label: t('service.process.cpu'), text: (row) => row.cpu ? row.cpu.toFixed(1) + '%' : '-' },
+  { label: t('service.process.mem'), text: (row) => row.mem ? formatSize(row.mem) : '-' },
+  { label: t('service.process.version'), text: (row) => !row.installed ? t('service.process.binaryNotInstalled') : (row.version || t('common.install')) },
+  { label: t('service.process.pid'), text: (row) => row.pid || '-' },
+  { label: t('service.process.uptime'), text: (row) => row.state === 'running' ? formatUptime(row.uptime) : '-' },
+])
 
 async function fetchData() {
   loading.value = true

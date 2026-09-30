@@ -9,7 +9,7 @@
       </div>
     </div>
 
-    <el-table :data="obPaged" stripe style="width:100%" size="small">
+    <el-table v-if="!isMobile" :data="obPaged" stripe style="width:100%" size="small">
       <el-table-column label="#" width="50" align="right">
         <template #default="{ $index }"><span style="font-size:11px;opacity:0.6">{{ (obPage - 1) * obSize + $index + 1 }}</span></template>
       </el-table-column>
@@ -44,6 +44,17 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="obPaged" title-field="tag" :fields="sbOutboundCardFields">
+      <template #actions="{ row }">
+        <!-- ↑↓ 沿用桌面逻辑：handleAction 内部用 form.indexOf(row) 定位，禁用态按全局序计算 -->
+        <el-button size="small" text :disabled="form.indexOf(row) === 0"
+          @click="handleAction('up', row)">↑</el-button>
+        <el-button size="small" text :disabled="form.indexOf(row) === form.length - 1"
+          @click="handleAction('down', row)">↓</el-button>
+        <el-button size="small" text type="primary" @click="handleAction('edit', row)">{{ t('common.edit') }}</el-button>
+        <el-button size="small" text type="danger" @click="handleAction('delete', row)">{{ t('common.delete') }}</el-button>
+      </template>
+    </MobileCards>
     <PaginationBar v-model:page="obPage" v-model:page-size="obSize" :total="obTotal" />
     <div v-if="!form.length" style="text-align:center;color:#909399;padding:24px">{{ t('singbox.outbound.noOutbounds') }}</div>
 
@@ -103,6 +114,8 @@ import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
+import MobileCards from '../../../components/MobileCards.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
 import { buildOutbound, parseOutbound, outboundDefaultsForType } from './singbox/utils/singboxBuildOutbound'
 import {
   OUTBOUND_TLS_PROTOCOLS, OUTBOUND_TRANSPORT_PROTOCOLS, OUTBOUND_MULTIPLEX_PROTOCOLS, OUTBOUND_SERVER_PROTOCOLS,
@@ -136,6 +149,14 @@ const props = defineProps({ data: Array, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
+const { isMobile } = useIsMobile()
+
+// 手机端卡片字段（与桌面表格列一一对应；↑↓/编辑/删除在 actions 插槽里）
+const sbOutboundCardFields = computed(() => [
+  { label: t('singbox.outbound.type'), text: (row) => row.type || '-' },
+  { label: 'Server', text: (row) => row.server ? `${row.server}:${row.server_port}` : '-' },
+  { label: 'TLS', text: (row) => row._tlsEnabled ? 'TLS' : '-' },
+])
 
 // 出站类型选项（value 用于存储/判断，label 用于显示）
 const OUTBOUND_TYPES = [

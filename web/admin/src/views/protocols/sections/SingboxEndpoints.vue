@@ -15,7 +15,7 @@
     </div>
 
     <!-- Table -->
-    <el-table :data="epPaged" stripe style="width:100%" size="small">
+    <el-table v-if="!isMobile" :data="epPaged" stripe style="width:100%" size="small">
       <el-table-column label="#" width="50" align="right">
         <template #default="{ $index }"><span style="font-size:11px;opacity:0.6">{{ (epPage - 1) * epSize + $index + 1 }}</span></template>
       </el-table-column>
@@ -58,6 +58,20 @@
         <template #default="{row}">{{ row.peers?.length || 0 }}</template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="epPaged" title-field="tag" :fields="sbEndpointCardFields">
+      <template #actions="{ row }">
+        <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
+        <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
+          <el-icon style="font-size:18px;cursor:pointer"><MoreFilled /></el-icon>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit"><el-icon><Edit /></el-icon> {{ t('common.edit') }}</el-dropdown-item>
+              <el-dropdown-item command="delete" divided><span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span></el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
+    </MobileCards>
     <PaginationBar v-model:page="epPage" v-model:page-size="epSize" :total="epTotal" />
     <div v-if="!form.length" style="text-align:center;color:#909399;padding:24px">{{ t('singbox.protocol.endpoint.noEndpoints') }}</div>
 
@@ -851,6 +865,8 @@ import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
+import MobileCards from '../../../components/MobileCards.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
 import { buildEndpoint, parseEndpoint, endpointDefaultsForType, ENDPOINT_TYPES, ENDPOINT_TYPE_LABELS } from './singbox/utils/singboxEndpointBuild'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 
@@ -861,6 +877,16 @@ const { t } = useI18n()
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
 const form = reactive([])
 const { paged: epPaged, page: epPage, pageSize: epSize, total: epTotal } = useClientPagination(computed(() => form), { pageKey: 'sbEpPage', pageSizeKey: 'sbEpSize' })
+const { isMobile } = useIsMobile()
+
+// 手机端卡片字段（与桌面表格列一一对应；启用开关与编辑/删除在 actions 插槽里）
+const sbEndpointCardFields = computed(() => [
+  { label: t('singbox.protocol.endpoint.type'), text: (row) => row.type || 'wireguard' },
+  { label: t('singbox.protocol.endpoint.listenPort'), text: (row) => row.listen_port || '-' },
+  { label: t('singbox.protocol.endpoint.address'), text: (row) => (row.address || []).join?.(', ') || row.address || '-' },
+  { label: t('singbox.protocol.endpoint.publicKey'), text: (row) => row.public_key ? row.public_key.substring(0, 20) + '...' : '-' },
+  { label: t('singbox.protocol.endpoint.peers'), text: (row) => String(row.peers?.length || 0) },
+])
 
 const dlg = ref(false)
 const editIdx = ref(-1)

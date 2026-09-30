@@ -28,7 +28,7 @@
     </div>
 
     <!-- Table List -->
-    <el-table :data="inbPaged" stripe style="width:100%" size="small">
+    <el-table v-if="!isMobile" :data="inbPaged" stripe style="width:100%" size="small">
       <el-table-column label="ID" width="50" align="right">
         <template #default="{row, $index}">
           <span style="font-size:11px;opacity:0.6">{{ row._id || ($index + 1) }}</span>
@@ -122,6 +122,36 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards v-else :rows="inbPaged" title-field="tag" :fields="xrayInboundCardFields">
+      <template #actions="{ row }">
+        <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
+        <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
+          <el-icon style="font-size:18px;cursor:pointer"><MoreFilled /></el-icon>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit">
+                <el-icon><Edit /></el-icon> {{ t('common.edit') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasShareableUsers(row)" command="qrcode" divided>
+                <el-icon><View /></el-icon> {{ t('protoCenter.inbounds.qrCode') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasUsers(row)" command="reset-traffic">
+                <el-icon><RefreshRight /></el-icon> {{ t('protoCenter.inbounds.resetTraffic') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="canAddUsers(row)" command="add-user" divided>
+                <el-icon><Plus /></el-icon> {{ t('protoCenter.inbounds.addUser') }}
+              </el-dropdown-item>
+              <el-dropdown-item v-if="hasUserList(row)" command="manage-users">
+                <el-icon><User /></el-icon> {{ t('protoCenter.inbounds.manageUsers') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="delete" divided>
+                <span style="color:#f56c6c"><el-icon><Delete /></el-icon> {{ t('common.delete') }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </template>
+    </MobileCards>
     <PaginationBar v-model:page="inbPage" v-model:page-size="inbSize" :total="inbTotal" />
 
     <!-- Details Dialog -->
@@ -1753,6 +1783,8 @@ import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
+import MobileCards from '../../../components/MobileCards.vue'
+import { useIsMobile } from '../../../composables/useIsMobile'
 import XrayInboundProtoVless from './xray/protocol/XrayInboundProtoVless.vue'
 import XrayInboundProtoVmess from './xray/protocol/XrayInboundProtoVmess.vue'
 import XrayInboundProtoTrojan from './xray/protocol/XrayInboundProtoTrojan.vue'
@@ -1783,6 +1815,7 @@ const apiBase = computed(() => `${nodeBase.value}/binaries`)
 const form = ref([])
 
 const { paged: inbPaged, page: inbPage, pageSize: inbSize, total: inbTotal } = useClientPagination(form, { pageKey: 'xbInbPage', pageSizeKey: 'xbInbSize' })
+const { isMobile } = useIsMobile()
 const dlg = ref(false)
 const editIdx = ref(-1)
 const activeTab = useQueryState('itab', 'basic')
@@ -2101,6 +2134,21 @@ function getUsers(ib) {
   }
   return []
 }
+
+// 手机端卡片字段（与桌面表格列一一对应；启用开关在 actions 插槽里）
+const xrayInboundCardFields = computed(() => [
+  { label: t('protoCenter.inbounds.remark'), text: (row) => row._remark || '-' },
+  { label: t('protoCenter.inbounds.port'), text: (row) => row.port ?? '-' },
+  { label: t('protoCenter.inbounds.protocol'), text: (row) => [(row.protocol || '').toUpperCase(), row.streamSettings?.network || 'raw', row.streamSettings?.security === 'tls' ? 'TLS' : '', row.streamSettings?.security === 'reality' ? 'Reality' : ''].filter(Boolean).join(', ') },
+  { label: t('protoCenter.inbounds.users'), text: (row) => {
+    const parts = [String(getUserCount(row))]
+    if (getActiveUserCount(row) > 0) parts.push(String(getActiveUserCount(row)))
+    if (getExpiredUserCount(row) > 0) parts.push(String(getExpiredUserCount(row)))
+    return parts.join(' / ')
+  } },
+  { label: t('protoCenter.inbounds.traffic'), text: (row) => '↑ ' + formatTraffic(getTotalTraffic(row, 'up')) + ' / ↓ ' + formatTraffic(getTotalTraffic(row, 'down')) },
+  { label: t('protoCenter.inbounds.expiry'), text: (row) => getExpiryDisplay(row) },
+])
 
 function realIndex(row) {
   // row may come from a paginated slice; resolve its true index in the full form list

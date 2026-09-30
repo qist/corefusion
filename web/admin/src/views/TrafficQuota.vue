@@ -18,7 +18,7 @@
       <!-- Per-node effective quotas (from node_servers) -->
       <el-tab-pane :label="t('trafficQuota.quotas')" name="quotas">
         <el-card>
-          <el-table :data="quotas" v-loading="loadingQuotas" stripe>
+          <el-table v-if="!isMobile" :data="quotas" v-loading="loadingQuotas" stripe>
             <el-table-column prop="server_id" label="ID" width="80" />
             <el-table-column prop="name" :label="t('trafficQuota.nodeName')" min-width="160" />
             <el-table-column prop="region" :label="t('trafficQuota.region')" width="120" />
@@ -55,6 +55,11 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="quotas" title-field="name" :fields="quotaCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" type="primary" plain @click="showUsage(row)">{{ t('trafficQuota.usage') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
       </el-tab-pane>
 
@@ -70,7 +75,7 @@
             </el-form-item>
             <el-button type="primary" plain @click="fetchUsage">{{ t('common.refresh') }}</el-button>
           </el-form>
-          <el-table :data="usageList" v-loading="loadingUsage" stripe>
+          <el-table v-if="!isMobile" :data="usageList" v-loading="loadingUsage" stripe>
             <el-table-column prop="server_id" label="ID" width="80" />
             <el-table-column :label="t('trafficQuota.periodStart')" min-width="180">
               <template #default="{row}">{{ formatDate(row.period_start) }}</template>
@@ -98,6 +103,7 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="usageList" title-field="server_id" :fields="usageCardFields" />
           <el-empty v-if="!loadingUsage && usageList.length === 0" :description="t('common.noData')" />
         </el-card>
       </el-tab-pane>
@@ -115,7 +121,7 @@
             </el-form-item>
             <el-button type="primary" plain @click="fetchHistory">{{ t('common.refresh') }}</el-button>
           </el-form>
-          <el-table :data="historyList" v-loading="loadingHistory" stripe max-height="520">
+          <el-table v-if="!isMobile" :data="historyList" v-loading="loadingHistory" stripe max-height="520">
             <el-table-column prop="server_id" label="ID" width="80" />
             <el-table-column :label="t('trafficQuota.periodStart')" min-width="180">
               <template #default="{row}">{{ formatDate(row.period_start) }}</template>
@@ -140,6 +146,7 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="historyList" title-field="server_id" :fields="historyCardFields" />
           <el-empty v-if="!loadingHistory && historyList.length === 0" :description="t('common.noData')" />
         </el-card>
       </el-tab-pane>
@@ -147,7 +154,7 @@
       <!-- Reset logs (from traffic_quota_reset_logs) -->
       <el-tab-pane :label="t('trafficQuota.resetLogs')" name="logs">
         <el-card>
-          <el-table :data="resetLogs" v-loading="loadingLogs" stripe>
+          <el-table v-if="!isMobile" :data="resetLogs" v-loading="loadingLogs" stripe>
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="subject_type" :label="t('trafficQuota.subjectType')" width="120" />
             <el-table-column prop="subject_id" :label="t('trafficQuota.subjectId')" width="100" />
@@ -161,6 +168,7 @@
               <template #default="{row}">{{ formatDate(row.created_at) }}</template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="resetLogs" title-field="id" :fields="logsCardFields" />
           <el-empty v-if="!loadingLogs && resetLogs.length === 0" :description="t('common.noData')" />
         </el-card>
       </el-tab-pane>
@@ -200,15 +208,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import {
   listTrafficQuotas, getTrafficQuotaUsage, getTrafficUsageHistory,
   listTrafficResetLogs,
 } from '../api/trafficQuota'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const activeTab = ref('quotas')
 
 // ── quotas ──
@@ -248,6 +259,47 @@ function formatDate(s) {
   if (isNaN(d.getTime())) return String(s)
   return d.toLocaleString()
 }
+
+// ── 移动端卡片字段（与桌面列一一对应）──
+const quotaCardFields = computed(() => [
+  { label: 'ID', text: row => row.server_id ?? '-' },
+  { label: t('trafficQuota.region'), text: row => row.region || '-' },
+  { label: t('trafficQuota.egressIface'), text: row => row.egress_iface || '-' },
+  { label: t('trafficQuota.resetDay'), text: row => row.has_quota ? ('D' + row.reset_day) : '-' },
+  { label: t('trafficQuota.quotaBytes'), text: row => row.has_quota ? formatBytes(row.quota_bytes) : t('trafficQuota.unlimited') },
+  { label: t('trafficQuota.usedBytes'), text: row => formatBytes(row.used_bytes) },
+  { label: t('trafficQuota.usagePct'), text: row => row.has_quota ? (Math.min(100, row.quota_bytes > 0 ? Math.round(row.used_bytes / row.quota_bytes * 100) : 0) + '%') : '-' },
+  { label: t('trafficQuota.status'), text: row => row.suspended ? t('trafficQuota.suspended') : (row.has_quota ? t('trafficQuota.active') : t('trafficQuota.none')) },
+])
+
+const usageCardFields = computed(() => [
+  { label: t('trafficQuota.periodStart'), text: row => formatDate(row.period_start) },
+  { label: t('trafficQuota.periodEnd'), text: row => formatDate(row.period_end) },
+  { label: t('trafficQuota.inputBytes'), text: row => formatBytes(row.rx_bytes) },
+  { label: t('trafficQuota.outputBytes'), text: row => formatBytes(row.tx_bytes) },
+  { label: t('trafficQuota.usedBytes'), text: row => formatBytes(row.total_bytes) },
+  { label: t('trafficQuota.quotaBytes'), text: row => row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('trafficQuota.unlimited') },
+  { label: t('trafficQuota.status'), text: row => row.suspended ? t('trafficQuota.suspended') : t('trafficQuota.active') },
+])
+
+const historyCardFields = computed(() => [
+  { label: t('trafficQuota.periodStart'), text: row => formatDate(row.period_start) },
+  { label: t('trafficQuota.periodEnd'), text: row => formatDate(row.period_end) },
+  { label: t('trafficQuota.inputBytes'), text: row => formatBytes(row.rx_bytes) },
+  { label: t('trafficQuota.outputBytes'), text: row => formatBytes(row.tx_bytes) },
+  { label: t('trafficQuota.usedBytes'), text: row => formatBytes(row.total_bytes) },
+  { label: t('trafficQuota.status'), text: row => row.suspended ? t('trafficQuota.suspended') : t('trafficQuota.active') },
+])
+
+const logsCardFields = computed(() => [
+  { label: t('trafficQuota.subjectType'), text: row => row.subject_type || '-' },
+  { label: t('trafficQuota.subjectId'), text: row => row.subject_id ?? '-' },
+  { label: t('trafficQuota.resetCycle'), text: row => row.reset_cycle || '-' },
+  { label: t('trafficQuota.periodStart'), text: row => formatDate(row.period_start) },
+  { label: t('trafficQuota.triggerSource'), text: row => row.trigger_source || '-' },
+  { label: t('trafficQuota.operatorId'), text: row => row.operator_id ?? '-' },
+  { label: t('common.createdAt'), text: row => formatDate(row.created_at) },
+])
 
 async function fetchQuotas() {
   loadingQuotas.value = true

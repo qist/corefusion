@@ -69,7 +69,7 @@
             <el-button size="small" @click="fetchWithdrawals">{{ t('common.query') }}</el-button>
           </div>
         </div>
-        <el-table :data="withdrawals" v-loading="withdrawalsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="withdrawals" v-loading="withdrawalsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="90" />
           <el-table-column :label="t('clientExt.amount')" width="100">
@@ -95,6 +95,14 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="withdrawals" title-field="client_id" :fields="withdrawalCardFields">
+          <template #actions="{ row }">
+            <template v-if="row.status==='pending'">
+              <el-button size="small" type="success" @click="approveWithdrawal(row)">{{ t('clientExt.approve') }}</el-button>
+              <el-button size="small" type="danger" @click="rejectWithdrawal(row)">{{ t('clientExt.reject') }}</el-button>
+            </template>
+          </template>
+        </MobileCards>
         <PaginationBar v-model:page="withdrawalPage" v-model:page-size="withdrawalPageSize" :total="withdrawalTotal" @change="fetchWithdrawals" />
 
         <!-- 邀请记录查询 -->
@@ -103,7 +111,7 @@
           <el-input v-model="referralRecordReferrerFilter" size="small" :placeholder="t('clientExt.referrerIdFilter')" style="width:180px" clearable />
           <el-button size="small" @click="fetchReferralRecords">{{ t('common.query') }}</el-button>
         </div>
-        <el-table :data="referralRecords" v-loading="referralRecordsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="referralRecords" v-loading="referralRecordsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column :label="t('clientExt.referrer')" min-width="160">
             <template #default="{row}">{{ row.referrer_email || row.referrer_id }}</template>
@@ -121,6 +129,7 @@
           </el-table-column>
           <el-table-column prop="created_at" :label="t('clientExt.createdAt')" width="170" />
         </el-table>
+        <MobileCards v-else :rows="referralRecords" :title-fn="refRecordTitleFn" :fields="refRecordCardFields" />
         <PaginationBar v-model:page="refPage" v-model:page-size="refSize" :total="refTotal" @change="fetchReferralRecords" />
       </el-tab-pane>
 
@@ -155,7 +164,7 @@
             <el-button size="small" @click="showBatchGift">{{ t('clientExt.batchGrant') }}</el-button>
           </div>
         </div>
-        <el-table :data="gifts" v-loading="giftsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="gifts" v-loading="giftsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column :label="t('clientExt.client')" min-width="180">
             <template #default="{row}">
@@ -181,6 +190,7 @@
             <template #default="{row}">{{ row.claimed_at || '-' }}</template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="gifts" :title-fn="giftTitleFn" :fields="giftCardFields" />
         <PaginationBar v-model:page="giftPage" v-model:page-size="giftSize" :total="giftTotal" @change="fetchGifts" />
 
         <el-dialog v-model="giftDialogVisible" :title="giftBatchMode?t('clientExt.batchGrantGift'):t('clientExt.grantGift')" width="500px">
@@ -256,7 +266,7 @@
           <h3 style="margin:0">{{ t('clientExt.articlesTab') }}</h3>
           <el-button type="primary" size="small" @click="showCreateArticle">{{ t('clientExt.newArticle') }}</el-button>
         </div>
-        <el-table :data="articles" v-loading="articlesLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="articles" v-loading="articlesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="title" :label="t('clientExt.title')" show-overflow-tooltip />
           <el-table-column prop="slug" :label="t('clientExt.slug')" width="150" show-overflow-tooltip />
@@ -286,6 +296,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="articles" title-field="title" :fields="articleCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showEditArticle(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteArticle(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
         <PaginationBar v-model:page="artPage" v-model:page-size="artSize" :total="artTotal" @change="fetchArticles" />
 
         <el-dialog v-model="articleDialogVisible" :title="articleForm.id?t('clientExt.editArticle'):t('clientExt.newArticle')" width="800px">
@@ -342,7 +358,7 @@
           <h3 style="margin:0">{{ t('clientExt.sharedAccountsTab') }}</h3>
           <el-button type="primary" size="small" @click="showCreateSharedAccount">{{ t('clientExt.newAccount') }}</el-button>
         </div>
-        <el-table :data="sharedAccounts" v-loading="sharedAccountsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="sharedAccounts" v-loading="sharedAccountsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="name" :label="t('clientExt.name')" min-width="150" />
           <el-table-column :label="t('clientExt.type')" width="100">
@@ -368,6 +384,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="sharedAccounts" title-field="name" :fields="sharedAccountCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showEditSharedAccount(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" @click="viewRepairLogs(row)">{{ t('clientExt.repairLogs') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteSharedAccount(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
         <PaginationBar v-model:page="acctPage" v-model:page-size="acctSize" :total="acctTotal" @change="fetchSharedAccounts" />
 
         <el-dialog v-model="sharedAccountDialogVisible" :title="sharedAccountForm.id?t('clientExt.editAccount'):t('clientExt.newAccount')" width="500px">
@@ -412,7 +435,7 @@
         </el-dialog>
 
         <el-dialog v-model="repairLogDialogVisible" :title="t('clientExt.repairLogs')" width="600px">
-          <el-table :data="repairLogs" stripe size="small">
+          <el-table v-if="!isMobile" :data="repairLogs" stripe size="small">
             <el-table-column prop="id" label="ID" width="60" />
             <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="90" />
             <el-table-column :label="t('clientExt.status')" width="80">
@@ -422,6 +445,7 @@
             </el-table-column>
             <el-table-column prop="created_at" :label="t('clientExt.time')" width="170" />
           </el-table>
+          <MobileCards v-else :rows="repairLogs" title-field="client_id" :fields="repairLogCardFields" />
         </el-dialog>
       </el-tab-pane>
 
@@ -434,7 +458,7 @@
             <el-button size="small" @click="fetchIPWhitelists">{{ t('common.query') }}</el-button>
           </div>
         </div>
-        <el-table :data="ipWhitelistEntries" v-loading="ipWhitelistLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="ipWhitelistEntries" v-loading="ipWhitelistLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="100" />
           <el-table-column prop="ip_address" :label="t('clientExt.ipAddress')" min-width="160" />
@@ -447,6 +471,7 @@
             <template #default="{row}">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="ipWhitelistEntries" title-field="ip_address" :fields="ipCardFields" />
         <PaginationBar v-model:page="ipPage" v-model:page-size="ipSize" :total="ipTotal" @change="fetchIPWhitelists" />
       </el-tab-pane>
 
@@ -459,7 +484,7 @@
             <el-button size="small" @click="fetchOAuthBindings">{{ t('common.query') }}</el-button>
           </div>
         </div>
-        <el-table :data="oauthBindings" v-loading="oauthBindingsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="oauthBindings" v-loading="oauthBindingsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('clientExt.clientId')" width="100" />
           <el-table-column prop="provider" :label="t('clientExt.platform')" width="100">
@@ -472,6 +497,7 @@
             <template #default="{row}">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="oauthBindings" title-field="client_id" :fields="oauthCardFields" />
         <PaginationBar v-model:page="oaPage" v-model:page-size="oaSize" :total="oaTotal" @change="fetchOAuthBindings" />
       </el-tab-pane>
 
@@ -480,7 +506,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -496,7 +522,10 @@ import { listPlanTemplates } from '../api/plan'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 
+const { isMobile } = useIsMobile()
 const activeTab = useQueryState('tab', 'referrals')
 
 // ════════════ Referral Stats & Records ════════════
@@ -853,6 +882,77 @@ async function fetchOAuthBindings() {
     oaTotal.value = result?.total || 0
   } finally { oauthBindingsLoading.value = false }
 }
+
+// ════════════ 移动端卡片字段（与桌面列一一对应）════════════
+const refRecordTitleFn = row => row.referrer_email || row.referrer_id
+const giftTitleFn = row => row.client_email || ('ID: ' + row.client_id)
+
+const withdrawalCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.amount'), text: row => row.amount != null ? ((row.amount / 100).toFixed(2) + ' ' + t('clientExt.yuan')) : '-' },
+  { label: t('clientExt.withdrawType'), text: row => row.withdraw_type === 'balance' ? t('clientExt.toBalance') : t('clientExt.usdt') },
+  { label: t('clientExt.walletAddress'), text: row => row.wallet_address || '-' },
+  { label: t('clientExt.status'), text: row => withdrawalStatusLabel(row.status) },
+  { label: t('clientExt.processRemark'), text: row => row.process_remark || '-' },
+  { label: t('clientExt.applicationTime'), text: row => row.created_at || '-' },
+])
+
+const refRecordCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.invitee'), text: row => row.referee_email || row.referee_id || '-' },
+  { label: t('clientExt.commission'), text: row => '¥' + ((row.commission_amount || 0) / 100).toFixed(2) },
+  { label: t('clientExt.commissionStatus'), text: row => ({ available: t('clientExt.commissionAvailable'), paid: t('clientExt.commissionPaid'), pending: t('clientExt.commissionPending') })[row.commission_status] || row.commission_status || '-' },
+  { label: t('clientExt.createdAt'), text: row => row.created_at || '-' },
+])
+
+const giftCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.type'), text: row => row.type === 'days' ? t('clientExt.days') : t('clientExt.traffic') },
+  { label: t('clientExt.value'), text: row => row.type === 'days' ? row.value + t('clientExt.dayUnit') : formatBytes(row.value) },
+  { label: t('clientExt.source'), text: row => row.source || '-' },
+  { label: t('clientExt.status'), text: row => giftStatusLabel(row.status) },
+  { label: t('clientExt.grantTime'), text: row => row.created_at || '-' },
+  { label: t('clientExt.claimTime'), text: row => row.claimed_at || '-' },
+])
+
+const articleCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.slug'), text: row => row.slug || '-' },
+  { label: t('clientExt.category'), text: row => articleCategoryLabel(row.category) },
+  { label: t('clientExt.platform'), text: row => row.platform || t('clientExt.general') },
+  { label: t('clientExt.status'), text: row => row.is_published ? t('clientExt.published') : t('clientExt.draft') },
+  { label: t('clientExt.popup'), text: row => row.is_popup ? t('common.yes') : t('common.no') },
+  { label: t('clientExt.sortOrder'), text: row => row.sort_order ?? '-' },
+])
+
+const sharedAccountCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.type'), text: row => sharedAccountTypeLabel(row.type) },
+  { label: t('clientExt.minPlan'), text: row => planTemplateNameById(row.min_plan_category) },
+  { label: t('clientExt.repairCooldown'), text: row => row.repair_cooldown ?? '-' },
+  { label: t('clientExt.status'), text: row => row.enabled ? t('clientExt.enabled') : t('clientExt.disabled') },
+  { label: t('clientExt.sortOrder'), text: row => row.sort_order ?? '-' },
+])
+
+const repairLogCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.status'), text: row => row.status || '-' },
+  { label: t('clientExt.time'), text: row => row.created_at || '-' },
+])
+
+const ipCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.clientId'), text: row => row.client_id ?? '-' },
+  { label: t('clientExt.source'), text: row => row.source === 'auto' ? t('clientExt.autoAdded') : t('clientExt.manualAdded') },
+  { label: t('clientExt.addedTime'), text: row => formatTime(row.created_at) },
+])
+
+const oauthCardFields = computed(() => [
+  { label: 'ID', text: row => row.id ?? '-' },
+  { label: t('clientExt.platform'), text: row => row.provider || '-' },
+  { label: t('clientExt.thirdPartyUserId'), text: row => row.provider_user_id || '-' },
+  { label: t('clientExt.bindingTime'), text: row => formatTime(row.created_at) },
+])
 
 onMounted(() => { fetchReferralConfig(); fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings(); fetchPlanTemplates() })
 </script>

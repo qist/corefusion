@@ -17,7 +17,7 @@
         <el-button size="small" @click="fetchTickets">{{ t('ticket.search') }}</el-button>
       </div>
     </div>
-    <el-table :data="tickets" v-loading="loading" stripe size="small">
+    <el-table v-if="!isMobile" :data="tickets" v-loading="loading" stripe size="small">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="client_id" :label="t('ticket.clientId')" width="90" />
       <el-table-column prop="subject" :label="t('ticket.subject')" show-overflow-tooltip />
@@ -47,6 +47,18 @@
         </template>
       </el-table-column>
     </el-table>
+    <MobileCards
+      v-else
+      :rows="tickets"
+      title-field="subject"
+      :fields="ticketCardFields"
+    >
+      <template #actions="{ row }">
+        <el-button size="small" @click="viewTicket(row)">{{ t('ticket.viewReply') }}</el-button>
+        <el-button size="small" type="primary" @click="assignTicketTo(row)" v-if="row.status!=='closed'">{{ t('ticket.assign') }}</el-button>
+        <el-button size="small" type="danger" @click="closeTicket(row)" v-if="row.status!=='closed'">{{ t('ticket.close') }}</el-button>
+      </template>
+    </MobileCards>
     <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchTickets" />
 
     <el-dialog v-model="dialogVisible" :title="t('ticket.detail')" width="700px">
@@ -87,12 +99,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import { useQueryState } from '../composables/useQueryState'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 import { listTickets, getTicket, replyTicket, closeTicket as closeTicketApi, assignTicket } from '../api/clientext'
 
 const { t } = useI18n()
@@ -193,6 +207,17 @@ function priorityLabel(p) { return { low: t('ticket.priorityLow'), normal: t('ti
 function priorityType(p) { return { low: 'info', normal: '', high: 'warning', urgent: 'danger' }[p] || '' }
 function statusLabel(s) { return { open: t('ticket.statusOpen'), replied: t('ticket.statusReplied'), closed: t('ticket.statusClosed') }[s] || s }
 function statusType(s) { return { open: 'danger', replied: 'warning', closed: 'info' }[s] || '' }
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与桌面表格列一一对应，状态/分类/优先级复用现有本地化函数）
+const ticketCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('ticket.clientId'), text: (row) => row.client_id ?? '-' },
+  { label: t('ticket.category'), text: (row) => categoryLabel(row.category) },
+  { label: t('ticket.priority'), text: (row) => priorityLabel(row.priority) },
+  { label: t('common.status'), text: (row) => statusLabel(row.status) },
+  { label: t('common.updatedAt'), text: (row) => row.updated_at || '-' },
+])
 
 onMounted(fetchTickets)
 </script>

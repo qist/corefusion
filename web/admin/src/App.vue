@@ -39,6 +39,10 @@ body {
   .el-card__body { padding: 12px; }
   /* 统计卡片（span=4 的列）每行两张 */
   .el-col-4 { flex: 0 0 50%; max-width: 50%; }
+  /* 内容卡片（span=8 的列，如套餐模板卡）手机端全宽 */
+  .el-col-8 { flex: 0 0 100%; max-width: 100%; }
+  /* 仪表盘"集群资源/高负载节点"双列手机端上下堆叠 */
+  .el-col-10, .el-col-14 { flex: 0 0 100%; max-width: 100%; }
   /* 移动端菜单抽屉去内边距 */
   .mobile-menu-drawer .el-drawer__body { padding: 0; }
   /* 表格更紧凑：按钮间距/单元格内边距缩小 */

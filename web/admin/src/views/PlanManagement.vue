@@ -8,7 +8,7 @@
           <h3 style="margin:0">{{ t('plan.trafficPacksTab') }}</h3>
           <el-button type="primary" size="small" @click="showCreateTrafficPack">{{ t('plan.createTrafficPack') }}</el-button>
         </div>
-        <el-table :data="trafficPackVariants" v-loading="trafficPacksLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="trafficPackVariants" v-loading="trafficPacksLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="name" :label="t('common.name')" width="150" />
           <el-table-column :label="t('plan.trafficPackDesc')" show-overflow-tooltip>
@@ -44,6 +44,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="trafficPackVariants" title-field="name" :fields="trafficPackCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showEditTrafficPack(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteTrafficPack(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
         <PaginationBar
           v-model:page="trafficPage"
           v-model:page-size="trafficSize"
@@ -109,7 +115,7 @@
           <h3 style="margin:0">{{ t('plan.nodeGroupsTab') }}</h3>
           <el-button type="primary" size="small" @click="showCreateGroup">{{ t('plan.createGroup') }}</el-button>
         </div>
-        <el-table :data="nodeGroups" v-loading="groupLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="nodeGroups" v-loading="groupLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
           <el-table-column prop="name" :label="t('common.name')" width="150" />
           <el-table-column :label="t('plan.category')" width="100">
@@ -134,6 +140,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="nodeGroups" title-field="name" :fields="nodeGroupCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showMembersDialog(row)">{{ t('plan.memberManagement') }}</el-button>
+            <el-button size="small" @click="showEditGroup(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteGroup(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
       </el-tab-pane>
 
       <!-- ════════════ 优惠码 Tab ════════════ -->
@@ -142,7 +155,7 @@
           <h3 style="margin:0">{{ t('plan.promotions') }}</h3>
           <el-button type="primary" size="small" @click="showCreatePromo">{{ t('plan.createPromotion') }}</el-button>
         </div>
-        <el-table :data="promotions" v-loading="promoLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="promotions" v-loading="promoLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
           <el-table-column prop="code" :label="t('plan.promotionsTab')" width="150" />
           <el-table-column prop="name" :label="t('common.name')" min-width="150" />
@@ -183,6 +196,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="promotions" title-field="code" :fields="promoCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showEditPromo(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="danger" @click="deletePromo(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
       </el-tab-pane>
 
       <!-- ════════════ 订单记录 Tab ════════════ -->
@@ -194,7 +213,7 @@
             <el-button size="small" @click="fetchOrders">{{ t('common.search') }}</el-button>
           </div>
         </div>
-        <el-table :data="orders" v-loading="orderLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="orders" v-loading="orderLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('plan.clientId')" width="80" />
           <el-table-column :label="t('common.type')" width="80">
@@ -226,6 +245,7 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="orders" :title-fn="orderCardTitle" :fields="orderCardFields" />
       </el-tab-pane>
 
     </el-tabs>
@@ -297,7 +317,7 @@
       <div style="margin-bottom:12px;text-align:right">
         <el-button type="primary" size="small" @click="showCreateVariant">{{ t('plan.addVariant') }}</el-button>
       </div>
-      <el-table :data="variants" stripe size="small">
+      <el-table v-if="!isMobile" :data="variants" stripe size="small">
         <el-table-column prop="name" :label="t('common.name')" width="80" />
         <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
@@ -332,6 +352,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="variants" title-field="name" :fields="variantCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" @click="showEditVariant(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click="deleteVariant(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-dialog>
 
     <!-- 规格编辑弹窗 -->
@@ -459,7 +485,7 @@
         </el-select>
         <el-button size="small" type="success" @click="addExtNodeMember">{{ t('plan.addExtNode') }}</el-button>
       </div>
-      <el-table :data="groupMembers" stripe size="small">
+      <el-table v-if="!isMobile" :data="groupMembers" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column :label="t('plan.hostNode')" width="120">
           <template #default="{row}">
@@ -493,6 +519,11 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="groupMembers" :title-fn="memberCardTitle" :fields="memberCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" type="danger" @click="removeMember(row)">{{ t('common.remove') }}</el-button>
+        </template>
+      </MobileCards>
     </el-dialog>
 
     <!-- 优惠码编辑弹窗 -->
@@ -578,7 +609,11 @@ import client from '../api/client'
 import * as planApi from '../api/plan'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
+
+const { isMobile } = useIsMobile()
 
 const activeTab = useQueryState('tab', 'templates')
 
@@ -1107,6 +1142,68 @@ function inboundLabel(ib) {
 
 const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || t('plan.localNode')) : '—' }
 const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
+
+// ──────── 手机端卡片字段（与桌面表格列对应） ────────
+const trafficPackCardFields = computed(() => [
+  { label: 'ID', text: (row) => row.id },
+  { label: t('plan.trafficPackDesc'), text: (row) => row.description || '—' },
+  { label: t('plan.applicableScope'), text: () => t('plan.allPlans') },
+  { label: t('plan.price'), text: (row) => '¥' + (row.price / 100).toFixed(2) },
+  { label: t('plan.traffic'), text: (row) => row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '—' },
+  { label: t('plan.expiryMode'), text: (row) => row.expiry_mode === 'extend_plan' ? t('plan.extendPlan', { days: row.duration_days }) : t('plan.modeSamePlan') },
+  { label: t('plan.sortOrder'), text: (row) => row.sort_order ?? '-' },
+  { label: t('common.status'), text: (row) => row.enabled ? t('common.enabled') : t('common.disabled') },
+])
+
+const nodeGroupCardFields = computed(() => [
+  { label: 'ID', text: (row) => row.id },
+  { label: t('plan.category'), text: (row) => tierLabel(row.tier) },
+  { label: t('plan.region'), text: (row) => row.region || '-' },
+  { label: t('plan.description'), text: (row) => row.description || '-' },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
+])
+
+const promoCardFields = computed(() => [
+  { label: 'ID', text: (row) => row.id },
+  { label: t('common.name'), text: (row) => row.name || '-' },
+  { label: t('common.type'), text: (row) => row.discount_type === 'percentage' ? row.discount_value + '%' : '¥' + (row.discount_value / 100).toFixed(2) },
+  { label: t('plan.applicableScope'), text: (row) => scopeLabel(row.applicable_scope) },
+  { label: t('plan.usageLimit'), text: (row) => row.used_count + (row.max_uses > 0 ? '/' + row.max_uses : '/∞') },
+  { label: t('plan.perUserLimit'), text: (row) => row.max_uses_per_user > 0 ? row.max_uses_per_user : '∞' },
+  { label: t('plan.validPeriod'), text: (row) => (row.starts_at?.substring(0, 10) || '—') + ' ~ ' + (row.ends_at?.substring(0, 10) || t('plan.permanent')) },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
+])
+
+// 标题：#ID + 订单类型
+const orderCardTitle = (row) => '#' + row.id + ' ' + orderTypeLabel(row.order_type)
+const orderCardFields = computed(() => [
+  { label: t('plan.clientId'), text: (row) => row.client_id ?? '-' },
+  { label: t('plan.variantId'), text: (row) => row.to_variant_id ?? '-' },
+  { label: t('plan.amount'), text: (row) => '¥' + (row.paid_amount / 100).toFixed(2) + (row.discount_amount > 0 ? ' (¥' + (row.original_amount / 100).toFixed(2) + ')' : '') },
+  { label: t('plan.promotionsTab'), text: (row) => row.promotion_code || '-' },
+  { label: t('plan.effectiveTime'), text: (row) => row.effective_from?.substring(0, 16).replace('T', ' ') || '-' },
+  { label: t('plan.expiryTime'), text: (row) => row.effective_to?.substring(0, 16).replace('T', ' ') || '—' },
+  { label: t('common.status'), text: (row) => orderStatusLabel(row.status) },
+])
+
+const variantCardFields = computed(() => [
+  { label: t('common.type'), text: (row) => row.variant_type === 'traffic_pack' ? t('plan.trafficPack') : t('plan.planType') },
+  { label: t('plan.billingCycle'), text: (row) => cycleLabel(row.billing_cycle) },
+  { label: t('plan.price'), text: (row) => '¥' + (row.price / 100).toFixed(2) },
+  { label: t('plan.originalPrice'), text: (row) => row.original_price > 0 ? '¥' + (row.original_price / 100).toFixed(2) : '—' },
+  { label: t('plan.durationDays'), text: (row) => row.duration_days ?? '-' },
+  { label: t('plan.quota'), text: (row) => row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('plan.modeSamePlan') },
+  { label: t('plan.tag'), text: (row) => row.is_default ? t('plan.default') : (row.is_recommended ? t('plan.recommended') : '') },
+])
+
+// 标题：节点名称（入站按 remark/tag，外部按名称），均无则回退 #ID
+const memberCardTitle = (row) => row.inbound_config_id ? inboundName(row.inbound_config_id) : (row.external_node_id ? extNodeName(row.external_node_id) : '')
+const memberCardFields = computed(() => [
+  { label: 'ID', text: (row) => row.id },
+  { label: t('plan.hostNode'), text: (row) => row.inbound_config_id ? inboundServerName(row.inbound_config_id) : (row.external_node_id ? t('plan.nodeTypeExternal') : '—') },
+  { label: t('common.protocol'), text: (row) => row.inbound_config_id ? inboundDetailById(row.inbound_config_id) : '—' },
+  { label: t('common.type'), text: (row) => row.inbound_config_id ? t('plan.nodeTypeInbound') : (row.external_node_id ? t('plan.nodeTypeExternal') : '') },
+])
 
 onMounted(() => {
   fetchTemplates()

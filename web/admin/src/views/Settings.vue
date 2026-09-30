@@ -201,7 +201,7 @@
               <el-button type="primary" size="small" @click="showAddTemplate">{{ t('settings.templates.add') }}</el-button>
             </div>
           </div>
-          <el-table :data="templates" stripe>
+          <el-table v-if="!isMobile" :data="templates" stripe>
             <el-table-column prop="name" :label="t('common.name')" min-width="150" />
             <el-table-column prop="type" :label="t('settings.templates.tplType')" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
@@ -229,6 +229,14 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="templates" title-field="name" :fields="templateCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" @click="showEditTemplate(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="success" plain @click="handleSendTemplate(row)" :title="t('settings.templates.sendHint')">{{ t('settings.templates.send') }}</el-button>
+              <el-button v-if="row.audience === 'subscriber'" size="small" type="warning" plain @click="showBroadcastDialog(row)" :title="t('settings.templates.broadcastHint')">{{ t('settings.templates.broadcast') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteTemplate(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Template Variables Doc Dialog（纯 HTML + i18n，避免 markdown 渲染依赖） -->
@@ -437,7 +445,7 @@
         <!-- Backup List -->
         <el-card style="margin-bottom:20px">
           <template #header><span>{{ t('settings.backup.list') }}</span></template>
-          <el-table :data="backups" v-loading="backupsLoading" stripe>
+          <el-table v-if="!isMobile" :data="backups" v-loading="backupsLoading" stripe>
 <el-table-column prop="name" :label="t('common.name')" min-width="200">
 <template #default="{row}">
 {{ row.name }}
@@ -474,6 +482,24 @@
 </template>
 </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="backups" title-field="name" :fields="backupCardFields">
+            <template #actions="{ row }">
+              <el-button v-if="!row.remote_only" size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
+              <el-button v-if="!row.remote_only" size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
+              <el-button v-if="row.remote_only" size="small" type="warning" disabled title="Use Remote Restore below">Local Restore</el-button>
+              <el-dropdown trigger="click" style="margin:0 8px">
+                <el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item @click="showUploadS3(row)">S3 / MinIO</el-dropdown-item>
+                    <el-dropdown-item @click="showUploadWebDAV(row)">WebDAV</el-dropdown-item>
+                    <el-dropdown-item @click="showUploadFTP(row)">FTP</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button size="small" type="danger" @click="handleDeleteBackup(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Schedules -->
@@ -484,7 +510,7 @@
               <el-button size="small" type="primary" @click="showAddSchedule">{{ t('settings.backup.addSchedule') }}</el-button>
             </div>
           </template>
-          <el-table :data="schedules" stripe>
+          <el-table v-if="!isMobile" :data="schedules" stripe>
             <el-table-column prop="name" :label="t('common.name')" min-width="150" />
             <el-table-column prop="cron" label="Cron" width="140" />
             <el-table-column :label="t('settings.backup.remoteStorage')" width="150">
@@ -506,6 +532,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="schedules" title-field="name" :fields="scheduleCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" @click="showEditSchedule(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteSchedule(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
 
         <!-- Remote Storage -->
@@ -516,7 +548,7 @@
               <el-button size="small" type="primary" @click="showAddStorage">{{ t('settings.backup.addStorage') }}</el-button>
             </div>
           </template>
-          <el-table :data="storages" stripe>
+          <el-table v-if="!isMobile" :data="storages" stripe>
             <el-table-column prop="name" :label="t('common.name')" min-width="150" />
             <el-table-column prop="type" label="Type" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
@@ -533,6 +565,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="storages" title-field="name" :fields="storageCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" @click="showEditStorage(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteStorage(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
       </el-tab-pane>
 
@@ -721,7 +759,7 @@
             <span style="font-weight:500">{{ t('settings.github.domains') }}</span>
             <el-button type="primary" size="small" @click="showAddDomain">{{ t('settings.github.addDomain') }}</el-button>
           </div>
-          <el-table :data="githubForm.domains" stripe>
+          <el-table v-if="!isMobile" :data="githubForm.domains" stripe>
             <el-table-column prop="name" :label="t('settings.github.domainName')" width="150" />
             <el-table-column prop="url" :label="t('settings.github.domainUrl')" />
             <el-table-column :label="t('settings.github.domainEnabled')" width="100">
@@ -738,6 +776,13 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="githubForm.domains" title-field="name" :fields="domainCardFields">
+            <template #actions="{ row }">
+              <el-switch v-model="row.enabled" size="small" />
+              <el-button size="small" @click="showEditDomain(row, githubForm.domains.indexOf(row))">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="handleDeleteDomain(githubForm.domains.indexOf(row))">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
 
           <div style="margin-top:20px;text-align:right">
             <el-button type="primary" :loading="githubSaving" @click="saveGitHubConfig">{{ t('common.save') }}</el-button>
@@ -919,7 +964,7 @@
 
     <!-- Remote Restore Dialog -->
     <el-dialog v-model="remoteRestoreDialogVisible" :title="t('settings.backup.remoteRestore')" width="600">
-      <el-table :data="remoteRestoreFiles" v-loading="remoteRestoreLoading" stripe max-height="400">
+      <el-table v-if="!isMobile" :data="remoteRestoreFiles" v-loading="remoteRestoreLoading" stripe max-height="400">
         <el-table-column prop="name" :label="t('common.name')" />
         <el-table-column prop="size" label="Size" width="120">
           <template #default="{row}">{{ formatSize(row.size) }}</template>
@@ -930,6 +975,11 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="remoteRestoreFiles" title-field="name" :fields="remoteRestoreCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" type="warning" @click="handleRemoteRestore(row.name)">{{ t('settings.backup.restore') }}</el-button>
+        </template>
+      </MobileCards>
       <div v-if="!remoteRestoreLoading && remoteRestoreFiles.length === 0" style="text-align:center;padding:20px;color:#909399">
         {{ t('settings.backup.noRemoteFiles') }}
       </div>
@@ -1025,8 +1075,11 @@ import { useI18n } from 'vue-i18n'
 import client from '../api/client'
 import { CURRENCIES as currencyList } from '../utils/currency'
 import { useQueryState } from '../composables/useQueryState'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const activeTab = useQueryState('tab', 'panel')
 
 // Currency config
@@ -1818,6 +1871,43 @@ function handleSaveDomain() {
   domainDialogVisible.value = false
 }
 function handleDeleteDomain(index) { githubForm.value.domains.splice(index, 1) }
+
+// ── 移动端卡片字段（与桌面列一一对应）──
+const templateCardFields = computed(() => [
+  { label: t('settings.templates.tplType'), text: row => row.type || '-' },
+  { label: t('settings.templates.audience'), text: row => row.audience === 'subscriber' ? t('settings.templates.audienceSubscriber') : t('settings.templates.audienceAdmin') },
+  { label: t('settings.templates.tplSubject'), text: row => row.subject || '-' },
+  { label: t('settings.templates.tplCron'), text: row => row.cron || '-' },
+  { label: t('settings.templates.tplEnabled'), text: row => row.enabled ? 'ON' : 'OFF' },
+])
+
+const backupCardFields = computed(() => [
+  { label: 'Type', text: row => row.type || '-' },
+  { label: 'Size', text: row => formatSize(row.file_size) },
+  { label: t('common.createdAt'), text: row => row.created_at ? new Date(row.created_at).toLocaleString() : '-' },
+  { label: 'Remote Only', text: row => row.remote_only ? '✓' : '' },
+])
+
+const scheduleCardFields = computed(() => [
+  { label: 'Cron', text: row => row.cron || '-' },
+  { label: t('settings.backup.remoteStorage'), text: row => row.storage_id ? getStorageName(row.storage_id) : t('settings.backup.localOnly') },
+  { label: t('settings.backup.retainDays'), text: row => row.retain_days ?? '-' },
+  { label: 'Enabled', text: row => row.enabled ? 'ON' : 'OFF' },
+])
+
+const storageCardFields = computed(() => [
+  { label: 'Type', text: row => row.type || '-' },
+  { label: 'Enabled', text: row => row.enabled ? 'ON' : 'OFF' },
+])
+
+const domainCardFields = computed(() => [
+  { label: t('settings.github.domainUrl'), text: row => row.url || '-' },
+  { label: t('settings.github.domainEnabled'), text: row => row.enabled ? 'ON' : 'OFF' },
+])
+
+const remoteRestoreCardFields = computed(() => [
+  { label: 'Size', text: row => formatSize(row.size) },
+])
 
 onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
 </script>

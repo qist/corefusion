@@ -16,7 +16,7 @@
 
     <!-- Certificate List -->
     <el-card>
-      <el-table :data="certificates" v-loading="loading" stripe @selection-change="onCertSelectionChange">
+      <el-table v-if="!isMobile" :data="certificates" v-loading="loading" stripe @selection-change="onCertSelectionChange">
         <el-table-column type="selection" width="46" />
         <el-table-column prop="name" :label="t('certificate.certName')" width="200">
           <template #default="{row}">
@@ -82,6 +82,31 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards
+        v-else
+        :rows="certificates"
+        :title-fn="certCardTitle"
+        :fields="certCardFields"
+      >
+        <template #actions="{ row }">
+          <!-- 下载：浏览器无法自定义请求头 ✗ → 先换一次性票据再拼 ?ticket= ✓（scope=cert_download ✓）-->
+          <el-dropdown size="small" trigger="click" style="margin-right:8px" @command="(f) => downloadCert(row, f)">
+            <el-button size="small" plain :disabled="row.has_content === false">{{ t('certificate.download') }}</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="zip">{{ t('certificate.downloadZip') }}</el-dropdown-item>
+                <el-dropdown-item command="cert">{{ t('certificate.downloadCertOnly') }}</el-dropdown-item>
+                <el-dropdown-item command="fullchain">{{ t('certificate.downloadFullchain') }}</el-dropdown-item>
+                <el-dropdown-item command="key">{{ t('certificate.downloadKey') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button size="small" type="primary" plain :disabled="row.has_content === false" :loading="row._distributing" @click="handleDistribute(row)">{{ t('certificate.distribute') }}</el-button>
+          <el-button size="small" type="warning" plain @click="showMigrateDialog(row)">{{ t('certificate.migrate') }}</el-button>
+          <el-button v-if="row.provider_type!=='upload'" size="small" @click="handleRenew(row)" :loading="row._renewing">{{ t('certificate.renew') }}</el-button>
+          <el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
       <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchCertificates" />
     </el-card>
 
@@ -196,7 +221,7 @@
         <el-button type="primary" size="small" @click="showAddEAB">{{ t('certificate.addEAB') }}</el-button>
         <span style="margin-left:12px;color:#909399;font-size:12px">{{ t('certificate.eabWhyHint') }}</span>
       </div>
-      <el-table :data="eabConfigs" stripe>
+      <el-table v-if="!isMobile" :data="eabConfigs" stripe>
         <el-table-column prop="name" :label="t('common.name')" width="180" />
         <el-table-column :label="t('certificate.caProvider')" width="150">
           <template #default="{row}"><el-tag size="small">{{ row.ca_provider || '-' }}</el-tag></template>
@@ -218,6 +243,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="eabConfigs" title-field="name" :fields="eabCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" @click="showEditEAB(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click="handleDeleteEAB(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-dialog>
 
     <!-- Add/Edit EAB Dialog -->
@@ -296,7 +327,7 @@
       <div style="margin-bottom:16px">
         <el-button type="primary" size="small" @click="showAddChannel">{{ t('certificate.addChannel') }}</el-button>
       </div>
-      <el-table :data="channels" stripe>
+      <el-table v-if="!isMobile" :data="channels" stripe>
         <el-table-column prop="name" :label="t('common.name')" width="150" />
         <el-table-column prop="provider" :label="t('certificate.dnsProvider')" width="120" />
         <el-table-column :label="t('certificate.envVars')" min-width="200">
@@ -317,6 +348,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="channels" title-field="name" :fields="channelCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" @click="showEditChannel(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click="handleDeleteChannel(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-dialog>
 
     <!-- Add/Edit Channel Dialog -->
@@ -346,7 +383,7 @@
       <div style="margin-bottom:16px">
         <el-button type="primary" size="small" @click="showAddEmail">{{ t('certificate.addEmail') }}</el-button>
       </div>
-      <el-table :data="emails" stripe>
+      <el-table v-if="!isMobile" :data="emails" stripe>
         <el-table-column prop="email" :label="t('certificate.email')" />
         <el-table-column :label="t('certificate.default')" width="100">
           <template #default="{row}">
@@ -362,6 +399,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="emails" title-field="email" :fields="emailCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" @click="showEditEmail(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click="handleDeleteEmail(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-dialog>
 
     <!-- Add/Edit Email Dialog -->
@@ -481,6 +524,8 @@ import { UploadFilled } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../composables/useQueryState'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 import client from '../api/client'
 
 const { t } = useI18n()
@@ -606,6 +651,34 @@ function formatDate(d) {
   if (!d || d === '0001-01-01T00:00:00Z') return '-'
   return new Date(d).toLocaleString()
 }
+
+const { isMobile } = useIsMobile()
+// 手机端卡片：标题 = 证书名 + （节点只留元数据时的"节点持有"标记，与桌面 name 列 tag 等价）
+const certCardTitle = (row) => row.has_content === false ? `${row.name}（${t('certificate.nodeHeld')}）` : row.name
+// 与桌面表格列一一对应，复用现有 helper
+const certCardFields = computed(() => [
+  { label: t('certificate.domain'), text: (row) => row.domains ? parseDomains(row.domains).join(', ') : (row.domain || '-') },
+  { label: t('certificate.keyType'), text: (row) => row.key_type ? `${row.key_type.toUpperCase()} ${row.key_bits}` : '-' },
+  { label: t('certificate.issuer'), text: (row) => row.issuer || '-' },
+  { label: t('certificate.issuerNode'), text: (row) => row.issuer_node_id > 0 ? (row.issuer_node_name || ('#' + row.issuer_node_id)) : t('certificate.panelLocal') },
+  { label: t('common.status'), text: (row) => row.status || '-' },
+  { label: t('certificate.expiresAt'), text: (row) => formatDate(row.expires_at) },
+])
+// EAB 配置卡片（弹窗内表格）
+const eabCardFields = computed(() => [
+  { label: t('certificate.caProvider'), text: (row) => row.ca_provider || '-' },
+  { label: 'EAB-KID', text: (row) => row.eab_key_id || '-' },
+  { label: 'EAB-HMAC-Key', text: (row) => row.has_mac_key ? t('certificate.eabSet') : t('certificate.eabUnset') },
+])
+// DNS 通道卡片（弹窗内表格）
+const channelCardFields = computed(() => [
+  { label: t('certificate.dnsProvider'), text: (row) => row.provider || '-' },
+  { label: t('certificate.envVars'), text: (row) => row.env_vars ? Object.entries(row.env_vars).map(([k, v]) => `${k}: ${v}`).join(', ') : '' },
+])
+// ACME 邮箱卡片（弹窗内表格；非默认不显示该字段）
+const emailCardFields = computed(() => [
+  { label: t('certificate.default'), text: (row) => row.is_default ? t('common.yes') : '' },
+])
 
 // --- Certificates ---
 async function fetchCertificates() {

@@ -8,7 +8,7 @@
     <!-- Sources -->
     <el-card style="margin-bottom:16px">
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.importSources') }}</div>
-      <el-table :data="sourcesPagedList" stripe size="small">
+      <el-table v-if="!isMobile" :data="sourcesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" :label="t('common.name')" min-width="180" />
         <el-table-column prop="source_type" :label="t('common.type')" width="80">
@@ -23,13 +23,19 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="sourcesPagedList" title-field="name" :fields="extSourceCardFields">
+        <template #actions="{ row }">
+          <el-switch v-model="row.enabled" @change="updateSource(row)" />
+          <el-button size="small" type="danger" text @click="deleteSource(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
       <PaginationBar v-model:page="sourcesPage" v-model:page-size="sourcesSize" :total="sourcesTotal" />
     </el-card>
 
     <!-- Nodes -->
     <el-card>
       <div class="hint" style="margin-bottom:8px">{{ t('externalNodes.allNodesHint') }}</div>
-      <el-table :data="nodesPagedList" stripe size="small">
+      <el-table v-if="!isMobile" :data="nodesPagedList" stripe size="small">
         <el-table-column prop="id" label="ID" width="50" />
         <el-table-column prop="name" :label="t('common.name')" min-width="160" />
         <el-table-column prop="protocol" :label="t('externalNodes.protocol')" width="80">
@@ -60,6 +66,16 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="nodesPagedList" title-field="name" :fields="extNodeCardFields">
+        <template #actions="{ row }">
+          <el-switch v-model="row.enabled" size="small" @change="updateNode(row)" />
+          <el-tag v-if="registeredNodeIds.has(row.id)" size="small" type="success">{{ t('externalNodes.registered') }}</el-tag>
+          <el-button size="small" text @click="editNode(row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="!registeredNodeIds.has(row.id)" size="small" type="success" text @click="registerAsEntry(row)">{{ t('externalNodes.registerAsEntry') }}</el-button>
+          <el-button v-else size="small" type="warning" text @click="unregisterEntry(row)">{{ t('externalNodes.unregisterEntry') }}</el-button>
+          <el-button size="small" type="danger" text @click="deleteNode(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
       <PaginationBar v-model:page="nodesPage" v-model:page-size="nodesSize" :total="nodesTotal" />
     </el-card>
 
@@ -147,7 +163,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import client from '../api/client'
 import * as chainApi from '../api/chainlink'
 import { useClientPagination } from '../composables/useClientPagination'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
 
@@ -167,6 +185,19 @@ const regSaving = ref(false)
 const regForm = ref({ external_node_id: 0, node_display: '', name: '', region: '', region_label: '', enabled: true })
 const registeredServers = ref([]) // external_node_servers from chain API
 const registeredNodeIds = computed(() => new Set(registeredServers.value.map(s => s.external_node_id)))
+
+const { isMobile } = useIsMobile()
+// 手机端卡片字段（与桌面表格列对应）
+const extSourceCardFields = computed(() => [
+  { label: t('common.type'), text: (row) => row.source_type || '-' },
+])
+const extNodeCardFields = computed(() => [
+  { label: t('externalNodes.protocol'), text: (row) => row.protocol || '-' },
+  { label: t('externalNodes.address'), text: (row) => row.host || '-' },
+  { label: t('externalNodes.port'), text: (row) => row.port ?? '-' },
+  { label: t('externalNodes.transport'), text: (row) => row.transport || '-' },
+  { label: 'TLS', text: () => 'TLS', hide: (row) => !row.tls },
+])
 
 async function fetchSources() {
   try { sources.value = (await client.get('/external-nodes/sources')) || [] } catch {}

@@ -8,7 +8,7 @@
           <h3 style="margin:0">{{ t('charge.sitesTab') }}</h3>
           <el-button type="primary" size="small" @click="showCreateSite">+ {{ t('charge.addSite') }}</el-button>
         </div>
-        <el-table :data="sites" v-loading="sitesLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="sites" v-loading="sitesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="name" :label="t('common.name')" width="150" />
           <el-table-column prop="site_url" :label="t('charge.siteUrl')" show-overflow-tooltip />
@@ -45,6 +45,16 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="sites" title-field="name" :fields="siteCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showEditSite(row)">{{ t('common.edit') }}</el-button>
+            <el-button size="small" type="primary" @click="showVerifyDialog(row)">{{ t('charge.verify') }}</el-button>
+            <el-button size="small" type="warning" @click="rotateSiteSecret(row)">{{ t('charge.rotateSecret') }}</el-button>
+            <el-button size="small" type="info" @click="showIntegrationDoc(row)">{{ t('charge.doc') }}</el-button>
+            <el-button size="small" :type="row.enabled?'warning':'success'" @click="toggleSite(row)">{{ row.enabled?t('common.disabled'):t('common.enabled') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
       </el-tab-pane>
 
       <!-- ════════════ 充值订单 Tab ════════════ -->
@@ -62,7 +72,7 @@
             <el-button type="info" size="small" @click="doExportOrdersCSV">📥 {{ t('charge.exportCSV') }}</el-button>
           </div>
         </div>
-        <el-table :data="orders" v-loading="ordersLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="orders" v-loading="ordersLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('charge.clientId')" width="90" />
           <el-table-column prop="client_email" :label="t('charge.email')" min-width="180" show-overflow-tooltip />
@@ -103,6 +113,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="orders" title-field="trade_no" :fields="chargeOrderCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showOrderDetail(row)">{{ t('charge.detail') }}</el-button>
+            <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">{{ t('charge.refund') }}</el-button>
+          </template>
+        </MobileCards>
         <div style="display:flex;justify-content:center;margin-top:16px">
           <PaginationBar v-model:page="orderPage" v-model:page-size="orderPageSize" :total="orderTotal" @change="fetchOrders" />
         </div>
@@ -136,7 +152,7 @@
           </el-select>
           <el-button size="small" @click="fetchCards">{{ t('common.search') }}</el-button>
         </div>
-        <el-table :data="cards" v-loading="cardsLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="cards" v-loading="cardsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column :label="t('charge.cardCode')" min-width="200">
             <template #default="{row}">
@@ -189,6 +205,12 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="cards" :title-fn="chargeCardCardTitle" :fields="chargeCardCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showCardUsages(row)">{{ t('charge.usageRecord') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteCard(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </MobileCards>
         <div style="display:flex;justify-content:center;margin-top:16px">
           <PaginationBar v-model:page="cardPage" v-model:page-size="cardPageSize" :total="cardTotal" @change="fetchCards" />
         </div>
@@ -200,7 +222,7 @@
           <h3 style="margin:0">{{ t('charge.balancesTab') }}</h3>
           <el-button type="info" size="small" @click="doExportBalanceTxCSV">📥 {{ t('charge.exportCSV') }}</el-button>
         </div>
-        <el-table :data="balances" v-loading="balancesLoading" stripe size="small">
+        <el-table v-if="!isMobile" :data="balances" v-loading="balancesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
           <el-table-column prop="client_id" :label="t('charge.clientId')" width="100" />
           <el-table-column prop="client_email" :label="t('charge.email')" min-width="180" show-overflow-tooltip />
@@ -217,6 +239,11 @@
             </template>
           </el-table-column>
         </el-table>
+        <MobileCards v-else :rows="balances" title-field="client_email" :fields="balanceCardFields">
+          <template #actions="{ row }">
+            <el-button size="small" @click="showTransactions(row)">{{ t('charge.transactions') }}</el-button>
+          </template>
+        </MobileCards>
         <div style="display:flex;justify-content:center;margin-top:16px">
           <PaginationBar v-model:page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" @change="fetchBalances" />
         </div>
@@ -515,7 +542,7 @@
 
     <!-- 余额流水弹窗 -->
     <el-dialog v-model="txDialog" :title="t('charge.txTitle', { id: txClientId })" width="800px">
-      <el-table :data="transactions" v-loading="txLoading" stripe size="small">
+      <el-table v-if="!isMobile" :data="transactions" v-loading="txLoading" stripe size="small">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column :label="t('common.type')" width="80">
           <template #default="{row}">
@@ -537,6 +564,7 @@
           <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="transactions" :title-fn="txCardTitle" :fields="txCardFields" />
     </el-dialog>
 
     <!-- ═══════════════════════════════════════════════ -->
@@ -577,7 +605,7 @@
       <el-alert v-if="usageItems.length === 0 && !usageLoading" type="info" :closable="false">
         <template #title>{{ t('charge.cardNotUsed') }}</template>
       </el-alert>
-      <el-table :data="usageItems" v-loading="usageLoading" stripe size="small" v-else>
+      <el-table v-else-if="!isMobile" :data="usageItems" v-loading="usageLoading" stripe size="small">
         <el-table-column prop="id" :label="t('charge.orderId')" width="70" />
         <el-table-column prop="trade_no" :label="t('charge.tradeNo')" width="200" show-overflow-tooltip />
         <el-table-column prop="client_email" :label="t('charge.userEmail')" min-width="160" show-overflow-tooltip />
@@ -594,6 +622,7 @@
           <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="usageItems" title-field="trade_no" :fields="usageCardFields" />
       <template #footer>
         <el-button @click="usageDialog=false">{{ t('common.close') }}</el-button>
       </template>
@@ -626,7 +655,7 @@
       <el-alert type="success" :closable="false" style="margin-bottom:12px">
         <template #title>{{ t('charge.batchResultMsg', { count: batchResult.length, batchId: batchResultBatchId }) }}</template>
       </el-alert>
-      <el-table :data="batchResult" stripe size="small" max-height="400">
+      <el-table v-if="!isMobile" :data="batchResult" stripe size="small" max-height="400">
         <el-table-column prop="card_code" :label="t('charge.cardCode')" min-width="220" />
         <el-table-column :label="t('currency.amount')" width="200" show-overflow-tooltip>
           <template #default="{row}">{{ batchResultType==='balance' ? formatAmount(row.value, batchResultCurrency) : findVariantName(row.value) }}</template>
@@ -635,6 +664,7 @@
           <template #default><el-tag type="success" size="small">{{ t('charge.unused') }}</el-tag></template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="batchResult" title-field="card_code" :fields="batchResultCardFields" />
       <template #footer>
         <el-button type="primary" @click="batchResultDialog=false">{{ t('common.confirm') }}</el-button>
       </template>
@@ -651,9 +681,12 @@ import * as chargeApi from '../api/charge'
 import * as planApi from '../api/plan'
 import { CURRENCIES, getCurrencyInfo, getCurrencySymbol, getCurrencyDecimals, yuanToMinor, minorToYuan, formatAmount, getAmountStep, getValuePlaceholder } from '../utils/currency'
 import { useQueryState } from '../composables/useQueryState'
+import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t, locale } = useI18n()
+const { isMobile } = useIsMobile()
 
 // Default currency - fetched from system settings
 const defaultCurrency = ref('CNY')
@@ -1165,6 +1198,68 @@ const cardStatusLabel = (s) => ({ active: t('charge.cardActive'), used: t('charg
 const cardStatusColor = (s) => ({ active:'success', used:'info', expired:'warning', disabled:'danger' })[s] || ''
 const cardTypeLabel = (tp) => ({ balance: t('charge.typeBalance'), plan: t('charge.typePlan'), traffic_pack: t('charge.typeTrafficPack') })[tp] || tp
 const txTypeLabel = (tp) => ({ charge: t('charge.txCharge'), consume: t('charge.txConsume'), refund: t('charge.txRefund'), gift: t('charge.txGift') })[tp] || tp
+
+// ──────── 移动端卡片字段（与桌面列一一对应）────────
+const siteCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('charge.siteUrl'), text: (row) => row.site_url || '-' },
+  { label: t('charge.paymentMethods'), text: (row) => { const ms = parseMethods(row.supported_methods); return ms.length ? ms.join(', ') : '—' } },
+  { label: t('common.status'), text: (row) => row.enabled ? t('common.enabled') : t('common.disabled') },
+  { label: t('charge.verification'), text: (row) => row.verified ? t('charge.verified') : t('charge.notVerified') },
+  { label: t('charge.currency'), text: (row) => row.currency || '-' },
+  { label: t('charge.sortOrder'), text: (row) => String(row.sort_order ?? '-') },
+])
+const chargeOrderCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('charge.clientId'), text: (row) => String(row.client_id ?? '-') },
+  { label: t('charge.email'), text: (row) => row.client_email || '-' },
+  { label: t('charge.source'), text: (row) => sourceLabel(row.source) || '-' },
+  { label: t('common.type'), text: (row) => row.order_type === 'charge' ? t('charge.typeCharge') : t('charge.typePlan') },
+  { label: t('currency.amount'), text: (row) => formatAmount(row.amount, row.currency || 'CNY') },
+  { label: t('charge.paymentMethods'), text: (row) => row.method || '—' },
+  { label: t('common.status'), text: (row) => chargeOrderStatusLabel(row.status) || '-' },
+  { label: t('common.createdAt'), text: (row) => row.created_at?.substring(0, 16).replace('T', ' ') || '-' },
+  { label: t('charge.paidAt'), text: (row) => row.paid_at?.substring(0, 16).replace('T', ' ') || '—' },
+])
+const chargeCardCardTitle = (row) => row.card_code_masked || row.card_code || ''
+const chargeCardCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('common.type'), text: (row) => cardTypeLabel(row.card_type) || '-' },
+  { label: t('charge.faceValue'), text: (row) => row.card_type === 'balance' ? formatAmount(row.value, row.currency || 'CNY') : findVariantName(row.value) },
+  { label: t('charge.usage'), text: (row) => row.status === 'active' ? t('charge.unused') : t('charge.used') },
+  { label: t('charge.batch'), text: (row) => row.batch_id || '-' },
+  { label: t('charge.creator'), text: (row) => row.created_by_admin_name || '—' },
+  { label: t('charge.agent'), text: (row) => row.agent_name || t('charge.official') },
+  { label: t('common.status'), text: (row) => cardStatusLabel(row.status) || '-' },
+  { label: t('charge.expiresAt'), text: (row) => row.expires_at?.substring(0, 10) || t('charge.neverExpires') },
+])
+const balanceCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('charge.clientId'), text: (row) => String(row.client_id ?? '-') },
+  { label: t('charge.nickname'), text: (row) => row.client_nickname || '-' },
+  { label: t('currency.balance'), text: (row) => formatAmount(row.balance, row.currency || 'CNY') },
+  { label: t('currency.frozen'), text: (row) => formatAmount(row.frozen, row.currency || 'CNY') },
+])
+const txCardTitle = (row) => row.created_at?.substring(0, 16).replace('T', ' ') || ''
+const txCardFields = computed(() => [
+  { label: 'ID', text: (row) => String(row.id ?? '-') },
+  { label: t('common.type'), text: (row) => txTypeLabel(row.type) || '-' },
+  { label: t('currency.amount'), text: (row) => (row.amount > 0 ? '+' : row.amount < 0 ? '-' : '') + formatAmount(Math.abs(row.amount), row.currency || 'CNY') },
+  { label: t('charge.balance'), text: (row) => formatAmount(row.balance_after, row.currency || 'CNY') },
+  { label: t('charge.remark'), text: (row) => row.remark || '-' },
+])
+const usageCardFields = computed(() => [
+  { label: t('charge.orderId'), text: (row) => String(row.id ?? '-') },
+  { label: t('charge.userEmail'), text: (row) => row.client_email || '-' },
+  { label: t('charge.nickname'), text: (row) => row.client_nickname || '-' },
+  { label: t('currency.amount'), text: (row) => formatAmount(row.amount, row.currency || 'CNY') },
+  { label: t('common.status'), text: (row) => chargeOrderStatusLabel(row.status) || '-' },
+  { label: t('charge.usedAt'), text: (row) => row.created_at?.substring(0, 16).replace('T', ' ') || '-' },
+])
+const batchResultCardFields = computed(() => [
+  { label: t('currency.amount'), text: (row) => batchResultType.value === 'balance' ? formatAmount(row.value, batchResultCurrency.value) : findVariantName(row.value) },
+  { label: t('common.status'), text: () => t('charge.unused') },
+])
 
 // ──────── Plan Data (for card variant selection) ────────
 const planTemplates = ref([])

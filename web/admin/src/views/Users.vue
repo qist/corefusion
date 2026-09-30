@@ -2,7 +2,7 @@
   <div>
     <div style="display:flex;justify-content:space-between;margin-bottom:20px"><h2>{{ t('user.title') }}</h2><el-button type="primary" v-if="$can('admin')" @click="showCreate">{{ t('user.create') }}</el-button></div>
     <el-card>
-      <el-table :data="users" v-loading="loading" stripe>
+      <el-table v-if="!isMobile" :data="users" v-loading="loading" stripe>
         <el-table-column prop="id" :label="t('common.id')" width="60" />
         <el-table-column prop="username" :label="t('user.username')" width="120" />
         <el-table-column prop="email" :label="t('user.email')" />
@@ -12,6 +12,12 @@
           <template #default="{row}"><div style="display:flex;gap:2px;align-items:center;white-space:nowrap"><el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button><el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button></div></template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="users" title-field="username" :fields="userCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" @click="showEdit(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" v-if="$can('admin')" @click="handleDelete(row)" :disabled="row.id===1">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
     <PaginationBar v-model:page="page" v-model:page-size="pageSize" :total="total" @change="fetchData" />
     <el-dialog v-model="dialogVisible" :title="editing?t('user.edit'):t('user.create')" width="400">
@@ -26,17 +32,25 @@
   </div>
 </template>
 <script setup>
-import {ref,onMounted} from 'vue'
+import {ref,onMounted,computed} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import {useI18n} from 'vue-i18n'
 import client from '../api/client'
 import {usePagination} from '../composables/usePagination'
 import PaginationBar from '../components/PaginationBar.vue'
+import { useIsMobile } from '../composables/useIsMobile'
+import MobileCards from '../components/MobileCards.vue'
 const {t}=useI18n()
+const { isMobile } = useIsMobile()
 const {page,pageSize}=usePagination({pageKey:'usersPage',pageSizeKey:'usersSize'})
 const users=ref([]);const loading=ref(false);const total=ref(0);const dialogVisible=ref(false);const editing=ref(null);const saving=ref(false)
 const form=ref({username:'',email:'',password:'',role:'viewer'})
 const roleLabel=(r)=>({super_admin:t('user.roles.superAdmin'),admin:t('user.roles.admin'),operator:t('user.roles.operator'),viewer:t('user.roles.viewer')}[r]||r)
+const userCardFields=computed(()=>[
+  {label:t('user.email'),text:(row)=>row.email||'-'},
+  {label:t('user.role'),text:(row)=>roleLabel(row.role)},
+  {label:t('common.status'),text:(row)=>row.status===1?t('common.enabled'):t('common.disabled')},
+])
 async function fetchData(){loading.value=true;try{const r=await client.get('/users',{params:{limit:pageSize.value,offset:(page.value-1)*pageSize.value}});users.value=r.items||[];total.value=r.total||0}finally{loading.value=false}}
 function showCreate(){editing.value=null;form.value={username:'',email:'',password:'',role:'viewer'};dialogVisible.value=true}
 function showEdit(row){editing.value=row;form.value={username:row.username,email:row.email||'',password:'',role:row.role};dialogVisible.value=true}

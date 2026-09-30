@@ -19,7 +19,7 @@
           </div>
         </el-form-item>
         <el-form-item :label="t('proxy.wafSyncFiles')">
-          <el-table :data="fileMappings" stripe size="small" style="width:100%">
+          <el-table v-if="!isMobile" :data="fileMappings" stripe size="small" style="width:100%">
             <el-table-column prop="name" :label="t('proxy.wafFileName')" width="140" />
             <el-table-column :label="t('proxy.wafFileURL')" min-width="300">
               <template #default="{ row }">
@@ -52,6 +52,18 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="fileMappings" title-field="name" :fields="wafFileMappingCardFields">
+            <template #actions="{ row }">
+              <el-input v-model="row.url" size="small" :placeholder="previewUrl(row.name)" style="flex:1 1 100%">
+                <template v-if="!row.url" #append>
+                  <span style="font-size:11px;color:#c0c4cc">{{ t('proxy.wafInherit') }}</span>
+                </template>
+              </el-input>
+              <el-button size="small" text type="danger" @click="removeFileMapping(fileMappings.indexOf(row))">
+                {{ t('common.delete') }}
+              </el-button>
+            </template>
+          </MobileCards>
           <div style="margin-top:8px;display:flex;gap:8px">
             <el-select
               v-model="newFileName"
@@ -116,7 +128,7 @@
           • <b>Append</b>: {{ t('proxy.wafMergeAppendDesc') }}
         </div>
       </el-alert>
-      <el-table :data="globalRules" stripe style="width:100%" @row-click="openRuleEditor" class="rules-table">
+      <el-table v-if="!isMobile" :data="globalRules" stripe style="width:100%" @row-click="openRuleEditor" class="rules-table">
         <el-table-column prop="name" :label="t('proxy.wafRule')" width="150" />
         <el-table-column :label="t('proxy.wafMergeMode')" width="100">
           <template #default="{ row }">
@@ -150,6 +162,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="globalRules" title-field="name" :fields="wafRuleCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" text @click.stop="openRuleEditor(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" text type="danger" @click.stop="deleteRule(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
 
     <!-- Rule Editor Dialog -->
@@ -194,12 +212,15 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Refresh, Promotion } from '@element-plus/icons-vue'
+import { useIsMobile } from '../../composables/useIsMobile'
+import MobileCards from '../../components/MobileCards.vue'
 import {
   listWafRules, getWafRule, saveWafRule, deleteWafRule,
   syncWafFromGitHub, getWafGitHubSource, saveWafGitHubSource, pushWafToAllNodes,
 } from '../../api/waf'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 const globalRules = ref([])
 const syncing = ref(false)
@@ -302,6 +323,19 @@ function formatWafSize(n) {
   if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
   return (n / (1024 * 1024)).toFixed(2) + ' MB'
 }
+
+// 手机端卡片字段（与桌面表格列对应）
+const wafFileMappingCardFields = computed(() => [
+  { label: t('proxy.wafFileMode'), text: (row) => row.merge_mode || 'replace' },
+  { label: t('proxy.wafFileURL'), text: (row) => row.url || previewUrl(row.name) },
+])
+const wafRuleCardFields = computed(() => [
+  { label: t('proxy.wafMergeMode'), text: (row) => row.merge_mode || 'replace' },
+  { label: t('proxy.wafRuleDesc'), text: (row) => wafRuleDesc(row.name) },
+  { label: t('proxy.wafSize'), text: (row) => formatWafSize(row.content ? row.content.length : 0) },
+  { label: t('proxy.wafHash'), text: (row) => row.hash ? row.hash.substring(0, 12) + '...' : '-' },
+  { label: t('common.updatedAt'), text: (row) => formatTime(row.updated_at) },
+])
 
 async function loadRules() {
   try {

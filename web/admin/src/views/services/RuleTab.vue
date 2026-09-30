@@ -10,7 +10,7 @@
       </div>
     </div>
     <el-card style="margin-bottom:20px">
-      <el-table :data="sources" v-loading="sourcesLoading" stripe>
+      <el-table v-if="!isMobile" :data="sources" v-loading="sourcesLoading" stripe>
         <el-table-column prop="name" :label="t('common.name')" width="200" />
         <el-table-column prop="repo_url" label="Repo" />
         <el-table-column prop="sync_cron" :label="t('service.rules.syncCron')" width="140" />
@@ -36,6 +36,15 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="sources" title-field="name" :fields="ruleSourceCardFields">
+        <template #actions="{ row }">
+          <el-switch v-model="row.enabled" @change="handleToggleSchedule(row)" />
+          <el-button size="small" :disabled="row.repo_url.startsWith('http')" @click="showFetchAssets(row)">{{ t('service.rules.browseFiles') }}</el-button>
+          <el-button size="small" type="success" @click="handleSyncSource(row)" :loading="row._syncing">{{ t('service.rules.sync') }}</el-button>
+          <el-button size="small" @click="showEditSource(row)">{{ t('common.edit') }}</el-button>
+          <el-button size="small" type="danger" @click="handleDeleteSource(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
 
     <!-- Selected Files -->
@@ -44,7 +53,7 @@
       <el-button type="primary" plain @click="showAddFile">{{ t('service.rules.addFile') }}</el-button>
     </div>
     <el-card>
-      <el-table :data="files" v-loading="filesLoading" stripe>
+      <el-table v-if="!isMobile" :data="files" v-loading="filesLoading" stripe>
         <el-table-column prop="name" label="File" min-width="250" />
         <el-table-column :label="t('service.rules.fileSize')" width="120">
           <template #default="{row}">{{ row.file_size ? formatSize(row.file_size) : '-' }}</template>
@@ -69,6 +78,12 @@
           </template>
         </el-table-column>
       </el-table>
+      <MobileCards v-else :rows="files" title-field="name" :fields="ruleFileCardFields">
+        <template #actions="{ row }">
+          <el-button size="small" type="primary" @click="handleDownload(row)" :loading="row._loading">{{ t('service.rules.download') }}</el-button>
+          <el-button size="small" type="danger" @click="handleDeleteFile(row)">{{ t('common.delete') }}</el-button>
+        </template>
+      </MobileCards>
     </el-card>
 
     <!-- Add/Edit Source Dialog -->
@@ -119,13 +134,19 @@
       <div style="margin-bottom:12px">
         <el-tag v-if="assetsTag">{{ t('service.rules.latestVersion') }}: {{ assetsTag }}</el-tag>
       </div>
-      <el-table ref="assetsTableRef" :data="assets" v-loading="assetsLoading" stripe @selection-change="handleAssetSelect" max-height="400">
+      <el-table v-if="!isMobile" ref="assetsTableRef" :data="assets" v-loading="assetsLoading" stripe @selection-change="handleAssetSelect" max-height="400">
         <el-table-column type="selection" width="50" />
         <el-table-column prop="name" label="File" />
         <el-table-column :label="t('service.rules.fileSize')" width="100">
           <template #default="{row}">{{ formatSize(row.size) }}</template>
         </el-table-column>
       </el-table>
+      <!-- 手机端：selection 列以行内勾选框替代，仍写入 selectedAssets -->
+      <MobileCards v-else :rows="assets" title-field="name" :fields="ruleAssetCardFields">
+        <template #actions="{ row }">
+          <el-checkbox :model-value="selectedAssets.includes(row.name)" @change="(v) => toggleAsset(row.name, v)" />
+        </template>
+      </MobileCards>
       <template #footer>
         <el-button @click="assetsDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="selectSaving" @click="handleConfirmSelect">{{ t('service.rules.addSelected') }}</el-button>
@@ -161,8 +182,11 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
+import { useIsMobile } from '../../composables/useIsMobile'
+import MobileCards from '../../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 // Sources
 const sources = ref([])
@@ -202,6 +226,31 @@ function formatSize(bytes) {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
+// 手机端卡片字段（与桌面表格列对应）
+const ruleSourceCardFields = computed(() => [
+  { label: 'Repo', text: (row) => row.repo_url || '-' },
+  { label: t('service.rules.syncCron'), text: (row) => row.sync_cron || '-' },
+  { label: 'Version', text: (row) => row.last_sync_tag || '-' },
+  { label: t('common.status'), text: (row) => row.status || '-' },
+])
+const ruleFileCardFields = computed(() => [
+  { label: t('service.rules.fileSize'), text: (row) => row.file_size ? formatSize(row.file_size) : '-' },
+  { label: 'Version', text: (row) => row.version || '-' },
+  { label: t('service.rules.lastUpdated'), text: (row) => row.last_updated && row.last_updated !== '0001-01-01T00:00:00Z' ? new Date(row.last_updated).toLocaleString() : '-' },
+  { label: t('common.status'), text: (row) => row.status || '-' },
+])
+const ruleAssetCardFields = computed(() => [
+  { label: t('service.rules.fileSize'), text: (row) => formatSize(row.size) },
+])
+// 手机端卡片勾选（替代 el-table selection 列）
+function toggleAsset(name, checked) {
+  if (checked) {
+    if (!selectedAssets.value.includes(name)) selectedAssets.value.push(name)
+  } else {
+    selectedAssets.value = selectedAssets.value.filter(n => n !== name)
+  }
 }
 
 // --- Sources ---

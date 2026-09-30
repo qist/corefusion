@@ -148,7 +148,7 @@
       <!-- ============ 快照 ============ -->
       <el-tab-pane :label="t('runtime.snapshots')" name="snapshots">
         <el-card shadow="never">
-          <el-table :data="snapshotList" v-loading="snapListLoading" border stripe>
+          <el-table v-if="!isMobile" :data="snapshotList" v-loading="snapListLoading" border stripe>
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column prop="trigger_source" :label="t('runtime.triggerSource')" width="130" />
             <el-table-column prop="reason" :label="t('runtime.reason')" min-width="180" show-overflow-tooltip />
@@ -169,13 +169,19 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="snapshotList" :title-fn="snapshotCardTitle" :fields="snapshotCardFields">
+            <template #actions="{ row }">
+              <el-button type="primary" link size="small" @click="viewSnapshot(row)">{{ t('runtime.viewConfig') }}</el-button>
+              <el-button type="danger" link size="small" @click="delSnapshot(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
         </el-card>
       </el-tab-pane>
 
       <!-- ============ 任务 ============ -->
       <el-tab-pane :label="t('runtime.jobs')" name="jobs">
         <el-card shadow="never">
-          <el-table :data="jobList" v-loading="jobLoading" border stripe>
+          <el-table v-if="!isMobile" :data="jobList" v-loading="jobLoading" border stripe>
             <el-table-column prop="id" label="ID" width="70" />
             <el-table-column :label="t('runtime.jobType')" width="130">
               <template #default="{ row }">{{ opLabel(row.operation_kind) }}</template>
@@ -203,6 +209,13 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="jobList" :title-fn="jobCardTitle" :fields="runtimeJobCardFields">
+            <template #actions="{ row }">
+              <el-button type="primary" link size="small" @click="viewJob(row)">{{ t('runtime.detail') }}</el-button>
+              <el-button v-if="row.status === 'failed'" type="warning" link size="small" @click="retryJobHandler(row)">{{ t('runtime.retry') }}</el-button>
+              <el-button v-if="row.status === 'running' || row.status === 'pending'" type="danger" link size="small" @click="cancelJobHandler(row)">{{ t('runtime.cancel') }}</el-button>
+            </template>
+          </MobileCards>
           <div class="pager">
             <el-pagination
               v-model:current-page="jobQuery.page"
@@ -227,7 +240,7 @@
           <el-alert v-if="!nodes.length && !nodesLoading" :closable="false" type="info" class="mb8">
             {{ t('runtime.noNodes') }}
           </el-alert>
-          <el-table :data="nodes" v-loading="nodesLoading" border stripe>
+          <el-table v-if="!isMobile" :data="nodes" v-loading="nodesLoading" border stripe>
             <el-table-column prop="server_id" label="ID" width="70" />
             <el-table-column :label="t('runtime.nodeName')" min-width="160">
               <template #default="{ row }">
@@ -263,6 +276,7 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="nodes" :title-fn="nodeCardTitle" :fields="runtimeNodeCardFields" />
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -298,7 +312,7 @@
           <el-descriptions-item :label="t('runtime.error')" :span="2">{{ jobDetail.job.error_message || '-' }}</el-descriptions-item>
         </el-descriptions>
         <el-divider>{{ t('runtime.targets') }}</el-divider>
-        <el-table :data="jobDetail.targets || []" border size="small">
+        <el-table v-if="!isMobile" :data="jobDetail.targets || []" border size="small">
           <el-table-column type="expand">
             <template #default="{ row }">
               <div v-if="row.detail_json">
@@ -325,6 +339,7 @@
           </el-table-column>
           <el-table-column prop="error_message" :label="t('runtime.error')" min-width="200" show-overflow-tooltip />
         </el-table>
+        <MobileCards v-else :rows="jobDetail.targets || []" :title-fn="targetCardTitle" :fields="runtimeTargetCardFields" />
         <el-divider>{{ t('runtime.events') }}</el-divider>
         <el-timeline>
           <el-timeline-item
@@ -352,8 +367,11 @@ import {
   dryRun, applyRuntime, rollbackRuntime, disableProxy,
   listJobs, getJob, retryJob, cancelJob, listRuntimeNodes, verifyRuntimeNodes,
 } from '../api/runtime'
+import { useIsMobile } from '../composables/useIsMobile'
+import MobileCards from '../components/MobileCards.vue'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const activeTab = ref('actions')
 
 // ---------------- 标签/状态辅助 ----------------
@@ -427,6 +445,39 @@ function showTime(ts) {
   const d = new Date(ts)
   return isNaN(d.getTime()) ? String(ts) : d.toLocaleString()
 }
+
+// ---------------- 移动端卡片字段 ----------------
+const snapshotCardTitle = (row) => row.id != null ? '#' + row.id + (row.trigger_source ? ' · ' + row.trigger_source : '') : ''
+const snapshotCardFields = computed(() => [
+  { label: t('runtime.reason'), text: (row) => row.reason || '-' },
+  { label: t('runtime.targetNodes'), text: (row) => { const n = targetNodeNames(row.target_server_ids_json); return n.length ? n.join(', ') : t('runtime.allNodes') } },
+  { label: t('runtime.hash'), text: (row) => row.config_hash || '-' },
+  { label: t('common.time'), text: (row) => showTime(row.created_at) },
+])
+const jobCardTitle = (row) => row.id != null ? '#' + row.id + ' ' + (opLabel(row.operation_kind) || '') : ''
+const runtimeJobCardFields = computed(() => [
+  { label: t('runtime.triggerSource'), text: (row) => row.trigger_source || '-' },
+  { label: t('runtime.reason'), text: (row) => row.reason || '-' },
+  { label: t('runtime.snapshot'), text: (row) => row.snapshot_id ?? '-' },
+  { label: t('runtime.status'), text: (row) => row.status || '-' },
+  { label: t('runtime.verifyStatus'), text: (row) => verifyLabel(row.verify_status) },
+  { label: t('runtime.error'), text: (row) => row.error_message || '-' },
+  { label: t('common.time'), text: (row) => showTime(row.created_at) },
+])
+const nodeCardTitle = (row) => (row.name || ('#' + row.server_id)) + (row.is_local ? '（' + t('runtime.nodeLocal') + '）' : '')
+const runtimeNodeCardFields = computed(() => [
+  { label: t('runtime.nodeHost'), text: (row) => row.hostname || '-' },
+  { label: t('runtime.nodeRegion'), text: (row) => row.region || '-' },
+  { label: t('runtime.agentStatus'), text: (row) => row.online ? t('runtime.online') : t('runtime.offline') },
+  { label: t('runtime.targetStatus'), text: (row) => (row.verify_ok ? t('runtime.nodeVerifyOk') : t('runtime.nodeVerifyFail')) + (row.reason ? ' · ' + row.reason : '') },
+  { label: t('runtime.coreStates'), text: (row) => (row.cores && row.cores.length) ? row.cores.map(c => `${c.core_type}: ${c.state}${c.crashed ? ' · ' + t('runtime.verifyCrash') : ''}`).join(', ') : '-' },
+])
+const targetCardTitle = (row) => `${row.target_type || '-'} #${row.target_id ?? '-'}`
+const runtimeTargetCardFields = computed(() => [
+  { label: t('runtime.targetStatus'), text: (row) => row.status === 'verified_ok' ? t('runtime.verifiedOk') : row.status === 'verified_failed' ? t('runtime.verifiedFailed') : (row.status || '-') },
+  { label: t('runtime.coreStates'), text: (row) => { const cs = parseCores(row.detail_json); if (cs.length) return cs.map(c => `${c.core_type || '-'}: ${c.state || '-'}${c.crashed ? ' · ' + t('runtime.verifyCrash') : ''}`).join(', '); return row.detail_json || t('runtime.noCoreStates') } },
+  { label: t('runtime.error'), text: (row) => row.error_message || '-' },
+])
 
 const overview = ref({})
 function loadOverview() {

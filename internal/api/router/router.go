@@ -3856,6 +3856,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		// 注册"该域名"的回调即可 ✓（不必是面板域名 ✓）。
 		// ⚠ 登录成功跳回的是**根路径 /** ✓（本引擎门户不挂在 /p ✓）→ SetPortalBasePath("/") ✓。
 		oauthSvcPortal := oauthService.NewService(systemSettingSvc, repository.NewClientOAuthBindingRepository(database), clientRepo)
+		// ⚠ 门户引擎的 OAuth 同样要接自解封判定 ✗：不接的话 suspended 账号经门户引擎
+		// 回调会直接走"联系客服"拒绝分支，解封卡永远不出现（真机踩过 ✓）。
+		oauthSvcPortal.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 		oauthHPortal := oauthHandler.NewHandler(oauthSvcPortal, os.Getenv("JWT_SECRET"))
 		oauthHPortal.SetPortalBasePath("/")
 		clientAuthGroup.GET("/oauth/providers", oauthHPortal.ProvidersStatus)

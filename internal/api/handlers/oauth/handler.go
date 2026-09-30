@@ -21,13 +21,25 @@ type stateEntry struct {
 	CreatedAt time.Time
 }
 
+// oauthStateStore 是**进程内共享**的 state 存储。
+// ⚠ 主面板引擎（:8080）与独立门户引擎（:8082）各自 new 了一个 Handler（同一进程），
+// OAuth 回调域名（GitHub/Google 应用里注册的）与发起登录的域名端口可能不同 →
+// authorize 与 callback 会落到**不同 Handler 实例**。state 若按实例存内存，
+// 跨实例必报 "invalid or expired state parameter"（真机踩过 ✓）—— 所以必须共享。
+type oauthStateStore struct {
+	mu sync.RWMutex
+	m  map[string]stateEntry
+}
+
+var sharedOAuthStates = &oauthStateStore{m: make(map[string]stateEntry)}
+
 // Handler handles OAuth2 HTTP requests.
 type Handler struct {
 	oauthSvc *oauthSvc.Service
 	jwt      *jwt.JWT
-	// In-memory state store (for single-instance; use Redis for multi-instance)
-	stateStore   map[string]stateEntry
-	stateStoreMu sync.RWMutex
+	// states 指向进程内共享的 state 存储（见 oauthStateStore 注释）；
+	// 多实例部署才需要换 Redis。
+	states *oauthStateStore
 	// portalPath 是登录成功后跳回的**门户页面路径** ✓：主面板引擎上门户挂在 /p ✓，
 	// 独立门户端口引擎（NewPortalEngine）挂在根路径 / ✓ → 用 SetPortalBasePath 配置 ✓。
 	portalPath string
@@ -38,7 +50,7 @@ func NewHandler(oauthSvc *oauthSvc.Service, jwtSecret string) *Handler {
 	h := &Handler{
 		oauthSvc:   oauthSvc,
 		jwt:        jwt.New(jwtSecret, 24*time.Hour, 7*24*time.Hour),
-		stateStore: make(map[string]stateEntry),
+		states:     sharedOAuthStates,
 		portalPath: "/p", // 主面板引擎的默认挂载点 ✓
 	}
 	// Start cleanup goroutine for expired states
@@ -64,14 +76,14 @@ func (h *Handler) SetPortalBasePath(p string) {
 func (h *Handler) cleanupStates() {
 	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
-		h.stateStoreMu.Lock()
+		h.states.mu.Lock()
 		now := time.Now()
-		for k, v := range h.stateStore {
+		for k, v := range h.states.m {
 			if now.Sub(v.CreatedAt) > 10*time.Minute {
-				delete(h.stateStore, k)
+				delete(h.states.m, k)
 			}
 		}
-		h.stateStoreMu.Unlock()
+		h.states.mu.Unlock()
 	}
 }
 
@@ -80,21 +92,21 @@ func (h *Handler) generateState() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	state := hex.EncodeToString(b)
-	h.stateStoreMu.Lock()
-	h.stateStore[state] = stateEntry{State: state, CreatedAt: time.Now()}
-	h.stateStoreMu.Unlock()
+	h.states.mu.Lock()
+	h.states.m[state] = stateEntry{State: state, CreatedAt: time.Now()}
+	h.states.mu.Unlock()
 	return state
 }
 
 // validateState checks if a state parameter is valid and removes it.
 func (h *Handler) validateState(state string) bool {
-	h.stateStoreMu.Lock()
-	defer h.stateStoreMu.Unlock()
-	entry, ok := h.stateStore[state]
+	h.states.mu.Lock()
+	defer h.states.mu.Unlock()
+	entry, ok := h.states.m[state]
 	if !ok {
 		return false
 	}
-	delete(h.stateStore, state)
+	delete(h.states.m, state)
 	return time.Since(entry.CreatedAt) < 10*time.Minute
 }
 

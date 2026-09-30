@@ -231,6 +231,7 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Rate Limit Config / 限速配置
 		&entity.RateLimitConfig{},
+		&entity.RateLimitIPEntry{},
 
 		// WAF Rule Store (nginx/caddy shared rules)
 		&entity.WafRule{},

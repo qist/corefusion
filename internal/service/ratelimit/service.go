@@ -4,11 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os/exec"
+	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	"corefusion/internal/model/dto"
 	"corefusion/internal/model/entity"
+	runtimeagent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	ratelimit "corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/store/repository"
 )
 
@@ -23,6 +29,94 @@ type ErrNodeUnsupported struct{ Reason string }
 
 func (e *ErrNodeUnsupported) Error() string {
 	return "node does not support rate limiting: " + e.Reason
+}
+
+// InitLocalBackend 初始化**本地（面板进程内）**限速后端 —— 等价于 Agent 端的
+// initRateLimitWith：iface 自动探测 → 创建管理器 → Init → 按持久化 DB 重建 IP 关联 → 清理循环。
+// 面板启用限速（配置级 apply）与面板启动时的自动初始化都走这里。
+// ⚠ main.go 与 router 的 fallback LocalAgent 构造路径**都必须**调用本函数挂载管理器，
+// 否则该实例的 AssociateIP/ApplyLimits 会报 "rate limit manager not configured"。
+func InitLocalBackend(ctx context.Context, database *gorm.DB, localAgent *runtimeagent.LocalAgent, maxDown, maxUp int32) error {
+	var localServer entity.NodeServer
+	if err := database.WithContext(ctx).Where("is_local = ?", true).First(&localServer).Error; err != nil {
+		return fmt.Errorf("local server row not found: %w", err)
+	}
+	var config entity.RateLimitConfig
+	if err := database.WithContext(ctx).Where("server_id = ?", localServer.ID).First(&config).Error; err != nil {
+		return fmt.Errorf("rate limit config not found: %w", err)
+	}
+	if !config.Enabled {
+		return fmt.Errorf("rate limiting disabled for local server %d", localServer.ID)
+	}
+
+	iface := config.Iface
+	if iface == "" {
+		out, err := exec.Command("sh", "-c", "ip -o -4 route show default | awk '{print $5}' | head -n1").CombinedOutput()
+		iface = strings.TrimSpace(string(out))
+		if err != nil || iface == "" {
+			return fmt.Errorf("rate limit: no network interface found")
+		}
+		if iface != config.Iface {
+			config.Iface = iface
+			_ = database.WithContext(ctx).Save(&config).Error
+		}
+	}
+
+	mgr := ratelimit.NewManager(iface)
+	localAgent.WithRateLimitManager(mgr)
+	localServerID := localServer.ID
+	mgr.WithPersistFunc(
+		func(ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) {
+			entry := entity.RateLimitIPEntry{
+				ServerID:       localServerID,
+				IP:             ip,
+				SubscriptionID: subID,
+				MaxDownMbps:    maxDownMbps,
+				MaxUpMbps:      maxUpMbps,
+				ConnLimit:      connLimit,
+				DeviceLimit:    deviceLimit,
+				LastSeen:       time.Now(),
+				CreatedAt:      time.Now(),
+			}
+			if err := database.Where("ip = ? AND server_id = ?", ip, localServerID).
+				Assign(entry).FirstOrCreate(&entry).Error; err != nil {
+				log.Printf("[RateLimitService] persist local IP entry failed: %v", err)
+			}
+		},
+		func(ip string) {
+			database.Where("ip = ? AND server_id = ?", ip, localServerID).
+				Delete(&entity.RateLimitIPEntry{})
+		},
+	)
+
+	if err := mgr.Init(ctx); err != nil {
+		return fmt.Errorf("init nft/tc backend on iface=%s: %w", iface, err)
+	}
+
+	// 重建持久化的 IP 关联（含并发/设备数限制）
+	var entries []entity.RateLimitIPEntry
+	if err := database.WithContext(ctx).Where("server_id = ?", localServerID).Find(&entries).Error; err == nil {
+		for _, entry := range entries {
+			rate := &ratelimit.RateConfig{
+				MaxDownMbps: entry.MaxDownMbps,
+				MaxUpMbps:   entry.MaxUpMbps,
+				ConnLimit:   entry.ConnLimit,
+				DeviceLimit: entry.DeviceLimit,
+			}
+			if err := mgr.RestoreFromDB(ctx, entry.IP, entry.SubscriptionID, rate); err != nil {
+				log.Printf("[RateLimitService] restore local rate limit for ip=%s failed: %v", entry.IP, err)
+			}
+		}
+	}
+
+	if config.IdleTTLSeconds > 0 && config.CleanupInterval > 0 {
+		mgr.WithCleanupTTL(time.Duration(config.IdleTTLSeconds) * time.Second)
+		mgr.StartCleanupLoop(time.Duration(config.CleanupInterval) * time.Second)
+	}
+
+	log.Printf("[RateLimitService] local rate limit initialized: iface=%s, default=↓%dMbps/↑%dMbps",
+		iface, config.DefaultMaxDownMbps, config.DefaultMaxUpMbps)
+	return nil
 }
 
 // NodeOperator is a minimal interface for sending commands to nodes.
@@ -65,8 +159,11 @@ func (s *Service) GetConfig(ctx context.Context, serverID int64) (*dto.RateLimit
 	}
 	vo := configToVO(config)
 
-	// 实时探测：DB 里的 availability 是静态值（从不刷新），不能作为"支持/不支持"依据
-	if s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+	// 实时探测：DB 里的 availability 是静态值（从不刷新），不能作为"支持/不支持"依据。
+	// ⚠ 不用 IsOnline 做前置门：本地节点（面板 in-process Agent）没有 gRPC 连接记录，
+	// IsOnline 恒 false → 本地面板永远显示"不支持"。改为直接查询，失败再回退 DB
+	// （离线远程节点 SendCommand 会立刻报错，不会阻塞）。
+	if s.nodeOp != nil {
 		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
 			avail := live.Availability()
 			vo.NftAvailable = avail.NftAvailable
@@ -130,7 +227,8 @@ func (s *Service) UpdateConfig(ctx context.Context, serverID int64, req *dto.Rat
 
 	// 启用前 fail-close：节点**实时探测**不支持限流（缺 nft/tc 或内核太旧）→ 拒绝保存，
 	// 避免"开关打开了但节点上什么都不会发生"的假配置。
-	if config.Enabled && s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+	// （不设 IsOnline 前置门：本地节点同样要过检查；离线节点查询立即失败 → 跳过检查放行）
+	if config.Enabled && s.nodeOp != nil {
 		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
 			if !live.Availability().OverallSupported() {
 				reason := live.UnsupportedReason
@@ -179,7 +277,8 @@ func (s *Service) GetStatus(ctx context.Context, serverID int64) (*dto.RateLimit
 	}
 
 	// 实时查询在线 Agent：能力探测 + 活跃条目（DB 里的 availability 是静态值，从不刷新 ✗）
-	if s.nodeOp != nil && s.nodeOp.IsOnline(serverID) {
+	// 同 GetConfig：不设 IsOnline 前置门，本地节点（in-process）也要能查到。
+	if s.nodeOp != nil {
 		if live, err := s.nodeOp.GetRateLimitStatus(ctx, serverID, 0); err == nil && live != nil {
 			resp.Availability = live.Availability()
 			resp.ActiveEntries = live.Entries
@@ -193,13 +292,12 @@ func (s *Service) GetStatus(ctx context.Context, serverID int64) (*dto.RateLimit
 
 // SyncConfigToAgent pushes the current rate limit config to the server's Agent.
 // This is called when the admin updates the rate limit configuration for a node.
+// ⚠ 不做 IsOnline 前置门：本地节点（面板 in-process Agent）没有 gRPC 连接记录，
+// IsOnline 恒 false → 本地面板启用限速后配置永远下不去。本地走 in-process 委托
+// （ApplyLimits → initRateLimitOnDemand），离线远程节点 SendCommand 立刻报错。
 func (s *Service) SyncConfigToAgent(ctx context.Context, serverID int64) error {
 	if s.nodeOp == nil {
 		return fmt.Errorf("node operator not configured")
-	}
-	if !s.nodeOp.IsOnline(serverID) {
-		log.Printf("[RateLimitService] server %d is offline, skipping config sync", serverID)
-		return nil
 	}
 
 	config, err := s.repo.GetByServerID(ctx, serverID)
@@ -226,14 +324,16 @@ func (s *Service) SyncConfigToAgent(ctx context.Context, serverID int64) error {
 
 // PushIPAssociation pushes an IP association to a specific server's Agent.
 // This is called when a user accesses their subscription URL.
+// ⚠ 不做 IsOnline 前置门：本地节点要能收到关联（离线远程由底层立刻报错跳过）。
 func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error {
 	if s.nodeOp == nil {
 		return fmt.Errorf("node operator not configured")
 	}
 
-	if !s.nodeOp.IsOnline(serverID) {
-		log.Printf("[RateLimitService] server %d is offline, skipping IP association for %s", serverID, ip)
-		return nil // Not an error — server is offline
+	// 仅对启用限流的节点推送（此前注释声称有检查但实现遗漏 → 未启用节点
+	// 的 Agent 反复收到 AssociateIP 报 "not initialized" 日志噪音）。
+	if cfg, err := s.repo.GetByServerID(ctx, serverID); err != nil || cfg == nil || !cfg.Enabled {
+		return nil
 	}
 
 	req := &agentpb.AssociateIPRequest{
@@ -265,9 +365,6 @@ func (s *Service) PushSubscriptionRateUpdate(ctx context.Context, subID int64, m
 	}
 	pushed := 0
 	for _, server := range servers {
-		if !s.nodeOp.IsOnline(server.ID) {
-			continue
-		}
 		req := &agentpb.ApplyLimitsRequest{
 			Action:         "update",
 			SubscriptionId: subID,
@@ -277,6 +374,7 @@ func (s *Service) PushSubscriptionRateUpdate(ctx context.Context, subID int64, m
 			ConnLimit:      connLimit,
 			DeviceLimit:    deviceLimit,
 		}
+		// 本地节点（in-process）也要能收到更新；离线远程 ApplyLimits 立刻报错 → 记日志跳过
 		if err := s.nodeOp.ApplyLimits(ctx, server.ID, req); err != nil {
 			log.Printf("[RateLimitService] rate update for sub %d on server %d failed: %v", subID, server.ID, err)
 			continue
@@ -328,13 +426,11 @@ func (s *Service) RemoveSubscriptionOnAllNodes(ctx context.Context, subID int64)
 	}
 
 	for _, server := range servers {
-		if !s.nodeOp.IsOnline(server.ID) {
-			continue
-		}
 		req := &agentpb.ApplyLimitsRequest{
 			Action:         "remove_subscription",
 			SubscriptionId: subID,
 		}
+		// 本地节点也要清理（离线远程立刻报错 → 记日志跳过）
 		if err := s.nodeOp.ApplyLimits(ctx, server.ID, req); err != nil {
 			log.Printf("[RateLimitService] remove subscription %d from server %d failed: %v", subID, server.ID, err)
 		}

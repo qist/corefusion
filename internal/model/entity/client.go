@@ -37,9 +37,11 @@ func (PlanNode) TableName() string { return "plan_nodes" }
 
 // Client represents a subscription client/user.
 type Client struct {
-	ID             int64  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Email          string `gorm:"size:255;uniqueIndex;not null" json:"email"`
-	Password       string `gorm:"size:255" json:"password"`
+	ID    int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Email string `gorm:"size:255;uniqueIndex;not null" json:"email"`
+	// Password 存 bcrypt 哈希，禁止序列化进任何 API 响应（安全审计 M-1）：
+	// 请求绑定走独立的 Input 结构，不受此 tag 影响。
+	Password       string `gorm:"size:255" json:"-"`
 	Nickname       string `gorm:"size:100" json:"nickname"`
 	QQ             string `gorm:"size:64" json:"qq"`
 	Wechat         string `gorm:"size:64" json:"wechat"`

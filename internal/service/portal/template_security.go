@@ -69,6 +69,18 @@ const (
 	rendererPresence = `var renderMdUntrusted = function(md) {`
 )
 
+// L-5：OAuth 回调 token 由 query 下发改为 **fragment** 下发（token 不再进
+// 访问日志/Referer/浏览器历史）。存量模板的 handleOAuthCallback 还在读
+// location.search ✗ → 后端已改为 #fragment 跳回，读不到就登录失败 ——
+// 这里把"读 query"的精确片段替换为"读 fragment"。幂等 ✓。
+const (
+	oldOAuthReadSnippet = `      var params = new URLSearchParams(window.location.search)
+      var at = params.get('access_token')`
+
+	newOAuthReadSnippet = `      var params = new URLSearchParams(window.location.hash.slice(1))
+      var at = params.get('access_token')`
+)
+
 // PatchTemplateSecurity 对**存量门户模板**做幂等的安全补丁（安全审计 v5 M7）。
 //
 // 为什么需要：门户模板存在数据库里、可在后台编辑，所以只改默认模板**到不了**已部署的门户
@@ -95,6 +107,12 @@ func PatchTemplateSecurity(htmlContent, jsContent string) (newHTML, newJS string
 	// 登出：只清本地存储 → 先在服务端吊销（令牌版本 +1）✓
 	if strings.Contains(newJS, oldLogoutSnippet) {
 		newJS = strings.Replace(newJS, oldLogoutSnippet, newLogoutSnippet, 1)
+		changed = true
+	}
+
+	// OAuth 回调：token 从 URL query 改为 fragment 读取（安全审计 L-5）✓
+	if strings.Contains(newJS, oldOAuthReadSnippet) {
+		newJS = strings.Replace(newJS, oldOAuthReadSnippet, newOAuthReadSnippet, 1)
 		changed = true
 	}
 

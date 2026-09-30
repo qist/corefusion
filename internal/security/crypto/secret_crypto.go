@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 )
@@ -17,16 +18,20 @@ import (
 var defaultKey []byte
 
 // getKey returns the encryption key, loading it from the environment on first use.
-// If not set, generates a default key from hostname (consistent across restarts).
 // The key must be a 32-byte hex string (64 hex chars).
+//
+// 安全审计 M-4：环境变量未设置时**不再**静默使用"主机名派生"的弱默认密钥 ——
+// 面板启动流程（cmd/corefusion/main.go）会在首启生成随机密钥并写入 .env（0600）。
+// 走到这里仍拿不到环境变量的场景（Agent / 测试 / 嵌入使用）回退主机名派生密钥
+// 以保持行为连续，并打印告警；解密侧另有"新密钥解不开 → 回退旧密钥"的历史数据兜底。
 func getKey() ([]byte, error) {
 	if defaultKey != nil {
 		return defaultKey, nil
 	}
 	raw := os.Getenv("CF_SECRET_ENCRYPTION_KEY")
 	if raw == "" {
-		// Auto-generate default key from hostname + fixed salt
-		defaultKey = generateDefaultKey()
+		defaultKey = legacyHostnameKey()
+		log.Printf("[security] warning: CF_SECRET_ENCRYPTION_KEY not set; falling back to legacy hostname-derived key (offline-guessable)")
 		return defaultKey, nil
 	}
 	key, err := hex.DecodeString(raw)
@@ -60,9 +65,10 @@ func SetKey(hexKey string) error {
 	return nil
 }
 
-// generateDefaultKey generates a deterministic 32-byte key from hostname.
-// This ensures the same key is generated across restarts on the same machine.
-func generateDefaultKey() []byte {
+// legacyHostnameKey 是历史版本的主机名派生密钥（安全审计 M-4）：
+// 仅用于 ① 环境变量缺失场景的行为连续，② DecryptSecret 对历史密文的解密兜底。
+// 新写入一律使用主密钥（环境变量 / 面板首启随机生成）。
+func legacyHostnameKey() []byte {
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "corefusion-default"
@@ -163,6 +169,19 @@ func DecryptSecret(encrypted string) (string, error) {
 
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
+		// 安全审计 M-4 历史数据兜底：密文可能产自升级前的"主机名派生密钥"。
+		// 主密钥解不开时用旧密钥再试一次，成功则打印迁移告警（重新保存该值即
+		// 会以新主密钥落库）。仍然失败才报错。
+		legacyBlock, blkErr := aes.NewCipher(legacyHostnameKey())
+		if blkErr == nil {
+			legacyGCM, gcmErr := cipher.NewGCM(legacyBlock)
+			if gcmErr == nil {
+				if legacyPlain, legacyErr := legacyGCM.Open(nil, nonce, ciphertext, nil); legacyErr == nil {
+					log.Printf("[security] warning: value decrypted with legacy hostname-derived key; re-save it to migrate to the new encryption key")
+					return string(legacyPlain), nil
+				}
+			}
+		}
 		return "", fmt.Errorf("failed to decrypt: %w", err)
 	}
 

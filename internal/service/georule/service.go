@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"corefusion/internal/domain/user"
 	"corefusion/internal/model/entity"
+	authsvc "corefusion/internal/service/auth"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
@@ -30,6 +32,11 @@ type NodeOperator interface {
 // SettingStore provides access to system settings.
 type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
+}
+
+// TicketIssuer 签发一次性短时下载票据（安全审计 H-1：download-file 端点鉴权）。
+type TicketIssuer interface {
+	Issue(opts authsvc.TicketOptions) (string, time.Time, error)
 }
 
 // NodeLister provides the list of all server IDs (for push-to-all).
@@ -65,6 +72,7 @@ type Service struct {
 	settingSvc SettingStore
 	nodeOp     NodeOperator
 	nodeLister NodeLister
+	tickets    TicketIssuer
 }
 
 // NewService creates a new geo rule service.
@@ -85,6 +93,31 @@ func (s *Service) SetNodeOperator(op NodeOperator) {
 // SetNodeLister sets the node lister for push-to-all operations.
 func (s *Service) SetNodeLister(lister NodeLister) {
 	s.nodeLister = lister
+}
+
+// SetTicketIssuer 注入一次性票据仓库（router 装配时调用）。签发的票据拼进下发给
+// Agent 的相对下载 URL，使公开的 download-file 端点变为"持票可下载"（安全审计 H-1）。
+func (s *Service) SetTicketIssuer(issuer TicketIssuer) {
+	s.tickets = issuer
+}
+
+// issueDownloadTicket 为 Agent 拉取 geo 规则文件签发一次性票据。
+// 机器对机器票据：TokenVersion=-1 跳过用户令牌版本校验，作用域仅限 download-file。
+func (s *Service) issueDownloadTicket() string {
+	if s.tickets == nil {
+		return ""
+	}
+	tok, _, err := s.tickets.Issue(authsvc.TicketOptions{
+		Scope:        authsvc.TicketScopeGeoDownload,
+		Kind:         authsvc.TicketKindAdmin,
+		Role:         user.RoleAdmin,
+		TokenVersion: -1,
+	})
+	if err != nil {
+		log.Printf("[georule] issue download ticket failed: %v", err)
+		return ""
+	}
+	return tok
 }
 
 // githubAccelDomain reads the active GitHub acceleration domain from settings.
@@ -587,6 +620,9 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 	s.fileRepo.Update(ctx, rule)
 
 	downloadURL := netutil.AccelerateGitHubURL(rule.DownloadURL, s.githubAccelDomain(ctx))
+	// 安全审计 H-1：DownloadURL 是用户可控输入（AddFile/直连源），必须走带 SSRF
+	// 防护的客户端 —— 拨号层拒绝内网/环回/保留地址（重定向每一跳都会再校验），
+	// 管理员配置的 GitHub 代理作为受信出口放行；大小仍由 CopyLimited 流式限制。
 	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
 	if err != nil {
 		rule.Status = "error"
@@ -594,7 +630,7 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 		return nil, err
 	}
 
-	resp, err := s.httpClientWithAccel(ctx).Do(req)
+	resp, err := netutil.NewSafeDownloadClient(120*time.Second, s.githubProxyURL(ctx)).Do(req)
 	if err != nil {
 		rule.Status = "error"
 		s.fileRepo.Update(ctx, rule)
@@ -1007,7 +1043,12 @@ func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 		}
 		// Build a **relative** download URL — the Agent resolves it using
 		// the panel host/port from its config (same as UpdateAgent).
+		// 安全审计 H-1：附带一次性下载票据（60s、单次有效、仅限 download-file），
+		// 端点不再接受匿名请求。
 		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
+		if tok := s.issueDownloadTicket(); tok != "" {
+			downloadURL += "?ticket=" + tok
+		}
 
 		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
 		if err != nil {

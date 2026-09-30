@@ -411,6 +411,21 @@ func runServer(args []string) {
 	jwtHandler := jwt.New(jwtSecret, 0, 0)
 	middleware.SetJWT(jwtHandler)
 
+	// 安全审计 M-4：CF_SECRET_ENCRYPTION_KEY 缺省时不再使用"主机名派生"的
+	// 可穷举密钥 —— 首启生成随机密钥写入 .env（0600，复用 JWT_SECRET 的现成模式）。
+	// 升级场景：库里已有的历史密文（旧主机名密钥加密）由 DecryptSecret 的
+	// legacy 兜底继续可解，并打印迁移告警。
+	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate secret encryption key: %v", err)
+		}
+		encKey := hex.EncodeToString(b)
+		saveEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey)
+		os.Setenv("CF_SECRET_ENCRYPTION_KEY", encKey)
+		log.Println("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to .env")
+	}
+
 	// Create initial admin
 	//
 	// 安全审计 v5 S4：这里原本写死 "admin"/"admin123" ✗ —— 新部署即存在可预测口令。

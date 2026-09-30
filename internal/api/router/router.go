@@ -626,6 +626,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planSvcInst.StartDowngradeScheduler(context.Background(), time.Duration(schedCfg.DowngradeScanInterval)*time.Minute)
 
 	geoRuleSvcInst := geoRuleSvc.NewService(ruleSourceRepo, geoRuleRepo, dataDir, systemSettingSvc)
+	geoRuleSvcInst.SetTicketIssuer(middleware.TicketStore())
 
 	// WAF Rule Store (unified nginx/caddy rules in database)
 	wafRuleRepo := repository.NewWafRuleRepository(database)
@@ -1431,10 +1432,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodesGroup := protected.Group("/nodes")
 			{
 				nodesGroup.GET("", nodeH.List)
-				nodesGroup.POST("", nodeH.Create)
+				// 增删改属管理操作：viewer 只读（对齐节点服务器菜单的 admin 角色）
+				writeAdmin := protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				{
+					writeAdmin.POST("/nodes", nodeH.Create)
+					writeAdmin.PUT("/nodes/:id", nodeH.Update)
+					writeAdmin.DELETE("/nodes/:id", nodeH.Delete)
+				}
 				nodesGroup.GET("/:id", nodeH.GetByID)
-				nodesGroup.PUT("/:id", nodeH.Update)
-				nodesGroup.DELETE("/:id", nodeH.Delete)
 				nodesGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
 			}
 
@@ -1544,17 +1549,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			clientsGroup := protected.Group("/clients")
 			{
 				clientsGroup.GET("", clientH.ListClients)
-				clientsGroup.POST("", clientH.CreateClient)
 				clientsGroup.GET("/:id", clientH.GetClient)
-				clientsGroup.PUT("/:id", clientH.UpdateClient)
-				clientsGroup.DELETE("/:id", clientH.DeleteClient)
-				clientsGroup.POST("/:id/suspend", clientH.SuspendClient)
-				clientsGroup.POST("/:id/restore", clientH.RestoreClient)
-				clientsGroup.POST("/:id/reset-usage", clientH.ResetUsage)
 				clientsGroup.GET("/:id/orders", planH.ListClientOrders)
-				clientsGroup.POST("/:id/renew", planH.Renew)
-				clientsGroup.POST("/:id/upgrade", planH.Upgrade)
-				clientsGroup.POST("/:id/downgrade", planH.Downgrade)
+				// 写操作对齐客户端管理菜单的 operator 角色：viewer 只读
+				clientWrite := protected.Group("/clients").Use(middleware.RequireRole(domainuser.RoleOperator))
+				{
+					clientWrite.POST("", clientH.CreateClient)
+					clientWrite.PUT("/:id", clientH.UpdateClient)
+					clientWrite.DELETE("/:id", clientH.DeleteClient)
+					clientWrite.POST("/:id/suspend", clientH.SuspendClient)
+					clientWrite.POST("/:id/restore", clientH.RestoreClient)
+					clientWrite.POST("/:id/reset-usage", clientH.ResetUsage)
+					clientWrite.POST("/:id/renew", planH.Renew)
+					clientWrite.POST("/:id/upgrade", planH.Upgrade)
+					clientWrite.POST("/:id/downgrade", planH.Downgrade)
+				}
 			}
 
 			// Plan Templates (套餐模板)
@@ -1658,7 +1667,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			callbackRetryGroup := protected.Group("/charge-callback-retries")
 			{
 				callbackRetryGroup.GET("", chargeAdminH.ListCallbackRetries)
-				callbackRetryGroup.POST("/:id/retry", chargeAdminH.RetryCallback)
+				// 支付回调重试属经济操作：仅 Admin
+				callbackRetryGroup.POST("/:id/retry", middleware.RequireRole(domainuser.RoleAdmin), chargeAdminH.RetryCallback)
 			}
 
 			// P1-P3: Admin routes for extended modules
@@ -1674,7 +1684,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				referralAdminGroup.GET("/stats", clientExtH.AdminReferralStats)
 				referralAdminGroup.GET("/records", clientExtH.AdminListReferralRecords)
 				referralAdminGroup.GET("/config", clientExtH.AdminGetReferralConfig)
-				referralAdminGroup.PUT("/config", clientExtH.AdminSetReferralConfig)
+				// 返佣比例属经济参数：仅 Admin
+				referralAdminGroup.PUT("/config", middleware.RequireRole(domainuser.RoleAdmin), clientExtH.AdminSetReferralConfig)
 			}
 			ipWhitelistAdminGroup := protected.Group("/ip-whitelists")
 			{
@@ -1688,32 +1699,38 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			{
 				ticketAdminGroup.GET("", clientExtH.AdminListTickets)
 				ticketAdminGroup.GET("/:id", clientExtH.AdminGetTicket)
-				ticketAdminGroup.POST("/:id/reply", clientExtH.AdminReplyTicket)
-				ticketAdminGroup.POST("/:id/close", clientExtH.AdminCloseTicket)
-				ticketAdminGroup.POST("/:id/assign", clientExtH.AdminAssignTicket)
+				// 工单处理对齐工单管理菜单的 operator 角色：viewer 只读
+				ticketOps := middleware.RequireRole(domainuser.RoleOperator)
+				ticketAdminGroup.POST("/:id/reply", ticketOps, clientExtH.AdminReplyTicket)
+				ticketAdminGroup.POST("/:id/close", ticketOps, clientExtH.AdminCloseTicket)
+				ticketAdminGroup.POST("/:id/assign", ticketOps, clientExtH.AdminAssignTicket)
 			}
 			giftAdminGroup := protected.Group("/client-gifts")
 			{
 				giftAdminGroup.GET("", clientExtH.AdminListGifts)
-				giftAdminGroup.POST("", clientExtH.AdminCreateGift)
-				giftAdminGroup.POST("/batch", clientExtH.AdminCreateGiftBatch)
+				// 福利发放属经济操作：仅 Admin（对齐扩展管理菜单角色）
+				giftWrite := middleware.RequireRole(domainuser.RoleAdmin)
+				giftAdminGroup.POST("", giftWrite, clientExtH.AdminCreateGift)
+				giftAdminGroup.POST("/batch", giftWrite, clientExtH.AdminCreateGiftBatch)
 				giftAdminGroup.GET("/search-clients", clientExtH.AdminSearchClients)
 			}
 			articleAdminGroup := protected.Group("/articles")
 			{
 				articleAdminGroup.GET("", clientExtH.AdminListArticles)
 				articleAdminGroup.GET("/:id", clientExtH.AdminGetArticle)
-				articleAdminGroup.POST("", clientExtH.AdminCreateArticle)
-				articleAdminGroup.PUT("/:id", clientExtH.AdminUpdateArticle)
-				articleAdminGroup.DELETE("/:id", clientExtH.AdminDeleteArticle)
+				articleWrite := middleware.RequireRole(domainuser.RoleAdmin)
+				articleAdminGroup.POST("", articleWrite, clientExtH.AdminCreateArticle)
+				articleAdminGroup.PUT("/:id", articleWrite, clientExtH.AdminUpdateArticle)
+				articleAdminGroup.DELETE("/:id", articleWrite, clientExtH.AdminDeleteArticle)
 			}
 			sharedAccountAdminGroup := protected.Group("/shared-accounts")
 			{
 				sharedAccountAdminGroup.GET("", clientExtH.AdminListSharedAccounts)
 				sharedAccountAdminGroup.GET("/:id", clientExtH.AdminGetSharedAccount)
-				sharedAccountAdminGroup.POST("", clientExtH.AdminCreateSharedAccount)
-				sharedAccountAdminGroup.PUT("/:id", clientExtH.AdminUpdateSharedAccount)
-				sharedAccountAdminGroup.DELETE("/:id", clientExtH.AdminDeleteSharedAccount)
+				sharedAcctWrite := middleware.RequireRole(domainuser.RoleAdmin)
+				sharedAccountAdminGroup.POST("", sharedAcctWrite, clientExtH.AdminCreateSharedAccount)
+				sharedAccountAdminGroup.PUT("/:id", sharedAcctWrite, clientExtH.AdminUpdateSharedAccount)
+				sharedAccountAdminGroup.DELETE("/:id", sharedAcctWrite, clientExtH.AdminDeleteSharedAccount)
 				sharedAccountAdminGroup.GET("/:id/repair-logs", clientExtH.AdminRepairLogs)
 			}
 
@@ -2928,8 +2945,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Agent download + install script (public — no auth, bootstrap token verifies identity)
 			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
 			v1.GET("/agent/download", agentH.DownloadAgent)
-			// Geo rule file download — public (no auth), used by remote Agents
-			v1.GET("/geo-rules/files/:fileId/download-file", geoRuleH.DownloadFile)
+			// Geo rule file download（安全审计 H-1：不再对匿名开放）— 已移入下方受保护组，
+			// Agent 拉取时由面板在下发的相对 URL 里附带一次性票据（?ticket=）。
 			v1.GET("/agent/install", agentH.GetInstallScript)
 			// Agent version & releases (requires auth — admin only)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
@@ -2956,9 +2973,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
 				geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
 				geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
-				// download-file is public (no auth) — Agent downloads geo rule files
-				// from the panel using a relative URL, same as /agent/download.
-				// Registered in the public v1 group below.
+				// download-file（安全审计 H-1：需鉴权）— 常规 Bearer 头或一次性票据
+				// （scope=geo_download，票据由面板推送时签发并拼进 Agent 的下载 URL）。
+				geoRuleGlobalGroup.GET("/files/:fileId/download-file", geoRuleH.DownloadFile)
 				geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
 				geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
 				geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)
@@ -2968,13 +2985,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Portal template management (admin only)
 			portalH := portalHandler.NewHandler(portalTmplSvc)
-			portalGroup := protected.Group("/portal/templates")
+			portalGroup := protected.Group("/portal/templates").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				portalGroup.GET("", portalH.List)
 				portalGroup.POST("", portalH.Create)
 				portalGroup.GET("/:id", portalH.Get)
 				portalGroup.PUT("/:id", portalH.Update)
 				portalGroup.DELETE("/:id", portalH.Delete)
+				// 激活会即时切换对外门户：仅 Admin（与下方 /portal active 组一致）
 				portalGroup.POST("/:id/activate", portalH.Activate)
 			}
 
@@ -3385,23 +3403,29 @@ func registerAuxiliaryRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *r
 	}
 
 	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
+	// 安全审计 H-2：apply/rollback/disable-proxy 是全节点下发/停机级操作，仅 Admin；
+	// 快照/dry-run/verify 属本地生成不触达节点，保持登录可用。
 	runtime := rg.Group("/runtime")
 	{
 		runtime.GET("/overview", runtimeH.Overview)
 		runtime.GET("/snapshots", runtimeH.ListSnapshots)
 		runtime.GET("/snapshots/:id", runtimeH.GetSnapshot)
-		runtime.DELETE("/snapshots/:id", runtimeH.DeleteSnapshot)
 		runtime.GET("/apply-jobs", runtimeH.ListJobs)
 		runtime.GET("/apply-jobs/:id", runtimeH.GetJob)
 		runtime.POST("/snapshots", runtimeH.CreateSnapshot)
 		runtime.POST("/dry-run", runtimeH.DryRun)
-		runtime.POST("/apply", runtimeH.Apply)
-		runtime.POST("/apply-jobs/:id/retry", runtimeH.RetryJob)
-		runtime.POST("/apply-jobs/:id/cancel", runtimeH.CancelJob)
-		runtime.POST("/rollback", runtimeH.Rollback)
-		runtime.POST("/disable-proxy", runtimeH.DisableProxy)
 		runtime.GET("/nodes", runtimeH.ListNodes)
 		runtime.POST("/verify", runtimeH.Verify)
+
+		runtimeAdmin := rg.Group("/runtime").Use(middleware.RequireRole(domainuser.RoleAdmin))
+		{
+			runtimeAdmin.DELETE("/snapshots/:id", runtimeH.DeleteSnapshot)
+			runtimeAdmin.POST("/apply", runtimeH.Apply)
+			runtimeAdmin.POST("/apply-jobs/:id/retry", runtimeH.RetryJob)
+			runtimeAdmin.POST("/apply-jobs/:id/cancel", runtimeH.CancelJob)
+			runtimeAdmin.POST("/rollback", runtimeH.Rollback)
+			runtimeAdmin.POST("/disable-proxy", runtimeH.DisableProxy)
+		}
 	}
 
 	// Traffic Quotas

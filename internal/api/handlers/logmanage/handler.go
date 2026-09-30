@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/service/logmanage"
+	"corefusion/internal/util/safepath"
 )
 
 // Handler handles log management HTTP requests.
@@ -1056,6 +1057,13 @@ func (h *Handler) GetNodeLog(c *gin.Context) {
 		lines = 500
 	}
 	logPath := c.Query("log_path")
+	// 安全审计 M-2：log_path 是用户可控输入，拒绝路径穿越
+	if logPath != "" {
+		if err := safepath.RejectTraversal("log_path", logPath); err != nil {
+			response.BadRequest(c, "INVALID_LOG_PATH", err.Error())
+			return
+		}
+	}
 
 	// Local node (serverId=1)
 	if serverID == 1 {
@@ -1122,6 +1130,13 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		return
 	}
 	logPath := c.Query("log_path")
+	// 安全审计 M-2：log_path 是用户可控输入，拒绝路径穿越
+	if logPath != "" {
+		if err := safepath.RejectTraversal("log_path", logPath); err != nil {
+			response.BadRequest(c, "INVALID_LOG_PATH", err.Error())
+			return
+		}
+	}
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -1284,7 +1299,15 @@ func (h *Handler) RotateNodeLog(c *gin.Context) {
 		response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
 		return
 	}
-	rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), serverID, logType, c.Query("log_path"))
+	remoteLogPath := c.Query("log_path")
+	// 安全审计 M-2：log_path 是用户可控输入，拒绝路径穿越（Agent 侧同样有校验）
+	if remoteLogPath != "" {
+		if err := safepath.RejectTraversal("log_path", remoteLogPath); err != nil {
+			response.BadRequest(c, "INVALID_LOG_PATH", err.Error())
+			return
+		}
+	}
+	rotated, cleaned, freed, err := nodeLogMgr.RotateLogOnServer(c.Request.Context(), serverID, logType, remoteLogPath)
 	if err != nil {
 		response.InternalError(c, "ROTATE_FAILED", err.Error())
 		return

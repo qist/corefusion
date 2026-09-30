@@ -15,6 +15,7 @@ const (
 	TicketScopeBackupDownload = "backup_download" // 管理端：备份文件下载
 	TicketScopeClientDownload = "client_download" // 客户端：日志包下载
 	TicketScopeCertDownload   = "cert_download"   // 管理端：证书下载 / 打包下载 ✓
+	TicketScopeGeoDownload    = "geo_download"    // 机器票据：Agent 拉取 geo 规则文件（安全审计 H-1）
 )
 
 // 票据主体类型。

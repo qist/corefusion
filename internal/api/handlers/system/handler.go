@@ -658,6 +658,14 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 	if coreType == "" {
 		coreType = "xray"
 	}
+	// 安全审计 L-3：coreType 直接拼进文件路径，必须先过白名单
+	// （与 nodeserver 侧 isValidCoreType 同一口径），防任意文件读取。
+	switch coreType {
+	case "xray", "singbox", "hysteria2", "tuic":
+	default:
+		response.BadRequest(c, "INVALID_CORE_TYPE", "unsupported core type: "+coreType)
+		return
+	}
 	configPath := filepath.Join(h.dataDir, "runtime", coreType+".jsonc")
 	data, err := os.ReadFile(configPath)
 	if err != nil {

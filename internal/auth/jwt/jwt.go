@@ -1,6 +1,8 @@
 package jwt
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"time"
 
@@ -79,6 +81,8 @@ func (j *JWT) generate(userID int64, username, role string, tokenVersion int, to
 		TokenType:    tokenType,
 		TokenVersion: tokenVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
+			// jti：随机唯一 ID。refresh 轮换的一次性检测依赖它（安全审计 L-4）。
+			ID:        newJTI(),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
@@ -86,6 +90,15 @@ func (j *JWT) generate(userID int64, username, role string, tokenVersion int, to
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(j.secret)
+}
+
+// newJTI 生成 16 字节 CSPRNG 随机数的 hex 编码（失败时退化为纳秒时间戳，仍唯一）。
+func newJTI() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return hex.EncodeToString([]byte(time.Now().Format("20060102150405.000000000")))
+	}
+	return hex.EncodeToString(b)
 }
 
 // Validate validates a token and returns the claims.

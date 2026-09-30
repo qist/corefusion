@@ -65,8 +65,9 @@ var ticketRouteScopes = []struct {
 	scope    string
 }{
 	{"/log-manage/", "/stdout-log", authsvc.TicketScopeLogs},
-	// "/stream" 同时覆盖 /proxy|core/<type>/stdout-stream 与 /nodes/<id>/logs/<type>/stream
-	{"/log-manage/", "/stream", authsvc.TicketScopeLogs},
+	// 后缀 "stream"（不带斜杠）同时覆盖 /proxy|core/<type>/stdout-stream（stdout-stream
+	// 以 "-stream" 结尾 ✗，"/stream" 永远匹配不到）与 /nodes/<id>/logs/<type>/stream
+	{"/log-manage/", "stream", authsvc.TicketScopeLogs},
 	// 策略"查看日志"对话框的 SSE（/policies/<id>/log-stream）
 	{"/log-manage/", "/log-stream", authsvc.TicketScopeLogs},
 	{"/backups/", "/download", authsvc.TicketScopeBackupDownload},
@@ -74,6 +75,9 @@ var ticketRouteScopes = []struct {
 	{"/certificates/", "/download", authsvc.TicketScopeCertDownload},
 	{"/certificates/", "/export", authsvc.TicketScopeCertDownload},
 	{"/client-auth/logs/", "/download", authsvc.TicketScopeClientDownload},
+	// Agent 拉取 geo 规则文件（安全审计 H-1）：票据由面板在推送时签发并拼进
+	// 下发给 Agent 的相对 URL，端点本身不再对匿名请求开放。
+	{"/geo-rules/files/", "/download-file", authsvc.TicketScopeGeoDownload},
 }
 
 // TicketScopeForPath 返回该路径允许的票据作用域（空串 = 该路径不接受票据）。

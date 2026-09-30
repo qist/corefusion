@@ -3930,9 +3930,11 @@ var showPromoInput = ref(false) // promo code fold
     var hasLegalLinks = computed(function() {
       return !!(privacyUrl.value || privacyContent.value || termsUrl.value || termsContent.value)
     })
-    // 兜底：回调以 /p?access_token=... 方式回来时（无 opener 的整页跳转 ✓）直接收 token ✓
+    // 兜底：回调以 /p#access_token=... 方式回来时（无 opener 的整页跳转 ✓）直接收 token ✓
+    // 安全审计 L-5：token 走 URL **fragment** 下发 —— fragment 不会进访问日志/Referer/
+    // 浏览器历史，query 串会把长效 JWT 散播到各处 ✗。
     var handleOAuthCallback = function() {
-      var params = new URLSearchParams(window.location.search)
+      var params = new URLSearchParams(window.location.hash.slice(1))
       var at = params.get('access_token')
       if (!at) return
       var rt = params.get('refresh_token') || ''
@@ -3940,7 +3942,7 @@ var showPromoInput = ref(false) // promo code fold
       refreshToken.value = rt
       localStorage.setItem('client_token', at)
       if (rt) localStorage.setItem('client_refresh_token', rt)
-      window.history.replaceState({}, '', '/p')
+      window.history.replaceState({}, '', window.location.pathname)
       ElMessage.success(t('auth.login_success'))
       fetchMe(); fetchEndpoints()
     }

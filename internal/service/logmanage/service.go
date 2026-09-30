@@ -13,6 +13,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 )
 
 // SettingStore provides access to system settings.
@@ -1152,9 +1153,16 @@ func (s *Service) StreamProxyStdout(ctx context.Context, logType string, ch chan
 }
 
 // resolveLogPath resolves a relative log path against dataDir.
+// 安全审计 M-2：log_path 可经 HTTP 查询参数直达（GetNodeLog/StreamNodeLog），
+// 绝对路径直通、相对路径 Join 都必须拒绝 `..`/NUL，否则构成面板本地任意文件读取。
+// 非法路径返回空串（调用方按"文件不存在"处理并回退 broker）。
 func (s *Service) resolveLogPath(path string) string {
 	if path == "" {
 		return path
+	}
+	if err := safepath.RejectTraversal("log_path", path); err != nil {
+		log.Printf("[logmanage] rejected unsafe log path %q: %v", path, err)
+		return ""
 	}
 	if filepath.IsAbs(path) {
 		return path

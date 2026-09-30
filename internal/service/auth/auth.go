@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"log"
+	"sync"
 	"time"
 
 	"corefusion/internal/auth/jwt"
@@ -20,6 +22,37 @@ var (
 type Service struct {
 	userRepo *repository.UserRepository
 	jwt      *jwt.JWT
+	usedJTI  refreshJTIRegistry
+}
+
+// refreshJTIRegistry 记录"已用于换发"的 refresh token jti（安全审计 L-4）。
+//
+// refresh token 在 7 天 TTL 内本可与新一轮并行使用且不可检测 —— 这里把它做成
+// **一次性**：已消费的 jti 再次出现即视为泄漏信号，直接吊销该用户全部 token。
+// 故意放内存（进程重启即清空）：只损失重启窗口内的检测能力，不引入存储依赖。
+type refreshJTIRegistry struct {
+	mu   sync.Mutex
+	used map[string]time.Time // jti → token 过期时间
+}
+
+// seenAndRecord 返回该 jti 是否已被消费过（无论结果都会记录/续期过期时间）。
+func (r *refreshJTIRegistry) seenAndRecord(jti string, expiresAt time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.used == nil {
+		r.used = make(map[string]time.Time)
+	}
+	if len(r.used) > 4096 {
+		now := time.Now()
+		for k, exp := range r.used {
+			if now.After(exp) {
+				delete(r.used, k)
+			}
+		}
+	}
+	_, seen := r.used[jti]
+	r.used[jti] = expiresAt
+	return seen
 }
 
 // NewService creates a new auth service.
@@ -114,7 +147,26 @@ func (s *Service) RefreshToken(ctx context.Context, refreshTokenStr string) (acc
 		return "", "", err
 	}
 
+	// 安全审计 L-4：refresh 轮换一次性检测。旧 token（无 jti 的历史 token 除外）
+	// 已被消费过还再次提交 → 判定为泄漏，立即吊销该用户全部 token 并拒绝换发。
+	if claims.ID != "" {
+		exp := time.Now().Add(s.refreshTTL())
+		if claims.ExpiresAt != nil {
+			exp = claims.ExpiresAt.Time
+		}
+		if s.usedJTI.seenAndRecord(claims.ID, exp) {
+			log.Printf("[security] refresh token reuse detected (user %d, jti %s); revoking all tokens", claims.UserID, claims.ID)
+			_ = s.userRepo.BumpTokenVersion(ctx, claims.UserID)
+			return "", "", ErrTokenRevoked
+		}
+	}
+
 	return accessToken, refreshToken, nil
+}
+
+// refreshTTL 返回 refresh token 的 TTL（新签发 token 的有效期，用作兜底过期时间）。
+func (s *Service) refreshTTL() time.Duration {
+	return 7 * 24 * time.Hour
 }
 
 // ErrTokenRevoked 表示该 token 已被吊销（登出/踢下线后旧 token 的表现）。
@@ -164,7 +216,13 @@ func (s *Service) ChangePassword(ctx context.Context, userID int64, oldPassword,
 	}
 
 	user.PasswordHash = hash
-	return s.userRepo.Update(ctx, user)
+	if err := s.userRepo.Update(ctx, user); err != nil {
+		return err
+	}
+	// 安全审计 M-3：改密成功后吊销该用户此前签发的所有 token（含 refresh），
+	// 否则旧 token 在 TTL 内继续有效 —— 与 CLI 管理路径"改口令同时 BumpTokenVersion"的
+	// 意图一致（admin.go）。
+	return s.userRepo.BumpTokenVersion(ctx, userID)
 }
 
 // CreateInitialAdmin creates the first admin user if no users exist.

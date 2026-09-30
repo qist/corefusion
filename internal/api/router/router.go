@@ -3815,6 +3815,32 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		})
 	})
 
+	// ⚠ 门户运行时会 fetch 的两个 public 端点，独立门户引擎**也必须提供** ✗：
+	// 此前只有主引擎注册 → 纯门户域名（独立端口/独立域名）部署时 live fetch 404，
+	// builder 改动（导航/模块/语言包）永远热更不到门户，只能靠页面初始快照（存量坑，已修 ✓）。
+	// Public: effective portal runtime config — lean payload served from the
+	// in-memory cache in production (fresh DB read only on cache miss).
+	r.GET("/api/v1/public/portal-config", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
+		body, err := portalTmplSvc.GetPublicConfigJSON(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "PORTAL_CONFIG_FAILED", err.Error())
+			return
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+	})
+
+	// Public subscription endpoints (portal "更多订阅" 弹窗) — plain array,
+	// 前端直接消费 d.data（无分页包装 ✓，与主引擎同语义 ✓）。
+	subendRepoPortalEngine := repository.NewSubscriptionEndpointRepository(database)
+	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
+		endpoints, err := subendRepoPortalEngine.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		response.OK(c, endpoints)
+	})
+
 	// Root path serves the portal page (cached)
 	r.GET("/", func(c *gin.Context) {
 		html := portalTmplSvc.RenderPage(c.Request.Context())

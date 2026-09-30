@@ -16,3 +16,6 @@ corefusion.log
 # e2e 连通性测试产物（含测试用户凭据与客户端日志，不入库）
 scripts/e2e/artifacts/
 scripts/e2e/__pycache__/
+
+# 敏感配置（密钥/数据库 DSN），只跟踪 .env.example 模板
+.env

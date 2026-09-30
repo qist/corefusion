@@ -4,7 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"log"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -672,17 +677,103 @@ func (s *IPWhitelistService) RemoveIP(ctx context.Context, clientID, entryID int
 }
 
 // ============================================================
-// P3-3: Self-Unban Service
+// P3-3: Self-Unban Service（自助解封）
 // ============================================================
 
 type SelfUnbanService struct {
 	unbanLogRepo *repository.ClientSelfUnbanLogRepository
 	clientRepo   *repository.ClientRepository
 	settingSvc   SettingStore
+	subRepo      *repository.SubscriptionRepository
+	userSyncer   UserSyncer
 }
 
 func NewSelfUnbanService(unbanLogRepo *repository.ClientSelfUnbanLogRepository, clientRepo *repository.ClientRepository, settingSvc SettingStore) *SelfUnbanService {
-	return &SelfUnbanService{unbanLogRepo, clientRepo, settingSvc}
+	return &SelfUnbanService{unbanLogRepo, clientRepo, settingSvc, nil, nil}
+}
+
+// SetSubRepo 注入订阅仓储：解封前校验订阅未到期（到期封禁自解无意义，应先续费）。
+func (s *SelfUnbanService) SetSubRepo(repo *repository.SubscriptionRepository) { s.subRepo = repo }
+
+// SetUserSyncer 注入用户凭据同步器：解封成功后向所有核心重新下发凭据恢复流量
+// （封禁时 blockClient 已 "remove"，只改 status 不恢复凭据则解封后依然不通网）。
+func (s *SelfUnbanService) SetUserSyncer(syncer UserSyncer) { s.userSyncer = syncer }
+
+// selfUnbanSettings 读取自助解封策略：enabled / cooldown_hours / applicable_status。
+// 与管理端 Settings.vue 的 self_unban.* 配置项一一对应（此前后端从未消费这些键 ✗）。
+func (s *SelfUnbanService) selfUnbanSettings(ctx context.Context) (enabled bool, cooldown time.Duration, statuses map[string]bool) {
+	if v, err := s.settingSvc.GetByKey(ctx, "self_unban.enabled"); err == nil {
+		enabled = strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	hours := 24
+	if v, err := s.settingSvc.GetByKey(ctx, "self_unban.cooldown_hours"); err == nil && v != "" {
+		if h, aerr := strconv.Atoi(strings.TrimSpace(v)); aerr == nil && h > 0 {
+			hours = h
+		}
+	}
+	cooldown = time.Duration(hours) * time.Hour
+
+	statuses = map[string]bool{}
+	if v, err := s.settingSvc.GetByKey(ctx, "self_unban.applicable_status"); err == nil && v != "" {
+		// 管理端 Settings.vue 以 JSON 数组存（如 ["suspended","expired"]），优先按 JSON 解析；
+		// 兼容旧的逗号分隔写法（"suspended,expired"），两者都认。
+		var arr []string
+		if json.Unmarshal([]byte(v), &arr) == nil && len(arr) > 0 {
+			for _, st := range arr {
+				if st = strings.TrimSpace(strings.ToLower(st)); st != "" {
+					statuses[st] = true
+				}
+			}
+		} else {
+			for _, st := range strings.Split(v, ",") {
+				if st = strings.TrimSpace(strings.ToLower(strings.Trim(st, "[]\" "))); st != "" {
+					statuses[st] = true
+				}
+			}
+		}
+	}
+	if len(statuses) == 0 {
+		statuses["suspended"] = true
+	}
+	return enabled, cooldown, statuses
+}
+
+// CanSelfUnban 判定账号当前能否自助解封；不可解时返回面向用户的中文原因。
+// 规则（全部满足才放行）：
+//  1. 功能已开启（self_unban.enabled）
+//  2. 账号状态在 applicable_status 列表内（默认 suspended）
+//  3. 封禁原因是 auto_quota（流量超额自动封禁）——admin（管理员手动）、
+//     auto_expired（到期）、空（升级前遗留）一律需人工处理
+//  4. 距上次自解封已过冷却期
+//  5. 订阅未到期（到期解封无意义）
+func (s *SelfUnbanService) CanSelfUnban(ctx context.Context, client *entity.Client) (bool, string) {
+	enabled, cooldown, statuses := s.selfUnbanSettings(ctx)
+	if !enabled {
+		return false, "自助解封功能未开启，请联系客服"
+	}
+	if client == nil {
+		return false, "账号不存在"
+	}
+	if !statuses[strings.ToLower(client.Status)] {
+		return false, "账号当前状态不支持自助解封"
+	}
+	if client.SuspendReason != "auto_quota" {
+		return false, "该账号需联系客服处理，无法自助解封"
+	}
+	if lastLog, err := s.unbanLogRepo.GetLastByClientID(ctx, client.ID); err == nil && lastLog != nil {
+		if since := time.Since(lastLog.CreatedAt); since < cooldown {
+			remain := int(math.Ceil((cooldown - since).Hours()))
+			return false, fmt.Sprintf("操作过于频繁，约 %d 小时后可再次自助解封", remain)
+		}
+	}
+	if client.SubscriptionID != nil && s.subRepo != nil {
+		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil && sub != nil {
+			if sub.Status == "expired" || (sub.ExpiresAt != nil && sub.ExpiresAt.Before(time.Now())) {
+				return false, "订阅已到期，请先续费后再登录"
+			}
+		}
+	}
+	return true, ""
 }
 
 func (s *SelfUnbanService) SelfUnban(ctx context.Context, clientID int64) error {
@@ -690,35 +781,46 @@ func (s *SelfUnbanService) SelfUnban(ctx context.Context, clientID int64) error 
 	if err != nil {
 		return fmt.Errorf("client not found")
 	}
-	if client.Status != "suspended" {
-		return fmt.Errorf("account is not suspended")
+	if ok, reason := s.CanSelfUnban(ctx, client); !ok {
+		return fmt.Errorf("%s", reason)
 	}
-	cooldownHours := s.getCooldownHours()
-	lastLog, err := s.unbanLogRepo.GetLastByClientID(ctx, clientID)
-	if err == nil && lastLog != nil {
-		if time.Since(lastLog.CreatedAt) < time.Duration(cooldownHours)*time.Hour {
-			return fmt.Errorf("self-unban cooldown not expired (%d hours)", cooldownHours)
-		}
-	}
+
+	suspendReason := client.SuspendReason
 	client.Status = "active"
+	client.SuspendedAt = nil
+	client.SuspendReason = ""
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return err
 	}
-	log := &entity.ClientSelfUnbanLog{ClientID: clientID, Reason: "self_unban"}
-	return s.unbanLogRepo.Create(ctx, log)
-}
 
-func (s *SelfUnbanService) getCooldownHours() int {
-	val, _ := s.settingSvc.GetByKey(context.Background(), "self_unban.cooldown_hours")
-	if val == "" {
-		return 24
+	// 订阅侧恢复：超流封禁时订阅被置 suspended。QuotaState 置 over_limit_hard
+	// （=超额运行但不断网，EnforceQuotaAndExpiry 的 ListQuotaExhausted 会跳过该状态）
+	// → 解封后不会被立即再封，等流量重置日自动归位 normal。
+	if client.SubscriptionID != nil && s.subRepo != nil {
+		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil && sub != nil && sub.Status == "suspended" {
+			sub.Status = "active"
+			sub.SuspendedAt = nil
+			sub.QuotaState = "over_limit_hard"
+			if err := s.subRepo.Update(ctx, sub); err != nil {
+				log.Printf("[self-unban] restore subscription %d failed: %v", sub.ID, err)
+			}
+		}
 	}
-	h := 0
-	fmt.Sscanf(val, "%d", &h)
-	if h <= 0 {
-		return 24
+
+	// 向所有核心重新下发凭据（封禁时被 "remove"）——没有这步解封后流量依然不通。
+	if s.userSyncer != nil {
+		cid := clientID
+		go func() {
+			if err := s.userSyncer.SyncUserToServers(context.Background(), cid, "add"); err != nil {
+				log.Printf("[self-unban] re-add client %d to servers failed: %v", cid, err)
+			}
+		}()
 	}
-	return h
+
+	return s.unbanLogRepo.Create(ctx, &entity.ClientSelfUnbanLog{
+		ClientID: clientID,
+		Reason:   "self_unban:" + suspendReason,
+	})
 }
 
 // ============================================================

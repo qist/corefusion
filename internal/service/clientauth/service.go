@@ -32,6 +32,9 @@ type Service struct {
 	settingSvc      SettingStore
 	jwt             *jwt.JWT
 	trafficQuotaSvc *nodeserver.NodeTrafficQuotaService
+	// selfUnbanCheck 由 SelfUnbanService.CanSelfUnban 注入（避免 Service↔SelfUnbanService 循环依赖）。
+	// 登录时判定"被封账号能否走自助解封分支"。
+	selfUnbanCheck func(ctx context.Context, client *entity.Client) (bool, string)
 }
 
 // NewService creates a new client auth service.
@@ -67,6 +70,11 @@ func (s *Service) SetReferralService(svc *ReferralService) {
 // client's traffic history across the billing nodes of their subscription.
 func (s *Service) SetTrafficQuotaSvc(svc *nodeserver.NodeTrafficQuotaService) {
 	s.trafficQuotaSvc = svc
+}
+
+// SetSelfUnbanChecker 注入自解封资格判定（由 router 在构造 SelfUnbanService 后接线）。
+func (s *Service) SetSelfUnbanChecker(fn func(ctx context.Context, client *entity.Client) (bool, string)) {
+	s.selfUnbanCheck = fn
 }
 
 // TrafficHistoryPoint is one monthly data point of a client's aggregated traffic
@@ -150,6 +158,12 @@ type TokenResponse struct {
 	AccessToken  string      `json:"access_token"`
 	RefreshToken string      `json:"refresh_token"`
 	Client       *ClientInfo `json:"client"`
+	// 自助解封分支：账号被封但符合自解封条件时，登录**不签发**常规 token，
+	// 改为返回 require_self_unban=true + 短时效专用 token（typ=self_unban，
+	// 仅可调 POST /self-unban，见 clientauth 中间件）。门户据此显示解封卡片。
+	RequireSelfUnban bool   `json:"require_self_unban,omitempty"`
+	SelfUnbanToken   string `json:"self_unban_token,omitempty"`
+	SelfUnbanHint    string `json:"self_unban_hint,omitempty"`
 }
 
 // ClientInfo is the public client info.
@@ -232,19 +246,46 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*TokenResponse, 
 
 	// ⚠ 账号被管理员停用后不允许再登录 ✗：旧实现只比密码，被停用的客户端照样能拿到 token
 	// 并访问 /api/v1/client-auth/*（自助解封、工单、资料…）→ 封禁策略形同虚设（安全审计 v5 M2）。
-	if err := ensureClientActive(client); err != nil {
-		return nil, err
+	if client.Status != "active" {
+		// 自助解封分支：仅"流量超额自动封禁（auto_quota）"+功能开启时，签发**受限**
+		// 解封专用 token（typ=self_unban，中间件只放行 POST /self-unban），
+		// 不发常规 token —— 封禁账号拿不到工单/资料等门户能力，M2 语义不破。
+		if client.Status == "suspended" && s.selfUnbanCheck != nil {
+			if ok, hint := s.selfUnbanCheck(ctx, client); ok {
+				suToken, terr := s.jwt.GenerateSelfUnbanToken(client.ID, client.Email, "client", client.TokenVersion)
+				if terr != nil {
+					return nil, fmt.Errorf("生成解封凭证失败")
+				}
+				// Client 带最小信息：handler 审计日志读 result.Client.ID；
+				// 门户解封卡也可显示邮箱。只给受限字段，不带任何订阅信息。
+				return &TokenResponse{
+					RequireSelfUnban: true,
+					SelfUnbanToken:   suToken,
+					SelfUnbanHint:    hint,
+					Client: &ClientInfo{
+						ID:     client.ID,
+						Email:  client.Email,
+						Status: client.Status,
+					},
+				}, nil
+			}
+		}
+		return nil, ensureClientActive(client)
 	}
 
 	return s.generateTokens(client)
 }
 
 // ensureClientActive 拒绝非 active 状态的客户端（停用或其它未知状态一律拒绝，失败关闭）。
+// 提示按封禁原因区分：到期封禁引导续费；其余引导联系客服。
 func ensureClientActive(client *entity.Client) error {
 	if client == nil {
 		return fmt.Errorf("client not found")
 	}
 	if client.Status != "active" {
+		if client.SuspendReason == "auto_expired" {
+			return fmt.Errorf("订阅已到期，请续费后重新登录")
+		}
 		return fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
 	}
 	return nil
@@ -428,6 +469,28 @@ func (s *Service) ValidateClientAccessToken(tokenStr string) (int64, error) {
 		return 0, errNotClientToken
 	}
 	// 令牌版本校验：登出/踢下线后（版本 +1）旧 token 立即失效 ✗→✓
+	if s.clientRepo != nil {
+		tv, verr := s.clientRepo.GetTokenVersion(context.Background(), claims.UserID)
+		if verr != nil {
+			return 0, verr
+		}
+		if tv != claims.TokenVersion {
+			return 0, errClientTokenRevoked
+		}
+	}
+	return claims.UserID, nil
+}
+
+// ValidateSelfUnbanToken 校验自助解封专用 token（typ=self_unban，role=client，带版本校验）。
+// 与 access token 类型严格区分：专用 token 无法当作 access 用，反之亦然。
+func (s *Service) ValidateSelfUnbanToken(tokenStr string) (int64, error) {
+	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeSelfUnban)
+	if err != nil {
+		return 0, err
+	}
+	if !strings.EqualFold(claims.Role, "client") {
+		return 0, errNotClientToken
+	}
 	if s.clientRepo != nil {
 		tv, verr := s.clientRepo.GetTokenVersion(context.Background(), claims.UserID)
 		if verr != nil {

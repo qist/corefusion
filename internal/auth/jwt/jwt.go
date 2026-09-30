@@ -21,7 +21,14 @@ var (
 const (
 	TokenTypeAccess  = "access"
 	TokenTypeRefresh = "refresh"
+	// TokenTypeSelfUnban：给"被封但符合自助解封条件"的客户签发的一次性用途 token。
+	// 与 access 结构相同但 typ 独立（ValidateTyped 按类型严格区分）：
+	// 中间件只允许它访问 POST /self-unban，防止封禁账号借道拿到完整门户能力（审计 v5 M2 语义）。
+	TokenTypeSelfUnban = "self_unban"
 )
+
+// SelfUnbanTokenTTL 专用解封 token 的有效期：足够完成一次解封操作，过期需重新登录获取。
+const SelfUnbanTokenTTL = 15 * time.Minute
 
 // Claims represents JWT claims.
 type Claims struct {
@@ -70,6 +77,11 @@ func (j *JWT) GenerateRefreshToken(userID int64, username, role string) (string,
 // GenerateRefreshTokenWithVersion generates a refresh token carrying the user's token version.
 func (j *JWT) GenerateRefreshTokenWithVersion(userID int64, username, role string, tokenVersion int) (string, error) {
 	return j.generate(userID, username, role, tokenVersion, TokenTypeRefresh, j.refreshTTL)
+}
+
+// GenerateSelfUnbanToken 生成自助解封专用 token（短时效、仅限 self-unban 端点使用）。
+func (j *JWT) GenerateSelfUnbanToken(userID int64, username, role string, tokenVersion int) (string, error) {
+	return j.generate(userID, username, role, tokenVersion, TokenTypeSelfUnban, SelfUnbanTokenTTL)
 }
 
 func (j *JWT) generate(userID int64, username, role string, tokenVersion int, tokenType string, ttl time.Duration) (string, error) {

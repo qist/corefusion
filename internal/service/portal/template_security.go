@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 )
@@ -81,6 +82,176 @@ const (
       var at = params.get('access_token')`
 )
 
+// P3-3：自助解封 —— 存量模板补齐解封卡。解封卡分 6 处（HTML 1 处 + JS 5 处），
+// 每处独立判定、独立幂等；存量模板缺哪块补哪块，命中过的跳过 ✓。
+// 注：片段里**不能出现反引号**（本文件是 Go 源码，JS 片段统一单引号 ✓）。
+const (
+	// JS-1：handleLogin 加 require_self_unban 分支（被封账号登录不再直接报错，
+	// 改为显示解封卡；不发常规 token，M2 语义不破）
+	oldSULoginSnippet = `      api('POST', '/login', loginForm.value).then(function(res) {
+        token.value = res.access_token`
+
+	newSULoginSnippet = `      api('POST', '/login', loginForm.value).then(function(res) {
+        // 自助解封分支：被封但可自解 → 不发常规 token，显示解封卡
+        if (res.require_self_unban) {
+          selfUnban.value = { visible: true, token: res.self_unban_token || '', hint: res.self_unban_hint || '', loading: false }
+          ElMessage.warning(res.self_unban_hint || t('auth.self_unban_desc'))
+          return
+        }
+        token.value = res.access_token`
+
+	// JS-2：handleOAuthCallback 加 require_self_unban 分支（OAuth 回调带解封
+	// fragment → 显示解封卡，不进入登录态）
+	oldSUOAuthSnippet = `    var handleOAuthCallback = function() {
+      var params = new URLSearchParams(window.location.hash.slice(1))
+      var at = params.get('access_token')`
+
+	newSUOAuthSnippet = `    var handleOAuthCallback = function() {
+      var params = new URLSearchParams(window.location.hash.slice(1))
+      // 自助解封分支：OAuth 回调带 require_self_unban=1 → 显示解封卡，不进入登录态
+      if (params.get('require_self_unban') === '1') {
+        var suToken = params.get('self_unban_token') || ''
+        var suHint = params.get('self_unban_hint') || ''
+        window.history.replaceState({}, '', window.location.pathname)
+        if (suToken) {
+          selfUnban.value = { visible: true, token: suToken, hint: suHint, loading: false }
+          ElMessage.warning(suHint || t('auth.self_unban_desc'))
+        } else {
+          ElMessage.error(t('auth.self_unban_failed'))
+        }
+        return
+      }
+      var at = params.get('access_token')`
+
+	// JS-3：selfUnban ref + handleSelfUnban 函数体（插到 handleLogin 函数之后）
+	suFuncPresence = `var handleSelfUnban = function() {`
+	suFuncAnchor   = `var handleLogin = function() {`
+
+	suFuncSnippet = `
+    // ── 自助解封 ✓（登录/OAuth 返回 require_self_unban → 显示解封卡）──
+    var selfUnban = ref({ visible: false, token: '', hint: '', loading: false })
+    var handleSelfUnban = function() {
+      selfUnban.value.loading = true
+      fetch('/api/v1/client-auth/self-unban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + selfUnban.value.token }
+      })
+        .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d } }) })
+        .then(function(x) {
+          if (x.ok) {
+            ElMessage.success(t('auth.self_unban_success'))
+            selfUnban.value = { visible: false, token: '', hint: '', loading: false }
+          } else {
+            ElMessage.error((x.data && (x.data.message || x.data.error)) || t('auth.self_unban_failed'))
+          }
+        })
+        .catch(function() { ElMessage.error(t('auth.self_unban_failed')) })
+        .finally(function() { selfUnban.value.loading = false })
+    }`
+
+	// JS-4：auth 区域组件上下文透传（解封卡 HTML 在 auth 区域内编译，
+	// 不透传 selfUnban/handleSelfUnban 渲染时直接 undefined ✗）
+	oldSUAuthCtxSnippet = `        // Methods
+        handleLogin: handleLogin,
+        handleRegister: handleRegister,
+        t: t,`
+
+	newSUAuthCtxSnippet = `        // Methods
+        handleLogin: handleLogin,
+        handleRegister: handleRegister,
+        // 自助解封卡 ✓（必须透传进 authCtx，否则渲染时 selfUnban undefined ✗）
+        selfUnban: selfUnban,
+        handleSelfUnban: handleSelfUnban,
+        t: t,`
+
+	// JS-5：主 setup return 透传（管理端若把卡片移出 auth 区域仍可用）
+	oldSUReturnSnippet = `      handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,`
+
+	newSUReturnSnippet = `      handleLogin: handleLogin, handleRegister: handleRegister, handleLogout: handleLogout,
+      selfUnban: selfUnban, handleSelfUnban: handleSelfUnban,`
+
+	// HTML：登录卡 tabs 前插解封卡 + tabs 加 v-if（卡片显示时隐藏 tabs）
+	oldSUTabsSnippet = `          <el-tabs v-model="authTab" class="auth-tabs">`
+
+	newSUTabsSnippet = `          <!-- 自助解封卡 ✓：流量超额被自动封禁的账号登录时返回 require_self_unban，
+               凭登录签发的受限专用 token（仅可调 /self-unban）一键恢复，无需联系客服 -->
+          <div class="self-unban-card" v-if="selfUnban.visible">
+            <el-alert type="warning" :title="t('auth.self_unban_title')" :description="selfUnban.hint || t('auth.self_unban_desc')" show-icon :closable="false" style="margin-bottom:14px" />
+            <el-button type="warning" class="btn-block" :loading="selfUnban.loading" @click="handleSelfUnban" size="large">{{ t('auth.self_unban_btn') }}</el-button>
+            <el-button class="btn-block" text @click="selfUnban.visible = false">{{ t('auth.self_unban_cancel') }}</el-button>
+          </div>
+          <el-tabs v-if="!selfUnban.visible" v-model="authTab" class="auth-tabs">`
+)
+
+// regions.auth（登录卡区域）是**真正渲染**的登录卡 —— 主 HTML 里的兜底卡只在
+// regions 缺失时才用 ✗。存量模板的 config JSON 里 auth 区域没有解封卡 →
+// 必须随 config 一起补齐（JSON 感知：unmarshal → 改 html/js → marshal）。
+// 注意此处的锚点是 **JSON 反序列化后**的形态（真实换行/引号），与上面
+// 主 HTML/JS 的原文锚点缩进不同 ✓。
+const (
+	// 区域 HTML：tabs 前插解封卡 + tabs 加 v-if（区域内 4 空格缩进）
+	oldSURegionTabsSnippet = `    <el-tabs v-model="authTab" class="auth-tabs">`
+
+	newSURegionTabsSnippet = `    <!-- 自助解封卡 ✓：流量超额被自动封禁的账号登录时返回 require_self_unban，
+         凭登录签发的受限专用 token（仅可调 /self-unban）一键恢复，无需联系客服 -->
+    <div class="self-unban-card" v-if="selfUnban.visible">
+      <el-alert type="warning" :title="t('auth.self_unban_title')" :description="selfUnban.hint || t('auth.self_unban_desc')" show-icon :closable="false" style="margin-bottom:14px" />
+      <el-button type="warning" class="btn-block" :loading="selfUnban.loading" @click="handleSelfUnban" size="large">{{ t('auth.self_unban_btn') }}</el-button>
+      <el-button class="btn-block" text @click="selfUnban.visible = false">{{ t('auth.self_unban_cancel') }}</el-button>
+    </div>
+    <el-tabs v-if="!selfUnban.visible" v-model="authTab" class="auth-tabs">`
+
+	// 区域 JS：setup return 透传 selfUnban/handleSelfUnban（ctx 来自主 JS 的 authCtx ✓）
+	oldSURegionJSReturn = `  handleLogin,
+  handleRegister,
+  oauthProviders: ctx.oauthProviders,`
+
+	newSURegionJSReturn = `  handleLogin,
+  handleRegister,
+  selfUnban: ctx.selfUnban,
+  handleSelfUnban: ctx.handleSelfUnban,
+  oauthProviders: ctx.oauthProviders,`
+)
+
+// PatchRegionsSecurity 对模板 config JSON 里的 regions.auth（登录卡区域源码）
+// 打自助解封补丁。幂等：命中过的跳过；config 非法/无 regions 时原样返回。
+// json.Marshal 会把 config 压缩成紧凑格式 —— 语义不变，编辑器读的是结构化字段 ✓。
+func PatchRegionsSecurity(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	regions, ok := cfg["regions"].(map[string]interface{})
+	if !ok {
+		return configStr, false
+	}
+	auth, ok := regions["auth"].(map[string]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	if html, ok := auth["html"].(string); ok && strings.Contains(html, oldSURegionTabsSnippet) {
+		auth["html"] = strings.Replace(html, oldSURegionTabsSnippet, newSURegionTabsSnippet, 1)
+		changed = true
+	}
+	if js, ok := auth["js"].(string); ok &&
+		strings.Contains(js, oldSURegionJSReturn) && !strings.Contains(js, "selfUnban: ctx.selfUnban") {
+		auth["js"] = strings.Replace(js, oldSURegionJSReturn, newSURegionJSReturn, 1)
+		changed = true
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
 // PatchTemplateSecurity 对**存量门户模板**做幂等的安全补丁（安全审计 v5 M7）。
 //
 // 为什么需要：门户模板存在数据库里、可在后台编辑，所以只改默认模板**到不了**已部署的门户
@@ -113,6 +284,40 @@ func PatchTemplateSecurity(htmlContent, jsContent string) (newHTML, newJS string
 	// OAuth 回调：token 从 URL query 改为 fragment 读取（安全审计 L-5）✓
 	if strings.Contains(newJS, oldOAuthReadSnippet) {
 		newJS = strings.Replace(newJS, oldOAuthReadSnippet, newOAuthReadSnippet, 1)
+		changed = true
+	}
+
+	// ── P3-3：自助解封卡补齐（每处独立判定、独立幂等 ✓）──
+	// JS-1：登录响应处理加 require_self_unban 分支
+	if strings.Contains(newJS, oldSULoginSnippet) {
+		newJS = strings.Replace(newJS, oldSULoginSnippet, newSULoginSnippet, 1)
+		changed = true
+	}
+	// JS-2：OAuth 回调加 require_self_unban 分支
+	if strings.Contains(newJS, oldSUOAuthSnippet) {
+		newJS = strings.Replace(newJS, oldSUOAuthSnippet, newSUOAuthSnippet, 1)
+		changed = true
+	}
+	// JS-3：selfUnban ref + handleSelfUnban（插到 handleLogin 函数之后）
+	if !strings.Contains(newJS, suFuncPresence) {
+		if patched, ok := insertAfterFunction(newJS, suFuncAnchor, suFuncSnippet); ok {
+			newJS = patched
+			changed = true
+		}
+	}
+	// JS-4：auth 区域组件上下文透传 selfUnban/handleSelfUnban
+	if strings.Contains(newJS, oldSUAuthCtxSnippet) {
+		newJS = strings.Replace(newJS, oldSUAuthCtxSnippet, newSUAuthCtxSnippet, 1)
+		changed = true
+	}
+	// JS-5：主 setup return 透传（旧片段是新片段的前缀 → 必须同时查新片段防重复追加 ✗）
+	if strings.Contains(newJS, oldSUReturnSnippet) && !strings.Contains(newJS, newSUReturnSnippet) {
+		newJS = strings.Replace(newJS, oldSUReturnSnippet, newSUReturnSnippet, 1)
+		changed = true
+	}
+	// HTML：tabs 前插解封卡 + tabs 加 v-if
+	if strings.Contains(newHTML, oldSUTabsSnippet) {
+		newHTML = strings.Replace(newHTML, oldSUTabsSnippet, newSUTabsSnippet, 1)
 		changed = true
 	}
 
@@ -159,11 +364,14 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		return nil
 	}
 	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
-	if !changed {
+	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）
+	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
+	if !changed && !cfgChanged {
 		return nil
 	}
 	tmpl.HTMLContent = newHTML
 	tmpl.JSContent = newJS
+	tmpl.Config = newConfig
 	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return err
 	}

@@ -322,6 +322,10 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 		tmpl.JSContent = safeJS
 		log.Printf("[portal] security patch applied on save (M7: 用户内容不再执行 HTML)")
 	}
+	// regions.auth（登录卡区域）在 config 里 → 保存时一并补齐（自助解封卡 ✓）
+	if newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config); cfgChanged {
+		tmpl.Config = newConfig
+	}
 
 	if err := s.repo.Update(ctx, tmpl); err != nil {
 		return nil, err
@@ -354,9 +358,13 @@ func (s *Service) Activate(ctx context.Context, id int64) error {
 	}
 	// 安全审计 L-2：激活旧模板是把未打补丁的 HTML/JS 原样带回门户的入口 ——
 	// 落库激活前统一补丁（幂等，与 Update/EnsureSecurityPatches 同一实现）。
-	if newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent); changed {
+	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
+	// regions.auth（登录卡区域）在 config JSON 里 → 一并补齐（自助解封卡 ✓）
+	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
+	if changed || cfgChanged {
 		tmpl.HTMLContent = newHTML
 		tmpl.JSContent = newJS
+		tmpl.Config = newConfig
 		if err := s.repo.Update(ctx, tmpl); err != nil {
 			return err
 		}
@@ -515,6 +523,10 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 	if newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent); changed {
 		tmpl.HTMLContent = newHTML
 		tmpl.JSContent = newJS
+	}
+	// regions.auth（登录卡区域）在 config 里 → 编辑器保存也一并补齐（自助解封卡 ✓）
+	if newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config); cfgChanged {
+		tmpl.Config = newConfig
 	}
 
 	if err := s.repo.Update(ctx, tmpl.PortalTemplate); err != nil {

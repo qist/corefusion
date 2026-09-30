@@ -253,6 +253,8 @@ func (s *Service) SuspendClient(ctx context.Context, id int64) error {
 	now := time.Now()
 	client.Status = "suspended"
 	client.SuspendedAt = &now
+	// 管理员手动封禁不可自助解封（客户端封禁原因字段，见 entity.Client.SuspendReason）
+	client.SuspendReason = "admin"
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return err
 	}
@@ -274,6 +276,7 @@ func (s *Service) RestoreClient(ctx context.Context, id int64) error {
 
 	client.Status = "active"
 	client.SuspendedAt = nil
+	client.SuspendReason = ""
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return err
 	}
@@ -295,6 +298,7 @@ func (s *Service) ResetUsage(ctx context.Context, id int64) error {
 	if client.Status == "suspended" {
 		client.Status = "active"
 		client.SuspendedAt = nil
+		client.SuspendReason = ""
 		// Resume users
 		s.pauseResumeAll(ctx, client.Email, client.PlanID, false)
 	}

@@ -3034,7 +3034,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 
 	// Public subscription endpoint — guarded by maintenance mode
-	r.GET("/sub/:token", middleware.MaintenanceGuard(), middleware.SubscribeRateLimit(), publicSubH.ServeSubscription)
+	r.GET("/sub/:token", middleware.MaintenanceGuard(), middleware.IPBlacklistGuard(database), middleware.SubscribeRateLimit(), publicSubH.ServeSubscription)
 
 	// Portal page — served from active custom template (cached)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
@@ -3053,6 +3053,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
+	// 客户端面 IP 黑名单（订阅拉取/登录/注册/OAuth 一并拦截，管理端 API 不拦防自锁）
+	clientAuthGroup.Use(middleware.IPBlacklistGuard(database))
 	{
 		clientAuthGroup.POST("/register", middleware.RegisterRateLimit(), clientauthH.Register)
 		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)
@@ -3583,6 +3585,8 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	r.Use(middleware.MaintenanceGuard())
+	// 客户端面 IP 黑名单（运维在面板安全设置维护 panel.ip_blacklist，30s 缓存生效）
+	r.Use(middleware.IPBlacklistGuard(database))
 
 	subRepo := repository.NewSubscriptionRepository(database)
 	inboundRepo := repository.NewInboundConfigRepository(database)
@@ -3872,6 +3876,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
+	// 客户端面 IP 黑名单（与主引擎同口径 ✓）
+	clientAuthGroup.Use(middleware.IPBlacklistGuard(database))
 	{
 		clientAuthGroup.POST("/register", middleware.RegisterRateLimit(), clientauthH.Register)
 		clientAuthGroup.POST("/login", middleware.ClientLoginRateLimit(), clientauthH.Login)

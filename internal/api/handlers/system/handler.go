@@ -29,6 +29,8 @@ type Handler struct {
 	settingSvc *system.SettingService
 	statsSvc   *system.StatsService
 	dataDir    string
+	// ipBlacklistChangeHook：panel.ip_blacklist 保存后的异步下发钩子（router 接线）。
+	ipBlacklistChangeHook func(ctx context.Context, raw string)
 }
 
 // NewHandler creates a new system handler.
@@ -550,8 +552,19 @@ func (h *Handler) BatchUpdateSettings(c *gin.Context) {
 			response.InternalError(c, "SET_FAILED", err.Error())
 			return
 		}
+		// IP 黑名单变更 → 异步同步到所有节点（Agent 核心 nft 拦截，30s 面板面缓存另行生效）
+		if item.Key == "panel.ip_blacklist" && h.ipBlacklistChangeHook != nil {
+			raw := item.Value
+			go h.ipBlacklistChangeHook(context.Background(), raw)
+		}
 	}
 	response.OK(c, gin.H{"message": "settings updated"})
+}
+
+// IPBlacklistChangeHook 在 panel.ip_blacklist 保存后被异步调用（raw 为设置原文）。
+// router 接线：解析条目并经 ratelimit 服务推送到所有启用节点。
+func (h *Handler) SetIPBlacklistChangeHook(fn func(ctx context.Context, raw string)) {
+	h.ipBlacklistChangeHook = fn
 }
 
 // --- 面板自更新 / 首次启动向导：**未实现**，统一返回 501 ---

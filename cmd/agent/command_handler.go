@@ -831,6 +831,14 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				}, nil
 			})
 
+	case *agentpb.PanelCommand_SetIpBlacklist:
+		req := c.SetIpBlacklist
+		// 同步执行（nft 命令毫秒级）：面板用 SendCommandAndWait 等结果，
+		// 便于逐节点记录下发成败。空 entries = 清空黑名单。
+		sendSyncResult("set_ip_blacklist", map[string]interface{}{
+			"entries": len(req.Entries),
+		}, a.localAgent.SetIPBlacklist(ctx, req.Entries))
+
 	default:
 		log.Printf("[Agent] unknown command: %T", cmd.Command)
 	}

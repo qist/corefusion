@@ -237,6 +237,14 @@ message GetRateLimitStatusRequest {
   int64  subscription_id = 1;     // 0=查询所有
 }
 
+// IP 黑名单下发（Panel→Agent，运维配置的面板级策略）。
+// Agent 在本机 nft 表 corefusion_ratelimit 的 blocked_chain 里维护
+// ip_blacklist / ip_blacklist6 两个 interval 集合 + drop 规则，对**核心入站**
+// 流量按源地址阻断（面板面拦截由面板自身中间件负责，两者互补）。
+message SetIPBlacklistRequest {
+  repeated string entries = 1;    // IP 或 CIDR 列表（空 = 清空黑名单）
+}
+
 message GetRateLimitStatusResponse {
   repeated RateLimitEntry entries = 1;
   bool   nft_available = 2;       // Agent 是否支持 nft
@@ -615,6 +623,7 @@ message PanelCommand {
     AssociateIPRequest associate_ip = 100;                    // IP 归属推送
     BatchApplyLimitsRequest batch_apply_limits = 101;         // 批量限速
     GetRateLimitStatusRequest get_rate_limit_status = 102;    // 限速状态查询
+    SetIPBlacklistRequest set_ip_blacklist = 104;             // IP 黑名单下发（节点核心入站阻断）
 
     // --- 节点流量配额指令 ---
     SetEgressInterfaceRequest set_egress_interface = 103;     // 设置出口网卡

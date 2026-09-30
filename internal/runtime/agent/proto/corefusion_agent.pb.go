@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.21.12
-// source: internal/runtime/agent/proto/corefusion_agent.proto
+// source: corefusion_agent.proto
 
 package agentpb
 
@@ -61,11 +61,11 @@ func (x TaskStatus) String() string {
 }
 
 func (TaskStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[0].Descriptor()
+	return file_corefusion_agent_proto_enumTypes[0].Descriptor()
 }
 
 func (TaskStatus) Type() protoreflect.EnumType {
-	return &file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[0]
+	return &file_corefusion_agent_proto_enumTypes[0]
 }
 
 func (x TaskStatus) Number() protoreflect.EnumNumber {
@@ -74,7 +74,7 @@ func (x TaskStatus) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TaskStatus.Descriptor instead.
 func (TaskStatus) EnumDescriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{0}
 }
 
 type ApplyLimitsRequest_LimitType int32
@@ -110,11 +110,11 @@ func (x ApplyLimitsRequest_LimitType) String() string {
 }
 
 func (ApplyLimitsRequest_LimitType) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[1].Descriptor()
+	return file_corefusion_agent_proto_enumTypes[1].Descriptor()
 }
 
 func (ApplyLimitsRequest_LimitType) Type() protoreflect.EnumType {
-	return &file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[1]
+	return &file_corefusion_agent_proto_enumTypes[1]
 }
 
 func (x ApplyLimitsRequest_LimitType) Number() protoreflect.EnumNumber {
@@ -123,7 +123,7 @@ func (x ApplyLimitsRequest_LimitType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ApplyLimitsRequest_LimitType.Descriptor instead.
 func (ApplyLimitsRequest_LimitType) EnumDescriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{11, 0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{11, 0}
 }
 
 type AgentReport_ReportType int32
@@ -175,11 +175,11 @@ func (x AgentReport_ReportType) String() string {
 }
 
 func (AgentReport_ReportType) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[2].Descriptor()
+	return file_corefusion_agent_proto_enumTypes[2].Descriptor()
 }
 
 func (AgentReport_ReportType) Type() protoreflect.EnumType {
-	return &file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[2]
+	return &file_corefusion_agent_proto_enumTypes[2]
 }
 
 func (x AgentReport_ReportType) Number() protoreflect.EnumNumber {
@@ -188,7 +188,7 @@ func (x AgentReport_ReportType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AgentReport_ReportType.Descriptor instead.
 func (AgentReport_ReportType) EnumDescriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{41, 0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{42, 0}
 }
 
 // --- 重载策略（镜像节点同步时使用） ---
@@ -226,11 +226,11 @@ func (x SyncDataRequest_ReloadStrategy) String() string {
 }
 
 func (SyncDataRequest_ReloadStrategy) Descriptor() protoreflect.EnumDescriptor {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[3].Descriptor()
+	return file_corefusion_agent_proto_enumTypes[3].Descriptor()
 }
 
 func (SyncDataRequest_ReloadStrategy) Type() protoreflect.EnumType {
-	return &file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes[3]
+	return &file_corefusion_agent_proto_enumTypes[3]
 }
 
 func (x SyncDataRequest_ReloadStrategy) Number() protoreflect.EnumNumber {
@@ -239,7 +239,7 @@ func (x SyncDataRequest_ReloadStrategy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SyncDataRequest_ReloadStrategy.Descriptor instead.
 func (SyncDataRequest_ReloadStrategy) EnumDescriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{57, 0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{58, 0}
 }
 
 // TaskAccept — 异步任务接受确认，立刻返回。
@@ -257,7 +257,7 @@ type TaskAccept struct {
 
 func (x *TaskAccept) Reset() {
 	*x = TaskAccept{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[0]
+	mi := &file_corefusion_agent_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -269,7 +269,7 @@ func (x *TaskAccept) String() string {
 func (*TaskAccept) ProtoMessage() {}
 
 func (x *TaskAccept) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[0]
+	mi := &file_corefusion_agent_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -282,7 +282,7 @@ func (x *TaskAccept) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskAccept.ProtoReflect.Descriptor instead.
 func (*TaskAccept) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{0}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TaskAccept) GetAccepted() bool {
@@ -323,7 +323,7 @@ type GetTaskRequest struct {
 
 func (x *GetTaskRequest) Reset() {
 	*x = GetTaskRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[1]
+	mi := &file_corefusion_agent_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -335,7 +335,7 @@ func (x *GetTaskRequest) String() string {
 func (*GetTaskRequest) ProtoMessage() {}
 
 func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[1]
+	mi := &file_corefusion_agent_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -348,7 +348,7 @@ func (x *GetTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{1}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *GetTaskRequest) GetTaskId() string {
@@ -374,7 +374,7 @@ type GetTaskResponse struct {
 
 func (x *GetTaskResponse) Reset() {
 	*x = GetTaskResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[2]
+	mi := &file_corefusion_agent_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -386,7 +386,7 @@ func (x *GetTaskResponse) String() string {
 func (*GetTaskResponse) ProtoMessage() {}
 
 func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[2]
+	mi := &file_corefusion_agent_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -399,7 +399,7 @@ func (x *GetTaskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskResponse.ProtoReflect.Descriptor instead.
 func (*GetTaskResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{2}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *GetTaskResponse) GetTaskId() string {
@@ -462,7 +462,7 @@ type SyncConfigRequest struct {
 
 func (x *SyncConfigRequest) Reset() {
 	*x = SyncConfigRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[3]
+	mi := &file_corefusion_agent_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +474,7 @@ func (x *SyncConfigRequest) String() string {
 func (*SyncConfigRequest) ProtoMessage() {}
 
 func (x *SyncConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[3]
+	mi := &file_corefusion_agent_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +487,7 @@ func (x *SyncConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncConfigRequest.ProtoReflect.Descriptor instead.
 func (*SyncConfigRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{3}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *SyncConfigRequest) GetCoreType() string {
@@ -521,7 +521,7 @@ type ControlCoreRequest struct {
 
 func (x *ControlCoreRequest) Reset() {
 	*x = ControlCoreRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[4]
+	mi := &file_corefusion_agent_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +533,7 @@ func (x *ControlCoreRequest) String() string {
 func (*ControlCoreRequest) ProtoMessage() {}
 
 func (x *ControlCoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[4]
+	mi := &file_corefusion_agent_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +546,7 @@ func (x *ControlCoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlCoreRequest.ProtoReflect.Descriptor instead.
 func (*ControlCoreRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{4}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ControlCoreRequest) GetCoreType() string {
@@ -576,7 +576,7 @@ type SyncProxyConfigRequest struct {
 
 func (x *SyncProxyConfigRequest) Reset() {
 	*x = SyncProxyConfigRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[5]
+	mi := &file_corefusion_agent_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -588,7 +588,7 @@ func (x *SyncProxyConfigRequest) String() string {
 func (*SyncProxyConfigRequest) ProtoMessage() {}
 
 func (x *SyncProxyConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[5]
+	mi := &file_corefusion_agent_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -601,7 +601,7 @@ func (x *SyncProxyConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncProxyConfigRequest.ProtoReflect.Descriptor instead.
 func (*SyncProxyConfigRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{5}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SyncProxyConfigRequest) GetProxyType() string {
@@ -650,7 +650,7 @@ type SyncWAFFilesRequest struct {
 
 func (x *SyncWAFFilesRequest) Reset() {
 	*x = SyncWAFFilesRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[6]
+	mi := &file_corefusion_agent_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -662,7 +662,7 @@ func (x *SyncWAFFilesRequest) String() string {
 func (*SyncWAFFilesRequest) ProtoMessage() {}
 
 func (x *SyncWAFFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[6]
+	mi := &file_corefusion_agent_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -675,7 +675,7 @@ func (x *SyncWAFFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncWAFFilesRequest.ProtoReflect.Descriptor instead.
 func (*SyncWAFFilesRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{6}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *SyncWAFFilesRequest) GetFiles() []*WAFFile {
@@ -697,7 +697,7 @@ type WAFFile struct {
 
 func (x *WAFFile) Reset() {
 	*x = WAFFile{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[7]
+	mi := &file_corefusion_agent_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +709,7 @@ func (x *WAFFile) String() string {
 func (*WAFFile) ProtoMessage() {}
 
 func (x *WAFFile) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[7]
+	mi := &file_corefusion_agent_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +722,7 @@ func (x *WAFFile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WAFFile.ProtoReflect.Descriptor instead.
 func (*WAFFile) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{7}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *WAFFile) GetPath() string {
@@ -756,7 +756,7 @@ type ControlProxyRequest struct {
 
 func (x *ControlProxyRequest) Reset() {
 	*x = ControlProxyRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[8]
+	mi := &file_corefusion_agent_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +768,7 @@ func (x *ControlProxyRequest) String() string {
 func (*ControlProxyRequest) ProtoMessage() {}
 
 func (x *ControlProxyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[8]
+	mi := &file_corefusion_agent_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +781,7 @@ func (x *ControlProxyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ControlProxyRequest.ProtoReflect.Descriptor instead.
 func (*ControlProxyRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{8}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ControlProxyRequest) GetProxyType() string {
@@ -810,7 +810,7 @@ type AlterUsersRequest struct {
 
 func (x *AlterUsersRequest) Reset() {
 	*x = AlterUsersRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[9]
+	mi := &file_corefusion_agent_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -822,7 +822,7 @@ func (x *AlterUsersRequest) String() string {
 func (*AlterUsersRequest) ProtoMessage() {}
 
 func (x *AlterUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[9]
+	mi := &file_corefusion_agent_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -835,7 +835,7 @@ func (x *AlterUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlterUsersRequest.ProtoReflect.Descriptor instead.
 func (*AlterUsersRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{9}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AlterUsersRequest) GetCoreType() string {
@@ -881,7 +881,7 @@ type UserOp struct {
 
 func (x *UserOp) Reset() {
 	*x = UserOp{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[10]
+	mi := &file_corefusion_agent_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +893,7 @@ func (x *UserOp) String() string {
 func (*UserOp) ProtoMessage() {}
 
 func (x *UserOp) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[10]
+	mi := &file_corefusion_agent_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +906,7 @@ func (x *UserOp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserOp.ProtoReflect.Descriptor instead.
 func (*UserOp) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{10}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *UserOp) GetEmail() string {
@@ -977,7 +977,7 @@ type ApplyLimitsRequest struct {
 
 func (x *ApplyLimitsRequest) Reset() {
 	*x = ApplyLimitsRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[11]
+	mi := &file_corefusion_agent_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -989,7 +989,7 @@ func (x *ApplyLimitsRequest) String() string {
 func (*ApplyLimitsRequest) ProtoMessage() {}
 
 func (x *ApplyLimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[11]
+	mi := &file_corefusion_agent_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1002,7 +1002,7 @@ func (x *ApplyLimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyLimitsRequest.ProtoReflect.Descriptor instead.
 func (*ApplyLimitsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{11}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ApplyLimitsRequest) GetType() ApplyLimitsRequest_LimitType {
@@ -1086,7 +1086,7 @@ type BatchApplyLimitsRequest struct {
 
 func (x *BatchApplyLimitsRequest) Reset() {
 	*x = BatchApplyLimitsRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[12]
+	mi := &file_corefusion_agent_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1098,7 +1098,7 @@ func (x *BatchApplyLimitsRequest) String() string {
 func (*BatchApplyLimitsRequest) ProtoMessage() {}
 
 func (x *BatchApplyLimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[12]
+	mi := &file_corefusion_agent_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1111,7 +1111,7 @@ func (x *BatchApplyLimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchApplyLimitsRequest.ProtoReflect.Descriptor instead.
 func (*BatchApplyLimitsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{12}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BatchApplyLimitsRequest) GetLimits() []*ApplyLimitsRequest {
@@ -1146,7 +1146,7 @@ type AssociateIPRequest struct {
 
 func (x *AssociateIPRequest) Reset() {
 	*x = AssociateIPRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[13]
+	mi := &file_corefusion_agent_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1158,7 +1158,7 @@ func (x *AssociateIPRequest) String() string {
 func (*AssociateIPRequest) ProtoMessage() {}
 
 func (x *AssociateIPRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[13]
+	mi := &file_corefusion_agent_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1171,7 +1171,7 @@ func (x *AssociateIPRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AssociateIPRequest.ProtoReflect.Descriptor instead.
 func (*AssociateIPRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{13}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AssociateIPRequest) GetIp() string {
@@ -1247,7 +1247,7 @@ type GetRateLimitStatusRequest struct {
 
 func (x *GetRateLimitStatusRequest) Reset() {
 	*x = GetRateLimitStatusRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[14]
+	mi := &file_corefusion_agent_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1259,7 +1259,7 @@ func (x *GetRateLimitStatusRequest) String() string {
 func (*GetRateLimitStatusRequest) ProtoMessage() {}
 
 func (x *GetRateLimitStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[14]
+	mi := &file_corefusion_agent_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1272,7 @@ func (x *GetRateLimitStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRateLimitStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetRateLimitStatusRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{14}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetRateLimitStatusRequest) GetSubscriptionId() int64 {
@@ -1280,6 +1280,54 @@ func (x *GetRateLimitStatusRequest) GetSubscriptionId() int64 {
 		return x.SubscriptionId
 	}
 	return 0
+}
+
+// IP 黑名单下发（Panel→Agent，运维配置的面板级策略）。
+// Agent 在本机 nft 表 corefusion_ratelimit 的 blocked_chain 里维护
+// ip_blacklist / ip_blacklist6 两个 interval 集合 + drop 规则，对**核心入站**
+// 流量按源地址阻断（面板面拦截由面板自身中间件负责，两者互补）。
+type SetIPBlacklistRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []string               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"` // IP 或 CIDR 列表（空 = 清空黑名单）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetIPBlacklistRequest) Reset() {
+	*x = SetIPBlacklistRequest{}
+	mi := &file_corefusion_agent_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetIPBlacklistRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetIPBlacklistRequest) ProtoMessage() {}
+
+func (x *SetIPBlacklistRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_corefusion_agent_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetIPBlacklistRequest.ProtoReflect.Descriptor instead.
+func (*SetIPBlacklistRequest) Descriptor() ([]byte, []int) {
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SetIPBlacklistRequest) GetEntries() []string {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
 }
 
 type GetRateLimitStatusResponse struct {
@@ -1294,7 +1342,7 @@ type GetRateLimitStatusResponse struct {
 
 func (x *GetRateLimitStatusResponse) Reset() {
 	*x = GetRateLimitStatusResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[15]
+	mi := &file_corefusion_agent_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1354,7 @@ func (x *GetRateLimitStatusResponse) String() string {
 func (*GetRateLimitStatusResponse) ProtoMessage() {}
 
 func (x *GetRateLimitStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[15]
+	mi := &file_corefusion_agent_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1367,7 @@ func (x *GetRateLimitStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRateLimitStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetRateLimitStatusResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{15}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetRateLimitStatusResponse) GetEntries() []*RateLimitEntry {
@@ -1366,7 +1414,7 @@ type RateLimitEntry struct {
 
 func (x *RateLimitEntry) Reset() {
 	*x = RateLimitEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[16]
+	mi := &file_corefusion_agent_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1378,7 +1426,7 @@ func (x *RateLimitEntry) String() string {
 func (*RateLimitEntry) ProtoMessage() {}
 
 func (x *RateLimitEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[16]
+	mi := &file_corefusion_agent_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1391,7 +1439,7 @@ func (x *RateLimitEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RateLimitEntry.ProtoReflect.Descriptor instead.
 func (*RateLimitEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{16}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RateLimitEntry) GetSubscriptionId() int64 {
@@ -1458,7 +1506,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[17]
+	mi := &file_corefusion_agent_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1470,7 +1518,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[17]
+	mi := &file_corefusion_agent_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1483,7 +1531,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{17}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{18}
 }
 
 type GetStatusResponse struct {
@@ -1497,7 +1545,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[18]
+	mi := &file_corefusion_agent_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1509,7 +1557,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[18]
+	mi := &file_corefusion_agent_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1522,7 +1570,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{18}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetStatusResponse) GetCores() []*CoreStatus {
@@ -1558,7 +1606,7 @@ type UpdateAgentRequest struct {
 
 func (x *UpdateAgentRequest) Reset() {
 	*x = UpdateAgentRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[19]
+	mi := &file_corefusion_agent_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1570,7 +1618,7 @@ func (x *UpdateAgentRequest) String() string {
 func (*UpdateAgentRequest) ProtoMessage() {}
 
 func (x *UpdateAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[19]
+	mi := &file_corefusion_agent_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1583,7 +1631,7 @@ func (x *UpdateAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAgentRequest.ProtoReflect.Descriptor instead.
 func (*UpdateAgentRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{19}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateAgentRequest) GetTargetVersion() string {
@@ -1623,7 +1671,7 @@ type ReadConfigFileRequest struct {
 
 func (x *ReadConfigFileRequest) Reset() {
 	*x = ReadConfigFileRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[20]
+	mi := &file_corefusion_agent_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1635,7 +1683,7 @@ func (x *ReadConfigFileRequest) String() string {
 func (*ReadConfigFileRequest) ProtoMessage() {}
 
 func (x *ReadConfigFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[20]
+	mi := &file_corefusion_agent_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1648,7 +1696,7 @@ func (x *ReadConfigFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadConfigFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadConfigFileRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{20}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ReadConfigFileRequest) GetCoreType() string {
@@ -1670,7 +1718,7 @@ type ReadConfigFileResponse struct {
 
 func (x *ReadConfigFileResponse) Reset() {
 	*x = ReadConfigFileResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[21]
+	mi := &file_corefusion_agent_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1682,7 +1730,7 @@ func (x *ReadConfigFileResponse) String() string {
 func (*ReadConfigFileResponse) ProtoMessage() {}
 
 func (x *ReadConfigFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[21]
+	mi := &file_corefusion_agent_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1695,7 +1743,7 @@ func (x *ReadConfigFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadConfigFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadConfigFileResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{21}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReadConfigFileResponse) GetSuccess() bool {
@@ -1738,7 +1786,7 @@ type SpeedTestRequest struct {
 
 func (x *SpeedTestRequest) Reset() {
 	*x = SpeedTestRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[22]
+	mi := &file_corefusion_agent_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1750,7 +1798,7 @@ func (x *SpeedTestRequest) String() string {
 func (*SpeedTestRequest) ProtoMessage() {}
 
 func (x *SpeedTestRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[22]
+	mi := &file_corefusion_agent_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1763,7 +1811,7 @@ func (x *SpeedTestRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpeedTestRequest.ProtoReflect.Descriptor instead.
 func (*SpeedTestRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{22}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SpeedTestRequest) GetTargetHost() string {
@@ -1809,7 +1857,7 @@ type SpeedTestResponse struct {
 
 func (x *SpeedTestResponse) Reset() {
 	*x = SpeedTestResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[23]
+	mi := &file_corefusion_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1821,7 +1869,7 @@ func (x *SpeedTestResponse) String() string {
 func (*SpeedTestResponse) ProtoMessage() {}
 
 func (x *SpeedTestResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[23]
+	mi := &file_corefusion_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1834,7 +1882,7 @@ func (x *SpeedTestResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SpeedTestResponse.ProtoReflect.Descriptor instead.
 func (*SpeedTestResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{23}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SpeedTestResponse) GetSuccess() bool {
@@ -1896,7 +1944,7 @@ type GetMetricsRequest struct {
 
 func (x *GetMetricsRequest) Reset() {
 	*x = GetMetricsRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[24]
+	mi := &file_corefusion_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1908,7 +1956,7 @@ func (x *GetMetricsRequest) String() string {
 func (*GetMetricsRequest) ProtoMessage() {}
 
 func (x *GetMetricsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[24]
+	mi := &file_corefusion_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1921,7 +1969,7 @@ func (x *GetMetricsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMetricsRequest.ProtoReflect.Descriptor instead.
 func (*GetMetricsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{24}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetMetricsRequest) GetLastNPoints() int32 {
@@ -1947,7 +1995,7 @@ type GetMetricsResponse struct {
 
 func (x *GetMetricsResponse) Reset() {
 	*x = GetMetricsResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[25]
+	mi := &file_corefusion_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +2007,7 @@ func (x *GetMetricsResponse) String() string {
 func (*GetMetricsResponse) ProtoMessage() {}
 
 func (x *GetMetricsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[25]
+	mi := &file_corefusion_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +2020,7 @@ func (x *GetMetricsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMetricsResponse.ProtoReflect.Descriptor instead.
 func (*GetMetricsResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{25}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetMetricsResponse) GetPoints() []*MetricPoint {
@@ -2014,7 +2062,7 @@ type MetricPoint struct {
 
 func (x *MetricPoint) Reset() {
 	*x = MetricPoint{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[26]
+	mi := &file_corefusion_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2026,7 +2074,7 @@ func (x *MetricPoint) String() string {
 func (*MetricPoint) ProtoMessage() {}
 
 func (x *MetricPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[26]
+	mi := &file_corefusion_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2039,7 +2087,7 @@ func (x *MetricPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MetricPoint.ProtoReflect.Descriptor instead.
 func (*MetricPoint) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{26}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *MetricPoint) GetTimestamp() int64 {
@@ -2217,7 +2265,7 @@ type InstallBinaryRequest struct {
 
 func (x *InstallBinaryRequest) Reset() {
 	*x = InstallBinaryRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[27]
+	mi := &file_corefusion_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2229,7 +2277,7 @@ func (x *InstallBinaryRequest) String() string {
 func (*InstallBinaryRequest) ProtoMessage() {}
 
 func (x *InstallBinaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[27]
+	mi := &file_corefusion_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2242,7 +2290,7 @@ func (x *InstallBinaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallBinaryRequest.ProtoReflect.Descriptor instead.
 func (*InstallBinaryRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{27}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *InstallBinaryRequest) GetCoreType() string {
@@ -2300,7 +2348,7 @@ type InstallProxyRequest struct {
 
 func (x *InstallProxyRequest) Reset() {
 	*x = InstallProxyRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[28]
+	mi := &file_corefusion_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2312,7 +2360,7 @@ func (x *InstallProxyRequest) String() string {
 func (*InstallProxyRequest) ProtoMessage() {}
 
 func (x *InstallProxyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[28]
+	mi := &file_corefusion_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2325,7 +2373,7 @@ func (x *InstallProxyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InstallProxyRequest.ProtoReflect.Descriptor instead.
 func (*InstallProxyRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{28}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *InstallProxyRequest) GetProxyType() string {
@@ -2371,7 +2419,7 @@ type GetProxyStatusRequest struct {
 
 func (x *GetProxyStatusRequest) Reset() {
 	*x = GetProxyStatusRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[29]
+	mi := &file_corefusion_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2383,7 +2431,7 @@ func (x *GetProxyStatusRequest) String() string {
 func (*GetProxyStatusRequest) ProtoMessage() {}
 
 func (x *GetProxyStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[29]
+	mi := &file_corefusion_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2396,7 +2444,7 @@ func (x *GetProxyStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProxyStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetProxyStatusRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{29}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{30}
 }
 
 type GetProxyStatusResponse struct {
@@ -2410,7 +2458,7 @@ type GetProxyStatusResponse struct {
 
 func (x *GetProxyStatusResponse) Reset() {
 	*x = GetProxyStatusResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[30]
+	mi := &file_corefusion_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2422,7 +2470,7 @@ func (x *GetProxyStatusResponse) String() string {
 func (*GetProxyStatusResponse) ProtoMessage() {}
 
 func (x *GetProxyStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[30]
+	mi := &file_corefusion_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2435,7 +2483,7 @@ func (x *GetProxyStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProxyStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetProxyStatusResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{30}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetProxyStatusResponse) GetProxies() []*ProxyInfo {
@@ -2467,7 +2515,7 @@ type ProxyInfo struct {
 
 func (x *ProxyInfo) Reset() {
 	*x = ProxyInfo{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[31]
+	mi := &file_corefusion_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2479,7 +2527,7 @@ func (x *ProxyInfo) String() string {
 func (*ProxyInfo) ProtoMessage() {}
 
 func (x *ProxyInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[31]
+	mi := &file_corefusion_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2492,7 +2540,7 @@ func (x *ProxyInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProxyInfo.ProtoReflect.Descriptor instead.
 func (*ProxyInfo) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{31}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ProxyInfo) GetType() string {
@@ -2552,7 +2600,7 @@ type ListBinariesRequest struct {
 
 func (x *ListBinariesRequest) Reset() {
 	*x = ListBinariesRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[32]
+	mi := &file_corefusion_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2564,7 +2612,7 @@ func (x *ListBinariesRequest) String() string {
 func (*ListBinariesRequest) ProtoMessage() {}
 
 func (x *ListBinariesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[32]
+	mi := &file_corefusion_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2577,7 +2625,7 @@ func (x *ListBinariesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBinariesRequest.ProtoReflect.Descriptor instead.
 func (*ListBinariesRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{32}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{33}
 }
 
 type ListBinariesResponse struct {
@@ -2590,7 +2638,7 @@ type ListBinariesResponse struct {
 
 func (x *ListBinariesResponse) Reset() {
 	*x = ListBinariesResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[33]
+	mi := &file_corefusion_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2602,7 +2650,7 @@ func (x *ListBinariesResponse) String() string {
 func (*ListBinariesResponse) ProtoMessage() {}
 
 func (x *ListBinariesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[33]
+	mi := &file_corefusion_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2615,7 +2663,7 @@ func (x *ListBinariesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBinariesResponse.ProtoReflect.Descriptor instead.
 func (*ListBinariesResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{33}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ListBinariesResponse) GetBinaries() []*BinaryInfo {
@@ -2644,7 +2692,7 @@ type BinaryInfo struct {
 
 func (x *BinaryInfo) Reset() {
 	*x = BinaryInfo{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[34]
+	mi := &file_corefusion_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2656,7 +2704,7 @@ func (x *BinaryInfo) String() string {
 func (*BinaryInfo) ProtoMessage() {}
 
 func (x *BinaryInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[34]
+	mi := &file_corefusion_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2669,7 +2717,7 @@ func (x *BinaryInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BinaryInfo.ProtoReflect.Descriptor instead.
 func (*BinaryInfo) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{34}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *BinaryInfo) GetCoreType() string {
@@ -2710,7 +2758,7 @@ type ListReleasesRequest struct {
 
 func (x *ListReleasesRequest) Reset() {
 	*x = ListReleasesRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[35]
+	mi := &file_corefusion_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2722,7 +2770,7 @@ func (x *ListReleasesRequest) String() string {
 func (*ListReleasesRequest) ProtoMessage() {}
 
 func (x *ListReleasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[35]
+	mi := &file_corefusion_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2735,7 +2783,7 @@ func (x *ListReleasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListReleasesRequest.ProtoReflect.Descriptor instead.
 func (*ListReleasesRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{35}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListReleasesRequest) GetCoreType() string {
@@ -2755,7 +2803,7 @@ type ReleaseInfo struct {
 
 func (x *ReleaseInfo) Reset() {
 	*x = ReleaseInfo{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[36]
+	mi := &file_corefusion_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2767,7 +2815,7 @@ func (x *ReleaseInfo) String() string {
 func (*ReleaseInfo) ProtoMessage() {}
 
 func (x *ReleaseInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[36]
+	mi := &file_corefusion_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2780,7 +2828,7 @@ func (x *ReleaseInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseInfo.ProtoReflect.Descriptor instead.
 func (*ReleaseInfo) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{36}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ReleaseInfo) GetVersion() string {
@@ -2811,7 +2859,7 @@ type DownloadGeoRuleRequest struct {
 
 func (x *DownloadGeoRuleRequest) Reset() {
 	*x = DownloadGeoRuleRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[37]
+	mi := &file_corefusion_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2823,7 +2871,7 @@ func (x *DownloadGeoRuleRequest) String() string {
 func (*DownloadGeoRuleRequest) ProtoMessage() {}
 
 func (x *DownloadGeoRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[37]
+	mi := &file_corefusion_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2836,7 +2884,7 @@ func (x *DownloadGeoRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadGeoRuleRequest.ProtoReflect.Descriptor instead.
 func (*DownloadGeoRuleRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{37}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DownloadGeoRuleRequest) GetFileName() string {
@@ -2893,7 +2941,7 @@ type DownloadGeoRuleResponse struct {
 
 func (x *DownloadGeoRuleResponse) Reset() {
 	*x = DownloadGeoRuleResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[38]
+	mi := &file_corefusion_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2905,7 +2953,7 @@ func (x *DownloadGeoRuleResponse) String() string {
 func (*DownloadGeoRuleResponse) ProtoMessage() {}
 
 func (x *DownloadGeoRuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[38]
+	mi := &file_corefusion_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2918,7 +2966,7 @@ func (x *DownloadGeoRuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadGeoRuleResponse.ProtoReflect.Descriptor instead.
 func (*DownloadGeoRuleResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{38}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *DownloadGeoRuleResponse) GetSuccess() bool {
@@ -2958,7 +3006,7 @@ type DeleteGeoRuleRequest struct {
 
 func (x *DeleteGeoRuleRequest) Reset() {
 	*x = DeleteGeoRuleRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[39]
+	mi := &file_corefusion_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2970,7 +3018,7 @@ func (x *DeleteGeoRuleRequest) String() string {
 func (*DeleteGeoRuleRequest) ProtoMessage() {}
 
 func (x *DeleteGeoRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[39]
+	mi := &file_corefusion_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2983,7 +3031,7 @@ func (x *DeleteGeoRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGeoRuleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteGeoRuleRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{39}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DeleteGeoRuleRequest) GetFileName() string {
@@ -3004,7 +3052,7 @@ type DeleteGeoRuleResponse struct {
 
 func (x *DeleteGeoRuleResponse) Reset() {
 	*x = DeleteGeoRuleResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[40]
+	mi := &file_corefusion_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3016,7 +3064,7 @@ func (x *DeleteGeoRuleResponse) String() string {
 func (*DeleteGeoRuleResponse) ProtoMessage() {}
 
 func (x *DeleteGeoRuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[40]
+	mi := &file_corefusion_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3029,7 +3077,7 @@ func (x *DeleteGeoRuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteGeoRuleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteGeoRuleResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{40}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *DeleteGeoRuleResponse) GetSuccess() bool {
@@ -3112,7 +3160,7 @@ type AgentReport struct {
 
 func (x *AgentReport) Reset() {
 	*x = AgentReport{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[41]
+	mi := &file_corefusion_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3124,7 +3172,7 @@ func (x *AgentReport) String() string {
 func (*AgentReport) ProtoMessage() {}
 
 func (x *AgentReport) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[41]
+	mi := &file_corefusion_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3137,7 +3185,7 @@ func (x *AgentReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentReport.ProtoReflect.Descriptor instead.
 func (*AgentReport) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{41}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *AgentReport) GetType() AgentReport_ReportType {
@@ -3442,7 +3490,7 @@ type OnlineSession struct {
 
 func (x *OnlineSession) Reset() {
 	*x = OnlineSession{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[42]
+	mi := &file_corefusion_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3454,7 +3502,7 @@ func (x *OnlineSession) String() string {
 func (*OnlineSession) ProtoMessage() {}
 
 func (x *OnlineSession) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[42]
+	mi := &file_corefusion_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3467,7 +3515,7 @@ func (x *OnlineSession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnlineSession.ProtoReflect.Descriptor instead.
 func (*OnlineSession) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{42}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *OnlineSession) GetIp() string {
@@ -3530,7 +3578,7 @@ type OnlineUserEntry struct {
 
 func (x *OnlineUserEntry) Reset() {
 	*x = OnlineUserEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[43]
+	mi := &file_corefusion_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3542,7 +3590,7 @@ func (x *OnlineUserEntry) String() string {
 func (*OnlineUserEntry) ProtoMessage() {}
 
 func (x *OnlineUserEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[43]
+	mi := &file_corefusion_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3555,7 +3603,7 @@ func (x *OnlineUserEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OnlineUserEntry.ProtoReflect.Descriptor instead.
 func (*OnlineUserEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{43}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *OnlineUserEntry) GetSubscriptionId() int64 {
@@ -3664,7 +3712,7 @@ type CoreStatus struct {
 
 func (x *CoreStatus) Reset() {
 	*x = CoreStatus{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[44]
+	mi := &file_corefusion_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3676,7 +3724,7 @@ func (x *CoreStatus) String() string {
 func (*CoreStatus) ProtoMessage() {}
 
 func (x *CoreStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[44]
+	mi := &file_corefusion_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3689,7 +3737,7 @@ func (x *CoreStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoreStatus.ProtoReflect.Descriptor instead.
 func (*CoreStatus) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{44}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *CoreStatus) GetCoreType() string {
@@ -3754,7 +3802,7 @@ type TrafficStat struct {
 
 func (x *TrafficStat) Reset() {
 	*x = TrafficStat{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[45]
+	mi := &file_corefusion_agent_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3766,7 +3814,7 @@ func (x *TrafficStat) String() string {
 func (*TrafficStat) ProtoMessage() {}
 
 func (x *TrafficStat) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[45]
+	mi := &file_corefusion_agent_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3779,7 +3827,7 @@ func (x *TrafficStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TrafficStat.ProtoReflect.Descriptor instead.
 func (*TrafficStat) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{45}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TrafficStat) GetUserEmail() string {
@@ -3860,6 +3908,7 @@ type PanelCommand struct {
 	//	*PanelCommand_AssociateIp
 	//	*PanelCommand_BatchApplyLimits
 	//	*PanelCommand_GetRateLimitStatus
+	//	*PanelCommand_SetIpBlacklist
 	//	*PanelCommand_SetEgressInterface
 	//	*PanelCommand_IssuePublicCert
 	Command       isPanelCommand_Command `protobuf_oneof:"command"`
@@ -3869,7 +3918,7 @@ type PanelCommand struct {
 
 func (x *PanelCommand) Reset() {
 	*x = PanelCommand{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[46]
+	mi := &file_corefusion_agent_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3881,7 +3930,7 @@ func (x *PanelCommand) String() string {
 func (*PanelCommand) ProtoMessage() {}
 
 func (x *PanelCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[46]
+	mi := &file_corefusion_agent_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3894,7 +3943,7 @@ func (x *PanelCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PanelCommand.ProtoReflect.Descriptor instead.
 func (*PanelCommand) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{46}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *PanelCommand) GetCommandId() string {
@@ -4251,6 +4300,15 @@ func (x *PanelCommand) GetGetRateLimitStatus() *GetRateLimitStatusRequest {
 	return nil
 }
 
+func (x *PanelCommand) GetSetIpBlacklist() *SetIPBlacklistRequest {
+	if x != nil {
+		if x, ok := x.Command.(*PanelCommand_SetIpBlacklist); ok {
+			return x.SetIpBlacklist
+		}
+	}
+	return nil
+}
+
 func (x *PanelCommand) GetSetEgressInterface() *SetEgressInterfaceRequest {
 	if x != nil {
 		if x, ok := x.Command.(*PanelCommand_SetEgressInterface); ok {
@@ -4424,6 +4482,10 @@ type PanelCommand_GetRateLimitStatus struct {
 	GetRateLimitStatus *GetRateLimitStatusRequest `protobuf:"bytes,102,opt,name=get_rate_limit_status,json=getRateLimitStatus,proto3,oneof"` // 限速状态查询
 }
 
+type PanelCommand_SetIpBlacklist struct {
+	SetIpBlacklist *SetIPBlacklistRequest `protobuf:"bytes,104,opt,name=set_ip_blacklist,json=setIpBlacklist,proto3,oneof"` // IP 黑名单下发（节点核心入站阻断）
+}
+
 type PanelCommand_SetEgressInterface struct {
 	// --- 节点流量配额指令 ---
 	SetEgressInterface *SetEgressInterfaceRequest `protobuf:"bytes,103,opt,name=set_egress_interface,json=setEgressInterface,proto3,oneof"` // 设置出口网卡
@@ -4510,6 +4572,8 @@ func (*PanelCommand_BatchApplyLimits) isPanelCommand_Command() {}
 
 func (*PanelCommand_GetRateLimitStatus) isPanelCommand_Command() {}
 
+func (*PanelCommand_SetIpBlacklist) isPanelCommand_Command() {}
+
 func (*PanelCommand_SetEgressInterface) isPanelCommand_Command() {}
 
 func (*PanelCommand_IssuePublicCert) isPanelCommand_Command() {}
@@ -4530,7 +4594,7 @@ type TaskResult struct {
 
 func (x *TaskResult) Reset() {
 	*x = TaskResult{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[47]
+	mi := &file_corefusion_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4542,7 +4606,7 @@ func (x *TaskResult) String() string {
 func (*TaskResult) ProtoMessage() {}
 
 func (x *TaskResult) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[47]
+	mi := &file_corefusion_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4555,7 +4619,7 @@ func (x *TaskResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskResult.ProtoReflect.Descriptor instead.
 func (*TaskResult) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{47}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *TaskResult) GetTaskId() string {
@@ -4626,7 +4690,7 @@ type UpdateAgentCommand struct {
 
 func (x *UpdateAgentCommand) Reset() {
 	*x = UpdateAgentCommand{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[48]
+	mi := &file_corefusion_agent_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4638,7 +4702,7 @@ func (x *UpdateAgentCommand) String() string {
 func (*UpdateAgentCommand) ProtoMessage() {}
 
 func (x *UpdateAgentCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[48]
+	mi := &file_corefusion_agent_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4651,7 +4715,7 @@ func (x *UpdateAgentCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateAgentCommand.ProtoReflect.Descriptor instead.
 func (*UpdateAgentCommand) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{48}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *UpdateAgentCommand) GetVersion() string {
@@ -4687,7 +4751,7 @@ type RenewCertCommand struct {
 
 func (x *RenewCertCommand) Reset() {
 	*x = RenewCertCommand{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[49]
+	mi := &file_corefusion_agent_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4699,7 +4763,7 @@ func (x *RenewCertCommand) String() string {
 func (*RenewCertCommand) ProtoMessage() {}
 
 func (x *RenewCertCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[49]
+	mi := &file_corefusion_agent_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4712,7 +4776,7 @@ func (x *RenewCertCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewCertCommand.ProtoReflect.Descriptor instead.
 func (*RenewCertCommand) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{49}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *RenewCertCommand) GetNewCertPem() []byte {
@@ -4752,7 +4816,7 @@ type DistributeCertCommand struct {
 
 func (x *DistributeCertCommand) Reset() {
 	*x = DistributeCertCommand{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[50]
+	mi := &file_corefusion_agent_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4764,7 +4828,7 @@ func (x *DistributeCertCommand) String() string {
 func (*DistributeCertCommand) ProtoMessage() {}
 
 func (x *DistributeCertCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[50]
+	mi := &file_corefusion_agent_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4777,7 +4841,7 @@ func (x *DistributeCertCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DistributeCertCommand.ProtoReflect.Descriptor instead.
 func (*DistributeCertCommand) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{50}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *DistributeCertCommand) GetCertName() string {
@@ -4842,7 +4906,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[51]
+	mi := &file_corefusion_agent_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4854,7 +4918,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[51]
+	mi := &file_corefusion_agent_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4867,7 +4931,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{51}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *RegisterRequest) GetBootstrapToken() string {
@@ -4920,7 +4984,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[52]
+	mi := &file_corefusion_agent_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4932,7 +4996,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[52]
+	mi := &file_corefusion_agent_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4945,7 +5009,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{52}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *RegisterResponse) GetSuccess() bool {
@@ -5014,7 +5078,7 @@ type XrayAPIRequest struct {
 
 func (x *XrayAPIRequest) Reset() {
 	*x = XrayAPIRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[53]
+	mi := &file_corefusion_agent_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5026,7 +5090,7 @@ func (x *XrayAPIRequest) String() string {
 func (*XrayAPIRequest) ProtoMessage() {}
 
 func (x *XrayAPIRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[53]
+	mi := &file_corefusion_agent_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5039,7 +5103,7 @@ func (x *XrayAPIRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XrayAPIRequest.ProtoReflect.Descriptor instead.
 func (*XrayAPIRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{53}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *XrayAPIRequest) GetService() string {
@@ -5075,7 +5139,7 @@ type XrayAPIResponse struct {
 
 func (x *XrayAPIResponse) Reset() {
 	*x = XrayAPIResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[54]
+	mi := &file_corefusion_agent_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5087,7 +5151,7 @@ func (x *XrayAPIResponse) String() string {
 func (*XrayAPIResponse) ProtoMessage() {}
 
 func (x *XrayAPIResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[54]
+	mi := &file_corefusion_agent_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5100,7 +5164,7 @@ func (x *XrayAPIResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use XrayAPIResponse.ProtoReflect.Descriptor instead.
 func (*XrayAPIResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{54}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *XrayAPIResponse) GetSuccess() bool {
@@ -5132,7 +5196,7 @@ type ListInterfacesRequest struct {
 
 func (x *ListInterfacesRequest) Reset() {
 	*x = ListInterfacesRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[55]
+	mi := &file_corefusion_agent_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5144,7 +5208,7 @@ func (x *ListInterfacesRequest) String() string {
 func (*ListInterfacesRequest) ProtoMessage() {}
 
 func (x *ListInterfacesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[55]
+	mi := &file_corefusion_agent_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5157,7 +5221,7 @@ func (x *ListInterfacesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInterfacesRequest.ProtoReflect.Descriptor instead.
 func (*ListInterfacesRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{55}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{56}
 }
 
 type ListInterfacesResponse struct {
@@ -5169,7 +5233,7 @@ type ListInterfacesResponse struct {
 
 func (x *ListInterfacesResponse) Reset() {
 	*x = ListInterfacesResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[56]
+	mi := &file_corefusion_agent_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5181,7 +5245,7 @@ func (x *ListInterfacesResponse) String() string {
 func (*ListInterfacesResponse) ProtoMessage() {}
 
 func (x *ListInterfacesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[56]
+	mi := &file_corefusion_agent_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5194,7 +5258,7 @@ func (x *ListInterfacesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInterfacesResponse.ProtoReflect.Descriptor instead.
 func (*ListInterfacesResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{56}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *ListInterfacesResponse) GetInterfaces() []string {
@@ -5270,7 +5334,7 @@ type SyncDataRequest struct {
 
 func (x *SyncDataRequest) Reset() {
 	*x = SyncDataRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[57]
+	mi := &file_corefusion_agent_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5282,7 +5346,7 @@ func (x *SyncDataRequest) String() string {
 func (*SyncDataRequest) ProtoMessage() {}
 
 func (x *SyncDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[57]
+	mi := &file_corefusion_agent_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5295,7 +5359,7 @@ func (x *SyncDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncDataRequest.ProtoReflect.Descriptor instead.
 func (*SyncDataRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{57}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *SyncDataRequest) GetServerId() int64 {
@@ -5507,7 +5571,7 @@ type CoreGuardianEntry struct {
 
 func (x *CoreGuardianEntry) Reset() {
 	*x = CoreGuardianEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[58]
+	mi := &file_corefusion_agent_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5519,7 +5583,7 @@ func (x *CoreGuardianEntry) String() string {
 func (*CoreGuardianEntry) ProtoMessage() {}
 
 func (x *CoreGuardianEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[58]
+	mi := &file_corefusion_agent_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5532,7 +5596,7 @@ func (x *CoreGuardianEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoreGuardianEntry.ProtoReflect.Descriptor instead.
 func (*CoreGuardianEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{58}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *CoreGuardianEntry) GetCoreType() string {
@@ -5584,7 +5648,7 @@ type ChainLinkEntry struct {
 
 func (x *ChainLinkEntry) Reset() {
 	*x = ChainLinkEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[59]
+	mi := &file_corefusion_agent_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5596,7 +5660,7 @@ func (x *ChainLinkEntry) String() string {
 func (*ChainLinkEntry) ProtoMessage() {}
 
 func (x *ChainLinkEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[59]
+	mi := &file_corefusion_agent_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5609,7 +5673,7 @@ func (x *ChainLinkEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChainLinkEntry.ProtoReflect.Descriptor instead.
 func (*ChainLinkEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{59}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *ChainLinkEntry) GetId() int64 {
@@ -5718,7 +5782,7 @@ type NodeServerEntry struct {
 
 func (x *NodeServerEntry) Reset() {
 	*x = NodeServerEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[60]
+	mi := &file_corefusion_agent_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5730,7 +5794,7 @@ func (x *NodeServerEntry) String() string {
 func (*NodeServerEntry) ProtoMessage() {}
 
 func (x *NodeServerEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[60]
+	mi := &file_corefusion_agent_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5743,7 +5807,7 @@ func (x *NodeServerEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeServerEntry.ProtoReflect.Descriptor instead.
 func (*NodeServerEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{60}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *NodeServerEntry) GetId() int64 {
@@ -5853,7 +5917,7 @@ type ExternalNodeEntry struct {
 
 func (x *ExternalNodeEntry) Reset() {
 	*x = ExternalNodeEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[61]
+	mi := &file_corefusion_agent_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5865,7 +5929,7 @@ func (x *ExternalNodeEntry) String() string {
 func (*ExternalNodeEntry) ProtoMessage() {}
 
 func (x *ExternalNodeEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[61]
+	mi := &file_corefusion_agent_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5878,7 +5942,7 @@ func (x *ExternalNodeEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExternalNodeEntry.ProtoReflect.Descriptor instead.
 func (*ExternalNodeEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{61}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ExternalNodeEntry) GetId() int64 {
@@ -5998,7 +6062,7 @@ type CertificateEntry struct {
 
 func (x *CertificateEntry) Reset() {
 	*x = CertificateEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[62]
+	mi := &file_corefusion_agent_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6010,7 +6074,7 @@ func (x *CertificateEntry) String() string {
 func (*CertificateEntry) ProtoMessage() {}
 
 func (x *CertificateEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[62]
+	mi := &file_corefusion_agent_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6023,7 +6087,7 @@ func (x *CertificateEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertificateEntry.ProtoReflect.Descriptor instead.
 func (*CertificateEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{62}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *CertificateEntry) GetId() int64 {
@@ -6103,7 +6167,7 @@ type CoreConfigEntry struct {
 
 func (x *CoreConfigEntry) Reset() {
 	*x = CoreConfigEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[63]
+	mi := &file_corefusion_agent_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6115,7 +6179,7 @@ func (x *CoreConfigEntry) String() string {
 func (*CoreConfigEntry) ProtoMessage() {}
 
 func (x *CoreConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[63]
+	mi := &file_corefusion_agent_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6128,7 +6192,7 @@ func (x *CoreConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CoreConfigEntry.ProtoReflect.Descriptor instead.
 func (*CoreConfigEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{63}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *CoreConfigEntry) GetId() int64 {
@@ -6194,7 +6258,7 @@ type InboundConfigEntry struct {
 
 func (x *InboundConfigEntry) Reset() {
 	*x = InboundConfigEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[64]
+	mi := &file_corefusion_agent_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6206,7 +6270,7 @@ func (x *InboundConfigEntry) String() string {
 func (*InboundConfigEntry) ProtoMessage() {}
 
 func (x *InboundConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[64]
+	mi := &file_corefusion_agent_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6219,7 +6283,7 @@ func (x *InboundConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InboundConfigEntry.ProtoReflect.Descriptor instead.
 func (*InboundConfigEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{64}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *InboundConfigEntry) GetId() int64 {
@@ -6333,7 +6397,7 @@ type OutboundConfigEntry struct {
 
 func (x *OutboundConfigEntry) Reset() {
 	*x = OutboundConfigEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[65]
+	mi := &file_corefusion_agent_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6345,7 +6409,7 @@ func (x *OutboundConfigEntry) String() string {
 func (*OutboundConfigEntry) ProtoMessage() {}
 
 func (x *OutboundConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[65]
+	mi := &file_corefusion_agent_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6358,7 +6422,7 @@ func (x *OutboundConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutboundConfigEntry.ProtoReflect.Descriptor instead.
 func (*OutboundConfigEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{65}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *OutboundConfigEntry) GetId() int64 {
@@ -6474,7 +6538,7 @@ type WarpConfigEntry struct {
 
 func (x *WarpConfigEntry) Reset() {
 	*x = WarpConfigEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[66]
+	mi := &file_corefusion_agent_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6486,7 +6550,7 @@ func (x *WarpConfigEntry) String() string {
 func (*WarpConfigEntry) ProtoMessage() {}
 
 func (x *WarpConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[66]
+	mi := &file_corefusion_agent_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6499,7 +6563,7 @@ func (x *WarpConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WarpConfigEntry.ProtoReflect.Descriptor instead.
 func (*WarpConfigEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{66}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *WarpConfigEntry) GetId() int64 {
@@ -6670,7 +6734,7 @@ type ShareDomainConfigEntry struct {
 
 func (x *ShareDomainConfigEntry) Reset() {
 	*x = ShareDomainConfigEntry{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[67]
+	mi := &file_corefusion_agent_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6682,7 +6746,7 @@ func (x *ShareDomainConfigEntry) String() string {
 func (*ShareDomainConfigEntry) ProtoMessage() {}
 
 func (x *ShareDomainConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[67]
+	mi := &file_corefusion_agent_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6695,7 +6759,7 @@ func (x *ShareDomainConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShareDomainConfigEntry.ProtoReflect.Descriptor instead.
 func (*ShareDomainConfigEntry) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{67}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ShareDomainConfigEntry) GetId() int64 {
@@ -6803,7 +6867,7 @@ type SyncDataResponse struct {
 
 func (x *SyncDataResponse) Reset() {
 	*x = SyncDataResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[68]
+	mi := &file_corefusion_agent_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6815,7 +6879,7 @@ func (x *SyncDataResponse) String() string {
 func (*SyncDataResponse) ProtoMessage() {}
 
 func (x *SyncDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[68]
+	mi := &file_corefusion_agent_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6828,7 +6892,7 @@ func (x *SyncDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncDataResponse.ProtoReflect.Descriptor instead.
 func (*SyncDataResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{68}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *SyncDataResponse) GetSuccess() bool {
@@ -6933,7 +6997,7 @@ type ExecuteBinaryRequest struct {
 
 func (x *ExecuteBinaryRequest) Reset() {
 	*x = ExecuteBinaryRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[69]
+	mi := &file_corefusion_agent_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6945,7 +7009,7 @@ func (x *ExecuteBinaryRequest) String() string {
 func (*ExecuteBinaryRequest) ProtoMessage() {}
 
 func (x *ExecuteBinaryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[69]
+	mi := &file_corefusion_agent_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6958,7 +7022,7 @@ func (x *ExecuteBinaryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteBinaryRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteBinaryRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{69}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *ExecuteBinaryRequest) GetCoreType() string {
@@ -6994,7 +7058,7 @@ type ExecuteBinaryResponse struct {
 
 func (x *ExecuteBinaryResponse) Reset() {
 	*x = ExecuteBinaryResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[70]
+	mi := &file_corefusion_agent_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7006,7 +7070,7 @@ func (x *ExecuteBinaryResponse) String() string {
 func (*ExecuteBinaryResponse) ProtoMessage() {}
 
 func (x *ExecuteBinaryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[70]
+	mi := &file_corefusion_agent_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7019,7 +7083,7 @@ func (x *ExecuteBinaryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteBinaryResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteBinaryResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{70}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ExecuteBinaryResponse) GetSuccess() bool {
@@ -7066,7 +7130,7 @@ type ReadLogFileRequest struct {
 
 func (x *ReadLogFileRequest) Reset() {
 	*x = ReadLogFileRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[71]
+	mi := &file_corefusion_agent_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7078,7 +7142,7 @@ func (x *ReadLogFileRequest) String() string {
 func (*ReadLogFileRequest) ProtoMessage() {}
 
 func (x *ReadLogFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[71]
+	mi := &file_corefusion_agent_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7091,7 +7155,7 @@ func (x *ReadLogFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadLogFileRequest.ProtoReflect.Descriptor instead.
 func (*ReadLogFileRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{71}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *ReadLogFileRequest) GetLogType() string {
@@ -7157,7 +7221,7 @@ type ReadLogFileResponse struct {
 
 func (x *ReadLogFileResponse) Reset() {
 	*x = ReadLogFileResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[72]
+	mi := &file_corefusion_agent_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7169,7 +7233,7 @@ func (x *ReadLogFileResponse) String() string {
 func (*ReadLogFileResponse) ProtoMessage() {}
 
 func (x *ReadLogFileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[72]
+	mi := &file_corefusion_agent_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7182,7 +7246,7 @@ func (x *ReadLogFileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadLogFileResponse.ProtoReflect.Descriptor instead.
 func (*ReadLogFileResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{72}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *ReadLogFileResponse) GetSuccess() bool {
@@ -7238,7 +7302,7 @@ type RotateLogRequest struct {
 
 func (x *RotateLogRequest) Reset() {
 	*x = RotateLogRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[73]
+	mi := &file_corefusion_agent_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7250,7 +7314,7 @@ func (x *RotateLogRequest) String() string {
 func (*RotateLogRequest) ProtoMessage() {}
 
 func (x *RotateLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[73]
+	mi := &file_corefusion_agent_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7263,7 +7327,7 @@ func (x *RotateLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateLogRequest.ProtoReflect.Descriptor instead.
 func (*RotateLogRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{73}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *RotateLogRequest) GetLogType() string {
@@ -7293,7 +7357,7 @@ type RotateLogResponse struct {
 
 func (x *RotateLogResponse) Reset() {
 	*x = RotateLogResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[74]
+	mi := &file_corefusion_agent_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7305,7 +7369,7 @@ func (x *RotateLogResponse) String() string {
 func (*RotateLogResponse) ProtoMessage() {}
 
 func (x *RotateLogResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[74]
+	mi := &file_corefusion_agent_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7318,7 +7382,7 @@ func (x *RotateLogResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateLogResponse.ProtoReflect.Descriptor instead.
 func (*RotateLogResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{74}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *RotateLogResponse) GetSuccess() bool {
@@ -7370,7 +7434,7 @@ type PackageLogsRequest struct {
 
 func (x *PackageLogsRequest) Reset() {
 	*x = PackageLogsRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[75]
+	mi := &file_corefusion_agent_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7382,7 +7446,7 @@ func (x *PackageLogsRequest) String() string {
 func (*PackageLogsRequest) ProtoMessage() {}
 
 func (x *PackageLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[75]
+	mi := &file_corefusion_agent_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7395,7 +7459,7 @@ func (x *PackageLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageLogsRequest.ProtoReflect.Descriptor instead.
 func (*PackageLogsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{75}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *PackageLogsRequest) GetLogType() string {
@@ -7446,7 +7510,7 @@ type PackageLogsResponse struct {
 
 func (x *PackageLogsResponse) Reset() {
 	*x = PackageLogsResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[76]
+	mi := &file_corefusion_agent_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7458,7 +7522,7 @@ func (x *PackageLogsResponse) String() string {
 func (*PackageLogsResponse) ProtoMessage() {}
 
 func (x *PackageLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[76]
+	mi := &file_corefusion_agent_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7471,7 +7535,7 @@ func (x *PackageLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageLogsResponse.ProtoReflect.Descriptor instead.
 func (*PackageLogsResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{76}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *PackageLogsResponse) GetSuccess() bool {
@@ -7520,7 +7584,7 @@ type StreamLogFileRequest struct {
 
 func (x *StreamLogFileRequest) Reset() {
 	*x = StreamLogFileRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[77]
+	mi := &file_corefusion_agent_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7532,7 +7596,7 @@ func (x *StreamLogFileRequest) String() string {
 func (*StreamLogFileRequest) ProtoMessage() {}
 
 func (x *StreamLogFileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[77]
+	mi := &file_corefusion_agent_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7545,7 +7609,7 @@ func (x *StreamLogFileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogFileRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogFileRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{77}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *StreamLogFileRequest) GetLogType() string {
@@ -7574,7 +7638,7 @@ type SyncLogConfigRequest struct {
 
 func (x *SyncLogConfigRequest) Reset() {
 	*x = SyncLogConfigRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[78]
+	mi := &file_corefusion_agent_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7586,7 +7650,7 @@ func (x *SyncLogConfigRequest) String() string {
 func (*SyncLogConfigRequest) ProtoMessage() {}
 
 func (x *SyncLogConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[78]
+	mi := &file_corefusion_agent_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7599,7 +7663,7 @@ func (x *SyncLogConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncLogConfigRequest.ProtoReflect.Descriptor instead.
 func (*SyncLogConfigRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{78}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *SyncLogConfigRequest) GetCoreLogConfig() string {
@@ -7632,7 +7696,7 @@ type DiscoverLogsRequest struct {
 
 func (x *DiscoverLogsRequest) Reset() {
 	*x = DiscoverLogsRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[79]
+	mi := &file_corefusion_agent_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7644,7 +7708,7 @@ func (x *DiscoverLogsRequest) String() string {
 func (*DiscoverLogsRequest) ProtoMessage() {}
 
 func (x *DiscoverLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[79]
+	mi := &file_corefusion_agent_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7657,7 +7721,7 @@ func (x *DiscoverLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverLogsRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverLogsRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{79}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{80}
 }
 
 type DiscoverLogsResponse struct {
@@ -7671,7 +7735,7 @@ type DiscoverLogsResponse struct {
 
 func (x *DiscoverLogsResponse) Reset() {
 	*x = DiscoverLogsResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[80]
+	mi := &file_corefusion_agent_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7683,7 +7747,7 @@ func (x *DiscoverLogsResponse) String() string {
 func (*DiscoverLogsResponse) ProtoMessage() {}
 
 func (x *DiscoverLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[80]
+	mi := &file_corefusion_agent_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7696,7 +7760,7 @@ func (x *DiscoverLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverLogsResponse.ProtoReflect.Descriptor instead.
 func (*DiscoverLogsResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{80}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *DiscoverLogsResponse) GetSuccess() bool {
@@ -7733,7 +7797,7 @@ type DiscoveredLogInfo struct {
 
 func (x *DiscoveredLogInfo) Reset() {
 	*x = DiscoveredLogInfo{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[81]
+	mi := &file_corefusion_agent_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7745,7 +7809,7 @@ func (x *DiscoveredLogInfo) String() string {
 func (*DiscoveredLogInfo) ProtoMessage() {}
 
 func (x *DiscoveredLogInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[81]
+	mi := &file_corefusion_agent_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7758,7 +7822,7 @@ func (x *DiscoveredLogInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoveredLogInfo.ProtoReflect.Descriptor instead.
 func (*DiscoveredLogInfo) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{81}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *DiscoveredLogInfo) GetSourceType() string {
@@ -7804,7 +7868,7 @@ type GetWriterStatusRequest struct {
 
 func (x *GetWriterStatusRequest) Reset() {
 	*x = GetWriterStatusRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[82]
+	mi := &file_corefusion_agent_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7816,7 +7880,7 @@ func (x *GetWriterStatusRequest) String() string {
 func (*GetWriterStatusRequest) ProtoMessage() {}
 
 func (x *GetWriterStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[82]
+	mi := &file_corefusion_agent_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7829,7 +7893,7 @@ func (x *GetWriterStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWriterStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetWriterStatusRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{82}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{83}
 }
 
 type GetWriterStatusResponse struct {
@@ -7843,7 +7907,7 @@ type GetWriterStatusResponse struct {
 
 func (x *GetWriterStatusResponse) Reset() {
 	*x = GetWriterStatusResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[83]
+	mi := &file_corefusion_agent_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7855,7 +7919,7 @@ func (x *GetWriterStatusResponse) String() string {
 func (*GetWriterStatusResponse) ProtoMessage() {}
 
 func (x *GetWriterStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[83]
+	mi := &file_corefusion_agent_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7868,7 +7932,7 @@ func (x *GetWriterStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetWriterStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetWriterStatusResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{83}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *GetWriterStatusResponse) GetSuccess() bool {
@@ -7909,7 +7973,7 @@ type WriterStatus struct {
 
 func (x *WriterStatus) Reset() {
 	*x = WriterStatus{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[84]
+	mi := &file_corefusion_agent_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7921,7 +7985,7 @@ func (x *WriterStatus) String() string {
 func (*WriterStatus) ProtoMessage() {}
 
 func (x *WriterStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[84]
+	mi := &file_corefusion_agent_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7934,7 +7998,7 @@ func (x *WriterStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriterStatus.ProtoReflect.Descriptor instead.
 func (*WriterStatus) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{84}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *WriterStatus) GetProxyType() string {
@@ -8010,7 +8074,7 @@ type StartWriterRequest struct {
 
 func (x *StartWriterRequest) Reset() {
 	*x = StartWriterRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[85]
+	mi := &file_corefusion_agent_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8022,7 +8086,7 @@ func (x *StartWriterRequest) String() string {
 func (*StartWriterRequest) ProtoMessage() {}
 
 func (x *StartWriterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[85]
+	mi := &file_corefusion_agent_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8035,7 +8099,7 @@ func (x *StartWriterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWriterRequest.ProtoReflect.Descriptor instead.
 func (*StartWriterRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{85}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *StartWriterRequest) GetProxyType() string {
@@ -8063,7 +8127,7 @@ type StartWriterResponse struct {
 
 func (x *StartWriterResponse) Reset() {
 	*x = StartWriterResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[86]
+	mi := &file_corefusion_agent_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8075,7 +8139,7 @@ func (x *StartWriterResponse) String() string {
 func (*StartWriterResponse) ProtoMessage() {}
 
 func (x *StartWriterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[86]
+	mi := &file_corefusion_agent_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8088,7 +8152,7 @@ func (x *StartWriterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartWriterResponse.ProtoReflect.Descriptor instead.
 func (*StartWriterResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{86}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *StartWriterResponse) GetSuccess() bool {
@@ -8121,7 +8185,7 @@ type StopWriterRequest struct {
 
 func (x *StopWriterRequest) Reset() {
 	*x = StopWriterRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[87]
+	mi := &file_corefusion_agent_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8133,7 +8197,7 @@ func (x *StopWriterRequest) String() string {
 func (*StopWriterRequest) ProtoMessage() {}
 
 func (x *StopWriterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[87]
+	mi := &file_corefusion_agent_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8146,7 +8210,7 @@ func (x *StopWriterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopWriterRequest.ProtoReflect.Descriptor instead.
 func (*StopWriterRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{87}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *StopWriterRequest) GetProxyType() string {
@@ -8167,7 +8231,7 @@ type StopWriterResponse struct {
 
 func (x *StopWriterResponse) Reset() {
 	*x = StopWriterResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[88]
+	mi := &file_corefusion_agent_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8179,7 +8243,7 @@ func (x *StopWriterResponse) String() string {
 func (*StopWriterResponse) ProtoMessage() {}
 
 func (x *StopWriterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[88]
+	mi := &file_corefusion_agent_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8192,7 +8256,7 @@ func (x *StopWriterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopWriterResponse.ProtoReflect.Descriptor instead.
 func (*StopWriterResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{88}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *StopWriterResponse) GetSuccess() bool {
@@ -8230,7 +8294,7 @@ type UpdateWriterConfigRequest struct {
 
 func (x *UpdateWriterConfigRequest) Reset() {
 	*x = UpdateWriterConfigRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[89]
+	mi := &file_corefusion_agent_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8242,7 +8306,7 @@ func (x *UpdateWriterConfigRequest) String() string {
 func (*UpdateWriterConfigRequest) ProtoMessage() {}
 
 func (x *UpdateWriterConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[89]
+	mi := &file_corefusion_agent_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8255,7 +8319,7 @@ func (x *UpdateWriterConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWriterConfigRequest.ProtoReflect.Descriptor instead.
 func (*UpdateWriterConfigRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{89}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *UpdateWriterConfigRequest) GetProxyType() string {
@@ -8311,7 +8375,7 @@ type UpdateWriterConfigResponse struct {
 
 func (x *UpdateWriterConfigResponse) Reset() {
 	*x = UpdateWriterConfigResponse{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[90]
+	mi := &file_corefusion_agent_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8323,7 +8387,7 @@ func (x *UpdateWriterConfigResponse) String() string {
 func (*UpdateWriterConfigResponse) ProtoMessage() {}
 
 func (x *UpdateWriterConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[90]
+	mi := &file_corefusion_agent_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8336,7 +8400,7 @@ func (x *UpdateWriterConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateWriterConfigResponse.ProtoReflect.Descriptor instead.
 func (*UpdateWriterConfigResponse) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{90}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *UpdateWriterConfigResponse) GetSuccess() bool {
@@ -8370,7 +8434,7 @@ type SetEgressInterfaceRequest struct {
 
 func (x *SetEgressInterfaceRequest) Reset() {
 	*x = SetEgressInterfaceRequest{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[91]
+	mi := &file_corefusion_agent_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8382,7 +8446,7 @@ func (x *SetEgressInterfaceRequest) String() string {
 func (*SetEgressInterfaceRequest) ProtoMessage() {}
 
 func (x *SetEgressInterfaceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[91]
+	mi := &file_corefusion_agent_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8395,7 +8459,7 @@ func (x *SetEgressInterfaceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetEgressInterfaceRequest.ProtoReflect.Descriptor instead.
 func (*SetEgressInterfaceRequest) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{91}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *SetEgressInterfaceRequest) GetInterfaceName() string {
@@ -8445,7 +8509,7 @@ type IssuePublicCertCommand struct {
 
 func (x *IssuePublicCertCommand) Reset() {
 	*x = IssuePublicCertCommand{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[92]
+	mi := &file_corefusion_agent_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8457,7 +8521,7 @@ func (x *IssuePublicCertCommand) String() string {
 func (*IssuePublicCertCommand) ProtoMessage() {}
 
 func (x *IssuePublicCertCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[92]
+	mi := &file_corefusion_agent_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8470,7 +8534,7 @@ func (x *IssuePublicCertCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssuePublicCertCommand.ProtoReflect.Descriptor instead.
 func (*IssuePublicCertCommand) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{92}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *IssuePublicCertCommand) GetCertId() int64 {
@@ -8604,7 +8668,7 @@ type PublicCertIssuedReport struct {
 
 func (x *PublicCertIssuedReport) Reset() {
 	*x = PublicCertIssuedReport{}
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[93]
+	mi := &file_corefusion_agent_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -8616,7 +8680,7 @@ func (x *PublicCertIssuedReport) String() string {
 func (*PublicCertIssuedReport) ProtoMessage() {}
 
 func (x *PublicCertIssuedReport) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[93]
+	mi := &file_corefusion_agent_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8629,7 +8693,7 @@ func (x *PublicCertIssuedReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PublicCertIssuedReport.ProtoReflect.Descriptor instead.
 func (*PublicCertIssuedReport) Descriptor() ([]byte, []int) {
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP(), []int{93}
+	return file_corefusion_agent_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *PublicCertIssuedReport) GetCertId() int64 {
@@ -8709,11 +8773,11 @@ func (x *PublicCertIssuedReport) GetDnsChannelId() int64 {
 	return 0
 }
 
-var File_internal_runtime_agent_proto_corefusion_agent_proto protoreflect.FileDescriptor
+var File_corefusion_agent_proto protoreflect.FileDescriptor
 
-const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
+const file_corefusion_agent_proto_rawDesc = "" +
 	"\n" +
-	"3internal/runtime/agent/proto/corefusion_agent.proto\x12\x13corefusion.agent.v1\"\x8f\x01\n" +
+	"\x16corefusion_agent.proto\x12\x13corefusion.agent.v1\"\x8f\x01\n" +
 	"\n" +
 	"TaskAccept\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x17\n" +
@@ -8811,7 +8875,9 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"conn_limit\x18\b \x01(\x05R\tconnLimit\x12!\n" +
 	"\fdevice_limit\x18\t \x01(\x05R\vdeviceLimit\"D\n" +
 	"\x19GetRateLimitStatusRequest\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\x03R\x0esubscriptionId\"\xc8\x01\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\x03R\x0esubscriptionId\"1\n" +
+	"\x15SetIPBlacklistRequest\x12\x18\n" +
+	"\aentries\x18\x01 \x03(\tR\aentries\"\xc8\x01\n" +
 	"\x1aGetRateLimitStatusResponse\x12=\n" +
 	"\aentries\x18\x01 \x03(\v2#.corefusion.agent.v1.RateLimitEntryR\aentries\x12#\n" +
 	"\rnft_available\x18\x02 \x01(\bR\fnftAvailable\x12!\n" +
@@ -9063,7 +9129,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\fuplink_bytes\x18\x02 \x01(\x03R\vuplinkBytes\x12%\n" +
 	"\x0edownlink_bytes\x18\x03 \x01(\x03R\rdownlinkBytes\x12#\n" +
 	"\rsession_start\x18\x04 \x01(\x03R\fsessionStart\x12\x1b\n" +
-	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\xe9\x19\n" +
+	"\tcore_type\x18\x05 \x01(\tR\bcoreType\"\xc1\x1a\n" +
 	"\fPanelCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x14 \x01(\tR\tcommandId\x12'\n" +
@@ -9113,7 +9179,8 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x0esync_waf_files\x18# \x01(\v2(.corefusion.agent.v1.SyncWAFFilesRequestH\x00R\fsyncWafFiles\x12L\n" +
 	"\fassociate_ip\x18d \x01(\v2'.corefusion.agent.v1.AssociateIPRequestH\x00R\vassociateIp\x12\\\n" +
 	"\x12batch_apply_limits\x18e \x01(\v2,.corefusion.agent.v1.BatchApplyLimitsRequestH\x00R\x10batchApplyLimits\x12c\n" +
-	"\x15get_rate_limit_status\x18f \x01(\v2..corefusion.agent.v1.GetRateLimitStatusRequestH\x00R\x12getRateLimitStatus\x12b\n" +
+	"\x15get_rate_limit_status\x18f \x01(\v2..corefusion.agent.v1.GetRateLimitStatusRequestH\x00R\x12getRateLimitStatus\x12V\n" +
+	"\x10set_ip_blacklist\x18h \x01(\v2*.corefusion.agent.v1.SetIPBlacklistRequestH\x00R\x0esetIpBlacklist\x12b\n" +
 	"\x14set_egress_interface\x18g \x01(\v2..corefusion.agent.v1.SetEgressInterfaceRequestH\x00R\x12setEgressInterface\x12Y\n" +
 	"\x11issue_public_cert\x18( \x01(\v2+.corefusion.agent.v1.IssuePublicCertCommandH\x00R\x0fissuePublicCertB\t\n" +
 	"\acommand\"\x9b\x02\n" +
@@ -9594,20 +9661,20 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\bRegister\x12$.corefusion.agent.v1.RegisterRequest\x1a%.corefusion.agent.v1.RegisterResponseB1Z/corefusion/internal/runtime/agent/proto;agentpbb\x06proto3"
 
 var (
-	file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescOnce sync.Once
-	file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescData []byte
+	file_corefusion_agent_proto_rawDescOnce sync.Once
+	file_corefusion_agent_proto_rawDescData []byte
 )
 
-func file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescGZIP() []byte {
-	file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescOnce.Do(func() {
-		file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc), len(file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc)))
+func file_corefusion_agent_proto_rawDescGZIP() []byte {
+	file_corefusion_agent_proto_rawDescOnce.Do(func() {
+		file_corefusion_agent_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_corefusion_agent_proto_rawDesc), len(file_corefusion_agent_proto_rawDesc)))
 	})
-	return file_internal_runtime_agent_proto_corefusion_agent_proto_rawDescData
+	return file_corefusion_agent_proto_rawDescData
 }
 
-var file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 98)
-var file_internal_runtime_agent_proto_corefusion_agent_proto_goTypes = []any{
+var file_corefusion_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
+var file_corefusion_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 99)
+var file_corefusion_agent_proto_goTypes = []any{
 	(TaskStatus)(0),                     // 0: corefusion.agent.v1.TaskStatus
 	(ApplyLimitsRequest_LimitType)(0),   // 1: corefusion.agent.v1.ApplyLimitsRequest.LimitType
 	(AgentReport_ReportType)(0),         // 2: corefusion.agent.v1.AgentReport.ReportType
@@ -9627,229 +9694,231 @@ var file_internal_runtime_agent_proto_corefusion_agent_proto_goTypes = []any{
 	(*BatchApplyLimitsRequest)(nil),     // 16: corefusion.agent.v1.BatchApplyLimitsRequest
 	(*AssociateIPRequest)(nil),          // 17: corefusion.agent.v1.AssociateIPRequest
 	(*GetRateLimitStatusRequest)(nil),   // 18: corefusion.agent.v1.GetRateLimitStatusRequest
-	(*GetRateLimitStatusResponse)(nil),  // 19: corefusion.agent.v1.GetRateLimitStatusResponse
-	(*RateLimitEntry)(nil),              // 20: corefusion.agent.v1.RateLimitEntry
-	(*GetStatusRequest)(nil),            // 21: corefusion.agent.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),           // 22: corefusion.agent.v1.GetStatusResponse
-	(*UpdateAgentRequest)(nil),          // 23: corefusion.agent.v1.UpdateAgentRequest
-	(*ReadConfigFileRequest)(nil),       // 24: corefusion.agent.v1.ReadConfigFileRequest
-	(*ReadConfigFileResponse)(nil),      // 25: corefusion.agent.v1.ReadConfigFileResponse
-	(*SpeedTestRequest)(nil),            // 26: corefusion.agent.v1.SpeedTestRequest
-	(*SpeedTestResponse)(nil),           // 27: corefusion.agent.v1.SpeedTestResponse
-	(*GetMetricsRequest)(nil),           // 28: corefusion.agent.v1.GetMetricsRequest
-	(*GetMetricsResponse)(nil),          // 29: corefusion.agent.v1.GetMetricsResponse
-	(*MetricPoint)(nil),                 // 30: corefusion.agent.v1.MetricPoint
-	(*InstallBinaryRequest)(nil),        // 31: corefusion.agent.v1.InstallBinaryRequest
-	(*InstallProxyRequest)(nil),         // 32: corefusion.agent.v1.InstallProxyRequest
-	(*GetProxyStatusRequest)(nil),       // 33: corefusion.agent.v1.GetProxyStatusRequest
-	(*GetProxyStatusResponse)(nil),      // 34: corefusion.agent.v1.GetProxyStatusResponse
-	(*ProxyInfo)(nil),                   // 35: corefusion.agent.v1.ProxyInfo
-	(*ListBinariesRequest)(nil),         // 36: corefusion.agent.v1.ListBinariesRequest
-	(*ListBinariesResponse)(nil),        // 37: corefusion.agent.v1.ListBinariesResponse
-	(*BinaryInfo)(nil),                  // 38: corefusion.agent.v1.BinaryInfo
-	(*ListReleasesRequest)(nil),         // 39: corefusion.agent.v1.ListReleasesRequest
-	(*ReleaseInfo)(nil),                 // 40: corefusion.agent.v1.ReleaseInfo
-	(*DownloadGeoRuleRequest)(nil),      // 41: corefusion.agent.v1.DownloadGeoRuleRequest
-	(*DownloadGeoRuleResponse)(nil),     // 42: corefusion.agent.v1.DownloadGeoRuleResponse
-	(*DeleteGeoRuleRequest)(nil),        // 43: corefusion.agent.v1.DeleteGeoRuleRequest
-	(*DeleteGeoRuleResponse)(nil),       // 44: corefusion.agent.v1.DeleteGeoRuleResponse
-	(*AgentReport)(nil),                 // 45: corefusion.agent.v1.AgentReport
-	(*OnlineSession)(nil),               // 46: corefusion.agent.v1.OnlineSession
-	(*OnlineUserEntry)(nil),             // 47: corefusion.agent.v1.OnlineUserEntry
-	(*CoreStatus)(nil),                  // 48: corefusion.agent.v1.CoreStatus
-	(*TrafficStat)(nil),                 // 49: corefusion.agent.v1.TrafficStat
-	(*PanelCommand)(nil),                // 50: corefusion.agent.v1.PanelCommand
-	(*TaskResult)(nil),                  // 51: corefusion.agent.v1.TaskResult
-	(*UpdateAgentCommand)(nil),          // 52: corefusion.agent.v1.UpdateAgentCommand
-	(*RenewCertCommand)(nil),            // 53: corefusion.agent.v1.RenewCertCommand
-	(*DistributeCertCommand)(nil),       // 54: corefusion.agent.v1.DistributeCertCommand
-	(*RegisterRequest)(nil),             // 55: corefusion.agent.v1.RegisterRequest
-	(*RegisterResponse)(nil),            // 56: corefusion.agent.v1.RegisterResponse
-	(*XrayAPIRequest)(nil),              // 57: corefusion.agent.v1.XrayAPIRequest
-	(*XrayAPIResponse)(nil),             // 58: corefusion.agent.v1.XrayAPIResponse
-	(*ListInterfacesRequest)(nil),       // 59: corefusion.agent.v1.ListInterfacesRequest
-	(*ListInterfacesResponse)(nil),      // 60: corefusion.agent.v1.ListInterfacesResponse
-	(*SyncDataRequest)(nil),             // 61: corefusion.agent.v1.SyncDataRequest
-	(*CoreGuardianEntry)(nil),           // 62: corefusion.agent.v1.CoreGuardianEntry
-	(*ChainLinkEntry)(nil),              // 63: corefusion.agent.v1.ChainLinkEntry
-	(*NodeServerEntry)(nil),             // 64: corefusion.agent.v1.NodeServerEntry
-	(*ExternalNodeEntry)(nil),           // 65: corefusion.agent.v1.ExternalNodeEntry
-	(*CertificateEntry)(nil),            // 66: corefusion.agent.v1.CertificateEntry
-	(*CoreConfigEntry)(nil),             // 67: corefusion.agent.v1.CoreConfigEntry
-	(*InboundConfigEntry)(nil),          // 68: corefusion.agent.v1.InboundConfigEntry
-	(*OutboundConfigEntry)(nil),         // 69: corefusion.agent.v1.OutboundConfigEntry
-	(*WarpConfigEntry)(nil),             // 70: corefusion.agent.v1.WarpConfigEntry
-	(*ShareDomainConfigEntry)(nil),      // 71: corefusion.agent.v1.ShareDomainConfigEntry
-	(*SyncDataResponse)(nil),            // 72: corefusion.agent.v1.SyncDataResponse
-	(*ExecuteBinaryRequest)(nil),        // 73: corefusion.agent.v1.ExecuteBinaryRequest
-	(*ExecuteBinaryResponse)(nil),       // 74: corefusion.agent.v1.ExecuteBinaryResponse
-	(*ReadLogFileRequest)(nil),          // 75: corefusion.agent.v1.ReadLogFileRequest
-	(*ReadLogFileResponse)(nil),         // 76: corefusion.agent.v1.ReadLogFileResponse
-	(*RotateLogRequest)(nil),            // 77: corefusion.agent.v1.RotateLogRequest
-	(*RotateLogResponse)(nil),           // 78: corefusion.agent.v1.RotateLogResponse
-	(*PackageLogsRequest)(nil),          // 79: corefusion.agent.v1.PackageLogsRequest
-	(*PackageLogsResponse)(nil),         // 80: corefusion.agent.v1.PackageLogsResponse
-	(*StreamLogFileRequest)(nil),        // 81: corefusion.agent.v1.StreamLogFileRequest
-	(*SyncLogConfigRequest)(nil),        // 82: corefusion.agent.v1.SyncLogConfigRequest
-	(*DiscoverLogsRequest)(nil),         // 83: corefusion.agent.v1.DiscoverLogsRequest
-	(*DiscoverLogsResponse)(nil),        // 84: corefusion.agent.v1.DiscoverLogsResponse
-	(*DiscoveredLogInfo)(nil),           // 85: corefusion.agent.v1.DiscoveredLogInfo
-	(*GetWriterStatusRequest)(nil),      // 86: corefusion.agent.v1.GetWriterStatusRequest
-	(*GetWriterStatusResponse)(nil),     // 87: corefusion.agent.v1.GetWriterStatusResponse
-	(*WriterStatus)(nil),                // 88: corefusion.agent.v1.WriterStatus
-	(*StartWriterRequest)(nil),          // 89: corefusion.agent.v1.StartWriterRequest
-	(*StartWriterResponse)(nil),         // 90: corefusion.agent.v1.StartWriterResponse
-	(*StopWriterRequest)(nil),           // 91: corefusion.agent.v1.StopWriterRequest
-	(*StopWriterResponse)(nil),          // 92: corefusion.agent.v1.StopWriterResponse
-	(*UpdateWriterConfigRequest)(nil),   // 93: corefusion.agent.v1.UpdateWriterConfigRequest
-	(*UpdateWriterConfigResponse)(nil),  // 94: corefusion.agent.v1.UpdateWriterConfigResponse
-	(*SetEgressInterfaceRequest)(nil),   // 95: corefusion.agent.v1.SetEgressInterfaceRequest
-	(*IssuePublicCertCommand)(nil),      // 96: corefusion.agent.v1.IssuePublicCertCommand
-	(*PublicCertIssuedReport)(nil),      // 97: corefusion.agent.v1.PublicCertIssuedReport
-	nil,                                 // 98: corefusion.agent.v1.UserOp.ExtraEntry
-	nil,                                 // 99: corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
-	nil,                                 // 100: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
-	nil,                                 // 101: corefusion.agent.v1.IssuePublicCertCommand.DnsEnvVarsEntry
+	(*SetIPBlacklistRequest)(nil),       // 19: corefusion.agent.v1.SetIPBlacklistRequest
+	(*GetRateLimitStatusResponse)(nil),  // 20: corefusion.agent.v1.GetRateLimitStatusResponse
+	(*RateLimitEntry)(nil),              // 21: corefusion.agent.v1.RateLimitEntry
+	(*GetStatusRequest)(nil),            // 22: corefusion.agent.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),           // 23: corefusion.agent.v1.GetStatusResponse
+	(*UpdateAgentRequest)(nil),          // 24: corefusion.agent.v1.UpdateAgentRequest
+	(*ReadConfigFileRequest)(nil),       // 25: corefusion.agent.v1.ReadConfigFileRequest
+	(*ReadConfigFileResponse)(nil),      // 26: corefusion.agent.v1.ReadConfigFileResponse
+	(*SpeedTestRequest)(nil),            // 27: corefusion.agent.v1.SpeedTestRequest
+	(*SpeedTestResponse)(nil),           // 28: corefusion.agent.v1.SpeedTestResponse
+	(*GetMetricsRequest)(nil),           // 29: corefusion.agent.v1.GetMetricsRequest
+	(*GetMetricsResponse)(nil),          // 30: corefusion.agent.v1.GetMetricsResponse
+	(*MetricPoint)(nil),                 // 31: corefusion.agent.v1.MetricPoint
+	(*InstallBinaryRequest)(nil),        // 32: corefusion.agent.v1.InstallBinaryRequest
+	(*InstallProxyRequest)(nil),         // 33: corefusion.agent.v1.InstallProxyRequest
+	(*GetProxyStatusRequest)(nil),       // 34: corefusion.agent.v1.GetProxyStatusRequest
+	(*GetProxyStatusResponse)(nil),      // 35: corefusion.agent.v1.GetProxyStatusResponse
+	(*ProxyInfo)(nil),                   // 36: corefusion.agent.v1.ProxyInfo
+	(*ListBinariesRequest)(nil),         // 37: corefusion.agent.v1.ListBinariesRequest
+	(*ListBinariesResponse)(nil),        // 38: corefusion.agent.v1.ListBinariesResponse
+	(*BinaryInfo)(nil),                  // 39: corefusion.agent.v1.BinaryInfo
+	(*ListReleasesRequest)(nil),         // 40: corefusion.agent.v1.ListReleasesRequest
+	(*ReleaseInfo)(nil),                 // 41: corefusion.agent.v1.ReleaseInfo
+	(*DownloadGeoRuleRequest)(nil),      // 42: corefusion.agent.v1.DownloadGeoRuleRequest
+	(*DownloadGeoRuleResponse)(nil),     // 43: corefusion.agent.v1.DownloadGeoRuleResponse
+	(*DeleteGeoRuleRequest)(nil),        // 44: corefusion.agent.v1.DeleteGeoRuleRequest
+	(*DeleteGeoRuleResponse)(nil),       // 45: corefusion.agent.v1.DeleteGeoRuleResponse
+	(*AgentReport)(nil),                 // 46: corefusion.agent.v1.AgentReport
+	(*OnlineSession)(nil),               // 47: corefusion.agent.v1.OnlineSession
+	(*OnlineUserEntry)(nil),             // 48: corefusion.agent.v1.OnlineUserEntry
+	(*CoreStatus)(nil),                  // 49: corefusion.agent.v1.CoreStatus
+	(*TrafficStat)(nil),                 // 50: corefusion.agent.v1.TrafficStat
+	(*PanelCommand)(nil),                // 51: corefusion.agent.v1.PanelCommand
+	(*TaskResult)(nil),                  // 52: corefusion.agent.v1.TaskResult
+	(*UpdateAgentCommand)(nil),          // 53: corefusion.agent.v1.UpdateAgentCommand
+	(*RenewCertCommand)(nil),            // 54: corefusion.agent.v1.RenewCertCommand
+	(*DistributeCertCommand)(nil),       // 55: corefusion.agent.v1.DistributeCertCommand
+	(*RegisterRequest)(nil),             // 56: corefusion.agent.v1.RegisterRequest
+	(*RegisterResponse)(nil),            // 57: corefusion.agent.v1.RegisterResponse
+	(*XrayAPIRequest)(nil),              // 58: corefusion.agent.v1.XrayAPIRequest
+	(*XrayAPIResponse)(nil),             // 59: corefusion.agent.v1.XrayAPIResponse
+	(*ListInterfacesRequest)(nil),       // 60: corefusion.agent.v1.ListInterfacesRequest
+	(*ListInterfacesResponse)(nil),      // 61: corefusion.agent.v1.ListInterfacesResponse
+	(*SyncDataRequest)(nil),             // 62: corefusion.agent.v1.SyncDataRequest
+	(*CoreGuardianEntry)(nil),           // 63: corefusion.agent.v1.CoreGuardianEntry
+	(*ChainLinkEntry)(nil),              // 64: corefusion.agent.v1.ChainLinkEntry
+	(*NodeServerEntry)(nil),             // 65: corefusion.agent.v1.NodeServerEntry
+	(*ExternalNodeEntry)(nil),           // 66: corefusion.agent.v1.ExternalNodeEntry
+	(*CertificateEntry)(nil),            // 67: corefusion.agent.v1.CertificateEntry
+	(*CoreConfigEntry)(nil),             // 68: corefusion.agent.v1.CoreConfigEntry
+	(*InboundConfigEntry)(nil),          // 69: corefusion.agent.v1.InboundConfigEntry
+	(*OutboundConfigEntry)(nil),         // 70: corefusion.agent.v1.OutboundConfigEntry
+	(*WarpConfigEntry)(nil),             // 71: corefusion.agent.v1.WarpConfigEntry
+	(*ShareDomainConfigEntry)(nil),      // 72: corefusion.agent.v1.ShareDomainConfigEntry
+	(*SyncDataResponse)(nil),            // 73: corefusion.agent.v1.SyncDataResponse
+	(*ExecuteBinaryRequest)(nil),        // 74: corefusion.agent.v1.ExecuteBinaryRequest
+	(*ExecuteBinaryResponse)(nil),       // 75: corefusion.agent.v1.ExecuteBinaryResponse
+	(*ReadLogFileRequest)(nil),          // 76: corefusion.agent.v1.ReadLogFileRequest
+	(*ReadLogFileResponse)(nil),         // 77: corefusion.agent.v1.ReadLogFileResponse
+	(*RotateLogRequest)(nil),            // 78: corefusion.agent.v1.RotateLogRequest
+	(*RotateLogResponse)(nil),           // 79: corefusion.agent.v1.RotateLogResponse
+	(*PackageLogsRequest)(nil),          // 80: corefusion.agent.v1.PackageLogsRequest
+	(*PackageLogsResponse)(nil),         // 81: corefusion.agent.v1.PackageLogsResponse
+	(*StreamLogFileRequest)(nil),        // 82: corefusion.agent.v1.StreamLogFileRequest
+	(*SyncLogConfigRequest)(nil),        // 83: corefusion.agent.v1.SyncLogConfigRequest
+	(*DiscoverLogsRequest)(nil),         // 84: corefusion.agent.v1.DiscoverLogsRequest
+	(*DiscoverLogsResponse)(nil),        // 85: corefusion.agent.v1.DiscoverLogsResponse
+	(*DiscoveredLogInfo)(nil),           // 86: corefusion.agent.v1.DiscoveredLogInfo
+	(*GetWriterStatusRequest)(nil),      // 87: corefusion.agent.v1.GetWriterStatusRequest
+	(*GetWriterStatusResponse)(nil),     // 88: corefusion.agent.v1.GetWriterStatusResponse
+	(*WriterStatus)(nil),                // 89: corefusion.agent.v1.WriterStatus
+	(*StartWriterRequest)(nil),          // 90: corefusion.agent.v1.StartWriterRequest
+	(*StartWriterResponse)(nil),         // 91: corefusion.agent.v1.StartWriterResponse
+	(*StopWriterRequest)(nil),           // 92: corefusion.agent.v1.StopWriterRequest
+	(*StopWriterResponse)(nil),          // 93: corefusion.agent.v1.StopWriterResponse
+	(*UpdateWriterConfigRequest)(nil),   // 94: corefusion.agent.v1.UpdateWriterConfigRequest
+	(*UpdateWriterConfigResponse)(nil),  // 95: corefusion.agent.v1.UpdateWriterConfigResponse
+	(*SetEgressInterfaceRequest)(nil),   // 96: corefusion.agent.v1.SetEgressInterfaceRequest
+	(*IssuePublicCertCommand)(nil),      // 97: corefusion.agent.v1.IssuePublicCertCommand
+	(*PublicCertIssuedReport)(nil),      // 98: corefusion.agent.v1.PublicCertIssuedReport
+	nil,                                 // 99: corefusion.agent.v1.UserOp.ExtraEntry
+	nil,                                 // 100: corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
+	nil,                                 // 101: corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	nil,                                 // 102: corefusion.agent.v1.IssuePublicCertCommand.DnsEnvVarsEntry
 }
-var file_internal_runtime_agent_proto_corefusion_agent_proto_depIdxs = []int32{
+var file_corefusion_agent_proto_depIdxs = []int32{
 	0,   // 0: corefusion.agent.v1.GetTaskResponse.status:type_name -> corefusion.agent.v1.TaskStatus
-	66,  // 1: corefusion.agent.v1.SyncProxyConfigRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
+	67,  // 1: corefusion.agent.v1.SyncProxyConfigRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
 	11,  // 2: corefusion.agent.v1.SyncWAFFilesRequest.files:type_name -> corefusion.agent.v1.WAFFile
 	14,  // 3: corefusion.agent.v1.AlterUsersRequest.users:type_name -> corefusion.agent.v1.UserOp
-	98,  // 4: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
+	99,  // 4: corefusion.agent.v1.UserOp.extra:type_name -> corefusion.agent.v1.UserOp.ExtraEntry
 	1,   // 5: corefusion.agent.v1.ApplyLimitsRequest.type:type_name -> corefusion.agent.v1.ApplyLimitsRequest.LimitType
 	15,  // 6: corefusion.agent.v1.BatchApplyLimitsRequest.limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
-	20,  // 7: corefusion.agent.v1.GetRateLimitStatusResponse.entries:type_name -> corefusion.agent.v1.RateLimitEntry
-	48,  // 8: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
-	30,  // 9: corefusion.agent.v1.GetMetricsResponse.points:type_name -> corefusion.agent.v1.MetricPoint
-	35,  // 10: corefusion.agent.v1.GetProxyStatusResponse.proxies:type_name -> corefusion.agent.v1.ProxyInfo
-	99,  // 11: corefusion.agent.v1.GetProxyStatusResponse.guardian_status:type_name -> corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
-	38,  // 12: corefusion.agent.v1.ListBinariesResponse.binaries:type_name -> corefusion.agent.v1.BinaryInfo
-	40,  // 13: corefusion.agent.v1.ListBinariesResponse.releases:type_name -> corefusion.agent.v1.ReleaseInfo
+	21,  // 7: corefusion.agent.v1.GetRateLimitStatusResponse.entries:type_name -> corefusion.agent.v1.RateLimitEntry
+	49,  // 8: corefusion.agent.v1.GetStatusResponse.cores:type_name -> corefusion.agent.v1.CoreStatus
+	31,  // 9: corefusion.agent.v1.GetMetricsResponse.points:type_name -> corefusion.agent.v1.MetricPoint
+	36,  // 10: corefusion.agent.v1.GetProxyStatusResponse.proxies:type_name -> corefusion.agent.v1.ProxyInfo
+	100, // 11: corefusion.agent.v1.GetProxyStatusResponse.guardian_status:type_name -> corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntry
+	39,  // 12: corefusion.agent.v1.ListBinariesResponse.binaries:type_name -> corefusion.agent.v1.BinaryInfo
+	41,  // 13: corefusion.agent.v1.ListBinariesResponse.releases:type_name -> corefusion.agent.v1.ReleaseInfo
 	2,   // 14: corefusion.agent.v1.AgentReport.type:type_name -> corefusion.agent.v1.AgentReport.ReportType
-	48,  // 15: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
-	49,  // 16: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
-	51,  // 17: corefusion.agent.v1.AgentReport.task_result:type_name -> corefusion.agent.v1.TaskResult
-	20,  // 18: corefusion.agent.v1.AgentReport.rate_limit_entries:type_name -> corefusion.agent.v1.RateLimitEntry
-	47,  // 19: corefusion.agent.v1.AgentReport.online_users:type_name -> corefusion.agent.v1.OnlineUserEntry
-	97,  // 20: corefusion.agent.v1.AgentReport.public_cert_issued:type_name -> corefusion.agent.v1.PublicCertIssuedReport
-	46,  // 21: corefusion.agent.v1.OnlineUserEntry.sessions:type_name -> corefusion.agent.v1.OnlineSession
+	49,  // 15: corefusion.agent.v1.AgentReport.cores:type_name -> corefusion.agent.v1.CoreStatus
+	50,  // 16: corefusion.agent.v1.AgentReport.traffic_stats:type_name -> corefusion.agent.v1.TrafficStat
+	52,  // 17: corefusion.agent.v1.AgentReport.task_result:type_name -> corefusion.agent.v1.TaskResult
+	21,  // 18: corefusion.agent.v1.AgentReport.rate_limit_entries:type_name -> corefusion.agent.v1.RateLimitEntry
+	48,  // 19: corefusion.agent.v1.AgentReport.online_users:type_name -> corefusion.agent.v1.OnlineUserEntry
+	98,  // 20: corefusion.agent.v1.AgentReport.public_cert_issued:type_name -> corefusion.agent.v1.PublicCertIssuedReport
+	47,  // 21: corefusion.agent.v1.OnlineUserEntry.sessions:type_name -> corefusion.agent.v1.OnlineSession
 	7,   // 22: corefusion.agent.v1.PanelCommand.sync_config:type_name -> corefusion.agent.v1.SyncConfigRequest
 	8,   // 23: corefusion.agent.v1.PanelCommand.control_core:type_name -> corefusion.agent.v1.ControlCoreRequest
 	13,  // 24: corefusion.agent.v1.PanelCommand.alter_users:type_name -> corefusion.agent.v1.AlterUsersRequest
 	15,  // 25: corefusion.agent.v1.PanelCommand.apply_limits:type_name -> corefusion.agent.v1.ApplyLimitsRequest
-	21,  // 26: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
-	53,  // 27: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
-	54,  // 28: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
+	22,  // 26: corefusion.agent.v1.PanelCommand.get_status:type_name -> corefusion.agent.v1.GetStatusRequest
+	54,  // 27: corefusion.agent.v1.PanelCommand.renew_cert:type_name -> corefusion.agent.v1.RenewCertCommand
+	55,  // 28: corefusion.agent.v1.PanelCommand.distribute_cert:type_name -> corefusion.agent.v1.DistributeCertCommand
 	9,   // 29: corefusion.agent.v1.PanelCommand.sync_proxy_config:type_name -> corefusion.agent.v1.SyncProxyConfigRequest
 	12,  // 30: corefusion.agent.v1.PanelCommand.control_proxy:type_name -> corefusion.agent.v1.ControlProxyRequest
-	52,  // 31: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
-	61,  // 32: corefusion.agent.v1.PanelCommand.sync_data:type_name -> corefusion.agent.v1.SyncDataRequest
-	31,  // 33: corefusion.agent.v1.PanelCommand.install_binary:type_name -> corefusion.agent.v1.InstallBinaryRequest
-	32,  // 34: corefusion.agent.v1.PanelCommand.install_proxy:type_name -> corefusion.agent.v1.InstallProxyRequest
-	28,  // 35: corefusion.agent.v1.PanelCommand.get_metrics:type_name -> corefusion.agent.v1.GetMetricsRequest
-	36,  // 36: corefusion.agent.v1.PanelCommand.list_binaries:type_name -> corefusion.agent.v1.ListBinariesRequest
-	33,  // 37: corefusion.agent.v1.PanelCommand.get_proxy_status:type_name -> corefusion.agent.v1.GetProxyStatusRequest
-	26,  // 38: corefusion.agent.v1.PanelCommand.speed_test:type_name -> corefusion.agent.v1.SpeedTestRequest
-	41,  // 39: corefusion.agent.v1.PanelCommand.download_geo_rule:type_name -> corefusion.agent.v1.DownloadGeoRuleRequest
-	43,  // 40: corefusion.agent.v1.PanelCommand.delete_geo_rule:type_name -> corefusion.agent.v1.DeleteGeoRuleRequest
-	59,  // 41: corefusion.agent.v1.PanelCommand.list_interfaces:type_name -> corefusion.agent.v1.ListInterfacesRequest
-	73,  // 42: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
-	57,  // 43: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
-	24,  // 44: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
-	75,  // 45: corefusion.agent.v1.PanelCommand.read_log_file:type_name -> corefusion.agent.v1.ReadLogFileRequest
-	77,  // 46: corefusion.agent.v1.PanelCommand.rotate_log:type_name -> corefusion.agent.v1.RotateLogRequest
-	79,  // 47: corefusion.agent.v1.PanelCommand.package_logs:type_name -> corefusion.agent.v1.PackageLogsRequest
-	81,  // 48: corefusion.agent.v1.PanelCommand.stream_log_file:type_name -> corefusion.agent.v1.StreamLogFileRequest
-	82,  // 49: corefusion.agent.v1.PanelCommand.sync_log_config:type_name -> corefusion.agent.v1.SyncLogConfigRequest
-	83,  // 50: corefusion.agent.v1.PanelCommand.discover_logs:type_name -> corefusion.agent.v1.DiscoverLogsRequest
-	86,  // 51: corefusion.agent.v1.PanelCommand.get_writer_status:type_name -> corefusion.agent.v1.GetWriterStatusRequest
-	89,  // 52: corefusion.agent.v1.PanelCommand.start_writer:type_name -> corefusion.agent.v1.StartWriterRequest
-	91,  // 53: corefusion.agent.v1.PanelCommand.stop_writer:type_name -> corefusion.agent.v1.StopWriterRequest
-	93,  // 54: corefusion.agent.v1.PanelCommand.update_writer_config:type_name -> corefusion.agent.v1.UpdateWriterConfigRequest
+	53,  // 31: corefusion.agent.v1.PanelCommand.update_agent:type_name -> corefusion.agent.v1.UpdateAgentCommand
+	62,  // 32: corefusion.agent.v1.PanelCommand.sync_data:type_name -> corefusion.agent.v1.SyncDataRequest
+	32,  // 33: corefusion.agent.v1.PanelCommand.install_binary:type_name -> corefusion.agent.v1.InstallBinaryRequest
+	33,  // 34: corefusion.agent.v1.PanelCommand.install_proxy:type_name -> corefusion.agent.v1.InstallProxyRequest
+	29,  // 35: corefusion.agent.v1.PanelCommand.get_metrics:type_name -> corefusion.agent.v1.GetMetricsRequest
+	37,  // 36: corefusion.agent.v1.PanelCommand.list_binaries:type_name -> corefusion.agent.v1.ListBinariesRequest
+	34,  // 37: corefusion.agent.v1.PanelCommand.get_proxy_status:type_name -> corefusion.agent.v1.GetProxyStatusRequest
+	27,  // 38: corefusion.agent.v1.PanelCommand.speed_test:type_name -> corefusion.agent.v1.SpeedTestRequest
+	42,  // 39: corefusion.agent.v1.PanelCommand.download_geo_rule:type_name -> corefusion.agent.v1.DownloadGeoRuleRequest
+	44,  // 40: corefusion.agent.v1.PanelCommand.delete_geo_rule:type_name -> corefusion.agent.v1.DeleteGeoRuleRequest
+	60,  // 41: corefusion.agent.v1.PanelCommand.list_interfaces:type_name -> corefusion.agent.v1.ListInterfacesRequest
+	74,  // 42: corefusion.agent.v1.PanelCommand.execute_binary:type_name -> corefusion.agent.v1.ExecuteBinaryRequest
+	58,  // 43: corefusion.agent.v1.PanelCommand.xray_api:type_name -> corefusion.agent.v1.XrayAPIRequest
+	25,  // 44: corefusion.agent.v1.PanelCommand.read_config_file:type_name -> corefusion.agent.v1.ReadConfigFileRequest
+	76,  // 45: corefusion.agent.v1.PanelCommand.read_log_file:type_name -> corefusion.agent.v1.ReadLogFileRequest
+	78,  // 46: corefusion.agent.v1.PanelCommand.rotate_log:type_name -> corefusion.agent.v1.RotateLogRequest
+	80,  // 47: corefusion.agent.v1.PanelCommand.package_logs:type_name -> corefusion.agent.v1.PackageLogsRequest
+	82,  // 48: corefusion.agent.v1.PanelCommand.stream_log_file:type_name -> corefusion.agent.v1.StreamLogFileRequest
+	83,  // 49: corefusion.agent.v1.PanelCommand.sync_log_config:type_name -> corefusion.agent.v1.SyncLogConfigRequest
+	84,  // 50: corefusion.agent.v1.PanelCommand.discover_logs:type_name -> corefusion.agent.v1.DiscoverLogsRequest
+	87,  // 51: corefusion.agent.v1.PanelCommand.get_writer_status:type_name -> corefusion.agent.v1.GetWriterStatusRequest
+	90,  // 52: corefusion.agent.v1.PanelCommand.start_writer:type_name -> corefusion.agent.v1.StartWriterRequest
+	92,  // 53: corefusion.agent.v1.PanelCommand.stop_writer:type_name -> corefusion.agent.v1.StopWriterRequest
+	94,  // 54: corefusion.agent.v1.PanelCommand.update_writer_config:type_name -> corefusion.agent.v1.UpdateWriterConfigRequest
 	10,  // 55: corefusion.agent.v1.PanelCommand.sync_waf_files:type_name -> corefusion.agent.v1.SyncWAFFilesRequest
 	17,  // 56: corefusion.agent.v1.PanelCommand.associate_ip:type_name -> corefusion.agent.v1.AssociateIPRequest
 	16,  // 57: corefusion.agent.v1.PanelCommand.batch_apply_limits:type_name -> corefusion.agent.v1.BatchApplyLimitsRequest
 	18,  // 58: corefusion.agent.v1.PanelCommand.get_rate_limit_status:type_name -> corefusion.agent.v1.GetRateLimitStatusRequest
-	95,  // 59: corefusion.agent.v1.PanelCommand.set_egress_interface:type_name -> corefusion.agent.v1.SetEgressInterfaceRequest
-	96,  // 60: corefusion.agent.v1.PanelCommand.issue_public_cert:type_name -> corefusion.agent.v1.IssuePublicCertCommand
-	0,   // 61: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
-	67,  // 62: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
-	68,  // 63: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
-	69,  // 64: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
-	70,  // 65: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
-	71,  // 66: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
-	66,  // 67: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
-	3,   // 68: corefusion.agent.v1.SyncDataRequest.reload_strategy:type_name -> corefusion.agent.v1.SyncDataRequest.ReloadStrategy
-	63,  // 69: corefusion.agent.v1.SyncDataRequest.chain_links:type_name -> corefusion.agent.v1.ChainLinkEntry
-	64,  // 70: corefusion.agent.v1.SyncDataRequest.node_servers:type_name -> corefusion.agent.v1.NodeServerEntry
-	65,  // 71: corefusion.agent.v1.SyncDataRequest.external_nodes:type_name -> corefusion.agent.v1.ExternalNodeEntry
-	62,  // 72: corefusion.agent.v1.SyncDataRequest.core_guardians:type_name -> corefusion.agent.v1.CoreGuardianEntry
-	100, // 73: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
-	85,  // 74: corefusion.agent.v1.DiscoverLogsResponse.logs:type_name -> corefusion.agent.v1.DiscoveredLogInfo
-	88,  // 75: corefusion.agent.v1.GetWriterStatusResponse.writers:type_name -> corefusion.agent.v1.WriterStatus
-	101, // 76: corefusion.agent.v1.IssuePublicCertCommand.dns_env_vars:type_name -> corefusion.agent.v1.IssuePublicCertCommand.DnsEnvVarsEntry
-	21,  // 77: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
-	28,  // 78: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
-	33,  // 79: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
-	36,  // 80: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
-	39,  // 81: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
-	41,  // 82: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
-	26,  // 83: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
-	24,  // 84: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
-	8,   // 85: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
-	12,  // 86: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
-	7,   // 87: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
-	9,   // 88: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
-	13,  // 89: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
-	15,  // 90: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
-	31,  // 91: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
-	32,  // 92: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
-	23,  // 93: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
-	57,  // 94: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
-	59,  // 95: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
-	73,  // 96: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
-	61,  // 97: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
-	5,   // 98: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
-	45,  // 99: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
-	55,  // 100: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
-	22,  // 101: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
-	29,  // 102: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
-	34,  // 103: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
-	37,  // 104: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
-	37,  // 105: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
-	42,  // 106: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
-	27,  // 107: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
-	25,  // 108: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
-	4,   // 109: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 110: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 111: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 112: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 113: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 114: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 115: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 116: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
-	4,   // 117: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
-	58,  // 118: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
-	60,  // 119: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
-	74,  // 120: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
-	72,  // 121: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
-	6,   // 122: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
-	50,  // 123: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
-	56,  // 124: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
-	101, // [101:125] is the sub-list for method output_type
-	77,  // [77:101] is the sub-list for method input_type
-	77,  // [77:77] is the sub-list for extension type_name
-	77,  // [77:77] is the sub-list for extension extendee
-	0,   // [0:77] is the sub-list for field type_name
+	19,  // 59: corefusion.agent.v1.PanelCommand.set_ip_blacklist:type_name -> corefusion.agent.v1.SetIPBlacklistRequest
+	96,  // 60: corefusion.agent.v1.PanelCommand.set_egress_interface:type_name -> corefusion.agent.v1.SetEgressInterfaceRequest
+	97,  // 61: corefusion.agent.v1.PanelCommand.issue_public_cert:type_name -> corefusion.agent.v1.IssuePublicCertCommand
+	0,   // 62: corefusion.agent.v1.TaskResult.status:type_name -> corefusion.agent.v1.TaskStatus
+	68,  // 63: corefusion.agent.v1.SyncDataRequest.core_configs:type_name -> corefusion.agent.v1.CoreConfigEntry
+	69,  // 64: corefusion.agent.v1.SyncDataRequest.inbound_configs:type_name -> corefusion.agent.v1.InboundConfigEntry
+	70,  // 65: corefusion.agent.v1.SyncDataRequest.outbound_configs:type_name -> corefusion.agent.v1.OutboundConfigEntry
+	71,  // 66: corefusion.agent.v1.SyncDataRequest.warp_configs:type_name -> corefusion.agent.v1.WarpConfigEntry
+	72,  // 67: corefusion.agent.v1.SyncDataRequest.share_domain_configs:type_name -> corefusion.agent.v1.ShareDomainConfigEntry
+	67,  // 68: corefusion.agent.v1.SyncDataRequest.certificates:type_name -> corefusion.agent.v1.CertificateEntry
+	3,   // 69: corefusion.agent.v1.SyncDataRequest.reload_strategy:type_name -> corefusion.agent.v1.SyncDataRequest.ReloadStrategy
+	64,  // 70: corefusion.agent.v1.SyncDataRequest.chain_links:type_name -> corefusion.agent.v1.ChainLinkEntry
+	65,  // 71: corefusion.agent.v1.SyncDataRequest.node_servers:type_name -> corefusion.agent.v1.NodeServerEntry
+	66,  // 72: corefusion.agent.v1.SyncDataRequest.external_nodes:type_name -> corefusion.agent.v1.ExternalNodeEntry
+	63,  // 73: corefusion.agent.v1.SyncDataRequest.core_guardians:type_name -> corefusion.agent.v1.CoreGuardianEntry
+	101, // 74: corefusion.agent.v1.ExecuteBinaryResponse.parsed:type_name -> corefusion.agent.v1.ExecuteBinaryResponse.ParsedEntry
+	86,  // 75: corefusion.agent.v1.DiscoverLogsResponse.logs:type_name -> corefusion.agent.v1.DiscoveredLogInfo
+	89,  // 76: corefusion.agent.v1.GetWriterStatusResponse.writers:type_name -> corefusion.agent.v1.WriterStatus
+	102, // 77: corefusion.agent.v1.IssuePublicCertCommand.dns_env_vars:type_name -> corefusion.agent.v1.IssuePublicCertCommand.DnsEnvVarsEntry
+	22,  // 78: corefusion.agent.v1.AgentService.GetStatus:input_type -> corefusion.agent.v1.GetStatusRequest
+	29,  // 79: corefusion.agent.v1.AgentService.GetMetrics:input_type -> corefusion.agent.v1.GetMetricsRequest
+	34,  // 80: corefusion.agent.v1.AgentService.GetProxyStatus:input_type -> corefusion.agent.v1.GetProxyStatusRequest
+	37,  // 81: corefusion.agent.v1.AgentService.ListBinaries:input_type -> corefusion.agent.v1.ListBinariesRequest
+	40,  // 82: corefusion.agent.v1.AgentService.ListReleases:input_type -> corefusion.agent.v1.ListReleasesRequest
+	42,  // 83: corefusion.agent.v1.AgentService.DownloadGeoRule:input_type -> corefusion.agent.v1.DownloadGeoRuleRequest
+	27,  // 84: corefusion.agent.v1.AgentService.SpeedTest:input_type -> corefusion.agent.v1.SpeedTestRequest
+	25,  // 85: corefusion.agent.v1.AgentService.ReadConfigFile:input_type -> corefusion.agent.v1.ReadConfigFileRequest
+	8,   // 86: corefusion.agent.v1.AgentService.ControlCore:input_type -> corefusion.agent.v1.ControlCoreRequest
+	12,  // 87: corefusion.agent.v1.AgentService.ControlProxy:input_type -> corefusion.agent.v1.ControlProxyRequest
+	7,   // 88: corefusion.agent.v1.AgentService.SyncConfig:input_type -> corefusion.agent.v1.SyncConfigRequest
+	9,   // 89: corefusion.agent.v1.AgentService.SyncProxyConfig:input_type -> corefusion.agent.v1.SyncProxyConfigRequest
+	13,  // 90: corefusion.agent.v1.AgentService.AlterUsers:input_type -> corefusion.agent.v1.AlterUsersRequest
+	15,  // 91: corefusion.agent.v1.AgentService.ApplyLimits:input_type -> corefusion.agent.v1.ApplyLimitsRequest
+	32,  // 92: corefusion.agent.v1.AgentService.InstallBinary:input_type -> corefusion.agent.v1.InstallBinaryRequest
+	33,  // 93: corefusion.agent.v1.AgentService.InstallProxy:input_type -> corefusion.agent.v1.InstallProxyRequest
+	24,  // 94: corefusion.agent.v1.AgentService.UpdateAgent:input_type -> corefusion.agent.v1.UpdateAgentRequest
+	58,  // 95: corefusion.agent.v1.AgentService.XrayAPI:input_type -> corefusion.agent.v1.XrayAPIRequest
+	60,  // 96: corefusion.agent.v1.AgentService.ListInterfaces:input_type -> corefusion.agent.v1.ListInterfacesRequest
+	74,  // 97: corefusion.agent.v1.AgentService.ExecuteBinary:input_type -> corefusion.agent.v1.ExecuteBinaryRequest
+	62,  // 98: corefusion.agent.v1.AgentService.SyncData:input_type -> corefusion.agent.v1.SyncDataRequest
+	5,   // 99: corefusion.agent.v1.AgentService.GetTask:input_type -> corefusion.agent.v1.GetTaskRequest
+	46,  // 100: corefusion.agent.v1.HeartbeatService.Stream:input_type -> corefusion.agent.v1.AgentReport
+	56,  // 101: corefusion.agent.v1.RegistrationService.Register:input_type -> corefusion.agent.v1.RegisterRequest
+	23,  // 102: corefusion.agent.v1.AgentService.GetStatus:output_type -> corefusion.agent.v1.GetStatusResponse
+	30,  // 103: corefusion.agent.v1.AgentService.GetMetrics:output_type -> corefusion.agent.v1.GetMetricsResponse
+	35,  // 104: corefusion.agent.v1.AgentService.GetProxyStatus:output_type -> corefusion.agent.v1.GetProxyStatusResponse
+	38,  // 105: corefusion.agent.v1.AgentService.ListBinaries:output_type -> corefusion.agent.v1.ListBinariesResponse
+	38,  // 106: corefusion.agent.v1.AgentService.ListReleases:output_type -> corefusion.agent.v1.ListBinariesResponse
+	43,  // 107: corefusion.agent.v1.AgentService.DownloadGeoRule:output_type -> corefusion.agent.v1.DownloadGeoRuleResponse
+	28,  // 108: corefusion.agent.v1.AgentService.SpeedTest:output_type -> corefusion.agent.v1.SpeedTestResponse
+	26,  // 109: corefusion.agent.v1.AgentService.ReadConfigFile:output_type -> corefusion.agent.v1.ReadConfigFileResponse
+	4,   // 110: corefusion.agent.v1.AgentService.ControlCore:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 111: corefusion.agent.v1.AgentService.ControlProxy:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 112: corefusion.agent.v1.AgentService.SyncConfig:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 113: corefusion.agent.v1.AgentService.SyncProxyConfig:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 114: corefusion.agent.v1.AgentService.AlterUsers:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 115: corefusion.agent.v1.AgentService.ApplyLimits:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 116: corefusion.agent.v1.AgentService.InstallBinary:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 117: corefusion.agent.v1.AgentService.InstallProxy:output_type -> corefusion.agent.v1.TaskAccept
+	4,   // 118: corefusion.agent.v1.AgentService.UpdateAgent:output_type -> corefusion.agent.v1.TaskAccept
+	59,  // 119: corefusion.agent.v1.AgentService.XrayAPI:output_type -> corefusion.agent.v1.XrayAPIResponse
+	61,  // 120: corefusion.agent.v1.AgentService.ListInterfaces:output_type -> corefusion.agent.v1.ListInterfacesResponse
+	75,  // 121: corefusion.agent.v1.AgentService.ExecuteBinary:output_type -> corefusion.agent.v1.ExecuteBinaryResponse
+	73,  // 122: corefusion.agent.v1.AgentService.SyncData:output_type -> corefusion.agent.v1.SyncDataResponse
+	6,   // 123: corefusion.agent.v1.AgentService.GetTask:output_type -> corefusion.agent.v1.GetTaskResponse
+	51,  // 124: corefusion.agent.v1.HeartbeatService.Stream:output_type -> corefusion.agent.v1.PanelCommand
+	57,  // 125: corefusion.agent.v1.RegistrationService.Register:output_type -> corefusion.agent.v1.RegisterResponse
+	102, // [102:126] is the sub-list for method output_type
+	78,  // [78:102] is the sub-list for method input_type
+	78,  // [78:78] is the sub-list for extension type_name
+	78,  // [78:78] is the sub-list for extension extendee
+	0,   // [0:78] is the sub-list for field type_name
 }
 
-func init() { file_internal_runtime_agent_proto_corefusion_agent_proto_init() }
-func file_internal_runtime_agent_proto_corefusion_agent_proto_init() {
-	if File_internal_runtime_agent_proto_corefusion_agent_proto != nil {
+func init() { file_corefusion_agent_proto_init() }
+func file_corefusion_agent_proto_init() {
+	if File_corefusion_agent_proto != nil {
 		return
 	}
-	file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes[46].OneofWrappers = []any{
+	file_corefusion_agent_proto_msgTypes[47].OneofWrappers = []any{
 		(*PanelCommand_SyncConfig)(nil),
 		(*PanelCommand_ControlCore)(nil),
 		(*PanelCommand_AlterUsers)(nil),
@@ -9887,6 +9956,7 @@ func file_internal_runtime_agent_proto_corefusion_agent_proto_init() {
 		(*PanelCommand_AssociateIp)(nil),
 		(*PanelCommand_BatchApplyLimits)(nil),
 		(*PanelCommand_GetRateLimitStatus)(nil),
+		(*PanelCommand_SetIpBlacklist)(nil),
 		(*PanelCommand_SetEgressInterface)(nil),
 		(*PanelCommand_IssuePublicCert)(nil),
 	}
@@ -9894,18 +9964,18 @@ func file_internal_runtime_agent_proto_corefusion_agent_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc), len(file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_corefusion_agent_proto_rawDesc), len(file_corefusion_agent_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   98,
+			NumMessages:   99,
 			NumExtensions: 0,
 			NumServices:   3,
 		},
-		GoTypes:           file_internal_runtime_agent_proto_corefusion_agent_proto_goTypes,
-		DependencyIndexes: file_internal_runtime_agent_proto_corefusion_agent_proto_depIdxs,
-		EnumInfos:         file_internal_runtime_agent_proto_corefusion_agent_proto_enumTypes,
-		MessageInfos:      file_internal_runtime_agent_proto_corefusion_agent_proto_msgTypes,
+		GoTypes:           file_corefusion_agent_proto_goTypes,
+		DependencyIndexes: file_corefusion_agent_proto_depIdxs,
+		EnumInfos:         file_corefusion_agent_proto_enumTypes,
+		MessageInfos:      file_corefusion_agent_proto_msgTypes,
 	}.Build()
-	File_internal_runtime_agent_proto_corefusion_agent_proto = out.File
-	file_internal_runtime_agent_proto_corefusion_agent_proto_goTypes = nil
-	file_internal_runtime_agent_proto_corefusion_agent_proto_depIdxs = nil
+	File_corefusion_agent_proto = out.File
+	file_corefusion_agent_proto_goTypes = nil
+	file_corefusion_agent_proto_depIdxs = nil
 }

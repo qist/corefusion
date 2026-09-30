@@ -29,9 +29,10 @@ type NodeOperator interface {
 
 // Handler handles unified WAF HTTP requests (both global rules and per-node configs).
 type Handler struct {
-	svc      *waf.Service
-	nodeOp   NodeOperator
-	proxyMgr ProxyReloader
+	svc       *waf.Service
+	nodeOp    NodeOperator
+	proxyMgr  ProxyReloader
+	scheduler *waf.Scheduler
 }
 
 // ProxyReloader provides proxy detection and reload capability for local nodes.
@@ -60,6 +61,11 @@ func (h *Handler) SetNodeOperator(op NodeOperator) {
 // SetProxyManager sets the proxy manager for local proxy reload.
 func (h *Handler) SetProxyManager(mgr ProxyReloader) {
 	h.proxyMgr = mgr
+}
+
+// SetScheduler 注入 GitHub 规则源同步调度器（保存配置后立即重排定时任务）。
+func (h *Handler) SetScheduler(s *waf.Scheduler) {
+	h.scheduler = s
 }
 
 // localServerID is the server ID of the local node.
@@ -223,6 +229,10 @@ func (h *Handler) SaveGitHubSource(c *gin.Context) {
 	if err := h.svc.SaveGitHubSource(c.Request.Context(), &req); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
+	}
+	// ⚠ 保存后必须重排调度任务 —— 此前只落库不调度 ✗，sync_cron 配了也永远不执行
+	if h.scheduler != nil {
+		h.scheduler.Apply(&req)
 	}
 	response.OK(c, gin.H{"message": "saved"})
 }

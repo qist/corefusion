@@ -40,6 +40,8 @@ type Service struct {
 	trafficHook TrafficResetHook
 	// balanceCleaner 是"删除客户时级联清理余额/流水"的能力 ✓（可选注入 ✓）。
 	balanceCleaner BalanceCleaner
+	// rateLimitUpdater 是"客户限速变更 → 节点立即生效"的推送能力 ✓（可选注入 ✓）。
+	rateLimitUpdater RateLimitUpdater
 }
 
 // BalanceCleaner 是"按客户 ID 清理余额与余额流水"的能力 ✓（由余额/流水仓储实现 ✓）。
@@ -48,8 +50,17 @@ type BalanceCleaner interface {
 	DeleteTxnsByClientID(ctx context.Context, clientID int64) error
 }
 
+// RateLimitUpdater 是"订阅限速参数变更 → 推送所有启用限流的节点立即生效"的能力
+// （由 ratelimit.Service 实现；Agent 按 action=update 更新 tc class 并重建 connlimit）。
+type RateLimitUpdater interface {
+	PushSubscriptionRateUpdate(ctx context.Context, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error
+}
+
 // SetBalanceCleaner 注入余额级联清理能力 ✓。
 func (s *Service) SetBalanceCleaner(c BalanceCleaner) { s.balanceCleaner = c }
+
+// SetRateLimitUpdater 注入限速变更推送能力 ✓（router 装配时调用）。
+func (s *Service) SetRateLimitUpdater(u RateLimitUpdater) { s.rateLimitUpdater = u }
 
 // NewService creates a new client service.
 func NewService(
@@ -386,6 +397,8 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	if err != nil {
 		return nil, err
 	}
+	// 记录限速旧值：更新后若有变化则推送到节点立即生效（不必等用户重拉订阅）
+	oldDown, oldUp, oldConn := client.SpeedLimitMbps, client.SpeedLimitUpMbps, client.ConcurrentLimit
 	if input.Password != nil {
 		h, err := hashClientPassword(*input.Password)
 		if err != nil {
@@ -427,15 +440,9 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 		if input.QuotaBytes == nil || client.QuotaBytes <= 0 {
 			if tmpl, err := s.planSvc.GetTemplateByID(ctx, client.PlanID); err == nil {
 				client.QuotaBytes = tmpl.DefaultQuotaBytes
-				if client.SpeedLimitMbps == 0 {
-					client.SpeedLimitMbps = tmpl.SpeedLimitMbps
-				}
-				if client.SpeedLimitUpMbps == 0 {
-					client.SpeedLimitUpMbps = tmpl.SpeedLimitUpMbps
-				}
-				if client.ConcurrentLimit == 0 {
-					client.ConcurrentLimit = tmpl.ConcurrentLimit
-				}
+				// 限速三字段（下载/上传/并发）不在此物化模板值：0=订阅拉取时实时继承模板，
+				// 非 0=个人覆盖（与 public.go/clientauth 的 push 回退逻辑同一语义），
+				// 否则套餐后续调整限速不会跟随。
 				if client.ExpiresAt == nil {
 					t := time.Now().AddDate(0, 0, 30)
 					client.ExpiresAt = &t
@@ -454,6 +461,32 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	// If plan changed and no subscription exists, generate accounts and create subscription
 	if planChanged && client.SubscriptionID == nil {
 		s.generateAccountsForClient(ctx, client)
+	}
+
+	// 限速三字段有变化 → 把生效值推送到所有启用限流的节点（立即生效，异步）。
+	// 生效值口径与订阅拉取回退一致：客户字段 0=继承套餐模板值。
+	if s.rateLimitUpdater != nil && client.SubscriptionID != nil &&
+		(oldDown != client.SpeedLimitMbps || oldUp != client.SpeedLimitUpMbps || oldConn != client.ConcurrentLimit) {
+		maxDown, maxUp, conn := client.SpeedLimitMbps, client.SpeedLimitUpMbps, client.ConcurrentLimit
+		if tmpl, err := s.planSvc.GetTemplateByID(ctx, client.PlanID); err == nil && tmpl != nil {
+			if maxDown == 0 {
+				maxDown = tmpl.SpeedLimitMbps
+			}
+			if maxUp == 0 {
+				maxUp = tmpl.SpeedLimitUpMbps
+			}
+			if conn == 0 {
+				conn = tmpl.ConcurrentLimit
+			}
+		}
+		subID := *client.SubscriptionID
+		updater := s.rateLimitUpdater
+		go func() {
+			if err := updater.PushSubscriptionRateUpdate(context.Background(), subID,
+				int32(maxDown), int32(maxUp), int32(conn), int32(client.DeviceLimit)); err != nil {
+				log.Printf("[client] push rate update for subscription %d failed: %v", subID, err)
+			}
+		}()
 	}
 
 	return client, nil

@@ -45,14 +45,17 @@ func (RateLimitConfig) TableName() string { return "rate_limit_configs" }
 // nft + tc rules, so that active users don't lose their rate limit enforcement
 // until the next subscription access or Portal login pushes a fresh association.
 type RateLimitIPEntry struct {
-	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID       int64     `json:"server_id" gorm:"not null;index:idx_rlip_server"`
-	IP             string    `json:"ip" gorm:"size:64;not null;uniqueIndex:idx_rlip_ip"`
-	SubscriptionID int64     `json:"subscription_id" gorm:"not null;index:idx_rlip_sub"`
-	MaxDownMbps    int32     `json:"max_down_mbps" gorm:"not null;default:0"`
-	MaxUpMbps      int32     `json:"max_up_mbps" gorm:"not null;default:0"`
-	LastSeen       time.Time `json:"last_seen" gorm:"not null"`
-	CreatedAt      time.Time `json:"created_at" gorm:"not null"`
+	ID             int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID       int64  `json:"server_id" gorm:"not null;index:idx_rlip_server"`
+	IP             string `json:"ip" gorm:"size:64;not null;uniqueIndex:idx_rlip_ip"`
+	SubscriptionID int64  `json:"subscription_id" gorm:"not null;index:idx_rlip_sub"`
+	MaxDownMbps    int32  `json:"max_down_mbps" gorm:"not null;default:0"`
+	MaxUpMbps      int32  `json:"max_up_mbps" gorm:"not null;default:0"`
+	// 账号（订阅）维度的并发连接限制与设备数限制：Agent 重启恢复时重建计数规则用
+	ConnLimit   int32     `json:"conn_limit" gorm:"not null;default:0"`
+	DeviceLimit int32     `json:"device_limit" gorm:"not null;default:0"`
+	LastSeen    time.Time `json:"last_seen" gorm:"not null"`
+	CreatedAt   time.Time `json:"created_at" gorm:"not null"`
 }
 
 func (RateLimitIPEntry) TableName() string { return "rate_limit_ip_entries" }

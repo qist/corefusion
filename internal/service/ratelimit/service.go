@@ -207,6 +207,44 @@ func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip stri
 	return nil
 }
 
+// PushSubscriptionRateUpdate 把某订阅的新限速参数推送到所有启用限流的在线节点。
+// 管理端修改客户限速/并发后调用 —— Agent 按 action=update 更新 tc class 并
+// 重建该订阅已关联 IP 的 connlimit 规则，**无需等用户重新拉订阅**（立即生效）。
+func (s *Service) PushSubscriptionRateUpdate(ctx context.Context, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error {
+	if s.nodeOp == nil || subID <= 0 {
+		return nil
+	}
+	servers, err := s.repo.ListEnabledServers(ctx)
+	if err != nil {
+		return fmt.Errorf("list rate-limit enabled servers: %w", err)
+	}
+	pushed := 0
+	for _, server := range servers {
+		if !s.nodeOp.IsOnline(server.ID) {
+			continue
+		}
+		req := &agentpb.ApplyLimitsRequest{
+			Action:         "update",
+			SubscriptionId: subID,
+			Value:          maxDownMbps,
+			MaxDownMbps:    maxDownMbps,
+			MaxUpMbps:      maxUpMbps,
+			ConnLimit:      connLimit,
+			DeviceLimit:    deviceLimit,
+		}
+		if err := s.nodeOp.ApplyLimits(ctx, server.ID, req); err != nil {
+			log.Printf("[RateLimitService] rate update for sub %d on server %d failed: %v", subID, server.ID, err)
+			continue
+		}
+		pushed++
+	}
+	if pushed > 0 {
+		log.Printf("[RateLimitService] rate update pushed for sub %d to %d server(s) (↓%d/↑%dMbps conn=%d device=%d)",
+			subID, pushed, maxDownMbps, maxUpMbps, connLimit, deviceLimit)
+	}
+	return nil
+}
+
 // NodeServerLister lists node servers for batch operations.
 type NodeServerLister interface {
 	ListEnabled(ctx context.Context) ([]entity.NodeServer, error)

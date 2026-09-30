@@ -183,13 +183,21 @@ func (s *Service) enrichOnlineUsers(users []*agentpb.OnlineUserEntry) {
 			name = c.Remark
 		}
 		u.ClientName = name
+		// 限速展示：客户端字段 0=继承模板 → 回退模板值显示实际生效的限速
+		downLimit, upLimit := c.SpeedLimitMbps, c.SpeedLimitUpMbps
 		if c.PlanID > 0 {
 			if p, ok := plans[c.PlanID]; ok && p != nil {
 				u.PlanName = p.Name
+				if downLimit == 0 {
+					downLimit = p.SpeedLimitMbps
+				}
+				if upLimit == 0 {
+					upLimit = p.SpeedLimitUpMbps
+				}
 			}
 		}
-		u.SpeedLimitDownMbps = int32(c.SpeedLimitMbps)
-		u.SpeedLimitUpMbps = int32(c.SpeedLimitUpMbps)
+		u.SpeedLimitDownMbps = int32(downLimit)
+		u.SpeedLimitUpMbps = int32(upLimit)
 	}
 }
 

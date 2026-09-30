@@ -672,7 +672,7 @@ func detectDefaultInterface() string {
 }
 
 // persistIPEntry saves an IP → subscription mapping to the local DB for restart recovery.
-func (a *AgentApp) persistIPEntry(ip string, subID int64, maxDownMbps, maxUpMbps int32) {
+func (a *AgentApp) persistIPEntry(ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) {
 	if a.database == nil {
 		return
 	}
@@ -683,6 +683,8 @@ func (a *AgentApp) persistIPEntry(ip string, subID int64, maxDownMbps, maxUpMbps
 		SubscriptionID: subID,
 		MaxDownMbps:    maxDownMbps,
 		MaxUpMbps:      maxUpMbps,
+		ConnLimit:      connLimit,
+		DeviceLimit:    deviceLimit,
 		LastSeen:       time.Now(),
 		CreatedAt:      time.Now(),
 	}
@@ -730,6 +732,8 @@ func (a *AgentApp) restoreIPEntries(ctx context.Context) {
 		rate := &ratelimit.RateConfig{
 			MaxDownMbps: entry.MaxDownMbps,
 			MaxUpMbps:   entry.MaxUpMbps,
+			ConnLimit:   entry.ConnLimit,
+			DeviceLimit: entry.DeviceLimit,
 		}
 		if err := a.rateLimitMgr.RestoreFromDB(ctx, entry.IP, entry.SubscriptionID, rate); err != nil {
 			log.Printf("[Agent] restore rate limit for ip=%s failed: %v", entry.IP, err)

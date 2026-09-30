@@ -136,18 +136,7 @@ func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Clie
 	client.UsedBytes = 0
 	client.Status = "active"
 	client.ExpiresAt = &newExpiry
-	if targetTmpl.DeviceLimit > 0 {
-		client.DeviceLimit = targetTmpl.DeviceLimit
-	}
-	if targetTmpl.SpeedLimitMbps > 0 {
-		client.SpeedLimitMbps = targetTmpl.SpeedLimitMbps
-	}
-	if targetTmpl.SpeedLimitUpMbps > 0 {
-		client.SpeedLimitUpMbps = targetTmpl.SpeedLimitUpMbps
-	}
-	if targetTmpl.ConcurrentLimit > 0 {
-		client.ConcurrentLimit = targetTmpl.ConcurrentLimit
-	}
+	// 限速三字段与设备数不物化模板值：0=订阅拉取时实时继承模板，非 0=个人覆盖。
 	client.UpdatedAt = now
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return fmt.Errorf("update client: %w", err)

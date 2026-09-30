@@ -348,8 +348,19 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 
 // Activate sets a template as the active one.
 func (s *Service) Activate(ctx context.Context, id int64) error {
-	if _, err := s.repo.GetByID(ctx, id); err != nil {
+	tmpl, err := s.repo.GetByID(ctx, id)
+	if err != nil {
 		return err
+	}
+	// 安全审计 L-2：激活旧模板是把未打补丁的 HTML/JS 原样带回门户的入口 ——
+	// 落库激活前统一补丁（幂等，与 Update/EnsureSecurityPatches 同一实现）。
+	if newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent); changed {
+		tmpl.HTMLContent = newHTML
+		tmpl.JSContent = newJS
+		if err := s.repo.Update(ctx, tmpl); err != nil {
+			return err
+		}
+		log.Printf("[portal] security patch applied before activation of template %d (M7)", tmpl.ID)
 	}
 	if err := s.repo.Activate(ctx, id); err != nil {
 		return err
@@ -498,6 +509,13 @@ func (s *Service) UpdateActiveConfig(ctx context.Context, input UpdateInput) (*P
 		tmpl.Config = cleanedConfig
 	}
 	tmpl.UpdatedAt = time.Now()
+
+	// 安全审计 L-2：UpdateActiveConfig 可直接改写 HTML/JS —— 落库前统一打安全补丁，
+	// 防止编辑器/旧备份粘回 renderMd(msg.content) 之类的 XSS 写法。
+	if newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent); changed {
+		tmpl.HTMLContent = newHTML
+		tmpl.JSContent = newJS
+	}
 
 	if err := s.repo.Update(ctx, tmpl.PortalTemplate); err != nil {
 		return nil, err

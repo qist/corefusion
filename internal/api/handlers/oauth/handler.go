@@ -197,7 +197,11 @@ func (h *Handler) Callback(c *gin.Context) {
 	// （真机现象：客户账号创建了、门户标签却关了 ✓）。
 	// 门户侧登录按钮是整页跳转发起的 ✓ → 回调用 302 跳回门户是同一语义 ✓。
 	// ⚠ 跳回路径按**引擎**配置 ✓：主面板引擎 → /p ✓；独立门户端口引擎 → / ✓。
-	c.Redirect(http.StatusFound, h.portalPath+"?access_token="+url.QueryEscape(accessToken)+
+	// 安全审计 L-5：token 改走 **fragment**（#access_token=..）下发 —— query 串里的
+	// 长效 JWT 会残留进浏览器历史/访问日志/Referer ✗；fragment 只存在于客户端，
+	// 不会发往服务器。门户模板 handleOAuthCallback 已同步改为读 location.hash
+	// （存量模板由 PatchTemplateSecurity 幂等补丁升级）。
+	c.Redirect(http.StatusFound, h.portalPath+"#access_token="+url.QueryEscape(accessToken)+
 		"&refresh_token="+url.QueryEscape(refreshToken))
 }
 

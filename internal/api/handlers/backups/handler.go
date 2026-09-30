@@ -91,6 +91,19 @@ func (h *Handler) RestoreDBBackup(c *gin.Context) {
 		return
 	}
 
+	// 安全审计 L-1：filename 用户可控，必须是纯文件名且限定备份扩展名，
+	// 防 `../` 穿越把任意文件当作恢复源读入执行。
+	if req.Filename != filepath.Base(req.Filename) {
+		response.BadRequest(c, "INVALID_FILENAME", "filename must be a plain file name")
+		return
+	}
+	switch filepath.Ext(req.Filename) {
+	case ".db", ".sql":
+	default:
+		response.BadRequest(c, "INVALID_FILENAME", "filename must be a .db or .sql backup")
+		return
+	}
+
 	backupPath := filepath.Join(h.dataDir, "backup", "database", req.Filename)
 	if _, err := os.Stat(backupPath); err != nil {
 		response.NotFound(c, "BACKUP_NOT_FOUND", "backup file not found: "+req.Filename)

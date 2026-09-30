@@ -385,7 +385,12 @@ func (s *Service) ChangePassword(ctx context.Context, clientID int64, oldPwd, ne
 	}
 
 	client.Password = hashedPwd
-	return s.clientRepo.Update(ctx, client)
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		return err
+	}
+	// 安全审计 M-3：改密成功后吊销该客户端此前签发的所有 token（含 refresh），
+	// 否则旧 token 在 TTL 内继续有效。
+	return s.clientRepo.BumpTokenVersion(ctx, clientID)
 }
 
 // errNotClientToken 表示 token 合法但主体不是客户端（例如管理端用户）。

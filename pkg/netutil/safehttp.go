@@ -122,6 +122,37 @@ func SafeFetchGET(ctx context.Context, rawURL string, timeout time.Duration, max
 	return safeFetchGETWithClient(ctx, NewSafeHTTPClient(timeout, false), rawURL, maxBytes)
 }
 
+// NewSafeDownloadClient 面向"用户可控 URL 的大文件下载"场景（流式落盘，不适合整块读进内存）：
+//   - 拨号层拒绝环回/内网/保留地址（同 NewSafeHTTPClient）——校验发生在**每次拨号**时，
+//     因此即使跟随重定向，每一跳的真实目标 IP 都会被再校验，SSRF 防护与"禁重定向"等效；
+//   - 允许跟随重定向：GitHub release 下载必然 302 → objects.githubusercontent.com，
+//     完全禁跳转会破坏正常下载；
+//   - proxyURL 非空时走**管理员配置**的受信代理（系统设置，仅 Admin 可改）：此时拨号
+//     目标是代理本身，目标 IP 校验交由代理执行。
+//
+// 响应体大小限制由调用方用 CopyLimited 流式控制。
+func NewSafeDownloadClient(timeout time.Duration, proxyURL string) *http.Client {
+	transport := &http.Transport{
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+	if proxyURL != "" {
+		if u, err := url.Parse(proxyURL); err == nil && u.Host != "" {
+			transport.Proxy = http.ProxyURL(u)
+			transport.DialContext = (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+		}
+	} else {
+		dialer := &net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Control:   newSafeDialControl(false),
+		}
+		transport.DialContext = dialer.DialContext
+	}
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
 func safeFetchGETWithClient(ctx context.Context, client *http.Client, rawURL string, maxBytes int64) ([]byte, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {

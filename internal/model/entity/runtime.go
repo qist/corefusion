@@ -190,14 +190,15 @@ func (RoutingRegion) TableName() string { return "routing_regions" }
 
 // ACMEAccount is the GORM model for ACME accounts.
 type ACMEAccount struct {
-	ID              int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Email           string    `json:"email" gorm:"size:255;not null"`
-	CAProvider      string    `json:"ca_provider" gorm:"size:32;not null"`
-	CAUrl           string    `json:"ca_url" gorm:"size:512;not null"`
-	AccountKeyPEM   string    `json:"account_key_pem" gorm:"type:longtext;not null"`
+	ID         int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Email      string `json:"email" gorm:"size:255;not null"`
+	CAProvider string `json:"ca_provider" gorm:"size:32;not null"`
+	CAUrl      string `json:"ca_url" gorm:"size:512;not null"`
+	// 账号私钥与 EAB MAC 密钥属敏感凭据，禁止序列化进任何 API 响应（安全审计 L-6 防回归加固）
+	AccountKeyPEM   string    `json:"-" gorm:"type:longtext;not null"`
 	RegistrationURI string    `json:"registration_uri" gorm:"size:512"`
 	EABKeyID        string    `json:"eab_key_id" gorm:"size:255"`
-	EABMACKey       string    `json:"eab_mac_key" gorm:"size:255"`
+	EABMACKey       string    `json:"-" gorm:"size:255"`
 	Status          string    `json:"status" gorm:"size:32;not null;default:active"`
 	CreatedAt       time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt       time.Time `json:"updated_at" gorm:"not null"`

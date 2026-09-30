@@ -1241,6 +1241,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 			c.Data(200, ct, data)
 			return
+		} else if strings.Contains(path[1:], ".") && !strings.Contains(path, "..") {
+			// 根目录静态文件（favicon.ico / apple-touch-icon.png / icon-192.png 等）：
+			// 带扩展名的路径尝试按嵌入文件服务；拒绝 .. 防目录穿越；找不到则继续走 SPA/404
+			assetPath = path
 		}
 
 		if assetPath != "" {

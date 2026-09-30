@@ -59,4 +59,21 @@ type Availability struct {
 	NftAvailable bool `json:"nft_available"`
 	TcAvailable  bool `json:"tc_available"`
 	IfbAvailable bool `json:"ifb_available"`
+	// ConnTrackAvailable：内核 conntrack（nf_conntrack）是否可用 —— 账号并发计数依赖它
+	ConnTrackAvailable bool `json:"conntrack_available"`
+	// KernelSupported：内核是否支持账号并发计数所需能力
+	// （nft 动态集合 + ct count，实测探测：需内核 ≥4.18），不只是命令存在
+	KernelSupported bool `json:"kernel_supported"`
+	// UnsupportedReason：不支持时的原因（供 UI 直接展示）
+	UnsupportedReason string `json:"unsupported_reason"`
+}
+
+// OverallSupported 返回"限速功能整体可用"（下载/上传限速的最小依赖）。
+func (a Availability) OverallSupported() bool {
+	return a.NftAvailable && a.TcAvailable
+}
+
+// ConnLimitSupported 返回"账号并发计数可用"。
+func (a Availability) ConnLimitSupported() bool {
+	return a.NftAvailable && a.ConnTrackAvailable && a.KernelSupported
 }

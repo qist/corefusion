@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -57,6 +58,12 @@ func (h *Handler) UpdateConfig(c *gin.Context) {
 	config, err := h.svc.UpdateConfig(c.Request.Context(), serverID, &req)
 	if err != nil {
 		audit.RecordNodeFromCtx(c, serverID, "update_ratelimit", "", false, err.Error())
+		// 节点不支持（内核/依赖缺失）→ 400 + 原因，而不是 500
+		var unsupported *ratelimitsvc.ErrNodeUnsupported
+		if errors.As(err, &unsupported) {
+			response.BadRequest(c, "RATE_LIMIT_UNSUPPORTED", err.Error())
+			return
+		}
 		response.InternalError(c, "UPDATE_RATE_LIMIT_CONFIG_FAILED", err.Error())
 		return
 	}

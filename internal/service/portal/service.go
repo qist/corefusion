@@ -780,7 +780,9 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 			if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
 				// Check if it's the new multi-language format or old flat format
 				// Both are passed through as-is; the frontend handles both
-				cfg.Lang = v
+				// ⚠ 自定义语言包缺新增内置 key（如自助解封卡文案）时显示原始 key ✗
+				// → 内置包作兜底层合并（自定义 key 优先，仅补缺失 ✓）
+				cfg.Lang = MergeBuiltinLangFallback(v)
 			} else {
 				cfg.Lang = json.RawMessage(defaultMultiLangJSON)
 			}

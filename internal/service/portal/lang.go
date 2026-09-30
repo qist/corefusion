@@ -1,5 +1,11 @@
 package portal
 
+import (
+	"encoding/json"
+	"strings"
+	"sync"
+)
+
 // defaultLangZhCNJSON contains the default Chinese (zh-CN) UI text strings.
 const defaultLangZhCNJSON = `{
   "_meta": {
@@ -1037,3 +1043,84 @@ const defaultLangJSON = defaultLangZhCNJSON
 //
 // The admin backend can edit/add/remove locales via the "文案" tab.
 const defaultMultiLangJSON = `{"default":"zh-CN","locales":{"zh-CN":` + defaultLangZhCNJSON + `,"en":` + defaultLangENJSON + `}}`
+
+// builtinLangPacks 缓存内置语言包（code → key→value，解析一次）。
+var (
+	builtinLangPacksOnce sync.Once
+	builtinLangPacks     map[string]map[string]interface{}
+)
+
+func builtinLangPacksMap() map[string]map[string]interface{} {
+	builtinLangPacksOnce.Do(func() {
+		m := map[string]map[string]interface{}{}
+		for code, raw := range map[string]string{
+			"zh-CN": defaultLangZhCNJSON,
+			"en":    defaultLangENJSON,
+		} {
+			pack := map[string]interface{}{}
+			if json.Unmarshal([]byte(raw), &pack) == nil {
+				m[code] = pack
+			}
+		}
+		builtinLangPacks = m
+	})
+	return builtinLangPacks
+}
+
+// matchBuiltinLangPack 按语言码匹配内置语言包：精确 → 前缀（zh-*→zh-CN、en-*→en）
+// → 兜底 zh-CN。
+func matchBuiltinLangPack(code string) map[string]interface{} {
+	packs := builtinLangPacksMap()
+	if pack, ok := packs[code]; ok {
+		return pack
+	}
+	prefix := strings.Split(code, "-")[0]
+	for c, pack := range packs {
+		if strings.Split(c, "-")[0] == prefix {
+			return pack
+		}
+	}
+	return packs["zh-CN"]
+}
+
+// MergeBuiltinLangFallback 把内置语言包作为**兜底层**合并进模板自定义语言包：
+// 自定义 key 一律优先，仅缺失的 key 用内置补齐 —— 新增内置 key（如自助解封
+// auth.self_unban_*）无需动存量模板的语言包即可到达已部署门户 ✓。
+// 支持两种格式：multi-lang {default, locales:{...}} 与旧版平铺 {key:value}。
+// 解析失败时原样返回（不影响渲染）。
+func MergeBuiltinLangFallback(langRaw json.RawMessage) json.RawMessage {
+	if len(langRaw) == 0 {
+		return langRaw
+	}
+	var parsed interface{}
+	if err := json.Unmarshal(langRaw, &parsed); err != nil {
+		return langRaw
+	}
+	root, ok := parsed.(map[string]interface{})
+	if !ok {
+		return langRaw
+	}
+	fill := func(target map[string]interface{}, code string) {
+		pack := matchBuiltinLangPack(code)
+		for k, v := range pack {
+			if cur, exists := target[k]; !exists || cur == nil || cur == "" {
+				target[k] = v
+			}
+		}
+	}
+	if locales, ok := root["locales"].(map[string]interface{}); ok {
+		for code, loc := range locales {
+			if lm, ok := loc.(map[string]interface{}); ok {
+				fill(lm, code)
+			}
+		}
+	} else {
+		// 旧版平铺格式：整体当 zh-CN 处理
+		fill(root, "zh-CN")
+	}
+	out, err := json.Marshal(root)
+	if err != nil {
+		return langRaw
+	}
+	return out
+}

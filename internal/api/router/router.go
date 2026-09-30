@@ -2935,8 +2935,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/releases", agentH.GetAgentReleases)
 
-			// Placeholder routes for remaining modules
-			registerPlaceholderRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
+			// Auxiliary feature routes (services policies / runtime workflow / traffic quotas)
+			registerAuxiliaryRoutes(protected, database, runtimecfgHandler.NewHandler(runtimeApplySvcInst))
 
 			// Geo Rules — global rule source and file management (no node-servers prefix)
 			// These routes are public-except-auth (any authenticated user can read, admin can write).
@@ -3366,8 +3366,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	return r
 }
 
-// registerPlaceholderRoutes registers placeholder routes for modules not yet implemented.
-func registerPlaceholderRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *runtimecfgHandler.Handler) {
+// registerAuxiliaryRoutes registers routes for auxiliary feature modules
+// (services access policies/ip-bans, runtime config workflow, traffic quota monitoring).
+func registerAuxiliaryRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *runtimecfgHandler.Handler) {
+	// 辅助功能路由：services 访问策略/ip-bans、runtime 配置工作流、traffic 配额监控。
+	// ⚠ 历史名 registerPlaceholderRoutes 已废弃——这些路由全部是真实现，并非占位。
 	// Services (access policies, ip bans)
 	services := rg.Group("/services")
 	accessH := servicesHandler.NewAccessHandler(database, getAccessService(database))

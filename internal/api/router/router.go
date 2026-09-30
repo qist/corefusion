@@ -651,6 +651,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	wafCfgRepo := repository.NewWafConfigRepository(database)
 	wafDomainCfgRepo := repository.NewWafDomainConfigRepository(database)
 	wafSvcInst := wafSvc.NewService(wafRuleRepo, wafCfgRepo, wafDomainCfgRepo, dataDir, systemSettingSvc)
+	// WAF GitHub 规则源定时同步调度器（sync_cron 此前只有 UI 落库没有执行器 ✗ → 已补）
+	wafScheduler := wafSvc.NewScheduler(wafSvcInst)
+	wafScheduler.Start()
 	// Initialize from GitHub if table is empty (async, non-blocking)
 	go func() {
 		if err := wafSvcInst.EnsureInitialized(context.Background()); err != nil {
@@ -1137,6 +1140,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	wafH := wafHandler.NewHandler(wafSvcInst)
+	wafH.SetScheduler(wafScheduler)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
 		geoRuleSvcInst.SetNodeLister(nodeServerRepoForSync)

@@ -41,7 +41,6 @@ func AutoMigrate(db *gorm.DB) error {
 		// Access Control
 		&entity.ServiceAccessPolicy{},
 		&entity.ServiceIPBan{},
-		&entity.ServiceGeoRule{},
 
 		// Subscriptions
 		&entity.Subscription{},
@@ -50,8 +49,6 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Certificates
 		&entity.Certificate{},
-		&entity.ACMEAccount{},
-		&entity.CertificateJob{},
 
 		// Traffic & Quota
 		&entity.InboundUserTraffic{},
@@ -69,15 +66,10 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.RuntimeApplyJob{},
 		&entity.RuntimeApplyJobTarget{},
 		&entity.RuntimeApplyJobEvent{},
-		&entity.ReverseProxyInstance{},
 
 		// Backups
-		&entity.BackupRetentionPolicy{},
-		&entity.BackupCleanupJob{},
 
 		// Binaries & Updates
-		&entity.BinaryRelease{},
-		&entity.UpdateJob{},
 
 		// Routing
 
@@ -180,7 +172,6 @@ func AutoMigrate(db *gorm.DB) error {
 
 		// Phase 6: Server Metrics & Speed Test Records
 		&entity.ServerMetric{},
-		&entity.SpeedTestRecord{},
 
 		// Supplementary: Node Audit Logs, Server Tags, Cert Distribution Queue
 		&entity.NodeAuditLog{},
@@ -338,6 +329,9 @@ func RunDataMigrations(db *gorm.DB) error {
 	// 该表不再被任何代码使用，直接删除（幂等；删前打印行数留底）。
 	dropLegacyChainExitConfigs(db)
 
+	// 2026-10 数据库审计：清掉全仓零引用的死表（0 行才删，详见 unusedLegacyTables）
+	dropUnusedLegacyTables(db)
+
 	return nil
 }
 
@@ -445,6 +439,49 @@ func dropLegacyChainExitConfigs(db *gorm.DB) {
 	}
 	if err := db.Migrator().DropTable("chain_exit_configs"); err != nil {
 		log.Printf("[migration] drop chain_exit_configs failed: %v", err)
+	}
+}
+
+// unusedLegacyTables 是 2026-10 数据库审计确认的**死表**：
+// 有实体/AutoMigrate 历史登记但全仓零业务引用（无仓储、无服务、无 handler 读写），
+// 表内 0 行。实体与 AutoMigrate 注册已一并删除，这里把表本身 drop 掉，
+// 免得库里留一堆让人误以为在生效的空表。
+//
+// 排查口径：结构体名 + 裸表名全仓 grep（排除 model/migration/db 注册），
+// 并复核 log_cleanup 清单与数据迁移的特殊引用（update_jobs 等三条清理规则已随删）。
+// 注：recovery_codes 虽 0 行，但 2FA 恢复码服务在用（router twoFASvc）→ 不在此列。
+var unusedLegacyTables = []string{
+	"charge_callback_logs",      // 无实体，历史回调日志
+	"routing_regions",           // 2026-09-23 已摘 AutoMigrate，注释也标注"保留但未接线"
+	"acme_accounts",             // 旧 ACME 账号表，已被 acme_account_configs 取代
+	"reverse_proxy_instances",   // 反代实例（本地 caddy/nginx 特性未落地）
+	"speed_test_records",        // 测速结果只在内存/日志，从不落库
+	"binary_releases",           // 更新功能走面板内存任务，从不落库
+	"update_jobs",               // 同上
+	"backup_retention_policies", // 备份保留策略未接线（backup_records/schedules 在用，不受影响）
+	"backup_cleanup_jobs",       // 同上
+	"certificate_jobs",          // 证书任务历史未接线（certificates 在用）
+	"service_geo_rules",         // 独立服务特性中唯一零引用的附属表
+	"server_share_profiles",     // 实体零引用（domain/subscription 的同名 DTO 是另一类型）
+}
+
+// dropUnusedLegacyTables 删除上述死表。幂等：HasTable 判在先。
+func dropUnusedLegacyTables(db *gorm.DB) {
+	for _, t := range unusedLegacyTables {
+		if !db.Migrator().HasTable(t) {
+			continue
+		}
+		var rows int64
+		if err := db.Table(t).Count(&rows).Error; err == nil && rows > 0 {
+			// 有数据的表不 drop —— 审计口径是「0 行死表」，真有数据要人工确认
+			log.Printf("[migration] skip dropping %s: %d rows present, needs manual review", t, rows)
+			continue
+		}
+		if err := db.Migrator().DropTable(t); err != nil {
+			log.Printf("[migration] drop %s failed: %v", t, err)
+			continue
+		}
+		log.Printf("[migration] dropped unused legacy table: %s", t)
 	}
 }
 
@@ -1331,11 +1368,8 @@ func seedDefaultLogCleanupRules(db *gorm.DB) {
 		{Category: "runtime", Table: "runtime_apply_job_targets", DisplayName: "Runtime Apply Job Targets", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "runtime", Table: "runtime_snapshots", DisplayName: "Runtime Snapshots", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "runtime", Table: "runtime_apply_jobs", DisplayName: "Runtime Apply Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
-		{Category: "runtime", Table: "update_jobs", DisplayName: "Update Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "runtime", Table: "config_snapshots", DisplayName: "Config Snapshots", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
-		{Category: "runtime", Table: "certificate_jobs", DisplayName: "Certificate Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "runtime", Table: "log_rotation_jobs", DisplayName: "Log Rotation Job History", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
-		{Category: "runtime", Table: "backup_cleanup_jobs", DisplayName: "Backup Cleanup Job History", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 
 		// ── Commerce log tables (180-day retention, financial logs need longer retention) ──
 		{Category: "commerce", Table: "charge_callback_events", DisplayName: "Charge Callback Events", RetainDays: 180, Enabled: true, CleanupCron: "0 */6 * * *"},

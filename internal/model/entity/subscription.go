@@ -78,27 +78,3 @@ func (SubscriptionRotation) TableName() string { return "subscription_rotations"
 // 它描述的是「发布 / 撤销 / 版本历史 / 预览 / 二维码 / 导出」这类更高层的节点分享能力
 // （已实现的 share-domains 是它的简化版）；结构体保留供将来参照，接线前先确认产品需要。
 //
-// ServerShareProfile is the GORM model for server share profiles.
-type ServerShareProfile struct {
-	ID                  int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name                string `json:"name" gorm:"size:128;not null"`
-	ClientID            *int64
-	TargetClientType    string `json:"target_client_type" gorm:"size:32;not null"`
-	OutputFormat        string `json:"output_format" gorm:"size:32;not null"`
-	DeliveryMode        string `json:"delivery_mode" gorm:"size:32;not null"`
-	TemplateID          *int64
-	RouteTemplateID     *int64
-	DefaultOutboundMode string     `json:"default_outbound_mode" gorm:"size:32;not null;default:rule"`
-	SecurityMode        string     `json:"security_mode" gorm:"size:32;not null;default:token_only"`
-	BindMode            string     `json:"bind_mode" gorm:"size:32;not null;default:none"`
-	IncludeRuleURLs     int        `json:"include_rule_urls" gorm:"not null;default:1"`
-	IncludeCustomRules  int        `json:"include_custom_rules" gorm:"not null;default:1"`
-	HTTPSRequired       int        `json:"https_required" gorm:"not null;default:1"`
-	Status              string     `json:"status" gorm:"size:32;not null;default:draft"`
-	LastPreviewAt       *time.Time `json:"last_preview_at"`
-	LastPublishedAt     *time.Time `json:"last_published_at"`
-	CreatedAt           time.Time  `json:"created_at" gorm:"not null"`
-	UpdatedAt           time.Time  `json:"updated_at" gorm:"not null"`
-}
-
-func (ServerShareProfile) TableName() string { return "server_share_profiles" }

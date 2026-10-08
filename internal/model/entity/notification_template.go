@@ -12,10 +12,10 @@ const (
 type NotificationTemplate struct {
 	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	Name       string    `json:"name" gorm:"size:128;not null"`
-	Type       string    `json:"type" gorm:"size:32;not null"`    // telegram, email
+	Type       string    `json:"type" gorm:"size:32;not null"`                   // telegram, email
 	Audience   string    `json:"audience" gorm:"size:16;not null;default:admin"` // admin / subscriber
-	EventKey   string    `json:"event_key" gorm:"size:64;index"`  // 业务事件键（自动触发；空 = 仅手动）
-	Recipients string    `json:"recipients" gorm:"type:longtext"` // admin: comma-separated emails; subscriber 模板忽略（发给客户本人）
+	EventKey   string    `json:"event_key" gorm:"size:64;index"`                 // 业务事件键（自动触发；空 = 仅手动）
+	Recipients string    `json:"recipients" gorm:"type:longtext"`                // admin: comma-separated emails; subscriber 模板忽略（发给客户本人）
 	Subject    string    `json:"subject" gorm:"size:255"`
 	Content    string    `json:"content" gorm:"type:longtext;not null"`
 	Cron       string    `json:"cron" gorm:"size:64"` // empty = manual only

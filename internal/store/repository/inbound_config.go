@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 var panelMetaKeys = [...]string{"_usedUp", "_usedDown", "_quota", "_expiry"}
 
 // stripPanelMeta 把面板元数据从 config_json 剥掉，是配置落库的统一收口。
+// service 层不再重复实现，统一走本仓储的 normalizeInboundConfigJSON（log 已在本文件引入）。
 //
 // 快路径：没有这些键时不做 JSON 解析（绝大多数配置直接原样返回）。
 func stripPanelMeta(configJSON string) string {
@@ -122,9 +124,20 @@ func (r *InboundConfigRepository) GetByTag(ctx context.Context, serverID int64, 
 	return &cfg, nil
 }
 
+// normalizeInboundConfigJSON 是 config_json 落库前的强制修正收口：
+// 面板元数据剥离（流量/遗留字段）→ ss-2022 密钥长度强制校正 → 按需加密。
+func normalizeInboundConfigJSON(v string) string {
+	if fixed, who := NormalizeShadowsocks2022Keys(v); len(who) > 0 {
+		log.Printf("[inbound-config] ss-2022 密钥长度与加密方式不匹配，已重新生成（客户端需重新导入）: %s",
+			strings.Join(who, ", "))
+		v = fixed
+	}
+	return EncryptConfigJSON(stripPanelMeta(v))
+}
+
 // Create creates a new inbound config.
 func (r *InboundConfigRepository) Create(ctx context.Context, cfg *entity.InboundConfig) error {
-	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
+	cfg.ConfigJSON = normalizeInboundConfigJSON(cfg.ConfigJSON)
 	cfg.CreatedAt = time.Now()
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(cfg).Error
@@ -132,14 +145,14 @@ func (r *InboundConfigRepository) Create(ctx context.Context, cfg *entity.Inboun
 
 // Update updates an inbound config.
 func (r *InboundConfigRepository) Update(ctx context.Context, cfg *entity.InboundConfig) error {
-	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
+	cfg.ConfigJSON = normalizeInboundConfigJSON(cfg.ConfigJSON)
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Save(cfg).Error
 }
 
 // Upsert creates or updates an inbound config by (server_id, tag).
 func (r *InboundConfigRepository) Upsert(ctx context.Context, cfg *entity.InboundConfig) error {
-	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
+	cfg.ConfigJSON = normalizeInboundConfigJSON(cfg.ConfigJSON)
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},

@@ -332,6 +332,11 @@ func RunDataMigrations(db *gorm.DB) error {
 	// 2026-10 数据库审计：清掉全仓零引用的死表（0 行才删，详见 unusedLegacyTables）
 	dropUnusedLegacyTables(db)
 
+	// hysteria2/tuic 独立核心下线：清残留配置与服务条目，并给存量 sing-box
+	// 的空壳 ntp/dns 换上有意义的默认值（详见函数注释）
+	migrateDropStandaloneHy2Tuic(db)
+	migrateSeedSingboxDefaults(db)
+
 	return nil
 }
 
@@ -482,6 +487,105 @@ func dropUnusedLegacyTables(db *gorm.DB) {
 			continue
 		}
 		log.Printf("[migration] dropped unused legacy table: %s", t)
+	}
+}
+
+// migrateDropStandaloneHy2Tuic 下线 hysteria2/tuic 独立核心（2026-10 决策）：
+//   - core_configs 里这两个核心的分段配置（listen/auth/users…）
+//   - 本地节点（server_id=1）为它们 seed 的 service 行与关联 guardian
+//
+// 保留：出站/外部节点的 hysteria2/tuic 支持（domain.CoreType 域，与本清理无关）、
+// sing-box 内的 hy2/tuic 入站、磁盘上已下载的二进制文件（不删，留作手工使用）。
+// 幂等：先判行数，没数据不动。
+func migrateDropStandaloneHy2Tuic(db *gorm.DB) {
+	dead := []string{"hysteria2", "tuic"}
+
+	// 1. 分段配置行
+	for _, ct := range dead {
+		res := db.Where("core_type = ?", ct).Delete(&entity.CoreConfig{})
+		if res.Error != nil {
+			log.Printf("[migration] drop core_configs/%s failed: %v", ct, res.Error)
+		} else if res.RowsAffected > 0 {
+			log.Printf("[migration] dropped %d core_configs rows of standalone core %s", res.RowsAffected, ct)
+		}
+	}
+
+	// 2. 本地 service + 关联 guardian（只动 server_id=1，远端节点的由各自 SyncData 管）
+	var svcIDs []int64
+	if err := db.Table("inbound_services").
+		Where("server_id = ? AND core_type IN ?", 1, dead).
+		Pluck("id", &svcIDs).Error; err != nil {
+		log.Printf("[migration] list hy2/tuic services failed: %v", err)
+		return
+	}
+	if len(svcIDs) == 0 {
+		return
+	}
+	if err := db.Where("service_id IN ?", svcIDs).Delete(&entity.ProcessGuardian{}).Error; err != nil {
+		log.Printf("[migration] drop guardians for hy2/tuic failed: %v", err)
+	}
+	res := db.Where("id IN ?", svcIDs).Delete(&entity.InboundService{})
+	if res.Error != nil {
+		log.Printf("[migration] drop hy2/tuic services failed: %v", res.Error)
+		return
+	}
+	log.Printf("[migration] dropped %d local service rows (+guardians) for standalone hy2/tuic", res.RowsAffected)
+}
+
+// migrateSeedSingboxDefaults 把存量 sing-box 的**空壳** ntp / dns 换成
+// coreconfig.DefaultSectionJSON 里的新默认（打开协议中心才有内容，此前是
+// {} / 空 servers）。只在「确实没人配置过」时替换：
+//   - ntp：解析后是空对象
+//   - dns：servers 为空数组且没有 fakeip/hosts 类 server
+//
+// 用户配置过的原样保留。幂等：替换后即不满足条件。
+func migrateSeedSingboxDefaults(db *gorm.DB) {
+	// 默认值与 coreconfig.DefaultSectionJSON["singbox"] 保持一致（那边改这里也要改）
+	const (
+		ntpDefault = `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`
+		dnsDefault = `{"servers":[{"type":"local","tag":"dns-local"},{"type":"udp","server":"1.1.1.1","server_port":53,"tag":"dns-remote"}],"rules":[],"final":"dns-remote"}`
+	)
+	type row struct {
+		ID      int64
+		Section string
+		Val     string
+	}
+	var rows []row
+	if err := db.Table("core_configs").
+		Select("id, section, config_json AS val").
+		Where("core_type = ? AND section IN ?", "singbox", []string{"ntp", "dns"}).
+		Scan(&rows).Error; err != nil {
+		log.Printf("[migration] scan singbox ntp/dns failed: %v", err)
+		return
+	}
+	updated := 0
+	for _, r := range rows {
+		var v map[string]interface{}
+		if err := json.Unmarshal([]byte(r.Val), &v); err != nil {
+			continue
+		}
+		var def string
+		switch r.Section {
+		case "ntp":
+			if len(v) != 0 {
+				continue // 不是空壳 → 用户配置过，保留
+			}
+			def = ntpDefault
+		case "dns":
+			servers, _ := v["servers"].([]interface{})
+			if len(servers) != 0 {
+				continue // 配过 DNS server，保留
+			}
+			def = dnsDefault
+		}
+		if err := db.Table("core_configs").Where("id = ?", r.ID).Update("config_json", def).Error; err != nil {
+			log.Printf("[migration] seed singbox %s (id=%d) failed: %v", r.Section, r.ID, err)
+			continue
+		}
+		updated++
+	}
+	if updated > 0 {
+		log.Printf("[migration] seeded defaults for %d empty singbox ntp/dns sections", updated)
 	}
 }
 

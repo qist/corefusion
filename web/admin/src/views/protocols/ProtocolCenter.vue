@@ -161,17 +161,6 @@ import SingboxExperimental from './sections/SingboxExperimental.vue'
 import SingboxEndpoints from './sections/SingboxEndpoints.vue'
 import SingboxNtp from './sections/SingboxNtp.vue'
 import SingboxJsonSection from './sections/SingboxJsonSection.vue'
-import Hy2Listen from './sections/Hy2Listen.vue'
-import Hy2Tls from './sections/Hy2Tls.vue'
-import Hy2Auth from './sections/Hy2Auth.vue'
-import Hy2Bandwidth from './sections/Hy2Bandwidth.vue'
-import Hy2Quic from './sections/Hy2Quic.vue'
-import Hy2TrafficStats from './sections/Hy2TrafficStats.vue'
-import TuicServer from './sections/TuicServer.vue'
-import TuicUsers from './sections/TuicUsers.vue'
-import TuicTls from './sections/TuicTls.vue'
-import TuicCongestion from './sections/TuicCongestion.vue'
-import TuicAdvanced from './sections/TuicAdvanced.vue'
 import JsonPreview from './sections/JsonPreview.vue'
 import { useRoute } from 'vue-router'
 
@@ -188,8 +177,7 @@ const apiBase = computed(() => `/node-servers/${props.serverId}/protocols`)
 const cores = [
   { type:'xray', label:'Xray', icon:'⚡', desc:t('protoCenter.cores.xrayDesc') },
   { type:'singbox', label:'sing-box', icon:'📦', desc:t('protoCenter.cores.singboxDesc') },
-  { type:'hysteria2', label:'Hysteria 2', icon:'🚀', desc:t('protoCenter.cores.hysteria2Desc') },
-  { type:'tuic', label:'TUIC', icon:'🌊', desc:t('protoCenter.cores.tuicDesc') },
+  // hysteria2 / tuic 独立核心已下线：协议由 sing-box 承载（入站/订阅/流量闭环完整）
 ]
 
 function getSections() {
@@ -210,23 +198,12 @@ function getSections() {
       {key:'experimental',label:t('protoCenter.sections.experimental')},
       {key:'_preview',label:t('protoCenter.sections.preview')},
     ],
-    hysteria2: [
-      {key:'listen',label:t('protoCenter.sections.listen')},{key:'tls',label:t('protoCenter.sections.tls')},{key:'auth',label:t('protoCenter.sections.auth')},
-      {key:'bandwidth',label:t('protoCenter.sections.bandwidth')},{key:'quic',label:t('protoCenter.sections.quic')},{key:'trafficStats',label:t('protoCenter.sections.trafficStats')},
-      {key:'_preview',label:t('protoCenter.sections.preview')},
-    ],
-    tuic: [
-      {key:'server',label:t('protoCenter.sections.server')},{key:'users',label:t('protoCenter.sections.users')},{key:'certificate',label:t('protoCenter.sections.tls')},
-      {key:'congestion_control',label:t('protoCenter.sections.congestion')},{key:'_preview',label:t('protoCenter.sections.preview')},
-    ],
   }
 }
 
 const COMPS = {
   xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,stats:XrayStats,metrics:XrayMetrics,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
   singbox: {log:SingboxLog,dns:SingboxDns,ntp:SingboxNtp,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,services:SingboxJsonSection,certificate:SingboxJsonSection,certificate_providers:SingboxJsonSection,http_clients:SingboxJsonSection,network_namespaces:SingboxJsonSection,experimental:SingboxExperimental,_preview:JsonPreview},
-  hysteria2: {listen:Hy2Listen,tls:Hy2Tls,auth:Hy2Auth,bandwidth:Hy2Bandwidth,quic:Hy2Quic,trafficStats:Hy2TrafficStats,_preview:JsonPreview},
-  tuic: {server:TuicServer,users:TuicUsers,certificate:TuicTls,congestion_control:TuicCongestion,_preview:JsonPreview},
 }
 
 const selectedCore = ref('')

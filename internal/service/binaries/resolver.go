@@ -46,8 +46,9 @@ func (r *Resolver) Resolve(coreType string) (binaryPath, version string, err err
 }
 
 // ListInstalled returns all installed core binaries with their versions.
+// hysteria2/tuic 独立核心已下线（协议由 sing-box 承载），不再出现在安装列表。
 func (r *Resolver) ListInstalled() []BinaryInfo {
-	coreTypes := []string{"xray", "singbox", "hysteria2", "tuic"}
+	coreTypes := []string{"xray", "singbox"}
 	var result []BinaryInfo
 
 	for _, ct := range coreTypes {

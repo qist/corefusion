@@ -569,7 +569,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Scheduler start is deferred until after systemSettingSvc is created (below)
 	// to allow reading configurable intervals from DB.
 
-	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database)
+	inboundConfigSvc := inboundconfigSvc.NewService(inboundConfigRepo, database, repository.NewInboundUserTrafficRepository(database))
 	outboundConfigRepo := repository.NewOutboundConfigRepository(database)
 	outboundConfigSvc := outboundconfigSvc.NewService(outboundConfigRepo)
 	endpointConfigRepo := repository.NewEndpointConfigRepository(database)

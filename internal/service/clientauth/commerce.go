@@ -251,6 +251,8 @@ func (s *CommerceService) getPlanNodes(ctx context.Context, tmpl *entity.PlanTem
 		if m.InboundConfigID > 0 && !seenInbound[m.InboundConfigID] {
 			var ib entity.InboundConfig
 			if err := s.db.WithContext(ctx).First(&ib, m.InboundConfigID).Error; err == nil && ib.Enabled {
+				// 直查库：config_json 是密文，解析传输层前先解密
+				ib.ConfigJSON = repository.DecryptConfigJSON(ib.ConfigJSON)
 				name := ib.Remark
 				if name == "" {
 					name = ib.Protocol + "-" + ib.Region

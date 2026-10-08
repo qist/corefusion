@@ -580,6 +580,7 @@ func allEntityModels() []interface{} {
 		&entity.InboundService{},
 		&entity.ServiceEndpoint{},
 		&entity.NodeTrafficUsage{},
+		&entity.InboundUserTraffic{},
 		&entity.ServiceAccessPolicy{},
 		&entity.ServiceIPBan{},
 		&entity.ServiceGeoRule{},

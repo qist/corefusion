@@ -53,6 +53,14 @@ type ExternalNodeRepository struct {
 	db *gorm.DB
 }
 
+// decryptProxyJSON / encrypt 走整包口径：external_nodes.proxy_json 内含
+// uuid / password / obfs-password 等凭据。
+func decryptProxyJSON(nodes []entity.ExternalNode) {
+	for i := range nodes {
+		nodes[i].ProxyJSON = DecryptConfigJSON(nodes[i].ProxyJSON)
+	}
+}
+
 func NewExternalNodeRepository(db *gorm.DB) *ExternalNodeRepository {
 	return &ExternalNodeRepository{db: db}
 }
@@ -64,12 +72,18 @@ func (r *ExternalNodeRepository) List(ctx context.Context, sourceID int64) ([]en
 		query = query.Where("source_id = ?", sourceID)
 	}
 	err := query.Order("sort_order, id").Find(&nodes).Error
+	if err == nil {
+		decryptProxyJSON(nodes)
+	}
 	return nodes, err
 }
 
 func (r *ExternalNodeRepository) ListAll(ctx context.Context) ([]entity.ExternalNode, error) {
 	var nodes []entity.ExternalNode
 	err := r.db.WithContext(ctx).Order("source_id, sort_order, id").Find(&nodes).Error
+	if err == nil {
+		decryptProxyJSON(nodes)
+	}
 	return nodes, err
 }
 
@@ -79,10 +93,12 @@ func (r *ExternalNodeRepository) GetByID(ctx context.Context, id int64) (*entity
 	if err != nil {
 		return nil, err
 	}
+	node.ProxyJSON = DecryptConfigJSON(node.ProxyJSON)
 	return &node, nil
 }
 
 func (r *ExternalNodeRepository) Create(ctx context.Context, node *entity.ExternalNode) error {
+	node.ProxyJSON = EncryptConfigJSON(node.ProxyJSON)
 	node.CreatedAt = time.Now()
 	node.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(node).Error
@@ -94,6 +110,7 @@ func (r *ExternalNodeRepository) CreateBatch(ctx context.Context, nodes []entity
 	}
 	now := time.Now()
 	for i := range nodes {
+		nodes[i].ProxyJSON = EncryptConfigJSON(nodes[i].ProxyJSON)
 		nodes[i].CreatedAt = now
 		nodes[i].UpdatedAt = now
 	}
@@ -101,6 +118,7 @@ func (r *ExternalNodeRepository) CreateBatch(ctx context.Context, nodes []entity
 }
 
 func (r *ExternalNodeRepository) Update(ctx context.Context, node *entity.ExternalNode) error {
+	node.ProxyJSON = EncryptConfigJSON(node.ProxyJSON)
 	node.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Save(node).Error
 }

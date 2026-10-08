@@ -23,6 +23,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/store/repository"
 )
 
 // Syncer triggers an immediate config sync (implemented by configsync.Service).
@@ -282,6 +283,8 @@ func (s *Service) DryRun(ctx context.Context, serverIDs []int64) (*DryRunResult,
 	if err := q.Find(&inbounds).Error; err != nil {
 		return nil, err
 	}
+	// 直查库：config_json 是密文，先解密再做 JSON 校验（否则密文会被误报为非法 JSON）
+	repository.DecryptInboundConfigs(inbounds)
 
 	res := &DryRunResult{OK: true}
 	coreSet := map[string]bool{}

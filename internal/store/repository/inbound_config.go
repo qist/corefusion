@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -9,6 +11,70 @@ import (
 
 	"corefusion/internal/model/entity"
 )
+
+// panelMetaKeys 是寄存在 config_json 用户对象里的**面板元数据**，不随配置落库：
+//
+//   - _usedUp/_usedDown：流量计数，已拆到 inbound_user_traffic 表；
+//   - _quota/_expiry：前端遗留字段，后端从不读取（配额走订阅 used_bytes_cache）。
+//
+// (_paused / _accessDomain / _portHop 属于配置语义，保留。)
+var panelMetaKeys = [...]string{"_usedUp", "_usedDown", "_quota", "_expiry"}
+
+// stripPanelMeta 把面板元数据从 config_json 剥掉，是配置落库的统一收口。
+//
+// 快路径：没有这些键时不做 JSON 解析（绝大多数配置直接原样返回）。
+func stripPanelMeta(configJSON string) string {
+	if configJSON == "" {
+		return configJSON
+	}
+	hit := false
+	for _, k := range panelMetaKeys {
+		if strings.Contains(configJSON, "\""+k+"\"") {
+			hit = true
+			break
+		}
+	}
+	if !hit {
+		return configJSON
+	}
+	var inbound map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &inbound); err != nil {
+		return configJSON
+	}
+	containers := []map[string]interface{}{inbound}
+	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
+	}
+	changed := false
+	for _, c := range containers {
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := c[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range items {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, k := range panelMetaKeys {
+					if _, exists := m[k]; exists {
+						delete(m, k)
+						changed = true
+					}
+				}
+			}
+		}
+	}
+	if !changed {
+		return configJSON
+	}
+	data, err := json.Marshal(inbound)
+	if err != nil {
+		return configJSON
+	}
+	return string(data)
+}
 
 // InboundConfigRepository handles inbound_config database operations.
 type InboundConfigRepository struct {
@@ -28,6 +94,9 @@ func (r *InboundConfigRepository) List(ctx context.Context, serverID int64, core
 		query = query.Where("core_type = ?", coreType)
 	}
 	err := query.Order("id").Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -38,6 +107,7 @@ func (r *InboundConfigRepository) GetByID(ctx context.Context, id int64) (*entit
 	if err != nil {
 		return nil, err
 	}
+	cfg.ConfigJSON = DecryptConfigJSON(cfg.ConfigJSON)
 	return &cfg, nil
 }
 
@@ -48,11 +118,13 @@ func (r *InboundConfigRepository) GetByTag(ctx context.Context, serverID int64, 
 	if err != nil {
 		return nil, err
 	}
+	cfg.ConfigJSON = DecryptConfigJSON(cfg.ConfigJSON)
 	return &cfg, nil
 }
 
 // Create creates a new inbound config.
 func (r *InboundConfigRepository) Create(ctx context.Context, cfg *entity.InboundConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
 	cfg.CreatedAt = time.Now()
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Create(cfg).Error
@@ -60,12 +132,14 @@ func (r *InboundConfigRepository) Create(ctx context.Context, cfg *entity.Inboun
 
 // Update updates an inbound config.
 func (r *InboundConfigRepository) Update(ctx context.Context, cfg *entity.InboundConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Save(cfg).Error
 }
 
 // Upsert creates or updates an inbound config by (server_id, tag).
 func (r *InboundConfigRepository) Upsert(ctx context.Context, cfg *entity.InboundConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(stripPanelMeta(cfg.ConfigJSON))
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "server_id"}, {Name: "tag"}},
@@ -91,6 +165,9 @@ func (r *InboundConfigRepository) ListAll(ctx context.Context, coreType string) 
 		query = query.Where("core_type = ?", coreType)
 	}
 	err := query.Order("id").Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -100,6 +177,9 @@ func (r *InboundConfigRepository) ListAll(ctx context.Context, coreType string) 
 func (r *InboundConfigRepository) ListByTag(ctx context.Context, tag string) ([]entity.InboundConfig, error) {
 	var configs []entity.InboundConfig
 	err := r.db.WithContext(ctx).Where("tag = ?", tag).Order("server_id").Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -110,6 +190,9 @@ func (r *InboundConfigRepository) ListByServerID(ctx context.Context, serverID i
 		Where("server_id = ?", serverID).
 		Order("id").
 		Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -123,5 +206,8 @@ func (r *InboundConfigRepository) ListByServerIDs(ctx context.Context, serverIDs
 		Where("server_id IN ?", serverIDs).
 		Order("server_id, id").
 		Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }

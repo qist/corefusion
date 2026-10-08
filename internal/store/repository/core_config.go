@@ -29,6 +29,7 @@ func (r *CoreConfigRepository) GetSection(ctx context.Context, serverID int64, c
 	if err != nil {
 		return nil, err
 	}
+	cfg.ConfigJSON = DecryptConfigJSON(cfg.ConfigJSON)
 	return &cfg, nil
 }
 
@@ -39,6 +40,9 @@ func (r *CoreConfigRepository) GetAllSections(ctx context.Context, serverID int6
 		Where("server_id = ? AND core_type = ?", serverID, coreType).
 		Order("section").
 		Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.CoreConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -49,11 +53,15 @@ func (r *CoreConfigRepository) List(ctx context.Context, serverID int64) ([]enti
 		Where("server_id = ?", serverID).
 		Order("core_type, section").
 		Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.CoreConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
 // UpsertSection creates or updates a single section.
 func (r *CoreConfigRepository) UpsertSection(ctx context.Context, cfg *entity.CoreConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(cfg.ConfigJSON)
 	cfg.UpdatedAt = time.Now()
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "server_id"}, {Name: "core_type"}, {Name: "section"}},

@@ -195,8 +195,7 @@ func (m *Manager) SeedCores(ctx context.Context) {
 	}{
 		{"Xray", "xray"},
 		{"sing-box", "singbox"},
-		{"Hysteria 2", "hysteria2"},
-		{"TUIC", "tuic"},
+		// hysteria2 / tuic 独立核心已下线（协议由 sing-box 承载，见 coreconfig.SupportedCoreTypes）
 	}
 
 	for _, c := range cores {

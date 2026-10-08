@@ -11,14 +11,16 @@ import (
 )
 
 // SupportedCoreTypes lists all supported proxy core types.
-var SupportedCoreTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
+// SupportedCoreTypes 只列**面板管理的服务端核心**：xray + sing-box。
+// hysteria2 / tuic 的**独立核心**管理已下线（入站/订阅/流量从未接线，用得也少）——
+// 这两个协议继续由 sing-box 承载（SingboxHysteria2/SingboxTuic 入站，闭环完整）；
+// 出站与外部节点对 hysteria2/tuic 的支持不受影响（走 domain.CoreType，与本列表无关）。
+var SupportedCoreTypes = []string{"xray", "singbox"}
 
 // CoreSections defines the ordered sections for each core type.
 var CoreSections = map[string][]string{
-	"xray":      {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
-	"singbox":   {"log", "dns", "ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "route", "inbounds", "outbounds", "services", "experimental"},
-	"hysteria2": {"listen", "tls", "auth", "bandwidth", "quic", "trafficStats"},
-	"tuic":      {"server", "users", "certificate", "congestion_control"},
+	"xray":    {"log", "dns", "routing", "policy", "inbounds", "outbounds", "stats", "metrics", "api", "fakedns", "observatory", "burstObservatory", "version", "geodata"},
+	"singbox": {"log", "dns", "ntp", "route", "inbounds", "outbounds", "endpoints", "services", "certificate", "certificate_providers", "http_clients", "network_namespaces", "experimental"},
 }
 
 // DefaultSectionJSON provides default JSON for each section.
@@ -71,32 +73,21 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"geodata": `{}`,
 	},
 	"singbox": {
-		"log":                   `{"level":"info","timestamp":true}`,
-		"dns":                   `{"servers":[],"rules":[],"final":""}`,
-		"ntp":                   `{}`,
+		"log":      `{"level":"info","timestamp":true}`,
+		"dns":      `{"servers":[{"type":"local","tag":"dns-local"},{"type":"udp","server":"1.1.1.1","server_port":53,"tag":"dns-remote"}],"rules":[],"final":"dns-remote"}`,
+		"ntp":      `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`,
+		"route":    `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
+		"inbounds": `[]`,
+		// endpoints（wireguard/tun/tailscale 出口端点）：前端 section 清单里一直有，
+		// 后端却缺了这个 key → 打开是空、保存还会丢数据（2026-10-08 补）。
+		"endpoints":             `[]`,
+		"outbounds":             `[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}]`,
+		"services":              `[]`,
 		"certificate":           `{}`,
 		"certificate_providers": `[]`,
 		"http_clients":          `[]`,
 		"network_namespaces":    `[]`,
-		"route":                 `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
-		"inbounds":              `[]`,
-		"outbounds":             `[{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}]`,
-		"services":              `[]`,
 		"experimental":          `{"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}}`,
-	},
-	"hysteria2": {
-		"listen":       `":443"`,
-		"tls":          `{"cert":"","key":""}`,
-		"auth":         `{"type":"password","password":""}`,
-		"bandwidth":    `{"up":"","down":""}`,
-		"quic":         `{}`,
-		"trafficStats": `{"listen":"","secret":""}`,
-	},
-	"tuic": {
-		"server":             `"[::]:443"`,
-		"users":              `{}`,
-		"certificate":        `{"certificate":"","private_key":""}`,
-		"congestion_control": `"bbr"`,
 	},
 }
 

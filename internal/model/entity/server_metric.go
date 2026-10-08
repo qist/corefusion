@@ -57,17 +57,3 @@ type ServerMetric struct {
 }
 
 func (ServerMetric) TableName() string { return "server_metrics" }
-
-// SpeedTestRecord stores historical speed test results.
-type SpeedTestRecord struct {
-	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID   int64     `json:"server_id" gorm:"index;not null"`
-	LatencyMs  int32     `json:"latency_ms" gorm:"not null;default:0"`
-	JitterMs   int32     `json:"jitter_ms" gorm:"not null;default:0"`
-	PacketLoss float64   `json:"packet_loss" gorm:"not null;default:0"`
-	Success    bool      `json:"success" gorm:"not null;default:true"`
-	Error      string    `json:"error" gorm:"size:512"`
-	CreatedAt  time.Time `json:"created_at" gorm:"index;not null"`
-}
-
-func (SpeedTestRecord) TableName() string { return "speed_test_records" }

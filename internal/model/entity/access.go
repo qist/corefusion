@@ -38,23 +38,6 @@ type ServiceIPBan struct {
 
 func (ServiceIPBan) TableName() string { return "service_ip_bans" }
 
-// ServiceGeoRule is the GORM model for GeoIP/ASN rules.
-type ServiceGeoRule struct {
-	ID         int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServiceID  int64     `json:"service_id" gorm:"index;not null"`
-	EndpointID *int64    `json:"endpoint_id"`
-	Scope      string    `json:"scope" gorm:"size:32;not null"`
-	Mode       string    `json:"mode" gorm:"size:32;not null"`
-	MatchValue string    `json:"match_value" gorm:"size:128;not null"`
-	RiskScore  int       `json:"risk_score" gorm:"not null;default:0"`
-	Priority   int       `json:"priority" gorm:"not null;default:100"`
-	Status     int       `json:"status" gorm:"not null;default:1"`
-	CreatedAt  time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt  time.Time `json:"updated_at" gorm:"not null"`
-}
-
-func (ServiceGeoRule) TableName() string { return "service_geo_rules" }
-
 // SecurityAuditEvent is the GORM model for audit events.
 type SecurityAuditEvent struct {
 	ID           int64     `json:"id" gorm:"primaryKey;autoIncrement"`

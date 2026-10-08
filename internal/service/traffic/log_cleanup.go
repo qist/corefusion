@@ -144,13 +144,9 @@ func (s *LogCleanupService) cleanupTable(rule entity.LogCleanupRule) int64 {
 		}
 		return total
 
-	case "runtime_apply_jobs", "update_jobs", "certificate_jobs", "backup_cleanup_jobs":
+	case "runtime_apply_jobs":
 		// Only completed/failed/cancelled jobs
-		timeCol := "finished_at"
-		if table == "backup_cleanup_jobs" {
-			timeCol = "finished_at"
-		}
-		r := s.db.Table(table).Where("status IN ? AND "+timeCol+" < ?", []string{"completed", "failed", "cancelled", "success"}, cutoff).Delete(nil)
+		r := s.db.Table(table).Where("status IN ? AND finished_at < ?", []string{"completed", "failed", "cancelled", "success"}, cutoff).Delete(nil)
 		if r.RowsAffected > 0 {
 			log.Printf("[LogCleanup] deleted %d %s (retention=%d days)", r.RowsAffected, table, rule.RetainDays)
 		}

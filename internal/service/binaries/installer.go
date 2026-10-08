@@ -85,9 +85,14 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 	}
 
 	// If version is empty, fetch latest.
-	// 优先取最新的「正式版」：singbox 的自建仓库（qist/singbox-binaries）会同时发布
-	// alpha 预发布与稳定版，若直接取列表第一个（按创建时间倒序）可能装上 alpha。
-	// 全部都是预发布时才回退到最新一个。
+	//
+	// 直接取**最新发布**（GitHub /releases 按创建时间倒序，releases[0] 即最新）。
+	//
+	// ⚠ 不要改成「优先正式版」：XTLS/Xray-core 近年所有 release 都标 prerelease
+	//（实测 v26.6~v26.9 全是），回退正式版会选到远古版本（实测选中 26.3.27），
+	// 而面板生成的运行配置是 Xray 25+ 口径（finalmask.udp / mkcp-legacy），
+	// 旧版一起来就 unknown config id: mkcp-legacy 崩溃循环 —— 线上踩过 ✗。
+	// 风险排序：装预发布最多不稳，装旧正式版是直接起不来。
 	if version == "" {
 		releases, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
 		if err != nil {
@@ -97,12 +102,6 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 			return nil, fmt.Errorf("no releases found for %s", coreType)
 		}
 		version = releases[0].TagName
-		for _, r := range releases {
-			if !r.Prerelease {
-				version = r.TagName
-				break
-			}
-		}
 	}
 
 	// Build download URL if not provided

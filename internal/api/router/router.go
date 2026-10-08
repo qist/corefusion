@@ -1904,6 +1904,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				var localAgent *agent.LocalAgent
 				if sharedLocalAgent != nil {
 					localAgent = sharedLocalAgent
+					// main.go 创建的共享实例只挂了限速管理器，而 ProxyManager /
+					// BinaryInstaller 的原料只在 router 里才构造得出来 → 这里原地补挂
+					//（With* 是原地修改，重复挂载幂等）。
+					// 漏挂的症状（两个同源 bug）：
+					//   - 本地节点安装核心 POST /binaries/install → 500
+					//     "binary installer not configured"
+					//   - GET /binaries 返回 {}：ListBinaries 见 binaryInst==nil
+					//     直接回空响应 → 前端不显示已安装版本
+					localAgent.WithProxyManager(agent.NewProxyManagerAdapter(proxyMgr))
+					localAgent.WithBinaryInstaller(agent.NewBinaryInstallerAdapter(binaryInstaller))
+					log.Printf("[router] shared LocalAgent: BinaryInstaller/ProxyManager injected")
 				} else {
 					// Fallback: create a new LocalAgent (backward compatible)
 					localAgent = agent.NewLocalAgent(dataDir, processMgr, svcRepo)

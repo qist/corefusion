@@ -33,6 +33,9 @@ func (r *MihomoConfigRepository) ListPaged(ctx context.Context, limit, offset in
 	if err != nil {
 		return nil, err
 	}
+	for i := range configs {
+		configs[i].ConfigJSON = DecryptConfigJSON(configs[i].ConfigJSON)
+	}
 	// Manually load plan_ids for each config (compatibility with MySQL/SQLite)
 	for i := range configs {
 		var planIDsJSON *string
@@ -54,14 +57,17 @@ func (r *MihomoConfigRepository) Count(ctx context.Context) (int64, error) {
 func (r *MihomoConfigRepository) GetByID(ctx context.Context, id int64) (*entity.MihomoConfig, error) {
 	var config entity.MihomoConfig
 	err := r.db.WithContext(ctx).First(&config, id).Error
+	config.ConfigJSON = DecryptConfigJSON(config.ConfigJSON)
 	return &config, err
 }
 
 func (r *MihomoConfigRepository) Create(ctx context.Context, config *entity.MihomoConfig) error {
+	config.ConfigJSON = EncryptConfigJSON(config.ConfigJSON)
 	return r.db.WithContext(ctx).Create(config).Error
 }
 
 func (r *MihomoConfigRepository) Update(ctx context.Context, config *entity.MihomoConfig) error {
+	config.ConfigJSON = EncryptConfigJSON(config.ConfigJSON)
 	return r.db.WithContext(ctx).Save(config).Error
 }
 
@@ -96,14 +102,18 @@ func NewMihomoGeneralRepository(db *gorm.DB) *MihomoGeneralRepository {
 func (r *MihomoGeneralRepository) GetByConfigID(ctx context.Context, configID int64) (*entity.MihomoGeneral, error) {
 	var general entity.MihomoGeneral
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).First(&general).Error
+	// authentication 是 mihomo 的代理认证口令（明文 JSON 数组），加密落库
+	general.Authentication = DecryptConfigJSON(general.Authentication)
 	return &general, err
 }
 
 func (r *MihomoGeneralRepository) Create(ctx context.Context, general *entity.MihomoGeneral) error {
+	general.Authentication = EncryptConfigField(general.Authentication)
 	return r.db.WithContext(ctx).Create(general).Error
 }
 
 func (r *MihomoGeneralRepository) Update(ctx context.Context, general *entity.MihomoGeneral) error {
+	general.Authentication = EncryptConfigField(general.Authentication)
 	return r.db.WithContext(ctx).Save(general).Error
 }
 
@@ -242,14 +252,17 @@ func NewMihomoTLSRepository(db *gorm.DB) *MihomoTLSRepository {
 func (r *MihomoTLSRepository) GetByConfigID(ctx context.Context, configID int64) (*entity.MihomoTLS, error) {
 	var tls entity.MihomoTLS
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).First(&tls).Error
+	tls.PrivateKey = DecryptConfigJSON(tls.PrivateKey)
 	return &tls, err
 }
 
 func (r *MihomoTLSRepository) Create(ctx context.Context, tls *entity.MihomoTLS) error {
+	tls.PrivateKey = EncryptConfigField(tls.PrivateKey)
 	return r.db.WithContext(ctx).Create(tls).Error
 }
 
 func (r *MihomoTLSRepository) Update(ctx context.Context, tls *entity.MihomoTLS) error {
+	tls.PrivateKey = EncryptConfigField(tls.PrivateKey)
 	return r.db.WithContext(ctx).Save(tls).Error
 }
 

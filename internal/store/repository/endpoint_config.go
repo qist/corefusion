@@ -25,6 +25,9 @@ func (r *EndpointConfigRepository) List(ctx context.Context, serverID int64, cor
 		Where("server_id = ? AND core_type = ?", serverID, coreType).
 		Order("id ASC").
 		Find(&configs).Error
+	if err == nil {
+		decryptConfigs(configs, func(c *entity.EndpointConfig) *string { return &c.ConfigJSON })
+	}
 	return configs, err
 }
 
@@ -37,16 +40,19 @@ func (r *EndpointConfigRepository) GetByID(ctx context.Context, id, serverID int
 	if err != nil {
 		return nil, err
 	}
+	cfg.ConfigJSON = DecryptConfigJSON(cfg.ConfigJSON)
 	return &cfg, nil
 }
 
 // Create inserts a new endpoint config.
 func (r *EndpointConfigRepository) Create(ctx context.Context, cfg *entity.EndpointConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(cfg.ConfigJSON)
 	return r.db.WithContext(ctx).Create(cfg).Error
 }
 
 // Update modifies an existing endpoint config.
 func (r *EndpointConfigRepository) Update(ctx context.Context, cfg *entity.EndpointConfig) error {
+	cfg.ConfigJSON = EncryptConfigJSON(cfg.ConfigJSON)
 	return r.db.WithContext(ctx).Save(cfg).Error
 }
 

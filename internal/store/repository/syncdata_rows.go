@@ -66,6 +66,11 @@ func (r *CoreConfigRepository) ListRows(ctx context.Context, serverID int64) ([]
 		Where("server_id = ?", serverID).
 		Order("core_type, section").
 		Find(&rows).Error
+	if err == nil {
+		for i := range rows {
+			rows[i].ConfigJSON = DecryptConfigJSON(rows[i].ConfigJSON)
+		}
+	}
 	return rows, err
 }
 
@@ -77,6 +82,11 @@ func (r *InboundConfigRepository) ListRows(ctx context.Context, serverID int64) 
 		Where("server_id = ?", serverID).
 		Order("id").
 		Find(&rows).Error
+	if err == nil {
+		for i := range rows {
+			rows[i].ConfigJSON = DecryptConfigJSON(rows[i].ConfigJSON)
+		}
+	}
 	return rows, err
 }
 
@@ -88,6 +98,11 @@ func (r *OutboundConfigRepository) ListRows(ctx context.Context, serverID int64)
 		Where("server_id = ?", serverID).
 		Order("sort_order ASC, id ASC").
 		Find(&rows).Error
+	if err == nil {
+		for i := range rows {
+			rows[i].ConfigJSON = DecryptConfigJSON(rows[i].ConfigJSON)
+		}
+	}
 	return rows, err
 }
 
@@ -98,6 +113,11 @@ func (r *WarpRepository) ListRows(ctx context.Context, serverID int64) ([]WarpCo
 		Where("server_id = ? AND status != ?", serverID, "not_registered").
 		Order("id DESC").
 		Find(&rows).Error
+	if err == nil {
+		for i := range rows {
+			warpReveal(&rows[i])
+		}
+	}
 	return rows, err
 }
 

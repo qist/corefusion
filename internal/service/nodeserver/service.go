@@ -1927,6 +1927,8 @@ func (s *Service) MigrateCertificate(ctx context.Context, oldCertID, newCertID i
 	if s.inboundRepo != nil {
 		var inbounds []entity.InboundConfig
 		s.db.WithContext(ctx).Find(&inbounds)
+		// 直查库：config_json 为密文，解析前先解密，回写时再加密
+		repository.DecryptInboundConfigs(inbounds)
 		inboundUpdated := 0
 		for _, ic := range inbounds {
 			var cfg map[string]interface{}
@@ -1966,7 +1968,8 @@ func (s *Service) MigrateCertificate(ctx context.Context, oldCertID, newCertID i
 			}
 			if modified {
 				updatedJSON, _ := json.Marshal(cfg)
-				s.db.WithContext(ctx).Model(&entity.InboundConfig{}).Where("id = ?", ic.ID).Update("config_json", string(updatedJSON))
+				s.db.WithContext(ctx).Model(&entity.InboundConfig{}).Where("id = ?", ic.ID).
+					Update("config_json", repository.EncryptConfigJSON(string(updatedJSON)))
 				affectedServers[ic.ServerID] = true
 				inboundUpdated++
 			}

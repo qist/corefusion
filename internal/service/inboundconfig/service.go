@@ -30,6 +30,9 @@ type Service struct {
 	repo       *repository.InboundConfigRepository
 	db         *gorm.DB
 	serverRepo *repository.NodeServerRepository
+	// traffic 存放用户级流量计数（inbound_user_traffic 表）。
+	// 计数不再寄存在 config_json 里——那会让每次流量归户都整包重写配置。
+	traffic *repository.InboundUserTrafficRepository
 }
 
 // SetServerRepo sets the node server repository for mirror node detection.
@@ -57,8 +60,10 @@ func (s *Service) resolveMirrorSource(ctx context.Context, serverID int64) int64
 }
 
 // NewService creates a new inbound config service.
-func NewService(repo *repository.InboundConfigRepository, db *gorm.DB) *Service {
-	return &Service{repo: repo, db: db}
+//
+// traffic 为 nil 时（单元测试等场景）流量读写自动降级为空操作，不影响配置读写。
+func NewService(repo *repository.InboundConfigRepository, db *gorm.DB, traffic *repository.InboundUserTrafficRepository) *Service {
+	return &Service{repo: repo, db: db, traffic: traffic}
 }
 
 // List returns all inbound configs for a core type on a specific server.
@@ -69,9 +74,14 @@ func (s *Service) List(ctx context.Context, serverID int64, coreType string) ([]
 }
 
 // ListAll returns all inbound configs across all servers (for traffic sync).
+//
+// 直查库（绕过仓储），所以必须显式解密 config_json，否则密文会被当成 JSON 解析。
 func (s *Service) ListAll(ctx context.Context) ([]entity.InboundConfig, error) {
 	var configs []entity.InboundConfig
 	err := s.db.WithContext(ctx).Order("id").Find(&configs).Error
+	if err == nil {
+		repository.DecryptInboundConfigs(configs)
+	}
 	return configs, err
 }
 
@@ -137,11 +147,22 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 	if err := s.repo.Update(ctx, cfg); err != nil {
 		return nil, err
 	}
+	// 用户可能在这次保存里被移除：清掉已不在配置里的流量行
+	if s.traffic != nil {
+		if err := s.traffic.Prune(ctx, cfg.ServerID, cfg.ID, userEmails(cfg.ConfigJSON)); err != nil {
+			log.Printf("inboundconfig: prune traffic rows failed for %s: %v", cfg.Tag, err)
+		}
+	}
 	return cfg, nil
 }
 
-// Delete deletes an inbound config.
+// Delete deletes an inbound config（同时清掉该入站的流量计数行）。
 func (s *Service) Delete(ctx context.Context, id int64) error {
+	if cfg, err := s.repo.GetByID(ctx, id); err == nil && cfg != nil && s.traffic != nil {
+		if err := s.traffic.DeleteByInbound(ctx, cfg.ID); err != nil {
+			log.Printf("inboundconfig: delete traffic rows failed for %s: %v", cfg.Tag, err)
+		}
+	}
 	return s.repo.Delete(ctx, id)
 }
 
@@ -480,6 +501,7 @@ func (s *Service) UpdateTraffic(ctx context.Context, serverID int64, tag string,
 		// xray-style configs put users in settings.users/clients/accounts;
 		// sing-box style configs put users directly in the top-level users array.
 		updated := false
+		matchedEmail := ""
 		for _, container := range userContainers(inbound) {
 			for _, key := range []string{"users", "clients", "accounts"} {
 				items, ok := container[key].([]interface{})
@@ -505,11 +527,8 @@ func (s *Service) UpdateTraffic(ctx context.Context, serverID int64, tag string,
 						}
 					}
 					if itemEmail == email {
-						// Update traffic
-						up, _ := m["_usedUp"].(float64)
-						down, _ := m["_usedDown"].(float64)
-						m["_usedUp"] = int64(up) + upDelta
-						m["_usedDown"] = int64(down) + downDelta
+						// 命中：记下 config_json 里该用户的真实 email，用于落到流量表
+						matchedEmail = itemEmail
 						updated = true
 					}
 				}
@@ -517,18 +536,12 @@ func (s *Service) UpdateTraffic(ctx context.Context, serverID int64, tag string,
 		}
 
 		if updated {
-			data, err := json.Marshal(inbound)
-			if err != nil {
-				log.Printf("trafficsync: marshal failed for %s: %v", cfg.Tag, err)
-				continue
-			}
-			cfg.ConfigJSON = string(data)
-			cfg.UpdatedAt = time.Now()
-			log.Printf("trafficsync: saving config %s (id=%d)", cfg.Tag, cfg.ID)
-			if err := s.repo.Update(ctx, &cfg); err != nil {
-				log.Printf("trafficsync: failed to update config %s: %v", cfg.Tag, err)
-			} else {
-				log.Printf("trafficsync: saved config %s successfully", cfg.Tag)
+			// 计数落到 inbound_user_traffic（原子 UPSERT），不再整包回写 config_json
+			if s.traffic != nil {
+				if err := s.traffic.AddUsage(ctx, cfg.ServerID, cfg.ID, matchedEmail, upDelta, downDelta); err != nil {
+					log.Printf("trafficsync: save traffic for %s in %s failed: %v", email, cfg.Tag, err)
+					continue
+				}
 			}
 			// 订阅流量缓存只累加一次（见函数注释：按入站数量累加会成倍虚高）
 			s.updateSubscriptionTraffic(ctx, email, upDelta, downDelta)
@@ -600,65 +613,163 @@ func userContainers(inbound map[string]interface{}) []map[string]interface{} {
 	return containers
 }
 
-// ResetAllTraffic resets _usedUp and _usedDown to 0 for all users in all
-// inbound configs on the given server. Also resets subscription traffic
-// cache columns for affected clients.
-func (s *Service) ResetAllTraffic(ctx context.Context, serverID int64) (int, error) {
-	configs, err := s.repo.List(ctx, serverID, "")
-	if err != nil {
-		return 0, err
+// userEmailOf 返回用户条目里用于归户的身份字段（xray: email/user；
+// sing-box: name/username）。口径与 UpdateTraffic 的匹配保持一致。
+func userEmailOf(m map[string]interface{}) string {
+	for _, key := range []string{"email", "user", "name", "username"} {
+		if v, _ := m[key].(string); v != "" {
+			return v
+		}
 	}
+	return ""
+}
 
-	resetCount := 0
-	for _, cfg := range configs {
-		var inbound map[string]interface{}
-		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
-			continue
-		}
+// forEachUser 依次访问 config_json 里所有用户条目（xray 的 settings.users/clients/
+// accounts 与 sing-box 的顶层 users 都覆盖）。
+func forEachUser(configJSON string, fn func(m map[string]interface{})) {
+	var inbound map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &inbound); err != nil {
+		return
+	}
+	walkUsers(inbound, fn)
+}
 
-		configReset := false
-		for _, container := range userContainers(inbound) {
-			for _, key := range []string{"users", "clients", "accounts"} {
-				items, ok := container[key].([]interface{})
-				if !ok {
-					continue
-				}
-				for _, item := range items {
-					m, ok := item.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if _, hasUp := m["_usedUp"]; hasUp {
-						m["_usedUp"] = int64(0)
-						configReset = true
-						resetCount++
-					}
-					if _, hasDown := m["_usedDown"]; hasDown {
-						m["_usedDown"] = int64(0)
-						configReset = true
-					}
-				}
-			}
-		}
-
-		if configReset {
-			data, err := json.Marshal(inbound)
-			if err != nil {
-				log.Printf("resetTraffic: marshal failed for %s: %v", cfg.Tag, err)
+// walkUsers 是 forEachUser 的 map 版本：解析结果会被就地修改。
+func walkUsers(inbound map[string]interface{}, fn func(m map[string]interface{})) {
+	for _, container := range userContainers(inbound) {
+		for _, key := range []string{"users", "clients", "accounts"} {
+			items, ok := container[key].([]interface{})
+			if !ok {
 				continue
 			}
-			cfg.ConfigJSON = string(data)
-			cfg.UpdatedAt = time.Now()
-			if err := s.repo.Update(ctx, &cfg); err != nil {
-				log.Printf("resetTraffic: failed to update config %s: %v", cfg.Tag, err)
+			for _, item := range items {
+				if m, ok := item.(map[string]interface{}); ok {
+					fn(m)
+				}
 			}
 		}
+	}
+}
+
+// findUserEmail 判断 config_json 里是否存在指定用户，返回其身份字段。
+func findUserEmail(configJSON, want string) (string, bool) {
+	found := ""
+	forEachUser(configJSON, func(m map[string]interface{}) {
+		if found == "" {
+			if e := userEmailOf(m); e == want {
+				found = e
+			}
+		}
+	})
+	return found, found != ""
+}
+
+// matchedEmails 返回该入站里匹配 email 的全部身份字段（精确匹配，或历史
+// "email_tag" 前缀格式）。
+func matchedEmails(configJSON, email string) []string {
+	var out []string
+	seen := make(map[string]bool)
+	forEachUser(configJSON, func(m map[string]interface{}) {
+		e := userEmailOf(m)
+		if e == "" || seen[e] {
+			return
+		}
+		if e == email || strings.HasPrefix(e, email+"_") {
+			seen[e] = true
+			out = append(out, e)
+		}
+	})
+	return out
+}
+
+// userEmails 返回 config_json 里全部用户身份字段（用于删除已移除用户的流量行）。
+func userEmails(configJSON string) []string {
+	var out []string
+	forEachUser(configJSON, func(m map[string]interface{}) {
+		if e := userEmailOf(m); e != "" {
+			out = append(out, e)
+		}
+	})
+	return out
+}
+
+// EnrichWithTraffic 把 inbound_user_traffic 的计数注回 config_json 的用户对象，
+// 供 API 响应展示（前端因此零改动）。
+//
+// 只改内存里的响应副本、不落库——真正写库时 repository 会再次剥离这些键。
+func (s *Service) EnrichWithTraffic(ctx context.Context, configs []entity.InboundConfig) error {
+	if s.traffic == nil || len(configs) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(configs))
+	for i := range configs {
+		ids = append(ids, configs[i].ID)
+	}
+	rows, err := s.traffic.MapForInbounds(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range configs {
+		list := rows[configs[i].ID]
+		if len(list) == 0 {
+			continue
+		}
+		byEmail := make(map[string]entity.InboundUserTraffic, len(list))
+		for _, row := range list {
+			byEmail[row.Email] = row
+		}
+		data := injectTraffic(configs[i].ConfigJSON, byEmail)
+		configs[i].ConfigJSON = data
+	}
+	return nil
+}
+
+// injectTraffic 在 config_json 副本里写回 _usedUp/_usedDown（仅响应用）。
+func injectTraffic(configJSON string, byEmail map[string]entity.InboundUserTraffic) string {
+	var inbound map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &inbound); err != nil {
+		return configJSON
+	}
+	changed := false
+	walkUsers(inbound, func(m map[string]interface{}) {
+		e := userEmailOf(m)
+		if e == "" {
+			return
+		}
+		if row, ok := byEmail[e]; ok {
+			m["_usedUp"] = row.UsedUp
+			m["_usedDown"] = row.UsedDown
+			changed = true
+		}
+	})
+	if !changed {
+		return configJSON
+	}
+	data, err := json.Marshal(inbound)
+	if err != nil {
+		return configJSON
+	}
+	return string(data)
+}
+
+// ResetAllTraffic 把该节点所有入站用户的流量计数清零（inbound_user_traffic 表），
+// 并重置受影响客户端的订阅流量缓存。
+//
+// 流量已不在 config_json 里，因此这里**不再改写任何配置**，也不会触发核心重载。
+func (s *Service) ResetAllTraffic(ctx context.Context, serverID int64) (int, error) {
+	resetCount := int64(0)
+	if s.traffic != nil {
+		n, err := s.traffic.ResetForServer(ctx, serverID)
+		if err != nil {
+			return 0, err
+		}
+		resetCount = n
 	}
 
 	// Reset subscription traffic caches for all clients on this server
 	s.resetSubscriptionTrafficForServer(ctx, serverID)
 
-	return resetCount, nil
+	return int(resetCount), nil
 }
 
 // resetSubscriptionTrafficForServer resets the traffic cache columns
@@ -748,75 +859,37 @@ func (s *Service) resetSubscriptionTrafficForServer(ctx context.Context, serverI
 	log.Printf("resetTraffic: reset traffic cache for %d subscriptions on server %d", len(subIDs), serverID)
 }
 
-// ResetUserTrafficByEmail resets _usedUp and _usedDown to 0 for a specific user
-// (matched by email) across ALL inbound configs on ALL servers.
-// Returns the list of server IDs that were affected (for sync triggering).
+// ResetUserTrafficByEmail 把某 email 的用户在**所有入站**上的流量计数清零
+// （inbound_user_traffic 表），返回受影响的节点 ID（供调用方触发同步）。
+//
+// 匹配语义与历史一致：精确 email，或 "email_tag" 前缀格式。
 func (s *Service) ResetUserTrafficByEmail(ctx context.Context, email string) ([]int64, error) {
 	configs, err := s.ListAll(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	targets := make([]repository.ResetTarget, 0, len(configs))
 	var affectedServers []int64
 	for _, cfg := range configs {
-		var inbound map[string]interface{}
-		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+		matched := matchedEmails(cfg.ConfigJSON, email)
+		if len(matched) == 0 {
 			continue
 		}
+		targets = append(targets, repository.ResetTarget{
+			ServerID:  cfg.ServerID,
+			InboundID: cfg.ID,
+			Emails:    matched,
+		})
+		affectedServers = append(affectedServers, cfg.ServerID)
+	}
 
-		configReset := false
-		for _, container := range userContainers(inbound) {
-			for _, key := range []string{"users", "clients", "accounts"} {
-				items, ok := container[key].([]interface{})
-				if !ok {
-					continue
-				}
-				for _, item := range items {
-					m, ok := item.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					itemEmail, _ := m["email"].(string)
-					if itemEmail == "" {
-						itemEmail, _ = m["user"].(string)
-					}
-					if itemEmail == "" {
-						itemEmail, _ = m["name"].(string)
-					}
-					// Match exact email or "email_tag" format
-					if itemEmail == email || strings.HasPrefix(itemEmail, email+"_") {
-						m["_usedUp"] = int64(0)
-						m["_usedDown"] = int64(0)
-						configReset = true
-					}
-				}
-			}
+	if s.traffic != nil && len(targets) > 0 {
+		if _, err := s.traffic.ResetTargets(ctx, targets); err != nil {
+			log.Printf("resetUserTraffic: failed to reset traffic for %s: %v", email, err)
+			return affectedServers, err
 		}
-
-		if configReset {
-			data, err := json.Marshal(inbound)
-			if err != nil {
-				continue
-			}
-			cfg.ConfigJSON = string(data)
-			cfg.UpdatedAt = time.Now()
-			if err := s.repo.Update(ctx, &cfg); err != nil {
-				log.Printf("resetUserTraffic: failed to update config %s: %v", cfg.Tag, err)
-				continue
-			}
-			log.Printf("resetUserTraffic: reset traffic for %s in config %s (server %d)", email, cfg.Tag, cfg.ServerID)
-			// Track unique server IDs
-			found := false
-			for _, sid := range affectedServers {
-				if sid == cfg.ServerID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				affectedServers = append(affectedServers, cfg.ServerID)
-			}
-		}
+		log.Printf("resetUserTraffic: reset traffic for %s in %d inbound(s)", email, len(targets))
 	}
 
 	return affectedServers, nil

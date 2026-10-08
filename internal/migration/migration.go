@@ -1,16 +1,19 @@
 package migration
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/security/crypto"
+	"corefusion/internal/store/repository"
 )
 
 // AutoMigrate runs auto-migration for all entity models.
@@ -51,6 +54,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.CertificateJob{},
 
 		// Traffic & Quota
+		&entity.InboundUserTraffic{},
 		&entity.TrafficQuota{},
 		&entity.TrafficUsageLedger{},
 		&entity.TrafficUsageSummary{},
@@ -282,6 +286,14 @@ func AutoMigrate(db *gorm.DB) error {
 func RunDataMigrations(db *gorm.DB) error {
 	// Migrate existing data to server_id=1 (local node)
 	migrateServerID(db)
+
+	// 把寄存在 inbound_configs.config_json 里的用户流量计数迁到 inbound_user_traffic，
+	// 并顺带清掉 _quota/_expiry 遗留字段（幂等）
+	migrateInboundUserTraffic(db)
+
+	// 存量配置密文化：把 6 张配置表里的明文 config_json / proxy_json 与 WARP 敏感列
+	// 加密为 "enc:" 形式（幂等，只处理不带前缀的存量明文）
+	migrateConfigJSONEncryption(db)
 
 	// Migrate geo rules from per-node (server_id=1) to global (server_id=0)
 	migrateGeoRulesToGlobal(db)
@@ -777,6 +789,276 @@ func migrateServerID(db *gorm.DB) {
 			log.Printf("WARNING: migrate server_id for %s: %v", table, result.Error)
 		} else if result.RowsAffected > 0 {
 			log.Printf("migrated %d rows in %s to server_id=1", result.RowsAffected, table)
+		}
+	}
+}
+
+// migrateInboundUserTraffic 把寄存在 inbound_configs.config_json 里的**面板元数据**
+// 一次性迁出（幂等，可重复执行）：
+//
+//   - _usedUp/_usedDown → inbound_user_traffic 表（按 入站×email 累加）
+//   - _quota/_expiry     → 直接删除（前端遗留字段，后端从不读取）
+//
+// _paused / _accessDomain / _portHop 属于配置语义，保持不动。
+// 每条配置的「写流量表 + 改 config_json」在同一个事务里完成，避免半途失败导致
+// 计数被重复累加。
+func migrateInboundUserTraffic(db *gorm.DB) {
+	var configs []entity.InboundConfig
+	err := db.Where(
+		"config_json LIKE ? OR config_json LIKE ? OR config_json LIKE ? OR config_json LIKE ?",
+		"%\"_usedUp\"%", "%\"_usedDown\"%", "%\"_quota\"%", "%\"_expiry\"%",
+	).Find(&configs).Error
+	if err != nil {
+		log.Printf("[migration] inbound_user_traffic: scan failed: %v", err)
+		return
+	}
+	if len(configs) == 0 {
+		return
+	}
+
+	panelKeys := []string{"_usedUp", "_usedDown", "_quota", "_expiry"}
+	moved, cleaned := 0, 0
+
+	for _, cfg := range configs {
+		var inbound map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &inbound); err != nil {
+			continue
+		}
+
+		type counter struct {
+			email string
+			up    int64
+			down  int64
+		}
+		var counters []counter
+		changed := false
+
+		for _, container := range panelMetaContainers(inbound) {
+			for _, key := range []string{"users", "clients", "accounts"} {
+				items, ok := container[key].([]interface{})
+				if !ok {
+					continue
+				}
+				for _, item := range items {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					up := panelMetaInt64(m["_usedUp"])
+					down := panelMetaInt64(m["_usedDown"])
+					email := panelMetaEmail(m)
+					for _, k := range panelKeys {
+						if _, exists := m[k]; exists {
+							delete(m, k)
+							changed = true
+						}
+					}
+					if email != "" && (up != 0 || down != 0) {
+						counters = append(counters, counter{email: email, up: up, down: down})
+					}
+				}
+			}
+		}
+		if !changed {
+			continue
+		}
+
+		data, err := json.Marshal(inbound)
+		if err != nil {
+			continue
+		}
+		newJSON := string(data)
+
+		txErr := db.Transaction(func(tx *gorm.DB) error {
+			for _, c := range counters {
+				row := entity.InboundUserTraffic{
+					ServerID:  cfg.ServerID,
+					InboundID: cfg.ID,
+					Email:     c.email,
+					UsedUp:    c.up,
+					UsedDown:  c.down,
+					UpdatedAt: time.Now(),
+				}
+				if err := tx.Clauses(clause.OnConflict{
+					Columns: []clause.Column{{Name: "server_id"}, {Name: "inbound_id"}, {Name: "email"}},
+					DoUpdates: clause.Assignments(map[string]interface{}{
+						"used_up":    gorm.Expr("used_up + ?", c.up),
+						"used_down":  gorm.Expr("used_down + ?", c.down),
+						"updated_at": time.Now(),
+					}),
+				}).Create(&row).Error; err != nil {
+					return err
+				}
+			}
+			return tx.Model(&entity.InboundConfig{}).
+				Where("id = ?", cfg.ID).
+				Update("config_json", newJSON).Error
+		})
+		if txErr != nil {
+			log.Printf("[migration] inbound_user_traffic: config %d (%s) failed: %v", cfg.ID, cfg.Tag, txErr)
+			continue
+		}
+		moved += len(counters)
+		cleaned++
+	}
+
+	log.Printf("[migration] inbound_user_traffic: moved %d user counter(s) out of config_json, cleaned %d config(s)", moved, cleaned)
+}
+
+// panelMetaContainers 返回可存放用户条目的容器（xray: 顶层 + settings；
+// sing-box: 顶层）。
+func panelMetaContainers(inbound map[string]interface{}) []map[string]interface{} {
+	containers := []map[string]interface{}{inbound}
+	if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
+	}
+	return containers
+}
+
+// panelMetaEmail 返回用户条目的身份字段（与归户口径一致）。
+func panelMetaEmail(m map[string]interface{}) string {
+	for _, key := range []string{"email", "user", "name", "username"} {
+		if v, _ := m[key].(string); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// panelMetaInt64 兼容 JSON 数字（float64）与整数两种形态。
+func panelMetaInt64(v interface{}) int64 {
+	switch n := v.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	}
+	return 0
+}
+
+// migrateConfigJSONEncryption 把配置表里的存量明文密文化（与充值卡同一把密钥、
+// 同一 "enc:" 格式），幂等：只挑不带前缀的行。
+//
+// 覆盖范围（第 5 步加密方案的 6 张表 + WARP 敏感列）：
+//   - inbound_configs / outbound_configs / core_configs / endpoint_configs /
+//     mihomo_configs 的 config_json
+//   - external_nodes 的 proxy_json（含 uuid / password / obfs-password）
+//   - warp_configs 的 token / private_key / license_key / config_json
+//
+// 不覆盖 inbound_services.config_json（另一套「服务」特性，未纳入本次范围）。
+func migrateConfigJSONEncryption(db *gorm.DB) {
+	type row struct {
+		ID  int64
+		Val string
+	}
+
+	jsonTables := []struct {
+		table string
+		col   string
+	}{
+		{"inbound_configs", "config_json"},
+		{"outbound_configs", "config_json"},
+		{"core_configs", "config_json"},
+		{"endpoint_configs", "config_json"},
+		{"mihomo_configs", "config_json"},
+		{"external_nodes", "proxy_json"},
+	}
+
+	for _, t := range jsonTables {
+		var rows []row
+		if err := db.Table(t.table).
+			Select("id, " + t.col + " AS val").
+			Where(t.col + " IS NOT NULL AND " + t.col + " != ''").
+			Scan(&rows).Error; err != nil {
+			log.Printf("[migration] config encryption scan %s failed: %v", t.table, err)
+			continue
+		}
+		encrypted, decrypted := 0, 0
+		for _, r := range rows {
+			alreadyEnc := strings.HasPrefix(r.Val, "enc:")
+			plain := r.Val
+			if alreadyEnc {
+				p, err := crypto.DecryptSecret(r.Val)
+				if err != nil {
+					// 密钥不符（跨机恢复）→ 保持原样，不要覆盖成明文
+					log.Printf("[migration] config encryption %s#%d decrypt failed: %v", t.table, r.ID, err)
+					continue
+				}
+				plain = p
+			}
+			sensitive := repository.IsSensitiveConfigJSON(plain)
+			switch {
+			case sensitive && !alreadyEnc:
+				enc, err := crypto.EncryptSecret(plain)
+				if err != nil {
+					log.Printf("[migration] config encryption %s#%d failed: %v", t.table, r.ID, err)
+					continue
+				}
+				if err := db.Table(t.table).Where("id = ?", r.ID).Update(t.col, enc).Error; err != nil {
+					log.Printf("[migration] config encryption write %s#%d failed: %v", t.table, r.ID, err)
+					continue
+				}
+				encrypted++
+			case !sensitive && alreadyEnc:
+				// 早前版本「整包加密」遗留的无凭据密文 → 解回明文，保持 DB 可读
+				if err := db.Table(t.table).Where("id = ?", r.ID).Update(t.col, plain).Error; err != nil {
+					log.Printf("[migration] config decrypt-back write %s#%d failed: %v", t.table, r.ID, err)
+					continue
+				}
+				decrypted++
+			}
+		}
+		if encrypted > 0 || decrypted > 0 {
+			log.Printf("[migration] config crypto: %s.%s encrypted %d row(s), plaintext-restored %d row(s)",
+				t.table, t.col, encrypted, decrypted)
+		}
+	}
+
+	// mihomo 的 TLS 私钥与代理认证口令同样是「整列凭据」，一律加密
+	for _, t := range []struct{ table, col string }{
+		{"mihomo_tls", "private_key"},
+		{"mihomo_general", "authentication"},
+	} {
+		var rows []row
+		if err := db.Table(t.table).
+			Select("id, "+t.col+" AS val").
+			Where(t.col+" IS NOT NULL AND "+t.col+" != '' AND "+t.col+" NOT LIKE ?", "enc:%").
+			Scan(&rows).Error; err != nil {
+			log.Printf("[migration] mihomo encryption scan %s failed: %v", t.table, err)
+			continue
+		}
+		for _, r := range rows {
+			enc, err := crypto.EncryptSecret(r.Val)
+			if err != nil {
+				continue
+			}
+			if err := db.Table(t.table).Where("id = ?", r.ID).Update(t.col, enc).Error; err != nil {
+				log.Printf("[migration] mihomo encryption write %s#%d failed: %v", t.table, r.ID, err)
+			}
+		}
+	}
+
+	// WARP 是独立列存储（整列就是凭据，没有键名可判定），四列一律加密
+	for _, col := range []string{"token", "private_key", "license_key", "config_json"} {
+		var rows []row
+		if err := db.Table("warp_configs").
+			Select("id, "+col+" AS val").
+			Where(col+" IS NOT NULL AND "+col+" != '' AND "+col+" NOT LIKE ?", "enc:%").
+			Scan(&rows).Error; err != nil {
+			log.Printf("[migration] warp encryption scan %s failed: %v", col, err)
+			continue
+		}
+		for _, r := range rows {
+			enc, err := crypto.EncryptSecret(r.Val)
+			if err != nil {
+				log.Printf("[migration] warp encryption %s#%d failed: %v", col, r.ID, err)
+				continue
+			}
+			if err := db.Table("warp_configs").Where("id = ?", r.ID).Update(col, enc).Error; err != nil {
+				log.Printf("[migration] warp encryption write %s#%d failed: %v", col, r.ID, err)
+			}
 		}
 	}
 }

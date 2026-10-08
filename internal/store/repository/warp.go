@@ -18,8 +18,26 @@ func NewWarpRepository(db *gorm.DB) *WarpRepository {
 	return &WarpRepository{db: db}
 }
 
+// warpSecret 是 WARP 配置里需要加密落库的敏感列（与 config_json 同一把密钥）。
+// 设备 ID / 公钥不是秘密，保持明文便于检索。
+func warpSecret(c *entity.WarpConfig) {
+	// 整列就是凭据（不是 JSON，无键名可判定）→ 无条件加密
+	c.Token = EncryptConfigField(c.Token)
+	c.PrivateKey = EncryptConfigField(c.PrivateKey)
+	c.LicenseKey = EncryptConfigField(c.LicenseKey)
+	c.ConfigJSON = EncryptConfigJSON(c.ConfigJSON)
+}
+
+func warpReveal(c *entity.WarpConfig) {
+	c.Token = DecryptConfigJSON(c.Token)
+	c.PrivateKey = DecryptConfigJSON(c.PrivateKey)
+	c.LicenseKey = DecryptConfigJSON(c.LicenseKey)
+	c.ConfigJSON = DecryptConfigJSON(c.ConfigJSON)
+}
+
 // Create creates a new WARP config.
 func (r *WarpRepository) Create(ctx context.Context, cfg *entity.WarpConfig) error {
+	warpSecret(cfg)
 	return r.db.WithContext(ctx).Create(cfg).Error
 }
 
@@ -30,6 +48,7 @@ func (r *WarpRepository) GetByID(ctx context.Context, id int64) (*entity.WarpCon
 	if err != nil {
 		return nil, err
 	}
+	warpReveal(&cfg)
 	return &cfg, nil
 }
 
@@ -46,6 +65,7 @@ func (r *WarpRepository) GetActiveByServer(ctx context.Context, serverID int64, 
 	if err != nil {
 		return nil, err
 	}
+	warpReveal(&cfg)
 	return &cfg, nil
 }
 
@@ -56,11 +76,17 @@ func (r *WarpRepository) ListByServer(ctx context.Context, serverID int64) ([]*e
 		Where("server_id = ? AND status != ?", serverID, "not_registered").
 		Order("id DESC").
 		Find(&cfgs).Error
+	if err == nil {
+		for _, c := range cfgs {
+			warpReveal(c)
+		}
+	}
 	return cfgs, err
 }
 
 // Update updates a WARP config.
 func (r *WarpRepository) Update(ctx context.Context, cfg *entity.WarpConfig) error {
+	warpSecret(cfg)
 	return r.db.WithContext(ctx).Save(cfg).Error
 }
 

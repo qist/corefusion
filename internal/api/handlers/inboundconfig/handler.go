@@ -11,6 +11,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/domain"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/service/inboundconfig"
 )
 
@@ -108,6 +109,9 @@ func (h *Handler) List(c *gin.Context) {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
+	// 流量计数已拆到 inbound_user_traffic 表，这里注回响应副本供 UI 展示；
+	// 注回失败只影响展示（前端仍显示 0），不阻断列表。
+	_ = h.svc.EnrichWithTraffic(c.Request.Context(), configs)
 	response.OK(c, configs)
 }
 
@@ -123,6 +127,10 @@ func (h *Handler) Get(c *gin.Context) {
 		response.NotFound(c, "NOT_FOUND", err.Error())
 		return
 	}
+	// 同 List：把流量计数注回响应副本供 UI 展示
+	list := []entity.InboundConfig{*cfg}
+	_ = h.svc.EnrichWithTraffic(c.Request.Context(), list)
+	cfg = &list[0]
 	response.OK(c, cfg)
 }
 

@@ -1721,6 +1721,8 @@ func (s *Service) ListAllInboundsWithServer(ctx context.Context) ([]InboundWithS
 		if r.ServerNodeType == string(entity.NodeTypeMirror) {
 			continue // Skip mirror nodes
 		}
+		// join 直查库：config_json 是密文，展示前解密
+		r.ConfigJSON = repository.DecryptConfigJSON(r.ConfigJSON)
 		filtered = append(filtered, r)
 	}
 
@@ -1778,6 +1780,7 @@ func (s *Service) GetBillingNodeOptions(ctx context.Context, templateID int64) (
 			Where("ic.id IN ?", inboundIDs).
 			Find(&inbounds)
 		for _, ib := range inbounds {
+			ib.ConfigJSON = repository.DecryptConfigJSON(ib.ConfigJSON)
 			inboundMap[ib.ID] = ib
 		}
 	}

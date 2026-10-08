@@ -479,8 +479,11 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		// 先判断"写下去是否真的会改变配置" —— 用于 reload_strategy=none 时决定要不要重启核心
 		// （见下面 NONE 分支：变更才重启，避免每次同步都白重启一次 ✗）。
 		configChanged := false
+		// 供 HOT_RELOAD 分支做新旧 diff —— 必须在**写盘之前**读取旧运行配置。
+		var oldConfig []byte
 		if len(configData) > 0 {
 			configChanged = a.procMgr.RuntimeConfigChanged(coreType, configData)
+			oldConfig, _ = os.ReadFile(a.procMgr.RuntimeConfigPath(coreType))
 		}
 
 		if len(configData) > 0 {
@@ -527,6 +530,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 					return resp, nil
 				}
 				resp.CoreRestarted = true
+				a.writeAppliedBasis(coreType, configData)
 				log.Printf("[Agent] SyncData: config changed → restarted core to apply it (reload_strategy=none)")
 			} else if isRunning {
 				log.Printf("[Agent] SyncData: reload_strategy=none, core already running, config unchanged")
@@ -549,6 +553,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 					return resp, nil
 				}
 				resp.CoreRestarted = true
+				a.writeAppliedBasis(coreType, configData)
 				log.Printf("[Agent] SyncData: core restarted successfully (reload_strategy=restart)")
 			} else {
 				// Core not running — start it fresh
@@ -562,25 +567,44 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			}
 
 		case agentpb.SyncDataRequest_RELOAD_STRATEGY_HOT_RELOAD:
-			// Future: implement xray gRPC API hot reload (add/del inbounds)
-			// For now, fall back to restart behavior
-			if isRunning {
-				if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
-					resp.Error = fmt.Sprintf("restart core: %v", err)
-					log.Printf("[Agent] SyncData: core restart failed (hot_reload fallback): %v", err)
-					return resp, nil
-				}
-				resp.CoreRestarted = true
-				log.Printf("[Agent] SyncData: core restarted (hot_reload not yet implemented, used restart)")
-			} else {
+			// 热应用优先（与主节点「热下发 + 不重启」的行为对齐 ✓）：
+			//   1. 核心没在跑 → 直接启动；
+			//   2. xray → 把新旧配置的差异经 proxyman API 热下发，成功则完全不重启；
+			//   3. 差异落在 API 覆盖不到的段（routing/dns/outbounds…）、核心不支持热更、
+			//      或任何一次下发失败 → 回退重启，保证配置最终生效。
+			if !isRunning {
 				if err := a.procMgr.Start(ctx, serviceID, coreType); err != nil {
 					resp.Error = fmt.Sprintf("start core: %v", err)
 					log.Printf("[Agent] SyncData: core start failed: %v", err)
 					return resp, nil
 				}
 				resp.CoreStarted = true
-				log.Printf("[Agent] SyncData: core started successfully")
+				a.writeAppliedBasis(coreType, configData)
+				log.Printf("[Agent] SyncData: core started successfully (hot_reload, was not running)")
+				break
 			}
+			if coreType == "xray" && len(configData) > 0 {
+				// diff 基准用**运行态基准**而非磁盘文件：面板的 SyncConfig 命令会抢先写盘，
+				// 拿磁盘当基准会让 diff 永远判「未变」（实测竞态见 hotreload.go 注释）。
+				basis := a.readAppliedBasis(coreType, oldConfig)
+				if applied, why := a.tryHotApplyXray(ctx, basis, configData); applied {
+					a.writeAppliedBasis(coreType, configData)
+					log.Printf("[Agent] SyncData: %s — no restart needed (reload_strategy=hot_reload)", why)
+					break
+				} else {
+					log.Printf("[Agent] SyncData: hot apply not applicable (%s), falling back to restart", why)
+				}
+			} else {
+				log.Printf("[Agent] SyncData: core %s has no hot-reload API, using restart", coreType)
+			}
+			if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
+				resp.Error = fmt.Sprintf("restart core: %v", err)
+				log.Printf("[Agent] SyncData: core restart failed (hot_reload fallback): %v", err)
+				return resp, nil
+			}
+			resp.CoreRestarted = true
+			a.writeAppliedBasis(coreType, configData)
+			log.Printf("[Agent] SyncData: core restarted to apply config changes (hot_reload fallback)")
 
 		default:
 			// Backward-compatible behavior: Start is a no-op if already running

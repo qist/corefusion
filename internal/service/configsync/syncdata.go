@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"corefusion/internal/domain"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 
 	"corefusion/internal/model/entity"
@@ -41,6 +42,18 @@ type RawDataProvider interface {
 	// local Reconcile (boot auto-start) and Guardian (crash restart) honor the
 	// toggles set in the panel UI.
 	ListCoreGuardians(ctx context.Context, serverID int64) ([]CoreGuardianRow, error)
+}
+
+// reloadStrategyFor 按核心能力决定 SyncData 之后核心的重载方式：
+//   - 支持热下发的核心（xray 的 proxyman API 可增删改入站）→ HOT_RELOAD：
+//     Agent 只把变更热应用到运行中的进程，配置没变则完全不碰进程；
+//   - 其余核心（sing-box / hysteria2 / tuic）→ RESTART：它们的 v2ray API 只注册了
+//     StatsService，入站变更只能重启生效。
+func reloadStrategyFor(coreType string) agentpb.SyncDataRequest_ReloadStrategy {
+	if domain.CoreType(coreType).SupportsHotApply() {
+		return agentpb.SyncDataRequest_RELOAD_STRATEGY_HOT_RELOAD
+	}
+	return agentpb.SyncDataRequest_RELOAD_STRATEGY_RESTART
 }
 
 // CoreGuardianRow represents a core guardian setting for one core type.
@@ -334,8 +347,12 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	sourceServerID, isMirror := b.resolveMirrorSourceServerID(ctx, serverID)
 	if isMirror {
 		log.Printf("[DataSyncBuilder] server %d is mirror, using source server %d for data", serverID, sourceServerID)
-		// Mirror nodes use restart strategy by default — SyncData should restart
-		// the core to apply changes, not just start if not running.
+		// Mirror 的重载策略按核心能力决定（此处先给兜底值，拿到 coreType 后再精确设置）：
+		//   - xray：有 proxyman API（增删改入站）→ HOT_RELOAD，Agent 只热应用变更，
+		//     配置没变完全不碰进程 —— 与主节点「热下发 + 不重启」的行为保持一致；
+		//   - 其余核心：v2ray API 仅注册 StatsService，入站变更无法热下发 → RESTART。
+		// 历史行为是无条件 RESTART，导致周期性 SyncData（MirrorSync 每 10 分钟兜底）
+		// 反复重启 xray、健康检查撞上重启窗口而误报 degraded。
 		req.ReloadStrategy = agentpb.SyncDataRequest_RELOAD_STRATEGY_RESTART
 	}
 
@@ -571,7 +588,12 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			} else {
 				req.ConfigContent = configData
 				req.ConfigCoreType = coreType
-				log.Printf("[DataSyncBuilder] server %d: generated final config via PrepareFullConfig (%d bytes)", serverID, len(configData))
+				// 拿到 coreType 后精确设置 mirror 的重载策略（见上方 isMirror 处的说明）
+				if isMirror {
+					req.ReloadStrategy = reloadStrategyFor(coreType)
+				}
+				log.Printf("[DataSyncBuilder] server %d: generated final config via PrepareFullConfig (%d bytes, reload=%s)",
+					serverID, len(configData), req.ReloadStrategy)
 			}
 		}
 	} else {

@@ -132,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
@@ -403,6 +403,23 @@ async function doDownload(r){
   }
 }
 
+// 切换/新建节点后 props.serverId 变化，必须重新拉取配置 —— 否则 fullConfig/secData
+// 还留着上一个（已创建）节点的参数：打开新节点的 section 显示的是别人的值（“记忆”），
+// 或显示空对象让人误以为“没自动生成默认值”（2026-10-09）。
+watch(() => props.serverId, async (id, old) => {
+  if (!id || id === old) return
+  const core = selectedCore.value
+  const sec = activeSection.value
+  fullConfig.value = {}
+  secData.value = null
+  secOutput.value = undefined
+  secJson.value = ''
+  activeSection.value = ''
+  if (core) {
+    await selectCore(core)          // 按新 serverId 重新 loadConfig + fetchStatus
+    if (sec && sections.value.some(x => x.key === sec)) switchSection(sec)
+  }
+})
 onMounted(async ()=>{const s=localStorage.getItem('active_core');const sec=route.query.section;if(s&&cores.some(c=>c.type===s)){await selectCore(s);if(typeof sec==='string'&&sections.value.some(x=>x.key===sec))switchSection(sec)};timer=setInterval(fetchStatus,10000)})
 onUnmounted(()=>{if(timer)clearInterval(timer)})
 </script>

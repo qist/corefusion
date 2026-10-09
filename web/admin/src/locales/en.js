@@ -49,6 +49,7 @@ export default {
     loadFailed: 'Load failed',
     copy: 'Copy',
     copied: 'Copied',
+    copySuccess: 'Copied successfully',
     add: 'Add',
     remove: 'Remove',
     upload: 'Upload',
@@ -642,6 +643,7 @@ export default {
       warpRegistering: 'Registering WARP...',
       warpRegisterFailed: 'WARP registration failed',
       warpConfigFailed: 'Failed to get WARP config',
+      warpImport: 'Import WARP',
       warpImportSuccess: 'WARP config imported',
       warpImportFailed: 'WARP import failed',
       advancedSettings: 'Advanced Settings',
@@ -1282,6 +1284,7 @@ export default {
     rules: {
       title: 'Rule Files',
       sources: 'Rule Sources',
+      source: 'Source',
       selectedFiles: 'Selected Files',
       addSource: 'Add Source',
       editSource: 'Edit Source',

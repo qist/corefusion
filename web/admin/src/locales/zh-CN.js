@@ -48,6 +48,7 @@ export default {
     update: '更新',
     copy: '复制',
     copied: '已复制',
+    copySuccess: '复制成功',
     add: '添加',
     remove: '移除',
     upload: '上传',
@@ -642,6 +643,7 @@ export default {
       warpRegistering: 'WARP 注册中...',
       warpRegisterFailed: 'WARP 注册失败',
       warpConfigFailed: '获取 WARP 配置失败',
+      warpImport: '导入 WARP',
       warpImportSuccess: 'WARP 配置导入成功',
       warpImportFailed: 'WARP 导入失败',
       advancedSettings: '高级设置',
@@ -1282,6 +1284,7 @@ export default {
     rules: {
       title: '规则文件管理',
       sources: '规则仓库',
+      source: '来源',
       selectedFiles: '已选规则文件',
       addSource: '添加仓库',
       editSource: '编辑仓库',

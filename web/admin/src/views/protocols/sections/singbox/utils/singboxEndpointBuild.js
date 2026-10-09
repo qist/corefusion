@@ -305,8 +305,8 @@ export function endpointDefaultsForType(type, customPort) {
   }
 }
 
-// 表单模型 -> sing-box 配置
-export function buildEndpoint(ep) {
+// 表单模型 -> sing-box 配置（各类型的字段映射）
+function buildEndpointTyped(ep) {
   switch (ep.type) {
     case 'wireguard': {
       const out = { type: 'wireguard' }
@@ -316,7 +316,12 @@ export function buildEndpoint(ep) {
       if (ep.mtu > 0) out.mtu = ep.mtu
       if (ep.address?.length) out.address = ep.address
       if (ep.private_key) out.private_key = ep.private_key
-      if (ep.public_key) out.public_key = ep.public_key
+      // 公钥按项目既有约束处理：落库但不落地配置 ——
+      // sing-box wireguard endpoint 没有顶层 public_key（公钥只属于 peers[].public_key），
+      // 直接写 public_key 会让核心 strict decode FATAL（unknown field）；
+      // 用 _ 前缀内部字段存进 endpoint_configs，供界面/他人取用，
+      // 渲染运行配置时由后端剥离（同 CleanInboundFields 对 inbounds 的约束）。
+      if (ep.public_key) out._public_key = ep.public_key
       if (ep.listen_port) out.listen_port = ep.listen_port
       if (ep.peers?.length) {
         out.peers = ep.peers.map(p => {
@@ -329,7 +334,12 @@ export function buildEndpoint(ep) {
           if (p.pre_shared_key) peer.pre_shared_key = p.pre_shared_key
           if (p.address) peer.address = p.address
           if (p.port > 0) peer.port = p.port
-          if (p.reserved) peer.reserved = p.reserved.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+          // reserved 可能是表单字符串 "34, 51, 234"，也可能是配置里的 int 数组（直接粘贴/导入时）——统一转数组，避免 split is not a function
+          if (Array.isArray(p.reserved)) {
+            if (p.reserved.length) peer.reserved = p.reserved
+          } else if (p.reserved) {
+            peer.reserved = String(p.reserved).split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+          }
           return peer
         })
       }
@@ -586,9 +596,34 @@ export function buildEndpoint(ep) {
   }
 }
 
+// 表单模型 -> sing-box 配置
+//
+// 先按类型映射，再把「表单没建模」的原始字段原样透传：文档里有但界面没做的字段
+//（wireguard 的 UDP NAT udp_mapping/udp_filtering/udp_nat_max、通用 dial 字段、
+// openvpn 的 pull_filters/redirect_private/tls_timeout 等），编辑一次就保存的话
+// 会被整个抹掉。判断依据：字段不在该类型表单默认模型里（说明不是界面建模的）。
+// 「_」开头的是表单内部字段（_addressStr/_remark 等），绝不进配置。
+export function buildEndpoint(ep) {
+  const out = buildEndpointTyped(ep)
+  let formKeys = {}
+  try {
+    formKeys = endpointDefaultsForType(ep.type, 0)
+  } catch { /* 未知类型，走 default 分支只输出 type/tag */ }
+  for (const k of Object.keys(ep)) {
+    if (k.startsWith('_') || k in formKeys || k in out) continue
+    const v = ep[k]
+    if (v === undefined || v === null || v === '') continue
+    out[k] = v
+  }
+  return out
+}
+
 // sing-box 配置 -> 表单模型
 export function parseEndpoint(ep) {
+  // ...ep：保留文档里有、表单没建模的字段（UDP NAT、dial、openvpn pull_filters 等），
+  // 与 buildEndpoint 的透传配对，否则编辑保存一次这些字段就丢了
   const base = {
+    ...ep,
     type: ep.type || 'wireguard',
     tag: ep.tag || '',
     _remark: ep.tag || '',
@@ -605,11 +640,15 @@ export function parseEndpoint(ep) {
         address: Array.isArray(ep.address) ? ep.address : [],
         _addressStr: Array.isArray(ep.address) ? ep.address.join(', ') : '',
         private_key: ep.private_key || '',
-        public_key: ep.public_key || '',
+        // 公钥：新数据存 _public_key（build 输出），兼容历史上直接写 public_key 的记录
+        public_key: ep._public_key || ep.public_key || '',
         listen_port: ep.listen_port || 0,
         peers: (ep.peers || []).map(p => ({
           ...p,
           _allowedIPsStr: Array.isArray(p.allowed_ips) ? p.allowed_ips.join(', ') : (p.allowed_ips || '0.0.0.0/0, ::/0'),
+          // 配置里 reserved 是 int 数组（sing-box 原生格式），表单要字符串 ——
+          // 不转换的话保存时 build 侧 p.reserved.split 直接崩（split is not a function）
+          reserved: Array.isArray(p.reserved) ? p.reserved.join(', ') : (p.reserved || ''),
         })),
         workers: ep.workers || 0,
         on_demand: ep.on_demand || false,

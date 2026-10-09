@@ -214,6 +214,30 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		}
 	}
 
+	// 渲染前清洗 endpoints，约束与 CleanInboundFields 对 inbounds 的一致：
+	//  1. 「_」前缀内部字段只落库（endpoint_configs），不进运行配置 ——
+	//     wireguard 顶层公钥就是用 _public_key 存库的（sing-box 没有该字段，
+	//     直接输出会让核心 strict decode FATAL：unknown field）；
+	//  2. 兜底存量数据里历史上直接写成顶层 public_key 的记录。
+	if opts.CoreType == "singbox" {
+		if eps, ok := fullConfig["endpoints"].([]interface{}); ok {
+			for _, raw := range eps {
+				m, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for k := range m {
+					if strings.HasPrefix(k, "_") {
+						delete(m, k)
+					}
+				}
+				if m["type"] == "wireguard" {
+					delete(m, "public_key")
+				}
+			}
+		}
+	}
+
 	// 8b. If ChainLinkProvider is set, merge chain link outbounds and routing rules.
 	if opts.ChainLinkProvider != nil {
 		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID, opts.CoreType)
@@ -597,6 +621,13 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 		// Remove xray-specific fields that may have been stored in config_json
 		delete(inbound, "port")
 		delete(inbound, "protocol")
+		// sing-box 1.11 弃用、1.13 起移除的**入站级 legacy 字段**：留着会让核心
+		// strict decode 直接 FATAL（实测本地 1.15-alpha 拒载，核心起不来）。
+		// 这几个能力 1.11+ 由 route rules 承接（sniff action 等），配置渲染时剥离；
+		// 用户在表单里勾选的 sniff/domain_strategy 不会进运行配置。
+		delete(inbound, "sniff")
+		delete(inbound, "sniff_override_destination")
+		delete(inbound, "domain_strategy")
 	} else {
 		// xray: inject "port" and "protocol" from DB record
 		if port > 0 {

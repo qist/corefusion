@@ -460,15 +460,32 @@ func (a *LocalAgent) GetStatus(ctx context.Context) (*agentpb.GetStatusResponse,
 	cores := make([]*agentpb.CoreStatus, 0, len(allProcs))
 	for _, p := range allProcs {
 		cores = append(cores, &agentpb.CoreStatus{
-			CoreType:      p.CoreType,
-			State:         p.State,
-			Pid:           int32(p.PID),
+			CoreType: p.CoreType,
+			State:    p.State,
+			Pid:      int32(p.PID),
+			// Unix 秒：前端协议中心状态栏「启动时间」用（p.startedAt 由进程启动时记录，
+			// 面板/Agent 重启恢复的进程可能是零值，退回 /proc/<pid>/stat 的 starttime）
+			StartedAt:     startedAtSeconds(p),
 			UptimeSeconds: p.Uptime,
 			CpuUsage:      p.CPU,
 			MemUsageBytes: p.Mem,
 		})
 	}
 	return &agentpb.GetStatusResponse{Cores: cores}, nil
+}
+
+// startedAtSeconds 返回进程启动时间（Unix 秒）。
+// p.startedAt 在正常启动时已记录；但 Agent 重启后从 guardian 恢复的进程
+// 可能是零值，此时退回读 /proc/<pid>/stat（Linux）算真实启动时间，
+// 避免状态栏「启动时间」显示 1970 或空。
+func startedAtSeconds(p process.ProcessInfo) int64 {
+	if !p.StartedAt.IsZero() {
+		return p.StartedAt.Unix()
+	}
+	if t := process.GetProcessStartTime(p.PID); !t.IsZero() {
+		return t.Unix()
+	}
+	return 0
 }
 
 // IsOnline 本地服务器永远在线。

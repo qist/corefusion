@@ -335,7 +335,10 @@ async function fetchStatus(){
       const bin=bins.find(b=>b.core_type===selectedCore.value)
       if(bin){binaryInstalled=true;version=bin.version||''}
     }catch{}
-    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:binaryInstalled,version:version||s.version||'',pid:s.pid||0,cpu:s.cpu||0,mem:s.mem||0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:binaryInstalled,version:version})
+    // 后端 /node-servers/:id/status 返回的字段名是 cpu_usage/mem_usage_bytes/uptime_seconds/started_at
+    //（proto CoreStatus 的 json tag），不是 cpu/mem/uptime —— 此前读错名导致状态栏
+    // CPU 恒 0、内存/运行时间/启动时间全为空。
+    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:binaryInstalled,version:version||s.version||'',pid:s.pid||0,cpu:s.cpu_usage||0,mem:s.mem_usage_bytes||0,uptime:s.uptime_seconds||0,started_at:s.started_at?new Date(s.started_at*1000).toISOString():0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:binaryInstalled,version:version})
   }catch{}
 }
 

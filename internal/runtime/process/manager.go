@@ -103,6 +103,9 @@ type managedProcess struct {
 	state      string
 	startedAt  time.Time
 	lastError  error
+	// CPU 差值采样状态：两次 ListAll 之间算实时占用率（而非开机以来平均）
+	lastCPUTicks    int64     // 上次采样的 utime+stime（clock ticks）
+	lastCPUSampleAt time.Time // 上次采样的时间点
 }
 
 type processStateChange struct {
@@ -870,7 +873,9 @@ func (m *Manager) ListAll() []ProcessInfo {
 		}
 		if p.state == "running" {
 			info.Uptime = int64(time.Since(p.startedAt).Seconds())
-			info.CPU, info.Mem = getProcessStats(p.pid)
+			// 实时 CPU（两次采样差值）+ 内存；非 Linux 退回旧的开机平均算法
+			info.CPU = m.cpuUsageLocked(p)
+			_, info.Mem = getProcessStats(p.pid)
 		}
 		if p.lastError != nil {
 			info.LastError = p.lastError.Error()
@@ -1181,6 +1186,60 @@ func GetProcessStartTime(pid int) time.Time {
 	clkTck := int64(100) // standard CLK_TCK on Linux
 	startSec := bootSec + starttimeTicks/clkTck
 	return time.Unix(startSec, 0)
+}
+
+// readCPUTicks 读取 /proc/<pid>/stat 的 utime+stime 总和（clock ticks）。
+// 进程不存在/读取失败返回 0,false。
+func readCPUTicks(pid int) (int64, bool) {
+	if runtime.GOOS != "linux" || pid <= 0 {
+		return 0, false
+	}
+	statData, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0, false
+	}
+	fields := strings.Fields(string(statData))
+	if len(fields) < 15 {
+		return 0, false
+	}
+	utime, _ := strconv.ParseInt(fields[13], 10, 64)
+	stime, _ := strconv.ParseInt(fields[14], 10, 64)
+	return utime + stime, true
+}
+
+// cpuUsageLocked 用「两次采样差值」算进程实时 CPU 占用率（%）：
+//
+//	cpu% = Δ(utime+stime)/CLK_TCK / Δt × 100
+//
+// 旧算法用总 CPU 时间 ÷ 系统 uptime，那是开机以来的平均值 —— 空闲核心
+// （哪怕刚启动、几乎没干活）也会显示 0.0%，看着像坏了。差值算法只反映
+// 上次采样到现在这段时间的真实占用。首次采样（无上一次基线）返回 0。
+// 非 Linux 读不到 /proc 时退回旧算法。
+//
+// 调用方必须持有 m.mu（在 ListAll 的锁内调用）。
+func (m *Manager) cpuUsageLocked(p *managedProcess) float64 {
+	ticks, ok := readCPUTicks(p.pid)
+	now := time.Now()
+	if !ok {
+		return 0
+	}
+	cpu := 0.0
+	// 有上一次基线、进程未重启（PID 未变、ticks 未倒退）才算差值
+	if !p.lastCPUSampleAt.IsZero() && ticks >= p.lastCPUTicks {
+		dt := now.Sub(p.lastCPUSampleAt).Seconds()
+		if dt >= 0.5 { // 采样间隔太短时噪声大，沿用上次值
+			dTicks := ticks - p.lastCPUTicks
+			cpu = float64(dTicks) / 100.0 / dt * 100.0 // CLK_TCK=100
+			if cpu > 100*float64(runtime.NumCPU()) {
+				cpu = 100 * float64(runtime.NumCPU())
+			}
+			p.lastCPUTicks, p.lastCPUSampleAt = ticks, now
+		}
+	} else {
+		// 首次采样或进程重启过：重置基线，本帧给 0（下一帧起有值）
+		p.lastCPUTicks, p.lastCPUSampleAt = ticks, now
+	}
+	return cpu
 }
 
 // getProcessStats reads CPU and memory from /proc/<pid>/stat (Linux only).

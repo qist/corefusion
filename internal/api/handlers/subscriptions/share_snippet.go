@@ -468,7 +468,7 @@ func mihomoProxySnippetFromNode(node *formatter.Node) string {
 	}
 	var b strings.Builder
 	b.WriteString("proxies:\n")
-	writeMihomoProxyMap(&b, m)
+	writeMihomoProxyMap(&b, m, 2)
 	return b.String()
 }
 

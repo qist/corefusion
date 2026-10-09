@@ -1030,6 +1030,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	clientauthSvcInst.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
+	publicSubH.SetSubEndpointRepo(subEndpointRepo)
 	clientExtH := clientextHandler.NewHandler(
 		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
 		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
@@ -3662,6 +3663,7 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	planSvcInst2 := planSvc.NewService(database, planTmplRepo2, planVariantRepo2, nodeGroupRepo2, nodeGroupMemberRepo2, promoRepo2, planOrderRepo2, clientRepo, inboundRepo, extNodeRepo2)
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
+	publicSubH.SetSubEndpointRepo(repository.NewSubscriptionEndpointRepository(database))
 
 	// 订阅拉取触发的 IP 关联推送：8081 引擎的 PublicHandler 也必须接 RateLimitPusher。
 	// ⚠ 此前漏接 → 用户订阅实际走 8081，h.rateLimitPusher == nil，
@@ -3979,6 +3981,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		repository.NewMihomoConfigRepository(database), repository.NewMihomoRuleRepository(database),
 		systemSettingRepo, repository.NewAccessLogRepository(database),
 	)
+	portalPublicSubH.SetSubEndpointRepo(subEndpointRepo2)
 	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
 		portalPublicSubH.SetNetworkTracker(tracker)
 	}

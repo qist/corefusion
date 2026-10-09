@@ -16,6 +16,7 @@ const (
 	FormatSingBoxJSON     Format = "singbox_json"
 	FormatXrayJSON        Format = "xray_json"
 	FormatMihomoYAML      Format = "mihomo_yaml"
+	FormatMihomoProxies   Format = "mihomo_proxies_yaml"
 	FormatRawURI          Format = "raw_uri"
 	FormatBase64Aggregate Format = "base64_uri"
 )
@@ -59,6 +60,8 @@ func GetFormatter(format Format) Formatter {
 		return &XrayFormatter{}
 	case FormatMihomoYAML:
 		return &MihomoFormatter{}
+	case FormatMihomoProxies:
+		return &MihomoProxiesFormatter{}
 	case FormatRawURI:
 		return &RawURIFormatter{}
 	case FormatBase64Aggregate:
@@ -1062,6 +1065,22 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 
 	result := map[string]interface{}{"outbounds": outbounds}
 	return json.MarshalIndent(result, "", "  ")
+}
+
+// MihomoProxiesFormatter 只输出 proxies 节点列表（**proxy-provider 专用**）：
+// mihomo 的 http provider 定时拉取的文件就是"仅含 proxies: 顶层键"的 YAML，
+// 与完整订阅配置分开——订阅主文件用 http provider 引用这份列表实现定时更新。
+type MihomoProxiesFormatter struct{}
+
+func (f *MihomoProxiesFormatter) ContentType() string   { return "text/yaml" }
+func (f *MihomoProxiesFormatter) FileExtension() string { return "yaml" }
+
+func (f *MihomoProxiesFormatter) Format(nodes []Node) ([]byte, error) {
+	yaml := "proxies:\n"
+	for _, node := range nodes {
+		yaml += NodeToMihomoProxy(node)
+	}
+	return []byte(yaml), nil
 }
 
 // MihomoFormatter formats nodes as Mihomo YAML.

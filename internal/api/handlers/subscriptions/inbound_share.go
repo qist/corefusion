@@ -161,7 +161,7 @@ func mihomoProxySnippet(link string) string {
 	}
 	var b strings.Builder
 	b.WriteString("proxies:\n")
-	writeMihomoProxyMap(&b, converted[0])
+	writeMihomoProxyMap(&b, converted[0], 2)
 	return b.String()
 }
 

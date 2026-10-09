@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
@@ -530,5 +533,131 @@ func TestConvertLinksToMihomoProxyMapsHandlesExternalNodeURI(t *testing.T) {
 	}
 	if !strings.Contains(yaml, "path: /ws") {
 		t.Fatalf("expected external proxy ws path in YAML, got %s", yaml)
+	}
+}
+
+// 订阅节点以 **http proxy-provider** 注入（官方模板写法：type:http + url + interval +
+// health-check），分组通过 use 引用；mihomo 按 interval 定时拉 provider 专用端点
+// （?format=mihomo_proxies_yaml，只输出 proxies 列表）→ 订阅能定时更新。
+// buildProviderURL：订阅端点管理里配了启用独立域名 → 优先用
+// https://<domain><path>/<token>（与 clientext buildSubLinks 口径一致）；
+// 未配置（或 repo 未注入）→ 回退本请求 scheme://Host/sub/<token>。
+func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &PublicHandler{}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/sub/test-token", nil)
+
+	// 未注入 repo → 回退本请求 host（X-Forwarded-Proto 判定 https）
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
+	c.Request.Header.Set("X-Forwarded-Host", "panel.example.com")
+	got := h.buildProviderURL(c, "test-token")
+	want0 := "https://panel.example.com/sub/test-token?format=mihomo_proxies_yaml"
+	want := want0
+	if got != want {
+		t.Fatalf("fallback url = %q, want %q", got, want)
+	}
+
+	// 注入 repo 且有启用独立域名（path=/ → 拼成根路径）
+	h2 := &PublicHandler{}
+	h2.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
+		{ID: 1, Domain: "sub.example.com", Path: "/", Enabled: true},
+	}})
+	got = h2.buildProviderURL(c, "test-token")
+	want = "https://sub.example.com/test-token?format=mihomo_proxies_yaml"
+	if got != want {
+		t.Fatalf("endpoint url = %q, want %q", got, want)
+	}
+
+	// 启用端点但 Domain 为空 → 跳过，回退本请求
+	h3 := &PublicHandler{}
+	h3.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
+		{ID: 2, Domain: "", Path: "/", Enabled: true},
+	}})
+	got = h3.buildProviderURL(c, "test-token")
+	if got != want0 {
+		t.Fatalf("empty-domain url = %q, want fallback %q", got, want0)
+	}
+}
+
+// fakeSubEndpointSource 实现 PublicHandler.SubEndpointSource 最小接口。
+type fakeSubEndpointSource struct {
+	endpoints []entity.SubscriptionEndpoint
+}
+
+func (f fakeSubEndpointSource) GetEnabled(_ context.Context) ([]entity.SubscriptionEndpoint, error) {
+	return f.endpoints, nil
+}
+
+func TestGenerateMihomoYAMLInjectsHTTPProxyProvider(t *testing.T) {
+	config := &entity.MihomoConfig{
+		ConfigJSON: `{"proxy-groups":[
+			{"name":"PROXY","type":"select","proxies":["DIRECT"],"_hasExternalNodes":true},
+			{"name":"AUTO","type":"url-test","_hasExternalNodes":true,"url":"https://www.gstatic.com/generate_204","interval":300}
+		]}`,
+	}
+	proxyMaps := []map[string]interface{}{
+		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
+	}
+	providerURL := "http://panel.example.com/sub/test-token?format=mihomo_proxies_yaml"
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, providerURL))
+
+	if !strings.Contains(out, "proxy-providers:") {
+		t.Fatalf("YAML should contain proxy-providers section: %s", out)
+	}
+	if !strings.Contains(out, "    type: http") {
+		t.Fatalf("dynamic provider should be http type: %s", out)
+	}
+	if !strings.Contains(out, `    url: "`+providerURL+`"`) {
+		t.Fatalf("provider should point at dedicated subscription endpoint: %s", out)
+	}
+	if !strings.Contains(out, "    interval: 3600") {
+		t.Fatalf("provider should carry update interval: %s", out)
+	}
+	if !strings.Contains(out, "health-check:") || !strings.Contains(out, "      enable: true") {
+		t.Fatalf("provider should carry health-check: %s", out)
+	}
+	if !strings.Contains(out, "- subscription-nodes") {
+		t.Fatalf("groups with _hasExternalNodes should reference the dynamic provider via use: %s", out)
+	}
+	if !strings.Contains(out, "- DIRECT") {
+		t.Fatalf("static proxies of the group should be preserved: %s", out)
+	}
+	// 节点由 provider 定时拉取下发：主配置不再静态铺顶层 proxies（重名整份拒载）
+	if strings.Contains(out, "name: node-a") {
+		t.Fatalf("main config should not statically list nodes when provider is active: %s", out)
+	}
+
+	// 无 providerURL（单测/极端场景）时不生成 provider，节点走顶层 proxies
+	out2 := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, ""))
+	if strings.Contains(out2, "proxy-providers:") {
+		t.Fatalf("no providerURL should mean no provider section: %s", out2)
+	}
+	if !strings.Contains(out2, "name: node-a") {
+		t.Fatalf("no providerURL should fall back to top-level proxies: %s", out2)
+	}
+}
+
+// 撞名规避：config_json 里用户自定义了同名的 proxy-providers 时，
+// 动态 provider 应改用 subscription-nodes-2，且 use 引用要一致。
+func TestGenerateMihomoYAMLProviderNameCollision(t *testing.T) {
+	config := &entity.MihomoConfig{
+		ConfigJSON: `{"proxy-providers":{"subscription-nodes":{"type":"http","url":"https://example.com/sub.yaml","interval":3600}},
+			"proxy-groups":[{"name":"PROXY","type":"select","_hasExternalNodes":true}]}`,
+	}
+	proxyMaps := []map[string]interface{}{
+		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, "http://panel.example.com/sub/t?format=mihomo_proxies_yaml"))
+
+	if !strings.Contains(out, "  subscription-nodes:") {
+		t.Fatalf("user-defined provider should be emitted as-is: %s", out)
+	}
+	if !strings.Contains(out, "  subscription-nodes-2:") {
+		t.Fatalf("dynamic provider should be renamed on collision: %s", out)
+	}
+	if !strings.Contains(out, "- subscription-nodes-2") {
+		t.Fatalf("use reference should point at the renamed dynamic provider: %s", out)
 	}
 }

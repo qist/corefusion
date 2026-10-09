@@ -27,7 +27,9 @@ export function endpointDefaultsForType(type, customPort) {
   const base = {
     type,
     tag: '',
-    _remark: '',
+    // 与入站编辑器一致：备注（界面「节点名称」）自动生成，不留空 ——
+    // 此前默认 ''，新建端点的「节点名称」永远要手填（2026-10-09）。
+    _remark: 'Node-' + randSuffix(),
     _enabled: true,
   }
 

@@ -912,6 +912,9 @@ async function showAdd() {
   activeTab.value = 'basic'
   // 端口与入站编辑器对齐：取该节点未被占用的端口（含其它入站/端点占用）
   await prefetchFreePort(props.serverId)
+  // 先清空：rf 是复用对象，上次【编辑】写入而 defaults 里没有的键会残留进
+  // 新建对话框（表现为“新建还显示已创建端点的参数”）
+  for (const k of Object.keys(rf)) delete rf[k]
   Object.assign(rf, endpointDefaultsForType('wireguard', takeFreePort(props.serverId)))
   dlg.value = true
   // 自动生成 WireGuard 密钥对
@@ -986,9 +989,14 @@ function showEdit(row) {
 async function onTypeChange() {
   const oldTag = rf.tag
   const oldRemark = rf._remark
-  Object.assign(rf, endpointDefaultsForType(rf.type, takeFreePort(props.serverId)))
+  // 切类型 = 整套默认重置：先清空再赋值，避免上一类型的字段残留
+  //（如 WireGuard 的 private_key 带进 Tailscale）
+  const type = rf.type
+  for (const k of Object.keys(rf)) delete rf[k]
+  rf.type = type
+  Object.assign(rf, endpointDefaultsForType(type, takeFreePort(props.serverId)))
   rf.tag = oldTag || rf.tag
-  rf._remark = oldRemark || ''
+  rf._remark = oldRemark || rf._remark  // 原备注为空时保留新生成的默认备注
   // 切换到 WireGuard 时自动生成密钥对
   if (rf.type === 'wireguard' && !rf.private_key) {
     try {

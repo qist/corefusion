@@ -584,6 +584,9 @@ function noop() {}
 function showAdd() {
   editIdx.value = -1
   activeTab.value = 'basic'
+  // 先清空：rf 是复用的 reactive 对象，上次【编辑】写入而 defaults 里没有的键
+  // 会残留进新建对话框（表现为“新建还显示已创建入站的参数”）。
+  for (const k of Object.keys(rf)) delete rf[k]
   Object.assign(rf, inboundDefaultsForType('vless', takeFreePort(props.serverId)))
   rf._id = null
   dlg.value = true
@@ -599,7 +602,11 @@ function showEdit(row) {
 }
 
 function onTypeChange() {
-  Object.assign(rf, inboundDefaultsForType(rf.type, takeFreePort(props.serverId)))
+  // 切协议 = 整套默认重置：同 showAdd，先清空再赋值，避免上一协议的字段残留
+  const type = rf.type
+  for (const k of Object.keys(rf)) delete rf[k]
+  rf.type = type
+  Object.assign(rf, inboundDefaultsForType(type, takeFreePort(props.serverId)))
 }
 
 async function save() {

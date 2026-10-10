@@ -769,9 +769,15 @@
 <!-- SNI Dialog -->
 <el-dialog v-model="sniDialogVisible" :title="t('proxy.addSNIRule')" width="560">
 <el-form :model="sniForm" label-width="120px">
-<el-form-item :label="t('proxy.associateInbound')">
+<el-form-item :label="t('proxy.inboundMode')">
+<el-radio-group v-model="sniForm.inbound_mode">
+<el-radio-button value="link">{{ t('proxy.modeAssociate') }}</el-radio-button>
+<el-radio-button value="manual">{{ t('proxy.modeManual') }}</el-radio-button>
+</el-radio-group>
+</el-form-item>
+<el-form-item v-if="sniForm.inbound_mode==='link'" :label="t('proxy.associateInbound')">
 <el-select v-model="sniForm.inbound_id" filterable clearable :placeholder="t('proxy.selectInbound')" style="width:100%" @change="onSNIInboundSelect">
-<el-option v-for="ib in sniInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" />
+<el-option v-for="ib in sniInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" :disabled="isInboundAssociated(ib)" />
 </el-select>
 </el-form-item>
 <el-form-item label="Domain">
@@ -803,14 +809,20 @@
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" placeholder="example.com" />
         </el-form-item>
-<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'">
+<el-form-item v-if="showInboundSelect" :label="t('proxy.inboundMode')">
+  <el-radio-group v-model="siteForm.inbound_mode">
+    <el-radio-button value="link">{{ t('proxy.modeAssociate') }}</el-radio-button>
+    <el-radio-button value="manual">{{ t('proxy.modeManual') }}</el-radio-button>
+  </el-radio-group>
+</el-form-item>
+<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
 <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
 <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
 <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
 </div>
 <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') }}</el-button>
 </el-form-item>
-<el-form-item :label="t('proxy.upstreamTls')">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4'" :label="t('proxy.upstreamTls')">
   <el-switch v-model="siteForm.upstream_tls" />
   <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.upstreamTlsHint') }}</div>
 </el-form-item>
@@ -830,9 +842,9 @@
           </div>
           <el-button size="small" @click="siteForm.upstreams.push('')">+ {{ t('common.add') }}</el-button>
         </el-form-item>
-        <el-form-item v-if="showInboundSelect" :label="t('proxy.associateInbound')">
-          <el-select v-model="siteForm.inbound_id" filterable clearable :placeholder="t('proxy.selectInbound')" style="width:100%" @change="onInboundSelect">
-            <el-option v-for="ib in filteredInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" />
+        <el-form-item v-if="showInboundSelect && siteForm.inbound_mode==='link'" :label="t('proxy.associateInbound')">
+          <el-select :model-value="currentInboundId" filterable :placeholder="t('proxy.selectInbound')" style="width:100%" @change="onInboundSelect">
+            <el-option v-for="ib in filteredInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" :disabled="isInboundAssociated(ib)" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort')">
@@ -890,6 +902,8 @@
         <el-form-item label="IPv6">
           <el-switch v-model="siteForm.enable_ipv6" />
         </el-form-item>
+        <!-- SNI / L4 为 TCP 层（layer4）转发，不终止 TLS、不做 HTTP 路由：证书/日志/跳转/WAF 对其无效，隐藏之 -->
+        <template v-if="!isTcpForward">
         <el-form-item :label="t('proxy.useCertificate')">
           <el-switch v-model="siteForm.use_cert" :disabled="siteForm.template==='reality'" @change="onToggleCert" />
           <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
@@ -956,6 +970,7 @@
           <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
           <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.wafEnabledHint') }}</span>
         </el-form-item>
+        </template>
       </el-form>
       <div v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') }}</div>
@@ -1047,6 +1062,10 @@ const httpSites = computed(() => allSites.value.filter(s => s.template !== 'sni'
 const l4Sites = computed(() => allSites.value.filter(s => s.template === 'l4'))
 const sniRules = computed(() => allSites.value.filter(s => s.template === 'sni'))
 
+// SNI / L4 为 TCP 层（layer4）转发：不终止 TLS、不做 HTTP 路由，
+// 证书 / 日志 / HTTP→HTTPS 跳转 / WAF 等 HTTP 层配置对其无意义，编辑时不展示。
+const isTcpForward = computed(() => ['sni', 'l4'].includes(siteForm.value.template))
+
 const { paged: sniPagedList, page: sniPage, pageSize: sniSize, total: sniTotal } = useClientPagination(sniRules, { pageKey: 'sniPage', pageSizeKey: 'sniSize' })
 const { paged: l4PagedList, page: l4Page, pageSize: l4Size, total: l4Total } = useClientPagination(l4Sites, { pageKey: 'l4Page', pageSizeKey: 'l4Size' })
 const { paged: httpPagedList, page: httpPage, pageSize: httpSize, total: httpTotal } = useClientPagination(httpSites, { pageKey: 'httpPage', pageSizeKey: 'httpSize' })
@@ -1083,9 +1102,40 @@ const showInboundSelect = computed(() => {
   const tpl = siteForm.value.template
   return ['websocket', 'grpc', 'xhttp', 'httpupgrade', 'sni', 'http'].includes(tpl)
 })
+// 入站地址：与站点 upstream / sni_target 的比较口径
+function inboundAddr(ib) {
+  return ib._isSocket ? `unix/${ib._socketPath}` : `127.0.0.1:${ib.port}`
+}
+// 站点与入站是**隐式关联**（站点 upstream/sni_target == 入站地址），据此反查已关联入站 id
+function matchInboundId(target) {
+  const t = String(target || '').split(',')[0].trim()
+  if (!t) return null
+  const hit = inbounds.value.find(ib => inboundAddr(ib) === t)
+  return hit ? hit.id : null
+}
+// 当前表单已关联的入站（编辑已有站点时据 sni_target / upstream 反查）
+const currentInboundId = computed(() => {
+  const f = siteForm.value
+  const target = f.template === 'sni' ? f.sni_target : (f.upstreams || [])[0]
+  return matchInboundId(target)
+})
+// 已被其它站点关联的入站地址集合 → 新增站点时这些入站不可再选
+const associatedInboundTargets = computed(() => {
+  const set = new Set()
+  for (const s of allSites.value) {
+    if (s.id === siteForm.value.id) continue
+    const t = s.template === 'sni' ? s.sni_target : s.upstream
+    const first = String(t || '').split(',')[0].trim()
+    if (first) set.add(first)
+  }
+  return set
+})
+function isInboundAssociated(ib) {
+  return associatedInboundTargets.value.has(inboundAddr(ib))
+}
 const filteredInbounds = computed(() => {
 const tpl = siteForm.value.template
-return inbounds.value.filter(ib => {
+const list = inbounds.value.filter(ib => {
 const network = ib._network
 const security = ib._security
 // Exclude UDP-based protocols for all templates
@@ -1105,9 +1155,13 @@ return true
 }
 return false
 })
+// 已关联的入站必须始终可见（否则编辑时看不到当前关联项）
+const cur = inbounds.value.find(ib => ib.id === currentInboundId.value)
+if (cur && !list.includes(cur)) list.push(cur)
+return list
 })
 function inboundLabel(ib) {
-  const parts = [ib._remark || ib.tag || ib.protocol]
+  const parts = [ib._core === 'singbox' ? 'sing-box' : 'xray', ib._remark || ib.tag || ib.protocol]
   if (ib._isSocket) parts.push(`socket:${ib._socketPath}`)
   else parts.push(`${ib.listen}:${ib.port}`)
   if (ib._network && ib._network !== 'raw' && ib._network !== 'tcp') parts.push(ib._network)
@@ -1626,7 +1680,7 @@ const configViewContent = ref('')
 
 // SNI
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null })
+const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
 
 // SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
@@ -1937,7 +1991,7 @@ siteForm.value = {
   ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: !wafDisabledTemplates.includes(template),
   editMode: 'form',
-    inbound_id: null
+    inbound_id: null, inbound_mode: 'link'
   }
   siteDialogVisible.value = true
 }
@@ -1984,7 +2038,7 @@ function showPanelProxy() {
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: true,
   editMode: 'form',
-    inbound_id: null
+    inbound_id: null, inbound_mode: 'manual'
   }
   siteDialogVisible.value = true
 }
@@ -2045,7 +2099,8 @@ function editSite(row) {
       redirect_https: row.redirect_https !== false,
       dual_cert: row.dual_cert !== false,
     editMode: 'form',
-    inbound_id: null
+    inbound_id: null,
+    inbound_mode: matchInboundId(row.template === 'sni' ? row.sni_target : upstreams[0]) ? 'link' : 'manual'
   }
   siteDialogVisible.value = true
 }
@@ -2092,6 +2147,41 @@ function generatePreview(site) {
     lines.push(`    location = / {`)
     lines.push(`        default_type 'text/html';`)
     lines.push(`        return 200 'Success';`)
+    lines.push(`    }`)
+    lines.push(`}`)
+    return lines.join('\n')
+  }
+  // SNI preview (stream / ssl_preread)
+  if (site.template === 'sni') {
+    const port = site.path || site.listen_port || '443'
+    const domain = site.domain || 'fallback'
+    const target = (site.sni_target || '').trim() || ((site.upstreams || []).filter(u => u.trim())[0] || '127.0.0.1:8443')
+    const localPort = site.local_port || '8443'
+    const key = String(domain).replace(/[^a-zA-Z0-9_]/g, '_')
+    lines.push(`stream {`)
+    if (domain && domain !== 'fallback') {
+      lines.push(`    upstream sni_${key} {`)
+      lines.push(`        server ${target};`)
+      lines.push(`    }`, '')
+    }
+    lines.push(`    upstream sni_fallback {`)
+    lines.push(`        server 127.0.0.1:${localPort};`)
+    lines.push(`    }`, '')
+    lines.push(`    # SNI routing on :${port}`)
+    lines.push(`    map $ssl_preread_server_name $sni_backend {`)
+    if (domain && domain !== 'fallback') lines.push(`        ${domain} sni_${key};`)
+    lines.push(`        default sni_fallback;`)
+    lines.push(`    }`, '')
+    lines.push(`    server {`)
+    lines.push(`        listen ${port} reuseport fastopen=4096 so_keepalive=on backlog=4096;`)
+    lines.push(`        ssl_preread on;`)
+    lines.push(`        proxy_half_close on;`)
+    if (site.proxy_protocol) lines.push(`        proxy_protocol on;`)
+    lines.push(`        tcp_nodelay on;`)
+    lines.push(`        preread_buffer_size 128k;`)
+    lines.push(`        proxy_connect_timeout 1s;`)
+    lines.push(`        proxy_timeout 3s;`)
+    lines.push(`        proxy_pass $sni_backend;`)
     lines.push(`    }`)
     lines.push(`}`)
     return lines.join('\n')
@@ -2262,7 +2352,7 @@ function copyConfig() {
 }
 
 function showAddSNI() {
-sniForm.value = { domain: '', sni_target: '', proxy_protocol: false, inbound_id: null }
+sniForm.value = { domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' }
 sniDialogVisible.value = true
 }
 

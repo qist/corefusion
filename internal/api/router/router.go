@@ -3953,6 +3953,11 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthGroup.GET("/oauth/:provider/callback", oauthHPortal.Callback)
 	}
 
+	// Charge callback (public, called by charge sites)
+	// ⚠ 充值回调属于**门户**侧：notify_url 指向门户域名 → 本引擎也必须注册 ✓，
+	//   否则门户域名下 /api/v1/charge/callback/:site_id 404 ✗（支付站点上送失败 → 充值不到账 ✗）。
+	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
+
 	// Log manage deps (for client log packaging)
 	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
 	logJobRepo := repository.NewLogRotationJobRepository(database)

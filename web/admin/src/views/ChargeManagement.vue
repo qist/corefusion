@@ -301,7 +301,7 @@
         <!-- 回调地址展示 -->
         <el-divider content-position="left">{{ t('charge.callbackConfig') }}</el-divider>
         <el-form-item v-if="editingSite" :label="t('charge.callbackUrl')">
-          <el-input :model-value="`/api/v1/charge/callback/${editingSite.id}`" readonly>
+          <el-input :model-value="portalCallbackUrl(editingSite.id)" readonly>
             <template #append><el-button @click="copyCallbackUrl(editingSite.id)">{{ t('common.copy') }}</el-button></template>
           </el-input>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('charge.callbackHint') }}</div>
@@ -702,6 +702,29 @@ async function fetchDefaultCurrency() {
   } catch {}
 }
 
+// 充值回调属于**门户**侧 → 展示/复制的回调地址用门户回调域名（oauth.callback_domain），
+// 避免把后台面板地址暴露给充值站点（面板域名会泄露管理入口）。
+const oauthCallbackDomain = ref('')
+async function fetchOAuthCallbackDomain() {
+  try {
+    const client = (await import('../api/client')).default
+    const d = await client.get('/system/settings', { params: { prefix: 'oauth' } })
+    if (d && d.items) {
+      for (const item of d.items) {
+        if (item.key === 'oauth.callback_domain') oauthCallbackDomain.value = item.value || ''
+      }
+    }
+  } catch {}
+}
+const portalCallbackOrigin = computed(() => {
+  let d = (oauthCallbackDomain.value || '').trim()
+  if (d && !/^https?:\/\//i.test(d)) d = 'https://' + d
+  return (d || window.location.origin).replace(/\/$/, '')
+})
+function portalCallbackUrl(siteId) {
+  return `${portalCallbackOrigin.value}/api/v1/charge/callback/${siteId}`
+}
+
 const activeTab = useQueryState('tab', 'sites')
 
 // ──────── Charge Sites ────────
@@ -732,8 +755,7 @@ function showEditSite(row) {
   siteDialog.value = true
 }
 function copyCallbackUrl(siteId) {
-  const url = window.location.origin + `/api/v1/charge/callback/${siteId}`
-  navigator.clipboard.writeText(url)
+  navigator.clipboard.writeText(portalCallbackUrl(siteId))
   ElMessage.success(t('charge.copiedCallbackUrl'))
 }
 
@@ -748,7 +770,7 @@ function showSecretDialog(siteName, siteId, version, plaintextSecret) {
   secretDialogSite.value = siteName
   secretDialogVersion.value = version
   secretDialogValue.value = plaintextSecret
-  secretDialogCallbackUrl.value = window.location.origin + `/api/v1/charge/callback/${siteId}`
+  secretDialogCallbackUrl.value = portalCallbackUrl(siteId)
   secretDialog.value = true
 }
 
@@ -1352,6 +1374,7 @@ function saveFormatAndPrefix(format, prefix) {
 
 onMounted(async () => {
   await fetchDefaultCurrency()
+  fetchOAuthCallbackDomain()
   fetchAgentUsers() // v3.3: 加载代理员列表
   fetchSites()
   fetchOrders()

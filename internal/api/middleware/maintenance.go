@@ -79,6 +79,9 @@ func MaintenanceGuard() gin.HandlerFunc {
 			"/api/v1/auth/login",             // admin re-login
 			"/api/v1/client-auth/login",      // portal client re-login
 			"/api/v1/client-auth/register",   // portal client register
+			// 充值站点服务端回调：必须在维护期也放行，否则维护期间已支付订单回调被 503
+			// 丢掉 → 充值不到账。主引擎本就未挂 MaintenanceGuard，此处保持一致。
+			"/api/v1/charge/callback",
 		}
 		for _, prefix := range allowedPrefixes {
 			if path == prefix || len(path) > len(prefix) && path[:len(prefix)] == prefix {

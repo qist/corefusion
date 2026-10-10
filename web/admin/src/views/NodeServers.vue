@@ -535,8 +535,6 @@
           <el-select v-model="form.supported_cores_arr" multiple style="width:100%" :placeholder="t('nodeServer.supportedCoresPlaceholder')">
             <el-option label="Xray" value="xray" />
             <el-option label="sing-box" value="singbox" />
-            <el-option label="Hysteria2" value="hysteria2" />
-            <el-option label="TUIC" value="tuic" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('nodeServer.maxInbounds')">
@@ -702,8 +700,6 @@
           <el-select v-model="controlForm.core_type" style="width:100%">
             <el-option label="Xray" value="xray" />
             <el-option label="sing-box" value="singbox" />
-            <el-option label="Hysteria2" value="hysteria2" />
-            <el-option label="TUIC" value="tuic" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('nodeServer.action')">
@@ -887,7 +883,7 @@ const form = reactive({
   node_type: 'standalone', partner_server_id: 0, failover_role: '', failover_priority: 0,
   recover_mode: 'auto_switch_back', // 故障转移回切模式
   chain_config: '', agent_port: DEFAULT_AGENT_GRPC_PORT,
-  supported_cores_arr: ['xray', 'singbox', 'hysteria2', 'tuic'],
+  supported_cores_arr: ['xray', 'singbox'],
   max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
   // 流量配额
@@ -1178,7 +1174,7 @@ async function quickAddSave() {
       hostname: quickForm.hostname,
       node_type: 'standalone',
       agent_port: DEFAULT_AGENT_GRPC_PORT,
-      supported_cores: JSON.stringify(['xray', 'singbox', 'hysteria2', 'tuic']),
+      supported_cores: JSON.stringify(['xray', 'singbox']),
       max_inbounds: 0,
       public_ip: quickForm.hostname,
       internal_ip: quickForm.hostname,
@@ -1540,7 +1536,7 @@ async function deleteDistItem(id) {
 // ════════════ Helpers ════════════
 
 function parseCores(s) {
-  if (!s) return ['xray', 'singbox', 'hysteria2', 'tuic']
+  if (!s) return ['xray', 'singbox']
   try { return JSON.parse(s) } catch { return [] }
 }
 

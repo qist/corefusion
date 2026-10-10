@@ -2653,7 +2653,8 @@ func (s *CommerceService) portalReturnURL(ctx context.Context) string {
 // requestChargeSitePayment sends a payment request to the charge site.
 func (s *CommerceService) requestChargeSitePayment(ctx context.Context, site *entity.ChargeSite, order *entity.ChargeOrder, client *entity.Client) (string, error) {
 	// return_url：用户支付完成后浏览器跳回门户页面。
-	returnURL := s.portalReturnURL(ctx) + "?tab=subscription"
+	// 门户用 ?page=xxx 切换 tab（见 portal/template.go）→ 跳 billing 页（订单/充值/余额）✓。
+	returnURL := s.portalReturnURL(ctx) + "?page=billing"
 
 	// notify_url：支付站点**服务端**回调地址。
 	// ⚠ 充值回调属于**门户**侧 → 用门户域名 ✓；回调路由 /api/v1/charge/callback/:id

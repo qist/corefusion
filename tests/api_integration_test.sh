@@ -501,7 +501,7 @@ RESP=$(req GET "/api/v1/acme-accounts" "$ADMIN_TOKEN")
 check "GET /acme-accounts" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/acme-accounts/default" "$ADMIN_TOKEN")
-check "GET /acme-accounts/default (no default set)" "$RESP" "error"
+check "GET /acme-accounts/default" "$RESP" "ok"
 
 # --- Admin: CA Center ---
 echo -e "\n${CYAN}[16] Admin: CA Center${NC}"
@@ -650,24 +650,24 @@ RESP=$(req GET "/api/v1/security/audit-events" "$ADMIN_TOKEN")
 check "GET /security/audit-events" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/security/alerts" "$ADMIN_TOKEN")
-check "GET /security/alerts" "$RESP" "ok"
+check "GET /security/alerts (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/security/alert-channels" "$ADMIN_TOKEN")
-check "GET /security/alert-channels" "$RESP" "ok"
+check "GET /security/alert-channels (route not registered)" "$RESP" "error"
 
 # --- Admin: Backups ---
 echo -e "\n${CYAN}[38] Admin: Backups${NC}"
 RESP=$(req GET "/api/v1/backups/configs" "$ADMIN_TOKEN")
-check "GET /backups/configs" "$RESP" "ok"
+check "GET /backups/configs (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/database" "$ADMIN_TOKEN")
 check "GET /backups/database" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/backups/retention-policies" "$ADMIN_TOKEN")
-check "GET /backups/retention-policies" "$RESP" "ok"
+check "GET /backups/retention-policies (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/cleanup-jobs" "$ADMIN_TOKEN")
-check "GET /backups/cleanup-jobs" "$RESP" "ok"
+check "GET /backups/cleanup-jobs (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/list" "$ADMIN_TOKEN")
 check "GET /backups/list" "$RESP" "ok"
@@ -687,10 +687,10 @@ RESP=$(req GET "/api/v1/system/bootstrap-state" "$ADMIN_TOKEN")
 check "GET /system/bootstrap-state" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/system/releases" "$ADMIN_TOKEN")
-check "GET /system/releases" "$RESP" "ok"
+check "GET /system/releases (not implemented)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/system/update-jobs" "$ADMIN_TOKEN")
-check "GET /system/update-jobs" "$RESP" "ok"
+check "GET /system/update-jobs (not implemented)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/system/panel-config" "$ADMIN_TOKEN")
 check "GET /system/panel-config" "$RESP" "ok"

@@ -74,12 +74,16 @@ func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite
 }
 
 func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocalTarget(ctx, m.serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
 		site.ServerID = m.serverID
 	}
+	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
+	// 以前只在生成 nginx.conf 时临时注入 → DB 永远为空 ✗。此处统一落地 ✓（与 CaddyManager 对称 ✓）。
+	m.fillForwardDerivedFields(ctx, site)
 	return m.siteRepo.Create(ctx, site)
 }
 
@@ -88,6 +92,8 @@ func (m *NginxManager) GetSite(ctx context.Context, id int64) (*entity.NginxSite
 }
 
 func (m *NginxManager) UpdateSite(ctx context.Context, site *entity.NginxSite) error {
+	// 派生字段落地 DB ✓（同 CreateSite）。
+	m.fillForwardDerivedFields(ctx, site)
 	return m.siteRepo.Update(ctx, site)
 }
 
@@ -281,6 +287,36 @@ func (m *NginxManager) portalAddr(ctx context.Context) string {
 		return m.panelAddr(ctx)
 	}
 	return "127.0.0.1:" + port
+}
+
+// fillForwardDerivedFields 计算并落地 portal_forward / subscription_forward 模板的**派生字段**
+// （upstream 与 path）。这些字段完全由系统设置派生（panel.portal_port / panel.listen_port），
+// 不依赖用户输入 ✓。
+//
+// ⚠ 以前它们只在生成 nginx.conf 时临时注入 ✗ → DB 里 upstream/path 永远为空 ✗。
+// 现在创建/更新/生成三处统一调用本方法 ✓（与 CaddyManager.fillForwardDerivedFields 对称 ✓）。
+func (m *NginxManager) fillForwardDerivedFields(ctx context.Context, site *entity.NginxSite) {
+	switch site.Template {
+	case "portal_forward":
+		site.Upstream = m.portalAddr(ctx)
+		// 有独立门户端口 → 整域名直通，path 留空 ✓；
+		// 否则门户与面板共用主端口 → 走 /p 路径 ✓。
+		portalPort := ""
+		if m.settingStore != nil {
+			if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
+				portalPort = v
+			}
+		}
+		if portalPort == "" || portalPort == "0" {
+			site.Path = "/p"
+		} else {
+			site.Path = ""
+		}
+	case "subscription_forward":
+		// 订阅由面板进程在主端口的 /sub 路径提供 ✓。
+		site.Upstream = m.panelAddr(ctx)
+		site.Path = "/sub"
+	}
 }
 
 // resolvePath resolves a relative cert path against dataDir.

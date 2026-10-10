@@ -212,7 +212,7 @@ func (r *NodeServerRepository) EnsureLocalServer(ctx context.Context, hostname s
 		AgentPort:      constants.DefaultAgentGRPCPort,
 		IsLocal:        true,
 		BillingEnabled: true,
-		SupportedCores: `["xray","singbox","hysteria2","tuic"]`,
+		SupportedCores: `["xray","singbox"]`,
 		Enabled:        true,
 		CreatedAt:      now,
 		UpdatedAt:      now,

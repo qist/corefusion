@@ -820,8 +820,6 @@ func ApplyAPIInboundRouting(fullConfig map[string]interface{}) {
 //   - file: preserves the user's log config as-is.
 //   - stdout: overrides output to "stderr". Preserves user's level.
 //   - off: sets level to "silent".
-//
-// For hysteria2/tuic: no config-level log changes (handled by process.Manager).
 func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode string) {
 	if mode == "" {
 		mode = "file"
@@ -881,9 +879,6 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 		default: // "file" — preserve user's log config from core_configs as-is
 			// Do nothing.
 		}
-
-		// hysteria2 and tuic don't have config-level log settings.
-		// Their log output is controlled by process.Manager (file/stdout/off).
 	}
 }
 

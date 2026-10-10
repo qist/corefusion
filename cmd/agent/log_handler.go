@@ -188,7 +188,7 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 //
 // Rotation semantics must match the writer process:
 //   - nginx: rename + recreate, then "nginx -s reopen" so nginx reopens its FDs
-//   - everything else (caddy/xray/singbox/hysteria2/tuic): the writer holds an
+//   - everything else (caddy/xray/singbox): the writer holds an
 //     O_APPEND handle and has NO reopen signal (Caddy v2 dropped SIGUSR1) — a
 //     plain rename would leave it writing into the rotated archive while the
 //     fresh file stays empty forever. Use copy-truncate instead: archive a copy,
@@ -536,10 +536,6 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 		return filepath.Join(logDir, "xray-access.log")
 	case "singbox":
 		return filepath.Join(logDir, "singbox.log")
-	case "hysteria2":
-		return filepath.Join(logDir, "hysteria2.log")
-	case "tuic":
-		return filepath.Join(logDir, "tuic.log")
 	case "nginx":
 		// Read actual error log path from nginx settings
 		ctx := context.Background()
@@ -583,7 +579,7 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 }
 
 // getLogMode reads the log output mode for a given log type from local settings.
-// Core types (xray/singbox/hysteria2/tuic) use "core.log_output_config".
+// Core types (xray/singbox) use "core.log_output_config".
 // Proxy types (nginx/caddy) use "proxy.log_output_config".
 // Returns "file" as default if not configured.
 func (a *AgentApp) getLogMode(logType string) string {
@@ -593,7 +589,7 @@ func (a *AgentApp) getLogMode(logType string) string {
 
 	ctx := context.Background()
 	isCore := false
-	for _, ct := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, ct := range []string{"xray", "singbox"} {
 		if logType == ct {
 			isCore = true
 			break
@@ -613,12 +609,6 @@ func (a *AgentApp) getLogMode(logType string) string {
 			Singbox struct {
 				Mode string `json:"mode"`
 			} `json:"singbox"`
-			Hysteria2 struct {
-				Mode string `json:"mode"`
-			} `json:"hysteria2"`
-			Tuic struct {
-				Mode string `json:"mode"`
-			} `json:"tuic"`
 		}
 		if json.Unmarshal([]byte(v), &cfg) != nil {
 			return "file"
@@ -637,10 +627,6 @@ func (a *AgentApp) getLogMode(logType string) string {
 				return derived
 			}
 			return cfg.Singbox.Mode
-		case "hysteria2":
-			return cfg.Hysteria2.Mode
-		case "tuic":
-			return cfg.Tuic.Mode
 		}
 		return "file"
 	}
@@ -949,7 +935,7 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	var logs []*agentpb.DiscoveredLogInfo
 
 	// Discover core process logs
-	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, coreType := range []string{"xray", "singbox"} {
 		mode := a.getLogMode(coreType)
 		switch mode {
 		case "stdout":

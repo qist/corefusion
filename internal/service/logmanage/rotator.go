@@ -140,7 +140,7 @@ func (s *Service) rotateFile(policy *entity.LogRotationPolicy) (int, error) {
 		newFile.Close()
 		s.signalNginxReopen()
 	} else {
-		// All other sources (caddy, xray, singbox, hysteria2, tuic, waf, ...)
+		// All other sources (caddy, xray, singbox, waf, ...)
 		// write via their own O_APPEND file handles and have NO reopen signal
 		// (Caddy v2 dropped SIGUSR1; the cores have none either).
 		// A plain rename would leave the process writing into the rotated

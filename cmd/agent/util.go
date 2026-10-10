@@ -81,21 +81,6 @@ func generateDefaultConfig(coreType string, dataDir string) map[string]interface
 			"inbounds":  []interface{}{},
 			"outbounds": []interface{}{},
 		}
-	case "hysteria2":
-		return map[string]interface{}{
-			"log": map[string]interface{}{
-				"level": "info",
-			},
-			"listen": ":0",
-			"masquerade": map[string]interface{}{
-				"type": "404",
-			},
-		}
-	case "tuic":
-		return map[string]interface{}{
-			"server": "0.0.0.0:0",
-			"users":  []interface{}{},
-		}
 	}
 	_ = rulesDir // rulesDir used for future geo file path injection
 	return nil

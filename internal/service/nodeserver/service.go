@@ -302,7 +302,7 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.Cr
 
 	supportedCores := req.SupportedCores
 	if supportedCores == "" {
-		supportedCores = `["xray","singbox","hysteria2","tuic"]`
+		supportedCores = `["xray","singbox"]`
 	}
 
 	server := &entity.NodeServer{

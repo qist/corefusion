@@ -15,7 +15,7 @@ import (
 // 获取最终执行状态。
 //
 // 对于 is_local=1 的服务器，操作委托给 LocalAgent + TaskQueue：
-//   - 核心进程 (xray/singbox/hysteria2/tuic) → process.Manager + Guardian
+//   - 核心进程 (xray/singbox) → process.Manager + Guardian
 //   - 代理进程 (caddy/nginx)                → proxy.Manager + Guardian
 //
 // 对于远程服务器，操作通过 gRPC 调用 Agent（也是异步 TaskAccept）。
@@ -43,7 +43,7 @@ type NodeOperator interface {
 }
 
 // CoreUserOperator 处理本地核心的用户热更新操作。
-// 由现有的 xraycontrol / singbox / hysteria2 / tuic 适配器实现，
+// 由现有的 xraycontrol / singbox 适配器实现，
 // LocalAgent 通过此接口委托，不重新实现 gRPC 调用逻辑。
 type CoreUserOperator interface {
 	// AlterUsers 对本地核心执行用户增删改操作。

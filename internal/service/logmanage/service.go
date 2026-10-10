@@ -27,7 +27,7 @@ var (
 	// proxyLogTypes are the proxy process types managed by the log center.
 	proxyLogTypes = []string{"nginx", "caddy", "waf"}
 	// coreLogTypes are the core process types managed by the log center.
-	coreLogTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
+	coreLogTypes = []string{"xray", "singbox"}
 	// allLogTypes is the combined list for iteration.
 	allLogTypes = append(append([]string{}, proxyLogTypes...), coreLogTypes...)
 )
@@ -166,10 +166,8 @@ func (s *Service) StartAutoWritersForServer(serverID int64) {
 			Managed     bool
 			CapturePath string
 		}{
-			"xray":      {coreCfg.Xray.Mode, coreCfg.Xray.Managed, coreCfg.Xray.CapturePath},
-			"singbox":   {coreCfg.Singbox.Mode, coreCfg.Singbox.Managed, coreCfg.Singbox.CapturePath},
-			"hysteria2": {coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed, coreCfg.Hysteria2.CapturePath},
-			"tuic":      {coreCfg.Tuic.Mode, coreCfg.Tuic.Managed, coreCfg.Tuic.CapturePath},
+			"xray":    {coreCfg.Xray.Mode, coreCfg.Xray.Managed, coreCfg.Xray.CapturePath},
+			"singbox": {coreCfg.Singbox.Mode, coreCfg.Singbox.Managed, coreCfg.Singbox.CapturePath},
 		}
 		for coreType, m := range coreModes {
 			s.syncWriterFilePath(coreType, m.CapturePath)
@@ -359,10 +357,6 @@ func (s *Service) syncWriterFilePath(proxyType string, capturePath string) {
 			capturePath = "logs/xray-stdout.log"
 		case "singbox":
 			capturePath = "logs/singbox-stdout.log"
-		case "hysteria2":
-			capturePath = "logs/hysteria2-stdout.log"
-		case "tuic":
-			capturePath = "logs/tuic-stdout.log"
 		default:
 			return
 		}
@@ -490,14 +484,6 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 			Mode    string
 			Managed bool
 		}{coreCfg.Singbox.Mode, coreCfg.Singbox.Managed}
-		realModes["hysteria2"] = struct {
-			Mode    string
-			Managed bool
-		}{coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed}
-		realModes["tuic"] = struct {
-			Mode    string
-			Managed bool
-		}{coreCfg.Tuic.Mode, coreCfg.Tuic.Managed}
 	}
 
 	var statuses []LogWriterStatus
@@ -674,7 +660,7 @@ func (s *Service) DiscoverLogsForServer(ctx context.Context, serverID int64) ([]
 func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error) {
 	var logs []DiscoveredLog
 
-	// Discover core process logs (xray, singbox, hysteria2, tuic)
+	// Discover core process logs (xray, singbox)
 	coreLogs, err := s.discoverCoreLogs(ctx)
 	if err != nil {
 		log.Printf("logmanage: failed to discover core logs: %v", err)
@@ -723,7 +709,7 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 	return logs, nil
 }
 
-// discoverCoreLogs discovers log files for core processes (xray, singbox, hysteria2, tuic).
+// discoverCoreLogs discovers log files for core processes (xray, singbox).
 // Uses the actual log mode derived from the runtime config (not the stale
 // log_output_config) to decide which logs to discover.
 func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error) {
@@ -1091,7 +1077,7 @@ func (s *Service) GetStatusForServer(ctx context.Context, serverID int64) (*Stat
 }
 
 // GetProxyStdoutLog returns the last N lines from a process's stdout broker.
-// Works for both proxy (nginx/caddy) and core (xray/singbox/hysteria2/tuic) processes.
+// Works for both proxy (nginx/caddy) and core (xray/singbox) processes.
 func (s *Service) GetProxyStdoutLog(ctx context.Context, logType string, lastLines int) ([]string, error) {
 	// Try proxy broker first
 	if s.proxyBroker != nil {

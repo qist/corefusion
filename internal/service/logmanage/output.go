@@ -205,15 +205,13 @@ func (s *Service) ReleaseStdout(ctx context.Context, proxyType string) error {
 }
 
 // ============================================================
-// Core process log output config (xray/singbox/hysteria2/tuic)
+// Core process log output config (xray/singbox)
 // ============================================================
 
 // CoreLogOutputConfig defines the log output mode for core processes.
 type CoreLogOutputConfig struct {
-	Xray      CoreLogMode `json:"xray"`
-	Singbox   CoreLogMode `json:"singbox"`
-	Hysteria2 CoreLogMode `json:"hysteria2"`
-	Tuic      CoreLogMode `json:"tuic"`
+	Xray    CoreLogMode `json:"xray"`
+	Singbox CoreLogMode `json:"singbox"`
 }
 
 // CoreLogMode defines how a core process's logs are handled.
@@ -225,10 +223,8 @@ type CoreLogMode struct {
 
 // Default core capture paths.
 const (
-	DefaultXrayCapturePath      = "logs/xray-stdout.log"
-	DefaultSingboxCapturePath   = "logs/singbox-stdout.log"
-	DefaultHysteria2CapturePath = "logs/hysteria2-stdout.log"
-	DefaultTuicCapturePath      = "logs/tuic-stdout.log"
+	DefaultXrayCapturePath    = "logs/xray-stdout.log"
+	DefaultSingboxCapturePath = "logs/singbox-stdout.log"
 )
 
 // GetCoreLogOutput reads the core log output configuration from database.
@@ -241,10 +237,8 @@ func (s *Service) GetCoreLogOutput(ctx context.Context) (*CoreLogOutputConfig, e
 // to stay in sync with changes made in the protocol center.
 func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64) (*CoreLogOutputConfig, error) {
 	cfg := &CoreLogOutputConfig{
-		Xray:      CoreLogMode{Mode: "file", Managed: false},
-		Singbox:   CoreLogMode{Mode: "file", Managed: false},
-		Hysteria2: CoreLogMode{Mode: "file", Managed: false},
-		Tuic:      CoreLogMode{Mode: "file", Managed: false},
+		Xray:    CoreLogMode{Mode: "file", Managed: false},
+		Singbox: CoreLogMode{Mode: "file", Managed: false},
 	}
 	if s.settingStore == nil {
 		return cfg, nil
@@ -267,13 +261,6 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 	if saved.Singbox.Mode == "" {
 		saved.Singbox.Mode = "file"
 	}
-	if saved.Hysteria2.Mode == "" {
-		saved.Hysteria2.Mode = "file"
-	}
-	if saved.Tuic.Mode == "" {
-		saved.Tuic.Mode = "file"
-	}
-
 	// Remember the stored modes before deriving from actual config
 	storedXrayMode := saved.Xray.Mode
 	storedSingboxMode := saved.Singbox.Mode
@@ -300,13 +287,6 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 	if saved.Singbox.Mode != "stdout" {
 		saved.Singbox.Managed = false
 	}
-	if saved.Hysteria2.Mode != "stdout" {
-		saved.Hysteria2.Managed = false
-	}
-	if saved.Tuic.Mode != "stdout" {
-		saved.Tuic.Managed = false
-	}
-
 	// If mode changed, persist the corrected config so that SyncData
 	// sends the right managed values to remote agents.
 	if modeChanged {
@@ -417,12 +397,6 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 		if oldCfg.Singbox.Mode != cfg.Singbox.Mode {
 			cfg.Singbox.Managed = false
 		}
-		if oldCfg.Hysteria2.Mode != cfg.Hysteria2.Mode {
-			cfg.Hysteria2.Managed = false
-		}
-		if oldCfg.Tuic.Mode != cfg.Tuic.Mode {
-			cfg.Tuic.Managed = false
-		}
 	}
 
 	// Auto-fix: managed should only be true when mode is stdout
@@ -432,13 +406,6 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 	if cfg.Singbox.Mode != "stdout" {
 		cfg.Singbox.Managed = false
 	}
-	if cfg.Hysteria2.Mode != "stdout" {
-		cfg.Hysteria2.Managed = false
-	}
-	if cfg.Tuic.Mode != "stdout" {
-		cfg.Tuic.Managed = false
-	}
-
 	key := perNodeKey(settingKeyCoreLogOutput, serverID)
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -451,10 +418,8 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 	// Only start/stop local writers for the local node
 	if serverID <= 1 {
 		coreModes := map[string]CoreLogMode{
-			"xray":      cfg.Xray,
-			"singbox":   cfg.Singbox,
-			"hysteria2": cfg.Hysteria2,
-			"tuic":      cfg.Tuic,
+			"xray":    cfg.Xray,
+			"singbox": cfg.Singbox,
 		}
 		for coreType, mode := range coreModes {
 			s.syncWriterFilePath(coreType, mode.CapturePath)
@@ -531,14 +496,6 @@ func (s *Service) GetLogModeForServer(ctx context.Context, serverID int64, coreT
 		if cfg.Singbox.Mode != "" {
 			return cfg.Singbox.Mode
 		}
-	case "hysteria2":
-		if cfg.Hysteria2.Mode != "" {
-			return cfg.Hysteria2.Mode
-		}
-	case "tuic":
-		if cfg.Tuic.Mode != "" {
-			return cfg.Tuic.Mode
-		}
 	}
 	return "file"
 }
@@ -560,16 +517,6 @@ func (s *Service) takeoverCoreStdout(ctx context.Context, coreType string) error
 		if cfg.Singbox.CapturePath == "" {
 			cfg.Singbox.CapturePath = DefaultSingboxCapturePath
 		}
-	case "hysteria2":
-		cfg.Hysteria2.Managed = true
-		if cfg.Hysteria2.CapturePath == "" {
-			cfg.Hysteria2.CapturePath = DefaultHysteria2CapturePath
-		}
-	case "tuic":
-		cfg.Tuic.Managed = true
-		if cfg.Tuic.CapturePath == "" {
-			cfg.Tuic.CapturePath = DefaultTuicCapturePath
-		}
 	default:
 		return nil
 	}
@@ -587,10 +534,6 @@ func (s *Service) releaseCoreStdout(ctx context.Context, coreType string) error 
 		cfg.Xray.Managed = false
 	case "singbox":
 		cfg.Singbox.Managed = false
-	case "hysteria2":
-		cfg.Hysteria2.Managed = false
-	case "tuic":
-		cfg.Tuic.Managed = false
 	default:
 		return nil
 	}

@@ -140,7 +140,7 @@ message GetTaskResponse {
 // ============================================================
 
 message SyncConfigRequest {
-  string core_type = 1;           // xray/singbox/hysteria2/tuic
+  string core_type = 1;           // xray/singbox
   bytes  config_content = 2;      // 完整配置文件内容（JSONC）
   int64  config_version = 3;      // 配置版本号（用于增量判断）
 }
@@ -287,7 +287,7 @@ message UpdateAgentRequest {
 // ============================================================
 
 message ReadConfigFileRequest {
-  string core_type = 1;            // xray/singbox/hysteria2/tuic
+  string core_type = 1;            // xray/singbox
 }
 
 message ReadConfigFileResponse {
@@ -364,7 +364,7 @@ message MetricPoint {
 // ============================================================
 
 message InstallBinaryRequest {
-  string core_type = 1;            // xray/singbox/hysteria2/tuic
+  string core_type = 1;            // xray/singbox
   string version = 2;              // 目标版本号（如 v1.8.6）
   string download_url = 3;         // 下载 URL（空则自动构建）
   string asset_name = 4;           // 指定 asset 名称（可选）
@@ -782,7 +782,7 @@ message SyncDataRequest {
   // 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
   string log_output_config = 14;
 
-  // 核心日志输出配置（JSON 格式，包含 xray/singbox/hysteria2/tuic 的 mode 设置）
+  // 核心日志输出配置（JSON 格式，包含 xray/singbox 的 mode 设置）
   string core_log_output_config = 23;
 
   // Nginx 是否手动停止
@@ -821,7 +821,7 @@ message SyncDataRequest {
   repeated ExternalNodeEntry external_nodes = 28;
 
   // --- Core Guardian 设置（面板→Agent 同步） ---
-  // core（xray/singbox/hysteria2/tuic）的"开机启动/崩溃重启"开关存放在面板 DB 的
+  // core（xray/singbox）的"开机启动/崩溃重启"开关存放在面板 DB 的
   // process_guardians 表，此前从未同步到 Agent → Agent 重启后 Reconcile（开机启动）
   // 与 Guardian（崩溃重启）读到的都是本地默认 0，远程节点两个开关全部失效。
   // 按 core_type 对齐（Agent 本地 services 是 server_id=1 的 seed 行，id 与面板不同）。
@@ -1004,7 +1004,7 @@ message SyncDataResponse {
 // ============================================================
 
 message ExecuteBinaryRequest {
-  string core_type = 1;          // xray/singbox/hysteria2/tuic
+  string core_type = 1;          // xray/singbox
   repeated string args = 2;      // 命令行参数
   bool   raw_output = 3;         // true: 返回原始 stdout; false: 解析为 key:value
 }
@@ -1022,7 +1022,7 @@ message ExecuteBinaryResponse {
 
 // 读取节点上的日志文件
 message ReadLogFileRequest {
-  string log_type = 1;    // xray/singbox/hysteria2/tuic/nginx/caddy
+  string log_type = 1;    // xray/singbox/nginx/caddy
   int32  last_lines = 2;  // 读取最后 N 行（默认 500）
   string log_path = 3;    // 指定日志文件绝对路径（优先于 log_type 自动解析）
   repeated string filter_emails = 4;  // 仅返回包含这些 email 标识的日志行（用于订阅用户日志打包）
@@ -1094,7 +1094,7 @@ message DiscoverLogsResponse {
 }
 
 message DiscoveredLogInfo {
-  string source_type = 1;    // nginx/caddy/xray/singbox/hysteria2/tuic
+  string source_type = 1;    // nginx/caddy/xray/singbox
   string domain = 2;         // 域名或标识
   string log_path = 3;       // 日志文件路径
   string log_format = 4;     // 日志格式（可选）

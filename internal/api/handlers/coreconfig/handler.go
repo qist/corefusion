@@ -164,7 +164,7 @@ func (h *Handler) SaveSection(c *gin.Context) {
 
 // getServiceID returns the service ID for a core type.
 func (h *Handler) getServiceID(coreType string) int64 {
-	ids := map[string]int64{"xray": 1, "singbox": 2, "hysteria2": 3, "tuic": 4}
+	ids := map[string]int64{"xray": 1, "singbox": 2}
 	return ids[coreType]
 }
 

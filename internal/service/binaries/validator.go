@@ -22,7 +22,6 @@ import (
 // 注意各核心的严格程度不同：
 //   - sing-box：严格，未知字段 FATAL（最有价值）
 //   - xray：宽松，未知字段只告警不报错，能挡住语法/语义错误
-//   - hysteria2 / tuic：没有内置的配置检查子命令，跳过（Checked=false）
 type CoreValidator struct {
 	resolver *Resolver
 	timeout  time.Duration

@@ -453,7 +453,7 @@ func (x *GetTaskResponse) GetDetailJson() string {
 
 type SyncConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`                 // xray/singbox/hysteria2/tuic
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`                 // xray/singbox
 	ConfigContent []byte                 `protobuf:"bytes,2,opt,name=config_content,json=configContent,proto3" json:"config_content,omitempty"`  // 完整配置文件内容（JSONC）
 	ConfigVersion int64                  `protobuf:"varint,3,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"` // 配置版本号（用于增量判断）
 	unknownFields protoimpl.UnknownFields
@@ -1664,7 +1664,7 @@ func (x *UpdateAgentRequest) GetForce() bool {
 
 type ReadConfigFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"` // xray/singbox/hysteria2/tuic
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"` // xray/singbox
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2253,7 +2253,7 @@ func (x *MetricPoint) GetUptimeSeconds() int64 {
 
 type InstallBinaryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`          // xray/singbox/hysteria2/tuic
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`          // xray/singbox
 	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`                            // 目标版本号（如 v1.8.6）
 	DownloadUrl   string                 `protobuf:"bytes,3,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL（空则自动构建）
 	AssetName     string                 `protobuf:"bytes,4,opt,name=asset_name,json=assetName,proto3" json:"asset_name,omitempty"`       // 指定 asset 名称（可选）
@@ -5303,7 +5303,7 @@ type SyncDataRequest struct {
 	CaddySniSettings string `protobuf:"bytes,13,opt,name=caddy_sni_settings,json=caddySniSettings,proto3" json:"caddy_sni_settings,omitempty"`
 	// 日志输出配置（JSON 格式，包含 nginx/caddy 的 mode 设置）
 	LogOutputConfig string `protobuf:"bytes,14,opt,name=log_output_config,json=logOutputConfig,proto3" json:"log_output_config,omitempty"`
-	// 核心日志输出配置（JSON 格式，包含 xray/singbox/hysteria2/tuic 的 mode 设置）
+	// 核心日志输出配置（JSON 格式，包含 xray/singbox 的 mode 设置）
 	CoreLogOutputConfig string `protobuf:"bytes,23,opt,name=core_log_output_config,json=coreLogOutputConfig,proto3" json:"core_log_output_config,omitempty"`
 	// Nginx 是否手动停止
 	NginxManuallyStopped bool `protobuf:"varint,15,opt,name=nginx_manually_stopped,json=nginxManuallyStopped,proto3" json:"nginx_manually_stopped,omitempty"`
@@ -5323,7 +5323,7 @@ type SyncDataRequest struct {
 	NodeServers      []*NodeServerEntry             `protobuf:"bytes,27,rep,name=node_servers,json=nodeServers,proto3" json:"node_servers,omitempty"`
 	ExternalNodes    []*ExternalNodeEntry           `protobuf:"bytes,28,rep,name=external_nodes,json=externalNodes,proto3" json:"external_nodes,omitempty"`
 	// --- Core Guardian 设置（面板→Agent 同步） ---
-	// core（xray/singbox/hysteria2/tuic）的"开机启动/崩溃重启"开关存放在面板 DB 的
+	// core（xray/singbox）的"开机启动/崩溃重启"开关存放在面板 DB 的
 	// process_guardians 表，此前从未同步到 Agent → Agent 重启后 Reconcile（开机启动）
 	// 与 Guardian（崩溃重启）读到的都是本地默认 0，远程节点两个开关全部失效。
 	// 按 core_type 对齐（Agent 本地 services 是 server_id=1 的 seed 行，id 与面板不同）。
@@ -6988,7 +6988,7 @@ func (x *SyncDataResponse) GetCoreRestarted() bool {
 
 type ExecuteBinaryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`     // xray/singbox/hysteria2/tuic
+	CoreType      string                 `protobuf:"bytes,1,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`     // xray/singbox
 	Args          []string               `protobuf:"bytes,2,rep,name=args,proto3" json:"args,omitempty"`                             // 命令行参数
 	RawOutput     bool                   `protobuf:"varint,3,opt,name=raw_output,json=rawOutput,proto3" json:"raw_output,omitempty"` // true: 返回原始 stdout; false: 解析为 key:value
 	unknownFields protoimpl.UnknownFields
@@ -7117,7 +7117,7 @@ func (x *ExecuteBinaryResponse) GetParsed() map[string]string {
 // 读取节点上的日志文件
 type ReadLogFileRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`                // xray/singbox/hysteria2/tuic/nginx/caddy
+	LogType       string                 `protobuf:"bytes,1,opt,name=log_type,json=logType,proto3" json:"log_type,omitempty"`                // xray/singbox/nginx/caddy
 	LastLines     int32                  `protobuf:"varint,2,opt,name=last_lines,json=lastLines,proto3" json:"last_lines,omitempty"`         // 读取最后 N 行（默认 500）
 	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`                // 指定日志文件绝对路径（优先于 log_type 自动解析）
 	FilterEmails  []string               `protobuf:"bytes,4,rep,name=filter_emails,json=filterEmails,proto3" json:"filter_emails,omitempty"` // 仅返回包含这些 email 标识的日志行（用于订阅用户日志打包）
@@ -7786,7 +7786,7 @@ func (x *DiscoverLogsResponse) GetLogs() []*DiscoveredLogInfo {
 
 type DiscoveredLogInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // nginx/caddy/xray/singbox/hysteria2/tuic
+	SourceType    string                 `protobuf:"bytes,1,opt,name=source_type,json=sourceType,proto3" json:"source_type,omitempty"` // nginx/caddy/xray/singbox
 	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`                           // 域名或标识
 	LogPath       string                 `protobuf:"bytes,3,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`          // 日志文件路径
 	LogFormat     string                 `protobuf:"bytes,4,opt,name=log_format,json=logFormat,proto3" json:"log_format,omitempty"`    // 日志格式（可选）

@@ -6,10 +6,8 @@ import "time"
 type CoreType string
 
 const (
-	CoreTypeXray      CoreType = "xray"
-	CoreTypeSingBox   CoreType = "singbox"
-	CoreTypeHysteria2 CoreType = "hysteria2"
-	CoreTypeTUIC      CoreType = "tuic"
+	CoreTypeXray    CoreType = "xray"
+	CoreTypeSingBox CoreType = "singbox"
 )
 
 // SupportsHotApply 报告该核心的配置改动能否通过运行时 API 热下发（无需重启进程）。

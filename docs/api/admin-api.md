@@ -336,7 +336,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/certificates/:cid` | 管理员 | 绑定证书 |
 | GET | `/api/v1/node-servers/:id/chain-config` | 管理员 | 生成链式配置 |
 | GET | `/api/v1/node-servers/:id/chain-health` | 管理员 | 链式健康状态 |
-| POST | `/api/v1/node-servers/:id/control` | 超级管理员 | 控制节点核心。body：`{"core_type":"xray","action":"start"}`（action = start/stop/restart）。`core_type` 可选 `xray`/`singbox`/`hysteria2` |
+| POST | `/api/v1/node-servers/:id/control` | 超级管理员 | 控制节点核心。body：`{"core_type":"xray","action":"start"}`（action = start/stop/restart）。`core_type` 可选 `xray`/`singbox` |
 | GET | `/api/v1/node-servers/:id/degradation-status` | 管理员 | 降级状态 |
 | POST | `/api/v1/node-servers/:id/distribute-cert` | 管理员 | 分发证书 |
 | GET | `/api/v1/node-servers/:id/endpoint-configs` | 管理员 | 列表 |

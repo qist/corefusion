@@ -31,6 +31,11 @@ type PlanRefunder interface {
 }
 
 // Handler handles admin charge management HTTP requests.
+// SettingStore 是 Handler 读取系统设置所需的最小依赖（门户回调域名等）。
+type SettingStore interface {
+	GetByKey(ctx context.Context, key string) (string, error)
+}
+
 type Handler struct {
 	chargeSiteRepo  *repository.ChargeSiteRepository
 	chargeOrderRepo *repository.ChargeOrderRepository
@@ -40,6 +45,7 @@ type Handler struct {
 	clientRepo      *repository.ClientRepository
 	userRepo        *repository.UserRepository // v3.3: 用于查询代理员信息
 	planRefunder    PlanRefunder               // 退款时回退套餐时间 + 移除节点账号
+	settingSvc      SettingStore               // 门户回调域名等系统设置
 	db              *gorm.DB
 }
 
@@ -52,6 +58,7 @@ func NewHandler(
 	balanceTxRepo *repository.BalanceTransactionRepository,
 	clientRepo *repository.ClientRepository,
 	userRepo *repository.UserRepository, // v3.3: 用于查询代理员信息
+	settingSvc SettingStore,
 	db *gorm.DB,
 ) *Handler {
 	return &Handler{
@@ -62,6 +69,7 @@ func NewHandler(
 		balanceTxRepo:   balanceTxRepo,
 		clientRepo:      clientRepo,
 		userRepo:        userRepo,
+		settingSvc:      settingSvc,
 		db:              db,
 	}
 }
@@ -383,6 +391,23 @@ func (h *Handler) VerifyDomainDNS(c *gin.Context) {
 	response.BadRequest(c, "CONTENT_MISMATCH", "DNS TXT 记录内容不匹配")
 }
 
+// portalCallbackBase 返回门户回调基址（域名 + scheme，不含路径）。
+// 优先 oauth.callback_domain（门户回调域名）；未配置时返回空串（调用方回退相对路径）。
+func (h *Handler) portalCallbackBase(ctx context.Context) string {
+	if h.settingSvc == nil {
+		return ""
+	}
+	d, _ := h.settingSvc.GetByKey(ctx, "oauth.callback_domain")
+	d = strings.TrimSpace(d)
+	if d == "" {
+		return ""
+	}
+	if !strings.HasPrefix(d, "http://") && !strings.HasPrefix(d, "https://") {
+		d = "https://" + d
+	}
+	return strings.TrimRight(d, "/")
+}
+
 // GetSiteIntegrationDoc handles GET /api/v1/charge-sites/:id/integration-doc.
 // Returns the integration documentation for this specific site.
 func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
@@ -397,7 +422,11 @@ func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
 		return
 	}
 
-	callbackURL := fmt.Sprintf("/api/v1/charge/callback/%d", site.ID)
+	callbackPath := fmt.Sprintf("/api/v1/charge/callback/%d", site.ID)
+	callbackURL := callbackPath
+	if base := h.portalCallbackBase(c.Request.Context()); base != "" {
+		callbackURL = base + callbackPath
+	}
 
 	doc := gin.H{
 		"site_id":             site.ID,

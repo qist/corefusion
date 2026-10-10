@@ -1663,6 +1663,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				repository.NewBalanceTransactionRepository(database),
 				clientRepo,
 				userRepo, // v3.3: 用于查询代理员信息
+				systemSettingSvc,
 				database,
 			)
 			// 注入 PlanRefunder — 退款时回退套餐时间 + 移除节点账号

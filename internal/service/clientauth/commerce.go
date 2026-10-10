@@ -2609,15 +2609,57 @@ func (s *CommerceService) deductBalanceForOrder(ctx context.Context, clientID in
 	return s.balanceTxRepo.Create(ctx, txRecord)
 }
 
+// portalBaseURL 返回门户对外基址（域名 + scheme，**不含路径/查询**）。
+//
+// 域名优先级：oauth.callback_domain（门户回调域名，可选）> panel.external_url > localhost。
+//
+//	⚠ 用面板域名（panel.external_url）会把后台管理入口下发给支付平台/浏览器 → 泄露后台地址 ✗。
+//
+// 充值 return_url / notify_url 都基于它 —— 充值链路整体属于**门户**侧 ✓。
+func (s *CommerceService) portalBaseURL(ctx context.Context) string {
+	base := ""
+	if d, _ := s.settingSvc.GetByKey(ctx, "oauth.callback_domain"); strings.TrimSpace(d) != "" {
+		base = strings.TrimSpace(d)
+		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+			base = "https://" + base
+		}
+	}
+	if base == "" {
+		base, _ = s.settingSvc.GetByKey(ctx, "panel.external_url")
+		if base == "" {
+			base = "http://localhost:8080"
+		}
+	}
+	return strings.TrimRight(base, "/")
+}
+
+// portalPagePath 返回门户页面在本域名下的挂载路径（"" 或 "/p"）。
+// 与 proxy portal_forward 的生成规则一致：
+//
+//	panel.portal_port 已配置（独立门户端口）→ 门户整域名挂在根路径 "" ✓；
+//	否则门户与面板共用主端口 → 挂在 "/p" ✓。
+func (s *CommerceService) portalPagePath(ctx context.Context) string {
+	if p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port"); p != "" && p != "0" {
+		return ""
+	}
+	return "/p"
+}
+
+// portalReturnURL 返回"用户支付完成后跳回门户"的地址（基址 + 门户挂载路径）。
+func (s *CommerceService) portalReturnURL(ctx context.Context) string {
+	return s.portalBaseURL(ctx) + s.portalPagePath(ctx)
+}
+
 // requestChargeSitePayment sends a payment request to the charge site.
 func (s *CommerceService) requestChargeSitePayment(ctx context.Context, site *entity.ChargeSite, order *entity.ChargeOrder, client *entity.Client) (string, error) {
-	externalURL, _ := s.settingSvc.GetByKey(ctx, "panel.external_url")
-	if externalURL == "" {
-		externalURL = "http://localhost:8080"
-	}
+	// return_url：用户支付完成后浏览器跳回门户页面。
+	returnURL := s.portalReturnURL(ctx) + "?tab=subscription"
 
-	returnURL := externalURL + "/p?tab=subscription"
-	notifyURL := externalURL + "/api/v1/charge/callback/" + strconv.FormatInt(site.ID, 10)
+	// notify_url：支付站点**服务端**回调地址。
+	// ⚠ 充值回调属于**门户**侧 → 用门户域名 ✓；回调路由 /api/v1/charge/callback/:id
+	//   在主面板引擎与门户引擎**都**注册 ✓（见 router.go），两条路径都能打到 ✓。
+	//   注意：这里拼的是域名根路径，**不带门户页面挂载路径**（回调不是门户页面 ✗）。
+	notifyURL := s.portalBaseURL(ctx) + "/api/v1/charge/callback/" + strconv.FormatInt(site.ID, 10)
 
 	// 金额单位统一为 **分**（与官方对接文档 CHARGE_SITE_ACCESS_GUIDE.md 一致）。
 	// 原来这里发的是「元」（float）→ 站点回传时也只能给元 ✗，而回调侧按 int64 元解析 ✗ →

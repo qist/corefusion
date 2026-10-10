@@ -35,7 +35,7 @@
           </el-alert>
           <el-alert type="success" :closable="false" show-icon style="margin-bottom: 16px">
             <span style="font-size: 13px">{{ t('portal.apiFullRef') }}
-              <a href="https://github.com/qist/corefusion/blob/main/docs/portal-api.md" target="_blank" rel="noopener" style="color:#409eff">docs/portal-api.md</a>
+              <a href="https://github.com/qist/corefusion/blob/main/docs/api/portal-api.md" target="_blank" rel="noopener" style="color:#409eff">docs/api/portal-api.md</a>
             </span>
           </el-alert>
           <el-collapse v-model="ed.activeApiNames" class="api-collapse">

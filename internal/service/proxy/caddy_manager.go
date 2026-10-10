@@ -85,12 +85,16 @@ func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite
 }
 
 func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocalTarget(ctx, m.serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
 		site.ServerID = m.serverID
 	}
+	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
+	// 以前只在生成配置时临时注入 → DB 永远为空 ✗。此处统一落地 ✓。
+	m.fillForwardDerivedFields(ctx, site)
 	return m.siteRepo.Create(ctx, site)
 }
 
@@ -99,6 +103,8 @@ func (m *CaddyManager) GetSite(ctx context.Context, id int64) (*entity.CaddySite
 }
 
 func (m *CaddyManager) UpdateSite(ctx context.Context, site *entity.CaddySite) error {
+	// 派生字段落地 DB ✓（同 CreateSite）。
+	m.fillForwardDerivedFields(ctx, site)
 	return m.siteRepo.Update(ctx, site)
 }
 
@@ -191,41 +197,17 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		} else if site.Template == "reality" {
 			realitySites = append(realitySites, site)
 		} else {
-			// portal_forward: only valid on the panel node (isLocal). Remote
-			// nodes have no panel process, so skip generating it for them.
-			// ⚠ 有独立门户端口 → 转发到该端口（整域名直通 ✓）；
-			//   没有端口 → 转发到**面板主端口**并走 /p 路径 ✓（portalAddr 兜底 ✓）。
-			if site.Template == "portal_forward" {
-				if !m.isLocal {
+			// portal_forward / subscription_forward：仅面板节点有效 ✓（远程节点没有
+			// 面板/门户进程 ✗）。派生字段（upstream/path）统一走 fillForwardDerivedFields ✓。
+			//
+			// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗
+			//   （m.isLocal 每请求被改写 ✓ → 本机/远程请求交错时会误跳过本机站点 ✗，
+			//    表现为门户转发配置时有时无、重置或换端口访问又正常 ✗）。
+			if site.Template == "portal_forward" || site.Template == "subscription_forward" {
+				if !m.isLocalTarget(ctx, serverID) {
 					continue
 				}
-				site.Upstream = m.portalAddr(ctx)
-				// If portal has a dedicated port, no path needed (whole domain forwards).
-				// If portal shares the panel port, use /p path.
-				if site.Path == "" {
-					portalPort := ""
-					if m.settingStore != nil {
-						if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
-							portalPort = v
-						}
-					}
-					if portalPort == "" || portalPort == "0" {
-						site.Path = "/p"
-					}
-				}
-			} else if site.Template == "subscription_forward" {
-				// subscription_forward: only valid on the panel node (isLocal).
-				// Subscription URLs are served by the panel process on its
-				// main port under the /sub path.
-				// ⚠ 这个分支必须挂在**模板判断**这一层 ✗：以前误挂在 portal_forward 内部的
-				//   `if site.Path == ""` 上 ✗ → 永远走不到（死代码 ✗ → upstream/path 不注入 ✗）。
-				if !m.isLocal {
-					continue
-				}
-				site.Upstream = m.panelAddr(ctx)
-				if site.Path == "" {
-					site.Path = "/sub"
-				}
+				m.fillForwardDerivedFields(ctx, &site)
 			}
 			httpSites = append(httpSites, site)
 		}
@@ -416,7 +398,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString(":80 {\n")
 		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
 		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
-		if !m.isLocal {
+		if !m.isLocalTarget(ctx, serverID) {
 			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -424,7 +406,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("\t\tfile_server\n")
 			sb.WriteString("\t}\n")
 		}
-		if m.isLocal {
+		if m.isLocalTarget(ctx, serverID) {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -483,7 +465,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 			sb.WriteString("# HTTP → HTTPS redirect (auto_https is off — generated manually)\n")
 			sb.WriteString(fmt.Sprintf("http://%s {\n", host))
-			if !m.isLocal {
+			if !m.isLocalTarget(ctx, serverID) {
 				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 				sb.WriteString("\thandle @acme {\n")
 				sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
@@ -547,7 +529,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		// 远程节点 → **服务节点本地挑战目录** ✓（签发由节点上的 Agent 做 ✓，面板没有挑战记录 ✗）。
 		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
 		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
-		if !m.isLocal {
+		if !m.isLocalTarget(ctx, serverID) {
 			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -555,7 +537,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("\t\tfile_server\n")
 			sb.WriteString("\t}\n")
 		}
-		if m.isLocal {
+		if m.isLocalTarget(ctx, serverID) {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -735,6 +717,37 @@ func (m *CaddyManager) portalAddr(ctx context.Context) string {
 		return m.panelAddr(ctx)
 	}
 	return "127.0.0.1:" + port
+}
+
+// fillForwardDerivedFields 计算并落地 portal_forward / subscription_forward 模板的**派生字段**
+// （upstream 与 path）。这些字段完全由系统设置派生（panel.portal_port / panel.listen_port），
+// 不依赖用户输入 ✓。
+//
+// ⚠ 以前它们只在生成 Caddyfile 时临时注入 ✗ → DB 里 upstream/path 永远为空 ✗
+// （用户反馈"数据库没落地" ✓）。现在创建/更新/生成三处统一调用本方法 ✓，
+// 保证 DB 记录与生成的 Caddyfile 一致 ✓。
+func (m *CaddyManager) fillForwardDerivedFields(ctx context.Context, site *entity.CaddySite) {
+	switch site.Template {
+	case "portal_forward":
+		site.Upstream = m.portalAddr(ctx)
+		// 有独立门户端口 → 整域名直通，path 留空 ✓；
+		// 否则门户与面板共用主端口 → 走 /p 路径 ✓。
+		portalPort := ""
+		if m.settingStore != nil {
+			if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
+				portalPort = v
+			}
+		}
+		if portalPort == "" || portalPort == "0" {
+			site.Path = "/p"
+		} else {
+			site.Path = ""
+		}
+	case "subscription_forward":
+		// 订阅由面板进程在主端口的 /sub 路径提供 ✓。
+		site.Upstream = m.panelAddr(ctx)
+		site.Path = "/sub"
+	}
 }
 
 // isWAFEnabledForServer checks if WAF is enabled for a specific server.

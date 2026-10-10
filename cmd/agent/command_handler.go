@@ -567,7 +567,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					}
 				}
 			}
-			// Parse core config and start/stop writers for xray/singbox/hysteria2/tuic
+			// Parse core config and start/stop writers for xray/singbox
 			if req.CoreLogConfig != "" {
 				var coreCfg struct {
 					Xray struct {
@@ -578,14 +578,6 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 						Mode    string `json:"mode"`
 						Managed bool   `json:"managed"`
 					} `json:"singbox"`
-					Hysteria2 struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"hysteria2"`
-					Tuic struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"tuic"`
 				}
 				if err := json.Unmarshal([]byte(req.CoreLogConfig), &coreCfg); err == nil {
 					if err := a.logMgr.StartWriterManaged("xray", coreCfg.Xray.Mode, coreCfg.Xray.Managed); err != nil {
@@ -593,12 +585,6 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 					}
 					if err := a.logMgr.StartWriterManaged("singbox", coreCfg.Singbox.Mode, coreCfg.Singbox.Managed); err != nil {
 						log.Printf("[Agent] failed to start singbox writer: %v", err)
-					}
-					if err := a.logMgr.StartWriterManaged("hysteria2", coreCfg.Hysteria2.Mode, coreCfg.Hysteria2.Managed); err != nil {
-						log.Printf("[Agent] failed to start hysteria2 writer: %v", err)
-					}
-					if err := a.logMgr.StartWriterManaged("tuic", coreCfg.Tuic.Mode, coreCfg.Tuic.Managed); err != nil {
-						log.Printf("[Agent] failed to start tuic writer: %v", err)
 					}
 				}
 			}

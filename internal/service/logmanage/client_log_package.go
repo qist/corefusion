@@ -88,7 +88,7 @@ func (s *Service) InitClientLogDeps(
 // entryNodeInfo represents an entry node associated with a client.
 type entryNodeInfo struct {
 	ServerID int64
-	LogType  string // xray / singbox / hysteria2 / tuic
+	LogType  string // xray / singbox
 	Tag      string
 }
 

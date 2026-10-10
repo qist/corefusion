@@ -493,7 +493,7 @@ func (h *PublicHandler) collectShareLinks(
 ) []string {
 	var links []string
 
-	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, coreType := range []string{"xray", "singbox"} {
 		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue
@@ -675,7 +675,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		}
 	}
 
-	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, coreType := range []string{"xray", "singbox"} {
 		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue
@@ -1136,7 +1136,7 @@ func (h *PublicHandler) collectExternalNodesAndLinks(ctx context.Context, allowe
 func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains []shareDomainEntry, allowedInboundIDs map[int64]bool, clientEmail string) []formatter.Node {
 	var nodes []formatter.Node
 
-	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, coreType := range []string{"xray", "singbox"} {
 		configs, err := h.inboundRepo.ListAll(ctx, coreType)
 		if err != nil {
 			continue

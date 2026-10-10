@@ -154,7 +154,7 @@ type NodeStatusProvider interface {
 }
 
 // coreTypes are the runtime config files managed under <dataDir>/runtime/.
-var coreTypes = []string{"xray", "singbox", "hysteria2", "tuic"}
+var coreTypes = []string{"xray", "singbox"}
 
 // Service implements the runtime config workflow.
 type Service struct {

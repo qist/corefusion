@@ -47,7 +47,7 @@ type RawDataProvider interface {
 // reloadStrategyFor 按核心能力决定 SyncData 之后核心的重载方式：
 //   - 支持热下发的核心（xray 的 proxyman API 可增删改入站）→ HOT_RELOAD：
 //     Agent 只把变更热应用到运行中的进程，配置没变则完全不碰进程；
-//   - 其余核心（sing-box / hysteria2 / tuic）→ RESTART：它们的 v2ray API 只注册了
+//   - 其余核心（sing-box）→ RESTART：它的 v2ray API 只注册了
 //     StatsService，入站变更只能重启生效。
 func reloadStrategyFor(coreType string) agentpb.SyncDataRequest_ReloadStrategy {
 	if domain.CoreType(coreType).SupportsHotApply() {
@@ -746,8 +746,6 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 		}
 	}
 
-	// Also check hysteria2/tuic core configs for cert/key path references
-	// (these use a flat tls section with cert/key fields)
 	if rdp.serverRepo != nil {
 		if server, err := rdp.serverRepo.GetByID(ctx, serverID); err == nil {
 			if server.CertificateID > 0 {

@@ -43,7 +43,7 @@ type ProcessController interface {
 	Restart(ctx context.Context, serviceID int64, coreType string) error
 }
 
-// Installer handles downloading and installing core binaries (xray/singbox/hysteria2/tuic).
+// Installer handles downloading and installing core binaries (xray/singbox).
 // The logic is extracted from the HTTP handler so it can be reused by both
 // the panel's REST API and the Agent's gRPC service.
 type Installer struct {
@@ -691,7 +691,7 @@ func binaryNameInArchive(coreType, osName, archName string) string {
 
 // getServiceID returns the service ID for a core type.
 func getServiceID(coreType string) int64 {
-	ids := map[string]int64{"xray": 1, "singbox": 2, "hysteria2": 3, "tuic": 4}
+	ids := map[string]int64{"xray": 1, "singbox": 2}
 	return ids[coreType]
 }
 

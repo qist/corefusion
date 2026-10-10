@@ -35,7 +35,7 @@ type HotApplySyncHook interface {
 //
 // 支持热下发的核心（见 domain.CoreType.SupportsHotApply）只写盘、不重启核心：面板的
 // 入站/出站/路由编辑器写库后一定会调用 xray/control/* 把改动下发到运行中的进程。
-// 其余核心（sing-box / hysteria2 / tuic）没有热下发接口，必须重启核心才能生效。
+// 其余核心（sing-box）没有热下发接口，必须重启核心才能生效。
 func (h *Handler) triggerConfigSync(serverID int64, coreType string) {
 	if h.syncHook == nil {
 		return

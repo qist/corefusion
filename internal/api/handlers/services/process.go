@@ -272,8 +272,6 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 	}{
 		{"Xray", "xray"},
 		{"sing-box", "singbox"},
-		{"Hysteria 2", "hysteria2"},
-		{"TUIC", "tuic"},
 	}
 	existingCoreTypes := make(map[string]bool)
 	for _, svc := range services {

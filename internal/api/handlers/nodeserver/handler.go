@@ -1426,7 +1426,7 @@ func (h *Handler) ForceReconnect(c *gin.Context) {
 
 // ──────────────────── Binary & Proxy Installation ────────────────────
 
-// InstallBinary installs a core binary (xray/singbox/hysteria2/tuic) on a server.
+// InstallBinary installs a core binary (xray/singbox) on a server.
 // For local servers, delegates to binaries.Installer directly.
 // For remote servers, sends install command via gRPC to the Agent.
 func (h *Handler) InstallBinary(c *gin.Context) {

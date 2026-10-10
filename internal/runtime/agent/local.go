@@ -42,7 +42,7 @@ import (
 //
 // 本地服务器（is_local=1）不需要 gRPC 连接到远程 Agent，
 // 而是直接复用现有的进程管理基础设施：
-//   - 核心进程 (xray/singbox/hysteria2/tuic) → process.Manager + healthcheck.Guardian
+//   - 核心进程 (xray/singbox) → process.Manager + healthcheck.Guardian
 //   - 代理进程 (caddy/nginx)                → proxy.Manager + healthcheck.Guardian
 //
 // 所有控制操作都是异步的——方法提交任务后立刻返回，
@@ -176,7 +176,7 @@ func (a *LocalAgent) RestoreFromSnapshot(ctx context.Context) {
 	if a.db == nil {
 		return
 	}
-	for _, coreType := range []string{"xray", "singbox", "hysteria2", "tuic"} {
+	for _, coreType := range []string{"xray", "singbox"} {
 		var snap entity.ConfigSnapshot
 		if err := a.db.Where("server_id = ? AND core_type = ?", a.serverID, coreType).
 			Order("version DESC").First(&snap).Error; err != nil {
@@ -598,7 +598,7 @@ func (a *LocalAgent) InstallProxyVersion(ctx context.Context, proxyType, downloa
 	return nil
 }
 
-// InstallBinary 安装核心二进制（xray/singbox/hysteria2/tuic）（异步）。
+// InstallBinary 安装核心二进制（xray/singbox）（异步）。
 func (a *LocalAgent) InstallBinary(ctx context.Context, coreType, version, downloadURL, assetName string) error {
 	if a.binaryInst == nil {
 		return fmt.Errorf("binary installer not configured")

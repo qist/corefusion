@@ -73,7 +73,7 @@ func (h *Handler) collectNodeUsedPorts(ctx context.Context, serverID int64, core
 		used[p] = true
 	}
 
-	coreTypes := []string{"xray", "singbox", "hysteria2", "tuic"}
+	coreTypes := []string{"xray", "singbox"}
 	if coreType != "" {
 		coreTypes = []string{coreType}
 	}

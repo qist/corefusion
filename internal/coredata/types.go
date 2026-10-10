@@ -5,7 +5,7 @@
 // 设计见 docs/design/core-data-layer-design.md
 package coredata
 
-// CoreKind 标记核心类型，便于未来扩展（sing-box / hysteria2 / tuic）。
+// CoreKind 标记核心类型，便于未来扩展（sing-box）。
 type CoreKind string
 
 const (

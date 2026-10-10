@@ -44,7 +44,7 @@ CoreFusion 是一款多协议代理管理面板，支持 VLESS、VMess、Trojan�
 | 功能模块 | 说明 |
 |---------|------|
 | 多协议支持 | VLESS、VMess、Trojan、Shadowsocks、Hysteria2、TUIC、WireGuard 等 |
-| 多核心支持 | Xray、sing-box、Hysteria2、TUIC 等核心进程 |
+| 多核心支持 | Xray-core、sing-box 两个核心进程（Hysteria2/TUIC 等 QUIC 协议由 sing-box 承载） |
 | 多节点管理 | 支持独立、镜像、主备、链式入口、链式出口五种节点类型 |
 | 订阅分发 | 支持多格式订阅链接、订阅端点、订阅格式管理 |
 | 计费系统 | 套餐模板、充值卡、余额管理、订单管理、代理员佣金 |
@@ -292,10 +292,8 @@ CF_DB_MAX_IDLE_CONNS=10
 
 | 核心 | 说明 |
 |------|------|
-| Xray | VLESS/VMess/Trojan/Shadowsocks 等多协议 |
-| sing-box | 模块化通用代理平台，支持 TUN |
-| Hysteria2 | 基于 QUIC 的高速代理，抗丢包 |
-| TUIC | 基于 QUIC 的轻量低延迟代理 |
+| Xray-core | VLESS/VMess/Trojan/Shadowsocks 等多协议 |
+| sing-box | 模块化通用代理平台，支持 TUN，并承载 Hysteria2/TUIC 等 QUIC 协议 |
 
 ### 6.2 配置模块
 

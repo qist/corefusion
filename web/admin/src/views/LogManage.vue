@@ -769,8 +769,6 @@
           <el-select v-model="form.source_type" style="width:100%">
             <el-option label="Xray" value="xray" />
             <el-option label="sing-box" value="singbox" />
-            <el-option label="Hysteria2" value="hysteria2" />
-            <el-option label="TUIC" value="tuic" />
             <el-option label="Nginx" value="nginx" />
             <el-option label="Caddy" value="caddy" />
             <el-option label="Custom" value="custom" />
@@ -1044,8 +1042,6 @@ const jobs = ref([])
 const CORE_TYPES = [
   { type: 'xray', label: 'Xray' },
   { type: 'singbox', label: 'sing-box' },
-  { type: 'hysteria2', label: 'Hysteria 2' },
-  { type: 'tuic', label: 'TUIC' },
 ]
 const PROXY_TYPES = [
   { type: 'nginx', label: 'Nginx' },
@@ -1118,7 +1114,7 @@ const groupedDiscoveredOptions = computed(() => {
 // ═══════════════ Helpers ═══════════════
 
 function isCoreType(type) {
-  return ['xray', 'singbox', 'hysteria2', 'tuic'].includes(type)
+  return ['xray', 'singbox'].includes(type)
 }
 
 function modeLabel(mode) {
@@ -1134,7 +1130,7 @@ function modeTagType(mode) {
 }
 
 function sourceTagType(source) {
-  if (['xray', 'singbox', 'hysteria2', 'tuic'].includes(source)) return 'info'
+  if (['xray', 'singbox'].includes(source)) return 'info'
   if (source === 'nginx') return 'success'
   if (source === 'caddy') return 'primary'
   return ''

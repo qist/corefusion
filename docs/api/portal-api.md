@@ -32,6 +32,36 @@
 
 订单/余额类字段为**整数分**：`990` = ¥9.90（`currency: "CNY"`）。
 
+### 1.5 真实示例（登录 → 拉取资料）
+
+```bash
+# 注册（若 registration_enabled=true）
+curl -X POST https://<门户域名>/api/v1/client-auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"明文密码","referral_code":""}'
+# → 201 {"data":{"access_token":"<JWT>","refresh_token":"<JWT>","client":{...}}}
+
+# 登录
+curl -X POST https://<门户域名>/api/v1/client-auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"user@example.com","password":"明文密码"}'
+# → 200 同上
+
+# 拉取当前客户资料（带 token）
+curl https://<门户域名>/api/v1/client-auth/me \
+  -H 'Authorization: Bearer <access_token>'
+# → 200 {"data":{"id":27,"email":"user@example.com","nickname":"","status":"active","quota_bytes":10737418240,"used_bytes":0,...}}
+
+# 订阅拉取（无需 Header，token 在路径里）
+curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
+# → 200 Mihomo YAML（或 base64_uri / singbox_json / xray_json）
+
+# 错误样例：token 失效
+# → 401 {"code":"errClientTokenRevoked","message":"...","request_id":"...","can_retry":false}
+```
+
+401 时先 `POST /api/v1/client-auth/refresh` 换新 token 重试一次，仍失败则清除本地登录态（门户模板已内置）。
+
 ---
 
 ## 2. 公开端点（无需登录）
@@ -45,8 +75,9 @@
 | GET | `/api/v1/public/articles` | 公开文章列表（已发布） |
 | GET | `/api/v1/public/articles/:slug` | 文章详情 |
 | GET | `/api/v1/public/client-configs` | 客户端下载配置 |
-| GET | `/sub/:token` | 订阅下发（按 `fmt` 参数返回 base64_uri / mihomo_yaml / singbox_json / xray_json 等；已吊销返回 403） |
+| GET | `/sub/:token` | 订阅下发（按 `format` 参数返回 base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json 等；已吊销/不存在返回 404，暂停/到期/未激活返回 403。详见 [subscription.md](./subscription.md)） |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth 提供商显隐：`{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
+| GET | `/api/v1/system/maintenance` | 维护模式状态（公开）。维护开启时门户显示维护页 |
 
 > 以上均带维护模式守卫与公共 API 限流。
 

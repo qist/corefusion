@@ -38,3 +38,10 @@
 - `oauth-google-verification.md` — Google OAuth 验证
 - `notification-templates.md` — 通知模板说明
 - 仓库根目录 `DEVELOPMENT.md` — 开发指南（构建、部署、数据库）
+
+接口	路由	Handler	说明
+首次启动初始化	PUT /api/v1/system/bootstrap-finish	FinishBootstrap	设计文档已写，代码未实现
+面板版本列表	GET /api/v1/system/releases	ListReleases	返回 501
+面板自更新	POST /api/v1/system/update	SystemUpdate	返回 501
+面板自回滚	POST /api/v1/system/rollback	SystemRollback	返回 501
+面板更新任务列表	GET /api/v1/system/update-jobs	ListUpdateJobs	返回 501

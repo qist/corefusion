@@ -517,18 +517,11 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 					if portalPort == "" || portalPort == "0" {
 						site.Path = "/p"
 					}
-				} else if site.Template == "subscription_forward" {
-					// subscription_forward: only valid on the panel node (isLocal).
-					// Subscription URLs are served by the panel process on its
-					// main port under the /sub path.
-					if !m.isLocal {
-						continue
-					}
-					site.Upstream = m.panelAddr(ctx)
-					if site.Path == "" {
-						site.Path = "/sub"
-					}
 				}
+				// 这里曾有一个 else-if 判断 subscription_forward 的分支：它嵌在
+				// portal_forward 判断之内，条件恒为假，是不可达死代码，已删除。
+				// （该方法已无生产调用路径：生成职责由 CaddyManager/NginxManager 承担，
+				//   仅在 caddyConfigGen==nil 的兜底分支可达。）
 			}
 			httpSites = append(httpSites, site)
 		}

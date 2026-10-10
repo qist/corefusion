@@ -411,37 +411,17 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		case "reality":
 			realitySites = append(realitySites, site)
 		default:
-			// portal_forward: only valid on the panel node (isLocal). Remote
-			// nodes have no panel process, so skip generating it for them.
-			if site.Template == "portal_forward" {
-				if !m.isLocal {
+			// portal_forward / subscription_forward：仅面板节点有效 ✓（远程节点没有
+			// 面板/门户进程 ✗）。派生字段（upstream/path）统一走 fillForwardDerivedFields ✓。
+			//
+			// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗
+			//   （m.isLocal 每请求被改写 ✓ → 本机/远程请求交错时会误跳过本机站点 ✗，
+			//    表现为门户转发配置时有时无、重置或换端口访问又正常 ✗）。
+			if site.Template == "portal_forward" || site.Template == "subscription_forward" {
+				if !m.isLocalTarget(ctx, serverID) {
 					continue
 				}
-				site.Upstream = m.portalAddr(ctx)
-				// If portal has a dedicated port, no path needed (whole domain forwards).
-				// If portal shares the panel port, use /p path.
-				if site.Path == "" {
-					portalPort := ""
-					if m.settingStore != nil {
-						if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
-							portalPort = v
-						}
-					}
-					if portalPort == "" || portalPort == "0" {
-						site.Path = "/p"
-					}
-				} else if site.Template == "subscription_forward" {
-					// subscription_forward: only valid on the panel node (isLocal).
-					// Subscription URLs are served by the panel process on its
-					// main port under the /sub path.
-					if !m.isLocal {
-						continue
-					}
-					site.Upstream = m.panelAddr(ctx)
-					if site.Path == "" {
-						site.Path = "/sub"
-					}
-				}
+				m.fillForwardDerivedFields(ctx, &site)
 			}
 			httpSites = append(httpSites, site)
 		}

@@ -605,7 +605,7 @@ function onTlsRecordFragmentChange() { if (rf.tlsRecordFragment) rf.tlsFragment 
 //   - tls_fragment / tls_record_fragment 互斥
 //   - tls_spoof_method 必须伴随 tls_spoof
 //   - fallback delay 必须是合法 duration
-// —— 以下 helper 的每条约束都用 sing-box check 实测过（详见 docs/singbox-field-gap.md）——
+// —— 以下 helper 的每条约束都用 sing-box check 实测过（详见 docs/design/singbox-field-gap.md）——
 
 // duration 字段给非法值会让核心拒绝启动（如 `time: invalid duration "abc"`）→ 生成前校验
 function validDuration(v) {

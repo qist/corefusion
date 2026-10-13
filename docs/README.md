@@ -40,7 +40,7 @@
 - 仓库根目录 `DEVELOPMENT.md` — 开发指南（构建、部署、数据库）
 
 接口	路由	Handler	说明
-首次启动初始化	PUT /api/v1/system/bootstrap-finish	FinishBootstrap	设计文档已写，代码未实现
+首次启动初始化	独立初始化向导服务（随机端口 18000-18999 + init_token）/ /init 前端向导 / corefusion init|reset-init	InitWizard	已实现（Web 向导 + CLI；步骤：数据库[SQLite/MySQL/Pg]、数据目录、env 加密密钥、核心安装、代理[Nginx/Caddy 二选一]、面板/订阅/门户端口+域名+默认货币+一键添加到代理、HTTPS[自签名·上传·ACME]、配置清单/下载 .env；监听地址按是否配置证书自动决定；核心/代理重启后自动安装）
 面板版本列表	GET /api/v1/system/releases	ListReleases	返回 501
 面板自更新	POST /api/v1/system/update	SystemUpdate	返回 501
 面板自回滚	POST /api/v1/system/rollback	SystemRollback	返回 501

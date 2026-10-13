@@ -31,6 +31,7 @@ import (
 	"corefusion/internal/runtime/process"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
+	"corefusion/internal/service/bootstrap"
 	certService "corefusion/internal/service/certificate"
 	planSvc "corefusion/internal/service/plan"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
@@ -53,6 +54,10 @@ func main() {
 		runServer(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
+	case "init":
+		runInit(os.Args[2:])
+	case "reset-init":
+		runResetInit(os.Args[2:])
 	case "admin":
 		runAdmin(os.Args[2:])
 	case "version":
@@ -74,6 +79,8 @@ Usage:
 
 Commands:
   admin     Offline admin commands (reset-password / list) — use when you cannot sign in
+  init      Non-interactive first-boot initialization (CLI)
+  reset-init  Reset first-boot initialization state (destructive, keeps data)
   migrate   Run database migrations
   version   Print version
   help      Show this help
@@ -196,6 +203,14 @@ func runServer(args []string) {
 		if abs, err := filepath.Abs(dataDir); err == nil {
 			dataDir = abs
 		}
+	}
+
+	// 首次启动检测（设计 3.1）：未配置 SAFE_PATHS / CF_DB_DSN 且无既有部署 → 进入初始化向导，
+	// 不启动正式面板。初始化完成后重跑本进程即走正常启动路径。
+	if bootstrap.IsFirstBoot(env, dataDir) {
+		log.Println("[startup] first boot detected; starting initialization wizard")
+		runInitMode(env, dataDir)
+		return
 	}
 
 	// Ensure data directory structure
@@ -520,6 +535,28 @@ func runServer(args []string) {
 		tlsEnabled = false
 	}
 
+	// 面板 / 订阅 / 门户**共用同一份 TLS 配置**：证书配在面板上时，独立端口的订阅站
+	// 与门户站也加载同一张证书（复用面板证书，含 IP 证书）。
+	var tlsCfg *tls.Config
+	if tlsEnabled {
+		tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
+		if mtlsEnabled && mtlsCAPath != "" {
+			caCert, err := os.ReadFile(mtlsCAPath)
+			if err != nil {
+				log.Printf("WARNING: failed to read mTLS CA: %v, skipping mTLS", err)
+			} else {
+				pool := x509.NewCertPool()
+				if pool.AppendCertsFromPEM(caCert) {
+					tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+					tlsCfg.ClientCAs = pool
+					log.Printf("mTLS enabled, CA: %s", mtlsCAPath)
+				} else {
+					log.Println("WARNING: failed to parse mTLS CA cert")
+				}
+			}
+		}
+	}
+
 	// Phase 8: Start server with graceful shutdown
 	// WriteTimeout is set to 5 minutes to accommodate long-running operations
 	// such as binary downloads (~20s), process stop/start, and certificate
@@ -533,21 +570,41 @@ func runServer(args []string) {
 		IdleTimeout:  120 * time.Second,
 	}
 
+	// 订阅 / 门户独立端口与面板**监听同一地址**：面板 127.0.0.1（走反向代理）时它们
+	// 也只在回环，由代理对外；面板 0.0.0.0 / :: 时对外直连。
+	bindHost := strings.TrimSpace(settings["listen_addr"])
+	bindAddr := func(port string) string {
+		if bindHost == "" {
+			return ":" + port
+		}
+		if strings.Contains(bindHost, ":") {
+			return "[" + bindHost + "]:" + port
+		}
+		return bindHost + ":" + port
+	}
+
 	// Start subscription server on dedicated port if configured
 	subPort := settings["subscription_port"]
 	var subSrv *http.Server
 	if subPort != "" && subPort != "0" && subPort != apiPort {
 		subEngine := router.NewSubscriptionEngine(db.DB)
 		subSrv = &http.Server{
-			Addr:         ":" + subPort,
+			Addr:         bindAddr(subPort),
 			Handler:      subEngine,
+			TLSConfig:    tlsCfg,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  120 * time.Second,
 		}
 		go func() {
-			log.Printf("Subscription server starting on :%s", subPort)
-			if err := subSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Subscription server starting on :%s (tls=%v, reuses panel cert)", subPort, tlsEnabled)
+			var err error
+			if tlsEnabled {
+				err = subSrv.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+			} else {
+				err = subSrv.ListenAndServe()
+			}
+			if err != nil && err != http.ErrServerClosed {
 				log.Printf("subscription server error: %v", err)
 			}
 		}()
@@ -559,15 +616,22 @@ func runServer(args []string) {
 	if portalPort != "" && portalPort != "0" && portalPort != apiPort {
 		portalEngine := router.NewPortalEngine(db.DB)
 		portalSrv = &http.Server{
-			Addr:         ":" + portalPort,
+			Addr:         bindAddr(portalPort),
 			Handler:      portalEngine,
+			TLSConfig:    tlsCfg,
 			ReadTimeout:  30 * time.Second,
 			WriteTimeout: 5 * time.Minute,
 			IdleTimeout:  120 * time.Second,
 		}
 		go func() {
-			log.Printf("Portal server starting on :%s", portalPort)
-			if err := portalSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Portal server starting on :%s (tls=%v, reuses panel cert)", portalPort, tlsEnabled)
+			var err error
+			if tlsEnabled {
+				err = portalSrv.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+			} else {
+				err = portalSrv.ListenAndServe()
+			}
+			if err != nil && err != http.ErrServerClosed {
 				log.Printf("portal server error: %v", err)
 			}
 		}()
@@ -592,24 +656,6 @@ func runServer(args []string) {
 	}()
 
 	if tlsEnabled {
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-
-		if mtlsEnabled && mtlsCAPath != "" {
-			caCert, err := os.ReadFile(mtlsCAPath)
-			if err != nil {
-				log.Printf("WARNING: failed to read mTLS CA: %v, skipping mTLS", err)
-			} else {
-				pool := x509.NewCertPool()
-				if pool.AppendCertsFromPEM(caCert) {
-					tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
-					tlsCfg.ClientCAs = pool
-					log.Printf("mTLS enabled, CA: %s", mtlsCAPath)
-				} else {
-					log.Println("WARNING: failed to parse mTLS CA cert")
-				}
-			}
-		}
-
 		srv.TLSConfig = tlsCfg
 		log.Printf("CoreFusion %s starting on %s (HTTPS)", Version, listenAddr)
 		if err := srv.ListenAndServeTLS(tlsCertPath, tlsKeyPath); err != nil {

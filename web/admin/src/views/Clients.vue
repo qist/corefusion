@@ -331,25 +331,34 @@ const getClientToken = (row) => {
   const sub = subscriptions.value.find(s => s.id === row.subscription_id)
   return sub?.token || ''
 }
+const isPrivateHost = (h) => {
+  if (!h) return true
+  const host = String(h).replace(/^\[|\]$/g, '')
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  if (v4) {
+    const a = Number(v4[1]); const b = Number(v4[2])
+    return a === 10 || a === 127 || a === 0 || (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)
+  }
+  return host === '::1' || host === 'localhost' || /^f[cd]/i.test(host) || /^fe80/i.test(host)
+}
+// 订阅链接：独立端点域名走 HTTPS；否则按当前访问 scheme，非 HTTPS + 公网地址（外网）不显示。
 const subUrl = (row) => {
   const token = getClientToken(row)
   if (!token) return ''
   const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
-
   if (ep && ep.domain) {
-    const host = ep.domain
     const path = ep.path || '/'
     const basePath = path.endsWith('/') ? path : path + '/'
-    return 'https://' + host + basePath + token
+    return 'https://' + ep.domain + basePath + token
   }
-
+  const scheme = window.location.protocol === 'https:' ? 'https' : 'http'
   const host = window.location.hostname
+  if (scheme === 'http' && !isPrivateHost(host)) return ''
   const subPort = panelSettings.value.subscription_port
   const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
-  if (isDedicatedPort) {
-    return 'https://' + host + ':' + subPort + '/' + token
-  }
-  return 'https://' + host + '/sub/' + token
+  if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token
+  return scheme + '://' + host + '/sub/' + token
 }
 
 // Helpers
@@ -509,6 +518,8 @@ async function resetPwd() {
 function showSubDetail(row) {
   subDetailEmail.value = row.email
   subDetailUrl.value = subUrl(row)
+  if (!subDetailUrl.value) ElMessage.warning(t('client.subInsecureHidden'))
+  else if (subDetailUrl.value.startsWith('http://')) ElMessage.warning(t('client.subInsecure'))
   subDetailQr.value = ''
   subDetailQrLoading.value = false
   subDetailDialog.value = true

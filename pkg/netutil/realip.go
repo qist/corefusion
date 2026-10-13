@@ -379,3 +379,21 @@ func IsReservedIP(ipStr string) bool {
 	}
 	return false
 }
+
+// HostIsPublicIP 判断 host（可含端口；IPv4/IPv6，IPv6 可带方括号）是否为“公网 IP 字面量”。
+// 域名、私网/环回/保留 IP、无法解析的 host 一律返回 false（不按公网 IP 处理）。
+// 用于订阅链接：非 HTTPS 时内网 IP 可展示、公网 IP 不展示。
+func HostIsPublicIP(host string) bool {
+	h := strings.TrimSpace(host)
+	if h == "" {
+		return false
+	}
+	if hp, _, err := net.SplitHostPort(h); err == nil {
+		h = hp
+	}
+	h = strings.Trim(h, "[]")
+	if net.ParseIP(h) == nil {
+		return false
+	}
+	return !IsPrivateIP(h)
+}

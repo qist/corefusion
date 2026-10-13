@@ -812,8 +812,8 @@ func (s *SettingService) GetDBConfig(ctx context.Context) (*DBConfig, error) {
 		MaxIdleConns: 10,
 	}
 
-	// Parse CF_DB_DSN
-	dsn := env["CF_DB_DSN"]
+	// Parse CF_DB_DSN（enc: 密文自动解密）
+	dsn := db.ResolveDSN(env["CF_DB_DSN"])
 	if dsn != "" {
 		switch {
 		case strings.HasPrefix(dsn, "mysql://"):
@@ -864,7 +864,7 @@ func (s *SettingService) GetDBConfig(ctx context.Context) (*DBConfig, error) {
 	// Compare the raw .env DSN with the startup DSN.
 	// Since startDSN may have the scheme prefix stripped by ConfigFromEnv,
 	// we normalize both for comparison.
-	currentEnvDSN := env["CF_DB_DSN"]
+	currentEnvDSN := db.ResolveDSN(env["CF_DB_DSN"])
 	needsRestart := false
 	if currentEnvDSN != "" && startDSN != "" {
 		// Strip scheme prefix from env DSN for fair comparison
@@ -985,7 +985,8 @@ func (s *SettingService) envDSNFor(config *DBConfig) string {
 	} else if config.Type == "postgres" && !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
 		dsn = "postgres://" + dsn
 	}
-	return dsn
+	// 落 .env 一律加密（mysql/postgres 含口令；sqlite 保持明文）。
+	return db.EncodeDSNForEnv(dsn)
 }
 
 // targetConfig 把前端传来的 DB 配置解析成 db.Config（含类型覆盖与连接池参数）。
@@ -1097,7 +1098,7 @@ func (s *SettingService) resolveDSN(dsn string) string {
 	if strings.Contains(dsn, "********") {
 		env := loadEnvFile()
 		if envDSN := env["CF_DB_DSN"]; envDSN != "" {
-			return envDSN
+			return db.ResolveDSN(envDSN)
 		}
 	}
 	// If DSN has no scheme prefix but type is mysql/postgres, the env may have the prefix
@@ -1105,7 +1106,7 @@ func (s *SettingService) resolveDSN(dsn string) string {
 	if !strings.HasPrefix(dsn, "mysql://") && !strings.HasPrefix(dsn, "postgres://") && strings.Contains(dsn, "@tcp(") {
 		env := loadEnvFile()
 		if envDSN := env["CF_DB_DSN"]; envDSN != "" {
-			return envDSN
+			return db.ResolveDSN(envDSN)
 		}
 	}
 	return dsn

@@ -135,6 +135,10 @@ SAFE_PATHS=data
 
 `CF_DB_TYPE` 可选，用于覆盖自动检测（`sqlite` / `mysql` / `postgres`）。
 
+> **密码加密存储**：通过面板写入（首次启动向导 / 数据库切换）的 MySQL/PostgreSQL
+> DSN 含数据库口令，会以 `enc:...` 形式（AES-256-GCM，密钥为 `CF_SECRET_ENCRYPTION_KEY`）
+> 加密存进 `.env`；读取时自动解密，手工写明文 DSN 同样兼容。
+
 **SQLite（默认）**
 
 ```env

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
@@ -334,7 +335,8 @@ func (s *NodeTrafficQuotaService) checkAllQuotas(ctx context.Context) {
 func (s *NodeTrafficQuotaService) quotaThresholdPercent() int {
 	pct := 80
 	var val string
-	if err := s.db.Table("system_settings").Select("value").Where("`key` = ?", QuotaThresholdSetting).Scan(&val).Error; err == nil && val != "" {
+	// clause.Column 兼容三库（反引号在 PostgreSQL 会语法错误）
+	if err := s.db.Table("system_settings").Select("value").Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: QuotaThresholdSetting}).Scan(&val).Error; err == nil && val != "" {
 		if n, perr := strconv.Atoi(val); perr == nil && n >= 0 && n <= 100 {
 			pct = n
 		}

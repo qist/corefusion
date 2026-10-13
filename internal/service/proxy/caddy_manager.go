@@ -719,6 +719,35 @@ func (m *CaddyManager) portalAddr(ctx context.Context) string {
 	return "127.0.0.1:" + port
 }
 
+// independentForwardPort 返回真正独立的自定义端口：非空、非 "0"，且不同于面板主端口。
+// 与 cmd/corefusion 启动逻辑一致 —— 只有该条件成立才会另起独立服务，且该服务在**根路径**对外
+// （订阅 /:token、门户 /），故反代必须整域名直通、不能再带 /sub 或 /p 前缀（否则 404）。
+func (m *CaddyManager) independentForwardPort(ctx context.Context, key string) string {
+	if m.settingStore == nil {
+		return ""
+	}
+	port := ""
+	if v, err := m.settingStore.GetByKey(ctx, key); err == nil {
+		port = strings.TrimSpace(v)
+	}
+	if port == "" || port == "0" {
+		return ""
+	}
+	if lp, err := m.settingStore.GetByKey(ctx, "panel.listen_port"); err == nil && strings.TrimSpace(lp) == port {
+		return ""
+	}
+	return port
+}
+
+// subscriptionAddr returns the subscription address (host:port) for subscription_forward.
+// 有独立订阅端口 → 127.0.0.1:<port>（独立订阅引擎）；否则回退面板主端口。
+func (m *CaddyManager) subscriptionAddr(ctx context.Context) string {
+	if p := m.independentForwardPort(ctx, "panel.subscription_port"); p != "" {
+		return "127.0.0.1:" + p
+	}
+	return m.panelAddr(ctx)
+}
+
 // fillForwardDerivedFields 计算并落地 portal_forward / subscription_forward 模板的**派生字段**
 // （upstream 与 path）。这些字段完全由系统设置派生（panel.portal_port / panel.listen_port），
 // 不依赖用户输入 ✓。
@@ -744,9 +773,15 @@ func (m *CaddyManager) fillForwardDerivedFields(ctx context.Context, site *entit
 			site.Path = ""
 		}
 	case "subscription_forward":
-		// 订阅由面板进程在主端口的 /sub 路径提供 ✓。
-		site.Upstream = m.panelAddr(ctx)
-		site.Path = "/sub"
+		// 有独立订阅端口 → 独立订阅引擎在**根路径**服务（/:token）→ 整域名直通，path 留空 ✓；
+		// 否则订阅由面板进程在主端口的 /sub 路径提供 → path "/sub" ✓。
+		// ⚠ 独立端口判定须与启动一致，否则反代会挂 /sub 打到根路径服务 → 404 ✗。
+		site.Upstream = m.subscriptionAddr(ctx)
+		if m.independentForwardPort(ctx, "panel.subscription_port") != "" {
+			site.Path = ""
+		} else {
+			site.Path = "/sub"
+		}
 	}
 }
 

@@ -233,6 +233,9 @@
             <el-button size="small" @click="showAddSite('grpc')">+ gRPC</el-button>
             <el-button size="small" @click="showAddSite('static')">+ Static</el-button>
             <el-button v-if="isLocal" size="small" type="primary" @click="showPanelProxy">{{ t('proxy.proxyPanel') }}</el-button>
+            <el-button v-if="isLocal" size="small" type="primary" plain @click="showForwardProxy('subscription_forward')">{{ t('proxy.templateSubscriptionForward') }}</el-button>
+            <el-button v-if="isLocal" size="small" type="primary" plain @click="showForwardProxy('portal_forward')">{{ t('proxy.templatePortalForward') }}</el-button>
+            <el-button size="small" type="primary" plain @click="showAddSite('reality')">{{ t('proxy.templateReality') }}</el-button>
           </div>
         </div>
       </template>
@@ -323,6 +326,7 @@
             <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="wafConfigForm.url_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="wafConfigForm.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="wafConfigForm.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafHeader')"><el-switch v-model="wafConfigForm.header_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="wafConfigForm.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="wafConfigForm.post_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="wafConfigForm.referer_check" active-value="on" inactive-value="off" /></el-form-item>
@@ -435,6 +439,7 @@
             <el-form-item :label="t('proxy.wafUrlCheck')"><el-switch v-model="siteWAFConfig.url_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafUrlArgs')"><el-switch v-model="siteWAFConfig.url_args_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafUserAgent')"><el-switch v-model="siteWAFConfig.user_agent_check" active-value="on" inactive-value="off" /></el-form-item>
+            <el-form-item :label="t('proxy.wafHeader')"><el-switch v-model="siteWAFConfig.header_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCookie')"><el-switch v-model="siteWAFConfig.cookie_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafPost')"><el-switch v-model="siteWAFConfig.post_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafReferer')"><el-switch v-model="siteWAFConfig.referer_check" active-value="on" inactive-value="off" /></el-form-item>
@@ -640,9 +645,6 @@
             <el-option label="gRPC" value="grpc" />
             <el-option label="XHTTP" value="xhttp" />
             <el-option label="HTTPUpgrade" value="httpupgrade" />
-            <el-option v-if="isLocal" :label="t('proxy.templatePortalForward')" value="portal_forward" />
-            <el-option v-if="isLocal" :label="t('proxy.templateSubscriptionForward')" value="subscription_forward" />
-            <el-option :label="t('proxy.templateReality')" value="reality" />
             </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
@@ -653,9 +655,7 @@
             <el-option label="XHTTP" value="xhttp" />
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             <el-option label="Static" value="static" />
-            <el-option v-if="isLocal" :label="t('proxy.templatePortalForward')" value="portal_forward" />
-            <el-option v-if="isLocal" :label="t('proxy.templateSubscriptionForward')" value="subscription_forward" />
-            <el-option :label="t('proxy.templateReality')" value="reality" />
+            <el-option v-if="isSpecialTemplate" :label="specialTemplateLabel" :value="siteForm.template" />
             </el-select>
         </el-form-item>
         <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static' && siteForm.template!=='reality'" label="lb_policy">
@@ -1062,6 +1062,40 @@ const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', tem
 
 // Panel port
 const panelPort = ref('8080')
+// 订阅/门户转发的 upstream+path 由面板设置派生（与后端 fillForwardDerivedFields 一致）
+const panelConfig = ref({ listen_port: '8080', subscription_port: '0', portal_port: '0' })
+async function fetchPanelConfig() {
+  try {
+    const d = await client.get('/system/panel-config')
+    if (d) panelConfig.value = { ...panelConfig.value, ...d }
+  } catch {}
+}
+// 镜像后端：订阅独立端口（非空、非 0、且 ≠ 主端口）→ 直通根路径；否则回退主端口 + /sub。
+// 门户独立端口（非空、非 0）→ 直通根路径；否则回退主端口 + /p。
+function forwardDerived(template) {
+  const cfg = panelConfig.value
+  const listenPort = cfg.listen_port || panelPort.value || '8080'
+  if (template === 'subscription_forward') {
+    const p = String(cfg.subscription_port || '').trim()
+    const independent = p && p !== '0' && p !== listenPort
+    return independent ? { upstream: `127.0.0.1:${p}`, path: '' }
+                       : { upstream: `127.0.0.1:${listenPort}`, path: '/sub' }
+  }
+  const pp = String(cfg.portal_port || '').trim()
+  const independent = pp && pp !== '0'
+  return independent ? { upstream: `127.0.0.1:${pp}`, path: '' }
+                     : { upstream: `127.0.0.1:${listenPort}`, path: '/p' }
+}
+
+// 订阅/门户/Reality 已从「模板」下拉移到工具栏按钮（代理面板同一排）。
+// 编辑既有站点时，模板下拉只需展示当前模板，故仅动态补一个当前项。
+const specialTemplates = ['portal_forward', 'subscription_forward', 'reality']
+const isSpecialTemplate = computed(() => specialTemplates.includes(siteForm.value.template))
+const specialTemplateLabel = computed(() => ({
+  portal_forward: t('proxy.templatePortalForward'),
+  subscription_forward: t('proxy.templateSubscriptionForward'),
+  reality: t('proxy.templateReality'),
+}[siteForm.value.template] || siteForm.value.template))
 
 // Config view
 const configViewVisible = ref(false)
@@ -1385,6 +1419,23 @@ l4_protocol: 'tcp', sni_target: '',
 proxy_protocol: false, is_panel: true, editMode: 'form',
 inbound_id: null, inbound_mode: 'manual'
 }
+  siteDialogVisible.value = true
+}
+
+// 订阅转发 / 门户转发：与「代理面板」同一排按钮；upstream 与 path 由后端按系统设置派生。
+function showForwardProxy(template) {
+  const isSub = template === 'subscription_forward'
+  siteDialogTitle.value = isSub ? t('proxy.templateSubscriptionForward') : t('proxy.templatePortalForward')
+  const d = forwardDerived(template)
+  siteForm.value = {
+    domain: '', upstreams: [d.upstream], path: d.path, backend_path: d.path, template,
+    use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
+    proxy_config: '', custom_config: '', waf_enabled: true, lb_policy: '',
+    log_enabled: false, log_path: '', log_format: 'json',
+    l4_protocol: 'tcp', sni_target: '',
+    proxy_protocol: false, is_panel: false, editMode: 'form',
+    inbound_id: null, inbound_mode: 'manual'
+  }
   siteDialogVisible.value = true
 }
 
@@ -1724,7 +1775,7 @@ const wafRuleDescMap = {
   'post.rule': 'wafRulePost', 'url.rule': 'wafRuleUrl', 'useragent.rule': 'wafRuleUseragent',
   'whiteip.rule': 'wafRuleWhiteip', 'whiteurl.rule': 'wafRuleWhiteurl', 'whiteua.rule': 'wafRuleWhiteua',
   'referer.rule': 'wafRuleReferer', 'fileext.rule': 'wafRuleFileext',
-'cdnip.rule': 'wafRuleCdnip'
+'header.rule': 'wafRuleHeader', 'cdnip.rule': 'wafRuleCdnip'
 }
 function wafRuleDesc(name) {
   const key = wafRuleDescMap[name]
@@ -1735,7 +1786,7 @@ const wafConfigForm = ref({
   waf_enable: 'on', trust_proxy_headers: 'on',
   white_url_check: 'on', white_ip_check: 'on', white_ua_check: 'on',
   black_ip_check: 'on',
-  url_check: 'on', url_args_check: 'on', user_agent_check: 'on',
+  url_check: 'on', url_args_check: 'on', user_agent_check: 'on', header_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'off', file_upload_check: 'on',
   cc_check: 'on', cc_rate: '', cc_block_ttl: '',
   bodyless: 'on', multipart_streaming_check: 'off',
@@ -1794,6 +1845,7 @@ function parseWAFConfigForm() {
       url_check: obj.url_check || 'on',
       url_args_check: obj.url_args_check || 'on',
       user_agent_check: obj.user_agent_check || 'on',
+      header_check: obj.header_check || 'on',
       cookie_check: obj.cookie_check || 'on',
       post_check: obj.post_check || 'on',
       referer_check: obj.referer_check || 'off',
@@ -1824,6 +1876,7 @@ async function saveWAFConfigForm() {
   obj.url_check = wafConfigForm.value.url_check
   obj.url_args_check = wafConfigForm.value.url_args_check
   obj.user_agent_check = wafConfigForm.value.user_agent_check
+  obj.header_check = wafConfigForm.value.header_check
   obj.cookie_check = wafConfigForm.value.cookie_check
   obj.post_check = wafConfigForm.value.post_check
   obj.referer_check = wafConfigForm.value.referer_check
@@ -1912,6 +1965,7 @@ const merged = { ...globalCfg, ...cfg }
       url_check: merged.url_check || 'on',
       url_args_check: merged.url_args_check || 'on',
       user_agent_check: merged.user_agent_check || 'on',
+      header_check: merged.header_check || 'on',
       cookie_check: merged.cookie_check || 'on',
       post_check: merged.post_check || 'on',
       referer_check: merged.referer_check || 'off',
@@ -1938,7 +1992,7 @@ white_url_check: merged.white_url_check || 'on',
   siteWAFVisible.value = true
 }
 
-const domainRuleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'cdnip.rule']
+const domainRuleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'header.rule', 'cdnip.rule']
 
 async function loadSiteWAFDomainRules(domain) {
   // Always show all rule files, even if empty — user can click Edit to create content
@@ -2011,6 +2065,7 @@ async function saveSiteWAFConfig() {
 
 onMounted(() => {
   fetchProxyInfo()
+  fetchPanelConfig()
   fetchSites()
   fetchCertificates()
   fetchSNISettings()

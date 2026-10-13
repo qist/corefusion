@@ -137,6 +137,7 @@ const ruleDescriptions = {
   'referer.rule': 'Referer rules',
   'useragent.rule': 'User-Agent rules',
   'fileext.rule': 'File extension rules',
+  'header.rule': 'Request header rules',
   'whiteua.rule': 'Whitelist User-Agent rules',
   'blackip.rule': 'Blacklist IP rules (user-defined)',
   'whiteip.rule': 'Whitelist IP rules (user-defined)',

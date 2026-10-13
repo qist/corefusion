@@ -55,10 +55,21 @@ func TestCaddyFillForwardDerivedFields(t *testing.T) {
 		t.Fatalf("portal_forward(no portal port): upstream=%q path=%q, want 127.0.0.1:8080 / /p", pf2.Upstream, pf2.Path)
 	}
 
-	// subscription_forward → 面板主端口 + /sub
+	// 无独立订阅端口 → 面板主端口 + /sub
 	sf := &entity.CaddySite{Template: "subscription_forward"}
 	m.fillForwardDerivedFields(ctx, sf)
 	if sf.Upstream != "127.0.0.1:8080" || sf.Path != "/sub" {
 		t.Fatalf("subscription_forward: upstream=%q path=%q, want 127.0.0.1:8080 / /sub", sf.Upstream, sf.Path)
+	}
+
+	// 有独立订阅端口 → 独立订阅引擎在根路径服务 → 整域名直通，path 留空（不能再挂 /sub，否则 404）
+	m3 := &CaddyManager{settingStore: fakeSettingStore{m: map[string]string{
+		"panel.subscription_port": "8083",
+		"panel.listen_port":       "8080",
+	}}}
+	sf2 := &entity.CaddySite{Template: "subscription_forward"}
+	m3.fillForwardDerivedFields(ctx, sf2)
+	if sf2.Upstream != "127.0.0.1:8083" || sf2.Path != "" {
+		t.Fatalf("subscription_forward(dedicated): upstream=%q path=%q, want 127.0.0.1:8083 / empty", sf2.Upstream, sf2.Path)
 	}
 }

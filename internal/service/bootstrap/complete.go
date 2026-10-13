@@ -214,6 +214,18 @@ func firstNonEmpty(a, b string) string {
 	return b
 }
 
+// independentPort 返回"真正独立"的端口：非空、非 0，且与面板监听端口不同。
+// 与 cmd/corefusion 启动逻辑一致（subPort/portalPort != "" && != "0" && != apiPort）——
+// 只有此条件成立时才会另起独立 HTTP 服务，该服务在**根路径**对外（订阅 /:token、门户 /），
+// 所以反代必须整域名直通，不能再加 /sub、/p 前缀（否则 404）。
+func (d *Draft) independentPort(port string) string {
+	p := strings.TrimSpace(port)
+	if p == "" || p == "0" || p == strings.TrimSpace(d.ListenPort) {
+		return ""
+	}
+	return p
+}
+
 func maskSecret(s string) string {
 	if s == "" {
 		return ""
@@ -365,7 +377,15 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 	}
 	if h := normalizeHost(d.SubscriptionDomain); h != "" {
 		epRepo := repository.NewSubscriptionEndpointRepository(db.DB)
-		if err := epRepo.Create(ctx, &entity.SubscriptionEndpoint{Domain: h, Path: "/", Enabled: true, Description: "首次启动初始化创建"}); err != nil {
+		// 订阅端点路径必须与实际服务路由一致：
+		//   - 配置了独立订阅端口 → 订阅引擎在根路径提供 /:token，路径写 "/"；
+		//   - 否则由面板在主端口用 /sub/<token> 提供，路径写 "/sub"。
+		// 不一致会生成 404 的订阅 URL（预览/客户端拉取空白）。
+		subPath := "/sub"
+		if d.independentPort(d.SubscriptionPort) != "" {
+			subPath = "/"
+		}
+		if err := epRepo.Create(ctx, &entity.SubscriptionEndpoint{Domain: h, Path: subPath, Enabled: true, Description: "首次启动初始化创建"}); err != nil {
 			log.Printf("[bootstrap] warning: create subscription endpoint failed: %v", err)
 		}
 		sdRepo := repository.NewShareDomainConfigRepository(db.DB)
@@ -487,44 +507,97 @@ func registerIssuedCert(ctx context.Context, dataDir string, d *Draft, dnsChanne
 }
 
 // createProxySites 为面板/订阅/门户创建反代站点（仅落库；代理配置在重启后生效）。
-// 只有**涵盖域名的证书**才绑定到这些站点（proxy_sites.cert_path/key_path）——反代站点是
-// 域名站点，挂仅 IP 的证书会让 TLS 校验失败；未签发域名证书时不挂，代理走 HTTP。
+//
+// ⚠ 写入的是**真实生成器读取的表**（nginx_sites / caddy_sites，按所选代理类型），
+// 不是通用 proxy_sites —— 配置由 NginxManager / CaddyManager 从这两张表生成，
+// 只写 proxy_sites 不会落到 nginx/caddy 配置里（这正是此前"模板不完整"的原因）。
+//
+// 订阅/门户使用内置 forward 模板（subscription_forward / portal_forward）：upstream 与
+// path 随系统设置派生 ——
+//   - 配置了**独立端口**：独立的订阅/门户引擎在**根路径**对外（订阅 /:token、门户 /），
+//     反代整域名直通（path 空），不能再加 /sub、/p，否则 404；
+//   - 未配置独立端口：回退**面板端口**，订阅走 /sub、门户走 /p。
+//
+// 只有**涵盖域名的证书**才绑定到这些站点（cert_path/key_path）——反代站点是域名站点，
+// 挂仅 IP 的证书会让 TLS 校验失败；未签发域名证书时不挂，代理走 HTTP。
 func createProxySites(ctx context.Context, dataDir string, d *Draft) {
-	repo := repository.NewProxySiteRepository(db.DB)
 	certPath, keyPath := "", ""
 	if d.hasDomainCert() {
 		certPath = relToDataDir(dataDir, d.TLSCertPath)
 		keyPath = relToDataDir(dataDir, d.TLSKeyPath)
 	}
-	add := func(domain, upstreamPort, path string, isPanel bool) {
-		h := normalizeHost(domain)
-		if h == "" || strings.TrimSpace(upstreamPort) == "" || upstreamPort == "0" {
-			return
-		}
-		site := &entity.ProxySite{
-			ServerID:  1,
-			ProxyType: d.ProxyType,
-			Domain:    h,
-			Upstream:  "127.0.0.1:" + upstreamPort,
-			Path:      path,
-			CertPath:  certPath,
-			KeyPath:   keyPath,
-			Enabled:   true,
-			IsPanel:   isPanel,
-			Priority:  100,
-		}
-		if err := repo.Create(ctx, site); err != nil {
-			log.Printf("[bootstrap] warning: create %s proxy site failed: %v", h, err)
-		}
+	panelUpstream := "127.0.0.1:" + strings.TrimSpace(d.ListenPort)
+
+	// 订阅：独立端口 → 独立订阅引擎在根路径服务（/:token）→ 整域名直通（path 空）；
+	// 否则回退面板端口、由面板的 /sub 提供 → path "/sub"。
+	subUpstream := panelUpstream
+	subPath := "/sub"
+	if p := d.independentPort(d.SubscriptionPort); p != "" {
+		subUpstream = "127.0.0.1:" + p
+		subPath = ""
 	}
+
+	// 门户：独立端口 → 独立门户引擎在根路径服务（/）→ 整域名直通（path 空）；
+	// 否则与面板共用端口 → 走 /p。
+	portalUpstream := panelUpstream
+	portalPath := "/p"
+	if p := d.independentPort(d.PortalPort); p != "" {
+		portalUpstream = "127.0.0.1:" + p
+		portalPath = ""
+	}
+
+	type siteSpec struct {
+		domain   string
+		upstream string
+		template string
+		path     string
+		isPanel  bool
+	}
+	var specs []siteSpec
 	if d.ProxyAddPanel {
-		add(d.PanelDomain, d.ListenPort, "", true)
+		if h := normalizeHost(d.PanelDomain); h != "" {
+			specs = append(specs, siteSpec{h, panelUpstream, "", "", true})
+		}
 	}
 	if d.ProxyAddSubscription {
-		add(d.SubscriptionDomain, firstNonEmpty(d.SubscriptionPort, d.ListenPort), "", false)
+		if h := normalizeHost(d.SubscriptionDomain); h != "" {
+			specs = append(specs, siteSpec{h, subUpstream, "subscription_forward", subPath, false})
+		}
 	}
 	if d.ProxyAddPortal {
-		add(d.PortalDomain, firstNonEmpty(d.PortalPort, d.ListenPort), "", false)
+		if h := normalizeHost(d.PortalDomain); h != "" {
+			specs = append(specs, siteSpec{h, portalUpstream, "portal_forward", portalPath, false})
+		}
+	}
+	if len(specs) == 0 {
+		return
+	}
+
+	switch d.ProxyType {
+	case ProxyNginx:
+		repo := repository.NewNginxSiteRepository(db.DB)
+		for _, s := range specs {
+			site := &entity.NginxSite{
+				ServerID: 1, Domain: s.domain, Upstream: s.upstream, Template: s.template,
+				Path: s.path, CertPath: certPath, KeyPath: keyPath,
+				Enabled: true, IsPanel: s.isPanel, Priority: 100,
+			}
+			if err := repo.Create(ctx, site); err != nil {
+				log.Printf("[bootstrap] warning: create nginx site %s%s failed: %v", s.domain, s.path, err)
+			}
+		}
+	case ProxyCaddy:
+		repo := repository.NewCaddySiteRepository(db.DB)
+		for _, s := range specs {
+			site := &entity.CaddySite{
+				ServerID: 1, Domain: s.domain, Upstream: s.upstream, Template: s.template,
+				Path: s.path, CertPath: certPath, KeyPath: keyPath,
+				Enabled: true, IsPanel: s.isPanel, Priority: 100,
+			}
+			if err := repo.Create(ctx, site); err != nil {
+				log.Printf("[bootstrap] warning: create caddy site %s%s failed: %v", s.domain, s.path, err)
+			}
+		}
 	}
 }
 

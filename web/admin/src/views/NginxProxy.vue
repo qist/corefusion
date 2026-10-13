@@ -104,12 +104,36 @@
             <el-form-item label="multi_accept">
               <el-switch v-model="settings.multi_accept" />
             </el-form-item>
+            <el-form-item label="use epoll">
+              <el-switch v-model="settings.use_epoll" />
+              <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('proxy.useEpollHint') }}</span>
+            </el-form-item>
             <el-divider content-position="left">{{ t('proxy.defaultPorts') }}</el-divider>
             <el-form-item :label="t('proxy.defaultHttpPort')">
               <el-input v-model="settings.default_http_port" style="width:200px" placeholder="80" />
             </el-form-item>
             <el-form-item :label="t('proxy.defaultHttpsPort')">
               <el-input v-model="settings.default_https_port" style="width:200px" placeholder="443" />
+            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.network') }}</el-divider>
+            <el-form-item label="IPv6">
+              <el-switch v-model="settings.ipv6" />
+              <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.ipv6GlobalHint') }}</span>
+            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.tls') }}</el-divider>
+            <el-form-item label="ssl_dhparam">
+              <el-switch v-model="settings.ssl_dhparam" />
+              <el-button size="small" style="margin-left:8px" @click="regenerateSslMaterial('dhparam')">{{ t('proxy.sslGenerate') }}</el-button>
+              <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.sslDhparamHint') }}</span>
+            </el-form-item>
+            <el-form-item label="ssl_session_ticket_key">
+              <el-switch v-model="settings.ssl_session_ticket" />
+              <el-button size="small" style="margin-left:8px" @click="regenerateSslMaterial('session_ticket')">{{ t('proxy.sslGenerate') }}</el-button>
+              <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.sslSessionTicketHint') }}</span>
+            </el-form-item>
+            <el-form-item label="resolver">
+              <el-input v-model="settings.ssl_resolver" style="width:320px" clearable placeholder="8.8.8.8 1.1.1.1" />
+              <div style="font-size:12px;color:#909399">{{ t('proxy.sslResolverHint') }}</div>
             </el-form-item>
           </el-form>
         </el-tab-pane>
@@ -585,10 +609,6 @@
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">Proxy Protocol</div>
             <el-switch v-model="settings.stream_proxy_protocol" />
-          </div>
-          <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">IPv6</div>
-            <el-switch v-model="settings.stream_ipv6" />
           </div>
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_connect_timeout</div>
@@ -1898,6 +1918,14 @@ async function fetchSettings() {
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
+async function regenerateSslMaterial(target) {
+  try {
+    const data = await client.post(`${nginxApi.value}/ssl/generate`, { target })
+    if (data) settings.value = { ...settings.value, ...data }
+    ElMessage.success(t('common.success'))
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+
 async function saveSettings() {
   try {
     await client.post(`${nginxApi.value}/settings`, settings.value)
@@ -2167,6 +2195,8 @@ function editSite(row) {
 function generatePreview(site) {
   let lines = []
   const domain = site.domain
+  // 有效 IPv6：全局开关优先，站点级 enable_ipv6 可单独开启
+  const ipv6 = (settings.value && settings.value.ipv6) || site.enable_ipv6
   // L4 preview
   if (site.template === 'l4') {
     const port = site.listen_port
@@ -2179,7 +2209,7 @@ function generatePreview(site) {
     lines.push(`}`, ``)
     lines.push(`server {`)
     lines.push(`    listen ${port} so_keepalive=on;`)
-    if (site.enable_ipv6) lines.push(`    listen [::]:${port} ipv6only=on so_keepalive=on;`)
+    if (ipv6) lines.push(`    listen [::]:${port} ipv6only=on so_keepalive=on;`)
     lines.push(`    proxy_socket_keepalive on;`)
     lines.push(`    proxy_buffer_size 512k;`)
     if (site.proxy_protocol) lines.push(`    proxy_protocol on;`)
@@ -2196,6 +2226,7 @@ function generatePreview(site) {
     const keyPath = site.key_path || '/path/to/key.pem'
     lines.push(`server {`)
     lines.push(`    listen 127.0.0.1:${port} ssl proxy_protocol;`)
+    if (ipv6) lines.push(`    listen [::1]:${port} ssl proxy_protocol;`)
     lines.push(`    http2 on;`)
     lines.push(`    server_name _;`)
     lines.push(`    ssl_certificate ${certPath};`)
@@ -2233,6 +2264,7 @@ function generatePreview(site) {
     lines.push(`    }`, '')
     lines.push(`    server {`)
     lines.push(`        listen ${port} reuseport fastopen=4096 so_keepalive=on backlog=4096;`)
+    if (ipv6) lines.push(`        listen [::]:${port} reuseport fastopen=4096 so_keepalive=on backlog=4096;`)
     lines.push(`        ssl_preread on;`)
     lines.push(`        proxy_half_close on;`)
     if (site.proxy_protocol) lines.push(`        proxy_protocol on;`)
@@ -2254,16 +2286,27 @@ function generatePreview(site) {
   const port = site.listen_port
   if (site.cert_path && site.key_path) {
     lines.push(`    listen ${port} ssl;`)
-    if (site.enable_ipv6) lines.push(`    listen [::]:${port} ssl;`)
+    if (ipv6) lines.push(`    listen [::]:${port} ssl;`)
   } else {
     lines.push(`    listen ${port};`)
-    if (site.enable_ipv6) lines.push(`    listen [::]:${port};`)
+    if (ipv6) lines.push(`    listen [::]:${port};`)
   }
   lines.push(`    server_name ${domain};`)
   if (site.cert_path && site.key_path) {
     lines.push(`    ssl_certificate ${site.cert_path};`)
     lines.push(`    ssl_certificate_key ${site.key_path};`)
     lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
+    if (site.enable_stapling) {
+      lines.push(`    ssl_stapling on;`)
+      lines.push(`    ssl_stapling_verify on;`)
+      lines.push(`    ssl_trusted_certificate ${String(site.cert_path).replace(/[^/]*$/, 'fullchain.pem')};`)
+      // resolver 留空 = 关闭（用系统 resolver）：与后端一致，空则不输出
+      const resolver = ((settings.value && settings.value.ssl_resolver) || '').trim()
+      if (resolver) {
+        lines.push(`    resolver ${resolver};`)
+        lines.push(`    resolver_timeout 10s;`)
+      }
+    }
   }
   lines.push(``)
   if (site.template === 'static') {

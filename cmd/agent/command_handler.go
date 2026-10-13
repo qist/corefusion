@@ -181,6 +181,18 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			if err := a.settingRepo.Set(ctx, "proxy.nginx_settings", req.NginxSettings); err != nil {
 				log.Printf("[Agent] failed to save nginx settings: %v", err)
 			}
+			// 依据面板下发的 base64 素材，在本节点还原 dhparam / 会话票据密钥
+			// （配置引用了这些文件，必须在 nginx 加载前就位）。
+			var tlsCfg struct {
+				DhparamB64 string `json:"ssl_dhparam_b64"`
+				TicketB64  string `json:"ssl_session_ticket_b64"`
+				TicketBB64 string `json:"ssl_session_ticket_b_b64"`
+			}
+			if json.Unmarshal([]byte(req.NginxSettings), &tlsCfg) == nil {
+				if err := proxySvc.WriteGlobalSslFiles(a.dataDir, tlsCfg.DhparamB64, tlsCfg.TicketB64, tlsCfg.TicketBB64); err != nil {
+					log.Printf("[Agent] restore global ssl files: %v", err)
+				}
+			}
 		}
 		if req.ProxyType == "caddy" && req.CaddySniSettings != "" {
 			// Parse and save caddy SNI settings

@@ -2604,6 +2604,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/nginx/save-and-apply", nginxH.SaveAndApply)
 				nodeServersGroup.GET("/:id/nginx/settings", nginxH.GetSettings)
 				nodeServersGroup.POST("/:id/nginx/settings", nginxH.SaveSettings)
+				nodeServersGroup.POST("/:id/nginx/ssl/generate", nginxH.GenerateSSLFiles)
 				nodeServersGroup.POST("/:id/nginx/sni-rules/toggle", nginxH.ToggleSNI)
 				nodeServersGroup.DELETE("/:id/nginx/sni-rules", nginxH.DeleteAllSNI)
 				nodeServersGroup.POST("/:id/nginx/batch-update-ports", nginxH.BatchUpdatePorts)

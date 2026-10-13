@@ -1082,14 +1082,29 @@ func (m *Manager) installCaddy(ctx context.Context) error {
 }
 
 // checkNginxUser verifies the nginx system user exists, creating it if missing.
+//
+// ⚠ 必须区分「用户」和「组」✗：`useradd -r nginx` 会**顺带尝试创建同名组** ✓，
+// 而现实里常见「组已存在、用户不存在」（例如系统包只建了组、或上一次创建只完成了组 ✓）——
+// 此时 useradd 会以 `group nginx already exists` 失败 ✗，把整个 nginx 安装卡死 ✗。
+// 所以：用户已存在直接返回 ✓；用户不存在时**先探测组** ✓，组在就用 `-g nginx` 加入既有组 ✓，
+// 组不在才让 useradd 自建 ✓；最后再兜底复核一次（并发建号的竞态）✓。
 func checkNginxUser() error {
-	_, err := user.Lookup("nginx")
-	if err == nil {
-		return nil // user exists
+	if _, err := user.Lookup("nginx"); err == nil {
+		return nil // 用户已存在 → 不重复创建 ✓
 	}
-	// Create nginx system user
-	cmd := exec.Command("useradd", "-r", "-s", "/sbin/nologin", "nginx")
-	if out, err := cmd.CombinedOutput(); err != nil {
+
+	args := []string{"-r", "-s", "/sbin/nologin"}
+	if _, gerr := user.LookupGroup("nginx"); gerr == nil {
+		// 组已存在 → 加入既有 nginx 组，别再让 useradd 建组 ✗
+		args = append(args, "-g", "nginx")
+	}
+	args = append(args, "nginx")
+
+	if out, err := exec.Command("useradd", args...).CombinedOutput(); err != nil {
+		// 竞态兜底：可能刚被并发安装/其它进程建好了 → 复核一次，存在即算成功 ✓
+		if _, lerr := user.Lookup("nginx"); lerr == nil {
+			return nil
+		}
 		return fmt.Errorf("nginx user not found and creation failed: %s (run: useradd -r -s /sbin/nologin nginx)", strings.TrimSpace(string(out)))
 	}
 	log.Println("created nginx system user")

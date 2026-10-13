@@ -350,6 +350,27 @@ func (h *NginxHandler) SaveSettings(c *gin.Context) {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
+	// 开启全局 TLS 时自动补齐素材（base64 存库），并把最新的完整设置返回给前端。
+	if s, err := h.nginxMgr.EnsureGlobalSSLMaterial(c.Request.Context()); err == nil {
+		response.OK(c, s)
+		return
+	}
+	response.OK(c, settings)
+}
+
+// GenerateSSLFiles 重新生成全局 TLS 素材（dhparam / 会话票据密钥），存库并还原到本机磁盘。
+// 供前端「生成/替换」按钮调用；target: dhparam | session_ticket。
+func (h *NginxHandler) GenerateSSLFiles(c *gin.Context) {
+	h.applyServerID(c)
+	var req struct {
+		Target string `json:"target"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	settings, err := h.nginxMgr.RegenerateGlobalSSLMaterial(c.Request.Context(), req.Target)
+	if err != nil {
+		response.InternalError(c, "GENERATE_FAILED", err.Error())
+		return
+	}
 	response.OK(c, settings)
 }
 

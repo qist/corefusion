@@ -12,6 +12,7 @@ import (
 
 	"corefusion/internal/migration"
 	"corefusion/internal/model/entity"
+	seccrypto "corefusion/internal/security/crypto"
 
 	"github.com/qist/sqlite"
 	"gorm.io/gorm"
@@ -85,6 +86,124 @@ func DefaultConfig() Config {
 	}
 }
 
+// ResolveDSN 把 .env 里存的 CF_DB_DSN 解析成"明文可用"的 DSN。
+//
+// 存储约定（2026-10-12 起）：mysql/postgres 的 DSN 含数据库口令 → 一律以 `enc:` 密文
+// 存进 .env（与充值卡密钥/敏感配置同一套 AES-256-GCM）；sqlite 裸路径不含口令 →
+// 保持明文。明文形态（历史数据/手工配置）原样返回。
+func ResolveDSN(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || !seccrypto.IsEncrypted(raw) {
+		return raw
+	}
+	plain, err := seccrypto.DecryptSecret(raw)
+	if err != nil {
+		log.Printf("[db] CRITICAL: CF_DB_DSN decrypt failed (wrong CF_SECRET_ENCRYPTION_KEY?): %v", err)
+		return raw
+	}
+	return plain
+}
+
+// EncodeDSNForEnv 返回 CF_DB_DSN 在 .env 里的存储形态：mysql/postgres 加密，其余原样。
+func EncodeDSNForEnv(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" || seccrypto.IsEncrypted(dsn) {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "mysql://") || strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		enc, err := seccrypto.EncryptSecret(dsn)
+		if err != nil {
+			log.Printf("[db] warning: encrypt CF_DB_DSN failed, storing plaintext: %v", err)
+			return dsn
+		}
+		return enc
+	}
+	return dsn
+}
+
+// CreateDatabase 在目标服务器上创建数据库（首次初始化时库可能还不存在）。
+// 用同一账号连"维护库"（mysql 连不带库名、PG 连 postgres 库）后 CREATE DATABASE。
+// sqlite 文件由驱动自动创建，无需此步骤。
+func CreateDatabase(cfg Config, dbname string) error {
+	if cfg.Type != DBTypeMySQL && cfg.Type != DBTypePostgres {
+		return fmt.Errorf("auto create database only supports mysql/postgres, got %s", cfg.Type)
+	}
+	name := sanitizeDBName(dbname)
+	if name == "" {
+		return fmt.Errorf("invalid database name")
+	}
+	factory, ok := dialectorRegistry[cfg.Type]
+	if !ok {
+		return fmt.Errorf("unsupported database type: %s", cfg.Type)
+	}
+	testDB, err := gorm.Open(factory(maintenanceDSN(cfg)), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		return fmt.Errorf("connect %s (maintenance): %w", cfg.Type, err)
+	}
+	defer func() {
+		if sqlDB, err := testDB.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
+	var q string
+	if cfg.Type == DBTypeMySQL {
+		q = "CREATE DATABASE IF NOT EXISTS `" + name + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+	} else {
+		q = "CREATE DATABASE \"" + name + "\""
+	}
+	if err := testDB.Exec(q).Error; err != nil {
+		return fmt.Errorf("create database %s failed: %w（请先用管理员账号建库，或给当前账号 CREATE 权限）", name, err)
+	}
+	return nil
+}
+
+// maintenanceDSN 去掉 DSN 里的库名（mysql：`...tcp(h:p)/db?x` → `...tcp(h:p)/?x`；
+// PG：`.../db?x` → `.../postgres?x`）。
+func maintenanceDSN(cfg Config) string {
+	dsn := cfg.DSN
+	if cfg.Type == DBTypeMySQL {
+		if i := strings.Index(dsn, ")/"); i >= 0 {
+			rest := dsn[i+2:]
+			if j := strings.Index(rest, "?"); j >= 0 {
+				return dsn[:i+2] + rest[j:]
+			}
+			return dsn[:i+2]
+		}
+		return dsn
+	}
+	at := strings.LastIndex(dsn, "@")
+	if at < 0 {
+		return dsn
+	}
+	after := dsn[at:]
+	if j := strings.Index(after, "/"); j >= 0 {
+		head := dsn[:at+j+1]
+		rest := after[j+1:]
+		if k := strings.Index(rest, "?"); k >= 0 {
+			return head + "postgres?" + rest[k+1:]
+		}
+		return head + "postgres"
+	}
+	return dsn
+}
+
+// sanitizeDBName 只允许字母/数字/下划线/连字符（防注入）。
+func sanitizeDBName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // ConfigFromEnv builds a Config from environment variables or .env map.
 //
 // Reads CF_DB_DSN (primary) and CF_DB_TYPE (fallback for type hint).
@@ -99,7 +218,7 @@ func ConfigFromEnv(env map[string]string, defaultSQLitePath string) Config {
 	cfg := DefaultConfig()
 	cfg.DSN = defaultSQLitePath
 
-	dsn := env["CF_DB_DSN"]
+	dsn := ResolveDSN(env["CF_DB_DSN"])
 	dbType := env["CF_DB_TYPE"]
 
 	if dsn != "" {

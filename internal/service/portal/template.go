@@ -600,6 +600,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <!-- More Subscriptions Dialog -->
     <el-dialog v-model="moreSubsVisible" :title="t('sub.more_subs')" width="480px" align-center append-to-body class="more-subs-dialog">
       <div class="more-subs-list">
+        <el-alert v-if="subInsecureHidden" type="warning" :closable="false" show-icon :title="t('sub.insecure_hidden')" style="margin-bottom:10px" />
         <div v-if="moreSubFormats.length === 0" class="more-subs-empty">{{ t('common.empty') }}</div>
         <!-- Format Cards -->
         <div v-for="item in moreSubFormats" :key="item.key" class="more-subs-card">
@@ -4120,6 +4121,24 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
       }).catch(function() {})
     }
 
+    var hostIsPublicIP = function(host) {
+      if (!host) return false
+      var h = String(host).replace('[', '').replace(']', '')
+      var m = h.split('.')
+      if (m.length === 4) {
+        var a = parseInt(m[0], 10), b = parseInt(m[1], 10)
+        if (isNaN(a) || isNaN(b)) return false
+        var priv = a === 10 || a === 127 || a === 0 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)
+        return !priv
+      }
+      if (h.indexOf(':') >= 0) {
+        if (h === '::1') return false
+        var p = h.toLowerCase()
+        if (p.indexOf('fc') === 0 || p.indexOf('fd') === 0 || p.indexOf('fe80') === 0) return false
+        return true
+      }
+      return false
+    }
     var subUrl = computed(function() {
       if (!client.value.sub_token) return ''
       var t = client.value.sub_token
@@ -4130,7 +4149,14 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
         var basePath = path.endsWith('/') ? path : path + '/'
         return 'https://' + host + basePath + t
       }
+      // 非 HTTPS + 公网地址 → 不外发订阅链接（不安全）；内网地址仍可展示。
+      if (window.location.protocol !== 'https:' && hostIsPublicIP(window.location.hostname)) {
+        return ''
+      }
       return window.location.origin + '/sub/' + t
+    })
+    var subInsecureHidden = computed(function() {
+      return !!client.value.sub_token && !subUrl.value
     })
 
     var qrCodeUrl = ref('')
@@ -5320,6 +5346,7 @@ return {
       qrCodeUrl: qrCodeUrl, moreSubsVisible: moreSubsVisible, moreSubFormats: moreSubFormats,
       moreSubQrDialogVisible: moreSubQrDialogVisible, moreSubQrDialogUrl: moreSubQrDialogUrl,
       buildSubLink: buildSubLink, showMoreSubQrDialog: showMoreSubQrDialog,
+      subUrl: subUrl, subInsecureHidden: subInsecureHidden,
       // Utils & icons
       copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatMoney: formatMoney,
       iconPaths: iconPaths, navIconPath: navIconPath, authComponent: authComponent,

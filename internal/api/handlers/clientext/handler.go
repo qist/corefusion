@@ -1201,7 +1201,9 @@ func (h *Handler) ListSubscriptionFormats(c *gin.Context) {
 //   - If an enabled endpoint has a standalone domain (independent channel),
 //     the link is https://<domain>/<path>/<token>
 //   - Otherwise it falls back to the panel host with /sub/<token>
-func (h *Handler) buildSubLinks(c *gin.Context, token string) (primary string, backup string) {
+// insecure：链接走 HTTP（非 HTTPS）时为 true；当 HTTP + 公网 IP（外网地址）时，
+// 主链接会被**隐藏**（返回空），避免下发不安全的公网明文订阅；内网 IP 仍可展示。
+func (h *Handler) buildSubLinks(c *gin.Context, token string) (primary string, backup string, insecure bool) {
 	if h.subEndpointRepo != nil {
 		endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context())
 		if err == nil && len(endpoints) > 0 {
@@ -1227,9 +1229,16 @@ func (h *Handler) buildSubLinks(c *gin.Context, token string) (primary string, b
 		if host == "" {
 			host = c.Request.Host
 		}
+		if scheme == "http" {
+			insecure = true
+			// 公网 IP + HTTP → 不对外展示订阅链接（外网不显示）。
+			if netutil.HostIsPublicIP(host) {
+				return "", "", true
+			}
+		}
 		primary = fmt.Sprintf("%s://%s/sub/%s", scheme, host, token)
 	}
-	return primary, backup
+	return primary, backup, insecure
 }
 
 // GetSubscriptionLink returns the client's subscription URL with optional format override.
@@ -1265,7 +1274,7 @@ func (h *Handler) GetSubscriptionLink(c *gin.Context) {
 		return
 	}
 
-	primary, backup := h.buildSubLinks(c, sub.Token)
+	primary, backup, insecure := h.buildSubLinks(c, sub.Token)
 	if format != "" && format != "default" {
 		primary += "?format=" + format
 		if backup != "" {
@@ -1277,6 +1286,7 @@ func (h *Handler) GetSubscriptionLink(c *gin.Context) {
 		"format":         format,
 		"link":           primary,
 		"backup_link":    backup,
+		"insecure":       insecure,
 		"token":          sub.Token,
 		"status":         sub.Status,
 		"quota_bytes":    sub.QuotaBytes,
@@ -1317,8 +1327,8 @@ func (h *Handler) GetBackupSubscriptionLink(c *gin.Context) {
 		return
 	}
 
-	_, backup := h.buildSubLinks(c, sub.Token)
-	c.JSON(http.StatusOK, gin.H{"link": backup, "token": sub.Token})
+	_, backup, insecure := h.buildSubLinks(c, sub.Token)
+	c.JSON(http.StatusOK, gin.H{"link": backup, "token": sub.Token, "insecure": insecure})
 }
 
 // ======================== P3-22: Shared Account Apply ========================

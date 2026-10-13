@@ -79,6 +79,7 @@ import (
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
 	binariesSvc "corefusion/internal/service/binaries"
+	bootstrapSvc "corefusion/internal/service/bootstrap"
 	certService "corefusion/internal/service/certificate"
 	cfipSvc "corefusion/internal/service/cfip"
 	clientSvc "corefusion/internal/service/client"
@@ -841,6 +842,48 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				log.Printf("[startup] failed to download %s: %v", pt, err)
 			} else {
 				log.Printf("[startup] successfully downloaded %s", pt)
+			}
+		}
+
+		// --- 2.5 落地首次启动初始化的安装请求（核心 / 代理）---
+		// 向导只收集并落库；这里在正式启动后异步安装/启动，失败可重试（不清除标记）。
+		if raw, gerr := systemSettingSvc.GetByKey(ctx, bootstrapSvc.PendingApplyKey); gerr == nil && strings.TrimSpace(raw) != "" {
+			if p := bootstrapSvc.LoadPendingApply(raw); p != nil {
+				ok := true
+				if p.ProxyType == "nginx" || p.ProxyType == "caddy" {
+					pt := proxySvc.ProxyType(p.ProxyType)
+					_ = proxyMgr.SetProxyGuardianSettings(ctx, pt, true, true, 5)
+					if !proxyMgr.DetectProxy(pt).Installed {
+						log.Printf("[startup] first-boot: installing proxy binary %s", pt)
+						if err := proxyMgr.InstallProxy(ctx, pt); err != nil {
+							log.Printf("[startup] first-boot: install proxy %s failed: %v", pt, err)
+							ok = false
+						}
+					}
+					if proxyMgr.DetectProxy(pt).Installed {
+						if err := proxyMgr.StartProxy(ctx, pt); err != nil {
+							log.Printf("[startup] first-boot: start proxy %s failed: %v", pt, err)
+							ok = false
+						}
+					}
+				}
+				for _, ct := range p.Cores {
+					if installedMap[ct] {
+						continue
+					}
+					log.Printf("[startup] first-boot: installing core %s", ct)
+					if info, err := startupInstaller.InstallForPlatform(ctx, ct, "", "", "", runtime.GOOS, runtime.GOARCH); err != nil {
+						log.Printf("[startup] first-boot: install core %s failed: %v", ct, err)
+						ok = false
+					} else {
+						log.Printf("[startup] first-boot: installed core %s (version %s)", ct, info.Version)
+					}
+				}
+				if ok {
+					if err := systemSettingSvc.SetByKey(ctx, bootstrapSvc.PendingApplyKey, ""); err != nil {
+						log.Printf("[startup] first-boot: clear pending apply failed: %v", err)
+					}
+				}
 			}
 		}
 

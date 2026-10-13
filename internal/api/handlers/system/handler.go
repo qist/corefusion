@@ -3,21 +3,25 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	bootstrap "corefusion/internal/service/bootstrap"
 	"corefusion/internal/service/system"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
@@ -567,30 +571,200 @@ func (h *Handler) SetIPBlacklistChangeHook(fn func(ctx context.Context, raw stri
 	h.ipBlacklistChangeHook = fn
 }
 
-// --- 面板自更新 / 首次启动向导：**未实现**，统一返回 501 ---
+// --- 面板自更新：**未实现**，统一返回 501 ---
 //
 // 2026-09-23 体检发现：这几个 handler 原来返回的是"假成功 / 空数组"✗ ——
 //
 //	ListReleases / ListUpdateJobs → 恒返回 []（调用方会以为"没有可用版本"，
-//	实际是功能没做 ✗）；SystemUpdate / SystemRollback / FinishBootstrap → 恒返回成功 ✗（更误导）。
+//	实际是功能没做 ✗）；SystemUpdate / SystemRollback → 恒返回成功 ✗（更误导）。
 //
 // 前端目前**没有任何地方调用这些端点**（已全量确认 ✓），所以改成诚实的 501 不影响界面 ✓；
 // 将来真做面板自更新时，把这里替换成实现即可（路由不用动 ✓）。
+//
+// 注：首次启动向导（FinishBootstrap）已于 2026-10-12 实现，见下方定义。
 func notImplemented(c *gin.Context, what string) {
 	response.Error(c, http.StatusNotImplemented, "NOT_IMPLEMENTED", what+" is not implemented")
 }
 
+// bootstrapCompletedKey 记录首次启动初始化向导是否已完成（"true"）。单次有效：
+// 完成后再次调用 FinishBootstrap 返回 409（见 docs/design/first-boot-initialization.md）。
+const bootstrapCompletedKey = bootstrap.BootstrapCompletedKey
+
+// webPathPattern 校验管理面板访问路径：以 "/" 开头，仅字母/数字/连字符/下划线（设计 3.3.3）。
+var webPathPattern = regexp.MustCompile(`^/[A-Za-z0-9_-]*$`)
+
+// GetBootstrapState handles GET /api/v1/system/bootstrap-state.
+// initialized 保留既有语义（是否已存在管理员）；bootstrap_completed 表示首次启动
+// 初始化向导是否已走完 FinishBootstrap，前端据此决定是否进入初始化向导。
 func (h *Handler) GetBootstrapState(c *gin.Context) {
 	var count int64
 	h.db.Raw("SELECT COUNT(*) FROM users").Scan(&count)
-	response.OK(c, gin.H{"initialized": count > 0})
+	completed, _ := h.settingSvc.GetByKey(c.Request.Context(), bootstrapCompletedKey)
+	response.OK(c, gin.H{
+		"initialized":         count > 0,
+		"bootstrap_completed": completed == "true",
+	})
 }
 
-// FinishBootstrap 是"首次启动向导完成"的钩子 ✗ 原来直接回 `{"message":"bootstrap completed"}`
-// 的**假成功**——什么都没做却告诉调用方已完成。首次启动初始化（见
-// docs/design/first-boot-initialization.md）整体未实现 → 改为 501 ✓。
+// bootstrapFinishRequest 是首次启动初始化向导提交的配置（字段均可选，未给出的字段
+// 保持当前值）。data_dir / safe_paths 是同一含义（数据目录）的两种写法。
+type bootstrapFinishRequest struct {
+	ListenAddr       *string `json:"listen_addr"`
+	ListenPort       *string `json:"listen_port"`
+	SubscriptionPort *string `json:"subscription_port"`
+	PortalPort       *string `json:"portal_port"`
+	WebPath          *string `json:"web_path"`
+	DataDir          *string `json:"data_dir"`
+	SafePaths        *string `json:"safe_paths"`
+	TLSEnabled       *bool   `json:"tls_enabled"`
+	TLSCertPath      *string `json:"tls_cert_path"`
+	TLSKeyPath       *string `json:"tls_key_path"`
+	// Restart=true 时在响应后自动重启面板，使端口/TLS 变更立即生效。
+	Restart bool `json:"restart"`
+}
+
+// FinishBootstrap handles PUT /api/v1/system/bootstrap-finish.
+// 首次启动初始化向导的"完成"钩子：把向导采集的面板配置落库（并更新 .env 中的
+// SAFE_PATHS），再标记初始化完成。仅允许完成一次（设计 3.5 "单次有效"）。
+// 端口 / TLS / 数据目录等改动需重启后生效（Restart=true 可自动重启）。
 func (h *Handler) FinishBootstrap(c *gin.Context) {
-	notImplemented(c, "first-boot initialization")
+	ctx := c.Request.Context()
+
+	// 幂等保护：初始化完成后不允许再次进入（ErrInitAlreadyComplete）。
+	if v, _ := h.settingSvc.GetByKey(ctx, bootstrapCompletedKey); v == "true" {
+		response.Conflict(c, "INIT_ALREADY_COMPLETED", "first-boot initialization has already been completed")
+		return
+	}
+
+	var req bootstrapFinishRequest
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", "failed to read request body")
+		return
+	}
+	if len(strings.TrimSpace(string(body))) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			response.BadRequest(c, "INVALID_REQUEST", err.Error())
+			return
+		}
+	}
+
+	// 以当前面板配置为基线，仅覆盖请求显式给出的字段。
+	config, err := h.settingSvc.GetPanelConfig(ctx)
+	if err != nil {
+		response.InternalError(c, "GET_FAILED", err.Error())
+		return
+	}
+	if req.ListenAddr != nil {
+		config.ListenAddr = strings.TrimSpace(*req.ListenAddr)
+	}
+	if req.ListenPort != nil {
+		config.ListenPort = strings.TrimSpace(*req.ListenPort)
+	}
+	if req.SubscriptionPort != nil {
+		config.SubscriptionPort = strings.TrimSpace(*req.SubscriptionPort)
+	}
+	if req.PortalPort != nil {
+		config.PortalPort = strings.TrimSpace(*req.PortalPort)
+	}
+	if req.WebPath != nil {
+		config.WebPath = strings.TrimSpace(*req.WebPath)
+	}
+	switch {
+	case req.DataDir != nil:
+		config.DataDir = strings.TrimSpace(*req.DataDir)
+	case req.SafePaths != nil:
+		config.DataDir = strings.TrimSpace(*req.SafePaths)
+	}
+	if req.TLSEnabled != nil {
+		config.TLSEnabled = *req.TLSEnabled
+	}
+	if req.TLSCertPath != nil {
+		config.TLSCertPath = strings.TrimSpace(*req.TLSCertPath)
+	}
+	if req.TLSKeyPath != nil {
+		config.TLSKeyPath = strings.TrimSpace(*req.TLSKeyPath)
+	}
+
+	if err := validateBootstrapConfig(config); err != nil {
+		response.BadRequest(c, "INVALID_CONFIG", err.Error())
+		return
+	}
+	// 未配置 TLS → 只监听本机回环，避免面板以明文暴露到外网（设计 §1「默认仅监听内网地址」）。
+	if !config.TLSEnabled {
+		config.ListenAddr = bootstrap.LoopbackAddr
+	}
+
+	// UpdatePanelConfig 会把 panel.* 落库，并把数据目录写入 .env 的 SAFE_PATHS。
+	if err := h.settingSvc.UpdatePanelConfig(ctx, config); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	if err := h.settingSvc.SetByKey(ctx, bootstrapCompletedKey, "true"); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	log.Printf("[bootstrap] first-boot initialization completed (listen=%s:%s web_path=%s tls=%v)",
+		config.ListenAddr, config.ListenPort, config.WebPath, config.TLSEnabled)
+
+	response.OK(c, gin.H{
+		"message":          "first-boot initialization completed",
+		"restart_required": true,
+		"web_path":         config.WebPath,
+	})
+
+	if req.Restart {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			restartProcess()
+		}()
+	}
+}
+
+// validateBootstrapConfig 校验首次启动向导提交的面板配置（设计 3.3 / 5.2）。
+func validateBootstrapConfig(config *system.PanelConfig) error {
+	if strings.TrimSpace(config.ListenAddr) == "" {
+		return fmt.Errorf("listen_addr is required")
+	}
+	if err := validatePort("listen_port", config.ListenPort, true); err != nil {
+		return err
+	}
+	if err := validatePort("subscription_port", config.SubscriptionPort, false); err != nil {
+		return err
+	}
+	if err := validatePort("portal_port", config.PortalPort, false); err != nil {
+		return err
+	}
+	if !webPathPattern.MatchString(config.WebPath) {
+		return fmt.Errorf("web_path must start with '/' and contain only letters, digits, '-' or '_'")
+	}
+	if config.TLSEnabled && (config.TLSCertPath == "" || config.TLSKeyPath == "") {
+		return fmt.Errorf("tls_cert_path and tls_key_path are required when tls_enabled is true")
+	}
+	return nil
+}
+
+// validatePort 校验端口字符串；required=false 时允许空值 / "0"（表示不启用独立端口）。
+func validatePort(name, value string, required bool) error {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		if required {
+			return fmt.Errorf("%s is required", name)
+		}
+		return nil
+	}
+	port, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("%s must be an integer", name)
+	}
+	low := 1
+	if !required {
+		low = 0
+	}
+	if port < low || port > 65535 {
+		return fmt.Errorf("%s must be between %d and 65535", name, low)
+	}
+	return nil
 }
 
 // ListReleases 原来恒返回空数组 ✗（会被读成"没有可用版本"，实际是功能未实现）→ 501 ✓。
@@ -633,7 +807,8 @@ var defaultRealityTargets = `[
 // GetRealityTargets handles GET /api/v1/system/reality-targets.
 func (h *Handler) GetRealityTargets(c *gin.Context) {
 	var s entity.SystemSetting
-	err := h.db.WithContext(c.Request.Context()).Where("`key` = ?", realityTargetsKey).First(&s).Error
+	// clause.Column 兼容三库（反引号在 PostgreSQL 会语法错误）
+	err := h.db.WithContext(c.Request.Context()).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: realityTargetsKey}).First(&s).Error
 	if err != nil || s.Value == "" {
 		c.Data(200, "application/json", []byte(defaultRealityTargets))
 		return

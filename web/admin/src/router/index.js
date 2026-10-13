@@ -23,6 +23,11 @@ const basePath = getBasePath()
 
 const routes = [
   {
+    path: '/init',
+    name: 'InitWizard',
+    component: () => import('../views/InitWizard.vue'),
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('../views/Login.vue'),
@@ -73,7 +78,7 @@ router.beforeEach(async (to, from, next) => {
   const loginPath = basePath === '/' ? '/login' : basePath + '/login'
 
   // Allow login and maintenance pages through
-  if (to.path.endsWith('/login') || to.path.endsWith('/maintenance')) {
+  if (to.path.endsWith('/login') || to.path.endsWith('/maintenance') || to.path.endsWith('/init')) {
     next()
     return
   }

@@ -91,6 +91,17 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		s = DefaultNginxSettings()
 	}
+	// 全局 IPv6 开关：作用于所有生成的 listen（站点 server / HTTP→HTTPS 跳转 /
+	// 默认 server / stream）。站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
+	globalIPv6 := s.IPv6
+
+	// 全局 TLS 素材：开启时从库里的 base64 还原到 data/ssl/（生成在保存开关/点按钮时完成，
+	// 不在此处触发耗时生成）；远程节点由 Agent 按同一份 base64 还原，保证多节点一致。
+	if (s.SslDhparam || s.SslSessionTicket) && m.isLocalTarget(ctx, serverID) {
+		if err := WriteGlobalSslFiles(m.dataDir, s.SslDhparamB64, s.SslSessionTicketB64, s.SslSessionTicketBB64); err != nil {
+			log.Printf("[NginxManager] 还原本机全局 TLS 文件失败：%v", err)
+		}
+	}
 
 	var sb strings.Builder
 
@@ -109,11 +120,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	} else {
 		sb.WriteString("daemon off;\n")
 	}
-	if s.MasterProcess {
-		sb.WriteString("master_process on;\n")
-	} else {
-		sb.WriteString("master_process off;\n")
-	}
+	// master_process 强制 on ✓：nginx 由面板/Guardian 托管运行（daemon off ✓），
+	// 而**单进程模式（master_process off）在这套自编译 nginx 上处理 reload（SIGHUP）会段错误** ✗
+	// （dmesg 固定崩溃地址，2026-10-13 真机复现 ✓）→ 一改配置就崩、healthcheck 反复重启 ✗。
+	// 该开关前端从未暴露 ✓（用户改不了 ✓），所以不再读设置里的旧值，直接写死 ✓。
+	sb.WriteString("master_process on;\n")
 	// Error log - check log output mode (per-node first, then global)
 	logOutputMode := "file"
 	if m.settingStore != nil {
@@ -175,6 +186,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString("http {\n")
 	sb.WriteString("    include mime.types;\n")
 	sb.WriteString("    default_type application/octet-stream;\n")
+
+	// 全局 TLS：DH 参数与会话票据密钥（各站点 TLS server 共用 data/ssl/，文件已由
+	// GenerateConfigForServer / Agent 在加载前生成）。
+	if s.SslDhparam {
+		sb.WriteString(fmt.Sprintf("    ssl_dhparam %s;\n", nginxSslPath(sslDhparamName)))
+	}
+	if s.SslSessionTicket {
+		sb.WriteString(fmt.Sprintf("    ssl_session_ticket_key %s;\n", nginxSslPath(sslTicketKeyName)))
+		sb.WriteString(fmt.Sprintf("    ssl_session_ticket_key %s;\n", nginxSslPath(sslTicketKeyBName)))
+	}
 
 	// Lua module paths — required: the nginx binary has LuaJIT compiled in,
 	// without lua_package_path the Lua VM cannot locate modules and nginx may
@@ -478,6 +499,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		// 生成独立的 `server { listen 80; ... }` 块 ✓：ACME 挑战留在 :80 ✓，其余 301 到 https ✓。
 		grpHasTLS := false
 		redirectEnabled := false
+		grpIPv6 := globalIPv6
 		tlsPort := "443"
 		for _, s := range siteList {
 			if s.CertPath != "" && s.KeyPath != "" {
@@ -489,6 +511,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if s.RedirectHTTPS == nil || *s.RedirectHTTPS {
 				redirectEnabled = true
 			}
+			if s.EnableIpv6 {
+				grpIPv6 = true
+			}
 		}
 		if grpHasTLS && port80Open && redirectEnabled && domain != "" {
 			target := "https://" + domain
@@ -498,6 +523,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("    # HTTP → HTTPS redirect (auto-generated; per-site switch)\n")
 			sb.WriteString("    server {\n")
 			sb.WriteString("        listen 80;\n")
+			if grpIPv6 {
+				sb.WriteString("        listen [::]:80;\n")
+			}
 			sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
 			if !m.isLocal {
 				sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
@@ -525,7 +553,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		hasTLS := false
 		hasSocket := false
 		hasProxyProtocol := false
-		enableIpv6 := false
+		enableIpv6 := globalIPv6
 		listenPort := ""
 		var tlsCert, tlsKey string
 		var tlsSite *entity.NginxSite
@@ -639,6 +667,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if enableStapling {
 				sb.WriteString("        ssl_stapling on;\n")
 				sb.WriteString("        ssl_stapling_verify on;\n")
+				// OCSP stapling 校验需要可信链（fullchain），见 trustChainRel。
+				sb.WriteString(fmt.Sprintf("        ssl_trusted_certificate ../%s;\n",
+					stripDataDirPrefix(trustChainRel(tlsCert), m.dataDir)))
+				// resolver 可选 ✓：解析 CA 的 OCSP 地址用 ✓。**留空 = 不写该指令** ✓，
+				// 即关闭本功能、改用系统 resolver ✓（缺省值是 8.8.8.8 1.1.1.1，见 DefaultNginxSettings ✓）。
+				if resolver := strings.TrimSpace(s.SslResolver); resolver != "" {
+					sb.WriteString(fmt.Sprintf("        resolver %s;\n", resolver))
+					sb.WriteString("        resolver_timeout 10s;\n")
+				}
 			}
 			if enableQuic {
 				sb.WriteString("        add_header Alt-Svc 'h3=\":443\"; ma=86400, h3-29=\":443\"; ma=86400' always;\n")
@@ -858,7 +895,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
 		sb.WriteString("    server {\n")
 		sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
-		if rs.EnableIpv6 {
+		if rs.EnableIpv6 || globalIPv6 {
 			sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
 		}
 		sb.WriteString("        http2 on;\n")
@@ -884,7 +921,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 		// PROXY Protocol real_ip settings
 		sb.WriteString("        set_real_ip_from 127.0.0.1;\n")
-		if rs.EnableIpv6 {
+		if rs.EnableIpv6 || globalIPv6 {
 			sb.WriteString("        set_real_ip_from ::1;\n")
 		}
 		sb.WriteString("        real_ip_header proxy_protocol;\n")
@@ -912,6 +949,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if len(httpSites) == 0 {
 		sb.WriteString("    server {\n")
 		sb.WriteString("        listen 80;\n")
+		if globalIPv6 {
+			sb.WriteString("        listen [::]:80;\n")
+		}
 		sb.WriteString("        location / {\n")
 		sb.WriteString("            return 200 \"CoreFusion Proxy - OK\";\n")
 		sb.WriteString("        }\n")
@@ -1069,7 +1109,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				sb.WriteString("server {\n")
 				sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
-				if s.StreamIPv6 {
+				if s.StreamIPv6 || globalIPv6 {
 					sb.WriteString(fmt.Sprintf("    listen [::]:%s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
 				}
 				sb.WriteString("    ssl_preread on;\n")
@@ -1118,12 +1158,12 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("server {\n")
 				if proto == "udp" {
 					sb.WriteString(fmt.Sprintf("    listen %s udp so_keepalive=on;\n", port))
-					if s.StreamIPv6 {
+					if s.StreamIPv6 || globalIPv6 {
 						sb.WriteString(fmt.Sprintf("    listen [::]:%s udp ipv6only=on so_keepalive=on;\n", port))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("    listen %s so_keepalive=on;\n", port))
-					if s.StreamIPv6 {
+					if s.StreamIPv6 || globalIPv6 {
 						sb.WriteString(fmt.Sprintf("    listen [::]:%s ipv6only=on so_keepalive=on;\n", port))
 					}
 				}

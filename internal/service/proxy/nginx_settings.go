@@ -15,11 +15,31 @@ type NginxSettings struct {
 	WorkerPriority        string `json:"worker_priority"`
 	WorkerShutdownTimeout string `json:"worker_shutdown_timeout"`
 	Daemon                bool   `json:"daemon"`
-	MasterProcess         bool   `json:"master_process"`
 
 	// Default ports
 	DefaultHttpPort  string `json:"default_http_port"`
 	DefaultHttpsPort string `json:"default_https_port"`
+
+	// Network
+	// IPv6 是全局 IPv6 监听开关：打开后所有 HTTP/HTTPS/跳转/默认/stream 的 listen
+	// 都会追加对应的 [::] 监听；站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
+	IPv6 bool `json:"ipv6"`
+
+	// TLS（全局）
+	// SslDhparam 打开后所有 TLS server 共用 data/ssl/dhparam.pem（openssl dhparam 2048 生成一次）。
+	SslDhparam bool `json:"ssl_dhparam"`
+	// SslSessionTicket 打开后所有 TLS server 共用两份 48 字节会话票据密钥（data/ssl/）。
+	SslSessionTicket bool `json:"ssl_session_ticket"`
+	// SslResolver 供 OCSP stapling 解析 CA 的 OCSP 地址（如 "8.8.8.8 1.1.1.1"）。
+	// ⚠ **留空 = 关闭** ✓：不生成 `resolver` 指令、改用系统 resolver ✓（不要再用硬编码兜底 ✗）。
+	SslResolver string `json:"ssl_resolver"`
+	// 全局 TLS 素材（base64 存库，开启后还原/下发到各节点 data/ssl/，保证多节点一致）：
+	//   SslDhparamB64        → data/ssl/dhparam.pem
+	//   SslSessionTicketB64  → data/ssl/tls_session_ticket.key
+	//   SslSessionTicketBB64 → data/ssl/tlsb_session_ticket.key
+	SslDhparamB64        string `json:"ssl_dhparam_b64,omitempty"`
+	SslSessionTicketB64  string `json:"ssl_session_ticket_b64,omitempty"`
+	SslSessionTicketBB64 string `json:"ssl_session_ticket_b_b64,omitempty"`
 
 	// Events
 	WorkerConnections string `json:"worker_connections"`
@@ -149,17 +169,21 @@ type NginxSettings struct {
 func DefaultNginxSettings() *NginxSettings {
 	isWindows := runtime.GOOS == "windows"
 	return &NginxSettings{
-		WorkerProcesses:             "auto",
-		WorkerRlimitNofile:          "65535",
-		WorkerPriority:              "1",
-		WorkerShutdownTimeout:       "10s",
-		Daemon:                      false,
-		MasterProcess:               true,
-		DefaultHttpPort:             "80",
-		DefaultHttpsPort:            "443",
-		WorkerConnections:           "10240",
-		MultiAccept:                 true,
-		UseEpoll:                    !isWindows,
+		WorkerProcesses:       "auto",
+		WorkerRlimitNofile:    "65535",
+		WorkerPriority:        "1",
+		WorkerShutdownTimeout: "10s",
+		Daemon:                false,
+		DefaultHttpPort:       "80",
+		DefaultHttpsPort:      "443",
+		IPv6:                  false,
+		SslDhparam:            false,
+		SslSessionTicket:      false,
+		SslResolver:           "8.8.8.8 1.1.1.1",
+		WorkerConnections:     "10240",
+		MultiAccept:           true,
+		// 模板默认开启 epoll（Linux 事件模型）；UI 可关闭 ✓。
+		UseEpoll:                    true,
 		ErrorLog:                    true,
 		ErrorLogPath:                "logs/error.log",
 		ErrorLogLevel:               "",
@@ -322,6 +346,19 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.DefaultHttpsPort != "" {
 		dst.DefaultHttpsPort = src.DefaultHttpsPort
+	}
+	// SslResolver **无条件**覆盖 ✓（含空值 ✓）：允许用户**显式清空 = 关闭** ✗→✓
+	// —— 若只搬非空值 ✗，用户清空后会被默认值（8.8.8.8 1.1.1.1）覆盖回来 ✗。
+	// （无保存记录时走 DefaultNginxSettings 的默认值 ✓，不经过本函数 ✓。）
+	dst.SslResolver = src.SslResolver
+	if src.SslDhparamB64 != "" {
+		dst.SslDhparamB64 = src.SslDhparamB64
+	}
+	if src.SslSessionTicketB64 != "" {
+		dst.SslSessionTicketB64 = src.SslSessionTicketB64
+	}
+	if src.SslSessionTicketBB64 != "" {
+		dst.SslSessionTicketBB64 = src.SslSessionTicketBB64
 	}
 	if src.WorkerConnections != "" {
 		dst.WorkerConnections = src.WorkerConnections
@@ -510,8 +547,10 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 		dst.StreamLogFormat = src.StreamLogFormat
 	}
 	// Bool fields: always copy (can't distinguish "not set" from "false")
+	dst.IPv6 = src.IPv6
+	dst.SslDhparam = src.SslDhparam
+	dst.SslSessionTicket = src.SslSessionTicket
 	dst.Daemon = src.Daemon
-	dst.MasterProcess = src.MasterProcess
 	dst.MultiAccept = src.MultiAccept
 	dst.UseEpoll = src.UseEpoll
 	dst.ErrorLog = src.ErrorLog

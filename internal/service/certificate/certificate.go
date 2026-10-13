@@ -251,30 +251,45 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 		name = domain
 	}
 
-	// Save to final directory using name as key (unique per cert)
+	// Save to final directory keyed by (domain, key_type) — same layout as ACME.
 	// ✅ 按**密钥类型**分目录：否则同名上传 RSA + ECC 会互相覆盖 ✗
-	certPath, keyPath, _ := cert.CertRelPaths(sanitizeDomain(name), keyType)
+	// ✅ 目录统一按**域名**（与 ACME / 证书分发 / 落地 一致 ✓）：以前按 name ✗ →
+	//    与 cert_distributor 按 domain 落盘的口径对不上 ✗（远程分发后站点引用失效 ✗）。
+	//    filepath.Base 去掉任何路径成分防目录穿越 ✓（保留 S-8 的意图 ✓），
+	//    正常域名（含通配符 `*`）原样保留 ✓ → 与 ACME 的 certs/<domain>/ 完全一致 ✓。
+	certDir := filepath.Base(strings.TrimSpace(domain))
+	if certDir == "" || certDir == "." || certDir == ".." {
+		certDir = "unknown"
+	}
+	certPath, keyPath, fullchainPath := cert.CertRelPaths(certDir, keyType)
 	os.MkdirAll(filepath.Join(s.dataDir, filepath.Dir(certPath)), 0750)
-	os.WriteFile(filepath.Join(s.dataDir, certPath), []byte(input.CertContent), 0600)
+	// ⚠ 与 ACME 签发**保持一致** ✗→✓（ACME 见 runtime/cert/acme.go 的 saveCertificate ✓）：
+	//   ① 同样**落 fullchain.pem** ✓ —— 以前只写 cert.pem/key.pem ✗ → 依赖 fullchain 的
+	//      `ssl_trusted_certificate`（nginx）会指向**不存在的文件** ✗ → nginx 加载失败 ✗；
+	//   ② 权限一致 ✓：证书/fullchain 0640、私钥 0600 ✓（以前证书也是 0600 ✗）。
+	// 上传的证书通常本身就是「叶 + 中间链」✓ → fullchain 与 cert **同内容**（与 ACME 口径一致 ✓）。
+	os.WriteFile(filepath.Join(s.dataDir, certPath), []byte(input.CertContent), 0640)
 	os.WriteFile(filepath.Join(s.dataDir, keyPath), []byte(input.KeyContent), 0600)
+	os.WriteFile(filepath.Join(s.dataDir, fullchainPath), []byte(input.CertContent), 0640)
 	os.Remove(tmpCert)
 	os.Remove(tmpKey)
 
 	cert := &entity.Certificate{
-		Name:         name,
-		Domain:       domain,
-		Domains:      sans,
-		Issuer:       issuer,
-		ProviderType: "upload",
-		KeyType:      keyType,
-		KeyBits:      keyBits,
-		CertPath:     certPath,
-		KeyPath:      keyPath,
-		CertContent:  input.CertContent,
-		KeyContent:   input.KeyContent,
-		Status:       "active",
-		AutoRenew:    0,
-		ExpiresAt:    expiresAt,
+		Name:          name,
+		Domain:        domain,
+		Domains:       sans,
+		Issuer:        issuer,
+		ProviderType:  "upload",
+		KeyType:       keyType,
+		KeyBits:       keyBits,
+		CertPath:      certPath,
+		KeyPath:       keyPath,
+		FullchainPath: fullchainPath,
+		CertContent:   input.CertContent,
+		KeyContent:    input.KeyContent,
+		Status:        "active",
+		AutoRenew:     0,
+		ExpiresAt:     expiresAt,
 	}
 
 	// If a certificate with the same domain already exists, update it in place
@@ -288,6 +303,7 @@ func (s *Service) Upload(ctx context.Context, input UploadCertificateInput) (*en
 		existing.KeyBits = keyBits
 		existing.CertPath = certPath
 		existing.KeyPath = keyPath
+		existing.FullchainPath = fullchainPath
 		existing.CertContent = input.CertContent
 		existing.KeyContent = input.KeyContent
 		existing.Status = "active"
@@ -339,19 +355,6 @@ func certSANIdentifiers(c *x509.Certificate) []string {
 		out = append(out, ip.String())
 	}
 	return out
-}
-
-// sanitizeDomain converts a domain to a safe directory name.
-// S-8 fix: strip path separators and traversal sequences to prevent directory traversal.
-func sanitizeDomain(domain string) string {
-	// Remove any path components — only keep the base name
-	domain = filepath.Base(domain)
-	// Replace wildcard and dots, and remove any remaining path separators
-	domain = strings.ReplaceAll(strings.ReplaceAll(domain, "*", "_wildcard"), ".", "_")
-	domain = strings.ReplaceAll(domain, "/", "_")
-	domain = strings.ReplaceAll(domain, "\\", "_")
-	domain = strings.ReplaceAll(domain, "..", "_")
-	return domain
 }
 
 // parseCertExpiry parses a PEM certificate file and returns the expiry time.
@@ -1268,7 +1271,7 @@ func (s *Service) SyncCertsToDisk(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	count := 0
+	count, backfilled := 0, 0
 	for _, c := range certs {
 		if c.CertContent == "" || c.KeyContent == "" {
 			continue
@@ -1284,8 +1287,9 @@ func (s *Service) SyncCertsToDisk(ctx context.Context) error {
 		}
 		// Create directory
 		os.MkdirAll(filepath.Dir(certPath), 0750)
-		// Write files
-		if err := os.WriteFile(certPath, []byte(c.CertContent), 0600); err != nil {
+		// Write files —— 权限与其它落盘路径（ACME 签发 / 手动上传）保持一致 ✓：
+		// 证书 0640（可被非 root 的服务读 ✓）、私钥 0600 ✓（以前证书也写成 0600 ✗）。
+		if err := os.WriteFile(certPath, []byte(c.CertContent), 0640); err != nil {
 			log.Printf("Sync cert %s: %v", c.Domain, err)
 			continue
 		}
@@ -1293,10 +1297,38 @@ func (s *Service) SyncCertsToDisk(ctx context.Context) error {
 			log.Printf("Sync key %s: %v", c.Domain, err)
 			continue
 		}
+		// ── 回填 fullchain.pem ✓ ──────────────────────────────────────────────
+		// 历史上传路径只写 cert.pem/key.pem ✗ → 依赖 fullchain 的
+		// `ssl_trusted_certificate`（nginx）会指向**不存在的文件** ✗ → 配置加载失败 ✗。
+		// 这里按"与 cert.pem 同目录的 fullchain.pem"补齐 ✓（与 nginx 的 trustChainRel
+		// 推导一致 ✓），内容用库里的权威副本 ✓（面板签发的 cert 本身就是"叶 + 中间链" ✓）。
+		// 幂等 ✓：内容一致时覆盖写不影响 TLS ✓；库里 fullchain_path 为空的历史行顺带补上 ✓。
+		chainRel := strings.TrimSpace(c.FullchainPath)
+		if chainRel == "" {
+			chainRel = filepath.Join(filepath.Dir(c.CertPath), "fullchain.pem")
+			if !filepath.IsAbs(c.CertPath) {
+				chainRel = filepath.ToSlash(chainRel)
+			}
+		}
+		chainPath := chainRel
+		if !filepath.IsAbs(chainPath) {
+			chainPath = filepath.Join(s.dataDir, chainPath)
+		}
+		if err := os.WriteFile(chainPath, []byte(c.CertContent), 0640); err != nil {
+			log.Printf("Sync fullchain %s: %v", c.Domain, err)
+		} else {
+			backfilled++
+			if strings.TrimSpace(c.FullchainPath) == "" {
+				c.FullchainPath = chainRel
+				if uerr := s.repo.Update(ctx, &c); uerr != nil {
+					log.Printf("Sync fullchain path %s: %v", c.Domain, uerr)
+				}
+			}
+		}
 		count++
 	}
 	if count > 0 {
-		log.Printf("Synced %d certificates from database to disk", count)
+		log.Printf("Synced %d certificates from database to disk (%d with fullchain)", count, backfilled)
 	}
 	return nil
 }

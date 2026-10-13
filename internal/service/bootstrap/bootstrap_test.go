@@ -113,6 +113,11 @@ func TestComplete(t *testing.T) {
 	d.PanelDomain = "panel.example.com"
 	d.PortalDomain = "portal.example.com"
 	d.SubscriptionDomain = "sub.example.com"
+	// 选 nginx 且订阅/门户不设独立端口（0）→ 回退面板端口，订阅走 /sub、门户走 /p。
+	d.ProxyType = ProxyNginx
+	d.SubscriptionPort = "0"
+	d.PortalPort = "0"
+	d.ProxyAddPanel, d.ProxyAddSubscription, d.ProxyAddPortal = true, true, true
 
 	if err := Complete(context.Background(), dataDir, d); err != nil {
 		t.Fatalf("complete: %v", err)
@@ -149,6 +154,29 @@ func TestComplete(t *testing.T) {
 	var ep entity.SubscriptionEndpoint
 	if err := db.DB.Where("domain = ?", "sub.example.com").First(&ep).Error; err != nil {
 		t.Errorf("subscription endpoint not created: %v", err)
+	} else if ep.Path != "/sub" {
+		t.Errorf("subscription endpoint path = %q, want /sub (panel serves /sub/:token)", ep.Path)
+	}
+
+	// 反代站点写入真实生成器读取的 nginx_sites（不是 proxy_sites），
+	// 且只有面板有端口时订阅/门户仍带正确 upstream + path。
+	var panelSite entity.NginxSite
+	if err := db.DB.Where("domain = ?", "panel.example.com").First(&panelSite).Error; err != nil {
+		t.Errorf("panel nginx site not created: %v", err)
+	} else if panelSite.Template != "" || panelSite.Path != "" || panelSite.Upstream != "127.0.0.1:18080" {
+		t.Errorf("panel site mismatch: %+v", panelSite)
+	}
+	var subSite entity.NginxSite
+	if err := db.DB.Where("domain = ?", "sub.example.com").First(&subSite).Error; err != nil {
+		t.Errorf("subscription nginx site not created: %v", err)
+	} else if subSite.Template != "subscription_forward" || subSite.Path != "/sub" || subSite.Upstream != "127.0.0.1:18080" {
+		t.Errorf("subscription site mismatch: %+v", subSite)
+	}
+	var portalSite entity.NginxSite
+	if err := db.DB.Where("domain = ?", "portal.example.com").First(&portalSite).Error; err != nil {
+		t.Errorf("portal nginx site not created: %v", err)
+	} else if portalSite.Template != "portal_forward" || portalSite.Path != "/p" || portalSite.Upstream != "127.0.0.1:18080" {
+		t.Errorf("portal site mismatch: %+v", portalSite)
 	}
 	// .env 写入 SAFE_PATHS 与 CF_DB_DSN 与密钥
 	raw, err := os.ReadFile(".env")

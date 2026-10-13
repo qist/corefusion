@@ -671,6 +671,7 @@ var defaultRuleFiles = []githubRuleDefault{
 	{Name: "args.rule", MergeMode: "replace"},
 	{Name: "cookie.rule", MergeMode: "replace"},
 	{Name: "fileext.rule", MergeMode: "replace"},
+	{Name: "header.rule", MergeMode: "replace"},
 	{Name: "post.rule", MergeMode: "replace"},
 	{Name: "referer.rule", MergeMode: "replace"},
 	{Name: "url.rule", MergeMode: "replace"},
@@ -1420,6 +1421,7 @@ const DefaultCaddyWAFConfig = `{
     "url_check": "on",
     "url_args_check": "on",
     "user_agent_check": "on",
+    "header_check": "on",
     "cookie_check": "on",
     "cc_check": "on",
     "cc_rate": "150/60",
@@ -1460,6 +1462,8 @@ config_url_check = "on"
 config_url_args_check = "on"
 --enable/disable user agent filtering
 config_user_agent_check = "on"
+--enable/disable request header filtering (header.rule)
+config_header_check = "on"
 --enable/disable cookie deny filtering
 config_cookie_check = "on"
 --enable/disable cc filtering

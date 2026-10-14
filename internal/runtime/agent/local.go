@@ -244,6 +244,32 @@ func hashConfig(data []byte) string {
 	return hex.EncodeToString(h[:])[:8]
 }
 
+// SyncConfigSync 与 SyncConfig 相同（写运行时配置 + 落一份本地快照），但**同步**执行。
+//
+// ⚠ 为什么需要同步版本 ✗：sing-box 等**不支持热应用**的核心，配置下发后必须重启核心才能生效。
+// 异步任务队列会让"写盘"与"重启读取配置"发生竞态（重启可能读到旧文件）→ 故这条路径要求
+// 写盘先完成，调用方随后才重启（见 cmd/agent 的 applySyncedConfig）。
+func (a *LocalAgent) SyncConfigSync(ctx context.Context, coreType string, config []byte, version int64) error {
+	if err := safepath.CheckName("core type", coreType); err != nil {
+		return err
+	}
+	if err := a.procMgr.WriteRuntimeConfig(coreType, config); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	if a.db != nil {
+		if err := a.db.Create(&entity.ConfigSnapshot{
+			ServerID:  a.serverID,
+			CoreType:  coreType,
+			Version:   version,
+			Config:    string(config),
+			CreatedAt: time.Now(),
+		}).Error; err != nil {
+			log.Printf("[LocalAgent] save config snapshot %s failed: %v", coreType, err)
+		}
+	}
+	return nil
+}
+
 // ControlCore 控制本地核心进程（异步）。
 // 提交到 TaskQueue 执行，Worker 中调用 process.Manager。
 func (a *LocalAgent) ControlCore(ctx context.Context, coreType, action string) error {

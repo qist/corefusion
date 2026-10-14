@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -208,12 +209,51 @@ func (a *AgentApp) readAppliedBasis(coreType string, fallback []byte) []byte {
 	return data
 }
 
+// initAppliedBasisFromRuntime 在 Agent 启动时把「当前运行配置文件」登记为运行态基准。
+//
+// 启动后 Reconcile 会让各核心加载这份文件，因此它如实代表进程即将运行的配置。
+// ⚠ 必须显式建立基准 ✗：面板的 SyncConfig 会**抢先写盘**（只写盘、不动进程），
+// 磁盘文件不能代表运行态；没有基准时 diff 会退化为和磁盘比 → 变更被误判为「未变」。
+func (a *AgentApp) initAppliedBasisFromRuntime() {
+	for _, ct := range []string{"xray", "singbox"} {
+		p := a.procMgr.RuntimeConfigPath(ct)
+		data, err := os.ReadFile(p)
+		if err != nil || len(data) == 0 {
+			continue
+		}
+		a.writeAppliedBasis(ct, data)
+	}
+}
+
+// runtimeConfigDiffers 判断本次下发的 configData 相对「运行态基准」是否真的发生了变化。
+//
+// ⚠ 必须和「基准」比、而不是和磁盘文件比 ✗：面板的 PanelCommand.SyncConfig 会**抢先写盘**
+// 且只写盘、不动进程，拿磁盘当基准会把"文件已更新、进程仍跑旧配置"误判成"未变"→ 变更
+// 静默不生效（真机复现：创建链式代理后入口核心不重载、链式路由没生效，流量落到 direct）。
+// 基准由「配置真正应用到进程」时写入（见 readAppliedBasis / writeAppliedBasis）。
+func runtimeConfigDiffers(basis, configData []byte) bool {
+	if len(configData) == 0 {
+		return false
+	}
+	return !bytes.Equal(bytes.TrimSpace(basis), bytes.TrimSpace(configData))
+}
+
 // writeAppliedBasis 记录「运行态已等于这份配置」。
 func (a *AgentApp) writeAppliedBasis(coreType string, data []byte) {
-	if len(data) == 0 {
+	writeAppliedBasisFile(a.procMgr.RuntimeConfigPath(coreType), data)
+}
+
+// appliedBasisPathFor 由运行时配置路径推出基准文件路径（与 runtime 配置同目录）。
+func appliedBasisPathFor(runtimePath string) string {
+	return strings.TrimSuffix(runtimePath, filepath.Ext(runtimePath)) + ".applied"
+}
+
+// writeAppliedBasisFile 把 data 写为 runtimePath 对应的运行态基准文件（空内容/空路径直接跳过）。
+func writeAppliedBasisFile(runtimePath string, data []byte) {
+	if len(data) == 0 || runtimePath == "" {
 		return
 	}
-	path := a.appliedBasisPath(coreType)
+	path := appliedBasisPathFor(runtimePath)
 	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		log.Printf("[HotReload] mkdir basis dir failed: %v", err)
 		return

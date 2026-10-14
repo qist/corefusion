@@ -44,6 +44,12 @@ type Manager struct {
 	// runtime/<coreType>.jsonc file; this mutex ensures atomic writes.
 	configMu sync.Mutex
 
+	// runtimeAppliedHook 在核心进程**成功启动**（即真正加载了某份运行时配置）后回调，
+	// 传入进程实际加载的配置内容。Agent 用它记录「运行态基准」（SyncData 的变更判定依据）；
+	// 面板不设置（nil = 不回调）。⚠ 不能用「磁盘上的 runtime 文件」当基准 ✗：面板的
+	// SyncConfig 会**抢先写盘且不动进程**，磁盘文件会先于运行态变化（见 cmd/agent/hotreload.go）。
+	runtimeAppliedHook func(coreType string, configData []byte)
+
 	// logModeProvider determines the log output mode (file/stdout/off) for each core.
 	logModeProvider LogModeProvider
 	// logBrokers holds LogBroker instances for core processes.
@@ -60,6 +66,12 @@ type ConfigGenerator func(ctx context.Context, coreType string, configPath strin
 // SetConfigGenerator sets the config generator callback.
 func (m *Manager) SetConfigGenerator(gen ConfigGenerator) {
 	m.configGen = gen
+}
+
+// SetRuntimeConfigAppliedHook 注册「核心已加载运行时配置」回调（Agent 用于记录运行态基准）。
+// 每次进程成功启动后回调一次，传入该进程实际加载的配置内容。
+func (m *Manager) SetRuntimeConfigAppliedHook(h func(coreType string, configData []byte)) {
+	m.runtimeAppliedHook = h
 }
 
 // SetLogModeProvider sets the provider that determines log output mode per core type.
@@ -311,6 +323,23 @@ func (m *Manager) reattach(g entity.ProcessGuardian) {
 
 // Start starts a core process.
 func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) error {
+	// 早退：进程已在运行 / 正在重启或停止时**直接返回，且在生成配置之前**判定 ✗。
+	//
+	// ⚠ 为什么必须前置 ✗：configGen（Agent 从本地库重建）会**覆盖**面板刚下发的运行时配置。
+	// 一次重启会并发触发多次 Start（SyncData 的 auto-start + 重启本身），而 skipConfigGen
+	// 是**一次性**标志：先到的 Start 消耗掉它，后到的 Start 就会从（可能尚未同步链式数据的）
+	// 本地库重建 → 把带链式的配置覆盖成**不含链式**的版本（真机复现：sing-box 入口链式被
+	// 抹掉、流量静默退回直连）。在生成之前判"已在跑"即可避免这次多余的破坏性生成。
+	m.mu.RLock()
+	if p, ok := m.processes[serviceID]; ok &&
+		(p.state == "running" || p.state == "restarting" || p.state == "stopping") {
+		state := p.state
+		m.mu.RUnlock()
+		log.Printf("service %d already %s, start skipped", serviceID, state)
+		return nil
+	}
+	m.mu.RUnlock()
+
 	// Generate config OUTSIDE the lock — configGen may query the database
 	// which can be slow and would block all other mu.Lock() callers.
 	configDir := filepath.Join(m.dataDir, "runtime")
@@ -516,6 +545,14 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		startedAt:  time.Now(),
 	}
 	m.processes[serviceID] = p
+
+	// 通知「运行态基准」：进程已成功启动并加载 configPath 的配置。
+	// 这是 SyncData 变更判定的可信依据（读取的正是进程实际加载的这份文件）。
+	if m.runtimeAppliedHook != nil {
+		if data, rerr := os.ReadFile(configPath); rerr == nil && len(data) > 0 {
+			m.runtimeAppliedHook(coreType, data)
+		}
+	}
 
 	go func() {
 		_ = cmd.Wait()

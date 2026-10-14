@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	agent "corefusion/internal/runtime/agent"
 	ratelimit "corefusion/internal/runtime/agent/ratelimit"
@@ -130,8 +131,29 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// falls back to generating a minimal default config.
 	// After a successful SyncData, the local database contains the full config
 	// from the panel, and this generator produces the complete runtime config.
+	// 记录「运行态基准」：每当某核心**成功启动**（真正加载了 runtime 配置）就更新基准文件。
+	// 这是 SyncData 变更判定的可信依据 —— 面板的 SyncConfig 会**抢先写盘且不动进程**，
+	// 磁盘文件不能代表运行态（见 cmd/agent/hotreload.go / syncdata.go 的说明）。
+	procMgr.SetRuntimeConfigAppliedHook(func(coreType string, configData []byte) {
+		writeAppliedBasisFile(procMgr.RuntimeConfigPath(coreType), configData)
+	})
+
+	// Set config generator: generates config from local database (populated by SyncData).
+	// If the local database has no data (e.g., first boot before panel sync),
+	// falls back to generating a minimal default config.
+	// After a successful SyncData, the local database contains the full config
+	// from the panel, and this generator produces the complete runtime config.
 	agentServerID := cfg.Panel.ServerID // Agent's own server ID in the panel
 	procMgr.SetConfigGenerator(func(ctx context.Context, coreType string, configPath string) error {
+		// ⚠ 面板永远是**权威配置源**：运行配置已存在（面板已下发）时**绝不**用本地库重建覆盖它 ✗。
+		// 本地重建依赖本地库，而在"面板刚下发链式配置、chain_links 尚未落库完成"的竞态窗口里，
+		// 重建会生成**不含链式**的配置 → 覆盖面板下发的权威配置 → 链式出站被抹掉、流量退回直连
+		// （真机复现：创建/删除链式后核心重启，chain-* 出站消失，出口计数归零）。
+		// 只有"文件缺失"（全新节点首次启动 / 面板从未下发）才回退到本地库重建兜底。
+		if data, rerr := os.ReadFile(configPath); rerr == nil && len(data) > 0 {
+			log.Printf("[Agent] runtime %s config already present (%d bytes), keeping it", coreType, len(data))
+			return nil
+		}
 		// Try to generate config from local database first
 		data, err := generateConfigFromLocalDB(ctx, agentServerID, coreType)
 		if err == nil && len(data) > 0 {
@@ -320,7 +342,50 @@ func (a *AgentApp) syncGithubAccelSettings(ctx context.Context, accelDomain, pro
 // StartLocalDaemons starts process.Manager's seed + reconcile, which provides
 // independent local crash-recovery (Guardian) even if the panel is unreachable.
 // After reconcile, it also restores firewall rules for hysteria port hopping.
+// applySyncedConfig 写入面板下发的运行时配置，并对**不支持热应用**的核心（sing-box）
+// 在内容变化时**重启核心**使其生效。
+//
+// ⚠ 为什么必须这么做 ✗：远程节点收到的是 `PanelCommand.SyncConfig`（只写盘、不动进程），
+// 而 `SyncData` 只推 **xray** 配置 —— 于是 **sing-box 的配置变更（新建入站 / 链式出站）
+// 在远程节点永远不生效**（真机复现：新建 sing-box 入站后端口一直不监听，直到手动重启/
+// Agent 重启）。xray 由面板走 SyncData 热下发，这里保持"只落盘"即可。
+//
+// 变更判定用「运行态基准」：磁盘文件可能是本次刚写的（或面板并发写的），不能代表进程运行态。
+func (a *AgentApp) applySyncedConfig(ctx context.Context, coreType string, config []byte, version int64) error {
+	if len(config) == 0 {
+		return nil
+	}
+	changed := runtimeConfigDiffers(a.readAppliedBasis(coreType, nil), config)
+	if err := a.localAgent.SyncConfigSync(ctx, coreType, config, version); err != nil {
+		return err
+	}
+	if domain.CoreType(coreType).SupportsHotApply() || !changed {
+		return nil
+	}
+	serviceID := int64(0)
+	if a.svcRepo != nil {
+		if services, _, err := a.svcRepo.List(ctx, 1, coreType, 1, 0); err == nil && len(services) > 0 {
+			serviceID = services[0].ID
+		}
+	}
+	if serviceID <= 0 {
+		return nil
+	}
+	if err := a.procMgr.Restart(ctx, serviceID, coreType); err != nil {
+		// 该核心在本机未安装/未运行（例如只有 xray 的节点收到 singbox 配置）→ 只告警，
+		// 不影响配置落盘，也不算同步失败。
+		log.Printf("[Agent] %s restart after config change skipped: %v", coreType, err)
+		return nil
+	}
+	log.Printf("[Agent] %s does not support hot-apply → restarted core to apply synced config", coreType)
+	return nil
+}
+
 func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
+	// 建立「运行态基准」：Reconcile 会让各核心加载当前 runtime 配置，先把它登记为
+	// 已应用，后续 SyncData 的变更判定才有可信依据（面板 SyncConfig 会抢先写盘）。
+	a.initAppliedBasisFromRuntime()
+
 	a.procMgr.SeedCores(ctx)
 
 	// Start log management service (same as Panel)

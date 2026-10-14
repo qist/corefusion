@@ -2357,6 +2357,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerH.SetProxyHandler(proxyH)
 			nodeServerH.SetGeoRuleService(geoRuleSvcInst)
 			nodeServerH.SetChainLinkRepository(repository.NewChainLinkRepository(database))
+			// 手动"同步配置"也要带上链式出站（复用上面已接线的生成器）
+			nodeServerH.SetChainLinkProvider(chainLinkGen)
 
 			// Wire up NodeOperator so proxy/caddy/nginx handlers can route
 			// operations (start/stop/restart/reload, config sync, status)

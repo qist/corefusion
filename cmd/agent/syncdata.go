@@ -482,8 +482,15 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		// 供 HOT_RELOAD 分支做新旧 diff —— 必须在**写盘之前**读取旧运行配置。
 		var oldConfig []byte
 		if len(configData) > 0 {
-			configChanged = a.procMgr.RuntimeConfigChanged(coreType, configData)
 			oldConfig, _ = os.ReadFile(a.procMgr.RuntimeConfigPath(coreType))
+			// ⚠ 变更判定用「运行态基准」而不是磁盘文件 ✗：面板的 `PanelCommand.SyncConfig`
+			// 是**只写盘、不动进程**，且会与 SyncData **并发**下发 —— 它抢先写盘后，这里
+			// 再读磁盘就已经是新内容 → 永远判「未变」→ 变更只更新了文件、从未应用到运行中的
+			// 进程（真机复现：创建链式代理后入口核心不重载，链式路由静默不生效、流量落到
+			// direct 直连）。基准文件只在「配置真正应用到进程」时写入（见 hotreload.go），
+			// 因此能如实反映"进程当前跑的是哪份配置"。
+			basis := a.readAppliedBasis(coreType, oldConfig)
+			configChanged = runtimeConfigDiffers(basis, configData)
 		}
 
 		if len(configData) > 0 {

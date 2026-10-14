@@ -1,5 +1,7 @@
 // sing-box 公用工具：协议常量 + 自动填参 + 密钥/用户生成
 // sing-box 源码：/opt/sing-box/option/*.go（权威字段来源）
+// 节点「名称 / 标签」生成器与 xray 共用（见 sections/utils/nodeNaming.js），不另起一套。
+import { genRemark, genInboundTag } from '../../utils/nodeNaming'
 
 // 需要 TLS 的 Inbound 协议（InboundTLSOptionsContainer，源码验证）
 // vless/vmess/trojan/hysteria2/tuic/naive/anytls/mixed/hysteria 有 InboundTLSOptionsContainer
@@ -135,7 +137,7 @@ export function inboundDefaultsForType(type, customPort) {
   const port = customPort > 0 ? customPort : generatePort()
   const base = {
     type,
-    tag: 'inbound-' + type + '-' + port,
+    tag: genInboundTag(type, port),
     listen: '0.0.0.0',
     listen_port: port,
     domain_strategy: '',
@@ -224,7 +226,7 @@ export function inboundDefaultsForType(type, customPort) {
     _multiplexEnabled: false, _multiplexProtocol: 'smux', _multiplexMaxConn: 0,
     _multiplexMinStreams: 0, _multiplexMaxStreams: 0, _multiplexPadding: false,
     // remark + enabled + access domain (对齐 xray)
-    _remark: 'Node-' + Math.random().toString(36).substring(2, 8), _enabled: true,
+    _remark: genRemark(), _enabled: true,
     _accessDomainEnabled: false, _accessDomainType: 'direct',
     _directDomain: '', _directPortMode: 'config',
     _cfDomain: '', _cfIP: '', _customDomain: '',

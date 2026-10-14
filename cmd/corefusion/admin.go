@@ -231,7 +231,7 @@ func adminList(args []string) {
 // 只读/写数据库，不启动 HTTP 服务（与 reset-password 相同的恢复通道约束）。
 func adminPasskey(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 revoke\n")
+		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 revoke")
 		os.Exit(2)
 	}
 
@@ -327,7 +327,7 @@ func admin2FA(args []string) {
 	username := fs.String("u", "admin", "用户名")
 	_ = fs.Parse(args)
 	if fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 reset\n")
+		fmt.Fprintln(os.Stderr, "✗ 缺少子命令：list 或 reset")
 		os.Exit(2)
 	}
 	sub := fs.Arg(0)

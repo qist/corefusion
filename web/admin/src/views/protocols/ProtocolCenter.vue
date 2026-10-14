@@ -163,6 +163,7 @@ import SingboxNtp from './sections/SingboxNtp.vue'
 import SingboxJsonSection from './sections/SingboxJsonSection.vue'
 import JsonPreview from './sections/JsonPreview.vue'
 import { useRoute } from 'vue-router'
+import { useQueryState } from '../../composables/useQueryState'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -207,7 +208,10 @@ const COMPS = {
 }
 
 const selectedCore = ref('')
-const activeSection = ref('')
+// 顶层 section 选择与 URL query 双向同步（刷新后恢复到原 section）。
+// 子标签（inbounds/outbounds 等）本就用 useQueryState 记忆，这里补齐父级 section，
+// 否则刷新会丢掉 section、回到刚进入协议中心（未选 section）的状态。
+const activeSection = useQueryState('section', '')
 const fullConfig = ref({})
 const secData = ref(null)
 // Latest normalized output emitted by the section component. Never written back
@@ -265,6 +269,9 @@ function fmtUptime(s){if(!s)return'-';const d=Math.floor(s/86400),h=Math.floor(s
 async function selectCore(t){
   selectedCore.value=t
   activeSection.value=''
+  // 切换核心 = 换了一套配置，上一次的「校验配置」结果随之失效，必须清空，
+  // 否则切到 xray 还会残留 sing-box 的「校验通过（sing-box version …）」。
+  validateResult.value=null
   sections.value=getSections()[t]||[]
   localStorage.setItem('active_core',t)
   await loadConfig(t)
@@ -423,7 +430,18 @@ watch(() => props.serverId, async (id, old) => {
     if (sec && sections.value.some(x => x.key === sec)) switchSection(sec)
   }
 })
-onMounted(async ()=>{const s=localStorage.getItem('active_core');const sec=route.query.section;if(s&&cores.some(c=>c.type===s)){await selectCore(s);if(typeof sec==='string'&&sections.value.some(x=>x.key===sec))switchSection(sec)};timer=setInterval(fetchStatus,10000)})
+onMounted(async ()=>{
+  const s=localStorage.getItem('active_core')
+  // 记住进入时 URL 里的 section（可能在 selectCore 重置前失效，先捕获）
+  const sec=String(route.query.section??'')
+  if(s&&cores.some(c=>c.type===s)){
+    await selectCore(s)
+    if(sec&&sections.value.some(x=>x.key===sec))switchSection(sec)
+    // URL 里的 section 与当前核心不匹配（如核心从 xray 换成 singbox）→ 清掉，避免渲染空 section
+    else if(activeSection.value)activeSection.value=''
+  }
+  timer=setInterval(fetchStatus,10000)
+})
 onUnmounted(()=>{if(timer)clearInterval(timer)})
 </script>
 

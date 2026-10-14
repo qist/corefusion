@@ -492,7 +492,8 @@ func dropUnusedLegacyTables(db *gorm.DB) {
 
 // migrateDropStandaloneHy2Tuic 下线 hysteria2/tuic 独立核心（2026-10 决策）：
 //   - core_configs 里这两个核心的分段配置（listen/auth/users…）
-//   - 本地节点（server_id=1）为它们 seed 的 service 行与关联 guardian
+//   - 所有节点（含远程）为它们 seed 的 service 行与关联 guardian
+//   - 日志轮转策略（hysteria2.log / tuic.log）与日志设置里的 hy2/tuic 键
 //
 // 保留：出站/外部节点的 hysteria2/tuic 支持（domain.CoreType 域，与本清理无关）、
 // sing-box 内的 hy2/tuic 入站、磁盘上已下载的二进制文件（不删，留作手工使用）。
@@ -510,26 +511,73 @@ func migrateDropStandaloneHy2Tuic(db *gorm.DB) {
 		}
 	}
 
-	// 2. 本地 service + 关联 guardian（只动 server_id=1，远端节点的由各自 SyncData 管）
+	// 2. service + 关联 guardian（**所有节点**：1 为本地，>1 为远程）。
+	//    之前只清 server_id=1，导致远程节点上一直残留 hy2/tuic 服务行并随 SyncData 下发。
 	var svcIDs []int64
 	if err := db.Table("inbound_services").
-		Where("server_id = ? AND core_type IN ?", 1, dead).
+		Where("core_type IN ?", dead).
 		Pluck("id", &svcIDs).Error; err != nil {
 		log.Printf("[migration] list hy2/tuic services failed: %v", err)
+	} else if len(svcIDs) > 0 {
+		if err := db.Where("service_id IN ?", svcIDs).Delete(&entity.ProcessGuardian{}).Error; err != nil {
+			log.Printf("[migration] drop guardians for hy2/tuic failed: %v", err)
+		}
+		if res := db.Where("id IN ?", svcIDs).Delete(&entity.InboundService{}); res.Error != nil {
+			log.Printf("[migration] drop hy2/tuic services failed: %v", res.Error)
+		} else {
+			log.Printf("[migration] dropped %d service rows (+guardians) for standalone hy2/tuic", res.RowsAffected)
+		}
+	}
+
+	// 3. 日志轮转策略（hysteria2.log / tuic.log）
+	if res := db.Where("source_type IN ?", dead).Delete(&entity.LogRotationPolicy{}); res.Error != nil {
+		log.Printf("[migration] drop log_rotation_policies for hy2/tuic failed: %v", res.Error)
+	} else if res.RowsAffected > 0 {
+		log.Printf("[migration] dropped %d log_rotation_policies of hy2/tuic", res.RowsAffected)
+	}
+
+	// 4. 日志设置：删掉 proxy.log_writers.{hysteria2,tuic}；从 core.log_output_config[.N]
+	//    的 JSON 里剔除 hy2/tuic 键（代码现在只写 xray/singbox，留着会在日志配置里显示幽灵核心）。
+	for _, ct := range dead {
+		db.Exec("DELETE FROM system_settings WHERE key = ?", "proxy.log_writers."+ct)
+	}
+	stripStandaloneCoreFromLogOutputSettings(db, dead)
+}
+
+// stripStandaloneCoreFromLogOutputSettings 从 core.log_output_config[.N] 的 JSON 值里
+// 删掉已下线的独立核心键。解析失败/无该键则原样保留。
+func stripStandaloneCoreFromLogOutputSettings(db *gorm.DB, dead []string) {
+	var rows []entity.SystemSetting
+	if err := db.Where("key = ? OR key LIKE ?", "core.log_output_config", "core.log_output_config.%").
+		Find(&rows).Error; err != nil {
+		log.Printf("[migration] load core.log_output_config failed: %v", err)
 		return
 	}
-	if len(svcIDs) == 0 {
-		return
+	for _, row := range rows {
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(row.Value), &m); err != nil {
+			continue
+		}
+		changed := false
+		for _, ct := range dead {
+			if _, ok := m[ct]; ok {
+				delete(m, ct)
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		out, err := json.Marshal(m)
+		if err != nil {
+			continue
+		}
+		if err := db.Model(&entity.SystemSetting{}).Where("key = ?", row.Key).Update("value", string(out)).Error; err != nil {
+			log.Printf("[migration] strip hy2/tuic from %s failed: %v", row.Key, err)
+		} else {
+			log.Printf("[migration] stripped hy2/tuic keys from setting %s", row.Key)
+		}
 	}
-	if err := db.Where("service_id IN ?", svcIDs).Delete(&entity.ProcessGuardian{}).Error; err != nil {
-		log.Printf("[migration] drop guardians for hy2/tuic failed: %v", err)
-	}
-	res := db.Where("id IN ?", svcIDs).Delete(&entity.InboundService{})
-	if res.Error != nil {
-		log.Printf("[migration] drop hy2/tuic services failed: %v", res.Error)
-		return
-	}
-	log.Printf("[migration] dropped %d local service rows (+guardians) for standalone hy2/tuic", res.RowsAffected)
 }
 
 // migrateSeedSingboxDefaults 把存量 sing-box 的**空壳** ntp / dns 换成

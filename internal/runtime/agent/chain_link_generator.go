@@ -162,7 +162,15 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 
 	for _, inID := range order {
 		groupLinks := groups[inID]
-		inboundTag := fmt.Sprintf("in-%d", inID)
+		// 路由规则的 inboundTag 必须**等于入口入站在运行时配置里的真实 tag**。
+		// 此前写死 `in-<DB id>`，而面板下发的入站 tag 是入库时的 cfg.Tag
+		// （如 `inbound-vless-51697`）→ 规则永远匹配不到任何入站 → 入口流量落到
+		// route.final / 首个出站 → **链式代理对 xray 与 sing-box 都静默失效**
+		// （`check` / `run -test` 都不报错，只有比对出口时才发现）。
+		inboundTag := g.entryInboundTag(ctx, inID)
+		if inboundTag == "" {
+			inboundTag = fmt.Sprintf("in-%d", inID)
+		}
 
 		// 先为每个出口生成 outbound（无论单/多出口，全部产出，balancer 靠 selector 前缀圈定）
 		for _, link := range groupLinks {
@@ -395,13 +403,19 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 		security = "tls"
 	}
 
-	// 凭据：从该入站自己的用户里取第一条（vless/vmess→id，trojan/ss→password）
+	// 凭据：从该入站自己的用户里取第一条（vless/vmess→id，trojan/ss→password）。
+	// flow：vless 的 xtls-rprx-vision 必须**原样带过去** ✗ —— 面板（sing-box 的
+	// SingboxUsers / xray 的 vless 入站）默认给 vless 用户写上 flow=xtls-rprx-vision，
+	// 出口按 vision 握手；入口侧出站若丢了 flow，握手对不上 → 永远连不上，而
+	// `sing-box check` / `xray run -test` **都不报错**（flow 是可选字段）—— 又一个静默失效。
 	cred := ""
 	method := ""
+	flow := ""
 	if settings, ok := cfg["settings"].(map[string]interface{}); ok { // xray
 		if clients, ok := settings["clients"].([]interface{}); ok && len(clients) > 0 {
 			if c0, ok := clients[0].(map[string]interface{}); ok {
 				cred = firstString(c0, "id", "password")
+				flow = firstString(c0, "flow")
 			}
 		}
 		method = firstString(settings, "method")
@@ -410,6 +424,9 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 		if users, ok := cfg["users"].([]interface{}); ok && len(users) > 0 {
 			if u0, ok := users[0].(map[string]interface{}); ok {
 				cred = firstString(u0, "uuid", "password")
+				if flow == "" {
+					flow = firstString(u0, "flow")
+				}
 			}
 		}
 		if method == "" {
@@ -426,6 +443,11 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 		"network":  transport,
 		"security": security,
 	}
+	// 传输细节（gRPC service_name / ws path+Host / httpupgrade / http）必须从出口入站
+	// 带过来：只搬 network/security 会让入口侧出站对不上服务名/路径 —— xray 与 sing-box
+	// **都不报错**，只是永远连不上（典型的"静默失效"）。真机撞到：sing-box 出口的 gRPC
+	// service_name 丢失 → 入口 sing-box 出站 `transport:{type:grpc}` 无 service_name。
+	copyExitInboundTransport(streamSettings, cfg, transport)
 	if security == "tls" || security == "reality" {
 		applyExitInboundTLS(streamSettings, cfg, security)
 		// alpn 额外带一份到 streamSettings **顶层**（sing-box 转换器从那里读；
@@ -473,7 +495,7 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 	return ChainEntryOutbound{
 		Tag:            tag,
 		Protocol:       protocol,
-		Settings:       buildLinkOutboundSettingsWithCred(protocol, resolveExitAddress(entry, exitServer), port, cred, method),
+		Settings:       buildLinkOutboundSettingsWithCred(protocol, resolveExitAddress(entry, exitServer), port, cred, method, flow),
 		StreamSettings: streamSettings,
 	}, true, nil
 }
@@ -555,6 +577,96 @@ func applyExitInboundTLS(streamSettings map[string]interface{}, cfg map[string]i
 			}
 		}
 		streamSettings["tlsSettings"] = tl
+	}
+}
+
+// copyExitInboundTransport 把出口入站的**传输细节**搬到入口侧出站的 streamSettings
+// （统一写成 xray 形态的嵌套 *Settings，xray 入口直接用、sing-box 入口再经
+// convertChainOutboundsToSingbox 转换）。两种入站形状都支持：
+//
+//	xray    : streamSettings.{wsSettings|grpcSettings|httpupgradeSettings|httpSettings|kcpSettings|quicSettings}
+//	sing-box: 顶层 transport.{type, path, host, service_name, headers, method}
+//
+// 裸 TCP（tcp/raw/空）没有传输细节，直接返回。
+func copyExitInboundTransport(streamSettings, cfg map[string]interface{}, transport string) {
+	switch transport {
+	case "", "tcp", "raw":
+		return
+	}
+	// xray 形态：直接把嵌套传输设置原样搬过去。
+	if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok {
+		for _, key := range []string{
+			"wsSettings", "grpcSettings", "httpupgradeSettings", "httpSettings",
+			"kcpSettings", "quicSettings", "tcpSettings", "rawSettings",
+		} {
+			if v, ok := ss[key].(map[string]interface{}); ok && len(v) > 0 {
+				streamSettings[key] = v
+			}
+		}
+		return
+	}
+	// sing-box 形态：transport.* → xray 的嵌套 *Settings。
+	tr, ok := cfg["transport"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	switch transport {
+	case "grpc":
+		g := map[string]interface{}{}
+		if v := firstString(tr, "service_name"); v != "" {
+			g["serviceName"] = v
+		}
+		if v := firstString(tr, "idle_timeout"); v != "" {
+			g["idle_timeout"] = v
+		}
+		if v, ok := tr["permit_without_stream"].(bool); ok && v {
+			g["multiMode"] = true
+		}
+		if len(g) > 0 {
+			streamSettings["grpcSettings"] = g
+		}
+	case "ws":
+		w := map[string]interface{}{}
+		if v := firstString(tr, "path"); v != "" {
+			w["path"] = v
+		}
+		if hdrs, ok := tr["headers"].(map[string]interface{}); ok && len(hdrs) > 0 {
+			w["headers"] = hdrs
+		}
+		if v := firstString(tr, "early_data_header_name"); v != "" {
+			w["earlyDataHeaderName"] = v
+		}
+		if len(w) > 0 {
+			streamSettings["wsSettings"] = w
+		}
+	case "httpupgrade":
+		h := map[string]interface{}{}
+		if v := firstString(tr, "path"); v != "" {
+			h["path"] = v
+		}
+		if v := firstString(tr, "host"); v != "" {
+			h["host"] = v
+		}
+		if hdrs, ok := tr["headers"].(map[string]interface{}); ok && len(hdrs) > 0 {
+			h["headers"] = hdrs
+		}
+		if len(h) > 0 {
+			streamSettings["httpupgradeSettings"] = h
+		}
+	case "http":
+		h := map[string]interface{}{}
+		if v := firstString(tr, "path"); v != "" {
+			h["path"] = v
+		}
+		if host := tr["host"]; host != nil {
+			h["host"] = host
+		}
+		if v := firstString(tr, "method"); v != "" {
+			h["method"] = v
+		}
+		if len(h) > 0 {
+			streamSettings["httpSettings"] = h
+		}
 	}
 }
 
@@ -686,6 +798,20 @@ func (g *ChainLinkGenerator) entryCoreType(ctx context.Context, entryInboundID i
 		return ib.CoreType
 	}
 	return "xray"
+}
+
+// entryInboundTag 取入口入站在运行时配置里的**真实 tag**（= 入库时的 cfg.Tag），
+// 供链式路由规则 `inboundTag` / sing-box `inbound` 使用 —— 必须与核心实际看到的
+// 入站 tag 完全一致，否则规则不命中、链式静默失效。
+// 查不到（仓库未接线 / 无该入站 / tag 为空）时返回空串，由调用方回退到旧值。
+func (g *ChainLinkGenerator) entryInboundTag(ctx context.Context, entryInboundID int64) string {
+	if g.inboundRepo == nil || entryInboundID == 0 {
+		return ""
+	}
+	if ib, err := g.inboundRepo.GetByID(ctx, entryInboundID); err == nil && ib != nil {
+		return strings.TrimSpace(ib.Tag)
+	}
+	return ""
 }
 
 func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link entity.ChainLink) (ChainEntryOutbound, error) {
@@ -829,27 +955,32 @@ func mihomoPortRanges(pm map[string]interface{}) []interface{} {
 // buildLinkOutboundSettings builds xray outbound settings for a cluster exit.
 // buildLinkOutboundSettings 兼容旧调用：把 relayUUID 当凭据。
 func buildLinkOutboundSettings(protocol, address string, port int, relayUUID string) map[string]interface{} {
-	return buildLinkOutboundSettingsWithCred(protocol, address, port, relayUUID, "")
+	return buildLinkOutboundSettingsWithCred(protocol, address, port, relayUUID, "", "")
 }
 
 // buildLinkOutboundSettingsWithCred 与上面相同，但可指定 shadowsocks 的 method
 // （用"出口已有入站"时必须用它自己的 method —— 旧实现写死 chacha20-ietf-poly1305，
 // 遇到 2022-blake3-* 之类会构造出连不上的出站）。
-func buildLinkOutboundSettingsWithCred(protocol, address string, port int, cred, method string) map[string]interface{} {
+// flow 仅在 vless 生效（xtls-rprx-vision），必须从出口入站原样带过来，否则握手对不上。
+func buildLinkOutboundSettingsWithCred(protocol, address string, port int, cred, method, flow string) map[string]interface{} {
 	switch protocol {
 	case "vless", "vmess":
+		user := map[string]interface{}{
+			"id":         cred,
+			"email":      "chain-relay",
+			"encryption": "none",
+		}
+		// vless 的 flow（xtls-rprx-vision）必须带上 —— 出口入站按 vision 握手时，
+		// 出站缺 flow 会静默连不上（核心不报错）。vmess 无 flow，跳过。
+		if protocol == "vless" && flow != "" {
+			user["flow"] = flow
+		}
 		return map[string]interface{}{
 			"vnext": []map[string]interface{}{
 				{
 					"address": address,
 					"port":    port,
-					"users": []map[string]interface{}{
-						{
-							"id":         cred,
-							"email":      "chain-relay",
-							"encryption": "none",
-						},
-					},
+					"users":   []map[string]interface{}{user},
 				},
 			},
 		}

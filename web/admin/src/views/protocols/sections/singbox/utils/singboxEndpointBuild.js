@@ -14,10 +14,8 @@ export const ENDPOINT_TYPE_LABELS = {
   'openvpn-server': 'OpenVPN Server',
 }
 
-// 生成短随机后缀
-function randSuffix() {
-  return Math.random().toString(36).substring(2, 8)
-}
+// 节点「名称 / 标签」生成器与 xray 共用（见 sections/utils/nodeNaming.js），不另起一套。
+import { genRemark, randSuffix } from '../../utils/nodeNaming'
 
 // 端点表单默认值
 export function endpointDefaultsForType(type, customPort) {
@@ -29,7 +27,7 @@ export function endpointDefaultsForType(type, customPort) {
     tag: '',
     // 与入站编辑器一致：备注（界面「节点名称」）自动生成，不留空 ——
     // 此前默认 ''，新建端点的「节点名称」永远要手填（2026-10-09）。
-    _remark: 'Node-' + randSuffix(),
+    _remark: genRemark(),
     _enabled: true,
   }
 

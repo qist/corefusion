@@ -27,7 +27,7 @@
           <el-link v-else type="primary" @click="showVersions(row)" style="font-size:12px">{{ row.version || '...' }}</el-link>
         </template>
       </el-table-column>
-      <el-table-column :label="t('service.process.pid')" width="60">
+      <el-table-column :label="t('service.process.pid')" width="90">
         <template #default="{row}">{{ row.pid || '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('service.process.uptime')" width="80">
@@ -111,7 +111,7 @@
           <el-link v-else type="primary" @click="showProxyVersions(row)" style="font-size:12px">{{ row.version || t('common.install') }}</el-link>
         </template>
       </el-table-column>
-      <el-table-column :label="t('service.process.pid')" width="60">
+      <el-table-column :label="t('service.process.pid')" width="90">
         <template #default="{row}">{{ row.pid || '-' }}</template>
       </el-table-column>
       <el-table-column :label="t('service.process.uptime')" width="80">

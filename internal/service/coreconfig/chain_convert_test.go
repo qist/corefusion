@@ -154,6 +154,34 @@ func TestConvertChainOutboundsToSingbox_Hysteria2AndReality(t *testing.T) {
 	}
 }
 
+// TestConvertChainOutboundsToSingbox_GrpcServiceName 回归：gRPC 出口的 service_name
+// 必须从 streamSettings.grpcSettings 带进 sing-box 出站的 transport.service_name ——
+// 漏了它核心不报错，只是永远连不上（真机：sing-box 出口 gRPC）。
+func TestConvertChainOutboundsToSingbox_GrpcServiceName(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag": "chain-grpc", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{
+				map[string]interface{}{"address": "1.2.3.4", "port": float64(443),
+					"users": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111", "encryption": "none"}}},
+			}},
+			"streamSettings": map[string]interface{}{
+				"network": "grpc", "security": "tls",
+				"grpcSettings": map[string]interface{}{"serviceName": "ov2zy5xlnlmi"},
+			},
+		},
+	}
+	out := convertChainOutboundsToSingbox(in)
+	if len(out) != 1 {
+		t.Fatalf("期望 1 条出站，得到 %d", len(out))
+	}
+	m, _ := out[0].(map[string]interface{})
+	tr, _ := m["transport"].(map[string]interface{})
+	if tr == nil || tr["type"] != "grpc" || tr["service_name"] != "ov2zy5xlnlmi" {
+		t.Fatalf("gRPC service_name 未带进 transport: %#v", m)
+	}
+}
+
 // TestConvertChainOutboundsToSingbox_TransportNames 传输名映射：
 // xray 的 `raw`（= TCP 的新叫法）**不能**透传成 sing-box 的 transport.type ✗ ——
 // 透传会让核心拒绝启动：`FATAL ... unknown transport type: raw`（真机 E2E 撞到过）。
@@ -204,5 +232,34 @@ func TestConvertChainOutboundsToSingbox_TransportNames(t *testing.T) {
 				t.Errorf("t-ws: transport 应为 {type:ws,path:/ws}，得到 %#v", tr)
 			}
 		}
+	}
+}
+
+// TestConvertChainOutboundsToSingbox_VlessFlow 回归：vless 出站的 flow（xtls-rprx-vision）
+// 必须从 xray 形态的用户带进 sing-box 出站的顶层 flow 字段。
+//
+// 真机事故：面板（SingboxUsers / xray vless 入站）默认给 vless 用户写 flow=xtls-rprx-vision，
+// 出口按 vision 握手；链式出站丢了 flow 后握手对不上 → 永远连不上，而 `sing-box check`
+// 与 `xray run -test` **都不报错**（flow 是可选项）—— 典型的静默失效。
+func TestConvertChainOutboundsToSingbox_VlessFlow(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag": "chain-flow", "protocol": "vless",
+			"settings": map[string]interface{}{"vnext": []interface{}{
+				map[string]interface{}{"address": "1.2.3.4", "port": float64(443),
+					"users": []interface{}{map[string]interface{}{
+						"id": "11111111-1111-1111-1111-111111111111", "encryption": "none", "flow": "xtls-rprx-vision",
+					}}},
+			}},
+			"streamSettings": map[string]interface{}{"network": "tcp", "security": "tls"},
+		},
+	}
+	out := convertChainOutboundsToSingbox(in)
+	if len(out) != 1 {
+		t.Fatalf("期望 1 条出站，得到 %d", len(out))
+	}
+	m, _ := out[0].(map[string]interface{})
+	if m["flow"] != "xtls-rprx-vision" {
+		t.Fatalf("vless flow 未带进 sing-box 出站（出口按 vision 握手会连不上）: %#v", m)
 	}
 }

@@ -206,9 +206,14 @@
             </el-form-item>
             <el-form-item :label="t('chainProxy.entryInbound')">
               <el-select v-model="wiz.entryInboundId" filterable style="width:100%">
-                <el-option v-for="ib in inboundConfigs" :key="ib.id" :label="`${ib.tag || ('in-'+ib.id)} · ${ib.protocol||''}`" :value="ib.id" />
+                <el-option-group v-for="(list, core) in entryInboundGroups" :key="core" :label="coreLabel(core)">
+                  <el-option v-for="ib in list" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" />
+                </el-option-group>
               </el-select>
               <span style="font-size:12px;color:#909399">{{ t('chainProxy.entryInboundHint') }}</span>
+              <span v-if="wiz.entryInboundId" style="font-size:12px;color:#409eff">
+                {{ t('chainProxy.entryCoreHint', { core: coreLabel(entryCore), protos: chainAllowedProtocols.join(' / ') }) }}
+              </span>
             </el-form-item>
           </el-form>
         </div>
@@ -729,8 +734,24 @@ async function onEntryServerChange(serverId) {
 
 function inboundLabel(ib) {
   const port = ib.port ? ` :${ib.port}` : ''
-  return `${ib.tag || ('in-' + ib.id)} · ${ib.protocol || ''}${port}`
+  return `${ib.tag || ('in-' + ib.id)} · ${coreLabel(normCore(ib.core_type))} · ${ib.protocol || ''}${port}`
 }
+
+// 核心展示名（链式入口/出口都要让用户看清这个入站属于哪个核心 —— 入口核心决定
+// 可用的出口协议：xray 入口没有 hysteria2 出站）。
+function coreLabel(core) {
+  return normCore(core) === 'singbox' ? 'sing-box' : 'Xray'
+}
+
+// 入口入站按核心分组（xray / sing-box），下拉里分开展示，便于按核心选择。
+const entryInboundGroups = computed(() => {
+  const groups = {}
+  for (const ib of inboundConfigs.value || []) {
+    const c = normCore(ib.core_type)
+    ;(groups[c] || (groups[c] = [])).push(ib)
+  }
+  return groups
+})
 
 // 出口入站候选：只列**启用**且协议在入口核心支持名单里的入站
 function exitInboundCandidates(serverId) {

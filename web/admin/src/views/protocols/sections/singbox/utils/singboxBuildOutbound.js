@@ -2,6 +2,8 @@
 // 出站用 _ 前缀字段表达表单，build 时映射为标准 sing-box 字段。
 import { inboundDefaultsForType, generateKey, generatePassword } from './singboxDefaults'
 import { supportsReality, REALITY_PROTOCOLS } from './singboxDefaults'
+// 出站「标签」生成器与 xray 共用（见 sections/utils/nodeNaming.js），不另起一套。
+import { genOutboundTag } from '../../utils/nodeNaming'
 
 export function buildOutbound(ob) {
   const out = { type: ob.type, tag: ob.tag }
@@ -214,7 +216,7 @@ export function parseOutbound(ob) {
 
 export function outboundDefaultsForType(type) {
   const base = {
-    type, tag: '', server: '', server_port: 443,
+    type, tag: genOutboundTag(type), server: '', server_port: 443,
     uuid: '', password: '', username: '', flow: '', alterId: 0, packet_encoding: '',
     method: '', up: '', down: '', 'up_mbps': '', 'down_mbps': '', congestion_control: 'bbr',
     _outboundsStr: '', default: '', url: '', interval: '', tolerance: 0, interrupt_exist_connections: false,

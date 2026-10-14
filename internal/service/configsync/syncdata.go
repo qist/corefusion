@@ -720,28 +720,28 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 		if err := json.Unmarshal([]byte(ic.ConfigJSON), &inbound); err != nil {
 			continue
 		}
-		// Navigate: streamSettings.tlsSettings.certificates[].certificateFile
-		ss, ok := inbound["streamSettings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		tls, ok := ss["tlsSettings"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-		certs, ok := tls["certificates"].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, c := range certs {
-			cm, ok := c.(map[string]interface{})
-			if !ok {
-				continue
+		// xray：streamSettings.tlsSettings.certificates[].certificateFile
+		if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
+			if tls, ok := ss["tlsSettings"].(map[string]interface{}); ok {
+				if certs, ok := tls["certificates"].([]interface{}); ok {
+					for _, c := range certs {
+						cm, ok := c.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
+							// Normalize path: strip leading "../../../" or "./" prefixes
+							certPathSet[normalizeCertPath(certFile)] = true
+						}
+					}
+				}
 			}
-			if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
-				// Normalize path: strip leading "../../../" or "./" prefixes
-				normalized := normalizeCertPath(certFile)
-				certPathSet[normalized] = true
+		}
+		// sing-box：入站顶层的 tls.certificate_path（sing-box 没有 streamSettings 形态）。
+		// 以前只扫 xray 的 certificateFile，sing-box 选的证书收不到 → 远程节点不会落盘。
+		if tls, ok := inbound["tls"].(map[string]interface{}); ok {
+			if certPath, ok := tls["certificate_path"].(string); ok && certPath != "" {
+				certPathSet[normalizeCertPath(certPath)] = true
 			}
 		}
 	}
@@ -778,8 +778,13 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 		if cert.CertContent == "" || cert.KeyContent == "" {
 			continue
 		}
-		normalizedCertPath := normalizeCertPath(cert.CertPath)
-		if !certPathSet[normalizedCertPath] {
+		// 证书可能以 cert_path 或 fullchain_path 被引用（sing-box 优先用 fullchain_path），
+		// 两者都参与匹配，否则「只写 fullchain_path」的入站收不到证书。
+		matched := certPathSet[normalizeCertPath(cert.CertPath)]
+		if !matched && cert.FullchainPath != "" {
+			matched = certPathSet[normalizeCertPath(cert.FullchainPath)]
+		}
+		if !matched {
 			continue
 		}
 		fullchainContent := ""

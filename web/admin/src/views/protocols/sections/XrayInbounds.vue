@@ -631,10 +631,10 @@
                       </el-option-group>
                       <!-- 预设公共服务器分组（本节点已用过的打「已使用」标记；跨节点不算） -->
                       <el-option-group :label="t('protoCenter.reality.presetGroup')">
-                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'preset')" :key="'preset-' + tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target">
+                        <el-option v-for="tgt in allRealityTargets.filter(x => x.source === 'preset')" :key="'preset-' + tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target" :disabled="isTargetUsedByOthers(tgt.sni)">
                           <span>{{ tgt.sni }}</span>
                           <span style="color:#909399;margin-left:8px;font-size:12px">{{ tgt.target }}</span>
-                          <el-tag v-if="isSniUsed(tgt.sni)" size="small" type="warning" style="margin-left:8px">{{ t('protoCenter.reality.sniInUse') }}</el-tag>
+                          <el-tag v-if="isTargetUsedByOthers(tgt.sni)" size="small" type="warning" style="margin-left:8px">{{ t('protoCenter.reality.sniInUse') }}</el-tag>
                         </el-option>
                       </el-option-group>
                     </el-select>
@@ -1778,6 +1778,7 @@ import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
 import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
+import { genRemark, genInboundTag } from './utils/nodeNaming'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -1855,6 +1856,13 @@ function usedByOthersMap(self) {
 const usedSnis = computed(() => mergeUsedSnis(collectUsedSnisFromInbounds(form.value, null), serverNameUsage.value, null))
 // 当前编辑的入站（编辑模式），用于「排除自身」比较
 const selfInbound = computed(() => (editIdx.value >= 0 ? form.value[editIdx.value] : null))
+// 预设 Target 是否已被本节点「其它入站」占用（排除自身，含后端登记的跨核心占用）：
+// 占用则在下拉里置灰不可选；本地 127.0.0.1 目标没有 SNI，始终可选（允许复用）。
+const usedSnisByOthers = computed(() => usedByOthersMap(selfInbound.value))
+function isTargetUsedByOthers(sni) {
+  const sn = String(sni || '').trim().toLowerCase()
+  return !!sn && usedSnisByOthers.value.has(sn)
+}
 // 当前填写的 SNI 里「本次新增、已被本节点其它入站占用」的（即时提示，保存时同样拦截）
 const sniConflicts = computed(() => {
   if (rf.streamSettings?.security !== 'reality') return []
@@ -2781,7 +2789,6 @@ function randomDomains(count, excludeSet) {
   }
   return [...set]
 }
-function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
 // 优先使用后端返回的「该节点未占用」端口，避免与已有入站/端点重复（含 TCP/UDP）
 function genPort() { return takeFreePort(props.serverId) }
 function genId(len) { const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'; let r = ''; for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length)); return r }
@@ -2874,7 +2881,7 @@ function addUser(proto) {
 function getDefaultInbound() {
   const port = genPort()
   return {
-    _remark: genRemark(), tag: 'inbound-vless-' + port, protocol: 'vless',
+    _remark: genRemark(), tag: genInboundTag('vless', port), protocol: 'vless',
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
@@ -2900,7 +2907,7 @@ function onProtocolChange() {
   const p = rf.protocol
   const port = rf.port && rf.port > 0 ? rf.port : genPort()
   rf.port = port
-  rf.tag = 'inbound-' + p + '-' + port
+  rf.tag = genInboundTag(p, port)
   rf._socketPath = '/dev/shm/' + p + '.sock'
   // Reset transport when switching from hysteria
   if (p !== 'hysteria' && rf.streamSettings.network === 'hysteria') {

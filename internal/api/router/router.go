@@ -2240,11 +2240,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 						repository.NewExternalNodeRepository(database),
 					).WithCoreGuardianRepos(svcRepo, guardianRepo),
 				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo).WithChainLinkProvider(
-					agent.NewChainLinkGenerator(
-						repository.NewChainLinkRepository(database),
-						nodeServerRepo,
-						repository.NewExternalNodeRepository(database),
-					),
+					// 必须复用上面（758 行）已注入 inboundRepo / extServerRepo 的那个生成器。
+					// 这里曾经**另起了一个没接线的实例**：v2.0 起所有集群出口都要"选出口节点上
+					// 已有的入站"，生成时要读 inbound_configs（协议/端口/传输/凭据）—— 未接线时
+					// buildOutboundFromExitInbound 直接返回 "inbound repository not wired"，
+					// **远程节点（含镜像）的链式出站整段丢失**；入口核心探测也退化成 xray，
+					// sing-box 入口被误判成 xray → xray/sing-box 混合链式静默失效。
+					chainLinkGen,
 				).WithEndpointProvider(endpointConfigSvc)
 				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)

@@ -427,6 +427,10 @@ export function buildInbound(ib) {
   // _certId：TLS 证书选择（界面回显；证书文件路径已在 tls.certificate_path/key_path）。
   out._utlsFingerprint = ib._utlsFingerprint || ''
   out._certId = ib._certId || ''
+  // 备注（界面「节点名称」）：与 xray 的 buildInbound 一致必须带出 _remark，
+  // 否则保存时 `remark: cfg._remark || cfg.tag` 会回退成 tag —— 新建/编辑入站的
+  // 「节点名称」被写成 tag。落库前 configJson 会 delete 掉它（见 SingboxInbounds.save）。
+  out._remark = ib._remark || undefined
   // 端口跳跃：同样以对象形态落库 —— 面板启动时按它恢复 DNAT 规则
   // （firewall.ParsePortHopFromConfig），分享链接据此下发 mport，编辑器回显也靠它。
   out._portHopEnabled = ib._portHopEnabled || false

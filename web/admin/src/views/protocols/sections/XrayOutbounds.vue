@@ -1110,6 +1110,7 @@ import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
 import XrayOutboundProtocol from './xray/outbounds/XrayOutboundProtocol.vue'
+import { genOutboundTag } from './utils/nodeNaming'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String, serverId: Number })
@@ -1886,10 +1887,6 @@ async function loadOutbounds() {
   } catch (e) { console.error('loadOutbounds error:', e); form.value = [] }
 }
 
-function genTag(protocol) {
-  return 'outbound-' + protocol + '-' + Math.random().toString(36).substring(2, 8)
-}
-
 function genEmail() {
   return Math.random().toString(36).substring(2, 8) + '@xray.com'
 }
@@ -1897,7 +1894,7 @@ function genEmail() {
 function showAdd() {
   editIdx.value = -1
   const d = getDefaultOutbound()
-  d.tag = genTag(d.protocol)
+  d.tag = genOutboundTag(d.protocol)
   Object.assign(rf, d)
   activeTab.value = 'basic'
   dlg.value = true
@@ -2057,7 +2054,7 @@ async function moveOutbound(ob, dir) {
 }
 
 function onProtocolChange() {
-  rf.tag = genTag(rf.protocol)
+  rf.tag = genOutboundTag(rf.protocol)
   if (rf.protocol === 'freedom') rf._domainStrategy = 'AsIs'
   if (rf.protocol === 'wireguard') {
     rf._wgPeers = []

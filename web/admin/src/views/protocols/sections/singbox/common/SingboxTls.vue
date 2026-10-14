@@ -75,7 +75,7 @@
             </el-option-group>
             <!-- 预设公共服务器分组 -->
             <el-option-group :label="t('singbox.tls.presetGroup')">
-              <el-option v-for="tgt in ALL_REALITY_TARGETS.filter(t => t.source === 'preset')" :key="tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target">
+              <el-option v-for="tgt in ALL_REALITY_TARGETS.filter(t => t.source === 'preset')" :key="tgt.target" :label="tgt.sni + ' (' + tgt.target + ')'" :value="tgt.target" :disabled="isPresetSniUsed(tgt.sni)">
                 <span>{{ tgt.sni }}</span>
                 <span style="color:#909399;margin-left:8px;font-size:12px">{{ tgt.target }}</span>
                 <el-tag v-if="isPresetSniUsed(tgt.sni)" size="small" type="warning" style="margin-left:8px">{{ t('singbox.tls.sniInUse') }}</el-tag>
@@ -367,9 +367,18 @@ function onServerNameChange() {
   emit()
 }
 
-// 刷新 Reality 目标（随机换一个）
+// 「换一个/自动选」时可用的预设：排除已被本节点其它入站占用的 SNI；全部占用时退回全量，
+// 否则会随机挑到已用 SNI（用户反馈「换一个握手服务器会选中已使用的」）。
+function freeRealityPresets() {
+  const all = ALL_REALITY_TARGETS.value.filter(t => t.source === 'preset')
+  const free = all.filter(t => !isPresetSniUsed(t.sni))
+  return free.length ? free : all
+}
+
+// 刷新 Reality 目标（随机换一个未被占用的）
 function refreshRealityTarget() {
-  const presets = ALL_REALITY_TARGETS.value.filter(t => t.source === 'preset')
+  const presets = freeRealityPresets()
+  if (!presets.length) return
   const tgt = presets[Math.floor(Math.random() * presets.length)]
   _realityTarget.value = tgt.target
   onRealityTargetChange(tgt.target)
@@ -402,7 +411,7 @@ function onSecurityChange(val) {
 
 // 自动选择随机预设握手服务器（不选本地，因为本地需要先配置代理站点）
 function autoSelectRealityTarget() {
-  const presets = ALL_REALITY_TARGETS.value.filter(t => t.source === 'preset')
+  const presets = freeRealityPresets()
   if (!presets.length) return
   const tgt = presets[Math.floor(Math.random() * presets.length)]
   _realityTarget.value = tgt.target

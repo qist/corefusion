@@ -3306,6 +3306,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     stepConfirm: '确认创建',
     entryInbound: '入口入站',
     entryInboundHint: '选择该入口节点下承接用户的入站（每个入站对应一组链式路由）',
+    entryCoreHint: '入口核心：{core} · 可作为出口的协议：{protos}',
     multiExitHint: '可同时选择多个出口；选择≥2个出口时自动采用负载均衡模式，单出口则为直连。',
     clusterNodes: '集群节点',
     externalNodes: '外部节点',

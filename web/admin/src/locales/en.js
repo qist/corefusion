@@ -3384,6 +3384,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     stepConfirm: 'Confirm',
     entryInbound: 'Entry Inbound',
     entryInboundHint: 'Pick the user-facing inbound on this entry node (each inbound maps to one chain route)',
+    entryCoreHint: 'Entry core: {core} · Usable exit protocols: {protos}',
     multiExitHint: 'You may select multiple exits; ≥2 exits auto-use load balancing, a single exit is direct.',
     clusterNodes: 'Cluster Nodes',
     externalNodes: 'External Nodes',

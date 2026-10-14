@@ -1701,28 +1701,35 @@ func (s *Service) ListServerCertificates(ctx context.Context, serverID int64) (i
 				if err := json.Unmarshal([]byte(ic.ConfigJSON), &inbound); err != nil {
 					continue
 				}
-				ss, ok := inbound["streamSettings"].(map[string]interface{})
-				if !ok {
-					continue
-				}
-				tls, ok := ss["tlsSettings"].(map[string]interface{})
-				if !ok {
-					continue
-				}
-				certs, ok := tls["certificates"].([]interface{})
-				if !ok {
-					continue
-				}
-				for _, c := range certs {
-					cm, ok := c.(map[string]interface{})
-					if !ok {
-						continue
+				// xray：streamSettings.tlsSettings.certificates[].certificateFile
+				if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
+					if tls, ok := ss["tlsSettings"].(map[string]interface{}); ok {
+						if certs, ok := tls["certificates"].([]interface{}); ok {
+							for _, c := range certs {
+								cm, ok := c.(map[string]interface{})
+								if !ok {
+									continue
+								}
+								if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
+									normalized := normalizeCertPathLocal(certFile)
+									for _, cert := range allCerts {
+										if certPathMatchesLocal(cert, normalized) {
+											addSource(cert.ID, fmt.Sprintf("xray:%s", ic.Tag))
+										}
+									}
+								}
+							}
+						}
 					}
-					if certFile, ok := cm["certificateFile"].(string); ok && certFile != "" {
-						normalized := normalizeCertPathLocal(certFile)
+				}
+				// sing-box：入站顶层 tls.certificate_path（以前只扫 xray，sing-box 选证书后
+				// 「节点在用证书」列表与远程下发都收不到）。
+				if tls, ok := inbound["tls"].(map[string]interface{}); ok {
+					if certPath, ok := tls["certificate_path"].(string); ok && certPath != "" {
+						normalized := normalizeCertPathLocal(certPath)
 						for _, cert := range allCerts {
-							if normalizeCertPathLocal(cert.CertPath) == normalized {
-								addSource(cert.ID, fmt.Sprintf("xray:%s", ic.Tag))
+							if certPathMatchesLocal(cert, normalized) {
+								addSource(cert.ID, fmt.Sprintf("singbox:%s", ic.Tag))
 							}
 						}
 					}
@@ -1822,6 +1829,15 @@ func normalizeCertPathLocal(path string) string {
 		path = strings.TrimPrefix(path, "./")
 	}
 	return path
+}
+
+// certPathMatchesLocal 判断证书的 cert_path / fullchain_path 是否命中已归一化的引用路径。
+// sing-box 的 tls.certificate_path 常用 fullchain_path，故两者都要比。
+func certPathMatchesLocal(cert entity.Certificate, normalized string) bool {
+	if normalizeCertPathLocal(cert.CertPath) == normalized {
+		return true
+	}
+	return cert.FullchainPath != "" && normalizeCertPathLocal(cert.FullchainPath) == normalized
 }
 
 // AssociateCertificate associates a TLS certificate with a server.

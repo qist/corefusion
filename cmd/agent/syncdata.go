@@ -821,6 +821,10 @@ func generateConfigFromLocalDB(ctx context.Context, serverID int64, coreType str
 	)
 	// 链式出口"使用出口节点上已有的入站"这条路径需要读入站配置（协议/端口/传输/凭据）
 	localChainGen.SetInboundRepo(repository.NewInboundConfigRepository(db.DB))
+	// 外部出口引用的是 external_node_servers.id（注册成虚拟节点的外部节点），协议/地址/凭据
+	// 在关联的 external_nodes 记录里 —— 不接线时会把 ExitExternalID 当成 external_nodes.id，
+	// 选中外部出口要么查不到、要么按另一个节点生成出站（流量发到错误的服务器）。
+	localChainGen.SetExtServerRepo(repository.NewExternalNodeServerRepository(db.DB))
 	data, err := coreconfigSvc.PrepareFullConfig(coreconfigSvc.PrepareFullConfigOptions{
 		Ctx:               ctx,
 		ServerID:          serverID,

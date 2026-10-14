@@ -8,7 +8,9 @@ export function genId(len = 10) {
   return r
 }
 
-export function genRemark() { return 'Node-' + Math.random().toString(36).substring(2, 8) }
+// 「节点名称」生成器与 sing-box 共用同一实现（见 sections/utils/nodeNaming.js），
+// 这里只做转发，避免两套口径。
+export { genRemark } from '../../utils/nodeNaming'
 
 export function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
 

@@ -672,6 +672,19 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 						if coreType == "singbox" && isAuthUserProto {
 							delete(m, "name")
 						}
+						// sing-box 的 hysteria(v1) 入站 User 只认 name / auth / auth_str，
+						// 写成 password 会被 strict decode 直接 FATAL 拒载：
+						//   inbounds[N].users[M].password: json: unknown field "password"
+						// 面板内部统一用 password 承载用户凭据（分享/表单都依赖它），
+						// 下发前在此改名为核心要求的 auth_str。
+						if coreType == "singbox" && strings.EqualFold(protocol, "hysteria") {
+							if _, has := m["auth_str"]; !has {
+								if pw, _ := m["password"].(string); pw != "" {
+									m["auth_str"] = pw
+								}
+							}
+							delete(m, "password")
+						}
 						filtered = append(filtered, m)
 					}
 				}
@@ -1773,6 +1786,12 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 					if users, ok := first["users"].([]interface{}); ok && len(users) > 0 {
 						if user, ok := users[0].(map[string]interface{}); ok {
 							sb["uuid"] = user["id"]
+							// vless 的 flow（xtls-rprx-vision）必须带进 sing-box 出站 ✗ ——
+							// 面板默认给 vless 用户写 vision，出口按 vision 握手；出站缺 flow
+							// 时 `sing-box check` 不报错、运行期却永远连不上（静默失效）。
+							if v, ok := user["flow"].(string); ok && v != "" {
+								sb["flow"] = v
+							}
 						}
 					}
 				}
@@ -1868,6 +1887,13 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 					}
 				}
 				if path == "" {
+					if hs, ok := ss["httpSettings"].(map[string]interface{}); ok {
+						if v, ok := hs["path"].(string); ok {
+							path = v
+						}
+					}
+				}
+				if path == "" {
 					if v, ok := ss["path"].(string); ok {
 						path = v
 					}
@@ -1897,6 +1923,28 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 					if hdrs, ok := ws["headers"].(map[string]interface{}); ok {
 						if h, ok := hdrs["Host"].(string); ok && h != "" {
 							transport["headers"] = map[string]interface{}{"Host": h}
+						}
+					}
+				}
+				// httpupgrade：sing-box 的 httpupgrade transport **有** `host` 字段（与 ws 不同）。
+				if network == "httpupgrade" {
+					if hu, ok := ss["httpupgradeSettings"].(map[string]interface{}); ok {
+						if h, ok := hu["host"].(string); ok && h != "" {
+							transport["host"] = h
+						}
+						if hdrs, ok := hu["headers"].(map[string]interface{}); ok && len(hdrs) > 0 {
+							transport["headers"] = hdrs
+						}
+					}
+				}
+				// http：host 是**数组**、另有 method（sing-box http transport）。
+				if network == "http" {
+					if hs, ok := ss["httpSettings"].(map[string]interface{}); ok {
+						if host := hs["host"]; host != nil {
+							transport["host"] = host
+						}
+						if m, ok := hs["method"].(string); ok && m != "" {
+							transport["method"] = m
 						}
 					}
 				}

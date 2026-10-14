@@ -706,6 +706,32 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr.SetServerID(1)
 	nginxMgr.SetServerID(1)
 
+	// 面板转发站点：启动时为**既有**站点补建域名级 WAF URL 白名单（幂等）。
+	// 保持该域名 WAF 开启，仅放行面板自身管理 API（.log 路径 / WAF 规则文本等），
+	// 其余规则仍回落到全局规则；新建站点由 nginx/caddy handler 在创建时触发。
+	func() {
+		pfDomains := make(map[string]bool)
+		if sites, err := nginxSiteRepo.List(context.Background(), 1); err == nil {
+			for _, st := range sites {
+				if st.Template == "panel_forward" {
+					pfDomains[st.Domain] = true
+				}
+			}
+		}
+		if sites, err := caddySiteRepo.List(context.Background(), 1); err == nil {
+			for _, st := range sites {
+				if st.Template == "panel_forward" {
+					pfDomains[st.Domain] = true
+				}
+			}
+		}
+		for d := range pfDomains {
+			if err := wafSvcInst.EnsurePanelForwardWhitelist(context.Background(), 1, d); err != nil {
+				log.Printf("[WAF] provision panel-forward whitelist for %s failed: %v", d, err)
+			}
+		}
+	}()
+
 	// After nginx (re)install, tar.gz overwrites config.lua with defaults.
 	// This callback re-syncs WAF config from DB so user customizations survive.
 	proxyMgr.SetOnProxyInstalled(func(ctx context.Context, proxyType string) {
@@ -1185,6 +1211,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	wafH := wafHandler.NewHandler(wafSvcInst)
 	wafH.SetScheduler(wafScheduler)
+	// 面板转发站点创建时生成域名级 URL 白名单（保持 WAF 开启，仅放行面板 API）。
+	provisionPanelWAF := func(ctx context.Context, serverID int64, domain string) {
+		if err := wafSvcInst.EnsurePanelForwardWhitelist(ctx, serverID, domain); err != nil {
+			log.Printf("[WAF] provision panel-forward whitelist for %s failed: %v", domain, err)
+		}
+	}
+	caddyH.SetWAFProvisioner(provisionPanelWAF)
+	nginxH.SetWAFProvisioner(provisionPanelWAF)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
 		geoRuleSvcInst.SetNodeLister(nodeServerRepoForSync)

@@ -163,7 +163,7 @@ func TestComplete(t *testing.T) {
 	var panelSite entity.NginxSite
 	if err := db.DB.Where("domain = ?", "panel.example.com").First(&panelSite).Error; err != nil {
 		t.Errorf("panel nginx site not created: %v", err)
-	} else if panelSite.Template != "" || panelSite.Path != "" || panelSite.Upstream != "127.0.0.1:18080" {
+	} else if panelSite.Template != "panel_forward" || panelSite.Path != "" || panelSite.Upstream != "127.0.0.1:18080" {
 		t.Errorf("panel site mismatch: %+v", panelSite)
 	}
 	var subSite entity.NginxSite

@@ -1698,3 +1698,90 @@ func (s *Service) InitDomainRules(ctx context.Context, domain string) error {
 	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
 	return os.MkdirAll(domainDir, 0755)
 }
+
+// panelForwardWhitelist 是「面板转发」域名默认放行的 URL 白名单项。
+// 面板自身管理 API 会携带 .log 路径、WAF 规则文本、配置文本、URL 等，触发
+// url_attack / url_args / post 检查导致误拦；这里**按具体接口前缀**只放行这些
+// 「内容型」检查（IP/UA/Cookie/CC/文件上传等仍生效），避免整段 /api/ 放行。
+// 非管理接口（auth / client-auth / public / 回调等）不在此列，仍走全局规则。
+// 语法：<前缀或正则> <要跳过的检查，逗号分隔>。
+const panelForwardWhitelist = `# 面板管理接口：放行会被 WAF 误判的内容型检查（仅管理端可访问的接口）
+^/api/v1/log-manage/ url_attack,url_args
+^/api/v1/backups/ url_attack,url_args,file_upload
+^/api/v1/certificates/ url_attack,url_args,file_upload
+^/api/v1/node-servers/[0-9]+/certificates/ url_attack,url_args
+^/api/v1/node-servers/[0-9]+/binaries/ url_attack,url_args
+^/api/v1/waf/ url_attack,url_args,post
+^/api/v1/node-servers/[0-9]+/waf/ url_attack,url_args,post
+^/api/v1/node-servers/[0-9]+/(nginx|caddy)/ url_attack,url_args,post
+^/api/v1/node-servers/[0-9]+/(xray|singbox|mihomo)/ url_attack,url_args,post
+^/api/v1/node-servers/[0-9]+/(inbound-configs|outbound-configs|endpoint-configs|protocols|warp|services|proxy)/ url_attack,url_args,post
+^/api/v1/mihomo/ url_attack,url_args,post
+^/api/v1/geo-rules/ url_attack,url_args,post
+^/api/v1/chain/ url_attack,url_args,post
+^/api/v1/external-nodes/ url_attack,url_args,post
+^/api/v1/subscriptions/ url_attack,url_args,post
+^/api/v1/subscription-formats/ url_attack,url_args,post
+^/api/v1/portal/ url_attack,url_args,post
+^/api/v1/system/ url_attack,url_args,post
+^/api/v1/share-domains/ url_attack,url_args,post
+^/api/v1/cfip/ url_attack,url_args,post`
+
+// panelForwardWhitelistMarker 标记面板白名单块，用于幂等刷新（识别并覆盖旧版本）。
+const panelForwardWhitelistMarker = "# 面板管理接口"
+
+// EnsurePanelForwardWhitelist 为「面板转发」域名生成**独立的 URL 白名单规则**：
+//   - 域名配置写入 waf_enable=on + rule_dir=domains/<domain>（保留既有其它字段）
+//   - 域名级 whiteurl.rule（append）追加面板 API 放行项，其余规则仍回落到全局规则
+//   - 本地节点：创建域名规则目录并落盘（Lua/CaddyGuard 按 mtime 热加载）
+//
+// 幂等：域名配置与白名单项已存在时不重复写入，用户自定义内容不会被覆盖。
+func (s *Service) EnsurePanelForwardWhitelist(ctx context.Context, serverID int64, domain string) error {
+	domain = StripPort(strings.TrimSpace(domain))
+	// 跳过占位域名（_ 为「未配置域名」的通配；:80/:443 等仅端口无主机名）。
+	if domain == "" || domain == "_" || strings.HasPrefix(domain, ":") {
+		return nil
+	}
+
+	// 1) 域名配置：保持 WAF 开启并指向域名规则目录（保留用户已有的其它字段）
+	cfg := map[string]interface{}{}
+	if cur, err := s.GetDomainConfig(ctx, serverID, domain); err == nil && strings.TrimSpace(cur) != "" {
+		_ = json.Unmarshal([]byte(cur), &cfg)
+	}
+	cfg["waf_enable"] = "on"
+	cfg["rule_dir"] = "domains/" + domain
+	buf, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := s.SaveDomainConfig(ctx, serverID, domain, string(buf)); err != nil {
+		return err
+	}
+
+	// 2) 域名级 whiteurl.rule：系统托管的面板白名单（幂等刷新，保留用户自定义）
+	cur, _ := s.GetDomainRuleFile(ctx, domain, "whiteurl.rule", serverID)
+	if !strings.Contains(cur, panelForwardWhitelist) {
+		managed := strings.TrimSpace(cur) == "" ||
+			strings.Contains(cur, panelForwardWhitelistMarker) ||
+			strings.Contains(cur, "/api/ url_attack")
+		content := panelForwardWhitelist
+		if !managed {
+			// 用户已有自定义内容：追加系统白名单，保留用户规则
+			content = normalizeRuleContent(cur) + "\n" + panelForwardWhitelist
+		}
+		if err := s.SaveDomainRuleFileWithMode(ctx, domain, "whiteurl.rule", content, "append", serverID); err != nil {
+			return err
+		}
+	}
+
+	// 3) 本地节点：创建目录并落盘（远程节点在下次同步时下发）
+	if serverID <= 1 {
+		if err := s.InitDomainRules(ctx, domain); err != nil {
+			log.Printf("[WAF] init domain rules for %s: %v", domain, err)
+		}
+		if err := s.LandRulesForServer(ctx, serverID); err != nil {
+			return err
+		}
+	}
+	return nil
+}

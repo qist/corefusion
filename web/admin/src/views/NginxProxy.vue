@@ -611,12 +611,16 @@
             <el-switch v-model="settings.stream_proxy_protocol" />
           </div>
           <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">preread_timeout</div>
+            <el-input v-model="settings.stream_preread_timeout" size="small" style="width:100px" placeholder="3s" />
+          </div>
+          <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_connect_timeout</div>
             <el-input v-model="settings.stream_connect_timeout" size="small" style="width:100px" placeholder="1s" />
           </div>
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_timeout</div>
-            <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="3s" />
+            <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="1h" />
           </div>
         </div>
         <el-table v-if="!isMobile" :data="sniPagedList" stripe size="small">
@@ -840,7 +844,7 @@
     <el-radio-button value="manual">{{ t('proxy.modeManual') }}</el-radio-button>
   </el-radio-group>
 </el-form-item>
-<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
+<el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
 <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
 <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
 <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
@@ -893,7 +897,7 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -903,7 +907,7 @@
             <el-option :label="t('proxy.templateL4')" value="l4" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='panel_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
           <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -1723,11 +1727,12 @@ function forwardDerived(template) {
 
 // 订阅/门户/Reality 已从「模板」下拉移到工具栏按钮（代理面板同一排）。
 // 编辑既有站点时，模板下拉只需展示当前模板，故仅动态补一个当前项。
-const specialTemplates = ['portal_forward', 'subscription_forward', 'reality']
+const specialTemplates = ['portal_forward', 'subscription_forward', 'panel_forward', 'reality']
 const isSpecialTemplate = computed(() => specialTemplates.includes(siteForm.value.template))
 const specialTemplateLabel = computed(() => ({
   portal_forward: t('proxy.templatePortalForward'),
   subscription_forward: t('proxy.templateSubscriptionForward'),
+  panel_forward: t('proxy.templatePanelForward'),
   reality: t('proxy.templateReality'),
 }[siteForm.value.template] || siteForm.value.template))
 
@@ -2092,7 +2097,7 @@ function showPanelProxy() {
   siteDialogTitle.value = t('proxy.proxyPanel')
   const defaultPort = settings.value.default_http_port
   siteForm.value = {
-    domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
+    domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'panel_forward',
     listen_port: defaultPort, listen_socket: '',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',

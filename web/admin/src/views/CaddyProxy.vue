@@ -591,7 +591,7 @@
             <el-radio-button value="manual">{{ t('proxy.modeManual') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
+        <el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
             <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
@@ -638,7 +638,7 @@
             <el-option label="UDP" value="udp" />
           </el-select>
         </el-form-item>
-<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
+<el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -647,7 +647,7 @@
             <el-option label="HTTPUpgrade" value="httpupgrade" />
             </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
+        <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='panel_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
             <el-option label="WebSocket" value="websocket" />
@@ -1089,11 +1089,12 @@ function forwardDerived(template) {
 
 // 订阅/门户/Reality 已从「模板」下拉移到工具栏按钮（代理面板同一排）。
 // 编辑既有站点时，模板下拉只需展示当前模板，故仅动态补一个当前项。
-const specialTemplates = ['portal_forward', 'subscription_forward', 'reality']
+const specialTemplates = ['portal_forward', 'subscription_forward', 'panel_forward', 'reality']
 const isSpecialTemplate = computed(() => specialTemplates.includes(siteForm.value.template))
 const specialTemplateLabel = computed(() => ({
   portal_forward: t('proxy.templatePortalForward'),
   subscription_forward: t('proxy.templateSubscriptionForward'),
+  panel_forward: t('proxy.templatePanelForward'),
   reality: t('proxy.templateReality'),
 }[siteForm.value.template] || siteForm.value.template))
 
@@ -1411,7 +1412,7 @@ function onTemplateChange(newTemplate) {
 function showPanelProxy() {
   siteDialogTitle.value = t('proxy.proxyPanel')
   siteForm.value = {
-    domain: ':80', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'http',
+    domain: ':80', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'panel_forward',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
 proxy_config: '', custom_config: '', waf_enabled: true, lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',

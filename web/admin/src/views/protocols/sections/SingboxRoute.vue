@@ -458,14 +458,56 @@
         <el-button type="primary" @click="saveRule">Save</el-button>
       </template>
     </el-dialog>
+
+    <!-- Chain Proxy Auto-Injected (read-only) -->
+    <el-divider content-position="left">
+      {{ t('protoCenter.routing.chainAutoInjected') }}
+    </el-divider>
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+    </el-alert>
+    <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
+      {{ t('common.noData') }}
+    </div>
+    <template v-if="chainOutbounds.length">
+      <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
+      <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+          <el-tag size="small">{{ ob.type }}</el-tag>
+          <span v-if="ob.server" style="font-size:12px;color:#909399">{{ ob.server }}:{{ ob.server_port }}</span>
+        </div>
+      </div>
+    </template>
+    <template v-if="chainRules.length">
+      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
+      <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag v-if="r.outbound" size="small" type="info">{{ r.outbound }}</el-tag>
+          <span v-if="r.inbound && r.inbound.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: (r.inbound || []).join(',') }) }}</span>
+        </div>
+      </div>
+    </template>
+    <template v-if="chainBalancers.length">
+      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
+      <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
+          <el-tag size="small" type="info">{{ b.type || 'urltest' }}</el-tag>
+          <span v-if="b.outbounds && b.outbounds.length" style="font-size:12px;color:#909399">members: {{ b.outbounds.join(', ') }}</span>
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
+const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String, serverId: Number, fullConfig: Object })
 const emitFn = defineEmits(['update'])
 
@@ -1011,10 +1053,39 @@ function build() {
 }
 
 function emit() { emitFn('update', build()) }
-onMounted(function() { sync(); loadTags(); loadGeoRuleFiles() })
+onMounted(function() { sync(); loadTags(); loadGeoRuleFiles(); loadChainProxy() })
+
+// Chain proxy auto-injected content (read-only, from final sing-box config).
+// 链式出站/路由规则/urltest 由 PrepareFullConfig 在同步时注入，不在可编辑的 props.data 里。
+// 注意：sing-box 没有 xray 的 ruleTag，注入的链路规则在转换时丢掉 tag，
+// 因此只能按 outbound 指向 chain-* / bal-chain-* 来识别。
+const chainRules = ref([])
+const chainBalancers = ref([])
+const chainOutbounds = ref([])
+
+async function loadChainProxy() {
+  try {
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}/config-file`, { suppressErrorMessage: true })
+    if (!data) return
+    const cfg = typeof data === 'string' ? JSON.parse(data) : data
+    const allObs = cfg.outbounds || []
+    chainOutbounds.value = allObs.filter(ob => (ob?.tag || '').startsWith('chain-'))
+    chainBalancers.value = allObs.filter(ob => (ob?.tag || '').startsWith('bal-chain-'))
+    const allRules = (cfg.route && cfg.route.rules) || []
+    chainRules.value = allRules.filter(r => {
+      const ob = r?.outbound || ''
+      return ob.startsWith('chain-') || ob.startsWith('bal-chain-')
+    })
+  } catch {
+    chainRules.value = []
+    chainBalancers.value = []
+    chainOutbounds.value = []
+  }
+}
 </script>
 <style scoped>
 .rule-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+.chain-item { background: var(--el-color-warning-light-9); border: 1px dashed var(--el-color-warning-light-5); }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 2px; }
 .hint-inline { font-size: 12px; color: var(--el-text-color-secondary); margin-left: 8px; }
 </style>

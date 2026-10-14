@@ -103,6 +103,24 @@
         <el-button type="primary" @click="save">{{ t('singbox.outbound.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Chain Proxy Auto-Injected Outbounds (read-only) -->
+    <el-divider content-position="left">
+      {{ t('protoCenter.routing.chainAutoInjected') }}
+    </el-divider>
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+    </el-alert>
+    <div v-if="!chainOutbounds.length" style="text-align:center;color:#909399;padding:12px">
+      {{ t('common.noData') }}
+    </div>
+    <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="chain-item">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+        <el-tag size="small">{{ ob.type }}</el-tag>
+        <span v-if="ob.server" style="font-size:12px;color:#909399">{{ ob.server }}:{{ ob.server_port }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -277,5 +295,27 @@ function sync() {
   props.data.forEach(ob => form.push(parseOutbound(JSON.parse(JSON.stringify(ob)))))
 }
 function emit() { emitFn('update', form.map(buildOutbound)) }
-onMounted(sync)
+onMounted(() => { sync(); loadChainOutbounds() })
+
+// Chain proxy auto-injected outbounds (read-only, from final sing-box config).
+// 链式出站由 PrepareFullConfig 在同步时注入，不在可编辑的 props.data 里 → 必须读最终配置。
+const chainOutbounds = ref([])
+
+async function loadChainOutbounds() {
+  try {
+    const data = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}/config-file`, { suppressErrorMessage: true })
+    if (!data) return
+    const cfg = typeof data === 'string' ? JSON.parse(data) : data
+    const allObs = cfg.outbounds || []
+    chainOutbounds.value = allObs.filter(ob => {
+      const tag = ob?.tag || ''
+      return tag.startsWith('chain-')
+    })
+  } catch {
+    chainOutbounds.value = []
+  }
+}
 </script>
+<style scoped>
+.chain-item { background: var(--el-color-warning-light-9); border: 1px dashed var(--el-color-warning-light-5); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
+</style>

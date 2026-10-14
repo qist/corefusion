@@ -163,6 +163,20 @@ func (m *Manager) getNginxAccessLogPath() string {
 	return filepath.Join(m.dataDir, "logs", "access.log")
 }
 
+// proxyTimezone 返回注入给代理进程的 TZ 值：优先面板设置「时区」(panel.timezone)，
+// 回退到面板进程自身的 TZ 环境变量；两者都没有时返回空串（调用方不做覆盖，
+// 让子进程沿用系统默认时区）。
+func (m *Manager) proxyTimezone(ctx context.Context) string {
+	if m.settingStore != nil {
+		if v, err := m.settingStore.GetByKey(ctx, "panel.timezone"); err == nil {
+			if tz := strings.TrimSpace(v); tz != "" {
+				return tz
+			}
+		}
+	}
+	return strings.TrimSpace(os.Getenv("TZ"))
+}
+
 // GetLogBroker returns the log broker for a proxy type, or nil if not running.
 func (m *Manager) GetLogBroker(proxyType ProxyType) *LogBroker {
 	m.mu.Lock()
@@ -1378,6 +1392,14 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 	}
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = m.dataDir
+	// Caddy 依据 TZ 环境变量确定本地时区（日志时间戳等）。面板设置里的
+	// 「时区」(panel.timezone) 之前只存不生效 —— 启动 caddy 时显式注入 TZ，
+	// 未配置时回退到进程自身环境变量 TZ，仍未设置则不做覆盖（沿用系统默认）。
+	if proxyType == ProxyCaddy {
+		if tz := m.proxyTimezone(bgCtx); tz != "" {
+			cmd.Env = append(os.Environ(), "TZ="+tz)
+		}
+	}
 
 	// Create log broker for real-time viewing
 	broker := NewLogBroker()

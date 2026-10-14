@@ -40,6 +40,10 @@ type Handler struct {
 	proxyH            *system.ProxyHandler
 	geoRuleSvc        *geoRuleSvc.Service
 	chainLinkRepo     *repository.ChainLinkRepository
+	// chainLinkProvider 用于手动"同步配置"时把链式代理出站/路由/均衡器一并生成
+	// （不注入时 PrepareFullConfig 会生成**不含链式**的配置 —— 点一次"同步"就会
+	//  把节点上已有的链式出站覆盖掉，入口流量退回直连）。
+	chainLinkProvider coreconfigSvc.ChainLinkProvider
 }
 
 // LandLocalCertFilesFn 由 router 注入 ✓：把"**关联到本机节点**的证书"落地到面板磁盘 ✓。
@@ -58,6 +62,12 @@ func NewHandler(svc *nodeserverSvc.Service) *Handler {
 // report each node's chain-proxy role (entry→exits / exit←entries).
 func (h *Handler) SetChainLinkRepository(repo *repository.ChainLinkRepository) {
 	h.chainLinkRepo = repo
+}
+
+// SetChainLinkProvider 注入链式代理生成器：手动"同步配置"时也要把链式出站/路由/均衡器
+// 生成进去，否则"同步"会把节点上已有的链式配置覆盖成不含链式的版本（流量静默退回直连）。
+func (h *Handler) SetChainLinkProvider(p coreconfigSvc.ChainLinkProvider) {
+	h.chainLinkProvider = p
 }
 
 // SetCoreConfigService sets the core config service for protocol management.
@@ -958,6 +968,8 @@ func (h *Handler) SyncServerConfig(c *gin.Context) {
 			InboundProvider:  h.inboundConfigSvc,
 			OutboundProvider: h.outboundConfigSvc,
 			EndpointProvider: h.endpointConfigSvc,
+			// 链式出站/路由/均衡器必须一并生成，否则"同步"会覆盖掉节点上的链式配置。
+			ChainLinkProvider: h.chainLinkProvider,
 		})
 		if err != nil {
 			response.InternalError(c, "SYNC_FAILED", "failed to prepare config: "+err.Error())

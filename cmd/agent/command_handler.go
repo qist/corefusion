@@ -74,7 +74,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 	// ========== Fire-and-forget commands ==========
 	case *agentpb.PanelCommand_SyncConfig:
 		req := c.SyncConfig
-		if err := a.localAgent.SyncConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
+		if err := a.applySyncedConfig(ctx, req.CoreType, req.ConfigContent, req.ConfigVersion); err != nil {
 			log.Printf("[Agent] config sync failed: %s: %v", req.CoreType, err)
 		} else {
 			log.Printf("[Agent] config synced: %s (version=%d)", req.CoreType, req.ConfigVersion)

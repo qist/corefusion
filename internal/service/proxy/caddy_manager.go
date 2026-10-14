@@ -86,7 +86,7 @@ func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite
 
 func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocalTarget(ctx, m.serverID) {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, m.serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
@@ -203,7 +203,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗
 			//   （m.isLocal 每请求被改写 ✓ → 本机/远程请求交错时会误跳过本机站点 ✗，
 			//    表现为门户转发配置时有时无、重置或换端口访问又正常 ✗）。
-			if site.Template == "portal_forward" || site.Template == "subscription_forward" {
+			if site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward" {
 				if !m.isLocalTarget(ctx, serverID) {
 					continue
 				}
@@ -782,6 +782,10 @@ func (m *CaddyManager) fillForwardDerivedFields(ctx context.Context, site *entit
 		} else {
 			site.Path = "/sub"
 		}
+	case "panel_forward":
+		// 面板转发：整域名直通面板主端口（根路径）。upstream 由 panel.listen_port 派生。
+		site.Upstream = m.panelAddr(ctx)
+		site.Path = ""
 	}
 }
 
@@ -860,6 +864,12 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
+	case "panel_forward":
+		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
+		// 面板实时日志等 SSE 长连接：立即刷新，不缓冲上游响应。（Caddy 默认即 -1，显式声明防回退。）
+		sb.WriteString("\t\tflush_interval -1\n")
 	default:
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")

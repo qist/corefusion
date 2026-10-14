@@ -72,4 +72,11 @@ func TestCaddyFillForwardDerivedFields(t *testing.T) {
 	if sf2.Upstream != "127.0.0.1:8083" || sf2.Path != "" {
 		t.Fatalf("subscription_forward(dedicated): upstream=%q path=%q, want 127.0.0.1:8083 / empty", sf2.Upstream, sf2.Path)
 	}
+
+	// 面板转发 → 面板主端口 + 根路径（upstream 由 panel.listen_port 派生）
+	pf3 := &entity.CaddySite{Template: "panel_forward"}
+	m3.fillForwardDerivedFields(ctx, pf3)
+	if pf3.Upstream != "127.0.0.1:8080" || pf3.Path != "" {
+		t.Fatalf("panel_forward: upstream=%q path=%q, want 127.0.0.1:8080 / empty", pf3.Upstream, pf3.Path)
+	}
 }

@@ -156,10 +156,13 @@ type NginxSettings struct {
 	StreamIPv6           bool   `json:"stream_ipv6"`
 	StreamProxyProtocol  bool   `json:"stream_proxy_protocol"`
 	StreamConnectTimeout string `json:"stream_connect_timeout"`
-	StreamTimeout        string `json:"stream_timeout"`
-	StreamLog            bool   `json:"stream_log"`
-	StreamLogPath        string `json:"stream_log_path"`
-	StreamLogFormat      string `json:"stream_log_format"`
+	// StreamPrereadTimeout：等待客户端发出 ClientHello/SNI 的超时（防探测/防扫描，短）。
+	StreamPrereadTimeout string `json:"stream_preread_timeout"`
+	// StreamTimeout：已建立连接的空闲超时（proxy_timeout），需容纳面板 SSE 长连接，因此较长。
+	StreamTimeout   string `json:"stream_timeout"`
+	StreamLog       bool   `json:"stream_log"`
+	StreamLogPath   string `json:"stream_log_path"`
+	StreamLogFormat string `json:"stream_log_format"`
 
 	// Custom
 	CustomConfig string `json:"custom_config"`
@@ -272,7 +275,8 @@ func DefaultNginxSettings() *NginxSettings {
 		StreamIPv6:           false,
 		StreamProxyProtocol:  false,
 		StreamConnectTimeout: "1s",
-		StreamTimeout:        "3s",
+		StreamPrereadTimeout: "3s",
+		StreamTimeout:        "1h",
 		StreamLog:            true,
 		StreamLogPath:        "logs/stream.log",
 		StreamLogFormat:      "basic",
@@ -536,6 +540,9 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.StreamConnectTimeout != "" {
 		dst.StreamConnectTimeout = src.StreamConnectTimeout
+	}
+	if src.StreamPrereadTimeout != "" {
+		dst.StreamPrereadTimeout = src.StreamPrereadTimeout
 	}
 	if src.StreamTimeout != "" {
 		dst.StreamTimeout = src.StreamTimeout

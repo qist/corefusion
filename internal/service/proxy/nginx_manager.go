@@ -75,7 +75,7 @@ func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite
 
 func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocalTarget(ctx, m.serverID) {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, m.serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
@@ -351,6 +351,10 @@ func (m *NginxManager) fillForwardDerivedFields(ctx context.Context, site *entit
 		} else {
 			site.Path = "/sub"
 		}
+	case "panel_forward":
+		// 面板转发：整域名直通面板主端口（根路径）。upstream 由 panel.listen_port 派生。
+		site.Upstream = m.panelAddr(ctx)
+		site.Path = ""
 	}
 }
 

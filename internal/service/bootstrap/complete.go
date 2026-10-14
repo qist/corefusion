@@ -556,7 +556,9 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 	var specs []siteSpec
 	if d.ProxyAddPanel {
 		if h := normalizeHost(d.PanelDomain); h != "" {
-			specs = append(specs, siteSpec{h, panelUpstream, "", "", true})
+			// 面板转发使用专用模板 panel_forward（upstream/path 由面板主端口派生；
+			// 生成器为其附加 SSE/流式反代参数，见 nginx_config.go / caddy_manager.go）。
+			specs = append(specs, siteSpec{h, panelUpstream, "panel_forward", "", true})
 		}
 	}
 	if d.ProxyAddSubscription {

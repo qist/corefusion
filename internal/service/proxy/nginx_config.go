@@ -432,13 +432,13 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		case "reality":
 			realitySites = append(realitySites, site)
 		default:
-			// portal_forward / subscription_forward：仅面板节点有效 ✓（远程节点没有
+			// portal_forward / subscription_forward / panel_forward：仅面板节点有效 ✓（远程节点没有
 			// 面板/门户进程 ✗）。派生字段（upstream/path）统一走 fillForwardDerivedFields ✓。
 			//
 			// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗
 			//   （m.isLocal 每请求被改写 ✓ → 本机/远程请求交错时会误跳过本机站点 ✗，
 			//    表现为门户转发配置时有时无、重置或换端口访问又正常 ✗）。
-			if site.Template == "portal_forward" || site.Template == "subscription_forward" {
+			if site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward" {
 				if !m.isLocalTarget(ctx, serverID) {
 					continue
 				}
@@ -854,6 +854,25 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				sb.WriteString("            proxy_ssl_session_reuse off;\n")
 				sb.WriteString("            proxy_redirect off;\n")
+			case "panel_forward":
+				// 面板转发（专用模板）：把面板主端口整域名直通。必须按 SSE/流式响应配置 ——
+				// 面板的实时日志（/api/v1/log-manage/*/log-stream 等）是长连接事件流，
+				// 若沿用默认 location（缓冲 + 60s 读超时）会被 nginx 断开/缓冲住 ✗。
+				sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
+				sb.WriteString("            proxy_http_version 1.1;\n")
+				sb.WriteString("            proxy_set_header Accept-Encoding \"\";\n")
+				if site.UpstreamTLS {
+					writeProxySSLUpstream(&sb, upstreamSNI)
+				}
+				sb.WriteString("            proxy_set_header Host $host;\n")
+				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+				sb.WriteString("            proxy_set_header Connection \"\";\n")
+				sb.WriteString("            proxy_buffering off;\n")
+				sb.WriteString("            proxy_cache off;\n")
+				sb.WriteString("            proxy_read_timeout 3600s;\n")
+				sb.WriteString("            proxy_send_timeout 3600s;\n")
 			default:
 				sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
 				sb.WriteString("            proxy_http_version 1.1;\n")
@@ -1105,7 +1124,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				streamTimeout := s.StreamTimeout
 				if streamTimeout == "" {
-					streamTimeout = "3s"
+					streamTimeout = "1h"
+				}
+				prereadTimeout := s.StreamPrereadTimeout
+				if prereadTimeout == "" {
+					prereadTimeout = "3s"
 				}
 				sb.WriteString("server {\n")
 				sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
@@ -1119,6 +1142,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				sb.WriteString("    tcp_nodelay on;\n")
 				sb.WriteString("    preread_buffer_size 128k;\n")
+				// 未发 ClientHello/SNI 的探测连接用短超时快速丢弃（防扫描）；已建立连接允许长时间空闲，
+				// 以承载面板 SSE/日志流等长连接（proxy_timeout 过短会在空闲 3s 后把流切断）。
+				sb.WriteString(fmt.Sprintf("    preread_timeout %s;\n", prereadTimeout))
 				sb.WriteString(fmt.Sprintf("    proxy_connect_timeout %s;\n", connectTimeout))
 				sb.WriteString(fmt.Sprintf("    proxy_timeout %s;\n", streamTimeout))
 				sb.WriteString("    proxy_pass $sni_backend;\n")

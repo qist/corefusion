@@ -1,10 +1,12 @@
 package system
 
 import (
+	"context"
+	"strconv"
+
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,11 +16,18 @@ type NginxHandler struct {
 	nginxMgr *proxy.NginxManager
 	proxyMgr *proxy.Manager
 	nodeOp   NodeOperator
+	// wafProvisioner 为「面板转发」站点生成域名级 URL 白名单（由 router 注入）。
+	wafProvisioner func(ctx context.Context, serverID int64, domain string)
 }
 
 // NewNginxHandler creates a new Nginx handler.
 func NewNginxHandler(nginxMgr *proxy.NginxManager, proxyMgr *proxy.Manager) *NginxHandler {
 	return &NginxHandler{nginxMgr: nginxMgr, proxyMgr: proxyMgr}
+}
+
+// SetWAFProvisioner 注入面板转发白名单生成器（保持 WAF 开启、仅放行面板 API）。
+func (h *NginxHandler) SetWAFProvisioner(fn func(ctx context.Context, serverID int64, domain string)) {
+	h.wafProvisioner = fn
 }
 
 // SetNodeOperator sets the node operator for remote proxy operations.
@@ -59,7 +68,7 @@ func (h *NginxHandler) ListSites(c *gin.Context) {
 	response.OK(c, sites)
 }
 func (h *NginxHandler) CreateSite(c *gin.Context) {
-	h.applyServerID(c)
+	sid, _ := h.applyServerID(c)
 	var req struct {
 		Domain          string `json:"domain" binding:"required"`
 		Upstream        string `json:"upstream"`
@@ -128,6 +137,9 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 	if err := h.nginxMgr.CreateSite(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
+	}
+	if site.Template == "panel_forward" && h.wafProvisioner != nil {
+		h.wafProvisioner(c.Request.Context(), sid, site.Domain)
 	}
 	response.Created(c, site)
 }

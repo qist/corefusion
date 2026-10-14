@@ -17,6 +17,7 @@ import (
 	seccrypto "corefusion/internal/security/crypto"
 	certsvc "corefusion/internal/service/certificate"
 	systemsvc "corefusion/internal/service/system"
+	wafsvc "corefusion/internal/service/waf"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 )
@@ -587,6 +588,7 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 			if err := repo.Create(ctx, site); err != nil {
 				log.Printf("[bootstrap] warning: create nginx site %s%s failed: %v", s.domain, s.path, err)
 			}
+			provisionPanelForwardWAF(ctx, dataDir, s.template, s.domain)
 		}
 	case ProxyCaddy:
 		repo := repository.NewCaddySiteRepository(db.DB)
@@ -599,7 +601,27 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 			if err := repo.Create(ctx, site); err != nil {
 				log.Printf("[bootstrap] warning: create caddy site %s%s failed: %v", s.domain, s.path, err)
 			}
+			provisionPanelForwardWAF(ctx, dataDir, s.template, s.domain)
 		}
+	}
+}
+
+// provisionPanelForwardWAF 为面板转发站点生成**域名级 URL 白名单**：
+// 保持该域名 WAF 开启，仅放行面板自身管理 API（.log 路径 / WAF 规则文本等）对应的检查，
+// 其余规则仍回落到全局规则（见 waf.Service.EnsurePanelForwardWhitelist）。
+// 不再用「整体关闭该站点 WAF」的方式，避免面板域名失去防护。
+func provisionPanelForwardWAF(ctx context.Context, dataDir, template, domain string) {
+	if template != "panel_forward" || strings.TrimSpace(domain) == "" {
+		return
+	}
+	svc := wafsvc.NewService(
+		repository.NewWafRuleRepository(db.DB),
+		repository.NewWafConfigRepository(db.DB),
+		repository.NewWafDomainConfigRepository(db.DB),
+		dataDir, nil,
+	)
+	if err := svc.EnsurePanelForwardWhitelist(ctx, 1, domain); err != nil {
+		log.Printf("[bootstrap] warning: provision panel WAF whitelist for %s failed: %v", domain, err)
 	}
 }
 

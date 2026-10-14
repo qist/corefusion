@@ -1,6 +1,8 @@
 package system
 
 import (
+	"context"
+
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/proxy"
@@ -14,11 +16,18 @@ type CaddyHandler struct {
 	caddyMgr *proxy.CaddyManager
 	proxyMgr *proxy.Manager
 	nodeOp   NodeOperator
+	// wafProvisioner 为「面板转发」站点生成域名级 URL 白名单（由 router 注入）。
+	wafProvisioner func(ctx context.Context, serverID int64, domain string)
 }
 
 // NewCaddyHandler creates a new Caddy handler.
 func NewCaddyHandler(caddyMgr *proxy.CaddyManager, proxyMgr *proxy.Manager) *CaddyHandler {
 	return &CaddyHandler{caddyMgr: caddyMgr, proxyMgr: proxyMgr}
+}
+
+// SetWAFProvisioner 注入面板转发白名单生成器（保持 WAF 开启、仅放行面板 API）。
+func (h *CaddyHandler) SetWAFProvisioner(fn func(ctx context.Context, serverID int64, domain string)) {
+	h.wafProvisioner = fn
 }
 
 // SetNodeOperator sets the node operator for remote proxy operations.
@@ -59,7 +68,7 @@ func (h *CaddyHandler) ListSites(c *gin.Context) {
 	response.OK(c, sites)
 }
 func (h *CaddyHandler) CreateSite(c *gin.Context) {
-	h.applyServerID(c)
+	sid, _ := h.applyServerID(c)
 	var req struct {
 		Domain        string `json:"domain" binding:"required"`
 		Upstream      string `json:"upstream"`
@@ -126,6 +135,9 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	if err := h.caddyMgr.CreateSite(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
+	}
+	if site.Template == "panel_forward" && h.wafProvisioner != nil {
+		h.wafProvisioner(c.Request.Context(), sid, site.Domain)
 	}
 	response.Created(c, site)
 }

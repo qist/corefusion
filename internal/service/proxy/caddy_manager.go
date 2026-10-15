@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"corefusion/internal/model/entity"
@@ -418,11 +419,17 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		return sb.String(), nil
 	}
 
-	// Group HTTP sites by domain
+	// Group HTTP sites by domain — 键归一化 + 排序，保证生成结果确定
 	domainSites := make(map[string][]entity.CaddySite)
+	domainOrder := make([]string, 0)
 	for _, site := range httpSites {
-		domainSites[site.Domain] = append(domainSites[site.Domain], site)
+		key := normalizeGroupDomain(site.Domain)
+		if _, ok := domainSites[key]; !ok {
+			domainOrder = append(domainOrder, key)
+		}
+		domainSites[key] = append(domainSites[key], site)
 	}
+	sort.Strings(domainOrder)
 
 	// 80 端口是否开启 ✓：存在绑定 :80 的**启用**站点 ✓
 	//（domain=":80" ✓ / 以 ":80" 结尾 ✓ / 非证书站点未写端口（自动落 :80 ✓））。
@@ -436,7 +443,8 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 	}
 
-	for domain, siteList := range domainSites {
+	for _, domain := range domainOrder {
+		siteList := domainSites[domain]
 		// Check if this domain has TLS certificates
 		hasCert := false
 		for _, site := range siteList {
@@ -577,7 +585,14 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			_ = siteHasLog
 		}
 
+		seenLoc := make(map[string]bool)
 		for _, site := range siteList {
+			loc := normalizeLocationPath(site.Path)
+			if seenLoc[loc] {
+				log.Printf("[CaddyManager] %s: duplicate location %q (id=%d) skipped", domain, loc, site.ID)
+				continue
+			}
+			seenLoc[loc] = true
 			// Per-site WAF switch: when WafEnabled is explicitly false,
 			// inject `caddyguard waf_enable off` into the site's route block.
 			wafBypass := false
@@ -607,7 +622,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 			useRouteWrap := false  // wraps in route { ... } for WAF bypass
 			useHandlePath := false // uses handle_path to strip prefix
-			if site.Path == "" || site.Path == "/" {
+			if loc == "/" {
 				if wafBypass {
 					sb.WriteString("\troute {\n")
 					sb.WriteString("\t\tcaddyguard waf_enable off\n")
@@ -619,33 +634,33 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			} else if backendPath == "/" {
 				// Backend expects root path: use handle_path to strip the location prefix
 				if wafBypass {
-					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
-					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(loc, site.ID)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", loc))
 					sb.WriteString("\t}\n")
-					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(loc, site.ID)))
 					sb.WriteString("\t\tcaddyguard waf_enable off\n")
-					sb.WriteString(fmt.Sprintf("\t\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
+					sb.WriteString(fmt.Sprintf("\t\thandle_path %s/* {\n", strings.TrimSuffix(loc, "/")))
 					sb.WriteString("\t\t\treverse_proxy {\n")
 					useRouteWrap = true
 				} else {
-					sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(site.Path, "/")))
+					sb.WriteString(fmt.Sprintf("\thandle_path %s/* {\n", strings.TrimSuffix(loc, "/")))
 					sb.WriteString("\t\treverse_proxy {\n")
 				}
 				useHandlePath = true
 			} else {
 				if wafBypass {
-					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
-					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(loc, site.ID)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", loc))
 					sb.WriteString("\t}\n")
-					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\troute @%s {\n", pathToMatcher(loc, site.ID)))
 					sb.WriteString("\t\tcaddyguard waf_enable off\n")
-					sb.WriteString(fmt.Sprintf("\t\treverse_proxy @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\t\treverse_proxy @%s {\n", pathToMatcher(loc, site.ID)))
 					useRouteWrap = true
 				} else {
-					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
-					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+					sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(loc, site.ID)))
+					sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", loc))
 					sb.WriteString("\t}\n")
-					sb.WriteString(fmt.Sprintf("\treverse_proxy @%s {\n", pathToMatcher(site.Path)))
+					sb.WriteString(fmt.Sprintf("\treverse_proxy @%s {\n", pathToMatcher(loc, site.ID)))
 				}
 			}
 			// Multiple upstream targets

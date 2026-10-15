@@ -747,14 +747,25 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
-<el-table-column label="WAF" width="120" v-if="wafMasterEnabled">
+<el-table-column label="WAF" width="150" v-if="wafMasterEnabled">
 <template #default="{row}">
 <div style="display:flex;align-items:center;gap:4px">
+<!-- 本站点 WAF（location 级）：关闭 → 该 location 注入 set $waf_enable off -->
+<el-tooltip :content="t('proxy.wafSwitchTooltip')" placement="top">
 <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
-<el-tag v-if="row._waf_status === 'site'" type="success" size="small">{{ t('proxy.wafStatusSite') }}</el-tag>
-<el-tag v-else-if="row._waf_status === 'off'" type="danger" size="small">{{ t('proxy.wafStatusOff') }}</el-tag>
-<el-tag v-else type="info" size="small">{{ t('proxy.wafStatusGlobal') }}</el-tag>
-<el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+</el-tooltip>
+<!-- 站点模式（域名级 domain.json）：点选切换 站点规则 / 全局 / 关闭 -->
+<el-dropdown trigger="click" @command="(cmd) => setWafDomainMode(row, cmd)">
+<el-tag :type="wafDomainModeType(row)" size="small" :title="wafDomainModeHint(row)" style="cursor:pointer" :style="row._waf_enabled ? '' : 'opacity:.5'">{{ wafDomainModeLabel(row) }}</el-tag>
+<template #dropdown>
+<el-dropdown-menu>
+<el-dropdown-item command="site" :disabled="row._waf_status === 'site'">{{ t('proxy.wafStatusSite') }}</el-dropdown-item>
+<el-dropdown-item command="global" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
+<el-dropdown-item command="off" divided :disabled="row._waf_status === 'off'">{{ t('proxy.wafStatusOff') }}</el-dropdown-item>
+</el-dropdown-menu>
+</template>
+</el-dropdown>
+<el-button size="small" text @click="openSiteWAF(row)">⚙</el-button>
 </div>
 </template>
 </el-table-column>
@@ -774,10 +785,17 @@
           <template v-if="wafMasterEnabled">
             <span style="font-size:12px;color:#909399">WAF</span>
             <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
-            <el-tag v-if="row._waf_status === 'site'" type="success" size="small">{{ t('proxy.wafStatusSite') }}</el-tag>
-            <el-tag v-else-if="row._waf_status === 'off'" type="danger" size="small">{{ t('proxy.wafStatusOff') }}</el-tag>
-            <el-tag v-else type="info" size="small">{{ t('proxy.wafStatusGlobal') }}</el-tag>
-            <el-button v-if="row._waf_enabled" size="small" text @click="openSiteWAF(row)">⚙</el-button>
+            <el-dropdown trigger="click" @command="(cmd) => setWafDomainMode(row, cmd)">
+              <el-tag :type="wafDomainModeType(row)" size="small" :title="wafDomainModeHint(row)" style="cursor:pointer" :style="row._waf_enabled ? '' : 'opacity:.5'">{{ wafDomainModeLabel(row) }}</el-tag>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="site" :disabled="row._waf_status === 'site'">{{ t('proxy.wafStatusSite') }}</el-dropdown-item>
+                  <el-dropdown-item command="global" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
+                  <el-dropdown-item command="off" divided :disabled="row._waf_status === 'off'">{{ t('proxy.wafStatusOff') }}</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button size="small" text @click="openSiteWAF(row)">⚙</el-button>
           </template>
           <el-button size="small" @click="editSite(row)">{{ t('common.edit') }}</el-button>
           <el-button size="small" type="danger" plain @click="deleteSite(row)">{{ t('common.delete') }}</el-button>
@@ -990,9 +1008,9 @@
           <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectHttpsHint') }}</div>
         </el-form-item>
         <el-divider content-position="left">WAF</el-divider>
-        <el-form-item :label="t('proxy.wafEnabled')">
+        <el-form-item :label="t('proxy.wafLocationEnabled')">
           <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
-          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.wafEnabledHint') }}</span>
+          <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.wafLocationEnabledHint') }}</span>
         </el-form-item>
         </template>
       </el-form>
@@ -1804,17 +1822,18 @@ function formatTime(ts) {
 async function fetchSites() {
 try {
 allSites.value = await client.get(`${nginxApi.value}/sites`) || []
-// Check WAF status for each site
+// WAF 两套独立机制：
+//   ① location 级（本站点）—— 直接读站点自身的 waf_enabled（关 → 生成 set $waf_enable off）
+//   ② 站点模式（域名级 domain.json）—— 读 waf/domain-status（global/site/off）
 if (wafMasterEnabled.value) {
   for (const site of allSites.value) {
+    site._waf_enabled = site.waf_enabled !== false
     if (site.domain && site.template !== 'sni' && site.template !== 'stream') {
       try {
         const res = await client.get(`${apiBase.value}/waf/domain-status`, { params: { domain: site.domain } })
-        site._waf_enabled = res.enabled
         site._waf_status = res.status || 'global'
-      } catch { site._waf_enabled = false; site._waf_status = 'global' }
+      } catch { site._waf_status = 'global' }
     } else {
-      site._waf_enabled = false
       site._waf_status = 'global'
     }
   }
@@ -1822,68 +1841,58 @@ if (wafMasterEnabled.value) {
 } catch (e) { allSites.value = [] }
 }
 
-async function toggleSiteWAF(row, val) {
+// 站点模式（域名级 domain.json）标识：独立于 location 级开关
+function wafDomainModeLabel(row) {
+  if (row._waf_status === 'site') return t('proxy.wafStatusSite')
+  if (row._waf_status === 'off') return t('proxy.wafStatusOff')
+  return t('proxy.wafStatusGlobal')
+}
+function wafDomainModeType(row) {
+  if (row._waf_status === 'site') return 'success'
+  if (row._waf_status === 'off') return 'danger'
+  return 'info'
+}
+function wafDomainModeHint(row) {
+  if (row._waf_status === 'site') return t('proxy.wafStatusSiteHint')
+  if (row._waf_status === 'off') return t('proxy.wafStatusOffHint')
+  return t('proxy.wafStatusGlobalHint')
+}
+
+// 站点模式（域名级 domain.json）切换：独立规则 / 回退全局 / 关闭该域名。
+// 与「本站点 WAF（location 级）」开关互不影响。
+async function setWafDomainMode(row, mode) {
   const d = row.domain.replace(/:\d+$/, '')
-  if (val) {
-    // Enable: add to domain.json with rule_dir
-    try {
+  if (mode === row._waf_status) return
+  try {
+    if (mode === 'site') {
       await client.post(`${apiBase.value}/waf/enable-domain`, { domain: d })
-      row._waf_status = 'site'
       ElMessage.success(t('proxy.wafSiteEnabled', { domain: d }))
-    } catch (e) {
-      row._waf_enabled = false
-      ElMessage.error(t('common.failed'))
+    } else if (mode === 'off') {
+      await client.post(`${apiBase.value}/waf/disable-domain`, { domain: d })
+      ElMessage.success(t('proxy.wafSiteDisabled', { domain: d }))
+    } else {
+      await client.delete(`${apiBase.value}/waf/domain-config/${d}`)
+      ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
     }
-  } else {
-    // Disable: ask user — disable WAF entirely or fall back to global rules
-    try {
-      const action = await ElMessageBox.confirm(
-        t('proxy.wafDisableHint', { domain: d }),
-        t('proxy.wafDisableTitle'),
-        {
-          distinguishCancelAndClose: true,
-          confirmButtonText: t('proxy.wafDisableSite'),
-          cancelButtonText: t('proxy.wafUseGlobal'),
-          type: 'warning',
-        }
-      )
-      // confirmButtonText clicked → disable WAF for this domain (waf_enable: off)
-      try {
-        await client.put(`${apiBase.value}/waf/domain-config`, {
-          content: await updateDomainJSON(d, { waf_enable: 'off' })
-        })
-        row._waf_status = 'off'
-        ElMessage.success(t('proxy.wafSiteDisabled', { domain: d }))
-      } catch (e) {
-        row._waf_enabled = true
-        ElMessage.error(t('common.failed'))
-      }
-    } catch (action) {
-      if (action === 'cancel') {
-        // cancelButtonText clicked → use global rules (delete from domain.json)
-        try {
-          await client.delete(`${apiBase.value}/waf/domain-config/${d}`)
-          row._waf_status = 'global'
-          ElMessage.success(t('proxy.wafUseGlobalRules', { domain: d }))
-        } catch (e) {
-          row._waf_enabled = true
-          ElMessage.error(t('common.failed'))
-        }
-      } else {
-        // closed (X) → revert switch
-        row._waf_enabled = true
-      }
-    }
+    row._waf_status = mode
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
   }
 }
 
-// Helper: read current domain.json, update a domain's config, return new content
-async function updateDomainJSON(domain, patch) {
-  const data = await client.get(`${apiBase.value}/waf/domain-config`)
-  const obj = JSON.parse(data.content || '{}')
-  if (!obj[domain]) obj[domain] = {}
-  Object.assign(obj[domain], patch)
-  return JSON.stringify(obj, null, 4)
+// 行内开关 = 本站点 WAF（location 级）：关闭后该 location 注入 `set $waf_enable off`。
+// 站点模式（域名级 domain.json 的 on/off/全局）在 WAF 列的 ⚙ 中单独配置。
+async function toggleSiteWAF(row, val) {
+  try {
+    await client.put(`${nginxApi.value}/sites/${row.id}`, { waf_enabled: val })
+    await applyConfig()
+    ElMessage.success(val
+      ? t('proxy.wafLocationEnabledToast', { domain: row.domain })
+      : t('proxy.wafLocationDisabledToast', { domain: row.domain }))
+  } catch (e) {
+    row._waf_enabled = !val
+    ElMessage.error(t('common.failed'))
+  }
 }
 
 async function fetchCertificates() {

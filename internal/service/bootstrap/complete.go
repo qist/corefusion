@@ -588,7 +588,7 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 			if err := repo.Create(ctx, site); err != nil {
 				log.Printf("[bootstrap] warning: create nginx site %s%s failed: %v", s.domain, s.path, err)
 			}
-			provisionPanelForwardWAF(ctx, dataDir, s.template, s.domain)
+			provisionForwardWAF(ctx, dataDir, s.template, s.domain)
 		}
 	case ProxyCaddy:
 		repo := repository.NewCaddySiteRepository(db.DB)
@@ -601,17 +601,25 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 			if err := repo.Create(ctx, site); err != nil {
 				log.Printf("[bootstrap] warning: create caddy site %s%s failed: %v", s.domain, s.path, err)
 			}
-			provisionPanelForwardWAF(ctx, dataDir, s.template, s.domain)
+			provisionForwardWAF(ctx, dataDir, s.template, s.domain)
 		}
 	}
 }
 
-// provisionPanelForwardWAF 为面板转发站点生成**域名级 URL 白名单**：
-// 保持该域名 WAF 开启，仅放行面板自身管理 API（.log 路径 / WAF 规则文本等）对应的检查，
-// 其余规则仍回落到全局规则（见 waf.Service.EnsurePanelForwardWhitelist）。
-// 不再用「整体关闭该站点 WAF」的方式，避免面板域名失去防护。
-func provisionPanelForwardWAF(ctx context.Context, dataDir, template, domain string) {
-	if template != "panel_forward" || strings.TrimSpace(domain) == "" {
+// provisionForwardWAF 为「转发」类站点（面板/门户/订阅）生成站点级 WAF 配置：
+//   - 面板 panel_forward：域名级 URL 白名单（保持 WAF 开启，仅放行面板自身管理 API
+//     对应的检查），其余规则回落到全局规则（见 waf.Service.EnsurePanelForwardWhitelist）。
+//   - 门户/订阅 portal_forward/subscription_forward：独立的域名规则目录（继承全局规则，
+//     可站点级覆盖），不追加白名单（见 waf.Service.EnsureForwardDomainConfig）。
+//
+// 不再用「整体关闭该站点 WAF」的方式，避免面板/门户/订阅域名失去防护。
+func provisionForwardWAF(ctx context.Context, dataDir, template, domain string) {
+	switch template {
+	case "panel_forward", "portal_forward", "subscription_forward":
+	default:
+		return
+	}
+	if strings.TrimSpace(domain) == "" {
 		return
 	}
 	svc := wafsvc.NewService(
@@ -620,8 +628,14 @@ func provisionPanelForwardWAF(ctx context.Context, dataDir, template, domain str
 		repository.NewWafDomainConfigRepository(db.DB),
 		dataDir, nil,
 	)
-	if err := svc.EnsurePanelForwardWhitelist(ctx, 1, domain); err != nil {
-		log.Printf("[bootstrap] warning: provision panel WAF whitelist for %s failed: %v", domain, err)
+	var err error
+	if template == "panel_forward" {
+		err = svc.EnsurePanelForwardWhitelist(ctx, 1, domain)
+	} else {
+		err = svc.EnsureForwardDomainConfig(ctx, 1, domain)
+	}
+	if err != nil {
+		log.Printf("[bootstrap] warning: provision %s WAF config for %s failed: %v", template, domain, err)
 	}
 }
 

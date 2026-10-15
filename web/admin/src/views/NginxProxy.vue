@@ -760,7 +760,7 @@
 <template #dropdown>
 <el-dropdown-menu>
 <el-dropdown-item command="site" :disabled="row._waf_status === 'site'">{{ t('proxy.wafStatusSite') }}</el-dropdown-item>
-<el-dropdown-item command="global" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
+<el-dropdown-item command="global" v-if="showGlobalMode(row)" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
 <el-dropdown-item command="off" divided :disabled="row._waf_status === 'off'">{{ t('proxy.wafStatusOff') }}</el-dropdown-item>
 </el-dropdown-menu>
 </template>
@@ -790,7 +790,7 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="site" :disabled="row._waf_status === 'site'">{{ t('proxy.wafStatusSite') }}</el-dropdown-item>
-                  <el-dropdown-item command="global" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
+                  <el-dropdown-item command="global" v-if="showGlobalMode(row)" :disabled="row._waf_status === 'global'">{{ t('proxy.wafStatusGlobal') }}</el-dropdown-item>
                   <el-dropdown-item command="off" divided :disabled="row._waf_status === 'off'">{{ t('proxy.wafStatusOff') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -1840,6 +1840,11 @@ if (wafMasterEnabled.value) {
 }
 } catch (e) { allSites.value = [] }
 }
+
+// 门户/面板/订阅为系统托管的转发站点：站点模式下拉里不下发「全局」选项
+//（它们始终带独立站点级配置，回退全局会移除该配置）；其它站点正常显示。
+const forwardTemplates = ['panel_forward', 'portal_forward', 'subscription_forward']
+function showGlobalMode(row) { return !forwardTemplates.includes(row.template) }
 
 // 站点模式（域名级 domain.json）标识：独立于 location 级开关
 function wafDomainModeLabel(row) {

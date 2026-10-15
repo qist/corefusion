@@ -2,6 +2,7 @@ package system
 
 import (
 	"context"
+	"fmt"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
@@ -54,6 +55,28 @@ func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	return sid, isLocal
 }
 
+// caddyLocationConflict 检查是否已存在「同域名 + 同 location」的启用站点，返回其 id。
+func caddyLocationConflict(ctx context.Context, mgr *proxy.CaddyManager, domain, path, template string, excludeID int64) (int64, bool) {
+	if !httpTemplateHasLocation(template) {
+		return 0, false
+	}
+	sites, err := mgr.ListSites(ctx)
+	if err != nil {
+		return 0, false
+	}
+	nd := proxy.NormalizeGroupDomain(domain)
+	np := proxy.NormalizeLocationPath(path)
+	for _, s := range sites {
+		if !s.Enabled || s.ID == excludeID {
+			continue
+		}
+		if proxy.NormalizeGroupDomain(s.Domain) == nd && proxy.NormalizeLocationPath(s.Path) == np {
+			return s.ID, true
+		}
+	}
+	return 0, false
+}
+
 // --- Site Management ---
 func (h *CaddyHandler) ListSites(c *gin.Context) {
 	h.applyServerID(c)
@@ -95,6 +118,10 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, req.Domain, req.Path, req.Template, 0); dup {
+		response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(req.Domain), id))
 		return
 	}
 	// Auto-generate log path from domain (without port) if not provided
@@ -184,6 +211,22 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
+	}
+	if req.Domain != nil || req.Path != nil || req.Template != nil {
+		nd, np, nt := existing.Domain, existing.Path, existing.Template
+		if req.Domain != nil {
+			nd = *req.Domain
+		}
+		if req.Path != nil {
+			np = *req.Path
+		}
+		if req.Template != nil {
+			nt = *req.Template
+		}
+		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, nd, np, nt, existing.ID); dup {
+			response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(nd), id))
+			return
+		}
 	}
 	if req.Domain != nil {
 		existing.Domain = *req.Domain

@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -707,13 +708,20 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		return sb.String(), nil
 	}
 
-	// Group HTTP sites by domain
+	// Group HTTP sites by domain — 键归一化 + 排序，保证生成结果确定
 	domainSites := make(map[string][]entity.ProxySite)
+	domainOrder := make([]string, 0)
 	for _, site := range httpSites {
-		domainSites[site.Domain] = append(domainSites[site.Domain], site)
+		key := normalizeGroupDomain(site.Domain)
+		if _, ok := domainSites[key]; !ok {
+			domainOrder = append(domainOrder, key)
+		}
+		domainSites[key] = append(domainSites[key], site)
 	}
+	sort.Strings(domainOrder)
 
-	for domain, siteList := range domainSites {
+	for _, domain := range domainOrder {
+		siteList := domainSites[domain]
 		// Check if this domain has TLS certificates
 		hasCert := false
 		for _, site := range siteList {
@@ -750,8 +758,15 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			sb.WriteString("\t}\n")
 		}
 
-		// Path-based routing
+		// Path-based routing（去重：同域名同 location 仅保留第一个）
+		seenLoc := make(map[string]bool)
 		for _, site := range siteList {
+			loc := normalizeLocationPath(site.Path)
+			if seenLoc[loc] {
+				log.Printf("[ProxyManager] %s: duplicate location %q (id=%d) skipped", domain, loc, site.ID)
+				continue
+			}
+			seenLoc[loc] = true
 			// Static file server: root + file_server instead of reverse_proxy
 			if site.Template == "static" {
 				rootDir := strings.TrimSpace(site.Upstream)
@@ -778,10 +793,10 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 				sb.WriteString(m.proxyHeaders(&site))
 				sb.WriteString("\t}\n")
 			} else {
-				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(site.Path)))
-				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", site.Path))
+				sb.WriteString(fmt.Sprintf("\t@%s {\n", pathToMatcher(loc, site.ID)))
+				sb.WriteString(fmt.Sprintf("\t\tpath %s*\n", loc))
 				sb.WriteString("\t}\n")
-				sb.WriteString(fmt.Sprintf("\treverse_proxy @%s %s {\n", pathToMatcher(site.Path), caddyUpstream))
+				sb.WriteString(fmt.Sprintf("\treverse_proxy @%s %s {\n", pathToMatcher(loc, site.ID), caddyUpstream))
 				sb.WriteString(m.proxyHeaders(&site))
 				sb.WriteString("\t}\n")
 			}
@@ -917,10 +932,48 @@ func (m *Manager) generateL4Block(site *entity.ProxySite) string {
 	return sb.String()
 }
 
-func pathToMatcher(path string) string {
+// normalizeGroupDomain 归一化「按域名分组」的键：去空白、去结尾点、转小写。
+// 使 A.com / a.com. / a.com 归入同一组（nginx server_name 大小写不敏感）。
+// 不剥离端口：nginx 端口由 listen 决定；Caddy 地址里的端口是有效的
+// （如 ":80" / "p.x.top:8443"），必须保留。
+func normalizeGroupDomain(domain string) string {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	return strings.TrimSuffix(d, ".")
+}
+
+// normalizeLocationPath 规范化 location 路径：
+//   - 空 → "/"
+//   - 保留 nginx location 修饰符（= ~ ~* ^~ @），原样返回
+//   - 其它确保以 "/" 开头（避免生成非法的 `location api`）
+func normalizeLocationPath(path string) string {
+	p := strings.TrimSpace(path)
+	if p == "" {
+		return "/"
+	}
+	switch p[0] {
+	case '=', '~', '^', '@':
+		return p
+	}
+	if !strings.HasPrefix(p, "/") {
+		return "/" + p
+	}
+	return p
+}
+
+// NormalizeGroupDomain / NormalizeLocationPath 为 handler 写入前冲突预检提供的导出包装。
+func NormalizeGroupDomain(d string) string  { return normalizeGroupDomain(d) }
+func NormalizeLocationPath(p string) string { return normalizeLocationPath(p) }
+
+// pathToMatcher 把路径归一成 Caddy 命名 matcher（@name）。
+// id 作为后缀保证唯一：/a-b 与 /a_b 归一后同为 a_b，若不加 id，同一站点块内会
+// 重复定义同名 @name → Caddyfile adapt 失败（或后者覆盖前者）。
+func pathToMatcher(path string, id int64) string {
 	s := strings.TrimPrefix(path, "/")
 	s = strings.ReplaceAll(s, "/", "_")
 	s = strings.ReplaceAll(s, "-", "_")
+	if id > 0 {
+		return fmt.Sprintf("%s_%d", s, id)
+	}
 	return s
 }
 

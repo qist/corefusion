@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"corefusion/internal/model/entity"
@@ -472,11 +473,17 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString("    }\n\n")
 	}
 
-	// Group by domain (HTTP sites only)
+	// Group by domain (HTTP sites only) — 键归一化 + 排序，保证生成结果确定
 	domainSites := make(map[string][]entity.NginxSite)
+	domainOrder := make([]string, 0)
 	for _, site := range httpSites {
-		domainSites[site.Domain] = append(domainSites[site.Domain], site)
+		key := normalizeGroupDomain(site.Domain)
+		if _, ok := domainSites[key]; !ok {
+			domainOrder = append(domainOrder, key)
+		}
+		domainSites[key] = append(domainSites[key], site)
 	}
+	sort.Strings(domainOrder)
 
 	// 80 端口是否开启 ✓：存在 listen 80 的**启用**站点 ✓
 	//（ListenPort="80" ✓ / 非证书站点未写端口（默认 80 ✓））。
@@ -493,7 +500,8 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 	}
 
-	for domain, siteList := range domainSites {
+	for _, domain := range domainOrder {
+		siteList := domainSites[domain]
 		// HTTP → HTTPS 自动跳转 ✓ —— 三个条件**同时满足**才生成 ✓：
 		//   ① 域名组有 TLS 证书 ✓；② 节点开了 80 端口 ✓；③ 站点开关打开 ✓（nil=开 ✓）。
 		// 生成独立的 `server { listen 80; ... }` 块 ✓：ACME 挑战留在 :80 ✓，其余 301 到 https ✓。
@@ -589,6 +597,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				listenPort = "80"
 			}
 		}
+		// 通配/兜底域名（"" 或 "_"）显式 default_server，避免"默认站点"随生成顺序漂移
+		ds := ""
+		if domain == "" || domain == "_" {
+			ds = " default_server"
+		}
 
 		// TLS options from site
 		enableHttp2 := true
@@ -612,22 +625,22 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 		// Listen directives - IPv4 and IPv6 separately
 		if enableQuic && hasTLS {
-			sb.WriteString(fmt.Sprintf("        listen %s quic;\n", listenPort))
+			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", listenPort, ds))
 			if enableIpv6 {
-				sb.WriteString(fmt.Sprintf("        listen [::]:%s quic;\n", listenPort))
+				sb.WriteString(fmt.Sprintf("        listen [::]:%s quic%s;\n", listenPort, ds))
 			}
 		}
 		if hasTLS {
 			// HTTPS listen
 			if hasProxyProtocol {
-				sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol;\n", listenPort))
+				sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", listenPort, ds))
 				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl proxy_protocol;\n", listenPort))
+					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl proxy_protocol%s;\n", listenPort, ds))
 				}
 			} else {
-				sb.WriteString(fmt.Sprintf("        listen %s ssl;\n", listenPort))
+				sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", listenPort, ds))
 				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl;\n", listenPort))
+					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl%s;\n", listenPort, ds))
 				}
 			}
 			if enableHttp2 {
@@ -683,14 +696,14 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		} else {
 			// HTTP listen
 			if hasProxyProtocol {
-				sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol;\n", listenPort))
+				sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", listenPort, ds))
 				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s proxy_protocol;\n", listenPort))
+					sb.WriteString(fmt.Sprintf("        listen [::]:%s proxy_protocol%s;\n", listenPort, ds))
 				}
 			} else {
-				sb.WriteString(fmt.Sprintf("        listen %s;\n", listenPort))
+				sb.WriteString(fmt.Sprintf("        listen %s%s;\n", listenPort, ds))
 				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s;\n", listenPort))
+					sb.WriteString(fmt.Sprintf("        listen [::]:%s%s;\n", listenPort, ds))
 				}
 			}
 			if domain == "" {
@@ -710,18 +723,22 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 
 		// Server-level custom directives (between server { and location)
+		// 合并本域名组内**所有**站点的 server_config（相同行去重），不再只取第一个
+		serverDirectiveSeen := make(map[string]bool)
 		for _, site := range siteList {
-			if site.ServerConfig != "" {
-				for _, line := range strings.Split(strings.TrimSpace(site.ServerConfig), "\n") {
-					trimmed := strings.TrimSpace(line)
-					if trimmed != "" {
-						if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
-							trimmed += ";"
-						}
-						sb.WriteString("        " + trimmed + "\n")
-					}
+			if site.ServerConfig == "" {
+				continue
+			}
+			for _, line := range strings.Split(strings.TrimSpace(site.ServerConfig), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || serverDirectiveSeen[trimmed] {
+					continue
 				}
-				break
+				serverDirectiveSeen[trimmed] = true
+				if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
+					trimmed += ";"
+				}
+				sb.WriteString("        " + trimmed + "\n")
 			}
 		}
 
@@ -741,7 +758,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		if m.isLocal {
 			panelAddr := m.panelAddr(ctx)
 			sb.WriteString("        # ACME HTTP-01 challenge support\n")
-			sb.WriteString("        location /.well-known/acme-challenge/ {\n")
+			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
 			sb.WriteString(fmt.Sprintf("            proxy_pass http://%s;\n", panelAddr))
 			sb.WriteString("            proxy_set_header Host $host;\n")
 			sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
@@ -750,12 +767,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("        }\n")
 		}
 
-		// Locations
+		// Locations（去重：同域名同 location 只保留第一个，其余跳过并记日志）
+		seenLoc := make(map[string]bool)
 		for _, site := range siteList {
-			path := site.Path
-			if path == "" {
-				path = "/"
+			path := normalizeLocationPath(site.Path)
+			if seenLoc[path] {
+				log.Printf("[NginxManager] %s: duplicate location %q (id=%d) skipped", domain, path, site.ID)
+				continue
 			}
+			seenLoc[path] = true
 			backendPath := site.BackendPath
 			if backendPath == "" {
 				backendPath = "/"

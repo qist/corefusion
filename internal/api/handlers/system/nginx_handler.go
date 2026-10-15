@@ -16,8 +16,8 @@ type NginxHandler struct {
 	nginxMgr *proxy.NginxManager
 	proxyMgr *proxy.Manager
 	nodeOp   NodeOperator
-	// wafProvisioner 为「面板转发」站点生成域名级 URL 白名单（由 router 注入）。
-	wafProvisioner func(ctx context.Context, serverID int64, domain string)
+	// wafProvisioner 为「转发」类站点（面板/门户/订阅）生成站点级 WAF 配置（由 router 注入）。
+	wafProvisioner func(ctx context.Context, serverID int64, template, domain string)
 }
 
 // NewNginxHandler creates a new Nginx handler.
@@ -25,8 +25,8 @@ func NewNginxHandler(nginxMgr *proxy.NginxManager, proxyMgr *proxy.Manager) *Ngi
 	return &NginxHandler{nginxMgr: nginxMgr, proxyMgr: proxyMgr}
 }
 
-// SetWAFProvisioner 注入面板转发白名单生成器（保持 WAF 开启、仅放行面板 API）。
-func (h *NginxHandler) SetWAFProvisioner(fn func(ctx context.Context, serverID int64, domain string)) {
+// SetWAFProvisioner 注入转发站点 WAF 配置生成器（面板=独立 URL 白名单；门户/订阅=独立站点级配置）。
+func (h *NginxHandler) SetWAFProvisioner(fn func(ctx context.Context, serverID int64, template, domain string)) {
 	h.wafProvisioner = fn
 }
 
@@ -138,8 +138,11 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
-	if site.Template == "panel_forward" && h.wafProvisioner != nil {
-		h.wafProvisioner(c.Request.Context(), sid, site.Domain)
+	switch site.Template {
+	case "panel_forward", "portal_forward", "subscription_forward":
+		if h.wafProvisioner != nil {
+			h.wafProvisioner(c.Request.Context(), sid, site.Template, site.Domain)
+		}
 	}
 	response.Created(c, site)
 }

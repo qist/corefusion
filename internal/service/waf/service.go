@@ -1730,20 +1730,20 @@ const panelForwardWhitelist = `# 面板管理接口：放行会被 WAF 误判的
 // panelForwardWhitelistMarker 标记面板白名单块，用于幂等刷新（识别并覆盖旧版本）。
 const panelForwardWhitelistMarker = "# 面板管理接口"
 
-// EnsurePanelForwardWhitelist 为「面板转发」域名生成**独立的 URL 白名单规则**：
-//   - 域名配置写入 waf_enable=on + rule_dir=domains/<domain>（保留既有其它字段）
-//   - 域名级 whiteurl.rule（append）追加面板 API 放行项，其余规则仍回落到全局规则
-//   - 本地节点：创建域名规则目录并落盘（Lua/CaddyGuard 按 mtime 热加载）
-//
-// 幂等：域名配置与白名单项已存在时不重复写入，用户自定义内容不会被覆盖。
-func (s *Service) EnsurePanelForwardWhitelist(ctx context.Context, serverID int64, domain string) error {
-	domain = StripPort(strings.TrimSpace(domain))
-	// 跳过占位域名（_ 为「未配置域名」的通配；:80/:443 等仅端口无主机名）。
-	if domain == "" || domain == "_" || strings.HasPrefix(domain, ":") {
-		return nil
+// normalizeForwardDomain trims a forward-site domain and reports ok=false for
+// placeholders that must be skipped ("_" 为「未配置域名」通配；:80/:443 仅端口无主机名）。
+func normalizeForwardDomain(domain string) (string, bool) {
+	d := StripPort(strings.TrimSpace(domain))
+	if d == "" || d == "_" || strings.HasPrefix(d, ":") {
+		return "", false
 	}
+	return d, true
+}
 
-	// 1) 域名配置：保持 WAF 开启并指向域名规则目录（保留用户已有的其它字段）
+// upsertForwardDomainConfig writes the **站点级** WAF config for a forward domain:
+// waf_enable=on + rule_dir=domains/<domain>（保留用户已有的其它字段）。
+// 规则内容默认继承全局规则，仅域名级规则文件可站点级覆盖；此处不追加任何白名单。
+func (s *Service) upsertForwardDomainConfig(ctx context.Context, serverID int64, domain string) error {
 	cfg := map[string]interface{}{}
 	if cur, err := s.GetDomainConfig(ctx, serverID, domain); err == nil && strings.TrimSpace(cur) != "" {
 		_ = json.Unmarshal([]byte(cur), &cfg)
@@ -1754,12 +1754,58 @@ func (s *Service) EnsurePanelForwardWhitelist(ctx context.Context, serverID int6
 	if err != nil {
 		return err
 	}
-	if err := s.SaveDomainConfig(ctx, serverID, domain, string(buf)); err != nil {
+	return s.SaveDomainConfig(ctx, serverID, domain, string(buf))
+}
+
+// landDomainRules creates the local domain rule directory and re-lands rules for the
+// server（Lua/CaddyGuard 按 mtime 热加载）。远程节点在下次同步时下发，故 serverID>1 时跳过。
+func (s *Service) landDomainRules(ctx context.Context, serverID int64, domain string) error {
+	if serverID > 1 {
+		return nil
+	}
+	if err := s.InitDomainRules(ctx, domain); err != nil {
+		log.Printf("[WAF] init domain rules for %s: %v", domain, err)
+	}
+	return s.LandRulesForServer(ctx, serverID)
+}
+
+// EnsureForwardDomainConfig 为「转发」类站点（门户/订阅等）生成**独立的站点级 WAF 配置**：
+//   - 域名配置写入 waf_enable=on + rule_dir=domains/<domain>（保留既有其它字段）
+//   - 规则内容**继承全局规则**，仅域名级规则文件可站点级覆盖，互不影响其它站点
+//   - 本地节点：创建域名规则目录并落盘（远程节点在下次同步时下发）
+//
+// 门户/订阅对外接口本身不携带攻击样文本，正常流程不会被全局规则误拦，故这里
+// **不追加任何白名单**；需要站点级定制时由用户在域名规则里自行增改。
+func (s *Service) EnsureForwardDomainConfig(ctx context.Context, serverID int64, domain string) error {
+	d, ok := normalizeForwardDomain(domain)
+	if !ok {
+		return nil
+	}
+	if err := s.upsertForwardDomainConfig(ctx, serverID, d); err != nil {
+		return err
+	}
+	return s.landDomainRules(ctx, serverID, d)
+}
+
+// EnsurePanelForwardWhitelist 为「面板转发」域名生成**独立的 URL 白名单规则**：
+//   - 域名配置写入 waf_enable=on + rule_dir=domains/<domain>（保留既有其它字段）
+//   - 域名级 whiteurl.rule（append）追加面板 API 放行项，其余规则仍回落到全局规则
+//   - 本地节点：创建域名规则目录并落盘（Lua/CaddyGuard 按 mtime 热加载）
+//
+// 幂等：域名配置与白名单项已存在时不重复写入，用户自定义内容不会被覆盖。
+func (s *Service) EnsurePanelForwardWhitelist(ctx context.Context, serverID int64, domain string) error {
+	d, ok := normalizeForwardDomain(domain)
+	if !ok {
+		return nil
+	}
+
+	// 1) 域名配置：保持 WAF 开启并指向域名规则目录（保留用户已有的其它字段）
+	if err := s.upsertForwardDomainConfig(ctx, serverID, d); err != nil {
 		return err
 	}
 
 	// 2) 域名级 whiteurl.rule：系统托管的面板白名单（幂等刷新，保留用户自定义）
-	cur, _ := s.GetDomainRuleFile(ctx, domain, "whiteurl.rule", serverID)
+	cur, _ := s.GetDomainRuleFile(ctx, d, "whiteurl.rule", serverID)
 	if !strings.Contains(cur, panelForwardWhitelist) {
 		managed := strings.TrimSpace(cur) == "" ||
 			strings.Contains(cur, panelForwardWhitelistMarker) ||
@@ -1769,19 +1815,11 @@ func (s *Service) EnsurePanelForwardWhitelist(ctx context.Context, serverID int6
 			// 用户已有自定义内容：追加系统白名单，保留用户规则
 			content = normalizeRuleContent(cur) + "\n" + panelForwardWhitelist
 		}
-		if err := s.SaveDomainRuleFileWithMode(ctx, domain, "whiteurl.rule", content, "append", serverID); err != nil {
+		if err := s.SaveDomainRuleFileWithMode(ctx, d, "whiteurl.rule", content, "append", serverID); err != nil {
 			return err
 		}
 	}
 
 	// 3) 本地节点：创建目录并落盘（远程节点在下次同步时下发）
-	if serverID <= 1 {
-		if err := s.InitDomainRules(ctx, domain); err != nil {
-			log.Printf("[WAF] init domain rules for %s: %v", domain, err)
-		}
-		if err := s.LandRulesForServer(ctx, serverID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.landDomainRules(ctx, serverID, d)
 }

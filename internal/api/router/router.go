@@ -706,29 +706,52 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr.SetServerID(1)
 	nginxMgr.SetServerID(1)
 
-	// 面板转发站点：启动时为**既有**站点补建域名级 WAF URL 白名单（幂等）。
-	// 保持该域名 WAF 开启，仅放行面板自身管理 API（.log 路径 / WAF 规则文本等），
-	// 其余规则仍回落到全局规则；新建站点由 nginx/caddy handler 在创建时触发。
+	// 转发站点（面板/门户/订阅）创建时生成站点级 WAF 配置：
+	//   - 面板 panel_forward：域名级 URL 白名单（放行会被 WAF 误判的管理 API）
+	//   - 门户/订阅 portal_forward/subscription_forward：独立的域名规则目录
+	//     （继承全局规则，可做站点级覆盖，互不影响其它站点）
+	// 启动时为**既有**站点补建（幂等）；新建站点由 nginx/caddy handler 在创建时触发。
+	provisionForwardWAF := func(ctx context.Context, serverID int64, template, domain string) {
+		switch template {
+		case "panel_forward":
+			if err := wafSvcInst.EnsurePanelForwardWhitelist(ctx, serverID, domain); err != nil {
+				log.Printf("[WAF] provision panel-forward whitelist for %s failed: %v", domain, err)
+			}
+		case "portal_forward", "subscription_forward":
+			if err := wafSvcInst.EnsureForwardDomainConfig(ctx, serverID, domain); err != nil {
+				log.Printf("[WAF] provision %s domain config for %s failed: %v", template, domain, err)
+			}
+		}
+	}
 	func() {
-		pfDomains := make(map[string]bool)
+		type fwdSite struct{ template, domain string }
+		seen := make(map[string]bool)
+		var fwds []fwdSite
+		collect := func(template, domain string) {
+			switch template {
+			case "panel_forward", "portal_forward", "subscription_forward":
+			default:
+				return
+			}
+			key := template + "|" + domain
+			if seen[key] {
+				return
+			}
+			seen[key] = true
+			fwds = append(fwds, fwdSite{template, domain})
+		}
 		if sites, err := nginxSiteRepo.List(context.Background(), 1); err == nil {
 			for _, st := range sites {
-				if st.Template == "panel_forward" {
-					pfDomains[st.Domain] = true
-				}
+				collect(st.Template, st.Domain)
 			}
 		}
 		if sites, err := caddySiteRepo.List(context.Background(), 1); err == nil {
 			for _, st := range sites {
-				if st.Template == "panel_forward" {
-					pfDomains[st.Domain] = true
-				}
+				collect(st.Template, st.Domain)
 			}
 		}
-		for d := range pfDomains {
-			if err := wafSvcInst.EnsurePanelForwardWhitelist(context.Background(), 1, d); err != nil {
-				log.Printf("[WAF] provision panel-forward whitelist for %s failed: %v", d, err)
-			}
+		for _, f := range fwds {
+			provisionForwardWAF(context.Background(), 1, f.template, f.domain)
 		}
 	}()
 
@@ -1211,14 +1234,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	wafH := wafHandler.NewHandler(wafSvcInst)
 	wafH.SetScheduler(wafScheduler)
-	// 面板转发站点创建时生成域名级 URL 白名单（保持 WAF 开启，仅放行面板 API）。
-	provisionPanelWAF := func(ctx context.Context, serverID int64, domain string) {
-		if err := wafSvcInst.EnsurePanelForwardWhitelist(ctx, serverID, domain); err != nil {
-			log.Printf("[WAF] provision panel-forward whitelist for %s failed: %v", domain, err)
-		}
-	}
-	caddyH.SetWAFProvisioner(provisionPanelWAF)
-	nginxH.SetWAFProvisioner(provisionPanelWAF)
+	// 转发站点（面板/门户/订阅）创建时生成站点级 WAF 配置（见上方 provisionForwardWAF 定义）。
+	caddyH.SetWAFProvisioner(provisionForwardWAF)
+	nginxH.SetWAFProvisioner(provisionForwardWAF)
 	if sharedNodeMgr != nil {
 		geoRuleSvcInst.SetNodeOperator(sharedNodeMgr)
 		geoRuleSvcInst.SetNodeLister(nodeServerRepoForSync)

@@ -6,10 +6,8 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +22,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // Service handles certificate business logic.
@@ -1194,40 +1193,12 @@ func hasWildcardIdentifier(identifiers []string) bool {
 }
 
 // DetectPublicIP detects the public IPv4 and IPv6 addresses of the server.
+//
+// ⚠ 必须是**本机直连**探测 ✓（见 netutil.DetectPublicIPDirect ✓）：
+// 本机公网 IP 证书的 SAN 只能写本机真实出口地址 ✗→✓；
+// 一旦经管理员配置的出网代理，回显到的是**代理的出口 IP** ✗（真机踩到过）。
 func (s *Service) DetectPublicIP() (ipv4, ipv6 string, err error) {
-	client := &http.Client{Timeout: 8 * time.Second}
-
-	// Detect IPv4
-	req4, _ := http.NewRequest("GET", "http://ip.sb", nil)
-	req4.Header.Set("User-Agent", "curl/7.0")
-	resp4, err := client.Do(req4)
-	if err == nil {
-		defer resp4.Body.Close()
-		body, _ := io.ReadAll(resp4.Body)
-		ipv4 = strings.TrimSpace(string(body))
-	}
-
-	// Detect IPv6
-	client6 := &http.Client{
-		Timeout: 8 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives: true,
-		},
-	}
-	req6, _ := http.NewRequest("GET", "http://ip.sb", nil)
-	req6.Header.Set("User-Agent", "curl/7.0")
-	resp6, err := client6.Do(req6)
-	if err == nil {
-		defer resp6.Body.Close()
-		body, _ := io.ReadAll(resp6.Body)
-		ipv6 = strings.TrimSpace(string(body))
-	}
-
-	if ipv4 == "" && ipv6 == "" {
-		return "", "", fmt.Errorf("failed to detect public IP")
-	}
-
-	return ipv4, ipv6, nil
+	return netutil.DetectPublicIPDirect(context.Background(), 8*time.Second)
 }
 
 // CheckPortInUse checks if a port is in use and returns the process info.

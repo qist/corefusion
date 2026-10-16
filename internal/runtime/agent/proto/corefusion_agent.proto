@@ -632,6 +632,10 @@ message PanelCommand {
     // 为什么必须由 Agent 做 ✗：面板常在 SNAT 后面（只有出站、没有入站），
     // CA 无法回调面板的 80 端口做 http-01 验证 ✗；而节点有公网 IP 与 80 入站 ✓。
     IssuePublicCertCommand issue_public_cert = 40;
+
+    // --- 节点本机公网 IP 探测（选节点签发 IP 证书时用 ✓）---
+    // 同上：面板自己出网看到的是面板/代理的出口 IP ✗，签发 IP 证书必须用**节点自己的**公网 IP ✓。
+    DetectPublicIPRequest detect_public_ip = 41;
   }
 }
 
@@ -1228,4 +1232,26 @@ message PublicCertIssuedReport {
   // 现在节点把**自己实际用的**挑战方式原样带回来 ✓ → 面板落库即"创建时的选择" ✓。
   string challenge     = 10;
   int64  dns_channel_id = 11;
+}
+
+// ============================================================
+// 节点公网 IP 探测（Panel→Agent）
+// ============================================================
+
+// DetectPublicIPRequest — 面板 → Agent：请**节点在本机**探测自己的公网 IP。
+//
+// ⚠ 为什么必须由节点探测 ✗：面板常位于 SNAT 之后、或自身配置了出网代理 ✓，
+// 它自己出网看到的公网 IP 是**面板/代理的出口 IP** ✗，
+// 与"该节点实际对外提供服务、要写进证书 SAN 的 IP"不是一回事 ✗ →
+// 用面板探测结果去签 IP 证书会把**错误的 IP** 写进证书 ✗。
+// 节点侧直连探测（不使用任何代理 ✓）得到的才是"节点自己的"公网 IP ✓。
+//
+// 结果经 TaskResult.detail_json 回传 ✓（{"ipv4": "...", "ipv6": "..."} ✓，形状见 DetectPublicIPResponse ✓）。
+message DetectPublicIPRequest {}
+
+// DetectPublicIPResponse — 节点本机探测到的公网地址（回传形状 ✓）。
+message DetectPublicIPResponse {
+  string ipv4 = 1;   // 公网 IPv4（探测失败为空 ✓）
+  string ipv6 = 2;   // 公网 IPv6（探测失败为空 ✓）
+  string error = 3;  // IPv4/IPv6 都失败时的原因 ✓
 }

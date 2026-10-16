@@ -159,12 +159,11 @@
         <el-form-item :label="t('certificate.keySpecs')">
           <div v-for="(spec, i) in issueForm.key_specs" :key="i"
                style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-            <el-select v-model="spec.key_type" style="width:120px"
-                       :disabled="issueForm.issue_node_id > 0" @change="onSpecTypeChange(spec)">
+            <el-select v-model="spec.key_type" style="width:120px" @change="onSpecTypeChange(spec)">
               <el-option label="ECC" value="ecc" />
               <el-option label="RSA" value="rsa" />
             </el-select>
-            <el-select v-model="spec.key_bits" style="width:130px" :disabled="issueForm.issue_node_id > 0">
+            <el-select v-model="spec.key_bits" style="width:130px">
               <el-option v-for="b in bitsOptionsFor(spec.key_type)" :key="b" :label="b" :value="b" />
             </el-select>
             <el-button v-if="issueForm.key_specs.length > 1" link type="danger" @click="removeKeySpec(i)">✕</el-button>
@@ -173,9 +172,6 @@
             ＋ {{ t('certificate.addKeySpec') }}
           </el-button>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('certificate.keySpecHint') }}</div>
-          <div v-if="issueForm.issue_node_id > 0" style="font-size:11px;color:#e6a23c;margin-top:2px">
-            {{ t('certificate.nodeIssueOneKey') }}
-          </div>
         </el-form-item>
         <el-form-item :label="t('certificate.issueLocation')">
           <el-select v-model="issueForm.issue_node_id" style="width:100%">
@@ -601,9 +597,9 @@ function onSpecTypeChange(spec) {
 }
 
 // canAddSpec：还能不能再加一张 ✓ ——
-// ① 记录身份是 (域名, 密钥类型) ✓ → 两种类型各一张即可 ✓；② 节点侧签发暂不支持指定类型 ✗ → 只允许一张 ✓。
+// 记录身份是 (域名, 密钥类型) ✓ → 两种类型各一张即可 ✓。
+// 节点侧签发同样支持自选类型/位数 ✓（面板指令带 key_type/key_bits ✓、节点按类型落盘 ✓）→ 不再单独限一张 ✓。
 const canAddSpec = computed(() => {
-  if (issueForm.value.issue_node_id > 0) return false
   const specs = issueForm.value.key_specs || []
   if (specs.length >= 2) return false
   const types = new Set(specs.map(s => s.key_type))
@@ -700,7 +696,10 @@ function showIssueDialog() {
 async function handleDetectIP() {
   detectingIP.value = true
   try {
-    const data = await client.get('/certificates/detect-ip')
+    // ⚠ 必须带上"选定节点" ✗：给远程节点签 IP 证书时，要取的是**该节点自己的**公网 IP ✓，
+    // 而不是面板/代理的出口 IP ✗（面板配了代理时尤其会拿错 ✗）。
+    const nodeID = issueForm.value.issue_node_id > 0 ? issueForm.value.issue_node_id : 0
+    const data = await client.get('/certificates/detect-ip', { params: nodeID > 0 ? { node_id: nodeID } : {} })
     const ips = []
     if (data.ipv4) ips.push(data.ipv4)
     if (data.ipv6) ips.push(data.ipv6)

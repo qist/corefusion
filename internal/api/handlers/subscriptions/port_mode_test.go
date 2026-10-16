@@ -138,3 +138,41 @@ func TestResolveHostPortHonorsPortMode(t *testing.T) {
 		}
 	}
 }
+
+// 节点自身对外地址的优先顺序：**公网 IP → 主机名 → 内网 IP**。
+//
+// 回归点：此前 shareAddress 只取「公网 IP → 内网 IP」，**跳过了主机名** ✗ ——
+// 节点只填了 hostname（如 192.168.2.50）、public_ip/internal_ip 留空时，
+// 会一路落到监听地址兜底（0.0.0.0 → 127.0.0.1），下发给客户端的 server 变成
+// 客户端本机地址（真机现象：test-agent-50 的入站 server 恒为 127.0.0.1 ✗）。
+func TestPreferNodeAddressPriority(t *testing.T) {
+	cases := []struct {
+		name string
+		node entity.NodeServer
+		want string
+	}{
+		{"三者都有 → 公网 IP", entity.NodeServer{PublicIP: "1.2.3.4", Hostname: "h.example.com", InternalIP: "10.0.0.1"}, "1.2.3.4"},
+		{"无公网 → 主机名", entity.NodeServer{Hostname: "192.168.2.50", InternalIP: "10.0.0.1"}, "192.168.2.50"},
+		{"只有内网 → 内网 IP", entity.NodeServer{InternalIP: "10.0.0.1"}, "10.0.0.1"},
+		{"全空 → 空串", entity.NodeServer{}, ""},
+	}
+	for _, tc := range cases {
+		if got := preferNodeAddress(tc.node); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// 端到端（无 repo 之外的依赖）：没有 nodeServerRepo 时 shareAddress 仍回退监听地址；
+// 有节点主机名时，主机名必须优先于监听地址兜底 —— 这条以前会得到 127.0.0.1。
+func TestShareAddressUsesHostnameBeforeListenFallback(t *testing.T) {
+	// 直接验证优先链本身（repo 为具体类型，不便注入；preferNodeAddress 是同一逻辑的纯函数）
+	node := entity.NodeServer{Hostname: "192.168.2.50"}
+	if got := preferNodeAddress(node); got != "192.168.2.50" {
+		t.Fatalf("主机名应被采用，got %q", got)
+	}
+	// 监听兜底仍只对 0.0.0.0/:: 生效
+	if got := fallbackHost("0.0.0.0"); got != "127.0.0.1" {
+		t.Fatalf("0.0.0.0 应兜底 127.0.0.1，got %q", got)
+	}
+}

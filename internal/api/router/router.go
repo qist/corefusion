@@ -1173,6 +1173,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 证书页"选节点签发"：面板在 SNAT 后面时，公网证书只能由节点在本机签 ✓
 	if sharedNodeMgr != nil {
 		certH.SetNodeIssuer(sharedNodeMgr)
+		// IP 证书的"自动获取"必须按**选定节点**探测 ✓：面板自己（尤其配了代理时）
+		// 出网看到的是面板/代理的出口 IP ✗，写进远程节点证书就是废证书 ✗。
+		certH.SetNodeIPDetector(sharedNodeMgr)
 	}
 	// 邮箱/CA 归**面板** ✓（`acme_account_configs` 里的 ACME 账号 ✓）→ 必须接线 ✗，
 	// 否则节点侧签发会因"没有邮箱"而失败 ✓（真机踩到过：面板日志明确写了

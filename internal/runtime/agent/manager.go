@@ -25,6 +25,7 @@ import (
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // NodeServerManager manages all node server Agent connections.
@@ -2068,6 +2069,42 @@ func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) 
 		return nil, fmt.Errorf("unmarshal list_interfaces response: %w", err)
 	}
 	return resp.GetInterfaces(), nil
+}
+
+// DetectPublicIPOnServer 让指定节点在**本机直连**探测自己的公网 IP ✓。
+//
+// ⚠ 面板不能代节点探测 ✗：面板自己（尤其在配了出网代理时）出网看到的是**面板/代理的出口 IP** ✗，
+// 而签 IP 证书要写进 SAN 的必须是**该节点对外提供服务用的真实 IP** ✓
+// （真机踩到过：面板配了代理，给远程节点签 IP 证书却拿到面板/代理的 IP ✗）。
+func (m *NodeServerManager) DetectPublicIPOnServer(ctx context.Context, serverID int64) (ipv4, ipv6 string, err error) {
+	if m.isLocalServer(serverID) {
+		// 本机节点：面板就是这个节点 ✓ → 直接在本机直连探测 ✓（绝不走代理 ✗）。
+		return netutil.DetectPublicIPDirect(ctx, 8*time.Second)
+	}
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_DetectPublicIp{
+			DetectPublicIp: &agentpb.DetectPublicIPRequest{},
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 20*time.Second)
+	if err != nil {
+		return "", "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return "", "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.DetectPublicIPResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return "", "", fmt.Errorf("unmarshal detect_public_ip response: %w", err)
+	}
+	if resp.GetIpv4() == "" && resp.GetIpv6() == "" {
+		if msg := strings.TrimSpace(resp.GetError()); msg != "" {
+			return "", "", fmt.Errorf("%s", msg)
+		}
+		return "", "", fmt.Errorf("node %d did not detect a public IP", serverID)
+	}
+	return resp.GetIpv4(), resp.GetIpv6(), nil
 }
 
 // ExecuteBinaryCommand executes a binary command on a server.

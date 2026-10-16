@@ -329,6 +329,20 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			}
 		})
 
+	case *agentpb.PanelCommand_DetectPublicIp:
+		// 面板要用**节点自己的公网 IP** 来签 IP 证书 ✓ → 让节点在**本机直连**探测 ✓。
+		// ⚠ 面板不能代探测 ✗：面板（尤其在配了出网代理时）出网看到的是**面板/代理的出口 IP** ✗，
+		// 而证书 SAN 要写的是该节点对外提供服务的真实 IP ✓（见 netutil.DetectPublicIPDirect ✓）。
+		ipv4, ipv6, derr := netutil.DetectPublicIPDirect(ctx, 8*time.Second)
+		if derr != nil {
+			sendSyncResult("detect_public_ip", nil, derr)
+		} else {
+			sendSyncResult("detect_public_ip", &agentpb.DetectPublicIPResponse{
+				Ipv4: ipv4,
+				Ipv6: ipv6,
+			}, nil)
+		}
+
 	case *agentpb.PanelCommand_DistributeCert:
 		a.handleDistributeCert(c.DistributeCert)
 

@@ -32,6 +32,15 @@ type NodeCertIssuer interface {
 	IsOnlineForServer(serverID int64) bool
 }
 
+// NodeIPDetector 是"让选定节点在**本机**探测自己公网 IP"的能力 ✓（由 NodeServerManager 实现 ✓）。
+//
+// ⚠ 为什么必须由节点探测 ✗：IP 证书的 SAN 要写的是"该节点对外提供服务用的真实 IP" ✓；
+// 面板自己（尤其在配了出网代理时）出网看到的是**面板/代理的出口 IP** ✗ ——
+// 用它代探测去签，节点就会拿到一张指向别人的废证书 ✗（真机踩到过）。
+type NodeIPDetector interface {
+	DetectPublicIPOnServer(ctx context.Context, serverID int64) (ipv4, ipv6 string, err error)
+}
+
 // DNSChannelResolver 把"DNS 通道 ID"解析成 dns-01 提供者配置 ✓
 // （由 `certService.DNSChannelService` 实现 ✓）。
 type DNSChannelResolver interface {
@@ -127,6 +136,7 @@ type Handler struct {
 	certSvc       *certService.Service
 	onCertUpdated CertUpdateCallback
 	nodeIssuer    NodeCertIssuer
+	nodeIPDet     NodeIPDetector
 	acmeEmails    ACMEEmailResolver
 	dnsChannels   DNSChannelResolver
 	eabConfigs    EABConfigResolver
@@ -144,6 +154,11 @@ func (h *Handler) SetDNSChannelResolver(r DNSChannelResolver) { h.dnsChannels = 
 
 // SetNodeIssuer 注入"节点本机签发"能力 ✓（面板在 SNAT 后面时，公网证书只能让节点自己签 ✓）。
 func (h *Handler) SetNodeIssuer(i NodeCertIssuer) { h.nodeIssuer = i }
+
+// SetNodeIPDetector 注入"在节点本机探测公网 IP"能力 ✓（给远程节点签 IP 证书时用 ✓）。
+// ⚠ 必须按**选定节点**探测 ✗：面板自己（尤其在配了出网代理时）出网看到的是面板/代理的出口 IP ✗，
+// 写进节点证书就是废证书 ✗（真机踩到过）。
+func (h *Handler) SetNodeIPDetector(d NodeIPDetector) { h.nodeIPDet = d }
 
 // SetNodeNameResolver 注入"按 ID 取节点名"的能力 ✓（列表里显示"签发节点"用 ✓）。
 func (h *Handler) SetNodeNameResolver(r NodeNameResolver) { h.nodeNames = r }
@@ -879,9 +894,21 @@ func (h *Handler) FindExpiringSoon(c *gin.Context) {
 	response.OK(c, certs)
 }
 
-// DetectIP handles GET /api/v1/certificates/detect-ip.
+// DetectIP handles GET /api/v1/certificates/detect-ip?node_id=<id>.
+//
+// ⚠ 必须按**选定节点**探测 ✗→✓：给远程节点签 IP 证书时，SAN 要写的是"该节点对外提供服务的真实 IP" ✓，
+// 而不是面板/代理的出口 IP ✗（真机踩到过：面板配了代理，自动获取到的是代理的 IP ✗）。
+//   - 带 `node_id`（>0）：由该节点在**本机直连**探测 ✓（本机节点则退化为面板直连探测 ✓）；
+//   - 不带 `node_id`：面板本机探测 ✓（"面板本机签发"场景 ✓）。
 func (h *Handler) DetectIP(c *gin.Context) {
-	ipv4, ipv6, err := h.certSvc.DetectPublicIP()
+	var ipv4, ipv6 string
+	var err error
+	nodeID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("node_id")), 10, 64)
+	if nodeID > 0 && h.nodeIPDet != nil {
+		ipv4, ipv6, err = h.nodeIPDet.DetectPublicIPOnServer(c.Request.Context(), nodeID)
+	} else {
+		ipv4, ipv6, err = h.certSvc.DetectPublicIP()
+	}
 	if err != nil {
 		response.InternalError(c, "DETECT_FAILED", err.Error())
 		return

@@ -29,7 +29,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           <!-- 自助解封卡 ✓：流量超额被自动封禁的账号登录时返回 require_self_unban，
                凭登录签发的受限专用 token（仅可调 /self-unban）一键恢复，无需联系客服 -->
           <div class="self-unban-card" v-if="selfUnban.visible">
-            <el-alert type="warning" :title="t('auth.self_unban_title')" :description="selfUnban.hint || t('auth.self_unban_desc')" show-icon :closable="false" style="margin-bottom:14px" />
+            <el-alert type="warning" :title="t('auth.self_unban_title')" :description="selfUnban.hint || t('auth.self_unban_desc')" show-icon :closable="false" style="margin-bottom:14px"></el-alert>
             <el-button type="warning" class="btn-block" :loading="selfUnban.loading" @click="handleSelfUnban" size="large">{{ t('auth.self_unban_btn') }}</el-button>
             <el-button class="btn-block" text @click="selfUnban.visible = false">{{ t('auth.self_unban_cancel') }}</el-button>
           </div>
@@ -428,7 +428,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <transition name="pay-fade">
           <div v-if="chargeForm.method === 'card'" class="pay-extra-form">
             <div class="pay-extra-label">{{ t('charge.card_password') }}</div>
-            <el-input v-model="cardCode" :placeholder="t('charge.card_password_placeholder')" prefix-icon="Ticket" clearable />
+            <el-input v-model="cardCode" :placeholder="t('charge.card_password_placeholder')" prefix-icon="Ticket" clearable></el-input>
             <div class="pay-hint">{{ t('charge.card_hint') }}</div>
           </div>
         </transition>
@@ -600,7 +600,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
     <!-- More Subscriptions Dialog -->
     <el-dialog v-model="moreSubsVisible" :title="t('sub.more_subs')" width="480px" align-center append-to-body class="more-subs-dialog">
       <div class="more-subs-list">
-        <el-alert v-if="subInsecureHidden" type="warning" :closable="false" show-icon :title="t('sub.insecure_hidden')" style="margin-bottom:10px" />
+        <el-alert v-if="subInsecureHidden" type="warning" :closable="false" show-icon :title="t('sub.insecure_hidden')" style="margin-bottom:10px"></el-alert>
         <div v-if="moreSubFormats.length === 0" class="more-subs-empty">{{ t('common.empty') }}</div>
         <!-- Format Cards -->
         <div v-for="item in moreSubFormats" :key="item.key" class="more-subs-card">

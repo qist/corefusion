@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"regexp"
 	"strings"
 )
 
@@ -652,6 +653,56 @@ func insertAfterFunction(js, anchor, snippet string) (string, bool) {
 	return js, false
 }
 
+// selfClosingCustomTagRe 匹配模板里的自闭合自定义组件标签（如 <el-alert ... />、<Lightning />）。
+// 门户 shell 是**通过 #app innerHTML 编译的 in-DOM 模板**：HTML 解析器不认自定义元素的自闭合写法，
+// 会把 `<el-alert ... />` 当成开始标签，并把它后面的兄弟节点全部吞成自己的子节点 →
+// 当该组件带 v-if 且条件为假时，后面的内容（弹窗空态 / 格式卡片 / 按钮）整块不渲染 ✗。
+var selfClosingCustomTagRe = regexp.MustCompile(`<([A-Za-z][A-Za-z0-9-]*)\b[^<>]*?/>`)
+
+// PatchInDOMSelfClosingComponents 把 in-DOM 模板里"后面还跟着兄弟节点"的自闭合自定义组件展开成
+// 显式 `<tag ...></tag>`。幂等：仅命中紧跟兄弟内容的写法；紧跟 `</...>` 的（后面本无兄弟）保持原样。
+func PatchInDOMSelfClosingComponents(html string) (string, bool) {
+	matches := selfClosingCustomTagRe.FindAllStringSubmatchIndex(html, -1)
+	if len(matches) == 0 {
+		return html, false
+	}
+	var b strings.Builder
+	last := 0
+	changed := false
+	for _, m := range matches {
+		tag := html[m[2]:m[3]]
+		if !isCustomComponentTag(tag) {
+			continue
+		}
+		// 标签后的下一个非空白字符：若是结束标签 `</`，说明它后面本来就没有兄弟节点，安全跳过。
+		j := m[1]
+		for j < len(html) && (html[j] == ' ' || html[j] == '\t' || html[j] == '\n' || html[j] == '\r') {
+			j++
+		}
+		if j+1 < len(html) && html[j] == '<' && html[j+1] == '/' {
+			continue
+		}
+		b.WriteString(html[last : m[1]-2]) // 去掉结尾的 "/>"
+		b.WriteString("></" + tag + ">")
+		last = m[1]
+		changed = true
+	}
+	if !changed {
+		return html, false
+	}
+	b.WriteString(html[last:])
+	return b.String(), true
+}
+
+// isCustomComponentTag 判断是否为自定义组件标签：带连字符（如 el-alert）或以大写开头（如 Lightning 图标）。
+// 原生 void 元素（img/br/path 等）为小写且不含连字符，会被排除，不会误改。
+func isCustomComponentTag(tag string) bool {
+	if tag == "" {
+		return false
+	}
+	return strings.Contains(tag, "-") || (tag[0] >= 'A' && tag[0] <= 'Z')
+}
+
 // EnsureSecurityPatches 给"当前生效的门户模板"打安全补丁（进程启动时调用一次）。
 //
 // 全程自动：不需要管理员做任何操作；只在命中旧写法时改写，并把结果落库 + 清渲染缓存。
@@ -664,6 +715,12 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		return nil
 	}
 	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
+	// in-DOM shell 的自闭合自定义组件展开：HTML 解析器会把 `<el-alert ... />` 当成开始标签，
+	// 把它后面的兄弟节点全部吞成子节点 → v-if 为假时「更多订阅」弹窗的格式卡片整块不渲染 ✗。
+	if h1, c1 := PatchInDOMSelfClosingComponents(newHTML); c1 {
+		newHTML = h1
+		changed = true
+	}
 	// 导航「购买服务 / 我的账单」始终显示（历史版本按充值站点过滤的写法升级回透传）✓
 	if h2, j2, c2 := PatchChargeNavMenu(newHTML, newJS); c2 {
 		newHTML, newJS = h2, j2

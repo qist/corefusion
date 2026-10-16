@@ -411,3 +411,38 @@ func TestPatchChargeUiEnabled(t *testing.T) {
 		t.Error("第二次调用不应改动内容")
 	}
 }
+
+// in-DOM shell（#app innerHTML）里"后跟兄弟节点"的自闭合自定义组件会被 HTML 解析器吞成子节点 ✗：
+// 「更多订阅」弹窗的格式卡片、自助解封按钮、卡密输入提示都因此整块不渲染。
+func TestPatchInDOMSelfClosingComponents(t *testing.T) {
+	// 1) 默认模板「更多订阅」弹窗的 el-alert 不得再用自闭合写法
+	if strings.Contains(defaultPortalHTML, `style="margin-bottom:10px" />`) {
+		t.Error("默认模板「更多订阅」弹窗的 el-alert 不应再用自闭合写法")
+	}
+	if !strings.Contains(defaultPortalHTML, `style="margin-bottom:10px"></el-alert>`) {
+		t.Error("默认模板「更多订阅」弹窗的 el-alert 应显式闭合")
+	}
+
+	// 2) 补丁能修复且幂等；紧跟结束标签的安全写法与原生 void 元素保持不变
+	sample := `<div><el-alert v-if="x" type="warning" style="margin-bottom:10px" /><div v-for="i in list">c</div><el-icon><Check /></el-icon><img src="a" /></div>`
+	out, changed := PatchInDOMSelfClosingComponents(sample)
+	if !changed {
+		t.Fatal("含自闭合自定义组件 + 兄弟内容的模板应被判定为需要修改")
+	}
+	if strings.Contains(out, `" /><div v-for`) {
+		t.Error("应把 el-alert 展开为显式闭合，避免吞掉后面的兄弟节点")
+	}
+	if !strings.Contains(out, `></el-alert>`) {
+		t.Error("el-alert 应展开为 </el-alert>")
+	}
+	if !strings.Contains(out, `<Check />`) {
+		t.Error("紧跟 </el-icon> 的自闭合图标应保持原样")
+	}
+	if !strings.Contains(out, `<img src="a" />`) {
+		t.Error("原生 void 元素 img 不应被改动")
+	}
+	out2, changed2 := PatchInDOMSelfClosingComponents(out)
+	if changed2 || out2 != out {
+		t.Error("第二次调用应幂等（不再改动）")
+	}
+}

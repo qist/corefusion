@@ -46,14 +46,20 @@ func TestBuiltInTemplateDefaults(t *testing.T) {
 	}
 	var referralVisible interface{} = "missing"
 	var accountHasChargeToggle bool
+	var accountChargeDefaultOff bool
 	for _, m := range mods {
 		if m["id"] == "mod-referral" {
 			referralVisible = m["visible"]
 		}
 		if m["id"] == "mod-account" {
 			if data, ok := m["data"].(map[string]interface{}); ok {
-				if html, _ := data["html"].(string); strings.Contains(html, "show_charge_btn") {
+				html, _ := data["html"].(string)
+				if strings.Contains(html, "show_charge_btn") {
 					accountHasChargeToggle = true
+				}
+				// 充值按钮默认关闭：data.show_charge_btn=false 且渲染条件要求 === true 才显示 ✓
+				if v, ok := data["show_charge_btn"].(bool); ok && !v && strings.Contains(html, "mod.data.show_charge_btn === true") {
+					accountChargeDefaultOff = true
 				}
 			}
 		}
@@ -62,9 +68,12 @@ func TestBuiltInTemplateDefaults(t *testing.T) {
 		t.Fatalf("推广邀请模块应默认隐藏（visible=false）✗，实际 %v", referralVisible)
 	}
 
-	// 3. 充值按钮可开关 ✓
+	// 3. 充值按钮可开关，且默认关闭、后台手动开启才显示 ✓
 	if !accountHasChargeToggle {
 		t.Fatalf("账户模块充值按钮缺少 show_charge_btn 开关 ✗")
+	}
+	if !accountChargeDefaultOff {
+		t.Fatalf("账户模块充值按钮应默认关闭，需后台手动开启才显示 ✗")
 	}
 
 	// 4. 端到端渲染口径 ✓：种子常量 → renderPortalHTML 后，OAuth 入口与"推广邀请默认关"

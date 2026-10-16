@@ -254,7 +254,6 @@
         <template v-if="ed.selectedModule.type === 'balance_display'">
           <el-form-item :label="t('portal.showTransactions')"><el-switch v-model="ed.selectedModule.data.show_transactions" /></el-form-item>
           <el-form-item :label="t('portal.txLimit')"><el-input-number v-model="ed.selectedModule.data.tx_limit" :min="1" :max="50" /></el-form-item>
-          <el-form-item :label="t('portal.chargeBtnText2')"><el-input v-model="ed.selectedModule.data.charge_btn_text" :placeholder="t('portal.chargeBtnPlaceholder')" /></el-form-item>
         </template>
 
         <!-- Referral Properties -->
@@ -292,6 +291,13 @@
           <span style="font-size: 12px">{{ t('portal.noPropsHint') }}</span>
         </el-alert>
       </el-form>
+
+      <!-- 模块代码：HTML / CSS / JS 集中在本模块属性面板编辑（不再需要打开全局代码） -->
+      <el-collapse class="module-code-collapse">
+        <el-collapse-item :title="t('portal.moduleCode')" name="code">
+          <ModuleCodeEditor />
+        </el-collapse-item>
+      </el-collapse>
     </div>
 
     <!-- No Selection -->
@@ -306,6 +312,7 @@
 import { inject, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Delete } from '@element-plus/icons-vue'
+import ModuleCodeEditor from './ModuleCodeEditor.vue'
 
 const { t } = useI18n()
 const ed = inject('portalEditor')
@@ -327,13 +334,14 @@ const hasPropsForm = computed(() => {
 
 <style scoped>
 .col-properties {
-  width: 280px;
+  width: 340px;
   background: #fff;
   overflow-y: auto;
   border-left: 1px solid #e8e8e8;
   flex-shrink: 0;
   padding: 16px;
 }
+.module-code-collapse { margin-top: 8px; }
 .props-title { font-size: 14px; font-weight: 600; margin-bottom: 16px; color: #303133; }
 .props-empty { text-align: center; padding: 40px 20px; color: #909399; }
 .props-empty-icon { font-size: 32px; display: block; margin-bottom: 8px; }

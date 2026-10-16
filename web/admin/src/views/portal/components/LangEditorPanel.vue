@@ -7,6 +7,9 @@
       <el-upload :show-file-list="false" :before-upload="ed.importLang" accept=".json">
         <el-button text size="small">{{ t('portal.importJson') }}</el-button>
       </el-upload>
+      <el-badge v-if="ed.missingLangKeys.length > 0" :value="ed.missingLangKeys.length" type="danger" style="margin-left: 6px">
+        <el-button text size="small" type="primary" @click="ed.fillMissingLangKeys">{{ t('portal.fillMissingLangKeys') }}</el-button>
+      </el-badge>
       <span class="lang-count">{{ t('portal.langEntryCount', { count: ed.filteredLangEntries.length }) }}</span>
     </div>
     <!-- Locale tabs -->

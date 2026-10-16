@@ -13,6 +13,11 @@ export function resetPortal() {
   return client.post('/portal/reset')
 }
 
+// 内置语言包（供「文案」tab 缺失 key 检测 / 一键补齐）
+export function getBuiltinPortalLang() {
+  return client.get('/portal/lang/builtin')
+}
+
 // Render cache management
 export function getPortalCacheStatus() {
   return client.get('/portal/cache')

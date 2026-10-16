@@ -252,6 +252,129 @@ func PatchRegionsSecurity(configStr string) (string, bool) {
 	return string(out), true
 }
 
+// 门户账户模块「充值按钮」默认关闭 —— 存量模板的 account_info 模块 HTML 里按钮仍是
+// 「未显式关闭就显示」的旧写法 ✗（门户模板存在数据库里 → 只改默认模板到不了已部署门户 ✗，
+// 与 M7/自助解封是同一个坑 ✓）。这里做**精确片段替换** + 未设置时补 false，使
+// 「默认关闭、后台手动开启才显示」对存量模板同样生效；幂等，且不动管理员的其它定制 ✓。
+const (
+	oldChargeBtnCond = `v-if="!mod.data || mod.data.show_charge_btn !== false"`
+	newChargeBtnCond = `v-if="mod.data && mod.data.show_charge_btn === true"`
+)
+
+// PatchChargeButtonConfig 对模板 config JSON 里的 account_info 模块打「充值按钮默认关闭」
+// 补丁：把旧的「未显式关闭就显示」条件替换为「显式开启才显示」，并在 data 未设置
+// show_charge_btn 时补 false（默认关闭 ✓）。幂等：命中过 / 无 account_info 时原样返回 ✓。
+func PatchChargeButtonConfig(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	modules, ok := cfg["modules"].([]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	for _, mi := range modules {
+		mod, ok := mi.(map[string]interface{})
+		if !ok || mod["type"] != "account_info" {
+			continue
+		}
+		data, ok := mod["data"].(map[string]interface{})
+		if !ok {
+			data = map[string]interface{}{}
+			mod["data"] = data
+		}
+		if html, ok := data["html"].(string); ok && strings.Contains(html, oldChargeBtnCond) {
+			data["html"] = strings.Replace(html, oldChargeBtnCond, newChargeBtnCond, 1)
+			changed = true
+		}
+		if _, ok := data["show_charge_btn"]; !ok {
+			data["show_charge_btn"] = false
+			changed = true
+		}
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
+// 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航 —— 存量模板同样需要迁移
+// （门户模板存库 → 只改默认模板到不了已部署门户 ✗）。做法：导航渲染从 portalNavItems 改为按
+// chargeSites 过滤的 navItems computed，并补齐 chargeSitesLoaded / fetchChargeSites / return。
+// 每处独立判定、独立幂等 ✓（片段里**不能出现反引号**）。
+const (
+	oldNavSidebar = `v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item'`
+	newNavSidebar = `v-for="nav in navItems" :key="nav.id" :class="'sidebar-item'`
+	oldNavBottom  = `v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item'`
+	newNavBottom  = `v-for="nav in navItems" :key="nav.id" :class="'nav-item'`
+
+	navItemsAnchor   = `    var portalNavItems = ref([])`
+	navItemsPresence = `var navItems = computed(function() {`
+	navItemsSnippet  = `    var portalNavItems = ref([])
+    // 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航（无数据、无意义）
+    var chargeSitesLoaded = ref(false)
+    var navItems = computed(function() {
+      var items = portalNavItems.value
+      if (!chargeSitesLoaded.value || chargeSites.value.length > 0) return items
+      return items.filter(function(n) { return n.target !== 'store' && n.target !== 'billing' })
+    })`
+
+	oldChargeSitesFetch = `        chargeSites.value = Array.isArray(res) ? res : []`
+	newChargeSitesFetch = `        chargeSites.value = Array.isArray(res) ? res : []
+        chargeSitesLoaded.value = true`
+	chargeSitesLoadedFlag = `chargeSitesLoaded.value = true`
+	oldNavInitFetch       = `        if (initHasPlanList || initHasCharge) fetchChargeSites()`
+	newNavInitFetch       = `        fetchChargeSites()`
+	oldNavReturn          = `      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,`
+	newNavReturn          = `      currentModules: currentModules, portalNavItems: portalNavItems, navItems: navItems, onNavClick: onNavClick,`
+)
+
+// PatchChargeNavMenu 对存量门户模板打「无可用充值接口时隐藏购买服务/我的账单导航」补丁。
+// 幂等：命中过 / 已是新版时原样返回 ✓。
+func PatchChargeNavMenu(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+
+	if strings.Contains(newHTML, oldNavSidebar) {
+		newHTML = strings.Replace(newHTML, oldNavSidebar, newNavSidebar, 1)
+		changed = true
+	}
+	if strings.Contains(newHTML, oldNavBottom) {
+		newHTML = strings.Replace(newHTML, oldNavBottom, newNavBottom, 1)
+		changed = true
+	}
+
+	// navItems computed + chargeSitesLoaded 声明
+	if strings.Contains(newJS, navItemsAnchor) && !strings.Contains(newJS, navItemsPresence) {
+		newJS = strings.Replace(newJS, navItemsAnchor, navItemsSnippet, 1)
+		changed = true
+	}
+	// fetchChargeSites 成功后标记已加载
+	if strings.Contains(newJS, oldChargeSitesFetch) && !strings.Contains(newJS, chargeSitesLoadedFlag) {
+		newJS = strings.Replace(newJS, oldChargeSitesFetch, newChargeSitesFetch, 1)
+		changed = true
+	}
+	// 进入门户即拉取充值站点（导航过滤依赖它）
+	if strings.Contains(newJS, oldNavInitFetch) {
+		newJS = strings.Replace(newJS, oldNavInitFetch, newNavInitFetch, 1)
+		changed = true
+	}
+	// setup return 透传 navItems（旧片段是新片段前缀 → 必须同时查新片段防重复 ✓）
+	if strings.Contains(newJS, oldNavReturn) && !strings.Contains(newJS, newNavReturn) {
+		newJS = strings.Replace(newJS, oldNavReturn, newNavReturn, 1)
+		changed = true
+	}
+
+	return newHTML, newJS, changed
+}
+
 // PatchTemplateSecurity 对**存量门户模板**做幂等的安全补丁（安全审计 v5 M7）。
 //
 // 为什么需要：门户模板存在数据库里、可在后台编辑，所以只改默认模板**到不了**已部署的门户
@@ -364,8 +487,18 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		return nil
 	}
 	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
+	// 无可用充值接口（在线支付站点）时隐藏「购买服务 / 我的账单」导航 ✓
+	if h2, j2, c2 := PatchChargeNavMenu(newHTML, newJS); c2 {
+		newHTML, newJS = h2, j2
+		changed = true
+	}
 	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）
 	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
+	// 存量模板的 account_info 模块 HTML 里「充值按钮」旧条件也要迁移（默认关闭 ✓）
+	if c, cc := PatchChargeButtonConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
 	if !changed && !cfgChanged {
 		return nil
 	}
@@ -376,6 +509,6 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		return err
 	}
 	s.InvalidateCache()
-	log.Printf("[portal] security patch applied to template %d (M7: 用户内容不再执行 HTML)", tmpl.ID)
+	log.Printf("[portal] patches applied to template %d (security / charge nav menu)", tmpl.ID)
 	return nil
 }

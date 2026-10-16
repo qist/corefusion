@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -141,5 +142,133 @@ var other = 1
 	}
 	if again != newJS {
 		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 存量门户模板（存在数据库里）的 account_info 模块必须被迁移为「充值按钮默认关闭」：
+// 只有后台显式开启（show_charge_btn=true）才显示，否则默认隐藏。
+func TestPatchChargeButtonConfigDefaultsOff(t *testing.T) {
+	// 未设置 show_charge_btn + 旧条件 → 迁移为严格条件并补 false
+	// 注意：条件含双引号，塞进 JSON 字符串需转义
+	esc := strings.ReplaceAll(oldChargeBtnCond, `"`, `\"`)
+	cfg := `{"modules":[{"id":"mod-account","type":"account_info","data":{"html":"<el-button ` + esc + `>充值</el-button>"}}]}`
+	out, changed := PatchChargeButtonConfig(cfg)
+	if !changed {
+		t.Fatal("含旧充值按钮条件的存量模板应被判定为需要修改")
+	}
+	html, toggle := accountModuleOf(t, out)
+	if strings.Contains(html, oldChargeBtnCond) {
+		t.Error("旧的「未显式关闭就显示」条件应被替换")
+	}
+	if !strings.Contains(html, newChargeBtnCond) {
+		t.Error("应改为「后台显式开启才显示」的严格条件")
+	}
+	if toggle != false {
+		t.Errorf("未设置 show_charge_btn 时应补 false（默认关闭），实际 %v", toggle)
+	}
+
+	// 幂等：再跑一次不应再改
+	out2, changed2 := PatchChargeButtonConfig(out)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if out2 != out {
+		t.Error("第二次调用不应改动内容")
+	}
+
+	// 管理员已显式开启 → 保留 true，仅迁移旧条件
+	cfgOn := `{"modules":[{"id":"mod-account","type":"account_info","data":{"html":"<el-button ` + esc + `>充值</el-button>","show_charge_btn":true}}]}`
+	on, changedOn := PatchChargeButtonConfig(cfgOn)
+	if !changedOn {
+		t.Fatal("旧条件仍应被迁移")
+	}
+	if _, toggleOn := accountModuleOf(t, on); toggleOn != true {
+		t.Error("管理员已开启的 show_charge_btn=true 不应被改成 false")
+	}
+}
+
+// accountModuleOf 解析 config JSON，返回 account_info 模块的 html 与 show_charge_btn 值。
+func accountModuleOf(t *testing.T, configStr string) (html string, showChargeBtn bool) {
+	t.Helper()
+	var cfg struct {
+		Modules []struct {
+			Type string                 `json:"type"`
+			Data map[string]interface{} `json:"data"`
+		} `json:"modules"`
+	}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		t.Fatalf("config JSON 非法: %v", err)
+	}
+	for _, m := range cfg.Modules {
+		if m.Type != "account_info" {
+			continue
+		}
+		html, _ = m.Data["html"].(string)
+		showChargeBtn, _ = m.Data["show_charge_btn"].(bool)
+		return html, showChargeBtn
+	}
+	t.Fatal("未找到 account_info 模块")
+	return "", false
+}
+
+const (
+	sampleNavHTML = `<div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)"></div>
+<div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)"></div>`
+	sampleNavJS = `    var portalNavItems = ref([])
+      var fetchChargeSites = function() {
+        api('GET', '/charge/sites').then(function(res) {
+        chargeSites.value = Array.isArray(res) ? res : []
+      }).catch(function() {})
+      }
+        if (initHasPlanList || initHasCharge) fetchChargeSites()
+      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
+`
+)
+
+// 存量模板必须迁移为「无可用充值接口时隐藏购买服务/我的账单导航」。
+func TestPatchChargeNavMenu(t *testing.T) {
+	h2, j2, changed := PatchChargeNavMenu(sampleNavHTML, sampleNavJS)
+	if !changed {
+		t.Fatal("含旧导航写法的模板应被判定为需要修改")
+	}
+	if strings.Contains(h2, "nav in portalNavItems") {
+		t.Error("导航不应再直接遍历 portalNavItems")
+	}
+	if strings.Count(h2, "nav in navItems") != 2 {
+		t.Error("侧边栏 + 底部导航都应改为 navItems")
+	}
+	if !strings.Contains(j2, navItemsPresence) {
+		t.Error("应插入 navItems 过滤 computed")
+	}
+	if !strings.Contains(j2, chargeSitesLoadedFlag) {
+		t.Error("fetchChargeSites 成功后应标记 chargeSitesLoaded")
+	}
+	if !strings.Contains(j2, newNavInitFetch) {
+		t.Error("进入门户应无条件拉取充值站点（导航过滤依赖）")
+	}
+	if !strings.Contains(j2, "navItems: navItems") {
+		t.Error("setup return 应透传 navItems")
+	}
+
+	// 幂等：再跑一次不应再改
+	h3, j3, changed2 := PatchChargeNavMenu(h2, j2)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if h3 != h2 || j3 != j2 {
+		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 默认模板（新装/重置时种子进库的那份）也必须自带导航过滤。
+func TestDefaultPortalHasChargeNavGate(t *testing.T) {
+	if !strings.Contains(defaultPortalHTML, `v-for="nav in navItems"`) {
+		t.Error("默认门户 HTML 导航应使用按充值可用性过滤的 navItems")
+	}
+	if strings.Contains(defaultPortalHTML, `v-for="nav in portalNavItems"`) {
+		t.Error("默认门户 HTML 不应再直接遍历 portalNavItems")
+	}
+	if !strings.Contains(defaultPortalJS, navItemsPresence) {
+		t.Error("默认门户 JS 应内置 navItems 过滤 computed")
 	}
 }

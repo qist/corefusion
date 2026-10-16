@@ -497,6 +497,25 @@ func Shutdown() {
 }
 
 // NewWithFullConfig creates a new Gin engine with full config including data directory and version.
+// legalPageHandler 处理合规文档（隐私政策 / 服务条款）的独立页面。
+// doc ∈ {"privacy","terms"}；backURL 为「返回门户」链接（主引擎 "/p"、门户引擎 "/"）。
+func legalPageHandler(svc *portalSvc.Service, doc, backURL string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
+		body, status := svc.RenderLegalPage(c.Request.Context(), doc, c.Query("lang"), c.GetHeader("Accept-Language"), backURL)
+		if status != http.StatusOK {
+			c.Status(status)
+			return
+		}
+		for k, v := range portalSvc.SecurityHeaders() {
+			c.Header(k, v)
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(body))
+	}
+}
+
 func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, dataDir string, version string, listenPort ...string) *gin.Engine {
 	r := gin.New()
 
@@ -3179,6 +3198,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				portalActiveGroup.GET("/active", portalH.GetActive)
 				portalActiveGroup.PUT("/active", portalH.UpdateActive)
 				portalActiveGroup.POST("/reset", portalH.ResetToDefault)
+				// 内置语言包（供「文案」tab 缺失 key 检测 / 一键补齐）
+				portalActiveGroup.GET("/lang/builtin", portalH.GetBuiltinLang)
 				// Render cache management
 				portalActiveGroup.GET("/cache", portalH.CacheStatus)
 				portalActiveGroup.DELETE("/cache", portalH.CacheClear)
@@ -3205,6 +3226,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
+
+	// 合规文档独立页面（隐私政策 / 服务条款）：Google OAuth 验证 / 用户直接访问
+	// 支持 ?lang=xx；主面板域名下走 /p/legal/*（门户在 /p）。
+	r.GET("/p/legal/privacy", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "privacy", "/p"))
+	r.GET("/p/legal/terms", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "terms", "/p"))
 
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
@@ -3659,6 +3685,7 @@ func isSPARoute(path string) bool {
 		"/log-manage",
 		"/settings",
 		"/portal",
+		"/legal-documents",
 		"/charge",
 		"/tickets",
 		"/client-ext",
@@ -4010,6 +4037,10 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
 	})
+
+	// 合规文档独立页面（门户域名根路径部署）：隐私政策 / 服务条款
+	r.GET("/legal/privacy", legalPageHandler(portalTmplSvc, "privacy", "/"))
+	r.GET("/legal/terms", legalPageHandler(portalTmplSvc, "terms", "/"))
 
 	// Static files (qrcode.min.js etc.)
 	r.GET("/static/:file", func(c *gin.Context) {

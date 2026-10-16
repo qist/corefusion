@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -129,9 +130,9 @@ type UpdateInput struct {
 	// 合规文档链接 ✓（登录页展示 ✓；nil = 不修改 ✓）
 	PrivacyPolicyURL  *string `json:"privacy_policy_url"`
 	TermsOfServiceURL *string `json:"terms_of_service_url"`
-	// 合规文档内容 ✓（nil = 不修改 ✓；空串 = 清除 ✓）
-	PrivacyPolicyContent  *string `json:"privacy_policy_content"`
-	TermsOfServiceContent *string `json:"terms_of_service_content"`
+	// 合规文档内容 ✓（按语言 markdown：{"zh-CN":"...","en":"..."}；nil = 不修改 ✓）
+	PrivacyPolicyContent  *map[string]string `json:"privacy_policy_content"`
+	TermsOfServiceContent *map[string]string `json:"terms_of_service_content"`
 }
 
 // PortalSiteConfig is the response for the active portal site.
@@ -141,6 +142,12 @@ type PortalSiteConfig struct {
 	*entity.PortalTemplate
 	RegistrationEnabled bool   `json:"registration_enabled"`
 	PortalPort          string `json:"portal_port"`
+	// 门户对外地址 ✓（后台生成「合规文档独立页」/ 预览链接用：门户配置了域名用门户域名，
+	// 否则回退面板地址）：
+	//   PortalExternalURL = oauth.callback_domain（门户回调域名）> panel.external_url；均未配置为 ""（前端回退当前 origin）
+	//   PortalPagePath    = 门户在本域名下的挂载路径（独立门户端口为 ""，否则 "/p"）
+	PortalExternalURL string `json:"portal_external_url"`
+	PortalPagePath    string `json:"portal_page_path"`
 
 	// Structured fields parsed from the config JSON string.
 	// These are read-only in the response; to update them, use
@@ -161,9 +168,9 @@ type PortalSiteConfig struct {
 	// 合规文档链接 ✓（登录页展示 ✓；编辑器"基础设置"里配置 ✓）
 	PrivacyPolicyURL  string `json:"privacy_policy_url"`
 	TermsOfServiceURL string `json:"terms_of_service_url"`
-	// 合规文档内容 ✓（点击链接弹窗展示 ✓）
-	PrivacyPolicyContent  string `json:"privacy_policy_content"`
-	TermsOfServiceContent string `json:"terms_of_service_content"`
+	// 合规文档内容 ✓（按语言 markdown：{"zh-CN":"...","en":"..."}）
+	PrivacyPolicyContent  map[string]string `json:"privacy_policy_content"`
+	TermsOfServiceContent map[string]string `json:"terms_of_service_content"`
 }
 
 // parseConfigToSiteConfig parses the config JSON string and populates the
@@ -189,11 +196,6 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 		"privacy_policy_url":    &cfg.PrivacyPolicyURL,
 		"terms_of_service_url":  &cfg.TermsOfServiceURL,
 	}
-	// 合规文档内容 ✓（长文本单独解析 ✓，同 stringFields 口径 ✓）
-	contentFields := map[string]*string{
-		"privacy_policy_content":   &cfg.PrivacyPolicyContent,
-		"terms_of_service_content": &cfg.TermsOfServiceContent,
-	}
 	for key, ptr := range stringFields {
 		if v, ok := stored[key]; ok {
 			var s string
@@ -202,12 +204,15 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 			}
 		}
 	}
-	for key, ptr := range contentFields {
-		if v, ok := stored[key]; ok {
-			var s string
-			if json.Unmarshal(v, &s) == nil {
-				*ptr = s
-			}
+	// 合规文档内容 ✓（按语言 markdown：{"zh-CN":"...","en":"..."}）
+	if v, ok := stored["privacy_policy_content"]; ok {
+		if m := parseLegalContent(v); m != nil {
+			cfg.PrivacyPolicyContent = m
+		}
+	}
+	if v, ok := stored["terms_of_service_content"]; ok {
+		if m := parseLegalContent(v); m != nil {
+			cfg.TermsOfServiceContent = m
 		}
 	}
 	// Version
@@ -237,6 +242,24 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 	} else {
 		cfg.Regions = json.RawMessage(defaultRegionsJSON)
 	}
+}
+
+// parseLegalContent 解析合规文档内容（隐私政策 / 服务条款）。
+// 新格式：{"zh-CN":"...","en":"..."}；旧格式：单语言纯字符串。
+// 旧字符串归一到默认语言下，避免历史内容丢失。
+func parseLegalContent(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]string
+	if json.Unmarshal(raw, &m) == nil {
+		return m
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
+		return map[string]string{defaultLangCode: s}
+	}
+	return nil
 }
 
 // List returns all portal templates.
@@ -405,10 +428,45 @@ func (s *Service) GetActiveConfig(ctx context.Context) (*PortalSiteConfig, error
 		}
 	}
 
+	// 门户对外地址（供后台生成合规文档独立页 / 预览链接）：门户域名优先，未配置回退面板地址。
+	cfg.PortalExternalURL = s.resolvePortalExternalURL(ctx)
+	cfg.PortalPagePath = s.portalPagePath(ctx)
+
 	// Parse the config JSON string into structured fields
 	parseConfigToSiteConfig(tmpl.Config, cfg)
 
 	return cfg, nil
+}
+
+// resolvePortalExternalURL 返回门户对外基址（scheme + host，不含路径/查询）。
+// 优先级：oauth.callback_domain（门户回调域名）> panel.external_url；均未配置返回 ""。
+func (s *Service) resolvePortalExternalURL(ctx context.Context) string {
+	if s.settingSvc == nil {
+		return ""
+	}
+	if d, _ := s.settingSvc.GetByKey(ctx, "oauth.callback_domain"); strings.TrimSpace(d) != "" {
+		base := strings.TrimSpace(d)
+		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+			base = "https://" + base
+		}
+		return strings.TrimRight(base, "/")
+	}
+	if base, _ := s.settingSvc.GetByKey(ctx, "panel.external_url"); strings.TrimSpace(base) != "" {
+		return strings.TrimRight(strings.TrimSpace(base), "/")
+	}
+	return ""
+}
+
+// portalPagePath 返回门户页面在本域名下的挂载路径（"" 或 "/p"）。
+// 与 proxy portal_forward / 充值 return_url 的生成规则一致：
+// panel.portal_port 已配置（独立门户端口）→ 门户整域名挂在根路径 ""；否则共用主端口挂在 "/p"。
+func (s *Service) portalPagePath(ctx context.Context) string {
+	if s.settingSvc != nil {
+		if p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port"); p != "" && p != "0" {
+			return ""
+		}
+	}
+	return "/p"
 }
 
 // UpdateActiveConfig updates the currently active portal configuration.
@@ -606,9 +664,10 @@ type RenderConfig struct {
 	// 合规文档链接 ✓（Google OAuth 验证要求登录页展示隐私政策/服务条款链接 ✓；空 = 不显示 ✓）
 	PrivacyPolicyURL  string `json:"privacy_policy_url,omitempty"`
 	TermsOfServiceURL string `json:"terms_of_service_url,omitempty"`
-	// 合规文档**内容** ✓（登录卡片点击链接 → 弹窗展示 markdown 内容 ✓；URL 与内容二选一 ✓，URL 优先 ✓）
-	PrivacyPolicyContent  string `json:"privacy_policy_content,omitempty"`
-	TermsOfServiceContent string `json:"terms_of_service_content,omitempty"`
+	// 合规文档**内容** ✓（按语言 markdown：{"zh-CN":"...","en":"..."}；
+	// 登录卡片弹窗 + 独立页面 /legal/* 均使用 ✓；URL 与内容二选一 ✓，URL 优先 ✓）
+	PrivacyPolicyContent  map[string]string `json:"privacy_policy_content,omitempty"`
+	TermsOfServiceContent map[string]string `json:"terms_of_service_content,omitempty"`
 }
 
 // DefaultRenderConfig returns default render configuration.
@@ -621,8 +680,8 @@ func DefaultRenderConfig() RenderConfig {
 		TextColor:             "#303133",
 		AccentColor:           "#67c23a",
 		FontFamily:            "system-ui, -apple-system, sans-serif",
-		PrivacyPolicyContent:  defaultPrivacyPolicyContent,
-		TermsOfServiceContent: defaultTermsOfServiceContent,
+		PrivacyPolicyContent:  defaultLegalMap(defaultPrivacyPolicyContent, defaultPrivacyPolicyContentEN),
+		TermsOfServiceContent: defaultLegalMap(defaultTermsOfServiceContent, defaultTermsOfServiceContentEN),
 		PortalEditorVersion:   1,
 		Navigation:            json.RawMessage(defaultNavigationJSON),
 		Modules:               json.RawMessage(defaultModulesJSON),
@@ -765,15 +824,13 @@ func MergeConfig(tmpl *entity.PortalTemplate, registrationEnabled bool) RenderCo
 				}
 			}
 			if v, ok := stored["privacy_policy_content"]; ok {
-				var s string
-				if json.Unmarshal(v, &s) == nil {
-					cfg.PrivacyPolicyContent = s
+				if m := parseLegalContent(v); m != nil {
+					cfg.PrivacyPolicyContent = m
 				}
 			}
 			if v, ok := stored["terms_of_service_content"]; ok {
-				var s string
-				if json.Unmarshal(v, &s) == nil {
-					cfg.TermsOfServiceContent = s
+				if m := parseLegalContent(v); m != nil {
+					cfg.TermsOfServiceContent = m
 				}
 			}
 			// Pass through lang (i18n multi-language pack)

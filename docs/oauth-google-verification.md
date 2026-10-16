@@ -60,19 +60,25 @@ https://<门户访问域名>/api/v1/client-auth/oauth/google/callback
 
 ### 3.2 门户页上的隐私政策 / 服务条款链接
 
-登录卡片底部自带"隐私政策 · 服务条款"链接（配置后显示 ✓，与常规站点一致 ✓）。
+登录卡片底部自带"隐私政策 · 服务条款"链接（配置后显示 ✓），且两份文档都有**独立可访问页面**
+（登录卡片弹窗与独立页面共用同一份内容）：
+
+- 主面板域名：`https://<面板域名>/p/legal/privacy`、`/p/legal/terms`
+- 独立门户域名（根路径部署）：`https://<门户域名>/legal/privacy`、`/legal/terms`
+- 支持 `?lang=xx` 切换语言；不带参数时按浏览器 `Accept-Language`，再回退门户默认语言。
+- 页面为**服务端渲染**（不依赖 JS），便于 Google 验证抓取。
 
 **配置入口（二选一，链接优先）**：
 
 1. **内容方式（推荐，开箱即用）**：门户编辑器 → 设置 → 基础设置 → 合规文档 →
-   把 §4 模板文本粘进"隐私政策内容"/"服务条款内容"（Markdown）→
-   保存后登录卡片显示链接，点击**弹窗展示条款内容** ✓；
-2. **外链方式**：填"隐私政策链接"/"服务条款链接"（指向你托管的公共页面）→
-   点击新标签打开。
+   选择「编辑语言」后把 §4 模板文本粘进"隐私政策内容"/"服务条款内容"
+   （**Markdown，按语言分别编辑**）→ 保存后登录卡片显示链接，点击**弹窗展示**；
+   编辑器里的"独立访问链接"可直接填入 Google 同意屏幕。
+2. **外链方式**：填"隐私政策链接"/"服务条款链接"（指向你托管的公共页面）→ 点击新标签打开。
 
-两种方式都会经 `/api/v1/public/portal-config` 下发（`privacy_policy_content` /
-`terms_of_service_content` / `privacy_policy_url` / `terms_of_service_url`），
-无需改模板源码。**要求：未登录也能打开**（内容方式天然满足 ✓）。
+内容与链接经 `/api/v1/public/portal-config` 下发（`privacy_policy_content` /
+`terms_of_service_content` 为**按语言的 markdown 映射** `{"zh-CN":"...","en":"..."}`；
+`privacy_policy_url` / `terms_of_service_url` 为可选外链）。**要求：未登录也能打开** ✓。
 
 ### 3.3 面板侧开关
 

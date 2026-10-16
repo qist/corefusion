@@ -90,3 +90,19 @@ func TestBuiltInTemplateDefaults(t *testing.T) {
 		t.Fatalf("渲染产物中推广邀请模块未默认隐藏 ✗")
 	}
 }
+
+// 默认门户模板：订阅链接的「购买套餐」必须随「购买服务」导航开关联动。
+func TestDefaultPortalSubStoreActionGate(t *testing.T) {
+	if !strings.Contains(defaultModulesJSON, "visibleSubActions(mod.data.actions)") {
+		t.Error("默认门户订阅链接动作按钮应使用 visibleSubActions 过滤")
+	}
+	if !strings.Contains(defaultPortalJS, "var storeEnabled = computed(function() {") {
+		t.Error("默认门户 shell 应定义 storeEnabled")
+	}
+	if !strings.Contains(defaultPortalJS, "var visibleSubActions = function(") {
+		t.Error("默认门户 shell 应定义 visibleSubActions")
+	}
+	if !strings.Contains(defaultPortalJS, "storeEnabled: storeEnabled, visibleSubActions: visibleSubActions") {
+		t.Error("默认门户 shell 应在 ext 里透传 storeEnabled/visibleSubActions")
+	}
+}

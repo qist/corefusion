@@ -4129,6 +4129,100 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		subRepo, subEndpointRepo2, portalPublicSubH, database,
 	)
 
+	// ⚠ 门户前端直接 fetch 的 public 端点，独立门户引擎**也必须提供** ✗（此前只有主引擎注册 →
+	// 纯门户域名部署时 404 → 「更多订阅」弹窗/教程文章为空 ✗）。与主引擎同语义 ✓。
+	mihomoCfgRepoPortal := repository.NewMihomoConfigRepository(database)
+	subFmtRepoPortal := repository.NewSubscriptionFormatRepository(database)
+	r.GET("/api/v1/public/client-configs", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
+		planIDStr := c.Query("plan_id")
+		var planID int64
+		if planIDStr != "" {
+			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
+		}
+
+		configs, err := mihomoCfgRepoPortal.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var cfgItems []gin.H
+		for _, cfg := range configs {
+			if !cfg.Enabled {
+				continue
+			}
+			var planIDs []int64
+			if cfg.PlanIDs != nil && len(cfg.PlanIDs) > 0 {
+				planIDs = []int64(cfg.PlanIDs)
+			}
+			if len(planIDs) > 0 && !containsInt64(planIDs, planID) {
+				continue
+			}
+			cfgItems = append(cfgItems, gin.H{
+				"id":          cfg.ID,
+				"name":        cfg.Name,
+				"description": cfg.Description,
+				"format":      cfg.Format,
+				"client_type": cfg.ClientType,
+				"platform":    cfg.Platform,
+				"sort_order":  cfg.SortOrder,
+				"plan_ids":    planIDs,
+				"type":        "config",
+			})
+		}
+
+		formats, err := subFmtRepoPortal.List(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "LIST_FAILED", err.Error())
+			return
+		}
+		var fmtItems []gin.H
+		for _, fmt := range formats {
+			if !fmt.Enabled {
+				continue
+			}
+			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
+				continue
+			}
+			fmtItems = append(fmtItems, gin.H{
+				"id":          fmt.ID,
+				"name":        fmt.Name,
+				"description": fmt.Description,
+				"format":      fmt.Format,
+				"client_type": fmt.ClientType,
+				"platform":    "",
+				"sort_order":  fmt.SortOrder,
+				"plan_ids":    fmt.PlanIDs,
+				"type":        "format",
+			})
+		}
+
+		allItems := append(cfgItems, fmtItems...)
+		if allItems == nil {
+			allItems = []gin.H{}
+		}
+		response.OK(c, allItems)
+	})
+
+	// Public articles（门户教程 / 文章；门户域名下缺此路由 → 列表为空 ✗）
+	r.GET("/api/v1/public/articles", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), clientExtH.PublicListArticles)
+	r.GET("/api/v1/public/articles/:slug", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), clientExtH.PublicGetArticle)
+
+	// Public settings（门户运行时用：注册开关 / 客服配置 / 最新门户配置）
+	r.GET("/api/v1/public/settings", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
+		registrationEnabled, _ := systemSettingSvc.GetByKey(c.Request.Context(), "panel.registration_enabled")
+		chatProvider, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.provider")
+		chatSiteID, _ := systemSettingSvc.GetByKey(c.Request.Context(), "chat.site_id")
+		result := gin.H{
+			"registration_enabled": registrationEnabled == "true",
+			"chat_provider":        chatProvider,
+			"chat_site_id":         chatSiteID,
+		}
+		if cfg, err := portalTmplSvc.GetActiveConfig(c.Request.Context()); err == nil && cfg != nil {
+			result["portal_config"] = cfg
+		}
+		response.OK(c, result)
+	})
+
 	// Client auth (protected) — guarded by maintenance mode
 	clientAuthProtected := r.Group("/api/v1/client-auth")
 	clientAuthProtected.Use(middleware.MaintenanceGuard())

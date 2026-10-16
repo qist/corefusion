@@ -10,9 +10,9 @@
         </div>
         <el-table v-if="!isMobile" :data="sites" v-loading="sitesLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" :label="t('common.name')" width="150" />
-          <el-table-column prop="site_url" :label="t('charge.siteUrl')" show-overflow-tooltip />
-          <el-table-column :label="t('charge.paymentMethods')" width="200">
+          <el-table-column prop="name" :label="t('common.name')" width="180" show-overflow-tooltip />
+          <el-table-column prop="site_url" :label="t('charge.siteUrl')" min-width="220" show-overflow-tooltip />
+          <el-table-column :label="t('charge.paymentMethods')" width="180">
             <template #default="{row}">
               <template v-if="parseMethods(row.supported_methods).length">
                 <el-tag v-for="m in parseMethods(row.supported_methods)" :key="m" size="small" style="margin:2px">{{ m }}</el-tag>
@@ -32,9 +32,9 @@
           </el-table-column>
           <el-table-column prop="currency" :label="t('charge.currency')" width="70" />
           <el-table-column prop="sort_order" :label="t('charge.sortOrder')" width="60" />
-          <el-table-column :label="t('common.actions')" width="350">
+          <el-table-column :label="t('common.actions')" width="400" fixed="right">
             <template #default="{row}">
-              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <div class="tbl-actions" style="display:flex;gap:4px;align-items:center;white-space:nowrap">
                 <el-button size="small" @click="showEditSite(row)">{{ t('common.edit') }}</el-button>
                 <el-button size="small" type="primary" @click="showVerifyDialog(row)">{{ t('charge.verify') }}</el-button>
                 <el-button size="small" type="warning" @click="rotateSiteSecret(row)">{{ t('charge.rotateSecret') }}</el-button>
@@ -104,9 +104,9 @@
           <el-table-column :label="t('charge.paidAt')" width="160">
             <template #default="{row}">{{ row.paid_at?.substring(0,16).replace('T',' ') || '—' }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="140">
+          <el-table-column :label="t('common.actions')" width="140" fixed="right">
             <template #default="{row}">
-              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <div class="tbl-actions" style="display:flex;gap:4px;align-items:center;white-space:nowrap">
                 <el-button size="small" @click="showOrderDetail(row)">{{ t('charge.detail') }}</el-button>
                 <el-button size="small" type="danger" @click="refundOrder(row)" v-if="row.status==='paid'">{{ t('charge.refund') }}</el-button>
               </div>
@@ -196,9 +196,9 @@
           <el-table-column :label="t('charge.expiresAt')" width="160">
             <template #default="{row}">{{ row.expires_at?.substring(0,10) || t('charge.neverExpires') }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="150">
+          <el-table-column :label="t('common.actions')" width="150" fixed="right">
             <template #default="{row}">
-              <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+              <div class="tbl-actions" style="display:flex;gap:4px;align-items:center;white-space:nowrap">
                 <el-button size="small" @click="showCardUsages(row)">{{ t('charge.usageRecord') }}</el-button>
                 <el-button size="small" type="danger" @click="deleteCard(row)">{{ t('common.delete') }}</el-button>
               </div>
@@ -233,7 +233,7 @@
           <el-table-column :label="t('currency.frozen')" width="140">
             <template #default="{row}">{{ formatAmount(row.frozen, row.currency || 'CNY') }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="100">
+          <el-table-column :label="t('common.actions')" width="100" fixed="right">
             <template #default="{row}">
               <el-button size="small" @click="showTransactions(row)">{{ t('charge.transactions') }}</el-button>
             </template>
@@ -1386,4 +1386,6 @@ onMounted(async () => {
 
 <style scoped>
 .el-divider { margin: 12px 0; }
+/* 操作列按钮：去掉 Element Plus 默认的 12px 兄弟外边距，改用 gap 控制，避免按钮被单元格裁切（如「删除」被遮挡） */
+.tbl-actions :deep(.el-button + .el-button) { margin-left: 0; }
 </style>

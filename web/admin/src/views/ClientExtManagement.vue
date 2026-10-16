@@ -360,27 +360,29 @@
         </div>
         <el-table v-if="!isMobile" :data="sharedAccounts" v-loading="sharedAccountsLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="60" />
-          <el-table-column prop="name" :label="t('clientExt.name')" min-width="150" />
-          <el-table-column :label="t('clientExt.type')" width="100">
+          <el-table-column prop="name" :label="t('clientExt.name')" min-width="180" show-overflow-tooltip />
+          <el-table-column :label="t('clientExt.type')" min-width="100">
             <template #default="{row}">
               <el-tag size="small">{{ sharedAccountTypeLabel(row.type) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('clientExt.minPlan')" width="120">
+          <el-table-column :label="t('clientExt.minPlan')" min-width="120">
             <template #default="{row}">{{ planTemplateNameById(row.min_plan_category) }}</template>
           </el-table-column>
-          <el-table-column prop="repair_cooldown" :label="t('clientExt.repairCooldown')" width="120" />
-          <el-table-column :label="t('clientExt.status')" width="80">
+          <el-table-column prop="repair_cooldown" :label="t('clientExt.repairCooldown')" min-width="130" />
+          <el-table-column :label="t('clientExt.status')" min-width="90">
             <template #default="{row}">
               <el-tag :type="row.enabled?'success':'danger'" size="small">{{ row.enabled?t('clientExt.enabled'):t('clientExt.disabled') }}</el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="sort_order" :label="t('clientExt.sortOrder')" width="60" />
-          <el-table-column :label="t('common.action')" width="200">
+          <el-table-column :label="t('common.action')" width="230">
             <template #default="{row}">
-              <el-button size="small" @click="showEditSharedAccount(row)">{{ t('common.edit') }}</el-button>
-              <el-button size="small" @click="viewRepairLogs(row)">{{ t('clientExt.repairLogs') }}</el-button>
-              <el-button size="small" type="danger" @click="deleteSharedAccount(row)">{{ t('common.delete') }}</el-button>
+              <div class="tbl-actions">
+                <el-button size="small" @click="showEditSharedAccount(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" @click="viewRepairLogs(row)">{{ t('clientExt.repairLogs') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteSharedAccount(row)">{{ t('common.delete') }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -957,3 +959,9 @@ const oauthCardFields = computed(() => [
 
 onMounted(() => { fetchReferralConfig(); fetchReferralStats(); fetchReferralRecords(); fetchWithdrawals(); fetchGifts(); fetchArticles(); fetchSharedAccounts(); fetchIPWhitelists(); fetchOAuthBindings(); fetchPlanTemplates() })
 </script>
+
+<style scoped>
+/* 操作列按钮：去掉 Element Plus 默认的 12px 兄弟外边距，改用 gap 控制，避免按钮换行挤成一坨 */
+.tbl-actions { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.tbl-actions :deep(.el-button + .el-button) { margin-left: 0; }
+</style>

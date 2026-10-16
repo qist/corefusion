@@ -2524,19 +2524,38 @@ func (m *Manager) ReloadProxy(ctx context.Context, proxyType ProxyType) error {
 			return nil
 		}
 		binPath := info.Path
-		if strings.HasPrefix(binPath, m.dataDir) {
+		configPath := m.GetConfigPath(proxyType) // 面板托管：相对 dataDir 的 proxy/nginx.conf ✓
+		cmdDir := m.dataDir
+		// ⚠ 节点上跑的可能是**外部 nginx**（非面板托管）✗：它的配置文件不在 dataDir/proxy 下，
+		// 例如系统自带 `/apps/nginx/sbin/nginx -c /etc/nginx/nginx.conf` ✓。
+		// 这时拿面板托管的 proxy/nginx.conf 去测只会报"配置文件不存在"✗，任务直接失败 ✓。
+		// 因此优先采用**运行中 nginx 自己的**二进制与配置文件 ✓（真机踩到过 ✓）。
+		if rbin, rconf, rcwd := detectRunningNginx(); rbin != "" {
+			binPath = rbin
+			if rcwd != "" {
+				cmdDir = rcwd
+			}
+			// 运行中的 nginx 带 `-c` 就用它的配置文件 ✓；没带（用编译默认配置启动）则取
+			// `nginx -V` 里的 `--conf-path=` ✓。二者都拿不到时才回退面板托管路径 ✓。
+			if rconf != "" {
+				configPath = rconf
+			} else if compiled := nginxCompiledConfPath(rbin); compiled != "" {
+				configPath = compiled
+			}
+			log.Printf("proxy nginx: reloading running nginx (bin=%s) with config %s", binPath, configPath)
+		} else if strings.HasPrefix(binPath, m.dataDir) {
+			// 找不到运行中的 nginx（异常）→ 沿用托管口径：二进制按 dataDir 相对路径执行 ✓
 			binPath, _ = filepath.Rel(m.dataDir, binPath)
 		}
-		configPath := m.GetConfigPath(proxyType)
 		// Test config
 		testCmd := exec.Command(binPath, "-t", "-c", configPath)
-		testCmd.Dir = m.dataDir
+		testCmd.Dir = cmdDir
 		if out, err := testCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("nginx config test failed: %s", strings.TrimSpace(string(out)))
 		}
 		// Reload with config file
 		reloadCmd := exec.Command(binPath, "-c", configPath, "-s", "reload")
-		reloadCmd.Dir = m.dataDir
+		reloadCmd.Dir = cmdDir
 		return reloadCmd.Run()
 	case ProxyCaddy:
 		// Caddy supports in-process hot config reload via "caddy reload" command.

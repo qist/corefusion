@@ -232,8 +232,8 @@
         <!-- Account Info Properties -->
         <template v-if="ed.selectedModule.type === 'account_info'">
           <el-form-item :label="t('portal.columns')"><el-input-number v-model="ed.selectedModule.data.columns" :min="1" :max="2" /></el-form-item>
-          <el-form-item :label="t('portal.showBalanceRow')"><el-switch v-model="ed.selectedModule.data.show_balance" /></el-form-item>
-          <el-form-item :label="t('portal.showChargeBtn')"><el-switch v-model="ed.selectedModule.data.show_charge_btn" /></el-form-item>
+          <el-form-item :label="t('portal.showBalanceRow')"><el-switch v-model="ed.selectedModule.data.show_balance" @change="ed.onCodeChange" /></el-form-item>
+          <el-form-item :label="t('portal.showChargeBtn')"><el-switch v-model="ed.selectedModule.data.show_charge_btn" @change="ed.onCodeChange" /></el-form-item>
         </template>
 
         <!-- Order Create Properties -->

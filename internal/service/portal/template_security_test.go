@@ -212,42 +212,32 @@ func accountModuleOf(t *testing.T, configStr string) (html string, showChargeBtn
 }
 
 const (
+	// 历史版本仍直接遍历 portalNavItems（无需改动，本来就全显示）
 	sampleNavHTML = `<div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)"></div>
 <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)"></div>`
 	sampleNavJS = `    var portalNavItems = ref([])
-      var fetchChargeSites = function() {
-        api('GET', '/charge/sites').then(function(res) {
-        chargeSites.value = Array.isArray(res) ? res : []
-      }).catch(function() {})
-      }
-        if (initHasPlanList || initHasCharge) fetchChargeSites()
-      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
+    // 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航（无数据、无意义）
+    var chargeSitesLoaded = ref(false)
+    var navItems = computed(function() {
+      var items = portalNavItems.value
+      if (!chargeSitesLoaded.value || chargeSites.value.length > 0) return items
+      return items.filter(function(n) { return n.target !== 'store' && n.target !== 'billing' })
+    })
+      currentModules: currentModules, portalNavItems: portalNavItems, navItems: navItems, onNavClick: onNavClick,
 `
 )
 
-// 存量模板必须迁移为「无可用充值接口时隐藏购买服务/我的账单导航」。
+// 存量模板里「按充值站点过滤导航」的历史写法应升级为透传（购买服务/我的账单 始终显示）。
 func TestPatchChargeNavMenu(t *testing.T) {
 	h2, j2, changed := PatchChargeNavMenu(sampleNavHTML, sampleNavJS)
 	if !changed {
-		t.Fatal("含旧导航写法的模板应被判定为需要修改")
+		t.Fatal("含历史「过滤导航」写法的模板应被判定为需要修改")
 	}
-	if strings.Contains(h2, "nav in portalNavItems") {
-		t.Error("导航不应再直接遍历 portalNavItems")
+	if strings.Contains(j2, "chargeSites.value.length > 0") {
+		t.Error("导航不应再按充值站点过滤")
 	}
-	if strings.Count(h2, "nav in navItems") != 2 {
-		t.Error("侧边栏 + 底部导航都应改为 navItems")
-	}
-	if !strings.Contains(j2, navItemsPresence) {
-		t.Error("应插入 navItems 过滤 computed")
-	}
-	if !strings.Contains(j2, chargeSitesLoadedFlag) {
-		t.Error("fetchChargeSites 成功后应标记 chargeSitesLoaded")
-	}
-	if !strings.Contains(j2, newNavInitFetch) {
-		t.Error("进入门户应无条件拉取充值站点（导航过滤依赖）")
-	}
-	if !strings.Contains(j2, "navItems: navItems") {
-		t.Error("setup return 应透传 navItems")
+	if !strings.Contains(j2, newNavItemsPassthrough) {
+		t.Error("导航 computed 应升级为透传 portalNavItems")
 	}
 
 	// 幂等：再跑一次不应再改
@@ -260,15 +250,164 @@ func TestPatchChargeNavMenu(t *testing.T) {
 	}
 }
 
-// 默认模板（新装/重置时种子进库的那份）也必须自带导航过滤。
-func TestDefaultPortalHasChargeNavGate(t *testing.T) {
+// 存量门户导航「购买服务 / 我的账单」必须默认关闭（与 nav.logs 一致）。
+func TestPatchNavDefaultsOff(t *testing.T) {
+	const sample = `{"navigation":[{"id":"nav-services","label":"nav.store","enabled":true},{"id":"nav-billing","label":"nav.billing","enabled":true},{"id":"nav-home","label":"nav.home","enabled":true}]}`
+	out, changed := PatchNavDefaultsOff(sample)
+	if !changed {
+		t.Fatal("购买服务/我的账单 enabled=true 应被判定为需要修改")
+	}
+	if !strings.Contains(out, `"id":"nav-services"`) || !strings.Contains(out, `"id":"nav-billing"`) {
+		t.Error("导航项应保留")
+	}
+	// 两项都应为 false，nav-home 仍为 true
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &cfg); err != nil {
+		t.Fatalf("输出 JSON 非法: %v", err)
+	}
+	for _, ni := range cfg["navigation"].([]interface{}) {
+		nav := ni.(map[string]interface{})
+		enabled := nav["enabled"].(bool)
+		switch nav["id"] {
+		case "nav-services", "nav-billing":
+			if enabled {
+				t.Errorf("%v 应默认关闭", nav["id"])
+			}
+		case "nav-home":
+			if !enabled {
+				t.Error("nav-home 不应被改动")
+			}
+		}
+	}
+	// 幂等：再跑一次不应再改
+	out2, changed2 := PatchNavDefaultsOff(out)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if out2 != out {
+		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 订阅链接「购买套餐」必须随「购买服务」导航关闭而隐藏。
+func TestPatchSubStoreActionConfig(t *testing.T) {
+	const sample = `{"modules":[{"id":"mod-sub","type":"subscription_detail","data":{"html":"<el-button v-for=\"action in mod.data.actions\" :key=\"action.target\">x</el-button>"}},{"id":"mod-other","type":"hero","data":{"html":"v-for=\"action in mod.data.actions\""}}]}`
+	out, changed := PatchSubStoreActionConfig(sample)
+	if !changed {
+		t.Fatal("订阅链接旧 v-for 源应被判定为需要修改")
+	}
+	if !strings.Contains(out, "visibleSubActions(mod.data.actions)") {
+		t.Error("订阅链接 v-for 源应升级为 visibleSubActions")
+	}
+	// 只改 subscription_detail，不动其它模块
+	if strings.Count(out, "visibleSubActions(mod.data.actions)") != 1 {
+		t.Error("只应改写 subscription_detail 模块")
+	}
+	// 幂等
+	out2, changed2 := PatchSubStoreActionConfig(out)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if out2 != out {
+		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 存量门户 shell 必须补 storeEnabled/visibleSubActions（含 ext 透传）。
+func TestPatchSubStoreActionJS(t *testing.T) {
+	const sampleJS = `    var portalModules = ref([])
+    var portalNavItems = ref([])
+    var navItems = computed(function() { return portalNavItems.value })
+              var ext = {
+                refreshing: refreshing,
+              }
+`
+	h2, j2, changed := PatchSubStoreActionJS("", sampleJS)
+	if !changed {
+		t.Fatal("缺少 storeEnabled 的存量 shell 应被判定为需要修改")
+	}
+	if !strings.Contains(j2, subStoreActionJSPresence) {
+		t.Error("应补 visibleSubActions（含 storeEnabled）")
+	}
+	if !strings.Contains(j2, "storeEnabled: storeEnabled") {
+		t.Error("应在 ext 里透传 storeEnabled/visibleSubActions")
+	}
+	// 幂等
+	h3, j3, changed2 := PatchSubStoreActionJS(h2, j2)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if h3 != h2 || j3 != j2 {
+		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 默认门户模板的导航必须始终显示（不按充值站点过滤）。
+func TestDefaultPortalNavAlwaysVisible(t *testing.T) {
 	if !strings.Contains(defaultPortalHTML, `v-for="nav in navItems"`) {
-		t.Error("默认门户 HTML 导航应使用按充值可用性过滤的 navItems")
+		t.Error("默认门户 HTML 导航应使用 navItems")
 	}
-	if strings.Contains(defaultPortalHTML, `v-for="nav in portalNavItems"`) {
-		t.Error("默认门户 HTML 不应再直接遍历 portalNavItems")
+	if !strings.Contains(defaultPortalJS, newNavItemsPassthrough) {
+		t.Error("默认门户 JS 的 navItems 应为透传（不按充值站点过滤）")
 	}
-	if !strings.Contains(defaultPortalJS, navItemsPresence) {
-		t.Error("默认门户 JS 应内置 navItems 过滤 computed")
+	if strings.Contains(defaultPortalJS, "chargeSitesLoaded") {
+		t.Error("默认门户 JS 不应再有 chargeSitesLoaded 导航过滤逻辑")
+	}
+}
+
+// 存量门户 hero 的「管理您的订阅与服务」按钮必须补「充值/余额」联动条件。
+func TestPatchHeroButtonConfig(t *testing.T) {
+	const sample = `{"modules":[{"id":"mod-hero","type":"hero","data":{"button_text":"hero.manage_sub","button_target":"store","html":"<button v-if=\"mod.data && mod.data.button_text && mod.data.button_target !== 'overview'\" class=\"hero-btn\">x</button>"}}]}`
+	out, changed := PatchHeroButtonConfig(sample)
+	if !changed {
+		t.Fatal("hero 旧条件应被判定为需要修改")
+	}
+	if !strings.Contains(out, "chargeUiEnabled") {
+		t.Error("hero 按钮条件应补 chargeUiEnabled")
+	}
+	// 幂等：再跑一次不应再改
+	out2, changed2 := PatchHeroButtonConfig(out)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if out2 != out {
+		t.Error("第二次调用不应改动内容")
+	}
+}
+
+// 默认门户模板的 hero 按钮必须带 chargeUiEnabled 联动条件。
+func TestDefaultPortalHeroHasChargeGate(t *testing.T) {
+	if !strings.Contains(defaultModulesJSON, "chargeUiEnabled") {
+		t.Error("默认门户 hero 按钮应带 chargeUiEnabled 联动条件")
+	}
+}
+
+// 存量门户 shell 必须补 chargeUiEnabled（computed + ext 透传），否则 hero 按钮恒隐藏。
+func TestPatchChargeUiEnabled(t *testing.T) {
+	const sampleJS = `    var portalModules = ref([])
+    var portalNavItems = ref([])
+    var navItems = computed(function() { return portalNavItems.value })
+              var ext = {
+                refreshing: refreshing, rotating: rotating,
+              }
+`
+	h2, j2, changed := PatchChargeUiEnabled("", sampleJS)
+	if !changed {
+		t.Fatal("缺少 chargeUiEnabled 的存量 shell 应被判定为需要修改")
+	}
+	if !strings.Contains(j2, chargeUiPresence) {
+		t.Error("应补 chargeUiEnabled computed")
+	}
+	if !strings.Contains(j2, "chargeUiEnabled: chargeUiEnabled") {
+		t.Error("应在 ext 里透传 chargeUiEnabled（模块作用域可见）")
+	}
+
+	// 幂等：再跑一次不应再改
+	h3, j3, changed2 := PatchChargeUiEnabled(h2, j2)
+	if changed2 {
+		t.Error("第二次调用不应再判定为需要修改")
+	}
+	if h3 != h2 || j3 != j2 {
+		t.Error("第二次调用不应改动内容")
 	}
 }

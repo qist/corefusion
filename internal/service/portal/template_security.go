@@ -306,69 +306,246 @@ func PatchChargeButtonConfig(configStr string) (string, bool) {
 	return string(out), true
 }
 
-// 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航 —— 存量模板同样需要迁移
-// （门户模板存库 → 只改默认模板到不了已部署门户 ✗）。做法：导航渲染从 portalNavItems 改为按
-// chargeSites 过滤的 navItems computed，并补齐 chargeSitesLoaded / fetchChargeSites / return。
-// 每处独立判定、独立幂等 ✓（片段里**不能出现反引号**）。
+// 存量门户 hero 模块的「管理您的订阅与服务」按钮补「充值/余额」联动条件：
+// 账户模块「显示余额行」或「显示充值按钮」任一关闭 → 按钮隐藏 ✓。
+// 幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
 const (
-	oldNavSidebar = `v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item'`
-	newNavSidebar = `v-for="nav in navItems" :key="nav.id" :class="'sidebar-item'`
-	oldNavBottom  = `v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item'`
-	newNavBottom  = `v-for="nav in navItems" :key="nav.id" :class="'nav-item'`
+	oldHeroBtnCond = `v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview'"`
+	newHeroBtnCond = `v-if="mod.data && mod.data.button_text && mod.data.button_target !== 'overview' && chargeUiEnabled"`
+)
 
-	navItemsAnchor   = `    var portalNavItems = ref([])`
+// PatchHeroButtonConfig 对模板 config JSON 里的 hero 模块打「充值/余额联动」补丁
+// （只改按钮 v-if 条件，其它内容一字不动）；幂等：命中过 / 无 hero 时原样返回 ✓。
+func PatchHeroButtonConfig(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	modules, ok := cfg["modules"].([]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	for _, mi := range modules {
+		mod, ok := mi.(map[string]interface{})
+		if !ok || mod["type"] != "hero" {
+			continue
+		}
+		data, ok := mod["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		html, ok := data["html"].(string)
+		if !ok || strings.Contains(html, "chargeUiEnabled") || !strings.Contains(html, oldHeroBtnCond) {
+			continue
+		}
+		data["html"] = strings.Replace(html, oldHeroBtnCond, newHeroBtnCond, 1)
+		changed = true
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
+// 导航「购买服务 / 我的账单」**始终展示**（余额 / 充值卡仍可下单）；无可用充值站点时只隐藏
+// 「在线支付」方式，不隐藏导航。历史版本曾按充值站点可用性过滤导航 → 刷新时会一闪而过，
+// 这里把已迁移模板的导航 computed 升级回**透传**（幂等 ✓；片段里**不能出现反引号**）。
+const (
 	navItemsPresence = `var navItems = computed(function() {`
-	navItemsSnippet  = `    var portalNavItems = ref([])
-    // 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航（无数据、无意义）
-    var chargeSitesLoaded = ref(false)
-    var navItems = computed(function() {
+	// 历史版本：按充值站点可用性过滤导航（会导致刷新闪烁）
+	oldNavItemsFilter = `var navItems = computed(function() {
       var items = portalNavItems.value
       if (!chargeSitesLoaded.value || chargeSites.value.length > 0) return items
       return items.filter(function(n) { return n.target !== 'store' && n.target !== 'billing' })
     })`
-
-	oldChargeSitesFetch = `        chargeSites.value = Array.isArray(res) ? res : []`
-	newChargeSitesFetch = `        chargeSites.value = Array.isArray(res) ? res : []
-        chargeSitesLoaded.value = true`
-	chargeSitesLoadedFlag = `chargeSitesLoaded.value = true`
-	oldNavInitFetch       = `        if (initHasPlanList || initHasCharge) fetchChargeSites()`
-	newNavInitFetch       = `        fetchChargeSites()`
-	oldNavReturn          = `      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,`
-	newNavReturn          = `      currentModules: currentModules, portalNavItems: portalNavItems, navItems: navItems, onNavClick: onNavClick,`
+	// 升级后：透传全部导航（始终显示购买服务 / 我的账单）
+	newNavItemsPassthrough = `var navItems = computed(function() {
+      return portalNavItems.value
+    })`
 )
 
-// PatchChargeNavMenu 对存量门户模板打「无可用充值接口时隐藏购买服务/我的账单导航」补丁。
+// PatchChargeNavMenu 对存量门户模板打「导航始终显示」补丁：把历史版本「按充值站点过滤
+// 购买服务/我的账单」的导航 computed 升级回透传，避免刷新时导航一闪而过。
 // 幂等：命中过 / 已是新版时原样返回 ✓。
 func PatchChargeNavMenu(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
 	newHTML, newJS = htmlContent, jsContent
 
-	if strings.Contains(newHTML, oldNavSidebar) {
-		newHTML = strings.Replace(newHTML, oldNavSidebar, newNavSidebar, 1)
-		changed = true
-	}
-	if strings.Contains(newHTML, oldNavBottom) {
-		newHTML = strings.Replace(newHTML, oldNavBottom, newNavBottom, 1)
+	if strings.Contains(newJS, oldNavItemsFilter) {
+		newJS = strings.Replace(newJS, oldNavItemsFilter, newNavItemsPassthrough, 1)
 		changed = true
 	}
 
-	// navItems computed + chargeSitesLoaded 声明
-	if strings.Contains(newJS, navItemsAnchor) && !strings.Contains(newJS, navItemsPresence) {
-		newJS = strings.Replace(newJS, navItemsAnchor, navItemsSnippet, 1)
+	return newHTML, newJS, changed
+}
+
+// 存量门户导航「购买服务(nav.store) / 我的账单(nav.billing)」默认关闭（与 nav.logs 一致）：
+// 门户导航存在模板 config 里（数据库）→ 只改默认模板到不了已部署门户 ✗。这里把这两项
+// enabled 置为 false（管理员仍可在编辑器里手动打开 ✓）。幂等：已是 false / 不存在时原样返回 ✓。
+var defaultOffNavIDs = map[string]bool{
+	"nav-services": true,
+	"nav-billing":  true,
+}
+
+// PatchNavDefaultsOff 对模板 config JSON 里的导航打「购买服务 / 我的账单默认关闭」补丁。
+// 幂等：命中过的第二次调用返回 changed=false ✓。
+func PatchNavDefaultsOff(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	navigation, ok := cfg["navigation"].([]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	for _, ni := range navigation {
+		nav, ok := ni.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id, _ := nav["id"].(string)
+		if !defaultOffNavIDs[id] {
+			continue
+		}
+		if enabled, ok := nav["enabled"].(bool); !ok || enabled {
+			nav["enabled"] = false
+			changed = true
+		}
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
+// 订阅链接（subscription_detail）里的「购买套餐」(target=store) 在「购买服务」导航关闭时
+// 不应显示 —— 与导航开关联动 ✓。存量模板的模块 HTML 仍是 v-for="action in mod.data.actions"，
+// 这里升级为 visibleSubActions(mod.data.actions)（购买服务关闭时剔除 store 动作）。
+// 幂等：命中过 / 无 subscription_detail 时原样返回 ✓。
+const (
+	oldSubActionsLoop = `v-for="action in mod.data.actions"`
+	newSubActionsLoop = `v-for="action in visibleSubActions(mod.data.actions)"`
+
+	subStoreActionJSPresence = `var visibleSubActions = function(`
+	subStoreActionJSSnippet  = `    var portalNavItems = ref([])
+    // 「购买服务」导航（target=store）是否启用：关闭时订阅链接里的「购买套餐」入口不应显示。
+    var storeEnabled = computed(function() {
+      var navs = (typeof PORTAL_CONFIG !== 'undefined' && Array.isArray(PORTAL_CONFIG.navigation)) ? PORTAL_CONFIG.navigation : []
+      for (var i = 0; i < navs.length; i++) {
+        if (navs[i] && navs[i].target === 'store') return navs[i].enabled !== false
+      }
+      return true
+    })
+    var visibleSubActions = function(actions) {
+      if (!Array.isArray(actions)) return actions
+      if (storeEnabled.value) return actions
+      return actions.filter(function(a) { return !(a && a.target === 'store') })
+    }`
+	subStoreActionExtExposed = `var ext = {
+                storeEnabled: storeEnabled, visibleSubActions: visibleSubActions,`
+)
+
+// PatchSubStoreActionConfig 对模板 config JSON 里的 subscription_detail 模块打
+// 「购买套餐随购买服务关闭而隐藏」补丁（只改动作按钮的 v-for 源）。幂等 ✓。
+func PatchSubStoreActionConfig(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	modules, ok := cfg["modules"].([]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	for _, mi := range modules {
+		mod, ok := mi.(map[string]interface{})
+		if !ok || mod["type"] != "subscription_detail" {
+			continue
+		}
+		data, ok := mod["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if html, ok := data["html"].(string); ok && strings.Contains(html, oldSubActionsLoop) {
+			data["html"] = strings.Replace(html, oldSubActionsLoop, newSubActionsLoop, 1)
+			changed = true
+		}
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
+// PatchSubStoreActionJS 给存量门户 shell 补 storeEnabled computed + visibleSubActions 函数，
+// 并透传到模块作用域（ext）。幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
+func PatchSubStoreActionJS(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+	if !strings.Contains(newJS, subStoreActionJSPresence) && strings.Contains(newJS, chargeUiAnchor) {
+		newJS = strings.Replace(newJS, chargeUiAnchor, subStoreActionJSSnippet, 1)
 		changed = true
 	}
-	// fetchChargeSites 成功后标记已加载
-	if strings.Contains(newJS, oldChargeSitesFetch) && !strings.Contains(newJS, chargeSitesLoadedFlag) {
-		newJS = strings.Replace(newJS, oldChargeSitesFetch, newChargeSitesFetch, 1)
+	if !strings.Contains(newJS, "storeEnabled: storeEnabled") && strings.Contains(newJS, chargeUiExtAnchor) {
+		newJS = strings.Replace(newJS, chargeUiExtAnchor, subStoreActionExtExposed, 1)
 		changed = true
 	}
-	// 进入门户即拉取充值站点（导航过滤依赖它）
-	if strings.Contains(newJS, oldNavInitFetch) {
-		newJS = strings.Replace(newJS, oldNavInitFetch, newNavInitFetch, 1)
+	return newHTML, newJS, changed
+}
+
+// 存量门户 shell 缺少 chargeUiEnabled computed：hero「管理您的订阅与服务」按钮的 v-if 引用了它，
+// 未定义时恒为 falsy → 按钮恒隐藏 ✗（真机踩过 ✓）。这里给存量 shell 补上 computed，并透传到
+// 模块作用域（ext 自动合并）——与默认模板同一机制 ✓（片段里**不能出现反引号**）。
+const (
+	chargeUiAnchor   = `    var portalNavItems = ref([])`
+	chargeUiPresence = `var chargeUiEnabled = computed(function() {`
+	chargeUiSnippet  = `    var portalNavItems = ref([])
+    // 充值/余额 UI 开关：账户模块「显示余额行」或「显示充值按钮」任一关闭即视为关闭（hero 联动）
+    var chargeUiEnabled = computed(function() {
+      var acct = null
+      for (var i = 0; i < portalModules.value.length; i++) {
+        if (portalModules.value[i].type === 'account_info') { acct = portalModules.value[i]; break }
+      }
+      if (!acct || !acct.data) return true
+      return !(acct.data.show_balance === false || acct.data.show_charge_btn === false)
+    })`
+	chargeUiExtAnchor  = `var ext = {`
+	chargeUiExtExposed = `var ext = {
+                chargeUiEnabled: chargeUiEnabled,`
+)
+
+// PatchChargeUiEnabled 给存量门户 shell 补 chargeUiEnabled（computed + ext 透传），
+// 使 hero 按钮的充值/余额联动在存量模板上同样生效。幂等：命中过 / 已是新版时原样返回 ✓。
+func PatchChargeUiEnabled(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+
+	if !strings.Contains(newJS, chargeUiPresence) && strings.Contains(newJS, chargeUiAnchor) {
+		newJS = strings.Replace(newJS, chargeUiAnchor, chargeUiSnippet, 1)
 		changed = true
 	}
-	// setup return 透传 navItems（旧片段是新片段前缀 → 必须同时查新片段防重复 ✓）
-	if strings.Contains(newJS, oldNavReturn) && !strings.Contains(newJS, newNavReturn) {
-		newJS = strings.Replace(newJS, oldNavReturn, newNavReturn, 1)
+	if !strings.Contains(newJS, "chargeUiEnabled: chargeUiEnabled") && strings.Contains(newJS, chargeUiExtAnchor) {
+		newJS = strings.Replace(newJS, chargeUiExtAnchor, chargeUiExtExposed, 1)
 		changed = true
 	}
 
@@ -487,9 +664,19 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		return nil
 	}
 	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
-	// 无可用充值接口（在线支付站点）时隐藏「购买服务 / 我的账单」导航 ✓
+	// 导航「购买服务 / 我的账单」始终显示（历史版本按充值站点过滤的写法升级回透传）✓
 	if h2, j2, c2 := PatchChargeNavMenu(newHTML, newJS); c2 {
 		newHTML, newJS = h2, j2
+		changed = true
+	}
+	// 存量 shell 补 chargeUiEnabled（hero「管理您的订阅与服务」充值/余额联动依赖）✓
+	if h3, j3, c3 := PatchChargeUiEnabled(newHTML, newJS); c3 {
+		newHTML, newJS = h3, j3
+		changed = true
+	}
+	// 存量 shell 补 storeEnabled/visibleSubActions（订阅链接「购买套餐」随购买服务关闭而隐藏）✓
+	if h4, j4, c4 := PatchSubStoreActionJS(newHTML, newJS); c4 {
+		newHTML, newJS = h4, j4
 		changed = true
 	}
 	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）
@@ -498,6 +685,24 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 	if c, cc := PatchChargeButtonConfig(newConfig); cc {
 		newConfig = c
 		cfgChanged = true
+	}
+	// 存量模板 hero 的「管理您的订阅与服务」按钮补「充值/余额」联动条件 ✓
+	if c, cc := PatchHeroButtonConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
+	// 存量模板导航「购买服务 / 我的账单」默认关闭（与 nav.logs 一致）✓
+	if c, cc := PatchNavDefaultsOff(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
+	// 存量模板订阅链接模块的动作按钮源升级（购买服务关闭时隐藏「购买套餐」）——
+	// 仅在 shell 已具备 visibleSubActions 时才改写模块 HTML，避免引用未定义函数 ✗。
+	if strings.Contains(newJS, subStoreActionJSPresence) {
+		if c, cc := PatchSubStoreActionConfig(newConfig); cc {
+			newConfig = c
+			cfgChanged = true
+		}
 	}
 	if !changed && !cfgChanged {
 		return nil

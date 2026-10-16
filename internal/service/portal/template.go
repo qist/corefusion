@@ -3444,13 +3444,36 @@ var showPromoInput = ref(false) // promo code fold
     // Portal editor: modules & navigation from PORTAL_CONFIG
     var portalModules = ref([])
     var portalNavItems = ref([])
-    // 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航（无数据、无意义）
-    var chargeSitesLoaded = ref(false)
+    // 导航始终展示「购买服务 / 我的账单」（余额 / 充值卡仍可下单）；
+    // 无可用充值站点时只隐藏「在线支付」方式，不隐藏导航（否则刷新时会一闪而过）。
     var navItems = computed(function() {
-      var items = portalNavItems.value
-      if (!chargeSitesLoaded.value || chargeSites.value.length > 0) return items
-      return items.filter(function(n) { return n.target !== 'store' && n.target !== 'billing' })
+      return portalNavItems.value
     })
+    // 充值/余额 UI 是否开启：账户模块「显示余额行」或「显示充值按钮」任一关闭即视为关闭。
+    // hero 的「管理您的订阅与服务」按钮（跳购买服务）随之隐藏 —— 与充值/余额开关联动。
+    var chargeUiEnabled = computed(function() {
+      var acct = null
+      for (var i = 0; i < portalModules.value.length; i++) {
+        if (portalModules.value[i].type === 'account_info') { acct = portalModules.value[i]; break }
+      }
+      if (!acct || !acct.data) return true
+      return !(acct.data.show_balance === false || acct.data.show_charge_btn === false)
+    })
+    // 「购买服务」导航（target=store）是否启用：关闭时订阅链接里的「购买套餐」入口不应显示。
+    // 以原始 PORTAL_CONFIG.navigation 为准（portalNavItems 已被 enabled 过滤掉了）。
+    var storeEnabled = computed(function() {
+      var navs = (typeof PORTAL_CONFIG !== 'undefined' && Array.isArray(PORTAL_CONFIG.navigation)) ? PORTAL_CONFIG.navigation : []
+      for (var i = 0; i < navs.length; i++) {
+        if (navs[i] && navs[i].target === 'store') return navs[i].enabled !== false
+      }
+      return true
+    })
+    // 订阅链接模块的动作按钮：购买服务关闭时剔除「购买套餐」(target=store)，其余保持 ✓
+    var visibleSubActions = function(actions) {
+      if (!Array.isArray(actions)) return actions
+      if (storeEnabled.value) return actions
+      return actions.filter(function(a) { return !(a && a.target === 'store') })
+    }
     // Markdown renderer (using marked.js loaded from CDN)
         var renderMd = function(md) {
       if (!md) return ''
@@ -3660,8 +3683,8 @@ var showPromoInput = ref(false) // promo code fold
     if (portalNavItems.value.length === 0) {
       portalNavItems.value = [
         { id: 'nav-home', label: t('nav.home'), icon: 'HomeFilled', target: 'overview', enabled: true },
-        { id: 'nav-services', label: t('nav.store'), icon: 'ShoppingCart', target: 'store', enabled: true },
-        { id: 'nav-billing', label: t('nav.billing'), icon: 'Wallet', target: 'billing', enabled: true },
+        { id: 'nav-services', label: t('nav.store'), icon: 'ShoppingCart', target: 'store', enabled: false },
+        { id: 'nav-billing', label: t('nav.billing'), icon: 'Wallet', target: 'billing', enabled: false },
         { id: 'nav-nodes', label: t('nav.nodes'), icon: 'List', target: 'nodes', enabled: true },
         { id: 'nav-tutorial', label: t('nav.tutorial'), icon: 'Reading', target: 'tutorial', enabled: true },
         { id: 'nav-tickets', label: t('nav.support'), icon: 'Service', target: 'support', enabled: true },
@@ -4602,7 +4625,6 @@ var showStreamingAccount = function(service) {
     var fetchChargeSites = function() {
       api('GET', '/charge/sites').then(function(res) {
         chargeSites.value = Array.isArray(res) ? res : []
-        chargeSitesLoaded.value = true
       }).catch(function() {})
     }
 
@@ -5146,6 +5168,7 @@ if (initHasNodeList) fetchNodes()
           mod: mod,
           // Global reactive data
           client: client, token: token, isDark: isDark,
+          chargeUiEnabled: chargeUiEnabled,
           settings: settings, endpoints: endpoints,
           announcements: announcements,
           plans: plans, plansLoading: plansLoading,
@@ -5283,7 +5306,9 @@ if (initHasNodeList) fetchNodes()
                 moreSubQrDialogVisible: moreSubQrDialogVisible, buildSubLink: buildSubLink,
                 showNoticePanel: showNoticePanel, iconPaths: iconPaths, navIconPath: navIconPath,
                 gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
-                giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts
+                giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts,
+                chargeUiEnabled: chargeUiEnabled,
+                storeEnabled: storeEnabled, visibleSubActions: visibleSubActions
               }
               for (var k in ext) { if (!(k in result)) result[k] = ext[k] }
               return result

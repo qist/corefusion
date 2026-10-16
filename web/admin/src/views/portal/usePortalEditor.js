@@ -94,21 +94,26 @@ export function usePortalEditor() {
     return regions.value[selectedRegionType.value] || null
   })
 
-  // 门户对外基址（含挂载路径）：门户配置了域名 → 用门户域名；否则回退当前面板 origin。
-  // portal_page_path：独立门户端口为 ""（根路径），否则 "/p"。
+  // 可视化区 iframe 基址：固定用当前面板地址（面板自身提供 /p 门户页），
+  // **不走门户对外域名** —— 门户域名未就绪/不可达时 iframe 会「拒绝连接」。
+  const portalLocalBase = computed(() => window.location.origin + '/p')
+
+  // 对外基址（预览按钮/新标签打开）：配了门户域名就用域名（含挂载路径），否则回退本地。
   const portalPublicBase = computed(() => {
     const ext = (config.portal_external_url || '').replace(/\/$/, '')
-    const base = ext || window.location.origin
-    const path = config.portal_page_path || '/p'
-    return base + path
+    if (!ext) return portalLocalBase.value
+    const path = config.portal_page_path === undefined || config.portal_page_path === null
+      ? '/p'
+      : config.portal_page_path
+    return ext + path
   })
 
-  const previewUrl = computed(() => portalPublicBase.value + '?preview=1&screen=auth')
+  const previewUrl = computed(() => portalLocalBase.value + '?preview=1&screen=auth')
 
   // Preview iframe control — key forces reload when config changes
   const previewKey = ref(0)
   const pagePreviewUrl = computed(() => {
-    const base = portalPublicBase.value + '?preview=1'
+    const base = portalLocalBase.value + '?preview=1'
     // Append current page target so the preview shows the right page
     if (currentPageTarget.value) {
       return base + '&page=' + encodeURIComponent(currentPageTarget.value)
@@ -353,7 +358,10 @@ export function usePortalEditor() {
     config.terms_of_service_content = d.terms_of_service_content || {}
     // 门户对外地址（只读）：门户配置了域名用门户域名，否则前端回退当前 origin
     config.portal_external_url = d.portal_external_url || ''
-    config.portal_page_path = d.portal_page_path || '/p'
+    // portal_page_path：独立门户端口为 ""（根路径）—— 不能用 || 回退，否则 "" 会变成 "/p"
+    config.portal_page_path = d.portal_page_path === undefined || d.portal_page_path === null
+      ? '/p'
+      : d.portal_page_path
 
     // Config string is only a fallback source for legacy payloads
     let cfgObj = null

@@ -819,10 +819,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			// credentials as the primary, but with its own host address.
 			if mirrors, ok := mirrorMap[cfg.ServerID]; ok {
 				for _, mirror := range mirrors {
-					mirrorHost := mirror.PublicIP
-					if mirrorHost == "" {
-						mirrorHost = mirror.Hostname
-					}
+					// 与 shareAddress 同一口径：公网 IP → 主机名 → 内网 IP
+					mirrorHost := preferNodeAddress(mirror)
 					if mirrorHost == "" {
 						continue
 					}
@@ -2009,10 +2007,26 @@ func resolveAccessDomain(config map[string]interface{}, listenPort int, shareDom
 	return "", 0, false
 }
 
+// preferNodeAddress 按「公网 IP → 主机名 → 内网 IP」挑节点自身的对外地址（空串=都没有）。
+//
+// ⚠ 主机名必须排在「内网 IP」之前 ✗：很多节点只填了 hostname（或 hostname 本身就是
+// 对外可达的地址，如 192.168.2.50），而 public_ip / internal_ip 留空 —— 若跳过 hostname，
+// 分享地址会一路落到监听地址兜底（0.0.0.0 → 127.0.0.1），下发给客户端的 server 就变成
+// 客户端本机地址，必然连不上（真机现象 ✓）。
+func preferNodeAddress(node entity.NodeServer) string {
+	if node.PublicIP != "" {
+		return node.PublicIP
+	}
+	if node.Hostname != "" {
+		return node.Hostname
+	}
+	return node.InternalIP
+}
+
 // shareAddress 计算「发给客户端的地址」：
 //  1. 接入域名里**已明确选择**的域名/IP（resolveAccessDomain）；
-//  2. 否则退回节点自身的公网 / 内网 IP（未启用接入域名的入站本来就走这条）；
-//  3. 都没有才用监听地址兜底。
+//  2. 否则按节点自身地址依次取：**公网 IP → 主机名（Hostname）→ 内网 IP**；
+//  3. 都没有才用监听地址兜底（0.0.0.0/:: → 127.0.0.1）。
 //
 // 关键：第 2 步是必需的 —— 启用了接入域名但下拉没选时，以前会从面板级分享域名列表里
 // 随机抓一个（server 与界面选择无关、每次渲染还不同）；现在统一退到节点地址，
@@ -2023,11 +2037,8 @@ func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConf
 	}
 	if h.nodeServerRepo != nil {
 		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
-			if node.PublicIP != "" {
-				return node.PublicIP, cfg.Port
-			}
-			if node.InternalIP != "" {
-				return node.InternalIP, cfg.Port
+			if host := preferNodeAddress(*node); host != "" {
+				return host, cfg.Port
 			}
 		}
 	}
@@ -2361,11 +2372,8 @@ func replaceAccessDomainForMirror(config map[string]interface{}, mirror entity.N
 		config["_accessDomain"] = ad
 	}
 
-	// Determine the mirror's address
-	mirrorHost := mirror.PublicIP
-	if mirrorHost == "" {
-		mirrorHost = mirror.Hostname
-	}
+	// Determine the mirror's address（与 shareAddress 同一口径：公网 IP → 主机名 → 内网 IP）
+	mirrorHost := preferNodeAddress(mirror)
 	if mirrorHost == "" {
 		return
 	}

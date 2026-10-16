@@ -145,6 +145,15 @@ func (h *Handler) ResetToDefault(c *gin.Context) {
 	response.OK(c, tmpl)
 }
 
+// GetBuiltinLang handles GET /api/v1/portal/lang/builtin.
+// 返回内置语言包（各语言的 key→value），供后台检测 / 一键补齐缺失的文案 key。
+func (h *Handler) GetBuiltinLang(c *gin.Context) {
+	response.OK(c, gin.H{
+		"default": portalService.DefaultLangCode(),
+		"locales": portalService.BuiltinLangPacks(),
+	})
+}
+
 // CacheStatus handles GET /api/v1/portal/cache.
 // Returns diagnostic information about the render cache.
 func (h *Handler) CacheStatus(c *gin.Context) {

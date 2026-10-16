@@ -6,12 +6,12 @@ import DOMPurify from 'dompurify'
 import {
   getActivePortal, updateActivePortal, resetPortal,
   getPortalCacheStatus, clearPortalCache, rebuildPortalCache, setPortalDevMode,
+  getBuiltinPortalLang,
 } from '../../api/portal'
 import { useQueryState } from '../../composables/useQueryState'
 import { CONTENT_EDITOR_TYPES, moduleTypeLabel, moduleGroups, createModule, genId } from './moduleDefs'
 import { createDefaultNavigation, createDefaultModules } from './defaults'
 import { buildApiGroups } from './apiDocs'
-import { getDynamicComponent } from './dynamicComponent'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -40,12 +40,18 @@ export function usePortalEditor() {
   const langPack = ref({ default: 'zh-CN', locales: {} })
   const langLocale = ref('zh-CN')
   const langData = ref({})
+  // 内置语言包（后端 locales/*.json 经 go:embed 提供）——用于缺失 key 检测 / 补齐
+  const builtinLang = ref({ default: 'zh-CN', locales: {} })
   const config = reactive({
     site_name: 'CoreFusion', logo_url: '', primary_color: '#667eea', background_color: '#f0f2f5',
     card_background_color: '#ffffff', text_color: '#303133', accent_color: '#67c23a',
     font_family: 'system-ui, -apple-system, sans-serif',
     // 合规文档链接 ✓（Google OAuth 验证要求登录页展示 ✓）
     privacy_policy_url: '', terms_of_service_url: '',
+    // 合规文档内容 ✓（按语言 markdown：{"zh-CN":"...","en":"..."}）
+    privacy_policy_content: {}, terms_of_service_content: {},
+    // 门户对外地址 ✓（只读，来自后端：门户配置了域名用门户域名，否则回退面板地址；不参与保存）
+    portal_external_url: '', portal_page_path: '/p',
   })
 
   const navigation = ref([])
@@ -63,6 +69,7 @@ export function usePortalEditor() {
   const currentPageNavId = ref('')
   const centerViewMode = useQueryState('cview', 'preview')
   const freeformTab = useQueryState('ftab', 'html')
+  const moduleCodeTab = useQueryState('mctab', 'html')
 
   const cacheStatus = ref({ cached: false, dev_mode: false, hit_count: 0, miss_count: 0 })
 
@@ -87,12 +94,21 @@ export function usePortalEditor() {
     return regions.value[selectedRegionType.value] || null
   })
 
-  const previewUrl = computed(() => window.location.origin + '/p?preview=1&screen=auth')
+  // 门户对外基址（含挂载路径）：门户配置了域名 → 用门户域名；否则回退当前面板 origin。
+  // portal_page_path：独立门户端口为 ""（根路径），否则 "/p"。
+  const portalPublicBase = computed(() => {
+    const ext = (config.portal_external_url || '').replace(/\/$/, '')
+    const base = ext || window.location.origin
+    const path = config.portal_page_path || '/p'
+    return base + path
+  })
+
+  const previewUrl = computed(() => portalPublicBase.value + '?preview=1&screen=auth')
 
   // Preview iframe control — key forces reload when config changes
   const previewKey = ref(0)
   const pagePreviewUrl = computed(() => {
-    const base = window.location.origin + '/p?preview=1'
+    const base = portalPublicBase.value + '?preview=1'
     // Append current page target so the preview shows the right page
     if (currentPageTarget.value) {
       return base + '&page=' + encodeURIComponent(currentPageTarget.value)
@@ -108,27 +124,20 @@ export function usePortalEditor() {
     // Preview iframe loaded — could sync scroll position or highlight selected module
   }
 
-  const previewStyles = computed(() => ({
-    '--pv-primary': config.primary_color || '#667eea',
-    '--pv-bg': config.background_color || '#f0f2f5',
-    '--pv-card-bg': config.card_background_color || '#fff',
-    '--pv-text': config.text_color || '#303133',
-    '--pv-accent': config.accent_color || '#67c23a',
-    '--pv-font': config.font_family || 'sans-serif',
-  }))
-
   const apiGroups = computed(() => buildApiGroups(t))
   const addModuleGroups = computed(() => moduleGroups())
 
-  // Cached dynamic component for the selected module (css/js/html editor preview)
-  const dynamicModuleComponent = computed(() => getDynamicComponent(selectedModule.value, t))
-  const previewComponent = (mod) => getDynamicComponent(mod, t)
-
   // ---- Normalizers ----
-  function ensureCustomCss(mod) {
+  // 模块代码模型（统一）：data.html / data.css / data.js 均为字符串。
+  // 不再有 style.custom_css（已移除）。
+  function ensureModuleCode(mod) {
     if (!mod) return
+    if (!mod.data) mod.data = {}
+    if (typeof mod.data.html !== 'string') mod.data.html = ''
+    if (typeof mod.data.css !== 'string') mod.data.css = ''
+    if (typeof mod.data.js !== 'string') mod.data.js = ''
     if (!mod.style) mod.style = {}
-    if (typeof mod.style.custom_css !== 'string') mod.style.custom_css = ''
+    if (typeof mod.style.custom_class !== 'string') mod.style.custom_class = ''
   }
 
   function ensureNoticeData(mod) {
@@ -148,7 +157,7 @@ export function usePortalEditor() {
 
   const normalizeModule = (m) => {
     const mod = { ...m, page: m.page || 'overview' }
-    ensureCustomCss(mod)
+    ensureModuleCode(mod)
     ensureNoticeData(mod)
     return mod
   }
@@ -167,23 +176,6 @@ export function usePortalEditor() {
     navigator.clipboard.writeText(text)
       .then(() => ElMessage.success(t('portal.copiedToClipboard')))
       .catch(() => ElMessage.error(t('portal.copyFailed')))
-  }
-
-  // Scope CSS to a specific module preview by prefixing selectors with #preview-mod-{id}.
-  // @ rules and keyframe steps (from/to/%) are left untouched.
-  function scopeCss(css, modId) {
-    if (!css) return ''
-    const scope = `#preview-mod-${modId}`
-    return css.replace(/([^{}]+)\{/g, (match, selectors) => {
-      const scoped = selectors.split(',').map((s) => {
-        const trimmed = s.trim()
-        if (!trimmed) return trimmed
-        if (trimmed.startsWith('@')) return trimmed
-        if (/^(from|to|\d+(\.\d+)?%)$/.test(trimmed)) return trimmed
-        return `${scope} ${trimmed}`
-      }).join(', ')
-      return scoped + ' {'
-    })
   }
 
   function renderMd(md) {
@@ -220,7 +212,7 @@ export function usePortalEditor() {
     selectedRegionType.value = ''
     const mod = modules.value.find((m) => m.id === id)
     if (mod) {
-      ensureCustomCss(mod)
+      ensureModuleCode(mod)
       ensureNoticeData(mod)
     }
     autoCenterViewMode()
@@ -248,7 +240,8 @@ export function usePortalEditor() {
   }
 
   watch(centerViewMode, (val) => {
-    if (val === 'css' && selectedModule.value) ensureCustomCss(selectedModule.value)
+    // 旧的 'css' 视图已合并进「模块代码」（右侧属性面板 / 全屏）
+    if (val === 'css') centerViewMode.value = 'preview'
   })
 
   // ---- Navigation CRUD ----
@@ -356,6 +349,11 @@ export function usePortalEditor() {
     config.font_family = d.font_family || "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     config.privacy_policy_url = d.privacy_policy_url || ''
     config.terms_of_service_url = d.terms_of_service_url || ''
+    config.privacy_policy_content = d.privacy_policy_content || {}
+    config.terms_of_service_content = d.terms_of_service_content || {}
+    // 门户对外地址（只读）：门户配置了域名用门户域名，否则前端回退当前 origin
+    config.portal_external_url = d.portal_external_url || ''
+    config.portal_page_path = d.portal_page_path || '/p'
 
     // Config string is only a fallback source for legacy payloads
     let cfgObj = null
@@ -434,8 +432,8 @@ export function usePortalEditor() {
         // 合规文档链接/内容 ✓（登录卡片展示 ✓）
         privacy_policy_url: config.privacy_policy_url || '',
         terms_of_service_url: config.terms_of_service_url || '',
-        privacy_policy_content: config.privacy_policy_content || '',
-        terms_of_service_content: config.terms_of_service_content || '',
+        privacy_policy_content: config.privacy_policy_content || {},
+        terms_of_service_content: config.terms_of_service_content || {},
         regions: Object.keys(regions.value).length > 0 ? regions.value : undefined,
       }
       const res = await updateActivePortal(data)
@@ -451,7 +449,7 @@ export function usePortalEditor() {
     }
   }
 
-  const handlePreview = () => { window.open(window.location.origin + '/p', '_blank') }
+  const handlePreview = () => { window.open(portalPublicBase.value, '_blank') }
 
   const handleReset = async () => {
     try {
@@ -487,6 +485,51 @@ export function usePortalEditor() {
     entries.sort((a, b) => a.key.localeCompare(b.key))
     return entries
   })
+
+  // 当前语言对应的内置语言包（精确 → 前缀 → 默认兜底）
+  const builtinLangForCurrent = computed(() => {
+    const locales = builtinLang.value.locales || {}
+    const code = langLocale.value
+    if (locales[code]) return locales[code]
+    const prefix = String(code).split('-')[0]
+    for (const c of Object.keys(locales)) {
+      if (String(c).split('-')[0] === prefix) return locales[c]
+    }
+    return locales[builtinLang.value.default] || {}
+  })
+
+  // 缺失 key：内置语言包里有，但当前语言未填 / 为空
+  const missingLangKeys = computed(() => {
+    const pack = builtinLangForCurrent.value || {}
+    const cur = langData.value || {}
+    return Object.keys(pack).filter((k) => !k.startsWith('_') && (cur[k] === undefined || cur[k] === null || cur[k] === ''))
+  })
+
+  async function fetchBuiltinLang() {
+    try {
+      const data = await getBuiltinPortalLang()
+      if (data && data.locales) builtinLang.value = data
+    } catch { /* best-effort；失败则不显示缺失检测 */ }
+  }
+
+  function fillMissingLangKeys() {
+    const pack = builtinLangForCurrent.value || {}
+    if (!pack || Object.keys(pack).length === 0) {
+      ElMessage.warning(t('portal.builtinLangUnavailable'))
+      return
+    }
+    const keys = missingLangKeys.value
+    if (keys.length === 0) {
+      ElMessage.info(t('portal.noMissingLangKeys'))
+      return
+    }
+    const next = { ...langData.value }
+    keys.forEach((k) => { next[k] = pack[k] })
+    langData.value = next
+    langPack.value.locales[langLocale.value] = next
+    hasUnsavedChanges.value = true
+    ElMessage.success(t('portal.filledMissingLangKeys', { count: keys.length }))
+  }
 
   function switchLangLocale(code) {
     langPack.value.locales[langLocale.value] = langData.value
@@ -636,7 +679,7 @@ export function usePortalEditor() {
     }
   }
 
-  onMounted(() => { fetchConfig(); fetchCacheStatus() })
+  onMounted(() => { fetchConfig(); fetchCacheStatus(); fetchBuiltinLang() })
 
   // The reactive bag unwraps refs on access — children use ed.xxx everywhere.
   return reactive({
@@ -646,16 +689,16 @@ export function usePortalEditor() {
     form, langPack, langLocale, langData, config,
     navigation, modules, selectedNavId, selectedModuleId,
     regions, selectedRegionType, regionViewMode, newNav,
-    currentPageNavId, centerViewMode, freeformTab, cacheStatus,
+    currentPageNavId, centerViewMode, freeformTab, moduleCodeTab, cacheStatus,
     // Computed
     selectedNav, selectedModule, currentNav, currentPageTarget, hasContentEditor,
-    currentPageModules, selectedRegion, previewUrl, previewStyles,
+    currentPageModules, selectedRegion, previewUrl,
     previewKey, pagePreviewUrl, refreshPreview, onPreviewLoad,
-    apiGroups, addModuleGroups, dynamicModuleComponent,
+    apiGroups, addModuleGroups,
     langAvailableLocales, filteredLangEntries,
     // Helpers
-    copyText, scopeCss, renderMd, sanitizeHtml, typeLabel, currentPageModuleCount,
-    onCodeChange, previewComponent, ensureCustomCss,
+    copyText, renderMd, sanitizeHtml, typeLabel, currentPageModuleCount,
+    onCodeChange, ensureModuleCode,
     // Selection
     selectNav, selectModule, selectRegion,
     // Nav & modules
@@ -664,6 +707,7 @@ export function usePortalEditor() {
     // Load/save
     fetchConfig, handleSave, handlePreview, handleReset,
     // Lang editor
+    builtinLang, missingLangKeys, fillMissingLangKeys, fetchBuiltinLang,
     switchLangLocale, addLocale, removeLocale, addLangKey, deleteLangKey, exportLang, importLang,
     // Cache
     fetchCacheStatus, handleCacheCommand,

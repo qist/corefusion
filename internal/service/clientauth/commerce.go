@@ -960,6 +960,11 @@ func (s *CommerceService) ListChargeSites(ctx context.Context) ([]ChargeSiteItem
 	}
 	var items []ChargeSiteItem
 	for _, site := range sites {
+		// 未配置站点地址的充值站点视为「未配置的在线支付接口」→ 不下发给门户，
+		// 否则购买/充值对话框会出现空的「在线支付」入口（真机踩过 ✓）。
+		if strings.TrimSpace(site.SiteURL) == "" {
+			continue
+		}
 		var methods []string
 		if site.SupportedMethods != "" {
 			json.Unmarshal([]byte(site.SupportedMethods), &methods)

@@ -125,7 +125,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
 
       <!-- Desktop Sidebar -->
       <aside class="app-sidebar">
-        <div v-for="nav in portalNavItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
+        <div v-for="nav in navItems" :key="nav.id" :class="'sidebar-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
           <svg class="sidebar-icon" viewBox="0 0 1024 1024" width="18" height="18" fill="currentColor" fill-rule="evenodd"><path :d="navIconPath(nav)"></path></svg>
           <span>{{ t(nav.label) }}</span>
         </div>
@@ -197,7 +197,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
     </div>
       </main>
       <nav class="bottom-nav">
-        <div v-for="nav in portalNavItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
+        <div v-for="nav in navItems" :key="nav.id" :class="'nav-item' + (activeTab === nav.target ? ' active' : '')" @click="onNavClick(nav)">
           <svg class="nav-icon" viewBox="0 0 1024 1024" width="20" height="20" fill="currentColor" fill-rule="evenodd"><path :d="navIconPath(nav)"></path></svg>
           <span class="nav-label">{{ t(nav.label) }}</span>
         </div>
@@ -665,36 +665,34 @@ const defaultPortalCSS = `[v-cloak] { display: none; }
    ============================================ */
 
 :root {
-  /* Background - Modern gradient */
-  --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  --bg-solid: #f8fafc;
+  /* Background - 现代中性底色（弱化重渐变，主色交给 accent 承担） */
+  --bg-gradient: linear-gradient(165deg, #eef1f8 0%, #f7f8fc 50%, #eef6f4 100%);
+  --bg-solid: #f7f8fc;
   --bg-elevated: #ffffff;
-  
-  /* Glassmorphism Cards */
-  --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-bg-hover: rgba(255, 255, 255, 0.95);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 10px 15px -3px rgba(0, 0, 0, 0.08),
-    0 20px 25px -5px rgba(0, 0, 0, 0.05);
+
+  /* Cards（收敛阴影/边框，玻璃拟态更克制） */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --glass-bg-hover: rgba(255, 255, 255, 0.94);
+  --glass-border: rgba(17, 24, 39, 0.06);
+  --glass-shadow:
+    0 1px 2px rgba(17, 24, 39, 0.04),
+    0 10px 28px -18px rgba(17, 24, 39, 0.16);
   --glass-shadow-hover:
-    0 10px 15px -3px rgba(0, 0, 0, 0.08),
-    0 20px 25px -5px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.5) inset;
-  
+    0 2px 6px rgba(17, 24, 39, 0.06),
+    0 18px 44px -20px rgba(17, 24, 39, 0.22);
+
   /* Text Colors */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
-  
-  /* Accent - Purple to Blue gradient */
-  --accent: #6366f1;
-  --accent-dark: #4f46e5;
-  --accent-light: rgba(99, 102, 241, 0.1);
-  --accent-border: rgba(99, 102, 241, 0.2);
-  --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9aa4b2;
+
+  /* Accent - 更克制的靛蓝主色 */
+  --accent: #4f46e5;
+  --accent-dark: #4338ca;
+  --accent-light: rgba(79, 70, 229, 0.1);
+  --accent-border: rgba(79, 70, 229, 0.22);
+  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+
   /* Status Colors */
   --success: #10b981;
   --success-light: rgba(16, 185, 129, 0.1);
@@ -703,18 +701,18 @@ const defaultPortalCSS = `[v-cloak] { display: none; }
   --warning: #f59e0b;
   --warning-light: rgba(245, 158, 11, 0.1);
   --info: #3b82f6;
-  
+
   /* UI Elements */
-  --border: rgba(148, 163, 184, 0.2);
-  --ring-bg: rgba(99, 102, 241, 0.1);
-  --nav-bg: rgba(255, 255, 255, 0.9);
-  --sidebar-bg: rgba(255, 255, 255, 0.95);
+  --border: rgba(17, 24, 39, 0.08);
+  --ring-bg: rgba(79, 70, 229, 0.1);
+  --nav-bg: rgba(255, 255, 255, 0.82);
+  --sidebar-bg: rgba(255, 255, 255, 0.9);
   --sidebar-width: 260px;
-  
+
   /* Typography */
   --font-family: {{.FontFamily}};
   --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
-  
+
   /* Spacing Scale */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -722,14 +720,14 @@ const defaultPortalCSS = `[v-cloak] { display: none; }
   --space-4: 1rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-  
+
   /* Border Radius */
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
   --radius-full: 9999px;
-  
+
   /* Transitions */
   --transition-fast: 150ms ease;
   --transition-base: 250ms ease;
@@ -737,36 +735,34 @@ const defaultPortalCSS = `[v-cloak] { display: none; }
 }
 
 [data-theme="dark"] {
-  --bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  --bg-gradient: linear-gradient(165deg, #0b1120 0%, #0f172a 55%, #0b1a1a 100%);
   --bg-solid: #0f172a;
   --bg-elevated: #1e293b;
-  
-  --glass-bg: rgba(30, 41, 59, 0.8);
-  --glass-bg-hover: rgba(30, 41, 59, 0.9);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-shadow: 
-    0 4px 6px -1px rgba(0, 0, 0, 0.3),
-    0 10px 15px -3px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+
+  --glass-bg: rgba(30, 41, 59, 0.72);
+  --glass-bg-hover: rgba(30, 41, 59, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 12px 32px -20px rgba(0, 0, 0, 0.6);
   --glass-shadow-hover:
-    0 10px 15px -3px rgba(0, 0, 0, 0.4),
-    0 20px 25px -5px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
-  
-  --text-primary: #f1f5f9;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
-  
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    0 20px 48px -22px rgba(0, 0, 0, 0.7);
+
+  --text-primary: #e5e9f0;
+  --text-secondary: #b6c0cf;
+  --text-muted: #6b7688;
+
   --accent: #818cf8;
   --accent-dark: #6366f1;
   --accent-light: rgba(129, 140, 248, 0.15);
   --accent-border: rgba(129, 140, 248, 0.25);
-  --accent-gradient: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
-  
-  --border: rgba(255, 255, 255, 0.1);
+  --accent-gradient: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
+
+  --border: rgba(255, 255, 255, 0.09);
   --ring-bg: rgba(129, 140, 248, 0.15);
-  --nav-bg: rgba(15, 23, 42, 0.9);
-  --sidebar-bg: rgba(15, 23, 42, 0.95);
+  --nav-bg: rgba(15, 23, 42, 0.85);
+  --sidebar-bg: rgba(15, 23, 42, 0.92);
 }
 
 /* ============================================
@@ -2651,17 +2647,17 @@ border-bottom: 1px solid var(--border);
 }
 
 /* ---- Element Plus Overrides ---- */
-.el-button--primary { --el-color-primary: #2563eb; }
+.el-button--primary { --el-color-primary: var(--accent); }
 .el-button--primary:not(.is-plain) {
   background: linear-gradient(135deg, var(--accent), var(--accent-dark)) !important;
   border: none !important;
   font-weight: 600 !important;
-  box-shadow: 0 2px 8px rgba(37,99,235,0.18) !important;
+  box-shadow: 0 2px 10px rgba(79, 70, 229, 0.22) !important;
   color: #fff !important;
 }
 .el-button--primary:not(.is-plain):hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(37,99,235,0.28) !important;
+  box-shadow: 0 6px 18px rgba(79, 70, 229, 0.3) !important;
 }
 /* Plain button styles */
 .el-button--primary.is-plain {
@@ -3290,9 +3286,24 @@ var activeAnnouncement = ref(null)
     // 合规文档链接 ✓（Google OAuth 验证要求登录页可见隐私政策/服务条款链接 ✓）
     var privacyUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.privacy_policy_url) || '')
     var termsUrl = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.terms_of_service_url) || '')
-    // 合规文档内容 ✓（点击链接弹窗展示 markdown ✓；URL 优先 ✓）
-    var privacyContent = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.privacy_policy_content) || '')
-    var termsContent = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.terms_of_service_content) || '')
+    // 合规文档内容 ✓（按语言 markdown：{"zh-CN":"...","en":"..."}；点击链接弹窗展示 ✓）
+    // 按当前语言挑选内容：精确 → 主语言前缀 → 默认语言 → 首个非空。
+    var privacyContents = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.privacy_policy_content) || {})
+    var termsContents = ref((typeof PORTAL_CONFIG !== 'undefined' && PORTAL_CONFIG.terms_of_service_content) || {})
+    var pickLegalContent = function(map) {
+      if (!map || typeof map !== 'object') return ''
+      var code = (typeof currentLocale !== 'undefined' && currentLocale.value) || ''
+      var v = map[code]
+      if (!v) {
+        var prefix = ('' + code).split('-')[0]
+        for (var k in map) { if (map[k] && ('' + k).split('-')[0] === prefix) { v = map[k]; break } }
+      }
+      if (!v && typeof multiLang !== 'undefined' && multiLang.value && multiLang.value.default) v = map[multiLang.value.default]
+      if (!v) { for (var k2 in map) { if (map[k2]) { v = map[k2]; break } } }
+      return v || ''
+    }
+    var privacyContent = computed(function() { return pickLegalContent(privacyContents.value) })
+    var termsContent = computed(function() { return pickLegalContent(termsContents.value) })
     var isDark = ref(localStorage.getItem('portal_theme') === 'dark' || (!localStorage.getItem('portal_theme') && window.matchMedia('(prefers-color-scheme: dark)').matches))
 
     // Latest effective portal config — refreshed on every hot fetch from the DB.
@@ -3433,6 +3444,13 @@ var showPromoInput = ref(false) // promo code fold
     // Portal editor: modules & navigation from PORTAL_CONFIG
     var portalModules = ref([])
     var portalNavItems = ref([])
+    // 在线支付接口（充值站点）不可用时隐藏「购买服务 / 我的账单」导航（无数据、无意义）
+    var chargeSitesLoaded = ref(false)
+    var navItems = computed(function() {
+      var items = portalNavItems.value
+      if (!chargeSitesLoaded.value || chargeSites.value.length > 0) return items
+      return items.filter(function(n) { return n.target !== 'store' && n.target !== 'billing' })
+    })
     // Markdown renderer (using marked.js loaded from CDN)
         var renderMd = function(md) {
       if (!md) return ''
@@ -3740,8 +3758,10 @@ var showPromoInput = ref(false) // promo code fold
       if (existing) existing.remove()
       var cssParts = []
       portalModules.value.forEach(function(m) {
-        if (m.style && m.style.custom_css) {
-          var scoped = m.style.custom_css.replace(/([^{}]+)\{/g, function(match, selectors) {
+        // 模块 CSS 统一来自 data.css，按 #mod-{id} 作用域注入（模块间样式隔离 ✓）
+        var modCss = (m.data && m.data.css) || ''
+        if (modCss) {
+          var scoped = modCss.replace(/([^{}]+)\{/g, function(match, selectors) {
             var scoped2 = selectors.split(',').map(function(s) {
               var t = s.trim()
               if (!t || t.charAt(0) === '@') return t
@@ -4582,6 +4602,7 @@ var showStreamingAccount = function(service) {
     var fetchChargeSites = function() {
       api('GET', '/charge/sites').then(function(res) {
         chargeSites.value = Array.isArray(res) ? res : []
+        chargeSitesLoaded.value = true
       }).catch(function() {})
     }
 
@@ -4951,8 +4972,8 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       if (cfg.logo_url !== undefined) logoUrl.value = cfg.logo_url
       if (cfg.privacy_policy_url !== undefined) privacyUrl.value = cfg.privacy_policy_url
       if (cfg.terms_of_service_url !== undefined) termsUrl.value = cfg.terms_of_service_url
-      if (cfg.privacy_policy_content !== undefined) privacyContent.value = cfg.privacy_policy_content
-      if (cfg.terms_of_service_content !== undefined) termsContent.value = cfg.terms_of_service_content
+      if (cfg.privacy_policy_content !== undefined) privacyContents.value = cfg.privacy_policy_content || {}
+      if (cfg.terms_of_service_content !== undefined) termsContents.value = cfg.terms_of_service_content || {}
       if (cfg.registration_enabled !== undefined) registrationEnabled.value = !!cfg.registration_enabled
       if (Array.isArray(cfg.modules)) {
         portalModules.value = cfg.modules.filter(function(m) { return m.visible !== false })
@@ -5033,7 +5054,7 @@ var initHasReferral = initMods.some(function(m) { return m.type === 'referral' }
 if (initHasPlanList || initHasNodeList) fetchPlans()
 if (initHasTrafficPacks || initHasPlanList) fetchTrafficPacks()
 if (initHasNodeList) fetchNodes()
-        if (initHasPlanList || initHasCharge) fetchChargeSites()
+        fetchChargeSites()
         if (initHasCharge) fetchChargeOrders()
       if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
       if (initHasBalance || initMods.some(function(m) { return m.type === 'account_info' })) fetchGifts()
@@ -5114,7 +5135,6 @@ if (initHasNodeList) fetchNodes()
         if (!mod.data || (!mod.data.html && !mod.data.js)) return
         var html = (mod.data && mod.data.html) || '<div></div>'
         var js = (mod.data && mod.data.js) || ''
-        var css = (mod.data && mod.data.css) || ''
 
         // Build module context with i18n, data, and utilities
         var modCtx = {
@@ -5276,17 +5296,6 @@ if (initHasNodeList) fetchNodes()
           setupFn = function() { return { __error: e.message, t: t, mod: mod } }
         }
 
-        // Inject CSS
-        if (css) {
-          var styleId = 'module-css-' + mod.id
-          var existing = document.getElementById(styleId)
-          if (existing) existing.remove()
-          var styleEl = document.createElement('style')
-          styleEl.id = styleId
-          styleEl.textContent = css
-          document.head.appendChild(styleEl)
-        }
-
         comps[mod.id] = { template: html, setup: setupFn }
       })
       moduleComponents.value = comps
@@ -5308,12 +5317,13 @@ return {
       oauthProviders: oauthProviders, isOAuthEnabled: isOAuthEnabled, oauthLogin: oauthLogin,
       // 合规文档链接 ✓（Google 验证要求登录页展示 ✓）
       privacyUrl: privacyUrl, termsUrl: termsUrl,
+      privacyContent: privacyContent, termsContent: termsContent,
       // 合规文档弹窗 ✓（点击链接打开条款内容 ✓）
       openLegal: openLegal, legalDialogVisible: legalDialogVisible,
       legalDialogTitle: legalDialogTitle, legalDialogHtml: legalDialogHtml,
       hasLegalLinks: hasLegalLinks,
       // Navigation & modules
-      currentModules: currentModules, portalNavItems: portalNavItems, onNavClick: onNavClick,
+      currentModules: currentModules, portalNavItems: portalNavItems, navItems: navItems, onNavClick: onNavClick,
       renderMd: renderMd, renderMdUntrusted: renderMdUntrusted, moduleComponents: moduleComponents,
       // Shared dialogs
       showNodeQRDialog: showNodeQRDialog, nodeQRContainer: nodeQRContainer,

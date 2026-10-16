@@ -225,6 +225,7 @@ const allMenuItems = [
   { path: '/users', title: 'menu.users', icon: 'User', role: 'admin' },
   { path: '/log-manage', title: 'menu.logManage', icon: 'Document', role: 'admin' },
   { path: '/portal', title: 'menu.portalManagement', icon: 'Monitor', role: 'admin' },
+  { path: '/legal-documents', title: 'menu.legalDocuments', icon: 'Document', role: 'admin' },
   { path: '/settings', title: 'menu.settings', icon: 'Setting', role: 'admin' },
   { path: '/db-stats', title: 'menu.dbStats', icon: 'DataAnalysis', role: 'admin' },
   { path: '/audit', title: 'menu.audit', icon: 'Bell', role: 'admin' },

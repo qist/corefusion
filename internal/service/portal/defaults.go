@@ -51,7 +51,8 @@ const defaultModulesJSON = `[
     "visible": true,
     "data": {
       "columns": 2,
-      "html": "<div class=\"card-header\"><el-icon class=\"card-icon\" size=\"20\"><User /></el-icon><span class=\"card-title\">{{ t(mod.title) }}</span></div>\n              <div class=\"acct-info-list\" :class=\"{ 'two-column': mod.data && mod.data.columns === 2 }\">\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🛡️</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.status') }}</span>\n                    <div class=\"acct-info-value-row\">\n                      <span class=\"acct-info-value\">● {{ statusText }}</span>\n                      <span v-if=\"client.status === 'active'\" class=\"badge badge-active\" style=\"margin-left:6px\">{{ t('account.normal') }}</span>\n                      <span v-else-if=\"client.status === 'suspended'\" class=\"badge badge-suspended\" style=\"margin-left:6px\">{{ t('account.suspended') }}</span>\n                      <span v-else-if=\"client.status === 'expired'\" class=\"badge badge-expired\" style=\"margin-left:6px\">{{ t('common.expired') }}</span>\n                      <span v-else class=\"badge badge-none\" style=\"margin-left:6px\">{{ t('common.unknown') }}</span>\n                    </div>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">⭐</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.plan') }}</span>\n                    <span class=\"acct-info-value\">{{ client.plan_name || t('account.plan_default') }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">📧</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.email') }}</span>\n                    <span class=\"acct-info-value\">{{ client.email }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🕐</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.register_time') }}</span>\n                    <span class=\"acct-info-value\">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🔄</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.expire') }}</span>\n                    <span class=\"acct-info-value\">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>\n                  </div>\n                </div>\n                <!-- balance display -->\n                <div class=\"acct-info-row\" v-if=\"mod.data && mod.data.show_balance !== false\">\n                  <el-icon class=\"acct-info-icon\" size=\"16\"><Wallet /></el-icon>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('balance.available') }}</span>\n                    <div class=\"acct-info-value-row\">\n                      <span class=\"acct-info-value\">{{ formatMoney(balance.balance) }}</span>\n                      <el-button v-if=\"!mod.data || mod.data.show_charge_btn !== false\" type=\"primary\" size=\"small\" @click=\"showChargeDialog = true\" style=\"margin-left: 8px;\">{{ t('balance.charge_btn') }}</el-button>\n                    </div>\n                  </div>\n                </div>\n              </div>\n              <!-- Traffic mini bar inside account info -->\n              <div class=\"acct-traffic-section\">\n                <div class=\"acct-traffic-label\">\n                  <span>📊 {{ t('traffic.title') }}</span>\n                  <span class=\"acct-traffic-pct\">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>\n                </div>\n                <div class=\"traffic-bar\" style=\"height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;\">\n                  <div class=\"traffic-bar-fill\" :class=\"{ warn: usagePercent > 70, danger: usagePercent > 90 }\" :style=\"{ width: usagePercent + '%' }\"></div>\n                </div>\n                <div class=\"acct-traffic-hint\" style=\"font-size:11px;color:var(--text-muted);margin-top:4px;\">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>\n              </div>\n              <!-- Gift claim section -->\n              <div class=\"acct-gift-section\" v-if=\"gifts && gifts.length > 0\">\n                <div class=\"acct-gift-header\">\n                  <span>🎁 {{ t('gift.title') }}</span>\n                  <span class=\"acct-gift-count\" v-if=\"gifts.length > 0\">{{ gifts.length }}</span>\n                </div>\n                <div class=\"acct-gift-list\">\n                  <div v-for=\"g in gifts\" :key=\"g.id\" class=\"acct-gift-item\">\n                    <div class=\"acct-gift-info\">\n                      <span class=\"acct-gift-type\">{{ giftTypeText(g.type) }}</span>\n                      <span class=\"acct-gift-value\">{{ g.type === 'days' ? g.value + ' ' + t('gift.days') : formatBytes(g.value) }}</span>\n                      <span class=\"acct-gift-source\" v-if=\"g.source\">· {{ giftSourceText(g.source) }}</span>\n                    </div>\n                    <el-button type=\"success\" size=\"small\" :loading=\"giftClaiming\" @click=\"claimGift(g.id)\">{{ t('gift.claim_btn') }}</el-button>\n                  </div>\n                </div>\n              </div>",
+      "show_charge_btn": false,
+      "html": "<div class=\"card-header\"><el-icon class=\"card-icon\" size=\"20\"><User /></el-icon><span class=\"card-title\">{{ t(mod.title) }}</span></div>\n              <div class=\"acct-info-list\" :class=\"{ 'two-column': mod.data && mod.data.columns === 2 }\">\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🛡️</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.status') }}</span>\n                    <div class=\"acct-info-value-row\">\n                      <span class=\"acct-info-value\">● {{ statusText }}</span>\n                      <span v-if=\"client.status === 'active'\" class=\"badge badge-active\" style=\"margin-left:6px\">{{ t('account.normal') }}</span>\n                      <span v-else-if=\"client.status === 'suspended'\" class=\"badge badge-suspended\" style=\"margin-left:6px\">{{ t('account.suspended') }}</span>\n                      <span v-else-if=\"client.status === 'expired'\" class=\"badge badge-expired\" style=\"margin-left:6px\">{{ t('common.expired') }}</span>\n                      <span v-else class=\"badge badge-none\" style=\"margin-left:6px\">{{ t('common.unknown') }}</span>\n                    </div>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">⭐</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.plan') }}</span>\n                    <span class=\"acct-info-value\">{{ client.plan_name || t('account.plan_default') }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">📧</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.email') }}</span>\n                    <span class=\"acct-info-value\">{{ client.email }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🕐</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.register_time') }}</span>\n                    <span class=\"acct-info-value\">{{ client.created_at ? formatDate(client.created_at) : '-' }}</span>\n                  </div>\n                </div>\n                <div class=\"acct-info-row\">\n                  <span class=\"acct-info-icon\">🔄</span>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('account.expire') }}</span>\n                    <span class=\"acct-info-value\">{{ client.expires_at ? formatDate(client.expires_at) : t('common.unlimited') }}</span>\n                  </div>\n                </div>\n                <!-- balance display -->\n                <div class=\"acct-info-row\" v-if=\"mod.data && mod.data.show_balance !== false\">\n                  <el-icon class=\"acct-info-icon\" size=\"16\"><Wallet /></el-icon>\n                  <div class=\"acct-info-body\">\n                    <span class=\"acct-info-label\">{{ t('balance.available') }}</span>\n                    <div class=\"acct-info-value-row\">\n                      <span class=\"acct-info-value\">{{ formatMoney(balance.balance) }}</span>\n                      <el-button v-if=\"mod.data && mod.data.show_charge_btn === true\" type=\"primary\" size=\"small\" @click=\"showChargeDialog = true\" style=\"margin-left: 8px;\">{{ t('balance.charge_btn') }}</el-button>\n                    </div>\n                  </div>\n                </div>\n              </div>\n              <!-- Traffic mini bar inside account info -->\n              <div class=\"acct-traffic-section\">\n                <div class=\"acct-traffic-label\">\n                  <span>📊 {{ t('traffic.title') }}</span>\n                  <span class=\"acct-traffic-pct\">{{ usagePercent }}% / {{ formatBytes(client.quota_bytes) }}</span>\n                </div>\n                <div class=\"traffic-bar\" style=\"height:8px;border-radius:6px;background:var(--ring-bg);overflow:hidden;margin-top:6px;\">\n                  <div class=\"traffic-bar-fill\" :class=\"{ warn: usagePercent > 70, danger: usagePercent > 90 }\" :style=\"{ width: usagePercent + '%' }\"></div>\n                </div>\n                <div class=\"acct-traffic-hint\" style=\"font-size:11px;color:var(--text-muted);margin-top:4px;\">{{ t('traffic.remaining') }} {{ formatBytes(Math.max(0, client.quota_bytes - client.used_bytes)) }} {{ t('traffic.available') }}</div>\n              </div>\n              <!-- Gift claim section -->\n              <div class=\"acct-gift-section\" v-if=\"gifts && gifts.length > 0\">\n                <div class=\"acct-gift-header\">\n                  <span>🎁 {{ t('gift.title') }}</span>\n                  <span class=\"acct-gift-count\" v-if=\"gifts.length > 0\">{{ gifts.length }}</span>\n                </div>\n                <div class=\"acct-gift-list\">\n                  <div v-for=\"g in gifts\" :key=\"g.id\" class=\"acct-gift-item\">\n                    <div class=\"acct-gift-info\">\n                      <span class=\"acct-gift-type\">{{ giftTypeText(g.type) }}</span>\n                      <span class=\"acct-gift-value\">{{ g.type === 'days' ? g.value + ' ' + t('gift.days') : formatBytes(g.value) }}</span>\n                      <span class=\"acct-gift-source\" v-if=\"g.source\">· {{ giftSourceText(g.source) }}</span>\n                    </div>\n                    <el-button type=\"success\" size=\"small\" :loading=\"giftClaiming\" @click=\"claimGift(g.id)\">{{ t('gift.claim_btn') }}</el-button>\n                  </div>\n                </div>\n              </div>",
       "css": "",
       "js": "return {}"
     },
@@ -538,3 +539,83 @@ const defaultTermsOfServiceContent = `# 服务条款
 
 如对本条款有任何疑问，请通过工单系统与我们联系。
 `
+
+// defaultPrivacyPolicyContentEN is the English seed for the privacy policy.
+const defaultPrivacyPolicyContentEN = `# Privacy Policy
+
+We take your privacy seriously. This policy explains how we collect, use and protect your personal information when you use our services.
+
+## 1. Information We Collect
+
+- **Account information**: the email address you provide when registering.
+- **Usage data**: connection duration, traffic statistics and similar data used for billing and service quality.
+- **Payment information**: processed by third-party payment providers; we do not store sensitive payment credentials such as card numbers.
+
+## 2. How We Use Information
+
+We use the above information only to provide and maintain the service, manage accounts, handle billing and abuse prevention, and to meet legal compliance obligations.
+
+## 3. Sharing and Disclosure
+
+We do not sell or share your personal information with third parties, except:
+
+- with your explicit consent;
+- with payment providers as necessary to complete a transaction;
+- when required by law or a competent authority.
+
+## 4. Data Storage and Protection
+
+Your data is stored on servers protected by access controls, and transmitted over TLS. We retain data only as long as necessary for the purposes described in this policy.
+
+## 5. Your Rights
+
+You can view and correct your account information in the client portal at any time, or contact the administrator to delete your account and related data.
+
+## 6. Policy Updates
+
+We may update this policy from time to time; material changes will be announced on the site. Continued use of the service constitutes acceptance of the updated policy.
+
+## 7. Contact Us
+
+If you have any questions about this privacy policy, please contact us via the ticket system.
+`
+
+// defaultTermsOfServiceContentEN is the English seed for the terms of service.
+const defaultTermsOfServiceContentEN = `# Terms of Service
+
+Please read these terms carefully before using our services. By registering for or using the service you confirm that you have read and agree to all of these terms.
+
+## 1. Service Description
+
+We provide network acceleration / proxy forwarding services. Available routes, plan contents and pricing are as shown on the purchase page.
+
+## 2. Account and Acceptable Use
+
+- You are responsible for safeguarding your account credentials; any loss caused by poor safekeeping is your own responsibility.
+- It is strictly prohibited to use the service for any illegal or abusive purpose, including but not limited to attacking others, distributing illegal content, spam, or infringing the rights of others.
+- If you violate the above, we may suspend or terminate your service without notice.
+
+## 3. Payment and Refunds
+
+- Plans are billed according to the price and duration shown on the purchase page; the service stops automatically upon expiry.
+- As virtual goods, subscriptions are generally non-refundable once activated, except as expressly promised by the site; see the purchase page for details.
+- No refund of remaining time or traffic will be made if the service is terminated due to violations.
+
+## 4. Disclaimer
+
+- We are not liable for service interruptions caused by force majeure, carrier network failures, upstream route outages or other causes not attributable to us.
+- You are solely responsible for any consequences arising from your use of the service in violation of these terms or applicable laws.
+
+## 5. Changes to These Terms
+
+We reserve the right to revise these terms at any time; the revised terms will be published on this page. Continued use after revision constitutes acceptance.
+
+## 6. Contact Us
+
+If you have any questions about these terms, please contact us via the ticket system.
+`
+
+// defaultLegalMap 组合默认语言（zh-CN）与英文的内置合规文档内容。
+func defaultLegalMap(zh, en string) map[string]string {
+	return map[string]string{defaultLangCode: zh, "en": en}
+}

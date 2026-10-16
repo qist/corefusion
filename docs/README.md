@@ -24,7 +24,7 @@
 | 订阅 | `SUBSCRIPTION_DESIGN.md`、`singbox-configgen-design.md` |
 | 商务 | `plan-design.md`、`plan-integration.md`、`plan-node-account-sync.md`、`CHARGE_SITE_INTEGRATION.md` |
 | 节点/Agent | `node-server-architecture.md`、`chain-proxy-redesign.md`、`mirror-sync-redesign.md`、`one-line-agent-deploy.md`、`agent-push-update.md`、`eliminate-reverse-dial.md`、`remote-traffic-sync.md` |
-| 门户 | `portal-redesign.md`、`PORTAL_EDITOR_DESIGN.md`、`PORTAL_REGION_EDITOR_DESIGN.md`、`PORTAL_TEMPLATE_FRONTEND_DESIGN.md`、`PORTAL_FREEFORM_DESIGN.md` |
+| 门户 | `portal-redesign.md`、`PORTAL_EDITOR_DESIGN.md`、`PORTAL_REGION_EDITOR_DESIGN.md`、`PORTAL_TEMPLATE_FRONTEND_DESIGN.md`、`PORTAL_FREEFORM_DESIGN.md`、`PORTAL_UPGRADE_DESIGN.md`（编辑器/语言包/前端现代化升级，待评审） |
 | 安全审计 | `security-audit-v2.md` ~ `v5.md`、`SECURITY_AUDIT_2026-09-30.md`、`code-audit-report.md`、`WAF_TEST_ISSUES.md` |
 | 流量/配额 | `TRAFFIC_QUOTA_DESIGN.md`、`rate-limit-design.md`、`remote-traffic-sync.md` |
 | UI | `UI_DESIGN.md`、`NETWORK_CONTROL_UI.md`、`ONLINE_USERS_DESIGN.md`、`DASHBOARD_MULTINODE_DESIGN.md` |

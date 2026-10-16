@@ -69,7 +69,7 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/p`（独立门户引擎为 `/`） | 门户页 HTML（服务端渲染 + Vue 运行时） |
-| GET | `/api/v1/public/portal-config` | 门户运行时配置：站点名、主题色、导航、模块、多语言包、`registration_enabled`、`regions`（登录区源码）、`privacy_policy_url` / `terms_of_service_url` / `privacy_policy_content` / `terms_of_service_content`（合规文档 ✓） |
+| GET | `/api/v1/public/portal-config` | 门户运行时配置：站点名、主题色、导航、模块、多语言包、`registration_enabled`、`regions`（登录区源码）、`privacy_policy_url` / `terms_of_service_url` / `privacy_policy_content` / `terms_of_service_content`（合规文档；内容按语言映射；独立页面 `/p/legal/*` ✓） |
 | GET | `/api/v1/public/settings` | 公开设置（当前含 `registration_enabled`） |
 | GET | `/api/v1/public/subscription-endpoints` | 订阅接入点列表（裸数组） |
 | GET | `/api/v1/public/articles` | 公开文章列表（已发布） |
@@ -245,15 +245,18 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 
 登录卡片底部的"隐私政策 · 服务条款"链接（与常规站点一致，点击打开条款内容）：
 
-- **配置入口**：门户编辑器 → 设置 → 基础设置 → 合规文档；
+- **配置入口**：门户编辑器 → 设置 → 基础设置 → 合规文档（**按语言**分别编辑内容）；
   也可 `PUT /api/v1/portal/active` 传结构化字段 `privacy_policy_url` / `privacy_policy_content` /
-  `terms_of_service_url` / `terms_of_service_content`（nil=不改，空串=清除）。
+  `terms_of_service_url` / `terms_of_service_content`（nil=不改；内容为 `{"zh-CN":"...","en":"..."}` 映射）。
+- **独立可访问页面**（服务端渲染，便于 Google 验证抓取，支持 `?lang=xx`）：
+  - 主面板域名：`GET /p/legal/privacy`、`GET /p/legal/terms`
+  - 独立门户域名（根路径部署）：`GET /legal/privacy`、`GET /legal/terms`
 - **展示逻辑**：链接与内容二选一，**URL 优先**（新标签打开外链）；填了内容则登录卡片点击后
-  弹窗渲染 Markdown（`renderMd`）。
+  弹窗渲染 Markdown（`renderMd`），按当前门户语言挑选内容。
 - 运行时通过 `/api/v1/public/portal-config` 下发，登录区组件经 `ctx.privacyUrl / termsUrl /
   privacyContent / termsContent / openLegal / hasLegalLinks` 消费。
-- Google OAuth 正式授权要求这些链接公共可访问 → 见 `docs/oauth-google-verification.md`
-  （内含隐私政策/服务条款模板文本，可直接粘进"内容"字段）。
+- Google OAuth 正式授权要求这些链接公共可访问 → 用上面的独立链接填入同意屏幕；
+  见 `docs/oauth-google-verification.md`（内含隐私政策/服务条款模板文本）。
 
 ## 18. 接入示例
 

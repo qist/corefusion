@@ -22,7 +22,7 @@ export function createDefaultModules(t) {
     },
     {
       id: 'mod-account', type: 'account_info', title: t('portal.seed.mod.account.title'), page: 'overview', visible: true,
-      data: {}, style: {},
+      data: { show_charge_btn: false }, style: {},
     },
     {
       id: 'mod-traffic', type: 'traffic_ring', title: t('portal.seed.mod.traffic.title'), page: 'overview', visible: true,
@@ -60,7 +60,7 @@ export function createDefaultModules(t) {
     },
     {
       id: 'mod-balance', type: 'balance_display', title: t('portal.seed.mod.balance.title'), page: 'store', visible: true,
-      data: { show_transactions: true, charge_btn_text: t('portal.seed.common.charge'), tx_limit: 10 },
+      data: { show_transactions: true, tx_limit: 10 },
       style: {},
     },
     {

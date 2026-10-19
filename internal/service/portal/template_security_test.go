@@ -446,3 +446,103 @@ func TestPatchInDOMSelfClosingComponents(t *testing.T) {
 		t.Error("第二次调用应幂等（不再改动）")
 	}
 }
+
+// 存量门户模板必须被打上「升级 = 到期预约切换」补丁：跨套餐发 upgrade、认 scheduled 回调、
+// 订单状态表补 scheduled —— 三处缺任一，门户升级链路就断（后端拒绝 / 无提示 / 显示原始 key）。
+func TestPatchPlanUpgradeScheduledJS(t *testing.T) {
+	js := `    var purchaseVariant = function(variantId, plan, modData) {
+      var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'
+    }
+      api('POST', apiPath, apiPayload).then(function(res) {
+        showPaymentDialog.value = false
+        if (res.status === 'completed') {
+          ElMessage.success(t('plan.buy_success'))
+        }
+      })
+    var orderStatusText = function(s) {
+      return { pending: t('order.status_pending'), paid: t('order.status_paid'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'
+    }
+    var orderStatusBadge = function(s) {
+      return { pending: 'processing', paid: 'active', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'
+    }
+`
+	_, out, changed := PatchPlanUpgradeScheduledJS("", js)
+	if !changed {
+		t.Fatal("含旧写法的模板应被判定为需要修改")
+	}
+	if strings.Contains(out, "? 'renew' : 'new'") {
+		t.Error("跨套餐仍会发 new（后端会拒绝，门户无法升级）")
+	}
+	if !strings.Contains(out, "? 'renew' : 'upgrade'") {
+		t.Error("跨套餐应发 upgrade（预约切换）")
+	}
+	if !strings.Contains(out, "res.status === 'scheduled'") {
+		t.Error("回调分支应识别 scheduled")
+	}
+	if !strings.Contains(out, "scheduled: t('order.status_scheduled')") {
+		t.Error("订单状态文案应补 scheduled")
+	}
+	if !strings.Contains(out, "scheduled: 'processing'") {
+		t.Error("订单状态徽标应补 scheduled")
+	}
+
+	// 幂等
+	_, again, changed2 := PatchPlanUpgradeScheduledJS("", out)
+	if changed2 || again != out {
+		t.Error("第二次调用应幂等（不再改动）")
+	}
+}
+
+// 存量模板语言包要补 scheduled 状态键与预约提示，并把「立即生效」旧文案换成新语义；
+// 管理员自定义过的文案不得覆盖。
+func TestPatchPlanUpgradeScheduledConfig(t *testing.T) {
+	cfg := `{"lang":{"default":"zh-CN","locales":{` +
+		`"zh-CN":{"plan.notice_text":` + mustJSON(t, oldPlanNoticeZH) + `},` +
+		`"en":{"plan.notice_text":` + mustJSON(t, oldPlanNoticeEN) + `},` +
+		`"ja":{"plan.notice_text":"カスタム文案"}}}}`
+
+	out, changed := PatchPlanUpgradeScheduledConfig(cfg)
+	if !changed {
+		t.Fatal("缺新键 / 旧文案的模板应被判定为需要修改")
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &root); err != nil {
+		t.Fatalf("输出 JSON 非法: %v", err)
+	}
+	locales := root["lang"].(map[string]interface{})["locales"].(map[string]interface{})
+	zh := locales["zh-CN"].(map[string]interface{})
+	en := locales["en"].(map[string]interface{})
+	ja := locales["ja"].(map[string]interface{})
+	if zh["plan.notice_text"] != newPlanNoticeZH {
+		t.Error("zh-CN 旧文案应换成新语义")
+	}
+	if en["plan.notice_text"] != newPlanNoticeEN {
+		t.Error("en 旧文案应换成新语义")
+	}
+	if ja["plan.notice_text"] != "カスタム文案" {
+		t.Error("自定义文案不应被覆盖")
+	}
+	for _, pack := range []map[string]interface{}{zh, en} {
+		if pack["plan.upgrade_scheduled"] == nil || pack["plan.upgrade_scheduled"] == "" {
+			t.Error("应补 plan.upgrade_scheduled")
+		}
+		if pack["order.status_scheduled"] == nil || pack["order.status_scheduled"] == "" {
+			t.Error("应补 order.status_scheduled")
+		}
+	}
+
+	// 幂等
+	out2, changed2 := PatchPlanUpgradeScheduledConfig(out)
+	if changed2 || out2 != out {
+		t.Error("第二次调用应幂等（不再改动）")
+	}
+}
+
+func mustJSON(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal 失败: %v", err)
+	}
+	return string(b)
+}

@@ -616,6 +616,18 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if client.PlanID == 0 {
 			return nil, fmt.Errorf("no active plan to upgrade")
 		}
+		// 升级 = 预约切换：目标必须是更高档套餐，且不能重复预约。
+		if client.PlanVariantID > 0 {
+			cur, cerr := s.variantRepo.GetByID(ctx, client.PlanVariantID)
+			if cerr == nil && cur != nil && variant.Price <= cur.Price {
+				return nil, fmt.Errorf("target plan is not an upgrade; use renew instead")
+			}
+		}
+		if pending, perr := s.hasPendingPlanChange(ctx, clientID); perr != nil {
+			return nil, perr
+		} else if pending {
+			return nil, fmt.Errorf("there is already a pending plan change for this client")
+		}
 	default:
 		return nil, fmt.Errorf("invalid order type: %s", input.OrderType)
 	}
@@ -641,6 +653,21 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 
 	now := time.Now()
 
+	// 升级 = 预约切换：生效时间取当前到期时间，订单落 scheduled，
+	// 客户端套餐/配额/到期时间一律不动，等调度器到点统一切换。
+	isScheduled := input.OrderType == entity.OrderTypeUpgrade
+	effectiveFrom := now
+	initialStatus := entity.OrderStatusCompleted
+	var effectiveTo *time.Time
+	if isScheduled {
+		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+			effectiveFrom = *client.ExpiresAt
+		}
+		to := effectiveFrom.AddDate(0, 0, variant.DurationDays)
+		effectiveTo = &to
+		initialStatus = entity.OrderStatusScheduled
+	}
+
 	if input.PayMethod == "balance" {
 		// Pre-check balance for user-friendly error message
 		if paidAmount > 0 {
@@ -657,7 +684,10 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
 			OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: paidAmount,
 			PromotionID: promotionID, PromotionCode: input.PromotionCode,
-			EffectiveFrom: now, Status: entity.OrderStatusCompleted,
+			EffectiveFrom: effectiveFrom, EffectiveTo: effectiveTo, Status: initialStatus,
+		}
+		if isScheduled {
+			order.Remark = "scheduled upgrade, takes effect at current expiry"
 		}
 		// S-3 fix: wrap order creation + balance deduction in a transaction so
 		// a failure in either step leaves no orphan order or missing deduction.
@@ -698,8 +728,10 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if err != nil {
 			return nil, err
 		}
-		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
-			return nil, fmt.Errorf("failed to activate plan: %v", err)
+		if !isScheduled {
+			if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
+				return nil, fmt.Errorf("failed to activate plan: %v", err)
+			}
 		}
 		// P1: 首次付费返利触发（余额支付）
 		s.triggerFirstPaid(ctx, clientID, paidAmount)
@@ -712,7 +744,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 				"plan_name": tmpl.Name,
 			})
 		}()
-		return &CreateOrderResult{OrderID: order.ID, Status: entity.OrderStatusCompleted}, nil
+		return &CreateOrderResult{OrderID: order.ID, Status: initialStatus}, nil
 
 	} else if input.PayMethod == "charge_site" {
 		if input.ChargeSiteID == nil {
@@ -726,7 +758,10 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
 			OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: paidAmount,
 			PromotionID: promotionID, PromotionCode: input.PromotionCode,
-			EffectiveFrom: now, Status: entity.OrderStatusPending,
+			EffectiveFrom: effectiveFrom, EffectiveTo: effectiveTo, Status: entity.OrderStatusPending,
+		}
+		if isScheduled {
+			order.Remark = "scheduled upgrade, takes effect at current expiry"
 		}
 		if err := s.orderRepo.Create(ctx, order); err != nil {
 			return nil, fmt.Errorf("failed to create order: %v", err)
@@ -884,13 +919,16 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			if err := tx.Create(chargeOrder).Error; err != nil {
 				return err
 			}
-			// Create completed plan order
+			// Create plan order (scheduled for upgrades)
 			order := &entity.PlanOrder{
 				ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
 				OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: 0,
 				PromotionID: promotionID, PromotionCode: input.PromotionCode,
-				EffectiveFrom: now, Status: entity.OrderStatusCompleted,
+				EffectiveFrom: effectiveFrom, EffectiveTo: effectiveTo, Status: initialStatus,
 				Remark: "套餐卡支付: " + card.CardCodeMasked,
+			}
+			if isScheduled {
+				order.Remark += " (scheduled upgrade)"
 			}
 			if err := tx.Create(order).Error; err != nil {
 				return err
@@ -902,15 +940,17 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 			return nil, fmt.Errorf("failed to redeem gift card: %v", err)
 		}
 
-		// 激活套餐
-		if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
-			return nil, fmt.Errorf("failed to activate plan: %v", err)
+		// 激活套餐（升级为预约切换，到点由调度器执行）
+		if !isScheduled {
+			if err := s.activatePlan(ctx, client, tmpl, variant, input.OrderType); err != nil {
+				return nil, fmt.Errorf("failed to activate plan: %v", err)
+			}
 		}
 
 		// P1: 首次付费返利触发（套餐卡支付 — 按原价计算返利，套餐卡等价于预付原价）
 		s.triggerFirstPaid(ctx, clientID, originalAmount)
 
-		return &CreateOrderResult{OrderID: planOrderID, Status: entity.OrderStatusCompleted}, nil
+		return &CreateOrderResult{OrderID: planOrderID, Status: initialStatus}, nil
 	}
 
 	// No pay_method: pending order
@@ -918,7 +958,10 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		ClientID: clientID, OrderType: input.OrderType, ToVariantID: input.VariantID,
 		OriginalAmount: originalAmount, DiscountAmount: discountAmount, PaidAmount: paidAmount,
 		PromotionID: promotionID, PromotionCode: input.PromotionCode,
-		EffectiveFrom: now, Status: entity.OrderStatusPending,
+		EffectiveFrom: effectiveFrom, EffectiveTo: effectiveTo, Status: entity.OrderStatusPending,
+	}
+	if isScheduled {
+		order.Remark = "scheduled upgrade, takes effect at current expiry"
 	}
 	if err := s.orderRepo.Create(ctx, order); err != nil {
 		return nil, fmt.Errorf("failed to create order: %v", err)
@@ -2194,8 +2237,32 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 			}
 
 			// Traffic pack: add traffic (and optionally extend expiry)
+			scheduledOrder, err := s.findPendingPlanChangeTx(ctx, tx, order.ClientID, *order.PlanVariantID)
+			if err != nil {
+				return err
+			}
 			if variant.VariantType == entity.VariantTypeTrafficPack {
 				if err := s.applyTrafficPackTx(ctx, tx, &client, variant); err != nil {
+					return err
+				}
+			} else if scheduledOrder != nil {
+				// 付款前已登记过「待生效的套餐变更」（升级/降级预约）：
+				// 只把预约单置为 scheduled 并补齐生效时间 ✗ 不能立即激活。
+				now := time.Now()
+				effectiveFrom := now
+				if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+					effectiveFrom = *client.ExpiresAt
+				}
+				effectiveTo := effectiveFrom.AddDate(0, 0, variant.DurationDays)
+				if err := tx.Model(&entity.PlanOrder{}).
+					Where("id = ?", scheduledOrder.ID).
+					Updates(map[string]interface{}{
+						"status":         entity.OrderStatusScheduled,
+						"effective_from": effectiveFrom,
+						"effective_to":   effectiveTo,
+						"paid_amount":    order.Amount,
+						"updated_at":     now,
+					}).Error; err != nil {
 					return err
 				}
 			} else {
@@ -2209,56 +2276,115 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				}
 			}
 
-			// Create plan order for record-keeping
-			now := time.Now()
-			planOrder := &entity.PlanOrder{
-				ClientID: order.ClientID, OrderType: entity.OrderTypeNew,
-				ToVariantID: *order.PlanVariantID, OriginalAmount: order.Amount,
-				PaidAmount: order.Amount, EffectiveFrom: now,
-				Status: entity.OrderStatusCompleted, Remark: "充值订单自动开通",
-			}
-			if order.Source == entity.ChargeSourceCard {
-				planOrder.PaidAmount = 0
-				planOrder.Remark = "充值卡兑换自动开通"
-			}
-			if err := tx.Create(planOrder).Error; err != nil {
-				return err
-			}
-			// 把"下单时创建的那条 pending 套餐订单"一起收尾。
-			// 否则用户在「我的订单」里会一直看到"待支付"，而钱其实早就付了。
-			// 作用域限定 同一客户 + 同一目标变体，避免误伤其它未支付的订单。
-			finish := tx.Model(&entity.PlanOrder{}).
-				Where("client_id = ? AND status = ?", order.ClientID, entity.OrderStatusPending)
-			if order.PlanVariantID != nil {
-				finish = finish.Where("to_variant_id = ?", *order.PlanVariantID)
-			}
-			if err := finish.Updates(map[string]interface{}{
-				"status":      entity.OrderStatusCompleted,
-				"paid_amount": order.Amount,
-			}).Error; err != nil {
-				return err
-			}
-			// 记录余额消费流水（三方充值/充值卡购买套餐）
-			if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
-				remark := "在线支付购买套餐"
-				if order.Source == entity.ChargeSourceSite {
-					remark = "充值站点支付购买套餐"
+			if scheduledOrder == nil {
+				// Create plan order for record-keeping
+				now := time.Now()
+				planOrder := &entity.PlanOrder{
+					ClientID: order.ClientID, OrderType: entity.OrderTypeNew,
+					ToVariantID: *order.PlanVariantID, OriginalAmount: order.Amount,
+					PaidAmount: order.Amount, EffectiveFrom: now,
+					Status: entity.OrderStatusCompleted, Remark: "充值订单自动开通",
 				}
-				// S-10 fix: record actual balance before/after for audit trail
+				if order.Source == entity.ChargeSourceCard {
+					planOrder.PaidAmount = 0
+					planOrder.Remark = "充值卡兑换自动开通"
+				}
+				if err := tx.Create(planOrder).Error; err != nil {
+					return err
+				}
+				// 把"下单时创建的那条 pending 套餐订单"一起收尾。
+				// 否则用户在「我的订单」里会一直看到"待支付"，而钱其实早就付了。
+				// 作用域限定 同一客户 + 同一目标变体，避免误伤其它未支付的订单。
+				finish := tx.Model(&entity.PlanOrder{}).
+					Where("client_id = ? AND status = ?", order.ClientID, entity.OrderStatusPending)
+				if order.PlanVariantID != nil {
+					finish = finish.Where("to_variant_id = ?", *order.PlanVariantID)
+				}
+				if err := finish.Updates(map[string]interface{}{
+					"status":      entity.OrderStatusCompleted,
+					"paid_amount": order.Amount,
+				}).Error; err != nil {
+					return err
+				}
+				// 记录余额消费流水（三方充值/充值卡购买套餐）
+				if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
+					remark := "在线支付购买套餐"
+					if order.Source == entity.ChargeSourceSite {
+						remark = "充值站点支付购买套餐"
+					}
+					// S-10 fix: record actual balance before/after for audit trail
+					var balAfter entity.ClientBalance
+					tx.Where("client_id = ?", order.ClientID).First(&balAfter)
+					txRecord := &entity.BalanceTransaction{
+						ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
+						Amount: -order.Amount, BalanceBefore: balAfter.Balance + order.Amount, BalanceAfter: balAfter.Balance,
+						RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &planOrder.ID,
+						Remark: remark,
+					}
+					tx.Create(txRecord)
+				}
+			} else if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
+				// 预约单同样要记余额消费流水（金额在付款时已扣）
+				remark := "在线支付购买套餐（预约升级）"
+				if order.Source == entity.ChargeSourceSite {
+					remark = "充值站点支付购买套餐（预约升级）"
+				}
 				var balAfter entity.ClientBalance
 				tx.Where("client_id = ?", order.ClientID).First(&balAfter)
-				txRecord := &entity.BalanceTransaction{
+				tx.Create(&entity.BalanceTransaction{
 					ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
 					Amount: -order.Amount, BalanceBefore: balAfter.Balance + order.Amount, BalanceAfter: balAfter.Balance,
-					RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &planOrder.ID,
+					RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &scheduledOrder.ID,
 					Remark: remark,
-				}
-				tx.Create(txRecord)
+				})
 			}
 			return nil
 		}
 		return nil
 	})
+}
+
+// stalePendingWindow 未支付预约单的失效窗口。
+// 三方支付下单后 15 分钟内需完成支付；超过该窗口仍未付款的 pending 单
+// 不再阻塞新的预约，否则用户放弃一次支付就会把自己永久锁死。
+const stalePendingWindow = 30 * time.Minute
+
+// findPendingPlanChangeTx 查找客户此前登记、尚未付款的「套餐变更预约单」。
+// 三方支付/充值卡回调到账时，如果命中，只把预约单置为 scheduled，
+// 绝不在这里立即激活套餐（否则预约升级会提前生效）。
+func (s *CommerceService) findPendingPlanChangeTx(ctx context.Context, tx *gorm.DB, clientID, variantID int64) (*entity.PlanOrder, error) {
+	var order entity.PlanOrder
+	err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("client_id = ?", clientID).
+		Where("to_variant_id = ?", variantID).
+		Where("order_type IN ?", []string{entity.OrderTypeUpgrade, entity.OrderTypeDowngrade}).
+		Where("status = ?", entity.OrderStatusPending).
+		Order("id ASC").
+		First(&order).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
+// hasPendingPlanChange reports whether the client already has a scheduled
+// (or recently unpaid) upgrade/downgrade that has not taken effect yet.
+func (s *CommerceService) hasPendingPlanChange(ctx context.Context, clientID int64) (bool, error) {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&entity.PlanOrder{}).
+		Where("client_id = ?", clientID).
+		Where("order_type IN ?", []string{entity.OrderTypeUpgrade, entity.OrderTypeDowngrade}).
+		Where("status = ? OR (status = ? AND created_at >= ?)",
+			entity.OrderStatusScheduled, entity.OrderStatusPending, time.Now().Add(-stalePendingWindow)).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check pending plan change: %w", err)
+	}
+	return count > 0, nil
 }
 
 // activatePlan assigns the plan to the client and creates/updates subscription.
@@ -2284,16 +2410,21 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		}
 		client.ExpiresAt = &expiresAt
 	case entity.OrderTypeRenew:
-		client.QuotaBytes = quotaBytes
+		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
+		// 已用流量不清零（用户买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
 		baseTime := now
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
 		expiresAt := baseTime.AddDate(0, 0, variant.DurationDays)
 		client.ExpiresAt = &expiresAt
+		client.QuotaBytes += quotaBytes
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
+		// 升级不在这里生效：它要等当前计费周期结束后才切换（见 schedulePlanChange）。
+		// 走到这里说明调用方没做预约判断，按新购处理以免留下半个状态。
 		client.QuotaBytes = quotaBytes
+		client.UsedBytes = 0
 		expiresAt := now.AddDate(0, 0, variant.DurationDays)
 		client.ExpiresAt = &expiresAt
 		client.Status = "active"
@@ -2309,7 +2440,7 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 	if client.SubscriptionID == nil {
 		sub := &entity.Subscription{
 			ClientID: client.ID, Format: "xray", Token: generateToken(32),
-			Status: "active", QuotaBytes: quotaBytes,
+			Status: "active", QuotaBytes: client.QuotaBytes,
 			QuotaResetCycle: variant.QuotaResetCycle, QuotaResetDay: variant.QuotaResetDay,
 			ExpiresAt: client.ExpiresAt,
 		}
@@ -2329,7 +2460,12 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		if err != nil {
 			return err
 		}
-		sub.QuotaBytes = quotaBytes
+		if orderType == entity.OrderTypeRenew {
+			// 续费累加（client.QuotaBytes 已经加过本次配额，这里保持两边一致）
+			sub.QuotaBytes = client.QuotaBytes
+		} else {
+			sub.QuotaBytes = quotaBytes
+		}
 		sub.QuotaResetCycle = variant.QuotaResetCycle
 		sub.QuotaResetDay = variant.QuotaResetDay
 		sub.ExpiresAt = client.ExpiresAt
@@ -2384,16 +2520,20 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		}
 		client.ExpiresAt = &expiresAt
 	case entity.OrderTypeRenew:
-		client.QuotaBytes = quotaBytes
+		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
+		// 已用流量不清零（买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
 		baseTime := now
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
 		expiresAt := baseTime.AddDate(0, 0, variant.DurationDays)
 		client.ExpiresAt = &expiresAt
+		client.QuotaBytes += quotaBytes
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
+		// 升级不在这里生效：等当前计费周期结束后由调度器切换（见 schedulePlanChange）。
 		client.QuotaBytes = quotaBytes
+		client.UsedBytes = 0
 		expiresAt := now.AddDate(0, 0, variant.DurationDays)
 		client.ExpiresAt = &expiresAt
 		client.Status = "active"
@@ -2409,7 +2549,7 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 	if client.SubscriptionID == nil {
 		sub := &entity.Subscription{
 			ClientID: client.ID, Format: "xray", Token: generateToken(32),
-			Status: "active", QuotaBytes: quotaBytes,
+			Status: "active", QuotaBytes: client.QuotaBytes,
 			QuotaResetCycle: variant.QuotaResetCycle, QuotaResetDay: variant.QuotaResetDay,
 			ExpiresAt: client.ExpiresAt,
 		}
@@ -2429,7 +2569,11 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		if err := tx.Where("id = ?", *client.SubscriptionID).First(&sub).Error; err != nil {
 			return err
 		}
-		sub.QuotaBytes = quotaBytes
+		if orderType == entity.OrderTypeRenew {
+			sub.QuotaBytes = client.QuotaBytes
+		} else {
+			sub.QuotaBytes = quotaBytes
+		}
 		sub.QuotaResetCycle = variant.QuotaResetCycle
 		sub.QuotaResetDay = variant.QuotaResetDay
 		sub.ExpiresAt = client.ExpiresAt
@@ -2545,7 +2689,7 @@ func (s *CommerceService) RefundChargeOrder(ctx context.Context, chargeOrderID i
 		}
 	}
 
-	// 3. 如果是套餐购买订单，回退套餐时间
+	// 3. 如果是套餐购买订单，回退套餐时间/配额
 	if order.OrderType == entity.ChargeOrderTypePurchase && order.PlanVariantID != nil {
 		client, err := s.clientRepo.GetByID(ctx, order.ClientID)
 		if err != nil {
@@ -2559,10 +2703,43 @@ func (s *CommerceService) RefundChargeOrder(ctx context.Context, chargeOrderID i
 			return nil
 		}
 
+		// 预约变更（升级/降级）尚未生效时，套餐字段根本没被改过：
+		// 退款只需撤销那条预约单，绝不能去减 client.ExpiresAt，
+		// 否则会把用户已付费的当前周期白白扣掉。
+		var scheduled entity.PlanOrder
+		serr := s.db.WithContext(ctx).
+			Where("client_id = ? AND to_variant_id = ?", order.ClientID, *order.PlanVariantID).
+			Where("order_type IN ?", []string{entity.OrderTypeUpgrade, entity.OrderTypeDowngrade}).
+			Where("status IN ?", []string{entity.OrderStatusScheduled, entity.OrderStatusPending}).
+			Order("id DESC").First(&scheduled).Error
+		if serr == nil {
+			if uerr := s.db.WithContext(ctx).Model(&entity.PlanOrder{}).
+				Where("id = ?", scheduled.ID).
+				Update("status", entity.OrderStatusCancelled).Error; uerr != nil {
+				log.Printf("[refund] failed to cancel scheduled plan order %d: %v", scheduled.ID, uerr)
+			} else {
+				log.Printf("[refund] cancelled scheduled plan order %d for charge order %d", scheduled.ID, chargeOrderID)
+			}
+			return nil
+		}
+		if serr != gorm.ErrRecordNotFound {
+			log.Printf("[refund] failed to look up scheduled plan order for client %d: %v", order.ClientID, serr)
+			return nil
+		}
+
 		// 回退到期时间：减去 variant.DurationDays
 		if client.ExpiresAt != nil && variant.DurationDays > 0 {
 			newExpiresAt := client.ExpiresAt.AddDate(0, 0, -variant.DurationDays)
 			client.ExpiresAt = &newExpiresAt
+
+			// 配额是累加得到的，退款时同步扣回，避免退款后配额虚高。
+			if variant.QuotaBytes > 0 {
+				if client.QuotaBytes > variant.QuotaBytes {
+					client.QuotaBytes -= variant.QuotaBytes
+				} else {
+					client.QuotaBytes = 0
+				}
+			}
 
 			// 如果回退后已过期，标记为 expired
 			if newExpiresAt.Before(time.Now()) || newExpiresAt.Equal(time.Now()) {
@@ -2580,14 +2757,15 @@ func (s *CommerceService) RefundChargeOrder(ctx context.Context, chargeOrderID i
 			if err := s.clientRepo.Update(ctx, client); err != nil {
 				log.Printf("[refund] failed to update client %d expires_at: %v", client.ID, err)
 			} else {
-				log.Printf("[refund] client %d expires_at rolled back by %d days (order %d)",
-					client.ID, variant.DurationDays, chargeOrderID)
+				log.Printf("[refund] client %d expires_at rolled back by %d days, quota rolled back by %d bytes (order %d)",
+					client.ID, variant.DurationDays, variant.QuotaBytes, chargeOrderID)
 			}
 
 			// 同步更新 subscription
 			if client.SubscriptionID != nil {
 				if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
 					sub.ExpiresAt = client.ExpiresAt
+					sub.QuotaBytes = client.QuotaBytes
 					if client.Status == "expired" {
 						sub.Status = "expired"
 					}

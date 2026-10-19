@@ -1112,8 +1112,8 @@ const cycleLabel = (c) => ({ monthly: t('plan.cycleMonthly'), quarterly: t('plan
 const scopeLabel = (s) => ({ all: t('plan.allPlansLabel'), template: t('plan.specificTemplate'), specific_variant: t('plan.specificVariant') })[s] || s
 const orderTypeLabel = (tv) => ({ new: t('plan.orderNew'), renew: t('plan.orderRenew'), upgrade: t('plan.orderUpgrade'), downgrade: t('plan.orderDowngrade'), trial_convert: t('plan.orderTrialConvert') })[tv] || tv
 const orderTypeColor = (t) => ({ new:'success', renew:'', upgrade:'warning', downgrade:'info', trial_convert:'danger' })[t] || ''
-const orderStatusLabel = (s) => ({ pending: t('plan.orderPending'), paid: t('plan.orderPaid'), completed: t('plan.orderCompleted'), cancelled: t('plan.orderCancelled'), refunded: t('plan.orderRefunded') })[s] || s
-const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
+const orderStatusLabel = (s) => ({ pending: t('plan.orderPending'), paid: t('plan.orderPaid'), scheduled: t('plan.orderScheduled'), completed: t('plan.orderCompleted'), cancelled: t('plan.orderCancelled'), refunded: t('plan.orderRefunded') })[s] || s
+const orderStatusColor = (s) => ({ pending:'warning', paid:'info', scheduled:'warning', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 const inboundName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.remark || ib.tag) : '#' + id }
 // sortedInbounds：按「节点 → 入站」排序，让同节点条目聚在一起（后端已按 sort_order 排序，这里再兜底一次）
 const sortedInbounds = computed(() => {

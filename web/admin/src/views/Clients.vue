@@ -469,8 +469,8 @@ async function showOrdersDialog(row) {
 }
 const orderTypeLabel = (type) => ({ new:t('client.orderNew'), renew:t('client.renew'), upgrade:t('client.upgrade'), downgrade:t('client.downgrade'), trial_convert:t('client.trialConvert') })[type] || type
 const orderTypeColor = (type) => ({ new:'success', renew:'', upgrade:'warning', downgrade:'info', trial_convert:'danger' })[type] || ''
-const orderStatusLabel = (s) => ({ pending:t('client.orderPending'), paid:t('client.orderPaid'), completed:t('client.orderCompleted'), cancelled:t('client.orderCancelled'), refunded:t('client.orderRefunded') })[s] || s
-const orderStatusColor = (s) => ({ pending:'warning', paid:'info', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
+const orderStatusLabel = (s) => ({ pending:t('client.orderPending'), paid:t('client.orderPaid'), scheduled:t('client.orderScheduled'), completed:t('client.orderCompleted'), cancelled:t('client.orderCancelled'), refunded:t('client.orderRefunded') })[s] || s
+const orderStatusColor = (s) => ({ pending:'warning', paid:'info', scheduled:'warning', completed:'success', cancelled:'danger', refunded:'danger' })[s] || ''
 async function fetchClients() {
   clientLoading.value = true
   try {

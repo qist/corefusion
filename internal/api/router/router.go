@@ -1944,6 +1944,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				mihomoGroup.DELETE("/proxy-groups/:id", mihomoH.DeleteProxyGroup)
 				mihomoGroup.GET("/configs/:id/rules", mihomoH.ListRules)
 				mihomoGroup.POST("/configs/:id/rules", mihomoH.CreateRule)
+				mihomoGroup.PUT("/configs/:id/rules/order", mihomoH.ReorderRules)
+				mihomoGroup.PUT("/rules/:id", mihomoH.UpdateRule)
 				mihomoGroup.DELETE("/rules/:id", mihomoH.DeleteRule)
 				mihomoGroup.GET("/configs/:id/rule-providers", mihomoH.ListRuleProviders)
 				mihomoGroup.POST("/configs/:id/rule-providers", mihomoH.CreateRuleProvider)

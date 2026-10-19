@@ -1324,6 +1324,12 @@ func generatePlainMihomoYAML(proxyMaps []map[string]interface{}) []byte {
 //     把 Mihomo 残留字段或未知顶层键塞进去会让客户端**整份拒载**，所以白名单收口；
 //   - 带 `_disabled: true` 的段视为停用，跳过（与协议中心的停用语义一致），
 //     且无论启用与否都把面板内部标记 `_disabled` 从输出里剥掉（核心不认这个键）；
+//   - experimental 里的 v2ray_api **永远剔除**：那是节点侧给面板抓 user>>> 计数的
+//     通道，需要 with_v2ray_api 的 sing-box 构建，官方客户端带上会直接启动失败。
+//     客户端要控制/看流量走 clash_api（yacd / metacubexd 等第三方面板）；
+//   - Mihomo 形状的 `dns` 段要丢掉：sing-box 与 mihomo 都用 "dns" 这个键，但字段
+//     完全不同（enhanced-mode/fake-ip-range/nameserver vs servers/strategy）。历史
+//     订阅格式曾把整份 Mihomo 配置存进 sing-box 行，直接合并会让客户端 FATAL；
 //   - 空对象跳过；解析失败静默返回原数据（一段脏配置不能毁掉整份订阅）。
 func mergeFormatSections(data []byte, cfg *entity.MihomoConfig, allow ...string) []byte {
 	if cfg == nil || len(data) == 0 || len(allow) == 0 {
@@ -1355,11 +1361,18 @@ func mergeFormatSections(data []byte, cfg *entity.MihomoConfig, allow ...string)
 						clean[k] = vv
 					}
 				}
-				v = clean
+				m = clean
 			}
-			if len(v.(map[string]interface{})) == 0 {
+			// 节点侧统计通道不能下发给客户端（见函数注释）
+			if key == "experimental" {
+				if _, has := m["v2ray_api"]; has {
+					delete(m, "v2ray_api")
+				}
+			}
+			if len(m) == 0 {
 				continue
 			}
+			v = m
 		}
 		out[key] = v
 		changed = true

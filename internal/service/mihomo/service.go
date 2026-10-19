@@ -314,7 +314,48 @@ func (s *Service) CreateRule(ctx context.Context, configID int64, input CreateRu
 	if input.Enabled != nil {
 		rule.Enabled = *input.Enabled
 	}
+	// 未显式指定优先级时追加到末尾（priority 0 会让新规则跑到最前面）
+	if rule.Priority <= 0 {
+		rules, err := s.ruleRepo.ListByConfigID(ctx, configID)
+		if err != nil {
+			return nil, err
+		}
+		max := 0
+		for _, r := range rules {
+			if r.Priority > max {
+				max = r.Priority
+			}
+		}
+		rule.Priority = max + 10
+	}
 	if err := s.ruleRepo.Create(ctx, rule); err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+type UpdateRuleInput struct {
+	RuleString string `json:"rule_string"`
+	Priority   int    `json:"priority"`
+	Enabled    *bool  `json:"enabled"`
+}
+
+// UpdateRule 修改一条规则的内容/启用状态；priority 传 0 表示保持原顺序。
+func (s *Service) UpdateRule(ctx context.Context, id int64, input UpdateRuleInput) (*entity.MihomoRule, error) {
+	rule, err := s.ruleRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if input.RuleString != "" {
+		rule.RuleString = input.RuleString
+	}
+	if input.Priority > 0 {
+		rule.Priority = input.Priority
+	}
+	if input.Enabled != nil {
+		rule.Enabled = *input.Enabled
+	}
+	if err := s.ruleRepo.Update(ctx, rule); err != nil {
 		return nil, err
 	}
 	return rule, nil
@@ -322,6 +363,14 @@ func (s *Service) CreateRule(ctx context.Context, configID int64, input CreateRu
 
 func (s *Service) DeleteRule(ctx context.Context, id int64) error {
 	return s.ruleRepo.Delete(ctx, id)
+}
+
+// ReorderRules 按 ids 顺序重排某配置下的规则。
+func (s *Service) ReorderRules(ctx context.Context, configID int64, ids []int64) error {
+	if len(ids) == 0 {
+		return fmt.Errorf("rule ids required")
+	}
+	return s.ruleRepo.Reorder(ctx, configID, ids)
 }
 
 // --- Rule Provider operations ---

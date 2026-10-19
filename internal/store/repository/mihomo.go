@@ -358,6 +358,14 @@ func (r *MihomoRuleRepository) ListByConfigID(ctx context.Context, configID int6
 	return rules, err
 }
 
+func (r *MihomoRuleRepository) GetByID(ctx context.Context, id int64) (*entity.MihomoRule, error) {
+	var rule entity.MihomoRule
+	if err := r.db.WithContext(ctx).First(&rule, id).Error; err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
 func (r *MihomoRuleRepository) Create(ctx context.Context, rule *entity.MihomoRule) error {
 	return r.db.WithContext(ctx).Create(rule).Error
 }
@@ -368,6 +376,25 @@ func (r *MihomoRuleRepository) Update(ctx context.Context, rule *entity.MihomoRu
 
 func (r *MihomoRuleRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.MihomoRule{}, id).Error
+}
+
+// Reorder 按传入的 id 顺序重排该配置下的规则优先级（priority 递增，留出插入空间）。
+// 只更新属于 configID 的行，避免跨配置改动。
+func (r *MihomoRuleRepository) Reorder(ctx context.Context, configID int64, ids []int64) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i, id := range ids {
+			res := tx.Model(&entity.MihomoRule{}).
+				Where("id = ? AND config_id = ?", id, configID).
+				Update("priority", (i+1)*10)
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+		return nil
+	})
 }
 
 // MihomoSpecialOutboundRepository handles mihomo special outbounds.

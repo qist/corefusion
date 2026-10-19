@@ -1088,6 +1088,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
 import { CURRENCIES as currencyList } from '../utils/currency'
+import { TIMEZONES } from '../utils/timezone'
 import { useQueryState } from '../composables/useQueryState'
 import MobileCards from '../components/MobileCards.vue'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -1201,7 +1202,7 @@ const githubCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/clie
 const googleCallbackURL = computed(() => oauthCallbackBase.value + '/api/v1/client-auth/oauth/google/callback')
 const googleVerifyDocURL = 'https://github.com/qist/corefusion/blob/main/docs/oauth-google-verification.md'
 
-const timezones = ['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Tokyo','Asia/Seoul','Asia/Singapore','Asia/Kolkata','Asia/Dubai','Europe/London','Europe/Paris','Europe/Berlin','Europe/Moscow','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Sao_Paulo','Australia/Sydney','Pacific/Auckland','UTC']
+const timezones = TIMEZONES
 
 async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchEnvConfig() { try { const d = await client.get('/system/env-config'); if (d) envForm.value = { ...envForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }

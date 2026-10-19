@@ -282,10 +282,12 @@ type Draft struct {
 	// --- 步骤 4：核心安装 ---
 	Cores []string `json:"cores"`
 
-	// --- 步骤 5：代理选择 + 默认货币 ---
+	// --- 步骤 5：代理选择 + 默认货币 / 时区 ---
 	ProxyType string `json:"proxy_type"`
 	// DefaultCurrency 写入 currency.default（充值卡/余额等默认货币）。
 	DefaultCurrency string `json:"default_currency"`
+	// Timezone 写入 panel.timezone（面板与代理进程的 TZ）。
+	Timezone string `json:"timezone"`
 
 	// --- 步骤 6：面板 / 订阅 / 门户 ---
 	ListenAddr       string `json:"listen_addr"`
@@ -350,6 +352,7 @@ func NewDraft(dataDir string) *Draft {
 		AdminPassword:        RandomPassword(16),
 		ProxyType:            ProxyNone,
 		DefaultCurrency:      "CNY",
+		Timezone:             "Asia/Shanghai",
 		ProxyAddPanel:        true,
 		ProxyAddSubscription: true,
 		ProxyAddPortal:       true,
@@ -576,6 +579,12 @@ func (d *Draft) Validate() error {
 	}
 	if d.TLSMode != "" && d.TLSCertPath == "" {
 		return errors.New("tls certificate is not configured")
+	}
+	// 时区必须是 tzdata 能解析的 IANA 名称（写进 panel.timezone 后会注入代理进程的 TZ）。
+	if tz := strings.TrimSpace(d.Timezone); tz != "" {
+		if _, err := time.LoadLocation(tz); err != nil {
+			return fmt.Errorf("unsupported timezone: %s", tz)
+		}
 	}
 	return nil
 }

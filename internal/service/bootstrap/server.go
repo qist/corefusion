@@ -420,6 +420,7 @@ func (s *Server) handleSites(c *gin.Context) {
 		AddSubscription    *bool   `json:"add_subscription"`
 		AddPortal          *bool   `json:"add_portal"`
 		DefaultCurrency    *string `json:"default_currency"`
+		Timezone           *string `json:"timezone"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -458,6 +459,9 @@ func (s *Server) handleSites(c *gin.Context) {
 		}
 		if req.DefaultCurrency != nil {
 			d.DefaultCurrency = strings.ToUpper(strings.TrimSpace(*req.DefaultCurrency))
+		}
+		if req.Timezone != nil {
+			d.Timezone = strings.TrimSpace(*req.Timezone)
 		}
 	})
 	d := s.snapshot()

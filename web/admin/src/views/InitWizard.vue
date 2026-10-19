@@ -167,6 +167,13 @@
               <el-select v-model="form.default_currency" filterable style="width:100%">
                 <el-option v-for="c in currencies" :key="c.code" :label="c.code + ' ' + c.symbol" :value="c.code" />
               </el-select>
+              <div style="font-size:12px;color:#909399">{{ t('init.currencyHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('init.timezone')">
+              <el-select v-model="form.timezone" filterable style="width:100%">
+                <el-option v-for="tz in timezones" :key="tz" :label="tz" :value="tz" />
+              </el-select>
+              <div style="font-size:12px;color:#909399">{{ t('init.timezoneHint') }}</div>
             </el-form-item>
             <el-divider v-if="form.proxy_type !== 'none' && form.access_mode === 'domain'" />
             <template v-if="form.proxy_type !== 'none' && form.access_mode === 'domain'">
@@ -302,6 +309,7 @@
             <el-descriptions-item :label="t('init.core')">{{ (summary.cores || []).join(', ') || '-' }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.proxy')">{{ summary.proxy_type }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.defaultCurrency')">{{ summary.default_currency }}</el-descriptions-item>
+            <el-descriptions-item :label="t('init.timezone')">{{ summary.timezone || '-' }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.listenAddrAuto')">{{ summary.listen_addr }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.listenPort')">{{ summary.listen_port }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.subscriptionPort')">{{ summary.subscription_port }}</el-descriptions-item>
@@ -355,6 +363,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { CURRENCIES } from '../utils/currency'
+import { TIMEZONES } from '../utils/timezone'
 import {
   getInitStatus, randomPorts, saveDB, testDB, saveDataDir, saveEnv, saveCore, saveProxy,
   saveSites, saveAdmin, saveHttps, getSummary, complete, initToken, envDownloadUrl, getDNSProviders, getPublicIP
@@ -371,6 +380,7 @@ const fatal = ref('')
 const cores = ref(['xray', 'singbox'])
 const dnsProviders = ref({})
 const currencies = CURRENCIES
+const timezones = TIMEZONES
 const summary = ref({})
 const envUrl = ref('')
 const detecting = ref(false)
@@ -401,6 +411,7 @@ const form = reactive({
   subscription_domain: '',
   portal_domain: '',
   default_currency: 'CNY',
+  timezone: 'Asia/Shanghai',
   add_panel: true,
   add_subscription: true,
   add_portal: true,
@@ -639,6 +650,7 @@ function sitesPayload() {
     subscription_domain: ipMode ? '' : form.subscription_domain,
     portal_domain: ipMode ? '' : form.portal_domain,
     default_currency: form.default_currency,
+    timezone: form.timezone,
     add_panel: ipMode ? false : form.add_panel,
     add_subscription: ipMode ? false : form.add_subscription,
     add_portal: ipMode ? false : form.add_portal

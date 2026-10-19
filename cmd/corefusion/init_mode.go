@@ -163,6 +163,7 @@ func runInit(args []string) {
 	subDomain := fs.String("subscription-domain", "", "subscription domain (endpoint + share domain + proxy)")
 	portalDomain := fs.String("portal-domain", "", "portal callback domain (oauth.callback_domain + proxy)")
 	defaultCurrency := fs.String("currency", "CNY", "default currency (currency.default)")
+	timezone := fs.String("timezone", "Asia/Shanghai", "panel timezone (panel.timezone), e.g. Asia/Shanghai")
 	if err := fs.Parse(args); err != nil {
 		log.Fatalf("parse flags: %v", err)
 	}
@@ -211,6 +212,9 @@ func runInit(args []string) {
 	draft.Cores = splitCSV(*coresFlag)
 	draft.PanelDomain, draft.SubscriptionDomain, draft.PortalDomain = *panelDomain, *subDomain, *portalDomain
 	draft.DefaultCurrency = strings.ToUpper(strings.TrimSpace(*defaultCurrency))
+	if tz := strings.TrimSpace(*timezone); tz != "" {
+		draft.Timezone = tz
+	}
 
 	dbCfg := draft.DBConfig(dd)
 	if err := bootstrap.EnsureDatabase(dbCfg, draft.DBName); err != nil {

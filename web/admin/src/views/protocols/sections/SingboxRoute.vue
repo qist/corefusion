@@ -459,44 +459,50 @@
       </template>
     </el-dialog>
 
-    <!-- Chain Proxy Auto-Injected (read-only) -->
-    <el-divider content-position="left">
-      {{ t('protoCenter.routing.chainAutoInjected') }}
-    </el-divider>
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
-      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
-    </el-alert>
-    <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
-      {{ t('common.noData') }}
-    </div>
-    <template v-if="chainOutbounds.length">
-      <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
-      <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
-          <el-tag size="small">{{ ob.type }}</el-tag>
-          <span v-if="ob.server" style="font-size:12px;color:#909399">{{ ob.server }}:{{ ob.server_port }}</span>
-        </div>
+    <!--
+      链式代理自动注入（只读）：仅在**节点上下文**（协议中心）显示。
+      订阅格式管理是全局模板，绝不能出现节点侧内容 —— 这里的 outbounds / 规则 /
+      负载均衡器都是生成订阅时按节点附加的，既不该显示也不该存储（数据隔离）。
+    -->
+    <template v-if="serverId">
+      <el-divider content-position="left">
+        {{ t('protoCenter.routing.chainAutoInjected') }}
+      </el-divider>
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+        {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+      </el-alert>
+      <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
+        {{ t('common.noData') }}
       </div>
-    </template>
-    <template v-if="chainRules.length">
-      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
-      <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag v-if="r.outbound" size="small" type="info">{{ r.outbound }}</el-tag>
-          <span v-if="r.inbound && r.inbound.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: (r.inbound || []).join(',') }) }}</span>
+      <template v-if="chainOutbounds.length">
+        <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
+        <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+            <el-tag size="small">{{ ob.type }}</el-tag>
+            <span v-if="ob.server" style="font-size:12px;color:#909399">{{ ob.server }}:{{ ob.server_port }}</span>
+          </div>
         </div>
-      </div>
-    </template>
-    <template v-if="chainBalancers.length">
-      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
-      <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
-          <el-tag size="small" type="info">{{ b.type || 'urltest' }}</el-tag>
-          <span v-if="b.outbounds && b.outbounds.length" style="font-size:12px;color:#909399">members: {{ b.outbounds.join(', ') }}</span>
+      </template>
+      <template v-if="chainRules.length">
+        <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
+        <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag v-if="r.outbound" size="small" type="info">{{ r.outbound }}</el-tag>
+            <span v-if="r.inbound && r.inbound.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: (r.inbound || []).join(',') }) }}</span>
+          </div>
         </div>
-      </div>
+      </template>
+      <template v-if="chainBalancers.length">
+        <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
+        <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
+            <el-tag size="small" type="info">{{ b.type || 'urltest' }}</el-tag>
+            <span v-if="b.outbounds && b.outbounds.length" style="font-size:12px;color:#909399">members: {{ b.outbounds.join(', ') }}</span>
+          </div>
+        </div>
+      </template>
     </template>
   </div>
 </template>
@@ -1053,7 +1059,13 @@ function build() {
 }
 
 function emit() { emitFn('update', build()) }
-onMounted(function() { sync(); loadTags(); loadGeoRuleFiles(); loadChainProxy() })
+// 无节点上下文（如订阅格式编辑复用本组件）时只做本地同步：
+// 出站/入站 tag 退化为内置值，也不去拉节点侧数据。
+onMounted(function() {
+  sync()
+  loadGeoRuleFiles()
+  if (props.serverId) { loadTags(); loadChainProxy() }
+})
 
 // Chain proxy auto-injected content (read-only, from final sing-box config).
 // 链式出站/路由规则/urltest 由 PrepareFullConfig 在同步时注入，不在可编辑的 props.data 里。

@@ -661,3 +661,107 @@ func TestGenerateMihomoYAMLProviderNameCollision(t *testing.T) {
 		t.Fatalf("use reference should point at the renamed dynamic provider: %s", out)
 	}
 }
+
+// mergeFormatSections：config_json 里已编辑好的配置段应原样合并进订阅输出，
+// 且只合并白名单内的段（防止 Mihomo 残留/未知顶层键让 sing-box 整份拒载）。
+func TestMergeFormatSectionsInjectsAllowedSectionsOnly(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{
+		"log": {"level": "warn"},
+		"dns": {"servers": [{"address": "1.1.1.1"}]},
+		"route": {"final": "direct"},
+		"mixed-port": 10801,
+		"proxy-groups": [{"name": "PROXY"}]
+	}`}
+	base := []byte(`{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	out := string(mergeFormatSections(base, cfg, "log", "dns", "route", "experimental"))
+
+	for _, want := range []string{`"level": "warn"`, `"address": "1.1.1.1"`, `"final": "direct"`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("merged output should contain %s: %s", want, out)
+		}
+	}
+	// 白名单外的 Mihomo 残留字段绝不能透出（sing-box 严格解码会整份拒载）
+	for _, forbidden := range []string{"mixed-port", "proxy-groups"} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("output must not contain non-allowlisted key %q: %s", forbidden, out)
+		}
+	}
+}
+
+// _disabled: true 的段视为停用；空对象跳过；无可用段时原样返回。
+func TestMergeFormatSectionsSkipsDisabledAndEmpty(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{
+		"log": {"level": "warn", "_disabled": true},
+		"dns": {},
+		"experimental": {"cache_file": {"enabled": true}}
+	}`}
+	base := []byte(`{"outbounds":[]}`)
+	out := string(mergeFormatSections(base, cfg, "log", "dns", "experimental"))
+	if strings.Contains(out, "warn") {
+		t.Fatalf("_disabled section must be skipped: %s", out)
+	}
+	if !strings.Contains(out, "cache_file") {
+		t.Fatalf("enabled section should be merged: %s", out)
+	}
+
+	// 启用段里的内部标记 `_disabled` 必须被剥掉（sing-box 严格解码会整份拒载）
+	marked := &entity.MihomoConfig{ConfigJSON: `{"dns": {"servers": [{"type":"udp","server":"8.8.8.8"}], "_disabled": false}}`}
+	outMarked := string(mergeFormatSections(base, marked, "dns"))
+	if strings.Contains(outMarked, "_disabled") {
+		t.Fatalf("internal _disabled marker must be stripped from output: %s", outMarked)
+	}
+	if !strings.Contains(outMarked, "8.8.8.8") {
+		t.Fatalf("enabled section content should survive stripping: %s", outMarked)
+	}
+
+	// 无任何可用段 → 返回原数据（不做无谓的重新序列化）
+	empty := &entity.MihomoConfig{ConfigJSON: `{}`}
+	orig := []byte(`{"outbounds":[]}`)
+	if got := mergeFormatSections(orig, empty, "log", "dns"); string(got) != string(orig) {
+		t.Fatalf("no matching section should return input unchanged, got %s", got)
+	}
+}
+
+// injectRuleSets：rule_set 必须落在 route 段内（sing-box 1.15 顶层写会 FATAL），
+// 且兼容历史顶层旧写法读取、按 tag 去重。
+func TestInjectRuleSetsPlacesUnderRoute(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{"route":{"rule_set":[
+		{"type":"remote","tag":"geosite-cn","format":"binary","url":"https://example.com/a.srs"}
+	]}}`}
+	base := []byte(`{"outbounds":[{"type":"direct","tag":"direct"}]}`)
+	out := string(injectRuleSets(base, cfg))
+
+	if strings.Contains(out, `"rule_set"`) == false {
+		t.Fatalf("route.rule_set should be injected: %s", out)
+	}
+	// 顶层绝不能出现 rule_set：用 JSON 结构断言而非子串（子串会命中 route 内的那处）
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("output should be valid JSON: %v", err)
+	}
+	if _, topLevel := parsed["rule_set"]; topLevel {
+		t.Fatalf("rule_set must not be written at top level: %s", out)
+	}
+	route, _ := parsed["route"].(map[string]interface{})
+	if route == nil {
+		t.Fatalf("route section should exist: %s", out)
+	}
+	if _, ok := route["rule_set"].([]interface{}); !ok {
+		t.Fatalf("route.rule_set should be an array: %s", out)
+	}
+
+	// 历史顶层旧写法仍应被读取并搬到 route 内
+	legacy := &entity.MihomoConfig{ConfigJSON: `{"rule_set":[{"type":"local","tag":"legacy","path":"rules/x.json"}]}`}
+	outLegacy := string(injectRuleSets(base, legacy))
+	var parsedLegacy map[string]interface{}
+	if err := json.Unmarshal([]byte(outLegacy), &parsedLegacy); err != nil {
+		t.Fatalf("legacy output should be valid JSON: %v", err)
+	}
+	routeLegacy, _ := parsedLegacy["route"].(map[string]interface{})
+	if routeLegacy == nil {
+		t.Fatalf("legacy rule_set should be migrated into route: %s", outLegacy)
+	}
+	if arr, _ := routeLegacy["rule_set"].([]interface{}); len(arr) != 1 {
+		t.Fatalf("legacy rule_set should land in route.rule_set: %s", outLegacy)
+	}
+}

@@ -59,6 +59,16 @@ func TestDraftValidate(t *testing.T) {
 	if err := d.Validate(); err == nil {
 		t.Error("unsupported core should fail")
 	}
+	d = NewDraft(t.TempDir())
+	d.Timezone = "Mars/Olympus"
+	if err := d.Validate(); err == nil {
+		t.Error("unknown timezone should fail")
+	}
+	d = NewDraft(t.TempDir())
+	d.Timezone = "Europe/Berlin"
+	if err := d.Validate(); err != nil {
+		t.Errorf("valid timezone should pass: %v", err)
+	}
 }
 
 func TestPasswordStrength(t *testing.T) {
@@ -113,6 +123,7 @@ func TestComplete(t *testing.T) {
 	d.PanelDomain = "panel.example.com"
 	d.PortalDomain = "portal.example.com"
 	d.SubscriptionDomain = "sub.example.com"
+	d.Timezone = "Asia/Tokyo"
 	// 选 nginx 且订阅/门户不设独立端口（0）→ 回退面板端口，订阅走 /sub、门户走 /p。
 	d.ProxyType = ProxyNginx
 	d.SubscriptionPort = "0"
@@ -150,6 +161,10 @@ func TestComplete(t *testing.T) {
 	var cur entity.SystemSetting
 	if err := db.DB.Where("`key` = ?", "currency.default").First(&cur).Error; err != nil || cur.Value != "CNY" {
 		t.Errorf("currency.default = %q err=%v", cur.Value, err)
+	}
+	var tz entity.SystemSetting
+	if err := db.DB.Where("`key` = ?", "panel.timezone").First(&tz).Error; err != nil || tz.Value != "Asia/Tokyo" {
+		t.Errorf("panel.timezone = %q err=%v", tz.Value, err)
 	}
 	var ep entity.SubscriptionEndpoint
 	if err := db.DB.Where("domain = ?", "sub.example.com").First(&ep).Error; err != nil {

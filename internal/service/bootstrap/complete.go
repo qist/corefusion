@@ -134,6 +134,7 @@ func Summary(dataDir string, d *Draft) map[string]any {
 		"cores":                  d.Cores,
 		"proxy_type":             d.ProxyType,
 		"default_currency":       d.DefaultCurrency,
+		"timezone":               d.Timezone,
 		"proxy_add_panel":        d.ProxyAddPanel,
 		"proxy_add_subscription": d.ProxyAddSubscription,
 		"proxy_add_portal":       d.ProxyAddPortal,
@@ -363,6 +364,10 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 	// 默认货币（充值卡/余额等默认货币）。
 	if c := strings.ToUpper(strings.TrimSpace(d.DefaultCurrency)); c != "" {
 		_ = settingSvc.SetByKey(ctx, "currency.default", c)
+	}
+	// 时区（面板设置 → 注入代理进程 TZ；留空保持默认 Asia/Shanghai）。
+	if tz := strings.TrimSpace(d.Timezone); tz != "" {
+		_ = settingSvc.SetByKey(ctx, "panel.timezone", tz)
 	}
 
 	// 6. 域名：面板对外地址 + 门户回调域名 + 订阅端点/分享域名。

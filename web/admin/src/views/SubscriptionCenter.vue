@@ -59,6 +59,7 @@
             </div>
             <div style="display:flex;gap:8px">
               <el-button v-if="selectedFormatType==='mihomo_yaml'" size="small" @click="showImportYAML">{{ t('subfmt.importYAML') }}</el-button>
+              <el-button v-if="selectedFormatType==='singbox_json' || selectedFormatType==='xray_json'" size="small" @click="showImportJSON">{{ t('subfmt.importJSON') }}</el-button>
               <el-button type="primary" size="small" @click="showCreateFormat">{{ t('subfmt.create') }}</el-button>
             </div>
           </div>
@@ -176,6 +177,14 @@
             @update:dns="val => dnsConfig = val"
           />
         </el-tab-pane>
+        <!-- Sing-Box Config (component) -->
+        <el-tab-pane v-if="fmtForm.format==='singbox_json'" :label="t('subfmt.singboxConfig')" name="singbox">
+          <SingboxFormatConfig v-model="singboxConfig" />
+        </el-tab-pane>
+        <!-- Xray Config (component) -->
+        <el-tab-pane v-if="fmtForm.format==='xray_json'" :label="t('subfmt.xrayConfig')" name="xray">
+          <XrayFormatConfig v-model="xrayConfig" />
+        </el-tab-pane>
       </el-tabs>
       <template #footer><el-button @click="fmtDialog=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="saveFormat">{{ t('common.save') }}</el-button></template>
     </el-dialog>
@@ -217,6 +226,20 @@
       </template>
     </el-dialog>
 
+    <!-- Import JSON Dialog (sing-box / xray) -->
+    <el-dialog v-model="importJSONDialog" :title="t('subfmt.importJSON')" width="700">
+      <el-alert type="info" :closable="false" style="margin-bottom:16px">
+        <template #title>
+          <div style="font-size:13px">{{ t('subfmt.importJSONHint') }}</div>
+        </template>
+      </el-alert>
+      <el-input v-model="importJSONContent" type="textarea" :rows="16" :placeholder="t('subfmt.importJSONPlaceholder')" style="font-family:monospace;font-size:12px" />
+      <template #footer>
+        <el-button @click="importJSONDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="importing" @click="handleImportJSON">{{ t('subfmt.importBtn') }}</el-button>
+      </template>
+    </el-dialog>
+
     <!-- Format Rules Dialog -->
     <el-dialog v-model="rulesDialog" :title="currentFormat?.name + ' - ' + t('subfmt.rules')" width="700">
       <!-- sing-box / xray：规则不互通不转换，直接贴该格式自己的规则原文 -->
@@ -230,7 +253,7 @@
           </template>
         </el-alert>
         <el-input v-model="rawRulesText" type="textarea" :rows="14" :placeholder="t('subfmt.rawRulesPlaceholder')" style="font-family:monospace;font-size:12px" />
-        <!-- sing-box 外部规则集：引入方式与 Clash 的 rule-providers 一致，定义存 config_json，注入订阅顶层 rule_set -->
+        <!-- sing-box 外部规则集：引入方式与 Clash 的 rule-providers 一致，定义存 config_json（route.rule_set），生成订阅时注入 route.rule_set -->
         <template v-if="rulesFmt === 'singbox_json'">
           <div style="margin-top:14px;font-size:12px;font-weight:500">{{ t('subfmt.ruleSetTitle') }}</div>
           <div style="margin-top:4px;font-size:12px;color:#909399">{{ t('subfmt.ruleSetHint') }}<br />{{ t('subfmt.ruleSetExample') }}: <code>{{ singboxRuleSetExample }}</code></div>
@@ -315,6 +338,8 @@ import { useI18n } from 'vue-i18n'
 import { load as yamlLoad } from 'js-yaml'
 import client from '../api/client'
 import MihomoConfig from './protocols/sections/MihomoConfig.vue'
+import SingboxFormatConfig from './protocols/sections/SingboxFormatConfig.vue'
+import XrayFormatConfig from './protocols/sections/XrayFormatConfig.vue'
 import SubscriptionBillingTemplates from '../components/subscription/SubscriptionBillingTemplates.vue'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
@@ -402,16 +427,27 @@ const rawRuleLines = computed(() =>
 const ruleSetText = ref('')
 // 编辑对话框里的 rule_set 快照：saveFormat 会整体重写 config_json，不带上就会被抹掉
 const ruleSetArr = ref([])
+
+// sing-box / xray 配置段（config_json 原样承载）：与 Mihomo 的 generalConfig 平级，
+// 保存时按格式分支写回，避免把非 Mihomo 格式改写成 Mihomo 结构。
+const singboxConfig = ref({})
+const xrayConfig = ref({})
+
+// 「导入 JSON」：粘贴 sing-box / xray 配置文本，解析后填入各标签页
+const importJSONDialog = ref(false)
+const importJSONContent = ref('')
 const singboxRuleSetExample = '{"tag":"geosite-cn","type":"remote","format":"srs","url":"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs","download_detour":"proxy"}'
 const ruleSetLines = computed(() =>
   ruleSetText.value.split('\n').map(s => s.trim()).filter(Boolean)
 )
 
-// 读 config_json 里的 rule_set 段（兼容 rule-set 键与单对象写法），拼回每行一条的原文
+// 读 config_json 里的 rule_set 段。**正确位置是 route.rule_set**（sing-box 顶层写
+// rule_set 会被核心整份拒载）；兼容历史顶层 rule_set / rule-set 旧写法。
 function readRuleSetLines(configEntity) {
   let cfg = {}
   try { cfg = JSON.parse(configEntity?.config_json || '{}') } catch { return '' }
-  const src = cfg.rule_set ?? cfg['rule-set']
+  const route = cfg.route || {}
+  const src = route.rule_set ?? route['rule-set'] ?? cfg.rule_set ?? cfg['rule-set']
   if (!src) return ''
   const arr = Array.isArray(src) ? src : [src]
   return arr.map(v => JSON.stringify(v)).join('\n')
@@ -471,6 +507,9 @@ function showCreateFormat() {
   ruleProviders.value = {}
   ruleSetArr.value = []
   proxyProviders.value = {}
+  // sing-box / xray 配置段：新建时从空白开始，避免带上上一个格式的残留
+  singboxConfig.value = {}
+  xrayConfig.value = {}
   dnsConfig.value = { enable: true, _listen: '0.0.0.0:53', _enhancedMode: 'redir-host', _cacheAlgorithm: 'arc', _preferH3: false, _ipv6: true, _useHosts: true, _respectRules: false, _defaultNameserverStr: '114.114.114.114\n8.8.8.8', _nameserverStr: 'https://doh.pub/dns-query\nhttps://dns.alidns.com/dns-query', _fallbackEnabled: false, _fallbackStr: '', _proxyServerNSEnabled: false, _proxyServerNSStr: '', _directNSEnabled: false, _directNSStr: '', _fakeIPRange: '198.18.0.1/16', _fakeIPFilterMode: 'blacklist', _fakeIPFilterEnabled: true, _fakeIPFilterStr: '*.lan', _fallbackGeoIP: true, _fallbackGeoCode: 'CN', _fallbackIPCIDREnabled: false, _fallbackIPCIDRStr: '', _fallbackDomainEnabled: false, _fallbackDomainStr: '', _nsPolicyEnabled: false, _nsPolicyJSON: '{}', _nsPolicyStr: '' }
   generalConfig.value = { mixed_port: 10801, _mixedPortEnabled: true, port: 0, _portEnabled: false, socks_port: 0, _socksPortEnabled: false, redir_port: 0, _redirPortEnabled: false, tproxy_port: 0, _tproxyPortEnabled: false, allow_lan: true, bind_address: '*', _authEnabled: false, _authStr: '', _skipAuthEnabled: false, _skipAuthStr: '127.0.0.1/8\n::1/128', _lanAllowedEnabled: false, _lanAllowedStr: '0.0.0.0/0\n::/0', _lanDisallowedEnabled: false, _lanDisallowedStr: '', find_process_mode: 'strict', mode: 'rule', log_level: 'info', ipv6: true, _storeSelected: false, _storeFakeIP: true, _geoAutoUpdate: false, _geoUpdateInterval: 24, _geoIPEnabled: false, _geoIPUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat', _geositeEnabled: false, _geositeUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat', _mmdbEnabled: false, _mmdbUrl: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb', _extControllerEnabled: true, _extController: '0.0.0.0:9093', _extControllerTLS: '', _extControllerTLSEnabled: false, _extSecretEnabled: false, _extSecret: '', _extUIEnabled: false, _extUIName: 'metacubexd', _extUIUrl: '', _tlsEnabled: false, _tlsCert: '', _tlsKey: '', _interfaceEnabled: false, _interfaceName: '', _routingMarkEnabled: false, _routingMark: 0, _tcpConcurrent: true, _keepAliveEnabled: false, _keepAliveIdle: 15, _quicDisableGso: false, _quicDisableEcn: false, _dialerIP4PConvert: false, _tunEnabled: false, _tunStack: 'system', _tunDnsHijack: '0.0.0.0:53', _tunAutoRoute: true, _tunAutoRedirect: false, _tunMTUEnabled: false, _tunMTU: 9000, _tunStrictRoute: false, _tunDisableICMP: false, _tunDevice: '', _tunAutoDetect: true, _tunEndpointNAT: false, _tunGSO: false, _tunGSOMaxSize: 65536, _tunIPv6Enabled: false, _tunIPv6Addr: '', _tunUDPTimeoutEnabled: false, _tunUDPTimeout: 300, _tunRouteAddrV4Enabled: false, _tunRouteAddrV4: '0.0.0.0/1\n128.0.0.0/1', _tunRouteAddrV6Enabled: false, _tunRouteAddrV6: '::/1\n8000::/1', _tunRouteExcludeV4Enabled: false, _tunRouteExcludeV4: '192.168.0.0/16', _tunRouteExcludeV6Enabled: false, _tunRouteExcludeV6: 'fc00::/7', _tunRouteAddrSetEnabled: false, _tunRouteAddrSet: '', _tunRouteExcludeSetEnabled: false, _tunRouteExcludeSet: '', _tunIncludeIfEnabled: false, _tunIncludeIf: '', _tunExcludeIfEnabled: false, _tunExcludeIf: '', _tunIncludeUIDEnabled: false, _tunIncludeUID: '', _tunExcludeUIDEnabled: false, _tunExcludeUID: '', _tunIncludeUIDRangeEnabled: false, _tunIncludeUIDRange: '', _tunExcludeUIDRangeEnabled: false, _tunExcludeUIDRange: '', _tunIncludeMACEnabled: false, _tunIncludeMAC: '', _tunExcludeMACEnabled: false, _tunExcludeMAC: '', _tunIncludeAndroidUserEnabled: false, _tunIncludeAndroidUser: '', _tunIncludePkgEnabled: false, _tunIncludePkg: '', _tunExcludePkgEnabled: false, _tunExcludePkg: '', _snifferEnabled: false, _snifferForceDNS: false, _snifferParsePureIP: false, _snifferOverrideDest: false, _snifferHTTP: true, _snifferHTTPPorts: '80, 8080-8880', _snifferHTTPOverride: false, _snifferTLS: true, _snifferTLSPorts: '443, 8443', _snifferQUIC: true, _snifferQUICPorts: '443, 8443', _snifferForceDomainEnabled: false, _snifferForceDomain: '', _snifferSkipDomainEnabled: false, _snifferSkipDomain: '', _snifferSkipSrcEnabled: false, _snifferSkipSrcAddr: '', _snifferSkipDstEnabled: false, _snifferSkipDstAddr: '', _dnsOutEnabled: true, _rematchOutEnabled: false, _rematchTarget: '', _directOutEnabled: false, _directInterface: '', _directRoutingMark: 0 }
   formatRules.value = [] // 清掉上一个对话框残留的规则，避免串写进新配置
@@ -851,6 +890,53 @@ async function handleImportYAML() {
   }
 }
 
+// 「导入 JSON」：粘贴 sing-box / xray 配置文本 → 解析后填入对应格式的各标签页。
+// 与导入 YAML 一致：只填充表单，不立即落库；用户确认后再点「保存」。
+function showImportJSON() {
+  importJSONContent.value = ''
+  importJSONDialog.value = true
+}
+
+function handleImportJSON() {
+  if (!importJSONContent.value.trim()) { ElMessage.error(t('subfmt.importJSONEmpty')); return }
+  let parsed
+  try {
+    parsed = JSON.parse(importJSONContent.value)
+  } catch (e) {
+    ElMessage.error(t('subfmt.importJSONInvalid') + ': ' + e.message)
+    return
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    ElMessage.error(t('subfmt.importJSONInvalid'))
+    return
+  }
+  const fmt = selectedFormatType.value
+  // 打开新建对话框（导入即新建一份配置），再按格式把配置段填入
+  editingFormat.value = null
+  showCreateFormat()
+  fmtForm.value.format = fmt
+  fmtForm.value.name = 'Imported Config'
+  fmtForm.value.description = 'Imported from JSON'
+  if (fmt === 'singbox_json') {
+    // sing-box 的 rule_set 只认 route 段内的位置：历史配置若写在顶层，导入时搬进 route
+    const cfg = { ...parsed }
+    if (cfg.rule_set || cfg['rule-set']) {
+      const route = cfg.route && typeof cfg.route === 'object' ? { ...cfg.route } : {}
+      if (!route.rule_set) route.rule_set = cfg.rule_set || cfg['rule-set']
+      cfg.route = route
+    }
+    delete cfg.rule_set
+    delete cfg['rule-set']
+    singboxConfig.value = cfg
+    fmtTab.value = 'singbox'
+  } else if (fmt === 'xray_json') {
+    xrayConfig.value = { ...parsed }
+    fmtTab.value = 'xray'
+  }
+  importJSONDialog.value = false
+  ElMessage.success(t('subfmt.importSuccess'))
+}
+
 function showEditFormat(row) {
   editingFormat.value = row
   formatRules.value = [] // 同上：规则由「规则」对话框独立维护，这里不带旧状态
@@ -859,8 +945,14 @@ function showEditFormat(row) {
   // Parse config_json from mihomo table
   let config = {}
   try { config = JSON.parse(row.config_json || '{}') } catch { config = {} }
-  // sing-box 外部规则集随 config_json 一起带过来，保存时原样写回
-  ruleSetArr.value = config.rule_set || config['rule-set'] || []
+  // sing-box 外部规则集随 config_json 一起带过来，保存时原样写回。
+  // 正确位置是 route.rule_set（顶层写法是历史遗留，兼容读取）。
+  ruleSetArr.value = (config.route && (config.route.rule_set || config.route['rule-set'])) || config.rule_set || config['rule-set'] || []
+
+  // sing-box / xray：config_json 直接就是各自格式的配置段（log/dns/route|routing/experimental|policy），
+  // 交给对应的配置编辑器承载；保存时按格式分支写回，不再套 Mihomo 结构。
+  singboxConfig.value = (row.format === 'singbox_json') ? { ...config } : {}
+  xrayConfig.value = (row.format === 'xray_json') ? { ...config } : {}
 
   // Parse proxy groups (support both hyphen and underscore keys)
   try {
@@ -1071,13 +1163,24 @@ function showEditFormat(row) {
 }
 
 async function saveFormat() {
+  const fmt = fmtForm.value.format || selectedFormatType.value || 'mihomo_yaml'
+
   // Build nsPolicy from JSON
   let nsPolicy = {}
   if (dnsConfig.value._nsPolicyEnabled && dnsConfig.value._nsPolicyJSON) {
     try { nsPolicy = JSON.parse(dnsConfig.value._nsPolicyJSON) } catch { nsPolicy = {} }
   }
 
-  const configJSON = {
+  // 非 Mihomo 格式：config_json 直接承载各自格式的配置段（sing-box: log/dns/route/experimental；
+  // xray: log/dns/routing/policy），原样保存，绝不能套 Mihomo 结构 —— 否则会把
+  // sing-box/xray 配置改写成 Mihomo 形状（旧实现即此 bug，会毁掉已有配置）。
+  let configJSON
+  if (fmt === 'singbox_json') {
+    configJSON = { ...singboxConfig.value }
+  } else if (fmt === 'xray_json') {
+    configJSON = { ...xrayConfig.value }
+  } else {
+  configJSON = {
     'mixed-port': generalConfig.value._mixedPortEnabled ? (generalConfig.value.mixed_port || 0) : 0,
     'port': generalConfig.value._portEnabled ? (generalConfig.value.port || 0) : 0,
     'socks-port': generalConfig.value._socksPortEnabled ? (generalConfig.value.socks_port || 0) : 0,
@@ -1208,6 +1311,7 @@ async function saveFormat() {
       ...(generalConfig.value._rematchOutEnabled ? [{ name: 'rematch', type: 'rematch', 'target-rematch-name': generalConfig.value._rematchTarget || undefined }] : []),
       ...(generalConfig.value._directOutEnabled ? [{ name: generalConfig.value._directInterface + '-direct', type: 'direct', 'interface-name': generalConfig.value._directInterface, 'routing-mark': generalConfig.value._directRoutingMark || undefined }] : [])
     ],
+  }
   }
 
   try {
@@ -1340,13 +1444,18 @@ async function saveRawRules() {
   try {
     const cfgId = currentFormat.value.id
     const existing = await client.get(`/mihomo/configs/${cfgId}`)
-    // 外部规则集写回 config_json 的 rule_set 段（读-改-写，其余字段原样保留）
+    // 外部规则集写回 config_json 的 **route.rule_set** 段（读-改-写，其余字段原样保留）。
+    // sing-box 顶层写 rule_set 会被核心整份拒载，必须落在 route 内。
     if (rulesFmt.value === 'singbox_json') {
       let cfg = {}
       try { cfg = JSON.parse(existing.config?.config_json || '{}') } catch { cfg = {} }
+      delete cfg.rule_set
       delete cfg['rule-set']
-      if (rsLines.length) cfg.rule_set = rsLines.map(l => JSON.parse(l))
-      else delete cfg.rule_set
+      const route = cfg.route && typeof cfg.route === 'object' ? { ...cfg.route } : {}
+      delete route['rule-set']
+      if (rsLines.length) route.rule_set = rsLines.map(l => JSON.parse(l))
+      else delete route.rule_set
+      cfg.route = route
       const cfgPayload = {
         name: currentFormat.value.name,
         client_type: currentFormat.value.client_type || 'clash',
@@ -1358,7 +1467,7 @@ async function saveRawRules() {
         config_json: JSON.stringify(cfg)
       }
       await client.put(`/mihomo/configs/${cfgId}`, cfgPayload)
-      ruleSetArr.value = cfg.rule_set || []
+      ruleSetArr.value = route.rule_set || []
       currentFormat.value.config_json = JSON.stringify(cfg)
     }
     for (const rule of (existing.data?.rules || [])) {

@@ -220,47 +220,52 @@
       </template>
     </el-dialog>
 
-    <!-- Chain Proxy Auto-Injected (read-only) -->
-    <el-divider content-position="left">
-      {{ t('protoCenter.routing.chainAutoInjected') }}
-    </el-divider>
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
-      {{ t('protoCenter.routing.chainAutoInjectedHint') }}
-    </el-alert>
-    <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
-      {{ t('common.noData') }}
-    </div>
-    <template v-if="chainOutbounds.length">
-      <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
-      <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
-          <el-tag size="small">{{ ob.protocol }}</el-tag>
-          <span v-if="ob._server" style="font-size:12px;color:#909399">{{ ob._server }}:{{ ob._port }}</span>
-        </div>
+    <!--
+      链式代理自动注入（只读）：仅在**节点上下文**（协议中心）显示。
+      订阅格式管理是全局模板，绝不能出现节点侧内容（数据隔离）。
+    -->
+    <template v-if="serverId">
+      <el-divider content-position="left">
+        {{ t('protoCenter.routing.chainAutoInjected') }}
+      </el-divider>
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
+        {{ t('protoCenter.routing.chainAutoInjectedHint') }}
+      </el-alert>
+      <div v-if="!chainRules.length && !chainBalancers.length && !chainOutbounds.length" class="rule-item" style="text-align:center;color:#909399">
+        {{ t('common.noData') }}
       </div>
-    </template>
-    <template v-if="chainRules.length">
-      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
-      <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag v-if="r.ruleTag" size="small" type="warning">{{ r.ruleTag }}</el-tag>
-          <el-tag v-if="r.outboundTag" size="small" type="info">{{ r.outboundTag }}</el-tag>
-          <el-tag v-if="r.balancerTag" size="small" type="warning">{{ r.balancerTag }}</el-tag>
-          <span v-if="r.inboundTag && r.inboundTag.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: r.inboundTag.join(',') }) }}</span>
+      <template v-if="chainOutbounds.length">
+        <div style="font-size:13px;color:#909399;margin-bottom:6px">{{ t('protoCenter.routing.chainOutbounds') }} ({{ chainOutbounds.length }})</div>
+        <div v-for="(ob, i) in chainOutbounds" :key="'cob'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag size="small" type="warning">{{ ob.tag }}</el-tag>
+            <el-tag size="small">{{ ob.protocol }}</el-tag>
+            <span v-if="ob._server" style="font-size:12px;color:#909399">{{ ob._server }}:{{ ob._port }}</span>
+          </div>
         </div>
-      </div>
-    </template>
-    <template v-if="chainBalancers.length">
-      <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
-      <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
-          <el-tag size="small" type="info">{{ b.strategy?.type || 'random' }}</el-tag>
-          <span v-if="b.selector && b.selector.length" style="font-size:12px;color:#909399">selector: {{ b.selector.join(', ') }}</span>
-          <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.fallbackShort', { value: b.fallbackTag }) }}</span>
+      </template>
+      <template v-if="chainRules.length">
+        <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainRules') }} ({{ chainRules.length }})</div>
+        <div v-for="(r, i) in chainRules" :key="'cr'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag v-if="r.ruleTag" size="small" type="warning">{{ r.ruleTag }}</el-tag>
+            <el-tag v-if="r.outboundTag" size="small" type="info">{{ r.outboundTag }}</el-tag>
+            <el-tag v-if="r.balancerTag" size="small" type="warning">{{ r.balancerTag }}</el-tag>
+            <span v-if="r.inboundTag && r.inboundTag.length" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.inboundShort', { value: r.inboundTag.join(',') }) }}</span>
+          </div>
         </div>
-      </div>
+      </template>
+      <template v-if="chainBalancers.length">
+        <div style="font-size:13px;color:#909399;margin:12px 0 6px">{{ t('protoCenter.routing.chainBalancers') }} ({{ chainBalancers.length }})</div>
+        <div v-for="(b, i) in chainBalancers" :key="'cb'+i" class="rule-item chain-item">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
+            <el-tag size="small" type="info">{{ b.strategy?.type || 'random' }}</el-tag>
+            <span v-if="b.selector && b.selector.length" style="font-size:12px;color:#909399">selector: {{ b.selector.join(', ') }}</span>
+            <span v-if="b.fallbackTag" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.fallbackShort', { value: b.fallbackTag }) }}</span>
+          </div>
+        </div>
+      </template>
     </template>
   </div>
 </template>
@@ -448,6 +453,8 @@ function getInvalidBalancer(routing) {
 async function emit() {
   const data = build()
   emitFn('update', data)
+  // 无节点上下文（如订阅格式编辑复用本组件）时只更新表单，不写节点侧数据
+  if (!props.serverId) return
   // Save to database and apply to xray runtime
   await saveAndApply(data)
 }
@@ -481,7 +488,12 @@ async function saveAndApply(routing) {
   ElMessage.success(t('common.success'))
 }
 
-onMounted(function() { sync(); loadTags(); loadGeoStatus(); loadChainProxy() })
+onMounted(function() {
+  sync()
+  loadGeoStatus()
+  // 无节点上下文（如订阅格式编辑复用本组件）时不去拉节点侧数据
+  if (props.serverId) { loadTags(); loadChainProxy() }
+})
 
 // Chain proxy auto-injected content (read-only, from final xray config)
 const chainRules = ref([])

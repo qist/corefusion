@@ -428,6 +428,10 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		nodes = append(billingFormatterNodes, nodes...)
 		f := formatter.GetFormatter(formatter.FormatSingBoxJSON)
 		data, _ = f.Format(nodes)
+		// 把 config_json 里编辑好的 sing-box 配置段（log/dns/route/experimental）
+		// 原样合并进订阅输出（与 Mihomo 的 generateMihomoYAML 同一口径）：
+		// 节点（outbounds）由格式化器按套餐动态生成，其余客户端配置段以 config_json 为准。
+		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "route", "experimental")
 		// 路由规则按格式各存各的原文：这里只把 sing-box 自己的 route 规则
 		// 原样注入，不做任何跨格式转换（Mihomo 规则进不了这里，见 config 格式过滤）。
 		data = injectJSONRules(data, mihomoRules, "route")
@@ -443,7 +447,10 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		nodes = append(billingFormatterNodes, nodes...)
 		f := formatter.GetFormatter(formatter.FormatXrayJSON)
 		data, _ = f.Format(nodes)
-		// 同 sing-box：xray 自己的 routing 规则原文注入，不转换。
+		// 同 sing-box：config_json 里编辑好的 xray 配置段（log/dns/routing/policy）
+		// 原样合并进订阅输出。
+		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "routing", "policy")
+		// xray 自己的 routing 规则原文注入，不转换。
 		data = injectJSONRules(data, mihomoRules, "routing")
 		contentType = f.ContentType()
 	default:
@@ -1307,6 +1314,66 @@ func generatePlainMihomoYAML(proxyMaps []map[string]interface{}) []byte {
 	return []byte(buildMihomoProxiesYAML(proxyMaps))
 }
 
+// mergeFormatSections 把 config_json 里**已编辑好的客户端配置段**合并进生成的订阅 JSON。
+//
+// 与 Mihomo 的 generateMihomoYAML 同一口径：节点（outbounds）由格式化器按套餐动态
+// 生成，其余客户端配置段（sing-box 的 log/dns/route/experimental、xray 的
+// log/dns/routing/policy）以 config_json 为准原样透出。
+//
+//   - 只合并 allow 白名单里的段：sing-box 的 JSON 解码是 DisallowUnknownFields，
+//     把 Mihomo 残留字段或未知顶层键塞进去会让客户端**整份拒载**，所以白名单收口；
+//   - 带 `_disabled: true` 的段视为停用，跳过（与协议中心的停用语义一致），
+//     且无论启用与否都把面板内部标记 `_disabled` 从输出里剥掉（核心不认这个键）；
+//   - 空对象跳过；解析失败静默返回原数据（一段脏配置不能毁掉整份订阅）。
+func mergeFormatSections(data []byte, cfg *entity.MihomoConfig, allow ...string) []byte {
+	if cfg == nil || len(data) == 0 || len(allow) == 0 {
+		return data
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &raw); err != nil {
+		return data
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(data, &out); err != nil {
+		return data
+	}
+	changed := false
+	for _, key := range allow {
+		v, ok := raw[key]
+		if !ok || v == nil {
+			continue
+		}
+		if m, isMap := v.(map[string]interface{}); isMap {
+			if d, has := m["_disabled"]; has && d == true {
+				continue
+			}
+			// 剥掉面板内部标记：sing-box 严格解码，留着 `_disabled` 会整份拒载
+			if _, has := m["_disabled"]; has {
+				clean := make(map[string]interface{}, len(m))
+				for k, vv := range m {
+					if k != "_disabled" {
+						clean[k] = vv
+					}
+				}
+				v = clean
+			}
+			if len(v.(map[string]interface{})) == 0 {
+				continue
+			}
+		}
+		out[key] = v
+		changed = true
+	}
+	if !changed {
+		return data
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return data
+	}
+	return b
+}
+
 // injectJSONRules 把某个订阅格式**自己格式的路由规则原文**注入生成的 JSON 配置。
 //
 // 设计约定（用户明确要求"规则不互通、不转换、上传对应的规则就是了"）：
@@ -1383,14 +1450,19 @@ func parseRuleJSON(raw string) []interface{} {
 	return out
 }
 
-// injectRuleSets 把配置里定义的**外部规则集**注入生成的 sing-box 订阅（顶层 rule_set）。
+// injectRuleSets 把配置里定义的**外部规则集**注入生成的 sing-box 订阅。
+//
+// 关键（实测 sing-box 1.15 严格解码）：rule_set 必须位于 **route 段内**，
+// 顶层写 rule_set 会让核心整份配置拒载：
+//
+//	FATAL: decode config: rule_set: json: unknown field "rule_set"
 //
 // 引入方式与 Clash 的 rule-providers 完全一致，遵循"规则不互通、不转换"的约定：
-//   - 定义存在 config_json 的 rule_set 段（前端规则对话框直接粘原文），
-//     这里只负责搬进订阅的顶层，不解析、不改写其中任何字段
+//   - 定义来源：优先 route.rule_set（与协议中心 Route 编辑器同一处），
+//     兼容历史配置里顶层 rule_set / rule-set 的旧写法
 //   - 规则侧由用户自己写 {"rule_set":["geosite-cn"],"outbound":"direct"}，
 //     同样走 injectJSONRules 原样注入 route.rules
-//   - 兼容 rule_set / rule-set 两个键、数组或单个对象两种值
+//   - 兼容数组或单个对象两种值
 //   - 按 tag 去重：订阅已带的 tag 不重复追加
 //   - 解析失败静默跳过（一段脏配置不能毁掉整份订阅输出）
 func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
@@ -1401,7 +1473,17 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &raw); err != nil {
 		return data
 	}
-	src := raw["rule_set"]
+	// 定义优先取 route.rule_set（正确位置），回退顶层旧字段
+	var src interface{}
+	if route, ok := raw["route"].(map[string]interface{}); ok {
+		src = route["rule_set"]
+		if src == nil {
+			src = route["rule-set"]
+		}
+	}
+	if src == nil {
+		src = raw["rule_set"]
+	}
 	if src == nil {
 		src = raw["rule-set"]
 	}
@@ -1424,7 +1506,11 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 	if err := json.Unmarshal(data, &out); err != nil {
 		return data
 	}
-	existing, _ := out["rule_set"].([]interface{})
+	route, _ := out["route"].(map[string]interface{})
+	if route == nil {
+		route = map[string]interface{}{}
+	}
+	existing, _ := route["rule_set"].([]interface{})
 	seen := make(map[string]bool, len(existing))
 	for _, it := range existing {
 		if m, ok := it.(map[string]interface{}); ok {
@@ -1452,7 +1538,8 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 	if !changed {
 		return data
 	}
-	out["rule_set"] = existing
+	route["rule_set"] = existing
+	out["route"] = route
 
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {

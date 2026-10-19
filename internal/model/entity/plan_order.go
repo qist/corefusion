@@ -15,6 +15,9 @@ const (
 const (
 	OrderStatusPending   = "pending"
 	OrderStatusPaid      = "paid"
+	// OrderStatusScheduled 表示「已付款、待生效」：套餐变更（升级/降级）已成交，
+	// 但要等当前计费周期结束后才切换，由 plan 调度器在 effective_from 到达时执行。
+	OrderStatusScheduled = "scheduled"
 	OrderStatusCompleted = "completed"
 	OrderStatusCancelled = "cancelled"
 	OrderStatusRefunded  = "refunded"

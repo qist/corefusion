@@ -345,8 +345,17 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateInput) (*ent
 		tmpl.JSContent = safeJS
 		log.Printf("[portal] security patch applied on save (M7: 用户内容不再执行 HTML)")
 	}
+	// 升级 = 到期预约切换：旧模板粘回来时同样纠正（跨套餐发 upgrade / 认 scheduled）✓
+	if h, j, changed := PatchPlanUpgradeScheduledJS(tmpl.HTMLContent, tmpl.JSContent); changed {
+		tmpl.HTMLContent = h
+		tmpl.JSContent = j
+	}
 	// regions.auth（登录卡区域）在 config 里 → 保存时一并补齐（自助解封卡 ✓）
 	if newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config); cfgChanged {
+		tmpl.Config = newConfig
+	}
+	// 语言包：升级预约文案 + scheduled 状态键 ✓
+	if newConfig, cfgChanged := PatchPlanUpgradeScheduledConfig(tmpl.Config); cfgChanged {
 		tmpl.Config = newConfig
 	}
 
@@ -382,8 +391,18 @@ func (s *Service) Activate(ctx context.Context, id int64) error {
 	// 安全审计 L-2：激活旧模板是把未打补丁的 HTML/JS 原样带回门户的入口 ——
 	// 落库激活前统一补丁（幂等，与 Update/EnsureSecurityPatches 同一实现）。
 	newHTML, newJS, changed := PatchTemplateSecurity(tmpl.HTMLContent, tmpl.JSContent)
+	// 升级 = 到期预约切换（跨套餐发 upgrade / 认 scheduled 回调 / 状态表补键）✓
+	if h, j, c := PatchPlanUpgradeScheduledJS(newHTML, newJS); c {
+		newHTML, newJS = h, j
+		changed = true
+	}
 	// regions.auth（登录卡区域）在 config JSON 里 → 一并补齐（自助解封卡 ✓）
 	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
+	// 存量模板语言包：升级预约文案 + scheduled 状态键 ✓
+	if c, cc := PatchPlanUpgradeScheduledConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
 	if changed || cfgChanged {
 		tmpl.HTMLContent = newHTML
 		tmpl.JSContent = newJS

@@ -4480,7 +4480,12 @@ var showStreamingAccount = function(service) {
     // --- Purchase a plan variant ---
     // v3.3: show payment method dialog
     var purchaseVariant = function(variantId, plan, modData) {
-      var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'
+      // 同套餐 = 续费（累加时长与配额）；跨套餐 = 升级预约（当前周期结束后才切换）。
+      // 跨套餐若仍发 new，后端会以「已有生效套餐」拒绝，等于门户无法升级 ✗。
+      var orderType = 'new'
+      if (client.value.plan_id > 0) {
+        orderType = (client.value.plan_id === plan.id) ? 'renew' : 'upgrade'
+      }
       // find selected variant for dialog
       var variant = null
       if (plan && plan.variants) {
@@ -4573,7 +4578,10 @@ var showStreamingAccount = function(service) {
 
       api('POST', apiPath, apiPayload).then(function(res) {
         showPaymentDialog.value = false
-        if (res.status === 'completed') {
+        if (res.status === 'scheduled') {
+          ElMessage.success(t('plan.upgrade_scheduled'))
+          fetchMyOrders()
+        } else if (res.status === 'completed') {
           ElMessage.success(t('plan.buy_success'))
           fetchMe(); fetchBalance(); fetchBalanceTxns()
         } else if (res.payment_url) {
@@ -4673,10 +4681,10 @@ myOrders.value = ((res && res.items) ? res.items : (Array.isArray(res) ? res : [
 }).catch(function() {}).finally(function() { myOrdersLoading.value = false })
     }
     var orderStatusText = function(s) {
-      return { pending: t('order.status_pending'), paid: t('order.status_paid'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'
+      return { pending: t('order.status_pending'), paid: t('order.status_paid'), scheduled: t('order.status_scheduled'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'
     }
     var orderStatusBadge = function(s) {
-      return { pending: 'processing', paid: 'active', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'
+      return { pending: 'processing', paid: 'active', scheduled: 'processing', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'
     }
     // Resolve service name from plan cache by to_variant_id -> variant -> plan name
     var getOrderServiceName = function(order) {

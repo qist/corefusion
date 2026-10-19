@@ -387,6 +387,141 @@ func PatchChargeNavMenu(htmlContent, jsContent string) (newHTML, newJS string, c
 	return newHTML, newJS, changed
 }
 
+// 存量门户模板的「套餐升级」改造补丁（2026-10-19 语义调整：升级 = 到期预约切换）。
+// 三处必须一起改，缺一不可：
+//  1. 跨套餐下单仍发 new → 后端以「已有生效套餐」拒绝，门户根本升不了级 ✗；
+//  2. 回调返回 scheduled 时旧模板只认 completed → 用户看不到任何成功提示 ✗；
+//  3. 订单状态表缺 scheduled → 「我的账单」显示原始英文 key ✗。
+// 幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
+const (
+	oldPurchaseOrderType = `    var purchaseVariant = function(variantId, plan, modData) {
+      var orderType = (client.value.plan_id > 0 && client.value.plan_id === plan.id) ? 'renew' : 'new'`
+
+	newPurchaseOrderType = `    var purchaseVariant = function(variantId, plan, modData) {
+      // 同套餐 = 续费（累加时长与配额）；跨套餐 = 升级预约（当前周期结束后才切换）。
+      // 跨套餐若仍发 new，后端会以「已有生效套餐」拒绝，等于门户无法升级 ✗。
+      var orderType = 'new'
+      if (client.value.plan_id > 0) {
+        orderType = (client.value.plan_id === plan.id) ? 'renew' : 'upgrade'
+      }`
+
+	oldOrderDoneBranch = `        showPaymentDialog.value = false
+        if (res.status === 'completed') {
+          ElMessage.success(t('plan.buy_success'))`
+
+	newOrderDoneBranch = `        showPaymentDialog.value = false
+        if (res.status === 'scheduled') {
+          ElMessage.success(t('plan.upgrade_scheduled'))
+          fetchMyOrders()
+        } else if (res.status === 'completed') {
+          ElMessage.success(t('plan.buy_success'))`
+
+	oldOrderStatusText = `      return { pending: t('order.status_pending'), paid: t('order.status_paid'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'`
+
+	newOrderStatusText = `      return { pending: t('order.status_pending'), paid: t('order.status_paid'), scheduled: t('order.status_scheduled'), completed: t('order.status_completed'), cancelled: t('order.status_cancelled'), refunded: t('order.status_refunded') }[s] || s || '-'`
+
+	oldOrderStatusBadge = `      return { pending: 'processing', paid: 'active', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'`
+
+	newOrderStatusBadge = `      return { pending: 'processing', paid: 'active', scheduled: 'processing', completed: 'active', cancelled: 'none', refunded: 'expired' }[s] || 'none'`
+
+	// 旧文案宣传「立即生效 + 差价换算」，与新语义相反 → 只在仍是原文时替换 ✓
+	oldPlanNoticeZH = `套餐可叠加购买，剩余有效期自动叠加。如需升级请直接购买新套餐，剩余有效期会根据等级差价换算，然后再叠加(新套餐立即生效)。以下套餐只能个人使用，禁止倒卖/组团拼车购买等行为，发现则封号处理（如需多人使用请联系客服定制团队套餐）。`
+	newPlanNoticeZH = `套餐可叠加购买，剩余有效期自动叠加。如需升级请直接购买更高档套餐：升级在当前套餐到期后生效，按新套餐一个完整周期计费，不会吞掉你已付费的剩余时长。以下套餐只能个人使用，禁止倒卖/组团拼车购买等行为，发现则封号处理（如需多人使用请联系客服定制团队套餐）。`
+
+	oldPlanNoticeEN = `Plans can be stacked. Remaining validity period will be automatically extended. To upgrade, purchase a new plan directly — remaining time will be converted based on tier difference and stacked (new plan takes effect immediately). Plans are for personal use only. Reselling/group buying is prohibited and will result in account suspension (contact support for team plans).`
+	newPlanNoticeEN = `Plans can be stacked. Remaining validity period will be automatically extended. To upgrade, purchase a higher-tier plan directly: the upgrade takes effect after the current plan expires and is charged for one full new cycle, so no paid time is lost. Plans are for personal use only. Reselling/group buying is prohibited and will result in account suspension (contact support for team plans).`
+)
+
+// PatchPlanUpgradeScheduledJS 对存量门户模板打「升级预约切换」补丁（只改上面三处精确片段）。
+// 幂等：已是新版时原样返回 ✓。
+func PatchPlanUpgradeScheduledJS(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+
+	if strings.Contains(newJS, oldPurchaseOrderType) {
+		newJS = strings.Replace(newJS, oldPurchaseOrderType, newPurchaseOrderType, 1)
+		changed = true
+	}
+	if strings.Contains(newJS, oldOrderDoneBranch) {
+		newJS = strings.Replace(newJS, oldOrderDoneBranch, newOrderDoneBranch, 1)
+		changed = true
+	}
+	if strings.Contains(newJS, oldOrderStatusText) {
+		newJS = strings.Replace(newJS, oldOrderStatusText, newOrderStatusText, 1)
+		changed = true
+	}
+	if strings.Contains(newJS, oldOrderStatusBadge) {
+		newJS = strings.Replace(newJS, oldOrderStatusBadge, newOrderStatusBadge, 1)
+		changed = true
+	}
+
+	return newHTML, newJS, changed
+}
+
+// PatchPlanUpgradeScheduledConfig 给模板 config 里的语言包补新键（scheduled 状态 / 预约提示），
+// 并把仍在宣传「立即生效」的旧 notice_text 换成新语义文案。自定义过的文案不动 ✓。
+// 幂等：第二次调用返回 changed=false ✓。
+func PatchPlanUpgradeScheduledConfig(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	lang, ok := cfg["lang"].(map[string]interface{})
+	if !ok {
+		return configStr, false
+	}
+	locales, ok := lang["locales"].(map[string]interface{})
+	if !ok {
+		return configStr, false
+	}
+
+	changed := false
+	for code, raw := range locales {
+		pack, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch code {
+		case "zh-CN", "zh":
+			if cur, _ := pack["plan.notice_text"].(string); cur == oldPlanNoticeZH {
+				pack["plan.notice_text"] = newPlanNoticeZH
+				changed = true
+			}
+			if _, exists := pack["plan.upgrade_scheduled"]; !exists {
+				pack["plan.upgrade_scheduled"] = "升级已预约，将在当前套餐到期后生效"
+				changed = true
+			}
+			if _, exists := pack["order.status_scheduled"]; !exists {
+				pack["order.status_scheduled"] = "待生效"
+				changed = true
+			}
+		default:
+			if cur, _ := pack["plan.notice_text"].(string); cur == oldPlanNoticeEN {
+				pack["plan.notice_text"] = newPlanNoticeEN
+				changed = true
+			}
+			if _, exists := pack["plan.upgrade_scheduled"]; !exists {
+				pack["plan.upgrade_scheduled"] = "Upgrade scheduled, it will take effect after your current plan expires"
+				changed = true
+			}
+			if _, exists := pack["order.status_scheduled"]; !exists {
+				pack["order.status_scheduled"] = "Scheduled"
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
 // 存量门户导航「购买服务(nav.store) / 我的账单(nav.billing)」默认关闭（与 nav.logs 一致）：
 // 门户导航存在模板 config 里（数据库）→ 只改默认模板到不了已部署门户 ✗。这里把这两项
 // enabled 置为 false（管理员仍可在编辑器里手动打开 ✓）。幂等：已是 false / 不存在时原样返回 ✓。
@@ -736,6 +871,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		newHTML, newJS = h4, j4
 		changed = true
 	}
+	// 升级 = 到期预约切换：跨套餐发 upgrade、认 scheduled 回调、订单状态补 scheduled ✓
+	if h5, j5, c5 := PatchPlanUpgradeScheduledJS(newHTML, newJS); c5 {
+		newHTML, newJS = h5, j5
+		changed = true
+	}
 	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）
 	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
 	// 存量模板的 account_info 模块 HTML 里「充值按钮」旧条件也要迁移（默认关闭 ✓）
@@ -760,6 +900,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 			newConfig = c
 			cfgChanged = true
 		}
+	}
+	// 存量模板语言包：升级预约文案 + scheduled 状态键 ✓
+	if c, cc := PatchPlanUpgradeScheduledConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
 	}
 	if !changed && !cfgChanged {
 		return nil

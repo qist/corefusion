@@ -1213,9 +1213,9 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 	client.PlanID = variant.TemplateID
 	client.ExpiresAt = &newExpiry
 	client.Status = "active"
-	// Update quota if variant specifies
+	// 续费 = 累加：配额在原配额上继续加（买 N 次就是 N 份流量），已用流量不清零。
 	if variant.QuotaBytes > 0 {
-		client.QuotaBytes = variant.QuotaBytes
+		client.QuotaBytes += variant.QuotaBytes
 	}
 	client.UpdatedAt = now
 	if err := s.clientRepo.Update(ctx, client); err != nil {
@@ -1270,7 +1270,14 @@ type UpgradeInput struct {
 	PromotionCode string `json:"promotion_code"`
 }
 
-// Upgrade upgrades a client's plan to a higher variant immediately.
+// Upgrade schedules a plan upgrade that takes effect when the current
+// subscription expires (same timing as Downgrade).
+//
+// 升级 = 预约切换：旧订阅先用到到期，下个计费周期才按新套餐生效。
+// 付款/下单只登记一条 scheduled 订单，客户端套餐字段一律不动；
+// 到点由 ProcessPendingDowngrades（调度器）统一切换。
+// 计费口径：按新套餐一个完整周期收费（不折算旧套餐剩余价值），
+// 因为旧周期并不会被吞掉，用户会完整用完。
 func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInput) (*RenewResult, error) {
 	client, err := s.clientRepo.GetByID(ctx, clientID)
 	if err != nil {
@@ -1283,13 +1290,30 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		return nil, fmt.Errorf("variant not found: %w", err)
 	}
 
-	now := time.Now()
-	var newExpiry time.Time
-	if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
-		newExpiry = *client.ExpiresAt
-	} else {
-		newExpiry = now.AddDate(0, 0, variant.DurationDays)
+	// Validate that the target variant is actually an upgrade (higher price).
+	if oldVariantID > 0 {
+		oldVariant, err := s.variantRepo.GetByID(ctx, oldVariantID)
+		if err == nil && oldVariant != nil && variant.Price <= oldVariant.Price {
+			return nil, fmt.Errorf("target variant price (%d) is not higher than current (%d); use renew or downgrade instead", variant.Price, oldVariant.Price)
+		}
 	}
+
+	// 同一时间只允许一条待生效的套餐变更，避免重复预约/重复扣费。
+	if pending, err := s.hasPendingPlanChange(ctx, clientID); err != nil {
+		return nil, err
+	} else if pending {
+		return nil, fmt.Errorf("there is already a pending plan change for this client")
+	}
+
+	now := time.Now()
+	// Upgrade takes effect at current expiry
+	var effectiveFrom time.Time
+	if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+		effectiveFrom = *client.ExpiresAt
+	} else {
+		effectiveFrom = now
+	}
+	newExpiry := effectiveFrom.AddDate(0, 0, variant.DurationDays)
 
 	// Apply promotion
 	var discountAmount int64
@@ -1307,23 +1331,11 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		}
 	}
 
-	// Calculate upgrade cost: new variant price minus remaining value of old variant
 	originalAmount := variant.Price
-	if oldVariantID > 0 {
-		if oldVariant, err := s.variantRepo.GetByID(ctx, oldVariantID); err == nil && oldVariant != nil && oldVariant.DurationDays > 0 {
-			if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
-				remainingDays := int(client.ExpiresAt.Sub(now).Hours() / 24)
-				if remainingDays > 0 {
-					remainingValue := oldVariant.Price * int64(remainingDays) / int64(oldVariant.DurationDays)
-					originalAmount = variant.Price - remainingValue
-					if originalAmount < 0 {
-						originalAmount = 0
-					}
-				}
-			}
-		}
-	}
 	paidAmount := originalAmount - discountAmount
+	if paidAmount < 0 {
+		paidAmount = 0
+	}
 
 	var fromVariantID *int64
 	if oldVariantID > 0 {
@@ -1340,37 +1352,15 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		PaidAmount:     paidAmount,
 		PromotionID:    promoID,
 		PromotionCode:  promoCode,
-		EffectiveFrom:  now,
+		EffectiveFrom:  effectiveFrom,
 		EffectiveTo:    &newExpiry,
-		Status:         entity.OrderStatusCompleted,
+		Status:         entity.OrderStatusScheduled,
 		CreatedAt:      now,
 		UpdatedAt:      now,
+		Remark:         "scheduled upgrade, takes effect at current expiry",
 	}
 	if err := s.orderRepo.Create(ctx, order); err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
-	}
-
-	// Update client
-	client.PlanVariantID = input.VariantID
-	client.PlanID = variant.TemplateID
-	client.ExpiresAt = &newExpiry
-	if variant.QuotaBytes > 0 {
-		client.QuotaBytes = variant.QuotaBytes
-	}
-	client.UpdatedAt = now
-
-	// 限速三字段与设备数不在此物化模板值：0=订阅拉取时实时继承模板，
-	// 非 0=个人覆盖（续费/换套餐不冲掉管理员给客户设置的个人覆盖）。
-	if err := s.clientRepo.Update(ctx, client); err != nil {
-		return nil, fmt.Errorf("update client: %w", err)
-	}
-
-	// Update subscription table to keep quota/expiry consistent
-	s.syncSubscriptionAfterOrder(ctx, client, variant)
-
-	// Sync updated client config to all core servers (local + remote)
-	if s.userSyncer != nil {
-		go s.userSyncer.SyncUserToServers(context.Background(), clientID, "update")
 	}
 
 	// 促销码使用次数 +1（并发兜底）。这里必须**留下日志** ✗ 原来写的是 `_, _ = ...`：
@@ -1401,10 +1391,27 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		DiscountAmount:  discountAmount,
 		PaidAmount:      paidAmount,
 		PromotionCode:   promoCode,
-		EffectiveFrom:   now,
+		EffectiveFrom:   effectiveFrom,
 		EffectiveTo:     &newExpiry,
-		ClientExpiresAt: &newExpiry,
+		ClientExpiresAt: client.ExpiresAt,
 	}, nil
+}
+
+// hasPendingPlanChange reports whether the client already has a scheduled
+// (or recently unpaid) upgrade/downgrade that has not taken effect yet.
+func (s *Service) hasPendingPlanChange(ctx context.Context, clientID int64) (bool, error) {
+	var count int64
+	// 未支付的预约单只在 30 分钟内阻塞新预约：用户放弃支付后不应被永久锁死。
+	err := s.db.WithContext(ctx).Model(&entity.PlanOrder{}).
+		Where("client_id = ?", clientID).
+		Where("order_type IN ?", []string{entity.OrderTypeUpgrade, entity.OrderTypeDowngrade}).
+		Where("status = ? OR (status = ? AND created_at >= ?)",
+			entity.OrderStatusScheduled, entity.OrderStatusPending, time.Now().Add(-30*time.Minute)).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check pending plan change: %w", err)
+	}
+	return count > 0, nil
 }
 
 // syncSubscriptionAfterOrder updates the subscription table after a renew/upgrade
@@ -1460,6 +1467,13 @@ func (s *Service) Downgrade(ctx context.Context, clientID int64, input Downgrade
 				return nil, fmt.Errorf("cannot downgrade to a different template at the same price")
 			}
 		}
+	}
+
+	// 同一时间只允许一条待生效的套餐变更（升级/降级共用同一把锁）。
+	if pending, err := s.hasPendingPlanChange(ctx, clientID); err != nil {
+		return nil, err
+	} else if pending {
+		return nil, fmt.Errorf("there is already a pending plan change for this client")
 	}
 
 	now := time.Now()

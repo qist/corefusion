@@ -722,6 +722,31 @@ func TestMergeFormatSectionsSkipsDisabledAndEmpty(t *testing.T) {
 	}
 }
 
+// experimental.v2ray_api 是节点侧给面板抓计数的通道，需要 with_v2ray_api 构建；
+// 官方客户端带上会直接启动失败 —— 订阅输出里必须剔除，clash_api 要保留。
+func TestMergeFormatSectionsDropsV2RayAPIFromClientOutput(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{"experimental":{
+		"clash_api":{"external_controller":"127.0.0.1:9090"},
+		"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}
+	}}`}
+	base := []byte(`{"outbounds":[]}`)
+	out := string(mergeFormatSections(base, cfg, "experimental"))
+
+	if strings.Contains(out, "v2ray_api") || strings.Contains(out, "10086") {
+		t.Fatalf("v2ray_api must not reach client subscription: %s", out)
+	}
+	if !strings.Contains(out, "clash_api") || !strings.Contains(out, "9090") {
+		t.Fatalf("clash_api should survive: %s", out)
+	}
+
+	// 只剩 v2ray_api 的 experimental → 整段无意义，不写空段
+	only := &entity.MihomoConfig{ConfigJSON: `{"experimental":{"v2ray_api":{"listen":"127.0.0.1:10086"}}}`}
+	orig := []byte(`{"outbounds":[]}`)
+	if got := mergeFormatSections(orig, only, "experimental"); string(got) != string(orig) {
+		t.Fatalf("v2ray_api-only experimental should be dropped entirely, got %s", got)
+	}
+}
+
 // injectRuleSets：rule_set 必须落在 route 段内（sing-box 1.15 顶层写会 FATAL），
 // 且兼容历史顶层旧写法读取、按 tag 去重。
 func TestInjectRuleSetsPlacesUnderRoute(t *testing.T) {

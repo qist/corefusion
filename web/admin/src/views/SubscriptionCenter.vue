@@ -242,7 +242,7 @@
 
     <!-- Format Rules Dialog -->
     <el-dialog v-model="rulesDialog" :title="currentFormat?.name + ' - ' + t('subfmt.rules')" width="700">
-      <!-- sing-box / xray：规则不互通不转换，直接贴该格式自己的规则原文 -->
+      <!-- sing-box / xray：规则不互通不转换，逐条存该格式自己的规则 JSON -->
       <template v-if="rulesFmt !== 'mihomo_yaml'">
         <el-alert type="info" :closable="false" style="margin-bottom:12px">
           <template #title>
@@ -252,17 +252,34 @@
             </div>
           </template>
         </el-alert>
-        <el-input v-model="rawRulesText" type="textarea" :rows="14" :placeholder="t('subfmt.rawRulesPlaceholder')" style="font-family:monospace;font-size:12px" />
+        <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#909399">{{ t('subfmt.rawRulesLineCount', { n: rawRuleItems.length }) }}</span>
+          <el-button type="primary" size="small" @click="openNewRawRule">{{ t('subfmt.addRule') }}</el-button>
+        </div>
+        <el-table :data="rawRuleItems" stripe size="small" max-height="360" :empty-text="t('common.noData')">
+          <el-table-column label="#" width="50"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
+          <el-table-column :label="t('subfmt.ruleContent')">
+            <template #default="{ row }"><code style="font-size:12px;word-break:break-all">{{ row.text }}</code></template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="200">
+            <template #default="{ row, $index }">
+              <el-button link size="small" @click="openRawRuleEdit($index)">{{ t('common.edit') }}</el-button>
+              <el-button link size="small" :disabled="$index === 0" @click="moveRawRule($index, -1)">{{ t('common.moveUp') }}</el-button>
+              <el-button link size="small" :disabled="$index === rawRuleItems.length - 1" @click="moveRawRule($index, 1)">{{ t('common.moveDown') }}</el-button>
+              <el-button link size="small" type="danger" @click="deleteRawRule($index)">{{ t('common.delete') }}</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
         <!-- sing-box 外部规则集：引入方式与 Clash 的 rule-providers 一致，定义存 config_json（route.rule_set），生成订阅时注入 route.rule_set -->
         <template v-if="rulesFmt === 'singbox_json'">
           <div style="margin-top:14px;font-size:12px;font-weight:500">{{ t('subfmt.ruleSetTitle') }}</div>
           <div style="margin-top:4px;font-size:12px;color:#909399">{{ t('subfmt.ruleSetHint') }}<br />{{ t('subfmt.ruleSetExample') }}: <code>{{ singboxRuleSetExample }}</code></div>
           <el-input v-model="ruleSetText" type="textarea" :rows="5" :placeholder="t('subfmt.ruleSetPlaceholder')" style="margin-top:6px;font-family:monospace;font-size:12px" />
+          <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:12px;color:#909399">{{ t('subfmt.ruleSetLineCount', { n: ruleSetLines.length }) }}</span>
+            <el-button type="primary" size="small" :loading="savingRules" @click="saveRuleSet">{{ t('common.save') }}</el-button>
+          </div>
         </template>
-        <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:12px;color:#909399">{{ t('subfmt.rawRulesLineCount', { n: rawRuleLines.length }) }}<template v-if="rulesFmt === 'singbox_json'"> / {{ t('subfmt.ruleSetLineCount', { n: ruleSetLines.length }) }}</template></span>
-          <el-button type="primary" size="small" :loading="savingRules" @click="saveRawRules">{{ t('common.save') }}</el-button>
-        </div>
       </template>
       <!-- Mihomo：结构化规则编辑器 -->
       <template v-else>
@@ -301,8 +318,8 @@
         </el-select>
         <el-button size="small" type="primary" @click="addRule">{{ t('subfmt.addRule') }}</el-button>
       </div>
-      <el-table :data="formatRules" stripe size="small">
-        <el-table-column prop="priority" label="#" width="50" />
+      <el-table :data="formatRules" stripe size="small" max-height="400">
+        <el-table-column label="#" width="50"><template #default="{ $index }">{{ $index + 1 }}</template></el-table-column>
         <el-table-column :label="t('subfmt.ruleType')" width="140">
           <template #default="{row}">
             <el-tag v-if="row.rule_provider" size="small" type="warning">RULE-SET</el-tag>
@@ -313,8 +330,82 @@
           <template #default="{row}">{{ row.rule_provider || row.match_value }}</template>
         </el-table-column>
         <el-table-column prop="outbound_tag" :label="t('subfmt.outboundTag')" width="100"><template #default="{row}"><el-tag size="small">{{ row.outbound_tag }}</el-tag></template></el-table-column>
-        <el-table-column :label="t('common.actions')" width="70"><template #default="{row}"><el-button size="small" type="danger" @click="deleteRule(row)">{{ t('common.delete') }}</el-button></template></el-table-column>
+        <el-table-column :label="t('common.actions')" width="220">
+          <template #default="{ row, $index }">
+            <el-button link size="small" @click="openRuleEdit($index)">{{ t('common.edit') }}</el-button>
+            <el-button link size="small" :disabled="$index === 0" @click="moveRule($index, -1)">{{ t('common.moveUp') }}</el-button>
+            <el-button link size="small" :disabled="$index === formatRules.length - 1" @click="moveRule($index, 1)">{{ t('common.moveDown') }}</el-button>
+            <el-button link size="small" type="danger" @click="deleteRule(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
       </el-table>
+      </template>
+    </el-dialog>
+
+    <!-- Mihomo 单条规则编辑 -->
+    <el-dialog v-model="ruleEditDialog" :title="t('subfmt.editRule')" width="520" append-to-body>
+      <el-form :model="ruleEditForm" label-width="90px">
+        <el-form-item :label="t('subfmt.ruleType')">
+          <el-select v-model="ruleEditForm.rule_type" style="width:100%" @change="onRuleEditTypeChange">
+            <el-option-group :label="t('subfmt.groupDomain')">
+              <el-option label="DOMAIN" value="DOMAIN" /><el-option label="DOMAIN-SUFFIX" value="DOMAIN-SUFFIX" />
+              <el-option label="DOMAIN-KEYWORD" value="DOMAIN-KEYWORD" /><el-option label="DOMAIN-WILDCARD" value="DOMAIN-WILDCARD" />
+              <el-option label="DOMAIN-REGEX" value="DOMAIN-REGEX" />
+            </el-option-group>
+            <el-option-group label="IP">
+              <el-option label="IP-CIDR" value="IP-CIDR" /><el-option label="IP-CIDR6" value="IP-CIDR6" />
+              <el-option label="IP-ASN" value="IP-ASN" /><el-option label="GEOIP" value="GEOIP" />
+              <el-option label="GEOSITE" value="GEOSITE" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupRuleSet')">
+              <el-option label="RULE-SET" value="RULE-SET" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupNetwork')">
+              <el-option label="DST-PORT" value="DST-PORT" /><el-option label="SRC-PORT" value="SRC-PORT" />
+              <el-option label="NETWORK" value="NETWORK" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupProcess')">
+              <el-option label="PROCESS-NAME" value="PROCESS-NAME" /><el-option label="PROCESS-PATH" value="PROCESS-PATH" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupLogic')">
+              <el-option label="MATCH" value="MATCH" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="ruleEditForm.rule_type === 'RULE-SET'" :label="t('subfmt.groupRuleSet')">
+          <el-select v-model="ruleEditForm.rule_provider" filterable allow-create style="width:100%" :placeholder="t('subfmt.selectRuleProvider')">
+            <el-option v-for="(_, name) in ruleProviders" :key="name" :label="name" :value="name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-else-if="ruleEditForm.rule_type !== 'MATCH'" :label="t('subfmt.matchValue')">
+          <el-input v-model="ruleEditForm.match_value" placeholder="cn, private" />
+        </el-form-item>
+        <el-form-item :label="t('subfmt.outboundTag')">
+          <el-select v-model="ruleEditForm.outbound_tag" allow-create filterable style="width:100%">
+            <el-option label="PROXY" value="PROXY" /><el-option label="DIRECT" value="DIRECT" /><el-option label="BLOCK" value="BLOCK" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="ruleEditForm.rule_type !== 'MATCH'" :label="t('subfmt.ruleAction')">
+          <el-input v-model="ruleEditForm.rule_action" placeholder="no-resolve" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ruleEditDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingRules" @click="saveRuleEdit">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- sing-box / xray 单条规则编辑（JSON 原文） -->
+    <el-dialog v-model="rawRuleDialog" :title="t('subfmt.editRule')" width="600" append-to-body>
+      <el-alert type="info" :closable="false" style="margin-bottom:10px">
+        <template #title>
+          <div style="font-size:12px">{{ t('subfmt.rawRuleSingleHint') }}: <code>{{ rulesFmt === 'xray_json' ? xrayRuleExample : singboxRuleExample }}</code></div>
+        </template>
+      </el-alert>
+      <el-input v-model="rawRuleDraft" type="textarea" :rows="10" style="font-family:monospace;font-size:12px" />
+      <template #footer>
+        <el-button @click="rawRuleDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="savingRules" @click="saveRawRule">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -411,16 +502,20 @@ const newRuleValue = ref('')
 const newRuleProvider = ref('')
 const newRuleOutbound = ref('DIRECT')
 
-// 原文规则（sing-box / xray）：规则不互通不转换，直接存/发该格式自己的 JSON 原文
+// 原文规则（sing-box / xray）：规则不互通不转换，逐条存该格式自己的 JSON 原文
 const rulesFmt = ref('mihomo_yaml')
-const rawRulesText = ref('')
+const rawRuleItems = ref([])          // [{ id, text }]
+const rawRuleDialog = ref(false)
+const rawRuleDraft = ref('')
+const rawRuleEditIndex = ref(-1)
 const savingRules = ref(false)
 const singboxRuleExample = '{"domain_suffix":["cn"],"outbound":"direct"}'
 const xrayRuleExample = '{"type":"field","domain":["geosite:cn"],"outboundTag":"direct"}'
-// 逐行校验：每行必须是单个 JSON 值（对象/数组/标量都算合法 JSON）
-const rawRuleLines = computed(() =>
-  rawRulesText.value.split('\n').map(s => s.trim()).filter(Boolean)
-)
+
+// Mihomo 单条规则编辑
+const ruleEditDialog = ref(false)
+const ruleEditIndex = ref(-1)
+const ruleEditForm = ref({ rule_type: 'DOMAIN-SUFFIX', match_value: '', outbound_tag: 'DIRECT', rule_provider: '', rule_action: '' })
 
 // sing-box 外部规则集：与 Clash 的 rule-providers 同样引入，只是键名换成 rule_set、存进 config_json。
 // 每行一条定义原文，规则里用 {"rule_set":["tag"]} 引用。
@@ -1387,27 +1482,32 @@ async function deleteFormat(row) { await ElMessageBox.confirm(t('subfmt.deleteCo
 // Format Rules
 async function showFormatRules(row) {
   currentFormat.value = row
-  // 按格式分流：mihomo 用结构化编辑器，sing-box/xray 用原文编辑器（规则不互通不转换）
+  // 按格式分流：mihomo 用结构化编辑器，sing-box/xray 用逐条 JSON 编辑器（规则不互通不转换）
   rulesFmt.value = row.format || 'mihomo_yaml'
-  rawRulesText.value = ''
+  rawRuleItems.value = []
   ruleSetText.value = ''
+  formatRules.value = []
   rulesDialog.value = true
+  await reloadRules()
+}
+
+// 重新拉取当前格式的规则（增删改/移动后统一走这里，保证顺序与后端一致）
+async function reloadRules() {
+  const row = currentFormat.value
+  if (!row) return
   try {
     const r = await client.get(`/mihomo/configs/${row.id}`)
     const rules = r.data?.rules || []
     if (rulesFmt.value !== 'mihomo_yaml') {
-      // 原文模式：每条 rule_string 就是该格式的一条规则 JSON，按优先级拼回文本
-      rawRulesText.value = rules
+      rawRuleItems.value = rules
         .slice()
-        .sort((a, b) => (a.priority || 0) - (b.priority || 0))
-        .map(rule => rule.rule_string || '')
-        .filter(Boolean)
-        .join('\n')
+        .sort((a, b) => (a.priority || 0) - (b.priority || 0) || a.id - b.id)
+        .map(rule => ({ id: rule.id, text: rule.rule_string || '' }))
+        .filter(item => item.text)
       // sing-box 的外部规则集存在 config_json（与 Clash 的 rule-providers 同一存放方式）
       if (rulesFmt.value === 'singbox_json') ruleSetText.value = readRuleSetLines(r.config)
       return
     }
-    // Parse rule strings into components
     formatRules.value = rules.map((rule, i) => ({
       ...parseRuleString(rule.rule_string || '', i),
       id: rule.id,
@@ -1416,74 +1516,161 @@ async function showFormatRules(row) {
     }))
   } catch {
     formatRules.value = []
-    rawRulesText.value = ''
+    rawRuleItems.value = []
   }
 }
 
-// 原文规则保存：逐行校验 JSON → 全量替换该格式的规则（先删后建，顺序即优先级）
-async function saveRawRules() {
-  const lines = rawRuleLines.value
-  // 每行必须是合法 JSON：脏数据会让客户端整份订阅加载失败，宁可挡住
-  for (let i = 0; i < lines.length; i++) {
-    try { JSON.parse(lines[i]) } catch {
-      ElMessage.error(t('subfmt.rawRuleInvalidLine', { line: i + 1 }))
-      return
-    }
+async function reorderRules(ids) {
+  await client.put(`/mihomo/configs/${currentFormat.value.id}/rules/order`, { ids })
+}
+
+// --- Mihomo 结构化规则：编辑 / 上下移动 ---
+function openRuleEdit(index) {
+  const row = formatRules.value[index]
+  if (!row) return
+  ruleEditIndex.value = index
+  ruleEditForm.value = {
+    rule_type: row.rule_provider ? 'RULE-SET' : (row.rule_type || 'DOMAIN-SUFFIX'),
+    match_value: row.match_value || '',
+    outbound_tag: row.outbound_tag || 'DIRECT',
+    rule_provider: row.rule_provider || '',
+    rule_action: row.rule_action || ''
   }
-  // sing-box 外部规则集同样逐行校验，且必须在删旧规则之前挡下来，避免只写一半
+  ruleEditDialog.value = true
+}
+function onRuleEditTypeChange() {
+  if (ruleEditForm.value.rule_type !== 'RULE-SET') ruleEditForm.value.rule_provider = ''
+}
+async function saveRuleEdit() {
+  const row = formatRules.value[ruleEditIndex.value]
+  if (!row) return
+  const form = ruleEditForm.value
+  if (form.rule_type === 'RULE-SET' && !form.rule_provider) {
+    ElMessage.error(t('subfmt.selectRuleProvider'))
+    return
+  }
+  if (!['RULE-SET', 'MATCH'].includes(form.rule_type) && !form.match_value.trim()) {
+    ElMessage.error(t('subfmt.matchValueRequired'))
+    return
+  }
+  savingRules.value = true
+  try {
+    const ruleString = buildRuleString({
+      rule_type: form.rule_type,
+      match_value: form.match_value.trim(),
+      outbound_tag: form.outbound_tag || 'DIRECT',
+      rule_provider: form.rule_type === 'RULE-SET' ? form.rule_provider : '',
+      rule_action: form.rule_action.trim()
+    })
+    await client.put(`/mihomo/rules/${row.id}`, { rule_string: ruleString, enabled: row.enabled !== false })
+    ruleEditDialog.value = false
+    ElMessage.success(t('common.success'))
+    await reloadRules()
+  } finally { savingRules.value = false }
+}
+async function moveRule(index, delta) {
+  const target = index + delta
+  if (target < 0 || target >= formatRules.value.length) return
+  const arr = formatRules.value.slice()
+  const [item] = arr.splice(index, 1)
+  arr.splice(target, 0, item)
+  formatRules.value = arr
+  try {
+    await reorderRules(arr.map(r => r.id))
+    await reloadRules()
+  } catch { await reloadRules() }
+}
+
+// --- sing-box / xray 原文规则：逐条编辑 / 上下移动 ---
+function openNewRawRule() {
+  rawRuleEditIndex.value = -1
+  rawRuleDraft.value = rulesFmt.value === 'xray_json'
+    ? '{\n  "type": "field",\n  "domain": [],\n  "outboundTag": "direct"\n}'
+    : '{\n  "domain_suffix": [],\n  "outbound": "direct"\n}'
+  rawRuleDialog.value = true
+}
+function openRawRuleEdit(index) {
+  rawRuleEditIndex.value = index
+  rawRuleDraft.value = rawRuleItems.value[index]?.text || ''
+  rawRuleDialog.value = true
+}
+async function saveRawRule() {
+  const text = rawRuleDraft.value.trim()
+  if (!text) { ElMessage.error(t('subfmt.rawRulesEmpty')); return }
+  try { JSON.parse(text) } catch {
+    ElMessage.error(t('subfmt.rawRuleInvalid'))
+    return
+  }
+  savingRules.value = true
+  try {
+    const cfgId = currentFormat.value.id
+    if (rawRuleEditIndex.value < 0) {
+      await client.post(`/mihomo/configs/${cfgId}/rules`, { rule_string: text, enabled: true })
+    } else {
+      const row = rawRuleItems.value[rawRuleEditIndex.value]
+      await client.put(`/mihomo/rules/${row.id}`, { rule_string: text })
+    }
+    rawRuleDialog.value = false
+    ElMessage.success(t('common.success'))
+    await reloadRules()
+  } finally { savingRules.value = false }
+}
+async function deleteRawRule(index) {
+  const row = rawRuleItems.value[index]
+  if (!row) return
+  await client.delete(`/mihomo/rules/${row.id}`)
+  ElMessage.success(t('common.success'))
+  await reloadRules()
+}
+async function moveRawRule(index, delta) {
+  const target = index + delta
+  if (target < 0 || target >= rawRuleItems.value.length) return
+  const arr = rawRuleItems.value.slice()
+  const [item] = arr.splice(index, 1)
+  arr.splice(target, 0, item)
+  rawRuleItems.value = arr
+  try {
+    await reorderRules(arr.map(r => r.id))
+    await reloadRules()
+  } catch { await reloadRules() }
+}
+
+// sing-box 外部规则集保存：只写 config_json 的 route.rule_set，规则本身已逐条落库
+async function saveRuleSet() {
   const rsLines = ruleSetLines.value
-  if (rulesFmt.value === 'singbox_json') {
-    for (let i = 0; i < rsLines.length; i++) {
-      try { JSON.parse(rsLines[i]) } catch {
-        ElMessage.error(t('subfmt.ruleSetInvalidLine', { line: i + 1 }))
-        return
-      }
+  for (let i = 0; i < rsLines.length; i++) {
+    try { JSON.parse(rsLines[i]) } catch {
+      ElMessage.error(t('subfmt.ruleSetInvalidLine', { line: i + 1 }))
+      return
     }
   }
   savingRules.value = true
   try {
     const cfgId = currentFormat.value.id
     const existing = await client.get(`/mihomo/configs/${cfgId}`)
-    // 外部规则集写回 config_json 的 **route.rule_set** 段（读-改-写，其余字段原样保留）。
-    // sing-box 顶层写 rule_set 会被核心整份拒载，必须落在 route 内。
-    if (rulesFmt.value === 'singbox_json') {
-      let cfg = {}
-      try { cfg = JSON.parse(existing.config?.config_json || '{}') } catch { cfg = {} }
-      delete cfg.rule_set
-      delete cfg['rule-set']
-      const route = cfg.route && typeof cfg.route === 'object' ? { ...cfg.route } : {}
-      delete route['rule-set']
-      if (rsLines.length) route.rule_set = rsLines.map(l => JSON.parse(l))
-      else delete route.rule_set
-      cfg.route = route
-      const cfgPayload = {
-        name: currentFormat.value.name,
-        client_type: currentFormat.value.client_type || 'clash',
-        format: currentFormat.value.format || 'singbox_json',
-        description: currentFormat.value.description,
-        platform: currentFormat.value.platform || '',
-        plan_ids: currentFormat.value.plan_ids || [],
-        enabled: currentFormat.value.enabled,
-        config_json: JSON.stringify(cfg)
-      }
-      await client.put(`/mihomo/configs/${cfgId}`, cfgPayload)
-      ruleSetArr.value = route.rule_set || []
-      currentFormat.value.config_json = JSON.stringify(cfg)
+    let cfg = {}
+    try { cfg = JSON.parse(existing.config?.config_json || '{}') } catch { cfg = {} }
+    delete cfg.rule_set
+    delete cfg['rule-set']
+    const route = cfg.route && typeof cfg.route === 'object' ? { ...cfg.route } : {}
+    delete route['rule-set']
+    if (rsLines.length) route.rule_set = rsLines.map(l => JSON.parse(l))
+    else delete route.rule_set
+    cfg.route = route
+    const cfgPayload = {
+      name: currentFormat.value.name,
+      client_type: currentFormat.value.client_type || 'clash',
+      format: currentFormat.value.format || 'singbox_json',
+      description: currentFormat.value.description,
+      platform: currentFormat.value.platform || '',
+      plan_ids: currentFormat.value.plan_ids || [],
+      enabled: currentFormat.value.enabled,
+      config_json: JSON.stringify(cfg)
     }
-    for (const rule of (existing.data?.rules || [])) {
-      await client.delete(`/mihomo/rules/${rule.id}`)
-    }
-    for (let i = 0; i < lines.length; i++) {
-      await client.post(`/mihomo/configs/${cfgId}/rules`, {
-        rule_string: lines[i],
-        priority: (i + 1) * 10,
-        enabled: true
-      })
-    }
+    await client.put(`/mihomo/configs/${cfgId}`, cfgPayload)
+    ruleSetArr.value = route.rule_set || []
+    currentFormat.value.config_json = JSON.stringify(cfg)
     ElMessage.success(t('common.success'))
-    await showFormatRules(currentFormat.value)
-  } catch (e) {
-    ElMessage.error(t('common.failed') + (e?.message ? ': ' + e.message : ''))
   } finally { savingRules.value = false }
 }
 async function addRule() {
@@ -1498,10 +1685,14 @@ async function addRule() {
     await client.post(`/mihomo/configs/${currentFormat.value.id}/rules`, { rule_string: ruleString })
     newRuleValue.value = ''
   }
-  showFormatRules(currentFormat.value)
+  await reloadRules()
 }
 function onRuleTypeChange() { newRuleValue.value = ''; newRuleProvider.value = '' }
-async function deleteRule(row) { await client.delete(`/mihomo/rules/${row.id}`); showFormatRules(currentFormat.value) }
+async function deleteRule(row) {
+  await client.delete(`/mihomo/rules/${row.id}`)
+  ElMessage.success(t('common.success'))
+  await reloadRules()
+}
 
 // Endpoint CRUD
 function showCreateEndpoint() { editingEndpoint.value = null; epForm.value = { domain: '', path: '/', description: '', enabled: true }; epDialog.value = true }

@@ -224,6 +224,47 @@ func (h *Handler) CreateRule(c *gin.Context) {
 	response.Created(c, rule)
 }
 
+// UpdateRule handles PUT /api/v1/mihomo/rules/:id.
+func (h *Handler) UpdateRule(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	var input mihomo.UpdateRuleInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	rule, err := h.svc.UpdateRule(c.Request.Context(), id, input)
+	if err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, rule)
+}
+
+// ReorderRules handles PUT /api/v1/mihomo/configs/:id/rules/order.
+func (h *Handler) ReorderRules(c *gin.Context) {
+	configID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid config id")
+		return
+	}
+	var input struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if err := h.svc.ReorderRules(c.Request.Context(), configID, input.IDs); err != nil {
+		response.InternalError(c, "REORDER_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"message": "rules reordered"})
+}
+
 // DeleteRule handles DELETE /api/v1/mihomo/rules/:id.
 func (h *Handler) DeleteRule(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

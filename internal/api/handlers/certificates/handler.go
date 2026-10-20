@@ -3,7 +3,6 @@ package certificates
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -141,6 +140,8 @@ type Handler struct {
 	dnsChannels   DNSChannelResolver
 	eabConfigs    EABConfigResolver
 	nodeNames     NodeNameResolver
+	// tasks 保存后台签发/续期任务的状态（见 async.go ✓）。
+	tasks *certTaskStore
 }
 
 // SetACMEEmailResolver 注入 ACME 账号解析器 ✓（邮箱归面板 ✓，节点不配置 ✗）。
@@ -196,7 +197,7 @@ func (h *Handler) fillIssuerNodeNames(ctx context.Context, certs []entity.Certif
 
 // NewHandler creates a new certificate handler.
 func NewHandler(certSvc *certService.Service) *Handler {
-	return &Handler{certSvc: certSvc}
+	return &Handler{certSvc: certSvc, tasks: newCertTaskStore()}
 }
 
 // OnCertUpdated sets the callback invoked after a certificate is updated/renewed.
@@ -499,6 +500,13 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 	// 两个都为空 → 保持空串 ✓，节点侧回退历史默认 EC256 ✓（与"不指定"的旧行为一致 ✓）。
 	keyType, keyBits := resolveIssueKeyType(req.KeyType, req.KeyBits, existingKeyType, existingKeyBits)
 
+	// ⚠ 节点签发同样要**在本地**校验密钥规格 ✗：面板指令带 CA 不支持的组合时，
+	// 节点会把 DNS-01 全部跑完、最后才被 CA 拒绝 ✗。上限按 CA 区分 ✓（ZeroSSL 支持 8192 ✓）。
+	if err := cert.ValidateKeySpecForCA(cert.CAProvider(caProvider), keyType, keyBits); err != nil {
+		response.BadRequest(c, "UNSUPPORTED_KEY_SPEC", err.Error())
+		return
+	}
+
 	cmd := &agentpb.IssuePublicCertCommand{
 		CertId:      req.CertID,
 		Identifiers: identifiers,
@@ -586,6 +594,9 @@ func (h *Handler) Issue(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+	// 密钥规格校验放在 CA 解析**之后** ✓（见下方 ValidateKeySpecForCA）：
+	// 上限按 CA 不同（ZeroSSL 支持 RSA 8192，Let's Encrypt / Google 只到 4096）✗，
+	// 这里还没解析出 CA，不能提前判定 ✓。
 
 	// ACME 账号邮箱：Google Public CA **必须有联系邮箱** ✗（真机报 `Accounts must have at least one contact.` ✓），
 	// LE 也建议带上 ✓。选了账号就用选的，否则用面板里的**默认账号** ✓。
@@ -711,6 +722,13 @@ func (h *Handler) Issue(c *gin.Context) {
 		log.Printf("[cert] EAB auto-associated by CA: ca=%q eab_config=%q kid=%s", caProvider, cfg.Name, eabKID)
 	}
 
+	// 密钥规格：CA 已解析完 ✓ → 按该 CA 的上限校验（ZeroSSL 支持 RSA 8192 ✓，
+	// LE / Google 只到 4096 ✓）。必须放在开跑之前，别让用户白等 DNS-01 ✗。
+	if kerr := cert.ValidateKeySpecForCA(cert.CAProvider(caProvider), req.KeyType, req.KeyBits); kerr != nil {
+		response.BadRequest(c, "UNSUPPORTED_KEY_SPEC", kerr.Error())
+		return
+	}
+
 	input := certService.IssueACMEInput{
 		Domains:       req.Domains,
 		ChallengeType: req.ChallengeType,
@@ -756,27 +774,40 @@ func (h *Handler) Issue(c *gin.Context) {
 		}
 	}
 
-	cert, err := h.certSvc.IssueACME(c.Request.Context(), input)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, 0, "cert_issue", strings.Join(req.Domains, ","), false, err.Error())
-		// "同一张证书已经有一次签发在跑" ✓ 不是服务端故障 ✗ → 409 ✓：
-		// 签发已被刻意脱离请求上下文 ✓（见 detachedCertOpContext ✓），上一次可能仍在后台跑 ✓，
-		// 这里如实告诉调用方"稍后看结果" ✓，而不是让两个签发同时写同一份文件 ✗。
-		if errors.Is(err, certService.ErrCertOpInProgress) {
-			response.Conflict(c, "ISSUE_IN_PROGRESS", err.Error())
+	// ── 后台签发 ✓ ────────────────────────────────────────────────────────────
+	// dns-01 要等传播（单授权常见 60s、慢时 2m ✗），多域名 + 双证书串行很容易超过
+	// 反代/浏览器 5 分钟超时 ✗ → 同步等待只会让用户看到"签发超时"（证书其实还在签 ✓）。
+	// 现在立即返回 202 + task_id ✓，前端轮询 /certificate-tasks/:id 取结果 ✓。
+	firstDomain := ""
+	if len(req.Domains) > 0 {
+		firstDomain = strings.ToLower(strings.TrimSpace(req.Domains[0]))
+	}
+	task := h.tasks.create("issue", firstDomain, input.KeyType, input.KeyBits)
+	auditEv := taskAuditEventFromCtx(c, "cert_issue", strings.Join(req.Domains, ","))
+	go func(taskID string, in certService.IssueACMEInput, ev audit.NodeEvent) {
+		issued, ierr := h.certSvc.IssueACME(context.Background(), in)
+		var certID int64
+		if issued != nil {
+			certID = issued.ID
+		}
+		h.tasks.finish(taskID, certID, ierr)
+		if ierr != nil {
+			ev.Success = false
+			ev.ErrMsg = ierr.Error()
+			audit.RecordNode(ev)
+			log.Printf("[certificates] background issue failed (task=%s domains=%v): %v", taskID, in.Domains, ierr)
 			return
 		}
-		response.InternalError(c, "ISSUE_FAILED", err.Error())
-		return
-	}
+		ev.Success = true
+		ev.Detail = fmt.Sprintf("issued cert %d: %s", issued.ID, issued.Domain)
+		audit.RecordNode(ev)
+		// Trigger distribution to nodes — new cert may be referenced by
+		// configs that were previously using an older cert for the same domain.
+		h.fireCertUpdated(issued.ID)
+		log.Printf("[certificates] cert %d issued for %s in background, triggering distribution to nodes", issued.ID, issued.Domain)
+	}(task.ID, input, auditEv)
 
-	audit.RecordNodeFromCtx(c, 0, "cert_issue", fmt.Sprintf("issued cert %d: %s", cert.ID, cert.Domain), true, "")
-
-	// Trigger distribution to nodes — new cert may be referenced by
-	// configs that were previously using an older cert for the same domain.
-	h.fireCertUpdated(cert.ID)
-	log.Printf("[certificates] cert %d issued for %s, triggering distribution to nodes", cert.ID, cert.Domain)
-	response.Created(c, cert)
+	response.Accepted(c, task)
 }
 
 // Renew handles POST /api/v1/certificates/:id/renew.
@@ -820,30 +851,40 @@ func (h *Handler) Renew(c *gin.Context) {
 	// 邮箱 / EAB：与签发**同源** ✓（只读，不现场申请 ✗，理由见 resolveRenewalAuth 注释 ✓）
 	if rec, gerr := h.certSvc.GetByID(c.Request.Context(), id); gerr == nil && rec != nil {
 		in.Email, in.EAB = h.resolveRenewalAuth(c.Request.Context(), rec.Issuer)
+		// 续期按库里记录的规格走 ✓ —— 历史脏数据要在这里拦住 ✗，
+		// 但上限**按签发时的 CA** 判定 ✓（ZeroSSL 的 rsa/8192 是合法的 ✓，LE 的才要拦 ✗）。
+		if kerr := cert.ValidateKeySpecForCA(cert.NormalizeCAProvider(rec.Issuer), rec.KeyType, rec.KeyBits); kerr != nil {
+			response.BadRequest(c, "UNSUPPORTED_KEY_SPEC", kerr.Error()+"；请改用支持的规格重新签发")
+			return
+		}
 	}
 
 	// 诊断：一眼看出本次按什么方式续 ✓（不含任何凭据 ✓）
 	log.Printf("[cert] renew request: id=%d challenge=%q dns_channel_id=%d dns_provider_given=%v eab=%v email=%q",
 		id, in.ChallengeType, in.DNSChannelID, in.DNSProvider != nil, in.EAB != nil, in.Email)
 
-	cert, err := h.certSvc.RenewACME(c.Request.Context(), id, in)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("cert %d", id), false, err.Error())
-		// 同上 ✓：续期同样在后台保证跑完 ✓ → 并发的第二次直接 409 ✓（见 handler 里 Issue 的注释 ✓）。
-		if errors.Is(err, certService.ErrCertOpInProgress) {
-			response.Conflict(c, "RENEW_IN_PROGRESS", err.Error())
+	// 与签发同一口径：**后台续期 + 任务查询** ✓（dns-01 同样可能跑几分钟 ✗）。
+	task := h.tasks.create("renew", "", "", 0)
+	auditEv := taskAuditEventFromCtx(c, "cert_renew", fmt.Sprintf("cert %d", id))
+	go func(taskID string, certID int64, rin certService.RenewACMEInput, ev audit.NodeEvent) {
+		renewed, rerr := h.certSvc.RenewACME(context.Background(), certID, rin)
+		h.tasks.finish(taskID, certID, rerr)
+		if rerr != nil {
+			ev.Success = false
+			ev.ErrMsg = rerr.Error()
+			audit.RecordNode(ev)
+			log.Printf("[certificates] background renew failed (task=%s id=%d): %v", taskID, certID, rerr)
 			return
 		}
-		response.InternalError(c, "RENEW_FAILED", err.Error())
-		return
-	}
+		ev.Success = true
+		ev.Detail = fmt.Sprintf("renewed cert %d: %s", certID, renewed.Domain)
+		audit.RecordNode(ev)
+		h.fireCertUpdated(certID)
+		log.Printf("[certificates] cert %d renewed in background (challenge=%s dns_channel=%d), triggering distribution to nodes",
+			certID, renewed.ChallengeType, renewed.DNSChannelID)
+	}(task.ID, id, in, auditEv)
 
-	audit.RecordNodeFromCtx(c, 0, "cert_renew", fmt.Sprintf("renewed cert %d: %s", id, cert.Domain), true, "")
-
-	h.fireCertUpdated(id)
-	log.Printf("[certificates] cert %d renewed (challenge=%s dns_channel=%d), triggering distribution to nodes",
-		id, cert.ChallengeType, cert.DNSChannelID)
-	response.OK(c, cert)
+	response.Accepted(c, task)
 }
 
 // resolveRenewalAuth 返回续期应使用的 ACME 邮箱与 EAB ✓ —— 口径与签发一致 ✓。

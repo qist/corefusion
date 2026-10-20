@@ -83,6 +83,12 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 	if err := certsvc.ValidateACMEDomains(domains, challenge); err != nil {
 		return nil, err
 	}
+	// 公信 CA 不支持的密钥规格必须在**本地**拒绝 ✓：
+	// 上限按 CA 区分 ✗ —— ZeroSSL 支持 RSA 8192 ✓，LE / Google 只到 4096 ✓。
+	provider := cert.NormalizeCAProvider(p.CA)
+	if err := cert.ValidateKeySpecForCA(provider, strings.TrimSpace(p.KeyType), p.KeyBits); err != nil {
+		return nil, err
+	}
 
 	prof := strings.TrimSpace(p.Profile)
 	if prof == "" {
@@ -90,11 +96,6 @@ func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
 		if prof != "" {
 			log.Printf("[acme] %s → 自动使用 profile=%s（LE 的 IP 证书是短时证书，约 6 天）", domains[0], prof)
 		}
-	}
-
-	provider := cert.CAProvider(p.CA)
-	if provider == "" {
-		provider = cert.CAProviderLetsEncrypt
 	}
 
 	dataDir := strings.TrimSpace(p.DataDir)

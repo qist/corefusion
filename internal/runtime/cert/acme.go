@@ -244,6 +244,94 @@ func CertRelPaths(name, keyType string) (certRel, keyRel, fullchainRel string) {
 		filepath.Join("certs", dir, "fullchain.pem")
 }
 
+// RSA 密钥位数的上下限 ✓。
+//
+// ⚠ 上限**按 CA 区分** ✗，不是一个全局常数：
+//   - Let's Encrypt（正式/staging）在 finalize 阶段直接拒绝 8192：
+//     `urn:ietf:params:acme:error:badCSR :: invalid public key in CSR: key size not supported: 8192`
+//     （真机 2026-10-20 踩到 ✓，而且是在 DNS-01 全部通过、白跑几分钟后才失败 ✗）；
+//   - **ZeroSSL 支持 8192** ✓ —— 2026-10-20 用真实 DNS-01 在 ZeroSSL 正式环境实测签发成功，
+//     签出的证书公钥确认为 8192 位 ✓（所以不能像之前那样全局封杀 ✗）；
+//   - Google Public CA 仍按 4096 上限处理 ✓（保守，未实测 8192 ✓）。
+const (
+	MinRSAKeyBits        = 2048
+	MaxLetsEncryptRSAKey = 4096
+	MaxZeroSSLRSAKeyBits = 8192
+	MaxGoogleRSAKeyBits  = 4096
+)
+
+// NormalizeCAProvider 归一 CA 写法 ✓ —— 库里的 `issuer` 既可能是 provider id（`zerossl`），
+// 也可能是展示名（`Let's Encrypt` / `Google Trust Services`）✓，
+// 按 CA 判定密钥规格时必须先归到同一套枚举 ✗，否则会误判 ✓。
+func NormalizeCAProvider(p string) CAProvider {
+	s := strings.ToLower(strings.TrimSpace(p))
+	switch {
+	case s == "", s == "le", s == "letsencrypt", s == "let's encrypt", s == "lets_encrypt":
+		return CAProviderLetsEncrypt
+	case strings.Contains(s, "staging"):
+		return CAProviderLetsEncryptStaging
+	// 从证书 issuer 的 O/CN 解析出来的值可能是 "ZeroSSL" / "ZeroSSL GmbH" 之类 ✓
+	case strings.HasPrefix(s, "zerossl"), s == "zero ssl":
+		return CAProviderZeroSSL
+	// 同理 "Google Trust Services" / "Google Trust Services LLC" 都要归到 google ✓
+	case strings.HasPrefix(s, "google"):
+		return CAProviderGoogle
+	default:
+		return CAProvider(s)
+	}
+}
+
+// ValidateKeySpec 校验**客户端（lego）能生成**的密钥规格 ✓ —— 与具体 CA 无关。
+//
+// 支持：ecc 256/384（lego 只有 EC256/EC384 ✓，没有 EC521 ✗）；
+//
+//	rsa 2048/3072/4096/8192 ✓（8192 能不能签出取决于 CA，见 ValidateKeySpecForCA ✓）。
+//
+// 空类型 / 位数 0 = 用类型默认 ✓（保持历史行为）。
+func ValidateKeySpec(keyType string, keyBits int) error {
+	if NormalizeKeyType(keyType) == KeyTypeRSA {
+		switch keyBits {
+		case 0, 2048, 3072, 4096, 8192:
+			return nil
+		default:
+			return fmt.Errorf("不支持的 RSA 位数 %d（可选 2048/3072/4096/8192）", keyBits)
+		}
+	}
+	switch keyBits {
+	case 0, 256, 384:
+		return nil
+	case 521:
+		return fmt.Errorf("ECC 521 不受支持（lego 只提供 EC256/EC384）；请改用 ECC 256 或 384")
+	default:
+		return fmt.Errorf("不支持的 ECC 位数 %d（可选 256/384）", keyBits)
+	}
+}
+
+// ValidateKeySpecForCA 在 ValidateKeySpec 之上叠加**该 CA 的**密钥规格限制 ✓。
+//
+// 为什么必须按 CA 判定 ✗：RSA 8192 不是"公信 CA 一律不支持"——
+// Let's Encrypt 明确拒绝 ✗，但 ZeroSSL 支持 ✓（2026-10-20 真实 DNS-01 实测签出 8192 位证书 ✓）。
+// 统一封杀会把 ZeroSSL 本来能用的组合挡在门外 ✗。
+func ValidateKeySpecForCA(caProvider CAProvider, keyType string, keyBits int) error {
+	if err := ValidateKeySpec(keyType, keyBits); err != nil {
+		return err
+	}
+	if NormalizeKeyType(keyType) != KeyTypeRSA || keyBits != 8192 {
+		return nil
+	}
+	switch NormalizeCAProvider(string(caProvider)) {
+	case CAProviderZeroSSL:
+		return nil // 实测支持 ✓
+	case CAProviderLetsEncrypt, CAProviderLetsEncryptStaging:
+		return fmt.Errorf("Let's Encrypt 不支持 RSA 8192（会返回 key size not supported: 8192）；" +
+			"请改用 RSA 4096 或更小，或把 CA 切换到 ZeroSSL（ZeroSSL 支持 8192）")
+	case CAProviderGoogle:
+		return fmt.Errorf("Google Public CA 不支持 RSA 8192（上限 RSA 4096）；请改用 RSA 4096 或切换到 ZeroSSL")
+	default:
+		return fmt.Errorf("CA %q 不支持 RSA 8192（目前仅 ZeroSSL 支持）；请改用 RSA 4096 或更小", string(caProvider))
+	}
+}
+
 // resolveKeyType 把面板的 (key_type, key_bits) 映射成 lego 的密钥类型 ✓。
 // 位数为 0 或非法 → 用该类型的默认（ecc→256、rsa→2048 ✓）。
 func resolveKeyType(keyType string, keyBits int) certcrypto.KeyType {
@@ -314,6 +402,12 @@ func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
 func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult, error) {
 	if len(opts.Domains) == 0 {
 		return nil, fmt.Errorf("at least one domain required")
+	}
+	// ⚠ 密钥规格必须**在打到 CA 之前**校验 ✗：不支持的组合（如 LE 的 RSA 8192 ✗）
+	// 会在 DNS-01 全部通过后的 finalize 阶段才被 CA 拒绝 ✗ —— 白等几分钟、白消耗订单 ✗。
+	// 上限**按 CA** 区分 ✓（ZeroSSL 支持 8192 ✓，LE/Google 只到 4096 ✓）。
+	if err := ValidateKeySpecForCA(c.caProvider, opts.KeyType, opts.KeyBits); err != nil {
+		return nil, err
 	}
 
 	challengeType := opts.ChallengeType

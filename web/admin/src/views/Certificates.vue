@@ -119,7 +119,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('certificate.caProvider')">
-          <el-select v-model="issueForm.ca_provider" style="width:100%">
+          <el-select v-model="issueForm.ca_provider" style="width:100%" @change="onCAChange">
             <el-option label="Let's Encrypt" value="lets_encrypt" />
             <el-option label="ZeroSSL" value="zerossl" />
             <el-option label="Google Public CA" value="google" />
@@ -164,7 +164,7 @@
               <el-option label="RSA" value="rsa" />
             </el-select>
             <el-select v-model="spec.key_bits" style="width:130px">
-              <el-option v-for="b in bitsOptionsFor(spec.key_type)" :key="b" :label="b" :value="b" />
+              <el-option v-for="b in bitsOptionsFor(spec.key_type, issueForm.ca_provider)" :key="b" :label="b" :value="b" />
             </el-select>
             <el-button v-if="issueForm.key_specs.length > 1" link type="danger" @click="removeKeySpec(i)">✕</el-button>
           </div>
@@ -579,10 +579,16 @@ const emailSaving = ref(false)
 const editingEmail = ref(null)
 const emailForm = ref({ email: '', ca_provider: 'lets_encrypt', eab_key_id: '', eab_mac_key: '', is_default: false })
 
-// bitsOptionsFor 返回某密钥类型的可选长度 ✓（与后端 cert.resolveKeyType 的映射严格一致 ✓）。
-// ⚠ lego 只支持 EC256/EC384 ✗（**没有 EC521** ✓）→ 不提供 521，避免"选了不生效" ✗。
-function bitsOptionsFor(keyType) {
-  return keyType === 'rsa' ? [8192, 4096, 3072, 2048] : [384, 256]
+// bitsOptionsFor 返回某密钥类型在**当前 CA** 下的可选长度 ✓。
+// ⚠ lego 只支持 EC256/EC384 ✗（没有 EC521 ✓）；
+// ⚠ RSA 上限**按 CA 不同** ✗：ZeroSSL 实测支持 8192 ✓，
+//   Let's Encrypt 会在 finalize 阶段直接报 key size not supported: 8192 ✗（白等几分钟），
+//   Google Public CA 按 4096 上限处理 ✓ → 只在 ZeroSSL 下给出 8192 ✓。
+function bitsOptionsFor(keyType, caProvider) {
+  if (keyType === 'rsa') {
+    return caProvider === 'zerossl' ? [8192, 4096, 3072, 2048] : [4096, 3072, 2048]
+  }
+  return [384, 256]
 }
 
 // defaultBitsFor：切换类型时给一个合理默认 ✓
@@ -590,9 +596,18 @@ function defaultBitsFor(keyType) {
   return keyType === 'rsa' ? 2048 : 256
 }
 
+// onCAChange：切换 CA 后把该 CA 不支持的位数拉回合法值 ✓
+// （例如 ZeroSSL + RSA8192 → 切回 Let's Encrypt 时必须降为 4096 ✗）
+function onCAChange() {
+  for (const spec of issueForm.value.key_specs || []) {
+    const opts = bitsOptionsFor(spec.key_type, issueForm.value.ca_provider)
+    if (!opts.includes(spec.key_bits)) spec.key_bits = opts[0]
+  }
+}
+
 // onSpecTypeChange：切换某一行的类型 → 重置该行的长度（避免 ecc↔rsa 之间留下非法组合 ✗）
 function onSpecTypeChange(spec) {
-  const opts = bitsOptionsFor(spec.key_type)
+  const opts = bitsOptionsFor(spec.key_type, issueForm.value.ca_provider)
   if (!opts.includes(spec.key_bits)) spec.key_bits = defaultBitsFor(spec.key_type)
 }
 
@@ -740,6 +755,14 @@ async function handleIssue() {
       return
     }
     seen.add(s.key_type)
+    // 该 CA 下不支持的位数直接拦住 ✓（例如 LE + RSA8192 ✗）
+    if (!bitsOptionsFor(s.key_type, issueForm.value.ca_provider).includes(s.key_bits)) {
+      ElMessage.error(t('certificate.keySpecUnsupported', {
+        spec: `${s.key_type.toUpperCase()} ${s.key_bits}`,
+        ca: issueForm.value.ca_provider,
+      }))
+      return
+    }
   }
 
   // 选节点签发：交给该节点在本机完成 ACME ✓（本地 80 端口检查无意义 ✗）
@@ -802,30 +825,82 @@ async function handleIssue() {
     auto_renew: issueForm.value.auto_renew
   }
   issuing.value = true
-  const okList = []
+  const tasks = []
   const failList = []
   try {
     for (const s of specs) {
       const label = `${s.key_type.toUpperCase()} ${s.key_bits}`
       try {
+        // 后台签发 ✓：接口立即返回 202 + task_id，不再同步等 DNS-01 跑完
+        // （多域名 + 双证书很容易超过 5 分钟 → 以前会显示"签发超时"）
         // suppressErrorMessage：逐张自己汇总报错 ✓，避免弹两次 ✗
-        await client.post('/certificates/issue', { ...base, key_type: s.key_type, key_bits: s.key_bits },
+        const task = await client.post('/certificates/issue', { ...base, key_type: s.key_type, key_bits: s.key_bits },
                           { suppressErrorMessage: true })
-        okList.push(label)
+        tasks.push({ id: task?.id, label })
       } catch (e) {
-        failList.push(`${label}：${e?.message || t('common.failed')}`)
+        failList.push(`${label}：${e?.response?.data?.message || e?.message || t('common.failed')}`)
       }
-      fetchCertificates()
     }
-    if (okList.length) ElMessage.success(t('certificate.issuedN', { n: okList.length }) + '：' + okList.join('、'))
+    if (tasks.length) {
+      ElMessage.success(t('certificate.issueSubmittedN', { n: tasks.length }))
+      issueVisible.value = false
+      fetchCertificates()
+      // 后台轮询：不阻塞弹窗；完成/失败后刷新列表并汇总提示 ✓
+      trackCertTasks(tasks, 'issue')
+    }
     if (failList.length) ElMessage.error(t('certificate.someFailed', { list: failList.join('；') }))
-    if (failList.length === 0) issueVisible.value = false
   } finally { issuing.value = false }
+}
+
+// waitCertTask 轮询一张签发/续期任务直到结束 ✓（后端单任务最长 15 分钟兜底 ✓）。
+async function waitCertTask(id) {
+  const deadline = Date.now() + 15 * 60 * 1000
+  while (Date.now() < deadline) {
+    let task
+    try {
+      task = await client.get(`/certificate-tasks/${id}`, { suppressErrorMessage: true })
+    } catch (e) {
+      if (e?.response?.status === 404) throw new Error(t('certificate.taskLost'))
+      // 短暂网络抖动/面板重启 → 继续等（任务仍在后台跑 ✓）
+      await new Promise(r => setTimeout(r, 3000))
+      continue
+    }
+    if (task?.state === 'success') return task
+    if (task?.state === 'failed') throw new Error(task.error || t('common.failed'))
+    await new Promise(r => setTimeout(r, 2000))
+  }
+  throw new Error(t('certificate.taskTimeout'))
+}
+
+// trackCertTasks 并行跟踪多个后台任务，结束后统一刷新列表并汇总结果 ✓。
+async function trackCertTasks(tasks, kind) {
+  const ok = []
+  const failed = []
+  await Promise.all(tasks.map(async ({ id, label }) => {
+    try {
+      await waitCertTask(id)
+      ok.push(label)
+    } catch (e) {
+      failed.push(`${label}：${e?.message || t('common.failed')}`)
+    }
+  }))
+  fetchCertificates()
+  if (ok.length) {
+    ElMessage.success(t(kind === 'renew' ? 'certificate.renewDoneN' : 'certificate.issueDoneN', { n: ok.length }) + '：' + ok.join('、'))
+  }
+  if (failed.length) ElMessage.error(t('certificate.someFailed', { list: failed.join('；') }))
 }
 
 async function handleRenew(row) {
   row._renewing = true
-  try { await client.post(`/certificates/${row.id}/renew`); ElMessage.success(t('common.success')); fetchCertificates() } catch (e) { ElMessage.error(t('common.failed')) } finally { row._renewing = false }
+  try {
+    // 续期同样是后台任务 ✓（dns-01 也可能跑几分钟 ✗）
+    const task = await client.post(`/certificates/${row.id}/renew`)
+    ElMessage.success(t('certificate.renewSubmitted'))
+    if (task?.id) trackCertTasks([{ id: task.id, label: row.domain || row.name || `#${row.id}` }], 'renew')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  } finally { row._renewing = false }
 }
 
 async function handleDelete(row) {

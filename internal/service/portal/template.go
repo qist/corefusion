@@ -597,6 +597,29 @@ const defaultPortalHTML = `<!DOCTYPE html>
       </template>
     </el-dialog>
 
+    <!-- Withdraw Dialog -->
+    <el-dialog v-model="showWithdrawDialog" :title="t('referral.withdraw')" width="420px" align-center append-to-body>
+      <div class="payment-dialog-content">
+        <div class="pay-extra-label">{{ t('referral.withdraw_amount') }}（{{ t('charge.yuan') }}）</div>
+        <el-input-number v-model="withdrawForm.amount_yuan" :min="0" :step="10" style="width: 100%" />
+        <div class="pay-hint" style="margin-top:8px">{{ t('referral.withdrawable') }} {{ formatMoney((referralStats && referralStats.available_commission) || 0) }}</div>
+        <div class="pay-hint">{{ t('referral.withdraw_min_hint').replace('{amount}', ((referralStats && referralStats.min_withdraw_amount) || 0) / 100) }}</div>
+        <div class="pay-extra-label" style="margin-top:14px">{{ t('referral.withdraw_type') }}</div>
+        <el-radio-group v-model="withdrawForm.withdraw_type">
+          <el-radio label="balance">{{ t('referral.withdraw_type_balance') }}</el-radio>
+          <el-radio label="usdt">{{ t('referral.withdraw_type_usdt') }}</el-radio>
+        </el-radio-group>
+        <div v-if="withdrawForm.withdraw_type === 'usdt'" style="margin-top:12px">
+          <div class="pay-extra-label">{{ t('referral.wallet_address') }}</div>
+          <el-input v-model="withdrawForm.wallet_address" :placeholder="t('referral.wallet_address_placeholder')" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showWithdrawDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="withdrawBusy" @click="submitWithdraw">{{ t('referral.withdraw_submit') }}</el-button>
+      </template>
+    </el-dialog>
+
     <!-- More Subscriptions Dialog -->
     <el-dialog v-model="moreSubsVisible" :title="t('sub.more_subs')" width="480px" align-center append-to-body class="more-subs-dialog">
       <div class="more-subs-list">
@@ -3407,6 +3430,11 @@ var referralStats = ref(null)
 var referralRecords = ref([])
 var commissionRecords = ref([])
 var withdrawRecords = ref([])
+var showWithdrawDialog = ref(false)
+var withdrawBusy = ref(false)
+var withdrawForm = ref({ amount_yuan: 0, withdraw_type: 'balance', wallet_address: '' })
+var ipWhitelistEntries = ref([])
+var whitelistBusy = ref(false)
 // --- Gifts ---
 var gifts = ref([])
 var giftClaiming = ref(false)
@@ -3821,6 +3849,7 @@ var showPromoInput = ref(false) // promo code fold
       var hasCharge = pageMods.some(function(m) { return m.type === 'charge_panel' })
       var hasBalance = pageMods.some(function(m) { return m.type === 'balance_display' || m.type === 'account_info' })
       var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
+      var hasSecurity = pageMods.some(function(m) { return m.type === 'security_settings' })
       var hasTickets = pageMods.some(function(m) { return m.type === 'ticket_list' })
       var hasArticles = pageMods.some(function(m) { return m.type === 'article_list' })
       var hasTutorialCards = pageMods.some(function(m) { return m.type === 'tutorial_cards' })
@@ -3836,6 +3865,7 @@ var showPromoInput = ref(false) // promo code fold
       if (hasCharge) fetchChargeOrders()
       if (hasBalance) { fetchBalance(); fetchBalanceTxns() }
       if (hasReferral) fetchReferral()
+      if (hasSecurity) fetchWhitelistEntries()
       if (hasTickets) fetchTickets()
       if (hasArticles || hasTutorialCards || hasClientDownload) fetchArticles()
       if (hasSharedAccts || hasStreaming) fetchSharedAccounts()
@@ -4587,6 +4617,7 @@ var showStreamingAccount = function(service) {
         } else if (res.payment_url) {
           ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
+          startPaymentPolling(res)
         } else {
           ElMessage.success(t('plan.order_created'))
         }
@@ -4623,6 +4654,7 @@ var showStreamingAccount = function(service) {
         } else if (res.payment_url) {
           ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
+          startPaymentPolling(res)
         } else {
           ElMessage.success(t('plan.order_created'))
         }
@@ -4645,6 +4677,7 @@ var showStreamingAccount = function(service) {
         if (res.payment_url) {
           ElMessage.info(t('plan.redirecting_payment'))
           window.open(res.payment_url, '_blank')
+          startPaymentPolling(res)
         } else {
           ElMessage.success(t('charge.order_created'))
         }
@@ -4672,6 +4705,84 @@ chargeOrders.value = ((res && res.items) ? res.items : []).filter(function(co) {
     }
 
     var chargeStatusText = function(s) { return { pending: t('order.status_pending'), paid: t('order.status_paid'), processing: t('common.processing'), expired: t('common.expired'), failed: t('common.failed') }[s] || s || '-' }
+
+    // --- C-1: 支付后轮询（套餐订单 / 充值订单共用） ---
+    // 支付页在 window.open 的新标签里，门户这边只能轮询状态；到账后自动刷新余额/订单/套餐。
+    var paymentPollTimer = null
+    var stopPaymentPolling = function() {
+      if (paymentPollTimer) { clearInterval(paymentPollTimer); paymentPollTimer = null }
+    }
+    var startPaymentPolling = function(res) {
+      var tradeNo = res && res.trade_no
+      var orderId = res && res.order_id
+      if (!tradeNo && !orderId) return
+      stopPaymentPolling()
+      var startedAt = Date.now()
+      var finish = function() {
+        stopPaymentPolling()
+        ElMessage.success(t('order.payment_arrived'))
+        fetchMe(); fetchBalance(); fetchBalanceTxns(); fetchMyOrders(); fetchChargeOrders()
+      }
+      paymentPollTimer = setInterval(function() {
+        if (Date.now() - startedAt > 300000) { stopPaymentPolling(); return }
+        if (tradeNo) {
+          api('GET', '/charge/status/' + encodeURIComponent(tradeNo)).then(function(o) {
+            var st = o && o.status
+            if (st === 'paid') finish()
+            else if (st === 'failed' || st === 'expired' || st === 'refunded') stopPaymentPolling()
+          }).catch(function() {})
+        } else {
+          api('GET', '/orders/' + orderId).then(function(o) {
+            var st = o && o.status
+            if (st === 'paid' || st === 'completed' || st === 'scheduled') finish()
+            else if (st === 'cancelled' || st === 'refunded') stopPaymentPolling()
+          }).catch(function() {})
+        }
+      }, 3000)
+    }
+
+    // --- C-2: 推荐提现申请 ---
+    var openWithdrawDialog = function() {
+      var stats = referralStats.value || {}
+      withdrawForm.value = { amount_yuan: Math.floor((stats.available_commission || 0) / 100), withdraw_type: 'balance', wallet_address: '' }
+      showWithdrawDialog.value = true
+    }
+    var submitWithdraw = function() {
+      var f = withdrawForm.value || {}
+      var cents = Math.round((Number(f.amount_yuan) || 0) * 100)
+      var min = (referralStats.value && referralStats.min_withdraw_amount) || 0
+      if (cents <= 0) { ElMessage.error(t('referral.withdraw_amount_invalid')); return }
+      if (min > 0 && cents < min) { ElMessage.error(t('referral.withdraw_min_hint').replace('{amount}', (min / 100).toFixed(0))); return }
+      if (referralStats.value && cents > referralStats.value.available_commission) { ElMessage.error(t('referral.withdraw_exceeds')); return }
+      if (f.withdraw_type === 'usdt' && !f.wallet_address) { ElMessage.error(t('referral.wallet_required')); return }
+      withdrawBusy.value = true
+      api('POST', '/referral/withdraw', { amount: cents, withdraw_type: f.withdraw_type, wallet_address: f.wallet_address || '' }).then(function() {
+        ElMessage.success(t('referral.withdraw_submitted'))
+        showWithdrawDialog.value = false
+        fetchReferral()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { withdrawBusy.value = false })
+    }
+
+    // --- C-4: 订阅 IP 白名单列表管理 ---
+    var fetchWhitelistEntries = function() {
+      api('GET', '/settings/whitelist').then(function(res) {
+        ipWhitelistEntries.value = Array.isArray(res) ? res : []
+      }).catch(function() {})
+    }
+    var autoAddCurrentIP = function() {
+      whitelistBusy.value = true
+      api('POST', '/settings/auto-add-ip', {}).then(function() {
+        ElMessage.success(t('security.ip_added'))
+        fetchWhitelistEntries(); fetchMe()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { whitelistBusy.value = false })
+    }
+    var removeWhitelistEntry = function(id) {
+      whitelistBusy.value = true
+      api('DELETE', '/settings/whitelist/' + id).then(function() {
+        ElMessage.success(t('security.ip_removed'))
+        fetchWhitelistEntries(); fetchMe()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { whitelistBusy.value = false })
+    }
 
     // --- My Orders ---
     var fetchMyOrders = function() {
@@ -4736,6 +4847,9 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
       api('GET', '/referral/stats').then(function(res) { referralStats.value = res }).catch(function() {})
       api('GET', '/referral/records?limit=20').then(function(res) {
         referralRecords.value = (res && res.items) ? res.items : []
+      }).catch(function() {})
+      api('GET', '/referral/withdrawals?limit=20').then(function(res) {
+        withdrawRecords.value = (res && res.items) ? res.items : []
       }).catch(function() {})
     }
     var referralInviteUrl = computed(function() {
@@ -5089,6 +5203,7 @@ if (initHasNodeList) fetchNodes()
       if (initHasBalance) { fetchBalance(); fetchBalanceTxns() }
       if (initHasBalance || initMods.some(function(m) { return m.type === 'account_info' })) fetchGifts()
       if (initHasReferral) fetchReferral()
+      if (initMods.some(function(m) { return m.type === 'security_settings' })) fetchWhitelistEntries()
         if (initHasTickets) fetchTickets()
         if (initHasArticles) fetchArticles()
         if (initHasSharedAccts) fetchSharedAccounts()
@@ -5108,10 +5223,11 @@ if (initHasNodeList) fetchNodes()
 
     onUnmounted(function() {
       if (refreshTimer) clearInterval(refreshTimer)
+      stopPaymentPolling()
       window.removeEventListener('message', oauthMsgHandler)
     })
 
-    watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer) } })
+    watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer); stopPaymentPolling() } })
 
     // --- Module component runtime (all module types) ---
     var moduleComponents = ref({})
@@ -5185,6 +5301,10 @@ if (initHasNodeList) fetchNodes()
           myOrders: myOrders, myOrdersLoading: myOrdersLoading,
           allPlanNodes: allPlanNodes,
           referralCode: referralCode, referralStats: referralStats, referralRecords: referralRecords,
+          showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+          openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,
+          ipWhitelistEntries: ipWhitelistEntries, whitelistBusy: whitelistBusy,
+          fetchWhitelistEntries: fetchWhitelistEntries, autoAddCurrentIP: autoAddCurrentIP, removeWhitelistEntry: removeWhitelistEntry,
           tickets: tickets,
           articles: articles,
           sharedAccounts: sharedAccounts,
@@ -5293,6 +5413,10 @@ if (initHasNodeList) fetchNodes()
                 navigateTo: navigateTo, scrollToModule: scrollToModule,
                 referralInviteUrl: referralInviteUrl, referralStatusText: referralStatusText,
                 commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,
+                showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+                openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,
+                ipWhitelistEntries: ipWhitelistEntries, whitelistBusy: whitelistBusy,
+                fetchWhitelistEntries: fetchWhitelistEntries, autoAddCurrentIP: autoAddCurrentIP, removeWhitelistEntry: removeWhitelistEntry,
                 appleAccount: appleAccount, netflixAccount: netflixAccount,
                 appleAccounts: appleAccounts, netflixAccounts: netflixAccounts,
                 applySharedAccount: applySharedAccount, repairSharedAccount: repairSharedAccount,
@@ -5393,6 +5517,10 @@ return {
       // Utils & icons
       copyText: copyText, formatBytes: formatBytes, formatDate: formatDate, formatMoney: formatMoney,
       iconPaths: iconPaths, navIconPath: navIconPath, authComponent: authComponent,
+      // Referral withdraw
+      referralStats: referralStats,
+      showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+      openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,
       // Gifts
       gifts: gifts, giftClaiming: giftClaiming, claimGift: claimGift,
       giftTypeText: giftTypeText, giftSourceText: giftSourceText, fetchGifts: fetchGifts

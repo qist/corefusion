@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"corefusion/internal/api/handlers/subscriptions"
@@ -25,20 +24,17 @@ type PublicSubHandler interface {
 
 // Handler holds all new P1-P3 service references.
 type Handler struct {
-	referralSvc     *clientauth.ReferralService
-	ticketSvc       *clientauth.TicketService
-	giftSvc         *clientauth.GiftService
-	articleSvc      *clientauth.ArticleService
-	sharedAcctSvc   *clientauth.SharedAccountService
-	ipWhitelistSvc  *clientauth.IPWhitelistService
-	selfUnbanSvc    *clientauth.SelfUnbanService
-	subResetSvc     *clientauth.SubscriptionResetService
-	clientRepo      *repository.ClientRepository
-	oAuthRepo       *repository.ClientOAuthBindingRepository
-	subRepo         *repository.SubscriptionRepository
-	subEndpointRepo *repository.SubscriptionEndpointRepository
-	publicSubH      PublicSubHandler
-	db              *gorm.DB
+	referralSvc    *clientauth.ReferralService
+	ticketSvc      *clientauth.TicketService
+	giftSvc        *clientauth.GiftService
+	articleSvc     *clientauth.ArticleService
+	sharedAcctSvc  *clientauth.SharedAccountService
+	ipWhitelistSvc *clientauth.IPWhitelistService
+	selfUnbanSvc   *clientauth.SelfUnbanService
+	subResetSvc    *clientauth.SubscriptionResetService
+	clientRepo     *repository.ClientRepository
+	publicSubH     PublicSubHandler
+	db             *gorm.DB
 }
 
 // NewHandler creates a new Handler.
@@ -52,9 +48,6 @@ func NewHandler(
 	selfUnbanSvc *clientauth.SelfUnbanService,
 	subResetSvc *clientauth.SubscriptionResetService,
 	clientRepo *repository.ClientRepository,
-	oAuthRepo *repository.ClientOAuthBindingRepository,
-	subRepo *repository.SubscriptionRepository,
-	subEndpointRepo *repository.SubscriptionEndpointRepository,
 	publicSubH PublicSubHandler,
 	db *gorm.DB,
 ) *Handler {
@@ -63,10 +56,9 @@ func NewHandler(
 		giftSvc: giftSvc, articleSvc: articleSvc,
 		sharedAcctSvc: sharedAcctSvc, ipWhitelistSvc: ipWhitelistSvc,
 		selfUnbanSvc: selfUnbanSvc, subResetSvc: subResetSvc,
-		clientRepo: clientRepo, oAuthRepo: oAuthRepo,
-		subEndpointRepo: subEndpointRepo,
-		publicSubH:      publicSubH,
-		db:              db,
+		clientRepo: clientRepo,
+		publicSubH: publicSubH,
+		db:         db,
 	}
 }
 
@@ -393,20 +385,6 @@ func (h *Handler) AdminListAllIPWhitelists(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": out, "total": total})
-}
-
-// AdminUpdateIPWhitelistConfig handles PUT /api/v1/ip-whitelist-config (admin: update global IP whitelist config).
-func (h *Handler) AdminUpdateIPWhitelistConfig(c *gin.Context) {
-	var body struct {
-		AllowSelfAdd bool `json:"allow_self_add"`
-		MaxEntries   int  `json:"max_entries"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	// Store config via setting service
-	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }
 
 // AdminListClientOAuthBindings handles GET /api/v1/client-oauth-bindings (admin: list all OAuth bindings).
@@ -1038,64 +1016,6 @@ func (h *Handler) CheckTime(c *gin.Context) {
 
 // ======================== P3-19: Profile Management ========================
 
-func (h *Handler) GetProfile(c *gin.Context) {
-	clientID := getClientID(c)
-	if h.clientRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-	client, err := h.clientRepo.GetByID(c.Request.Context(), clientID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
-		return
-	}
-	// Get OAuth bindings
-	var bindings []entity.ClientOAuthBinding
-	if h.oAuthRepo != nil {
-		bindings, _ = h.oAuthRepo.ListByClientID(c.Request.Context(), clientID)
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"id":             client.ID,
-		"email":          client.Email,
-		"nickname":       client.Nickname,
-		"qq":             client.QQ,
-		"wechat":         client.Wechat,
-		"status":         client.Status,
-		"created_at":     client.CreatedAt,
-		"oauth_bindings": bindings,
-	})
-}
-
-func (h *Handler) UpdateProfile(c *gin.Context) {
-	clientID := getClientID(c)
-	if h.clientRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-	client, err := h.clientRepo.GetByID(c.Request.Context(), clientID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
-		return
-	}
-	var body struct {
-		Nickname string `json:"nickname"`
-		QQ       string `json:"qq"`
-		Wechat   string `json:"wechat"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	client.Nickname = body.Nickname
-	client.QQ = body.QQ
-	client.Wechat = body.Wechat
-	if err := h.clientRepo.Update(c.Request.Context(), client); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "profile updated"})
-}
-
 func (h *Handler) GetConnectionInfo(c *gin.Context) {
 	clientID := getClientID(c)
 	if h.clientRepo == nil {
@@ -1128,207 +1048,6 @@ func (h *Handler) GetConnectionInfo(c *gin.Context) {
 		"speed_limit":  client.SpeedLimitMbps,
 		"concurrent":   client.ConcurrentLimit,
 	})
-}
-
-func (h *Handler) BindOAuth(c *gin.Context) {
-	clientID := getClientID(c)
-	if h.oAuthRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-	var body struct {
-		Provider       string `json:"provider" binding:"required"`
-		ProviderUserID string `json:"provider_user_id" binding:"required"`
-		ProviderName   string `json:"provider_name"`
-	}
-	if err := c.ShouldBindJSON(&body); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	// Check if already bound
-	existing, _ := h.oAuthRepo.GetByProvider(c.Request.Context(), clientID, body.Provider)
-	if existing != nil && existing.ID > 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "already bound"})
-		return
-	}
-	binding := &entity.ClientOAuthBinding{
-		ClientID:       clientID,
-		Provider:       body.Provider,
-		ProviderUserID: body.ProviderUserID,
-		ProviderName:   body.ProviderName,
-	}
-	if err := h.oAuthRepo.Create(c.Request.Context(), binding); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, binding)
-}
-
-func (h *Handler) UnbindOAuth(c *gin.Context) {
-	clientID := getClientID(c)
-	if h.oAuthRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-	provider := c.Param("provider")
-	binding, err := h.oAuthRepo.GetByProvider(c.Request.Context(), clientID, provider)
-	if err != nil || binding == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "binding not found"})
-		return
-	}
-	if err := h.oAuthRepo.Delete(c.Request.Context(), binding.ID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "unbound"})
-}
-
-// ======================== P3-20: Subscription Formats ========================
-
-// ListSubscriptionFormats returns the supported subscription output formats.
-func (h *Handler) ListSubscriptionFormats(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"items": []map[string]string{
-		{"key": "base64_uri", "label": "Base64 (Default)"},
-		{"key": "raw_uri", "label": "Raw URI"},
-		{"key": "mihomo_yaml", "label": "Mihomo / Clash YAML"},
-		{"key": "singbox_json", "label": "Sing-box JSON"},
-		{"key": "xray_json", "label": "Xray JSON"},
-	}})
-}
-
-// buildSubLinks builds the primary and backup subscription URLs for a client.
-// It uses subscription endpoints from the database:
-//   - If an enabled endpoint has a standalone domain (independent channel),
-//     the link is https://<domain>/<path>/<token>
-//   - Otherwise it falls back to the panel host with /sub/<token>
-// insecure：链接走 HTTP（非 HTTPS）时为 true；当 HTTP + 公网 IP（外网地址）时，
-// 主链接会被**隐藏**（返回空），避免下发不安全的公网明文订阅；内网 IP 仍可展示。
-func (h *Handler) buildSubLinks(c *gin.Context, token string) (primary string, backup string, insecure bool) {
-	if h.subEndpointRepo != nil {
-		endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context())
-		if err == nil && len(endpoints) > 0 {
-			for _, ep := range endpoints {
-				path := strings.TrimRight(ep.Path, "/")
-				link := fmt.Sprintf("https://%s%s/%s", ep.Domain, path, token)
-				if primary == "" {
-					primary = link
-				} else {
-					backup = link
-					break
-				}
-			}
-		}
-	}
-	// Fallback: use panel host with /sub/ path
-	if primary == "" {
-		scheme := "http"
-		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-			scheme = "https"
-		}
-		host := c.GetHeader("X-Forwarded-Host")
-		if host == "" {
-			host = c.Request.Host
-		}
-		if scheme == "http" {
-			insecure = true
-			// 公网 IP + HTTP → 不对外展示订阅链接（外网不显示）。
-			if netutil.HostIsPublicIP(host) {
-				return "", "", true
-			}
-		}
-		primary = fmt.Sprintf("%s://%s/sub/%s", scheme, host, token)
-	}
-	return primary, backup, insecure
-}
-
-// GetSubscriptionLink returns the client's subscription URL with optional format override.
-func (h *Handler) GetSubscriptionLink(c *gin.Context) {
-	clientID := getClientID(c)
-	format := c.Query("format")
-
-	if h.clientRepo == nil || h.subRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-
-	client, err := h.clientRepo.GetByID(c.Request.Context(), clientID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
-		return
-	}
-
-	// Check client status - only active clients can get subscription link
-	if client.Status != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "account suspended", "status": client.Status})
-		return
-	}
-
-	if client.SubscriptionID == nil || *client.SubscriptionID == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no active subscription"})
-		return
-	}
-
-	sub, err := h.subRepo.GetByID(c.Request.Context(), *client.SubscriptionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
-		return
-	}
-
-	primary, backup, insecure := h.buildSubLinks(c, sub.Token)
-	if format != "" && format != "default" {
-		primary += "?format=" + format
-		if backup != "" {
-			backup += "?format=" + format
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"format":         format,
-		"link":           primary,
-		"backup_link":    backup,
-		"insecure":       insecure,
-		"token":          sub.Token,
-		"status":         sub.Status,
-		"quota_bytes":    sub.QuotaBytes,
-		"used_bytes":     sub.UsedBytesCache,
-		"upload_bytes":   sub.UploadBytesCache,
-		"download_bytes": sub.DownloadBytesCache,
-	})
-}
-
-// GetBackupSubscriptionLink returns the backup subscription URL.
-func (h *Handler) GetBackupSubscriptionLink(c *gin.Context) {
-	clientID := getClientID(c)
-	if h.clientRepo == nil || h.subRepo == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "not configured"})
-		return
-	}
-
-	client, err := h.clientRepo.GetByID(c.Request.Context(), clientID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "client not found"})
-		return
-	}
-
-	// Check client status - only active clients can get subscription link
-	if client.Status != "active" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "account suspended", "status": client.Status})
-		return
-	}
-
-	if client.SubscriptionID == nil || *client.SubscriptionID == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no active subscription"})
-		return
-	}
-
-	sub, err := h.subRepo.GetByID(c.Request.Context(), *client.SubscriptionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
-		return
-	}
-
-	_, backup, insecure := h.buildSubLinks(c, sub.Token)
-	c.JSON(http.StatusOK, gin.H{"link": backup, "token": sub.Token, "insecure": insecure})
 }
 
 // ======================== P3-22: Shared Account Apply ========================

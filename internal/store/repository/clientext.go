@@ -467,3 +467,13 @@ func (r *IPWhitelistEntryRepository) GetByClientAndIP(ctx context.Context, clien
 	err := r.db.WithContext(ctx).Where("client_id = ? AND ip_address = ?", clientID, ip).First(&item).Error
 	return &item, err
 }
+
+// GetByIDForClient 按主键 + 归属取条目（删除前需要知道 IP，才能同步清理
+// clients.ip_whitelist 镜像字段）。不属于该客户时返回 ErrRecordNotFound。
+func (r *IPWhitelistEntryRepository) GetByIDForClient(ctx context.Context, id, clientID int64) (*entity.IPWhitelistEntry, error) {
+	var item entity.IPWhitelistEntry
+	if err := r.db.WithContext(ctx).Where("id = ? AND client_id = ?", id, clientID).First(&item).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}

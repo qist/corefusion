@@ -221,20 +221,11 @@ check "GET /client-auth/articles" "$RESP" "ok"
 RESP=$(req GET "/api/v1/client-auth/checktime" "$CLIENT_TOKEN")
 check "GET /client-auth/checktime" "$RESP" "ok"
 
-RESP=$(req GET "/api/v1/client-auth/profile" "$CLIENT_TOKEN")
-check "GET /client-auth/profile" "$RESP" "ok"
-
 RESP=$(req GET "/api/v1/client-auth/connection-info" "$CLIENT_TOKEN")
 check "GET /client-auth/connection-info" "$RESP" "ok"
 
-RESP=$(req GET "/api/v1/client-auth/subscription-formats" "$CLIENT_TOKEN")
-check "GET /client-auth/subscription-formats" "$RESP" "ok"
-
-RESP=$(req GET "/api/v1/client-auth/subscription-link" "$CLIENT_TOKEN")
-check "GET /client-auth/subscription-link" "$RESP" "ok"
-
-RESP=$(req GET "/api/v1/client-auth/subscription-link/backup" "$CLIENT_TOKEN")
-check "GET /client-auth/subscription-link/backup" "$RESP" "ok"
+RESP=$(req GET "/api/v1/client-auth/referral/withdrawals" "$CLIENT_TOKEN")
+check "GET /client-auth/referral/withdrawals" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/client-auth/shared-accounts" "$CLIENT_TOKEN")
 check "GET /client-auth/shared-accounts" "$RESP" "ok"

@@ -282,6 +282,15 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 				return
 			}
 
+			// 用户级 IP 白名单：只拦**订阅拉取**（门户登录/OAuth/其它 client-auth 不拦）。
+			// 未配置白名单 → 放行；订阅未绑定客户（sub.ClientID==0）→ 无用户级配置可依 → 放行。
+			if !netutil.IPWhitelistAllows(cl.IPWhitelist, netutil.GetRealIP(c.Request)) {
+				c.Header("Profile-Title", profileTitle)
+				c.Header("Content-Type", "text/plain; charset=utf-8")
+				c.String(http.StatusForbidden, t(lang, "ip_not_allowed"))
+				return
+			}
+
 			if cl.PlanID > 0 && h.planSvc != nil {
 				tmpl, _ = h.planSvc.GetTemplateByID(ctx, cl.PlanID)
 				if rawMembers, err := h.planSvc.GetTemplateNodeMembers(ctx, cl.PlanID); err == nil {
@@ -3574,29 +3583,34 @@ func formatSubscriptionInfo(sub *entity.Subscription) string {
 
 var messages = map[string]map[string]string{
 	"zh": {
-		"suspended": "订阅已暂停 - 流量已用完，请联系客服续费",
-		"expired":   "订阅已到期 - 请续费后使用",
-		"inactive":  "订阅未激活",
+		"suspended":      "订阅已暂停 - 流量已用完，请联系客服续费",
+		"expired":        "订阅已到期 - 请续费后使用",
+		"inactive":       "订阅未激活",
+		"ip_not_allowed": "当前 IP 不在订阅 IP 白名单内 - 请到门户安全设置添加本机 IP",
 	},
 	"en": {
-		"suspended": "Subscription suspended - Traffic exhausted, please contact support",
-		"expired":   "Subscription expired - Please renew",
-		"inactive":  "Subscription inactive",
+		"suspended":      "Subscription suspended - Traffic exhausted, please contact support",
+		"expired":        "Subscription expired - Please renew",
+		"inactive":       "Subscription inactive",
+		"ip_not_allowed": "Your IP is not in the subscription IP whitelist - add it in the portal security settings",
 	},
 	"ja": {
-		"suspended": "サブスペンション停止 - トラフィック使い切り、サポートにお問い合わせください",
-		"expired":   "サブスペンション期限切れ - 更新してください",
-		"inactive":  "サブスペンション未アクティブ",
+		"suspended":      "サブスペンション停止 - トラフィック使い切り、サポートにお問い合わせください",
+		"expired":        "サブスペンション期限切れ - 更新してください",
+		"inactive":       "サブスペンション未アクティブ",
+		"ip_not_allowed": "現在の IP はサブスクリプション IP ホワイトリストにありません - ポータルのセキュリティ設定で追加してください",
 	},
 	"ko": {
-		"suspended": "구독 일시 중지 - 트래픽 소진, 고객센터에 문의하세요",
-		"expired":   "구독 만료 - 갱신해 주세요",
-		"inactive":  "구독 비활성",
+		"suspended":      "구독 일시 중지 - 트래픽 소진, 고객센터에 문의하세요",
+		"expired":        "구독 만료 - 갱신해 주세요",
+		"inactive":       "구독 비활성",
+		"ip_not_allowed": "현재 IP가 구독 IP 허용 목록에 없습니다 - 포털 보안 설정에서 추가하세요",
 	},
 	"ru": {
-		"suspended": "Подписка приостановлена - Трафик исчерпан, обратитесь в поддержку",
-		"expired":   "Подписка истекла - Продлите подписку",
-		"inactive":  "Подписка не активна",
+		"suspended":      "Подписка приостановлена - Трафик исчерпан, обратитесь в поддержку",
+		"expired":        "Подписка истекла - Продлите подписку",
+		"inactive":       "Подписка не активна",
+		"ip_not_allowed": "Ваш IP отсутствует в белом списке подписки - добавьте его в настройках безопасности портала",
 	},
 }
 

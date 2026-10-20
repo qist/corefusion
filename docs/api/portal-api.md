@@ -93,8 +93,6 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/ticket` | ✓ | 签发**一次性短时票据**（门户"下载日志包"等 `window.open` 场景用，无法带 Header） |
 | GET | `/api/v1/client-auth/oauth/:provider` | — | 发起 OAuth 授权：307 → GitHub/Google 授权页（`state` 防 CSRF，10 分钟有效）；未启用的 provider 返回 400 |
 | GET | `/api/v1/client-auth/oauth/:provider/callback` | — | OAuth 回调：换 code → 建/绑客户 → 签发带版本的 JWT → 302 跳回门户页（`/<portalPath>?access_token=...&refresh_token=...`） |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | ✓ | 绑定第三方账号到当前客户。body：`{provider, provider_user_id, provider_name?}` |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | ✓ | 解绑 |
 
 > OAuth 回调是**浏览器跳转**（非 API 调用）：登录成功后门户页在 `onMounted` 里
 > 从 URL 收 token（或经同源 `postMessage`，见 `web` 门户模板 `handleOAuthCallback`）。
@@ -104,8 +102,6 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | 当前客户：`{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}`（`data` 包装） |
-| GET | `/api/v1/client-auth/profile` | 客户扩展资料 |
-| PUT | `/api/v1/client-auth/profile` | 更新资料 |
 | POST | `/api/v1/client-auth/change-password` | body：`{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | 服务器时间（客户端校时） |
 | GET | `/api/v1/client-auth/connection-info` | 当前套餐连接参数：`{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -114,10 +110,10 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/client-auth/subscription-link` | 当前客户的订阅链接与到期；未配置时 `{"error":"not configured"}` |
-| GET | `/api/v1/client-auth/subscription-link/backup` | 备用订阅链接 |
-| GET | `/api/v1/client-auth/subscription-formats` | 支持的订阅格式：`{items:[{key,label}]}`（`base64_uri` / `raw_uri` / `mihomo_yaml` / `singbox_json` / `xray_json`） |
-| POST | `/api/v1/client-auth/reset-subscription` | 重置订阅（别名 `POST /subscription/reset`）；重置会轮换 sub_token |
+| POST | `/api/v1/client-auth/reset-subscription` | 重置订阅；重置会轮换 sub_token |
+
+> 订阅链接由 `/me` 返回的 `sub_token` 在前端拼接（`/sub/:token`），不再有独立的
+> `subscription-link` / `subscription-formats` 端点。
 
 ## 6. 节点
 
@@ -139,7 +135,7 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/client-auth/orders` | 我的套餐订单（分页） |
 | POST | `/api/v1/client-auth/orders` | 下单（购买/续费套餐变体） |
 | GET | `/api/v1/client-auth/orders/:id` | 订单详情 |
-| GET | `/api/v1/client-auth/invoices` | 账单（别名 `/bills`） |
+| GET | `/api/v1/client-auth/invoices` | 账单 |
 | GET | `/api/v1/client-auth/invoices/:id` | 账单详情 |
 
 ## 8. 余额 / 充值
@@ -220,10 +216,11 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/client-auth/settings/whitelist` | 白名单列表（裸数组） |
 | DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 删除白名单项 |
 | POST | `/api/v1/client-auth/settings/auto-add-ip` | 把当前 IP 加入白名单 |
-| GET | `/api/v1/client-auth/ip-whitelist` | 白名单（旧版别名） |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | 同上（旧版别名） |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 删除（旧版别名） |
 | POST | `/api/v1/client-auth/self-unban` | 自助解封（按策略限制次数） |
+
+> IP 白名单**只作用于订阅地址**（`/sub/:token`），不拦截门户登录/OAuth 或其它
+> client-auth 端点；用户未配置白名单或没有订阅地址时一律放行。白名单是用户级配置，
+> 没有全局开关。
 
 **自解封流程**：仅 `auto_quota`（流量超额自动封禁）+ 管理端 `self_unban.enabled` 开启时可用。
 登录（密码或 OAuth 回调）返回 `require_self_unban=true` + `self_unban_token`（typ=self_unban，

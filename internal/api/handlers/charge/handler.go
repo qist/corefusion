@@ -1344,7 +1344,9 @@ func (h *Handler) ExportOrdersCSV(c *gin.Context) {
 		}
 		paidAt := ""
 		if o.PaidAt != nil {
-			paidAt = o.PaidAt.Format("2006-01-02 15:04:05")
+			// 存量行里的 paid_at 是网关发来的 UTC（+00:00），新行已按面板本地时区落库；
+			// 导出统一转成本地时区，否则同一份 CSV 里「创建时间」与「支付时间」差 8 小时。
+			paidAt = o.PaidAt.In(time.Local).Format("2006-01-02 15:04:05")
 		}
 		cols := []string{
 			strconv.FormatInt(o.ID, 10),

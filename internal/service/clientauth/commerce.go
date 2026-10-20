@@ -1381,7 +1381,11 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 		paidAt := time.Now()
 		if input.PaidAt != "" {
 			if t, err := time.Parse(time.RFC3339, input.PaidAt); err == nil {
-				paidAt = t
+				// 网关按对接文档发的都是 UTC（如 2026-10-19T10:22:36Z）✗，
+				// 直接落库会保留 +00:00 偏移，而 created_at/expires_at 都是本地时间 →
+				// 后台「订单详情」里支付时间比创建时间早 8 小时（真机踩到 ✓）。
+				// 统一转成本地时区再存：同一列里所有时间都是同一口径 ✓。
+				paidAt = t.In(time.Local)
 			}
 		}
 
@@ -1413,8 +1417,18 @@ func (s *CommerceService) HandleChargeCallback(ctx context.Context, siteID int64
 				// Step 2: 余额行锁 —— 只有"充值单"需要（套餐单不动余额，而且客户端可能还没有余额行）
 				if lockedOrder.OrderType == entity.ChargeOrderTypeCharge {
 					var bal entity.ClientBalance
-					if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-						Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error; err != nil {
+					err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+						Where("client_id = ?", lockedOrder.ClientID).First(&bal).Error
+					if err == gorm.ErrRecordNotFound {
+						// 新客户首次充值：余额行还不存在 ✗ 不能直接报错退出，
+						// 否则"第一次充值"永远失败（钱收了、回调 500、余额不入账）。
+						// 这里补一行 0 余额，真正的入账由 processChargePayment 负责。
+						if cerr := tx.Create(&entity.ClientBalance{
+							ClientID: lockedOrder.ClientID, Balance: 0, Currency: lockedOrder.Currency,
+						}).Error; cerr != nil {
+							return cerr
+						}
+					} else if err != nil {
 						return err
 					}
 				}

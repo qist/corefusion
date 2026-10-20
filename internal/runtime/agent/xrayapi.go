@@ -409,8 +409,15 @@ func (a *LocalAgent) getSingboxV2RayConn() (*grpc.ClientConn, error) {
 		addr = coredata.DefaultSingboxStatsAddr // sing-box V2Ray API 默认 127.0.0.1:10086
 	}
 
-	client := coredata.NewXrayClient(addr)
-	conn, err := client.Conn(context.Background())
+	// 复用持久客户端：每次 stats 查询新建连接会泄漏（metrics 每 30s 一轮），
+	// 最终把 sing-box 的 gRPC 连接数堆到上千条。地址变化时重建。
+	if a.singboxClient == nil || a.singboxClient.Addr() != addr {
+		if a.singboxClient != nil {
+			a.singboxClient.Close()
+		}
+		a.singboxClient = coredata.NewV2RayClient(addr)
+	}
+	conn, err := a.singboxClient.Conn(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("connect to sing-box v2ray_api %s: %w", addr, err)
 	}

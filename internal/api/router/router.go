@@ -1984,7 +1984,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				// HTTP API status queries and commands use the same connection map.
 				nodeMgrForCRL := sharedNodeMgr
 				crlInst := agent.NewCertRevocationList(revocationRepo, nodeServerRepo, nodeMgrForCRL, caService)
-				certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL)
+				// 多对多绑定（一个节点多张证书 / 一张证书多个节点）也要参与分发 ✓
+				certDistribInst := agent.NewCertDistributor(certRepoForNodeServer, nodeServerRepo, nodeMgrForCRL).
+					WithNodeCertificates(repository.NewNodeCertificateRepository(database))
 				nodeServerSvcInst.WithCRL(crlInst).WithCertDistributor(certDistribInst)
 
 				// Wire cert update callback: when a certificate is updated/renewed
@@ -2000,19 +2002,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				certH.OnCertUpdated(func(ctx context.Context, certID int64) {
 					if err := nodeServerSvcInst.DistributeCertificateToAll(ctx, certID); err != nil {
+						// ⚠ 远端节点离线/分发失败**不能**连累本机 ✓：
+						// 以前本机刷新写在 else 里 ✗ → 只要有一个节点离线，本机内核就继续吐旧证书 ✗。
 						log.Printf("[router] auto-distribute cert %d after update: %v", certID, err)
 					} else {
 						log.Printf("[router] auto-distributed cert %d to all associated nodes", certID)
-						// 面板本机那份副本同样要刷新 + 重启本机代理 ✓（否则本机内核一直吐旧证书 ✗）
-						if certSvc != nil {
-							go func(id int64) {
-								if lerr := certSvc.SyncLocalCopyIfLanded(context.Background(), id); lerr != nil {
-									log.Printf("[cert] 刷新本机证书副本失败（cert %d）：%v", id, lerr)
-									return
-								}
-								reloadLocalProxiesAfterCertRefresh(id)
-							}(certID)
-						}
+					}
+					// 面板本机那份副本同样要刷新 + 重启本机代理 ✓（否则本机内核一直吐旧证书 ✗）
+					if certSvc != nil {
+						go func(id int64) {
+							if lerr := certSvc.SyncLocalCopyIfLanded(context.Background(), id); lerr != nil {
+								log.Printf("[cert] 刷新本机证书副本失败（cert %d）：%v", id, lerr)
+								return
+							}
+							reloadLocalProxiesAfterCertRefresh(id)
+						}(certID)
 					}
 				})
 
@@ -2426,6 +2430,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				_, lerr := certSvc.LandCertificateFiles(ctx, certID)
 				return lerr
 			}
+			// 手动"分发"后刷新面板本机已有副本（仅本机落地过的 ✓）+ 重启本机代理 ✓
+			nodeServerHandler.SyncLocalCertCopyFn = func(ctx context.Context, certID int64) {
+				if certSvc == nil {
+					return
+				}
+				if lerr := certSvc.SyncLocalCopyIfLanded(ctx, certID); lerr != nil {
+					log.Printf("[cert] 刷新本机证书副本失败（cert %d）：%v", certID, lerr)
+					return
+				}
+				reloadLocalProxiesAfterCertRefresh(certID)
+			}
 			nodeServerH.SetCoreConfigService(coreConfigSvc)
 			nodeServerH.SetInboundConfigService(inboundConfigSvc)
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)
@@ -2835,6 +2850,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				certsGroup.PUT("/:id", certH.Update)
 				certsGroup.DELETE("/:id", certH.Delete)
 				certsGroup.POST("/:id/renew", certH.Renew)
+			}
+
+			// 后台签发/续期任务状态 ✓（长任务 → 202 + task_id + 轮询 ✓）。
+			// 单独一组，避免与 /certificates/:id 的通配路径混在一起。
+			certTasksGroup := protected.Group("/certificate-tasks").Use(middleware.RequireRole(domainuser.RoleAdmin))
+			{
+				certTasksGroup.GET("/:id", certH.TaskStatus)
 			}
 
 			// DNS Channels — admin only.

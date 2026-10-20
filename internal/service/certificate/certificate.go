@@ -517,33 +517,48 @@ func (s *Service) LandCertificateFiles(ctx context.Context, certID int64) (*enti
 	// （真机核对过：节点上是 `certs/node-owner.example.com/` ✓）。这里原来用"消毒后的 name" ✗
 	// → 面板落地到 `certs/acme-node-owner_example_com/` ✗，而配置里引用的是 `certs/<域名>/` ✗
 	// → **文件在、路径不对 → 内核拿不到证书** ✗（真机搭建测试时踩到 ✓）。
-	relDir := certDirRel(c) // ✅ 按密钥类型分目录 ✓
-	certRel := filepath.Join(relDir, "cert.pem")
-	keyRel := filepath.Join(relDir, "key.pem")
-	chainRel := filepath.Join(relDir, "fullchain.pem")
-	if merr := os.MkdirAll(filepath.Join(s.dataDir, relDir), 0750); merr != nil {
-		return nil, merr
+	// ⚠ 与分发/同步一致：写**全部路径别名** ✓ ——
+	// 站点历史配置可能引用 certs/<name>/（如 name=gg），只写 certs/<domain>/ 时
+	// 本机内核会一直读旧文件 ✗（"签出来了但没生效"的另一个来源 ✓）。
+	variants := cert.CertPathVariants(name, string(c.Domain), c.KeyType, c.CertPath)
+	if len(variants) == 0 {
+		return nil, fmt.Errorf("证书 %d 没有可用的落地目录", certID)
 	}
-	// 权限与签发路径保持一致 ✓：证书 0640（可能被非 root 的服务读 ✓）、私钥 0600 ✓
-	if werr := os.WriteFile(filepath.Join(s.dataDir, certRel), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
-		return nil, werr
+	for _, p := range variants {
+		if merr := os.MkdirAll(filepath.Join(s.dataDir, p.Dir), 0750); merr != nil {
+			return nil, merr
+		}
+		// 权限与签发路径保持一致 ✓：证书 0640（可能被非 root 的服务读 ✓）、私钥 0600 ✓
+		if werr := os.WriteFile(filepath.Join(s.dataDir, p.Cert), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
+			return nil, werr
+		}
+		if werr := os.WriteFile(filepath.Join(s.dataDir, p.Key), []byte(withTrailingNewline(c.KeyContent)), 0600); werr != nil {
+			return nil, werr
+		}
+		// fullchain：库里存的本来就是"叶 + 中间链" ✓（见 runtime/cert/pemutil.go 的说明 ✓）
+		if werr := os.WriteFile(filepath.Join(s.dataDir, p.Fullchain), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
+			return nil, werr
+		}
 	}
-	if werr := os.WriteFile(filepath.Join(s.dataDir, keyRel), []byte(withTrailingNewline(c.KeyContent)), 0600); werr != nil {
-		return nil, werr
-	}
-	// fullchain：库里存的本来就是"叶 + 中间链" ✓（见 runtime/cert/pemutil.go 的说明 ✓）
-	if werr := os.WriteFile(filepath.Join(s.dataDir, chainRel), []byte(withTrailingNewline(c.CertContent)), 0640); werr != nil {
-		return nil, werr
-	}
-	c.CertPath = certRel
-	c.KeyPath = keyRel
-	c.FullchainPath = chainRel
+	primary := variants[0]
+	c.CertPath = primary.Cert
+	c.KeyPath = primary.Key
+	c.FullchainPath = primary.Fullchain
 	if uerr := s.repo.Update(ctx, c); uerr != nil {
 		return nil, uerr
 	}
-	log.Printf("[cert] 证书 %d（%s）已落地到面板本机 %s ✓（面板自身也是一个节点 ✓，只有关联到它的证书才落地 ✓）",
-		c.ID, name, relDir)
+	log.Printf("[cert] 证书 %d（%s）已落地到面板本机 %v ✓（面板自身也是一个节点 ✓，只有关联到它的证书才落地 ✓）",
+		c.ID, name, variantDirs(variants))
 	return c, nil
+}
+
+// variantDirs 取路径列表里的目录（打日志用 ✓）。
+func variantDirs(vs []cert.CertPaths) []string {
+	out := make([]string, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, v.Dir)
+	}
+	return out
 }
 
 // SyncLocalCopyIfLanded 在证书内容变化后（**续期/重报** ✓）刷新**面板本机**那份副本 ✓。
@@ -563,8 +578,19 @@ func (s *Service) SyncLocalCopyIfLanded(ctx context.Context, certID int64) error
 	if strings.TrimSpace(string(c.Domain)) == "" {
 		return nil
 	}
-	local := filepath.Join(s.dataDir, certDirRel(c), "cert.pem")
-	if _, serr := os.Stat(local); serr != nil {
+	// 本机是否落地过：任一别名目录存在即算（历史配置可能只落过 certs/<name>/ ✓）
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		name = string(c.Domain)
+	}
+	landed := false
+	for _, p := range cert.CertPathVariants(name, string(c.Domain), c.KeyType, c.CertPath) {
+		if _, serr := os.Stat(filepath.Join(s.dataDir, p.Cert)); serr == nil {
+			landed = true
+			break
+		}
+	}
+	if !landed {
 		return nil // 本机没这份 → 不动 ✓
 	}
 	if _, lerr := s.LandCertificateFiles(ctx, certID); lerr != nil {
@@ -898,6 +924,12 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		caProvider = s.caProvider
 	}
 
+	// 密钥规格**提前**校验 ✓：上限按 CA 区分 ✗ —— ZeroSSL 支持 RSA 8192 ✓，
+	// LE / Google 只到 4096 ✓。放在 CA 解析之后才判得准 ✓，且仍在下发/开跑之前 ✓。
+	if err := cert.ValidateKeySpecForCA(caProvider, input.KeyType, input.KeyBits); err != nil {
+		return nil, err
+	}
+
 	acme := s.getACMEClient(caProvider, input.Email)
 
 	// **IP 证书必须用 shortlived profile** ✓（LE 策略：IP 证书只能是短时证书、约 6 天）。
@@ -1038,6 +1070,11 @@ func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*
 	certRecord, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	// 历史脏数据不能继续送 CA；上限按**签发时的 CA** 判定 ✓
+	//（ZeroSSL 的 rsa/8192 合法 ✓，LE 的才拦 ✗）。
+	if kerr := cert.ValidateKeySpecForCA(cert.NormalizeCAProvider(certRecord.Issuer), certRecord.KeyType, certRecord.KeyBits); kerr != nil {
+		return nil, fmt.Errorf("证书 %d 的密钥规格不受支持：%w；请改用支持的规格重新签发", id, kerr)
 	}
 
 	// 标识符（含 SAN ✓）：必须按**同一组名字**续 ✓，主域名排第一位 ✓

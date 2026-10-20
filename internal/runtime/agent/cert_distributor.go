@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 
 	certpkg "corefusion/internal/runtime/cert"
@@ -20,6 +19,7 @@ import (
 type CertDistributor struct {
 	certRepo   *repository.CertificateRepository
 	serverRepo *repository.NodeServerRepository
+	nodeCerts  *repository.NodeCertificateRepository
 	nodeMgr    *NodeServerManager
 }
 
@@ -34,6 +34,14 @@ func NewCertDistributor(
 		serverRepo: serverRepo,
 		nodeMgr:    nodeMgr,
 	}
+}
+
+// WithNodeCertificates 注入"节点 ↔ 证书"多对多仓库 ✓：
+// 一个节点可以绑定多张证书，一张证书也可以被多个节点使用，
+// 只按 node_servers.certificate_id 单值分发会漏掉其余绑定（多证书场景）。
+func (d *CertDistributor) WithNodeCertificates(repo *repository.NodeCertificateRepository) *CertDistributor {
+	d.nodeCerts = repo
+	return d
 }
 
 // DistributeToServer distributes a certificate to a specific server.
@@ -70,32 +78,42 @@ func (d *CertDistributor) DistributeToServer(ctx context.Context, serverID int64
 	// as the certificates table so xray config references resolve correctly.
 	// The Agent's dataDir is /opt/corefusion-agent/data, and xray configs use
 	// relative paths like "../../../certs/gg/cert.pem" (relative to data/runtime/).
-	// So we write to dataDir/certs/<domain>/cert.pem etc.
-	// ✅ 与面板同一套路径规则 ✓（否则 RSA 证书会被分发到 ECC 的目录里 ✗）
-	certRel, _, _ := certpkg.CertRelPaths(cert.Domain, cert.KeyType)
-	certDir := filepath.Dir(certRel)
+	//
+	// ⚠ 必须写**全部路径别名** ✗：规范目录按域名（certs/<domain>）✓，
+	// 但历史证书的站点配置引用的是名称目录（name=gg / domain=example.com →
+	// 配置写 certs/gg/cert.pem ✓）。只写域名目录会表现为
+	// "签发/分发都成功，站点却一直用旧证书" ✗（真机 2026-10-20 踩到 ✓）。
+	variants := certpkg.CertPathVariants(cert.Name, cert.Domain, cert.KeyType, cert.CertPath)
+	if len(variants) == 0 {
+		return fmt.Errorf("certificate %d has no valid target directory", certID)
+	}
 
 	// Fullchain content: use cert content as fallback (fullchain is usually
 	// the same as cert for most setups; if separate fullchain content exists
 	// in DB, it would be stored in a fullchain_content field).
 	fullchainContent := cert.CertContent
 
-	cmd := &agentpb.DistributeCertCommand{
-		CertName:     cert.Domain,
-		CertPem:      []byte(cert.CertContent),
-		KeyPem:       []byte(cert.KeyContent),
-		FullchainPem: []byte(fullchainContent),
-		TargetPath:   certDir,
-		ExpiresAt:    cert.ExpiresAt.Unix(),
-		ReloadCore:   true, // Notify core to reload after cert replacement
+	var errs []error
+	for _, p := range variants {
+		cmd := &agentpb.DistributeCertCommand{
+			CertName:     cert.Domain,
+			CertPem:      []byte(cert.CertContent),
+			KeyPem:       []byte(cert.KeyContent),
+			FullchainPem: []byte(fullchainContent),
+			TargetPath:   p.Dir,
+			ExpiresAt:    cert.ExpiresAt.Unix(),
+			ReloadCore:   true, // Notify core to reload after cert replacement
+		}
+		if err := d.nodeMgr.DistributeCertificate(ctx, serverID, cmd); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", p.Dir, err))
+			continue
+		}
+		log.Printf("[CertDistributor] cert %s (id=%d) distributed to server %d → %s",
+			cert.Domain, certID, serverID, p.Dir)
 	}
-
-	if err := d.nodeMgr.DistributeCertificate(ctx, serverID, cmd); err != nil {
-		return fmt.Errorf("distribute to server %d: %w", serverID, err)
+	if len(errs) > 0 {
+		return fmt.Errorf("distribute to server %d: %v", serverID, errs)
 	}
-
-	log.Printf("[CertDistributor] cert %s (id=%d) distributed to server %d",
-		cert.Domain, certID, serverID)
 
 	return nil
 }
@@ -109,10 +127,26 @@ func (d *CertDistributor) DistributeToAllServers(ctx context.Context, certID int
 		return fmt.Errorf("list servers: %w", err)
 	}
 
+	// 目标节点 = 多对多表里的绑定 ∪ 历史单值字段（node_servers.certificate_id）。
+	// 只看单值字段会漏掉"一个节点绑定多张证书"里除主证书外的那些。
+	targetSet := make(map[int64]bool)
+	if d.nodeCerts != nil {
+		if ids, err := d.nodeCerts.ListNodeIDsByCertificate(ctx, certID); err == nil {
+			for _, id := range ids {
+				targetSet[id] = true
+			}
+		} else {
+			log.Printf("[CertDistributor] list nodes for cert %d: %v", certID, err)
+		}
+	}
 	var targets []int64
 	for _, s := range servers {
-		if s.CertificateID == certID && !s.IsLocal {
+		if s.CertificateID == certID {
+			targetSet[s.ID] = true
+		}
+		if targetSet[s.ID] && !s.IsLocal {
 			targets = append(targets, s.ID)
+			targetSet[s.ID] = false // 去重：多对多与单值字段可能同时命中
 		}
 	}
 
@@ -181,18 +215,39 @@ func (d *CertDistributor) DistributeOnReconnect(ctx context.Context, serverID in
 		return
 	}
 
-	if server.CertificateID == 0 {
-		return // No certificate associated
-	}
-
 	// Check if Agent cert also needs renewal (expired while offline)
 	if server.AgentCertExpiresAt != nil && time.Now().After(*server.AgentCertExpiresAt) {
 		log.Printf("[CertDistributor] server %d agent cert expired while offline, needs re-bootstrap", serverID)
 		return
 	}
 
-	log.Printf("[CertDistributor] server %d reconnected, distributing cert %d", serverID, server.CertificateID)
-	if err := d.DistributeToServer(ctx, serverID, server.CertificateID); err != nil {
-		log.Printf("[CertDistributor] reconnect distribution failed for server %d: %v", serverID, err)
+	// 重连补发要覆盖**全部绑定证书**（多对多 ✓），不只是历史单值字段那张。
+	certIDs := make([]int64, 0, 2)
+	seen := map[int64]bool{}
+	add := func(id int64) {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			certIDs = append(certIDs, id)
+		}
+	}
+	if d.nodeCerts != nil {
+		if ids, err := d.nodeCerts.ListCertificateIDsByNode(ctx, serverID); err == nil {
+			for _, id := range ids {
+				add(id)
+			}
+		} else {
+			log.Printf("[CertDistributor] reconnect: list certs for server %d: %v", serverID, err)
+		}
+	}
+	add(server.CertificateID)
+	if len(certIDs) == 0 {
+		return // No certificate associated
+	}
+
+	log.Printf("[CertDistributor] server %d reconnected, distributing cert(s) %v", serverID, certIDs)
+	for _, certID := range certIDs {
+		if err := d.DistributeToServer(ctx, serverID, certID); err != nil {
+			log.Printf("[CertDistributor] reconnect distribution failed for server %d cert %d: %v", serverID, certID, err)
+		}
 	}
 }

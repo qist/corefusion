@@ -13,6 +13,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	certpkg "corefusion/internal/runtime/cert"
 	"corefusion/internal/store/repository"
 )
 
@@ -774,35 +775,40 @@ func (b *DataSyncBuilder) collectCertificates(ctx context.Context, serverID int6
 	}
 
 	var entries []*agentpb.CertificateEntry
-	for _, cert := range allCerts {
-		if cert.CertContent == "" || cert.KeyContent == "" {
+	seen := make(map[string]bool)
+	for _, c := range allCerts {
+		if c.CertContent == "" || c.KeyContent == "" {
 			continue
 		}
-		// 证书可能以 cert_path 或 fullchain_path 被引用（sing-box 优先用 fullchain_path），
-		// 两者都参与匹配，否则「只写 fullchain_path」的入站收不到证书。
-		matched := certPathSet[normalizeCertPath(cert.CertPath)]
-		if !matched && cert.FullchainPath != "" {
-			matched = certPathSet[normalizeCertPath(cert.FullchainPath)]
+		// 路径别名匹配：配置里可能写 certs/gg/cert.pem，而证的规范路径是
+		// certs/example.com/cert.pem（name=gg / domain=example.com）。
+		// 只按规范路径匹配 → 站点引用的目录永远收不到新证书。
+		//
+		// 命中哪个目录，就以哪个目录的路径下发：Agent 会照 CertPath/KeyPath
+		// 落盘，因此每个被引用的别名目录都会被真正写入。
+		for _, p := range matchCertificateVariants(c, certPathSet) {
+			key := fmt.Sprintf("%d|%s", c.ID, p.Dir)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fullchainContent := ""
+			if c.FullchainPath != "" {
+				// Try to read fullchain from disk if not in DB
+				fullchainContent = c.CertContent // fallback: use cert content as fullchain
+			}
+			entries = append(entries, &agentpb.CertificateEntry{
+				Id:               c.ID,
+				Domain:           c.Domain,
+				CertPath:         p.Cert,
+				KeyPath:          p.Key,
+				FullchainPath:    p.Fullchain,
+				CertContent:      c.CertContent,
+				KeyContent:       c.KeyContent,
+				FullchainContent: fullchainContent,
+				ExpiresAt:        c.ExpiresAt.Unix(),
+			})
 		}
-		if !matched {
-			continue
-		}
-		fullchainContent := ""
-		if cert.FullchainPath != "" {
-			// Try to read fullchain from disk if not in DB
-			fullchainContent = cert.CertContent // fallback: use cert content as fullchain
-		}
-		entries = append(entries, &agentpb.CertificateEntry{
-			Id:               cert.ID,
-			Domain:           cert.Domain,
-			CertPath:         cert.CertPath,
-			KeyPath:          cert.KeyPath,
-			FullchainPath:    cert.FullchainPath,
-			CertContent:      cert.CertContent,
-			KeyContent:       cert.KeyContent,
-			FullchainContent: fullchainContent,
-			ExpiresAt:        cert.ExpiresAt.Unix(),
-		})
 	}
 
 	return entries
@@ -889,33 +895,56 @@ func (b *DataSyncBuilder) CollectProxyCertificates(ctx context.Context, serverID
 	}
 
 	var entries []*agentpb.CertificateEntry
-	for _, cert := range allCerts {
-		if cert.CertContent == "" || cert.KeyContent == "" {
+	seen := make(map[string]bool)
+	for _, c := range allCerts {
+		if c.CertContent == "" || c.KeyContent == "" {
 			continue
 		}
-		normalizedCertPath := normalizeCertPath(cert.CertPath)
-		if !certPathSet[normalizedCertPath] {
-			continue
+		// 与 collectCertificates 同一套别名匹配（站点写 certs/gg/ 也要命中 ✓）
+		for _, p := range matchCertificateVariants(c, certPathSet) {
+			key := fmt.Sprintf("%d|%s", c.ID, p.Dir)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			fullchainContent := ""
+			if c.FullchainPath != "" {
+				fullchainContent = c.CertContent
+			}
+			entries = append(entries, &agentpb.CertificateEntry{
+				Id:               c.ID,
+				Domain:           c.Domain,
+				CertPath:         p.Cert,
+				KeyPath:          p.Key,
+				FullchainPath:    p.Fullchain,
+				CertContent:      c.CertContent,
+				KeyContent:       c.KeyContent,
+				FullchainContent: fullchainContent,
+				ExpiresAt:        c.ExpiresAt.Unix(),
+			})
 		}
-		fullchainContent := ""
-		if cert.FullchainPath != "" {
-			fullchainContent = cert.CertContent
-		}
-		entries = append(entries, &agentpb.CertificateEntry{
-			Id:               cert.ID,
-			Domain:           cert.Domain,
-			CertPath:         cert.CertPath,
-			KeyPath:          cert.KeyPath,
-			FullchainPath:    cert.FullchainPath,
-			CertContent:      cert.CertContent,
-			KeyContent:       cert.KeyContent,
-			FullchainContent: fullchainContent,
-			ExpiresAt:        cert.ExpiresAt.Unix(),
-		})
 	}
 
 	log.Printf("[DataSyncBuilder] server %d: collected %d proxy certificates", serverID, len(entries))
 	return entries
+}
+
+// matchCertificateVariants 返回这张证书中被配置引用到的**全部路径形态** ✓。
+//
+// 关键点：配置里的路径可能是历史名称目录（certs/gg/cert.pem），
+// 而证书的规范路径按域名（certs/example.com/cert.pem）——
+// 只比规范路径会让"证书签出来了、站点却一直读旧文件"✗（真机 2026-10-20 ✓）。
+//
+// 返回的每个形态都会被原样下发（CertPath/KeyPath/FullchainPath ✓），
+// Agent 据此逐个目录落盘 ✓。
+func matchCertificateVariants(c entity.Certificate, certPathSet map[string]bool) []certpkg.CertPaths {
+	var out []certpkg.CertPaths
+	for _, p := range certpkg.CertPathVariants(c.Name, string(c.Domain), c.KeyType, c.CertPath) {
+		if certPathSet[normalizeCertPath(p.Cert)] || certPathSet[normalizeCertPath(p.Fullchain)] {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // normalizeCertPath strips common relative path prefixes so that paths

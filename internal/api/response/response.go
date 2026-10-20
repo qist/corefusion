@@ -23,6 +23,13 @@ func Created(c *gin.Context, data any) {
 	})
 }
 
+// Accepted sends a 202 response (async task accepted).
+func Accepted(c *gin.Context, data any) {
+	c.JSON(http.StatusAccepted, dto.APIResponse{
+		Data: data,
+	})
+}
+
 // Error sends an error response with the given status code.
 func Error(c *gin.Context, statusCode int, code, message string) {
 	c.JSON(statusCode, dto.APIError{

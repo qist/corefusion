@@ -53,6 +53,14 @@ type Handler struct {
 // 语义 ✓：**面板自身也是一个节点** ✓ —— 关联到它的证书才写文件 ✓（跟 Agent 一样 ✓）。
 var LandLocalCertFilesFn func(ctx context.Context, certID int64) error
 
+// SyncLocalCertCopyFn 由 router 注入 ✓：证书内容变化后刷新**面板本机已有副本** ✓
+// （只在"本机确实落地过这张证书"时生效 ✓），并在刷新后重启本机代理 ✓。
+//
+// 为什么手动"分发"也要调它 ✗：远端节点由 DistributeToAllServers 写盘 ✓，
+// 但本机不是 Agent、不走那条路 ✗ → 不刷新时面板本机（尤其 caddy/nginx 站点）
+// 会一直读旧证书 ✗（真机 2026-10-20：节点写到了 certs/example.com，站点读 certs/gg ✗）。
+var SyncLocalCertCopyFn func(ctx context.Context, certID int64)
+
 // NewHandler creates a new node server handler.
 func NewHandler(svc *nodeserverSvc.Service) *Handler {
 	return &Handler{svc: svc}
@@ -345,6 +353,10 @@ func (h *Handler) DistributeCertificate(c *gin.Context) {
 		response.InternalError(c, "DISTRIBUTE_FAILED", err.Error())
 		return
 	}
+	// 目标是本机节点时，还要刷新面板自己的副本（本机不走 Agent 分发 ✓）
+	if h.svc.IsLocalServer(c.Request.Context(), id) && SyncLocalCertCopyFn != nil {
+		go SyncLocalCertCopyFn(context.Background(), req.CertificateID)
+	}
 
 	h.auditLog(c, id, "distribute_cert", fmt.Sprintf("distributed certificate %d", req.CertificateID), true, "")
 	response.OK(c, gin.H{"distributed": true, "server_id": id, "certificate_id": req.CertificateID})
@@ -364,6 +376,11 @@ func (h *Handler) DistributeCertificateToAll(c *gin.Context) {
 		h.auditLog(c, 0, "distribute_cert_all", fmt.Sprintf("cert %d", req.CertificateID), false, err.Error())
 		response.InternalError(c, "DISTRIBUTE_FAILED", err.Error())
 		return
+	}
+	// 面板本机不是 Agent → 不走上面的分发；若本机已落地过这张证书，刷新副本并重启本机代理 ✓。
+	// SyncLocalCopyIfLanded 只在"已落地"时生效 ✓，不会把只给远端用的证书也写一份到面板 ✗。
+	if SyncLocalCertCopyFn != nil {
+		go SyncLocalCertCopyFn(context.Background(), req.CertificateID)
 	}
 
 	h.auditLog(c, 0, "distribute_cert_all", fmt.Sprintf("distributed certificate %d to all servers", req.CertificateID), true, "")

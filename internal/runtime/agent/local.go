@@ -75,6 +75,11 @@ type LocalAgent struct {
 	xrayConn   *grpc.ClientConn
 	xrayConnMu sync.Mutex
 	xrayClient *coredata.XrayClient
+
+	// Persistent sing-box V2Ray API client (lazy-initialized, reused across stats
+	// calls)。以前每次查询都新建 XrayClient/连接且从不关闭，metrics 每 30s
+	// 一轮会把 sing-box 的 gRPC 连接堆到数千条。
+	singboxClient *coredata.XrayClient
 }
 
 // NewLocalAgent 创建本地节点适配器，直接复用现有的 process.Manager。

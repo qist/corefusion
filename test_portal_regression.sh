@@ -458,25 +458,17 @@ else
   fail "POST /reset-subscription (code=$RS_CODE)"
 fi
 
-info "POST /subscription/reset (别名) ..."
-RSR_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CA/subscription/reset" \
-  -H "Authorization: Bearer $USER_TOKEN")
-if [ "$RSR_CODE" = "200" ] || [ "$RSR_CODE" = "400" ]; then
-  ok "POST /subscription/reset (接口可用, code=$RSR_CODE)"
-else
-  fail "POST /subscription/reset (code=$RSR_CODE)"
-fi
+# 已下线的别名/死功能端点（2026-10-20）：必须 404，避免回归时被当成"还能用"。
+# 注意用**原来的方法**探测：GET 打 POST-only 路由同样 404，会掩盖"路由还在"。
+info "POST /subscription/reset (已下线) ..."
+RC=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CA/subscription/reset" -H "Authorization: Bearer $USER_TOKEN")
+[ "$RC" = "404" ] && ok "POST /subscription/reset 已下线 (404)" || fail "POST /subscription/reset 应为 404，实际 $RC"
 
-info "GET /subscription-formats ..."
-[ "$(auth_get_code /subscription-formats)" = "200" ] && ok "GET /subscription-formats" || fail "GET /subscription-formats"
-
-info "GET /subscription-link ..."
-SL_CODE=$(auth_get_code /subscription-link)
-[ "$SL_CODE" = "200" ] && ok "GET /subscription-link" || ok "GET /subscription-link (接口可用, code=$SL_CODE)"
-
-info "GET /subscription-link/backup ..."
-SLB_CODE=$(auth_get_code /subscription-link/backup)
-[ "$SLB_CODE" = "200" ] && ok "GET /subscription-link/backup" || ok "GET /subscription-link/backup (接口可用, code=$SLB_CODE)"
+for retired in /subscription-formats /subscription-link /subscription-link/backup /bills /ip-whitelist /profile; do
+  info "GET $retired (已下线) ..."
+  RC=$(auth_get_code "$retired")
+  [ "$RC" = "404" ] && ok "GET $retired 已下线 (404)" || fail "GET $retired 应为 404，实际 $RC"
+done
 
 # ============================================================
 # 14. Portal 页面渲染

@@ -31,7 +31,6 @@ import (
 	clientHandler "corefusion/internal/api/handlers/client"
 	clientauthHandler "corefusion/internal/api/handlers/clientauth"
 	clientextHandler "corefusion/internal/api/handlers/clientext"
-	coreconfigHandler "corefusion/internal/api/handlers/coreconfig"
 	endpointconfigHandler "corefusion/internal/api/handlers/endpointconfig"
 	geoRuleHandler "corefusion/internal/api/handlers/georule"
 	inboundconfigHandler "corefusion/internal/api/handlers/inboundconfig"
@@ -51,7 +50,6 @@ import (
 	servicesHandler "corefusion/internal/api/handlers/services"
 	sharedomainconfigHandler "corefusion/internal/api/handlers/sharedomainconfig"
 	subendHandler "corefusion/internal/api/handlers/subendpoint"
-	subfmtHandler "corefusion/internal/api/handlers/subformat"
 	subsHandler "corefusion/internal/api/handlers/subscriptions"
 	systemHandler "corefusion/internal/api/handlers/system"
 	trafficHandler "corefusion/internal/api/handlers/traffic"
@@ -74,7 +72,6 @@ import (
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
-	accessPkg "corefusion/internal/service/access"
 	"corefusion/internal/service/audit"
 	authService "corefusion/internal/service/auth"
 	backupService "corefusion/internal/service/backup"
@@ -145,25 +142,6 @@ func initNetworkTrafficAccounting(subRepo *repository.SubscriptionRepository, cl
 		go bridge.Run(context.Background(), 30*time.Second)
 	})
 	return tracker
-}
-
-// --- Access control service (service/endpoint level) --------------------------
-// Shares one access control service across the whole process; its ban + policy
-// repositories are GORM-backed (service_ip_bans / service_access_policies).
-var (
-	sharedAccessSvc *accessPkg.Service
-	accessSvcOnce   sync.Once
-)
-
-// getAccessService returns the shared access control service, instantiating it once.
-func getAccessService(db *gorm.DB) *accessPkg.Service {
-	accessSvcOnce.Do(func() {
-		sharedAccessSvc = accessPkg.NewService(
-			accessPkg.NewBanRepository(db),
-			accessPkg.NewPolicyRepository(db),
-		)
-	})
-	return sharedAccessSvc
 }
 
 // binaryListerAdapter adapts binaries.Installer to nodeserver.BinaryLister interface.
@@ -1047,10 +1025,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	)
 	userH := usersHandler.NewHandler(userSvc)
 	nodeH := nodesHandler.NewHandler(nodeSvc)
-	coreConfigH := coreconfigHandler.NewHandler(coreConfigSvc)
 	svcH := servicesHandler.NewHandler(svcSvc)
 	subH := subsHandler.NewHandler(subSvc)
-	subfmtH := subfmtHandler.NewHandler(subfmtSvcInst)
 	subendH := subendHandler.NewHandler(subendSvcInst)
 	cfIPEntryRepo := repository.NewCFIPEntryRepository(database)
 	extSrcRepo := repository.NewExternalNodeSourceRepository(database)
@@ -1214,7 +1190,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if processMgr == nil {
 		processMgr = process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 	}
-	coreConfigH.SetProcessManager(processMgr)
 
 	// Set config generator: reads from core_configs and writes merged config file
 	// Uses the shared PrepareFullConfig function to ensure all nodes (local + remote)
@@ -1598,20 +1573,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				usersGroup.DELETE("/:id", middleware.RequireRole(domainuser.RoleSuperAdmin), userH.Delete)
 			}
 
-			// Nodes
-			nodesGroup := protected.Group("/nodes")
-			{
-				nodesGroup.GET("", nodeH.List)
-				// 增删改属管理操作：viewer 只读（对齐节点服务器菜单的 admin 角色）
-				writeAdmin := protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin))
-				{
-					writeAdmin.POST("/nodes", nodeH.Create)
-					writeAdmin.PUT("/nodes/:id", nodeH.Update)
-					writeAdmin.DELETE("/nodes/:id", nodeH.Delete)
-				}
-				nodesGroup.GET("/:id", nodeH.GetByID)
-				nodesGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
-			}
+			// 旧 /nodes CRUD 已于 2026-10-20 下线：管理端统一走 /node-servers，
+			// nodeH 仅保留 node-servers 下的 online-users 相关查询。
 
 			// Inbound Configs (moved under /node-servers/:id/)
 			inboundCfgH := inboundconfigHandler.NewHandler(inboundConfigSvc)
@@ -1690,20 +1653,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subsGroup.GET("/:id/rotations", subH.ListRotations)
 			}
 
-			// Subscription Formats
-			subfmtGroup := protected.Group("/subscription-formats")
-			{
-				subfmtGroup.GET("", subfmtH.List)
-				subfmtGroup.POST("", subfmtH.Create)
-				subfmtGroup.GET("/:id", subfmtH.GetByID)
-				subfmtGroup.PUT("/:id", subfmtH.Update)
-				subfmtGroup.DELETE("/:id", subfmtH.Delete)
-				subfmtGroup.GET("/:id/rules", subfmtH.ListRules)
-				subfmtGroup.POST("/:id/rules", subfmtH.CreateRule)
-				subfmtGroup.PUT("/:id/rules/:rid", subfmtH.UpdateRule)
-				subfmtGroup.DELETE("/:id/rules/:rid", subfmtH.DeleteRule)
-				subfmtGroup.POST("/:id/rules/sort", subfmtH.SortRules)
-			}
+			// 管理端 /subscription-formats CRUD 已于 2026-10-20 下线：
+			// 管理端实际用 /mihomo/configs 维护订阅格式（SubscriptionCenter.vue）。
+			// 注意：service/subformat 的 SeedDefaults 仍在用（公共订阅格式种子数据），
+			// 因此只删管理端 CRUD 路由与 handler，不删 service / 表。
 
 			// Subscription Endpoints
 			subendGroup := protected.Group("/subscription-endpoints")
@@ -1938,18 +1891,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				mihomoGroup.GET("/configs/:id", mihomoH.GetByID)
 				mihomoGroup.PUT("/configs/:id", mihomoH.Update)
 				mihomoGroup.DELETE("/configs/:id", mihomoH.Delete)
-				mihomoGroup.GET("/configs/:id/proxy-groups", mihomoH.ListProxyGroups)
-				mihomoGroup.POST("/configs/:id/proxy-groups", mihomoH.CreateProxyGroup)
-				mihomoGroup.DELETE("/proxy-groups/:id", mihomoH.DeleteProxyGroup)
+				// proxy-groups / rule-providers / yaml 子资源已于 2026-10-20 下线：
+				// 管理端直接编辑 config JSON（SubscriptionCenter.vue），零调用。
 				mihomoGroup.GET("/configs/:id/rules", mihomoH.ListRules)
 				mihomoGroup.POST("/configs/:id/rules", mihomoH.CreateRule)
 				mihomoGroup.PUT("/configs/:id/rules/order", mihomoH.ReorderRules)
 				mihomoGroup.PUT("/rules/:id", mihomoH.UpdateRule)
 				mihomoGroup.DELETE("/rules/:id", mihomoH.DeleteRule)
-				mihomoGroup.GET("/configs/:id/rule-providers", mihomoH.ListRuleProviders)
-				mihomoGroup.POST("/configs/:id/rule-providers", mihomoH.CreateRuleProvider)
-				mihomoGroup.DELETE("/rule-providers/:id", mihomoH.DeleteRuleProvider)
-				mihomoGroup.GET("/configs/:id/yaml", mihomoH.GenerateYAML)
 			}
 
 			// External Nodes
@@ -2965,7 +2913,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			metricsGroup := protected.Group("/metrics").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				metricsGroup.GET("/overview", metricsH.Overview)
-				metricsGroup.GET("/services", metricsH.ServiceMetrics)
 				metricsGroup.GET("/nodes", metricsH.NodeMetrics)
 				metricsGroup.GET("/certificates", metricsH.CertMetrics)
 
@@ -2985,9 +2932,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			backupsGroup.Use(middleware.RequireRole(domainuser.RoleAdmin))
 			superAdminBackups := backupsGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
 			{
-				backupsGroup.GET("/database", backupsH.ListDBBackups)
-				backupsGroup.POST("/database", backupsH.CreateDBBackup)
-				backupsGroup.POST("/cleanup-jobs", backupsH.CreateCleanupJob)
+				// 整库备份三端点已于 2026-10-20 下线：管理端整库备份统一走
+				// /backups/create（全量 tar.gz 内含 DB dump），这三条零调用。
 
 				// Full backup
 				backupsGroup.POST("/create", backupsH.CreateFullBackup)
@@ -3008,7 +2954,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				backupsGroup.GET("/storages/:id/files", backupsH.ListRemoteFiles)
 
 				// Destructive (super_admin only)
-				superAdminBackups.POST("/database/restore", backupsH.RestoreDBBackup)
 				superAdminBackups.POST("/:id/restore", backupsH.RestoreBackup)
 				superAdminBackups.DELETE("/:id", backupsH.DeleteBackup)
 				superAdminBackups.POST("/upload-restore", backupsH.UploadRestore)
@@ -3598,22 +3543,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 }
 
 // registerAuxiliaryRoutes registers routes for auxiliary feature modules
-// (services access policies/ip-bans, runtime config workflow, traffic quota monitoring).
+// (runtime config workflow, traffic quota monitoring).
 func registerAuxiliaryRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *runtimecfgHandler.Handler) {
-	// 辅助功能路由：services 访问策略/ip-bans、runtime 配置工作流、traffic 配额监控。
+	// 辅助功能路由：runtime 配置工作流、traffic 配额监控。
 	// ⚠ 历史名 registerPlaceholderRoutes 已废弃——这些路由全部是真实现，并非占位。
-	// Services (access policies, ip bans)
-	services := rg.Group("/services")
-	accessH := servicesHandler.NewAccessHandler(database, getAccessService(database))
-	{
-		services.GET("/:id/access-policies", accessH.ListPolicies)
-		services.POST("/:id/access-policies", accessH.CreatePolicy)
-		services.PUT("/:id/access-policies/:policyId", accessH.UpdatePolicy)
-		services.DELETE("/:id/access-policies/:policyId", accessH.DeletePolicy)
-		services.GET("/:id/ip-bans", accessH.ListIPBans)
-		services.POST("/:id/ip-bans", accessH.CreateIPBan)
-		services.DELETE("/:id/ip-bans/:banId", accessH.DeleteIPBan)
-	}
+	// services/:id/access-policies 与 /:id/ip-bans 已于 2026-10-20 下线：
+	// 管理端零调用，且没有任何连接链路消费这些策略（access.Service 无外部使用者）。
 
 	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
 	// 安全审计 H-2：apply/rollback/disable-proxy 是全节点下发/停机级操作，仅 Admin；
@@ -3679,10 +3614,8 @@ func isSPARoute(path string) bool {
 		"/dashboard",
 		"/chain-proxy",
 		"/online-users",
-		"/nodes",
 		"/services",
 		"/subscriptions",
-		"/subscription-formats",
 		"/subscription-endpoints",
 		"/plans",
 		"/clients",

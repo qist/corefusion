@@ -2030,11 +2030,15 @@ type registrationServiceImpl struct {
 	mgr *NodeServerManager
 }
 
+// Register 是**已废弃**的 gRPC 注册入口。
+//
+// Agent 的首次引导与注册统一走 REST：POST /api/v1/agent/bootstrap
+// （见 cmd/agent/bootstrap.go）。gRPC 侧保留这个桩只为让旧版 Agent 拿到
+// 一条明确的错误信息，而不是连接层面的含糊失败。
+//
+// 不要在 proto 层删除该方法：已发布的 Agent 二进制会按旧 proto 调用，
+// 删掉会变成 UNIMPLEMENTED 而非可读错误。
 func (r *registrationServiceImpl) Register(ctx context.Context, req *agentpb.RegisterRequest) (*agentpb.RegisterResponse, error) {
-	// The BootstrapTokenManager is not directly accessible here.
-	// In a full implementation, this would be injected.
-	// For now, we return a "not implemented" error.
-	// The actual registration flow will be wired up in the integration phase.
 	return &agentpb.RegisterResponse{
 		Success: false,
 		Error:   "registration not yet wired up — use REST API bootstrap-token endpoint",

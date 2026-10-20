@@ -71,24 +71,6 @@ func (h *Handler) Overview(c *gin.Context) {
 	})
 }
 
-// ServiceMetrics handles GET /api/v1/metrics/services.
-func (h *Handler) ServiceMetrics(c *gin.Context) {
-	var services []entity.InboundService
-	h.db.Find(&services)
-
-	items := make([]gin.H, len(services))
-	for i, s := range services {
-		items[i] = gin.H{
-			"service_id":     s.ID,
-			"name":           s.Name,
-			"core_type":      s.CoreType,
-			"process_status": s.ProcessStatus,
-		}
-	}
-
-	response.OK(c, items)
-}
-
 // NodeMetrics handles GET /api/v1/metrics/nodes.
 func (h *Handler) NodeMetrics(c *gin.Context) {
 	var nodes []entity.Node

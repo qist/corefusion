@@ -589,7 +589,7 @@ check "GET /client-oauth-bindings" "$RESP" "ok"
 # --- Admin: Subscription Formats ---
 echo -e "\n${CYAN}[29] Admin: Subscription Formats${NC}"
 RESP=$(req GET "/api/v1/subscription-formats" "$ADMIN_TOKEN")
-check "GET /subscription-formats" "$RESP" "ok"
+check "GET /subscription-formats (retired)" "$RESP" "error"
 
 # --- Admin: Subscription Endpoints ---
 echo -e "\n${CYAN}[30] Admin: Subscription Endpoints${NC}"
@@ -627,7 +627,7 @@ RESP=$(req GET "/api/v1/metrics/overview" "$ADMIN_TOKEN")
 check "GET /metrics/overview" "$RESP" "ok"
 
 RESP=$(req GET "/api/v1/metrics/services" "$ADMIN_TOKEN")
-check "GET /metrics/services" "$RESP" "ok"
+check "GET /metrics/services (retired)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/metrics/nodes" "$ADMIN_TOKEN")
 check "GET /metrics/nodes" "$RESP" "ok"
@@ -652,13 +652,13 @@ RESP=$(req GET "/api/v1/backups/configs" "$ADMIN_TOKEN")
 check "GET /backups/configs (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/database" "$ADMIN_TOKEN")
-check "GET /backups/database" "$RESP" "ok"
+check "GET /backups/database (retired)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/retention-policies" "$ADMIN_TOKEN")
 check "GET /backups/retention-policies (route not registered)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/cleanup-jobs" "$ADMIN_TOKEN")
-check "GET /backups/cleanup-jobs (route not registered)" "$RESP" "error"
+check "GET /backups/cleanup-jobs (retired)" "$RESP" "error"
 
 RESP=$(req GET "/api/v1/backups/list" "$ADMIN_TOKEN")
 check "GET /backups/list" "$RESP" "ok"

@@ -541,18 +541,10 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | GET | `/api/v1/node-audit-logs` | 登录 | 节点审计日志 |
 | GET | `/api/v1/node-audit-logs/export` | 登录 | 导出节点审计日志 |
 
-### 节点（旧版模型）
+### 节点（旧版模型，已下线）
 
-旧版 node 概型（保留兼容）。
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/v1/nodes` | 登录 | 列表 |
-| POST | `/api/v1/nodes` | 登录 | 创建 |
-| DELETE | `/api/v1/nodes/:id` | 登录 | 删除 |
-| GET | `/api/v1/nodes/:id` | 登录 | 详情 |
-| PUT | `/api/v1/nodes/:id` | 登录 | 更新 |
-| GET | `/api/v1/nodes/:id/online-users` | 登录 | 在线用户 |
+> `/api/v1/nodes` CRUD 已于 2026-10-20 下线：节点统一由 `/api/v1/node-servers` 管理。
+> 在线用户查询保留在 `/api/v1/node-servers/{online-users,online-summary,:id/online-users}`。
 
 ### 地区总览
 
@@ -584,20 +576,9 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 
 ### 订阅格式
 
-订阅输出格式（mihomo_yaml / singbox_json / xray_json / raw_uri…）及其规则。
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/api/v1/subscription-formats` | 登录 | 列表 |
-| POST | `/api/v1/subscription-formats` | 登录 | 创建 |
-| DELETE | `/api/v1/subscription-formats/:id` | 登录 | 删除 |
-| GET | `/api/v1/subscription-formats/:id` | 登录 | 详情 |
-| PUT | `/api/v1/subscription-formats/:id` | 登录 | 更新 |
-| GET | `/api/v1/subscription-formats/:id/rules` | 登录 | 规则列表 |
-| POST | `/api/v1/subscription-formats/:id/rules` | 登录 | 创建规则 |
-| DELETE | `/api/v1/subscription-formats/:id/rules/:rid` | 登录 | 删除规则 |
-| PUT | `/api/v1/subscription-formats/:id/rules/:rid` | 登录 | 更新规则 |
-| POST | `/api/v1/subscription-formats/:id/rules/sort` | 登录 | 规则排序 |
+> 管理端 `/api/v1/subscription-formats` CRUD 已于 2026-10-20 下线：实际维护入口是
+> `/api/v1/mihomo/configs`（订阅格式中心）。`subscription_formats` 表仍保留，
+> 仅用于公共接口 `/api/v1/public/client-configs` 的种子数据。
 
 ### 订阅接入点
 
@@ -992,11 +973,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | POST | `/api/v1/backups/:id/upload-ftp` | 管理员 | 上传到 FTP |
 | POST | `/api/v1/backups/:id/upload-s3` | 管理员 | 上传到 S3 |
 | POST | `/api/v1/backups/:id/upload-webdav` | 管理员 | 上传到 WebDAV |
-| POST | `/api/v1/backups/cleanup-jobs` | 管理员 | 创建清理任务 |
-| POST | `/api/v1/backups/create` | 管理员 | 创建全量备份 |
-| GET | `/api/v1/backups/database` | 管理员 | 数据库备份列表 |
-| POST | `/api/v1/backups/database` | 管理员 | 创建数据库备份 |
-| POST | `/api/v1/backups/database/restore` | 管理员 | 从数据库备份恢复 |
+| POST | `/api/v1/backups/create` | 管理员 | 创建全量备份（含 DB dump） |
 | GET | `/api/v1/backups/list` | 管理员 | 全量备份列表 |
 | POST | `/api/v1/backups/remote-restore` | 管理员 | 从远端恢复 |
 | GET | `/api/v1/backups/restore-status` | 管理员 | 恢复进度 |
@@ -1086,7 +1063,6 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/metrics/certificates` | 登录 | 证书指标 |
 | GET | `/api/v1/metrics/nodes` | 登录 | 节点指标 |
 | GET | `/api/v1/metrics/overview` | 登录 | 总览 |
-| GET | `/api/v1/metrics/services` | 登录 | 服务指标 |
 
 ### 门户模板
 
@@ -1107,6 +1083,9 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/portal/templates/:id` | 登录 | 详情 |
 | PUT | `/api/v1/portal/templates/:id` | 登录 | 更新 |
 | POST | `/api/v1/portal/templates/:id/activate` | 登录 | 激活模板 |
+
+> `/portal/templates` CRUD 是**高级 API**：门户 UI 的主路径是 `PUT /api/v1/portal/active`
+> （整站配置一次提交），多模板管理/切换才需要走这组接口。两者都受支持，不冲突。
 
 ### Agent 安装
 
@@ -1219,10 +1198,6 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/client-auth/shared-accounts/:id` | 公开 | 获取共享账号 |
 | POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 公开 | 申请共享账号 |
 | POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 公开 | Request修复 |
-| GET | `/api/v1/client-auth/subscription-formats` | 公开 | 支持的订阅格式 |
-| GET | `/api/v1/client-auth/subscription-link` | 公开 | 我的订阅链接 |
-| GET | `/api/v1/client-auth/subscription-link/backup` | 公开 | 备用订阅链接 |
-| POST | `/api/v1/client-auth/subscription/reset` | 公开 | 重置订阅 |
 | POST | `/api/v1/client-auth/ticket` | 公开 | 签发一次性短时票据 |
 | GET | `/api/v1/client-auth/tickets` | 公开 | 列表工单 |
 | POST | `/api/v1/client-auth/tickets` | 公开 | 创建工单 |
@@ -1263,19 +1238,10 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/runtime/snapshots/:id` | 登录 | 获取快照 |
 | POST | `/runtime/verify` | 登录 | 验证 |
 
-### 服务访问策略
+### 服务访问策略（已下线）
 
-服务级访问策略与 IP 封禁。
-
-| 方法 | 路径 | 权限 | 说明 |
-|---|---|---|---|
-| GET | `/services/:id/access-policies` | 登录 | 策略列表 |
-| POST | `/services/:id/access-policies` | 登录 | 创建策略 |
-| DELETE | `/services/:id/access-policies/:policyId` | 登录 | 删除策略 |
-| PUT | `/services/:id/access-policies/:policyId` | 登录 | 更新策略 |
-| GET | `/services/:id/ip-bans` | 登录 | IP 封禁列表 |
-| POST | `/services/:id/ip-bans` | 登录 | 新增 IP 封禁 |
-| DELETE | `/services/:id/ip-bans/:banId` | 登录 | 删除 IP 封禁 |
+> `/services/:id/access-policies` 与 `/services/:id/ip-bans` 已于 2026-10-20 下线：
+> 管理端零调用，且没有任何连接链路消费这些策略。
 
 ### 流量配额监控
 

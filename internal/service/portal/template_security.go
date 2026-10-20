@@ -392,6 +392,7 @@ func PatchChargeNavMenu(htmlContent, jsContent string) (newHTML, newJS string, c
 //  1. 跨套餐下单仍发 new → 后端以「已有生效套餐」拒绝，门户根本升不了级 ✗；
 //  2. 回调返回 scheduled 时旧模板只认 completed → 用户看不到任何成功提示 ✗；
 //  3. 订单状态表缺 scheduled → 「我的账单」显示原始英文 key ✗。
+//
 // 幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
 const (
 	oldPurchaseOrderType = `    var purchaseVariant = function(variantId, plan, modData) {
@@ -688,6 +689,340 @@ func PatchChargeUiEnabled(htmlContent, jsContent string) (newHTML, newJS string,
 	return newHTML, newJS, changed
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 客户端面收尾（C-1 支付后轮询 / C-2 推荐提现 / C-4 订阅 IP 白名单管理）
+//
+// 门户模板存在数据库里 → 只改默认模板到不了已部署门户（与 M7/自助解封是同一个坑）。
+// 这里对存量模板做精确、幂等的片段补齐：命中旧写法才改，已具备的跳过，
+// 管理员的其它定制一字不动 ✓。片段里不能出现反引号（同一段代码还要进 defaultPortalJS）。
+// ─────────────────────────────────────────────────────────────────────────────
+const (
+	clientFeatureRefsAnchor  = "var withdrawRecords = ref([])"
+	clientFeatureRefsSnippet = `var showWithdrawDialog = ref(false)
+var withdrawBusy = ref(false)
+var withdrawForm = ref({ amount_yuan: 0, withdraw_type: 'balance', wallet_address: '' })
+var ipWhitelistEntries = ref([])
+var whitelistBusy = ref(false)`
+
+	clientFeatureJSAnchor  = "var chargeStatusText = function(s) { return { pending: t('order.status_pending'), paid: t('order.status_paid'), processing: t('common.processing'), expired: t('common.expired'), failed: t('common.failed') }[s] || s || '-' }"
+	clientFeatureJSSnippet = `    // --- C-1: 支付后轮询（套餐订单 / 充值订单共用） ---
+    // 支付页在 window.open 的新标签里，门户这边只能轮询状态；到账后自动刷新余额/订单/套餐。
+    var paymentPollTimer = null
+    var stopPaymentPolling = function() {
+      if (paymentPollTimer) { clearInterval(paymentPollTimer); paymentPollTimer = null }
+    }
+    var startPaymentPolling = function(res) {
+      var tradeNo = res && res.trade_no
+      var orderId = res && res.order_id
+      if (!tradeNo && !orderId) return
+      stopPaymentPolling()
+      var startedAt = Date.now()
+      var finish = function() {
+        stopPaymentPolling()
+        ElMessage.success(t('order.payment_arrived'))
+        fetchMe(); fetchBalance(); fetchBalanceTxns(); fetchMyOrders(); fetchChargeOrders()
+      }
+      paymentPollTimer = setInterval(function() {
+        if (Date.now() - startedAt > 300000) { stopPaymentPolling(); return }
+        if (tradeNo) {
+          api('GET', '/charge/status/' + encodeURIComponent(tradeNo)).then(function(o) {
+            var st = o && o.status
+            if (st === 'paid') finish()
+            else if (st === 'failed' || st === 'expired' || st === 'refunded') stopPaymentPolling()
+          }).catch(function() {})
+        } else {
+          api('GET', '/orders/' + orderId).then(function(o) {
+            var st = o && o.status
+            if (st === 'paid' || st === 'completed' || st === 'scheduled') finish()
+            else if (st === 'cancelled' || st === 'refunded') stopPaymentPolling()
+          }).catch(function() {})
+        }
+      }, 3000)
+    }
+
+    // --- C-2: 推荐提现申请 ---
+    var openWithdrawDialog = function() {
+      var stats = referralStats.value || {}
+      withdrawForm.value = { amount_yuan: Math.floor((stats.available_commission || 0) / 100), withdraw_type: 'balance', wallet_address: '' }
+      showWithdrawDialog.value = true
+    }
+    var submitWithdraw = function() {
+      var f = withdrawForm.value || {}
+      var cents = Math.round((Number(f.amount_yuan) || 0) * 100)
+      var min = (referralStats.value && referralStats.min_withdraw_amount) || 0
+      if (cents <= 0) { ElMessage.error(t('referral.withdraw_amount_invalid')); return }
+      if (min > 0 && cents < min) { ElMessage.error(t('referral.withdraw_min_hint').replace('{amount}', (min / 100).toFixed(0))); return }
+      if (referralStats.value && cents > referralStats.value.available_commission) { ElMessage.error(t('referral.withdraw_exceeds')); return }
+      if (f.withdraw_type === 'usdt' && !f.wallet_address) { ElMessage.error(t('referral.wallet_required')); return }
+      withdrawBusy.value = true
+      api('POST', '/referral/withdraw', { amount: cents, withdraw_type: f.withdraw_type, wallet_address: f.wallet_address || '' }).then(function() {
+        ElMessage.success(t('referral.withdraw_submitted'))
+        showWithdrawDialog.value = false
+        fetchReferral()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { withdrawBusy.value = false })
+    }
+
+    // --- C-4: 订阅 IP 白名单列表管理 ---
+    var fetchWhitelistEntries = function() {
+      api('GET', '/settings/whitelist').then(function(res) {
+        ipWhitelistEntries.value = Array.isArray(res) ? res : []
+      }).catch(function() {})
+    }
+    var autoAddCurrentIP = function() {
+      whitelistBusy.value = true
+      api('POST', '/settings/auto-add-ip', {}).then(function() {
+        ElMessage.success(t('security.ip_added'))
+        fetchWhitelistEntries(); fetchMe()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { whitelistBusy.value = false })
+    }
+    var removeWhitelistEntry = function(id) {
+      whitelistBusy.value = true
+      api('DELETE', '/settings/whitelist/' + id).then(function() {
+        ElMessage.success(t('security.ip_removed'))
+        fetchWhitelistEntries(); fetchMe()
+      }).catch(function(e) { ElMessage.error(e.message) }).finally(function() { whitelistBusy.value = false })
+    }`
+
+	clientFeatureReferralOld = `      api('GET', '/referral/records?limit=20').then(function(res) {
+        referralRecords.value = (res && res.items) ? res.items : []
+      }).catch(function() {})
+    }`
+	clientFeatureReferralNew = `      api('GET', '/referral/records?limit=20').then(function(res) {
+        referralRecords.value = (res && res.items) ? res.items : []
+      }).catch(function() {})
+      api('GET', '/referral/withdrawals?limit=20').then(function(res) {
+        withdrawRecords.value = (res && res.items) ? res.items : []
+      }).catch(function() {})
+    }`
+
+	clientFeatureInitOld = `      if (initHasReferral) fetchReferral()`
+	clientFeatureInitNew = `      if (initHasReferral) fetchReferral()
+      if (initMods.some(function(m) { return m.type === 'security_settings' })) fetchWhitelistEntries()`
+
+	clientFeaturePageModsOld = `      var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })`
+	clientFeaturePageModsNew = `      var hasReferral = pageMods.some(function(m) { return m.type === 'referral' })
+      var hasSecurity = pageMods.some(function(m) { return m.type === 'security_settings' })`
+
+	clientFeaturePageFetchOld = `      if (hasReferral) fetchReferral()
+      if (hasTickets) fetchTickets()`
+	clientFeaturePageFetchNew = `      if (hasReferral) fetchReferral()
+      if (hasSecurity) fetchWhitelistEntries()
+      if (hasTickets) fetchTickets()`
+
+	clientFeatureUnmountOld = `    onUnmounted(function() {
+      if (refreshTimer) clearInterval(refreshTimer)
+      window.removeEventListener('message', oauthMsgHandler)
+    })
+
+    watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer) } })`
+	clientFeatureUnmountNew = `    onUnmounted(function() {
+      if (refreshTimer) clearInterval(refreshTimer)
+      stopPaymentPolling()
+      window.removeEventListener('message', oauthMsgHandler)
+    })
+
+    watch(token, function(v) { if (v) { startAutoRefresh() } else { if (refreshTimer) clearInterval(refreshTimer); stopPaymentPolling() } })`
+
+	clientFeatureModuleCtxOld = `          referralCode: referralCode, referralStats: referralStats, referralRecords: referralRecords,`
+	clientFeatureModuleCtxNew = `          referralCode: referralCode, referralStats: referralStats, referralRecords: referralRecords,
+          showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+          openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,
+          ipWhitelistEntries: ipWhitelistEntries, whitelistBusy: whitelistBusy,
+          fetchWhitelistEntries: fetchWhitelistEntries, autoAddCurrentIP: autoAddCurrentIP, removeWhitelistEntry: removeWhitelistEntry,`
+
+	clientFeatureExtOld = `                commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,`
+	clientFeatureExtNew = `                commissionRecords: commissionRecords, withdrawRecords: withdrawRecords,
+                showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+                openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,
+                ipWhitelistEntries: ipWhitelistEntries, whitelistBusy: whitelistBusy,
+                fetchWhitelistEntries: fetchWhitelistEntries, autoAddCurrentIP: autoAddCurrentIP, removeWhitelistEntry: removeWhitelistEntry,`
+
+	clientFeatureReturnOld = `      iconPaths: iconPaths, navIconPath: navIconPath, authComponent: authComponent,`
+	clientFeatureReturnNew = `      iconPaths: iconPaths, navIconPath: navIconPath, authComponent: authComponent,
+      // Referral withdraw
+      referralStats: referralStats,
+      showWithdrawDialog: showWithdrawDialog, withdrawForm: withdrawForm, withdrawBusy: withdrawBusy,
+      openWithdrawDialog: openWithdrawDialog, submitWithdraw: submitWithdraw,`
+
+	clientFeatureDialogHTML = `    <!-- Withdraw Dialog -->
+    <el-dialog v-model="showWithdrawDialog" :title="t('referral.withdraw')" width="420px" align-center append-to-body>
+      <div class="payment-dialog-content">
+        <div class="pay-extra-label">{{ t('referral.withdraw_amount') }}（{{ t('charge.yuan') }}）</div>
+        <el-input-number v-model="withdrawForm.amount_yuan" :min="0" :step="10" style="width: 100%" />
+        <div class="pay-hint" style="margin-top:8px">{{ t('referral.withdrawable') }} {{ formatMoney((referralStats && referralStats.available_commission) || 0) }}</div>
+        <div class="pay-hint">{{ t('referral.withdraw_min_hint').replace('{amount}', ((referralStats && referralStats.min_withdraw_amount) || 0) / 100) }}</div>
+        <div class="pay-extra-label" style="margin-top:14px">{{ t('referral.withdraw_type') }}</div>
+        <el-radio-group v-model="withdrawForm.withdraw_type">
+          <el-radio label="balance">{{ t('referral.withdraw_type_balance') }}</el-radio>
+          <el-radio label="usdt">{{ t('referral.withdraw_type_usdt') }}</el-radio>
+        </el-radio-group>
+        <div v-if="withdrawForm.withdraw_type === 'usdt'" style="margin-top:12px">
+          <div class="pay-extra-label">{{ t('referral.wallet_address') }}</div>
+          <el-input v-model="withdrawForm.wallet_address" :placeholder="t('referral.wallet_address_placeholder')" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showWithdrawDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="withdrawBusy" @click="submitWithdraw">{{ t('referral.withdraw_submit') }}</el-button>
+      </template>
+    </el-dialog>
+
+`
+
+	clientFeatureWithdrawBtnOld = `<el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0">`
+	clientFeatureWithdrawBtnNew = `<el-button type="danger" size="small" class="withdraw-btn" v-if="referralStats && referralStats.available_commission > 0" @click="openWithdrawDialog">`
+
+	clientFeatureSecAnchor = `                <el-form-item :label="t('security.ip_whitelist_full')">
+                  <el-input v-model="settings.ip_whitelist" :placeholder="t('security.ip_example')" />
+                </el-form-item>`
+	clientFeatureSecList = `                <div class="whitelist-manage" style="margin: 4px 0 12px">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span style="font-size:13px;font-weight:600">{{ t('security.ip_whitelist_list') }}</span>
+                    <el-button link type="primary" size="small" :loading="whitelistBusy" @click="autoAddCurrentIP">{{ t('security.ip_add_current') }}</el-button>
+                  </div>
+                  <div v-if="!ipWhitelistEntries || ipWhitelistEntries.length === 0" class="card-desc" style="margin:6px 0 0">{{ t('security.ip_whitelist_empty') }}</div>
+                  <div v-else style="margin-top:6px;display:flex;flex-direction:column;gap:6px">
+                    <div v-for="entry in ipWhitelistEntries" :key="entry.id" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px">
+                      <span style="flex:1;font-family:monospace;font-size:13px">{{ entry.ip_address }}</span>
+                      <el-tag size="small" effect="plain">{{ entry.source === 'auto' ? t('security.ip_source_auto') : t('security.ip_source_manual') }}</el-tag>
+                      <el-button link type="danger" size="small" :loading="whitelistBusy" @click="removeWhitelistEntry(entry.id)">{{ t('common.delete') }}</el-button>
+                    </div>
+                  </div>
+                </div>`
+)
+
+// PatchClientFeatures 对存量门户模板补 C-1/C-2/C-4 的 shell JS/HTML：
+//   - 支付页打开后轮询到账 + 到账刷新；
+//   - 推荐提现弹窗与提交、提现记录拉取；
+//   - 安全设置页的白名单条目管理（自动添加当前 IP / 删除）。
+//
+// 幂等：每处独立判定，已具备的跳过；找不到锚点保持原样，绝不覆盖管理员定制 ✓。
+func PatchClientFeatures(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+
+	// 1) 新增响应式状态（提现弹窗 + 白名单列表）
+	if !strings.Contains(newJS, "var showWithdrawDialog = ref(false)") && strings.Contains(newJS, clientFeatureRefsAnchor) {
+		newJS = strings.Replace(newJS, clientFeatureRefsAnchor, clientFeatureRefsAnchor+"\n"+clientFeatureRefsSnippet, 1)
+		changed = true
+	}
+
+	// 2) 轮询 / 提现 / 白名单函数（插在 chargeStatusText 之后）
+	if !strings.Contains(newJS, "var startPaymentPolling = function") && strings.Contains(newJS, clientFeatureJSAnchor) {
+		newJS = strings.Replace(newJS, clientFeatureJSAnchor, clientFeatureJSAnchor+"\n\n"+clientFeatureJSSnippet, 1)
+		changed = true
+	}
+
+	// 3) 三处支付跳转后启动轮询（套餐下单 / 升级 / 充值）
+	if !strings.Contains(newJS, "startPaymentPolling(res)") && strings.Contains(newJS, "window.open(res.payment_url, '_blank')") {
+		newJS = strings.ReplaceAll(newJS, "window.open(res.payment_url, '_blank')", "window.open(res.payment_url, '_blank')\n          startPaymentPolling(res)")
+		changed = true
+	}
+
+	// 4) 推荐页同时拉取提现记录（否则弹窗提交后列表仍旧空白）
+	if strings.Contains(newJS, clientFeatureReferralOld) && !strings.Contains(newJS, "/referral/withdrawals") {
+		newJS = strings.Replace(newJS, clientFeatureReferralOld, clientFeatureReferralNew, 1)
+		changed = true
+	}
+
+	// 5) 安全设置模块首次加载时拉白名单条目
+	if !strings.Contains(newJS, clientFeatureInitNew) && strings.Contains(newJS, clientFeatureInitOld) {
+		newJS = strings.Replace(newJS, clientFeatureInitOld, clientFeatureInitNew, 1)
+		changed = true
+	}
+	// 5b) 切到「安全设置」页时也拉一次（首次登录默认在 overview，init 分支不会命中）
+	if !strings.Contains(newJS, "var hasSecurity = pageMods.some") && strings.Contains(newJS, clientFeaturePageModsOld) {
+		newJS = strings.Replace(newJS, clientFeaturePageModsOld, clientFeaturePageModsNew, 1)
+		changed = true
+	}
+	if !strings.Contains(newJS, clientFeaturePageFetchNew) && strings.Contains(newJS, clientFeaturePageFetchOld) {
+		newJS = strings.Replace(newJS, clientFeaturePageFetchOld, clientFeaturePageFetchNew, 1)
+		changed = true
+	}
+
+	// 6) 卸载 / 登出时停止轮询（避免定时器泄漏）
+	if !strings.Contains(newJS, clientFeatureUnmountNew) && strings.Contains(newJS, clientFeatureUnmountOld) {
+		newJS = strings.Replace(newJS, clientFeatureUnmountOld, clientFeatureUnmountNew, 1)
+		changed = true
+	}
+
+	// 7) 模块上下文透传（模块模板只能看到 ctx + ext 显式字段）
+	if !strings.Contains(newJS, clientFeatureModuleCtxNew) && strings.Contains(newJS, clientFeatureModuleCtxOld) {
+		newJS = strings.Replace(newJS, clientFeatureModuleCtxOld, clientFeatureModuleCtxNew, 1)
+		changed = true
+	}
+	if !strings.Contains(newJS, clientFeatureExtNew) && strings.Contains(newJS, clientFeatureExtOld) {
+		newJS = strings.Replace(newJS, clientFeatureExtOld, clientFeatureExtNew, 1)
+		changed = true
+	}
+	// 主 app 的 setup return（shell HTML 里的提现弹窗需要这些状态/函数）
+	if !strings.Contains(newJS, clientFeatureReturnNew) && strings.Contains(newJS, clientFeatureReturnOld) {
+		newJS = strings.Replace(newJS, clientFeatureReturnOld, clientFeatureReturnNew, 1)
+		changed = true
+	}
+
+	// 8) shell HTML 补提现弹窗
+	if !strings.Contains(newHTML, "<!-- Withdraw Dialog -->") && strings.Contains(newHTML, "    <!-- More Subscriptions Dialog -->") {
+		newHTML = strings.Replace(newHTML, "    <!-- More Subscriptions Dialog -->", clientFeatureDialogHTML+"    <!-- More Subscriptions Dialog -->", 1)
+		changed = true
+	}
+
+	return newHTML, newJS, changed
+}
+
+// PatchClientFeaturesConfig 对模板 config JSON 里的模块 HTML 补 C-2/C-4 入口：
+//   - 推荐模块的「提现」按钮绑定 openWithdrawDialog；
+//   - 安全模块的 IP 白名单输入框下补条目列表（自动添加当前 IP / 删除）。
+//
+// 幂等：命中过的跳过；config 非法/无对应模块时原样返回 ✓。
+func PatchClientFeaturesConfig(configStr string) (string, bool) {
+	if strings.TrimSpace(configStr) == "" {
+		return configStr, false
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return configStr, false
+	}
+	modules, ok := cfg["modules"].([]interface{})
+	if !ok {
+		return configStr, false
+	}
+	changed := false
+	for _, mi := range modules {
+		mod, ok := mi.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		data, ok := mod["data"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		html, ok := data["html"].(string)
+		if !ok {
+			continue
+		}
+		switch mod["id"] {
+		case "mod-referral":
+			if strings.Contains(html, clientFeatureWithdrawBtnOld) {
+				data["html"] = strings.Replace(html, clientFeatureWithdrawBtnOld, clientFeatureWithdrawBtnNew, 1)
+				changed = true
+			}
+		case "mod-sec":
+			if !strings.Contains(html, "security.ip_whitelist_list") && strings.Contains(html, clientFeatureSecAnchor) {
+				data["html"] = strings.Replace(html, clientFeatureSecAnchor, clientFeatureSecAnchor+"\n"+clientFeatureSecList, 1)
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return configStr, false
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return configStr, false
+	}
+	return string(out), true
+}
+
 // PatchTemplateSecurity 对**存量门户模板**做幂等的安全补丁（安全审计 v5 M7）。
 //
 // 为什么需要：门户模板存在数据库里、可在后台编辑，所以只改默认模板**到不了**已部署的门户
@@ -876,6 +1211,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		newHTML, newJS = h5, j5
 		changed = true
 	}
+	// 客户端面：支付后轮询（C-1）/ 推荐提现（C-2）/ 订阅 IP 白名单管理（C-4）✓
+	if h6, j6, c6 := PatchClientFeatures(newHTML, newJS); c6 {
+		newHTML, newJS = h6, j6
+		changed = true
+	}
 	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）
 	newConfig, cfgChanged := PatchRegionsSecurity(tmpl.Config)
 	// 存量模板的 account_info 模块 HTML 里「充值按钮」旧条件也要迁移（默认关闭 ✓）
@@ -903,6 +1243,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 	}
 	// 存量模板语言包：升级预约文案 + scheduled 状态键 ✓
 	if c, cc := PatchPlanUpgradeScheduledConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
+	// 存量模板模块 HTML：推荐提现按钮 + 安全设置白名单列表（C-2/C-4）✓
+	if c, cc := PatchClientFeaturesConfig(newConfig); cc {
 		newConfig = c
 		cfgChanged = true
 	}

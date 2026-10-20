@@ -17,6 +17,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // ============================================================
@@ -650,6 +651,10 @@ func (s *IPWhitelistService) ListWhitelist(ctx context.Context, clientID int64) 
 }
 
 func (s *IPWhitelistService) AutoAddIP(ctx context.Context, clientID int64, ip string) (*entity.IPWhitelistEntry, error) {
+	ip = strings.TrimSpace(ip)
+	if netutil.NormalizeWhitelistEntry(ip) == "" {
+		return nil, fmt.Errorf("invalid IP address")
+	}
 	existing, err := s.ipRepo.GetByClientAndIP(ctx, clientID, ip)
 	if err == nil && existing != nil {
 		return existing, nil
@@ -671,9 +676,33 @@ func (s *IPWhitelistService) AutoAddIP(ctx context.Context, clientID int64, ip s
 	return entry, nil
 }
 
+// RemoveIP 删除条目，并同步从 clients.ip_whitelist 镜像字段里摘掉该 IP ——
+// 订阅侧只读 clients.ip_whitelist（见 netutil.IPWhitelistAllows），不同步的话
+// 删了列表项但白名单依然生效 ✗。
 func (s *IPWhitelistService) RemoveIP(ctx context.Context, clientID, entryID int64) error {
 	// 带归属校验：只能删自己的白名单条目（安全审计 v5 M1 —— 原实现忽略 clientID ✗）
-	return s.ipRepo.DeleteByIDForClient(ctx, entryID, clientID)
+	entry, err := s.ipRepo.GetByIDForClient(ctx, entryID, clientID)
+	if err != nil {
+		return err
+	}
+	if err := s.ipRepo.DeleteByIDForClient(ctx, entryID, clientID); err != nil {
+		return err
+	}
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil {
+		return nil // 条目已删；客户缺失不应回滚删除
+	}
+	removed := netutil.NormalizeWhitelistEntry(entry.IPAddress)
+	kept := make([]string, 0, 8)
+	for _, item := range netutil.ParseIPWhitelist(client.IPWhitelist) {
+		norm := netutil.NormalizeWhitelistEntry(item)
+		if norm == "" || norm == removed {
+			continue
+		}
+		kept = append(kept, norm)
+	}
+	client.IPWhitelist = strings.Join(kept, ",")
+	return s.clientRepo.Update(ctx, client)
 }
 
 // ============================================================

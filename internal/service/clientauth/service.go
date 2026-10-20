@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/nodeserver"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // SettingStore provides access to system settings.
@@ -398,13 +399,26 @@ func (s *Service) RotateToken(ctx context.Context, clientID int64) (string, erro
 }
 
 // UpdateSettings updates client's IP whitelist and device limit.
+//
+// ip_whitelist 会先做格式校验（IP / CIDR，逗号分隔，允许空 = 不限制），
+// 再规范化后落库 —— 避免把非法文本存进去，导致订阅侧永远匹配不上、用户被
+// 自己的白名单锁死。白名单**只作用于订阅拉取**，不影响门户登录（见
+// netutil.IPWhitelistAllows 的口径说明）。
 func (s *Service) UpdateSettings(ctx context.Context, clientID int64, ipWhitelist string, deviceLimit int) error {
 	client, err := s.clientRepo.GetByID(ctx, clientID)
 	if err != nil {
 		return err
 	}
 
-	client.IPWhitelist = ipWhitelist
+	normalized, err := netutil.ValidateIPWhitelist(ipWhitelist)
+	if err != nil {
+		return err
+	}
+	if deviceLimit < 0 {
+		deviceLimit = 0
+	}
+
+	client.IPWhitelist = normalized
 	client.DeviceLimit = deviceLimit
 	return s.clientRepo.Update(ctx, client)
 }

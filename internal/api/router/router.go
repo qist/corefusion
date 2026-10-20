@@ -1145,8 +1145,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	clientExtH := clientextHandler.NewHandler(
 		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
 		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-		clientRepo, repository.NewClientOAuthBindingRepository(database),
-		subRepo, subEndpointRepo, publicSubH, database,
+		clientRepo, publicSubH, database,
 	)
 
 	// Set balance repo on clientauth service for /me extension
@@ -3474,7 +3473,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 		// P1-4: Invoices (reuse plan orders) — 与文档设计统一为 /invoices
 		clientAuthProtected.GET("/invoices", commerceH.ListOrders)
-		clientAuthProtected.GET("/bills", commerceH.ListOrders) // 向后兼容别名
+		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
 
 		// P2-1: Gift system
 		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
@@ -3486,7 +3485,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 		// P2-3: Subscription reset — 与文档设计统一为 /reset-subscription
 		clientAuthProtected.POST("/reset-subscription", clientExtH.ResetSubscription)
-		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription) // 向后兼容别名
 
 		// P3-1: Shared accounts
 		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
@@ -3497,30 +3495,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		clientAuthProtected.GET("/settings/whitelist", clientExtH.ListIPWhitelist)
 		clientAuthProtected.POST("/settings/auto-add-ip", clientExtH.AutoAddIP)
 		clientAuthProtected.DELETE("/settings/whitelist/:id", clientExtH.RemoveIPWhitelist)
-		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)          // 向后兼容别名
-		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)      // 向后兼容别名
-		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist) // 向后兼容别名
 
 		// P3-3: Self-unban
 		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)
-
-		// P1-4b: Invoice detail (reuse order query)
-		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
-
-		// P3-17: Time check
 		clientAuthProtected.GET("/checktime", clientExtH.CheckTime)
-
-		// P3-19: Profile management
-		clientAuthProtected.GET("/profile", clientExtH.GetProfile)
-		clientAuthProtected.PUT("/profile", clientExtH.UpdateProfile)
 		clientAuthProtected.GET("/connection-info", clientExtH.GetConnectionInfo)
-		clientAuthProtected.POST("/profile/bind-oauth", clientExtH.BindOAuth)
-		clientAuthProtected.DELETE("/profile/unbind-oauth/:provider", clientExtH.UnbindOAuth)
-
-		// P3-20: Subscription formats
-		clientAuthProtected.GET("/subscription-formats", clientExtH.ListSubscriptionFormats)
-		clientAuthProtected.GET("/subscription-link", clientExtH.GetSubscriptionLink)
-		clientAuthProtected.GET("/subscription-link/backup", clientExtH.GetBackupSubscriptionLink)
 
 		// P3-22: Shared account apply
 		clientAuthProtected.POST("/shared-accounts/:id/apply", clientExtH.ApplySharedAccount)
@@ -4152,8 +4131,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientExtH := clientextHandler.NewHandler(
 		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
 		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
-		clientRepo, repository.NewClientOAuthBindingRepository(database),
-		subRepo, subEndpointRepo2, portalPublicSubH, database,
+		clientRepo, portalPublicSubH, database,
 	)
 
 	// ⚠ 门户前端直接 fetch 的 public 端点，独立门户引擎**也必须提供** ✗（此前只有主引擎注册 →
@@ -4319,7 +4297,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 
 		// P1-4: Invoices (reuse plan orders) — 与文档设计统一为 /invoices
 		clientAuthProtected.GET("/invoices", commerceH.ListOrders)
-		clientAuthProtected.GET("/bills", commerceH.ListOrders) // 向后兼容别名
+		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
 
 		// P2-1: Gift system
 		clientAuthProtected.GET("/gifts", clientExtH.ListGifts)
@@ -4331,7 +4309,6 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 
 		// P2-3: Subscription reset — 与文档设计统一为 /reset-subscription
 		clientAuthProtected.POST("/reset-subscription", clientExtH.ResetSubscription)
-		clientAuthProtected.POST("/subscription/reset", clientExtH.ResetSubscription) // 向后兼容别名
 
 		// P3-1: Shared accounts
 		clientAuthProtected.GET("/shared-accounts", clientExtH.ListSharedAccounts)
@@ -4342,30 +4319,11 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		clientAuthProtected.GET("/settings/whitelist", clientExtH.ListIPWhitelist)
 		clientAuthProtected.POST("/settings/auto-add-ip", clientExtH.AutoAddIP)
 		clientAuthProtected.DELETE("/settings/whitelist/:id", clientExtH.RemoveIPWhitelist)
-		clientAuthProtected.GET("/ip-whitelist", clientExtH.ListIPWhitelist)          // 向后兼容别名
-		clientAuthProtected.POST("/ip-whitelist/auto-add", clientExtH.AutoAddIP)      // 向后兼容别名
-		clientAuthProtected.DELETE("/ip-whitelist/:id", clientExtH.RemoveIPWhitelist) // 向后兼容别名
 
 		// P3-3: Self-unban
 		clientAuthProtected.POST("/self-unban", clientExtH.SelfUnban)
-
-		// P1-4b: Invoice detail (reuse order query)
-		clientAuthProtected.GET("/invoices/:id", commerceH.GetOrder)
-
-		// P3-17: Time check
 		clientAuthProtected.GET("/checktime", clientExtH.CheckTime)
-
-		// P3-19: Profile management
-		clientAuthProtected.GET("/profile", clientExtH.GetProfile)
-		clientAuthProtected.PUT("/profile", clientExtH.UpdateProfile)
 		clientAuthProtected.GET("/connection-info", clientExtH.GetConnectionInfo)
-		clientAuthProtected.POST("/profile/bind-oauth", clientExtH.BindOAuth)
-		clientAuthProtected.DELETE("/profile/unbind-oauth/:provider", clientExtH.UnbindOAuth)
-
-		// P3-20: Subscription formats
-		clientAuthProtected.GET("/subscription-formats", clientExtH.ListSubscriptionFormats)
-		clientAuthProtected.GET("/subscription-link", clientExtH.GetSubscriptionLink)
-		clientAuthProtected.GET("/subscription-link/backup", clientExtH.GetBackupSubscriptionLink)
 
 		// P3-22: Shared account apply
 		clientAuthProtected.POST("/shared-accounts/:id/apply", clientExtH.ApplySharedAccount)

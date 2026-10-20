@@ -99,10 +99,10 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('common.createdAt')" width="160">
-            <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
+            <template #default="{row}">{{ fmtTime(row.created_at) }}</template>
           </el-table-column>
           <el-table-column :label="t('charge.paidAt')" width="160">
-            <template #default="{row}">{{ row.paid_at?.substring(0,16).replace('T',' ') || '—' }}</template>
+            <template #default="{row}">{{ fmtTime(row.paid_at) || '—' }}</template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="140" fixed="right">
             <template #default="{row}">
@@ -194,7 +194,7 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('charge.expiresAt')" width="160">
-            <template #default="{row}">{{ row.expires_at?.substring(0,10) || t('charge.neverExpires') }}</template>
+            <template #default="{row}">{{ fmtDate(row.expires_at) || t('charge.neverExpires') }}</template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="150" fixed="right">
             <template #default="{row}">
@@ -420,9 +420,9 @@
           <el-tag :type="chargeOrderStatusColor(currentOrder.status)" size="small">{{ chargeOrderStatusLabel(currentOrder.status) }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="t('charge.siteTradeNo')">{{ currentOrder.site_trade_no || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.createdAt')">{{ currentOrder.created_at?.replace('T',' ').substring(0,19) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('charge.paidAt')">{{ currentOrder.paid_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('charge.expiresAt')">{{ currentOrder.expires_at?.replace('T',' ').substring(0,19) || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.createdAt')">{{ fmtTime(currentOrder.created_at, true) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.paidAt')">{{ fmtTime(currentOrder.paid_at, true) || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('charge.expiresAt')">{{ fmtTime(currentOrder.expires_at, true) || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('charge.remark')">{{ currentOrder.remark || '—' }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
@@ -561,7 +561,7 @@
         </el-table-column>
         <el-table-column prop="remark" :label="t('charge.remark')" show-overflow-tooltip />
         <el-table-column :label="t('common.time')" width="160">
-          <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
+          <template #default="{row}">{{ fmtTime(row.created_at) }}</template>
         </el-table-column>
       </el-table>
       <MobileCards v-else :rows="transactions" :title-fn="txCardTitle" :fields="txCardFields" />
@@ -619,7 +619,7 @@
           </template>
         </el-table-column>
         <el-table-column :label="t('charge.usedAt')" width="160">
-          <template #default="{row}">{{ row.created_at?.substring(0,16).replace('T',' ') }}</template>
+          <template #default="{row}">{{ fmtTime(row.created_at) }}</template>
         </el-table-column>
       </el-table>
       <MobileCards v-else :rows="usageItems" title-field="trade_no" :fields="usageCardFields" />
@@ -687,6 +687,35 @@ import MobileCards from '../components/MobileCards.vue'
 
 const { t, locale } = useI18n()
 const { isMobile } = useIsMobile()
+
+// ──────── 时间显示 ────────
+// 后端返回的时间字段时区口径并不统一 ✗：
+//   created_at / expires_at / last_callback_at → 带本地偏移（+08:00），纳秒精度
+//   paid_at（存量）                             → 充值站点按对接文档发的 UTC（Z / +00:00）
+// 以前这里用 substring(0,16) 直接截字符串 ✗ → UTC 的 10:22 被原样显示成「10:22」，
+// 而创建时间是 18:22，同一张订单看起来支付比下单早 8 小时（真机踩到 ✓）。
+// 统一走 Date 解析再按浏览器本地时区格式化 ✓，历史数据也能正确显示 ✓。
+// 解析前先规范化：空格分隔 → 'T'、小数秒截到 3 位（Safari 不接受纳秒 ✗）。
+function parseTime(v) {
+  const s = String(v).trim().replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1')
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
+function fmtTime(v, withSeconds = false) {
+  if (!v) return ''
+  const d = parseTime(v)
+  if (!d) return String(v).replace('T', ' ').substring(0, withSeconds ? 19 : 16)
+  const p = (n) => String(n).padStart(2, '0')
+  const base = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+  return withSeconds ? `${base}:${p(d.getSeconds())}` : base
+}
+function fmtDate(v) {
+  if (!v) return ''
+  const d = parseTime(v)
+  if (!d) return String(v).substring(0, 10)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
 
 // Default currency - fetched from system settings
 const defaultCurrency = ref('CNY')
@@ -1240,8 +1269,8 @@ const chargeOrderCardFields = computed(() => [
   { label: t('currency.amount'), text: (row) => formatAmount(row.amount, row.currency || 'CNY') },
   { label: t('charge.paymentMethods'), text: (row) => row.method || '—' },
   { label: t('common.status'), text: (row) => chargeOrderStatusLabel(row.status) || '-' },
-  { label: t('common.createdAt'), text: (row) => row.created_at?.substring(0, 16).replace('T', ' ') || '-' },
-  { label: t('charge.paidAt'), text: (row) => row.paid_at?.substring(0, 16).replace('T', ' ') || '—' },
+  { label: t('common.createdAt'), text: (row) => fmtTime(row.created_at) || '-' },
+  { label: t('charge.paidAt'), text: (row) => fmtTime(row.paid_at) || '—' },
 ])
 const chargeCardCardTitle = (row) => row.card_code_masked || row.card_code || ''
 const chargeCardCardFields = computed(() => [
@@ -1253,7 +1282,7 @@ const chargeCardCardFields = computed(() => [
   { label: t('charge.creator'), text: (row) => row.created_by_admin_name || '—' },
   { label: t('charge.agent'), text: (row) => row.agent_name || t('charge.official') },
   { label: t('common.status'), text: (row) => cardStatusLabel(row.status) || '-' },
-  { label: t('charge.expiresAt'), text: (row) => row.expires_at?.substring(0, 10) || t('charge.neverExpires') },
+  { label: t('charge.expiresAt'), text: (row) => fmtDate(row.expires_at) || t('charge.neverExpires') },
 ])
 const balanceCardFields = computed(() => [
   { label: 'ID', text: (row) => String(row.id ?? '-') },
@@ -1262,7 +1291,7 @@ const balanceCardFields = computed(() => [
   { label: t('currency.balance'), text: (row) => formatAmount(row.balance, row.currency || 'CNY') },
   { label: t('currency.frozen'), text: (row) => formatAmount(row.frozen, row.currency || 'CNY') },
 ])
-const txCardTitle = (row) => row.created_at?.substring(0, 16).replace('T', ' ') || ''
+const txCardTitle = (row) => fmtTime(row.created_at)
 const txCardFields = computed(() => [
   { label: 'ID', text: (row) => String(row.id ?? '-') },
   { label: t('common.type'), text: (row) => txTypeLabel(row.type) || '-' },
@@ -1276,7 +1305,7 @@ const usageCardFields = computed(() => [
   { label: t('charge.nickname'), text: (row) => row.client_nickname || '-' },
   { label: t('currency.amount'), text: (row) => formatAmount(row.amount, row.currency || 'CNY') },
   { label: t('common.status'), text: (row) => chargeOrderStatusLabel(row.status) || '-' },
-  { label: t('charge.usedAt'), text: (row) => row.created_at?.substring(0, 16).replace('T', ' ') || '-' },
+  { label: t('charge.usedAt'), text: (row) => fmtTime(row.created_at) || '-' },
 ])
 const batchResultCardFields = computed(() => [
   { label: t('currency.amount'), text: (row) => batchResultType.value === 'balance' ? formatAmount(row.value, batchResultCurrency.value) : findVariantName(row.value) },

@@ -28,10 +28,12 @@
 | 安全审计 | `security-audit-v2.md` ~ `v5.md`、`SECURITY_AUDIT_2026-09-30.md`、`code-audit-report.md`、`WAF_TEST_ISSUES.md` |
 | 接口接线审计 | `api-wiring-audit-2026-10-19.md`（前后端路由双向比对：断链 / 未接线 / 未实现） |
 | 流量/配额 | `TRAFFIC_QUOTA_DESIGN.md`、`rate-limit-design.md`、`remote-traffic-sync.md` |
-| UI | `UI_DESIGN.md`、`NETWORK_CONTROL_UI.md`、`ONLINE_USERS_DESIGN.md`、`DASHBOARD_MULTINODE_DESIGN.md` |
+| UI | `UI_DESIGN.md`、`ONLINE_USERS_DESIGN.md`、`DASHBOARD_MULTINODE_DESIGN.md` |
 | 其他 | `first-boot-initialization.md`、`log-management.md`、`waf-rule-store.md`、`MISSING_CLIENT_API_DESIGN.md`、`inbound-design.md`、`share-e2e-connectivity-*`、`NODE_PLANNING.md`、`UNIMPLEMENTED_FEATURES.md`（历史审计）、`PAGINATION_PLAN.md` |
 
 > 设计文档为某一时刻的快照；**实现状态以代码与提交历史为准**，多数文档顶部有"实现状态"修订说明。
+>
+> **范围说明**：客户端 App（本机运行界面、TUN 接管、托盘、多订阅合并等）为独立产品，不在本仓库文档范围，需另行设计。本仓库文档只描述服务端（面板 / 节点 / 订阅下发）。
 
 ## 其他（运维手册）
 

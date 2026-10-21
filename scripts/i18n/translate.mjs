@@ -181,25 +181,29 @@ function buildSystemPrompt(target) {
   ].join('\n')
 }
 
-/** LLM 单条翻译（OpenAI 兼容协议） */
-async function llmTranslateOne(text, target, cfg) {
-  const { masked, store } = protect(text)
+/** LLM 批量翻译：一次发 BATCH 条，要求返回等长 JSON 数组（比逐条快一个数量级） */
+const BATCH_SIZE = 24
+
+async function llmTranslateBatch(items, target, cfg) {
+  const maskedItems = items.map(it => protect(it.t))
+  const payload = maskedItems.map(m => m.masked)
+  const sys = buildSystemPrompt(target) + '\n\n8. 用户消息是一个 JSON 字符串数组，你必须返回**等长的 JSON 字符串数组**，第 i 个输出对应第 i 个输入，顺序严格一致，不要合并、拆分或省略。'
   const url = `${cfg.baseURL.replace(/\/$/, '')}/chat/completions`
   const body = JSON.stringify({
     model: cfg.model,
     temperature: 0.2,
-    max_tokens: Math.min(4096, Math.max(64, masked.length * 4)),
+    max_tokens: Math.min(16000, 512 + payload.join('').length * 4),
+    reasoning_effort: 'none',
+    chat_template_kwargs: { thinking: false, enable_thinking: false },
+    response_format: { type: 'json_object' },
     messages: [
-      { role: 'system', content: buildSystemPrompt(target) },
-      { role: 'user', content: masked },
+      { role: 'system', content: sys },
+      { role: 'user', content: JSON.stringify(payload) },
     ],
   })
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${cfg.apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
     body,
   })
   if (!res.ok) {
@@ -207,9 +211,33 @@ async function llmTranslateOne(text, target, cfg) {
     throw new Error(`LLM HTTP ${res.status}: ${detail}`)
   }
   const data = await res.json()
-  const out = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim()
-  if (!out) throw new Error('empty translation')
-  return restore(out, store)
+  const msg = data.choices && data.choices[0] && data.choices[0].message
+  let raw = (msg && msg.content || '').trim()
+  if (!raw) throw new Error('empty translation')
+
+  // 解析 JSON 数组（容忍模型包了 ```json 围栏或塞进对象里）
+  raw = raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim()
+  let arr = null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) arr = parsed
+    else if (parsed && typeof parsed === 'object') {
+      const v = Object.values(parsed).find(x => Array.isArray(x))
+      if (v) arr = v
+    }
+  } catch {
+    const m = raw.match(/\[[\s\S]*\]/)
+    if (m) { try { arr = JSON.parse(m[0]) } catch {} }
+  }
+  if (!Array.isArray(arr)) throw new Error(`响应不是 JSON 数组: ${raw.slice(0, 120)}`)
+  if (arr.length !== items.length) throw new Error(`长度不匹配: 期望 ${items.length}，实得 ${arr.length}`)
+
+  return items.map((it, i) => {
+    let v = arr[i]
+    if (typeof v !== 'string' || !v.trim()) throw new Error(`第 ${i} 条译文为空`)
+    v = v.replace(/^["'`「」『』]+|["'`「」『』]+$/g, '').trim()
+    return restore(v, maskedItems[i].store)
+  })
 }
 
 /** Google 免费端点单条翻译 */
@@ -226,14 +254,21 @@ async function googleTranslateOne(text, target) {
 }
 
 /** 统一的单条翻译入口 */
-async function translateOne(text, target, provider) {
-  if (provider.name === 'google') return googleTranslateOne(text, target)
-  return llmTranslateOne(text, target, provider)
+/** 统一的批量翻译入口 */
+async function translateBatch(items, target, provider) {
+  if (provider.name === 'google') {
+    // google 免费端点逐条（无 key、会限流，但逻辑简单可靠）
+    const out = []
+    for (const it of items) out.push(await googleTranslateOne(it.t, target))
+    return out
+  }
+  return llmTranslateBatch(items, target, provider)
 }
 
 /** 并发受控的逐条翻译：带缓存、重试、进度打印 */
 async function translateAll(texts, target, { force = false, noTranslateKeys = null, provider } = {}) {
   const cacheFile = join(CACHE_DIR, `${target}.json`)
+  mkdirSync(CACHE_DIR, { recursive: true })
   let cache = {}
   if (existsSync(cacheFile)) {
     try { cache = JSON.parse(readFileSync(cacheFile, 'utf8')) } catch { cache = {} }
@@ -250,39 +285,79 @@ async function translateAll(texts, target, { force = false, noTranslateKeys = nu
 
   console.log(`  [${target}] 共 ${texts.length} 条，待翻译 ${todo.length} 条`)
 
-  const CONCURRENCY = provider && provider.name !== 'google' ? 6 : 2
+  const CONCURRENCY = provider && provider.name !== 'google' ? 4 : 2
   let done = 0
-  async function worker(item) {
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      try {
-        const v = await translateOne(item.t, target, provider)
-        cache[item.t] = v
-        results[item.i] = v
+  const startedAt = Date.now()
+
+  /** 把一批条目送进翻译；整批失败时逐条重试，避免一条坏数据拖垮整批 */
+  async function runBatch(batch, attempt = 1) {
+    try {
+      const arr = await translateBatch(batch, target, provider)
+      batch.forEach((it, j) => {
+        cache[it.t] = arr[j]
+        results[it.i] = arr[j]
+      })
+      done += batch.length
+      return
+    } catch (e) {
+      // 批量解析失败（长度不匹配/非 JSON 数组）→ 拆成单条逐个试
+      if (provider && provider.name !== 'google' && batch.length > 1) {
+        for (const it of batch) await runOne(it)
         return
-      } catch (e) {
-        if (attempt === 5) {
-          console.error(`    失败(保留原文): ${JSON.stringify(item.t.slice(0, 40))} → ${e.message}`)
-          return
-        }
-        const backoff = e.message.includes('429') ? 5000 * attempt * 4 : 500 * attempt
-        await new Promise(r => setTimeout(r, backoff))
       }
+      if (attempt >= 5) {
+        console.error(`    失败(保留原文) ${batch.length} 条: ${e.message}`)
+        failCount += batch.length
+        done += batch.length
+        return
+      }
+      const backoff = e.message.includes('429') || e.message.includes('529') ? 5000 * attempt * 3 : 1000 * attempt
+      await new Promise(r => setTimeout(r, backoff))
+      await runBatch(batch, attempt + 1)
     }
   }
+
+  /** 单条兜底翻译 */
+  async function runOne(item) {
+    try {
+      const out = await translateBatch([item], target, provider)
+      cache[item.t] = out[0]
+      results[item.i] = out[0]
+    } catch (e) {
+      console.error(`    失败(保留原文): ${JSON.stringify(item.t.slice(0, 40))} → ${e.message}`)
+      failCount++
+    }
+    done += 1
+    if (done % 50 === 0) {
+      const secs = ((Date.now() - startedAt) / 1000).toFixed(0)
+      const rate = (done / Math.max(1, (Date.now() - startedAt) / 1000)).toFixed(2)
+      const eta = ((todo.length - done) / Math.max(0.01, done / Math.max(1, (Date.now() - startedAt) / 1000)) / 60).toFixed(1)
+      console.log(`    进度 ${done}/${todo.length} | 已用 ${secs}s | ${rate} 条/s | 预计剩余 ${eta} 分钟 | 失败 ${failCount}`)
+      writeFileSync(cacheFile, JSON.stringify(cache))
+    }
+  }
+
+  let failCount = 0
+  const batches = []
+  const size = provider && provider.name !== 'google' ? BATCH_SIZE : 1
+  for (let i = 0; i < todo.length; i += size) batches.push(todo.slice(i, i + size))
+
   const idx = { i: 0 }
   async function pump() {
-    while (idx.i < todo.length) {
-      const item = todo[idx.i++]
-      await worker(item)
-      if (++done % 100 === 0) {
-        console.log(`    进度 ${done}/${todo.length}`)
+    while (idx.i < batches.length) {
+      const batch = batches[idx.i++]
+      await runBatch(batch)
+      if (done % 50 !== 0) {
+        const secs = ((Date.now() - startedAt) / 1000).toFixed(0)
+        const rate = (done / Math.max(1, (Date.now() - startedAt) / 1000)).toFixed(2)
+        const eta = ((todo.length - done) / Math.max(0.01, done / Math.max(1, (Date.now() - startedAt) / 1000)) / 60).toFixed(1)
+        console.log(`    进度 ${done}/${todo.length} | 已用 ${secs}s | ${rate} 条/s | 预计剩余 ${eta} 分钟 | 失败 ${failCount}`)
         writeFileSync(cacheFile, JSON.stringify(cache))
       }
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, pump))
 
-  mkdirSync(CACHE_DIR, { recursive: true })
   writeFileSync(cacheFile, JSON.stringify(cache))
   return results
 }

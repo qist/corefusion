@@ -11,7 +11,14 @@ geoip.dat
 /corefusion-agent
 /agent
 corefusion.log
+
+# 本地工具目录与内部资料，不入库
 .codebuddy/
+.catpaw/
+
+# 设计/开发文档属核心知识产权，仅保存在仓库外
+docs/design/
+DEVELOPMENT.md
 
 # e2e 连通性测试产物（含测试用户凭据与客户端日志，不入库）
 scripts/e2e/artifacts/

@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=simple
 # 数据库 DSN 为相对路径时依赖此工作目录，不要修改
 WorkingDirectory=/opt/corefusion
-ExecStart=/opt/corefusion/corefusion server
+ExecStart=/opt/corefusion/corefusion
 Restart=on-failure
 RestartSec=3
 LimitNOFILE=1048576

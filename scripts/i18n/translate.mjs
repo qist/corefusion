@@ -1,26 +1,38 @@
 /**
- * 多语言转换脚本（一次性 / 可重复运行）
+ * 多语言转换脚本（可重复运行 / 幂等）
  *
  * 输入：web/admin/src/locales/{en,zh-CN}.js，internal/service/portal/locales/{en,zh-CN}.json
- * 输出：指定目标语言的完整语言包，键集合与源语言完全一致。
+ * 输出：指定目标语言的完整语言包，键集合与源语言**完全一致**。
  *
  * 用法：
- *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW,fr,es,ar,de,ja,ko,pt,tr,id,th,vi --dry-run
- *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW --write
+ *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW             # dry-run，只打印前几条
+ *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW --write     # 写入语言包
+ *   node scripts/i18n/translate.mjs --targets ru --force              # 忽略本地缓存，全部重译
  *
- * 默认走 Google 免费 translate endpoint（无需 API key）。
- * 如需换成自己的翻译服务，改 TRANSLATE_IMPL 一处即可。
+ * ⚠ 逐条翻译（一次一次发），**绝不**用 \n 拼接后按 \n 拆回：
+ *   早期版本用拼接法，遇到自带换行的文案就整批错位（account.email 拿到 account.plan 的值）。
+ *   代价是请求数 = 文案数，因此内置了本地缓存（.i18n-cache/<lang>.json），
+ *   同一份原文只翻一次，增量更新成本接近 0。
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const ADMIN_DIR = join(ROOT, 'web/admin/src/locales')
 const PORTAL_DIR = join(ROOT, 'internal/service/portal/locales')
+const CACHE_DIR = join(ROOT, '.i18n-cache')
 
-// 目标语言 → 各自母语名称（用于 UI 下拉展示）
+/** 这些键在任何语言下都必须保持原值（产品名 / 商标） */
+const NO_TRANSLATE_KEYS = new Set([
+  'common.appName',
+  '_meta.flag',
+  '_meta.label',
+  '_meta.language',
+])
+
+/** 语言码 → 母语名称（写入语言包头部注释 / UI 下拉） */
 const LOCALE_NAMES = {
   ru: 'Русский',
   fa: 'فارسی',
@@ -38,38 +50,26 @@ const LOCALE_NAMES = {
   vi: 'Tiếng Việt',
 }
 
-const LOCALE_FLAGS = {
-  ru: '🇷🇺', fa: '🇮🇷', 'zh-TW': '🇨🇳', fr: '🇫🇷', es: '🇪🇸', ar: '🇸🇦',
-  de: '🇩🇪', ja: '🇯🇵', ko: '🇰🇷', pt: '🇵🇹', tr: '🇹🇷', id: '🇮🇩', th: '🇹🇭', vi: '🇻🇳',
-}
-
-// 语言码 → Google translate 目标语言码（zh-TW 是 google 支持的，法语 es 等一致）
-const GOOGLE_LANG = { ...LOCALE_NAMES }
-
-// ── 解析参数 ────────────────────────────────────────────────
+// ── 参数 ────────────────────────────────────────────────────
 function parseArgs() {
   const a = process.argv.slice(2)
-  const out = { targets: [], write: false, limit: 0 }
+  const out = { targets: [], write: false, force: false }
   for (let i = 0; i < a.length; i++) {
     if (a[i] === '--targets') out.targets = a[++i].split(',').map(s => s.trim()).filter(Boolean)
     else if (a[i] === '--write') out.write = true
-    else if (a[i] === '--limit') out.limit = parseInt(a[++i], 10) || 0
+    else if (a[i] === '--force') out.force = true
   }
   return out
 }
 
-// ── 读取源语言 ──────────────────────────────────────────────
-// en.js / zh-CN.js 是 export default { ... }，用 node 直接 import 拿对象
+// ── 源语言 ──────────────────────────────────────────────────
 async function loadSourceJs(file) {
   const mod = await import(`file://${file}`)
   return mod.default
 }
+const loadSourceJson = file => JSON.parse(readFileSync(file, 'utf8'))
 
-async function loadSourceJson(file) {
-  return JSON.parse(readFileSync(file, 'utf8'))
-}
-
-// ── 收集待翻译键（扁平化 grouped → flat，保证键集合一致） ─────
+/** grouped → flat（a.b.c），保证键集合与源语言逐一对齐 */
 function flatten(obj, prefix = '') {
   const out = {}
   for (const [k, v] of Object.entries(obj)) {
@@ -81,154 +81,167 @@ function flatten(obj, prefix = '') {
 }
 
 // ── 占位符保护 ───────────────────────────────────────────────
-// {count} {name} 等占位符不能进翻译器
+// {count} / {{name}} / %s / ${expr} 不能进翻译器，否则会被改写
 const PLACEHOLDER = /(\{[a-zA-Z0-9_]+\}|\{\{\s*[a-zA-Z0-9_.]+\s*\}\}|%[sd]|\$\{[^}]+\})/g
+const SENTINEL = '\u0001'
 
 function protect(text) {
   const store = []
   const masked = String(text).replace(PLACEHOLDER, m => {
     store.push(m)
-    return `\u0001${store.length - 1}\u0001`
+    return `${SENTINEL}${store.length - 1}${SENTINEL}`
   })
   return { masked, store }
 }
 
 function restore(masked, store) {
-  return String(masked).replace(/\u0001(\d+)\u0001/g, (_, i) => store[+i])
+  return String(masked).replace(new RegExp(`${SENTINEL}(\\d+)${SENTINEL}`, 'g'), (_, i) => store[+i])
 }
 
-// ── 翻译实现（Google 免费 endpoint，一次最多 128 段） ─────────
-const TRANSLATE_IMPL = {
-  async google(texts, target) {
-    const chunks = []
-    for (let i = 0; i < texts.length; i += 100) chunks.push(texts.slice(i, i + 100))
-    const results = []
-    for (const chunk of chunks) {
-      const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=%s&dt=t&q=%s'
-      const q = encodeURIComponent(chunk.join('\n'))
-      const res = await fetch(url.replace('%s', encodeURIComponent(target)).replace('%s', q))
-      if (!res.ok) throw new Error(`translate HTTP ${res.status} for ${target}`)
-      const data = await res.json()
-      // data[0] = [[translated, original, ...], ...]
-      const segs = data[0] || []
-      const joined = segs.map(s => s[0]).join('')
-      results.push(joined.split('\n'))
-    }
-    return results.flat()
-  },
+// ── 翻译实现 ────────────────────────────────────────────────
+/** 单条翻译（唯一实现，绝不拼接） */
+async function translateOne(text, target) {
+  const { masked, store } = protect(text)
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(masked)}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`translate HTTP ${res.status} for ${target}`)
+  const data = await res.json()
+  const segs = data[0] || []
+  const out = segs.map(s => s[0]).join('')
+  if (!out) throw new Error('empty translation')
+  return restore(out, store)
 }
 
-// ── 一组键的翻译（带缓存与重试） ──────────────────────────────
-async function translateGroup(texts, target) {
-  const cacheKey = `${target}:${texts.length}`
-  const cacheFile = join(ROOT, '.i18n-cache', `${target}.json`)
+/** 并发受控的逐条翻译：带缓存、重试、进度打印 */
+async function translateAll(texts, target, { force = false, noTranslateKeys = null } = {}) {
+  const cacheFile = join(CACHE_DIR, `${target}.json`)
   let cache = {}
-  if (existsSync(cacheFile)) cache = JSON.parse(readFileSync(cacheFile, 'utf8'))
-  const todo = texts.map((t, i) => ({ i, t })).filter(x => x.t && !(x.t in cache))
-  if (todo.length) {
-    console.log(`  [${target}] 待翻译 ${todo.length} 条（缓存命中 ${texts.length - todo.length}）`)
-    const BATCH = 60
-    for (let i = 0; i < todo.length; i += BATCH) {
-      const batch = todo.slice(i, i + BATCH)
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const masked = batch.map(x => protect(x.t).masked)
-          const translated = await TRANSLATE_IMPL.google(masked, target)
-          batch.forEach((x, j) => {
-            const { store } = protect(x.t)
-            cache[x.t] = restore(translated[j] ?? x.t, store)
-          })
-          break
-        } catch (e) {
-          console.error(`    第 ${attempt} 次尝试失败: ${e.message}`)
-          if (attempt === 3) { /* 保留原值 */ }
-          else await new Promise(r => setTimeout(r, 2000 * attempt))
+  if (existsSync(cacheFile)) {
+    try { cache = JSON.parse(readFileSync(cacheFile, 'utf8')) } catch { cache = {} }
+  }
+  if (force) cache = {}
+
+  const results = new Array(texts.length).fill(null)
+  const todo = []
+  texts.forEach((t, i) => {
+    if (!t || typeof t !== 'string') results[i] = t
+    else if (cache[t] != null) results[i] = cache[t]
+    else todo.push({ i, t })
+  })
+
+  console.log(`  [${target}] 共 ${texts.length} 条，待翻译 ${todo.length} 条`)
+
+  const CONCURRENCY = 2
+  let done = 0
+  async function worker(item) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        const v = await translateOne(item.t, target)
+        cache[item.t] = v
+        results[item.i] = v
+        return
+      } catch (e) {
+        if (attempt === 5) {
+          console.error(`    失败(保留原文): ${JSON.stringify(item.t.slice(0, 40))} → ${e.message}`)
+          return
         }
+        const backoff = e.message.includes('429') ? 5000 * attempt * 4 : 500 * attempt
+        await new Promise(r => setTimeout(r, backoff))
       }
     }
-    const { mkdirSync } = await import('node:fs')
-    mkdirSync(dirname(cacheFile), { recursive: true })
-    writeFileSync(cacheFile, JSON.stringify(cache))
   }
-  return texts.map(t => (t ? cache[t] ?? t : t))
+  const idx = { i: 0 }
+  async function pump() {
+    while (idx.i < todo.length) {
+      const item = todo[idx.i++]
+      await worker(item)
+      if (++done % 100 === 0) {
+        console.log(`    进度 ${done}/${todo.length}`)
+        writeFileSync(cacheFile, JSON.stringify(cache))
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, pump))
+
+  mkdirSync(CACHE_DIR, { recursive: true })
+  writeFileSync(cacheFile, JSON.stringify(cache))
+  return results
 }
 
 // ── 输出序列化 ───────────────────────────────────────────────
+/** 按 template 的结构还原 nested 对象，键集合与 template 完全一致 */
 function flatToNested(flat, template) {
-  function build(tpl, src, prefix) {
+  function build(tpl, prefix) {
     const out = {}
     for (const [k, v] of Object.entries(tpl)) {
       const key = prefix ? `${prefix}.${k}` : k
-      if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = build(v, src, key)
-      else if (key in src) out[k] = src[key]
+      if (v && typeof v === 'object' && !Array.isArray(v)) out[k] = build(v, key)
+      else if (key in flat) out[k] = flat[key]
       else if (typeof v === 'string') out[k] = v
     }
     return out
   }
-  return build(template, flat, '')
+  return build(template, '')
 }
 
-function jsModule(obj, locale) {
-  const name = LOCALE_NAMES[locale] || locale
-  return `// ${name}（${locale}）\nexport default ${JSON.stringify(obj, null, 2)}\n`
-}
-
-function jsonModule(obj, locale) {
-  return `${JSON.stringify(obj, null, 2)}\n`
-}
+const jsModule = (obj, locale) => `// ${LOCALE_NAMES[locale] || locale}（${locale}）\nexport default ${JSON.stringify(obj, null, 2)}\n`
+const jsonModule = obj => `${JSON.stringify(obj, null, 2)}\n`
 
 // ── 主流程 ──────────────────────────────────────────────────
 async function main() {
-  const { targets, write, limit } = parseArgs()
+  const { targets, write, force } = parseArgs()
   if (!targets.length) { console.error('--targets 必填'); process.exit(1) }
 
-  // 源语言（以 en 的键集合为基准，缺失键在 zh-CN 里补）
-  const enJs = flatten(await loadSourceJs(join(ADMIN_DIR, 'en.js')))
-  const zhJs = flatten(await loadSourceJs(join(ADMIN_DIR, 'zh-CN.js')))
-  const enObj = await loadSourceJson(join(PORTAL_DIR, 'en.json'))
-  const zhObj = await loadSourceJson(join(PORTAL_DIR, 'zh-CN.json'))
+  // 源语言（以 en 为结构基准；缺省值用 zh-CN 兜底）
+  const enJsTpl = await loadSourceJs(join(ADMIN_DIR, 'en.js'))
+  const zhJsFlat = flatten(await loadSourceJs(join(ADMIN_DIR, 'zh-CN.js')))
+  const enJsFlat = flatten(enJsTpl)
+  const enObjTpl = loadSourceJson(join(PORTAL_DIR, 'en.json'))
+  const zhObjFlat = flatten(loadSourceJson(join(PORTAL_DIR, 'zh-CN.json')))
+  const enObjFlat = flatten(enObjTpl)
 
-  // 前端：以 zh-CN 的键为基准（更全），缺省值用 en 兜底
-  const flatAdmin = {}
-  for (const k of Object.keys(zhJs)) flatAdmin[k] = zhJs[k] || enJs[k]
-  for (const k of Object.keys(enJs)) if (!(k in flatAdmin)) flatAdmin[k] = enJs[k]
+  // 前端：优先 zh-CN 的文案（更贴近本项目术语），缺失键用 en 兜底
+  const adminSrc = {}
+  for (const k of Object.keys(enJsFlat)) adminSrc[k] = zhJsFlat[k] ?? enJsFlat[k]
+  // 门户：直接用 en 的文案
+  const portalSrc = {}
+  for (const k of Object.keys(enObjFlat)) portalSrc[k] = enObjFlat[k]
 
-  const adminOrder = Object.keys(enJs)
-  const portalOrder = Object.keys(enObj)
-
+  const adminKeys = Object.keys(enJsTpl.length ? enJsFlat : enJsFlat)
   for (const target of targets) {
-    console.log(`\n=== ${target} (${LOCALE_NAMES[target] || ''}) ===`)
-    const adminTexts = adminOrder.map(k => flatAdmin[k]).filter(t => typeof t === 'string')
-    const portalTexts = portalOrder.map(k => (typeof enObj[k] === 'string' ? enObj[k] : '')).filter(Boolean)
-    const limitAdmin = limit ? adminTexts.slice(0, limit) : adminTexts
-    const limitPortal = limit ? portalTexts.slice(0, limit) : portalTexts
+    console.log(`\n=== ${target} (${LOCALE_NAMES[target] || target}) ===`)
+    const adminOrder = Object.keys(adminSrc)
+    const portalOrder = Object.keys(portalSrc)
 
-    const tAdmin = await translateGroup(limitAdmin, target)
-    const tPortal = await translateGroup(limitPortal, target)
+    const adminNoTr = new Set(adminOrder.filter(k => NO_TRANSLATE_KEYS.has(k)))
+    const portalNoTr = new Set(portalOrder.filter(k => NO_TRANSLATE_KEYS.has(k)))
+    // 免翻键：直接透传原值（不进翻译器，也不会被缓存下来的旧译文覆盖）
+    const tAdmin = await translateAll(
+      adminOrder.map(k => adminNoTr.has(k) ? null : adminSrc[k]), target, { force })
+    const tPortal = await translateAll(
+      portalOrder.map(k => portalNoTr.has(k) ? null : portalSrc[k]), target, { force })
 
-    // 还原 nested 结构（用源对象当模板，保证键完全一致）
     const adminFlat = {}
-    adminOrder.forEach((k, i) => { if (typeof flatAdmin[k] === 'string') adminFlat[k] = tAdmin[limit ? i : i] ?? flatAdmin[k] })
-    const portalFlat = {}
-    portalOrder.forEach((k, i) => { portalFlat[k] = tPortal[i] ?? enObj[k] })
+    adminOrder.forEach((k, i) => { adminFlat[k] = tAdmin[i] != null ? tAdmin[i] : (adminNoTr.has(k) ? adminSrc[k] : adminSrc[k]) })
     // 非字符串值（数组/对象）原样保留
-    for (const k of Object.keys(enObj)) if (typeof enObj[k] !== 'string') portalFlat[k] = enObj[k]
-    for (const k of Object.keys(flatAdmin)) if (typeof flatAdmin[k] !== 'string') adminFlat[k] = flatAdmin[k]
+    for (const k of Object.keys(enJsFlat)) if (typeof enJsFlat[k] !== 'string') adminFlat[k] = enJsFlat[k]
 
-    const adminNested = flatToNested(adminFlat, await loadSourceJs(join(ADMIN_DIR, 'en.js')))
-    const portalNested = flatToNested(portalFlat, enObj)
+    const portalFlat = {}
+    portalOrder.forEach((k, i) => { portalFlat[k] = tPortal[i] != null ? tPortal[i] : (portalNoTr.has(k) ? portalSrc[k] : portalSrc[k]) })
+    for (const k of Object.keys(enObjFlat)) if (typeof enObjFlat[k] !== 'string') portalFlat[k] = enObjFlat[k]
+
+    const adminNested = flatToNested(adminFlat, enJsTpl)
+    const portalNested = flatToNested(portalFlat, enObjTpl)
 
     const adminOut = join(ADMIN_DIR, `${target}.js`)
     const portalOut = join(PORTAL_DIR, `${target}.json`)
     if (write) {
       writeFileSync(adminOut, jsModule(adminNested, target))
-      writeFileSync(portalOut, jsonModule(portalNested, target))
-      console.log(`  已写入 ${adminOut} / ${portalOut}`)
+      writeFileSync(portalOut, jsonModule(portalNested))
+      console.log(`  已写入 ${adminOut}\n  已写入 ${portalOut}`)
     } else {
       console.log(`  [dry-run] 将生成 ${adminOut} / ${portalOut}`)
-      const sample = adminTexts.slice(0, 5)
-      console.log('  示例：')
-      sample.forEach((s, i) => console.log(`    ${s}  →  ${tAdmin[i]}`))
+      adminOrder.slice(0, 8).forEach((k, i) => console.log(`    ${k}: ${adminSrc[k]}  →  ${tAdmin[i]}`))
     }
   }
 }

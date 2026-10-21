@@ -30,3 +30,6 @@ scripts/e2e/__pycache__/
 
 # i18n 翻译脚本的本地缓存（含中间译文，不入库）
 .i18n-cache/
+
+# i18n 修复脚本依赖 opencc（本地安装，不入库）
+/node_modules

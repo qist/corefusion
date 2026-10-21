@@ -5,11 +5,19 @@
 
 SHELL := /bin/bash
 
-GO      ?= go
-NPM     ?= npm
-BINARY  ?= corefusion
-VERSION ?= $(shell cat internal/constants/version 2>/dev/null || echo dev)
-LDFLAGS := -X corefusion/internal/constants.Version=$(VERSION)
+GO       ?= go
+NPM      ?= npm
+BINARY   ?= corefusion
+VERSION  ?= $(shell cat internal/constants/version 2>/dev/null || echo dev)
+
+# 静态链接：项目使用纯 Go SQLite 驱动，无需 CGO
+CGO_ENABLED ?= 0
+export CGO_ENABLED
+
+# 默认产出版本：-trimpath 去掉本机路径、-s -w 去掉符号表与 DWARF、-buildid= 禁buildid；
+# 调试时用 make GOBUILDFLAGS= LDFLAGS="-X corefusion/internal/constants.Version=$(VERSION)" 覆盖。
+GOBUILDFLAGS ?= -trimpath
+LDFLAGS      ?= -s -w -buildid= -X corefusion/internal/constants.Version=$(VERSION)
 
 FRONTEND_DIR := web/admin
 EMBED_DIR    := internal/app/embed/dist
@@ -55,6 +63,11 @@ help:
 	@echo "  清理："
 	@echo "    make clean              删除二进制与前端 dist"
 	@echo "    make distclean          连同 embed 产物一起清理"
+	@echo ""
+	@echo "  构建参数（可覆盖）："
+	@echo "    make test GOBUILDFLAGS= LDFLAGS=\"-X corefusion/internal/constants.Version=$(VERSION)\""
+	@echo "                          调试用：保留符号表/本地路径"
+	@echo "    默认 CGO_ENABLED=$(CGO_ENABLED)（静态链接）、-trimpath、-s -w -buildid="
 
 all: panel
 
@@ -78,17 +91,17 @@ backend:
 		echo "embed 目录为空，先构建前端..."; \
 		$(MAKE) frontend; \
 	fi
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/corefusion/
+	$(GO) build $(GOBUILDFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/corefusion/
 
 # 交叉编译面板：前端同样通过 go:embed 打进二进制
 panel-linux-amd64: frontend
 	@mkdir -p $(DIST_DIR)
-	GOOS=linux GOARCH=amd64 $(GO) build -ldflags "$(LDFLAGS)" \
+	GOOS=linux GOARCH=amd64 $(GO) build $(GOBUILDFLAGS) -ldflags "$(LDFLAGS)" \
 		-o $(DIST_DIR)/corefusion-linux-amd64 ./cmd/corefusion/
 
 panel-linux-arm64: frontend
 	@mkdir -p $(DIST_DIR)
-	GOOS=linux GOARCH=arm64 $(GO) build -ldflags "$(LDFLAGS)" \
+	GOOS=linux GOARCH=arm64 $(GO) build $(GOBUILDFLAGS) -ldflags "$(LDFLAGS)" \
 		-o $(DIST_DIR)/corefusion-linux-arm64 ./cmd/corefusion/
 
 panel-all: panel-linux-amd64 panel-linux-arm64
@@ -97,12 +110,12 @@ agent: agent-linux-amd64
 
 agent-linux-amd64:
 	@mkdir -p $(AGENT_DIR)
-	GOOS=linux GOARCH=amd64 $(GO) build -tags agent -ldflags "$(LDFLAGS)" \
+	GOOS=linux GOARCH=amd64 $(GO) build -tags agent $(GOBUILDFLAGS) -ldflags "$(LDFLAGS)" \
 		-o $(AGENT_DIR)/corefusion-agent-linux-amd64 ./cmd/agent/
 
 agent-linux-arm64:
 	@mkdir -p $(AGENT_DIR)
-	GOOS=linux GOARCH=arm64 $(GO) build -tags agent -ldflags "$(LDFLAGS)" \
+	GOOS=linux GOARCH=arm64 $(GO) build -tags agent $(GOBUILDFLAGS) -ldflags "$(LDFLAGS)" \
 		-o $(AGENT_DIR)/corefusion-agent-linux-arm64 ./cmd/agent/
 
 test:
@@ -154,6 +167,7 @@ logs:
 
 clean:
 	rm -f $(BINARY)
+	rm -rf $(DIST_DIR)
 	rm -rf $(FRONTEND_DIR)/dist
 
 distclean: clean

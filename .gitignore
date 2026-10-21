@@ -27,3 +27,6 @@ scripts/e2e/__pycache__/
 
 # 敏感配置（密钥/数据库 DSN），只跟踪 .env.example 模板
 .env
+
+# i18n 翻译脚本的本地缓存（含中间译文，不入库）
+.i18n-cache/

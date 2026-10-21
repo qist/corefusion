@@ -63,11 +63,10 @@ func newSafeDialControl(allowPrivate bool) func(network, address string, c sysca
 //
 // 需要访问本机/内网服务的内部调用（面板自身的 gRPC 转 HTTP 等）不要用这个客户端。
 func NewSafeHTTPClient(timeout time.Duration, allowPrivate bool) *http.Client {
-	dialer := &net.Dialer{
-		Timeout:   10 * time.Second,
-		KeepAlive: 30 * time.Second,
-		Control:   newSafeDialControl(allowPrivate),
-	}
+	// 这是禁代理的直连客户端：域名必须由本机解析，因此显式使用
+	// readNameservers 的结果（systemd-resolved 下优先上游文件）。
+	dialer := newResolvedDialer(10 * time.Second)
+	dialer.Control = newSafeDialControl(allowPrivate)
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
@@ -143,11 +142,9 @@ func NewSafeDownloadClient(timeout time.Duration, proxyURL string) *http.Client 
 			transport.DialContext = (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 		}
 	} else {
-		dialer := &net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-			Control:   newSafeDialControl(false),
-		}
+		// 直连分支同样需要处理 systemd-resolved（见 newResolvedDialer）。
+		dialer := newResolvedDialer(10 * time.Second)
+		dialer.Control = newSafeDialControl(false)
 		transport.DialContext = dialer.DialContext
 	}
 	return &http.Client{Timeout: timeout, Transport: transport}

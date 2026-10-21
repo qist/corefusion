@@ -13,10 +13,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"corefusion/pkg/netutil"
 
 	"github.com/go-acme/lego/v4/certcrypto"
 	"github.com/go-acme/lego/v4/certificate"
@@ -651,12 +654,34 @@ func (c *ACMEClient) createClient(user *ACMEUser, disableCommonName bool, keyTyp
 	config.Certificate.KeyType = keyType
 	config.Certificate.DisableCommonName = disableCommonName
 
+	// lego 默认的 HTTPClient 用**系统解析器**：systemd-resolved 机器上
+	// /etc/resolv.conf 往往只有 127.0.0.53 stub → stub 不在时连 ACME 目录都打不开 ✗。
+	// 只替换 DialContext（优先读 resolved 上游 nameserver），proxy/TLS/超时保持 lego 原样 ✓。
+	applyResolvedDNS(config.HTTPClient)
+
 	client, err := lego.NewClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
 
 	return client, nil
+}
+
+// applyResolvedDNS patches an http.Client (in place) so DNS is resolved via the
+// local upstream nameservers instead of the system resolver. The transport is
+// cloned first, so a client shared with the caller is never mutated. Other
+// transport settings — notably Proxy — are preserved.
+func applyResolvedDNS(client *http.Client) {
+	if client == nil {
+		return
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		return
+	}
+	cloned := transport.Clone()
+	cloned.DialContext = netutil.NewResolvedDialContext(30 * time.Second)
+	client.Transport = cloned
 }
 
 // setupChallenge sets up the challenge solver.

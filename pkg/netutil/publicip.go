@@ -43,7 +43,9 @@ func DetectPublicIPDirect(ctx context.Context, timeout time.Duration) (ipv4, ipv
 // probePublicIP 用锁定到 network（tcp4 / tcp6 ✓）的直连客户端依次尝试各回显服务，
 // 返回第一个**合法公网** IP ✓（内网/保留地址一律视为无效 ✓）。
 func probePublicIP(ctx context.Context, network string, timeout time.Duration) string {
-	dialer := &net.Dialer{Timeout: timeout}
+	// 禁代理的请求必须自己解析域名，因此同样走 readNameservers（优先
+	// systemd-resolved 的上游文件），不能依赖可能只指向 127.0.0.53 stub 的系统解析器。
+	dialer := newResolvedDialer(timeout)
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{

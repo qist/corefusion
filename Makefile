@@ -1,0 +1,120 @@
+# CoreFusion 构建与运行
+#
+# 版本号来源：internal/constants/version（可用 make VERSION=xxx 覆盖注入值）
+# 前端产物先构建到 web/admin/dist，再复制到 internal/app/embed/dist 供 go:embed 打包。
+
+SHELL := /bin/bash
+
+GO      ?= go
+NPM     ?= npm
+BINARY  ?= corefusion
+VERSION ?= $(shell cat internal/constants/version 2>/dev/null || echo dev)
+LDFLAGS := -X corefusion/internal/constants.Version=$(VERSION)
+
+FRONTEND_DIR := web/admin
+EMBED_DIR    := internal/app/embed/dist
+AGENT_DIR    := data/binaries/active/corefusion-agent
+
+.PHONY: help all build panel backend frontend deps \
+        agent agent-linux-amd64 agent-linux-arm64 \
+        test vet fmt version run start stop restart status logs clean distclean
+
+# panel 的 frontend 必须先于 backend（go:embed 依赖前端产物），禁止并行
+.NOTPARALLEL:
+
+help:
+	@echo "CoreFusion 构建与运行（当前版本 $(VERSION)）"
+	@echo ""
+	@echo "  构建："
+	@echo "    make panel              前端 + 面板二进制"
+	@echo "    make backend            仅面板后端（embed 目录为空时自动构建前端）"
+	@echo "    make frontend           仅构建前端并同步到 embed 目录"
+	@echo "    make agent              编译 linux-amd64 Agent"
+	@echo "    make agent-linux-arm64  交叉编译 linux-arm64 Agent"
+	@echo ""
+	@echo "  检查："
+	@echo "    make test / vet / fmt"
+	@echo ""
+	@echo "  运行："
+	@echo "    make run                前台启动面板"
+	@echo "    make start              后台启动面板（PID: data/corefusion.pid）"
+	@echo "    make stop / restart / status / logs"
+	@echo ""
+	@echo "  清理："
+	@echo "    make clean              删除二进制与前端 dist"
+	@echo "    make distclean          连同 embed 产物一起清理"
+
+all: panel
+
+build: panel
+
+# 面板 = 前端 + 后端（前端通过 go:embed 打进二进制）
+panel: frontend backend
+
+# 首次构建或 node_modules 缺失时安装依赖
+deps:
+	@test -d $(FRONTEND_DIR)/node_modules || (cd $(FRONTEND_DIR) && $(NPM) ci)
+
+frontend: deps
+	cd $(FRONTEND_DIR) && $(NPM) run build
+	rm -rf $(EMBED_DIR)
+	mkdir -p $(EMBED_DIR)
+	cp -r $(FRONTEND_DIR)/dist/. $(EMBED_DIR)/
+
+backend:
+	@if [ ! -d $(EMBED_DIR) ] || [ -z "$$(ls -A $(EMBED_DIR) 2>/dev/null)" ]; then \
+		echo "embed 目录为空，先构建前端..."; \
+		$(MAKE) frontend; \
+	fi
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/corefusion/
+
+agent: agent-linux-amd64
+
+agent-linux-amd64:
+	@mkdir -p $(AGENT_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build -tags agent -ldflags "$(LDFLAGS)" \
+		-o $(AGENT_DIR)/corefusion-agent-linux-amd64 ./cmd/agent/
+
+agent-linux-arm64:
+	@mkdir -p $(AGENT_DIR)
+	GOOS=linux GOARCH=arm64 $(GO) build -tags agent -ldflags "$(LDFLAGS)" \
+		-o $(AGENT_DIR)/corefusion-agent-linux-arm64 ./cmd/agent/
+
+test:
+	$(GO) test ./...
+
+vet:
+	$(GO) vet ./...
+
+fmt:
+	$(GO) fmt ./...
+
+version:
+	@echo $(VERSION)
+
+run:
+	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
+	./$(BINARY) server
+
+start:
+	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
+	./scripts/panel.sh start
+
+stop:
+	./scripts/panel.sh stop
+
+restart:
+	./scripts/panel.sh restart
+
+status:
+	./scripts/panel.sh status
+
+logs:
+	./scripts/panel.sh logs
+
+clean:
+	rm -f $(BINARY)
+	rm -rf $(FRONTEND_DIR)/dist
+
+distclean: clean
+	rm -rf $(EMBED_DIR)

@@ -15,9 +15,14 @@ FRONTEND_DIR := web/admin
 EMBED_DIR    := internal/app/embed/dist
 AGENT_DIR    := data/binaries/active/corefusion-agent
 
+SERVICE      ?= corefusion
+UNIT_SRC     := deploy/corefusion.service
+UNIT_DST     := /etc/systemd/system/$(SERVICE).service
+
 .PHONY: help all build panel backend frontend deps \
         agent agent-linux-amd64 agent-linux-arm64 \
-        test vet fmt version run start stop restart status logs clean distclean
+        test vet fmt version run start stop restart status logs \
+        service-install service-uninstall clean distclean
 
 # panel 的 frontend 必须先于 backend（go:embed 依赖前端产物），禁止并行
 .NOTPARALLEL:
@@ -35,10 +40,13 @@ help:
 	@echo "  检查："
 	@echo "    make test / vet / fmt"
 	@echo ""
-	@echo "  运行："
-	@echo "    make run                前台启动面板"
-	@echo "    make start              后台启动面板（PID: data/corefusion.pid）"
-	@echo "    make stop / restart / status / logs"
+	@echo "  服务（systemd）："
+	@echo "    make service-install    安装/更新服务并设为开机启动"
+	@echo "    make service-uninstall  停用并删除服务"
+	@echo "    make start / stop / restart / status / logs"
+	@echo ""
+	@echo "  其他："
+	@echo "    make run                前台启动面板（调试用）"
 	@echo ""
 	@echo "  清理："
 	@echo "    make clean              删除二进制与前端 dist"
@@ -96,21 +104,35 @@ run:
 	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
 	./$(BINARY) server
 
-start:
+service-install:
 	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
-	./scripts/panel.sh start
+	sed -e 's#^WorkingDirectory=.*#WorkingDirectory=$(CURDIR)#' \
+	    -e 's#^ExecStart=.*#ExecStart=$(CURDIR)/$(BINARY) server#' \
+	    $(UNIT_SRC) > $(UNIT_DST)
+	chmod 644 $(UNIT_DST)
+	systemctl daemon-reload
+	systemctl enable --now $(SERVICE)
+	@echo "已安装并启动：$(UNIT_DST)"
+
+service-uninstall:
+	-systemctl disable --now $(SERVICE)
+	rm -f $(UNIT_DST)
+	systemctl daemon-reload
+
+start:
+	systemctl start $(SERVICE)
 
 stop:
-	./scripts/panel.sh stop
+	systemctl stop $(SERVICE)
 
 restart:
-	./scripts/panel.sh restart
+	systemctl restart $(SERVICE)
 
 status:
-	./scripts/panel.sh status
+	systemctl status $(SERVICE) --no-pager --lines=20
 
 logs:
-	./scripts/panel.sh logs
+	journalctl -u $(SERVICE) -n 200 -f
 
 clean:
 	rm -f $(BINARY)

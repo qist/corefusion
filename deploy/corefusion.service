@@ -1,0 +1,25 @@
+[Unit]
+Description=CoreFusion Panel
+Documentation=https://github.com/qist/corefusion
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 数据库 DSN 为相对路径时依赖此工作目录，不要修改
+WorkingDirectory=/opt/corefusion
+ExecStart=/opt/corefusion/corefusion server
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# 日志使用 journald：
+#   journalctl -u corefusion -f
+# 如需写入文件，取消下面两行注释（目录需存在）
+#StandardOutput=append:/var/log/corefusion.log
+#StandardError=append:/var/log/corefusion.log
+
+[Install]
+WantedBy=multi-user.target

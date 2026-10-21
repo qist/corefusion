@@ -3,6 +3,7 @@ web/admin/dist
 web/admin/node_modules
 internal/app/embed/dist
 /corefusion
+/dist/
 geosite.dat
 geoip.metadb
 GeoLite2-ASN.mmdb

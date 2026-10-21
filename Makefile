@@ -14,12 +14,13 @@ LDFLAGS := -X corefusion/internal/constants.Version=$(VERSION)
 FRONTEND_DIR := web/admin
 EMBED_DIR    := internal/app/embed/dist
 AGENT_DIR    := data/binaries/active/corefusion-agent
+DIST_DIR     := dist
 
 SERVICE      ?= corefusion
 UNIT_SRC     := deploy/corefusion.service
 UNIT_DST     := /etc/systemd/system/$(SERVICE).service
 
-.PHONY: help all build panel backend frontend deps \
+.PHONY: help all build panel panel-all panel-linux-amd64 panel-linux-arm64 backend frontend deps \
         agent agent-linux-amd64 agent-linux-arm64 \
         test vet fmt version run start stop restart status logs \
         service-install service-uninstall clean distclean
@@ -31,7 +32,10 @@ help:
 	@echo "CoreFusion 构建与运行（当前版本 $(VERSION)）"
 	@echo ""
 	@echo "  构建："
-	@echo "    make panel              前端 + 面板二进制"
+	@echo "    make panel              前端 + 本机架构面板（./corefusion）"
+	@echo "    make panel-linux-amd64  交叉编译 linux-amd64 面板 → dist/"
+	@echo "    make panel-linux-arm64  交叉编译 linux-arm64 面板 → dist/"
+	@echo "    make panel-all          编译 amd64 + arm64 面板"
 	@echo "    make backend            仅面板后端（embed 目录为空时自动构建前端）"
 	@echo "    make frontend           仅构建前端并同步到 embed 目录"
 	@echo "    make agent              编译 linux-amd64 Agent"
@@ -75,6 +79,19 @@ backend:
 		$(MAKE) frontend; \
 	fi
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/corefusion/
+
+# 交叉编译面板：前端同样通过 go:embed 打进二进制
+panel-linux-amd64: frontend
+	@mkdir -p $(DIST_DIR)
+	GOOS=linux GOARCH=amd64 $(GO) build -ldflags "$(LDFLAGS)" \
+		-o $(DIST_DIR)/corefusion-linux-amd64 ./cmd/corefusion/
+
+panel-linux-arm64: frontend
+	@mkdir -p $(DIST_DIR)
+	GOOS=linux GOARCH=arm64 $(GO) build -ldflags "$(LDFLAGS)" \
+		-o $(DIST_DIR)/corefusion-linux-arm64 ./cmd/corefusion/
+
+panel-all: panel-linux-amd64 panel-linux-arm64
 
 agent: agent-linux-amd64
 

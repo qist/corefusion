@@ -102,16 +102,17 @@ version:
 
 run:
 	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
-	./$(BINARY) server
+	./$(BINARY)
 
 service-install:
 	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }
 	sed -e 's#^WorkingDirectory=.*#WorkingDirectory=$(CURDIR)#' \
-	    -e 's#^ExecStart=.*#ExecStart=$(CURDIR)/$(BINARY) server#' \
+	    -e 's#^ExecStart=.*#ExecStart=$(CURDIR)/$(BINARY)#' \
 	    $(UNIT_SRC) > $(UNIT_DST)
 	chmod 644 $(UNIT_DST)
 	systemctl daemon-reload
-	systemctl enable --now $(SERVICE)
+	systemctl enable $(SERVICE)
+	systemctl restart $(SERVICE)
 	@echo "已安装并启动：$(UNIT_DST)"
 
 service-uninstall:

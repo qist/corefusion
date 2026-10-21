@@ -587,7 +587,7 @@ func notImplemented(c *gin.Context, what string) {
 }
 
 // bootstrapCompletedKey 记录首次启动初始化向导是否已完成（"true"）。单次有效：
-// 完成后再次调用 FinishBootstrap 返回 409（见 docs/design/first-boot-initialization.md）。
+// 完成后再次调用 FinishBootstrap 返回 409。
 const bootstrapCompletedKey = bootstrap.BootstrapCompletedKey
 
 // webPathPattern 校验管理面板访问路径：以 "/" 开头，仅字母/数字/连字符/下划线（设计 3.3.3）。

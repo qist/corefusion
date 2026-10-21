@@ -20,7 +20,7 @@ import (
 	"corefusion/internal/store/db"
 )
 
-// 首次启动初始化（见 docs/design/first-boot-initialization.md）。
+// 首次启动初始化。
 const (
 	SessionFileName       = ".corefusion_init"
 	BootstrapCompletedKey = "bootstrap.completed"

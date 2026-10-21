@@ -95,7 +95,7 @@ const panelCertServerName = "corefusion-panel"
 //
 // ⚠ 这里**绝不能**用 `InsecureSkipVerify: true` ✗：Agent 不校验对端身份时，任何能 MITM 的人
 // （DNS 劫持 / ARP 欺骗 / 内网中间人）都能用一张自签证书冒充面板，而面板可以指挥 Agent
-// 以 **root** 写任意路径、执行命令（见 `docs/design/security-audit-v5.md` C2）——
+// 以 **root** 写任意路径、执行命令——
 // 相当于把整条控制面交出去。`RootCAs` 本来就已由 bootstrap 落盘的 CA 建好，
 // 这里改成正常校验 + 显式 ServerName 即可，不需要任何"开发用"放松。
 func buildPanelTLSConfig(cert tls.Certificate, caPool *x509.CertPool) *tls.Config {

@@ -1,8 +1,6 @@
 // Package coredata 提供核心数据公共层：将分散在多个文件中的 xray gRPC API
 // 访问（stats / sysstats / online users）收敛为统一接口与结构，使前端/面板
 // 只依赖 CoreDataProvider，而不感知具体核心协议与本地/远程路由。
-//
-// 设计见 docs/design/core-data-layer-design.md
 package coredata
 
 // CoreKind 标记核心类型，便于未来扩展（sing-box）。

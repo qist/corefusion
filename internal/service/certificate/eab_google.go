@@ -11,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
 	"corefusion/internal/model/entity"
+	"corefusion/pkg/netutil"
 )
 
 // GooglePublicCAKeyEndpoint 是 GCP 的**外部账号密钥（EAB）**创建接口 ✓。
@@ -138,6 +140,9 @@ func googleAccessToken(ctx context.Context, saJSON string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// oauth2 的 TokenSource 默认用 http.DefaultClient（系统解析器，systemd-resolved
+	// 下可能只有 127.0.0.53 stub）→ 通过 context 注入带本地上游 nameserver 的 client ✓。
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, netutil.NewDefaultHTTPClient(30*time.Second))
 	creds, err := google.CredentialsFromJSON(ctx, []byte(normalized), googleCloudPlatformScope)
 	if err != nil {
 		return "", fmt.Errorf("这份服务账号密钥用不了（%v）：%s", err, ErrGoogleNeedServiceAccountJSON)
@@ -184,7 +189,7 @@ func (s *EABConfigService) FetchGoogleEAB(ctx context.Context, projectID, servic
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := netutil.NewDefaultHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach Google Public CA: %w", err)

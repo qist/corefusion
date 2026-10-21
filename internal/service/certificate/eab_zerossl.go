@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	"corefusion/pkg/netutil"
 )
 
 // ZeroSSLEABEndpoint 是 ZeroSSL 用**邮箱换 EAB** 的接口 ✓。
@@ -94,7 +95,7 @@ func (s *EABConfigService) FetchZeroSSLEAB(ctx context.Context, email string) (*
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := netutil.NewDefaultHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach ZeroSSL: %w", err)

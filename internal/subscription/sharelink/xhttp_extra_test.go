@@ -8,7 +8,7 @@ import (
 
 // xhttpAdvancedFields 是 xhttp 的"填充 / 会话 / 上行"定制字段集合。
 //
-// 背景：我此前在 `docs/design/xray-field-gap.md` 里把这一组字段判为"会被静默丢掉"（A 类），
+// 背景：此前曾把这一组字段判为"会被静默丢掉"（A 类），
 // 依据是一个**并不存在的 `internal/configgen/xray` 强类型生成器** ✗。逐项核对后纠正：
 // 服务端配置走 `prepare.go` 的 map 透传（不丢），客户端分享链接走下面这个白名单
 // （`buildXhttpExtra`），而这 11 个字段**全都在白名单里**。

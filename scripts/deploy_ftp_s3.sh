@@ -2,7 +2,7 @@
 # =============================================================================
 # deploy_ftp_s3.sh — 在 CoreFusion 测试节点上部署 FTP(vsftpd)与 S3 兼容存储(MinIO)
 #
-# 对应文档: docs/design/NODE_PLANNING.md 第 4 节
+# 部署说明见内部节点规划文档第 4 节
 #   - FTP 节点(N5): 部署 vsftpd,被动模式,供 CoreFusion UploadToFTP 使用
 #   - S3  节点(N6): 部署 MinIO single-drive,供 CoreFusion UploadToS3 使用
 #

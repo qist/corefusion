@@ -5,9 +5,18 @@
  * 输出：指定目标语言的完整语言包，键集合与源语言**完全一致**。
  *
  * 用法：
- *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW             # dry-run，只打印前几条
- *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW --write     # 写入语言包
- *   node scripts/i18n/translate.mjs --targets ru --force              # 忽略本地缓存，全部重译
+ *   node scripts/i18n/translate.mjs --targets ru,fa,zh-TW --provider deepseek --write
+ *   node scripts/i18n/translate.mjs --targets ru --provider qwen --write
+ *   node scripts/i18n/translate.mjs --targets ru --force              # google 免费端点 + 忽略缓存
+ *
+ * Provider（默认 google）：
+ *   google    免费端点，无需 key，但会限流（429）
+ *   deepseek  DEEPSEEK_API_KEY      https://api.deepseek.com
+ *   qwen      DASHSCOPE_API_KEY     https://dashscope.aliyuncs.com
+ *   glm       ZHIPU_API_KEY         https://open.bigmodel.cn
+ *   moonshot / kimi  MOONSHOT_API_KEY
+ *   openai    OPENAI_API_KEY
+ * 也可 --base-url/--model/--api-key 指向任意 OpenAI 兼容端点（含自建）。
  *
  * ⚠ 逐条翻译（一次一次发），**绝不**用 \n 拼接后按 \n 拆回：
  *   早期版本用拼接法，遇到自带换行的文案就整批错位（account.email 拿到 account.plan 的值）。
@@ -53,11 +62,15 @@ const LOCALE_NAMES = {
 // ── 参数 ────────────────────────────────────────────────────
 function parseArgs() {
   const a = process.argv.slice(2)
-  const out = { targets: [], write: false, force: false }
+  const out = { targets: [], write: false, force: false, provider: 'google', model: '', baseURL: '', apiKey: '' }
   for (let i = 0; i < a.length; i++) {
     if (a[i] === '--targets') out.targets = a[++i].split(',').map(s => s.trim()).filter(Boolean)
     else if (a[i] === '--write') out.write = true
     else if (a[i] === '--force') out.force = true
+    else if (a[i] === '--provider') out.provider = a[++i]
+    else if (a[i] === '--model') out.model = a[++i]
+    else if (a[i] === '--base-url') out.baseURL = a[++i]
+    else if (a[i] === '--api-key') out.apiKey = a[++i]
   }
   return out
 }
@@ -98,9 +111,109 @@ function restore(masked, store) {
   return String(masked).replace(new RegExp(`${SENTINEL}(\\d+)${SENTINEL}`, 'g'), (_, i) => store[+i])
 }
 
-// ── 翻译实现 ────────────────────────────────────────────────
-/** 单条翻译（唯一实现，绝不拼接） */
-async function translateOne(text, target) {
+// ── Provider 定义 ──────────────────────────────────────────
+/** OpenAI 兼容的 /chat/completions 厂商配置（baseURL + key + 模型） */
+const LLM_PROVIDERS = {
+  deepseek: {
+    baseURL: 'https://api.deepseek.com/v1',
+    model: 'deepseek-chat',
+    envKey: 'DEEPSEEK_API_KEY',
+  },
+  qwen: {
+    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-plus',
+    envKey: 'DASHSCOPE_API_KEY',
+  },
+  glm: {
+    baseURL: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4-plus',
+    envKey: 'ZHIPU_API_KEY',
+  },
+  moonshot: {
+    baseURL: 'https://api.moonshot.cn/v1',
+    model: 'moonshot-v1-8k',
+    envKey: 'MOONSHOT_API_KEY',
+  },
+  kimi: {
+    baseURL: 'https://api.moonshot.cn/v1',
+    model: 'moonshot-v1-8k',
+    envKey: 'MOONSHOT_API_KEY',
+  },
+  openai: {
+    baseURL: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+    envKey: 'OPENAI_API_KEY',
+  },
+}
+
+/** provider 名称 → 环境变量；--provider 与 --model/--base-url 可覆盖 */
+function resolveProvider(opts) {
+  const name = opts.provider
+  if (!name || name === 'google') {
+    return { name: 'google', translateOne: googleTranslateOne }
+  }
+  const p = LLM_PROVIDERS[name]
+  if (!p) throw new Error(`未知 provider: ${name}（可选: google | ${Object.keys(LLM_PROVIDERS).join(' | ')}）`)
+  const apiKey = opts.apiKey || process.env[p.envKey]
+  if (!apiKey) throw new Error(`${name} 需要 API Key：传 --api-key 或设置环境变量 ${p.envKey}`)
+  return {
+    name,
+    baseURL: opts.baseURL || p.baseURL,
+    model: opts.model || p.model,
+    apiKey,
+  }
+}
+
+/** 组装给 LLM 的系统提示：术语表 + 硬约束 */
+function buildSystemPrompt(target) {
+  return [
+    '你是软件界面本地化翻译引擎，负责把中文界面文案译成目标语言。',
+    `目标语言：${LOCALE_NAMES[target] || target}（语言码 ${target}）。`,
+    '',
+    '硬性要求：',
+    '1. 只输出译文本身，不要引号、解释、注释、编号或前后缀。',
+    '2. 译文中出现 \u0001数字\u0001 形式的标记是占位符，必须原样保留，不得翻译、改写或删改。',
+    '3. 这是 UI 文案：译文要简短、自然、符合母语者习惯，遵循目标语言的大小写规范。',
+    '4. 同一术语在全文件中必须统一译法（如 proxy→代理/прокси，node→节点/узел，plan→套餐/план）。',
+    '5. 技术专有名词（HTTP、TLS、UUID、DNS、WebSocket 等）保持不译。',
+    '6. 占位符周围的语序按目标语言调整，但标记本身不动。',
+    '7. 按钮/菜单用词简洁（动词短语），提示/说明可用完整句。',
+  ].join('\n')
+}
+
+/** LLM 单条翻译（OpenAI 兼容协议） */
+async function llmTranslateOne(text, target, cfg) {
+  const { masked, store } = protect(text)
+  const url = `${cfg.baseURL.replace(/\/$/, '')}/chat/completions`
+  const body = JSON.stringify({
+    model: cfg.model,
+    temperature: 0.2,
+    max_tokens: Math.min(4096, Math.max(64, masked.length * 4)),
+    messages: [
+      { role: 'system', content: buildSystemPrompt(target) },
+      { role: 'user', content: masked },
+    ],
+  })
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${cfg.apiKey}`,
+    },
+    body,
+  })
+  if (!res.ok) {
+    const detail = (await res.text().catch(() => '')).slice(0, 200)
+    throw new Error(`LLM HTTP ${res.status}: ${detail}`)
+  }
+  const data = await res.json()
+  const out = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim()
+  if (!out) throw new Error('empty translation')
+  return restore(out, store)
+}
+
+/** Google 免费端点单条翻译 */
+async function googleTranslateOne(text, target) {
   const { masked, store } = protect(text)
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=zh-CN&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(masked)}`
   const res = await fetch(url)
@@ -112,8 +225,14 @@ async function translateOne(text, target) {
   return restore(out, store)
 }
 
+/** 统一的单条翻译入口 */
+async function translateOne(text, target, provider) {
+  if (provider.name === 'google') return googleTranslateOne(text, target)
+  return llmTranslateOne(text, target, provider)
+}
+
 /** 并发受控的逐条翻译：带缓存、重试、进度打印 */
-async function translateAll(texts, target, { force = false, noTranslateKeys = null } = {}) {
+async function translateAll(texts, target, { force = false, noTranslateKeys = null, provider } = {}) {
   const cacheFile = join(CACHE_DIR, `${target}.json`)
   let cache = {}
   if (existsSync(cacheFile)) {
@@ -131,12 +250,12 @@ async function translateAll(texts, target, { force = false, noTranslateKeys = nu
 
   console.log(`  [${target}] 共 ${texts.length} 条，待翻译 ${todo.length} 条`)
 
-  const CONCURRENCY = 2
+  const CONCURRENCY = provider && provider.name !== 'google' ? 6 : 2
   let done = 0
   async function worker(item) {
     for (let attempt = 1; attempt <= 5; attempt++) {
       try {
-        const v = await translateOne(item.t, target)
+        const v = await translateOne(item.t, target, provider)
         cache[item.t] = v
         results[item.i] = v
         return
@@ -189,7 +308,10 @@ const jsonModule = obj => `${JSON.stringify(obj, null, 2)}\n`
 
 // ── 主流程 ──────────────────────────────────────────────────
 async function main() {
-  const { targets, write, force } = parseArgs()
+  const opts = parseArgs()
+  const { targets, write, force } = opts
+  const provider = resolveProvider(opts)
+  console.log(`翻译引擎: ${provider.name}${provider.model ? ` (${provider.model})` : ''}`)
   if (!targets.length) { console.error('--targets 必填'); process.exit(1) }
 
   // 源语言（以 en 为结构基准；缺省值用 zh-CN 兜底）
@@ -217,9 +339,9 @@ async function main() {
     const portalNoTr = new Set(portalOrder.filter(k => NO_TRANSLATE_KEYS.has(k)))
     // 免翻键：直接透传原值（不进翻译器，也不会被缓存下来的旧译文覆盖）
     const tAdmin = await translateAll(
-      adminOrder.map(k => adminNoTr.has(k) ? null : adminSrc[k]), target, { force })
+      adminOrder.map(k => adminNoTr.has(k) ? null : adminSrc[k]), target, { force, provider })
     const tPortal = await translateAll(
-      portalOrder.map(k => portalNoTr.has(k) ? null : portalSrc[k]), target, { force })
+      portalOrder.map(k => portalNoTr.has(k) ? null : portalSrc[k]), target, { force, provider })
 
     const adminFlat = {}
     adminOrder.forEach((k, i) => { adminFlat[k] = tAdmin[i] != null ? tAdmin[i] : (adminNoTr.has(k) ? adminSrc[k] : adminSrc[k]) })

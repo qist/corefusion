@@ -231,8 +231,10 @@ func parseConfigToSiteConfig(configStr string, cfg *PortalSiteConfig) {
 		cfg.Modules = ParseModuleItems(v)
 	}
 	// Lang (multi-language pack)
+	// 库里的 lang 可能只是 diff（与内置包相同的文案已剥离）→ 这里补回内置兜底，
+	// 让编辑器拿到完整文案（保存时 ValidatePortalConfig 会再剥离 ✓）。
 	if v, ok := stored["lang"]; ok && len(v) > 0 && string(v) != "null" {
-		cfg.Lang = v
+		cfg.Lang = MergeBuiltinLangFallback(v)
 	} else {
 		cfg.Lang = json.RawMessage(defaultMultiLangJSON)
 	}
@@ -641,13 +643,12 @@ func (s *Service) ResetToDefault(ctx context.Context) (*PortalSiteConfig, error)
 	if err != nil {
 		return nil, err
 	}
-	defaultConfig, _ := json.Marshal(DefaultRenderConfig())
 	tmpl.Name = "Default"
 	tmpl.Description = "Built-in default portal template"
 	tmpl.HTMLContent = defaultPortalHTML
 	tmpl.CSSContent = defaultPortalCSS
 	tmpl.JSContent = defaultPortalJS
-	tmpl.Config = string(defaultConfig)
+	tmpl.Config = defaultStoredConfigJSON()
 	tmpl.IsBuiltIn = true
 	tmpl.UpdatedAt = time.Now()
 
@@ -687,6 +688,19 @@ type RenderConfig struct {
 	// 登录卡片弹窗 + 独立页面 /legal/* 均使用 ✓；URL 与内容二选一 ✓，URL 优先 ✓）
 	PrivacyPolicyContent  map[string]string `json:"privacy_policy_content,omitempty"`
 	TermsOfServiceContent map[string]string `json:"terms_of_service_content,omitempty"`
+}
+
+// defaultStoredConfigJSON 返回「默认模板落库用」的 config JSON。
+// 与 DefaultRenderConfig() 的区别：语言包已剥离与内置包逐字相同的文案（只留 diff），
+// 体积从 ~506KB 降到 ~85KB —— 否则新建/重置的模板一落库就超过 maxConfigSize，
+// 且内置文案升级对存量模板失效 ✗。渲染时由 MergeBuiltinLangFallback 补齐 ✓。
+func defaultStoredConfigJSON() string {
+	b, err := json.Marshal(DefaultRenderConfig())
+	if err != nil {
+		return ""
+	}
+	compact, _ := CompactConfigLang(string(b))
+	return compact
 }
 
 // DefaultRenderConfig returns default render configuration.
@@ -884,7 +898,7 @@ func (s *Service) SeedBuiltInTemplate(ctx context.Context) error {
 		return nil
 	}
 
-	defaultConfig, _ := json.Marshal(DefaultRenderConfig())
+	defaultConfig := defaultStoredConfigJSON()
 
 	tmpl := &entity.PortalTemplate{
 		Name:        "Default",
@@ -892,7 +906,7 @@ func (s *Service) SeedBuiltInTemplate(ctx context.Context) error {
 		HTMLContent: defaultPortalHTML,
 		CSSContent:  defaultPortalCSS,
 		JSContent:   defaultPortalJS,
-		Config:      string(defaultConfig),
+		Config:      defaultConfig,
 		IsActive:    true,
 		IsBuiltIn:   true,
 		CreatedAt:   time.Now(),

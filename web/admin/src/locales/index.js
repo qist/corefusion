@@ -58,9 +58,9 @@ export default i18n
 export function setLocale(locale) {
   i18n.global.locale.value = locale
   localStorage.setItem('locale', locale)
-  // RTL languages: switch document direction so the whole UI mirrors
-  const rtl = RTL_LOCALES.includes(locale)
-  document.documentElement.setAttribute('dir', rtl ? 'rtl' : 'ltr')
+  // 后台是「固定左侧栏 + 右侧内容」布局，整体镜像会让侧栏（菜单链接）翻到右边、
+  // 顶栏内容翻到左边，与其它语言不一致 ✗ → 始终 LTR，只切 lang（字体/断词用）。
+  document.documentElement.setAttribute('dir', 'ltr')
   document.documentElement.setAttribute('lang', locale)
 }
 
@@ -84,10 +84,8 @@ export const availableLocales = [
   { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩' },
 ]
 
-// Languages written right-to-left
+// Languages written right-to-left（仅用于文案层面的标记，后台布局不做镜像）
 export const RTL_LOCALES = ['fa', 'ar']
 
-// Apply direction on initial load
-if (RTL_LOCALES.includes(getDefaultLocale())) {
-  document.documentElement.setAttribute('dir', 'rtl')
-}
+// 后台布局始终 LTR：这里只写 lang 属性（首次加载同样不设 dir=rtl）
+document.documentElement.setAttribute('lang', getDefaultLocale())

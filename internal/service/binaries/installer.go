@@ -21,15 +21,21 @@ import (
 
 // GitHubRelease represents a GitHub release.
 type GitHubRelease struct {
-	TagName    string        `json:"tag_name"`
-	Prerelease bool          `json:"prerelease"`
-	Assets     []GitHubAsset `json:"assets"`
+	TagName     string        `json:"tag_name"`
+	Name        string        `json:"name"`
+	Body        string        `json:"body"`
+	Draft       bool          `json:"draft"`
+	Prerelease  bool          `json:"prerelease"`
+	PublishedAt string        `json:"published_at"`
+	Assets      []GitHubAsset `json:"assets"`
 }
 
 // GitHubAsset represents a release asset.
 type GitHubAsset struct {
 	Name               string `json:"name"`
+	Size               int64  `json:"size"`
 	BrowserDownloadURL string `json:"browser_download_url"`
+	Digest             string `json:"digest"`
 }
 
 // SettingStore provides access to system settings for GitHub acceleration.

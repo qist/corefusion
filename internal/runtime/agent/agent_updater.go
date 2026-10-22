@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +18,12 @@ import (
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
+
+// AgentGitHubRepo 是面板/Agent 二进制的发布仓库。
+// 面板自更新与 Agent 推送共用同一份 Release（产物名见 .github/workflows/release.yml）。
+const AgentGitHubRepo = "qist/corefusion"
 
 // AgentUpdater manages automatic Agent binary updates across remote servers.
 //
@@ -44,10 +52,17 @@ type AgentUpdater struct {
 	// 按平台存储的二进制信息，key = "{os}-{arch}"（如 "linux-amd64"）
 	platformBinaries map[string]*AgentBinaryInfo
 
-	// 手动指定的下载信息（通过 WithVersion 设置，用于 GitHub Release 等外部 URL 场景）
+	// 手动指定的下载信息（通过 WithVersion 设置，用于任意外部 URL 场景）
 	// 当此字段非空时，所有平台使用同一个 URL（由外部托管平台处理 os/arch 路由）
 	manualDownloadURL string
 	manualChecksum    string
+
+	// useGitHub 为 true 时，按目标节点的 os/arch 从 GitHub Release 解析产物
+	// （corefusion-agent-{os}-{arch}）及其 sha256，无需面板本地存二进制。
+	useGitHub bool
+
+	// settingRepo 用于读取 GitHub 加速域名/代理（与面板自更新同一套设置）。
+	settingRepo *repository.SystemSettingRepository
 
 	// 更新任务跟踪
 	pendingUpdates map[int64]*UpdateTask // server_id → task
@@ -66,15 +81,15 @@ type AgentBinaryInfo struct {
 	BinaryPath  string // 本地文件绝对路径
 }
 
-// UpdateTask 跟踪单个服务器的 Agent 更新进度。
+// UpdateTask tracks the update progress of a single server.
 type UpdateTask struct {
-	ServerID    int64
-	FromVersion string
-	ToVersion   string
-	Status      string // pending / downloading / verifying / replacing / restarting / done / failed
-	Error       string
-	StartedAt   time.Time
-	CompletedAt *time.Time
+	ServerID    int64      `json:"server_id"`
+	FromVersion string     `json:"from_version"`
+	ToVersion   string     `json:"to_version"`
+	Status      string     `json:"status"` // pending / downloading / verifying / replacing / restarting / done / failed
+	Error       string     `json:"error"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
 }
 
 // UpdateTaskStatus constants.
@@ -109,6 +124,37 @@ func (u *AgentUpdater) WithVersion(version, downloadURL, checksum string) *Agent
 	u.currentVersion = version
 	u.manualDownloadURL = downloadURL
 	u.manualChecksum = checksum
+	u.useGitHub = false
+	return u
+}
+
+// WithGitHubVersion 设定目标版本，推送时按每个节点的 os/arch 从 GitHub Release
+// 解析 corefusion-agent-{os}-{arch} 与其 sha256（面板无需本地存 Agent 二进制）。
+func (u *AgentUpdater) WithGitHubVersion(version string) *AgentUpdater {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.currentVersion = strings.TrimSpace(version)
+	u.manualDownloadURL = ""
+	u.manualChecksum = ""
+	u.useGitHub = true
+	return u
+}
+
+// WithLocalBinary 使用面板 data/binaries/active/corefusion-agent 下的本地二进制
+// （版本由该目录的 VERSION 文件决定）。
+func (u *AgentUpdater) WithLocalBinary() *AgentUpdater {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.currentVersion = ""
+	u.manualDownloadURL = ""
+	u.manualChecksum = ""
+	u.useGitHub = false
+	return u
+}
+
+// WithSettingRepo 注入系统设置仓库，用于 GitHub 加速域名 / 代理。
+func (u *AgentUpdater) WithSettingRepo(repo *repository.SystemSettingRepository) *AgentUpdater {
+	u.settingRepo = repo
 	return u
 }
 
@@ -167,17 +213,30 @@ func (u *AgentUpdater) GetPendingUpdates() []UpdateTask {
 }
 
 // resolveBinaryForServer 为指定服务器选择对应的二进制信息。
-// 优先使用手动指定的 URL（WithVersion），否则按节点 os/arch 从本地扫描结果中选择。
-func (u *AgentUpdater) resolveBinaryForServer(serverID int64) (version, downloadURL, checksum string, err error) {
+//   - WithGitHubVersion：按节点 os/arch 从 GitHub Release 解析产物与 sha256；
+//   - WithVersion（URL 非空）：直接使用给定 URL；
+//   - WithLocalBinary：按节点 os/arch 从面板本地扫描结果中选择。
+func (u *AgentUpdater) resolveBinaryForServer(ctx context.Context, serverID int64) (version, downloadURL, checksum string, err error) {
 	version = u.currentVersion
-	log.Printf("[AgentUpdater][DEBUG] resolveBinary server=%d currentVersion=%q dataDir=%q platformKeys=%v", serverID, u.currentVersion, u.dataDir, keysOf(u.platformBinaries))
-	if version == "" {
-		return "", "", "", fmt.Errorf("no target version set")
+
+	if u.useGitHub {
+		if version == "" {
+			return "", "", "", fmt.Errorf("no target version set")
+		}
+		osName, arch := u.nodeMgr.GetServerPlatform(serverID)
+		downloadURL, checksum, err = u.resolveGitHubAsset(ctx, version, osName, arch)
+		if err != nil {
+			return "", "", "", err
+		}
+		return version, downloadURL, checksum, nil
 	}
 
-	// 手动指定模式（GitHub Release 等外部 URL）
 	if u.manualDownloadURL != "" {
 		return version, u.manualDownloadURL, u.manualChecksum, nil
+	}
+
+	if version == "" {
+		return "", "", "", fmt.Errorf("no target version set")
 	}
 
 	// 本地扫描模式：按节点平台选择
@@ -202,23 +261,169 @@ func (u *AgentUpdater) resolveBinaryForServer(serverID int64) (version, download
 	return version, info.DownloadURL, info.Checksum, nil
 }
 
+// --- GitHub Release 解析 ---
+
+type agentGitHubAsset struct {
+	Name               string `json:"name"`
+	Size               int64  `json:"size"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Digest             string `json:"digest"`
+}
+
+type agentGitHubRelease struct {
+	TagName     string             `json:"tag_name"`
+	Prerelease  bool               `json:"prerelease"`
+	PublishedAt string             `json:"published_at"`
+	Body        string             `json:"body"`
+	Assets      []agentGitHubAsset `json:"assets"`
+}
+
+// resolveGitHubAsset 在指定 Release 中按节点平台取 Agent 产物与 sha256。
+// 校验和优先用 GitHub API 的 asset digest，其次取同名 .sha256 旁挂文件；
+// 两者都没有则拒绝推送（与 Agent 自更新“无校验不更新”的基线一致）。
+func (u *AgentUpdater) resolveGitHubAsset(ctx context.Context, version, osName, arch string) (downloadURL, checksum string, err error) {
+	assetName := fmt.Sprintf("corefusion-agent-%s-%s", osName, arch)
+	release, err := u.fetchAgentRelease(ctx, version)
+	if err != nil {
+		return "", "", err
+	}
+
+	var checksumURL string
+	for _, a := range release.Assets {
+		switch a.Name {
+		case assetName:
+			downloadURL = a.BrowserDownloadURL
+			checksum = normalizeChecksum(a.Digest)
+		case assetName + ".sha256":
+			checksumURL = a.BrowserDownloadURL
+		}
+	}
+	if downloadURL == "" {
+		return "", "", fmt.Errorf("release %s has no asset %s", version, assetName)
+	}
+	if checksum == "" && checksumURL != "" {
+		if checksum, err = u.fetchChecksumFile(ctx, checksumURL); err != nil {
+			return "", "", err
+		}
+	}
+	if checksum == "" {
+		return "", "", fmt.Errorf("release %s asset %s has no sha256 checksum", version, assetName)
+	}
+	return downloadURL, checksum, nil
+}
+
+func (u *AgentUpdater) fetchAgentRelease(ctx context.Context, version string) (*agentGitHubRelease, error) {
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s",
+		AgentGitHubRepo, url.PathEscape(version))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := u.gitHubClient(ctx).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("github api: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("github api %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var release agentGitHubRelease
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&release); err != nil {
+		return nil, fmt.Errorf("decode github response: %w", err)
+	}
+	return &release, nil
+}
+
+func (u *AgentUpdater) fetchChecksumFile(ctx context.Context, checksumURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := u.gitHubClient(ctx).Do(req)
+	if err != nil {
+		return "", fmt.Errorf("fetch checksum: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch checksum: HTTP %d", resp.StatusCode)
+	}
+	body, err := netutil.ReadLimited(resp.Body, netutil.MaxChecksumBytes)
+	if err != nil {
+		return "", fmt.Errorf("read checksum: %w", err)
+	}
+	for _, field := range strings.Fields(string(body)) {
+		if c := normalizeChecksum(field); c != "" {
+			return c, nil
+		}
+	}
+	return "", fmt.Errorf("checksum file has no sha256: %s", checksumURL)
+}
+
+// gitHubClient 读取面板的 GitHub 加速域名/代理设置，构造 GitHub 专用客户端。
+func (u *AgentUpdater) gitHubClient(ctx context.Context) *http.Client {
+	accel, proxy := u.gitHubSettings(ctx)
+	return netutil.GitHubHTTPClientWithProxy(30*time.Second, accel, proxy)
+}
+
+func (u *AgentUpdater) gitHubSettings(ctx context.Context) (accel, proxy string) {
+	if u.settingRepo == nil {
+		return "", ""
+	}
+	val, err := u.settingRepo.GetByKey(ctx, "github.acceleration")
+	if err != nil || val == "" {
+		return "", ""
+	}
+	var cfg struct {
+		Enabled bool `json:"enabled"`
+		Domains []struct {
+			URL     string `json:"url"`
+			Enabled bool   `json:"enabled"`
+		} `json:"domains"`
+		ProxyURL string `json:"proxy_url"`
+	}
+	if json.Unmarshal([]byte(val), &cfg) != nil {
+		return "", ""
+	}
+	proxy = cfg.ProxyURL
+	if !cfg.Enabled {
+		return "", proxy
+	}
+	for _, d := range cfg.Domains {
+		if d.Enabled && d.URL != "" {
+			return d.URL, proxy
+		}
+	}
+	return "", proxy
+}
+
 // UpdateServer triggers an Agent update on a specific server.
 // The update command is sent via the PanelCommand stream.
 // If no target version/URL is set, it auto-scans the panel's local Agent binary.
 func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 	u.mu.Lock()
 
-	// Auto-scan local binaries if no version is configured
-	if u.currentVersion == "" {
+	switch {
+	case u.useGitHub:
+		if u.currentVersion == "" {
+			u.mu.Unlock()
+			return fmt.Errorf("no target version set")
+		}
+	case u.manualDownloadURL == "":
+		// 面板本地二进制模式：每次推送重新扫描，保证用的是面板上最新的 Agent 二进制
+		// （以前只在 currentVersion 为空时扫描，换二进制后必须重启面板才生效）。
 		if u.dataDir == "" {
 			u.mu.Unlock()
 			return fmt.Errorf("no target version set and no dataDir for auto-scan")
 		}
 		if err := u.scanLocalAgentBinaries(); err != nil {
 			u.mu.Unlock()
-			return fmt.Errorf("no target version and cannot scan local binary: %w", err)
+			return fmt.Errorf("cannot scan local agent binary: %w", err)
 		}
-		log.Printf("[AgentUpdater] auto-scanned local binaries: version=%s, platforms=%d", u.currentVersion, len(u.platformBinaries))
+		log.Printf("[AgentUpdater] scanned local binaries: version=%s, platforms=%d", u.currentVersion, len(u.platformBinaries))
 	}
 
 	if u.currentVersion == "" {
@@ -261,7 +466,7 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 	}
 
 	// Resolve the correct binary for this server's platform
-	version, downloadURL, checksum, err := u.resolveBinaryForServer(serverID)
+	version, downloadURL, checksum, err := u.resolveBinaryForServer(ctx, serverID)
 	if err != nil {
 		u.mu.Unlock()
 		return fmt.Errorf("server %d: %w", serverID, err)
@@ -308,22 +513,26 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 
 // UpdateAllServers triggers Agent updates on all eligible remote servers.
 // Updates are sent concurrently up to maxConcurrency.
-// If no target version is set, auto-scans the panel's local Agent binary.
+// GitHub 模式必须显式给出目标版本；本地二进制模式每次都会重新扫描，
+// 面板上没有可用二进制时直接报错（由前端引导改走 GitHub 版本）。
 func (u *AgentUpdater) UpdateAllServers(ctx context.Context) error {
-	// Auto-scan local binaries if no version is configured
-	if u.currentVersion == "" && u.dataDir != "" {
-		u.mu.Lock()
+	u.mu.Lock()
+	if u.currentVersion == "" && !u.useGitHub {
+		if u.dataDir == "" {
+			u.mu.Unlock()
+			return fmt.Errorf("面板本地未配置 Agent 二进制，请从 GitHub 选择版本推送")
+		}
 		if err := u.scanLocalAgentBinaries(); err != nil {
 			u.mu.Unlock()
-			return fmt.Errorf("no target version and cannot scan local binary: %w", err)
+			return fmt.Errorf("面板本地未配置可用的 Agent 二进制（%v），请从 GitHub 选择版本推送", err)
 		}
-		log.Printf("[AgentUpdater] auto-scanned local binaries: version=%s, platforms=%d", u.currentVersion, len(u.platformBinaries))
-		u.mu.Unlock()
+		log.Printf("[AgentUpdater] scanned local binaries: version=%s, platforms=%d", u.currentVersion, len(u.platformBinaries))
 	}
-
 	if u.currentVersion == "" {
+		u.mu.Unlock()
 		return fmt.Errorf("no target version set")
 	}
+	u.mu.Unlock()
 
 	servers, err := u.serverRepo.ListAll(ctx)
 	if err != nil {

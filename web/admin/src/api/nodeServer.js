@@ -209,8 +209,8 @@ export function updateAgent(id, data) {
   return client.post(`/node-servers/${id}/update-agent`, data)
 }
 
-export function updateAllAgents() {
-  return client.post('/node-servers/update-all-agents')
+export function updateAllAgents(data = {}) {
+  return client.post('/node-servers/update-all-agents', data)
 }
 
 export function getPendingAgentUpdates() {
@@ -218,7 +218,8 @@ export function getPendingAgentUpdates() {
 }
 
 export function getAgentVersion() {
-  return client.get('/agent/version')
+  // 404 = 面板本地没有 Agent 二进制，属正常状态，不弹错误提示
+  return client.get('/agent/version', { suppressErrorMessage: true })
 }
 
 export function getAgentReleases(limit = 20) {

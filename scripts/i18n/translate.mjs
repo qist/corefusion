@@ -229,6 +229,11 @@ async function llmTranslateBatch(items, target, cfg) {
     const m = raw.match(/\[[\s\S]*\]/)
     if (m) { try { arr = JSON.parse(m[0]) } catch {} }
   }
+  // 单条翻译时模型可能直接返回裸字符串（如 "월"），这不算错误
+  if (!Array.isArray(arr) && items.length === 1 && typeof arr === 'string') arr = [arr]
+  if (!Array.isArray(arr) && items.length === 1 && typeof raw === 'string' && !raw.startsWith('[')) {
+    arr = [raw]
+  }
   if (!Array.isArray(arr)) throw new Error(`响应不是 JSON 数组: ${raw.slice(0, 120)}`)
   if (arr.length !== items.length) throw new Error(`长度不匹配: 期望 ${items.length}，实得 ${arr.length}`)
 

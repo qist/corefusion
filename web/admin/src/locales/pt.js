@@ -2202,7 +2202,7 @@ export default {
     "wafGlobalRules": "Regras globais do WAF",
     "wafSourceURL": "Endereço de origem",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL base dos arquivos de regras (URL raw do GitHub ou servidor HTTP(S) personalizado). Se a URL de um arquivo na tabela abaixo estiver vazia, o download será feito a partir deste endereço + /{文件名}. Se uma URL completa for informada, o download será feito diretamente dessa URL.",
+    "wafSourceUrlDesc": "URL base dos arquivos de regras (URL raw do GitHub ou servidor HTTP(S) personalizado). Se a URL de algum arquivo estiver vazia na tabela abaixo, o download será feito a partir deste endereço + /{nome do arquivo}. Se uma URL completa for informada, o download será feito diretamente dessa URL.",
     "wafSyncFiles": "Sincronizar arquivos",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (deixe em branco para usar a lista padrão)",
     "wafSyncFilesDesc": "Marque os arquivos de regras que deseja sincronizar. Para cada arquivo, você pode informar o endereço completo de download (URL); se ficar vazio, será usado o endereço de origem acima.",
@@ -3146,7 +3146,7 @@ export default {
   },
   "chainProxy": {
     "editModeHint": "Modo de edição: permite alterar o «inbound de saída» e a prioridade/peso/ordem/tag do outbound; para trocar o nó de saída, exclua e recrie.",
-    "exitTagPlaceholder": "Deixe em branco para gerar automaticamente chain-<inbound de entrada>-<saída>",
+    "exitTagPlaceholder": "Deixe vazio para gerar automaticamente chain-<ID do inbound de entrada>-<ID de saída>",
     "legacyRelayInbound": "Modo antigo: inbound relay criado automaticamente",
     "exitNode": "Nó de saída",
     "priorityHint": "Quanto menor o número da prioridade, maior ela é (1 é a mais alta); vários outbounds com a mesma prioridade usam balanceamento de carga.",

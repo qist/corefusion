@@ -465,7 +465,7 @@
   "traffic_history.empty": "아직 트래픽 기록이 없습니다",
   "traffic_history.error": "로드하지 못했습니다. 다시 시도해 주세요",
   "traffic_history.loading": "불러오는 중…",
-  "traffic_history.period": "Month",
+  "traffic_history.period": "월",
   "traffic_history.title": "트래픽 기록",
   "traffic_history.total": "총계",
   "traffic_history.upload": "업로드",

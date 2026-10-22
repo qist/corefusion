@@ -2202,7 +2202,7 @@ export default {
     "wafGlobalRules": "WAF genel kuralları",
     "wafSourceURL": "Kaynak adresi",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "Kural dosyaları için temel URL (GitHub ham URL'si veya özel HTTP(S) sunucusu). Aşağıdaki tabloda bir dosyanın URL'si boşsa, bu adres + /{文件名} üzerinden indirilir. Tam URL girilmişse doğrudan o URL'den indirilir.",
+    "wafSourceUrlDesc": "Kural dosyaları için temel URL (GitHub raw URL veya özel HTTP(S) sunucusu). Aşağıdaki tabloda bir dosyanın URL'si boşsa, bu adres + /{dosya adı} üzerinden indirilir. Tam URL girilmişse, doğrudan o URL'den indirilir.",
     "wafSyncFiles": "Dosyaları senkronize et",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (boş bırakılırsa varsayılan liste kullanılır)",
     "wafSyncFilesDesc": "Senkronize edilecek kural dosyalarını seçin. Her dosya için tam indirme adresi girilebilir (URL boşsa yukarıdaki kaynak adresi + /dosya adı kullanılır).",
@@ -3146,7 +3146,7 @@ export default {
   },
   "chainProxy": {
     "editModeHint": "Düzenleme modu: “Çıkış geleni”, öncelik/ağırlık/sıra ve giden tag değiştirilebilir; çıkış düğümünü değiştirmek için silip yeniden oluşturun.",
-    "exitTagPlaceholder": "Boş bırakılırsa chain-<giriş geleni>-<çıkış> otomatik oluşturulur",
+    "exitTagPlaceholder": "Boş bırakılırsa chain-<giriş inbound ID>-<çıkış ID> biçiminde otomatik oluşturulur",
     "legacyRelayInbound": "Eski mod: otomatik oluşturulan relay geleni",
     "exitNode": "Çıkış düğümü",
     "priorityHint": "Öncelik numarası küçüldükçe öncelik artar (1 en yüksek); aynı öncelikteki birden fazla çıkış yük dengelemesiyle yönlendirilir.",

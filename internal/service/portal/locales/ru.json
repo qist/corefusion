@@ -208,7 +208,7 @@
   "node.protocol": "Протокол",
   "node.qr_code": "QR-код узла",
   "node.region": "Регион",
-  "node.share_link": "Ссылка для分享",
+  "node.share_link": "Поделиться ссылкой",
   "node.tier": "Уровень",
   "node.title": "Список узлов",
   "order.amount_due": "Сумма к оплате",

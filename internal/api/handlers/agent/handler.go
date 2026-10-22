@@ -202,8 +202,30 @@ func stripPort(hostPort string) string {
 // Agent Version & Releases API
 // ============================================================
 
-// AgentGitHubRepo is the GitHub repository for Agent releases.
-const AgentGitHubRepo = "corefusion/agent"
+// AgentGitHubRepo 是 Agent 与面板共用的发布仓库。
+// 产物命名见 .github/workflows/release.yml：corefusion-agent-{os}-{arch}（附同名 .sha256）。
+const AgentGitHubRepo = agent.AgentGitHubRepo
+
+// agentReleaseAsset 是版本列表中的单个 Agent 产物。
+type agentReleaseAsset struct {
+	Name        string `json:"name"`
+	OS          string `json:"os,omitempty"`
+	Arch        string `json:"arch,omitempty"`
+	Size        int64  `json:"size"`
+	DownloadURL string `json:"download_url"`
+	ChecksumURL string `json:"checksum_url,omitempty"`
+	Checksum    string `json:"checksum,omitempty"`
+}
+
+// agentRelease 是 Agent 版本列表中的一项。
+type agentRelease struct {
+	Version     string              `json:"version"`
+	Name        string              `json:"name"`
+	Prerelease  bool                `json:"prerelease"`
+	PublishedAt string              `json:"published_at"`
+	Notes       string              `json:"notes"`
+	Assets      []agentReleaseAsset `json:"assets"`
+}
 
 // GetAgentVersion returns the panel's locally stored Agent binary version info.
 // GET /api/v1/agent/version
@@ -277,8 +299,10 @@ func (h *Handler) GetAgentReleases(c *gin.Context) {
 	if resp.StatusCode == 404 {
 		// Repository has no releases yet — return empty list
 		response.OK(c, gin.H{
-			"releases": []interface{}{},
-			"source":   "github",
+			"releases":       []interface{}{},
+			"latest_version": "",
+			"repo":           AgentGitHubRepo,
+			"source":         "github",
 		})
 		return
 	}
@@ -293,31 +317,87 @@ func (h *Handler) GetAgentReleases(c *gin.Context) {
 		return
 	}
 
-	// Filter for Agent binary assets
-	result := make([]map[string]interface{}, 0, len(ghReleases))
+	// 只保留含 Agent 产物的版本；每个产物带上 os/arch 与 sha256（digest 或 .sha256 地址）。
+	result := make([]agentRelease, 0, len(ghReleases))
+	latest := ""
 	for _, r := range ghReleases {
-		assets := make([]map[string]interface{}, 0)
+		if r.Draft {
+			continue
+		}
+		item := agentRelease{
+			Version:     r.TagName,
+			Name:        r.Name,
+			Prerelease:  r.Prerelease,
+			PublishedAt: r.PublishedAt,
+			Notes:       r.Body,
+		}
+		checksumURLs := make(map[string]string, len(r.Assets))
 		for _, a := range r.Assets {
-			if strings.HasPrefix(a.Name, "corefusion-agent-") {
-				assets = append(assets, map[string]interface{}{
-					"name":         a.Name,
-					"download_url": a.BrowserDownloadURL,
-				})
+			if strings.HasSuffix(a.Name, ".sha256") {
+				checksumURLs[strings.TrimSuffix(a.Name, ".sha256")] = a.BrowserDownloadURL
 			}
 		}
-		if len(assets) > 0 {
-			result = append(result, map[string]interface{}{
-				"version":    r.TagName,
-				"prerelease": r.Prerelease,
-				"assets":     assets,
+		for _, a := range r.Assets {
+			if !strings.HasPrefix(a.Name, "corefusion-agent-") || strings.HasSuffix(a.Name, ".sha256") {
+				continue
+			}
+			osName, arch, ok := parseAgentAssetName(a.Name)
+			if !ok {
+				continue
+			}
+			item.Assets = append(item.Assets, agentReleaseAsset{
+				Name:        a.Name,
+				OS:          osName,
+				Arch:        arch,
+				Size:        a.Size,
+				DownloadURL: a.BrowserDownloadURL,
+				ChecksumURL: checksumURLs[a.Name],
+				Checksum:    normalizeSHA256(a.Digest),
 			})
+		}
+		if latest == "" {
+			latest = r.TagName
+		}
+		if len(item.Assets) > 0 {
+			result = append(result, item)
 		}
 	}
 
 	response.OK(c, gin.H{
-		"releases": result,
-		"source":   "github",
+		"releases":       result,
+		"latest_version": latest,
+		"repo":           AgentGitHubRepo,
+		"source":         "github",
 	})
+}
+
+// parseAgentAssetName 从 corefusion-agent-{os}-{arch} 解析出平台。
+func parseAgentAssetName(name string) (osName, arch string, ok bool) {
+	rest, found := strings.CutPrefix(name, "corefusion-agent-")
+	if !found {
+		return "", "", false
+	}
+	idx := strings.LastIndex(rest, "-")
+	if idx <= 0 || idx == len(rest)-1 {
+		return "", "", false
+	}
+	return rest[:idx], rest[idx+1:], true
+}
+
+// normalizeSHA256 归一化 "sha256:xxx" / 纯 hash 形式的校验和。
+func normalizeSHA256(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(strings.ToLower(s), "sha256:")
+	s = strings.TrimSpace(s)
+	if len(s) != 64 {
+		return ""
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return ""
+		}
+	}
+	return s
 }
 
 // FetchAgentChecksum attempts to download a .sha256 checksum file for the

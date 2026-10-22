@@ -65,7 +65,7 @@
               <span style="color:#909399;font-size:13px">{{ t('nodeServer.currentAgentVersion') }}: </span>
               <el-tag size="small" type="info">{{ server.agent_version || 'unknown' }}</el-tag>
             </div>
-            <div v-if="panelAgentVersion">
+            <div v-if="hasLocalAgent">
               <span style="color:#909399;font-size:13px">{{ t('nodeServer.panelLocalVersion') }}: </span>
               <el-tag size="small" :type="server.agent_version === panelAgentVersion.version ? 'success' : 'warning'">
                 {{ panelAgentVersion.version }}
@@ -88,7 +88,9 @@
           </div>
 
           <template v-if="githubReleases.length > 0 || releasesLoading">
-          <el-divider content-position="center">{{ t('nodeServer.orFromGitHub') }}</el-divider>
+          <el-divider content-position="center">
+            {{ hasLocalAgent ? t('nodeServer.orFromGitHub') : t('nodeServer.updateFromGithub') }}
+          </el-divider>
 
           <!-- GitHub Releases -->
           <div v-loading="releasesLoading">
@@ -107,17 +109,17 @@
 
             <div v-if="selectedRelease" style="margin-bottom:12px">
               <div style="font-size:13px;color:#909399;margin-bottom:4px">{{ t('nodeServer.availableAssets') }}</div>
-              <el-select v-model="selectedAsset" :placeholder="t('nodeServer.selectAsset')" size="small" style="width:100%">
-                <el-option
-                  v-for="asset in selectedReleaseAssets" :key="asset.name"
-                  :label="asset.name" :value="asset.download_url"
-                />
-              </el-select>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">
+                <el-tag v-for="asset in selectedReleaseAssets" :key="asset.name" size="small" type="info">
+                  {{ asset.os }}/{{ asset.arch }}
+                </el-tag>
+              </div>
+              <div style="font-size:11px;color:#999">{{ t('nodeServer.githubAssetAutoHint') }}</div>
             </div>
 
             <el-button
               size="small" type="primary"
-              :disabled="!selectedAsset || updating"
+              :disabled="!selectedRelease || updating"
               :loading="updating"
               @click="pushUpdateFromGitHub"
             >
@@ -406,8 +408,13 @@ const panelVersionLoading = ref(false)
 const githubReleases = ref([])
 const releasesLoading = ref(false)
 const selectedRelease = ref('')
-const selectedAsset = ref('')
 const updating = ref(false)
+
+// 面板本地「有二进制且有版本号」才允许走本地推送；VERSION 缺失时后端返回 unknown。
+const hasLocalAgent = computed(() => {
+  const v = panelAgentVersion.value?.version
+  return !!v && v !== 'unknown'
+})
 const updateTask = ref(null)
 let pollTimer = null
 
@@ -569,13 +576,14 @@ async function loadGithubReleases() {
 }
 
 async function pushUpdateFromPanel() {
-  if (!panelAgentVersion.value) return
+  if (!hasLocalAgent.value) return
   updating.value = true
   try {
     await updateAgent(serverId, {
       version: panelAgentVersion.value.version,
       download_url: '',
       checksum: '',
+      source: 'panel',
     })
     ElMessage.success('Update pushed')
     startPolling()
@@ -587,13 +595,14 @@ async function pushUpdateFromPanel() {
 }
 
 async function pushUpdateFromGitHub() {
-  if (!selectedAsset.value || !selectedRelease.value) return
+  if (!selectedRelease.value) return
   updating.value = true
   try {
     await updateAgent(serverId, {
       version: selectedRelease.value,
-      download_url: selectedAsset.value,
+      download_url: '',
       checksum: '',
+      source: 'github',
     })
     ElMessage.success('Update pushed')
     startPolling()
@@ -609,7 +618,7 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     try {
       const data = await getPendingAgentUpdates()
-      const tasks = data?.updates || []
+      const tasks = Array.isArray(data) ? data : (data?.updates || [])
       const task = tasks.find(t => t.server_id === serverId)
       if (task) {
         updateTask.value = task

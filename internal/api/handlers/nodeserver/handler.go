@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -803,7 +804,10 @@ func (h *Handler) SelectNodesForSubscription(c *gin.Context) {
 }
 
 // UpdateAgent triggers an Agent update on a specific server.
-// If download_url is empty, the panel auto-scans its local Agent binary.
+// If source=github and download_url is empty, the panel resolves the release
+// asset for the node's os/arch from GitHub automatically.
+// If download_url is empty and source is not github, the panel auto-scans its
+// local Agent binary.
 // If checksum is empty and download_url is a GitHub URL, the checksum is
 // auto-fetched from the GitHub Release's .sha256 file.
 func (h *Handler) UpdateAgent(c *gin.Context) {
@@ -816,6 +820,7 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		Version     string `json:"version"`
 		DownloadURL string `json:"download_url"`
 		Checksum    string `json:"checksum"`
+		Source      string `json:"source"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_BODY", err.Error())
@@ -827,24 +832,42 @@ func (h *Handler) UpdateAgent(c *gin.Context) {
 		req.Checksum = h.fetchAgentChecksum(req.DownloadURL)
 	}
 
-	if err := h.svc.UpdateAgent(c.Request.Context(), id, req.Version, req.DownloadURL, req.Checksum); err != nil {
+	if err := h.svc.UpdateAgent(c.Request.Context(), id, req.Version, req.DownloadURL, req.Checksum, req.Source); err != nil {
 		h.auditLog(c, id, "update_agent", fmt.Sprintf("version: %s", req.Version), false, err.Error())
 		response.InternalError(c, "AGENT_UPDATE_FAILED", err.Error())
 		return
 	}
-	h.auditLog(c, id, "update_agent", fmt.Sprintf("triggered agent update, version: %s", req.Version), true, "")
+	h.auditLog(c, id, "update_agent", fmt.Sprintf("triggered agent update, version: %s, source: %s", req.Version, req.Source), true, "")
 	response.OK(c, gin.H{"updating": true, "server_id": id})
 }
 
 // UpdateAllAgents triggers Agent updates on all eligible remote servers.
+// body（可选）：{"version": "vX", "source": "github|panel", "download_url": ""}。
+// source=github 时按每个节点的 os/arch 从 GitHub Release 选产物；
+// 其余情况使用面板本地 data/binaries/active/corefusion-agent 下的二进制。
 func (h *Handler) UpdateAllAgents(c *gin.Context) {
-	if err := h.svc.UpdateAllAgents(c.Request.Context()); err != nil {
-		h.auditLog(c, 0, "update_all_agents", "", false, err.Error())
+	var req struct {
+		Version     string `json:"version"`
+		DownloadURL string `json:"download_url"`
+		Checksum    string `json:"checksum"`
+		Source      string `json:"source"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "INVALID_BODY", err.Error())
+		return
+	}
+
+	if err := h.svc.UpdateAllAgents(c.Request.Context(), req.Version, req.DownloadURL, req.Checksum, req.Source); err != nil {
+		h.auditLog(c, 0, "update_all_agents", fmt.Sprintf("version: %s, source: %s", req.Version, req.Source), false, err.Error())
 		response.InternalError(c, "AGENT_UPDATE_ALL_FAILED", err.Error())
 		return
 	}
-	h.auditLog(c, 0, "update_all_agents", "triggered agent update on all servers", true, "")
-	response.OK(c, gin.H{"triggered": true})
+	h.auditLog(c, 0, "update_all_agents", fmt.Sprintf("triggered agent update on all servers, version: %s, source: %s", req.Version, req.Source), true, "")
+	response.OK(c, gin.H{
+		"triggered": true,
+		"version":   req.Version,
+		"source":    req.Source,
+	})
 }
 
 // GetPendingAgentUpdates returns all pending Agent update tasks.

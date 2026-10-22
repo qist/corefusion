@@ -1094,18 +1094,50 @@ func (s *Service) SelectNodesForSubscription(ctx context.Context, userRegion str
 }
 
 // UpdateAgent triggers an Agent update on a specific server.
-func (s *Service) UpdateAgent(ctx context.Context, serverID int64, version, downloadURL, checksum string) error {
+//   - downloadURL 非空：直接使用该地址（显式指定，version 必填）；
+//   - source == "github"：按 version 从 GitHub Release 解析该节点平台的产物与 sha256；
+//   - 其它：使用面板本地 data/binaries/active/corefusion-agent 下的二进制。
+func (s *Service) UpdateAgent(ctx context.Context, serverID int64, version, downloadURL, checksum, source string) error {
 	if s.agentUpdater == nil {
 		return fmt.Errorf("agent updater not initialized")
 	}
-	s.agentUpdater.WithVersion(version, downloadURL, checksum)
+	if err := s.applyUpdateSource(version, downloadURL, checksum, source); err != nil {
+		return err
+	}
 	return s.agentUpdater.UpdateServer(ctx, serverID)
 }
 
+// applyUpdateSource 解析推送来源并设置 updater 的目标版本：
+//   - downloadURL 非空：直接用该地址（version 必填）；
+//   - source == "github"：按节点平台从 GitHub Release 解析产物；
+//   - 其它：用面板本地 Agent 二进制（本地未配置则报错，由调用方决定回退）。
+func (s *Service) applyUpdateSource(version, downloadURL, checksum, source string) error {
+	switch {
+	case strings.TrimSpace(downloadURL) != "":
+		if strings.TrimSpace(version) == "" {
+			return fmt.Errorf("version is required when download_url is provided")
+		}
+		s.agentUpdater.WithVersion(version, downloadURL, checksum)
+	case source == "github":
+		if strings.TrimSpace(version) == "" {
+			return fmt.Errorf("version is required for github source")
+		}
+		s.agentUpdater.WithGitHubVersion(version)
+	default:
+		s.agentUpdater.WithLocalBinary()
+	}
+	return nil
+}
+
 // UpdateAllAgents triggers Agent updates on all eligible remote servers.
-func (s *Service) UpdateAllAgents(ctx context.Context) error {
+// 参数语义与 UpdateAgent 一致：本地未配置 Agent 二进制时不会静默推送，
+// 而是返回错误，提示调用方改从 GitHub 选择版本。
+func (s *Service) UpdateAllAgents(ctx context.Context, version, downloadURL, checksum, source string) error {
 	if s.agentUpdater == nil {
 		return fmt.Errorf("agent updater not initialized")
+	}
+	if err := s.applyUpdateSource(version, downloadURL, checksum, source); err != nil {
+		return err
 	}
 	return s.agentUpdater.UpdateAllServers(ctx)
 }

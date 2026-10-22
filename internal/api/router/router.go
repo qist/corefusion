@@ -2236,7 +2236,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 				go speedTestMgr.RunLoop(context.Background())
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
-				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir)
+				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir).WithSettingRepo(systemSettingRepo)
 
 				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)

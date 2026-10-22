@@ -103,6 +103,80 @@
             </el-form-item>
           </el-form>
         </el-card>
+
+        <!-- Panel self-update -->
+        <el-card v-if="$can('super_admin')" shadow="never" style="margin-top:16px">
+          <template #header>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-weight:600">{{ t('settings.panelUpdate.title') }}</span>
+              <el-button size="small" :loading="panelReleasesLoading" @click="loadPanelUpdates">{{ t('common.refresh') }}</el-button>
+            </div>
+          </template>
+
+          <div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+            <div>
+              <span style="color:#909399;font-size:13px">{{ t('settings.panelUpdate.currentVersion') }}: </span>
+              <el-tag size="small" type="info">{{ panelReleases.current_version || '-' }}</el-tag>
+            </div>
+            <div v-if="panelLatestVersion">
+              <span style="color:#909399;font-size:13px">{{ t('settings.panelUpdate.latestVersion') }}: </span>
+              <el-tag size="small" :type="panelReleases.update_available ? 'warning' : 'success'">{{ panelLatestVersion }}</el-tag>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <el-select v-model="panelTargetVersion" :placeholder="t('settings.panelUpdate.selectVersion')" size="small" style="width:280px">
+              <el-option
+                v-for="rel in panelReleases.releases || []" :key="rel.version"
+                :value="rel.version" :disabled="!rel.asset"
+              >
+                <span>{{ rel.version }}</span>
+                <el-tag v-if="rel.prerelease" size="small" type="warning" style="margin-left:6px">pre</el-tag>
+                <span v-if="!rel.asset" style="color:#c0c4cc;font-size:12px;margin-left:6px">{{ t('settings.panelUpdate.noAsset') }}</span>
+              </el-option>
+            </el-select>
+            <el-button type="primary" size="small" :loading="panelUpdating" :disabled="!panelTargetVersion || panelUpdating" @click="startPanelUpdate">
+              {{ t('settings.panelUpdate.update') }}
+            </el-button>
+            <el-button size="small" :loading="panelRollbacking" :disabled="!panelReleases.rollback?.available || panelUpdating" @click="startPanelRollback">
+              {{ t('settings.panelUpdate.rollback') }}
+            </el-button>
+          </div>
+
+          <div v-if="panelReleases.rollback?.available" style="font-size:11px;color:#999;margin-top:6px">
+            {{ t('settings.panelUpdate.rollbackHint', { version: panelReleases.rollback.version || '-', time: formatPanelTime(panelReleases.rollback.created_at) }) }}
+          </div>
+          <el-alert type="warning" :closable="false" style="margin-top:12px" :title="t('settings.panelUpdate.restartHint')" />
+
+          <div v-if="panelCurrentJob" style="margin-top:12px;padding:10px 12px;background:#f5f7fa;border-radius:4px">
+            <span style="font-size:13px">{{ t('settings.panelUpdate.jobStatus') }}: </span>
+            <el-tag size="small" :type="panelJobTag(panelCurrentJob.status)">{{ panelCurrentJob.status }}</el-tag>
+            <span style="font-size:12px;color:#909399;margin-left:8px">
+              {{ panelCurrentJob.from_version }} → {{ panelCurrentJob.to_version }}
+              <span v-if="panelCurrentJob.phase">({{ panelCurrentJob.phase }})</span>
+            </span>
+            <div v-if="panelCurrentJob.error_message" style="color:#f56c6c;font-size:12px;margin-top:4px">{{ panelCurrentJob.error_message }}</div>
+          </div>
+
+          <el-divider content-position="left">{{ t('settings.panelUpdate.history') }}</el-divider>
+          <el-table v-if="panelJobs.length" :data="panelJobs" size="small" stripe>
+            <el-table-column prop="id" label="ID" width="60" />
+            <el-table-column :label="t('settings.panelUpdate.action')" width="90">
+              <template #default="{ row }">
+                {{ row.action === 'rollback' ? t('settings.panelUpdate.rollbackAction') : t('settings.panelUpdate.updateAction') }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="Status" width="100" />
+            <el-table-column :label="t('settings.panelUpdate.time')" min-width="170">
+              <template #default="{ row }">{{ formatPanelTime(row.finished_at || row.started_at || row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column label="Version" min-width="200">
+              <template #default="{ row }">{{ row.from_version || '-' }} → {{ row.to_version || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="error_message" label="Error" min-width="200" show-overflow-tooltip />
+          </el-table>
+          <el-text v-else type="info" size="small">{{ t('settings.panelUpdate.noJobs') }}</el-text>
+        </el-card>
       </el-tab-pane>
 
       <!-- Notification Config -->
@@ -1083,7 +1157,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
@@ -1164,6 +1238,17 @@ const regeneratingJwt = ref(false)
 // OAuth config
 const oauthForm = ref({ callback_domain: '', github_enabled: false, github_client_id: '', github_client_secret: '', google_enabled: false, google_client_id: '', google_client_secret: '' })
 const oauthSaving = ref(false)
+
+// Panel self-update
+const panelReleases = ref({ releases: [], rollback: {} })
+const panelReleasesLoading = ref(false)
+const panelTargetVersion = ref('')
+const panelUpdating = ref(false)
+const panelRollbacking = ref(false)
+const panelJobs = ref([])
+const panelCurrentJob = ref(null)
+const panelLatestVersion = computed(() => panelReleases.value.latest_version || '')
+let panelUpdatePollTimer = null
 
 // Database config
 const dbForm = ref({ type: 'sqlite', dsn: '', max_open_conns: 100, max_idle_conns: 10, current_type: 'sqlite', effective_dsn: '', restart_needed: false })
@@ -1450,6 +1535,104 @@ async function handleRestart() {
   try { await client.post('/system/restart'); ElMessage.success(t('settings.restart.restarting')); setTimeout(() => { window.location.reload() }, 3000) }
   catch (e) { setTimeout(() => { window.location.reload() }, 2000) }
   finally { restarting.value = false }
+}
+
+// ── Panel self-update ──
+function formatPanelTime(v) {
+  if (!v) return '-'
+  const d = new Date(v)
+  return isNaN(d.getTime()) ? v : d.toLocaleString()
+}
+
+function panelJobTag(status) {
+  return { success: 'success', failed: 'danger', running: 'warning', pending: 'info' }[status] || 'info'
+}
+
+async function loadPanelUpdates() {
+  panelReleasesLoading.value = true
+  try {
+    const data = await client.get('/system/releases', { params: { limit: 30 } })
+    panelReleases.value = data || { releases: [], rollback: {} }
+    if (!panelTargetVersion.value && panelReleases.value.latest_version) {
+      panelTargetVersion.value = panelReleases.value.latest_version
+    }
+    await refreshPanelJobs()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    panelReleasesLoading.value = false
+  }
+}
+
+async function refreshPanelJobs() {
+  const data = await client.get('/system/update-jobs', { params: { limit: 10, offset: 0 } })
+  panelJobs.value = data?.items || []
+  panelCurrentJob.value = panelJobs.value.find(j => j.status === 'pending' || j.status === 'running') || null
+  if (panelCurrentJob.value) startPanelUpdatePolling()
+}
+
+function startPanelUpdatePolling() {
+  if (panelUpdatePollTimer) return
+  panelUpdatePollTimer = setInterval(async () => {
+    try {
+      await refreshPanelJobs()
+      if (!panelCurrentJob.value) {
+        stopPanelUpdatePolling()
+        loadPanelUpdates()
+      }
+    } catch {
+      // 面板重启期间请求会失败，继续轮询
+    }
+  }, 3000)
+}
+
+function stopPanelUpdatePolling() {
+  if (panelUpdatePollTimer) {
+    clearInterval(panelUpdatePollTimer)
+    panelUpdatePollTimer = null
+  }
+}
+
+async function startPanelUpdate() {
+  if (!panelTargetVersion.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('settings.panelUpdate.updateConfirm', { version: panelTargetVersion.value }),
+      t('settings.panelUpdate.title'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  panelUpdating.value = true
+  try {
+    await client.post('/system/update', { version: panelTargetVersion.value })
+    ElMessage.success(t('settings.panelUpdate.started'))
+    startPanelUpdatePolling()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    panelUpdating.value = false
+  }
+}
+
+async function startPanelRollback() {
+  const info = panelReleases.value.rollback || {}
+  try {
+    await ElMessageBox.confirm(
+      t('settings.panelUpdate.rollbackConfirm', { version: info.version || '-' }),
+      t('settings.panelUpdate.title'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  panelRollbacking.value = true
+  try {
+    await client.post('/system/rollback')
+    ElMessage.success(t('settings.panelUpdate.rollbackStarted'))
+    startPanelUpdatePolling()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    panelRollbacking.value = false
+  }
 }
 
 // Backup functions
@@ -1945,7 +2128,8 @@ const remoteRestoreCardFields = computed(() => [
   { label: 'Size', text: row => formatSize(row.size) },
 ])
 
-onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchIPBlacklist(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchIPBlacklist(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus(); loadPanelUpdates() })
+onUnmounted(stopPanelUpdatePolling)
 </script>
 
 <style scoped>

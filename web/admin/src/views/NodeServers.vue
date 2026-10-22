@@ -13,7 +13,7 @@
               <el-option v-for="opt in nodeTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
             <el-button size="small" @click="loadServers"><el-icon><Refresh /></el-icon> {{ t('common.refresh') }}</el-button>
-            <el-button size="small" type="warning" @click="handleUpdateAllAgents" :loading="updateAllLoading">{{ t('nodeServer.updateAllAgents') }}</el-button>
+            <el-button size="small" type="warning" @click="openUpdateAllDialog" :loading="updateAllLoading">{{ t('nodeServer.updateAllAgents') }}</el-button>
           </div>
           <el-button type="primary" size="small" @click="showCreateDialog">+ {{ t('nodeServer.addServer') }}</el-button>
         </div>
@@ -734,6 +734,47 @@
       </el-table>
     </el-dialog>
 
+    <!-- ════════════ Update All Agents Dialog ════════════ -->
+    <el-dialog v-model="updateAllVisible" :title="t('nodeServer.updateAllAgents')" width="560px">
+      <div v-loading="updateAllOptionsLoading">
+        <el-alert
+          v-if="!hasLocalAgent && !updateAllOptionsLoading"
+          type="info" :closable="false" style="margin-bottom:14px"
+          :title="t('nodeServer.updateAllNoLocal')"
+        />
+        <el-radio-group v-model="updateAllSource" style="display:flex;flex-direction:column;gap:14px;align-items:flex-start">
+          <el-radio v-if="hasLocalAgent" value="panel">
+            {{ t('nodeServer.updateAllFromPanel') }}
+            <el-tag size="small" type="info" style="margin-left:6px">{{ panelAgentVersion.version }}</el-tag>
+          </el-radio>
+          <div>
+            <el-radio value="github">{{ t('nodeServer.updateAllFromGithub') }}</el-radio>
+            <div v-if="updateAllSource === 'github'" style="margin-top:8px">
+              <el-select
+                v-model="updateAllVersion" size="small" style="width:260px"
+                :placeholder="t('nodeServer.selectAgentVersion')"
+              >
+                <el-option v-for="rel in githubReleases" :key="rel.version" :label="rel.version" :value="rel.version">
+                  <span>{{ rel.version }}</span>
+                  <el-tag v-if="rel.prerelease" size="small" type="warning" style="margin-left:6px">pre</el-tag>
+                </el-option>
+              </el-select>
+              <div style="font-size:11px;color:#999;margin-top:6px">{{ t('nodeServer.updateAllGithubHint') }}</div>
+            </div>
+          </div>
+        </el-radio-group>
+        <div v-if="updateAllSource === 'panel'" style="font-size:11px;color:#999;margin-top:10px">
+          {{ t('nodeServer.updateAllPanelHint') }}
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="updateAllVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="warning" :loading="updateAllLoading" :disabled="!canUpdateAll" @click="confirmUpdateAll">
+          {{ t('common.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -760,6 +801,8 @@ import {
   listNodeAuditLogs, exportNodeAuditLogs, 
   syncServerConfig, 
   updateAllAgents, 
+  getAgentVersion,
+  getAgentReleases,
   resumeTrafficSuspended, listInterfaces, 
 } from '../api/nodeServer'
 import { useQueryState } from '../composables/useQueryState'
@@ -775,7 +818,60 @@ const router = useRouter()
 const activeTab = useQueryState('tab', 'servers')
 
 // ─── Agent Update All ───
+// 面板本地有可用的 Agent 二进制 + 版本号时，允许「用本地二进制」推送；
+// 否则（未配置）只能从 GitHub Release 里选版本，避免本地没东西还点更新。
 const updateAllLoading = ref(false)
+const updateAllVisible = ref(false)
+const updateAllOptionsLoading = ref(false)
+const panelAgentVersion = ref(null)
+const githubReleases = ref([])
+const updateAllVersion = ref('')
+const updateAllSource = ref('github')
+
+const hasLocalAgent = computed(() => {
+  const v = panelAgentVersion.value?.version
+  return !!v && v !== 'unknown'
+})
+const canUpdateAll = computed(() =>
+  updateAllSource.value === 'panel' ? hasLocalAgent.value : !!updateAllVersion.value
+)
+
+async function openUpdateAllDialog() {
+  updateAllVisible.value = true
+  await loadUpdateAllOptions()
+}
+
+async function loadUpdateAllOptions() {
+  updateAllOptionsLoading.value = true
+  try {
+    const [ver, rel] = await Promise.allSettled([getAgentVersion(), getAgentReleases(20)])
+    panelAgentVersion.value = ver.status === 'fulfilled' ? ver.value : null
+    githubReleases.value = rel.status === 'fulfilled' ? (rel.value?.releases || []) : []
+    if (!updateAllVersion.value && githubReleases.value.length > 0) {
+      updateAllVersion.value = rel.value?.latest_version || githubReleases.value[0].version
+    }
+    updateAllSource.value = hasLocalAgent.value ? 'panel' : 'github'
+  } finally {
+    updateAllOptionsLoading.value = false
+  }
+}
+
+async function confirmUpdateAll() {
+  const source = updateAllSource.value
+  const version = source === 'panel' ? '' : updateAllVersion.value
+  if (source === 'github' && !version) return
+  updateAllLoading.value = true
+  try {
+    await updateAllAgents({ version, download_url: '', checksum: '', source })
+    ElMessage.success(t('nodeServer.updateAllAgentsPushed'))
+    updateAllVisible.value = false
+    loadServers()
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    updateAllLoading.value = false
+  }
+}
 
 // ─── Server List ───
 const servers = ref([])
@@ -1320,26 +1416,6 @@ async function saveForm() {
 
 function goToDetail(row) {
   router.push(`/node-servers/${row.id}/detail`)
-}
-
-async function handleUpdateAllAgents() {
-  try {
-    await ElMessageBox.confirm(
-      t('nodeServer.updateAllAgentsConfirm'),
-      t('nodeServer.updateAllAgents'),
-      { type: 'warning' }
-    )
-    updateAllLoading.value = true
-    const res = await updateAllAgents()
-    ElMessage.success(t('nodeServer.updateAllAgentsPushed') + (res?.updated ? ` (${res.updated})` : ''))
-    loadServers()
-  } catch (e) {
-    if (e !== 'cancel' && e?.response?.data?.message) {
-      ElMessage.error(e.response.data.message)
-    }
-  } finally {
-    updateAllLoading.value = false
-  }
 }
 
 async function showDetailDialog(row) {

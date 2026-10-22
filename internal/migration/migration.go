@@ -70,6 +70,7 @@ func AutoMigrate(db *gorm.DB) error {
 		// Backups
 
 		// Binaries & Updates
+		&entity.PanelUpdateJob{},
 
 		// Routing
 

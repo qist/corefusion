@@ -7,6 +7,11 @@ body:
       value: |
         感谢反馈问题！请尽量用中文或英文填写，信息越完整我们越能快速定位。
         Thanks for reporting! Please fill in as much detail as possible (Chinese or English).
+
+        > **安全漏洞请勿在此公开提交**（含可利用细节、复现 payload、未修复的凭证泄露）。
+        > 请通过仓库 **Security → Report a vulnerability** 私下报告。
+        > Do **not** report security vulnerabilities here — use Security → Report a vulnerability.
+
   - type: checkboxes
     id: terms
     attributes:
@@ -29,11 +34,15 @@ body:
       label: 问题分类 / Category
       description: 问题大致属于哪个模块？ / Which module is affected?
       options:
-        - 控制面 / Master (Web 面板、API)
-        - 数据面 / Node (代理、传输、流量)
-        - 认证 / 订阅 (登录、JWT、用户、订阅)
-        - 证书 (SSL/TLS、ACME)
-        - 安装 / 部署 (安装脚本、升级)
+        - 面板 / Panel (Web 界面、API)
+        - 节点与 Agent / Node & Agent (心跳、指令下发、自更新)
+        - 代理核心 / Core (Xray-core、sing-box 启停与配置生成)
+        - 反向代理 / Proxy (Caddy、Nginx、WAF)
+        - 订阅 / Subscription (分享链接、订阅格式、端点)
+        - 客户与计费 / Customer & Billing (套餐、订单、充值、佣金)
+        - 证书 / Certificate (ACME、DNS-01、HTTP-01、分发)
+        - 流量与限流 / Traffic & Ratelimit (统计、配额、限速)
+        - 安装 / 部署 / 升级 (安装脚本、迁移、构建)
         - 其他 / Other
     validations:
       required: true
@@ -42,8 +51,21 @@ body:
     id: version
     attributes:
       label: CoreFusion 版本 / Version
-      description: 例如 v1.2.3 或 git commit hash。 / e.g. v1.2.3 or commit hash.
-      placeholder: "v1.2.3"
+      description: 面板页脚或 `./corefusion version` 的输出。 / Output of `./corefusion version`.
+      placeholder: "v0.12.298"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: deploy
+    attributes:
+      label: 部署方式 / Deployment
+      description: 面板是怎么跑起来的？ / How is the panel running?
+      options:
+        - systemd 服务 / systemd unit (deploy/corefusion.service)
+        - nohup 手动启动 / manual nohup
+        - 源码直接运行 / go run or built binary in place
+        - 其他 / Other
     validations:
       required: true
 
@@ -59,6 +81,48 @@ body:
         - Other Linux
         - macOS
         - Windows (WSL)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: 数据库 / Database
+      description: 由 `.env` 的 `CF_DB_DSN` 前缀决定。 / Determined by the `CF_DB_DSN` prefix in `.env`.
+      options:
+        - SQLite (默认 / default)
+        - MySQL
+        - PostgreSQL
+        - 不确定 / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: proxy
+    attributes:
+      label: 反向代理 / WAF
+      description: 面板或节点上启用的代理与防护组件。 / Proxy & WAF in use.
+      options:
+        - 未启用 / None
+        - Caddy
+        - Nginx
+        - Caddy + CaddyGuard
+        - Nginx + NginxGuard
+        - 不确定 / Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: core
+    attributes:
+      label: 代理核心 / Core
+      description: 问题涉及哪个核心？Hysteria2/TUIC 等 QUIC 协议由 sing-box 承载。 / Which core? QUIC protocols are served by sing-box.
+      options:
+        - 不涉及核心 / Not core-related
+        - Xray-core
+        - sing-box
+        - 两个都有 / Both
+        - 不确定 / Not sure
     validations:
       required: true
 
@@ -81,7 +145,18 @@ body:
         2. 点击 '...'
         3. 滚动到 '...'
         4. 出现错误
-      render: markdown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: 可复现性 / Reproducibility
+      options:
+        - 每次都能复现 / Always
+        - 偶发 / Intermittent
+        - 只出现过一次 / Once
+        - 还没能复现 / Not reproduced yet
     validations:
       required: true
 
@@ -105,7 +180,13 @@ body:
     id: log
     attributes:
       label: 日志 / Logs
-      description: 请粘贴 CoreFusion 或 xray 的相关日志（脱敏后）。 / Paste relevant logs (sanitized).
+      description: |
+        请粘贴相关日志（脱敏后）。 / Paste relevant logs (sanitized).
+
+        面板：`journalctl -u corefusion -n 200 --no-pager`，或 `nohup` 启动时看 `corefusion.log`；
+        代理与 WAF：`data/logs/`（如 `access.log`、`nginx-error.log`、`caddy_access.log`、`*_waf.log`）；
+        核心：`data/logs/<core>.log`（`xray.log` / `sing-box.log`）；
+        远程节点：在节点上 `journalctl -u corefusion-agent -n 200 --no-pager`。
       value: |-
         <details>
 
@@ -114,7 +195,6 @@ body:
         ```
 
         </details>
-      render: console
     validations:
       required: false
 
@@ -122,7 +202,7 @@ body:
     id: config
     attributes:
       label: 相关配置 / Configuration (optional)
-      description: 相关配置文件片段（请隐藏敏感信息如 token、密码、域名）。 / Sanitized config snippets.
+      description: 相关配置片段（请隐藏敏感信息如 token、密码、域名、订阅链接）。 / Sanitized config snippets.
       value: |-
         <details>
 
@@ -131,7 +211,6 @@ body:
         ```
 
         </details>
-      render: yaml
     validations:
       required: false
 

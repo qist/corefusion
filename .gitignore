@@ -3,6 +3,8 @@ web/admin/dist
 web/admin/node_modules
 internal/app/embed/dist
 /corefusion
+/corefusion.bak
+/corefusion.bak.json
 /dist/
 geosite.dat
 geoip.metadb

@@ -490,11 +490,11 @@ func PatchPlanUpgradeScheduledConfig(configStr string) (string, bool) {
 				pack["plan.notice_text"] = newPlanNoticeZH
 				changed = true
 			}
-			if _, exists := pack["plan.upgrade_scheduled"]; !exists {
+			if _, exists := pack["plan.upgrade_scheduled"]; !exists && !BuiltinHasLangKey(code, "plan.upgrade_scheduled") {
 				pack["plan.upgrade_scheduled"] = "升级已预约，将在当前套餐到期后生效"
 				changed = true
 			}
-			if _, exists := pack["order.status_scheduled"]; !exists {
+			if _, exists := pack["order.status_scheduled"]; !exists && !BuiltinHasLangKey(code, "order.status_scheduled") {
 				pack["order.status_scheduled"] = "待生效"
 				changed = true
 			}
@@ -503,11 +503,12 @@ func PatchPlanUpgradeScheduledConfig(configStr string) (string, bool) {
 				pack["plan.notice_text"] = newPlanNoticeEN
 				changed = true
 			}
-			if _, exists := pack["plan.upgrade_scheduled"]; !exists {
+			// 内置包已为各语言提供正确译文时不再补英文兜底（否则覆盖内置译文 ✗）
+			if _, exists := pack["plan.upgrade_scheduled"]; !exists && !BuiltinHasLangKey(code, "plan.upgrade_scheduled") {
 				pack["plan.upgrade_scheduled"] = "Upgrade scheduled, it will take effect after your current plan expires"
 				changed = true
 			}
-			if _, exists := pack["order.status_scheduled"]; !exists {
+			if _, exists := pack["order.status_scheduled"]; !exists && !BuiltinHasLangKey(code, "order.status_scheduled") {
 				pack["order.status_scheduled"] = "Scheduled"
 				changed = true
 			}
@@ -1248,6 +1249,12 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 	}
 	// 存量模板模块 HTML：推荐提现按钮 + 安全设置白名单列表（C-2/C-4）✓
 	if c, cc := PatchClientFeaturesConfig(newConfig); cc {
+		newConfig = c
+		cfgChanged = true
+	}
+	// 存量模板语言包瘦身：剥离与内置包逐字相同的文案（编辑器回传的全量包会撑爆
+	// 300KB 配置上限，且让内置文案升级对存量模板失效 ✗）→ 只留 diff，渲染时补齐 ✓
+	if c, cc := CompactConfigLang(newConfig); cc {
 		newConfig = c
 		cfgChanged = true
 	}

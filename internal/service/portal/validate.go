@@ -58,13 +58,24 @@ var javascriptURLRe = regexp.MustCompile(`(?i)^javascript\s*:`)
 // It enforces type whitelists, size limits, and content safety rules.
 // Returns cleaned config JSON or an error.
 func ValidatePortalConfig(configStr string) (string, error) {
-	if len(configStr) > maxConfigSize {
+	// 先挡住明显异常的输入（避免把超大 body 反复解析），真正的体积口径在下面按
+	// 「瘦身后的紧凑 JSON」判定 ✓。
+	if len(configStr) > maxConfigSize*4 {
 		return "", fmt.Errorf("portal config too large: %d bytes (max %d)", len(configStr), maxConfigSize)
 	}
 
 	var cfg map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return "", fmt.Errorf("invalid portal config JSON: %w", err)
+	}
+
+	// 语言包先瘦身再算体积：编辑器回传的是「自定义 + 内置兜底」合并后的全量包，
+	// 16 种语言全量 ≈ 420KB，会把 maxConfigSize 撑爆（portal config too large ✗）。
+	// 与内置包逐字相同的文案无需落库（渲染时由 MergeBuiltinLangFallback 补齐 ✓）。
+	if langRaw, ok := cfg["lang"]; ok {
+		if compacted := CompactBuiltinLang(langRaw); len(compacted) < len(langRaw) {
+			cfg["lang"] = compacted
+		}
 	}
 
 	// Validate and clean navigation
@@ -125,6 +136,10 @@ func ValidatePortalConfig(configStr string) (string, error) {
 	result, err := json.Marshal(cfg)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal cleaned config: %w", err)
+	}
+	// 清洗后（紧凑 JSON、语言包已瘦身）才是真正落库的体积 ✓
+	if len(result) > maxConfigSize {
+		return "", fmt.Errorf("portal config too large: %d bytes (max %d)", len(result), maxConfigSize)
 	}
 	return string(result), nil
 }
@@ -491,15 +506,20 @@ func validateRegions(regionsRaw json.RawMessage) (json.RawMessage, error) {
 //   - "default" key exists and matches one of the locales
 //   - Each locale value is an object with string keys/values
 //   - Size limits are enforced
-const maxLangSize = 200 * 1024 // 200KB max for the entire lang JSON
+// maxLangSize 单个语言包上限；语言包总量由 maxConfigSize 兜底（整体配置体积）。
+const maxLangSize = 200 * 1024 // 200KB max for a single locale pack
+
+// maxLocales 语言数量上限：内置包已有 16 种语言，上限必须大于它，
+// 否则编辑器回传内置全量包时会报 "too many locales" ✗。
+const maxLocales = 32
 
 func validateLang(langRaw json.RawMessage) (json.RawMessage, error) {
 	if len(langRaw) == 0 || string(langRaw) == "null" {
 		return json.RawMessage(defaultMultiLangJSON), nil
 	}
 
-	if len(langRaw) > maxLangSize {
-		return nil, fmt.Errorf("lang pack too large: %d bytes (max %d)", len(langRaw), maxLangSize)
+	if len(langRaw) > maxConfigSize {
+		return nil, fmt.Errorf("lang pack too large: %d bytes (max %d)", len(langRaw), maxConfigSize)
 	}
 
 	// 仅支持 multi-language 结构：{"default":..., "locales":{...}}（不再兼容旧版平铺格式）
@@ -516,8 +536,8 @@ func validateLang(langRaw json.RawMessage) (json.RawMessage, error) {
 	if _, ok := multiLang.Locales[multiLang.Default]; !ok {
 		return nil, fmt.Errorf("lang: default locale %q not found in locales", multiLang.Default)
 	}
-	if len(multiLang.Locales) > 10 {
-		return nil, fmt.Errorf("lang: too many locales: %d (max 10)", len(multiLang.Locales))
+	if len(multiLang.Locales) > maxLocales {
+		return nil, fmt.Errorf("lang: too many locales: %d (max %d)", len(multiLang.Locales), maxLocales)
 	}
 	// Validate each locale pack
 	for code, raw := range multiLang.Locales {

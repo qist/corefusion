@@ -495,6 +495,9 @@ func TestPatchPlanUpgradeScheduledJS(t *testing.T) {
 
 // 存量模板语言包要补 scheduled 状态键与预约提示，并把「立即生效」旧文案换成新语义；
 // 管理员自定义过的文案不得覆盖。
+//
+// 内置包已为各语言提供正确译文 → 补键补丁**不再写英文兜底**（否则 ja/ko/de 等
+// 会被 "Scheduled" 覆盖 ✗），缺失 key 交由 MergeBuiltinLangFallback 兜底 ✓。
 func TestPatchPlanUpgradeScheduledConfig(t *testing.T) {
 	cfg := `{"lang":{"default":"zh-CN","locales":{` +
 		`"zh-CN":{"plan.notice_text":` + mustJSON(t, oldPlanNoticeZH) + `},` +
@@ -503,7 +506,7 @@ func TestPatchPlanUpgradeScheduledConfig(t *testing.T) {
 
 	out, changed := PatchPlanUpgradeScheduledConfig(cfg)
 	if !changed {
-		t.Fatal("缺新键 / 旧文案的模板应被判定为需要修改")
+		t.Fatal("旧文案的模板应被判定为需要修改")
 	}
 	var root map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &root); err != nil {
@@ -522,19 +525,43 @@ func TestPatchPlanUpgradeScheduledConfig(t *testing.T) {
 	if ja["plan.notice_text"] != "カスタム文案" {
 		t.Error("自定义文案不应被覆盖")
 	}
-	for _, pack := range []map[string]interface{}{zh, en} {
-		if pack["plan.upgrade_scheduled"] == nil || pack["plan.upgrade_scheduled"] == "" {
-			t.Error("应补 plan.upgrade_scheduled")
+	// 内置包已有译文 → 不得写入英文兜底
+	for code, pack := range map[string]map[string]interface{}{"zh-CN": zh, "en": en, "ja": ja} {
+		if v, exists := pack["plan.upgrade_scheduled"]; exists {
+			t.Errorf("%s: 内置包已提供 plan.upgrade_scheduled，不应再补（写入 %v 会覆盖内置译文）", code, v)
 		}
-		if pack["order.status_scheduled"] == nil || pack["order.status_scheduled"] == "" {
-			t.Error("应补 order.status_scheduled")
+		if v, exists := pack["order.status_scheduled"]; exists {
+			t.Errorf("%s: 内置包已提供 order.status_scheduled，不应再补（写入 %v 会覆盖内置译文）", code, v)
 		}
+	}
+	// 缺失 key 由内置包兜底补齐（渲染路径）
+	langOnly, _ := json.Marshal(root["lang"])
+	merged := MergeBuiltinLangFallback(langOnly)
+	var mergedRoot map[string]interface{}
+	if err := json.Unmarshal(merged, &mergedRoot); err != nil {
+		t.Fatalf("合并后 JSON 非法: %v", err)
+	}
+	mergedJa := mergedRoot["locales"].(map[string]interface{})["ja"].(map[string]interface{})
+	if v, _ := mergedJa["order.status_scheduled"].(string); v == "" || v == "Scheduled" {
+		t.Errorf("ja 的 scheduled 文案应由内置包补齐为日文，得到 %v", v)
 	}
 
 	// 幂等
 	out2, changed2 := PatchPlanUpgradeScheduledConfig(out)
 	if changed2 || out2 != out {
 		t.Error("第二次调用应幂等（不再改动）")
+	}
+}
+
+// 内置包已有某 key 时 BuiltinHasLangKey 必须为 true（补键补丁据此跳过）✓。
+func TestBuiltinHasLangKey(t *testing.T) {
+	for _, code := range []string{"zh-CN", "en", "ja", "ko", "de"} {
+		if !BuiltinHasLangKey(code, "order.status_scheduled") {
+			t.Errorf("%s 内置包应已包含 order.status_scheduled", code)
+		}
+	}
+	if BuiltinHasLangKey("zh-CN", "no.such.key.at.all") {
+		t.Error("不存在的 key 不应判定为内置已有")
 	}
 }
 

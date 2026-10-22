@@ -59,6 +59,14 @@ const LOCALE_NAMES = {
   vi: 'Tiếng Việt',
 }
 
+/** 语言码 → 旗帜（写入门户 _meta，避免所有语言都显示 🇺🇸 English） */
+const LOCALE_FLAGS = {
+  'zh-CN': '🇨🇳', 'zh-TW': '🇨🇳', en: '🇺🇸',
+  ru: '🇷🇺', fa: '🇮🇷', ar: '🇸🇦', fr: '🇫🇷', es: '🇪🇸',
+  de: '🇩🇪', pt: '🇵🇹', ja: '🇯🇵', ko: '🇰🇷',
+  tr: '🇹🇷', id: '🇮🇩', th: '🇹🇭', vi: '🇻🇳',
+}
+
 // ── 参数 ────────────────────────────────────────────────────
 function parseArgs() {
   const a = process.argv.slice(2)
@@ -434,6 +442,16 @@ async function main() {
 
     const adminNested = flatToNested(adminFlat, enJsTpl)
     const portalNested = flatToNested(portalFlat, enObjTpl)
+
+    // ⚠ _meta 是"语言自身的名称/旗帜"，绝不能沿用 en 的值（否则每个语言下拉都显示 English）。
+    // 这里按目标语言码强制写回正确的 label/flag/language。
+    if (portalNested._meta) {
+      portalNested._meta = {
+        flag: LOCALE_FLAGS[target] || '🌐',
+        label: LOCALE_NAMES[target] || target,
+        language: target,
+      }
+    }
 
     const adminOut = join(ADMIN_DIR, `${target}.js`)
     const portalOut = join(PORTAL_DIR, `${target}.json`)

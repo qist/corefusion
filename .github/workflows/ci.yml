@@ -64,7 +64,7 @@ jobs:
         working-directory: web/admin
         run: npm run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: admin-dist
           path: web/admin/dist
@@ -130,7 +130,7 @@ jobs:
           sha256sum corefusion-linux-${{ matrix.goarch }} > corefusion-linux-${{ matrix.goarch }}.sha256
           sha256sum corefusion-agent-linux-${{ matrix.goarch }} > corefusion-agent-linux-${{ matrix.goarch }}.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binaries-${{ matrix.goarch }}
           path: dist/*

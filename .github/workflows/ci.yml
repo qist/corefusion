@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ── 静态检查 + 单元测试（不需要前端产物，用占位 index.html 满足 go:embed）──
+  verify:
+    name: vet & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # internal/app/embed/embed.go 用 //go:embed all:dist，
+      # 而 dist 不入库（.gitignore 有 internal/app/embed/dist）→ 干净检出必须先造出目录
+      - name: 准备 embed 占位
+        run: |
+          mkdir -p internal/app/embed/dist
+          printf '<!doctype html><title>ci placeholder</title>\n' > internal/app/embed/dist/index.html
+
+      - name: go vet
+        run: go vet ./...
+
+      # TestPrepareHTTP01TempServerWhenPortFree 依赖真机环境：
+      # 它要写 /var/lib/corefusion-agent/acme-challenge（需 root），并按 80 端口是否被占用分支。
+      # GitHub runner 非 root + 80 空闲 → 必然走到 t.Fatal。真机验证走 scripts/e2e。
+      - name: go test
+        run: go test -count=1 -skip 'TestPrepareHTTP01TempServerWhenPortFree' ./...
+
+  # ── 前端单独构建一次，产物通过 artifact 传给各架构编译 job ──
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+
+      - name: npm ci
+        working-directory: web/admin
+        run: npm ci
+
+      - name: npm run build
+        working-directory: web/admin
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: web/admin/dist
+          retention-days: 7
+
+  # ── 面板 + Agent 交叉编译（linux/amd64、linux/arm64）──
+  build:
+    name: build ${{ matrix.goarch }}
+    needs: [verify, frontend]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    env:
+      GOOS: linux
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: internal/app/embed/dist
+
+      - name: 取版本号
+        id: ver
+        run: echo "version=$(cat internal/constants/version)" >> "$GITHUB_OUTPUT"
+
+      # 与 Makefile 保持一致：-trimpath 去本机路径，-s -w 去符号表，-buildid= 保证可复现
+      - name: 编译面板
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -buildid= -X corefusion/internal/constants.Version=${{ steps.ver.outputs.version }}" \
+            -o dist/corefusion-linux-${{ matrix.goarch }} ./cmd/corefusion/
+
+      # -tags agent 排除 MySQL/PostgreSQL 驱动，Agent 只用 SQLite（体积约减半）
+      - name: 编译 Agent
+        run: |
+          go build -tags agent -trimpath \
+            -ldflags "-s -w -buildid= -X corefusion/internal/constants.Version=${{ steps.ver.outputs.version }}" \
+            -o dist/corefusion-agent-linux-${{ matrix.goarch }} ./cmd/agent/
+
+      - name: 校验产物
+        run: |
+          file dist/corefusion-linux-${{ matrix.goarch }}
+          file dist/corefusion-agent-linux-${{ matrix.goarch }}
+          # 版本号确实注入进二进制（面板支持 version 子命令）。
+          # runner 是 x86_64，arm64 产物跑不起来（exec format error）→ 只在 amd64 上实跑。
+          if [ "${{ matrix.goarch }}" = "amd64" ]; then
+            test "$(./dist/corefusion-linux-amd64 version)" = "corefusion ${{ steps.ver.outputs.version }}"
+          fi
+
+      - name: 生成 sha256
+        working-directory: dist
+        run: |
+          sha256sum corefusion-linux-${{ matrix.goarch }} > corefusion-linux-${{ matrix.goarch }}.sha256
+          sha256sum corefusion-agent-linux-${{ matrix.goarch }} > corefusion-agent-linux-${{ matrix.goarch }}.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7

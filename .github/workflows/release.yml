@@ -1,0 +1,207 @@
+name: Release
+
+# 打 tag（v0.12.299 这种）即发布：编译面板 + Agent 双架构，附带 sha256 与许可证文件。
+# 产物命名必须与代码里的约定一致，否则安装/自更新会 404：
+#   - Agent 安装脚本与自更新取 <tag>/corefusion-agent-<os>-<arch>
+#     见 internal/runtime/agent/install_script.go、self_updater.go
+#   - Agent 自更新还会自动拉 <asset>.sha256 做校验
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（已存在的 v* tag）'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ── 先过一遍静态检查与单测，避免把坏版本发出去 ──
+  verify:
+    name: vet & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # go:embed all:dist 需要目录存在；dist 不入库
+      - name: 准备 embed 占位
+        run: |
+          mkdir -p internal/app/embed/dist
+          printf '<!doctype html><title>ci placeholder</title>\n' > internal/app/embed/dist/index.html
+
+      - name: go vet
+        run: go vet ./...
+
+      # 该测试需 root 且按 80 端口占用情况分支，CI 里必然失败；真机验证走 scripts/e2e
+      - name: go test
+        run: go test -count=1 -skip 'TestPrepareHTTP01TempServerWhenPortFree' ./...
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+
+      - name: npm ci
+        working-directory: web/admin
+        run: npm ci
+
+      - name: npm run build
+        working-directory: web/admin
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: web/admin/dist
+          retention-days: 1
+
+  build:
+    name: build ${{ matrix.goarch }}
+    needs: [verify, frontend]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        goarch: [amd64, arm64]
+    env:
+      GOOS: linux
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: internal/app/embed/dist
+
+      - name: 取版本号
+        id: ver
+        run: echo "version=$(cat internal/constants/version)" >> "$GITHUB_OUTPUT"
+
+      # 发布产物名由 tag 决定（下载 URL 是 <tag>/corefusion-agent-<os>-<arch>），
+      # 而二进制内嵌的是 internal/constants/version → 两者不一致会导致"装到的版本对不上"。
+      - name: 校验 tag 与版本号一致
+        run: |
+          tag='${{ inputs.tag || github.ref_name }}'
+          ver='${{ steps.ver.outputs.version }}'
+          echo "tag=$tag version=$ver"
+          if [ "$tag" != "$ver" ]; then
+            echo "::error::tag ($tag) 与 internal/constants/version ($ver) 不一致；请先改版本号再打 tag"
+            exit 1
+          fi
+
+      - name: 编译面板
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -buildid= -X corefusion/internal/constants.Version=${{ steps.ver.outputs.version }}" \
+            -o dist/corefusion-linux-${{ matrix.goarch }} ./cmd/corefusion/
+
+      - name: 编译 Agent
+        run: |
+          go build -tags agent -trimpath \
+            -ldflags "-s -w -buildid= -X corefusion/internal/constants.Version=${{ steps.ver.outputs.version }}" \
+            -o dist/corefusion-agent-linux-${{ matrix.goarch }} ./cmd/agent/
+
+      - name: 校验产物
+        run: |
+          file dist/corefusion-linux-${{ matrix.goarch }}
+          file dist/corefusion-agent-linux-${{ matrix.goarch }}
+          if [ "${{ matrix.goarch }}" = "amd64" ]; then
+            test "$(./dist/corefusion-linux-amd64 version)" = "corefusion ${{ steps.ver.outputs.version }}"
+          fi
+
+      - name: 生成 sha256
+        working-directory: dist
+        run: |
+          sha256sum corefusion-linux-${{ matrix.goarch }} > corefusion-linux-${{ matrix.goarch }}.sha256
+          sha256sum corefusion-agent-linux-${{ matrix.goarch }} > corefusion-agent-linux-${{ matrix.goarch }}.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 1
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: release
+
+      # AGPL-3.0 要求分发二进制时提供对应源码与许可声明，故一并附上
+      - name: 附加许可证与源码信息
+        run: |
+          cp LICENSE THIRD_PARTY_LICENSES.md LEGAL.md release/
+          {
+            echo 'CoreFusion release build'
+            echo
+            echo "Source: https://github.com/qist/corefusion (tag: ${{ inputs.tag || github.ref_name }})"
+            echo "Go:     $(go version)"
+            echo 'Build:  GOOS=linux, GOARCH=amd64/arm64, CGO_ENABLED=0, -trimpath -s -w'
+            echo
+            echo 'Assets:'
+            echo '  corefusion-linux-{amd64,arm64}         面板'
+            echo '  corefusion-agent-linux-{amd64,arm64}   Agent（-tags agent，仅 SQLite）'
+            echo '  每个二进制附带同名 .sha256 校验文件'
+          } > release/BUILD-INFO.txt
+
+      - name: 汇总校验和
+        working-directory: release
+        run: |
+          sha256sum \
+            corefusion-linux-amd64 corefusion-linux-arm64 \
+            corefusion-agent-linux-amd64 corefusion-agent-linux-arm64 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 发布
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release/*

@@ -9,7 +9,7 @@ import "time"
 // 哪些 CA 需要 EAB ✓：Google Public CA ✓、ZeroSSL ✓（Let's Encrypt 不需要 ✓）。
 type EABConfig struct {
 	ID int64 `json:"id" gorm:"primaryKey;autoIncrement"`
-	// Name 是给人看的名字 ✓（例如 "Google CA - example-user" ✓）
+	// Name 是给人看的名字 ✓（例如 "Google CA - user@example.com" ✓）
 	Name string `json:"name" gorm:"size:128;not null"`
 	// CAProvider 这份 EAB 属于哪个 CA ✓（google / zerossl ✓ …）
 	// ⚠ 不加 `default:` ✗（GORM 会跳过零值 ✗）、不加 `not null` ✗（给已有的表加 NOT NULL 列 SQLite 会拒绝 ✗ → 面板起不来 ✗）

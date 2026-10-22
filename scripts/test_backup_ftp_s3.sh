@@ -28,6 +28,8 @@ FTP_HOST=""
 S3_HOST=""
 SETUP_STORAGES=0
 DATA_DIR="${DATA_DIR:-/opt/corefusion/data}"
+FTP_PASS="${FTP_PASS:-}"
+S3_PASS="${S3_PASS:-}"
 
 # ---- 解析参数 ---------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
@@ -68,12 +70,14 @@ echo "  token 已获取"
 
 # ---------------------------------------------------------------------------
 if [[ $SETUP_STORAGES -eq 1 ]]; then
+  : "${FTP_PASS:?--setup-storages 需要 FTP_PASS 环境变量}"
+  : "${S3_PASS:?--setup-storages 需要 S3_PASS 环境变量}"
   echo "==> 自动注册存储配置 (ftp-n5 / minio-n6)"
   curl -sf -X POST "$API/backups/storages" -H "$AUTH" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"ftp-n5\",\"type\":\"ftp\",\"endpoint\":\"ftp://$FTP_HOST:21\",\"access_key\":\"ftpuser\",\"secret_key\":\"CHANGE_ME_FTP_PASSWORD\"}" \
+    -d "{\"name\":\"ftp-n5\",\"type\":\"ftp\",\"endpoint\":\"ftp://$FTP_HOST:21\",\"access_key\":\"ftpuser\",\"secret_key\":\"$FTP_PASS\"}" \
     && echo "  ftp-n5 已注册"
   curl -sf -X POST "$API/backups/storages" -H "$AUTH" -H 'Content-Type: application/json' \
-    -d "{\"name\":\"minio-n6\",\"type\":\"s3\",\"endpoint\":\"http://$S3_HOST:9000\",\"bucket\":\"corefusion-backup\",\"access_key\":\"cf_s3\",\"secret_key\":\"CHANGE_ME_S3_PASSWORD\",\"use_path_style\":true}" \
+    -d "{\"name\":\"minio-n6\",\"type\":\"s3\",\"endpoint\":\"http://$S3_HOST:9000\",\"bucket\":\"corefusion-backup\",\"access_key\":\"cf_s3\",\"secret_key\":\"$S3_PASS\",\"use_path_style\":true}" \
     && echo "  minio-n6 已注册"
 fi
 

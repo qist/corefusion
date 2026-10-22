@@ -6,7 +6,7 @@
 #   - FTP 节点(N5): 部署 vsftpd,被动模式,供 CoreFusion UploadToFTP 使用
 #   - S3  节点(N6): 部署 MinIO single-drive,供 CoreFusion UploadToS3 使用
 #
-# 节点无外网,统一走 Panel 代理 127.0.0.1:7890 下载二进制。
+# 节点无外网时，通过 PANEL_PROXY 环境变量指定面板代理下载二进制。
 # 用法:
 #   ./deploy_ftp_s3.sh ftp            # 在 FTP 节点执行
 #   ./deploy_ftp_s3.sh s3             # 在 S3 节点执行
@@ -14,15 +14,17 @@
 # =============================================================================
 set -euo pipefail
 
-PROXY="http://127.0.0.1:7890"
-export http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY"
+PROXY="${PANEL_PROXY:-}"
+if [[ -n "$PROXY" ]]; then
+  export http_proxy="$PROXY" https_proxy="$PROXY" HTTP_PROXY="$PROXY" HTTPS_PROXY="$PROXY"
+fi
 
 # ---- 可覆盖的变量(通过环境变量传参) -----------------------------------------
 FTP_USER="${FTP_USER:-ftpuser}"
-FTP_PASS="${FTP_PASS:-CHANGE_ME_FTP_PASSWORD}"
+FTP_PASS="${FTP_PASS:?请通过环境变量 FTP_PASS 设置密码}"
 FTP_ROOT="${FTP_ROOT:-/srv/ftp}"
 S3_USER="${S3_USER:-cf_s3}"
-S3_PASS="${S3_PASS:-CHANGE_ME_S3_PASSWORD}"
+S3_PASS="${S3_PASS:?请通过环境变量 S3_PASS 设置密码}"
 S3_DIR="${S3_DIR:-/srv/minio}"
 S3_BUCKET="${S3_BUCKET:-corefusion-backup}"
 DATA_DIR="${DATA_DIR:-/opt/corefusion/data}"

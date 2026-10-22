@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -32,6 +33,7 @@ type Handler struct {
 	db         *gorm.DB
 	settingSvc *system.SettingService
 	statsSvc   *system.StatsService
+	updateSvc  *system.PanelUpdateService
 	dataDir    string
 	// ipBlacklistChangeHook：panel.ip_blacklist 保存后的异步下发钩子（router 接线）。
 	ipBlacklistChangeHook func(ctx context.Context, raw string)
@@ -39,10 +41,14 @@ type Handler struct {
 
 // NewHandler creates a new system handler.
 func NewHandler(db *gorm.DB, settingSvc *system.SettingService, dataDir string, version string) *Handler {
+	updateSvc := system.NewPanelUpdateService(db, settingSvc, dataDir, version)
+	// 复用 handler 包内的重启实现（Unix 用 re-exec，Windows 走 restart_windows.go）。
+	updateSvc.SetRestartFunc(restartProcess)
 	return &Handler{
 		db:         db,
 		settingSvc: settingSvc,
 		statsSvc:   system.NewStatsService(version),
+		updateSvc:  updateSvc,
 		dataDir:    dataDir,
 	}
 }
@@ -571,20 +577,13 @@ func (h *Handler) SetIPBlacklistChangeHook(fn func(ctx context.Context, raw stri
 	h.ipBlacklistChangeHook = fn
 }
 
-// --- 面板自更新：**未实现**，统一返回 501 ---
+// --- 面板自更新 ---
 //
-// 2026-09-23 体检发现：这几个 handler 原来返回的是"假成功 / 空数组"✗ ——
+// 2026-09-23 体检时这几个接口原来返回"假成功 / 空数组"；当时改为诚实的 501。
+// 现在已实现：版本列表来自 GitHub Releases，更新/回滚在后台任务中执行，
+// 必须校验 sha256 才替换二进制，替换前备份为 <exe>.bak（回滚用它）。
 //
-//	ListReleases / ListUpdateJobs → 恒返回 []（调用方会以为"没有可用版本"，
-//	实际是功能没做 ✗）；SystemUpdate / SystemRollback → 恒返回成功 ✗（更误导）。
-//
-// 前端目前**没有任何地方调用这些端点**（已全量确认 ✓），所以改成诚实的 501 不影响界面 ✓；
-// 将来真做面板自更新时，把这里替换成实现即可（路由不用动 ✓）。
-//
-// 注：首次启动向导（FinishBootstrap）已于 2026-10-12 实现，见下方定义。
-func notImplemented(c *gin.Context, what string) {
-	response.Error(c, http.StatusNotImplemented, "NOT_IMPLEMENTED", what+" is not implemented")
-}
+// 前端如需展示进度，轮询 GET /system/update-jobs 即可。
 
 // bootstrapCompletedKey 记录首次启动初始化向导是否已完成（"true"）。单次有效：
 // 完成后再次调用 FinishBootstrap 返回 409。
@@ -767,24 +766,79 @@ func validatePort(name, value string, required bool) error {
 	return nil
 }
 
-// ListReleases 原来恒返回空数组 ✗（会被读成"没有可用版本"，实际是功能未实现）→ 501 ✓。
+// ListReleases handles GET /api/v1/system/releases?limit=20.
+// 返回 GitHub 上的面板版本列表，标注当前版本、当前平台产物与是否可回滚。
 func (h *Handler) ListReleases(c *gin.Context) {
-	notImplemented(c, "panel releases listing")
+	limit := 20
+	if v := c.Query("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	res, err := h.updateSvc.ListReleases(c.Request.Context(), limit)
+	if err != nil {
+		// 上游 GitHub 不可达 / 限流等，属于网关型错误
+		response.Error(c, http.StatusBadGateway, "GITHUB_API_FAILED", err.Error())
+		return
+	}
+	response.OK(c, res)
 }
 
-// SystemUpdate 原来回 200 + code=NOT_IMPLEMENTED ✗（HTTP 语义上算成功）→ 真 501 ✓。
+// SystemUpdate handles POST /api/v1/system/update。
+// body: {"version": "v0.13.0-alpha.1"}（可省略，缺省安装最新版本）。
+// 任务在后台执行，立即返回 202 + 任务详情。
 func (h *Handler) SystemUpdate(c *gin.Context) {
-	notImplemented(c, "panel self-update")
+	var req struct {
+		Version string `json:"version"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	job, err := h.updateSvc.StartUpdate(c.Request.Context(), req.Version)
+	switch {
+	case errors.Is(err, system.ErrPanelUpdateInProgress):
+		response.Conflict(c, "UPDATE_IN_PROGRESS", "another panel update job is running")
+	case errors.Is(err, system.ErrPanelUpdateUnsupported):
+		response.Unprocessable(c, "UNSUPPORTED_PLATFORM", err.Error())
+	case err != nil:
+		response.InternalError(c, "UPDATE_START_FAILED", err.Error())
+	default:
+		response.Accepted(c, gin.H{
+			"job":     job,
+			"message": "update job started; the panel will restart after the binary is replaced",
+		})
+	}
 }
 
-// SystemRollback 同上 → 501 ✓。
+// SystemRollback handles POST /api/v1/system/rollback。
+// 用上次更新前备份的 <exe>.bak 还原并重启面板。
 func (h *Handler) SystemRollback(c *gin.Context) {
-	notImplemented(c, "panel self-rollback")
+	job, err := h.updateSvc.StartRollback(c.Request.Context())
+	switch {
+	case errors.Is(err, system.ErrPanelRollbackUnavailable):
+		response.Conflict(c, "ROLLBACK_UNAVAILABLE", "no rollback backup available")
+	case errors.Is(err, system.ErrPanelUpdateInProgress):
+		response.Conflict(c, "UPDATE_IN_PROGRESS", "another panel update job is running")
+	case err != nil:
+		response.InternalError(c, "ROLLBACK_START_FAILED", err.Error())
+	default:
+		response.Accepted(c, gin.H{
+			"job":     job,
+			"message": "rollback job started; the panel will restart with the previous binary",
+		})
+	}
 }
 
-// ListUpdateJobs 原来恒返回空数组 ✗ → 501 ✓。
+// ListUpdateJobs handles GET /api/v1/system/update-jobs.
 func (h *Handler) ListUpdateJobs(c *gin.Context) {
-	notImplemented(c, "panel update jobs listing")
+	pg := response.ParsePagination(c)
+	items, total, err := h.updateSvc.ListJobs(c.Request.Context(), pg.Limit, pg.Offset)
+	if err != nil {
+		response.InternalError(c, "LIST_FAILED", err.Error())
+		return
+	}
+	response.Paginated(c, items, total, pg.Limit, pg.Offset)
 }
 
 const realityTargetsKey = "reality.targets"

@@ -1846,7 +1846,7 @@ export default {
         "rulesTitle": "Reglas de activación",
         "ruleExpire": "Vencimiento de suscripciones: análisis diario a las 09:05 de las suscripciones activas que vencen en los próximos 7 días",
         "ruleBalance": "Saldo insuficiente: clientes con saldo ≤ el umbral en el escaneo diario (notify.balance_threshold, en centavos; predeterminado 100 = 1 yuan)",
-        "ruleNodeMonitor": "监控节点：按「监控设置」中的频率检查心跳；仅在状态发生变化时才发出告警，一切正常时保持静默",
+        "ruleNodeMonitor": "Monitoreo de nodos: comprueba el latido con la frecuencia de «Configuración de monitoreo»; solo envía alertas cuando cambia el estado, y permanece en silencio en condiciones normales.",
         "ruleQuota": "Cuota de tráfico: alerta al alcanzar el umbral; máximo una por nodo y ciclo de facturación",
         "ruleBackup": "Copia de seguridad: si la copia programada se completa correctamente, se envía el «Informe diario de copia de seguridad»; si falla, la «Alerta de fallo de copia de seguridad». Envío inmediato.",
         "ruleCert": "Vencimiento de certificados: cada día a las 09:05 se revisan los certificados próximos a vencer (certificados de IP: quedan 3 días; certificados de dominio: quedan 7 días); se avisa como máximo una vez al día por certificado",
@@ -3146,7 +3146,7 @@ export default {
   },
   "chainProxy": {
     "editModeHint": "Modo edición: puedes cambiar la «entrada de salida» y la prioridad/peso/índice/tag de salida; para cambiar el nodo de salida, elimínalo y vuelve a crearlo.",
-    "exitTagPlaceholder": "Si se deja vacío, se genera automáticamente chain-<入口入站>-<出口>",
+    "exitTagPlaceholder": "Si se deja vacío, se genera automáticamente: chain-<ID del inbound de entrada>-<ID de salida>",
     "legacyRelayInbound": "Modo antiguo: entrada relay creada automáticamente",
     "exitNode": "Nodo de salida",
     "priorityHint": "Cuanto menor sea el número de prioridad, más alta será la prioridad (1 es la más alta); las salidas con la misma prioridad usan balanceo de carga.",

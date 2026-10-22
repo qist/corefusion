@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "flag": "🇺🇸",
-    "label": "English",
-    "language": "en"
+    "flag": "🇯🇵",
+    "label": "日本語",
+    "language": "ja"
   },
   "account.email": "メールアドレス",
   "account.expire": "有効期限",

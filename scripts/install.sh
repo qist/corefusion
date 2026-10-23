@@ -21,7 +21,6 @@
 
 set -Eeuo pipefail
 
-APP_NAME="corefusion"
 REPO="qist/corefusion"
 DEFAULT_DIR="/opt/corefusion"
 DEFAULT_NODE_MAJOR="22"
@@ -99,12 +98,17 @@ CoreFusion 面板多环境安装脚本
 
 说明：
   1. 首次启动会进入初始化向导，脚本结束时会打印「初始化地址 + 初始化令牌」。
-  2. 源码模式按系统环境选择依赖版本：
-       - Go：读取 go.mod 的 go 指令，已安装版本不足时下载对应版本工具链；
+  2. 自动安装面板运行时依赖（--no-deps 可跳过）：
+       nftables(nft)、iproute2(tc/ip/ss)、iptables、conntrack-tools、
+       kmod(modprobe)、procps(pgrep/pkill)、lsof、openssl、curl/tar/gzip/xz、tzdata
+     缺 nft/tc 只会让限速与防火墙能力受限，不影响面板启动。
+  3. 源码模式按系统环境选择依赖版本：
+       - Go：读取 go.mod 的 toolchain / go 指令，已安装版本不足时下载对应版本工具链；
        - Node：优先官方 Node 22；glibc < 2.28 时尝试 glibc-217 非官方构建；
          Alpine(musl) 使用发行版 nodejs/npm。
-  3. 首次安装写入的 .env 只包含 SAFE_PATHS，以确保进入初始化向导；
+  4. 首次安装写入的 .env 只包含 SAFE_PATHS，以确保进入初始化向导；
      数据库等配置由向导写入，已有 .env 不会被覆盖。
+  5. 节点（Agent）由面板生成安装脚本，同样会自动装上面的运行时依赖。
 EOF
 }
 
@@ -243,6 +247,16 @@ if [ "$CPU_QUERY" = "1" ]; then
 	echo "Go 目标架构 : $(go_arch)"
 	echo "Node 架构   : $(node_arch || true)"
 	echo "Release 支持: $(release_arch_supported && echo 是 || echo 否（仅支持 amd64/arm64，可改用 --source）)"
+	printf '运行时依赖  : '
+	missing_cmds=()
+	for c in curl tar gzip nft tc ip ss iptables pgrep pkill lsof openssl modprobe conntrack; do
+		command -v "$c" >/dev/null 2>&1 || missing_cmds+=("$c")
+	done
+	if [ "${#missing_cmds[@]}" -eq 0 ]; then
+		echo "全部就绪"
+	else
+		echo "缺失 ${missing_cmds[*]}（安装时会自动补齐）"
+	fi
 	exit 0
 fi
 
@@ -277,13 +291,37 @@ install_deps() {
 	[ "$SKIP_DEPS" = "1" ] && { warn "已跳过系统依赖安装（--no-deps）"; return 0; }
 
 	local base_pkgs=()
+	local runtime_pkgs=()
 	case "$FAMILY" in
-		debian) base_pkgs=(curl ca-certificates tar gzip xz-utils tzdata) ;;
-		rhel)   base_pkgs=(curl ca-certificates tar gzip xz tzdata) ;;
-		alpine) base_pkgs=(curl ca-certificates tar gzip xz tzdata) ;;
-		arch)   base_pkgs=(curl ca-certificates tar gzip xz tzdata) ;;
-		suse)   base_pkgs=(curl ca-certificates tar gzip xz tzdata) ;;
-		*)      base_pkgs=(curl ca-certificates tar gzip xz) ;;
+		debian)
+			base_pkgs=(curl ca-certificates tar gzip xz-utils tzdata)
+			runtime_pkgs=(nftables iproute2 iptables conntrack kmod procps lsof openssl passwd)
+			;;
+		rhel)
+			base_pkgs=(curl ca-certificates tar gzip xz tzdata)
+			runtime_pkgs=(nftables iproute conntrack-tools kmod procps-ng lsof openssl shadow-utils)
+			# EL8+ 的 iptables 命令由 iptables-nft 提供（没有独立的 iptables 包）；
+			# EL7 反过来只有 iptables。装错包名会整批失败，必须按主版本区分。
+			case "${OS_VER%%.*}" in
+				7) runtime_pkgs+=(iptables) ;;
+				*) runtime_pkgs+=(iptables-nft) ;;
+			esac
+			;;
+		alpine)
+			base_pkgs=(curl ca-certificates tar gzip xz tzdata)
+			runtime_pkgs=(nftables iproute2 iptables conntrack-tools kmod procps lsof openssl shadow)
+			;;
+		arch)
+			base_pkgs=(curl ca-certificates tar gzip xz tzdata)
+			runtime_pkgs=(nftables iproute2 iptables conntrack-tools kmod procps-ng lsof openssl shadow)
+			;;
+		suse)
+			base_pkgs=(curl ca-certificates tar gzip xz tzdata)
+			runtime_pkgs=(nftables iproute2 iptables conntrack-tools kmod procps lsof openssl shadow)
+			;;
+		*)
+			base_pkgs=(curl ca-certificates tar gzip xz)
+			;;
 	esac
 
 	local build_pkgs=()
@@ -302,7 +340,17 @@ install_deps() {
 		warn "包索引刷新失败，尝试直接安装"
 	fi
 	if ! pkg_install "${base_pkgs[@]}" ${build_pkgs[@]+"${build_pkgs[@]}"}; then
-		warn "系统包安装失败，检查必要命令是否已存在"
+		warn "基础系统包安装失败，检查必要命令是否已存在"
+	fi
+	# 运行时依赖是“可选增强”：不能和基础包放在同一次事务里，
+	# 否则某个包在旧发行版仓库不存在（如 RHEL7 无 nftables）会连 curl/tar 都装不上。
+	if [ "${#runtime_pkgs[@]}" -gt 0 ]; then
+		if ! pkg_install "${runtime_pkgs[@]}" >/dev/null 2>&1; then
+			warn "运行时依赖批量安装失败，改为逐包尝试（缺失项不影响面板启动）"
+			for p in "${runtime_pkgs[@]}"; do
+				pkg_install "$p" >/dev/null 2>&1 || true
+			done
+		fi
 	fi
 
 	local missing=()
@@ -311,6 +359,18 @@ install_deps() {
 		for c in git make; do command -v "$c" >/dev/null 2>&1 || missing+=("$c"); done
 	fi
 	[ "${#missing[@]}" -eq 0 ] || die "缺少必要命令：${missing[*]}（请先手动安装，或去掉 --no-deps）"
+
+	# 运行时能力自检：nft/tc 缺失不阻断安装（面板其余功能可用），但要明确告诉用户
+	local caps_missing=()
+	for c in nft tc ip ss pgrep pkill lsof openssl modprobe conntrack; do
+		command -v "$c" >/dev/null 2>&1 || caps_missing+=("$c")
+	done
+	if [ "${#caps_missing[@]}" -gt 0 ]; then
+		warn "以下命令缺失，限速/防火墙/端口检测等能力会受限：${caps_missing[*]}"
+		warn "可手动安装后重试（nftables / iproute2 / procps / lsof / openssl）"
+	else
+		ok "运行时依赖就绪（nft/tc/ip/ss/procps/lsof/openssl）"
+	fi
 	ok "系统依赖就绪"
 }
 
@@ -462,6 +522,10 @@ latest_version() {
 	# 列表按创建时间倒序，第一条即最新（草稿对匿名 API 不可见）。
 	json="$(curl -fsSL --max-time 20 "https://api.github.com/repos/${REPO}/releases?per_page=5" 2>/dev/null || true)"
 	tag="$(printf '%s' "$json" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed 's/.*"\([^"]*\)"$/\1/' || true)"
+	if [ -z "$tag" ]; then
+		tag="$(curl -fsSL --max-time 20 "https://github.com/${REPO}/releases.atom" 2>/dev/null \
+			| grep -o 'releases/tag/[^"<]*' | head -n1 | sed 's#.*/##' || true)"
+	fi
 	if [ -z "$tag" ]; then
 		tag="$(curl -fsSI --max-time 20 "https://github.com/${REPO}/releases/latest" 2>/dev/null \
 			| tr -d '\r' | sed -n 's#^[Ll]ocation: .*/tag/##p' | head -n1 || true)"
@@ -633,7 +697,7 @@ EOF
  初始化向导 : ${url}
  初始化令牌 : ${token}
  有效期     : 2 小时（见启动日志）
- 提示       : 令牌只显示一次；完成后向导端口关闭并自动切换到正式面板。
+ 提示       : 令牌只显示一次；云服务器需放行该端口；完成后向导端口关闭并自动切换到正式面板。
 EOF
 	else
 		if [ "${ALREADY_CONFIGURED:-0}" = "1" ]; then

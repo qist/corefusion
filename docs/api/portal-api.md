@@ -1,5 +1,7 @@
 # 门户 API 参考（Client / Portal API）
 
+> 语言： 简体中文 · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
+
 > 面向门户前端（`/p` 或独立门户端口）与第三方客户端的**完整**接口参考。
 > 路由定义：`internal/api/router/router.go`（`clientAuthGroup` / `clientAuthProtected` / `/api/v1/public/*`）。
 

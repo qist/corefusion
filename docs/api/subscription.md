@@ -1,5 +1,7 @@
 # 订阅 API（对外）
 
+> 语言： 简体中文 · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
+
 拉取用户订阅节点列表。**这是面向最终用户最常用的接口**，无需任何 Header，凭 URL 中的 token 访问。
 
 ## 1. 端点

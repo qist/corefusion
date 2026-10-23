@@ -1,5 +1,7 @@
 # 法律与合规说明
 
+> 语言： 简体中文 · [English](LEGAL.en.md) · [繁體中文](LEGAL.zh-TW.md) · [Русский](LEGAL.ru.md) · [日本語](LEGAL.ja.md) · [한국어](LEGAL.ko.md) · [Deutsch](LEGAL.de.md) · [Français](LEGAL.fr.md) · [Español](LEGAL.es.md) · [Português](LEGAL.pt.md) · [Türkçe](LEGAL.tr.md) · [Bahasa Indonesia](LEGAL.id.md) · [ไทย](LEGAL.th.md) · [Tiếng Việt](LEGAL.vi.md) · [العربية](LEGAL.ar.md) · [فارسی](LEGAL.fa.md)
+
 > 本文档说明 CoreFusion 的许可证、商业使用政策、第三方组件义务以及使用者在各地区应自行关注的合规事项。
 >
 > **本文档不构成法律意见。** 具体业务是否合规取决于部署地区、服务对象和运营模式，请咨询当地执业律师。

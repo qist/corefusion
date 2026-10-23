@@ -1,5 +1,7 @@
 # 管理端 API（Admin API）
 
+> 语言： 简体中文 · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
+
 面向**面板二开 / 自动化运维 / 对接方**的管理端接口全量路由表。
 
 - Base URL：`https://<面板域名>/api/v1`
@@ -120,7 +122,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 - [节点分组](#节点分组)
 - [节点服务器](#节点服务器)
 - [节点审计日志](#节点审计日志)
-- [节点（旧版模型）](#节点旧版模型)
+- [节点（旧版模型，已下线）](#节点旧版模型已下线)
 - [地区总览](#地区总览)
 - [订阅](#订阅)
 - [订阅格式](#订阅格式)
@@ -162,7 +164,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 - [客户认证与业务（管理端引擎上的同一套）](#客户认证与业务管理端引擎上的同一套)
 - [订阅下发](#订阅下发)
 - [运行时配置工作流](#运行时配置工作流)
-- [服务访问策略](#服务访问策略)
+- [服务访问策略（已下线）](#服务访问策略已下线)
 - [流量配额监控](#流量配额监控)
 - [健康检查](#健康检查)
 - [门户页](#门户页)
@@ -183,7 +185,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | GET | `/api/v1/auth/2fa/status` | 登录 | 状态 |
 | POST | `/api/v1/auth/change-password` | 登录 | 修改密码 |
 | POST | `/api/v1/auth/login` | 公开 | 登录 |
-| POST | `/api/v1/auth/login/2fa` | 公开 | 第二步验证（2FA）登录 |
+| POST | `/api/v1/auth/login/2fa` | 公开 | 动态码登录（2FA） |
 | GET | `/api/v1/auth/login/2fa-status` | 公开 | 查询账号是否启用 2FA |
 | POST | `/api/v1/auth/logout` | 登录 | 登出 |
 | GET | `/api/v1/auth/me` | 登录 | 当前登录用户 |

@@ -1,0 +1,110 @@
+<!-- source: charge-callback.md | locale: en | updated: 2026-10-23 -->
+# Charge Callback API
+
+> Languages: [简体中文](charge-callback.md) · English · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
+
+For **payment platforms / site integrators**: after a user pays on a mounted site, the payment platform's server notifies the panel.
+
+## 1. Endpoint
+
+```
+POST /api/v1/charge/callback/{site_id}
+Content-Type: application/json
+```
+
+`site_id` is the admin-side “mounted site” ID (integer). The callback is server-to-server and uses **HMAC signing** plus an optional IP allow-list instead of Bearer auth.
+
+## 2. Request body
+
+```json
+{
+  "trade_no":       "CF20261010120000abcd1234",
+  "site_trade_no":  "payment-platform-order-no",
+  "status":         "success",
+  "amount":         990,
+  "currency":       "CNY",
+  "timestamp":      1791640000,
+  "nonce":          "random-unique-string",
+  "paid_currency":  "CNY",
+  "paid_amount":    990,
+  "method":         "alipay",
+  "exchange_rate":  1.0,
+  "paid_at":        "2026-10-10 12:00:01",
+  "sign":           "hex(signature)",
+  "extra":          {}
+}
+```
+
+| Field | Description |
+|---|---|
+| `trade_no` | Panel-side transaction number (issued at order creation, `CF` prefix) |
+| `site_trade_no` | Payment platform order number (signed) |
+| `status` | Business status, **not signed** |
+| `amount` / `currency` | Order amount (integer cents) and currency (both signed) |
+| `timestamp` | Unix seconds; rejected outside the window (signed) |
+| `nonce` | Replay protection: atomic INSERT, each nonce processed once (signed) |
+| `paid_*` / `method` / `exchange_rate` / `paid_at` | Actual payment info, **not signed** (integrity covered by `body_hash`) |
+| `sign` | HMAC-SHA256 signature, hex-encoded (computed over the body without `sign`) |
+| `extra` | Extension fields |
+
+## 3. Signing algorithm (v3.2 / `version: "v1"`)
+
+1. Build the **raw body without `sign`** and compute `body_hash = SHA256(raw body bytes)` (lowercase hex).
+   > The panel also accepts the legacy scheme that hashes the full body including `sign`; new integrations should follow the documented scheme.
+2. Build the signing payload (**keys in lexicographic order**, Go `json.Marshal` semantics):
+
+```json
+{
+  "amount": 990,
+  "body_hash": "<hash from step 1>",
+  "currency": "CNY",
+  "nonce": "<nonce>",
+  "site_trade_no": "<site_trade_no>",
+  "timestamp": 1791640000,
+  "trade_no": "<trade_no>",
+  "version": "v1"
+}
+```
+
+3. `sign = hex( HMAC_SHA256( key=callback secret, msg=JSON bytes from step 2) )`.
+   > The secret is the mounted site's callback secret in the admin UI (after rotation the previous secret is kept for one transition window).
+
+```python
+import hashlib, hmac, json
+
+def sign_callback(body: dict, secret: str) -> str:
+    # 1) body_hash first: body must not contain sign here
+    body_hash = hashlib.sha256(json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    # 2) signing payload (key order irrelevant: json.dumps(sort_keys=True))
+    payload = {
+        "amount": body["amount"], "body_hash": body_hash,
+        "currency": body["currency"], "nonce": body["nonce"],
+        "site_trade_no": body["site_trade_no"], "timestamp": body["timestamp"],
+        "trade_no": body["trade_no"], "version": "v1",
+    }
+    msg = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+```
+
+## 4. Panel-side validation chain (determines the errors you get)
+
+1. Site exists and its domain is verified → 404 / 403
+2. IP allow-list (if `callback_whitelist` is configured, non-listed IPs are **hard-blocked**; otherwise skipped and only the signature is checked)
+3. `timestamp` window + `nonce` replay protection (atomic INSERT)
+4. HMAC verification (accepts both active and legacy secrets)
+5. Order exists and belongs to the site → idempotency (already paid returns success) → **amount and currency lock validation** → transactional posting (balance ledger + order status)
+
+Processing is **idempotent**: repeated callbacks with the same `trade_no` are not posted twice. Signature/rate anomalies are recorded as “callback events”, which admins can inspect and retry manually.
+
+## 5. Responses
+
+- Success: 2xx (after the panel has posted the payment)
+- Failure: 4xx/5xx + `{ "code": "...", "message": "..." }`; typical codes include `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, amount mismatch, etc.
+
+> Every callback carries `X-Request-ID` (generated by the panel if absent); logs and events are traceable end to end. Give this ID to your administrator when troubleshooting.
+
+## 6. Testing and troubleshooting
+
+- Admins can fetch each site's **integration doc**: `GET /api/v1/charge-sites/{id}/integration-doc` (includes the site's actual callback URL examples).
+- Callback events: `GET /api/v1/charge-callback-events`; retries: `GET /api/v1/charge-callback-retries`, `POST /api/v1/charge-callback-retries/{id}/retry`.
+- Secret rotation: `POST /api/v1/charge-sites/{id}/rotate-secret` (the previous secret is kept for one transition window).

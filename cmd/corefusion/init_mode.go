@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"corefusion/internal/migration"
@@ -113,17 +114,26 @@ func localIPv4s() []string {
 }
 
 // restartSelf 重新执行当前二进制（初始化完成后切换到正式服务）。
+//
+// 用 syscall.Exec 原地替换进程镜像（PID 不变）：面板多由 systemd（Type=simple）
+// 托管，spawn 子进程再 exit(0) 会被 systemd 判定为服务正常退出，整个 cgroup
+// （含刚起的子进程）被回收，表现为"初始化完成后面板起不来"。与自更新/重启接口
+// 的 restart_unix.go 保持同一做法。
 func restartSelf() {
 	exe, err := os.Executable()
 	if err != nil {
 		os.Exit(0)
 	}
-	cmd := exec.Command(exe, os.Args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	if err := cmd.Start(); err != nil {
-		log.Printf("restart failed: %v", err)
+	argv := append([]string{exe}, os.Args[1:]...)
+	if err := syscall.Exec(exe, argv, os.Environ()); err != nil {
+		// exec 失败的兜底：退回 spawn，至少尝试拉起新进程。
+		cmd := exec.Command(exe, os.Args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		if err := cmd.Start(); err != nil {
+			log.Printf("restart failed: %v", err)
+		}
 	}
 	os.Exit(0)
 }

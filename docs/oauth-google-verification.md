@@ -1,5 +1,7 @@
 # Google OAuth 正式授权（应用验证）指南
 
+> 语言： 简体中文 · [English](oauth-google-verification.en.md) · [繁體中文](oauth-google-verification.zh-TW.md) · [Русский](oauth-google-verification.ru.md) · [日本語](oauth-google-verification.ja.md) · [한국어](oauth-google-verification.ko.md) · [Deutsch](oauth-google-verification.de.md) · [Français](oauth-google-verification.fr.md) · [Español](oauth-google-verification.es.md) · [Português](oauth-google-verification.pt.md) · [Türkçe](oauth-google-verification.tr.md) · [Bahasa Indonesia](oauth-google-verification.id.md) · [ไทย](oauth-google-verification.th.md) · [Tiếng Việt](oauth-google-verification.vi.md) · [العربية](oauth-google-verification.ar.md) · [فارسی](oauth-google-verification.fa.md)
+
 > 适用范围：CoreFusion 门户的 Google 第三方登录（`internal/service/oauth`，scopes：`openid`、`email`、`profile`）。
 > GitHub 对照说明见文末（GitHub 无需验证流程）。
 

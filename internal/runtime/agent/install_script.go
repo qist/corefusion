@@ -163,6 +163,99 @@ esac
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 echo "OS: $OS, Arch: $AGENT_ARCH"
 
+# ── 运行时依赖 ──────────────────────────────────────────────
+# Agent 在本机接管限速/防火墙/流量统计，需要这些系统命令：
+#   nftables       nft（防火墙/限速/并发标记）
+#   iproute2       tc / ip / ss（限速队列、网卡与连接查看）
+#   iptables       无 nft 时的回退
+#   conntrack      conntrack-tools（并发连接统计）
+#   kmod           modprobe / lsmod（加载 nf_conntrack、ifb）
+#   procps         pgrep / pkill（进程检测与清理）
+#   lsof/openssl   端口占用检测 / DH 参数生成
+# 装不上不阻断安装：缺这些只会让限速/防火墙能力受限。
+install_runtime_deps() {
+  if [ "${CF_SKIP_DEPS:-0}" = "1" ]; then
+    echo "已跳过系统依赖安装（CF_SKIP_DEPS=1）"
+    return 0
+  fi
+
+  local pkgs=""
+  local mgr=""
+  # EL8+ 的 iptables 命令由 iptables-nft 提供（没有独立的 iptables 包）；EL7 只有 iptables。
+  local ipt_pkg="iptables"
+  if [ -r /etc/os-release ]; then
+    local os_id="" os_major=""
+    os_id="$(. /etc/os-release 2>/dev/null; echo "$ID")"
+    os_major="$(. /etc/os-release 2>/dev/null; echo "${VERSION_ID%%.*}")"
+    case "$os_id" in
+      rhel|centos|rocky|almalinux|fedora|ol|amzn)
+        if [ "${os_major:-0}" -ge 8 ] 2>/dev/null; then ipt_pkg="iptables-nft"; fi
+        ;;
+    esac
+  fi
+  if command -v apt-get >/dev/null 2>&1; then
+    mgr="apt"
+    pkgs="nftables iproute2 iptables conntrack kmod procps lsof openssl passwd ca-certificates curl tar gzip xz-utils"
+  elif command -v dnf >/dev/null 2>&1; then
+    mgr="dnf"
+    pkgs="nftables iproute $ipt_pkg conntrack-tools kmod procps-ng lsof openssl shadow-utils ca-certificates curl tar gzip xz"
+  elif command -v yum >/dev/null 2>&1; then
+    mgr="yum"
+    pkgs="nftables iproute $ipt_pkg conntrack-tools kmod procps-ng lsof openssl shadow-utils ca-certificates curl tar gzip xz"
+  elif command -v apk >/dev/null 2>&1; then
+    mgr="apk"
+    pkgs="nftables iproute2 iptables conntrack-tools kmod procps lsof openssl shadow ca-certificates curl tar gzip xz"
+  elif command -v pacman >/dev/null 2>&1; then
+    mgr="pacman"
+    pkgs="nftables iproute2 iptables conntrack-tools kmod procps-ng lsof openssl shadow ca-certificates curl tar gzip xz"
+  elif command -v zypper >/dev/null 2>&1; then
+    mgr="zypper"
+    pkgs="nftables iproute2 iptables conntrack-tools kmod procps lsof openssl shadow ca-certificates curl tar gzip xz"
+  fi
+
+  if [ -z "$mgr" ]; then
+    echo "警告：未识别的包管理器，跳过依赖安装（可设置 CF_SKIP_DEPS=1 消除本提示）"
+    return 0
+  fi
+
+  echo "安装运行时依赖（$mgr）..."
+  case "$mgr" in
+    apt)
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -y -qq >/dev/null 2>&1 || true
+      apt-get install -y -qq --no-install-recommends $pkgs >/dev/null 2>&1 \
+        || for p in $pkgs; do apt-get install -y -qq --no-install-recommends "$p" >/dev/null 2>&1 || true; done
+      ;;
+    dnf|yum)
+      $mgr install -y -q $pkgs >/dev/null 2>&1 \
+        || for p in $pkgs; do $mgr install -y -q "$p" >/dev/null 2>&1 || true; done
+      ;;
+    apk)
+      apk add --no-cache -q $pkgs >/dev/null 2>&1 \
+        || for p in $pkgs; do apk add --no-cache -q "$p" >/dev/null 2>&1 || true; done
+      ;;
+    pacman)
+      pacman -Sy --needed --noconfirm --quiet $pkgs >/dev/null 2>&1 \
+        || for p in $pkgs; do pacman -S --needed --noconfirm --quiet "$p" >/dev/null 2>&1 || true; done
+      ;;
+    zypper)
+      zypper -q install -y --no-recommends $pkgs >/dev/null 2>&1 \
+        || for p in $pkgs; do zypper -q install -y --no-recommends "$p" >/dev/null 2>&1 || true; done
+      ;;
+  esac
+
+  local miss=""
+  for c in nft tc ip ss pgrep pkill lsof openssl modprobe conntrack; do
+    command -v "$c" >/dev/null 2>&1 || miss="$miss $c"
+  done
+  if [ -n "$miss" ]; then
+    echo "警告：以下命令仍缺失，限速/防火墙能力会受限：$miss"
+  else
+    echo "运行时依赖就绪（nft/tc/ip/ss/procps/lsof/openssl）"
+  fi
+}
+install_runtime_deps
+
 # Create install directory structure (must match initDataDir in agent main.go)
 mkdir -p "$INSTALL_DIR/data/sqlite" \
          "$INSTALL_DIR/data/certs" \

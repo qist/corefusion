@@ -34,6 +34,38 @@ func TestInstallScriptShipsPanelCAAndProtectsConfig(t *testing.T) {
 	}
 }
 
+// 节点机需要 nft/tc 等系统命令才能做限速/防火墙，安装脚本必须自动补齐，
+// 而不是让用户装完 Agent 才发现限速不可用。
+func TestInstallScriptInstallsRuntimeDeps(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 8080).
+		WithBootstrapToken("t").
+		WithServerID(2).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成失败：%v", err)
+	}
+	for _, want := range []string{
+		"install_runtime_deps",
+		"nftables",
+		"iproute2",
+		"conntrack-tools",
+		"procps",
+		"lsof",
+		"openssl",
+		"CF_SKIP_DEPS",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("安装脚本缺少运行时依赖相关内容：%q", want)
+		}
+	}
+	// 依赖安装必须在下载/启动之前，否则 Agent 起来后限速仍然不可用
+	depAt := strings.Index(script, "install_runtime_deps")
+	startAt := strings.Index(script, "systemctl restart corefusion-agent")
+	if depAt < 0 || startAt < 0 || depAt > startAt {
+		t.Error("依赖安装应在启动服务之前")
+	}
+}
+
 // 没提供 CA（理论上走不到，防御性）时脚本仍要能生成，只是不带 CA 段落。
 func TestInstallScriptWithoutCAStillGenerates(t *testing.T) {
 	script, err := NewAgentInstallScript("panel.example.com", 8080).

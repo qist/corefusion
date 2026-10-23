@@ -1,5 +1,7 @@
 # CoreFusion 操作使用手册
 
+> 语言： 简体中文 · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
+
 > 本手册面向 CoreFusion 使用者，涵盖从安装部署到日常运维的完整操作流程。
 
 ---
@@ -60,66 +62,260 @@ CoreFusion 是一款多协议代理管理面板，支持 VLESS、VMess、Trojan�
 - **前端**：Vue 3 + Element Plus
 - **数据库**：SQLite（默认）/ MySQL / PostgreSQL
 - **代理**：Caddy / Nginx 反向代理
-- **面板端口**：默认 8080
+- **面板端口**：由初始化向导指定（默认随机空闲端口，可填 8080）
 - **Agent gRPC 端口**：默认 18443
 
 ---
 
 ## 2. 安装部署
 
-### 2.1 环境要求
+### 2.1 支持的环境
 
-- Linux 系统（推荐 Debian / Ubuntu / CentOS）
-- Go 1.21+（从源码编译）
-- 至少 1GB 内存
-- 至少 10GB 磁盘空间
+| 项目 | 支持范围 |
+|------|----------|
+| 发行版 | Debian / Ubuntu、RHEL / CentOS / Rocky / AlmaLinux / Fedora、Alpine、Arch、openSUSE |
+| CPU 架构 | 官方二进制：`amd64`、`arm64`；源码编译另支持 `armv7`、`armv6`、`386`、`ppc64le`、`s390x`、`riscv64`、`loong64` |
+| 服务管理 | systemd（推荐）；容器等无 systemd 环境自动回落 `nohup` |
+| 内存 / 磁盘 | ≥ 1 GB / ≥ 10 GB（数据库、证书、日志与核心二进制都放在数据目录） |
+| 面板端口 | 由初始化向导指定（默认随机空闲端口，可填 `8080` 等）；初始化向导自身使用 18000–18999 的随机端口 |
+| Agent gRPC | 默认 `18443` |
 
-### 2.2 从源码编译
+面板与 Agent 的**运行时外部命令**由安装脚本自动补齐（`scripts/install.sh` 与面板生成的
+Agent 安装脚本都会做，`--no-deps` / `CF_SKIP_DEPS=1` 可跳过）：
+
+| 用途 | 依赖 |
+|------|------|
+| 防火墙 / 限速 / 并发标记 | `nftables`（`nft`） |
+| 限速队列、网卡与连接查看 | `iproute2`（`tc` / `ip` / `ss`） |
+| 无 nft 时回退 | `iptables`（EL8+ 为 `iptables-nft`，EL7 为 `iptables`） |
+| 并发连接统计 | `conntrack-tools`（`conntrack`） |
+| 加载 `nf_conntrack` / `ifb` | `kmod`（`modprobe` / `lsmod`） |
+| 进程检测与清理 | `procps`（`pgrep` / `pkill`） |
+| 端口占用检测 / DH 参数 | `lsof` / `openssl` |
+| 代理用户创建 | `shadow-utils`（Debian `passwd`，Alpine/Arch `shadow`） |
+| 下载与解包 | `curl` / `ca-certificates` / `tar` / `gzip` / `xz` |
+
+> 缺失 `nft` / `tc` 只影响限速与防火墙能力，不影响面板启动。
+> 安装前可先用 `--cpu-info` 查看当前环境识别结果与依赖缺口。
+
+### 2.2 一键在线安装（推荐）
 
 ```bash
-# 克隆仓库
-git clone <repository-url>
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh -o install.sh
+sudo bash install.sh
+```
+
+也可以直接管道执行（无交互、无额外参数）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
+```
+
+脚本依次完成：
+
+1. 识别发行版、CPU 架构与 libc，安装基础包与运行时依赖；
+2. 从 GitHub Release 下载 `corefusion-linux-<arch>`，并用同名 `.sha256` 校验；
+3. 安装到 `/opt/corefusion`，创建 `data/{sqlite,certs,logs,runtime}`；
+4. 不写数据库配置，只预置 `SAFE_PATHS=data` 的占位 `.env`，保证首次启动进入初始化向导（完整 `.env` 由向导生成）；
+5. 写入 systemd 服务并启动（无 systemd 时用 `nohup` 后台运行）；
+6. 等待就绪并打印初始化地址、令牌与各目录位置。
+
+安装完成后输出类似：
+
+```text
+==================================================================
+ CoreFusion 安装完成
+------------------------------------------------------------------
+ 安装目录 : /opt/corefusion
+ 数据目录 : /opt/corefusion/data
+ 二进制   : /opt/corefusion/corefusion
+ 日志     : journalctl -u corefusion -f
+------------------------------------------------------------------
+ 初始化向导 : http://<服务器IP>:<随机端口>/init?init_token=<令牌>
+ 初始化令牌 : <令牌>
+ 有效期     : 2 小时（见启动日志）
+ 提示       : 令牌只显示一次；完成后向导端口关闭并自动切换到正式面板。
+==================================================================
+```
+
+如果面板只监听 `127.0.0.1`（例如已配置反向代理），脚本会改为提示 SSH 隧道命令，而不是给一个访问不到的地址。
+
+> 令牌丢失可重新查看启动日志：`journalctl -u corefusion -n 50 --no-pager`
+> （无 systemd 时为 `tail -n 50 /opt/corefusion/data/logs/panel.log`）。
+
+### 2.3 指定版本 / 国内加速 / 离线安装
+
+```bash
+# 指定版本
+sudo bash install.sh --version v0.13.0-alpha.2
+
+# GitHub 下载加速（作为 URL 前缀）
+sudo bash install.sh --mirror https://ghproxy.net --version latest
+
+# 使用本地二进制（离线 / 内网 / 已交叉编译）
+sudo bash install.sh --local ./dist/corefusion-linux-arm64
+
+# 明确指定目标架构
+sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
+```
+
+> 不指定 `--version` 时取 GitHub Release 列表中最新的一条。本项目发布多为 pre-release，
+> 因此脚本不会使用 `/releases/latest` 接口。
+>
+> 官方 Release 只提供 `amd64` / `arm64`；其他架构请用源码模式，或自行交叉编译后配合 `--local`。
+
+### 2.4 源码编译安装
+
+```bash
+sudo bash install.sh --source --version v0.13.0-alpha.2
+```
+
+`--source` 会克隆源码（脚本位于源码目录内时直接使用现有源码）并执行 `make panel`。
+依赖版本按系统环境自动选择：
+
+| 依赖 | 选择策略 |
+|------|----------|
+| Go | 读取 `go.mod` 的 `toolchain` / `go` 指令（当前要求 **Go 1.27+**）；系统版本不足时下载对应工具链到 `<安装目录>/.toolchain` |
+| Node | 默认 **Node 22 LTS**（Vite 构建要求 ≥ 18）；系统版本不足时下载官方构建 |
+| Node（glibc < 2.28） | 自动改用 `unofficial-builds` 的 `glibc-217` 构建（如 CentOS 7） |
+| Node（Alpine / musl） | 使用发行版 `nodejs` / `npm` |
+
+可覆盖的变量：
+
+```bash
+# 指定 Go / Node 版本
+sudo CF_GO_VERSION=1.27.5 CF_NODE_MAJOR=22 bash install.sh --source
+
+# Go 工具链镜像（默认 https://go.dev/dl）
+sudo CF_GO_MIRROR=https://golang.google.cn/dl bash install.sh --source
+```
+
+手动编译（开发 / 调试）：
+
+```bash
+git clone https://github.com/qist/corefusion.git
 cd corefusion
 
-# 编译面板二进制
-go build -o corefusion ./cmd/corefusion/
+# 前端 + 本机架构面板；前端通过 go:embed 打进二进制
+make panel
 
-# 编译前端
-cd web/admin
-npm install
-npm run build
-cd ../..
-
-# 运行面板
-./corefusion
+# 交叉编译
+make panel-linux-amd64
+make panel-linux-arm64
 ```
 
-### 2.3 使用 Docker（可选，需自行构建镜像）
+> `go build ./...` 不会产出可执行文件。面板二进制必须用
+> `go build -o corefusion ./cmd/corefusion/` 或 `make panel`。
 
-仓库**未内置** Dockerfile，如需容器化请自行编写镜像。参考运行参数：
+### 2.5 安装参数速查
+
+| 参数 | 说明 |
+|------|------|
+| `-d, --dir <PATH>` | 安装目录，默认 `/opt/corefusion` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.2`，默认 `latest` |
+| `--binary` | 使用 GitHub Release 二进制（默认） |
+| `--source` | 源码编译安装，自动准备匹配的 Go / Node |
+| `--local <FILE>` | 使用本地二进制文件（离线安装） |
+| `--arch <ARCH>` | 指定 CPU 架构：`amd64` / `arm64` / `armv7` / `armv6` / `386` / `ppc64le` / `s390x` / `riscv64` / `loong64` |
+| `--mirror <URL>` | GitHub 下载加速前缀，如 `https://ghproxy.net` |
+| `--repo <URL>` | 源码仓库地址，默认 `https://github.com/qist/corefusion.git` |
+| `--ref <REF>` | 源码分支 / 标签，默认取 `--version`，否则 `main` |
+| `--no-deps` | 跳过系统依赖安装（离线或已预装环境） |
+| `--no-start` | 只安装并写入服务文件，不启动 |
+| `--cpu-info` | 只输出环境识别与依赖缺口，不执行安装 |
+| `--uninstall` | 停止服务并删除程序（保留数据与 `.env`） |
+| `--purge` | 与 `--uninstall` 连用，同时删除数据目录与 `.env` |
+
+相关环境变量：
+
+| 变量 | 作用 |
+|------|------|
+| `CF_GO_VERSION` | 覆盖源码模式要求的 Go 版本 |
+| `CF_NODE_MAJOR` | 覆盖源码模式的 Node 主版本（默认 22） |
+| `CF_GO_MIRROR` | Go 工具链下载镜像 |
+| `CF_SKIP_DEPS` | Agent 安装脚本中设为 `1` 可跳过依赖安装 |
+
+### 2.6 安装目录结构
+
+```text
+/opt/corefusion/
+├── corefusion                 # 面板二进制
+├── corefusion.bak             # 升级前的上一版（存在时）
+├── .env                       # 环境配置（0600，初始化向导生成）
+├── .toolchain/                # 源码模式下载的 Go / Node（仅源码安装）
+└── data/                      # 数据目录（SAFE_PATHS）
+    ├── sqlite/app.db          # 默认 SQLite 数据库
+    ├── certs/                 # 证书与私钥
+    ├── logs/                  # 无 systemd 时的运行日志
+    ├── runtime/               # 核心运行配置与状态
+    ├── binaries/              # 下载的 xray / sing-box 等核心
+    └── proxy/                 # 代理（Caddy/Nginx）站点与配置
+```
+
+> 安装脚本只创建 `sqlite/`、`certs/`、`logs/`、`runtime/`；`binaries/`、`proxy/`、`rules/` 等
+> 在面板启动或安装核心后自动创建。
+> 数据目录位置由 `.env` 的 `SAFE_PATHS` 决定，可以是绝对路径。更换安装目录不会自动搬迁数据。
+
+### 2.7 服务管理
+
+systemd（大多数发行版）：
 
 ```bash
-docker run -d \
-  --name corefusion \
-  -p 8080:8080 \
-  -p 18443:18443 \
-  -v /opt/corefusion/data:/app/data \
-  -v /opt/corefusion/.env:/app/.env \
-  <your-image>
+systemctl status corefusion --no-pager
+systemctl restart corefusion
+systemctl stop corefusion
+journalctl -u corefusion -f          # 实时日志
+journalctl -u corefusion -n 100      # 最近 100 行
 ```
 
-### 2.4 环境配置
-
-复制 `.env.example` 为 `.env` 并修改：
+无 systemd（容器等）：
 
 ```bash
-cp .env.example .env
+cd /opt/corefusion && ./corefusion            # 前台运行（调试）
+cd /opt/corefusion && setsid nohup ./corefusion >> data/logs/panel.log 2>&1 &
+tail -f data/logs/panel.log
 ```
+
+> 无 systemd 时进程不会开机自启，服务器重启后需要重新拉起（或重跑安装脚本）。
+
+### 2.8 升级与卸载
+
+升级（保留数据与配置）：
+
+```bash
+sudo bash install.sh --version <新版本>
+```
+
+脚本会停止旧服务、备份为 `corefusion.bak`、替换二进制并重启；已有 `.env` 与 `data/` 不会被动。
+
+卸载：
+
+```bash
+# 只删程序，保留数据与 .env
+sudo bash install.sh --uninstall
+
+# 连数据目录与 .env 一起删除（不可恢复）
+sudo bash install.sh --uninstall --purge
+```
+
+### 2.9 环境配置（.env）
+
+完整的 `.env` 由**初始化向导在保存配置时生成**（数据库 DSN、数据目录、密钥、端口、域名等）。
+
+安装脚本只在全新安装时预置一行占位，避免面板把已经存在的 `data/` 误判为“已初始化”而跳过向导：
+
+```env
+SAFE_PATHS=data
+```
+
+> 已有完整配置（`.env` 中含 `CF_DB_DSN`）时，安装 / 升级脚本不会覆盖，也不会再进入初始化向导。
+> 之后手工编辑 `.env` 同样生效，改完重启面板即可。
 
 #### 数据目录
 
 ```env
-SAFE_PATHS=data
+SAFE_PATHS=data                       # 相对安装目录
+# SAFE_PATHS=/srv/corefusion-data     # 或绝对路径
 ```
 
 #### 数据库配置
@@ -135,7 +331,7 @@ SAFE_PATHS=data
 
 `CF_DB_TYPE` 可选，用于覆盖自动检测（`sqlite` / `mysql` / `postgres`）。
 
-> **密码加密存储**：通过面板写入（首次启动向导 / 数据库切换）的 MySQL/PostgreSQL
+> **密码加密存储**：通过面板写入（初始化向导 / 数据库切换）的 MySQL/PostgreSQL
 > DSN 含数据库口令，会以 `enc:...` 形式（AES-256-GCM，密钥为 `CF_SECRET_ENCRYPTION_KEY`）
 > 加密存进 `.env`；读取时自动解密，手工写明文 DSN 同样兼容。
 
@@ -170,40 +366,285 @@ CF_DB_MAX_OPEN_CONNS=100
 CF_DB_MAX_IDLE_CONNS=10
 ```
 
+#### 其他常用项
+
+| 变量 | 说明 |
+|------|------|
+| `JWT_SECRET` | 登录令牌签名密钥；缺失时首次启动自动生成 |
+| `CF_SECRET_ENCRYPTION_KEY` | 敏感配置加密密钥（AES-256-GCM）；缺失时自动生成 |
+| `CF_INITIAL_ADMIN_PASSWORD` | 首次初始化时的管理员口令（可不设，默认随机生成并只打印一次） |
+| `CF_NETWORK_TRAFFIC_ACCOUNTING` | 设为 `0` 关闭基于 iptables 的流量统计（默认开启） |
+| `CF_NETWORK_TRAFFIC_TABLE` | 流量统计使用的 iptables 表名，默认 `corefusion` |
+
+> 可信反向代理地址（用于取真实客户端 IP）不再通过环境变量配置，而是在
+> 「系统设置 → 网络」中以 `panel.trusted_proxies` 保存。
+
+> `.env` 含密钥，面板启动时会自动把权限收紧到 `0600`。不要提交到版本库。
+
+### 2.10 使用 Docker（可选，需自行构建镜像）
+
+仓库**未内置** Dockerfile，如需容器化请自行编写镜像。参考运行参数：
+
+```bash
+docker run -d \
+  --name corefusion \
+  -p 8080:8080 \
+  -p 18443:18443 \
+  -v /opt/corefusion/data:/app/data \
+  -v /opt/corefusion/.env:/app/.env \
+  <your-image>
+```
+
+> 容器内通常没有 systemd 与 `nft` 权限，限速 / 防火墙相关功能不可用；
+> 工作目录需与 `SAFE_PATHS` 的相对路径基准一致。
+
+### 2.11 安装后自检
+
+```bash
+# 环境与依赖
+sudo bash install.sh --cpu-info
+
+# 服务状态
+systemctl is-active corefusion
+
+# 启动日志（含初始化地址与令牌）
+journalctl -u corefusion -n 50 --no-pager
+
+# 监听端口
+ss -lntp | grep corefusion
+```
+
 ---
 
 ## 3. 初始配置
 
-### 3.1 首次登录
+首次启动时，若 `.env` 中没有有效的 `CF_DB_DSN`，面板**不会**直接提供管理界面，而是进入
+**初始化向导**：只用 18000–18999 的随机端口和一次性令牌提供服务，配置保存后自动重启为正式面板。
 
-1. 启动面板后，访问 `http://your-server-ip:8080`
-2. 使用默认管理员账号登录：
-   - 用户名：`admin`
-   - 密码：随机生成（查看日志获取）或 `.env` 中设置的 `CF_INITIAL_ADMIN_PASSWORD`
+### 3.1 打开初始化向导
 
-### 3.2 修改初始密码
+1. 从安装脚本输出中复制「初始化向导」地址；
+2. 或在服务器上查看日志：
 
-登录后立即修改密码：
-1. 点击右上角用户名
-2. 选择「修改密码」
-3. 输入原密码和新密码
-4. 点击「保存」
+```bash
+journalctl -u corefusion -n 50 --no-pager | grep -A2 '初始化向导'
+```
 
-### 3.3 开启双步验证（2FA）
+```text
+CoreFusion 首次启动 - 初始化向导
+  访问地址: http://<IP>:<端口>/init?init_token=<令牌>
+  初始化令牌: <令牌>
+  有效期: 2h0m0s
+```
 
-1. 点击右上角用户名
-2. 选择「开启 2FA」
-3. 输入当前密码
-4. 使用认证器 App 扫描二维码
-5. 输入 6 位验证码
-6. **立即保存恢复码**（建议下载文件）
+3. 浏览器打开该地址（含 `init_token`），令牌无需手工输入。
 
-### 3.4 配置 Passkey（可选）
+> 向导会话默认 **2 小时**过期。过期或面板重启后需重新获取；令牌不要分享给他人。
+> 初始化完成后该端口关闭，仅正式面板端口对外服务。
 
-1. 点击右上角用户名
-2. 选择「Passkey 管理」
-3. 点击「注册新 Passkey」
-4. 按提示完成设备认证
+### 3.2 向导步骤
+
+向导共 8 步，可随时「上一步」修改，全部完成后才落库：
+
+| 步骤 | 内容 |
+|------|------|
+| 1. 数据库 | SQLite / MySQL / PostgreSQL |
+| 2. 数据目录 | 写入 `.env` 的 `SAFE_PATHS` |
+| 3. 加密密钥 | `JWT_SECRET` 与 `CF_SECRET_ENCRYPTION_KEY` |
+| 4. 核心安装 | 选择要安装的代理核心 |
+| 5. 代理 | 不使用 / Nginx / Caddy |
+| 6. 站点与域名 | 端口、访问路径、管理员账号、货币、时区、域名 |
+| 7. HTTPS 证书 | 不启用 / 上传证书 / ACME 自动申请 |
+| 8. 配置清单 | 复核、下载 `.env`、保存并重启 |
+
+#### 步骤 1：数据库
+
+- **SQLite（本地文件，推荐）**：文件路径留空即使用「数据目录/sqlite/app.db」。
+- **MySQL / PostgreSQL**：填写主机、端口、用户名、密码、库名；PostgreSQL 可选 `disable` / `require` / `verify-full`。
+- 点「测试连接」可先验证；保存下一步时也会测试。库不存在会自动尝试创建（账号无 `CREATE` 权限时请先手工建库）。
+- 数据库连接串（含密码）会加密写入 `.env`。
+
+#### 步骤 2：数据目录
+
+存放数据库、证书、日志、核心二进制等，即 `.env` 的 `SAFE_PATHS`。默认 `data`（相对安装目录），
+也可以填绝对路径。**创建后不要随意改动**，否则会找不到已有数据库与证书。
+
+#### 步骤 3：加密密钥
+
+- `JWT_SECRET`：登录令牌签名密钥。
+- `CF_SECRET_ENCRYPTION_KEY`：敏感配置（数据库口令、证书 DNS 凭据、充值卡等）的加密密钥。
+- 两者默认随机生成，可用「随机生成」重新取值。**更换 `CF_SECRET_ENCRYPTION_KEY` 会导致已加密数据无法解密**，务必备份。
+
+#### 步骤 4：核心安装
+
+勾选需要安装的代理核心：
+
+- **Xray**：VLESS / VMess / Trojan / Shadowsocks 等；
+- **sing-box**：Hysteria2 / TUIC 等 QUIC 协议由其承载。
+
+保存并重启后由面板自动下载安装，可在「协议中心」查看版本与运行状态。也可以稍后再装。
+
+#### 步骤 5：代理
+
+- **不使用**：面板直接对外提供服务（需要自己处理 TLS）。
+- **Nginx / Caddy**：由面板管理反向代理与证书托管，二者选一。
+
+选择代理后，面板通常只监听 `127.0.0.1`，由代理对外服务。
+
+#### 步骤 6：站点与域名
+
+| 字段 | 说明 |
+|------|------|
+| 监听地址 | 自动推导：走代理 → `127.0.0.1`；不走代理且配置了证书 → `0.0.0.0`；其余 → `127.0.0.1` |
+| 管理面板端口 | 默认随机分配空闲端口，可改（如 8080） |
+| 订阅服务端口 | 可选，`0` 表示与主面板共用端口 |
+| 门户站点端口 | 可选，`0` 表示与主面板共用端口 |
+| 访问路径 | 管理面板前端路径，默认 `/`；API 固定为 `/api/v1` |
+| 管理员用户名 / 密码 | 默认随机生成；**口令只在配置清单显示一次**，务必保存 |
+| 访问方式 | 「域名」或「IP」 |
+| 默认货币 / 时区 | 充值卡与余额的默认货币；面板时间与代理日志时区（如 `Asia/Shanghai`） |
+| 一键添加到反向代理 | 选了代理且填了域名时，可把面板 / 订阅 / 门户域名一起反代 |
+
+填了域名会写入对应配置（回调域名、订阅端点、分享域名）。
+
+#### 步骤 7：HTTPS 证书
+
+| 证书来源 | 说明 |
+|----------|------|
+| 暂不启用 HTTPS | 面板/门户/订阅以 HTTP 提供服务（不安全）；反向代理场景可稍后在代理侧补证书 |
+| 上传自定义证书 | 粘贴证书 PEM 与私钥 PEM（仅域名访问方式） |
+| ACME 自动申请 | 提交这一步即完成签发，支持域名与 IP 证书 |
+
+ACME 选项：
+
+- **CA 服务商**：Let's Encrypt、Let's Encrypt (Staging)、ZeroSSL、Google Public CA；
+- **证书目标**：「配置域名」或「使用 IP」（仅 Let's Encrypt 支持 IP 证书）；
+- **验证方式**：`HTTP-01`（需本机 80 端口）或 `DNS-01`（支持泛域名、无需 80 端口，需选择 DNS 服务商并填凭据）；
+- **密钥类型 / 长度**：ECC 256/384 或 RSA 2048/3072/4096；
+- **Google Public CA**：需要 EAB，可手工填 Key ID / HMAC，或用 GCP 服务账号自动申请。
+
+> IP 证书会自动检测本机公网 IPv4/IPv6。若面板位于代理后面，签发 IP 证书时应注意取的是本机地址，
+> 而不是代理出口地址。域名证书也可以在完成初始化后到「证书管理」中申请。
+
+#### 步骤 8：配置清单
+
+展示数据库、数据目录、核心、代理、端口、管理员账号、域名与 `.env` 键值（敏感项脱敏），并提供：
+
+- **下载 .env**：保存一份配置副本；
+- **访问地址**：面板 / 订阅 / 门户的最终 URL，HTTP 会标记「不安全」。
+
+点「保存并重启」后写入数据库与 `.env`，面板自动重启切换到正式服务。
+
+### 3.3 初始化完成
+
+- 服务自动重启，启动日志会打印正式监听地址；
+- 用配置清单中的管理员账号 + 访问地址 + 访问路径登录；
+- 若口令丢失，可用 `./corefusion admin reset-password` 离线重置。
+
+### 3.4 CLI 非交互初始化
+
+适合自动化部署 / 无浏览器环境，直接落库并标记完成：
+
+```bash
+cd /opt/corefusion
+./corefusion init \
+  --db-type sqlite \
+  --data-dir /opt/corefusion/data \
+  --admin-username admin \
+  --admin-password '改成强口令' \
+  --listen-port 8080 \
+  --proxy-type caddy \
+  --cores xray,singbox \
+  --panel-domain panel.example.com \
+  --tls-mode acme --tls-domain panel.example.com --tls-email you@example.com
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|------|------|
+| `--db-type` / `--db-host` / `--db-port` / `--db-user` / `--db-password` / `--db-name` | 数据库配置 |
+| `--data-dir` | 数据目录，默认取 `SAFE_PATHS` 或 `./data` |
+| `--listen-port` / `--subscription-port` / `--portal-port` / `--web-path` | 端口与访问路径（默认随机空闲端口） |
+| `--admin-username` / `--admin-password` | 管理员账号（口令留空则随机生成并只打印一次） |
+| `--proxy-type` | `none` / `nginx` / `caddy` |
+| `--cores` | 要安装的核心，逗号分隔：`xray,singbox` |
+| `--panel-domain` / `--subscription-domain` / `--portal-domain` | 域名（会写入配置并加入反向代理） |
+| `--tls-mode` | `none` / `self_signed` / `acme` |
+| `--tls-domain` / `--tls-email` / `--tls-challenge` / `--tls-key-type` / `--tls-key-bits` | 证书参数（`--tls-challenge` 默认 `http-01`；用 `dns-01` 时需配合 `--tls-dns-channel` 或 `--tls-dns-provider`） |
+| `--tls-ip-cert` | 为自动检测到的公网 IP 签发证书（仅 Let's Encrypt） |
+| `--acme-provider` | `lets_encrypt` / `lets_encrypt_staging` / `zerossl` / `google` |
+| `--currency` / `--timezone` | 默认货币 / 时区 |
+
+完整参数：`./corefusion init --help`。初始化后启动：
+
+```bash
+systemctl restart corefusion
+```
+
+### 3.5 重新初始化
+
+需要重走向导时（会删除 `.env` 与初始化标记，**保留数据**）：
+
+```bash
+cd /opt/corefusion
+./corefusion reset-init      # 需输入 RESET 确认
+systemctl restart corefusion
+```
+
+重启后按启动日志中的新地址与令牌重新进入向导。
+
+> 重新初始化会重置管理员与访问路径；旧数据库中的业务数据仍在，但登录账号可能需要重建。
+>
+> `reset-init` 会删除整个 `.env`（包括 `SAFE_PATHS`）。**如果数据目录是自定义绝对路径**，
+> 重启前先补回 `SAFE_PATHS`，否则面板会按默认的 `./data` 找库：
+>
+> ```bash
+> printf 'SAFE_PATHS=/srv/corefusion-data\n' > /opt/corefusion/.env
+> ```
+
+### 3.6 首次登录后的安全设置
+
+#### 修改初始密码
+
+1. 点击右上角用户名；
+2. 选择「修改密码」；
+3. 输入原密码与新密码；
+4. 点击「保存」。
+
+#### 启用动态码登录（2FA / TOTP）
+
+> 启用后账号改为**动态码登录**：登录时不再接受静态密码，只认认证器生成的 6 位动态码
+> （或一次性恢复码）。这是“用动态码替代密码登录”，不是“密码 + 验证码”两步验证。
+
+1. 点击右上角用户名；
+2. 选择「开启 2FA」；
+3. 输入当前密码（仅用于本次启用确认）；
+4. 用认证器 App（Google Authenticator / 1Password 等）扫描二维码，或手动输入下方密钥；
+5. 输入认证器生成的 6 位动态码完成启用；
+6. **立即保存恢复码**（可下载文件），每张只能使用一次。
+
+启用后的登录方式：
+
+- 填用户名后，密码框会变为「6 位验证码 / 恢复码」，按钮变为「动态码登录」；
+- 输入认证器当前动态码即可，**无需也不能再用静态密码**；
+- 恢复码用一张少一张，建议用完后在「动态码登录（2FA）」中重新生成（重新生成会使旧码全部作废）。
+
+认证器丢失且恢复码用完时，在服务器上离线关闭：
+
+```bash
+cd /opt/corefusion
+./corefusion admin 2fa reset -u admin    # 关闭 2FA、清空密钥与恢复码、吊销全部会话
+```
+
+> 唯一的超级管理员如果既没有认证器也没有恢复码，网页端无法自助恢复，只能走上面的命令。
+
+#### 配置 Passkey（可选）
+
+1. 点击右上角用户名；
+2. 选择「Passkey 管理」；
+3. 点击「注册新 Passkey」；
+4. 按提示完成设备认证。
 
 > **注意**：Passkey 需要 HTTPS 或 localhost 环境，且域名需在白名单中。
 
@@ -486,7 +927,7 @@ CF_DB_MAX_IDLE_CONNS=10
    - 流量（GB，0=不限）
    - 并发限制
    - 限速（Mbps）
-4. 保存规格
+2. 保存规格
 
 ### 11.3 流量叠加包
 
@@ -934,7 +1375,7 @@ CF_DB_MAX_IDLE_CONNS=10
 
 - 检查端口是否被占用
 - 检查 `.env` 配置是否正确
-- 查看日志：`tail -f /var/log/corefusion.log`
+- 查看日志：`journalctl -u corefusion -f`；无 systemd 时 `tail -f <安装目录>/data/logs/panel.log`
 
 ### 26.2 节点离线
 
@@ -980,7 +1421,7 @@ CF_DB_MAX_IDLE_CONNS=10
 
 | 端口 | 用途 |
 |------|------|
-| 8080 | 管理面板（可改） |
+| 由初始化向导指定（默认随机空闲端口） | 管理面板（可改） |
 | 18443 | Agent gRPC（可改） |
 | 0（默认未启用） | 订阅引擎独立端口（留空或 0 表示共用主端口） |
 | 0（默认未启用） | 门户引擎独立端口（留空或 0 表示共用主端口） |

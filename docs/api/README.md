@@ -1,5 +1,7 @@
 # CoreFusion API 文档
 
+> 语言： 简体中文 · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
+
 面向**外部集成者 / 二次开发 / 第三方客户端**的 API 说明。所有路径均相对于部署域名。
 
 | 文档 | 读者 | 内容 |

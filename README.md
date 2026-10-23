@@ -1,11 +1,15 @@
 # CoreFusion
 
+> 语言： 简体中文 · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
+
 代理服务运营管理面板（Panel + Agent + 客户端门户）：集中管理节点与 Agent、入站与订阅下发、套餐/订单/支付、证书签发、流量统计与限流。
 
 ## 文档
 
-- [docs/README.md](./docs/README.md) — 文档索引
-- [docs/USER-GUIDE.md](./docs/USER-GUIDE.md) — 安装部署与操作手册
+- [docs/README.md](./docs/README.md) — 文档索引（[English](./docs/README.en.md) / [繁體中文](./docs/README.zh-TW.md)）
+- [docs/USER-GUIDE.md](./docs/USER-GUIDE.md) — 安装部署与操作手册（[English](./docs/USER-GUIDE.en.md)）
+- [docs/I18N.md](./docs/I18N.md) — 文档多语言规范
+- 文档提供 16 种语言（简体中文 / English / 繁體中文 等），入口见 `docs/README.md`
 - 开发与架构文档为内部资料，不随本仓库分发
 
 ## 许可证

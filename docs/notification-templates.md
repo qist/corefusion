@@ -1,5 +1,7 @@
 # 通知模板变量说明
 
+> 语言： 简体中文 · [English](notification-templates.en.md) · [繁體中文](notification-templates.zh-TW.md) · [Русский](notification-templates.ru.md) · [日本語](notification-templates.ja.md) · [한국어](notification-templates.ko.md) · [Deutsch](notification-templates.de.md) · [Français](notification-templates.fr.md) · [Español](notification-templates.es.md) · [Português](notification-templates.pt.md) · [Türkçe](notification-templates.tr.md) · [Bahasa Indonesia](notification-templates.id.md) · [ไทย](notification-templates.th.md) · [Tiếng Việt](notification-templates.vi.md) · [العربية](notification-templates.ar.md) · [فارسی](notification-templates.fa.md)
+
 通知模板使用 `{变量名}` 占位符，发送时会被替换为实际值。本文档列出所有支持的变量、各事件的可用变量，以及自动触发规则。
 
 ## 一、模板类型与受众

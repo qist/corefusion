@@ -1,5 +1,7 @@
 # Google Public CA 配置指南（EAB 自动申请）
 
+> 语言： 简体中文 · [English](cert-google-eab.en.md) · [繁體中文](cert-google-eab.zh-TW.md) · [Русский](cert-google-eab.ru.md) · [日本語](cert-google-eab.ja.md) · [한국어](cert-google-eab.ko.md) · [Deutsch](cert-google-eab.de.md) · [Français](cert-google-eab.fr.md) · [Español](cert-google-eab.es.md) · [Português](cert-google-eab.pt.md) · [Türkçe](cert-google-eab.tr.md) · [Bahasa Indonesia](cert-google-eab.id.md) · [ไทย](cert-google-eab.th.md) · [Tiếng Việt](cert-google-eab.vi.md) · [العربية](cert-google-eab.ar.md) · [فارسی](cert-google-eab.fa.md)
+
 > 适用版本：面板 v0.12.101+ ｜ 相关页面：**证书 → EAB 配置**
 > 相关代码：`internal/service/certificate/eab_google.go`、`internal/api/handlers/certificates/eab_config.go`
 

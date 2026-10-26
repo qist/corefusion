@@ -27,6 +27,30 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* WAF 配置表单：多语言长标签允许换行，避免与控件/提示文案重叠 */
+.waf-config-form .el-form-item {
+  align-items: flex-start;
+}
+.waf-config-form .el-form-item__label {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  height: auto;
+  min-height: 24px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  line-height: 1.4;
+}
+.waf-config-form .el-form-item__content {
+  row-gap: 4px;
+}
+.waf-config-form .el-form-item__content > span {
+  flex-basis: 100%;
+  margin-left: 0 !important;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 /* ── 移动端全局适配（≤768px）── */
 @media (max-width: 768px) {
   /* 弹窗/消息框不超出屏幕 */

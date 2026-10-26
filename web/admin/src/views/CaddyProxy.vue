@@ -330,7 +330,7 @@
       </template>
       <el-tabs v-model="wafTab">
         <el-tab-pane label="Config" name="config-form">
-          <el-form :model="wafConfigForm" label-width="170px" size="small">
+          <el-form :model="wafConfigForm" label-width="170px" size="small" class="waf-config-form">
             <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
             <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="wafConfigForm.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>
@@ -456,7 +456,7 @@
     <el-dialog v-model="siteWAFVisible" :title="`WAF: ${siteWAFDomain}`" width="800px">
       <el-tabs v-model="siteWAFTab">
         <el-tab-pane label="Config" name="config">
-          <el-form :model="siteWAFConfig" label-width="160px" size="small">
+          <el-form :model="siteWAFConfig" label-width="160px" size="small" class="waf-config-form">
             <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
             <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafTrustProxy')"><el-switch v-model="siteWAFConfig.trust_proxy_headers" active-value="on" inactive-value="off" /></el-form-item>

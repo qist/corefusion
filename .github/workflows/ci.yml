@@ -34,6 +34,11 @@ jobs:
           mkdir -p internal/app/embed/dist
           printf '<!doctype html><title>ci placeholder</title>\n' > internal/app/embed/dist/index.html
 
+      - name: 校验安装脚本多语言
+        run: |
+          bash -n scripts/install.sh
+          python3 scripts/gen-install-i18n.py --check
+
       - name: go vet
         run: go vet ./...
 

@@ -143,6 +143,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > 令牌丢失可重新查看启动日志：`journalctl -u corefusion -n 50 --no-pager`
 > （无 systemd 时为 `tail -n 50 /opt/corefusion/data/logs/panel.log`）。
 
+### 2.2.1 多语言输出
+
+安装脚本内置简体中文、English、فارسی、Русский 四种界面语言，默认按系统 `LANG` 自动选择；也可显式指定：
+
+```bash
+# 指定英文
+sudo bash install.sh --lang en
+
+# 指定波斯语（环境变量方式）
+sudo CF_LANG=fa bash install.sh
+
+# 管道安装时传参
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+支持 `zh` / `en` / `fa` / `ru`，也接受 `--lang=ru`。显式传入不支持的语言会报错并列出可选值。
+
 ### 2.3 指定版本 / 国内加速 / 离线安装
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | 跳过系统依赖安装（离线或已预装环境） |
 | `--no-start` | 只安装并写入服务文件，不启动 |
 | `--cpu-info` | 只输出环境识别与依赖缺口，不执行安装 |
+| `--lang <LANG>` | 输出语言：`zh` / `en` / `fa` / `ru`（默认跟随系统 `LANG`） |
 | `--uninstall` | 停止服务并删除程序（保留数据与 `.env`） |
 | `--purge` | 与 `--uninstall` 连用，同时删除数据目录与 `.env` |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | 覆盖源码模式的 Node 主版本（默认 22） |
 | `CF_GO_MIRROR` | Go 工具链下载镜像 |
 | `CF_SKIP_DEPS` | Agent 安装脚本中设为 `1` 可跳过依赖安装 |
+| `CF_LANG` | 覆盖安装脚本输出语言（等同 `--lang`） |
 
 ### 2.6 安装目录结构
 

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-10-26 -->
 # Hướng dẫn vận hành CoreFusion
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ Nếu bảng điều khiển chỉ nghe trên `127.0.0.1` (ví dụ: sau proxy n
 > Mất mã thông báo? Đọc lại nhật ký khởi động: `journalctl -u corefusion -n 50 --no-pager`
 > (không có systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Đầu ra đa ngôn ngữ
+
+Trình cài đặt hỗ trợ bốn ngôn ngữ giao diện: tiếng Trung giản thể, tiếng Anh, tiếng Ba Tư (فارسی) và tiếng Nga (Русский). Ngôn ngữ được tự động phát hiện từ `LANG` của hệ thống hoặc có thể chỉ định rõ ràng:
+
+```bash
+# Tiếng Anh
+sudo bash install.sh --lang en
+
+# Tiếng Ba Tư qua biến môi trường
+sudo CF_LANG=fa bash install.sh
+
+# Truyền tham số khi cài đặt qua pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Giá trị hỗ trợ: `zh` / `en` / `fa` / `ru`; cũng chấp nhận `--lang=ru`. Nếu chỉ định ngôn ngữ không được hỗ trợ, chương trình sẽ báo lỗi kèm danh sách ngôn ngữ khả dụng.
+
 ### 2.3 Phiên bản ghim/gương/cài đặt offline
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Bỏ qua cài đặt phụ thuộc hệ thống |
 | `--no-start` | Cài đặt và ghi tệp dịch vụ mà không cần khởi động |
 | `--cpu-info` | In phát hiện môi trường và các phần phụ thuộc bị thiếu, sau đó thoát |
+| `--lang <LANG>` | Ngôn ngữ đầu ra: `zh` / `en` / `fa` / `ru` (mặc định: `LANG` hệ thống) |
 | `--uninstall` | Dừng dịch vụ và xóa chương trình (giữ dữ liệu và `.env`) |
 | `--purge` | Với `--uninstall`, cũng xóa thư mục dữ liệu và `.env` |
 
@@ -234,6 +252,7 @@ Các biến môi trường liên quan:
 | `CF_NODE_MAJOR` | Ghi đè phiên bản chính của Node (mặc định 22) |
 | `CF_GO_MIRROR` | Đi nhân bản tải xuống chuỗi công cụ |
 | `CF_SKIP_DEPS` | Đặt thành `1` trong tập lệnh cài đặt Tác nhân để bỏ qua cài đặt phụ thuộc |
+| `CF_LANG` | Ghi đè ngôn ngữ đầu ra của trình cài đặt (giống `--lang`) |
 
 ### 2.6 Bố cục thư mục
 

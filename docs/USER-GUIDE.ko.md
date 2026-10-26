@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-10-26 -->
 # CoreFusion 운영 가이드
 
 > 언어: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · 한국어 · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > 토큰을 분실하셨나요? 시작 로그를 다시 읽으십시오: `journalctl -u corefusion -n 50 --no-pager`
 > (systemd 제외: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 다국어 출력
+
+설치 스크립트에는 중국어 간체, English, فارسی, Русский 4개 UI 언어가 내장되어 있습니다. 시스템 `LANG`에서 자동 감지하거나 직접 지정할 수 있습니다.
+
+```bash
+# 영어
+sudo bash install.sh --lang en
+
+# 환경 변수로 페르시아어
+sudo CF_LANG=fa bash install.sh
+
+# 파이프 설치 시 인자 전달
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+`zh` / `en` / `fa` / `ru`를 지원하며 `--lang=ru`도 사용할 수 있습니다. 지원하지 않는 언어를 명시하면 사용 가능한 언어 목록과 함께 오류가 발생합니다.
+
 ### 2.3 버전 고정/미러/오프라인 설치
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | 시스템 종속성 설치 건너뛰기 |
 | `--no-start` | 시작하지 않고 서비스 파일 설치 및 쓰기 |
 | `--cpu-info` | 환경 감지 및 종속성 누락 인쇄 후 종료 |
+| `--lang <LANG>` | 출력 언어: `zh` / `en` / `fa` / `ru` (기본: 시스템 `LANG`) |
 | `--uninstall` | 서비스를 중지하고 프로그램을 제거합니다(데이터 및 `.env` 유지). |
 | `--purge` | `--uninstall`를 사용하여 데이터 디렉터리와 `.env`도 제거합니다. |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | Node 주 버전 재정의(기본값 22) |
 | `CF_GO_MIRROR` | 툴체인 다운로드 미러로 이동 |
 | `CF_SKIP_DEPS` | 종속성 설치를 건너뛰려면 에이전트 설치 스크립트에서 `1`로 설정하세요. |
+| `CF_LANG` | 설치 스크립트 출력 언어 재정의 (`--lang`과 동일) |
 
 ### 2.6 디렉토리 레이아웃
 

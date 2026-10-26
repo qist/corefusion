@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: ja | updated: 2026-10-26 -->
 # CoreFusion 操作ガイド
 
 > 言語： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · 日本語 · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > トークンを紛失しましたか?起動ログをもう一度読みます: `journalctl -u corefusion -n 50 --no-pager`
 > (systemdなし: `tail -n 50 /opt/corefusion/data/logs/panel.log`)。
 
+### 2.2.1 多言語出力
+
+インストーラーには簡体字中国語、English、فارسی、Русский の 4 つの UI 言語が組み込まれています。システムの `LANG` から自動判定するほか、明示的に指定できます。
+
+```bash
+# 英語
+sudo bash install.sh --lang en
+
+# 環境変数でペルシア語
+sudo CF_LANG=fa bash install.sh
+
+# パイプ実行時に引数を渡す
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+`zh` / `en` / `fa` / `ru` に対応し、`--lang=ru` も使用できます。明示的に未対応の言語を指定すると、利用可能な言語一覧とともにエラーになります。
+
 ### 2.3 バージョンの固定 / ミラー / オフライン インストール
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | システム依存関係のインストールをスキップする |
 | `--no-start` | 起動せずにサービスファイルをインストールして書き込みます |
 | `--cpu-info` | 環境の検出と不足している依存関係を出力して終了します。 |
+| `--lang <LANG>` | 出力言語：`zh` / `en` / `fa` / `ru`（既定：システム `LANG`） |
 | `--uninstall` | サービスを停止し、プログラムを削除します（データと`.env`は保持します）。 |
 | `--purge` | `--uninstall` では、データ ディレクトリと `.env` も削除します。 |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | ノードのメジャー バージョン (デフォルトは 22) をオーバーライドします。 |
 | `CF_GO_MIRROR` | Go ツールチェーンのダウンロード ミラー |
 | `CF_SKIP_DEPS` | 依存関係のインストールをスキップするには、エージェントのインストール スクリプトで `1` に設定します。 |
+| `CF_LANG` | インストーラーの出力言語を上書き（`--lang` と同じ） |
 
 ### 2.6 ディレクトリのレイアウト
 

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: id | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: id | updated: 2026-10-26 -->
 # Panduan Pengoperasian CoreFusion
 
 > Bahasa: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · Bahasa Indonesia · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,7 +144,24 @@ Jika panel hanya mendengarkan di `127.0.0.1` (misalnya di belakang proksi terbal
 > Kehilangan tokennya? Baca lagi log startup: `journalctl -u corefusion -n 50 --no-pager`
 > (tanpa systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
-### Penyematan versi 2.3 / mirror / instalasi offline
+### 2.2.1 Output multibahasa
+
+Installer menyertakan empat bahasa antarmuka: Tionghoa Sederhana, Inggris, Persia (فارسی), dan Rusia (Русский). Bahasa dideteksi otomatis dari `LANG` sistem atau dapat dipilih secara eksplisit:
+
+```bash
+# Inggris
+sudo bash install.sh --lang en
+
+# Persia melalui variabel lingkungan
+sudo CF_LANG=fa bash install.sh
+
+# Meneruskan opsi saat instalasi melalui pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Nilai yang didukung: `zh` / `en` / `fa` / `ru`; `--lang=ru` juga diterima. Nilai eksplisit yang tidak didukung akan gagal dengan daftar bahasa yang tersedia.
+
+### 2.3 Penyematan versi / mirror / instalasi offline
 
 ```bash
 # Pin a version
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Lewati instalasi ketergantungan sistem |
 | `--no-start` | Instal dan tulis file layanan tanpa memulai |
 | `--cpu-info` | Cetak deteksi lingkungan dan dependensi yang hilang, lalu keluar |
+| `--lang <LANG>` | Bahasa keluaran: `zh` / `en` / `fa` / `ru` (default: `LANG` sistem) |
 | `--uninstall` | Hentikan layanan dan hapus program (menyimpan data dan `.env`) |
 | `--purge` | Dengan `--uninstall`, hapus juga direktori data dan `.env` |
 
@@ -234,6 +252,7 @@ Variabel lingkungan terkait:
 | `CF_NODE_MAJOR` | Ganti versi utama Node (default 22) |
 | `CF_GO_MIRROR` | Buka cermin unduhan toolchain |
 | `CF_SKIP_DEPS` | Atur ke `1` dalam skrip pemasangan Agen untuk melewati pemasangan ketergantungan |
+| `CF_LANG` | Mengganti bahasa keluaran installer (sama dengan `--lang`) |
 
 ### 2.6 Tata letak direktori
 

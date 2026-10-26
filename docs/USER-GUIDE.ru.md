@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ru | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: ru | updated: 2026-10-26 -->
 # CoreFusion Руководство по эксплуатации
 
 > Языки: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · Русский · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > Потеряли жетон? Прочтите журнал запуска еще раз: `journalctl -u corefusion -n 50 --no-pager`.
 > (без systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Многоязычный вывод
+
+Установщик поддерживает четыре языка интерфейса: упрощённый китайский, английский, персидский (فارسی) и русский. Язык определяется по системному `LANG`; его можно указать явно:
+
+```bash
+# Русский
+sudo bash install.sh --lang ru
+
+# Персидский через переменную окружения
+sudo CF_LANG=fa bash install.sh
+
+# Передача параметров при установке через pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang en
+```
+
+Поддерживаются `zh` / `en` / `fa` / `ru`, также можно писать `--lang=ru`. При явном указании неподдерживаемого языка выводится ошибка со списком доступных.
+
 ### 2.3 Закрепление версии/зеркала/автономная установка
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Пропустить установку системных зависимостей |
 | `--no-start` | Установить и записать сервисный файл не запуская |
 | `--cpu-info` | Распечатайте обнаружение среды и отсутствующие зависимости, затем выйдите. |
+| `--lang <LANG>` | Язык вывода: `zh` / `en` / `fa` / `ru` (по умолчанию: системный `LANG`) |
 | `--uninstall` | Остановите службу и удалите программу (сохраняет данные и `.env`) |
 | `--purge` | С помощью `--uninstall` также удалите каталог данных и `.env`. |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | Переопределить основную версию узла (по умолчанию 22). |
 | `CF_GO_MIRROR` | Зеркало загрузки Go Toolchain |
 | `CF_SKIP_DEPS` | Установите значение `1` в сценарии установки агента, чтобы пропустить установку зависимостей. |
+| `CF_LANG` | Переопределить язык вывода установщика (аналогично `--lang`) |
 
 ### 2.6 Структура каталога
 

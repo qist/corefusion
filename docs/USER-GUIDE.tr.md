@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-10-26 -->
 # CoreFusion Operasyon Kılavuzu
 
 > Diller: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · Türkçe · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ Panel yalnızca `127.0.0.1`'yi dinliyorsa (örneğin ters proxy'nin arkasında),
 > Jetonunu mu kaybettin? Başlangıç günlüğünü tekrar okuyun: `journalctl -u corefusion -n 50 --no-pager`
 > (systemd olmadan: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Çok dilli çıktı
+
+Kurulum betiği dört arayüz dili içerir: basitleştirilmiş Çince, İngilizce, Farsça (فارسی) ve Rusça (Русский). Sistem `LANG` değerinden otomatik algılar veya açıkça seçebilirsiniz:
+
+```bash
+# İngilizce
+sudo bash install.sh --lang en
+
+# Ortam değişkeniyle Farsça
+sudo CF_LANG=fa bash install.sh
+
+# Boru ile kurulumda seçenek geçirme
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Desteklenen değerler: `zh` / `en` / `fa` / `ru`; `--lang=ru` de kabul edilir. Açıkça desteklenmeyen bir değer, kullanılabilir dillerin listesiyle birlikte hata verir.
+
 ### 2.3 Sürüm sabitleme / aynalar / çevrimdışı kurulum
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Sistem bağımlılığı kurulumunu atla |
 | `--no-start` | Hizmet dosyasını başlatmadan yükleyin ve yazın |
 | `--cpu-info` | Yazdırma ortamı algılama ve eksik bağımlılıklar, ardından çıkın |
+| `--lang <LANG>` | Çıktı dili: `zh` / `en` / `fa` / `ru` (varsayılan: sistem `LANG`) |
 | `--uninstall` | Hizmeti durdurun ve programı kaldırın (verileri ve `.env`'yi tutar) |
 | `--purge` | `--uninstall` ile veri dizinini ve `.env`'yi de kaldırın. |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | Düğümün ana sürümünü geçersiz kıl (varsayılan 22) |
 | `CF_GO_MIRROR` | Araç zinciri indirme aynasına git |
 | `CF_SKIP_DEPS` | Bağımlılık kurulumunu atlamak için Agent yükleme komut dosyasında `1` olarak ayarlayın |
+| `CF_LANG` | Kurulum betiği çıktı dilini geçersiz kıl (`--lang` ile aynı) |
 
 ### 2.6 Dizin düzeni
 

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-10-26 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ If the panel only listens on `127.0.0.1` (for example behind a reverse proxy), t
 > Lost the token? Read the startup log again: `journalctl -u corefusion -n 50 --no-pager`
 > (without systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Multilingual output
+
+The installer includes four UI languages: Simplified Chinese, English, Persian (فارسی), and Russian (Русский). It auto-detects the system `LANG`, or you can choose explicitly:
+
+```bash
+# English
+sudo bash install.sh --lang en
+
+# Persian via environment variable
+sudo CF_LANG=fa bash install.sh
+
+# Pass options through a pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Supported values: `zh` / `en` / `fa` / `ru`; `--lang=ru` is also accepted. An unsupported explicit value fails with the list of available languages.
+
 ### 2.3 Version pinning / mirrors / offline install
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Skip system dependency installation |
 | `--no-start` | Install and write the service file without starting |
 | `--cpu-info` | Print environment detection and missing dependencies, then exit |
+| `--lang <LANG>` | Output language: `zh` / `en` / `fa` / `ru` (default: system `LANG`) |
 | `--uninstall` | Stop the service and remove the program (keeps data and `.env`) |
 | `--purge` | With `--uninstall`, also remove the data directory and `.env` |
 
@@ -234,6 +252,7 @@ Related environment variables:
 | `CF_NODE_MAJOR` | Override the Node major version (default 22) |
 | `CF_GO_MIRROR` | Go toolchain download mirror |
 | `CF_SKIP_DEPS` | Set to `1` in the Agent install script to skip dependency installation |
+| `CF_LANG` | Override installer output language (same as `--lang`) |
 
 ### 2.6 Directory layout
 

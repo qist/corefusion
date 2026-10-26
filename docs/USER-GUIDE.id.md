@@ -980,12 +980,18 @@ Manajemen paket mengonfigurasi paket yang Anda jual.
 
 Manajemen isi ulang menangani situs isi ulang, pesanan, dan kartu isi ulang.
 
+> **Catatan integrasi pembayaran**
+>
+> Panel **tidak terhubung langsung ke lembaga pembayaran** (Alipay, WeChat Pay, Stripe, bank, dll.), melainkan hanya ke **platform pembayaran perantara**. Platform tersebut terhubung ke lembaga pembayaran terkait, menangani kontrak, akuisisi, dan penyelesaian, lalu mengirimkan hasil pembayaran ke panel melalui [API callback pembayaran](api/charge-callback.md).
+>
+> Platform pembayaran perantara **bukan bagian dari proyek ini dan harus dikembangkan sendiri oleh operator (atau menggunakan sistem miliknya)**. Setelah diterapkan, daftarkan di «Situs isi ulang» dan selesaikan verifikasi domain untuk menggunakannya sebagai pintu masuk isi ulang; situs isi ulang di sini adalah platform perantara tersebut, bukan lembaga pembayaran. Kualifikasi pembayaran, biaya, penyelesaian, dan kepatuhan disepakati serta ditanggung oleh operator, lembaga pembayaran, dan platform perantara.
+
 ### 12.1 Isi ulang situs
 
 1. Buka “Manajemen isi ulang” → “Situs isi ulang”;
 2. Tambahkan situs:
    - Nama situs
-   - Metode pembayaran yang didukung (Alipay, WeChat, USDT, Stripe, dll.)
+   - Metode pembayaran yang didukung platform perantara tersebut (Alipay, WeChat, USDT, Stripe, dll., disediakan melalui integrasinya dengan lembaga pembayaran)
    - Mata uang
    - Nilai tukar
 3. Simpan;

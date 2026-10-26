@@ -980,12 +980,18 @@ La gestión de planes configura los planes que vende.
 
 La gestión de recargas maneja sitios de recarga, pedidos y tarjetas de recarga.
 
+> **Nota sobre la integración de pagos**
+>
+> El panel **no se integra directamente con entidades de pago** (Alipay, WeChat Pay, Stripe, bancos, etc.); solo se conecta a una **plataforma de pago intermediaria**, que integra la entidad de pago correspondiente, realiza la contratación, la adquisición y la liquidación, y devuelve los resultados del pago al panel mediante la [API de callback de pago](api/charge-callback.md).
+>
+> La plataforma de pago intermediaria **no forma parte de este proyecto y debe ser desarrollada por el operador (o usar su propio sistema)**. Una vez desplegada, regístrela en «Sitios de recarga» y complete la verificación del dominio para usarla como punto de entrada de recargas; el sitio de recarga es esa plataforma intermediaria, no la entidad de pago. Las cualificaciones de pago, tarifas, liquidación y cumplimiento se acuerdan y son responsabilidad del operador, la entidad de pago y la plataforma intermediaria.
+
 ### 12.1 Sitios de recarga
 
 1. Abra “Gestión de recargas” → “Sitios de recarga”;
 2. Agregar un sitio:
    - Nombre del sitio
-   - Métodos de pago admitidos (Alipay, WeChat, USDT, Stripe, etc.)
+   - Métodos de pago admitidos por esa plataforma intermediaria (Alipay, WeChat, USDT, Stripe, etc., ofrecidos por su integración con las entidades de pago)
    - Moneda
    - tipo de cambio
 3. Guardar;

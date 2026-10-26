@@ -980,12 +980,18 @@ La gestion des forfaits configure les forfaits que vous vendez.
 
 La gestion des recharges gère les sites de recharge, les commandes et les cartes de recharge.
 
+> **Note sur l'intégration des paiements**
+>
+> Le panneau **ne se connecte pas directement aux établissements de paiement** (Alipay, WeChat Pay, Stripe, banques, etc.) ; il se connecte uniquement à une **plateforme de paiement intermédiaire**, qui s'intègre à l'établissement de paiement correspondant, gère la contractualisation, l'acquisition et le règlement, puis renvoie les résultats de paiement au panneau via l'[API de callback de paiement](api/charge-callback.md).
+>
+> La plateforme de paiement intermédiaire **ne fait pas partie de ce projet et doit être développée par l'exploitant (ou reposer sur son propre système)**. Une fois déployée, enregistrez-la dans « Sites de recharge » et validez le domaine pour l'utiliser comme point d'entrée de recharge ; le site de recharge désigne cette plateforme intermédiaire, et non l'établissement de paiement. Les qualifications de paiement, les frais, le règlement et la conformité sont convenus et assumés par l'exploitant, l'établissement de paiement et la plateforme intermédiaire.
+
 ### 12.1 Sites de recharge
 
 1. Ouvrez « Gestion des recharges » → « Sites de recharge » ;
 2. Ajouter un site :
    - Nom du site
-   - Méthodes de paiement prises en charge (Alipay, WeChat, USDT, Stripe, etc.)
+   - Méthodes de paiement prises en charge par cette plateforme intermédiaire (Alipay, WeChat, USDT, Stripe, etc., fournies par son intégration aux établissements de paiement)
    - Devise
    - Taux de change
 3. Enregistrer ;

@@ -1,11 +1,13 @@
 package agent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -31,13 +34,41 @@ type Handler struct {
 	dataDir    string
 	tokenMgr   *agent.BootstrapTokenManager
 	settingSvc binaries.SettingStore // for GitHub acceleration and panel settings
+
+	// detectPublicIP / probeGRPC 可在测试里替换；生产环境分别走本机公网 IP
+	// 探测与真实 TCP 探测。
+	detectPublicIP func(context.Context, time.Duration) (string, string, error)
+	probeGRPC      func(context.Context, string, int) bool
+
+	grpcHostMu    sync.Mutex
+	grpcHostCache map[string]grpcHostCacheEntry
+
+	// publicOriginHost cache for the unauthenticated origin-discovery endpoint.
+	originMu          sync.Mutex
+	originHost        string
+	originExpiresAt   time.Time
+	originLastAttempt time.Time
 }
+
+type grpcHostCacheEntry struct {
+	host      string
+	expiresAt time.Time
+}
+
+const (
+	agentGRPCHostCacheTTL = 10 * time.Minute
+	agentPublicIPTimeout  = 3 * time.Second
+	agentGRPCProbeTimeout = 1500 * time.Millisecond
+)
 
 // NewHandler creates a new Agent handler.
 func NewHandler(dataDir string, tokenMgr *agent.BootstrapTokenManager) *Handler {
 	return &Handler{
-		dataDir:  dataDir,
-		tokenMgr: tokenMgr,
+		dataDir:        dataDir,
+		tokenMgr:       tokenMgr,
+		detectPublicIP: netutil.DetectPublicIPDirect,
+		probeGRPC:      probeAgentGRPC,
+		grpcHostCache:  make(map[string]grpcHostCacheEntry),
 	}
 }
 
@@ -110,14 +141,27 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 	// Determine panel address.
 	// Behind a reverse proxy (Caddy/Nginx), c.Request.TLS is always nil,
 	// so we check X-Forwarded-Proto first, then query param, then TLS.
-	panelHost := c.Query("host")
+	panelHost := stripPort(c.Query("host"))
 	if panelHost == "" {
 		// X-Forwarded-Host (set by proxy) takes priority
 		if fh := c.GetHeader("X-Forwarded-Host"); fh != "" {
+			// Multiple proxies may append a comma-separated list; the first
+			// entry is the externally visible host.
+			if i := strings.IndexByte(fh, ','); i >= 0 {
+				fh = fh[:i]
+			}
 			panelHost = stripPort(fh)
 		} else {
 			panelHost = stripPort(c.Request.Host)
 		}
+	}
+	// panelHost is embedded into the generated shell script. Validate it even
+	// though the bootstrap token is required: Host/X-Forwarded-Host are
+	// attacker-controlled on a proxied public endpoint.
+	panelHost = normalizeAgentHost(panelHost)
+	if panelHost == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid panel host"})
+		return
 	}
 
 	// Detect TLS: X-Forwarded-Proto > query param > c.Request.TLS
@@ -139,40 +183,86 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 	// Priority: query param > X-Forwarded-Port > port in Host header > TLS 443 > 8080
 	panelPort := 8080
 	if p := c.Query("port"); p != "" {
-		if v, err := strconv.Atoi(p); err == nil {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 && v <= 65535 {
 			panelPort = v
 		}
 	} else if fp := c.GetHeader("X-Forwarded-Port"); fp != "" {
-		if v, err := strconv.Atoi(fp); err == nil {
+		if v, err := strconv.Atoi(fp); err == nil && v > 0 && v <= 65535 {
 			panelPort = v
 		}
 	} else if _, portStr, err := net.SplitHostPort(c.Request.Host); err == nil {
-		if v, err := strconv.Atoi(portStr); err == nil {
+		if v, err := strconv.Atoi(portStr); err == nil && v > 0 && v <= 65535 {
 			panelPort = v
 		}
 	} else if panelTLS {
 		panelPort = 443
 	}
 
-	// Determine gRPC port: query param > system setting > default 18443
+	// Determine gRPC port:
+	// query param > panel-wide setting > node's agent_port > default 18443
 	grpcPort := 0
 	if g := c.Query("grpc_port"); g != "" {
-		if v, err := strconv.Atoi(g); err == nil {
+		if v, err := strconv.Atoi(g); err == nil && v > 0 && v <= 65535 {
 			grpcPort = v
 		}
 	}
 	if grpcPort == 0 && h.settingSvc != nil {
 		if v, err := h.settingSvc.GetByKey(c.Request.Context(), "panel.agent_grpc_port"); err == nil && v != "" {
-			if p, err := strconv.Atoi(v); err == nil && p > 0 {
+			if p, err := strconv.Atoi(v); err == nil && p > 0 && p <= 65535 {
 				grpcPort = p
 			}
 		}
 	}
 	if grpcPort == 0 {
+		if p, err := h.tokenMgr.AgentPort(c.Request.Context(), serverID); err == nil && p > 0 && p <= 65535 {
+			grpcPort = p
+		}
+	}
+	if grpcPort == 0 {
 		grpcPort = constants.DefaultAgentGRPCPort
 	}
+
+	// Resolve the address used for gRPC. panelHost is also the HTTP(S) address
+	// used for bootstrap/download and may be a CDN domain. A normal CDN does
+	// not proxy the gRPC port, so if panelHost:<grpcPort> is not reachable,
+	// fall back to this panel's public IP (the origin). This is what removes
+	// the need to edit every agent's YAML by hand.
+	grpcHost := ""
+	if q := c.Query("grpc_host"); q != "" {
+		grpcHost = normalizeAgentHost(q)
+		if grpcHost == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid grpc_host"})
+			return
+		}
+	} else {
+		grpcHost = h.agentGRPCHost(c.Request.Context(), panelHost, grpcPort)
+	}
+	if grpcHost == "" {
+		grpcHost = panelHost
+	}
+	if grpcHost != panelHost {
+		log.Printf("[AgentInstall] %s:%d is not usable for gRPC (CDN?), using panel origin %s:%d",
+			panelHost, grpcPort, grpcHost, grpcPort)
+	}
+
+	// Prefer the panel's direct listener for bootstrap: it is the strictest
+	// path (the Agent verifies the panel with the panel CA). The config also
+	// carries the public CDN endpoint as a fallback for nodes that cannot reach
+	// the origin's HTTP port; the Agent verifies the issued Agent certificate
+	// against the panel CA, so a TLS-terminating proxy cannot substitute one.
+	//
+	// If panelHost already serves gRPC directly (LAN/direct deployment), keep
+	// it; otherwise use the detected origin IP.
+	bootstrapHost := panelHost
+	if grpcHost != panelHost {
+		bootstrapHost = grpcHost
+	}
+	bootstrapPort, bootstrapTLS := h.panelLocalHTTP(c.Request.Context())
+
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
 		WithScheme(scheme).
+		WithBootstrapEndpoint(bootstrapHost, bootstrapPort, bootstrapTLS).
+		WithGRPCHost(grpcHost).
 		WithGRPCPort(grpcPort).
 		WithTLS(panelTLS).
 		WithBootstrapToken(token).
@@ -190,12 +280,213 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 	c.Data(http.StatusOK, "text/x-shellscript", []byte(content))
 }
 
+// GetAgentOrigin lets an already-installed Agent discover the panel's gRPC
+// origin when its config only contains panel.host (for example an older node
+// installed before grpc_host existed, where panel.host is the CDN domain).
+// The response is intentionally public: it only reveals the panel's public
+// address, and the subsequent gRPC connection is still authenticated with the
+// panel CA. It must not be cached by a CDN.
+//
+// GET /api/v1/agent/origin?grpc_port=18443
+func (h *Handler) GetAgentOrigin(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	grpcPort := constants.DefaultAgentGRPCPort
+	if v, err := strconv.Atoi(c.Query("grpc_port")); err == nil && v > 0 && v <= 65535 {
+		grpcPort = v
+	}
+	host := h.publicOriginHost(c.Request.Context())
+	if host == "" {
+		response.Error(c, http.StatusServiceUnavailable, "ORIGIN_DETECTION_FAILED",
+			"panel origin address is not available")
+		return
+	}
+	response.OK(c, gin.H{"grpc_host": host, "grpc_port": grpcPort})
+}
+
+// publicOriginHost returns the panel's own public IP. Unlike the install
+// endpoint it deliberately ignores the request Host: this endpoint is public
+// and unauthenticated, so probing an attacker-supplied host would turn it into
+// an SSRF/scanning primitive. The result is cached briefly to avoid repeated
+// external IP lookups.
+func (h *Handler) publicOriginHost(ctx context.Context) string {
+	now := time.Now()
+	h.originMu.Lock()
+	if h.originHost != "" && now.Before(h.originExpiresAt) {
+		host := h.originHost
+		h.originMu.Unlock()
+		return host
+	}
+	// Also throttle failed lookups: this endpoint is unauthenticated, and the
+	// public-IP probe makes outbound connections.
+	if !h.originLastAttempt.IsZero() && now.Sub(h.originLastAttempt) < 10*time.Second {
+		h.originMu.Unlock()
+		return ""
+	}
+	h.originLastAttempt = now
+	h.originMu.Unlock()
+
+	if h.detectPublicIP == nil {
+		return ""
+	}
+	// Probe IPv4 and IPv6 sequentially; each gets agentPublicIPTimeout, so the
+	// outer budget must be larger than a single probe.
+	detectCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	ipv4, ipv6, err := h.detectPublicIP(detectCtx, agentPublicIPTimeout)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimSpace(ipv4)
+	if host == "" {
+		host = strings.TrimSpace(ipv6)
+	}
+	if net.ParseIP(host) == nil {
+		return ""
+	}
+	h.originMu.Lock()
+	h.originHost = host
+	h.originExpiresAt = time.Now().Add(agentGRPCHostCacheTTL)
+	h.originMu.Unlock()
+	return host
+}
+
+// panelLocalHTTP returns the panel's own HTTP listen port and TLS flag.
+// These are deliberately read from the panel settings instead of the incoming
+// request: behind a CDN/reverse proxy the request describes the public 443
+// endpoint, while the Agent's first bootstrap attempt targets the direct
+// listener whose certificate it can verify with the panel CA.
+func (h *Handler) panelLocalHTTP(ctx context.Context) (int, bool) {
+	const defaultPort = 8080
+	port := defaultPort
+	tlsEnabled := false
+	if h.settingSvc == nil {
+		return port, tlsEnabled
+	}
+	if v, err := h.settingSvc.GetByKey(ctx, "panel.listen_port"); err == nil {
+		if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && p > 0 && p <= 65535 {
+			port = p
+		}
+	}
+	if v, err := h.settingSvc.GetByKey(ctx, "panel.tls_enabled"); err == nil {
+		tlsEnabled = strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	return port, tlsEnabled
+}
+
+// agentGRPCHost returns the host the Agent should use for gRPC. The result is
+// cached because reachability/public-IP detection involves network I/O and is
+// requested every time the admin opens a deploy command.
+func (h *Handler) agentGRPCHost(ctx context.Context, panelHost string, grpcPort int) string {
+	key := net.JoinHostPort(panelHost, strconv.Itoa(grpcPort))
+
+	h.grpcHostMu.Lock()
+	if e, ok := h.grpcHostCache[key]; ok && time.Now().Before(e.expiresAt) {
+		host := e.host
+		h.grpcHostMu.Unlock()
+		return host
+	}
+	h.grpcHostMu.Unlock()
+
+	host := resolveAgentGRPCHost(ctx, panelHost, grpcPort, h.probeGRPC, h.detectPublicIP)
+	if host == "" {
+		host = panelHost
+	}
+
+	h.grpcHostMu.Lock()
+	if h.grpcHostCache == nil {
+		h.grpcHostCache = make(map[string]grpcHostCacheEntry)
+	}
+	h.grpcHostCache[key] = grpcHostCacheEntry{
+		host:      host,
+		expiresAt: time.Now().Add(agentGRPCHostCacheTTL),
+	}
+	h.grpcHostMu.Unlock()
+	return host
+}
+
+// resolveAgentGRPCHost keeps panelHost when the gRPC port is reachable through
+// it (direct deployment, LAN, or a CDN that supports TCP forwarding). If it is
+// not reachable — the usual case with a normal HTTP CDN — it returns the
+// panel's detected public IP instead.
+func resolveAgentGRPCHost(
+	ctx context.Context,
+	panelHost string,
+	grpcPort int,
+	probe func(context.Context, string, int) bool,
+	detect func(context.Context, time.Duration) (string, string, error),
+) string {
+	if panelHost == "" {
+		return ""
+	}
+	if ip := net.ParseIP(strings.Trim(panelHost, "[]")); ip != nil {
+		return ip.String()
+	}
+	if probe != nil && probe(ctx, panelHost, grpcPort) {
+		return panelHost
+	}
+	if detect != nil {
+		detectCtx, cancel := context.WithTimeout(ctx, agentPublicIPTimeout)
+		defer cancel()
+		ipv4, ipv6, err := detect(detectCtx, agentPublicIPTimeout)
+		if err == nil {
+			if ipv4 != "" && net.ParseIP(ipv4) != nil {
+				return ipv4
+			}
+			if ipv6 != "" && net.ParseIP(ipv6) != nil {
+				return ipv6
+			}
+		}
+	}
+	return panelHost
+}
+
+// probeAgentGRPC checks whether the panel's gRPC port is reachable through the
+// given host. A normal CDN only proxies HTTP(S), so this fails and the install
+// script switches to the origin IP.
+func probeAgentGRPC(ctx context.Context, host string, port int) bool {
+	d := net.Dialer{Timeout: agentGRPCProbeTimeout}
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+// normalizeAgentHost validates a host before it is embedded into the generated
+// shell script. Only IP literals and DNS names are accepted, which prevents a
+// crafted Host header / query parameter from injecting shell commands.
+func normalizeAgentHost(raw string) string {
+	host := strings.Trim(strings.TrimSpace(raw), "[]")
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return ""
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return ""
+		}
+		for _, r := range label {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-':
+			default:
+				return ""
+			}
+		}
+	}
+	return strings.ToLower(host)
+}
+
 // stripPort removes the port from a host:port string.
 func stripPort(hostPort string) string {
-	if idx := strings.LastIndex(hostPort, ":"); idx > 0 {
-		return hostPort[:idx]
+	hostPort = strings.TrimSpace(hostPort)
+	if host, _, err := net.SplitHostPort(hostPort); err == nil {
+		return host
 	}
-	return hostPort
+	return strings.Trim(hostPort, "[]")
 }
 
 // ============================================================

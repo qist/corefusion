@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Data dipisahkan koma"
   },
   "nodeServer": {
+    "certExpired": "Kedaluwarsa",
+    "certExpiringSoon": "Segera kedaluwarsa",
+    "certNotIssued": "Belum diterbitkan",
+    "certInvalidTitle": "Sertifikat Agent tidak valid — node ini tidak dapat terhubung kembali ke panel",
+    "certInvalidHint": "Setelah sertifikat mTLS kedaluwarsa, Agent tidak dapat menjangkau panel maupun memperoleh sertifikat baru melalui mTLS, sehingga satu-satunya cara adalah bootstrap ulang. Buat token sekali pakai, ganti bootstrap.token di node, lalu mulai ulang Agent (panel menerima percobaan ulangnya dalam 5 menit). Entri ini disembunyikan selama sertifikat masih valid — pada kondisi itu pembaruan dikirim otomatis.",
+    "regenerateToken": "Buat ulang Token",
+    "regenerateOnceWarn": "Token hanya ditampilkan sekali dan berlaku 24 jam; token menjadi tidak valid setelah satu kali pemakaian.",
+    "bootstrapToken": "Token Bootstrap",
+    "tokenExpiresAt": "Token berlaku hingga",
+    "recoverySteps": "Jalankan di node",
+    "insecureTokenWarning": "Halaman ini tidak disajikan melalui HTTPS, sehingga token dikirim dalam teks biasa. Utamakan HTTPS; jika tidak, tempelkan perintah melalui SSH dan jangan pernah meneruskan token lewat aplikasi chat.",
     "servers": "Daftar server",
     "onlineSubscriptions": "Langganan online",
     "justNow": "Baru saja",

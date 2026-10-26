@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Virgülle ayrılmış veriler"
   },
   "nodeServer": {
+    "certExpired": "Süresi doldu",
+    "certExpiringSoon": "Yakında doluyor",
+    "certNotIssued": "Verilmedi",
+    "certInvalidTitle": "Agent sertifikası geçersiz — bu düğüm panele bağlanamıyor",
+    "certInvalidHint": "mTLS sertifikasının süresi dolduğunda Agent ne panele ulaşabilir ne de mTLS ile yeni bir sertifika alabilir; tek çözüm yeniden bootstrap yapmaktır. Tek kullanımlık bir token oluşturun, düğümde bootstrap.token değerini değiştirin ve Agent servisini yeniden başlatın (panel 5 dakika içinde yeniden denemelerini alır). Sertifika geçerliyken bu giriş gizlenir — bu durumda yenileme otomatik olarak gönderilir.",
+    "regenerateToken": "Tokeni yeniden oluştur",
+    "regenerateOnceWarn": "Token yalnızca bir kez gösterilir ve 24 saat geçerlidir; tek kullanımdan sonra geçersiz olur.",
+    "bootstrapToken": "Bootstrap Token",
+    "tokenExpiresAt": "Token geçerlilik sonu",
+    "recoverySteps": "Düğümde çalıştırın",
+    "insecureTokenWarning": "Bu sayfa HTTPS üzerinden sunulmuyor, bu nedenle token düz metin olarak gider. Mümkünse HTTPS kullanın; aksi halde komutu SSH ile yapıştırın ve tokenı sohbet araçlarıyla iletmeyin.",
     "servers": "Sunucu listesi",
     "onlineSubscriptions": "Çevrimiçi abonelik",
     "justNow": "Az önce",

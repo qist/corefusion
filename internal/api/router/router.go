@@ -2237,6 +2237,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				go speedTestMgr.RunLoop(context.Background())
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
 				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir).WithSettingRepo(systemSettingRepo)
+				// 更新任务看护：卡死任务收割 + 失败自动重试（此前 RunLoop 从未启动，
+				// 一旦推送失败任务就永久停在 downloading，且阻塞后续推送）。
+				go agentUpdater.RunLoop(context.Background())
 
 				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
@@ -3097,9 +3100,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 				certResult, err := bootstrapTokenMgr.ValidateBootstrapToken(c.Request.Context(), req.ServerID, req.BootstrapToken)
 				if err != nil {
-					response.BadRequest(c, "BOOTSTRAP_FAILED", err.Error())
+					// 公开端点：不把具体原因（节点是否存在 / 令牌是否用过 / 是否过期）回给调用方，
+					// 否则等于给出一个可枚举服务器 ID 的探针；细节只写服务端日志。
+					log.Printf("[Bootstrap] rejected server %d: %v", req.ServerID, err)
+					response.BadRequest(c, "BOOTSTRAP_FAILED", "invalid bootstrap credentials")
 					return
 				}
+				// 响应里带 Agent 私钥，绝不允许被任何缓存保存
+				c.Header("Cache-Control", "no-store")
 				response.OK(c, gin.H{
 					"server_id":       req.ServerID,
 					"cert_pem":        string(certResult.CertPEM),

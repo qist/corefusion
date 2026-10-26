@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -178,6 +179,8 @@ func hashToken(token string) string {
 }
 
 // verifyToken checks if a plaintext token matches the stored hash.
+// 用常量时间比较：`==` 会在首个不同字节处提前返回，理论上可被用作计时侧信道来
+// 逐字节猜令牌哈希（虽然对 256-bit 哈希不现实，但没有理由留这种口子）。
 func verifyToken(token, hashed string) bool {
-	return hashToken(token) == hashed
+	return subtle.ConstantTimeCompare([]byte(hashToken(token)), []byte(hashed)) == 1
 }

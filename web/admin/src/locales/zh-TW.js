@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "逗號分隔資料"
   },
   "nodeServer": {
+    "certExpired": "已失效",
+    "certExpiringSoon": "即將過期",
+    "certNotIssued": "未簽發",
+    "certInvalidTitle": "Agent 憑證已失效，此節點無法連回面板",
+    "certInvalidHint": "mTLS 憑證過期後，Agent 既連不上面板，也無法透過握手領取新憑證，只能重新 Bootstrap。請產生一次性權杖，然後在節點上依提示替換 bootstrap.token 並重啟 Agent（面板每 5 分鐘會收到它的重試）。憑證正常時不會顯示此入口——此時續簽由面板自動推送。",
+    "regenerateToken": "重新產生 Token",
+    "regenerateOnceWarn": "權杖只顯示一次，有效期 24 小時；使用一次後立即失效。",
+    "bootstrapToken": "Bootstrap Token",
+    "tokenExpiresAt": "權杖有效期至",
+    "recoverySteps": "在節點上執行",
+    "insecureTokenWarning": "目前頁面不是 HTTPS，權杖會以明文經過網路。請盡量在 HTTPS 下操作；否則請複製命令後透過 SSH 貼上執行，不要用聊天工具轉發權杖。",
     "servers": "伺服器清單",
     "onlineSubscriptions": "線上訂閱",
     "justNow": "剛剛",

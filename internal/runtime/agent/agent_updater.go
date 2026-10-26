@@ -70,6 +70,14 @@ type AgentUpdater struct {
 	// 配置
 	interval       time.Duration // 检查间隔
 	maxConcurrency int           // 最大并发更新数
+
+	// 失败重试策略
+	// taskTimeout 用于判定"推进中但迟迟没有结果"的任务已卡死：
+	// Agent 侧下载超时为 10 分钟，这里留出替换/重启的余量。
+	taskTimeout  time.Duration
+	maxAttempts  int             // 含首次推送在内的最大尝试次数
+	retryBackoff []time.Duration // 第 n 次失败后的等待时间
+	monitorEvery time.Duration   // 卡死看护 + 重试调度周期
 }
 
 // AgentBinaryInfo 记录单个平台的 Agent 二进制信息。
@@ -90,6 +98,20 @@ type UpdateTask struct {
 	Error       string     `json:"error"`
 	StartedAt   time.Time  `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at"`
+	// Attempts 是本次更新已推送的次数（1 = 首次推送）。
+	Attempts int `json:"attempts"`
+	// NextRetryAt 非空表示失败后已排入重试队列。
+	NextRetryAt *time.Time `json:"next_retry_at,omitempty"`
+}
+
+// inFlight 表示任务已经推给 Agent、正在等待结果。
+func (t *UpdateTask) inFlight() bool {
+	switch t.Status {
+	case UpdateStatusPending, UpdateStatusDownloading, UpdateStatusVerifying,
+		UpdateStatusReplacing, UpdateStatusRestarting:
+		return true
+	}
+	return false
 }
 
 // UpdateTaskStatus constants.
@@ -112,6 +134,10 @@ func NewAgentUpdater(serverRepo *repository.NodeServerRepository, nodeMgr *NodeS
 		pendingUpdates:   make(map[int64]*UpdateTask),
 		interval:         6 * time.Hour,
 		maxConcurrency:   5,
+		taskTimeout:      12 * time.Minute,
+		maxAttempts:      3,
+		retryBackoff:     []time.Duration{30 * time.Second, 2 * time.Minute},
+		monitorEvery:     30 * time.Second,
 	}
 }
 
@@ -403,7 +429,15 @@ func (u *AgentUpdater) gitHubSettings(ctx context.Context) (accel, proxy string)
 // UpdateServer triggers an Agent update on a specific server.
 // The update command is sent via the PanelCommand stream.
 // If no target version/URL is set, it auto-scans the panel's local Agent binary.
+//
+// 管理动作会把重试计数重置为第 1 次尝试。
 func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
+	return u.push(ctx, serverID, 1)
+}
+
+// push 把 UpdateAgent 指令推给指定节点，并登记一个带 CommandID 的结果等待者。
+// attempt 为本次是第几次尝试（1 = 首次）。
+func (u *AgentUpdater) push(ctx context.Context, serverID int64, attempt int) error {
 	u.mu.Lock()
 
 	switch {
@@ -442,15 +476,16 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 		return fmt.Errorf("local server does not need Agent update")
 	}
 
-	// Check if already updating
-	if existing, ok := u.pendingUpdates[serverID]; ok {
-		if existing.Status == UpdateStatusDownloading ||
-			existing.Status == UpdateStatusVerifying ||
-			existing.Status == UpdateStatusReplacing ||
-			existing.Status == UpdateStatusRestarting {
+	// Check if already updating。只有"确实还在推进且未超时"的任务才阻塞新推送：
+	// 以前只要状态还停在 downloading 就永久拒绝，导致失败/卡死的任务把重试也堵死。
+	if existing, ok := u.pendingUpdates[serverID]; ok && existing.inFlight() {
+		age := time.Since(existing.StartedAt)
+		if age < u.taskTimeout {
 			u.mu.Unlock()
-			return fmt.Errorf("server %d already has an update in progress (status=%s)", serverID, existing.Status)
+			return fmt.Errorf("server %d already has an update in progress (status=%s, %v elapsed)", serverID, existing.Status, age.Truncate(time.Second))
 		}
+		log.Printf("[AgentUpdater] server %d: previous update task stalled for %v, superseding it",
+			serverID, age.Truncate(time.Second))
 	}
 
 	// Check if server is online
@@ -459,8 +494,17 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 		return fmt.Errorf("server %d is offline, cannot push update", serverID)
 	}
 
-	// Skip if already on target version
+	// Skip if already on target version。
+	// 若这里还有残留的失败任务（例如上一次确认丢失、重试时发现节点其实已到位），
+	// 直接收尾为 done，避免 UI 上一直挂着一条"失败"记录。
 	if server.AgentVersion == u.currentVersion {
+		if existing, ok := u.pendingUpdates[serverID]; ok {
+			existing.Status = UpdateStatusDone
+			existing.Error = ""
+			existing.NextRetryAt = nil
+			now := time.Now()
+			existing.CompletedAt = &now
+		}
 		u.mu.Unlock()
 		return fmt.Errorf("server %d already on version %s", serverID, u.currentVersion)
 	}
@@ -479,11 +523,17 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 		ToVersion:   version,
 		Status:      UpdateStatusPending,
 		StartedAt:   time.Now(),
+		Attempts:    attempt,
 	}
 	u.pendingUpdates[serverID] = task
 
-	// Send update command via PanelCommand stream
+	// Send update command via PanelCommand stream.
+	// 必须带 CommandId：Agent 的失败回执靠 TaskId 与面板的等待者对应，
+	// 以前不带 CommandId，Agent 回了 TASK_FAILED 也会被面板按空 ID 丢弃。
+	cmdID := generateCommandID()
+	resultCh := u.nodeMgr.RegisterTaskResultWaiter(cmdID)
 	cmd := &agentpb.PanelCommand{
+		CommandId: cmdID,
 		Command: &agentpb.PanelCommand_UpdateAgent{
 			UpdateAgent: &agentpb.UpdateAgentCommand{
 				Version:     version,
@@ -494,21 +544,182 @@ func (u *AgentUpdater) UpdateServer(ctx context.Context, serverID int64) error {
 	}
 
 	if err := u.nodeMgr.SendCommand(ctx, serverID, cmd); err != nil {
+		u.nodeMgr.UnregisterTaskResultWaiter(cmdID)
 		task.Status = UpdateStatusFailed
 		task.Error = err.Error()
 		now := time.Now()
 		task.CompletedAt = &now
+		u.scheduleRetryLocked(task)
 		u.mu.Unlock()
 		return fmt.Errorf("send update command to server %d: %w", serverID, err)
 	}
 
 	task.Status = UpdateStatusDownloading
 	osName, arch := u.nodeMgr.GetServerPlatform(serverID)
-	log.Printf("[AgentUpdater] update pushed to server %d: %s → %s (platform=%s-%s)",
-		serverID, task.FromVersion, task.ToVersion, osName, arch)
+	log.Printf("[AgentUpdater] update pushed to server %d (attempt %d/%d): %s → %s (platform=%s-%s)",
+		serverID, attempt, u.maxAttempts, task.FromVersion, task.ToVersion, osName, arch)
 
 	u.mu.Unlock()
+
+	// 等 Agent 的失败回执（成功回执通常收不到：Agent 替换二进制后立刻重启进程）。
+	go u.watchUpdateResult(resultCh, cmdID, serverID, task)
+
 	return nil
+}
+
+// watchUpdateResult 等待 Agent 对本条 UpdateAgent 指令的回执。
+// 只处理失败回执：成功回执通常收不到（Agent 替换二进制后立刻重启进程），
+// 成功由重连/心跳上报的新版本号确认（OnAgentReconnect）。
+func (u *AgentUpdater) watchUpdateResult(resultCh chan *agentpb.TaskResult, cmdID string, serverID int64, task *UpdateTask) {
+	timer := time.NewTimer(u.taskTimeout)
+	defer timer.Stop()
+	defer u.nodeMgr.UnregisterTaskResultWaiter(cmdID)
+
+	select {
+	case res := <-resultCh:
+		if res == nil || res.Status != agentpb.TaskStatus_TASK_FAILED {
+			return // 成功回执同样交给 OnAgentReconnect 确认
+		}
+		log.Printf("[AgentUpdater] server %d reported update failure: %s", serverID, res.Error)
+		u.failTask(serverID, task, "agent: "+res.Error)
+	case <-timer.C:
+		// 超时交给 monitorPendingUpdates 统一收割（避免两处写同一任务）
+	}
+}
+
+// failTask 把指定任务标记为失败并排入重试队列。
+// 只有 pendingUpdates 里仍是同一个任务对象时才生效（防止覆盖后续新推送）。
+func (u *AgentUpdater) failTask(serverID int64, task *UpdateTask, reason string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	cur, ok := u.pendingUpdates[serverID]
+	if !ok || cur != task || !cur.inFlight() {
+		return
+	}
+	now := time.Now()
+	cur.Status = UpdateStatusFailed
+	cur.Error = reason
+	cur.CompletedAt = &now
+	u.scheduleRetryLocked(cur)
+}
+
+// scheduleRetryLocked 按当前尝试次数决定"稍后重试"还是"放弃"。调用方必须持有 u.mu。
+func (u *AgentUpdater) scheduleRetryLocked(task *UpdateTask) {
+	if task.Attempts >= u.maxAttempts {
+		task.NextRetryAt = nil
+		log.Printf("[AgentUpdater] server %d: giving up after %d attempt(s), last error: %s",
+			task.ServerID, task.Attempts, task.Error)
+		return
+	}
+	at := time.Now().Add(u.retryDelay(task.Attempts))
+	task.NextRetryAt = &at
+	log.Printf("[AgentUpdater] server %d: retry %d/%d scheduled in %v (last error: %s)",
+		task.ServerID, task.Attempts+1, u.maxAttempts, u.retryDelay(task.Attempts), task.Error)
+}
+
+// retryDelay 返回第 attempt 次失败后的等待时间（attempt 从 1 开始）。
+func (u *AgentUpdater) retryDelay(attempt int) time.Duration {
+	if len(u.retryBackoff) == 0 {
+		return 30 * time.Second
+	}
+	idx := attempt - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(u.retryBackoff) {
+		idx = len(u.retryBackoff) - 1
+	}
+	return u.retryBackoff[idx]
+}
+
+// monitorPendingUpdates 是更新任务的看护循环：
+//  1. 推进中但超过 taskTimeout 仍无结果的任务判定为卡死 → failed + 排重试；
+//  2. 到点的失败任务重新推送（最多 maxAttempts 次）；
+//  3. 收尾校验：节点实际版本已等于目标版本的任务直接判成功（回执可能丢失）。
+func (u *AgentUpdater) monitorPendingUpdates(ctx context.Context) {
+	type retryJob struct {
+		serverID int64
+		attempt  int
+	}
+
+	u.mu.Lock()
+	now := time.Now()
+	var toRetry []retryJob
+	var toVerify []*UpdateTask
+	for _, t := range u.pendingUpdates {
+		switch {
+		case t.inFlight() && now.Sub(t.StartedAt) > u.taskTimeout:
+			stalled := t.Status
+			t.Status = UpdateStatusFailed
+			t.Error = fmt.Sprintf("no result from agent within %v (task stalled in %s)", u.taskTimeout, stalled)
+			completed := now
+			t.CompletedAt = &completed
+			toVerify = append(toVerify, t)
+			u.scheduleRetryLocked(t)
+		case t.Status == UpdateStatusFailed && t.NextRetryAt != nil && !now.Before(*t.NextRetryAt):
+			t.NextRetryAt = nil
+			toRetry = append(toRetry, retryJob{serverID: t.ServerID, attempt: t.Attempts + 1})
+		}
+	}
+	u.mu.Unlock()
+
+	// 收尾校验：版本已到位但没等到确认（心跳/重连与 TaskResult 都可能错开）。
+	for _, t := range toVerify {
+		server, err := u.serverRepo.GetByID(ctx, t.ServerID)
+		if err != nil || server.AgentVersion != t.ToVersion {
+			continue
+		}
+		u.mu.Lock()
+		if cur, ok := u.pendingUpdates[t.ServerID]; ok && cur == t {
+			cur.Status = UpdateStatusDone
+			cur.Error = ""
+			cur.NextRetryAt = nil
+		}
+		u.mu.Unlock()
+		log.Printf("[AgentUpdater] server %d already reports %s, marking update done", t.ServerID, t.ToVersion)
+	}
+
+	for _, job := range toRetry {
+		if err := u.push(ctx, job.serverID, job.attempt); err != nil {
+			log.Printf("[AgentUpdater] server %d retry %d/%d failed to dispatch: %v",
+				job.serverID, job.attempt, u.maxAttempts, err)
+			u.settleDispatchFailure(ctx, job.serverID, job.attempt)
+		}
+	}
+}
+
+// settleDispatchFailure 处理"重试没能派发出去"的情况：
+// 节点实际已跑到目标版本（确认丢失）→ 直接判成功；
+// 其它原因（离线/平台无二进制等）→ 记一次尝试，退避后再试，用满 maxAttempts 后放弃。
+func (u *AgentUpdater) settleDispatchFailure(ctx context.Context, serverID int64, attempt int) {
+	u.mu.Lock()
+	task, ok := u.pendingUpdates[serverID]
+	u.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	if server, err := u.serverRepo.GetByID(ctx, serverID); err == nil && server.AgentVersion == task.ToVersion {
+		u.mu.Lock()
+		if cur, ok := u.pendingUpdates[serverID]; ok && cur == task {
+			cur.Status = UpdateStatusDone
+			cur.Error = ""
+			cur.NextRetryAt = nil
+			now := time.Now()
+			cur.CompletedAt = &now
+		}
+		u.mu.Unlock()
+		log.Printf("[AgentUpdater] server %d already reports %s, marking update done", serverID, task.ToVersion)
+		return
+	}
+
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if cur, ok := u.pendingUpdates[serverID]; ok && cur == task && cur.Status == UpdateStatusFailed {
+		cur.Attempts = attempt
+		u.scheduleRetryLocked(cur)
+	}
 }
 
 // UpdateAllServers triggers Agent updates on all eligible remote servers.
@@ -542,6 +753,7 @@ func (u *AgentUpdater) UpdateAllServers(ctx context.Context) error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, u.maxConcurrency)
 	errCh := make(chan error, len(servers))
+	targeted := 0
 
 	for _, server := range servers {
 		if server.IsLocal {
@@ -555,6 +767,7 @@ func (u *AgentUpdater) UpdateAllServers(ctx context.Context) error {
 			continue
 		}
 
+		targeted++
 		wg.Add(1)
 		go func(srvID int64, srvName string) {
 			defer wg.Done()
@@ -577,7 +790,7 @@ func (u *AgentUpdater) UpdateAllServers(ctx context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("%d/%d updates failed", len(errs), len(servers))
+		return fmt.Errorf("%d/%d updates failed", len(errs), targeted)
 	}
 
 	log.Printf("[AgentUpdater] all eligible servers updated to %s", u.currentVersion)
@@ -597,6 +810,8 @@ func (u *AgentUpdater) OnAgentReconnect(serverID int64, reportedVersion string) 
 
 	if reportedVersion == task.ToVersion {
 		task.Status = UpdateStatusDone
+		task.Error = "" // 之前失败/不匹配留下的错误信息必须清掉，否则 UI 上"成功但带错误"
+		task.NextRetryAt = nil
 		now := time.Now()
 		task.CompletedAt = &now
 		log.Printf("[AgentUpdater] server %d updated successfully: %s → %s",
@@ -606,30 +821,40 @@ func (u *AgentUpdater) OnAgentReconnect(serverID int64, reportedVersion string) 
 		task.Error = fmt.Sprintf("version mismatch: expected %s, got %s", task.ToVersion, reportedVersion)
 		now := time.Now()
 		task.CompletedAt = &now
+		u.scheduleRetryLocked(task)
 		log.Printf("[AgentUpdater] server %d update verification failed: expected %s, got %s",
 			serverID, task.ToVersion, reportedVersion)
 	}
 }
 
-// RunLoop starts a periodic check loop that auto-updates outdated Agents.
-// Blocks until ctx is cancelled.
+// RunLoop 是更新任务的后台维护循环，务必在面板启动时拉起：
+//   - monitorEvery 周期：收割卡死任务 + 到点重试（失败自动重试，不需要人工再点）；
+//   - interval 周期：把仍落后于目标版本的在线节点再推一遍（长周期兜底）。
+//
+// 注意：以前的 RunLoop 只在启动时 currentVersion 非空才运行，而版本是管理员
+// 点推送时才设置的，所以它开机即退出；它也从没被调用过。
 func (u *AgentUpdater) RunLoop(ctx context.Context) {
-	if u.currentVersion == "" {
-		log.Println("[AgentUpdater] no target version set, auto-update disabled")
-		return
-	}
+	monitor := time.NewTicker(u.monitorEvery)
+	defer monitor.Stop()
+	reconcile := time.NewTicker(u.interval)
+	defer reconcile.Stop()
 
-	ticker := time.NewTicker(u.interval)
-	defer ticker.Stop()
-
-	log.Printf("[AgentUpdater] auto-update loop started, interval=%v, target=%s", u.interval, u.currentVersion)
+	log.Printf("[AgentUpdater] maintenance loop started (monitor=%v, reconcile=%v, timeout=%v, maxAttempts=%d)",
+		u.monitorEvery, u.interval, u.taskTimeout, u.maxAttempts)
 
 	for {
 		select {
 		case <-ctx.Done():
 			log.Println("[AgentUpdater] stopped")
 			return
-		case <-ticker.C:
+		case <-monitor.C:
+			u.monitorPendingUpdates(ctx)
+			// 已结束的任务保留 1 小时供排查，超时清理，避免列表越积越多
+			u.CleanupCompleted(time.Hour)
+		case <-reconcile.C:
+			if u.GetCurrentVersion() == "" {
+				continue
+			}
 			if err := u.autoUpdateOutdated(ctx); err != nil {
 				log.Printf("[AgentUpdater] auto-update check error: %v", err)
 			}

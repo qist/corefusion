@@ -75,7 +75,16 @@ func main() {
 
 	// Phase 1: Bootstrap (get mTLS cert from Panel) or load existing cert
 	if err := app.EnsureCert(); err != nil {
-		log.Fatalf("bootstrap failed: %v", err)
+		if !app.HasCertFiles() {
+			// 首次安装：没有证书就没什么可守护的，直接失败让安装脚本暴露问题
+			log.Fatalf("bootstrap failed: %v", err)
+		}
+		// 有证书但不可用（典型：面板关停太久，证书已过期，令牌也已用过）：
+		// 不要退出 —— 核心/代理守护不依赖面板连接，继续跑；后台定期重试引导。
+		log.Printf("[Agent] WARNING: mTLS 不可用且引导失败：%v", err)
+		log.Printf("[Agent] 修复步骤：面板 → 该节点 → 重新生成 Bootstrap Token → " +
+			"更新 config.yaml 的 bootstrap.token → 重启 corefusion-agent")
+		go app.retryBootstrapLoop(ctx, 5*time.Minute)
 	}
 
 	// Phase 2: Start process.Manager + Guardian (local daemon, independent of panel connection)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -28,7 +29,18 @@ import (
 func (a *AgentApp) EnsureCert() error {
 	if a.hasValidCert() {
 		log.Println("[Agent] using existing mTLS certificate")
+		a.logCertExpiryWarning()
 		return nil
+	}
+
+	// 过期/损坏要先说清楚，否则用户只会看到 mTLS 握手失败的一行错误。
+	if exp, ok := a.agentCertExpiry(); ok {
+		if left := time.Until(exp); left <= 0 {
+			log.Printf("[Agent] local mTLS certificate EXPIRED at %s (%.1f days ago) — the panel cannot authenticate this node",
+				exp.Format(time.RFC3339), -left.Hours()/24)
+		} else {
+			log.Printf("[Agent] local mTLS certificate is not usable (expires %s)", exp.Format(time.RFC3339))
+		}
 	}
 
 	if a.cfg.Bootstrap.Token == "" {
@@ -418,6 +430,74 @@ func writePinnedFingerprint(path, fp string) error {
 }
 
 // hasValidCert checks whether the on-disk mTLS certificate is present and not expired.
+// agentCertExpiry 返回本地 mTLS 证书的过期时间（读不到证书时 ok=false）。
+func (a *AgentApp) agentCertExpiry() (time.Time, bool) {
+	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
+	if err != nil || len(cert.Certificate) == 0 {
+		return time.Time{}, false
+	}
+	parsed, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return time.Time{}, false
+	}
+	return parsed.NotAfter, true
+}
+
+// HasCertFiles 表示本地已经有证书文件（不判断是否过期）。
+// 用于区分"首次安装、压根没证书"和"有证书但过期需要重新引导"。
+func (a *AgentApp) HasCertFiles() bool {
+	if _, err := os.Stat(a.certPath); err != nil {
+		return false
+	}
+	if _, err := os.Stat(a.keyPath); err != nil {
+		return false
+	}
+	_, err := os.Stat(a.caPath)
+	return err == nil
+}
+
+// logCertExpiryWarning 在证书临近过期时给出一条可操作的提醒。
+// 面板长期关停会导致续签推送不到位 —— 这里提前把时间点喊出来。
+func (a *AgentApp) logCertExpiryWarning() {
+	exp, ok := a.agentCertExpiry()
+	if !ok {
+		return
+	}
+	left := time.Until(exp)
+	if left <= 0 {
+		log.Printf("[Agent] mTLS certificate expired at %s", exp.Format(time.RFC3339))
+		return
+	}
+	if left < 7*24*time.Hour {
+		log.Printf("[Agent] mTLS certificate expires in %.1f days (%s); the panel renews it while connected",
+			left.Hours()/24, exp.Format(time.RFC3339))
+	}
+}
+
+// retryBootstrapLoop 在证书不可用且引导失败后周期性重试。
+//
+// 为什么不直接退出：面板长期关停（周末/假期）后证书可能过期，此时引导令牌通常
+// 也已用过或过期 → 引导必失败。以前的实现是 log.Fatalf + systemd 无限重启，
+// 节点只会留下"连不上"的假象。现在保持进程存活（核心守护/本地配置照常运行），
+// 日志给出明确的修复步骤，并在管理员重新下发令牌后自动恢复。
+func (a *AgentApp) retryBootstrapLoop(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := a.EnsureCert(); err != nil {
+				log.Printf("[Agent] bootstrap retry failed: %v", err)
+				continue
+			}
+			log.Println("[Agent] bootstrap succeeded on retry, mTLS connection will resume")
+			return
+		}
+	}
+}
+
 func (a *AgentApp) hasValidCert() bool {
 	cert, err := tls.LoadX509KeyPair(a.certPath, a.keyPath)
 	if err != nil {

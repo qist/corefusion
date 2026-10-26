@@ -279,11 +279,21 @@ func (h *Handler) GenerateBootstrapToken(c *gin.Context) {
 
 	result, err := h.svc.GenerateBootstrapToken(c.Request.Context(), id)
 	if err != nil {
-		response.InternalError(c, "TOKEN_GEN_FAILED", err.Error())
+		switch {
+		case errors.Is(err, nodeserverSvc.ErrAgentCertStillValid):
+			// 证书仍有效：不允许再签一张新身份（续签是自动的，不需要重新引导）
+			response.Conflict(c, "AGENT_CERT_STILL_VALID", err.Error())
+		case errors.Is(err, nodeserverSvc.ErrBootstrapLocalNode):
+			response.Conflict(c, "LOCAL_NODE_NO_TOKEN", err.Error())
+		default:
+			response.InternalError(c, "TOKEN_GEN_FAILED", err.Error())
+		}
 		return
 	}
 
-	h.auditLog(c, id, "generate_token", "generated bootstrap token", true, "")
+	// 令牌只显示一次：禁止任何中间层/浏览器缓存这个响应
+	c.Header("Cache-Control", "no-store")
+	h.auditLog(c, id, "generate_token", "generated bootstrap token (agent cert invalid)", true, "")
 	response.OK(c, result)
 }
 
@@ -1054,9 +1064,18 @@ func (h *Handler) GetBootstrapCommand(c *gin.Context) {
 	}
 	script, err := h.svc.GetBootstrapCommand(c.Request.Context(), id, panelHost, panelPort)
 	if err != nil {
-		response.InternalError(c, "BOOTSTRAP_CMD_FAILED", err.Error())
+		switch {
+		case errors.Is(err, nodeserverSvc.ErrAgentCertStillValid):
+			response.Conflict(c, "AGENT_CERT_STILL_VALID", err.Error())
+		case errors.Is(err, nodeserverSvc.ErrBootstrapLocalNode):
+			response.Conflict(c, "LOCAL_NODE_NO_TOKEN", err.Error())
+		default:
+			response.InternalError(c, "BOOTSTRAP_CMD_FAILED", err.Error())
+		}
 		return
 	}
+	// 脚本里含引导令牌，不缓存
+	c.Header("Cache-Control", "no-store")
 	c.Data(http.StatusOK, "text/x-shellscript", []byte(script))
 }
 

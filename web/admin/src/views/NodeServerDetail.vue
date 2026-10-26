@@ -42,13 +42,44 @@
           <el-descriptions-item :label="t('nodeServer.agentVersion')">{{ server.agent_version || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('nodeServer.lastHeartbeat')">{{ server.last_heartbeat_at ? formatTime(server.last_heartbeat_at) : '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('nodeServer.certStatus')">
-            <span v-if="server.agent_cert_expires_at">{{ formatTime(server.agent_cert_expires_at) }}</span>
-            <span v-else>-</span>
+            <template v-if="server.is_local">-</template>
+            <template v-else-if="server.agent_cert_expires_at">
+              <span>{{ formatTime(server.agent_cert_expires_at) }}</span>
+              <el-tag v-if="server.agent_cert_invalid" size="small" type="danger" style="margin-left:6px">
+                {{ t('nodeServer.certExpired') }}
+              </el-tag>
+              <el-tag v-else-if="agentCertExpiringSoon(server.agent_cert_expires_at)" size="small" type="warning" style="margin-left:6px">
+                {{ t('nodeServer.certExpiringSoon') }}
+              </el-tag>
+            </template>
+            <el-tag v-else size="small" type="info">{{ t('nodeServer.certNotIssued') }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item :label="t('nodeServer.isLocal')">
             <el-tag size="small" :type="server.is_local ? 'warning' : 'info'">{{ server.is_local ? t('common.yes') : t('common.no') }}</el-tag>
           </el-descriptions-item>
         </el-descriptions>
+
+        <!--
+          证书失效恢复入口：只在 Agent 证书过期/未签发时出现。
+          证书正常时不显示——此时续签由面板自动推送，不需要（也不应该）重新引导。
+        -->
+        <el-alert
+          v-if="server && !server.is_local && server.agent_cert_invalid"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-top:16px"
+        >
+          <template #title>{{ t('nodeServer.certInvalidTitle') }}</template>
+          <div style="line-height:1.9">
+            {{ t('nodeServer.certInvalidHint') }}
+            <div style="margin-top:8px">
+              <el-button v-if="$can('admin')" size="small" type="danger" :loading="regenLoading" @click="regenerateBootstrapToken">
+                {{ t('nodeServer.regenerateToken') }}
+              </el-button>
+            </div>
+          </div>
+        </el-alert>
 
         <!-- Agent Update Section -->
         <el-card v-if="server && !server.is_local" shadow="never" style="margin-top:16px">
@@ -366,6 +397,35 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 重新生成 Bootstrap Token（仅证书失效时可用）-->
+    <el-dialog v-model="regenVisible" :title="t('nodeServer.regenerateToken')" width="680px">
+      <el-alert type="warning" :closable="false" show-icon style="margin-bottom:12px">
+        <template #title>{{ t('nodeServer.regenerateOnceWarn') }}</template>
+      </el-alert>
+      <el-alert v-if="isInsecureContext" type="error" :closable="false" show-icon style="margin-bottom:12px">
+        <template #title>{{ t('nodeServer.insecureTokenWarning') }}</template>
+      </el-alert>
+      <el-form label-width="90px">
+        <el-form-item :label="t('nodeServer.bootstrapToken')">
+          <el-input v-model="regenToken" readonly>
+            <template #append>
+              <el-button @click="copyText(regenToken)">{{ t('nodeServer.copyCmd') }}</el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+        <el-form-item :label="t('nodeServer.tokenExpiresAt')">
+          <span>{{ regenExpiresAt ? formatTime(regenExpiresAt) : '-' }}</span>
+        </el-form-item>
+        <el-form-item :label="t('nodeServer.recoverySteps')">
+          <el-input v-model="regenCmd" type="textarea" :rows="7" readonly />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="copyText(regenCmd)">{{ t('nodeServer.copyCmd') }}</el-button>
+        <el-button size="small" type="primary" @click="regenVisible = false">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -380,7 +440,7 @@ import { useClientPagination } from '../composables/useClientPagination'
 import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
 import MobileCards from '../components/MobileCards.vue'
-import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate } from '../api/nodeServer'
+import { getAgentVersion, getAgentReleases, updateAgent, getPendingAgentUpdates, distributeCertificate, associateCertificate, generateBootstrapToken } from '../api/nodeServer'
 import ProtocolCenter from './protocols/ProtocolCenter.vue'
 import ProxyManagement from './ProxyManagement.vue'
 import CoreProcessTab from './node-server/CoreProcessTab.vue'
@@ -473,6 +533,86 @@ function certExpiringSoon(ts) {
   if (!ts) return false
   const days = (new Date(ts).getTime() - Date.now()) / 86400000
   return days < 30
+}
+
+// Agent mTLS 证书：面板在到期前 3 天开始自动续签，所以用同一个窗口做"即将过期"提示
+function agentCertExpiringSoon(ts) {
+  if (!ts) return false
+  const days = (new Date(ts).getTime() - Date.now()) / 86400000
+  return days < 3
+}
+
+// ── 证书失效后的重新引导（仅当 agent_cert_invalid 为真时才提供入口）──
+const regenVisible = ref(false)
+const regenLoading = ref(false)
+const regenToken = ref('')
+const regenCmd = ref('')
+const regenExpiresAt = ref(null)
+// 非 HTTPS 时令牌会明文传输（引导令牌可换到 Agent 证书），必须提示
+const isInsecureContext = computed(() => window.location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(window.location.hostname))
+
+async function regenerateBootstrapToken() {
+  regenLoading.value = true
+  try {
+    const res = await generateBootstrapToken(serverId)
+    const token = res?.token || ''
+    if (!token) {
+      ElMessage.error(t('nodeServer.cannotGenerateDeployToken'))
+      return
+    }
+    regenToken.value = token
+    regenExpiresAt.value = res?.expires_at || null
+    regenCmd.value = buildRecoveryCmd(token)
+    regenVisible.value = true
+    // 令牌生成后 bootstrap_required 会变成 true，刷新一次让页面状态跟上
+    loadServer()
+  } catch (e) {
+    // 后端会拒发（证书仍有效/本地面板节点），把具体原因显示出来，别吞成通用错误
+    ElMessage.error(e?.response?.data?.message || t('nodeServer.generateDeployFailed'))
+  } finally {
+    regenLoading.value = false
+  }
+}
+
+// 恢复步骤：只替换 bootstrap.token，不动其它配置（配置里的 host/port 仍然有效）
+function buildRecoveryCmd(token) {
+  return [
+    '# 1) 把新的 Bootstrap Token 写进 Agent 配置（只替换 token 这一行）',
+    `sed -i 's|^[[:space:]]*token:.*|  token: "${token}"|' /opt/corefusion-agent/config.yaml`,
+    '',
+    '# 2) 重启 Agent（证书失效时它会每 5 分钟自动重试引导，无需手工再等）',
+    'systemctl restart corefusion-agent || (pkill -9 -x corefusion-agent; sleep 1; cd /opt/corefusion-agent && setsid nohup ./corefusion-agent -config config.yaml >> /tmp/agent.log 2>&1 &)',
+    '',
+    '# 3) 看结果：出现 "bootstrapping with panel" / "connected to panel" 即恢复',
+    'journalctl -u corefusion-agent -n 20 --no-pager | grep -iE "bootstrap|mTLS|connected to panel"',
+  ].join('\n')
+}
+
+function copyText(text) {
+  if (!text) return
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text)
+      .then(() => ElMessage.success(t('nodeServer.copied')))
+      .catch(() => fallbackCopyText(text))
+    return
+  }
+  fallbackCopyText(text)
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    document.execCommand('copy')
+    ElMessage.success(t('nodeServer.copied'))
+  } catch (e) {
+    ElMessage.error(t('common.failed'))
+  }
+  document.body.removeChild(ta)
 }
 
 async function syncCertToNode(cert) {

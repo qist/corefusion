@@ -66,24 +66,33 @@ func (a *AgentApp) panelGRPCAddress() string {
 }
 
 // panelGRPCAddresses returns the addresses to try for the mTLS heartbeat, in
-// priority order: a runtime-discovered origin, grpc_host, then panel.host.
-// The last entry is important: if a discovered origin is temporarily
-// unreachable, a CDN that does proxy the gRPC port can still be used; the
-// panel's CA verification makes trying both safe.
+// priority order: the last address that worked, a runtime-discovered origin,
+// grpc_host, then panel.host.
+//
+// 最后一项很重要：发现的源站可能不可达（例如面板探测到的"公网 IP"其实是
+// 出口 NAT 地址，不转发 inbound）。以前 dialPanel 只拨 addrs[0]，一旦发现
+// 到一个坏地址就会把本来能连的节点永久打死 —— 节点 14/19 就是这么掉的。
 func (a *AgentApp) panelGRPCAddresses() []string {
 	a.grpcHostMu.RLock()
 	override := strings.TrimSpace(a.grpcHostOverride)
+	lastGood := strings.TrimSpace(a.lastGoodGRPCAddr)
 	a.grpcHostMu.RUnlock()
 
+	port := strconv.Itoa(a.cfg.Panel.GRPCPort)
 	hosts := []string{override, strings.TrimSpace(a.cfg.Panel.GRPCHost), strings.TrimSpace(a.cfg.Panel.Host)}
-	seen := make(map[string]struct{}, len(hosts))
-	addrs := make([]string, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts)+1)
+	addrs := make([]string, 0, len(hosts)+1)
+	// lastGood 已经是 "host:port" 形式
+	if lastGood != "" {
+		seen[lastGood] = struct{}{}
+		addrs = append(addrs, lastGood)
+	}
 	for _, host := range hosts {
 		host = strings.Trim(host, "[]")
 		if host == "" {
 			continue
 		}
-		addr := net.JoinHostPort(host, strconv.Itoa(a.cfg.Panel.GRPCPort))
+		addr := net.JoinHostPort(host, port)
 		if _, ok := seen[addr]; ok {
 			continue
 		}
@@ -99,6 +108,29 @@ func (a *AgentApp) setGRPCHostOverride(host string) {
 	a.grpcHostMu.Unlock()
 }
 
+// setLastGoodGRPCAddr 记住最近一次 mTLS 握手成功的地址（进程内，不持久化）。
+func (a *AgentApp) setLastGoodGRPCAddr(addr string) {
+	a.grpcHostMu.Lock()
+	a.lastGoodGRPCAddr = addr
+	a.grpcHostMu.Unlock()
+}
+
+// shouldDiscoverOrigin 判断是否值得向面板查询 gRPC 源站。
+//
+// 只有"配置的是域名"时才需要：域名可能指向 CDN，而 CDN 通常不转发 gRPC 端口，
+// 这时才需要用源站 IP 兜底。配置成 IP 时它本身就是源站地址，再"发现"只会把
+// 一个可用的内网/直连地址换成面板探测到的公网出口 IP（NAT 后面根本不通）。
+func (a *AgentApp) shouldDiscoverOrigin() bool {
+	configured := strings.Trim(strings.TrimSpace(a.cfg.Panel.GRPCHost), "[]")
+	if configured == "" {
+		configured = strings.Trim(strings.TrimSpace(a.cfg.Panel.Host), "[]")
+	}
+	if configured == "" {
+		return false
+	}
+	return net.ParseIP(configured) == nil
+}
+
 const panelOriginDiscoveryInterval = 2 * time.Minute
 
 // discoverPanelOrigin asks the panel's public HTTP endpoint for its gRPC
@@ -107,10 +139,9 @@ const panelOriginDiscoveryInterval = 2 * time.Minute
 // editing config.yaml. The discovered address is still verified by mTLS
 // against the panel CA, so a forged HTTP response cannot impersonate the panel.
 func (a *AgentApp) discoverPanelOrigin(ctx context.Context) {
-	// An explicitly configured hostname (e.g. a gRPC load balancer) is
-	// authoritative and must not be replaced by the panel's egress IP. Only
-	// old configs without grpc_host, or configs using an IP, are discovered.
-	if explicit := strings.Trim(strings.TrimSpace(a.cfg.Panel.GRPCHost), "[]"); explicit != "" && net.ParseIP(explicit) == nil {
+	// 只在配置的是域名（可能是 CDN）时才做源站发现。配置成 IP 时它已经是源站，
+	// 再发现只会被换成不可达的公网出口 IP —— 见 shouldDiscoverOrigin 的说明。
+	if !a.shouldDiscoverOrigin() {
 		return
 	}
 	a.discoveryMu.Lock()
@@ -219,10 +250,28 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 
 	tlsConfig := buildPanelTLSConfig(cert, caPool)
 
-	addr := a.panelGRPCAddress()
-	// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
-	// 启用 keepalive：每 10 秒发送一次 PING，5 秒内无 PONG 响应则判定连接死亡，
-	// 避免 TCP 静默断开时长时间等待 OS 级 TCP 超时（默认可达 60+ 秒）。
+	// 依次尝试候选地址（上次成功的 → 发现的源站 → grpc_host → panel.host）。
+	// 每个候选都有独立的就绪超时，任何一个能完成 mTLS 握手即用，并记为 lastGood。
+	var failures []string
+	for _, addr := range a.panelGRPCAddresses() {
+		conn, err := a.dialPanelAddr(ctx, addr, tlsConfig)
+		if err == nil {
+			a.setLastGoodGRPCAddr(addr)
+			return conn, nil
+		}
+		failures = append(failures, err.Error())
+	}
+	if len(failures) == 0 {
+		return nil, fmt.Errorf("dial panel: no candidate address configured")
+	}
+	return nil, fmt.Errorf("dial panel: %s", strings.Join(failures, "; "))
+}
+
+// dialPanelAddr 对单个地址建立 gRPC 连接并等待 Ready。
+// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
+// 启用 keepalive：每 10 秒发送一次 PING，5 秒内无 PONG 响应则判定连接死亡，
+// 避免 TCP 静默断开时长时间等待 OS 级 TCP 超时（默认可达 60+ 秒）。
+func (a *AgentApp) dialPanelAddr(ctx context.Context, addr string, tlsConfig *tls.Config) (*grpc.ClientConn, error) {
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
@@ -232,13 +281,13 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create panel client: %w", err)
+		return nil, fmt.Errorf("%s: create panel client: %w", addr, err)
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := coredata.WaitForReady(dialCtx, conn); err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("dial panel: %w", err)
+		return nil, fmt.Errorf("%s: %w", addr, err)
 	}
 	return conn, nil
 }

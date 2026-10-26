@@ -980,12 +980,18 @@ O gerenciamento de planos configura os planos que você vende.
 
 O gerenciamento de recarga lida com sites de recarga, pedidos e cartões de recarga.
 
+> **Nota sobre integração de pagamentos**
+>
+> O painel **não se integra diretamente com instituições de pagamento** (Alipay, WeChat Pay, Stripe, bancos etc.); conecta-se apenas a uma **plataforma de pagamento intermediária**, que se integra à instituição de pagamento correspondente, realiza contratação, captura e liquidação e envia os resultados ao painel pela [API de callback de pagamento](api/charge-callback.md).
+>
+> A plataforma de pagamento intermediária **não faz parte deste projeto e deve ser desenvolvida pelo operador (ou usar um sistema próprio)**. Após a implantação, cadastre-a em «Sites de recarga» e conclua a verificação de domínio para usá-la como entrada de recarga; o site de recarga é essa plataforma intermediária, não a instituição de pagamento. Qualificações de pagamento, taxas, liquidação e conformidade são acordadas e assumidas pelo operador, pela instituição de pagamento e pela plataforma intermediária.
+
 ### 12.1 Locais de recarga
 
 1. Abra “Gerenciamento de recarga” → “Sites de recarga”;
 2. Adicione um site:
    - Nome do site
-   - Métodos de pagamento suportados (Alipay, WeChat, USDT, Stripe, etc.)
+   - Métodos de pagamento suportados por essa plataforma intermediária (Alipay, WeChat, USDT, Stripe etc., fornecidos pela integração dela com as instituições de pagamento)
    - Moeda
    - Taxa de câmbio
 3. Salvar;

@@ -980,12 +980,18 @@ Plan management configures the plans you sell.
 
 Recharge management handles recharge sites, orders and recharge cards.
 
+> **Payment integration**
+>
+> The panel **does not integrate directly with payment institutions** (Alipay, WeChat Pay, Stripe, banks, etc.). It only connects to an **intermediate payment platform**, which in turn integrates with the corresponding payment institution, handles contracting, acquiring and settlement, and reports payment results back through the [charge callback API](api/charge-callback.md).
+>
+> The intermediate payment platform is **not part of this project; operators must develop it themselves (or use their own system)**. Once deployed, register it under “Recharge sites” and complete domain verification to use it as a recharge entry point; the recharge site here is that intermediate platform, not the payment institution itself. Payment qualifications, fees, settlement and compliance are agreed and borne by the operator, the payment institution and the intermediate platform.
+
 ### 12.1 Recharge sites
 
 1. Open “Recharge management” → “Recharge sites”;
 2. Add a site:
    - Site name
-   - Supported payment methods (Alipay, WeChat, USDT, Stripe, etc.)
+   - Payment methods supported by that intermediate platform (Alipay, WeChat, USDT, Stripe, etc., provided through its integration with payment institutions)
    - Currency
    - Exchange rate
 3. Save;

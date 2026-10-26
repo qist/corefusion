@@ -980,12 +980,18 @@ Plan yönetimi sattığınız planları yapılandırır.
 
 Şarj yönetimi, şarj sitelerini, siparişleri ve şarj kartlarını yönetir.
 
+> **Ödeme entegrasyonu notu**
+>
+> Panel, **ödeme kuruluşlarına doğrudan bağlanmaz** (Alipay, WeChat Pay, Stripe, bankalar vb.); yalnızca bir **aracı ödeme platformuna** bağlanır. Aracı platform ilgili ödeme kuruluşunu entegre eder, sözleşme, tahsilat ve mutabakatı yürütür ve ödeme sonuçlarını [ödeme geri çağırma API'si](api/charge-callback.md) aracılığıyla panele bildirir.
+>
+> Aracı ödeme platformu **bu projenin kapsamında değildir ve işletmeci tarafından geliştirilmelidir (veya kendi sistemi kullanılmalıdır)**. Dağıtımdan sonra «Şarj siteleri» altında kaydedin ve alan adı doğrulamasını tamamlayarak şarj girişi olarak kullanın; buradaki şarj sitesi ödeme kuruluşunun kendisi değil, aracı platformdur. Ödeme yetkinlikleri, ücretler, mutabakat ve uyumluluk, işletmeci ile ödeme kuruluşu ve aracı platform arasında kararlaştırılır ve işletmeci tarafından üstlenilir.
+
 ### 12.1 Şarj yerleri
 
 1. “Şarj yönetimi” → “Şarj siteleri”ni açın;
 2. Bir site ekleyin:
    - Site adı
-   - Desteklenen ödeme yöntemleri (Alipay, WeChat, USDT, Stripe vb.)
+   - Bu aracı platformun desteklediği ödeme yöntemleri (Alipay, WeChat, USDT, Stripe vb.; platformun ödeme kuruluşlarıyla entegrasyonu üzerinden sunulur)
    - Para birimi
    - Döviz kuru
 3. Kaydet;

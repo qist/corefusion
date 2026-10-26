@@ -980,12 +980,18 @@ Quản lý kế hoạch định cấu hình các kế hoạch bạn bán.
 
 Quản lý nạp tiền xử lý các trang nạp tiền, đơn đặt hàng và thẻ nạp tiền.
 
+> **Lưu ý về tích hợp thanh toán**
+>
+> Bảng điều khiển **không kết nối trực tiếp với tổ chức thanh toán** (Alipay, WeChat Pay, Stripe, ngân hàng, v.v.) mà chỉ kết nối với **nền tảng thanh toán trung gian**. Nền tảng này tích hợp với tổ chức thanh toán tương ứng, thực hiện ký kết, thu tiền và quyết toán, rồi gửi kết quả thanh toán về bảng điều khiển qua [API gọi lại thanh toán](api/charge-callback.md).
+>
+> Nền tảng thanh toán trung gian **không thuộc phạm vi dự án này và phải do nhà vận hành tự phát triển (hoặc dùng hệ thống riêng)**. Sau khi triển khai, hãy đăng ký tại «Trang web nạp tiền» và hoàn tất xác minh tên miền để dùng làm cổng nạp tiền; trang nạp tiền ở đây chính là nền tảng trung gian đó, không phải tổ chức thanh toán. Tư cách thanh toán, phí, quyết toán và tuân thủ do nhà vận hành cùng tổ chức thanh toán và nền tảng trung gian thỏa thuận và chịu trách nhiệm.
+
 ### 12.1 Địa điểm nạp tiền
 
 1. Mở “Quản lý nạp tiền” → “Trang web nạp tiền”;
 2. Thêm một trang web:
    - Tên trang web
-   - Các phương thức thanh toán được hỗ trợ (Alipay, WeChat, USDT, Stripe, v.v.)
+   - Các phương thức thanh toán mà nền tảng trung gian đó hỗ trợ (Alipay, WeChat, USDT, Stripe, v.v., do nền tảng tích hợp với tổ chức thanh toán cung cấp)
    - Tiền tệ
    - Tỷ giá hối đoái
 3. Lưu;

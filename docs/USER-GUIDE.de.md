@@ -980,12 +980,18 @@ Die Planverwaltung konfiguriert die von Ihnen verkauften Pläne.
 
 Das Auflademanagement verwaltet Aufladestandorte, Bestellungen und Aufladekarten.
 
+> **Hinweis zur Zahlungsanbindung**
+>
+> Das Panel **bindet keine Zahlungsinstitute direkt an** (Alipay, WeChat Pay, Stripe, Banken usw.), sondern ausschließlich eine **zwischengeschaltete Zahlungsplattform**. Diese bindet das jeweilige Zahlungsinstitut an, übernimmt Vertragsabschluss, Acquiring und Abrechnung und meldet Zahlungsergebnisse über die [Charge-Callback-API](api/charge-callback.md) an das Panel zurück.
+>
+> Die zwischengeschaltete Zahlungsplattform ist **nicht Bestandteil dieses Projekts und muss vom Betreiber selbst entwickelt werden (oder als eigenes System betrieben werden)**. Nach der Bereitstellung wird sie unter „Aufladestandorte“ registriert und per Domain-Verifizierung freigeschaltet; ein Aufladestandort ist dabei diese zwischengeschaltete Plattform, nicht das Zahlungsinstitut selbst. Zahlungsqualifikation, Gebühren, Abrechnung und Compliance vereinbart und trägt der Betreiber gemeinsam mit Zahlungsinstitut und zwischengeschalteter Plattform.
+
 ### 12.1 Ladestationen
 
 1. Öffnen Sie „Aufladeverwaltung“ → „Aufladestandorte“;
 2. Fügen Sie eine Website hinzu:
    - Site-Name
-   - Unterstützte Zahlungsmethoden (Alipay, WeChat, USDT, Stripe usw.)
+   - Von dieser zwischengeschalteten Plattform unterstützte Zahlungsmethoden (Alipay, WeChat, USDT, Stripe usw., bereitgestellt über deren Anbindung an Zahlungsinstitute)
    - Währung
    - Wechselkurs
 3. Speichern;

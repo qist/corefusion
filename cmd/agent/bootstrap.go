@@ -2,14 +2,18 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,11 +42,6 @@ func (a *AgentApp) EnsureCert() error {
 		hostname = "agent-" + strconv.FormatInt(a.cfg.Panel.ServerID, 10)
 	}
 
-	scheme := "http"
-	if a.cfg.Panel.TLS {
-		scheme = "https"
-	}
-	bootstrapURL := fmt.Sprintf("%s://%s:%d/api/v1/agent/bootstrap", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port)
 	reqBody, _ := json.Marshal(map[string]interface{}{
 		"server_id":       a.cfg.Panel.ServerID,
 		"bootstrap_token": a.cfg.Bootstrap.Token,
@@ -50,60 +49,292 @@ func (a *AgentApp) EnsureCert() error {
 		"agent_version":   constants.Version,
 	})
 
-	// ⚠ 不再 `InsecureSkipVerify: true` ✗（安全审计 v5 M6）：引导阶段同样要校验面板身份，
-	// 否则任何能 MITM 的人都能冒充面板、把 Agent 引导到自己的假面板上（拿到 Agent 的私钥 ✗）。
-	// 两条路径**都不需要人工填写**任何东西：
-	//   ① 安装脚本会自动把面板 CA 证书写到 certs/ca-cert.pem（面板自动附带）→ 用它做正常校验；
-	//   ② 万一没有 CA（老脚本安装的节点）→ TOFU：把首次看到的证书指纹自动记到
-	//      certs/panel-tls-pin，之后每次引导都比对它（不一致即拒绝）。
-	tlsCfg, err := a.bootstrapTLSConfig()
+	endpoints, err := a.bootstrapEndpoints()
 	if err != nil {
 		return err
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	if tlsCfg != nil {
-		client.Transport = &http.Transport{TLSClientConfig: tlsCfg}
+	var lastErr error
+	for _, ep := range endpoints {
+		body, status, err := a.postBootstrap(ep, reqBody)
+		if err != nil {
+			lastErr = fmt.Errorf("%s endpoint: %w", ep.label, err)
+			log.Printf("[Agent] bootstrap via %s failed: %v", ep.label, err)
+			continue
+		}
+		if status != http.StatusOK {
+			lastErr = fmt.Errorf("%s endpoint: HTTP %d: %s", ep.label, status, strings.TrimSpace(string(body)))
+			log.Printf("[Agent] bootstrap via %s failed: HTTP %d", ep.label, status)
+			continue
+		}
+
+		var apiResp struct {
+			Code string `json:"code"`
+			Data struct {
+				ServerID  int64  `json:"server_id"`
+				CertPEM   string `json:"cert_pem"`
+				KeyPEM    string `json:"key_pem"`
+				CACertPEM string `json:"ca_cert_pem"`
+				ExpiresAt int64  `json:"cert_expires_at"`
+			} `json:"data"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(body, &apiResp); err != nil {
+			lastErr = fmt.Errorf("parse bootstrap response from %s: %w", ep.label, err)
+			log.Printf("[Agent] bootstrap via %s returned invalid JSON: %v", ep.label, err)
+			continue
+		}
+		if apiResp.Code != "" && apiResp.Code != "OK" {
+			lastErr = fmt.Errorf("bootstrap error from %s: %s - %s", ep.label, apiResp.Code, apiResp.Message)
+			log.Printf("[Agent] bootstrap via %s rejected: %s", ep.label, apiResp.Message)
+			continue
+		}
+		if apiResp.Data.ServerID != 0 && apiResp.Data.ServerID != a.cfg.Panel.ServerID {
+			lastErr = fmt.Errorf("bootstrap response server_id=%d does not match config server_id=%d",
+				apiResp.Data.ServerID, a.cfg.Panel.ServerID)
+			log.Printf("[Agent] bootstrap via %s returned server_id=%d, want %d", ep.label, apiResp.Data.ServerID, a.cfg.Panel.ServerID)
+			continue
+		}
+
+		result := bootstrapResult{
+			CertPEM:   apiResp.Data.CertPEM,
+			KeyPEM:    apiResp.Data.KeyPEM,
+			CACertPEM: apiResp.Data.CACertPEM,
+			ExpiresAt: apiResp.Data.ExpiresAt,
+		}
+		if err := a.installBootstrapResult(result, ep.label); err != nil {
+			lastErr = err
+			log.Printf("[Agent] bootstrap via %s rejected: %v", ep.label, err)
+			continue
+		}
+		log.Printf("[Agent] bootstrap successful via %s, cert expires at %v", ep.label, time.Unix(result.ExpiresAt, 0))
+		return nil
 	}
-	resp, err := client.Post(bootstrapURL, "application/json", bytes.NewReader(reqBody))
+	return fmt.Errorf("bootstrap request failed: %w", lastErr)
+}
+
+type bootstrapEndpoint struct {
+	url     string
+	tlsCfg  *tls.Config
+	label   string
+	timeout time.Duration
+}
+
+type bootstrapResult struct {
+	CertPEM   string
+	KeyPEM    string
+	CACertPEM string
+	ExpiresAt int64
+}
+
+// bootstrapEndpoints returns the endpoints to try. Normally the direct panel
+// listener (Host/Port/TLS) comes first, because it lets the Agent verify the
+// panel with the panel CA. The public CDN/reverse-proxy endpoint
+// (PublicHost/Port/TLS) is the fallback for nodes that cannot reach the
+// origin's HTTP port.
+//
+// Exception: if the direct attempt would be cleartext HTTP while the public
+// endpoint is HTTPS, try the public endpoint first. Otherwise the one-time
+// bootstrap token would be sent over the internet without encryption.
+func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
+	tlsCfg, err := a.bootstrapTLSConfig()
 	if err != nil {
-		return fmt.Errorf("bootstrap request: %w", err)
+		return nil, err
+	}
+	endpoints := []bootstrapEndpoint{{
+		url:     bootstrapURL(a.cfg.Panel.Host, a.cfg.Panel.Port, a.cfg.Panel.TLS),
+		tlsCfg:  tlsCfg,
+		label:   "direct",
+		timeout: 8 * time.Second,
+	}}
+
+	publicHost := strings.TrimSpace(a.cfg.Panel.PublicHost)
+	if publicHost == "" {
+		return endpoints, nil
+	}
+	publicPort := a.cfg.Panel.PublicPort
+	if publicPort <= 0 {
+		publicPort = a.cfg.Panel.Port
+	}
+	if publicHost == a.cfg.Panel.Host &&
+		publicPort == a.cfg.Panel.Port &&
+		a.cfg.Panel.PublicTLS == a.cfg.Panel.TLS {
+		return endpoints, nil
+	}
+
+	var publicTLS *tls.Config
+	if a.cfg.Panel.PublicTLS {
+		// Trust the CDN/proxy's public certificate. The Agent certificate in the
+		// response is verified separately against the panel CA, so terminating
+		// TLS at the CDN cannot substitute its own Agent certificate.
+		publicTLS = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: publicHost,
+		}
+	}
+	publicEndpoint := bootstrapEndpoint{
+		url:     bootstrapURL(publicHost, publicPort, a.cfg.Panel.PublicTLS),
+		tlsCfg:  publicTLS,
+		label:   "public",
+		timeout: 30 * time.Second,
+	}
+	if endpoints[0].tlsCfg == nil && publicEndpoint.tlsCfg != nil {
+		endpoints = []bootstrapEndpoint{publicEndpoint, endpoints[0]}
+	} else {
+		endpoints = append(endpoints, publicEndpoint)
+	}
+	return endpoints, nil
+}
+
+func bootstrapURL(host string, port int, useTLS bool) string {
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/api/v1/agent/bootstrap", scheme, net.JoinHostPort(host, strconv.Itoa(port)))
+}
+
+func (a *AgentApp) postBootstrap(ep bootstrapEndpoint, reqBody []byte) ([]byte, int, error) {
+	client := &http.Client{Timeout: ep.timeout}
+	if ep.tlsCfg != nil {
+		client.Transport = &http.Transport{TLSClientConfig: ep.tlsCfg}
+	}
+	resp, err := client.Post(ep.url, "application/json", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, resp.StatusCode, readErr
+	}
+	return body, resp.StatusCode, nil
+}
 
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("bootstrap failed (HTTP %d): %s", resp.StatusCode, string(body))
+func (a *AgentApp) installBootstrapResult(result bootstrapResult, source string) error {
+	if strings.TrimSpace(result.CertPEM) == "" || strings.TrimSpace(result.KeyPEM) == "" {
+		return fmt.Errorf("bootstrap response from %s has empty cert/key", source)
 	}
-
-	var apiResp struct {
-		Code string `json:"code"`
-		Data struct {
-			CertPEM   string `json:"cert_pem"`
-			KeyPEM    string `json:"key_pem"`
-			CACertPEM string `json:"ca_cert_pem"`
-			ExpiresAt int64  `json:"cert_expires_at"`
-		} `json:"data"`
-		Message string `json:"message"`
+	if err := verifyBootstrapCert(result.CertPEM, result.KeyPEM, a.caPath, a.cfg.Panel.ServerID); err != nil {
+		return fmt.Errorf("verify bootstrap certificate from %s: %w", source, err)
 	}
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return fmt.Errorf("parse bootstrap response: %w", err)
-	}
-	if apiResp.Code != "" && apiResp.Code != "OK" {
-		return fmt.Errorf("bootstrap error: %s - %s", apiResp.Code, apiResp.Message)
-	}
-
-	if err := os.WriteFile(a.certPath, []byte(apiResp.Data.CertPEM), 0640); err != nil {
+	if err := os.WriteFile(a.certPath, []byte(result.CertPEM), 0640); err != nil {
 		return fmt.Errorf("write cert: %w", err)
 	}
-	if err := os.WriteFile(a.keyPath, []byte(apiResp.Data.KeyPEM), 0600); err != nil {
+	if err := os.WriteFile(a.keyPath, []byte(result.KeyPEM), 0600); err != nil {
 		return fmt.Errorf("write key: %w", err)
 	}
-	if err := os.WriteFile(a.caPath, []byte(apiResp.Data.CACertPEM), 0640); err != nil {
-		return fmt.Errorf("write CA cert: %w", err)
+	if result.CACertPEM != "" {
+		info, statErr := os.Stat(a.caPath)
+		if os.IsNotExist(statErr) || (statErr == nil && info.Size() == 0) {
+			if err := os.MkdirAll(filepath.Dir(a.caPath), 0750); err != nil {
+				return fmt.Errorf("create CA dir: %w", err)
+			}
+			if err := os.WriteFile(a.caPath, []byte(result.CACertPEM), 0640); err != nil {
+				return fmt.Errorf("write CA cert: %w", err)
+			}
+		} else {
+			// Never overwrite an existing trust anchor with a bundle supplied by
+			// the remote endpoint; a public TLS endpoint could be a CDN.
+			log.Printf("[Agent] keeping existing CA %s (bootstrap response also carried a CA bundle)", a.caPath)
+		}
+	}
+	return nil
+}
+
+// verifyBootstrapCert checks that the issued certificate belongs to this
+// server and that its private key matches. If the panel CA is present, the
+// certificate must also chain to it — this is what makes the public/CDN
+// fallback safe even though that hop uses a public TLS certificate.
+func verifyBootstrapCert(certPEM, keyPEM, caPath string, serverID int64) error {
+	certBlock, _ := pem.Decode([]byte(certPEM))
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		return fmt.Errorf("invalid certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse certificate: %w", err)
+	}
+	now := time.Now()
+	if now.Before(cert.NotBefore) {
+		return fmt.Errorf("certificate is not valid before %v", cert.NotBefore)
+	}
+	if now.After(cert.NotAfter) {
+		return fmt.Errorf("certificate expired at %v", cert.NotAfter)
+	}
+	if cert.IsCA {
+		return fmt.Errorf("bootstrap response returned a CA certificate instead of an Agent certificate")
+	}
+	if serverID > 0 {
+		wantOU := fmt.Sprintf("server-%d", serverID)
+		found := false
+		for _, ou := range cert.Subject.OrganizationalUnit {
+			if ou == wantOU {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("certificate OU does not identify %s", wantOU)
+		}
 	}
 
-	log.Printf("[Agent] bootstrap successful, cert expires at %v", time.Unix(apiResp.Data.ExpiresAt, 0))
+	keyBlock, _ := pem.Decode([]byte(keyPEM))
+	if keyBlock == nil {
+		return fmt.Errorf("invalid private key PEM")
+	}
+	var key any
+	switch keyBlock.Type {
+	case "EC PRIVATE KEY":
+		key, err = x509.ParseECPrivateKey(keyBlock.Bytes)
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+	case "PRIVATE KEY":
+		key, err = x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	default:
+		return fmt.Errorf("unsupported private key type %q", keyBlock.Type)
+	}
+	if err != nil {
+		return fmt.Errorf("parse private key: %w", err)
+	}
+
+	certPub, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
+	if err != nil {
+		return fmt.Errorf("marshal certificate public key: %w", err)
+	}
+	keyPub, err := x509.MarshalPKIXPublicKey(publicKeyOf(key))
+	if err != nil {
+		return fmt.Errorf("marshal private key public part: %w", err)
+	}
+	if !bytes.Equal(certPub, keyPub) {
+		return fmt.Errorf("certificate public key does not match returned private key")
+	}
+
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil || len(caPEM) == 0 {
+		return nil // legacy/TOFU path: no local CA to verify against
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(caPEM) {
+		return fmt.Errorf("parse panel CA %s failed", caPath)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots:     pool,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}); err != nil {
+		return fmt.Errorf("certificate does not chain to panel CA: %w", err)
+	}
 	return nil
+}
+
+func publicKeyOf(key any) any {
+	switch k := key.(type) {
+	case *ecdsa.PrivateKey:
+		return &k.PublicKey
+	case *rsa.PrivateKey:
+		return &k.PublicKey
+	default:
+		return key
+	}
 }
 
 // bootstrapTLSConfig 组装引导阶段的 TLS 配置（返回 nil 表示面板走 http，无需 TLS）。

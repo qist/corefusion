@@ -4,10 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -32,7 +37,11 @@ func (a *AgentApp) RunHeartbeatLoop(ctx context.Context) {
 		}
 
 		if err := a.connectAndStream(ctx); err != nil {
-			log.Printf("[Agent] panel connection error: %v", err)
+			log.Printf("[Agent] panel connection error (%s): %v", a.panelGRPCAddress(), err)
+			// Older configs only have panel.host (possibly a CDN domain) and
+			// no grpc_host. Try to discover the origin through the public HTTP
+			// endpoint so those Agents recover without a reinstall.
+			a.discoverPanelOrigin(ctx)
 		}
 
 		select {
@@ -41,6 +50,155 @@ func (a *AgentApp) RunHeartbeatLoop(ctx context.Context) {
 		case <-time.After(5 * time.Second):
 		}
 	}
+}
+
+// panelGRPCAddress returns the panel address used for the mTLS heartbeat.
+// panel.host is kept for the HTTP(S) bootstrap/download path (it may be a CDN
+// domain), while panel.grpc_host is the address that can actually serve the
+// gRPC port (normally the origin IP). Older configs without grpc_host fall
+// back to panel.host.
+func (a *AgentApp) panelGRPCAddress() string {
+	addrs := a.panelGRPCAddresses()
+	if len(addrs) > 0 {
+		return addrs[0]
+	}
+	return net.JoinHostPort(a.cfg.Panel.Host, strconv.Itoa(a.cfg.Panel.GRPCPort))
+}
+
+// panelGRPCAddresses returns the addresses to try for the mTLS heartbeat, in
+// priority order: a runtime-discovered origin, grpc_host, then panel.host.
+// The last entry is important: if a discovered origin is temporarily
+// unreachable, a CDN that does proxy the gRPC port can still be used; the
+// panel's CA verification makes trying both safe.
+func (a *AgentApp) panelGRPCAddresses() []string {
+	a.grpcHostMu.RLock()
+	override := strings.TrimSpace(a.grpcHostOverride)
+	a.grpcHostMu.RUnlock()
+
+	hosts := []string{override, strings.TrimSpace(a.cfg.Panel.GRPCHost), strings.TrimSpace(a.cfg.Panel.Host)}
+	seen := make(map[string]struct{}, len(hosts))
+	addrs := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		host = strings.Trim(host, "[]")
+		if host == "" {
+			continue
+		}
+		addr := net.JoinHostPort(host, strconv.Itoa(a.cfg.Panel.GRPCPort))
+		if _, ok := seen[addr]; ok {
+			continue
+		}
+		seen[addr] = struct{}{}
+		addrs = append(addrs, addr)
+	}
+	return addrs
+}
+
+func (a *AgentApp) setGRPCHostOverride(host string) {
+	a.grpcHostMu.Lock()
+	a.grpcHostOverride = host
+	a.grpcHostMu.Unlock()
+}
+
+const panelOriginDiscoveryInterval = 2 * time.Minute
+
+// discoverPanelOrigin asks the panel's public HTTP endpoint for its gRPC
+// origin. It is used only when the existing mTLS connection fails, so old
+// installations (which have just panel.host = CDN domain) can recover without
+// editing config.yaml. The discovered address is still verified by mTLS
+// against the panel CA, so a forged HTTP response cannot impersonate the panel.
+func (a *AgentApp) discoverPanelOrigin(ctx context.Context) {
+	// An explicitly configured hostname (e.g. a gRPC load balancer) is
+	// authoritative and must not be replaced by the panel's egress IP. Only
+	// old configs without grpc_host, or configs using an IP, are discovered.
+	if explicit := strings.Trim(strings.TrimSpace(a.cfg.Panel.GRPCHost), "[]"); explicit != "" && net.ParseIP(explicit) == nil {
+		return
+	}
+	a.discoveryMu.Lock()
+	if !a.lastDiscovery.IsZero() && time.Since(a.lastDiscovery) < panelOriginDiscoveryInterval {
+		a.discoveryMu.Unlock()
+		return
+	}
+	a.lastDiscovery = time.Now()
+	a.discoveryMu.Unlock()
+
+	url := a.panelHTTPBaseURL() + "/api/v1/agent/origin?grpc_port=" + strconv.Itoa(a.cfg.Panel.GRPCPort)
+	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
+	if err != nil {
+		log.Printf("[Agent] origin discovery request failed: %v", err)
+		return
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		log.Printf("[Agent] origin discovery request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		log.Printf("[Agent] origin discovery failed (HTTP %d): %v %s", resp.StatusCode, err, strings.TrimSpace(string(body)))
+		return
+	}
+
+	var apiResp struct {
+		Code string `json:"code"`
+		Data struct {
+			GRPCHost string `json:"grpc_host"`
+		} `json:"data"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		log.Printf("[Agent] origin discovery returned invalid JSON: %v", err)
+		return
+	}
+	if apiResp.Code != "" && apiResp.Code != "OK" {
+		log.Printf("[Agent] origin discovery rejected: %s - %s", apiResp.Code, apiResp.Message)
+		return
+	}
+
+	host := strings.Trim(strings.TrimSpace(apiResp.Data.GRPCHost), "[]")
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	} else {
+		log.Printf("[Agent] origin discovery returned invalid host %q", apiResp.Data.GRPCHost)
+		return
+	}
+	a.grpcHostMu.RLock()
+	current := strings.TrimSpace(a.grpcHostOverride)
+	if current == "" {
+		current = strings.TrimSpace(a.cfg.Panel.GRPCHost)
+	}
+	a.grpcHostMu.RUnlock()
+	if host == current {
+		return
+	}
+	a.setGRPCHostOverride(host)
+	log.Printf("[Agent] discovered panel gRPC origin %s (was %q)", host, current)
+}
+
+// panelHTTPBaseURL returns the HTTP(S) base URL used for relative downloads
+// (Agent self-update, geo rule files). Prefer the public CDN endpoint when it
+// is configured: the panel's direct HTTP port may be firewalled from nodes,
+// while the CDN is always reachable at the same address that served the
+// install script.
+func (a *AgentApp) panelHTTPBaseURL() string {
+	host := a.cfg.Panel.Host
+	port := a.cfg.Panel.Port
+	useTLS := a.cfg.Panel.TLS
+	if publicHost := strings.TrimSpace(a.cfg.Panel.PublicHost); publicHost != "" {
+		host = publicHost
+		port = a.cfg.Panel.PublicPort
+		if port <= 0 {
+			port = a.cfg.Panel.Port
+		}
+		useTLS = a.cfg.Panel.PublicTLS
+	}
+	scheme := "http"
+	if useTLS {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s", scheme, net.JoinHostPort(host, strconv.Itoa(port)))
 }
 
 // dialPanel establishes a gRPC connection to the Panel using mTLS.
@@ -61,7 +219,7 @@ func (a *AgentApp) dialPanel(ctx context.Context) (*grpc.ClientConn, error) {
 
 	tlsConfig := buildPanelTLSConfig(cert, caPool)
 
-	addr := fmt.Sprintf("%s:%d", a.cfg.Panel.Host, a.cfg.Panel.GRPCPort)
+	addr := a.panelGRPCAddress()
 	// grpc.NewClient（非阻塞，Dial 的推荐替代）。创建时不拨号，需显式等待 Ready。
 	// 启用 keepalive：每 10 秒发送一次 PING，5 秒内无 PONG 响应则判定连接死亡，
 	// 避免 TCP 静默断开时长时间等待 OS 级 TCP 超时（默认可达 60+ 秒）。

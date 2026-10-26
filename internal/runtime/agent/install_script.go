@@ -12,11 +12,23 @@ import (
 // The script downloads the Agent (panel-first, GitHub fallback), configures it
 // with the panel address and bootstrap token, then starts the service.
 type AgentInstallScript struct {
-	panelHost      string
-	panelPort      int
-	panelScheme    string // "http" or "https"
+	// panelHost/panelPort/panelScheme 是**下载脚本和二进制**用的公开地址
+	// （通常是 CDN/反代域名），不用于 Agent 配置。
+	panelHost   string
+	panelPort   int
+	panelScheme string // "http" or "https"
+
+	// bootstrapHost/bootstrapPort/bootstrapTLS 是 Agent 引导阶段直连的
+	// 面板自身监听地址。反代/CDN 会终止 TLS，其证书不是面板 CA 签发的，
+	// Agent 无法用 panel CA 校验；因此引导必须走源站，而不是公开域名。
+	bootstrapHost   string
+	bootstrapPort   int
+	bootstrapTLS    bool
+	bootstrapTLSSet bool
+
+	panelGRPCHost  string // gRPC 连接地址：面板未走 CDN 时与 panelHost 相同，走 CDN 时为源站 IP
 	panelGRPCPort  int
-	panelTLS       bool
+	panelTLS       bool // 兼容旧调用：未单独设置 bootstrapTLS 时作为引导 TLS
 	bootstrapToken string
 	caCertPEM      []byte // 面板 CA 证书（公开信息）—— 让 Agent 引导阶段就能校验面板身份
 	serverID       int64
@@ -69,15 +81,40 @@ func (s *AgentInstallScript) WithScheme(scheme string) *AgentInstallScript {
 	return s
 }
 
+// WithGRPCHost sets the address the Agent uses for the gRPC heartbeat.
+// When the panel is fronted by a normal CDN, panelHost is the CDN domain but
+// only the origin IP can serve the gRPC port, so the panel passes that here.
+func (s *AgentInstallScript) WithGRPCHost(host string) *AgentInstallScript {
+	s.panelGRPCHost = strings.TrimSpace(host)
+	return s
+}
+
 // WithGRPCPort sets the panel gRPC port.
 func (s *AgentInstallScript) WithGRPCPort(port int) *AgentInstallScript {
 	s.panelGRPCPort = port
 	return s
 }
 
-// WithTLS sets whether the panel uses TLS.
+// WithTLS sets whether the panel uses TLS for bootstrap. Kept for compatibility;
+// WithBootstrapEndpoint takes precedence when the panel's own listen endpoint
+// differs from the public CDN/reverse-proxy endpoint.
 func (s *AgentInstallScript) WithTLS(tls bool) *AgentInstallScript {
 	s.panelTLS = tls
+	if !s.bootstrapTLSSet {
+		s.bootstrapTLS = tls
+	}
+	return s
+}
+
+// WithBootstrapEndpoint sets the panel's direct HTTP(S) endpoint that the Agent
+// uses for bootstrap. This must be the panel's own listener (origin IP + local
+// listen port), because a CDN/reverse proxy terminates TLS with a certificate
+// that is not signed by the panel CA.
+func (s *AgentInstallScript) WithBootstrapEndpoint(host string, port int, tls bool) *AgentInstallScript {
+	s.bootstrapHost = strings.TrimSpace(host)
+	s.bootstrapPort = port
+	s.bootstrapTLS = tls
+	s.bootstrapTLSSet = true
 	return s
 }
 
@@ -95,18 +132,43 @@ func (s *AgentInstallScript) WithDownloadURL(url string) *AgentInstallScript {
 
 // Generate generates the install script content.
 func (s *AgentInstallScript) Generate() (string, error) {
+	grpcHost := strings.TrimSpace(s.panelGRPCHost)
+	if grpcHost == "" {
+		grpcHost = s.panelHost
+	}
+	bootstrapHost := strings.TrimSpace(s.bootstrapHost)
+	if bootstrapHost == "" {
+		bootstrapHost = s.panelHost
+	}
+	bootstrapPort := s.bootstrapPort
+	if bootstrapPort <= 0 {
+		bootstrapPort = s.panelPort
+	}
+	bootstrapTLS := s.bootstrapTLS
+	if !s.bootstrapTLSSet {
+		bootstrapTLS = s.panelTLS
+	}
+	bootstrapScheme := "http"
+	if bootstrapTLS {
+		bootstrapScheme = "https"
+	}
 	var sb strings.Builder
 	err := installScriptTmpl.Execute(&sb, map[string]interface{}{
-		"PanelHost":      s.panelHost,
-		"PanelPort":      s.panelPort,
-		"PanelScheme":    s.panelScheme,
-		"PanelGRPCPort":  s.panelGRPCPort,
-		"PanelTLS":       s.panelTLS,
-		"BootstrapToken": s.bootstrapToken,
-		"CACertPEM":      string(s.caCertPEM),
-		"ServerID":       s.serverID,
-		"AgentVersion":   s.agentVersion,
-		"GitHubURL":      s.githubURL,
+		"PanelHost":       s.panelHost,
+		"PanelPort":       s.panelPort,
+		"PanelScheme":     s.panelScheme,
+		"PanelTLS":        s.panelTLS,
+		"BootstrapHost":   bootstrapHost,
+		"BootstrapPort":   bootstrapPort,
+		"BootstrapScheme": bootstrapScheme,
+		"BootstrapTLS":    bootstrapTLS,
+		"PanelGRPCHost":   grpcHost,
+		"PanelGRPCPort":   s.panelGRPCPort,
+		"BootstrapToken":  s.bootstrapToken,
+		"CACertPEM":       string(s.caCertPEM),
+		"ServerID":        s.serverID,
+		"AgentVersion":    s.agentVersion,
+		"GitHubURL":       s.githubURL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate install script: %w", err)
@@ -120,13 +182,25 @@ set -e
 
 # CoreFusion Agent Install Script
 # Generated for server_id={{.ServerID}}
-# Panel: {{.PanelScheme}}://{{.PanelHost}}:{{.PanelPort}}
+# Panel download: {{.PanelScheme}}://{{.PanelHost}}:{{.PanelPort}}
+# Agent bootstrap (direct): {{.BootstrapScheme}}://{{.BootstrapHost}}:{{.BootstrapPort}}
+# Agent gRPC: {{.PanelGRPCHost}}:{{.PanelGRPCPort}}
 
 PANEL_SCHEME="{{.PanelScheme}}"
 PANEL_HOST="{{.PanelHost}}"
 PANEL_PORT="{{.PanelPort}}"
-PANEL_GRPC_PORT="{{.PanelGRPCPort}}"
 PANEL_TLS={{.PanelTLS}}
+BOOTSTRAP_SCHEME="{{.BootstrapScheme}}"
+BOOTSTRAP_HOST="{{.BootstrapHost}}"
+BOOTSTRAP_PORT="{{.BootstrapPort}}"
+BOOTSTRAP_TLS={{.BootstrapTLS}}
+PANEL_GRPC_HOST="{{.PanelGRPCHost}}"
+PANEL_GRPC_PORT="{{.PanelGRPCPort}}"
+# Bracket IPv6 literals for URL interpolation; the raw host stays in config.yaml.
+PANEL_URL_HOST="$PANEL_HOST"
+case "$PANEL_HOST" in
+  *:*) PANEL_URL_HOST="[$PANEL_HOST]" ;;
+esac
 BOOTSTRAP_TOKEN="{{.BootstrapToken}}"
 SERVER_ID="{{.ServerID}}"
 AGENT_VERSION="{{.AgentVersion}}"
@@ -142,7 +216,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${GREEN}=== CoreFusion Agent Installer ===${NC}"
-echo "Panel: $PANEL_SCHEME://$PANEL_HOST:$PANEL_PORT"
+echo "Panel download: $PANEL_SCHEME://$PANEL_URL_HOST:$PANEL_PORT"
+echo "Agent bootstrap: $BOOTSTRAP_SCHEME://$BOOTSTRAP_HOST:$BOOTSTRAP_PORT"
+echo "Agent gRPC: $PANEL_GRPC_HOST:$PANEL_GRPC_PORT"
 echo "Server ID: $SERVER_ID"
 echo ""
 
@@ -289,18 +365,26 @@ chmod +x "$INSTALL_DIR/corefusion-agent"
 echo -e "${YELLOW}Writing config...${NC}"
 PANEL_CA_PEM='{{.CACertPEM}}'
 if [ -n "$PANEL_CA_PEM" ] && [ "$PANEL_CA_PEM" != "''" ]; then
-  mkdir -p "$INSTALL_DIR/certs"
-  printf '%s\n' "$PANEL_CA_PEM" > "$INSTALL_DIR/certs/ca-cert.pem"
-  chmod 644 "$INSTALL_DIR/certs/ca-cert.pem"
-  echo -e "${GREEN}面板 CA 证书已就位（Agent 引导阶段将校验证书链）${NC}"
+  # Agent 的 a.caPath 是 $dataDir/certs/ca-cert.pem，而 data_dir 是
+  # "$INSTALL_DIR/data"；CA 写错到 "$INSTALL_DIR/certs" 会导致 gRPC mTLS
+  # 读不到 CA，心跳永远连不上。
+  CA_DIR="$INSTALL_DIR/data/certs"
+  mkdir -p "$CA_DIR"
+  printf '%s\n' "$PANEL_CA_PEM" > "$CA_DIR/ca-cert.pem"
+  chmod 640 "$CA_DIR/ca-cert.pem"
+  echo -e "${GREEN}面板 CA 证书已就位（Agent gRPC 心跳将用它校验面板）${NC}"
 fi
 
 cat > "$CONFIG_FILE" << EOF
 panel:
-  host: "$PANEL_HOST"
-  port: $PANEL_PORT
+  host: "$BOOTSTRAP_HOST"
+  port: $BOOTSTRAP_PORT
+  grpc_host: "$PANEL_GRPC_HOST"
   grpc_port: $PANEL_GRPC_PORT
-  tls: $PANEL_TLS
+  tls: $BOOTSTRAP_TLS
+  public_host: "$PANEL_HOST"
+  public_port: $PANEL_PORT
+  public_tls: $PANEL_TLS
   server_id: $SERVER_ID
 
 bootstrap:

@@ -75,6 +75,17 @@ type AgentApp struct {
 	// gRPC connection to Panel
 	grpcConn *grpc.ClientConn
 
+	// grpcHostOverride is set when an already-installed Agent discovers the
+	// panel's origin address at runtime (old configs only have panel.host,
+	// which may be a CDN domain). It is process-local and never persisted.
+	grpcHostMu       sync.RWMutex
+	grpcHostOverride string
+
+	// discoveryMu throttles origin-discovery HTTP requests when the gRPC
+	// connection keeps failing.
+	discoveryMu   sync.Mutex
+	lastDiscovery time.Time
+
 	// streamSendMu protects stream.Send calls from concurrent goroutines
 	// (heartbeat ticker, status ticker, traffic ticker, recv loop, TaskQueue workers)
 	streamSendMu sync.Mutex
@@ -85,6 +96,24 @@ type AgentApp struct {
 	// the Agent's stream.Send/Recv don't error (data sits in TCP buffer).
 	lastRecvTime time.Time
 	lastRecvMu   sync.RWMutex
+}
+
+// resolveAgentCAPath returns the panel CA path. New installs place it under
+// data_dir/certs. Install scripts between 2026-09-22 and this fix wrote it to
+// $INSTALL_DIR/certs even though data_dir had moved to $INSTALL_DIR/data, so
+// fall back to that legacy location when the new one is missing.
+func resolveAgentCAPath(dataDir string) string {
+	dataDir = filepath.Clean(dataDir)
+	caPath := filepath.Join(dataDir, "certs", "ca-cert.pem")
+	if info, err := os.Stat(caPath); err == nil && info.Size() > 0 {
+		return caPath
+	}
+	legacyCAPath := filepath.Join(filepath.Dir(dataDir), "certs", "ca-cert.pem")
+	if info, err := os.Stat(legacyCAPath); err == nil && info.Size() > 0 {
+		log.Printf("[Agent] CA not found at %s, using legacy path %s", caPath, legacyCAPath)
+		return legacyCAPath
+	}
+	return caPath
 }
 
 // NewAgentApp initialises the Agent application:
@@ -234,12 +263,14 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// 核心门禁：xray / sing-box 未安装或未运行时，不再反复探测其 stats API
 	coreGate := newCoreProbeGate(procMgr)
 
+	caPath := resolveAgentCAPath(dataDir)
+
 	app := &AgentApp{
 		cfg:                cfg,
 		dataDir:            dataDir,
 		certPath:           filepath.Join(dataDir, "certs", "agent-cert.pem"),
 		keyPath:            filepath.Join(dataDir, "certs", "agent-key.pem"),
-		caPath:             filepath.Join(dataDir, "certs", "ca-cert.pem"),
+		caPath:             caPath,
 		procMgr:            procMgr,
 		proxyMgr:           proxyMgr,
 		localAgent:         localAgent,

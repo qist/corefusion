@@ -3115,6 +3115,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// Geo rule file download（安全审计 H-1：不再对匿名开放）— 已移入下方受保护组，
 			// Agent 拉取时由面板在下发的相对 URL 里附带一次性票据（?ticket=）。
 			v1.GET("/agent/install", agentH.GetInstallScript)
+			// Public origin discovery for Agents installed before grpc_host
+			// existed (their panel.host may be a CDN domain).
+			v1.GET("/agent/origin", agentH.GetAgentOrigin)
 			// Agent version & releases (requires auth — admin only)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/releases", agentH.GetAgentReleases)

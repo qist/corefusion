@@ -353,14 +353,11 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		log.Printf("[Agent] UpdateAgent command received: version=%s", c.UpdateAgent.Version)
 		go func() {
 			updater := agent.NewSelfUpdater(a.dataDir, a.settingRepo)
-			// Resolve relative download URL using the panel address from config
+			// Resolve relative download URL using the public HTTP endpoint
+			// (CDN when configured) from config.
 			downloadURL := c.UpdateAgent.DownloadUrl
 			if strings.HasPrefix(downloadURL, "/") {
-				scheme := "http"
-				if a.cfg.Panel.TLS {
-					scheme = "https"
-				}
-				downloadURL = fmt.Sprintf("%s://%s:%d%s", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port, downloadURL)
+				downloadURL = a.panelHTTPBaseURL() + downloadURL
 				log.Printf("[Agent] resolved relative download URL to %s", downloadURL)
 			}
 			err := updater.PerformUpdate(
@@ -1022,17 +1019,13 @@ func (a *AgentApp) handleDownloadGeoRule(ctx context.Context, req *agentpb.Downl
 		}
 	}
 
-	// Resolve relative download URL using the panel address from config.
-	// The panel sends relative paths like "/api/v1/geo-rules/files/3/download-file"
-	// so it doesn't need to know its own external URL — the Agent resolves it
-	// using the panel host/port from its config (same as UpdateAgent).
+	// Resolve relative download URL using the public HTTP endpoint from config
+	// (CDN when configured). The panel sends relative paths like
+	// "/api/v1/geo-rules/files/3/download-file" so it doesn't need to know its
+	// own external URL — the Agent resolves it (same as UpdateAgent).
 	downloadURL := req.DownloadUrl
 	if strings.HasPrefix(downloadURL, "/") {
-		scheme := "http"
-		if a.cfg.Panel.TLS {
-			scheme = "https"
-		}
-		downloadURL = fmt.Sprintf("%s://%s:%d%s", scheme, a.cfg.Panel.Host, a.cfg.Panel.Port, downloadURL)
+		downloadURL = a.panelHTTPBaseURL() + downloadURL
 		log.Printf("[Agent] resolved relative geo rule download URL to %s", downloadURL)
 	}
 

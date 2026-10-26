@@ -57,8 +57,9 @@ func main() {
 	certsDir := filepath.Join(dataDir, "certs")
 	os.MkdirAll(certsDir, 0750)
 
-	log.Printf("[Agent] version=%s, server_id=%d, panel=%s:%d, data_dir=%s",
-		constants.Version, cfg.Panel.ServerID, cfg.Panel.Host, cfg.Panel.GRPCPort, dataDir)
+	log.Printf("[Agent] version=%s, server_id=%d, panel=%s:%d, grpc=%s:%d, data_dir=%s",
+		constants.Version, cfg.Panel.ServerID, cfg.Panel.Host, cfg.Panel.Port,
+		cfg.Panel.GRPCHost, cfg.Panel.GRPCPort, dataDir)
 
 	app, err := NewAgentApp(cfg)
 	if err != nil {

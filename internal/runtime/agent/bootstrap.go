@@ -112,6 +112,17 @@ func (m *BootstrapTokenManager) ValidateBootstrapToken(ctx context.Context, serv
 	return certResult, nil
 }
 
+// AgentPort returns the configured gRPC port for a server. The install script
+// endpoint uses it so a per-node port is respected even when the caller does
+// not pass grpc_port explicitly.
+func (m *BootstrapTokenManager) AgentPort(ctx context.Context, serverID int64) (int, error) {
+	server, err := m.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		return 0, err
+	}
+	return server.AgentPort, nil
+}
+
 // VerifyToken checks if a bootstrap token is valid without consuming it.
 // Used by the install script endpoint to verify the request is legitimate.
 func (m *BootstrapTokenManager) VerifyToken(ctx context.Context, serverID int64, token string) bool {

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// 安全审计 v5 M6：安装脚本必须**自动**把面板 CA 交给 Agent（引导阶段才能校验面板身份），
+// 安全审计 v5 M6：安装脚本必须**自动**把面板 CA 交给 Agent（gRPC mTLS 心跳要用它校验面板），
 // 并且把含 bootstrap token 的 config.yaml 收紧到 0600 —— 全程不需要人工填写/操作。
 func TestInstallScriptShipsPanelCAAndProtectsConfig(t *testing.T) {
 	caPEM := "-----BEGIN CERTIFICATE-----\nMIIBfakefakefake\n-----END CERTIFICATE-----"
@@ -21,10 +21,10 @@ func TestInstallScriptShipsPanelCAAndProtectsConfig(t *testing.T) {
 	}
 
 	if !strings.Contains(script, caPEM) {
-		t.Error("安装脚本里必须带上面板 CA 证书（否则 Agent 引导阶段无法校验面板身份）")
+		t.Error("安装脚本里必须带上面板 CA 证书（否则 Agent gRPC 心跳无法校验面板身份）")
 	}
-	if !strings.Contains(script, `"$INSTALL_DIR/certs/ca-cert.pem"`) {
-		t.Error("CA 证书要落到 Agent 的 certs/ca-cert.pem（正是引导与心跳读取的路径）")
+	if !strings.Contains(script, `CA_DIR="$INSTALL_DIR/data/certs"`) || !strings.Contains(script, `"$CA_DIR/ca-cert.pem"`) {
+		t.Error("CA 证书要落到 Agent data_dir 下的 certs/ca-cert.pem（正是心跳读取的路径）")
 	}
 	if !strings.Contains(script, `chmod 600 "$CONFIG_FILE"`) {
 		t.Error("config.yaml 里有 bootstrap token，必须 chmod 600")
@@ -63,6 +63,68 @@ func TestInstallScriptInstallsRuntimeDeps(t *testing.T) {
 	startAt := strings.Index(script, "systemctl restart corefusion-agent")
 	if depAt < 0 || startAt < 0 || depAt > startAt {
 		t.Error("依赖安装应在启动服务之前")
+	}
+}
+
+// 面板走 CDN 时，HTTP 入口是 CDN 域名，但 gRPC 必须直连源站 IP。
+// 安装脚本必须把两者分开写入，Agent 才能自动连上，不需要人工改 YAML。
+func TestInstallScriptUsesSeparateGRPCHost(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 443).
+		WithScheme("https").
+		WithTLS(true).
+		WithBootstrapEndpoint("203.0.113.10", 8080, false).
+		WithGRPCHost("203.0.113.10").
+		WithGRPCPort(18443).
+		WithBootstrapToken("tok").
+		WithServerID(3).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+	for _, want := range []string{
+		// 脚本/二进制仍从 CDN 下载
+		`PANEL_SCHEME="https"`,
+		`PANEL_HOST="panel.example.com"`,
+		`PANEL_PORT="443"`,
+		`PANEL_TLS=true`,
+		`PANEL_DOWNLOAD_URL="${PANEL_SCHEME}://${PANEL_HOST}:${PANEL_PORT}/api/v1/agent/download`,
+		// Agent 配置直连源站：引导 + gRPC
+		`BOOTSTRAP_SCHEME="http"`,
+		`BOOTSTRAP_HOST="203.0.113.10"`,
+		`BOOTSTRAP_PORT="8080"`,
+		`PANEL_GRPC_HOST="203.0.113.10"`,
+		`  host: "$BOOTSTRAP_HOST"`,
+		`  port: $BOOTSTRAP_PORT`,
+		`  tls: $BOOTSTRAP_TLS`,
+		`  public_host: "$PANEL_HOST"`,
+		`  public_port: $PANEL_PORT`,
+		`  public_tls: $PANEL_TLS`,
+		`  grpc_host: "$PANEL_GRPC_HOST"`,
+		`  grpc_port: $PANEL_GRPC_PORT`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("安装脚本缺少 %q，CDN 场景下 Agent 会连错地址", want)
+		}
+	}
+}
+
+// 兼容直接部署（没有 CDN）：未显式给 grpc_host 时应回退到 panel.host。
+func TestInstallScriptGRPCHostFallsBackToPanelHost(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 8080).
+		WithBootstrapToken("tok").
+		WithServerID(4).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+	if !strings.Contains(script, `PANEL_GRPC_HOST="panel.example.com"`) {
+		t.Error("未设置 grpc_host 时应回退到 panel.host")
+	}
+	if !strings.Contains(script, `BOOTSTRAP_HOST="panel.example.com"`) {
+		t.Error("未设置 bootstrap endpoint 时应回退到 panel.host/port/tls")
+	}
+	if !strings.Contains(script, `  port: $BOOTSTRAP_PORT`) || !strings.Contains(script, `BOOTSTRAP_PORT="8080"`) {
+		t.Error("未设置 bootstrap endpoint 时应回退到 panel.port")
 	}
 }
 

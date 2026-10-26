@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Las solicitudes que superen este tamaño se rechazarán para evitar escaneos parciales",
     "wafCcCheck": "Protección CC",
     "wafCcRate": "Tasa de CC",
+    "wafCcMode": "Modo de conteo CC",
+    "wafCcModeHint": "ip = por IP (cuota compartida); ip_uri = por IP+URI; ip_host = por dominio+IP (cuota/bloqueo aislado)",
     "wafCcBlockTtl": "Tiempo de bloqueo de CC (segundos)",
     "wafOutput": "Respuesta de bloqueo",
     "wafRedirectUrl": "URL de redirección",

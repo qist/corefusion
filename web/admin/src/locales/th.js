@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "คำขอที่มีขนาดเกินนี้จะถูกปฏิเสธ เพื่อหลีกเลี่ยงการสแกนเพียงบางส่วน",
     "wafCcCheck": "การป้องกัน CC",
     "wafCcRate": "อัตรา CC",
+    "wafCcMode": "โหมดนับ CC",
+    "wafCcModeHint": "ip = ต่อ IP (โควต้าร่วม); ip_uri = ต่อ IP+URI; ip_host = ต่อโดเมน+IP (โควต้า/บล็อกแยก)",
     "wafCcBlockTtl": "ระยะเวลาบล็อก CC (วินาที)",
     "wafOutput": "เอาต์พุตการบล็อก",
     "wafRedirectUrl": "URL การเปลี่ยนเส้นทาง",

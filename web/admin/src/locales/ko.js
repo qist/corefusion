@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "이 크기를 초과하는 요청은 거부되어 일부만 검사되는 것을 방지합니다",
     "wafCcCheck": "CC 보호",
     "wafCcRate": "CC 속도",
+    "wafCcMode": "CC 집계 단위",
+    "wafCcModeHint": "ip = IP 기준(URI/도메인 공유); ip_uri = IP+URI 기준; ip_host = 도메인+IP 기준(독립 할당량/차단)",
     "wafCcBlockTtl": "CC 차단 시간(초)",
     "wafOutput": "차단 출력",
     "wafRedirectUrl": "리디렉션 URL",

@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Anfragen, die diese Größe überschreiten, werden abgelehnt, um Teilscans zu vermeiden.",
     "wafCcCheck": "CC-Schutz",
     "wafCcRate": "CC-Rate",
+    "wafCcMode": "CC-Zählmodus",
+    "wafCcModeHint": "ip = pro IP (gemeinsames Kontingent); ip_uri = pro IP+URI; ip_host = pro Domain+IP (eigenes Kontingent/Sperre)",
     "wafCcBlockTtl": "CC-Sperrzeit (Sekunden)",
     "wafOutput": "Ausgabe bei Blockierung",
     "wafRedirectUrl": "Weiterleitungs-URL",

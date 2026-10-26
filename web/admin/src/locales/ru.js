@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Запросы большего размера будут отклонены во избежание частичного сканирования",
     "wafCcCheck": "Защита от CC-атак",
     "wafCcRate": "Скорость CC",
+    "wafCcMode": "Режим подсчёта CC",
+    "wafCcModeHint": "ip = по IP (общий лимит); ip_uri = по IP+URI; ip_host = по домену+IP (отдельный лимит/блокировка)",
     "wafCcBlockTtl": "Время блокировки CC (сек)",
     "wafOutput": "Вывод при блокировке",
     "wafRedirectUrl": "URL перенаправления",

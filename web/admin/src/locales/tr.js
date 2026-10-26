@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Bu boyutu aşan istekler, kısmi taramayı önlemek için reddedilir",
     "wafCcCheck": "CC koruması",
     "wafCcRate": "CC hızı",
+    "wafCcMode": "CC Sayım Modu",
+    "wafCcModeHint": "ip = IP başına (paylaşılan kota); ip_uri = IP+URI başına; ip_host = alan adı+IP başına (ayrı kota/engel)",
     "wafCcBlockTtl": "CC engelleme süresi (saniye)",
     "wafOutput": "Engelleme çıktısı",
     "wafRedirectUrl": "Yönlendirme URL'si",

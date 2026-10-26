@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "超過此大小的請求將被拒絕，避免部分掃描",
     "wafCcCheck": "CC 防護",
     "wafCcRate": "CC 速率",
+    "wafCcMode": "CC 計數粒度",
+    "wafCcModeHint": "ip = 按 IP（跨 URI/網域共享額度）; ip_uri = 按 IP+URI; ip_host = 按網域+IP（獨立額度與封鎖）",
     "wafCcBlockTtl": "CC 封鎖時間（秒）",
     "wafOutput": "攔截輸出",
     "wafRedirectUrl": "跳轉 URL",

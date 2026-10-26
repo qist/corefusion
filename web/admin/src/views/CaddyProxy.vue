@@ -369,6 +369,12 @@
             <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
             <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcMode')">
+              <el-select v-model="wafConfigForm.cc_mode" style="width:120px">
+                <el-option label="ip" value="ip" /><el-option label="ip_uri" value="ip_uri" /><el-option label="ip_host" value="ip_host" />
+              </el-select>
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafCcModeHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
             <el-form-item :label="t('proxy.wafOutput')">
@@ -489,6 +495,12 @@
             <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
             <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcMode')">
+              <el-select v-model="siteWAFConfig.cc_mode" style="width:120px">
+                <el-option label="ip" value="ip" /><el-option label="ip_uri" value="ip_uri" /><el-option label="ip_host" value="ip_host" />
+              </el-select>
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafCcModeHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
             <el-form-item :label="t('proxy.wafOutput')">
@@ -1817,7 +1829,7 @@ const wafConfigForm = ref({
   black_ip_check: 'on',
   url_check: 'on', url_args_check: 'on', user_agent_check: 'on', header_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'off', file_upload_check: 'on',
-  cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  cc_check: 'on', cc_rate: '', cc_mode: 'ip', cc_block_ttl: '',
   bodyless: 'on', multipart_streaming_check: 'off',
   upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
@@ -1885,6 +1897,7 @@ function parseWAFConfigForm() {
       post_body_scan_limit: String(obj.post_body_scan_limit ?? '2097152'),
       cc_check: obj.cc_check || 'on',
       cc_rate: obj.cc_rate || '',
+      cc_mode: obj.cc_mode || 'ip',
       cc_block_ttl: String(obj.cc_block_ttl || '600'),
       waf_output: obj.waf_output || 'html',
       waf_redirect_url: obj.waf_redirect_url || '',
@@ -1916,6 +1929,7 @@ async function saveWAFConfigForm() {
   obj.post_body_scan_limit = parseInt(wafConfigForm.value.post_body_scan_limit) || 2097152
   obj.cc_check = wafConfigForm.value.cc_check
   obj.cc_rate = wafConfigForm.value.cc_rate
+  obj.cc_mode = wafConfigForm.value.cc_mode
   obj.cc_block_ttl = parseInt(wafConfigForm.value.cc_block_ttl) || 600
   obj.waf_output = wafConfigForm.value.waf_output
   obj.waf_redirect_url = wafConfigForm.value.waf_redirect_url
@@ -2009,6 +2023,7 @@ white_url_check: merged.white_url_check || 'on',
       black_ip_check: merged.black_ip_check || 'on',
       cc_check: merged.cc_check || 'off',
       cc_rate: merged.cc_rate || '150/60',
+      cc_mode: merged.cc_mode || 'ip',
       cc_block_ttl: String(merged.cc_block_ttl || '600'),
       waf_output: merged.waf_output || 'html',
       waf_redirect_url: merged.waf_redirect_url || ''

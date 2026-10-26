@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "درخواست‌های بزرگ‌تر از این اندازه رد می‌شوند تا از اسکن ناقص جلوگیری شود",
     "wafCcCheck": "محافظت CC",
     "wafCcRate": "نرخ CC",
+    "wafCcMode": "حالت شمارش CC",
+    "wafCcModeHint": "ip = بر اساس IP (سهمیه مشترک); ip_uri = بر اساس IP+URI; ip_host = بر اساس دامنه+IP (سهمیه/مسدودسازی مستقل)",
     "wafCcBlockTtl": "مدت مسدودسازی CC (ثانیه)",
     "wafOutput": "خروجی مسدودسازی",
     "wafRedirectUrl": "URL تغییر مسیر",

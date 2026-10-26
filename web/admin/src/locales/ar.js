@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "ستُرفض الطلبات الأكبر من هذا الحجم لتجنب الفحص الجزئي",
     "wafCcCheck": "حماية CC",
     "wafCcRate": "معدل CC",
+    "wafCcMode": "وضع عد CC",
+    "wafCcModeHint": "ip = لكل IP (حصة مشتركة); ip_uri = لكل IP+URI; ip_host = لكل نطاق+IP (حصة/حظر منفصل)",
     "wafCcBlockTtl": "مدة حظر CC (ثانية)",
     "wafOutput": "مخرجات الحظر",
     "wafRedirectUrl": "URL إعادة التوجيه",

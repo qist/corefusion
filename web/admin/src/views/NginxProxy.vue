@@ -392,6 +392,12 @@
             <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
             <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="wafConfigForm.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="wafConfigForm.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcMode')">
+              <el-select v-model="wafConfigForm.cc_mode" style="width:120px">
+                <el-option label="ip" value="ip" /><el-option label="ip_uri" value="ip_uri" /><el-option label="ip_host" value="ip_host" />
+              </el-select>
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafCcModeHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="wafConfigForm.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
             <el-form-item :label="t('proxy.wafOutput')">
@@ -512,6 +518,12 @@
             <el-divider content-position="left">{{ t('proxy.wafCcProtection') }}</el-divider>
             <el-form-item :label="t('proxy.wafCcCheck')"><el-switch v-model="siteWAFConfig.cc_check" active-value="on" inactive-value="off" /></el-form-item>
             <el-form-item :label="t('proxy.wafCcRate')"><el-input v-model="siteWAFConfig.cc_rate" placeholder="60/60" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafCcMode')">
+              <el-select v-model="siteWAFConfig.cc_mode" style="width:120px">
+                <el-option label="ip" value="ip" /><el-option label="ip_uri" value="ip_uri" /><el-option label="ip_host" value="ip_host" />
+              </el-select>
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafCcModeHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
             <el-form-item :label="t('proxy.wafOutput')">
@@ -1401,7 +1413,7 @@ const wafConfigForm = ref({
   black_ip_check: 'on',
   url_check: 'on', url_args_check: 'on', user_agent_check: 'on', header_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'on', file_upload_check: 'on',
-  cc_check: 'on', cc_rate: '', cc_block_ttl: '',
+  cc_check: 'on', cc_rate: '', cc_mode: 'ip', cc_block_ttl: '',
   bodyless: 'on', multipart_streaming_check: 'off',
   upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
@@ -1419,7 +1431,7 @@ function parseLuaConfig(text) {
   const keys = ['waf_enable','trust_proxy_headers','white_url_check','white_ip_check','white_ua_check',
     'black_ip_check','url_check','url_args_check','user_agent_check','header_check','cookie_check','post_check',
     'referer_check','file_upload_check','bodyless','multipart_streaming_check',
-    'upload_filename_scan_limit','post_body_scan_limit','cc_check','cc_rate','cc_block_ttl',
+    'upload_filename_scan_limit','post_body_scan_limit','cc_check','cc_rate','cc_mode','cc_block_ttl',
     'waf_output','waf_redirect_url','log_dir','rule_dir']
   for (const k of keys) {
     const v = get(k)
@@ -1458,6 +1470,7 @@ function parseWAFConfigForm() {
     post_body_scan_limit: get('post_body_scan_limit') || '2097152',
     cc_check: get('cc_check') || 'on',
     cc_rate: get('cc_rate') || '',
+    cc_mode: get('cc_mode') || 'ip',
     cc_block_ttl: get('cc_block_ttl') || '600',
     waf_output: get('waf_output') || 'html',
     waf_redirect_url: get('waf_redirect_url') || '',
@@ -1500,6 +1513,16 @@ async function saveWAFConfigForm() {
   }
   set('cc_check', wafConfigForm.value.cc_check)
   set('cc_rate', wafConfigForm.value.cc_rate)
+  set('cc_mode', wafConfigForm.value.cc_mode)
+  // 旧版 config.lua 没有 config_cc_mode：set() 只替换已存在的行，需补插一次
+  if (!text.includes('config_cc_mode')) {
+    const ccModeLine = `config_cc_mode = "${wafConfigForm.value.cc_mode || 'ip'}"`
+    if (/config_cc_rate\s*=\s*"[^"]*"/.test(text)) {
+      text = text.replace(/(config_cc_rate\s*=\s*"[^"]*")/, `$1\n${ccModeLine}`)
+    } else {
+      text = `${text.replace(/\s*$/, '')}\n${ccModeLine}\n`
+    }
+  }
   // cc_block_ttl is a Lua number (no quotes), use special handling
   const ttl = wafConfigForm.value.cc_block_ttl
   if (ttl !== '' && ttl != null) {
@@ -1610,6 +1633,7 @@ white_url_check: merged.white_url_check || 'on',
       black_ip_check: merged.black_ip_check || 'on',
       cc_check: merged.cc_check || 'off',
       cc_rate: merged.cc_rate || '150/60',
+      cc_mode: merged.cc_mode || 'ip',
       cc_block_ttl: merged.cc_block_ttl || '600',
       waf_output: merged.waf_output || 'html',
       waf_redirect_url: merged.waf_redirect_url || ''

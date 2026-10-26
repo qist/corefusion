@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Yêu cầu vượt quá kích thước này sẽ bị từ chối để tránh quét một phần",
     "wafCcCheck": "Bảo vệ CC",
     "wafCcRate": "Tốc độ CC",
+    "wafCcMode": "Chế độ đếm CC",
+    "wafCcModeHint": "ip = theo IP (hạn mức dùng chung); ip_uri = theo IP+URI; ip_host = theo tên miền+IP (hạn mức/chặn riêng)",
     "wafCcBlockTtl": "Thời gian chặn CC (giây)",
     "wafOutput": "Nội dung khi chặn",
     "wafRedirectUrl": "URL chuyển hướng",

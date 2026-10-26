@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "Permintaan yang melebihi ukuran ini akan ditolak untuk mencegah pemindaian sebagian",
     "wafCcCheck": "Proteksi CC",
     "wafCcRate": "Laju CC",
+    "wafCcMode": "Mode Hitung CC",
+    "wafCcModeHint": "ip = per IP (kuota bersama); ip_uri = per IP+URI; ip_host = per domain+IP (kuota/blokir terpisah)",
     "wafCcBlockTtl": "Waktu blokir CC (detik)",
     "wafOutput": "Output pemblokiran",
     "wafRedirectUrl": "URL pengalihan",

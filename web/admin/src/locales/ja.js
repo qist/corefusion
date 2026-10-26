@@ -2184,6 +2184,8 @@ export default {
     "wafPostBodyScanHint": "このサイズを超えるリクエストは拒否され、部分スキャンを防止します",
     "wafCcCheck": "CC 対策",
     "wafCcRate": "CC レート",
+    "wafCcMode": "CC 計測単位",
+    "wafCcModeHint": "ip = IP 単位（URI/ドメイン間で共有）; ip_uri = IP+URI 単位; ip_host = ドメイン+IP 単位（独立した枠とブロック）",
     "wafCcBlockTtl": "CC ブロック時間（秒）",
     "wafOutput": "ブロック時の出力",
     "wafRedirectUrl": "リダイレクト URL",

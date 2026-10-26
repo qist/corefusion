@@ -1425,6 +1425,7 @@ const DefaultCaddyWAFConfig = `{
     "cookie_check": "on",
     "cc_check": "on",
     "cc_rate": "150/60",
+    "cc_mode": "ip",
     "cc_block_ttl": 600,
     "post_check": "on",
     "referer_check": "off",
@@ -1472,6 +1473,11 @@ config_cc_check = "on"
 config_cc_rate = "150/60"
 --cc block ttl (seconds), auto-ban IP when CC triggered, 0=disable auto-ban
 config_cc_block_ttl = 600
+--cc counting granularity mode (domain.json can override per domain)
+--"ip"      (default) = count per client IP, shared across all URIs and domains
+--"ip_uri"           = count per IP+URI, only blocks single-path flooding
+--"ip_host"          = count per domain+IP, each domain gets an independent quota
+config_cc_mode = "ip"
 --enable/disable post filtering
 config_post_check = "on"
 --enable/disable referer filtering

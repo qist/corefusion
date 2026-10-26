@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Kommagetrennte Daten"
   },
   "nodeServer": {
+    "certExpired": "Abgelaufen",
+    "certExpiringSoon": "Läuft bald ab",
+    "certNotIssued": "Nicht ausgestellt",
+    "certInvalidTitle": "Das Agent-Zertifikat ist ungültig — dieser Knoten kann keine Verbindung zum Panel aufbauen",
+    "certInvalidHint": "Nach Ablauf des mTLS-Zertifikats kann der Agent weder das Panel erreichen noch über mTLS ein neues Zertifikat erhalten; die einzige Lösung ist ein erneutes Bootstrap. Erzeugen Sie ein Einmal-Token, ersetzen Sie bootstrap.token auf dem Knoten und starten Sie den Agent neu (das Panel übernimmt seine Wiederholungsversuche innerhalb von 5 Minuten). Solange das Zertifikat gültig ist, wird dieser Eintrag ausgeblendet — dann wird die Verlängerung automatisch übertragen.",
+    "regenerateToken": "Token neu erzeugen",
+    "regenerateOnceWarn": "Das Token wird nur einmal angezeigt und ist 24 Stunden gültig; nach einmaliger Verwendung wird es ungültig.",
+    "bootstrapToken": "Bootstrap-Token",
+    "tokenExpiresAt": "Token gültig bis",
+    "recoverySteps": "Auf dem Knoten ausführen",
+    "insecureTokenWarning": "Diese Seite wird nicht über HTTPS ausgeliefert, das Token wird also im Klartext übertragen. Bevorzugen Sie HTTPS; andernfalls fügen Sie den Befehl per SSH ein und leiten Sie das Token niemals über Chat-Tools weiter.",
     "servers": "Serverliste",
     "onlineSubscriptions": "Online-Abonnement",
     "justNow": "Gerade eben",

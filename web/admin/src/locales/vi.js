@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Dữ liệu phân tách bằng dấu phẩy"
   },
   "nodeServer": {
+    "certExpired": "Đã hết hạn",
+    "certExpiringSoon": "Sắp hết hạn",
+    "certNotIssued": "Chưa được cấp",
+    "certInvalidTitle": "Chứng chỉ Agent không hợp lệ — nút này không thể kết nối lại với bảng điều khiển",
+    "certInvalidHint": "Khi chứng chỉ mTLS hết hạn, Agent không thể kết nối tới bảng điều khiển và cũng không thể lấy chứng chỉ mới qua mTLS, nên cách duy nhất là bootstrap lại. Hãy tạo token dùng một lần, thay bootstrap.token trên nút rồi khởi động lại Agent (bảng điều khiển sẽ nhận các lần thử lại trong vòng 5 phút). Mục này bị ẩn khi chứng chỉ còn hợp lệ — khi đó việc gia hạn được đẩy tự động.",
+    "regenerateToken": "Tạo lại Token",
+    "regenerateOnceWarn": "Token chỉ hiển thị một lần và có hiệu lực 24 giờ; sẽ bị vô hiệu sau một lần sử dụng.",
+    "bootstrapToken": "Token Bootstrap",
+    "tokenExpiresAt": "Token có hiệu lực đến",
+    "recoverySteps": "Thực thi trên nút",
+    "insecureTokenWarning": "Trang này không dùng HTTPS nên token được truyền dưới dạng văn bản thuần. Nên dùng HTTPS; nếu không, hãy dán lệnh qua SSH và không chuyển tiếp token qua công cụ chat.",
     "servers": "Danh sách máy chủ",
     "onlineSubscriptions": "Đăng ký trực tuyến",
     "justNow": "Vừa xong",

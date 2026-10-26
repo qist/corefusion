@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "쉼표로 구분된 데이터"
   },
   "nodeServer": {
+    "certExpired": "만료됨",
+    "certExpiringSoon": "곧 만료됨",
+    "certNotIssued": "발급되지 않음",
+    "certInvalidTitle": "Agent 인증서가 유효하지 않습니다 — 이 노드는 패널에 연결할 수 없습니다",
+    "certInvalidHint": "mTLS 인증서가 만료되면 Agent는 패널에 연결할 수도, mTLS로 새 인증서를 받을 수도 없으므로 다시 Bootstrap 하는 방법밖에 없습니다. 일회용 토큰을 발급하고 노드의 bootstrap.token을 교체한 뒤 Agent를 재시작하세요 (패널은 5분 이내에 재시도를 수신합니다). 인증서가 유효한 동안에는 이 항목이 표시되지 않습니다 — 이 경우 갱신은 자동으로 전송됩니다.",
+    "regenerateToken": "토큰 재발급",
+    "regenerateOnceWarn": "토큰은 한 번만 표시되며 유효 기간은 24시간입니다. 한 번 사용하면 즉시 무효화됩니다.",
+    "bootstrapToken": "Bootstrap 토큰",
+    "tokenExpiresAt": "토큰 만료 시각",
+    "recoverySteps": "노드에서 실행",
+    "insecureTokenWarning": "이 페이지는 HTTPS가 아니므로 토큰이 평문으로 전송됩니다. 가능하면 HTTPS를 사용하고, 그렇지 않으면 SSH로 명령을 붙여넣고 채팅 도구로 토큰을 전달하지 마세요.",
     "servers": "서버 목록",
     "onlineSubscriptions": "온라인 구독",
     "justNow": "방금",

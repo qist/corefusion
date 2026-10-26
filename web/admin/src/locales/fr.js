@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Données séparées par des virgules"
   },
   "nodeServer": {
+    "certExpired": "Expiré",
+    "certExpiringSoon": "Expire bientôt",
+    "certNotIssued": "Non émis",
+    "certInvalidTitle": "Le certificat de l'agent est invalide — ce nœud ne peut pas se reconnecter au panneau",
+    "certInvalidHint": "Une fois le certificat mTLS expiré, l'agent ne peut ni joindre le panneau ni obtenir un nouveau certificat via mTLS : la seule solution est de refaire un bootstrap. Générez un jeton à usage unique, remplacez bootstrap.token sur le nœud puis redémarrez l'agent (le panneau récupère ses tentatives en 5 minutes maximum). Cette entrée est masquée tant que le certificat est valide — le renouvellement est alors poussé automatiquement.",
+    "regenerateToken": "Régénérer le jeton",
+    "regenerateOnceWarn": "Le jeton n'est affiché qu'une fois et reste valide 24 heures ; il est invalidé après une seule utilisation.",
+    "bootstrapToken": "Jeton de bootstrap",
+    "tokenExpiresAt": "Jeton valable jusqu'à",
+    "recoverySteps": "À exécuter sur le nœud",
+    "insecureTokenWarning": "Cette page n'est pas servie en HTTPS : le jeton circule en clair. Privilégiez HTTPS ; sinon collez la commande via SSH et ne transmettez jamais le jeton par messagerie.",
     "servers": "Liste des serveurs",
     "onlineSubscriptions": "Abonnement en ligne",
     "justNow": "À l'instant",

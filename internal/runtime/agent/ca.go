@@ -28,6 +28,10 @@ import (
 
 const (
 	// AgentCertValidity defines the validity period for Agent mTLS certificates.
+	//
+	// ⚠ 数字证书有效期是安全参数，**不要为了运维方便擅自拉长**。短有效期让泄露的
+	// Agent 证书很快自然失效；配合 3 天前的自动续签窗口，面板只要一周内运行过一次
+	// 就不会断。若面板停机超过约 7 天导致证书过期，只能重新 Bootstrap（见 SKILL.md）。
 	AgentCertValidity = 10 * 24 * time.Hour // 10 天有效期
 
 	// AgentCertRenewBefore defines how long before expiry to start renewal.

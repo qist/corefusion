@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"corefusion/internal/constants"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
@@ -77,7 +78,13 @@ func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error
 	log.Printf("[SelfUpdater] checksum verified (%s…)", expected[:12])
 
 	// Step 3 + 4: Backup and replace
+	// 替换前先落"更新中"标记：下次启动据此按**版本号**判定成功/回滚，
+	// 而不是靠 .bak 的 mtime 猜（那套启发式会在连续更新时误判，把新二进制回滚掉）。
+	if err := u.writeUpdateMarker(version); err != nil {
+		return fmt.Errorf("write update marker: %w", err)
+	}
 	if err := u.replaceBinary(tmpPath); err != nil {
+		u.clearUpdateMarker()
 		return fmt.Errorf("replace binary failed: %w", err)
 	}
 	log.Printf("[SelfUpdater] binary replaced successfully")
@@ -243,15 +250,9 @@ func (u *SelfUpdater) verifyChecksum(filePath, expectedChecksum string) error {
 // is safe — the running process keeps using the old inode via the open file
 // descriptor.
 func (u *SelfUpdater) replaceBinary(newBinaryPath string) error {
-	selfPath, err := os.Executable()
+	selfPath, err := SelfBinaryPath()
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)
-	}
-
-	// Resolve symlinks to get the real path
-	selfPath, err = filepath.EvalSymlinks(selfPath)
-	if err != nil {
-		return fmt.Errorf("resolve symlink: %w", err)
 	}
 
 	bakPath := selfPath + ".bak"
@@ -303,13 +304,12 @@ func (u *SelfUpdater) restart() error {
 
 	// Fallback: re-exec
 	log.Println("[SelfUpdater] restarting via re-exec")
-	selfPath, err := os.Executable()
+	// 必须用"安装路径"而不是 os.Executable()：replaceBinary 刚把旧二进制 rename 成
+	// .bak，/proc/self/exe 会跟着指向 .bak —— 直接拿它 re-exec 就是把**旧版本**再跑一遍
+	// （真机：节点 18 每次更新后版本回退，还堆出 .bak.bak.bak）。
+	selfPath, err := SelfBinaryPath()
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)
-	}
-	selfPath, err = filepath.EvalSymlinks(selfPath)
-	if err != nil {
-		return fmt.Errorf("resolve symlink: %w", err)
 	}
 
 	cmd := exec.Command(selfPath, os.Args[1:]...)
@@ -338,63 +338,183 @@ func (u *SelfUpdater) isSystemdManaged() bool {
 	return false
 }
 
-// CheckCrashRecovery checks if the Agent crashed after a recent update and
-// rolls back to the previous version if so.
+// CheckCrashRecovery 判定"上一次自更新到底成不成功"，并在新二进制没起来时回滚。
 //
-// Detection logic:
-//   - If a .bak file exists and its modification time is less than 30 seconds ago,
-//     it likely means the new binary crashed immediately after startup.
-//     In this case, roll back to the .bak binary and restart.
-//   - If a .bak file exists but is older than 30 seconds, the update was successful.
-//     Delete the .bak file.
+// 判定依据（重要）：
+//  1. 有 .update-pending 标记 → 按**版本号**判定。运行中的版本 == 标记里的目标版本
+//     → 更新成功，清理标记与 .bak；否则回滚。
+//     ⚠ 不能再用 ".bak 的 mtime 小于 30 秒" 这套启发式：rename 不改变 mtime，
+//     而连续两次更新时 .bak 也可能是刚下载的新文件 → 会把刚装好的二进制回滚回去，
+//     节点版本永远上不去（真机：节点 18 在 alpha.3/alpha.4 之间来回回滚）。
+//  2. 没有标记（老版本 Agent 更新的，或人工替换）→ 保留原来的 mtime 启发式。
 func (u *SelfUpdater) CheckCrashRecovery() {
-	selfPath, err := os.Executable()
+	selfPath, err := SelfBinaryPath()
 	if err != nil {
 		log.Printf("[SelfUpdater] crash recovery: cannot get executable path: %v", err)
 		return
 	}
-	selfPath, err = filepath.EvalSymlinks(selfPath)
-	if err != nil {
-		log.Printf("[SelfUpdater] crash recovery: cannot resolve symlink: %v", err)
-		return
-	}
 
 	bakPath := selfPath + ".bak"
+	marker, markerFound := readUpdateMarker(selfPath)
 
-	info, err := os.Stat(bakPath)
-	if err != nil {
-		// No .bak file — nothing to recover
+	switch decideRecovery(marker, markerFound, constants.Version, fileExists(bakPath)) {
+	case recoveryCleanup:
+		log.Printf("[SelfUpdater] update to %s confirmed, cleaning up marker and backup", marker.ToVersion)
+		u.clearUpdateMarker()
+		os.Remove(bakPath)
+		return
+	case recoveryRollback:
+		log.Printf("[SelfUpdater] running version %q does not match pending target %q, rolling back",
+			constants.Version, marker.ToVersion)
+		u.rollbackTo(bakPath, selfPath)
 		return
 	}
 
-	// Check if the backup is recent (within 30 seconds)
-	if time.Since(info.ModTime()) < 30*time.Second {
-		// Likely crashed after update — roll back
-		log.Println("[SelfUpdater] crash recovery detected, rolling back to previous version")
-
-		// Replace current binary with backup
-		if err := os.Rename(bakPath, selfPath); err != nil {
-			log.Printf("[SelfUpdater] crash recovery: failed to restore backup: %v", err)
-			return
-		}
-		os.Chmod(selfPath, 0755)
-
-		// Restart with the rolled-back binary
-		cmd := exec.Command(selfPath, os.Args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		if err := cmd.Start(); err != nil {
-			log.Printf("[SelfUpdater] crash recovery: failed to restart: %v", err)
-			return
-		}
-		log.Printf("[SelfUpdater] rolled back and restarted (pid=%d)", cmd.Process.Pid)
-		os.Exit(1)
+	// 没有标记：沿用旧的 mtime 判据
+	info, err := os.Stat(bakPath)
+	if err != nil {
+		return // No .bak file — nothing to recover
 	}
+	if time.Since(info.ModTime()) >= 30*time.Second {
+		log.Println("[SelfUpdater] previous .bak backup is old, removing (update was successful)")
+		os.Remove(bakPath)
+		return
+	}
+	log.Println("[SelfUpdater] crash recovery detected, rolling back to previous version")
+	u.rollbackTo(bakPath, selfPath)
+}
 
-	// Update was successful (survived > 30s) — clean up backup
-	log.Println("[SelfUpdater] previous .bak backup is old, removing (update was successful)")
-	os.Remove(bakPath)
+// rollbackTo 用 .bak 覆盖当前二进制并重启；成功后本进程退出（不返回）。
+func (u *SelfUpdater) rollbackTo(bakPath, selfPath string) {
+	if err := os.Rename(bakPath, selfPath); err != nil {
+		log.Printf("[SelfUpdater] crash recovery: failed to restore backup: %v", err)
+		u.clearUpdateMarker()
+		return
+	}
+	os.Chmod(selfPath, 0755)
+	u.clearUpdateMarker()
+
+	cmd := exec.Command(selfPath, os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		log.Printf("[SelfUpdater] crash recovery: failed to restart: %v", err)
+		return
+	}
+	log.Printf("[SelfUpdater] rolled back and restarted (pid=%d)", cmd.Process.Pid)
+	os.Exit(1)
+}
+
+// SelfBinaryPath 返回"安装路径"上的可执行文件路径（解析符号链接后去掉 .bak 后缀）。
+//
+// ⚠ 不能直接用 os.Executable()：自更新会把旧二进制 rename 成 <path>.bak，
+// 而 /proc/self/exe 会跟着改名一起走。于是：
+//   - replaceBinary 把新二进制写到 .bak 上（下次再 rename 成 .bak.bak，无限套娃）；
+//   - re-exec 重新拉起的是 .bak 里的**旧版本**（节点永远升不上去）。
+//
+// 真实事故：节点 18（容器内无 systemd，走 re-exec）在 alpha.3/alpha.4 之间反复回滚。
+//
+// 因此这里统一归一到安装路径：带 .bak 后缀时退回去掉后缀的路径（该路径存在时）。
+func SelfBinaryPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+		exe = resolved
+	}
+	if base, stripped := stripBackupSuffix(exe); stripped && fileExists(base) {
+		return base, nil
+	}
+	return exe, nil
+}
+
+// stripBackupSuffix 去掉路径末尾连续的 ".bak"（.bak / .bak.bak / .bak.bak.bak…）。
+func stripBackupSuffix(path string) (string, bool) {
+	base := path
+	for strings.HasSuffix(base, ".bak") {
+		base = strings.TrimSuffix(base, ".bak")
+	}
+	return base, base != path
+}
+
+// updateMarkerPath 是"自更新进行中"的标记文件（与二进制同目录）。
+func updateMarkerPath(selfPath string) string { return selfPath + ".update-pending" }
+
+// updateMarker 记录一次自更新的来源/目标版本。
+type updateMarker struct {
+	FromVersion string    `json:"from_version"`
+	ToVersion   string    `json:"to_version"`
+	At          time.Time `json:"at"`
+}
+
+// writeUpdateMarker 在替换二进制之前写下目标版本，供下次启动校验。
+func (u *SelfUpdater) writeUpdateMarker(version string) error {
+	selfPath, err := SelfBinaryPath()
+	if err != nil {
+		return err
+	}
+	marker := updateMarker{FromVersion: constants.Version, ToVersion: strings.TrimSpace(version), At: time.Now()}
+	data, err := json.Marshal(marker)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(updateMarkerPath(selfPath), data, 0600)
+}
+
+// clearUpdateMarker 删除标记文件（不存在时静默）。
+func (u *SelfUpdater) clearUpdateMarker() {
+	selfPath, err := SelfBinaryPath()
+	if err != nil {
+		return
+	}
+	if err := os.Remove(updateMarkerPath(selfPath)); err != nil && !os.IsNotExist(err) {
+		log.Printf("[SelfUpdater] failed to remove update marker: %v", err)
+	}
+}
+
+// readUpdateMarker 读取标记文件；不存在或损坏时返回 (nil,false)。
+func readUpdateMarker(selfPath string) (*updateMarker, bool) {
+	data, err := os.ReadFile(updateMarkerPath(selfPath))
+	if err != nil {
+		return nil, false
+	}
+	var marker updateMarker
+	if err := json.Unmarshal(data, &marker); err != nil {
+		return nil, false
+	}
+	return &marker, true
+}
+
+// recoveryAction 是启动时的自更新收尾动作。
+type recoveryAction int
+
+const (
+	recoveryNone     recoveryAction = iota // 与本次启动无关，交给 mtime 兜底逻辑
+	recoveryCleanup                        // 目标版本已在运行 → 清理
+	recoveryRollback                       // 目标版本没起来 → 回滚
+)
+
+// decideRecovery 是 CheckCrashRecovery 的纯决策逻辑（便于测试）：
+func decideRecovery(marker *updateMarker, markerFound bool, runningVersion string, bakExists bool) recoveryAction {
+	if !markerFound || marker == nil {
+		return recoveryNone
+	}
+	target := strings.TrimSpace(marker.ToVersion)
+	if target != "" && target == strings.TrimSpace(runningVersion) {
+		return recoveryCleanup
+	}
+	if !bakExists {
+		// 没有备份可回滚：只能认账，清掉标记避免反复尝试
+		return recoveryCleanup
+	}
+	return recoveryRollback
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // getGithubAccelDomain reads the GitHub acceleration domain from the Agent's

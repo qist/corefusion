@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "カンマ区切りデータ"
   },
   "nodeServer": {
+    "certExpired": "失効",
+    "certExpiringSoon": "まもなく失効",
+    "certNotIssued": "未発行",
+    "certInvalidTitle": "Agent 証明書が無効です — このノードはパネルに接続できません",
+    "certInvalidHint": "mTLS 証明書が失効すると、Agent はパネルにも接続できず、mTLS で新しい証明書も取得できないため、再 Bootstrap しか復旧手段がありません。ワンタイムトークンを発行し、ノード上の bootstrap.token を置き換えて Agent を再起動してください（パネルは 5 分以内に再試行を受け取ります）。証明書が有効な間はこの項目は表示されません — その場合は自動で更新が配信されます。",
+    "regenerateToken": "トークンを再生成",
+    "regenerateOnceWarn": "トークンは一度だけ表示され、有効期限は 24 時間です。1 回使用すると無効になります。",
+    "bootstrapToken": "Bootstrap トークン",
+    "tokenExpiresAt": "トークン有効期限",
+    "recoverySteps": "ノードで実行",
+    "insecureTokenWarning": "このページは HTTPS ではないため、トークンは平文で送信されます。可能な限り HTTPS を使用し、そうでない場合は SSH 経由でコマンドを貼り付け、チャットツールでトークンを転送しないでください。",
     "servers": "サーバーリスト",
     "onlineSubscriptions": "オンライン購読",
     "justNow": "たった今",

@@ -28,6 +28,10 @@ type NodeServerResponse struct {
 	// Agent cert status
 	AgentCertExpiresAt     *time.Time `json:"agent_cert_expires_at,omitempty"`
 	AgentCertLastRenewedAt *time.Time `json:"agent_cert_last_renewed_at,omitempty"`
+	// AgentCertInvalid 表示 Agent 的 mTLS 证书已失效（过期或从未签发）。
+	// 这种情况下 Agent 已经无法与面板握手、也无法通过 mTLS 领取新证书，
+	// 唯一出路是重新 Bootstrap —— 前端只在这个条件下显示"重新生成 Token"。
+	AgentCertInvalid bool `json:"agent_cert_invalid"`
 
 	// Certificate association
 	CertificateID int64 `json:"certificate_id"`

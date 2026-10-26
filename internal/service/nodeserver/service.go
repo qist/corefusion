@@ -3,6 +3,7 @@ package nodeserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"runtime"
@@ -506,16 +507,52 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// Bootstrap 相关的安全约束错误（由 handler 映射成 4xx）。
+var (
+	// ErrBootstrapLocalNode：本地面板节点不走 Agent 证书，不能也不需要重新引导。
+	ErrBootstrapLocalNode = errors.New("local panel node has no agent certificate to enroll")
+	// ErrAgentCertStillValid：证书仍有效时禁止重发引导令牌。
+	//
+	// 引导令牌的作用是"换取一张新的 Agent 身份证书"。旧证书仍有效且未被吊销时再发新证书，
+	// 等于给同一个节点同时留下两张有效身份，且无法审计到底哪张在跑。
+	// 真需要重新引导（节点重装/证书文件丢失），必须先吊销证书：
+	//   POST /api/v1/node-servers/:id/revoke-cert
+	// 吊销后 cert 失效 → 本接口才会放行。
+	ErrAgentCertStillValid = errors.New("agent certificate is still valid: no re-bootstrap is needed; renew is automatic. If the node really needs re-enrollment, revoke its certificate first (POST /node-servers/:id/revoke-cert)")
+)
+
+// ensureBootstrapAllowed 是"能否签发引导令牌"的唯一判定点。
+//
+// 允许的条件只有一个：该节点的 Agent 证书已不可用（从未签发 / 已过期 / 已被吊销）。
+// 这样"重新生成 Token"就只可能在真正需要重新引导时发生，而不是被当成日常运维按钮。
+func (s *Service) ensureBootstrapAllowed(server *entity.NodeServer) error {
+	if server.IsLocal {
+		return ErrBootstrapLocalNode
+	}
+	if server.AgentCertExpiresAt != nil && time.Now().Before(*server.AgentCertExpiresAt) {
+		return ErrAgentCertStillValid
+	}
+	return nil
+}
+
 // GenerateBootstrapToken generates a bootstrap token for a server.
 // Returns the plaintext token (shown only once).
 func (s *Service) GenerateBootstrapToken(ctx context.Context, serverID int64) (*vo.BootstrapTokenResponse, error) {
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+	if err := s.ensureBootstrapAllowed(server); err != nil {
+		return nil, err
+	}
+
 	token, err := s.tokenMgr.GenerateBootstrapToken(ctx, serverID)
 	if err != nil {
 		return nil, fmt.Errorf("generate bootstrap token: %w", err)
 	}
 
-	server, err := s.repo.GetByID(ctx, serverID)
-	if err != nil {
+	// tokenMgr 已写库，重新读一次拿到新的过期时间
+	if server, err = s.repo.GetByID(ctx, serverID); err != nil {
 		return nil, err
 	}
 
@@ -533,6 +570,11 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 	bootstrapRequired := server.BootstrapUsedAt == nil &&
 		server.BootstrapTokenExpiresAt != nil &&
 		time.Now().Before(*server.BootstrapTokenExpiresAt)
+
+	// Agent 证书失效：过期或从未签发（本地面板不需要 Agent 证书，排除）。
+	// 只在这种情况下前端才提供"重新生成 Bootstrap Token"的入口。
+	agentCertInvalid := !server.IsLocal &&
+		(server.AgentCertExpiresAt == nil || time.Now().After(*server.AgentCertExpiresAt))
 
 	resp := &vo.NodeServerResponse{
 		ID:                     server.ID,
@@ -555,6 +597,7 @@ func (s *Service) ToResponse(server *entity.NodeServer, resourceUsage ...*vo.Res
 		BootstrapUsedAt:        server.BootstrapUsedAt,
 		AgentCertExpiresAt:     server.AgentCertExpiresAt,
 		AgentCertLastRenewedAt: server.AgentCertLastRenewedAt,
+		AgentCertInvalid:       agentCertInvalid,
 		CertificateID:          server.CertificateID,
 		IsLocal:                server.IsLocal,
 		SupportedCores:         server.SupportedCores,
@@ -1026,8 +1069,13 @@ func (s *Service) RecommendRegion(clientIP string, allowedRegions []string) stri
 // GenerateAgentInstallScript generates the Agent install script for a server.
 func (s *Service) GenerateAgentInstallScript(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
 	// Verify server exists
-	if _, err := s.repo.GetByID(ctx, serverID); err != nil {
+	server, err := s.repo.GetByID(ctx, serverID)
+	if err != nil {
 		return "", fmt.Errorf("server not found: %w", err)
+	}
+	// 安装脚本里嵌的是引导令牌，签发条件与 /bootstrap-token 完全一致
+	if err := s.ensureBootstrapAllowed(server); err != nil {
+		return "", err
 	}
 
 	// Generate bootstrap token if not already present
@@ -1601,12 +1649,13 @@ func (s *Service) ReadConfigFileOnServer(ctx context.Context, serverID int64, co
 
 // GetBootstrapCommand generates the bootstrap installation command for a server.
 func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panelHost string, panelPort int) (string, error) {
-	required, err := s.tokenMgr.IsBootstrapRequired(ctx, serverID)
+	// 与 /bootstrap-token 同一套安全门：只有证书不可用时才签发令牌
+	server, err := s.repo.GetByID(ctx, serverID)
 	if err != nil {
-		return "", fmt.Errorf("check bootstrap required: %w", err)
+		return "", fmt.Errorf("server not found: %w", err)
 	}
-	if !required {
-		return "", fmt.Errorf("bootstrap already completed for server %d", serverID)
+	if err := s.ensureBootstrapAllowed(server); err != nil {
+		return "", err
 	}
 
 	token, err := s.tokenMgr.GenerateBootstrapToken(ctx, serverID)

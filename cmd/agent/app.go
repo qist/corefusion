@@ -80,6 +80,10 @@ type AgentApp struct {
 	// which may be a CDN domain). It is process-local and never persisted.
 	grpcHostMu       sync.RWMutex
 	grpcHostOverride string
+	// lastGoodGRPCAddr is the address that most recently completed an mTLS
+	// handshake. It is tried first on reconnect so a stale/discovered-host
+	// entry can never keep costing connection timeouts.
+	lastGoodGRPCAddr string
 
 	// discoveryMu throttles origin-discovery HTTP requests when the gRPC
 	// connection keeps failing.

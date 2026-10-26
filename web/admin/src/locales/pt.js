@@ -2894,6 +2894,17 @@ export default {
     "commaSeparatedData": "Dados separados por vírgula"
   },
   "nodeServer": {
+    "certExpired": "Expirado",
+    "certExpiringSoon": "Expira em breve",
+    "certNotIssued": "Não emitido",
+    "certInvalidTitle": "O certificado do agente é inválido — este nó não consegue se reconectar ao painel",
+    "certInvalidHint": "Quando o certificado mTLS expira, o agente não consegue alcançar o painel nem obter um novo por mTLS, então a única solução é refazer o bootstrap. Gere um token de uso único, substitua bootstrap.token no nó e reinicie o agente (o painel capta as tentativas em até 5 minutos). Esta entrada fica oculta enquanto o certificado é válido — nesse caso a renovação é enviada automaticamente.",
+    "regenerateToken": "Regenerar token",
+    "regenerateOnceWarn": "O token é exibido apenas uma vez e vale 24 horas; é invalidado após um único uso.",
+    "bootstrapToken": "Token de bootstrap",
+    "tokenExpiresAt": "Token válido até",
+    "recoverySteps": "Executar no nó",
+    "insecureTokenWarning": "Esta página não é servida por HTTPS, então o token trafega em texto puro. Prefira HTTPS; caso contrário, cole o comando via SSH e nunca encaminhe o token por ferramentas de chat.",
     "servers": "Lista de servidores",
     "onlineSubscriptions": "Assinatura online",
     "justNow": "Agora mesmo",

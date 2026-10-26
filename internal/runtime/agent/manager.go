@@ -1415,6 +1415,23 @@ func (m *NodeServerManager) SendCommand(ctx context.Context, serverID int64, cmd
 	return nil
 }
 
+// RegisterTaskResultWaiter 为一个已生成的 command_id 注册一次性结果通道，
+// 供调用方自己异步等待 Agent 的 TaskResult（handleTaskResult 按 TaskId 路由）。
+func (m *NodeServerManager) RegisterTaskResultWaiter(cmdID string) chan *agentpb.TaskResult {
+	ch := make(chan *agentpb.TaskResult, 1)
+	m.pendingTasksMu.Lock()
+	m.pendingTasks[cmdID] = ch
+	m.pendingTasksMu.Unlock()
+	return ch
+}
+
+// UnregisterTaskResultWaiter 清理 RegisterTaskResultWaiter 的注册。
+func (m *NodeServerManager) UnregisterTaskResultWaiter(cmdID string) {
+	m.pendingTasksMu.Lock()
+	delete(m.pendingTasks, cmdID)
+	m.pendingTasksMu.Unlock()
+}
+
 // SendCommandAndWait sends a PanelCommand to a server and waits for the Agent
 // to report back a CommandResult. This enables synchronous command execution
 // with a timeout, so callers can know whether the command succeeded or failed.

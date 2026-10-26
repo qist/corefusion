@@ -215,9 +215,21 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	}
 
 	// Maps
-	sb.WriteString("    map $http_x_forwarded_for $clientRealIp {\n")
+	// $proxy_protocol_addr 在连接 accept 阶段就有值（PROXY protocol 头），而 realip
+	// 改写的 $remote_addr 要等 post-read 阶段才生效：CONNECT/畸形请求在请求行解析
+	// 阶段就被 405/400 拒绝，此时 realip 还没跑，$remote_addr 仍是原始 peer ——
+	// unix socket 前置（reality 回落等）下就是字面量 "unix:"，日志里会记成 unix:。
+	// 所以先用 $pp_addr 兜底（无 PROXY 头时回退 $remote_addr），再让 $clientRealIp
+	// 在 XFF 为空时回退 $pp_addr。与上游 nginxguard 2026-10-26 的修复一致。
+	sb.WriteString("    map $proxy_protocol_addr $pp_addr {\n")
 	sb.WriteString("        \"\" $remote_addr;\n")
-	sb.WriteString("        ~^(?P<firstAddr>[0-9\\.\\:a-f\\.\\:A-F\\.\\:]+),?.*$ $firstAddr;\n")
+	sb.WriteString("        default $proxy_protocol_addr;\n")
+	sb.WriteString("    }\n\n")
+	sb.WriteString("    map $http_x_forwarded_for $clientRealIp {\n")
+	sb.WriteString("        \"\" $pp_addr;\n")
+	sb.WriteString("        ~^(?P<firstAddr>[0-9\\.\\:a-fA-F]+),?.*$ $firstAddr;\n")
+	// XFF 存在但格式不匹配（unknown / 带空格等）时回退到 $pp_addr，避免空串。
+	sb.WriteString("        default $pp_addr;\n")
 	sb.WriteString("    }\n\n")
 	sb.WriteString("    map $http_upgrade $connection_upgrade {\n")
 	sb.WriteString("        default upgrade;\n")
@@ -560,6 +572,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		// Collect settings from all sites for this domain
 		hasTLS := false
 		hasSocket := false
+		socketProxyProtocol := false
 		hasProxyProtocol := false
 		enableIpv6 := globalIPv6
 		listenPort := ""
@@ -567,7 +580,14 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		var tlsSite *entity.NginxSite
 		for _, site := range siteList {
 			if site.ListenSocket != "" && !hasSocket {
-				sb.WriteString(fmt.Sprintf("        listen unix:%s;\n", site.ListenSocket))
+				// unix socket 也要按站点开关声明 proxy_protocol：否则前置层发来的
+				// PROXY 头会被当成请求行 → 400，且 $proxy_protocol_addr 恒为空。
+				if site.ProxyProtocol {
+					sb.WriteString(fmt.Sprintf("        listen unix:%s proxy_protocol;\n", site.ListenSocket))
+					socketProxyProtocol = true
+				} else {
+					sb.WriteString(fmt.Sprintf("        listen unix:%s;\n", site.ListenSocket))
+				}
 				hasSocket = true
 			}
 			if site.ListenPort != "" && listenPort == "" {
@@ -718,6 +738,12 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("        set_real_ip_from 127.0.0.1;\n")
 			if enableIpv6 {
 				sb.WriteString("        set_real_ip_from ::1;\n")
+			}
+			if socketProxyProtocol {
+				// AF_UNIX 的 peer 不是 IP，127.0.0.1 匹配不上 → realip 不会改写，
+				// $remote_addr 对所有 unix 连接恒为 "unix:"（WAF/日志都拿不到真实 IP）。
+				// 必须显式信任 unix:（nginx 1.13.8+）。
+				sb.WriteString("        set_real_ip_from unix:;\n")
 			}
 			sb.WriteString("        real_ip_header proxy_protocol;\n")
 		}

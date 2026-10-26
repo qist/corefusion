@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-10-26 -->
 # Guide d'utilisation CoreFusion
 
 > Langues : [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · Français · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ Si le panneau écoute uniquement sur `127.0.0.1` (par exemple derrière un proxy
 > Vous avez perdu le jeton ? Relisez le journal de démarrage : `journalctl -u corefusion -n 50 --no-pager`
 > (sans systemd : `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Sortie multilingue
+
+L'installateur intègre quatre langues d'interface : chinois simplifié, anglais, persan (فارسی) et russe (Русский). La langue est détectée automatiquement via `LANG`, ou peut être choisie explicitement :
+
+```bash
+# Anglais
+sudo bash install.sh --lang en
+
+# Persan via une variable d'environnement
+sudo CF_LANG=fa bash install.sh
+
+# Transmettre des options lors d'une installation par pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Valeurs prises en charge : `zh` / `en` / `fa` / `ru` ; `--lang=ru` est également accepté. Une valeur explicite non prise en charge échoue avec la liste des langues disponibles.
+
 ### 2.3 Épinglage de version / miroirs / installation hors ligne
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Ignorer l'installation des dépendances du système |
 | `--no-start` | Installer et écrire le fichier de service sans démarrer |
 | `--cpu-info` | Détection de l'environnement d'impression et dépendances manquantes, puis quittez |
+| `--lang <LANG>` | Langue de sortie : `zh` / `en` / `fa` / `ru` (par défaut : `LANG` du système) |
 | `--uninstall` | Arrêtez le service et supprimez le programme (conserve les données et `.env`) |
 | `--purge` | Avec `--uninstall`, supprimez également le répertoire de données et `.env` |
 
@@ -234,6 +252,7 @@ Variables d'environnement associées :
 | `CF_NODE_MAJOR` | Remplacer la version majeure du nœud (22 par défaut) |
 | `CF_GO_MIRROR` | Aller au miroir de téléchargement de la chaîne d'outils |
 | `CF_SKIP_DEPS` | Définissez sur `1` dans le script d'installation de l'agent pour ignorer l'installation des dépendances. |
+| `CF_LANG` | Remplacer la langue de sortie de l'installateur (équivalent à `--lang`) |
 
 ### 2.6 Disposition du répertoire
 

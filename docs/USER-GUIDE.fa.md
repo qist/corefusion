@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-10-26 -->
 # راهنمای عملیات CoreFusion
 
 > زبان‌ها: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · فارسی
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > رمز را گم کرده اید؟ گزارش راه اندازی را دوباره بخوانید: `journalctl -u corefusion -n 50 --no-pager`
 > (بدون systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 خروجی چندزبانه
+
+نصب‌کننده چهار زبان رابط دارد: چینی ساده‌شده، انگلیسی، فارسی و روسی. زبان به‌طور خودکار از `LANG` سیستم انتخاب می‌شود و می‌توان آن را صریحاً تعیین کرد:
+
+```bash
+# فارسی
+sudo bash install.sh --lang fa
+
+# روسی با متغیر محیطی
+sudo CF_LANG=ru bash install.sh
+
+# انتقال پارامترها در نصب با pipe
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang en
+```
+
+مقادیر پشتیبانی‌شده: `zh` / `en` / `fa` / `ru`؛ `--lang=ru` نیز پذیرفته می‌شود. اگر زبان صریحاً پشتیبانی نشود، خطا و فهرست زبان‌های موجود نمایش داده می‌شود.
+
 ### 2.3 نسخه پین / آینه / نصب آفلاین
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | از نصب وابستگی سیستم صرف نظر کنید |
 | `--no-start` | فایل سرویس را بدون شروع نصب کنید و بنویسید |
 | `--cpu-info` | شناسایی محیط و وابستگی های از دست رفته را چاپ کنید، سپس خارج شوید |
+| `--lang <LANG>` | زبان خروجی: `zh` / `en` / `fa` / `ru` (پیش‌فرض: `LANG` سیستم) |
 | `--uninstall` | سرویس را متوقف کنید و برنامه را حذف کنید (داده ها و `.env` را نگه می دارد) |
 | `--purge` | با `--uninstall`، دایرکتوری داده و `.env` را نیز حذف کنید |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | لغو نسخه اصلی Node (پیش‌فرض 22) |
 | `CF_GO_MIRROR` | Go toolchain دانلود آینه |
 | `CF_SKIP_DEPS` | در اسکریپت نصب Agent روی `1` تنظیم کنید تا از نصب وابستگی رد شوید |
+| `CF_LANG` | جایگزینی زبان خروجی نصب‌کننده (مانند `--lang`) |
 
 ### 2.6 طرح دایرکتوری
 

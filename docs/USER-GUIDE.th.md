@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: th | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: th | updated: 2026-10-26 -->
 # คู่มือการใช้งาน CoreFusion
 
 > ภาษา: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · ไทย · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > โทเค็นสูญหายใช่ไหม อ่านบันทึกการเริ่มต้นอีกครั้ง: `journalctl -u corefusion -n 50 --no-pager`
 > (ไม่มี systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`)
 
+### 2.2.1 เอาต์พุตหลายภาษา
+
+ตัวติดตั้งมีภาษาของอินเทอร์เฟซ 4 ภาษา: จีนตัวย่อ อังกฤษ เปอร์เซีย (فارسی) และรัสเซีย (Русский) ระบบจะตรวจจับจาก `LANG` โดยอัตโนมัติ หรือระบุเองได้:
+
+```bash
+# อังกฤษ
+sudo bash install.sh --lang en
+
+# เปอร์เซียผ่านตัวแปรสภาพแวดล้อม
+sudo CF_LANG=fa bash install.sh
+
+# ส่งอาร์กิวเมนต์เมื่อติดตั้งผ่านไปป์
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+รองรับ `zh` / `en` / `fa` / `ru` และยอมรับ `--lang=ru` ด้วย หากระบุภาษาที่ไม่รองรับจะแจ้งข้อผิดพลาดพร้อมรายการภาษาที่ใช้ได้
+
 ### 2.3 การปักหมุดเวอร์ชัน / มิเรอร์ / การติดตั้งออฟไลน์
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | ข้ามการติดตั้งการพึ่งพาระบบ |
 | `--no-start` | ติดตั้งและเขียนไฟล์บริการโดยไม่ต้องเริ่มต้น |
 | `--cpu-info` | การตรวจจับสภาพแวดล้อมการพิมพ์และการขึ้นต่อกันที่ขาดหายไป จากนั้นออก |
+| `--lang <LANG>` | ภาษาของเอาต์พุต: `zh` / `en` / `fa` / `ru` (ค่าเริ่มต้น: `LANG` ของระบบ) |
 | `--uninstall` | หยุดบริการและลบโปรแกรมออก (เก็บข้อมูลและ `.env`) |
 | `--purge` | ด้วย `--uninstall` ให้ลบไดเร็กทอรีข้อมูลและ `.env` ด้วย |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | แทนที่เวอร์ชันหลักของโหนด (ค่าเริ่มต้น 22) |
 | `CF_GO_MIRROR` | ไปที่มิเรอร์ดาวน์โหลด toolchain |
 | `CF_SKIP_DEPS` | ตั้งค่าเป็น `1` ในสคริปต์การติดตั้ง Agent เพื่อข้ามการติดตั้งการขึ้นต่อกัน |
+| `CF_LANG` | แทนที่ภาษาของเอาต์พุตตัวติดตั้ง (เหมือน `--lang`) |
 
 ### 2.6 เค้าโครงไดเร็กทอรี
 

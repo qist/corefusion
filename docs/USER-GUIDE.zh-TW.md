@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-10-26 -->
 # CoreFusion 操作使用手冊
 
 > 語言： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · 繁體中文 · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > 令牌丟失可重新檢視啟動日誌：`journalctl -u corefusion -n 50 --no-pager`
 > （無 systemd 時為 `tail -n 50 /opt/corefusion/data/logs/panel.log`）。
 
+### 2.2.1 多語言輸出
+
+安裝腳本內建簡體中文、English、فارسی、Русский 四種介面語言，預設依系統 `LANG` 自動選擇；也可明確指定：
+
+```bash
+# 指定英文
+sudo bash install.sh --lang en
+
+# 指定波斯語（環境變數方式）
+sudo CF_LANG=fa bash install.sh
+
+# 管線安裝時傳參
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+支援 `zh` / `en` / `fa` / `ru`，也接受 `--lang=ru`。明確傳入不支援的語言會報錯並列出可選值。
+
 ### 2.3 指定版本 / 國內加速 / 離線安裝
 
 ```bash
@@ -224,6 +241,7 @@ make panel-linux-arm64
 | `--no-deps` | 跳過系統依賴安裝（離線或已預裝環境） |
 | `--no-start` | 只安裝並寫入服務檔案，不啟動 |
 | `--cpu-info` | 只輸出環境識別與依賴缺口，不執行安裝 |
+| `--lang <LANG>` | 輸出語言：`zh` / `en` / `fa` / `ru`（預設依系統 `LANG`） |
 | `--uninstall` | 停止服務並刪除程式（保留資料與 `.env`） |
 | `--purge` | 與 `--uninstall` 連用，同時刪除資料目錄與 `.env` |
 
@@ -235,6 +253,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | 覆蓋原始碼模式的 Node 主版本（預設 22） |
 | `CF_GO_MIRROR` | Go 工具鏈下載映象 |
 | `CF_SKIP_DEPS` | Agent 安裝指令碼中設為 `1` 可跳過依賴安裝 |
+| `CF_LANG` | 覆寫安裝腳本輸出語言（等同 `--lang`） |
 
 ### 2.6 安裝目錄結構
 

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-10-26 -->
 # دليل عمليات CoreFusion
 
 > اللغات: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · العربية · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 > فقدت الرمز؟ اقرأ سجل بدء التشغيل مرة أخرى: `journalctl -u corefusion -n 50 --no-pager`
 > (بدون systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 مخرجات متعددة اللغات
+
+يتضمن المثبّت أربع لغات للواجهة: الصينية المبسطة والإنجليزية والفارسية (فارسی) والروسية (Русский). يكتشف لغة النظام من `LANG` تلقائياً، ويمكن تحديدها صراحةً:
+
+```bash
+# الإنجليزية
+sudo bash install.sh --lang en
+
+# الفارسية عبر متغير بيئة
+sudo CF_LANG=fa bash install.sh
+
+# تمرير الخيارات عند التثبيت عبر الأنبوب
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+القيم المدعومة: `zh` / `en` / `fa` / `ru`، ويُقبل أيضاً `--lang=ru`. عند تحديد لغة غير مدعومة تظهر رسالة خطأ مع قائمة اللغات المتاحة.
+
 ### 2.3 تثبيت الإصدار / المرايا / التثبيت دون اتصال
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | تخطي تثبيت تبعية النظام |
 | `--no-start` | تثبيت وكتابة ملف الخدمة دون البدء |
 | `--cpu-info` | قم بطباعة الكشف عن البيئة والتبعيات المفقودة، ثم قم بالخروج |
+| `--lang <LANG>` | لغة الخرج: `zh` / `en` / `fa` / `ru` (افتراضي: `LANG` النظام) |
 | `--uninstall` | إيقاف الخدمة وإزالة البرنامج (يحتفظ بالبيانات و`.env`) |
 | `--purge` | باستخدام `--uninstall`، قم أيضًا بإزالة دليل البيانات و`.env` |
 
@@ -234,6 +252,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | تجاوز إصدار Node الرئيسي (الافتراضي 22) |
 | `CF_GO_MIRROR` | اذهب إلى مرآة تنزيل سلسلة الأدوات |
 | `CF_SKIP_DEPS` | اضبط على `1` في البرنامج النصي لتثبيت Agent لتخطي تثبيت التبعية |
+| `CF_LANG` | تجاوز لغة مخرجات المثبّت (مثل `--lang`) |
 
 ### 2.6 تخطيط الدليل
 

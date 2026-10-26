@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: de | updated: 2026-10-23 -->
+<!-- source: USER-GUIDE.md | locale: de | updated: 2026-10-26 -->
 # CoreFusion Betriebshandbuch
 
 > Sprachen: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · Deutsch · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -144,6 +144,23 @@ Wenn das Panel nur `127.0.0.1` abhört (z. B. hinter einem Reverse-Proxy), gibt 
 > Token verloren? Lesen Sie das Startprotokoll erneut: `journalctl -u corefusion -n 50 --no-pager`
 > (ohne systemd: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
+### 2.2.1 Mehrsprachige Ausgabe
+
+Der Installer enthält vier UI-Sprachen: vereinfachtes Chinesisch, Englisch, Persisch (فارسی) und Russisch (Русский). Die Sprache wird anhand von `LANG` automatisch erkannt oder kann explizit gewählt werden:
+
+```bash
+# Englisch
+sudo bash install.sh --lang en
+
+# Persisch über eine Umgebungsvariable
+sudo CF_LANG=fa bash install.sh
+
+# Optionen bei einer Pipe-Installation übergeben
+curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
+```
+
+Unterstützt werden `zh` / `en` / `fa` / `ru`; `--lang=ru` ist ebenfalls möglich. Ein explizit nicht unterstützter Wert führt zu einem Fehler mit Liste der verfügbaren Sprachen.
+
 ### 2.3 Versionsfixierung / Spiegelung / Offline-Installation
 
 ```bash
@@ -223,6 +240,7 @@ make panel-linux-arm64
 | `--no-deps` | Überspringen Sie die Installation der Systemabhängigkeit |
 | `--no-start` | Installieren und schreiben Sie die Dienstdatei, ohne zu starten |
 | `--cpu-info` | Druckumgebungserkennung und fehlende Abhängigkeiten, dann beenden |
+| `--lang <LANG>` | Ausgabesprache: `zh` / `en` / `fa` / `ru` (Standard: System-`LANG`) |
 | `--uninstall` | Stoppen Sie den Dienst und entfernen Sie das Programm (behält Daten und `.env`) |
 | `--purge` | Entfernen Sie bei `--uninstall` auch das Datenverzeichnis und `.env` |
 
@@ -234,6 +252,7 @@ Verwandte Umgebungsvariablen:
 | `CF_NODE_MAJOR` | Überschreiben Sie die Hauptversion des Knotens (Standard 22). |
 | `CF_GO_MIRROR` | Gehen Sie zum Toolchain-Download-Spiegel |
 | `CF_SKIP_DEPS` | Legen Sie im Agent-Installationsskript `1` fest, um die Abhängigkeitsinstallation zu überspringen |
+| `CF_LANG` | Ausgabesprache des Installers überschreiben (wie `--lang`) |
 
 ### 2.6 Verzeichnislayout
 

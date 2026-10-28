@@ -3,6 +3,7 @@ package inboundconfig
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -240,5 +241,30 @@ func TestUpdateServerNamesConflict(t *testing.T) {
 	// holding b.com (failed update does not persist).
 	if _, err := svc.Update(ctx, a.ID, "node-A", "vless", "tag-a", "0.0.0.0", 443, realityConfig("a.com"), true); err != nil {
 		t.Fatalf("self-update should not conflict: %v", err)
+	}
+}
+
+// TestEnsureDefaultAccessDomain 新建入站默认带「直连 + 开启」，否则订阅渲染会跳过该节点。
+func TestEnsureDefaultAccessDomain(t *testing.T) {
+	// 1) 完全没配 → 注入默认值
+	in := `{"tag":"t","protocol":"vless","port":31080,"settings":{"clients":[]}}`
+	out := ensureDefaultAccessDomain(in)
+	if !strings.Contains(out, `"_accessDomainEnabled":true`) || !strings.Contains(out, `"_accessDomainType":"direct"`) {
+		t.Fatalf("未注入默认接入域名: %s", out)
+	}
+	// 2) 显式关闭 → 保持原样
+	off := `{"tag":"t","protocol":"vless","_accessDomainEnabled":false}`
+	if got := ensureDefaultAccessDomain(off); got != off {
+		t.Fatalf("显式关闭不应被覆盖: %s", got)
+	}
+	// 3) 已有对象 → 保持原样
+	obj := `{"tag":"t","protocol":"vless","_accessDomain":{"enabled":true}}`
+	if got := ensureDefaultAccessDomain(obj); got != obj {
+		t.Fatalf("已有 _accessDomain 不应被覆盖: %s", got)
+	}
+	// 4) 非 xray 形态（无 protocol）→ 不动
+	other := `{"inbounds":[{"type":"vless"}]}`
+	if got := ensureDefaultAccessDomain(other); got != other {
+		t.Fatalf("非 xray 形态不应修改: %s", got)
 	}
 }

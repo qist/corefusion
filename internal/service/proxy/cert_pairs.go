@@ -125,3 +125,29 @@ func collectCertPairs(ctx context.Context, certRepo *repository.CertificateRepos
 	}
 	return pairs
 }
+
+// collectCertPairsForDomains 为一个站点绑定的多个域名分别收集证书并去重。
+// 一个站点绑多域名时，证书可能是「一个 SAN 证书覆盖全部」也可能是「每域名各一张」——
+// 全部挂上后 nginx/Caddy 会按 SNI 自动挑对应的一张。
+func collectCertPairsForDomains(ctx context.Context, certRepo *repository.CertificateRepository,
+	domains []string, siteCert, siteKey string, dualEnabled bool, checker certPairChecker) []certPair {
+	if len(domains) == 0 {
+		return collectCertPairs(ctx, certRepo, "", siteCert, siteKey, dualEnabled, checker)
+	}
+	out := make([]certPair, 0, maxCertPairs)
+	seen := make(map[string]bool)
+	for _, d := range domains {
+		for _, cp := range collectCertPairs(ctx, certRepo, d, siteCert, siteKey, dualEnabled, checker) {
+			if len(out) >= maxCertPairs {
+				return out
+			}
+			id := cp.Cert + "\x00" + cp.Key
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, cp)
+		}
+	}
+	return out
+}

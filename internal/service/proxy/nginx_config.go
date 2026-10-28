@@ -467,6 +467,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		if site.Upstream == "" || site.Template == "static" {
 			continue
 		}
+		// 含 scheme 的值（如 http://php、https://host:port）是直接上游，不生成 upstream 块。
+		if strings.Contains(site.Upstream, "://") {
+			continue
+		}
 		upstreams := strings.Split(site.Upstream, ",")
 		upstreamKey := strings.ReplaceAll(site.Upstream, ".", "_")
 		upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
@@ -485,13 +489,18 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString("    }\n\n")
 	}
 
-	// Group by domain (HTTP sites only) — 键归一化 + 排序，保证生成结果确定
+	// Group by domain set (HTTP sites only) — 一个站点可绑多个域名 ✓
+	// 键 = 排序后的域名组，保证 a.com,b.com 与 b.com,a.com 落到同一个 server 块 ✓，
+	// 同时生成结果与输入顺序无关（确定性）。
 	domainSites := make(map[string][]entity.NginxSite)
 	domainOrder := make([]string, 0)
+	groupDomains := make(map[string][]string)
 	for _, site := range httpSites {
-		key := normalizeGroupDomain(site.Domain)
+		domains := SplitDomains(site.Domain)
+		key := DomainGroupKey(domains)
 		if _, ok := domainSites[key]; !ok {
 			domainOrder = append(domainOrder, key)
+			groupDomains[key] = domains
 		}
 		domainSites[key] = append(domainSites[key], site)
 	}
@@ -512,8 +521,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 	}
 
-	for _, domain := range domainOrder {
-		siteList := domainSites[domain]
+	for _, groupKey := range domainOrder {
+		siteList := domainSites[groupKey]
+		domains := groupDomains[groupKey]
+		// primary 用于证书查找/跳转目标/日志；server_name 用整组域名 ✓
+		primary := ""
+		if len(domains) > 0 {
+			primary = domains[0]
+		}
+		serverNames := strings.Join(domains, " ")
 		// HTTP → HTTPS 自动跳转 ✓ —— 三个条件**同时满足**才生成 ✓：
 		//   ① 域名组有 TLS 证书 ✓；② 节点开了 80 端口 ✓；③ 站点开关打开 ✓（nil=开 ✓）。
 		// 生成独立的 `server { listen 80; ... }` 块 ✓：ACME 挑战留在 :80 ✓，其余 301 到 https ✓。
@@ -535,10 +551,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				grpIPv6 = true
 			}
 		}
-		if grpHasTLS && port80Open && redirectEnabled && domain != "" {
-			target := "https://" + domain
+		if grpHasTLS && port80Open && redirectEnabled && primary != "" {
+			target := "https://" + primary
 			if tlsPort != "443" {
-				target = fmt.Sprintf("https://%s:%s", domain, tlsPort)
+				target = fmt.Sprintf("https://%s:%s", primary, tlsPort)
 			}
 			sb.WriteString("    # HTTP → HTTPS redirect (auto-generated; per-site switch)\n")
 			sb.WriteString("    server {\n")
@@ -546,7 +562,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if grpIPv6 {
 				sb.WriteString("        listen [::]:80;\n")
 			}
-			sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
+			sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
 			if !m.isLocal {
 				sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
 				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
@@ -566,7 +582,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("    }\n\n")
 		}
 
-		sb.WriteString(fmt.Sprintf("    # %s\n", domain))
+		sb.WriteString(fmt.Sprintf("    # %s\n", primary))
 		sb.WriteString("    server {\n")
 
 		// Collect settings from all sites for this domain
@@ -619,7 +635,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 		// 通配/兜底域名（"" 或 "_"）显式 default_server，避免"默认站点"随生成顺序漂移
 		ds := ""
-		if domain == "" || domain == "_" {
+		if primary == "" || primary == "_" {
 			ds = " default_server"
 		}
 
@@ -666,10 +682,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if enableHttp2 {
 				sb.WriteString("        http2 on;\n")
 			}
-			if domain == "" {
+			if len(domains) == 0 {
 				sb.WriteString("        server_name _;\n")
 			} else {
-				sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
+				sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
 			}
 			// ✅ 双证书 ✓：nginx 允许在同一个 server 块里写**多组** ssl_certificate ✓，
 			// 它会按客户端支持能力自动挑 ECC / RSA ✓（以前只写一组 ✗ → 另一张白签 ✗）。
@@ -682,7 +698,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if m.isLocalTarget(ctx, serverID) {
 				checker = localCertPairChecker(m.dataDir)
 			}
-			for _, cp := range collectCertPairs(ctx, m.certRepo, domain, tlsCert, tlsKey, dual, checker) {
+			for _, cp := range collectCertPairsForDomains(ctx, m.certRepo, domains, tlsCert, tlsKey, dual, checker) {
 				sb.WriteString(fmt.Sprintf("        ssl_certificate ../%s;\n", stripDataDirPrefix(cp.Cert, m.dataDir)))
 				sb.WriteString(fmt.Sprintf("        ssl_certificate_key ../%s;\n", stripDataDirPrefix(cp.Key, m.dataDir)))
 			}
@@ -726,10 +742,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 					sb.WriteString(fmt.Sprintf("        listen [::]:%s%s;\n", listenPort, ds))
 				}
 			}
-			if domain == "" {
+			if len(domains) == 0 {
 				sb.WriteString("        server_name _;\n")
 			} else {
-				sb.WriteString(fmt.Sprintf("        server_name %s;\n", domain))
+				sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
 			}
 		}
 
@@ -798,7 +814,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		for _, site := range siteList {
 			path := normalizeLocationPath(site.Path)
 			if seenLoc[path] {
-				log.Printf("[NginxManager] %s: duplicate location %q (id=%d) skipped", domain, path, site.ID)
+				log.Printf("[NginxManager] %s: duplicate location %q (id=%d) skipped", primary, path, site.ID)
 				continue
 			}
 			seenLoc[path] = true
@@ -809,6 +825,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			upstreamKey := strings.ReplaceAll(site.Upstream, ".", "_")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
 			upstreamKey = strings.ReplaceAll(upstreamKey, ",", "_")
+			// 直接上游（含 scheme，如 http://php / https://host:port）：proxy_pass 原样使用
+			directUpstream := ""
+			if strings.Contains(site.Upstream, "://") && !strings.Contains(site.Upstream, ",") {
+				directUpstream = strings.TrimSpace(site.Upstream)
+			}
 
 			// Per-location WAF bypass: set $waf_enable off; when WafEnabled is false
 			wafBypass := ""
@@ -827,7 +848,13 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			// 回源 SNI ✓：优先 sni_target ✓，否则退回域名 ✓
 			upstreamSNI := strings.TrimSpace(site.SNITarget)
 			if upstreamSNI == "" {
-				upstreamSNI = strings.TrimSpace(site.Domain)
+				if ds := SplitDomains(site.Domain); len(ds) > 0 {
+					upstreamSNI = ds[0]
+				}
+			}
+			upstreamTarget := fmt.Sprintf("%s://backend_%s", upstreamScheme, upstreamKey)
+			if directUpstream != "" {
+				upstreamTarget = directUpstream
 			}
 
 			if site.Template == "grpc" {
@@ -879,13 +906,28 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
 				sb.WriteString("            index index.html index.htm;\n")
 				sb.WriteString("            try_files $uri $uri/ =404;\n")
+			case "echo_ip":
+				// 回显真实客户端 IP：落地页/探测页常用（现网 nginx 里就是 echo -n $clientRealIp）。
+				// $clientRealIp 由生成器顶部的 map 定义（无 XFF 时回退 PROXY protocol / remote_addr）。
+				sb.WriteString("            default_type text/plain;\n")
+				sb.WriteString("            return 200 \"$clientRealIp\\n\";\n")
+			case "redirect":
+				// 跳转：目标 URL 放 backend_path（其次 upstream）；都没填就跳 https://同域名。
+				target := strings.TrimSpace(site.BackendPath)
+				if target == "" {
+					target = strings.TrimSpace(site.Upstream)
+				}
+				if target == "" {
+					target = "https://$host"
+				}
+				sb.WriteString(fmt.Sprintf("            return 301 %s$request_uri;\n", target))
 			case "websocket", "xhttp", "httpupgrade":
 				// If backend_path is root ("/"), add trailing slash to strip the location prefix
 				// If backend_path has a specific path, no trailing slash to preserve the full URI
 				if backendPath == "/" {
-					sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s/;\n", upstreamScheme, upstreamKey))
+					sb.WriteString(fmt.Sprintf("            proxy_pass %s/;\n", strings.TrimSuffix(upstreamTarget, "/")))
 				} else {
-					sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
+					sb.WriteString(fmt.Sprintf("            proxy_pass %s;\n", upstreamTarget))
 				}
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
@@ -904,7 +946,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				// 面板转发（专用模板）：把面板主端口整域名直通。必须按 SSE/流式响应配置 ——
 				// 面板的实时日志（/api/v1/log-manage/*/log-stream 等）是长连接事件流，
 				// 若沿用默认 location（缓冲 + 60s 读超时）会被 nginx 断开/缓冲住 ✗。
-				sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
+				sb.WriteString(fmt.Sprintf("            proxy_pass %s;\n", upstreamTarget))
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Accept-Encoding \"\";\n")
 				if site.UpstreamTLS {
@@ -920,7 +962,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("            proxy_read_timeout 3600s;\n")
 				sb.WriteString("            proxy_send_timeout 3600s;\n")
 			default:
-				sb.WriteString(fmt.Sprintf("            proxy_pass %s://backend_%s;\n", upstreamScheme, upstreamKey))
+				sb.WriteString(fmt.Sprintf("            proxy_pass %s;\n", upstreamTarget))
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Accept-Encoding \"\";\n")
 				if site.UpstreamTLS {

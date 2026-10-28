@@ -98,9 +98,6 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 			return nil, err
 		}
 	}
-	// 新建入站默认带「接入域名：直连 + 开启」，否则订阅渲染层会把它整条跳过
-	//（渲染要求 _accessDomain，由 _accessDomainEnabled/_accessDomainType 归一而来）。
-	configJSON = ensureDefaultAccessDomain(configJSON)
 	cfg := &entity.InboundConfig{
 		ServerID:   serverID,
 		CoreType:   coreType,
@@ -138,7 +135,7 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 	cfg.Tag = tag
 	cfg.Listen = listen
 	cfg.Port = port
-	cfg.ConfigJSON = ensureDefaultAccessDomain(configJSON)
+	cfg.ConfigJSON = configJSON
 	cfg.Enabled = enabled
 	cfg.UpdatedAt = time.Now()
 	if err := s.repo.Update(ctx, cfg); err != nil {
@@ -794,43 +791,4 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreTy
 		result = append(result, data)
 	}
 	return result, nil
-}
-
-// ensureDefaultAccessDomain 为 xray 形态的入站补默认「接入域名：直连 + 开启」。
-//
-// 背景：订阅渲染要求入站配置里存在 _accessDomain（由扁平字段
-// _accessDomainEnabled/_accessDomainType 归一而来，见 subscriptions.ensureAccessDomain）。
-// 完全没配接入域名的入站会被整条跳过 —— 新建入站默认给直连+开启，避免新装用户订阅为空。
-//
-// 已有任一接入域名字段（包括显式关闭 _accessDomainEnabled=false）时原样保留。
-func ensureDefaultAccessDomain(configJSON string) string {
-	var cfg map[string]interface{}
-	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil || cfg == nil {
-		return configJSON
-	}
-	// 处理两种入站形态：
-	//   xray    —— 根部有 protocol + settings
-	//   sing-box —— 根部是单个 inbound 对象：有 type、没有 settings（users[] 在根部）
-	_, hasProtocol := cfg["protocol"].(string)
-	_, hasType := cfg["type"].(string)
-	_, hasSettings := cfg["settings"]
-	if !hasProtocol && !(hasType && !hasSettings) {
-		return configJSON
-	}
-	if _, ok := cfg["_accessDomain"]; ok {
-		return configJSON
-	}
-	if _, ok := cfg["_accessDomainEnabled"]; ok {
-		return configJSON
-	}
-	if _, ok := cfg["_accessDomainType"]; ok {
-		return configJSON
-	}
-	cfg["_accessDomainEnabled"] = true
-	cfg["_accessDomainType"] = "direct"
-	out, err := json.Marshal(cfg)
-	if err != nil {
-		return configJSON
-	}
-	return string(out)
 }

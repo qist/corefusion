@@ -176,3 +176,28 @@ func TestShareAddressUsesHostnameBeforeListenFallback(t *testing.T) {
 		t.Fatalf("0.0.0.0 应兜底 127.0.0.1，got %q", got)
 	}
 }
+
+// TestShareAddressFallsBackWhenNoAccessDomain 回归：
+// 没配接入域名 / 显式关闭接入域名时，订阅仍要用节点地址（公网 IP → 主机名 → 内网 IP →
+// 监听地址）返回，而不是把节点整条跳过。这里验证无 repo 时的最后一级回退。
+func TestShareAddressFallsBackWhenNoAccessDomain(t *testing.T) {
+	h := &PublicHandler{}
+	cases := []struct {
+		name     string
+		config   map[string]interface{}
+		listen   string
+		want     string
+		wantPort int
+	}{
+		{"no-access-domain", map[string]interface{}{}, "203.0.113.9", "203.0.113.9", 31080},
+		{"access-domain-disabled", map[string]interface{}{"_accessDomain": map[string]interface{}{"enabled": false}}, "203.0.113.9", "203.0.113.9", 31080},
+		{"wildcard-listen", map[string]interface{}{}, "0.0.0.0", "127.0.0.1", 31080},
+	}
+	for _, tc := range cases {
+		cfg := entity.InboundConfig{Port: tc.wantPort, Listen: tc.listen}
+		host, port := h.shareAddress(context.Background(), cfg, tc.config, nil)
+		if host != tc.want || port != tc.wantPort {
+			t.Fatalf("%s: shareAddress = %s:%d, want %s:%d", tc.name, host, port, tc.want, tc.wantPort)
+		}
+	}
+}

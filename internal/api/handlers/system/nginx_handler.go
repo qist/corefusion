@@ -354,6 +354,52 @@ func (h *NginxHandler) DeleteSite(c *gin.Context) {
 	response.OK(c, gin.H{"message": "deleted"})
 }
 
+// ImportSites handles POST /api/v1/node-servers/:id/nginx/import.
+//
+// 把现网 nginx 配置文本解析成站点；dry_run=true 只返回预览（不落库）。
+// 用途：从旧服务器迁移到面板托管生成 nginx 配置时，避免手抄每个 conf。
+func (h *NginxHandler) ImportSites(c *gin.Context) {
+	serverID, _ := h.applyServerID(c)
+	var req struct {
+		Content string `json:"content" binding:"required"`
+		DryRun  bool   `json:"dry_run"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	res := proxy.ParseNginxSites(req.Content)
+	if req.DryRun {
+		response.OK(c, gin.H{
+			"dry_run":  true,
+			"sites":    res.Sites,
+			"warnings": res.Warnings,
+		})
+		return
+	}
+
+	created := 0
+	skipped := make([]string, 0)
+	for i := range res.Sites {
+		site := res.Sites[i]
+		site.ServerID = serverID
+		if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, site.Domain, site.Path, site.Template, 0); dup {
+			skipped = append(skipped, fmt.Sprintf("%s %s 已存在（站点 id=%d）", site.Domain, site.Path, id))
+			continue
+		}
+		if err := h.nginxMgr.CreateSite(c.Request.Context(), &site); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s %s 创建失败：%v", site.Domain, site.Path, err))
+			continue
+		}
+		created++
+	}
+	response.OK(c, gin.H{
+		"created":  created,
+		"skipped":  skipped,
+		"warnings": res.Warnings,
+	})
+}
+
 // --- Config ---
 func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)

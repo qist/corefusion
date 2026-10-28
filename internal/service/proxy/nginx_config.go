@@ -877,7 +877,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 					}
 					sb.WriteString("            grpc_ssl_verify off;\n")
 				}
-				sb.WriteString(fmt.Sprintf("            grpc_pass %s://backend_%s;\n", grpcScheme, upstreamKey))
+				grpcTarget := fmt.Sprintf("%s://backend_%s", grpcScheme, upstreamKey)
+				if directUpstream != "" {
+					grpcTarget = directUpstream
+				}
+				sb.WriteString(fmt.Sprintf("            grpc_pass %s;\n", grpcTarget))
 				// Location-level directives
 				if site.LocationConfig != "" {
 					for _, line := range strings.Split(strings.TrimSpace(site.LocationConfig), "\n") {

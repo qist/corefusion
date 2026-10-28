@@ -53,6 +53,10 @@ type NodeServerUpdate struct {
 	SortOrder        *int    `json:"sort_order"`
 	Enabled          *bool   `json:"enabled"`
 
+	// 订阅容量阈值（P2）：0=不限
+	SubMaxConnections   *int `json:"sub_max_connections"`
+	SubMaxBandwidthMbps *int `json:"sub_max_bandwidth_mbps"`
+
 	// 出口网卡流量配额
 	EgressInterface      *string `json:"egress_interface"`
 	TrafficQuotaBytes    *int64  `json:"traffic_quota_bytes"`

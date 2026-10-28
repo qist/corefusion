@@ -549,6 +549,15 @@
         <el-form-item :label="t('nodeServer.bandwidthMbps')">
           <el-input-number v-model="form.bandwidth_mbps" :min="0" controls-position="right" style="width:100%" />
         </el-form-item>
+        <el-divider content-position="left">{{ t('nodeServer.subCapacity') }}</el-divider>
+        <el-form-item :label="t('nodeServer.subMaxConnections')">
+          <el-input-number v-model="form.sub_max_connections" :min="0" controls-position="right" style="width:100%" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('nodeServer.subMaxConnectionsHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('nodeServer.subMaxBandwidthMbps')">
+          <el-input-number v-model="form.sub_max_bandwidth_mbps" :min="0" controls-position="right" style="width:100%" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('nodeServer.subMaxBandwidthMbpsHint') }}</div>
+        </el-form-item>
 
         <el-divider content-position="left">{{ t('nodeServer.advanced') }}</el-divider>
         <el-form-item :label="t('nodeServer.billingEnabled')">
@@ -981,6 +990,7 @@ const form = reactive({
   chain_config: '', agent_port: DEFAULT_AGENT_GRPC_PORT,
   supported_cores_arr: ['xray', 'singbox'],
   max_inbounds: 0, public_ip: '', internal_ip: '', bandwidth_mbps: 0,
+  sub_max_connections: 0, sub_max_bandwidth_mbps: 0,
   billing_enabled: true, enabled: true, sort_order: 0, metadata: '',
   // 流量配额
   egress_interface: '', traffic_quota_gb: 0, traffic_quota_reset_day: 1,
@@ -1316,6 +1326,7 @@ function showEditDialog(row) {
     chain_config: row.chain_config || '', agent_port: row.agent_port,
     supported_cores_arr: parseCores(row.supported_cores),
     max_inbounds: row.max_inbounds, public_ip: row.public_ip,
+    sub_max_connections: row.sub_max_connections || 0, sub_max_bandwidth_mbps: row.sub_max_bandwidth_mbps || 0,
     internal_ip: row.internal_ip, bandwidth_mbps: row.bandwidth_mbps,
     billing_enabled: row.billing_enabled, enabled: row.enabled,
     sort_order: row.sort_order, metadata: row.metadata || '',

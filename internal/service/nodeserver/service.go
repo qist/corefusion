@@ -450,6 +450,12 @@ func (s *Service) Update(ctx context.Context, id int64, req *dto.NodeServerUpdat
 	if req.MaxInbounds != nil {
 		server.MaxInbounds = *req.MaxInbounds
 	}
+	if req.SubMaxConnections != nil {
+		server.SubMaxConnections = *req.SubMaxConnections
+	}
+	if req.SubMaxBandwidthMbps != nil {
+		server.SubMaxBandwidthMbps = *req.SubMaxBandwidthMbps
+	}
 	if req.PublicIP != nil {
 		server.PublicIP = *req.PublicIP
 	}

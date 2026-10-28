@@ -1035,6 +1035,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
 	publicSubH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync)
+	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
 		publicSubH.SetNetworkTracker(tracker)
 	}
@@ -3742,6 +3743,7 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
 	publicSubH.SetSubEndpointRepo(repository.NewSubscriptionEndpointRepository(database))
+	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 
 	// 订阅拉取触发的 IP 关联推送：8081 引擎的 PublicHandler 也必须接 RateLimitPusher。
 	// ⚠ 此前漏接 → 用户订阅实际走 8081，h.rateLimitPusher == nil，

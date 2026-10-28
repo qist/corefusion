@@ -43,6 +43,7 @@ type PublicHandler struct {
 	extNodeRepo       *repository.ExternalNodeRepository
 	mihomoRepo        *repository.MihomoConfigRepository
 	mihomoRuleRepo    *repository.MihomoRuleRepository
+	metricRepo        *repository.ServerMetricRepository
 	systemSettingRepo *repository.SystemSettingRepository
 	accessLog         *repository.AccessLogRepository
 	rateLimitPusher   RateLimitPusher
@@ -56,6 +57,11 @@ type PublicHandler struct {
 
 // SetNetworkTracker injects the nftables IP tracker so subscription access records can
 // feed the network-layer traffic accounting bridge.
+// SetServerMetricRepo 注入节点指标仓储（订阅容量 P2 判定用）。
+func (h *PublicHandler) SetServerMetricRepo(repo *repository.ServerMetricRepository) {
+	h.metricRepo = repo
+}
+
 func (h *PublicHandler) SetNetworkTracker(t *traffic.SubscriptionIPTracker) {
 	h.networkTracker = t
 }
@@ -335,7 +341,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	// /opt/corefusion-private/design/SUBSCRIPTION_NODE_SELECTION.md
 	{
 		nowSel := time.Now()
-		picked, selIDs := selectMembersForSubscription(sub, tmpl, members, nowSel)
+		excluded := h.subscriptionCapacityExclusions(ctx, members, nowSel)
+		picked, selIDs := selectMembersForSubscription(sub, tmpl, members, excluded, nowSel)
 		members = picked
 		if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
 			sub.NodeSelectionIDs = entity.Int64List(selIDs)
@@ -3759,7 +3766,8 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	if h.subRepo != nil {
 		if sub, err := h.subRepo.GetActiveByClientID(ctx, clientID); err == nil && sub != nil {
 			nowSel := time.Now()
-			picked, selIDs := selectMembersForSubscription(sub, tmpl, members, nowSel)
+			excluded := h.subscriptionCapacityExclusions(ctx, members, nowSel)
+			picked, selIDs := selectMembersForSubscription(sub, tmpl, members, excluded, nowSel)
 			members = picked
 			if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
 				sub.NodeSelectionIDs = entity.Int64List(selIDs)
@@ -3794,4 +3802,42 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
+}
+
+// subscriptionCapacityExclusions 计算本轮因节点容量/冷却被排除的订阅成员。
+// 阈值来自 node_servers.sub_max_connections / sub_max_bandwidth_mbps（0=不限），
+// 实时值来自 server_metrics 最近一条；首次超限的节点写 30 分钟冷却。
+func (h *PublicHandler) subscriptionCapacityExclusions(ctx context.Context, members []entity.NodeGroupMember, now time.Time) map[int64]bool {
+	if h.metricRepo == nil || h.nodeServerRepo == nil || h.inboundRepo == nil || len(members) == 0 {
+		return nil
+	}
+	servers, err := h.nodeServerRepo.ListAll(ctx)
+	if err != nil {
+		return nil
+	}
+	in := nodeCapacityInput{
+		memberServer: make(map[int64]int64, len(members)),
+		servers:      make(map[int64]entity.NodeServer, len(servers)),
+	}
+	for _, srv := range servers {
+		in.servers[srv.ID] = srv
+	}
+	if metrics, err := h.metricRepo.LatestByServer(ctx); err == nil {
+		in.metrics = metrics
+	}
+	for _, m := range members {
+		if m.InboundConfigID <= 0 {
+			continue
+		}
+		if cfg, err := h.inboundRepo.GetByID(ctx, m.InboundConfigID); err == nil && cfg != nil {
+			in.memberServer[m.ID] = cfg.ServerID
+		}
+	}
+	excluded, cooldownUpdates := capacityExcludedMembers(in, now)
+	for serverID, until := range cooldownUpdates {
+		if err := h.nodeServerRepo.UpdateSubCooldown(ctx, serverID, until); err != nil {
+			log.Printf("[subscription] persist capacity cooldown failed: server=%d err=%v", serverID, err)
+		}
+	}
+	return excluded
 }

@@ -262,9 +262,15 @@ func TestEnsureDefaultAccessDomain(t *testing.T) {
 	if got := ensureDefaultAccessDomain(obj); got != obj {
 		t.Fatalf("已有 _accessDomain 不应被覆盖: %s", got)
 	}
-	// 4) 非 xray 形态（无 protocol）→ 不动
+	// 4) sing-box 形态（根部有 type、无 settings）→ 同样注入
+	sb := `{"type":"vless","tag":"sb","listen_port":31081,"users":[]}`
+	sbOut := ensureDefaultAccessDomain(sb)
+	if !strings.Contains(sbOut, `"_accessDomainEnabled":true`) || !strings.Contains(sbOut, `"_accessDomainType":"direct"`) {
+		t.Fatalf("sing-box 形态未注入默认接入域名: %s", sbOut)
+	}
+	// 5) 整份配置（inbounds 数组）→ 不动
 	other := `{"inbounds":[{"type":"vless"}]}`
 	if got := ensureDefaultAccessDomain(other); got != other {
-		t.Fatalf("非 xray 形态不应修改: %s", got)
+		t.Fatalf("整份配置不应修改: %s", got)
 	}
 }

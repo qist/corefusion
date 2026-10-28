@@ -96,6 +96,7 @@ func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) e
 	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
 	// 以前只在生成配置时临时注入 → DB 永远为空 ✗。此处统一落地 ✓。
 	m.fillForwardDerivedFields(ctx, site)
+	normalizeCaddySiteDomain(site)
 	return m.siteRepo.Create(ctx, site)
 }
 
@@ -106,6 +107,7 @@ func (m *CaddyManager) GetSite(ctx context.Context, id int64) (*entity.CaddySite
 func (m *CaddyManager) UpdateSite(ctx context.Context, site *entity.CaddySite) error {
 	// 派生字段落地 DB ✓（同 CreateSite）。
 	m.fillForwardDerivedFields(ctx, site)
+	normalizeCaddySiteDomain(site)
 	return m.siteRepo.Update(ctx, site)
 }
 
@@ -419,13 +421,17 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		return sb.String(), nil
 	}
 
-	// Group HTTP sites by domain — 键归一化 + 排序，保证生成结果确定
+	// Group HTTP sites by domain set — 一个站点可绑多个域名 ✓
+	// 键 = 排序后的域名组（与书写顺序无关），同组站点合并到一个 Caddy site block。
 	domainSites := make(map[string][]entity.CaddySite)
 	domainOrder := make([]string, 0)
+	groupDomains := make(map[string][]string)
 	for _, site := range httpSites {
-		key := normalizeGroupDomain(site.Domain)
+		domains := SplitDomains(site.Domain)
+		key := DomainGroupKey(domains)
 		if _, ok := domainSites[key]; !ok {
 			domainOrder = append(domainOrder, key)
+			groupDomains[key] = domains
 		}
 		domainSites[key] = append(domainSites[key], site)
 	}
@@ -443,8 +449,13 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		}
 	}
 
-	for _, domain := range domainOrder {
-		siteList := domainSites[domain]
+	for _, groupKey := range domainOrder {
+		siteList := domainSites[groupKey]
+		domains := groupDomains[groupKey]
+		primary := ""
+		if len(domains) > 0 {
+			primary = domains[0]
+		}
 		// Check if this domain has TLS certificates
 		hasCert := false
 		for _, site := range siteList {
@@ -466,13 +477,18 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				break
 			}
 		}
-		if hasCert && port80Open && redirectEnabled && !strings.HasSuffix(domain, ":80") {
-			host := domain
-			if h, _, ok := strings.Cut(domain, ":"); ok {
-				host = h
+		if hasCert && port80Open && redirectEnabled && !strings.HasSuffix(primary, ":80") {
+			// 多域名：跳转块同样列出全部域名（http://a.com, http://b.com）
+			redirectAddrs := make([]string, 0, len(domains))
+			for _, d := range domains {
+				h := d
+				if cut, _, ok := strings.Cut(d, ":"); ok {
+					h = cut
+				}
+				redirectAddrs = append(redirectAddrs, "http://"+h)
 			}
 			sb.WriteString("# HTTP → HTTPS redirect (auto_https is off — generated manually)\n")
-			sb.WriteString(fmt.Sprintf("http://%s {\n", host))
+			sb.WriteString(fmt.Sprintf("%s {\n", strings.Join(redirectAddrs, ", ")))
 			if !m.isLocalTarget(ctx, serverID) {
 				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 				sb.WriteString("\thandle @acme {\n")
@@ -485,18 +501,24 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 				sb.WriteString("\t}\n")
 			}
-			sb.WriteString(fmt.Sprintf("\tredir https://%s{uri} 302\n", domain))
+			sb.WriteString(fmt.Sprintf("\tredir https://%s{uri} 302\n", primary))
 			sb.WriteString("}\n\n")
 		}
 		// When layer4 is active, non-TLS sites must use :80 to avoid
 		// conflicting with layer4's :443 listener (SO_REUSEPORT causes
 		// ~50% of connections to bypass layer4 and return empty responses).
 		// Skip domains that already specify a port (e.g. ":80", "0.0.0.0:8080").
-		siteAddr := domain
-		if hasL4 && !hasCert && !strings.HasPrefix(domain, ":") {
-			siteAddr = domain + ":80"
+		// 多域名地址：Caddyfile 支持 `a.com, b.com { ... }` ✓
+		addrs := make([]string, 0, len(domains))
+		for _, d := range domains {
+			if hasL4 && !hasCert && !strings.HasPrefix(d, ":") {
+				addrs = append(addrs, d+":80")
+			} else {
+				addrs = append(addrs, d)
+			}
 		}
-		sb.WriteString(fmt.Sprintf("# %s\n", domain))
+		siteAddr := strings.Join(addrs, ", ")
+		sb.WriteString(fmt.Sprintf("# %s\n", primary))
 		sb.WriteString(fmt.Sprintf("%s {\n", siteAddr))
 
 		// ✅ 双证书 ✓：把同域名的多张证书（ECC + RSA ✓）写进**同一条** tls 指令 ✓，
@@ -527,7 +549,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		if m.isLocalTarget(ctx, serverID) {
 			checker = localCertPairChecker(m.dataDir)
 		}
-		for _, p := range collectCertPairs(ctx, m.certRepo, domain, pc, pk, dual, checker) {
+		for _, p := range collectCertPairsForDomains(ctx, m.certRepo, domains, pc, pk, dual, checker) {
 			sb.WriteString("\ttls " + m.resolvePath(p.Cert) + " " + m.resolvePath(p.Key) + "\n")
 		}
 
@@ -589,7 +611,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 		for _, site := range siteList {
 			loc := normalizeLocationPath(site.Path)
 			if seenLoc[loc] {
-				log.Printf("[CaddyManager] %s: duplicate location %q (id=%d) skipped", domain, loc, site.ID)
+				log.Printf("[CaddyManager] %s: duplicate location %q (id=%d) skipped", primary, loc, site.ID)
 				continue
 			}
 			seenLoc[loc] = true
@@ -608,6 +630,33 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString(fmt.Sprintf("\troot * %s\n", rootDir))
 				sb.WriteString("\tfile_server\n")
 				// Site-level custom config
+				if site.CustomConfig != "" {
+					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
+						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+					}
+				}
+				continue
+			}
+			// 回显真实客户端 IP（落地页/探测页，等价 nginx 的 echo $clientRealIp）
+			if site.Template == "echo_ip" {
+				sb.WriteString("\trespond \"{remote_host}\" 200\n")
+				if site.CustomConfig != "" {
+					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
+						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+					}
+				}
+				continue
+			}
+			// 整站跳转（目标放 backend_path，其次 upstream；都空则跳 https://同域名）
+			if site.Template == "redirect" {
+				target := strings.TrimSpace(site.BackendPath)
+				if target == "" {
+					target = strings.TrimSpace(site.Upstream)
+				}
+				if target == "" {
+					target = "https://{host}"
+				}
+				sb.WriteString(fmt.Sprintf("\tredir %s{uri} 301\n", target))
 				if site.CustomConfig != "" {
 					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
 						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
@@ -1218,4 +1267,15 @@ func StripPort(domain string) string {
 		return domain[:idx]
 	}
 	return domain
+}
+
+// normalizeCaddySiteDomain 同 nginx：普通站点支持多域名，sni/l4 保持原值。
+func normalizeCaddySiteDomain(site *entity.CaddySite) {
+	switch site.Template {
+	case "sni", "l4":
+		return
+	}
+	if normalized := NormalizeDomainField(site.Domain); normalized != "" {
+		site.Domain = normalized
+	}
 }

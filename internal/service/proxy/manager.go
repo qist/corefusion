@@ -941,6 +941,58 @@ func normalizeGroupDomain(domain string) string {
 	return strings.TrimSuffix(d, ".")
 }
 
+// SplitDomains 把一个站点的域名串拆成规范化列表。
+//
+// 一个站点经常要绑多个域名（实测现网 nginx 里同一 server 块有 4 个 server_name）：
+// 支持用逗号、分号、空格、换行分隔，允许带 http(s):// 前缀或路径（会被去掉），
+// 统一转小写、去尾部点、去重。返回空切片表示"未填域名"（生成 server_name _）。
+func SplitDomains(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		switch r {
+		case ',', ';', ' ', '\t', '\r', '\n':
+			return true
+		}
+		return false
+	})
+	seen := make(map[string]struct{}, len(fields))
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		d := strings.ToLower(strings.TrimSpace(f))
+		d = strings.TrimPrefix(d, "https://")
+		d = strings.TrimPrefix(d, "http://")
+		if i := strings.IndexAny(d, "/?#"); i >= 0 {
+			d = d[:i]
+		}
+		d = strings.TrimSuffix(d, ".")
+		if d == "" {
+			continue
+		}
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
+		out = append(out, d)
+	}
+	return out
+}
+
+// DomainGroupKey 生成"域名组"键：同一组域名无论书写顺序都归到同一个 server 块。
+// 排序后 join，避免 a.com,b.com 与 b.com,a.com 生成两套互相抢请求的 server 块。
+func DomainGroupKey(domains []string) string {
+	if len(domains) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), domains...)
+	sort.Strings(sorted)
+	return strings.Join(sorted, ",")
+}
+
+// NormalizeDomainField 把用户输入的域名串规范化后落库（多域名用 ", " 连接）。
+// 空输入保持为空（默认 server / :80 这类特殊站点）。
+func NormalizeDomainField(raw string) string {
+	return strings.Join(SplitDomains(raw), ", ")
+}
+
 // normalizeLocationPath 规范化 location 路径：
 //   - 空 → "/"
 //   - 保留 nginx location 修饰符（= ~ ~* ^~ @），原样返回

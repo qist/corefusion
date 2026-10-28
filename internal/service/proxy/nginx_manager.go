@@ -84,6 +84,7 @@ func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) e
 	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
 	// 以前只在生成 nginx.conf 时临时注入 → DB 永远为空 ✗。此处统一落地 ✓（与 CaddyManager 对称 ✓）。
 	m.fillForwardDerivedFields(ctx, site)
+	normalizeSiteDomain(site)
 	return m.siteRepo.Create(ctx, site)
 }
 
@@ -94,6 +95,7 @@ func (m *NginxManager) GetSite(ctx context.Context, id int64) (*entity.NginxSite
 func (m *NginxManager) UpdateSite(ctx context.Context, site *entity.NginxSite) error {
 	// 派生字段落地 DB ✓（同 CreateSite）。
 	m.fillForwardDerivedFields(ctx, site)
+	normalizeSiteDomain(site)
 	return m.siteRepo.Update(ctx, site)
 }
 
@@ -405,4 +407,16 @@ func (m *NginxManager) wafRuleDir() string {
 // inside config.lua points to the unified proxy/waf-rules/ directory.
 func (m *NginxManager) wafConfigPath() string {
 	return filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
+}
+
+// normalizeSiteDomain 把多域名输入规范化后落库（逗号分隔）。
+// sni / l4 / reality 的 Domain 不是普通站点域名（SNI 名称 / 端口 / 占位），保持原样。
+func normalizeSiteDomain(site *entity.NginxSite) {
+	switch site.Template {
+	case "sni", "l4", "reality":
+		return
+	}
+	if normalized := NormalizeDomainField(site.Domain); normalized != "" {
+		site.Domain = normalized
+	}
 }

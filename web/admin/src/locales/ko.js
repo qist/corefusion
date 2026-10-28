@@ -2093,6 +2093,7 @@ export default {
     "template": "템플릿",
     "importConfig": "설정에서 가져오기",
     "importConfigHint": "기존 nginx 설정을 붙여넣으세요(여러 server 블록 가능). server_name 다중, proxy_pass/grpc_pass, return(리디렉트/204), root, echo 프로브를 지원하며 lua/rewrite/if 는 건너뛰고 아래에 표시합니다.",
+    "importConfigHintCaddy": "기존 Caddyfile을 붙여넣으세요(여러 site 블록 가능). reverse_proxy(to/transport tls 포함), handle_path/handle/route 경로별 사이트, root+file_server, redir, respond(상태/echo), tls 인증서 경로를 지원합니다. :port L4 블록과 import는 건너뛰고 아래에 표시합니다.",
     "importParse": "미리보기 분석",
     "importApply": "가져오기",
     "importResult": "{created}개 사이트를 가져왔고 {skipped}개를 건너뛰었습니다",

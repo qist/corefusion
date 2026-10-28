@@ -236,6 +236,7 @@
             <el-button v-if="isLocal" size="small" type="primary" plain @click="showForwardProxy('subscription_forward')">{{ t('proxy.templateSubscriptionForward') }}</el-button>
             <el-button v-if="isLocal" size="small" type="primary" plain @click="showForwardProxy('portal_forward')">{{ t('proxy.templatePortalForward') }}</el-button>
             <el-button size="small" type="primary" plain @click="showAddSite('reality')">{{ t('proxy.templateReality') }}</el-button>
+            <el-button size="small" type="warning" plain @click="showImportDialog">{{ t('proxy.importConfig') }}</el-button>
           </div>
         </div>
       </template>
@@ -600,6 +601,30 @@
       <template #footer>
         <el-button @click="sniDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveSNIRule">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Import Dialog -->
+    <el-dialog v-model="importDialogVisible" :title="t('proxy.importConfig')" width="900px" top="5vh">
+      <el-alert type="info" :closable="false" style="margin-bottom:10px" :title="t('proxy.importConfigHintCaddy')" />
+      <el-input v-model="importForm.content" type="textarea" :rows="12" placeholder="example.com { ... }" />
+      <div v-if="importWarnings.length" style="margin-top:10px">
+        <div style="font-weight:600;margin-bottom:4px">{{ t('proxy.importWarnings') }}</div>
+        <ul style="margin:0;padding-left:18px;color:#E6A23C;font-size:12px">
+          <li v-for="(w, i) in importWarnings" :key="i">{{ w }}</li>
+        </ul>
+      </div>
+      <el-table v-if="importPreview.length" :data="importPreview" size="small" style="margin-top:10px" max-height="320">
+        <el-table-column prop="domain" :label="t('proxy.domain')" min-width="200" />
+        <el-table-column prop="path" :label="t('proxy.path')" width="140" />
+        <el-table-column prop="template" :label="t('proxy.template')" width="110" />
+        <el-table-column prop="upstream" label="Upstream" min-width="160" />
+        <el-table-column prop="backend_path" label="Backend" width="150" />
+      </el-table>
+      <template #footer>
+        <el-button @click="importDialogVisible=false">{{ t('common.cancel') }}</el-button>
+        <el-button :loading="importForm.loading" @click="runImport(true)">{{ t('proxy.importParse') }}</el-button>
+        <el-button type="primary" :loading="importForm.loading" :disabled="!importPreview.length" @click="runImport(false)">{{ t('proxy.importApply') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1100,6 +1125,42 @@ const downloadProgress = ref('')
 // Site dialog
 const siteDialogVisible = ref(false)
 const siteDialogTitle = ref('')
+
+// 从现网 Caddyfile 导入站点
+const importDialogVisible = ref(false)
+const importForm = ref({ content: '', loading: false })
+const importPreview = ref([])
+const importWarnings = ref([])
+function showImportDialog() {
+  importForm.value = { content: '', loading: false }
+  importPreview.value = []
+  importWarnings.value = []
+  importDialogVisible.value = true
+}
+async function runImport(dryRun) {
+  if (!importForm.value.content.trim()) return
+  importForm.value.loading = true
+  try {
+    const res = await client.post(`${caddyApi.value}/import`, {
+      content: importForm.value.content,
+      dry_run: dryRun,
+    })
+    if (dryRun) {
+      importPreview.value = res?.sites || []
+      importWarnings.value = res?.warnings || []
+      if (!importPreview.value.length) ElMessage.warning(t('proxy.importEmpty'))
+    } else {
+      ElMessage.success(t('proxy.importResult', { created: res?.created || 0, skipped: (res?.skipped || []).length }))
+      importDialogVisible.value = false
+      fetchSites()
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || 'import failed')
+  } finally {
+    importForm.value.loading = false
+  }
+}
+
 const siteSaving = ref(false)
 const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓

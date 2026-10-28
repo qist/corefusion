@@ -2093,6 +2093,7 @@ export default {
     "template": "テンプレート",
     "importConfig": "設定からインポート",
     "importConfigHint": "既存の nginx 設定を貼り付け（複数 server ブロック可）。server_name 複数、proxy_pass/grpc_pass、return（リダイレクト/204）、root、echo プローブに対応。lua/rewrite/if はスキップし下に表示します。",
+    "importConfigHintCaddy": "既存の Caddyfile を貼り付け（複数 site ブロック可）。reverse_proxy（to/transport tls 含む）、handle_path/handle/route のパス別サイト、root+file_server、redir、respond（ステータス/echo）、tls 証明書パスに対応。:port の L4 ブロックと import はスキップし下に表示します。",
     "importParse": "プレビュー解析",
     "importApply": "インポート実行",
     "importResult": "{created} 件インポート、{skipped} 件スキップ",

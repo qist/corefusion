@@ -2438,6 +2438,7 @@ wafAutoSyncDesc: '按计划自动从规则源同步规则，然后推送到所�
     template: '模板',
     importConfig: '从配置导入',
     importConfigHint: '粘贴现网 nginx 配置（可包含多个 server 块）：支持 server_name 多域名、proxy_pass/grpc_pass、return（跳转/204）、root 与 echo 探测页；lua/rewrite/if 会被跳过并在下方提示。',
+    importConfigHintCaddy: '粘贴现网 Caddyfile（可包含多个站点块）：支持 reverse_proxy（含 to/transport tls）、handle_path/handle/route 按路径拆站点、root+file_server、redir、respond（状态码/回显 IP）与 tls 证书路径；:端口 L4 块和 import 会被跳过并在下方提示。',
     importParse: '解析预览',
     importApply: '确认导入',
     importResult: '已导入 {created} 个站点，跳过 {skipped} 个',

@@ -2093,6 +2093,7 @@ export default {
     "template": "範本",
     "importConfig": "從設定匯入",
     "importConfigHint": "貼上現有 nginx 設定（可含多個 server 區塊）：支援 server_name 多網域、proxy_pass/grpc_pass、return（跳轉/204）、root 與 echo 探測頁；lua/rewrite/if 會略過並於下方提示。",
+    "importConfigHintCaddy": "貼上現有 Caddyfile（可含多個站點區塊）：支援 reverse_proxy（含 to/transport tls）、handle_path/handle/route 按路徑拆站點、root+file_server、redir、respond（狀態碼/回顯 IP）與 tls 憑證路徑；:連接埠 L4 區塊和 import 會略過並於下方提示。",
     "importParse": "解析預覽",
     "importApply": "確認匯入",
     "importResult": "已匯入 {created} 個站點，略過 {skipped} 個",

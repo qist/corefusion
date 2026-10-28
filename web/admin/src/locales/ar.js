@@ -2093,6 +2093,7 @@ export default {
     "template": "قالب",
     "importConfig": "استيراد من الإعدادات",
     "importConfigHint": "الصق إعدادات nginx الحالية (عدة كتل server). يدعم عدة server_name وproxy_pass/grpc_pass وreturn (تحويل/204) وroot وصفحات echo؛ يتم تخطي lua/rewrite/if والإبلاغ عنها أدناه.",
+    "importConfigHintCaddy": "الصق Caddyfile موجود (عدة كتل مواقع). يدعم reverse_proxy (بما فيها to/transport tls) وhandle_path/handle/route لكل مسار وroot+file_server وredir وrespond (حالة/echo) ومسارات tls؛ يتم تخطي كتل :port L4 وimport والإبلاغ عنها أدناه.",
     "importParse": "تحليل المعاينة",
     "importApply": "استيراد",
     "importResult": "تم استيراد {created} موقعاً وتخطي {skipped}",

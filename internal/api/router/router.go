@@ -2631,6 +2631,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/caddy/sites", caddyH.CreateSite)
 				nodeServersGroup.PUT("/:id/caddy/sites/:siteId", caddyH.UpdateSite)
 				nodeServersGroup.DELETE("/:id/caddy/sites/:siteId", caddyH.DeleteSite)
+				nodeServersGroup.POST("/:id/caddy/import", caddyH.ImportSites)
 				nodeServersGroup.POST("/:id/caddy/generate-config", caddyH.GenerateConfig)
 				nodeServersGroup.POST("/:id/caddy/save-and-apply", caddyH.SaveAndApply)
 				nodeServersGroup.GET("/:id/caddy/sni-settings", caddyH.GetSNISettings)

@@ -2093,6 +2093,7 @@ export default {
     "template": "เทมเพลต",
     "importConfig": "นำเข้าจากคอนฟิก",
     "importConfigHint": "วางคอนฟิก nginx ที่มีอยู่ (หลายบล็อก server) รองรับ server_name หลายค่า, proxy_pass/grpc_pass, return (รีไดเรกต์/204), root และหน้า echo; lua/rewrite/if จะถูกข้ามและแจ้งด้านล่าง",
+    "importConfigHintCaddy": "วาง Caddyfile ที่มีอยู่ (หลายบล็อกไซต์) รองรับ reverse_proxy (รวม to/transport tls), handle_path/handle/route ตามเส้นทาง, root+file_server, redir, respond (รหัสสถานะ/echo) และพาธ tls; บล็อก :port L4 และ import จะถูกข้ามและแจ้งด้านล่าง",
     "importParse": "วิเคราะห์ตัวอย่าง",
     "importApply": "นำเข้า",
     "importResult": "นำเข้าแล้ว {created} ไซต์ ข้าม {skipped}",

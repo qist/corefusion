@@ -2093,6 +2093,7 @@ export default {
     "template": "Plantilla",
     "importConfig": "Importar desde configuración",
     "importConfigHint": "Pegue la configuración nginx existente (varios bloques server). Admite varios server_name, proxy_pass/grpc_pass, return (redirección/204), root y páginas echo; lua/rewrite/if se omiten y se informan abajo.",
+    "importConfigHintCaddy": "Pegue un Caddyfile existente (varios bloques de sitio). Admite reverse_proxy (incl. to/transport tls), handle_path/handle/route por ruta, root+file_server, redir, respond (estado/echo) y rutas tls; los bloques :puerto L4 e import se omiten y se informan abajo.",
     "importParse": "Analizar vista previa",
     "importApply": "Importar",
     "importResult": "{created} sitios importados, {skipped} omitidos",

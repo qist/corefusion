@@ -2093,6 +2093,7 @@ export default {
     "template": "Mẫu",
     "importConfig": "Nhập từ cấu hình",
     "importConfigHint": "Dán cấu hình nginx hiện có (nhiều khối server). Hỗ trợ nhiều server_name, proxy_pass/grpc_pass, return (chuyển hướng/204), root và trang echo; lua/rewrite/if sẽ bị bỏ qua và báo bên dưới.",
+    "importConfigHintCaddy": "Dán Caddyfile hiện có (nhiều khối site). Hỗ trợ reverse_proxy (gồm to/transport tls), handle_path/handle/route theo đường dẫn, root+file_server, redir, respond (mã trạng thái/echo) và đường dẫn tls; các khối :port L4 và import bị bỏ qua và báo bên dưới.",
     "importParse": "Phân tích xem trước",
     "importApply": "Nhập",
     "importResult": "Đã nhập {created} site, bỏ qua {skipped}",

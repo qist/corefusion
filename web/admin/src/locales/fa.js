@@ -2093,6 +2093,7 @@ export default {
     "template": "قالب",
     "importConfig": "درون‌ریزی از پیکربندی",
     "importConfigHint": "پیکربندی موجود nginx را بچسبانید (چند بلوک server). پشتیبانی از چند server_name، proxy_pass/grpc_pass، return (ریدایرکت/204)، root و صفحه echo؛ lua/rewrite/if نادیده گرفته و زیر گزارش می‌شود.",
+    "importConfigHintCaddy": "Caddyfile موجود را بچسبانید (چند بلوک سایت). پشتیبانی از reverse_proxy (شامل to/transport tls)، handle_path/handle/route برای مسیرها، root+file_server، redir، respond (کد وضعیت/echo) و مسیرهای tls؛ بلوک‌های :port L4 و import نادیده گرفته و زیر گزارش می‌شوند.",
     "importParse": "تحلیل پیش‌نمایش",
     "importApply": "درون‌ریزی",
     "importResult": "{created} سایت درون‌ریزی و {skipped} رد شد",

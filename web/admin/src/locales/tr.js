@@ -2093,6 +2093,7 @@ export default {
     "template": "Şablon",
     "importConfig": "Yapılandırmadan içe aktar",
     "importConfigHint": "Mevcut nginx yapılandırmasını yapıştırın (birden çok server bloğu). Çoklu server_name, proxy_pass/grpc_pass, return (yönlendirme/204), root ve echo sayfaları desteklenir; lua/rewrite/if atlanır ve aşağıda bildirilir.",
+    "importConfigHintCaddy": "Mevcut Caddyfile yapıştırın (birden çok site bloğu). reverse_proxy (to/transport tls dahil), handle_path/handle/route, root+file_server, redir, respond (durum/echo) ve tls yolları desteklenir; :port L4 blokları ve import atlanır ve aşağıda bildirilir.",
     "importParse": "Önizlemeyi çözümle",
     "importApply": "İçe aktar",
     "importResult": "{created} site içe aktarıldı, {skipped} atlandı",

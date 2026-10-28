@@ -2093,6 +2093,7 @@ export default {
     "template": "Modèle",
     "importConfig": "Importer depuis la config",
     "importConfigHint": "Collez la configuration nginx existante (plusieurs blocs server). Prend en charge plusieurs server_name, proxy_pass/grpc_pass, return (redirection/204), root et pages echo ; lua/rewrite/if sont ignorés et signalés ci-dessous.",
+    "importConfigHintCaddy": "Collez un Caddyfile existant (plusieurs blocs de site). Prend en charge reverse_proxy (incl. to/transport tls), handle_path/handle/route par chemin, root+file_server, redir, respond (statut/echo) et chemins tls ; les blocs :port L4 et import sont ignorés et signalés ci-dessous.",
     "importParse": "Analyser",
     "importApply": "Importer",
     "importResult": "{created} sites importés, {skipped} ignorés",

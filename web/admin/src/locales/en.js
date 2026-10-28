@@ -2522,6 +2522,7 @@ wafAutoSyncDesc: 'Automatically sync from source on schedule, then push to all n
     template: 'Template',
     importConfig: 'Import from config',
     importConfigHint: 'Paste existing nginx config (multiple server blocks). Supports multi-value server_name, proxy_pass/grpc_pass, return (redirect/204), root and echo probe pages; lua/rewrite/if blocks are skipped and reported below.',
+    importConfigHintCaddy: 'Paste an existing Caddyfile (multiple site blocks). Supports reverse_proxy (incl. to/transport tls), handle_path/handle/route per-path sites, root+file_server, redir, respond (status/echo) and tls cert paths; :port L4 blocks and import are skipped and reported below.',
     importParse: 'Parse preview',
     importApply: 'Import',
     importResult: 'Imported {created} sites, skipped {skipped}',

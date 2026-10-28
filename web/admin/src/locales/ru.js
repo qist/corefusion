@@ -2093,6 +2093,7 @@ export default {
     "template": "Шаблон",
     "importConfig": "Импорт из конфигурации",
     "importConfigHint": "Вставьте существующий конфиг nginx (несколько блоков server). Поддерживаются несколько server_name, proxy_pass/grpc_pass, return (редирект/204), root и echo-страницы; lua/rewrite/if пропускаются с отчётом ниже.",
+    "importConfigHintCaddy": "Вставьте существующий Caddyfile (несколько блоков сайтов). Поддерживаются reverse_proxy (вкл. to/transport tls), handle_path/handle/route по путям, root+file_server, redir, respond (статус/echo) и пути tls; блоки :порт L4 и import пропускаются с отчётом ниже.",
     "importParse": "Разобрать предпросмотр",
     "importApply": "Импортировать",
     "importResult": "Импортировано {created}, пропущено {skipped}",

@@ -55,6 +55,52 @@ func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	return sid, isLocal
 }
 
+// ImportSites handles POST /api/v1/node-servers/:id/caddy/import.
+//
+// 把现网 Caddyfile 文本解析成站点；dry_run=true 只返回预览（不落库）。
+// 用途：从旧服务器迁移到面板托管生成 Caddyfile 时，避免手抄每个 site 块。
+func (h *CaddyHandler) ImportSites(c *gin.Context) {
+	serverID, _ := h.applyServerID(c)
+	var req struct {
+		Content string `json:"content" binding:"required"`
+		DryRun  bool   `json:"dry_run"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	res := proxy.ParseCaddyfileSites(req.Content)
+	if req.DryRun {
+		response.OK(c, gin.H{
+			"dry_run":  true,
+			"sites":    res.Sites,
+			"warnings": res.Warnings,
+		})
+		return
+	}
+
+	created := 0
+	skipped := make([]string, 0)
+	for i := range res.Sites {
+		site := res.Sites[i]
+		site.ServerID = serverID
+		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, site.Domain, site.Path, site.Template, 0); dup {
+			skipped = append(skipped, fmt.Sprintf("%s %s 已存在（站点 id=%d）", site.Domain, site.Path, id))
+			continue
+		}
+		if err := h.caddyMgr.CreateSite(c.Request.Context(), &site); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s %s 创建失败：%v", site.Domain, site.Path, err))
+			continue
+		}
+		created++
+	}
+	response.OK(c, gin.H{
+		"created":  created,
+		"skipped":  skipped,
+		"warnings": res.Warnings,
+	})
+}
+
 // caddyLocationConflict 检查是否已存在「同域名 + 同 location」的启用站点，返回其 id。
 func caddyLocationConflict(ctx context.Context, mgr *proxy.CaddyManager, domain, path, template string, excludeID int64) (int64, bool) {
 	if !httpTemplateHasLocation(template) {

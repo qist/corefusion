@@ -2093,6 +2093,7 @@ export default {
     "template": "Templat",
     "importConfig": "Impor dari konfigurasi",
     "importConfigHint": "Tempel konfigurasi nginx yang ada (beberapa blok server). Mendukung banyak server_name, proxy_pass/grpc_pass, return (redirect/204), root dan halaman echo; lua/rewrite/if dilewati dan dilaporkan di bawah.",
+    "importConfigHintCaddy": "Tempel Caddyfile yang ada (beberapa blok situs). Mendukung reverse_proxy (termasuk to/transport tls), handle_path/handle/route per jalur, root+file_server, redir, respond (status/echo), dan jalur tls; blok :port L4 dan import dilewati dan dilaporkan di bawah.",
     "importParse": "Pratinjau",
     "importApply": "Impor",
     "importResult": "{created} situs diimpor, {skipped} dilewati",

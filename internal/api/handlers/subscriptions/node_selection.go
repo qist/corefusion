@@ -22,35 +22,55 @@ func selectMembersForSubscription(
 	sub *entity.Subscription,
 	tmpl *entity.PlanTemplate,
 	members []entity.NodeGroupMember,
+	excluded map[int64]bool,
 	now time.Time,
 ) ([]entity.NodeGroupMember, []int64) {
-	if sub == nil || tmpl == nil || tmpl.SubNodeLimit <= 0 || len(members) <= tmpl.SubNodeLimit {
-		return members, nil
+	// ① 先剔除容量超限/冷却中的成员（P2）——它们不参与选择，也不计入快照。
+	candidates := members
+	if len(excluded) > 0 {
+		candidates = make([]entity.NodeGroupMember, 0, len(members))
+		for _, m := range members {
+			if excluded[m.ID] {
+				continue
+			}
+			candidates = append(candidates, m)
+		}
+	}
+	if sub == nil || tmpl == nil || tmpl.SubNodeLimit <= 0 || len(candidates) <= tmpl.SubNodeLimit {
+		return candidates, nil
 	}
 
 	limit := tmpl.SubNodeLimit
-	byID := make(map[int64]entity.NodeGroupMember, len(members))
-	ids := make([]int64, 0, len(members))
-	for _, m := range members {
+	byID := make(map[int64]entity.NodeGroupMember, len(candidates))
+	ids := make([]int64, 0, len(candidates))
+	for _, m := range candidates {
 		byID[m.ID] = m
 		ids = append(ids, m.ID)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
-	// ① 缓存命中：数量对、全部仍在候选里、且未到轮换时间
-	if len(sub.NodeSelectionIDs) == limit && !rotationDue(sub, tmpl, now) {
-		cached := make([]entity.NodeGroupMember, 0, limit)
-		valid := true
+	// ① 未到轮换期：保留快照里仍然有效的成员，只补齐缺失的槽位。
+	//    （节点被禁用/超限时，只替换它那一个位置，其余 N-1 个保持不变。）
+	keep := make([]entity.NodeGroupMember, 0, limit)
+	keepIDs := make(map[int64]bool, limit)
+	if !rotationDue(sub, tmpl, now) {
 		for _, id := range sub.NodeSelectionIDs {
-			m, ok := byID[id]
-			if !ok {
-				valid = false
+			if len(keep) >= limit {
 				break
 			}
-			cached = append(cached, m)
+			m, ok := byID[id]
+			if !ok {
+				continue
+			}
+			keep = append(keep, m)
+			keepIDs[id] = true
 		}
-		if valid {
-			return cached, append([]int64(nil), sub.NodeSelectionIDs...)
+		if len(keep) == limit {
+			outIDs := make([]int64, 0, limit)
+			for _, m := range keep {
+				outIDs = append(outIDs, m.ID)
+			}
+			return keep, outIDs
 		}
 	}
 
@@ -74,11 +94,20 @@ func selectMembersForSubscription(
 		return scoredIDs[i].id < scoredIDs[j].id
 	})
 
-	chosen := make([]entity.NodeGroupMember, 0, limit)
+	chosen := append([]entity.NodeGroupMember(nil), keep...)
 	chosenIDs := make([]int64, 0, limit)
-	for _, s := range scoredIDs[:limit] {
-		chosen = append(chosen, byID[s.id])
-		chosenIDs = append(chosenIDs, s.id)
+	for _, m := range keep {
+		chosenIDs = append(chosenIDs, m.ID)
+	}
+	for _, sc := range scoredIDs {
+		if len(chosen) >= limit {
+			break
+		}
+		if keepIDs[sc.id] {
+			continue
+		}
+		chosen = append(chosen, byID[sc.id])
+		chosenIDs = append(chosenIDs, sc.id)
 	}
 	return chosen, chosenIDs
 }
@@ -115,4 +144,58 @@ func sameInt64List(a, b []int64) bool {
 		}
 	}
 	return true
+}
+
+// 订阅容量（P2）：节点超限后冷却多久再允许参与选择。
+const nodeCapacityCooldown = 30 * time.Minute
+
+// nodeCapacityInput 是容量判定所需的输入（便于单测，不依赖仓储）。
+type nodeCapacityInput struct {
+	// memberServer：memberID → 节点服务器 ID（0 = 外部节点/未知，不参与容量判定）
+	memberServer map[int64]int64
+	servers      map[int64]entity.NodeServer
+	metrics      map[int64]entity.ServerMetric
+}
+
+// capacityExcludedMembers 计算本轮因容量/冷却被排除的成员。
+// 返回 excluded（memberID 集合）与 cooldownUpdates（服务器 ID → 新冷却截止时间，
+// 调用方负责落库）。首次超限的节点进入冷却，避免阈值边缘反复抖动。
+func capacityExcludedMembers(in nodeCapacityInput, now time.Time) (map[int64]bool, map[int64]time.Time) {
+	excluded := make(map[int64]bool)
+	cooldownUpdates := make(map[int64]time.Time)
+
+	for memberID, serverID := range in.memberServer {
+		if serverID <= 0 {
+			continue
+		}
+		srv, ok := in.servers[serverID]
+		if !ok || !srv.Enabled {
+			excluded[memberID] = true
+			continue
+		}
+		if srv.SubCooldownUntil != nil && now.Before(*srv.SubCooldownUntil) {
+			excluded[memberID] = true
+			continue
+		}
+		over := false
+		if srv.SubMaxConnections > 0 {
+			if m, ok := in.metrics[serverID]; ok && m.TCPConnections > srv.SubMaxConnections {
+				over = true
+			}
+		}
+		if !over && srv.SubMaxBandwidthMbps > 0 {
+			if m, ok := in.metrics[serverID]; ok {
+				// traffic_* 是 bytes/sec → Mbps
+				mbps := float64(m.TrafficUplink+m.TrafficDownlink) * 8 / 1_000_000
+				if mbps > float64(srv.SubMaxBandwidthMbps) {
+					over = true
+				}
+			}
+		}
+		if over {
+			excluded[memberID] = true
+			cooldownUpdates[serverID] = now.Add(nodeCapacityCooldown)
+		}
+	}
+	return excluded, cooldownUpdates
 }

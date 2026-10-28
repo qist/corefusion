@@ -128,6 +128,13 @@ func (r *NodeServerRepository) Update(ctx context.Context, server *entity.NodeSe
 }
 
 // UpdateAgentStatus updates only the agent status and heartbeat.
+// UpdateSubCooldown 只更新订阅容量冷却截止时间（避免整行 Save 覆盖并发字段）。
+func (r *NodeServerRepository) UpdateSubCooldown(ctx context.Context, id int64, until time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.NodeServer{}).
+		Where("id = ?", id).
+		Update("sub_cooldown_until", until).Error
+}
+
 func (r *NodeServerRepository) UpdateAgentStatus(ctx context.Context, id int64, status string, version string) error {
 	updates := map[string]interface{}{
 		"agent_status":      status,

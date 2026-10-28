@@ -81,6 +81,13 @@ type NodeServer struct {
 	// 计费标记：chain_exit/mirror 默认 0
 	BillingEnabled bool `json:"billing_enabled" gorm:"not null;default:true"`
 
+	// 订阅容量阈值（P2）：0 = 不限。
+	// 超限节点不再参与订阅节点选择，并在 SubCooldownUntil 之前保持冷却，
+	// 只替换受影响的那一个槽位（详见设计文档 SUBSCRIPTION_NODE_SELECTION.md）。
+	SubMaxConnections   int        `json:"sub_max_connections" gorm:"not null;default:0"`
+	SubMaxBandwidthMbps int        `json:"sub_max_bandwidth_mbps" gorm:"not null;default:0"`
+	SubCooldownUntil    *time.Time `json:"sub_cooldown_until"`
+
 	// 元数据
 	Metadata  string    `json:"metadata" gorm:"type:longtext"`
 	SortOrder int       `json:"sort_order" gorm:"not null;default:0"`

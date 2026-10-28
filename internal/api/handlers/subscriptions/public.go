@@ -325,6 +325,9 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	if formatStr == "" {
 		formatStr = sub.Format
 	}
+	// 归一常见写法（clash/mihomo → mihomo_yaml、xray → xray_json、singbox → singbox_json），
+	// 避免未知格式静默回落到 base64（历史上库里就存过 "xray"）。
+	formatStr = normalizeSubscriptionFormat(formatStr)
 	if formatStr == "" {
 		formatStr = "base64_uri"
 	}

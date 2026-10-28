@@ -87,3 +87,18 @@ func TestNginxConfigDirectUpstream(t *testing.T) {
 		t.Fatalf("带 scheme 的上游应直接 proxy_pass：\n%s", cfg)
 	}
 }
+
+// TestNginxConfigReturnCodeTemplate 探测页模板：直接返回状态码（默认 204，非法回退 204）。
+func TestNginxConfigReturnCodeTemplate(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "probe.example.com", ListenPort: "80", Enabled: true, Path: "/", Template: "return_code", BackendPath: "204"},
+		{ServerID: 2, Domain: "bad.example.com", ListenPort: "80", Enabled: true, Path: "/", Template: "return_code", BackendPath: "9999"},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "return 204;") {
+		t.Fatalf("return_code 未生成 return 204：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "return 9999;") {
+		t.Fatalf("非法状态码应回退 204：\n%s", cfg)
+	}
+}

@@ -911,6 +911,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				// $clientRealIp 由生成器顶部的 map 定义（无 XFF 时回退 PROXY protocol / remote_addr）。
 				sb.WriteString("            default_type text/plain;\n")
 				sb.WriteString("            return 200 \"$clientRealIp\\n\";\n")
+			case "return_code":
+				// 直接返回状态码（探测页常用 204）。状态码放 backend_path（其次 upstream）。
+				code := strings.TrimSpace(site.BackendPath)
+				if code == "" {
+					code = strings.TrimSpace(site.Upstream)
+				}
+				if !isHTTPStatusCode(code) {
+					code = "204"
+				}
+				sb.WriteString(fmt.Sprintf("            return %s;\n", code))
 			case "redirect":
 				// 跳转：目标 URL 放 backend_path（其次 upstream）；都没填就跳 https://同域名。
 				target := strings.TrimSpace(site.BackendPath)

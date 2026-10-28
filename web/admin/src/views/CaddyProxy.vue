@@ -614,7 +614,7 @@
       <el-form v-if="siteForm.editMode==='form'" :model="siteForm" label-width="120px">
         <el-form-item label="Domain">
           <el-input v-model="siteForm.domain" type="textarea" :rows="2" placeholder="example.com&#10;www.example.com" />
-          <div style="color:#909399;font-size:12px;margin-top:4px">可填多个域名（逗号或换行分隔），生成 `a.com, b.com { ... }`；第一个域名作为主域名（证书/跳转目标）。</div>
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.domainMultiHint') }}</div>
         </el-form-item>
         <el-form-item v-if="showInboundSelect" :label="t('proxy.inboundMode')">
           <el-radio-group v-model="siteForm.inbound_mode">
@@ -660,6 +660,14 @@
         <el-form-item v-else label="Path">
           <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
+        <el-form-item v-if="siteForm.template==='redirect'" :label="t('proxy.redirectTarget')">
+          <el-input v-model="siteForm.backend_path" placeholder="https://example.com" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.redirectTargetHint') }}</div>
+        </el-form-item>
+        <el-form-item v-if="siteForm.template==='return_code'" :label="t('proxy.returnCode')">
+          <el-input v-model="siteForm.backend_path" placeholder="204" style="width:120px" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.returnCodeHint') }}</div>
+        </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
           <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />
         </el-form-item>
@@ -672,8 +680,9 @@
 <el-form-item v-if="siteForm.template!=='sni' && siteForm.template!=='l4' && siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
-            <el-option label="回显客户端 IP" value="echo_ip" />
-            <el-option label="跳转 (301)" value="redirect" />
+            <el-option :label="t('proxy.templateEchoIp')" value="echo_ip" />
+            <el-option :label="t('proxy.templateRedirect')" value="redirect" />
+            <el-option :label="t('proxy.templateReturnCode')" value="return_code" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
             <el-option label="XHTTP" value="xhttp" />
@@ -683,8 +692,9 @@
         <el-form-item v-if="siteForm.template==='static' || siteForm.template==='portal_forward' || siteForm.template==='subscription_forward' || siteForm.template==='panel_forward' || siteForm.template==='reality'" :label="t('proxy.template')">
             <el-select v-model="siteForm.template" style="width:100%" @change="onTemplateChange">
             <el-option label="HTTP" value="http" />
-            <el-option label="回显客户端 IP" value="echo_ip" />
-            <el-option label="跳转 (301)" value="redirect" />
+            <el-option :label="t('proxy.templateEchoIp')" value="echo_ip" />
+            <el-option :label="t('proxy.templateRedirect')" value="redirect" />
+            <el-option :label="t('proxy.templateReturnCode')" value="return_code" />
             <el-option label="WebSocket" value="websocket" />
             <el-option label="gRPC" value="grpc" />
             <el-option label="XHTTP" value="xhttp" />

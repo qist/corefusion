@@ -647,6 +647,23 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				continue
 			}
+			// 直接返回状态码（探测页常用 204）
+			if site.Template == "return_code" {
+				code := strings.TrimSpace(site.BackendPath)
+				if code == "" {
+					code = strings.TrimSpace(site.Upstream)
+				}
+				if !isHTTPStatusCode(code) {
+					code = "204"
+				}
+				sb.WriteString(fmt.Sprintf("\trespond \"\" %s\n", code))
+				if site.CustomConfig != "" {
+					for _, line := range strings.Split(strings.TrimSpace(site.CustomConfig), "\n") {
+						sb.WriteString("\t" + strings.TrimSpace(line) + "\n")
+					}
+				}
+				continue
+			}
 			// 整站跳转（目标放 backend_path，其次 upstream；都空则跳 https://同域名）
 			if site.Template == "redirect" {
 				target := strings.TrimSpace(site.BackendPath)

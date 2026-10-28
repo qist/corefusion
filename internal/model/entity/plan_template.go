@@ -15,11 +15,16 @@ const (
 // It defines core attributes, node group permissions, feature limits, and trial config.
 // Multiple PlanVariants (pricing tiers) belong to one template.
 type PlanTemplate struct {
-	ID                       int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	Name                     string    `gorm:"size:100;not null" json:"name"`
-	Description              string    `gorm:"size:500" json:"description"`
-	Category                 string    `gorm:"size:32;not null;default:general" json:"category"`
-	NodeGroupIDs             Int64List `gorm:"type:longtext;not null" json:"node_group_ids"`
+	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Name         string    `gorm:"size:100;not null" json:"name"`
+	Description  string    `gorm:"size:500" json:"description"`
+	Category     string    `gorm:"size:32;not null;default:general" json:"category"`
+	NodeGroupIDs Int64List `gorm:"type:longtext;not null" json:"node_group_ids"`
+	// SubNodeLimit：每个订阅实际返回的节点数（0=不限=保持旧行为）。
+	// 套餐可挂 N 个节点，但每人只返回其中 SubNodeLimit 个（按订阅稳定选择）。
+	SubNodeLimit int `gorm:"not null;default:0" json:"sub_node_limit"`
+	// SubRotateHours：订阅节点轮换周期（小时，0=不主动轮换）。
+	SubRotateHours           int       `gorm:"not null;default:0" json:"sub_rotate_hours"`
 	DeviceLimit              int       `gorm:"not null;default:0" json:"device_limit"`
 	SpeedLimitMbps           int       `gorm:"not null;default:0" json:"speed_limit_mbps"`    // 下载限速 Mbps（0=不限）
 	SpeedLimitUpMbps         int       `gorm:"not null;default:0" json:"speed_limit_up_mbps"` // 上传限速 Mbps（0=不限）

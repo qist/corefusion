@@ -2646,6 +2646,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/nginx/sites", nginxH.CreateSite)
 				nodeServersGroup.PUT("/:id/nginx/sites/:siteId", nginxH.UpdateSite)
 				nodeServersGroup.DELETE("/:id/nginx/sites/:siteId", nginxH.DeleteSite)
+				nodeServersGroup.POST("/:id/nginx/import", nginxH.ImportSites)
 				nodeServersGroup.POST("/:id/nginx/generate-config", nginxH.GenerateConfig)
 				nodeServersGroup.POST("/:id/nginx/save-and-apply", nginxH.SaveAndApply)
 				nodeServersGroup.GET("/:id/nginx/settings", nginxH.GetSettings)

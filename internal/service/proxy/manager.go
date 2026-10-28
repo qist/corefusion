@@ -2888,3 +2888,13 @@ func (m *Manager) SetL4Enabled(ctx context.Context, enabled bool) error {
 	}
 	return m.settingStore.Set(ctx, "proxy.l4_enabled", v)
 }
+
+// isHTTPStatusCode 判断字符串是否为合法 HTTP 状态码（100-599）。
+// 用于 return_code 模板：非法输入一律回退 204，避免生成非法 nginx/caddy 配置。
+func isHTTPStatusCode(code string) bool {
+	n, err := strconv.Atoi(strings.TrimSpace(code))
+	if err != nil {
+		return false
+	}
+	return n >= 100 && n <= 599
+}

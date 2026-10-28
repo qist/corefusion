@@ -151,6 +151,8 @@ type CreateTemplateInput struct {
 	Description              string  `json:"description"`
 	Category                 string  `json:"category"`
 	NodeGroupIDs             []int64 `json:"node_group_ids"`
+	SubNodeLimit             int     `json:"sub_node_limit"`   // 每订阅返回节点数，0=不限
+	SubRotateHours           int     `json:"sub_rotate_hours"` // 轮换周期（小时），0=不轮换
 	DeviceLimit              int     `json:"device_limit"`
 	SpeedLimitMbps           int     `json:"speed_limit_mbps"`
 	SpeedLimitUpMbps         int     `json:"speed_limit_up_mbps"`
@@ -197,6 +199,8 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		Description:              input.Description,
 		Category:                 category,
 		NodeGroupIDs:             entity.Int64List(input.NodeGroupIDs),
+		SubNodeLimit:             input.SubNodeLimit,
+		SubRotateHours:           input.SubRotateHours,
 		DeviceLimit:              input.DeviceLimit,
 		SpeedLimitMbps:           input.SpeedLimitMbps,
 		SpeedLimitUpMbps:         input.SpeedLimitUpMbps,
@@ -230,6 +234,8 @@ type UpdateTemplateInput struct {
 	Description              *string  `json:"description"`
 	Category                 *string  `json:"category"`
 	NodeGroupIDs             *[]int64 `json:"node_group_ids"`
+	SubNodeLimit             *int     `json:"sub_node_limit"`
+	SubRotateHours           *int     `json:"sub_rotate_hours"`
 	DeviceLimit              *int     `json:"device_limit"`
 	SpeedLimitMbps           *int     `json:"speed_limit_mbps"`
 	SpeedLimitUpMbps         *int     `json:"speed_limit_up_mbps"`
@@ -267,6 +273,12 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.NodeGroupIDs != nil {
 		tmpl.NodeGroupIDs = entity.Int64List(*input.NodeGroupIDs)
+	}
+	if input.SubNodeLimit != nil {
+		tmpl.SubNodeLimit = *input.SubNodeLimit
+	}
+	if input.SubRotateHours != nil {
+		tmpl.SubRotateHours = *input.SubRotateHours
 	}
 	if input.DeviceLimit != nil {
 		tmpl.DeviceLimit = *input.DeviceLimit

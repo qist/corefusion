@@ -35,8 +35,12 @@ type Subscription struct {
 	LastIP                  string     `json:"ip" gorm:"size:64"`
 	LastUserAgent           string     `json:"user_agent" gorm:"size:512"`
 	BillingNodeIDs          Int64List  `json:"billing_node_ids" gorm:"type:longtext"`
-	CreatedAt               time.Time  `json:"created_at" gorm:"not null"`
-	UpdatedAt               time.Time  `json:"updated_at" gorm:"not null"`
+	// NodeSelectionIDs：套餐开启"限量返回 N 个节点"时，本订阅当前选中的
+	// NodeGroupMember ID 快照（顺序即订阅返回顺序）。空 = 未启用限量。
+	NodeSelectionIDs Int64List  `json:"node_selection_ids" gorm:"type:longtext"`
+	NodeSelectionAt  *time.Time `json:"node_selection_at"`
+	CreatedAt        time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt        time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (Subscription) TableName() string { return "subscriptions" }

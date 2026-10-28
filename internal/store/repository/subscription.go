@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -60,6 +61,24 @@ func (r *SubscriptionRepository) GetByToken(ctx context.Context, token string) (
 	return &sub, nil
 }
 
+// GetActiveByClientID 返回该客户当前生效中的订阅（门户可见节点列表需要与
+// 订阅接口使用**同一个** sub 做节点限量选择，否则门户和订阅会给出不同节点）。
+// 没有生效订阅时返回 (nil, nil)。
+func (r *SubscriptionRepository) GetActiveByClientID(ctx context.Context, clientID int64) (*entity.Subscription, error) {
+	var sub entity.Subscription
+	err := r.db.WithContext(ctx).
+		Where("client_id = ? AND status = ?", clientID, "active").
+		Order("id ASC").
+		First(&sub).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &sub, nil
+}
+
 // List retrieves all subscriptions with pagination.
 func (r *SubscriptionRepository) List(ctx context.Context, status string, limit, offset int) ([]entity.Subscription, int64, error) {
 	var subs []entity.Subscription
@@ -78,6 +97,22 @@ func (r *SubscriptionRepository) List(ctx context.Context, status string, limit,
 // Update updates a subscription.
 func (r *SubscriptionRepository) Update(ctx context.Context, sub *entity.Subscription) error {
 	return r.db.WithContext(ctx).Save(sub).Error
+}
+
+// UpdateNodeSelection 只更新"节点选择快照"两列。
+// 不走整行 Save：订阅接口并发高，整行保存会用旧值覆盖访问统计等其他字段。
+func (r *SubscriptionRepository) UpdateNodeSelection(ctx context.Context, id int64, ids entity.Int64List, at time.Time) error {
+	raw, err := ids.Value()
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&entity.Subscription{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"node_selection_ids": raw,
+			"node_selection_at":  at,
+			"updated_at":         at,
+		}).Error
 }
 
 // Delete deletes a subscription by ID.

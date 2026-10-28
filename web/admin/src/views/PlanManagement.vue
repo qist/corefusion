@@ -279,6 +279,14 @@
         <el-form-item :label="t('plan.concurrentLimit')">
           <el-input-number v-model="templateForm.concurrent_limit" :min="0" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
         </el-form-item>
+        <el-form-item :label="t('plan.subNodeLimit')">
+          <el-input-number v-model="templateForm.sub_node_limit" :min="0" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('plan.subNodeLimitHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('plan.subRotateHours')">
+          <el-input-number v-model="templateForm.sub_rotate_hours" :min="0" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('plan.subRotateHoursHint') }}</div>
+        </el-form-item>
         <el-divider content-position="left">{{ t('plan.quotaDefaults') }}</el-divider>
         <el-form-item :label="t('plan.defaultTraffic')">
           <el-input-number v-model="templateForm.default_quota_gb" :min="0" :step="0.1" /> <span style="color:#909399;font-size:12px">{{ t('plan.zeroUnlimited') }}</span>
@@ -628,6 +636,7 @@ function emptyTemplateForm() {
   return {
     name: '', description: '', category: 'standard',
     device_limit: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0,
+    sub_node_limit: 0, sub_rotate_hours: 0,
     default_quota_gb: 0, default_quota_reset_cycle: 'none',
     suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0,
     sort_order: 0, enabled: true,

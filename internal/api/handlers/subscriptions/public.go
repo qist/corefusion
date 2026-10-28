@@ -330,6 +330,21 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	if len(billingTemplates.BillingNodeIDs) == 0 && tmpl != nil {
 		billingTemplates.BillingNodeIDs = []int64(tmpl.BillingNodeIDs)
 	}
+	// 套餐「订阅限量 N 个节点」：按订阅稳定挑选（同一订阅反复拉取结果一致，
+	// 轮换周期见 plan_templates.sub_rotate_hours）。详见设计文档
+	// /opt/corefusion-private/design/SUBSCRIPTION_NODE_SELECTION.md
+	{
+		nowSel := time.Now()
+		picked, selIDs := selectMembersForSubscription(sub, tmpl, members, nowSel)
+		members = picked
+		if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
+			sub.NodeSelectionIDs = entity.Int64List(selIDs)
+			sub.NodeSelectionAt = &nowSel
+			if err := h.subRepo.UpdateNodeSelection(ctx, sub.ID, entity.Int64List(selIDs), nowSel); err != nil {
+				log.Printf("[subscription] persist node selection failed: sub=%d err=%v", sub.ID, err)
+			}
+		}
+	}
 	renderedNodes := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)
 	// 各订阅格式支持的协议不同：不支持的协议不要写进订阅（客户端会解析失败/忽略）
 	renderedNodes = filterRenderedNodesForFormat(renderedNodes, formatStr)
@@ -3723,6 +3738,7 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	clientEmail := client.Email
 
 	var members []entity.NodeGroupMember
+	// 下面在取到 tmpl 后再做「订阅限量 N 个节点」的选择（与订阅接口保持同一批节点）。
 	if client.PlanID > 0 && h.planSvc != nil {
 		if rawMembers, err := h.planSvc.GetTemplateNodeMembers(ctx, client.PlanID); err == nil {
 			for _, m := range rawMembers {
@@ -3738,6 +3754,23 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	if client.PlanID > 0 && h.planSvc != nil {
 		tmpl, _ = h.planSvc.GetTemplateByID(ctx, client.PlanID)
 	}
+	// 与订阅接口保持一致：套餐限量 N 个节点时，门户也只展示同一批节点。
+	// 用该客户的生效订阅做选择（同一 subID → 与订阅接口结果完全一致）。
+	if h.subRepo != nil {
+		if sub, err := h.subRepo.GetActiveByClientID(ctx, clientID); err == nil && sub != nil {
+			nowSel := time.Now()
+			picked, selIDs := selectMembersForSubscription(sub, tmpl, members, nowSel)
+			members = picked
+			if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
+				sub.NodeSelectionIDs = entity.Int64List(selIDs)
+				sub.NodeSelectionAt = &nowSel
+				if err := h.subRepo.UpdateNodeSelection(ctx, sub.ID, entity.Int64List(selIDs), nowSel); err != nil {
+					log.Printf("[subscription] persist node selection (portal) failed: sub=%d err=%v", sub.ID, err)
+				}
+			}
+		}
+	}
+
 	billingTemplates := h.loadBillingTemplateConfig(ctx, tmpl)
 
 	rendered := h.collectRenderedNodes(ctx, shareDomains, members, clientEmail, billingTemplates)

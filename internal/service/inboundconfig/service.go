@@ -808,8 +808,13 @@ func ensureDefaultAccessDomain(configJSON string) string {
 	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil || cfg == nil {
 		return configJSON
 	}
-	// 只处理 xray 形态（根部有 protocol）；sing-box 整份配置结构不同，不在这里改。
-	if _, ok := cfg["protocol"].(string); !ok {
+	// 处理两种入站形态：
+	//   xray    —— 根部有 protocol + settings
+	//   sing-box —— 根部是单个 inbound 对象：有 type、没有 settings（users[] 在根部）
+	_, hasProtocol := cfg["protocol"].(string)
+	_, hasType := cfg["type"].(string)
+	_, hasSettings := cfg["settings"]
+	if !hasProtocol && !(hasType && !hasSettings) {
 		return configJSON
 	}
 	if _, ok := cfg["_accessDomain"]; ok {

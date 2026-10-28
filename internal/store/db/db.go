@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"corefusion/internal/migration"
-	"corefusion/internal/model/entity"
 	seccrypto "corefusion/internal/security/crypto"
 
 	"github.com/qist/sqlite"
@@ -614,6 +613,12 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 		log.Printf("migrate: copied table %s (%d rows, verified)", table, len(rows))
 	}
 
+	// PostgreSQL：显式 id 写入不会推进序列 → 必须按每表 max(id) 重新 setval，
+	// 否则切换完成后第一条 INSERT 就会撞主键/唯一约束（实测 system_settings_pkey）。
+	if err := syncPostgresSequences(dstDB); err != nil {
+		return 0, 0, fmt.Errorf("sync sequences: %w", err)
+	}
+
 	return tablesCopied, rowsCopied, nil
 }
 
@@ -688,117 +693,11 @@ func runAutoMigrate(db *gorm.DB) error {
 }
 
 // allEntityModels returns all entity models for AutoMigrate.
-// This is the same list used in migration.AutoMigrate.
+// It reuses migration.Models() so the cross-database copy path and the
+// normal startup path can never drift apart again (以前少 11 个模型，
+// 切到全新空库会因缺表失败)。
 func allEntityModels() []interface{} {
-	return []interface{}{
-		&entity.User{},
-		&entity.Node{},
-		&entity.CoreConfig{},
-		&entity.InboundConfig{},
-		&entity.OutboundConfig{},
-		&entity.InboundService{},
-		&entity.ServiceEndpoint{},
-		&entity.NodeTrafficUsage{},
-		&entity.InboundUserTraffic{},
-		&entity.ServiceAccessPolicy{},
-		&entity.ServiceIPBan{},
-		&entity.Subscription{},
-		&entity.SubscriptionAccessLog{},
-		&entity.SubscriptionRotation{},
-		&entity.Certificate{},
-		&entity.TrafficQuota{},
-		&entity.TrafficUsageLedger{},
-		&entity.TrafficUsageSummary{},
-		&entity.TrafficSession{},
-		&entity.TrafficQuotaResetLog{},
-		&entity.SecurityAuditEvent{},
-		&entity.RuntimeSnapshot{},
-		&entity.RuntimeApplyJob{},
-		&entity.RuntimeApplyJobTarget{},
-		&entity.RuntimeApplyJobEvent{},
-		&entity.RuleSource{},
-		&entity.GeoRuleFile{},
-		&entity.WarpConfig{},
-		&entity.ProcessGuardian{},
-		&entity.CoreCrashLog{},
-		&entity.ProxySite{},
-		&entity.CaddySite{},
-		&entity.NginxSite{},
-		&entity.DNSChannel{},
-		&entity.EABConfig{},
-		&entity.ACMEAccountConfig{},
-		&entity.CARoot{},
-		&entity.LogRotationPolicy{},
-		&entity.LogRotationJob{},
-		&entity.SystemSetting{},
-		&entity.NotificationTemplate{},
-		&entity.BackupRecord{},
-		&entity.BackupSchedule{},
-		&entity.BackupStorage{},
-		&entity.ShareDomainConfig{},
-		&entity.CFIPSource{},
-		&entity.CFIPEntry{},
-		&entity.SubscriptionFormat{},
-		&entity.SubscriptionRule{},
-		&entity.SubscriptionEndpoint{},
-		&entity.Plan{},
-		&entity.PlanNode{},
-		&entity.Client{},
-		&entity.PlanTemplate{},
-		&entity.PlanVariant{},
-		&entity.NodeGroup{},
-		&entity.NodeGroupMember{},
-		&entity.Promotion{},
-		&entity.PlanOrder{},
-		&entity.MihomoConfig{},
-		&entity.MihomoGeneral{},
-		&entity.MihomoDNS{},
-		&entity.MihomoHost{},
-		&entity.MihomoTunnel{},
-		&entity.MihomoSniffer{},
-		&entity.MihomoExternalController{},
-		&entity.MihomoTLS{},
-		&entity.MihomoTun{},
-		&entity.MihomoProxyGroup{},
-		&entity.MihomoRuleProvider{},
-		&entity.MihomoRule{},
-		&entity.MihomoSpecialOutbound{},
-		&entity.ExternalNodeSource{},
-		&entity.ExternalNode{},
-		&entity.ChainLink{},
-		&entity.ExternalNodeServer{},
-		&entity.NodeServer{},
-		&entity.NodeCertificate{}, // 节点 ↔ 证书 多对多 ✓（一个节点可绑多张 ✓）
-		&entity.AgentCertRevocation{},
-		&entity.ServerMetric{},
-		&entity.NodeAuditLog{},
-		&entity.ServerTag{},
-		&entity.CertDistributionQueueItem{},
-		&entity.ClientLogPackage{},
-		&entity.PortalTemplate{},
-		&entity.ChargeSite{},
-		&entity.ChargeOrder{},
-		&entity.ChargeCard{},
-		&entity.ClientBalance{},
-		&entity.BalanceTransaction{},
-		&entity.CallbackNonce{},
-		&entity.ChargeCallbackRetry{},
-		&entity.ChargeCallbackEvent{},
-		&entity.ChargeSiteSecret{},
-		&entity.ChargeSecurityEvent{},
-		&entity.ReferralCode{},
-		&entity.ReferralRecord{},
-		&entity.ReferralWithdrawal{},
-		&entity.Ticket{},
-		&entity.TicketMessage{},
-		&entity.ClientGift{},
-		&entity.Article{},
-		&entity.SharedAccount{},
-		&entity.SharedAccountRepairLog{},
-		&entity.ClientOAuthBinding{},
-		&entity.ClientSelfUnbanLog{},
-		&entity.IPWhitelistEntry{},
-	}
+	return migration.Models()
 }
 
 // MigrateFromSQLite opens a SQLite database file and migrates all its data
@@ -941,7 +840,45 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 		log.Printf("migrate: copied %d rows from %s (verified)", len(rows), table)
 	}
 
+	// 同 MigrateTo：目标为 PostgreSQL 时修正自增序列，避免恢复后写入撞主键。
+	if err := syncPostgresSequences(dstDB); err != nil {
+		return 0, 0, fmt.Errorf("sync sequences: %w", err)
+	}
+
 	return tablesCopied, rowsCopied, nil
+}
+
+// syncPostgresSequences 把目标库所有 serial/identity 序列推进到 max(id)。
+// 只对 PostgreSQL 生效；MySQL 的 AUTO_INCREMENT 在显式 id 写入后会自动抬高，无需处理；
+// SQLite 的 rowid 取 max+1，也无需处理。
+func syncPostgresSequences(db *gorm.DB) error {
+	if db == nil || db.Dialector.Name() != "postgres" {
+		return nil
+	}
+	var qnames []string
+	if err := db.Raw(`
+		SELECT format('%I.%I', table_schema, table_name)
+		FROM information_schema.columns
+		WHERE table_schema = current_schema()
+		  AND column_name = 'id'
+		  AND pg_get_serial_sequence(format('%I.%I', table_schema, table_name), 'id') IS NOT NULL
+		ORDER BY table_name`).Scan(&qnames).Error; err != nil {
+		return fmt.Errorf("list serial columns: %w", err)
+	}
+	for _, qname := range qnames {
+		// qname 由 format('%I.%I') 生成，已按标识符规则转义（小写表名下就是 schema.table）。
+		stmt := fmt.Sprintf(
+			`SELECT setval(pg_get_serial_sequence('%s', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM %s`,
+			qname, qname,
+		)
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("setval for %s: %w", qname, err)
+		}
+	}
+	if len(qnames) > 0 {
+		log.Printf("migrate: synced %d PostgreSQL sequences", len(qnames))
+	}
+	return nil
 }
 
 // OpenDBPublic opens a temporary database connection from a Config.

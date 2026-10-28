@@ -16,9 +16,14 @@ import (
 	"corefusion/internal/store/repository"
 )
 
-// AutoMigrate runs auto-migration for all entity models.
-func AutoMigrate(db *gorm.DB) error {
-	models := []interface{}{
+// Models returns the complete, ordered list of entity models.
+//
+// This is the **single source of truth** for the schema: migration.AutoMigrate
+// and the cross-database copy path (store/db.runAutoMigrate) both use it.
+// 之前两处各维护一份清单，db 侧少 11 个模型 → 切到全新空库时会缺表
+// （例：log_cleanup_rules），现在统一从这里取，避免再次漂移。
+func Models() []interface{} {
+	return []interface{}{
 		// User & Auth
 		&entity.User{},
 		&entity.WebAuthnCredential{},
@@ -234,6 +239,11 @@ func AutoMigrate(db *gorm.DB) error {
 		&entity.WafConfig{},
 		&entity.WafDomainConfig{},
 	}
+}
+
+// AutoMigrate runs auto-migration for all entity models.
+func AutoMigrate(db *gorm.DB) error {
+	models := Models()
 
 	// PostgreSQL has no "longtext" type. CoreFusion entities use type:longtext
 	// for large-text columns (MySQL maps it to LONGTEXT, 4GB). To keep a single
@@ -539,17 +549,28 @@ func migrateDropStandaloneHy2Tuic(db *gorm.DB) {
 
 	// 4. 日志设置：删掉 proxy.log_writers.{hysteria2,tuic}；从 core.log_output_config[.N]
 	//    的 JSON 里剔除 hy2/tuic 键（代码现在只写 xray/singbox，留着会在日志配置里显示幽灵核心）。
+	keyCol := systemSettingKeyColumn(db)
 	for _, ct := range dead {
-		db.Exec("DELETE FROM system_settings WHERE key = ?", "proxy.log_writers."+ct)
+		db.Exec("DELETE FROM system_settings WHERE "+keyCol+" = ?", "proxy.log_writers."+ct)
 	}
 	stripStandaloneCoreFromLogOutputSettings(db, dead)
+}
+
+// systemSettingKeyColumn 返回按方言转义后的 system_settings.key 列名。
+// key 是 MySQL 保留字：MySQL 需要反引号，PostgreSQL/SQLite 用双引号
+// （SQLite 也接受反引号，但 PostgreSQL 不接受，所以不能写死一种）。
+func systemSettingKeyColumn(db *gorm.DB) string {
+	if db.Dialector.Name() == "mysql" {
+		return "`key`"
+	}
+	return `"key"`
 }
 
 // stripStandaloneCoreFromLogOutputSettings 从 core.log_output_config[.N] 的 JSON 值里
 // 删掉已下线的独立核心键。解析失败/无该键则原样保留。
 func stripStandaloneCoreFromLogOutputSettings(db *gorm.DB, dead []string) {
 	var rows []entity.SystemSetting
-	if err := db.Where("key = ? OR key LIKE ?", "core.log_output_config", "core.log_output_config.%").
+	if err := db.Where(systemSettingKeyColumn(db)+" = ? OR "+systemSettingKeyColumn(db)+" LIKE ?", "core.log_output_config", "core.log_output_config.%").
 		Find(&rows).Error; err != nil {
 		log.Printf("[migration] load core.log_output_config failed: %v", err)
 		return
@@ -573,7 +594,7 @@ func stripStandaloneCoreFromLogOutputSettings(db *gorm.DB, dead []string) {
 		if err != nil {
 			continue
 		}
-		if err := db.Model(&entity.SystemSetting{}).Where("key = ?", row.Key).Update("value", string(out)).Error; err != nil {
+		if err := db.Model(&entity.SystemSetting{}).Where(systemSettingKeyColumn(db)+" = ?", row.Key).Update("value", string(out)).Error; err != nil {
 			log.Printf("[migration] strip hy2/tuic from %s failed: %v", row.Key, err)
 		} else {
 			log.Printf("[migration] stripped hy2/tuic keys from setting %s", row.Key)
@@ -649,30 +670,41 @@ func migrateUniqueIndexes(db *gorm.DB) {
 
 	// inbound_configs: idx_inbound_configs_tag was (tag), needs (server_id, tag) as idx_inbound_tag_server
 	dropIndex(db, "inbound_configs", "idx_inbound_configs_tag")
-	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_tag_server ON inbound_configs(server_id, tag)")
+	createIndex(db, "inbound_configs", "idx_inbound_tag_server",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_tag_server ON inbound_configs(server_id, tag)")
 
 	// outbound_configs: idx_outbound_configs_tag and idx_outbound_tag were (tag), needs (server_id, tag)
 	dropIndex(db, "outbound_configs", "idx_outbound_configs_tag")
 	dropIndex(db, "outbound_configs", "idx_outbound_tag")
-	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_tag_server ON outbound_configs(server_id, tag)")
+	createIndex(db, "outbound_configs", "idx_outbound_tag_server",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_outbound_tag_server ON outbound_configs(server_id, tag)")
 
 	// waf_rules: ensure unique (name, rule_scope, server_id, domain)
 	// GORM AutoMigrate creates the table but may not enforce the composite unique index.
 	// Drop old index (without domain column) and create new one with domain.
 	dropIndex(db, "waf_rules", "idx_waf_rules_scope")
-	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_rules_scope ON waf_rules(name, rule_scope, server_id, domain)")
+	createIndex(db, "waf_rules", "idx_waf_rules_scope",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_rules_scope ON waf_rules(name, rule_scope, server_id, domain)")
 
 	// waf_configs: ensure unique (server_id, proxy_type) for OnConflict upsert
-	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_configs_server_proxy ON waf_configs(server_id, proxy_type)")
+	createIndex(db, "waf_configs", "idx_waf_configs_server_proxy",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_configs_server_proxy ON waf_configs(server_id, proxy_type)")
 
 	// waf_domain_configs: ensure unique (server_id, domain) for OnConflict upsert
-	createIndex(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_domain_configs_server_domain ON waf_domain_configs(server_id, domain)")
+	createIndex(db, "waf_domain_configs", "idx_waf_domain_configs_server_domain",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_waf_domain_configs_server_domain ON waf_domain_configs(server_id, domain)")
 }
 
 // dropIndex drops an index if it exists, logging the result.
 // 兼容 MySQL 与 PostgreSQL: MySQL 不支持 DROP INDEX ... IF EXISTS,
 // 且语法为 DROP INDEX idx ON table;PostgreSQL 支持 DROP INDEX IF EXISTS idx。
 func dropIndex(db *gorm.DB, table, indexName string) {
+	// 先查元数据：不存在就当幂等成功直接返回。
+	// 之前直接下发 DROP，MySQL 报 1091（虽被 isIgnorableIndexError 吞掉，
+	// 但 GORM logger 仍打印红色 Error，造成启动日志噪音）。
+	if !indexExists(db, table, indexName) {
+		return
+	}
 	var sql string
 	if db.Dialector.Name() == "mysql" {
 		sql = "DROP INDEX " + indexName + " ON " + table
@@ -690,7 +722,11 @@ func dropIndex(db *gorm.DB, table, indexName string) {
 
 // createIndex creates a new index, logging the result.
 // PostgreSQL 支持 CREATE INDEX IF NOT EXISTS;MySQL 不支持 IF NOT EXISTS。
-func createIndex(db *gorm.DB, sql string) {
+func createIndex(db *gorm.DB, table, indexName, sql string) {
+	// 先查元数据：已存在就当幂等成功（避免 MySQL 1061 / PG 的重复报错噪音）。
+	if indexExists(db, table, indexName) {
+		return
+	}
 	if db.Dialector.Name() == "mysql" {
 		sql = strings.Replace(sql, " IF NOT EXISTS", "", 1)
 	}
@@ -701,6 +737,37 @@ func createIndex(db *gorm.DB, sql string) {
 		}
 		log.Printf("WARNING: create index: %s: %v", sql, err)
 	}
+}
+
+// indexExists 通过当前方言的元数据表判断索引是否已经存在。
+func indexExists(db *gorm.DB, table, indexName string) bool {
+	if db == nil {
+		return false
+	}
+	var n int64
+	var err error
+	switch db.Dialector.Name() {
+	case "mysql":
+		err = db.Raw(
+			"SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+			table, indexName,
+		).Scan(&n).Error
+	case "postgres":
+		err = db.Raw(
+			"SELECT COUNT(*) FROM pg_indexes WHERE schemaname = current_schema() AND tablename = ? AND indexname = ?",
+			table, indexName,
+		).Scan(&n).Error
+	default:
+		err = db.Raw(
+			"SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name = ?",
+			table, indexName,
+		).Scan(&n).Error
+	}
+	if err != nil {
+		log.Printf("WARNING: check index %s on %s: %v", indexName, table, err)
+		return false
+	}
+	return n > 0
 }
 
 // isIgnorableIndexError reports whether a DDL index error is benign and can be
@@ -725,7 +792,7 @@ func isIgnorableIndexError(err error) bool {
 // recreateIndex drops the old index and creates a new one with the given SQL.
 func recreateIndex(db *gorm.DB, table, indexName, createSQL string) {
 	dropIndex(db, table, indexName)
-	createIndex(db, createSQL)
+	createIndex(db, table, indexName, createSQL)
 }
 
 // migrateChargeCardEncryption v3.3: 迁移 charge_cards 从明文 card_code 到加密存储。

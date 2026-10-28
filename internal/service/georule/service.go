@@ -671,7 +671,8 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 	}
 
 	rule.FileSize = size
-	rule.LastUpdated = time.Now()
+	updatedAt := time.Now()
+	rule.LastUpdated = &updatedAt
 	rule.Status = "available"
 	s.fileRepo.Update(ctx, rule)
 
@@ -824,7 +825,8 @@ func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, 
 		}
 	}
 
-	src.LastSyncAt = time.Now()
+	now := time.Now()
+	src.LastSyncAt = &now
 	src.LastSyncTag = tag
 	src.Status = "idle"
 	s.sourceRepo.Update(ctx, src)

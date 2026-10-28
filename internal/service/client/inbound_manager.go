@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -407,27 +408,58 @@ func (m *InboundManager) callXrayAddUser(serverID int64, tag, email, uuid, passw
 
 	// URL includes /node-servers/:id/ prefix for server routing
 	url := fmt.Sprintf("%s/api/v1/node-servers/%d/xray/control/inbound/%s/user", m.apiBaseURL, serverID, tag)
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
-	if err != nil {
-		log.Printf("xray add user: request error: %v", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if token := m.generateInternalToken(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+
+	// 热加用户会与「核心正在重启」竞态：SyncData 刚触发 restart 时 xray 还没起来，
+	// 第一次请求必然 500。以前只打一行日志就放弃 → 面板库有账号、节点配置没有，
+	// 用户连上直接 EOF（实测）。这里重试几次；仍失败则回退到「重新生成配置 + 重启核心」，
+	// 保证账号最终一定落到节点上。
+	const attempts = 3
+	lastStatus := 0
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		req, err := http.NewRequest("POST", url, strings.NewReader(body))
+		if err != nil {
+			log.Printf("xray add user: request error: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if token := m.generateInternalToken(); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			log.Printf("xray add user %s to %s (serverID=%d, %s) attempt %d/%d: %v",
+				email, tag, serverID, protocol, attempt, attempts, err)
+		} else {
+			detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				log.Printf("xray add user %s to %s (serverID=%d, %s): ok", email, tag, serverID, protocol)
+				return
+			}
+			lastStatus = resp.StatusCode
+			log.Printf("xray add user %s to %s (serverID=%d) attempt %d/%d: status %d body=%s",
+				email, tag, serverID, attempt, attempts, resp.StatusCode, strings.TrimSpace(string(detail)))
+		}
+		if attempt < attempts {
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("xray add user %s to %s (serverID=%d, %s): %v", email, tag, serverID, protocol, err)
+	if m.coreReloader == nil {
+		log.Printf("xray add user %s to %s (serverID=%d): giving up (status=%d err=%v)",
+			email, tag, serverID, lastStatus, lastErr)
 		return
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		log.Printf("xray add user %s to %s (serverID=%d): status %d", email, tag, serverID, resp.StatusCode)
-	} else {
-		log.Printf("xray add user %s to %s (serverID=%d, %s): ok", email, tag, serverID, protocol)
+	// 兜底：重新生成配置并下发（远端走 SyncServerCore，本地会重启核心），
+	// 用户账号随配置一起生效 —— 比让用户拿到"连不上的订阅"要好。
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	log.Printf("[inbound_manager] hot add failed (status=%d), reloading core: server=%d tag=%s", lastStatus, serverID, tag)
+	if err := m.coreReloader(ctx, serverID, "xray"); err != nil {
+		log.Printf("[inbound_manager] core reload fallback failed: server=%d tag=%s err=%v", serverID, tag, err)
 	}
 }
 

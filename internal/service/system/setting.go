@@ -867,12 +867,10 @@ func (s *SettingService) GetDBConfig(ctx context.Context) (*DBConfig, error) {
 	currentEnvDSN := db.ResolveDSN(env["CF_DB_DSN"])
 	needsRestart := false
 	if currentEnvDSN != "" && startDSN != "" {
-		// Strip scheme prefix from env DSN for fair comparison
-		envDSNNormalized := strings.TrimPrefix(currentEnvDSN, "mysql://")
-		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "postgres://")
-		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "postgresql://")
-		envDSNNormalized = strings.TrimPrefix(envDSNNormalized, "sqlite://")
-		needsRestart = (envDSNNormalized != startDSN)
+		// 两边都要归一化：MySQL 的 StartDSN 已被 ConfigFromEnv 去掉 mysql://，
+		// 但 PostgreSQL 的 StartDSN 仍保留 postgres:// → 只归一化 env 侧会把
+		// "刚重启完"误报成 restart_needed=true。
+		needsRestart = normalizeDSNForCompare(currentEnvDSN) != normalizeDSNForCompare(startDSN)
 	} else if currentEnvDSN != "" && startDSN == "" {
 		// Env has config but startup used default SQLite
 		needsRestart = true
@@ -1112,6 +1110,19 @@ func (s *SettingService) resolveDSN(dsn string) string {
 	return dsn
 }
 
+// normalizeDSNForCompare 去掉 DSN 的 scheme 前缀，用于比较 .env 里的 DSN 与
+// 进程启动时实际使用的 DSN（后者在 MySQL 下已被去掉 mysql://，PostgreSQL 下保留
+// postgres://，不归一化会误报“需要重启”）。
+func normalizeDSNForCompare(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	for _, prefix := range []string{"mysql://", "postgres://", "postgresql://", "sqlite://"} {
+		if strings.HasPrefix(dsn, prefix) {
+			return strings.TrimPrefix(dsn, prefix)
+		}
+	}
+	return dsn
+}
+
 // maskDSN masks passwords in a DSN string for display.
 func maskDSN(dsn string) string {
 	if dsn == "" {
@@ -1136,7 +1147,12 @@ func maskDSN(dsn string) string {
 	// Also handles bare format: user:password@tcp(host:port)/db (without mysql:// prefix)
 	if strings.HasPrefix(dsn, "mysql://") {
 		rest := strings.TrimPrefix(dsn, "mysql://")
-		atIdx := strings.Index(rest, "@")
+		// 口令里可能含 @（如 Cf@2026test），必须从右往左找主机段的 "@tcp("，
+		// 否则会按第一个 @ 切分，把口令尾部（@2026test）原样泄露到页面上。
+		atIdx := strings.LastIndex(rest, "@tcp(")
+		if atIdx < 0 {
+			atIdx = strings.LastIndex(rest, "@")
+		}
 		if atIdx >= 0 {
 			userPart := rest[:atIdx]
 			if colonIdx := strings.Index(userPart, ":"); colonIdx >= 0 {
@@ -1145,7 +1161,7 @@ func maskDSN(dsn string) string {
 		}
 	} else if strings.Contains(dsn, "@tcp(") {
 		// Bare MySQL DSN without mysql:// prefix: user:password@tcp(host:port)/db
-		atIdx := strings.Index(dsn, "@tcp(")
+		atIdx := strings.LastIndex(dsn, "@tcp(")
 		if atIdx >= 0 {
 			userPart := dsn[:atIdx]
 			if colonIdx := strings.Index(userPart, ":"); colonIdx >= 0 {

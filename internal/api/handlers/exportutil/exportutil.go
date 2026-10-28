@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"corefusion/internal/service/system"
 )
@@ -30,7 +31,7 @@ func MaxRows(ctx context.Context, db *gorm.DB) int {
 		err := db.WithContext(ctx).
 			Table("system_settings").
 			Select("value").
-			Where("key = ?", "panel.export_max_rows").
+			Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: "panel.export_max_rows"}).
 			Scan(&value).Error
 		if err == nil && strings.TrimSpace(value) != "" {
 			if n, convErr := strconv.Atoi(strings.TrimSpace(value)); convErr == nil {

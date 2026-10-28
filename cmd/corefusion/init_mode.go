@@ -316,13 +316,18 @@ func runResetInit(args []string) {
 		return
 	}
 
-	bt := string(byte(96)) // MySQL 保留字 key 的引用符
 	dbCfg := db.ConfigFromEnv(env, filepath.Join(dd, "sqlite", "app.db"))
 	if err := db.Init(dbCfg); err == nil {
 		if err := db.DB.Where("role IN ?", []string{"super_admin", "admin"}).Delete(&entity.User{}).Error; err != nil {
 			log.Printf("reset: delete admins: %v", err)
 		}
-		if err := db.DB.Exec("DELETE FROM system_settings WHERE "+bt+"key"+bt+" IN (?, ?)", "bootstrap.completed", "panel.web_path").Error; err != nil {
+		// key 是 MySQL 保留字：MySQL 用反引号，PostgreSQL/SQLite 用双引号
+		// （写死反引号会让 PostgreSQL 上的 reset-init 清不掉初始化标记）。
+		keyCol := `"key"`
+		if db.DB.Dialector.Name() == "mysql" {
+			keyCol = "`key`"
+		}
+		if err := db.DB.Exec("DELETE FROM system_settings WHERE "+keyCol+" IN (?, ?)", "bootstrap.completed", "panel.web_path").Error; err != nil {
 			log.Printf("reset: clear init marks: %v", err)
 		}
 		db.Close()

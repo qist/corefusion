@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // PublicSubHandler is the interface satisfied by subscriptions.PublicHandler.
@@ -675,7 +676,7 @@ func (h *Handler) AdminSearchClients(c *gin.Context) {
 func (h *Handler) AdminGetReferralConfig(c *gin.Context) {
 	getSetting := func(key, defaultVal string) string {
 		var s entity.SystemSetting
-		if err := h.db.WithContext(c.Request.Context()).Where("key = ?", key).First(&s).Error; err == nil {
+		if err := h.db.WithContext(c.Request.Context()).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: key}).First(&s).Error; err == nil {
 			return s.Value
 		}
 		return defaultVal
@@ -698,7 +699,7 @@ func (h *Handler) AdminSetReferralConfig(c *gin.Context) {
 	}
 	setSetting := func(key string, value string) error {
 		return h.db.WithContext(c.Request.Context()).
-			Where("key = ?", key).
+			Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: key}).
 			Assign(entity.SystemSetting{Value: value}).
 			FirstOrCreate(&entity.SystemSetting{Key: key, Value: value}).Error
 	}

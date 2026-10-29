@@ -70,16 +70,21 @@ func (s *Scheduler) Apply(cfg *GitHubSourceConfig) {
 	}
 	s.current = cfg.SyncCron
 	cron := cfg.SyncCron
-	s.timer = time.AfterFunc(interval, func() {
-		s.mu.Lock()
-		// 到点后按固定间隔滚动（AfterFunc 单次 → 重新排下一个周期）
-		if s.current == cron {
-			s.timer = time.AfterFunc(interval, func() { s.fire(cron, interval) })
-		}
-		s.mu.Unlock()
-		s.fire(cron, interval)
-	})
+	s.scheduleLocked(cron, interval)
 	log.Printf("[WAFScheduler] github source sync scheduled every %v (cron=%q)", interval, cron)
+}
+
+// scheduleLocked 排下一次执行；每轮 fire 结束后再排下一轮（调用方必须持有 s.mu）。
+// ⚠ 旧实现把重排塞在第一次回调里，只滚两轮就停了（第三轮永远不来）。
+func (s *Scheduler) scheduleLocked(cron string, interval time.Duration) {
+	s.timer = time.AfterFunc(interval, func() {
+		s.fire(cron, interval)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.current == cron {
+			s.scheduleLocked(cron, interval)
+		}
+	})
 }
 
 // fire 执行一次同步（拉规则 → 推送全节点），带重入保护。
@@ -96,8 +101,12 @@ func (s *Scheduler) fire(cron string, interval time.Duration) {
 
 	log.Printf("[WAFScheduler] scheduled sync start (cron=%q)", cron)
 	cfg, err := s.svc.GetGitHubSource(s.ctx)
-	if err != nil || cfg == nil || !cfg.Enabled || cfg.URL == "" {
-		log.Printf("[WAFScheduler] source disabled or empty, skip this round")
+	if err != nil || cfg == nil {
+		log.Printf("[WAFScheduler] no source config, skip this round")
+		return
+	}
+	if !cfg.Enabled || (cfg.URL == "" && len(cfg.FileMappings) == 0) {
+		log.Printf("[WAFScheduler] source disabled or empty (url=%q, file_mappings=%d), skip this round", cfg.URL, len(cfg.FileMappings))
 		return
 	}
 	if err := s.svc.SyncFromGitHubWithSource(s.ctx, cfg.URL, cfg.Files, cfg.FileMappings); err != nil {

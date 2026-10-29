@@ -2,6 +2,7 @@ package georule
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ type Scheduler struct {
 	svc        *Service
 	mu         sync.Mutex
 	jobs       map[int64]*cronJob
+	pushMu     sync.Mutex // 串行化节点推送，避免多个源同时推全节点
 	ctx        context.Context
 	cancel     context.CancelFunc
 }
@@ -43,10 +45,23 @@ func (s *Scheduler) Start() {
 		log.Printf("scheduler: failed to load sources: %v", err)
 		return
 	}
+	var overdue []int64
 	for _, src := range sources {
-		if src.Enabled && src.SyncCron != "" {
-			s.addJob(src.ID, src.SyncCron)
+		if !src.Enabled || src.SyncCron == "" {
+			continue
 		}
+		s.addJob(src.ID, src.SyncCron)
+		// 启动补跑：ticker 在面板重启后会从头计时，若上次同步已超过周期，
+		// 说明这一轮被重启吞掉了，立即补一次，避免频繁重启导致任务饿死。
+		if interval := parseCronInterval(src.SyncCron); interval > 0 {
+			if src.LastSyncAt == nil || time.Since(*src.LastSyncAt) >= interval {
+				log.Printf("scheduler: source %d overdue (last sync %v), catch-up now", src.ID, src.LastSyncAt)
+				overdue = append(overdue, src.ID)
+			}
+		}
+	}
+	if len(overdue) > 0 {
+		go s.catchUp(overdue)
 	}
 	log.Printf("scheduler: started %d cron jobs", len(s.jobs))
 }
@@ -116,10 +131,58 @@ func (s *Scheduler) addJob(sourceID int64, syncCron string) {
 				return
 			case <-ticker.C:
 				log.Printf("scheduler: syncing source %d", sourceID)
-				s.svc.SyncSource(s.ctx, sourceID)
+				s.runSync(sourceID)
 			}
 		}
 	}()
+}
+
+// runSync 同步一个源；若是全局源（server_id=0），同步完成后把文件推送到所有节点。
+// ⚠ 旧实现只调 Service.SyncSource()，它只下载到面板 data/rules/，
+// 不会推送节点 —— 定时任务等于只更新了面板，节点要等手动推送或面板重启才更新。
+func (s *Scheduler) runSync(sourceID int64) {
+	if global, ok := s.syncSource(sourceID); ok && global {
+		s.pushGlobalFiles(fmt.Sprintf("source %d", sourceID))
+	}
+}
+
+// catchUp 启动补跑：逐个同步过期源，最后只推送一次节点。
+func (s *Scheduler) catchUp(ids []int64) {
+	needPush := false
+	for _, id := range ids {
+		if global, ok := s.syncSource(id); ok && global {
+			needPush = true
+		}
+	}
+	if needPush {
+		s.pushGlobalFiles("startup catch-up")
+	}
+}
+
+// syncSource 把源下载到面板本地，返回该源是否为全局源以及是否同步成功。
+func (s *Scheduler) syncSource(sourceID int64) (global, ok bool) {
+	src, err := s.sourceRepo.GetByID(s.ctx, sourceID)
+	if err != nil {
+		log.Printf("scheduler: load source %d failed: %v", sourceID, err)
+		return false, false
+	}
+	if _, err := s.svc.SyncSource(s.ctx, sourceID); err != nil {
+		log.Printf("scheduler: sync source %d failed: %v", sourceID, err)
+		return false, false
+	}
+	log.Printf("scheduler: source %d synced", sourceID)
+	return src.ServerID == 0, true
+}
+
+// pushGlobalFiles 把面板上的全局 geo 文件推送到所有节点（Agent 按 hash 去重）。
+func (s *Scheduler) pushGlobalFiles(reason string) {
+	s.pushMu.Lock()
+	defer s.pushMu.Unlock()
+	if err := s.svc.SyncToAllNodes(s.ctx); err != nil {
+		log.Printf("scheduler: push global files to nodes failed (%s): %v", reason, err)
+		return
+	}
+	log.Printf("scheduler: pushed global files to all nodes (%s)", reason)
 }
 
 // parseCronInterval converts a simple cron expression to a time.Duration.

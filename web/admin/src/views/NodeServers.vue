@@ -13,7 +13,7 @@
               <el-option v-for="opt in nodeTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
             <el-button size="small" @click="loadServers"><el-icon><Refresh /></el-icon> {{ t('common.refresh') }}</el-button>
-            <el-button size="small" type="warning" @click="openUpdateAllDialog" :loading="updateAllLoading">{{ t('nodeServer.updateAllAgents') }}</el-button>
+            <el-button v-if="hasRemoteAgents" size="small" type="warning" @click="openUpdateAllDialog" :loading="updateAllLoading">{{ t('nodeServer.updateAllAgents') }}</el-button>
           </div>
           <el-button type="primary" size="small" @click="showCreateDialog">+ {{ t('nodeServer.addServer') }}</el-button>
         </div>
@@ -883,6 +883,7 @@ async function confirmUpdateAll() {
 }
 
 // ─── Server List ───
+const hasRemoteAgents = ref(false)
 const servers = ref([])
 const { page: serverPage, pageSize: serverPageSize } = usePagination({ pageKey: 'srvPage', pageSizeKey: 'srvSize' })
 const serverTotal = ref(0)
@@ -1101,6 +1102,7 @@ async function loadServers() {
     if (filterNodeType.value) params.node_type = filterNodeType.value
     const res = await listNodeServers(params)
     servers.value = res.items || []
+    hasRemoteAgents.value = !!res.has_remote_agent
     serverTotal.value = res.total || 0
     // Update region options from data
     const regionsSet = new Set(regionOptions.value)

@@ -64,6 +64,11 @@ type AgentUpdater struct {
 	// settingRepo 用于读取 GitHub 加速域名/代理（与面板自更新同一套设置）。
 	settingRepo *repository.SystemSettingRepository
 
+	// GitHub Release 元数据缓存：同一版本只查一次 API，多节点/多平台复用，
+	// 避免每个节点各查一次导致推送变慢、以及网络抖动时逐个失败。
+	releaseMu    sync.Mutex
+	releaseCache map[string]*cachedAgentRelease
+
 	// 更新任务跟踪
 	pendingUpdates map[int64]*UpdateTask // server_id → task
 
@@ -79,6 +84,15 @@ type AgentUpdater struct {
 	retryBackoff []time.Duration // 第 n 次失败后的等待时间
 	monitorEvery time.Duration   // 卡死看护 + 重试调度周期
 }
+
+// cachedAgentRelease 是带过期时间的 GitHub Release 元数据缓存。
+type cachedAgentRelease struct {
+	release *agentGitHubRelease
+	at      time.Time
+}
+
+// agentReleaseCacheTTL 是 Release 元数据缓存时长（同一 tag 的产物不会变）。
+const agentReleaseCacheTTL = 10 * time.Minute
 
 // AgentBinaryInfo 记录单个平台的 Agent 二进制信息。
 type AgentBinaryInfo struct {
@@ -131,6 +145,7 @@ func NewAgentUpdater(serverRepo *repository.NodeServerRepository, nodeMgr *NodeS
 		serverRepo:       serverRepo,
 		nodeMgr:          nodeMgr,
 		platformBinaries: make(map[string]*AgentBinaryInfo),
+		releaseCache:     make(map[string]*cachedAgentRelease),
 		pendingUpdates:   make(map[int64]*UpdateTask),
 		interval:         6 * time.Hour,
 		maxConcurrency:   5,
@@ -339,6 +354,10 @@ func (u *AgentUpdater) resolveGitHubAsset(ctx context.Context, version, osName, 
 }
 
 func (u *AgentUpdater) fetchAgentRelease(ctx context.Context, version string) (*agentGitHubRelease, error) {
+	if rel := u.cachedAgentRelease(version); rel != nil {
+		return rel, nil
+	}
+
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s",
 		AgentGitHubRepo, url.PathEscape(version))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
@@ -361,7 +380,26 @@ func (u *AgentUpdater) fetchAgentRelease(ctx context.Context, version string) (*
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&release); err != nil {
 		return nil, fmt.Errorf("decode github response: %w", err)
 	}
+	u.storeAgentRelease(version, &release)
 	return &release, nil
+}
+
+// cachedAgentRelease 返回未过期的缓存（没有则返回 nil）。
+func (u *AgentUpdater) cachedAgentRelease(version string) *agentGitHubRelease {
+	u.releaseMu.Lock()
+	defer u.releaseMu.Unlock()
+	entry, ok := u.releaseCache[version]
+	if !ok || time.Since(entry.at) > agentReleaseCacheTTL {
+		return nil
+	}
+	return entry.release
+}
+
+// storeAgentRelease 写入 Release 元数据缓存。
+func (u *AgentUpdater) storeAgentRelease(version string, release *agentGitHubRelease) {
+	u.releaseMu.Lock()
+	defer u.releaseMu.Unlock()
+	u.releaseCache[version] = &cachedAgentRelease{release: release, at: time.Now()}
 }
 
 func (u *AgentUpdater) fetchChecksumFile(ctx context.Context, checksumURL string) (string, error) {

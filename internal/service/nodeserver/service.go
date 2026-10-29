@@ -1183,6 +1183,15 @@ func (s *Service) applyUpdateSource(version, downloadURL, checksum, source strin
 	return nil
 }
 
+// PrepareAgentUpdateSource 校验参数并设置更新源（不触网、不推送）。
+// 供 HTTP 层在后台执行前做同步校验，避免把明显的参数错误吞进后台日志。
+func (s *Service) PrepareAgentUpdateSource(version, downloadURL, checksum, source string) error {
+	if s.agentUpdater == nil {
+		return fmt.Errorf("agent updater not initialized")
+	}
+	return s.applyUpdateSource(version, downloadURL, checksum, source)
+}
+
 // UpdateAllAgents triggers Agent updates on all eligible remote servers.
 // 参数语义与 UpdateAgent 一致：本地未配置 Agent 二进制时不会静默推送，
 // 而是返回错误，提示调用方改从 GitHub 选择版本。

@@ -1,9 +1,29 @@
-<!-- source: README.md | locale: en | updated: 2026-10-23 -->
+<!-- source: README.md | locale: en | updated: 2026-10-29 -->
 # CoreFusion
 
 > Languages: [简体中文](README.md) · English · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
 
 Proxy service operations panel (Panel + Agent + client portal): manage nodes and Agents, inbound and subscription delivery, plans / orders / payments, certificate issuance, traffic accounting and rate limiting from one place.
+
+## Screenshots
+
+> Captured in a test environment; IPs, domains, e-mail addresses and node names have been redacted.
+
+| Dashboard | Node management |
+|:---:|:---:|
+| [![Dashboard](./docs/screenshots/dashboard.png)](./docs/screenshots/dashboard.png) | [![Node management](./docs/screenshots/node-servers.png)](./docs/screenshots/node-servers.png) |
+
+| Routing resources (direct domains) | Routing resources (global WAF rules) |
+|:---:|:---:|
+| [![Direct domains](./docs/screenshots/services-domains.png)](./docs/screenshots/services-domains.png) | [![Global WAF rules](./docs/screenshots/services-waf.png)](./docs/screenshots/services-waf.png) |
+
+| Subscription center | Plan templates |
+|:---:|:---:|
+| [![Subscription center](./docs/screenshots/subscriptions.png)](./docs/screenshots/subscriptions.png) | [![Plan templates](./docs/screenshots/plans.png)](./docs/screenshots/plans.png) |
+
+| Audit log | Runtime console |
+|:---:|:---:|
+| [![Audit log](./docs/screenshots/audit.png)](./docs/screenshots/audit.png) | [![Runtime console](./docs/screenshots/runtime.png)](./docs/screenshots/runtime.png) |
 
 ## Documentation
 

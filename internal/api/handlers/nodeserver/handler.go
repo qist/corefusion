@@ -167,9 +167,18 @@ func (h *Handler) List(c *gin.Context) {
 		}
 	}
 
+	hasRemoteAgent := false
+	for i := range items {
+		if !items[i].IsLocal {
+			hasRemoteAgent = true
+			break
+		}
+	}
+
 	response.OK(c, gin.H{
 		"items": items,
 		"total": total,
+		"has_remote_agent": hasRemoteAgent,
 	})
 }
 

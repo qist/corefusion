@@ -4,6 +4,26 @@
 
 代理服务运营管理面板（Panel + Agent + 客户端门户）：集中管理节点与 Agent、入站与订阅下发、套餐/订单/支付、证书签发、流量统计与限流。
 
+## 界面预览
+
+> 截图取自测试环境，IP、域名、邮箱、节点名等均已脱敏。
+
+| 仪表盘 | 节点管理 |
+|:---:|:---:|
+| [![仪表盘](./docs/screenshots/dashboard.png)](./docs/screenshots/dashboard.png) | [![节点管理](./docs/screenshots/node-servers.png)](./docs/screenshots/node-servers.png) |
+
+| 分流资源（直连域名） | 分流资源（WAF 全局规则） |
+|:---:|:---:|
+| [![直连域名](./docs/screenshots/services-domains.png)](./docs/screenshots/services-domains.png) | [![WAF 全局规则](./docs/screenshots/services-waf.png)](./docs/screenshots/services-waf.png) |
+
+| 订阅中心 | 套餐模板 |
+|:---:|:---:|
+| [![订阅中心](./docs/screenshots/subscriptions.png)](./docs/screenshots/subscriptions.png) | [![套餐模板](./docs/screenshots/plans.png)](./docs/screenshots/plans.png) |
+
+| 审计日志 | 运行控制台 |
+|:---:|:---:|
+| [![审计日志](./docs/screenshots/audit.png)](./docs/screenshots/audit.png) | [![运行控制台](./docs/screenshots/runtime.png)](./docs/screenshots/runtime.png) |
+
 ## 文档
 
 - [docs/README.md](./docs/README.md) — 文档索引（[English](./docs/README.en.md) / [繁體中文](./docs/README.zh-TW.md)）

@@ -176,8 +176,8 @@ func (h *Handler) List(c *gin.Context) {
 	}
 
 	response.OK(c, gin.H{
-		"items": items,
-		"total": total,
+		"items":            items,
+		"total":            total,
 		"has_remote_agent": hasRemoteAgent,
 	})
 }
@@ -876,16 +876,33 @@ func (h *Handler) UpdateAllAgents(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.UpdateAllAgents(c.Request.Context(), req.Version, req.DownloadURL, req.Checksum, req.Source); err != nil {
+	// 只做参数校验与更新源设置（不触网），真正的推送放后台执行。
+	// 以前这里是同步等待：每个节点都要查一次 GitHub API 选产物，网络抖动时
+	// 请求要几十秒甚至几分钟，前端一直转圈，最后还回 “N/M updates failed”，
+	// 但后台其实仍在重试并最终成功。
+	if err := h.svc.PrepareAgentUpdateSource(req.Version, req.DownloadURL, req.Checksum, req.Source); err != nil {
 		h.auditLog(c, 0, "update_all_agents", fmt.Sprintf("version: %s, source: %s", req.Version, req.Source), false, err.Error())
 		response.InternalError(c, "AGENT_UPDATE_ALL_FAILED", err.Error())
 		return
 	}
-	h.auditLog(c, 0, "update_all_agents", fmt.Sprintf("triggered agent update on all servers, version: %s, source: %s", req.Version, req.Source), true, "")
+
+	version, downloadURL, checksum, source := req.Version, req.DownloadURL, req.Checksum, req.Source
+	go func() {
+		// 必须用 Background：请求返回后 c.Request.Context() 会被取消，
+		// 后台推送会立刻失败。
+		if err := h.svc.UpdateAllAgents(context.Background(), version, downloadURL, checksum, source); err != nil {
+			log.Printf("[AgentUpdater] update-all background run finished with errors: %v", err)
+			return
+		}
+		log.Printf("[AgentUpdater] update-all background run finished: version=%s source=%s", version, source)
+	}()
+
+	h.auditLog(c, 0, "update_all_agents", fmt.Sprintf("triggered agent update on all servers (async), version: %s, source: %s", version, source), true, "")
 	response.OK(c, gin.H{
 		"triggered": true,
-		"version":   req.Version,
-		"source":    req.Source,
+		"async":     true,
+		"version":   version,
+		"source":    source,
 	})
 }
 

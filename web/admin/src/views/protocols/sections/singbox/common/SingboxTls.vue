@@ -135,6 +135,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../../../api/client'
 import { REALITY_PROTOCOLS, REALITY_TRANSPORTS } from '../utils/singboxDefaults'
 import { collectUsedSnis as collectUsedSnisShared, mergeUsedSnis } from '../../utils/sniUsage'
+import { loadLocalSniConfig, genLocalSniDomains, defaultLocalSniConfig } from '../../utils/localSni'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -161,8 +162,10 @@ function randomDomain() {
 // Collect already-used SNI from other inbounds
 // 本节点「其它入站」已占用的 SNI（共用 utils/sniUsage：按 id 排除自身，
 // 口径为同节点互斥、跨节点允许重复）。
+// 含后端登记的跨核心占用（sing-box 生成时也要避开 xray 入站已占的 SNI）。
 function collectUsedSnis() {
-  return collectUsedSnisShared(props.inbounds || [], props.model)
+  const map = collectUsedSnisShared(props.inbounds || [], props.model)
+  return mergeUsedSnis(map, props.usedServerNames, props.model._id ?? null)
 }
 
 // 预设列表里的「已使用」标记数据源（本核心内存中的其它入站 + 后端登记的跨核心占用）
@@ -299,13 +302,18 @@ function onRealityTargetChange(target) {
   const tgt = ALL_REALITY_TARGETS.value.find(rt => rt.target === target)
   if (tgt) {
     if (tgt.source === 'local') {
-      // 本地 Reality 服务器：连接地址为 127.0.0.1，SNI 为随机域名，xver=1
+      // 本地 Reality 服务器：连接地址为 127.0.0.1，SNI 优先固定前缀域名（speedtest.<域名>），
+      // 功能关闭或取不到基础域名时回退随机域名，xver=1
       props.model._realityHandshakeServer = '127.0.0.1'
       props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
       const used = collectUsedSnis()
-      let d = randomDomain()
-      let attempts = 0
-      while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
+      const generated = genLocalSniDomains(1, used, localSniCfg.value, randomDomain)
+      let d = generated[0] || ''
+      if (!d) {
+        let attempts = 0
+        d = randomDomain()
+        while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
+      }
       props.model._tlsServerName = d
       props.model._realityXver = 1
     } else {
@@ -331,9 +339,13 @@ function onRealityTargetChange(target) {
 // Regenerate random domain for local Reality serverName
 function refreshRandomServerName() {
   const used = collectUsedSnis()
-  let d = randomDomain()
-  let attempts = 0
-  while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
+  const generated = genLocalSniDomains(1, used, localSniCfg.value, randomDomain)
+  let d = generated[0] || ''
+  if (!d) {
+    let attempts = 0
+    d = randomDomain()
+    while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
+  }
   props.model._tlsServerName = d
   emit()
 }
@@ -473,11 +485,15 @@ watch(
   { immediate: true }
 )
 
+// 本地 Reality 自动 SNI 配置（面板 system_settings: reality.local_sni）
+const localSniCfg = ref(defaultLocalSniConfig())
+
 // 组件挂载时加载证书和本地 Reality 服务器
 onMounted(() => {
   loadCertificates()
   loadLocalRealityServers()
   loadRealityTargets()
+  loadLocalSniConfig().then(c => { localSniCfg.value = c })
   initRealityTarget()
 })
 

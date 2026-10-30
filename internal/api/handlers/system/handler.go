@@ -893,6 +893,61 @@ func (h *Handler) ResetRealityTargets(c *gin.Context) {
 	c.Data(200, "application/json", []byte(defaultRealityTargets))
 }
 
+// realityLocalSniKey：本地 Reality 握手目标的自动 SNI 生成配置。
+// enabled=false 时前端直接使用随机域名；开启时在原有随机域名上加前缀：
+// speedtest.<随机域名> / <随机标签>.speedtest.<随机域名>。
+const realityLocalSniKey = "reality.local_sni"
+
+const defaultRealityLocalSni = `{"enabled":true,"prefix":"speedtest"}`
+
+// 单段 DNS 标签（prefix 用）
+var sniLabelRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,30}[A-Za-z0-9])?$`)
+
+// GetRealityLocalSni handles GET /api/v1/system/reality-local-sni.
+func (h *Handler) GetRealityLocalSni(c *gin.Context) {
+	var s entity.SystemSetting
+	err := h.db.WithContext(c.Request.Context()).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: realityLocalSniKey}).First(&s).Error
+	if err != nil || s.Value == "" {
+		c.Data(200, "application/json", []byte(defaultRealityLocalSni))
+		return
+	}
+	c.Data(200, "application/json", []byte(s.Value))
+}
+
+// UpdateRealityLocalSni handles PUT /api/v1/system/reality-local-sni.
+func (h *Handler) UpdateRealityLocalSni(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.BadRequest(c, "INVALID_BODY", "failed to read body")
+		return
+	}
+	var cfg struct {
+		Enabled *bool  `json:"enabled"`
+		Prefix  string `json:"prefix"`
+	}
+	if err := json.Unmarshal(body, &cfg); err != nil {
+		response.BadRequest(c, "INVALID_JSON", "must be a JSON object")
+		return
+	}
+	enabled := cfg.Enabled != nil && *cfg.Enabled
+	prefix := strings.TrimSpace(cfg.Prefix)
+	if prefix == "" {
+		prefix = "speedtest"
+	}
+	prefix = strings.ToLower(prefix)
+	if !sniLabelRe.MatchString(prefix) {
+		response.BadRequest(c, "INVALID_PREFIX", "prefix must be a single DNS label (letters/digits/hyphen)")
+		return
+	}
+	out, err := json.Marshal(map[string]interface{}{"enabled": enabled, "prefix": prefix})
+	if err != nil {
+		response.InternalError(c, "MARSHAL_FAILED", err.Error())
+		return
+	}
+	h.settingSvc.Set(c.Request.Context(), realityLocalSniKey, string(out))
+	c.Data(200, "application/json", out)
+}
+
 // GetConfigFile handles GET /api/v1/system/config-file/:coreType.
 // Reads the actual config file from disk (runtime/xray.jsonc etc.)
 func (h *Handler) GetConfigFile(c *gin.Context) {

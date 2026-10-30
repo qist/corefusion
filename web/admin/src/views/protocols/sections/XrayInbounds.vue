@@ -1765,6 +1765,17 @@
           <el-button size="small" type="danger" text @click="removeTarget(i)">{{ t('common.delete') }}</el-button>
         </div>
       </div>
+      <el-divider style="margin:16px 0 12px" />
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">{{ t('protoCenter.reality.localSniTitle') }}</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <el-switch v-model="localSniCfg.enabled" />
+        <span style="font-size:12px">{{ t('protoCenter.reality.localSniEnabled') }}</span>
+      </div>
+      <div v-if="localSniCfg.enabled" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <el-input v-model="localSniCfg.prefix" style="width:140px" placeholder="speedtest" />
+        <el-button type="primary" @click="saveLocalSni">{{ t('protoCenter.reality.localSniSave') }}</el-button>
+      </div>
+      <div style="font-size:12px;color:#909399;margin-top:6px">{{ t('protoCenter.reality.localSniDomainHint') }}</div>
     </el-dialog>
   </div>
 </template>
@@ -1778,6 +1789,7 @@ import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { splitNames, snisOfInbound, collectUsedSnis as collectUsedSnisFromInbounds, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
 import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
+import { loadLocalSniConfig, genLocalSniDomains, defaultLocalSniConfig } from './utils/localSni'
 import { genRemark, genInboundTag } from './utils/nodeNaming'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
@@ -1822,6 +1834,21 @@ const editIdx = ref(-1)
 const activeTab = useQueryState('itab', 'basic')
 const certList = ref([])
 const realityTargets = ref([])
+// 本地 Reality 自动 SNI 配置（面板 system_settings: reality.local_sni）
+// enabled 时本地 Reality 目标生成 <prefix>.<域名> 固定形式，关闭则回退完全随机域名
+const localSniCfg = ref(defaultLocalSniConfig())
+async function loadLocalSni() { localSniCfg.value = await loadLocalSniConfig() }
+async function saveLocalSni() {
+  try {
+    const data = await client.put('/system/reality-local-sni', { ...localSniCfg.value })
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      localSniCfg.value = { enabled: data.enabled !== false, prefix: data.prefix || 'speedtest' }
+    }
+    ElMessage.success(t('protoCenter.reality.localSniSave') + ' ✓')
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || 'save failed')
+  }
+}
 // 本地代理 Reality 握手服务器（来自 caddy/nginx 代理站点）
 const localRealityServers = ref([])
 // 所有可用的 Reality 目标（本地 + 预设）
@@ -3151,10 +3178,12 @@ function onTargetChange() {
   if (!target) { emit(); return }
 
   if (isLocalTarget(target)) {
-    // Local Reality server: generate multiple completely random domains, xver=1
-    const count = 2 + Math.floor(Math.random() * 3) // 2-4 random domains
+    // Local Reality server: fixed-prefix domains (speed.<domain>) when enabled,
+    // otherwise fall back to completely random domains; xver=1
+    const count = 2 + Math.floor(Math.random() * 3) // 2-4 domains
     const used = collectUsedSnis()
-    const domains = randomDomains(count, used)
+    let domains = genLocalSniDomains(count, used, localSniCfg.value, randomDomain)
+    if (!domains.length) domains = randomDomains(count, used)
     rf.streamSettings.reality.serverNamesStr = domains.join('\n')
     rf.streamSettings.reality.xver = 1
   } else {
@@ -3169,10 +3198,11 @@ function onTargetChange() {
 }
 
 // Collect already-used SNIs from other inbounds on this node-server
-// 本节点「其它入站」占用的 SNI（Set），供随机域名生成避开。
+// 本节点「其它入站」占用的 SNI（Set），供随机/固定前缀域名生成避开。
 // 委托共用工具 utils/sniUsage（按 id 排除自身），口径：同节点互斥、跨节点允许重复。
+// 含后端登记的跨核心占用（xray 生成时也要避开 sing-box 入站已占的 SNI，反之亦然）。
 function collectUsedSnis() {
-  return new Set(collectUsedSnisFromInbounds(form.value, selfInbound.value).keys())
+  return new Set(usedByOthersMap(selfInbound.value).keys())
 }
 
 // Regenerate random domains for Server Names (local Reality only)
@@ -3182,7 +3212,8 @@ function refreshRandomDomains() {
   const existing = (rf.streamSettings.reality.serverNamesStr || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean)
   // Exclude already-used SNIs from other inbounds
   existing.forEach(s => { if (!collectHasOtherInboundSni(s)) used.add(s.toLowerCase()) })
-  const domains = randomDomains(count, used)
+  let domains = genLocalSniDomains(count, used, localSniCfg.value, randomDomain)
+  if (!domains.length) domains = randomDomains(count, used)
   rf.streamSettings.reality.serverNamesStr = domains.join('\n')
   emit()
 }
@@ -4522,13 +4553,16 @@ function showAdd() {
   rf._portHopInterface = d._portHopInterface
   activeTab.value = 'basic'
   dlg.value = true
-  // Auto-select: prefer local Reality server (random domains), else random preset
+  // Auto-select: prefer local Reality server (speedtest-format domains), else random preset
   if (localRealityServers.value.length > 0) {
     // Pick first available local server
     const ls = localRealityServers.value[0]
     rf.streamSettings.reality.target = `127.0.0.1:${ls.port}`
+    // 新建默认也要走同一套生成口径：speedtest 格式优先，关闭/取不到域名才回退随机
     const count = 2 + Math.floor(Math.random() * 3)
-    const domains = randomDomains(count, collectUsedSnis())
+    const used = collectUsedSnis()
+    let domains = genLocalSniDomains(count, used, localSniCfg.value, randomDomain)
+    if (!domains.length) domains = randomDomains(count, used)
     rf.streamSettings.reality.serverNamesStr = domains.join('\n')
     rf.streamSettings.reality.xver = 1
   } else {
@@ -4929,7 +4963,7 @@ function emit() { /* no longer needed, saves directly to API */ }
 onMounted(() => {
   // ⚠ 这两件事都会让 `form.value` / `certList` 就绪 ✓，而它们是并发的 ✗ ——
   // 谁先回来都要能正确回显 ✓，所以两边完成后都调一次 matchCertIds() ✓（幂等 ✓）。
-  loadInbounds().then(() => matchCertIds()); loadCertList(); loadTargets(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
+  loadInbounds().then(() => matchCertIds()); loadCertList(); loadTargets(); loadLocalSni(); loadLocalRealityServers(); loadInterfaces(); fetchXrayStats(); loadDataDir(); loadCFDomains(); loadCFIPEntries()
   prefetchFreePort(props.serverId) // 预热空闲端口，新建入站时不再撞已有端口
   loadServerNameUsage() // 该节点已占用的 Server Names（含另一核心），用于标记与互斥
   loadPortHopRules() // 该节点已用的端口跳跃段，用于标记冲突段

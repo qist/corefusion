@@ -3009,6 +3009,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.DELETE("/notification-templates/:id", systemH.DeleteTemplate)
 				systemGroup.GET("/reality-targets", systemH.GetRealityTargets)
 				systemGroup.PUT("/reality-targets", systemH.UpdateRealityTargets)
+				systemGroup.GET("/reality-local-sni", systemH.GetRealityLocalSni)
+				systemGroup.PUT("/reality-local-sni", systemH.UpdateRealityLocalSni)
 				systemGroup.GET("/config-file/:coreType", systemH.GetConfigFile)
 				// Generic settings API (used by self-unban, OAuth config, etc.)
 				systemGroup.GET("/settings", systemH.GetSettings)

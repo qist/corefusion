@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -449,7 +448,7 @@ func (m *NodeServerManager) StartGRPCServer(ctx context.Context, addr string) er
 	// and agents with bootstrap tokens use a separate insecure connection.
 	agentpb.RegisterRegistrationServiceServer(m.grpcServer, &registrationServiceImpl{mgr: m})
 
-	lis, err := net.Listen("tcp", addr)
+	lis, err := netutil.ListenTCP(addr)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}

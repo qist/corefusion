@@ -22,6 +22,7 @@ import (
 	"corefusion/internal/service/certificate"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
 
 // runInitMode 以“初始化向导服务”方式启动：独立随机端口 + init_token（设计 3.2 / 3.5）。
@@ -66,7 +67,7 @@ func runInitMode(env map[string]string, dataDir string) {
 
 	srv := bootstrap.NewServer(dataDir, sess, certSvc, dnsSvc, eabSvc, restartSelf)
 	addr := fmt.Sprintf(":%d", sess.Port)
-	ln, err := net.Listen("tcp", addr)
+	ln, err := netutil.ListenTCP(addr)
 	if err != nil {
 		log.Fatalf("init mode: listen on %s failed: %v", addr, err)
 	}

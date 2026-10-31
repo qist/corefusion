@@ -598,11 +598,16 @@ func runServer(args []string) {
 		}
 		go func() {
 			log.Printf("Subscription server starting on :%s (tls=%v, reuses panel cert)", subPort, tlsEnabled)
+			subLn, lnErr := netutil.ListenTCP(subSrv.Addr)
+			if lnErr != nil {
+				log.Printf("subscription server listen error: %v", lnErr)
+				return
+			}
 			var err error
 			if tlsEnabled {
-				err = subSrv.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+				err = subSrv.ServeTLS(subLn, tlsCertPath, tlsKeyPath)
 			} else {
-				err = subSrv.ListenAndServe()
+				err = subSrv.Serve(subLn)
 			}
 			if err != nil && err != http.ErrServerClosed {
 				log.Printf("subscription server error: %v", err)
@@ -625,11 +630,16 @@ func runServer(args []string) {
 		}
 		go func() {
 			log.Printf("Portal server starting on :%s (tls=%v, reuses panel cert)", portalPort, tlsEnabled)
+			portalLn, lnErr := netutil.ListenTCP(portalSrv.Addr)
+			if lnErr != nil {
+				log.Printf("portal server listen error: %v", lnErr)
+				return
+			}
 			var err error
 			if tlsEnabled {
-				err = portalSrv.ListenAndServeTLS(tlsCertPath, tlsKeyPath)
+				err = portalSrv.ServeTLS(portalLn, tlsCertPath, tlsKeyPath)
 			} else {
-				err = portalSrv.ListenAndServe()
+				err = portalSrv.Serve(portalLn)
 			}
 			if err != nil && err != http.ErrServerClosed {
 				log.Printf("portal server error: %v", err)
@@ -655,15 +665,20 @@ func runServer(args []string) {
 		}
 	}()
 
+	// 面板主端口：显式禁用 MPTCP（见 netutil.ListenTCP，CVE-2026-98432 加固）
+	mainLn, listenErr := netutil.ListenTCP(listenAddr)
+	if listenErr != nil {
+		log.Fatalf("failed to listen on %s: %v", listenAddr, listenErr)
+	}
 	if tlsEnabled {
 		srv.TLSConfig = tlsCfg
 		log.Printf("CoreFusion %s starting on %s (HTTPS)", Version, listenAddr)
-		if err := srv.ListenAndServeTLS(tlsCertPath, tlsKeyPath); err != nil {
+		if err := srv.ServeTLS(mainLn, tlsCertPath, tlsKeyPath); err != nil {
 			log.Fatalf("failed to start server: %v", err)
 		}
 	} else {
 		log.Printf("CoreFusion %s starting on %s (HTTP)", Version, listenAddr)
-		if err := srv.ListenAndServe(); err != nil {
+		if err := srv.Serve(mainLn); err != nil {
 			log.Fatalf("failed to start server: %v", err)
 		}
 	}

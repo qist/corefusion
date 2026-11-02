@@ -121,7 +121,6 @@ func NewPanelUpdateService(db *gorm.DB, settingSvc *SettingService, dataDir, ver
 		dataDir:      dataDir,
 		version:      version,
 		repo:         PanelGitHubRepo,
-		restartFn:    restartCurrentProcess,
 		executableFn: os.Executable,
 	}
 }
@@ -355,7 +354,7 @@ func (s *PanelUpdateService) runUpdate(jobID int64, version string) {
 
 	// 5. 重启（进程会退出，finished_at 尽量先落库）
 	s.finishJob(jobID, PanelUpdateStatusSuccess, "restarting", "")
-	s.scheduleRestart()
+	s.restartSelf()
 }
 
 func (s *PanelUpdateService) runRollback(jobID int64) {
@@ -387,7 +386,7 @@ func (s *PanelUpdateService) runRollback(jobID int64) {
 		return
 	}
 	s.finishJob(jobID, PanelUpdateStatusSuccess, "restarting", "")
-	s.scheduleRestart()
+	s.restartSelf()
 }
 
 func (s *PanelUpdateService) beginJob(jobID int64) (*entity.PanelUpdateJob, error) {
@@ -419,13 +418,72 @@ func (s *PanelUpdateService) finishJob(jobID int64, status, phase, errMsg string
 	})
 }
 
-func (s *PanelUpdateService) scheduleRestart() {
-	go func() {
-		time.Sleep(500 * time.Millisecond)
-		if s.restartFn != nil {
-			s.restartFn()
+// restartSelf 执行更新后的进程重启。
+//
+// ⚠ 必须是「直接方法调用」，不能经由函数值字段间接调用：链接器 deadcode
+// pass 会把「仅作为函数值存储、经字段间接调用」的函数连同其字符串常量整体
+// 剪除（2026-11-02 实测：nm 里 restartCurrentProcess 符号消失，导致更新后
+// 面板起不来）。直接调用链上的代码链接器无法剪除。
+//
+// 顺序：
+//  1. 测试注入的 restartFn 优先（不真正重启进程）；
+//  2. systemd 托管（cgroup 里能解析出 .service 段）：`systemctl restart
+//     --no-block`——请求入队即返回，systemd 完成 stop（本进程被停）+ start
+//     （拉起新二进制）。不能用前台等待或 setsid+立即退出：两种时序都可能
+//     在请求送达前被 cgroup 清理杀掉（实测×2）；
+//  3. 非 systemd（nohup / 容器无 systemd）：re-exec 自身后退出。
+func (s *PanelUpdateService) restartSelf() {
+	if s.restartFn != nil {
+		s.restartFn()
+		return
+	}
+	unit := systemdUnitName()
+	log.Printf("[panel-update] restart: unit=%q", unit)
+	if unit != "" {
+		cmd := exec.Command("systemctl", "restart", "--no-block", unit)
+		out, err := cmd.CombinedOutput()
+		log.Printf("[panel-update] systemctl restart --no-block %s: err=%v out=%s", unit, err, strings.TrimSpace(string(out)))
+		if err == nil {
+			// 重启任务已入队，systemd 会完成 stop+start
+			return
 		}
-	}()
+		// 请求未送达（如容器里 systemd 不可达）：走下面的 re-exec 保底
+	}
+	time.Sleep(200 * time.Millisecond) // 让 finishJob 的日志/落盘先落定
+	exe, err := os.Executable()
+	if err != nil {
+		os.Exit(0)
+	}
+	cmd := exec.Command(exe, os.Args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Start()
+	os.Exit(0)
+}
+
+// systemdUnitName 从 cgroup 解析当前进程所属的 systemd 单元名（如 corefusion.service）。
+// docker 容器（面板进程不受 systemd 管理时）cgroup 段以容器 id 或 .scope 结尾，
+// 不会误匹配；找不到 .service 段则返回空。
+func systemdUnitName() string {
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		log.Printf("[panel-update] read /proc/self/cgroup: %v", err)
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		// 形如 1:name=systemd:/system.slice/corefusion.service
+		// 或嵌套 1:name=systemd:/docker/<id>/system.slice/corefusion.service
+		idx := strings.LastIndex(line, "/")
+		if idx < 0 {
+			continue
+		}
+		name := strings.TrimSpace(line[idx+1:])
+		if strings.HasSuffix(name, ".service") {
+			return name
+		}
+	}
+	log.Printf("[panel-update] no .service segment in cgroup: %s", strings.TrimSpace(string(data)))
+	return ""
 }
 
 func (s *PanelUpdateService) ensureNoRunningJob() error {
@@ -820,63 +878,4 @@ func normalizeSHA256(s string) string {
 		}
 	}
 	return s
-}
-
-// restartCurrentProcess 默认重启实现。
-//
-// systemd 托管下绝不能 re-exec 自身：旧主进程退出（exit 0）后 systemd 立即把
-// 单元判为 inactive/dead，re-exec 出的子进程也在单元 cgroup 里随后被清理——
-// 表现为「自更新成功但面板没起来」（2026-11-02 在 116 实测踩中）。
-//
-// 正确做法：前台执行 `systemctl restart`——重启请求送达 PID 1 后，systemd 在
-// stop 阶段会把本进程（连同 cgroup）一起停掉并拉起新二进制，无需自行退出。
-// 2026-11-02 第二次实测教训：setsid + 立即 exit 有竞态——父进程先退，systemd
-// 清理 cgroup 时把还没来得及发请求的 systemctl 客户端一起杀了，单元照样 inactive。
-func restartCurrentProcess() {
-	if unit := systemdUnitName(); unit != "" {
-		cmd := exec.Command("systemctl", "restart", unit)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			// 请求未送达（如容器里 systemd 不可达）：回退 re-exec 保底
-			log.Printf("[panel-update] systemctl restart %s failed: %v; falling back to re-exec", unit, err)
-		} else {
-			// restart 请求已被 systemd 受理；本进程会在 stop 阶段被 systemd 停掉
-			return
-		}
-	}
-	// 非 systemd（nohup / 容器无 systemd）：re-exec 自身后退出。
-	exe, err := os.Executable()
-	if err != nil {
-		os.Exit(0)
-	}
-	cmd := exec.Command(exe, os.Args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	_ = cmd.Start()
-	os.Exit(0)
-}
-
-// systemdUnitName 返回当前进程所属的 systemd 单元名（如 corefusion.service）。
-// 仅当确实由 systemd 启动（INVOCATION_ID 存在且 cgroup 可解析）时返回非空。
-func systemdUnitName() string {
-	if os.Getenv("INVOCATION_ID") == "" {
-		return ""
-	}
-	data, err := os.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		// 形如 0::/system.slice/corefusion.service
-		idx := strings.LastIndex(line, "/")
-		if idx < 0 {
-			continue
-		}
-		name := strings.TrimSpace(line[idx+1:])
-		if strings.HasSuffix(name, ".service") {
-			return name
-		}
-	}
-	return ""
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -795,10 +796,10 @@ func (a *LocalAgent) ExecuteBinaryCommand(ctx context.Context, coreType string, 
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := a.newBinaryCmd(ctx, binaryPath, coreType, args)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("command failed: %w", err)
+		return nil, binaryCmdError(err, out)
 	}
 
 	result := make(map[string]string)
@@ -819,12 +820,46 @@ func (a *LocalAgent) ExecuteBinaryRawOutput(ctx context.Context, coreType string
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	cmd := a.newBinaryCmd(ctx, binaryPath, coreType, args)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("command failed: %w", err)
+		return "", binaryCmdError(err, out)
 	}
 	return string(out), nil
+}
+
+// newBinaryCmd 构造核心二进制命令。xray 的 -test 等子命令需要加载 geoip/geosite
+// 等资产（与启动核心时一致），环境里没设 XRAY_LOCATION_ASSET 时补上节点本地的
+// 数据目录，避免「校验在节点上执行却因找不到 geo 文件误判配置非法」。
+func (a *LocalAgent) newBinaryCmd(ctx context.Context, binaryPath, coreType string, args []string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, binaryPath, args...)
+	if coreType == "xray" && os.Getenv("XRAY_LOCATION_ASSET") == "" {
+		if _, statErr := os.Stat(filepath.Join(a.dataDir, "rules")); statErr == nil {
+			cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Join(a.dataDir, "rules"))
+		}
+	}
+	return cmd
+}
+
+// binaryCmdError 把非零退出的 stderr/stdout 关键输出带进错误信息，
+// 否则调用方（如远程配置校验）只能看到 "command failed: exit status 1"。
+// cmd.Output() 在失败时会把已捕获的 stdout 放进返回值、stderr 放进 ExitError.Stderr。
+func binaryCmdError(err error, stdout []byte) error {
+	msg := fmt.Sprintf("command failed: %v", err)
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		detail := strings.TrimSpace(string(ee.Stderr))
+		if detail == "" {
+			detail = strings.TrimSpace(string(stdout))
+		}
+		if detail != "" {
+			if len(detail) > 1500 {
+				detail = detail[:1500] + "…"
+			}
+			msg += "\n" + detail
+		}
+	}
+	return fmt.Errorf("%s", msg)
 }
 
 // ListInterfaces returns a list of network interface names.

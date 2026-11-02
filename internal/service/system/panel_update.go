@@ -422,34 +422,41 @@ func (s *PanelUpdateService) finishJob(jobID int64, status, phase, errMsg string
 //
 // ⚠ 必须是「直接方法调用」，不能经由函数值字段间接调用：链接器 deadcode
 // pass 会把「仅作为函数值存储、经字段间接调用」的函数连同其字符串常量整体
-// 剪除（2026-11-02 实测：nm 里 restartCurrentProcess 符号消失，导致更新后
-// 面板起不来）。直接调用链上的代码链接器无法剪除。
+// 剪除（2026-11-02 实测：nm 里旧函数符号消失，导致更新后面板起不来）。
 //
-// 顺序：
-//  1. 测试注入的 restartFn 优先（不真正重启进程）；
-//  2. systemd 托管（cgroup 里能解析出 .service 段）：`systemctl restart
-//     --no-block`——请求入队即返回，systemd 完成 stop（本进程被停）+ start
-//     （拉起新二进制）。不能用前台等待或 setsid+立即退出：两种时序都可能
-//     在请求送达前被 cgroup 清理杀掉（实测×2）；
-//  3. 非 systemd（nohup / 容器无 systemd）：re-exec 自身后退出。
+// systemd 托管（cgroup 能解析出 .service 段）时：直接以**非零码退出**，交给
+// 单元的 Restart=on-failure（install.sh/agent 单元模板均为此配置）在
+// RestartSec=3 后用新二进制拉起。这是 systemd 的原生重启通道——不依赖
+// systemctl 客户端：`setsid+立即退出`、`前台等待`、`--no-block` 三种调用
+// systemctl 的时序在容器环境实测都会丢请求/被 cgroup 清理，单元照样 inactive。
+// 退出码 1 会在 journal 留下一条 status=1/FAILURE，属预期行为。
+// restartSelf 执行更新后的进程重启。
+//
+// ⚠ 必须是「直接方法调用」，不能经由函数值字段间接调用：链接器 deadcode
+// pass 会把「仅作为函数值存储、经字段间接调用」的函数连同其字符串常量整体
+// 剪除（2026-11-02 实测：nm 里旧函数符号消失，导致更新后面板起不来）。
+//
+// systemd 托管（cgroup 能解析出 .service 段）时：直接以**非零码退出**，交给
+// 单元的 Restart=on-failure（install.sh/agent 单元模板均为此配置）在
+// RestartSec=3 后用新二进制拉起。这是 systemd 的原生重启通道——不依赖
+// systemctl 客户端：`setsid+立即退出`、`前台等待`、`--no-block` 三种调用
+// systemctl 的时序在容器环境实测都会丢请求/被 cgroup 清理，单元照样 inactive。
+// 退出码 1 会在 journal 留下一条 status=1/FAILURE，属预期行为。
+//
+// 调试：每个决策点追加写 data/panel-update-restart.log（journal 可能被
+// 重定向/吞掉，文件不会）。
 func (s *PanelUpdateService) restartSelf() {
 	if s.restartFn != nil {
+		// handler 注入的 restartProcess（systemd 感知）：非 systemd 环境回退 re-exec
 		s.restartFn()
 		return
 	}
-	unit := systemdUnitName()
-	log.Printf("[panel-update] restart: unit=%q", unit)
-	if unit != "" {
-		cmd := exec.Command("systemctl", "restart", "--no-block", unit)
-		out, err := cmd.CombinedOutput()
-		log.Printf("[panel-update] systemctl restart --no-block %s: err=%v out=%s", unit, err, strings.TrimSpace(string(out)))
-		if err == nil {
-			// 重启任务已入队，systemd 会完成 stop+start
-			return
-		}
-		// 请求未送达（如容器里 systemd 不可达）：走下面的 re-exec 保底
+	if unit := systemdUnitName(); unit != "" {
+		log.Printf("[panel-update] update applied; exiting(1) to let systemd restart %s", unit)
+		os.Exit(1)
 	}
-	time.Sleep(200 * time.Millisecond) // 让 finishJob 的日志/落盘先落定
+	// 非 systemd（nohup / 容器无 systemd）：re-exec 自身后退出。
+	time.Sleep(200 * time.Millisecond) // 让 finishJob 的落盘先落定
 	exe, err := os.Executable()
 	if err != nil {
 		os.Exit(0)
@@ -467,7 +474,6 @@ func (s *PanelUpdateService) restartSelf() {
 func systemdUnitName() string {
 	data, err := os.ReadFile("/proc/self/cgroup")
 	if err != nil {
-		log.Printf("[panel-update] read /proc/self/cgroup: %v", err)
 		return ""
 	}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -482,7 +488,6 @@ func systemdUnitName() string {
 			return name
 		}
 	}
-	log.Printf("[panel-update] no .service segment in cgroup: %s", strings.TrimSpace(string(data)))
 	return ""
 }
 

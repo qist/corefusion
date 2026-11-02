@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	statsService "github.com/xtls/xray-core/app/stats/command"
 
@@ -33,11 +34,19 @@ type RemoteCaller interface {
 type OnlineUsersProvider func(ctx context.Context, serverID int64) ([]OnlineUser, error)
 
 // Provider 组合本地/远程两种后端。
+//
+// ⚠ 路由必须按「每次调用的 serverID」决定，不能用构造时的 serverID 预建单一后端：
+// 此前 Handler 用面板本机 localServerID 构造 → backend() 恒返回 local 后端，
+// 查询任何远程节点都在拨面板本机的 127.0.0.1:10085（远程后端根本没建出来），
+// 面板本机核心没跑时远程节点也被误报 dial 失败。
 type Provider struct {
-	serverID    int64
-	local       *localBackend
-	remote      *remoteBackend
-	onlineUsers OnlineUsersProvider
+	mu           sync.Mutex
+	isLocalFn    func(serverID int64) bool
+	addrResolver AddrResolver
+	remoteCaller RemoteCaller
+	onlineUsers  OnlineUsersProvider
+	locals       map[int64]*localBackend
+	remotes      map[int64]*remoteBackend
 }
 
 // Options 构造 Provider 所需依赖。
@@ -52,38 +61,53 @@ type Options struct {
 	OnlineUsers OnlineUsersProvider
 }
 
-// NewProvider 构造 Provider。本地/远程后端按需惰性创建。
+// NewProvider 构造 Provider。本地/远程后端按每次调用的 serverID 惰性创建并缓存。
+// serverID 参数保留仅为兼容旧签名，路由不再依赖它。
 func NewProvider(serverID int64, opts Options) *Provider {
-	p := &Provider{serverID: serverID, onlineUsers: opts.OnlineUsers}
-
-	if opts.IsLocal == nil || opts.IsLocal(serverID) {
-		var addr string
-		if opts.AddrResolver != nil {
-			if a, err := opts.AddrResolver(context.Background(), serverID); err == nil {
-				addr = a
-			}
-		}
-		p.local = &localBackend{client: NewXrayClient(addr)}
+	_ = serverID
+	return &Provider{
+		isLocalFn:    opts.IsLocal,
+		addrResolver: opts.AddrResolver,
+		remoteCaller: opts.Remote,
+		onlineUsers:  opts.OnlineUsers,
+		locals:       make(map[int64]*localBackend),
+		remotes:      make(map[int64]*remoteBackend),
 	}
-	if opts.Remote != nil && (opts.IsLocal == nil || !opts.IsLocal(serverID)) {
-		p.remote = &remoteBackend{caller: opts.Remote, serverID: serverID}
-	}
-	return p
 }
 
-func (p *Provider) backend() (CoreDataProvider, error) {
-	if p.local != nil {
-		return p.local, nil
+func (p *Provider) backend(serverID int64) (CoreDataProvider, error) {
+	if p.isLocalFn == nil || p.isLocalFn(serverID) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		lb, ok := p.locals[serverID]
+		if !ok {
+			var addr string
+			if p.addrResolver != nil {
+				if a, err := p.addrResolver(context.Background(), serverID); err == nil {
+					addr = a
+				}
+			}
+			lb = &localBackend{client: NewXrayClient(addr)}
+			p.locals[serverID] = lb
+		}
+		return lb, nil
 	}
-	if p.remote != nil {
-		return p.remote, nil
+	if p.remoteCaller == nil {
+		return nil, fmt.Errorf("no remote caller available for server %d", serverID)
 	}
-	return nil, fmt.Errorf("no backend available for server %d", p.serverID)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	rb, ok := p.remotes[serverID]
+	if !ok {
+		rb = &remoteBackend{caller: p.remoteCaller, serverID: serverID}
+		p.remotes[serverID] = rb
+	}
+	return rb, nil
 }
 
 // GetUserTraffic 返回用户累计流量。
 func (p *Provider) GetUserTraffic(ctx context.Context, serverID int64) ([]UserTraffic, error) {
-	b, err := p.backend()
+	b, err := p.backend(serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +116,7 @@ func (p *Provider) GetUserTraffic(ctx context.Context, serverID int64) ([]UserTr
 
 // GetInboundTraffic 返回入站累计流量。
 func (p *Provider) GetInboundTraffic(ctx context.Context, serverID int64) ([]InboundTraffic, error) {
-	b, err := p.backend()
+	b, err := p.backend(serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +125,7 @@ func (p *Provider) GetInboundTraffic(ctx context.Context, serverID int64) ([]Inb
 
 // GetSysStats 返回系统统计。
 func (p *Provider) GetSysStats(ctx context.Context, serverID int64) (*SysStats, error) {
-	b, err := p.backend()
+	b, err := p.backend(serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +142,7 @@ func (p *Provider) GetOnlineUsers(ctx context.Context, serverID int64) ([]Online
 
 // ResetUserTraffic 复位用户流量计数器。
 func (p *Provider) ResetUserTraffic(ctx context.Context, serverID int64, email string) error {
-	b, err := p.backend()
+	b, err := p.backend(serverID)
 	if err != nil {
 		return err
 	}

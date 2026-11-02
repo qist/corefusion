@@ -2851,6 +2851,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			xrayStatsH := xrayStatsHandler.NewHandler(systemSettingSvc)
 			xrayStatsH.SetCoreConfigService(coreConfigSvc)
 			xrayStatsH.SetNodeOperator(nodeServerSvcInst)
+			// 本地节点核心没跑时 stats 接口返回空数据而非 dial 报错；
+			// 远程节点由 Agent 侧进程门禁处理（checker 恒 true 放行）
+			xrayStatsH.SetCoreRunningChecker(func(serverID int64) bool {
+				if serverID != coredata.LocalServerID || processMgr == nil {
+					return true
+				}
+				return processMgr.IsCoreRunning("xray") || processMgr.IsCoreRunning("singbox")
+			})
 			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
 			xrayControlH.SetCoreConfigService(coreConfigSvc)
 			xrayControlH.SetNodeOperator(nodeServerSvcInst)

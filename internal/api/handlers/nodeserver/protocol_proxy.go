@@ -231,22 +231,93 @@ func (h *Handler) ValidateProtocol(c *gin.Context) {
 		source = "generated"
 	}
 
-	res, err := h.coreConfigSvc.Validate(coreType, target)
-	if err != nil {
-		msg := err.Error()
-		if res.Output != "" {
-			msg += "：" + res.Output
+	// 校验必须落在「配置所属的节点」上：
+	//   - 本地节点：沿用面板本机的核心二进制（原路径）；
+	//   - 远程节点：把 check 命令下发到目标节点，用节点自己的二进制校验节点上
+	//     已生成的 runtime 配置。否则面板本机没装/没启动核心时，远程节点的校验
+	//     会被误报（「核心未安装/没运行」），本地状态不应影响远程节点。
+	isLocal := h.svc == nil || h.svc.IsLocalServer(c.Request.Context(), serverID)
+	if isLocal {
+		res, err := h.coreConfigSvc.Validate(coreType, target)
+		if err != nil {
+			msg := err.Error()
+			if res.Output != "" {
+				msg += "：" + res.Output
+			}
+			response.BadRequest(c, "VALIDATION_FAILED", msg)
+			return
 		}
-		response.BadRequest(c, "VALIDATION_FAILED", msg)
+		response.OK(c, gin.H{
+			"valid":   true,
+			"source":  source,
+			"checked": res.Checked,
+			"version": res.Version,
+			"output":  res.Output,
+		})
+		return
+	}
+
+	// ---- 远程节点 ----
+	if source == "request" {
+		// 自定义配置内容没有传输通道（ExecuteBinary 只支持命令行参数），
+		// 远程节点只做 JSON 语法检查；二进制校验请校验「节点当前配置」。
+		if !coreconfigSvc.ValidJSONC([]byte(target)) {
+			response.BadRequest(c, "VALIDATION_FAILED", "invalid JSON")
+			return
+		}
+		response.OK(c, gin.H{
+			"valid":   true,
+			"source":  source,
+			"checked": false,
+			"output":  "远程节点自定义配置仅做 JSON 语法检查；二进制校验请不传 config_json（校验节点当前配置）",
+		})
+		return
+	}
+
+	// source == generated：读取节点上已生成的 runtime 配置文件，在节点上跑 check
+	_, remotePath, rcErr := h.svc.ReadConfigFile(c.Request.Context(), serverID, coreType)
+	if rcErr != nil || remotePath == "" {
+		msg := "读取节点配置失败，无法在节点上校验"
+		if rcErr != nil {
+			msg += "：" + rcErr.Error()
+		}
+		response.InternalError(c, "READ_CONFIG_FAILED", msg)
+		return
+	}
+	args := remoteCheckArgs(coreType, remotePath)
+	if args == nil {
+		response.OK(c, gin.H{
+			"valid":   true,
+			"source":  source,
+			"checked": false,
+			"output":  "核心 " + coreType + " 不支持配置检查命令，已跳过",
+		})
+		return
+	}
+	rawOut, exErr := h.svc.ExecuteBinaryRawOutput(c.Request.Context(), serverID, coreType, args...)
+	if exErr != nil {
+		response.BadRequest(c, "VALIDATION_FAILED", fmt.Sprintf("%s 配置校验失败（在节点上执行）：\n%v", coreType, exErr))
 		return
 	}
 	response.OK(c, gin.H{
 		"valid":   true,
 		"source":  source,
-		"checked": res.Checked,
-		"version": res.Version,
-		"output":  res.Output,
+		"checked": true,
+		"output":  strings.TrimSpace(rawOut),
 	})
+}
+
+// remoteCheckArgs 返回各核心的「只检查不启动」命令参数（与 binaries.checkArgs 保持一致）；
+// 返回 nil 表示该核心不支持校验。
+func remoteCheckArgs(coreType, configPath string) []string {
+	switch coreType {
+	case "singbox":
+		return []string{"check", "-c", configPath}
+	case "xray":
+		return []string{"-test", "-config", configPath}
+	default:
+		return nil
+	}
 }
 
 // GetConfigFile handles GET /api/v1/node-servers/:id/protocols/:coreType/config-file

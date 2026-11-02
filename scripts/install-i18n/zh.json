@@ -36,6 +36,8 @@
     "warn_caps_missing": "以下命令缺失，限速/防火墙/端口检测等能力会受限：%s",
     "warn_caps_hint": "可手动安装后重试（nftables / iproute2 / procps / lsof / openssl）",
     "ok_runtime": "运行时依赖就绪（nft/tc/ip/ss/procps/lsof/openssl）",
+    "step_libcrypt": "检测到缺少 libcrypt.so.1，安装兼容包 %s",
+    "warn_libcrypt": "兼容包 %s 安装失败，依赖 libcrypt.so.1 的功能可能不可用（可手动安装，如 dnf install -y libxcrypt-compat）",
     "ok_deps": "系统依赖就绪",
     "ok_system_go": "使用系统 Go %s（要求 >= %s）",
     "step_install_go": "安装 Go %s（系统版本不满足 >= %s）",

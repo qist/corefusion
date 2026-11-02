@@ -137,6 +137,8 @@ err_missing_cmds=缺少必要命令：%s（请先手动安装，或去掉 --no-d
 warn_caps_missing=以下命令缺失，限速/防火墙/端口检测等能力会受限：%s
 warn_caps_hint=可手动安装后重试（nftables / iproute2 / procps / lsof / openssl）
 ok_runtime=运行时依赖就绪（nft/tc/ip/ss/procps/lsof/openssl）
+step_libcrypt=检测到缺少 libcrypt.so.1，安装兼容包 %s
+warn_libcrypt=兼容包 %s 安装失败，依赖 libcrypt.so.1 的功能可能不可用（可手动安装，如 dnf install -y libxcrypt-compat）
 ok_deps=系统依赖就绪
 ok_system_go=使用系统 Go %s（要求 >= %s）
 step_install_go=安装 Go %s（系统版本不满足 >= %s）
@@ -251,6 +253,8 @@ err_missing_cmds=Missing required commands: %s (install them manually or remove 
 warn_caps_missing=The following commands are missing; rate limiting/firewall/port detection may be limited: %s
 warn_caps_hint=Install them manually and retry (nftables / iproute2 / procps / lsof / openssl)
 ok_runtime=Runtime dependencies ready (nft/tc/ip/ss/procps/lsof/openssl)
+step_libcrypt=libcrypt.so.1 not found; installing compatibility package %s
+warn_libcrypt=Failed to install compatibility package %s; features depending on libcrypt.so.1 may not work (install manually, e.g. dnf install -y libxcrypt-compat)
 ok_deps=System dependencies ready
 ok_system_go=Using system Go %s (requires >= %s)
 step_install_go=Installing Go %s (system version is older than >= %s)
@@ -365,6 +369,8 @@ err_missing_cmds=دستورات لازم موجود نیستند: %s (آن‌ه�
 warn_caps_missing=این دستورات موجود نیستند؛ محدودسازی سرعت/فایروال/تشخیص پورت محدود می‌شود: %s
 warn_caps_hint=پس از نصب دستی دوباره تلاش کنید (nftables / iproute2 / procps / lsof / openssl)
 ok_runtime=وابستگی‌های زمان اجرا آماده‌اند (nft/tc/ip/ss/procps/lsof/openssl)
+step_libcrypt=libcrypt.so.1 یافت نشد؛ نصب بسته سازگاری %s
+warn_libcrypt=نصب بسته سازگاری %s ناموفق بود؛ قابلیت‌های وابسته به libcrypt.so.1 ممکن است کار نکنند (نصب دستی، مثلاً dnf install -y libxcrypt-compat)
 ok_deps=وابستگی‌های سیستم آماده‌اند
 ok_system_go=استفاده از Go سیستم %s (نیاز >= %s)
 step_install_go=نصب Go %s (نسخه سیستم کمتر از >= %s است)
@@ -479,6 +485,8 @@ err_missing_cmds=Не хватает обязательных команд: %s (
 warn_caps_missing=Следующие команды отсутствуют; ограничение скорости/межсетевой экран/проверка портов могут работать не полностью: %s
 warn_caps_hint=Установите их вручную и повторите (nftables / iproute2 / procps / lsof / openssl)
 ok_runtime=Зависимости времени выполнения готовы (nft/tc/ip/ss/procps/lsof/openssl)
+step_libcrypt=libcrypt.so.1 не найдена; устанавливаем пакет совместимости %s
+warn_libcrypt=Не удалось установить пакет совместимости %s; функции, зависящие от libcrypt.so.1, могут не работать (установите вручную, напр. dnf install -y libxcrypt-compat)
 ok_deps=Системные зависимости готовы
 ok_system_go=Используется системный Go %s (требуется >= %s)
 step_install_go=Установка Go %s (системная версия ниже >= %s)
@@ -1077,6 +1085,24 @@ install_deps() {
 			for p in "${runtime_pkgs[@]}"; do
 				pkg_install "$p" >/dev/null 2>&1 || true
 			done
+		fi
+	fi
+
+	# libcrypt.so.1 兼容包：EL9/EL10（RHEL/Rocky/Alma/Oracle）、Fedora、Arch 等默认只有
+	# libxcrypt 的 libcrypt.so.2，不再提供 libcrypt.so.1，依赖旧 crypt 接口的程序会报
+	# "libcrypt.so.1: cannot open shared object file"。按检测结果缺则补装（尽力而为，
+	# 失败只告警不中断）；Debian/Ubuntu 自带 libcrypt1，Alpine 是 musl 无此概念，直接跳过。
+	if [ "$FAMILY" != "alpine" ] && ! ldconfig -p 2>/dev/null | grep -q 'libcrypt\.so\.1'; then
+		local crypt_pkg=""
+		case "$FAMILY" in
+			debian)         crypt_pkg="libcrypt1" ;;
+			rhel|arch|suse) crypt_pkg="libxcrypt-compat" ;;
+		esac
+		if [ -n "$crypt_pkg" ]; then
+			step "$(t step_libcrypt "$crypt_pkg")"
+			if ! pkg_install "$crypt_pkg" >/dev/null 2>&1 || ! ldconfig -p 2>/dev/null | grep -q 'libcrypt\.so\.1'; then
+				warn "$(t warn_libcrypt "$crypt_pkg")"
+			fi
 		fi
 	fi
 

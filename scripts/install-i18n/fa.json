@@ -36,6 +36,8 @@
     "warn_caps_missing": "این دستورات موجود نیستند؛ محدودسازی سرعت/فایروال/تشخیص پورت محدود می‌شود: %s",
     "warn_caps_hint": "پس از نصب دستی دوباره تلاش کنید (nftables / iproute2 / procps / lsof / openssl)",
     "ok_runtime": "وابستگی‌های زمان اجرا آماده‌اند (nft/tc/ip/ss/procps/lsof/openssl)",
+    "step_libcrypt": "libcrypt.so.1 یافت نشد؛ نصب بسته سازگاری %s",
+    "warn_libcrypt": "نصب بسته سازگاری %s ناموفق بود؛ قابلیت‌های وابسته به libcrypt.so.1 ممکن است کار نکنند (نصب دستی، مثلاً dnf install -y libxcrypt-compat)",
     "ok_deps": "وابستگی‌های سیستم آماده‌اند",
     "ok_system_go": "استفاده از Go سیستم %s (نیاز >= %s)",
     "step_install_go": "نصب Go %s (نسخه سیستم کمتر از >= %s است)",

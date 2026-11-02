@@ -351,26 +351,41 @@ func (a *LocalAgent) proxyRouter(ctx context.Context, conn *grpc.ClientConn, req
 // tries sing-box. If both succeed, merges results.
 // For "resetStats" and "resetUserStats": tries xray first, then sing-box.
 func (a *LocalAgent) proxyStatsAny(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
-	// Try xray connection
-	xrayConn, xrayErr := a.getXrayConn()
+	// 核心没跑时不去 dial stats API：dial 失败（"connection failed (transient):
+	// context deadline exceeded"）会被面板原样透给前端。核心未运行属于正常态，
+	// 查询返回空数据、复位直接成功跳过；只有「进程在跑但查询真的失败」才返回错误。
+	// （顺带省掉核心未运行时每次 5s 的建连超时。）
+	xrayRunning := a.procMgr == nil || a.procMgr.IsCoreRunning("xray")
+	singboxRunning := a.procMgr == nil || a.procMgr.IsCoreRunning("singbox")
+	if !xrayRunning && !singboxRunning {
+		if req.Method == "resetStats" || req.Method == "resetUserStats" {
+			return &agentpb.XrayAPIResponse{Success: true, Response: []byte(`{"message":"core not running, stats reset skipped"}`)}, nil
+		}
+		return &agentpb.XrayAPIResponse{Success: true, Response: []byte(`{"users":[],"inbounds":[]}`)}, nil
+	}
+
+	// Try xray connection（xray 未运行时跳过，不去 dial）
 	xrayResp := (*agentpb.XrayAPIResponse)(nil)
-	if xrayErr == nil {
-		xrayResp, _ = a.proxyStats(ctx, xrayConn, req, false)
+	var xrayErr error
+	if xrayRunning {
+		xrayConn, connErr := a.getXrayConn()
+		if connErr != nil {
+			xrayErr = connErr
+		} else {
+			xrayResp, _ = a.proxyStats(ctx, xrayConn, req, false)
+		}
 	}
 
-	// Try sing-box connection (V2Ray API)
+	// Try sing-box connection (V2Ray API)（sing-box 未运行时跳过）
 	singboxResp := (*agentpb.XrayAPIResponse)(nil)
-	sbConn, sbErr := a.getSingboxV2RayConn()
-	if sbErr == nil {
-		singboxResp, _ = a.proxyStats(ctx, sbConn, req, true)
-	}
-
-	// If neither worked
-	if xrayResp == nil && singboxResp == nil {
-		return &agentpb.XrayAPIResponse{
-			Success: false,
-			Error:   fmt.Sprintf("connect failed: xray(%v), singbox(%v)", xrayErr, sbErr),
-		}, nil
+	var sbErr error
+	if singboxRunning {
+		sbConn, connErr := a.getSingboxV2RayConn()
+		if connErr != nil {
+			sbErr = connErr
+		} else {
+			singboxResp, _ = a.proxyStats(ctx, sbConn, req, true)
+		}
 	}
 
 	// For reset operations, success from either is fine
@@ -378,20 +393,45 @@ func (a *LocalAgent) proxyStatsAny(ctx context.Context, req *agentpb.XrayAPIRequ
 		if xrayResp != nil && xrayResp.Success {
 			return xrayResp, nil
 		}
-		return singboxResp, nil
+		if singboxResp != nil && singboxResp.Success {
+			return singboxResp, nil
+		}
+		// 两边都失败/未运行：必须带回具体原因，绝不能返回 nil 响应
+		// （面板侧对 nil 响应只会得到空错误信息）
+		return &agentpb.XrayAPIResponse{Success: false, Error: statsFailReason(xrayResp, xrayErr, singboxResp, sbErr)}, nil
 	}
 
 	// For query operations, merge results from both cores
 	// If only one succeeded, return that one
-	if xrayResp == nil || !xrayResp.Success {
-		return singboxResp, nil
+	if xrayResp != nil && xrayResp.Success && singboxResp != nil && singboxResp.Success {
+		// Both succeeded — merge user and inbound stats
+		return mergeStatsResponses(xrayResp, singboxResp)
 	}
-	if singboxResp == nil || !singboxResp.Success {
+	if xrayResp != nil && xrayResp.Success {
 		return xrayResp, nil
 	}
+	if singboxResp != nil && singboxResp.Success {
+		return singboxResp, nil
+	}
+	// 两边都失败：带回具体原因（nil 响应到面板会变成空错误）
+	return &agentpb.XrayAPIResponse{Success: false, Error: statsFailReason(xrayResp, xrayErr, singboxResp, sbErr)}, nil
+}
 
-	// Both succeeded — merge user and inbound stats
-	return mergeStatsResponses(xrayResp, singboxResp)
+// statsFailReason 汇总两路 stats 尝试的失败原因，取第一个可读的错误。
+func statsFailReason(xrayResp *agentpb.XrayAPIResponse, xrayErr error, singboxResp *agentpb.XrayAPIResponse, sbErr error) string {
+	if xrayResp != nil && xrayResp.Error != "" {
+		return "xray: " + xrayResp.Error
+	}
+	if xrayErr != nil {
+		return "xray: " + xrayErr.Error()
+	}
+	if singboxResp != nil && singboxResp.Error != "" {
+		return "singbox: " + singboxResp.Error
+	}
+	if sbErr != nil {
+		return "singbox: " + sbErr.Error()
+	}
+	return "no stats-capable core responded"
 }
 
 // getSingboxV2RayConn returns a gRPC connection to the local sing-box V2Ray API.
@@ -533,12 +573,29 @@ func (a *LocalAgent) proxyStats(ctx context.Context, conn *grpc.ClientConn, req 
 	}
 
 	switch req.Method {
-	case "getStats":
+	case "getStats", "QueryStats":
+		// "QueryStats" 是面板 coredata.Provider 远程后端使用的方法名，
+		// 与 gRPC 原生方法同名；此前只认 "getStats" 导致远程 stats 恒报
+		// unknown stats method（被面板侧 provider 的 local 回退 bug 掩盖）。
 		resp, err := queryStats(&statsCommand.QueryStatsRequest{Reset_: false})
 		if err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
 		return buildStatsResponse(resp)
+
+	case "GetSysStats":
+		// 面板 remoteBackend.GetSysStats 使用；sing-box V2Ray API 无此方法，
+		// 失败时由上层（proxyStatsAny）合并逻辑处理。
+		client := statsCommand.NewStatsServiceClient(conn)
+		r, err := client.GetSysStats(ctx, &statsCommand.SysStatsRequest{})
+		if err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+		}
+		out, mErr := json.Marshal(r)
+		if mErr != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: mErr.Error()}, nil
+		}
+		return &agentpb.XrayAPIResponse{Success: true, Response: out}, nil
 
 	case "resetStats":
 		_, err := queryStats(&statsCommand.QueryStatsRequest{Reset_: true})

@@ -1074,6 +1074,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString("        listen [::]:80;\n")
 		}
 		sb.WriteString("        location / {\n")
+		sb.WriteString("            default_type text/plain;\n")
 		sb.WriteString("            return 200 \"CoreFusion Proxy - OK\";\n")
 		sb.WriteString("        }\n")
 		sb.WriteString("    }\n")

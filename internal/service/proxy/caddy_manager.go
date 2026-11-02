@@ -416,7 +416,7 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
 			sb.WriteString("\t}\n")
 		}
-		sb.WriteString("\trespond \"CoreFusion\" 200\n")
+		sb.WriteString("\trespond \"CoreFusion Proxy - OK\" 200\n")
 		sb.WriteString("}\n")
 		return sb.String(), nil
 	}

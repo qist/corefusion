@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gorm.io/gorm"
@@ -822,8 +823,24 @@ func normalizeSHA256(s string) string {
 	return s
 }
 
-// restartCurrentProcess 默认重启实现：re-exec 自身后退出。
+// restartCurrentProcess 默认重启实现。
+//
+// systemd 托管下绝不能 re-exec 自身：旧主进程退出（exit 0）后 systemd 立即把
+// 单元判为 inactive/dead，re-exec 出的子进程也在单元 cgroup 里随后被清理——
+// 表现为「自更新成功但面板没起来」（2026-11-02 在 116 实测踩中）。
+// 正确做法是脱离 cgroup 调 systemctl restart，由 systemd 自己完成重启。
 func restartCurrentProcess() {
+	if unit := systemdUnitName(); unit != "" {
+		cmd := exec.Command("systemctl", "restart", unit)
+		// 新会话脱离单元 cgroup：即使 systemd 先 stop 旧单元把客户端一并清掉，
+		// 重启请求也已送达 PID 1；旧单元 inactive 后 restart 等价 start。
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		_ = cmd.Start()
+		os.Exit(0)
+	}
+	// 非 systemd（nohup / 容器）：re-exec 自身后退出。
 	exe, err := os.Executable()
 	if err != nil {
 		os.Exit(0)
@@ -833,4 +850,28 @@ func restartCurrentProcess() {
 	cmd.Stderr = os.Stderr
 	_ = cmd.Start()
 	os.Exit(0)
+}
+
+// systemdUnitName 返回当前进程所属的 systemd 单元名（如 corefusion.service）。
+// 仅当确实由 systemd 启动（INVOCATION_ID 存在且 cgroup 可解析）时返回非空。
+func systemdUnitName() string {
+	if os.Getenv("INVOCATION_ID") == "" {
+		return ""
+	}
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		// 形如 0::/system.slice/corefusion.service
+		idx := strings.LastIndex(line, "/")
+		if idx < 0 {
+			continue
+		}
+		name := strings.TrimSpace(line[idx+1:])
+		if strings.HasSuffix(name, ".service") {
+			return name
+		}
+	}
+	return ""
 }

@@ -1367,6 +1367,10 @@ RestartSec=3
 LimitNOFILE=1048576
 KillSignal=SIGTERM
 TimeoutStopSec=30
+# 只杀主进程（面板），不回收整个 cgroup：caddy/nginx 等代理子进程在面板
+# 重启/更新期间保持运行，新面板进程启动时按 PID 收编（StartProxy 的
+# "already running, attaching guardian" 路径），代理不中断服务。
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

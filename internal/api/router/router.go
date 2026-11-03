@@ -99,13 +99,11 @@ import (
 	portalSvc "corefusion/internal/service/portal"
 	proxySvc "corefusion/internal/service/proxy"
 	rateLimitSvc "corefusion/internal/service/ratelimit"
-	ratelimitsvc "corefusion/internal/service/ratelimit"
 	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
 	subendSvc "corefusion/internal/service/subendpoint"
 	subfmtSvc "corefusion/internal/service/subformat"
-	subRegion "corefusion/internal/service/subscription"
 	subService "corefusion/internal/service/subscription"
 	systemSvc "corefusion/internal/service/system"
 	trafficSvc "corefusion/internal/service/traffic"
@@ -2077,10 +2075,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					// 否则 AssociateIP/ApplyLimits 报 "rate limit manager not configured"。
 					localAgent = localAgent.WithRateLimitManager(agentratelimit.NewManager(""))
 					localAgent = localAgent.WithRateLimitInitFunc(func(ctx context.Context, maxDown, maxUp int32) error {
-						return ratelimitsvc.InitLocalBackend(ctx, database, localAgent, maxDown, maxUp)
+						return rateLimitSvc.InitLocalBackend(ctx, database, localAgent, maxDown, maxUp)
 					})
 					go func() {
-						if err := ratelimitsvc.InitLocalBackend(context.Background(), database, localAgent, 0, 0); err != nil {
+						if err := rateLimitSvc.InitLocalBackend(context.Background(), database, localAgent, 0, 0); err != nil {
 							log.Printf("[RateLimitService] local rate limit not initialized at startup: %v", err)
 						}
 					}()
@@ -2176,8 +2174,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 				// Phase 5: Dashboard & Enhancements wiring
 				multiHealthChecker := healthcheck.NewMultiServerHealthChecker(nodeMgrForPhase3, nodeServerRepo)
-				geoIPResolver := subRegion.NewSimpleGeoIPResolver()
-				regionSelector := subRegion.NewRegionSelector(geoIPResolver, nodeServerRepo)
+				geoIPResolver := subService.NewSimpleGeoIPResolver()
+				regionSelector := subService.NewRegionSelector(geoIPResolver, nodeServerRepo)
 
 				nodeServerSvcInst.
 					WithHealthChecker(multiHealthChecker).
@@ -3200,7 +3198,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 
 			// Agent bootstrap (public — no auth, uses bootstrap token, registered on v1 not protected)
-			v1.POST("/agent/bootstrap", func(c *gin.Context) {
+			// ⚠ 加公共限流（安全审计 v6 §5 M4 遗留）：失败分支会写服务端日志，
+			// 不限流可被拿来刷日志/放大请求；正常节点的 bootstrap 只有装机时一次。
+			v1.POST("/agent/bootstrap", middleware.PublicAPIRateLimit(), func(c *gin.Context) {
 				var req struct {
 					ServerID       int64  `json:"server_id" binding:"required"`
 					BootstrapToken string `json:"bootstrap_token" binding:"required"`

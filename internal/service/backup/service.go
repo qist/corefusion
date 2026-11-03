@@ -391,7 +391,9 @@ func (s *Service) crossDBDumpRestore(ctx context.Context, targetDBType, targetDS
 	if err != nil {
 		return fmt.Errorf("create temp sqlite: %w", err)
 	}
-	defer srcCleanup()
+	// ⚠ 必须用闭包延迟调用：`defer srcCleanup()` 在 defer 语句处就固定了函数值 ✗，
+	// 后面把 srcCleanup 换成空函数也无法阻止二次 Close（staticcheck SA4006 抓到）。
+	defer func() { srcCleanup() }()
 
 	// Run AutoMigrate to create all tables in the temporary SQLite database
 	if err := db.AutoMigrateOnDB(srcDB); err != nil {

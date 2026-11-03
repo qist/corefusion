@@ -138,3 +138,43 @@ func TestAccessLogFormatterRedactsToken(t *testing.T) {
 		t.Errorf("应只打码 token、保留其它参数：%s", line)
 	}
 }
+
+// 安全审计 v6 L-4：登录页 2fa-status 按用户名返回布尔值，可被用来缩小用户名
+// 枚举范围 —— 按 IP 限流后批量查询会被拦住，正常用户的零星查询不受影响。
+func TestAuthStatusRateLimitBlocksBurst(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mw := AuthStatusRateLimit()
+	hit := func(ip string) int {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/login/2fa-status?username=x", nil)
+		c.Request.RemoteAddr = ip + ":1234"
+		mw(c)
+		if !c.IsAborted() {
+			c.Next()
+		}
+		return w.Code
+	}
+
+	// 正常登录流程只会偶发查询：前几次必须放行
+	for i := 0; i < 3; i++ {
+		if got := hit("198.51.100.77"); got != http.StatusOK {
+			t.Fatalf("第 %d 次应放行，得到 %d", i+1, got)
+		}
+	}
+	// 持续枚举最终要被拦（限额 30/分钟，这里跑到超限）
+	blocked := false
+	for i := 0; i < 50; i++ {
+		if hit("198.51.100.77") == http.StatusTooManyRequests {
+			blocked = true
+			break
+		}
+	}
+	if !blocked {
+		t.Error("批量查询 2fa-status 应被限流拦截")
+	}
+	// 不同出口 IP 互不影响
+	if got := hit("198.51.100.88"); got != http.StatusOK {
+		t.Errorf("另一个 IP 不应受影响，得到 %d", got)
+	}
+}

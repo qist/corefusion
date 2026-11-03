@@ -214,3 +214,60 @@ func RelocateKeyToSecretFile(key string) {
 	}
 	log.Printf("[startup] moved %s to %s (backup: %s)", key, SecretEnvFile, bak)
 }
+
+// ReencryptEnvFile 把 env 文件里「当前主密钥解不开、但 legacy 主机名派生密钥能解」
+// 的 `enc:` 值，解出来后用当前主密钥重写（原子写，0600，幂等）。返回重写数量。
+//
+// 典型用途：`.env` 里的 `CF_DB_DSN`（mysql/pg 的 DSN 是加密存储的）。老部署若
+// 曾在 hostname 派生密钥下写入，升级后只靠 DecryptSecret 的 legacy 回退能读；
+// 这里把它真正迁到新密钥，避免换机/回退逻辑变化后永久解不开。
+func ReencryptEnvFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(string(data), "\n")
+	n := 0
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		if !IsEncrypted(val) || CanDecryptWithPrimary(val) {
+			continue
+		}
+		plain, derr := DecryptSecret(val)
+		if derr != nil {
+			continue
+		}
+		enc, eerr := EncryptSecret(plain)
+		if eerr != nil || enc == "" {
+			continue
+		}
+		lines[i] = key + "=" + enc
+		n++
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	content := strings.Join(lines, "\n")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0600); err != nil {
+		return 0, err
+	}
+	if err := os.Chmod(tmp, 0600); err != nil {
+		os.Remove(tmp)
+		return 0, err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return 0, err
+	}
+	return n, nil
+}

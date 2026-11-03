@@ -257,3 +257,51 @@ func (m *certMeta) issueParams(a *AgentApp, dataDir string) acmeIssueParams {
 		Timeout: 5 * time.Minute,
 	}
 }
+
+// migrateCertMetaEncryption 把 certs/*/meta.json 里用**历史主机名派生密钥**加密的
+// DNS 凭据，解出来用当前本地密钥重写（幂等）。
+//
+// 为什么必须做：readCertMeta 只是在运行时靠 DecryptSecret 的 legacy 回退解密，
+// 落盘的密文仍然是老密钥 —— 一旦换机器/换 hostname/回退逻辑调整就永久解不开
+// （该证书再也不能自续）。这里做一次性搬家：老密文 → 明文 → 当前密钥密文。
+func migrateCertMetaEncryption(dataDir string) {
+	files, err := filepath.Glob(filepath.Join(dataDir, "certs", "*", "meta.json"))
+	if err != nil || len(files) == 0 {
+		return
+	}
+	migrated := 0
+	for _, p := range files {
+		raw, rerr := os.ReadFile(p)
+		if rerr != nil {
+			continue
+		}
+		var m certMeta
+		if err := json.Unmarshal(raw, &m); err != nil {
+			continue
+		}
+		needs := false
+		for _, v := range m.DNSEnvVars {
+			if crypto.IsEncrypted(v) && !crypto.CanDecryptWithPrimary(v) {
+				needs = true
+				break
+			}
+		}
+		if !needs {
+			continue // 已是当前密钥（或没有加密凭据）
+		}
+		name := filepath.Base(filepath.Dir(p))
+		plain, derr := readCertMeta(dataDir, name)
+		if derr != nil {
+			log.Printf("[acme] 迁移 %s 失败（保留原密文，下次重试）: %v", p, derr)
+			continue
+		}
+		if werr := writeCertMeta(dataDir, name, plain); werr != nil {
+			log.Printf("[acme] 迁移 %s 写回失败（保留原密文）: %v", p, werr)
+			continue
+		}
+		migrated++
+	}
+	if migrated > 0 {
+		log.Printf("[acme] 已用本地密钥重新加密 %d 个证书 meta（历史主机名密钥 → 当前密钥）", migrated)
+	}
+}

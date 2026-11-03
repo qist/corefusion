@@ -41,17 +41,22 @@ import (
 // 失败不致命：写不了就保持原有 hostname 派生行为，只告警 —— 不能让加密加固
 // 反而把节点启动拦住。
 func initAgentEncryptionKey(dataDir string) {
-	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") != "" {
-		return // 运维显式注入（EnvironmentFile 等）优先
-	}
 	installDir := filepath.Dir(filepath.Clean(dataDir))
-	key, err := secretcrypto.EnsureSecretKeyAt(installDir, "CF_SECRET_ENCRYPTION_KEY")
-	if err != nil {
-		log.Printf("[Agent] warning: prepare encryption key failed (%v); falling back to legacy hostname-derived key", err)
-		return
+	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") == "" {
+		key, err := secretcrypto.EnsureSecretKeyAt(installDir, "CF_SECRET_ENCRYPTION_KEY")
+		if err != nil {
+			log.Printf("[Agent] warning: prepare encryption key failed (%v); falling back to legacy hostname-derived key", err)
+			return
+		}
+		os.Setenv("CF_SECRET_ENCRYPTION_KEY", key)
+		log.Printf("[Agent] encryption key ready: %s", filepath.Join(installDir, secretcrypto.SecretEnvFile))
+	} else {
+		log.Printf("[Agent] using CF_SECRET_ENCRYPTION_KEY from environment")
 	}
-	os.Setenv("CF_SECRET_ENCRYPTION_KEY", key)
-	log.Printf("[Agent] encryption key ready: %s", filepath.Join(installDir, secretcrypto.SecretEnvFile))
+
+	// 无论密钥来自文件还是环境变量，都把历史 hostname 密钥加密的 meta 重写成
+	// 当前密钥 —— 不能只依赖 DecryptSecret 的 legacy 回退（换机/回退逻辑变化就永久解不开）。
+	migrateCertMetaEncryption(dataDir)
 }
 
 func main() {

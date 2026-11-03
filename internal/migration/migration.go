@@ -348,7 +348,117 @@ func RunDataMigrations(db *gorm.DB) error {
 	migrateDropStandaloneHy2Tuic(db)
 	migrateSeedSingboxDefaults(db)
 
+	// 历史「主机名派生密钥」加密的存量密文 → 用当前主密钥重新加密（幂等）。
+	//
+	// 之前这些值只靠 DecryptSecret 的 legacy 回退才能读；一旦换机/换主机名/
+	// 回退逻辑调整就会永久解不开（充值卡、DNS 凭据、支付密钥、TOTP、CA 私钥全中）。
+	// 必须在 CF_SECRET_ENCRYPTION_KEY 就绪之后执行（main 已把密钥初始化提前到 db.Init 之前）。
+	reencryptLegacySecrets(db)
+
 	return nil
+}
+
+// reencryptLegacySecrets 扫描所有表的文本列，把「`enc:` 前缀 + 当前主密钥解不开 +
+// legacy 主机名派生密钥能解开」的值，解出来后用当前主密钥重写。
+//
+// 为什么不维护表列清单：加密点分散在 system_settings / charge / ca_root / eab_config /
+// acme_account_config / dns 渠道 / 备份存储 / warps / mihomo 等十几处，漏一个就留隐患。
+// 这里用 GORM Migrator 枚举所有表与字符串列，只处理 `enc:` 前缀且能成功 legacy 解密的值，
+// 不会误伤普通字段（普通值不以 enc: 开头）。
+//
+// 幂等：重写后主密钥即可解开 → 下次启动 CanDecryptWithPrimary 为 true → 跳过。
+func reencryptLegacySecrets(db *gorm.DB) {
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		log.Printf("[migration] re-encrypt: list tables failed: %v", err)
+		return
+	}
+	totalRewritten := 0
+	dialect := db.Dialector.Name()
+	for _, table := range tables {
+		cols, err := db.Migrator().ColumnTypes(table)
+		if err != nil {
+			continue
+		}
+		pk := ""
+		for _, col := range cols {
+			if isPK, ok := col.PrimaryKey(); ok && isPK {
+				pk = col.Name()
+				break
+			}
+		}
+		if pk == "" {
+			continue // 复合/无主键的表跳过（本项目业务表都是单主键）
+		}
+		for _, col := range cols {
+			if !isStringColumn(col) {
+				continue
+			}
+			name := col.Name()
+			if name == pk {
+				continue
+			}
+			// 先只取主键 + 该列，避免把大表整行读进内存
+			type encRow struct {
+				ID  int64
+				Val string
+			}
+			var rows []encRow
+			q := db.Table(table).
+				Select(quoteIdent(dialect, pk)+" AS id, "+quoteIdent(dialect, name)+" AS val").
+				Where(quoteIdent(dialect, name)+" LIKE ?", "enc:%")
+			if err := q.Scan(&rows).Error; err != nil {
+				continue // 该列可能是非文本类型或不支持 LIKE，跳过
+			}
+			rewritten := 0
+			for _, r := range rows {
+				if r.Val == "" || crypto.CanDecryptWithPrimary(r.Val) {
+					continue // 已是当前密钥加密（或不是密文）
+				}
+				plain, derr := crypto.DecryptSecret(r.Val)
+				if derr != nil {
+					log.Printf("[migration] re-encrypt: %s.%s#%d cannot be decrypted with legacy key either, left as-is", table, name, r.ID)
+					continue
+				}
+				enc, eerr := crypto.EncryptSecret(plain)
+				if eerr != nil || enc == "" {
+					continue
+				}
+				if uerr := db.Table(table).Where(quoteIdent(dialect, pk)+" = ?", r.ID).Update(name, enc).Error; uerr != nil {
+					log.Printf("[migration] re-encrypt: write %s.%s#%d failed: %v", table, name, r.ID, uerr)
+					continue
+				}
+				rewritten++
+			}
+			if rewritten > 0 {
+				log.Printf("[migration] re-encrypt: %s.%s rewrote %d legacy value(s) with the current key", table, name, rewritten)
+				totalRewritten += rewritten
+			}
+		}
+	}
+	if totalRewritten > 0 {
+		log.Printf("[migration] re-encrypt: done, %d value(s) migrated to the current encryption key", totalRewritten)
+	}
+}
+
+// isStringColumn 判断列是否可能是文本（只对这些列做 `LIKE 'enc:%'` 扫描）。
+func isStringColumn(col gorm.ColumnType) bool {
+	t := strings.ToUpper(col.DatabaseTypeName())
+	for _, marker := range []string{"CHAR", "TEXT", "CLOB", "JSON", "VARCHAR", "NVARCHAR", "LONGTEXT", "MEDIUMTEXT"} {
+		if strings.Contains(t, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// quoteIdent 给标识符加引号，避免列名是保留字（如 key）导致 SQL 语法错误。
+// PostgreSQL 用双引号；SQLite/MySQL 用反引号。
+func quoteIdent(dialect, name string) string {
+	if dialect == "postgres" {
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	}
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
 
 // migrateClientPasswordHashes 把历史上以可恢复形式落库的客户端密码重新哈希成 bcrypt。

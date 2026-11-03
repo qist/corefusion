@@ -121,6 +121,17 @@ func SafeFetchGET(ctx context.Context, rawURL string, timeout time.Duration, max
 	return safeFetchGETWithClient(ctx, NewSafeHTTPClient(timeout, false), rawURL, maxBytes)
 }
 
+// SafeFetchGETFollowRedirects 与 SafeFetchGET 相同，但**允许跟随重定向**。
+//
+// 适用场景：公开的 CF IP 优选源、镜像站经常 http→https 或 302 到 CDN，
+// 一律禁跳转会把这些正常源也打断。安全性由 NewSafeDownloadClient 的
+// **拨号层校验**保证：每一跳都会对真实目标 IP 校验，所以
+// 「公网 URL 302 → 127.0.0.1 / 169.254.169.254」仍会在第二跳拨号时被拒，
+// 与禁跳转等效（见安全审计 v6 H-2）。
+func SafeFetchGETFollowRedirects(ctx context.Context, rawURL string, timeout time.Duration, maxBytes int64) ([]byte, error) {
+	return safeFetchGETWithClient(ctx, NewSafeDownloadClient(timeout, ""), rawURL, maxBytes)
+}
+
 // NewSafeDownloadClient 面向"用户可控 URL 的大文件下载"场景（流式落盘，不适合整块读进内存）：
 //   - 拨号层拒绝环回/内网/保留地址（同 NewSafeHTTPClient）——校验发生在**每次拨号**时，
 //     因此即使跟随重定向，每一跳的真实目标 IP 都会被再校验，SSRF 防护与"禁重定向"等效；

@@ -4,21 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"regexp"
 	"time"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/pkg/netutil"
 )
+
+// cfipMaxResponseBytes 是 CF IP 源响应的上限（正常优选源只有几十 KB）。
+const cfipMaxResponseBytes int64 = 4 << 20
 
 // Service handles CF IP business logic.
 type Service struct {
 	sourceRepo *repository.CFIPSourceRepository
 	entryRepo  *repository.CFIPEntryRepository
-	httpClient *http.Client
 }
 
 // NewService creates a new CF IP service.
@@ -26,7 +27,6 @@ func NewService(sourceRepo *repository.CFIPSourceRepository, entryRepo *reposito
 	return &Service{
 		sourceRepo: sourceRepo,
 		entryRepo:  entryRepo,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -173,7 +173,7 @@ func (s *Service) FetchFromSource(ctx context.Context, sourceID int64) error {
 	}
 
 	// Fetch IPs from URL
-	ips, err := s.fetchIPs(source.URL)
+	ips, err := s.fetchIPs(ctx, source.URL)
 	if err != nil {
 		return fmt.Errorf("fetch failed: %w", err)
 	}
@@ -228,20 +228,21 @@ func (s *Service) FetchAllEnabled(ctx context.Context) error {
 }
 
 // fetchIPs fetches IP list from URL.
-func (s *Service) fetchIPs(url string) ([]string, error) {
-	resp, err := s.httpClient.Get(url)
+//
+// 安全审计 v6 H-2：源 URL 由管理员配置，任何能写 cfip 源的账号都能让面板发起请求，
+// 因此**不能**用裸 http.Client（否则可探测内网 / 读取云元数据 169.254.169.254）。
+// 统一走 netutil.SafeFetchGETFollowRedirects：
+//   - 只允许 http/https —— 公网优选源（BestCF / CloudFlareYes 等）行为不变；
+//   - **允许跟随重定向**：http→https、CDN 302 这类正常跳转不会被误伤；
+//   - 拨号层拒绝环回/私网/保留地址（含云元数据），且**每一跳**都校验真实 IP，
+//     因此「公网 302 → 内网」仍会被拒（与禁跳转等效，且不依赖 DNS 预检）；
+//   - 响应体上限 4 MiB，避免被超大响应打爆内存。
+func (s *Service) fetchIPs(ctx context.Context, url string) ([]string, error) {
+	body, err := netutil.SafeFetchGETFollowRedirects(ctx, url, 30*time.Second, cfipMaxResponseBytes)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	content := string(body)
-	return extractIPs(content), nil
+	return extractIPs(string(body)), nil
 }
 
 // extractIPs extracts IP addresses from text.

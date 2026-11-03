@@ -387,6 +387,7 @@
   "sub.copy": "复制",
   "sub.copy_link": "复制链接",
   "sub.default_config": "默认配置",
+  "sub.proxy_providers": "Provider 模式",
   "sub.description": "查看您的订阅链接和状态",
   "sub.fmt_base64": "通用 Base64 格式，兼容大部分客户端",
   "sub.fmt_clash": "Clash/Mihomo YAML 配置",

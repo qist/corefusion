@@ -11,6 +11,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/subscription/providercfg"
 )
 
 // AccountSyncer is implemented by client.Service to synchronize accounts
@@ -147,34 +148,38 @@ func (s *Service) GetTemplate(ctx context.Context, id int64) (*entity.PlanTempla
 
 // CreateTemplateInput is the input for creating a plan template.
 type CreateTemplateInput struct {
-	Name                     string  `json:"name" binding:"required"`
-	Description              string  `json:"description"`
-	Category                 string  `json:"category"`
-	NodeGroupIDs             []int64 `json:"node_group_ids"`
-	SubNodeLimit             int     `json:"sub_node_limit"`   // 每订阅返回节点数，0=不限
-	SubRotateHours           int     `json:"sub_rotate_hours"` // 轮换周期（小时），0=不轮换
-	DeviceLimit              int     `json:"device_limit"`
-	SpeedLimitMbps           int     `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps         int     `json:"speed_limit_up_mbps"`
-	ConcurrentLimit          int     `json:"concurrent_limit"`
-	DefaultQuotaBytes        int64   `json:"default_quota_bytes"`
-	DefaultQuotaResetCycle   string  `json:"default_quota_reset_cycle"`
-	DefaultQuotaResetDay     *int    `json:"default_quota_reset_day"`
-	SuspendOnQuotaExhausted  *int    `json:"suspend_on_quota_exhausted"`
-	IsTrial                  bool    `json:"is_trial"`
-	TrialDurationHours       int     `json:"trial_duration_hours"`
-	BillingUsedTemplate      string  `json:"billing_used_template"`
-	BillingRemainingTemplate string  `json:"billing_remaining_template"`
-	BillingResetTemplate     string  `json:"billing_reset_template"`
-	BillingExpiryTemplate    string  `json:"billing_expiry_template"`
-	BillingNodeIDs           []int64 `json:"billing_node_ids"`
-	SortOrder                int     `json:"sort_order"`
-	Enabled                  *bool   `json:"enabled"`
-	Metadata                 string  `json:"metadata"`
+	Name                       string  `json:"name" binding:"required"`
+	Description                string  `json:"description"`
+	Category                   string  `json:"category"`
+	NodeGroupIDs               []int64 `json:"node_group_ids"`
+	SubNodeLimit               int     `json:"sub_node_limit"`   // 每订阅返回节点数，0=不限
+	SubRotateHours             int     `json:"sub_rotate_hours"` // 轮换周期（小时），0=不轮换
+	DeviceLimit                int     `json:"device_limit"`
+	SpeedLimitMbps             int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps           int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit            int     `json:"concurrent_limit"`
+	DefaultQuotaBytes          int64   `json:"default_quota_bytes"`
+	DefaultQuotaResetCycle     string  `json:"default_quota_reset_cycle"`
+	DefaultQuotaResetDay       *int    `json:"default_quota_reset_day"`
+	SuspendOnQuotaExhausted    *int    `json:"suspend_on_quota_exhausted"`
+	IsTrial                    bool    `json:"is_trial"`
+	TrialDurationHours         int     `json:"trial_duration_hours"`
+	BillingUsedTemplate        string  `json:"billing_used_template"`
+	BillingRemainingTemplate   string  `json:"billing_remaining_template"`
+	BillingResetTemplate       string  `json:"billing_reset_template"`
+	BillingExpiryTemplate      string  `json:"billing_expiry_template"`
+	BillingNodeIDs             []int64 `json:"billing_node_ids"`
+	SubscriptionProviderConfig string  `json:"subscription_provider_config"`
+	SortOrder                  int     `json:"sort_order"`
+	Enabled                    *bool   `json:"enabled"`
+	Metadata                   string  `json:"metadata"`
 }
 
 // CreateTemplate creates a new plan template.
 func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput) (*entity.PlanTemplate, error) {
+	if err := providercfg.Validate(input.SubscriptionProviderConfig); err != nil {
+		return nil, err
+	}
 	category := input.Category
 	if category == "" {
 		category = entity.PlanCategoryStandard
@@ -216,6 +221,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		BillingResetTemplate:     input.BillingResetTemplate,
 		BillingExpiryTemplate:    input.BillingExpiryTemplate,
 		BillingNodeIDs:           entity.Int64List(input.BillingNodeIDs),
+		SubscriptionProviderConfig: input.SubscriptionProviderConfig,
 		SortOrder:                input.SortOrder,
 		Enabled:                  enabled,
 		Metadata:                 input.Metadata,
@@ -230,34 +236,40 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 
 // UpdateTemplateInput is the input for updating a plan template.
 type UpdateTemplateInput struct {
-	Name                     *string  `json:"name"`
-	Description              *string  `json:"description"`
-	Category                 *string  `json:"category"`
-	NodeGroupIDs             *[]int64 `json:"node_group_ids"`
-	SubNodeLimit             *int     `json:"sub_node_limit"`
-	SubRotateHours           *int     `json:"sub_rotate_hours"`
-	DeviceLimit              *int     `json:"device_limit"`
-	SpeedLimitMbps           *int     `json:"speed_limit_mbps"`
-	SpeedLimitUpMbps         *int     `json:"speed_limit_up_mbps"`
-	ConcurrentLimit          *int     `json:"concurrent_limit"`
-	DefaultQuotaBytes        *int64   `json:"default_quota_bytes"`
-	DefaultQuotaResetCycle   *string  `json:"default_quota_reset_cycle"`
-	DefaultQuotaResetDay     *int     `json:"default_quota_reset_day"`
-	SuspendOnQuotaExhausted  *int     `json:"suspend_on_quota_exhausted"`
-	IsTrial                  *bool    `json:"is_trial"`
-	TrialDurationHours       *int     `json:"trial_duration_hours"`
-	BillingUsedTemplate      *string  `json:"billing_used_template"`
-	BillingRemainingTemplate *string  `json:"billing_remaining_template"`
-	BillingResetTemplate     *string  `json:"billing_reset_template"`
-	BillingExpiryTemplate    *string  `json:"billing_expiry_template"`
-	BillingNodeIDs           *[]int64 `json:"billing_node_ids"`
-	SortOrder                *int     `json:"sort_order"`
-	Enabled                  *bool    `json:"enabled"`
-	Metadata                 *string  `json:"metadata"`
+	Name                       *string  `json:"name"`
+	Description                *string  `json:"description"`
+	Category                   *string  `json:"category"`
+	NodeGroupIDs               *[]int64 `json:"node_group_ids"`
+	SubNodeLimit               *int     `json:"sub_node_limit"`
+	SubRotateHours             *int     `json:"sub_rotate_hours"`
+	DeviceLimit                *int     `json:"device_limit"`
+	SpeedLimitMbps             *int     `json:"speed_limit_mbps"`
+	SpeedLimitUpMbps           *int     `json:"speed_limit_up_mbps"`
+	ConcurrentLimit            *int     `json:"concurrent_limit"`
+	DefaultQuotaBytes          *int64   `json:"default_quota_bytes"`
+	DefaultQuotaResetCycle     *string  `json:"default_quota_reset_cycle"`
+	DefaultQuotaResetDay       *int     `json:"default_quota_reset_day"`
+	SuspendOnQuotaExhausted    *int     `json:"suspend_on_quota_exhausted"`
+	IsTrial                    *bool    `json:"is_trial"`
+	TrialDurationHours         *int     `json:"trial_duration_hours"`
+	BillingUsedTemplate        *string  `json:"billing_used_template"`
+	BillingRemainingTemplate   *string  `json:"billing_remaining_template"`
+	BillingResetTemplate       *string  `json:"billing_reset_template"`
+	BillingExpiryTemplate      *string  `json:"billing_expiry_template"`
+	BillingNodeIDs             *[]int64 `json:"billing_node_ids"`
+	SubscriptionProviderConfig *string  `json:"subscription_provider_config"`
+	SortOrder                  *int     `json:"sort_order"`
+	Enabled                    *bool    `json:"enabled"`
+	Metadata                   *string  `json:"metadata"`
 }
 
 // UpdateTemplate updates a plan template.
 func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemplateInput) (*entity.PlanTemplate, error) {
+	if input.SubscriptionProviderConfig != nil {
+		if err := providercfg.Validate(*input.SubscriptionProviderConfig); err != nil {
+			return nil, err
+		}
+	}
 	tmpl, err := s.tmplRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("template not found: %w", err)
@@ -324,6 +336,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.BillingNodeIDs != nil {
 		tmpl.BillingNodeIDs = entity.Int64List(*input.BillingNodeIDs)
+	}
+	if input.SubscriptionProviderConfig != nil {
+		tmpl.SubscriptionProviderConfig = *input.SubscriptionProviderConfig
 	}
 	if input.SortOrder != nil {
 		tmpl.SortOrder = *input.SortOrder

@@ -387,6 +387,7 @@
   "sub.copy": "کپی",
   "sub.copy_link": "کپی لینک",
   "sub.default_config": "پیش‌فرض",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "مشاهده لینک و وضعیت اشتراک شما",
   "sub.fmt_base64": "قالب عمومی Base64، سازگار با بیشتر کلاینت‌ها",
   "sub.fmt_clash": "پیکربندی YAML برای Clash/Mihomo",

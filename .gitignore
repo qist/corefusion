@@ -35,3 +35,5 @@ scripts/e2e/__pycache__/
 
 # i18n 修复脚本依赖 opencc（本地安装，不入库）
 /node_modules
+shots/116-after-login.png
+shots/116-login.png

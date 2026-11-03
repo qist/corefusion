@@ -100,6 +100,7 @@
                 <el-button size="small" @click="showVariantsDialog(tpl)">{{ t('plan.manageVariants') }}</el-button>
                 <el-button size="small" @click="showNodeGroupsDialog(tpl)">{{ t('plan.manageNodes') }}</el-button>
                 <el-button size="small" @click="showBillingNodesDialog(tpl)">{{ t('plan.billingNodes') }}</el-button>
+                <el-button size="small" @click="showProvidersDialog(tpl)">{{ t('plan.subscriptionSources') }}</el-button>
                 <el-button size="small" type="warning" :loading="syncLoading[tpl.id]" @click="handleSyncTemplate(tpl)">{{ t('plan.syncAccounts') }}</el-button>
                 <el-button size="small" @click="showEditTemplate(tpl)">{{ t('common.edit') }}</el-button>
                 <el-button size="small" type="danger" @click="deleteTemplate(tpl)">{{ t('common.delete') }}</el-button>
@@ -441,6 +442,81 @@
       <template #footer>
         <el-button @click="billingNodesDialog=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="saveBillingNodes">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 订阅来源（proxy-providers）配置弹窗 -->
+    <el-dialog v-model="providerDialog" :title="currentTemplate?.name + ' - ' + t('plan.subscriptionSources')" width="820px">
+      <el-alert type="info" :closable="false" style="margin-bottom:12px">
+        {{ t('plan.subscriptionSourcesHint') }}
+      </el-alert>
+      <el-form label-width="120px" size="small">
+        <el-form-item :label="t('plan.internalProvidersAuto')">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <el-tag v-for="g in providerInternalGroups" :key="g.id" size="small">{{ g.name }}</el-tag>
+            <span v-if="!providerInternalGroups.length" style="color:#909399;font-size:12px">{{ t('plan.noInternalGroups') }}</span>
+          </div>
+          <div class="form-hint">{{ t('plan.internalProvidersAutoHint') }}</div>
+        </el-form-item>
+      </el-form>
+
+      <el-divider content-position="left">{{ t('plan.externalProviders') }}</el-divider>
+      <el-table :data="providerForm.external_providers" size="small" stripe>
+        <el-table-column :label="t('common.name')" width="130">
+          <template #default="{row}"><el-input v-model="row.name" /></template>
+        </el-table-column>
+        <el-table-column :label="t('common.type')" width="95">
+          <template #default="{row}">
+            <el-select v-model="row.type" style="width:100%">
+              <el-option label="http" value="http" />
+              <el-option label="file" value="file" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="URL" min-width="200">
+          <template #default="{row}"><el-input v-model="row.url" /></template>
+        </el-table-column>
+        <el-table-column :label="t('plan.providerPath')" width="150">
+          <template #default="{row}"><el-input v-model="row.path" placeholder="./providers/" /></template>
+        </el-table-column>
+        <el-table-column :label="t('plan.providerInterval')" width="110">
+          <template #default="{row}"><el-input-number v-model="row.interval" :min="0" controls-position="right" style="width:100%" /></template>
+        </el-table-column>
+        <el-table-column width="70">
+          <template #default="{ $index }">
+            <el-button size="small" type="danger" @click="providerForm.external_providers.splice($index, 1)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-button size="small" style="margin-top:8px" @click="addExternalProvider">+ {{ t('plan.addExternalProvider') }}</el-button>
+
+      <el-divider content-position="left">{{ t('plan.groupMapping') }}</el-divider>
+      <el-table :data="providerForm.group_use" size="small" stripe>
+        <el-table-column :label="t('plan.groupName')" min-width="200">
+          <template #default="{row}">
+            <el-select v-model="row.group" filterable allow-create default-first-option style="width:100%">
+              <el-option v-for="n in mihomoGroupNames" :key="n" :label="n" :value="n" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('plan.providerKeys')" min-width="240">
+          <template #default="{row}">
+            <el-select v-model="row.keys" multiple filterable allow-create style="width:100%">
+              <el-option v-for="k in providerKeyOptions" :key="k" :label="k" :value="k" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column width="70">
+          <template #default="{ $index }">
+            <el-button size="small" type="danger" @click="providerForm.group_use.splice($index, 1)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-button size="small" style="margin-top:8px" @click="addGroupMapping">+ {{ t('plan.addGroupMapping') }}</el-button>
+
+      <template #footer>
+        <el-button @click="providerDialog=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="providerSaving" @click="saveProviders">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -887,6 +963,118 @@ async function fetchNodeGroups() {
   groupLoading.value = true
   try { nodeGroups.value = (await planApi.listNodeGroups()) || [] } catch {} finally { groupLoading.value = false }
 }
+// ──────── Subscription Providers ────────
+// 内部 provider 由套餐节点组自动生成（后端按组名清洗 key），这里只读展示；
+// 外部 provider 与组 → 来源映射属于套餐配置，保存在 subscription_provider_config。
+const providerDialog = ref(false)
+const providerSaving = ref(false)
+const providerForm = ref({ internal_providers: {}, external_providers: [], group_use: [] })
+const mihomoGroupNames = ref([])
+
+const providerInternalGroups = computed(() => {
+  const ids = currentTemplate.value?.node_group_ids || []
+  return nodeGroups.value.filter(g => ids.includes(g.id))
+})
+const providerKeyOptions = computed(() => {
+  const set = new Set()
+  providerInternalGroups.value.forEach(g => { if (g.name) set.add(g.name) })
+  providerForm.value.external_providers.forEach(p => { if (p.name) set.add(p.name) })
+  return [...set]
+})
+
+async function showProvidersDialog(tpl) {
+  currentTemplate.value = tpl
+  let cfg = {}
+  try { cfg = JSON.parse(tpl.subscription_provider_config || '{}') } catch { cfg = {} }
+  providerForm.value = {
+    internal_providers: cfg.internal_providers || {},
+    external_providers: Object.entries(cfg.external_providers || {}).map(([name, p]) => ({
+      name,
+      type: p.type || 'http',
+      url: p.url || '',
+      path: p.path || '',
+      interval: p.interval || 3600,
+      // 保留 health-check / filter / override 等未在表格里编辑的字段，保存时原样带回。
+      raw: { ...p },
+    })),
+    group_use: Object.entries(cfg.group_use || {}).map(([group, keys]) => ({
+      group,
+      keys: Array.isArray(keys) ? [...keys] : [],
+    })),
+  }
+  providerDialog.value = true
+  await fetchNodeGroups()
+  await fetchMihomoGroupNames()
+}
+
+// 共享 YAML 里的组名（只用于下拉提示，允许 allow-create 手填）。
+async function fetchMihomoGroupNames() {
+  const names = new Set()
+  try {
+    const r = await client.get('/mihomo/configs', { params: { limit: 200, offset: 0 } })
+    const list = Array.isArray(r?.items) ? r.items : (r || [])
+    for (const c of list) {
+      if (c.format !== 'mihomo_yaml' || !c.enabled) continue
+      try {
+        const cfg = JSON.parse(c.config_json || '{}')
+        for (const g of (cfg['proxy-groups'] || [])) {
+          if (g && g.name) names.add(g.name)
+        }
+      } catch {}
+    }
+  } catch {}
+  mihomoGroupNames.value = [...names]
+}
+
+function addExternalProvider() {
+  providerForm.value.external_providers.push({ name: '', type: 'http', url: '', path: '', interval: 3600 })
+}
+function addGroupMapping() {
+  providerForm.value.group_use.push({ group: '', keys: [] })
+}
+
+async function saveProviders() {
+  const external = {}
+  for (const p of providerForm.value.external_providers) {
+    const name = (p.name || '').trim()
+    if (!name) continue
+    const entry = { ...(p.raw || {}), type: p.type || 'http' }
+    if (p.url) entry.url = p.url.trim()
+    else delete entry.url
+    if (p.path) entry.path = p.path.trim()
+    else delete entry.path
+    if (p.interval) entry.interval = Number(p.interval)
+    else delete entry.interval
+    if (entry.type === 'http' && !entry.url) {
+      ElMessage.error(t('plan.providerUrlRequired', { name }))
+      return
+    }
+    external[name] = entry
+  }
+  const groupUse = {}
+  for (const row of providerForm.value.group_use) {
+    const group = (row.group || '').trim()
+    const keys = (row.keys || []).map(k => String(k).trim()).filter(Boolean)
+    if (!group || keys.length === 0) continue
+    groupUse[group] = keys
+  }
+  const cfg = { external_providers: external, group_use: groupUse }
+  if (providerForm.value.internal_providers && Object.keys(providerForm.value.internal_providers).length > 0) {
+    cfg.internal_providers = providerForm.value.internal_providers
+  }
+  providerSaving.value = true
+  try {
+    await planApi.updatePlanTemplate(currentTemplate.value.id, {
+      subscription_provider_config: JSON.stringify(cfg),
+    })
+    ElMessage.success(t('plan.saveSuccess'))
+    providerDialog.value = false
+    fetchTemplates()
+  } catch {} finally {
+    providerSaving.value = false
+  }
+}
+
 function showCreateGroup() {
   editingGroup.value = null
   groupForm.value = { name: '', description: '', region: '', tier: 'standard', sort_order: 0, enabled: true }

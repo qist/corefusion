@@ -40,11 +40,15 @@ type PlanTemplate struct {
 	BillingResetTemplate     string    `gorm:"type:longtext" json:"billing_reset_template"`
 	BillingExpiryTemplate    string    `gorm:"type:longtext" json:"billing_expiry_template"`
 	BillingNodeIDs           Int64List `gorm:"type:longtext" json:"billing_node_ids"` // NodeGroupMember IDs selected for billing info rendering
-	SortOrder                int       `gorm:"not null;default:0" json:"sort_order"`
-	Enabled                  bool      `gorm:"not null;default:true" json:"enabled"`
-	Metadata                 string    `gorm:"type:longtext" json:"metadata"`
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
+	// SubscriptionProviderConfig：本套餐的订阅来源配置（proxy-providers / group_use），
+	// 只在该套餐生成订阅时注入，绝不写入共享 mihomo_configs.config_json。
+	// 结构见 design/SUBSCRIPTION_PROVIDERS_DESIGN.md §5.1。
+	SubscriptionProviderConfig string    `gorm:"type:longtext" json:"subscription_provider_config"`
+	SortOrder                  int       `gorm:"not null;default:0" json:"sort_order"`
+	Enabled                    bool      `gorm:"not null;default:true" json:"enabled"`
+	Metadata                   string    `gorm:"type:longtext" json:"metadata"`
+	CreatedAt                  time.Time `json:"created_at"`
+	UpdatedAt                  time.Time `json:"updated_at"`
 }
 
 func (PlanTemplate) TableName() string { return "plan_templates" }

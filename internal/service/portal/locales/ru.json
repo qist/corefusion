@@ -387,6 +387,7 @@
   "sub.copy": "Копировать",
   "sub.copy_link": "Копировать ссылку",
   "sub.default_config": "По умолчанию",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "Посмотреть ссылку на подписку и статус",
   "sub.fmt_base64": "Универсальный формат Base64, совместим с большинством клиентов",
   "sub.fmt_clash": "YAML-конфигурация Clash/Mihomo",

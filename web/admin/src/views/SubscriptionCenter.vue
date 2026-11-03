@@ -152,9 +152,10 @@
               </el-select>
             </el-form-item>
             <el-form-item :label="t('subfmt.planIds')">
-              <el-select v-model="fmtForm.plan_ids" style="width:100%" multiple clearable placeholder="Universal">
+              <el-select v-model="fmtForm.plan_ids" style="width:100%" multiple clearable :placeholder="t('subfmt.planIdsPlaceholder')">
                 <el-option v-for="p in allPlans" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
+              <div class="form-hint">{{ t('subfmt.planIdsHint') }}</div>
             </el-form-item>
             <el-form-item :label="t('common.enabled')"><el-switch v-model="fmtForm.enabled" /></el-form-item>
           </el-form>
@@ -213,7 +214,7 @@
         <el-upload
           :auto-upload="false"
           :show-file-list="false"
-          accept=".yaml,.yml,.txt"
+          accept=".yaml,.yml,.txt,.ini,.conf"
           @change="handleFileUpload"
         >
           <el-button size="small">{{ t('subfmt.importUpload') }}</el-button>

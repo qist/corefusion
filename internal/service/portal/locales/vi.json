@@ -387,6 +387,7 @@
   "sub.copy": "Sao chép",
   "sub.copy_link": "Sao chép liên kết",
   "sub.default_config": "Mặc định",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "Xem liên kết đăng ký và trạng thái của bạn",
   "sub.fmt_base64": "Định dạng Base64 phổ thông, tương thích với hầu hết ứng dụng khách",
   "sub.fmt_clash": "Cấu hình YAML Clash/Mihomo",

@@ -3335,73 +3335,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
 		}
 
-		// 1) Fetch enabled MihomoConfigs, filter by plan_id
-		configs, err := mihomoCfgRepoPublic.List(c.Request.Context())
+		items, err := buildPublicClientConfigItems(c.Request.Context(), mihomoCfgRepoPublic, subFmtRepoPublic, planID)
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
 			return
 		}
-		var cfgItems []gin.H
-		for _, cfg := range configs {
-			if !cfg.Enabled {
-				continue
-			}
-			// Parse plan_ids from JSON string (manual handling for compatibility)
-			var planIDs []int64
-			if cfg.PlanIDs != nil && len(cfg.PlanIDs) > 0 {
-				planIDs = []int64(cfg.PlanIDs)
-			}
-			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
-			if len(planIDs) > 0 && !containsInt64(planIDs, planID) {
-				continue
-			}
-			cfgItems = append(cfgItems, gin.H{
-				"id":          cfg.ID,
-				"name":        cfg.Name,
-				"description": cfg.Description,
-				"format":      cfg.Format,
-				"client_type": cfg.ClientType,
-				"platform":    cfg.Platform,
-				"sort_order":  cfg.SortOrder,
-				"plan_ids":    planIDs,
-				"type":        "config",
-			})
-		}
-
-		// 2) Fetch enabled SubscriptionFormats, filter by plan_id
-		formats, err := subFmtRepoPublic.List(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "LIST_FAILED", err.Error())
-			return
-		}
-		var fmtItems []gin.H
-		for _, fmt := range formats {
-			if !fmt.Enabled {
-				continue
-			}
-			// Filter by plan_id: show if plan_ids is empty (universal) or contains the plan_id
-			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
-				continue
-			}
-			fmtItems = append(fmtItems, gin.H{
-				"id":          fmt.ID,
-				"name":        fmt.Name,
-				"description": fmt.Description,
-				"format":      fmt.Format,
-				"client_type": fmt.ClientType,
-				"platform":    "",
-				"sort_order":  fmt.SortOrder,
-				"plan_ids":    fmt.PlanIDs,
-				"type":        "format",
-			})
-		}
-
-		// Merge and return
-		allItems := append(cfgItems, fmtItems...)
-		if allItems == nil {
-			allItems = []gin.H{}
-		}
-		response.OK(c, allItems)
+		response.OK(c, items)
 	})
 
 	// Charge callback (public, called by charge sites)
@@ -4137,67 +4076,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 			planID, _ = strconv.ParseInt(planIDStr, 10, 64)
 		}
 
-		configs, err := mihomoCfgRepoPortal.List(c.Request.Context())
+		items, err := buildPublicClientConfigItems(c.Request.Context(), mihomoCfgRepoPortal, subFmtRepoPortal, planID)
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
 			return
 		}
-		var cfgItems []gin.H
-		for _, cfg := range configs {
-			if !cfg.Enabled {
-				continue
-			}
-			var planIDs []int64
-			if cfg.PlanIDs != nil && len(cfg.PlanIDs) > 0 {
-				planIDs = []int64(cfg.PlanIDs)
-			}
-			if len(planIDs) > 0 && !containsInt64(planIDs, planID) {
-				continue
-			}
-			cfgItems = append(cfgItems, gin.H{
-				"id":          cfg.ID,
-				"name":        cfg.Name,
-				"description": cfg.Description,
-				"format":      cfg.Format,
-				"client_type": cfg.ClientType,
-				"platform":    cfg.Platform,
-				"sort_order":  cfg.SortOrder,
-				"plan_ids":    planIDs,
-				"type":        "config",
-			})
-		}
-
-		formats, err := subFmtRepoPortal.List(c.Request.Context())
-		if err != nil {
-			response.InternalError(c, "LIST_FAILED", err.Error())
-			return
-		}
-		var fmtItems []gin.H
-		for _, fmt := range formats {
-			if !fmt.Enabled {
-				continue
-			}
-			if len(fmt.PlanIDs) > 0 && !containsInt64(fmt.PlanIDs, planID) {
-				continue
-			}
-			fmtItems = append(fmtItems, gin.H{
-				"id":          fmt.ID,
-				"name":        fmt.Name,
-				"description": fmt.Description,
-				"format":      fmt.Format,
-				"client_type": fmt.ClientType,
-				"platform":    "",
-				"sort_order":  fmt.SortOrder,
-				"plan_ids":    fmt.PlanIDs,
-				"type":        "format",
-			})
-		}
-
-		allItems := append(cfgItems, fmtItems...)
-		if allItems == nil {
-			allItems = []gin.H{}
-		}
-		response.OK(c, allItems)
+		response.OK(c, items)
 	})
 
 	// Public articles（门户教程 / 文章；门户域名下缺此路由 → 列表为空 ✗）
@@ -4325,6 +4209,93 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 }
 
 // containsInt64 checks if a slice contains a specific int64 value.
+// buildPublicClientConfigItems 组装门户「更多订阅」弹窗用的格式列表。
+//
+// 可见性规则（2026-11-03）：
+//   - mihomo_configs 是具体客户端配置：必须显式关联当前套餐（plan_ids 含 plan_id）。
+//     plan_ids 为空 = 未关联 → 不返回（不再当作 universal 对所有套餐可见）。
+//   - subscription_formats 中的 singbox_json / xray_json 是具体客户端配置，规则与 mihomo_configs
+//     一致：未关联当前套餐（plan_ids 为空或不含 plan_id）→ 不返回。
+//   - subscription_formats 中的 base64_uri / raw_uri 等通用格式保留默认语义：
+//     plan_ids 为空表示内置默认格式，对所有套餐可见。
+func buildPublicClientConfigItems(
+	ctx context.Context,
+	mihomoRepo *repository.MihomoConfigRepository,
+	subFmtRepo *repository.SubscriptionFormatRepository,
+	planID int64,
+) ([]gin.H, error) {
+	configs, err := mihomoRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cfgItems := make([]gin.H, 0, len(configs))
+	for _, cfg := range configs {
+		if !cfg.Enabled {
+			continue
+		}
+		planIDs := []int64(cfg.PlanIDs)
+		// 未关联任何套餐 → 门户不显示。
+		if len(planIDs) == 0 || !containsInt64(planIDs, planID) {
+			continue
+		}
+		cfgItems = append(cfgItems, gin.H{
+			"id":          cfg.ID,
+			"name":        cfg.Name,
+			"description": cfg.Description,
+			"format":      cfg.Format,
+			"client_type": cfg.ClientType,
+			"platform":    cfg.Platform,
+			"sort_order":  cfg.SortOrder,
+			"plan_ids":    planIDs,
+			"type":        "config",
+		})
+	}
+
+	formats, err := subFmtRepo.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fmtItems := make([]gin.H, 0, len(formats))
+	for _, format := range formats {
+		if !format.Enabled {
+			continue
+		}
+		// sing-box / xray 是具体客户端配置：必须显式关联当前套餐才在门户显示，
+		// plan_ids 为空不再当作「默认格式」对所有套餐可见（与 mihomo_configs 一致）。
+		if isPlanGatedClientFormat(format.Format) {
+			if !containsInt64([]int64(format.PlanIDs), planID) {
+				continue
+			}
+		} else if len(format.PlanIDs) > 0 && !containsInt64([]int64(format.PlanIDs), planID) {
+			// base64 / raw 等通用格式：plan_ids 为空 = 默认格式，不受套餐关联限制。
+			continue
+		}
+		fmtItems = append(fmtItems, gin.H{
+			"id":          format.ID,
+			"name":        format.Name,
+			"description": format.Description,
+			"format":      format.Format,
+			"client_type": format.ClientType,
+			"platform":    "",
+			"sort_order":  format.SortOrder,
+			"plan_ids":    format.PlanIDs,
+			"type":        "format",
+		})
+	}
+
+	return append(cfgItems, fmtItems...), nil
+}
+
+// isPlanGatedClientFormat 判断某订阅格式是否属于「具体客户端配置」，
+// 这类格式必须显式关联套餐后才在门户可见（不允许用空 plan_ids 当默认格式全量下发）。
+func isPlanGatedClientFormat(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "singbox", "sing_box", "sing-box", "singbox_json", "xray", "xray_json":
+		return true
+	}
+	return false
+}
+
 func containsInt64(slice []int64, val int64) bool {
 	for _, v := range slice {
 		if v == val {

@@ -387,6 +387,7 @@
   "sub.copy": "Salin",
   "sub.copy_link": "Salin Tautan",
   "sub.default_config": "Konfigurasi Default",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "Lihat tautan dan status langganan Anda",
   "sub.fmt_base64": "Format Base64 universal, kompatibel dengan sebagian besar klien",
   "sub.fmt_clash": "Konfigurasi YAML Clash/Mihomo",

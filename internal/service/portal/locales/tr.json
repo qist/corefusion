@@ -387,6 +387,7 @@
   "sub.copy": "Kopyala",
   "sub.copy_link": "Bağlantıyı Kopyala",
   "sub.default_config": "Varsayılan",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "Abonelik bağlantınızı ve durumunuzu görüntüleyin",
   "sub.fmt_base64": "Evrensel Base64 formatı, çoğu istemciyle uyumludur",
   "sub.fmt_clash": "Clash/Mihomo YAML yapılandırması",

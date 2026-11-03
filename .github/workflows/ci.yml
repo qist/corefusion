@@ -39,6 +39,11 @@ jobs:
           bash -n scripts/install.sh
           python3 scripts/gen-install-i18n.py --check
 
+      # 路径拼接静态检查（安全审计 v6 §6）：filepath.Join 里直接拼请求输入
+      # 一律拦下，必须走 internal/util/safepath；避免下次新增接口又漏。
+      - name: 路径拼接静态检查（safepath）
+        run: bash scripts/check-safepath.sh
+
       - name: go vet
         run: go vet ./...
 

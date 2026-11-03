@@ -3076,9 +3076,7 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if sn, ok := grpc["serviceName"].(string); ok && sn != "" {
 				opts["grpc-service-name"] = sn
 			}
-			if mm, ok := grpc["multiMode"].(bool); ok && mm {
-				// grpc-mode not supported by mihomo
-			}
+			// grpc-mode（multiMode）mihomo 不支持，无需映射（原先是个空 if，staticcheck SA4006 已删）
 			if len(opts) > 0 {
 				extra["grpc-opts"] = opts
 			}

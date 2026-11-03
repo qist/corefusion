@@ -1089,9 +1089,10 @@ func (a *AgentApp) handleDeleteGeoRule(req *agentpb.DeleteGeoRuleRequest) *agent
 		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: "file_name is required"}
 	}
 
-	// Prevent path traversal
-	if strings.Contains(req.FileName, "..") || strings.Contains(req.FileName, "/") {
-		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: "invalid file name"}
+	// 与下载路径同一套校验（安全审计 v5 H4 / v6 M-6 口径）：手写的黑名单只查
+	// `..`/`/`，覆盖不到 `\`、绝对路径与编码变体 → 统一走 safepath.CheckName。
+	if err := safepath.CheckName("geo rule file name", req.FileName); err != nil {
+		return &agentpb.DeleteGeoRuleResponse{Success: false, Error: err.Error()}
 	}
 
 	filePath := filepath.Join(a.dataDir, "rules", req.FileName)

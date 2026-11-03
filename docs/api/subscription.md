@@ -41,7 +41,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 用量与到期时间（字节 / Unix 秒）。**错误响应（403）时也带**，供客户端展示余量 |
 | `Profile-Update-Interval` | `6` | 建议刷新间隔（小时） |
 | `Profile-Title` | `CoreFusion` | 订阅配置名（Clash Verge Rev / V2RayN 等显示用） |
-| `Profile-Web-Page-Url` | `https://…/portal` | 门户页链接（客户端"打开网页"入口） |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | 门户对外地址（客户端"打开网页"入口；独立门户端口为域名根路径，否则 /p） |
 | `Content-Type` | 按格式：`text/plain` / `text/yaml` / `application/json` | |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` | |
 

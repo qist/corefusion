@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | การใช้งานและการหมดอายุ (ไบต์ / Unix วินาที) **ส่งวันที่ 403 ด้วย** เพื่อให้ลูกค้าสามารถแสดงเบี้ยคงเหลือได้ |
 | `Profile-Update-Interval` | `6` | ช่วงเวลารีเฟรชที่แนะนำ (ชั่วโมง) |
 | `Profile-Title` | `CoreFusion` | ชื่อโปรไฟล์ (แสดงโดย Clash Verge Rev / V2RayN ฯลฯ) |
-| `Profile-Web-Page-Url` | `https://…/portal` | ลิงก์หน้าพอร์ทัล (“เปิดหน้าเว็บ” ในไคลเอนต์) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | ลิงก์หน้าพอร์ทัล (“เปิดหน้าเว็บ” ในไคลเอนต์) |
 | `Content-Type` | ต่อรูปแบบ: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

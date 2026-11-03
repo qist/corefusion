@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | الاستخدام وانتهاء الصلاحية (بايت / ثانية يونكس). **تم الإرسال أيضًا على الرقم 403** حتى يتمكن العملاء من إظهار الرصيد المتبقي |
 | `Profile-Update-Interval` | `6` | الفاصل الزمني للتحديث المقترح (ساعات) |
 | `Profile-Title` | `CoreFusion` | اسم الملف الشخصي (يتم عرضه بواسطة Clash Verge Rev / V2RayN، وما إلى ذلك) |
-| `Profile-Web-Page-Url` | `https://…/portal` | رابط صفحة البوابة ("فتح صفحة الويب" في العملاء) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | رابط صفحة البوابة ("فتح صفحة الويب" في العملاء) |
 | `Content-Type` | لكل تنسيق: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

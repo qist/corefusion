@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 用量與到期時間（位元組 / Unix 秒）。**錯誤響應（403）時也帶**，供客戶端展示餘量 |
 | `Profile-Update-Interval` | `6` | 建議重新整理間隔（小時） |
 | `Profile-Title` | `CoreFusion` | 訂閱配置名（Clash Verge Rev / V2RayN 等顯示用） |
-| `Profile-Web-Page-Url` | `https://…/portal` | 門戶頁連結（客戶端"開啟網頁"入口） |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | 門戶頁連結（客戶端"開啟網頁"入口） |
 | `Content-Type` | 按格式：`text/plain` / `text/yaml` / `application/json` | |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` | |
 

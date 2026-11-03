@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 사용량 및 만료(바이트/Unix 초). **403으로도 전송됨** 고객이 남은 허용량을 표시할 수 있음 |
 | `Profile-Update-Interval` | `6` | 제안된 새로 고침 간격(시간) |
 | `Profile-Title` | `CoreFusion` | 프로필 이름(Clash Verge Rev/V2RayN 등으로 표시) |
-| `Profile-Web-Page-Url` | `https://…/portal` | 포털 페이지 링크(클라이언트에서 "웹 페이지 열기") |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | 포털 페이지 링크(클라이언트에서 "웹 페이지 열기") |
 | `Content-Type` | 형식별: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

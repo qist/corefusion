@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | استفاده و انقضا (بایت / یونیکس ثانیه). **همچنین به شماره 403** ارسال شد، بنابراین مشتریان می توانند کمک هزینه باقیمانده را نشان دهند |
 | `Profile-Update-Interval` | `6` | فاصله پیشنهادی به‌روزرسانی (ساعت‌ها) |
 | `Profile-Title` | `CoreFusion` | نام نمایه (نشان داده شده توسط Clash Verge Rev / V2RayN و غیره) |
-| `Profile-Web-Page-Url` | `https://…/portal` | پیوند صفحه پورتال («صفحه وب باز» در مشتریان) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | پیوند صفحه پورتال («صفحه وب باز» در مشتریان) |
 | `Content-Type` | در قالب: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

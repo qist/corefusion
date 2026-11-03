@@ -42,7 +42,7 @@ Busca a lista de nós de assinatura de um usuário. **Este é o endpoint mais us
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Uso e expiração (bytes/segundos Unix). **Também enviado em 403**, para que os clientes possam mostrar o valor restante |
 | `Profile-Update-Interval` | `6` | Intervalo de atualização sugerido (horas) |
 | `Profile-Title` | `CoreFusion` | Nome do perfil (mostrado por Clash Verge Rev / V2RayN, etc.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Link da página do portal (“abrir página web” nos clientes) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Link da página do portal (“abrir página web” nos clientes) |
 | `Content-Type` | Por formato: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

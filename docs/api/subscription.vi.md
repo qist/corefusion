@@ -42,7 +42,7 @@ Tìm nạp danh sách nút đăng ký của người dùng. **Đây là điểm 
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Cách sử dụng và hết hạn (byte/giây Unix). **Cũng được gửi vào 403**, để khách hàng có thể hiển thị khoản trợ cấp còn lại |
 | `Profile-Update-Interval` | `6` | Khoảng thời gian làm mới được đề xuất (giờ) |
 | `Profile-Title` | `CoreFusion` | Tên hồ sơ (được hiển thị bởi Clash Verge Rev / V2RayN, v.v.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Liên kết trang cổng thông tin (“trang web mở” trong ứng dụng khách) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Liên kết trang cổng thông tin (“trang web mở” trong ứng dụng khách) |
 | `Content-Type` | Mỗi định dạng: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

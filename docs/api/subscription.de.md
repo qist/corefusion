@@ -42,7 +42,7 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Nutzung und Ablauf (Bytes/Unix-Sekunden). **Wird auch auf 403 gesendet**, damit Kunden das verbleibende Guthaben anzeigen können |
 | `Profile-Update-Interval` | `6` | Empfohlenes Aktualisierungsintervall (Stunden) |
 | `Profile-Title` | `CoreFusion` | Profilname (angezeigt von Clash Verge Rev / V2RayN usw.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Link zur Portalseite („Webseite öffnen“ in Clients) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Link zur Portalseite („Webseite öffnen“ in Clients) |
 | `Content-Type` | Pro Format: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

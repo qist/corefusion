@@ -42,7 +42,7 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Utilisation et expiration (octets / secondes Unix). **Également envoyé sur 403**, afin que les clients puissent montrer l'allocation restante |
 | `Profile-Update-Interval` | `6` | Intervalle d'actualisation suggéré (heures) |
 | `Profile-Title` | `CoreFusion` | Nom du profil (affiché par Clash Verge Rev / V2RayN, etc.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Lien vers la page du portail (« page Web ouverte » chez les clients) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Lien vers la page du portail (« page Web ouverte » chez les clients) |
 | `Content-Type` | Par format : `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

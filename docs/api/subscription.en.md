@@ -42,7 +42,7 @@ Fetches a user's subscription node list. **This is the most-used endpoint for en
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Usage and expiry (bytes / Unix seconds). **Also sent on 403**, so clients can show the remaining allowance |
 | `Profile-Update-Interval` | `6` | Suggested refresh interval (hours) |
 | `Profile-Title` | `CoreFusion` | Profile name (shown by Clash Verge Rev / V2RayN, etc.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Portal page link (“open web page” in clients) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Portal URL (“open web page” in clients; root path when the portal has its own port, otherwise /p) |
 | `Content-Type` | Per format: `text/plain` / `text/yaml` / `application/json` | |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` | |
 

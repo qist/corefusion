@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Использование и срок действия (байты/Unix-секунды). **Также отправляется по номеру 403**, чтобы клиенты могли показать остаток суммы. |
 | `Profile-Update-Interval` | `6` | Рекомендуемый интервал обновления (часы) |
 | `Profile-Title` | `CoreFusion` | Имя профиля (показано Clash Verge Rev / V2RayN и т. д.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Ссылка на страницу портала («открыть веб-страницу» в клиентах) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Ссылка на страницу портала («открыть веб-страницу» в клиентах) |
 | `Content-Type` | По формату: `text/plain` / `text/yaml` / `application/json`. |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

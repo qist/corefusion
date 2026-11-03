@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -756,6 +757,27 @@ func ensureImplicitAPIRoutingRuleLocal(routerConf *conf.RouterConfig) {
 // firewall service proxy (nftables/iptables on Agent host)
 // ============================================================
 
+var (
+	agentPortRangePattern = regexp.MustCompile(`^\d+(-\d+)?$`)
+	agentIfacePattern     = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,15}$`)
+)
+
+// validateAgentFirewallInput 与面板 xraycontrol 同一套白名单（安全审计 v6 M-6）：
+// Agent 以 root 运行，PortRange/Interface 会拼进 nft/iptables 参数，必须在 Agent 侧
+// 再校验一次，防止其它调用方（或面板被攻破）绕过前置校验。
+func validateAgentFirewallInput(portRange string, targetPort int, iface string) error {
+	if !agentPortRangePattern.MatchString(portRange) {
+		return fmt.Errorf("invalid port_range format: must be a single port or range (e.g. 443 or 20000-30000)")
+	}
+	if targetPort <= 0 || targetPort > 65535 {
+		return fmt.Errorf("invalid target_port: must be 1-65535")
+	}
+	if iface != "" && !agentIfacePattern.MatchString(iface) {
+		return fmt.Errorf("invalid interface name: must be alphanumeric with optional . _ - (max 15 chars)")
+	}
+	return nil
+}
+
 func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error) {
 	switch req.Method {
 	case "apply":
@@ -769,6 +791,9 @@ func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequ
 		}
 		if payload.PortRange == "" || payload.TargetPort == 0 {
 			return &agentpb.XrayAPIResponse{Success: false, Error: "port_range and target_port are required"}, nil
+		}
+		if err := validateAgentFirewallInput(payload.PortRange, payload.TargetPort, payload.Interface); err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
 		useNft := isNftablesAvailable()
 		exists, err := checkFirewallRuleExists(useNft, payload.PortRange, payload.TargetPort, payload.Interface)
@@ -813,6 +838,9 @@ func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequ
 		}
 		if payload.PortRange == "" || payload.TargetPort == 0 {
 			return &agentpb.XrayAPIResponse{Success: false, Error: "port_range and target_port are required"}, nil
+		}
+		if err := validateAgentFirewallInput(payload.PortRange, payload.TargetPort, payload.Interface); err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
 		}
 		useNft := isNftablesAvailable()
 		if err := removeFirewallRule(useNft, payload.PortRange, payload.TargetPort, payload.Interface); err != nil {

@@ -133,7 +133,9 @@ func (h *Handler) Authorize(c *gin.Context) {
 	if host == "" {
 		host = c.Request.Host
 	}
-	redirectURL := scheme + "://" + host + "/api/v1/client-auth/oauth/" + provider + "/callback"
+	// 安全审计 v6 L-2：回调地址优先取 oauth.callback_domain，不信任请求头。
+	base := h.oauthSvc.CallbackBaseURL(c.Request.Context(), scheme, host)
+	redirectURL := base + "/api/v1/client-auth/oauth/" + provider + "/callback"
 
 	authURL, err := h.oauthSvc.GetAuthURL(c.Request.Context(), provider, redirectURL, state)
 	if err != nil {
@@ -178,7 +180,9 @@ func (h *Handler) Callback(c *gin.Context) {
 	if host == "" {
 		host = c.Request.Host
 	}
-	redirectURL := scheme + "://" + host + "/api/v1/client-auth/oauth/" + provider + "/callback"
+	// 与 Authorize 同一口径（安全审计 v6 L-2）。
+	base := h.oauthSvc.CallbackBaseURL(c.Request.Context(), scheme, host)
+	redirectURL := base + "/api/v1/client-auth/oauth/" + provider + "/callback"
 
 	// Process OAuth callback
 	result, err := h.oauthSvc.HandleCallback(c.Request.Context(), provider, code, redirectURL)

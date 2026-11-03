@@ -235,12 +235,15 @@ func (s *Service) issueRecoveryCodes(ctx context.Context, userID int64) ([]strin
 
 // randomRecoveryCode 生成 XXXX-XXXX-XXXX 格式的恢复码（12 字符，48bit 十六进制）。
 func randomRecoveryCode() string {
-	buf := make([]byte, 6)
+	// 安全审计 v6 M-8：恢复码必须 ≥80 bit 熵。旧实现只有 6 字节（48 bit），
+	// DB 泄露后可离线枚举；这里升到 10 字节（80 bit），格式 5 组 4 位。
+	// 旧码（3 组）仍可校验：hashCode 逻辑不变，只是新生成的码更长。
+	buf := make([]byte, 10)
 	if _, err := rand.Read(buf); err != nil {
 		panic("crypto/rand failed: " + err.Error()) // 系统熵源故障，无法保证安全，直接崩溃
 	}
-	hexStr := strings.ToUpper(hex.EncodeToString(buf))
-	return hexStr[0:4] + "-" + hexStr[4:8] + "-" + hexStr[8:12]
+	h := strings.ToUpper(hex.EncodeToString(buf))
+	return h[0:4] + "-" + h[4:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20]
 }
 
 func hashCode(plain string) string {

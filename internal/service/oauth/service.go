@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -38,6 +39,27 @@ func NewService(settingSvc SettingStore, oAuthRepo *repository.ClientOAuthBindin
 		oAuthRepo:  oAuthRepo,
 		clientRepo: clientRepo,
 	}
+}
+
+// CallbackBaseURL 返回 OAuth 回调使用的 scheme://host（安全审计 v6 L-2）。
+//
+// 优先使用管理端配置的 oauth.callback_domain（即 provider 后台登记的域名），
+// **不信任**请求头 X-Forwarded-Host / Host —— 否则攻击者可让 redirect_uri
+// 指向自己的域名（provider 未严格校验时即可窃取授权码）。
+// 未配置时才回退到调用方传入的请求 host，保证旧部署行为不变。
+func (s *Service) CallbackBaseURL(ctx context.Context, scheme, requestHost string) string {
+	if s.settingSvc != nil {
+		if d, err := s.settingSvc.GetByKey(ctx, "oauth.callback_domain"); err == nil {
+			d = strings.TrimSpace(d)
+			if d != "" {
+				if strings.HasPrefix(d, "http://") || strings.HasPrefix(d, "https://") {
+					return strings.TrimRight(d, "/")
+				}
+				return "https://" + strings.TrimRight(d, "/")
+			}
+		}
+	}
+	return scheme + "://" + requestHost
 }
 
 // SetSelfUnbanChecker 注入自解封资格判定（与 clientauth.Service.SetSelfUnbanChecker 同源）。

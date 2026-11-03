@@ -6,11 +6,15 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -99,8 +103,10 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 	// 而面板生成的运行配置是 Xray 25+ 口径（finalmask.udp / mkcp-legacy），
 	// 旧版一起来就 unknown config id: mkcp-legacy 崩溃循环 —— 线上踩过 ✗。
 	// 风险排序：装预发布最多不稳，装旧正式版是直接起不来。
+	var releases []GitHubRelease
 	if version == "" {
-		releases, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
+		var err error
+		releases, err = i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
 		if err != nil {
 			return nil, fmt.Errorf("list releases: %w", err)
 		}
@@ -121,10 +127,28 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 		}
 	}
 
+	// 安全审计 v6 M-10：安装前必须校验 SHA-256（此前 Digest 字段完全未使用，
+	// 镜像/反代被劫持即可把恶意二进制装到本机与所有节点）。
+	//   - 校验和优先取 GitHub API 的 asset digest（Xray / sing-box 自建仓库均提供）；
+	//   - GitHub 下载地址拿不到校验和时**拒绝安装**（与 Agent 自更新同策略）；
+	//   - 非 GitHub 的自建镜像拿不到校验和时仅告警（避免直接锁死私有源）。
+	digest := findReleaseDigest(releases, version, downloadURL, assetName)
+	if digest == "" {
+		if rel, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName); err == nil {
+			digest = findReleaseDigest(rel, version, downloadURL, assetName)
+		}
+	}
+	if digest == "" {
+		if netutil.IsGitHubURL(downloadURL) {
+			return nil, fmt.Errorf("no SHA-256 checksum available for %s; refusing to install unverified binary", downloadURL)
+		}
+		log.Printf("[binaries] warning: no checksum available for %s, installing without verification", downloadURL)
+	}
+
 	// Download to temp directory first
 	tmpDir := filepath.Join(i.dataDir, "binaries", "tmp")
 	os.MkdirAll(tmpDir, 0750)
-	if err := i.downloadAndExtract(ctx, downloadURL, tmpDir, coreType); err != nil {
+	if err := i.downloadAndExtract(ctx, downloadURL, tmpDir, coreType, digest); err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
 	}
 
@@ -273,7 +297,51 @@ func (i *Installer) githubProxyURL(ctx context.Context) string {
 	return cfg.ProxyURL
 }
 
-func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, coreType string) error {
+// normalizeDigest 把 GitHub API 的 digest（形如 "sha256:<hex>"）归一化为小写 hex。
+// 非 sha256 或格式异常返回空串（视为「没有校验和」）。
+func normalizeDigest(d string) string {
+	d = strings.TrimSpace(strings.ToLower(d))
+	d = strings.TrimPrefix(d, "sha256:")
+	if len(d) != 64 {
+		return ""
+	}
+	for _, r := range d {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return ""
+		}
+	}
+	return d
+}
+
+// findReleaseDigest 在 release 列表中按下载 URL / 资产名找到对应资产的 sha256。
+//
+// 只在目标 version 的 release 里找：不同版本的资产可能同名（如固定命名），
+// 跨版本匹配会拿错校验和导致校验失败。
+func findReleaseDigest(releases []GitHubRelease, version, downloadURL, assetName string) string {
+	if downloadURL == "" {
+		return ""
+	}
+	base := path.Base(downloadURL)
+	for _, r := range releases {
+		if version != "" && r.TagName != version {
+			continue
+		}
+		for _, a := range r.Assets {
+			if a.BrowserDownloadURL != downloadURL && a.Name != base && (assetName == "" || a.Name != assetName) {
+				continue
+			}
+			if d := normalizeDigest(a.Digest); d != "" {
+				return d
+			}
+		}
+	}
+	return ""
+}
+
+// downloadAndExtract downloads a binary and extracts it to destDir.
+//
+// expectedDigest 非空时会在解包前校验整包 SHA-256（安全审计 v6 M-10）。
+func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, coreType, expectedDigest string) error {
 	accelDomain := i.githubAccelDomain(ctx)
 	proxyURL := i.githubProxyURL(ctx)
 	accelURL := netutil.AccelerateGitHubURL(rawURL, accelDomain)
@@ -294,6 +362,15 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 	bodyBytes, err := netutil.ReadLimited(resp.Body, netutil.MaxBinaryBytes)
 	if err != nil {
 		return fmt.Errorf("read response: %w", err)
+	}
+
+	// 安全审计 v6 M-10：解包前校验整包 SHA-256，不匹配直接丢弃（不落盘）。
+	if expectedDigest != "" {
+		sum := sha256.Sum256(bodyBytes)
+		got := hex.EncodeToString(sum[:])
+		if !strings.EqualFold(got, expectedDigest) {
+			return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedDigest, got)
+		}
 	}
 
 	// Try zip extraction first (Xray uses .zip)

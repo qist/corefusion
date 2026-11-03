@@ -643,14 +643,15 @@ const defaultPortalHTML = `<!DOCTYPE html>
               </div>
             </div>
             <!-- Multiple configs -->
-            <div v-for="cfg in item.configs" :key="cfg.name + '-' + cfg.type" class="more-subs-config-row">
+            <div v-for="cfg in item.configs" :key="cfg.name + '-' + cfg.type + '-' + (cfg.providers ? 'providers' : 'raw')" class="more-subs-config-row">
               <div class="more-subs-config-info">
-                <span class="more-subs-config-name">{{ cfg.name }}</span>
+                <span class="more-subs-config-name">{{ cfg.displayName || cfg.name }}</span>
                 <el-tag v-if="cfg.platform" size="small" type="info" effect="plain" class="more-subs-config-tag">{{ cfg.platform }}</el-tag>
+                <el-tag v-if="cfg.providers" size="small" type="warning" effect="plain" class="more-subs-config-tag">providers</el-tag>
               </div>
               <div class="more-subs-config-actions">
-                <el-button size="small" type="primary" plain @click="copyText(buildSubLink(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || ''))" :disabled="!client.sub_token">{{ t('sub.copy_link') }}</el-button>
-                <el-button size="small" @click="showMoreSubQrDialog(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || '')" :disabled="!client.sub_token">{{ t('sub.qr_code') }}</el-button>
+                <el-button size="small" type="primary" plain @click="copyText(buildSubLink(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || '', cfg.providers))" :disabled="!client.sub_token">{{ t('sub.copy_link') }}</el-button>
+                <el-button size="small" @click="showMoreSubQrDialog(item.key, cfg.type === 'config' ? cfg.name : '', cfg.platform || '', cfg.providers)" :disabled="!client.sub_token">{{ t('sub.qr_code') }}</el-button>
               </div>
             </div>
           </div>
@@ -4264,13 +4265,15 @@ var fetchClientConfigs = function() {
   }).catch(function() { clientConfigs.value = [] })
 }
 
-var buildSubLink = function(formatKey, configName, platform) {
+var buildSubLink = function(formatKey, configName, platform, providers) {
   var base = subUrl.value
   if (!base) return ''
   var sep = base.indexOf('?') >= 0 ? '&' : '?'
   var link = base + sep + 'format=' + encodeURIComponent(formatKey)
   if (configName) link += '&config=' + encodeURIComponent(configName)
   if (platform) link += '&platform=' + encodeURIComponent(platform)
+  // providers=1 → 主配置输出 proxy-providers（节点走定时回源），不加则内联节点。
+  if (providers) link += '&providers=1'
   return link
 }
 
@@ -4317,6 +4320,27 @@ var moreSubFormats = computed(function() {
     subFmts.forEach(function(c) {
       if (!seenNames[c.name]) configs.push(c)
     })
+    // 关联了 mihomo 格式 → 同时给出原始订阅（内联节点）与 proxy-providers 两种地址。
+    if (f.key === 'mihomo_yaml') {
+      var expanded = []
+      configs.forEach(function(c) {
+        expanded.push(c)
+        if (c.type === 'config') {
+          expanded.push({
+            id: c.id,
+            name: c.name,
+            displayName: c.name + ' · ' + t('sub.proxy_providers'),
+            description: c.description,
+            platform: c.platform,
+            type: c.type,
+            client_type: c.client_type,
+            sort_order: c.sort_order,
+            providers: true
+          })
+        }
+      })
+      configs = expanded
+    }
     // Sort by sort_order then name
     if (configs.length > 0) {
       item.configs = configs.slice().sort(function(a, b) { return a.sort_order - b.sort_order || a.name.localeCompare(b.name) })
@@ -4333,7 +4357,7 @@ var generateMoreSubQr = function(url) {
   } catch(e) { return '' }
 }
 
-var toggleMoreSubQr = function(formatKey, configName, platform) {
+var toggleMoreSubQr = function(formatKey, configName, platform, providers) {
 if (moreSubQrKey.value === formatKey && moreSubQrConfig.value === configName) {
 moreSubQrKey.value = ''
 moreSubQrConfig.value = ''
@@ -4342,11 +4366,11 @@ return
 }
 moreSubQrKey.value = formatKey
 moreSubQrConfig.value = configName
-var url = buildSubLink(formatKey, configName, platform)
+var url = buildSubLink(formatKey, configName, platform, providers)
 moreSubQrUrl.value = url ? generateMoreSubQr(url) : ''
 }
-var showMoreSubQrDialog = function(formatKey, configName, platform) {
-var url = buildSubLink(formatKey, configName, platform)
+var showMoreSubQrDialog = function(formatKey, configName, platform, providers) {
+var url = buildSubLink(formatKey, configName, platform, providers)
 moreSubQrDialogUrl.value = url ? generateMoreSubQr(url) : ''
 moreSubQrDialogVisible.value = true
 }

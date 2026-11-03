@@ -12,6 +12,7 @@ import (
 	"corefusion/internal/subscription/formatter"
 
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
@@ -552,7 +553,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	// 未注入 repo → 回退本请求 host（X-Forwarded-Proto 判定 https）
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
 	c.Request.Header.Set("X-Forwarded-Host", "panel.example.com")
-	got := h.buildProviderURL(c, "test-token")
+	got := h.buildProviderURL(c, "test-token", "")
 	want0 := "https://panel.example.com/sub/test-token?format=mihomo_proxies_yaml"
 	want := want0
 	if got != want {
@@ -564,7 +565,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	h2.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
 		{ID: 1, Domain: "sub.example.com", Path: "/", Enabled: true},
 	}})
-	got = h2.buildProviderURL(c, "test-token")
+	got = h2.buildProviderURL(c, "test-token", "")
 	want = "https://sub.example.com/test-token?format=mihomo_proxies_yaml"
 	if got != want {
 		t.Fatalf("endpoint url = %q, want %q", got, want)
@@ -575,9 +576,33 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	h3.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
 		{ID: 2, Domain: "", Path: "/", Enabled: true},
 	}})
-	got = h3.buildProviderURL(c, "test-token")
+	got = h3.buildProviderURL(c, "test-token", "")
 	if got != want0 {
 		t.Fatalf("empty-domain url = %q, want fallback %q", got, want0)
+	}
+}
+
+// 内部 provider URL 必须继承主订阅的 config/platform（否则 config=win 取不到配置），
+// 只替换 format 并追加 provider=key；subscription-nodes 是保留 key，不带 provider。
+func TestBuildProviderURLInheritsSubscriptionParams(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &PublicHandler{}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/sub/tok?format=mihomo_yaml&config=win&platform=android&foo=bar", nil)
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
+	c.Request.Header.Set("X-Forwarded-Host", "panel.example.com")
+
+	got := h.buildProviderURL(c, "tok", "office")
+	want := "https://panel.example.com/sub/tok?format=mihomo_proxies_yaml&config=win&platform=android&foo=bar&provider=office"
+	if got != want {
+		t.Fatalf("provider url = %q, want %q", got, want)
+	}
+
+	got = h.buildProviderURL(c, "tok", "subscription-nodes")
+	want = "https://panel.example.com/sub/tok?format=mihomo_proxies_yaml&config=win&platform=android&foo=bar"
+	if got != want {
+		t.Fatalf("all-nodes provider url = %q, want %q", got, want)
 	}
 }
 
@@ -590,7 +615,9 @@ func (f fakeSubEndpointSource) GetEnabled(_ context.Context) ([]entity.Subscript
 	return f.endpoints, nil
 }
 
-func TestGenerateMihomoYAMLInjectsHTTPProxyProvider(t *testing.T) {
+// 默认（不带 providers 参数）是原始模式：节点内联在顶层 proxies，
+// 标记 _hasExternalNodes 的组通过显式节点名引用，不输出 proxy-providers / use。
+func TestGenerateMihomoYAMLRawModeInlinesNodes(t *testing.T) {
 	config := &entity.MihomoConfig{
 		ConfigJSON: `{"proxy-groups":[
 			{"name":"PROXY","type":"select","proxies":["DIRECT"],"_hasExternalNodes":true},
@@ -600,65 +627,279 @@ func TestGenerateMihomoYAMLInjectsHTTPProxyProvider(t *testing.T) {
 	proxyMaps := []map[string]interface{}{
 		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
 	}
-	providerURL := "http://panel.example.com/sub/test-token?format=mihomo_proxies_yaml"
-	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, providerURL))
+	opts := &mihomoRenderOptions{
+		ProviderNodeNames: map[string][]string{"subscription-nodes": {"node-a"}},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, opts))
 
-	if !strings.Contains(out, "proxy-providers:") {
-		t.Fatalf("YAML should contain proxy-providers section: %s", out)
+	if strings.Contains(out, "proxy-providers:") {
+		t.Fatalf("raw mode must not emit proxy-providers: %s", out)
 	}
-	if !strings.Contains(out, "    type: http") {
-		t.Fatalf("dynamic provider should be http type: %s", out)
+	if strings.Contains(out, "use:") {
+		t.Fatalf("raw mode must not emit provider use: %s", out)
 	}
-	if !strings.Contains(out, `    url: "`+providerURL+`"`) {
-		t.Fatalf("provider should point at dedicated subscription endpoint: %s", out)
+	if !strings.Contains(out, "name: node-a") {
+		t.Fatalf("raw mode should inline nodes in top-level proxies: %s", out)
 	}
-	if !strings.Contains(out, "    interval: 3600") {
-		t.Fatalf("provider should carry update interval: %s", out)
-	}
-	if !strings.Contains(out, "health-check:") || !strings.Contains(out, "      enable: true") {
-		t.Fatalf("provider should carry health-check: %s", out)
-	}
-	if !strings.Contains(out, "- subscription-nodes") {
-		t.Fatalf("groups with _hasExternalNodes should reference the dynamic provider via use: %s", out)
-	}
-	if !strings.Contains(out, "- DIRECT") {
-		t.Fatalf("static proxies of the group should be preserved: %s", out)
-	}
-	// 节点由 provider 定时拉取下发：主配置不再静态铺顶层 proxies（重名整份拒载）
-	if strings.Contains(out, "name: node-a") {
-		t.Fatalf("main config should not statically list nodes when provider is active: %s", out)
-	}
-
-	// 无 providerURL（单测/极端场景）时不生成 provider，节点走顶层 proxies
-	out2 := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, ""))
-	if strings.Contains(out2, "proxy-providers:") {
-		t.Fatalf("no providerURL should mean no provider section: %s", out2)
-	}
-	if !strings.Contains(out2, "name: node-a") {
-		t.Fatalf("no providerURL should fall back to top-level proxies: %s", out2)
+	if !strings.Contains(out, "- DIRECT") || !strings.Contains(out, "- node-a") {
+		t.Fatalf("groups should contain static + injected node names: %s", out)
 	}
 }
 
-// 撞名规避：config_json 里用户自定义了同名的 proxy-providers 时，
-// 动态 provider 应改用 subscription-nodes-2，且 use 引用要一致。
-func TestGenerateMihomoYAMLProviderNameCollision(t *testing.T) {
+// Provider 模式：输出 proxy-providers + 组 use，主配置不内联节点。
+func TestGenerateMihomoYAMLProviderModeUsesProviders(t *testing.T) {
 	config := &entity.MihomoConfig{
-		ConfigJSON: `{"proxy-providers":{"subscription-nodes":{"type":"http","url":"https://example.com/sub.yaml","interval":3600}},
+		ConfigJSON: `{"proxy-groups":[
+			{"name":"PROXY","type":"select","proxies":["DIRECT"],"_hasExternalNodes":true},
+			{"name":"AUTO","type":"url-test","_hasExternalNodes":true,"url":"https://www.gstatic.com/generate_204","interval":300}
+		]}`,
+	}
+	proxyMaps := []map[string]interface{}{
+		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
+	}
+	defs := []mihomoProviderDefinition{
+		{Key: "office", Fields: map[string]interface{}{
+			"type": "http", "url": "https://panel.example.com/sub/t?format=mihomo_proxies_yaml&config=win&provider=office",
+			"path": "./providers/office.yaml", "interval": 3600,
+		}},
+		{Key: "subscription-nodes", Fields: map[string]interface{}{
+			"type": "http", "url": "https://panel.example.com/sub/t?format=mihomo_proxies_yaml&config=win",
+			"path": "./providers/subscription-nodes.yaml", "interval": 3600,
+		}},
+	}
+	opts := &mihomoRenderOptions{
+		ProviderMode:         true,
+		ProviderDefinitions:  defs,
+		ProviderNodeNames:    map[string][]string{"subscription-nodes": {"node-a"}},
+		SpecificProviderKeys: []string{"office"},
+		GroupUse:             map[string][]string{"PROXY": {"office"}},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, opts))
+
+	if !strings.Contains(out, "proxy-providers:") || !strings.Contains(out, "  office:") {
+		t.Fatalf("provider mode should emit proxy-providers: %s", out)
+	}
+	if !strings.Contains(out, "use:") || !strings.Contains(out, "- office") {
+		t.Fatalf("group_use should be written as use: %s", out)
+	}
+	if strings.Contains(out, "name: node-a") {
+		t.Fatalf("provider mode must not inline nodes: %s", out)
+	}
+}
+
+// 共享 YAML 里的 proxy-providers 不能输出：一份 YAML 被多个套餐复用，会串套餐。
+func TestGenerateMihomoYAMLIgnoresSharedProviders(t *testing.T) {
+	config := &entity.MihomoConfig{
+		ConfigJSON: `{"proxy-providers":{"singbox":{"type":"http","url":"https://example.com/singbox.yaml"}},
 			"proxy-groups":[{"name":"PROXY","type":"select","_hasExternalNodes":true}]}`,
 	}
 	proxyMaps := []map[string]interface{}{
 		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
 	}
-	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, "http://panel.example.com/sub/t?format=mihomo_proxies_yaml"))
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, nil))
 
-	if !strings.Contains(out, "  subscription-nodes:") {
-		t.Fatalf("user-defined provider should be emitted as-is: %s", out)
+	if strings.Contains(out, "proxy-providers:") || strings.Contains(out, "singbox") {
+		t.Fatalf("shared YAML providers must not be emitted: %s", out)
 	}
-	if !strings.Contains(out, "  subscription-nodes-2:") {
-		t.Fatalf("dynamic provider should be renamed on collision: %s", out)
+	if !strings.Contains(out, "name: node-a") {
+		t.Fatalf("raw mode should still inline nodes: %s", out)
 	}
-	if !strings.Contains(out, "- subscription-nodes-2") {
-		t.Fatalf("use reference should point at the renamed dynamic provider: %s", out)
+}
+
+// 生成的两种主配置都必须是合法 YAML，且结构符合 mihomo 预期。
+func TestGenerateMihomoYAMLIsValidYAML(t *testing.T) {
+	config := &entity.MihomoConfig{ConfigJSON: `{
+		"mixed-port": 7890,
+		"dns": {"enable": true, "nameserver": ["1.1.1.1"]},
+		"proxies": [{"name": "dns-out", "type": "dns"}],
+		"proxy-groups": [
+			{"name": "✈️ 墙外网站", "type": "select", "proxies": ["DIRECT"], "_hasExternalNodes": true},
+			{"name": "AUTO", "type": "url-test", "url": "https://www.gstatic.com/generate_204", "interval": 300}
+		]
+	}`}
+	proxyMaps := []map[string]interface{}{
+		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
+	}
+
+	rawOpts := &mihomoRenderOptions{
+		ProviderNodeNames: map[string][]string{"subscription-nodes": {"node-a"}},
+	}
+	raw := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, rawOpts))
+	var rawDoc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(raw), &rawDoc); err != nil {
+		t.Fatalf("raw mode YAML is invalid: %v\n%s", err, raw)
+	}
+	if _, ok := rawDoc["proxy-providers"]; ok {
+		t.Fatalf("raw mode must not contain proxy-providers: %s", raw)
+	}
+	rawProxies, _ := rawDoc["proxies"].([]interface{})
+	if len(rawProxies) != 2 {
+		t.Fatalf("raw proxies should contain special outbound + node: %s", raw)
+	}
+
+	opts := &mihomoRenderOptions{
+		ProviderMode: true,
+		ProviderDefinitions: []mihomoProviderDefinition{
+			{Key: "office", Fields: map[string]interface{}{
+				"type": "http", "url": "https://panel.example.com/sub/t?format=mihomo_proxies_yaml&config=win&provider=office",
+				"path": "./providers/office.yaml", "interval": 3600,
+				"health-check": map[string]interface{}{"enable": true, "url": "https://www.gstatic.com/generate_204", "interval": 3600},
+			}},
+			{Key: "singbox", Fields: map[string]interface{}{
+				"type": "http", "url": "https://example.com/oneclash.yaml", "path": "./providers/singbox.yaml",
+				"interval": 1800, "unknown-field": "keep",
+			}},
+			{Key: "subscription-nodes", Fields: map[string]interface{}{
+				"type": "http", "url": "https://panel.example.com/sub/t?format=mihomo_proxies_yaml&config=win",
+				"path": "./providers/subscription-nodes.yaml", "interval": 3600,
+			}},
+		},
+		ProviderNodeNames:    map[string][]string{"subscription-nodes": {"node-a"}},
+		SpecificProviderKeys: []string{"office", "singbox"},
+		GroupUse:             map[string][]string{"✈️ 墙外网站": {"office", "singbox"}},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, opts))
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("provider mode YAML is invalid: %v\n%s", err, out)
+	}
+	providers, ok := doc["proxy-providers"].(map[string]interface{})
+	if !ok || len(providers) != 3 {
+		t.Fatalf("provider mode should emit proxy-providers: %s", out)
+	}
+	singbox, _ := providers["singbox"].(map[string]interface{})
+	if singbox["unknown-field"] != "keep" {
+		t.Fatalf("external provider unknown fields should pass through: %s", out)
+	}
+	groups, _ := doc["proxy-groups"].([]interface{})
+	first, _ := groups[0].(map[string]interface{})
+	use, _ := first["use"].([]interface{})
+	if len(use) != 2 || use[0] != "office" || use[1] != "singbox" {
+		t.Fatalf("group_use should be written as use: %s", out)
+	}
+	// 顶层 proxies 只能有共享配置里的特殊出站
+	proxies, _ := doc["proxies"].([]interface{})
+	if len(proxies) != 1 {
+		t.Fatalf("provider mode should only keep special outbounds: %s", out)
+	}
+}
+
+// 组来源优先级：group_use > _hasExternalNodes；_hasExternalNodes 使用具体 provider
+// （没有具体来源时回落 subscription-nodes）。
+func TestBuildMihomoGroupPlansPriority(t *testing.T) {
+	cfg := map[string]interface{}{
+		"proxy-groups": []interface{}{
+			map[string]interface{}{"name": "MAPPED", "_hasExternalNodes": true},
+			map[string]interface{}{"name": "FALLBACK", "_hasExternalNodes": true},
+			map[string]interface{}{"name": "STATIC", "proxies": []interface{}{"DIRECT"}},
+		},
+	}
+	opts := &mihomoRenderOptions{
+		ProviderMode:         true,
+		ProviderDefinitions:  []mihomoProviderDefinition{{Key: "office"}, {Key: "vless"}, {Key: "subscription-nodes"}},
+		SpecificProviderKeys: []string{"office", "vless"},
+		GroupUse:             map[string][]string{"MAPPED": {"vless"}},
+	}
+	plans := buildMihomoGroupPlans(cfg, opts)
+	if got := strings.Join(plans["MAPPED"].Use, ","); got != "vless" {
+		t.Fatalf("group_use should win: got %q", got)
+	}
+	if got := strings.Join(plans["FALLBACK"].Use, ","); got != "office,vless" {
+		t.Fatalf("_hasExternalNodes should use specific providers: got %q", got)
+	}
+	if _, ok := plans["STATIC"]; ok {
+		t.Fatalf("group without mapping/_hasExternalNodes should not be injected")
+	}
+
+	// 没有任何具体 provider 时回落 subscription-nodes
+	opts.SpecificProviderKeys = nil
+	plans = buildMihomoGroupPlans(cfg, opts)
+	if got := strings.Join(plans["FALLBACK"].Use, ","); got != "subscription-nodes" {
+		t.Fatalf("fallback should be subscription-nodes: got %q", got)
+	}
+}
+
+// 虚拟入口与节点组里是同一个外部节点、且名字相同时，属于重复登记，必须跳过。
+func TestVirtualEntryIsDuplicate(t *testing.T) {
+	extNode := &entity.ExternalNode{Name: "trojan-worker"}
+	items := []renderedSubscriptionNode{
+		{MemberID: 33, ExternalNodeID: 1},
+		{MemberID: 34, InboundConfigID: 76},
+	}
+	if !virtualEntryIsDuplicate("trojan-worker", extNode, items) {
+		t.Fatalf("same name + already rendered by group member should be duplicate")
+	}
+	if virtualEntryIsDuplicate("香港入口", extNode, items) {
+		t.Fatalf("renamed virtual entry should be kept")
+	}
+	if virtualEntryIsDuplicate("trojan-worker", extNode, nil) {
+		t.Fatalf("virtual entry is the only source when node is not in any group")
+	}
+	if virtualEntryIsDuplicate("trojan-worker", nil, items) {
+		t.Fatalf("nil external node should not panic or be treated as duplicate")
+	}
+}
+
+// 原始模式注入的组节点必须真实存在于顶层 proxies。
+func TestPruneProviderNodeNames(t *testing.T) {
+	names := map[string][]string{
+		"subscription-nodes": {"node-a", "dropped-node"},
+		"office":             {"node-b"},
+	}
+	proxyMaps := []map[string]interface{}{{"name": "node-a"}, {"name": "node-b"}}
+	pruneProviderNodeNames(names, proxyMaps)
+	if got := strings.Join(names["subscription-nodes"], ","); got != "node-a" {
+		t.Fatalf("dropped node should be pruned: %q", got)
+	}
+	if got := strings.Join(names["office"], ","); got != "node-b" {
+		t.Fatalf("available node should survive: %q", got)
+	}
+}
+
+// 历史共享 YAML 残留的 use：Provider 模式按名字解析，原始模式不输出也不据此注入。
+func TestBuildMihomoGroupPlansLegacyUse(t *testing.T) {
+	cfg := map[string]interface{}{
+		"proxy-groups": []interface{}{
+			map[string]interface{}{"name": "LEGACY", "use": []interface{}{"office"}},
+		},
+	}
+	providerOpts := &mihomoRenderOptions{
+		ProviderMode:        true,
+		ProviderDefinitions: []mihomoProviderDefinition{{Key: "office"}},
+	}
+	plans := buildMihomoGroupPlans(cfg, providerOpts)
+	if got := strings.Join(plans["LEGACY"].Use, ","); got != "office" {
+		t.Fatalf("provider mode should resolve legacy use: got %q", got)
+	}
+
+	rawOpts := &mihomoRenderOptions{
+		ProviderNodeNames: map[string][]string{"subscription-nodes": {"node-a"}},
+	}
+	plans = buildMihomoGroupPlans(cfg, rawOpts)
+	if _, ok := plans["LEGACY"]; ok {
+		t.Fatalf("raw mode must not use legacy use for injection")
+	}
+}
+
+// 数据源过滤：内部 provider 按节点组过滤；未知 / 外部 provider 回落全部节点。
+func TestFilterRenderedNodesForProvider(t *testing.T) {
+	rendered := []renderedSubscriptionNode{
+		{MemberID: 1, Node: &formatter.Node{Name: "hk-1"}},
+		{MemberID: 2, Node: &formatter.Node{Name: "us-1"}},
+	}
+	plan := &subscriptionProviderPlan{
+		Internal:    map[string]*internalProviderDef{"office": {Key: "office", NodeGroupID: 12}},
+		External:    map[string]map[string]interface{}{"singbox": {}},
+		MemberGroup: map[int64]int64{1: 12, 2: 13},
+	}
+	if got := filterRenderedNodesForProvider(rendered, plan, "office"); len(got) != 1 || got[0].Node.Name != "hk-1" {
+		t.Fatalf("office should only contain group 12 nodes: %+v", got)
+	}
+	if got := filterRenderedNodesForProvider(rendered, plan, "unknown"); len(got) != 2 {
+		t.Fatalf("unknown provider should fall back to all nodes: %+v", got)
+	}
+	if got := filterRenderedNodesForProvider(rendered, plan, "singbox"); len(got) != 2 {
+		t.Fatalf("external provider should not be proxied by panel: %+v", got)
 	}
 }
 

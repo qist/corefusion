@@ -387,6 +387,7 @@
   "sub.copy": "コピー",
   "sub.copy_link": "リンクをコピー",
   "sub.default_config": "デフォルト",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "サブスクリプションリンクとステータスを表示",
   "sub.fmt_base64": "汎用 Base64 形式。ほとんどのクライアントと互換性があります",
   "sub.fmt_clash": "Clash/Mihomo YAML 設定",

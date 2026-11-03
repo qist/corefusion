@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ import (
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/mihomoconv"
+	"corefusion/internal/subscription/providercfg"
 	"corefusion/internal/subscription/sharelink"
 	"corefusion/pkg/netutil"
 )
@@ -123,12 +125,15 @@ func (h *PublicHandler) SetSubEndpointRepo(repo SubEndpointSource) {
 	h.subEndpointRepo = repo
 }
 
-// buildProviderURL returns the back-source URL for the dynamic http proxy-provider.
+// buildProviderURL returns the back-source URL for an internal http proxy-provider.
 // It mirrors clientext buildSubLinks: an enabled standalone endpoint wins
 // (https://<domain><path>/<token>), otherwise fall back to the current request's
-// scheme://Host/sub/<token>. The ?format= query works on both paths because the
-// standalone endpoint domain is reverse-proxied back to the panel.
-func (h *PublicHandler) buildProviderURL(c *gin.Context, token string) string {
+// scheme://Host/sub/<token>.
+//
+// 只把 format 换成 mihomo_proxies_yaml；config / platform 等主订阅参数必须继承，
+// 再追加 provider=<key>（subscription-nodes 为保留 key，不带 provider 参数）。
+func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey string) string {
+	base := ""
 	if h.subEndpointRepo != nil {
 		endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context())
 		if err == nil {
@@ -137,20 +142,67 @@ func (h *PublicHandler) buildProviderURL(c *gin.Context, token string) string {
 					continue
 				}
 				path := strings.TrimRight(ep.Path, "/")
-				return fmt.Sprintf("https://%s%s/%s?format=mihomo_proxies_yaml", ep.Domain, path, token)
+				base = fmt.Sprintf("https://%s%s/%s", ep.Domain, path, token)
+				break
 			}
 		}
 	}
-	scheme := "http"
-	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
-		scheme = "https"
+	if base == "" {
+		scheme := "http"
+		if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		// 反代场景 request.Host 可能是内网地址 → 与 buildSubLinks 一致优先 X-Forwarded-Host
+		host := c.GetHeader("X-Forwarded-Host")
+		if host == "" {
+			host = c.Request.Host
+		}
+		base = fmt.Sprintf("%s://%s/sub/%s", scheme, host, token)
 	}
-	// 反代场景 request.Host 可能是内网地址 → 与 buildSubLinks 一致优先 X-Forwarded-Host
-	host := c.GetHeader("X-Forwarded-Host")
-	if host == "" {
-		host = c.Request.Host
+	return base + buildProviderQuery(c, providerKey)
+}
+
+// buildProviderQuery 继承主订阅请求的查询参数，仅替换 format 并追加 provider。
+func buildProviderQuery(c *gin.Context, providerKey string) string {
+	parts := []string{"format=mihomo_proxies_yaml"}
+	added := map[string]bool{
+		"format":    true,
+		"provider":  true,
+		"providers": true,
 	}
-	return fmt.Sprintf("%s://%s/sub/%s?format=mihomo_proxies_yaml", scheme, host, token)
+	for _, key := range []string{"config", "platform"} {
+		if value := c.Query(key); value != "" {
+			parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(value))
+			added[key] = true
+		}
+	}
+	extra := make([]string, 0)
+	for key := range c.Request.URL.Query() {
+		if !added[key] {
+			extra = append(extra, key)
+		}
+	}
+	sort.Strings(extra)
+	for _, key := range extra {
+		for _, value := range c.QueryArray(key) {
+			parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(value))
+		}
+	}
+	if providerKey != "" && providerKey != providercfg.ReservedAllNodesKey {
+		parts = append(parts, subscriptionProviderParam+"="+url.QueryEscape(providerKey))
+	}
+	return "?" + strings.Join(parts, "&")
+}
+
+// mihomoConfigFormatMatches 判断某份共享配置能否用于本次订阅格式。
+// provider 数据源（mihomo_proxies_yaml）复用 mihomo_yaml 的配置：
+// 主订阅地址里的 config=win 必须能在数据源请求上继续命中。
+func mihomoConfigFormatMatches(configFormat, requestFormat string) bool {
+	if configFormat == requestFormat {
+		return true
+	}
+	return requestFormat == string(formatter.FormatMihomoProxies) &&
+		configFormat == string(formatter.FormatMihomoYAML)
 }
 
 // shareableProtocols are protocols that generate share links.
@@ -378,7 +430,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	if configName != "" && h.mihomoRepo != nil {
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
-			if cfg.Name == configName && cfg.Enabled && cfg.Format == formatStr {
+			if cfg.Name == configName && cfg.Enabled && mihomoConfigFormatMatches(cfg.Format, formatStr) {
 				mihomoConfig = &cfg
 				break
 			}
@@ -387,7 +439,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		// Try to find a config matching the requested platform
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
-			if cfg.Enabled && cfg.Platform == platformName && cfg.Format == formatStr {
+			if cfg.Enabled && cfg.Platform == platformName && mihomoConfigFormatMatches(cfg.Format, formatStr) {
 				mihomoConfig = &cfg
 				break
 			}
@@ -395,7 +447,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		// Fallback: if no exact platform match, try universal (empty platform)
 		if mihomoConfig == nil {
 			for _, cfg := range configs {
-				if cfg.Enabled && cfg.Platform == "" && cfg.Format == formatStr {
+				if cfg.Enabled && cfg.Platform == "" && mihomoConfigFormatMatches(cfg.Format, formatStr) {
 					mihomoConfig = &cfg
 					break
 				}
@@ -404,7 +456,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	} else if sub.MihomoConfigID != nil && h.mihomoRepo != nil {
 		// GetByID 出错时返回零值 config（非 nil），必须同时校验 err 与格式，
 		// 否则会把一份空 config 的"规则"注入订阅。
-		if cfg, err := h.mihomoRepo.GetByID(ctx, *sub.MihomoConfigID); err == nil && cfg != nil && cfg.Format == formatStr {
+		if cfg, err := h.mihomoRepo.GetByID(ctx, *sub.MihomoConfigID); err == nil && cfg != nil && mihomoConfigFormatMatches(cfg.Format, formatStr) {
 			mihomoConfig = cfg
 		}
 	}
@@ -443,20 +495,39 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		allItems := append(billingNodes, renderedNodes...)
 		proxyMaps := buildRenderedMihomoProxyMaps(allItems)
 		if mihomoConfig != nil {
-			// 动态 proxy-provider 用 type:http 定时回源拉节点。
-			// URL 优先用订阅端点管理里启用的独立域名（状态一致：反向代理已配置该域名 → path/<token>），
-			// 未配置时回退到本请求自身的 scheme://Host/sub/<token>。
-			providerURL := h.buildProviderURL(c, sub.Token)
-			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, proxyMaps, providerURL)
+			// 默认（不带宽 providers）是原始模式：完整配置 + 顶层 proxies。
+			// ?providers=1 才进入 Provider 模式：proxy-providers + 组内 use。
+			// provider 全部由套餐的节点组/外部源自动生成，客户端不需要指定。
+			plan := h.resolveSubscriptionProviderPlan(ctx, tmpl, members, renderedNodes)
+			// 原始模式组内 proxies 引用的节点名必须真实存在于顶层 proxies。
+			pruneProviderNodeNames(plan.NodeNames, proxyMaps)
+			opts := &mihomoRenderOptions{
+				ProviderMode:         providersEnabled(c.Query(subscriptionProvidersParam)),
+				ProviderNodeNames:    plan.NodeNames,
+				GroupUse:             plan.GroupUse,
+				SpecificProviderKeys: plan.Keys,
+			}
+			if opts.ProviderMode {
+				opts.ProviderDefinitions = h.buildProviderDefinitions(c, sub.Token, plan)
+			}
+			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, proxyMaps, opts)
 		} else {
 			data = generatePlainMihomoYAML(proxyMaps)
 		}
 		contentType = "text/yaml"
 	case formatter.FormatMihomoProxies:
-		// **proxy-provider 专用端点**：只输出 proxies 节点列表（yaml）。
-		// mihomo 的 http provider 定时拉这份文件，节点随订阅自动更新。
-		allItems := append(billingNodes, renderedNodes...)
-		data = []byte(buildMihomoProxiesYAML(buildRenderedMihomoProxyMaps(allItems)))
+		// **provider 数据源**：只输出 proxies 节点列表（yaml）。
+		// 不带 provider → 全部节点 + 计费伪节点（保持旧行为）；
+		// 带 provider=<key> → 该来源的节点子集（不含计费伪节点）。
+		providerKey := strings.TrimSpace(c.Query(subscriptionProviderParam))
+		if providerKey == "" || tmpl == nil {
+			allItems := append(billingNodes, renderedNodes...)
+			data = []byte(buildMihomoProxiesYAML(buildRenderedMihomoProxyMaps(allItems)))
+		} else {
+			plan := h.resolveSubscriptionProviderPlan(ctx, tmpl, members, renderedNodes)
+			filtered := filterRenderedNodesForProvider(renderedNodes, plan, providerKey)
+			data = []byte(buildMihomoProxiesYAML(buildRenderedMihomoProxyMaps(filtered)))
+		}
 		contentType = "text/yaml"
 	case formatter.FormatSingBoxJSON:
 		nodes = append(billingFormatterNodes, nodes...)
@@ -987,6 +1058,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				if err != nil || extNode == nil || !extNode.Enabled {
 					continue
 				}
+				// 同名虚拟入口 = 同一节点的重复登记（虚拟入口的意义是改名/换入口），
+				// 该节点已通过节点组成员渲染时直接跳过，避免订阅里出现两条完全相同的节点。
+				if virtualEntryIsDuplicate(es.Name, extNode, items) {
+					continue
+				}
 
 				var pm map[string]interface{}
 				if json.Unmarshal([]byte(extNode.ProxyJSON), &pm) != nil {
@@ -1256,65 +1332,59 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 	return nodes
 }
 
-// generateMihomoYAML generates a complete mihomo YAML config with proxies and rules.
-// providerURL 非空时，订阅节点以 **http proxy-provider**（官方模板写法：type: http +
-// url 指向 provider 专用端点 + interval + health-check）注入，mihomo 按 interval
-// 定时重新拉取节点列表 → 订阅能定时更新；分组通过 use 引用该 provider。
-// providerURL 为空（如单测）时不生成动态 provider，节点走顶层 proxies。
-func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, proxyMaps []map[string]interface{}, providerURL string) []byte {
+// generateMihomoYAML generates a complete mihomo YAML config.
+//
+// 两种形态：
+//   - opts == nil / !ProviderMode：原始模式，节点内联在顶层 proxies，不输出 proxy-providers；
+//   - ProviderMode：顶层 proxies 只保留共享配置里的特殊出站，节点由 proxy-providers
+//     定时回源拉取，组内用 use 引用（provider 由套餐自动生成）。
+//
+// 共享 config_json 里的 proxy-providers / 组级 use 一律不输出：
+// 一份共享 YAML 会被多个套餐复用，套餐级 provider 写进去会串套餐。
+func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []entity.MihomoRule, proxyMaps []map[string]interface{}, opts *mihomoRenderOptions) []byte {
 	var yaml strings.Builder
 
 	// Parse config_json
 	var cfg map[string]interface{}
 	json.Unmarshal([]byte(config.ConfigJSON), &cfg)
 
-	providerName := subscriptionProviderName(cfg, proxyMaps)
-	// http provider 必须有可回源的 URL；没有 URL 时退回顶层 proxies（inline 兼容口径已移除）
-	if providerURL == "" {
-		providerName = ""
-	}
+	providerMode := opts != nil && opts.ProviderMode
+	groupPlans := buildMihomoGroupPlans(cfg, opts)
 
-	// Output all top-level fields except proxies and rules (those are injected)
-	skipKeys := map[string]bool{"proxies": true, "rules": true}
-
+	var staticProxies []interface{}
 	for _, key := range getSortedKeys(cfg) {
-		if skipKeys[key] {
+		value := cfg[key]
+		switch key {
+		case "rules":
+			continue
+		case "proxies":
+			// 共享配置只允许特殊出站（如 dns-out）；节点由订阅动态生成。
+			staticProxies, _ = value.([]interface{})
+			continue
+		case "proxy-providers":
+			log.Printf("[subscription] shared mihomo config contains proxy-providers; ignored (configure providers on the plan)")
 			continue
 		}
-		value := cfg[key]
 		// Skip empty or disabled fields
 		if isEmptyOrDisabled(key, value) {
 			continue
 		}
-		// For proxy-groups, groups with _hasExternalNodes reference the dynamic provider via use
 		if key == "proxy-groups" {
-			writeProxyGroups(&yaml, value, providerName)
+			writeProxyGroups(&yaml, value, groupPlans)
 			continue
 		}
 		// For DNS, clean up corrupted nameserver-policy
 		if key == "dns" {
 			value = cleanDNSConfig(value)
 		}
-		// proxy-providers：config_json 里的用户自定义段（http/file）与动态 http provider 合并输出
-		if key == "proxy-providers" {
-			userProviders, _ := value.(map[string]interface{})
-			writeMihomoProxyProviders(&yaml, userProviders, providerURL, providerName)
-			continue
-		}
 		writeYAMLField(&yaml, key, value, 0)
 	}
 
-	// 用户在 config_json 未定义任何 provider 但分组需要 use 时，单独落动态段
-	if _, has := cfg["proxy-providers"]; !has {
-		writeMihomoProxyProviders(&yaml, nil, providerURL, providerName)
+	if providerMode {
+		writeMihomoProxyProviders(&yaml, opts.ProviderDefinitions)
 	}
 
-	// 动态 provider 生效时节点**只**存在于 provider payload：
-	// 再铺一遍顶层 proxies 会出现同名代理（proxies vs provider），mihomo 对
-	// 重名是整份拒载（实测 "proxy xxx is the duplicate name"）。
-	if providerName == "" {
-		yaml.WriteString(buildMihomoProxiesYAML(proxyMaps))
-	}
+	writeMihomoProxiesSection(&yaml, staticProxies, proxyMaps, providerMode)
 
 	// Inject rules from database
 	if len(rules) > 0 {
@@ -1327,6 +1397,41 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	}
 
 	return []byte(yaml.String())
+}
+
+// writeMihomoProxiesSection 输出唯一一段顶层 proxies：
+//   - 原始模式：共享配置里的特殊出站 + 动态生成的节点（同名时动态节点优先）；
+//   - Provider 模式：只输出特殊出站，节点由 provider 拉取（否则重名会让 mihomo 整份拒载）。
+func writeMihomoProxiesSection(yaml *strings.Builder, static []interface{}, generated []map[string]interface{}, providerMode bool) {
+	generatedNames := map[string]bool{}
+	if !providerMode {
+		for _, proxyMap := range generated {
+			if name, _ := proxyMap["name"].(string); name != "" {
+				generatedNames[name] = true
+			}
+		}
+	}
+	entries := make([]map[string]interface{}, 0, len(static)+len(generated))
+	for _, raw := range static {
+		proxyMap, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name, _ := proxyMap["name"].(string); name != "" && generatedNames[name] {
+			continue
+		}
+		entries = append(entries, proxyMap)
+	}
+	if !providerMode {
+		entries = append(entries, generated...)
+	}
+	if len(entries) == 0 {
+		return
+	}
+	yaml.WriteString("proxies:\n")
+	for _, proxyMap := range entries {
+		writeMihomoProxyMap(yaml, proxyMap, 2)
+	}
 }
 
 func generatePlainMihomoYAML(proxyMaps []map[string]interface{}) []byte {
@@ -1580,90 +1685,35 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 	return b
 }
 
-// writeMihomoProxyProviders 输出 proxy-providers 段：
+// writeMihomoProxyProviders 输出套餐级 proxy-providers 段。
 //
-//   - userProviders：config_json 里用户自定义的 provider（http/file 等原样透出）；
-//
-//   - dynamic：订阅节点（每次请求按套餐/客户端动态生成）打包成一个 **inline provider**
-//     （mihomo 官方模板写法，参考 https://wiki.metacubex.one/config/proxy-providers/ ）：
-//
-//     proxy-providers:
-//     subscription-nodes:
-//     type: inline
-//     payload:
-//
-//   - name: ...
-//     type: ...
-//
-//     proxy-groups 里对应组用 use: [subscription-nodes] 引用（由 writeProxyGroups 完成）。
-//
-// 动态名字固定 "subscription-nodes"，撞用户定义的名字时换 "subscription-nodes-2"，
-// provider 撞名会让 mihomo 拒载整份配置。provider 生效时节点只写进 payload
-// （顶层 proxies 不再重复输出，否则重名整份拒载）；无动态节点且用户没定义时 SECTION 整段不写。
-func writeMihomoProxyProviders(yaml *strings.Builder, userProviders map[string]interface{}, providerURL string, providerName string) {
-	if len(userProviders) == 0 && providerName == "" {
+// 定义来自套餐（内部节点组自动生成 + 套餐配置的外部源），不再从共享
+// mihomo_configs.config_json 透出 —— 共享 YAML 会被多个套餐复用。
+func writeMihomoProxyProviders(yaml *strings.Builder, defs []mihomoProviderDefinition) {
+	if len(defs) == 0 {
 		return
 	}
-
 	yaml.WriteString("\nproxy-providers:\n")
-	// 用户自定义 provider 原样透出（每条多变体都走 writeYAMLField，保持既有转义口径）
-	for _, key := range getSortedKeys(userProviders) {
-		yaml.WriteString("  " + formatYAMLString(key) + ":\n")
-		if m, ok := userProviders[key].(map[string]interface{}); ok {
-			for _, k := range getSortedKeys(m) {
-				writeYAMLField(yaml, k, m[k], 2)
+	preferred := []string{
+		"type", "url", "path", "interval", "filter", "exclude-filter", "exclude-type",
+		"health-check", "override", "header",
+	}
+	for _, def := range defs {
+		yaml.WriteString("  " + formatYAMLString(def.Key) + ":\n")
+		seen := map[string]bool{}
+		for _, key := range preferred {
+			if value, ok := def.Fields[key]; ok {
+				writeYAMLField(yaml, key, value, 2)
+				seen[key] = true
 			}
 		}
-	}
-	if providerName != "" {
-		yaml.WriteString("  " + formatYAMLString(providerName) + ":\n")
-		yaml.WriteString("    type: http\n")
-		yaml.WriteString("    url: " + formatYAMLString(providerURL) + "\n")
-		yaml.WriteString("    interval: 3600\n")
-		// 与官方模板一致的健康检查：provider 拉回的节点定时测活
-		yaml.WriteString("    health-check:\n")
-		yaml.WriteString("      enable: true\n")
-		yaml.WriteString("      url: https://www.gstatic.com/generate_204\n")
-		yaml.WriteString("      interval: 300\n")
-	}
-}
-
-// subscriptionProviderName 返回动态 inline provider 的名字，供 proxy-groups 的 use 引用。
-// 只有当"模板里有 proxy-groups 且至少一组勾了 _hasExternalNodes、本次也确实有节点"时才生成；
-// 否则返回 ""（节点维持旧的顶层 proxies 输出，不做无 provider 引用的空挂载）。
-// 撞名规则与 writeMihomoProxyProviders 一致（同一 userProviders 集合必然得出同名）。
-func subscriptionProviderName(cfg map[string]interface{}, proxyMaps []map[string]interface{}) string {
-	if len(proxyMaps) == 0 {
-		return ""
-	}
-	groups, ok := cfg["proxy-groups"].([]interface{})
-	if !ok || len(groups) == 0 {
-		return ""
-	}
-	wantProvider := false
-	for _, g := range groups {
-		if m, ok := g.(map[string]interface{}); ok {
-			if b, _ := m["_hasExternalNodes"].(bool); b {
-				wantProvider = true
-				break
+		for _, key := range getSortedKeys(def.Fields) {
+			if seen[key] {
+				continue
 			}
+			writeYAMLField(yaml, key, def.Fields[key], 2)
 		}
 	}
-	if !wantProvider {
-		return ""
-	}
-	var userProviders map[string]interface{}
-	if pp, ok := cfg["proxy-providers"].(map[string]interface{}); ok {
-		userProviders = pp
-	}
-	name := "subscription-nodes"
-	for i := 2; ; i++ {
-		if _, taken := userProviders[name]; !taken {
-			break
-		}
-		name = fmt.Sprintf("subscription-nodes-%d", i)
-	}
-	return name
 }
 
 func buildMihomoProxiesYAML(proxyMaps []map[string]interface{}) string {
@@ -1686,9 +1736,14 @@ func getMihomoProxyNames(proxyMaps []map[string]interface{}) []string {
 	return names
 }
 
-// writeProxyGroups writes proxy-groups，分组通过 use 引用动态生成的订阅节点 provider
-// （mihomo 官方模板写法：provider 组不逐个列 proxies，由 use 拉取；filter 等字段同样生效）。
-func writeProxyGroups(yaml *strings.Builder, value interface{}, providerName string) {
+// writeProxyGroups writes proxy-groups.
+//
+// 组的节点来源由 buildMihomoGroupPlans 预先算好：
+//   - 原始模式把来源展开成显式节点名（服务端已应用组级 filter/exclude-filter）；
+//   - Provider 模式写 use 引用 provider key，filter 等字段原样输出。
+//
+// 空组补 DIRECT：既没有静态出站、也没有任何来源时，组不能为空。
+func writeProxyGroups(yaml *strings.Builder, value interface{}, plans map[string]mihomoGroupPlan) {
 	groups, ok := value.([]interface{})
 	if !ok || len(groups) == 0 {
 		return
@@ -1699,11 +1754,14 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, providerName str
 		if !ok {
 			continue
 		}
-		yaml.WriteString("  - name: " + formatYAMLString(getString(group, "name", "")) + "\n")
+		name := getString(group, "name", "")
+		plan := plans[name]
+		yaml.WriteString("  - name: " + formatYAMLString(name) + "\n")
 		yaml.WriteString("    type: " + getString(group, "type", "select") + "\n")
 
-		// 静态 proxies 原样保留（特别出口如 DIRECT 等）
-		proxies := getStringSlice(group, "proxies")
+		// 静态 proxies 原样保留（特别出口如 DIRECT、其它组名等）+ 原始模式注入的节点名
+		proxies := dedupeStrings(append(getStringSlice(group, "proxies"), plan.Proxies...))
+
 		if len(proxies) > 0 {
 			yaml.WriteString("    proxies:\n")
 			for _, p := range proxies {
@@ -1711,11 +1769,18 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, providerName str
 			}
 		}
 
-		// _hasExternalNodes 标记"该组要吃订阅节点"→ 经 use 引用动态 provider
-		hasExternal, _ := group["_hasExternalNodes"].(bool)
-		if hasExternal && providerName != "" {
+		// Provider 模式：use 引用套餐自动生成的 provider
+		if len(plan.Use) > 0 {
 			yaml.WriteString("    use:\n")
-			yaml.WriteString("      - " + formatYAMLString(providerName) + "\n")
+			for _, p := range plan.Use {
+				yaml.WriteString("      - " + formatYAMLString(p) + "\n")
+			}
+		}
+
+		// 空组兜底
+		if len(proxies) == 0 && len(plan.Use) == 0 {
+			yaml.WriteString("    proxies:\n")
+			yaml.WriteString("      - " + formatYAMLString("DIRECT") + "\n")
 		}
 
 		// Optional fields
@@ -1740,7 +1805,39 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, providerName str
 		if excludeFilter := getString(group, "exclude-filter", ""); excludeFilter != "" {
 			yaml.WriteString("    exclude-filter: " + formatYAMLString(excludeFilter) + "\n")
 		}
+		if excludeType := getString(group, "exclude-type", ""); excludeType != "" {
+			yaml.WriteString("    exclude-type: " + formatYAMLString(excludeType) + "\n")
+		}
+
+		// 其余原生字段原样透出（include-all-proxies / include-all-providers /
+		// disable-udp / interface-name / routing-mark / tolerance / empty-fallback 等）。
+		// `_` 开头是面板 UI 内部字段，不能下发给客户端；proxies/use/name/type 已单独处理。
+		handled := map[string]bool{
+			"name": true, "type": true, "proxies": true, "use": true,
+			"url": true, "interval": true, "lazy": true, "timeout": true,
+			"max-failed-times": true, "filter": true, "exclude-filter": true,
+			"exclude-type": true, "_hasExternalNodes": true,
+		}
+		for _, key := range getSortedKeys(group) {
+			if handled[key] || strings.HasPrefix(key, "_") {
+				continue
+			}
+			writeYAMLField(yaml, key, group[key], 2)
+		}
 	}
+}
+
+func dedupeStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
 }
 
 // itemIndent 是列表项"- "的缩进空格数：顶层 proxies 是 2；provider 的 payload 里要多缩两层（6）。
@@ -2292,6 +2389,22 @@ func findClientByEmail(settings map[string]interface{}, clientEmail, tag string)
 		}
 	}
 	return nil
+}
+
+// virtualEntryIsDuplicate 判断 external_node_servers 虚拟入口是否是同一外部节点的
+// 重复登记：名字与原外部节点完全相同（虚拟入口的本意是给同一节点换名字/换入口），
+// 且该节点已经通过节点组成员渲染过。这种重复只会生成两个参数完全相同的节点，
+// 名字被去重逻辑改成 "xxx 2"，对用户没有意义。
+func virtualEntryIsDuplicate(entryName string, extNode *entity.ExternalNode, items []renderedSubscriptionNode) bool {
+	if extNode == nil || entryName != extNode.Name {
+		return false
+	}
+	for _, item := range items {
+		if item.ExternalNodeID == extNode.ID {
+			return true
+		}
+	}
+	return false
 }
 
 // generateInboundEmail creates a unique email per inbound (mirrors service/client/inbound_manager.go).

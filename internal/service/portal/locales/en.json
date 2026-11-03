@@ -387,6 +387,7 @@
   "sub.copy": "Copy",
   "sub.copy_link": "Copy Link",
   "sub.default_config": "Default",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "View your subscription link and status",
   "sub.fmt_base64": "Universal Base64 format, compatible with most clients",
   "sub.fmt_clash": "Clash/Mihomo YAML config",

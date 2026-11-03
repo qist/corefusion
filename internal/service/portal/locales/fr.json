@@ -387,6 +387,7 @@
   "sub.copy": "Copier",
   "sub.copy_link": "Copier le lien",
   "sub.default_config": "Par défaut",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "Consultez votre lien d'abonnement et son statut",
   "sub.fmt_base64": "Format Base64 universel, compatible avec la plupart des clients",
   "sub.fmt_clash": "Configuration YAML Clash/Mihomo",

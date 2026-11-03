@@ -387,6 +387,7 @@
   "sub.copy": "نسخ",
   "sub.copy_link": "نسخ الرابط",
   "sub.default_config": "افتراضي",
+  "sub.proxy_providers": "Proxy Providers",
   "sub.description": "عرض رابط اشتراكك وحالته",
   "sub.fmt_base64": "تنسيق Base64 عالمي، متوافق مع معظم العملاء",
   "sub.fmt_clash": "إعداد YAML لـ Clash/Mihomo",

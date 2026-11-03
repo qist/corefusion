@@ -2,8 +2,11 @@ package crypto
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -60,8 +63,14 @@ func ReadSecretEnvValue(key string) string {
 // SaveSecretEnvValue 写入/更新 SecretEnvFile 中的单个键
 // （0600，先写临时文件再 rename，避免半截文件）。
 func SaveSecretEnvValue(key, value string) error {
+	return SaveEnvFileValue(SecretEnvFile, key, value)
+}
+
+// SaveEnvFileValue 写入/更新指定 env 文件中的单个键
+// （0600，先写临时文件再 rename，避免半截文件）。
+func SaveEnvFileValue(path, key, value string) error {
 	existing := ""
-	if data, err := os.ReadFile(SecretEnvFile); err == nil {
+	if data, err := os.ReadFile(path); err == nil {
 		existing = string(data)
 	}
 	lines := []string{}
@@ -87,7 +96,7 @@ func SaveSecretEnvValue(key, value string) error {
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	tmp := SecretEnvFile + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(content), 0600); err != nil {
 		return err
 	}
@@ -95,11 +104,43 @@ func SaveSecretEnvValue(key, value string) error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, SecretEnvFile); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
 		os.Remove(tmp)
 		return err
 	}
 	return nil
+}
+
+// EnsureSecretKeyAt 确保 <dir>/.env.secret 里存在指定密钥并返回它。
+//
+// 用于**没有 .env 机制的进程**（节点上的 Agent）：首次启动生成 32 字节随机密钥
+// 写入 0600 文件，之后一直复用；已有密钥时只读不写（幂等）。
+//
+// 密钥文件放在 <dir>（Agent 的 $INSTALL_DIR）而不是 data 目录里 ——
+// 这样备份/打包 data 目录不会把密钥一起带走。
+//
+// ⚠ 它是**随机密钥**，不是从 hostname 派生。历史密文（hostname 派生加密）
+// 仍由 DecryptSecret 的 legacy 回退解密，下次写入时自动迁移到新密钥。
+func EnsureSecretKeyAt(dir, key string) (string, error) {
+	if v := os.Getenv(key); v != "" {
+		return v, nil
+	}
+	path := filepath.Join(dir, SecretEnvFile)
+	if v := ReadEnvFileValue(path, key); v != "" {
+		return v, nil
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	value := hex.EncodeToString(buf)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	if err := SaveEnvFileValue(path, key, value); err != nil {
+		return "", err
+	}
+	return value, nil
 }
 
 // RemoveEnvValue 从指定 env 文件中删除某个键（保持其它行原样，0600）。

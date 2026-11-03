@@ -3,6 +3,8 @@ package router
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -474,6 +476,35 @@ func Shutdown() {
 	}
 }
 
+// adminContentSecurityPolicy 构造管理端 SPA 的 CSP（安全审计 v6 L-5）。
+//
+// 管理端 token 存在 localStorage，CSP 是"出现 XSS 后别让它升级为任意脚本执行"的
+// 最后一道闸：只允许同源脚本 + 明确列出的内联脚本哈希。
+//   - 'unsafe-eval' 不能省：vue-i18n 的消息编译器用 new Function 生成渲染函数，
+//     去掉它界面文案会整体失效；
+//   - worker-src 放 'self' 与 blob:：代码编辑器（CodeMirror）用 Web Worker 跑语法分析；
+//   - 图片/字体/连接不设指令，保持默认放行，避免打断既有功能。
+func adminContentSecurityPolicy(inlineScripts ...string) string {
+	srcs := []string{"'self'", "'unsafe-eval'"}
+	for _, s := range inlineScripts {
+		if s == "" {
+			continue
+		}
+		sum := sha256.Sum256([]byte(s))
+		srcs = append(srcs, "'sha256-"+base64.StdEncoding.EncodeToString(sum[:])+"'")
+	}
+	return "script-src " + strings.Join(srcs, " ") +
+		"; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+}
+
+// setAdminSecurityHeaders 给管理端 HTML 响应加安全头。
+// inlineScripts 是本页会用到的内联脚本**内容**（不含 <script> 标签），用于 CSP 哈希白名单。
+func setAdminSecurityHeaders(c *gin.Context, inlineScripts ...string) {
+	c.Header("Content-Security-Policy", adminContentSecurityPolicy(inlineScripts...))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "same-origin")
+}
+
 // NewWithFullConfig creates a new Gin engine with full config including data directory and version.
 // legalPageHandler 处理合规文档（隐私政策 / 服务条款）的独立页面。
 // doc ∈ {"privacy","terms"}；backURL 为「返回门户」链接（主引擎 "/p"、门户引擎 "/"）。
@@ -487,7 +518,7 @@ func legalPageHandler(svc *portalSvc.Service, doc, backURL string) gin.HandlerFu
 			c.Status(status)
 			return
 		}
-		for k, v := range portalSvc.SecurityHeaders() {
+		for k, v := range portalSvc.BaseSecurityHeaders() {
 			c.Header(k, v)
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(body))
@@ -1470,14 +1501,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 				// Inject base path and asset paths when using web path
 				html := string(data)
+				inlineScript := ""
 				if webPath != "" {
 					html = strings.ReplaceAll(html, `src="/assets/`, `src="`+webPath+"/assets/")
 					html = strings.ReplaceAll(html, `href="/assets/`, `href="`+webPath+"/assets/")
 					// Inject base path for Vue Router
-					inject := fmt.Sprintf(`<script>window.__CF_BASE_PATH__="%s/";</script>`, webPath)
-					html = strings.Replace(html, "<head>", "<head>"+inject, 1)
+					inlineScript = fmt.Sprintf(`window.__CF_BASE_PATH__="%s/";`, webPath)
+					html = strings.Replace(html, "<head>", "<head><script>"+inlineScript+"</script>", 1)
 				}
 				c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+				// L-5：内联脚本本身要进 CSP 哈希白名单，否则会被 script-src 拦掉
+				setAdminSecurityHeaders(c, inlineScript)
 				c.Data(200, "text/html; charset=utf-8", []byte(html))
 				return
 			}
@@ -1495,6 +1529,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				return
 			}
 			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			setAdminSecurityHeaders(c)
 			c.Data(200, "text/html; charset=utf-8", data)
 			return
 		}
@@ -1525,7 +1560,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			authGroup.POST("/login/2fa", middleware.LoginRateLimit(), twofaH.Login2FA)
 			// 登录页查询指定用户名是否已启用 2FA（公开）——据此把输入框切换为
 			// "密码"或"动态码/恢复码"。只返回 enabled 布尔，不泄露账号存在性。
-			authGroup.GET("/login/2fa-status", authH.Login2FAStatus)
+			// ⚠ 仍按 IP 限流（安全审计 v6 L-4）：该布尔值可用于缩小用户名枚举范围。
+			authGroup.GET("/login/2fa-status", middleware.AuthStatusRateLimit(), authH.Login2FAStatus)
 			// Passkey（无密码登录）：
 			//   - status：前端据此显示/隐藏登录按钮（未认证阶段只认白名单已有条目）；
 			//   - login/begin + login/finish：discoverable 登录仪式。
@@ -3287,8 +3323,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
 		html := portalTmplSvc.RenderPage(c.Request.Context())
-		// 门户页面的安全响应头（自动；只设不影响自定义 HTML/JS/CDN 的那几条）
-		for k, v := range portalSvc.SecurityHeaders() {
+		// 门户页面的安全响应头（script-src 与本次渲染产物配套，见 portal.ScriptSrcCSP）
+		for k, v := range portalTmplSvc.SecurityHeaders() {
 			c.Header(k, v)
 		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))
@@ -4006,8 +4042,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// Root path serves the portal page (cached)
 	r.GET("/", func(c *gin.Context) {
 		html := portalTmplSvc.RenderPage(c.Request.Context())
-		// 门户页面的安全响应头（自动；只设不影响自定义 HTML/JS/CDN 的那几条）
-		for k, v := range portalSvc.SecurityHeaders() {
+		// 门户页面的安全响应头（script-src 与本次渲染产物配套，见 portal.ScriptSrcCSP）
+		for k, v := range portalTmplSvc.SecurityHeaders() {
 			c.Header(k, v)
 		}
 		c.Data(200, "text/html; charset=utf-8", []byte(html))

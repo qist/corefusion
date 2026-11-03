@@ -94,12 +94,19 @@ const (
 
 	publicAPIRateLimit  = 120
 	publicAPIRateWindow = time.Minute
+
+	// authStatusRateLimit：登录页「该账号是否启用 2FA」查询（安全审计 v6 L-4）。
+	// 该接口按用户名返回布尔值，可用来缩小用户名枚举范围（只有"存在且启用 2FA"
+	// 才返回 true），因此按 IP 限流 —— 正常用户只会因输入停顿触发个位数请求。
+	authStatusRateLimit  = 30
+	authStatusRateWindow = time.Minute
 )
 
 var (
-	subscribeLimiter = newRateLimiter(subscribeRateLimit, subscribeRateWindow)
-	registerLimiter  = newRateLimiter(registerRateLimit, registerRateWindow)
-	publicAPILimiter = newRateLimiter(publicAPIRateLimit, publicAPIRateWindow)
+	subscribeLimiter  = newRateLimiter(subscribeRateLimit, subscribeRateWindow)
+	registerLimiter   = newRateLimiter(registerRateLimit, registerRateWindow)
+	publicAPILimiter  = newRateLimiter(publicAPIRateLimit, publicAPIRateWindow)
+	authStatusLimiter = newRateLimiter(authStatusRateLimit, authStatusRateWindow)
 )
 
 // rateLimitByIP 构造一个按客户端 IP 限流的中间件。
@@ -132,6 +139,15 @@ func RegisterRateLimit() gin.HandlerFunc {
 // PublicAPIRateLimit 挂在 `/api/v1/public/*` 这类无需登录的读接口上。
 func PublicAPIRateLimit() gin.HandlerFunc {
 	return rateLimitByIP(publicAPILimiter, "TOO_MANY_REQUESTS",
+		"too many requests, please slow down")
+}
+
+// AuthStatusRateLimit 挂在登录页的 `2fa-status` 查询上（安全审计 v6 L-4）。
+//
+// 该接口只返回「该用户名是否启用 2FA」的布尔值，正常登录流程在用户名输入停顿时
+// 查询一两次；按 IP 限流后，批量枚举用户名的收益被压到可忽略。
+func AuthStatusRateLimit() gin.HandlerFunc {
+	return rateLimitByIP(authStatusLimiter, "TOO_MANY_REQUESTS",
 		"too many requests, please slow down")
 }
 

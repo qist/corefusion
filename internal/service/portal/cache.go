@@ -36,10 +36,13 @@ type CacheStats struct {
 // the TTL elapses. Dev mode bypasses both caches entirely.
 type RenderCache struct {
 	cachedHTML string
-	cacheKey   string
-	builtAt    time.Time
-	hitCount   atomic.Int64
-	missCount  atomic.Int64
+	// cachedCSP 是与 cachedHTML 配套的 script-src 指令值（安全审计 v6 L-6）：
+	// 在渲染时一并算出，避免每个请求都重新扫描整页 HTML。
+	cachedCSP string
+	cacheKey  string
+	builtAt   time.Time
+	hitCount  atomic.Int64
+	missCount atomic.Int64
 
 	configJSON    []byte
 	configBuiltAt time.Time
@@ -70,14 +73,22 @@ func (c *RenderCache) Get() (string, bool) {
 }
 
 // Set stores the rendered HTML in the cache.
-func (c *RenderCache) Set(html string) {
+func (c *RenderCache) Set(html, csp string) {
 	h := sha1.Sum([]byte(html))
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cachedHTML = html
+	c.cachedCSP = csp
 	c.cacheKey = hex.EncodeToString(h[:])[:16]
 	c.builtAt = time.Now()
 	c.missCount.Add(1)
+}
+
+// CSP 返回与当前缓存 HTML 配套的 script-src 指令值（没有缓存时为空）。
+func (c *RenderCache) CSP() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cachedCSP
 }
 
 // GetConfig returns the cached runtime config JSON if it is fresh.
@@ -107,11 +118,7 @@ func (c *RenderCache) SetConfig(data []byte) {
 func (c *RenderCache) Invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cachedHTML = ""
-	c.cacheKey = ""
-	c.builtAt = time.Time{}
-	c.configJSON = nil
-	c.configBuiltAt = time.Time{}
+	c.InvalidateLocked()
 }
 
 // SetDevMode enables or disables dev mode (no caching).
@@ -132,6 +139,7 @@ func (c *RenderCache) IsDevMode() bool {
 // InvalidateLocked clears the cache without acquiring the lock (caller must hold it).
 func (c *RenderCache) InvalidateLocked() {
 	c.cachedHTML = ""
+	c.cachedCSP = ""
 	c.cacheKey = ""
 	c.builtAt = time.Time{}
 	c.configJSON = nil

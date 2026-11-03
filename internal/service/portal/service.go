@@ -64,7 +64,9 @@ func (s *Service) RenderPage(ctx context.Context) string {
 	cfg := MergeConfig(tmpl, registrationEnabled)
 	html := renderPortalHTML(tmpl.HTMLContent, tmpl.CSSContent, tmpl.JSContent, tmpl.Config, cfg)
 
-	s.cache.Set(html)
+	// script-src 与渲染产物一起算好并缓存（安全审计 v6 L-6）：每个请求都重扫
+	// 整页 HTML 是浪费；模板更新会让缓存失效、随之重算。
+	s.cache.Set(html, ScriptSrcCSP(html))
 
 	return html
 }

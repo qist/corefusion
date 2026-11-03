@@ -1,6 +1,8 @@
 package portal
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -56,19 +58,19 @@ func TestPortalTicketMessageUsesUntrustedRenderer(t *testing.T) {
 	}
 }
 
-// 门户页面的安全响应头：只设不会打断自定义 HTML/JS/CDN 的那几条。
+// 门户页面的安全响应头：基础头永远在，script-src 由渲染产物推导（安全审计 v6 L-6）。
 func TestPortalSecurityHeaders(t *testing.T) {
-	h := SecurityHeaders()
+	h := BaseSecurityHeaders()
 	csp := h["Content-Security-Policy"]
 	for _, want := range []string{"object-src 'none'", "base-uri 'self'", "frame-ancestors 'self'"} {
 		if !strings.Contains(csp, want) {
 			t.Errorf("CSP 缺少 %q：%s", want, csp)
 		}
 	}
-	// 门户允许管理员自定义 HTML/JS 且使用 CDN → 不能收紧脚本源（否则直接打断自定义功能）
+	// 基础头（合规文档等页面）不带 script-src：那些页面没有脚本，收紧也无意义
 	for _, bad := range []string{"script-src", "default-src", "style-src"} {
 		if strings.Contains(csp, bad) {
-			t.Errorf("CSP 不应包含 %q（会打断门户自定义脚本/样式与 CDN）：%s", bad, csp)
+			t.Errorf("基础 CSP 不应包含 %q：%s", bad, csp)
 		}
 	}
 	if h["X-Content-Type-Options"] != "nosniff" {
@@ -78,9 +80,67 @@ func TestPortalSecurityHeaders(t *testing.T) {
 		t.Error("应设置 Referrer-Policy")
 	}
 
+	// 带 script-src 的版本：指令必须**前置**（不覆盖基础头里的 object-src 等）
+	withScript := SecurityHeaders("'self' 'unsafe-eval'")["Content-Security-Policy"]
+	if !strings.HasPrefix(withScript, "script-src 'self' 'unsafe-eval'; ") {
+		t.Errorf("script-src 应前置，实际 %q", withScript)
+	}
+	for _, want := range []string{"object-src 'none'", "base-uri 'self'", "frame-ancestors 'self'"} {
+		if !strings.Contains(withScript, want) {
+			t.Errorf("带 script-src 的 CSP 丢了基础指令 %q：%s", want, withScript)
+		}
+	}
+
 	// 每次调用返回独立 map（调用方改动不污染其它请求）
 	h["Content-Security-Policy"] = "mutated"
-	if SecurityHeaders()["Content-Security-Policy"] == "mutated" {
+	if BaseSecurityHeaders()["Content-Security-Policy"] == "mutated" {
 		t.Error("SecurityHeaders 每次应返回新的 map")
+	}
+}
+
+// ScriptSrcCSP：只放行模板里**静态写出**的脚本源，内联脚本走 sha256，
+// 绝不启用 'unsafe-inline'（否则 <img onerror> 这类事件属性注入照样执行）。
+func TestScriptSrcCSP(t *testing.T) {
+	page := `<html><head>` +
+		`<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>` +
+		`<script src="/static/qrcode.min.js"></script>` +
+		`<script>window.PORTAL_CONFIG = {"a":1};</script>` +
+		`<script id="empty"></script>` +
+		`<script src="data:text/javascript,alert(1)"></script>` +
+		`</head><body><img src=x onerror="alert(1)"></body></html>`
+
+	csp := ScriptSrcCSP(page)
+	for _, want := range []string{"'self'", "'unsafe-eval'", "https://cdn.jsdelivr.net"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("script-src 缺少 %q：%s", want, csp)
+		}
+	}
+	// 内联脚本：sha256(内容) 白名单
+	inline := `window.PORTAL_CONFIG = {"a":1};`
+	sum := sha256.Sum256([]byte(inline))
+	if want := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"; !strings.Contains(csp, want) {
+		t.Errorf("内联脚本缺少哈希白名单 %q：%s", want, csp)
+	}
+	// 事件属性 / 动态注入靠这条兜住
+	if strings.Contains(csp, "'unsafe-inline'") {
+		t.Errorf("script-src 不得包含 'unsafe-inline'：%s", csp)
+	}
+	// data: 脚本一律不放行
+	if strings.Contains(csp, "data:") {
+		t.Errorf("script-src 不应放行 data:：%s", csp)
+	}
+	// 空内联脚本不产生无意义哈希
+	if strings.Count(csp, "'sha256-") != 1 {
+		t.Errorf("只应为 1 个内联脚本生成哈希：%s", csp)
+	}
+
+	// 默认模板（真实渲染产物）必须能通过：否则门户整站脚本会被 CSP 拦掉
+	rendered := renderPortalHTML(defaultPortalHTML, defaultPortalCSS, defaultPortalJS, "", MergeConfig(nil, false))
+	defCSP := ScriptSrcCSP(rendered)
+	if !strings.Contains(defCSP, "https://cdn.jsdelivr.net") {
+		t.Errorf("默认模板的 CDN 源未被放行：%s", defCSP)
+	}
+	if !strings.Contains(defCSP, "'sha256-") {
+		t.Errorf("默认模板的内联脚本未获得哈希白名单：%s", defCSP)
 	}
 }

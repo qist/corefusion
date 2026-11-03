@@ -409,7 +409,10 @@ func (h *Handler) GetConfigFile(c *gin.Context) {
 // into the same { caddy, nginx, active_proxy } format the frontend expects.
 func (h *Handler) GetProxyStatus(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	// 0 曾在各层被当作"本地节点"，导致 /node-servers/0/proxy/status 静默返回
+	// 面板本机的 Caddy/Nginx 状态（远程节点页面显示"本地 Caddy 正在运行"）。
+	// 节点维度的接口必须显式给出有效 ID，缺失/0 一律拒绝。
+	if err != nil || serverID <= 0 {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
@@ -437,7 +440,9 @@ func (h *Handler) GetProxyStatus(c *gin.Context) {
 // Controls a proxy process (caddy/nginx) on a specific server.
 func (h *Handler) ControlProxy(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	// 同 GetProxyStatus：0 不能被当成"本地节点"，否则 /node-servers/0/proxy/control
+	// 会直接启停面板本机的代理进程。
+	if err != nil || serverID <= 0 {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
@@ -465,7 +470,8 @@ func (h *Handler) ControlProxy(c *gin.Context) {
 // referenced by proxy sites (Caddy/Nginx tls directives) on the agent.
 func (h *Handler) SyncProxyConfig(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	// 同 GetProxyStatus：0 不能被当成"本地节点"。
+	if err != nil || serverID <= 0 {
 		response.BadRequest(c, "INVALID_ID", "invalid server ID")
 		return
 	}
@@ -569,6 +575,9 @@ func isValidCoreType(ct string) bool {
 // the frontend expects. It also includes guardian settings from the panel DB.
 func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int64) gin.H {
 	resp := gin.H{
+		// 回传请求的节点 ID：前端据此丢弃"不是当前节点"的响应，
+		// 防止切换节点/并发请求时把别的节点状态渲染进来。
+		"server_id":      serverID,
 		"active_proxy":   "",
 		"caddy":          gin.H{"type": "caddy", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},
 		"nginx":          gin.H{"type": "nginx", "installed": false, "status": "unknown", "version": "", "path": "", "managed": false},

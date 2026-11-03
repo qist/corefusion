@@ -39,7 +39,6 @@ func newNginxTestManager(t *testing.T, sites []entity.NginxSite, settingsJSON st
 			"panel.listen_port":    "8080",
 		}},
 	}
-	m.SetServerID(2)
 	return m
 }
 

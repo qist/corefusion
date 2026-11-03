@@ -36,23 +36,16 @@ func (h *CaddyHandler) SetNodeOperator(op NodeOperator) {
 	h.nodeOp = op
 }
 
-// applyServerID extracts the server ID from the URL and sets it on the managers
-// so that site queries filter by the correct node.
+// applyServerID extracts the server ID from the URL and reports whether it is
+// the local node. 节点归属由调用方按参数传给 manager，manager 不再保存共享状态。
 func (h *CaddyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	serverID := parseServerID(c)
-	isLocal := serverID == localServerID || serverID == 0
-	if !isLocal && h.nodeOp != nil {
+	// 0 不再视为本地节点：否则非法/缺失的 :id 会把请求落到面板本机。
+	isLocal := serverID == localServerID
+	if !isLocal && serverID > 0 && h.nodeOp != nil {
 		isLocal = h.nodeOp.IsLocalServer(c.Request.Context(), serverID)
 	}
-	sid := serverID
-	if sid == 0 {
-		sid = localServerID
-	}
-	h.caddyMgr.SetServerID(sid)
-	h.proxyMgr.SetServerID(sid)
-	h.caddyMgr.SetIsLocal(isLocal)
-	h.proxyMgr.SetIsLocal(isLocal)
-	return sid, isLocal
+	return serverID, isLocal
 }
 
 // ImportSites handles POST /api/v1/node-servers/:id/caddy/import.
@@ -84,11 +77,11 @@ func (h *CaddyHandler) ImportSites(c *gin.Context) {
 	for i := range res.Sites {
 		site := res.Sites[i]
 		site.ServerID = serverID
-		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, site.Domain, site.Path, site.Template, 0); dup {
+		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, serverID, site.Domain, site.Path, site.Template, 0); dup {
 			skipped = append(skipped, fmt.Sprintf("%s %s 已存在（站点 id=%d）", site.Domain, site.Path, id))
 			continue
 		}
-		if err := h.caddyMgr.CreateSite(c.Request.Context(), &site); err != nil {
+		if err := h.caddyMgr.CreateSite(c.Request.Context(), serverID, &site); err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s %s 创建失败：%v", site.Domain, site.Path, err))
 			continue
 		}
@@ -102,11 +95,11 @@ func (h *CaddyHandler) ImportSites(c *gin.Context) {
 }
 
 // caddyLocationConflict 检查是否已存在「同域名 + 同 location」的启用站点，返回其 id。
-func caddyLocationConflict(ctx context.Context, mgr *proxy.CaddyManager, domain, path, template string, excludeID int64) (int64, bool) {
+func caddyLocationConflict(ctx context.Context, mgr *proxy.CaddyManager, serverID int64, domain, path, template string, excludeID int64) (int64, bool) {
 	if !httpTemplateHasLocation(template) {
 		return 0, false
 	}
-	sites, err := mgr.ListSites(ctx)
+	sites, err := mgr.ListSites(ctx, serverID)
 	if err != nil {
 		return 0, false
 	}
@@ -125,8 +118,8 @@ func caddyLocationConflict(ctx context.Context, mgr *proxy.CaddyManager, domain,
 
 // --- Site Management ---
 func (h *CaddyHandler) ListSites(c *gin.Context) {
-	h.applyServerID(c)
-	sites, err := h.caddyMgr.ListSites(c.Request.Context())
+	sid, _ := h.applyServerID(c)
+	sites, err := h.caddyMgr.ListSites(c.Request.Context(), sid)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -166,7 +159,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, req.Domain, req.Path, req.Template, 0); dup {
+	if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, sid, req.Domain, req.Path, req.Template, 0); dup {
 		response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(req.Domain), id))
 		return
 	}
@@ -205,7 +198,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		DualCert:      req.DualCert,
 		Priority:      req.Priority,
 	}
-	if err := h.caddyMgr.CreateSite(c.Request.Context(), site); err != nil {
+	if err := h.caddyMgr.CreateSite(c.Request.Context(), sid, site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -218,7 +211,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	response.Created(c, site)
 }
 func (h *CaddyHandler) UpdateSite(c *gin.Context) {
-	h.applyServerID(c)
+	sid, _ := h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -269,7 +262,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		if req.Template != nil {
 			nt = *req.Template
 		}
-		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, nd, np, nt, existing.ID); dup {
+		if id, dup := caddyLocationConflict(c.Request.Context(), h.caddyMgr, sid, nd, np, nt, existing.ID); dup {
 			response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(nd), id))
 			return
 		}
@@ -375,7 +368,7 @@ func (h *CaddyHandler) DeleteSite(c *gin.Context) {
 // --- Config ---
 func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
-	config, err := h.caddyMgr.GenerateConfig(c.Request.Context())
+	config, err := h.caddyMgr.GenerateConfig(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "GENERATE_FAILED", err.Error())
 		return
@@ -398,7 +391,7 @@ func (h *CaddyHandler) GenerateConfig(c *gin.Context) {
 }
 func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
-	config, err := h.caddyMgr.SaveAndApply(c.Request.Context())
+	config, err := h.caddyMgr.SaveAndApply(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
@@ -419,8 +412,8 @@ func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 
 // --- SNI ---
 func (h *CaddyHandler) GetSNISettings(c *gin.Context) {
-	h.applyServerID(c)
-	settings, err := h.caddyMgr.GetSNISettings(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	settings, err := h.caddyMgr.GetSNISettings(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
@@ -434,7 +427,7 @@ func (h *CaddyHandler) SaveSNISettings(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.caddyMgr.SaveSNISettings(c.Request.Context(), &settings); err != nil {
+	if err := h.caddyMgr.SaveSNISettings(c.Request.Context(), serverID, &settings); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
@@ -453,7 +446,7 @@ func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.caddyMgr.ToggleSNIEnabled(c.Request.Context(), req.Enabled)
+	count, err := h.caddyMgr.ToggleSNIEnabled(c.Request.Context(), serverID, req.Enabled)
 	if err != nil {
 		response.InternalError(c, "TOGGLE_FAILED", err.Error())
 		return
@@ -465,8 +458,8 @@ func (h *CaddyHandler) ToggleSNI(c *gin.Context) {
 	response.OK(c, gin.H{"updated": count})
 }
 func (h *CaddyHandler) DeleteAllSNI(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.caddyMgr.DeleteAllSNI(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.caddyMgr.DeleteAllSNI(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
@@ -483,7 +476,7 @@ func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.caddyMgr.BatchUpdatePorts(c.Request.Context(), req.Port, req.Enable)
+	count, err := h.caddyMgr.BatchUpdatePorts(c.Request.Context(), serverID, req.Port, req.Enable)
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -497,7 +490,7 @@ func (h *CaddyHandler) BatchUpdatePorts(c *gin.Context) {
 
 // BatchUpdateLogEnabled updates the log_enabled flag for all HTTP Caddy sites.
 func (h *CaddyHandler) BatchUpdateLogEnabled(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -505,7 +498,7 @@ func (h *CaddyHandler) BatchUpdateLogEnabled(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.caddyMgr.BatchUpdateLogEnabled(c.Request.Context(), req.Enabled)
+	count, err := h.caddyMgr.BatchUpdateLogEnabled(c.Request.Context(), serverID, req.Enabled)
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -515,8 +508,8 @@ func (h *CaddyHandler) BatchUpdateLogEnabled(c *gin.Context) {
 
 // --- L4 ---
 func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.caddyMgr.DeleteAllL4(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.caddyMgr.DeleteAllL4(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return

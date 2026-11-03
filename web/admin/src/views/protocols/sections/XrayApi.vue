@@ -30,12 +30,15 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
-const form = reactive({ tag: 'api', listen: '', services: ['HandlerService', 'LoggerService', 'StatsService', 'RoutingService'] })
+// 默认全选：RoutingService 是路由管理所需，缺省时必须一并开启。
+const ALL_SERVICES = ['HandlerService', 'LoggerService', 'StatsService', 'RoutingService']
+const form = reactive({ tag: 'api', listen: '', services: ALL_SERVICES.slice() })
 function sync() {
   if (!props.data) return
   form.tag = props.data.tag || 'api'
   form.listen = props.data.listen || ''
-  form.services = props.data.services || ['HandlerService', 'LoggerService', 'StatsService', 'RoutingService']
+  const services = Array.isArray(props.data.services) ? props.data.services : []
+  form.services = services.length ? services.slice() : ALL_SERVICES.slice()
 }
 function emit() {
   const out = { tag: form.tag, services: form.services }

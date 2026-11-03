@@ -44,7 +44,7 @@
           </template>
         </el-dropdown>
       </el-header>
-      <el-main style="background:#f5f7fa;padding:20px"><router-view /></el-main>
+      <el-main style="background:#f5f7fa;padding:20px"><router-view :key="viewKey" /></el-main>
     </el-container>
   </el-container>
 
@@ -185,6 +185,15 @@ const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+
+// 节点详情页的路由只改 :id 时，Vue Router 会复用同一个组件实例，而
+// NodeServerDetail 的 serverId 是 setup 时读取的常量 → 会继续用上一个节点的
+// ID 查询（远程节点页面串出本地面板的代理状态）。这里按 name+id 强制重建；
+// 仅 query 变化（tab 切换）不重建。
+const viewKey = computed(() => {
+  if (route.name === 'NodeServerDetail') return `${route.name}:${route.params.id}`
+  return String(route.name || route.path)
+})
 
 const currentLocaleName = computed(() => {
   const found = availableLocales.find(l => l.code === locale.value)

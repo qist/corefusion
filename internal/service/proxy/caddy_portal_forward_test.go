@@ -16,16 +16,12 @@ func (f fakeSettingStore) GetByKey(_ context.Context, key string) (string, error
 
 func (f fakeSettingStore) Set(_ context.Context, _, _ string) error { return nil }
 
-// TestCaddyIsLocalTargetIgnoresSharedIsLocal 锁定：判断「配置落到哪个节点」必须按 serverID 参数，
-// 绝不能依赖会被每请求改写的共享状态 m.isLocal。
-//
-// Why: 面板启动时只 SetServerID(1)、不设 m.isLocal（默认 false）。旧逻辑用 m.isLocal 判断
-// → 启动生成的 Caddyfile 会**跳过 portal_forward 站点**（门户白屏），直到某次本机请求把它置回 true。
-func TestCaddyIsLocalTargetIgnoresSharedIsLocal(t *testing.T) {
+// TestCaddyIsLocalTargetByParam 锁定：判断「配置落到哪个节点」必须按 serverID 参数，
+// manager 不保存任何每请求可变的共享状态。
+func TestCaddyIsLocalTargetByParam(t *testing.T) {
 	m := &CaddyManager{}
-	m.SetIsLocal(false) // 模拟「启动时 / 被并发请求改写」的状态
 	if !m.isLocalTarget(context.Background(), 1) {
-		t.Fatal("serverID=1（本机面板）应始终判为本机，与 m.isLocal 无关")
+		t.Fatal("serverID=1（本机面板）应始终判为本机")
 	}
 }
 

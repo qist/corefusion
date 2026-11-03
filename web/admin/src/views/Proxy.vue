@@ -56,6 +56,7 @@ const manualOverride = ref(false)
 // based on the new node's actual running state.
 watch(() => props.serverId, () => {
   activeProxy.value = ''
+  runningProxy.value = ''
   manualOverride.value = false
   fetchStatus()
 })
@@ -84,8 +85,19 @@ function switchProxy() {
 }
 
 async function fetchStatus() {
+  // serverId=0 会让后端回落到面板本机状态，必须直接忽略。
+  if (!props.serverId) {
+    runningProxy.value = ''
+    activeProxy.value = ''
+    return
+  }
+  const sid = props.serverId
   try {
-    const status = await client.get(`/node-servers/${props.serverId}/proxy/status`)
+    const status = await client.get(`/node-servers/${sid}/proxy/status`)
+    // 忽略已在切节点途中返回的旧响应，以及不属于当前节点的状态
+    // （防止远程节点页面显示面板本机的 Caddy/Nginx 运行状态）。
+    if (sid !== props.serverId) return
+    if (status.server_id && Number(status.server_id) !== sid) return
     if (status.nginx && status.nginx.status === 'running') {
       runningProxy.value = 'nginx'
     } else if (status.caddy && status.caddy.status === 'running') {

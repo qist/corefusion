@@ -29,28 +29,18 @@ func (h *ProxyHandler) SetNodeOperator(op NodeOperator) {
 	h.nodeOp = op
 }
 
-// applyServerID extracts the server ID from the URL and sets it on all managers
-// so that site queries filter by the correct node. Returns the server ID and
-// whether it is the local node.
+// applyServerID extracts the server ID from the URL and reports whether it is
+// the local node. 节点归属由调用方按参数传给 manager，manager 不再保存共享状态。
 func (h *ProxyHandler) applyServerID(c *gin.Context) (int64, bool) {
 	serverID := parseServerID(c)
-	isLocal := serverID == localServerID || serverID == 0
-	if !isLocal && h.nodeOp != nil {
+	// ⚠ 缺失/非法的 server id（0）绝不能再当成本地节点：
+	// 之前 `serverID == 0` 会回落到本地 manager，于是 /node-servers/0/proxy/* 静默
+	// 操作/显示面板本机的 Caddy/Nginx（远程节点页面出现"本地 Caddy 正在运行"）。
+	isLocal := serverID == localServerID
+	if !isLocal && serverID > 0 && h.nodeOp != nil {
 		isLocal = h.nodeOp.IsLocalServer(c.Request.Context(), serverID)
 	}
-	// Set serverID on all managers for per-node site filtering.
-	// For local nodes this is always 1; for remote nodes it's the remote server's ID.
-	sid := serverID
-	if sid == 0 {
-		sid = localServerID
-	}
-	h.proxyMgr.SetServerID(sid)
-	h.caddyMgr.SetServerID(sid)
-	h.nginxMgr.SetServerID(sid)
-	h.proxyMgr.SetIsLocal(isLocal)
-	h.caddyMgr.SetIsLocal(isLocal)
-	h.nginxMgr.SetIsLocal(isLocal)
-	return sid, isLocal
+	return serverID, isLocal
 }
 
 // parseServerID extracts the :id parameter from the URL and returns it.
@@ -67,7 +57,13 @@ func parseServerID(c *gin.Context) int64 {
 const localServerID = int64(1)
 
 // GetStatus handles GET /api/v1/proxy/status.
+// 只在本地节点分支被调用（远程节点由 nodeserver.GetProxyStatus 走 Agent），
+// 检测的是**面板本机**的进程；响应带上所属 server_id，前端据此确认状态归属。
 func (h *ProxyHandler) GetStatus(c *gin.Context) {
+	serverID := parseServerID(c)
+	if serverID <= 0 {
+		serverID = localServerID
+	}
 	nginx := h.proxyMgr.DetectProxy(proxy.ProxyNginx)
 	caddy := h.proxyMgr.DetectProxy(proxy.ProxyCaddy)
 	active := ""
@@ -87,6 +83,7 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 	nginxGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyNginx)
 	caddyGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyCaddy)
 	response.OK(c, gin.H{
+		"server_id":      serverID,
 		"active_proxy":   active,
 		"nginx":          nginx,
 		"caddy":          caddy,
@@ -310,14 +307,14 @@ func (h *ProxyHandler) Reload(c *gin.Context) {
 // --- Site Management ---
 // ListSites handles GET /api/v1/node-servers/:id/proxy/sites.
 func (h *ProxyHandler) ListSites(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	proxyType := c.Query("type")
 	var sites []entity.ProxySite
 	var err error
 	if proxyType != "" {
-		sites, err = h.proxyMgr.ListSitesByType(c.Request.Context(), proxyType)
+		sites, err = h.proxyMgr.ListSitesByType(c.Request.Context(), serverID, proxyType)
 	} else {
-		sites, err = h.proxyMgr.ListSites(c.Request.Context())
+		sites, err = h.proxyMgr.ListSites(c.Request.Context(), serverID)
 	}
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
@@ -331,7 +328,7 @@ func (h *ProxyHandler) ListSites(c *gin.Context) {
 
 // CreateSite handles POST /api/v1/node-servers/:id/proxy/sites.
 func (h *ProxyHandler) CreateSite(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, isLocal := h.applyServerID(c)
 	var req struct {
 		ProxyType      string `json:"proxy_type"`
 		Domain         string `json:"domain" binding:"required"`
@@ -402,7 +399,7 @@ func (h *ProxyHandler) CreateSite(c *gin.Context) {
 		DualCert:        req.DualCert,
 		Priority:        req.Priority,
 	}
-	if err := h.proxyMgr.CreateSite(c.Request.Context(), site); err != nil {
+	if err := h.proxyMgr.CreateSite(c.Request.Context(), serverID, isLocal, site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -584,9 +581,9 @@ func (h *ProxyHandler) GenerateConfig(c *gin.Context) {
 	var genErr error
 	switch proxyType {
 	case proxy.ProxyCaddy:
-		config, genErr = h.caddyMgr.GenerateConfig(c.Request.Context())
+		config, genErr = h.caddyMgr.GenerateConfig(c.Request.Context(), serverID)
 	case proxy.ProxyNginx:
-		config, genErr = h.nginxMgr.GenerateConfig(c.Request.Context())
+		config, genErr = h.nginxMgr.GenerateConfig(c.Request.Context(), serverID)
 	default:
 		response.BadRequest(c, "UNSUPPORTED", "unsupported proxy type")
 		return
@@ -745,7 +742,8 @@ func (h *ProxyHandler) GetLogSettings(c *gin.Context) {
 
 // GetNginxSettings handles GET /api/v1/proxy/nginx-settings.
 func (h *ProxyHandler) GetNginxSettings(c *gin.Context) {
-	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
@@ -755,12 +753,13 @@ func (h *ProxyHandler) GetNginxSettings(c *gin.Context) {
 
 // SaveNginxSettings handles POST /api/v1/proxy/nginx-settings.
 func (h *ProxyHandler) SaveNginxSettings(c *gin.Context) {
+	serverID, _ := h.applyServerID(c)
 	var settings proxy.NginxSettings
 	if err := c.ShouldBindJSON(&settings); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveNginxSettings(c.Request.Context(), &settings); err != nil {
+	if err := h.nginxMgr.SaveNginxSettings(c.Request.Context(), serverID, &settings); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
@@ -793,7 +792,7 @@ func (h *ProxyHandler) BatchUpdatePorts(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.proxyMgr.BatchUpdatePorts(c.Request.Context(), req.Port, req.Enable)
+	count, err := h.proxyMgr.BatchUpdatePorts(c.Request.Context(), serverID, req.Port, req.Enable)
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -807,8 +806,8 @@ func (h *ProxyHandler) BatchUpdatePorts(c *gin.Context) {
 
 // DeleteAllSNI handles DELETE /api/v1/node-servers/:id/proxy/sni-rules.
 func (h *ProxyHandler) DeleteAllSNI(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.proxyMgr.DeleteAllSNI(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.proxyMgr.DeleteAllSNI(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
@@ -827,7 +826,7 @@ func (h *ProxyHandler) ToggleSNI(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.proxyMgr.ToggleSNIEnabled(c.Request.Context(), req.ProxyType, req.Enabled)
+	count, err := h.proxyMgr.ToggleSNIEnabled(c.Request.Context(), serverID, req.ProxyType, req.Enabled)
 	if err != nil {
 		response.InternalError(c, "TOGGLE_FAILED", err.Error())
 		return
@@ -863,8 +862,8 @@ func (h *ProxyHandler) SaveL4Settings(c *gin.Context) {
 
 // DeleteAllL4 handles DELETE /api/v1/node-servers/:id/proxy/l4-rules.
 func (h *ProxyHandler) DeleteAllL4(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.proxyMgr.DeleteAllL4(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.proxyMgr.DeleteAllL4(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return

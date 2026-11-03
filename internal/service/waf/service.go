@@ -657,6 +657,33 @@ func (s *Service) DeleteDomainConfig(ctx context.Context, serverID int64, domain
 // Used only when the user has not configured a custom source URL.
 const githubRawBase = "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config"
 
+// DefaultSyncCron 是内置规则源的默认同步周期（24 小时）。
+const DefaultSyncCron = "@every 24h"
+
+// DefaultGitHubSource 返回内置默认规则源：启用、包含全部引擎规则、每 24 小时同步一次。
+// 用户从未保存过配置时使用它 → 安装 nginx/caddy 后即可自动下载规则，
+// 不需要先去 WAF 页面手动启用。
+func DefaultGitHubSource() *GitHubSourceConfig {
+	mappings := make([]SourceFileMapping, 0, len(defaultRuleFiles))
+	for _, rd := range defaultRuleFiles {
+		mappings = append(mappings, SourceFileMapping{Name: rd.Name})
+	}
+	return &GitHubSourceConfig{
+		URL:          githubRawBase,
+		FileMappings: mappings,
+		SyncCron:     DefaultSyncCron,
+		Enabled:      true,
+	}
+}
+
+// knownRuleDefaults 返回全部已知规则（引擎规则 + 用户自定义规则）。
+func knownRuleDefaults() []githubRuleDefault {
+	all := make([]githubRuleDefault, 0, len(defaultRuleFiles)+len(userDefinedRules))
+	all = append(all, defaultRuleFiles...)
+	all = append(all, userDefinedRules...)
+	return all
+}
+
 // githubRuleDefault defines a default rule file from GitHub with its merge mode.
 type githubRuleDefault struct {
 	Name      string // e.g. "args.rule"
@@ -766,65 +793,64 @@ func (s *Service) SyncFromGitHub(ctx context.Context) error {
 
 // --- Initialization ---
 
-// EnsureInitialized checks if the waf_rules table has global rules and initializes if not.
-// 1. Downloads engine rules + whiteua from GitHub
-// 2. Creates empty user-defined rules (blackip, whiteip, whiteurl, cdnip)
-// 3. Ensures all user-defined rules exist (for upgrades that add new rules)
+// EnsureInitialized guarantees a complete rule set:
+//  1. Every known rule (engine + user-defined) exists as a global row, so the
+//     rules page always shows the full list.
+//  2. Engine rules that are missing or still empty are downloaded from the
+//     configured source (default: built-in GitHub source).
+//
+// 旧实现只在表为空时才下载：任何一次下载失败/后加规则文件都会让列表永久缺项。
 func (s *Service) EnsureInitialized(ctx context.Context) error {
-	count, err := s.ruleRepo.CountGlobal(ctx)
-	if err != nil {
-		return err
-	}
-	if count > 0 {
-		// Already initialized — but check for missing user-defined rules (e.g. cdnip.rule added later)
-		for _, ud := range userDefinedRules {
-			_, err := s.ruleRepo.GetGlobalByName(ctx, ud.Name)
-			if err != nil {
-				// Rule doesn't exist, create it
-				rule := &entity.WafRule{
-					Name:      ud.Name,
-					RuleScope: "global",
-					ServerID:  0,
-					MergeMode: ud.MergeMode,
-					Content:   "",
-					Hash:      "",
-					Enabled:   true,
-				}
-				if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
-					log.Printf("[WAF] failed to create missing user-defined rule %s: %v", ud.Name, err)
-					continue
-				}
-				log.Printf("[WAF] created missing user-defined rule %s", ud.Name)
+	needDownload := false
+
+	for _, rd := range defaultRuleFiles {
+		rule, err := s.ruleRepo.GetGlobalByName(ctx, rd.Name)
+		if err != nil || rule == nil {
+			needDownload = true
+			if err := s.createEmptyRule(ctx, rd); err != nil {
+				log.Printf("[WAF] failed to create rule %s: %v", rd.Name, err)
+			} else {
+				log.Printf("[WAF] created empty rule %s (awaiting download)", rd.Name)
 			}
-		}
-		return nil
-	}
-	log.Printf("[WAF] waf_rules table has no global rules, initializing...")
-
-	// 1. Sync engine rules from GitHub
-	if err := s.SyncFromGitHub(ctx); err != nil {
-		log.Printf("[WAF] GitHub sync failed (will continue): %v", err)
-	}
-
-	// 2. Create empty user-defined rules
-	for _, ud := range userDefinedRules {
-		rule := &entity.WafRule{
-			Name:      ud.Name,
-			RuleScope: "global",
-			ServerID:  0,
-			MergeMode: ud.MergeMode,
-			Content:   "",
-			Hash:      "",
-			Enabled:   true,
-		}
-		if err := s.ruleRepo.Upsert(ctx, rule); err != nil {
-			log.Printf("[WAF] failed to create user-defined rule %s: %v", ud.Name, err)
 			continue
 		}
-		log.Printf("[WAF] created empty user-defined rule %s", ud.Name)
+		if strings.TrimSpace(rule.Content) == "" {
+			needDownload = true
+		}
 	}
 
+	// User-defined rules only need to exist; their content is authored by the user.
+	for _, ud := range userDefinedRules {
+		if _, err := s.ruleRepo.GetGlobalByName(ctx, ud.Name); err != nil {
+			if err := s.createEmptyRule(ctx, ud); err != nil {
+				log.Printf("[WAF] failed to create missing user-defined rule %s: %v", ud.Name, err)
+				continue
+			}
+			log.Printf("[WAF] created missing user-defined rule %s", ud.Name)
+		}
+	}
+
+	if !needDownload {
+		return nil // 规则齐全，交给 24h 调度器刷新
+	}
+	log.Printf("[WAF] incomplete rule set detected, downloading from source...")
+	if err := s.SyncFromGitHub(ctx); err != nil {
+		return fmt.Errorf("sync waf rules from source: %w", err)
+	}
 	return nil
+}
+
+// createEmptyRule inserts an empty global rule row (idempotent via Upsert).
+func (s *Service) createEmptyRule(ctx context.Context, rd githubRuleDefault) error {
+	return s.ruleRepo.Upsert(ctx, &entity.WafRule{
+		Name:      rd.Name,
+		RuleScope: "global",
+		ServerID:  0,
+		MergeMode: rd.MergeMode,
+		Content:   "",
+		Hash:      "",
+		Enabled:   true,
+	})
 }
 
 // --- Local Disk Landing ---
@@ -1270,17 +1296,31 @@ func (s *Service) SyncToAllNodesFromDB(ctx context.Context) error {
 }
 
 // GetGitHubSource returns the configured GitHub source URL and sync schedule.
+// 未配置（或只保存过一个空配置）时返回内置默认源（启用 + 24h + 全部引擎规则）。
 func (s *Service) GetGitHubSource(ctx context.Context) (*GitHubSourceConfig, error) {
 	if s.settingSvc == nil {
-		return &GitHubSourceConfig{}, nil
+		return DefaultGitHubSource(), nil
 	}
 	val, err := s.settingSvc.GetByKey(ctx, "waf.github_source")
 	if err != nil || val == "" {
-		return &GitHubSourceConfig{}, nil
+		return DefaultGitHubSource(), nil
 	}
 	var cfg GitHubSourceConfig
 	if err := json.Unmarshal([]byte(val), &cfg); err != nil {
-		return &GitHubSourceConfig{}, nil
+		return DefaultGitHubSource(), nil
+	}
+	// 空记录（旧版本保存了全空字段）视为未配置 → 用默认值。
+	if cfg.URL == "" && len(cfg.FileMappings) == 0 && cfg.Files == "" && cfg.SyncCron == "" && !cfg.Enabled {
+		return DefaultGitHubSource(), nil
+	}
+	if cfg.URL == "" {
+		cfg.URL = githubRawBase
+	}
+	if len(cfg.FileMappings) == 0 && cfg.Files == "" {
+		cfg.FileMappings = DefaultGitHubSource().FileMappings
+	}
+	if cfg.SyncCron == "" && cfg.Enabled {
+		cfg.SyncCron = DefaultSyncCron
 	}
 	return &cfg, nil
 }

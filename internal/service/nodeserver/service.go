@@ -77,6 +77,10 @@ type Service struct {
 
 	// Binary management
 	binaryLister BinaryLister
+
+	// onProxyInstalled 在 nginx/caddy 安装/更新成功后回调，
+	// 用于触发 WAF 规则下载并把规则下发到该节点。
+	onProxyInstalled func(ctx context.Context, serverID int64, proxyType string)
 }
 
 // NewService creates a new node server service.
@@ -1523,6 +1527,10 @@ func (s *Service) InstallProxy(ctx context.Context, serverID int64, proxyType, d
 	if err == nil {
 		// Invalidate cached binary info so next query fetches fresh data
 		s.nodeMgr.InvalidateBinaryCache(serverID)
+		// 安装完 nginx/caddy 立即触发 WAF 规则下载 + 下发（用户要求"装了代理就有规则"）。
+		if s.onProxyInstalled != nil && (proxyType == "nginx" || proxyType == "caddy") {
+			s.onProxyInstalled(ctx, serverID, proxyType)
+		}
 	}
 	return result, err
 }
@@ -1593,6 +1601,13 @@ func (s *Service) ListBinaries(ctx context.Context, serverID int64) (interface{}
 // SetBinaryLister sets the binary lister for fetching releases from GitHub.
 func (s *Service) SetBinaryLister(lister BinaryLister) {
 	s.binaryLister = lister
+}
+
+// SetOnProxyInstalled sets the callback invoked after a proxy binary is
+// installed/updated on a node (local or remote). Used to download WAF rules
+// and push them to that node immediately.
+func (s *Service) SetOnProxyInstalled(fn func(ctx context.Context, serverID int64, proxyType string)) {
+	s.onProxyInstalled = fn
 }
 
 // ListReleases lists available binary releases from GitHub for a core type.

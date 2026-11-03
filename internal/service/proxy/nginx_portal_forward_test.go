@@ -7,13 +7,12 @@ import (
 	"corefusion/internal/model/entity"
 )
 
-// TestNginxIsLocalTargetIgnoresSharedIsLocal 锁定：判断「配置落到哪个节点」必须按 serverID 参数，
-// 绝不能依赖会被每请求改写的共享状态 m.isLocal（与 CaddyManager 对称）。
-func TestNginxIsLocalTargetIgnoresSharedIsLocal(t *testing.T) {
+// TestNginxIsLocalTargetByParam 锁定：判断「配置落到哪个节点」必须按 serverID 参数，
+// manager 不保存任何每请求可变的共享状态（与 CaddyManager 对称）。
+func TestNginxIsLocalTargetByParam(t *testing.T) {
 	m := &NginxManager{}
-	m.SetIsLocal(false) // 模拟「启动时 / 被并发请求改写」的状态
 	if !m.isLocalTarget(context.Background(), 1) {
-		t.Fatal("serverID=1（本机面板）应始终判为本机，与 m.isLocal 无关")
+		t.Fatal("serverID=1（本机面板）应始终判为本机")
 	}
 }
 

@@ -212,7 +212,7 @@ func (h *Handler) SyncAll(c *gin.Context) {
 func (h *Handler) GetGitHubSource(c *gin.Context) {
 	source, err := h.svc.GetGitHubSource(c.Request.Context())
 	if err != nil {
-		response.OK(c, gin.H{"url": "", "sync_cron": "", "enabled": false})
+		response.OK(c, waf.DefaultGitHubSource())
 		return
 	}
 	response.OK(c, source)

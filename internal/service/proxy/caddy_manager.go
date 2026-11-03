@@ -23,8 +23,6 @@ type CaddyManager struct {
 	// 允许为 nil ✓（未注入时退化为"只用站点自配的那组" ✓）。
 	certRepo     *repository.CertificateRepository
 	settingStore SettingStore
-	serverID     int64
-	isLocal      bool
 	// nodeServerRepo is used to detect mirror nodes and resolve their primary
 	// server ID for config generation. When set, GenerateConfigForServer checks
 	// if the target is a mirror and uses the primary's server_id to query sites.
@@ -41,11 +39,9 @@ func (m *CaddyManager) wafRuleDir() string {
 	return m.wafBaseDir()
 }
 
-// SetServerID sets the server ID for per-node site filtering.
-func (m *CaddyManager) SetServerID(id int64) { m.serverID = id }
-
-// SetIsLocal sets whether this manager is operating on the local node.
-func (m *CaddyManager) SetIsLocal(v bool) { m.isLocal = v }
+// 节点归属（serverID）一律由调用方按参数传入，manager 不保存每请求可变的共享状态。
+// 原因见 isLocalTarget 的注释：handlers 曾用 SetServerID/SetIsLocal 改共享单例，
+// 并发访问不同节点时会互相覆盖。
 
 // SetCertificateRepo 注入证书仓储 ✓（用于生成"双证书"配置 ✓）。
 func (m *CaddyManager) SetCertificateRepo(repo *repository.CertificateRepository) {
@@ -77,21 +73,21 @@ func NewCaddyManager(dataDir string, siteRepo *repository.CaddySiteRepository, s
 
 // --- Site CRUD ---
 
-func (m *CaddyManager) ListSites(ctx context.Context) ([]entity.CaddySite, error) {
-	return m.siteRepo.List(ctx, m.serverID)
+func (m *CaddyManager) ListSites(ctx context.Context, serverID int64) ([]entity.CaddySite, error) {
+	return m.siteRepo.List(ctx, serverID)
 }
 
-func (m *CaddyManager) ListEnabledSites(ctx context.Context) ([]entity.CaddySite, error) {
-	return m.siteRepo.ListEnabled(ctx, m.serverID)
+func (m *CaddyManager) ListEnabledSites(ctx context.Context, serverID int64) ([]entity.CaddySite, error) {
+	return m.siteRepo.ListEnabled(ctx, serverID)
 }
 
-func (m *CaddyManager) CreateSite(ctx context.Context, site *entity.CaddySite) error {
+func (m *CaddyManager) CreateSite(ctx context.Context, serverID int64, site *entity.CaddySite) error {
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, m.serverID) {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
-		site.ServerID = m.serverID
+		site.ServerID = serverID
 	}
 	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
 	// 以前只在生成配置时临时注入 → DB 永远为空 ✗。此处统一落地 ✓。
@@ -118,8 +114,8 @@ func (m *CaddyManager) DeleteSite(ctx context.Context, id int64) error {
 // --- Config Generation ---
 
 // GenerateConfig assembles the full Caddyfile from all enabled sites.
-func (m *CaddyManager) GenerateConfig(ctx context.Context) (string, error) {
-	return m.GenerateConfigForServer(ctx, m.serverID)
+func (m *CaddyManager) GenerateConfig(ctx context.Context, serverID int64) (string, error) {
+	return m.GenerateConfigForServer(ctx, serverID)
 }
 
 // resolveSourceServerID checks if the given serverID is a mirror node.
@@ -141,14 +137,11 @@ func (m *CaddyManager) resolveSourceServerID(ctx context.Context, serverID int64
 
 // isLocalTarget 判断「**这份配置要落到哪个节点**」是不是本机（面板）✓。
 //
-// ⚠ 不能用 m.isLocal ✗：它是**每请求被改写**的共享状态 ✓（handlers 的 applyServerID 会按
-// URL 里的 node id 调 SetIsLocal ✓），本机请求与远程请求**交错**时会被别的请求改掉 ✗
-// → 拿它决定"要不要校验证书文件在不在本地"会时好时坏 ✗
+// ⚠ 不能用共享状态 ✗：历史上 handlers 每请求调 SetIsLocal 改写单例 ✓，本机/远程请求
+// **交错**时会互相覆盖 ✗（实测踩到 ✓：对 node 1 生成配置时被别的请求置为 false ✗，
+// 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。该字段已彻底移除 ✓。
 //
-//	（实测踩到 ✓：对 node 1 生成配置时 m.isLocal 被别的请求置为 false ✗，
-//	 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。
-//
-// 这里改为**按本次调用的 serverID 参数**判断 ✓，与共享状态无关 ✓。
+// 判断只认**本次调用的 serverID 参数** ✓，与任何共享状态无关 ✓。
 func (m *CaddyManager) isLocalTarget(ctx context.Context, serverID int64) bool {
 	if serverID == 1 { // NodeServer 表里 id=1 就是 "Local (Panel)" ✓
 		return true
@@ -993,8 +986,8 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 }
 
 // SaveAndApply generates config and writes to disk.
-func (m *CaddyManager) SaveAndApply(ctx context.Context) (string, error) {
-	config, err := m.GenerateConfig(ctx)
+func (m *CaddyManager) SaveAndApply(ctx context.Context, serverID int64) (string, error) {
+	config, err := m.GenerateConfig(ctx, serverID)
 	if err != nil {
 		return "", err
 	}
@@ -1008,8 +1001,8 @@ func (m *CaddyManager) SaveAndApply(ctx context.Context) (string, error) {
 
 // --- SNI Management ---
 
-func (m *CaddyManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *CaddyManager) ToggleSNIEnabled(ctx context.Context, serverID int64, enabled bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -1026,16 +1019,16 @@ func (m *CaddyManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int,
 	return count, nil
 }
 
-func (m *CaddyManager) DeleteAllSNI(ctx context.Context) (int, error) {
-	return m.deleteByTemplate(ctx, "sni")
+func (m *CaddyManager) DeleteAllSNI(ctx context.Context, serverID int64) (int, error) {
+	return m.deleteByTemplate(ctx, serverID, "sni")
 }
 
-func (m *CaddyManager) DeleteAllL4(ctx context.Context) (int, error) {
-	return m.deleteByTemplate(ctx, "l4")
+func (m *CaddyManager) DeleteAllL4(ctx context.Context, serverID int64) (int, error) {
+	return m.deleteByTemplate(ctx, serverID, "l4")
 }
 
-func (m *CaddyManager) deleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *CaddyManager) deleteByTemplate(ctx context.Context, serverID int64, template string) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -1052,8 +1045,8 @@ func (m *CaddyManager) deleteByTemplate(ctx context.Context, template string) (i
 }
 
 // BatchUpdatePorts updates HTTPS site domains to add/remove port suffix.
-func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *CaddyManager) BatchUpdatePorts(ctx context.Context, serverID int64, port string, enable bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -1098,9 +1091,9 @@ func perNodeSNISettingsKey(baseKey string, serverID int64) string {
 	return fmt.Sprintf("%s.%d", baseKey, serverID)
 }
 
-// GetSNISettings reads SNI settings from database (uses the manager's serverID).
-func (m *CaddyManager) GetSNISettings(ctx context.Context) (*SNISettings, error) {
-	return m.GetSNISettingsForServer(ctx, m.serverID)
+// GetSNISettings reads SNI settings from database for a specific server.
+func (m *CaddyManager) GetSNISettings(ctx context.Context, serverID int64) (*SNISettings, error) {
+	return m.GetSNISettingsForServer(ctx, serverID)
 }
 
 // GetSNISettingsForServer reads SNI settings from database for a specific server.
@@ -1166,8 +1159,8 @@ func (m *CaddyManager) GetSNISettingsForServer(ctx context.Context, serverID int
 	return settings, nil
 }
 
-// SaveSNISettings saves SNI settings to database (uses the manager's serverID).
-func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISettings) error {
+// SaveSNISettings saves SNI settings to database for a specific server.
+func (m *CaddyManager) SaveSNISettings(ctx context.Context, serverID int64, settings *SNISettings) error {
 	if m.settingStore == nil {
 		return nil
 	}
@@ -1176,7 +1169,7 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 		enabled = "true"
 	}
 
-	enabledKey := perNodeSNISettingsKey("proxy.sni_enabled", m.serverID)
+	enabledKey := perNodeSNISettingsKey("proxy.sni_enabled", serverID)
 	if err := m.settingStore.Set(ctx, enabledKey, enabled); err != nil {
 		return err
 	}
@@ -1187,12 +1180,12 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 		settings.LocalPort = "8443"
 	}
 
-	listenPortKey := perNodeSNISettingsKey("proxy.sni_listen_port", m.serverID)
+	listenPortKey := perNodeSNISettingsKey("proxy.sni_listen_port", serverID)
 	if err := m.settingStore.Set(ctx, listenPortKey, settings.ListenPort); err != nil {
 		return err
 	}
 
-	localPortKey := perNodeSNISettingsKey("proxy.sni_local_port", m.serverID)
+	localPortKey := perNodeSNISettingsKey("proxy.sni_local_port", serverID)
 	if err := m.settingStore.Set(ctx, localPortKey, settings.LocalPort); err != nil {
 		return err
 	}
@@ -1200,7 +1193,7 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, settings *SNISetting
 	// Save proxy_protocol rules
 	if len(settings.ProxyProtocolRules) > 0 {
 		data, _ := json.Marshal(settings.ProxyProtocolRules)
-		rulesKey := perNodeSNISettingsKey("proxy.proxy_protocol_rules", m.serverID)
+		rulesKey := perNodeSNISettingsKey("proxy.proxy_protocol_rules", serverID)
 		return m.settingStore.Set(ctx, rulesKey, string(data))
 	}
 	return nil
@@ -1249,8 +1242,8 @@ func (m *CaddyManager) getCaddyLogModeForServer(ctx context.Context, serverID in
 // BatchUpdateLogEnabled updates the log_enabled flag for all HTTP sites of a server.
 // When log output mode is "off", all sites should have log_enabled=false.
 // When log output mode is "file" or "stdout", all sites should have log_enabled=true.
-func (m *CaddyManager) BatchUpdateLogEnabled(ctx context.Context, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *CaddyManager) BatchUpdateLogEnabled(ctx context.Context, serverID int64, enabled bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}

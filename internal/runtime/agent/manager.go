@@ -798,6 +798,11 @@ func (m *NodeServerManager) SyncProxyConfigFromPrimary(ctx context.Context, mirr
 // For local servers, delegates to LocalAgent → proxy.Manager.StartProxy/StopProxy/etc.
 // For remote servers, sends control command via the heartbeat stream.
 func (m *NodeServerManager) ControlProxy(ctx context.Context, serverID int64, proxyType, action string) error {
+	// serverID=0 不能被当成"本地节点"（isLocalServer(0) 为真）→ 否则非法节点 ID
+	// 会直接启停面板本机的代理进程。
+	if serverID <= 0 {
+		return fmt.Errorf("invalid server id %d", serverID)
+	}
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
@@ -950,6 +955,10 @@ func (m *NodeServerManager) InstallProxy(ctx context.Context, serverID int64, pr
 // For local servers, delegates to LocalAgent.
 // For remote servers, queries via heartbeat stream.
 func (m *NodeServerManager) GetProxyStatus(ctx context.Context, serverID int64) (*agentpb.GetProxyStatusResponse, error) {
+	// 同 ControlProxy：0 不是本地节点，缺失/非法 ID 必须报错而不是回落到面板本机。
+	if serverID <= 0 {
+		return nil, fmt.Errorf("invalid server id %d", serverID)
+	}
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return nil, fmt.Errorf("local agent not configured")

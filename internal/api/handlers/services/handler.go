@@ -7,6 +7,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/dto"
+	"corefusion/internal/model/entity"
 	svcService "corefusion/internal/service/service"
 )
 
@@ -74,6 +75,17 @@ func (h *Handler) Create(c *gin.Context) {
 	response.Created(c, svcService.ServiceToJSON(svc))
 }
 
+// ensureServiceBelongsToServer 校验 :serviceId 属于路径里的 :id 节点。
+// 旧实现只按 serviceId 查库，跨节点可读/改/删（安全审计 v6 M-3）。
+func (h *Handler) ensureServiceBelongsToServer(c *gin.Context, svc *entity.InboundService) bool {
+	sid, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || sid <= 0 || svc.ServerID == sid {
+		return true
+	}
+	response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+	return false
+}
+
 // GetByID handles GET /api/v1/node-servers/:id/services/:serviceId.
 func (h *Handler) GetByID(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
@@ -85,6 +97,9 @@ func (h *Handler) GetByID(c *gin.Context) {
 	svc, endpoints, err := h.svcSvc.GetByID(c.Request.Context(), id)
 	if err != nil {
 		response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+		return
+	}
+	if !h.ensureServiceBelongsToServer(c, svc) {
 		return
 	}
 
@@ -108,6 +123,16 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 
+	// 先校验归属，避免「用 A 节点 URL 改 B 节点服务」。
+	existing, _, err := h.svcSvc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+		return
+	}
+	if !h.ensureServiceBelongsToServer(c, existing) {
+		return
+	}
+
 	svc, err := h.svcSvc.Update(c.Request.Context(), id, input)
 	if err != nil {
 		response.InternalError(c, "UPDATE_SERVICE_FAILED", err.Error())
@@ -125,6 +150,15 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
+	existing, _, err := h.svcSvc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+		return
+	}
+	if !h.ensureServiceBelongsToServer(c, existing) {
+		return
+	}
+
 	if err := h.svcSvc.Delete(c.Request.Context(), id); err != nil {
 		response.InternalError(c, "DELETE_SERVICE_FAILED", err.Error())
 		return
@@ -138,6 +172,15 @@ func (h *Handler) ListEndpoints(c *gin.Context) {
 	serviceID, err := strconv.ParseInt(c.Param("serviceId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid service id")
+		return
+	}
+
+	svc, _, err := h.svcSvc.GetByID(c.Request.Context(), serviceID)
+	if err != nil {
+		response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+		return
+	}
+	if !h.ensureServiceBelongsToServer(c, svc) {
 		return
 	}
 
@@ -161,6 +204,15 @@ func (h *Handler) CreateEndpoint(c *gin.Context) {
 	var input svcService.CreateEndpointInput
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+
+	svc, _, err := h.svcSvc.GetByID(c.Request.Context(), serviceID)
+	if err != nil {
+		response.NotFound(c, "SERVICE_NOT_FOUND", "service not found")
+		return
+	}
+	if !h.ensureServiceBelongsToServer(c, svc) {
 		return
 	}
 

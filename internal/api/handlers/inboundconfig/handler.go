@@ -115,6 +115,26 @@ func (h *Handler) List(c *gin.Context) {
 	response.OK(c, configs)
 }
 
+// pathServerID 返回 URL 里的节点 ID（缺失/非法返回 0）。
+func pathServerID(c *gin.Context) int64 {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// ensureInboundBelongsToServer 校验 :cfgId 确实属于路径里的 :id 节点。
+// 旧实现只按 cfgId 查库，用节点 A 的 URL 可以读/改/删节点 B 的入站（安全审计 v6 M-3）。
+func (h *Handler) ensureInboundBelongsToServer(c *gin.Context, cfg *entity.InboundConfig) bool {
+	sid := pathServerID(c)
+	if sid <= 0 || cfg.ServerID == sid {
+		return true
+	}
+	response.NotFound(c, "NOT_FOUND", "inbound config not found")
+	return false
+}
+
 // Get handles GET /api/v1/node-servers/:id/inbound-configs/:cfgId.
 func (h *Handler) Get(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("cfgId"), 10, 64)
@@ -125,6 +145,9 @@ func (h *Handler) Get(c *gin.Context) {
 	cfg, err := h.svc.GetByID(c.Request.Context(), id)
 	if err != nil {
 		response.NotFound(c, "NOT_FOUND", err.Error())
+		return
+	}
+	if !h.ensureInboundBelongsToServer(c, cfg) {
 		return
 	}
 	// 同 List：把流量计数注回响应副本供 UI 展示
@@ -222,6 +245,9 @@ func (h *Handler) Update(c *gin.Context) {
 		response.NotFound(c, "NOT_FOUND", err.Error())
 		return
 	}
+	if !h.ensureInboundBelongsToServer(c, existing) {
+		return
+	}
 	if h.checkMirrorReadOnly(c, existing.ServerID) {
 		return
 	}
@@ -273,16 +299,22 @@ func (h *Handler) Delete(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
 	}
-	// Get server_id before deletion for sync trigger
+	// Get server_id before deletion for sync trigger；同时校验归属节点
 	serverID := int64(1)
 	coreType := "xray"
-	if existing, err := h.svc.GetByID(c.Request.Context(), id); err == nil {
-		serverID = existing.ServerID
-		coreType = existing.CoreType
-		// Reject writes on mirror nodes (read-only)
-		if h.checkMirrorReadOnly(c, serverID) {
-			return
-		}
+	existing, err := h.svc.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", err.Error())
+		return
+	}
+	if !h.ensureInboundBelongsToServer(c, existing) {
+		return
+	}
+	serverID = existing.ServerID
+	coreType = existing.CoreType
+	// Reject writes on mirror nodes (read-only)
+	if h.checkMirrorReadOnly(c, serverID) {
+		return
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {

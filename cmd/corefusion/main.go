@@ -563,11 +563,12 @@ func runServer(args []string) {
 	// generation. ReadTimeout stays at 30s since clients should send requests
 	// quickly. IdleTimeout is 120s for keep-alive connections.
 	srv := &http.Server{
-		Addr:         listenAddr,
-		Handler:      r,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 5 * time.Minute,
-		IdleTimeout:  120 * time.Second,
+		Addr:              listenAddr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// 订阅 / 门户独立端口与面板**监听同一地址**：面板 127.0.0.1（走反向代理）时它们
@@ -589,12 +590,13 @@ func runServer(args []string) {
 	if subPort != "" && subPort != "0" && subPort != apiPort {
 		subEngine := router.NewSubscriptionEngine(db.DB)
 		subSrv = &http.Server{
-			Addr:         bindAddr(subPort),
-			Handler:      subEngine,
-			TLSConfig:    tlsCfg,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 5 * time.Minute,
-			IdleTimeout:  120 * time.Second,
+			Addr:              bindAddr(subPort),
+			Handler:           subEngine,
+			TLSConfig:         tlsCfg,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      5 * time.Minute,
+			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
 			log.Printf("Subscription server starting on :%s (tls=%v, reuses panel cert)", subPort, tlsEnabled)
@@ -621,12 +623,13 @@ func runServer(args []string) {
 	if portalPort != "" && portalPort != "0" && portalPort != apiPort {
 		portalEngine := router.NewPortalEngine(db.DB)
 		portalSrv = &http.Server{
-			Addr:         bindAddr(portalPort),
-			Handler:      portalEngine,
-			TLSConfig:    tlsCfg,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 5 * time.Minute,
-			IdleTimeout:  120 * time.Second,
+			Addr:              bindAddr(portalPort),
+			Handler:           portalEngine,
+			TLSConfig:         tlsCfg,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      5 * time.Minute,
+			IdleTimeout:       120 * time.Second,
 		}
 		go func() {
 			log.Printf("Portal server starting on :%s (tls=%v, reuses panel cert)", portalPort, tlsEnabled)

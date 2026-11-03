@@ -3200,13 +3200,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Agent download + install script (public — no auth, bootstrap token verifies identity)
 			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
-			v1.GET("/agent/download", agentH.DownloadAgent)
+			// 安全审计 v6 L-3：这三个公开端点会读盘/发外网探测，统一加公共限流，
+			// 避免被当成免费 CDN 或探针放大面（正常 Agent 装机/升级频率远低于限制）。
+			v1.GET("/agent/download", middleware.PublicAPIRateLimit(), agentH.DownloadAgent)
 			// Geo rule file download（安全审计 H-1：不再对匿名开放）— 已移入下方受保护组，
 			// Agent 拉取时由面板在下发的相对 URL 里附带一次性票据（?ticket=）。
-			v1.GET("/agent/install", agentH.GetInstallScript)
+			v1.GET("/agent/install", middleware.PublicAPIRateLimit(), agentH.GetInstallScript)
 			// Public origin discovery for Agents installed before grpc_host
 			// existed (their panel.host may be a CDN domain).
-			v1.GET("/agent/origin", agentH.GetAgentOrigin)
+			v1.GET("/agent/origin", middleware.PublicAPIRateLimit(), agentH.GetAgentOrigin)
 			// Agent version & releases (requires auth — admin only)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/version", agentH.GetAgentVersion)
 			protected.Group("").Use(middleware.RequireRole(domainuser.RoleAdmin)).GET("/agent/releases", agentH.GetAgentReleases)

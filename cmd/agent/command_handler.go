@@ -238,8 +238,14 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		os.MkdirAll(wafDir, 0755)
 		anyWritten := false
 		for _, f := range req.Files {
-			// Prevent path traversal
-			if strings.Contains(f.Path, "..") {
+			// 安全审计 v6 M-6：与面板同一套 safepath 语义（此前只查 ".."，
+			// 绝对路径/编码变体没有覆盖）。解析到目标目录之下，非法条目直接跳过。
+			base := wafDir
+			if f.Path == "config.lua" {
+				base = nginxConfigDir
+			}
+			if _, err := safepath.ResolveUnder(base, filepath.FromSlash(f.Path)); err != nil {
+				log.Printf("[Agent] SyncWAFFiles: skip unsafe path %q: %v", f.Path, err)
 				continue
 			}
 			// config.lua is the Nginx WAF config — skip if nginx not installed.

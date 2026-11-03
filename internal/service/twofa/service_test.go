@@ -70,13 +70,20 @@ func TestBeginSetup(t *testing.T) {
 	}
 }
 
-// TestRecoveryCodeFormat 验证恢复码格式（XXXX-XXXX-XXXX）与 hash 一致性。
+// TestRecoveryCodeFormat 验证恢复码格式与 hash 一致性。
+//
+// 安全审计 v6 M-8 后新码为 5 组 4 位（80 bit 熵）；旧码 3 组仍可校验（hash 逻辑不变）。
 func TestRecoveryCodeFormat(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		code := randomRecoveryCode()
 		parts := strings.Split(code, "-")
-		if len(parts) != 3 || len(parts[0]) != 4 || len(parts[1]) != 4 || len(parts[2]) != 4 {
-			t.Fatalf("恢复码格式异常: %q", code)
+		if len(parts) != 5 {
+			t.Fatalf("恢复码格式异常（期望 5 组）: %q", code)
+		}
+		for _, p := range parts {
+			if len(p) != 4 {
+				t.Fatalf("恢复码每组应为 4 位: %q", code)
+			}
 		}
 		if hashCode(code) != hashCode(strings.ToLower(code)) {
 			t.Fatal("hashCode 应大小写不敏感（登录时先统一大写再 hash）")

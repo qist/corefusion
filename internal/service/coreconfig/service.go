@@ -65,9 +65,11 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"fakedns":          `{}`,
 		"observatory":      `{}`,
 		"burstObservatory": `{}`,
+		// RoutingService 默认开启：路由管理依赖它（历史默认只有前三项，
+		// 导致新建节点的路由管理相关操作不可用）。
 		"api": `{
   "tag": "api",
-  "services": ["HandlerService", "LoggerService", "StatsService"]
+  "services": ["HandlerService", "LoggerService", "StatsService", "RoutingService"]
 }`,
 		"version": `{}`,
 		"geodata": `{}`,
@@ -89,6 +91,46 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"network_namespaces":    `[]`,
 		"experimental":          `{"v2ray_api":{"listen":"127.0.0.1:10086","stats":{"enabled":true}}}`,
 	},
+}
+
+// defaultXrayAPIServices 是 Xray API 默认开放的完整服务集合。
+// RoutingService 必须默认开启：路由管理依赖它。
+var defaultXrayAPIServices = []string{"HandlerService", "LoggerService", "StatsService", "RoutingService"}
+
+// normalizeXrayAPIServices 把历史默认（恰好缺 RoutingService 的三项）补全为四项。
+// 只在“正好是旧默认集合”时补，避免覆盖用户自己勾选的服务组合。
+func normalizeXrayAPIServices(api map[string]interface{}) {
+	raw, ok := api["services"]
+	if !ok {
+		return
+	}
+	list, ok := raw.([]interface{})
+	if !ok || len(list) != 3 {
+		return
+	}
+	have := make(map[string]bool, 3)
+	for _, v := range list {
+		if s, ok := v.(string); ok {
+			have[s] = true
+		}
+	}
+	for _, name := range []string{"HandlerService", "LoggerService", "StatsService"} {
+		if !have[name] {
+			return // 不是旧默认集合，保持用户配置
+		}
+	}
+	api["services"] = defaultXrayAPIServices
+}
+
+// normalizeXraySection 对 xray 的 api 段做兼容性归一化（其余段原样返回）。
+func normalizeXraySection(coreType, section string, val interface{}) interface{} {
+	if coreType != "xray" || section != "api" {
+		return val
+	}
+	if m, ok := val.(map[string]interface{}); ok {
+		normalizeXrayAPIServices(m)
+	}
+	return val
 }
 
 // Service handles core config business logic.
@@ -179,6 +221,10 @@ func (s *Service) GetFull(ctx context.Context, serverID int64, coreType string) 
 			}
 		}
 	}
+	// 兼容历史数据：xray api 段补全 RoutingService（不写库，避免改用户数据）。
+	if api, ok := result["api"]; ok {
+		result["api"] = normalizeXraySection(coreType, "api", api)
+	}
 
 	return result, nil
 }
@@ -193,7 +239,7 @@ func (s *Service) GetSection(ctx context.Context, serverID int64, coreType, sect
 		if err := ParseJSONC([]byte(cfg.ConfigJSON), &val); err != nil {
 			return nil, fmt.Errorf("invalid JSON in %s/%s: %w", coreType, section, err)
 		}
-		return val, nil
+		return normalizeXraySection(coreType, section, val), nil
 	}
 
 	// Section not found in DB — try to return and persist the default value

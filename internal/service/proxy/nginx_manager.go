@@ -21,19 +21,15 @@ type NginxManager struct {
 	// 允许为 nil ✓（未注入时只用站点自配的那组 ✓）。
 	certRepo     *repository.CertificateRepository
 	settingStore SettingStore
-	serverID     int64
-	isLocal      bool
 	// nodeServerRepo is used to detect mirror nodes and resolve their primary
 	// server ID for config generation. When set, GenerateConfigForServer checks
 	// if the target is a mirror and uses the primary's server_id to query sites.
 	nodeServerRepo *repository.NodeServerRepository
 }
 
-// SetServerID sets the server ID for per-node site filtering.
-func (m *NginxManager) SetServerID(id int64) { m.serverID = id }
-
-// SetIsLocal sets whether this manager is operating on the local node.
-func (m *NginxManager) SetIsLocal(v bool) { m.isLocal = v }
+// 节点归属（serverID）一律由调用方按参数传入，manager 不保存每请求可变的共享状态。
+// 原因见 isLocalTarget 的注释：handlers 曾用 SetServerID/SetIsLocal 改共享单例，
+// 并发访问不同节点时会互相覆盖。
 
 // SetCertificateRepo 注入证书仓储 ✓（用于生成"双证书"配置 ✓）。
 func (m *NginxManager) SetCertificateRepo(repo *repository.CertificateRepository) {
@@ -65,21 +61,21 @@ func NewNginxManager(dataDir string, siteRepo *repository.NginxSiteRepository, s
 
 // --- Site CRUD ---
 
-func (m *NginxManager) ListSites(ctx context.Context) ([]entity.NginxSite, error) {
-	return m.siteRepo.List(ctx, m.serverID)
+func (m *NginxManager) ListSites(ctx context.Context, serverID int64) ([]entity.NginxSite, error) {
+	return m.siteRepo.List(ctx, serverID)
 }
 
-func (m *NginxManager) ListEnabledSites(ctx context.Context) ([]entity.NginxSite, error) {
-	return m.siteRepo.ListEnabled(ctx, m.serverID)
+func (m *NginxManager) ListEnabledSites(ctx context.Context, serverID int64) ([]entity.NginxSite, error) {
+	return m.siteRepo.ListEnabled(ctx, serverID)
 }
 
-func (m *NginxManager) CreateSite(ctx context.Context, site *entity.NginxSite) error {
+func (m *NginxManager) CreateSite(ctx context.Context, serverID int64, site *entity.NginxSite) error {
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, m.serverID) {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
-		site.ServerID = m.serverID
+		site.ServerID = serverID
 	}
 	// 派生字段落地 DB ✓：portal_forward/subscription_forward 的 upstream/path 由系统设置派生，
 	// 以前只在生成 nginx.conf 时临时注入 → DB 永远为空 ✗。此处统一落地 ✓（与 CaddyManager 对称 ✓）。
@@ -105,8 +101,8 @@ func (m *NginxManager) DeleteSite(ctx context.Context, id int64) error {
 
 // --- SNI Management ---
 
-func (m *NginxManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *NginxManager) ToggleSNIEnabled(ctx context.Context, serverID int64, enabled bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -123,16 +119,16 @@ func (m *NginxManager) ToggleSNIEnabled(ctx context.Context, enabled bool) (int,
 	return count, nil
 }
 
-func (m *NginxManager) DeleteAllSNI(ctx context.Context) (int, error) {
-	return m.deleteByTemplate(ctx, "sni")
+func (m *NginxManager) DeleteAllSNI(ctx context.Context, serverID int64) (int, error) {
+	return m.deleteByTemplate(ctx, serverID, "sni")
 }
 
-func (m *NginxManager) DeleteAllL4(ctx context.Context) (int, error) {
-	return m.deleteByTemplate(ctx, "l4")
+func (m *NginxManager) DeleteAllL4(ctx context.Context, serverID int64) (int, error) {
+	return m.deleteByTemplate(ctx, serverID, "l4")
 }
 
-func (m *NginxManager) deleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *NginxManager) deleteByTemplate(ctx context.Context, serverID int64, template string) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -148,8 +144,8 @@ func (m *NginxManager) deleteByTemplate(ctx context.Context, template string) (i
 	return count, nil
 }
 
-func (m *NginxManager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *NginxManager) BatchUpdatePorts(ctx context.Context, serverID int64, port string, enable bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -190,8 +186,8 @@ func (m *NginxManager) BatchUpdatePorts(ctx context.Context, port string, enable
 // --- Config Generation ---
 
 // SaveAndApply generates nginx config and writes to disk.
-func (m *NginxManager) SaveAndApply(ctx context.Context) (string, error) {
-	config, err := m.GenerateConfig(ctx)
+func (m *NginxManager) SaveAndApply(ctx context.Context, serverID int64) (string, error) {
+	config, err := m.GenerateConfig(ctx, serverID)
 	if err != nil {
 		return "", err
 	}
@@ -205,9 +201,9 @@ func (m *NginxManager) SaveAndApply(ctx context.Context) (string, error) {
 
 // --- NginxSettings ---
 
-// GetNginxSettings reads Nginx settings from database (uses the manager's serverID).
-func (m *NginxManager) GetNginxSettings(ctx context.Context) (*NginxSettings, error) {
-	return m.GetNginxSettingsForServer(ctx, m.serverID)
+// GetNginxSettings reads Nginx settings from database for a specific server.
+func (m *NginxManager) GetNginxSettings(ctx context.Context, serverID int64) (*NginxSettings, error) {
+	return m.GetNginxSettingsForServer(ctx, serverID)
 }
 
 // GetNginxSettingsForServer reads Nginx settings from database for a specific server.
@@ -251,8 +247,8 @@ func (m *NginxManager) GetNginxSettingsForServer(ctx context.Context, serverID i
 	return settings, nil
 }
 
-// SaveNginxSettings saves Nginx settings to database (uses the manager's serverID).
-func (m *NginxManager) SaveNginxSettings(ctx context.Context, settings *NginxSettings) error {
+// SaveNginxSettings saves Nginx settings to database for a specific server.
+func (m *NginxManager) SaveNginxSettings(ctx context.Context, serverID int64, settings *NginxSettings) error {
 	if m.settingStore == nil {
 		return nil
 	}
@@ -260,7 +256,7 @@ func (m *NginxManager) SaveNginxSettings(ctx context.Context, settings *NginxSet
 	if err != nil {
 		return err
 	}
-	key := perNodeNginxSettingsKey(m.serverID)
+	key := perNodeNginxSettingsKey(serverID)
 	return m.settingStore.Set(ctx, key, string(data))
 }
 

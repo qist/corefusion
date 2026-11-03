@@ -26,8 +26,8 @@ func ensureSymlink(path, target string) {
 
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 // GenerateConfig assembles an nginx.conf from settings and sites.
-func (m *NginxManager) GenerateConfig(ctx context.Context) (string, error) {
-	return m.GenerateConfigForServer(ctx, m.serverID)
+func (m *NginxManager) GenerateConfig(ctx context.Context, serverID int64) (string, error) {
+	return m.GenerateConfigForServer(ctx, serverID)
 }
 
 // resolveSourceServerID checks if the given serverID is a mirror node.
@@ -53,14 +53,11 @@ func (m *NginxManager) resolveSourceServerID(ctx context.Context, serverID int64
 // same nginx.conf as the primary without needing separate DB records.
 // isLocalTarget 判断「**这份配置要落到哪个节点**」是不是本机（面板）✓。
 //
-// ⚠ 不能用 m.isLocal ✗：它是**每请求被改写**的共享状态 ✓（handlers 的 applyServerID 会按
-// URL 里的 node id 调 SetIsLocal ✓），本机请求与远程请求**交错**时会被别的请求改掉 ✗
-// → 拿它决定"要不要校验证书文件在不在本地"会时好时坏 ✗
+// ⚠ 不能用共享状态 ✗：历史上 handlers 每请求调 SetIsLocal 改写单例 ✓，本机/远程请求
+// **交错**时会互相覆盖 ✗（实测踩到 ✓：对 node 1 生成配置时被别的请求置为 false ✗，
+// 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。该字段已彻底移除 ✓。
 //
-//	（实测踩到 ✓：对 node 1 生成配置时 m.isLocal 被别的请求置为 false ✗，
-//	 文件校验没生效 ✗，缺文件的证书照样写进配置 ✗）。
-//
-// 这里改为**按本次调用的 serverID 参数**判断 ✓，与共享状态无关 ✓。
+// 判断只认**本次调用的 serverID 参数** ✓，与任何共享状态无关 ✓。
 func (m *NginxManager) isLocalTarget(ctx context.Context, serverID int64) bool {
 	if serverID == 1 { // NodeServer 表里 id=1 就是 "Local (Panel)" ✓
 		return true
@@ -563,7 +560,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("        listen [::]:80;\n")
 			}
 			sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
-			if !m.isLocal {
+			if !m.isLocalTarget(ctx, serverID) {
 				sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
 				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
 				sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
@@ -791,13 +788,13 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		//   - **远程节点**：签发是**节点上的 Agent 在本机做**的 ✓ → 它的挑战记录在 Agent 进程内存里，
 		//     面板并不知道 ✗ → 所以**不能代理回面板** ✗，必须直接服务**节点本地的挑战目录** ✓
 		//     （Agent 会把挑战文件写在那里 ✓，见 cmd/agent/acme_webserver.go ✓）。
-		if !m.isLocal {
+		if !m.isLocalTarget(ctx, serverID) {
 			sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
 			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
 			sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
 			sb.WriteString("        }\n")
 		}
-		if m.isLocal {
+		if m.isLocalTarget(ctx, serverID) {
 			panelAddr := m.panelAddr(ctx)
 			sb.WriteString("        # ACME HTTP-01 challenge support\n")
 			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")

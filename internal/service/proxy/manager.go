@@ -93,8 +93,6 @@ type Manager struct {
 	siteRepo     *repository.ProxySiteRepository
 	settingStore SettingStore
 	crashLogRepo CrashLogInserter
-	serverID     int64
-	isLocal      bool
 	// Config generators (set by router to use new separated managers)
 	caddyConfigGen func(ctx context.Context) (string, error)
 	nginxConfigGen func(ctx context.Context) (string, error)
@@ -119,11 +117,9 @@ type Manager struct {
 	mu sync.Mutex
 }
 
-// SetServerID sets the server ID for per-node site filtering.
-func (m *Manager) SetServerID(id int64) { m.serverID = id }
-
-// SetIsLocal sets whether this manager is operating on the local node.
-func (m *Manager) SetIsLocal(v bool) { m.isLocal = v }
+// 节点归属（serverID / isLocal）一律由调用方**按参数**传入，manager 不再保存
+// 每请求可变的共享状态：handlers 是按请求改状态的，共享单例在并发访问不同节点时
+// 会互相覆盖，把 A 节点的状态串到 B 节点的请求上。
 
 // SetCaddyConfigGen sets the Caddy config generator function.
 func (m *Manager) SetCaddyConfigGen(fn func(ctx context.Context) (string, error)) {
@@ -492,8 +488,9 @@ func (m *Manager) getProcessStatus(name string) string {
 }
 
 // GenerateConfig assembles the full Caddyfile from all enabled caddy sites.
-func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
-	sites, err := m.siteRepo.ListEnabledByType(ctx, m.serverID, "caddy")
+// serverID/isLocal 本次调用的目标节点（不再读共享状态）。
+func (m *Manager) GenerateConfig(ctx context.Context, serverID int64, isLocal bool) (string, error) {
+	sites, err := m.siteRepo.ListEnabledByType(ctx, serverID, "caddy")
 	if err != nil {
 		return "", err
 	}
@@ -516,7 +513,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 			// portal_forward: only valid on the panel node (isLocal). Remote
 			// nodes have no panel process, so skip generating it for them.
 			if site.Template == "portal_forward" {
-				if !m.isLocal {
+				if !isLocal {
 					continue
 				}
 				site.Upstream = m.portalAddr(ctx)
@@ -592,8 +589,8 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 	caddyLogMode := "file"
 	if m.settingStore != nil {
 		logKey := "proxy.log_output_config"
-		if m.serverID > 1 {
-			logKey = fmt.Sprintf("%s.%d", logKey, m.serverID)
+		if serverID > 1 {
+			logKey = fmt.Sprintf("%s.%d", logKey, serverID)
 		}
 		v, err := m.settingStore.GetByKey(ctx, logKey)
 		if err != nil || v == "" {
@@ -696,7 +693,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 
 	if len(httpSites) == 0 && !hasL4 {
 		sb.WriteString(":80 {\n")
-		if m.isLocal {
+		if isLocal {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -750,7 +747,7 @@ func (m *Manager) GenerateConfig(ctx context.Context) (string, error) {
 		}
 
 		// ACME HTTP-01 challenge support (local node only)
-		if m.isLocal {
+		if isLocal {
 			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
 			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
 			sb.WriteString("\thandle @acme {\n")
@@ -1030,22 +1027,22 @@ func pathToMatcher(path string, id int64) string {
 }
 
 // ListSites returns all proxy sites from the database.
-func (m *Manager) ListSites(ctx context.Context) ([]entity.ProxySite, error) {
-	return m.siteRepo.List(ctx, m.serverID)
+func (m *Manager) ListSites(ctx context.Context, serverID int64) ([]entity.ProxySite, error) {
+	return m.siteRepo.List(ctx, serverID)
 }
 
 // ListSitesByType returns proxy sites filtered by proxy type.
-func (m *Manager) ListSitesByType(ctx context.Context, proxyType string) ([]entity.ProxySite, error) {
-	return m.siteRepo.ListByType(ctx, m.serverID, proxyType)
+func (m *Manager) ListSitesByType(ctx context.Context, serverID int64, proxyType string) ([]entity.ProxySite, error) {
+	return m.siteRepo.ListByType(ctx, serverID, proxyType)
 }
 
 // CreateSite creates a new proxy site in the database.
-func (m *Manager) CreateSite(ctx context.Context, site *entity.ProxySite) error {
-	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !m.isLocal {
+func (m *Manager) CreateSite(ctx context.Context, serverID int64, isLocal bool, site *entity.ProxySite) error {
+	if (site.Template == "portal_forward" || site.Template == "subscription_forward") && !isLocal {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
 	}
 	if site.ServerID == 0 {
-		site.ServerID = m.serverID
+		site.ServerID = serverID
 	}
 	return m.siteRepo.Create(ctx, site)
 }
@@ -1066,8 +1063,8 @@ func (m *Manager) DeleteSite(ctx context.Context, id int64) error {
 }
 
 // SaveAndApply saves config to file and returns it.
-func (m *Manager) SaveAndApply(ctx context.Context) (string, error) {
-	config, err := m.GenerateConfig(ctx)
+func (m *Manager) SaveAndApply(ctx context.Context, serverID int64, isLocal bool) (string, error) {
+	config, err := m.GenerateConfig(ctx, serverID, isLocal)
 	if err != nil {
 		return "", err
 	}
@@ -1082,7 +1079,7 @@ func (m *Manager) SaveAndApply(ctx context.Context) (string, error) {
 }
 
 // SaveAndApplyProxy regenerates and writes the config for the specified proxy type.
-func (m *Manager) SaveAndApplyProxy(ctx context.Context, proxyType ProxyType) error {
+func (m *Manager) SaveAndApplyProxy(ctx context.Context, serverID int64, isLocal bool, proxyType ProxyType) error {
 	switch proxyType {
 	case ProxyCaddy:
 		// Use caddyConfigGen (set to CaddyManager.GenerateConfigForServer) if available,
@@ -1092,7 +1089,7 @@ func (m *Manager) SaveAndApplyProxy(ctx context.Context, proxyType ProxyType) er
 		if m.caddyConfigGen != nil {
 			config, err = m.caddyConfigGen(ctx)
 		} else {
-			config, err = m.GenerateConfig(ctx)
+			config, err = m.GenerateConfig(ctx, serverID, isLocal)
 		}
 		if err != nil {
 			return err
@@ -2469,13 +2466,7 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 			os.RemoveAll(oldRuleDir)
 			log.Printf("removed obsolete proxy/lua/waf/rule-config/ directory")
 		}
-		// Re-sync WAF config from DB so user customizations (cc_rate, etc.)
-		// survive the tar.gz overwrite. patchWAFConfig only fixes paths;
-		// this call restores the user's actual WAF settings from database.
-		if m.onProxyInstalled != nil {
-			m.onProxyInstalled(context.Background(), "nginx")
-			log.Printf("re-synced WAF config from DB after nginx install")
-		}
+		// WAF 配置/规则的重新落地统一放在解包末尾（nginx/caddy 共用）。
 		// Chown lua directory to nginx user so worker process can read files
 		luaDir := filepath.Join(m.dataDir, "proxy", "lua")
 		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
@@ -2495,6 +2486,13 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 		if nginxUID, nginxGID, err := lookupNginxUser(); err == nil {
 			os.Chown(logsDir, nginxUID, nginxGID)
 		}
+	}
+
+	// nginx/caddy 安装或更新完成：立即触发 WAF 规则下载与落地。
+	// 用户要求"装了代理就自动有完整规则"，不再依赖手动点同步。
+	if m.onProxyInstalled != nil && (name == "nginx" || name == "caddy") {
+		m.onProxyInstalled(context.Background(), name)
+		log.Printf("re-synced WAF rules/config from DB after %s install", name)
 	}
 
 	if !binaryFound {
@@ -2756,8 +2754,8 @@ const publicHTTPSPort = "443"
 //
 // 迁移（enable=true）**只针对当前监听公网 443 的站点** ✓；l4/sni/reality 与自定义端口的站点一律不动 ✓。
 // 回滚（enable=false）只还原"当前正监听迁移端口"的那批 ✓。
-func (m *Manager) BatchUpdatePorts(ctx context.Context, port string, enable bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *Manager) BatchUpdatePorts(ctx context.Context, serverID int64, port string, enable bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -2821,14 +2819,14 @@ func (m *Manager) BatchUpdatePorts(ctx context.Context, port string, enable bool
 }
 
 // DeleteAllSNI deletes all SNI template sites from the database.
-func (m *Manager) DeleteAllSNI(ctx context.Context) (int, error) {
-	return m.DeleteByTemplate(ctx, "sni")
+func (m *Manager) DeleteAllSNI(ctx context.Context, serverID int64) (int, error) {
+	return m.DeleteByTemplate(ctx, serverID, "sni")
 }
 
 // ToggleSNIEnabled enables or disables all SNI template sites without deleting them.
 // When disabled, rules stay in DB but won't be used in config generation.
-func (m *Manager) ToggleSNIEnabled(ctx context.Context, proxyType string, enabled bool) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *Manager) ToggleSNIEnabled(ctx context.Context, serverID int64, proxyType string, enabled bool) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}
@@ -2846,13 +2844,13 @@ func (m *Manager) ToggleSNIEnabled(ctx context.Context, proxyType string, enable
 }
 
 // DeleteAllL4 deletes all L4 template sites from the database.
-func (m *Manager) DeleteAllL4(ctx context.Context) (int, error) {
-	return m.DeleteByTemplate(ctx, "l4")
+func (m *Manager) DeleteAllL4(ctx context.Context, serverID int64) (int, error) {
+	return m.DeleteByTemplate(ctx, serverID, "l4")
 }
 
 // DeleteByTemplate deletes all sites with the given template.
-func (m *Manager) DeleteByTemplate(ctx context.Context, template string) (int, error) {
-	sites, err := m.siteRepo.List(ctx, m.serverID)
+func (m *Manager) DeleteByTemplate(ctx context.Context, serverID int64, template string) (int, error) {
+	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
 		return 0, err
 	}

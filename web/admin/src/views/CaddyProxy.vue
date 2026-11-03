@@ -1244,8 +1244,14 @@ function formatSize(bytes) {
 }
 
 async function fetchProxyInfo() {
+  // 没有有效节点 ID 时不发请求（后端曾把 serverId=0 当作本地节点）。
+  if (!props.serverId) return
+  const sid = props.serverId
   try {
     const status = await client.get(`${proxyApi.value}/status`)
+    // 丢弃切节点后返回的旧响应 / 不属于当前节点的状态
+    if (sid !== props.serverId) return
+    if (status.server_id && Number(status.server_id) !== sid) return
     proxyInfo.value = status.caddy || {}
     guardian.value = status.caddy_guardian || {}
     guardianConfig.value.autoRestart = guardian.value.auto_restart !== false

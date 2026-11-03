@@ -661,6 +661,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			if err := wafSvcInst.LandAllRules(context.Background()); err != nil {
 				log.Printf("WARNING: waf rule land to disk failed: %v", err)
 			}
+			// 启动同步完成后把完整规则推给所有在线节点（含远程），
+			// 避免远程节点在首次 24h 调度前没有规则。
+			if err := wafSvcInst.SyncToAllNodesFromDB(context.Background()); err != nil {
+				log.Printf("WARNING: waf rule push to nodes failed: %v", err)
+			}
 		}
 	}()
 
@@ -696,12 +701,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	caddyMgr.SetCertificateRepo(certRepo)
 	nginxMgr.SetCertificateRepo(certRepo)
 
-	// Set server_id = 1 (local node) for per-node site filtering.
-	// All proxy/caddy/nginx site queries filter by server_id to ensure
-	// data isolation between node servers.
-	proxyMgr.SetServerID(1)
-	caddyMgr.SetServerID(1)
-	nginxMgr.SetServerID(1)
+	// 节点归属由 handler 按请求把 serverID 传给 manager（manager 不再保存共享状态），
+	// 避免并发访问不同节点时状态互相覆盖。
 
 	// 转发站点（面板/门户/订阅）创建时生成站点级 WAF 配置：
 	//   - 面板 panel_forward：域名级 URL 白名单（放行会被 WAF 误判的管理 API）
@@ -752,13 +753,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 	}()
 
-	// After nginx (re)install, tar.gz overwrites config.lua with defaults.
-	// This callback re-syncs WAF config from DB so user customizations survive.
+	// 安装/更新 nginx 或 caddy 后：先补齐规则（缺失则自动下载），再把规则与
+	// 配置重新落地，避免 tar.gz 覆盖 config.lua 或规则文件还没下载。
 	proxyMgr.SetOnProxyInstalled(func(ctx context.Context, proxyType string) {
-		if proxyType == "nginx" {
-			if err := wafSvcInst.LandRulesForServer(ctx, 1); err != nil {
-				log.Printf("[WAF] post-install re-sync failed: %v", err)
-			}
+		if proxyType != "nginx" && proxyType != "caddy" {
+			return
+		}
+		if err := wafSvcInst.EnsureInitialized(ctx); err != nil {
+			log.Printf("[WAF] post-install ensure rules failed: %v", err)
+		}
+		if err := wafSvcInst.LandRulesForServer(ctx, 1); err != nil {
+			log.Printf("[WAF] post-install re-sync failed: %v", err)
 		}
 	})
 
@@ -822,8 +827,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	logManageSvc.SetCoreConfigSectionGetter(coreConfigSvc)
 
 	// Wire config generators so auto-start uses the new separated managers
-	proxyMgr.SetCaddyConfigGen(caddyMgr.GenerateConfig)
-	proxyMgr.SetNginxConfigGen(nginxMgr.GenerateConfig)
+	// 兜底生成器只服务本地面板（serverID=1）。
+	proxyMgr.SetCaddyConfigGen(func(ctx context.Context) (string, error) {
+		return caddyMgr.GenerateConfig(ctx, 1)
+	})
+	proxyMgr.SetNginxConfigGen(func(ctx context.Context) (string, error) {
+		return nginxMgr.GenerateConfig(ctx, 1)
+	})
 
 	// Seed default geo rules for local node (server_id=1)
 	geoRuleSvcInst.SeedDefaults(nil, 1)
@@ -2412,6 +2422,30 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			wafH.SetNodeOperator(&wafNodeOperatorAdapter{svc: nodeServerSvcInst, mgr: sharedNodeMgr})
 			wafH.SetProxyManager(&wafProxyReloaderAdapter{mgr: proxyMgr})
 
+			// 节点（含远程）安装/更新 nginx 或 caddy 后：补齐规则并立即下发到该节点。
+			// 远程安装是异步任务，这里只负责把规则推过去（文件与二进制互不覆盖）。
+			nodeServerSvcInst.SetOnProxyInstalled(func(ctx context.Context, serverID int64, proxyType string) {
+				if proxyType != "nginx" && proxyType != "caddy" {
+					return
+				}
+				go func() {
+					bg, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+					defer cancel()
+					if err := wafSvcInst.EnsureInitialized(bg); err != nil {
+						log.Printf("[WAF] post-install ensure rules for server %d failed: %v", serverID, err)
+					}
+					if nodeServerSvcInst.IsLocalServer(bg, serverID) {
+						if err := wafSvcInst.LandRulesForServer(bg, 1); err != nil {
+							log.Printf("[WAF] post-install land rules (local) failed: %v", err)
+						}
+						return
+					}
+					if err := wafSvcInst.SyncToNode(bg, serverID); err != nil {
+						log.Printf("[WAF] post-install push rules to server %d failed: %v", serverID, err)
+					}
+				}()
+			})
+
 			// Inject SyncData hook so traffic reset also pushes inbound_configs
 			// table to remote Agent's local SQLite DB.
 			syncDataHook := &syncDataHookAdapter{nodeServerSvc: nodeServerSvcInst}
@@ -3513,10 +3547,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		switch proxyType {
 		case "nginx":
 			pType = proxySvc.ProxyNginx
-			nginxMgr.SaveAndApply(bgCtx)
+			nginxMgr.SaveAndApply(bgCtx, 1)
 		case "caddy":
 			pType = proxySvc.ProxyCaddy
-			caddyMgr.SaveAndApply(bgCtx)
+			caddyMgr.SaveAndApply(bgCtx, 1)
 		default:
 			return
 		}
@@ -4407,7 +4441,7 @@ func (a *wafProxyReloaderAdapter) ReloadProxy(ctx context.Context, proxyType str
 }
 
 func (a *wafProxyReloaderAdapter) SaveAndApply(ctx context.Context, proxyType string) error {
-	return a.mgr.SaveAndApplyProxy(ctx, proxySvc.ProxyType(proxyType))
+	return a.mgr.SaveAndApplyProxy(ctx, 1, true, proxySvc.ProxyType(proxyType))
 }
 
 // autoDistributeCertFn 在"节点签好的证书落库"之后，把最新证书**同步给使用它的节点** ✓。

@@ -1892,8 +1892,15 @@ function formatSize(bytes) {
 }
 
 async function fetchProxyInfo() {
+  // 没有有效节点 ID 时不发请求：后端曾把 serverId=0 当作本地节点，
+  // 会让远程节点页面显示面板本机 Caddy 的"正在运行"提示。
+  if (!props.serverId) return
+  const sid = props.serverId
   try {
     const status = await client.get(`${proxyApi.value}/status`)
+    // 丢弃切节点后返回的旧响应 / 不属于当前节点的状态
+    if (sid !== props.serverId) return
+    if (status.server_id && Number(status.server_id) !== sid) return
     proxyInfo.value = status.nginx || {}
     guardian.value = status.nginx_guardian || {}
     guardianConfig.value.autoRestart = guardian.value.auto_restart !== false
@@ -1902,6 +1909,15 @@ async function fetchProxyInfo() {
     caddyRunning.value = (status.caddy && status.caddy.status === 'running')
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
+
+// 同一组件实例被复用到另一个节点时，先清掉上一个节点的状态，
+// 避免旧 Caddy 运行态在新节点页面上残留。
+watch(() => props.serverId, () => {
+  proxyInfo.value = {}
+  guardian.value = {}
+  caddyRunning.value = false
+  fetchProxyInfo()
+})
 
 async function saveGuardianConfig() {
   try {

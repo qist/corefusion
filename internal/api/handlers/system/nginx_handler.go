@@ -36,23 +36,16 @@ func (h *NginxHandler) SetNodeOperator(op NodeOperator) {
 	h.nodeOp = op
 }
 
-// applyServerID extracts the server ID from the URL and sets it on the managers
-// so that site queries filter by the correct node.
+// applyServerID extracts the server ID from the URL and reports whether it is
+// the local node. 节点归属由调用方按参数传给 manager，manager 不再保存共享状态。
 func (h *NginxHandler) applyServerID(c *gin.Context) (int64, bool) {
 	serverID := parseServerID(c)
-	isLocal := serverID == localServerID || serverID == 0
-	if !isLocal && h.nodeOp != nil {
+	// 0 不再视为本地节点：否则非法/缺失的 :id 会把请求落到面板本机。
+	isLocal := serverID == localServerID
+	if !isLocal && serverID > 0 && h.nodeOp != nil {
 		isLocal = h.nodeOp.IsLocalServer(c.Request.Context(), serverID)
 	}
-	sid := serverID
-	if sid == 0 {
-		sid = localServerID
-	}
-	h.nginxMgr.SetServerID(sid)
-	h.proxyMgr.SetServerID(sid)
-	h.nginxMgr.SetIsLocal(isLocal)
-	h.proxyMgr.SetIsLocal(isLocal)
-	return sid, isLocal
+	return serverID, isLocal
 }
 
 // httpTemplateHasLocation 判断模板是否生成 HTTP location/route
@@ -66,11 +59,11 @@ func httpTemplateHasLocation(template string) bool {
 }
 
 // nginxLocationConflict 检查是否已存在「同域名 + 同 location」的启用站点，返回其 id。
-func nginxLocationConflict(ctx context.Context, mgr *proxy.NginxManager, domain, path, template string, excludeID int64) (int64, bool) {
+func nginxLocationConflict(ctx context.Context, mgr *proxy.NginxManager, serverID int64, domain, path, template string, excludeID int64) (int64, bool) {
 	if !httpTemplateHasLocation(template) {
 		return 0, false
 	}
-	sites, err := mgr.ListSites(ctx)
+	sites, err := mgr.ListSites(ctx, serverID)
 	if err != nil {
 		return 0, false
 	}
@@ -89,8 +82,8 @@ func nginxLocationConflict(ctx context.Context, mgr *proxy.NginxManager, domain,
 
 // --- Site Management ---
 func (h *NginxHandler) ListSites(c *gin.Context) {
-	h.applyServerID(c)
-	sites, err := h.nginxMgr.ListSites(c.Request.Context())
+	sid, _ := h.applyServerID(c)
+	sites, err := h.nginxMgr.ListSites(c.Request.Context(), sid)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
@@ -136,7 +129,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, req.Domain, req.Path, req.Template, 0); dup {
+	if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, sid, req.Domain, req.Path, req.Template, 0); dup {
 		response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(req.Domain), id))
 		return
 	}
@@ -171,7 +164,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		DualCert:        req.DualCert,
 		Priority:        req.Priority,
 	}
-	if err := h.nginxMgr.CreateSite(c.Request.Context(), site); err != nil {
+	if err := h.nginxMgr.CreateSite(c.Request.Context(), sid, site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -184,7 +177,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 	response.Created(c, site)
 }
 func (h *NginxHandler) UpdateSite(c *gin.Context) {
-	h.applyServerID(c)
+	sid, _ := h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -241,7 +234,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		if req.Template != nil {
 			nt = *req.Template
 		}
-		if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, nd, np, nt, existing.ID); dup {
+		if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, sid, nd, np, nt, existing.ID); dup {
 			response.BadRequest(c, "LOCATION_CONFLICT", fmt.Sprintf("域名 %s 已存在相同 location（站点 id=%d）；同一域名下 location 不能重复", proxy.NormalizeGroupDomain(nd), id))
 			return
 		}
@@ -383,11 +376,11 @@ func (h *NginxHandler) ImportSites(c *gin.Context) {
 	for i := range res.Sites {
 		site := res.Sites[i]
 		site.ServerID = serverID
-		if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, site.Domain, site.Path, site.Template, 0); dup {
+		if id, dup := nginxLocationConflict(c.Request.Context(), h.nginxMgr, serverID, site.Domain, site.Path, site.Template, 0); dup {
 			skipped = append(skipped, fmt.Sprintf("%s %s 已存在（站点 id=%d）", site.Domain, site.Path, id))
 			continue
 		}
-		if err := h.nginxMgr.CreateSite(c.Request.Context(), &site); err != nil {
+		if err := h.nginxMgr.CreateSite(c.Request.Context(), serverID, &site); err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s %s 创建失败：%v", site.Domain, site.Path, err))
 			continue
 		}
@@ -403,7 +396,7 @@ func (h *NginxHandler) ImportSites(c *gin.Context) {
 // --- Config ---
 func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
-	config, err := h.nginxMgr.GenerateConfig(c.Request.Context())
+	config, err := h.nginxMgr.GenerateConfig(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "GENERATE_FAILED", err.Error())
 		return
@@ -424,7 +417,7 @@ func (h *NginxHandler) GenerateConfig(c *gin.Context) {
 }
 func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 	serverID, isLocal := h.applyServerID(c)
-	config, err := h.nginxMgr.SaveAndApply(c.Request.Context())
+	config, err := h.nginxMgr.SaveAndApply(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
@@ -445,8 +438,8 @@ func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 
 // --- Settings ---
 func (h *NginxHandler) GetSettings(c *gin.Context) {
-	h.applyServerID(c)
-	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	settings, err := h.nginxMgr.GetNginxSettings(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
@@ -454,18 +447,18 @@ func (h *NginxHandler) GetSettings(c *gin.Context) {
 	response.OK(c, settings)
 }
 func (h *NginxHandler) SaveSettings(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var settings proxy.NginxSettings
 	if err := c.ShouldBindJSON(&settings); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	if err := h.nginxMgr.SaveNginxSettings(c.Request.Context(), &settings); err != nil {
+	if err := h.nginxMgr.SaveNginxSettings(c.Request.Context(), serverID, &settings); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
 	// 开启全局 TLS 时自动补齐素材（base64 存库），并把最新的完整设置返回给前端。
-	if s, err := h.nginxMgr.EnsureGlobalSSLMaterial(c.Request.Context()); err == nil {
+	if s, err := h.nginxMgr.EnsureGlobalSSLMaterial(c.Request.Context(), serverID); err == nil {
 		response.OK(c, s)
 		return
 	}
@@ -475,12 +468,12 @@ func (h *NginxHandler) SaveSettings(c *gin.Context) {
 // GenerateSSLFiles 重新生成全局 TLS 素材（dhparam / 会话票据密钥），存库并还原到本机磁盘。
 // 供前端「生成/替换」按钮调用；target: dhparam | session_ticket。
 func (h *NginxHandler) GenerateSSLFiles(c *gin.Context) {
-	h.applyServerID(c)
+	serverID, _ := h.applyServerID(c)
 	var req struct {
 		Target string `json:"target"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	settings, err := h.nginxMgr.RegenerateGlobalSSLMaterial(c.Request.Context(), req.Target)
+	settings, err := h.nginxMgr.RegenerateGlobalSSLMaterial(c.Request.Context(), serverID, req.Target)
 	if err != nil {
 		response.InternalError(c, "GENERATE_FAILED", err.Error())
 		return
@@ -498,7 +491,7 @@ func (h *NginxHandler) ToggleSNI(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.nginxMgr.ToggleSNIEnabled(c.Request.Context(), req.Enabled)
+	count, err := h.nginxMgr.ToggleSNIEnabled(c.Request.Context(), serverID, req.Enabled)
 	if err != nil {
 		response.InternalError(c, "TOGGLE_FAILED", err.Error())
 		return
@@ -510,8 +503,8 @@ func (h *NginxHandler) ToggleSNI(c *gin.Context) {
 	response.OK(c, gin.H{"updated": count})
 }
 func (h *NginxHandler) DeleteAllSNI(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.nginxMgr.DeleteAllSNI(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.nginxMgr.DeleteAllSNI(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
@@ -528,7 +521,7 @@ func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	count, err := h.nginxMgr.BatchUpdatePorts(c.Request.Context(), req.Port, req.Enable)
+	count, err := h.nginxMgr.BatchUpdatePorts(c.Request.Context(), serverID, req.Port, req.Enable)
 	if err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -542,8 +535,8 @@ func (h *NginxHandler) BatchUpdatePorts(c *gin.Context) {
 
 // --- L4 ---
 func (h *NginxHandler) DeleteAllL4(c *gin.Context) {
-	h.applyServerID(c)
-	count, err := h.nginxMgr.DeleteAllL4(c.Request.Context())
+	serverID, _ := h.applyServerID(c)
+	count, err := h.nginxMgr.DeleteAllL4(c.Request.Context(), serverID)
 	if err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return

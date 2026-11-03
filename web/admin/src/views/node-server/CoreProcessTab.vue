@@ -382,6 +382,8 @@ async function handleDownloadVersion(release) {
 
 // Proxy binaries
 async function loadProxyStatuses() {
+  // 无效节点 ID 不查询：serverId=0 会被后端当作本地节点，串出面板本机代理状态。
+  if (!props.serverId) { proxyStatusLoading.value = false; return }
   proxyStatusLoading.value = true
   try {
     const data = await getProxyStatus(props.serverId)

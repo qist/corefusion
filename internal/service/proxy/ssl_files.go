@@ -106,8 +106,8 @@ func GenerateSessionTicketB64() (string, error) {
 // EnsureGlobalSSLMaterial 确保当前节点开启的全局 TLS 素材已在库（base64），
 // 缺失则生成并写回；本机再还原到 data/ssl/。用于「保存开关」时自动补齐，
 // 避免在生成配置（可能高频）时触发耗时的 dhparam 生成。
-func (m *NginxManager) EnsureGlobalSSLMaterial(ctx context.Context) (*NginxSettings, error) {
-	s, err := m.GetNginxSettings(ctx)
+func (m *NginxManager) EnsureGlobalSSLMaterial(ctx context.Context, serverID int64) (*NginxSettings, error) {
+	s, err := m.GetNginxSettings(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,11 +132,11 @@ func (m *NginxManager) EnsureGlobalSSLMaterial(ctx context.Context) (*NginxSetti
 		}
 	}
 	if changed {
-		if err := m.SaveNginxSettings(ctx, s); err != nil {
+		if err := m.SaveNginxSettings(ctx, serverID, s); err != nil {
 			return nil, err
 		}
 	}
-	if m.isLocal && (s.SslDhparam || s.SslSessionTicket) {
+	if m.isLocalTarget(ctx, serverID) && (s.SslDhparam || s.SslSessionTicket) {
 		if err := WriteGlobalSslFiles(m.dataDir, s.SslDhparamB64, s.SslSessionTicketB64, s.SslSessionTicketBB64); err != nil {
 			return nil, err
 		}
@@ -146,8 +146,8 @@ func (m *NginxManager) EnsureGlobalSSLMaterial(ctx context.Context) (*NginxSetti
 
 // RegenerateGlobalSSLMaterial 重新生成素材（供前端「生成/替换」按钮），存库并还原到本机磁盘。
 // target: dhparam | session_ticket。
-func (m *NginxManager) RegenerateGlobalSSLMaterial(ctx context.Context, target string) (*NginxSettings, error) {
-	s, err := m.GetNginxSettings(ctx)
+func (m *NginxManager) RegenerateGlobalSSLMaterial(ctx context.Context, serverID int64, target string) (*NginxSettings, error) {
+	s, err := m.GetNginxSettings(ctx, serverID)
 	if err != nil {
 		return nil, err
 	}
@@ -171,10 +171,10 @@ func (m *NginxManager) RegenerateGlobalSSLMaterial(ctx context.Context, target s
 	default:
 		return nil, fmt.Errorf("未知 target：%s", target)
 	}
-	if err := m.SaveNginxSettings(ctx, s); err != nil {
+	if err := m.SaveNginxSettings(ctx, serverID, s); err != nil {
 		return nil, err
 	}
-	if m.isLocal {
+	if m.isLocalTarget(ctx, serverID) {
 		if err := WriteGlobalSslFiles(m.dataDir, s.SslDhparamB64, s.SslSessionTicketB64, s.SslSessionTicketBB64); err != nil {
 			return nil, err
 		}

@@ -413,6 +413,9 @@ Restart=on-failure
 RestartSec=5
 LimitNOFILE=65535
 WorkingDirectory=$INSTALL_DIR
+# 只杀主进程（Agent），不回收整个 cgroup：节点上的 caddy/nginx 代理子进程
+# 在 Agent 重启/自更新期间保持运行，新 Agent 按 PID 收编，代理不中断。
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

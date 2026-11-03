@@ -460,17 +460,17 @@ func (a *mirrorCheckerAdapter) IsMirrorNode(ctx context.Context, serverID int64)
 }
 
 // Shutdown stops all managed processes. Call this when the panel exits.
+//
+// ⚠ 这里**不停 caddy/nginx**：代理是数据面服务，不应随管理面（面板）重启而
+// 中断。面板退出后代理进程存活（unit 配 KillMode=process，systemd 只杀主
+// 进程），新面板进程启动时 StartProxy 会按 PID 收编（"already running,
+// attaching guardian"）。核心（xray/sing-box）由 Reconcile 统一 kill+重启，
+// 维持原语义。
 func Shutdown() {
 	ctx := context.Background()
 	// Stop core processes
 	if processMgr != nil {
 		processMgr.StopAll(ctx)
-	}
-	// Stop managed proxies without marking as manually stopped
-	if proxyMgr != nil {
-		log.Println("stopping managed proxies...")
-		proxyMgr.StopProxyForShutdown(ctx, proxySvc.ProxyNginx)
-		proxyMgr.StopProxyForShutdown(ctx, proxySvc.ProxyCaddy)
 	}
 }
 

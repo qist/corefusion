@@ -42,7 +42,7 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Uso y caducidad (bytes / segundos Unix). **También enviado al 403**, para que los clientes puedan mostrar la asignación restante |
 | `Profile-Update-Interval` | `6` | Intervalo de actualización sugerido (horas) |
 | `Profile-Title` | `CoreFusion` | Nombre del perfil (mostrado por Clash Verge Rev / V2RayN, etc.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Enlace a la página del portal (“abrir página web” en clientes) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Enlace a la página del portal (“abrir página web” en clientes) |
 | `Content-Type` | Por formato: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

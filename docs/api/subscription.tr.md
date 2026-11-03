@@ -42,7 +42,7 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Kullanım ve sona erme (bayt / Unix saniye). **Ayrıca 403'e de gönderilir**, böylece müşteriler kalan ödeneği gösterebilirler |
 | `Profile-Update-Interval` | `6` | Önerilen yenileme aralığı (saat) |
 | `Profile-Title` | `CoreFusion` | Profil adı (Clash Verge Rev / V2RayN vb. tarafından gösterilir) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Portal sayfası bağlantısı (istemcilerde “web sayfasını aç”) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Portal sayfası bağlantısı (istemcilerde “web sayfasını aç”) |
 | `Content-Type` | Format başına: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

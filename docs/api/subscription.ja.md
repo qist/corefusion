@@ -42,7 +42,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 使用量と有効期限 (バイト/Unix 秒)。 **403 でも送信される**ため、クライアントは残りの手当を表示できます |
 | `Profile-Update-Interval` | `6` | 推奨される更新間隔 (時間) |
 | `Profile-Title` | `CoreFusion` | プロファイル名 (Clash Verge Rev / V2RayN などで表示) |
-| `Profile-Web-Page-Url` | `https://…/portal` | ポータル ページのリンク (クライアントの「Web ページを開く」) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | ポータル ページのリンク (クライアントの「Web ページを開く」) |
 | `Content-Type` | フォーマットごと: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

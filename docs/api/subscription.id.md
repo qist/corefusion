@@ -42,7 +42,7 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Penggunaan dan kedaluwarsa (byte / Unix detik). **Dikirim juga pada 403**, sehingga klien dapat menunjukkan sisa uang saku |
 | `Profile-Update-Interval` | `6` | Interval penyegaran yang disarankan (jam) |
 | `Profile-Title` | `CoreFusion` | Nama profil (ditunjukkan oleh Clash Verge Rev / V2RayN, dll.) |
-| `Profile-Web-Page-Url` | `https://…/portal` | Tautan halaman portal (“halaman web terbuka” di klien) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Tautan halaman portal (“halaman web terbuka” di klien) |
 | `Content-Type` | Per format: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 

@@ -289,24 +289,10 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
-	// Profile-Web-Page-Url: use system setting if configured,
-	// otherwise auto-detect from request host (strip port).
-	if h.systemSettingRepo != nil {
-		if portalURL, err := h.systemSettingRepo.GetByKey(ctx, "panel.profile_web_page_url"); err == nil && portalURL != "" {
-			c.Header("Profile-Web-Page-Url", portalURL)
-		}
-	}
-	if c.GetHeader("Profile-Web-Page-Url") == "" {
-		portalHost := c.GetHeader("X-Forwarded-Host")
-		if portalHost == "" {
-			portalHost = c.Request.Host
-		}
-		if portalHost != "" {
-			if host, _, err := net.SplitHostPort(portalHost); err == nil {
-				portalHost = host
-			}
-			c.Header("Profile-Web-Page-Url", fmt.Sprintf("%s://%s/portal", scheme, portalHost))
-		}
+	// Profile-Web-Page-Url：客户端「打开网页」入口，必须是**门户**的真实地址。
+	// 订阅域名（如 sub.*）与门户域名/端口是两套独立配置，不能拿订阅请求的 Host 直接拼。
+	if u := h.resolvePortalWebPageURL(ctx, scheme, c); u != "" {
+		c.Header("Profile-Web-Page-Url", u)
 	}
 
 	// Detect client language from Accept-Language header
@@ -594,6 +580,72 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	c.Header("Content-Type", contentType+"; charset=utf-8")
 	c.Header("Content-Disposition", "attachment; filename=\"subscription.txt\"")
 	c.Data(http.StatusOK, contentType+"; charset=utf-8", data)
+}
+
+// resolvePortalWebPageURL 返回门户对外地址（客户端「打开网页」入口）。
+//
+// 优先级：
+//  1. panel.profile_web_page_url：管理员显式配置，原样使用；
+//  2. oauth.callback_domain（门户回调域名，独立配置）> panel.external_url：
+//     配置了独立门户端口 panel.portal_port → 门户挂在域名根路径 ""，否则挂在 "/p"；
+//  3. 请求 Host 兜底（X-Forwarded-Host > Host），路径固定 "/p"。
+//
+// 订阅域名（sub.*）≠ 门户域名，不能用订阅请求的 Host 直接拼门户地址。
+func (h *PublicHandler) resolvePortalWebPageURL(ctx context.Context, scheme string, c *gin.Context) string {
+	if h.systemSettingRepo != nil {
+		if v, err := h.systemSettingRepo.GetByKey(ctx, "panel.profile_web_page_url"); err == nil {
+			if u := strings.TrimSpace(v); u != "" {
+				return u
+			}
+		}
+		base := ""
+		if v, err := h.systemSettingRepo.GetByKey(ctx, "oauth.callback_domain"); err == nil {
+			base = strings.TrimSpace(v)
+		}
+		if base == "" {
+			if v, err := h.systemSettingRepo.GetByKey(ctx, "panel.external_url"); err == nil {
+				base = strings.TrimSpace(v)
+			}
+		}
+		if base != "" {
+			// 门户域名默认 https（与 portal.Service.resolvePortalExternalURL 一致）；
+			// 订阅请求本身可能走内网 http，不能拿来决定门户 scheme。
+			if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+				base = "https://" + base
+			}
+			base = strings.TrimRight(base, "/")
+			// 与 portal.Service.portalPagePath 同一口径：独立门户端口 → 根路径。
+			if !h.portalServesAtRoot(ctx) {
+				base += "/p"
+			}
+			return base
+		}
+	}
+	// 兜底：从订阅请求 Host 推断（门户路径是 /p，不是 /portal）。
+	host := c.GetHeader("X-Forwarded-Host")
+	if host == "" {
+		host = c.Request.Host
+	}
+	if host == "" {
+		return ""
+	}
+	if h2, _, err := net.SplitHostPort(host); err == nil {
+		host = h2
+	}
+	return fmt.Sprintf("%s://%s/p", scheme, host)
+}
+
+// portalServesAtRoot 判断门户是否以独立端口/域名根路径提供（panel.portal_port 已配置）。
+func (h *PublicHandler) portalServesAtRoot(ctx context.Context) bool {
+	if h.systemSettingRepo == nil {
+		return false
+	}
+	v, err := h.systemSettingRepo.GetByKey(ctx, "panel.portal_port")
+	if err != nil {
+		return false
+	}
+	v = strings.TrimSpace(v)
+	return v != "" && v != "0"
 }
 
 // collectShareLinks generates share link URIs using the sharelink package.

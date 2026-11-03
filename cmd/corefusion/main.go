@@ -172,6 +172,46 @@ func loadEnv() map[string]string {
 	return env
 }
 
+// ensureEncryptionKey 确保进程有可用的加密主密钥（幂等）：
+//  1. 系统环境变量 / .env / .env.secret 已有 → 直接复用；
+//  2. 都没有 → 生成 32 字节随机密钥写入 .env.secret（失败回退 .env）。
+//
+// ⚠ 必须在 db.Init **之前**调用：RunDataMigrations 里有一趟"历史主机名派生
+// 密钥加密的密文 → 用当前主密钥重写"。密钥没就绪时 getKey() 会退回 hostname
+// 派生，迁移会拿错误的主密钥去判断（并把值重写成同样解不开的形式）。
+func ensureEncryptionKey() {
+	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") == "" {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			log.Fatalf("failed to generate secret encryption key: %v", err)
+		}
+		key := hex.EncodeToString(b)
+		if err := secretcrypto.SaveSecretEnvValue("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
+			// 写独立文件失败时退回 .env，绝不因为落盘失败而让密钥只存在内存里
+			// （重启后密钥丢失 = 库里所有密文报废）。
+			log.Printf("[startup] warning: write %s failed (%v), falling back to .env", secretcrypto.SecretEnvFile, err)
+			saveEnvValue("CF_SECRET_ENCRYPTION_KEY", key)
+			log.Println("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to .env")
+		} else {
+			log.Printf("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to %s", secretcrypto.SecretEnvFile)
+		}
+		os.Setenv("CF_SECRET_ENCRYPTION_KEY", key)
+	}
+
+	// 密钥就绪后，把 env 文件里历史主机名密钥加密的值（典型：CF_DB_DSN）
+	// 用当前主密钥重写。必须在 db.Init 之前做 —— DSN 要在打开连接前解开。
+	for _, path := range []string{".env", secretcrypto.SecretEnvFile} {
+		n, err := secretcrypto.ReencryptEnvFile(path)
+		if err != nil {
+			log.Printf("[startup] warning: re-encrypt %s failed: %v", path, err)
+			continue
+		}
+		if n > 0 {
+			log.Printf("[startup] re-encrypted %d legacy value(s) in %s with the current key", n, path)
+		}
+	}
+}
+
 // saveEnvValue updates or adds a key-value pair in the .env file.
 func saveEnvValue(key, value string) {
 	lines := []string{}
@@ -237,6 +277,12 @@ func runServer(args []string) {
 
 	// Ensure data directory structure
 	initDataDir(dataDir)
+
+	// 加密密钥必须在**任何 DB 初始化/数据迁移之前**就绪：
+	// 存量迁移里有一趟「历史主机名密钥加密的密文 → 用当前主密钥重写」，
+	// 如果这时 env 里还没有密钥，getKey() 会用 hostname 派生去判断，
+	// 迁移会误判（甚至把值写成 hostname 密钥后才发现刚生成了新密钥）。
+	ensureEncryptionKey()
 
 	// Phase 2: Initialize database (from .env config, default: SQLite)
 	dbPath := filepath.Join(dataDir, "sqlite", "app.db")
@@ -469,28 +515,8 @@ func runServer(args []string) {
 	jwtHandler := jwt.New(jwtSecret, 0, 0)
 	middleware.SetJWT(jwtHandler)
 
-	// 安全审计 M-4：CF_SECRET_ENCRYPTION_KEY 缺省时不再使用"主机名派生"的
-	// 可穷举密钥 —— 首启生成随机密钥写入**独立隐藏文件** .env.secret（0600），
-	// 与 .env 里日常要查看的配置分离（降低误 cat/截图/贴日志时的暴露面）。
-	// 升级场景：库里已有的历史密文（旧主机名密钥加密）由 DecryptSecret 的
-	// legacy 兜底继续可解，并打印迁移告警。
-	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") == "" {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			log.Fatalf("failed to generate secret encryption key: %v", err)
-		}
-		encKey := hex.EncodeToString(b)
-		if err := secretcrypto.SaveSecretEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey); err != nil {
-			// 写独立文件失败时退回 .env，绝不因为落盘失败而让密钥只存在内存里
-			// （重启后密钥丢失 = 库里所有密文报废）。
-			log.Printf("[startup] warning: write %s failed (%v), falling back to .env", secretcrypto.SecretEnvFile, err)
-			saveEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey)
-			log.Println("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to .env")
-		} else {
-			log.Printf("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to %s", secretcrypto.SecretEnvFile)
-		}
-		os.Setenv("CF_SECRET_ENCRYPTION_KEY", encKey)
-	}
+	// CF_SECRET_ENCRYPTION_KEY 已在 db.Init 之前由 ensureEncryptionKey() 就绪
+	// （存量密文重加密迁移依赖它）。这里不再重复生成。
 
 	// Create initial admin
 	//

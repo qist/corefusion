@@ -125,6 +125,46 @@ func EncryptSecret(plaintext string) (string, error) {
 	), nil
 }
 
+// CanDecryptWithPrimary 判断一个 `enc:` 密文能否被**当前主密钥**解开
+// （不回落 legacy hostname 派生密钥）。
+//
+// 用途：识别"历史 hostname 密钥加密"的存量密文 —— 这类值目前靠
+// DecryptSecret 的 legacy 兜底才能读；一旦迁移/换机/回退逻辑变化就永久失效。
+// 启动迁移据此把它们解出来再用主密钥重写（一次性、幂等）。
+func CanDecryptWithPrimary(encrypted string) bool {
+	if !IsEncrypted(encrypted) {
+		return false
+	}
+	key, err := getKey()
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(encrypted, ":", 3)
+	if len(parts) != 3 {
+		return false
+	}
+	nonce, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	ciphertext, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return false
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return false
+	}
+	if _, err := gcm.Open(nil, nonce, ciphertext, nil); err != nil {
+		return false
+	}
+	return true
+}
+
 // DecryptSecret decrypts a string in the format "enc:<base64_nonce>:<base64_ciphertext>".
 // If the input does not have the "enc:" prefix, it returns the input as-is (backward compatible).
 func DecryptSecret(encrypted string) (string, error) {

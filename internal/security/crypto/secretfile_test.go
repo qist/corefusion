@@ -184,3 +184,77 @@ func TestEnsureSecretKeyAtPrefersEnv(t *testing.T) {
 		t.Fatalf("no file should be created when env provides the key (err=%v)", err)
 	}
 }
+
+// TestReencryptEnvFileLegacy 锁定"历史主机名密钥 → 当前主密钥"的迁移：
+// 老密文必须能被解出来并用新密钥重写，明文值不能变；重复执行幂等。
+func TestReencryptEnvFileLegacy(t *testing.T) {
+	inTempDir(t)
+
+	// 1) 模拟老部署：没有 env 密钥 → 用 legacy hostname 派生密钥加密
+	os.Unsetenv("CF_SECRET_ENCRYPTION_KEY")
+	defaultKey = nil
+	const dsn = "postgres://user:p%40ss@127.0.0.1:5432/corefusion"
+	legacyEnc, err := EncryptSecret(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(".env", []byte("SAFE_PATHS=data\nCF_DB_DSN="+legacyEnc+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2) 切换到新的随机主密钥（模拟升级后 .env.secret 就绪）
+	t.Setenv("CF_SECRET_ENCRYPTION_KEY", testKey)
+	defaultKey = nil
+	if CanDecryptWithPrimary(legacyEnc) {
+		t.Fatal("legacy ciphertext must not decrypt with the new key before migration")
+	}
+
+	// 3) 迁移
+	n, err := ReencryptEnvFile(".env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 rewritten value, got %d", n)
+	}
+
+	// 4) 迁移后：主密钥可解、明文不变、其它键保留
+	migrated := ReadEnvFileValue(".env", "CF_DB_DSN")
+	if !CanDecryptWithPrimary(migrated) {
+		t.Fatal("migrated value must be decryptable with the primary key")
+	}
+	if migrated == legacyEnc {
+		t.Fatal("ciphertext should change after re-encryption")
+	}
+	plain, err := DecryptSecret(migrated)
+	if err != nil || plain != dsn {
+		t.Fatalf("plaintext changed: %q err=%v", plain, err)
+	}
+	if ReadEnvFileValue(".env", "SAFE_PATHS") != "data" {
+		t.Fatal("unrelated keys must be preserved")
+	}
+
+	// 5) 幂等：再跑一次不重写
+	if n2, err := ReencryptEnvFile(".env"); err != nil || n2 != 0 {
+		t.Fatalf("second run should be a no-op, got n=%d err=%v", n2, err)
+	}
+}
+
+// TestCanDecryptWithPrimaryRejectsPlainAndGarbage 只对 enc: 密文返回 true。
+func TestCanDecryptWithPrimaryRejectsPlainAndGarbage(t *testing.T) {
+	t.Setenv("CF_SECRET_ENCRYPTION_KEY", testKey)
+	defaultKey = nil
+	if CanDecryptWithPrimary("plain-value") {
+		t.Fatal("plain value must not be treated as primary-encrypted")
+	}
+	if CanDecryptWithPrimary("enc:not-base64:%%%") {
+		t.Fatal("garbage must not be treated as primary-encrypted")
+	}
+	enc, err := EncryptSecret("hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CanDecryptWithPrimary(enc) {
+		t.Fatal("freshly encrypted value must decrypt with primary key")
+	}
+}

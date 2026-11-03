@@ -651,6 +651,35 @@ func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int
 		}
 	}
 
+	// 代理二进制未安装时不可能开机自启/自动重启：对外一律返回关闭
+	//（与本地节点 GetStatus 口径一致，避免界面显示「已开启」但永远不会拉起）。
+	installedCount := 0
+	for _, pt := range []string{"caddy", "nginx"} {
+		info, ok := resp[pt].(gin.H)
+		if ok {
+			if installed, _ := info["installed"].(bool); installed {
+				installedCount++
+			}
+		}
+		if !ok {
+			continue
+		}
+		if installed, _ := info["installed"].(bool); installed {
+			continue
+		}
+		switch g := resp[pt+"_guardian"].(type) {
+		case gin.H:
+			g["auto_start"] = false
+			g["auto_restart"] = false
+		case map[string]interface{}:
+			g["auto_start"] = false
+			g["auto_restart"] = false
+		}
+	}
+	// 两者共用 80/443，都装了就只能运行一个。
+	resp["port_conflict"] = installedCount >= 2
+	resp["shared_ports"] = []string{"80", "443"}
+
 	return resp
 }
 

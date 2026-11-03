@@ -38,13 +38,13 @@
           <div style="display:flex;gap:12px;align-items:center;font-size:12px">
             <el-tooltip :content="t('service.process.autoStartHint')">
               <span>
-                <el-switch v-model="row.auto_start" size="small" @change="updateGuardian(row)" />
+                <el-switch v-model="row.auto_start" size="small" :disabled="!row.binary_installed" @change="updateGuardian(row)" />
                 <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
               </span>
             </el-tooltip>
             <el-tooltip :content="t('service.process.autoRestartHint')">
               <span>
-                <el-switch v-model="row.auto_restart" size="small" @change="updateGuardian(row)" />
+                <el-switch v-model="row.auto_restart" size="small" :disabled="!row.binary_installed" @change="updateGuardian(row)" />
                 <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
               </span>
             </el-tooltip>
@@ -68,13 +68,13 @@
           <span style="color:#909399">{{ t('service.process.guardian') }}</span>
           <el-tooltip :content="t('service.process.autoStartHint')">
             <span>
-              <el-switch v-model="row.auto_start" size="small" @change="updateGuardian(row)" />
+              <el-switch v-model="row.auto_start" size="small" :disabled="!row.binary_installed" @change="updateGuardian(row)" />
               <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
             </span>
           </el-tooltip>
           <el-tooltip :content="t('service.process.autoRestartHint')">
             <span>
-              <el-switch v-model="row.auto_restart" size="small" @change="updateGuardian(row)" />
+              <el-switch v-model="row.auto_restart" size="small" :disabled="!row.binary_installed" @change="updateGuardian(row)" />
               <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
             </span>
           </el-tooltip>
@@ -88,6 +88,7 @@
 
     <!-- Proxy Binaries -->
     <h3 style="margin-bottom:16px">{{ t('nodeServer.proxyBinaries') }}</h3>
+    <el-alert v-if="portConflict" type="warning" :closable="false" show-icon :title="t('nodeServer.proxyPortConflict')" style="margin-bottom:12px" />
     <el-table v-if="!isMobile" :data="proxyRows" v-loading="proxyStatusLoading" stripe size="small" style="margin-bottom:24px">
       <el-table-column prop="name" :label="t('nodeServer.proxyType')" width="100">
         <template #default="{row}"><el-tag size="small">{{ row.name }}</el-tag></template>
@@ -122,13 +123,13 @@
           <div style="display:flex;gap:12px;align-items:center;font-size:12px">
             <el-tooltip :content="t('service.process.autoStartHint')">
               <span>
-                <el-switch v-model="row.auto_start" size="small" @change="updateProxyGuardian(row)" />
+                <el-switch v-model="row.auto_start" size="small" :disabled="!row.installed" @change="updateProxyGuardian(row)" />
                 <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
               </span>
             </el-tooltip>
             <el-tooltip :content="t('service.process.autoRestartHint')">
               <span>
-                <el-switch v-model="row.auto_restart" size="small" @change="updateProxyGuardian(row)" />
+                <el-switch v-model="row.auto_restart" size="small" :disabled="!row.installed" @change="updateProxyGuardian(row)" />
                 <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
               </span>
             </el-tooltip>
@@ -138,7 +139,7 @@
       <el-table-column :label="t('common.actions')" width="180">
         <template #default="{row}">
           <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
-            <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed">{{ t('service.start') }}</el-button>
+            <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed || isOtherProxyRunning(row)">{{ t('service.start') }}</el-button>
             <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleProxyStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
             <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
             <el-button size="small" @click="handleProxyRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || !row.installed">{{ t('service.restart') }}</el-button>
@@ -152,18 +153,18 @@
           <span style="color:#909399">{{ t('service.process.guardian') }}</span>
           <el-tooltip :content="t('service.process.autoStartHint')">
             <span>
-              <el-switch v-model="row.auto_start" size="small" @change="updateProxyGuardian(row)" />
+              <el-switch v-model="row.auto_start" size="small" :disabled="!row.installed" @change="updateProxyGuardian(row)" />
               <span style="margin-left:2px;color:#999">{{ t('service.process.autoStart') }}</span>
             </span>
           </el-tooltip>
           <el-tooltip :content="t('service.process.autoRestartHint')">
             <span>
-              <el-switch v-model="row.auto_restart" size="small" @change="updateProxyGuardian(row)" />
+              <el-switch v-model="row.auto_restart" size="small" :disabled="!row.installed" @change="updateProxyGuardian(row)" />
               <span style="margin-left:2px;color:#999">{{ t('service.process.autoRestart') }}</span>
             </span>
           </el-tooltip>
         </span>
-        <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed">{{ t('service.start') }}</el-button>
+        <el-button v-if="row.state === 'stopped' || row.state === 'crashed'" size="small" type="success" @click="handleProxyStart(row)" :loading="row._loading" :disabled="!row.installed || isOtherProxyRunning(row)">{{ t('service.start') }}</el-button>
         <el-button v-else-if="row.state === 'running'" size="small" type="danger" @click="handleProxyStop(row)" :loading="row._loading">{{ t('service.stop') }}</el-button>
         <el-button v-else size="small" type="info" disabled>{{ t('common.loading') }}</el-button>
         <el-button size="small" @click="handleProxyRestart(row)" :loading="row._loading" :disabled="row.state === 'unknown' || !row.installed">{{ t('service.restart') }}</el-button>
@@ -234,6 +235,8 @@ const selectedService = ref(null)
 // Proxy binaries
 const proxyRows = ref([])
 const proxyStatusLoading = ref(false)
+// caddy/nginx 共用 80/443：两者都装时提示不能同时启动
+const portConflict = ref(false)
 
 // Proxy version dialog
 const proxyVersionVisible = ref(false)
@@ -387,6 +390,7 @@ async function loadProxyStatuses() {
   proxyStatusLoading.value = true
   try {
     const data = await getProxyStatus(props.serverId)
+    portConflict.value = !!(data && data.port_conflict)
     const rows = []
     for (const pt of ['caddy', 'nginx']) {
       const info = data?.[pt] || {}
@@ -411,7 +415,7 @@ async function loadProxyStatuses() {
         cpu: guardian.cpu || 0,
         mem: guardian.mem || 0,
         uptime,
-        auto_start: guardian.auto_start !== undefined ? guardian.auto_start : true,
+        auto_start: guardian.auto_start !== undefined ? guardian.auto_start : false,
         auto_restart: guardian.auto_restart !== undefined ? guardian.auto_restart : false,
         max_restarts: guardian.max_restarts || 5,
         current_restarts: guardian.current_restarts || 0,
@@ -424,6 +428,10 @@ async function loadProxyStatuses() {
   } finally {
     proxyStatusLoading.value = false
   }
+}
+
+function isOtherProxyRunning(row) {
+  return proxyRows.value.some(r => r.type !== row.type && r.state === 'running')
 }
 
 async function handleProxyStart(row) {

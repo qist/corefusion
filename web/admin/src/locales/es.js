@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "Gestión de binarios",
     "coreBinaries": "Binario del núcleo",
     "proxyBinaries": "Binario del proxy",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "El panel está en modo de solo gestión y el proceso del núcleo local no está en ejecución; si necesitas el servicio de proxy local, vuelve al modo completo.",
     "installed": "Instalado",
     "binaryPath": "Ruta del binario",

@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "Управление бинарными файлами",
     "coreBinaries": "Бинарный файл ядра",
     "proxyBinaries": "Бинарный файл прокси",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "Панель работает в режиме только управления, локальный процесс ядра не запущен; если нужен локальный прокси-сервис, переключитесь обратно в полный режим.",
     "installed": "Установлено",
     "binaryPath": "Путь к бинарному файлу",

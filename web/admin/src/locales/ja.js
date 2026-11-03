@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "バイナリ管理",
     "coreBinaries": "コアバイナリ",
     "proxyBinaries": "プロキシバイナリ",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "パネルは管理専用モードで、ローカルコアプロセスは実行されていません。本機でプロキシサービスを利用するには、フルモードに戻してください。",
     "installed": "インストール済み",
     "binaryPath": "バイナリパス",

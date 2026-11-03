@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "จัดการไบนารี",
     "coreBinaries": "ไบนารีหลัก",
     "proxyBinaries": "ไบนารีพร็อกซี",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "แผงควบคุมอยู่ในโหมดจัดการเท่านั้น และกระบวนการคอร์ในเครื่องไม่ได้ทำงาน หากต้องการบริการพร็อกซีในเครื่องนี้ โปรดสลับกลับไปโหมดเต็มรูปแบบ",
     "installed": "ติดตั้งแล้ว",
     "binaryPath": "พาธไบนารี",

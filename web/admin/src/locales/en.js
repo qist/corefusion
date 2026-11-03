@@ -3387,6 +3387,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     binaryManagement: 'Binary Management',
     coreBinaries: 'Core Binaries',
     proxyBinaries: 'Proxy Binaries',
+    'proxyPortConflict': 'Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.',
     managementOnlyNotice: 'Panel is in Management Only mode — local core processes are not running. Switch back to Full Mode for local proxy services.',
     installed: 'Installed',
     binaryPath: 'Binary Path',

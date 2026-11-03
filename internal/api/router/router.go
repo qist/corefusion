@@ -695,6 +695,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	nginxSiteRepo := repository.NewNginxSiteRepository(database)
 	proxyMgr = proxySvc.NewManager(dataDir, proxySiteRepo, systemSettingRepo)
 	proxyMgr.SetCrashLogRepo(repository.NewCrashLogRepository(database))
+	// 开机自启只能启动一个代理（caddy/nginx 共用 80/443）：按「已启用站点数」判断
+	// 谁才是真正配置过的，避免空代理抢端口导致整站代理失联。
+	proxyMgr.SetSiteCountFunc(func(ctx context.Context, proxyType string) (int, error) {
+		switch proxyType {
+		case "caddy":
+			sites, err := caddySiteRepo.ListEnabled(ctx, 1)
+			return len(sites), err
+		case "nginx":
+			sites, err := nginxSiteRepo.ListEnabled(ctx, 1)
+			return len(sites), err
+		}
+		return 0, nil
+	})
 	caddyMgr := proxySvc.NewCaddyManager(dataDir, caddySiteRepo, systemSettingRepo)
 	nginxMgr := proxySvc.NewNginxManager(dataDir, nginxSiteRepo, systemSettingRepo)
 	// 双证书 ✓：生成器要按域名收集同域名的多张证书（ECC + RSA ✓）

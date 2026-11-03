@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "مدیریت باینری",
     "coreBinaries": "باینری هسته",
     "proxyBinaries": "باینری پروکسی",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "پنل در حالت مدیریت صرف است و فرایند هسته محلی اجرا نمی‌شود؛ برای سرویس پروکسی محلی به حالت کامل برگردید.",
     "installed": "نصب‌شده",
     "binaryPath": "مسیر باینری",

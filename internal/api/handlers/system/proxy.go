@@ -82,6 +82,18 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 	// Guardian status
 	nginxGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyNginx)
 	caddyGuardian := h.proxyMgr.GetGuardianStatus(proxy.ProxyCaddy)
+	// 二进制未安装时代理不可能开机自启/自动重启：对外一律返回关闭，
+	// 否则界面会显示「已开启」但实际永远不会拉起（库里的开关值保持不变，装好后仍按原设置生效）。
+	if !nginx.Installed {
+		nginxGuardian["auto_start"] = false
+		nginxGuardian["auto_restart"] = false
+	}
+	if !caddy.Installed {
+		caddyGuardian["auto_start"] = false
+		caddyGuardian["auto_restart"] = false
+	}
+	// 两套代理都装了二进制时提示端口竞争（80/443 共用，只能运行一个）。
+	portConflict := nginx.Installed && caddy.Installed
 	response.OK(c, gin.H{
 		"server_id":      serverID,
 		"active_proxy":   active,
@@ -90,6 +102,8 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 		"panel_port":     panelPort,
 		"nginx_guardian": nginxGuardian,
 		"caddy_guardian": caddyGuardian,
+		"port_conflict":  portConflict,
+		"shared_ports":   []string{"80", "443"},
 	})
 }
 

@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "إدارة الملفات الثنائية",
     "coreBinaries": "الملف الثنائي الأساسي",
     "proxyBinaries": "الملف الثنائي للبروكسي",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "اللوحة في وضع الإدارة البحتة، وعملية النواة المحلية غير قيد التشغيل؛ إذا كنت بحاجة إلى خدمة بروكسي محلية، فبدّل إلى الوضع الكامل",
     "installed": "مثبّت",
     "binaryPath": "مسار الملف الثنائي",

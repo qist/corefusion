@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "Manajemen biner",
     "coreBinaries": "Biner inti",
     "proxyBinaries": "Biner proxy",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "Panel dalam mode manajemen murni, proses inti lokal tidak berjalan; jika memerlukan layanan proxy lokal, beralihlah kembali ke mode lengkap",
     "installed": "Terpasang",
     "binaryPath": "Jalur biner",

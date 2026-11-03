@@ -3306,6 +3306,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     binaryManagement: '二进制管理',
     coreBinaries: '核心二进制',
     proxyBinaries: '代理二进制',
+    'proxyPortConflict': 'Caddy 与 Nginx 共用 80/443 端口，不能同时启动；开机只会启动已配置站点（或当前正在运行）的那个。',
     managementOnlyNotice: '面板为纯管理模式，本地核心进程未运行；如需本机代理服务请切换回完整模式',
     installed: '已安装',
     binaryPath: '二进制路径',

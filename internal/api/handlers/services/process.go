@@ -359,6 +359,16 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 			binaryVersion = bi.version
 		}
 
+		// 二进制未安装时核心不可能开机自启/自动重启：对外一律返回关闭，
+		// 否则界面会显示「已开启」但实际永远不会拉起（数据库里的历史开关值保持不变，
+		// 装好二进制后仍按原设置生效）。
+		autoStart := guardianAutoStart[svc.ID]
+		autoRestart := guardianAutoRestart[svc.ID]
+		if !binaryInstalled {
+			autoStart = false
+			autoRestart = false
+		}
+
 		item := gin.H{
 			"service_id":        svc.ID,
 			"name":              svc.Name,
@@ -373,8 +383,8 @@ func (h *ProcessHandler) ListAllProcessStatuses(c *gin.Context) {
 			"mem":               int64(0),
 			"binary_installed":  binaryInstalled,
 			"version":           binaryVersion,
-			"auto_start":        guardianAutoStart[svc.ID],
-			"auto_restart":      guardianAutoRestart[svc.ID],
+			"auto_start":        autoStart,
+			"auto_restart":      autoRestart,
 			"max_restart_count": guardianMaxRestarts[svc.ID],
 		}
 

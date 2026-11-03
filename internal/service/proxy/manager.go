@@ -24,6 +24,7 @@ import (
 
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
+	"corefusion/internal/util/safepath"
 
 	"corefusion/internal/model/entity"
 	systemSvc "corefusion/internal/service/system"
@@ -2411,9 +2412,17 @@ func (m *Manager) ListNginxReleasesForPlatform(repo, osName, archName, distro st
 }
 
 func (m *Manager) DownloadAsset(ctx context.Context, downloadURL, name string) (string, error) {
+	// 安全审计 v6 H-3：name 来自请求体，必须白名单化后再拼路径 ——
+	// 否则 `name=../../../../etc/cron.d/x` 会以 root 写任意文件。
+	if name != string(ProxyNginx) && name != string(ProxyCaddy) {
+		return "", fmt.Errorf("unsupported proxy type %q", name)
+	}
 	os.MkdirAll(m.binDir, 0750)
 	binaryName := m.binaryName(name)
-	destPath := filepath.Join(m.binDir, binaryName)
+	destPath, err := safepath.ResolveUnder(m.binDir, binaryName)
+	if err != nil {
+		return "", err
+	}
 
 	accelURL := netutil.AccelerateGitHubURL(downloadURL, m.githubAccelDomain())
 	req, _ := http.NewRequestWithContext(ctx, "GET", accelURL, nil)
@@ -2473,7 +2482,8 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 		if err != nil {
 			return "", err
 		}
-		if header.Typeflag == tar.TypeDir {
+		// 只接受普通文件：symlink/hardlink/设备文件可直接逃出目标目录或改写系统文件。
+		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 
@@ -2507,7 +2517,13 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 			if idx >= 0 {
 				subPath := header.Name[idx+len("/lua/"):]
 				if subPath != "" {
-					outPath := filepath.Join(m.dataDir, "proxy", "lua", subPath)
+					// 安全审计 v6 H-3：tar 条目名可含 `..`，必须解析到 proxy/lua 之下。
+					luaRoot := filepath.Join(m.dataDir, "proxy", "lua")
+					outPath, perr := safepath.ResolveUnder(luaRoot, subPath)
+					if perr != nil {
+						log.Printf("proxy %s: skip unsafe lua entry %q: %v", name, header.Name, perr)
+						continue
+					}
 					if err := os.MkdirAll(filepath.Dir(outPath), 0755); err == nil {
 						if f, err := os.Create(outPath); err == nil {
 							io.Copy(f, tr)

@@ -137,6 +137,12 @@ func (s *Service) SeedDefaults(ctx context.Context) error {
 	if err := s.repo.ClearAll(ctx, "cf_domain"); err != nil {
 		return err
 	}
+	// 清掉历史遗留的 cf_ip 行：这张表只应存 direct / cf_domain，
+	// IP 来自 cf_ip_entries。旧版本 seed 把域名写成 cf_ip，订阅逻辑会跳过
+	// （public.go 的 loadShareDomains），导致「重置后域名看起来不全」。
+	if err := s.repo.ClearAll(ctx, "cf_ip"); err != nil {
+		return err
+	}
 
 	defaultPorts := "[443]"
 	defaults := []entity.ShareDomainConfig{

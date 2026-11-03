@@ -106,7 +106,10 @@ async function fetchNodeServers() {
 async function fetchItems() {
   loading.value = true
   try {
-    const data = await client.get(apiBase.value)
+    // limit=100（后端 MaxPageSize）：分享域名是配置项，必须一次拿全。
+    // 旧后端默认分页 20 条，历史 cf_ip 行会把 cf_domain 挤到第二页导致列表为空；
+    // 后端已改为全量返回，这里显式带 limit 兼容尚未升级的节点/缓存。
+    const data = await client.get(apiBase.value, { params: { limit: 100 } })
     const raw = Array.isArray(data) ? data : (data?.items || [])
     items.value = raw.map(item => ({
       ...item,

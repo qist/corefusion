@@ -25,14 +25,17 @@ func NewHandler(svc *sharedomainconfig.Service) *Handler {
 // List handles GET /api/v1/share-domains.
 // Returns all share domain configs (optionally filtered by type).
 func (h *Handler) List(c *gin.Context) {
-	pg := response.ParsePagination(c)
 	configType := c.Query("type")
-	configs, total, err := h.svc.ListPaged(c.Request.Context(), configType, pg.Limit, pg.Offset)
+	// 分享域名是配置类数据（几十条），必须全量返回：
+	// 旧实现走默认分页（DefaultPageSize=20）+ ORDER BY sort_order ASC，
+	// 历史 cf_ip 行 sort_order=0 会排在前面占满首页，前端过滤掉 cf_ip 后
+	// 一条 cf_domain 都看不到（116 上“重置后域名不全”的根因）。
+	configs, err := h.svc.List(c.Request.Context(), configType)
 	if err != nil {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	response.Paginated(c, configs, total, pg.Limit, pg.Offset)
+	response.Paginated(c, configs, int64(len(configs)), len(configs), 0)
 }
 
 // ListByServer handles GET /api/v1/node-servers/:id/share-domains.

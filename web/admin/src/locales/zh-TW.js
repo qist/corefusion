@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "二進位檔管理",
     "coreBinaries": "核心二進位檔",
     "proxyBinaries": "代理二進位檔",
+    "proxyPortConflict": "Caddy 与 Nginx 共用 80/443 端口，不能同时启动；开机只会启动已配置站点（或当前正在运行）的那个。",
     "managementOnlyNotice": "面板為純管理模式，本機核心程序未執行；如需本機代理服務請切換回完整模式",
     "installed": "已安裝",
     "binaryPath": "二進位檔路徑",

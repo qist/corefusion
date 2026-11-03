@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "Binärverwaltung",
     "coreBinaries": "Kern-Binärdatei",
     "proxyBinaries": "Proxy-Binärdatei",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "Das Panel läuft im reinen Verwaltungsmodus, der lokale Kernprozess ist nicht aktiv; für einen lokalen Proxy-Dienst bitte in den vollständigen Modus wechseln",
     "installed": "Installiert",
     "binaryPath": "Binärpfad",

@@ -100,6 +100,9 @@ type Manager struct {
 	// Used to re-sync WAF configs from DB so user customizations survive
 	// the tar.gz overwrite during nginx reinstall.
 	onProxyInstalled func(ctx context.Context, proxyType string)
+	// siteCountFn 返回某代理（caddy/nginx）已启用的站点数：开机自启时用于判断
+	// 「谁才是真正配置过的代理」，两者共用 80/443 只能启动一个。
+	siteCountFn func(ctx context.Context, proxyType string) (int, error)
 	// Stdout log broker for real-time log viewing
 	logBrokers map[ProxyType]*LogBroker
 	// Process guardian for auto-restart on crash (shared healthcheck)
@@ -2012,25 +2015,100 @@ func (m *Manager) attachGuardian(proxyType ProxyType, pid int) {
 	log.Printf("proxy %s: guardian attached to existing process (pid %d)", proxyType, pid)
 }
 
+// SetSiteCountFunc 注入「已启用站点数」查询（开机自启时区分谁真正配置过）。
+func (m *Manager) SetSiteCountFunc(fn func(ctx context.Context, proxyType string) (int, error)) {
+	m.siteCountFn = fn
+}
+
+// countEnabledSites 返回某代理已启用站点数；未注入或查询失败返回 0。
+func (m *Manager) countEnabledSites(ctx context.Context, proxyType ProxyType) int {
+	if m.siteCountFn == nil {
+		return 0
+	}
+	n, err := m.siteCountFn(ctx, string(proxyType))
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// autoStartCandidate 是开机自启的候选代理（已安装、托管且 auto_start 开启）。
+type autoStartCandidate struct {
+	proxyType ProxyType
+	sites     int
+	running   bool
+}
+
+// pickAutoStartProxy 从候选中选出唯一要启动的代理（caddy/nginx 共用 80/443）：
+//  1. 已经在运行的优先（面板重启但代理进程保留时保持现状）；
+//  2. 否则启动「已启用站点数」更多的那个；
+//  3. 平局按传入顺序（Caddy 在前），保持确定性。
+func pickAutoStartProxy(candidates []autoStartCandidate) (autoStartCandidate, bool) {
+	if len(candidates) == 0 {
+		return autoStartCandidate{}, false
+	}
+	pick := candidates[0]
+	for _, c := range candidates[1:] {
+		switch {
+		case c.running && !pick.running:
+			pick = c
+		case c.running == pick.running && c.sites > pick.sites:
+			pick = c
+		}
+	}
+	return pick, true
+}
+
 // AutoStartManaged syncs config from DB and starts managed proxies.
 // Skips proxies that have auto_start disabled.
+//
+// caddy 与 nginx 共用 80/443 等监听端口，**只能运行一个**：
+//   - 已有一个在运行（面板重启但代理进程保留）→ 保持它，不再拉起另一个；
+//   - 都没在运行 → 优先启动「已配置站点」的代理（站点数多者），避免先装的
+//     空代理抢到端口，导致真正配置的代理起不来、整站代理失联。
 func (m *Manager) AutoStartManaged() {
 	time.Sleep(2 * time.Second)
+	ctx := context.Background()
+
+	var candidates []autoStartCandidate
 	for _, proxyType := range []ProxyType{ProxyCaddy, ProxyNginx} {
 		info := m.DetectProxy(proxyType)
-		if info.Installed && info.Managed {
-			autoStart, _, _ := m.GetProxyGuardianSettings(context.Background(), proxyType)
-			if !autoStart {
-				log.Printf("proxy %s: auto_start disabled, skipping", proxyType)
-				continue
-			}
-			log.Printf("proxy %s: managed, syncing config and starting", proxyType)
-			if err := m.StartProxy(context.Background(), proxyType); err != nil {
-				log.Printf("auto-start %s failed: %v", proxyType, err)
-			} else {
-				log.Printf("auto-start %s succeeded", proxyType)
-			}
+		if !info.Installed || !info.Managed {
+			continue
 		}
+		autoStart, _, _ := m.GetProxyGuardianSettings(ctx, proxyType)
+		if !autoStart {
+			log.Printf("proxy %s: auto_start disabled, skipping", proxyType)
+			continue
+		}
+		candidates = append(candidates, autoStartCandidate{
+			proxyType: proxyType,
+			sites:     m.countEnabledSites(ctx, proxyType),
+			running:   info.Status == "running",
+		})
+	}
+	pick, ok := pickAutoStartProxy(candidates)
+	if !ok {
+		return
+	}
+
+	for _, c := range candidates {
+		if c.proxyType == pick.proxyType {
+			continue
+		}
+		log.Printf("proxy %s: skipped auto-start (port conflict with %s: both listen on 80/443; %s has %d enabled sites)",
+			c.proxyType, pick.proxyType, pick.proxyType, pick.sites)
+	}
+
+	if pick.running {
+		log.Printf("proxy %s: already running, keep it and skip starting the other proxy", pick.proxyType)
+		return
+	}
+	log.Printf("proxy %s: managed (%d enabled sites), syncing config and starting", pick.proxyType, pick.sites)
+	if err := m.StartProxy(ctx, pick.proxyType); err != nil {
+		log.Printf("auto-start %s failed: %v", pick.proxyType, err)
+	} else {
+		log.Printf("auto-start %s succeeded", pick.proxyType)
 	}
 }
 

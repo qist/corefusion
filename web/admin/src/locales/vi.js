@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "Quản lý tệp nhị phân",
     "coreBinaries": "Tệp nhị phân lõi",
     "proxyBinaries": "Tệp nhị phân proxy",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "Bảng điều khiển đang ở chế độ chỉ quản lý, tiến trình lõi cục bộ không chạy; nếu cần dịch vụ proxy trên máy này, vui lòng chuyển lại chế độ đầy đủ.",
     "installed": "Đã cài đặt",
     "binaryPath": "Đường dẫn tệp nhị phân",

@@ -285,6 +285,11 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		if svc.ServerID != 1 {
 			continue
 		}
+		// 二进制未安装时不尝试拉起：guardian 里的 auto_start 保持原值（装好后仍生效），
+		// 但开机不应刷一串「启动失败」日志。
+		if _, _, err := m.ResolveBinary(svc.CoreType); err != nil {
+			continue
+		}
 		if err := m.Start(ctx, g.ServiceID, svc.CoreType); err != nil {
 			log.Printf("reconcile: failed to start service %d: %v", g.ServiceID, err)
 		} else {

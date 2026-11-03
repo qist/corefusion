@@ -345,7 +345,10 @@ async function fetchStatus(){
     // 后端 /node-servers/:id/status 返回的字段名是 cpu_usage/mem_usage_bytes/uptime_seconds/started_at
     //（proto CoreStatus 的 json tag），不是 cpu/mem/uptime —— 此前读错名导致状态栏
     // CPU 恒 0、内存/运行时间/启动时间全为空。
-    if(s)Object.assign(svc,{service_id:0,state:s.state||'unknown',binary_installed:binaryInstalled,version:version||s.version||'',pid:s.pid||0,cpu:s.cpu_usage||0,mem:s.mem_usage_bytes||0,uptime:s.uptime_seconds||0,started_at:s.started_at?new Date(s.started_at*1000).toISOString():0});else Object.assign(svc,{service_id:0,state:'unknown',binary_installed:binaryInstalled,version:version})
+    // 该接口只上报「在管进程」：核心已停止时列表里没有该条目。装了二进制就按 stopped
+    // 处理（否则会一直显示「加载中…」，也不会有「启动」按钮，只能去核心进程页启动）。
+    let state = (s && s.state) ? s.state : (binaryInstalled ? 'stopped' : 'unknown')
+    if(s)Object.assign(svc,{service_id:0,state,binary_installed:binaryInstalled,version:version||s.version||'',pid:s.pid||0,cpu:s.cpu_usage||0,mem:s.mem_usage_bytes||0,uptime:s.uptime_seconds||0,started_at:s.started_at?new Date(s.started_at*1000).toISOString():0});else Object.assign(svc,{service_id:0,state,binary_installed:binaryInstalled,version:version,pid:0,cpu:0,mem:0,uptime:0,started_at:0})
   }catch{}
 }
 

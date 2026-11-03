@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "İkili dosya yönetimi",
     "coreBinaries": "Çekirdek ikili dosyası",
     "proxyBinaries": "Proxy ikili dosyası",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "Panel salt yönetim modunda; yerel çekirdek süreci çalışmıyor. Yerel proxy hizmeti için tam moda dönün.",
     "installed": "Yüklü",
     "binaryPath": "İkili dosya yolu",

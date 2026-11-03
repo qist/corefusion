@@ -3135,6 +3135,7 @@ export default {
     "binaryManagement": "바이너리 관리",
     "coreBinaries": "코어 바이너리",
     "proxyBinaries": "프록시 바이너리",
+    "proxyPortConflict": "Caddy and Nginx share ports 80/443 and cannot run concurrently; on boot only the one with configured sites (or already running) is started.",
     "managementOnlyNotice": "패널이 순수 관리 모드이며 로컬 코어 프로세스가 실행되고 있지 않습니다. 로컬 프록시 서비스를 사용하려면 전체 모드로 전환하세요",
     "installed": "설치됨",
     "binaryPath": "바이너리 경로",

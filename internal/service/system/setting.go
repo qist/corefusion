@@ -773,6 +773,23 @@ func (s *SettingService) DeleteTemplate(ctx context.Context, id int64) error {
 
 // UpdateDataDir updates the data directory setting in DB and .env file.
 func (s *SettingService) UpdateDataDir(ctx context.Context, dataDir string) error {
+	// 安全审计 v6 M-9：数据目录会被整体迁移/写入，拒绝根目录与系统目录，
+	// 避免把备份/DB/证书覆盖到 /etc、/usr、/root 等位置。
+	abs, err := filepath.Abs(strings.TrimSpace(dataDir))
+	if err != nil {
+		return fmt.Errorf("invalid data dir: %w", err)
+	}
+	if abs == "/" {
+		return fmt.Errorf("invalid data dir: filesystem root is not allowed")
+	}
+	for _, root := range []string{
+		"/etc", "/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot",
+		"/proc", "/sys", "/dev", "/root", "/run",
+	} {
+		if abs == root || strings.HasPrefix(abs, root+string(filepath.Separator)) {
+			return fmt.Errorf("invalid data dir %q: system directory is not allowed", abs)
+		}
+	}
 	if err := s.repo.Set(ctx, "panel.data_dir", dataDir); err != nil {
 		return err
 	}

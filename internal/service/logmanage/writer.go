@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"corefusion/internal/util/safepath"
 )
 
 // LogWriter manages log output mode and file rotation.
@@ -192,11 +194,20 @@ func (w *LogWriter) GetFilePath() string {
 }
 
 // resolveFilePath returns the absolute path of the stdout capture file.
+//
+// 安全审计 v6 M-2：capture_path/file_path 来自管理端配置，必须落在 dataDir 内
+// （旧实现绝对路径直通 → 可以 O_APPEND 任意文件、轮转时还会 rename/删除它）。
+// 非法路径返回空串，调用方按“打开失败”处理，不会误写。
 func (w *LogWriter) resolveFilePath() string {
-	if filepath.IsAbs(w.filePath) {
-		return w.filePath
+	if strings.TrimSpace(w.filePath) == "" {
+		return ""
 	}
-	return filepath.Join(w.dataDir, w.filePath)
+	p, err := safepath.ResolveUnder(w.dataDir, w.filePath)
+	if err != nil {
+		log.Printf("[logmanage] rejected unsafe capture path %q: %v", w.filePath, err)
+		return ""
+	}
+	return p
 }
 
 // checkLoop periodically checks for rotation.

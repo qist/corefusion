@@ -117,7 +117,11 @@ func newJTI() string {
 func (j *JWT) Validate(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		return j.secret, nil
-	})
+	},
+		// 显式限定算法（安全审计 v6 M-5）：即使未来改用非对称密钥/自定义 Keyfunc，
+		// 也不会被 alg=none 或 RS256→HS256 混淆绕过。
+		jwt.WithValidMethods([]string{"HS256"}),
+	)
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, ErrTokenExpired

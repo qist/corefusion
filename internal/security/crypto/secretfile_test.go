@@ -135,3 +135,52 @@ func TestParseEnvContent(t *testing.T) {
 		t.Fatalf("unexpected parse result: %v", got)
 	}
 }
+
+// TestEnsureSecretKeyAt 锁定节点侧行为（Agent 没有 .env）：
+// 首次生成 32 字节随机密钥写入 <dir>/.env.secret（0600），之后复用不再变。
+func TestEnsureSecretKeyAt(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CF_SECRET_ENCRYPTION_KEY", "")
+	os.Unsetenv("CF_SECRET_ENCRYPTION_KEY")
+
+	first, err := EnsureSecretKeyAt(dir, "CF_SECRET_ENCRYPTION_KEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 64 {
+		t.Fatalf("key should be 64 hex chars, got %d", len(first))
+	}
+	path := filepath.Join(dir, SecretEnvFile)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("secret file not created: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Fatalf("permission = %o, want 600", perm)
+	}
+
+	second, err := EnsureSecretKeyAt(dir, "CF_SECRET_ENCRYPTION_KEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Fatalf("key must be reused across restarts, got %q vs %q", second, first)
+	}
+}
+
+// TestEnsureSecretKeyAtPrefersEnv 运维显式注入的环境变量优先，不覆盖文件。
+func TestEnsureSecretKeyAtPrefersEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CF_SECRET_ENCRYPTION_KEY", testKey)
+
+	got, err := EnsureSecretKeyAt(dir, "CF_SECRET_ENCRYPTION_KEY")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != testKey {
+		t.Fatalf("env should win, got %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, SecretEnvFile)); !os.IsNotExist(err) {
+		t.Fatalf("no file should be created when env provides the key (err=%v)", err)
+	}
+}

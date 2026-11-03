@@ -27,7 +27,32 @@ import (
 
 	"corefusion/internal/constants"
 	agent "corefusion/internal/runtime/agent"
+	secretcrypto "corefusion/internal/security/crypto"
 )
+
+// initAgentEncryptionKey 确保节点有**自己的随机加密密钥**（不是从 hostname 派生）。
+//
+// 节点没有 .env 机制：密钥单独放 $INSTALL_DIR/.env.secret（0600，data 目录之外，
+// 备份 data 不会带走）。首次启动生成 32 字节随机值，之后复用（幂等）。
+//
+// 历史兼容：`data/certs/*/meta.json` 里可能还是 hostname 派生密钥加密的 DNS 凭据，
+// DecryptSecret 的 legacy 回退仍能解开，下次续期写回时自动换成新密钥。
+//
+// 失败不致命：写不了就保持原有 hostname 派生行为，只告警 —— 不能让加密加固
+// 反而把节点启动拦住。
+func initAgentEncryptionKey(dataDir string) {
+	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") != "" {
+		return // 运维显式注入（EnvironmentFile 等）优先
+	}
+	installDir := filepath.Dir(filepath.Clean(dataDir))
+	key, err := secretcrypto.EnsureSecretKeyAt(installDir, "CF_SECRET_ENCRYPTION_KEY")
+	if err != nil {
+		log.Printf("[Agent] warning: prepare encryption key failed (%v); falling back to legacy hostname-derived key", err)
+		return
+	}
+	os.Setenv("CF_SECRET_ENCRYPTION_KEY", key)
+	log.Printf("[Agent] encryption key ready: %s", filepath.Join(installDir, secretcrypto.SecretEnvFile))
+}
 
 func main() {
 	// 证书子命令（在**节点本机**做 ACME 签发）—— 不需要面板配置，先于配置加载处理 ✓。
@@ -54,6 +79,9 @@ func main() {
 	// Ensure data directory structure
 	dataDir := cfg.Agent.DataDir
 	initDataDir(dataDir)
+	// 节点自己的随机加密密钥（data 目录之外，0600）——必须在任何
+	// EncryptSecret/DecryptSecret 之前就绪（ACME meta 加密依赖它）。
+	initAgentEncryptionKey(dataDir)
 	certsDir := filepath.Join(dataDir, "certs")
 	os.MkdirAll(certsDir, 0750)
 

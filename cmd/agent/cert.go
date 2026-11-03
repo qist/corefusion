@@ -101,6 +101,10 @@ func runCertIssue(args []string) int {
 		return 2
 	}
 
+	// 手工签发同样会写 ACME meta（其中 DNS 凭据是加密的）→ 用与 Agent 主进程
+	// 一致的「随机密钥 + 独立文件」规则，避免同一节点出现两套密钥互相解不开。
+	initAgentEncryptionKey(*dataDir)
+
 	domains := splitSANs(*sans)
 	if len(domains) == 0 {
 		fmt.Fprintln(os.Stderr, "✗ -san 必填（IP 或域名，多个用逗号分隔）")

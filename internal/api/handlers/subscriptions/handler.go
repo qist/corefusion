@@ -6,8 +6,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
 	subDomain "corefusion/internal/domain/subscription"
+	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/model/dto"
 	subService "corefusion/internal/service/subscription"
 )
@@ -45,10 +47,7 @@ func (h *Handler) List(c *gin.Context) {
 	// Mask tokens in list view
 	items := make([]gin.H, len(subs))
 	for i, s := range subs {
-		token := s.Token
-		if len(token) > 8 {
-			token = token[:8] + "***"
-		}
+		token := maskSubscriptionToken(s.Token)
 		items[i] = gin.H{
 			"id":                   s.ID,
 			"client_id":            s.ClientID,
@@ -107,7 +106,18 @@ func (h *Handler) Create(c *gin.Context) {
 	})
 }
 
+// maskSubscriptionToken 统一脱敏：只保留前 8 位，足以区分/排查，但不可直接当订阅凭证使用。
+func maskSubscriptionToken(token string) string {
+	if len(token) <= 8 {
+		return "***"
+	}
+	return token[:8] + "***"
+}
+
 // GetByID handles GET /api/v1/subscriptions/:id.
+//
+// token 是订阅凭证（拿到即可拉取客户节点/流量），**不能**让只读角色看到明文：
+// viewer 返回脱敏值，operator 及以上才返回完整 token（安全审计 v6 H-1）。
 func (h *Handler) GetByID(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -121,6 +131,12 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
+	if middleware.RankOf(c.GetString("role")) < middleware.RankOf(domainuser.RoleOperator) {
+		clone := *sub
+		clone.Token = maskSubscriptionToken(sub.Token)
+		response.OK(c, &clone)
+		return
+	}
 	response.OK(c, sub)
 }
 

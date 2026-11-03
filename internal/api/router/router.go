@@ -1629,11 +1629,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			shareDomainGroup := protected.Group("/share-domains")
 			{
 				shareDomainGroup.GET("", shareDomainH.List)
-				shareDomainGroup.POST("", shareDomainH.Create)
-				shareDomainGroup.PUT("/:id", shareDomainH.Update)
-				shareDomainGroup.DELETE("/:id", shareDomainH.Delete)
-				shareDomainGroup.DELETE("/all", shareDomainH.ClearAll)
-				shareDomainGroup.POST("/seed", shareDomainH.SeedDefaults)
+				// 分享域名是全局 CDN 入口，影响所有订阅：写操作仅 Admin（安全审计 v6 H-1）。
+				shareDomainWrite := protected.Group("/share-domains").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				shareDomainWrite.POST("", shareDomainH.Create)
+				shareDomainWrite.PUT("/:id", shareDomainH.Update)
+				shareDomainWrite.DELETE("/:id", shareDomainH.Delete)
+				shareDomainWrite.DELETE("/all", shareDomainH.ClearAll)
+				shareDomainWrite.POST("/seed", shareDomainH.SeedDefaults)
 			}
 
 			// CF IP Sources & Entries
@@ -1645,16 +1647,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			cfipGroup := protected.Group("/cfip")
 			{
 				cfipGroup.GET("/sources", cfipH.ListSources)
-				cfipGroup.POST("/sources", cfipH.CreateSource)
-				cfipGroup.PUT("/sources/:id", cfipH.UpdateSource)
-				cfipGroup.DELETE("/sources/:id", cfipH.DeleteSource)
-				cfipGroup.POST("/sources/:id/fetch", cfipH.FetchSource)
-				cfipGroup.POST("/fetch-all", cfipH.FetchAll)
 				cfipGroup.GET("/entries", cfipH.ListEntries)
-				cfipGroup.POST("/entries", cfipH.AddEntry)
-				cfipGroup.DELETE("/entries/:id", cfipH.DeleteEntry)
-				cfipGroup.DELETE("/entries", cfipH.ClearEntries)
-				cfipGroup.POST("/seed", cfipH.SeedDefaults)
+				// CF IP 池是全局出站资源，且 fetch 会发起服务端请求：
+				// 写操作仅 Admin（安全审计 v6 H-1/H-2）。
+				cfipWrite := protected.Group("/cfip").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				cfipWrite.POST("/sources", cfipH.CreateSource)
+				cfipWrite.PUT("/sources/:id", cfipH.UpdateSource)
+				cfipWrite.DELETE("/sources/:id", cfipH.DeleteSource)
+				cfipWrite.POST("/sources/:id/fetch", cfipH.FetchSource)
+				cfipWrite.POST("/fetch-all", cfipH.FetchAll)
+				cfipWrite.POST("/entries", cfipH.AddEntry)
+				cfipWrite.DELETE("/entries/:id", cfipH.DeleteEntry)
+				cfipWrite.DELETE("/entries", cfipH.ClearEntries)
+				cfipWrite.POST("/seed", cfipH.SeedDefaults)
 			}
 
 			// Services (moved under /node-servers/:id/services)
@@ -1664,17 +1669,20 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			subsGroup := protected.Group("/subscriptions")
 			{
 				subsGroup.GET("", subH.List)
-				subsGroup.POST("", subH.Create)
 				subsGroup.GET("/:id", subH.GetByID)
-				subsGroup.PUT("/:id", subH.Update)
-				subsGroup.DELETE("/:id", subH.Delete)
-				subsGroup.POST("/:id/rotate", subH.Rotate)
-				subsGroup.POST("/:id/revoke", subH.Revoke)
-				subsGroup.POST("/:id/restore", subH.Restore)
-				subsGroup.POST("/:id/enable", subH.Enable)
-				subsGroup.POST("/:id/reset-usage", subH.ResetUsage)
 				subsGroup.GET("/:id/access-logs", subH.ListAccessLogs)
 				subsGroup.GET("/:id/rotations", subH.ListRotations)
+				// 订阅写操作（含 rotate/revoke，会直接影响客户可用性）：
+				// 至少 operator；viewer 只读（安全审计 v6 H-1）。
+				subsWrite := protected.Group("/subscriptions").Use(middleware.RequireRole(domainuser.RoleOperator))
+				subsWrite.POST("", subH.Create)
+				subsWrite.PUT("/:id", subH.Update)
+				subsWrite.DELETE("/:id", subH.Delete)
+				subsWrite.POST("/:id/rotate", subH.Rotate)
+				subsWrite.POST("/:id/revoke", subH.Revoke)
+				subsWrite.POST("/:id/restore", subH.Restore)
+				subsWrite.POST("/:id/enable", subH.Enable)
+				subsWrite.POST("/:id/reset-usage", subH.ResetUsage)
 			}
 
 			// 管理端 /subscription-formats CRUD 已于 2026-10-20 下线：
@@ -1686,10 +1694,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			subendGroup := protected.Group("/subscription-endpoints")
 			{
 				subendGroup.GET("", subendH.List)
-				subendGroup.POST("", subendH.Create)
 				subendGroup.GET("/:id", subendH.GetByID)
-				subendGroup.PUT("/:id", subendH.Update)
-				subendGroup.DELETE("/:id", subendH.Delete)
+				// 订阅入口域名影响所有客户端的订阅地址：写操作仅 Admin。
+				subendWrite := protected.Group("/subscription-endpoints").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				subendWrite.POST("", subendH.Create)
+				subendWrite.PUT("/:id", subendH.Update)
+				subendWrite.DELETE("/:id", subendH.Delete)
 			}
 
 			// Clients
@@ -1717,22 +1727,24 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			planTmplGroup := protected.Group("/plan-templates")
 			{
 				planTmplGroup.GET("", planH.ListTemplates)
-				planTmplGroup.POST("", planH.CreateTemplate)
 				planTmplGroup.GET("/:id", planH.GetTemplate)
-				planTmplGroup.PUT("/:id", planH.UpdateTemplate)
-				planTmplGroup.DELETE("/:id", planH.DeleteTemplate)
-				planTmplGroup.PUT("/:id/node-groups", planH.SetTemplateNodeGroups)
 				planTmplGroup.GET("/:id/accessible-nodes", planH.GetAccessibleNodes)
 				planTmplGroup.GET("/:id/billing-node-options", planH.GetBillingNodeOptions)
 				planTmplGroup.GET("/:id/variants", planH.ListVariants)
-				planTmplGroup.POST("/:id/variants", planH.CreateVariant)
+				// 套餐价格/配额/节点组属于经济与全局配置：写操作仅 Admin。
+				planTmplWrite := protected.Group("/plan-templates").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				planTmplWrite.POST("", planH.CreateTemplate)
+				planTmplWrite.PUT("/:id", planH.UpdateTemplate)
+				planTmplWrite.DELETE("/:id", planH.DeleteTemplate)
+				planTmplWrite.PUT("/:id/node-groups", planH.SetTemplateNodeGroups)
+				planTmplWrite.POST("/:id/variants", planH.CreateVariant)
 				// Account synchronization: manually trigger account creation for existing clients
-				planTmplGroup.POST("/sync-all-accounts", planH.SyncAllAccounts)
-				planTmplGroup.POST("/:id/sync-accounts", planH.SyncAccountsForTemplate)
+				planTmplWrite.POST("/sync-all-accounts", planH.SyncAllAccounts)
+				planTmplWrite.POST("/:id/sync-accounts", planH.SyncAccountsForTemplate)
 			}
 
 			// Plan Variants (套餐规格)
-			planVariantGroup := protected.Group("/plan-variants")
+			planVariantGroup := protected.Group("/plan-variants").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				planVariantGroup.PUT("/:id", planH.UpdateVariant)
 				planVariantGroup.DELETE("/:id", planH.DeleteVariant)
@@ -1742,9 +1754,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			trafficPackGroup := protected.Group("/traffic-packs")
 			{
 				trafficPackGroup.GET("", planH.ListTrafficPacks)
-				trafficPackGroup.POST("", planH.CreateTrafficPack)
-				trafficPackGroup.PUT("/:id", planH.UpdateTrafficPack)
-				trafficPackGroup.DELETE("/:id", planH.DeleteTrafficPack)
+				// 流量包价格/配额属经济配置：写操作仅 Admin。
+				trafficPackWrite := protected.Group("/traffic-packs").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				trafficPackWrite.POST("", planH.CreateTrafficPack)
+				trafficPackWrite.PUT("/:id", planH.UpdateTrafficPack)
+				trafficPackWrite.DELETE("/:id", planH.DeleteTrafficPack)
 			}
 
 			// Charge Sites (充值站点管理)
@@ -1889,39 +1903,46 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeGroupRoute := protected.Group("/node-groups")
 			{
 				nodeGroupRoute.GET("", planH.ListNodeGroups)
-				nodeGroupRoute.POST("", planH.CreateNodeGroup)
-				nodeGroupRoute.PUT("/:id", planH.UpdateNodeGroup)
-				nodeGroupRoute.DELETE("/:id", planH.DeleteNodeGroup)
 				nodeGroupRoute.GET("/:id/members", planH.ListGroupMembers)
-				nodeGroupRoute.POST("/:id/members", planH.AddGroupMember)
-				nodeGroupRoute.DELETE("/:id/members/:mid", planH.RemoveGroupMember)
+				// 节点组变更会同时影响所有引用它的套餐/订阅：写操作仅 Admin。
+				nodeGroupWrite := protected.Group("/node-groups").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				nodeGroupWrite.POST("", planH.CreateNodeGroup)
+				nodeGroupWrite.PUT("/:id", planH.UpdateNodeGroup)
+				nodeGroupWrite.DELETE("/:id", planH.DeleteNodeGroup)
+				nodeGroupWrite.POST("/:id/members", planH.AddGroupMember)
+				nodeGroupWrite.DELETE("/:id/members/:mid", planH.RemoveGroupMember)
 			}
 
 			// Promotions (促销优惠)
 			promoGroup := protected.Group("/promotions")
 			{
 				promoGroup.GET("", planH.ListPromotions)
-				promoGroup.POST("", planH.CreatePromotion)
-				promoGroup.PUT("/:id", planH.UpdatePromotion)
-				promoGroup.DELETE("/:id", planH.DeletePromotion)
+				// validate 只读（计算折扣），保留在登录即可用的读组
 				promoGroup.POST("/validate", planH.ValidatePromotion)
+				// 优惠码涉及价格：写操作仅 Admin。
+				promoWrite := protected.Group("/promotions").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				promoWrite.POST("", planH.CreatePromotion)
+				promoWrite.PUT("/:id", planH.UpdatePromotion)
+				promoWrite.DELETE("/:id", planH.DeletePromotion)
 			}
 
 			// Mihomo Config
 			mihomoGroup := protected.Group("/mihomo")
 			{
 				mihomoGroup.GET("/configs", mihomoH.List)
-				mihomoGroup.POST("/configs", mihomoH.Create)
 				mihomoGroup.GET("/configs/:id", mihomoH.GetByID)
-				mihomoGroup.PUT("/configs/:id", mihomoH.Update)
-				mihomoGroup.DELETE("/configs/:id", mihomoH.Delete)
+				mihomoGroup.GET("/configs/:id/rules", mihomoH.ListRules)
+				// 共享 YAML / 规则会被所有关联套餐复用：写操作仅 Admin。
+				mihomoWrite := protected.Group("/mihomo").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				mihomoWrite.POST("/configs", mihomoH.Create)
+				mihomoWrite.PUT("/configs/:id", mihomoH.Update)
+				mihomoWrite.DELETE("/configs/:id", mihomoH.Delete)
 				// proxy-groups / rule-providers / yaml 子资源已于 2026-10-20 下线：
 				// 管理端直接编辑 config JSON（SubscriptionCenter.vue），零调用。
-				mihomoGroup.GET("/configs/:id/rules", mihomoH.ListRules)
-				mihomoGroup.POST("/configs/:id/rules", mihomoH.CreateRule)
-				mihomoGroup.PUT("/configs/:id/rules/order", mihomoH.ReorderRules)
-				mihomoGroup.PUT("/rules/:id", mihomoH.UpdateRule)
-				mihomoGroup.DELETE("/rules/:id", mihomoH.DeleteRule)
+				mihomoWrite.POST("/configs/:id/rules", mihomoH.CreateRule)
+				mihomoWrite.PUT("/configs/:id/rules/order", mihomoH.ReorderRules)
+				mihomoWrite.PUT("/rules/:id", mihomoH.UpdateRule)
+				mihomoWrite.DELETE("/rules/:id", mihomoH.DeleteRule)
 			}
 
 			// External Nodes
@@ -3199,26 +3220,28 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			{
 				geoRuleGlobalGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
 				geoRuleGlobalGroup.GET("/sources", geoRuleH.ListSources)
-				geoRuleGlobalGroup.POST("/sources", geoRuleH.CreateSource)
-				geoRuleGlobalGroup.PUT("/sources/:sourceId", geoRuleH.UpdateSource)
-				geoRuleGlobalGroup.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
 				geoRuleGlobalGroup.GET("/sources/:sourceId/assets", geoRuleH.FetchReleaseAssets)
-				geoRuleGlobalGroup.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
-				geoRuleGlobalGroup.POST("/sources/:sourceId/files", geoRuleH.AddFile)
-				geoRuleGlobalGroup.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
-				geoRuleGlobalGroup.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
-				geoRuleGlobalGroup.POST("/sync-all", geoRuleH.SyncAll)
 				geoRuleGlobalGroup.GET("/sync-status/:key", geoRuleH.SyncStatus)
 				geoRuleGlobalGroup.GET("/files", geoRuleH.ListFiles)
-				geoRuleGlobalGroup.POST("/files/:fileId/download", geoRuleH.Download)
 				// download-file（安全审计 H-1：需鉴权）— 常规 Bearer 头或一次性票据
 				// （scope=geo_download，票据由面板推送时签发并拼进 Agent 的下载 URL）。
 				geoRuleGlobalGroup.GET("/files/:fileId/download-file", geoRuleH.DownloadFile)
-				geoRuleGlobalGroup.DELETE("/files/:fileId", geoRuleH.DeleteFile)
-				geoRuleGlobalGroup.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
-				geoRuleGlobalGroup.POST("/seed", geoRuleH.SeedDefaults)
 				geoRuleGlobalGroup.GET("/status", geoRuleH.Status)
-				geoRuleGlobalGroup.POST("/push-all", geoRuleH.PushToAllNodes)
+				// Geo 规则会下发到所有节点：写/同步操作仅 Admin（安全审计 v6 H-1）。
+				geoRuleWrite := protected.Group("/geo-rules").Use(middleware.RequireRole(domainuser.RoleAdmin))
+				geoRuleWrite.POST("/sources", geoRuleH.CreateSource)
+				geoRuleWrite.PUT("/sources/:sourceId", geoRuleH.UpdateSource)
+				geoRuleWrite.DELETE("/sources/:sourceId", geoRuleH.DeleteSource)
+				geoRuleWrite.POST("/sources/:sourceId/select", geoRuleH.SelectFiles)
+				geoRuleWrite.POST("/sources/:sourceId/files", geoRuleH.AddFile)
+				geoRuleWrite.POST("/sources/:sourceId/sync", geoRuleH.SyncSource)
+				geoRuleWrite.PUT("/sources/:sourceId/schedule", geoRuleH.ToggleSchedule)
+				geoRuleWrite.POST("/sync-all", geoRuleH.SyncAll)
+				geoRuleWrite.POST("/files/:fileId/download", geoRuleH.Download)
+				geoRuleWrite.DELETE("/files/:fileId", geoRuleH.DeleteFile)
+				geoRuleWrite.PUT("/files/:fileId/auto-sync", geoRuleH.SetAutoSync)
+				geoRuleWrite.POST("/seed", geoRuleH.SeedDefaults)
+				geoRuleWrite.POST("/push-all", geoRuleH.PushToAllNodes)
 			}
 
 			// Portal template management (admin only)

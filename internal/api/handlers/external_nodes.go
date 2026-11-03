@@ -13,6 +13,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gopkg.in/yaml.v3"
 
+	"corefusion/internal/api/middleware"
+	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/model/entity"
 	"corefusion/pkg/netutil"
 
@@ -33,15 +35,18 @@ func NewExternalNodeHandler(sourceRepo *repository.ExternalNodeSourceRepository,
 func (h *ExternalNodeHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/external-nodes")
 	g.GET("/sources", h.ListSources)
-	g.POST("/sources", h.CreateSource)
-	g.PUT("/sources/:id", h.UpdateSource)
-	g.DELETE("/sources/:id", h.DeleteSource)
-	g.POST("/sources/parse", h.Parse)
-
 	g.GET("", h.ListNodes)
 	g.GET("/:id", h.GetNode)
-	g.PUT("/:id", h.UpdateNode)
-	g.DELETE("/:id", h.DeleteNode)
+
+	// 外部节点/来源会被所有套餐复用，且 source_url 会触发服务端抓取：
+	// 写操作仅 Admin（安全审计 v6 H-1）。
+	write := rg.Group("/external-nodes").Use(middleware.RequireRole(domainuser.RoleAdmin))
+	write.POST("/sources", h.CreateSource)
+	write.PUT("/sources/:id", h.UpdateSource)
+	write.DELETE("/sources/:id", h.DeleteSource)
+	write.POST("/sources/parse", h.Parse)
+	write.PUT("/:id", h.UpdateNode)
+	write.DELETE("/:id", h.DeleteNode)
 }
 
 // --- Source CRUD ---

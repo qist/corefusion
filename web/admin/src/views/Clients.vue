@@ -329,7 +329,10 @@ const subDetailQrLoading = ref(false)
 const getClientToken = (row) => {
   if (!row.subscription_id) return ''
   const sub = subscriptions.value.find(s => s.id === row.subscription_id)
-  return sub?.token || ''
+  const token = sub?.token || ''
+  // viewer 拿到的 token 是脱敏值（前 8 位 + ***）：不能当订阅链接用，
+  // 直接不显示「查看详情」按钮（operator+ 才会返回完整 token）。
+  return token.includes('***') ? '' : token
 }
 const isPrivateHost = (h) => {
   if (!h) return true

@@ -26,6 +26,7 @@ import (
 	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -77,6 +78,11 @@ func NewService(repo *repository.BackupRepository, dataDir string, database *gor
 func (s *Service) CreateBackup(ctx context.Context, name, backupType string) (*entity.BackupRecord, error) {
 	if name == "" {
 		name = fmt.Sprintf("backup_%s", time.Now().Format("20060102_150405"))
+	}
+	// 安全审计 v6 M-1：name 来自请求体/定时任务，必须是不含分隔符的纯名字，
+	// 否则 `../../root/.ssh/authorized_keys` 会把备份写到任意路径。
+	if err := safepath.CheckName("backup name", name); err != nil {
+		return nil, err
 	}
 
 	backupDir := filepath.Join(s.dataDir, "backup")

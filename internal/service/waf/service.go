@@ -16,6 +16,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
 )
 
@@ -598,7 +599,27 @@ func (s *Service) GetDomainConfig(ctx context.Context, serverID int64, domain st
 }
 
 // SaveDomainConfig saves the WAF config for a specific domain on a server.
+// validateWAFDomainRuleDir 拒绝 rule_dir 中的 `..`/NUL（安全审计 v6 H-4）。
+// 非法 JSON 不在这里报错（后续逻辑会处理），只校验已解析出的 rule_dir。
+func validateWAFDomainRuleDir(domain, config string) error {
+	var cfg map[string]interface{}
+	if json.Unmarshal([]byte(config), &cfg) != nil {
+		return nil
+	}
+	ruleDir, _ := cfg["rule_dir"].(string)
+	if ruleDir == "" {
+		return nil
+	}
+	if err := safepath.RejectTraversal("waf rule_dir", ruleDir); err != nil {
+		return fmt.Errorf("domain %s: %w", domain, err)
+	}
+	return nil
+}
+
 func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, config string) error {
+	if err := validateWAFDomainRuleDir(domain, config); err != nil {
+		return err
+	}
 	cfg := &entity.WafDomainConfig{
 		ServerID: serverID,
 		Domain:   domain,
@@ -630,6 +651,10 @@ func (s *Service) SaveDomainConfigsBulk(ctx context.Context, serverID int64, con
 	// Insert each domain config
 	for domain, cfgRaw := range raw {
 		if domain == "_comment" {
+			continue
+		}
+		if err := validateWAFDomainRuleDir(domain, string(cfgRaw)); err != nil {
+			log.Printf("[WAF] reject bulk domain config: %v", err)
 			continue
 		}
 		cfg := &entity.WafDomainConfig{
@@ -906,9 +931,19 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 			}
 			// Three-layer merge: global+node (already in `merged`) + domain rules
 			domainMerged := s.mergeDomainRules(ctx, merged, serverID, dc.Domain)
-			domainDir := filepath.Join(s.wafRulesDir(), ruleDir)
+			// 安全审计 v6 H-4：rule_dir 来自域配置，必须解析到 waf-rules 之下，
+			// 否则 `../../../../root/.ssh` + 规则名 `authorized_keys` 可以写 root 公钥。
+			domainDir, derr := safepath.ResolveUnder(s.wafRulesDir(), ruleDir)
+			if derr != nil {
+				log.Printf("[WAF] skip unsafe rule_dir %q for domain %s: %v", ruleDir, dc.Domain, derr)
+				continue
+			}
 			os.MkdirAll(domainDir, 0755)
 			for name, content := range domainMerged {
+				if err := safepath.CheckName("waf rule name", name); err != nil {
+					log.Printf("[WAF] skip unsafe rule name %q for domain %s: %v", name, dc.Domain, err)
+					continue
+				}
 				filePath := filepath.Join(domainDir, name)
 				if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
 					log.Printf("[WAF] failed to sync rule %s to domain %s: %v", name, dc.Domain, err)
@@ -1184,7 +1219,15 @@ func (s *Service) CollectAllFilesForProxyTypes(ctx context.Context, serverID int
 			}
 			// Three-layer merge: global+node (already in `merged`) + domain rules
 			domainMerged := s.mergeDomainRules(ctx, merged, serverID, dc.Domain)
+			if err := safepath.RejectTraversal("waf rule_dir", ruleDir); err != nil {
+				log.Printf("[WAF] skip unsafe rule_dir %q for domain %s: %v", ruleDir, dc.Domain, err)
+				continue
+			}
 			for name, content := range domainMerged {
+				if err := safepath.CheckName("waf rule name", name); err != nil {
+					log.Printf("[WAF] skip unsafe rule name %q for domain %s: %v", name, dc.Domain, err)
+					continue
+				}
 				relPath := filepath.Join(ruleDir, name)
 				files = append(files, &WAFFile{
 					Path:    relPath,

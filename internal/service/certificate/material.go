@@ -37,18 +37,29 @@ func (s *Service) ReadCertMaterial(ctx context.Context, id int64) (*CertMaterial
 	certPEM := strings.TrimSpace(c.CertContent)
 	keyPEM := strings.TrimSpace(c.KeyContent)
 
+	// 安全审计 v6 H-5：这三条路径来自数据库，读取前必须拒绝 `..`，
+	// 否则可借 `cert_path=../../../etc/shadow` 读任意 root 文件。
 	if certPEM == "" && strings.TrimSpace(c.CertPath) != "" {
+		if verr := validateCertFilePath("cert_path", c.CertPath); verr != nil {
+			return nil, verr
+		}
 		if b, rerr := os.ReadFile(filepath.Join(s.dataDir, c.CertPath)); rerr == nil {
 			certPEM = strings.TrimSpace(string(b))
 		}
 	}
 	if keyPEM == "" && strings.TrimSpace(c.KeyPath) != "" {
+		if verr := validateCertFilePath("key_path", c.KeyPath); verr != nil {
+			return nil, verr
+		}
 		if b, rerr := os.ReadFile(filepath.Join(s.dataDir, c.KeyPath)); rerr == nil {
 			keyPEM = strings.TrimSpace(string(b))
 		}
 	}
 	// 有些老记录只落了 fullchain 文件 ✓
 	if certPEM == "" && strings.TrimSpace(c.FullchainPath) != "" {
+		if verr := validateCertFilePath("fullchain_path", c.FullchainPath); verr != nil {
+			return nil, verr
+		}
 		if b, rerr := os.ReadFile(filepath.Join(s.dataDir, c.FullchainPath)); rerr == nil {
 			certPEM = strings.TrimSpace(string(b))
 		}

@@ -22,6 +22,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/cert"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
 )
 
@@ -164,12 +165,30 @@ type CreateCertificateInput struct {
 	ExpiresAt     time.Time `json:"expires_at" binding:"required"`
 }
 
+// validateCertFilePath 拒绝证书路径中的 `..`/NUL（安全审计 v6 H-5）。
+// 仍然允许管理员配置绝对路径（例如 nginx 自己的证书目录），但禁止穿越。
+func validateCertFilePath(what, p string) error {
+	if strings.TrimSpace(p) == "" {
+		return nil
+	}
+	return safepath.RejectTraversal(what, p)
+}
+
 // Create creates a new certificate record.
 func (s *Service) Create(ctx context.Context, input CreateCertificateInput) (*entity.Certificate, error) {
 	// Check if domain already exists
 	existing, _ := s.repo.GetByDomain(ctx, input.Domain)
 	if existing != nil {
 		return nil, errors.New("certificate already exists for this domain")
+	}
+	for what, p := range map[string]string{
+		"cert_path":      input.CertPath,
+		"key_path":       input.KeyPath,
+		"fullchain_path": input.FullchainPath,
+	} {
+		if err := validateCertFilePath(what, p); err != nil {
+			return nil, err
+		}
 	}
 
 	autoRenew := 0
@@ -648,12 +667,21 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateCertificateI
 		cert.ProviderType = *input.ProviderType
 	}
 	if input.CertPath != nil {
+		if err := validateCertFilePath("cert_path", *input.CertPath); err != nil {
+			return nil, err
+		}
 		cert.CertPath = *input.CertPath
 	}
 	if input.KeyPath != nil {
+		if err := validateCertFilePath("key_path", *input.KeyPath); err != nil {
+			return nil, err
+		}
 		cert.KeyPath = *input.KeyPath
 	}
 	if input.FullchainPath != nil {
+		if err := validateCertFilePath("fullchain_path", *input.FullchainPath); err != nil {
+			return nil, err
+		}
 		cert.FullchainPath = *input.FullchainPath
 	}
 	if input.AutoRenew != nil {
@@ -1282,6 +1310,19 @@ func (s *Service) SyncCertsToDisk(ctx context.Context) error {
 	count, backfilled := 0, 0
 	for _, c := range certs {
 		if c.CertContent == "" || c.KeyContent == "" {
+			continue
+		}
+		// 安全审计 v6 H-5：启动时会把库里所有证书重新落盘，路径必须拒绝 `..`。
+		if err := validateCertFilePath("cert_path", c.CertPath); err != nil {
+			log.Printf("Sync cert %s: %v", c.Domain, err)
+			continue
+		}
+		if err := validateCertFilePath("key_path", c.KeyPath); err != nil {
+			log.Printf("Sync key %s: %v", c.Domain, err)
+			continue
+		}
+		if err := validateCertFilePath("fullchain_path", c.FullchainPath); err != nil {
+			log.Printf("Sync fullchain %s: %v", c.Domain, err)
 			continue
 		}
 		certPath := c.CertPath

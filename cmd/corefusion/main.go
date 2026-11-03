@@ -29,6 +29,7 @@ import (
 	"corefusion/internal/runtime/agent/ratelimit"
 	"corefusion/internal/runtime/healthcheck"
 	"corefusion/internal/runtime/process"
+	secretcrypto "corefusion/internal/security/crypto"
 	authService "corefusion/internal/service/auth"
 	binariesSvc "corefusion/internal/service/binaries"
 	"corefusion/internal/service/bootstrap"
@@ -92,61 +93,82 @@ Commands:
 // It also populates os.Environ so that code using os.Getenv (e.g.
 // CF_SECRET_ENCRYPTION_KEY, JWT_SECRET, CF_TRUSTED_PROXIES) can read values
 // from .env. Existing system environment variables are NOT overwritten.
-// hardenDotEnvPermissions 确保 `.env` 只有属主可读（安全审计 v5 P-4：它含 JWT_SECRET 等密钥）。
+// hardenDotEnvPermissions 确保 `.env` 与 `.env.secret` 只有属主可读
+// （安全审计 v5 P-4：它们含 JWT_SECRET / 加密密钥）。
 //
 // 放在 loadEnv 里是有意的：进程有多个启动入口（server / agent 等）都会先 loadEnv ✓，
 // 挂在读取处能保证**每条启动路径**都收紧一次，不依赖谁记得调用 ✗。只在权限**过宽**时才 chmod ✗，
 // 并用 sync.Once 避免重复系统调用。
 func hardenDotEnvPermissions() {
-	info, err := os.Stat(".env")
-	if err != nil {
-		return
+	for _, path := range []string{".env", secretcrypto.SecretEnvFile} {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+		if info.Mode().Perm()&0077 == 0 {
+			continue // 已只有属主可访问
+		}
+		if err := os.Chmod(path, 0600); err != nil {
+			log.Printf("[startup] warning: chmod %s failed: %v", path, err)
+			continue
+		}
+		log.Printf("[startup] hardened %s permissions to 0600 (file contains secrets)", path)
 	}
-	if info.Mode().Perm()&0077 == 0 {
-		return // 已只有属主可访问
-	}
-	if err := os.Chmod(".env", 0600); err != nil {
-		log.Printf("[startup] warning: chmod .env failed: %v", err)
-		return
-	}
-	log.Println("[startup] hardened .env permissions to 0600 (file contains secrets)")
 }
 
-var dotEnvHardened sync.Once
+var (
+	dotEnvHardened  sync.Once
+	secretRelocated sync.Once
+)
 
 func loadEnv() map[string]string {
 	dotEnvHardened.Do(hardenDotEnvPermissions)
 	env := make(map[string]string)
-	f, err := os.Open(".env")
-	if err != nil {
-		return env
-	}
-	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+	if f, err := os.Open(".env"); err == nil {
+		defer f.Close()
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				// System environment variables take precedence over .env file
+				// values. If a key is already set in the system environment
+				// (e.g. via `export CF_DB_DSN=mysql://...`), use that value
+				// instead of the .env file value.
+				if sysVal := os.Getenv(key); sysVal != "" {
+					val = sysVal
+				}
+				env[key] = val
+				// Populate os.Environ for keys not yet set.
+				if os.Getenv(key) == "" {
+					os.Setenv(key, val)
+				}
+			}
+		}
+	}
+
+	// 独立密钥文件：.env 里没有该键时再从 .env.secret 读（.env 优先，保证存量行为不变）。
+	for key := range secretcrypto.SecretEnvKeys {
+		if env[key] != "" {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			val := strings.TrimSpace(parts[1])
-			// System environment variables take precedence over .env file
-			// values. If a key is already set in the system environment
-			// (e.g. via `export CF_DB_DSN=mysql://...`), use that value
-			// instead of the .env file value.
-			if sysVal := os.Getenv(key); sysVal != "" {
-				val = sysVal
-			}
-			env[key] = val
-			// Populate os.Environ for keys not yet set.
+		if v := secretcrypto.ReadSecretEnvValue(key); v != "" {
+			env[key] = v
 			if os.Getenv(key) == "" {
-				os.Setenv(key, val)
+				os.Setenv(key, v)
 			}
 		}
 	}
+
+	// 存量部署：把 .env 里的密钥搬到 .env.secret（同值，幂等）。
+	secretRelocated.Do(func() { secretcrypto.RelocateKeyToSecretFile("CF_SECRET_ENCRYPTION_KEY") })
+
 	return env
 }
 
@@ -448,7 +470,8 @@ func runServer(args []string) {
 	middleware.SetJWT(jwtHandler)
 
 	// 安全审计 M-4：CF_SECRET_ENCRYPTION_KEY 缺省时不再使用"主机名派生"的
-	// 可穷举密钥 —— 首启生成随机密钥写入 .env（0600，复用 JWT_SECRET 的现成模式）。
+	// 可穷举密钥 —— 首启生成随机密钥写入**独立隐藏文件** .env.secret（0600），
+	// 与 .env 里日常要查看的配置分离（降低误 cat/截图/贴日志时的暴露面）。
 	// 升级场景：库里已有的历史密文（旧主机名密钥加密）由 DecryptSecret 的
 	// legacy 兜底继续可解，并打印迁移告警。
 	if os.Getenv("CF_SECRET_ENCRYPTION_KEY") == "" {
@@ -457,9 +480,16 @@ func runServer(args []string) {
 			log.Fatalf("failed to generate secret encryption key: %v", err)
 		}
 		encKey := hex.EncodeToString(b)
-		saveEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey)
+		if err := secretcrypto.SaveSecretEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey); err != nil {
+			// 写独立文件失败时退回 .env，绝不因为落盘失败而让密钥只存在内存里
+			// （重启后密钥丢失 = 库里所有密文报废）。
+			log.Printf("[startup] warning: write %s failed (%v), falling back to .env", secretcrypto.SecretEnvFile, err)
+			saveEnvValue("CF_SECRET_ENCRYPTION_KEY", encKey)
+			log.Println("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to .env")
+		} else {
+			log.Printf("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to %s", secretcrypto.SecretEnvFile)
+		}
 		os.Setenv("CF_SECRET_ENCRYPTION_KEY", encKey)
-		log.Println("[startup] generated random CF_SECRET_ENCRYPTION_KEY and saved to .env")
 	}
 
 	// Create initial admin

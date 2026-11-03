@@ -1194,7 +1194,7 @@ func loadEnvFile() map[string]string {
 	env := make(map[string]string)
 	data, err := os.ReadFile(".env")
 	if err != nil {
-		return env
+		data = nil
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
@@ -1204,6 +1204,15 @@ func loadEnvFile() map[string]string {
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
 			env[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+		}
+	}
+	// 独立密钥文件：.env 里没有的密钥键再从 .env.secret 补
+	// （加密密钥与日常配置分离，见 internal/security/crypto/secretfile.go）。
+	for k := range crypto.SecretEnvKeys {
+		if env[k] == "" {
+			if v := crypto.ReadSecretEnvValue(k); v != "" {
+				env[k] = v
+			}
 		}
 	}
 	return env
@@ -1302,14 +1311,17 @@ func setIntIfExist(m map[string]string, key string, target *int) {
 
 // --- Encryption Key Config ---
 
-// IsEncryptionKeyConfigured checks if CF_SECRET_ENCRYPTION_KEY is set in .env.
+// IsEncryptionKeyConfigured checks if CF_SECRET_ENCRYPTION_KEY is set
+// (in .env for legacy deployments, or in the dedicated .env.secret file).
 func (s *SettingService) IsEncryptionKeyConfigured() bool {
 	env := loadEnvFile()
 	key := env["CF_SECRET_ENCRYPTION_KEY"]
 	return key != "" && key != "0000000000000000000000000000000000000000000000000000000000000000"
 }
 
-// GenerateAndSaveEncryptionKey generates a random 32-byte key and saves it to .env.
+// GenerateAndSaveEncryptionKey generates a random 32-byte key and saves it to the
+// dedicated hidden file .env.secret (0600), keeping it out of .env where ordinary
+// config lives. Falls back to .env only if the dedicated file cannot be written.
 // Returns the generated key (for preview only) or error.
 // WARNING: Once generated, do not change this key, or all encrypted data (charge cards, charge site secrets, etc.) will be lost!
 func (s *SettingService) GenerateAndSaveEncryptionKey() (string, error) {
@@ -1320,9 +1332,13 @@ func (s *SettingService) GenerateAndSaveEncryptionKey() (string, error) {
 	}
 	key := hex.EncodeToString(b)
 
-	// Save to .env file
-	if err := saveEnvFile("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
-		return "", err
+	// Save to the dedicated secret file; never lose the key just because the
+	// preferred location failed (restart with a new key would orphan all ciphertext).
+	if err := crypto.SaveSecretEnvValue("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
+		log.Printf("[setting] warning: write %s failed (%v), falling back to .env", crypto.SecretEnvFile, err)
+		if err := saveEnvFile("CF_SECRET_ENCRYPTION_KEY", key); err != nil {
+			return "", err
+		}
 	}
 
 	return key, nil

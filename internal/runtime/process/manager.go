@@ -461,6 +461,13 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	}
 	m.killOrphanProcesses(managedPids, relBinPath, relConfigPath)
 
+	// 清理崩溃后残留的 unix socket：进程被 SIGKILL/OOM 时 *net.UnixListener 来不及
+	// unlink，下次 bind 同一路径会 EADDRINUSE，核心永远起不来（表现为节点一直离线、
+	// 配置却完全正确）。只删配置里声明且确认没有存活实例的 socket。
+	if n := cleanupStaleUnixSockets(configPath); n > 0 {
+		log.Printf("process: cleaned %d stale unix socket(s) before starting %s", n, coreType)
+	}
+
 	// Ensure geo files are accessible from the panel's lookup paths.
 	rulesDir := filepath.Join(m.dataDir, "rules")
 	if _, err := os.Stat(rulesDir); err == nil {

@@ -435,6 +435,14 @@ func (h *NginxHandler) SaveAndApply(c *gin.Context) {
 		return
 	}
 	if isLocal {
+		// 只写文件不重载 = 接口叫"保存并应用"但实际没生效：配置要等下一次重启才可见
+		// （实测：保存后 nginx worker 还是旧配置，新增的 SNI 规则完全不起作用）。
+		if h.proxyMgr != nil {
+			if err := h.proxyMgr.ReloadProxy(c.Request.Context(), proxy.ProxyNginx); err != nil {
+				response.InternalError(c, "RELOAD_FAILED", err.Error())
+				return
+			}
+		}
 		// Push config to mirror nodes so they get the updated nginx.conf.
 		if h.nodeOp != nil {
 			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "nginx", []byte(config))

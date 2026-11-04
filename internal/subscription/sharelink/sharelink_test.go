@@ -250,8 +250,7 @@ func TestRealityClientParamsShapes(t *testing.T) {
 	}
 }
 
-// 只存了服务端私钥（面板里很常见：编辑器/老数据没保存 pbk）时必须**推导出公钥**：
-// 客户端没有 pbk 就完全连不上（链接里缺 pbk、xray 片段 publicKey 缺失会被 xray 拒载）。
+// 只存了服务端私钥（面板里很常见：编辑器/老数据没保存 pbk）时必须**推导出公钥**：// 客户端没有 pbk 就完全连不上（链接里缺 pbk、xray 片段 publicKey 缺失会被 xray 拒载）。
 func TestRealityClientParamsDerivesPublicKey(t *testing.T) {
 	// xray 的 privateKey 推导（用 reality 包同一实现的已知测试向量校验一致性）
 	const priv = "CAP0iqPwrizd4edy_hLIKtlpA7V9WE2gAU0LxpfeCUY"
@@ -283,5 +282,31 @@ func TestRealityClientParamsDerivesPublicKey(t *testing.T) {
 	})
 	if !strings.Contains(link, "pbk="+pbk) {
 		t.Errorf("链接缺推导出的 pbk: %s", link)
+	}
+}
+
+// xray 的 serverNames / shortIds 里 "" 是"允许无 SNI / 空 shortId"的**服务端标记**，
+// 不是可用的客户端参数：客户端 sni 为空、sid 为空时 REALITY 握手会失败（xray 明确要求
+// serverName 非空；空 shortId 只对服务端列表里含 "" 的入站成立）。
+// 以前 getStringSlice 把 "" 原样保留，`list[0]` 取到空串 → 链接里没有 sni/sid、
+// mihomo 片段没有 servername/short-id（59026 / 22554 系列实测就是这样）。
+func TestRealityClientParamsSkipsEmptyEntries(t *testing.T) {
+	got := RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
+		"publicKey":   "PBK",
+		"serverNames": []interface{}{"", "ziftra.com", "qomvix.com"},
+		"shortIds":    []interface{}{"", "d6b95c57af3682aa"},
+	}})
+	if got.ServerName != "ziftra.com" {
+		t.Errorf("ServerName = %q, want ziftra.com（应跳过空串）", got.ServerName)
+	}
+	if got.ShortID != "d6b95c57af3682aa" {
+		t.Errorf("ShortID = %q, want d6b95c57af3682aa（应跳过空串）", got.ShortID)
+	}
+	// 只有空串时保持空（无 SNI / 空 shortId 的入站语义不变，不能凭空捏一个值）
+	got = RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
+		"serverNames": []interface{}{""}, "shortIds": []interface{}{""},
+	}})
+	if got.ServerName != "" || got.ShortID != "" {
+		t.Errorf("全空列表应保持空: %+v", got)
 	}
 }

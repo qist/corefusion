@@ -3051,6 +3051,11 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if rp.MLDSA65Verify != "" {
 				ro["mldsa65-verify"] = rp.MLDSA65Verify
 			}
+			// mihomo 默认会把 ClientHello 里的 X25519MLKEM768 key share 删掉
+			// （component/tls/reality.go 注释：旧 reality 服务端不兼容），而 xray 26 的 REALITY
+			// 服务端恰恰按"带 MLKEM 的指纹"校验 → 删掉就认证失败。mihomoconv 由链接转换时会补这个
+			// 字段，但**订阅 YAML 是直接由 Node.Extra 渲染的**，不补就只在这一条路径上失效。
+			ro["support-x25519mlkem768"] = true
 			if len(ro) > 0 {
 				extra["reality-opts"] = ro
 				// 供 sing-box 格式剔除判定：xray ≥26.9.8 的 REALITY 服务端要求 ClientHello 带

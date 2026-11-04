@@ -22,8 +22,10 @@ func TestNginxConfigSocketOnlySiteDoesNotListenOn443(t *testing.T) {
 		Enabled:       true,
 	}}
 	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
-	if !strings.Contains(cfg, "listen unix:/dev/shm/nginx.sock proxy_protocol;") {
-		t.Fatalf("缺少 unix listen：\n%s", cfg)
+	// 站点带证书时必须 `listen unix:... ssl proxy_protocol`：REALITY 回落目标要靠这个
+	// 完成 TLS 握手，缺 ssl 就是明文 HTTP（已认证的 REALITY 连接也会失败）。
+	if !strings.Contains(cfg, "listen unix:/dev/shm/nginx.sock ssl proxy_protocol;") {
+		t.Fatalf("缺少带 ssl 的 unix listen：\n%s", cfg)
 	}
 	if strings.Contains(cfg, "listen 443") || strings.Contains(cfg, "listen 80") {
 		t.Fatalf("socket-only 站点不应再监听 443/80：\n%s", cfg)

@@ -630,11 +630,21 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if site.ListenSocket != "" && !hasSocket {
 				// unix socket 也要按站点开关声明 proxy_protocol：否则前置层发来的
 				// PROXY 头会被当成请求行 → 400，且 $proxy_protocol_addr 恒为空。
+				//
+				// 站点自带证书时还必须带 ssl：REALITY 的回落目标就是这么用的
+				// （unix:/dev/shm/nginx.sock ssl proxy_protocol）。漏了 ssl，target 变成
+				// 明文 HTTP —— REALITY 要把客户端的 ClientHello 转发给 target、再把
+				// target 的 ServerHello 回给客户端，target 不吐 TLS 时**已认证的连接也握手失败**
+				// （客户端报 "first record does not look like a TLS handshake" 或证书不匹配）。
+				sslParam := ""
+				if site.CertPath != "" && site.KeyPath != "" {
+					sslParam = " ssl"
+				}
 				if site.ProxyProtocol {
-					sb.WriteString(fmt.Sprintf("        listen unix:%s proxy_protocol;\n", site.ListenSocket))
+					sb.WriteString(fmt.Sprintf("        listen unix:%s%s proxy_protocol;\n", site.ListenSocket, sslParam))
 					socketProxyProtocol = true
 				} else {
-					sb.WriteString(fmt.Sprintf("        listen unix:%s;\n", site.ListenSocket))
+					sb.WriteString(fmt.Sprintf("        listen unix:%s%s;\n", site.ListenSocket, sslParam))
 				}
 				hasSocket = true
 			}

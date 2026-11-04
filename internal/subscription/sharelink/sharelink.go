@@ -604,7 +604,11 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	case []interface{}:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			if s, ok := item.(string); ok {
+			// 空串必须丢掉：xray 的 serverNames/shortIds 里 "" 是"接受无 SNI / 空 shortId"的
+			// 标记（很常见，面板新建入站默认就有），但它**不是**可用的客户端参数。
+			// 以前原样保留，`list[0]` 取到 "" 后链接里就没有 sni/sid、
+			// mihomo 片段也没有 servername/short-id（实测 59026 系列就是这样）。
+			if s, ok := item.(string); ok && s != "" {
 				out = append(out, s)
 			}
 		}

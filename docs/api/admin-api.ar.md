@@ -1144,7 +1144,6 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/client-auth/articles/:slug` | عام | الحصول على المادة |
 | GET | `/api/v1/client-auth/balance` | عام | احصل على التوازن |
 | GET | `/api/v1/client-auth/balance/transactions` | عام | معاملات الرصيد |
-| GET | `/api/v1/client-auth/bills` | عام | قائمة الطلبات |
 | POST | `/api/v1/client-auth/change-password` | عام | تغيير كلمة المرور |
 | POST | `/api/v1/client-auth/charge/create` | عام | إنشاء أمر إعادة الشحن |
 | GET | `/api/v1/client-auth/charge/orders` | عام | قائمة أوامر إعادة الشحن |
@@ -1158,9 +1157,9 @@ CRUD لمقالات البوابة.
 | POST | `/api/v1/client-auth/gifts/:id/claim` | عام | المطالبة بالهدية |
 | GET | `/api/v1/client-auth/invoices` | عام | قائمة الطلبات |
 | GET | `/api/v1/client-auth/invoices/:id` | عام | تفاصيل الطلب |
-| GET | `/api/v1/client-auth/ip-whitelist` | عام | قائمة IP المسموح بها |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | عام | إزالة من قائمة IP المسموح بها |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | عام | إضافة IP تلقائيًا |
+| GET | `/api/v1/client-auth/settings/whitelist` | عام | قائمة IP المسموح بها |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عام | إزالة من قائمة IP المسموح بها |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | عام | إضافة IP تلقائيًا |
 | POST | `/api/v1/client-auth/login` | عام | تسجيل الدخول |
 | POST | `/api/v1/client-auth/logout` | عام | تسجيل الخروج |
 | POST | `/api/v1/client-auth/logs/package` | عام | إنشاء حزمة السجل |
@@ -1182,10 +1181,6 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/client-auth/orders/:id` | عام | تفاصيل الطلب |
 | GET | `/api/v1/client-auth/plans` | عام | قائمة الخطة |
 | GET | `/api/v1/client-auth/plans/:id` | عام | تفاصيل الخطة |
-| GET | `/api/v1/client-auth/profile` | عام | احصل على الملف الشخصي |
-| PUT | `/api/v1/client-auth/profile` | عام | تحديث الملف الشخصي |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | عام | ربط حساب طرف ثالث |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | عام | إلغاء ربط حساب الطرف الثالث |
 | GET | `/api/v1/client-auth/referral/code` | عام | الحصول على رمز التحقق من الإحالة |
 | GET | `/api/v1/client-auth/referral/records` | عام | قائمة سجلات الإحالة |
 | GET | `/api/v1/client-auth/referral/stats` | عام | احصل على إحصائيات الإحالة |
@@ -1194,6 +1189,7 @@ CRUD لمقالات البوابة.
 | POST | `/api/v1/client-auth/refresh` | عام | تحديث |
 | POST | `/api/v1/client-auth/register` | عام | سجل |
 | POST | `/api/v1/client-auth/reset-subscription` | عام | إعادة تعيين الاشتراك |
+| PUT | `/api/v1/client-auth/settings` | عام | تحديث الملف الشخصي |
 | POST | `/api/v1/client-auth/rotate-token` | عام | تدوير رمز الاشتراك |
 | POST | `/api/v1/client-auth/self-unban` | عام | إلغاء حظر الخدمة الذاتية |
 | PUT | `/api/v1/client-auth/settings` | عام | تحديث الإعدادات |
@@ -1228,21 +1224,21 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| POST | `/runtime/apply` | عام | تطبيق |
-| GET | `/runtime/apply-jobs` | تم تسجيل الدخول | قائمة الوظائف |
-| GET | `/runtime/apply-jobs/:id` | تم تسجيل الدخول | احصل على وظيفة |
-| POST | `/runtime/apply-jobs/:id/cancel` | عام | إلغاء المهمة |
-| POST | `/runtime/apply-jobs/:id/retry` | عام | أعد محاولة المهمة |
-| POST | `/runtime/disable-proxy` | عام | تعطيل الوكيل |
-| POST | `/runtime/dry-run` | تم تسجيل الدخول | التنفيذ الجاف |
-| GET | `/runtime/nodes` | تم تسجيل الدخول | قائمة العقد |
-| GET | `/runtime/overview` | تم تسجيل الدخول | نظرة عامة |
-| POST | `/runtime/rollback` | عام | التراجع |
-| GET | `/runtime/snapshots` | تم تسجيل الدخول | قائمة اللقطات |
-| POST | `/runtime/snapshots` | تم تسجيل الدخول | إنشاء لقطة |
-| DELETE | `/runtime/snapshots/:id` | عام | حذف لقطة |
-| GET | `/runtime/snapshots/:id` | تم تسجيل الدخول | احصل على لقطة |
-| POST | `/runtime/verify` | تم تسجيل الدخول | تحقق |
+| POST | `/api/v1/runtime/apply` | المشرف | تطبيق |
+| GET | `/api/v1/runtime/apply-jobs` | تم تسجيل الدخول | قائمة الوظائف |
+| GET | `/api/v1/runtime/apply-jobs/:id` | تم تسجيل الدخول | احصل على وظيفة |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | المشرف | إلغاء المهمة |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | المشرف | أعد محاولة المهمة |
+| POST | `/api/v1/runtime/disable-proxy` | المشرف | تعطيل الوكيل |
+| POST | `/api/v1/runtime/dry-run` | تم تسجيل الدخول | التنفيذ الجاف |
+| GET | `/api/v1/runtime/nodes` | تم تسجيل الدخول | قائمة العقد |
+| GET | `/api/v1/runtime/overview` | تم تسجيل الدخول | نظرة عامة |
+| POST | `/api/v1/runtime/rollback` | المشرف | التراجع |
+| GET | `/api/v1/runtime/snapshots` | تم تسجيل الدخول | قائمة اللقطات |
+| POST | `/api/v1/runtime/snapshots` | تم تسجيل الدخول | إنشاء لقطة |
+| DELETE | `/api/v1/runtime/snapshots/:id` | المشرف | حذف لقطة |
+| GET | `/api/v1/runtime/snapshots/:id` | تم تسجيل الدخول | احصل على لقطة |
+| POST | `/api/v1/runtime/verify` | تم تسجيل الدخول | تحقق |
 
 ### سياسات الوصول إلى الخدمة (متقاعدة)
 
@@ -1255,10 +1251,10 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/traffic/quotas` | تم تسجيل الدخول | قائمة الحصص |
-| GET | `/traffic/quotas/:id/usage` | تم تسجيل الدخول | استخدام الحصص |
-| GET | `/traffic/reset-logs` | تم تسجيل الدخول | سجلات إعادة تعيين الحصة النسبية |
-| GET | `/traffic/usage-history` | تم تسجيل الدخول | تاريخ الاستخدام |
+| GET | `/api/v1/traffic/quotas` | تم تسجيل الدخول | قائمة الحصص |
+| GET | `/api/v1/traffic/quotas/:id/usage` | تم تسجيل الدخول | استخدام الحصص |
+| GET | `/api/v1/traffic/reset-logs` | تم تسجيل الدخول | سجلات إعادة تعيين الحصة النسبية |
+| GET | `/api/v1/traffic/usage-history` | تم تسجيل الدخول | تاريخ الاستخدام |
 
 ### الفحوصات الصحية
 

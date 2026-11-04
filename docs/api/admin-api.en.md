@@ -1144,7 +1144,6 @@ Client endpoints identical to the portal; see `portal-api.en.md` for details.
 | GET | `/api/v1/client-auth/articles/:slug` | Public | Get article |
 | GET | `/api/v1/client-auth/balance` | Public | Get balance |
 | GET | `/api/v1/client-auth/balance/transactions` | Public | Balance transactions |
-| GET | `/api/v1/client-auth/bills` | Public | Order list |
 | POST | `/api/v1/client-auth/change-password` | Public | Change password |
 | POST | `/api/v1/client-auth/charge/create` | Public | Create recharge order |
 | GET | `/api/v1/client-auth/charge/orders` | Public | List recharge orders |
@@ -1158,9 +1157,9 @@ Client endpoints identical to the portal; see `portal-api.en.md` for details.
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Public | Claim gift |
 | GET | `/api/v1/client-auth/invoices` | Public | Order list |
 | GET | `/api/v1/client-auth/invoices/:id` | Public | Order details |
-| GET | `/api/v1/client-auth/ip-whitelist` | Public | List IP allow-list |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | Public | Remove from IP allow-list |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | Public | Auto-add IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Public | List IP allow-list |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Public | Remove from IP allow-list |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Public | Auto-add IP |
 | POST | `/api/v1/client-auth/login` | Public | Sign in |
 | POST | `/api/v1/client-auth/logout` | Public | Sign out |
 | POST | `/api/v1/client-auth/logs/package` | Public | Create log bundle |
@@ -1182,10 +1181,6 @@ Client endpoints identical to the portal; see `portal-api.en.md` for details.
 | GET | `/api/v1/client-auth/orders/:id` | Public | Order details |
 | GET | `/api/v1/client-auth/plans` | Public | Plan list |
 | GET | `/api/v1/client-auth/plans/:id` | Public | Plan details |
-| GET | `/api/v1/client-auth/profile` | Public | Get profile |
-| PUT | `/api/v1/client-auth/profile` | Public | Update profile |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | Public | Bind third-party account |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | Public | Unbind third-party account |
 | GET | `/api/v1/client-auth/referral/code` | Public | Get referral verification code |
 | GET | `/api/v1/client-auth/referral/records` | Public | List referral records |
 | GET | `/api/v1/client-auth/referral/stats` | Public | Get referral stats |
@@ -1194,6 +1189,7 @@ Client endpoints identical to the portal; see `portal-api.en.md` for details.
 | POST | `/api/v1/client-auth/refresh` | Public | Refresh |
 | POST | `/api/v1/client-auth/register` | Public | Register |
 | POST | `/api/v1/client-auth/reset-subscription` | Public | Reset subscription |
+| PUT | `/api/v1/client-auth/settings` | Public | Update profile |
 | POST | `/api/v1/client-auth/rotate-token` | Public | Rotate subscription token |
 | POST | `/api/v1/client-auth/self-unban` | Public | Self-service unban |
 | PUT | `/api/v1/client-auth/settings` | Public | Update settings |
@@ -1228,21 +1224,21 @@ Config snapshots / dry-run / apply / rollback (`apply`, `rollback` and `disable-
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| POST | `/runtime/apply` | Public | Apply |
-| GET | `/runtime/apply-jobs` | Signed in | List jobs |
-| GET | `/runtime/apply-jobs/:id` | Signed in | Get job |
-| POST | `/runtime/apply-jobs/:id/cancel` | Public | Cancel job |
-| POST | `/runtime/apply-jobs/:id/retry` | Public | Retry job |
-| POST | `/runtime/disable-proxy` | Public | Disable proxy |
-| POST | `/runtime/dry-run` | Signed in | Dry-run execution |
-| GET | `/runtime/nodes` | Signed in | List nodes |
-| GET | `/runtime/overview` | Signed in | Overview |
-| POST | `/runtime/rollback` | Public | Roll back |
-| GET | `/runtime/snapshots` | Signed in | List snapshots |
-| POST | `/runtime/snapshots` | Signed in | Create snapshot |
-| DELETE | `/runtime/snapshots/:id` | Public | Delete snapshot |
-| GET | `/runtime/snapshots/:id` | Signed in | Get snapshot |
-| POST | `/runtime/verify` | Signed in | Verify |
+| POST | `/api/v1/runtime/apply` | Admin | Apply |
+| GET | `/api/v1/runtime/apply-jobs` | Signed in | List jobs |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Signed in | Get job |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Admin | Cancel job |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Admin | Retry job |
+| POST | `/api/v1/runtime/disable-proxy` | Admin | Disable proxy |
+| POST | `/api/v1/runtime/dry-run` | Signed in | Dry-run execution |
+| GET | `/api/v1/runtime/nodes` | Signed in | List nodes |
+| GET | `/api/v1/runtime/overview` | Signed in | Overview |
+| POST | `/api/v1/runtime/rollback` | Admin | Roll back |
+| GET | `/api/v1/runtime/snapshots` | Signed in | List snapshots |
+| POST | `/api/v1/runtime/snapshots` | Signed in | Create snapshot |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Admin | Delete snapshot |
+| GET | `/api/v1/runtime/snapshots/:id` | Signed in | Get snapshot |
+| POST | `/api/v1/runtime/verify` | Signed in | Verify |
 
 ### Service access policies (retired)
 
@@ -1255,10 +1251,10 @@ Read-only monitoring view of quotas and usage.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Signed in | Quota list |
-| GET | `/traffic/quotas/:id/usage` | Signed in | Quota usage |
-| GET | `/traffic/reset-logs` | Signed in | Quota reset records |
-| GET | `/traffic/usage-history` | Signed in | Usage history |
+| GET | `/api/v1/traffic/quotas` | Signed in | Quota list |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Signed in | Quota usage |
+| GET | `/api/v1/traffic/reset-logs` | Signed in | Quota reset records |
+| GET | `/api/v1/traffic/usage-history` | Signed in | Usage history |
 
 ### Health checks
 

@@ -1144,7 +1144,6 @@ CRUD для статей портала.
 | GET | `/api/v1/client-auth/articles/:slug` | Публичный | Получить статью |
 | GET | `/api/v1/client-auth/balance` | Публичный | Получить баланс |
 | GET | `/api/v1/client-auth/balance/transactions` | Публичный | Балансовые операции |
-| GET | `/api/v1/client-auth/bills` | Публичный | Список заказов |
 | POST | `/api/v1/client-auth/change-password` | Публичный | Изменить пароль |
 | POST | `/api/v1/client-auth/charge/create` | Публичный | Создать заказ на пополнение счета |
 | GET | `/api/v1/client-auth/charge/orders` | Публичный | Список заказов на пополнение счета |
@@ -1158,9 +1157,9 @@ CRUD для статей портала.
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Публичный | Получить подарок |
 | GET | `/api/v1/client-auth/invoices` | Публичный | Список заказов |
 | GET | `/api/v1/client-auth/invoices/:id` | Публичный | Детали заказа |
-| GET | `/api/v1/client-auth/ip-whitelist` | Публичный | Список разрешенных IP-адресов |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | Публичный | Удалить из списка разрешенных IP-адресов |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | Публичный | Автоматическое добавление IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Публичный | Список разрешенных IP-адресов |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Публичный | Удалить из списка разрешенных IP-адресов |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Публичный | Автоматическое добавление IP |
 | POST | `/api/v1/client-auth/login` | Публичный | Войти |
 | POST | `/api/v1/client-auth/logout` | Публичный | Выйти |
 | POST | `/api/v1/client-auth/logs/package` | Публичный | Создать пакет журналов |
@@ -1182,10 +1181,6 @@ CRUD для статей портала.
 | GET | `/api/v1/client-auth/orders/:id` | Публичный | Детали заказа |
 | GET | `/api/v1/client-auth/plans` | Публичный | Список планов |
 | GET | `/api/v1/client-auth/plans/:id` | Публичный | Детали плана |
-| GET | `/api/v1/client-auth/profile` | Публичный | Получить профиль |
-| PUT | `/api/v1/client-auth/profile` | Публичный | Обновить профиль |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | Публичный | Привязать сторонний аккаунт |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | Публичный | Отвязать сторонний аккаунт |
 | GET | `/api/v1/client-auth/referral/code` | Публичный | Получить код подтверждения реферала |
 | GET | `/api/v1/client-auth/referral/records` | Публичный | Список реферальных записей |
 | GET | `/api/v1/client-auth/referral/stats` | Публичный | Получить статистику рефералов |
@@ -1194,6 +1189,7 @@ CRUD для статей портала.
 | POST | `/api/v1/client-auth/refresh` | Публичный | Обновить |
 | POST | `/api/v1/client-auth/register` | Публичный | Зарегистрироваться |
 | POST | `/api/v1/client-auth/reset-subscription` | Публичный | Сбросить подписку |
+| PUT | `/api/v1/client-auth/settings` | Публичный | Обновить профиль |
 | POST | `/api/v1/client-auth/rotate-token` | Публичный | Ротация токена подписки |
 | POST | `/api/v1/client-auth/self-unban` | Публичный | Самообслуживание разблокирует |
 | PUT | `/api/v1/client-auth/settings` | Публичный | Обновить настройки |
@@ -1228,21 +1224,21 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| POST | `/runtime/apply` | Публичный | Применить |
-| GET | `/runtime/apply-jobs` | Требуется вход | Список вакансий |
-| GET | `/runtime/apply-jobs/:id` | Требуется вход | Получить работу |
-| POST | `/runtime/apply-jobs/:id/cancel` | Публичный | Отменить задание |
-| POST | `/runtime/apply-jobs/:id/retry` | Публичный | Повторить задание |
-| POST | `/runtime/disable-proxy` | Публичный | Отключить прокси |
-| POST | `/runtime/dry-run` | Требуется вход | Исполнение всухую |
-| GET | `/runtime/nodes` | Требуется вход | Список узлов |
-| GET | `/runtime/overview` | Требуется вход | Обзор |
-| POST | `/runtime/rollback` | Публичный | Откат назад |
-| GET | `/runtime/snapshots` | Требуется вход | Получение списка снимков |
-| POST | `/runtime/snapshots` | Требуется вход | Создать снимок |
-| DELETE | `/runtime/snapshots/:id` | Публичный | Удалить снимок |
-| GET | `/runtime/snapshots/:id` | Требуется вход | Получить снимок |
-| POST | `/runtime/verify` | Требуется вход | Проверить |
+| POST | `/api/v1/runtime/apply` | Администратор | Применить |
+| GET | `/api/v1/runtime/apply-jobs` | Требуется вход | Список вакансий |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Требуется вход | Получить работу |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Администратор | Отменить задание |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Администратор | Повторить задание |
+| POST | `/api/v1/runtime/disable-proxy` | Администратор | Отключить прокси |
+| POST | `/api/v1/runtime/dry-run` | Требуется вход | Исполнение всухую |
+| GET | `/api/v1/runtime/nodes` | Требуется вход | Список узлов |
+| GET | `/api/v1/runtime/overview` | Требуется вход | Обзор |
+| POST | `/api/v1/runtime/rollback` | Администратор | Откат назад |
+| GET | `/api/v1/runtime/snapshots` | Требуется вход | Получение списка снимков |
+| POST | `/api/v1/runtime/snapshots` | Требуется вход | Создать снимок |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Администратор | Удалить снимок |
+| GET | `/api/v1/runtime/snapshots/:id` | Требуется вход | Получить снимок |
+| POST | `/api/v1/runtime/verify` | Требуется вход | Проверить |
 
 ### Политики доступа к услугам (устарело)
 
@@ -1255,10 +1251,10 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Требуется вход | Список квот |
-| GET | `/traffic/quotas/:id/usage` | Требуется вход | Использование квоты |
-| GET | `/traffic/reset-logs` | Требуется вход | Записи сброса квоты |
-| GET | `/traffic/usage-history` | Требуется вход | История использования |
+| GET | `/api/v1/traffic/quotas` | Требуется вход | Список квот |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Требуется вход | Использование квоты |
+| GET | `/api/v1/traffic/reset-logs` | Требуется вход | Записи сброса квоты |
+| GET | `/api/v1/traffic/usage-history` | Требуется вход | История использования |
 
 ### Проверка здоровья
 

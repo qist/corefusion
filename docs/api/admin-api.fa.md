@@ -1144,7 +1144,6 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 | GET | `/api/v1/client-auth/articles/:slug` | عمومی | دریافت مقاله |
 | GET | `/api/v1/client-auth/balance` | عمومی | تعادل را بدست آورید |
 | GET | `/api/v1/client-auth/balance/transactions` | عمومی | تراکنش های موجود |
-| GET | `/api/v1/client-auth/bills` | عمومی | لیست سفارش |
 | POST | `/api/v1/client-auth/change-password` | عمومی | رمز عبور را تغییر دهید |
 | POST | `/api/v1/client-auth/charge/create` | عمومی | ایجاد سفارش شارژ |
 | GET | `/api/v1/client-auth/charge/orders` | عمومی | لیست سفارشات شارژ |
@@ -1158,9 +1157,9 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 | POST | `/api/v1/client-auth/gifts/:id/claim` | عمومی | ادعای هدیه |
 | GET | `/api/v1/client-auth/invoices` | عمومی | لیست سفارش |
 | GET | `/api/v1/client-auth/invoices/:id` | عمومی | جزئیات سفارش |
-| GET | `/api/v1/client-auth/ip-whitelist` | عمومی | فهرست مجاز IP |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | عمومی | از لیست مجاز IP حذف کنید |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | عمومی | افزودن خودکار IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | عمومی | فهرست مجاز IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عمومی | از لیست مجاز IP حذف کنید |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | عمومی | افزودن خودکار IP |
 | POST | `/api/v1/client-auth/login` | عمومی | وارد شوید |
 | POST | `/api/v1/client-auth/logout` | عمومی | از سیستم خارج شوید |
 | POST | `/api/v1/client-auth/logs/package` | عمومی | ایجاد بسته گزارش |
@@ -1182,10 +1181,6 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 | GET | `/api/v1/client-auth/orders/:id` | عمومی | جزئیات سفارش |
 | GET | `/api/v1/client-auth/plans` | عمومی | لیست طرح |
 | GET | `/api/v1/client-auth/plans/:id` | عمومی | جزئیات طرح |
-| GET | `/api/v1/client-auth/profile` | عمومی | دریافت نمایه |
-| PUT | `/api/v1/client-auth/profile` | عمومی | به روز رسانی نمایه |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | عمومی | اتصال حساب شخص ثالث |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | عمومی | لغو پیوند حساب شخص ثالث |
 | GET | `/api/v1/client-auth/referral/code` | عمومی | کد تایید ارجاع را دریافت کنید |
 | GET | `/api/v1/client-auth/referral/records` | عمومی | فهرست سوابق ارجاع |
 | GET | `/api/v1/client-auth/referral/stats` | عمومی | آمار ارجاع را دریافت کنید |
@@ -1194,6 +1189,7 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 | POST | `/api/v1/client-auth/refresh` | عمومی | تازه کردن |
 | POST | `/api/v1/client-auth/register` | عمومی | ثبت نام کنید |
 | POST | `/api/v1/client-auth/reset-subscription` | عمومی | اشتراک را بازنشانی کنید |
+| PUT | `/api/v1/client-auth/settings` | عمومی | به روز رسانی نمایه |
 | POST | `/api/v1/client-auth/rotate-token` | عمومی | چرخاندن نشانه اشتراک |
 | POST | `/api/v1/client-auth/self-unban` | عمومی | سلف سرویس لغو ممنوعیت |
 | PUT | `/api/v1/client-auth/settings` | عمومی | تنظیمات را به روز کنید |
@@ -1228,21 +1224,21 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| POST | `/runtime/apply` | عمومی | درخواست کنید |
-| GET | `/runtime/apply-jobs` | وارد شده است | فهرست مشاغل |
-| GET | `/runtime/apply-jobs/:id` | وارد شده است | کار پیدا کن |
-| POST | `/runtime/apply-jobs/:id/cancel` | عمومی | کار را لغو کنید |
-| POST | `/runtime/apply-jobs/:id/retry` | عمومی | دوباره کار را امتحان کنید |
-| POST | `/runtime/disable-proxy` | عمومی | غیر فعال کردن پروکسی |
-| POST | `/runtime/dry-run` | وارد شده است | اجرای خشک |
-| GET | `/runtime/nodes` | وارد شده است | لیست گره ها |
-| GET | `/runtime/overview` | وارد شده است | نمای کلی |
-| POST | `/runtime/rollback` | عمومی | به عقب برگرد |
-| GET | `/runtime/snapshots` | وارد شده است | فهرست عکس های فوری |
-| POST | `/runtime/snapshots` | وارد شده است | ایجاد عکس فوری |
-| DELETE | `/runtime/snapshots/:id` | عمومی | حذف عکس فوری |
-| GET | `/runtime/snapshots/:id` | وارد شده است | دریافت عکس فوری |
-| POST | `/runtime/verify` | وارد شده است | تأیید کنید |
+| POST | `/api/v1/runtime/apply` | مدیر | درخواست کنید |
+| GET | `/api/v1/runtime/apply-jobs` | وارد شده است | فهرست مشاغل |
+| GET | `/api/v1/runtime/apply-jobs/:id` | وارد شده است | کار پیدا کن |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | مدیر | کار را لغو کنید |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | مدیر | دوباره کار را امتحان کنید |
+| POST | `/api/v1/runtime/disable-proxy` | مدیر | غیر فعال کردن پروکسی |
+| POST | `/api/v1/runtime/dry-run` | وارد شده است | اجرای خشک |
+| GET | `/api/v1/runtime/nodes` | وارد شده است | لیست گره ها |
+| GET | `/api/v1/runtime/overview` | وارد شده است | نمای کلی |
+| POST | `/api/v1/runtime/rollback` | مدیر | به عقب برگرد |
+| GET | `/api/v1/runtime/snapshots` | وارد شده است | فهرست عکس های فوری |
+| POST | `/api/v1/runtime/snapshots` | وارد شده است | ایجاد عکس فوری |
+| DELETE | `/api/v1/runtime/snapshots/:id` | مدیر | حذف عکس فوری |
+| GET | `/api/v1/runtime/snapshots/:id` | وارد شده است | دریافت عکس فوری |
+| POST | `/api/v1/runtime/verify` | وارد شده است | تأیید کنید |
 
 ### خط‌مشی‌های دسترسی به خدمات (بازنشسته)
 
@@ -1255,10 +1251,10 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/traffic/quotas` | وارد شده است | لیست سهمیه |
-| GET | `/traffic/quotas/:id/usage` | وارد شده است | استفاده از سهمیه |
-| GET | `/traffic/reset-logs` | وارد شده است | رکوردهای بازنشانی سهمیه |
-| GET | `/traffic/usage-history` | وارد شده است | سابقه استفاده |
+| GET | `/api/v1/traffic/quotas` | وارد شده است | لیست سهمیه |
+| GET | `/api/v1/traffic/quotas/:id/usage` | وارد شده است | استفاده از سهمیه |
+| GET | `/api/v1/traffic/reset-logs` | وارد شده است | رکوردهای بازنشانی سهمیه |
+| GET | `/api/v1/traffic/usage-history` | وارد شده است | سابقه استفاده |
 
 ### بررسی های سلامت
 

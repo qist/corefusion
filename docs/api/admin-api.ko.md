@@ -1144,7 +1144,6 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/client-auth/articles/:slug` | 공개 | 기사 받기 |
 | GET | `/api/v1/client-auth/balance` | 공개 | 잔액 확보 |
 | GET | `/api/v1/client-auth/balance/transactions` | 공개 | 잔액 거래 |
-| GET | `/api/v1/client-auth/bills` | 공개 | 주문 목록 |
 | POST | `/api/v1/client-auth/change-password` | 공개 | 비밀번호 변경 |
 | POST | `/api/v1/client-auth/charge/create` | 공개 | 재충전 주문 생성 |
 | GET | `/api/v1/client-auth/charge/orders` | 공개 | 재충전 주문 나열 |
@@ -1158,9 +1157,9 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | POST | `/api/v1/client-auth/gifts/:id/claim` | 공개 | 선물 받기 |
 | GET | `/api/v1/client-auth/invoices` | 공개 | 주문 목록 |
 | GET | `/api/v1/client-auth/invoices/:id` | 공개 | 주문 세부정보 |
-| GET | `/api/v1/client-auth/ip-whitelist` | 공개 | IP 허용 목록 나열 |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 공개 | IP 허용 목록에서 제거 |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | 공개 | IP 자동 추가 |
+| GET | `/api/v1/client-auth/settings/whitelist` | 공개 | IP 허용 목록 나열 |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 공개 | IP 허용 목록에서 제거 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 공개 | IP 자동 추가 |
 | POST | `/api/v1/client-auth/login` | 공개 | 로그인 |
 | POST | `/api/v1/client-auth/logout` | 공개 | 로그아웃 |
 | POST | `/api/v1/client-auth/logs/package` | 공개 | 로그 번들 생성 |
@@ -1182,10 +1181,6 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/client-auth/orders/:id` | 공개 | 주문 세부정보 |
 | GET | `/api/v1/client-auth/plans` | 공개 | 플랜 목록 |
 | GET | `/api/v1/client-auth/plans/:id` | 공개 | 요금제 세부정보 |
-| GET | `/api/v1/client-auth/profile` | 공개 | 프로필 받기 |
-| PUT | `/api/v1/client-auth/profile` | 공개 | 프로필 업데이트 |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | 공개 | 타사 계정 바인딩 |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | 공개 | 타사 계정 바인딩 해제 |
 | GET | `/api/v1/client-auth/referral/code` | 공개 | 추천 확인 코드 받기 |
 | GET | `/api/v1/client-auth/referral/records` | 공개 | 추천 기록 나열 |
 | GET | `/api/v1/client-auth/referral/stats` | 공개 | 추천 통계 받기 |
@@ -1194,6 +1189,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | POST | `/api/v1/client-auth/refresh` | 공개 | 새로고침 |
 | POST | `/api/v1/client-auth/register` | 공개 | 등록 |
 | POST | `/api/v1/client-auth/reset-subscription` | 공개 | 구독 재설정 |
+| PUT | `/api/v1/client-auth/settings` | 공개 | 프로필 업데이트 |
 | POST | `/api/v1/client-auth/rotate-token` | 공개 | 구독 토큰 순환 |
 | POST | `/api/v1/client-auth/self-unban` | 공개 | 셀프 서비스 금지 해제 |
 | PUT | `/api/v1/client-auth/settings` | 공개 | 업데이트 설정 |
@@ -1228,21 +1224,21 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| POST | `/runtime/apply` | 공개 | 적용 |
-| GET | `/runtime/apply-jobs` | 로그인됨 | 채용정보 나열 |
-| GET | `/runtime/apply-jobs/:id` | 로그인됨 | 취업 |
-| POST | `/runtime/apply-jobs/:id/cancel` | 공개 | 작업 취소 |
-| POST | `/runtime/apply-jobs/:id/retry` | 공개 | 작업 재시도 |
-| POST | `/runtime/disable-proxy` | 공개 | 프록시 비활성화 |
-| POST | `/runtime/dry-run` | 로그인됨 | 드라이런 실행 |
-| GET | `/runtime/nodes` | 로그인됨 | 노드 나열 |
-| GET | `/runtime/overview` | 로그인됨 | 개요 |
-| POST | `/runtime/rollback` | 공개 | 롤백 |
-| GET | `/runtime/snapshots` | 로그인됨 | 스냅샷 나열 |
-| POST | `/runtime/snapshots` | 로그인됨 | 스냅샷 생성 |
-| DELETE | `/runtime/snapshots/:id` | 공개 | 스냅샷 삭제 |
-| GET | `/runtime/snapshots/:id` | 로그인됨 | 스냅샷 받기 |
-| POST | `/runtime/verify` | 로그인됨 | 확인 |
+| POST | `/api/v1/runtime/apply` | 관리자 | 적용 |
+| GET | `/api/v1/runtime/apply-jobs` | 로그인됨 | 채용정보 나열 |
+| GET | `/api/v1/runtime/apply-jobs/:id` | 로그인됨 | 취업 |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | 관리자 | 작업 취소 |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | 관리자 | 작업 재시도 |
+| POST | `/api/v1/runtime/disable-proxy` | 관리자 | 프록시 비활성화 |
+| POST | `/api/v1/runtime/dry-run` | 로그인됨 | 드라이런 실행 |
+| GET | `/api/v1/runtime/nodes` | 로그인됨 | 노드 나열 |
+| GET | `/api/v1/runtime/overview` | 로그인됨 | 개요 |
+| POST | `/api/v1/runtime/rollback` | 관리자 | 롤백 |
+| GET | `/api/v1/runtime/snapshots` | 로그인됨 | 스냅샷 나열 |
+| POST | `/api/v1/runtime/snapshots` | 로그인됨 | 스냅샷 생성 |
+| DELETE | `/api/v1/runtime/snapshots/:id` | 관리자 | 스냅샷 삭제 |
+| GET | `/api/v1/runtime/snapshots/:id` | 로그인됨 | 스냅샷 받기 |
+| POST | `/api/v1/runtime/verify` | 로그인됨 | 확인 |
 
 ### 서비스 액세스 정책(폐기됨)
 
@@ -1255,10 +1251,10 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/traffic/quotas` | 로그인됨 | 할당량 목록 |
-| GET | `/traffic/quotas/:id/usage` | 로그인됨 | 할당량 사용량 |
-| GET | `/traffic/reset-logs` | 로그인됨 | 할당량 재설정 기록 |
-| GET | `/traffic/usage-history` | 로그인됨 | 이용내역 |
+| GET | `/api/v1/traffic/quotas` | 로그인됨 | 할당량 목록 |
+| GET | `/api/v1/traffic/quotas/:id/usage` | 로그인됨 | 할당량 사용량 |
+| GET | `/api/v1/traffic/reset-logs` | 로그인됨 | 할당량 재설정 기록 |
+| GET | `/api/v1/traffic/usage-history` | 로그인됨 | 이용내역 |
 
 ### 건강검진
 

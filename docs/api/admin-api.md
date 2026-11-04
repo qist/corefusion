@@ -1143,7 +1143,6 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/client-auth/articles/:slug` | 公开 | 获取文章 |
 | GET | `/api/v1/client-auth/balance` | 公开 | 获取余额 |
 | GET | `/api/v1/client-auth/balance/transactions` | 公开 | 余额流水 |
-| GET | `/api/v1/client-auth/bills` | 公开 | 订单列表 |
 | POST | `/api/v1/client-auth/change-password` | 公开 | 修改密码 |
 | POST | `/api/v1/client-auth/charge/create` | 公开 | 创建充值订单 |
 | GET | `/api/v1/client-auth/charge/orders` | 公开 | 列表充值订单 |
@@ -1157,9 +1156,9 @@ geoip/geosite 数据源与文件的同步、下发。
 | POST | `/api/v1/client-auth/gifts/:id/claim` | 公开 | 领取礼品 |
 | GET | `/api/v1/client-auth/invoices` | 公开 | 订单列表 |
 | GET | `/api/v1/client-auth/invoices/:id` | 公开 | 订单详情 |
-| GET | `/api/v1/client-auth/ip-whitelist` | 公开 | 列表IP白名单 |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 公开 | 移除IP白名单 |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | 公开 | 自动新增IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | 公开 | 列表IP白名单 |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公开 | 移除IP白名单 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公开 | 自动新增IP |
 | POST | `/api/v1/client-auth/login` | 公开 | 登录 |
 | POST | `/api/v1/client-auth/logout` | 公开 | 登出 |
 | POST | `/api/v1/client-auth/logs/package` | 公开 | 创建日志日志包 |
@@ -1181,10 +1180,6 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/client-auth/orders/:id` | 公开 | 订单详情 |
 | GET | `/api/v1/client-auth/plans` | 公开 | 套餐列表 |
 | GET | `/api/v1/client-auth/plans/:id` | 公开 | 套餐详情 |
-| GET | `/api/v1/client-auth/profile` | 公开 | 获取资料 |
-| PUT | `/api/v1/client-auth/profile` | 公开 | 更新资料 |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | 公开 | 绑定第三方账号 |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | 公开 | 解绑第三方账号 |
 | GET | `/api/v1/client-auth/referral/code` | 公开 | 获取推广验证码 |
 | GET | `/api/v1/client-auth/referral/records` | 公开 | 列表推广记录 |
 | GET | `/api/v1/client-auth/referral/stats` | 公开 | 获取推广统计 |
@@ -1193,6 +1188,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | POST | `/api/v1/client-auth/refresh` | 公开 | 刷新 |
 | POST | `/api/v1/client-auth/register` | 公开 | 注册 |
 | POST | `/api/v1/client-auth/reset-subscription` | 公开 | 重置订阅 |
+| PUT | `/api/v1/client-auth/settings` | 公开 | 更新资料 |
 | POST | `/api/v1/client-auth/rotate-token` | 公开 | 轮换订阅 token |
 | POST | `/api/v1/client-auth/self-unban` | 公开 | 自助解封 |
 | PUT | `/api/v1/client-auth/settings` | 公开 | 更新设置 |
@@ -1227,21 +1223,21 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | `/runtime/apply` | 公开 | 申请 |
-| GET | `/runtime/apply-jobs` | 登录 | 列表任务 |
-| GET | `/runtime/apply-jobs/:id` | 登录 | 获取任务 |
-| POST | `/runtime/apply-jobs/:id/cancel` | 公开 | 取消任务 |
-| POST | `/runtime/apply-jobs/:id/retry` | 公开 | 重试任务 |
-| POST | `/runtime/disable-proxy` | 公开 | 禁用代理 |
-| POST | `/runtime/dry-run` | 登录 | 试算执行 |
-| GET | `/runtime/nodes` | 登录 | 列表节点 |
-| GET | `/runtime/overview` | 登录 | 总览 |
-| POST | `/runtime/rollback` | 公开 | 回滚 |
-| GET | `/runtime/snapshots` | 登录 | 列表快照 |
-| POST | `/runtime/snapshots` | 登录 | 创建快照 |
-| DELETE | `/runtime/snapshots/:id` | 公开 | 删除快照 |
-| GET | `/runtime/snapshots/:id` | 登录 | 获取快照 |
-| POST | `/runtime/verify` | 登录 | 验证 |
+| POST | `/api/v1/runtime/apply` | 管理员 | 申请 |
+| GET | `/api/v1/runtime/apply-jobs` | 登录 | 列表任务 |
+| GET | `/api/v1/runtime/apply-jobs/:id` | 登录 | 获取任务 |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | 管理员 | 取消任务 |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | 管理员 | 重试任务 |
+| POST | `/api/v1/runtime/disable-proxy` | 管理员 | 禁用代理 |
+| POST | `/api/v1/runtime/dry-run` | 登录 | 试算执行 |
+| GET | `/api/v1/runtime/nodes` | 登录 | 列表节点 |
+| GET | `/api/v1/runtime/overview` | 登录 | 总览 |
+| POST | `/api/v1/runtime/rollback` | 管理员 | 回滚 |
+| GET | `/api/v1/runtime/snapshots` | 登录 | 列表快照 |
+| POST | `/api/v1/runtime/snapshots` | 登录 | 创建快照 |
+| DELETE | `/api/v1/runtime/snapshots/:id` | 管理员 | 删除快照 |
+| GET | `/api/v1/runtime/snapshots/:id` | 登录 | 获取快照 |
+| POST | `/api/v1/runtime/verify` | 登录 | 验证 |
 
 ### 服务访问策略（已下线）
 
@@ -1254,10 +1250,10 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/traffic/quotas` | 登录 | 配额列表 |
-| GET | `/traffic/quotas/:id/usage` | 登录 | 配额用量 |
-| GET | `/traffic/reset-logs` | 登录 | 配额重置记录 |
-| GET | `/traffic/usage-history` | 登录 | 用量历史 |
+| GET | `/api/v1/traffic/quotas` | 登录 | 配额列表 |
+| GET | `/api/v1/traffic/quotas/:id/usage` | 登录 | 配额用量 |
+| GET | `/api/v1/traffic/reset-logs` | 登录 | 配额重置记录 |
+| GET | `/api/v1/traffic/usage-history` | 登录 | 用量历史 |
 
 ### 健康检查
 

@@ -1144,7 +1144,6 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/client-auth/articles/:slug` | 公開 | 記事を取得 |
 | GET | `/api/v1/client-auth/balance` | 公開 | バランスを取る |
 | GET | `/api/v1/client-auth/balance/transactions` | 公開 | 残高取引 |
-| GET | `/api/v1/client-auth/bills` | 公開 | 注文リスト |
 | POST | `/api/v1/client-auth/change-password` | 公開 | パスワードを変更する |
 | POST | `/api/v1/client-auth/charge/create` | 公開 | リチャージ注文を作成する |
 | GET | `/api/v1/client-auth/charge/orders` | 公開 | リチャージ注文をリストする |
@@ -1158,9 +1157,9 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | POST | `/api/v1/client-auth/gifts/:id/claim` | 公開 | ギフトを受け取る |
 | GET | `/api/v1/client-auth/invoices` | 公開 | 注文リスト |
 | GET | `/api/v1/client-auth/invoices/:id` | 公開 | 注文の詳細 |
-| GET | `/api/v1/client-auth/ip-whitelist` | 公開 | IP許可リストをリストする |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 公開 | IP許可リストから削除 |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | 公開 | IPの自動追加 |
+| GET | `/api/v1/client-auth/settings/whitelist` | 公開 | IP許可リストをリストする |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公開 | IP許可リストから削除 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公開 | IPの自動追加 |
 | POST | `/api/v1/client-auth/login` | 公開 | サインイン |
 | POST | `/api/v1/client-auth/logout` | 公開 | サインアウト |
 | POST | `/api/v1/client-auth/logs/package` | 公開 | ログバンドルの作成 |
@@ -1182,10 +1181,6 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/client-auth/orders/:id` | 公開 | 注文の詳細 |
 | GET | `/api/v1/client-auth/plans` | 公開 | プラン一覧 |
 | GET | `/api/v1/client-auth/plans/:id` | 公開 | プラン詳細 |
-| GET | `/api/v1/client-auth/profile` | 公開 | プロフィールを取得 |
-| PUT | `/api/v1/client-auth/profile` | 公開 | プロフィールを更新する |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | 公開 | サードパーティアカウントをバインドする |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | 公開 | サードパーティアカウントのバインドを解除する |
 | GET | `/api/v1/client-auth/referral/code` | 公開 | 紹介確認コードを取得する |
 | GET | `/api/v1/client-auth/referral/records` | 公開 | 紹介記録の一覧表示 |
 | GET | `/api/v1/client-auth/referral/stats` | 公開 | 紹介統計を取得する |
@@ -1194,6 +1189,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | POST | `/api/v1/client-auth/refresh` | 公開 | リフレッシュ |
 | POST | `/api/v1/client-auth/register` | 公開 | 登録する |
 | POST | `/api/v1/client-auth/reset-subscription` | 公開 | サブスクリプションをリセットする |
+| PUT | `/api/v1/client-auth/settings` | 公開 | プロフィールを更新する |
 | POST | `/api/v1/client-auth/rotate-token` | 公開 | サブスクリプション トークンをローテーションする |
 | POST | `/api/v1/client-auth/self-unban` | 公開 | セルフサービスの禁止解除 |
 | PUT | `/api/v1/client-auth/settings` | 公開 | 設定を更新する |
@@ -1228,21 +1224,21 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| POST | `/runtime/apply` | 公開 | 申し込む |
-| GET | `/runtime/apply-jobs` | 要サインイン | ジョブのリストを表示する |
-| GET | `/runtime/apply-jobs/:id` | 要サインイン | 仕事を得る |
-| POST | `/runtime/apply-jobs/:id/cancel` | 公開 | ジョブをキャンセルする |
-| POST | `/runtime/apply-jobs/:id/retry` | 公開 | ジョブを再試行します |
-| POST | `/runtime/disable-proxy` | 公開 | プロキシを無効にする |
-| POST | `/runtime/dry-run` | 要サインイン | ドライラン実行 |
-| GET | `/runtime/nodes` | 要サインイン | リストノード |
-| GET | `/runtime/overview` | 要サインイン | 概要 |
-| POST | `/runtime/rollback` | 公開 | ロールバック |
-| GET | `/runtime/snapshots` | 要サインイン | スナップショットの一覧表示 |
-| POST | `/runtime/snapshots` | 要サインイン | スナップショットの作成 |
-| DELETE | `/runtime/snapshots/:id` | 公開 | スナップショットの削除 |
-| GET | `/runtime/snapshots/:id` | 要サインイン | スナップショットの取得 |
-| POST | `/runtime/verify` | 要サインイン | 検証する |
+| POST | `/api/v1/runtime/apply` | 管理者 | 申し込む |
+| GET | `/api/v1/runtime/apply-jobs` | 要サインイン | ジョブのリストを表示する |
+| GET | `/api/v1/runtime/apply-jobs/:id` | 要サインイン | 仕事を得る |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | 管理者 | ジョブをキャンセルする |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | 管理者 | ジョブを再試行します |
+| POST | `/api/v1/runtime/disable-proxy` | 管理者 | プロキシを無効にする |
+| POST | `/api/v1/runtime/dry-run` | 要サインイン | ドライラン実行 |
+| GET | `/api/v1/runtime/nodes` | 要サインイン | リストノード |
+| GET | `/api/v1/runtime/overview` | 要サインイン | 概要 |
+| POST | `/api/v1/runtime/rollback` | 管理者 | ロールバック |
+| GET | `/api/v1/runtime/snapshots` | 要サインイン | スナップショットの一覧表示 |
+| POST | `/api/v1/runtime/snapshots` | 要サインイン | スナップショットの作成 |
+| DELETE | `/api/v1/runtime/snapshots/:id` | 管理者 | スナップショットの削除 |
+| GET | `/api/v1/runtime/snapshots/:id` | 要サインイン | スナップショットの取得 |
+| POST | `/api/v1/runtime/verify` | 要サインイン | 検証する |
 
 ### サービス アクセス ポリシー (廃止)
 
@@ -1255,10 +1251,10 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/traffic/quotas` | 要サインイン | クォータリスト |
-| GET | `/traffic/quotas/:id/usage` | 要サインイン | クォータの使用量 |
-| GET | `/traffic/reset-logs` | 要サインイン | クォータリセットレコード |
-| GET | `/traffic/usage-history` | 要サインイン | 利用履歴 |
+| GET | `/api/v1/traffic/quotas` | 要サインイン | クォータリスト |
+| GET | `/api/v1/traffic/quotas/:id/usage` | 要サインイン | クォータの使用量 |
+| GET | `/api/v1/traffic/reset-logs` | 要サインイン | クォータリセットレコード |
+| GET | `/api/v1/traffic/usage-history` | 要サインイン | 利用履歴 |
 
 ### 健康診断
 

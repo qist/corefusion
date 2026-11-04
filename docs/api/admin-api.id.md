@@ -1144,7 +1144,6 @@ Titik akhir klien identik dengan portal; lihat `portal-api.en.md` untuk detailny
 | GET | `/api/v1/client-auth/articles/:slug` | Publik | Dapatkan artikel |
 | GET | `/api/v1/client-auth/balance` | Publik | Dapatkan keseimbangan |
 | GET | `/api/v1/client-auth/balance/transactions` | Publik | Transaksi saldo |
-| GET | `/api/v1/client-auth/bills` | Publik | Daftar pesanan |
 | POST | `/api/v1/client-auth/change-password` | Publik | Ubah kata sandi |
 | POST | `/api/v1/client-auth/charge/create` | Publik | Buat pesanan isi ulang |
 | GET | `/api/v1/client-auth/charge/orders` | Publik | Daftar pesanan isi ulang |
@@ -1158,9 +1157,9 @@ Titik akhir klien identik dengan portal; lihat `portal-api.en.md` untuk detailny
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Publik | Klaim hadiah |
 | GET | `/api/v1/client-auth/invoices` | Publik | Daftar pesanan |
 | GET | `/api/v1/client-auth/invoices/:id` | Publik | Detail pesanan |
-| GET | `/api/v1/client-auth/ip-whitelist` | Publik | Daftar daftar IP yang diizinkan |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | Publik | Hapus dari daftar IP yang diizinkan |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | Publik | Tambahkan IP secara otomatis |
+| GET | `/api/v1/client-auth/settings/whitelist` | Publik | Daftar daftar IP yang diizinkan |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Publik | Hapus dari daftar IP yang diizinkan |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Publik | Tambahkan IP secara otomatis |
 | POST | `/api/v1/client-auth/login` | Publik | Masuk |
 | POST | `/api/v1/client-auth/logout` | Publik | Keluar |
 | POST | `/api/v1/client-auth/logs/package` | Publik | Buat bundel log |
@@ -1182,10 +1181,6 @@ Titik akhir klien identik dengan portal; lihat `portal-api.en.md` untuk detailny
 | GET | `/api/v1/client-auth/orders/:id` | Publik | Detail pesanan |
 | GET | `/api/v1/client-auth/plans` | Publik | Daftar rencana |
 | GET | `/api/v1/client-auth/plans/:id` | Publik | Detail rencana |
-| GET | `/api/v1/client-auth/profile` | Publik | Dapatkan profil |
-| PUT | `/api/v1/client-auth/profile` | Publik | Perbarui profil |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | Publik | Ikat akun pihak ketiga |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | Publik | Lepas ikatan akun pihak ketiga |
 | GET | `/api/v1/client-auth/referral/code` | Publik | Dapatkan kode verifikasi rujukan |
 | GET | `/api/v1/client-auth/referral/records` | Publik | Daftar catatan rujukan |
 | GET | `/api/v1/client-auth/referral/stats` | Publik | Dapatkan statistik rujukan |
@@ -1194,6 +1189,7 @@ Titik akhir klien identik dengan portal; lihat `portal-api.en.md` untuk detailny
 | POST | `/api/v1/client-auth/refresh` | Publik | Segarkan |
 | POST | `/api/v1/client-auth/register` | Publik | Daftar |
 | POST | `/api/v1/client-auth/reset-subscription` | Publik | Setel ulang langganan |
+| PUT | `/api/v1/client-auth/settings` | Publik | Perbarui profil |
 | POST | `/api/v1/client-auth/rotate-token` | Publik | Putar token berlangganan |
 | POST | `/api/v1/client-auth/self-unban` | Publik | Pembatalan larangan layanan mandiri |
 | PUT | `/api/v1/client-auth/settings` | Publik | Perbarui pengaturan |
@@ -1228,21 +1224,21 @@ Konfigurasikan snapshot / dry-run / apply / rollback (`apply`, `rollback` dan `d
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| POST | `/runtime/apply` | Publik | Terapkan |
-| GET | `/runtime/apply-jobs` | Masuk | Daftar pekerjaan |
-| GET | `/runtime/apply-jobs/:id` | Masuk | Dapatkan pekerjaan |
-| POST | `/runtime/apply-jobs/:id/cancel` | Publik | Batalkan pekerjaan |
-| POST | `/runtime/apply-jobs/:id/retry` | Publik | Coba lagi pekerjaan |
-| POST | `/runtime/disable-proxy` | Publik | Nonaktifkan proksi |
-| POST | `/runtime/dry-run` | Masuk | Eksekusi uji coba |
-| GET | `/runtime/nodes` | Masuk | Daftar node |
-| GET | `/runtime/overview` | Masuk | Ikhtisar |
-| POST | `/runtime/rollback` | Publik | Putar kembali |
-| GET | `/runtime/snapshots` | Masuk | Daftar cuplikan |
-| POST | `/runtime/snapshots` | Masuk | Buat cuplikan |
-| DELETE | `/runtime/snapshots/:id` | Publik | Hapus cuplikan |
-| GET | `/runtime/snapshots/:id` | Masuk | Dapatkan cuplikan |
-| POST | `/runtime/verify` | Masuk | Verifikasi |
+| POST | `/api/v1/runtime/apply` | Admin | Terapkan |
+| GET | `/api/v1/runtime/apply-jobs` | Masuk | Daftar pekerjaan |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Masuk | Dapatkan pekerjaan |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Admin | Batalkan pekerjaan |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Admin | Coba lagi pekerjaan |
+| POST | `/api/v1/runtime/disable-proxy` | Admin | Nonaktifkan proksi |
+| POST | `/api/v1/runtime/dry-run` | Masuk | Eksekusi uji coba |
+| GET | `/api/v1/runtime/nodes` | Masuk | Daftar node |
+| GET | `/api/v1/runtime/overview` | Masuk | Ikhtisar |
+| POST | `/api/v1/runtime/rollback` | Admin | Putar kembali |
+| GET | `/api/v1/runtime/snapshots` | Masuk | Daftar cuplikan |
+| POST | `/api/v1/runtime/snapshots` | Masuk | Buat cuplikan |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Admin | Hapus cuplikan |
+| GET | `/api/v1/runtime/snapshots/:id` | Masuk | Dapatkan cuplikan |
+| POST | `/api/v1/runtime/verify` | Masuk | Verifikasi |
 
 ### Kebijakan akses layanan (pensiun)
 
@@ -1255,10 +1251,10 @@ Tampilan pemantauan kuota dan penggunaan hanya baca.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Masuk | Daftar kuota |
-| GET | `/traffic/quotas/:id/usage` | Masuk | Penggunaan kuota |
-| GET | `/traffic/reset-logs` | Masuk | Catatan penyetelan ulang kuota |
-| GET | `/traffic/usage-history` | Masuk | Riwayat penggunaan |
+| GET | `/api/v1/traffic/quotas` | Masuk | Daftar kuota |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Masuk | Penggunaan kuota |
+| GET | `/api/v1/traffic/reset-logs` | Masuk | Catatan penyetelan ulang kuota |
+| GET | `/api/v1/traffic/usage-history` | Masuk | Riwayat penggunaan |
 
 ### Pemeriksaan kesehatan
 

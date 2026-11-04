@@ -1144,7 +1144,6 @@ Portalla aynı istemci uç noktaları; ayrıntılar için `portal-api.en.md`'ye 
 | GET | `/api/v1/client-auth/articles/:slug` | halka açık | Makaleyi al |
 | GET | `/api/v1/client-auth/balance` | halka açık | Bakiyeyi alın |
 | GET | `/api/v1/client-auth/balance/transactions` | halka açık | Bakiye işlemleri |
-| GET | `/api/v1/client-auth/bills` | halka açık | Sipariş listesi |
 | POST | `/api/v1/client-auth/change-password` | halka açık | Şifreyi değiştir |
 | POST | `/api/v1/client-auth/charge/create` | halka açık | Yükleme siparişi oluştur |
 | GET | `/api/v1/client-auth/charge/orders` | halka açık | Yeniden yükleme siparişlerini listeleyin |
@@ -1158,9 +1157,9 @@ Portalla aynı istemci uç noktaları; ayrıntılar için `portal-api.en.md`'ye 
 | POST | `/api/v1/client-auth/gifts/:id/claim` | halka açık | Hediye talep et |
 | GET | `/api/v1/client-auth/invoices` | halka açık | Sipariş listesi |
 | GET | `/api/v1/client-auth/invoices/:id` | halka açık | Sipariş ayrıntıları |
-| GET | `/api/v1/client-auth/ip-whitelist` | halka açık | IP izin verilenler listesini listele |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | halka açık | IP izin verilenler listesinden kaldır |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | halka açık | Otomatik IP ekle |
+| GET | `/api/v1/client-auth/settings/whitelist` | halka açık | IP izin verilenler listesini listele |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | halka açık | IP izin verilenler listesinden kaldır |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | halka açık | Otomatik IP ekle |
 | POST | `/api/v1/client-auth/login` | halka açık | Oturum aç |
 | POST | `/api/v1/client-auth/logout` | halka açık | Oturumu kapat |
 | POST | `/api/v1/client-auth/logs/package` | halka açık | Günlük paketi oluştur |
@@ -1182,10 +1181,6 @@ Portalla aynı istemci uç noktaları; ayrıntılar için `portal-api.en.md`'ye 
 | GET | `/api/v1/client-auth/orders/:id` | halka açık | Sipariş ayrıntıları |
 | GET | `/api/v1/client-auth/plans` | halka açık | Plan listesi |
 | GET | `/api/v1/client-auth/plans/:id` | halka açık | Plan ayrıntıları |
-| GET | `/api/v1/client-auth/profile` | halka açık | Profili al |
-| PUT | `/api/v1/client-auth/profile` | halka açık | Profili güncelle |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | halka açık | Üçüncü taraf hesabını bağla |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | halka açık | Üçüncü taraf hesabının bağlantısını kaldırın |
 | GET | `/api/v1/client-auth/referral/code` | halka açık | Yönlendirme doğrulama kodunu alın |
 | GET | `/api/v1/client-auth/referral/records` | halka açık | Yönlendirme kayıtlarını listeleyin |
 | GET | `/api/v1/client-auth/referral/stats` | halka açık | Yönlendirme istatistiklerini alın |
@@ -1194,6 +1189,7 @@ Portalla aynı istemci uç noktaları; ayrıntılar için `portal-api.en.md`'ye 
 | POST | `/api/v1/client-auth/refresh` | halka açık | Yenile |
 | POST | `/api/v1/client-auth/register` | halka açık | Kayıt ol |
 | POST | `/api/v1/client-auth/reset-subscription` | halka açık | Aboneliği sıfırla |
+| PUT | `/api/v1/client-auth/settings` | halka açık | Profili güncelle |
 | POST | `/api/v1/client-auth/rotate-token` | halka açık | Abonelik jetonunu döndür |
 | POST | `/api/v1/client-auth/self-unban` | halka açık | Self servis yasağını kaldır |
 | PUT | `/api/v1/client-auth/settings` | halka açık | Ayarları güncelle |
@@ -1228,21 +1224,21 @@ Anlık görüntüleri yapılandırma / prova / uygulama / geri alma (`apply`, `r
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| POST | `/runtime/apply` | halka açık | Uygula |
-| GET | `/runtime/apply-jobs` | Oturum açıldı | İşleri listele |
-| GET | `/runtime/apply-jobs/:id` | Oturum açıldı | İş bul |
-| POST | `/runtime/apply-jobs/:id/cancel` | halka açık | İşi iptal et |
-| POST | `/runtime/apply-jobs/:id/retry` | halka açık | İşi yeniden dene |
-| POST | `/runtime/disable-proxy` | halka açık | Proxy'yi devre dışı bırak |
-| POST | `/runtime/dry-run` | Oturum açıldı | Deneme çalıştırması yürütme |
-| GET | `/runtime/nodes` | Oturum açıldı | Düğümleri listele |
-| GET | `/runtime/overview` | Oturum açıldı | Genel Bakış |
-| POST | `/runtime/rollback` | halka açık | Geri al |
-| GET | `/runtime/snapshots` | Oturum açıldı | Anlık görüntüleri listeleme |
-| POST | `/runtime/snapshots` | Oturum açıldı | Anlık görüntü oluştur |
-| DELETE | `/runtime/snapshots/:id` | halka açık | Anlık görüntüyü sil |
-| GET | `/runtime/snapshots/:id` | Oturum açıldı | Anlık görüntü al |
-| POST | `/runtime/verify` | Oturum açıldı | Doğrula |
+| POST | `/api/v1/runtime/apply` | Yönetici | Uygula |
+| GET | `/api/v1/runtime/apply-jobs` | Oturum açıldı | İşleri listele |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Oturum açıldı | İş bul |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Yönetici | İşi iptal et |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Yönetici | İşi yeniden dene |
+| POST | `/api/v1/runtime/disable-proxy` | Yönetici | Proxy'yi devre dışı bırak |
+| POST | `/api/v1/runtime/dry-run` | Oturum açıldı | Deneme çalıştırması yürütme |
+| GET | `/api/v1/runtime/nodes` | Oturum açıldı | Düğümleri listele |
+| GET | `/api/v1/runtime/overview` | Oturum açıldı | Genel Bakış |
+| POST | `/api/v1/runtime/rollback` | Yönetici | Geri al |
+| GET | `/api/v1/runtime/snapshots` | Oturum açıldı | Anlık görüntüleri listeleme |
+| POST | `/api/v1/runtime/snapshots` | Oturum açıldı | Anlık görüntü oluştur |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Yönetici | Anlık görüntüyü sil |
+| GET | `/api/v1/runtime/snapshots/:id` | Oturum açıldı | Anlık görüntü al |
+| POST | `/api/v1/runtime/verify` | Oturum açıldı | Doğrula |
 
 ### Hizmet erişim politikaları (kullanımdan kaldırıldı)
 
@@ -1255,10 +1251,10 @@ Kotaların ve kullanımın salt okunur izleme görünümü.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Oturum açıldı | Kota listesi |
-| GET | `/traffic/quotas/:id/usage` | Oturum açıldı | Kota kullanımı |
-| GET | `/traffic/reset-logs` | Oturum açıldı | Kota sıfırlama kayıtları |
-| GET | `/traffic/usage-history` | Oturum açıldı | Kullanım geçmişi |
+| GET | `/api/v1/traffic/quotas` | Oturum açıldı | Kota listesi |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Oturum açıldı | Kota kullanımı |
+| GET | `/api/v1/traffic/reset-logs` | Oturum açıldı | Kota sıfırlama kayıtları |
+| GET | `/api/v1/traffic/usage-history` | Oturum açıldı | Kullanım geçmişi |
 
 ### Sağlık kontrolleri
 

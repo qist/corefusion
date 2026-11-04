@@ -1144,7 +1144,6 @@ Points de terminaison client identiques au portail ; voir `portal-api.en.md` po
 | GET | `/api/v1/client-auth/articles/:slug` | Publique | Obtenir l'article |
 | GET | `/api/v1/client-auth/balance` | Publique | Obtenez l'équilibre |
 | GET | `/api/v1/client-auth/balance/transactions` | Publique | Opérations de solde |
-| GET | `/api/v1/client-auth/bills` | Publique | Liste de commandes |
 | POST | `/api/v1/client-auth/change-password` | Publique | Changer le mot de passe |
 | POST | `/api/v1/client-auth/charge/create` | Publique | Créer une commande de recharge |
 | GET | `/api/v1/client-auth/charge/orders` | Publique | Répertorier les commandes de recharge |
@@ -1158,9 +1157,9 @@ Points de terminaison client identiques au portail ; voir `portal-api.en.md` po
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Publique | Réclamer un cadeau |
 | GET | `/api/v1/client-auth/invoices` | Publique | Liste de commandes |
 | GET | `/api/v1/client-auth/invoices/:id` | Publique | Détails de la commande |
-| GET | `/api/v1/client-auth/ip-whitelist` | Publique | Liste des adresses IP autorisées |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | Publique | Supprimer de la liste verte IP |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | Publique | Ajouter automatiquement une adresse IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Publique | Liste des adresses IP autorisées |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Publique | Supprimer de la liste verte IP |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Publique | Ajouter automatiquement une adresse IP |
 | POST | `/api/v1/client-auth/login` | Publique | Connectez-vous |
 | POST | `/api/v1/client-auth/logout` | Publique | Se déconnecter |
 | POST | `/api/v1/client-auth/logs/package` | Publique | Créer un groupe de journaux |
@@ -1182,10 +1181,6 @@ Points de terminaison client identiques au portail ; voir `portal-api.en.md` po
 | GET | `/api/v1/client-auth/orders/:id` | Publique | Détails de la commande |
 | GET | `/api/v1/client-auth/plans` | Publique | Liste des forfaits |
 | GET | `/api/v1/client-auth/plans/:id` | Publique | Détails du forfait |
-| GET | `/api/v1/client-auth/profile` | Publique | Obtenir un profil |
-| PUT | `/api/v1/client-auth/profile` | Publique | Mettre à jour le profil |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | Publique | Lier un compte tiers |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | Publique | Dissocier le compte tiers |
 | GET | `/api/v1/client-auth/referral/code` | Publique | Obtenez le code de vérification de référence |
 | GET | `/api/v1/client-auth/referral/records` | Publique | Répertorier les enregistrements de référence |
 | GET | `/api/v1/client-auth/referral/stats` | Publique | Obtenez des statistiques de référencement |
@@ -1194,6 +1189,7 @@ Points de terminaison client identiques au portail ; voir `portal-api.en.md` po
 | POST | `/api/v1/client-auth/refresh` | Publique | Actualiser |
 | POST | `/api/v1/client-auth/register` | Publique | S'inscrire |
 | POST | `/api/v1/client-auth/reset-subscription` | Publique | Réinitialiser l'abonnement |
+| PUT | `/api/v1/client-auth/settings` | Publique | Mettre à jour le profil |
 | POST | `/api/v1/client-auth/rotate-token` | Publique | Faire pivoter le jeton d'abonnement |
 | POST | `/api/v1/client-auth/self-unban` | Publique | Annulation du bannissement en libre-service |
 | PUT | `/api/v1/client-auth/settings` | Publique | Mettre à jour les paramètres |
@@ -1228,21 +1224,21 @@ Instantanés de configuration/exécution à sec/application/restauration (`apply
 
 | Méthode | Chemin | Autorisation | Descriptif |
 |---|---|---|---|
-| POST | `/runtime/apply` | Publique | Postuler |
-| GET | `/runtime/apply-jobs` | Connecté | Liste des emplois |
-| GET | `/runtime/apply-jobs/:id` | Connecté | Obtenir un emploi |
-| POST | `/runtime/apply-jobs/:id/cancel` | Publique | Annuler le travail |
-| POST | `/runtime/apply-jobs/:id/retry` | Publique | Réessayer le travail |
-| POST | `/runtime/disable-proxy` | Publique | Désactiver le proxy |
-| POST | `/runtime/dry-run` | Connecté | Exécution à sec |
-| GET | `/runtime/nodes` | Connecté | Répertorier les nœuds |
-| GET | `/runtime/overview` | Connecté | Aperçu |
-| POST | `/runtime/rollback` | Publique | Revenir en arrière |
-| GET | `/runtime/snapshots` | Connecté | Répertorier les instantanés |
-| POST | `/runtime/snapshots` | Connecté | Créer un instantané |
-| DELETE | `/runtime/snapshots/:id` | Publique | Supprimer l'instantané |
-| GET | `/runtime/snapshots/:id` | Connecté | Obtenir un instantané |
-| POST | `/runtime/verify` | Connecté | Vérifier |
+| POST | `/api/v1/runtime/apply` | Administrateur | Postuler |
+| GET | `/api/v1/runtime/apply-jobs` | Connecté | Liste des emplois |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Connecté | Obtenir un emploi |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Administrateur | Annuler le travail |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Administrateur | Réessayer le travail |
+| POST | `/api/v1/runtime/disable-proxy` | Administrateur | Désactiver le proxy |
+| POST | `/api/v1/runtime/dry-run` | Connecté | Exécution à sec |
+| GET | `/api/v1/runtime/nodes` | Connecté | Répertorier les nœuds |
+| GET | `/api/v1/runtime/overview` | Connecté | Aperçu |
+| POST | `/api/v1/runtime/rollback` | Administrateur | Revenir en arrière |
+| GET | `/api/v1/runtime/snapshots` | Connecté | Répertorier les instantanés |
+| POST | `/api/v1/runtime/snapshots` | Connecté | Créer un instantané |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Administrateur | Supprimer l'instantané |
+| GET | `/api/v1/runtime/snapshots/:id` | Connecté | Obtenir un instantané |
+| POST | `/api/v1/runtime/verify` | Connecté | Vérifier |
 
 ### Politiques d'accès aux services (retraitées)
 
@@ -1255,10 +1251,10 @@ Vue de surveillance en lecture seule des quotas et de l'utilisation.
 
 | Méthode | Chemin | Autorisation | Descriptif |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Connecté | Liste des quotas |
-| GET | `/traffic/quotas/:id/usage` | Connecté | Utilisation des quotas |
-| GET | `/traffic/reset-logs` | Connecté | Enregistrements de réinitialisation de quota |
-| GET | `/traffic/usage-history` | Connecté | Historique d'utilisation |
+| GET | `/api/v1/traffic/quotas` | Connecté | Liste des quotas |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Connecté | Utilisation des quotas |
+| GET | `/api/v1/traffic/reset-logs` | Connecté | Enregistrements de réinitialisation de quota |
+| GET | `/api/v1/traffic/usage-history` | Connecté | Historique d'utilisation |
 
 ### Bilans de santé
 

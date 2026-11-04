@@ -1144,7 +1144,6 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 | GET | `/api/v1/client-auth/articles/:slug` | công khai | Nhận bài viết |
 | GET | `/api/v1/client-auth/balance` | công khai | Nhận số dư |
 | GET | `/api/v1/client-auth/balance/transactions` | công khai | Giao dịch số dư |
-| GET | `/api/v1/client-auth/bills` | công khai | Danh sách đặt hàng |
 | POST | `/api/v1/client-auth/change-password` | công khai | Thay đổi mật khẩu |
 | POST | `/api/v1/client-auth/charge/create` | công khai | Tạo lệnh nạp tiền |
 | GET | `/api/v1/client-auth/charge/orders` | công khai | Liệt kê các lệnh nạp tiền |
@@ -1158,9 +1157,9 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 | POST | `/api/v1/client-auth/gifts/:id/claim` | công khai | Yêu cầu quà tặng |
 | GET | `/api/v1/client-auth/invoices` | công khai | Danh sách đặt hàng |
 | GET | `/api/v1/client-auth/invoices/:id` | công khai | Chi tiết đặt hàng |
-| GET | `/api/v1/client-auth/ip-whitelist` | công khai | Liệt kê danh sách cho phép IP |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | công khai | Xóa khỏi danh sách cho phép IP |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | công khai | Tự động thêm IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | công khai | Liệt kê danh sách cho phép IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | công khai | Xóa khỏi danh sách cho phép IP |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | công khai | Tự động thêm IP |
 | POST | `/api/v1/client-auth/login` | công khai | Đăng nhập |
 | POST | `/api/v1/client-auth/logout` | công khai | Đăng xuất |
 | POST | `/api/v1/client-auth/logs/package` | công khai | Tạo gói nhật ký |
@@ -1182,10 +1181,6 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 | GET | `/api/v1/client-auth/orders/:id` | công khai | Chi tiết đặt hàng |
 | GET | `/api/v1/client-auth/plans` | công khai | Danh sách kế hoạch |
 | GET | `/api/v1/client-auth/plans/:id` | công khai | Chi tiết kế hoạch |
-| GET | `/api/v1/client-auth/profile` | công khai | Nhận hồ sơ |
-| PUT | `/api/v1/client-auth/profile` | công khai | Cập nhật hồ sơ |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | công khai | Liên kết tài khoản của bên thứ ba |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | công khai | Hủy liên kết tài khoản của bên thứ ba |
 | GET | `/api/v1/client-auth/referral/code` | công khai | Nhận mã xác minh giới thiệu |
 | GET | `/api/v1/client-auth/referral/records` | công khai | Liệt kê hồ sơ giới thiệu |
 | GET | `/api/v1/client-auth/referral/stats` | công khai | Nhận số liệu thống kê giới thiệu |
@@ -1194,6 +1189,7 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 | POST | `/api/v1/client-auth/refresh` | công khai | Làm mới |
 | POST | `/api/v1/client-auth/register` | công khai | Đăng ký |
 | POST | `/api/v1/client-auth/reset-subscription` | công khai | Đặt lại đăng ký |
+| PUT | `/api/v1/client-auth/settings` | công khai | Cập nhật hồ sơ |
 | POST | `/api/v1/client-auth/rotate-token` | công khai | Xoay mã thông báo đăng ký |
 | POST | `/api/v1/client-auth/self-unban` | công khai | Bỏ cấm tự phục vụ |
 | PUT | `/api/v1/client-auth/settings` | công khai | Cập nhật cài đặt |
@@ -1228,21 +1224,21 @@ Cấu hình ảnh chụp nhanh / chạy khô / áp dụng / khôi phục (`apply
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| POST | `/runtime/apply` | công khai | Áp dụng |
-| GET | `/runtime/apply-jobs` | Đã đăng nhập | Liệt kê công việc |
-| GET | `/runtime/apply-jobs/:id` | Đã đăng nhập | Nhận việc làm |
-| POST | `/runtime/apply-jobs/:id/cancel` | công khai | Hủy công việc |
-| POST | `/runtime/apply-jobs/:id/retry` | công khai | Thử lại công việc |
-| POST | `/runtime/disable-proxy` | công khai | Tắt proxy |
-| POST | `/runtime/dry-run` | Đã đăng nhập | Thực hiện chạy khô |
-| GET | `/runtime/nodes` | Đã đăng nhập | Liệt kê các nút |
-| GET | `/runtime/overview` | Đã đăng nhập | Tổng quan |
-| POST | `/runtime/rollback` | công khai | Quay lại |
-| GET | `/runtime/snapshots` | Đã đăng nhập | Liệt kê ảnh chụp nhanh |
-| POST | `/runtime/snapshots` | Đã đăng nhập | Tạo ảnh chụp nhanh |
-| DELETE | `/runtime/snapshots/:id` | công khai | Xóa ảnh chụp nhanh |
-| GET | `/runtime/snapshots/:id` | Đã đăng nhập | Nhận ảnh chụp nhanh |
-| POST | `/runtime/verify` | Đã đăng nhập | Xác minh |
+| POST | `/api/v1/runtime/apply` | Quản trị viên | Áp dụng |
+| GET | `/api/v1/runtime/apply-jobs` | Đã đăng nhập | Liệt kê công việc |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Đã đăng nhập | Nhận việc làm |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Quản trị viên | Hủy công việc |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Quản trị viên | Thử lại công việc |
+| POST | `/api/v1/runtime/disable-proxy` | Quản trị viên | Tắt proxy |
+| POST | `/api/v1/runtime/dry-run` | Đã đăng nhập | Thực hiện chạy khô |
+| GET | `/api/v1/runtime/nodes` | Đã đăng nhập | Liệt kê các nút |
+| GET | `/api/v1/runtime/overview` | Đã đăng nhập | Tổng quan |
+| POST | `/api/v1/runtime/rollback` | Quản trị viên | Quay lại |
+| GET | `/api/v1/runtime/snapshots` | Đã đăng nhập | Liệt kê ảnh chụp nhanh |
+| POST | `/api/v1/runtime/snapshots` | Đã đăng nhập | Tạo ảnh chụp nhanh |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Quản trị viên | Xóa ảnh chụp nhanh |
+| GET | `/api/v1/runtime/snapshots/:id` | Đã đăng nhập | Nhận ảnh chụp nhanh |
+| POST | `/api/v1/runtime/verify` | Đã đăng nhập | Xác minh |
 
 ### Chính sách truy cập dịch vụ (đã ngừng hoạt động)
 
@@ -1255,10 +1251,10 @@ Chế độ xem giám sát chỉ đọc về hạn ngạch và mức sử dụng
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Đã đăng nhập | Danh sách hạn ngạch |
-| GET | `/traffic/quotas/:id/usage` | Đã đăng nhập | Hạn mức sử dụng |
-| GET | `/traffic/reset-logs` | Đã đăng nhập | Bản ghi đặt lại hạn ngạch |
-| GET | `/traffic/usage-history` | Đã đăng nhập | Lịch sử sử dụng |
+| GET | `/api/v1/traffic/quotas` | Đã đăng nhập | Danh sách hạn ngạch |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Đã đăng nhập | Hạn mức sử dụng |
+| GET | `/api/v1/traffic/reset-logs` | Đã đăng nhập | Bản ghi đặt lại hạn ngạch |
+| GET | `/api/v1/traffic/usage-history` | Đã đăng nhập | Lịch sử sử dụng |
 
 ### Kiểm tra sức khỏe
 

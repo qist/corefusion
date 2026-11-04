@@ -1144,7 +1144,6 @@ Client-Endpunkte identisch mit dem Portal; Weitere Informationen finden Sie unte
 | GET | `/api/v1/client-auth/articles/:slug` | Öffentlich | Artikel abrufen |
 | GET | `/api/v1/client-auth/balance` | Öffentlich | Schaffen Sie Balance |
 | GET | `/api/v1/client-auth/balance/transactions` | Öffentlich | Saldotransaktionen |
-| GET | `/api/v1/client-auth/bills` | Öffentlich | Bestellliste |
 | POST | `/api/v1/client-auth/change-password` | Öffentlich | Passwort ändern |
 | POST | `/api/v1/client-auth/charge/create` | Öffentlich | Aufladeauftrag erstellen |
 | GET | `/api/v1/client-auth/charge/orders` | Öffentlich | Aufladeaufträge auflisten |
@@ -1158,9 +1157,9 @@ Client-Endpunkte identisch mit dem Portal; Weitere Informationen finden Sie unte
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Öffentlich | Geschenk beanspruchen |
 | GET | `/api/v1/client-auth/invoices` | Öffentlich | Bestellliste |
 | GET | `/api/v1/client-auth/invoices/:id` | Öffentlich | Bestelldetails |
-| GET | `/api/v1/client-auth/ip-whitelist` | Öffentlich | IP-Zulassungsliste auflisten |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | Öffentlich | Von der IP-Zulassungsliste entfernen |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | Öffentlich | IP automatisch hinzufügen |
+| GET | `/api/v1/client-auth/settings/whitelist` | Öffentlich | IP-Zulassungsliste auflisten |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Öffentlich | Von der IP-Zulassungsliste entfernen |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Öffentlich | IP automatisch hinzufügen |
 | POST | `/api/v1/client-auth/login` | Öffentlich | Melden Sie sich an |
 | POST | `/api/v1/client-auth/logout` | Öffentlich | Abmelden |
 | POST | `/api/v1/client-auth/logs/package` | Öffentlich | Erstellen Sie ein Protokollpaket |
@@ -1182,10 +1181,6 @@ Client-Endpunkte identisch mit dem Portal; Weitere Informationen finden Sie unte
 | GET | `/api/v1/client-auth/orders/:id` | Öffentlich | Bestelldetails |
 | GET | `/api/v1/client-auth/plans` | Öffentlich | Planliste |
 | GET | `/api/v1/client-auth/plans/:id` | Öffentlich | Plandetails |
-| GET | `/api/v1/client-auth/profile` | Öffentlich | Holen Sie sich Profil |
-| PUT | `/api/v1/client-auth/profile` | Öffentlich | Profil aktualisieren |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | Öffentlich | Drittanbieterkonto binden |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | Öffentlich | Bindung des Drittanbieterkontos aufheben |
 | GET | `/api/v1/client-auth/referral/code` | Öffentlich | Holen Sie sich den Bestätigungscode für die Empfehlung |
 | GET | `/api/v1/client-auth/referral/records` | Öffentlich | Empfehlungsdatensätze auflisten |
 | GET | `/api/v1/client-auth/referral/stats` | Öffentlich | Erhalten Sie Empfehlungsstatistiken |
@@ -1194,6 +1189,7 @@ Client-Endpunkte identisch mit dem Portal; Weitere Informationen finden Sie unte
 | POST | `/api/v1/client-auth/refresh` | Öffentlich | Aktualisieren |
 | POST | `/api/v1/client-auth/register` | Öffentlich | Registrieren |
 | POST | `/api/v1/client-auth/reset-subscription` | Öffentlich | Abonnement zurücksetzen |
+| PUT | `/api/v1/client-auth/settings` | Öffentlich | Profil aktualisieren |
 | POST | `/api/v1/client-auth/rotate-token` | Öffentlich | Abonnement-Token drehen |
 | POST | `/api/v1/client-auth/self-unban` | Öffentlich | Selbstbedienungsverbot aufgehoben |
 | PUT | `/api/v1/client-auth/settings` | Öffentlich | Einstellungen aktualisieren |
@@ -1228,21 +1224,21 @@ Konfigurations-Snapshots / Probelauf / Anwenden / Rollback (`apply`, `rollback` 
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| POST | `/runtime/apply` | Öffentlich | Bewerben |
-| GET | `/runtime/apply-jobs` | Angemeldet | Jobs auflisten |
-| GET | `/runtime/apply-jobs/:id` | Angemeldet | Job bekommen |
-| POST | `/runtime/apply-jobs/:id/cancel` | Öffentlich | Auftrag abbrechen |
-| POST | `/runtime/apply-jobs/:id/retry` | Öffentlich | Auftrag wiederholen |
-| POST | `/runtime/disable-proxy` | Öffentlich | Proxy deaktivieren |
-| POST | `/runtime/dry-run` | Angemeldet | Probelaufausführung |
-| GET | `/runtime/nodes` | Angemeldet | Knoten auflisten |
-| GET | `/runtime/overview` | Angemeldet | Übersicht |
-| POST | `/runtime/rollback` | Öffentlich | Zurückrollen |
-| GET | `/runtime/snapshots` | Angemeldet | Schnappschüsse auflisten |
-| POST | `/runtime/snapshots` | Angemeldet | Schnappschuss erstellen |
-| DELETE | `/runtime/snapshots/:id` | Öffentlich | Snapshot löschen |
-| GET | `/runtime/snapshots/:id` | Angemeldet | Holen Sie sich einen Schnappschuss |
-| POST | `/runtime/verify` | Angemeldet | Überprüfen |
+| POST | `/api/v1/runtime/apply` | Admin | Bewerben |
+| GET | `/api/v1/runtime/apply-jobs` | Angemeldet | Jobs auflisten |
+| GET | `/api/v1/runtime/apply-jobs/:id` | Angemeldet | Job bekommen |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | Admin | Auftrag abbrechen |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | Admin | Auftrag wiederholen |
+| POST | `/api/v1/runtime/disable-proxy` | Admin | Proxy deaktivieren |
+| POST | `/api/v1/runtime/dry-run` | Angemeldet | Probelaufausführung |
+| GET | `/api/v1/runtime/nodes` | Angemeldet | Knoten auflisten |
+| GET | `/api/v1/runtime/overview` | Angemeldet | Übersicht |
+| POST | `/api/v1/runtime/rollback` | Admin | Zurückrollen |
+| GET | `/api/v1/runtime/snapshots` | Angemeldet | Schnappschüsse auflisten |
+| POST | `/api/v1/runtime/snapshots` | Angemeldet | Schnappschuss erstellen |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Admin | Snapshot löschen |
+| GET | `/api/v1/runtime/snapshots/:id` | Angemeldet | Holen Sie sich einen Schnappschuss |
+| POST | `/api/v1/runtime/verify` | Angemeldet | Überprüfen |
 
 ### Dienstzugriffsrichtlinien (eingestellt)
 
@@ -1255,10 +1251,10 @@ Schreibgeschützte Überwachungsansicht von Kontingenten und Nutzung.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/traffic/quotas` | Angemeldet | Quotenliste |
-| GET | `/traffic/quotas/:id/usage` | Angemeldet | Kontingentnutzung |
-| GET | `/traffic/reset-logs` | Angemeldet | Datensätze zum Zurücksetzen des Kontingents |
-| GET | `/traffic/usage-history` | Angemeldet | Nutzungshistorie |
+| GET | `/api/v1/traffic/quotas` | Angemeldet | Quotenliste |
+| GET | `/api/v1/traffic/quotas/:id/usage` | Angemeldet | Kontingentnutzung |
+| GET | `/api/v1/traffic/reset-logs` | Angemeldet | Datensätze zum Zurücksetzen des Kontingents |
+| GET | `/api/v1/traffic/usage-history` | Angemeldet | Nutzungshistorie |
 
 ### Gesundheitschecks
 

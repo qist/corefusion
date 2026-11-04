@@ -1144,7 +1144,6 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | GET | `/api/v1/client-auth/articles/:slug` | 公開 | 獲取文章 |
 | GET | `/api/v1/client-auth/balance` | 公開 | 獲取餘額 |
 | GET | `/api/v1/client-auth/balance/transactions` | 公開 | 餘額流水 |
-| GET | `/api/v1/client-auth/bills` | 公開 | 訂單列表 |
 | POST | `/api/v1/client-auth/change-password` | 公開 | 修改密碼 |
 | POST | `/api/v1/client-auth/charge/create` | 公開 | 建立充值訂單 |
 | GET | `/api/v1/client-auth/charge/orders` | 公開 | 列表充值訂單 |
@@ -1158,9 +1157,9 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | POST | `/api/v1/client-auth/gifts/:id/claim` | 公開 | 領取禮品 |
 | GET | `/api/v1/client-auth/invoices` | 公開 | 訂單列表 |
 | GET | `/api/v1/client-auth/invoices/:id` | 公開 | 訂單詳情 |
-| GET | `/api/v1/client-auth/ip-whitelist` | 公開 | 列表IP白名單 |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | 公開 | 移除IP白名單 |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | 公開 | 自動新增IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | 公開 | 列表IP白名單 |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公開 | 移除IP白名單 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公開 | 自動新增IP |
 | POST | `/api/v1/client-auth/login` | 公開 | 登入 |
 | POST | `/api/v1/client-auth/logout` | 公開 | 登出 |
 | POST | `/api/v1/client-auth/logs/package` | 公開 | 建立日誌日誌包 |
@@ -1182,10 +1181,6 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | GET | `/api/v1/client-auth/orders/:id` | 公開 | 訂單詳情 |
 | GET | `/api/v1/client-auth/plans` | 公開 | 套餐列表 |
 | GET | `/api/v1/client-auth/plans/:id` | 公開 | 套餐詳情 |
-| GET | `/api/v1/client-auth/profile` | 公開 | 獲取資料 |
-| PUT | `/api/v1/client-auth/profile` | 公開 | 更新資料 |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | 公開 | 繫結第三方賬號 |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | 公開 | 解綁第三方賬號 |
 | GET | `/api/v1/client-auth/referral/code` | 公開 | 獲取推廣驗證碼 |
 | GET | `/api/v1/client-auth/referral/records` | 公開 | 列表推廣記錄 |
 | GET | `/api/v1/client-auth/referral/stats` | 公開 | 獲取推廣統計 |
@@ -1194,6 +1189,7 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | POST | `/api/v1/client-auth/refresh` | 公開 | 重新整理 |
 | POST | `/api/v1/client-auth/register` | 公開 | 註冊 |
 | POST | `/api/v1/client-auth/reset-subscription` | 公開 | 重置訂閱 |
+| PUT | `/api/v1/client-auth/settings` | 公開 | 更新資料 |
 | POST | `/api/v1/client-auth/rotate-token` | 公開 | 輪換訂閱 token |
 | POST | `/api/v1/client-auth/self-unban` | 公開 | 自助解封 |
 | PUT | `/api/v1/client-auth/settings` | 公開 | 更新設定 |
@@ -1228,21 +1224,21 @@ geoip/geosite 資料來源與檔案的同步、下發。
 
 | 方法 | 路徑 | 許可權 | 說明 |
 |---|---|---|---|
-| POST | `/runtime/apply` | 公開 | 申請 |
-| GET | `/runtime/apply-jobs` | 登入 | 列表任務 |
-| GET | `/runtime/apply-jobs/:id` | 登入 | 獲取任務 |
-| POST | `/runtime/apply-jobs/:id/cancel` | 公開 | 取消任務 |
-| POST | `/runtime/apply-jobs/:id/retry` | 公開 | 重試任務 |
-| POST | `/runtime/disable-proxy` | 公開 | 禁用代理 |
-| POST | `/runtime/dry-run` | 登入 | 試算執行 |
-| GET | `/runtime/nodes` | 登入 | 列表節點 |
-| GET | `/runtime/overview` | 登入 | 總覽 |
-| POST | `/runtime/rollback` | 公開 | 回滾 |
-| GET | `/runtime/snapshots` | 登入 | 列表快照 |
-| POST | `/runtime/snapshots` | 登入 | 建立快照 |
-| DELETE | `/runtime/snapshots/:id` | 公開 | 刪除快照 |
-| GET | `/runtime/snapshots/:id` | 登入 | 獲取快照 |
-| POST | `/runtime/verify` | 登入 | 驗證 |
+| POST | `/api/v1/runtime/apply` | 管理員 | 申請 |
+| GET | `/api/v1/runtime/apply-jobs` | 登入 | 列表任務 |
+| GET | `/api/v1/runtime/apply-jobs/:id` | 登入 | 獲取任務 |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | 管理員 | 取消任務 |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | 管理員 | 重試任務 |
+| POST | `/api/v1/runtime/disable-proxy` | 管理員 | 禁用代理 |
+| POST | `/api/v1/runtime/dry-run` | 登入 | 試算執行 |
+| GET | `/api/v1/runtime/nodes` | 登入 | 列表節點 |
+| GET | `/api/v1/runtime/overview` | 登入 | 總覽 |
+| POST | `/api/v1/runtime/rollback` | 管理員 | 回滾 |
+| GET | `/api/v1/runtime/snapshots` | 登入 | 列表快照 |
+| POST | `/api/v1/runtime/snapshots` | 登入 | 建立快照 |
+| DELETE | `/api/v1/runtime/snapshots/:id` | 管理員 | 刪除快照 |
+| GET | `/api/v1/runtime/snapshots/:id` | 登入 | 獲取快照 |
+| POST | `/api/v1/runtime/verify` | 登入 | 驗證 |
 
 ### 服務訪問策略（已下線）
 
@@ -1255,10 +1251,10 @@ geoip/geosite 資料來源與檔案的同步、下發。
 
 | 方法 | 路徑 | 許可權 | 說明 |
 |---|---|---|---|
-| GET | `/traffic/quotas` | 登入 | 配額列表 |
-| GET | `/traffic/quotas/:id/usage` | 登入 | 配額用量 |
-| GET | `/traffic/reset-logs` | 登入 | 配額重置記錄 |
-| GET | `/traffic/usage-history` | 登入 | 用量歷史 |
+| GET | `/api/v1/traffic/quotas` | 登入 | 配額列表 |
+| GET | `/api/v1/traffic/quotas/:id/usage` | 登入 | 配額用量 |
+| GET | `/api/v1/traffic/reset-logs` | 登入 | 配額重置記錄 |
+| GET | `/api/v1/traffic/usage-history` | 登入 | 用量歷史 |
 
 ### 健康檢查
 

@@ -1144,7 +1144,6 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/client-auth/articles/:slug` | สาธารณะ | รับบทความ |
 | GET | `/api/v1/client-auth/balance` | สาธารณะ | ได้รับความสมดุล |
 | GET | `/api/v1/client-auth/balance/transactions` | สาธารณะ | ธุรกรรมยอดคงเหลือ |
-| GET | `/api/v1/client-auth/bills` | สาธารณะ | รายการสั่งซื้อ |
 | POST | `/api/v1/client-auth/change-password` | สาธารณะ | เปลี่ยนรหัสผ่าน |
 | POST | `/api/v1/client-auth/charge/create` | สาธารณะ | สร้างคำสั่งเติมเงิน |
 | GET | `/api/v1/client-auth/charge/orders` | สาธารณะ | แสดงรายการคำสั่งเติมเงิน |
@@ -1158,9 +1157,9 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | POST | `/api/v1/client-auth/gifts/:id/claim` | สาธารณะ | เรียกร้องของขวัญ |
 | GET | `/api/v1/client-auth/invoices` | สาธารณะ | รายการสั่งซื้อ |
 | GET | `/api/v1/client-auth/invoices/:id` | สาธารณะ | รายละเอียดการสั่งซื้อ |
-| GET | `/api/v1/client-auth/ip-whitelist` | สาธารณะ | แสดงรายการรายการที่อนุญาต IP |
-| DELETE | `/api/v1/client-auth/ip-whitelist/:id` | สาธารณะ | ลบออกจากรายการอนุญาต IP |
-| POST | `/api/v1/client-auth/ip-whitelist/auto-add` | สาธารณะ | เพิ่ม IP อัตโนมัติ |
+| GET | `/api/v1/client-auth/settings/whitelist` | สาธารณะ | แสดงรายการรายการที่อนุญาต IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | สาธารณะ | ลบออกจากรายการอนุญาต IP |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | สาธารณะ | เพิ่ม IP อัตโนมัติ |
 | POST | `/api/v1/client-auth/login` | สาธารณะ | เข้าสู่ระบบ |
 | POST | `/api/v1/client-auth/logout` | สาธารณะ | ออกจากระบบ |
 | POST | `/api/v1/client-auth/logs/package` | สาธารณะ | สร้างบันเดิลบันทึก |
@@ -1182,10 +1181,6 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/client-auth/orders/:id` | สาธารณะ | รายละเอียดการสั่งซื้อ |
 | GET | `/api/v1/client-auth/plans` | สาธารณะ | รายการแผน |
 | GET | `/api/v1/client-auth/plans/:id` | สาธารณะ | รายละเอียดแผน |
-| GET | `/api/v1/client-auth/profile` | สาธารณะ | รับโปรไฟล์ |
-| PUT | `/api/v1/client-auth/profile` | สาธารณะ | อัพเดตโปรไฟล์ |
-| POST | `/api/v1/client-auth/profile/bind-oauth` | สาธารณะ | ผูกบัญชีบุคคลที่สาม |
-| DELETE | `/api/v1/client-auth/profile/unbind-oauth/:provider` | สาธารณะ | เลิกผูกบัญชีบุคคลที่สาม |
 | GET | `/api/v1/client-auth/referral/code` | สาธารณะ | รับรหัสยืนยันการอ้างอิง |
 | GET | `/api/v1/client-auth/referral/records` | สาธารณะ | แสดงรายการบันทึกการอ้างอิง |
 | GET | `/api/v1/client-auth/referral/stats` | สาธารณะ | รับสถิติการอ้างอิง |
@@ -1194,6 +1189,7 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | POST | `/api/v1/client-auth/refresh` | สาธารณะ | รีเฟรช |
 | POST | `/api/v1/client-auth/register` | สาธารณะ | ลงทะเบียน |
 | POST | `/api/v1/client-auth/reset-subscription` | สาธารณะ | รีเซ็ตการสมัครรับข้อมูล |
+| PUT | `/api/v1/client-auth/settings` | สาธารณะ | อัพเดตโปรไฟล์ |
 | POST | `/api/v1/client-auth/rotate-token` | สาธารณะ | หมุนเวียนโทเค็นการสมัครสมาชิก |
 | POST | `/api/v1/client-auth/self-unban` | สาธารณะ | ยกเลิกการแบนแบบบริการตนเอง |
 | PUT | `/api/v1/client-auth/settings` | สาธารณะ | อัปเดตการตั้งค่า |
@@ -1228,21 +1224,21 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| POST | `/runtime/apply` | สาธารณะ | สมัคร |
-| GET | `/runtime/apply-jobs` | ลงชื่อเข้าใช้แล้ว | รายการงาน |
-| GET | `/runtime/apply-jobs/:id` | ลงชื่อเข้าใช้แล้ว | รับงาน |
-| POST | `/runtime/apply-jobs/:id/cancel` | สาธารณะ | ยกเลิกงาน |
-| POST | `/runtime/apply-jobs/:id/retry` | สาธารณะ | ลองงานอีกครั้ง |
-| POST | `/runtime/disable-proxy` | สาธารณะ | ปิดการใช้งานพรอกซี |
-| POST | `/runtime/dry-run` | ลงชื่อเข้าใช้แล้ว | การดำเนินการแบบทดลองรัน |
-| GET | `/runtime/nodes` | ลงชื่อเข้าใช้แล้ว | แสดงรายการโหนด |
-| GET | `/runtime/overview` | ลงชื่อเข้าใช้แล้ว | ภาพรวม |
-| POST | `/runtime/rollback` | สาธารณะ | ย้อนกลับ |
-| GET | `/runtime/snapshots` | ลงชื่อเข้าใช้แล้ว | แสดงรายการสแนปชอต |
-| POST | `/runtime/snapshots` | ลงชื่อเข้าใช้แล้ว | สร้างภาพรวม |
-| DELETE | `/runtime/snapshots/:id` | สาธารณะ | ลบสแนปชอต |
-| GET | `/runtime/snapshots/:id` | ลงชื่อเข้าใช้แล้ว | รับภาพรวม |
-| POST | `/runtime/verify` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบ |
+| POST | `/api/v1/runtime/apply` | ผู้ดูแลระบบ | สมัคร |
+| GET | `/api/v1/runtime/apply-jobs` | ลงชื่อเข้าใช้แล้ว | รายการงาน |
+| GET | `/api/v1/runtime/apply-jobs/:id` | ลงชื่อเข้าใช้แล้ว | รับงาน |
+| POST | `/api/v1/runtime/apply-jobs/:id/cancel` | ผู้ดูแลระบบ | ยกเลิกงาน |
+| POST | `/api/v1/runtime/apply-jobs/:id/retry` | ผู้ดูแลระบบ | ลองงานอีกครั้ง |
+| POST | `/api/v1/runtime/disable-proxy` | ผู้ดูแลระบบ | ปิดการใช้งานพรอกซี |
+| POST | `/api/v1/runtime/dry-run` | ลงชื่อเข้าใช้แล้ว | การดำเนินการแบบทดลองรัน |
+| GET | `/api/v1/runtime/nodes` | ลงชื่อเข้าใช้แล้ว | แสดงรายการโหนด |
+| GET | `/api/v1/runtime/overview` | ลงชื่อเข้าใช้แล้ว | ภาพรวม |
+| POST | `/api/v1/runtime/rollback` | ผู้ดูแลระบบ | ย้อนกลับ |
+| GET | `/api/v1/runtime/snapshots` | ลงชื่อเข้าใช้แล้ว | แสดงรายการสแนปชอต |
+| POST | `/api/v1/runtime/snapshots` | ลงชื่อเข้าใช้แล้ว | สร้างภาพรวม |
+| DELETE | `/api/v1/runtime/snapshots/:id` | ผู้ดูแลระบบ | ลบสแนปชอต |
+| GET | `/api/v1/runtime/snapshots/:id` | ลงชื่อเข้าใช้แล้ว | รับภาพรวม |
+| POST | `/api/v1/runtime/verify` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบ |
 
 ### นโยบายการเข้าถึงบริการ (เลิกใช้แล้ว)
 
@@ -1255,10 +1251,10 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/traffic/quotas` | ลงชื่อเข้าใช้แล้ว | รายการโควต้า |
-| GET | `/traffic/quotas/:id/usage` | ลงชื่อเข้าใช้แล้ว | การใช้โควต้า |
-| GET | `/traffic/reset-logs` | ลงชื่อเข้าใช้แล้ว | บันทึกการรีเซ็ตโควต้า |
-| GET | `/traffic/usage-history` | ลงชื่อเข้าใช้แล้ว | ประวัติการใช้งาน |
+| GET | `/api/v1/traffic/quotas` | ลงชื่อเข้าใช้แล้ว | รายการโควต้า |
+| GET | `/api/v1/traffic/quotas/:id/usage` | ลงชื่อเข้าใช้แล้ว | การใช้โควต้า |
+| GET | `/api/v1/traffic/reset-logs` | ลงชื่อเข้าใช้แล้ว | บันทึกการรีเซ็ตโควต้า |
+| GET | `/api/v1/traffic/usage-history` | ลงชื่อเข้าใช้แล้ว | ประวัติการใช้งาน |
 
 ### การตรวจสุขภาพ
 

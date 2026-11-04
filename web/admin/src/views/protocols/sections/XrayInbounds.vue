@@ -3427,6 +3427,16 @@ function parseTlsSettings(tls) {
   }
 }
 
+// nameLines 解析 REALITY 的 serverNames / shortIds 文本域：空行代表 xray 的 "" 条目
+// （允许无 SNI / 空 shortId），不能过滤掉；只裁掉尾部的空行。
+function nameLines(v) {
+  const raw = String(v == null ? '' : v)
+  if (raw.trim() === '') return []
+  const lines = raw.split('\n').map(s => s.trim())
+  while (lines.length && lines[lines.length - 1] === '') lines.pop()
+  return lines
+}
+
 function parseRealitySettings(reality) {
   const settingsArr = reality.settings || []
   const cs = settingsArr[0] || {}
@@ -3436,8 +3446,11 @@ function parseRealitySettings(reality) {
     target: reality.target || 'www.amazon.com:443',
     serverNamesStr: (reality.serverNames || []).join('\n'),
     privateKey: reality.privateKey || '',
-    _password: cs.password || '',
-    _fingerprint: cs.fingerprint || 'chrome',
+    // publicKey 有三种存法（3x-ui 导入是顶层 publicKey，面板编辑器是 settings[0].password，
+    // sing-box 反推是 _realityPublicKey）。只认 settings[0].password 时，打开再保存会把
+    // publicKey 抹掉 → 之后所有分享链接都缺 pbk（客户端 REALITY 直接连不上）。
+    _password: cs.password || reality.publicKey || reality._realityPublicKey || reality.password || '',
+    _fingerprint: cs.fingerprint || reality.fingerprint || 'chrome',
     shortIdsStr: (reality.shortIds || []).join('\n'),
     show: reality.show || false,
     xver: reality.xver || 0,
@@ -3445,7 +3458,7 @@ function parseRealitySettings(reality) {
     maxClientVer: reality.maxClientVer || '',
     maxTimeDiff: reality.maxTimeDiff || 0,
     mldsa65Seed: reality.mldsa65Seed || '',
-    _mldsa65Verify: cs.mldsa65Verify || '',
+    _mldsa65Verify: cs.mldsa65Verify || reality.mldsa65Verify || '',
     _showLimitUpload: !!reality.limitFallbackUpload,
     limitFallbackUpload: { afterBytes: lfu.afterBytes || 0, bytesPerSec: lfu.bytesPerSec || 0, burstBytesPerSec: lfu.burstBytesPerSec || 0 },
     _showLimitDownload: !!reality.limitFallbackDownload,
@@ -4234,6 +4247,11 @@ function buildInbound(ib, isApiCall = false) {
   // 监听方式写进 config_json（_ 前缀，下发核心前由 coreconfig 剥掉）：
   // socket 路径可以是任意形式，回显时不能靠字符串前缀猜。
   result._listenType = ib._listenType === 'sock' ? 'sock' : 'tcp'
+  // 必须把 socket 路径/权限一起带到结果里：saveInbound 会对 buildInbound 的**返回值**
+  // 再调一次 effectiveListen(ib)，缺了 _socketPath 就返回空串 → 后端"保留原值"，
+  // 于是 config_json 里是 @name、listen 列却还是旧地址（保存看起来没生效）。
+  result._socketPath = ib._socketPath || ''
+  result._socketPerm = ib._socketPerm || ''
   result.listen = ib._listenType === 'sock' ? effectiveListen(ib) : (ib.listen || undefined)
   // port 必须**永远**带上：xray 绑定 unix/抽象 socket 时会忽略它，但面板侧把它当
   // 标识端口（订阅按 port==0 直接跳过节点、分享链接会生成 ":0"、端口跳跃/防火墙也用它）。
@@ -4312,10 +4330,12 @@ function buildInbound(ib, isApiCall = false) {
       const r = ib.streamSettings.reality || {}
       const rs = {}
       if (r.target) rs.target = r.target
-      const names = r.serverNamesStr ? r.serverNamesStr.split('\n').map(s => s.trim()).filter(Boolean) : []
+      // 空串在 xray REALITY 里是"允许无 SNI / 空 shortId"的语义，保存时必须原样保留：
+      // 只去掉尾部空行（文本域多敲的回车），开头/中间的空行不能丢。
+      const names = nameLines(r.serverNamesStr)
       if (names.length) rs.serverNames = names
       if (r.privateKey) rs.privateKey = r.privateKey
-      const sids = r.shortIdsStr ? r.shortIdsStr.split('\n').map(s => s.trim()).filter(s => s !== '') : []
+      const sids = nameLines(r.shortIdsStr)
       if (sids.length) rs.shortIds = sids
       if (r.show) rs.show = true
       if (r.xver) rs.xver = r.xver
@@ -4330,6 +4350,11 @@ function buildInbound(ib, isApiCall = false) {
       if (r._fingerprint) settingsObj.fingerprint = r._fingerprint
       if (r._password) settingsObj.password = r._password
       if (r._mldsa65Verify) settingsObj.mldsa65Verify = r._mldsa65Verify
+      // 同时写回顶层扁平字段：3x-ui 导入的老数据/本面板的 REALITY 取参都可能读顶层
+      // （少了它，保存一次 publicKey 就丢，分享链接缺 pbk → 客户端认证失败）。
+      if (r._fingerprint) rs.fingerprint = r._fingerprint
+      if (r._password) rs.publicKey = r._password
+      if (r._mldsa65Verify) rs.mldsa65Verify = r._mldsa65Verify
       if (r.spiderX) settingsObj.spiderX = r.spiderX
       if (Object.keys(settingsObj).length) rs.settings = [settingsObj]
       result.streamSettings.realitySettings = rs
@@ -4748,7 +4773,8 @@ async function saveInbound() {
     remark: ib._remark || ib.tag || '',
     protocol: ib.protocol,
     tag: ib.tag,
-    listen: effectiveListen(ib),
+    // ib 已是 buildInbound 的结果，listen 就是最终值（不要再 effectiveListen 一次）
+    listen: ib.listen || effectiveListen(ib),
     port: ib.port || 0,
     enabled: ib._enabled !== false,
     config_json: configJson,

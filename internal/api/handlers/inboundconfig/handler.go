@@ -203,7 +203,12 @@ func (h *Handler) Create(c *gin.Context) {
 		response.BadRequest(c, "INVALID_PORT", "端口必须 >= 1（Unix Socket / @抽象 socket 也需要：用于分享、订阅与规则标识）")
 		return
 	}
-	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), req.Enabled)
+	listen := strings.TrimSpace(req.Listen)
+	if listen == "" {
+		// 同 Update：允许只提供 config_json.listen（导入/脚本/旧前端）。
+		listen = listenFromConfigJSON(req.ConfigJSON)
+	}
+	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, listen, req.Port, string(req.ConfigJSON), req.Enabled)
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
 			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())
@@ -276,7 +281,13 @@ func (h *Handler) Update(c *gin.Context) {
 		req.Port = existing.Port
 	}
 	if strings.TrimSpace(req.Listen) == "" {
-		req.Listen = existing.Listen
+		// 前端历史上存在"只改了 socket 路径、listen 传空"的路径（buildInbound 没带
+		// _socketPath，effectiveListen 返回空串）→ 这里保留旧值就等于"保存没生效"。
+		// config_json 里的 listen 是同一份数据的副本，用它兜底（仍为空才保留旧值）。
+		req.Listen = listenFromConfigJSON(req.ConfigJSON)
+		if strings.TrimSpace(req.Listen) == "" {
+			req.Listen = existing.Listen
+		}
 	}
 	if v := strings.TrimSpace(string(req.ConfigJSON)); v == "" || v == "null" {
 		req.ConfigJSON = json.RawMessage(existing.ConfigJSON)
@@ -506,4 +517,19 @@ func (h *Handler) setUserPaused(c *gin.Context, paused bool) {
 	} else {
 		response.OK(c, gin.H{"message": "user resumed", "email": email})
 	}
+}
+
+// listenFromConfigJSON 取 config_json 顶层的 listen（老前端/脚本可能只填这里）。
+// 只认字符串且非空；解析失败返回空串。
+func listenFromConfigJSON(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var cfg struct {
+		Listen string `json:"listen"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(cfg.Listen)
 }

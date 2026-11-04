@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/url"
 	"strconv"
 	"strings"
@@ -617,6 +618,39 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 	return nil
 }
 
+// getStringSliceKeepEmpty 与 getStringSlice 相同，但**保留空串**。
+// 用于 REALITY 的 serverNames / shortIds：列表里的 "" 是服务端"允许无 SNI / 空 shortId"
+// 的合法选项，随机挑到它时客户端就应该发空（而不是永远跳过）。
+func getStringSliceKeepEmpty(m map[string]interface{}, key string) []string {
+	if m == nil {
+		return nil
+	}
+	switch v := m[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// 一次请求内"已挑好的客户端参数"缓存键：链接与各格式片段必须用同一个 sni/sid，
+// 否则用户对照时以为配置错了；写回 realitySettings（只在本次请求的 map 副本上）。
+const (
+	pickedShortIDKey    = "_cfPickedShortID"
+	pickedServerNameKey = "_cfPickedServerName"
+)
+
 // RealityParams 是 REALITY 客户端需要的参数（服务端那份 privateKey/target 不在这里）。
 //
 // 字段口径按官方实现 XTLS/REALITY 的客户端配置（README）：
@@ -642,8 +676,10 @@ type RealityParams struct {
 //	② xray 25+ / 面板编辑器：      settings: [{fingerprint, password(=公钥), shortId, serverName, spiderX}]
 //	③ 顶层下划线：                _password（=公钥）、_realityPublicKey（sing-box 编辑器存的）
 //
-// sni/sid 取**第一个**（不再随机挑）：同一个入站的链接、Mihomo、sing-box、Xray
-// 四种产物必须一致，否则用户对照时会以为配置错了（服务端接受 shortIds 里任意一个）。
+// sni/sid **每次随机挑一个**（服务端接受 serverNames/shortIds 里任意一个），
+// 列表里的 "" 也算合法选项（随机挑到就发空 = 无 SNI / 空 shortId）。
+// 同一次请求内链接与四种片段必须一致 → 挑完写回 realitySettings 的 _cfPicked* 键，
+// 后续调用直接复用；换一次请求（重新拉订阅/重新打开分享）就重新随机。
 func RealityClientParams(ss map[string]interface{}) RealityParams {
 	var out RealityParams
 	reality := getMap(ss, "realitySettings")
@@ -682,15 +718,21 @@ func RealityClientParams(ss map[string]interface{}) RealityParams {
 	out.SpiderX = pick("spiderX")
 	// 抗量子校验（面板把客户端那份存成 _mldsa65Verify）
 	out.MLDSA65Verify = pick("mldsa65Verify", "_mldsa65Verify")
-	// 短 id：优先标量，其次列表里第一个
+	// 短 id：显式标量优先；否则在 shortIds 里**随机**挑（含空串）。
 	if sid := pick("shortId"); sid != "" {
 		out.ShortID = sid
-	} else if list := getStringSlice(reality, "shortIds"); len(list) > 0 {
-		out.ShortID = list[0]
+	} else if v, ok := reality[pickedShortIDKey].(string); ok {
+		out.ShortID = v // 本次请求已挑过（链接/片段保持一致）
+	} else if list := getStringSliceKeepEmpty(reality, "shortIds"); len(list) > 0 {
+		out.ShortID = list[rand.Intn(len(list))]
+		reality[pickedShortIDKey] = out.ShortID
 	}
-	// serverName（客户端 SNI）：优先 serverNames[0]，其次 settings[0].serverName
-	if list := getStringSlice(reality, "serverNames"); len(list) > 0 {
-		out.ServerName = list[0]
+	// serverName（客户端 SNI）：显式标量优先；否则在 serverNames 里**随机**挑（含空串）。
+	if v, ok := reality[pickedServerNameKey].(string); ok {
+		out.ServerName = v
+	} else if list := getStringSliceKeepEmpty(reality, "serverNames"); len(list) > 0 {
+		out.ServerName = list[rand.Intn(len(list))]
+		reality[pickedServerNameKey] = out.ServerName
 	} else if v, ok := reality["serverName"].(string); ok && v != "" {
 		out.ServerName = v
 	} else if first != nil {

@@ -127,12 +127,16 @@ func TestRealityParamsFromEditorShape(t *testing.T) {
 	node := formatterNodeForShare("reality-in", cfg, view, firstClient(getMap(view, "settings")), "127.0.0.1", 34201)
 
 	rp := sharelink.RealityClientParams(ss)
-	if rp.PublicKey != pbk || rp.ShortID != "6fb5a09e" || rp.Fingerprint != "chrome" || rp.ServerName != "www.intel.com" {
+	if rp.PublicKey != pbk || rp.Fingerprint != "chrome" || rp.ServerName != "www.intel.com" {
 		t.Fatalf("RealityClientParams = %+v", rp)
 	}
+	// shortId 在列表里随机挑（服务端接受任意一个），但同一请求内节点必须与它一致
+	if rp.ShortID != "6fb5a09e" && rp.ShortID != "a5395d21" {
+		t.Fatalf("shortId 不在列表里: %q", rp.ShortID)
+	}
 	ro, _ := node.Extra["reality-opts"].(map[string]interface{})
-	if ro == nil || ro["public-key"] != pbk || ro["short-id"] != "6fb5a09e" {
-		t.Fatalf("节点缺 reality-opts: %#v", node.Extra)
+	if ro == nil || ro["public-key"] != pbk || ro["short-id"] != rp.ShortID {
+		t.Fatalf("节点 reality-opts 与挑选结果不一致: %#v vs %+v", node.Extra, rp)
 	}
 	if node.Extra["client-fingerprint"] != "chrome" || node.ServerName != "www.intel.com" {
 		t.Errorf("指纹/SNI 丢了: fp=%v sni=%q", node.Extra["client-fingerprint"], node.ServerName)
@@ -163,7 +167,7 @@ func TestRealityParamsFromEditorShape(t *testing.T) {
 	if !ok {
 		t.Fatal("xray 应能产出片段")
 	}
-	for _, want := range []string{`"security": "reality"`, `"password": "` + pbk + `"`, `"shortId": "6fb5a09e"`, `"fingerprint": "chrome"`} {
+	for _, want := range []string{`"security": "reality"`, `"password": "` + pbk + `"`, `"shortId": "` + rp.ShortID + `"`, `"fingerprint": "chrome"`} {
 		if !strings.Contains(xr, want) {
 			t.Errorf("xray 片段缺 %s:\n%s", want, xr)
 		}
@@ -194,7 +198,7 @@ func TestRealityParamsFromEditorShape(t *testing.T) {
 		Tag: "reality-in", Protocol: "vless", Host: "127.0.0.1", Port: 34201,
 		Settings: getMap(view, "settings"), StreamSettings: ss,
 	})
-	for _, want := range []string{"security=reality", "pbk=" + pbk, "sid=6fb5a09e", "sni=www.intel.com", "fp=chrome"} {
+	for _, want := range []string{"security=reality", "pbk=" + pbk, "sid=" + rp.ShortID, "sni=www.intel.com", "fp=chrome"} {
 		if !strings.Contains(link, want) {
 			t.Errorf("链接缺 %s:\n%s", want, link)
 		}

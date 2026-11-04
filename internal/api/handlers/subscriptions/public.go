@@ -944,6 +944,12 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				protocol = "hysteria2"
 			}
 			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
+			// REALITY 的客户端 SNI 由 sharelink 随机挑（serverNames 里可能含空串），
+			// 必须与链接用同一个值；getTLSServerName 只认 serverNames[0]。
+			serverName := getTLSServerName(ss)
+			if getMap(ss, "realitySettings") != nil {
+				serverName = sharelink.RealityClientParams(ss).ServerName
+			}
 			node := &formatter.Node{
 				Name:       nodeName,
 				CoreType:   cfg.CoreType,
@@ -952,7 +958,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				Port:       port,
 				Transport:  transport,
 				TLS:        getString(ss, "security", "none") != "none",
-				ServerName: getTLSServerName(ss),
+				ServerName: serverName,
 				UUID:       uuid,
 				Password:   effectivePassword,
 				Flow:       flow,
@@ -1379,6 +1385,11 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			}
 			extra := buildExtra(config, ss, cfg.Protocol)
 			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
+			// REALITY 的客户端 SNI 由 sharelink 随机挑，必须与链接用同一个值。
+			serverName := getTLSServerName(ss)
+			if getMap(ss, "realitySettings") != nil {
+				serverName = sharelink.RealityClientParams(ss).ServerName
+			}
 			node := formatter.Node{
 				Name:       nodeName,
 				CoreType:   cfg.CoreType,
@@ -1387,7 +1398,7 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				Port:       port,
 				Transport:  transport,
 				TLS:        getString(ss, "security", "none") != "none",
-				ServerName: getTLSServerName(ss),
+				ServerName: serverName,
 				UUID:       uuid,
 				Password:   effectivePassword,
 				Flow:       flow,
@@ -2975,10 +2986,11 @@ func getTLSServerName(ss map[string]interface{}) string {
 			return sni
 		}
 	}
-	// Try realitySettings.serverNames[0]
+	// Try realitySettings.serverNames（跳过空串："" 是"允许无 SNI"的服务端标记，
+	// 不是可用的 SNI；以前直接返回 serverNames[0] 会在首项为空时把 SNI 整个丢掉）
 	if reality := getMap(ss, "realitySettings"); reality != nil {
-		if sniList, ok := reality["serverNames"].([]interface{}); ok && len(sniList) > 0 {
-			if s, ok := sniList[0].(string); ok {
+		for _, raw := range getStringSlice(reality, "serverNames") {
+			if s := strings.TrimSpace(raw); s != "" {
 				return s
 			}
 		}

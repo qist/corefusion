@@ -226,10 +226,12 @@ func TestRealityClientParamsShapes(t *testing.T) {
 		if got.PublicKey != "PBK" {
 			t.Errorf("%s: PublicKey = %q, want PBK", label, got.PublicKey)
 		}
-		if got.ShortID != "SID" && got.ShortID != "S1" {
-			t.Errorf("%s: ShortID = %q, want SID/S1", label, got.ShortID)
+		// shortId 在列表里随机挑，只要来自列表即可
+		if got.ShortID != "SID" && got.ShortID != "S1" && got.ShortID != "S2" {
+			t.Errorf("%s: ShortID = %q, want SID/S1/S2", label, got.ShortID)
 		}
-		if got.ServerName != "sni.example.com" {
+		// sni 在列表里随机挑（服务端接受任意一个），只要来自列表即可
+		if got.ServerName != "sni.example.com" && got.ServerName != "other.example.com" {
 			t.Errorf("%s: ServerName = %q", label, got.ServerName)
 		}
 	}
@@ -285,25 +287,55 @@ func TestRealityClientParamsDerivesPublicKey(t *testing.T) {
 	}
 }
 
-// xray 的 serverNames / shortIds 里 "" 是"允许无 SNI / 空 shortId"的**服务端标记**，
-// 不是可用的客户端参数：客户端 sni 为空、sid 为空时 REALITY 握手会失败（xray 明确要求
-// serverName 非空；空 shortId 只对服务端列表里含 "" 的入站成立）。
-// 以前 getStringSlice 把 "" 原样保留，`list[0]` 取到空串 → 链接里没有 sni/sid、
-// mihomo 片段没有 servername/short-id（59026 / 22554 系列实测就是这样）。
-func TestRealityClientParamsSkipsEmptyEntries(t *testing.T) {
+// REALITY 的 serverNames / shortIds 每次**随机**挑一个，列表里的 "" 也是合法选项
+// （服务端列表含 "" 表示允许无 SNI / 空 shortId）。同一次请求内链接与各片段必须一致，
+// 所以挑完会写回 realitySettings 缓存，重复调用返回同一个值。
+func TestRealityClientParamsRandomPicksAndCaches(t *testing.T) {
+	newReality := func() map[string]interface{} {
+		return map[string]interface{}{
+			"publicKey":   "PBK",
+			"serverNames": []interface{}{"", "ziftra.com", "qomvix.com"},
+			"shortIds":    []interface{}{"", "d6b95c57af3682aa", "03e822599b26"},
+		}
+	}
+
+	// 同一份 map 重复调用 → 值必须一致（链接/片段共用一次挑选结果）
+	r := newReality()
+	ss := map[string]interface{}{"security": "reality", "realitySettings": r}
+	first := RealityClientParams(ss)
+	for i := 0; i < 5; i++ {
+		if got := RealityClientParams(ss); got != first {
+			t.Fatalf("同一请求内应复用挑选结果: %+v vs %+v", got, first)
+		}
+	}
+
+	// 每次新请求（新 map）都要重新随机：多次调用应覆盖到列表里的多个值，且能出现空串
+	seenSni, seenSid := map[string]bool{}, map[string]bool{}
+	for i := 0; i < 400; i++ {
+		p := RealityClientParams(map[string]interface{}{"realitySettings": newReality()})
+		seenSni[p.ServerName] = true
+		seenSid[p.ShortID] = true
+	}
+	if len(seenSni) < 2 || len(seenSid) < 2 {
+		t.Errorf("sni/sid 没有随机: sni=%v sid=%v", seenSni, seenSid)
+	}
+	if !seenSni[""] || !seenSid[""] {
+		t.Errorf("列表里的空串应参与随机: sni=%v sid=%v", seenSni, seenSid)
+	}
+	// 非空值必须来自列表（不能凭空生成）
+	for v := range seenSni {
+		if v != "" && v != "ziftra.com" && v != "qomvix.com" {
+			t.Errorf("出现了列表外的 SNI: %q", v)
+		}
+	}
+	for v := range seenSid {
+		if v != "" && v != "d6b95c57af3682aa" && v != "03e822599b26" {
+			t.Errorf("出现了列表外的 shortId: %q", v)
+		}
+	}
+
+	// 只有空串时保持空（无 SNI / 空 shortId 的入站语义不变）
 	got := RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
-		"publicKey":   "PBK",
-		"serverNames": []interface{}{"", "ziftra.com", "qomvix.com"},
-		"shortIds":    []interface{}{"", "d6b95c57af3682aa"},
-	}})
-	if got.ServerName != "ziftra.com" {
-		t.Errorf("ServerName = %q, want ziftra.com（应跳过空串）", got.ServerName)
-	}
-	if got.ShortID != "d6b95c57af3682aa" {
-		t.Errorf("ShortID = %q, want d6b95c57af3682aa（应跳过空串）", got.ShortID)
-	}
-	// 只有空串时保持空（无 SNI / 空 shortId 的入站语义不变，不能凭空捏一个值）
-	got = RealityClientParams(map[string]interface{}{"realitySettings": map[string]interface{}{
 		"serverNames": []interface{}{""}, "shortIds": []interface{}{""},
 	}})
 	if got.ServerName != "" || got.ShortID != "" {

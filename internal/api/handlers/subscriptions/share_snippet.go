@@ -7,6 +7,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
+	"corefusion/internal/subscription/sharelink"
 )
 
 // 编辑器"分享"弹窗的片段渲染。
@@ -73,6 +74,12 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 	password := getString(client, "password", "")
 	extra := buildExtra(view, ss, cfg.Protocol)
 	applyClientCredentials(cfg.Protocol, client, view, &password, extra)
+	// REALITY 的客户端 SNI 由 sharelink 随机挑（serverNames 里可能含空串），
+	// 必须与链接/其它片段用同一个值；getTLSServerName 只认 serverNames[0]，会与随机结果不一致。
+	serverName := getTLSServerName(ss)
+	if getMap(ss, "realitySettings") != nil {
+		serverName = sharelink.RealityClientParams(ss).ServerName
+	}
 	return &formatter.Node{
 		Name:       name,
 		CoreType:   cfg.CoreType,
@@ -81,7 +88,7 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		Port:       port,
 		Transport:  transport,
 		TLS:        getString(ss, "security", "none") != "none",
-		ServerName: getTLSServerName(ss),
+		ServerName: serverName,
 		UUID:       uuid,
 		Password:   ss2022ClientPassword(view, cfg.Protocol, password),
 		Flow: formatter.FlowForTransport(getString(client, "flow", ""),

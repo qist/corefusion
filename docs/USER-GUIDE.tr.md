@@ -165,7 +165,7 @@ Desteklenen değerler: `zh` / `en` / `fa` / `ru`; `--lang=ru` de kabul edilir. A
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Kaynaktan inşa etmek
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source`, depoyu klonlar (veya komut dosyası içindeyken mevcut ödemeyi kullanır) ve `make panel`'yi çalıştırır. Araç zinciri versiyonları ortama göre seçilir:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bayrak | Açıklama |
 |------|-------------|
 | `-d, --dir <PATH>` | Kurulum dizini, varsayılan `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-alpha.2`; varsayılan `latest` |
+| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-alpha.26`; varsayılan `latest` |
 | `--binary` | GitHub Sürüm ikili dosyasını kullanın (varsayılan) |
 | `--source` | Kaynaktan derleyin ve eşleşen Go/Node'u hazırlayın |
 | `--local <FILE>` | Yerel bir ikili dosya kullanın (çevrimdışı kurulum) |

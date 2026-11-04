@@ -165,7 +165,7 @@ Nilai yang didukung: `zh` / `en` / `fa` / `ru`; `--lang=ru` juga diterima. Nilai
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Membangun dari sumbernya
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` mengkloning repositori (atau menggunakan checkout yang ada saat skrip ada di dalamnya) dan menjalankan `make panel`. Versi Toolchain dipilih per lingkungan:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bendera | Deskripsi |
 |------|-------------|
 | `-d, --dir <PATH>` | Instal direktori, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-alpha.2`; bawaan `latest` |
+| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-alpha.26`; bawaan `latest` |
 | `--binary` | Gunakan biner Rilis GitHub (default) |
 | `--source` | Bangun dari sumber dan siapkan Go/Node.js yang cocok |
 | `--local <FILE>` | Gunakan biner lokal (instal offline) |

@@ -35,7 +35,7 @@ Panel dapat mengekspos tiga mesin secara bersamaan, berbagi satu database:
 | **Token berlangganan** | Token di URL: `/sub/<token>` | Pengambilan langganan, tanpa header |
 
 - Token akses klien bertahan 24 jam, menyegarkan token 7 hari; JWT berisi `tv` (token_version), jadi logout/keluar paksa akan membatalkan semua token lama.
-- Peran Admin: `admin` / `operator` / `super_admin`; beberapa operasi tulis memerlukan `RequireRole(RoleAdmin)` atau lebih tinggi.
+- Peran Admin: `viewer` / `admin` / `operator` / `super_admin`; beberapa operasi tulis memerlukan `RequireRole(RoleAdmin)` atau lebih tinggi.
 
 ## 3. Format tanggapan
 

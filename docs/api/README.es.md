@@ -35,7 +35,7 @@ El panel puede exponer tres motores al mismo tiempo, compartiendo una base de da
 | **Ficha de suscripción** | Ficha en el URL: `/sub/<token>` | Recuperación de suscripción, sin encabezado |
 
 - Los tokens de acceso al cliente duran 24 horas, los tokens de actualización duran 7 días; el JWT contiene `tv` (token_version), por lo que el cierre de sesión/cierre de sesión forzado invalida todos los tokens antiguos.
-- Funciones de administrador: `admin` / `operator` / `super_admin`; algunas operaciones de escritura requieren `RequireRole(RoleAdmin)` o superior.
+- Funciones de administrador: `viewer` / `admin` / `operator` / `super_admin`; algunas operaciones de escritura requieren `RequireRole(RoleAdmin)` o superior.
 
 ## 3. Formato de respuesta
 

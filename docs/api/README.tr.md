@@ -35,7 +35,7 @@ Panel, tek bir veritabanını paylaşarak aynı anda üç motoru açığa çıka
 | **Abonelik jetonu** | URL'deki jeton: `/sub/<token>` | Abonelik getirme, başlık yok |
 
 - Müşteri erişim belirteçleri 24 saat sürer, belirteçleri 7 gün yeniler; JWT, `tv` (token_version) içerir, bu nedenle oturum kapatma / zorunlu oturum kapatma tüm eski belirteçleri geçersiz kılar.
-- Yönetici rolleri: `admin` / `operator` / `super_admin`; bazı yazma işlemleri `RequireRole(RoleAdmin)` veya üzerini gerektirir.
+- Yönetici rolleri: `viewer` / `admin` / `operator` / `super_admin`; bazı yazma işlemleri `RequireRole(RoleAdmin)` veya üzerini gerektirir.
 
 ## 3. Yanıt formatı
 

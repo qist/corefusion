@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Сборка из исходного кода
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` клонирует репозиторий (или использует существующую проверку, когда в нем находится скрипт) и запускает `make panel`. Версии Toolchain выбираются для каждой среды:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Флаг | Описание |
 |------|-------------|
 | `-d, --dir <PATH>` | Каталог установки, по умолчанию `/opt/corefusion` |
-| `-v, --version <TAG>` | Панельная версия, напр. `v0.13.0-alpha.2`; по умолчанию `latest` |
+| `-v, --version <TAG>` | Панельная версия, напр. `v0.13.0-alpha.26`; по умолчанию `latest` |
 | `--binary` | Используйте двоичный файл выпуска GitHub (по умолчанию). |
 | `--source` | Сборка из исходного кода и подготовка соответствующего Go/Node. |
 | `--local <FILE>` | Используйте локальный двоичный файл (автономная установка) |

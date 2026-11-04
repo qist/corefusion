@@ -35,7 +35,7 @@ Das Panel kann drei Engines gleichzeitig verfügbar machen und eine Datenbank ge
 | **Abonnement-Token** | Token im URL: `/sub/<token>` | Abonnementabruf, kein Header |
 
 - Client-Zugriffstokens halten 24 Stunden, Aktualisierungstokens 7 Tage; Der JWT enthält `tv` (token_version), sodass beim Abmelden/erzwungenen Abmelden alle alten Token ungültig werden.
-- Administratorrollen: `admin` / `operator` / `super_admin`; Für einige Schreibvorgänge ist `RequireRole(RoleAdmin)` oder höher erforderlich.
+- Administratorrollen: `viewer` / `admin` / `operator` / `super_admin`; Für einige Schreibvorgänge ist `RequireRole(RoleAdmin)` oder höher erforderlich.
 
 ## 3. Antwortformat
 

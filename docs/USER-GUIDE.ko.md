@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 소스에서 빌드하기
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source`는 저장소를 복제하고(또는 스크립트가 내부에 있을 때 기존 체크아웃을 사용) `make panel`를 실행합니다. 툴체인 버전은 환경에 따라 선택됩니다.
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 깃발 | 설명 |
 |------|-------------|
 | `-d, --dir <PATH>` | 설치 디렉토리, 기본값 `/opt/corefusion` |
-| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-alpha.2`; 기본 `latest` |
+| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-alpha.26`; 기본 `latest` |
 | `--binary` | GitHub 릴리스 바이너리 사용(기본값) |
 | `--source` | 소스에서 빌드하고 일치하는 Go/Node 준비 |
 | `--local <FILE>` | 로컬 바이너리 사용(오프라인 설치) |

@@ -35,7 +35,7 @@
 | **구독 토큰** | URL의 토큰: `/sub/<token>` | 구독 가져오기, 헤더 없음 |
 
 - 클라이언트 액세스 토큰은 24시간 동안 지속되고 새로 고침 토큰은 7일 동안 지속됩니다. JWT에는 `tv`(token_version)가 포함되어 있으므로 로그아웃/강제 로그아웃은 모든 이전 토큰을 무효화합니다.
-- 관리자 역할: `admin` / `operator` / `super_admin`; 일부 쓰기 작업에는 `RequireRole(RoleAdmin)` 이상이 필요합니다.
+- 관리자 역할: `viewer` / `admin` / `operator` / `super_admin`; 일부 쓰기 작업에는 `RequireRole(RoleAdmin)` 이상이 필요합니다.
 
 ## 3. 응답 형식
 

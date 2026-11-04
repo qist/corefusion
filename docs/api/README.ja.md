@@ -35,7 +35,7 @@
 | **サブスクリプション トークン** | URL のトークン: `/sub/<token>` | サブスクリプションフェッチ、ヘッダーなし |
 
 - クライアント アクセス トークンは 24 時間持続し、リフレッシュ トークンは 7 日間持続します。 JWT には `tv` (token_version) が含まれているため、ログアウト/強制サインアウトすると古いトークンがすべて無効になります。
-- 管理者の役割: `admin` / `operator` / `super_admin`;一部の書き込み操作には、`RequireRole(RoleAdmin)` 以降が必要です。
+- 管理者の役割: `viewer` / `admin` / `operator` / `super_admin`;一部の書き込み操作には、`RequireRole(RoleAdmin)` 以降が必要です。
 
 ## 3. 応答フォーマット
 

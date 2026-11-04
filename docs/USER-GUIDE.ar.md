@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 البناء من المصدر
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 يقوم `--source` باستنساخ المستودع (أو يستخدم عملية السحب الموجودة عندما يكون البرنامج النصي بداخله) ويقوم بتشغيل `make panel`. يتم اختيار إصدارات Toolchain لكل بيئة:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | العلم | الوصف |
 |------|-------------|
 | `-d, --dir <PATH>` | دليل التثبيت، الافتراضي `/opt/corefusion` |
-| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-alpha.2`; الافتراضي `latest` |
+| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-alpha.26`; الافتراضي `latest` |
 | `--binary` | استخدم الإصدار الثنائي GitHub (افتراضي) |
 | `--source` | البناء من المصدر وإعداد مطابقة Go / Node |
 | `--local <FILE>` | استخدام ثنائي محلي (تثبيت دون اتصال) |

@@ -35,7 +35,7 @@ Bảng điều khiển có thể hiển thị ba công cụ cùng lúc, chia s�
 | **Mã thông báo đăng ký** | Mã thông báo trong URL: `/sub/<token>` | Tìm nạp đăng ký, không có tiêu đề |
 
 - Mã thông báo truy cập của khách hàng kéo dài 24 giờ, mã thông báo làm mới 7 ngày; JWT chứa `tv` (token_version), do đó việc đăng xuất/đăng xuất bắt buộc sẽ làm mất hiệu lực tất cả các mã thông báo cũ.
-- Vai trò quản trị viên: `admin` / `operator` / `super_admin`; một số thao tác ghi yêu cầu `RequireRole(RoleAdmin)` hoặc cao hơn.
+- Vai trò quản trị viên: `viewer` / `admin` / `operator` / `super_admin`; một số thao tác ghi yêu cầu `RequireRole(RoleAdmin)` hoặc cao hơn.
 
 ## 3. Định dạng phản hồi
 

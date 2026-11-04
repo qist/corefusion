@@ -35,7 +35,7 @@ O painel pode expor três mecanismos ao mesmo tempo, compartilhando um banco de 
 | **Token de assinatura** | Token no URL: `/sub/<token>` | Busca de assinatura, sem cabeçalho |
 
 - Os tokens de acesso do cliente duram 24h, os tokens de atualização duram 7 dias; o JWT contém `tv` (token_version), portanto, o logout/saída forçada invalida todos os tokens antigos.
-- Funções administrativas: `admin`/`operator`/`super_admin`; algumas operações de gravação requerem `RequireRole(RoleAdmin)` ou superior.
+- Funções administrativas: `viewer` / `admin`/`operator`/`super_admin`; algumas operações de gravação requerem `RequireRole(RoleAdmin)` ou superior.
 
 ## 3. Formato de resposta
 

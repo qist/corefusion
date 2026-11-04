@@ -35,7 +35,7 @@
 | **訂閱 Token** | URL 路徑中的 token：`/sub/<token>` | 訂閱拉取，無需 Header |
 
 - 客戶端 access token 有效期 24h，refresh token 7 天；JWT 含 `tv`（token_version），登出/踢下線後舊 token 全部失效。
-- 管理端角色：`admin` / `operator` / `super_admin`，部分寫操作要求 `RequireRole(RoleAdmin)` 以上。
+- 管理端角色：`viewer` / `admin` / `operator` / `super_admin`，部分寫操作要求 `RequireRole(RoleAdmin)` 以上。
 
 ## 3. 響應格式約定
 

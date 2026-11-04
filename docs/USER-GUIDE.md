@@ -164,7 +164,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub 下载加速（作为 URL 前缀）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -184,7 +184,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 源码编译安装
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` 会克隆源码（脚本位于源码目录内时直接使用现有源码）并执行 `make panel`。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 参数 | 说明 |
 |------|------|
 | `-d, --dir <PATH>` | 安装目录，默认 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.2`，默认 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.26`，默认 `latest` |
 | `--binary` | 使用 GitHub Release 二进制（默认） |
 | `--source` | 源码编译安装，自动准备匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二进制文件（离线安装） |

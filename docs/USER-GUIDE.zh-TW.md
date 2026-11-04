@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub 下載加速（作為 URL 字首）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 原始碼編譯安裝
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` 會克隆原始碼（指令碼位於原始碼目錄內時直接使用現有原始碼）並執行 `make panel`。
@@ -230,7 +230,7 @@ make panel-linux-arm64
 | 引數 | 說明 |
 |------|------|
 | `-d, --dir <PATH>` | 安裝目錄，預設 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.2`，預設 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.26`，預設 `latest` |
 | `--binary` | 使用 GitHub Release 二進位制（預設） |
 | `--source` | 原始碼編譯安裝，自動準備匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二進位制檔案（離線安裝） |

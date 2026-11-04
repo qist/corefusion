@@ -35,7 +35,7 @@ Le panneau peut exposer trois moteurs en même temps, partageant une seule base 
 | **Jeton d'abonnement** | Jeton dans le URL : `/sub/<token>` | Récupération d'abonnement, pas d'en-tête |
 
 - Les jetons d'accès client durent 24 heures, actualisent les jetons 7 jours ; le JWT contient `tv` (token_version), donc la déconnexion/déconnexion forcée invalide tous les anciens jetons.
-- Rôles d'administrateur : `admin` / `operator` / `super_admin` ; certaines opérations d'écriture nécessitent `RequireRole(RoleAdmin)` ou une version ultérieure.
+- Rôles d'administrateur : `viewer` / `admin` / `operator` / `super_admin` ; certaines opérations d'écriture nécessitent `RequireRole(RoleAdmin)` ou une version ultérieure.
 
 ## 3. Format de réponse
 

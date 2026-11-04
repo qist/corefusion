@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 ساختن از مبدا
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` مخزن را شبیه سازی می کند (یا وقتی اسکریپت داخل آن است از پرداخت موجود استفاده می کند) و `make panel` را اجرا می کند. نسخه های زنجیره ابزار در هر محیط انتخاب می شوند:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | پرچم | توضیحات |
 |------|-------------|
 | `-d, --dir <PATH>` | دایرکتوری، پیش فرض `/opt/corefusion` را نصب کنید |
-| `-v, --version <TAG>` | نسخه پنل، به عنوان مثال `v0.13.0-alpha.2`; پیش فرض `latest` |
+| `-v, --version <TAG>` | نسخه پنل، به عنوان مثال `v0.13.0-alpha.26`; پیش فرض `latest` |
 | `--binary` | استفاده از باینری GitHub Release (پیش‌فرض) |
 | `--source` | از منبع بسازید و Go/Node مطابق را آماده کنید |
 | `--local <FILE>` | استفاده از باینری محلی (نصب آفلاین) |

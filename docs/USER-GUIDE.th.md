@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 การสร้างจากแหล่งที่มา
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` โคลนที่เก็บ (หรือใช้การชำระเงินที่มีอยู่เมื่อมีสคริปต์อยู่ข้างใน) และรัน `make panel` เวอร์ชันของ Toolchain จะถูกเลือกตามสภาพแวดล้อม:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | ธง | คำอธิบาย |
 |------|-------------|
 | `-d, --dir <PATH>` | ติดตั้งไดเร็กทอรี ค่าเริ่มต้น `/opt/corefusion` |
-| `-v, --version <TAG>` | เวอร์ชันแผง เช่น `v0.13.0-alpha.2`; ค่าเริ่มต้น `latest` |
+| `-v, --version <TAG>` | เวอร์ชันแผง เช่น `v0.13.0-alpha.26`; ค่าเริ่มต้น `latest` |
 | `--binary` | ใช้ไบนารี่ Release GitHub (ค่าเริ่มต้น) |
 | `--source` | สร้างจากแหล่งที่มาและเตรียมการจับคู่ Go / Node |
 | `--local <FILE>` | ใช้ไบนารีท้องถิ่น (ติดตั้งออฟไลน์) |

@@ -165,7 +165,7 @@ Unterstützt werden `zh` / `en` / `fa` / `ru`; `--lang=ru` ist ebenfalls möglic
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.2
+sudo bash install.sh --version v0.13.0-alpha.26
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Aufbau aus der Quelle
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.2
+sudo bash install.sh --source --version v0.13.0-alpha.26
 ```
 
 `--source` klont das Repository (oder verwendet den vorhandenen Checkout, wenn sich das Skript darin befindet) und führt `make panel` aus. Toolchain-Versionen werden pro Umgebung ausgewählt:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flagge | Beschreibung |
 |------|-------------|
 | `-d, --dir <PATH>` | Installationsverzeichnis, Standard `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel-Version, z.B. `v0.13.0-alpha.2`; Standard `latest` |
+| `-v, --version <TAG>` | Panel-Version, z.B. `v0.13.0-alpha.26`; Standard `latest` |
 | `--binary` | Verwenden Sie die Release-Binärdatei GitHub (Standard). |
 | `--source` | Erstellen Sie aus dem Quellcode und bereiten Sie den passenden Go/Node vor |
 | `--local <FILE>` | Verwenden Sie eine lokale Binärdatei (Offline-Installation) |

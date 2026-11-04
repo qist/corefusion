@@ -35,7 +35,7 @@ The panel can expose three engines at the same time, sharing one database:
 | **Subscription token** | Token in the URL: `/sub/<token>` | Subscription fetch, no header |
 
 - Client access tokens last 24h, refresh tokens 7 days; the JWT contains `tv` (token_version), so logout / forced sign-out invalidates all old tokens.
-- Admin roles: `admin` / `operator` / `super_admin`; some write operations require `RequireRole(RoleAdmin)` or higher.
+- Admin roles: `viewer` / `admin` / `operator` / `super_admin`; some write operations require `RequireRole(RoleAdmin)` or higher.
 
 ## 3. Response format
 

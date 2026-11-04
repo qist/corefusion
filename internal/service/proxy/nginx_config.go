@@ -35,6 +35,17 @@ func nginxHashSize(v string, min int) string {
 	return strings.TrimSpace(v)
 }
 
+// hasRootOrAlias 判断 location 级配置里是否已显式写了 root / alias。
+func hasRootOrAlias(locationConfig string) bool {
+	for _, line := range strings.Split(locationConfig, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "root ") || strings.HasPrefix(line, "alias ") {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureSymlink creates a symlink, removing existing file/symlink first.
 func ensureSymlink(path, target string) {
 	os.Remove(path)
@@ -926,11 +937,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 			switch site.Template {
 			case "static":
-				rootDir := strings.TrimSpace(site.Upstream)
-				if rootDir == "" {
-					rootDir = "/var/www"
+				// location_config 里已经写了 root/alias（迁移存量站点时常见）就不再重复写，
+				// 否则 alias 会被生成的 root 干扰（两者语义不同，alias 是前缀替换）。
+				if !hasRootOrAlias(site.LocationConfig) {
+					rootDir := strings.TrimSpace(site.Upstream)
+					if rootDir == "" {
+						rootDir = "/var/www"
+					}
+					sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
 				}
-				sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
 				sb.WriteString("            index index.html index.htm;\n")
 				sb.WriteString("            try_files $uri $uri/ =404;\n")
 			case "echo_ip":

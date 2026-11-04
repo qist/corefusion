@@ -238,6 +238,53 @@ def detect_template(pass_target, loc_body):
     return "http"
 
 
+# 由证书中心重新提供、且以绝对路径引用的 TLS 素材：迁移时丢弃（改走站点证书字段）。
+TLS_MATERIAL_PREFIXES = (
+    "ssl_certificate ", "ssl_certificate_key ", "ssl_trusted_certificate ",
+    "ssl_stapling_file ", "ssl_dhparam ", "ssl_session_ticket_key ",
+    "proxy_ssl_certificate ", "proxy_ssl_certificate_key ",
+    "proxy_ssl_trusted_certificate ",
+)
+
+
+def apply_path_map(line, path_map):
+    """按 --path-map 改写指令里的绝对路径（授权文件、回源证书等）。"""
+    if not path_map:
+        return line
+    for old, new in path_map:
+        if old in line:
+            line = line.replace(old, new)
+    return line
+
+
+def auth_errors(sites):
+    """auth_basic 没有配套 auth_basic_user_file 会让人人可访问（或 500），必须拦住。"""
+    errors = []
+    for s in sites:
+        blob = (s.get("server_config") or "") + "\n" + (s.get("location_config") or "")
+        has_basic = "auth_basic " in blob
+        has_file = "auth_basic_user_file " in blob
+        if has_basic and not has_file:
+            errors.append("%s %s（%s）: auth_basic 缺少 auth_basic_user_file" %
+                          (s.get("domain"), s.get("path"), s.get("template")))
+    return errors
+
+
+def asset_paths(sites):
+    """收集需要在目标机存在的授权/回源文件路径。"""
+    out = set()
+    for s in sites:
+        blob = (s.get("server_config") or "") + "\n" + (s.get("location_config") or "")
+        for line in blob.splitlines():
+            line = line.strip()
+            if line.startswith(("auth_basic_user_file ", "proxy_ssl_certificate ",
+                                "proxy_ssl_certificate_key ", "proxy_ssl_trusted_certificate ")):
+                value = line.split(None, 1)[1].rstrip(";").strip()
+                if value.startswith("/"):
+                    out.add(value)
+    return sorted(out)
+
+
 def cert_domain_from_path(p):
     # /apps/nginx/sslkey/example.com/ecc/fullchain.crt -> example.com
     parts = [x for x in p.split("/") if x]
@@ -248,10 +295,12 @@ def cert_domain_from_path(p):
     return ""
 
 
-def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=""):
+def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override="", path_map=None):
+    path_map = path_map or []
     servers = parse_servers(root)
     sites = []
     skipped = []
+    dropped_tls = []
     cert_dirs = set()
 
     for sv in servers:
@@ -331,11 +380,13 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
         for d in sv["directives"]:
             if d.startswith(drop_prefix):
                 continue
-            # 回源 mTLS / OCSP 等直接引用生产绝对路径的素材：CoreFusion 侧应走证书中心，
-            # 这里先丢弃，否则生成配置在目标机直接 nginx -t 失败（/apps 不存在）。
-            if "/apps/" in d:
+            # 只丢弃由证书中心接管、且目标是生产绝对路径的 TLS 素材。
+            # 注意：不能按 "/apps/" 一刀切 —— 会连带丢掉 auth_basic_user_file 这类
+            # 授权文件路径，导致认证失效（严重安全问题）。
+            if d.startswith(TLS_MATERIAL_PREFIXES):
+                dropped_tls.append(d)
                 continue
-            srv_cfg.append(d)
+            srv_cfg.append(apply_path_map(d, path_map))
         if has_ipv6_loopback and not skip_ipv6:
             # 目标机禁用 IPv6 时（/proc/sys/net/ipv6/conf/all/disable_ipv6=1）不能带 [::1]，
             # 否则 nginx -t 直接 bind() [::1]:443 failed。
@@ -374,6 +425,7 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
                     targets.append(("grpc_pass", d[len("grpc_pass "):]))
             rets = [d[len("return "):] for d in loc_singles if d.startswith("return ")]
             roots = [d[len("root "):] for d in loc_singles if d.startswith("root ")]
+            aliases = [d[len("alias "):] for d in loc_singles if d.startswith("alias ")]
 
             if targets:
                 kind, target = targets[0][0], targets[0][1].strip()
@@ -389,6 +441,11 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
                 else:
                     upstream = upstream_value(target, upstreams)
                     upstream_tls = target.startswith("https://")
+            elif aliases:
+                # alias 是前缀替换，不能用 root 表达：保留 alias 指令，模板不再写 root。
+                template = "static"
+                upstream = ""
+                upstream_tls = False
             elif roots:
                 template = "static"
                 upstream = roots[0]
@@ -417,7 +474,7 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
             # location_config：去掉模板会生成的指令（重复会 "directive is duplicate"），
             # 其余顶层指令与 if 块原样保留。
             skip = (
-                "proxy_pass ", "grpc_pass ", "return ", "root ", "alias ",
+                "proxy_pass ", "grpc_pass ", "return ", "root ",
                 "client_max_body_size ", "client_body_timeout ", "send_timeout ",
                 "keepalive_requests ", "lingering_close ", "grpc_read_timeout ",
                 "grpc_send_timeout ", "grpc_set_header ", "grpc_socket_keepalive ",
@@ -429,8 +486,14 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
                 "proxy_buffers ", "proxy_buffer_size ", "proxy_busy_buffers_size ",
                 "proxy_max_temp_file_size ", "proxy_temp_file_write_size ",
             )
-            keep = [d for d in loc_singles
-                    if not d.startswith(skip) and "/apps/" not in d]
+            keep = []
+            for d in loc_singles:
+                if d.startswith(skip):
+                    continue
+                if d.startswith(TLS_MATERIAL_PREFIXES):
+                    dropped_tls.append(d)
+                    continue
+                keep.append(apply_path_map(d, path_map))
             for head, inner in loc_blocks:
                 keep.append(head + " {")
                 keep.extend([ln.strip() for ln in inner.strip().splitlines() if ln.strip()])
@@ -483,7 +546,7 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
             "sni_target": fallback, "enabled": True,
         })
 
-    return sites, sni_sites, sorted(cert_dirs), skipped
+    return sites, sni_sites, sorted(cert_dirs), skipped, dropped_tls
 
 
 # ---------------------------------------------------------------- 主流程
@@ -505,10 +568,22 @@ def main():
                     help="目标机禁用 IPv6 时跳过 listen [::1]:443")
     ap.add_argument("--sni-listen", default="",
                     help="覆盖 stream 监听地址（如 192.168.1.116:443）；默认沿用生产 listen")
+    ap.add_argument("--path-map", action="append", default=[], metavar="OLD=NEW",
+                    help="改写配置里的绝对路径（如授权文件 --path-map /apps/nginx/key=/data/nginx/key），可重复")
+    ap.add_argument("--force", action="store_true",
+                    help="即使 auth_basic 缺少 auth_basic_user_file 也继续（不建议）")
     args = ap.parse_args()
 
     upstreams = parse_upstreams(os.path.join(args.root, "conf.d", "upstream.conf"))
-    sites, sni_sites, cert_dirs, skipped = build_plan(args.root, args.certs_dir, upstreams, args.skip_ipv6, args.sni_listen)
+    path_map = []
+    for item in args.path_map:
+        old, sep, new = item.partition("=")
+        if not sep or not old or not new:
+            sys.exit("--path-map 格式应为 OLD=NEW：%r" % item)
+        path_map.append((old, new))
+
+    sites, sni_sites, cert_dirs, skipped, dropped_tls = build_plan(
+        args.root, args.certs_dir, upstreams, args.skip_ipv6, args.sni_listen, path_map)
 
     print("== 迁移计划 ==")
     print("站点 %d 条，SNI %d 条，需要证书 %s" % (len(sites), len(sni_sites), cert_dirs or "无"))
@@ -521,6 +596,24 @@ def main():
         print("\n未迁移（探测页/内部 server，不影响代理转发）：")
         for f, n, l, why in skipped:
             print("  %s %s %s: %s" % (f, n, l, why))
+
+    auths = asset_paths(sites)
+    if auths:
+        print("\n需要在目标机存在的授权/回源文件（请一并拷贝，否则认证/回源会失败）：")
+        print("  注意：nginx worker 以 nginx 用户运行，文件必须是 644，600 会让认证返回 500")
+        for p in auths:
+            exists = "存在" if os.path.exists(p) else "缺失"
+            print("  %-60s [%s]" % (p, exists))
+    if dropped_tls:
+        print("\n已丢弃的 TLS 素材（改由证书中心/站点证书字段提供）：%d 条" % len(dropped_tls))
+
+    errs = auth_errors(sites)
+    if errs:
+        print("\n!! 认证配置不完整（auth_basic 缺少 auth_basic_user_file）：")
+        for e in errs:
+            print("  - " + e)
+        if not args.force:
+            sys.exit("已中止：请检查授权文件路径，或显式加 --force（不建议）")
 
     if args.dry_run:
         print("\n[dry-run] 未写面板。")

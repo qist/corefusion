@@ -151,7 +151,7 @@ def parse_locations(body):
 def parse_sni(stream_path, upstreams):
     """default.stream -> [(domain, target)] + fallback target。"""
     if not os.path.isfile(stream_path):
-        return [], ""
+        return [], "", ""
     text = strip_comments(open(stream_path, encoding="utf-8", errors="replace").read())
     # stream 内的 upstream 块
     local_up = dict(upstreams)
@@ -177,7 +177,13 @@ def parse_sni(stream_path, upstreams):
             if domain.startswith("~"):
                 continue  # 正则 SNI 不支持
             rules.append((domain, ",".join(local_up.get(target.lower(), [target]))))
-    return rules, fallback
+    # stream server 的监听地址（生产是「公网 IP:443」，不是 0.0.0.0:443）——
+    # 必须保留：如果写成 wildcard，会与 HTTP 站点的 127.0.0.1:443 冲突（bind EADDRINUSE）。
+    listen_addr = ""
+    m = re.search(r"(?m)^\s*listen\s+([^\s;]+?):(\d+)\b.*$", text)
+    if m:
+        listen_addr = "%s:%s" % (m.group(1), m.group(2))
+    return rules, fallback, listen_addr
 
 
 # ---------------------------------------------------------------- API
@@ -242,7 +248,7 @@ def cert_domain_from_path(p):
     return ""
 
 
-def build_plan(root, certs_dir, upstreams):
+def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=""):
     servers = parse_servers(root)
     sites = []
     skipped = []
@@ -325,8 +331,14 @@ def build_plan(root, certs_dir, upstreams):
         for d in sv["directives"]:
             if d.startswith(drop_prefix):
                 continue
+            # 回源 mTLS / OCSP 等直接引用生产绝对路径的素材：CoreFusion 侧应走证书中心，
+            # 这里先丢弃，否则生成配置在目标机直接 nginx -t 失败（/apps 不存在）。
+            if "/apps/" in d:
+                continue
             srv_cfg.append(d)
-        if has_ipv6_loopback:
+        if has_ipv6_loopback and not skip_ipv6:
+            # 目标机禁用 IPv6 时（/proc/sys/net/ipv6/conf/all/disable_ipv6=1）不能带 [::1]，
+            # 否则 nginx -t 直接 bind() [::1]:443 failed。
             srv_cfg.append("listen [::1]:443 ssl proxy_protocol")
             if has_quic:
                 srv_cfg.append("listen [::1]:443 quic")
@@ -417,7 +429,8 @@ def build_plan(root, certs_dir, upstreams):
                 "proxy_buffers ", "proxy_buffer_size ", "proxy_busy_buffers_size ",
                 "proxy_max_temp_file_size ", "proxy_temp_file_write_size ",
             )
-            keep = [d for d in loc_singles if not d.startswith(skip)]
+            keep = [d for d in loc_singles
+                    if not d.startswith(skip) and "/apps/" not in d]
             for head, inner in loc_blocks:
                 keep.append(head + " {")
                 keep.extend([ln.strip() for ln in inner.strip().splitlines() if ln.strip()])
@@ -450,16 +463,23 @@ def build_plan(root, certs_dir, upstreams):
 
     # SNI
     stream_path = os.path.join(root, "conf.d", "default.stream")
-    sni_rules, fallback = parse_sni(stream_path, upstreams)
+    sni_rules, fallback, stream_listen = parse_sni(stream_path, upstreams)
+    sni_path = sni_listen_override or stream_listen or "443"
+    if skip_ipv6:
+        # 目标机禁用 IPv6 时去掉 [::1]/[::] 上游，否则 nginx 连接会一直失败。
+        def _drop6(targets):
+            return ",".join(a for a in targets.split(",") if a and not a.startswith("["))
+        sni_rules = [(d, _drop6(t)) for d, t in sni_rules]
+        fallback = _drop6(fallback)
     sni_sites = []
     for domain, target in sni_rules:
         sni_sites.append({
-            "domain": domain, "template": "sni", "path": "443",
+            "domain": domain, "template": "sni", "path": sni_path,
             "sni_target": target, "enabled": True,
         })
     if fallback:
         sni_sites.append({
-            "domain": "fallback", "template": "sni", "path": "443",
+            "domain": "fallback", "template": "sni", "path": sni_path,
             "sni_target": fallback, "enabled": True,
         })
 
@@ -481,10 +501,14 @@ def main():
     ap.add_argument("--node", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--skip-certs", action="store_true")
+    ap.add_argument("--skip-ipv6", action="store_true",
+                    help="目标机禁用 IPv6 时跳过 listen [::1]:443")
+    ap.add_argument("--sni-listen", default="",
+                    help="覆盖 stream 监听地址（如 192.168.1.116:443）；默认沿用生产 listen")
     args = ap.parse_args()
 
     upstreams = parse_upstreams(os.path.join(args.root, "conf.d", "upstream.conf"))
-    sites, sni_sites, cert_dirs, skipped = build_plan(args.root, args.certs_dir, upstreams)
+    sites, sni_sites, cert_dirs, skipped = build_plan(args.root, args.certs_dir, upstreams, args.skip_ipv6, args.sni_listen)
 
     print("== 迁移计划 ==")
     print("站点 %d 条，SNI %d 条，需要证书 %s" % (len(sites), len(sni_sites), cert_dirs or "无"))
@@ -518,6 +542,22 @@ def main():
 
     # 1) 上传证书
     cert_map = {}
+    if args.skip_certs:
+        # 复用证书中心里已有的证书（迁移演练时证书已提前上传）。
+        # 同域名多张时优先 ECC（路径 certs/<domain>/cert.pem）。
+        try:
+            r = panel.call("GET", "/api/v1/certificates?limit=100")
+            items = r.get("items") if isinstance(r, dict) else r
+            for c in items or []:
+                d = (c.get("domain") or "").strip()
+                if not d:
+                    continue
+                cur = cert_map.get(d)
+                prefer = (c.get("key_type") or "").lower() == "ecc"
+                if cur is None or prefer:
+                    cert_map[d] = c
+        except Exception as e:  # noqa: BLE001
+            print("  WARN: 读取已有证书失败: %s" % e)
     if not args.skip_certs:
         for d in cert_dirs:
             # 优先 ECC，再 RSA（两者按 key_type 落不同子目录，可共存）
@@ -580,7 +620,7 @@ def main():
         "stream_sni_enabled": True,
         "stream_nontls_target": "127.0.0.1:8444",
         "stream_proxy_protocol": True,
-        "stream_ipv6": True,
+        "stream_ipv6": not args.skip_ipv6,
         "ipv6": False,
         "waf_enabled": False,
         "client_header_timeout": "900",

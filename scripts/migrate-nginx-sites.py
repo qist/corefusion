@@ -627,6 +627,10 @@ def main():
         "client_body_timeout": "900",
         "send_timeout": "900",
         "client_max_body_size": "0",
+        # nginx 默认 512/64 在站点多、proxy_set_header 多时会告警
+        # "could not build optimal proxy_headers_hash ... ignoring proxy_headers_hash_bucket_size"
+        "proxy_headers_hash_max_size": "2048",
+        "proxy_headers_hash_bucket_size": "128",
         "custom_config": "resolver 127.0.0.1 valid=10s;\nresolver_timeout 60s;",
     })
     panel.call("POST", "/api/v1/node-servers/%d/proxy/nginx-settings" % server_id, settings)

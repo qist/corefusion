@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"corefusion/internal/model/entity"
@@ -17,6 +18,22 @@ import (
 // 必须与 Agent 侧保持一致 ✗（cmd/agent/acme_webserver.go 的 acmeChallengeDir ✓），
 // 且**不能在 /tmp** ✗ —— nginx 服务单元常带 PrivateTmp=yes ✗，放 /tmp 会恒 404 ✗（真机踩过 ✓）。
 const nodeACMEChallengeDir = "/var/lib/corefusion-agent/acme-challenge"
+
+// proxy_headers_hash 的可用下限：低于这个值时 nginx 会告警并忽略
+// （"could not build optimal proxy_headers_hash ... ignoring proxy_headers_hash_bucket_size"）。
+const (
+	minProxyHeadersHashMaxSize    = 2048
+	minProxyHeadersHashBucketSize = 128
+)
+
+// nginxHashSize 确保 hash size 是合法整数且不低于 min；非法值按 min 处理。
+func nginxHashSize(v string, min int) string {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < min {
+		return strconv.Itoa(min)
+	}
+	return strings.TrimSpace(v)
+}
 
 // ensureSymlink creates a symlink, removing existing file/symlink first.
 func ensureSymlink(path, target string) {
@@ -321,8 +338,17 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString(fmt.Sprintf("    types_hash_max_size %s;\n", s.TypesHashMaxSize))
 	sb.WriteString(fmt.Sprintf("    server_names_hash_max_size %s;\n", s.ServerNamesHashMaxSize))
 	sb.WriteString(fmt.Sprintf("    server_names_hash_bucket_size %s;\n", s.ServerNamesHashBucketSize))
-	sb.WriteString(fmt.Sprintf("    proxy_headers_hash_max_size %s;\n", s.ProxyHeadersHashMaxSize))
-	sb.WriteString(fmt.Sprintf("    proxy_headers_hash_bucket_size %s;\n", s.ProxyHeadersHashBucketSize))
+	// nginx 默认 512/64；站点多、proxy_set_header 多时会告警
+	// "could not build optimal proxy_headers_hash ... ignoring proxy_headers_hash_bucket_size"。
+	// 历史安装的 DB 里存的就是 512/64，所以这里兜底抬到可用下限（配置值本身仍可调大）。
+	proxyHeadersMaxSize := nginxHashSize(s.ProxyHeadersHashMaxSize, minProxyHeadersHashMaxSize)
+	proxyHeadersBucketSize := nginxHashSize(s.ProxyHeadersHashBucketSize, minProxyHeadersHashBucketSize)
+	if proxyHeadersMaxSize != s.ProxyHeadersHashMaxSize || proxyHeadersBucketSize != s.ProxyHeadersHashBucketSize {
+		log.Printf("[NginxManager] proxy_headers_hash %s/%s is too small, using %s/%s",
+			s.ProxyHeadersHashMaxSize, s.ProxyHeadersHashBucketSize, proxyHeadersMaxSize, proxyHeadersBucketSize)
+	}
+	sb.WriteString(fmt.Sprintf("    proxy_headers_hash_max_size %s;\n", proxyHeadersMaxSize))
+	sb.WriteString(fmt.Sprintf("    proxy_headers_hash_bucket_size %s;\n", proxyHeadersBucketSize))
 	sb.WriteString(fmt.Sprintf("    variables_hash_bucket_size %s;\n", s.VariablesHashBucketSize))
 	sb.WriteString(fmt.Sprintf("    variables_hash_max_size %s;\n", s.VariablesHashMaxSize))
 	if s.UnderscoresInHeaders {
@@ -1140,7 +1166,28 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sniByPort[port] = append(sniByPort[port], site)
 			}
 
+			multiPort := len(sniByPort) > 1
 			for port, portSites := range sniByPort {
+				// 多个监听地址时，map / upstream 名字必须带端口后缀：否则每组都会写出
+				// 同名的 `upstream direct_http` / `map ... $sni_backend`，
+				// nginx -t 直接报 duplicate upstream "direct_http"。
+				suffix := ""
+				if multiPort {
+					suffix = "_" + nginxUpstreamKey(port)
+				}
+				sniBackendVar := "$sni_backend" + suffix
+				guardVar := "$sni_backend_guarded" + suffix
+				fallbackUpstream := "sni_fallback" + suffix
+				directUpstream := "direct_http" + suffix
+				// 上游名同样按监听组区分：同一个 SNI 域名在不同监听地址上可能指向不同后端。
+				sniUpstreamName := func(domain string) string {
+					name := "sni_" + nginxUpstreamKey(domain)
+					if multiPort {
+						name += suffix
+					}
+					return name
+				}
+
 				// Build upstreams for SNI targets
 				for _, site := range portSites {
 					domain := site.Domain
@@ -1154,12 +1201,12 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 					if target == "" {
 						continue
 					}
-					upKey := nginxUpstreamKey(domain)
-					if streamUpstreamSeen[upKey] {
+					upName := sniUpstreamName(domain)
+					if streamUpstreamSeen[upName] {
 						continue
 					}
-					streamUpstreamSeen[upKey] = true
-					sb.WriteString(fmt.Sprintf("upstream sni_%s {\n", upKey))
+					streamUpstreamSeen[upName] = true
+					sb.WriteString(fmt.Sprintf("upstream %s {\n", upName))
 					for _, up := range strings.Split(target, ",") {
 						up = strings.TrimSpace(up)
 						if up != "" {
@@ -1192,9 +1239,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				if fallbackTarget == "" {
 					fallbackTarget = "127.0.0.1:8443"
 				}
-				if !streamUpstreamSeen["sni_fallback"] {
-					streamUpstreamSeen["sni_fallback"] = true
-					sb.WriteString("upstream sni_fallback {\n")
+				if !streamUpstreamSeen[fallbackUpstream] {
+					streamUpstreamSeen[fallbackUpstream] = true
+					sb.WriteString(fmt.Sprintf("upstream %s {\n", fallbackUpstream))
 					for _, up := range strings.Split(fallbackTarget, ",") {
 						up = strings.TrimSpace(up)
 						if up != "" {
@@ -1206,24 +1253,24 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 				// ssl_preread map
 				sb.WriteString(fmt.Sprintf("# SNI routing on :%s\n", port))
-				sb.WriteString("map $ssl_preread_server_name $sni_backend {\n")
+				sb.WriteString(fmt.Sprintf("map $ssl_preread_server_name %s {\n", sniBackendVar))
 				for _, site := range portSites {
 					domain := site.Domain
 					if domain == "fallback" || domain == "" {
 						continue
 					}
-					sb.WriteString(fmt.Sprintf("    %s sni_%s;\n", domain, nginxUpstreamKey(domain)))
+					sb.WriteString(fmt.Sprintf("    %s %s;\n", domain, sniUpstreamName(domain)))
 				}
-				sb.WriteString("    default sni_fallback;\n")
+				sb.WriteString(fmt.Sprintf("    default %s;\n", fallbackUpstream))
 				sb.WriteString("}\n\n")
 
 				// 非 TLS 流量（没有 ClientHello / ssl_preread_protocol 为空）单独分流。
 				// 历史实现把非 TLS 和"未知 SNI"一起丢给 sni_fallback（通常是 REALITY 入站），
 				// 探测流量会落到 REALITY；这里按协议类型先摘出去，语义等同生产 nginx 的
 				// `map $ssl_preread_protocol $stream_map_guarded`。
-				backendVar := "$sni_backend"
+				backendVar := sniBackendVar
 				if strings.TrimSpace(s.StreamNonTLSTarget) != "" {
-					sb.WriteString("upstream direct_http {\n")
+					sb.WriteString(fmt.Sprintf("upstream %s {\n", directUpstream))
 					for _, up := range strings.Split(s.StreamNonTLSTarget, ",") {
 						up = strings.TrimSpace(up)
 						if up != "" {
@@ -1231,11 +1278,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 						}
 					}
 					sb.WriteString("}\n\n")
-					sb.WriteString("map $ssl_preread_protocol $sni_backend_guarded {\n")
-					sb.WriteString("    \"\"      direct_http;\n")
-					sb.WriteString("    default $sni_backend;\n")
+					sb.WriteString(fmt.Sprintf("map $ssl_preread_protocol %s {\n", guardVar))
+					sb.WriteString(fmt.Sprintf("    \"\"      %s;\n", directUpstream))
+					sb.WriteString(fmt.Sprintf("    default %s;\n", sniBackendVar))
 					sb.WriteString("}\n\n")
-					backendVar = "$sni_backend_guarded"
+					backendVar = guardVar
 				}
 
 				// SNI server block

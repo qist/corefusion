@@ -2493,7 +2493,7 @@ async function confirmResetTraffic() {
         remark: ib._remark || '',
         protocol: ib.protocol,
         tag: ib.tag,
-        listen: ib.listen || '0.0.0.0',
+        listen: effectiveListen(ib),
         port: ib.port || 0,
         enabled: ib._enabled,
         config_json: configJson,
@@ -2599,7 +2599,7 @@ async function confirmAddUser() {
         remark: ib._remark || '',
         protocol: ib.protocol,
         tag: ib.tag,
-        listen: ib.listen || '0.0.0.0',
+        listen: effectiveListen(ib),
         port: ib.port || 0,
         enabled: ib._enabled,
         config_json: configJson,
@@ -2698,7 +2698,7 @@ async function removeUserFromXray(user) {
           remark: ib._remark || '',
           protocol: ib.protocol,
           tag: ib.tag,
-          listen: ib.listen || '0.0.0.0',
+          listen: effectiveListen(ib),
           port: ib.port || 0,
           enabled: ib._enabled,
           config_json: configJson,
@@ -2994,13 +2994,14 @@ function onProtocolChange() {
 
 function onListenTypeChange(val) {
   if (val === 'sock') {
+    // Port 对 socket 入站是"分享/订阅端口"（后端用它生成链接，0 会被订阅跳过），
+    // 所以切到 Unix Socket 时**保留原端口**，不要清 0。
     rf._savedPort = rf.port
     rf.listen = ''
-    rf.port = 0
     if (!rf._socketPath) rf._socketPath = '/dev/shm/' + rf.protocol + '.sock'
   } else {
     rf.listen = '0.0.0.0'
-    rf.port = rf._savedPort || genPort()
+    rf.port = rf.port || rf._savedPort || genPort()
     rf._socketPath = ''
   }
 }
@@ -3890,15 +3891,23 @@ function parseSettings(ib) {
 function parseInbound(ib) {
   const ss = ib.streamSettings || {}
   const tls = ss.tlsSettings || {}
-  const isSocket = ib.listen && ib.listen.startsWith('/')
+  // ⚠ listen / port 是 inbound_configs 的**独立列**，不在 config_json 里：
+  // 调用方必须把行数据合并进 ib，否则这里会退化成 0.0.0.0 / 0
+  // （0 再被 el-input-number 的 :min="1" 夹成 1 → "导入后端口全是 1"）。
+  // unix socket 有两种写法：文件路径 "/dev/shm/x.sock,0666" 和抽象 socket "@name"。
+  const rawListen = String(ib.listen || '').trim().replace(/^unix:/, '')
+  const isSocket = rawListen.startsWith('/') || rawListen.startsWith('@')
+  const sockParts = isSocket ? rawListen.split(',') : []
+  const isAbstract = rawListen.startsWith('@')
   return {
     _id: ib._id || null,
     _remark: ib._remark || ib.tag || '', tag: ib.tag || '', protocol: ib.protocol || 'vless',
-    listen: ib.listen || '0.0.0.0', port: ib.port || 0,
+    listen: isSocket ? '' : (rawListen || '0.0.0.0'), port: Number(ib.port) || 0,
     _enabled: ib._enabled !== false,
     _listenType: isSocket ? 'sock' : 'tcp',
-    _socketPath: isSocket ? ib.listen.split(',')[0] : '',
-    _socketPerm: isSocket && ib.listen.includes(',') ? ib.listen.split(',')[1] : '0666',
+    _socketPath: isSocket ? sockParts[0] : '',
+    // 抽象 socket（@name）没有权限位；只有文件型 socket 才带 ",0666"
+    _socketPerm: isSocket && !isAbstract && sockParts[1] ? sockParts[1] : '0666',
     settings: parseSettings(ib),
     _portMap: ib.settings && ib.settings.portMap ? Object.entries(ib.settings.portMap).map(([local, remote]) => ({ local, remote })) : [],
     streamSettings: {
@@ -3949,6 +3958,20 @@ function parseInbound(ib) {
     _customPortMode: ib._accessDomain?.customPortMode || 'custom',
     _accessCustomPort: ib._accessDomain?.customPort || 443,
   }
+}
+
+// effectiveListen 返回要写进 DB `listen` 列的值。
+//
+// 这一列直接决定生成配置里的监听地址（coreconfig 会用它覆盖 config_json），
+// 所以 Unix Socket 模式必须写 socket 路径，不能写表单里残留的 0.0.0.0 ——
+// 否则保存后 xray 会去抢 0.0.0.0:443，与 nginx 冲突。
+function effectiveListen(ib) {
+  if (ib._listenType === 'sock') {
+    const path = String(ib._socketPath || '').trim()
+    if (path.startsWith('@')) return path
+    return path + (ib._socketPerm ? ',' + ib._socketPerm : '')
+  }
+  return ib.listen || '0.0.0.0'
 }
 
 function buildInbound(ib, isApiCall = false) {
@@ -4163,13 +4186,10 @@ function buildInbound(ib, isApiCall = false) {
     if (Object.keys(finalmask).length) result.streamSettings.finalmask = finalmask
   }
   // Handle listen/port based on type
-  if (ib._listenType === 'sock') {
-    result.listen = ib._socketPath + (ib._socketPerm ? ',' + ib._socketPerm : '')
-    result.port = 0
-  } else {
-    result.listen = ib.listen || undefined
-    result.port = ib.port
-  }
+  // Port 对 socket 入站不是监听端口，而是**分享/订阅端口**（后端用它生成链接，
+  // 为 0 时该入站会被订阅直接跳过）→ 不能清 0，两种模式都原样带上。
+  result.listen = ib._listenType === 'sock' ? effectiveListen(ib) : (ib.listen || undefined)
+  result.port = ib.port || 0
   // Only add transport-specific settings when streamSettings exists (protocols with transport layer)
   if (result.streamSettings) {
     // Add TLS settings if security is tls
@@ -4680,7 +4700,7 @@ async function saveInbound() {
     remark: ib._remark || ib.tag || '',
     protocol: ib.protocol,
     tag: ib.tag,
-    listen: ib.listen || '0.0.0.0',
+    listen: effectiveListen(ib),
     port: ib.port || 0,
     enabled: ib._enabled !== false,
     config_json: configJson,
@@ -4834,7 +4854,7 @@ async function toggleEnabled(row) {
       remark: ib._remark || '',
       protocol: ib.protocol,
       tag: ib.tag,
-      listen: ib.listen || '0.0.0.0',
+      listen: effectiveListen(ib),
       port: ib.port || 0,
       enabled: ib._enabled,
       config_json: configJson,
@@ -4951,7 +4971,9 @@ async function loadInbounds() {
     const data = await client.get(`${nodeBase.value}/inbound-configs`, { params: { core_type: props.coreType || 'xray' } })
     form.value = (data || []).map(item => {
       const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
-      const parsed = parseInbound(cfg)
+      // listen / port 存在表列上，不在 config_json 里 —— 不合并的话编辑框会显示
+      // 0.0.0.0 + 端口 1（被 input-number 的 min 夹住），且监听方式恒为 TCP。
+      const parsed = parseInbound({ ...cfg, listen: item.listen ?? cfg.listen, port: item.port ?? cfg.port })
       // Use remark from API response (stored separately in DB)
       if (item.remark) {
         parsed._remark = item.remark

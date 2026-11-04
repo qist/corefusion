@@ -707,10 +707,9 @@ func (h *PublicHandler) collectShareLinks(
 			// 用户密钥 → 订阅链接（以及由链接派生的 mihomo 片段）连不上。
 			settings = linkSettingsForUser(config, settings, cfg.Protocol, getString(firstClient(settings), "password", ""))
 
-			nodeName := cfg.Remark
-			if nodeName == "" {
-				nodeName = cfg.Tag
-			}
+			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
+			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
+			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
 			node := sharelink.Node{
 				Tag:            nodeName,
 				Protocol:       cfg.Protocol,
@@ -915,10 +914,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			applyClientCredentials(cfg.Protocol, firstClient(linkSettings), config, &password, credExtra)
 			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
-			nodeName := cfg.Remark
-			if nodeName == "" {
-				nodeName = cfg.Tag
-			}
+			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
+			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
+			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
 			shareNode := sharelink.Node{
 				Tag:            nodeName,
 				Protocol:       cfg.Protocol,
@@ -1357,10 +1355,9 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
 
 			ss := getMap(config, "streamSettings")
-			nodeName := cfg.Remark
-			if nodeName == "" {
-				nodeName = cfg.Tag
-			}
+			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
+			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
+			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
 			protocol := cfg.Protocol
 			if protocol == "hysteria" {
 				protocol = "hysteria2"

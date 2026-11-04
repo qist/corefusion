@@ -43,10 +43,7 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	// format=uri（默认，分享链接）/ mihomo / singbox / xray（可直接粘贴的配置片段）。
 	format := normalizeShareFormat(c.Query("format"))
 	shareDomains := h.loadShareDomains(c.Request.Context())
-	nodeName := cfg.Remark
-	if nodeName == "" {
-		nodeName = cfg.Tag
-	}
+	nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
 
 	// 协议是否在该客户端里受支持（与订阅同一份矩阵）——决定前端是显示
 	// "该客户端不支持此协议" 还是 "无可渲染内容"。

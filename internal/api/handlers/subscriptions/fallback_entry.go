@@ -162,6 +162,11 @@ func fallbackShareView(inner, entry map[string]interface{}, sni string) map[stri
 		if ts := getMap(innerSS, "tlsSettings"); ts != nil {
 			ts["serverName"] = sni
 		}
+	} else {
+		// fallback 没配 name（catch-all）：它接收所有"未被命名 fallback 匹配"的 SNI，
+		// 所以客户端可用的 SNI = 入口 serverNames 里剩下的（含空串）+ 随机。
+		// 命名 fallback 的 SNI 必须剔除，否则客户端会被路由到别的内部入站。
+		filterClaimedServerNames(getMap(innerSS, "realitySettings"), claimedFallbackNames(entry))
 	}
 	// 访问域名（对外地址/端口）属于"入口"的属性：不带上就会退回内部入站的
 	// 抽象 socket / 内网端口（客户端根本连不到）。
@@ -198,29 +203,23 @@ func deepCopyMapAny(v interface{}) interface{} {
 func (h *PublicHandler) applyFallbackEntry(cfg entity.InboundConfig, config map[string]interface{}, idx map[int64]fallbackEntry) (entity.InboundConfig, map[string]interface{}) {
 	e, ok := idx[cfg.ID]
 	if !ok || e.Entry == nil {
-		// 入口入站自身：可用 SNI = 未被 fallback 认领的 + 空串。
-		return cfg, entryShareView(config)
+		// 入口入站自身：REALITY 认证通过后不会再走 fallback（fallback 只在协议头解析失败时
+		// 触发），所以任何 serverNames 里的 SNI 都能用，包括 fallback 配置的那些。
+		return cfg, config
 	}
 	entryCfg := parseConfigMap(e.Entry.ConfigJSON)
 	if entryCfg == nil {
-		return cfg, entryShareView(config)
+		return cfg, config
 	}
 	return *e.Entry, fallbackShareView(config, entryCfg, e.Name)
 }
 
-// entryShareView 返回"入口入站"的客户端视图：把 REALITY serverNames 里被 fallback
-// 认领的 SNI 剔除。语义（用户明确）：
-//   - 入口入站（如 any_SNI_No_SNI）允许无 SNI，也可用**未被认领**的 SNI；
-//   - fallback 上配置的 name 是该内部入站的**唯一**入口 SNI，其它客户端不能拿它当入口。
-//
-// 因此外层节点的分享只应在"剩余 SNI + 空串"里随机。
-func entryShareView(config map[string]interface{}) map[string]interface{} {
-	if config == nil {
-		return config
-	}
-	settings := getMap(config, "settings")
+// claimedFallbackNames 收集入口入站里"命名 fallback"的 SNI（name 非空）。
+// 这些 SNI 只属于对应的内部入站，catch-all（name 为空）的客户端不能用。
+func claimedFallbackNames(entry map[string]interface{}) map[string]bool {
+	settings := getMap(entry, "settings")
 	if settings == nil {
-		return config
+		return nil
 	}
 	fbs, _ := settings["fallbacks"].([]interface{})
 	claimed := make(map[string]bool, len(fbs))
@@ -231,40 +230,40 @@ func entryShareView(config map[string]interface{}) map[string]interface{} {
 		}
 	}
 	if len(claimed) == 0 {
-		return config
+		return nil
 	}
-	ss := getMap(config, "streamSettings")
-	rs := getMap(ss, "realitySettings")
-	if rs == nil {
-		return config
+	return claimed
+}
+
+// filterClaimedServerNames 从 realitySettings.serverNames 里剔除被命名 fallback 认领的
+// SNI（保留 "" = 允许无 SNI）。用于"没配置 SNI 的 fallback"：它只接收剩余 SNI。
+func filterClaimedServerNames(rs map[string]interface{}, claimed map[string]bool) {
+	if rs == nil || len(claimed) == 0 {
+		return
 	}
 	var names []string
 	switch list := rs["serverNames"].(type) {
 	case []interface{}:
 		for _, raw := range list {
-			if s, ok := raw.(string); ok {
-				names = append(names, s)
+			if v, ok := raw.(string); ok {
+				names = append(names, v)
 			}
 		}
 	case []string:
 		names = append(names, list...)
 	default:
-		return config
+		return
 	}
 	kept := make([]interface{}, 0, len(names))
-	for _, s := range names {
-		if s == "" || !claimed[strings.ToLower(strings.TrimSpace(s))] {
-			kept = append(kept, s)
+	for _, n := range names {
+		if n == "" || !claimed[strings.ToLower(strings.TrimSpace(n))] {
+			kept = append(kept, n)
 		}
 	}
 	if len(kept) == 0 {
-		// 全被 fallback 认领：入口只剩"无 SNI"这一种可用方式。
 		kept = []interface{}{""}
 	}
-	out := deepCopyMap(config)
-	outRS := getMap(getMap(out, "streamSettings"), "realitySettings")
-	outRS["serverNames"] = kept
-	// 标量 serverName 是旧值（可能正是被认领的 SNI），删掉让随机从列表里挑。
-	delete(outRS, "serverName")
-	return out
+	rs["serverNames"] = kept
+	// 标量 serverName 可能是被认领的那个 SNI，删掉让随机从列表里挑。
+	delete(rs, "serverName")
 }

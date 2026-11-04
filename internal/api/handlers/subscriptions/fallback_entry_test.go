@@ -84,9 +84,13 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// 入口入站（any_SNI_No_SNI）只允许"无 SNI + 未被 fallback 认领的 SNI"：
-// fallback.name 是内部入站的唯一入口 SNI，外层客户端不能拿它当入口。
-func TestEntryShareViewRemovesFallbackClaimedSNI(t *testing.T) {
+// fallback 的 SNI 语义：
+//   - 配了 name（如 qomvix.com）→ 该 name 是内部入站的唯一入口 SNI；
+//   - 没配 name（catch-all，如 @vless-grpc）→ 可用"入口 serverNames 里未被命名 fallback
+//     认领的项 + 空串"随机；
+//   - 入口入站自身（any_SNI_No_SNI）→ REALITY 认证通过后不会再走 fallback，
+//     任何 serverNames 里的 SNI 都能用（包括 fallback 配置的），不做过滤。
+func TestFallbackShareViewSNI(t *testing.T) {
 	entry := map[string]interface{}{
 		"settings": map[string]interface{}{"fallbacks": []interface{}{
 			map[string]interface{}{"name": "", "dest": "@vless-grpc"},
@@ -94,36 +98,54 @@ func TestEntryShareViewRemovesFallbackClaimedSNI(t *testing.T) {
 			map[string]interface{}{"name": "Ravexo.com", "dest": "@vless-h2"},
 		}},
 		"streamSettings": map[string]interface{}{"security": "reality", "realitySettings": map[string]interface{}{
-			"serverNames": []interface{}{"", "activate.apple.com", "qomvix.com", "ravexo.com", "adrepository.apple.com"},
+			"serverNames": []interface{}{"", "activate.apple.com", "qomvix.com", "ravexo.com", "ziftra.com"},
 			"serverName":  "qomvix.com",
 			"shortIds":    []interface{}{"", "32"},
 		}},
 	}
-	view := entryShareView(entry)
+	inner := map[string]interface{}{"streamSettings": map[string]interface{}{
+		"network": "grpc", "security": "none",
+		"grpcSettings": map[string]interface{}{"serviceName": "SVC"},
+		"sockopt":      map[string]interface{}{"acceptProxyProtocol": true},
+	}}
+
+	// catch-all（name 为空）：剔除 qomvix/ravexo，保留空串/activate/ziftra
+	view := fallbackShareView(inner, entry, "")
 	rs := getMap(getMap(view, "streamSettings"), "realitySettings")
 	names := getStringSliceKeepEmptyLocal(rs, "serverNames")
-	if len(names) != 3 || names[0] != "" || names[1] != "activate.apple.com" || names[2] != "adrepository.apple.com" {
-		t.Fatalf("serverNames 过滤结果不对: %v", names)
+	want := []string{"", "activate.apple.com", "ziftra.com"}
+	if len(names) != len(want) {
+		t.Fatalf("catch-all serverNames = %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("catch-all serverNames = %v, want %v", names, want)
+		}
 	}
 	if _, ok := rs["serverName"]; ok {
 		t.Error("残留的标量 serverName 会让随机失效，应删除")
 	}
-	// 原 config 不能被改动（服务端仍需要完整 serverNames）
+	if getString(getMap(view, "streamSettings"), "network", "") != "grpc" {
+		t.Error("传输必须保留内部入站自己的")
+	}
+	if getMap(getMap(view, "streamSettings"), "sockopt") != nil {
+		t.Error("服务端 sockopt 不应进入客户端视图")
+	}
+
+	// 配了 name：固定为该 SNI
+	view2 := fallbackShareView(inner, entry, "qomvix.com")
+	rs2 := getMap(getMap(view2, "streamSettings"), "realitySettings")
+	names2 := getStringSliceKeepEmptyLocal(rs2, "serverNames")
+	if len(names2) != 1 || names2[0] != "qomvix.com" {
+		t.Fatalf("命名 fallback 的 serverNames 应为 [qomvix.com]: %v", names2)
+	}
+	if getString(rs2, "serverName", "") != "qomvix.com" {
+		t.Errorf("命名 fallback 的 serverName 应为 qomvix.com: %v", rs2["serverName"])
+	}
+
+	// 入口自身不过滤：原 config 的 serverNames 一项不少
 	if len(getStringSliceKeepEmptyLocal(getMap(getMap(entry, "streamSettings"), "realitySettings"), "serverNames")) != 5 {
-		t.Error("entryShareView 不应修改原始 config")
-	}
-	// 全被认领时保留空串（无 SNI 仍可用）
-	only := map[string]interface{}{
-		"settings": map[string]interface{}{"fallbacks": []interface{}{
-			map[string]interface{}{"name": "qomvix.com", "dest": "@trojan-grpc"},
-		}},
-		"streamSettings": map[string]interface{}{"realitySettings": map[string]interface{}{
-			"serverNames": []interface{}{"qomvix.com"},
-		}},
-	}
-	got := getStringSliceKeepEmptyLocal(getMap(getMap(entryShareView(only), "streamSettings"), "realitySettings"), "serverNames")
-	if len(got) != 1 || got[0] != "" {
-		t.Fatalf("全被认领时应只剩空串: %v", got)
+		t.Error("fallbackShareView 不应修改入口 config")
 	}
 }
 

@@ -87,9 +87,6 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 				view = fallbackShareView(view, entryCfg, entry.Name)
 				shareCfg = entry.Entry
 			}
-		} else {
-			// 入口入站自身：剔除被 fallback 认领的 SNI（那些只属于内部入站）。
-			view = entryShareView(view)
 		}
 		host, port := h.hostForLink(c.Request.Context(), shareCfg, view, shareDomains)
 		// 注意：这里传**完整的 settings**（而不是只挑 clients/encryption）——

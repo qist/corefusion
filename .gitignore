@@ -41,3 +41,7 @@ scripts/e2e/__pycache__/
 /node_modules
 shots/116-after-login.png
 shots/116-login.png
+
+# Python 缓存
+__pycache__/
+*.pyc

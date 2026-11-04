@@ -1984,14 +1984,17 @@ const canEnableFlow = computed(() => {
 })
 
 // Check if any user has flow enabled
-// 接入域名启用后是否真的选了域名/IP：没选时不能从面板域名池里随机抓一个
-// （那样分享链接/订阅里的 server 与这里的下拉选择对不上），而应退回节点自身地址。
+// 接入域名是否已选到可用值：
+// - direct / custom 必须明确选择（direct 池是节点级的，随机会取到下拉里没有的域名）；
+// - cf_domain / cf_ip 池是全局的，未指定时按设计从对应池随机取，所以始终算已选择。
 const accessDomainSelected = computed(() => {
-  switch (rf.value?._accessDomainType) {
-    case 'direct': return !!rf.value?._directDomain
-    case 'cf_domain': return !!rf.value?._cfDomain
-    case 'cf_ip': return !!rf.value?._cfIP
-    case 'custom': return !!rf.value?._customDomain
+  // ⚠ rf 是 reactive，不是 ref：这里误用 rf.value 会恒为 undefined →
+  // 无论选什么类型都判定"未选择"，CF 类型下面也会错误显示回退警告。
+  switch (rf._accessDomainType) {
+    case 'direct': return !!rf._directDomain
+    case 'cf_domain':
+    case 'cf_ip': return true
+    case 'custom': return !!rf._customDomain
     default: return false
   }
 })

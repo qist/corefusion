@@ -1143,7 +1143,9 @@ Zincirlenmiş proxy'ler çoklu çıkış bağlantılarını yapılandırır.
 
 - Harici düğümleri içe aktarın (v2ray URI, Base64 URI, URL aboneliği)
 - Harici girişleri kaydedin
-- Harici düğümleri yönet
+- Harici düğümleri yönet (tek tek düzenle / sil)
+- Erişim alan adı: düğüm başına CDN hızlandırma / tercih edilen IP yapılandır (doğrudan alan adı, tercih edilen CF alan adı, CF IP havuzu, özel). Aboneliklerde yalnızca server/port yeniden yazılır; SNI/Host içe aktarıldığı gibi kalır. Devre dışıyken içe aktarılan adres/port kullanılır
+- «Tercih edilen CF alan adı / CF IP havuzu» belirli bir değer olmadan seçilirse havuzdan rastgele bir giriş (portuyla birlikte) seçilir; «doğrudan / özel» açık bir değer gerektirir, aksi halde düğümün kendi adresine geri döner
 
 ---
 

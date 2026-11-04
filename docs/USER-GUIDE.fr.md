@@ -1143,7 +1143,9 @@ Les proxys chaînés configurent des liens à sorties multiples.
 
 - Importer des nœuds externes (v2ray URI, Base64 URI, abonnement URL)
 - Enregistrer les entrées externes
-- Gérer les nœuds externes
+- Gérer les nœuds externes (modifier / supprimer individuellement)
+- Domaine d'accès : configurer l'accélération CDN / l'IP préférée par nœud (domaine direct, domaine CF préféré, pool d'IP CF, personnalisé). Seuls server/port livrés dans les abonnements sont réécrits ; SNI/Host restent tels qu'importés. Si désactivé, l'adresse/le port importés sont utilisés
+- Lorsque « domaine CF préféré / pool d'IP CF » est sélectionné sans valeur précise, une entrée est choisie aléatoirement dans le pool (avec son port) ; « direct / personnalisé » exige une valeur explicite, sinon retour à l'adresse du nœud
 
 ---
 

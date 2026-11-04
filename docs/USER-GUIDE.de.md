@@ -1143,7 +1143,9 @@ Verkettete Proxys konfigurieren Multi-Exit-Links.
 
 - Externe Knoten importieren (v2ray URI, Base64 URI, Abonnement URL)
 - Registrieren Sie externe Einträge
-- Externe Knoten verwalten
+- Externe Knoten verwalten (einzeln bearbeiten / löschen)
+- Zugriffsdomain: CDN-Beschleunigung / bevorzugte IP pro Knoten konfigurieren (direkte Domain, bevorzugte CF-Domain, CF-IP-Pool, benutzerdefiniert). Nur server/port in Abonnements wird ersetzt; SNI/Host bleiben wie importiert. Wenn deaktiviert, wird die importierte Adresse/der Port verwendet
+- Bei „bevorzugte CF-Domain / CF-IP-Pool" ohne konkreten Wert wird zufällig ein Eintrag aus dem Pool gewählt (mit seinem Port); „direkt / benutzerdefiniert" erfordert einen expliziten Wert, sonst wird auf die Knotenadresse zurückgefallen
 
 ---
 

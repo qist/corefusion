@@ -1143,7 +1143,9 @@ Proxy chuỗi cấu hình liên kết nhiều lối ra.
 
 - Nhập các nút bên ngoài (v2ray URI, Base64 URI, đăng ký URL)
 - Đăng ký các mục bên ngoài
-- Quản lý các nút bên ngoài
+- Quản lý nút bên ngoài (sửa / xóa riêng lẻ)
+- Tên miền truy cập: cấu hình tăng tốc CDN / IP ưu tiên cho từng nút (tên miền trực tiếp, tên miền CF ưu tiên, pool IP CF, tùy chỉnh). Chỉ ghi đè server/port gửi trong đăng ký; SNI/Host giữ nguyên như khi nhập. Khi tắt, dùng địa chỉ/cổng đã nhập
+- Khi chọn «tên miền CF ưu tiên / pool IP CF» mà không có giá trị cụ thể, hệ thống chọn ngẫu nhiên một mục từ pool (kèm cổng của mục đó); «trực tiếp / tùy chỉnh» yêu cầu giá trị rõ ràng, nếu không sẽ quay về địa chỉ của chính nút
 
 ---
 

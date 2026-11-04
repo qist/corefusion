@@ -1062,6 +1062,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		if json.Unmarshal([]byte(extNode.ProxyJSON), &pm) != nil {
 			continue
 		}
+		applyExternalNodeAccessDomain(pm, &extNode, shareDomains)
 		node := mihomoProxyMapToNode(pm)
 		if node != nil && extNode.Name != "" {
 			node.Name = extNode.Name
@@ -1120,6 +1121,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				if json.Unmarshal([]byte(extNode.ProxyJSON), &pm) != nil {
 					continue
 				}
+				applyExternalNodeAccessDomain(pm, extNode, shareDomains)
 
 				node := mihomoProxyMapToNode(pm)
 				if node != nil && es.Name != "" {
@@ -1259,6 +1261,7 @@ func (h *PublicHandler) collectExternalNodesAndLinks(ctx context.Context, allowe
 	if err != nil {
 		return nodes, links
 	}
+	shareDomains := h.loadShareDomains(ctx)
 	for _, n := range all {
 		if !n.Enabled || !allowedIDs[n.ID] {
 			continue
@@ -1267,6 +1270,7 @@ func (h *PublicHandler) collectExternalNodesAndLinks(ctx context.Context, allowe
 		if json.Unmarshal([]byte(n.ProxyJSON), &pm) != nil {
 			continue
 		}
+		applyExternalNodeAccessDomain(pm, &n, shareDomains)
 		// Use mihomo proxy map directly for Node (all fields preserved)
 		node := mihomoProxyMapToNode(pm)
 		if node != nil {
@@ -2214,13 +2218,16 @@ func resolveHostPort(config map[string]interface{}, listenHost string, listenPor
 	return fallbackHost(listenHost), listenPort
 }
 
-// resolveAccessDomain 解析「用户在接入域名里**明确选择**的域名/IP」。
+// resolveAccessDomain 解析「接入域名」最终下发给客户端的地址与端口。
 //
-// ok=false 的三种情况：未启用 / 选中的类型下面那个下拉**没选**（值为空）/ 类型不认识。
-// 此时调用方必须回退到节点自身的地址（见 PublicHandler.shareAddress），
-// **绝不能再从面板级分享域名列表里猜一个** —— 此前用 pickByType / rand 随机取，
-// 同一个入站每次渲染出来的 server 与 port 都不一样，而且与界面上下拉的选择完全无关
-// （用户报的 "server 不对 / 下拉对应的没有"）。
+// 设计语义（与分享域名池一致）：
+//   - cf_domain / cf_ip：池是全局的，**指定了就返回指定的**；没指定具体值则从
+//     对应池里随机取一个，端口用该条目自己的端口（多条 ports 时随机一条）。
+//   - direct：直连域名是**节点级**列表，必须明确选择；没选 → ok=false 回退节点自身地址。
+//     不能从全局池随机取 —— 池里可能包含别的节点的直连域名，随机取会得到
+//     "界面对应下拉里根本没有" 的域名（2026-09-21 用户报的 server 不对）。
+//   - custom：必须填写域名/IP；没填 → 回退。
+//   - 未启用 / 类型未知 → ok=false，调用方按 公网IP → 主机名 → 内网IP → 监听地址 回退。
 func resolveAccessDomain(config map[string]interface{}, listenPort int, shareDomains []shareDomainEntry) (string, int, bool) {
 	ad, ok := config["_accessDomain"].(map[string]interface{})
 	if !ok {
@@ -2245,16 +2252,22 @@ func resolveAccessDomain(config map[string]interface{}, listenPort int, shareDom
 		// 没有「端口模式」选项），因此显式传空 portMode —— 否则 direct 类型下
 		// 残留的 "inbound" 选择会串到 CDN 域名上，链接端口与界面预览不一致。
 		domain, _ := ad["cfDomain"].(string)
-		if domain == "" {
-			return "", 0, false
+		if domain != "" {
+			return domain, resolvePort(ad, "", listenPort, shareDomains, "cf_domain", domain), true
 		}
-		return domain, resolvePort(ad, "", listenPort, shareDomains, "cf_domain", domain), true
+		if d := pickRandomShareDomain(shareDomains, "cf_domain"); d != nil {
+			return d.Host, resolvePortFromEntry(d, "", listenPort), true
+		}
+		return "", 0, false
 	case "cf_ip":
 		ip, _ := ad["cfIP"].(string)
-		if ip == "" {
-			return "", 0, false
+		if ip != "" {
+			return ip, resolvePort(ad, "", listenPort, shareDomains, "cf_ip", ip), true
 		}
-		return ip, resolvePort(ad, "", listenPort, shareDomains, "cf_ip", ip), true
+		if d := pickRandomShareDomain(shareDomains, "cf_ip"); d != nil {
+			return d.Host, resolvePortFromEntry(d, "", listenPort), true
+		}
+		return "", 0, false
 	case "custom":
 		domain, _ := ad["customDomain"].(string)
 		if domain == "" {
@@ -2273,6 +2286,43 @@ func resolveAccessDomain(config map[string]interface{}, listenPort int, shareDom
 		return domain, customPort, true
 	}
 	return "", 0, false
+}
+
+// applyExternalNodeAccessDomain 把外部节点「访问域名」里**明确选择**的域名/IP
+// 覆盖到代理配置的 server/port 上（CDN 加速 / 优选 IP）。
+//
+// 语义与入站 _accessDomain 完全一致：
+//   - 未启用 / 选了类型但没选具体域名 → 不改动，保持导入时的 server/port；
+//   - SNI / Host 等字段一律不动（这正是 CDN 回源能用的前提）。
+//
+// 端口为 0（如 hy2 端口跳跃 ports: "40000-50000"）时只换地址、不换端口。
+func applyExternalNodeAccessDomain(pm map[string]interface{}, n *entity.ExternalNode, shareDomains []shareDomainEntry) {
+	if pm == nil || n == nil || n.AccessDomainJSON == "" {
+		return
+	}
+	ad := n.LoadAccessDomain()
+	if len(ad) == 0 {
+		return
+	}
+	listenPort := n.Port
+	if listenPort <= 0 {
+		switch p := pm["port"].(type) {
+		case float64:
+			listenPort = int(p)
+		case int:
+			listenPort = p
+		}
+	}
+	host, port, ok := resolveAccessDomain(map[string]interface{}{"_accessDomain": ad}, listenPort, shareDomains)
+	if !ok || host == "" {
+		return
+	}
+	pm["server"] = host
+	if port > 0 {
+		// 与 JSON 反序列化后的形状保持一致（float64）：mihomoProxyMapToNode
+		// 只认 string/float64，写成 int 会让 sing-box/xray 的端口变成 0。
+		pm["port"] = float64(port)
+	}
 }
 
 // preferNodeAddress 按「公网 IP → 主机名 → 内网 IP」挑节点自身的对外地址（空串=都没有）。
@@ -2317,13 +2367,42 @@ func resolvePort(ad map[string]interface{}, portMode string, listenPort int, sha
 	if portMode == "inbound" {
 		return listenPort
 	}
-	for _, d := range shareDomains {
-		if d.Host == domain {
-			if len(d.Ports) > 0 {
-				return d.Ports[rand.Intn(len(d.Ports))]
-			}
-			return d.Port
+	for i := range shareDomains {
+		if shareDomains[i].Host == domain {
+			return resolvePortFromEntry(&shareDomains[i], portMode, listenPort)
 		}
+	}
+	return 443
+}
+
+// pickRandomShareDomain 从指定类型的池里随机取一个条目（cf_domain / cf_ip 未指定具体值时用）。
+// 池里没有该类型条目时返回 nil，调用方回退节点自身地址。
+func pickRandomShareDomain(entries []shareDomainEntry, adType string) *shareDomainEntry {
+	candidates := make([]*shareDomainEntry, 0, len(entries))
+	for i := range entries {
+		if entries[i].Type == adType && entries[i].Host != "" {
+			candidates = append(candidates, &entries[i])
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	return candidates[rand.Intn(len(candidates))]
+}
+
+// resolvePortFromEntry 取 CDN 条目自己的端口：多条 ports 时随机一条，否则用主端口。
+func resolvePortFromEntry(d *shareDomainEntry, portMode string, listenPort int) int {
+	if d == nil {
+		return 443
+	}
+	if portMode == "inbound" {
+		return listenPort
+	}
+	if len(d.Ports) > 0 {
+		return d.Ports[rand.Intn(len(d.Ports))]
+	}
+	if d.Port > 0 {
+		return d.Port
 	}
 	return 443
 }
@@ -2760,6 +2839,9 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 		fmt.Sscanf(v, "%d", &port)
 	} else if v, ok := p["port"].(float64); ok {
 		port = int(v)
+	} else if v, ok := p["port"].(int); ok {
+		// 内部改写（如外部节点访问域名）可能写入 int，不能漏判
+		port = v
 	}
 	uuid, _ := p["uuid"].(string)
 	password, _ := p["password"].(string)

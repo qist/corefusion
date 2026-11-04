@@ -1143,7 +1143,13 @@ Chained proxies configure multi-exit links.
 
 - Import external nodes (v2ray URI, Base64 URI, subscription URL)
 - Register external entries
-- Manage external nodes
+- Manage external nodes (edit / delete individually)
+- Access domain: configure CDN acceleration / preferred IP per node (direct domain, CF preferred
+  domain, CF IP pool, custom). Only the server/port delivered in subscriptions is rewritten;
+  SNI/Host stay as imported. When disabled, the imported address/port is used
+- When "CF preferred domain / CF IP pool" is selected without a specific value, one entry is picked
+  randomly from the pool (with its port); "direct / custom" requires an explicit value, otherwise
+  it falls back to the node's own address
 
 ---
 

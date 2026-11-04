@@ -208,6 +208,9 @@ func (h *ExternalNodeHandler) ListNodes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	for i := range nodes {
+		nodes[i].AccessDomain = nodes[i].LoadAccessDomain()
+	}
 	c.JSON(http.StatusOK, gin.H{"data": nodes})
 }
 
@@ -223,6 +226,7 @@ func (h *ExternalNodeHandler) GetNode(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
+	node.AccessDomain = node.LoadAccessDomain()
 	c.JSON(http.StatusOK, gin.H{"data": node})
 }
 
@@ -243,6 +247,8 @@ func (h *ExternalNodeHandler) UpdateNode(c *gin.Context) {
 		Enabled   *bool   `json:"enabled"`
 		SortOrder *int    `json:"sort_order"`
 		ProxyJSON *string `json:"proxy_json"`
+		// AccessDomain 传 null / 空对象 = 清除；不传该字段 = 保持不变。
+		AccessDomain json.RawMessage `json:"access_domain"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -281,10 +287,19 @@ func (h *ExternalNodeHandler) UpdateNode(c *gin.Context) {
 			}
 		}
 	}
+	if len(req.AccessDomain) > 0 {
+		var ad map[string]interface{}
+		if string(req.AccessDomain) != "null" && json.Unmarshal(req.AccessDomain, &ad) != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid access_domain"})
+			return
+		}
+		existing.SetAccessDomain(ad)
+	}
 	if err := h.nodeRepo.Update(ctx, existing); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	existing.AccessDomain = existing.LoadAccessDomain()
 	c.JSON(http.StatusOK, gin.H{"data": existing})
 }
 

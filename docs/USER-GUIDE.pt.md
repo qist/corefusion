@@ -1143,7 +1143,9 @@ Proxies encadeados configuram links de múltiplas saídas.
 
 - Importar nós externos (v2ray URI, Base64 URI, assinatura URL)
 - Registrar entradas externas
-- Gerenciar nós externos
+- Gerenciar nós externos (editar / excluir individualmente)
+- Domínio de acesso: configurar aceleração CDN / IP preferido por nó (domínio direto, domínio preferido da CF, pool de IP da CF, personalizado). Apenas server/port entregues nas assinaturas é reescrito; SNI/Host permanecem como importados. Quando desativado, o endereço/porta importados são usados
+- Ao selecionar «domínio preferido da CF / pool de IP da CF» sem um valor específico, uma entrada é escolhida aleatoriamente do pool (com a sua porta); «direto / personalizado» exige um valor explícito, caso contrário recorre ao endereço do próprio nó
 
 ---
 

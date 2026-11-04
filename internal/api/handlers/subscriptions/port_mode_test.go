@@ -7,39 +7,39 @@ import (
 	"corefusion/internal/model/entity"
 )
 
-// 接入域名里**没选**具体域名/IP 时，绝不能从面板级分享域名列表里随机取一个：
-// 曾用 pickByType/rand 随机选，同一个入站每次渲染的 server 都不同，而且与界面上下拉的
-// 选择完全无关（用户报的 "server 不对 / 下拉对应的没有"）。
-func TestResolveAccessDomainRequiresExplicitSelection(t *testing.T) {
+// 接入域名的设计语义：
+//   - direct / custom：必须明确选择具体值，否则回退节点自身地址
+//     （direct 池是节点级的，随机会取到界面对应下拉里没有的域名）。
+//   - cf_domain / cf_ip：未指定具体值时从对应全局池**随机**取一个 + 该条目的端口；
+//     指定了就返回指定的。
+func TestResolveAccessDomainSemantics(t *testing.T) {
 	const listenPort = 20001
 	domains := []shareDomainEntry{
 		{Type: "direct", Host: "direct.example.com", Port: 443, Ports: []int{443}},
-		{Type: "cf_domain", Host: "cdn.example.com", Port: 2096, Ports: []int{2096}},
+		{Type: "cf_domain", Host: "cdn.example.com", Port: 2096, Ports: []int{2096, 2083}},
 		{Type: "cf_ip", Host: "1.2.3.4", Port: 2053, Ports: []int{2053}},
 	}
 
-	empty := []map[string]interface{}{
+	// direct / custom / 类型缺失 / 未知类型 → 必须回退
+	fallback := []map[string]interface{}{
 		{"type": "direct", "directDomain": ""},
-		{"type": "cf_domain", "cfDomain": ""},
-		{"type": "cf_ip", "cfIP": ""},
 		{"type": "custom", "customDomain": ""},
 		{"type": "direct"}, // 字段缺失
 		{"type": "unknown-type"},
 	}
-	for _, ad := range empty {
+	for _, ad := range fallback {
 		ad["enabled"] = true
 		cfg := map[string]interface{}{"_accessDomain": ad}
 		host, port, ok := resolveAccessDomain(cfg, listenPort, domains)
 		if ok || host != "" || port != 0 {
 			t.Errorf("ad=%v 应判为未选择, got %q:%d ok=%v", ad, host, port, ok)
 		}
-		// resolveHostPort 必须回退监听地址/入站端口（而不是面板域名）
 		if h, p := resolveHostPort(cfg, "0.0.0.0", listenPort, domains); h != "127.0.0.1" || p != listenPort {
 			t.Errorf("ad=%v 应回退 127.0.0.1:%d, got %s:%d", ad, listenPort, h, p)
 		}
 	}
 
-	// 没有 _accessDomain / 未启用 → 同样不取面板域名
+	// 没有 _accessDomain / 未启用 → 回退
 	if _, _, ok := resolveAccessDomain(map[string]interface{}{}, listenPort, domains); ok {
 		t.Error("缺少 _accessDomain 时不应解析出地址")
 	}
@@ -49,11 +49,40 @@ func TestResolveAccessDomainRequiresExplicitSelection(t *testing.T) {
 		t.Error("未启用接入域名时不应解析出地址")
 	}
 
+	// cf_domain / cf_ip 未指定具体值 → 从对应池随机取，端口必须来自该条目
+	for _, tc := range []struct {
+		adType   string
+		wantHost string
+		wantPort map[int]bool
+	}{
+		{"cf_domain", "cdn.example.com", map[int]bool{2096: true, 2083: true}},
+		{"cf_ip", "1.2.3.4", map[int]bool{2053: true}},
+	} {
+		host, port, ok := resolveAccessDomain(map[string]interface{}{"_accessDomain": map[string]interface{}{
+			"enabled": true, "type": tc.adType,
+		}}, listenPort, domains)
+		if !ok || host != tc.wantHost || !tc.wantPort[port] {
+			t.Errorf("%s 未指定时应随机取池条目, got %s:%d ok=%v", tc.adType, host, port, ok)
+		}
+	}
+
+	// 池里没有对应类型条目 → 回退，不能凭空造地址
+	if _, _, ok := resolveAccessDomain(map[string]interface{}{"_accessDomain": map[string]interface{}{
+		"enabled": true, "type": "cf_ip",
+	}}, listenPort, []shareDomainEntry{{Type: "cf_domain", Host: "cdn.example.com", Port: 443}}); ok {
+		t.Error("池里没有 cf_ip 条目时应回退")
+	}
+
 	// 明确选了值的仍然照常解析
 	if host, port, ok := resolveAccessDomain(map[string]interface{}{"_accessDomain": map[string]interface{}{
 		"enabled": true, "type": "direct", "directDomain": "direct.example.com", "directPortMode": "inbound",
 	}}, listenPort, domains); !ok || host != "direct.example.com" || port != listenPort {
 		t.Errorf("选中的域名应正常解析, got %s:%d ok=%v", host, port, ok)
+	}
+	if host, port, ok := resolveAccessDomain(map[string]interface{}{"_accessDomain": map[string]interface{}{
+		"enabled": true, "type": "cf_domain", "cfDomain": "cdn.example.com",
+	}}, listenPort, domains); !ok || host != "cdn.example.com" || (port != 2096 && port != 2083) {
+		t.Errorf("指定的 CF 域名应原样返回, got %s:%d ok=%v", host, port, ok)
 	}
 }
 

@@ -535,13 +535,14 @@ const cfDomains = ref([])
 const cfIPEntries = ref([])
 const directDomains = ref([])
 
-// 接入域名启用后是否真的选了域名/IP：没选时不能从面板域名池里随机抓一个
-// （那样分享链接/预览里的 server 与下拉选择对不上），而应退回节点自身地址。
+// 接入域名是否已选到可用值：
+// - direct / custom 必须明确选择（direct 池是节点级的，随机会取到下拉里没有的域名）；
+// - cf_domain / cf_ip 池是全局的，未指定时按设计从对应池随机取，所以始终算已选择。
 const accessDomainSelected = computed(() => {
   switch (rf._accessDomainType) {
     case 'direct': return !!rf._directDomain
-    case 'cf_domain': return !!rf._cfDomain
-    case 'cf_ip': return !!rf._cfIP
+    case 'cf_domain':
+    case 'cf_ip': return true
     case 'custom': return !!rf._customDomain
     default: return false
   }

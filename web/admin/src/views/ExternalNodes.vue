@@ -43,6 +43,12 @@
         </el-table-column>
         <el-table-column prop="host" :label="t('externalNodes.address')" width="180" />
         <el-table-column prop="port" :label="t('externalNodes.port')" width="70" />
+        <el-table-column :label="t('protoCenter.inbounds.accessDomain')" width="180">
+          <template #default="{row}">
+            <el-tag v-if="accessAddress(row) !== '-'" size="small" type="success">{{ accessAddress(row) }}</el-tag>
+            <span v-else style="color:#909399">-</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="transport" :label="t('externalNodes.transport')" width="80" />
         <el-table-column label="TLS" width="60">
           <template #default="{row}"><el-tag v-if="row.tls" size="small" type="success">TLS</el-tag></template>
@@ -119,6 +125,65 @@
         <el-form-item :label="t('common.name')">
           <el-input v-model="editForm.name" />
         </el-form-item>
+        <!-- Access Domain（与 xray/sing-box 入站同一套逻辑） -->
+        <el-divider content-position="left">{{ t('protoCenter.inbounds.accessDomain') }}</el-divider>
+        <el-form-item :label="t('protoCenter.inbounds.enableAccessDomain')">
+          <el-switch v-model="editForm.access_domain.enabled" />
+          <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('protoCenter.inbounds.accessDomainHint') }}</span>
+        </el-form-item>
+        <template v-if="editForm.access_domain.enabled">
+          <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
+            <el-select v-model="editForm.access_domain.type" style="width:100%">
+              <el-option :label="t('protoCenter.inbounds.accessTypeDirect')" value="direct" />
+              <el-option :label="t('protoCenter.inbounds.accessTypeCFDomain')" value="cf_domain" />
+              <el-option :label="t('protoCenter.inbounds.accessTypeCFIP')" value="cf_ip" />
+              <el-option :label="t('protoCenter.inbounds.accessTypeCustom')" value="custom" />
+            </el-select>
+          </el-form-item>
+          <div v-if="!editAccessDomainSelected" class="hint warn-hint" style="margin-bottom:12px">
+            {{ t('protoCenter.inbounds.accessDomainNotSelected') }}
+          </div>
+          <template v-if="editForm.access_domain.type === 'direct'">
+            <el-form-item :label="t('protoCenter.inbounds.directDomain')">
+              <el-select v-model="editForm.access_domain.directDomain" style="width:100%" filterable clearable :placeholder="t('protoCenter.inbounds.directDomainPlaceholder')">
+                <el-option v-for="d in directDomains" :key="d.id" :label="d.value" :value="d.value" />
+              </el-select>
+              <div class="hint">{{ t('protoCenter.inbounds.directDomainHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('protoCenter.inbounds.directPortMode')">
+              <el-radio-group v-model="editForm.access_domain.directPortMode">
+                <el-radio value="config">{{ t('protoCenter.inbounds.directPortConfig') }}</el-radio>
+                <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+          </template>
+          <el-form-item v-if="editForm.access_domain.type === 'cf_domain'" :label="t('protoCenter.inbounds.cfDomainSelect')">
+            <el-select v-model="editForm.access_domain.cfDomain" style="width:100%" filterable clearable :placeholder="t('protoCenter.inbounds.cfDomainPlaceholder')">
+              <el-option v-for="d in cfDomains" :key="d.id" :label="d.value" :value="d.value" />
+            </el-select>
+            <div class="hint">{{ t('protoCenter.inbounds.cfDomainHint') }}</div>
+          </el-form-item>
+          <el-form-item v-if="editForm.access_domain.type === 'cf_ip'" :label="t('protoCenter.inbounds.cfIPSelect')">
+            <el-select v-model="editForm.access_domain.cfIP" style="width:100%" filterable clearable :placeholder="t('protoCenter.inbounds.cfIPPlaceholder')">
+              <el-option v-for="e in cfIPEntries" :key="e.id" :label="e.ip + (e.country ? ' (' + e.country + ')' : '')" :value="e.ip" />
+            </el-select>
+            <div class="hint">{{ t('protoCenter.inbounds.cfIPHint') }}</div>
+          </el-form-item>
+          <template v-if="editForm.access_domain.type === 'custom'">
+            <el-form-item :label="t('protoCenter.inbounds.customDomain')">
+              <el-input v-model="editForm.access_domain.customDomain" :placeholder="t('protoCenter.inbounds.customDomainPlaceholder')" />
+            </el-form-item>
+            <el-form-item :label="t('protoCenter.inbounds.directPortMode')">
+              <el-radio-group v-model="editForm.access_domain.customPortMode">
+                <el-radio value="custom">{{ t('protoCenter.inbounds.customPortCustom') }}</el-radio>
+                <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item v-if="editForm.access_domain.customPortMode === 'custom'" :label="t('protoCenter.inbounds.customPort')">
+              <el-input-number v-model="editForm.access_domain.customPort" :min="1" :max="65535" />
+            </el-form-item>
+          </template>
+        </template>
         <el-form-item :label="t('externalNodes.proxyConfig')">
           <el-input v-model="editForm.proxy_json" type="textarea" :rows="12" style="font-family:monospace;font-size:12px" />
         </el-form-item>
@@ -177,7 +242,93 @@ const { paged: nodesPagedList, page: nodesPage, pageSize: nodesSize, total: node
 const importDlg = ref(false)
 const form = ref({ name: '', source_type: 'uri', source_data: '', source_url: '' })
 const editDlg = ref(false)
-const editForm = ref({ id: 0, name: '', proxy_json: '' })
+const editForm = ref({ id: 0, name: '', proxy_json: '', port: 0, access_domain: defaultAccessDomain() })
+
+// ── Access Domain（与 xray/sing-box 入站同一套语义）──
+const directDomains = ref([])
+const cfDomains = ref([])
+const cfIPEntries = ref([])
+
+function defaultAccessDomain() {
+  return {
+    enabled: false,
+    type: 'direct',
+    directDomain: '',
+    directPortMode: 'config',
+    cfDomain: '',
+    cfIP: '',
+    customDomain: '',
+    customPortMode: 'custom',
+    customPort: 443,
+  }
+}
+
+function normalizeAccessDomain(ad) {
+  return { ...defaultAccessDomain(), ...(ad || {}) }
+}
+
+// 是否已选到可用值：
+// - direct / custom 必须明确选择，否则回退导入的地址；
+// - cf_domain / cf_ip 池是全局的，未指定时按设计从池里随机取，所以始终算已选择。
+const editAccessDomainSelected = computed(() => {
+  const ad = editForm.value.access_domain || {}
+  switch (ad.type) {
+    case 'direct': return !!ad.directDomain
+    case 'cf_domain':
+    case 'cf_ip': return true
+    case 'custom': return !!ad.customDomain
+    default: return false
+  }
+})
+
+function accessDomainHost(ad) {
+  switch (ad?.type) {
+    case 'direct': return ad.directDomain || ''
+    case 'cf_domain': return ad.cfDomain || ''
+    case 'cf_ip': return ad.cfIP || ''
+    case 'custom': return ad.customDomain || ''
+    default: return ''
+  }
+}
+
+// 表格展示：启用且会改写地址时才显示，否则显示 '-'（实际使用导入的地址）
+function accessAddress(row) {
+  const ad = row?.access_domain
+  if (!ad || !ad.enabled) return '-'
+  const host = accessDomainHost(ad)
+  if (!host) {
+    // CF 池是全局的：未指定具体值时会从池里随机取
+    if (ad.type === 'cf_domain' || ad.type === 'cf_ip') {
+      const pool = ad.type === 'cf_domain' ? cfDomains.value : cfIPEntries.value
+      return `${t('protoCenter.inbounds.accessDomainRandom')} (${pool.length})`
+    }
+    return '-'
+  }
+  // CF 域名/IP 的端口来自条目自身的端口池（渲染时随机），这里只展示地址
+  if (ad.type === 'cf_domain' || ad.type === 'cf_ip') return host
+  let port = 0
+  if (ad.type === 'custom') {
+    port = ad.customPortMode === 'inbound' ? (row.port || 0) : (ad.customPort || 0)
+  } else if (ad.type === 'direct') {
+    port = ad.directPortMode === 'inbound'
+      ? (row.port || 0)
+      : (directDomains.value.find(d => d.value === host)?.port || 0)
+  }
+  return port > 0 ? `${host}:${port}` : host
+}
+
+async function loadAccessDomainOptions() {
+  try {
+    const globalData = await client.get('/share-domains')
+    const global = globalData?.items || (Array.isArray(globalData) ? globalData : [])
+    cfDomains.value = global.filter(d => d.type === 'cf_domain' && d.enabled !== false)
+    directDomains.value = global.filter(d => d.type === 'direct' && d.enabled !== false)
+  } catch {}
+  try {
+    const data = await client.get('/cfip/entries')
+    cfIPEntries.value = data?.items || (Array.isArray(data) ? data : [])
+  } catch {}
+}
 
 // ── Register as Entry (§12.3) ──
 const regDlg = ref(false)
@@ -195,6 +346,7 @@ const extNodeCardFields = computed(() => [
   { label: t('externalNodes.protocol'), text: (row) => row.protocol || '-' },
   { label: t('externalNodes.address'), text: (row) => row.host || '-' },
   { label: t('externalNodes.port'), text: (row) => row.port ?? '-' },
+  { label: t('protoCenter.inbounds.accessDomain'), text: (row) => accessAddress(row) },
   { label: t('externalNodes.transport'), text: (row) => row.transport || '-' },
   { label: 'TLS', text: () => 'TLS', hide: (row) => !row.tls },
 ])
@@ -246,14 +398,21 @@ async function deleteSource(row) {
   try { await client.delete(`/external-nodes/sources/${row.id}`); fetchSources(); fetchNodes() } catch {}
 }
 function editNode(row) {
-  editForm.value = { id: row.id, name: row.name, proxy_json: row.proxy_json }
+  editForm.value = {
+    id: row.id,
+    name: row.name,
+    proxy_json: row.proxy_json,
+    port: row.port || 0,
+    access_domain: normalizeAccessDomain(row.access_domain),
+  }
   editDlg.value = true
 }
 async function saveNode() {
   try {
     await client.put(`/external-nodes/${editForm.value.id}`, {
       name: editForm.value.name,
-      proxy_json: editForm.value.proxy_json
+      proxy_json: editForm.value.proxy_json,
+      access_domain: editForm.value.access_domain,
     })
     editDlg.value = false
     fetchNodes()
@@ -312,7 +471,11 @@ async function unregisterEntry(row) {
   } catch { /* cancelled */ }
 }
 
-onMounted(() => { fetchSources(); fetchNodes(); fetchRegisteredServers() })
+onMounted(() => { fetchSources(); fetchNodes(); fetchRegisteredServers(); loadAccessDomainOptions() })
 
 defineExpose({ fetchSources, fetchNodes, fetchRegisteredServers })
 </script>
+
+<style scoped>
+.warn-hint { color: #e6a23c; }
+</style>

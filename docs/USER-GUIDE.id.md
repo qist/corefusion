@@ -1143,7 +1143,9 @@ Proksi berantai mengonfigurasi tautan multi-keluar.
 
 - Impor node eksternal (v2ray URI, Base64 URI, langganan URL)
 - Daftarkan entri eksternal
-- Kelola node eksternal
+- Kelola node eksternal (edit / hapus satu per satu)
+- Domain akses: konfigurasikan akselerasi CDN / IP pilihan per node (domain langsung, domain pilihan CF, kumpulan IP CF, kustom). Hanya server/port yang dikirim dalam langganan yang ditulis ulang; SNI/Host tetap seperti saat diimpor. Jika dinonaktifkan, alamat/port hasil impor digunakan
+- Saat memilih «domain pilihan CF / kumpulan IP CF» tanpa nilai tertentu, satu entri dipilih secara acak dari kumpulan (dengan portnya); «langsung / kustom» memerlukan nilai eksplisit, jika tidak akan kembali ke alamat node sendiri
 
 ---
 

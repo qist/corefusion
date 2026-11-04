@@ -1143,7 +1143,9 @@ Los proxies encadenados configuran enlaces de múltiples salidas.
 
 - Importar nodos externos (v2ray URI, Base64 URI, suscripción URL)
 - Registrar entradas externas
-- Administrar nodos externos
+- Administrar nodos externos (editar / eliminar individualmente)
+- Dominio de acceso: configurar aceleración CDN / IP preferida por nodo (dominio directo, dominio preferido de CF, grupo de IP de CF, personalizado). Solo se reescribe server/port en las suscripciones; SNI/Host se mantienen como se importaron. Si está desactivado, se usa la dirección/puerto importados
+- Al seleccionar «dominio preferido de CF / grupo de IP de CF» sin un valor concreto, se elige aleatoriamente una entrada del grupo (con su puerto); «directo / personalizado» requiere un valor explícito, de lo contrario se recurre a la dirección del propio nodo
 
 ---
 

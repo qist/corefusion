@@ -262,6 +262,7 @@ make panel-linux-arm64
 ├── corefusion                 # 面板二進位制
 ├── corefusion.bak             # 升級前的上一版（存在時）
 ├── .env                       # 環境配置（0600，初始化嚮導生成）
+├── .env.secret                # 加密金鑰檔案（0600，首次啟動產生）
 ├── .toolchain/                # 原始碼模式下載的 Go / Node（僅原始碼安裝）
 └── data/                      # 資料目錄（SAFE_PATHS）
     ├── sqlite/app.db          # 預設 SQLite 資料庫
@@ -396,10 +397,12 @@ CF_DB_MAX_IDLE_CONNS=10
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | 設為 `0` 關閉基於 iptables 的流量統計（預設開啟） |
 | `CF_NETWORK_TRAFFIC_TABLE` | 流量統計使用的 iptables 表名，預設 `corefusion` |
 
+> **加密金鑰存放在 `.env.secret`**：首次啟動會把 `CF_SECRET_ENCRYPTION_KEY` 寫入與 `.env` 同目錄的 `.env.secret`（0600），不再寫進 `.env`；`.env` 裡的舊金鑰會自動搬移過去。備份/遷移部署時務必單獨保存該檔案，遺失後所有 `enc:` 密文都無法解密。
+
 > 可信反向代理地址（用於取真實客戶端 IP）不再透過環境變數配置，而是在
 > 「系統設定 → 網路」中以 `panel.trusted_proxies` 儲存。
 
-> `.env` 含金鑰，面板啟動時會自動把許可權收緊到 `0600`。不要提交到版本庫。
+> `.env` 與 `.env.secret` 都含敏感資訊，面板啟動時會自動把權限收緊到 `0600`。不要提交到版本庫。
 
 ### 2.10 使用 Docker（可選，需自行構建映象）
 

@@ -588,6 +588,20 @@ func CleanEmpty(m map[string]interface{}) {
 	}
 }
 
+// isUnixSocketListen 判断 listen 是否指向 Unix Domain Socket。
+//
+// 支持的形式："/dev/shm/x.sock"、"/dev/shm/x.sock,0666"、"unix:/dev/shm/x.sock"、
+// 抽象 socket "@abstract"。判据与 xray 一致（绝对路径或以 @ 开头的 domain）。
+// 这类入站不需要 port：xray 自己也会把 PortList 置 nil。
+func isUnixSocketListen(listen string) bool {
+	l := strings.TrimSpace(listen)
+	if i := strings.IndexByte(l, ','); i > 0 {
+		l = l[:i] // 去掉 ",0666" 权限位
+	}
+	l = strings.TrimPrefix(l, "unix:")
+	return strings.HasPrefix(l, "/") || strings.HasPrefix(l, "@")
+}
+
 // CleanInboundFields removes all internal (underscore-prefixed) fields from an
 // inbound config map, ensures required fields are set from the DB record, and
 // filters paused users from settings. This is the shared cleaning logic used by
@@ -630,7 +644,12 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 		delete(inbound, "domain_strategy")
 	} else {
 		// xray: inject "port" and "protocol" from DB record
-		if port > 0 {
+		if isUnixSocketListen(listen) {
+			// Unix socket（"/path,perm" / "@abstract"）监听时端口没有意义：
+			// xray 自己也会把 PortList 置 nil（见 infra/conf/xray.go），写进去只会
+			// 让运行配置看起来像在监听 TCP 端口（实测不写 port 也能正常创建 socket）。
+			delete(inbound, "port")
+		} else if port > 0 {
 			inbound["port"] = port
 		}
 		if protocol != "" {

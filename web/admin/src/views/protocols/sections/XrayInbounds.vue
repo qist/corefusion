@@ -4222,8 +4222,9 @@ function buildInbound(ib, isApiCall = false) {
   // socket 路径可以是任意形式，回显时不能靠字符串前缀猜。
   result._listenType = ib._listenType === 'sock' ? 'sock' : 'tcp'
   result.listen = ib._listenType === 'sock' ? effectiveListen(ib) : (ib.listen || undefined)
-  // port 是入站真实端口（表列）；分享/订阅用的端口由接入域名配置决定，这里不改写。
-  result.port = ib.port || 0
+  // port 只对 TCP 监听有意义；unix socket 入站写 port 会被 xray 忽略（PortList 置 nil），
+  // 运行配置里只是噪音，所以 socket 模式不写。
+  if (ib._listenType !== 'sock') result.port = ib.port || 0
   // Only add transport-specific settings when streamSettings exists (protocols with transport layer)
   if (result.streamSettings) {
     // Add TLS settings if security is tls

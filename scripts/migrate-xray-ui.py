@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""把 3x-ui / xray-ui 的 Xray 配置迁移到 CoreFusion。
+"""把 xray-ui（qist/xray-ui）的 Xray 配置迁移到 CoreFusion。
 
 迁移范围（只处理 Xray 侧，不改 nginx）：
   * 入站（inbounds）：tag/remark/protocol/listen/port/settings/streamSettings/sniffing 原样透传
   * 出站（outbounds）：direct/blocked/wireguard 等原样透传
   * 路由（routing）：domain/ip/geoip -> outboundTag 原样透传（自动剔除 api 规则）
 
-客户/订阅不在默认范围内：3x-ui 的 client 常常没有 email，CoreFusion 的订阅要求
-`{客户邮箱}_{入站tag片段}` 格式，直接迁移会静默跳过。需要时用 --assign-emails 指定
-一个邮箱，脚本会把各入站里无 email 的 client 统一补成该格式（凭据不变），但不会创建
-CoreFusion 客户与订阅（避免套餐/计费语义被猜错）。
+xray-ui 的 client 通常没有 email，而 CoreFusion 订阅按
+`{客户邮箱}_{入站tag片段}` 精确匹配，没有 email 会被静默跳过。
+默认行为（--email-mode auto）：按**凭据**分组，为每组随机生成一个 base email
+（`u<8hex>@cf.local`），再把各入站里的 client 补成 `{base}_{tag片段}`。
+同一凭据在多个入站复用时，会得到同一个客户邮箱（不同 tag 后缀），凭据本身不变，
+旧分享链接继续可用。
+
+需要固定邮箱时用 --assign-emails user@example.com；要原样保留用 --email-mode keep。
 
 用法示例：
   # 1. 先看迁移计划（不写任何东西）
@@ -27,6 +31,7 @@ CoreFusion 客户与订阅（避免套餐/计费语义被猜错）。
 """
 
 import argparse
+import hashlib
 import json
 import sqlite3
 import sys
@@ -134,33 +139,103 @@ def strip_internal(obj):
     return obj
 
 
-def assign_email(settings, email):
-    """把 clients 里缺 email 的项补成 {email}_{tag片段}，凭据不动。"""
-    changed = 0
+def tag_suffix(tag: str) -> str:
+    """与 CoreFusion 的 generateInboundEmail 保持一致：
+    inbound-vless-20296 -> vless20296"""
+    parts = tag.split("-")
+    if len(parts) >= 3:
+        return parts[1] + parts[-1]
+    return tag
+
+
+def credential_key(item):
+    """用凭据本身做"同一个用户"的判定（xray-ui 没有 email 可用）。"""
+    # vless/vmess/trojan 用 id/password，hysteria 用 auth
+    for k in ("id", "password", "auth"):
+        v = item.get(k)
+        if isinstance(v, str) and v:
+            return k + ":" + v
+    return None
+
+
+def build_email_map(inbounds, mode, fixed):
+    """凭据 -> base email。
+
+    auto：xray-ui 没有 email，就按**凭据**分组生成一个 base
+    （`u<8hex>@cf.local`），同一凭据在多个入站复用同一个 base；
+    若某个 client 本来就填了 email，则拿它当 base（保留人可读的部分）。
+
+    base 由凭据的 SHA256 派生（而不是每次真随机），这样 dry-run 看到的邮箱、
+    重跑迁移、换一台新面板再迁一次，得到的都是同一套邮箱，便于对账。
+    """
+    mapping = {}
+    if mode == "keep":
+        return mapping
+    for ib in inbounds:
+        for key in ("clients", "users"):
+            items = ib["settings"].get(key)
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                ck = credential_key(item)
+                if not ck or ck in mapping:
+                    continue
+                existing = (item.get("email") or "").strip()
+                if fixed:
+                    mapping[ck] = fixed
+                elif existing:
+                    mapping[ck] = existing
+                else:
+                    digest = hashlib.sha256(ck.encode("utf-8")).hexdigest()[:8]
+                    mapping[ck] = "u%s@cf.local" % digest
+    return mapping
+
+
+def assign_emails(settings, tag, email_map, mode):
+    """把 client 的 email 规整成 {base}_{tag片段}，凭据不动。
+
+    已经是 `{base}_{suffix}` 的保持原样（重复执行幂等）。CoreFusion 订阅按
+    `generateInboundEmail(client.Email, tag)` 精确匹配，缺这段后缀就会跳过整个入站，
+    所以即使 client 原本有 email，也要补上后缀。
+    """
+    if mode == "keep":
+        return []
+    changed = []
+    suffix = tag_suffix(tag)
     for key in ("clients", "users"):
         items = settings.get(key)
         if not isinstance(items, list):
             continue
         for item in items:
-            if isinstance(item, dict) and not item.get("email"):
-                item["email"] = email
-                changed += 1
+            if not isinstance(item, dict):
+                continue
+            ck = credential_key(item)
+            base = email_map.get(ck)
+            if not base:
+                continue
+            current = (item.get("email") or "").strip()
+            if current.endswith("_" + suffix):
+                base = current[: -(len(suffix) + 1)]
+            want = "%s_%s" % (base, suffix)
+            if current == want:
+                continue
+            item["email"] = want
+            changed.append(want)
     return changed
 
 
-def build_inbound_payload(ib, public_port, port_map, default_email):
+def build_inbound_payload(ib, public_port, port_map, email_map, email_mode):
     settings = json.loads(json.dumps(strip_internal(ib["settings"])))
-    if default_email:
-        changed = assign_email(settings, default_email)
-        if changed:
-            print("    [email] %s: 补齐 %d 个 client email -> %s" % (ib["tag"], changed, default_email))
+    changed = assign_emails(settings, ib["tag"], email_map, email_mode)
+    if changed:
+        print("    [email] %s: 补齐 %d 个 -> %s" % (ib["tag"], len(changed), ", ".join(changed)))
     config = {"settings": settings}
     if ib["streamSettings"]:
         config["streamSettings"] = strip_internal(ib["streamSettings"])
     if ib["sniffing"]:
         config["sniffing"] = strip_internal(ib["sniffing"])
-    # x-ui 里 unix socket 入站的 port 只是"名义端口"，对外端口由 nginx 决定；
-    # CoreFusion 用 Port 生成分享链接，所以这里按对外端口写。
     port = resolve_port(ib, public_port, port_map)
     return {
         "core_type": "xray",
@@ -216,8 +291,10 @@ def main():
                     help="unix socket/回环入站对外暴露的端口（默认 443）")
     ap.add_argument("--port-map", action="append", default=[],
                     metavar="TAG=PORT", help="按 tag 指定对外端口，可重复")
+    ap.add_argument("--email-mode", choices=["auto", "keep", "fixed"], default="auto",
+                    help="auto=按凭据随机生成（默认）；keep=保留原样；fixed=配合 --assign-emails 统一")
     ap.add_argument("--assign-emails", metavar="EMAIL",
-                    help="给无 email 的 client 统一补 {EMAIL}（凭据不变，仅用于订阅识别）")
+                    help="固定邮箱（隐含 --email-mode fixed），无 email 的 client 统一用它做 base")
     ap.add_argument("--skip-inbounds", action="store_true")
     ap.add_argument("--skip-outbounds", action="store_true")
     ap.add_argument("--skip-routing", action="store_true")
@@ -234,6 +311,9 @@ def main():
     inbounds = load_inbounds(args.db)
     runtime = load_runtime_config(args.config) if args.config else {}
 
+    email_mode = "fixed" if args.assign_emails else args.email_mode
+    email_map = build_email_map(inbounds, email_mode, args.assign_emails)
+
     print("== 迁移计划 ==")
     print("入站 %d 个，出站 %d 个，路由规则 %d 条"
           % (len(inbounds), len(runtime.get("outbounds") or []),
@@ -244,6 +324,11 @@ def main():
         flag = "" if ib["enabled"] else "  [disabled]"
         print("  %-28s %-10s listen=%-30r port=%s%s"
               % (ib["tag"], ib["protocol"], ib["listen"], port, flag))
+
+    if email_map:
+        print("\n随机邮箱映射（凭据前 8 位 -> base email；同凭据在多个入站会复用）：")
+        for ck, email in sorted(email_map.items()):
+            print("  %-20s -> %s" % (ck.split(":", 1)[1][:8], email))
 
     if args.dry_run:
         print("\n[dry-run] 不写面板。")
@@ -276,7 +361,7 @@ def main():
         by_tag = {c.get("tag"): c for c in existing}
         print("\n== 入站 ==")
         for ib in inbounds:
-            payload = build_inbound_payload(ib, args.public_port, port_map, args.assign_emails)
+            payload = build_inbound_payload(ib, args.public_port, port_map, email_map, email_mode)
             try:
                 cur = by_tag.get(payload["tag"])
                 if cur:

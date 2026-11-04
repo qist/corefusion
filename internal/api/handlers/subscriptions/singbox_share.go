@@ -553,6 +553,11 @@ func transportUnsupportedReason(node *formatter.Node) string {
 	if transportCapableProtocols[proto] {
 		return ""
 	}
+	// hysteria2 / tuic 的传输是协议自带的（xray 入站的 streamSettings.network 就写成
+	// "hysteria"），不存在"传输字段丢失"的问题，不能当不可表达处理。
+	if proto == "hysteria2" || proto == "tuic" {
+		return ""
+	}
 	// 前端把 "transport=" 之后的部分直接填进"不支持传输 X"的文案，这里只给传输名。
 	return "transport=" + t
 }

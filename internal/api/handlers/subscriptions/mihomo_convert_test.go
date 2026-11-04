@@ -98,4 +98,15 @@ func TestTransportUnsupportedForNonV2RayProtocols(t *testing.T) {
 			t.Errorf("ss 裸传输 %q 不应被判定为表达不了: %s", tr, r)
 		}
 	}
+	// hysteria2 / tuic 的 streamSettings.network 是协议自带值（"hysteria" / "tuic"），
+	// 不是可选传输，不能被误剔除（116 上 hysteria 4443 就是这么被误伤的）。
+	for _, n := range []*formatter.Node{
+		{Protocol: "hysteria2", Transport: "hysteria"},
+		{Protocol: "hysteria", Transport: "hysteria"},
+		{Protocol: "tuic", Transport: "tuic"},
+	} {
+		if r := transportUnsupportedReason(n); r != "" {
+			t.Errorf("%s+%s 不应被判定为表达不了: %s", n.Protocol, n.Transport, r)
+		}
+	}
 }

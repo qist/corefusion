@@ -5010,7 +5010,15 @@ async function loadInbounds() {
       const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
       // listen / port 存在表列上，不在 config_json 里 —— 不合并的话编辑框会显示
       // 0.0.0.0 + 端口 1（被 input-number 的 min 夹住），且监听方式恒为 TCP。
-      const parsed = parseInbound({ ...cfg, listen: item.listen ?? cfg.listen, port: item.port ?? cfg.port })
+      // protocol / tag 是表列（config_json 里的副本可能过期）：必须以表列为准，
+      // 否则回显和保存会把旧协议（常见是 vless）写回去。
+      const parsed = parseInbound({
+        ...cfg,
+        protocol: item.protocol || cfg.protocol,
+        tag: item.tag || cfg.tag,
+        listen: item.listen ?? cfg.listen,
+        port: item.port ?? cfg.port,
+      })
       // Use remark from API response (stored separately in DB)
       if (item.remark) {
         parsed._remark = item.remark

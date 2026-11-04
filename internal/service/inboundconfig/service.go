@@ -117,6 +117,39 @@ func requireClientField(clients []interface{}, field, what string) error {
 	return nil
 }
 
+// syncConfigJSONMeta 让 config_json 里的 protocol/tag 与表列保持一致。
+//
+// 历史原因：前端保存时会把 protocol/tag 也塞进 config_json，之后改协议只更新了表列，
+// config_json 里的旧值就变成"幽灵协议"——前端回显优先用它，结果所有入站都显示 VLESS，
+// 编辑保存时又把错误协议写回去（进而让 xray 起不来）。
+func syncConfigJSONMeta(configJSON, protocol, tag string) string {
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &root); err != nil {
+		return configJSON
+	}
+	changed := false
+	if protocol != "" {
+		if cur, _ := root["protocol"].(string); cur != protocol {
+			root["protocol"] = protocol
+			changed = true
+		}
+	}
+	if tag != "" {
+		if cur, _ := root["tag"].(string); cur != tag {
+			root["tag"] = tag
+			changed = true
+		}
+	}
+	if !changed {
+		return configJSON
+	}
+	b, err := json.Marshal(root)
+	if err != nil {
+		return configJSON
+	}
+	return string(b)
+}
+
 // Service handles inbound config business logic.
 type Service struct {
 	repo       *repository.InboundConfigRepository
@@ -187,10 +220,12 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 	if serverID == 0 {
 		serverID = 1 // default to local node
 	}
+	protocol, tag = strings.TrimSpace(protocol), strings.TrimSpace(tag)
 	configJSON, err := normalizeXrayInboundConfig(coreType, protocol, configJSON)
 	if err != nil {
 		return nil, err
 	}
+	configJSON = syncConfigJSONMeta(configJSON, protocol, tag)
 	if snis := extractServerNames(configJSON); len(snis) > 0 {
 		if err := s.checkServerNamesConflict(ctx, serverID, 0, snis); err != nil {
 			return nil, err
@@ -228,10 +263,12 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 			return nil, err
 		}
 	}
+	protocol, tag = strings.TrimSpace(protocol), strings.TrimSpace(tag)
 	configJSON, err = normalizeXrayInboundConfig(cfg.CoreType, protocol, configJSON)
 	if err != nil {
 		return nil, err
 	}
+	configJSON = syncConfigJSONMeta(configJSON, protocol, tag)
 	cfg.Remark = remark
 	cfg.Protocol = protocol
 	cfg.Tag = tag

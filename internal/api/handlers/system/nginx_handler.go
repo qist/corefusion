@@ -100,6 +100,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		Upstream        string `json:"upstream"`
 		Template        string `json:"template"`
 		Path            string `json:"path"`
+		BackendPath     string `json:"backend_path"`
 		ListenPort      string `json:"listen_port"`
 		QuicListen      string `json:"quic_listen"`
 		ListenSocket    string `json:"listen_socket"`
@@ -139,6 +140,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		Upstream:        req.Upstream,
 		Template:        req.Template,
 		Path:            req.Path,
+		BackendPath:     req.BackendPath,
 		ListenPort:      req.ListenPort,
 		QuicListen:      req.QuicListen,
 		ListenSocket:    req.ListenSocket,
@@ -195,6 +197,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		Upstream        *string `json:"upstream"`
 		Template        *string `json:"template"`
 		Path            *string `json:"path"`
+		BackendPath     *string `json:"backend_path"`
 		ListenPort      *string `json:"listen_port"`
 		QuicListen      *string `json:"quic_listen"`
 		ListenSocket    *string `json:"listen_socket"`
@@ -253,6 +256,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.Path != nil {
 		existing.Path = *req.Path
+	}
+	if req.BackendPath != nil {
+		existing.BackendPath = *req.BackendPath
 	}
 	if req.ListenPort != nil {
 		existing.ListenPort = *req.ListenPort

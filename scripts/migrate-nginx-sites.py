@@ -104,7 +104,8 @@ def parse_upstreams(path):
         body, _ = brace_block(text, s)
         servers = re.findall(r"(?m)^\s*server\s+([^\s;]+)", body)
         if servers:
-            result[m.group(1)] = servers
+            # nginx 的 upstream 名在配置里大小写混用（vnStat vs vnstat），统一小写查找
+            result[m.group(1).lower()] = servers
     return result
 
 
@@ -159,7 +160,7 @@ def parse_sni(stream_path, upstreams):
         body, _ = brace_block(text, s)
         addrs = re.findall(r"(?m)^\s*server\s+([^\s;]+)", body)
         if addrs:
-            local_up[m.group(1)] = addrs
+            local_up[m.group(1).lower()] = addrs
 
     rules, fallback = [], ""
     for m in re.finditer(r"(?m)^\s*map\s+\$ssl_preread_server_name\s+\S+\s*\{", text):
@@ -171,11 +172,11 @@ def parse_sni(stream_path, upstreams):
                 continue
             domain, target = parts[0], parts[1].rstrip(";")
             if domain == "default":
-                fallback = ",".join(local_up.get(target, [target]))
+                fallback = ",".join(local_up.get(target.lower(), [target]))
                 continue
             if domain.startswith("~"):
                 continue  # 正则 SNI 不支持
-            rules.append((domain, ",".join(local_up.get(target, [target]))))
+            rules.append((domain, ",".join(local_up.get(target.lower(), [target]))))
     return rules, fallback
 
 
@@ -213,8 +214,8 @@ def upstream_value(proxy_target, upstreams):
     m = re.match(r"^(https?)://([^/]+)(/.*)?$", proxy_target)
     if m:
         scheme, host, uri = m.group(1), m.group(2), m.group(3) or ""
-        if host in upstreams:
-            addr = upstreams[host][0]
+        if host.lower() in upstreams:
+            addr = upstreams[host.lower()][0]
             # 直接上游：保留 scheme 与 URI（含 "://" 时生成器会原样 proxy_pass）
             return "%s://%s%s" % (scheme, addr, uri)
         return proxy_target
@@ -296,7 +297,7 @@ def build_plan(root, certs_dir, upstreams):
         quic_listen = ""
         has_quic = False
         for l in listens:
-            if re.search(r"\bquic\b", l) and not l.startswith("[::1]"):
+            if re.search(r"\bquic\b", l) and not l.startswith("["):
                 quic_listen = listen_addr(l)
                 has_quic = True
 
@@ -313,9 +314,13 @@ def build_plan(root, certs_dir, upstreams):
                 cert_dirs.add(d)
 
         # server 级配置：只保留 CoreFusion 不自动生成的指令
+        # 生成器会自动写这些：重复会导致 "directive is duplicate" / 证书路径失效。
         drop_prefix = ("listen ", "server_name ", "ssl_certificate ", "ssl_certificate_key ",
                        "http2 ", "ssl_protocols ", "ssl_ciphers ", "ssl_ecdh_curve ",
-                       "ssl_early_data", "location ")
+                       "ssl_early_data", "location ",
+                       "real_ip_header ", "set_real_ip_from ",
+                       "ssl_trusted_certificate ", "ssl_stapling ",
+                       "ssl_dhparam ", "ssl_session_ticket_key ")
         srv_cfg = []
         for d in sv["directives"]:
             if d.startswith(drop_prefix):
@@ -346,9 +351,17 @@ def build_plan(root, certs_dir, upstreams):
         for path, loc_body in locs:
             # location 修饰符与路径分开（CoreFusion 直接拼 location %s）
             loc_path = path
-            targets = re.findall(r"(?m)^\s*(proxy_pass|grpc_pass)\s+([^;]+);", loc_body)
-            rets = re.findall(r"(?m)^\s*return\s+([^;]+);", loc_body)
-            roots = re.findall(r"(?m)^\s*root\s+([^;]+);", loc_body)
+            # 顶层指令与嵌套块分开解析：if 块必须原样保留（里面的 return 不能被当成
+            # location 顶层 return，否则会误判模板类型并丢语义）。
+            loc_singles, loc_blocks = parse_directives(loc_body)
+            targets = []
+            for d in loc_singles:
+                if d.startswith("proxy_pass "):
+                    targets.append(("proxy_pass", d[len("proxy_pass "):]))
+                elif d.startswith("grpc_pass "):
+                    targets.append(("grpc_pass", d[len("grpc_pass "):]))
+            rets = [d[len("return "):] for d in loc_singles if d.startswith("return ")]
+            roots = [d[len("root "):] for d in loc_singles if d.startswith("root ")]
 
             if targets:
                 kind, target = targets[0][0], targets[0][1].strip()
@@ -356,8 +369,8 @@ def build_plan(root, certs_dir, upstreams):
                 if kind == "grpc_pass":
                     template = "grpc"
                     target = re.sub(r"^grpcs?://", "", target)
-                    if target in upstreams:
-                        upstream = upstreams[target][0]
+                    if target.lower() in upstreams:
+                        upstream = upstreams[target.lower()][0]
                     else:
                         upstream = target
                     upstream_tls = False
@@ -389,15 +402,26 @@ def build_plan(root, certs_dir, upstreams):
                 upstream = srv_root
                 upstream_tls = False
 
-            # location 内其余指令原样保留（去掉模板已生成的）
-            keep = []
-            for line in loc_body.splitlines():
-                s = line.strip()
-                if not s:
-                    continue
-                if re.match(r"^(proxy_pass|grpc_pass|return|root|alias)\b", s):
-                    continue
-                keep.append(s)
+            # location_config：去掉模板会生成的指令（重复会 "directive is duplicate"），
+            # 其余顶层指令与 if 块原样保留。
+            skip = (
+                "proxy_pass ", "grpc_pass ", "return ", "root ", "alias ",
+                "client_max_body_size ", "client_body_timeout ", "send_timeout ",
+                "keepalive_requests ", "lingering_close ", "grpc_read_timeout ",
+                "grpc_send_timeout ", "grpc_set_header ", "grpc_socket_keepalive ",
+                "grpc_intercept_errors ", "proxy_read_timeout ", "proxy_send_timeout ",
+                "proxy_connect_timeout ", "proxy_http_version ", "proxy_cache_bypass ",
+                "proxy_ssl_server_name ", "proxy_ssl_verify ", "proxy_ssl_name ",
+                "grpc_ssl_server_name ", "grpc_ssl_name ", "grpc_ssl_verify ",
+                "proxy_ssl_session_reuse ", "proxy_redirect ", "proxy_buffering ",
+                "proxy_buffers ", "proxy_buffer_size ", "proxy_busy_buffers_size ",
+                "proxy_max_temp_file_size ", "proxy_temp_file_write_size ",
+            )
+            keep = [d for d in loc_singles if not d.startswith(skip)]
+            for head, inner in loc_blocks:
+                keep.append(head + " {")
+                keep.extend([ln.strip() for ln in inner.strip().splitlines() if ln.strip()])
+                keep.append("}")
 
             site = {
                 "domain": domain,
@@ -453,6 +477,7 @@ def main():
     ap.add_argument("--panel", default="http://127.0.0.1:8080")
     ap.add_argument("--user")
     ap.add_argument("--password")
+    ap.add_argument("--token", help="直接使用 access token（与 --user/--password 二选一）")
     ap.add_argument("--node", type=int, default=0)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--skip-certs", action="store_true")
@@ -476,11 +501,13 @@ def main():
     if args.dry_run:
         print("\n[dry-run] 未写面板。")
         return 0
-    if not args.user or not args.password:
-        sys.exit("执行需要 --user/--password")
-
     panel = Panel(args.panel)
-    panel.login(args.user, args.password)
+    if args.token:
+        panel.token = args.token
+    else:
+        if not args.user or not args.password:
+            sys.exit("执行需要 --user/--password 或 --token")
+        panel.login(args.user, args.password)
     server_id = args.node
     if server_id == 0:
         data = panel.call("GET", "/api/v1/node-servers")
@@ -547,6 +574,8 @@ def main():
 
     # 3) stream 设置
     settings = panel.call("GET", "/api/v1/node-servers/%d/proxy/nginx-settings" % server_id) or {}
+    # 超时/体积用 CoreFusion 的独立设置字段，不能重复写进 custom_config
+    # （默认全局块已经生成 client_header_timeout 等，重复会导致 nginx -t 失败）。
     settings.update({
         "stream_sni_enabled": True,
         "stream_nontls_target": "127.0.0.1:8444",
@@ -554,10 +583,11 @@ def main():
         "stream_ipv6": True,
         "ipv6": False,
         "waf_enabled": False,
-        "custom_config": (settings.get("custom_config") or "") +
-                         "\nresolver 127.0.0.1 valid=10s;\nresolver_timeout 60s;"
-                         "\nproxy_ignore_client_abort on;\nclient_header_timeout 900;"
-                         "\nclient_body_timeout 900;\nsend_timeout 900;",
+        "client_header_timeout": "900",
+        "client_body_timeout": "900",
+        "send_timeout": "900",
+        "client_max_body_size": "0",
+        "custom_config": "resolver 127.0.0.1 valid=10s;\nresolver_timeout 60s;",
     })
     panel.call("POST", "/api/v1/node-servers/%d/proxy/nginx-settings" % server_id, settings)
 

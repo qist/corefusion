@@ -210,6 +210,7 @@ def main():
     ap.add_argument("--panel", default="http://127.0.0.1:8080", help="CoreFusion 面板地址")
     ap.add_argument("--user", help="管理员用户名（执行迁移时必填）")
     ap.add_argument("--password", help="管理员密码（执行迁移时必填）")
+    ap.add_argument("--token", help="直接使用 access token（与 --user/--password 二选一）")
     ap.add_argument("--node", type=int, default=0, help="目标节点 ID，默认自动选本地节点")
     ap.add_argument("--public-port", type=int, default=443,
                     help="unix socket/回环入站对外暴露的端口（默认 443）")
@@ -248,11 +249,13 @@ def main():
         print("\n[dry-run] 不写面板。")
         return
 
-    if not args.user or not args.password:
-        sys.exit("执行迁移需要 --user/--password（或用 --dry-run 先看计划）")
-
     panel = Panel(args.panel)
-    panel.login(args.user, args.password)
+    if args.token:
+        panel.token = args.token
+    else:
+        if not args.user or not args.password:
+            sys.exit("执行迁移需要 --user/--password 或 --token（或用 --dry-run 先看计划）")
+        panel.login(args.user, args.password)
     print("\n登录成功：%s" % args.panel)
 
     server_id = args.node

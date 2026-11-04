@@ -83,3 +83,61 @@ func containsString(list []string, want string) bool {
 	}
 	return false
 }
+
+// 入口入站（any_SNI_No_SNI）只允许"无 SNI + 未被 fallback 认领的 SNI"：
+// fallback.name 是内部入站的唯一入口 SNI，外层客户端不能拿它当入口。
+func TestEntryShareViewRemovesFallbackClaimedSNI(t *testing.T) {
+	entry := map[string]interface{}{
+		"settings": map[string]interface{}{"fallbacks": []interface{}{
+			map[string]interface{}{"name": "", "dest": "@vless-grpc"},
+			map[string]interface{}{"name": "qomvix.com", "dest": "@trojan-grpc"},
+			map[string]interface{}{"name": "Ravexo.com", "dest": "@vless-h2"},
+		}},
+		"streamSettings": map[string]interface{}{"security": "reality", "realitySettings": map[string]interface{}{
+			"serverNames": []interface{}{"", "activate.apple.com", "qomvix.com", "ravexo.com", "adrepository.apple.com"},
+			"serverName":  "qomvix.com",
+			"shortIds":    []interface{}{"", "32"},
+		}},
+	}
+	view := entryShareView(entry)
+	rs := getMap(getMap(view, "streamSettings"), "realitySettings")
+	names := getStringSliceKeepEmptyLocal(rs, "serverNames")
+	if len(names) != 3 || names[0] != "" || names[1] != "activate.apple.com" || names[2] != "adrepository.apple.com" {
+		t.Fatalf("serverNames 过滤结果不对: %v", names)
+	}
+	if _, ok := rs["serverName"]; ok {
+		t.Error("残留的标量 serverName 会让随机失效，应删除")
+	}
+	// 原 config 不能被改动（服务端仍需要完整 serverNames）
+	if len(getStringSliceKeepEmptyLocal(getMap(getMap(entry, "streamSettings"), "realitySettings"), "serverNames")) != 5 {
+		t.Error("entryShareView 不应修改原始 config")
+	}
+	// 全被认领时保留空串（无 SNI 仍可用）
+	only := map[string]interface{}{
+		"settings": map[string]interface{}{"fallbacks": []interface{}{
+			map[string]interface{}{"name": "qomvix.com", "dest": "@trojan-grpc"},
+		}},
+		"streamSettings": map[string]interface{}{"realitySettings": map[string]interface{}{
+			"serverNames": []interface{}{"qomvix.com"},
+		}},
+	}
+	got := getStringSliceKeepEmptyLocal(getMap(getMap(entryShareView(only), "streamSettings"), "realitySettings"), "serverNames")
+	if len(got) != 1 || got[0] != "" {
+		t.Fatalf("全被认领时应只剩空串: %v", got)
+	}
+}
+
+func getStringSliceKeepEmptyLocal(m map[string]interface{}, key string) []string {
+	var out []string
+	switch v := m[key].(type) {
+	case []interface{}:
+		for _, raw := range v {
+			if s, ok := raw.(string); ok {
+				out = append(out, s)
+			}
+		}
+	case []string:
+		out = append(out, v...)
+	}
+	return out
+}

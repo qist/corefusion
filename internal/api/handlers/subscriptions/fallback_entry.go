@@ -198,11 +198,73 @@ func deepCopyMapAny(v interface{}) interface{} {
 func (h *PublicHandler) applyFallbackEntry(cfg entity.InboundConfig, config map[string]interface{}, idx map[int64]fallbackEntry) (entity.InboundConfig, map[string]interface{}) {
 	e, ok := idx[cfg.ID]
 	if !ok || e.Entry == nil {
-		return cfg, config
+		// 入口入站自身：可用 SNI = 未被 fallback 认领的 + 空串。
+		return cfg, entryShareView(config)
 	}
 	entryCfg := parseConfigMap(e.Entry.ConfigJSON)
 	if entryCfg == nil {
-		return cfg, config
+		return cfg, entryShareView(config)
 	}
 	return *e.Entry, fallbackShareView(config, entryCfg, e.Name)
+}
+
+// entryShareView 返回"入口入站"的客户端视图：把 REALITY serverNames 里被 fallback
+// 认领的 SNI 剔除。语义（用户明确）：
+//   - 入口入站（如 any_SNI_No_SNI）允许无 SNI，也可用**未被认领**的 SNI；
+//   - fallback 上配置的 name 是该内部入站的**唯一**入口 SNI，其它客户端不能拿它当入口。
+//
+// 因此外层节点的分享只应在"剩余 SNI + 空串"里随机。
+func entryShareView(config map[string]interface{}) map[string]interface{} {
+	if config == nil {
+		return config
+	}
+	settings := getMap(config, "settings")
+	if settings == nil {
+		return config
+	}
+	fbs, _ := settings["fallbacks"].([]interface{})
+	claimed := make(map[string]bool, len(fbs))
+	for _, raw := range fbs {
+		fb, _ := raw.(map[string]interface{})
+		if name := strings.ToLower(strings.TrimSpace(getString(fb, "name", ""))); name != "" {
+			claimed[name] = true
+		}
+	}
+	if len(claimed) == 0 {
+		return config
+	}
+	ss := getMap(config, "streamSettings")
+	rs := getMap(ss, "realitySettings")
+	if rs == nil {
+		return config
+	}
+	var names []string
+	switch list := rs["serverNames"].(type) {
+	case []interface{}:
+		for _, raw := range list {
+			if s, ok := raw.(string); ok {
+				names = append(names, s)
+			}
+		}
+	case []string:
+		names = append(names, list...)
+	default:
+		return config
+	}
+	kept := make([]interface{}, 0, len(names))
+	for _, s := range names {
+		if s == "" || !claimed[strings.ToLower(strings.TrimSpace(s))] {
+			kept = append(kept, s)
+		}
+	}
+	if len(kept) == 0 {
+		// 全被 fallback 认领：入口只剩"无 SNI"这一种可用方式。
+		kept = []interface{}{""}
+	}
+	out := deepCopyMap(config)
+	outRS := getMap(getMap(out, "streamSettings"), "realitySettings")
+	outRS["serverNames"] = kept
+	// 标量 serverName 是旧值（可能正是被认领的 SNI），删掉让随机从列表里挑。
+	delete(outRS, "serverName")
+	return out
 }

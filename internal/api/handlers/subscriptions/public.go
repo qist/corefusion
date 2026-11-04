@@ -662,6 +662,9 @@ func (h *PublicHandler) collectShareLinks(
 		if err != nil {
 			continue
 		}
+		// 内部入站（被外层 REALITY/TLS 入站的 fallbacks 引用）要按外层入口对外呈现：
+		// 地址/端口/security 用入口的，协议/传输/凭据用自己的。
+		entryIdx := buildFallbackEntryIndex(configs)
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
 				continue
@@ -683,7 +686,9 @@ func (h *PublicHandler) collectShareLinks(
 			// 接入域名只是「指定对外地址」的可选项：没配 / 没启用时由 shareAddress
 			// 回退到节点自身地址（公网 IP → 主机名 → 内网 IP → 监听地址），
 			// 不能因此把节点整条跳过（否则未配置域名的入站永远不出现在订阅里）。
-			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
+			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
+			config = merged
+			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
 
 			// Find the specific client's credentials for this subscription
 			settings := getMap(config, "settings")
@@ -840,6 +845,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		if err != nil {
 			continue
 		}
+		// 内部入站（被外层 REALITY/TLS 入站的 fallbacks 引用）要按外层入口对外呈现：
+		// 地址/端口/security 用入口的，协议/传输/凭据用自己的。
+		entryIdx := buildFallbackEntryIndex(configs)
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
 				continue
@@ -872,7 +880,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				config = view
 			}
 			// 同上：无接入域名时回退节点地址，不跳过。
-			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
+			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
+			config = merged
+			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
 			settings := getMap(config, "settings")
 
 			linkSettings := settings
@@ -1299,6 +1309,9 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 		if err != nil {
 			continue
 		}
+		// 内部入站（被外层 REALITY/TLS 入站的 fallbacks 引用）要按外层入口对外呈现：
+		// 地址/端口/security 用入口的，协议/传输/凭据用自己的。
+		entryIdx := buildFallbackEntryIndex(configs)
 		for _, cfg := range configs {
 			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
 				continue
@@ -1318,7 +1331,9 @@ func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains 
 				config = view
 			}
 			// 同上：无接入域名时回退节点地址，不跳过。
-			host, port := h.shareAddress(ctx, cfg, config, shareDomains)
+			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
+			config = merged
+			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
 			settings := getMap(config, "settings")
 			credExtra := map[string]interface{}{}
 			var uuid, password, flow string

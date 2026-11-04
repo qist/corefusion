@@ -356,9 +356,10 @@
               <el-input-number v-model="rf.port" :min="1" :max="65535" />
             </el-form-item>
             <el-form-item v-if="rf._listenType === 'sock'" :label="t('protoCenter.inbounds.socketPath')">
-              <el-input v-model="rf._socketPath" :placeholder="'/dev/shm/' + rf.protocol + '.sock'" />
+              <el-input v-model="rf._socketPath" :placeholder="'/dev/shm/' + rf.protocol + '.sock 或 @name（抽象 socket）'" />
             </el-form-item>
-            <el-form-item v-if="rf._listenType === 'sock'" :label="t('protoCenter.inbounds.socketPerm')">
+            <!-- 抽象 socket（@name）没有文件权限位：带 ,0666 会绑定到字面量路径 -->
+            <el-form-item v-if="rf._listenType === 'sock' && !isAbstractSocketPath(rf._socketPath)" :label="t('protoCenter.inbounds.socketPerm')">
               <el-input v-model="rf._socketPerm" placeholder="0666" />
             </el-form-item>
 
@@ -2999,6 +3000,7 @@ function onListenTypeChange(val) {
     rf._savedPort = rf.port
     rf.listen = ''
     if (!rf._socketPath) rf._socketPath = '/dev/shm/' + rf.protocol + '.sock'
+    if (!rf._socketPerm) rf._socketPerm = '0666'
   } else {
     rf.listen = '0.0.0.0'
     rf.port = rf.port || rf._savedPort || genPort()
@@ -3914,6 +3916,12 @@ function splitSocketListen(v) {
   return [s, '']
 }
 
+// 抽象 socket（Linux abstract namespace，xray 写 `@name`）没有文件权限位：
+// 界面上不能显示 0666（保存时会拼成 "@name,0666"，绑定到错误的字面量路径）。
+function isAbstractSocketPath(p) {
+  return String(p || '').trim().startsWith('@')
+}
+
 // socketListenValue 生成写进 DB/运行配置的 listen 值。
 // 抽象 socket（@name）没有文件权限位，带 ",0666" 会绑定到字面量路径。
 function socketListenValue(path, perm) {
@@ -3929,9 +3937,10 @@ function parseInbound(ib) {
   // 调用方必须把行数据合并进 ib，否则这里会退化成 0.0.0.0 / 0
   // （0 再被 el-input-number 的 :min="1" 夹成 1 → "导入后端口全是 1"）。
   const rawListen = String(ib.listen ?? '').trim()
-  const listenType = (ib._listenType === 'sock' || ib._listenType === 'tcp')
-    ? ib._listenType
-    : inferListenType(rawListen)
+  // ⚠ 必须以 **listen 列**为准（生成配置直接用它），不能信 config_json 里遗留的
+  // _listenType：两者不一致时（例如把 Unix Socket 改成 TCP 后）编辑框会显示成
+  // "Unix Socket + 0.0.0.0"，一保存就把 @abstract/路径写坏。
+  const listenType = inferListenType(rawListen)
   const [sockPath, sockPerm] = listenType === 'sock' ? splitSocketListen(rawListen) : ['', '']
   return {
     _id: ib._id || null,
@@ -3941,7 +3950,7 @@ function parseInbound(ib) {
     _enabled: ib._enabled !== false,
     _listenType: listenType,
     _socketPath: sockPath,
-    _socketPerm: sockPerm || '0666',
+    _socketPerm: sockPerm || (isAbstractSocketPath(sockPath) ? '' : '0666'),
     settings: parseSettings(ib),
     _portMap: ib.settings && ib.settings.portMap ? Object.entries(ib.settings.portMap).map(([local, remote]) => ({ local, remote })) : [],
     streamSettings: {

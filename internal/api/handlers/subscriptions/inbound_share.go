@@ -59,6 +59,16 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		reason = "protocol=" + matrixProto
 	}
 
+	// 内部入站（@abstract / unix.sock，被外层 REALITY/TLS 入站的 fallback 引用）：
+	// 分享地址与 security 必须用**外层入口**的，否则客户端拿到的是"明文 + 抽象 socket"。
+	var entryIdx map[int64]fallbackEntry
+	if h.inboundRepo != nil {
+		if cfgs, err := h.inboundRepo.ListAll(c.Request.Context(), cfg.CoreType); err == nil {
+			entryIdx = buildFallbackEntryIndex(cfgs)
+		}
+	}
+	entry, hasEntry := entryIdx[cfg.ID]
+
 	items := make([]gin.H, 0, 4)
 	userRecords := inboundUserRecords(config)
 	for idx, u := range userRecords {
@@ -71,7 +81,14 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		if client == nil {
 			continue
 		}
-		host, port := h.hostForLink(c.Request.Context(), cfg, view, shareDomains)
+		shareCfg := cfg
+		if hasEntry && entry.Entry != nil {
+			if entryCfg := parseConfigMap(entry.Entry.ConfigJSON); entryCfg != nil {
+				view = fallbackShareView(view, entryCfg, entry.Name)
+				shareCfg = entry.Entry
+			}
+		}
+		host, port := h.hostForLink(c.Request.Context(), shareCfg, view, shareDomains)
 		// 注意：这里传**完整的 settings**（而不是只挑 clients/encryption）——
 		// ss 的加密方式（method）、http/socks 的认证等都从这里取，
 		// 只挑两个键会让链接用错 cipher（如把 2022-blake3 写成 aes-256-gcm）。
@@ -131,7 +148,9 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 		}
 	}
 
-	host, port := h.hostForLink(c.Request.Context(), cfg, config, shareDomains)
+	// 顶层 host/port 供前端显示：与被 fallback 引用时一样用外层入口的地址。
+	respCfg, respView := h.applyFallbackEntry(*cfg, config, entryIdx)
+	host, port := h.hostForLink(c.Request.Context(), &respCfg, respView, shareDomains)
 	response.OK(c, gin.H{
 		"items":     items,
 		"users":     users,

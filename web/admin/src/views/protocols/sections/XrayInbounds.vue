@@ -352,7 +352,9 @@
             <el-form-item v-if="rf._listenType === 'tcp'" :label="t('protoCenter.inbounds.listen')">
               <el-input v-model="rf.listen" placeholder="0.0.0.0" />
             </el-form-item>
-            <el-form-item v-if="rf._listenType === 'tcp'" :label="t('protoCenter.inbounds.port')">
+            <!-- 端口对 Unix Socket / @抽象 socket 同样必需：它是分享/订阅/规则用的标识端口
+                 （xray 绑定 socket 时忽略它，但订阅会跳过 port==0 的节点）。 -->
+            <el-form-item :label="t('protoCenter.inbounds.port')">
               <el-input-number v-model="rf.port" :min="1" :max="65535" />
             </el-form-item>
             <el-form-item v-if="rf._listenType === 'sock'" :label="t('protoCenter.inbounds.socketPath')">
@@ -3946,7 +3948,9 @@ function parseInbound(ib) {
     _id: ib._id || null,
     _remark: ib._remark || ib.tag || '', tag: ib.tag || '', protocol: ib.protocol || 'vless',
     listen: listenType === 'sock' ? '' : (rawListen.replace(/^unix:/, '') || '0.0.0.0'),
-    port: Number(ib.port) || 0,
+    // socket 入站的历史数据可能 port=0（旧版本保存时没带端口）：给一个可用端口，
+    // 否则订阅会静默跳过它、二维码端口是 0。
+    port: Number(ib.port) || (listenType === 'sock' ? genPort() : 0),
     _enabled: ib._enabled !== false,
     _listenType: listenType,
     _socketPath: sockPath,
@@ -4231,9 +4235,9 @@ function buildInbound(ib, isApiCall = false) {
   // socket 路径可以是任意形式，回显时不能靠字符串前缀猜。
   result._listenType = ib._listenType === 'sock' ? 'sock' : 'tcp'
   result.listen = ib._listenType === 'sock' ? effectiveListen(ib) : (ib.listen || undefined)
-  // port 只对 TCP 监听有意义；unix socket 入站写 port 会被 xray 忽略（PortList 置 nil），
-  // 运行配置里只是噪音，所以 socket 模式不写。
-  if (ib._listenType !== 'sock') result.port = ib.port || 0
+  // port 必须**永远**带上：xray 绑定 unix/抽象 socket 时会忽略它，但面板侧把它当
+  // 标识端口（订阅按 port==0 直接跳过节点、分享链接会生成 ":0"、端口跳跃/防火墙也用它）。
+  result.port = ib.port || 0
   // Only add transport-specific settings when streamSettings exists (protocols with transport layer)
   if (result.streamSettings) {
     // Add TLS settings if security is tls

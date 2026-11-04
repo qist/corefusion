@@ -1076,11 +1076,31 @@ func rewriteCertPaths(configJSON json.RawMessage, dataDir string) json.RawMessag
 //	../../../certs/gg/cert.pem             → /opt/corefusion-agent/data/certs/gg/cert.pem
 //	certs/gg/cert.pem                      → /opt/corefusion-agent/data/certs/gg/cert.pem
 func rewritePathToLocal(path, dataDir string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return path
+	}
+	base := strings.TrimRight(strings.TrimSpace(dataDir), "/")
+
+	// 已经是本机绝对路径（或历史上被拼了两遍 dataDir）：直接返回/纠正，
+	// 否则 dataDir + 绝对路径 会变成 /data/data/certs/...（实测导致整个 xray 起不来）。
+	if base != "" {
+		doubled := base + base
+		if strings.HasPrefix(path, doubled+"/") {
+			return base + strings.TrimPrefix(path, doubled)
+		}
+		if path == base || strings.HasPrefix(path, base+"/") {
+			return path
+		}
+	}
 	// Find "certs/" in the path — everything from there is the relative part
 	idx := strings.Index(path, "certs/")
 	if idx >= 0 {
 		relPath := path[idx:]
-		return dataDir + "/" + relPath
+		if base == "" {
+			return relPath
+		}
+		return base + "/" + relPath
 	}
 	// If no "certs/" found, return as-is (might be a non-cert path)
 	return path

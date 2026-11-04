@@ -202,6 +202,10 @@ func (h *Handler) Create(c *gin.Context) {
 			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())
 			return
 		}
+		if errors.Is(err, inboundconfig.ErrProtocolSettingsMismatch) {
+			response.BadRequest(c, "PROTOCOL_SETTINGS_MISMATCH", err.Error())
+			return
+		}
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -278,6 +282,10 @@ func (h *Handler) Update(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
 			response.BadRequest(c, "SERVER_NAMES_CONFLICT", err.Error())
+			return
+		}
+		if errors.Is(err, inboundconfig.ErrProtocolSettingsMismatch) {
+			response.BadRequest(c, "PROTOCOL_SETTINGS_MISMATCH", err.Error())
 			return
 		}
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
@@ -478,6 +486,10 @@ func (h *Handler) setUserPaused(c *gin.Context, paused bool) {
 
 	_, err = h.svc.Update(c.Request.Context(), id, cfg.Remark, cfg.Protocol, cfg.Tag, cfg.Listen, cfg.Port, string(configJSON), cfg.Enabled)
 	if err != nil {
+		if errors.Is(err, inboundconfig.ErrProtocolSettingsMismatch) {
+			response.BadRequest(c, "PROTOCOL_SETTINGS_MISMATCH", err.Error())
+			return
+		}
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}

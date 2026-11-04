@@ -23,6 +23,100 @@ import (
 // cannot decide which inbound to forward to.
 var ErrServerNamesConflict = errors.New("server names conflict")
 
+// ErrProtocolSettingsMismatch 表示 protocol 与 settings 结构对不上。
+// 这类配置能让 xray 启动直接失败，**整个核心**（所有入站）一起挂掉，必须在落库前拦住。
+var ErrProtocolSettingsMismatch = errors.New("protocol/settings mismatch")
+
+// normalizeXrayInboundConfig 校验（并修复）xray 入站的 protocol 与 settings 结构。
+//
+// 两个真实事故：
+//   - 导入/改协议后残留 shadowsocks 的 method/password，protocol 却是 vless；
+//   - vless 缺 "decryption":"none"（xray 强制要求）。
+//
+// 前者返回 ErrProtocolSettingsMismatch，后者就地补上并返回规范化后的 JSON。
+func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, error) {
+	if !strings.EqualFold(strings.TrimSpace(coreType), "xray") {
+		return configJSON, nil
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &root); err != nil {
+		return configJSON, nil
+	}
+	settings, _ := root["settings"].(map[string]interface{})
+	if settings == nil {
+		settings = map[string]interface{}{}
+		root["settings"] = settings
+	}
+	clients, _ := settings["clients"].([]interface{})
+	p := strings.ToLower(strings.TrimSpace(protocol))
+	changed := false
+
+	switch p {
+	case "vless":
+		// shadowsocks 结构出现在 vless 里 → 100% 是改协议/导入残留，不能落库。
+		if _, hasMethod := settings["method"]; hasMethod {
+			return "", fmt.Errorf("%w: protocol=vless 但 settings 含 shadowsocks 的 method，请把协议改成 shadowsocks（或清空 settings 后重新添加客户端）", ErrProtocolSettingsMismatch)
+		}
+		if _, hasPwd := settings["password"]; hasPwd && len(clients) == 0 {
+			return "", fmt.Errorf("%w: protocol=vless 但 settings 只有 password（shadowsocks 结构），请检查协议选择", ErrProtocolSettingsMismatch)
+		}
+		if _, ok := settings["decryption"]; !ok {
+			settings["decryption"] = "none"
+			changed = true
+		}
+		if err := requireClientField(clients, "id", "vless 客户端"); err != nil {
+			return "", err
+		}
+	case "shadowsocks":
+		if _, ok := settings["method"]; !ok {
+			if len(clients) == 0 {
+				return "", fmt.Errorf("%w: shadowsocks 入站缺少 settings.method", ErrProtocolSettingsMismatch)
+			}
+		}
+		if _, ok := settings["password"]; !ok && len(clients) == 0 {
+			return "", fmt.Errorf("%w: shadowsocks 入站缺少 settings.password（单用户）或 settings.clients（多用户）", ErrProtocolSettingsMismatch)
+		}
+	case "vmess":
+		if err := requireClientField(clients, "id", "vmess 客户端"); err != nil {
+			return "", err
+		}
+	case "trojan":
+		if err := requireClientField(clients, "password", "trojan 客户端"); err != nil {
+			return "", err
+		}
+	}
+	if !changed {
+		return configJSON, nil
+	}
+	b, err := json.Marshal(root)
+	if err != nil {
+		return configJSON, nil
+	}
+	return string(b), nil
+}
+
+// requireClientField 校验每个 client 都带指定凭据字段（vless/vmess 的 id、trojan 的 password）。
+// 缺字段时 xray 会以 "invalid UUID:" / "empty password" 直接启动失败 → 整个核心挂掉。
+func requireClientField(clients []interface{}, field, what string) error {
+	for i, raw := range clients {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		v, _ := m[field].(string)
+		if strings.TrimSpace(v) != "" {
+			continue
+		}
+		if field == "id" {
+			if pwd, _ := m["password"].(string); strings.TrimSpace(pwd) != "" {
+				return fmt.Errorf("%w: %s[%d] 只有 password（trojan 结构）没有 id，请检查协议选择", ErrProtocolSettingsMismatch, what, i)
+			}
+		}
+		return fmt.Errorf("%w: %s[%d] 缺少 %s", ErrProtocolSettingsMismatch, what, i, field)
+	}
+	return nil
+}
+
 // Service handles inbound config business logic.
 type Service struct {
 	repo       *repository.InboundConfigRepository
@@ -93,6 +187,10 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 	if serverID == 0 {
 		serverID = 1 // default to local node
 	}
+	configJSON, err := normalizeXrayInboundConfig(coreType, protocol, configJSON)
+	if err != nil {
+		return nil, err
+	}
 	if snis := extractServerNames(configJSON); len(snis) > 0 {
 		if err := s.checkServerNamesConflict(ctx, serverID, 0, snis); err != nil {
 			return nil, err
@@ -129,6 +227,10 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 		if err := s.checkServerNamesConflict(ctx, cfg.ServerID, id, added); err != nil {
 			return nil, err
 		}
+	}
+	configJSON, err = normalizeXrayInboundConfig(cfg.CoreType, protocol, configJSON)
+	if err != nil {
+		return nil, err
 	}
 	cfg.Remark = remark
 	cfg.Protocol = protocol

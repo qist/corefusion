@@ -330,11 +330,61 @@ func removeNftRuleLocal(portRange string, targetPort int, iface string) error {
 }
 
 func removeIptablesRuleLocal(portRange string, targetPort int, iface string) error {
+	spec := iptablesPortSpec(portRange)
 	args := []string{"-t", "nat", "-D", "PREROUTING"}
 	if iface != "" {
 		args = append(args, "-i", iface)
 	}
-	args = append(args, "-p", "udp", "--dport", iptablesPortSpec(portRange), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
+	args = append(args, "-p", "udp", "--dport", spec, "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
 
-	return runFirewallCmd("iptables", args...)
+	if err := runFirewallCmd("iptables", args...); err == nil {
+		return nil
+	}
+
+	// 精确 -D 失败通常是规则根本不存在（例如端口段写错），或者添加时的 match/参数
+	// 写法与这里不一致（iptables -D 要求整条规则逐字匹配）。按实际规则表找同
+	// 端口段 + 同目标端口的行，用它的原始 -S 表示删除；找不到就视为"已经不存在"，
+	// 返回成功而不是 500，保证 remove 幂等。
+	del, found, err := findIptablesRuleDeleteArgs(spec, targetPort)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	return runFirewallCmd("iptables", del...)
+}
+
+// findIptablesRuleDeleteArgs 在 nat/PREROUTING 里查找匹配端口段与目标端口的规则，
+// 返回用 `iptables -S` 形式改写成的删除参数（把 -A 换成 -D）。
+//
+// 用 `-S` 而不是 `-L`：-S 输出就是可直接回放的规则原文，能避开 match 顺序/隐式
+// 模块（-m udp）导致的 "No chain/target/match by that name"。
+func findIptablesRuleDeleteArgs(portSpec string, targetPort int) ([]string, bool, error) {
+	out, err := exec.Command("iptables", "-t", "nat", "-S", "PREROUTING").CombinedOutput()
+	if err != nil {
+		return nil, false, fmt.Errorf("iptables -S PREROUTING: %s", strings.TrimSpace(string(out)))
+	}
+	args, found := matchIptablesDeleteArgs(string(out), portSpec, targetPort)
+	return args, found, nil
+}
+
+// matchIptablesDeleteArgs 从 `iptables -S` 输出里找到匹配的规则并改写成删除参数。
+// 抽成纯函数便于单测（不要在这里执行命令）。
+func matchIptablesDeleteArgs(s string, portSpec string, targetPort int) ([]string, bool) {
+	wantDport := "--dport " + portSpec
+	wantTo := fmt.Sprintf("--to-ports %d", targetPort)
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A PREROUTING ") {
+			continue
+		}
+		if !strings.Contains(line, wantDport) || !strings.Contains(line, wantTo) {
+			continue
+		}
+		fields := strings.Fields(line)
+		fields[0] = "-D"
+		return append([]string{"-t", "nat"}, fields...), true
+	}
+	return nil, false
 }

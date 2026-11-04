@@ -3888,26 +3888,60 @@ function parseSettings(ib) {
   return settings
 }
 
+// 监听方式判定：**不要**靠 "/" 前缀猜 —— socket 路径可以是任意形式
+// （绝对/相对路径、抽象 socket、带 unix: 前缀）。
+// 优先用保存时写下的 _listenType；只有老数据没有该字段时才按"像不像主机地址"兜底。
+function isHostLikeListen(v) {
+  if (!v) return true // 空 = 监听所有网卡
+  return /^[A-Za-z0-9._:\-\[\]]+$/.test(v)
+}
+
+function inferListenType(v) {
+  if (!v) return 'tcp'
+  if (v.startsWith('unix:') || v.includes('/') || v.includes('@') || v.includes(',')) return 'sock'
+  // 形如 "x.sock" 这种没有分隔符的路径：不像主机名/IP 就当 socket
+  return isHostLikeListen(v) ? 'tcp' : 'sock'
+}
+
+// splitSocketListen 拆分 "<path>[,<perm>]"：只把**末段是八进制权限**的当 perm，
+// 路径本身允许任意字符（含逗号）。
+function splitSocketListen(v) {
+  const s = String(v || '').replace(/^unix:/, '')
+  const i = s.lastIndexOf(',')
+  if (i > 0 && /^[0-7]{3,4}$/.test(s.slice(i + 1))) {
+    return [s.slice(0, i), s.slice(i + 1)]
+  }
+  return [s, '']
+}
+
+// socketListenValue 生成写进 DB/运行配置的 listen 值。
+// 抽象 socket（@name）没有文件权限位，带 ",0666" 会绑定到字面量路径。
+function socketListenValue(path, perm) {
+  const p = String(path || '').trim()
+  if (!p || p.startsWith('@') || p.includes(',')) return p
+  return perm ? p + ',' + perm : p
+}
+
 function parseInbound(ib) {
   const ss = ib.streamSettings || {}
   const tls = ss.tlsSettings || {}
   // ⚠ listen / port 是 inbound_configs 的**独立列**，不在 config_json 里：
   // 调用方必须把行数据合并进 ib，否则这里会退化成 0.0.0.0 / 0
   // （0 再被 el-input-number 的 :min="1" 夹成 1 → "导入后端口全是 1"）。
-  // unix socket 有两种写法：文件路径 "/dev/shm/x.sock,0666" 和抽象 socket "@name"。
-  const rawListen = String(ib.listen || '').trim().replace(/^unix:/, '')
-  const isSocket = rawListen.startsWith('/') || rawListen.startsWith('@')
-  const sockParts = isSocket ? rawListen.split(',') : []
-  const isAbstract = rawListen.startsWith('@')
+  const rawListen = String(ib.listen ?? '').trim()
+  const listenType = (ib._listenType === 'sock' || ib._listenType === 'tcp')
+    ? ib._listenType
+    : inferListenType(rawListen)
+  const [sockPath, sockPerm] = listenType === 'sock' ? splitSocketListen(rawListen) : ['', '']
   return {
     _id: ib._id || null,
     _remark: ib._remark || ib.tag || '', tag: ib.tag || '', protocol: ib.protocol || 'vless',
-    listen: isSocket ? '' : (rawListen || '0.0.0.0'), port: Number(ib.port) || 0,
+    listen: listenType === 'sock' ? '' : (rawListen.replace(/^unix:/, '') || '0.0.0.0'),
+    port: Number(ib.port) || 0,
     _enabled: ib._enabled !== false,
-    _listenType: isSocket ? 'sock' : 'tcp',
-    _socketPath: isSocket ? sockParts[0] : '',
-    // 抽象 socket（@name）没有权限位；只有文件型 socket 才带 ",0666"
-    _socketPerm: isSocket && !isAbstract && sockParts[1] ? sockParts[1] : '0666',
+    _listenType: listenType,
+    _socketPath: sockPath,
+    _socketPerm: sockPerm || '0666',
     settings: parseSettings(ib),
     _portMap: ib.settings && ib.settings.portMap ? Object.entries(ib.settings.portMap).map(([local, remote]) => ({ local, remote })) : [],
     streamSettings: {
@@ -3967,9 +4001,7 @@ function parseInbound(ib) {
 // 否则保存后 xray 会去抢 0.0.0.0:443，与 nginx 冲突。
 function effectiveListen(ib) {
   if (ib._listenType === 'sock') {
-    const path = String(ib._socketPath || '').trim()
-    if (path.startsWith('@')) return path
-    return path + (ib._socketPerm ? ',' + ib._socketPerm : '')
+    return socketListenValue(ib._socketPath, ib._socketPerm)
   }
   return ib.listen || '0.0.0.0'
 }
@@ -4186,9 +4218,11 @@ function buildInbound(ib, isApiCall = false) {
     if (Object.keys(finalmask).length) result.streamSettings.finalmask = finalmask
   }
   // Handle listen/port based on type
-  // Port 对 socket 入站不是监听端口，而是**分享/订阅端口**（后端用它生成链接，
-  // 为 0 时该入站会被订阅直接跳过）→ 不能清 0，两种模式都原样带上。
+  // 监听方式写进 config_json（_ 前缀，下发核心前由 coreconfig 剥掉）：
+  // socket 路径可以是任意形式，回显时不能靠字符串前缀猜。
+  result._listenType = ib._listenType === 'sock' ? 'sock' : 'tcp'
   result.listen = ib._listenType === 'sock' ? effectiveListen(ib) : (ib.listen || undefined)
+  // port 是入站真实端口（表列）；分享/订阅用的端口由接入域名配置决定，这里不改写。
   result.port = ib.port || 0
   // Only add transport-specific settings when streamSettings exists (protocols with transport layer)
   if (result.streamSettings) {
@@ -4728,6 +4762,7 @@ async function saveInbound() {
       delete apiJson._accessDomain
       delete apiJson._portHop
       delete apiJson._wgPublicKey
+      delete apiJson._listenType
       // Only remove existing inbound when editing (not creating new)
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         try {
@@ -4872,6 +4907,7 @@ async function toggleEnabled(row) {
           delete apiConfig._accessDomain
           delete apiConfig._portHop
           delete apiConfig._wgPublicKey
+          delete apiConfig._listenType
           // Remove existing first to avoid duplicate
           try {
             await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })

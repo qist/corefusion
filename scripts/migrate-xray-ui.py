@@ -107,26 +107,14 @@ def load_runtime_config(path):
 DEFAULT_OUTBOUND_TAGS = {"direct", "blocked"}
 
 
-def is_internal_listen(listen):
-    """listen 为 unix socket / abstract socket / 回环地址时，对外依赖 nginx 443。"""
-    if not listen:
-        return False
-    return listen.startswith("/") or listen.startswith("@") or listen.startswith("unix:") \
-        or listen.startswith("127.") or listen == "localhost"
+def resolve_port(ib, port_map):
+    """入站端口保持源面板原值（socket 入站也一样）。
 
-
-# 内部协议（hysteria 回落用 socks、面板 API 用 dokodemo-door）不对外分享，
-# 端口保持原值，避免把内部端口写进订阅链接。
-INTERNAL_PROTOCOLS = {"socks", "dokodemo-door"}
-
-
-def resolve_port(ib, public_port, port_map):
+    Port 是入站自身的端口；订阅/分享用的对外端口由「接入域名」配置决定，
+    迁移阶段不做任何改写。
+    """
     if ib["tag"] in port_map:
         return port_map[ib["tag"]]
-    if ib["protocol"].lower() in INTERNAL_PROTOCOLS:
-        return ib["port"]
-    if is_internal_listen(ib["listen"]):
-        return public_port
     return ib["port"]
 
 
@@ -226,7 +214,7 @@ def assign_emails(settings, tag, email_map, mode):
     return changed
 
 
-def build_inbound_payload(ib, public_port, port_map, email_map, email_mode):
+def build_inbound_payload(ib, port_map, email_map, email_mode):
     settings = json.loads(json.dumps(strip_internal(ib["settings"])))
     changed = assign_emails(settings, ib["tag"], email_map, email_mode)
     if changed:
@@ -236,7 +224,9 @@ def build_inbound_payload(ib, public_port, port_map, email_map, email_mode):
         config["streamSettings"] = strip_internal(ib["streamSettings"])
     if ib["sniffing"]:
         config["sniffing"] = strip_internal(ib["sniffing"])
-    port = resolve_port(ib, public_port, port_map)
+    # 面板内部字段（下发核心前由 coreconfig 剥掉）：记录监听方式，避免回显时猜路径。
+    config["_listenType"] = listen_type(ib["listen"])
+    port = resolve_port(ib, port_map)
     return {
         "core_type": "xray",
         "remark": ib["remark"],
@@ -287,10 +277,10 @@ def main():
     ap.add_argument("--password", help="管理员密码（执行迁移时必填）")
     ap.add_argument("--token", help="直接使用 access token（与 --user/--password 二选一）")
     ap.add_argument("--node", type=int, default=0, help="目标节点 ID，默认自动选本地节点")
-    ap.add_argument("--public-port", type=int, default=443,
-                    help="unix socket/回环入站对外暴露的端口（默认 443）")
+    ap.add_argument("--public-port", type=int, default=None,
+                    help="已废弃：入站端口一律保留原值；对外端口请用接入域名配置")
     ap.add_argument("--port-map", action="append", default=[],
-                    metavar="TAG=PORT", help="按 tag 指定对外端口，可重复")
+                    metavar="TAG=PORT", help="按 tag 覆盖端口（默认保留源面板原值）")
     ap.add_argument("--email-mode", choices=["auto", "keep", "fixed"], default="auto",
                     help="auto=按凭据随机生成（默认）；keep=保留原样；fixed=配合 --assign-emails 统一")
     ap.add_argument("--assign-emails", metavar="EMAIL",
@@ -318,9 +308,9 @@ def main():
     print("入站 %d 个，出站 %d 个，路由规则 %d 条"
           % (len(inbounds), len(runtime.get("outbounds") or []),
              len((runtime.get("routing") or {}).get("rules") or [])))
-    print("\n端口推断（对外端口用于分享链接；unix/回环 -> %d）：" % args.public_port)
+    print("\n入站列表（端口保持源面板原值；分享端口由接入域名配置决定）：")
     for ib in inbounds:
-        port = resolve_port(ib, args.public_port, port_map)
+        port = resolve_port(ib, port_map)
         flag = "" if ib["enabled"] else "  [disabled]"
         print("  %-28s %-10s listen=%-30r port=%s%s"
               % (ib["tag"], ib["protocol"], ib["listen"], port, flag))
@@ -361,7 +351,7 @@ def main():
         by_tag = {c.get("tag"): c for c in existing}
         print("\n== 入站 ==")
         for ib in inbounds:
-            payload = build_inbound_payload(ib, args.public_port, port_map, email_map, email_mode)
+            payload = build_inbound_payload(ib, port_map, email_map, email_mode)
             try:
                 cur = by_tag.get(payload["tag"])
                 if cur:

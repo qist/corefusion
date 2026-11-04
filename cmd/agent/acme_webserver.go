@@ -110,14 +110,16 @@ func prepareHTTP01(identifiers []string, dataDir, overrideWebroot string) (root 
 	case "caddy":
 		undo, err := configureCaddyForACME(dir, identifiers)
 		if err != nil {
-			return "", func() {}, err
+			// 报错必须点明"80 被占用 + 自动配置失败"，否则调用方只会看到
+			// 一条含糊的配置错误，不知道该停服务还是手工给 webroot。
+			return "", func() {}, fmt.Errorf("port 80 is in use by caddy; automatic HTTP-01 configuration failed: %w", err)
 		}
 		return dir, undo, nil
 
 	case "nginx":
 		undo, err := configureNginxForACME(dir, identifiers)
 		if err != nil {
-			return "", func() {}, err
+			return "", func() {}, fmt.Errorf("port 80 is in use by nginx; automatic HTTP-01 configuration failed: %w", err)
 		}
 		return dir, undo, nil
 	default:
@@ -162,10 +164,37 @@ func nginxSnippet(challengeDir string, identifiers []string) string {
 	return sb.String()
 }
 
+// findNginxBinary 找到可用于 -t / -s reload 的 nginx 可执行文件。
+//
+// 不能只依赖 PATH：面板/节点自带的 nginx 进程名常是 `nginx-linux-amd64` 之类，
+// 且不一定在 PATH 里（本机实测：80 被 nginx-linux-amd 占用、`nginx` 命令不存在）。
+// 先查 PATH，再退回占用进程的 /proc/<pid>/exe。
+func findNginxBinary() string {
+	if p, err := exec.LookPath("nginx"); err == nil {
+		return p
+	}
+	out, err := exec.Command("pgrep", "^nginx").Output()
+	if err != nil {
+		return ""
+	}
+	for _, pid := range strings.Fields(string(out)) {
+		if exe, err := os.Readlink("/proc/" + pid + "/exe"); err == nil {
+			return exe
+		}
+	}
+	return ""
+}
+
 // configureNginxForACME 写入片段 → nginx -t → reload ✓；任一步失败都会**回滚** ✓。
 func configureNginxForACME(challengeDir string, identifiers []string) (func(), error) {
 	path := nginxSnippetPath()
 	noop := func() {}
+
+	nginxBin := findNginxBinary()
+	if nginxBin == "" {
+		return noop, fmt.Errorf("port 80 is in use by nginx, but the nginx binary was not found " +
+			"(PATH 与 /proc/<pid>/exe 都不可用；请把 nginx 加入 PATH，或显式指定 webroot)")
+	}
 
 	prev, hadPrev := readFileIfExists(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -183,11 +212,11 @@ func configureNginxForACME(challengeDir string, identifiers []string) (func(), e
 	}
 
 	// `nginx -t` 通过才允许 reload ✓（语法错就回滚 ✗，绝不把线上配置搞坏 ✗）
-	if out, err := exec.Command("nginx", "-t").CombinedOutput(); err != nil {
+	if out, err := exec.Command(nginxBin, "-t").CombinedOutput(); err != nil {
 		restore()
 		return noop, fmt.Errorf("nginx -t failed after adding ACME snippet: %v: %s", err, strings.TrimSpace(string(out)))
 	}
-	if out, err := exec.Command("nginx", "-s", "reload").CombinedOutput(); err != nil {
+	if out, err := exec.Command(nginxBin, "-s", "reload").CombinedOutput(); err != nil {
 		restore()
 		return noop, fmt.Errorf("nginx reload failed: %v: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -197,17 +226,17 @@ func configureNginxForACME(challengeDir string, identifiers []string) (func(), e
 	time.Sleep(1 * time.Second)
 
 	// 自检：片段真的被 include 进来了吗？（include 路径不对就白写了 ✗ → 回滚并说明 ✓）
-	if out, err := exec.Command("nginx", "-T").CombinedOutput(); err != nil || !strings.Contains(string(out), strings.TrimSuffix(challengeDir, "/")) {
+	if out, err := exec.Command(nginxBin, "-T").CombinedOutput(); err != nil || !strings.Contains(string(out), strings.TrimSuffix(challengeDir, "/")) {
 		restore()
-		_, _ = exec.Command("nginx", "-t").CombinedOutput()
-		_ = exec.Command("nginx", "-s", "reload").Run()
+		_, _ = exec.Command(nginxBin, "-t").CombinedOutput()
+		_ = exec.Command(nginxBin, "-s", "reload").Run()
 		return noop, fmt.Errorf("nginx does not include the ACME snippet (%s) — 请把该目录加入 nginx.conf 的 include（例如 http{} 里 include /etc/nginx/conf.d/*.conf;）", path)
 	}
 
 	undo := func() {
 		restore()
-		_, _ = exec.Command("nginx", "-t").CombinedOutput()
-		_ = exec.Command("nginx", "-s", "reload").Run()
+		_, _ = exec.Command(nginxBin, "-t").CombinedOutput()
+		_ = exec.Command(nginxBin, "-s", "reload").Run()
 	}
 
 	// 开签前自检 ✓：真的能从 :80 取到挑战文件吗？

@@ -62,11 +62,36 @@ def find_blocks(text, keyword):
 
 
 def parse_directives(body):
-    """返回 (单行指令列表, 嵌套块列表[(head, inner)])。"""
+    """返回 (单行指令列表, 嵌套块列表[(head, inner)])。
+
+    必须跟踪引号：nginx 允许把整个指令值写成跨行字符串，例如
+        add_header Strict-Transport-Security "max-age=63072000;
+        includeSubdomains;
+        preload";
+    引号内的 `;` `{` `}` 都不是分隔符。以前按裸字符切分会把这一条拆成三条，
+    生成出来的响应头是 `max-age=63072000` + 一行 `includeSubdomains` + 一行 `preload`，
+    gRPC(HTTP/2) 直接报 `invalid header field value`（所有 grpc 节点握手失败）。
+    """
     singles, blocks = [], []
     i, d, buf = 0, 0, ""
+    quote = None
     while i < len(body):
         ch = body[i]
+        if quote is not None:
+            buf += ch
+            if ch == "\\" and i + 1 < len(body):
+                buf += body[i + 1]
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ('"', "'"):
+            quote = ch
+            buf += ch
+            i += 1
+            continue
         if ch == "{":
             head = buf.strip()
             inner, end = brace_block(body, i)
@@ -308,7 +333,10 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
         # 只迁 443 的业务 server 与 8080（HTTP）
         is_tls = any("127.0.0.1:443" in l or re.search(r"(^|:)\s*443(\s|$)", l) for l in listens)
         is_8080 = any(l.startswith("8080") for l in listens)
-        if not (is_tls or is_8080):
+        # 仅 unix 监听的 TLS server（典型：REALITY 回落目标 /dev/shm/nginx.sock）：
+        # 它没有 443/8080，但必须导入 —— 否则 xray 的 realitySettings.target 指向空气。
+        is_unix_tls = any(l.startswith("unix:") for l in listens) and bool(sv["certs"])
+        if not (is_tls or is_8080 or is_unix_tls):
             # 非 TLS 兜底 server（stream_nontls_target 指向它）必须迁移，
             # 否则非 TLS 探测流量会被转到不存在的后端。
             if any("127.0.0.1:8444" in l for l in listens):
@@ -386,7 +414,9 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
             if d.startswith(TLS_MATERIAL_PREFIXES):
                 dropped_tls.append(d)
                 continue
-            srv_cfg.append(apply_path_map(d, path_map))
+            # 跨行指令（如 add_header "a;\n b";）折叠成单行：生成器按行写 server_config，
+            # 保留换行会把一条响应头拆成多条非法指令（gRPC/HTTP2 直接报 invalid header field）。
+            srv_cfg.append(re.sub(r"\s*\n\s*", " ", apply_path_map(d, path_map)))
         if has_ipv6_loopback and not skip_ipv6:
             # 目标机禁用 IPv6 时（/proc/sys/net/ipv6/conf/all/disable_ipv6=1）不能带 [::1]，
             # 否则 nginx -t 直接 bind() [::1]:443 failed。
@@ -407,7 +437,37 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
 
         locs = parse_locations(sv["body"])
         if not locs:
-            # 无 location 的 server（如 unix:nginx.sock）跳过
+            # REALITY 回落 server：只有 `listen unix:/dev/shm/nginx.sock ssl proxy_protocol`
+            # + 证书，没有 location / server_name。xray 的 realitySettings.target 就指向它；
+            # 不导入 → target 不存在 → REALITY 握手直接失败（表现为整条 REALITY 链路连不上）。
+            # 按"仅 unix 监听 + 静态站点"导入：listen_socket + root，且 listen_port 留空
+            # （生成器对 socket-only 站点不会额外补 443/80）。
+            if has_unix:
+                srv_root = next((d.split(None, 1)[1] for d in sv["directives"]
+                                 if d.startswith("root ")), "/usr/share/nginx/html")
+                unix_pp = any("proxy_protocol" in l for l in listens if l.startswith("unix:"))
+                for idx, u in enumerate(has_unix):
+                    sock = u[len("unix:"):]
+                    base = os.path.basename(sock).rsplit(".", 1)[0] or "socket"
+                    sites.append({
+                        "domain": "unix-%s-%d.invalid" % (base, idx),
+                        "template": "static",
+                        "path": "/",
+                        "upstream": srv_root,
+                        "upstream_tls": False,
+                        "listen_port": "",
+                        "listen_socket": sock,
+                        "proxy_protocol": unix_pp,
+                        "enable_http2": False,
+                        "enable_quic": False,
+                        "enable_ipv6": False,
+                        "enable_early_data": False,
+                        "cert_domain": cert_domain,
+                        "server_config": "",
+                        "location_config": "",
+                        "enabled": True,
+                    })
+                continue
             skipped.append((sv["file"], sv["names"], listens, "server 无 location"))
             continue
 
@@ -493,7 +553,7 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
                 if d.startswith(TLS_MATERIAL_PREFIXES):
                     dropped_tls.append(d)
                     continue
-                keep.append(apply_path_map(d, path_map))
+                keep.append(re.sub(r"\s*\n\s*", " ", apply_path_map(d, path_map)))
             for head, inner in loc_blocks:
                 keep.append(head + " {")
                 keep.extend([ln.strip() for ln in inner.strip().splitlines() if ln.strip()])

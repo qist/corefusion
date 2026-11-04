@@ -691,8 +691,19 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			sslEcdhCurve = tlsSite.SslEcdhCurve
 		}
 
+		// socket-only：站点只挂 unix socket（如 REALITY 回落 server：listen unix:... ssl proxy_protocol，
+		// 无 server_name/无 443）。这类站点不能再按默认端口补 listen 443/80 —— 否则会凭空多出
+		// 一个 HTTPS 监听（还可能带 default_server），抢走真实站点的流量。
+		socketOnly := len(siteList) > 0
+		for _, s := range siteList {
+			if s.ListenSocket == "" || s.ListenPort != "" {
+				socketOnly = false
+				break
+			}
+		}
+
 		// Listen directives - IPv4 and IPv6 separately
-		if enableQuic && hasTLS {
+		if enableQuic && hasTLS && !socketOnly {
 			quicListen := listenPort
 			if tlsSite != nil && tlsSite.QuicListen != "" {
 				quicListen = tlsSite.QuicListen
@@ -703,16 +714,18 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 		}
 		if hasTLS {
-			// HTTPS listen
-			if hasProxyProtocol {
-				sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", listenPort, ds))
-				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl proxy_protocol%s;\n", listenPort, ds))
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", listenPort, ds))
-				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl%s;\n", listenPort, ds))
+			// HTTPS listen（socket-only 站点只监听 unix，不补 443）
+			if !socketOnly {
+				if hasProxyProtocol {
+					sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", listenPort, ds))
+					if enableIpv6 {
+						sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl proxy_protocol%s;\n", listenPort, ds))
+					}
+				} else {
+					sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", listenPort, ds))
+					if enableIpv6 {
+						sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl%s;\n", listenPort, ds))
+					}
 				}
 			}
 			if enableHttp2 {
@@ -766,16 +779,18 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("        add_header Alt-Svc 'h3=\":443\"; ma=86400, h3-29=\":443\"; ma=86400' always;\n")
 			}
 		} else {
-			// HTTP listen
-			if hasProxyProtocol {
-				sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", listenPort, ds))
-				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s proxy_protocol%s;\n", listenPort, ds))
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("        listen %s%s;\n", listenPort, ds))
-				if enableIpv6 {
-					sb.WriteString(fmt.Sprintf("        listen [::]:%s%s;\n", listenPort, ds))
+			// HTTP listen（socket-only 站点不补 80）
+			if !socketOnly {
+				if hasProxyProtocol {
+					sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", listenPort, ds))
+					if enableIpv6 {
+						sb.WriteString(fmt.Sprintf("        listen [::]:%s proxy_protocol%s;\n", listenPort, ds))
+					}
+				} else {
+					sb.WriteString(fmt.Sprintf("        listen %s%s;\n", listenPort, ds))
+					if enableIpv6 {
+						sb.WriteString(fmt.Sprintf("        listen [::]:%s%s;\n", listenPort, ds))
+					}
 				}
 			}
 			if len(domains) == 0 {
@@ -854,10 +869,6 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				continue
 			}
 			seenLoc[path] = true
-			backendPath := site.BackendPath
-			if backendPath == "" {
-				backendPath = "/"
-			}
 			upstreamKey := nginxUpstreamKey(site.Upstream)
 			// 直接上游（含 scheme，如 http://php / https://host:port）：proxy_pass 原样使用
 			directUpstream := ""
@@ -974,13 +985,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				sb.WriteString(fmt.Sprintf("            return 301 %s$request_uri;\n", target))
 			case "websocket", "xhttp", "httpupgrade":
-				// If backend_path is root ("/"), add trailing slash to strip the location prefix
-				// If backend_path has a specific path, no trailing slash to preserve the full URI
-				if backendPath == "/" {
-					sb.WriteString(fmt.Sprintf("            proxy_pass %s/;\n", strings.TrimSuffix(upstreamTarget, "/")))
-				} else {
-					sb.WriteString(fmt.Sprintf("            proxy_pass %s;\n", upstreamTarget))
-				}
+				// 回源 URI 交给 nginx 原生语义：proxy_pass 末尾带 / → 用 location 之后的
+				// 剩余路径替换；末尾不带 / → 原样透传完整 URI。
+				// 不能再用 backend_path 猜：迁移来的 xray ws/httpupgrade 入站需要完整路径
+				// （如 /efnxuvlqws），强行补 / 会把它剥成 / → 上游 404（TROJANWS/VMESSWS 全挂）。
+				sb.WriteString(fmt.Sprintf("            proxy_pass %s;\n", upstreamTarget))
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
 				sb.WriteString("            proxy_set_header Connection $connection_upgrade;\n")

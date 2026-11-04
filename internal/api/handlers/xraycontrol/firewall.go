@@ -137,9 +137,28 @@ func (h *Handler) RemoveFirewallRules(c *gin.Context) {
 // Local firewall helper functions (suffixed with "Local" to avoid conflicts
 // with the Agent-side implementations in xrayapi.go)
 
+// isNftablesAvailableLocal 判断本机 nft 是否**真的能用 NAT**。
+//
+// 只判断二进制存在是不够的：容器里常见 nft 可执行文件在、但内核没有 nft_nat
+// 模块，add chain type nat 直接返回 "Could not process rule: No such file or directory"。
+// 这时必须回退 iptables（xt_nat 通常可用），否则端口跳跃一直 500。
 func isNftablesAvailableLocal() bool {
-	_, err := exec.LookPath("nft")
-	return err == nil
+	if _, err := exec.LookPath("nft"); err != nil {
+		return false
+	}
+	const probe = "corefusion_fw_probe"
+	_ = exec.Command("nft", "delete", "table", "inet", probe).Run()
+	if out, err := exec.Command("nft", "add", "table", "inet", probe).CombinedOutput(); err != nil {
+		_ = out
+		return false
+	}
+	defer exec.Command("nft", "delete", "table", "inet", probe).Run()
+	chain := exec.Command("nft", "add", "chain", "inet", probe, "prerouting",
+		"{ type nat hook prerouting priority dstnat; policy accept; }")
+	if _, err := chain.CombinedOutput(); err != nil {
+		return false
+	}
+	return true
 }
 
 func getFirewallTypeLocal(useNft bool) string {
@@ -226,10 +245,15 @@ func checkIptablesRuleExistsLocal(portRange string, targetPort int, iface string
 	}
 
 	rules := string(out)
-	if strings.Contains(rules, portRange) && strings.Contains(rules, fmt.Sprintf("to:%d", targetPort)) {
+	spec := iptablesPortSpec(portRange)
+	if !strings.Contains(rules, spec) {
+		return false, nil
+	}
+	// 不同 iptables 版本/后端的展示不同：legacy 是 "to:4443"，-L -n 是 "redir ports 4443"。
+	if strings.Contains(rules, fmt.Sprintf("to:%d", targetPort)) ||
+		strings.Contains(rules, fmt.Sprintf("redir ports %d", targetPort)) {
 		return true, nil
 	}
-
 	return false, nil
 }
 
@@ -240,19 +264,41 @@ func applyFirewallRuleLocal(useNft bool, portRange string, targetPort int, iface
 	return applyIptablesRuleLocal(portRange, targetPort, iface)
 }
 
-func applyNftRuleLocal(portRange string, targetPort int, iface string) error {
-	exec.Command("nft", "add", "table", "inet", "hysteria_porthopping").Run()
+// runFirewallCmd 执行防火墙命令并把 stderr 带进错误里。
+// 之前只用 cmd.Run()，失败时只剩 "exit status 1"，面板上根本看不出原因。
+func runFirewallCmd(name string, args ...string) error {
+	out, err := exec.Command(name, args...).CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	msg := strings.TrimSpace(string(out))
+	if msg == "" {
+		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+	}
+	return fmt.Errorf("%s %s: %s", name, strings.Join(args, " "), msg)
+}
 
-	exec.Command("nft", "add", "chain", "inet", "hysteria_porthopping", "prerouting",
-		"{ type nat hook prerouting priority dstnat; policy accept; }").Run()
+// iptablesPortSpec 把 "20000-30000" 转成 iptables 的 "20000:30000"。
+// iptables 的端口段用**冒号**，用中划线会被当成服务名而报错
+// （"Port 20000-30000 does not resolve to anything"）。
+func iptablesPortSpec(portRange string) string {
+	return strings.ReplaceAll(portRange, "-", ":")
+}
+
+func applyNftRuleLocal(portRange string, targetPort int, iface string) error {
+	// 表已存在时 add 会报错，忽略即可；链不存在则是真错误（缺 nft_nat）。
+	_ = exec.Command("nft", "add", "table", "inet", "hysteria_porthopping").Run()
+	if err := runFirewallCmd("nft", "add", "chain", "inet", "hysteria_porthopping", "prerouting",
+		"{ type nat hook prerouting priority dstnat; policy accept; }"); err != nil {
+		return fmt.Errorf("nft nat chain unavailable: %w", err)
+	}
 
 	rule := fmt.Sprintf("udp dport %s counter redirect to :%d", portRange, targetPort)
 	if iface != "" {
 		rule = fmt.Sprintf("iifname %s %s", iface, rule)
 	}
 
-	cmd := exec.Command("nft", "add", "rule", "inet", "hysteria_porthopping", "prerouting", rule)
-	return cmd.Run()
+	return runFirewallCmd("nft", "add", "rule", "inet", "hysteria_porthopping", "prerouting", rule)
 }
 
 func applyIptablesRuleLocal(portRange string, targetPort int, iface string) error {
@@ -260,10 +306,9 @@ func applyIptablesRuleLocal(portRange string, targetPort int, iface string) erro
 	if iface != "" {
 		args = append(args, "-i", iface)
 	}
-	args = append(args, "-p", "udp", "--dport", portRange, "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
+	args = append(args, "-p", "udp", "--dport", iptablesPortSpec(portRange), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
 
-	cmd := exec.Command("iptables", args...)
-	return cmd.Run()
+	return runFirewallCmd("iptables", args...)
 }
 
 func removeFirewallRuleLocal(useNft bool, portRange string, targetPort int, iface string) error {
@@ -289,8 +334,7 @@ func removeIptablesRuleLocal(portRange string, targetPort int, iface string) err
 	if iface != "" {
 		args = append(args, "-i", iface)
 	}
-	args = append(args, "-p", "udp", "--dport", portRange, "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
+	args = append(args, "-p", "udp", "--dport", iptablesPortSpec(portRange), "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
 
-	cmd := exec.Command("iptables", args...)
-	return cmd.Run()
+	return runFirewallCmd("iptables", args...)
 }

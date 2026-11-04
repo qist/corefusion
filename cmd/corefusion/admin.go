@@ -105,6 +105,7 @@ func openAdminRepos() (*repository.UserRepository, *repository.WebAuthnCredentia
 
 // runAdmin 是 `corefusion admin <subcommand>` 的入口。
 func runAdmin(args []string) {
+	enterConfigDir()
 	if len(args) == 0 {
 		printAdminUsage()
 		os.Exit(2)

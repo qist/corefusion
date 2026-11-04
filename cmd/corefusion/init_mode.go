@@ -142,6 +142,7 @@ func restartSelf() {
 // runInit 是 CLI 非交互初始化（“cli 方式去初始化”）：直接落库配置并标记完成，
 // 无需启动 Web 向导。TLS 支持 none / self_signed / acme。
 func runInit(args []string) {
+	enterConfigDir()
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	listenAddr := fs.String("listen-addr", "127.0.0.1", "panel listen address (when TLS is not configured, only 127.0.0.1 is used)")
 	listenPort := fs.String("listen-port", "", "panel listen port (default: random free port)")
@@ -298,6 +299,7 @@ func runInit(args []string) {
 
 // runResetInit 强制重新初始化（设计 3.6.2）：删除 .env 与初始化标记，保留数据目录。
 func runResetInit(args []string) {
+	enterConfigDir()
 	env := loadEnv()
 	dd := env["SAFE_PATHS"]
 	if dd == "" {

@@ -61,7 +61,7 @@ func main() {
 		runResetInit(os.Args[2:])
 	case "admin":
 		runAdmin(os.Args[2:])
-	case "version":
+	case "version", "--version", "-v", "-V":
 		fmt.Printf("corefusion %s\n", Version)
 	case "help", "--help", "-h":
 		printUsage()
@@ -249,9 +249,64 @@ func saveEnvValue(key, value string) {
 	}
 }
 
+// resolveConfigDir 决定 .env / .env.secret 的基准目录：
+//   - 当前目录已有 .env → 当前目录（systemd WorkingDirectory 的正常情况）；
+//   - 否则可执行文件目录有 .env / .env.secret → 部署目录；
+//   - 都没有 → 当前目录（首次部署，就在 cwd 生成）。
+//
+// 为什么必须锚定：.env / .env.secret 都是相对路径。手工在 /root 下跑
+// `corefusion migrate` 时，cwd 没有 .env，旧逻辑会**静默生成一个不同的**密钥文件
+// （/root/.env.secret），之后库里已有的 enc: 密文就再也解不开了。
+func resolveConfigDir(cwd, exeDir string) string {
+	if cwd == "" {
+		cwd = "."
+	}
+	if _, err := os.Stat(filepath.Join(cwd, ".env")); err == nil {
+		return cwd
+	}
+	if exeDir != "" {
+		if absExe, err := filepath.Abs(exeDir); err == nil {
+			exeDir = absExe
+		}
+		if absCwd, err := filepath.Abs(cwd); err == nil && absCwd == exeDir {
+			return cwd
+		}
+		for _, name := range []string{".env", secretcrypto.SecretEnvFile} {
+			if _, err := os.Stat(filepath.Join(exeDir, name)); err == nil {
+				return exeDir
+			}
+		}
+	}
+	return cwd
+}
+
+// enterConfigDir 在读取 .env 之前把工作目录切到部署目录（见 resolveConfigDir）。
+func enterConfigDir() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	dir := resolveConfigDir(cwd, filepath.Dir(exe))
+	if dir == cwd {
+		return
+	}
+	if err := os.Chdir(dir); err != nil {
+		log.Printf("[startup] warning: chdir %s failed: %v (relative .env/.env.secret stay in %s)", dir, err, cwd)
+		return
+	}
+	log.Printf("[startup] no .env in %s; switched to deployment dir %s", cwd, dir)
+}
+
 func runServer(args []string) {
 	// Record panel start time
 	sysService.InitStartTime()
+
+	// .env / .env.secret 都是相对路径：先确保在部署目录（systemd 下是 no-op）。
+	enterConfigDir()
 
 	// Phase 1: Read .env to get data directory
 	env := loadEnv()
@@ -816,6 +871,7 @@ func runClient(args []string) {
 }
 
 func runMigrate(args []string) {
+	enterConfigDir()
 	env := loadEnv()
 	dataDir := env["SAFE_PATHS"]
 	if dataDir == "" {

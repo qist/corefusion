@@ -28,7 +28,7 @@ CoreFusion는 다음 오픈 소스 구성 요소를 사용합니다. 이 파일�
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | BSD-3-절 | UUID |
 
-> ⚠ **GPL-3.0 구성요소**: `sing` 및 `sing-shadowsocks`는 GPL-3.0 이상입니다. 이는 패널 및 에이전트 바이너리에 정적으로 연결되므로 **바이너리를 배포하려면 해당 소스를 제공해야 합니다**([LEGAL.md](THIRD_PARTY_LICENSES.ko.md)의 섹션 3 참조).
+> ⚠ **GPL-3.0 구성요소**: `sing` 및 `sing-shadowsocks`는 GPL-3.0 이상입니다. 이는 패널 및 에이전트 바이너리에 정적으로 연결되므로 **바이너리를 배포하려면 해당 소스를 제공해야 합니다**([LEGAL.md](LEGAL.ko.md)의 섹션 3 참조).
 
 ## 2. 런타임 시 호출되는 독립 실행형 프로그램(이 저장소에 배포되지 않음)
 

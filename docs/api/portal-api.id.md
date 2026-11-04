@@ -78,7 +78,7 @@ Pada 401, panggil `POST /api/v1/client-auth/refresh` sekali dan coba lagi; jika 
 | GET | `/api/v1/public/articles` | Artikel publik (hanya diterbitkan) |
 | GET | `/api/v1/public/articles/:slug` | Detil artikel |
 | GET | `/api/v1/public/client-configs` | Konfigurasi pengunduhan klien |
-| GET | `/sub/:token` | Pengiriman langganan (`format` mengembalikan base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, dll.; dicabut/hilang → 404, ditangguhkan/kedaluwarsa/tidak aktif → 403. Lihat [subscription.md](portal-api.id.md)) |
+| GET | `/sub/:token` | Pengiriman langganan (`format` mengembalikan base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, dll.; dicabut/hilang → 404, ditangguhkan/kedaluwarsa/tidak aktif → 403. Lihat [subscription.md](./subscription.id.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilitas penyedia OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Status pemeliharaan (publik). Portal menampilkan halaman pemeliharaan saat diaktifkan |
 

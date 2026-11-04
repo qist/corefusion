@@ -74,4 +74,4 @@
 
 ## 6. 路由权威来源
 
-`internal/api/router/router.go`（共 746 条路由，其中 743 条已文档化）。[admin-api.md](./admin-api.md) 的路由表由代码提取生成；如与代码不一致，**以代码为准**。
+`internal/api/router/router.go`（数量随版本变化，以代码为准）。[admin-api.md](./admin-api.md) 的路由表由代码提取生成；如与代码不一致，**以代码为准**。

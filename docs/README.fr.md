@@ -47,4 +47,4 @@ Les documents de conception sont des documents internes (propriété intellectue
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Voir [I18N.md](README.fr.md) pour connaître les règles de dénomination, de navigation linguistique et de révision *(chinois)*.
+Voir [I18N.md](./I18N.md) pour connaître les règles de dénomination, de navigation linguistique et de révision *(chinois)*.

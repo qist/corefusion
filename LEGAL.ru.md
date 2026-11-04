@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. Сторонние компоненты и перераспределение
 
-Основные сторонние компоненты и их лицензии перечислены в [THIRD_PARTY_LICENSES.md](LEGAL.ru.md).
+Основные сторонние компоненты и их лицензии перечислены в [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.ru.md).
 
 Особые примечания:
 

@@ -8,7 +8,7 @@ Die vollständige Admin-API-Routentabelle für **Panel-Entwicklung/Automatisieru
 - Basis URL: `https://<panel-domain>/api/v1`
 - Authentifizierung: `Authorization: Bearer <admin_token>` (von `POST /api/v1/auth/login`)
 - Gängige Antwort-/Fehlerformate und Ratenbegrenzungskonventionen: siehe [README.md](./README.de.md)
-- Quelle der Wahrheit: `internal/api/router/router.go` (739 Admin-Routen); Wenn diese Tabelle nicht übereinstimmt, gewinnt **der Code**
+- Quelle der Wahrheit: `internal/api/router/router.go` (Anzahl variiert je nach Version; maßgeblich ist der Code); Wenn diese Tabelle nicht übereinstimmt, gewinnt **der Code**
 
 ## Berechtigungsmarkierungen
 
@@ -328,6 +328,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Speichern und bewerben |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Site-Liste |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Website erstellen |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Sites importieren |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Site löschen |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Website aktualisieren |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Löschen Sie alle SNI-Regeln |
@@ -372,6 +373,8 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Einstellungen speichern |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Site-Liste |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Website erstellen |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Sites importieren |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL-Zertifikatsdateien erzeugen |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Site löschen |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Website aktualisieren |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Löschen Sie alle SNI-Regeln |
@@ -637,15 +640,10 @@ Konfiguration der Abonnementvorlage: Gruppen, Regeln, Regelanbieter, YAML-Vorsch
 | DELETE | `/api/v1/mihomo/configs/:id` | Angemeldet | Löschen |
 | GET | `/api/v1/mihomo/configs/:id` | Angemeldet | Einzelheiten |
 | PUT | `/api/v1/mihomo/configs/:id` | Angemeldet | Aktualisieren |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Angemeldet | Gruppenliste |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Angemeldet | Gruppe erstellen |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Angemeldet | Liste der Regelanbieter |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Angemeldet | Regelanbieter erstellen |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Angemeldet | Regelliste |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Angemeldet | Regel erstellen |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Angemeldet | Vorschau generiert YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Angemeldet | Gruppe löschen |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Angemeldet | Regelanbieter löschen |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Regeln sortieren |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Regel aktualisieren |
 | DELETE | `/api/v1/mihomo/rules/:id` | Angemeldet | Regel löschen |
 
 ### Aufladeseiten
@@ -824,6 +822,7 @@ Ausstellung, Hochladen, Erneuerung und Export öffentlicher Zertifikate (ACME); 
 | POST | `/api/v1/certificates/issue` | Angemeldet | Problem. Körper: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` ist standardmäßig http-01; `dns_channel_id` wählt einen DNS-Kanal aus (einen konfigurierten DNS-Anbieter + Anmeldeinformationen). |
 | POST | `/api/v1/certificates/issue-on-node` | Angemeldet | Ausgabe an Knoten |
 | POST | `/api/v1/certificates/upload` | Angemeldet | Hochladen |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Status des Hintergrundtasks abfragen |
 
 ### Zertifikatskanäle
 
@@ -1032,6 +1031,8 @@ Datenbankkonfiguration und -migration, Panel-Einstellungen, JWT-Schlüssel, SMTP
 | GET | `/api/v1/system/reality-targets` | Admin | REALITY Zielliste |
 | PUT | `/api/v1/system/reality-targets` | Admin | Ziel REALITY aktualisieren |
 | POST | `/api/v1/system/reality-targets/reset` | Admin | REALITY-Ziel auf Standard zurücksetzen |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality-Local-SNI-Konfiguration lesen |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality-Local-SNI-Konfiguration aktualisieren |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Admin | JWT-Schlüssel neu generieren |
 | GET | `/api/v1/system/releases` | Admin | Verfügbare Versionen |
 | POST | `/api/v1/system/restart` | Admin | Neustart |
@@ -1079,6 +1080,7 @@ Portalvorlagen, Aktivierungskonfiguration und Cache-Verwaltung.
 | GET | `/api/v1/portal/cache` | Angemeldet | Cache-Status |
 | PUT | `/api/v1/portal/cache/dev-mode` | Angemeldet | Cache-Entwicklungsmodus umschalten |
 | POST | `/api/v1/portal/cache/rebuild` | Angemeldet | Portal-Cache neu erstellen |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Integrierte Sprachpakete |
 | POST | `/api/v1/portal/reset` | Angemeldet | Standardvorlage wiederherstellen |
 | GET | `/api/v1/portal/templates` | Angemeldet | Liste |
 | POST | `/api/v1/portal/templates` | Angemeldet | Erstellen |
@@ -1101,6 +1103,7 @@ Node Agent-Installationsskript und Download (öffentlich).
 | GET | `/api/v1/agent/version` | Admin | Aktuelle Agentenversion auf dem Panel |
 | GET | `/api/v1/agent/download` | Öffentlich | Laden Sie den Agenten herunter |
 | GET | `/api/v1/agent/install` | Öffentlich | Holen Sie sich das Installationsskript |
+| GET | `/api/v1/agent/origin` | 公开 | Panel-Origin-Adresse (öffentlich) |
 
 ### Kostenpflichtiger Rückrufeintrag
 

@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. ส่วนประกอบของบุคคลที่สามและการแจกจ่ายซ้ำ
 
-ส่วนประกอบหลักของบุคคลที่สามและใบอนุญาตแสดงอยู่ใน [THIRD_PARTY_LICENSES.md](LEGAL.th.md)
+ส่วนประกอบหลักของบุคคลที่สามและใบอนุญาตแสดงอยู่ใน [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.th.md)
 
 หมายเหตุพิเศษ:
 

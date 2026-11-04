@@ -78,7 +78,7 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 | GET | `/api/v1/public/articles` | Öffentliche Artikel (nur veröffentlicht) |
 | GET | `/api/v1/public/articles/:slug` | Artikeldetail |
 | GET | `/api/v1/public/client-configs` | Client-Download-Konfiguration |
-| GET | `/sub/:token` | Abonnementlieferung (`format` gibt base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json usw. zurück; widerrufen/fehlend → 404, ausgesetzt/abgelaufen/inaktiv → 403. Siehe [subscription.md](portal-api.de.md)) |
+| GET | `/sub/:token` | Abonnementlieferung (`format` gibt base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json usw. zurück; widerrufen/fehlend → 404, ausgesetzt/abgelaufen/inaktiv → 403. Siehe [subscription.md](./subscription.de.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Sichtbarkeit des OAuth-Anbieters: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Wartungsstatus (öffentlich). Das Portal zeigt bei Aktivierung eine Wartungsseite an |
 

@@ -78,7 +78,7 @@ Au 401, appelez `POST /api/v1/client-auth/refresh` une fois et réessayez ; si 
 | GET | `/api/v1/public/articles` | Articles publics (publiés uniquement) |
 | GET | `/api/v1/public/articles/:slug` | Détail de l'article |
 | GET | `/api/v1/public/client-configs` | Configuration du téléchargement du client |
-| GET | `/sub/:token` | Livraison de l'abonnement (`format` renvoie base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc. ; révoqué/manquant → 404, suspendu/expiré/inactif → 403. Voir [subscription.md](portal-api.fr.md)) |
+| GET | `/sub/:token` | Livraison de l'abonnement (`format` renvoie base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc. ; révoqué/manquant → 404, suspendu/expiré/inactif → 403. Voir [subscription.md](./subscription.fr.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilité du fournisseur OAuth : `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Statut de maintenance (public). Le portail affiche une page de maintenance lorsqu'il est activé |
 

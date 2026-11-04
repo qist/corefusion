@@ -8,7 +8,7 @@
 | 문서 | 청중 | 내용 |
 |---|---|---|
 | [subscription.md](./subscription.ko.md) | 구독자/클라이언트 개발자 | 구독 엔드포인트(`/sub/:token`): 형식, 헤더, 상태 코드, 예 |
-| [portal-api.md](README.ko.md) | 포털 프런트엔드/타사 클라이언트 | 클라이언트 포털 API (`/api/v1/client-auth/*`, `/api/v1/public/*`): 가입, 로그인, 요금제, 주문, 잔액, 티켓 |
+| [portal-api.md](./portal-api.ko.md) | 포털 프런트엔드/타사 클라이언트 | 클라이언트 포털 API (`/api/v1/client-auth/*`, `/api/v1/public/*`): 가입, 로그인, 요금제, 주문, 잔액, 티켓 |
 | [충전-콜백.md](./charge-callback.ko.md) | 결제 제공업체 | 결제 콜백 서명 및 확인 |
 | [admin-api.ko.md](./admin-api.ko.md) | 패널 개발/자동화 | 전체 관리자 API 경로 테이블(`/api/v1/*`, 모듈별로 그룹화됨) |
 
@@ -75,4 +75,4 @@
 
 ## 6. 진실의 근원
 
-`internal/api/router/router.go`(746개 경로, 743개 문서화). [admin-api.md](README.ko.md)의 경로 테이블은 코드에서 생성됩니다. 코드와 일치하지 않으면 **코드가 승리합니다**.
+`internal/api/router/router.go`(개수는 버전에 따라 달라집니다. 코드가 우선입니다). [admin-api.md](./admin-api.ko.md)의 경로 테이블은 코드에서 생성됩니다. 코드와 일치하지 않으면 **코드가 승리합니다**.

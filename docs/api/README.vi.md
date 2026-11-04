@@ -8,7 +8,7 @@ Tài liệu API dành cho **các nhà tích hợp bên ngoài, nhà phát triể
 | tài liệu | Khán giả | Nội dung |
 |---|---|---|
 | [subscription.md](./subscription.vi.md) | Người đăng ký / nhà phát triển khách hàng | Điểm cuối đăng ký (`/sub/:token`): định dạng, tiêu đề, mã trạng thái, ví dụ |
-| [portal-api.md](README.vi.md) | Giao diện cổng thông tin / khách hàng của bên thứ ba | Cổng thông tin khách hàng API (`/api/v1/client-auth/*`, `/api/v1/public/*`): đăng ký, đăng nhập, gói, đơn đặt hàng, số dư, vé |
+| [portal-api.md](./portal-api.vi.md) | Giao diện cổng thông tin / khách hàng của bên thứ ba | Cổng thông tin khách hàng API (`/api/v1/client-auth/*`, `/api/v1/public/*`): đăng ký, đăng nhập, gói, đơn đặt hàng, số dư, vé |
 | [charge-callback.md](./charge-callback.vi.md) | Nhà cung cấp thanh toán | Ký và xác minh cuộc gọi lại thanh toán |
 | [admin-api.vi.md](./admin-api.vi.md) | Phát triển/tự động hóa bảng điều khiển | Bảng lộ trình API quản trị đầy đủ (`/api/v1/*`, được nhóm theo mô-đun) |
 
@@ -75,4 +75,4 @@ Các tuyến này trả về nội dung HTML/tĩnh và nằm ngoài tài liệu 
 
 ## 6. Nguồn sự thật
 
-`internal/api/router/router.go` (746 tuyến đường, 743 tài liệu). Bảng lộ trình trong [admin-api.md](README.vi.md) được tạo từ mã; nếu nó không đồng ý với mã, **mã sẽ thắng**.
+`internal/api/router/router.go` (số lượng thay đổi theo phiên bản; mã nguồn là chuẩn). Bảng lộ trình trong [admin-api.md](./admin-api.vi.md) được tạo từ mã; nếu nó không đồng ý với mã, **mã sẽ thắng**.

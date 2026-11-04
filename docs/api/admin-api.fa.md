@@ -8,7 +8,7 @@
 - پایه URL: `https://<panel-domain>/api/v1`
 - اعتبار: `Authorization: Bearer <admin_token>` (از `POST /api/v1/auth/login`)
 - فرمت‌های رایج پاسخ/خطا و قراردادهای محدودیت نرخ: به [README.md](./README.fa.md) مراجعه کنید
-- منبع حقیقت: `internal/api/router/router.go` (739 مسیر مدیریت)؛ اگر این جدول مخالف باشد، **کد برنده می شود**
+- منبع حقیقت: `internal/api/router/router.go` (تعداد بسته به نسخه تغییر می‌کند؛ کد مرجع است)؛ اگر این جدول مخالف باشد، **کد برنده می شود**
 
 ## نشانگرهای مجوز
 
@@ -328,6 +328,7 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | مدیر | ذخیره و اعمال کنید |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | مدیر | لیست سایت |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | مدیر | سایت ایجاد کنید |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | وارد کردن سایت‌ها |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | مدیر | حذف سایت |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | مدیر | سایت را به روز کنید |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | مدیر | تمام قوانین SNI را حذف کنید |
@@ -372,6 +373,8 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | مدیر | تنظیمات را ذخیره کنید |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | مدیر | لیست سایت |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | مدیر | سایت ایجاد کنید |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | وارد کردن سایت‌ها |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | تولید فایل‌های گواهی SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | مدیر | حذف سایت |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | مدیر | سایت را به روز کنید |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | مدیر | تمام قوانین SNI را حذف کنید |
@@ -637,15 +640,10 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 | DELETE | `/api/v1/mihomo/configs/:id` | وارد شده است | حذف کنید |
 | GET | `/api/v1/mihomo/configs/:id` | وارد شده است | جزئیات |
 | PUT | `/api/v1/mihomo/configs/:id` | وارد شده است | به روز رسانی |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | وارد شده است | لیست گروه |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | وارد شده است | گروه ایجاد کنید |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | وارد شده است | لیست ارائه دهنده قوانین |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | وارد شده است | ایجاد ارائه دهنده قانون |
 | GET | `/api/v1/mihomo/configs/:id/rules` | وارد شده است | لیست قوانین |
 | POST | `/api/v1/mihomo/configs/:id/rules` | وارد شده است | قانون ایجاد کنید |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | وارد شده است | پیش نمایش YAML ایجاد شده |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | وارد شده است | حذف گروه |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | وارد شده است | ارائه دهنده قوانین را حذف کنید |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | مرتب‌سازی قواعد |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | به‌روزرسانی قاعده |
 | DELETE | `/api/v1/mihomo/rules/:id` | وارد شده است | حذف قانون |
 
 ### سایت های شارژ
@@ -824,6 +822,7 @@ CRUD برای مقالات پورتال.
 | POST | `/api/v1/certificates/issue` | وارد شده است | موضوع. بدنه: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` پیش‌فرض http-01 است. `dns_channel_id` یک کانال DNS را انتخاب می کند (یک ارائه دهنده DNS پیکربندی شده + اطلاعات کاربری) |
 | POST | `/api/v1/certificates/issue-on-node` | وارد شده است | مشکل به گره |
 | POST | `/api/v1/certificates/upload` | وارد شده است | آپلود کنید |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | استعلام وضعیت وظیفه پس‌زمینه |
 
 ### کانال های گواهی
 
@@ -1032,6 +1031,8 @@ CRUD برای مقالات پورتال.
 | GET | `/api/v1/system/reality-targets` | مدیر | لیست هدف REALITY |
 | PUT | `/api/v1/system/reality-targets` | مدیر | هدف REALITY را به روز کنید |
 | POST | `/api/v1/system/reality-targets/reset` | مدیر | هدف REALITY را به حالت پیش فرض بازنشانی کنید |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | خواندن پیکربندی SNI محلی Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | به‌روزرسانی پیکربندی SNI محلی Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | مدیر | کلید JWT را بازسازی کنید |
 | GET | `/api/v1/system/releases` | مدیر | نسخه های موجود |
 | POST | `/api/v1/system/restart` | مدیر | راه اندازی مجدد |
@@ -1079,6 +1080,7 @@ CRUD برای مقالات پورتال.
 | GET | `/api/v1/portal/cache` | وارد شده است | وضعیت حافظه پنهان |
 | PUT | `/api/v1/portal/cache/dev-mode` | وارد شده است | حالت توسعه حافظه پنهان را تغییر دهید |
 | POST | `/api/v1/portal/cache/rebuild` | وارد شده است | کش پورتال را بازسازی کنید |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | بسته‌های زبان داخلی |
 | POST | `/api/v1/portal/reset` | وارد شده است | بازیابی قالب پیش فرض |
 | GET | `/api/v1/portal/templates` | وارد شده است | فهرست کنید |
 | POST | `/api/v1/portal/templates` | وارد شده است | ایجاد کنید |
@@ -1101,6 +1103,7 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 | GET | `/api/v1/agent/version` | مدیر | نسخه عامل فعلی در پانل |
 | GET | `/api/v1/agent/download` | عمومی | عامل دانلود |
 | GET | `/api/v1/agent/install` | عمومی | دریافت اسکریپت نصب |
+| GET | `/api/v1/agent/origin` | 公开 | آدرس مبدأ پنل (عمومی) |
 
 ### شارژ ورودی برگشت به تماس
 

@@ -8,7 +8,7 @@
 - Temel URL: `https://<panel-domain>/api/v1`
 - Yetki: `Authorization: Bearer <admin_token>` (`POST /api/v1/auth/login`'den)
 - Yaygın yanıt/hata formatları ve hız sınırı kuralları: bkz. [README.md](./README.tr.md)
-- Gerçeğin kaynağı: `internal/api/router/router.go` (739 yönetici yolu); eğer bu tablo aynı fikirde değilse **kod kazanır**
+- Gerçeğin kaynağı: `internal/api/router/router.go` (sayı sürüme göre değişir; kod esastır); eğer bu tablo aynı fikirde değilse **kod kazanır**
 
 ## İzin işaretleri
 
@@ -328,6 +328,7 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Yönetici | Kaydet ve uygula |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Yönetici | Site listesi |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Yönetici | Site oluştur |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Siteleri içe aktar |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Yönetici | Siteyi sil |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Yönetici | Siteyi güncelle |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Yönetici | Tüm SNI kurallarını sil |
@@ -372,6 +373,8 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Yönetici | Ayarları kaydet |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Yönetici | Site listesi |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Yönetici | Site oluştur |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Siteleri içe aktar |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL sertifika dosyaları oluştur |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Yönetici | Siteyi sil |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Yönetici | Siteyi güncelle |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Yönetici | Tüm SNI kurallarını sil |
@@ -637,15 +640,10 @@ Abonelik şablonu yapılandırması: gruplar, kurallar, kural sağlayıcılar, Y
 | DELETE | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Sil |
 | GET | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Ayrıntılar |
 | PUT | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Güncelleme |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Oturum açıldı | Grup listesi |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Oturum açıldı | Grup oluştur |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Oturum açıldı | Kural sağlayıcı listesi |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Oturum açıldı | Kural sağlayıcı oluştur |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Oturum açıldı | Kural listesi |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Oturum açıldı | Kural oluştur |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Oturum açıldı | Önizleme oluşturuldu YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Oturum açıldı | Grubu sil |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Oturum açıldı | Kural sağlayıcıyı sil |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Kuralları yeniden sırala |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Kuralı güncelle |
 | DELETE | `/api/v1/mihomo/rules/:id` | Oturum açıldı | Kuralı sil |
 
 ### Siteleri şarj edin
@@ -824,6 +822,7 @@ Kamu sertifikası (ACME) verilmesi, yüklenmesi, yenilenmesi ve dışa aktarılm
 | POST | `/api/v1/certificates/issue` | Oturum açıldı | Sayı. gövde: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` varsayılan olarak http-01'e ayarlanır; `dns_channel_id`, bir DNS kanalını seçer (yapılandırılmış bir DNS sağlayıcı + kimlik bilgileri) |
 | POST | `/api/v1/certificates/issue-on-node` | Oturum açıldı | Düğüme sorun |
 | POST | `/api/v1/certificates/upload` | Oturum açıldı | Yükle |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Arka plan görevi durumunu sorgula |
 
 ### Sertifika kanalları
 
@@ -1032,6 +1031,8 @@ Veritabanı yapılandırması ve geçişi, panel ayarları, JWT anahtarları, SM
 | GET | `/api/v1/system/reality-targets` | Yönetici | REALITY hedef listesi |
 | PUT | `/api/v1/system/reality-targets` | Yönetici | REALITY hedefini güncelleyin |
 | POST | `/api/v1/system/reality-targets/reset` | Yönetici | REALITY hedefini varsayılana sıfırla |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality yerel SNI yapılandırmasını oku |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality yerel SNI yapılandırmasını güncelle |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Yönetici | JWT anahtarını yeniden oluştur |
 | GET | `/api/v1/system/releases` | Yönetici | Mevcut versiyonlar |
 | POST | `/api/v1/system/restart` | Yönetici | Yeniden başlat |
@@ -1079,6 +1080,7 @@ Portal şablonları, etkinleştirme yapılandırması ve önbellek yönetimi.
 | GET | `/api/v1/portal/cache` | Oturum açıldı | Önbellek durumu |
 | PUT | `/api/v1/portal/cache/dev-mode` | Oturum açıldı | Önbellek geliştirme modunu değiştir |
 | POST | `/api/v1/portal/cache/rebuild` | Oturum açıldı | Portal önbelleğini yeniden oluştur |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Yerleşik dil paketleri |
 | POST | `/api/v1/portal/reset` | Oturum açıldı | Varsayılan şablonu geri yükle |
 | GET | `/api/v1/portal/templates` | Oturum açıldı | Liste |
 | POST | `/api/v1/portal/templates` | Oturum açıldı | Oluştur |
@@ -1101,6 +1103,7 @@ Düğüm Aracısı komut dosyasını yükler ve indirir (genel).
 | GET | `/api/v1/agent/version` | Yönetici | Paneldeki mevcut Agent sürümü |
 | GET | `/api/v1/agent/download` | halka açık | Aracıyı İndir |
 | GET | `/api/v1/agent/install` | halka açık | Yükleme komut dosyasını al |
+| GET | `/api/v1/agent/origin` | 公开 | Panel kaynak adresi (genel) |
 
 ### Geri arama girişini ücretlendir
 

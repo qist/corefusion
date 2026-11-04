@@ -8,7 +8,7 @@
 - 베이스 URL: `https://<panel-domain>/api/v1`
 - 저자: `Authorization: Bearer <admin_token>`(`POST /api/v1/auth/login`에서)
 - 일반적인 응답/오류 형식 및 속도 제한 규칙: [README.md](./README.ko.md)를 참조하세요.
-- 정보 출처: `internal/api/router/router.go`(관리 경로 739개); 이 테이블이 동의하지 않으면 **코드가 승리합니다**
+- 정보 출처: `internal/api/router/router.go`(개수는 버전에 따라 달라집니다. 코드가 우선입니다); 이 테이블이 동의하지 않으면 **코드가 승리합니다**
 
 ## 권한 표시
 
@@ -328,6 +328,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 관리자 | 저장 및 적용 |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 관리자 | 사이트 목록 |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 관리자 | 사이트 만들기 |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | 사이트 가져오기 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 관리자 | 사이트 삭제 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 관리자 | 사이트 업데이트 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 관리자 | 모든 SNI 규칙 삭제 |
@@ -372,6 +373,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 관리자 | 설정 저장 |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 관리자 | 사이트 목록 |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 관리자 | 사이트 만들기 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | 사이트 가져오기 |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL 인증서 파일 생성 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 관리자 | 사이트 삭제 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 관리자 | 사이트 업데이트 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 관리자 | 모든 SNI 규칙 삭제 |
@@ -637,15 +640,10 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | DELETE | `/api/v1/mihomo/configs/:id` | 로그인됨 | 삭제 |
 | GET | `/api/v1/mihomo/configs/:id` | 로그인됨 | 세부정보 |
 | PUT | `/api/v1/mihomo/configs/:id` | 로그인됨 | 업데이트 |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | 로그인됨 | 그룹 목록 |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | 로그인됨 | 그룹 만들기 |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | 로그인됨 | 규칙 공급자 목록 |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | 로그인됨 | 규칙 공급자 생성 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 로그인됨 | 규칙 목록 |
 | POST | `/api/v1/mihomo/configs/:id/rules` | 로그인됨 | 규칙 만들기 |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | 로그인됨 | 미리보기 생성 YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | 로그인됨 | 그룹 삭제 |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | 로그인됨 | 규칙 공급자 삭제 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | 규칙 순서 변경 |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | 규칙 업데이트 |
 | DELETE | `/api/v1/mihomo/rules/:id` | 로그인됨 | 규칙 삭제 |
 
 ### 충전소
@@ -824,6 +822,7 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | POST | `/api/v1/certificates/issue` | 로그인됨 | 이슈. 본체: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type`의 기본값은 http-01입니다. `dns_channel_id`는 DNS 채널을 선택합니다(구성된 DNS 공급자 + 자격 증명) |
 | POST | `/api/v1/certificates/issue-on-node` | 로그인됨 | 노드에 발행 |
 | POST | `/api/v1/certificates/upload` | 로그인됨 | 업로드 |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | 백그라운드 작업 상태 조회 |
 
 ### 인증서 채널
 
@@ -1032,6 +1031,8 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/system/reality-targets` | 관리자 | REALITY 대상 목록 |
 | PUT | `/api/v1/system/reality-targets` | 관리자 | REALITY 대상 업데이트 |
 | POST | `/api/v1/system/reality-targets/reset` | 관리자 | REALITY 대상을 기본값으로 재설정 |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality 로컬 SNI 설정 읽기 |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality 로컬 SNI 설정 업데이트 |
 | POST | `/api/v1/system/regenerate-jwt-secret` | 관리자 | JWT 키 재생성 |
 | GET | `/api/v1/system/releases` | 관리자 | 사용 가능한 버전 |
 | POST | `/api/v1/system/restart` | 관리자 | 다시 시작 |
@@ -1079,6 +1080,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/portal/cache` | 로그인됨 | 캐시 상태 |
 | PUT | `/api/v1/portal/cache/dev-mode` | 로그인됨 | 캐시 개발 모드 전환 |
 | POST | `/api/v1/portal/cache/rebuild` | 로그인됨 | 포털 캐시 재구축 |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | 내장 언어 팩 |
 | POST | `/api/v1/portal/reset` | 로그인됨 | 기본 템플릿 복원 |
 | GET | `/api/v1/portal/templates` | 로그인됨 | 목록 |
 | POST | `/api/v1/portal/templates` | 로그인됨 | 만들기 |
@@ -1101,6 +1103,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/agent/version` | 관리자 | 패널의 현재 에이전트 버전 |
 | GET | `/api/v1/agent/download` | 공개 | 에이전트 다운로드 |
 | GET | `/api/v1/agent/install` | 공개 | 설치 스크립트 받기 |
+| GET | `/api/v1/agent/origin` | 公开 | 패널 원본 주소(공개) |
 
 ### 청구 콜백 항목
 

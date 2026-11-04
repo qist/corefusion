@@ -47,4 +47,4 @@
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-이름 지정, 언어 탐색 및 검토 규칙 *(중국어)*는 [I18N.md](README.ko.md)를 참조하세요.
+이름 지정, 언어 탐색 및 검토 규칙 *(중국어)*는 [I18N.md](./I18N.md)를 참조하세요.

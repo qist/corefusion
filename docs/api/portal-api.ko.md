@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | 공개 기사(게시된 경우에만) |
 | GET | `/api/v1/public/articles/:slug` | 기사 세부정보 |
 | GET | `/api/v1/public/client-configs` | 클라이언트 다운로드 구성 |
-| GET | `/sub/:token` | 구독 전달(`format`는 base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json 등을 반환합니다. 취소됨/누락 → 404, 일시 중지/만료/비활성 → 403. [subscription.md](portal-api.ko.md) 참조) |
+| GET | `/sub/:token` | 구독 전달(`format`는 base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json 등을 반환합니다. 취소됨/누락 → 404, 일시 중지/만료/비활성 → 403. [subscription.md](./subscription.ko.md) 참조) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth 제공자 가시성: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | 유지 관리 상태(공개) 활성화되면 포털에 유지 관리 페이지가 표시됩니다. |
 

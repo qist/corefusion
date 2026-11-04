@@ -78,7 +78,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 | GET | `/api/v1/public/articles` | Bài viết công khai (chỉ được xuất bản) |
 | GET | `/api/v1/public/articles/:slug` | Chi tiết bài viết |
 | GET | `/api/v1/public/client-configs` | Cấu hình tải xuống của khách hàng |
-| GET | `/sub/:token` | Phân phối đăng ký (`format` trả về base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, v.v.; bị thu hồi/thiếu → 404, bị treo/hết hạn/không hoạt động → 403. Xem [subscription.md](portal-api.vi.md)) |
+| GET | `/sub/:token` | Phân phối đăng ký (`format` trả về base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, v.v.; bị thu hồi/thiếu → 404, bị treo/hết hạn/không hoạt động → 403. Xem [subscription.md](./subscription.vi.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Khả năng hiển thị của nhà cung cấp OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Trạng thái bảo trì (công khai). Cổng thông tin hiển thị trang bảo trì khi được bật |
 

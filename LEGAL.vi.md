@@ -48,7 +48,7 @@ Ghi chú bổ sung:
 
 ## 3. Các thành phần và phân phối lại của bên thứ ba
 
-Các thành phần chính của bên thứ ba và giấy phép của chúng được liệt kê trong [THIRD_PARTY_LICENSES.md](LEGAL.vi.md).
+Các thành phần chính của bên thứ ba và giấy phép của chúng được liệt kê trong [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.vi.md).
 
 Ghi chú đặc biệt:
 

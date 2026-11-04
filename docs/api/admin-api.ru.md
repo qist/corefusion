@@ -8,7 +8,7 @@
 - База URL: `https://<panel-domain>/api/v1`
 - Аутентификация: `Authorization: Bearer <admin_token>` (из `POST /api/v1/auth/login`)
 - Общие форматы ответов/ошибок и соглашения об ограничении скорости: см. [README.md](./README.ru.md).
-- Источник истины: `internal/api/router/router.go` (739 административных маршрутов); если эта таблица не согласна, **код выигрывает**
+- Источник истины: `internal/api/router/router.go` (количество зависит от версии; приоритет имеет код); если эта таблица не согласна, **код выигрывает**
 
 ## Маркеры разрешений
 
@@ -328,6 +328,7 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Администратор | Сохраните и примените |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Администратор | Список сайтов |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Администратор | Создать сайт |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Импорт сайтов |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Администратор | Удалить сайт |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Администратор | Обновить сайт |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Администратор | Удалить все правила SNI. |
@@ -372,6 +373,8 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Администратор | Сохранить настройки |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Администратор | Список сайтов |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Администратор | Создать сайт |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Импорт сайтов |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Создать файлы SSL-сертификата |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Администратор | Удалить сайт |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Администратор | Обновить сайт |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Администратор | Удалить все правила SNI. |
@@ -637,15 +640,10 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 | DELETE | `/api/v1/mihomo/configs/:id` | Требуется вход | Удалить |
 | GET | `/api/v1/mihomo/configs/:id` | Требуется вход | Подробности |
 | PUT | `/api/v1/mihomo/configs/:id` | Требуется вход | Обновить |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Требуется вход | Список групп |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Требуется вход | Создать группу |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Требуется вход | Список поставщиков правил |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Требуется вход | Создать поставщика правил |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Требуется вход | Список правил |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Требуется вход | Создать правило |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Требуется вход | Предварительный просмотр создан YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Требуется вход | Удалить группу |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Требуется вход | Удалить поставщика правил |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Упорядочить правила |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Обновить правило |
 | DELETE | `/api/v1/mihomo/rules/:id` | Требуется вход | Удалить правило |
 
 ### Сайты пополнения счета
@@ -824,6 +822,7 @@ CRUD для статей портала.
 | POST | `/api/v1/certificates/issue` | Требуется вход | Проблема. корпус: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. Для `challenge_type` по умолчанию используется http-01; `dns_channel_id` выбирает канал DNS (настроенный провайдер DNS + учетные данные) |
 | POST | `/api/v1/certificates/issue-on-node` | Требуется вход | Выдать на узел |
 | POST | `/api/v1/certificates/upload` | Требуется вход | Загрузить |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Запросить статус фоновой задачи |
 
 ### Каналы сертификатов
 
@@ -1032,6 +1031,8 @@ CRUD для статей портала.
 | GET | `/api/v1/system/reality-targets` | Администратор | Целевой список REALITY |
 | PUT | `/api/v1/system/reality-targets` | Администратор | Обновить цель REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | Администратор | Сбросить цель REALITY по умолчанию |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Прочитать локальную конфигурацию SNI Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Обновить локальную конфигурацию SNI Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Администратор | Восстановить ключ JWT |
 | GET | `/api/v1/system/releases` | Администратор | Доступные версии |
 | POST | `/api/v1/system/restart` | Администратор | Перезапустить |
@@ -1079,6 +1080,7 @@ CRUD для статей портала.
 | GET | `/api/v1/portal/cache` | Требуется вход | Статус кэша |
 | PUT | `/api/v1/portal/cache/dev-mode` | Требуется вход | Переключить режим разработки кэша |
 | POST | `/api/v1/portal/cache/rebuild` | Требуется вход | Восстановить кэш портала |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Встроенные языковые пакеты |
 | POST | `/api/v1/portal/reset` | Требуется вход | Восстановить шаблон по умолчанию |
 | GET | `/api/v1/portal/templates` | Требуется вход | Список |
 | POST | `/api/v1/portal/templates` | Требуется вход | Создать |
@@ -1101,6 +1103,7 @@ CRUD для статей портала.
 | GET | `/api/v1/agent/version` | Администратор | Текущая версия Агента на панели |
 | GET | `/api/v1/agent/download` | Публичный | Скачать агент |
 | GET | `/api/v1/agent/install` | Публичный | Получить скрипт установки |
+| GET | `/api/v1/agent/origin` | 公开 | Адрес источника панели (публичный) |
 
 ### Запись об обратном вызове
 

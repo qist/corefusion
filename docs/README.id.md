@@ -47,4 +47,4 @@ Dokumen desain adalah materi internal (kekayaan intelektual inti) dan **tidak di
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Lihat [I18N.md](README.id.md) untuk aturan penamaan, navigasi bahasa, dan peninjauan *(Bahasa Mandarin)*.
+Lihat [I18N.md](./I18N.md) untuk aturan penamaan, navigasi bahasa, dan peninjauan *(Bahasa Mandarin)*.

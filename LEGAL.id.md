@@ -48,7 +48,7 @@ Catatan tambahan:
 
 ## 3. Komponen pihak ketiga dan redistribusi
 
-Komponen pihak ketiga utama dan lisensinya tercantum di [THIRD_PARTY_LICENSES.md](LEGAL.id.md).
+Komponen pihak ketiga utama dan lisensinya tercantum di [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.id.md).
 
 Catatan khusus:
 

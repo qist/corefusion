@@ -47,4 +47,4 @@ Designdokumente sind interne Materialien (zentrales geistiges Eigentum) und werd
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Siehe [I18N.md](README.de.md) für Benennung, Sprachnavigation und Überprüfungsregeln *(Chinesisch)*.
+Siehe [I18N.md](./I18N.md) für Benennung, Sprachnavigation und Überprüfungsregeln *(Chinesisch)*.

@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | Публичные статьи (только опубликованные) |
 | GET | `/api/v1/public/articles/:slug` | Подробности статьи |
 | GET | `/api/v1/public/client-configs` | Конфигурация загрузки клиента |
-| GET | `/sub/:token` | Доставка подписки (`format` возвращает base64_uri/raw_uri/mihomo_yaml/singbox_json/xray_json и т. д.; отозвана/отсутствует → 404, приостановлена/истекла/неактивна → 403. См. [subscription.md](portal-api.ru.md)) |
+| GET | `/sub/:token` | Доставка подписки (`format` возвращает base64_uri/raw_uri/mihomo_yaml/singbox_json/xray_json и т. д.; отозвана/отсутствует → 404, приостановлена/истекла/неактивна → 403. См. [subscription.md](./subscription.ru.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Видимость поставщика OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}`. |
 | GET | `/api/v1/system/maintenance` | Статус обслуживания (общедоступный). Портал показывает страницу обслуживания, когда он включен. |
 

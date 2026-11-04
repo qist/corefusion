@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | المقالات العامة (المنشورة فقط) |
 | GET | `/api/v1/public/articles/:slug` | تفاصيل المادة |
 | GET | `/api/v1/public/client-configs` | تكوين تنزيل العميل |
-| GET | `/sub/:token` | تسليم الاشتراك (`format` يُرجع base64_uri / Raw_uri / mihomo_yaml /ingbox_json / xray_json، وما إلى ذلك؛ ملغى/مفقود → 404، معلق/منتهية الصلاحية/غير نشط → 403. راجع [subscription.md](portal-api.ar.md)) |
+| GET | `/sub/:token` | تسليم الاشتراك (`format` يُرجع base64_uri / Raw_uri / mihomo_yaml /ingbox_json / xray_json، وما إلى ذلك؛ ملغى/مفقود → 404، معلق/منتهية الصلاحية/غير نشط → 403. راجع [subscription.md](./subscription.ar.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | رؤية موفر OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | حالة الصيانة (عامة). تعرض البوابة صفحة الصيانة عند تمكينها |
 

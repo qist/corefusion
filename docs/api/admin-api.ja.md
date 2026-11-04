@@ -8,7 +8,7 @@
 - ベース URL: `https://<panel-domain>/api/v1`
 - 認証: `Authorization: Bearer <admin_token>` (`POST /api/v1/auth/login` から)
 - 一般的な応答/エラー形式とレート制限規則: [README.md](./README.ja.md) を参照してください。
-- 真実の情報源: `internal/api/router/router.go` (739 管理ルート)。この表が一致しない場合、**コードが優先されます**
+- 真実の情報源: `internal/api/router/router.go` (件数はバージョンにより変動します。コードが優先されます)。この表が一致しない場合、**コードが優先されます**
 
 ## 許可マーカー
 
@@ -328,6 +328,7 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 管理者 | 保存して適用する |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 管理者 | サイトリスト |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 管理者 | サイトの作成 |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | サイトをインポート |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理者 | サイトの削除 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理者 | 更新サイト |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 管理者 | すべての SNI ルールを削除します |
@@ -372,6 +373,8 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 管理者 | 設定を保存する |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 管理者 | サイトリスト |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 管理者 | サイトの作成 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | サイトをインポート |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL 証明書ファイルを生成 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理者 | サイトの削除 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理者 | 更新サイト |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 管理者 | すべての SNI ルールを削除します |
@@ -637,15 +640,10 @@ Cloudflare CDN IP プールとソースの管理。
 | DELETE | `/api/v1/mihomo/configs/:id` | 要サインイン | 削除 |
 | GET | `/api/v1/mihomo/configs/:id` | 要サインイン | 詳細 |
 | PUT | `/api/v1/mihomo/configs/:id` | 要サインイン | アップデート |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | 要サインイン | グループリスト |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | 要サインイン | グループの作成 |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | 要サインイン | ルールプロバイダーのリスト |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | 要サインイン | ルールプロバイダーの作成 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 要サインイン | ルール一覧 |
 | POST | `/api/v1/mihomo/configs/:id/rules` | 要サインイン | ルールの作成 |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | 要サインイン | 生成されたYAMLをプレビューする |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | 要サインイン | グループの削除 |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | 要サインイン | ルールプロバイダーの削除 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | ルールを並べ替え |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | ルールを更新 |
 | DELETE | `/api/v1/mihomo/rules/:id` | 要サインイン | ルールの削除 |
 
 ### リチャージサイト
@@ -824,6 +822,7 @@ Cloudflare CDN IP プールとソースの管理。
 | POST | `/api/v1/certificates/issue` | 要サインイン | 問題。本体：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。 `challenge_type` のデフォルトは http-01 です。 `dns_channel_id` は、DNS チャネル (構成された DNS プロバイダー + 資格情報) を選択します。 |
 | POST | `/api/v1/certificates/issue-on-node` | 要サインイン | ノードに発行する |
 | POST | `/api/v1/certificates/upload` | 要サインイン | アップロード |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | バックグラウンドタスクの状態を照会 |
 
 ### 証明書チャネル
 
@@ -1032,6 +1031,8 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/system/reality-targets` | 管理者 | REALITY ターゲットリスト |
 | PUT | `/api/v1/system/reality-targets` | 管理者 | REALITY ターゲットを更新 |
 | POST | `/api/v1/system/reality-targets/reset` | 管理者 | REALITY ターゲットをデフォルトにリセット |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality ローカル SNI 設定を取得 |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality ローカル SNI 設定を更新 |
 | POST | `/api/v1/system/regenerate-jwt-secret` | 管理者 | JWTキーを再生成します |
 | GET | `/api/v1/system/releases` | 管理者 | 利用可能なバージョン |
 | POST | `/api/v1/system/restart` | 管理者 | 再起動 |
@@ -1079,6 +1080,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/portal/cache` | 要サインイン | キャッシュステータス |
 | PUT | `/api/v1/portal/cache/dev-mode` | 要サインイン | キャッシュ開発モードの切り替え |
 | POST | `/api/v1/portal/cache/rebuild` | 要サインイン | ポータルキャッシュを再構築する |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | 組み込み言語パック |
 | POST | `/api/v1/portal/reset` | 要サインイン | デフォルトのテンプレートを復元する |
 | GET | `/api/v1/portal/templates` | 要サインイン | リスト |
 | POST | `/api/v1/portal/templates` | 要サインイン | 作成 |
@@ -1101,6 +1103,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/agent/version` | 管理者 | パネル上の現在のエージェントのバージョン |
 | GET | `/api/v1/agent/download` | 公開 | ダウンロードエージェント |
 | GET | `/api/v1/agent/install` | 公開 | インストールスクリプトを取得する |
+| GET | `/api/v1/agent/origin` | 公开 | パネルのオリジンアドレス（公開） |
 
 ### チャージコールバックエントリ
 

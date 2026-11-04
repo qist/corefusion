@@ -8,7 +8,7 @@
 | Belge | Seyirci | İçerik |
 |---|---|---|
 | [subscription.md](./subscription.tr.md) | Aboneler / müşteri geliştiricileri | Abonelik uç noktası (`/sub/:token`): formatlar, başlıklar, durum kodları, örnekler |
-| [portal-api.md](README.tr.md) | Portal ön ucu / üçüncü taraf istemcileri | Müşteri portalı API (`/api/v1/client-auth/*`, `/api/v1/public/*`): kaydolma, oturum açma, planlar, siparişler, bakiye, biletler |
+| [portal-api.md](./portal-api.tr.md) | Portal ön ucu / üçüncü taraf istemcileri | Müşteri portalı API (`/api/v1/client-auth/*`, `/api/v1/public/*`): kaydolma, oturum açma, planlar, siparişler, bakiye, biletler |
 | [şarj-geri arama.md](./charge-callback.tr.md) | Ödeme sağlayıcıları | Ödeme geri arama imzalama ve doğrulama |
 | [admin-api.tr.md](./admin-api.tr.md) | Panel geliştirme / otomasyon | Tam yönetici API rota tablosu (`/api/v1/*`, modüle göre gruplandırılmış) |
 
@@ -75,4 +75,4 @@ Bu rotalar HTML/statik varlıkları döndürür ve API belgelerinin dışındad�
 
 ## 6. Gerçeğin kaynağı
 
-`internal/api/router/router.go` (746 rota, 743 belgelenmiştir). [admin-api.md](README.tr.md)'deki rota tablosu koddan oluşturulmuştur; eğer kodla aynı fikirde değilse **kod kazanır**.
+`internal/api/router/router.go` (sayı sürüme göre değişir; kod esastır). [admin-api.md](./admin-api.tr.md)'deki rota tablosu koddan oluşturulmuştur; eğer kodla aynı fikirde değilse **kod kazanır**.

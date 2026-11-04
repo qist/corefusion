@@ -48,7 +48,7 @@ Ek notlar:
 
 ## 3. Üçüncü taraf bileşenler ve yeniden dağıtım
 
-Ana üçüncü taraf bileşenleri ve lisansları [THIRD_PARTY_LICENSES.md](LEGAL.tr.md)'de listelenmiştir.
+Ana üçüncü taraf bileşenleri ve lisansları [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.tr.md)'de listelenmiştir.
 
 Özel notlar:
 

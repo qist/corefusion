@@ -75,4 +75,4 @@ These routes return HTML/static assets and are outside the API docs; listed so t
 
 ## 6. Source of truth
 
-`internal/api/router/router.go` (746 routes, 743 documented). The route table in [admin-api.md](./admin-api.md) is generated from code; if it disagrees with the code, **the code wins**.
+`internal/api/router/router.go` (count varies by version; the code is authoritative). The route table in [admin-api.md](./admin-api.md) is generated from code; if it disagrees with the code, **the code wins**.

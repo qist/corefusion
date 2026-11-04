@@ -78,7 +78,7 @@ Al 401, llame a `POST /api/v1/client-auth/refresh` una vez y vuelva a intentarlo
 | GET | `/api/v1/public/articles` | Artículos públicos (solo publicados) |
 | GET | `/api/v1/public/articles/:slug` | Detalle del artículo |
 | GET | `/api/v1/public/client-configs` | Configuración de descarga del cliente |
-| GET | `/sub/:token` | Entrega de suscripción (`format` devuelve base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revocada/faltante → 404, suspendida/vencida/inactiva → 403. Consulte [subscription.md](portal-api.es.md)) |
+| GET | `/sub/:token` | Entrega de suscripción (`format` devuelve base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revocada/faltante → 404, suspendida/vencida/inactiva → 403. Consulte [subscription.md](./subscription.es.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilidad del proveedor de OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Estado de mantenimiento (público). El portal muestra una página de mantenimiento cuando está habilitado |
 

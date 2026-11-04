@@ -8,7 +8,7 @@ Documentação API para **integradores externos, desenvolvimento secundário e c
 | Documento | Público | Conteúdo |
 |---|---|---|
 | [subscrição.md](./subscription.pt.md) | Assinantes/desenvolvedores de clientes | Endpoint de assinatura (`/sub/:token`): formatos, cabeçalhos, códigos de status, exemplos |
-| [portal-api.md](README.pt.md) | Frontend do portal/clientes terceiros | Portal do cliente API (`/api/v1/client-auth/*`, `/api/v1/public/*`): inscrição, login, planos, pedidos, saldo, tickets |
+| [portal-api.md](./portal-api.pt.md) | Frontend do portal/clientes terceiros | Portal do cliente API (`/api/v1/client-auth/*`, `/api/v1/public/*`): inscrição, login, planos, pedidos, saldo, tickets |
 | [ retorno de chamada de cobrança.md](./charge-callback.pt.md) | Provedores de pagamento | Assinatura e verificação de retorno de chamada de pagamento |
 | [admin-api.pt.md](./admin-api.pt.md) | Desenvolvimento/automação de painel | Tabela de rotas API de administração completa (`/api/v1/*`, agrupada por módulo) |
 
@@ -75,4 +75,4 @@ Essas rotas retornam ativos HTML/estáticos e estão fora dos documentos API; li
 
 ## 6. Fonte da verdade
 
-`internal/api/router/router.go` (746 rotas, 743 documentadas). A tabela de rotas em [admin-api.md](README.pt.md) é gerada a partir do código; se discordar do código, **o código vence**.
+`internal/api/router/router.go` (a quantidade varia conforme a versão; o código é a referência). A tabela de rotas em [admin-api.md](./admin-api.pt.md) é gerada a partir do código; se discordar do código, **o código vence**.

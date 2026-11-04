@@ -8,7 +8,7 @@ Bảng lộ trình API dành cho quản trị viên hoàn chỉnh dành cho **ph
 - Đế URL: `https://<panel-domain>/api/v1`
 - Xác thực: `Authorization: Bearer <admin_token>` (từ `POST /api/v1/auth/login`)
 - Các định dạng phản hồi/lỗi phổ biến và quy ước giới hạn tỷ lệ: xem [README.md](./README.vi.md)
-- Nguồn sự thật: `internal/api/router/router.go` (739 tuyến quản trị viên); nếu bảng này không đồng ý, **mã sẽ thắng**
+- Nguồn sự thật: `internal/api/router/router.go` (số lượng thay đổi theo phiên bản; mã nguồn là chuẩn); nếu bảng này không đồng ý, **mã sẽ thắng**
 
 ## Đánh dấu quyền
 
@@ -328,6 +328,7 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Quản trị viên | Lưu và áp dụng |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Quản trị viên | Danh sách trang web |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Quản trị viên | Tạo trang web |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Nhập trang |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Quản trị viên | Xóa trang web |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Quản trị viên | Cập nhật trang web |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Quản trị viên | Xóa tất cả quy tắc SNI |
@@ -372,6 +373,8 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Quản trị viên | Lưu cài đặt |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Quản trị viên | Danh sách trang web |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Quản trị viên | Tạo trang web |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Nhập trang |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Tạo tệp chứng chỉ SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Quản trị viên | Xóa trang web |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Quản trị viên | Cập nhật trang web |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Quản trị viên | Xóa tất cả quy tắc SNI |
@@ -637,15 +640,10 @@ Cấu hình mẫu đăng ký: nhóm, quy tắc, nhà cung cấp quy tắc, bản
 | DELETE | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | Xóa |
 | GET | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | Chi tiết |
 | PUT | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | cập nhật |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Đã đăng nhập | Danh sách nhóm |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Đã đăng nhập | Tạo nhóm |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Đã đăng nhập | Danh sách nhà cung cấp quy tắc |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Đã đăng nhập | Tạo nhà cung cấp quy tắc |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Đã đăng nhập | Danh sách quy tắc |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Đã đăng nhập | Tạo quy tắc |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Đã đăng nhập | Xem trước được tạo YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Đã đăng nhập | Xóa nhóm |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Đã đăng nhập | Xóa nhà cung cấp quy tắc |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Sắp xếp lại quy tắc |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Cập nhật quy tắc |
 | DELETE | `/api/v1/mihomo/rules/:id` | Đã đăng nhập | Xóa quy tắc |
 
 ### Trang web nạp tiền
@@ -824,6 +822,7 @@ Phát hành, tải lên, gia hạn và xuất chứng chỉ công cộng (ACME);
 | POST | `/api/v1/certificates/issue` | Đã đăng nhập | Vấn đề. Thân máy: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` mặc định là http-01; `dns_channel_id` chọn kênh DNS (nhà cung cấp DNS đã định cấu hình + thông tin xác thực) |
 | POST | `/api/v1/certificates/issue-on-node` | Đã đăng nhập | Vấn đề với nút |
 | POST | `/api/v1/certificates/upload` | Đã đăng nhập | Tải lên |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Truy vấn trạng thái tác vụ nền |
 
 ### Kênh chứng chỉ
 
@@ -1032,6 +1031,8 @@ Cấu hình và di chuyển cơ sở dữ liệu, cài đặt bảng điều khi
 | GET | `/api/v1/system/reality-targets` | Quản trị viên | Danh sách mục tiêu REALITY |
 | PUT | `/api/v1/system/reality-targets` | Quản trị viên | Cập nhật mục tiêu REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | Quản trị viên | Đặt lại mục tiêu REALITY về mặc định |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Đọc cấu hình SNI cục bộ Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Cập nhật cấu hình SNI cục bộ Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Quản trị viên | Tạo lại khóa JWT |
 | GET | `/api/v1/system/releases` | Quản trị viên | Phiên bản có sẵn |
 | POST | `/api/v1/system/restart` | Quản trị viên | Khởi động lại |
@@ -1079,6 +1080,7 @@ Mẫu cổng thông tin, cấu hình kích hoạt và quản lý bộ đệm.
 | GET | `/api/v1/portal/cache` | Đã đăng nhập | Trạng thái bộ đệm |
 | PUT | `/api/v1/portal/cache/dev-mode` | Đã đăng nhập | Chuyển đổi chế độ phát triển bộ đệm |
 | POST | `/api/v1/portal/cache/rebuild` | Đã đăng nhập | Xây dựng lại bộ đệm cổng thông tin |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Gói ngôn ngữ tích hợp |
 | POST | `/api/v1/portal/reset` | Đã đăng nhập | Khôi phục mẫu mặc định |
 | GET | `/api/v1/portal/templates` | Đã đăng nhập | Danh sách |
 | POST | `/api/v1/portal/templates` | Đã đăng nhập | Tạo |
@@ -1101,6 +1103,7 @@ Tập lệnh cài đặt và tải xuống Node Agent (công khai).
 | GET | `/api/v1/agent/version` | Quản trị viên | Phiên bản Đại lý hiện tại trên bảng điều khiển |
 | GET | `/api/v1/agent/download` | công khai | Tải đại lý |
 | GET | `/api/v1/agent/install` | công khai | Nhận tập lệnh cài đặt |
+| GET | `/api/v1/agent/origin` | 公开 | Địa chỉ gốc của bảng điều khiển (công khai) |
 
 ### Tính phí mục gọi lại
 

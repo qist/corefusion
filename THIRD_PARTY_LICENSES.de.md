@@ -28,7 +28,7 @@ Wenn Sie Binärdateien dieses Projekts verteilen, bewahren Sie diese Datei, das 
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | BSD-3-Klausel | UUID |
 
-> ⚠ **GPL-3.0-Komponenten**: `sing` und `sing-shadowsocks` sind GPL-3.0 oder höher. Sie sind statisch mit den Panel- und Agent-Binärdateien verknüpft, sodass **für die Verteilung von Binärdateien die Bereitstellung der entsprechenden Quelle erforderlich ist** (siehe Abschnitt 3 von [LEGAL.md](THIRD_PARTY_LICENSES.de.md)).
+> ⚠ **GPL-3.0-Komponenten**: `sing` und `sing-shadowsocks` sind GPL-3.0 oder höher. Sie sind statisch mit den Panel- und Agent-Binärdateien verknüpft, sodass **für die Verteilung von Binärdateien die Bereitstellung der entsprechenden Quelle erforderlich ist** (siehe Abschnitt 3 von [LEGAL.md](LEGAL.de.md)).
 
 ## 2. Eigenständige Programme, die zur Laufzeit aufgerufen werden (nicht in diesem Repository verteilt)
 

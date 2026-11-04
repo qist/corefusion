@@ -8,7 +8,7 @@ Documentation API pour **intégrateurs externes, développement secondaire et cl
 | Documenter | Public | Contenu |
 |---|---|---|
 | [abonnement.md](./subscription.fr.md) | Abonnés / développeurs clients | Point de terminaison d'abonnement (`/sub/:token`) : formats, en-têtes, codes d'état, exemples |
-| [portal-api.md](README.fr.md) | Frontend du portail / clients tiers | Portail client API (`/api/v1/client-auth/*`, `/api/v1/public/*`) : inscription, connexion, plans, commandes, solde, billets |
+| [portal-api.md](./portal-api.fr.md) | Frontend du portail / clients tiers | Portail client API (`/api/v1/client-auth/*`, `/api/v1/public/*`) : inscription, connexion, plans, commandes, solde, billets |
 | [charge-callback.md](./charge-callback.fr.md) | Fournisseurs de paiement | Signature et vérification du rappel de paiement |
 | [admin-api.fr.md](./admin-api.fr.md) | Développement / automatisation de panneaux | Table de routage d'administration complète API (`/api/v1/*`, regroupée par module) |
 
@@ -75,4 +75,4 @@ Ces routes renvoient des ressources HTML/statiques et se trouvent en dehors de l
 
 ## 6. Source de vérité
 
-`internal/api/router/router.go` (746 itinéraires, 743 documentés). La table de routage dans [admin-api.md](README.fr.md) est générée à partir du code ; s'il n'est pas d'accord avec le code, **le code gagne**.
+`internal/api/router/router.go` (le nombre varie selon la version ; le code fait foi). La table de routage dans [admin-api.md](./admin-api.fr.md) est générée à partir du code ; s'il n'est pas d'accord avec le code, **le code gagne**.

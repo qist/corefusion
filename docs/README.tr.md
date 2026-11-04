@@ -47,4 +47,4 @@ Tasarım belgeleri dahili materyallerdir (temel fikri mülkiyet) ve bu depoyla *
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Adlandırma, dilde gezinme ve inceleme kuralları için [I18N.md](README.tr.md)'ye bakın *(Çince)*.
+Adlandırma, dilde gezinme ve inceleme kuralları için [I18N.md](./I18N.md)'ye bakın *(Çince)*.

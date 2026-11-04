@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. サードパーティのコンポーネントと再配布
 
-主要なサードパーティ コンポーネントとそのライセンスは、[THIRD_PARTY_LICENSES.md](LEGAL.ja.md) にリストされています。
+主要なサードパーティ コンポーネントとそのライセンスは、[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.ja.md) にリストされています。
 
 特記事項:
 

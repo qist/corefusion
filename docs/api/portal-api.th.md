@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | บทความสาธารณะ (เผยแพร่เท่านั้น) |
 | GET | `/api/v1/public/articles/:slug` | รายละเอียดบทความ |
 | GET | `/api/v1/public/client-configs` | การกำหนดค่าการดาวน์โหลดไคลเอ็นต์ |
-| GET | `/sub/:token` | การจัดส่งการสมัครสมาชิก (`format` ส่งคืน base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json ฯลฯ ; เพิกถอน/หายไป → 404, ถูกระงับ/หมดอายุ/ไม่ได้ใช้งาน → 403 ดู [subscription.md](portal-api.th.md)) |
+| GET | `/sub/:token` | การจัดส่งการสมัครสมาชิก (`format` ส่งคืน base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json ฯลฯ ; เพิกถอน/หายไป → 404, ถูกระงับ/หมดอายุ/ไม่ได้ใช้งาน → 403 ดู [subscription.md](./subscription.th.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | การมองเห็นผู้ให้บริการ OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | สถานะการบำรุงรักษา (สาธารณะ) พอร์ทัลแสดงหน้าการบำรุงรักษาเมื่อเปิดใช้งาน |
 

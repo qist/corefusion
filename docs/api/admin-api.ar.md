@@ -8,7 +8,7 @@
 - قاعدة URL: `https://<panel-domain>/api/v1`
 - المصادقة: `Authorization: Bearer <admin_token>` (من `POST /api/v1/auth/login`)
 - تنسيقات الاستجابة/الخطأ الشائعة واصطلاحات الحد الأقصى للمعدل: راجع [README.md](./README.ar.md)
-- مصدر الحقيقة: `internal/api/router/router.go` (739 مسارًا إداريًا)؛ إذا لم يتفق هذا الجدول، **الرمز يفوز**
+- مصدر الحقيقة: `internal/api/router/router.go` (يختلف العدد حسب الإصدار؛ الكود هو المرجع)؛ إذا لم يتفق هذا الجدول، **الرمز يفوز**
 
 ## علامات الإذن
 
@@ -328,6 +328,7 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | المشرف | حفظ وتطبيق |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | المشرف | قائمة الموقع |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | المشرف | إنشاء موقع |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | استيراد المواقع |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | المشرف | حذف الموقع |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | المشرف | تحديث الموقع |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | المشرف | احذف جميع قواعد SNI |
@@ -372,6 +373,8 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/nginx/settings` | المشرف | حفظ الإعدادات |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | المشرف | قائمة الموقع |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | المشرف | إنشاء موقع |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | استيراد المواقع |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | إنشاء ملفات شهادة SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | المشرف | حذف الموقع |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | المشرف | تحديث الموقع |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | المشرف | احذف جميع قواعد SNI |
@@ -637,15 +640,10 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 | DELETE | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | حذف |
 | GET | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | التفاصيل |
 | PUT | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | تحديث |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | تم تسجيل الدخول | قائمة المجموعة |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | تم تسجيل الدخول | إنشاء مجموعة |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | تم تسجيل الدخول | قائمة موفر القاعدة |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | تم تسجيل الدخول | إنشاء مزود القاعدة |
 | GET | `/api/v1/mihomo/configs/:id/rules` | تم تسجيل الدخول | قائمة القواعد |
 | POST | `/api/v1/mihomo/configs/:id/rules` | تم تسجيل الدخول | إنشاء القاعدة |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | تم تسجيل الدخول | تم إنشاء المعاينة YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | تم تسجيل الدخول | حذف المجموعة |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | تم تسجيل الدخول | حذف مزود القاعدة |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | إعادة ترتيب القواعد |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | تحديث القاعدة |
 | DELETE | `/api/v1/mihomo/rules/:id` | تم تسجيل الدخول | حذف القاعدة |
 
 ### مواقع إعادة الشحن
@@ -824,6 +822,7 @@ CRUD لمقالات البوابة.
 | POST | `/api/v1/certificates/issue` | تم تسجيل الدخول | قضية. الجسم: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` افتراضيًا http-01؛ `dns_channel_id` يحدد قناة DNS (موفر DNS الذي تم تكوينه + بيانات الاعتماد) |
 | POST | `/api/v1/certificates/issue-on-node` | تم تسجيل الدخول | مشكلة في العقدة |
 | POST | `/api/v1/certificates/upload` | تم تسجيل الدخول | تحميل |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | الاستعلام عن حالة المهمة في الخلفية |
 
 ### قنوات الشهادة
 
@@ -1032,6 +1031,8 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/system/reality-targets` | المشرف | قائمة الأهداف REALITY |
 | PUT | `/api/v1/system/reality-targets` | المشرف | تحديث هدف REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | المشرف | إعادة تعيين هدف REALITY إلى الوضع الافتراضي |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | قراءة إعداد SNI المحلي لـ Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | تحديث إعداد SNI المحلي لـ Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | المشرف | إعادة إنشاء مفتاح JWT |
 | GET | `/api/v1/system/releases` | المشرف | الإصدارات المتاحة |
 | POST | `/api/v1/system/restart` | المشرف | إعادة التشغيل |
@@ -1079,6 +1080,7 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/portal/cache` | تم تسجيل الدخول | حالة ذاكرة التخزين المؤقت |
 | PUT | `/api/v1/portal/cache/dev-mode` | تم تسجيل الدخول | تبديل وضع تطوير ذاكرة التخزين المؤقت |
 | POST | `/api/v1/portal/cache/rebuild` | تم تسجيل الدخول | إعادة بناء ذاكرة التخزين المؤقت للبوابة |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | حزم اللغات المضمنة |
 | POST | `/api/v1/portal/reset` | تم تسجيل الدخول | استعادة القالب الافتراضي |
 | GET | `/api/v1/portal/templates` | تم تسجيل الدخول | قائمة |
 | POST | `/api/v1/portal/templates` | تم تسجيل الدخول | إنشاء |
@@ -1101,6 +1103,7 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/agent/version` | المشرف | إصدار الوكيل الحالي على اللوحة |
 | GET | `/api/v1/agent/download` | عام | وكيل التحميل |
 | GET | `/api/v1/agent/install` | عام | الحصول على البرنامج النصي للتثبيت |
+| GET | `/api/v1/agent/origin` | 公开 | عنوان أصل اللوحة (عام) |
 
 ### تهمة إدخال رد الاتصال
 

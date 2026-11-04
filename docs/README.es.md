@@ -47,4 +47,4 @@ Los documentos de diseño son materiales internos (propiedad intelectual princip
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Consulte [I18N.md](README.es.md) para conocer nombres, navegación por idiomas y reglas de revisión *(chino)*.
+Consulte [I18N.md](./I18N.md) para conocer nombres, navegación por idiomas y reglas de revisión *(chino)*.

@@ -8,7 +8,7 @@ Documentación API para **integradores externos, desarrollo secundario y cliente
 | Documento | Audiencia | Contenido |
 |---|---|---|
 | [subscription.md](./subscription.es.md) | Suscriptores / desarrolladores de clientes | Punto final de suscripción (`/sub/:token`): formatos, encabezados, códigos de estado, ejemplos |
-| [portal-api.md](README.es.md) | Frontend del portal/clientes de terceros | Portal de clientes API (`/api/v1/client-auth/*`, `/api/v1/public/*`): registro, inicio de sesión, planes, pedidos, saldo, tickets |
+| [portal-api.md](./portal-api.es.md) | Frontend del portal/clientes de terceros | Portal de clientes API (`/api/v1/client-auth/*`, `/api/v1/public/*`): registro, inicio de sesión, planes, pedidos, saldo, tickets |
 | [charge-callback.md](./charge-callback.es.md) | Proveedores de pago | Firma y verificación de devolución de llamada de pago |
 | [admin-api.es.md](./admin-api.es.md) | Desarrollo de paneles / automatización | Tabla de rutas API de administración completa (`/api/v1/*`, agrupada por módulo) |
 
@@ -75,4 +75,4 @@ Estas rutas devuelven recursos HTML/estáticos y están fuera de los documentos 
 
 ## 6. fuente de verdad
 
-`internal/api/router/router.go` (746 rutas, 743 documentadas). La tabla de rutas en [admin-api.md](README.es.md) se genera a partir de código; si no está de acuerdo con el código, **el código gana**.
+`internal/api/router/router.go` (la cantidad varía según la versión; el código es la referencia). La tabla de rutas en [admin-api.md](./admin-api.es.md) se genera a partir de código; si no está de acuerdo con el código, **el código gana**.

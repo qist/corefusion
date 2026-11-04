@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. مكونات الطرف الثالث وإعادة التوزيع
 
-يتم إدراج مكونات الطرف الثالث الرئيسية وتراخيصها في [THIRD_PARTY_LICENSES.md](LEGAL.ar.md).
+يتم إدراج مكونات الطرف الثالث الرئيسية وتراخيصها في [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.ar.md).
 
 ملاحظات خاصة:
 

@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. اجزای شخص ثالث و توزیع مجدد
 
-اجزای اصلی شخص ثالث و مجوزهای آنها در [THIRD_PARTY_LICENSES.md](LEGAL.fa.md) فهرست شده است.
+اجزای اصلی شخص ثالث و مجوزهای آنها در [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.fa.md) فهرست شده است.
 
 نکات ویژه:
 

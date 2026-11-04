@@ -48,7 +48,7 @@ Notes complémentaires :
 
 ## 3. Composants tiers et redistribution
 
-Les principaux composants tiers et leurs licences sont répertoriés dans [THIRD_PARTY_LICENSES.md](LEGAL.fr.md).
+Les principaux composants tiers et leurs licences sont répertoriés dans [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.fr.md).
 
 Remarques spéciales :
 

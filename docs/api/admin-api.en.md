@@ -8,7 +8,7 @@ The complete admin API route table for **panel development / automation / integr
 - Base URL: `https://<panel-domain>/api/v1`
 - Auth: `Authorization: Bearer <admin_token>` (from `POST /api/v1/auth/login`)
 - Common response/error formats and rate-limit conventions: see [README.md](./README.en.md)
-- Source of truth: `internal/api/router/router.go` (739 admin routes); if this table disagrees, **the code wins**
+- Source of truth: `internal/api/router/router.go` (count varies by version; the code is authoritative); if this table disagrees, **the code wins**
 
 ## Permission markers
 
@@ -328,6 +328,7 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Save and apply |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Site list |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Create site |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Import sites |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Delete site |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Update site |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Delete all SNI rules |
@@ -372,6 +373,8 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Save settings |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Site list |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Create site |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Import sites |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Generate SSL certificate files |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Delete site |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Update site |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Delete all SNI rules |
@@ -637,15 +640,10 @@ Subscription template configuration: groups, rules, rule-providers, YAML preview
 | DELETE | `/api/v1/mihomo/configs/:id` | Signed in | Delete |
 | GET | `/api/v1/mihomo/configs/:id` | Signed in | Details |
 | PUT | `/api/v1/mihomo/configs/:id` | Signed in | Update |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Signed in | Group list |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Signed in | Create group |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Signed in | Rule provider list |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Signed in | Create rule provider |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Signed in | Rule list |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Signed in | Create rule |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Signed in | Preview generated YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Signed in | Delete group |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Signed in | Delete rule provider |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Reorder rules |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Update rule |
 | DELETE | `/api/v1/mihomo/rules/:id` | Signed in | Delete rule |
 
 ### Recharge sites
@@ -824,6 +822,7 @@ Public certificate (ACME) issuance, upload, renewal and export; issuance on a sp
 | POST | `/api/v1/certificates/issue` | Signed in | Issue. body: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaults to http-01; `dns_channel_id` selects a DNS channel (a configured DNS provider + credentials) |
 | POST | `/api/v1/certificates/issue-on-node` | Signed in | Issue to node |
 | POST | `/api/v1/certificates/upload` | Signed in | Upload |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Query background task status |
 
 ### Certificate channels
 
@@ -1032,6 +1031,8 @@ Database config and migration, panel settings, JWT keys, SMTP/Telegram tests, no
 | GET | `/api/v1/system/reality-targets` | Admin | REALITY target list |
 | PUT | `/api/v1/system/reality-targets` | Admin | Update REALITY target |
 | POST | `/api/v1/system/reality-targets/reset` | Admin | Reset REALITY target to default |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Read Reality local SNI config |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Update Reality local SNI config |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Admin | Regenerate JWT key |
 | GET | `/api/v1/system/releases` | Admin | Available versions |
 | POST | `/api/v1/system/restart` | Admin | Restart |
@@ -1079,6 +1080,7 @@ Portal templates, activation config and cache management.
 | GET | `/api/v1/portal/cache` | Signed in | Cache status |
 | PUT | `/api/v1/portal/cache/dev-mode` | Signed in | Toggle cache development mode |
 | POST | `/api/v1/portal/cache/rebuild` | Signed in | Rebuild portal cache |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Built-in language packs |
 | POST | `/api/v1/portal/reset` | Signed in | Restore default template |
 | GET | `/api/v1/portal/templates` | Signed in | List |
 | POST | `/api/v1/portal/templates` | Signed in | Create |
@@ -1101,6 +1103,7 @@ Node Agent install script and download (public).
 | GET | `/api/v1/agent/version` | Admin | Current Agent version on the panel |
 | GET | `/api/v1/agent/download` | Public | Download Agent |
 | GET | `/api/v1/agent/install` | Public | Get install script |
+| GET | `/api/v1/agent/origin` | 公开 | Panel origin address (public) |
 
 ### Charge callback entry
 

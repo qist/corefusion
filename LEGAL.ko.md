@@ -48,7 +48,7 @@ by the Free Software Foundation, either version 3 of the License, or
 
 ## 3. 타사 구성 요소 및 재배포
 
-주요 타사 구성요소 및 해당 라이센스는 [THIRD_PARTY_LICENSES.md](LEGAL.ko.md)에 나열되어 있습니다.
+주요 타사 구성요소 및 해당 라이센스는 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.ko.md)에 나열되어 있습니다.
 
 특별 참고사항:
 

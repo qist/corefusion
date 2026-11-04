@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | 公開記事（公開のみ） |
 | GET | `/api/v1/public/articles/:slug` | 記事詳細 |
 | GET | `/api/v1/public/client-configs` | クライアントのダウンロード構成 |
-| GET | `/sub/:token` | サブスクリプション配信 (`format` は、base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json などを返します。取り消し/欠落 → 404、一時停止/期限切れ/非アクティブ → 403 を参照。[subscription.md](portal-api.ja.md) を参照) |
+| GET | `/sub/:token` | サブスクリプション配信 (`format` は、base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json などを返します。取り消し/欠落 → 404、一時停止/期限切れ/非アクティブ → 403 を参照。[subscription.md](./subscription.ja.md) を参照) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth プロバイダーの可視性: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | メンテナンス状況（公開）。有効にすると、ポータルにメンテナンス ページが表示されます |
 

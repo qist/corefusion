@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | مقالات عمومی (فقط منتشر شده) |
 | GET | `/api/v1/public/articles/:slug` | جزئیات مقاله |
 | GET | `/api/v1/public/client-configs` | پیکربندی دانلود مشتری |
-| GET | `/sub/:token` | تحویل اشتراک (`format` base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json و غیره را برمی‌گرداند؛ لغو/غایب → 404، معلق/منقضی شده/غیرفعال → 403 را ببینید. [subscription.md](portal-api.fa.md)) |
+| GET | `/sub/:token` | تحویل اشتراک (`format` base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json و غیره را برمی‌گرداند؛ لغو/غایب → 404، معلق/منقضی شده/غیرفعال → 403 را ببینید. [subscription.md](./subscription.fa.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | قابلیت مشاهده ارائه دهنده OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | وضعیت نگهداری (عمومی). در صورت فعال بودن، پورتال یک صفحه تعمیر و نگهداری را نشان می دهد |
 

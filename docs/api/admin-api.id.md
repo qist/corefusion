@@ -8,7 +8,7 @@ Tabel rute admin lengkap API untuk **pengembangan panel/otomatisasi/integrator**
 - Basis URL: `https://<panel-domain>/api/v1`
 - Otentikasi: `Authorization: Bearer <admin_token>` (dari `POST /api/v1/auth/login`)
 - Format respons/kesalahan umum dan konvensi batas kecepatan: lihat [README.md](./README.id.md)
-- Sumber kebenaran: `internal/api/router/router.go` (739 rute admin); jika tabel ini tidak sesuai, **kode menang**
+- Sumber kebenaran: `internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kode adalah acuan); jika tabel ini tidak sesuai, **kode menang**
 
 ## Penanda izin
 
@@ -328,6 +328,7 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Simpan dan terapkan |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Daftar situs |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Buat situs |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Impor situs |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Hapus situs |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Perbarui situs |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Hapus semua aturan SNI |
@@ -372,6 +373,8 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Simpan pengaturan |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Daftar situs |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Buat situs |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Impor situs |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Hasilkan file sertifikat SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Hapus situs |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Perbarui situs |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Hapus semua aturan SNI |
@@ -637,15 +640,10 @@ Konfigurasi templat langganan: grup, aturan, penyedia aturan, pratinjau YAML.
 | DELETE | `/api/v1/mihomo/configs/:id` | Masuk | Hapus |
 | GET | `/api/v1/mihomo/configs/:id` | Masuk | Detail |
 | PUT | `/api/v1/mihomo/configs/:id` | Masuk | Pembaruan |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Masuk | Daftar grup |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Masuk | Buat grup |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Masuk | Daftar penyedia aturan |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Masuk | Buat penyedia aturan |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Masuk | Daftar aturan |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Masuk | Buat aturan |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Masuk | Pratinjau menghasilkan YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Masuk | Hapus grup |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Masuk | Hapus penyedia aturan |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Urutkan ulang aturan |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Perbarui aturan |
 | DELETE | `/api/v1/mihomo/rules/:id` | Masuk | Hapus aturan |
 
 ### Isi ulang situs
@@ -824,6 +822,7 @@ Penerbitan, pengunggahan, pembaruan dan ekspor sertifikat publik (ACME); penerbi
 | POST | `/api/v1/certificates/issue` | Masuk | Masalah. tubuh: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaultnya adalah http-01; `dns_channel_id` memilih saluran DNS (penyedia DNS yang dikonfigurasi + kredensial) |
 | POST | `/api/v1/certificates/issue-on-node` | Masuk | Masalah ke node |
 | POST | `/api/v1/certificates/upload` | Masuk | Unggah |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Periksa status tugas latar belakang |
 
 ### Saluran sertifikat
 
@@ -1032,6 +1031,8 @@ Konfigurasi dan migrasi database, pengaturan panel, kunci JWT, tes SMTP/Telegram
 | GET | `/api/v1/system/reality-targets` | Admin | Daftar target REALITY |
 | PUT | `/api/v1/system/reality-targets` | Admin | Perbarui target REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | Admin | Setel ulang target REALITY ke default |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Baca konfigurasi SNI lokal Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Perbarui konfigurasi SNI lokal Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Admin | Regenerasi kunci JWT |
 | GET | `/api/v1/system/releases` | Admin | Versi yang tersedia |
 | POST | `/api/v1/system/restart` | Admin | Mulai ulang |
@@ -1079,6 +1080,7 @@ Templat portal, konfigurasi aktivasi, dan manajemen cache.
 | GET | `/api/v1/portal/cache` | Masuk | Status cache |
 | PUT | `/api/v1/portal/cache/dev-mode` | Masuk | Alihkan mode pengembangan cache |
 | POST | `/api/v1/portal/cache/rebuild` | Masuk | Membangun kembali cache portal |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Paket bahasa bawaan |
 | POST | `/api/v1/portal/reset` | Masuk | Kembalikan templat default |
 | GET | `/api/v1/portal/templates` | Masuk | Daftar |
 | POST | `/api/v1/portal/templates` | Masuk | Buat |
@@ -1101,6 +1103,7 @@ Skrip instalasi Node Agent dan unduh (publik).
 | GET | `/api/v1/agent/version` | Admin | Versi Agen saat ini di panel |
 | GET | `/api/v1/agent/download` | Publik | Unduh Agen |
 | GET | `/api/v1/agent/install` | Publik | Dapatkan skrip pemasangan |
+| GET | `/api/v1/agent/origin` | 公开 | Alamat asal panel (publik) |
 
 ### Biaya entri panggilan balik
 

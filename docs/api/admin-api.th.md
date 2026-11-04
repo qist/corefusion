@@ -8,7 +8,7 @@
 - ฐาน URL: `https://<panel-domain>/api/v1`
 - การรับรองความถูกต้อง: `Authorization: Bearer <admin_token>` (จาก `POST /api/v1/auth/login`)
 - รูปแบบการตอบสนอง/ข้อผิดพลาดทั่วไปและแบบแผนการจำกัดอัตรา: ดู [README.md](./README.th.md)
-- แหล่งที่มาของความจริง: `internal/api/router/router.go` (เส้นทางผู้ดูแลระบบ 739 เส้นทาง); หากตารางนี้ไม่เห็นด้วย **โค้ดจะชนะ**
+- แหล่งที่มาของความจริง: `internal/api/router/router.go` (จำนวนขึ้นอยู่กับเวอร์ชัน โค้ดเป็นหลัก); หากตารางนี้ไม่เห็นด้วย **โค้ดจะชนะ**
 
 ## เครื่องหมายอนุญาต
 
@@ -328,6 +328,7 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | ผู้ดูแลระบบ | บันทึกและนำไปใช้ |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | ผู้ดูแลระบบ | รายการไซต์ |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | ผู้ดูแลระบบ | สร้างไซต์ |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | นำเข้าไซต์ |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | ผู้ดูแลระบบ | ลบไซต์ |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | ผู้ดูแลระบบ | อัปเดตไซต์ |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | ผู้ดูแลระบบ | ลบกฎ SNI ทั้งหมด |
@@ -372,6 +373,8 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | ผู้ดูแลระบบ | บันทึกการตั้งค่า |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | ผู้ดูแลระบบ | รายการไซต์ |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | ผู้ดูแลระบบ | สร้างไซต์ |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | นำเข้าไซต์ |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | สร้างไฟล์ใบรับรอง SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | ผู้ดูแลระบบ | ลบไซต์ |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | ผู้ดูแลระบบ | อัปเดตไซต์ |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | ผู้ดูแลระบบ | ลบกฎ SNI ทั้งหมด |
@@ -637,15 +640,10 @@ Cloudflare CDN IP พูลและการจัดการแหล่ง�
 | DELETE | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
 | GET | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
 | PUT | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | ลงชื่อเข้าใช้แล้ว | รายการกลุ่ม |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | ลงชื่อเข้าใช้แล้ว | สร้างกลุ่ม |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | ลงชื่อเข้าใช้แล้ว | รายชื่อผู้ให้บริการกฎ |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | ลงชื่อเข้าใช้แล้ว | สร้างผู้ให้บริการกฎ |
 | GET | `/api/v1/mihomo/configs/:id/rules` | ลงชื่อเข้าใช้แล้ว | รายการกฎ |
 | POST | `/api/v1/mihomo/configs/:id/rules` | ลงชื่อเข้าใช้แล้ว | สร้างกฎ |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | ลงชื่อเข้าใช้แล้ว | แสดงตัวอย่าง YAML ที่สร้างขึ้น |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | ลงชื่อเข้าใช้แล้ว | ลบกลุ่ม |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | ลงชื่อเข้าใช้แล้ว | ลบผู้ให้บริการกฎ |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | จัดเรียงกฎใหม่ |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | อัปเดตกฎ |
 | DELETE | `/api/v1/mihomo/rules/:id` | ลงชื่อเข้าใช้แล้ว | ลบกฎ |
 
 ### เว็บไซต์เติมเงิน
@@ -824,6 +822,7 @@ CRUD สำหรับบทความพอร์ทัล
 | POST | `/api/v1/certificates/issue` | ลงชื่อเข้าใช้แล้ว | ปัญหา ร่างกาย: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` มีค่าเริ่มต้นเป็น http-01; `dns_channel_id` เลือกช่อง DNS (ผู้ให้บริการ DNS ที่กำหนดค่าไว้ + ข้อมูลรับรอง) |
 | POST | `/api/v1/certificates/issue-on-node` | ลงชื่อเข้าใช้แล้ว | ออกไปยังโหนด |
 | POST | `/api/v1/certificates/upload` | ลงชื่อเข้าใช้แล้ว | อัปโหลด |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | ตรวจสอบสถานะงานเบื้องหลัง |
 
 ### ช่องทางการรับรอง
 
@@ -1032,6 +1031,8 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/system/reality-targets` | ผู้ดูแลระบบ | รายการเป้าหมาย REALITY |
 | PUT | `/api/v1/system/reality-targets` | ผู้ดูแลระบบ | อัพเดตเป้าหมาย REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | ผู้ดูแลระบบ | รีเซ็ตเป้าหมาย REALITY เป็นค่าเริ่มต้น |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | อ่านการตั้งค่า SNI ภายในเครื่องของ Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | อัปเดตการตั้งค่า SNI ภายในเครื่องของ Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | ผู้ดูแลระบบ | สร้างคีย์ JWT ใหม่ |
 | GET | `/api/v1/system/releases` | ผู้ดูแลระบบ | รุ่นที่มีจำหน่าย |
 | POST | `/api/v1/system/restart` | ผู้ดูแลระบบ | รีสตาร์ท |
@@ -1079,6 +1080,7 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/portal/cache` | ลงชื่อเข้าใช้แล้ว | สถานะแคช |
 | PUT | `/api/v1/portal/cache/dev-mode` | ลงชื่อเข้าใช้แล้ว | สลับโหมดการพัฒนาแคช |
 | POST | `/api/v1/portal/cache/rebuild` | ลงชื่อเข้าใช้แล้ว | สร้างแคชพอร์ทัลใหม่ |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | ชุดภาษาที่มีในตัว |
 | POST | `/api/v1/portal/reset` | ลงชื่อเข้าใช้แล้ว | คืนค่าเทมเพลตเริ่มต้น |
 | GET | `/api/v1/portal/templates` | ลงชื่อเข้าใช้แล้ว | รายการ |
 | POST | `/api/v1/portal/templates` | ลงชื่อเข้าใช้แล้ว | สร้าง |
@@ -1101,6 +1103,7 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/agent/version` | ผู้ดูแลระบบ | เวอร์ชันตัวแทนปัจจุบันบนแผงควบคุม |
 | GET | `/api/v1/agent/download` | สาธารณะ | ดาวน์โหลดตัวแทน |
 | GET | `/api/v1/agent/install` | สาธารณะ | รับสคริปต์การติดตั้ง |
+| GET | `/api/v1/agent/origin` | 公开 | ที่อยู่ต้นทางของแผงควบคุม (สาธารณะ) |
 
 ### เรียกเก็บเงินรายการโทรกลับ
 

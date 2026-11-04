@@ -7,7 +7,7 @@
 - Base URL：`https://<面板域名>/api/v1`
 - 认证：`Authorization: Bearer <admin_token>`（`POST /api/v1/auth/login` 获取）
 - 通用响应/错误格式、限流约定见 [README.md](./README.md)
-- 路由权威来源：`internal/api/router/router.go`（共 739 条管理端路由）；与本表不一致时**以代码为准**
+- 路由权威来源：`internal/api/router/router.go`（数量随版本变化，以代码为准）；与本表不一致时**以代码为准**
 
 ## 权限标记
 
@@ -327,6 +327,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 管理员 | 保存并应用 |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 管理员 | 站点列表 |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 管理员 | 创建站点 |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | 导入站点配置 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理员 | 删除站点 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理员 | 更新站点 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 管理员 | 删除全部 SNI 规则 |
@@ -371,6 +372,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 管理员 | 保存设置 |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 管理员 | 站点列表 |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 管理员 | 创建站点 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | 导入站点配置 |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | 生成 SSL 证书文件 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理员 | 删除站点 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理员 | 更新站点 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 管理员 | 删除全部 SNI 规则 |
@@ -636,15 +639,10 @@ CF CDN IP 池与来源管理。
 | DELETE | `/api/v1/mihomo/configs/:id` | 登录 | 删除 |
 | GET | `/api/v1/mihomo/configs/:id` | 登录 | 详情 |
 | PUT | `/api/v1/mihomo/configs/:id` | 登录 | 更新 |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | 登录 | 分组列表 |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | 登录 | 创建分组 |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | 登录 | 规则提供者列表 |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | 登录 | 创建规则提供者 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 登录 | 规则列表 |
 | POST | `/api/v1/mihomo/configs/:id/rules` | 登录 | 创建规则 |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | 登录 | 预览生成的 YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | 登录 | 删除分组 |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | 登录 | 删除规则提供者 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | 规则排序 |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | 更新规则 |
 | DELETE | `/api/v1/mihomo/rules/:id` | 登录 | 删除规则 |
 
 ### 充值站点
@@ -823,6 +821,7 @@ CF CDN IP 池与来源管理。
 | POST | `/api/v1/certificates/issue` | 登录 | 签发。body：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。`challenge_type` 缺省 http-01；`dns_channel_id` 指定 DNS 通道（面板配置好的 DNS 提供者+凭据） |
 | POST | `/api/v1/certificates/issue-on-node` | 登录 | 签发到节点 |
 | POST | `/api/v1/certificates/upload` | 登录 | 上传 |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | 查询后台任务状态 |
 
 ### 证书通道
 
@@ -1031,6 +1030,8 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/system/reality-targets` | 管理员 | REALITY 目标列表 |
 | PUT | `/api/v1/system/reality-targets` | 管理员 | 更新 REALITY 目标 |
 | POST | `/api/v1/system/reality-targets/reset` | 管理员 | 重置 REALITY 目标为默认 |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | 读取 Reality 本地 SNI 配置 |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | 更新 Reality 本地 SNI 配置 |
 | POST | `/api/v1/system/regenerate-jwt-secret` | 管理员 | 重新生成 JWT 密钥 |
 | GET | `/api/v1/system/releases` | 管理员 | 可用版本列表 |
 | POST | `/api/v1/system/restart` | 管理员 | 重启 |
@@ -1078,6 +1079,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/portal/cache` | 登录 | 缓存状态 |
 | PUT | `/api/v1/portal/cache/dev-mode` | 登录 | 切换缓存开发模式 |
 | POST | `/api/v1/portal/cache/rebuild` | 登录 | 重建门户缓存 |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | 内置语言包 |
 | POST | `/api/v1/portal/reset` | 登录 | 恢复默认模板 |
 | GET | `/api/v1/portal/templates` | 登录 | 列表 |
 | POST | `/api/v1/portal/templates` | 登录 | 创建 |
@@ -1100,6 +1102,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/agent/version` | 管理员 | 面板侧 Agent 当前版本 |
 | GET | `/api/v1/agent/download` | 公开 | 下载Agent |
 | GET | `/api/v1/agent/install` | 公开 | 获取安装脚本 |
+| GET | `/api/v1/agent/origin` | 公开 | 面板源站地址（公开） |
 
 ### 支付回调入口
 

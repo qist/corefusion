@@ -28,7 +28,7 @@ Saat mendistribusikan biner proyek ini, simpan file ini, proyek `LICENSE`, dan p
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | BSD-3-Klausul | UUID |
 
-> ⚠ **Komponen GPL-3.0**: `sing` dan `sing-shadowsocks` adalah GPL-3.0-atau-yang lebih baru. Mereka ditautkan secara statis ke dalam biner panel dan Agen, jadi **mendistribusikan biner memerlukan penyediaan Sumber yang Sesuai** (lihat bagian 3 dari [LEGAL.md](THIRD_PARTY_LICENSES.id.md)).
+> ⚠ **Komponen GPL-3.0**: `sing` dan `sing-shadowsocks` adalah GPL-3.0-atau-yang lebih baru. Mereka ditautkan secara statis ke dalam biner panel dan Agen, jadi **mendistribusikan biner memerlukan penyediaan Sumber yang Sesuai** (lihat bagian 3 dari [LEGAL.md](LEGAL.id.md)).
 
 ## 2. Program mandiri yang dipanggil saat runtime (tidak didistribusikan dalam repositori ini)
 

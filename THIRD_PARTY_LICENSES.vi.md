@@ -28,7 +28,7 @@ Khi phân phối các tệp nhị phân của dự án này, hãy giữ tệp n�
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | Điều khoản BSD-3 | UUID |
 
-> ⚠ **Thành phần GPL-3.0**: `sing` và `sing-shadowsocks` là GPL-3.0 trở lên. Chúng được liên kết tĩnh vào bảng điều khiển và các tệp nhị phân Tác nhân, vì vậy **việc phân phối các tệp nhị phân yêu cầu cung cấp Nguồn tương ứng** (xem phần 3 của [LEGAL.md](THIRD_PARTY_LICENSES.vi.md)).
+> ⚠ **Thành phần GPL-3.0**: `sing` và `sing-shadowsocks` là GPL-3.0 trở lên. Chúng được liên kết tĩnh vào bảng điều khiển và các tệp nhị phân Tác nhân, vì vậy **việc phân phối các tệp nhị phân yêu cầu cung cấp Nguồn tương ứng** (xem phần 3 của [LEGAL.md](LEGAL.vi.md)).
 
 ## 2. Các chương trình độc lập được gọi trong thời gian chạy (không được phân phối trong kho lưu trữ này)
 

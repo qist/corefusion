@@ -28,7 +28,7 @@ Bu projenin ikili dosyalarını dağıtırken bu dosyayı, `LICENSE` projesini v
 | `github.com/golang-jwt/jwt/v5` | MİT | JWT |
 | `github.com/google/uuid` | BSD-3-Madde | UUID |
 
-> ⚠ **GPL-3.0 bileşenleri**: `sing` ve `sing-shadowsocks`, GPL-3.0 veya üzeridir. Bunlar panele ve Aracı ikili dosyalarına statik olarak bağlıdır, bu nedenle **ikili dosyaları dağıtmak Karşılık Gelen Kaynağın sağlanmasını gerektirir** (bkz. [LEGAL.md](THIRD_PARTY_LICENSES.tr.md)'nin 3. bölümü).
+> ⚠ **GPL-3.0 bileşenleri**: `sing` ve `sing-shadowsocks`, GPL-3.0 veya üzeridir. Bunlar panele ve Aracı ikili dosyalarına statik olarak bağlıdır, bu nedenle **ikili dosyaları dağıtmak Karşılık Gelen Kaynağın sağlanmasını gerektirir** (bkz. [LEGAL.md](LEGAL.tr.md)'nin 3. bölümü).
 
 ## 2. Çalışma zamanında çağrılan bağımsız programlar (bu depoda dağıtılmaz)
 

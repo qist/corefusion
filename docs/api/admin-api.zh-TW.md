@@ -8,7 +8,7 @@
 - Base URL：`https://<面板域名>/api/v1`
 - 認證：`Authorization: Bearer <admin_token>`（`POST /api/v1/auth/login` 獲取）
 - 通用響應/錯誤格式、限流約定見 [README.md](./README.zh-TW.md)
-- 路由權威來源：`internal/api/router/router.go`（共 739 條管理端路由）；與本表不一致時**以程式碼為準**
+- 路由權威來源：`internal/api/router/router.go`（數量隨版本變化，以程式碼為準）；與本表不一致時**以程式碼為準**
 
 ## 許可權標記
 
@@ -328,6 +328,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 管理員 | 儲存並應用 |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 管理員 | 站點列表 |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 管理員 | 建立站點 |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | 匯入站點設定 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理員 | 刪除站點 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理員 | 更新站點 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 管理員 | 刪除全部 SNI 規則 |
@@ -372,6 +373,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 管理員 | 儲存設定 |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 管理員 | 站點列表 |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 管理員 | 建立站點 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | 匯入站點設定 |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | 產生 SSL 憑證檔案 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理員 | 刪除站點 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理員 | 更新站點 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 管理員 | 刪除全部 SNI 規則 |
@@ -637,15 +640,10 @@ CF CDN IP 池與來源管理。
 | DELETE | `/api/v1/mihomo/configs/:id` | 登入 | 刪除 |
 | GET | `/api/v1/mihomo/configs/:id` | 登入 | 詳情 |
 | PUT | `/api/v1/mihomo/configs/:id` | 登入 | 更新 |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | 登入 | 分組列表 |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | 登入 | 建立分組 |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | 登入 | 規則提供者列表 |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | 登入 | 建立規則提供者 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 登入 | 規則列表 |
 | POST | `/api/v1/mihomo/configs/:id/rules` | 登入 | 建立規則 |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | 登入 | 預覽生成的 YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | 登入 | 刪除分組 |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | 登入 | 刪除規則提供者 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | 規則排序 |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | 更新規則 |
 | DELETE | `/api/v1/mihomo/rules/:id` | 登入 | 刪除規則 |
 
 ### 充值站點
@@ -824,6 +822,7 @@ CF CDN IP 池與來源管理。
 | POST | `/api/v1/certificates/issue` | 登入 | 簽發。body：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。`challenge_type` 預設 http-01；`dns_channel_id` 指定 DNS 通道（面板配置好的 DNS 提供者+憑據） |
 | POST | `/api/v1/certificates/issue-on-node` | 登入 | 簽發到節點 |
 | POST | `/api/v1/certificates/upload` | 登入 | 上傳 |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | 查詢背景任務狀態 |
 
 ### 證書通道
 
@@ -1032,6 +1031,8 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | GET | `/api/v1/system/reality-targets` | 管理員 | REALITY 目標列表 |
 | PUT | `/api/v1/system/reality-targets` | 管理員 | 更新 REALITY 目標 |
 | POST | `/api/v1/system/reality-targets/reset` | 管理員 | 重置 REALITY 目標為預設 |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | 讀取 Reality 本機 SNI 設定 |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | 更新 Reality 本機 SNI 設定 |
 | POST | `/api/v1/system/regenerate-jwt-secret` | 管理員 | 重新生成 JWT 金鑰 |
 | GET | `/api/v1/system/releases` | 管理員 | 可用版本列表 |
 | POST | `/api/v1/system/restart` | 管理員 | 重啟 |
@@ -1079,6 +1080,7 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | GET | `/api/v1/portal/cache` | 登入 | 快取狀態 |
 | PUT | `/api/v1/portal/cache/dev-mode` | 登入 | 切換快取開發模式 |
 | POST | `/api/v1/portal/cache/rebuild` | 登入 | 重建門戶快取 |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | 內建語言包 |
 | POST | `/api/v1/portal/reset` | 登入 | 恢復預設模板 |
 | GET | `/api/v1/portal/templates` | 登入 | 列表 |
 | POST | `/api/v1/portal/templates` | 登入 | 建立 |
@@ -1101,6 +1103,7 @@ geoip/geosite 資料來源與檔案的同步、下發。
 | GET | `/api/v1/agent/version` | 管理員 | 面板側 Agent 當前版本 |
 | GET | `/api/v1/agent/download` | 公開 | 下載Agent |
 | GET | `/api/v1/agent/install` | 公開 | 獲取安裝指令碼 |
+| GET | `/api/v1/agent/origin` | 公开 | 面板源站位址（公開） |
 
 ### 支付回撥入口
 

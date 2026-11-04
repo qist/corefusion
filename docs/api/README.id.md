@@ -8,7 +8,7 @@ Dokumentasi API untuk **integrator eksternal, pengembangan sekunder, dan klien p
 | Dokumen | Penonton | Konten |
 |---|---|---|
 | [langganan.md](./subscription.id.md) | Pelanggan / pengembang klien | Titik akhir langganan (`/sub/:token`): format, header, kode status, contoh |
-| [portal-api.md](README.id.md) | Frontend portal/klien pihak ketiga | Portal klien API (`/api/v1/client-auth/*`, `/api/v1/public/*`): pendaftaran, masuk, paket, pesanan, saldo, tiket |
+| [portal-api.md](./portal-api.id.md) | Frontend portal/klien pihak ketiga | Portal klien API (`/api/v1/client-auth/*`, `/api/v1/public/*`): pendaftaran, masuk, paket, pesanan, saldo, tiket |
 | [biaya-panggilan balik.md](./charge-callback.id.md) | Penyedia pembayaran | Penandatanganan dan verifikasi panggilan balik pembayaran |
 | [admin-api.id.md](./admin-api.id.md) | Pengembangan / otomatisasi panel | Tabel rute admin lengkap API (`/api/v1/*`, dikelompokkan berdasarkan modul) |
 
@@ -75,4 +75,4 @@ Rute ini mengembalikan aset HTML/statis dan berada di luar dokumen API; terdafta
 
 ## 6. Sumber kebenaran
 
-`internal/api/router/router.go` (746 rute, 743 didokumentasikan). Tabel rute di [admin-api.md](README.id.md) dihasilkan dari kode; jika tidak sesuai dengan kode, **kode menang**.
+`internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kode adalah acuan). Tabel rute di [admin-api.md](./admin-api.id.md) dihasilkan dari kode; jika tidak sesuai dengan kode, **kode menang**.

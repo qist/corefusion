@@ -8,7 +8,7 @@ API-Dokumentation für **externe Integratoren, Sekundärentwicklung und Drittanb
 | Dokument | Publikum | Inhalt |
 |---|---|---|
 | [subscription.md](./subscription.de.md) | Abonnenten/Client-Entwickler | Abonnementendpunkt (`/sub/:token`): Formate, Header, Statuscodes, Beispiele |
-| [portal-api.md](README.de.md) | Portal-Frontend / Drittanbieter-Clients | Kundenportal API (`/api/v1/client-auth/*`, `/api/v1/public/*`): Anmeldung, Anmeldung, Pläne, Bestellungen, Guthaben, Tickets |
+| [portal-api.md](./portal-api.de.md) | Portal-Frontend / Drittanbieter-Clients | Kundenportal API (`/api/v1/client-auth/*`, `/api/v1/public/*`): Anmeldung, Anmeldung, Pläne, Bestellungen, Guthaben, Tickets |
 | [charge-callback.md](./charge-callback.de.md) | Zahlungsanbieter | Signieren und Überprüfen des Zahlungsrückrufs |
 | [admin-api.de.md](./admin-api.de.md) | Panelentwicklung / Automatisierung | Vollständige Admin-API-Routentabelle (`/api/v1/*`, gruppiert nach Modul) |
 
@@ -75,4 +75,4 @@ Diese Routen geben HTML/statische Assets zurück und liegen außerhalb der API-D
 
 ## 6. Quelle der Wahrheit
 
-`internal/api/router/router.go` (746 Routen, 743 dokumentiert). Die Routentabelle in [admin-api.md](README.de.md) wird aus Code generiert; Wenn es mit dem Code nicht übereinstimmt, **gewinnt der Code**.
+`internal/api/router/router.go` (Anzahl variiert je nach Version; maßgeblich ist der Code). Die Routentabelle in [admin-api.md](./admin-api.de.md) wird aus Code generiert; Wenn es mit dem Code nicht übereinstimmt, **gewinnt der Code**.

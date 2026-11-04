@@ -8,7 +8,7 @@ La table de routage d'administration complète API pour **le développement de p
 - Base URL : `https://<panel-domain>/api/v1`
 - Auteur : `Authorization: Bearer <admin_token>` (à partir de `POST /api/v1/auth/login`)
 - Formats de réponse/erreur courants et conventions de limite de débit : voir [README.md](./README.fr.md)
-- Source de vérité : `internal/api/router/router.go` (739 routes administratives) ; si ce tableau n'est pas d'accord, **le code gagne**
+- Source de vérité : `internal/api/router/router.go` (le nombre varie selon la version ; le code fait foi) ; si ce tableau n'est pas d'accord, **le code gagne**
 
 ## Marqueurs d'autorisation
 
@@ -328,6 +328,7 @@ Ressources de base : nœud CRUD, livraison de la configuration de base (xray/si
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Administrateur | Enregistrer et postuler |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Administrateur | Liste des sites |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Administrateur | Créer un site |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Importer des sites |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Administrateur | Supprimer le site |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Administrateur | Mettre à jour le site |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Administrateur | Supprimer toutes les règles SNI |
@@ -372,6 +373,8 @@ Ressources de base : nœud CRUD, livraison de la configuration de base (xray/si
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Administrateur | Enregistrer les paramètres |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Administrateur | Liste des sites |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Administrateur | Créer un site |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Importer des sites |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Générer les fichiers de certificat SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Administrateur | Supprimer le site |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Administrateur | Mettre à jour le site |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Administrateur | Supprimer toutes les règles SNI |
@@ -637,15 +640,10 @@ Configuration du modèle d'abonnement : groupes, règles, fournisseurs de règl
 | DELETE | `/api/v1/mihomo/configs/:id` | Connecté | Supprimer |
 | GET | `/api/v1/mihomo/configs/:id` | Connecté | Détails |
 | PUT | `/api/v1/mihomo/configs/:id` | Connecté | Mise à jour |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Connecté | Liste de groupe |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Connecté | Créer un groupe |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Connecté | Liste des fournisseurs de règles |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Connecté | Créer un fournisseur de règles |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Connecté | Liste de règles |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Connecté | Créer une règle |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Connecté | Aperçu généré YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Connecté | Supprimer le groupe |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Connecté | Supprimer le fournisseur de règles |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Réordonner les règles |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Mettre à jour la règle |
 | DELETE | `/api/v1/mihomo/rules/:id` | Connecté | Supprimer la règle |
 
 ### Sites de recharge
@@ -824,6 +822,7 @@ Dossiers d'émission et de réparation des comptes partagés (streaming, etc.).
 | POST | `/api/v1/certificates/issue` | Connecté | Problème. corps : `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` est par défaut http-01 ; `dns_channel_id` sélectionne un canal DNS (un fournisseur DNS configuré + informations d'identification) |
 | POST | `/api/v1/certificates/issue-on-node` | Connecté | Problème vers le nœud |
 | POST | `/api/v1/certificates/upload` | Connecté | Télécharger |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Consulter l'état de la tâche en arrière-plan |
 
 ### Canaux de certificat
 
@@ -1032,6 +1031,8 @@ Configuration et migration de la base de données, paramètres du panneau, clés
 | GET | `/api/v1/system/reality-targets` | Administrateur | Liste des cibles REALITY |
 | PUT | `/api/v1/system/reality-targets` | Administrateur | Mettre à jour la cible REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | Administrateur | Réinitialiser la cible REALITY par défaut |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Lire la configuration SNI locale Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Mettre à jour la configuration SNI locale Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | Administrateur | Régénérer la clé JWT |
 | GET | `/api/v1/system/releases` | Administrateur | Versions disponibles |
 | POST | `/api/v1/system/restart` | Administrateur | Redémarrer |
@@ -1079,6 +1080,7 @@ Modèles de portail, configuration d'activation et gestion du cache.
 | GET | `/api/v1/portal/cache` | Connecté | État du cache |
 | PUT | `/api/v1/portal/cache/dev-mode` | Connecté | Basculer le mode de développement du cache |
 | POST | `/api/v1/portal/cache/rebuild` | Connecté | Reconstruire le cache du portail |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Packs de langues intégrés |
 | POST | `/api/v1/portal/reset` | Connecté | Restaurer le modèle par défaut |
 | GET | `/api/v1/portal/templates` | Connecté | Liste |
 | POST | `/api/v1/portal/templates` | Connecté | Créer |
@@ -1101,6 +1103,7 @@ Script d'installation et téléchargement de Node Agent (public).
 | GET | `/api/v1/agent/version` | Administrateur | Version actuelle de l'agent sur le panneau |
 | GET | `/api/v1/agent/download` | Publique | Agent de téléchargement |
 | GET | `/api/v1/agent/install` | Publique | Obtenir le script d'installation |
+| GET | `/api/v1/agent/origin` | 公开 | Adresse d'origine du panneau (publique) |
 
 ### Entrée de rappel de facturation
 

@@ -48,7 +48,7 @@ Zusätzliche Hinweise:
 
 ## 3. Komponenten von Drittanbietern und Weiterverbreitung
 
-Die wichtigsten Komponenten von Drittanbietern und ihre Lizenzen sind in [THIRD_PARTY_LICENSES.md](LEGAL.de.md) aufgeführt.
+Die wichtigsten Komponenten von Drittanbietern und ihre Lizenzen sind in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.de.md) aufgeführt.
 
 Besondere Hinweise:
 

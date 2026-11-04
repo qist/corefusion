@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | Genel makaleler (yalnızca yayınlanan) |
 | GET | `/api/v1/public/articles/:slug` | Makale ayrıntısı |
 | GET | `/api/v1/public/client-configs` | İstemci indirme yapılandırması |
-| GET | `/sub/:token` | Abonelik teslimi (`format`, base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json vb. döndürür; iptal edildi/eksik → 404, askıya alındı/süresi doldu/etkin değil → 403. Bkz. [subscription.md](portal-api.tr.md)) |
+| GET | `/sub/:token` | Abonelik teslimi (`format`, base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json vb. döndürür; iptal edildi/eksik → 404, askıya alındı/süresi doldu/etkin değil → 403. Bkz. [subscription.md](./subscription.tr.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth sağlayıcı görünürlüğü: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Bakım durumu (genel). Portal etkinleştirildiğinde bir bakım sayfası gösterir |
 

@@ -8,7 +8,7 @@
 | 文書 | 観客 | 内容 |
 |---|---|---|
 | [subscription.md](./subscription.ja.md) | 加入者 / クライアント開発者 | サブスクリプションエンドポイント (`/sub/:token`): フォーマット、ヘッダー、ステータスコード、例 |
-| [ポータル-api.md](README.ja.md) | ポータルフロントエンド/サードパーティクライアント | クライアント ポータル API (`/api/v1/client-auth/*`、`/api/v1/public/*`): サインアップ、サインイン、プラン、注文、残高、チケット |
+| [ポータル-api.md](./portal-api.ja.md) | ポータルフロントエンド/サードパーティクライアント | クライアント ポータル API (`/api/v1/client-auth/*`、`/api/v1/public/*`): サインアップ、サインイン、プラン、注文、残高、チケット |
 | [チャージコールバック.md](./charge-callback.ja.md) | 決済プロバイダー | 支払いコールバックの署名と検証 |
 | [admin-api.ja.md](./admin-api.ja.md) | パネル開発・自動化 | 完全な管理 API ルート テーブル (`/api/v1/*`、モジュールごとにグループ化) |
 
@@ -75,4 +75,4 @@
 
 ## 6. 真実の情報源
 
-`internal/api/router/router.go` (746 ルート、743 文書化)。 [admin-api.md](README.ja.md) のルート テーブルはコードから生成されます。コードと一致しない場合は、**コードが優先されます**。
+`internal/api/router/router.go` (件数はバージョンにより変動します。コードが優先されます)。 [admin-api.md](./admin-api.ja.md) のルート テーブルはコードから生成されます。コードと一致しない場合は、**コードが優先されます**。

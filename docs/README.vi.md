@@ -47,4 +47,4 @@ Tài liệu thiết kế là tài liệu nội bộ (sở hữu trí tuệ cốt
 | LEGAL.md | ✅ | ✅ | ✅ | ru ✅ |
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
-Xem [I18N.md](README.vi.md) để biết các quy tắc đặt tên, điều hướng ngôn ngữ và đánh giá *(tiếng Trung)*.
+Xem [I18N.md](./I18N.md) để biết các quy tắc đặt tên, điều hướng ngôn ngữ và đánh giá *(tiếng Trung)*.

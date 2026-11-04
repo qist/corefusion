@@ -8,7 +8,7 @@ La tabla de rutas de administración completa API para **desarrollo de paneles/a
 - Base URL: `https://<panel-domain>/api/v1`
 - Autenticación: `Authorization: Bearer <admin_token>` (de `POST /api/v1/auth/login`)
 - Formatos de respuesta/error comunes y convenciones de límite de velocidad: consulte [README.md](./README.es.md)
-- Fuente de la verdad: `internal/api/router/router.go` (739 rutas de administración); si esta tabla no está de acuerdo, **el código gana**
+- Fuente de la verdad: `internal/api/router/router.go` (la cantidad varía según la versión; el código es la referencia); si esta tabla no está de acuerdo, **el código gana**
 
 ## Marcadores de permiso
 
@@ -328,6 +328,7 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | administrador | Guardar y aplicar |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | administrador | Lista de sitios |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | administrador | Crear sitio |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Importar sitios |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | administrador | Eliminar sitio |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | administrador | Sitio de actualización |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | administrador | Eliminar todas las reglas SNI |
@@ -372,6 +373,8 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/nginx/settings` | administrador | Guardar configuración |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | administrador | Lista de sitios |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | administrador | Crear sitio |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Importar sitios |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Generar archivos de certificado SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | administrador | Eliminar sitio |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | administrador | Sitio de actualización |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | administrador | Eliminar todas las reglas SNI |
@@ -637,15 +640,10 @@ Configuración de plantilla de suscripción: grupos, reglas, proveedores de regl
 | DELETE | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Eliminar |
 | GET | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Detalles |
 | PUT | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Actualizar |
-| GET | `/api/v1/mihomo/configs/:id/proxy-groups` | Iniciado sesión | lista de grupos |
-| POST | `/api/v1/mihomo/configs/:id/proxy-groups` | Iniciado sesión | Crear grupo |
-| GET | `/api/v1/mihomo/configs/:id/rule-providers` | Iniciado sesión | Lista de proveedores de reglas |
-| POST | `/api/v1/mihomo/configs/:id/rule-providers` | Iniciado sesión | Crear proveedor de reglas |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Iniciado sesión | Lista de reglas |
 | POST | `/api/v1/mihomo/configs/:id/rules` | Iniciado sesión | Crear regla |
-| GET | `/api/v1/mihomo/configs/:id/yaml` | Iniciado sesión | Vista previa generada YAML |
-| DELETE | `/api/v1/mihomo/proxy-groups/:id` | Iniciado sesión | Eliminar grupo |
-| DELETE | `/api/v1/mihomo/rule-providers/:id` | Iniciado sesión | Eliminar proveedor de reglas |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Reordenar reglas |
+| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Actualizar regla |
 | DELETE | `/api/v1/mihomo/rules/:id` | Iniciado sesión | Eliminar regla |
 
 ### Sitios de recarga
@@ -824,6 +822,7 @@ Emisión, carga, renovación y exportación de certificado público (ACME); Se a
 | POST | `/api/v1/certificates/issue` | Iniciado sesión | Problema. cuerpo: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` por defecto es http-01; `dns_channel_id` selecciona un canal DNS (un proveedor DNS configurado + credenciales) |
 | POST | `/api/v1/certificates/issue-on-node` | Iniciado sesión | Emitir al nodo |
 | POST | `/api/v1/certificates/upload` | Iniciado sesión | Subir |
+| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Consultar estado de tarea en segundo plano |
 
 ### Canales de certificación
 
@@ -1032,6 +1031,8 @@ Configuración y migración de bases de datos, configuraciones del panel, claves
 | GET | `/api/v1/system/reality-targets` | administrador | Lista de objetivos REALITY |
 | PUT | `/api/v1/system/reality-targets` | administrador | Actualizar objetivo REALITY |
 | POST | `/api/v1/system/reality-targets/reset` | administrador | Restablecer el objetivo REALITY a sus valores predeterminados |
+| GET | `/api/v1/system/reality-local-sni` | 管理员 | Leer configuración SNI local de Reality |
+| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Actualizar configuración SNI local de Reality |
 | POST | `/api/v1/system/regenerate-jwt-secret` | administrador | Regenerar clave JWT |
 | GET | `/api/v1/system/releases` | administrador | Versiones disponibles |
 | POST | `/api/v1/system/restart` | administrador | Reiniciar |
@@ -1079,6 +1080,7 @@ Plantillas de portal, configuración de activación y gestión de caché.
 | GET | `/api/v1/portal/cache` | Iniciado sesión | Estado de caché |
 | PUT | `/api/v1/portal/cache/dev-mode` | Iniciado sesión | Alternar modo de desarrollo de caché |
 | POST | `/api/v1/portal/cache/rebuild` | Iniciado sesión | Reconstruir la caché del portal |
+| GET | `/api/v1/portal/lang/builtin` | 登录 | Paquetes de idioma integrados |
 | POST | `/api/v1/portal/reset` | Iniciado sesión | Restaurar plantilla predeterminada |
 | GET | `/api/v1/portal/templates` | Iniciado sesión | Lista |
 | POST | `/api/v1/portal/templates` | Iniciado sesión | crear |
@@ -1101,6 +1103,7 @@ Script de instalación y descarga del Agente de Nodo (público).
 | GET | `/api/v1/agent/version` | administrador | Versión actual del Agente en el panel |
 | GET | `/api/v1/agent/download` | Público | Descargar Agente |
 | GET | `/api/v1/agent/install` | Público | Obtener script de instalación |
+| GET | `/api/v1/agent/origin` | 公开 | Dirección de origen del panel (pública) |
 
 ### Entrada de devolución de llamada de cargo
 

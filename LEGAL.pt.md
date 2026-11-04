@@ -48,7 +48,7 @@ Notas adicionais:
 
 ## 3. Componentes de terceiros e redistribuição
 
-Os principais componentes de terceiros e suas licenças estão listados em [THIRD_PARTY_LICENSES.md](LEGAL.pt.md).
+Os principais componentes de terceiros e suas licenças estão listados em [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.pt.md).
 
 Notas especiais:
 

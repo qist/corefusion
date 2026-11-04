@@ -4,14 +4,18 @@ import "time"
 
 // NginxSite is the GORM model for the nginx_sites table.
 type NginxSite struct {
-	ID           int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID     int64  `json:"server_id" gorm:"not null;default:1;index"`
-	Domain       string `json:"domain" gorm:"size:255;not null"`
-	Upstream     string `json:"upstream" gorm:"size:255;not null"`
-	Template     string `json:"template" gorm:"size:32"`
-	Path         string `json:"path" gorm:"size:255"`
-	BackendPath  string `json:"backend_path" gorm:"size:255"`
-	ListenPort   string `json:"listen_port" gorm:"size:16"`
+	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID    int64  `json:"server_id" gorm:"not null;default:1;index"`
+	Domain      string `json:"domain" gorm:"size:255;not null"`
+	Upstream    string `json:"upstream" gorm:"size:255;not null"`
+	Template    string `json:"template" gorm:"size:32"`
+	Path        string `json:"path" gorm:"size:255"`
+	BackendPath string `json:"backend_path" gorm:"size:255"`
+	ListenPort  string `json:"listen_port" gorm:"size:16"`
+	// QuicListen：QUIC 监听地址，空=与 ListenPort 相同。
+	// 迁移「公网 443 被 stream 占用、HTTP 只在 127.0.0.1:443」这种结构时，
+	// HTTP 监听是 127.0.0.1:443，而 QUIC 仍要监听公网 443。
+	QuicListen   string `json:"quic_listen" gorm:"size:64"`
 	ListenSocket string `json:"listen_socket" gorm:"size:255"`
 	CertPath     string `json:"cert_path" gorm:"size:512"`
 	// DualCert：同 CaddySite.DualCert ✓ —— nil=true=挂同域名的多张证书（ECC+RSA ✓），

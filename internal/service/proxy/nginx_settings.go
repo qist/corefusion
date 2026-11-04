@@ -164,6 +164,10 @@ type NginxSettings struct {
 	StreamLogPath   string `json:"stream_log_path"`
 	StreamLogFormat string `json:"stream_log_format"`
 
+	// StreamNonTLSTarget：非 TLS 流量（ssl_preread_protocol 为空）导向的后端，
+	// 例如 "127.0.0.1:8444"。空=不启用（非 TLS 与未知 SNI 一起走 fallback）。
+	StreamNonTLSTarget string `json:"stream_nontls_target"`
+
 	// Custom
 	CustomConfig string `json:"custom_config"`
 }
@@ -552,6 +556,9 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.StreamLogFormat != "" {
 		dst.StreamLogFormat = src.StreamLogFormat
+	}
+	if src.StreamNonTLSTarget != "" {
+		dst.StreamNonTLSTarget = src.StreamNonTLSTarget
 	}
 	// Bool fields: always copy (can't distinguish "not set" from "false")
 	dst.IPv6 = src.IPv6

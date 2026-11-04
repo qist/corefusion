@@ -469,9 +469,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			continue
 		}
 		upstreams := strings.Split(site.Upstream, ",")
-		upstreamKey := strings.ReplaceAll(site.Upstream, ".", "_")
-		upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
-		upstreamKey = strings.ReplaceAll(upstreamKey, ",", "_")
+		upstreamKey := nginxUpstreamKey(site.Upstream)
 		if upstreamSeen[upstreamKey] {
 			continue
 		}
@@ -658,9 +656,13 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 		// Listen directives - IPv4 and IPv6 separately
 		if enableQuic && hasTLS {
-			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", listenPort, ds))
+			quicListen := listenPort
+			if tlsSite != nil && tlsSite.QuicListen != "" {
+				quicListen = tlsSite.QuicListen
+			}
+			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", quicListen, ds))
 			if enableIpv6 {
-				sb.WriteString(fmt.Sprintf("        listen [::]:%s quic%s;\n", listenPort, ds))
+				sb.WriteString(fmt.Sprintf("        listen [::]:%s quic%s;\n", quicListen, ds))
 			}
 		}
 		if hasTLS {
@@ -819,9 +821,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			if backendPath == "" {
 				backendPath = "/"
 			}
-			upstreamKey := strings.ReplaceAll(site.Upstream, ".", "_")
-			upstreamKey = strings.ReplaceAll(upstreamKey, ":", "_")
-			upstreamKey = strings.ReplaceAll(upstreamKey, ",", "_")
+			upstreamKey := nginxUpstreamKey(site.Upstream)
 			// 直接上游（含 scheme，如 http://php / https://host:port）：proxy_pass 原样使用
 			directUpstream := ""
 			if strings.Contains(site.Upstream, "://") && !strings.Contains(site.Upstream, ",") {
@@ -1217,6 +1217,27 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("    default sni_fallback;\n")
 				sb.WriteString("}\n\n")
 
+				// 非 TLS 流量（没有 ClientHello / ssl_preread_protocol 为空）单独分流。
+				// 历史实现把非 TLS 和"未知 SNI"一起丢给 sni_fallback（通常是 REALITY 入站），
+				// 探测流量会落到 REALITY；这里按协议类型先摘出去，语义等同生产 nginx 的
+				// `map $ssl_preread_protocol $stream_map_guarded`。
+				backendVar := "$sni_backend"
+				if strings.TrimSpace(s.StreamNonTLSTarget) != "" {
+					sb.WriteString("upstream direct_http {\n")
+					for _, up := range strings.Split(s.StreamNonTLSTarget, ",") {
+						up = strings.TrimSpace(up)
+						if up != "" {
+							sb.WriteString(fmt.Sprintf("    server %s;\n", up))
+						}
+					}
+					sb.WriteString("}\n\n")
+					sb.WriteString("map $ssl_preread_protocol $sni_backend_guarded {\n")
+					sb.WriteString("    \"\"      direct_http;\n")
+					sb.WriteString("    default $sni_backend;\n")
+					sb.WriteString("}\n\n")
+					backendVar = "$sni_backend_guarded"
+				}
+
 				// SNI server block
 				connectTimeout := s.StreamConnectTimeout
 				if connectTimeout == "" {
@@ -1247,7 +1268,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString(fmt.Sprintf("    preread_timeout %s;\n", prereadTimeout))
 				sb.WriteString(fmt.Sprintf("    proxy_connect_timeout %s;\n", connectTimeout))
 				sb.WriteString(fmt.Sprintf("    proxy_timeout %s;\n", streamTimeout))
-				sb.WriteString("    proxy_pass $sni_backend;\n")
+				sb.WriteString(fmt.Sprintf("    proxy_pass %s;\n", backendVar))
 				sb.WriteString("}\n\n")
 			}
 		}

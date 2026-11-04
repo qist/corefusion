@@ -377,6 +377,10 @@ func nginxUpstreamKey(name string) string {
 	s = strings.ReplaceAll(s, ":", "_")
 	s = strings.ReplaceAll(s, "*", "wildcard")
 	s = strings.ReplaceAll(s, "-", "_")
+	// unix socket（unix:/dev/shm/x.sock）作为 upstream 时，"/" 会让 upstream
+	// 块名非法（nginx 不接受含 "/" 的名字），统一替换掉。
+	s = strings.ReplaceAll(s, "/", "_")
+	s = strings.ReplaceAll(s, "@", "_")
 	if s == "" {
 		s = "default"
 	}

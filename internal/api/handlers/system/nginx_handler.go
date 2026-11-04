@@ -106,7 +106,6 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		KeyPath         string `json:"key_path"`
 		ServerConfig    string `json:"server_config"`
 		LocationConfig  string `json:"location_config"`
-		RawServer       string `json:"raw_server"`
 		L4Protocol      string `json:"l4_protocol"`
 		SNITarget       string `json:"sni_target"`
 		UpstreamTLS     bool   `json:"upstream_tls"`
@@ -145,7 +144,6 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		KeyPath:         req.KeyPath,
 		ServerConfig:    req.ServerConfig,
 		LocationConfig:  req.LocationConfig,
-		RawServer:       req.RawServer,
 		L4Protocol:      req.L4Protocol,
 		SNITarget:       req.SNITarget,
 		UpstreamTLS:     req.UpstreamTLS,
@@ -201,7 +199,6 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		KeyPath         *string `json:"key_path"`
 		ServerConfig    *string `json:"server_config"`
 		LocationConfig  *string `json:"location_config"`
-		RawServer       *string `json:"raw_server"`
 		L4Protocol      *string `json:"l4_protocol"`
 		SNITarget       *string `json:"sni_target"`
 		UpstreamTLS     *bool   `json:"upstream_tls"`
@@ -271,9 +268,6 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.LocationConfig != nil {
 		existing.LocationConfig = *req.LocationConfig
-	}
-	if req.RawServer != nil {
-		existing.RawServer = *req.RawServer
 	}
 	if req.L4Protocol != nil {
 		existing.L4Protocol = *req.L4Protocol

@@ -20,8 +20,12 @@ type NginxSite struct {
 	KeyPath        string `json:"key_path" gorm:"size:512"`
 	ServerConfig   string `json:"server_config" gorm:"type:longtext"`
 	LocationConfig string `json:"location_config" gorm:"type:longtext"`
-	L4Protocol     string `json:"l4_protocol" gorm:"size:16"`
-	SNITarget      string `json:"sni_target" gorm:"size:255"`
+	// RawServer：原样写入 http 块内的完整 server 块（template="raw" 时生效）。
+	// 用于接管现有 nginx 里无法用模板表达的复杂站点（多 listen 组合、unix+quic、
+	// if/set/grpc_pass 等）。生成器不做任何改写，也不会为它生成 upstream。
+	RawServer  string `json:"raw_server" gorm:"type:longtext"`
+	L4Protocol string `json:"l4_protocol" gorm:"size:16"`
+	SNITarget  string `json:"sni_target" gorm:"size:255"`
 	// UpstreamTLS 表示"**回源这一段**（nginx → 本地内核）要不要走 TLS" ✓。
 	// grpc 原来写死 `grpc_pass grpc://`（h2c 明文）✗；入站自带 TLS 时必须 `grpcs://` ✗。
 	// 「从入站一键导入」按入站 security 自动置位 ✓，表单里可手改 ✓。

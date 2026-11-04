@@ -166,6 +166,12 @@ type NginxSettings struct {
 
 	// Custom
 	CustomConfig string `json:"custom_config"`
+	// RawStream：非空时整段 stream 块原样写入（跳过 SNI/L4 自动生成）。
+	// 用于接管现有 nginx 的 ssl_preread 分流、自定义 map/upstream/server。
+	RawStream string `json:"raw_stream"`
+	// RawMainConfig：非空时整份 nginx.conf 原样写入（跳过所有生成逻辑）。
+	// 用于迁移存量系统 nginx：先保真接管，再逐步迁到站点模板。
+	RawMainConfig string `json:"raw_main_config"`
 }
 
 // DefaultNginxSettings returns default Nginx configuration.
@@ -534,6 +540,12 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.CustomConfig != "" {
 		dst.CustomConfig = src.CustomConfig
+	}
+	if src.RawStream != "" {
+		dst.RawStream = src.RawStream
+	}
+	if src.RawMainConfig != "" {
+		dst.RawMainConfig = src.RawMainConfig
 	}
 	if src.StreamSNICacheSize != "" {
 		dst.StreamSNICacheSize = src.StreamSNICacheSize

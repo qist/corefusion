@@ -89,6 +89,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		s = DefaultNginxSettings()
 	}
+
+	// raw_main_config：整份 nginx.conf 原样接管（迁移存量系统 nginx 时用）。
+	// 非空时完全跳过生成器，避免模板与存量配置的指令重复/语义差异。
+	// 仍会走 WriteConfigFile → 进程管理 → nginx -t/reload 同一条链路。
+	if strings.TrimSpace(s.RawMainConfig) != "" {
+		log.Printf("[NginxManager] server %d uses raw_main_config (%d bytes), skip generator",
+			sourceServerID, len(s.RawMainConfig))
+		return s.RawMainConfig, nil
+	}
 	// 全局 IPv6 开关：作用于所有生成的 listen（站点 server / HTTP→HTTPS 跳转 /
 	// 默认 server / stream）。站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
 	globalIPv6 := s.IPv6
@@ -433,6 +442,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	var l4Sites []entity.NginxSite
 	var realitySites []entity.NginxSite
 	var httpSites []entity.NginxSite
+	var rawSites []entity.NginxSite
 	for _, site := range sites {
 		switch site.Template {
 		case "sni":
@@ -441,6 +451,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			l4Sites = append(l4Sites, site)
 		case "reality":
 			realitySites = append(realitySites, site)
+		case "raw":
+			// 原样 server 块：不参与域名合并/upstream 生成，稍后直接写入 http 块。
+			rawSites = append(rawSites, site)
 		default:
 			// portal_forward / subscription_forward / panel_forward：仅面板节点有效 ✓（远程节点没有
 			// 面板/门户进程 ✗）。派生字段（upstream/path）统一走 fillForwardDerivedFields ✓。
@@ -1004,6 +1017,21 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 		sb.WriteString("    }\n\n")
 	}
 
+	// Raw server blocks（template=raw）：原样写入 http 块，用于接管无法模板化的
+	// 存量站点（多 listen 组合 / unix+quic / if-set-grpc_pass 等）。生成器不改写内容，
+	// 也不为它生成 upstream —— 需要的 upstream 由 settings.custom_config 提供。
+	for _, rs := range rawSites {
+		body := strings.TrimSpace(rs.RawServer)
+		if body == "" {
+			continue
+		}
+		sb.WriteString("    # raw server: " + rs.Domain + "\n")
+		for _, line := range strings.Split(body, "\n") {
+			sb.WriteString("    " + line + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
 	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required
 	for _, rs := range realitySites {
 		port := rs.ListenPort
@@ -1064,7 +1092,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	}
 
 	// Default server if no HTTP sites (ensures :80 always responds)
-	if len(httpSites) == 0 {
+	if len(httpSites) == 0 && len(rawSites) == 0 {
 		sb.WriteString("    server {\n")
 		sb.WriteString("        listen 80;\n")
 		if globalIPv6 {
@@ -1081,7 +1109,15 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 
 	// Stream block — SNI has toggle, L4 auto-enabled when rules exist
 	needStream := (s.StreamSNIEnabled && len(sniSites) > 0) || len(l4Sites) > 0
-	if needStream {
+	// 原始 stream 块：完全接管（迁移现有 nginx 的 ssl_preread 分流/自定义 map/
+	// upstream/server 时用）。非空时跳过 SNI/L4 自动生成，内容原样写入。
+	if strings.TrimSpace(s.RawStream) != "" {
+		sb.WriteString("\nstream {\n")
+		for _, line := range strings.Split(strings.TrimRight(s.RawStream, "\n"), "\n") {
+			sb.WriteString("    " + line + "\n")
+		}
+		sb.WriteString("}\n")
+	} else if needStream {
 		sb.WriteString("\nstream {\n")
 		// Lua module paths in stream context too — needed so resty.core can be
 		// found when lua-nginx-module initializes in the stream block.

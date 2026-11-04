@@ -296,6 +296,13 @@ func renderShareSnippet(format, link string, node *formatter.Node) (string, bool
 		}
 		return outboundJSONSnippet(formatter.FormatXrayJSON, node)
 	default:
+		// 分享链接（URI）：ss:// 等 SIP002 链接没有传输字段，shadowsocks + gRPC
+		// 这类节点发出去只会变成裸 TCP（连不上），必须按"不支持"处理。
+		if node != nil {
+			if reason := transportUnsupportedReason(node); reason != "" {
+				return "", false
+			}
+		}
 		return link, link != ""
 	}
 }
@@ -367,7 +374,7 @@ func shareUnsupportedReason(format string, node *formatter.Node) string {
 	case "xray":
 		return xrayNodeDropReason(node)
 	default:
-		return ""
+		return transportUnsupportedReason(node)
 	}
 }
 

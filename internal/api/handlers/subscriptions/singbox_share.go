@@ -524,6 +524,39 @@ var mihomoUnsupportedTransports = map[string]bool{
 	"kcp": true, "mkcp": true, "quic": true, "splithttp": true,
 }
 
+// transportCapableProtocols 是 mihomo / sing-box 里**真正带通用传输字段**的出站类型。
+// 只有 vless / vmess / trojan 的选项结构里有 network / transport + ws-opts / grpc-opts；
+// 其余协议（shadowsocks / socks / http / snell / ssh / hysteria2 / tuic / anytls …）的
+// 配置结构里**没有**传输字段：写进去会被静默忽略（sing-box 甚至直接 FATAL
+// "unknown field transport"），客户端按裸 TCP 连 → "能加载、连不上"的假节点。
+//
+// 典型踩坑：xray 的 shadowsocks + gRPC 入站（SHADOWSOCKSGRPC），只有 xray 客户端能连；
+// 以前订阅 / 分享片段照样输出 `type: ss` 而不带 grpc，用户拿到手必然连不上。
+var transportCapableProtocols = map[string]bool{
+	"vless": true, "vmess": true, "trojan": true,
+}
+
+// transportUnsupportedReason 返回"该协议在 mihomo / sing-box 里表达不了这个传输"的原因
+// （空串 = 能表达）。裸 TCP（含空 / raw）不涉及传输字段，一律返回空串。
+func transportUnsupportedReason(node *formatter.Node) string {
+	if node == nil {
+		return ""
+	}
+	t := strings.ToLower(strings.TrimSpace(node.Transport))
+	if t == "" || t == "tcp" || t == "raw" {
+		return ""
+	}
+	proto := strings.ToLower(strings.TrimSpace(node.Protocol))
+	if proto == "hysteria" {
+		proto = "hysteria2"
+	}
+	if transportCapableProtocols[proto] {
+		return ""
+	}
+	// 前端把 "transport=" 之后的部分直接填进"不支持传输 X"的文案，这里只给传输名。
+	return "transport=" + t
+}
+
 // mihomoNodeDropReason 返回该节点**不能**进 mihomo 片段/订阅的原因（空串=可以）。
 func mihomoNodeDropReason(node *formatter.Node) string {
 	if node == nil {
@@ -531,6 +564,9 @@ func mihomoNodeDropReason(node *formatter.Node) string {
 	}
 	if mihomoUnsupportedTransports[strings.ToLower(node.Transport)] {
 		return "transport=" + node.Transport
+	}
+	if reason := transportUnsupportedReason(node); reason != "" {
+		return reason
 	}
 	return ""
 }
@@ -543,6 +579,11 @@ func singboxNodeDropReason(node *formatter.Node) string {
 	}
 	if singboxUnsupportedTransports[strings.ToLower(node.Transport)] {
 		return "transport=" + node.Transport
+	}
+	// 协议本身没有传输字段（ss / socks / http / snell …）：sing-box 会 FATAL
+	// "unknown field transport"，整份订阅都加载不了。
+	if reason := transportUnsupportedReason(node); reason != "" {
+		return reason
 	}
 	// REALITY：**只有 xray 当服务端时**才不能进 sing-box 格式。xray ≥26.9.8 的 REALITY 服务端要求
 	// ClientHello 带 `X25519MLKEM768` key share 且排在 X25519 之前（xtls/reality 提交 8cdf7bf9c7f0）；
@@ -603,9 +644,13 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 	if supported == nil {
 		return items
 	}
-	isSingbox := strings.ToLower(format) == "singbox_json"
-	isMihomo := strings.ToLower(format) == "mihomo_yaml"
-	isXray := strings.ToLower(format) == "xray_json"
+	fmtLower := strings.ToLower(format)
+	isSingbox := fmtLower == "singbox_json"
+	isMihomo := fmtLower == "mihomo_yaml"
+	isXray := fmtLower == "xray_json"
+	// 链接形态同样会丢传输：ss:// 是 SIP002，只有 method/password/host/port，
+	// 没有传输字段（vless/vmess/trojan 才有 network/ws/grpc 参数）。
+	isLink := fmtLower == "base64_uri" || fmtLower == "raw_uri"
 	kept := make([]renderedSubscriptionNode, 0, len(items))
 	dropped := make([]string, 0, 4)
 	for _, item := range items {
@@ -642,6 +687,14 @@ func filterRenderedNodesForFormat(items []renderedSubscriptionNode, format strin
 			// xray 26 对"明文 vless/trojan + 公网地址"是**整份拒载**：
 			// 一个这样的节点会让整份 xray 配置加载失败（用户侧表现为"所有节点都没了"）。
 			if reason := xrayNodeDropReason(item.Node); reason != "" {
+				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
+				continue
+			}
+		}
+		if isLink && item.Node != nil {
+			// ss:// 链接没有传输字段：shadowsocks + gRPC 这类节点发出去就是裸 TCP，
+			// 客户端连接必然失败（xray JSON 订阅里仍然保留，那是唯一能表达它的格式）。
+			if reason := transportUnsupportedReason(item.Node); reason != "" {
 				dropped = append(dropped, fmt.Sprintf("%s(%s)", name, reason))
 				continue
 			}

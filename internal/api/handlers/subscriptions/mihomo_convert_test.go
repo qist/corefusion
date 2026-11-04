@@ -70,3 +70,32 @@ func TestSingboxNodeDropReason(t *testing.T) {
 		t.Errorf("正常节点不应被剔除: %s", r)
 	}
 }
+
+// shadowsocks + gRPC（xray 独有的 ss over gRPC）：ss 的 mihomo / sing-box 选项里
+// **没有** network/transport 字段，写进去会被静默忽略（sing-box 直接 FATAL
+// unknown field transport）→ 客户端按裸 TCP 连，必然失败。
+// 这类节点只能出现在 xray JSON 里，其它格式必须整条剔除并说明原因。
+func TestTransportUnsupportedForNonV2RayProtocols(t *testing.T) {
+	ssGrpc := &formatter.Node{Protocol: "shadowsocks", Transport: "grpc"}
+	if r := transportUnsupportedReason(ssGrpc); r == "" {
+		t.Error("ss+grpc 应判定为表达不了")
+	}
+	if r := mihomoNodeDropReason(ssGrpc); r == "" {
+		t.Error("ss+grpc 不应进 mihomo")
+	}
+	if r := singboxNodeDropReason(ssGrpc); r == "" {
+		t.Error("ss+grpc 不应进 sing-box")
+	}
+	// v2ray 系协议自带传输字段，grpc/ws 照常保留
+	for _, proto := range []string{"vless", "vmess", "trojan"} {
+		if r := transportUnsupportedReason(&formatter.Node{Protocol: proto, Transport: "grpc"}); r != "" {
+			t.Errorf("%s+grpc 不应被判定为表达不了: %s", proto, r)
+		}
+	}
+	// 裸 TCP / raw 与传输无关
+	for _, tr := range []string{"", "tcp", "raw"} {
+		if r := transportUnsupportedReason(&formatter.Node{Protocol: "shadowsocks", Transport: tr}); r != "" {
+			t.Errorf("ss 裸传输 %q 不应被判定为表达不了: %s", tr, r)
+		}
+	}
+}

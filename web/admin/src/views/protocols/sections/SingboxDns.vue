@@ -1,7 +1,7 @@
 <template>
   <div>
     <el-form label-width="160px" label-position="left">
-      <el-form-item label="Enable DNS">
+      <el-form-item :label="t('protoCenter.dns.enable')">
         <el-switch v-model="enabled" @change="onToggle" />
       </el-form-item>
     </el-form>
@@ -10,7 +10,7 @@
       <!-- Global Settings -->
       <el-divider content-position="left">Global Settings</el-divider>
       <el-form label-width="160px" label-position="left">
-        <el-form-item label="Strategy">
+        <el-form-item :label="t('protoCenter.routing.strategy')">
           <el-select v-model="form.strategy" style="width:100%" clearable @change="emit">
             <el-option label="" value="" />
             <el-option label="prefer_ipv4" value="prefer_ipv4" />
@@ -20,34 +20,34 @@
           </el-select>
           <div class="hint">DNS query strategy for IP version preference</div>
         </el-form-item>
-        <el-form-item label="Disable Cache">
+        <el-form-item :label="t('protoCenter.dns.disableCache')">
           <el-switch v-model="form.disable_cache" @change="emit" />
         </el-form-item>
-        <el-form-item label="Disable Expire">
+        <el-form-item :label="t('singboxDns.disableExpire')">
           <el-switch v-model="form.disable_expire" @change="emit" />
           <div class="hint">Disable cache expiration</div>
         </el-form-item>
-        <el-form-item label="Cache Capacity">
+        <el-form-item :label="t('singboxDns.cacheCapacity')">
           <el-input-number v-model="form.cache_capacity" :min="0" @change="emit" />
           <div class="hint">DNS 缓存条目上限（0 = 用核心默认）</div>
         </el-form-item>
-        <el-form-item label="Optimistic">
+        <el-form-item :label="t('singboxDns.optimistic')">
           <el-switch v-model="form.optimistic_enabled" @change="emit" />
           <div class="hint">乐观缓存：过期条目先返回、同时后台刷新（明显降延迟；代价是可能短暂返回陈旧记录）</div>
         </el-form-item>
-        <el-form-item v-if="form.optimistic_enabled" label="Optimistic Timeout">
+        <el-form-item v-if="form.optimistic_enabled" :label="t('singboxDns.optimisticTimeout')">
           <el-input v-model="form.optimistic_timeout" placeholder="3s" @change="emit" />
           <div class="hint">后台刷新的等待上限；留空则按核心的简写形式写 <code>optimistic: true</code></div>
         </el-form-item>
-        <el-form-item label="Reverse Mapping">
+        <el-form-item :label="t('singboxDns.reverseMapping')">
           <el-switch v-model="form.reverse_mapping" @change="emit" />
           <div class="hint">Store reverse DNS mapping for IPs</div>
         </el-form-item>
-        <el-form-item label="Client Subnet">
+        <el-form-item :label="t('singboxDns.clientSubnet')">
           <el-input v-model="form.client_subnet" placeholder="0.0.0.0/24" @change="emit" />
           <div class="hint">EDNS0 client subnet</div>
         </el-form-item>
-        <el-form-item label="Final Server">
+        <el-form-item :label="t('singboxDns.finalServer')">
           <el-input v-model="form.final" placeholder="dns-remote" @change="emit" />
           <div class="hint">Tag of the final DNS server used as fallback（不能指向 fakeip server）</div>
         </el-form-item>
@@ -124,40 +124,40 @@
     <!-- Server Edit Dialog -->
     <el-dialog v-model="serverDlg" :title="editingServerIdx >= 0 ? 'Edit DNS Server' : 'Add DNS Server'" width="550">
       <el-form label-width="140px" label-position="left">
-        <el-form-item label="Type">
+        <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
           <el-select v-model="srvForm.type" style="width:100%">
             <el-option v-for="tp in DNS_SERVER_TYPES" :key="tp.value" :label="tp.label" :value="tp.value" />
           </el-select>
           <div class="hint">{{ currentTypeHint }}</div>
         </el-form-item>
-        <el-form-item label="Tag">
+        <el-form-item :label="t('protoCenter.api.tag')">
           <el-input v-model="srvForm.tag" placeholder="dns-google" />
         </el-form-item>
         <!-- 远程类型：server / server_port -->
         <template v-if="REMOTE_TYPES.includes(srvForm.type)">
-          <el-form-item label="Server">
+          <el-form-item :label="t('protoCenter.outbounds.server')">
             <el-input v-model="srvForm.server" placeholder="8.8.8.8 / dns.google / 1.1.1.1" />
             <div class="hint">sing-box 1.12+ 使用 <code>server</code>（旧字段 <code>address</code> 已移除）</div>
           </el-form-item>
-          <el-form-item label="Server Port">
+          <el-form-item :label="t('singbox.outboundBase.serverPort')">
             <el-input-number v-model="srvForm.server_port" :min="0" :max="65535" placeholder="53" />
           </el-form-item>
-          <el-form-item v-if="['https', 'h3'].includes(srvForm.type)" label="Path">
+          <el-form-item v-if="['https', 'h3'].includes(srvForm.type)" :label="t('protoCenter.masque.path')">
             <el-input v-model="srvForm.path" placeholder="/dns-query" />
           </el-form-item>
-          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" label="TLS Server Name">
+          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" :label="t('singboxDns.tlsServerName')">
             <el-input v-model="srvForm.tls_server_name" placeholder="dns.google" />
           </el-form-item>
-          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" label="TLS Insecure">
+          <el-form-item v-if="['tls', 'https', 'h3', 'quic'].includes(srvForm.type)" :label="t('singboxDns.tlsInsecure')">
             <el-switch v-model="srvForm.tls_insecure" />
           </el-form-item>
         </template>
         <!-- fakeip -->
         <template v-if="srvForm.type === 'fakeip'">
-          <el-form-item label="IPv4 Range">
+          <el-form-item :label="t('singboxDns.ipv4Range')">
             <el-input v-model="srvForm.inet4_range" placeholder="198.18.0.0/15" />
           </el-form-item>
-          <el-form-item label="IPv6 Range">
+          <el-form-item :label="t('singboxDns.ipv6Range')">
             <el-input v-model="srvForm.inet6_range" placeholder="fc00::/18" />
           </el-form-item>
           <el-alert type="warning" :closable="false" style="margin-bottom:12px"
@@ -165,33 +165,33 @@
         </template>
         <!-- hosts -->
         <template v-if="srvForm.type === 'hosts'">
-          <el-form-item label="Predefined">
+          <el-form-item :label="t('singboxDns.predefined')">
             <el-input v-model="srvForm._predefinedStr" type="textarea" :rows="5"
               placeholder="example.com=1.2.3.4&#10;test.com=1.1.1.1, 2.2.2.2" />
             <div class="hint">每行一条：<code>域名=IP[,IP...]</code></div>
           </el-form-item>
-          <el-form-item label="Path">
+          <el-form-item :label="t('protoCenter.masque.path')">
             <el-input v-model="srvForm._hostsPathStr" type="textarea" :rows="2" placeholder="每行一个 hosts 文件路径" />
           </el-form-item>
         </template>
         <!-- local / dhcp / mdns -->
         <template v-if="['local', 'dhcp', 'mdns'].includes(srvForm.type)">
-          <el-form-item v-if="srvForm.type === 'local'" label="Prefer Go">
+          <el-form-item v-if="srvForm.type === 'local'" :label="t('singboxDns.preferGo')">
             <el-switch v-model="srvForm.prefer_go" />
           </el-form-item>
-          <el-form-item v-if="['dhcp', 'mdns'].includes(srvForm.type)" label="Interface">
-            <el-input v-model="srvForm._interfaceStr" placeholder="eth0（mdns 可逗号分隔多个）" />
+          <el-form-item v-if="['dhcp', 'mdns'].includes(srvForm.type)" :label="t('protoCenter.inbounds.interface')">
+            <el-input v-model="srvForm._interfaceStr" :placeholder="t('singboxDns.mdnsInterfaceHint')" />
           </el-form-item>
         </template>
         <!-- 依赖 endpoint 的类型 -->
-        <el-form-item v-if="ENDPOINT_TYPES.includes(srvForm.type)" label="Endpoint Tag">
-          <el-input v-model="srvForm.endpoint" placeholder="endpoint 段中的 tag，如 ts-ep / vpn-ep" />
+        <el-form-item v-if="ENDPOINT_TYPES.includes(srvForm.type)" :label="t('singboxDns.endpointTag')">
+          <el-input v-model="srvForm.endpoint" :placeholder="t('singboxDns.endpointTagHint')" />
           <div class="hint">该类型的 DNS server 需要引用 endpoints 段里的 tag</div>
         </el-form-item>
-        <el-form-item label="Detour">
-          <el-input v-model="srvForm.detour" placeholder="Outbound tag (optional)" />
+        <el-form-item :label="t('xrayIn.detour')">
+          <el-input v-model="srvForm.detour" :placeholder="t('singboxDns.outboundTagOptional')" />
         </el-form-item>
-        <el-form-item label="Domain Resolver">
+        <el-form-item :label="t('singbox.outboundBase.domainResolver')">
           <el-input v-model="srvForm.domain_resolver" placeholder="用于解析 server 域名的 DNS server tag" />
           <div class="hint">Server 填域名时必填（否则核心报 missing domain resolver）</div>
         </el-form-item>
@@ -205,31 +205,31 @@
     <!-- Rule Edit Dialog -->
     <el-dialog v-model="ruleDlg" :title="editingRuleIdx >= 0 ? 'Edit DNS Rule' : 'Add DNS Rule'" width="600">
       <el-form label-width="130px" label-position="left">
-        <el-form-item label="Type">
+        <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
           <el-select v-model="ruleForm.type" style="width:100%" clearable>
             <el-option label="default" value="" />
             <el-option label="logical" value="logical" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ruleForm.type === 'logical'" label="Mode">
+        <el-form-item v-if="ruleForm.type === 'logical'" :label="t('xrayUi.mode')">
           <el-select v-model="ruleForm.mode" style="width:100%">
             <el-option label="and" value="and" />
             <el-option label="or" value="or" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Domain">
-          <el-input v-model="ruleForm._domain" type="textarea" :rows="2" placeholder="One domain per line" />
+        <el-form-item :label="t('protoCenter.routing.domain')">
+          <el-input v-model="ruleForm._domain" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneDomainPerLine')" />
         </el-form-item>
-        <el-form-item label="Domain Suffix">
-          <el-input v-model="ruleForm._domainSuffix" type="textarea" :rows="2" placeholder="One suffix per line" />
+        <el-form-item :label="t('singboxRoute.domainSuffix')">
+          <el-input v-model="ruleForm._domainSuffix" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneSuffixPerLine')" />
         </el-form-item>
-        <el-form-item label="Domain Keyword">
-          <el-input v-model="ruleForm._domainKeyword" type="textarea" :rows="2" placeholder="One keyword per line" />
+        <el-form-item :label="t('singboxRoute.domainKeyword')">
+          <el-input v-model="ruleForm._domainKeyword" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneKeywordPerLine')" />
         </el-form-item>
-        <el-form-item label="IP CIDR">
-          <el-input v-model="ruleForm._ipCIDR" type="textarea" :rows="2" placeholder="One CIDR per line" />
+        <el-form-item :label="t('subfmt.dnsFallbackIPCIDR')">
+          <el-input v-model="ruleForm._ipCIDR" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCidrPerLine')" />
         </el-form-item>
-        <el-form-item label="Protocol">
+        <el-form-item :label="t('protoCenter.protocol')">
           <el-select v-model="ruleForm._protocol" multiple style="width:100%">
             <el-option label="http" value="http" />
             <el-option label="tls" value="tls" />
@@ -238,21 +238,21 @@
             <el-option label="dns" value="dns" />
           </el-select>
         </el-form-item>
-        <el-form-item label="Query DNSSEC">
+        <el-form-item :label="t('singboxDns.queryDnssec')">
           <el-switch v-model="ruleForm._queryDnssec" />
           <div class="hint">匹配"查询是否请求 DNSSEC"（关 = 不带 DO 位）</div>
         </el-form-item>
-        <el-form-item label="Query Client Subnet">
+        <el-form-item :label="t('singboxDns.queryClientSubnet')">
           <el-input v-model="ruleForm._queryClientSubnet" type="textarea" :rows="2" placeholder="1.2.3.0/24" />
           <div class="hint">匹配查询里的 ECS 客户端子网，每行一条</div>
         </el-form-item>
-        <el-form-item label="Server">
+        <el-form-item :label="t('protoCenter.outbounds.server')">
           <el-input v-model="ruleForm.server" placeholder="dns-server tag" />
         </el-form-item>
-        <el-form-item label="Outbound">
-          <el-input v-model="ruleForm.outbound" placeholder="Outbound tag (optional)" />
+        <el-form-item :label="t('protoCenter.routing.outbound')">
+          <el-input v-model="ruleForm.outbound" :placeholder="t('singboxDns.outboundTagOptional')" />
         </el-form-item>
-        <el-form-item label="Action">
+        <el-form-item :label="t('protoCenter.routing.action')">
           <el-select v-model="ruleForm.action" style="width:100%" clearable>
             <el-option label="" value="" />
             <el-option label="route" value="route" />
@@ -263,21 +263,21 @@
             <el-option label="evaluate" value="evaluate" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ruleForm.action === 'route' || ruleForm.action === 'evaluate'" label="Speculative">
+        <el-form-item v-if="ruleForm.action === 'route' || ruleForm.action === 'evaluate'" :label="t('singboxDns.speculative')">
           <el-switch v-model="ruleForm.speculative" />
           <div class="hint">乐观并发：同时向多个 server 发起查询、取最快返回（仅 action=route 有效）</div>
         </el-form-item>
-        <el-form-item v-if="ruleForm.action === 'evaluate'" label="Evaluate Tag">
+        <el-form-item v-if="ruleForm.action === 'evaluate'" :label="t('singboxDns.evaluateTag')">
           <el-input v-model="ruleForm.evaluateTag" placeholder="ev" />
           <div class="hint">
             evaluate 的 tag。**配对规则（实测）**：evaluate 带 tag → 下面的 match_response 必须写同一个 tag；
             evaluate 不带 tag → match_response 只能写 true。配错核心 FATAL。
           </div>
         </el-form-item>
-        <el-form-item v-if="ruleForm.action === 'evaluate'" label="Evaluate Timeout">
+        <el-form-item v-if="ruleForm.action === 'evaluate'" :label="t('singboxDns.evaluateTimeout')">
           <el-input v-model="ruleForm.evaluateTimeout" placeholder="5s" />
         </el-form-item>
-        <el-form-item label="Match Response">
+        <el-form-item :label="t('singboxDns.matchResponse')">
           <el-switch v-model="ruleForm.matchResponse" />
           <div class="hint">
             匹配**上一次 evaluate 的结果**（而不是查询本身）。必须先有一条 action=evaluate 的规则，
@@ -286,10 +286,10 @@
           </div>
         </el-form-item>
         <template v-if="ruleForm.matchResponse">
-          <el-form-item label="Response Tag">
+          <el-form-item :label="t('singboxDns.responseTag')">
             <el-input v-model="ruleForm.matchResponseTag" placeholder="留空 = 匹配最近一次不带 tag 的 evaluate（写 true）" />
           </el-form-item>
-          <el-form-item label="Response RCode">
+          <el-form-item :label="t('singboxDns.responseRCode')">
             <el-select v-model="ruleForm.responseRcode" style="width:100%" clearable>
               <el-option label="(不限)" value="" /><el-option label="NOERROR" value="NOERROR" />
               <el-option label="NXDOMAIN" value="NXDOMAIN" /><el-option label="SERVFAIL" value="SERVFAIL" />
@@ -298,19 +298,19 @@
             </el-select>
             <div class="hint">非法 rcode 核心会 FATAL（`unknown rcode`），所以这里用下拉而不是自由输入</div>
           </el-form-item>
-          <el-form-item label="IP Accept Any">
+          <el-form-item :label="t('singboxDns.ipAcceptAny')">
             <el-switch v-model="ruleForm.ipAcceptAny" />
             <div class="hint">应答里出现任意 IP 就算命中（去广告/黑洞场景常用）</div>
           </el-form-item>
-          <el-form-item label="Response Answer">
+          <el-form-item :label="t('singboxDns.responseAnswer')">
             <el-input v-model="ruleForm._responseAnswer" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
             <div class="hint">按**应答记录**匹配，每行一条 **zone 格式完整 RR**（只写 IP 会报 `not a TTL`）</div>
           </el-form-item>
-          <el-form-item label="Response NS">
+          <el-form-item :label="t('singboxDns.responseNs')">
             <el-input v-model="ruleForm._responseNs" type="textarea" :rows="2" placeholder="a.example. 300 IN NS ns.example." />
             <div class="hint">同上，匹配 NS 记录</div>
           </el-form-item>
-          <el-form-item label="Response Extra">
+          <el-form-item :label="t('singboxDns.responseExtra')">
             <el-input v-model="ruleForm._responseExtra" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
             <div class="hint">同上，匹配 additional 段记录</div>
           </el-form-item>

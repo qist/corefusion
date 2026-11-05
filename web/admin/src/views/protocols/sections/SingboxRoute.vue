@@ -3,7 +3,7 @@
     <!-- Global Settings -->
     <el-divider content-position="left">Global Settings</el-divider>
     <el-form label-width="160px" label-position="left">
-      <el-form-item label="Final Outbound">
+      <el-form-item :label="t('singboxRoute.finalOutbound')">
         <el-select v-model="form.final" style="width:100%" filterable allow-create clearable @change="emit">
           <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
         </el-select>
@@ -12,14 +12,14 @@
           想让代理出口兜底：选出口节点 tag，或清空后把非直连出站在「出站」列表里上移到第一位。
         </div>
       </el-form-item>
-      <el-form-item label="Auto Detect Interface">
+      <el-form-item :label="t('subfmt.tunAutoDetect')">
         <el-switch v-model="form.auto_detect_interface" @change="emit" />
       </el-form-item>
-      <el-form-item label="Default Domain Resolver">
+      <el-form-item :label="t('singboxRoute.defaultDomainResolver')">
         <el-input v-model="form.default_domain_resolver" placeholder="dns-remote" @change="emit" />
         <div class="hint">Default DNS server tag for domain resolution</div>
       </el-form-item>
-      <el-form-item label="Default Network Strategy">
+      <el-form-item :label="t('singboxRoute.defaultNetworkStrategy')">
         <el-select v-model="form.default_network_strategy" style="width:100%" clearable @change="onNetStrategyChange">
           <el-option label="(默认)" value="" />
           <el-option label="hybrid" value="hybrid" />
@@ -30,28 +30,28 @@
           `unknown network strategy`）；且必须同时开启上面的 Auto Detect Interface。
         </div>
       </el-form-item>
-      <el-form-item label="Default Network Type">
+      <el-form-item :label="t('singboxRoute.defaultNetworkType')">
         <el-select v-model="form.default_network_type" multiple clearable style="width:100%" @change="emit">
           <el-option label="wifi" value="wifi" /><el-option label="cellular" value="cellular" />
           <el-option label="ethernet" value="ethernet" /><el-option label="other" value="other" />
         </el-select>
       </el-form-item>
-      <el-form-item label="Default Fallback Network Type">
+      <el-form-item :label="t('singboxRoute.defaultFallbackNetworkType')">
         <el-select v-model="form.default_fallback_network_type" multiple clearable style="width:100%" @change="emit">
           <el-option label="wifi" value="wifi" /><el-option label="cellular" value="cellular" />
           <el-option label="ethernet" value="ethernet" /><el-option label="other" value="other" />
         </el-select>
         <div class="hint">strategy=fallback 时的退化网络类型</div>
       </el-form-item>
-      <el-form-item label="Default Fallback Delay">
+      <el-form-item :label="t('singboxRoute.defaultFallbackDelay')">
         <el-input v-model="form.default_fallback_delay" placeholder="300ms" @change="emit" />
         <div class="hint">回退等待时长（duration，如 300ms / 1s；非法值核心会拒绝启动）</div>
       </el-form-item>
-      <el-form-item label="Default HTTP Client">
+      <el-form-item :label="t('singboxRoute.defaultHttpClient')">
         <el-input v-model="form.default_http_client" placeholder="出站 tag" @change="emit" />
         <div class="hint">内部 HTTP 请求（如规则集下载）默认走哪个出站</div>
       </el-form-item>
-      <el-form-item label="Default Strategy">
+      <el-form-item :label="t('singboxRoute.defaultStrategy')">
         <el-select v-model="form.default_domain_strategy" style="width:100%" clearable @change="emit">
           <el-option label="" value="" />
           <el-option label="prefer_ipv4" value="prefer_ipv4" />
@@ -77,7 +77,7 @@
           <el-option label="remote" value="remote" /><el-option label="local" value="local" />
           <el-option label="inline" value="inline" />
         </el-select>
-        <el-input v-model="rs.tag" placeholder="tag（规则里用它引用；多个用逗号分隔）" style="flex:1" @change="emit" />
+        <el-input v-model="rs.tag" :placeholder="t('singboxRoute.tagHint')" style="flex:1" @change="emit" />
         <el-select v-model="rs.format" style="width:130px" clearable @change="emit">
           <el-option label="(默认)" value="" /><el-option label="source" value="source" />
           <el-option label="binary" value="binary" />
@@ -88,10 +88,10 @@
         <el-input v-model="rs.url" placeholder="https://…/geosite-cn.srs" style="margin-top:8px" @change="emit" />
         <div style="display:flex;gap:8px;margin-top:8px">
           <el-input v-model="rs.update_interval" placeholder="更新间隔，如 1d" @change="emit" />
-          <el-input v-model="rs.download_detour" placeholder="download_detour（出站 tag）" @change="emit" />
+          <el-input v-model="rs.download_detour" :placeholder="t('singboxRoute.downloadDetourHint')" @change="emit" />
           <el-input v-model="rs.http_client" placeholder="http_client tag" @change="emit" />
         </div>
-        <el-input v-model="rs.initial_path" placeholder="initial_path，如 /etc/sing-box/<tag>.srs" style="margin-top:8px" @change="emit" />
+        <el-input v-model="rs.initial_path" :placeholder="t('singboxRoute.initialPathHint')" style="margin-top:8px" @change="emit" />
         <div class="hint">initial_path 必须包含 <code>&lt;tag&gt;</code> 占位符（实测否则 FATAL `missing &lt;tag&gt; placeholder in initial_path`），留空则用缓存目录默认值</div>
       </template>
       <template v-else-if="rs.type === 'local'">
@@ -153,7 +153,7 @@
         <el-divider content-position="left">Rule Type</el-divider>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="Type">
+            <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
               <el-select v-model="rf.type" style="width:100%">
                 <el-option label="default" value="" />
                 <el-option label="logical" value="logical" />
@@ -161,7 +161,7 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item v-if="rf.type === 'logical'" label="Mode">
+            <el-form-item v-if="rf.type === 'logical'" :label="t('xrayUi.mode')">
               <el-select v-model="rf.mode" style="width:100%">
                 <el-option label="and" value="and" />
                 <el-option label="or" value="or" />
@@ -172,7 +172,7 @@
 
         <!-- Logical rule: sub-rules (sing-box 要求 type=logical 时 rules 必填) -->
         <template v-if="rf.type === 'logical'">
-          <el-form-item label="Sub Rules (JSON)">
+          <el-form-item :label="t('singboxRoute.subRulesJson')">
             <el-input v-model="rf._subRules" type="textarea" :rows="8"
               placeholder='[{"domain_suffix":[".example.com"]},{"ip_cidr":["10.0.0.0/8"]}]' />
             <div class="hint">
@@ -180,7 +180,7 @@
               <code>[{"domain_suffix":[".example.com"]},{"port_range":["1000:2000"]}]</code>
             </div>
           </el-form-item>
-          <el-form-item label="Invert">
+          <el-form-item :label="t('singboxRoute.invert')">
             <el-switch v-model="rf.invert" />
             <span class="hint-inline">逻辑取反（不匹配子规则时命中）</span>
           </el-form-item>
@@ -189,42 +189,42 @@
         <!-- Default rule: match conditions -->
         <template v-else>
           <el-divider content-position="left">Match Conditions</el-divider>
-          <el-form-item label="Domain">
-            <el-input v-model="rf._domain" type="textarea" :rows="2" placeholder="One domain per line" />
+          <el-form-item :label="t('protoCenter.routing.domain')">
+            <el-input v-model="rf._domain" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneDomainPerLine')" />
           </el-form-item>
-          <el-form-item label="Domain Suffix">
-            <el-input v-model="rf._domainSuffix" type="textarea" :rows="2" placeholder="One suffix per line" />
+          <el-form-item :label="t('singboxRoute.domainSuffix')">
+            <el-input v-model="rf._domainSuffix" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneSuffixPerLine')" />
           </el-form-item>
-          <el-form-item label="Domain Keyword">
-            <el-input v-model="rf._domainKeyword" type="textarea" :rows="2" placeholder="One keyword per line" />
+          <el-form-item :label="t('singboxRoute.domainKeyword')">
+            <el-input v-model="rf._domainKeyword" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneKeywordPerLine')" />
           </el-form-item>
-          <el-form-item label="Domain Regex">
-            <el-input v-model="rf._domainRegex" type="textarea" :rows="2" placeholder="One regex per line" />
+          <el-form-item :label="t('singboxRoute.domainRegex')">
+            <el-input v-model="rf._domainRegex" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneRegexPerLine')" />
           </el-form-item>
 
-          <el-form-item label="IP CIDR">
-            <el-input v-model="rf._ipCIDR" type="textarea" :rows="2" placeholder="One CIDR per line" />
+          <el-form-item :label="t('subfmt.dnsFallbackIPCIDR')">
+            <el-input v-model="rf._ipCIDR" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCidrPerLine')" />
           </el-form-item>
-          <el-form-item label="Source IP CIDR">
-            <el-input v-model="rf._sourceIPCIDR" type="textarea" :rows="2" placeholder="One CIDR per line" />
+          <el-form-item :label="t('singboxRoute.sourceIpCidr')">
+            <el-input v-model="rf._sourceIPCIDR" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCidrPerLine')" />
           </el-form-item>
           <el-row :gutter="12">
             <el-col :span="8">
-              <el-form-item label="IP Version">
+              <el-form-item :label="t('singbox.protocol.hysteria2.realmIpVersion')">
                 <el-select v-model="rf._ipVersion" style="width:100%" clearable>
                   <el-option label="any" value="" />
-                  <el-option label="IPv4" :value="4" />
-                  <el-option label="IPv6" :value="6" />
+                  <el-option :label="t('singboxRoute.ipv4')" :value="4" />
+                  <el-option :label="t('subfmt.dnsIPv6')" :value="6" />
                 </el-select>
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="IP Is Private">
+              <el-form-item :label="t('singboxRoute.ipIsPrivate')">
                 <el-switch v-model="rf._ipIsPrivate" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="Src Is Private">
+              <el-form-item :label="t('singboxRoute.srcIsPrivate')">
                 <el-switch v-model="rf._sourceIPIsPrivate" />
               </el-form-item>
             </el-col>
@@ -232,122 +232,122 @@
 
           <el-row :gutter="12">
             <el-col :span="12">
-              <el-form-item label="Port">
+              <el-form-item :label="t('protoCenter.port')">
                 <el-input v-model="rf._port" placeholder="53,443 (single ports)" />
                 <div class="hint">仅单个端口，逗号分隔；端口范围请用下面的 Port Range</div>
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Port Range">
+              <el-form-item :label="t('protoCenter.inbounds.portRange')">
                 <el-input v-model="rf._portRange" placeholder="1000:2000,3000:4000" />
               </el-form-item>
             </el-col>
           </el-row>
           <el-row :gutter="12">
             <el-col :span="12">
-              <el-form-item label="Source Port">
+              <el-form-item :label="t('protoCenter.routing.sourcePort')">
                 <el-input v-model="rf._sourcePort" placeholder="53" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="Source Port Range">
+              <el-form-item :label="t('singboxRoute.sourcePortRange')">
                 <el-input v-model="rf._sourcePortRange" placeholder="1000:2000" />
               </el-form-item>
             </el-col>
           </el-row>
 
           <el-row :gutter="12">
-            <el-col :span="8"><el-form-item label="Network"><el-select v-model="rf._network" clearable style="width:100%"><el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" /></el-select></el-form-item></el-col>
-            <el-col :span="16"><el-form-item label="Protocol"><el-select v-model="rf._protocol" multiple style="width:100%"><el-option label="http" value="http" /><el-option label="tls" value="tls" /><el-option label="quic" value="quic" /><el-option label="stun" value="stun" /><el-option label="dns" value="dns" /><el-option label="bittorrent" value="bittorrent" /><el-option label="dtls" value="dtls" /><el-option label="ssh" value="ssh" /><el-option label="rdp" value="rdp" /><el-option label="ntp" value="ntp" /></el-select></el-form-item></el-col>
+            <el-col :span="8"><el-form-item :label="t('protoCenter.routing.network')"><el-select v-model="rf._network" clearable style="width:100%"><el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" /></el-select></el-form-item></el-col>
+            <el-col :span="16"><el-form-item :label="t('protoCenter.protocol')"><el-select v-model="rf._protocol" multiple style="width:100%"><el-option label="http" value="http" /><el-option label="tls" value="tls" /><el-option label="quic" value="quic" /><el-option label="stun" value="stun" /><el-option label="dns" value="dns" /><el-option label="bittorrent" value="bittorrent" /><el-option label="dtls" value="dtls" /><el-option label="ssh" value="ssh" /><el-option label="rdp" value="rdp" /><el-option label="ntp" value="ntp" /></el-select></el-form-item></el-col>
           </el-row>
 
-          <el-form-item label="Inbound Tag">
-            <el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option placeholder="Select or type" style="width:100%">
+          <el-form-item :label="t('protoCenter.routing.inboundTag')">
+            <el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%">
               <el-option v-for="tag in inboundTags" :key="tag" :label="tag" :value="tag" />
             </el-select>
           </el-form-item>
           <el-row :gutter="12">
             <el-col :span="12">
-              <el-form-item label="Auth User">
-                <el-input v-model="rf._authUser" type="textarea" :rows="2" placeholder="One inbound auth user per line" />
+              <el-form-item :label="t('singboxRoute.authUser')">
+                <el-input v-model="rf._authUser" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneAuthUserPerLine')" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
-              <el-form-item label="User">
-                <el-input v-model="rf._user" type="textarea" :rows="2" placeholder="One user name per line" />
+              <el-form-item :label="t('protoCenter.masque.user')">
+                <el-input v-model="rf._user" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneUserNamePerLine')" />
               </el-form-item>
             </el-col>
           </el-row>
-          <el-form-item label="Client">
-            <el-input v-model="rf._client" placeholder="Client identifier (comma separated)" />
+          <el-form-item :label="t('protoCenter.finalmask.client')">
+            <el-input v-model="rf._client" :placeholder="t('singboxRoute.clientIdentifier')" />
           </el-form-item>
 
-          <el-form-item label="Process Name">
-            <el-input v-model="rf._process" placeholder="One process name per line" type="textarea" :rows="2" />
+          <el-form-item :label="t('singboxRoute.processName')">
+            <el-input v-model="rf._process" :placeholder="t('singboxRoute.oneProcessPerLine')" type="textarea" :rows="2" />
           </el-form-item>
-          <el-form-item label="Process Path">
-            <el-input v-model="rf._processPath" placeholder="One full path per line" type="textarea" :rows="2" />
+          <el-form-item :label="t('singboxRoute.processPath')">
+            <el-input v-model="rf._processPath" :placeholder="t('singboxRoute.oneFullPathPerLine')" type="textarea" :rows="2" />
           </el-form-item>
-          <el-form-item label="Process Path Regex">
-            <el-input v-model="rf._processPathRegex" placeholder="One regex per line" type="textarea" :rows="2" />
+          <el-form-item :label="t('singboxRoute.processPathRegex')">
+            <el-input v-model="rf._processPathRegex" :placeholder="t('singboxRoute.oneRegexPerLine')" type="textarea" :rows="2" />
           </el-form-item>
 
-          <el-form-item label="Rule Set">
+          <el-form-item :label="t('subfmt.groupRuleSet')">
             <el-select v-model="rf._ruleSet" multiple filterable allow-create default-first-option
               placeholder="选择上方 Rule Sets 已定义的 tag（也可手填）" style="width:100%">
               <el-option v-for="rs in ruleSetTags" :key="rs" :label="rs" :value="rs" />
             </el-select>
           </el-form-item>
-          <el-form-item label="Match Source IP" v-if="rf._ruleSet?.length">
+          <el-form-item :label="t('singboxRoute.matchSourceIp')" v-if="rf._ruleSet?.length">
             <el-switch v-model="rf._ruleSetIPCIDRMatchSource" />
             <span class="hint-inline">rule_set 中的 ip_cidr 匹配源地址（rule_set_ip_cidr_match_source）</span>
           </el-form-item>
-          <el-form-item label="Clash Mode">
+          <el-form-item :label="t('singboxRoute.clashMode')">
             <el-select v-model="rf._clashMode" style="width:100%" clearable filterable allow-create @change="emit">
               <el-option label="(不限)" value="" /><el-option label="rule" value="rule" />
               <el-option label="global" value="global" /><el-option label="direct" value="direct" />
             </el-select>
             <div class="hint">按外部控制器（clash_api）当前模式匹配</div>
           </el-form-item>
-          <el-form-item label="Interface Address (JSON)">
+          <el-form-item :label="t('singboxRoute.interfaceAddressJson')">
             <el-input v-model="rf._interfaceAddressJson" type="textarea" :rows="2"
               placeholder='{"eth0": ["192.168.1.10/32"]}' @change="emit" />
             <div class="hint">本地**接口名 → 地址段**映射（JSON，map 形式）；JSON 非法会被忽略</div>
           </el-form-item>
-          <el-form-item label="Network Interface Address (JSON)">
+          <el-form-item :label="t('singboxRoute.networkInterfaceAddressJson')">
             <el-input v-model="rf._networkInterfaceAddressJson" type="textarea" :rows="2"
               placeholder='{"wifi": ["10.0.0.1/32"]}' @change="emit" />
             <div class="hint">按**网络类型 → 地址段**匹配（JSON；键是 wifi/cellular/ethernet/other）</div>
           </el-form-item>
-          <el-form-item label="Default Interface Address">
+          <el-form-item :label="t('singboxRoute.defaultInterfaceAddress')">
             <el-input v-model="rf._defaultInterfaceAddress" type="textarea" :rows="2" placeholder="10.0.0.1/32" @change="emit" />
             <div class="hint">系统未识别接口时的兜底地址段，每行一条</div>
           </el-form-item>
 
-          <el-form-item label="Invert">
+          <el-form-item :label="t('singboxRoute.invert')">
             <el-switch v-model="rf.invert" />
             <span class="hint-inline">整条规则取反</span>
           </el-form-item>
 
           <el-collapse>
             <el-collapse-item title="Legacy GeoIP / Geosite（xray 兼容字段，sing-box 1.8+ 建议改用 rule_set）">
-              <el-form-item label="Geosite">
-                <el-input v-model="rf._geosite" type="textarea" :rows="2" placeholder="One code per line" />
+              <el-form-item :label="t('singboxRoute.geosite')">
+                <el-input v-model="rf._geosite" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCodePerLine')" />
               </el-form-item>
-              <el-form-item label="GeoIP">
-                <el-input v-model="rf._geoip" type="textarea" :rows="2" placeholder="One code per line" />
+              <el-form-item :label="t('singboxRoute.geoip')">
+                <el-input v-model="rf._geoip" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCodePerLine')" />
               </el-form-item>
-              <el-form-item label="Source GeoIP">
-                <el-input v-model="rf._sourceGeoip" type="textarea" :rows="2" placeholder="One code per line" />
+              <el-form-item :label="t('singboxRoute.sourceGeoip')">
+                <el-input v-model="rf._sourceGeoip" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCodePerLine')" />
               </el-form-item>
             </el-collapse-item>
           </el-collapse>
         </template>
 
         <el-divider content-position="left">Action</el-divider>
-        <el-form-item label="Action">
+        <el-form-item :label="t('protoCenter.routing.action')">
           <el-select v-model="rf.action" style="width:100%" clearable>
-            <el-option label="route (default)" value="" />
+            <el-option :label="t('singboxRoute.routeDefault')" value="" />
             <el-option label="route-options" value="route-options" />
             <el-option label="reject" value="reject" />
             <el-option label="hijack-dns" value="hijack-dns" />
@@ -356,7 +356,7 @@
           </el-select>
         </el-form-item>
         <template v-if="rf.action === 'reject'">
-          <el-form-item label="Reject Method">
+          <el-form-item :label="t('singboxRoute.rejectMethod')">
             <el-select v-model="rf.rejectMethod" style="width:100%" clearable @change="onRejectMethodChange">
               <el-option label="default" value="default" />
               <el-option label="drop" value="drop" />
@@ -364,7 +364,7 @@
             </el-select>
             <div class="hint">拒绝方式（default=关连接 / drop=直接丢包 / reply=回 ICMP 或 TCP RST）</div>
           </el-form-item>
-          <el-form-item v-if="rf.rejectMethod !== 'drop'" label="No Drop">
+          <el-form-item v-if="rf.rejectMethod !== 'drop'" :label="t('singboxRoute.noDrop')">
             <el-switch v-model="rf.noDrop" @change="emit" />
             <div class="hint">
               不立刻断开该连接（"静默拦截"体验）；**method=drop 时不能开** ——
@@ -372,7 +372,7 @@
             </div>
           </el-form-item>
         </template>
-        <el-form-item label="Outbound">
+        <el-form-item :label="t('protoCenter.routing.outbound')">
           <el-select v-model="rf.outbound" style="width:100%" clearable filterable allow-create>
             <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
           </el-select>
@@ -380,48 +380,48 @@
         </el-form-item>
         <!-- route-options 动作用的字段（与 action 同级写在 rule 顶层） -->
         <template v-if="rf.action === 'route-options'">
-          <el-form-item label="TLS Fragment">
+          <el-form-item :label="t('singboxRoute.tlsFragment')">
             <el-switch v-model="rf.tlsFragment" @change="onTlsFragmentChange" />
             <div class="hint">
               对命中流量做 TLS 分片（抗特征）；与下面的 Record Fragment <b>互斥</b>
               —— 同时给核心会拒绝启动（实测 `tls_fragment and tls_record_fragment are mutually exclusive`）
             </div>
           </el-form-item>
-          <el-form-item label="TLS Record Fragment">
+          <el-form-item :label="t('singboxRoute.tlsRecordFragment')">
             <el-switch v-model="rf.tlsRecordFragment" @change="onTlsRecordFragmentChange" />
             <div class="hint">按 TLS 记录分片；与上面的 TLS Fragment 互斥</div>
           </el-form-item>
-          <el-form-item v-if="rf.tlsFragment || rf.tlsRecordFragment" label="Fragment Fallback Delay">
+          <el-form-item v-if="rf.tlsFragment || rf.tlsRecordFragment" :label="t('singboxRoute.fragmentFallbackDelay')">
             <el-input v-model="rf.tlsFragmentFallbackDelay" placeholder="100ms" @change="emit" />
             <div class="hint">分片失败后的回退延迟（duration，如 100ms / 1s；非法值核心会拒绝启动）</div>
           </el-form-item>
-          <el-form-item label="Network Strategy">
+          <el-form-item :label="t('singboxRoute.networkStrategy')">
             <el-select v-model="rf.networkStrategy" style="width:100%" clearable @change="emit">
               <el-option label="(默认)" value="" /><el-option label="hybrid" value="hybrid" />
               <el-option label="fallback" value="fallback" />
             </el-select>
             <div class="hint">该规则命中的连接用哪种选路策略（只有 hybrid / fallback 合法）</div>
           </el-form-item>
-          <el-form-item label="Fallback Delay">
+          <el-form-item :label="t('singboxRoute.fallbackDelay')">
             <el-input-number v-model="rf.fallbackDelay" :min="0" @change="emit" />
             <div class="hint">回退延迟，单位毫秒（0 = 不写）</div>
           </el-form-item>
-          <el-form-item label="UDP Disable Domain Unmapping">
+          <el-form-item :label="t('singboxRoute.udpDisableDomainUnmapping')">
             <el-switch v-model="rf.udpDisableDomainUnmapping" @change="emit" />
             <div class="hint">关闭 UDP 的域名反查（该字段 1.13 起已从 inbound 迁到规则动作）</div>
           </el-form-item>
-          <el-form-item label="UDP Connect">
+          <el-form-item :label="t('singboxRoute.udpConnect')">
             <el-switch v-model="rf.udpConnect" @change="emit" />
           </el-form-item>
-          <el-form-item label="UDP Timeout">
+          <el-form-item :label="t('xrayIn.udpTimeout')">
             <el-input v-model="rf.udpTimeout" placeholder="5m" @change="emit" />
             <div class="hint">UDP 会话超时（duration；非法值核心会拒绝启动）</div>
           </el-form-item>
-          <el-form-item label="TLS Spoof">
+          <el-form-item :label="t('singboxRoute.tlsSpoof')">
             <el-input v-model="rf.tlsSpoof" placeholder="www.bing.com" @change="emit" />
             <div class="hint">本 fork 的 TLS spoof 的 route-options 形式（伪装目标，域名或 IP）；留空不启用</div>
           </el-form-item>
-          <el-form-item v-if="rf.tlsSpoof" label="TLS Spoof Method">
+          <el-form-item v-if="rf.tlsSpoof" :label="t('singboxRoute.tlsSpoofMethod')">
             <el-select v-model="rf.tlsSpoofMethod" style="width:100%" clearable @change="emit">
               <el-option label="(默认)" value="" />
               <el-option label="wrong-sequence" value="wrong-sequence" />
@@ -436,10 +436,10 @@
         <!-- 规则级 strategy / domain_resolver 都不是 sing-box 字段；
              action=resolve 时对应字段是 server + strategy -->
         <template v-if="rf.action === 'resolve'">
-          <el-form-item label="Resolve DNS Server">
-            <el-input v-model="rf.resolveServer" placeholder="DNS server tag（resolve 动作用 server，不是 domain_resolver）" />
+          <el-form-item :label="t('singboxRoute.resolveDnsServer')">
+            <el-input v-model="rf.resolveServer" :placeholder="t('singboxRoute.dnsServerTagHint')" />
           </el-form-item>
-          <el-form-item label="Strategy">
+          <el-form-item :label="t('protoCenter.routing.strategy')">
             <el-select v-model="rf.strategy" style="width:100%" clearable>
               <el-option label="" value="" />
               <el-option label="prefer_ipv4" value="prefer_ipv4" />

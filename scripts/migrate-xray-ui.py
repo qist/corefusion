@@ -33,6 +33,7 @@ xray-ui 的 client 通常没有 email，而 CoreFusion 订阅按
 import argparse
 import hashlib
 import json
+import re
 import sqlite3
 import sys
 import urllib.error
@@ -105,6 +106,26 @@ def load_runtime_config(path):
 # ---------------------------------------------------------------- 迁移逻辑
 
 DEFAULT_OUTBOUND_TAGS = {"direct", "blocked"}
+
+
+def is_host_like_listen(v):
+    """空值/主机名/IP 视为 TCP 监听。"""
+    if not v:
+        return True
+    return re.match(r"^[A-Za-z0-9._:\-\[\]]+$", v) is not None
+
+
+def listen_type(listen):
+    """监听方式：tcp（主机名/IP/空）或 sock（unix/抽象 socket）。
+
+    与前端 XrayInbounds.vue 的 inferListenType 保持一致：不要靠 "/" 前缀猜，
+    socket 路径可能是相对路径、@abstract 或带 unix: 前缀。
+    """
+    if not listen:
+        return "tcp"
+    if listen.startswith("unix:") or "/" in listen or "@" in listen or "," in listen:
+        return "sock"
+    return "tcp" if is_host_like_listen(listen) else "sock"
 
 
 def resolve_port(ib, port_map):

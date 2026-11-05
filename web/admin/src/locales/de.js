@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Panel neu starten",
-      "hint": "Änderungen der Listenadresse, des Ports und der TLS-Einstellungen werden erst nach einem Neustart wirksam.",
+      "hint": "Ein Neustart ist nur bei Änderungen von Listen-Adresse/Port nötig; TLS-Zertifikate und die mTLS-Client-CA werden automatisch ohne Neustart neu geladen",
       "button": "Panel neu starten",
       "confirm": "Panel neu starten? Der Dienst ist während des Neustarts kurzzeitig nicht verfügbar.",
       "restarting": "Wird neu gestartet..."

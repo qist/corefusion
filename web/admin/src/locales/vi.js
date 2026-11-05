@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Khởi động lại bảng điều khiển",
-      "hint": "Cần khởi động lại để áp dụng sau khi thay đổi địa chỉ lắng nghe, cổng, TLS, v.v.",
+      "hint": "Chỉ cần khởi động lại khi thay đổi địa chỉ/cổng lắng nghe; chứng chỉ TLS và CA máy khách mTLS được tự động nạp lại mà không cần khởi động lại",
       "button": "Khởi động lại bảng điều khiển",
       "confirm": "Khởi động lại bảng điều khiển? Dịch vụ sẽ tạm gián đoạn trong quá trình khởi động lại.",
       "restarting": "Đang khởi động lại..."

@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Paneli yeniden başlat",
-      "hint": "Dinleme adresi, bağlantı noktası, TLS gibi yapılandırmaları değiştirdikten sonra etkinleşmesi için yeniden başlatma gerekir",
+      "hint": "Yalnızca dinleme adresi/portu değiştiğinde yeniden başlatma gerekir; TLS sertifikaları ve mTLS istemci CA otomatik olarak yeniden yüklenir",
       "button": "Paneli yeniden başlat",
       "confirm": "Panel yeniden başlatılsın mı? Yeniden başlatma sırasında hizmet kısa süreliğine kesintiye uğrar.",
       "restarting": "Yeniden başlatılıyor..."

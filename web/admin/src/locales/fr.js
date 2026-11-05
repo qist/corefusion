@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Redémarrer le panneau",
-      "hint": "La modification de l'adresse d'écoute, du port, de la configuration TLS, etc. nécessite un redémarrage pour prendre effet.",
+      "hint": "Un redémarrage n'est nécessaire que pour l'adresse ou le port d'écoute ; les certificats TLS et l'AC client mTLS sont rechargés automatiquement sans redémarrage",
       "button": "Redémarrer le panneau",
       "confirm": "Redémarrer le panneau ? Le service sera brièvement interrompu pendant le redémarrage.",
       "restarting": "Redémarrage en cours…"

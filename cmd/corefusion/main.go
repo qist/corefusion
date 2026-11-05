@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -649,26 +647,21 @@ func runServer(args []string) {
 		tlsEnabled = false
 	}
 
-	// 面板 / 订阅 / 门户**共用同一份 TLS 配置**：证书配在面板上时，独立端口的订阅站
+	// 面板 / 订阅 / 门户**共用同一份 TLS 材料**：证书配在面板上时，独立端口的订阅站
 	// 与门户站也加载同一张证书（复用面板证书，含 IP 证书）。
-	var tlsCfg *tls.Config
+	//
+	// ⚠ 证书与 mTLS 客户端 CA 必须**热加载** ✗：证书中心续期/重签后文件已换新，
+	// 但旧实现只在启动时 LoadX509KeyPair 一次 ✗ → 不重启面板就一直用旧证书 ✗。
+	var panelTLSSvc *panelTLS
 	if tlsEnabled {
-		tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12}
-		if mtlsEnabled && mtlsCAPath != "" {
-			caCert, err := os.ReadFile(mtlsCAPath)
-			if err != nil {
-				log.Printf("WARNING: failed to read mTLS CA: %v, skipping mTLS", err)
-			} else {
-				pool := x509.NewCertPool()
-				if pool.AppendCertsFromPEM(caCert) {
-					tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
-					tlsCfg.ClientCAs = pool
-					log.Printf("mTLS enabled, CA: %s", mtlsCAPath)
-				} else {
-					log.Println("WARNING: failed to parse mTLS CA cert")
-				}
-			}
+		var tlsErr error
+		// mtlsCAPath 为空 = 没配 CA → 按原行为跳过 mTLS（不阻断启动）
+		panelTLSSvc, tlsErr = newPanelTLS(tlsCertPath, tlsKeyPath, mtlsCAPath, mtlsEnabled && mtlsCAPath != "")
+		if tlsErr != nil {
+			log.Fatalf("failed to load TLS certificate: %v", tlsErr)
 		}
+		// 换证书路径 / 开关 mTLS 也要免重启生效（证书内容变化本身由文件时间戳即时感知）
+		go panelTLSSvc.watchSettings(settingRepo, dataDir)
 	}
 
 	// Phase 8: Start server with graceful shutdown
@@ -706,11 +699,13 @@ func runServer(args []string) {
 		subSrv = &http.Server{
 			Addr:              bindAddr(subPort),
 			Handler:           subEngine,
-			TLSConfig:         tlsCfg,
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      5 * time.Minute,
 			IdleTimeout:       120 * time.Second,
+		}
+		if panelTLSSvc != nil {
+			subSrv.TLSConfig = panelTLSSvc.Config()
 		}
 		go func() {
 			log.Printf("Subscription server starting on :%s (tls=%v, reuses panel cert)", subPort, tlsEnabled)
@@ -721,7 +716,7 @@ func runServer(args []string) {
 			}
 			var err error
 			if tlsEnabled {
-				err = subSrv.ServeTLS(subLn, tlsCertPath, tlsKeyPath)
+				err = subSrv.ServeTLS(subLn, "", "")
 			} else {
 				err = subSrv.Serve(subLn)
 			}
@@ -740,11 +735,13 @@ func runServer(args []string) {
 		portalSrv = &http.Server{
 			Addr:              bindAddr(portalPort),
 			Handler:           portalEngine,
-			TLSConfig:         tlsCfg,
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      5 * time.Minute,
 			IdleTimeout:       120 * time.Second,
+		}
+		if panelTLSSvc != nil {
+			portalSrv.TLSConfig = panelTLSSvc.Config()
 		}
 		go func() {
 			log.Printf("Portal server starting on :%s (tls=%v, reuses panel cert)", portalPort, tlsEnabled)
@@ -755,7 +752,7 @@ func runServer(args []string) {
 			}
 			var err error
 			if tlsEnabled {
-				err = portalSrv.ServeTLS(portalLn, tlsCertPath, tlsKeyPath)
+				err = portalSrv.ServeTLS(portalLn, "", "")
 			} else {
 				err = portalSrv.Serve(portalLn)
 			}
@@ -789,9 +786,9 @@ func runServer(args []string) {
 		log.Fatalf("failed to listen on %s: %v", listenAddr, listenErr)
 	}
 	if tlsEnabled {
-		srv.TLSConfig = tlsCfg
+		srv.TLSConfig = panelTLSSvc.Config()
 		log.Printf("CoreFusion %s starting on %s (HTTPS)", Version, listenAddr)
-		if err := srv.ServeTLS(mainLn, tlsCertPath, tlsKeyPath); err != nil {
+		if err := srv.ServeTLS(mainLn, "", ""); err != nil {
 			log.Fatalf("failed to start server: %v", err)
 		}
 	} else {

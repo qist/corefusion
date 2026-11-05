@@ -2424,7 +2424,7 @@ trustedProxies: 'Trusted Proxies',
     },
     restart: {
       title: 'Restart Panel',
-      hint: 'Restart required for listen address, port, TLS changes to take effect',
+      hint: 'Restart is required only for listen address/port changes; TLS certificates and the mTLS client CA reload automatically without restart',
       button: 'Restart Panel',
       confirm: 'Restart the panel? Service will be briefly interrupted.',
       restarting: 'Restarting...',

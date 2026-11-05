@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Reiniciar panel",
-      "hint": "Los cambios en la dirección de escucha, el puerto, TLS y otras opciones requieren reiniciar para aplicarse.",
+      "hint": "Solo se requiere reiniciar al cambiar la dirección o el puerto de escucha; los certificados TLS y la CA de cliente mTLS se recargan automáticamente sin reiniciar",
       "button": "Reiniciar panel",
       "confirm": "¿Reiniciar el panel? El servicio se interrumpirá brevemente durante el reinicio.",
       "restarting": "Reiniciando…"

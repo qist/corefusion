@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Reiniciar painel",
-      "hint": "Alterações ao endereço de escuta, porta, TLS etc. só terão efeito após reiniciar o painel",
+      "hint": "Só é necessário reiniciar ao alterar o endereço ou a porta de escuta; os certificados TLS e a CA de cliente mTLS são recarregados automaticamente sem reiniciar",
       "button": "Reiniciar painel",
       "confirm": "Reiniciar o painel? O serviço ficará brevemente indisponível durante o reinício.",
       "restarting": "Reiniciando..."

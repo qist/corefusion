@@ -2404,7 +2404,7 @@ export default {
     },
     "restart": {
       "title": "Mulai ulang panel",
-      "hint": "Perubahan pada alamat listen, port, TLS, dan konfigurasi lainnya baru berlaku setelah panel dimulai ulang.",
+      "hint": "Restart hanya diperlukan saat mengubah alamat/port listen; sertifikat TLS dan CA klien mTLS dimuat ulang otomatis tanpa restart",
       "button": "Mulai ulang panel",
       "confirm": "Yakin ingin memulai ulang panel? Layanan akan terhenti sementara selama proses ini.",
       "restarting": "Sedang memulai ulang..."

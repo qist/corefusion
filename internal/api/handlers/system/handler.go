@@ -189,7 +189,9 @@ func (h *Handler) UpdatePanelConfig(c *gin.Context) {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"message": "panel config updated, restart required for listen_addr/port/tls changes"})
+	// TLS 证书与 mTLS 客户端 CA 已支持热加载（见 cmd/corefusion/panel_tls.go）→
+	// 只有监听地址/端口变更才需要重启，别再让用户误以为换证书也要重启。
+	response.OK(c, gin.H{"message": "panel config updated; restart required only for listen_addr/port changes (TLS certificate and mTLS reload automatically)"})
 }
 
 // --- Notification Config ---

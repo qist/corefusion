@@ -2429,7 +2429,7 @@ trustedProxies: '可信代理',
     },
     restart: {
       title: '重启面板',
-      hint: '修改监听地址、端口、TLS 等配置后需要重启才能生效',
+      hint: '修改监听地址、端口后需要重启才能生效；TLS 证书与 mTLS 客户端 CA 会自动热加载，无需重启',
       button: '重启面板',
       confirm: '确定重启面板？重启期间服务将短暂中断。',
       restarting: '正在重启...',

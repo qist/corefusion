@@ -29,7 +29,7 @@
 
     <!-- Table List -->
     <el-table v-if="!isMobile" :data="inbPaged" stripe style="width:100%" size="small">
-      <el-table-column label="ID" width="50" align="right">
+      <el-table-column :label="t('common.id')" width="50" align="right">
         <template #default="{row, $index}">
           <span style="font-size:11px;opacity:0.6">{{ row._id || ($index + 1) }}</span>
         </template>
@@ -255,28 +255,28 @@
     <!-- Add User Dialog -->
     <el-dialog v-model="addUserDlg" :title="t('protoCenter.inbounds.addUser')" width="500">
       <el-form label-width="100px" label-position="left">
-        <el-form-item label="Email">
+        <el-form-item :label="t('certificate.email')">
           <el-input v-model="newUser.email" placeholder="user@example.com" />
         </el-form-item>
-        <el-form-item v-if="['vless','vmess'].includes(addUserProtocol)" label="UUID">
+        <el-form-item v-if="['vless','vmess'].includes(addUserProtocol)" :label="t('singbox.users.uuid')">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="newUser.id" style="flex:1" />
             <el-button size="small" @click="newUser.id = genUUID()">Generate</el-button>
           </div>
         </el-form-item>
-        <el-form-item v-if="addUserProtocol === 'vless' && canEnableFlowForInbound(addUserTag)" label="Flow">
+        <el-form-item v-if="addUserProtocol === 'vless' && canEnableFlowForInbound(addUserTag)" :label="t('singbox.users.flow')">
           <el-select v-model="newUser.flow" style="width:100%" clearable>
             <el-option label="none" value="" />
             <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="['trojan','hysteria'].includes(addUserProtocol)" label="Password">
+        <el-form-item v-if="['trojan','hysteria'].includes(addUserProtocol)" :label="t('protoCenter.masque.password')">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="newUser.password" style="flex:1" />
             <el-button size="small" @click="newUser.password = genBase64Password()">Generate</el-button>
           </div>
         </el-form-item>
-        <el-form-item v-if="addUserProtocol === 'shadowsocks' && isSSMultiUser(addUserSSMethod)" label="Password">
+        <el-form-item v-if="addUserProtocol === 'shadowsocks' && isSSMultiUser(addUserSSMethod)" :label="t('protoCenter.masque.password')">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="newUser.password" style="flex:1" />
             <el-button size="small" @click="newUser.password = genSSPassword(addUserSSMethod)">Generate</el-button>
@@ -447,7 +447,7 @@
         <!-- Stream Tab (not for HTTP/SOCKS/Tunnel/WireGuard/TUN) -->
         <el-tab-pane v-if="!['http','socks','tunnel','dokodemo-door','wireguard','tun'].includes(rf.protocol)" :label="t('protoCenter.inbounds.stream')" name="stream">
           <el-form label-width="120px" label-position="left">
-            <el-form-item label="Network">
+            <el-form-item :label="t('protoCenter.routing.network')">
               <el-select v-model="rf.streamSettings.network" style="width:100%" :disabled="rf.protocol === 'hysteria'" @change="onNetworkChange">
                 <el-option label="raw" value="raw" /><el-option label="ws" value="ws" />
                 <el-option label="mKCP" value="mkcp" /><el-option label="grpc" value="grpc" />
@@ -457,7 +457,7 @@
                 <el-option v-if="rf.protocol === 'masque'" label="MASQUE" value="masque" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Security">
+            <el-form-item :label="t('protoCenter.outbounds.security')">
               <el-select v-model="rf.streamSettings.security" style="width:100%" @change="onSecurityChange">
                 <el-option v-if="rf.protocol !== 'hysteria' && rf.protocol !== 'masque'" label="none" value="none" />
                 <el-option label="tls" value="tls" />
@@ -612,7 +612,7 @@
                   <el-input v-model="rf.streamSettings.tls.echConfigList" type="textarea" :rows="2" @change="emit" />
                   <div class="hint">{{ t('protoCenter.tls.echConfigListHint') }}</div>
                 </el-form-item>
-                <el-form-item label="ECH Sockopt (JSON)">
+                <el-form-item :label="t('xrayIn.echSockopt')">
                   <el-input v-model="rf.streamSettings.tls._echSockoptStr" type="textarea" :rows="3"
                     placeholder='{"interfaceName": "eth0", "mark": 255, "tcpFastOpen": true}' @change="emit" />
                   <div class="hint">
@@ -625,7 +625,7 @@
 
             <template v-if="rf.streamSettings.security === 'reality'">
               <el-form label-width="160px" label-position="left">
-                <el-form-item label="Target">
+                <el-form-item :label="t('protoCenter.reality.target')">
                   <div style="display:flex;gap:8px;width:100%">
                     <el-select v-model="rf.streamSettings.reality.target" style="flex:1" filterable allow-create default-first-option @change="onTargetChange">
                       <!-- 本地代理 Reality 服务器分组
@@ -651,7 +651,7 @@
                   </div>
                   <div v-if="usedSnis.size > 0" class="hint">{{ t('protoCenter.reality.defaultPreset') }}：{{ usedSnis.size }} {{ t('protoCenter.reality.defaultPresetHint') }}</div>
                 </el-form-item>
-                <el-form-item label="Server Names">
+                <el-form-item :label="t('protoCenter.reality.serverNames')">
                   <div style="display:flex;gap:8px;align-items:flex-start;width:100%">
                     <el-input v-model="rf.streamSettings.reality.serverNamesStr" type="textarea" :rows="3" :placeholder="t('protoCenter.reality.serverNamesPlaceholder')" style="flex:1" @change="emit" />
                     <el-button size="small" style="margin-top:0" :title="t('protoCenter.reality.serverNamesRandomTip')" @click="refreshRandomDomains">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
@@ -661,7 +661,7 @@
                     {{ t('protoCenter.reality.serverNamesConflict') }}：{{ sniConflicts.map(c => c.sni + '（已被 ' + c.by + ' 使用）').join('，') }}
                   </div>
                 </el-form-item>
-                <el-form-item label="Private Key">
+                <el-form-item :label="t('protoCenter.reality.privateKey')">
                   <div style="display:flex;gap:8px;flex:1">
                     <el-input v-model="rf.streamSettings.reality.privateKey" style="flex:1" @change="emit" />
                     <el-button size="small" @click="genRealityKey(rf)">{{ t('protoCenter.reality.generate') }}</el-button>
@@ -671,12 +671,12 @@
                   <el-input v-model="rf.streamSettings.reality._password" readonly />
                   <div class="hint">{{ t('protoCenter.reality.passwordHint') }}</div>
                 </el-form-item>
-                <el-form-item label="Short IDs">
+                <el-form-item :label="t('protoCenter.reality.shortIds')">
                   <el-input v-model="rf.streamSettings.reality.shortIdsStr" type="textarea" :rows="4" :placeholder="t('protoCenter.reality.shortIdsPlaceholder')" @change="emit" />
                   <el-button size="small" style="margin-top:4px" @click="genRandomShortId(rf)">{{ t('protoCenter.reality.randomGenerate') }}</el-button>
                   <div class="hint">{{ t('protoCenter.reality.shortIdsHint') }}</div>
                 </el-form-item>
-                <el-form-item label="Fingerprint">
+                <el-form-item :label="t('protoCenter.tls.fingerprint')">
                   <el-select v-model="rf.streamSettings.reality._fingerprint" style="width:100%" clearable @change="emit">
                     <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
                     <el-option label="safari" value="safari" /><el-option label="ios" value="ios" />
@@ -688,23 +688,23 @@
                   <el-input v-model="rf.streamSettings.reality.spiderX" :placeholder="t('protoCenter.reality.spiderXPlaceholder')" @change="emit" />
                   <div class="hint">{{ t('protoCenter.reality.spiderXHint') }}</div>
                 </el-form-item>
-                <el-form-item label="Show">
+                <el-form-item :label="t('protoCenter.reality.show')">
                   <el-switch v-model="rf.streamSettings.reality.show" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Xver">
+                <el-form-item :label="t('protoCenter.reality.xver')">
                   <el-select v-model="rf.streamSettings.reality.xver" style="width:100%" filterable allow-create default-first-option @change="emit">
                     <el-option label="0 (disabled)" :value="0" />
                     <el-option label="1" :value="1" />
                     <el-option label="2" :value="2" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="Min Client Ver">
+                <el-form-item :label="t('protoCenter.reality.minClientVer')">
                   <el-input v-model="rf.streamSettings.reality.minClientVer" placeholder="x.y.z" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Max Client Ver">
+                <el-form-item :label="t('protoCenter.reality.maxClientVer')">
                   <el-input v-model="rf.streamSettings.reality.maxClientVer" placeholder="x.y.z" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Max Time Diff (ms)">
+                <el-form-item :label="t('protoCenter.reality.maxTimeDiff')">
                   <el-input-number v-model="rf.streamSettings.reality.maxTimeDiff" :min="0" @change="emit" />
                 </el-form-item>
               </el-form>
@@ -712,7 +712,7 @@
               <!-- ML-DSA-65 -->
               <el-divider content-position="left">{{ t('protoCenter.reality.mldsa65') }}</el-divider>
               <el-form label-width="160px" label-position="left">
-                <el-form-item label="Seed">
+                <el-form-item :label="t('protoCenter.reality.mldsa65Seed')">
                   <div style="display:flex;gap:8px;flex:1">
                     <el-input v-model="rf.streamSettings.reality.mldsa65Seed" style="flex:1" @change="emit" />
                     <el-button size="small" @click="genMldsa65(rf)">{{ t('protoCenter.reality.generate') }}</el-button>
@@ -728,47 +728,47 @@
               <!-- Limit Fallback -->
               <el-divider content-position="left">{{ t('protoCenter.reality.limitFallback') }}</el-divider>
               <el-form label-width="160px" label-position="left">
-                <el-form-item label="Limit Upload">
+                <el-form-item :label="t('protoCenter.reality.limitUpload')">
                   <el-switch v-model="rf.streamSettings.reality._showLimitUpload" @change="emit" />
                 </el-form-item>
               </el-form>
               <el-form v-if="rf.streamSettings.reality._showLimitUpload" label-width="180px" label-position="left" style="margin-bottom:12px;padding-left:20px">
-                <el-form-item label="After Bytes"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.afterBytes" :min="0" @change="emit" /></el-form-item>
-                <el-form-item label="Bytes Per Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
-                <el-form-item label="Burst Bytes/Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.afterBytes')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.afterBytes" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.bytesPerSec')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.burstBytesPerSec')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackUpload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
               </el-form>
               <el-form label-width="160px" label-position="left">
-                <el-form-item label="Limit Download">
+                <el-form-item :label="t('protoCenter.reality.limitDownload')">
                   <el-switch v-model="rf.streamSettings.reality._showLimitDownload" @change="emit" />
                 </el-form-item>
               </el-form>
               <el-form v-if="rf.streamSettings.reality._showLimitDownload" label-width="180px" label-position="left" style="padding-left:20px">
-                <el-form-item label="After Bytes"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.afterBytes" :min="0" @change="emit" /></el-form-item>
-                <el-form-item label="Bytes Per Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
-                <el-form-item label="Burst Bytes/Sec"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.afterBytes')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.afterBytes" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.bytesPerSec')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.bytesPerSec" :min="0" @change="emit" /></el-form-item>
+                <el-form-item :label="t('protoCenter.reality.burstBytesPerSec')"><el-input-number v-model="rf.streamSettings.reality.limitFallbackDownload.burstBytesPerSec" :min="0" @change="emit" /></el-form-item>
               </el-form>
             </template>
           </el-form>
 
           <!-- Port Hopping (Hysteria only) -->
           <template v-if="rf.protocol === 'hysteria'">
-          <el-divider content-position="left">Port Hopping</el-divider>
+          <el-divider content-position="left">{{ t('xrayIn.portHopping') }}</el-divider>
           <el-form label-width="140px" label-position="left">
-            <el-form-item label="Enable">
+            <el-form-item :label="t('protoCenter.inbounds.enableAccessDomain')">
               <el-switch v-model="rf._portHopEnabled" @change="onPortHopChange" />
             </el-form-item>
             <template v-if="rf._portHopEnabled">
-              <el-form-item label="Target Port">
+              <el-form-item :label="t('protoCenter.inbounds.targetPort')">
                 <el-input-number v-model="rf.port" :min="1" :max="65535" disabled />
                 <div class="hint">Current server port</div>
               </el-form-item>
-              <el-form-item label="Range Mode">
+              <el-form-item :label="t('protoCenter.inbounds.rangeMode')">
                 <el-select v-model="rf._portHopMode" style="width:100%" @change="onPortHopModeChange">
-                  <el-option label="Preset" value="preset" />
-                  <el-option label="Manual" value="manual" />
+                  <el-option :label="t('protoCenter.inbounds.preset')" value="preset" />
+                  <el-option :label="t('protoCenter.inbounds.manual')" value="manual" />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
+              <el-form-item v-if="rf._portHopMode === 'preset'" :label="t('protoCenter.inbounds.portRange')">
                 <el-select v-model="rf._portHopRange" style="width:100%" @change="onPortHopRangeChange">
                   <!-- 预设段互不重叠；已被本节点其它入站占用的段直接标出来（端口段是节点级资源） -->
                   <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
@@ -780,16 +780,16 @@
                 </el-select>
                 <div v-if="portHopUsageHint" class="hint">{{ portHopUsageHint }}</div>
               </el-form-item>
-              <el-form-item v-if="rf._portHopMode === 'manual'" label="Port Range">
+              <el-form-item v-if="rf._portHopMode === 'manual'" :label="t('protoCenter.inbounds.portRange')">
                 <div style="display:flex;gap:8px;align-items:center">
                   <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
                   <span>-</span>
                   <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" @change="onPortHopManualChange" />
                 </div>
               </el-form-item>
-              <el-form-item label="Interface">
+              <el-form-item :label="t('protoCenter.inbounds.interface')">
                 <div style="display:flex;gap:8px;width:100%">
-                  <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
+                  <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create :placeholder="t('xrayIn.allInterfaces')">
                     <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
                   </el-select>
                   <el-button size="small" @click="loadInterfaces">Refresh</el-button>
@@ -802,50 +802,50 @@
 
           <!-- RAW Settings -->
           <template v-if="rf.streamSettings.network === 'raw'">
-            <el-divider content-position="left">RAW Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayUi.rawSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Accept Proxy Protocol">
+              <el-form-item :label="t('protoCenter.sockopt.acceptProxyProtocol')">
                 <el-switch v-model="rf.streamSettings.raw.acceptProxyProtocol" />
               </el-form-item>
-              <el-form-item label="Header Type">
+              <el-form-item :label="t('xrayUi.headerType')">
                 <el-select v-model="rf.streamSettings.raw.headerType" style="width:100%" @change="onRawHeaderChange">
                   <el-option label="none" value="none" />
                   <el-option label="http" value="http" />
                 </el-select>
               </el-form-item>
               <template v-if="rf.streamSettings.raw.headerType === 'http'">
-                <el-divider content-position="left">HTTP Request</el-divider>
-                <el-form-item label="Version">
+                <el-divider content-position="left">{{ t('xrayUi.httpRequest') }}</el-divider>
+                <el-form-item :label="t('protoCenter.status.version')">
                   <el-input v-model="rf.streamSettings.raw.request.version" placeholder="1.1" />
                 </el-form-item>
-                <el-form-item label="Method">
+                <el-form-item :label="t('xrayUi.method')">
                   <el-input v-model="rf.streamSettings.raw.request.method" placeholder="GET" />
                 </el-form-item>
-                <el-form-item label="Paths">
+                <el-form-item :label="t('proxy.wafPaths')">
                   <el-input v-model="rf.streamSettings.raw.request._pathsStr" placeholder="/" />
                   <div class="hint">Comma-separated, e.g. /,/path</div>
                 </el-form-item>
-                <el-form-item label="Headers">
+                <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                   <div v-for="(h, i) in rf.streamSettings.raw.request._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                    <el-input v-model="h.key" placeholder="Host" style="width:30%" />
+                    <el-input v-model="h.key" :placeholder="t('xrayIn.host')" style="width:30%" />
                     <el-input v-model="h.value" placeholder="www.example.com" style="width:50%" />
                     <el-button size="small" type="danger" text @click="rf.streamSettings.raw.request._headers.splice(i,1)">X</el-button>
                   </div>
                   <el-button size="small" @click="rf.streamSettings.raw.request._headers.push({key:'',value:''})">+ Add Header</el-button>
                 </el-form-item>
-                <el-divider content-position="left">HTTP Response</el-divider>
-                <el-form-item label="Version">
+                <el-divider content-position="left">{{ t('xrayUi.httpResponse') }}</el-divider>
+                <el-form-item :label="t('protoCenter.status.version')">
                   <el-input v-model="rf.streamSettings.raw.response.version" placeholder="1.1" />
                 </el-form-item>
-                <el-form-item label="Status">
+                <el-form-item :label="t('common.status')">
                   <el-input v-model="rf.streamSettings.raw.response.status" placeholder="200" />
                 </el-form-item>
-                <el-form-item label="Reason">
-                  <el-input v-model="rf.streamSettings.raw.response.reason" placeholder="OK" />
+                <el-form-item :label="t('xrayUi.reason')">
+                  <el-input v-model="rf.streamSettings.raw.response.reason" :placeholder="t('xrayUi.ok')" />
                 </el-form-item>
-                <el-form-item label="Headers">
+                <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                   <div v-for="(h, i) in rf.streamSettings.raw.response._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                    <el-input v-model="h.key" placeholder="Content-Type" style="width:30%" />
+                    <el-input v-model="h.key" :placeholder="t('subfmt.contentType')" style="width:30%" />
                     <el-input v-model="h.value" placeholder="application/octet-stream" style="width:50%" />
                     <el-button size="small" type="danger" text @click="rf.streamSettings.raw.response._headers.splice(i,1)">X</el-button>
                   </div>
@@ -857,36 +857,36 @@
 
           <!-- WebSocket Settings -->
           <template v-if="rf.streamSettings.network === 'ws'">
-            <el-divider content-position="left">WebSocket Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.webSocketSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Accept Proxy Protocol">
+              <el-form-item :label="t('protoCenter.sockopt.acceptProxyProtocol')">
                 <el-switch v-model="rf.streamSettings.ws.acceptProxyProtocol" />
               </el-form-item>
-              <el-form-item label="Path">
+              <el-form-item :label="t('protoCenter.masque.path')">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.streamSettings.ws.path" placeholder="/" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.ws.path = '/' + genId(12) + '?ed=2560'">Random</el-button>
                 </div>
                 <div class="hint">{{ t('protoCenter.transport.wsEarlyData') }}</div>
               </el-form-item>
-              <el-form-item label="Host">
+              <el-form-item :label="t('xrayIn.host')">
                 <el-input v-model="rf.streamSettings.ws.host" />
               </el-form-item>
             </el-form>
-            <el-divider content-position="left">Client Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.clientSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Headers">
+              <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                 <!-- 模型是**扁平**的 `ws._headers`（parseWsSettings 产出、序列化读它）：
                      写成 ws.settings._headers 会在打开已有 ws 入站时抛
                      "Cannot read properties of undefined (reading '_headers')"（整页渲染失败）。 -->
                 <div v-for="(h, i) in rf.streamSettings.ws._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                  <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
-                  <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
+                  <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:30%" />
+                  <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:50%" />
                   <el-button size="small" type="danger" text @click="rf.streamSettings.ws._headers.splice(i,1)">X</el-button>
                 </div>
                 <el-button size="small" @click="rf.streamSettings.ws._headers.push({key:'',value:''})">+ Add Header</el-button>
               </el-form-item>
-              <el-form-item label="Heartbeat Period">
+              <el-form-item :label="t('xrayUi.heartbeatPeriod')">
                 <el-input-number v-model="rf.streamSettings.ws.heartbeatPeriod" :min="0" />
                 <div class="hint">Seconds, 0 = disabled</div>
               </el-form-item>
@@ -895,32 +895,32 @@
 
           <!-- mKCP Settings -->
           <template v-if="rf.streamSettings.network === 'mkcp'">
-            <el-divider content-position="left">mKCP Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.mkcpSettings') }}</el-divider>
             <el-form label-width="160px" label-position="left">
-              <el-form-item label="MTU">
+              <el-form-item :label="t('protoCenter.masque.mtu')">
                 <el-input-number v-model="rf.streamSettings.kcp.mtu" :min="576" :max="1460" @change="emit" />
                 <div class="hint">576-1460, default 1350</div>
               </el-form-item>
-              <el-form-item label="TTI (ms)">
+              <el-form-item :label="t('xrayUi.ttiMs')">
                 <el-input-number v-model="rf.streamSettings.kcp.tti" :min="10" :max="100" @change="emit" />
                 <div class="hint">Transmission time interval, 10-100ms, default 50</div>
               </el-form-item>
-              <el-form-item label="Uplink Capacity (MB/s)">
+              <el-form-item :label="t('protoCenter.outbounds.kcpUplinkCap')">
                 <el-input-number v-model="rf.streamSettings.kcp.uplinkCapacity" :min="0" @change="emit" />
                 <div class="hint">Upload bandwidth, 0 = very small</div>
               </el-form-item>
-              <el-form-item label="Downlink Capacity (MB/s)">
+              <el-form-item :label="t('protoCenter.outbounds.kcpDownlinkCap')">
                 <el-input-number v-model="rf.streamSettings.kcp.downlinkCapacity" :min="0" @change="emit" />
                 <div class="hint">Download bandwidth, 0 = very small</div>
               </el-form-item>
-              <el-form-item label="Congestion">
+              <el-form-item :label="t('protoCenter.finalmask.congestion')">
                 <el-switch v-model="rf.streamSettings.kcp.congestion" @change="emit" />
                 <div class="hint">Auto reduce throughput on packet loss</div>
               </el-form-item>
-              <el-form-item label="Read Buffer Size (MB)">
+              <el-form-item :label="t('xrayIn.readBufferSizeMb')">
                 <el-input-number v-model="rf.streamSettings.kcp.readBufferSize" :min="1" @change="emit" />
               </el-form-item>
-              <el-form-item label="Write Buffer Size (MB)">
+              <el-form-item :label="t('xrayIn.writeBufferSizeMb')">
                 <el-input-number v-model="rf.streamSettings.kcp.writeBufferSize" :min="1" @change="emit" />
               </el-form-item>
             </el-form>
@@ -928,29 +928,29 @@
 
           <!-- HTTPUpgrade Settings -->
           <template v-if="rf.streamSettings.network === 'httpupgrade'">
-            <el-divider content-position="left">HTTPUpgrade Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.httpUpgradeSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Accept Proxy Protocol">
+              <el-form-item :label="t('protoCenter.sockopt.acceptProxyProtocol')">
                 <el-switch v-model="rf.streamSettings.httpupgrade.acceptProxyProtocol" />
               </el-form-item>
-              <el-form-item label="Path">
+              <el-form-item :label="t('protoCenter.masque.path')">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.streamSettings.httpupgrade.path" placeholder="/" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.httpupgrade.path = '/' + genId(12) + '?ed=2560'">Random</el-button>
                 </div>
                 <div class="hint">{{ t('protoCenter.transport.httpupgradeEarlyData') }}</div>
               </el-form-item>
-              <el-form-item label="Host">
+              <el-form-item :label="t('xrayIn.host')">
                 <el-input v-model="rf.streamSettings.httpupgrade.host" />
               </el-form-item>
             </el-form>
-            <el-divider content-position="left">Client Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.clientSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Headers">
+              <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                 <!-- 同上：模型是扁平 `httpupgrade._headers` -->
                 <div v-for="(h, i) in rf.streamSettings.httpupgrade._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                  <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
-                  <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
+                  <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:30%" />
+                  <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:50%" />
                   <el-button size="small" type="danger" text @click="rf.streamSettings.httpupgrade._headers.splice(i,1)">X</el-button>
                 </div>
                 <el-button size="small" @click="rf.streamSettings.httpupgrade._headers.push({key:'',value:''})">+ Add Header</el-button>
@@ -960,51 +960,51 @@
 
           <!-- Hysteria Settings -->
           <template v-if="rf.streamSettings.network === 'hysteria'">
-            <el-divider content-position="left">Hysteria Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayUi.hysteriaSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Version">
+              <el-form-item :label="t('protoCenter.status.version')">
                 <el-input-number v-model="rf.settings.version" :min="2" :max="2" disabled />
               </el-form-item>
-              <el-form-item label="UDP Idle Timeout">
+              <el-form-item :label="t('xrayIn.udpIdleTimeout')">
                 <el-input-number v-model="rf.streamSettings.hysteria.udpIdleTimeout" :min="0" @change="emit" />
                 <div class="hint">{{ t('protoCenter.transport.hysteriaIdleTimeout') }}</div>
               </el-form-item>
             </el-form>
-            <el-divider content-position="left">Masquerade</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.masquerade') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Type">
+              <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
                 <el-select v-model="rf.streamSettings.hysteria.masquerade.type" style="width:100%" clearable @change="emit">
-                  <el-option label="Default 404" value="" />
+                  <el-option :label="t('xrayIn.default404')" value="" />
                   <el-option label="file" value="file" />
                   <el-option label="proxy" value="proxy" />
                   <el-option label="string" value="string" />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="rf.streamSettings.hysteria.masquerade.type === 'file'" label="Directory">
+              <el-form-item v-if="rf.streamSettings.hysteria.masquerade.type === 'file'" :label="t('xrayIn.directory')">
                 <el-input v-model="rf.streamSettings.hysteria.masquerade.dir" placeholder="/var/www/html" @change="emit" />
               </el-form-item>
               <template v-if="rf.streamSettings.hysteria.masquerade.type === 'proxy'">
-                <el-form-item label="URL">
+                <el-form-item :label="t('protoCenter.routing.webhookUrl')">
                   <el-input v-model="rf.streamSettings.hysteria.masquerade.url" placeholder="https://example.com" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Rewrite Host">
+                <el-form-item :label="t('xrayIn.rewriteHost')">
                   <el-switch v-model="rf.streamSettings.hysteria.masquerade.rewriteHost" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Insecure">
+                <el-form-item :label="t('singbox.tls.insecure')">
                   <el-switch v-model="rf.streamSettings.hysteria.masquerade.insecure" @change="emit" />
                 </el-form-item>
               </template>
               <template v-if="rf.streamSettings.hysteria.masquerade.type === 'string'">
-                <el-form-item label="Content">
+                <el-form-item :label="t('xrayIn.content')">
                   <el-input v-model="rf.streamSettings.hysteria.masquerade.content" type="textarea" :rows="3" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Status Code">
+                <el-form-item :label="t('xrayIn.statusCode')">
                   <el-input-number v-model="rf.streamSettings.hysteria.masquerade.statusCode" :min="0" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Headers">
+                <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                   <div v-for="(h, i) in rf.streamSettings.hysteria.masquerade._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                    <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
-                    <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
+                    <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:30%" />
+                    <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:50%" />
                     <el-button size="small" type="danger" text @click="rf.streamSettings.hysteria.masquerade._headers.splice(i,1)">X</el-button>
                   </div>
                   <el-button size="small" @click="rf.streamSettings.hysteria.masquerade._headers.push({key:'',value:''})">+ Add Header</el-button>
@@ -1015,18 +1015,18 @@
 
           <!-- XHTTP Settings -->
           <template v-if="rf.streamSettings.network === 'xhttp'">
-            <el-divider content-position="left">XHTTP Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.xhttpSettings') }}</el-divider>
             <el-form label-width="160px" label-position="left">
-              <el-form-item label="Path">
+              <el-form-item :label="t('protoCenter.masque.path')">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.streamSettings.xhttp.path" placeholder="/" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.xhttp.path = '/' + genId(12)">Random</el-button>
                 </div>
               </el-form-item>
-              <el-form-item label="Host">
+              <el-form-item :label="t('xrayIn.host')">
                 <el-input v-model="rf.streamSettings.xhttp.host" @change="emit" />
               </el-form-item>
-              <el-form-item label="Mode">
+              <el-form-item :label="t('xrayUi.mode')">
                 <el-select v-model="rf.streamSettings.xhttp.mode" style="width:100%" clearable @change="emit">
                   <el-option label="auto" value="" />
                   <el-option label="packet-up" value="packet-up" />
@@ -1034,78 +1034,78 @@
                   <el-option label="stream-one" value="stream-one" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="Uplink HTTP Method">
+              <el-form-item :label="t('xrayIn.uplinkHttpMethod')">
                 <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMethod" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
                 <el-select v-if="rf.streamSettings.xhttp.extra._showMethod" v-model="rf.streamSettings.xhttp.extra.uplinkHTTPMethod" style="width:100%;margin-top:4px" @change="emit">
                   <el-option label="POST" value="POST" /><el-option label="GET" value="GET" />
                 </el-select>
               </el-form-item>
-              <el-form-item v-if="['stream-up','stream-one'].includes(rf.streamSettings.xhttp.mode)" label="No GRPC Header">
+              <el-form-item v-if="['stream-up','stream-one'].includes(rf.streamSettings.xhttp.mode)" :label="t('xrayUi.noGrpcHeader')">
                 <el-switch v-model="rf.streamSettings.xhttp.extra.noGRPCHeader" @change="emit" />
               </el-form-item>
-              <el-form-item label="No SSE Header">
+              <el-form-item :label="t('xrayIn.noSseHeader')">
                 <el-switch v-model="rf.streamSettings.xhttp.extra.noSSEHeader" @change="emit" />
                 <div class="hint">Server only</div>
               </el-form-item>
-              <el-form-item label="Server Max Header Bytes">
+              <el-form-item :label="t('xrayIn.serverMaxHeaderBytes')">
                 <el-checkbox v-model="rf.streamSettings.xhttp.extra._showMaxHeader" @change="emit">{{ t('protoCenter.transport.xhttpEnable') }}</el-checkbox>
                 <el-input-number v-if="rf.streamSettings.xhttp.extra._showMaxHeader" v-model="rf.streamSettings.xhttp.extra.serverMaxHeaderBytes" :min="0" style="margin-top:4px" @change="emit" />
               </el-form-item>
-              <el-form-item label="Headers">
+              <el-form-item :label="t('protoCenter.routing.webhookHeaders')">
                 <div v-for="(h, i) in rf.streamSettings.xhttp.extra._headers" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
-                  <el-input v-model="h.key" placeholder="Header name" style="width:30%" />
-                  <el-input v-model="h.value" placeholder="Header value" style="width:50%" />
+                  <el-input v-model="h.key" :placeholder="t('protoCenter.routing.webhookHeaderName')" style="width:30%" />
+                  <el-input v-model="h.value" :placeholder="t('protoCenter.routing.webhookHeaderValue')" style="width:50%" />
                   <el-button size="small" type="danger" text @click="rf.streamSettings.xhttp.extra._headers.splice(i,1)">X</el-button>
                 </div>
                 <el-button size="small" @click="rf.streamSettings.xhttp.extra._headers.push({key:'',value:''})">+ Add Header</el-button>
               </el-form-item>
-              <el-form-item label="x Padding Bytes">
+              <el-form-item :label="t('xrayUi.xPaddingBytes')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xPaddingBytes" placeholder="100-1000" style="width:200px" @change="emit" />
                 <div class="hint">{{ t('protoCenter.transport.xhttpPaddingHint') }}</div>
               </el-form-item>
             </el-form>
             <template v-if="!rf.streamSettings.xhttp.mode || rf.streamSettings.xhttp.mode === 'packet-up'">
-              <el-divider content-position="left">Scamper (packet-up only)</el-divider>
+              <el-divider content-position="left">{{ t('xrayIn.scamper') }}</el-divider>
               <el-form label-width="180px" label-position="left">
-                <el-form-item label="Max Each Post Bytes">
+                <el-form-item :label="t('xrayUi.maxEachPostBytes')">
                   <el-input-number v-model="rf.streamSettings.xhttp.extra.scMaxEachPostBytes" :min="0" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Min Posts Interval (ms)">
+                <el-form-item :label="t('xrayUi.minPostsIntervalMs')">
                   <el-input-number v-model="rf.streamSettings.xhttp.extra.scMinPostsIntervalMs" :min="0" @change="emit" />
                 </el-form-item>
-                <el-form-item label="Max Buffered Posts">
+                <el-form-item :label="t('xrayIn.maxBufferedPosts')">
                   <el-input v-model="rf.streamSettings.xhttp.extra.scMaxBufferedPosts" placeholder="30" style="width:200px" @change="emit" />
                 </el-form-item>
               </el-form>
             </template>
             <template v-if="rf.streamSettings.xhttp.mode === 'stream-up'">
-              <el-divider content-position="left">Stream-Up Settings</el-divider>
+              <el-divider content-position="left">{{ t('xrayIn.streamUpSettings') }}</el-divider>
               <el-form label-width="180px" label-position="left">
-                <el-form-item label="Stream Up Server Secs">
+                <el-form-item :label="t('xrayIn.streamUpServerSecs')">
                   <el-input v-model="rf.streamSettings.xhttp.extra.scStreamUpServerSecs" placeholder="20-80" style="width:200px" @change="emit" />
                 </el-form-item>
               </el-form>
             </template>
-            <el-divider content-position="left">Xmux (Multiplexing)</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.xmux') }}</el-divider>
             <el-form label-width="180px" label-position="left">
-              <el-form-item label="Max Concurrency">
+              <el-form-item :label="t('xrayUi.maxConcurrency')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConcurrency" placeholder="16-32" style="width:200px" :disabled="xmuxConnActive" @change="onXmuxConcurrency" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxConcurrencyHint') }}</div>
               </el-form-item>
-              <el-form-item label="Max Connections">
+              <el-form-item :label="t('xrayUi.maxConnections')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.maxConnections" placeholder="0" style="width:200px" :disabled="xmuxConcurrencyActive" @change="onXmuxConnections" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxConnectionsHint') }}</div>
               </el-form-item>
-              <el-form-item label="C Max Reuse Times">
+              <el-form-item :label="t('xrayUi.cMaxReuseTimes')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.cMaxReuseTimes" placeholder="0" style="width:200px" @change="emit" />
               </el-form-item>
-              <el-form-item label="H Max Request Times">
+              <el-form-item :label="t('xrayUi.hMaxRequestTimes')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.hMaxRequestTimes" placeholder="600-900" style="width:200px" @change="emit" />
               </el-form-item>
-              <el-form-item label="H Max Reusable Secs">
+              <el-form-item :label="t('xrayUi.hMaxReusableSecs')">
                 <el-input v-model="rf.streamSettings.xhttp.extra.xmux.hMaxReusableSecs" placeholder="1800-3000" style="width:200px" @change="emit" />
               </el-form-item>
-              <el-form-item label="H Keep Alive Period">
+              <el-form-item :label="t('xrayUi.hKeepAlivePeriod')">
                 <el-input-number v-model="rf.streamSettings.xhttp.extra.xmux.hKeepAlivePeriod" :min="-1" @change="emit" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxKeepAliveHint') }}</div>
               </el-form-item>
@@ -1133,28 +1133,28 @@
             </el-form-item>
                       </template>
           <template v-if="rf.streamSettings.network === 'grpc'">
-            <el-divider content-position="left">gRPC Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.grpcSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Service Name">
+              <el-form-item :label="t('xrayUi.serviceName')">
                 <div style="display:flex;gap:8px">
                   <el-input v-model="rf.streamSettings.grpc.serviceName" style="flex:1" />
                   <el-button size="small" @click="rf.streamSettings.grpc.serviceName = genId(12)">{{ t('protoCenter.transport.grpcChange') }}</el-button>
                 </div>
               </el-form-item>
-              <el-form-item label="Authority">
+              <el-form-item :label="t('xrayUi.authority')">
                 <el-input v-model="rf.streamSettings.grpc.authority" placeholder="grpc.example.com" />
                 <div class="hint">{{ t('protoCenter.transport.grpcAuthority') }}</div>
               </el-form-item>
             </el-form>
-            <el-divider content-position="left">Client Settings</el-divider>
+            <el-divider content-position="left">{{ t('xrayIn.clientSettings') }}</el-divider>
             <el-form label-width="140px" label-position="left">
-              <el-form-item label="Multi Mode">
+              <el-form-item :label="t('xrayUi.multiMode')">
                 <el-switch v-model="rf.streamSettings.grpc.settings.multiMode" />
                 <div class="hint">{{ t('protoCenter.transport.grpcMultiMode') }}</div>
               </el-form-item>
-              <el-form-item label="User Agent">
+              <el-form-item :label="t('xrayUi.userAgent')">
                 <el-select v-model="rf.streamSettings.grpc.settings.user_agent" filterable allow-create style="width:100%" @change="emit">
-                  <el-option label="Default (Go)" value="" />
+                  <el-option :label="t('protoCenter.transport.grpcUaDefault')" value="" />
                   <el-option label="Chrome Windows" value="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
                   <el-option label="Chrome macOS" value="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
                   <el-option label="Chrome Linux" value="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" />
@@ -1165,18 +1165,18 @@
                   <el-option label="grpc-python/1.60.0" value="grpc-python/1.60.0" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="Idle Timeout (s)">
+              <el-form-item :label="t('xrayUi.idleTimeoutS')">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.idle_timeout" :min="0" />
                 <div class="hint">{{ t('protoCenter.transport.grpcHealthCheck') }}</div>
               </el-form-item>
-              <el-form-item label="Health Check Timeout">
+              <el-form-item :label="t('xrayUi.healthCheckTimeout')">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.health_check_timeout" :min="0" />
                 <div class="hint">{{ t('protoCenter.transport.grpcHealthTimeout') }}</div>
               </el-form-item>
-              <el-form-item label="Permit Without Stream">
+              <el-form-item :label="t('xrayUi.permitWithoutStream')">
                 <el-switch v-model="rf.streamSettings.grpc.settings.permit_without_stream" />
               </el-form-item>
-              <el-form-item label="Initial Window Size">
+              <el-form-item :label="t('xrayUi.initialWindowSize')">
                 <el-input-number v-model="rf.streamSettings.grpc.settings.initial_windows_size" :min="0" />
                 <div class="hint">{{ t('protoCenter.transport.grpcInitialWindows') }}</div>
               </el-form-item>
@@ -1197,25 +1197,25 @@
             <span v-if="!rf.sockopt._enabled" style="font-size:12px;color:#909399">{{ t('protoCenter.sockopt.enableHint') }}</span>
           </div>
           <el-form v-if="rf.sockopt._enabled" label-width="180px" label-position="left">
-            <el-form-item label="Mark">
+            <el-form-item :label="t('protoCenter.sockopt.mark')">
               <el-input-number v-model="rf.sockopt.mark" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP Fast Open">
+            <el-form-item :label="t('protoCenter.sockopt.tcpFastOpen')">
               <el-switch v-model="rf.sockopt.tcpFastOpen" @change="emit" />
             </el-form-item>
-            <el-form-item label="TProxy">
+            <el-form-item :label="t('protoCenter.sockopt.tproxy')">
               <el-select v-model="rf.sockopt.tproxy" style="width:100%" clearable @change="emit">
                 <el-option label="off" value="off" /><el-option label="redirect" value="redirect" /><el-option label="tproxy" value="tproxy" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Domain Strategy">
+            <el-form-item :label="t('protoCenter.routing.domainStrategy')">
               <el-select v-model="rf.sockopt.domainStrategy" style="width:100%" clearable @change="emit">
                 <el-option label="AsIs" value="AsIs" /><el-option label="UseIP" value="UseIP" />
                 <el-option label="UseIPv4" value="UseIPv4" /><el-option label="UseIPv6" value="UseIPv6" />
                 <el-option label="ForceIP" value="ForceIP" /><el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Interface">
+            <el-form-item :label="t('protoCenter.inbounds.interface')">
               <div style="display:flex;gap:8px;width:100%">
                 <el-select v-model="rf.sockopt.interface" style="flex:1" filterable allow-create clearable @change="emit" :placeholder="t('protoCenter.sockopt.interfaceHint')">
                   <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
@@ -1223,39 +1223,39 @@
                 <el-button size="small" @click="loadInterfaces">{{ t('protoCenter.transport.refresh') }}</el-button>
               </div>
             </el-form-item>
-            <el-form-item label="V6 Only">
+            <el-form-item :label="t('protoCenter.sockopt.v6only')">
               <el-switch v-model="rf.sockopt.v6only" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP Keep Alive Idle (s)">
+            <el-form-item :label="t('protoCenter.sockopt.tcpKeepAliveIdle')">
               <el-input-number v-model="rf.sockopt.tcpKeepAliveIdle" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP Keep Alive Interval (s)">
+            <el-form-item :label="t('protoCenter.sockopt.tcpKeepAliveInterval')">
               <el-input-number v-model="rf.sockopt.tcpKeepAliveInterval" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP User Timeout (ms)">
+            <el-form-item :label="t('protoCenter.sockopt.tcpUserTimeout')">
               <el-input-number v-model="rf.sockopt.tcpUserTimeout" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP Congestion">
+            <el-form-item :label="t('protoCenter.sockopt.tcpcongestion')">
               <el-select v-model="rf.sockopt.tcpcongestion" style="width:100%" clearable @change="emit">
                 <el-option label="(default)" value="" /><el-option label="bbr" value="bbr" /><el-option label="cubic" value="cubic" /><el-option label="reno" value="reno" />
               </el-select>
             </el-form-item>
-            <el-form-item label="TCP Max Seg">
+            <el-form-item :label="t('protoCenter.sockopt.tcpMaxSeg')">
               <el-input-number v-model="rf.sockopt.tcpMaxSeg" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP Window Clamp">
+            <el-form-item :label="t('protoCenter.sockopt.tcpWindowClamp')">
               <el-input-number v-model="rf.sockopt.tcpWindowClamp" :min="0" @change="emit" />
             </el-form-item>
-            <el-form-item label="TCP MPTCP">
+            <el-form-item :label="t('protoCenter.sockopt.tcpMptcp')">
               <el-switch v-model="rf.sockopt.tcpMptcp" @change="emit" />
             </el-form-item>
-            <el-form-item label="Accept Proxy Protocol">
+            <el-form-item :label="t('protoCenter.sockopt.acceptProxyProtocol')">
               <el-switch v-model="rf.sockopt.acceptProxyProtocol" @change="emit" />
             </el-form-item>
-            <el-form-item label="Dialer Proxy">
+            <el-form-item :label="t('protoCenter.sockopt.dialerProxy')">
               <el-input v-model="rf.sockopt.dialerProxy" @change="emit" />
             </el-form-item>
-            <el-form-item label="Address Port Strategy">
+            <el-form-item :label="t('protoCenter.sockopt.addressPortStrategy')">
               <el-select v-model="rf.sockopt.addressPortStrategy" style="width:100%" clearable @change="emit">
                 <el-option label="(none)" value="" /><el-option label="SrvPortOnly" value="SrvPortOnly" />
                 <el-option label="SrvAddressOnly" value="SrvAddressOnly" /><el-option label="SrvPortAndAddress" value="SrvPortAndAddress" />
@@ -1263,7 +1263,7 @@
                 <el-option label="TxtPortAndAddress" value="TxtPortAndAddress" />
               </el-select>
             </el-form-item>
-            <el-form-item label="Trusted X-Forwarded-For">
+            <el-form-item :label="t('protoCenter.sockopt.trustedXff')">
               <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" placeholder="IP/CIDR" @change="emit" />
             </el-form-item>
           </el-form>
@@ -1513,7 +1513,7 @@
                   <!-- AES-128-GCM: show key input with generate button -->
                   <el-form-item v-if="!entry.settings.header" :label="t('protoCenter.finalmask.value')">
                     <div style="display:flex;gap:8px;width:100%">
-                      <el-input v-model="entry.settings.value" placeholder="AES-128-GCM key (empty = xor)" @change="emit" />
+                      <el-input v-model="entry.settings.value" :placeholder="t('xrayIn.aes128GcmKey')" @change="emit" />
                       <el-button size="small" @click="entry.settings.value = genAES128Key(); emit()">Generate</el-button>
                     </div>
                     <div class="hint">AES-128-GCM key, empty = default xor obfuscation</div>
@@ -1775,7 +1775,7 @@
       </div>
       <div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap">
         <el-input v-model="newTarget.target" placeholder="host:port" style="flex:2" />
-        <el-input v-model="newTarget.sni" placeholder="SNI" style="flex:1" />
+        <el-input v-model="newTarget.sni" :placeholder="t('service.serverName')" style="flex:1" />
         <el-select v-model="newTarget.type" style="width:90px">
           <el-option label="TCP" value="tcp" /><el-option label="Sock" value="sock" />
         </el-select>

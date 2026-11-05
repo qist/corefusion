@@ -133,13 +133,20 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 		}
 
 		existing := findInboundUserEntry(config, email)
-		changed := false
 		if existing == nil {
 			if err := m.addUserToInboundConfig(ctx, inbound, p, email, uuid, password, flow, method); err != nil {
 				log.Printf("inbound_manager: failed to add user %s to inbound %s: %v", email, inbound.Tag, err)
 				continue
 			}
-			// addUserToInboundConfig 已写库并热下发。
+			// addUserToInboundConfig 只写库：运行中的核心不会自动感知，
+			// 必须调 xray API 热加（或 sing-box 重载核心），否则要等下次重启才生效。
+			if isSingboxInbound(inbound) {
+				go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "upsert user "+email)
+				m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "upsert user "+email)
+				continue
+			}
+			go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+			m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 			continue
 		}
 
@@ -148,27 +155,26 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 			continue
 		}
 		applyUserCredentials(existing, p, uuid, password, flow, method)
-		changed = true
 
-		if changed {
-			data, err := json.Marshal(config)
-			if err != nil {
-				log.Printf("inbound_manager: upsert user %s marshal inbound %s: %v", email, inbound.Tag, err)
-				continue
-			}
-			inbound.ConfigJSON = string(data)
-			if err := m.inboundRepo.Update(ctx, inbound); err != nil {
-				log.Printf("inbound_manager: upsert user %s update inbound %s: %v", email, inbound.Tag, err)
-				continue
-			}
-			if isSingboxInbound(inbound) {
-				go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "upsert user "+email)
-				continue
-			}
-			// xray：先移除旧凭据再添加，避免运行时保留旧 uuid。
-			m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
-			go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		data, err := json.Marshal(config)
+		if err != nil {
+			log.Printf("inbound_manager: upsert user %s marshal inbound %s: %v", email, inbound.Tag, err)
+			continue
 		}
+		inbound.ConfigJSON = string(data)
+		if err := m.inboundRepo.Update(ctx, inbound); err != nil {
+			log.Printf("inbound_manager: upsert user %s update inbound %s: %v", email, inbound.Tag, err)
+			continue
+		}
+		if isSingboxInbound(inbound) {
+			go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "upsert user "+email)
+			m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "upsert user "+email)
+			continue
+		}
+		// xray：先移除旧凭据再添加，避免运行时保留旧 uuid（只写库不会生效）。
+		m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		m.fanOutReplaceUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
 	}
 	return nil
 }
@@ -549,6 +555,28 @@ func (m *InboundManager) fanOutPauseToMirrors(ctx context.Context, primaryServer
 		if paused {
 			go m.callXrayRemoveUser(mirror.ID, tag, email)
 		}
+	}
+}
+
+// fanOutReplaceUserToMirrors 在镜像节点上按「先移除、再添加」更新同一账号的凭据。
+// 放在同一个 goroutine 里顺序执行，避免 remove/add 乱序导致账号缺失。
+func (m *InboundManager) fanOutReplaceUserToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+	if m.serverRepo == nil {
+		return
+	}
+	mirrors, err := m.serverRepo.ListByPartner(ctx, primaryServerID)
+	if err != nil {
+		return
+	}
+	for _, mirror := range mirrors {
+		if mirror.NodeType != entity.NodeTypeMirror {
+			continue
+		}
+		serverID := mirror.ID
+		go func() {
+			m.callXrayRemoveUser(serverID, tag, email)
+			m.callXrayAddUser(serverID, tag, email, uuid, password, flow, method)
+		}()
 	}
 }
 

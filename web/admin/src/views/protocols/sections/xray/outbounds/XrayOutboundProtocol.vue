@@ -26,25 +26,25 @@
         </el-form-item>
       </template>
       <template v-if="rf.protocol === 'vmess' || rf.protocol === 'vless'">
-        <el-form-item label="UUID">
+        <el-form-item :label="t('singbox.users.uuid')">
           <el-input v-model="rf._uuid" />
         </el-form-item>
-        <el-form-item v-if="rf.protocol === 'vless'" label="Encryption">
+        <el-form-item v-if="rf.protocol === 'vless'" :label="t('protoCenter.inbounds.encryption')">
           <el-input v-model="rf._vlessEncryption" placeholder="none" />
           <div class="hint">{{ t('protoCenter.outbounds.vlessEncryptionHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="rf.protocol === 'vless'" label="Flow">
+        <el-form-item v-if="rf.protocol === 'vless'" :label="t('singbox.users.flow')">
           <el-select v-model="rf._flow" style="width:100%" clearable>
             <el-option label="none" value="" />
             <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
             <el-option label="xtls-rprx-vision-udp443" value="xtls-rprx-vision-udp443" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="rf.protocol === 'vless'" label="Reverse Proxy">
+        <el-form-item v-if="rf.protocol === 'vless'" :label="t('protoCenter.sections.reverse')">
           <el-switch v-model="rf._vlessReverseEnabled" />
         </el-form-item>
         <template v-if="rf.protocol === 'vless' && rf._vlessReverseEnabled">
-          <el-form-item label="Reverse Tag">
+          <el-form-item :label="t('misc.reverseTag')">
             <el-input v-model="rf._vlessReverseTag" placeholder="r-inbound" />
             <div class="hint">{{ t('protoCenter.outbounds.vlessReverseTagHint') }}</div>
           </el-form-item>
@@ -107,7 +107,7 @@
         </el-form-item>
       </template>
       <template v-if="rf.protocol === 'hysteria'">
-        <el-form-item label="Version">
+        <el-form-item :label="t('protoCenter.status.version')">
           <el-input-number v-model="rf._hysteriaVersion" :min="2" :max="2" disabled />
           <div class="hint">{{ t('protoCenter.outbounds.hysteriaVersionHint') }}</div>
         </el-form-item>
@@ -125,10 +125,10 @@
         <el-form-item :label="t('protoCenter.outbounds.password')">
           <el-input v-model="rf._password" />
         </el-form-item>
-        <el-form-item label="Email">
+        <el-form-item :label="t('certificate.email')">
           <el-input v-model="rf._email" placeholder="user@example.com" />
         </el-form-item>
-        <el-form-item label="User Level">
+        <el-form-item :label="t('protoCenter.outbounds.userLevel')">
           <el-input-number v-model="rf._level" :min="0" />
         </el-form-item>
       </template>
@@ -140,35 +140,35 @@
         <el-button size="small" type="primary" @click="importWarp">{{ t('protoCenter.outbounds.importWarp') }}</el-button>
       </div>
       <el-form label-width="140px" label-position="left">
-        <el-form-item label="Secret Key">
+        <el-form-item :label="t('settings2.secretKey')">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="rf._wgSecretKey" style="flex:1" show-password />
             <el-button size="small" @click="genWgKey">{{ t('protoCenter.outbounds.generate') }}</el-button>
           </div>
         </el-form-item>
-        <el-form-item v-if="rf._wgPublicKey" label="Public Key">
+        <el-form-item v-if="rf._wgPublicKey" :label="t('service.warp.publicKey')">
           <el-input :model-value="rf._wgPublicKey" readonly />
           <div class="hint">{{ t('protoCenter.outbounds.wgPublicKeyHint') }}</div>
         </el-form-item>
-        <el-form-item label="Address (IPv4)">
+        <el-form-item :label="t('misc.addressIpv4')">
           <el-input v-model="rf._wgAddressIPv4" placeholder="172.16.0.2/32" @change="emit" />
         </el-form-item>
-        <el-form-item label="Address (IPv6)">
+        <el-form-item :label="t('misc.addressIpv6')">
           <el-input v-model="rf._wgAddressIPv6" placeholder="fd00::2/128" @change="emit" />
         </el-form-item>
-        <el-form-item label="MTU">
+        <el-form-item :label="t('protoCenter.masque.mtu')">
           <el-input-number v-model="rf._wgMtu" :min="0" />
         </el-form-item>
-        <el-form-item label="Workers">
+        <el-form-item :label="t('singbox.protocol.wireguard.workers')">
           <el-input-number v-model="rf._wgWorkers" :min="0" />
         </el-form-item>
-        <el-form-item label="Reserved">
+        <el-form-item :label="t('singbox.protocol.wireguard.reserved')">
           <el-input v-model="rf._wgReservedStr" placeholder="0, 0, 0" />
         </el-form-item>
-        <el-form-item label="No Kernel TUN">
+        <el-form-item :label="t('misc.noKernelTun')">
           <el-switch v-model="rf._wgNoKernelTun" />
         </el-form-item>
-        <el-form-item label="Domain Strategy">
+        <el-form-item :label="t('protoCenter.routing.domainStrategy')">
           <el-select v-model="rf._wgDomainStrategy" style="width:100%" clearable>
             <el-option :label="t('protoCenter.outbounds.wgDomainStrategyDefault')" value="ForceIP" />
             <el-option label="ForceIPv4" value="ForceIPv4" />
@@ -178,7 +178,7 @@
           </el-select>
           <div class="hint">{{ t('protoCenter.outbounds.wgDomainStrategyHint') }}</div>
         </el-form-item>
-        <el-form-item label="Remote DNS">
+        <el-form-item :label="t('protoCenter.masque.remoteDNS')">
           <el-input v-model="rf._wgRemoteDNS" placeholder="1.1.1.1, 8.8.8.8" @change="emit" />
           <div class="hint">WireGuard 隧道内使用的 DNS 服务器，逗号分隔（写入 settings.remoteDNS；替代已废弃的 dns 字段）</div>
         </el-form-item>
@@ -190,14 +190,14 @@
           <el-button size="small" type="danger" text @click="rf._wgPeers.splice(pi,1)">X</el-button>
         </div>
         <el-form label-width="140px" label-position="left" size="small">
-          <el-form-item label="Public Key"><el-input v-model="p.publicKey" /></el-form-item>
-          <el-form-item label="Endpoint"><el-input v-model="p.endpoint" placeholder="1.2.3.4:51820" /></el-form-item>
-          <el-form-item label="Pre-Shared Key"><el-input v-model="p.preSharedKey" show-password /></el-form-item>
-          <el-form-item label="Keep Alive (s)"><el-input-number v-model="p.keepAlive" :min="0" /></el-form-item>
-          <el-form-item label="Allowed IPs (IPv4)">
+          <el-form-item :label="t('service.warp.publicKey')"><el-input v-model="p.publicKey" /></el-form-item>
+          <el-form-item :label="t('service.warp.endpoint')"><el-input v-model="p.endpoint" placeholder="1.2.3.4:51820" /></el-form-item>
+          <el-form-item :label="t('misc.preSharedKey')"><el-input v-model="p.preSharedKey" show-password /></el-form-item>
+          <el-form-item :label="t('misc.keepAliveS')"><el-input-number v-model="p.keepAlive" :min="0" /></el-form-item>
+          <el-form-item :label="t('misc.allowedIpsIpv4')">
             <el-input v-model="p._allowedIPv4" placeholder="0.0.0.0/0" @change="emit" />
           </el-form-item>
-          <el-form-item label="Allowed IPs (IPv6)">
+          <el-form-item :label="t('misc.allowedIpsIpv6')">
             <el-input v-model="p._allowedIPv6" placeholder="::/0" @change="emit" />
           </el-form-item>
         </el-form>

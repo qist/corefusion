@@ -1,5 +1,35 @@
 // Español（es）
 export default {
+  misc: {
+    "costsJson": "Costos (JSON)",
+    "localOs": "SO local",
+    "addressIpv4": "Dirección (IPv4)",
+    "addressIpv6": "Dirección (IPv6)",
+    "allowedIpsIpv4": "IP permitidas (IPv4)",
+    "allowedIpsIpv6": "IP permitidas (IPv6)",
+    "keepAliveS": "Keep-alive (s)",
+    "noKernelTun": "Sin TUN del kernel",
+    "preSharedKey": "Clave precompartida",
+    "reverseTag": "Etiqueta inversa",
+    "delivered": "Entregado",
+    "pending": "Pendiente"
+  },
+  settings2: {
+    "accessKey": "Clave de acceso",
+    "bucket": "Bucket",
+    "clientSecret": "Secreto del cliente",
+    "deleteLocal": "Eliminar local",
+    "deleteLocalAfterUpload": "Eliminar local tras subir",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID de la app GitHub OAuth",
+    "googleOAuthClientId": "Client ID de Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Usar restauración remota abajo"
+  },
   site: {
     "siteAppend": "Añadir (fusionar)",
     "siteReplace": "Reemplazar (sobrescribir)",

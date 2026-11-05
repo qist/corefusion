@@ -1,5 +1,35 @@
 // فارسی（fa）
 export default {
+  misc: {
+    "costsJson": "هزینه (JSON)",
+    "localOs": "سیستم‌عامل محلی",
+    "addressIpv4": "آدرس (IPv4)",
+    "addressIpv6": "آدرس (IPv6)",
+    "allowedIpsIpv4": "IPهای مجاز (IPv4)",
+    "allowedIpsIpv6": "IPهای مجاز (IPv6)",
+    "keepAliveS": "Keep-alive (ثانیه)",
+    "noKernelTun": "بدون TUN هسته",
+    "preSharedKey": "کلید از پیش اشتراکی",
+    "reverseTag": "برچسب معکوس",
+    "delivered": "تحویل‌شده",
+    "pending": "در انتظار"
+  },
+  settings2: {
+    "accessKey": "کلید دسترسی",
+    "bucket": "سطل",
+    "clientSecret": "رمز مخفی کلاینت",
+    "deleteLocal": "حذف محلی",
+    "deleteLocalAfterUpload": "حذف محلی پس از آپلود",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID اپ GitHub OAuth",
+    "googleOAuthClientId": "Client ID گوگل OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "استفاده از بازیابی راه دور در پایین"
+  },
   site: {
     "siteAppend": "افزودن (ادغام)",
     "siteReplace": "جایگزینی (بازنویسی)",

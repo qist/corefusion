@@ -1,4 +1,34 @@
 export default {
+  misc: {
+    "costsJson": "开销（JSON）",
+    "localOs": "本地操作系统",
+    "addressIpv4": "地址（IPv4）",
+    "addressIpv6": "地址（IPv6）",
+    "allowedIpsIpv4": "允许的 IP（IPv4）",
+    "allowedIpsIpv6": "允许的 IP（IPv6）",
+    "keepAliveS": "保活（秒）",
+    "noKernelTun": "不使用内核 TUN",
+    "preSharedKey": "预共享密钥",
+    "reverseTag": "反向标签",
+    "delivered": "已投递",
+    "pending": "待处理"
+  },
+  settings2: {
+    "accessKey": "访问密钥",
+    "bucket": "存储桶",
+    "clientSecret": "客户端密钥",
+    "deleteLocal": "删除本地",
+    "deleteLocalAfterUpload": "上传后删除本地",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth 应用 Client ID",
+    "googleOAuthClientId": "Google OAuth Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "密钥（Secret Key）",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "使用下方远程恢复"
+  },
   site: {
     "siteAppend": "追加（合并）",
     "siteReplace": "替换（覆盖）",

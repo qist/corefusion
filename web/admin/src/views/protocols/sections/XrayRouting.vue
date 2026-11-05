@@ -117,7 +117,7 @@
         <el-form-item :label="t('protoCenter.routing.localIP')"><el-select v-model="rf._localIP" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="192.168.0.0/16" value="192.168.0.0/16" /><el-option label="10.0.0.0/8" value="10.0.0.0/8" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.inboundTag')"><el-select v-model="rf._inboundTag" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in activeInboundTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.process')"><el-select v-model="rf._process" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option label="curl" value="curl" /><el-option label="wget" value="wget" /><el-option label="self/" value="self/" /><el-option label="xray/" value="xray/" /></el-select></el-form-item>
-        <el-form-item label="Local OS">
+        <el-form-item :label="t('misc.localOs')">
           <el-select v-model="rf._localOS" multiple filterable allow-create default-first-option placeholder="linux / windows / darwin ..." style="width:100%">
             <el-option label="linux" value="linux" /><el-option label="windows" value="windows" />
             <el-option label="darwin (macOS)" value="darwin" /><el-option label="android" value="android" />
@@ -204,7 +204,7 @@
             <el-input v-model="bf._baselinesStr" placeholder="1s, 2s" />
             <div class="hint">{{ t('protoCenter.routing.baselinesHint') }}</div>
           </el-form-item>
-          <el-form-item label="Costs (JSON)">
+          <el-form-item :label="t('misc.costsJson')">
             <el-input v-model="bf._costsJson" type="textarea" :rows="4"
               placeholder='[{"match": "tag:out-1", "value": 1.0}, {"regexp": true, "match": "^hk-", "value": 0.5}]' />
             <div class="hint">

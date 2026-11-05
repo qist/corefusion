@@ -1,5 +1,35 @@
 // Tiếng Việt（vi）
 export default {
+  misc: {
+    "costsJson": "Chi phí (JSON)",
+    "localOs": "HĐH cục bộ",
+    "addressIpv4": "Địa chỉ (IPv4)",
+    "addressIpv6": "Địa chỉ (IPv6)",
+    "allowedIpsIpv4": "IP được phép (IPv4)",
+    "allowedIpsIpv6": "IP được phép (IPv6)",
+    "keepAliveS": "Keep-alive (giây)",
+    "noKernelTun": "Không dùng TUN nhân",
+    "preSharedKey": "Khóa chia sẻ trước",
+    "reverseTag": "Thẻ ngược",
+    "delivered": "Đã gửi",
+    "pending": "Đang chờ"
+  },
+  settings2: {
+    "accessKey": "Khóa truy cập",
+    "bucket": "Bucket",
+    "clientSecret": "Mã bí mật máy khách",
+    "deleteLocal": "Xóa cục bộ",
+    "deleteLocalAfterUpload": "Xóa cục bộ sau khi tải lên",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID ứng dụng GitHub OAuth",
+    "googleOAuthClientId": "Client ID Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Dùng khôi phục từ xa bên dưới"
+  },
   site: {
     "siteAppend": "Thêm (gộp)",
     "siteReplace": "Thay thế (ghi đè)",

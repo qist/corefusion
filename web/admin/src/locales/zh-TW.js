@@ -1,5 +1,35 @@
 // 繁體中文（zh-TW）
 export default {
+  misc: {
+    "costsJson": "開銷（JSON）",
+    "localOs": "本機作業系統",
+    "addressIpv4": "位址（IPv4）",
+    "addressIpv6": "位址（IPv6）",
+    "allowedIpsIpv4": "允許的 IP（IPv4）",
+    "allowedIpsIpv6": "允許的 IP（IPv6）",
+    "keepAliveS": "保持連線（秒）",
+    "noKernelTun": "不使用核心 TUN",
+    "preSharedKey": "預共用金鑰",
+    "reverseTag": "反向標籤",
+    "delivered": "已投遞",
+    "pending": "待處理"
+  },
+  settings2: {
+    "accessKey": "存取金鑰",
+    "bucket": "儲存桶",
+    "clientSecret": "用戶端密鑰",
+    "deleteLocal": "刪除本機",
+    "deleteLocalAfterUpload": "上傳後刪除本機",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth 應用程式 Client ID",
+    "googleOAuthClientId": "Google OAuth Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "密鑰（Secret Key）",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "使用下方遠端還原"
+  },
   site: {
     "siteAppend": "附加（合併）",
     "siteReplace": "取代（覆寫）",

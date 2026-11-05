@@ -170,14 +170,14 @@
                 {{ row.action === 'rollback' ? t('settings.panelUpdate.rollbackAction') : t('settings.panelUpdate.updateAction') }}
               </template>
             </el-table-column>
-            <el-table-column prop="status" label="Status" width="100" />
+            <el-table-column prop="status" :label="t('common.status')" width="100" />
             <el-table-column :label="t('settings.panelUpdate.time')" min-width="170">
               <template #default="{ row }">{{ formatPanelTime(row.finished_at || row.started_at || row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="Version" min-width="200">
+            <el-table-column :label="t('settings.proxy.version')" min-width="200">
               <template #default="{ row }">{{ row.from_version || '-' }} → {{ row.to_version || '-' }}</template>
             </el-table-column>
-            <el-table-column prop="error_message" label="Error" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="error_message" :label="t('service.rules.error')" min-width="200" show-overflow-tooltip />
           </el-table>
           <el-text v-else type="info" size="small">{{ t('settings.panelUpdate.noJobs') }}</el-text>
         </el-card>
@@ -530,10 +530,10 @@
 <el-tag v-if="row.remote_only" size="small" type="warning" style="margin-left:4px">Remote Only</el-tag>
 </template>
 </el-table-column>
-<el-table-column prop="type" label="Type" width="80">
+<el-table-column prop="type" :label="t('settings.templates.tplType')" width="80">
 <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
 </el-table-column>
-<el-table-column label="Size" width="100">
+<el-table-column :label="t('service.rules.fileSize')" width="100">
 <template #default="{row}">{{ formatSize(row.file_size) }}</template>
 </el-table-column>
 <el-table-column :label="t('common.createdAt')" width="180">
@@ -544,7 +544,7 @@
 <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
 <el-button v-if="!row.remote_only" size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
 <el-button v-if="!row.remote_only" size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
-<el-button v-if="row.remote_only" size="small" type="warning" disabled title="Use Remote Restore below">Local Restore</el-button>
+<el-button v-if="row.remote_only" size="small" type="warning" disabled :title="t('settings2.useRemoteRestoreBelow')">Local Restore</el-button>
 <el-dropdown trigger="click" style="margin:0 8px">
 <el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
 <template #dropdown>
@@ -564,7 +564,7 @@
             <template #actions="{ row }">
               <el-button v-if="!row.remote_only" size="small" @click="handleDownload(row)">{{ t('settings.backup.download') }}</el-button>
               <el-button v-if="!row.remote_only" size="small" type="warning" @click="handleRestore(row)">{{ t('settings.backup.restore') }}</el-button>
-              <el-button v-if="row.remote_only" size="small" type="warning" disabled title="Use Remote Restore below">Local Restore</el-button>
+              <el-button v-if="row.remote_only" size="small" type="warning" disabled :title="t('settings2.useRemoteRestoreBelow')">Local Restore</el-button>
               <el-dropdown trigger="click" style="margin:0 8px">
                 <el-button size="small" type="success">{{ t('settings.backup.uploadTo') }}<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
                 <template #dropdown>
@@ -590,7 +590,7 @@
           </template>
           <el-table v-if="!isMobile" :data="schedules" stripe>
             <el-table-column prop="name" :label="t('common.name')" min-width="150" />
-            <el-table-column prop="cron" label="Cron" width="140" />
+            <el-table-column prop="cron" :label="t('settings.templates.tplCron')" width="140" />
             <el-table-column :label="t('settings.backup.remoteStorage')" width="150">
               <template #default="{row}">
                 <span v-if="row.storage_id">{{ getStorageName(row.storage_id) }}</span>
@@ -598,7 +598,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="retain_days" :label="t('settings.backup.retainDays')" width="100" />
-            <el-table-column label="Enabled" width="80">
+            <el-table-column :label="t('settings.notification.enabled')" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
@@ -628,10 +628,10 @@
           </template>
           <el-table v-if="!isMobile" :data="storages" stripe>
             <el-table-column prop="name" :label="t('common.name')" min-width="150" />
-            <el-table-column prop="type" label="Type" width="80">
+            <el-table-column prop="type" :label="t('settings.templates.tplType')" width="80">
               <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="Enabled" width="80">
+            <el-table-column :label="t('settings.notification.enabled')" width="80">
               <template #default="{row}"><el-tag :type="row.enabled?'success':'info'" size="small">{{ row.enabled ? 'ON' : 'OFF' }}</el-tag></template>
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="140">
@@ -796,10 +796,10 @@
               </div>
             </el-form-item>
             <template v-if="oauthForm.github_enabled">
-              <el-form-item label="Client ID">
-                <el-input v-model="oauthForm.github_client_id" placeholder="GitHub OAuth App Client ID" />
+              <el-form-item :label="t('ticket.clientId')">
+                <el-input v-model="oauthForm.github_client_id" :placeholder="t('settings2.githubOAuthClientId')" />
               </el-form-item>
-              <el-form-item label="Client Secret">
+              <el-form-item :label="t('settings2.clientSecret')">
                 <el-input v-model="oauthForm.github_client_secret" type="password" show-password />
               </el-form-item>
               <el-form-item :label="t('settings.oauth.callbackUrl')">
@@ -815,10 +815,10 @@
               </div>
             </el-form-item>
             <template v-if="oauthForm.google_enabled">
-              <el-form-item label="Client ID">
-                <el-input v-model="oauthForm.google_client_id" placeholder="Google OAuth Client ID" />
+              <el-form-item :label="t('ticket.clientId')">
+                <el-input v-model="oauthForm.google_client_id" :placeholder="t('settings2.googleOAuthClientId')" />
               </el-form-item>
-              <el-form-item label="Client Secret">
+              <el-form-item :label="t('settings2.clientSecret')">
                 <el-input v-model="oauthForm.google_client_secret" type="password" show-password />
               </el-form-item>
               <el-form-item :label="t('settings.oauth.callbackUrl')">
@@ -907,9 +907,9 @@
           <el-form :model="dbForm" label-width="160px" style="max-width:700px">
             <el-form-item :label="t('settings.db.type')">
               <el-select v-model="dbForm.type" style="width:100%">
-                <el-option label="SQLite" value="sqlite" />
-                <el-option label="MySQL" value="mysql" />
-                <el-option label="PostgreSQL" value="postgres" />
+                <el-option :label="t('settings2.sqlite')" value="sqlite" />
+                <el-option :label="t('init.dbMySQL')" value="mysql" />
+                <el-option :label="t('init.dbPostgres')" value="postgres" />
               </el-select>
               <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.db.typeHint') }}</div>
             </el-form-item>
@@ -948,7 +948,7 @@
     <el-dialog v-model="schedDialogVisible" :title="editingSched ? t('common.edit') : t('settings.backup.addSchedule')" width="500">
       <el-form :model="schedForm" label-width="100px">
         <el-form-item :label="t('common.name')"><el-input v-model="schedForm.name" /></el-form-item>
-        <el-form-item label="Cron">
+        <el-form-item :label="t('settings.templates.tplCron')">
           <el-select v-model="schedForm.cron" filterable allow-create style="width:100%">
             <el-option :label="t('settings.cron.daily3')" value="0 3 * * *" />
             <el-option :label="t('settings.cron.daily0')" value="0 0 * * *" />
@@ -963,8 +963,8 @@
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.backup.storageHint') }}</div>
         </el-form-item>
         <el-form-item :label="t('settings.backup.retainDays')"><el-input-number v-model="schedForm.retain_days" :min="1" :max="365" /></el-form-item>
-<el-form-item label="Delete Local After Upload"><el-switch v-model="schedForm.delete_local_after_upload" /> <span style="color:#909399;font-size:12px">Remove local backup after successful remote upload</span></el-form-item>
-        <el-form-item label="Enabled"><el-switch v-model="schedForm.enabled" /></el-form-item>
+<el-form-item :label="t('settings2.deleteLocalAfterUpload')"><el-switch v-model="schedForm.delete_local_after_upload" /> <span style="color:#909399;font-size:12px">Remove local backup after successful remote upload</span></el-form-item>
+        <el-form-item :label="t('settings.notification.enabled')"><el-switch v-model="schedForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="schedDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -976,32 +976,32 @@
     <el-dialog v-model="storageDialogVisible" :title="editingStorage ? t('common.edit') : t('settings.backup.addStorage')" width="500">
       <el-form :model="storageForm" label-width="100px">
         <el-form-item :label="t('common.name')"><el-input v-model="storageForm.name" /></el-form-item>
-        <el-form-item label="Type">
+        <el-form-item :label="t('settings.templates.tplType')">
           <el-select v-model="storageForm.type" style="width:100%">
-            <el-option label="S3 / MinIO" value="s3" />
-            <el-option label="WebDAV" value="webdav" />
-            <el-option label="FTP" value="ftp" />
+            <el-option :label="t('settings2.s3Minio')" value="s3" />
+            <el-option :label="t('settings2.webdav')" value="webdav" />
+            <el-option :label="t('settings2.ftp')" value="ftp" />
           </el-select>
         </el-form-item>
         <template v-if="storageForm.type==='s3'">
-          <el-form-item label="Endpoint"><el-input v-model="storageForm.config.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
-          <el-form-item label="Bucket"><el-input v-model="storageForm.config.bucket" /></el-form-item>
-          <el-form-item label="Access Key"><el-input v-model="storageForm.config.access_key" /></el-form-item>
-          <el-form-item label="Secret Key"><el-input v-model="storageForm.config.secret_key" type="password" show-password /></el-form-item>
+          <el-form-item :label="t('service.warp.endpoint')"><el-input v-model="storageForm.config.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
+          <el-form-item :label="t('settings2.bucket')"><el-input v-model="storageForm.config.bucket" /></el-form-item>
+          <el-form-item :label="t('settings2.accessKey')"><el-input v-model="storageForm.config.access_key" /></el-form-item>
+          <el-form-item :label="t('settings2.secretKey')"><el-input v-model="storageForm.config.secret_key" type="password" show-password /></el-form-item>
         </template>
         <template v-if="storageForm.type==='webdav'">
-          <el-form-item label="URL"><el-input v-model="storageForm.config.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
-          <el-form-item label="Username"><el-input v-model="storageForm.config.username" /></el-form-item>
-          <el-form-item label="Password"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
+          <el-form-item :label="t('protoCenter.routing.webhookUrl')"><el-input v-model="storageForm.config.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
+          <el-form-item :label="t('settings.smtp.user')"><el-input v-model="storageForm.config.username" /></el-form-item>
+          <el-form-item :label="t('settings.smtp.pass')"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
         </template>
         <template v-if="storageForm.type==='ftp'">
-          <el-form-item label="Host"><el-input v-model="storageForm.config.host" placeholder="ftp.example.com" /></el-form-item>
-          <el-form-item label="Port"><el-input-number v-model="storageForm.config.port" :min="1" :max="65535" /></el-form-item>
-          <el-form-item label="Username"><el-input v-model="storageForm.config.username" /></el-form-item>
-          <el-form-item label="Password"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
-          <el-form-item label="Path"><el-input v-model="storageForm.config.path" placeholder="/backups" /></el-form-item>
+          <el-form-item :label="t('common.host')"><el-input v-model="storageForm.config.host" placeholder="ftp.example.com" /></el-form-item>
+          <el-form-item :label="t('settings.smtp.port')"><el-input-number v-model="storageForm.config.port" :min="1" :max="65535" /></el-form-item>
+          <el-form-item :label="t('settings.smtp.user')"><el-input v-model="storageForm.config.username" /></el-form-item>
+          <el-form-item :label="t('settings.smtp.pass')"><el-input v-model="storageForm.config.password" type="password" show-password /></el-form-item>
+          <el-form-item :label="t('settings.proxy.path')"><el-input v-model="storageForm.config.path" placeholder="/backups" /></el-form-item>
         </template>
-        <el-form-item label="Enabled"><el-switch v-model="storageForm.enabled" /></el-form-item>
+        <el-form-item :label="t('settings.notification.enabled')"><el-switch v-model="storageForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="storageDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -1012,12 +1012,12 @@
     <!-- FTP Upload Dialog -->
     <el-dialog v-model="ftpDialogVisible" :title="'Upload to FTP'" width="500">
       <el-form :model="ftpForm" label-width="100px">
-        <el-form-item label="Host"><el-input v-model="ftpForm.host" placeholder="ftp.example.com" /></el-form-item>
-        <el-form-item label="Port"><el-input-number v-model="ftpForm.port" :min="1" :max="65535" /></el-form-item>
-        <el-form-item label="Username"><el-input v-model="ftpForm.username" /></el-form-item>
-        <el-form-item label="Password"><el-input v-model="ftpForm.password" type="password" show-password /></el-form-item>
-        <el-form-item label="Path"><el-input v-model="ftpForm.path" placeholder="/backups" /></el-form-item>
-<el-form-item label="Delete Local"><el-switch v-model="ftpForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
+        <el-form-item :label="t('common.host')"><el-input v-model="ftpForm.host" placeholder="ftp.example.com" /></el-form-item>
+        <el-form-item :label="t('settings.smtp.port')"><el-input-number v-model="ftpForm.port" :min="1" :max="65535" /></el-form-item>
+        <el-form-item :label="t('settings.smtp.user')"><el-input v-model="ftpForm.username" /></el-form-item>
+        <el-form-item :label="t('settings.smtp.pass')"><el-input v-model="ftpForm.password" type="password" show-password /></el-form-item>
+        <el-form-item :label="t('settings.proxy.path')"><el-input v-model="ftpForm.path" placeholder="/backups" /></el-form-item>
+<el-form-item :label="t('settings2.deleteLocal')"><el-switch v-model="ftpForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="ftpDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -1028,11 +1028,11 @@
     <!-- S3 Upload Dialog -->
     <el-dialog v-model="s3DialogVisible" :title="'Upload to S3 / MinIO'" width="500">
       <el-form :model="s3Form" label-width="100px">
-        <el-form-item label="Endpoint"><el-input v-model="s3Form.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
-        <el-form-item label="Bucket"><el-input v-model="s3Form.bucket" /></el-form-item>
-        <el-form-item label="Access Key"><el-input v-model="s3Form.access_key" /></el-form-item>
-<el-form-item label="Secret Key"><el-input v-model="s3Form.secret_key" type="password" show-password /></el-form-item>
-<el-form-item label="Delete Local"><el-switch v-model="s3Form.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
+        <el-form-item :label="t('service.warp.endpoint')"><el-input v-model="s3Form.endpoint" placeholder="https://s3.amazonaws.com" /></el-form-item>
+        <el-form-item :label="t('settings2.bucket')"><el-input v-model="s3Form.bucket" /></el-form-item>
+        <el-form-item :label="t('settings2.accessKey')"><el-input v-model="s3Form.access_key" /></el-form-item>
+<el-form-item :label="t('settings2.secretKey')"><el-input v-model="s3Form.secret_key" type="password" show-password /></el-form-item>
+<el-form-item :label="t('settings2.deleteLocal')"><el-switch v-model="s3Form.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
 </el-form>
 <template #footer>
 <el-button @click="s3DialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -1043,10 +1043,10 @@
 <!-- WebDAV Upload Dialog -->
 <el-dialog v-model="webdavDialogVisible" :title="'Upload to WebDAV'" width="500">
 <el-form :model="webdavForm" label-width="100px">
-<el-form-item label="URL"><el-input v-model="webdavForm.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
-<el-form-item label="Username"><el-input v-model="webdavForm.username" /></el-form-item>
-<el-form-item label="Password"><el-input v-model="webdavForm.password" type="password" show-password /></el-form-item>
-<el-form-item label="Delete Local"><el-switch v-model="webdavForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
+<el-form-item :label="t('protoCenter.routing.webhookUrl')"><el-input v-model="webdavForm.url" placeholder="https://dav.example.com/backups/" /></el-form-item>
+<el-form-item :label="t('settings.smtp.user')"><el-input v-model="webdavForm.username" /></el-form-item>
+<el-form-item :label="t('settings.smtp.pass')"><el-input v-model="webdavForm.password" type="password" show-password /></el-form-item>
+<el-form-item :label="t('settings2.deleteLocal')"><el-switch v-model="webdavForm.delete_local" /> <span style="color:#909399;font-size:12px">Remove local backup after upload</span></el-form-item>
 </el-form>
 <template #footer>
 <el-button @click="webdavDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -1058,7 +1058,7 @@
     <el-dialog v-model="remoteRestoreDialogVisible" :title="t('settings.backup.remoteRestore')" width="600">
       <el-table v-if="!isMobile" :data="remoteRestoreFiles" v-loading="remoteRestoreLoading" stripe max-height="400">
         <el-table-column prop="name" :label="t('common.name')" />
-        <el-table-column prop="size" label="Size" width="120">
+        <el-table-column prop="size" :label="t('service.rules.fileSize')" width="120">
           <template #default="{row}">{{ formatSize(row.size) }}</template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="120">
@@ -1094,10 +1094,10 @@
           </el-radio-group>
           <div style="font-size:11px;color:#999;margin-top:4px;width:100%">{{ t('settings.templates.audienceHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="tmplForm.audience !== 'subscriber'" label="Type">
+        <el-form-item v-if="tmplForm.audience !== 'subscriber'" :label="t('settings.templates.tplType')">
           <el-select v-model="tmplForm.type" style="width:100%">
-            <el-option label="Telegram" value="telegram" />
-            <el-option label="Email" value="email" />
+            <el-option :label="t('settings2.telegram')" value="telegram" />
+            <el-option :label="t('certificate.email')" value="email" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="tmplForm.audience === 'subscriber'" :label="t('settings.templates.eventKey')">
@@ -1118,8 +1118,8 @@
           </el-select>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.templates.recipientsHint') }}</div>
         </el-form-item>
-        <el-form-item v-if="tmplForm.type==='email'" label="Subject"><el-input v-model="tmplForm.subject" /></el-form-item>
-        <el-form-item label="Content">
+        <el-form-item v-if="tmplForm.type==='email'" :label="t('settings.templates.tplSubject')"><el-input v-model="tmplForm.subject" /></el-form-item>
+        <el-form-item :label="t('xrayIn.content')">
           <el-input v-model="tmplForm.content" type="textarea" :rows="6" :placeholder="t('settings.supportVars')" />
         </el-form-item>
         <el-form-item :label="t('settings.cron.label')">
@@ -1127,7 +1127,7 @@
             {{ isMonitorTemplate ? t('settings.templates.monitorCronHint') : (tmplForm.audience === 'subscriber' ? t('settings.templates.cronHintSubscriber') : t('settings.templates.cronHintAdmin')) }}
           </div>
         </el-form-item>
-        <el-form-item label="Enabled"><el-switch v-model="tmplForm.enabled" /></el-form-item>
+        <el-form-item :label="t('settings.notification.enabled')"><el-switch v-model="tmplForm.enabled" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="tmplDialogVisible=false">{{ t('common.cancel') }}</el-button>

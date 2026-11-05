@@ -1,4 +1,34 @@
 export default {
+  misc: {
+    "costsJson": "Costs (JSON)",
+    "localOs": "Local OS",
+    "addressIpv4": "Address (IPv4)",
+    "addressIpv6": "Address (IPv6)",
+    "allowedIpsIpv4": "Allowed IPs (IPv4)",
+    "allowedIpsIpv6": "Allowed IPs (IPv6)",
+    "keepAliveS": "Keep Alive (s)",
+    "noKernelTun": "No Kernel TUN",
+    "preSharedKey": "Pre-Shared Key",
+    "reverseTag": "Reverse Tag",
+    "delivered": "Delivered",
+    "pending": "Pending"
+  },
+  settings2: {
+    "accessKey": "Access Key",
+    "bucket": "Bucket",
+    "clientSecret": "Client Secret",
+    "deleteLocal": "Delete Local",
+    "deleteLocalAfterUpload": "Delete Local After Upload",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth App Client ID",
+    "googleOAuthClientId": "Google OAuth Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Use Remote Restore below"
+  },
   site: {
     "siteAppend": "Append (merge)",
     "siteReplace": "Replace (overwrite)",

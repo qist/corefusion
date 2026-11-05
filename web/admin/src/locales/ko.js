@@ -1,5 +1,35 @@
 // 한국어（ko）
 export default {
+  misc: {
+    "costsJson": "비용 (JSON)",
+    "localOs": "로컬 OS",
+    "addressIpv4": "주소 (IPv4)",
+    "addressIpv6": "주소 (IPv6)",
+    "allowedIpsIpv4": "허용 IP (IPv4)",
+    "allowedIpsIpv6": "허용 IP (IPv6)",
+    "keepAliveS": "Keep-alive(초)",
+    "noKernelTun": "커널 TUN 미사용",
+    "preSharedKey": "사전 공유 키",
+    "reverseTag": "역방향 태그",
+    "delivered": "전달됨",
+    "pending": "대기 중"
+  },
+  settings2: {
+    "accessKey": "액세스 키",
+    "bucket": "버킷",
+    "clientSecret": "클라이언트 시크릿",
+    "deleteLocal": "로컬 삭제",
+    "deleteLocalAfterUpload": "업로드 후 로컬 삭제",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth 앱 Client ID",
+    "googleOAuthClientId": "Google OAuth Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "아래 원격 복원 사용"
+  },
   site: {
     "siteAppend": "추가(병합)",
     "siteReplace": "교체(덮어쓰기)",

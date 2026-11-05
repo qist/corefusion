@@ -1,5 +1,35 @@
 // العربية（ar）
 export default {
+  misc: {
+    "costsJson": "التكلفة (JSON)",
+    "localOs": "نظام التشغيل المحلي",
+    "addressIpv4": "العنوان (IPv4)",
+    "addressIpv6": "العنوان (IPv6)",
+    "allowedIpsIpv4": "عناوين IP المسموحة (IPv4)",
+    "allowedIpsIpv6": "عناوين IP المسموحة (IPv6)",
+    "keepAliveS": "Keep-alive (ثانية)",
+    "noKernelTun": "بدون TUN للنواة",
+    "preSharedKey": "مفتاح مشترك مسبقًا",
+    "reverseTag": "وسم عكسي",
+    "delivered": "تم التسليم",
+    "pending": "قيد الانتظار"
+  },
+  settings2: {
+    "accessKey": "مفتاح الوصول",
+    "bucket": "الحاوية",
+    "clientSecret": "سر العميل",
+    "deleteLocal": "حذف المحلي",
+    "deleteLocalAfterUpload": "حذف المحلي بعد الرفع",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID لتطبيق GitHub OAuth",
+    "googleOAuthClientId": "Client ID لـ Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "استخدام الاستعادة عن بُعد أدناه"
+  },
   site: {
     "siteAppend": "إضافة (دمج)",
     "siteReplace": "استبدال (كتابة فوق)",

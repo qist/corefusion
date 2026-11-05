@@ -1,5 +1,35 @@
 // Bahasa Indonesia（id）
 export default {
+  misc: {
+    "costsJson": "Biaya (JSON)",
+    "localOs": "OS lokal",
+    "addressIpv4": "Alamat (IPv4)",
+    "addressIpv6": "Alamat (IPv6)",
+    "allowedIpsIpv4": "IP diizinkan (IPv4)",
+    "allowedIpsIpv6": "IP diizinkan (IPv6)",
+    "keepAliveS": "Keep-alive (dtk)",
+    "noKernelTun": "Tanpa TUN kernel",
+    "preSharedKey": "Kunci pra-bagi",
+    "reverseTag": "Tag terbalik",
+    "delivered": "Terkirim",
+    "pending": "Tertunda"
+  },
+  settings2: {
+    "accessKey": "Kunci akses",
+    "bucket": "Bucket",
+    "clientSecret": "Rahasia klien",
+    "deleteLocal": "Hapus lokal",
+    "deleteLocalAfterUpload": "Hapus lokal setelah unggah",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID aplikasi GitHub OAuth",
+    "googleOAuthClientId": "Client ID Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Gunakan pemulihan jarak jauh di bawah"
+  },
   site: {
     "siteAppend": "Tambahkan (gabung)",
     "siteReplace": "Ganti (timpa)",

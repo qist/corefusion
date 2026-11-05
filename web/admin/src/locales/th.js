@@ -1,5 +1,35 @@
 // ไทย（th）
 export default {
+  misc: {
+    "costsJson": "ค่าใช้จ่าย (JSON)",
+    "localOs": "ระบบปฏิบัติการท้องถิ่น",
+    "addressIpv4": "ที่อยู่ (IPv4)",
+    "addressIpv6": "ที่อยู่ (IPv6)",
+    "allowedIpsIpv4": "IP ที่อนุญาต (IPv4)",
+    "allowedIpsIpv6": "IP ที่อนุญาต (IPv6)",
+    "keepAliveS": "Keep-alive (วินาที)",
+    "noKernelTun": "ไม่ใช้ TUN เคอร์เนล",
+    "preSharedKey": "คีย์ที่แชร์ล่วงหน้า",
+    "reverseTag": "แท็กย้อนกลับ",
+    "delivered": "ส่งแล้ว",
+    "pending": "รอดำเนินการ"
+  },
+  settings2: {
+    "accessKey": "คีย์เข้าถึง",
+    "bucket": "บักเก็ต",
+    "clientSecret": "รหัสลับไคลเอนต์",
+    "deleteLocal": "ลบในเครื่อง",
+    "deleteLocalAfterUpload": "ลบในเครื่องหลังอัปโหลด",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID แอป GitHub OAuth",
+    "googleOAuthClientId": "Client ID Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "ใช้การกู้คืนระยะไกลด้านล่าง"
+  },
   site: {
     "siteAppend": "ต่อท้าย (รวม)",
     "siteReplace": "แทนที่ (เขียนทับ)",

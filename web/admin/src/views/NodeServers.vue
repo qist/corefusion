@@ -376,10 +376,10 @@
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span>{{ t('nodeServer.distributionQueue') }}</span>
               <el-select v-model="distQueueFilter" size="small" style="width:120px" @change="loadDistQueue">
-                <el-option label="All" value="" />
-                <el-option label="Pending" value="pending" />
-                <el-option label="Delivered" value="delivered" />
-                <el-option label="Failed" value="failed" />
+                <el-option :label="t('common.all')" value="" />
+                <el-option :label="t('misc.pending')" value="pending" />
+                <el-option :label="t('misc.delivered')" value="delivered" />
+                <el-option :label="t('common.failed')" value="failed" />
               </el-select>
             </div>
           </template>
@@ -492,8 +492,8 @@
           </el-form-item>
           <el-form-item :label="t('nodeServer.failoverRole')">
             <el-select v-model="form.failover_role" style="width:100%" clearable>
-              <el-option label="Primary" value="primary" />
-              <el-option label="Backup" value="backup" />
+              <el-option :label="t('nodeServer.nodeTypePrimary')" value="primary" />
+              <el-option :label="t('nodeServer.failoverBackup')" value="backup" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('nodeServer.failoverPriority')">
@@ -728,13 +728,13 @@
     <!-- ════════════ Tags Dialog ════════════ -->
     <el-dialog v-model="tagsVisible" :title="t('nodeServer.tagsManagement')" width="580px">
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <el-input v-model="newTagKey" placeholder="Key" size="small" style="width:120px" />
-        <el-input v-model="newTagValue" placeholder="Value" size="small" style="flex:1" />
+        <el-input v-model="newTagKey" :placeholder="t('protoCenter.inbounds.key')" size="small" style="width:120px" />
+        <el-input v-model="newTagValue" :placeholder="t('protoCenter.finalmask.value')" size="small" style="flex:1" />
         <el-button size="small" type="primary" @click="addTag">+</el-button>
       </div>
       <el-table :data="tags" size="small">
-        <el-table-column prop="tag_key" label="Key" width="140" />
-        <el-table-column prop="tag_value" label="Value" />
+        <el-table-column prop="tag_key" :label="t('protoCenter.inbounds.key')" width="140" />
+        <el-table-column prop="tag_value" :label="t('protoCenter.finalmask.value')" />
         <el-table-column :label="t('common.actions')" width="80">
           <template #default="{row}">
             <el-button size="small" type="danger" @click="removeTag(row.tag_key)">×</el-button>

@@ -1,5 +1,35 @@
 // Русский（ru）
 export default {
+  misc: {
+    "costsJson": "Затраты (JSON)",
+    "localOs": "Локальная ОС",
+    "addressIpv4": "Адрес (IPv4)",
+    "addressIpv6": "Адрес (IPv6)",
+    "allowedIpsIpv4": "Разрешённые IP (IPv4)",
+    "allowedIpsIpv6": "Разрешённые IP (IPv6)",
+    "keepAliveS": "Keep-alive (с)",
+    "noKernelTun": "Без ядерного TUN",
+    "preSharedKey": "Предобщий ключ",
+    "reverseTag": "Обратный тег",
+    "delivered": "Доставлено",
+    "pending": "В ожидании"
+  },
+  settings2: {
+    "accessKey": "Ключ доступа",
+    "bucket": "Контейнер",
+    "clientSecret": "Секрет клиента",
+    "deleteLocal": "Удалить локально",
+    "deleteLocalAfterUpload": "Удалить локально после загрузки",
+    "ftp": "FTP",
+    "githubOAuthClientId": "Client ID приложения GitHub OAuth",
+    "googleOAuthClientId": "Client ID Google OAuth",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Использовать удалённое восстановление ниже"
+  },
   site: {
     "siteAppend": "Добавить (объединить)",
     "siteReplace": "Заменить (перезаписать)",

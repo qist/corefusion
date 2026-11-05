@@ -1,5 +1,35 @@
 // Türkçe（tr）
 export default {
+  misc: {
+    "costsJson": "Maliyet (JSON)",
+    "localOs": "Yerel işletim sistemi",
+    "addressIpv4": "Adres (IPv4)",
+    "addressIpv6": "Adres (IPv6)",
+    "allowedIpsIpv4": "İzin verilen IP'ler (IPv4)",
+    "allowedIpsIpv6": "İzin verilen IP'ler (IPv6)",
+    "keepAliveS": "Keep-alive (sn)",
+    "noKernelTun": "Kernel TUN yok",
+    "preSharedKey": "Önceden paylaşılan anahtar",
+    "reverseTag": "Ters etiket",
+    "delivered": "Teslim edildi",
+    "pending": "Beklemede"
+  },
+  settings2: {
+    "accessKey": "Erişim anahtarı",
+    "bucket": "Bucket",
+    "clientSecret": "İstemci gizli anahtarı",
+    "deleteLocal": "Yereli sil",
+    "deleteLocalAfterUpload": "Yükledikten sonra yereli sil",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth uygulama Client ID",
+    "googleOAuthClientId": "Google OAuth Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "Aşağıdaki uzak geri yüklemeyi kullan"
+  },
   site: {
     "siteAppend": "Ekle (birleştir)",
     "siteReplace": "Değiştir (üzerine yaz)",

@@ -1,5 +1,35 @@
 // 日本語（ja）
 export default {
+  misc: {
+    "costsJson": "コスト (JSON)",
+    "localOs": "ローカル OS",
+    "addressIpv4": "アドレス (IPv4)",
+    "addressIpv6": "アドレス (IPv6)",
+    "allowedIpsIpv4": "許可 IP (IPv4)",
+    "allowedIpsIpv6": "許可 IP (IPv6)",
+    "keepAliveS": "キープアライブ (秒)",
+    "noKernelTun": "カーネル TUN なし",
+    "preSharedKey": "事前共有キー",
+    "reverseTag": "リバースタグ",
+    "delivered": "配信済み",
+    "pending": "保留中"
+  },
+  settings2: {
+    "accessKey": "アクセスキー",
+    "bucket": "バケット",
+    "clientSecret": "クライアントシークレット",
+    "deleteLocal": "ローカルを削除",
+    "deleteLocalAfterUpload": "アップロード後にローカルを削除",
+    "ftp": "FTP",
+    "githubOAuthClientId": "GitHub OAuth アプリの Client ID",
+    "googleOAuthClientId": "Google OAuth の Client ID",
+    "s3Minio": "S3 / MinIO",
+    "sqlite": "SQLite",
+    "secretKey": "Secret Key",
+    "telegram": "Telegram",
+    "webdav": "WebDAV",
+    "useRemoteRestoreBelow": "下のリモート復元を使用"
+  },
   site: {
     "siteAppend": "追加（マージ）",
     "siteReplace": "置換（上書き）",

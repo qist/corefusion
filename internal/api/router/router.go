@@ -685,6 +685,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 	geoRuleScheduler := geoRuleSvc.NewScheduler(ruleSourceRepo, geoRuleSvcInst)
 	warpSvcInst := warpSvc.NewService(warpRepo)
+	// MASQUE 设备注册后可直接生成 xray 出站（旧 WireGuard 路径不受影响）。
+	warpSvcInst.SetOutboundRepository(outboundConfigRepo)
 	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
 	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
@@ -1634,6 +1636,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			inboundCfgH.SetSyncHook(inboundSyncHook)
 			outboundCfgH.SetSyncHook(outboundSyncHook)
 			endpointCfgH.SetSyncHook(endpointSyncHook)
+			// WARP 一键创建 MASQUE 出站后需要立即下发（走同一套热下发逻辑）。
+			warpH.SetSyncHook(outboundSyncHook)
 
 			// NOTE: SyncData and traffic reset hooks are injected after
 			// nodeServerSvcInst is created (see below).
@@ -2828,6 +2832,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/warp", warpH.List)
 				nodeServersGroup.GET("/:id/warp/status", warpH.Status)
 				nodeServersGroup.POST("/:id/warp/register", warpH.Register)
+				// MASQUE 注册（两步流程）与一键创建出站，和旧 WireGuard 注册并存。
+				nodeServersGroup.POST("/:id/warp/masque/register", warpH.RegisterMasque)
+				nodeServersGroup.POST("/:id/warp/:warpId/masque-outbound", warpH.CreateMasqueOutbound)
 				nodeServersGroup.POST("/:id/warp/generate-config", warpH.GenerateConfig)
 				nodeServersGroup.GET("/:id/warp/config", warpH.GetConfig)
 				nodeServersGroup.DELETE("/:id/warp/:warpId", warpH.Delete)

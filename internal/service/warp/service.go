@@ -64,6 +64,10 @@ type WarpStatus struct {
 	AddressIPv6 string `json:"address_ipv6,omitempty"`
 	Endpoint    string `json:"endpoint,omitempty"`
 	LicenseKey  string `json:"license_key,omitempty"`
+	// KeyType / TunnelType 为空的历史记录视为 wireguard（不迁移）。
+	KeyType       string `json:"key_type,omitempty"`
+	TunnelType    string `json:"tunnel_type,omitempty"`
+	EndpointPorts string `json:"endpoint_ports,omitempty"`
 }
 
 // WarpConfigItem is a list item for WARP configs.
@@ -76,17 +80,27 @@ type WarpConfigItem struct {
 	AddressIPv4    string `json:"address_ipv4"`
 	AddressIPv6    string `json:"address_ipv6"`
 	Endpoint       string `json:"endpoint"`
+	KeyType        string `json:"key_type"`
+	TunnelType     string `json:"tunnel_type"`
+	EndpointPorts  string `json:"endpoint_ports"`
 	RegistrationAt string `json:"registration_at"`
 }
 
 // Service handles WARP business logic.
 type Service struct {
 	repo *repository.WarpRepository
+	// outboundRepo 用于「用已注册的 MASQUE 设备一键创建出站」，可选注入。
+	outboundRepo *repository.OutboundConfigRepository
 }
 
 // NewService creates a new WARP service.
 func NewService(repo *repository.WarpRepository) *Service {
 	return &Service{repo: repo}
+}
+
+// SetOutboundRepository 注入出站仓储（用于一键创建 MASQUE 出站）。
+func (s *Service) SetOutboundRepository(repo *repository.OutboundConfigRepository) {
+	s.outboundRepo = repo
 }
 
 // GetStatus returns the WARP registration status for a specific server and core type.
@@ -116,6 +130,9 @@ func (s *Service) ListByServer(serverID int64) ([]*WarpConfigItem, error) {
 			AddressIPv4:    cfg.AddressIPv4,
 			AddressIPv6:    cfg.AddressIPv6,
 			Endpoint:       cfg.Endpoint,
+			KeyType:        cfg.KeyType,
+			TunnelType:     cfg.TunnelType,
+			EndpointPorts:  cfg.EndpointPorts,
 			RegistrationAt: cfg.RegistrationAt.Format(time.RFC3339),
 		}
 	}
@@ -201,16 +218,19 @@ func (s *Service) Register(serverID int64, coreType string) (*WarpStatus, error)
 	addressV6 = apiResp.Config.Interface.Addresses.V6
 
 	cfg := &entity.WarpConfig{
-		ServerID:       serverID,
-		CoreType:       coreType,
-		DeviceID:       apiResp.ID,
-		Token:          apiResp.Token,
-		PrivateKey:     privateKey,
-		PublicKey:      peerPublicKey,
-		Reserved:       reserved,
-		AddressIPv4:    addressV4,
-		AddressIPv6:    addressV6,
-		Endpoint:       endpoint,
+		ServerID:    serverID,
+		CoreType:    coreType,
+		DeviceID:    apiResp.ID,
+		Token:       apiResp.Token,
+		PrivateKey:  privateKey,
+		PublicKey:   peerPublicKey,
+		Reserved:    reserved,
+		AddressIPv4: addressV4,
+		AddressIPv6: addressV6,
+		Endpoint:    endpoint,
+		// 旧 WireGuard 路径也打上标识；历史 NULL/空值仍按 wireguard 处理。
+		KeyType:        "curve25519",
+		TunnelType:     masqueWireGuard,
 		ClientID:       apiResp.Config.ClientID,
 		AccountID:      apiResp.Account.ID,
 		AccountType:    apiResp.Account.AccountType,
@@ -276,20 +296,23 @@ func (s *Service) Reset(warpID int64) error {
 // configToStatus converts a WarpConfig entity to a WarpStatus response.
 func (s *Service) configToStatus(cfg *entity.WarpConfig) *WarpStatus {
 	return &WarpStatus{
-		ID:          cfg.ID,
-		Status:      cfg.Status,
-		Registered:  cfg.Status != "not_registered",
-		CoreType:    cfg.CoreType,
-		DeviceID:    cfg.DeviceID,
-		AccountID:   cfg.AccountID,
-		AccountType: cfg.AccountType,
-		PrivateKey:  cfg.PrivateKey,
-		PublicKey:   cfg.PublicKey,
-		Reserved:    cfg.Reserved,
-		AddressIPv4: cfg.AddressIPv4,
-		AddressIPv6: cfg.AddressIPv6,
-		Endpoint:    cfg.Endpoint,
-		LicenseKey:  cfg.LicenseKey,
+		ID:            cfg.ID,
+		Status:        cfg.Status,
+		Registered:    cfg.Status != "not_registered",
+		CoreType:      cfg.CoreType,
+		DeviceID:      cfg.DeviceID,
+		AccountID:     cfg.AccountID,
+		AccountType:   cfg.AccountType,
+		PrivateKey:    cfg.PrivateKey,
+		PublicKey:     cfg.PublicKey,
+		Reserved:      cfg.Reserved,
+		AddressIPv4:   cfg.AddressIPv4,
+		AddressIPv6:   cfg.AddressIPv6,
+		Endpoint:      cfg.Endpoint,
+		LicenseKey:    cfg.LicenseKey,
+		KeyType:       cfg.KeyType,
+		TunnelType:    cfg.TunnelType,
+		EndpointPorts: cfg.EndpointPorts,
 	}
 }
 

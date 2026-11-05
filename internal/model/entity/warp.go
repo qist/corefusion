@@ -7,18 +7,26 @@ import "time"
 // to a specific core type (e.g. "xray", "singbox"), so that different
 // cores on the same node can use independent WARP exits.
 type WarpConfig struct {
-	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID       int64     `json:"server_id" gorm:"not null;default:1;index:idx_warp_server_core"`
-	CoreType       string    `json:"core_type" gorm:"size:32;not null;default:'';index:idx_warp_server_core"`
-	Remark         string    `json:"remark" gorm:"size:128"`
-	DeviceID       string    `json:"device_id" gorm:"size:255"`
-	Token          string    `json:"token" gorm:"size:512"`
-	PrivateKey     string    `json:"private_key" gorm:"size:255"`
-	PublicKey      string    `json:"public_key" gorm:"size:255"`
-	Reserved       string    `json:"reserved" gorm:"size:128"`
-	AddressIPv4    string    `json:"address_ipv4" gorm:"size:64"`
-	AddressIPv6    string    `json:"address_ipv6" gorm:"size:128"`
-	Endpoint       string    `json:"endpoint" gorm:"size:255"`
+	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID    int64  `json:"server_id" gorm:"not null;default:1;index:idx_warp_server_core"`
+	CoreType    string `json:"core_type" gorm:"size:32;not null;default:'';index:idx_warp_server_core"`
+	Remark      string `json:"remark" gorm:"size:128"`
+	DeviceID    string `json:"device_id" gorm:"size:255"`
+	Token       string `json:"token" gorm:"size:512"`
+	PrivateKey  string `json:"private_key" gorm:"size:255"`
+	PublicKey   string `json:"public_key" gorm:"size:255"`
+	Reserved    string `json:"reserved" gorm:"size:128"`
+	AddressIPv4 string `json:"address_ipv4" gorm:"size:64"`
+	AddressIPv6 string `json:"address_ipv6" gorm:"size:128"`
+	Endpoint    string `json:"endpoint" gorm:"size:255"`
+	// KeyType / TunnelType 区分两种注册形态，旧数据为空时按 wireguard 处理，
+	// 不做数据迁移（旧 WG 记录继续可用）。
+	//   wireguard: KeyType=curve25519, TunnelType=wireguard
+	//   masque   : KeyType=secp256r1, TunnelType=masque（PrivateKey 是 P-256 SEC1）
+	KeyType    string `json:"key_type" gorm:"size:32"`
+	TunnelType string `json:"tunnel_type" gorm:"size:32"`
+	// EndpointPorts 是 MASQUE 注册返回的边缘端口列表（逗号分隔），旧数据为空。
+	EndpointPorts  string    `json:"endpoint_ports" gorm:"size:255"`
 	ClientID       string    `json:"client_id" gorm:"size:512"`
 	AccountID      string    `json:"account_id" gorm:"size:255"`
 	AccountType    string    `json:"account_type" gorm:"size:64"`

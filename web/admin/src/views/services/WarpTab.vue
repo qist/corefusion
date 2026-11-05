@@ -3,7 +3,7 @@
       <template #header>
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span>{{ t('service.warp.title') }}</span>
-          <el-button type="primary" @click="showRegisterDialog = true" :loading="registerLoading">
+          <el-button type="primary" @click="openRegisterDialog" :loading="registerLoading">
             {{ t('service.warp.register') }}
           </el-button>
         </div>
@@ -18,6 +18,13 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
+        <el-table-column :label="t('service.warp.tunnelType')" width="110">
+          <template #default="{ row }">
+            <el-tag :type="isMasque(row) ? 'success' : 'info'" size="small">
+              {{ isMasque(row) ? 'MASQUE' : 'WireGuard' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="remark" :label="t('service.warp.remark')" width="120" />
         <el-table-column prop="status" :label="t('service.warp.status')" width="100">
           <template #default="{ row }">
@@ -30,10 +37,13 @@
         <el-table-column prop="address_ipv6" :label="t('service.warp.addressIPv6')" width="180" />
         <el-table-column prop="endpoint" :label="t('service.warp.endpoint')" min-width="200" />
         <el-table-column prop="registration_at" :label="t('service.warp.registrationAt')" width="180" />
-        <el-table-column :label="t('common.actions')" width="200" fixed="right">
+        <el-table-column :label="t('common.actions')" width="240" fixed="right">
           <template #default="{ row }">
             <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
-              <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
+              <el-button v-if="isMasque(row)" size="small" type="success" @click="openOutboundDialog(row)">
+                {{ t('service.warp.createOutbound') }}
+              </el-button>
+              <el-button v-else size="small" type="primary" @click="handleGenerateConfig(row)">
                 {{ t('service.warp.generateConfig') }}
               </el-button>
               <el-button size="small" type="danger" @click="handleDelete(row)">
@@ -45,7 +55,10 @@
       </el-table>
       <MobileCards v-else-if="warpConfigs.length > 0" :rows="warpConfigs" title-field="remark" :fields="warpCardFields">
         <template #actions="{ row }">
-          <el-button size="small" type="primary" @click="handleGenerateConfig(row)">
+          <el-button v-if="isMasque(row)" size="small" type="success" @click="openOutboundDialog(row)">
+            {{ t('service.warp.createOutbound') }}
+          </el-button>
+          <el-button v-else size="small" type="primary" @click="handleGenerateConfig(row)">
             {{ t('service.warp.generateConfig') }}
           </el-button>
           <el-button size="small" type="danger" @click="handleDelete(row)">
@@ -63,8 +76,15 @@
       </div>
 
     <!-- Register dialog -->
-    <el-dialog v-model="showRegisterDialog" :title="t('service.warp.register')" width="420px">
-      <el-form label-width="100px">
+    <el-dialog v-model="showRegisterDialog" :title="t('service.warp.register')" width="460px">
+      <el-form label-width="120px">
+        <el-form-item :label="t('service.warp.registerType')">
+          <el-radio-group v-model="registerForm.type">
+            <el-radio value="wireguard">WireGuard</el-radio>
+            <el-radio value="masque">MASQUE</el-radio>
+          </el-radio-group>
+          <div class="hint">{{ registerForm.type === 'masque' ? t('service.warp.masqueHint') : t('service.warp.wireguardHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('service.warp.coreType')">
           <el-select v-model="registerForm.core_type" style="width:100%" clearable>
             <el-option label="xray" value="xray" />
@@ -79,6 +99,34 @@
       <template #footer>
         <el-button @click="showRegisterDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="handleRegister" :loading="registerLoading">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- MASQUE outbound dialog -->
+    <el-dialog v-model="showOutboundDialog" :title="t('service.warp.createOutbound')" width="480px">
+      <el-form label-width="130px">
+        <el-form-item :label="t('service.warp.outboundTag')">
+          <el-input v-model="outboundForm.tag" :placeholder="defaultOutboundTag" />
+          <div class="hint">{{ t('service.warp.outboundTagHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('service.warp.outboundRemark')">
+          <el-input v-model="outboundForm.remark" placeholder="WARP MASQUE" />
+        </el-form-item>
+        <el-form-item :label="t('service.warp.outboundAlpn')">
+          <el-radio-group v-model="outboundForm.alpn">
+            <el-radio value="h3">h3 (QUIC)</el-radio>
+            <el-radio value="h2">h2 (TCP)</el-radio>
+          </el-radio-group>
+          <div class="hint">{{ t('service.warp.outboundAlpnHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('service.warp.outboundPort')">
+          <el-input-number v-model="outboundForm.port" :min="0" :max="65535" />
+          <div class="hint">{{ t('service.warp.outboundPortHint') }}</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showOutboundDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="handleCreateOutbound" :loading="outboundLoading">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </el-card>
@@ -100,13 +148,27 @@ const { t } = useI18n()
 const { isMobile } = useIsMobile()
 const loading = ref(false)
 const registerLoading = ref(false)
+const outboundLoading = ref(false)
 const warpConfigs = ref([])
 const currentConfig = ref('')
 const showRegisterDialog = ref(false)
-const registerForm = ref({ core_type: '', remark: '' })
+const showOutboundDialog = ref(false)
+const registerForm = ref({ type: 'wireguard', core_type: '', remark: '' })
+const outboundForm = ref({ warpId: 0, tag: '', remark: '', alpn: 'h3', port: 0 })
+const lastCreatedTag = ref('')
+
+// 历史记录 KeyType/TunnelType 为空，按 WireGuard 处理（不迁移）。
+function isMasque(row) {
+  return String(row?.tunnel_type || '').toLowerCase() === 'masque'
+}
+
+const defaultOutboundTag = computed(() =>
+  outboundForm.value.warpId ? `warp-masque-${outboundForm.value.warpId}` : 'warp-masque'
+)
 
 // 手机端卡片字段（与桌面表格列对应）
 const warpCardFields = computed(() => [
+  { label: t('service.warp.tunnelType'), text: (row) => (isMasque(row) ? 'MASQUE' : 'WireGuard') },
   { label: t('service.warp.coreType'), text: (row) => row.core_type || '-' },
   { label: t('service.warp.status'), text: (row) => row.status === 'active' ? t('service.warp.active') : t('service.warp.registered') },
   { label: t('service.warp.addressIPv4'), text: (row) => row.address_ipv4 || '-' },
@@ -130,16 +192,26 @@ async function fetchWarpConfigs() {
   }
 }
 
+function openRegisterDialog() {
+  registerForm.value = { type: 'wireguard', core_type: '', remark: '' }
+  showRegisterDialog.value = true
+}
+
 async function handleRegister() {
   registerLoading.value = true
   try {
-    await client.post(`${warpBase.value}/register`, {
+    const payload = {
       core_type: registerForm.value.core_type || '',
       remark: registerForm.value.remark || '',
-    })
+    }
+    // 两种注册并存：MASQUE 走两步流程，WireGuard 保持原接口。
+    if (registerForm.value.type === 'masque') {
+      await client.post(`${warpBase.value}/masque/register`, payload)
+    } else {
+      await client.post(`${warpBase.value}/register`, payload)
+    }
     ElMessage.success(t('common.success'))
     showRegisterDialog.value = false
-    registerForm.value = { core_type: '', remark: '' }
     await fetchWarpConfigs()
   } catch (e) {
     ElMessage.error(e.message || t('service.warp.registerFailed'))
@@ -158,6 +230,37 @@ async function handleGenerateConfig(row) {
     await fetchWarpConfigs()
   } catch (e) {
     ElMessage.error(e.message || 'Failed')
+  }
+}
+
+function openOutboundDialog(row) {
+  outboundForm.value = {
+    warpId: row.id,
+    tag: `warp-masque-${row.id}`,
+    remark: row.remark || 'WARP MASQUE',
+    alpn: 'h3',
+    port: 0,
+  }
+  showOutboundDialog.value = true
+}
+
+async function handleCreateOutbound() {
+  outboundLoading.value = true
+  try {
+    const f = outboundForm.value
+    const data = await client.post(`${warpBase.value}/${f.warpId}/masque-outbound`, {
+      tag: f.tag || '',
+      remark: f.remark || '',
+      alpn: [f.alpn],
+      port: Number(f.port) || 0,
+    })
+    lastCreatedTag.value = data?.tag || ''
+    showOutboundDialog.value = false
+    ElMessage.success(t('service.warp.outboundCreated', { tag: lastCreatedTag.value }))
+  } catch (e) {
+    ElMessage.error(e.message || 'Failed')
+  } finally {
+    outboundLoading.value = false
   }
 }
 

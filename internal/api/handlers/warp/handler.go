@@ -1,23 +1,56 @@
 package warp
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/domain"
 	"corefusion/internal/service/warp"
 )
+
+// ConfigSyncHook triggers config sync to a specific server after data changes.
+// Implemented by configSyncHookAdapter in router.go.
+type ConfigSyncHook interface {
+	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
+}
+
+// HotApplySyncHook 是 ConfigSyncHook 的可选扩展：声明改动已通过核心 API 热下发。
+type HotApplySyncHook interface {
+	SyncServerConfigHotApplied(ctx context.Context, serverID int64, coreType string)
+}
 
 // Handler handles WARP HTTP requests.
 // All endpoints are scoped to a specific node server via the :id path parameter.
 type Handler struct {
-	svc *warp.Service
+	svc      *warp.Service
+	syncHook ConfigSyncHook
 }
 
 // NewHandler creates a new WARP handler.
 func NewHandler(svc *warp.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// SetSyncHook 注入配置同步钩子：一键创建 MASQUE 出站后需要把新出站推到运行中的核心。
+func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
+	h.syncHook = hook
+}
+
+// triggerConfigSync 触发该节点的配置同步（xray 支持热下发时只写盘不重启）。
+func (h *Handler) triggerConfigSync(serverID int64, coreType string) {
+	if h.syncHook == nil {
+		return
+	}
+	if domain.CoreType(coreType).SupportsHotApply() {
+		if hot, ok := h.syncHook.(HotApplySyncHook); ok {
+			go hot.SyncServerConfigHotApplied(context.Background(), serverID, coreType)
+			return
+		}
+	}
+	go h.syncHook.SyncServerConfig(context.Background(), serverID, coreType)
 }
 
 // List handles GET /api/v1/node-servers/:id/warp
@@ -125,4 +158,56 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	response.OK(c, gin.H{"message": "deleted"})
+}
+
+// RegisterMasque handles POST /api/v1/node-servers/:id/warp/masque/register
+// 走 WARP 的两步注册（先建 WireGuard 设备、再登记 P-256 公钥切 masque）。
+// 与旧的 /warp/register 并存，旧记录不受影响。
+// Body: { "core_type": "xray", "remark": "" }
+func (h *Handler) RegisterMasque(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	var req struct {
+		CoreType string `json:"core_type"`
+		Remark   string `json:"remark"`
+	}
+	c.ShouldBindJSON(&req)
+	status, err := h.svc.RegisterMasque(serverID, req.CoreType, req.Remark)
+	if err != nil {
+		response.InternalError(c, "REGISTER_FAILED", err.Error())
+		return
+	}
+	response.OK(c, status)
+}
+
+// CreateMasqueOutbound handles POST /api/v1/node-servers/:id/warp/:warpId/masque-outbound
+// 用已注册的 MASQUE 设备直接创建一条 xray 出站，返回 tag 供路由引用。
+// Body: { "remark": "", "tag": "", "alpn": ["h3"], "server_name": "", "port": 0 }
+func (h *Handler) CreateMasqueOutbound(c *gin.Context) {
+	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	warpID, err := strconv.ParseInt(c.Param("warpId"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid warp ID")
+		return
+	}
+	var in warp.MasqueOutboundInput
+	if err := c.ShouldBindJSON(&in); err != nil && err.Error() != "EOF" {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	result, err := h.svc.CreateMasqueOutbound(serverID, warpID, in)
+	if err != nil {
+		response.InternalError(c, "CREATE_OUTBOUND_FAILED", err.Error())
+		return
+	}
+	// 新出站必须下发到运行中的核心，否则路由选不到它（xray 热下发，不重启）。
+	h.triggerConfigSync(serverID, "xray")
+	response.OK(c, result)
 }

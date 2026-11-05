@@ -103,9 +103,165 @@ func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inbou
 	return nil
 }
 
+// UpsertUserInbound 保证入站里存在指定账号，且凭据与传入值**完全一致**：
+//   - 不存在 → 创建
+//   - 已存在但凭据不同 → 按传入凭据修正（用于上下行分离时让下行账号与上行对齐）
+//   - 已存在且一致 → 跳过
+//
+// 与 AddUserToInbound 不同，它不会因为「email 已存在」就跳过，避免下行残留旧凭据
+// （旧 uuid/password 会让客户端认证失败，或把流量记到别人头上）。
+func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error {
+	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
+	if err != nil || len(inbounds) == 0 {
+		return fmt.Errorf("inbound not found: %s", inboundTag)
+	}
+
+	for i := range inbounds {
+		inbound := &inbounds[i]
+		p := protocol
+		if p == "" {
+			p = inbound.Protocol
+		}
+		if p == "" {
+			p = detectProtocol(inbound.Tag)
+		}
+
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
+			log.Printf("inbound_manager: upsert user %s parse inbound %s: %v", email, inbound.Tag, err)
+			continue
+		}
+
+		existing := findInboundUserEntry(config, email)
+		changed := false
+		if existing == nil {
+			if err := m.addUserToInboundConfig(ctx, inbound, p, email, uuid, password, flow, method); err != nil {
+				log.Printf("inbound_manager: failed to add user %s to inbound %s: %v", email, inbound.Tag, err)
+				continue
+			}
+			// addUserToInboundConfig 已写库并热下发。
+			continue
+		}
+
+		curUUID, curPassword, curFlow, curMethod := entryCredentials(existing, p)
+		if curUUID == uuid && curPassword == password && curFlow == flow && curMethod == method {
+			continue
+		}
+		applyUserCredentials(existing, p, uuid, password, flow, method)
+		changed = true
+
+		if changed {
+			data, err := json.Marshal(config)
+			if err != nil {
+				log.Printf("inbound_manager: upsert user %s marshal inbound %s: %v", email, inbound.Tag, err)
+				continue
+			}
+			inbound.ConfigJSON = string(data)
+			if err := m.inboundRepo.Update(ctx, inbound); err != nil {
+				log.Printf("inbound_manager: upsert user %s update inbound %s: %v", email, inbound.Tag, err)
+				continue
+			}
+			if isSingboxInbound(inbound) {
+				go m.reloadCoreForInbound(inbound.ServerID, inbound.CoreType, "upsert user "+email)
+				continue
+			}
+			// xray：先移除旧凭据再添加，避免运行时保留旧 uuid。
+			m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+			go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		}
+	}
+	return nil
+}
+
+// findInboundUserEntry 在入站配置里按身份字段精确匹配用户条目。
+func findInboundUserEntry(config map[string]interface{}, email string) map[string]interface{} {
+	var found map[string]interface{}
+	containers := []map[string]interface{}{config}
+	if settings, ok := config["settings"].(map[string]interface{}); ok {
+		containers = append(containers, settings)
+	}
+	for _, c := range containers {
+		for _, key := range []string{"users", "clients", "accounts"} {
+			arr, ok := c[key].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, item := range arr {
+				if m, ok := item.(map[string]interface{}); ok && inboundUserIdentityOf(m) == email {
+					found = m
+				}
+			}
+		}
+	}
+	return found
+}
+
+func inboundUserIdentityOf(u map[string]interface{}) string {
+	for _, key := range []string{"email", "user", "name", "username"} {
+		if v, _ := u[key].(string); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// entryCredentials 按协议读取用户条目里的凭据字段。
+func entryCredentials(u map[string]interface{}, protocol string) (uuid, password, flow, method string) {
+	uuid, _ = u["id"].(string)
+	if uuid == "" {
+		uuid, _ = u["uuid"].(string)
+	}
+	password, _ = u["password"].(string)
+	flow, _ = u["flow"].(string)
+	method, _ = u["method"].(string)
+	switch strings.ToLower(protocol) {
+	case "hysteria":
+		if auth, _ := u["auth"].(string); auth != "" {
+			password = auth
+		}
+	case "vless", "vmess":
+		password = ""
+	case "trojan", "shadowsocks":
+		uuid = ""
+	}
+	return uuid, password, flow, method
+}
+
+// applyUserCredentials 按协议把凭据写进用户条目（保留 level 等其它字段）。
+func applyUserCredentials(u map[string]interface{}, protocol, uuid, password, flow, method string) {
+	switch strings.ToLower(protocol) {
+	case "vless":
+		u["id"] = uuid
+		u["flow"] = flow
+		if _, ok := u["level"]; !ok {
+			u["level"] = 0
+		}
+	case "vmess":
+		u["id"] = uuid
+		if _, ok := u["alterId"]; !ok {
+			u["alterId"] = 0
+		}
+		if _, ok := u["level"]; !ok {
+			u["level"] = 0
+		}
+	case "trojan":
+		u["password"] = password
+		delete(u, "id")
+	case "hysteria":
+		u["auth"] = password
+		delete(u, "password")
+	case "shadowsocks":
+		u["password"] = password
+		if method != "" {
+			u["method"] = method
+		}
+	default:
+		u["id"] = uuid
+		u["password"] = password
+	}
+}
+
 // RemoveUserFromInbound removes a user entry from ALL inbound configs matching the tag
-// (across local and remote nodes) and calls xray API for real-time user removal.
-// It also fans out to mirror nodes by directly calling xray API on each mirror.
 func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
 	// Find ALL inbounds with this tag across all servers (local + remote)
 	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)

@@ -79,6 +79,8 @@ type Handler struct {
 // 从下行入口认证失败（下行入站通常不在套餐节点组里，不会被批量建号覆盖）。
 type DownloadAccountSyncHook interface {
 	SyncDownloadAccounts(ctx context.Context, uplinkInboundID int64) error
+	// PruneDownloadAccounts 在上行入站释放/改指向下行入口后，清理旧下行里的复制账号。
+	PruneDownloadAccounts(ctx context.Context, uplinkInboundID, oldTargetID int64) error
 }
 
 // SetDownloadAccountSyncHook 注入下行入站账号补齐能力。
@@ -244,7 +246,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// nodes. SyncData detects mirror nodes and generates config from
 	// the primary's data at runtime.
 	h.triggerConfigSync(serverID, req.CoreType)
-	h.syncDownloadAccounts(cfg, string(req.ConfigJSON))
+	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), 0)
 
 	response.OK(c, cfg)
 }
@@ -312,6 +314,8 @@ func (h *Handler) Update(c *gin.Context) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	// 记录旧的「下行入口」引用：引用被移除/改指向后要清理旧下行里的复制账号。
+	oldTargetID := domain.DownloadTargetID(existing.ConfigJSON)
 	cfg, err := h.svc.Update(c.Request.Context(), id, req.Remark, req.Protocol, req.Tag, req.Listen, req.Port, string(req.ConfigJSON), enabled)
 	if err != nil {
 		if errors.Is(err, inboundconfig.ErrServerNamesConflict) {
@@ -330,7 +334,7 @@ func (h *Handler) Update(c *gin.Context) {
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
 	h.triggerConfigSync(cfg.ServerID, cfg.CoreType)
-	h.syncDownloadAccounts(cfg, string(req.ConfigJSON))
+	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), oldTargetID)
 
 	response.OK(c, cfg)
 }
@@ -340,20 +344,28 @@ func (h *Handler) Update(c *gin.Context) {
 //
 // configJSON 必须传**明文**配置：仓储 Update/Create 会把实体的 ConfigJSON 就地替换成
 // 加密串（enc: 前缀），用返回值解析会永远读不到 _downloadInboundId。
-func (h *Handler) syncDownloadAccounts(cfg *entity.InboundConfig, configJSON string) {
+func (h *Handler) syncDownloadAccounts(cfg *entity.InboundConfig, configJSON string, oldTargetID int64) {
 	if h.downloadSync == nil || cfg == nil {
 		return
 	}
-	targetID := domain.DownloadTargetID(configJSON)
-	if targetID <= 0 {
+	newTargetID := domain.DownloadTargetID(configJSON)
+	if newTargetID <= 0 && oldTargetID <= 0 {
 		return
 	}
 	uplinkID := cfg.ID
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
-		if err := h.downloadSync.SyncDownloadAccounts(ctx, uplinkID); err != nil {
-			log.Printf("[inbound] sync download accounts for %d failed: %v", uplinkID, err)
+		// 引用被移除或改指向：先清理旧下行里由本上行复制过去的账号。
+		if oldTargetID > 0 && oldTargetID != newTargetID {
+			if err := h.downloadSync.PruneDownloadAccounts(ctx, uplinkID, oldTargetID); err != nil {
+				log.Printf("[inbound] prune download accounts for %d (target %d) failed: %v", uplinkID, oldTargetID, err)
+			}
+		}
+		if newTargetID > 0 {
+			if err := h.downloadSync.SyncDownloadAccounts(ctx, uplinkID); err != nil {
+				log.Printf("[inbound] sync download accounts for %d failed: %v", uplinkID, err)
+			}
 		}
 	}()
 }

@@ -23,6 +23,9 @@ type InboundUserManager interface {
 	// 上下行分离要把上行用户的凭据复制到下行入站，字段名（id/uuid/auth/password）
 	// 必须按目标入站的真实协议写。
 	AddUserToInboundWithProtocol(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error
+	// UpsertUserInbound 保证账号存在且凭据与传入值一致（存在但凭据不同则修正）。
+	// 上下行分离用它把下行账号与上行凭据对齐，避免残留旧凭据。
+	UpsertUserInbound(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error
 	RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error
 	PauseUser(ctx context.Context, inboundID int64, email string) error
 	ResumeUser(ctx context.Context, inboundID int64, email string) error
@@ -215,7 +218,7 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 			}
 			// 上下行分离：被该入站引用的下行入站也要有同凭据账号，
 			// 否则客户端从下行入口认证失败（下行不在套餐节点组时不会自动建号）。
-			s.followDownloadTarget(ctx, inbound, input.Email, uuid, password, flow, method)
+			s.followDownloadTarget(ctx, inbound, input.Email)
 		}
 	}
 
@@ -543,7 +546,7 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
 			// 上下行分离：下行入站补同凭据账号。
-			s.followDownloadTarget(ctx, inbound, client.Email, uuid, password, flow, method)
+			s.followDownloadTarget(ctx, inbound, client.Email)
 		}
 	}
 
@@ -618,7 +621,7 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 				log.Printf("client: failed to sync account for %s on inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
 			// 新入站若引用了下行入口，同样要为已有客户补建下行账号。
-			s.followDownloadTarget(ctx, *inbound, client.Email, uuid, password, flow, method)
+			s.followDownloadTarget(ctx, *inbound, client.Email)
 		}
 
 		// Refresh inbound config_json after adding user

@@ -38,6 +38,10 @@ func (f *fakeUserManager) AddUserToInboundWithProtocol(ctx context.Context, inbo
 	return nil
 }
 
+func (f *fakeUserManager) UpsertUserInbound(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error {
+	return f.AddUserToInboundWithProtocol(ctx, inboundTag, protocol, email, uuid, password, flow, method)
+}
+
 func (f *fakeUserManager) RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error {
 	return nil
 }
@@ -54,12 +58,17 @@ func newClientTestService(t *testing.T) (*Service, *repository.InboundConfigRepo
 	if err != nil {
 		t.Fatalf("open in-memory db: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.InboundConfig{}); err != nil {
+	if err := db.AutoMigrate(&entity.InboundConfig{}, &entity.Client{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	repo := repository.NewInboundConfigRepository(db)
 	mgr := &fakeUserManager{}
-	return &Service{inboundRepo: repo, userManager: mgr}, repo, mgr
+	svc := &Service{
+		inboundRepo: repo,
+		clientRepo:  repository.NewClientRepository(db),
+		userManager: mgr,
+	}
+	return svc, repo, mgr
 }
 
 func xhttpVlessConfig(t *testing.T, path string, users ...map[string]interface{}) string {
@@ -80,102 +89,107 @@ func xhttpVlessConfig(t *testing.T, path string, users ...map[string]interface{}
 	return string(raw)
 }
 
-// TestSyncDownloadAccountsCopiesCredentials 校验：入站关联下行入口后，
-// 上行用户会被复制到下行入站，凭据相同、email 换成下行入站后缀。
+func mustClient(t *testing.T, svc *Service, email string) {
+	t.Helper()
+	if err := svc.clientRepo.Create(context.Background(), &entity.Client{Email: email}); err != nil {
+		t.Fatalf("create client %s: %v", email, err)
+	}
+}
+
+// makeUplink 造一个上行入站（xhttp vless），可选写入下行引用。
+func makeUplink(t *testing.T, repo *repository.InboundConfigRepository, tag string, port int, email, uuid string, targetID int64) *entity.InboundConfig {
+	t.Helper()
+	ctx := context.Background()
+	cfgJSON := xhttpVlessConfig(t, "/up", map[string]interface{}{"email": email, "id": uuid})
+	if targetID > 0 {
+		var parsed map[string]interface{}
+		_ = json.Unmarshal([]byte(cfgJSON), &parsed)
+		ss := parsed["streamSettings"].(map[string]interface{})
+		xh := ss["xhttpSettings"].(map[string]interface{})
+		xh["extra"] = map[string]interface{}{"_downloadInboundId": float64(targetID)}
+		raw, _ := json.Marshal(parsed)
+		cfgJSON = string(raw)
+	}
+	up := &entity.InboundConfig{
+		ServerID: 1, CoreType: "xray", Protocol: "vless", Tag: tag,
+		Listen: "127.0.0.1", Port: port, Enabled: true, ConfigJSON: cfgJSON,
+	}
+	if err := repo.Create(ctx, up); err != nil {
+		t.Fatalf("create uplink %s: %v", tag, err)
+	}
+	return up
+}
+
+func makeTarget(t *testing.T, repo *repository.InboundConfigRepository, tag string, port int) *entity.InboundConfig {
+	t.Helper()
+	target := &entity.InboundConfig{
+		ServerID: 1, CoreType: "xray", Protocol: "vless", Tag: tag,
+		Listen: "127.0.0.1", Port: port, Enabled: true,
+		ConfigJSON: xhttpVlessConfig(t, "/up"),
+	}
+	if err := repo.Create(context.Background(), target); err != nil {
+		t.Fatalf("create target %s: %v", tag, err)
+	}
+	return target
+}
+
+// TestSyncDownloadAccountsCopiesCredentials 上行客户账号要被复制到下行入站，
+// 凭据完全一致、email 换成下行入站后缀。
 func TestSyncDownloadAccountsCopiesCredentials(t *testing.T) {
 	svc, repo, mgr := newClientTestService(t)
 	ctx := context.Background()
 
 	const uuid = "11111111-1111-1111-1111-111111111111"
-	uploadCfg := xhttpVlessConfig(t, "/up", map[string]interface{}{
-		"email": "a@x.com_vless20296",
-		"id":    uuid,
-	})
-	upload := &entity.InboundConfig{
-		ServerID: 1, CoreType: "xray", Protocol: "vless", Tag: "inbound-vless-20296",
-		Listen: "127.0.0.1", Port: 20296, Enabled: true, ConfigJSON: uploadCfg,
-	}
-	if err := repo.Create(ctx, upload); err != nil {
-		t.Fatalf("create upload inbound: %v", err)
-	}
+	target := makeTarget(t, repo, "inbound-vless-8443", 8443)
+	up := makeUplink(t, repo, "inbound-vless-20296", 20296, "a@x.com_vless20296", uuid, target.ID)
+	mustClient(t, svc, "a@x.com")
 
-	targetCfg := xhttpVlessConfig(t, "/up")
-	target := &entity.InboundConfig{
-		ServerID: 1, CoreType: "xray", Protocol: "vless", Tag: "inbound-vless-8443",
-		Listen: "127.0.0.1", Port: 8443, Enabled: true, ConfigJSON: targetCfg,
-	}
-	if err := repo.Create(ctx, target); err != nil {
-		t.Fatalf("create target inbound: %v", err)
-	}
-
-	// 写入下行引用
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(uploadCfg), &parsed); err != nil {
-		t.Fatalf("unmarshal upload cfg: %v", err)
-	}
-	ss := parsed["streamSettings"].(map[string]interface{})
-	xh := ss["xhttpSettings"].(map[string]interface{})
-	xh["extra"] = map[string]interface{}{"_downloadInboundId": float64(target.ID)}
-	raw, _ := json.Marshal(parsed)
-	upload.ConfigJSON = string(raw)
-	if err := repo.Update(ctx, upload); err != nil {
-		t.Fatalf("update upload inbound: %v", err)
-	}
-
-	if err := svc.SyncDownloadAccounts(ctx, upload.ID); err != nil {
+	if err := svc.SyncDownloadAccounts(ctx, up.ID); err != nil {
 		t.Fatalf("SyncDownloadAccounts: %v", err)
 	}
-
 	if len(mgr.calls) != 1 {
-		t.Fatalf("expected 1 account copy, got %d: %#v", len(mgr.calls), mgr.calls)
+		t.Fatalf("expected 1 account, got %d: %#v", len(mgr.calls), mgr.calls)
 	}
 	call := mgr.calls[0]
 	if call.Tag != target.Tag || call.Protocol != "vless" {
-		t.Errorf("target/tag mismatch: %#v", call)
+		t.Errorf("target/protocol mismatch: %#v", call)
 	}
 	if call.Email != "a@x.com_vless8443" {
 		t.Errorf("email = %q, want a@x.com_vless8443", call.Email)
 	}
 	if call.UUID != uuid {
-		t.Errorf("uuid = %q, want %q（必须与上行一致，否则下行认证失败）", call.UUID, uuid)
+		t.Errorf("uuid = %q, want %q（必须与上行一致）", call.UUID, uuid)
 	}
 }
 
-// TestSyncDownloadAccountsSkipsProtocolMismatch 协议不同时不能复制凭据。
-func TestSyncDownloadAccountsSkipsProtocolMismatch(t *testing.T) {
+// TestSyncDownloadAccountsSkipsNonClient 手工账号（没有 client 记录）不能复制到下行，
+// 否则会出现统计归不到任何客户的账号。
+func TestSyncDownloadAccountsSkipsNonClient(t *testing.T) {
 	svc, repo, mgr := newClientTestService(t)
-	ctx := context.Background()
+	target := makeTarget(t, repo, "inbound-vless-8443", 8443)
+	up := makeUplink(t, repo, "inbound-vless-20296", 20296, "manual@x.com_vless20296", "22222222-2222-2222-2222-222222222222", target.ID)
 
-	uploadCfg := xhttpVlessConfig(t, "/up", map[string]interface{}{
-		"email": "a@x.com_vless20296",
-		"id":    "11111111-1111-1111-1111-111111111111",
-	})
-	targetCfg := xhttpVlessConfig(t, "/up")
-	target := &entity.InboundConfig{
-		ServerID: 1, CoreType: "xray", Protocol: "trojan", Tag: "inbound-trojan-8443",
-		Listen: "127.0.0.1", Port: 8443, Enabled: true, ConfigJSON: targetCfg,
-	}
-	if err := repo.Create(ctx, target); err != nil {
-		t.Fatalf("create target: %v", err)
-	}
-	var parsed map[string]interface{}
-	_ = json.Unmarshal([]byte(uploadCfg), &parsed)
-	ss := parsed["streamSettings"].(map[string]interface{})
-	xh := ss["xhttpSettings"].(map[string]interface{})
-	xh["extra"] = map[string]interface{}{"_downloadInboundId": float64(target.ID)}
-	raw, _ := json.Marshal(parsed)
-	upload := &entity.InboundConfig{
-		ServerID: 1, CoreType: "xray", Protocol: "vless", Tag: "inbound-vless-20296",
-		Listen: "127.0.0.1", Port: 20296, Enabled: true, ConfigJSON: string(raw),
-	}
-	if err := repo.Create(ctx, upload); err != nil {
-		t.Fatalf("create upload: %v", err)
-	}
-
-	if err := svc.SyncDownloadAccounts(ctx, upload.ID); err != nil {
+	if err := svc.SyncDownloadAccounts(context.Background(), up.ID); err != nil {
 		t.Fatalf("SyncDownloadAccounts: %v", err)
 	}
 	if len(mgr.calls) != 0 {
-		t.Errorf("协议不一致时不应建号，实际: %#v", mgr.calls)
+		t.Errorf("非订阅客户不应复制，实际: %#v", mgr.calls)
+	}
+}
+
+// TestSyncDownloadAccountsDetectsCredentialConflict 两个上行引用同一 target、同一客户
+// 却是不同凭据时，必须拒绝写入（否则无论写谁都会让另一条上行认证失败/串号）。
+func TestSyncDownloadAccountsDetectsCredentialConflict(t *testing.T) {
+	svc, repo, mgr := newClientTestService(t)
+	target := makeTarget(t, repo, "inbound-vless-8443", 8443)
+	up1 := makeUplink(t, repo, "inbound-vless-20296", 20296, "a@x.com_vless20296", "11111111-1111-1111-1111-111111111111", target.ID)
+	makeUplink(t, repo, "inbound-vless-20297", 20297, "a@x.com_vless20297", "33333333-3333-3333-3333-333333333333", target.ID)
+	mustClient(t, svc, "a@x.com")
+
+	if err := svc.SyncDownloadAccounts(context.Background(), up1.ID); err != nil {
+		t.Fatalf("SyncDownloadAccounts: %v", err)
+	}
+	if len(mgr.calls) != 0 {
+		t.Errorf("凭据冲突时不应写入，实际: %#v", mgr.calls)
 	}
 }

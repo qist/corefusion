@@ -73,6 +73,40 @@ const router = createRouter({
   routes,
 })
 
+// ── 懒加载 chunk 失效自愈 ─────────────────────────────────────────────
+// 路由组件都是 `() => import(...)`，构建产物文件名带内容 hash。若标签页是在
+// 面板升级/重启之前打开的（"页面停留久了"），旧 index 引用的 chunk 已随新
+// 构建被删除：点侧边栏时动态 import 404，vue-router 直接中止导航，el-menu
+// 又吞掉 rejection —— 表现为"点菜单没反应，只有刷新才好"。
+// 这里捕获这类错误后整页跳到目标路由，自动加载新版本；10s 内只自愈一次，
+// 避免部署异常时无限刷新。
+const CHUNK_RELOAD_KEY = '__cf_chunk_reload_at'
+const CHUNK_ERROR_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk \S+ failed/i
+
+function isChunkLoadError(err) {
+  return CHUNK_ERROR_RE.test(String(err?.message || err || ''))
+}
+
+function recoverFromChunkError(to) {
+  const now = Date.now()
+  const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0)
+  if (now - last < 10000) return
+  sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now))
+  const base = basePath === '/' ? '' : basePath
+  if (to?.fullPath) window.location.assign(base + to.fullPath)
+  else window.location.reload()
+}
+
+router.onError((err, to) => {
+  if (isChunkLoadError(err)) recoverFromChunkError(to)
+})
+
+// Vite 的 modulepreload 失败会先派发该事件（早于路由导航）
+window.addEventListener('vite:preloadError', (e) => {
+  e.preventDefault()
+  recoverFromChunkError(null)
+})
+
 // Navigation guard — restores user info on page refresh
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')

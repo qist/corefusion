@@ -90,6 +90,32 @@ func resolveIssueKeyType(reqType string, reqBits int, dbType string, dbBits int)
 	return keyType, keyBits
 }
 
+// mergeSANNames 把 domains 与 ips 合并成一份去重后的 SAN 列表。
+//
+// IP 证书的前端只发 ips（domains 为空）✓；域名证书只发 domains ✓。
+// 两者同时给（混合证书）也支持 ✓，顺序保持"域名在前、IP 在后" ✓。
+func mergeSANNames(domains, ips []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(domains)+len(ips))
+	add := func(list []string) {
+		for _, raw := range list {
+			v := strings.TrimSpace(raw)
+			if v == "" {
+				continue
+			}
+			key := strings.ToLower(v)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, v)
+		}
+	}
+	add(domains)
+	add(ips)
+	return out
+}
+
 // EABConfigInfo 是"从独立 EAB 配置里取到的内容" ✓。
 type EABConfigInfo struct {
 	Name       string
@@ -350,9 +376,13 @@ func (h *Handler) Delete(c *gin.Context) {
 // 注意：这是**异步**的（节点签发需要时间 ✓），接口立刻返回 202 ✓。
 func (h *Handler) IssueOnNode(c *gin.Context) {
 	var req struct {
-		NodeID        int64    `json:"node_id" binding:"required"`
-		CertID        int64    `json:"cert_id"` // 续签已有证书时带上（可选 ✓）
-		Domains       []string `json:"domains"` // 新签发时必填 ✓
+		NodeID  int64    `json:"node_id" binding:"required"`
+		CertID  int64    `json:"cert_id"` // 续签已有证书时带上（可选 ✓）
+		Domains []string `json:"domains"` // 新签发时必填 ✓
+		// IPs：IP 证书的 SAN（IPv4 / IPv6 可同时给 ✓）。
+		// 前端节点路径历史上把 ips 直接塞进 domains 发过来 ✓，这里仍兼容；
+		// 新增 ips 字段是为了与 /issue 口径一致 ✓（两种写法都能签 ✓）。
+		IPs           []string `json:"ips"`
 		ChallengeType string   `json:"challenge_type"`
 		CAProvider    string   `json:"ca_provider"`
 		Profile       string   `json:"profile"`
@@ -378,12 +408,8 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		return
 	}
 
-	identifiers := make([]string, 0, len(req.Domains))
-	for _, d := range req.Domains {
-		if d = strings.TrimSpace(d); d != "" {
-			identifiers = append(identifiers, d)
-		}
-	}
+	// domains + ips 都是 SAN 候选，合并去重（IP 证书 = domains 空 + ips 有值 ✓）
+	identifiers := mergeSANNames(req.Domains, req.IPs)
 	// 续签已有证书：标识符 + **密钥类型**都从库里取 ✓（避免前端重复填、也避免填错/丢参数 ✗）
 	//
 	// ⚠ 密钥类型必须兜底 ✗：前端不传、指令里也没有 → 节点侧退回 EC256 ✗，
@@ -561,7 +587,12 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 // Issue handles POST /api/v1/certificates/issue.
 func (h *Handler) Issue(c *gin.Context) {
 	var req struct {
-		Domains       []string `json:"domains" binding:"required"`
+		Domains []string `json:"domains"`
+		// IPs 是「IP 证书」模式下的 SAN 列表（IPv4 / IPv6 可同时给）。
+		// ⚠ 以前后端**根本没解析这个字段** ✗：前端 IP 模式发 domains=[] + ips=[...] ✓，
+		// 后端只读 domains → 空列表 → ValidateACMEDomains 报 "at least one domain required" ✗
+		// （生产实测：IP 证书 100% 签发失败 ✓）。现在与 domains 合并成同一份 SAN 列表 ✓。
+		IPs           []string `json:"ips"`
 		ChallengeType string   `json:"challenge_type"`
 		// DNSChannelID 是面板里存的"DNS 通道"（提供者 + 凭据 ✓）。
 		// ⚠ 以前这里**完全没解析** ✗：前端一直在传 `dns_channel_id` ✓，后端却把它丢掉 ✗ →
@@ -594,6 +625,14 @@ func (h *Handler) Issue(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
+
+	// domains 与 ips 合并成同一份 SAN 列表（IP 证书 = domains 为空 + ips 有值）✓
+	names := mergeSANNames(req.Domains, req.IPs)
+	if len(names) == 0 {
+		response.BadRequest(c, "DOMAINS_REQUIRED", "at least one domain or IP required")
+		return
+	}
+	req.Domains = names
 	// 密钥规格校验放在 CA 解析**之后** ✓（见下方 ValidateKeySpecForCA）：
 	// 上限按 CA 不同（ZeroSSL 支持 RSA 8192，Let's Encrypt / Google 只到 4096）✗，
 	// 这里还没解析出 CA，不能提前判定 ✓。
@@ -741,8 +780,8 @@ func (h *Handler) Issue(c *gin.Context) {
 		DNSChannelID: req.DNSChannelID,
 	}
 	// 诊断：一眼看出本次用了哪个 CA / 有没有 EAB / 用哪个邮箱 ✓
-	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d email=%q",
-		req.Domains, req.ChallengeType, caProvider, eabKID != "" && eabMAC != "", req.EABConfigID, req.EmailID, email)
+	log.Printf("[cert] issue request: domains=%v challenge=%s ca=%q eab=%v eab_config_id=%d email_id=%d email=%q key_type=%q key_bits=%d",
+		req.Domains, req.ChallengeType, caProvider, eabKID != "" && eabMAC != "", req.EABConfigID, req.EmailID, email, req.KeyType, req.KeyBits)
 	input.Email = email
 
 	if req.DNSProvider != nil {

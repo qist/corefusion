@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"corefusion/pkg/netutil"
@@ -94,6 +95,10 @@ type ACMEClient struct {
 
 // NewACMEClient creates a new ACME client.
 func NewACMEClient(dataDir, email string, caProvider CAProvider) *ACMEClient {
+	// 先把展示名归一到枚举 ✓：库里/请求里可能是 "Let's Encrypt"、"Google Trust Services" ✓。
+	// ⚠ 不归一会拿**名字本身**当账号文件名 ✗ → `Let's Encrypt.json` 与 `lets_encrypt.json`
+	// 各注册一份账号 ✗（真机已有两份 ✓），也会让"账号已注册"的判断失效 ✗。
+	caProvider = NormalizeCAProvider(string(caProvider))
 	caURL := CALetsEncrypt
 	switch caProvider {
 	case CAProviderZeroSSL:
@@ -418,17 +423,13 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 		challengeType = ChallengeHTTP01
 	}
 
-	// Load or create account
-	user, err := c.loadOrCreateAccount()
-	if err != nil {
-		return nil, fmt.Errorf("load account: %w", err)
-	}
-
 	// Create lego client —— ✅ 这里以前写死 EC256 ✗，用户的 key_type/key_bits 完全没生效 ✗
 	keyType := resolveKeyType(opts.KeyType, opts.KeyBits)
 	log.Printf("[ACME] issuing %v: key_type=%s bits=%d → lego %s",
 		opts.Domains, NormalizeKeyType(opts.KeyType), opts.KeyBits, keyType)
-	client, err := c.createClient(user, hasIPIdentifier(opts.Domains), keyType)
+
+	// 账号加载 + 首次注册（per-CA 串行化 → 不会并发消耗同一把一次性 EAB）
+	client, err := c.prepareClient(opts.Domains, opts.EAB, keyType)
 	if err != nil {
 		return nil, err
 	}
@@ -436,33 +437,6 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	// Setup challenge
 	if err := c.setupChallenge(client, challengeType, opts.DNSProvider); err != nil {
 		return nil, fmt.Errorf("setup challenge: %w", err)
-	}
-
-	// Register if needed
-	if user.Registration == nil {
-		var reg *registration.Resource
-		var regErr error
-
-		if opts.EAB != nil && opts.EAB.KeyID != "" {
-			// EAB registration (ZeroSSL, Google CA)
-			reg, regErr = client.Registration.RegisterWithExternalAccountBinding(
-				registration.RegisterEABOptions{
-					TermsOfServiceAgreed: true,
-					Kid:                  opts.EAB.KeyID,
-					HmacEncoded:          opts.EAB.MACKey,
-				})
-		} else {
-			// Standard registration (Let's Encrypt)
-			reg, regErr = client.Registration.Register(registration.RegisterOptions{
-				TermsOfServiceAgreed: true,
-			})
-		}
-
-		if regErr != nil {
-			return nil, fmt.Errorf("register: %w", regErr)
-		}
-		user.Registration = reg
-		c.saveAccount(user)
 	}
 
 	// Request certificate
@@ -485,6 +459,72 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 		opts.Domains, c.caProvider, result.ExpiresAt.Format(time.RFC3339))
 
 	return result, nil
+}
+
+// acmeAccountLocks 按账号文件路径串行化"账号加载 + 首次注册"。
+//
+// ⚠ 为什么需要 ✗：Google Public CA / ZeroSSL 的 **EAB 是一次性的** ✓。
+// 同时提交 ECC + RSA 两张证书时，两个 goroutine 都会看到"本地账号还没注册" ✗
+// → 各自拿同一把 EAB 去 `new-account` ✗ → 后一个必然报
+// `External account binding key has already been used` ✗
+// （生产实测 2026-11-05：ECC 成功、RSA 403 ✓）。
+var acmeAccountLocks sync.Map // map[string]*sync.Mutex
+
+func accountLock(path string) *sync.Mutex {
+	v, _ := acmeAccountLocks.LoadOrStore(path, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// prepareClient 加载/创建 ACME 账号并（首次）完成注册，返回可用的 lego client。
+// 同一账号文件的注册动作互斥；若发现别的进程已注册则直接复用其账号 ✓。
+func (c *ACMEClient) prepareClient(domains []string, eab *EABConfig, keyType certcrypto.KeyType) (*lego.Client, error) {
+	mu := accountLock(c.accountPath())
+	mu.Lock()
+	defer mu.Unlock()
+
+	user, err := c.loadOrCreateAccount()
+	if err != nil {
+		return nil, fmt.Errorf("load account: %w", err)
+	}
+	client, err := c.createClient(user, hasIPIdentifier(domains), keyType)
+	if err != nil {
+		return nil, err
+	}
+	if user.Registration != nil {
+		return client, nil
+	}
+
+	var reg *registration.Resource
+	if eab != nil && eab.KeyID != "" {
+		// EAB registration (ZeroSSL, Google CA)
+		reg, err = client.Registration.RegisterWithExternalAccountBinding(
+			registration.RegisterEABOptions{
+				TermsOfServiceAgreed: true,
+				Kid:                  eab.KeyID,
+				HmacEncoded:          eab.MACKey,
+			})
+	} else {
+		// Standard registration (Let's Encrypt)
+		reg, err = client.Registration.Register(registration.RegisterOptions{
+			TermsOfServiceAgreed: true,
+		})
+	}
+	if err != nil {
+		// 跨进程兜底：另一实例可能刚好用掉这把 EAB 并落盘了账号 ✓
+		if u2, e2 := c.loadOrCreateAccount(); e2 == nil && u2.Registration != nil {
+			if c2, cerr := c.createClient(u2, hasIPIdentifier(domains), keyType); cerr == nil {
+				log.Printf("[ACME] account already registered by another process (%s); reusing it", u2.Registration.URI)
+				return c2, nil
+			}
+		}
+		return nil, fmt.Errorf("register: %w", err)
+	}
+	user.Registration = reg
+	if serr := c.saveAccount(user); serr != nil {
+		// 落盘失败不阻断本次签发（账号仍在本进程内存里）✓，但下次会重新注册 ✗ → 必须留痕
+		log.Printf("[ACME] warning: save account %s failed: %v", c.accountPath(), serr)
+	}
+	return client, nil
 }
 
 // RenewOptions 是"续期"的参数 ✓ —— 与 IssueOptions 对称 ✓。
@@ -560,12 +600,10 @@ func (c *ACMEClient) Renew(ctx context.Context, opts RenewOptions) (*IssueResult
 	//   更糟的是注册成功后的 `saveAccount` 会把 `data/acme/accounts/<ca>.json` **覆盖成该证书的私钥** ✗
 	//   （账号身份被换掉 ✗，且每次续期都会重新注册一个账号 ✗ —— 真机已复现并留证 ✓）。
 	// 证书私钥只应该出现在 CSR 里 ✓（见下面 `certificate.Resource{PrivateKey: keyPEM}` ✓）。
-	user, err := c.loadOrCreateAccount()
-	if err != nil {
-		return nil, fmt.Errorf("load account: %w", err)
-	}
-
-	client, err := c.createClient(user, hasIPIdentifier(opts.Domains), keyTypeOfKey(key))
+	// 账号加载 + 首次注册（与 Issue 共用同一份串行化逻辑 ✓）：
+	// 账号已存在（有 registration URI ✓）→ 不重复注册 ✓（不会误耗 EAB ✓）；
+	// 需要首次注册时必须带上 EAB ✗ —— Google / ZeroSSL 首次注册强制要求 ✗。
+	client, err := c.prepareClient(opts.Domains, opts.EAB, keyTypeOfKey(key))
 	if err != nil {
 		return nil, err
 	}
@@ -573,29 +611,6 @@ func (c *ACMEClient) Renew(ctx context.Context, opts RenewOptions) (*IssueResult
 	// Setup challenge
 	if err := c.setupChallenge(client, challengeType, opts.DNSProvider); err != nil {
 		return nil, err
-	}
-
-	// Register if needed（与 Issue 同口径 ✓）：
-	// 账号已存在（有 registration URI ✓）→ **不重复注册** ✓（真机噪声少、也不会误耗 EAB ✓）；
-	// 需要首次注册时**必须带上 EAB** ✗ —— Google / ZeroSSL 首次注册强制要求 ✗。
-	if user.Registration == nil {
-		var reg *registration.Resource
-		var regErr error
-		if opts.EAB != nil && opts.EAB.KeyID != "" {
-			reg, regErr = client.Registration.RegisterWithExternalAccountBinding(
-				registration.RegisterEABOptions{
-					TermsOfServiceAgreed: true,
-					Kid:                  opts.EAB.KeyID,
-					HmacEncoded:          opts.EAB.MACKey,
-				})
-		} else {
-			reg, regErr = client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
-		}
-		if regErr != nil {
-			return nil, fmt.Errorf("register: %w", regErr)
-		}
-		user.Registration = reg
-		c.saveAccount(user)
 	}
 
 	// Renew

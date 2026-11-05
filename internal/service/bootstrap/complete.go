@@ -142,6 +142,7 @@ func Summary(dataDir string, d *Draft) map[string]any {
 		"listen_port":            d.ListenPort,
 		"subscription_port":      d.SubscriptionPort,
 		"portal_port":            d.PortalPort,
+		"portal_enabled":         d.PortalEnabled,
 		"web_path":               d.WebPath,
 		"panel_domain":           d.PanelDomain,
 		"subscription_domain":    d.SubscriptionDomain,

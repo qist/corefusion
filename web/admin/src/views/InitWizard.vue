@@ -133,7 +133,11 @@
             <el-form-item :label="t('init.subscriptionPort')">
               <el-input v-model="form.subscription_port"><template #append><el-button @click="roll(1, 'subscription_port')">🎲</el-button></template></el-input>
             </el-form-item>
-            <el-form-item :label="t('init.portalPort')">
+            <el-form-item :label="t('init.portalEnabled')">
+              <el-switch v-model="form.portal_enabled" />
+              <div style="font-size:12px;color:#909399">{{ t('init.portalEnabledHint') }}</div>
+            </el-form-item>
+            <el-form-item v-if="form.portal_enabled" :label="t('init.portalPort')">
               <el-input v-model="form.portal_port"><template #append><el-button @click="roll(1, 'portal_port')">🎲</el-button></template></el-input>
             </el-form-item>
             <el-form-item :label="t('init.webPath')">
@@ -313,6 +317,7 @@
             <el-descriptions-item :label="t('init.listenAddrAuto')">{{ summary.listen_addr }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.listenPort')">{{ summary.listen_port }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.subscriptionPort')">{{ summary.subscription_port }}</el-descriptions-item>
+            <el-descriptions-item :label="t('init.portalEnabled')">{{ summary.portal_enabled === false ? t('init.portalDisabled') : t('init.portalEnabledOn') }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.portalPort')">{{ summary.portal_port }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.webPath')">{{ summary.web_path }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.username')">{{ summary.admin_username }}</el-descriptions-item>
@@ -403,6 +408,7 @@ const form = reactive({
   listen_port: '',
   subscription_port: '',
   portal_port: '',
+  portal_enabled: true,
   web_path: '/',
   username: '',
   password: '',

@@ -409,6 +409,7 @@ func (s *Server) handleSites(c *gin.Context) {
 		ListenPort         *string `json:"listen_port"`
 		SubscriptionPort   *string `json:"subscription_port"`
 		PortalPort         *string `json:"portal_port"`
+		PortalEnabled      *bool   `json:"portal_enabled"`
 		WebPath            *string `json:"web_path"`
 		PanelDomain        *string `json:"panel_domain"`
 		SubscriptionDomain *string `json:"subscription_domain"`
@@ -432,6 +433,9 @@ func (s *Server) handleSites(c *gin.Context) {
 		}
 		if req.PortalPort != nil {
 			d.PortalPort = strings.TrimSpace(*req.PortalPort)
+		}
+		if req.PortalEnabled != nil {
+			d.PortalEnabled = *req.PortalEnabled
 		}
 		if req.WebPath != nil {
 			d.WebPath = strings.TrimSpace(*req.WebPath)

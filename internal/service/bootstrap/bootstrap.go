@@ -294,7 +294,9 @@ type Draft struct {
 	ListenPort       string `json:"listen_port"`
 	SubscriptionPort string `json:"subscription_port"`
 	PortalPort       string `json:"portal_port"`
-	WebPath          string `json:"web_path"`
+	// PortalEnabled 初始化时就决定是否对外提供客户门户（个人自用可关闭）。
+	PortalEnabled bool   `json:"portal_enabled"`
+	WebPath       string `json:"web_path"`
 
 	AdminUsername string `json:"admin_username"`
 	AdminPassword string `json:"admin_password"`
@@ -347,6 +349,7 @@ func NewDraft(dataDir string) *Draft {
 		ListenPort:           "8080",
 		SubscriptionPort:     "0",
 		PortalPort:           "0",
+		PortalEnabled:        true,
 		WebPath:              "/",
 		AdminUsername:        RandomUsername(),
 		AdminPassword:        RandomPassword(16),

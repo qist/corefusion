@@ -56,6 +56,16 @@ func (m *InboundManager) SetServerRepo(repo *repository.NodeServerRepository) {
 // It also fans out to mirror nodes by directly calling xray API on each mirror
 // using the primary's tag (mirror's xray config uses the same tag as the primary).
 func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email, uuid, password, flow, method string) error {
+	return m.AddUserToInboundWithProtocol(ctx, inboundTag, "", email, uuid, password, flow, method)
+}
+
+// AddUserToInboundWithProtocol 与 AddUserToInbound 相同，但协议由调用方显式指定
+// （protocol 为空时仍按 tag 推断）。
+//
+// 上下行分离需要把上行用户的凭据原样复制到下行入站：凭据字段名随协议不同
+// （vless/vmess 是 id/uuid，trojan/ss 是 password，hysteria 是 auth），
+// 只靠 tag 推断在 tag 不含协议名时会写错字段 → 账号建了但连不上。
+func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error {
 	// Find ALL inbounds with this tag across all servers (local + remote)
 	inbounds, err := m.inboundRepo.ListByTag(ctx, inboundTag)
 	if err != nil || len(inbounds) == 0 {
@@ -71,7 +81,7 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 		}
 
 		// Add user to config_json
-		if err := m.addUserToInboundConfig(ctx, inbound, email, uuid, password, flow, method); err != nil {
+		if err := m.addUserToInboundConfig(ctx, inbound, protocol, email, uuid, password, flow, method); err != nil {
 			log.Printf("inbound_manager: failed to add user %s to inbound %s (serverID=%d): %v", email, inbound.Tag, inbound.ServerID, err)
 			continue
 		}
@@ -210,16 +220,22 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 }
 
 // addUserToInboundConfig adds a user entry to the specified inbound's config_json.
-func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *entity.InboundConfig, email, uuid, password, flow, method string) error {
+func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *entity.InboundConfig, protocol, email, uuid, password, flow, method string) error {
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
 	}
+	if protocol == "" {
+		protocol = inbound.Protocol
+	}
+	if protocol == "" {
+		protocol = detectProtocol(inbound.Tag)
+	}
 
 	// sing-box 入站没有 settings，用户挂在顶层 users[]，字段名也与 xray 不同
 	if isSingboxInbound(inbound) {
-		protocol := singboxProtocolOf(config, inbound.Tag)
-		user := singboxUserEntry(protocol, email, uuid, password, flow, method)
+		sbProtocol := singboxProtocolOf(config, inbound.Tag)
+		user := singboxUserEntry(sbProtocol, email, uuid, password, flow, method)
 		users, _ := config["users"].([]interface{})
 		config["users"] = append(users, user)
 		data, err := json.Marshal(config)
@@ -235,7 +251,6 @@ func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *en
 		return fmt.Errorf("no settings in config")
 	}
 
-	protocol := detectProtocol(inbound.Tag)
 	user := map[string]interface{}{
 		"email":   email,
 		"_paused": false,

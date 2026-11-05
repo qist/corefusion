@@ -1615,6 +1615,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Inbound Configs (moved under /node-servers/:id/)
 			inboundCfgH := inboundconfigHandler.NewHandler(inboundConfigSvc)
+			// 上下行分离：入站保存后为已有客户补齐下行入站账号。
+			inboundCfgH.SetDownloadAccountSyncHook(clientSvcInst)
 
 			// Outbound Configs (moved under /node-servers/:id/)
 			outboundCfgH := outboundconfigHandler.NewHandler(outboundConfigSvc)

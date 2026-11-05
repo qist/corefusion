@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -69,6 +71,19 @@ type Handler struct {
 	syncHook      ConfigSyncHook
 	syncDataHook  SyncDataHook
 	mirrorChecker MirrorChecker
+	downloadSync  DownloadAccountSyncHook
+}
+
+// DownloadAccountSyncHook 在入站保存后，为「该入站引用的下行入口」补齐已有客户账号。
+// 没有它时，先建客户、后加入站关联的顺序会导致下行入站里没有对应凭据 → 客户端
+// 从下行入口认证失败（下行入站通常不在套餐节点组里，不会被批量建号覆盖）。
+type DownloadAccountSyncHook interface {
+	SyncDownloadAccounts(ctx context.Context, uplinkInboundID int64) error
+}
+
+// SetDownloadAccountSyncHook 注入下行入站账号补齐能力。
+func (h *Handler) SetDownloadAccountSyncHook(hook DownloadAccountSyncHook) {
+	h.downloadSync = hook
 }
 
 // NewHandler creates a new inbound config handler.
@@ -229,6 +244,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// nodes. SyncData detects mirror nodes and generates config from
 	// the primary's data at runtime.
 	h.triggerConfigSync(serverID, req.CoreType)
+	h.syncDownloadAccounts(cfg, string(req.ConfigJSON))
 
 	response.OK(c, cfg)
 }
@@ -314,8 +330,32 @@ func (h *Handler) Update(c *gin.Context) {
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
 	h.triggerConfigSync(cfg.ServerID, cfg.CoreType)
+	h.syncDownloadAccounts(cfg, string(req.ConfigJSON))
 
 	response.OK(c, cfg)
+}
+
+// syncDownloadAccounts 在入站保存后异步补齐「被该入站引用的下行入口」里的客户账号。
+// 只在确实存在下行引用时执行，避免每次保存都全量扫用户。
+//
+// configJSON 必须传**明文**配置：仓储 Update/Create 会把实体的 ConfigJSON 就地替换成
+// 加密串（enc: 前缀），用返回值解析会永远读不到 _downloadInboundId。
+func (h *Handler) syncDownloadAccounts(cfg *entity.InboundConfig, configJSON string) {
+	if h.downloadSync == nil || cfg == nil {
+		return
+	}
+	targetID := domain.DownloadTargetID(configJSON)
+	if targetID <= 0 {
+		return
+	}
+	uplinkID := cfg.ID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		if err := h.downloadSync.SyncDownloadAccounts(ctx, uplinkID); err != nil {
+			log.Printf("[inbound] sync download accounts for %d failed: %v", uplinkID, err)
+		}
+	}()
 }
 
 // Delete handles DELETE /api/v1/node-servers/:id/inbound-configs/:cfgId.

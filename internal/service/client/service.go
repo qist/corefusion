@@ -19,6 +19,10 @@ import (
 // InboundUserManager manages users in inbound configs (pause/resume/add/remove).
 type InboundUserManager interface {
 	AddUserToInbound(ctx context.Context, inboundTag, email, uuid, password, flow, method string) error
+	// AddUserToInboundWithProtocol 显式指定协议，避免 tag 不含协议名时被推断错：
+	// 上下行分离要把上行用户的凭据复制到下行入站，字段名（id/uuid/auth/password）
+	// 必须按目标入站的真实协议写。
+	AddUserToInboundWithProtocol(ctx context.Context, inboundTag, protocol, email, uuid, password, flow, method string) error
 	RemoveUserFromInbound(ctx context.Context, inboundTag, email string) error
 	PauseUser(ctx context.Context, inboundID int64, email string) error
 	ResumeUser(ctx context.Context, inboundID int64, email string) error
@@ -209,6 +213,9 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
+			// 上下行分离：被该入站引用的下行入站也要有同凭据账号，
+			// 否则客户端从下行入口认证失败（下行不在套餐节点组时不会自动建号）。
+			s.followDownloadTarget(ctx, inbound, input.Email, uuid, password, flow, method)
 		}
 	}
 
@@ -353,6 +360,10 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 			inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
 			if s.userManager != nil {
 				s.userManager.RemoveUserFromInbound(ctx, inbound.Tag, inboundEmail)
+				// 上下行分离：下行入站里的同客户账号一并删除，避免残留可认证账号。
+				if target := s.downloadTargetOf(ctx, inbound); target != nil {
+					s.userManager.RemoveUserFromInbound(ctx, target.Tag, generateInboundEmail(client.Email, target.Tag))
+				}
 			}
 		}
 	}
@@ -531,6 +542,8 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
+			// 上下行分离：下行入站补同凭据账号。
+			s.followDownloadTarget(ctx, inbound, client.Email, uuid, password, flow, method)
 		}
 	}
 
@@ -604,6 +617,8 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to sync account for %s on inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
+			// 新入站若引用了下行入口，同样要为已有客户补建下行账号。
+			s.followDownloadTarget(ctx, *inbound, client.Email, uuid, password, flow, method)
 		}
 
 		// Refresh inbound config_json after adding user
@@ -632,6 +647,16 @@ func (s *Service) pauseResumeAll(ctx context.Context, email string, planID int64
 			s.userManager.PauseUser(ctx, inbound.ID, inboundEmail)
 		} else {
 			s.userManager.ResumeUser(ctx, inbound.ID, inboundEmail)
+		}
+		// 上下行分离：下行入站里同客户的账号也要一起暂停/恢复，
+		// 否则只封上行、下行仍可用（或反之恢复不完整）。
+		if target := s.downloadTargetOf(ctx, inbound); target != nil {
+			targetEmail := generateInboundEmail(email, target.Tag)
+			if pause {
+				s.userManager.PauseUser(ctx, target.ID, targetEmail)
+			} else {
+				s.userManager.ResumeUser(ctx, target.ID, targetEmail)
+			}
 		}
 	}
 }

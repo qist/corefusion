@@ -728,10 +728,11 @@ func runServer(args []string) {
 		}()
 	}
 
-	// Start portal server on dedicated port if configured
+	// Start portal server on dedicated port if configured (跳过前提：门户总开关未关闭)
 	portalPort := settings["portal_port"]
+	portalSwitchedOff := settings["portal_enabled"] == "false"
 	var portalSrv *http.Server
-	if portalPort != "" && portalPort != "0" && portalPort != apiPort {
+	if !portalSwitchedOff && portalPort != "" && portalPort != "0" && portalPort != apiPort {
 		portalEngine := router.NewPortalEngine(db.DB)
 		portalSrv = &http.Server{
 			Addr:              bindAddr(portalPort),
@@ -851,7 +852,7 @@ func initTrustedProxies(settings map[string]string) {
 // readSettings reads all panel settings from database.
 func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 	keys := []string{
-		"panel.listen_addr", "panel.listen_port", "panel.subscription_port", "panel.portal_port",
+		"panel.listen_addr", "panel.listen_port", "panel.subscription_port", "panel.portal_port", "panel.portal_enabled",
 		"panel.tls_enabled", "panel.tls_cert_path", "panel.tls_key_path",
 		"panel.mtls_enabled", "panel.mtls_ca_path",
 		"panel.web_path", "panel.timezone", "panel.data_dir",

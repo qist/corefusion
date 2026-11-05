@@ -1761,6 +1761,8 @@ export default {
       exportMaxRows: '导出上限（行）',
       exportMaxRowsHint: 'CSV 导出的单次最大行数，范围 1000 ~ 2000000，越界会被自动夹取。太小可能导不全，太大可能拖慢面板。',
       registrationEnabled: '开放注册',
+      portalEnabled: '启用客户门户',
+      portalEnabledHint: '关闭后 /p、合规页与独立门户端口不再对外提供（门户登录/注册/模板接口一并 404），仅保留订阅接口。设置立即生效；如配置了独立门户端口，需重启面板才会释放该端口。',
       registrationHint: '开启后用户可通过 Portal 页面自主注册账号',
       mode: '面板模式',
       modeFull: '完整模式',

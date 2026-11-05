@@ -1756,6 +1756,8 @@ export default {
       exportMaxRows: 'Export row limit',
       exportMaxRowsHint: 'Max rows per CSV export (1000 - 2000000); out-of-range values are clamped. Too small may truncate the export, too large may slow the panel down.',
       registrationEnabled: 'Open Registration',
+      portalEnabled: 'Enable Customer Portal',
+      portalEnabledHint: 'When disabled, /p, legal pages and the dedicated portal port stop serving (portal auth/template APIs return 404); subscription endpoints keep working. Takes effect immediately. If a dedicated portal port is configured, restart the panel to release it.',
       registrationHint: 'When enabled, users can register via Portal page',
       mode: 'Panel Mode',
       modeFull: 'Full Mode',

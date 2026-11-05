@@ -65,6 +65,10 @@
               </el-radio-group>
               <div class="hint">{{ t('settings.panel.modeHint') }}</div>
             </el-form-item>
+            <el-form-item :label="t('settings.panel.portalEnabled')">
+              <el-switch v-model="panelForm.portal_enabled" />
+              <div class="hint">{{ t('settings.panel.portalEnabledHint') }}</div>
+            </el-form-item>
             <el-divider />
             <el-form-item :label="t('settings.panel.tlsEnabled')">
               <el-switch v-model="panelForm.tls_enabled" />
@@ -1176,7 +1180,7 @@ const currencyForm = ref({ default_currency: 'CNY' })
 const currencySaving = ref(false)
 
 // Panel config
-const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full', export_max_rows: 50000, passkey_rp_ids: '' })
+const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', portal_enabled: true, tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full', export_max_rows: 50000, passkey_rp_ids: '' })
 const envForm = ref({ safe_paths: 'data' })
 const envSaving = ref(false)
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })

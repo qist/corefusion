@@ -88,10 +88,13 @@ func NewSettingService(repo *repository.SystemSettingRepository, tmplRepo *repos
 
 // PanelConfig contains all panel configuration fields.
 type PanelConfig struct {
-	ListenAddr          string `json:"listen_addr"`
-	ListenPort          string `json:"listen_port"`
-	SubscriptionPort    string `json:"subscription_port"`
-	PortalPort          string `json:"portal_port"`
+	ListenAddr       string `json:"listen_addr"`
+	ListenPort       string `json:"listen_port"`
+	SubscriptionPort string `json:"subscription_port"`
+	PortalPort       string `json:"portal_port"`
+	// PortalEnabled 控制客户门户（/p、合规页、独立门户端口）是否对外提供。
+	// 个人自用部署通常不需要门户，可关闭；缺省为 true，老库不受影响。
+	PortalEnabled       bool   `json:"portal_enabled"`
 	RegistrationEnabled bool   `json:"registration_enabled"`
 	TLSEnabled          bool   `json:"tls_enabled"`
 	TLSCertID           int64  `json:"tls_cert_id"`
@@ -274,6 +277,7 @@ func DefaultPanelConfig() *PanelConfig {
 		ListenPort:       "8080",
 		SubscriptionPort: "0",
 		PortalPort:       "0",
+		PortalEnabled:    true,
 		TLSEnabled:       false,
 		AgentGRPCPort:    strconv.Itoa(constants.DefaultAgentGRPCPort),
 		WebPath:          "/",
@@ -325,6 +329,9 @@ func (s *SettingService) GetPanelConfig(ctx context.Context) (*PanelConfig, erro
 	setIfExist(settings, "panel.listen_port", &config.ListenPort)
 	setIfExist(settings, "panel.subscription_port", &config.SubscriptionPort)
 	setIfExist(settings, "panel.portal_port", &config.PortalPort)
+	if v, ok := settings["panel.portal_enabled"]; ok {
+		config.PortalEnabled = v != "false"
+	}
 	if v, ok := settings["panel.registration_enabled"]; ok {
 		config.RegistrationEnabled = v == "true"
 	}
@@ -366,6 +373,7 @@ func (s *SettingService) UpdatePanelConfig(ctx context.Context, config *PanelCon
 		"panel.listen_port":          config.ListenPort,
 		"panel.subscription_port":    config.SubscriptionPort,
 		"panel.portal_port":          config.PortalPort,
+		"panel.portal_enabled":       fmt.Sprintf("%v", config.PortalEnabled),
 		"panel.tls_enabled":          fmt.Sprintf("%v", config.TLSEnabled),
 		"panel.tls_cert_id":          strconv.FormatInt(config.TLSCertID, 10),
 		"panel.tls_cert_path":        config.TLSCertPath,

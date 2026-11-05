@@ -3297,7 +3297,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Portal page — served from active custom template (cached)
 	// Note: uses /p to avoid collision with admin SPA route /portal (PortalManagement.vue)
 	// Guarded by maintenance mode so portal visitors see the maintenance page.
-	r.GET("/p", middleware.MaintenanceGuard(), func(c *gin.Context) {
+	r.GET("/p", middleware.MaintenanceGuard(), portalGate(systemSettingSvc), func(c *gin.Context) {
 		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
@@ -3311,8 +3311,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// 合规文档独立页面（隐私政策 / 服务条款）：Google OAuth 验证 / 用户直接访问
 	// 支持 ?lang=xx；主面板域名下走 /p/legal/*（门户在 /p）。
-	r.GET("/p/legal/privacy", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "privacy", "/p"))
-	r.GET("/p/legal/terms", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "terms", "/p"))
+	r.GET("/p/legal/privacy", middleware.MaintenanceGuard(), portalGate(systemSettingSvc), legalPageHandler(portalTmplSvc, "privacy", "/p"))
+	r.GET("/p/legal/terms", middleware.MaintenanceGuard(), portalGate(systemSettingSvc), legalPageHandler(portalTmplSvc, "terms", "/p"))
 
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")
@@ -3864,6 +3864,36 @@ func (p *proxySettingsProvider) GetCaddySNISettingsForServer(ctx context.Context
 	return result, nil
 }
 
+// portalEnabledSettingKey 是客户门户总开关（panel.portal_enabled）。
+// 缺省视为开启，保证老库升级后行为不变。
+const portalEnabledSettingKey = "panel.portal_enabled"
+
+// portalEnabled 读取门户总开关；读不到时按开启处理。
+func portalEnabled(ctx context.Context, svc *systemSvc.SettingService) bool {
+	if svc == nil {
+		return true
+	}
+	v, err := svc.GetByKey(ctx, portalEnabledSettingKey)
+	if err != nil || v == "" {
+		return true
+	}
+	return v != "false"
+}
+
+// portalGate 在门户关闭时把请求当作不存在（404），避免暴露半开的登录/模板接口。
+func portalGate(svc *systemSvc.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !portalEnabled(c.Request.Context(), svc) {
+			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{
+				"code":    "PORTAL_DISABLED",
+				"message": "portal is disabled",
+			})
+			return
+		}
+		c.Next()
+	}
+}
+
 // NewPortalEngine creates a separate Gin engine for portal-only serving on a dedicated port.
 // This allows the portal to be accessed at http://domain:port/ (root path, no /p prefix).
 // On the main panel the portal is served at /p to avoid collision with the admin SPA route /portal.
@@ -3884,6 +3914,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
 	portalTmplSvc.WithSettingStore(systemSettingSvc)
+	// 门户总开关关闭时，独立端口上的一切路径（页面/合规页/登录接口）都按不存在处理。
+	r.Use(portalGate(systemSettingSvc))
 	// 存量明文敏感配置统一加密落库（幂等，主面板引擎已执行过则这里直接跳过）
 	if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {
 		log.Printf("[router] portal: encrypt existing secrets skipped: %v", serr)

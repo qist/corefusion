@@ -318,9 +318,3 @@ func (p *HTTP01Provider) SetStrategy(strategy Port80Strategy) {
 	defer p.mu.Unlock()
 	p.strategy = strategy
 }
-
-// GetChallengePath returns the expected challenge path for a given token.
-// Useful for logging and debugging.
-func GetChallengePath(token string) string {
-	return fmt.Sprintf("/.well-known/acme-challenge/%s", token)
-}

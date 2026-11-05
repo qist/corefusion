@@ -217,22 +217,12 @@ func (r *ClientGiftRepository) ListAll(ctx context.Context, limit, offset int) (
 	return items, total, err
 }
 
-func (r *ClientGiftRepository) GetByID(ctx context.Context, id int64) (*entity.ClientGift, error) {
-	var item entity.ClientGift
-	err := r.db.WithContext(ctx).First(&item, id).Error
-	return &item, err
-}
-
 func (r *ClientGiftRepository) Create(ctx context.Context, item *entity.ClientGift) error {
 	return r.db.WithContext(ctx).Create(item).Error
 }
 
 func (r *ClientGiftRepository) CreateBatch(ctx context.Context, items []entity.ClientGift) error {
 	return r.db.WithContext(ctx).Create(&items).Error
-}
-
-func (r *ClientGiftRepository) Update(ctx context.Context, item *entity.ClientGift) error {
-	return r.db.WithContext(ctx).Save(item).Error
 }
 
 // ============================================================
@@ -364,10 +354,6 @@ func (r *SharedAccountRepairLogRepository) GetLastByClientAndAccount(ctx context
 	return &item, err
 }
 
-func (r *SharedAccountRepairLogRepository) Update(ctx context.Context, item *entity.SharedAccountRepairLog) error {
-	return r.db.WithContext(ctx).Save(item).Error
-}
-
 // ============================================================
 // OAuth Binding
 // ============================================================
@@ -378,18 +364,6 @@ func NewClientOAuthBindingRepository(db *gorm.DB) *ClientOAuthBindingRepository 
 	return &ClientOAuthBindingRepository{db: db}
 }
 
-func (r *ClientOAuthBindingRepository) ListByClientID(ctx context.Context, clientID int64) ([]entity.ClientOAuthBinding, error) {
-	var items []entity.ClientOAuthBinding
-	err := r.db.WithContext(ctx).Where("client_id = ?", clientID).Find(&items).Error
-	return items, err
-}
-
-func (r *ClientOAuthBindingRepository) GetByProvider(ctx context.Context, clientID int64, provider string) (*entity.ClientOAuthBinding, error) {
-	var item entity.ClientOAuthBinding
-	err := r.db.WithContext(ctx).Where("client_id = ? AND provider = ?", clientID, provider).First(&item).Error
-	return &item, err
-}
-
 func (r *ClientOAuthBindingRepository) GetByProviderUserID(ctx context.Context, provider, providerUserID string) (*entity.ClientOAuthBinding, error) {
 	var item entity.ClientOAuthBinding
 	err := r.db.WithContext(ctx).Where("provider = ? AND provider_user_id = ?", provider, providerUserID).First(&item).Error
@@ -398,10 +372,6 @@ func (r *ClientOAuthBindingRepository) GetByProviderUserID(ctx context.Context, 
 
 func (r *ClientOAuthBindingRepository) Create(ctx context.Context, item *entity.ClientOAuthBinding) error {
 	return r.db.WithContext(ctx).Create(item).Error
-}
-
-func (r *ClientOAuthBindingRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.ClientOAuthBinding{}, id).Error
 }
 
 // ============================================================

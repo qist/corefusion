@@ -129,13 +129,6 @@ func (c *RenderCache) SetDevMode(dev bool) {
 	c.InvalidateLocked()
 }
 
-// IsDevMode returns whether dev mode is enabled.
-func (c *RenderCache) IsDevMode() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.devMode
-}
-
 // InvalidateLocked clears the cache without acquiring the lock (caller must hold it).
 func (c *RenderCache) InvalidateLocked() {
 	c.cachedHTML = ""

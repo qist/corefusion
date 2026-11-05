@@ -65,10 +65,6 @@ func (m *NginxManager) ListSites(ctx context.Context, serverID int64) ([]entity.
 	return m.siteRepo.List(ctx, serverID)
 }
 
-func (m *NginxManager) ListEnabledSites(ctx context.Context, serverID int64) ([]entity.NginxSite, error) {
-	return m.siteRepo.ListEnabled(ctx, serverID)
-}
-
 func (m *NginxManager) CreateSite(ctx context.Context, serverID int64, site *entity.NginxSite) error {
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
 	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, serverID) {

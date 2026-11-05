@@ -123,24 +123,6 @@ func (s *Scheduler) fire(cron string, interval time.Duration) {
 	log.Printf("[WAFScheduler] scheduled sync done: rules synced and pushed to nodes")
 }
 
-// Status 返回调度器当前状态（前端展示用）。
-func (s *Scheduler) Status() map[string]interface{} {
-	s.mu.Lock()
-	current := s.current
-	hasTimer := s.timer != nil
-	s.mu.Unlock()
-	s.syncMu.Lock()
-	lastRunAt, lastRunOK, lastRunInfo := s.lastRunAt, s.lastRunOK, s.lastRunInfo
-	s.syncMu.Unlock()
-	return map[string]interface{}{
-		"active":        hasTimer && current != "",
-		"cron":          current,
-		"last_run_at":   lastRunAt,
-		"last_run_ok":   lastRunOK,
-		"last_run_info": lastRunInfo,
-	}
-}
-
 // Stop 停止调度（面板关闭或配置禁用时）。
 func (s *Scheduler) Stop() {
 	s.mu.Lock()
@@ -150,12 +132,6 @@ func (s *Scheduler) Stop() {
 		s.timer = nil
 	}
 	s.current = ""
-}
-
-// Close 释放调度器（面板关闭）。
-func (s *Scheduler) Close() {
-	s.cancel()
-	s.Stop()
 }
 
 // parseCronInterval 把简化 cron 表达式转为轮询间隔（与 georule scheduler 同口径）。

@@ -54,13 +54,6 @@ func (r *PortalTemplateRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.PortalTemplate{}, id).Error
 }
 
-// DeactivateAll deactivates all portal templates.
-func (r *PortalTemplateRepository) DeactivateAll(ctx context.Context) error {
-	return r.db.WithContext(ctx).Model(&entity.PortalTemplate{}).
-		Where("is_active = ?", true).
-		Update("is_active", false).Error
-}
-
 // Activate sets the given template as the only active one.
 func (r *PortalTemplateRepository) Activate(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

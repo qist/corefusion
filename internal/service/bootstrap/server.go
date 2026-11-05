@@ -49,9 +49,6 @@ func NewServer(dataDir string, sess *Session, certSvc *certsvc.Service, dnsSvc *
 	}
 }
 
-// Session 返回当前初始化会话（供启动横幅打印访问地址/令牌）。
-func (s *Server) Session() *Session { return s.session }
-
 // Engine 构建初始化向导的 HTTP 引擎。
 func (s *Server) Engine() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)

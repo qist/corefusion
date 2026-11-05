@@ -223,19 +223,6 @@ func StartSubscriberNotifyLoop(ctx context.Context, db *gorm.DB, settingSvc *Set
 	}()
 }
 
-// NotifyClientEvent 供业务代码在事件发生点（充值、扣费、续费等）即时给单个客户发送
-// 订阅者模板：按 event_key 查找启用的 subscriber 模板并发送，模板不存在/未启用则静默跳过。
-func NotifyClientEvent(ctx context.Context, db *gorm.DB, settingSvc *SettingService, eventKey, clientEmail string, vars map[string]string) {
-	var tmpl entity.NotificationTemplate
-	if err := db.Where("audience = ? AND event_key = ? AND enabled = ?",
-		entity.TemplateAudienceSubscriber, eventKey, true).First(&tmpl).Error; err != nil {
-		return
-	}
-	if err := settingSvc.SendSubscriberTemplate(ctx, &tmpl, clientEmail, vars); err != nil {
-		log.Printf("[subscriber-notify] event %s to %s failed: %v", eventKey, clientEmail, err)
-	}
-}
-
 // ---- 手动群发（营销/召回类）----
 
 // BroadcastSubscriberTemplate 向一批客户群发订阅者模板（管理员手动触发，如广告/召回邮件）。

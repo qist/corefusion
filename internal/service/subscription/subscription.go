@@ -490,28 +490,6 @@ func (s *Service) ResetUsage(ctx context.Context, id int64) (*entity.Subscriptio
 	return sub, nil
 }
 
-// RecordAccess records a subscription access event.
-func (s *Service) RecordAccess(ctx context.Context, id int64, ip, userAgent, realIP, cdnIP, cdnProvider, accessType string) error {
-	// Update subscription access stats
-	if err := s.repo.UpdateAccessStats(ctx, id, ip, userAgent); err != nil {
-		return err
-	}
-
-	// Create access log entry
-	log := &entity.SubscriptionAccessLog{
-		SubscriptionID: id,
-		IP:             ip,
-		RealIP:         realIP,
-		CDNIP:          cdnIP,
-		CDNProvider:    cdnProvider,
-		AccessType:     accessType,
-		UserAgent:      userAgent,
-		StatusCode:     200,
-		HitResult:      "served",
-	}
-	return s.accessLog.Create(ctx, log)
-}
-
 // ListAccessLogs retrieves access logs for a subscription.
 func (s *Service) ListAccessLogs(ctx context.Context, subID int64, limit, offset int) ([]entity.SubscriptionAccessLog, int64, error) {
 	return s.accessLog.ListBySubscriptionID(ctx, subID, limit, offset)
@@ -520,11 +498,6 @@ func (s *Service) ListAccessLogs(ctx context.Context, subID int64, limit, offset
 // ListRotations retrieves rotation history for a subscription.
 func (s *Service) ListRotations(ctx context.Context, subID int64, limit, offset int) ([]entity.SubscriptionRotation, int64, error) {
 	return s.rotation.ListBySubscriptionID(ctx, subID, limit, offset)
-}
-
-// GetByToken retrieves a subscription by token (for subscription URL access).
-func (s *Service) GetByToken(ctx context.Context, token string) (*entity.Subscription, error) {
-	return s.repo.GetByToken(ctx, token)
 }
 
 // generateToken generates a random hex token.

@@ -69,12 +69,6 @@ func (s *AgentInstallScript) WithServerID(id int64) *AgentInstallScript {
 	return s
 }
 
-// WithVersion sets the Agent version.
-func (s *AgentInstallScript) WithVersion(version string) *AgentInstallScript {
-	s.agentVersion = version
-	return s
-}
-
 // WithScheme sets the panel URL scheme ("http" or "https").
 func (s *AgentInstallScript) WithScheme(scheme string) *AgentInstallScript {
 	s.panelScheme = scheme
@@ -120,12 +114,6 @@ func (s *AgentInstallScript) WithBootstrapEndpoint(host string, port int, tls bo
 
 // WithGitHubURL sets the GitHub Releases download base URL.
 func (s *AgentInstallScript) WithGitHubURL(url string) *AgentInstallScript {
-	s.githubURL = url
-	return s
-}
-
-// WithDownloadURL sets the download base URL (legacy compat, maps to githubURL).
-func (s *AgentInstallScript) WithDownloadURL(url string) *AgentInstallScript {
 	s.githubURL = url
 	return s
 }

@@ -866,10 +866,6 @@ func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 	return settings
 }
 
-func runClient(args []string) {
-	fmt.Println("client mode not yet implemented")
-}
-
 func runMigrate(args []string) {
 	enterConfigDir()
 	env := loadEnv()

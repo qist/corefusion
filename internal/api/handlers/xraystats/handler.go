@@ -55,9 +55,6 @@ func NewHandler(settingSvc SettingStore) *Handler {
 	return h
 }
 
-// Close is kept for API compatibility.
-func (h *Handler) Close() {}
-
 // SetCoreConfigService sets the core config service (used to resolve api.listen).
 func (h *Handler) SetCoreConfigService(svc CoreConfigService) {
 	h.coreConfigSvc = svc

@@ -69,11 +69,6 @@ func SetEgressInterface(iface string) {
 	egressInterface = iface
 }
 
-// GetEgressInterface returns the currently configured egress interface name.
-func GetEgressInterface() string {
-	return egressInterface
-}
-
 type netCounter struct {
 	rxBytes   int64
 	txBytes   int64

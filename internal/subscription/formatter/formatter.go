@@ -1454,11 +1454,6 @@ func extraToInt(extra map[string]interface{}, key string) int {
 	return 0
 }
 
-// FormatNodeURI exports the URI formatting for a single node.
-func FormatNodeURI(node Node) string {
-	return formatURI(node)
-}
-
 // URIToMihomo converts a xray-style URI directly to mihomo proxy YAML lines.
 func URIToMihomo(uri string) string {
 	node := ParseURIToNode(uri)

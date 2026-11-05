@@ -182,11 +182,6 @@ type PendingLogin struct {
 	ExpiresAt time.Time
 }
 
-// CreatePendingLogin 创建一张一次性且 5 分钟过期的登录票据，返回 token。
-func (s *Service) CreatePendingLogin(userID int64, username string) string {
-	return s.pending.create(userID, username, 5*time.Minute)
-}
-
 // TakePendingLogin 取出（并作废）一张票据；不存在/过期返回 false。
 func (s *Service) TakePendingLogin(token string) (PendingLogin, bool) {
 	return s.pending.take(token)

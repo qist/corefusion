@@ -938,28 +938,3 @@ type ACMEUser struct {
 func (u *ACMEUser) GetEmail() string                        { return u.Email }
 func (u *ACMEUser) GetRegistration() *registration.Resource { return u.Registration }
 func (u *ACMEUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
-
-// GetSupportedProviders returns a list of supported DNS providers with their required env vars.
-func GetSupportedProviders() map[DNSProvider][]string {
-	return map[DNSProvider][]string{
-		// 直接按 acme.sh / Cloudflare 官方脚本的写法给字段 ✓（`CF_Token` + `CF_Account_ID` ✓）。
-		// 服务端会把别名归一成 lego 认的 `CF_DNS_API_TOKEN` ✓（见 dns_env.go ✓）；
-		// 标准名与老式全局 Key（CLOUDFLARE_API_KEY + CLOUDFLARE_EMAIL）也都兼容 ✓。
-		DNSProviderCloudflare: {"CF_Token", "CF_Account_ID"},
-		DNSProviderAliDNS:     {"ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"},
-		DNSProviderDNSPod:     {"DNSPOD_API_KEY"},
-		DNSProviderRoute53:    {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},
-		DNSProviderGoogle:     {"GCE_PROJECT", "GCE_SERVICE_ACCOUNT_FILE"},
-		DNSProviderGoDaddy:    {"GODADDY_API_KEY", "GODADDY_API_SECRET"},
-		DNSProviderNamecheap:  {"NAMECHEAP_API_USER", "NAMECHEAP_API_KEY"},
-	}
-}
-
-// GetCAProviders returns supported CA providers.
-func GetCAProviders() map[CAProvider]string {
-	return map[CAProvider]string{
-		CAProviderLetsEncrypt: CALetsEncrypt,
-		CAProviderZeroSSL:     CAZeroSSL,
-		CAProviderGoogle:      CAGooglePublicCA,
-	}
-}

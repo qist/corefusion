@@ -63,25 +63,6 @@ func NewService(userRepo *repository.UserRepository, jwtSecret string) *Service 
 	}
 }
 
-// Login authenticates a user and returns tokens.
-func (s *Service) Login(ctx context.Context, username, passwordStr string) (accessToken, refreshToken string, user *entity.User, err error) {
-	user, err = s.GetActiveUserByUsername(ctx, username)
-	if err != nil {
-		return "", "", nil, err
-	}
-
-	if !password.Check(passwordStr, user.PasswordHash) {
-		return "", "", nil, ErrInvalidCredentials
-	}
-
-	accessToken, refreshToken, err = s.IssueTokens(ctx, user)
-	if err != nil {
-		return "", "", nil, err
-	}
-
-	return accessToken, refreshToken, user, nil
-}
-
 // GetActiveUserByUsername 按用户名返回处于启用状态的用户，供各登录入口共用。
 // 不存在 / 已禁用统一返回 ErrInvalidCredentials（不暴露账号存在性）。
 func (s *Service) GetActiveUserByUsername(ctx context.Context, username string) (*entity.User, error) {
@@ -182,11 +163,6 @@ func (s *Service) Logout(ctx context.Context, userID int64) error {
 		return ErrInvalidCredentials
 	}
 	return s.userRepo.BumpTokenVersion(ctx, userID)
-}
-
-// ValidateToken validates an access token and returns the claims.
-func (s *Service) ValidateToken(tokenStr string) (*jwt.Claims, error) {
-	return s.jwt.Validate(tokenStr)
 }
 
 // GetByID retrieves a user by ID.

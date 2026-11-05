@@ -87,9 +87,6 @@ func (h *Handler) rebuildControlProvider() {
 	})
 }
 
-// Close is kept for API compatibility.
-func (h *Handler) Close() {}
-
 func ensureImplicitAPIRoutingRule(routerConf *conf.RouterConfig) {
 	if routerConf == nil {
 		return

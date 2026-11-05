@@ -959,37 +959,6 @@ func normalizeCertPath(path string) string {
 	return path
 }
 
-// MarshalSyncDataRequest serializes a SyncDataRequest to JSON for debugging.
-func MarshalSyncDataRequest(req *agentpb.SyncDataRequest) ([]byte, error) {
-	summary := map[string]interface{}{
-		"server_id":            req.ServerId,
-		"config_version":       req.ConfigVersion,
-		"apply_and_start":      req.ApplyAndStart,
-		"core_configs":         len(req.CoreConfigs),
-		"inbound_configs":      len(req.InboundConfigs),
-		"outbound_configs":     len(req.OutboundConfigs),
-		"warp_configs":         len(req.WarpConfigs),
-		"share_domain_configs": len(req.ShareDomainConfigs),
-		"chain_links":          len(req.ChainLinks),
-		"node_servers":         len(req.NodeServers),
-		"external_nodes":       len(req.ExternalNodes),
-		"has_config_content":   len(req.ConfigContent) > 0,
-		"config_core_type":     req.ConfigCoreType,
-	}
-	return json.MarshalIndent(summary, "", "  ")
-}
-
-// ValidateSyncDataRequest validates that a SyncDataRequest has the minimum required data.
-func ValidateSyncDataRequest(req *agentpb.SyncDataRequest) error {
-	if req.ServerId <= 0 {
-		return fmt.Errorf("invalid server_id: %d", req.ServerId)
-	}
-	if len(req.CoreConfigs) == 0 && len(req.ConfigContent) == 0 {
-		return fmt.Errorf("no core_configs or config_content provided for server %d", req.ServerId)
-	}
-	return nil
-}
-
 // resolveLogMode returns the log mode for a given server and core type.
 // Uses the per-server config if available, falling back to the global config.
 func (b *DataSyncBuilder) resolveLogMode(ctx context.Context, serverID int64, coreType string) string {

@@ -57,11 +57,6 @@ func (s *Service) Create(ctx context.Context, input CreateUserInput) (*entity.Us
 	return user, nil
 }
 
-// GetByID retrieves a user by ID.
-func (s *Service) GetByID(ctx context.Context, id int64) (*entity.User, error) {
-	return s.repo.GetByID(ctx, id)
-}
-
 // List retrieves all users with pagination.
 func (s *Service) List(ctx context.Context, limit, offset int) ([]entity.User, int64, error) {
 	return s.repo.List(ctx, limit, offset)

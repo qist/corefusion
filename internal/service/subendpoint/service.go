@@ -44,11 +44,6 @@ func NewService(
 	}
 }
 
-// List returns all subscription endpoints.
-func (s *Service) List(ctx context.Context) ([]entity.SubscriptionEndpoint, error) {
-	return s.repo.List(ctx)
-}
-
 // ListPaged returns subscription endpoints with pagination and total count.
 func (s *Service) ListPaged(ctx context.Context, limit, offset int) ([]entity.SubscriptionEndpoint, int64, error) {
 	items, err := s.repo.ListPaged(ctx, limit, offset)

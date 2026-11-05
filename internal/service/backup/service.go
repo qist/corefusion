@@ -261,15 +261,6 @@ func (s *Service) pruneDir(dir string, exts []string, cutoff time.Time) int {
 	return removed
 }
 
-// RestoreBackup restores from a backup file (legacy sync version, use RestoreBackupAsync for non-blocking).
-func (s *Service) RestoreBackup(ctx context.Context, id int64) error {
-	rec, err := s.repo.GetRecordByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	return s.restoreFromArchive(ctx, rec.FilePath)
-}
-
 // importDumpsFromArchive imports any db_dump/*.sql files extracted from a full backup.
 func (s *Service) importDumpsFromArchive(ctx context.Context, dbType, dsn string) error {
 	matches, _ := filepath.Glob(filepath.Join(s.dataDir, "db_dump", "*.sql"))
@@ -292,27 +283,6 @@ func (s *Service) importDumpsFromArchive(ctx context.Context, dbType, dsn string
 	}
 	os.RemoveAll(filepath.Join(s.dataDir, "db_dump"))
 	return nil
-}
-
-// RestoreFromFile restores from an uploaded file (upload-restore).
-// The file must be a .tar.gz archive containing either sqlite/app.db or
-// db_dump/*.sql, produced by CreateBackup.
-func (s *Service) RestoreFromFile(ctx context.Context, reader io.Reader) error {
-	tmpPath := filepath.Join(s.dataDir, "backup", "restore_tmp.tar.gz")
-	os.MkdirAll(filepath.Dir(tmpPath), 0750)
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, reader); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
-		return err
-	}
-	f.Close()
-	defer os.Remove(tmpPath)
-
-	return s.restoreFromArchive(ctx, tmpPath)
 }
 
 // restoreFromArchive extracts a tar.gz archive and imports the database dump
@@ -477,66 +447,6 @@ func (s *Service) migrateSQLiteToTarget(ctx context.Context, sqlitePath, targetD
 	}
 	log.Printf("[Backup] cross-db migrate: copied %d tables, %d rows from SQLite to %s", tables, rows, targetDBType)
 	return nil
-}
-
-// RemoteRestore downloads a backup file from remote storage and restores it.
-// The backup file is downloaded to a temporary location, restored, then deleted.
-// This supports the "backup to remote only, restore from remote" workflow.
-func (s *Service) RemoteRestore(ctx context.Context, storageID int64, filename string) error {
-	storage, err := s.GetStorage(ctx, storageID)
-	if err != nil {
-		return fmt.Errorf("get storage config: %w", err)
-	}
-
-	tmpPath := filepath.Join(s.dataDir, "backup", "remote_restore_tmp.tar.gz")
-	os.MkdirAll(filepath.Dir(tmpPath), 0750)
-	out, err := os.Create(tmpPath)
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpPath)
-
-	log.Printf("[Backup] downloading %s from %s storage...", filename, storage.Type)
-	switch storage.Type {
-	case "s3":
-		var cfg S3Config
-		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
-			out.Close()
-			return err
-		}
-		if err := s.downloadFromS3(ctx, cfg, filename, out); err != nil {
-			out.Close()
-			return err
-		}
-	case "ftp":
-		var cfg FTPConfig
-		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
-			out.Close()
-			return err
-		}
-		if err := s.downloadFromFTP(ctx, cfg, filename, out); err != nil {
-			out.Close()
-			return err
-		}
-	case "webdav":
-		var cfg WebDAVConfig
-		if err := ParseStorageConfig(storage.Config, &cfg); err != nil {
-			out.Close()
-			return err
-		}
-		if err := s.downloadFromWebDAV(ctx, cfg, filename, out); err != nil {
-			out.Close()
-			return err
-		}
-	default:
-		out.Close()
-		return fmt.Errorf("unsupported storage type: %s", storage.Type)
-	}
-	out.Close()
-
-	info, _ := os.Stat(tmpPath)
-	log.Printf("[Backup] downloaded %s (%d bytes), restoring...", filename, info.Size())
-	return s.restoreFromArchive(ctx, tmpPath)
 }
 
 // GetRestoreStatus returns the current async restore status, or nil if none.
@@ -1644,67 +1554,6 @@ func (s *Service) dumpSQLiteOnlineBackup(ctx context.Context, sqlDB *sql.DB, des
 	return nil
 }
 
-// RestoreDatabase restores the configured database from a dump file.
-//   - sqlite:   copies the .db backup copy over the live db file (caller restarts)
-//   - mysql:    executes the .sql dump with multiStatements enabled
-//   - postgres: executes the .sql dump via pgx (simple query protocol, multi-statement)
-//
-// Returns needRestart=true when the process must be restarted (sqlite only).
-func (s *Service) RestoreDatabase(ctx context.Context, dbType, dsn, dumpPath string) (needRestart bool, err error) {
-	content, err := os.ReadFile(dumpPath)
-	if err != nil {
-		return false, fmt.Errorf("read dump: %w", err)
-	}
-	switch dbType {
-	case db.DBTypeMySQL:
-		if dsn == "" {
-			return false, fmt.Errorf("数据库 DSN 未配置（环境变量 CF_DB_DSN），无法还原 MySQL 备份")
-		}
-		if err := restoreMySQL(ctx, dsn, string(content)); err != nil {
-			return false, err
-		}
-		return false, nil
-	case db.DBTypePostgres:
-		if dsn == "" {
-			return false, fmt.Errorf("数据库 DSN 未配置（环境变量 CF_DB_DSN），无法还原 PostgreSQL 备份")
-		}
-		if err := restorePostgres(ctx, dsn, string(content)); err != nil {
-			return false, err
-		}
-		return false, nil
-	case db.DBTypeSQLite, "":
-		dst := filepath.Join(s.dataDir, "sqlite", "app.db")
-		if err := copyFile(dumpPath, dst); err != nil {
-			return false, fmt.Errorf("copy sqlite dump: %w", err)
-		}
-		// Drop stale WAL/SHM so the restored snapshot is authoritative on next open.
-		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-wal"))
-		os.Remove(filepath.Join(s.dataDir, "sqlite", "app.db-shm"))
-		return true, nil
-	default:
-		return false, fmt.Errorf("unsupported database type for restore: %s", dbType)
-	}
-}
-
-// resolveRestoreType decides which database a dump file should be restored into,
-// validating it against the current environment DB configuration (read from the
-// .env / CF_DB_* variables at startup). A .sql dump is restored using the env DB
-// type (mysql vs postgres cannot be told from the file alone); a .db dump is SQLite
-// only. This prevents silently importing a dump into the wrong database.
-func ResolveRestoreType(dumpPath, envType string) (string, error) {
-	if strings.HasSuffix(dumpPath, ".sql") {
-		if envType != db.DBTypeMySQL && envType != db.DBTypePostgres {
-			return "", fmt.Errorf("当前运行数据库为 %s，无法直接还原 SQL 备份（该备份来自 MySQL/PostgreSQL）。如需更换数据库类型，请先在同一类型的数据库中还原此备份，再使用系统设置中的「数据库迁移」功能将数据迁移到当前数据库", dbTypeLabel(envType))
-		}
-		return envType, nil
-	}
-	// .db dump is a SQLite snapshot.
-	if envType != "" && envType != db.DBTypeSQLite {
-		return "", fmt.Errorf("当前运行数据库为 %s，无法直接还原 SQLite 备份。如需更换数据库类型，请先在 SQLite 数据库中还原此备份，再使用系统设置中的「数据库迁移」功能将数据迁移到当前数据库", dbTypeLabel(envType))
-	}
-	return db.DBTypeSQLite, nil
-}
-
 func dbTypeLabel(t string) string {
 	switch t {
 	case db.DBTypeMySQL:
@@ -1990,27 +1839,6 @@ func syncPostgresSequences(ctx context.Context, conn *pgx.Conn) error {
 	}
 	log.Printf("[Backup] synced %d postgres sequences after restore", len(seqs))
 	return nil
-}
-
-// copyFile copies src to dst, creating parent dirs as needed.
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	if err := os.MkdirAll(filepath.Dir(dst), 0750); err != nil {
-		return err
-	}
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Close()
 }
 
 // dumpMySQL writes a SQL dump using a gorm (MySQL) connection built from the DSN.
@@ -2454,16 +2282,6 @@ func (s *BackupScheduler) Start() {
 	s.running = true
 	go s.run()
 	log.Printf("[BackupScheduler] Started")
-}
-
-// Stop stops the backup scheduler.
-func (s *BackupScheduler) Stop() {
-	if !s.running {
-		return
-	}
-	close(s.stopCh)
-	s.running = false
-	log.Printf("[BackupScheduler] Stopped")
 }
 
 func (s *BackupScheduler) run() {

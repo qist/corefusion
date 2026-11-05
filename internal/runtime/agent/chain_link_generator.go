@@ -88,21 +88,6 @@ func ChainSupportedProtocol(coreType, protocol string) bool {
 	return false
 }
 
-// ChainAllSupportedProtocols 返回所有核心的并集（"出口侧能提供哪些协议"，供前端提示）。
-func ChainAllSupportedProtocols() []string {
-	seen := map[string]bool{}
-	var all []string
-	for _, core := range []string{"xray", "singbox"} {
-		for _, p := range chainCoreProtocols[core] {
-			if !seen[p] {
-				seen[p] = true
-				all = append(all, p)
-			}
-		}
-	}
-	return all
-}
-
 // NewChainLinkGenerator creates a new ChainLinkGenerator.
 func NewChainLinkGenerator(
 	linkRepo *repository.ChainLinkRepository,
@@ -1241,47 +1226,6 @@ func buildStreamFromProxyMap(pm map[string]interface{}, protocol string) map[str
 	}
 
 	return ss
-}
-
-// MergeChainLinkOutbounds merges chain link outbounds into existing outbounds.
-// Removes any existing outbounds with the same tags first (idempotent).
-func MergeChainLinkOutbounds(existingOutbounds []interface{}, chainOutbounds []ChainEntryOutbound) []interface{} {
-	existingTags := make(map[string]bool)
-	filtered := make([]interface{}, 0, len(existingOutbounds))
-	for _, ob := range existingOutbounds {
-		if obMap, ok := ob.(map[string]interface{}); ok {
-			if tag, ok := obMap["tag"].(string); ok {
-				existingTags[tag] = true
-			}
-		}
-		filtered = append(filtered, ob)
-	}
-
-	for _, cob := range chainOutbounds {
-		if existingTags[cob.Tag] {
-			continue
-		}
-		data, _ := json.Marshal(cob)
-		var m map[string]interface{}
-		json.Unmarshal(data, &m)
-		filtered = append(filtered, m)
-	}
-
-	return filtered
-}
-
-// MergeChainLinkRoutingRules merges chain link routing rules into existing rules.
-// Chain rules go first (higher priority).
-func MergeChainLinkRoutingRules(existingRules []interface{}, chainRules []ChainRoutingRule) []interface{} {
-	result := make([]interface{}, 0, len(existingRules)+len(chainRules))
-	for _, cr := range chainRules {
-		data, _ := json.Marshal(cr)
-		var m map[string]interface{}
-		json.Unmarshal(data, &m)
-		result = append(result, m)
-	}
-	result = append(result, existingRules...)
-	return result
 }
 
 // ── ChainLinkProvider interface adapter ──

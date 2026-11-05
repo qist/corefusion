@@ -86,33 +86,6 @@ func (n *Notifier) SendEmail(ctx context.Context, to, subject, body string) erro
 	return smtp.SendMail(addr, auth, from, []string{to}, msg)
 }
 
-// SendNotification sends notification to all enabled channels.
-func (n *Notifier) SendNotification(ctx context.Context, message string) error {
-	config, err := n.settingSvc.GetNotificationConfig(ctx)
-	if err != nil {
-		return err
-	}
-
-	var errs []string
-
-	if config.TelegramEnabled {
-		if err := n.SendTelegram(ctx, message); err != nil {
-			errs = append(errs, "telegram: "+err.Error())
-		}
-	}
-
-	if config.SMTPEnabled && config.SMTPFrom != "" {
-		if err := n.SendEmail(ctx, config.SMTPFrom, "CoreFusion Notification", message); err != nil {
-			errs = append(errs, "email: "+err.Error())
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
-	}
-	return nil
-}
-
 // SendTemplateNotification sends a notification using a template.
 func (n *Notifier) SendTemplateNotification(ctx context.Context, tmpl *entity.NotificationTemplate, vars map[string]string) error {
 	content := tmpl.Content

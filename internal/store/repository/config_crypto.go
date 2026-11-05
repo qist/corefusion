@@ -136,9 +136,3 @@ func decryptConfigs[T any](items []T, get func(*T) *string) {
 func DecryptInboundConfigs(items []entity.InboundConfig) {
 	decryptConfigs(items, func(c *entity.InboundConfig) *string { return &c.ConfigJSON })
 }
-
-func EncryptInboundConfig(cfg *entity.InboundConfig) {
-	if cfg != nil {
-		cfg.ConfigJSON = EncryptConfigJSON(cfg.ConfigJSON)
-	}
-}

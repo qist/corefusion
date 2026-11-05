@@ -42,17 +42,6 @@ func getKey() ([]byte, error) {
 	return key, nil
 }
 
-// ExportKey returns the current encryption key as a hex string.
-// This is used during backup to include the key in the archive so that
-// CA private keys can be decrypted on a different machine during restore.
-func ExportKey() (string, error) {
-	key, err := getKey()
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(key), nil
-}
-
 // SetKey overrides the encryption key with the given hex string.
 // This is used during restore to temporarily use the source machine's key
 // so that encrypted secrets (like CA private keys) can be decrypted.

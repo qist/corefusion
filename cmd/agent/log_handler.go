@@ -876,9 +876,8 @@ var (
 
 // desensitizingWriter wraps an io.Writer and applies regex substitutions to each line.
 type desensitizingWriter struct {
-	w       *bufio.Writer
-	scanner *bufio.Scanner
-	buf     []byte
+	w   *bufio.Writer
+	buf []byte
 }
 
 func newDesensitizingWriter(w io.Writer) *desensitizingWriter {

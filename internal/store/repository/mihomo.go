@@ -112,11 +112,6 @@ func (r *MihomoGeneralRepository) Create(ctx context.Context, general *entity.Mi
 	return r.db.WithContext(ctx).Create(general).Error
 }
 
-func (r *MihomoGeneralRepository) Update(ctx context.Context, general *entity.MihomoGeneral) error {
-	general.Authentication = EncryptConfigField(general.Authentication)
-	return r.db.WithContext(ctx).Save(general).Error
-}
-
 // MihomoDNSRepository handles mihomo DNS config.
 type MihomoDNSRepository struct {
 	db *gorm.DB
@@ -136,10 +131,6 @@ func (r *MihomoDNSRepository) Create(ctx context.Context, dns *entity.MihomoDNS)
 	return r.db.WithContext(ctx).Create(dns).Error
 }
 
-func (r *MihomoDNSRepository) Update(ctx context.Context, dns *entity.MihomoDNS) error {
-	return r.db.WithContext(ctx).Save(dns).Error
-}
-
 // MihomoHostRepository handles mihomo hosts.
 type MihomoHostRepository struct {
 	db *gorm.DB
@@ -153,18 +144,6 @@ func (r *MihomoHostRepository) ListByConfigID(ctx context.Context, configID int6
 	var hosts []entity.MihomoHost
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).Order("id ASC").Find(&hosts).Error
 	return hosts, err
-}
-
-func (r *MihomoHostRepository) Create(ctx context.Context, host *entity.MihomoHost) error {
-	return r.db.WithContext(ctx).Create(host).Error
-}
-
-func (r *MihomoHostRepository) Update(ctx context.Context, host *entity.MihomoHost) error {
-	return r.db.WithContext(ctx).Save(host).Error
-}
-
-func (r *MihomoHostRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.MihomoHost{}, id).Error
 }
 
 // MihomoTunnelRepository handles mihomo tunnels.
@@ -182,18 +161,6 @@ func (r *MihomoTunnelRepository) ListByConfigID(ctx context.Context, configID in
 	return tunnels, err
 }
 
-func (r *MihomoTunnelRepository) Create(ctx context.Context, tunnel *entity.MihomoTunnel) error {
-	return r.db.WithContext(ctx).Create(tunnel).Error
-}
-
-func (r *MihomoTunnelRepository) Update(ctx context.Context, tunnel *entity.MihomoTunnel) error {
-	return r.db.WithContext(ctx).Save(tunnel).Error
-}
-
-func (r *MihomoTunnelRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.MihomoTunnel{}, id).Error
-}
-
 // MihomoSnifferRepository handles mihomo sniffer config.
 type MihomoSnifferRepository struct {
 	db *gorm.DB
@@ -209,14 +176,6 @@ func (r *MihomoSnifferRepository) GetByConfigID(ctx context.Context, configID in
 	return &sniffer, err
 }
 
-func (r *MihomoSnifferRepository) Create(ctx context.Context, sniffer *entity.MihomoSniffer) error {
-	return r.db.WithContext(ctx).Create(sniffer).Error
-}
-
-func (r *MihomoSnifferRepository) Update(ctx context.Context, sniffer *entity.MihomoSniffer) error {
-	return r.db.WithContext(ctx).Save(sniffer).Error
-}
-
 // MihomoExternalControllerRepository handles mihomo external controller config.
 type MihomoExternalControllerRepository struct {
 	db *gorm.DB
@@ -230,14 +189,6 @@ func (r *MihomoExternalControllerRepository) GetByConfigID(ctx context.Context, 
 	var ctrl entity.MihomoExternalController
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).First(&ctrl).Error
 	return &ctrl, err
-}
-
-func (r *MihomoExternalControllerRepository) Create(ctx context.Context, ctrl *entity.MihomoExternalController) error {
-	return r.db.WithContext(ctx).Create(ctrl).Error
-}
-
-func (r *MihomoExternalControllerRepository) Update(ctx context.Context, ctrl *entity.MihomoExternalController) error {
-	return r.db.WithContext(ctx).Save(ctrl).Error
 }
 
 // MihomoTLSRepository handles mihomo TLS config.
@@ -256,16 +207,6 @@ func (r *MihomoTLSRepository) GetByConfigID(ctx context.Context, configID int64)
 	return &tls, err
 }
 
-func (r *MihomoTLSRepository) Create(ctx context.Context, tls *entity.MihomoTLS) error {
-	tls.PrivateKey = EncryptConfigField(tls.PrivateKey)
-	return r.db.WithContext(ctx).Create(tls).Error
-}
-
-func (r *MihomoTLSRepository) Update(ctx context.Context, tls *entity.MihomoTLS) error {
-	tls.PrivateKey = EncryptConfigField(tls.PrivateKey)
-	return r.db.WithContext(ctx).Save(tls).Error
-}
-
 // MihomoTunRepository handles mihomo TUN config.
 type MihomoTunRepository struct {
 	db *gorm.DB
@@ -279,14 +220,6 @@ func (r *MihomoTunRepository) GetByConfigID(ctx context.Context, configID int64)
 	var tun entity.MihomoTun
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).First(&tun).Error
 	return &tun, err
-}
-
-func (r *MihomoTunRepository) Create(ctx context.Context, tun *entity.MihomoTun) error {
-	return r.db.WithContext(ctx).Create(tun).Error
-}
-
-func (r *MihomoTunRepository) Update(ctx context.Context, tun *entity.MihomoTun) error {
-	return r.db.WithContext(ctx).Save(tun).Error
 }
 
 // MihomoProxyGroupRepository handles mihomo proxy groups.
@@ -304,18 +237,6 @@ func (r *MihomoProxyGroupRepository) ListByConfigID(ctx context.Context, configI
 	return groups, err
 }
 
-func (r *MihomoProxyGroupRepository) Create(ctx context.Context, group *entity.MihomoProxyGroup) error {
-	return r.db.WithContext(ctx).Create(group).Error
-}
-
-func (r *MihomoProxyGroupRepository) Update(ctx context.Context, group *entity.MihomoProxyGroup) error {
-	return r.db.WithContext(ctx).Save(group).Error
-}
-
-func (r *MihomoProxyGroupRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.MihomoProxyGroup{}, id).Error
-}
-
 // MihomoRuleProviderRepository handles mihomo rule providers.
 type MihomoRuleProviderRepository struct {
 	db *gorm.DB
@@ -329,18 +250,6 @@ func (r *MihomoRuleProviderRepository) ListByConfigID(ctx context.Context, confi
 	var providers []entity.MihomoRuleProvider
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).Order("id ASC").Find(&providers).Error
 	return providers, err
-}
-
-func (r *MihomoRuleProviderRepository) Create(ctx context.Context, provider *entity.MihomoRuleProvider) error {
-	return r.db.WithContext(ctx).Create(provider).Error
-}
-
-func (r *MihomoRuleProviderRepository) Update(ctx context.Context, provider *entity.MihomoRuleProvider) error {
-	return r.db.WithContext(ctx).Save(provider).Error
-}
-
-func (r *MihomoRuleProviderRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.MihomoRuleProvider{}, id).Error
 }
 
 // MihomoRuleRepository handles mihomo rules.
@@ -410,16 +319,4 @@ func (r *MihomoSpecialOutboundRepository) ListByConfigID(ctx context.Context, co
 	var outbounds []entity.MihomoSpecialOutbound
 	err := r.db.WithContext(ctx).Where("config_id = ?", configID).Order("id ASC").Find(&outbounds).Error
 	return outbounds, err
-}
-
-func (r *MihomoSpecialOutboundRepository) Create(ctx context.Context, outbound *entity.MihomoSpecialOutbound) error {
-	return r.db.WithContext(ctx).Create(outbound).Error
-}
-
-func (r *MihomoSpecialOutboundRepository) Update(ctx context.Context, outbound *entity.MihomoSpecialOutbound) error {
-	return r.db.WithContext(ctx).Save(outbound).Error
-}
-
-func (r *MihomoSpecialOutboundRepository) Delete(ctx context.Context, id int64) error {
-	return r.db.WithContext(ctx).Delete(&entity.MihomoSpecialOutbound{}, id).Error
 }

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 
@@ -117,51 +116,6 @@ func (g *ChainConfigGenerator) GenerateChainEntryOutbounds(ctx context.Context, 
 	}
 
 	return outbounds, routingRules, nil
-}
-
-// MergeChainOutbounds merges chain proxy outbounds into an existing config.
-// This is called when generating the full config for a chain_entry node.
-func MergeChainOutbounds(existingOutbounds []interface{}, chainOutbounds []ChainEntryOutbound) []interface{} {
-	// Remove any existing outbounds with the same tags (idempotent merge)
-	existingTags := make(map[string]bool)
-	filtered := make([]interface{}, 0, len(existingOutbounds))
-	for _, ob := range existingOutbounds {
-		if obMap, ok := ob.(map[string]interface{}); ok {
-			if tag, ok := obMap["tag"].(string); ok {
-				existingTags[tag] = true
-			}
-		}
-		filtered = append(filtered, ob)
-	}
-
-	for _, cob := range chainOutbounds {
-		if existingTags[cob.Tag] {
-			continue // Don't duplicate
-		}
-		// Convert to map[string]interface{}
-		data, _ := json.Marshal(cob)
-		var m map[string]interface{}
-		json.Unmarshal(data, &m)
-		filtered = append(filtered, m)
-	}
-
-	return filtered
-}
-
-// MergeChainRoutingRules merges chain proxy routing rules into existing routing rules.
-func MergeChainRoutingRules(existingRules []interface{}, chainRules []ChainRoutingRule) []interface{} {
-	result := make([]interface{}, 0, len(existingRules)+len(chainRules))
-
-	// Chain rules go first (higher priority)
-	for _, cr := range chainRules {
-		data, _ := json.Marshal(cr)
-		var m map[string]interface{}
-		json.Unmarshal(data, &m)
-		result = append(result, m)
-	}
-
-	result = append(result, existingRules...)
-	return result
 }
 
 // buildOutboundSettings builds the settings object for a chain exit outbound.

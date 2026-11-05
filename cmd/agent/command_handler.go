@@ -890,13 +890,6 @@ func (a *AgentApp) handleSpeedTest(ctx context.Context, req *agentpb.SpeedTestRe
 	}
 }
 
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // sendTaskResult sends a TaskResult back to the panel via the heartbeat stream.
 // Thread-safe: uses streamSendMu to protect concurrent stream.Send calls.
 func (a *AgentApp) sendTaskResult(stream agentpb.HeartbeatService_StreamClient, result *agentpb.TaskResult) {

@@ -69,33 +69,3 @@ func ParseModuleItems(raw json.RawMessage) []ModuleItem {
 	}
 	return items
 }
-
-// NavigationItemsToRaw converts NavigationItem slice to json.RawMessage.
-func NavigationItemsToRaw(items []NavigationItem) json.RawMessage {
-	if items == nil {
-		return json.RawMessage(`[]`)
-	}
-	data, _ := json.Marshal(items)
-	return data
-}
-
-// ModuleItemsToRaw converts ModuleItem slice to json.RawMessage.
-func ModuleItemsToRaw(items []ModuleItem) json.RawMessage {
-	if items == nil {
-		return json.RawMessage(`[]`)
-	}
-	data, _ := json.Marshal(items)
-	return data
-}
-
-// ParseRegions parses a json.RawMessage into a map of RegionSource.
-func ParseRegions(raw json.RawMessage) map[string]RegionSource {
-	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
-		return map[string]RegionSource{}
-	}
-	var regions map[string]RegionSource
-	if err := json.Unmarshal(raw, &regions); err != nil {
-		return map[string]RegionSource{}
-	}
-	return regions
-}

@@ -23,19 +23,6 @@ func (s *Service) List(ctx context.Context, configType string) ([]entity.ShareDo
 	return s.repo.List(ctx, configType)
 }
 
-// ListPaged returns share domain configs filtered by type with pagination and total count.
-func (s *Service) ListPaged(ctx context.Context, configType string, limit, offset int) ([]entity.ShareDomainConfig, int64, error) {
-	items, err := s.repo.ListPaged(ctx, configType, limit, offset)
-	if err != nil {
-		return nil, 0, err
-	}
-	total, err := s.repo.CountByType(ctx, configType)
-	if err != nil {
-		return nil, 0, err
-	}
-	return items, total, nil
-}
-
 // ListByServer returns direct share domain configs for a specific server.
 // CF domains are global (server_id=0) and not included here.
 // ListByServer returns direct share domain configs effective for a specific server.
@@ -54,11 +41,6 @@ func (s *Service) ListByServer(ctx context.Context, serverID int64) ([]entity.Sh
 		}
 	}
 	return result, nil
-}
-
-// GetByID returns a share domain config by ID.
-func (s *Service) GetByID(ctx context.Context, id int64) (*entity.ShareDomainConfig, error) {
-	return s.repo.GetByID(ctx, id)
 }
 
 // Create creates a new share domain config for a specific server.

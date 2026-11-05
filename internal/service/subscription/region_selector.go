@@ -124,11 +124,6 @@ type regionScore struct {
 // Used when GeoIP is not configured.
 type NoopGeoIPResolver struct{}
 
-// LookupCountry returns an empty country code (no-op).
-func (n *NoopGeoIPResolver) LookupCountry(ip string) (string, error) {
-	return "", nil
-}
-
 // SimpleGeoIPResolver is a basic GeoIP resolver using a country-to-IP-prefix map.
 // For production, replace with a MaxMind GeoLite2 database reader.
 type SimpleGeoIPResolver struct {

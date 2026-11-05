@@ -54,21 +54,6 @@ type GuardianConfig struct {
 	CrashLogRetention   int
 }
 
-// DefaultGuardianConfig returns the default guardian config.
-func DefaultGuardianConfig() GuardianConfig {
-	return GuardianConfig{
-		MaxRestartAttempts:  5,
-		RestartWindow:       10 * time.Minute,
-		StableThreshold:     5 * time.Minute,
-		LongStableThreshold: 1 * time.Hour,
-		BaseBackoff:         5 * time.Second,
-		MaxBackoff:          80 * time.Second,
-		MaxStdoutLines:      200,
-		MaxStderrLines:      200,
-		CrashLogRetention:   50,
-	}
-}
-
 // RuntimeApplyService manages runtime apply jobs.
 type RuntimeApplyService interface {
 	DryRun(ctx context.Context, in SingleNodeApplyInput) (*RuntimeDryRunResult, error)

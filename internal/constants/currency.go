@@ -43,27 +43,3 @@ func init() {
 		CurrencyMap[c.Code] = c
 	}
 }
-
-// GetCurrencyDecimals returns the number of decimal places for a currency.
-// Returns 2 as default if not found.
-func GetCurrencyDecimals(code string) int {
-	if c, ok := CurrencyMap[code]; ok {
-		return c.Decimals
-	}
-	return 2
-}
-
-// GetCurrencySymbol returns the symbol for a currency.
-// Returns the code itself if not found.
-func GetCurrencySymbol(code string) string {
-	if c, ok := CurrencyMap[code]; ok {
-		return c.Symbol
-	}
-	return code
-}
-
-// IsCurrencySupported checks if a currency code is supported.
-func IsCurrencySupported(code string) bool {
-	_, ok := CurrencyMap[code]
-	return ok
-}

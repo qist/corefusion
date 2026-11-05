@@ -94,11 +94,6 @@ func (s *Service) SetDevMode(dev bool) {
 	s.cache.SetDevMode(dev)
 }
 
-// IsDevMode returns whether dev mode is currently active.
-func (s *Service) IsDevMode() bool {
-	return s.cache.IsDevMode()
-}
-
 // CreateInput is the input for creating a portal template.
 type CreateInput struct {
 	Name        string `json:"name" binding:"required"`
@@ -274,11 +269,6 @@ func (s *Service) List(ctx context.Context) ([]entity.PortalTemplate, error) {
 // GetByID returns a portal template by ID.
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.PortalTemplate, error) {
 	return s.repo.GetByID(ctx, id)
-}
-
-// GetActive returns the currently active portal template.
-func (s *Service) GetActive(ctx context.Context) (*entity.PortalTemplate, error) {
-	return s.repo.GetActive(ctx)
 }
 
 // Create creates a new portal template.

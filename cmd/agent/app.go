@@ -24,7 +24,6 @@ import (
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
 
-	"google.golang.org/grpc"
 	"gorm.io/gorm"
 )
 
@@ -71,9 +70,6 @@ type AgentApp struct {
 
 	// Online users reporter — collects real-time online subscribers for the Panel
 	onlineUsersReporter *onlineUsersReporter
-
-	// gRPC connection to Panel
-	grpcConn *grpc.ClientConn
 
 	// grpcHostOverride is set when an already-installed Agent discovers the
 	// panel's origin address at runtime (old configs only have panel.host,

@@ -454,16 +454,6 @@ var errNotClientToken = errors.New("token subject is not a client")
 // errClientTokenRevoked 表示 token 已被登出/踢下线吊销（令牌版本不匹配）。
 var errClientTokenRevoked = errors.New("client token has been revoked; please sign in again")
 
-// ValidateAccessToken validates a JWT token and returns the client ID.
-func (s *Service) ValidateAccessToken(tokenStr string) (int64, error) {
-	claims, err := s.jwt.ValidateTyped(tokenStr, jwt.TokenTypeAccess)
-	if err != nil {
-		return 0, err
-	}
-	// Client IDs are stored as UserID in JWT
-	return claims.UserID, nil
-}
-
 // ValidateClientAccessToken 与 ValidateAccessToken 相同，但**额外要求主体确实是客户端**。
 //
 // ⚠ 客户端与管理端共用同一把 JWT 签名密钥 ✗，因此管理端的 access token 也能通过

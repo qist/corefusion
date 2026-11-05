@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/qist/sqlite"
 )
@@ -771,33 +769,3 @@ func indexOf(s, substr string) int {
 // ---------------------------------------------------------------------------
 // SQLite file size helper (used by backup service)
 // ---------------------------------------------------------------------------
-
-// SQLiteFileSize returns the size of the SQLite database file on disk.
-// Returns 0 if the file does not exist or the database is not SQLite.
-func SQLiteFileSize(dsn string) int64 {
-	if dsn == "" {
-		return 0
-	}
-	// Strip query parameters if present
-	path := dsn
-	if q := indexOf(path, "?"); q >= 0 {
-		path = path[:q]
-	}
-	// Make absolute if relative
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(getWorkDir(), path)
-	}
-	if info, err := os.Stat(path); err == nil {
-		return info.Size()
-	}
-	return 0
-}
-
-// getWorkDir returns the current working directory.
-func getWorkDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "."
-	}
-	return dir
-}

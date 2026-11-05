@@ -66,18 +66,6 @@ func (s *Scheduler) Start() {
 	log.Printf("scheduler: started %d cron jobs", len(s.jobs))
 }
 
-// Stop stops all cron jobs.
-func (s *Scheduler) Stop() {
-	s.cancel()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for id, job := range s.jobs {
-		close(job.done)
-		job.ticker.Stop()
-		delete(s.jobs, id)
-	}
-}
-
 // RefreshJob updates the cron job for a source.
 func (s *Scheduler) RefreshJob(sourceID int64, enabled bool, syncCron string) {
 	s.removeJob(sourceID)

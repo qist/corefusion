@@ -2,8 +2,6 @@ package ratelimit
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -207,35 +205,6 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 	if applied > 0 {
 		log.Printf("[OnlineStatsPoller] processed %d online IPs from %d users", applied, len(resp.Users))
 	}
-}
-
-// ParseOnlineStatsFromXrayAPI parses the JSON response from the xray API proxy
-// and extracts online user IPs. This is used when the poller runs through the
-// Panel's XrayAPIProxy instead of direct gRPC connection.
-func ParseOnlineStatsFromXrayAPI(responseJSON []byte) (map[string][]string, error) {
-	var resp struct {
-		Users []struct {
-			Email string `json:"email"`
-			IPs   []struct {
-				IP       string `json:"ip"`
-				LastSeen int64  `json:"last_seen"`
-			} `json:"ips"`
-		} `json:"users"`
-	}
-
-	if err := json.Unmarshal(responseJSON, &resp); err != nil {
-		return nil, fmt.Errorf("parse online stats response: %w", err)
-	}
-
-	result := make(map[string][]string)
-	for _, user := range resp.Users {
-		for _, ip := range user.IPs {
-			if ip.IP != "" && !isPrivateIP(ip.IP) {
-				result[user.Email] = append(result[user.Email], ip.IP)
-			}
-		}
-	}
-	return result, nil
 }
 
 // isPrivateIP checks if an IP is a private/loopback address.

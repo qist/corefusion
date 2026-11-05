@@ -151,20 +151,6 @@ func (s *Service) Start() {
 	log.Printf("trafficsync: started with interval %v", s.interval)
 }
 
-// Stop stops the traffic sync service.
-func (s *Service) Stop() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if !s.running {
-		return
-	}
-	s.running = false
-	close(s.stopCh)
-
-	log.Println("trafficsync: stopped")
-}
-
 func (s *Service) loop() {
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()

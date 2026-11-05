@@ -76,15 +76,6 @@ func (s *Service) SaveLogOutput(ctx context.Context, cfg *LogOutputConfig) error
 	return s.SaveLogOutputForServer(ctx, 1, cfg)
 }
 
-// EffectiveWriterMode is kept for backward compatibility but should be avoided.
-// Prefer StartWriterManaged which preserves the real mode in writer config.
-func EffectiveWriterMode(mode string, managed bool) string {
-	if mode == "stdout" && !managed {
-		return "file" // pause writer — stdout but not managed by log center
-	}
-	return mode
-}
-
 // SaveLogOutputForServer saves the log output configuration for a specific server.
 // For local node (serverID=1), it also starts/stops local writers.
 // For remote nodes, the caller is responsible for syncing via gRPC.

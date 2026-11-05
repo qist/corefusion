@@ -30,11 +30,6 @@ func NewService(sourceRepo *repository.CFIPSourceRepository, entryRepo *reposito
 	}
 }
 
-// ListSources returns all CF IP sources.
-func (s *Service) ListSources(ctx context.Context) ([]entity.CFIPSource, error) {
-	return s.sourceRepo.List(ctx)
-}
-
 // ListSourcesPaged returns CF IP sources with pagination and total count.
 func (s *Service) ListSourcesPaged(ctx context.Context, limit, offset int) ([]entity.CFIPSource, int64, error) {
 	items, err := s.sourceRepo.ListPaged(ctx, limit, offset)
@@ -111,11 +106,6 @@ func (s *Service) DeleteSource(ctx context.Context, id int64) error {
 		return err
 	}
 	return s.sourceRepo.Delete(ctx, id)
-}
-
-// ListEntries returns all CF IP entries.
-func (s *Service) ListEntries(ctx context.Context, sourceID int64) ([]entity.CFIPEntry, error) {
-	return s.entryRepo.List(ctx, sourceID)
 }
 
 // ListEntriesPaged returns CF IP entries filtered by source with pagination and total count.

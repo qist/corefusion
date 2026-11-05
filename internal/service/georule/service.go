@@ -679,13 +679,6 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 	return rule, nil
 }
 
-// downloadRemote is no longer used — geo rules are always downloaded to the
-// panel's local directory first, then pushed to remote nodes via SyncToNode.
-// Kept for backward compatibility but just delegates to downloadLocal.
-func (s *Service) downloadRemote(ctx context.Context, rule *entity.GeoRuleFile) (*entity.GeoRuleFile, error) {
-	return s.downloadLocal(ctx, rule)
-}
-
 // DeleteFile deletes a geo rule file from the panel's local disk and database,
 // then propagates the deletion to all remote nodes asynchronously.
 func (s *Service) DeleteFile(ctx context.Context, fileID int64) error {

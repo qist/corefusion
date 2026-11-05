@@ -619,16 +619,6 @@ func (s *Service) SyncLocalCopyIfLanded(ctx context.Context, certID int64) error
 	return nil
 }
 
-// certDirRel 返回某证书在磁盘上的**相对目录**（按密钥类型 ✓）。
-//
-// ✗ 为什么需要它：这里以前按域名重算路径 ✗ —— 同域同时签 ECC/RSA 时，
-// 这个"落地/刷新本机副本"的动作会把 RSA 记录**又写回 ECC 的旧目录** ✗，
-// 等于"分别存储"被抹平 ✗（真机 E2E 抓到的 ✓）。统一走 cert.CertRelPaths ✓。
-func certDirRel(c *entity.Certificate) string {
-	certRel, _, _ := cert.CertRelPaths(string(c.Domain), c.KeyType)
-	return filepath.Dir(certRel)
-}
-
 // withTrailingNewline 保证文件以换行结尾 ✓（PEM 常规 ✓，也避免有些解析器抱怨 ✓）。
 func withTrailingNewline(s string) string {
 	if strings.HasSuffix(s, "\n") {

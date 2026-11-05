@@ -750,10 +750,3 @@ func (s *Service) writeConfig(coreType string, data []byte) error {
 	}
 	return os.WriteFile(s.runtimePath(coreType), data, 0640)
 }
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}

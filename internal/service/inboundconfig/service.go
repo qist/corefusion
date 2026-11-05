@@ -659,19 +659,6 @@ func walkUsers(inbound map[string]interface{}, fn func(m map[string]interface{})
 	}
 }
 
-// findUserEmail 判断 config_json 里是否存在指定用户，返回其身份字段。
-func findUserEmail(configJSON, want string) (string, bool) {
-	found := ""
-	forEachUser(configJSON, func(m map[string]interface{}) {
-		if found == "" {
-			if e := userEmailOf(m); e == want {
-				found = e
-			}
-		}
-	})
-	return found, found != ""
-}
-
 // matchedEmails 返回该入站里匹配 email 的全部身份字段（精确匹配，或历史
 // "email_tag" 前缀格式）。
 func matchedEmails(configJSON, email string) []string {

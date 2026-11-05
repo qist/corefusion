@@ -978,17 +978,6 @@ func (s *Service) discoverWAFLogs(ctx context.Context) ([]DiscoveredLog, error) 
 	}, nil
 }
 
-// sanitizeDomain converts a domain to a safe log file name.
-func sanitizeDomain(domain string) string {
-	if domain == "" || domain == "_" || domain == ":80" || domain == ":443" {
-		return "default"
-	}
-	if strings.HasPrefix(domain, ":") {
-		return "port" + domain[1:]
-	}
-	return domain
-}
-
 // SyncPolicies creates policies for discovered logs on the local node.
 func (s *Service) SyncPolicies(ctx context.Context) (int, error) {
 	return s.SyncPoliciesForServer(ctx, 1)

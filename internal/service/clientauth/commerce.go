@@ -1872,11 +1872,6 @@ func absInt64(n int64) int64 {
 	return n
 }
 
-// isIPAllowed checks if remoteIP is in the whitelist JSON.
-func isIPAllowed(remoteIP string, whitelistJSON string) bool {
-	return findIPMatchRule(remoteIP, whitelistJSON) != ""
-}
-
 // findIPMatchRule returns the matching whitelist rule (IP or CIDR) for remoteIP, or "" if no match.
 func findIPMatchRule(remoteIP string, whitelistJSON string) string {
 	var whitelist []string

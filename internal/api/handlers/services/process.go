@@ -3,8 +3,6 @@ package services
 import (
 	"context"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -510,15 +508,4 @@ func (h *ProcessHandler) ClearCrashLogs(c *gin.Context) {
 // GetCrashLog handles GET /api/v1/node-servers/:id/services/:serviceId/crash-logs/:logId.
 func (h *ProcessHandler) GetCrashLog(c *gin.Context) {
 	response.NotFound(c, "NOT_FOUND", "crash log not found")
-}
-
-// ensureConfig ensures a config file exists for a service.
-func (h *ProcessHandler) ensureConfig(coreType string, configJSON string) string {
-	configDir := filepath.Join(h.dataDir, "runtime")
-	os.MkdirAll(configDir, 0750)
-	configPath := filepath.Join(configDir, coreType+".jsonc")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) && configJSON != "" {
-		os.WriteFile(configPath, []byte(configJSON), 0640)
-	}
-	return configPath
 }

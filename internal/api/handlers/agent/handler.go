@@ -691,27 +691,6 @@ func normalizeSHA256(s string) string {
 	return s
 }
 
-// FetchAgentChecksum attempts to download a .sha256 checksum file for the
-// given download URL. Returns "" if not available.
-func (h *Handler) FetchAgentChecksum(downloadURL string) string {
-	checksumURL := downloadURL + ".sha256"
-	client := netutil.NewHTTPClient(30 * time.Second)
-	resp, err := client.Get(checksumURL)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return ""
-	}
-	data, _ := io.ReadAll(resp.Body)
-	parts := strings.Fields(string(data))
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
-}
-
 // detectAgentVersion reads the VERSION file from the agent binary directory.
 func (h *Handler) detectAgentVersion(agentDir string) string {
 	versionFile := filepath.Join(agentDir, "VERSION")

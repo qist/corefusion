@@ -52,9 +52,6 @@ type HTTP01Provider struct {
 	tempServer *http.Server
 	tempPort   string
 
-	// Proxy mode: the Gin handler serves challenges
-	ginHandler gin.HandlerFunc
-
 	// Port checking
 	panelPort string // The panel's own port (e.g., "8080")
 }

@@ -23,11 +23,10 @@ import (
 //
 // 实现：30s TTL 缓存读取设置（避免每请求查库），空列表零开销直通。
 type ipBlacklistCache struct {
-	mu        sync.RWMutex
-	rules     []*net.IPNet
-	ips       []net.IP
-	loadedAt  time.Time
-	loadError bool
+	mu       sync.RWMutex
+	rules    []*net.IPNet
+	ips      []net.IP
+	loadedAt time.Time
 }
 
 var globalIPBlacklist ipBlacklistCache

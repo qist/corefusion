@@ -2330,16 +2330,6 @@ func mysqlLiteral(v interface{}) string {
 	}
 }
 
-func hexEncode(b []byte) string {
-	const hexd = "0123456789ABCDEF"
-	out := make([]byte, len(b)*2)
-	for i, c := range b {
-		out[i*2] = hexd[c>>4]
-		out[i*2+1] = hexd[c&0x0F]
-	}
-	return string(out)
-}
-
 func quoteMySQLIdent(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }

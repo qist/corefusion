@@ -360,7 +360,6 @@ func PatchHeroButtonConfig(configStr string) (string, bool) {
 // 「在线支付」方式，不隐藏导航。历史版本曾按充值站点可用性过滤导航 → 刷新时会一闪而过，
 // 这里把已迁移模板的导航 computed 升级回**透传**（幂等 ✓；片段里**不能出现反引号**）。
 const (
-	navItemsPresence = `var navItems = computed(function() {`
 	// 历史版本：按充值站点可用性过滤导航（会导致刷新闪烁）
 	oldNavItemsFilter = `var navItems = computed(function() {
       var items = portalNavItems.value

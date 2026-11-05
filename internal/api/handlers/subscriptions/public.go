@@ -648,92 +648,6 @@ func (h *PublicHandler) portalServesAtRoot(ctx context.Context) bool {
 	return v != "" && v != "0"
 }
 
-// collectShareLinks generates share link URIs using the sharelink package.
-func (h *PublicHandler) collectShareLinks(
-	ctx context.Context,
-	shareDomains []shareDomainEntry,
-	allowedInboundIDs map[int64]bool,
-	clientEmail string,
-) []string {
-	var links []string
-
-	for _, coreType := range []string{"xray", "singbox"} {
-		configs, err := h.inboundRepo.ListAll(ctx, coreType)
-		if err != nil {
-			continue
-		}
-		// 内部入站（被外层 REALITY/TLS 入站的 fallbacks 引用）要按外层入口对外呈现：
-		// 地址/端口/security 用入口的，协议/传输/凭据用自己的。
-		entryIdx := buildFallbackEntryIndex(configs)
-		for _, cfg := range configs {
-			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
-				continue
-			}
-			// Filter by plan nodes if client has a plan
-			if allowedInboundIDs != nil && !allowedInboundIDs[cfg.ID] {
-				continue
-			}
-			var config map[string]interface{}
-			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
-				continue
-			}
-			// sing-box 入站归一成 xray 形态（否则用户凭证找不到，该节点会被整体跳过）
-			if view, skip := subscriptionView(cfg.Tag, config, clientEmail); skip {
-				continue
-			} else {
-				config = view
-			}
-			// 接入域名只是「指定对外地址」的可选项：没配 / 没启用时由 shareAddress
-			// 回退到节点自身地址（公网 IP → 主机名 → 内网 IP → 监听地址），
-			// 不能因此把节点整条跳过（否则未配置域名的入站永远不出现在订阅里）。
-			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
-			config = merged
-			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
-
-			// Find the specific client's credentials for this subscription
-			settings := getMap(config, "settings")
-			if clientEmail != "" {
-				if userClient := findClientByEmail(settings, clientEmail, cfg.Tag); userClient != nil {
-					// Create a settings map with only this client
-					settings = map[string]interface{}{
-						"clients":    []interface{}{userClient},
-						"encryption": getString(settings, "encryption", "none"),
-					}
-				} else {
-					// Client has no account on this node → skip
-					continue
-				}
-			} else {
-				// No client email → skip nodes requiring authentication
-				continue
-			}
-			// ss/ss2022：链接需要 method，多用户 ss2022 的密码必须是 `服务端密钥:用户密钥`。
-			// 上面只挑了 clients/encryption，会把 2022-blake3 写成默认 aes-256-gcm、且密码只有
-			// 用户密钥 → 订阅链接（以及由链接派生的 mihomo 片段）连不上。
-			settings = linkSettingsForUser(config, settings, cfg.Protocol, getString(firstClient(settings), "password", ""))
-
-			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
-			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
-			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
-			node := sharelink.Node{
-				Tag:            nodeName,
-				Protocol:       cfg.Protocol,
-				Host:           host,
-				Port:           port,
-				Settings:       settings,
-				StreamSettings: getMap(config, "streamSettings"),
-				FinalMask:      finalMaskWithPortHop(config),
-			}
-
-			link := sharelink.Generate(node)
-			if link != "" {
-				links = append(links, link)
-			}
-		}
-	}
-	return links
-}
-
 func renderedNodeLinks(items []renderedSubscriptionNode) []string {
 	links := make([]string, 0, len(items))
 	for _, item := range items {
@@ -1265,150 +1179,6 @@ func decodeVmessPayload(payload string) ([]byte, error) {
 		lastErr = err
 	}
 	return nil, lastErr
-}
-
-// collectExternalNodesAndLinks returns formatter.Nodes and share URIs from external nodes.
-func (h *PublicHandler) collectExternalNodesAndLinks(ctx context.Context, allowedIDs map[int64]bool) ([]formatter.Node, []string) {
-	var nodes []formatter.Node
-	var links []string
-	all, err := h.extNodeRepo.ListAll(ctx)
-	if err != nil {
-		return nodes, links
-	}
-	shareDomains := h.loadShareDomains(ctx)
-	for _, n := range all {
-		if !n.Enabled || !allowedIDs[n.ID] {
-			continue
-		}
-		var pm map[string]interface{}
-		if json.Unmarshal([]byte(n.ProxyJSON), &pm) != nil {
-			continue
-		}
-		applyExternalNodeAccessDomain(pm, &n, shareDomains)
-		// Use mihomo proxy map directly for Node (all fields preserved)
-		node := mihomoProxyMapToNode(pm)
-		if node != nil {
-			if n.Name != "" {
-				node.Name = n.Name
-			}
-			nodes = append(nodes, *node)
-		}
-		// Generate complete URI from mihomo proxy map
-		uri := formatter.MihomoToURI(pm)
-		if uri != "" {
-			// Replace fragment with external node name
-			if idx := strings.LastIndex(uri, "#"); idx >= 0 {
-				uri = uri[:idx+1] + url.PathEscape(n.Name)
-			}
-			links = append(links, uri)
-		}
-	}
-	return nodes, links
-}
-
-// collectFormatterNodes collects nodes for the formatter (used by singbox/xray/mihomo formats).
-func (h *PublicHandler) collectFormatterNodes(ctx context.Context, shareDomains []shareDomainEntry, allowedInboundIDs map[int64]bool, clientEmail string) []formatter.Node {
-	var nodes []formatter.Node
-
-	for _, coreType := range []string{"xray", "singbox"} {
-		configs, err := h.inboundRepo.ListAll(ctx, coreType)
-		if err != nil {
-			continue
-		}
-		// 内部入站（被外层 REALITY/TLS 入站的 fallbacks 引用）要按外层入口对外呈现：
-		// 地址/端口/security 用入口的，协议/传输/凭据用自己的。
-		entryIdx := buildFallbackEntryIndex(configs)
-		for _, cfg := range configs {
-			if cfg.Port == 0 || !shareableProtocols[cfg.Protocol] {
-				continue
-			}
-			// Filter by plan nodes if client has a plan
-			if allowedInboundIDs != nil && !allowedInboundIDs[cfg.ID] {
-				continue
-			}
-			var config map[string]interface{}
-			if err := json.Unmarshal([]byte(cfg.ConfigJSON), &config); err != nil {
-				continue
-			}
-			// sing-box 入站归一成 xray 形态（否则用户凭证找不到，该节点会被整体跳过）
-			if view, skip := subscriptionView(cfg.Tag, config, clientEmail); skip {
-				continue
-			} else {
-				config = view
-			}
-			// 同上：无接入域名时回退节点地址，不跳过。
-			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
-			config = merged
-			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
-			settings := getMap(config, "settings")
-			credExtra := map[string]interface{}{}
-			var uuid, password, flow string
-
-			// Find the specific client's credentials for this subscription
-			var credClient map[string]interface{}
-			if clientEmail != "" {
-				userClient := findClientByEmail(settings, clientEmail, cfg.Tag)
-				if userClient == nil {
-					// Client has no account on this node → skip (security: never use other users' credentials)
-					continue
-				}
-				uuid, _ = userClient["id"].(string)
-				password, _ = userClient["password"].(string)
-				flow, _ = userClient["flow"].(string)
-				// Hysteria uses "auth" field instead of "password"
-				if cfg.Protocol == "hysteria" {
-					if auth, ok := userClient["auth"].(string); ok && auth != "" {
-						password = auth
-					}
-				}
-				if cfg.Protocol == "snell" {
-					// snell 的 psk 在入站**顶层**（不是每个用户一条），客户端出站需要它
-					if psk := getString(config, "psk", ""); psk != "" {
-						password = psk
-					}
-				}
-				credClient = userClient
-			} else {
-				// No client email → skip nodes requiring authentication (security)
-				continue
-			}
-			applyClientCredentials(cfg.Protocol, credClient, config, &password, credExtra)
-			effectivePassword := ss2022ClientPassword(config, cfg.Protocol, password)
-
-			ss := getMap(config, "streamSettings")
-			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
-			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
-			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
-			protocol := cfg.Protocol
-			if protocol == "hysteria" {
-				protocol = "hysteria2"
-			}
-			extra := buildExtra(config, ss, cfg.Protocol)
-			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
-			// REALITY 的客户端 SNI 由 sharelink 随机挑，必须与链接用同一个值。
-			serverName := getTLSServerName(ss)
-			if getMap(ss, "realitySettings") != nil {
-				serverName = sharelink.RealityClientParams(ss).ServerName
-			}
-			node := formatter.Node{
-				Name:       nodeName,
-				CoreType:   cfg.CoreType,
-				Protocol:   protocol,
-				Host:       host,
-				Port:       port,
-				Transport:  transport,
-				TLS:        getString(ss, "security", "none") != "none",
-				ServerName: serverName,
-				UUID:       uuid,
-				Password:   effectivePassword,
-				Flow:       flow,
-				Encryption: nodeEncryption(cfg.Protocol, getMap(config, "settings")),
-				Extra:      mergeExtraMaps(extra, credExtra),
-			}
-			nodes = append(nodes, node)
-		}
-	}
-	return nodes
 }
 
 // generateMihomoYAML generates a complete mihomo YAML config.
@@ -2480,17 +2250,6 @@ func getBool(m map[string]interface{}, key string) bool {
 	return v
 }
 
-func getBoolDef(m map[string]interface{}, key string, def bool) bool {
-	if m == nil {
-		return def
-	}
-	v, ok := m[key].(bool)
-	if !ok {
-		return def
-	}
-	return v
-}
-
 func getStringSlice(m map[string]interface{}, key string) []string {
 	if m == nil {
 		return nil
@@ -2568,24 +2327,6 @@ func generateInboundEmail(baseEmail, tag string) string {
 		return fmt.Sprintf("%s_%s%s", baseEmail, parts[1], parts[len(parts)-1])
 	}
 	return fmt.Sprintf("%s_%s", baseEmail, tag)
-}
-
-func getSettingsClients(config map[string]interface{}) []map[string]interface{} {
-	settings := getMap(config, "settings")
-	if settings == nil {
-		return nil
-	}
-	clients, ok := settings["clients"].([]interface{})
-	if !ok {
-		return nil
-	}
-	var result []map[string]interface{}
-	for _, c := range clients {
-		if m, ok := c.(map[string]interface{}); ok {
-			result = append(result, m)
-		}
-	}
-	return result
 }
 
 func convertLinksToMihomoProxyMaps(links []string) []map[string]interface{} {
@@ -3828,28 +3569,6 @@ func (h *PublicHandler) loadBillingTemplateConfig(ctx context.Context, tmpl *ent
 
 func humanizeBytesGB(v int64) string {
 	return fmt.Sprintf("%.2f GB", float64(v)/1073741824)
-}
-
-// buildInfoNode creates a REJECT node with usage info as name (shows in clash proxy list).
-// Format: ↑:1.21GB,↓:17.64GB,TOT:512GB,EXPIRES:2026-09-02
-func buildInfoNode(sub *entity.Subscription, lang string) *formatter.Node {
-	usedGB := float64(sub.UsedBytesCache) / 1073741824
-	totalGB := float64(sub.QuotaBytes) / 1073741824
-	var expiresStr string
-	if sub.ExpiresAt != nil && !sub.ExpiresAt.IsZero() {
-		expiresStr = sub.ExpiresAt.Format("2006-01-02")
-	}
-	remainGB := totalGB - usedGB
-	if remainGB < 0 {
-		remainGB = 0
-	}
-	name := fmt.Sprintf("↑:%.2fGB,↓:0.00GB,TOT:%.0fGB,EXPIRES:%s,REMAIN:%.0fGB", usedGB, totalGB, expiresStr, remainGB)
-	return &formatter.Node{
-		Name:     name,
-		Protocol: "reject",
-		Host:     "127.0.0.1",
-		Port:     0,
-	}
 }
 
 func formatSubscriptionInfo(sub *entity.Subscription) string {

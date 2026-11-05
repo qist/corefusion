@@ -124,14 +124,6 @@ func DecryptConfigJSON(v string) string {
 	return plain
 }
 
-// encryptConfigs / decryptConfigs 是切片版收口，供各仓储的 List* 方法统一调用。
-func encryptConfigs[T any](items []T, get func(*T) *string) {
-	for i := range items {
-		p := get(&items[i])
-		*p = EncryptConfigJSON(*p)
-	}
-}
-
 func decryptConfigs[T any](items []T, get func(*T) *string) {
 	for i := range items {
 		p := get(&items[i])

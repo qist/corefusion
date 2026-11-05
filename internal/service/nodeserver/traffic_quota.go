@@ -72,15 +72,7 @@ type NodeTrafficQuotaService struct {
 	serverRepo *repository.NodeServerRepository
 	nodeMgr    *agent.NodeServerManager
 
-	mu             sync.Mutex
-	lastEgressStat map[int64]*egressStat // serverID → last egress counters
-}
-
-type egressStat struct {
-	rxBytes   int64
-	txBytes   int64
-	timestamp time.Time
-	bootID    string // boot identifier to detect counter resets
+	mu sync.Mutex
 }
 
 // NewNodeTrafficQuotaService creates a new traffic quota service.
@@ -90,10 +82,9 @@ func NewNodeTrafficQuotaService(
 	nodeMgr *agent.NodeServerManager,
 ) *NodeTrafficQuotaService {
 	return &NodeTrafficQuotaService{
-		db:             db,
-		serverRepo:     serverRepo,
-		nodeMgr:        nodeMgr,
-		lastEgressStat: make(map[int64]*egressStat),
+		db:         db,
+		serverRepo: serverRepo,
+		nodeMgr:    nodeMgr,
 	}
 }
 
@@ -378,16 +369,10 @@ func (s *NodeTrafficQuotaService) resetPeriod(ctx context.Context, server *entit
 		"traffic_suspended_at": nil,
 	})
 
-	// If the node was suspended, re-enable it and start cores
 	if server.TrafficSuspended {
 		log.Printf("[TrafficQuota] re-enabling server %d after billing period reset", server.ID)
 		s.resumeNode(ctx, server)
 	}
-
-	// Reset the egress counter baseline so we don't double-count
-	s.mu.Lock()
-	delete(s.lastEgressStat, server.ID)
-	s.mu.Unlock()
 }
 
 // suspendNode stops all cores on a node and marks it as traffic-suspended.

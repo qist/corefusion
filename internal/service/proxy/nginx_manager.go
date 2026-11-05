@@ -356,21 +356,6 @@ func (m *NginxManager) fillForwardDerivedFields(ctx context.Context, site *entit
 	}
 }
 
-// resolvePath resolves a relative cert path against dataDir.
-func (m *NginxManager) resolvePath(path string) string {
-	if path == "" {
-		return path
-	}
-	if filepath.IsAbs(path) {
-		return path
-	}
-	base := filepath.Base(m.dataDir)
-	if strings.HasPrefix(path, base+"/") {
-		path = strings.TrimPrefix(path, base+"/")
-	}
-	return filepath.Join(m.dataDir, path)
-}
-
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 func nginxUpstreamKey(name string) string {
 	s := strings.ReplaceAll(name, ".", "_")
@@ -390,24 +375,6 @@ func nginxUpstreamKey(name string) string {
 // --- WAF Management moved to service/waf/ ---
 // All WAF rule management has been moved to internal/service/waf/service.go.
 // The manager only retains path helpers for config generation.
-
-// wafBaseDir returns the unified WAF rules directory: dataDir/proxy/waf-rules
-func (m *NginxManager) wafBaseDir() string {
-	return filepath.Join(m.dataDir, "proxy", "waf-rules")
-}
-
-// wafRuleDir returns the WAF rules directory (same as wafBaseDir for compatibility).
-func (m *NginxManager) wafRuleDir() string {
-	return m.wafBaseDir()
-}
-
-// wafConfigPath returns the path to config.lua.
-// config.lua lives with the NginxGuard Lua source at proxy/lua/waf/config.lua
-// because the Lua engine loads it via lua_package_path. The config_rule_dir
-// inside config.lua points to the unified proxy/waf-rules/ directory.
-func (m *NginxManager) wafConfigPath() string {
-	return filepath.Join(m.dataDir, "proxy", "lua", "waf", "config.lua")
-}
 
 // normalizeSiteDomain 把多域名输入规范化后落库（逗号分隔）。
 // sni / l4 / reality 的 Domain 不是普通站点域名（SNI 名称 / 端口 / 占位），保持原样。

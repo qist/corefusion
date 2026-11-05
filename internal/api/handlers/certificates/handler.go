@@ -924,17 +924,6 @@ func (h *Handler) resolveRenewalAuth(ctx context.Context, caProvider string) (st
 	return email, eab
 }
 
-// FindExpiringSoon returns certificates expiring within 30 days.
-func (h *Handler) FindExpiringSoon(c *gin.Context) {
-	certs, err := h.certSvc.FindExpiringSoon(c.Request.Context(), 30*24*time.Hour)
-	if err != nil {
-		response.InternalError(c, "QUERY_FAILED", err.Error())
-		return
-	}
-
-	response.OK(c, certs)
-}
-
 // DetectIP handles GET /api/v1/certificates/detect-ip?node_id=<id>.
 //
 // ⚠ 必须按**选定节点**探测 ✗→✓：给远程节点签 IP 证书时，SAN 要写的是"该节点对外提供服务的真实 IP" ✓，

@@ -107,25 +107,6 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 	})
 }
 
-// Install handles POST /api/v1/proxy/install.
-func (h *ProxyHandler) Install(c *gin.Context) {
-	var req struct {
-		Type string `json:"type" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	proxyType := proxy.ProxyType(req.Type)
-	if err := h.proxyMgr.InstallProxy(c.Request.Context(), proxyType); err != nil {
-		response.InternalError(c, "INSTALL_FAILED", err.Error())
-		return
-	}
-	nginx := h.proxyMgr.DetectProxy(proxy.ProxyNginx)
-	caddy := h.proxyMgr.DetectProxy(proxy.ProxyCaddy)
-	response.OK(c, gin.H{"nginx": nginx, "caddy": caddy})
-}
-
 // ListReleases handles GET /api/v1/proxy/releases.
 func (h *ProxyHandler) ListReleases(c *gin.Context) {
 	proxyType := c.Query("type")

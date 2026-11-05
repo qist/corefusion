@@ -293,28 +293,3 @@ func (s *Service) RotateExpiredLogs(ctx context.Context, policyID int64) {
 		log.Printf("logmanage: scheduled rotation failed for policy %d: %v", policyID, err)
 	}
 }
-
-// parseRotatedDate extracts the date from a rotated log filename.
-// Supports: basename.20060102, basename.20060102.gz, basename.20060102.N
-func parseRotatedDate(base, name string) (time.Time, bool) {
-	if !strings.HasPrefix(name, base+".") {
-		return time.Time{}, false
-	}
-
-	suffix := strings.TrimPrefix(name, base+".")
-	// Remove .gz extension
-	suffix = strings.TrimSuffix(suffix, ".gz")
-
-	// The date part should be the first 8 characters
-	if len(suffix) < 8 {
-		return time.Time{}, false
-	}
-
-	dateStr := suffix[:8]
-	t, err := time.Parse("20060102", dateStr)
-	if err != nil {
-		return time.Time{}, false
-	}
-
-	return t, true
-}

@@ -952,12 +952,6 @@ func mihomoPortRanges(pm map[string]interface{}) []interface{} {
 	return out
 }
 
-// buildLinkOutboundSettings builds xray outbound settings for a cluster exit.
-// buildLinkOutboundSettings 兼容旧调用：把 relayUUID 当凭据。
-func buildLinkOutboundSettings(protocol, address string, port int, relayUUID string) map[string]interface{} {
-	return buildLinkOutboundSettingsWithCred(protocol, address, port, relayUUID, "", "")
-}
-
 // buildLinkOutboundSettingsWithCred 与上面相同，但可指定 shadowsocks 的 method
 // （用"出口已有入站"时必须用它自己的 method —— 旧实现写死 chacha20-ietf-poly1305，
 // 遇到 2022-blake3-* 之类会构造出连不上的出站）。

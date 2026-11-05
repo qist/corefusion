@@ -1000,15 +1000,6 @@ func removeIptablesRule(portRange string, targetPort int, iface string) error {
 	return exec.Command("iptables", args...).Run()
 }
 
-// Helper functions (mirroring xraycontrol handler helpers)
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
-}
-
-func splitN(s, sep string) []string {
-	return strings.Split(s, sep)
-}
-
 // rewriteCertPaths rewrites certificate/key file paths in an inbound config JSON.
 // The panel sends absolute paths like /opt/corefusion/data/certs/gg/cert.pem,
 // which don't exist on the Agent's filesystem. This function rewrites them

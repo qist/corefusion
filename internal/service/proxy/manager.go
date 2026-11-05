@@ -837,26 +837,6 @@ func stripDataDirPrefix(path, dataDir string) string {
 	return path
 }
 
-// resolvePath resolves a relative cert path against dataDir.
-// Absolute paths are returned as-is for backward compatibility.
-// Relative paths are resolved against dataDir.
-func (m *Manager) resolvePath(path string) string {
-	if path == "" {
-		return path
-	}
-	// Absolute path - return as-is
-	if filepath.IsAbs(path) {
-		return path
-	}
-	// Strip "data/" prefix if it matches dataDir's base name
-	// e.g., dataDir="/opt/corefusion/data", path="data/certs/x.pem" -> "certs/x.pem"
-	base := filepath.Base(m.dataDir)
-	if strings.HasPrefix(path, base+"/") {
-		path = strings.TrimPrefix(path, base+"/")
-	}
-	return filepath.Join(m.dataDir, path)
-}
-
 func (m *Manager) proxyHeaders(site *entity.ProxySite) string {
 	var sb strings.Builder
 	switch site.Template {
@@ -2770,13 +2750,6 @@ func (m *Manager) patchWAFConfig() {
 		os.RemoveAll(oldRuleDir)
 		log.Printf("removed obsolete proxy/lua/waf/rule-config/ directory (patchWAFConfig)")
 	}
-}
-
-func run(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 // SNISettings contains SNI routing configuration.

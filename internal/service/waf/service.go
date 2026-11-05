@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -701,14 +700,6 @@ func DefaultGitHubSource() *GitHubSourceConfig {
 	}
 }
 
-// knownRuleDefaults 返回全部已知规则（引擎规则 + 用户自定义规则）。
-func knownRuleDefaults() []githubRuleDefault {
-	all := make([]githubRuleDefault, 0, len(defaultRuleFiles)+len(userDefinedRules))
-	all = append(all, defaultRuleFiles...)
-	all = append(all, userDefinedRules...)
-	return all
-}
-
 // githubRuleDefault defines a default rule file from GitHub with its merge mode.
 type githubRuleDefault struct {
 	Name      string // e.g. "args.rule"
@@ -750,56 +741,6 @@ func isUserDefinedRule(name string) bool {
 		}
 	}
 	return false
-}
-
-// githubAccelDomain reads the active GitHub acceleration domain from settings.
-func (s *Service) githubAccelDomain(ctx context.Context) string {
-	if s.settingSvc == nil {
-		return ""
-	}
-	val, err := s.settingSvc.GetByKey(ctx, "github.acceleration")
-	if err != nil || val == "" {
-		return ""
-	}
-	var cfg struct {
-		Enabled bool `json:"enabled"`
-		Domains []struct {
-			URL     string `json:"url"`
-			Enabled bool   `json:"enabled"`
-		} `json:"domains"`
-	}
-	if json.Unmarshal([]byte(val), &cfg) != nil || !cfg.Enabled {
-		return ""
-	}
-	for _, d := range cfg.Domains {
-		if d.Enabled && d.URL != "" {
-			return d.URL
-		}
-	}
-	return ""
-}
-
-// githubProxyURL reads the HTTP proxy URL from GitHub acceleration settings.
-func (s *Service) githubProxyURL(ctx context.Context) string {
-	if s.settingSvc == nil {
-		return ""
-	}
-	val, err := s.settingSvc.GetByKey(ctx, "github.acceleration")
-	if err != nil || val == "" {
-		return ""
-	}
-	var cfg struct {
-		ProxyURL string `json:"proxy_url"`
-	}
-	if json.Unmarshal([]byte(val), &cfg) != nil {
-		return ""
-	}
-	return cfg.ProxyURL
-}
-
-// githubHTTPClient creates an HTTP client with GitHub acceleration and proxy.
-func (s *Service) githubHTTPClient(ctx context.Context, timeout time.Duration) *http.Client {
-	return netutil.GitHubHTTPClientWithProxy(timeout, s.githubAccelDomain(ctx), s.githubProxyURL(ctx))
 }
 
 // SyncFromGitHub downloads rule files from the configured source.

@@ -36,11 +36,6 @@ type loginRequest struct {
 	Password string `json:"password"` // 兼容旧客户端：与 code 等价
 }
 
-type loginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-}
-
 // loginFailed 统一处理登录失败：计入限流、记审计、返回 401。
 func (h *Handler) loginFailed(c *gin.Context, username, reason string) {
 	middleware.DefaultLoginLimiter().RecordFailure(netutil.GetRealIP(c.Request))

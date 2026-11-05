@@ -24,10 +24,6 @@ var _ = strconv.IntSize
 // DB is the global database instance.
 var DB *gorm.DB
 
-// currentCfg holds the config used at Init time so that other packages
-// can query the database type and DSN at runtime.
-var currentCfg Config
-
 // Database type constants.
 const (
 	DBTypeSQLite   = "sqlite"
@@ -352,7 +348,6 @@ func Init(cfg Config) error {
 		log.Printf("database initialized: %s (pool: %d/%d)", cfg.Type, cfg.MaxIdleConns, cfg.MaxOpenConns)
 	}
 
-	currentCfg = cfg
 	DB = db
 	return nil
 }

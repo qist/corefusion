@@ -6,7 +6,6 @@ import (
 	"log"
 	"math/rand"
 	"sort"
-	"sync"
 	"time"
 
 	"corefusion/internal/store/repository"
@@ -22,7 +21,6 @@ import (
 //
 // 与 SpeedTestManager 协同工作：测速结果影响排序权重。
 type LoadBalancer struct {
-	mu         sync.RWMutex
 	serverRepo *repository.NodeServerRepository
 	nodeMgr    *NodeServerManager
 	speedTest  *SpeedTestManager

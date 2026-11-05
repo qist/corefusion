@@ -29,16 +29,6 @@ type CaddyManager struct {
 	nodeServerRepo *repository.NodeServerRepository
 }
 
-// wafBaseDir returns the unified WAF rules directory: dataDir/proxy/waf-rules
-func (m *CaddyManager) wafBaseDir() string {
-	return filepath.Join(m.dataDir, "proxy", "waf-rules")
-}
-
-// wafRuleDir returns the WAF rules directory (same as wafBaseDir for compatibility).
-func (m *CaddyManager) wafRuleDir() string {
-	return m.wafBaseDir()
-}
-
 // 节点归属（serverID）一律由调用方按参数传入，manager 不保存每请求可变的共享状态。
 // 原因见 isLocalTarget 的注释：handlers 曾用 SetServerID/SetIsLocal 改共享单例，
 // 并发访问不同节点时会互相覆盖。

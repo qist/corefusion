@@ -1071,12 +1071,3 @@ func computeFileChecksum(path string) (string, error) {
 
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
-
-// keysOf returns the keys of a map as a slice (for debug logging).
-func keysOf(m map[string]*AgentBinaryInfo) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
-}

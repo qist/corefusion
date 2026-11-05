@@ -17,7 +17,6 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/healthcheck"
-	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 )
 
@@ -298,32 +297,6 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	}
 
 	log.Printf("reconcile: done, %d processes managed", len(m.processes))
-}
-
-// reattach reattaches to an already-running process.
-func (m *Manager) reattach(g entity.ProcessGuardian) {
-	svc, err := m.svcRepo.GetByID(nil, g.ServiceID)
-	if err != nil {
-		return
-	}
-	binaryPath, _, _ := m.resolver.Resolve(svc.CoreType)
-	configPath := filepath.Join(m.dataDir, "runtime", svc.CoreType+".jsonc")
-	logPath := filepath.Join(m.dataDir, "logs", svc.CoreType+".log")
-
-	p := &managedProcess{
-		ServiceID:  g.ServiceID,
-		CoreType:   svc.CoreType,
-		BinaryPath: binaryPath,
-		ConfigPath: configPath,
-		LogPath:    logPath,
-		pid:        g.PID,
-		state:      "running",
-		startedAt:  g.StartedAt,
-	}
-	m.processes[g.ServiceID] = p
-
-	// Start monitoring
-	go m.monitor(p, g)
 }
 
 // Start starts a core process.
@@ -892,11 +865,6 @@ func (m *Manager) IsRunning(serviceID int64) bool {
 	return running
 }
 
-func (m *Manager) isRunning(serviceID int64) bool {
-	p, ok := m.processes[serviceID]
-	return ok && p.state == "running"
-}
-
 // ListAll returns the status of all managed processes.
 func (m *Manager) ListAll() []ProcessInfo {
 	m.mu.Lock()
@@ -1016,120 +984,6 @@ func (m *Manager) StopAll(ctx context.Context) {
 	}
 
 	log.Printf("stopall: all processes stopped")
-}
-
-// monitor monitors a process and handles crashes.
-func (m *Manager) monitor(p *managedProcess, g entity.ProcessGuardian) {
-	var err error
-	if p.cmd != nil {
-		err = p.cmd.Wait()
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if p.state == "stopping" {
-		p.state = "stopped"
-		p.pid = 0
-		p.lastError = nil
-		return
-	}
-
-	// Unexpected crash
-	p.state = "crashed"
-	p.lastError = err
-
-	// Load guardian config if not already loaded
-	if g.ServiceID == 0 {
-		gPtr, repoErr := m.guardRepo.GetByServiceID(nil, p.ServiceID)
-		if repoErr == nil {
-			g = *gPtr
-		}
-	}
-
-	// Record crash log
-	crashLog := &entity.CoreCrashLog{
-		ServiceID:      p.ServiceID,
-		CoreType:       p.CoreType,
-		RuntimeSeconds: int64(time.Since(p.startedAt).Seconds()),
-		RestartAttempt: g.CurrentRestarts + 1,
-		CrashAt:        time.Now(),
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		crashLog.ExitCode = exitErr.ExitCode()
-	}
-	if p.cmd != nil && p.cmd.ProcessState != nil {
-		crashLog.Signal = p.cmd.ProcessState.String()
-	}
-	m.crashRepo.Create(nil, crashLog)
-
-	log.Printf("service %d crashed: %v (restarts: %d/%d)", p.ServiceID, err, g.CurrentRestarts, g.MaxRestartCount)
-
-	// 核心进程异常告警：admin 模板「核心进程异常告警」未启用时 NotifyTemplate 静默 no-op
-	go systemSvc.NotifyTemplate(context.Background(), "核心进程异常告警", map[string]string{
-		"core":     p.CoreType,
-		"restarts": fmt.Sprintf("%d", g.CurrentRestarts),
-		"max":      fmt.Sprintf("%d", g.MaxRestartCount),
-		"message":  fmt.Sprintf("%v", err),
-		"time":     time.Now().Format("2006-01-02 15:04:05"),
-	})
-
-	// Update guardian
-	g.ProcessStatus = "crashed"
-	g.LastCrashAt = time.Now()
-	g.PID = 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			g.LastExitCode = exitErr.ExitCode()
-		}
-	}
-
-	// Check if auto-restart is allowed
-	if g.AutoRestart && g.CurrentRestarts < g.MaxRestartCount {
-		// Check restart window
-		if g.WindowStartAt.IsZero() || time.Since(g.WindowStartAt) > time.Duration(g.RestartWindowSec)*time.Second {
-			g.WindowStartAt = time.Now()
-			g.CurrentRestarts = 0
-		}
-		g.CurrentRestarts++
-		g.LastRestartAt = time.Now()
-		m.guardRepo.Update(nil, &g)
-
-		// Exponential backoff: 2^(restarts-1) * 2 seconds, max 80s
-		backoff := time.Duration(1<<uint(g.CurrentRestarts-1)*2) * time.Second
-		if backoff > 80*time.Second {
-			backoff = 80 * time.Second
-		}
-		log.Printf("service %d: restarting in %v (attempt %d/%d)", p.ServiceID, backoff, g.CurrentRestarts, g.MaxRestartCount)
-
-		// Restart after backoff
-		go func() {
-			time.Sleep(backoff)
-			m.mu.Lock()
-			delete(m.processes, p.ServiceID)
-			m.mu.Unlock()
-
-			if err := m.Start(nil, p.ServiceID, p.CoreType); err != nil {
-				log.Printf("service %d: auto-restart failed: %v", p.ServiceID, err)
-			} else {
-				// Reset restart count after stable threshold
-				go func() {
-					time.Sleep(time.Duration(g.StableThresholdSec) * time.Second)
-					if m.IsRunning(p.ServiceID) {
-						g2, err := m.guardRepo.GetByServiceID(nil, p.ServiceID)
-						if err == nil {
-							g2.CurrentRestarts = 0
-							m.guardRepo.Update(nil, g2)
-						}
-					}
-				}()
-			}
-		}()
-	} else {
-		// Max restarts reached or auto-restart disabled
-		g.ProcessStatus = "crashed"
-		m.guardRepo.Update(nil, &g)
-	}
 }
 
 // persistState updates the guardian and service process status in the database.

@@ -24,9 +24,13 @@ import (
 // （也能读 /proc/<pid>/environ），本地文件方案防不了"已进机器"。
 const SecretEnvFile = ".env.secret"
 
+// SecretEncryptionKeyName 是加密主密钥的键名：只应出现在 SecretEnvFile，
+// 不应写进 .env（否则会随 .env 被抄送/贴日志，且首次启动还会触发一次"搬家"）。
+const SecretEncryptionKeyName = "CF_SECRET_ENCRYPTION_KEY"
+
 // SecretEnvKeys 是允许存放在 SecretEnvFile 的键（目前只有加密密钥）。
 var SecretEnvKeys = map[string]bool{
-	"CF_SECRET_ENCRYPTION_KEY": true,
+	SecretEncryptionKeyName: true,
 }
 
 // ParseEnvContent 解析 env 文本为 map（忽略空行与 # 注释）。
@@ -166,6 +170,23 @@ func RemoveEnvValue(path, key string) error {
 	return os.Chmod(path, 0600)
 }
 
+// redactEnvKey 把 env 文本里指定键的值替换成占位符（写备份用）：
+// 避免把密钥再复制到 .env.bak-* 这类容易被拷贝/发送的文件里。
+func redactEnvKey(content, key string) string {
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
+			lines[i] = key + "=#redacted (moved to " + SecretEnvFile + ")"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 // RelocateKeyToSecretFile 把老部署 `.env` 里的某个密钥键搬到 SecretEnvFile
 // （**值不变**，所以现有密文仍能解密；幂等）。
 //
@@ -203,8 +224,10 @@ func RelocateKeyToSecretFile(key string) {
 		return
 	}
 	// 备份 .env 后再删（出问题可手工恢复）。
+	// 备份里**不回写密钥**：此时密钥已在 .env.secret 中，回滚只需恢复 .env，
+	// 没必要再多一份含密钥的文件（.env 经常被拷贝/贴出来排查）。
 	bak := ".env.bak-" + time.Now().Format("20060102-150405")
-	if err := os.WriteFile(bak, data, 0600); err != nil {
+	if err := os.WriteFile(bak, []byte(redactEnvKey(string(data), key)), 0600); err != nil {
 		log.Printf("[startup] warning: backup .env failed, keeping key in .env: %v", err)
 		return
 	}

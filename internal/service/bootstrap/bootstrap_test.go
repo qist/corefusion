@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	secretcrypto "corefusion/internal/security/crypto"
 	"corefusion/internal/store/db"
 )
 
@@ -193,15 +194,21 @@ func TestComplete(t *testing.T) {
 	} else if portalSite.Template != "portal_forward" || portalSite.Path != "/p" || portalSite.Upstream != "127.0.0.1:18080" {
 		t.Errorf("portal site mismatch: %+v", portalSite)
 	}
-	// .env 写入 SAFE_PATHS 与 CF_DB_DSN 与密钥
+	// .env 只放常规配置；加密主密钥单独写进 .env.secret（0600）
 	raw, err := os.ReadFile(".env")
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
 	s := string(raw)
 	if !strings.Contains(s, "SAFE_PATHS="+dataDir) || !strings.Contains(s, "CF_DB_DSN=") ||
-		!strings.Contains(s, "JWT_SECRET=") || !strings.Contains(s, "CF_SECRET_ENCRYPTION_KEY=") {
+		!strings.Contains(s, "JWT_SECRET=") {
 		t.Errorf(".env missing keys: %s", s)
+	}
+	if strings.Contains(s, secretcrypto.SecretEncryptionKeyName) {
+		t.Errorf(".env must not contain %s: %s", secretcrypto.SecretEncryptionKeyName, s)
+	}
+	if v := secretcrypto.ReadSecretEnvValue(secretcrypto.SecretEncryptionKeyName); v == "" {
+		t.Errorf("%s missing %s", secretcrypto.SecretEnvFile, secretcrypto.SecretEncryptionKeyName)
 	}
 	db.Close()
 }

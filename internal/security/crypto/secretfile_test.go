@@ -69,13 +69,20 @@ func TestRelocateKeyToSecretFile(t *testing.T) {
 			t.Fatalf(".env lost %q:\n%s", want, envData)
 		}
 	}
-	// 迁移前会备份 .env（便于人工回滚）
+	// 迁移前会备份 .env（便于人工回滚），但备份里不能留明文密钥
 	matches, _ := filepath.Glob(filepath.Join(dir, ".env.bak-*"))
 	if len(matches) != 1 {
 		t.Fatalf("expected one .env backup, got %v", matches)
 	}
-	if b, err := os.ReadFile(matches[0]); err != nil || !strings.Contains(string(b), "CF_SECRET_ENCRYPTION_KEY="+testKey) {
-		t.Fatalf("backup should still contain original key: %v", err)
+	b, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if strings.Contains(string(b), testKey) {
+		t.Fatalf("backup must not contain plaintext key:\n%s", b)
+	}
+	if !strings.Contains(string(b), "CF_SECRET_ENCRYPTION_KEY=#redacted") {
+		t.Fatalf("backup should mark the key as redacted:\n%s", b)
 	}
 }
 

@@ -48,7 +48,6 @@ func EnvKV(dataDir string, d *Draft) [][2]string {
 	}
 	kv = append(kv,
 		[2]string{"JWT_SECRET", d.JWTSecret},
-		[2]string{"CF_SECRET_ENCRYPTION_KEY", d.SecretEncryptionKey},
 	)
 	return kv
 }
@@ -63,13 +62,15 @@ func EnvContent(dataDir string, d *Draft) string {
 	for _, kv := range EnvKV(dataDir, d) {
 		b.WriteString(kv[0] + "=" + kv[1] + nl)
 		if kv[0] == "CF_DB_DSN" {
-			b.WriteString(nl + "# === 加密密钥 ===" + nl)
+			b.WriteString(nl + "# 加密主密钥（CF_SECRET_ENCRYPTION_KEY）单独保存在同目录的 .env.secret（0600）" + nl)
 		}
 	}
 	return b.String()
 }
 
-// SaveEnv 把初始化配置合并写入当前目录的 .env（0600）。
+// SaveEnv 把初始化配置合并写入当前目录的 .env（0600）；
+// 加密主密钥单独写进 .env.secret（0600），不落 .env ——
+// 否则下次启动会被当成"存量部署"搬家，并留下一个含密钥的 .env.bak。
 func SaveEnv(dataDir string, d *Draft) error {
 	content := ""
 	if b, err := os.ReadFile(".env"); err == nil {
@@ -82,6 +83,22 @@ func SaveEnv(dataDir string, d *Draft) error {
 		return fmt.Errorf("write .env: %w", err)
 	}
 	_ = os.Chmod(".env", 0600)
+
+	key := strings.TrimSpace(d.SecretEncryptionKey)
+	if key == "" {
+		return nil
+	}
+	if err := seccrypto.SaveSecretEnvValue(seccrypto.SecretEncryptionKeyName, key); err != nil {
+		// 独立文件写失败时退回 .env，绝不让密钥只存在内存里（重启后密文全废）。
+		content = upsertEnvLine(content, seccrypto.SecretEncryptionKeyName, key)
+		if werr := os.WriteFile(".env", []byte(content), 0600); werr != nil {
+			return fmt.Errorf("write %s: %w", seccrypto.SecretEnvFile, werr)
+		}
+		_ = os.Chmod(".env", 0600)
+		return nil
+	}
+	// 清掉老版本遗留在 .env 里的同键，保持"密钥只在 .env.secret"。
+	_ = seccrypto.RemoveEnvValue(".env", seccrypto.SecretEncryptionKeyName)
 	return nil
 }
 

@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "إعدادات Stream-Up",
     "webSocketSettings": "إعدادات WebSocket",
     "xhttpSettings": "إعدادات XHTTP",
-    "xmux": "Xmux (تعدد الإرسال)"
+    "xmux": "Xmux (تعدد الإرسال)",
+    "overrideAddress": "تجاوز العنوان",
+    "overridePort": "تجاوز المنفذ",
+    "detour": "تحويل (Detour)",
+    "tcpMultiPath": "TCP متعدد المسارات",
+    "udpFragment": "تجزئة UDP",
+    "udpTimeout": "مهلة UDP",
+    "advancedListen": "استماع متقدم"
   },
   xrayUi: {
     "rCode": "رمز الاستجابة (0-65535)",

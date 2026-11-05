@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Настройки Stream-Up",
     "webSocketSettings": "Настройки WebSocket",
     "xhttpSettings": "Настройки XHTTP",
-    "xmux": "Xmux (мультиплексирование)"
+    "xmux": "Xmux (мультиплексирование)",
+    "overrideAddress": "Переопределить адрес",
+    "overridePort": "Переопределить порт",
+    "detour": "Обход (Detour)",
+    "tcpMultiPath": "Многопутевой TCP",
+    "udpFragment": "Фрагментация UDP",
+    "udpTimeout": "Таймаут UDP",
+    "advancedListen": "Расширенное прослушивание"
   },
   xrayUi: {
     "rCode": "Код ответа (0-65535)",

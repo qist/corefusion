@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Stream-Up 設定",
     "webSocketSettings": "WebSocket 設定",
     "xhttpSettings": "XHTTP 設定",
-    "xmux": "Xmux（多重化）"
+    "xmux": "Xmux（多重化）",
+    "overrideAddress": "アドレスを上書き",
+    "overridePort": "ポートを上書き",
+    "detour": "迂回 (Detour)",
+    "tcpMultiPath": "TCP マルチパス",
+    "udpFragment": "UDP フラグメント",
+    "udpTimeout": "UDP タイムアウト",
+    "advancedListen": "詳細リスン"
   },
   xrayUi: {
     "rCode": "レスポンスコード (0-65535)",

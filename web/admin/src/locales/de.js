@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Stream-Up-Einstellungen",
     "webSocketSettings": "WebSocket-Einstellungen",
     "xhttpSettings": "XHTTP-Einstellungen",
-    "xmux": "Xmux (Multiplexing)"
+    "xmux": "Xmux (Multiplexing)",
+    "overrideAddress": "Adresse überschreiben",
+    "overridePort": "Port überschreiben",
+    "detour": "Umleitung (Detour)",
+    "tcpMultiPath": "TCP-Multipfad",
+    "udpFragment": "UDP-Fragmentierung",
+    "udpTimeout": "UDP-Timeout",
+    "advancedListen": "Erweiterte Listen-Optionen"
   },
   xrayUi: {
     "rCode": "Antwortcode (0-65535)",

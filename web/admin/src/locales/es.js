@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Ajustes de Stream-Up",
     "webSocketSettings": "Ajustes de WebSocket",
     "xhttpSettings": "Ajustes de XHTTP",
-    "xmux": "Xmux (multiplexación)"
+    "xmux": "Xmux (multiplexación)",
+    "overrideAddress": "Reemplazar dirección",
+    "overridePort": "Reemplazar puerto",
+    "detour": "Desvío (Detour)",
+    "tcpMultiPath": "TCP multipath",
+    "udpFragment": "Fragmentación UDP",
+    "udpTimeout": "Tiempo de espera UDP",
+    "advancedListen": "Escucha avanzada"
   },
   xrayUi: {
     "rCode": "Código de respuesta (0-65535)",

@@ -27,7 +27,14 @@ export default {
     "streamUpSettings": "Stream-Up 设置",
     "webSocketSettings": "WebSocket 设置",
     "xhttpSettings": "XHTTP 设置",
-    "xmux": "Xmux（多路复用）"
+    "xmux": "Xmux（多路复用）",
+    "overrideAddress": "覆盖地址",
+    "overridePort": "覆盖端口",
+    "detour": "绕行（Detour）",
+    "tcpMultiPath": "TCP 多路径",
+    "udpFragment": "UDP 分片",
+    "udpTimeout": "UDP 超时",
+    "advancedListen": "高级监听"
   },
   xrayUi: {
     "rCode": "响应码（0-65535）",

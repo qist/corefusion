@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Stream-Up 설정",
     "webSocketSettings": "WebSocket 설정",
     "xhttpSettings": "XHTTP 설정",
-    "xmux": "Xmux(멀티플렉싱)"
+    "xmux": "Xmux(멀티플렉싱)",
+    "overrideAddress": "주소 재정의",
+    "overridePort": "포트 재정의",
+    "detour": "우회(Detour)",
+    "tcpMultiPath": "TCP 멀티패스",
+    "udpFragment": "UDP 단편화",
+    "udpTimeout": "UDP 시간 초과",
+    "advancedListen": "고급 수신"
   },
   xrayUi: {
     "rCode": "응답 코드 (0-65535)",

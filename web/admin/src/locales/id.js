@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Pengaturan Stream-Up",
     "webSocketSettings": "Pengaturan WebSocket",
     "xhttpSettings": "Pengaturan XHTTP",
-    "xmux": "Xmux (multiplexing)"
+    "xmux": "Xmux (multiplexing)",
+    "overrideAddress": "Timpa alamat",
+    "overridePort": "Timpa port",
+    "detour": "Detour",
+    "tcpMultiPath": "TCP multipath",
+    "udpFragment": "Fragmentasi UDP",
+    "udpTimeout": "Batas waktu UDP",
+    "advancedListen": "Listen lanjutan"
   },
   xrayUi: {
     "rCode": "Kode respons (0-65535)",

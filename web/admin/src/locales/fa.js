@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "تنظیمات Stream-Up",
     "webSocketSettings": "تنظیمات WebSocket",
     "xhttpSettings": "تنظیمات XHTTP",
-    "xmux": "Xmux (چندگانه)"
+    "xmux": "Xmux (چندگانه)",
+    "overrideAddress": "بازنویسی آدرس",
+    "overridePort": "بازنویسی پورت",
+    "detour": "انحراف (Detour)",
+    "tcpMultiPath": "TCP چندمسیره",
+    "udpFragment": "قطعه‌بندی UDP",
+    "udpTimeout": "مهلت UDP",
+    "advancedListen": "شنود پیشرفته"
   },
   xrayUi: {
     "rCode": "کد پاسخ (0-65535)",

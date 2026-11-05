@@ -194,11 +194,11 @@
 
             <!-- direct inbound：静态转发目标（sing-box inbound/direct） -->
             <template v-if="rf.type === 'direct'">
-              <el-form-item label="Override Address">
+              <el-form-item :label="t('xrayIn.overrideAddress')">
                 <el-input v-model="rf.override_address" placeholder="1.2.3.4" />
                 <div class="hint">把命中该入站的流量转发到该地址</div>
               </el-form-item>
-              <el-form-item label="Override Port">
+              <el-form-item :label="t('xrayIn.overridePort')">
                 <el-input-number v-model="rf.override_port" :min="0" :max="65535" style="width:100%" />
               </el-form-item>
             </template>
@@ -208,23 +208,23 @@
                  字段），服务端靠防火墙把端口段 DNAT 到入站端口（与 xray 一致）；
                  客户端跳跃范围通过分享链接的 mport 下发。保存时自动增删规则。 -->
             <template v-if="rf.type === 'hysteria2' || rf.type === 'hysteria'">
-              <el-divider content-position="left">Port Hopping</el-divider>
-              <el-form-item label="Enable">
+              <el-divider content-position="left">{{ t('xrayIn.portHopping') }}</el-divider>
+              <el-form-item :label="t('protoCenter.inbounds.enableAccessDomain')">
                 <el-switch v-model="rf._portHopEnabled" />
                 <span class="hint" style="margin-left:8px">端口段转发到本入站端口（保存时自动增删防火墙规则）</span>
               </el-form-item>
               <template v-if="rf._portHopEnabled">
-                <el-form-item label="Target Port">
+                <el-form-item :label="t('protoCenter.inbounds.targetPort')">
                   <el-input-number v-model="rf.listen_port" :min="1" :max="65535" disabled />
                   <div class="hint">当前入站监听端口（端口段会转发到这里）</div>
                 </el-form-item>
-                <el-form-item label="Range Mode">
+                <el-form-item :label="t('protoCenter.inbounds.rangeMode')">
                   <el-select v-model="rf._portHopMode" style="width:100%">
-                    <el-option label="Preset" value="preset" />
-                    <el-option label="Manual" value="manual" />
+                    <el-option :label="t('protoCenter.inbounds.preset')" value="preset" />
+                    <el-option :label="t('protoCenter.inbounds.manual')" value="manual" />
                   </el-select>
                 </el-form-item>
-                <el-form-item v-if="rf._portHopMode === 'preset'" label="Port Range">
+                <el-form-item v-if="rf._portHopMode === 'preset'" :label="t('protoCenter.inbounds.portRange')">
                   <el-select v-model="rf._portHopRange" style="width:100%">
                     <!-- 预设段互不重叠；已被本节点其它入站占用的段直接标出来（端口段是节点级资源） -->
                     <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
@@ -236,16 +236,16 @@
                   </el-select>
                   <div v-if="portHopUsageHint" class="hint">{{ portHopUsageHint }}</div>
                 </el-form-item>
-                <el-form-item v-else label="Port Range">
+                <el-form-item v-else :label="t('protoCenter.inbounds.portRange')">
                   <div style="display:flex;gap:8px;align-items:center">
                     <el-input-number v-model="rf._portHopStart" :min="1" :max="65535" style="width:120px" />
                     <span>-</span>
                     <el-input-number v-model="rf._portHopEnd" :min="1" :max="65535" style="width:120px" />
                   </div>
                 </el-form-item>
-                <el-form-item label="Interface">
+                <el-form-item :label="t('protoCenter.inbounds.interface')">
                   <div style="display:flex;gap:8px;width:100%">
-                    <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create placeholder="All interfaces">
+                    <el-select v-model="rf._portHopInterface" style="flex:1" clearable filterable allow-create :placeholder="t('xrayIn.allInterfaces')">
                       <el-option v-for="iface in ifaceList" :key="iface" :label="iface" :value="iface" />
                     </el-select>
                     <el-button size="small" @click="loadInterfaces">Refresh</el-button>
@@ -254,17 +254,17 @@
                 </el-form-item>
               </template>
             </template>
-            <el-divider content-position="left">Advanced Listen</el-divider>
-            <el-form-item label="Detour">
+            <el-divider content-position="left">{{ t('xrayIn.advancedListen') }}</el-divider>
+            <el-form-item :label="t('xrayIn.detour')">
               <el-input v-model="rf.detour" placeholder="direct" />
               <div class="hint">inbound 级 detour（把该入站流量交给指定 outbound）</div>
             </el-form-item>
             <el-row :gutter="12">
-              <el-col :span="8"><el-form-item label="TCP Fast Open"><el-switch v-model="rf.tcp_fast_open" /></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="TCP Multi Path"><el-switch v-model="rf.tcp_multi_path" /></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="UDP Fragment"><el-switch v-model="rf.udp_fragment" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item :label="t('protoCenter.sockopt.tcpFastOpen')"><el-switch v-model="rf.tcp_fast_open" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item :label="t('xrayIn.tcpMultiPath')"><el-switch v-model="rf.tcp_multi_path" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item :label="t('xrayIn.udpFragment')"><el-switch v-model="rf.udp_fragment" /></el-form-item></el-col>
             </el-row>
-            <el-form-item label="UDP Timeout">
+            <el-form-item :label="t('xrayIn.udpTimeout')">
               <el-input v-model="rf.udp_timeout" placeholder="5m" />
               <div class="hint">UDP NAT 超时，如 5m / 300s</div>
             </el-form-item>

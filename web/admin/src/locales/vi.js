@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Cài đặt Stream-Up",
     "webSocketSettings": "Cài đặt WebSocket",
     "xhttpSettings": "Cài đặt XHTTP",
-    "xmux": "Xmux (ghép kênh)"
+    "xmux": "Xmux (ghép kênh)",
+    "overrideAddress": "Ghi đè địa chỉ",
+    "overridePort": "Ghi đè cổng",
+    "detour": "Vòng tránh (Detour)",
+    "tcpMultiPath": "TCP đa đường",
+    "udpFragment": "Phân mảnh UDP",
+    "udpTimeout": "Hết hạn UDP",
+    "advancedListen": "Lắng nghe nâng cao"
   },
   xrayUi: {
     "rCode": "Mã phản hồi (0-65535)",

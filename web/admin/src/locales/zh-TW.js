@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Stream-Up 設定",
     "webSocketSettings": "WebSocket 設定",
     "xhttpSettings": "XHTTP 設定",
-    "xmux": "Xmux（多路複用）"
+    "xmux": "Xmux（多路複用）",
+    "overrideAddress": "覆寫位址",
+    "overridePort": "覆寫連接埠",
+    "detour": "繞行（Detour）",
+    "tcpMultiPath": "TCP 多路徑",
+    "udpFragment": "UDP 分片",
+    "udpTimeout": "UDP 逾時",
+    "advancedListen": "進階監聽"
   },
   xrayUi: {
     "quicParams": "QUIC 參數",

@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "Stream-Up ayarları",
     "webSocketSettings": "WebSocket ayarları",
     "xhttpSettings": "XHTTP ayarları",
-    "xmux": "Xmux (çoklama)"
+    "xmux": "Xmux (çoklama)",
+    "overrideAddress": "Adresi geçersiz kıl",
+    "overridePort": "Bağlantı noktasını geçersiz kıl",
+    "detour": "Dolambaç (Detour)",
+    "tcpMultiPath": "TCP çoklu yol",
+    "udpFragment": "UDP parçalama",
+    "udpTimeout": "UDP zaman aşımı",
+    "advancedListen": "Gelişmiş dinleme"
   },
   xrayUi: {
     "rCode": "Yanıt kodu (0-65535)",

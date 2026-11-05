@@ -28,7 +28,14 @@ export default {
     "streamUpSettings": "การตั้งค่า Stream-Up",
     "webSocketSettings": "การตั้งค่า WebSocket",
     "xhttpSettings": "การตั้งค่า XHTTP",
-    "xmux": "Xmux (มัลติเพล็กซ์)"
+    "xmux": "Xmux (มัลติเพล็กซ์)",
+    "overrideAddress": "แทนที่ที่อยู่",
+    "overridePort": "แทนที่พอร์ต",
+    "detour": "เส้นทางอ้อม (Detour)",
+    "tcpMultiPath": "TCP หลายเส้นทาง",
+    "udpFragment": "แยกส่วน UDP",
+    "udpTimeout": "หมดเวลา UDP",
+    "advancedListen": "การรับฟังขั้นสูง"
   },
   xrayUi: {
     "rCode": "รหัสตอบกลับ (0-65535)",

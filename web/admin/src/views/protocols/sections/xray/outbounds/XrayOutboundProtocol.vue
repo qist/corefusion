@@ -1,6 +1,9 @@
 <template>
   <div>
     <el-form v-if="rf.protocol === 'masque'" label-width="120px" label-position="left">
+      <el-form-item>
+        <el-button size="small" type="primary" @click="importWarpMasque">{{ t('protoCenter.outbounds.importWarp') }}</el-button>
+      </el-form-item>
       <el-form-item :label="t('protoCenter.outbounds.server')">
         <el-input v-model="rf._server" placeholder="example.com" />
       </el-form-item>
@@ -257,6 +260,44 @@ async function importWarp() {
       _allowedIPv4: '0.0.0.0/0',
       _allowedIPv6: '::/0',
     }]
+    ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
+  } catch (e) { ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e)) }
+}
+async function importWarpMasque() {
+  try {
+    const coreType = props.coreType || 'xray'
+    const warpBase = `/node-servers/${props.serverId}/warp`
+    let status = null
+    try { status = await client.get(`${warpBase}/status`, { params: { core_type: coreType } }) } catch { status = null }
+    // status 取的是该核型下最新的 active 记录，可能是旧的 WireGuard 设备 → 不是 masque 就新注册一台。
+    if (!status || String(status.tunnel_type || '').toLowerCase() !== 'masque') {
+      ElMessage.info(t('protoCenter.outbounds.warpRegistering'))
+      status = await client.post(`${warpBase}/masque/register`, { core_type: coreType })
+    }
+    if (!status || !status.private_key || !status.public_key) {
+      ElMessage.error(t('protoCenter.outbounds.warpRegisterFailed'))
+      return
+    }
+    const rf = props.rf
+    rf.tag = 'warp-masque-' + Math.random().toString(36).substring(2, 6)
+    rf._server = status.endpoint || 'engage.cloudflareclient.com'
+    const ports = String(status.endpoint_ports || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0)
+    rf._port = ports[0] || 443
+    // WARP 官方客户端参数：masque 传输 + TLS/H3，SNI 与 path 都是固定默认值。
+    rf._network = 'masque'
+    rf._securityMode = 'tls'
+    rf._sni = 'consumer-masque.cloudflareclient.com'
+    rf._alpn = ['h3']
+    rf._masqueHost = ''
+    rf._masquePath = '/'
+    rf._masqueWarpEnabled = true
+    rf._masqueWarpPrivateKey = status.private_key
+    rf._masqueWarpPublicKey = status.public_key
+    const addrs = []
+    if (status.address_ipv4) addrs.push(status.address_ipv4.includes('/') ? status.address_ipv4 : status.address_ipv4 + '/32')
+    if (status.address_ipv6) addrs.push(status.address_ipv6.includes('/') ? status.address_ipv6 : status.address_ipv6 + '/128')
+    rf._masqueWarpAddressStr = addrs.join('\n')
+    rf._masqueRemoteDNSStr = '1.1.1.1, 1.0.0.1, 2606:4700:4700::1111, 2606:4700:4700::1001'
     ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
   } catch (e) { ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e)) }
 }

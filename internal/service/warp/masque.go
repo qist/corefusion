@@ -38,8 +38,6 @@ const (
 
 	// masqueConnectSNI 是 WARP 官方客户端使用的 SNI（出站复用）。
 	masqueConnectSNI = "consumer-masque.cloudflareclient.com"
-	// masqueDefaultPath 是 RFC 9484 的默认 URI 模板。
-	masqueDefaultPath = "/.well-known/masque/ip/{target}/{ipproto}/"
 )
 
 // masqueRegisterRequest 是 POST /reg 的请求体（第一步，仍用 WireGuard 形态建号）。
@@ -433,6 +431,10 @@ func BuildMasqueOutboundConfig(cfg *entity.WarpConfig, in MasqueOutboundInput) (
 		addresses = append(addresses, ensureCIDR(cfg.AddressIPv6, 128))
 	}
 
+	// WARP 模式下 host/path 有官方默认值（cloudflareaccess.com / "/"）：
+	// 显式写 RFC 9484 的模板路径会被边缘当作普通请求 404，导致隧道建立失败。
+	path := "/"
+
 	ob := map[string]interface{}{
 		"tag":      tag,
 		"protocol": "masque",
@@ -444,7 +446,7 @@ func BuildMasqueOutboundConfig(cfg *entity.WarpConfig, in MasqueOutboundInput) (
 		"streamSettings": map[string]interface{}{
 			"network": "masque",
 			"masqueSettings": map[string]interface{}{
-				"path": masqueDefaultPath,
+				"path": path,
 				"warp": map[string]interface{}{
 					"privateKey": cfg.PrivateKey,
 					"publicKey":  cfg.PublicKey,

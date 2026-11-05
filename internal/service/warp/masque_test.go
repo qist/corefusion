@@ -61,6 +61,10 @@ func TestBuildMasqueOutboundConfig(t *testing.T) {
 		t.Errorf("streamSettings network/security = %v/%v", ss["network"], ss["security"])
 	}
 	mq := ss["masqueSettings"].(map[string]interface{})
+	// WARP 模式必须用官方默认 path "/"，否则边缘会 404（RFC 模板路径只适用于自建服务端）。
+	if mq["path"] != "/" {
+		t.Errorf("warp path = %v, want /", mq["path"])
+	}
 	warp := mq["warp"].(map[string]interface{})
 	if warp["privateKey"] != "cHJpdmF0ZQ==" || warp["publicKey"] != "cHVibGlj" {
 		t.Errorf("warp keys = %#v", warp)

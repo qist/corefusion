@@ -735,7 +735,7 @@
         </el-tab-pane>
 
         <!-- Sockopt Tab -->
-        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.sockopt.title')" name="sockopt">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria','masque'].includes(rf.protocol)" :label="t('protoCenter.sockopt.title')" name="sockopt">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.sockopt.enable') }}</span>
             <el-switch v-model="rf._sockoptEnabled" />
@@ -853,7 +853,7 @@
         </el-tab-pane>
 
         <!-- FinalMask Tab -->
-        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.finalmask.title')" name="finalmask">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria','masque'].includes(rf.protocol)" :label="t('protoCenter.finalmask.title')" name="finalmask">
           <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px">
             <span style="font-weight:500">{{ t('protoCenter.finalmask.enable') }}</span>
             <el-switch v-model="rf._finalmaskEnabled" />

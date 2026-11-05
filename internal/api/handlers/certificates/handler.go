@@ -408,8 +408,12 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 		return
 	}
 
-	// domains + ips 都是 SAN 候选，合并去重（IP 证书 = domains 空 + ips 有值 ✓）
+	// domains + ips 都是 SAN 候选，合并去重（IP 证书 = domains 空 + ips 有值 ✓）；
+	// 统一小写 → 节点回传落库时与面板本机签发口径一致 ✓（否则大小写不同会多一条记录 ✗）。
 	identifiers := mergeSANNames(req.Domains, req.IPs)
+	for i, v := range identifiers {
+		identifiers[i] = strings.ToLower(v)
+	}
 	// 续签已有证书：标识符 + **密钥类型**都从库里取 ✓（避免前端重复填、也避免填错/丢参数 ✗）
 	//
 	// ⚠ 密钥类型必须兜底 ✗：前端不传、指令里也没有 → 节点侧退回 EC256 ✗，

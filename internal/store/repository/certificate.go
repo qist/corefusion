@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -39,7 +40,9 @@ func (r *CertificateRepository) GetByID(ctx context.Context, id int64) (*entity.
 // GetByDomain retrieves a certificate by domain.
 func (r *CertificateRepository) GetByDomain(ctx context.Context, domain string) (*entity.Certificate, error) {
 	var cert entity.Certificate
-	err := r.db.WithContext(ctx).Where("domain = ?", domain).First(&cert).Error
+	err := r.db.WithContext(ctx).
+		Where("LOWER(domain) = ?", strings.ToLower(strings.TrimSpace(domain))).
+		First(&cert).Error
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +57,10 @@ func (r *CertificateRepository) GetByDomain(ctx context.Context, domain string) 
 func (r *CertificateRepository) GetByDomainAndKeyType(ctx context.Context, domain, keyType string) (*entity.Certificate, error) {
 	var cert entity.Certificate
 	kt := certpkg.NormalizeKeyType(keyType)
-	err := r.db.WithContext(ctx).Where("domain = ? AND key_type = ?", domain, kt).First(&cert).Error
+	// 域名大小写不敏感 ✓：`Example.com` 与 `example.com` 必须是同一张证书 ✗→✓
+	err := r.db.WithContext(ctx).
+		Where("LOWER(domain) = ? AND key_type = ?", strings.ToLower(strings.TrimSpace(domain)), kt).
+		First(&cert).Error
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +75,7 @@ func (r *CertificateRepository) GetByDomainAndKeyType(ctx context.Context, domai
 func (r *CertificateRepository) ListByDomain(ctx context.Context, domain string) ([]entity.Certificate, error) {
 	var certs []entity.Certificate
 	err := r.db.WithContext(ctx).
-		Where("domain = ? AND status = ?", domain, "active").
+		Where("LOWER(domain) = ? AND status = ?", strings.ToLower(strings.TrimSpace(domain)), "active").
 		Order("key_type").
 		Find(&certs).Error
 	if err != nil {

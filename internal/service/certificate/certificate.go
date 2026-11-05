@@ -902,12 +902,36 @@ func ValidateACMEDomains(domains []string, challengeType string) error {
 	return nil
 }
 
+// normalizeIdentifiers 归一证书 SAN 列表：去空白、去空项、按小写去重；
+// 顺序保持不变（主域名仍在第一位，落盘目录以它为准 ✓）。
+// DNS 名称大小写不敏感，IPv6 字面量小写同样可解析 ✓ ——
+// 归一后"重新签发"才能稳定命中同一条记录、写回同一个目录 ✓。
+func normalizeIdentifiers(names []string) []string {
+	out := make([]string, 0, len(names))
+	seen := make(map[string]bool, len(names))
+	for _, raw := range names {
+		v := strings.ToLower(strings.TrimSpace(raw))
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	return out
+}
+
 // IssueACME issues a new certificate via ACME.
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
 	// ⚠ 顺序很重要 ✓：**先**把上下文换成"不受断开影响"的 ✓（见 detachedCertOpContext ✓）——
 	// 证书一旦签出来就必须落库 ✓，否则又是一份"有文件、库里没有"的孤儿 ✗。
 	ctx, cancel := detachedCertOpContext(ctx)
 	defer cancel()
+
+	// 标识符先归一（去空白/去重/域名小写）✓：
+	// 证书身份 = (域名, 密钥类型) ✓，域名大小写不敏感 ✓ ——
+	// 不归一的话 `Example.com` 与 `example.com` 会变成两条记录 ✗，
+	// 而且落盘目录也会分叉 ✗（certs/Example.com 与 certs/example.com ✓）。
+	input.Domains = normalizeIdentifiers(input.Domains)
 
 	// 同一张证书（域名 + 密钥类型 ✓，与库里的身份口径一致 ✓）不允许两个签发并发 ✓
 	//（并发签发会各自写同一份文件 + 各自落库 ✗）。
@@ -1015,11 +1039,29 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	// (certs/<domain>/cert.pem), so all existing config references remain valid.
 	now := time.Now()
 	// ✅ 身份是 (域名, 密钥类型) ✓：同域再签 RSA 时**新建**一条 ✓ 而不是改写 ECC 那条 ✗
-	if existing, err := s.repo.GetByDomainAndKeyType(ctx, input.Domains[0], keyType); err == nil {
+	//
+	// ⚠ "重新签发覆盖旧证书"必须真的覆盖 ✗：
+	//   - 域名大小写不同（`Example.com` vs `example.com`）以前查不到 → 多出一条重复记录 ✗；
+	//   - 老版本落库的记录 `key_type` 为空 ✗ → 也查不到 → 又多一条 ✗。
+	// 现在：查不到精确匹配时，退一步找**同域名且 key_type 为空**的历史记录**就地升级** ✓。
+	existing, findErr := s.repo.GetByDomainAndKeyType(ctx, input.Domains[0], keyType)
+	if findErr != nil {
+		if rows, rerr := s.repo.ListByDomain(ctx, input.Domains[0]); rerr == nil {
+			for i := range rows {
+				if strings.TrimSpace(rows[i].KeyType) == "" {
+					existing, findErr = &rows[i], nil
+					break
+				}
+			}
+		}
+	}
+	if findErr == nil {
 		// 续期/重签也把元数据补齐 ✓（名字为空时补上 ✓，已有的名字不覆盖 ✓）
 		if strings.TrimSpace(existing.Name) == "" {
 			existing.Name = input.Domains[0]
 		}
+		// 域名统一成归一后的小写形式 ✓（否则大小写一变就又是"另一张证书" ✗）
+		existing.Domain = input.Domains[0]
 		existing.Domains = sansJSON
 		existing.KeyType = keyType
 		existing.KeyBits = keyBits

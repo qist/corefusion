@@ -12,16 +12,22 @@
             <el-descriptions-item :label="t('init.username')">{{ summary.admin_username }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.password')">{{ summary.admin_password }}</el-descriptions-item>
             <el-descriptions-item :label="t('init.accessPanel')">
-              {{ summary.access && summary.access.panel }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.panel)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              <div v-for="u in accessList(summary.access && summary.access.panel)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
             <el-descriptions-item :label="t('init.accessSubscription')">
-              {{ summary.access && summary.access.subscription }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.subscription)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              <div v-for="u in accessList(summary.access && summary.access.subscription)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
-            <el-descriptions-item :label="t('init.accessPortal')">
-              {{ summary.access && summary.access.portal }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.portal)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+            <el-descriptions-item v-if="accessList(summary.access && summary.access.portal).length" :label="t('init.accessPortal')">
+              <div v-for="u in accessList(summary.access && summary.access.portal)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
           </el-descriptions>
         </template>
@@ -337,16 +343,22 @@
           <h4 style="margin:14px 0 8px">{{ t('init.accessTitle') }}</h4>
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item :label="t('init.accessPanel')">
-              {{ summary.access && summary.access.panel }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.panel)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              <div v-for="u in accessList(summary.access && summary.access.panel)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
             <el-descriptions-item :label="t('init.accessSubscription')">
-              {{ summary.access && summary.access.subscription }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.subscription)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              <div v-for="u in accessList(summary.access && summary.access.subscription)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
-            <el-descriptions-item :label="t('init.accessPortal')">
-              {{ summary.access && summary.access.portal }}
-              <el-tag v-if="isInsecure(summary.access && summary.access.portal)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+            <el-descriptions-item v-if="accessList(summary.access && summary.access.portal).length" :label="t('init.accessPortal')">
+              <div v-for="u in accessList(summary.access && summary.access.portal)" :key="u" style="line-height:1.7">
+                {{ u }}
+                <el-tag v-if="isInsecure(u)" size="small" type="warning">{{ t('init.notSecure') }}</el-tag>
+              </div>
             </el-descriptions-item>
           </el-descriptions>
           <div style="font-size:12px;color:#909399;margin-top:10px">{{ t('init.summaryHint') }}</div>

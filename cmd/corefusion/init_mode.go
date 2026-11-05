@@ -249,11 +249,25 @@ func runInit(args []string) {
 			log.Fatalf("init: self-signed certificate failed: %v", err)
 		}
 		draft.TLSMode, draft.TLSCertPath, draft.TLSKeyPath = "self_signed", cp, kp
+		draft.TLSDomains = splitCSV(*tlsDomain)
 	case "acme":
 		domains := splitCSV(*tlsDomain)
 		if *tlsIPCert {
-			// IP 证书：自动取本机公网 IPv4/IPv6，--tls-domain 可再手动追加。
-			domains = append(bootstrap.LocalPublicIPs(), domains...)
+			// IP 证书：优先直连探测本机公网 IPv4/IPv6（NAT 后面也能拿到真实出口地址），
+			// 探测失败再回退网卡上的公网地址；--tls-domain 可再手动追加。
+			var ips []string
+			if v4, v6, derr := certSvc.DetectPublicIP(); derr == nil {
+				if v4 != "" {
+					ips = append(ips, v4)
+				}
+				if v6 != "" {
+					ips = append(ips, v6)
+				}
+			}
+			if len(ips) == 0 {
+				ips = bootstrap.LocalPublicIPs()
+			}
+			domains = append(ips, domains...)
 		}
 		cp, kp, err := bootstrap.IssueACME(context.Background(), dd, certSvc, bootstrap.ACMEDeps{
 			EAB: certificate.NewEABConfigService(repository.NewEABConfigRepository(db.DB)),
@@ -273,6 +287,7 @@ func runInit(args []string) {
 			log.Fatalf("init: ACME issuance failed: %v", err)
 		}
 		draft.TLSMode, draft.TLSCertPath, draft.TLSKeyPath = "acme", cp, kp
+		draft.TLSDomains = domains
 	default:
 		log.Fatalf("init: unsupported tls-mode %q", *tlsMode)
 	}
@@ -283,7 +298,20 @@ func runInit(args []string) {
 	if err := bootstrap.Complete(context.Background(), dd, draft); err != nil {
 		log.Fatalf("init: %v", err)
 	}
-	log.Printf("初始化完成：管理员 %s，端口 %s:%s，访问路径 %s", draft.AdminUsername, draft.ResolvedListenAddr(), draft.ListenPort, draft.WebPath)
+	log.Printf("初始化完成：管理员 %s，访问路径 %s", draft.AdminUsername, draft.WebPath)
+	if sum := bootstrap.Summary(dd, draft); sum != nil {
+		if access, ok := sum["access"].(map[string][]string); ok {
+			for _, u := range access["panel"] {
+				log.Printf("  面板访问: %s%s", u, draft.WebPath)
+			}
+			for _, u := range access["subscription"] {
+				log.Printf("  订阅访问: %s", u)
+			}
+			for _, u := range access["portal"] {
+				log.Printf("  门户访问: %s", u)
+			}
+		}
+	}
 	if *adminPass == "" {
 		log.Printf("[startup] 管理员随机口令（仅显示这一次）：%s", draft.AdminPassword)
 	}

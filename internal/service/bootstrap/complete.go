@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,6 +128,19 @@ func Summary(dataDir string, d *Draft) map[string]any {
 	panelVia := d.viaProxy(d.ProxyAddPanel)
 	subVia := d.viaProxy(d.ProxyAddSubscription)
 	portalVia := d.viaProxy(d.ProxyAddPortal)
+	// 订阅没有独立端口时挂在面板的 /sub/:token；门户关掉时整条不展示。
+	subPath := ""
+	if d.independentPort(d.SubscriptionPort) == "" {
+		subPath = "/sub"
+	}
+	portalURLs := []string{}
+	if d.PortalEnabled {
+		portalPath := ""
+		if d.independentPort(d.PortalPort) == "" {
+			portalPath = "/p"
+		}
+		portalURLs = d.accessURLs(d.PortalDomain, firstNonEmpty(d.PortalPort, d.ListenPort), d.servesTLS(portalVia), portalVia, portalPath)
+	}
 	return map[string]any{
 		"db_type":                d.DBType,
 		"db_dsn":                 maskDSN(d.DSN(dataDir)),
@@ -153,10 +167,10 @@ func Summary(dataDir string, d *Draft) map[string]any {
 		"admin_password": d.AdminPassword,
 		// .env 展示用键值对（已脱敏）；前端「配置清单」的 .env 表格读取此字段。
 		"env": env,
-		"access": map[string]string{
-			"panel":        accessURL(d.PanelDomain, listenAddr, d.ListenPort, d.servesTLS(panelVia), panelVia),
-			"subscription": accessURL(d.SubscriptionDomain, listenAddr, firstNonEmpty(d.SubscriptionPort, d.ListenPort), d.servesTLS(subVia), subVia),
-			"portal":       accessURL(d.PortalDomain, listenAddr, firstNonEmpty(d.PortalPort, d.ListenPort), d.servesTLS(portalVia), portalVia),
+		"access": map[string][]string{
+			"panel":        d.accessURLs(d.PanelDomain, d.ListenPort, d.servesTLS(panelVia), panelVia, ""),
+			"subscription": d.accessURLs(d.SubscriptionDomain, firstNonEmpty(d.SubscriptionPort, d.ListenPort), d.servesTLS(subVia), subVia, subPath),
+			"portal":       portalURLs,
 		},
 	}
 }
@@ -191,23 +205,86 @@ func (d *Draft) viaProxy(add bool) bool {
 	return (d.ProxyType == ProxyNginx || d.ProxyType == ProxyCaddy) && add
 }
 
-// accessURL 生成访问地址。勾选了「一键添加到反向代理」且配置了域名时，
-// 流量走代理的 80/443（上游面板监听 127.0.0.1）→ 不带端口。
-func accessURL(domain, addr, port string, tls, viaProxy bool) string {
+// isWildcardHost 判断监听地址是否为通配/未指定：这类地址只能用于 bind，
+// 写进访问链接会变成 https://0.0.0.0:10111 这种用户点不开的地址。
+func isWildcardHost(h string) bool {
+	switch strings.TrimSpace(h) {
+	case "", "0.0.0.0", "::", "[::]", "*":
+		return true
+	}
+	return false
+}
+
+// certIPHosts 从已签发证书的 SAN 里挑出 IP（「IP 证书」模式）：IPv4 在前、IPv6 在后。
+func (d *Draft) certIPHosts() []string {
+	var v4, v6 []string
+	seen := map[string]bool{}
+	for _, raw := range d.TLSDomains {
+		s := strings.Trim(strings.TrimSpace(raw), "[]")
+		ip := net.ParseIP(s)
+		if ip == nil || seen[ip.String()] {
+			continue
+		}
+		seen[ip.String()] = true
+		if ip.To4() != nil {
+			v4 = append(v4, ip.String())
+		} else {
+			v6 = append(v6, ip.String())
+		}
+	}
+	return append(v4, v6...)
+}
+
+// accessHosts 返回访问链接用的主机列表：
+//   - 配了域名 → 域名；
+//   - IP 证书 → 证书 SAN 里的 IPv4/IPv6（两个都展示）；
+//   - 监听地址是具体 IP → 用它；
+//   - 通配地址（0.0.0.0/::）且没有可用 IP → 回退本机公网地址，最后回退 loopback。
+func (d *Draft) accessHosts(domain string) []string {
+	if h := normalizeHost(domain); h != "" {
+		return []string{h}
+	}
+	if ips := d.certIPHosts(); len(ips) > 0 {
+		return ips
+	}
+	if addr := strings.TrimSpace(d.ListenAddr); !isWildcardHost(addr) {
+		return []string{addr}
+	}
+	if ips := LocalPublicIPs(); len(ips) > 0 {
+		return ips
+	}
+	return []string{LoopbackAddr}
+}
+
+// formatAccessURL 拼一条访问链接：IPv6 必须加方括号，端口为空/0 时省略。
+func formatAccessURL(scheme, host, port, path string) string {
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		host = "[" + host + "]"
+	}
+	u := scheme + "://" + host
+	if p := strings.TrimSpace(port); p != "" && p != "0" {
+		u += ":" + p
+	}
+	return u + path
+}
+
+// accessURLs 生成某一项（面板/订阅/门户）的访问链接列表：
+// 域名 + 一键加入反代 → 由代理对外服务（80/443），不带端口；
+// 直连则按主机列表逐个生成（IPv4 + IPv6 各一条）。
+func (d *Draft) accessURLs(domain, port string, tls, viaProxy bool, path string) []string {
 	scheme := "http"
 	if tls {
 		scheme = "https"
 	}
-	host := normalizeHost(domain)
-	if host == "" {
-		host = addr
+	if viaProxy && normalizeHost(domain) != "" {
+		port, path = "", ""
 	}
-	// 用域名 + 勾了反代 → 由代理对外服务（80/443），不加端口；
-	// 否则面板本机直连才带端口。
-	if (viaProxy && normalizeHost(domain) != "") || strings.TrimSpace(port) == "" || port == "0" {
-		return scheme + "://" + host
+	hosts := d.accessHosts(domain)
+	out := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		out = append(out, formatAccessURL(scheme, h, port, path))
 	}
-	return scheme + "://" + host + ":" + port
+	return out
 }
 
 func firstNonEmpty(a, b string) string {

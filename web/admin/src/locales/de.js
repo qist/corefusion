@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Port",
       "outboundPortHint": "0 = erster von der Registrierung zurückgegebener Port.",
       "outboundCreated": "MASQUE-Outbound erstellt: {tag}. Routing-Regel hinzufügen, um ihn zu nutzen.",
+      "deleteTitle": "WARP-Konfiguration löschen",
+      "deleteRemoteLabel": "Cloudflare-Gerät ebenfalls abmelden",
+      "deleteRemoteHint": "Nicht angehakt: nur der Panel-Eintrag wird gelöscht, das Cloud-Gerät bleibt bestehen. Abmeldung ist nicht umkehrbar.",
+      "deleteRemoteFailed": "Lokal gelöscht, aber Cloud-Abmeldung fehlgeschlagen: {error}",
       "active": "Aktiviert",
       "registrationAt": "Registrierungszeit"
     }

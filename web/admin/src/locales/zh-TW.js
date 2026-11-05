@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "連接埠",
       "outboundPortHint": "0 表示使用註冊回傳的第一個連接埠。",
       "outboundCreated": "已建立 MASQUE 出站：{tag}，到路由引用即可生效。",
+      "deleteTitle": "刪除 WARP 設定",
+      "deleteRemoteLabel": "同時註銷 Cloudflare 雲端裝置",
+      "deleteRemoteHint": "未勾選則只刪除面板紀錄，雲端裝置會殘留；註銷不可復原。",
+      "deleteRemoteFailed": "本地已刪除，但雲端註銷失敗：{error}",
       "active": "已啟用",
       "registrationAt": "註冊時間"
     }

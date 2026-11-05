@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "المنفذ",
       "outboundPortHint": "0 يعني استخدام أول منفذ يعيده التسجيل.",
       "outboundCreated": "تم إنشاء خروج MASQUE: {tag}. أضف قاعدة توجيه لاستخدامه.",
+      "deleteTitle": "حذف إعداد WARP",
+      "deleteRemoteLabel": "حذف جهاز Cloudflare أيضًا",
+      "deleteRemoteHint": "بدون تحديد: يُحذف سجل اللوحة فقط ويبقى الجهاز في السحابة. الحذف غير قابل للتراجع.",
+      "deleteRemoteFailed": "تم الحذف محليًا، لكن فشل حذف الجهاز السحابي: {error}",
       "active": "مفعّل",
       "registrationAt": "وقت التسجيل"
     }

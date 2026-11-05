@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "พอร์ต",
       "outboundPortHint": "0 = ใช้พอร์ตแรกที่ได้จากการลงทะเบียน",
       "outboundCreated": "สร้าง outbound MASQUE แล้ว: {tag} เพิ่มกฎเส้นทางเพื่อใช้งาน",
+      "deleteTitle": "ลบการตั้งค่า WARP",
+      "deleteRemoteLabel": "ยกเลิกการลงทะเบียนอุปกรณ์ Cloudflare ด้วย",
+      "deleteRemoteHint": "หากไม่เลือก จะลบเฉพาะระเบียนในแผงควบคุมและอุปกรณ์ยังคงอยู่ในคลาวด์ การยกเลิกไม่สามารถย้อนกลับได้",
+      "deleteRemoteFailed": "ลบในเครื่องแล้ว แต่ยกเลิกการลงทะเบียนบนคลาวด์ไม่สำเร็จ: {error}",
       "active": "เปิดใช้งานแล้ว",
       "registrationAt": "เวลาลงทะเบียน"
     }

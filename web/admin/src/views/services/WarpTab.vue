@@ -129,12 +129,25 @@
         <el-button type="primary" @click="handleCreateOutbound" :loading="outboundLoading">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- Delete dialog -->
+    <el-dialog v-model="showDeleteDialog" :title="t('service.warp.deleteTitle')" width="460px">
+      <div>{{ t('service.warp.resetConfirm') }}</div>
+      <el-checkbox v-model="deleteRemote" style="margin-top:14px">
+        {{ t('service.warp.deleteRemoteLabel') }}
+      </el-checkbox>
+      <div class="hint">{{ t('service.warp.deleteRemoteHint') }}</div>
+      <template #footer>
+        <el-button @click="showDeleteDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" @click="confirmDelete" :loading="deleting">{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 import { useIsMobile } from '../../composables/useIsMobile'
@@ -153,6 +166,10 @@ const warpConfigs = ref([])
 const currentConfig = ref('')
 const showRegisterDialog = ref(false)
 const showOutboundDialog = ref(false)
+const showDeleteDialog = ref(false)
+const deleteTarget = ref(null)
+const deleteRemote = ref(false)
+const deleting = ref(false)
 const registerForm = ref({ type: 'wireguard', core_type: '', remark: '' })
 const outboundForm = ref({ warpId: 0, tag: '', remark: '', alpn: 'h3', port: 0 })
 const lastCreatedTag = ref('')
@@ -264,14 +281,29 @@ async function handleCreateOutbound() {
   }
 }
 
-async function handleDelete(row) {
-  await ElMessageBox.confirm(t('service.warp.resetConfirm'), t('common.confirm'))
+function handleDelete(row) {
+  deleteTarget.value = row
+  deleteRemote.value = false
+  showDeleteDialog.value = true
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value) return
+  deleting.value = true
   try {
-    await client.delete(`${warpBase.value}/${row.id}`)
-    ElMessage.success(t('common.success'))
+    const data = await client.delete(`${warpBase.value}/${deleteTarget.value.id}?remote=${deleteRemote.value ? 1 : 0}`)
+    // 云端注销失败不影响本地删除，但要明确告知，避免以为设备已释放。
+    if (data && data.remote_attempted && !data.remote_deleted) {
+      ElMessage.warning(t('service.warp.deleteRemoteFailed', { error: data.remote_error || '' }))
+    } else {
+      ElMessage.success(t('common.success'))
+    }
+    showDeleteDialog.value = false
     await fetchWarpConfigs()
   } catch (e) {
     ElMessage.error(e.message || 'Failed')
+  } finally {
+    deleting.value = false
   }
 }
 

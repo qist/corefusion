@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Port",
       "outboundPortHint": "0 = kayıttan dönen ilk portu kullan.",
       "outboundCreated": "MASQUE outbound oluşturuldu: {tag}. Kullanmak için yönlendirme kuralı ekleyin.",
+      "deleteTitle": "WARP Yapılandırmasını Sil",
+      "deleteRemoteLabel": "Cloudflare cihazını da kayıttan sil",
+      "deleteRemoteHint": "İşaretlenmezse yalnızca panel kaydı silinir, bulut cihazı kalır. Kayıt silme geri alınamaz.",
+      "deleteRemoteFailed": "Yerel olarak silindi, ancak bulut kaydı silinemedi: {error}",
       "active": "Etkinleştirildi",
       "registrationAt": "Kayıt zamanı"
     }

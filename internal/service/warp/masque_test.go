@@ -19,6 +19,7 @@ func masqueWarpConfig() *entity.WarpConfig {
 		CoreType:      "xray",
 		Remark:        "warp masque",
 		DeviceID:      "dev-1",
+		Token:         "token-1",
 		PrivateKey:    "cHJpdmF0ZQ==",
 		PublicKey:     "cHVibGlj",
 		AddressIPv4:   "172.16.0.2",

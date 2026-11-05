@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Port",
       "outboundPortHint": "0 = gunakan port pertama dari hasil registrasi.",
       "outboundCreated": "Outbound MASQUE dibuat: {tag}. Tambahkan aturan routing untuk memakainya.",
+      "deleteTitle": "Hapus Konfigurasi WARP",
+      "deleteRemoteLabel": "Hapus juga perangkat Cloudflare",
+      "deleteRemoteHint": "Tanpa centang: hanya catatan panel yang dihapus dan perangkat tetap ada di cloud. Penghapusan tidak dapat dibatalkan.",
+      "deleteRemoteFailed": "Dihapus secara lokal, tetapi penghapusan di cloud gagal: {error}",
       "active": "Aktif",
       "registrationAt": "Waktu pendaftaran"
     }

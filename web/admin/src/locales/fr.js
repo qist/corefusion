@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Port",
       "outboundPortHint": "0 = utiliser le premier port renvoyé par l'enregistrement.",
       "outboundCreated": "Outbound MASQUE créé : {tag}. Ajoutez une règle de routage pour l'utiliser.",
+      "deleteTitle": "Supprimer la configuration WARP",
+      "deleteRemoteLabel": "Supprimer aussi l'appareil Cloudflare",
+      "deleteRemoteHint": "Non coché : seul l'enregistrement du panneau est supprimé, l'appareil reste dans le cloud. La suppression est irréversible.",
+      "deleteRemoteFailed": "Supprimé localement, mais la suppression cloud a échoué : {error}",
       "active": "Activé",
       "registrationAt": "Date d’inscription"
     }

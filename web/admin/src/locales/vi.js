@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Cổng",
       "outboundPortHint": "0 = dùng cổng đầu tiên do đăng ký trả về.",
       "outboundCreated": "Đã tạo outbound MASQUE: {tag}. Thêm quy tắc định tuyến để sử dụng.",
+      "deleteTitle": "Xóa cấu hình WARP",
+      "deleteRemoteLabel": "Hủy đăng ký thiết bị Cloudflare",
+      "deleteRemoteHint": "Không chọn: chỉ xóa bản ghi trên bảng điều khiển, thiết bị vẫn còn trên cloud. Hủy đăng ký không thể hoàn tác.",
+      "deleteRemoteFailed": "Đã xóa cục bộ, nhưng hủy đăng ký trên cloud thất bại: {error}",
       "active": "Đã kích hoạt",
       "registrationAt": "Thời gian đăng ký"
     }

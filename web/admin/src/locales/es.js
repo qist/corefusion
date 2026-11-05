@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "Puerto",
       "outboundPortHint": "0 = usar el primer puerto devuelto por el registro.",
       "outboundCreated": "Outbound MASQUE creado: {tag}. Añade una regla de enrutamiento para usarlo.",
+      "deleteTitle": "Eliminar configuración WARP",
+      "deleteRemoteLabel": "Eliminar también el dispositivo de Cloudflare",
+      "deleteRemoteHint": "Sin marcar: solo se borra el registro del panel y el dispositivo permanece en la nube. La eliminación es irreversible.",
+      "deleteRemoteFailed": "Eliminado localmente, pero falló la eliminación en la nube: {error}",
       "active": "Activado",
       "registrationAt": "Fecha de registro"
     }

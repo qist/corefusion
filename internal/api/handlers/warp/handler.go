@@ -3,6 +3,7 @@ package warp
 import (
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -145,19 +146,33 @@ func (h *Handler) GetConfig(c *gin.Context) {
 	response.OK(c, gin.H{"config": config})
 }
 
-// Delete handles DELETE /api/v1/node-servers/:id/warp/:warpId
-// Deletes a specific WARP config by its ID.
+// Delete handles DELETE /api/v1/node-servers/:id/warp/:warpId?remote=true
+// Deletes a specific WARP config by its ID. remote=true 时同时注销 Cloudflare 设备。
 func (h *Handler) Delete(c *gin.Context) {
 	warpID, err := strconv.ParseInt(c.Param("warpId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid warp config ID")
 		return
 	}
-	if err := h.svc.Reset(warpID); err != nil {
+	remote := false
+	switch strings.ToLower(strings.TrimSpace(c.Query("remote"))) {
+	case "1", "true", "yes":
+		remote = true
+	}
+	res, err := h.svc.Delete(warpID, remote)
+	if err != nil {
 		response.InternalError(c, "RESET_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"message": "deleted"})
+	if res == nil {
+		res = &warp.DeleteResult{}
+	}
+	response.OK(c, gin.H{
+		"message":          "deleted",
+		"remote_attempted": res.RemoteAttempted,
+		"remote_deleted":   res.RemoteDeleted,
+		"remote_error":     res.RemoteError,
+	})
 }
 
 // RegisterMasque handles POST /api/v1/node-servers/:id/warp/masque/register

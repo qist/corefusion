@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "پورت",
       "outboundPortHint": "0 یعنی نخستین پورت بازگشتی از ثبت استفاده شود.",
       "outboundCreated": "خروجی MASQUE ساخته شد: {tag}. برای استفاده یک قاعده مسیریابی اضافه کنید.",
+      "deleteTitle": "حذف پیکربندی WARP",
+      "deleteRemoteLabel": "دستگاه Cloudflare نیز حذف شود",
+      "deleteRemoteHint": "اگر انتخاب نشود فقط رکورد پنل حذف می‌شود و دستگاه در ابر باقی می‌ماند. حذف قابل بازگشت نیست.",
+      "deleteRemoteFailed": "به‌صورت محلی حذف شد، اما حذف دستگاه ابری ناموفق بود: {error}",
       "active": "فعال‌شده",
       "registrationAt": "زمان ثبت‌نام"
     }

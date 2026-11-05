@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "ポート",
       "outboundPortHint": "0 は登録時に返された最初のポートを使用。",
       "outboundCreated": "MASQUE 出站を作成しました：{tag}。利用するにはルーティングルールを追加してください。",
+      "deleteTitle": "WARP 設定を削除",
+      "deleteRemoteLabel": "Cloudflare のデバイスも登録解除する",
+      "deleteRemoteHint": "未チェックの場合、パネルのレコードのみ削除され、クラウド側のデバイスは残ります。登録解除は元に戻せません。",
+      "deleteRemoteFailed": "ローカルからは削除しましたが、クラウドの登録解除に失敗しました: {error}",
       "active": "有効化済み",
       "registrationAt": "登録日時"
     }

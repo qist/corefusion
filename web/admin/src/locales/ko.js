@@ -1406,6 +1406,10 @@ export default {
       "outboundPort": "포트",
       "outboundPortHint": "0이면 등록 시 반환된 첫 번째 포트를 사용합니다.",
       "outboundCreated": "MASQUE 아웃바운드 생성됨: {tag}. 라우팅 규칙을 추가해 사용하세요.",
+      "deleteTitle": "WARP 설정 삭제",
+      "deleteRemoteLabel": "Cloudflare 장치도 등록 해제",
+      "deleteRemoteHint": "선택하지 않으면 패널 레코드만 삭제되고 클라우드 장치는 남습니다. 등록 해제는 되돌릴 수 없습니다.",
+      "deleteRemoteFailed": "로컬에서는 삭제했지만 클라우드 등록 해제에 실패했습니다: {error}",
       "active": "활성화됨",
       "registrationAt": "등록 시간"
     }

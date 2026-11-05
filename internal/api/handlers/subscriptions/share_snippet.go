@@ -161,6 +161,19 @@ func applyClientCredentials(protocol string, client, view map[string]interface{}
 		if psk := getString(view, "psk", ""); psk != "" {
 			*password = psk
 		}
+	case "masque":
+		// MASQUE 入站用 HTTP Basic：用户记录里是 email + pass（不是 password）。
+		// 出站侧对应 masqueSettings.user / masqueSettings.pass，缺任一项都是 401。
+		user := getString(client, "email", "")
+		if user == "" {
+			user = getString(client, "user", "")
+		}
+		if user != "" {
+			extra["username"] = user
+		}
+		if pass := getString(client, "pass", ""); pass != "" {
+			*password = pass
+		}
 	}
 }
 

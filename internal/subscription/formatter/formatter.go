@@ -409,6 +409,8 @@ var singboxRequireTLS = map[string]bool{
 // xrayRequireTLS 同理：xray 侧这些协议也必须 TLS。
 var xrayRequireTLS = map[string]bool{
 	"hysteria2": true, "hysteria": true, "tuic": true,
+	// masque 只能搭配 masque 传输且必须 TLS（xray 文档明确约束）。
+	"masque": true,
 }
 
 // extraFingerprint 取客户端 uTLS 指纹：内部构造写 client-fingerprint（mihomo 口径），
@@ -741,6 +743,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 				server["users"] = []map[string]interface{}{{"user": user, "pass": pass}}
 			}
 			settings["servers"] = []map[string]interface{}{server}
+		case "masque":
+			// MASQUE 出站：settings 只有 address/port/remoteDNS（RFC 9484 CONNECT-IP）。
+			// 认证与 HTTP 参数在 streamSettings.masqueSettings，见下方。
+			settings["address"] = node.Host
+			settings["port"] = node.Port
+			if dns := extraStringList(node.Extra["remote-dns"]); len(dns) > 0 {
+				settings["remoteDNS"] = dns
+			}
 		}
 		ob["settings"] = settings
 
@@ -1060,6 +1070,26 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 				streamSettings["finalmask"] = fm
 			}
 			streamSettings["hysteriaSettings"] = hysteriaSettings
+		}
+		if node.Protocol == "masque" {
+			// masqueSettings：path 必须与服务端完全一致（RFC 6570 模板），
+			// user/pass 是入站的 HTTP Basic 凭据。缺 path 时 xray 用默认模板，
+			// 与服务端不一致就会把请求当普通 HTTP → 隧道建不起来。
+			mq := map[string]interface{}{}
+			if path, ok := node.Extra["masque-path"].(string); ok && path != "" {
+				mq["path"] = path
+			}
+			if user := extraStringField(node.Extra, "username", "user"); user != "" {
+				mq["user"] = user
+			}
+			if node.Password != "" {
+				mq["pass"] = node.Password
+			}
+			if len(mq) > 0 {
+				streamSettings["masqueSettings"] = mq
+			}
+			// masque 只能搭配 masque 传输（normalizeNodeTransport 已保留原名）。
+			streamSettings["network"] = "masque"
 		}
 		ob["streamSettings"] = streamSettings
 

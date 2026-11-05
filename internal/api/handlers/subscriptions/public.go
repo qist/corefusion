@@ -226,6 +226,11 @@ var shareableProtocols = map[string]bool{
 	"anytls": true,
 	"naive":  true,
 	"snell":  true,
+	// masque 只有 **xray_json** 格式能表达（见 formatSupportedProtocols）：
+	// 没有任何客户端有 masque:// 之类的 URI 方案，mihomo 的 masque 只认
+	// private-key/public-key（mTLS），连不上我们 HTTP Basic 认证的入站，
+	// sing-box 压根没有 masque 出站。所以这里只放行"能渲染"，具体格式由矩阵过滤。
+	"masque": true,
 }
 
 // shareDomainEntry holds a share domain with its ports.
@@ -2838,6 +2843,17 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			}
 			if rp.Fingerprint != "" {
 				extra["client-fingerprint"] = rp.Fingerprint
+			}
+		}
+	}
+
+	// MASQUE：HTTP 请求参数在 streamSettings.masqueSettings，`path` 必须与服务端**完全一致**
+	// （RFC 6570 模板，客户端写错或漏写都会被边缘/服务端当普通请求，隧道建不起来）。
+	// 只由 XrayFormatter 消费；mihomo / sing-box 都没有对应的出站字段。
+	if strings.EqualFold(getString(ss, "network", ""), "masque") {
+		if mq := getMap(ss, "masqueSettings"); mq != nil {
+			if path := getString(mq, "path", ""); path != "" {
+				extra["masque-path"] = path
 			}
 		}
 	}

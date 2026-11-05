@@ -463,6 +463,11 @@ func formatSupportedProtocols(format string) map[string]bool {
 			"socks": true, "http": true, "socks5": true, "https": true,
 			// mixed 由 socks5 出站表达（xray 有 socks 出站）
 			"mixed": true,
+			// masque 只有 xray 出站能表达（user/pass + masqueSettings）。
+			// 其它格式一律不给：没有 masque:// URI 方案，mihomo 的 masque 只认
+			// mTLS 的 private-key/public-key，连不上 HTTP Basic 的入站，
+			// sing-box 没有 masque 出站。发出去就是"加载失败"或"连不上"。
+			"masque": true,
 		}
 	case "singbox_json":
 		// sing-box 客户端：支持面最广。注意：

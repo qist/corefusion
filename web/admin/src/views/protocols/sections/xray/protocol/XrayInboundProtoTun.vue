@@ -16,14 +16,14 @@
       <el-input v-model="rf._tunDnsStr" placeholder="1.1.1.1, 8.8.8.8" />
       <div class="hint">{{ t('protoCenter.transport.tunDns') }}</div>
     </el-form-item>
-    <el-form-item label="User Level">
+    <el-form-item :label="t('protoCenter.outbounds.userLevel')">
       <el-input-number v-model="rf.settings.userLevel" :min="0" />
     </el-form-item>
-    <el-form-item label="Auto System Routing Table">
+    <el-form-item :label="t('proto2.autoSystemRoutingTable')">
       <el-input v-model="rf._tunAutoRoutingStr" placeholder="0.0.0.0/0, ::/0" />
       <div class="hint">{{ t('protoCenter.transport.tunAutoRoute') }}</div>
     </el-form-item>
-    <el-form-item label="Auto Outbounds Interface">
+    <el-form-item :label="t('proto2.autoOutboundsInterface')">
       <el-input v-model="rf.settings.autoOutboundsInterface" placeholder="auto" />
       <div class="hint">{{ t('protoCenter.transport.tunStrictRoute') }}</div>
     </el-form-item>

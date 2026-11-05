@@ -1,26 +1,26 @@
 <template>
   <el-form label-width="140px" label-position="left">
-    <el-form-item label="Allowed Network">
+    <el-form-item :label="t('proto2.allowedNetwork')">
       <el-select v-model="rf.settings.allowedNetwork" style="width:100%">
         <el-option label="tcp" value="tcp" /><el-option label="udp" value="udp" /><el-option label="tcp,udp" value="tcp,udp" />
       </el-select>
     </el-form-item>
-    <el-form-item label="Rewrite Address">
+    <el-form-item :label="t('xrayUi.rewriteAddress')">
       <el-input v-model="rf.settings.rewriteAddress" placeholder="8.8.8.8 or domain.com" />
       <div class="hint">{{ t('protoCenter.transport.tunnelDest') }}</div>
     </el-form-item>
-    <el-form-item label="Rewrite Port">
+    <el-form-item :label="t('xrayUi.rewritePort')">
       <el-input-number v-model="rf.settings.rewritePort" :min="0" :max="65535" />
       <div class="hint">{{ t('protoCenter.transport.tunnelPort') }}</div>
     </el-form-item>
-    <el-form-item label="Follow Redirect">
+    <el-form-item :label="t('proto2.followRedirect')">
       <el-switch v-model="rf.settings.followRedirect" />
       <div class="hint">{{ t('protoCenter.transport.tunnelFollowRedirect') }}</div>
     </el-form-item>
-    <el-form-item label="User Level">
+    <el-form-item :label="t('protoCenter.outbounds.userLevel')">
       <el-input-number v-model="rf.settings.userLevel" :min="0" />
     </el-form-item>
-    <el-form-item label="Port Map">
+    <el-form-item :label="t('proto2.portMap')">
       <div v-for="(m, i) in rf._portMap" :key="i" style="display:flex;gap:8px;margin-bottom:4px">
         <el-input v-model="m.local" placeholder="5555" style="width:30%" />
         <el-input v-model="m.remote" placeholder="1.1.1.1:7777" style="width:50%" />

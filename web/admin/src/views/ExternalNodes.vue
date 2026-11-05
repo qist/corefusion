@@ -89,7 +89,7 @@
     <el-dialog v-model="importDlg" :title="t('externalNodes.importDialogTitle')" width="700">
       <el-form label-width="100px" size="small">
         <el-form-item :label="t('externalNodes.name')">
-          <el-input v-model="form.name" placeholder="My Nodes" />
+          <el-input v-model="form.name" :placeholder="t('proto2.myNodes')" />
         </el-form-item>
         <el-form-item :label="t('externalNodes.sourceType')">
           <el-select v-model="form.source_type" style="width:200px">

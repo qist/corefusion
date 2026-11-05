@@ -4,22 +4,22 @@
       <div style="display:flex;gap:8px;width:100%">
         <el-select v-model="rf.settings._encryptionType" style="flex:1" clearable @change="onVlessEncryptionTypeChange">
           <el-option label="None" value="" />
-          <el-option label="X25519 (Classic)" value="x25519" />
+          <el-option :label="t('proto2.x25519Classic')" value="x25519" />
           <el-option label="ML-KEM-768 (Post-Quantum)" value="mlkem768" />
         </el-select>
         <el-button size="small" @click="generateVlessEnc" :disabled="!rf.settings._encryptionType">{{ t('protoCenter.tls.generate') }}</el-button>
       </div>
       <div class="hint">VLESS-level encryption (vlessenc). Select type first, then generate keys.</div>
     </el-form-item>
-    <el-form-item label="Encryption Key">
+    <el-form-item :label="t('protoCenter.inbounds.encryptionKey')">
       <el-input v-model="rf.settings.encryption" placeholder="none" readonly />
       <div class="hint">Client-side encryption key (auto-generated)</div>
     </el-form-item>
-    <el-form-item label="Decryption Key">
+    <el-form-item :label="t('protoCenter.inbounds.decryptionKey')">
       <el-input v-model="rf.settings.decryption" placeholder="none" readonly />
       <div class="hint">Server-side decryption key (auto-generated)</div>
     </el-form-item>
-    <el-form-item label="Default Flow">
+    <el-form-item :label="t('proto2.defaultFlow')">
       <el-select v-model="rf.settings.flow" style="width:100%" clearable>
         <el-option label="none" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
@@ -53,7 +53,7 @@
       </XrayUserItem>
     </div>
     <!-- Vision Seed (settings level, only when any user has flow) -->
-    <el-form-item v-if="canEnableFlow && hasFlowUser" label="Vision Seed">
+    <el-form-item v-if="canEnableFlow && hasFlowUser" :label="t('proto2.visionSeed')">
       <div style="display:flex;gap:4px;align-items:center">
         <el-input-number v-for="(_, si) in 4" :key="si" v-model="getTestseed(rf.settings)[si]" :min="1" size="small" style="width:25%" />
         <el-button size="small" @click="randomSeed(rf.settings)">Rand</el-button>

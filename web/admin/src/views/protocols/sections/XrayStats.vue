@@ -1,6 +1,6 @@
 <template>
   <el-form label-width="120px" label-position="left">
-    <el-form-item label="Enable Stats">
+    <el-form-item :label="t('proto2.enableStats')">
       <el-switch v-model="enabled" @change="emitUpdate" />
       <span class="hint">Enable the traffic statistics engine</span>
     </el-form-item>

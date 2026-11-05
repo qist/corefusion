@@ -8,17 +8,17 @@
       <!-- Credentials / protocol-specific fields injected by parent -->
       <slot />
       <el-divider content-position="left">Traffic &amp; Expiry</el-divider>
-      <el-form-item label="Traffic Quota">
+      <el-form-item :label="t('menu.trafficQuota')">
         <el-input v-model="user._quota" placeholder="100GB, unlimited" />
       </el-form-item>
-      <el-form-item label="Traffic Used">
+      <el-form-item :label="t('proto2.trafficUsed')">
         <div style="display:flex;gap:8px;align-items:center">
           <span style="font-size:13px">↑ {{ formatTraffic(user._usedUp || 0) }} ↓ {{ formatTraffic(user._usedDown || 0) }}</span>
           <el-button size="small" type="warning" plain @click="resetTraffic(user)">Reset</el-button>
         </div>
       </el-form-item>
-      <el-form-item label="Expiry Time">
-        <el-date-picker v-model="user._expiry" type="datetime" placeholder="Select date" style="width:100%" />
+      <el-form-item :label="t('client.expiryTime')">
+        <el-date-picker v-model="user._expiry" type="datetime" :placeholder="t('proto2.selectDate')" style="width:100%" />
       </el-form-item>
     </el-form>
   </div>

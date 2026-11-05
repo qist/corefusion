@@ -22,7 +22,7 @@
         <el-option label="none (discard)" value="none" />
       </el-select>
     </el-form-item>
-    <el-form-item v-if="outputMode === 'file'" label="File Path">
+    <el-form-item v-if="outputMode === 'file'" :label="t('protoCenter.log.filePath')">
       <el-input v-model="form.output" placeholder="logs/singbox.log" @change="emit" />
     </el-form-item>
     <el-form-item label="Timestamp">

@@ -33,7 +33,7 @@
         <el-select v-model="model._snellMode" style="width:100%" @change="emit">
           <el-option label="Default" value="default" />
           <el-option label="Unshaped" value="unshaped" />
-          <el-option label="Unsafe Raw" value="unsafe-raw" />
+          <el-option :label="t('proto2.unsafeRaw')" value="unsafe-raw" />
         </el-select>
       </el-form-item>
     </template>

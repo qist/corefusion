@@ -10,7 +10,7 @@
       <!-- IPv4 Pool -->
       <el-divider content-position="left">IPv4 Pool</el-divider>
       <el-form label-width="140px" label-position="left">
-        <el-form-item label="Enable IPv4">
+        <el-form-item :label="t('proto2.enableIpv4')">
           <el-switch v-model="ipv4Enabled" @change="emit" />
         </el-form-item>
         <template v-if="ipv4Enabled">
@@ -28,7 +28,7 @@
       <!-- IPv6 Pool -->
       <el-divider content-position="left">IPv6 Pool</el-divider>
       <el-form label-width="140px" label-position="left">
-        <el-form-item label="Enable IPv6">
+        <el-form-item :label="t('proto2.enableIpv6')">
           <el-switch v-model="ipv6Enabled" @change="emit" />
         </el-form-item>
         <template v-if="ipv6Enabled">

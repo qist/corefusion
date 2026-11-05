@@ -1,6 +1,6 @@
 <template>
   <el-form label-width="120px" label-position="left">
-    <el-form-item label="Listen Address">
+    <el-form-item :label="t('protoCenter.api.listen')">
       <el-input v-model="form.server" placeholder="[::]:443" />
     </el-form-item>
   </el-form>

@@ -13,8 +13,8 @@
         <el-form-item :label="t('protoCenter.dns.queryStrategy')">
           <el-select v-model="form.queryStrategy" style="width:100%" @change="emit">
             <el-option label="UseIP (A+AAAA)" value="UseIP" />
-            <el-option label="UseIPv4 (A only)" value="UseIPv4" />
-            <el-option label="UseIPv6 (AAAA only)" value="UseIPv6" />
+            <el-option :label="t('proto2.useIpv4Only')" value="UseIPv4" />
+            <el-option :label="t('proto2.useIpv6Only')" value="UseIPv6" />
             <el-option label="UseSystem" value="UseSystem" />
           </el-select>
           <div class="hint">{{ t('protoCenter.dns.queryStrategyHint') }}</div>
@@ -105,8 +105,8 @@
             <el-select v-model="ruleForm.queryStrategy" style="width:100%" clearable>
               <el-option label="Inherit" value="" />
               <el-option label="UseIP (A+AAAA)" value="UseIP" />
-              <el-option label="UseIPv4 (A only)" value="UseIPv4" />
-              <el-option label="UseIPv6 (AAAA only)" value="UseIPv6" />
+              <el-option :label="t('proto2.useIpv4Only')" value="UseIPv4" />
+              <el-option :label="t('proto2.useIpv6Only')" value="UseIPv6" />
               <el-option label="UseSystem" value="UseSystem" />
             </el-select>
           </el-form-item>
@@ -114,7 +114,7 @@
             <el-input v-model="ruleForm._expectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
             <div class="hint">{{ t('protoCenter.dns.expectedIPsHint') }}</div>
           </el-form-item>
-          <el-form-item label="Expect IPs">
+          <el-form-item :label="t('proto2.expectIps')">
             <el-input v-model="ruleForm._expectIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
             <div class="hint">匹配该域名的 DNS 查询：只接受解析结果落在这些 IP/geoip 里的应答（与 expectedIPs 是两个独立字段）</div>
           </el-form-item>

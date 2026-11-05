@@ -1,6 +1,6 @@
 <template>
   <el-form label-width="140px" label-position="left">
-    <el-form-item label="Congestion Control">
+    <el-form-item :label="t('protoCenter.outbounds.kcpCongestion')">
       <el-select v-model="form" style="width:100%" @change="emitUpdate">
         <el-option label="BBR" value="bbr" /><el-option label="Cubic" value="cubic" /><el-option label="New Reno" value="new_reno" />
       </el-select>

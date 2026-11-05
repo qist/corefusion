@@ -257,7 +257,7 @@
       <el-form :model="siteForm" label-width="110px" size="small">
         <el-form-item :label="t('common.name')"><el-input v-model="siteForm.name" /></el-form-item>
         <el-form-item :label="t('charge.siteUrl')"><el-input v-model="siteForm.site_url" placeholder="https://pay.example.com" /></el-form-item>
-        <el-form-item label="API Key"><el-input v-model="siteForm.api_key" type="password" show-password /></el-form-item>
+        <el-form-item :label="t('proto2.apiKey')"><el-input v-model="siteForm.api_key" type="password" show-password /></el-form-item>
         <el-form-item :label="t('charge.callbackSecret')">
           <div style="display:flex;gap:8px;width:100%">
             <el-input v-model="siteForm.callback_secret" type="password" show-password :placeholder="t('charge.secretAutoGen')" style="flex:1" />

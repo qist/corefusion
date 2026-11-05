@@ -6,7 +6,7 @@
         <el-button size="small" @click="genWgKeyPair">Generate</el-button>
       </div>
     </el-form-item>
-    <el-form-item label="Public Key">
+    <el-form-item :label="t('service.warp.publicKey')">
       <el-input v-model="rf._wgPublicKey" readonly />
       <div class="hint">{{ t('protoCenter.transport.autoDerive') }}</div>
     </el-form-item>
@@ -14,7 +14,7 @@
       <el-input-number v-model="rf.settings.mtu" :min="0" />
       <div class="hint">{{ t('protoCenter.transport.defaultMtu') }}</div>
     </el-form-item>
-    <el-form-item label="No Kernel TUN">
+    <el-form-item :label="t('misc.noKernelTun')">
       <el-switch v-model="rf.settings.noKernelTun" />
     </el-form-item>
     <el-form-item label="Workers">
@@ -27,9 +27,9 @@
         <el-button size="small" type="danger" text @click="rf.settings.peers.splice(pi,1)">X</el-button>
       </div>
       <el-form label-width="100px" label-position="left" size="small">
-        <el-form-item label="Public Key"><el-input v-model="p.publicKey" /></el-form-item>
-        <el-form-item label="Allowed IPs"><el-input v-model="p._allowedIPsStr" placeholder="0.0.0.0/0, ::/0" /></el-form-item>
-        <el-form-item label="Keep Alive"><el-input-number v-model="p.keepAlive" :min="0" /></el-form-item>
+        <el-form-item :label="t('service.warp.publicKey')"><el-input v-model="p.publicKey" /></el-form-item>
+        <el-form-item :label="t('singbox.protocol.wireguard.allowedIPs')"><el-input v-model="p._allowedIPsStr" placeholder="0.0.0.0/0, ::/0" /></el-form-item>
+        <el-form-item :label="t('singbox.protocol.wireguard.keepAlive')"><el-input-number v-model="p.keepAlive" :min="0" /></el-form-item>
         <el-form-item label="Comment"><el-input v-model="p.comment" placeholder="e.g. iPhone, Laptop" /></el-form-item>
       </el-form>
     </div>

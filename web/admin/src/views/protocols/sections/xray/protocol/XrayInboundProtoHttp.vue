@@ -9,7 +9,7 @@
   <el-button size="small" @click="addAccount">+ Add Account</el-button>
   <el-divider content-position="left">Options</el-divider>
   <el-form label-width="140px" label-position="left">
-    <el-form-item label="Allow Transparent">
+    <el-form-item :label="t('proto2.allowTransparent')">
       <el-switch v-model="rf.settings.allowTransparent" />
     </el-form-item>
   </el-form>

@@ -1,9 +1,9 @@
 <template>
   <el-form label-width="120px" label-position="left">
-    <el-form-item label="Cert Path">
+    <el-form-item :label="t('certificate.certPath')">
       <el-input v-model="form.cert" placeholder="/path/to/cert.pem" />
     </el-form-item>
-    <el-form-item label="Key Path">
+    <el-form-item :label="t('singbox.tls.keyPath')">
       <el-input v-model="form.key" placeholder="/path/to/key.pem" />
     </el-form-item>
     <el-form-item label="ALPN">

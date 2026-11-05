@@ -90,7 +90,7 @@
     <el-dialog v-model="sourceDialogVisible" :title="editingSource ? t('common.edit') : t('service.rules.addSource')" width="600">
       <el-form :model="sourceForm" label-width="100px">
         <el-form-item :label="t('common.name')"><el-input v-model="sourceForm.name" /></el-form-item>
-        <el-form-item label="Repo URL">
+        <el-form-item :label="t('proto2.repoUrl')">
           <el-input v-model="sourceForm.repo_url" :placeholder="t('service.rules.repoUrlPlaceholder')" @blur="fetchAssetsForSource" />
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('service.rules.repoUrlHint') }}</div>
         </el-form-item>

@@ -540,7 +540,7 @@
           <el-form-item :label="t('subfmt.snifferSkipDomain')">
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._snifferSkipDomainEnabled" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferSkipDomain" type="textarea" :rows="2" placeholder="Mijia Cloud" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDomainEnabled" style="flex:1" @change="emit" />
+              <el-input v-model="modelValue._snifferSkipDomain" type="textarea" :rows="2" :placeholder="t('proto2.mijiaCloud')" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDomainEnabled" style="flex:1" @change="emit" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferSkipSrcAddr')">

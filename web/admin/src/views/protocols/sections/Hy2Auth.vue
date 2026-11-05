@@ -1,6 +1,6 @@
 <template>
   <el-form label-width="120px" label-position="left">
-    <el-form-item label="Auth Type">
+    <el-form-item :label="t('proto2.authType')">
       <el-select v-model="form.type" style="width:100%">
         <el-option label="Password" value="password" /><el-option label="User/Pass" value="userpass" />
       </el-select>

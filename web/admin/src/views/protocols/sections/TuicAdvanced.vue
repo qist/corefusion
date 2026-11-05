@@ -1,18 +1,18 @@
 <template>
   <el-form label-width="180px" label-position="left">
-    <el-form-item label="Max Idle Time (ms)">
+    <el-form-item :label="t('proto2.maxIdleTimeMs')">
       <el-input-number v-model="form.max_idle_time" :min="0" />
     </el-form-item>
-    <el-form-item label="Auth Timeout (ms)">
+    <el-form-item :label="t('proto2.authTimeoutMs')">
       <el-input-number v-model="form.auth_timeout" :min="0" />
     </el-form-item>
     <el-form-item label="ALPN">
       <el-input v-model="alpnStr" placeholder="h3" @change="emitUpdate" />
     </el-form-item>
-    <el-form-item label="Zero RTT Handshake">
+    <el-form-item :label="t('proto2.zeroRtt')">
       <el-switch v-model="form.zero_rtt_handshake" />
     </el-form-item>
-    <el-form-item label="Heartbeat (ms)">
+    <el-form-item :label="t('proto2.heartbeatMs')">
       <el-input-number v-model="form.heartbeat" :min="0" />
     </el-form-item>
   </el-form>

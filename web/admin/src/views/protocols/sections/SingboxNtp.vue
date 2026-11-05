@@ -16,7 +16,7 @@
         <el-form-item label="Server">
           <el-input v-model="form.server" placeholder="time.apple.com / ntp.aliyun.com" @change="emit" />
         </el-form-item>
-        <el-form-item label="Server Port">
+        <el-form-item :label="t('singbox.outboundBase.serverPort')">
           <el-input-number v-model="form.server_port" :min="0" :max="65535" style="width:100%" @change="emit" />
           <div class="hint">留 0 使用默认 123</div>
         </el-form-item>
@@ -29,10 +29,10 @@
         <el-form-item label="Detour">
           <el-input v-model="form.detour" placeholder="direct" @change="emit" />
         </el-form-item>
-        <el-form-item label="Bind Interface">
+        <el-form-item :label="t('singbox.outboundBase.bindInterface')">
           <el-input v-model="form.bind_interface" placeholder="eth0" @change="emit" />
         </el-form-item>
-        <el-form-item label="Routing Mark">
+        <el-form-item :label="t('singbox.outboundBase.routingMark')">
           <el-input-number v-model="form.routing_mark" :min="0" style="width:100%" @change="emit" />
           <div class="hint">仅 Linux</div>
         </el-form-item>

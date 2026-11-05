@@ -3,7 +3,7 @@
     <el-form-item label="Certificate">
       <el-input v-model="cert" placeholder="/path/to/cert.pem" @change="emitUpdate" />
     </el-form-item>
-    <el-form-item label="Private Key">
+    <el-form-item :label="t('protoCenter.reality.privateKey')">
       <el-input v-model="key" placeholder="/path/to/key.pem" @change="emitUpdate" />
     </el-form-item>
   </el-form>

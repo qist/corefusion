@@ -9,31 +9,31 @@
         <div class="hint" v-else>客户端侧的控制与流量展示走 Clash API（yacd / metacubexd 等第三方面板）；不启用则订阅里不带该段</div>
       </el-form-item>
       <template v-if="clashApi.enabled">
-        <el-form-item label="External Controller">
+        <el-form-item :label="t('subfmt.externalController')">
           <el-input v-model="clashApi.external_controller" placeholder="127.0.0.1:9090" @change="emit" />
           <div class="hint" v-if="isNodeContext">Clash API listening address（不要与 v2ray_api 的 10086 冲突）</div>
           <div class="hint" v-else>Clash API listening address（客户端本机，通常是 127.0.0.1:9090）</div>
         </el-form-item>
         <el-form-item label="Secret">
-          <el-input v-model="clashApi.secret" placeholder="Optional auth secret" @change="emit" />
+          <el-input v-model="clashApi.secret" :placeholder="t('proto2.optionalAuthSecret')" @change="emit" />
         </el-form-item>
-        <el-form-item label="Default Mode">
+        <el-form-item :label="t('proto2.defaultMode')">
           <el-select v-model="clashApi.default_mode" style="width:100%" @change="emit">
             <el-option label="rule" value="rule" />
             <el-option label="global" value="global" />
             <el-option label="direct" value="direct" />
           </el-select>
         </el-form-item>
-        <el-form-item label="External UI">
+        <el-form-item :label="t('proto2.externalUi')">
           <el-input v-model="clashApi.external_ui" placeholder="/path/to/ui" @change="emit" />
           <div class="hint">Path to Clash dashboard static files</div>
         </el-form-item>
-        <el-form-item label="External UI URL">
+        <el-form-item :label="t('proto2.externalUiUrl')">
           <el-input v-model="clashApi.external_ui_url" placeholder="https://github.com/..." @change="emit" />
           <div class="hint">Download URL for Clash dashboard</div>
         </el-form-item>
-        <el-form-item label="Cache ID">
-          <el-input v-model="clashApi.cache_id" placeholder="Optional cache identifier" @change="emit" />
+        <el-form-item :label="t('proto2.cacheId')">
+          <el-input v-model="clashApi.cache_id" :placeholder="t('proto2.optionalCacheId')" @change="emit" />
         </el-form-item>
       </template>
     </el-form>
@@ -47,17 +47,17 @@
       <el-form-item v-if="cacheFile.enabled" label="Path">
         <el-input v-model="cacheFile.path" placeholder="cache.db" @change="emit" />
       </el-form-item>
-      <el-form-item v-if="cacheFile.enabled" label="Store FakeIP">
+      <el-form-item v-if="cacheFile.enabled" :label="t('proto2.storeFakeip')">
         <el-switch v-model="cacheFile.store_fakeip" @change="emit" />
       </el-form-item>
-      <el-form-item v-if="cacheFile.enabled" label="Store DNS">
+      <el-form-item v-if="cacheFile.enabled" :label="t('proto2.storeDns')">
         <el-switch v-model="cacheFile.store_dns" @change="emit" />
         <div class="hint">
           DNS 缓存也落盘（重启后保留）。旧版的 <code>store_rdrc</code> / <code>rdrc_timeout</code> 已被它取代 ——
           带着旧字段核心会**直接拒绝启动**，所以面板读到旧字段时会自动迁移到这里、不再回写旧字段。
         </div>
       </el-form-item>
-      <el-form-item v-if="cacheFile.enabled" label="Flush Interval">
+      <el-form-item v-if="cacheFile.enabled" :label="t('proto2.flushInterval')">
         <el-input v-model="cacheFile.flush_interval" placeholder="1m" @change="emit" />
         <div class="hint">刷盘间隔（duration，如 1m / 30s）；留空用核心默认</div>
       </el-form-item>
@@ -84,7 +84,7 @@
           <el-input v-model="v2rayApi.listen" placeholder="127.0.0.1:10086" @change="emit" />
           <div class="hint">gRPC API listening address</div>
         </el-form-item>
-        <el-form-item label="Stats Service">
+        <el-form-item :label="t('proto2.statsService')">
           <el-switch v-model="v2rayApi.stats" @change="emit" />
           <div class="hint">Enable stats service for traffic monitoring（用户/入站/出站白名单由面板自动补齐）</div>
         </el-form-item>

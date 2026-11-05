@@ -294,11 +294,11 @@
                   {{ t('init.googleEABHint') }}
                   <a href="https://cloud.google.com/certificate-manager/public-ca" target="_blank" rel="noopener">{{ t('init.googleDocLink') }}</a>
                 </div>
-                <el-form-item label="EAB Key ID"><el-input v-model="form.eab_key_id" /></el-form-item>
-                <el-form-item label="EAB HMAC Key"><el-input v-model="form.eab_mac_key" show-password /></el-form-item>
+                <el-form-item :label="t('proto2.eabKeyId')"><el-input v-model="form.eab_key_id" /></el-form-item>
+                <el-form-item :label="t('proto2.eabHmacKey')"><el-input v-model="form.eab_mac_key" show-password /></el-form-item>
                 <el-divider>{{ t('init.orAutoEAB') }}</el-divider>
-                <el-form-item label="GCP Project ID"><el-input v-model="form.project_id" /></el-form-item>
-                <el-form-item label="Service Account JSON"><el-input v-model="form.service_account" type="textarea" :rows="4" /></el-form-item>
+                <el-form-item :label="t('certificate.googleProjectID')"><el-input v-model="form.project_id" /></el-form-item>
+                <el-form-item :label="t('proto2.serviceAccountJson')"><el-input v-model="form.service_account" type="textarea" :rows="4" /></el-form-item>
               </template>
               <div style="font-size:12px;color:#909399">{{ t('init.acmeHint') }}</div>
               </template>

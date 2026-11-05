@@ -1,15 +1,15 @@
 <template>
   <el-form label-width="200px" label-position="left">
-    <el-form-item label="Initial Stream Receive Window">
+    <el-form-item :label="t('proto2.initialStreamWindow')">
       <el-input-number v-model="form.initialStreamReceiveWindow" :min="0" />
     </el-form-item>
-    <el-form-item label="Max Stream Receive Window">
+    <el-form-item :label="t('proto2.maxStreamWindow')">
       <el-input-number v-model="form.maxStreamReceiveWindow" :min="0" />
     </el-form-item>
-    <el-form-item label="Initial Connection Receive Window">
+    <el-form-item :label="t('proto2.initialConnWindow')">
       <el-input-number v-model="form.initialConnectionReceiveWindow" :min="0" />
     </el-form-item>
-    <el-form-item label="Max Connection Receive Window">
+    <el-form-item :label="t('proto2.maxConnWindow')">
       <el-input-number v-model="form.maxConnectionReceiveWindow" :min="0" />
     </el-form-item>
   </el-form>

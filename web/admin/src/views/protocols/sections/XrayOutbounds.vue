@@ -274,39 +274,39 @@
             <!-- TLS Settings -->
             <template v-if="rf._securityMode === 'tls'">
               <el-divider content-position="left">TLS</el-divider>
-              <el-form-item label="Server Name">
+              <el-form-item :label="t('protoCenter.tls.serverName')">
                 <el-input v-model="rf._sni" placeholder="example.com" />
               </el-form-item>
-              <el-form-item label="Verify Peer Cert">
-                <el-input v-model="rf._tlsVerifyPeerCertByName" placeholder="{{ t('protoCenter.outbounds.tlsVerifyHint') }}" />
+              <el-form-item :label="t('protoCenter.tls.verifyPeerCertByName')">
+                <el-input v-model="rf._tlsVerifyPeerCertByName" :placeholder="t('protoCenter.outbounds.tlsVerifyHint')" />
                 <div class="hint">{{ t('protoCenter.outbounds.tlsVerifyDesc') }}</div>
               </el-form-item>
-              <el-form-item label="ALPN">
+              <el-form-item :label="t('protoCenter.tls.alpn')">
                 <el-select v-model="rf._alpn" style="width:100%" multiple clearable>
                   <el-option label="h2" value="h2" /><el-option label="http/1.1" value="http/1.1" /><el-option label="h3" value="h3" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="Fingerprint">
+              <el-form-item :label="t('protoCenter.tls.fingerprint')">
                 <el-select v-model="rf._fingerprint" style="width:100%" clearable>
                   <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
                   <el-option label="safari" value="safari" /><el-option label="ios" value="ios" />
                   <el-option label="android" value="android" /><el-option label="random" value="random" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="Allow Insecure">
+              <el-form-item :label="t('protoCenter.tls.allowInsecure')">
                 <el-switch v-model="rf._allowInsecure" />
               </el-form-item>
-              <el-form-item label="Disable System Root">
+              <el-form-item :label="t('protoCenter.tls.disableSystemRoot')">
                 <el-switch v-model="rf._tlsDisableSystemRoot" />
               </el-form-item>
               <el-form-item :label="t('protoCenter.tls.useSystemCA')">
                 <el-switch v-model="rf._tlsUseSystemCA" />
                 <div class="hint">{{ t('protoCenter.tls.useSystemCAHint') }}</div>
               </el-form-item>
-              <el-form-item label="ECH Config List">
+              <el-form-item :label="t('protoCenter.tls.echConfigList')">
                 <el-input v-model="rf._tlsEchConfigList" :placeholder="t('protoCenter.outbounds.tlsEchHint')" />
               </el-form-item>
-              <el-form-item label="Master Key Log">
+              <el-form-item :label="t('protoCenter.tls.masterKeyLog')">
                 <el-input v-model="rf._tlsMasterKeyLog" :placeholder="t('protoCenter.outbounds.tlsMasterKeyHint')" />
               </el-form-item>
             </template>

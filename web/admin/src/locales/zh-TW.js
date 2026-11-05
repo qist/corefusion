@@ -1,6 +1,7 @@
 // 繁體中文（zh-TW）
 export default {
   xrayUi: {
+    "quicParams": "QUIC 參數",
     "rCode": "回應碼（0-65535）",
     "exampleHost": "例如 example.com",
     "extra": "附加",

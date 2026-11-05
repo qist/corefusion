@@ -243,6 +243,12 @@ func (s *Service) Register(serverID int64, coreType string) (*WarpStatus, error)
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 
+	// ⚠ Create 会把 token/private_key 等敏感列**就地加密**（warpSecret），
+	// 直接用 cfg 返回会给前端一串 `enc:...`，拿去做出站必然认证失败。
+	// 必须重新读取（GetByID 会解密）再构造响应。
+	if saved, err := s.repo.GetByID(nil, cfg.ID); err == nil && saved != nil {
+		return s.configToStatus(saved), nil
+	}
 	return s.configToStatus(cfg), nil
 }
 

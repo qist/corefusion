@@ -124,6 +124,11 @@ func (s *Service) RegisterMasque(serverID int64, coreType, remark string) (*Warp
 	if err := s.repo.Create(nil, cfg); err != nil {
 		return nil, fmt.Errorf("save masque config: %w", err)
 	}
+	// Create 会就地加密 private_key/token，返回值必须重新读取（解密）后构造，
+	// 否则前端拿到的是 `enc:...`，直接拿去做出站会认证失败。
+	if saved, err := s.repo.GetByID(nil, cfg.ID); err == nil && saved != nil {
+		return s.configToStatus(saved), nil
+	}
 	return s.configToStatus(cfg), nil
 }
 

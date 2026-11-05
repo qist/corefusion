@@ -17,7 +17,7 @@ CoreFusion ใช้ส่วนประกอบโอเพ่นซอร์
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 หรือใหม่กว่า** | เชื่อมโยงทางอ้อมผ่าน xray-core (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | เอ็มพีแอล-2.0 | ไดรเวอร์ MySQL |
 | `github.com/hashicorp/golang-lru/v2` | เอ็มพีแอล-2.0 | แคช LRU |
-| `github.com/go-acme/lego/v4` | เอ็มไอที | การออกใบรับรอง ACME |
+| `github.com/go-acme/lego/v5` | เอ็มไอที | การออกใบรับรอง ACME |
 | `github.com/gin-gonic/gin` | เอ็มไอที | เฟรมเวิร์ก HTTP |
 | `gorm.io/gorm` | เอ็มไอที | ออม |
 | `github.com/aws/aws-sdk-go-v2` | อาปาเช่-2.0 | การสำรองข้อมูล S3, Route53 DNS-01 |

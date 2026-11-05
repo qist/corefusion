@@ -23,11 +23,15 @@ func SupportedDNSProviders() map[string][]string {
 		"cloudflare": {"CF_Token", "CF_Account_ID"},
 		"alidns":     {"ALICLOUD_ACCESS_KEY", "ALICLOUD_SECRET_KEY"},
 		"huawei":     {"HWC_ACCESS_KEY", "HWC_SECRET_KEY", "HWC_REGION", "HWC_PROJECT_ID"},
-		"dnspod":     {"DNSPOD_API_KEY"},
-		"route53":    {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},
-		"google":     {"GCE_PROJECT", "GCE_SERVICE_ACCOUNT_FILE"},
-		"godaddy":    {"GODADDY_API_KEY", "GODADDY_API_SECRET"},
-		"namecheap":  {"NAMECHEAP_API_USER", "NAMECHEAP_API_KEY"},
+		// ⚠ lego v5 删掉了 DNSPod 自己的 API 实现 ✗（deprecated → 腾讯云）：
+		// `dnspod` 只为**既有通道**还能列出/编辑而保留 ✓（真正签到时会给迁移提示 ✓）；
+		// 新建请用 tencentcloud ✓（腾讯云 DNS，SecretId/SecretKey ✓）。
+		"dnspod":       {"DNSPOD_API_KEY"},
+		"tencentcloud": {"TENCENTCLOUD_SECRET_ID", "TENCENTCLOUD_SECRET_KEY"},
+		"route53":      {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"},
+		"google":       {"GCE_PROJECT", "GCE_SERVICE_ACCOUNT_FILE"},
+		"godaddy":      {"GODADDY_API_KEY", "GODADDY_API_SECRET"},
+		"namecheap":    {"NAMECHEAP_API_USER", "NAMECHEAP_API_KEY"},
 	}
 }
 

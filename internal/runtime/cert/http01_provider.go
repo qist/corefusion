@@ -159,7 +159,8 @@ func isProcessManagedByUs(processName string) bool {
 
 // Present stores the challenge token and key authorization for serving.
 // Called by lego when an HTTP-01 challenge needs to be presented.
-func (p *HTTP01Provider) Present(domain, token, keyAuth string) error {
+// ⚠ lego v5 的 `challenge.Provider` 要求带 ctx ✗（v4 没有 ✓）。
+func (p *HTTP01Provider) Present(ctx context.Context, domain, token, keyAuth string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -178,7 +179,8 @@ func (p *HTTP01Provider) Present(domain, token, keyAuth string) error {
 
 // CleanUp removes the challenge token after validation.
 // Called by lego when the challenge is complete (success or failure).
-func (p *HTTP01Provider) CleanUp(domain, token, keyAuth string) error {
+// ⚠ lego v5 的 `challenge.Provider` 要求带 ctx ✗（v4 没有 ✓）。
+func (p *HTTP01Provider) CleanUp(ctx context.Context, domain, token, keyAuth string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

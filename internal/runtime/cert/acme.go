@@ -22,22 +22,23 @@ import (
 
 	"corefusion/pkg/netutil"
 
-	"github.com/go-acme/lego/v4/certcrypto"
-	"github.com/go-acme/lego/v4/certificate"
-	"github.com/go-acme/lego/v4/challenge"
-	"github.com/go-acme/lego/v4/challenge/dns01"
-	"github.com/go-acme/lego/v4/challenge/http01"
-	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/registration"
+	"github.com/go-acme/lego/v5/acme"
+	"github.com/go-acme/lego/v5/certcrypto"
+	"github.com/go-acme/lego/v5/certificate"
+	"github.com/go-acme/lego/v5/challenge"
+	"github.com/go-acme/lego/v5/challenge/dns01"
+	"github.com/go-acme/lego/v5/challenge/http01"
+	"github.com/go-acme/lego/v5/lego"
+	"github.com/go-acme/lego/v5/registration"
 
 	// DNS providers - only import what we need
-	"github.com/go-acme/lego/v4/providers/dns/alidns"
-	"github.com/go-acme/lego/v4/providers/dns/cloudflare"
-	"github.com/go-acme/lego/v4/providers/dns/dnspod"
-	"github.com/go-acme/lego/v4/providers/dns/gcloud"
-	"github.com/go-acme/lego/v4/providers/dns/godaddy"
-	"github.com/go-acme/lego/v4/providers/dns/namecheap"
-	"github.com/go-acme/lego/v4/providers/dns/route53"
+	"github.com/go-acme/lego/v5/providers/dns/alidns"
+	"github.com/go-acme/lego/v5/providers/dns/cloudflare"
+	"github.com/go-acme/lego/v5/providers/dns/gcloud"
+	"github.com/go-acme/lego/v5/providers/dns/godaddy"
+	"github.com/go-acme/lego/v5/providers/dns/namecheap"
+	"github.com/go-acme/lego/v5/providers/dns/route53"
+	"github.com/go-acme/lego/v5/providers/dns/tencentcloud"
 )
 
 // CA provider URLs
@@ -74,11 +75,16 @@ type DNSProvider string
 const (
 	DNSProviderCloudflare DNSProvider = "cloudflare"
 	DNSProviderAliDNS     DNSProvider = "alidns"
-	DNSProviderDNSPod     DNSProvider = "dnspod"
-	DNSProviderRoute53    DNSProvider = "route53"
-	DNSProviderGoogle     DNSProvider = "google"
-	DNSProviderGoDaddy    DNSProvider = "godaddy"
-	DNSProviderNamecheap  DNSProvider = "namecheap"
+	// DNSProviderDNSPod 是**历史值** ✗：lego v5 已删除 DNSPod 自己的 API 实现
+	// （上游注明 deprecated，改用腾讯云 API）✗ —— 库里可能还有老通道 ✓，
+	// 这里保留常量用于给出**明确的迁移提示** ✓（见 createDNSProvider ✓）。
+	DNSProviderDNSPod DNSProvider = "dnspod"
+	// DNSProviderTencentCloud 是 DNSPod 的替代者 ✓（腾讯云 DNS，同一套域名托管 ✓）。
+	DNSProviderTencentCloud DNSProvider = "tencentcloud"
+	DNSProviderRoute53      DNSProvider = "route53"
+	DNSProviderGoogle       DNSProvider = "google"
+	DNSProviderGoDaddy      DNSProvider = "godaddy"
+	DNSProviderNamecheap    DNSProvider = "namecheap"
 )
 
 // ACMEClient handles ACME certificate operations using go-acme/lego.
@@ -429,7 +435,7 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 		opts.Domains, NormalizeKeyType(opts.KeyType), opts.KeyBits, keyType)
 
 	// 账号加载 + 首次注册（per-CA 串行化 → 不会并发消耗同一把一次性 EAB）
-	client, err := c.prepareClient(opts.Domains, opts.EAB, keyType)
+	client, err := c.prepareClient(ctx, opts.EAB)
 	if err != nil {
 		return nil, err
 	}
@@ -440,10 +446,17 @@ func (c *ACMEClient) Issue(ctx context.Context, opts IssueOptions) (*IssueResult
 	}
 
 	// Request certificate
-	certResource, err := client.Certificate.Obtain(certificate.ObtainRequest{
-		Domains: opts.Domains,
-		Bundle:  true,
-		Profile: opts.Profile,
+	// ⚠ v5 把 KeyType / CommonName 从 lego.Config 挪到了**单次请求**上 ✗：
+	//   - KeyType 必须在这里传，否则用的是 lego 默认 EC256 ✗；
+	//   - EnableCommonName 默认 **false** ✗（v4 是 DisableCommonName，默认 false = 带 CN ✓）→
+	//     迁移时必须显式取反，否则域名证书会悄悄丢掉 CN ✗；
+	//   - IP 证书（RFC 8738）仍然**必须不带 CN** ✓（LE 会对 CN=IP 的 CSR 报 badCSR ✗）。
+	certResource, err := client.Certificate.Obtain(ctx, certificate.ObtainRequest{
+		Domains:          opts.Domains,
+		Bundle:           true,
+		Profile:          opts.Profile,
+		KeyType:          keyType,
+		EnableCommonName: !hasIPIdentifier(opts.Domains),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("obtain certificate: %w", err)
@@ -477,7 +490,10 @@ func accountLock(path string) *sync.Mutex {
 
 // prepareClient 加载/创建 ACME 账号并（首次）完成注册，返回可用的 lego client。
 // 同一账号文件的注册动作互斥；若发现别的进程已注册则直接复用其账号 ✓。
-func (c *ACMEClient) prepareClient(domains []string, eab *EABConfig, keyType certcrypto.KeyType) (*lego.Client, error) {
+//
+// ⚠ v5 起 lego 的 `registration.Register*` 都需要 ctx ✗；密钥类型/CommonName
+// 也不再属于 client 配置 ✓（改为每次 Obtain/Renew 传 ✓）。
+func (c *ACMEClient) prepareClient(ctx context.Context, eab *EABConfig) (*lego.Client, error) {
 	mu := accountLock(c.accountPath())
 	mu.Lock()
 	defer mu.Unlock()
@@ -486,7 +502,7 @@ func (c *ACMEClient) prepareClient(domains []string, eab *EABConfig, keyType cer
 	if err != nil {
 		return nil, fmt.Errorf("load account: %w", err)
 	}
-	client, err := c.createClient(user, hasIPIdentifier(domains), keyType)
+	client, err := c.createClient(user)
 	if err != nil {
 		return nil, err
 	}
@@ -494,10 +510,10 @@ func (c *ACMEClient) prepareClient(domains []string, eab *EABConfig, keyType cer
 		return client, nil
 	}
 
-	var reg *registration.Resource
+	var reg *acme.ExtendedAccount
 	if eab != nil && eab.KeyID != "" {
 		// EAB registration (ZeroSSL, Google CA)
-		reg, err = client.Registration.RegisterWithExternalAccountBinding(
+		reg, err = client.Registration.RegisterWithExternalAccountBinding(ctx,
 			registration.RegisterEABOptions{
 				TermsOfServiceAgreed: true,
 				Kid:                  eab.KeyID,
@@ -505,15 +521,15 @@ func (c *ACMEClient) prepareClient(domains []string, eab *EABConfig, keyType cer
 			})
 	} else {
 		// Standard registration (Let's Encrypt)
-		reg, err = client.Registration.Register(registration.RegisterOptions{
+		reg, err = client.Registration.Register(ctx, registration.RegisterOptions{
 			TermsOfServiceAgreed: true,
 		})
 	}
 	if err != nil {
 		// 跨进程兜底：另一实例可能刚好用掉这把 EAB 并落盘了账号 ✓
 		if u2, e2 := c.loadOrCreateAccount(); e2 == nil && u2.Registration != nil {
-			if c2, cerr := c.createClient(u2, hasIPIdentifier(domains), keyType); cerr == nil {
-				log.Printf("[ACME] account already registered by another process (%s); reusing it", u2.Registration.URI)
+			if c2, cerr := c.createClient(u2); cerr == nil {
+				log.Printf("[ACME] account already registered by another process (%s); reusing it", u2.Registration.Location)
 				return c2, nil
 			}
 		}
@@ -603,7 +619,7 @@ func (c *ACMEClient) Renew(ctx context.Context, opts RenewOptions) (*IssueResult
 	// 账号加载 + 首次注册（与 Issue 共用同一份串行化逻辑 ✓）：
 	// 账号已存在（有 registration URI ✓）→ 不重复注册 ✓（不会误耗 EAB ✓）；
 	// 需要首次注册时必须带上 EAB ✗ —— Google / ZeroSSL 首次注册强制要求 ✗。
-	client, err := c.prepareClient(opts.Domains, opts.EAB, keyTypeOfKey(key))
+	client, err := c.prepareClient(ctx, opts.EAB)
 	if err != nil {
 		return nil, err
 	}
@@ -614,15 +630,20 @@ func (c *ACMEClient) Renew(ctx context.Context, opts RenewOptions) (*IssueResult
 	}
 
 	// Renew
-	// ⚠ 必须用 RenewWithOptions ✗：`Renew(...)` **传不了 Profile** ✓，
-	// 而 IP 证书必须 `shortlived` ✓（不带 profile 续 IP 证书会被 LE 拒 ✓）。
-	certResource, err := client.Certificate.RenewWithOptions(certificate.Resource{
-		Domain:      opts.Domains[0],
+	// ⚠ v5 只有 `Renew(ctx, Resource, *RenewOptions)` ✓（v4 的 `RenewWithOptions` 已合并进来 ✗）：
+	//   - `Resource.Domain` 变成了 `Domains []string` ✗；
+	//   - KeyType / EnableCommonName 也必须在 RenewOptions 里给 ✓，
+	//     否则续期会按 lego 默认 EC256 生成密钥 ✗ / 悄悄丢掉 CN ✗；
+	//   - Profile 仍然必须带 ✓（IP 证书 = shortlived ✓，不带 profile 续 IP 证书会被 LE 拒 ✓）。
+	certResource, err := client.Certificate.Renew(ctx, certificate.Resource{
+		Domains:     opts.Domains,
 		Certificate: certPEM,
 		PrivateKey:  keyPEM,
 	}, &certificate.RenewOptions{
-		Bundle:  true,
-		Profile: opts.Profile,
+		Bundle:           true,
+		Profile:          opts.Profile,
+		KeyType:          keyTypeOfKey(key),
+		EnableCommonName: !hasIPIdentifier(opts.Domains),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("renew: %w", err)
@@ -660,14 +681,14 @@ func hasIPIdentifier(domains []string) bool {
 
 // createClient creates a lego client.
 //
-// disableCommonName=true 时 CSR 里**不写 CommonName** ✓ —— 这是 IP 证书的硬要求：
-// RFC 8738 规定 IP 证书只能靠 **IP SAN** 表达身份；LE 对"CN 是 IP"的 CSR 直接报
-// `badCSR :: CSR contains IP address in Common Name` ✗（真机实测踩到 ✓）。
-func (c *ACMEClient) createClient(user *ACMEUser, disableCommonName bool, keyType certcrypto.KeyType) (*lego.Client, error) {
+// ⚠ lego v5 的 `Config.Certificate` 只剩 Timeout / OverallRequestLimit ✓：
+// 以前挂在这里的 `KeyType` 与 `DisableCommonName` 都被挪到**单次请求**上 ✗ ——
+// 现在分别由 `certificate.ObtainRequest.KeyType` 和 `EnableCommonName` 控制 ✓
+// （见 Issue / Renew ✓）。`EnableCommonName` 默认 **false** ✗，域名的 CN
+// 必须显式打开，否则会悄悄丢掉 CN ✓；IP 证书（RFC 8738）仍然必须不带 CN ✓。
+func (c *ACMEClient) createClient(user *ACMEUser) (*lego.Client, error) {
 	config := lego.NewConfig(user)
 	config.CADirURL = c.caURL
-	config.Certificate.KeyType = keyType
-	config.Certificate.DisableCommonName = disableCommonName
 
 	// lego 默认的 HTTPClient 用**系统解析器**：systemd-resolved 机器上
 	// /etc/resolv.conf 往往只有 127.0.0.53 stub → stub 不在时连 ACME 目录都打不开 ✗。
@@ -727,27 +748,16 @@ func (c *ACMEClient) setupChallenge(client *lego.Client, challengeType Challenge
 		// ⚠ 这里原本传的是 `dns01.CondOption(true, dns01.CondOption(true, dns01.CondOption(true, nil)))` ✗：
 		// 最里层就是 **nil** ✗ → lego 在 `dns01.NewChallenge` 里执行 `opt(chlg)` 时**空指针 panic** ✗
 		// → **dns-01 从来就没能工作过** ✗（真机踩到 ✓：请求 500、日志停在 dns_challenge.go:66 ✓）。
+		// ⚠ lego v5 删掉了 `AddRecursiveNameservers` / `RecursiveNSsPropagationRequirement` ✗
+		// （传播检查改成包级 `dns01.SetDefaultClient` ✓）。这里**不需要**它们 ✓：
+		// `PropagationWait(45s, true)` 第二个参数是 skipCheck=true ✗ → 睡够就直接放行、
+		// 完全不做本地 DNS 检查 ✓，校验交给 **CA 自己的解析器** ✓。
+		// 当初那两个选项就是为了绕开"本机/内网 DNS 刷新慢、误判未发布" ✗ ——
+		// 现在睡够即放行，同样不依赖本机 DNS ✓，行为等价 ✓。
 		opts := []dns01.ChallengeOption{
-			// Cloudflare 写入 TXT 后，权威 NS 常常还没刷新 ✓ → 不强制"权威 NS 一致" ✗，
-			// 但仍按下面的超时等递归解析器看到记录 ✓（否则很容易卡死在传播检查里 ✗）。
-			dns01.DisableAuthoritativeNssPropagationRequirement(),
-			// ⚠ 默认会用**本机/内网 DNS**（真机看到 192.168.2.84:53 ✗）→ Cloudflare 明明已写入 ✓，
-			// 内网解析器却要 2 分钟才刷新 ✗ → 每个域名都白等 2 分钟 ✗。
-			// 直接查公共解析器 ✓ → 等待从"分钟级"降到"秒级" ✓。
-			dns01.AddRecursiveNameservers([]string{"1.1.1.1:53", "8.8.8.8:53"}),
-			// 明确要求"**递归解析器**能看到记录"✓ —— 否则下面那条 DisableAuthoritative… 一开，
-			// 两道检查就都不做了 ✗ → lego 会**立刻**说"就绪" ✗ → CA 去查时记录还没发布 ✗
-			// （真机踩到：`No TXT record found at _acme-challenge.…` 403 ✗）。
-			dns01.RecursiveNSsPropagationRequirement(),
-			// ⚠ PropagationWait 的语义是"**先无条件睡 wait**，再检查"✗，不是"最多等 wait" ✗
-			// （真机实测：写 2m 就每个域名都慢 2 分钟 ✗，不是"最多等 2 分钟" ✗）。
-			//
-			// ⚠⚠ 第二个参数必须是 **true（睡够就直接放行、不做本地校验）** ✗：
-			//   目标机器（节点/内网）**常常连不到公共解析器** ✗ —— 1.8 实测卡在
-			//   `Waiting for DNS record propagation` 100+ 秒 ✗，而记录其实早就发布了 ✓;
-			//   本地校验不过 ≠ 记录没发布 ✗，只会白白拖死签发 ✗。
-			//   Cloudflare 是**秒级**发布 ✓ → 睡 45 秒足够 ✓，之后交给 **CA 自己的解析器**验证 ✓
-			//   （它一定能看到 ✓）→ 面板本机与各节点都不再依赖本机 DNS ✓。
+			// ⚠ PropagationWait 的语义是"**先无条件睡 wait**，再检查" ✗，不是"最多等 wait" ✗
+			// （真机实测：写 2m 就每个域名都慢 2 分钟 ✗）。
+			// Cloudflare 是**秒级**发布 ✓ → 睡 45 秒足够 ✓。
 			dns01.PropagationWait(45*time.Second, true),
 		}
 		return client.Challenge.SetDNS01Provider(provider, opts...)
@@ -777,8 +787,13 @@ func (c *ACMEClient) createDNSProvider(config *DNSProviderConfig) (challenge.Pro
 		return cloudflare.NewDNSProvider()
 	case DNSProviderAliDNS:
 		return alidns.NewDNSProvider()
+	case DNSProviderTencentCloud:
+		return tencentcloud.NewDNSProvider()
 	case DNSProviderDNSPod:
-		return dnspod.NewDNSProvider()
+		// ⚠ lego v5 删掉了 DNSPod 的 API 实现 ✗（上游标记 deprecated，改用腾讯云）——
+		// 不要静默换成别的 provider ✗：明确告诉用户怎么迁移 ✓。
+		return nil, fmt.Errorf("lego v5 已移除 DNSPod API 支持；请新建 provider=tencentcloud 的 DNS 通道" +
+			"（TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY），再把证书的 DNS 通道切到它")
 	case DNSProviderRoute53:
 		return route53.NewDNSProvider()
 	case DNSProviderGoogle:
@@ -807,8 +822,10 @@ func (c *ACMEClient) loadOrCreateAccount() (*ACMEUser, error) {
 					key:   key,
 				}
 				if accountData.RegistrationURI != "" {
-					user.Registration = &registration.Resource{
-						URI: accountData.RegistrationURI,
+					// v5：注册信息是 `acme.ExtendedAccount`，账号 URL 在 `Location` ✓
+					// （v4 的 `registration.Resource.URI` 已不存在 ✗）。
+					user.Registration = &acme.ExtendedAccount{
+						Location: accountData.RegistrationURI,
 					}
 				}
 				return user, nil
@@ -848,7 +865,7 @@ func (c *ACMEClient) saveAccount(user *ACMEUser) error {
 	}
 
 	if user.Registration != nil {
-		accountData.RegistrationURI = user.Registration.URI
+		accountData.RegistrationURI = user.Registration.Location
 	}
 
 	data, err := json.MarshalIndent(accountData, "", "  ")
@@ -920,7 +937,9 @@ type AccountData struct {
 }
 
 // loadPrivateKey loads an EC private key from PEM.
-func loadPrivateKey(pemStr string) (crypto.PrivateKey, error) {
+// ⚠ v5 的 `registration.User.GetPrivateKey()` 要求 `crypto.Signer` ✗
+// （v4 是 `crypto.PrivateKey` ✓）；账号密钥本来就是 ECDSA ✓（满足 Signer ✓）。
+func loadPrivateKey(pemStr string) (crypto.Signer, error) {
 	block, _ := pem.Decode([]byte(pemStr))
 	if block == nil {
 		return nil, fmt.Errorf("invalid PEM")
@@ -944,12 +963,14 @@ func parseCertExpiry(certPEM []byte) (time.Time, error) {
 }
 
 // ACMEUser implements the lego.User interface.
+// ⚠ v5 的接口是 `GetRegistration() *acme.ExtendedAccount` + `GetPrivateKey() crypto.Signer` ✗
+// （v4 是 `*registration.Resource` + `crypto.PrivateKey` ✓）。
 type ACMEUser struct {
 	Email        string
-	Registration *registration.Resource
-	key          crypto.PrivateKey
+	Registration *acme.ExtendedAccount
+	key          crypto.Signer
 }
 
 func (u *ACMEUser) GetEmail() string                        { return u.Email }
-func (u *ACMEUser) GetRegistration() *registration.Resource { return u.Registration }
-func (u *ACMEUser) GetPrivateKey() crypto.PrivateKey        { return u.key }
+func (u *ACMEUser) GetRegistration() *acme.ExtendedAccount  { return u.Registration }
+func (u *ACMEUser) GetPrivateKey() crypto.Signer            { return u.key }

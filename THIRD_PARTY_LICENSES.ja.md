@@ -17,7 +17,7 @@ CoreFusion は、次のオープンソース コンポーネントを使用し�
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 以降** | xray コア (Shadowsocks-2022) 経由で間接的にリンク |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQLドライバー |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | LRUキャッシュ |
-| `github.com/go-acme/lego/v4` | マサチューセッツ工科大学 | ACME 証明書の発行 |
+| `github.com/go-acme/lego/v5` | マサチューセッツ工科大学 | ACME 証明書の発行 |
 | `github.com/gin-gonic/gin` | マサチューセッツ工科大学 | HTTP フレームワーク |
 | `gorm.io/gorm` | マサチューセッツ工科大学 | ORM |
 | `github.com/aws/aws-sdk-go-v2` | アパッチ-2.0 | S3 バックアップ、Route53 DNS-01 |

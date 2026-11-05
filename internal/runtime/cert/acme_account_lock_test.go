@@ -1,6 +1,7 @@
 package cert
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -11,8 +12,6 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-
-	certcrypto "github.com/go-acme/lego/v4/certcrypto"
 )
 
 // 同一账号文件的注册动作必须**串行**：Google / ZeroSSL 的 EAB 是一次性的，
@@ -102,7 +101,7 @@ func TestPrepareClientReusesRegisteredAccount(t *testing.T) {
 	}
 
 	c := NewACMEClient(dir, "ops@example.com", CAProviderGoogle)
-	client, err := c.prepareClient([]string{"203.0.113.10", "2001:db8::1"}, nil, certcrypto.EC256)
+	client, err := c.prepareClient(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("prepareClient with registered account should not hit the network: %v", err)
 	}

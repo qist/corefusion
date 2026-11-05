@@ -16,7 +16,7 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0-or-later** | 经 xray-core 间接链接（Shadowsocks-2022） |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL 驱动 |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | LRU 缓存 |
-| `github.com/go-acme/lego/v4` | MIT | ACME 证书签发 |
+| `github.com/go-acme/lego/v5` | MIT | ACME 证书签发 |
 | `github.com/gin-gonic/gin` | MIT | HTTP 框架 |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | S3 备份、Route53 DNS-01 |

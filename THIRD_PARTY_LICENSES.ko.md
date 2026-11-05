@@ -17,7 +17,7 @@ CoreFusion는 다음 오픈 소스 구성 요소를 사용합니다. 이 파일�
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 이상** | xray-core(Shadowsocks-2022)를 통해 간접적으로 연결됨 |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL 드라이버 |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | LRU 캐시 |
-| `github.com/go-acme/lego/v4` | MIT | ACME 인증서 발급 |
+| `github.com/go-acme/lego/v5` | MIT | ACME 인증서 발급 |
 | `github.com/gin-gonic/gin` | MIT | HTTP 프레임워크 |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | 아파치-2.0 | S3 백업, Route53 DNS-01 |

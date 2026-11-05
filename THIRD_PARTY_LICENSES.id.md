@@ -17,7 +17,7 @@ Saat mendistribusikan biner proyek ini, simpan file ini, proyek `LICENSE`, dan p
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0-atau-lebih baru** | Terhubung secara tidak langsung melalui xray-core (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | Pengemudi MySQL |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | cache LRU |
-| `github.com/go-acme/lego/v4` | MIT | Penerbitan sertifikat ACME |
+| `github.com/go-acme/lego/v5` | MIT | Penerbitan sertifikat ACME |
 | `github.com/gin-gonic/gin` | MIT | Kerangka kerja HTTP |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | Pencadangan S3, Route53 DNS-01 |

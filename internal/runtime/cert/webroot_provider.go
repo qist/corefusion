@@ -1,6 +1,7 @@
 package cert
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -38,7 +39,8 @@ func (w *WebrootProvider) challengePath(token string) (string, error) {
 }
 
 // Present 写入挑战文件（0644，web 服务器可读 ✓）。
-func (w *WebrootProvider) Present(domain, token, keyAuth string) error {
+// ⚠ lego v5 的 `challenge.Provider` 要求带 ctx ✗（v4 没有 ✓）。
+func (w *WebrootProvider) Present(ctx context.Context, domain, token, keyAuth string) error {
 	path, err := w.challengePath(token)
 	if err != nil {
 		return err
@@ -69,7 +71,8 @@ func (w *WebrootProvider) Present(domain, token, keyAuth string) error {
 }
 
 // CleanUp 删除挑战文件（幂等 ✓）。
-func (w *WebrootProvider) CleanUp(domain, token, keyAuth string) error {
+// ⚠ lego v5 的 `challenge.Provider` 要求带 ctx ✗（v4 没有 ✓）。
+func (w *WebrootProvider) CleanUp(ctx context.Context, domain, token, keyAuth string) error {
 	path, err := w.challengePath(token)
 	if err != nil {
 		return err

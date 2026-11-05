@@ -17,7 +17,7 @@ Khi phân phối các tệp nhị phân của dự án này, hãy giữ tệp n�
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 trở lên** | Liên kết gián tiếp qua lõi xray (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | Trình điều khiển MySQL |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | Bộ đệm LRU |
-| `github.com/go-acme/lego/v4` | MIT | Cấp chứng chỉ ACME |
+| `github.com/go-acme/lego/v5` | MIT | Cấp chứng chỉ ACME |
 | `github.com/gin-gonic/gin` | MIT | Khung HTTP |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | Bản sao lưu S3, Route53 DNS-01 |

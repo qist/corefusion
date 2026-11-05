@@ -30,7 +30,7 @@ issue 选项：
   -ca             lets_encrypt（默认）| lets_encrypt_staging（测试用，不受浏览器信任但流程一致）
     -webroot        http-01 用：把挑战文件写进该目录（80 端口已被 nginx/caddy 占用时用；
                   你只需在站点里放行 /.well-known/acme-challenge/，无需停服务）
-  -dns-provider   dns-01 用：cloudflare|alidns|dnspod|route53|google|godaddy|namecheap
+  -dns-provider   dns-01 用：cloudflare|alidns|tencentcloud|route53|google|godaddy|namecheap
   -dns-env        dns-01 用：KEY=VALUE，可重复（如 -dns-env CF_DNS_API_TOKEN=xxx）
   -profile        ACME profile；**IP 证书会自动用 shortlived**（LE 策略要求短时证书，约 6 天）
   -key-type       ecc（默认）| rsa：**私钥类型**（面板记录里选了 rsa 就必须带 rsa，

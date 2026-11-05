@@ -17,7 +17,7 @@ Al distribuir archivos binarios de este proyecto, conserve este archivo, el proy
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 o posterior** | Vinculado indirectamente a través de xray-core (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | Controlador MySQL |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | caché LRU |
-| `github.com/go-acme/lego/v4` | MIT | Emisión de certificado ACME |
+| `github.com/go-acme/lego/v5` | MIT | Emisión de certificado ACME |
 | `github.com/gin-gonic/gin` | MIT | Marco HTTP |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | Copias de seguridad S3, Ruta 53 DNS-01 |

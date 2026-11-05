@@ -17,7 +17,7 @@ CoreFusion использует следующие компоненты с от�
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 или более поздней версии** | Косвенно связано через ядро xray (Shadowsocks-2022). |
 | `github.com/go-sql-driver/mysql` | МПЛ-2.0 | Драйвер MySQL |
 | `github.com/hashicorp/golang-lru/v2` | МПЛ-2.0 | LRU-кэш |
-| `github.com/go-acme/lego/v4` | Массачусетский технологический институт | Выдача сертификата ACME |
+| `github.com/go-acme/lego/v5` | Массачусетский технологический институт | Выдача сертификата ACME |
 | `github.com/gin-gonic/gin` | Массачусетский технологический институт | Структура HTTP |
 | `gorm.io/gorm` | Массачусетский технологический институт | ОРМ |
 | `github.com/aws/aws-sdk-go-v2` | Апач-2.0 | Резервные копии S3, Route53 DNS-01 |

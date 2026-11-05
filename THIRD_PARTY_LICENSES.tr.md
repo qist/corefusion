@@ -17,7 +17,7 @@ Bu projenin ikili dosyalarını dağıtırken bu dosyayı, `LICENSE` projesini v
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 veya üzeri** | xray-core (Shadowsocks-2022) aracılığıyla dolaylı olarak bağlantılı |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | MySQL sürücüsü |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | LRU önbelleği |
-| `github.com/go-acme/lego/v4` | MİT | ACME sertifika verilmesi |
+| `github.com/go-acme/lego/v5` | MİT | ACME sertifika verilmesi |
 | `github.com/gin-gonic/gin` | MİT | HTTP çerçevesi |
 | `gorm.io/gorm` | MİT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | S3 yedeklemeleri, Route53 DNS-01 |

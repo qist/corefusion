@@ -17,7 +17,7 @@ CoreFusion از اجزای منبع باز زیر استفاده می کند. ا
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0-یا جدیدتر** | پیوند غیر مستقیم از طریق هسته xray (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | درایور MySQL |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | کش LRU |
-| `github.com/go-acme/lego/v4` | MIT | صدور گواهی ACME |
+| `github.com/go-acme/lego/v5` | MIT | صدور گواهی ACME |
 | `github.com/gin-gonic/gin` | MIT | چارچوب HTTP |
 | `gorm.io/gorm` | MIT | ORM |
 | `github.com/aws/aws-sdk-go-v2` | آپاچی-2.0 | پشتیبان گیری S3، Route53 DNS-01 |

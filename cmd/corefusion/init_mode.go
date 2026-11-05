@@ -159,7 +159,7 @@ func runInit(args []string) {
 	tlsKeyType := fs.String("tls-key-type", "ecc", "certificate key type: ecc | rsa")
 	tlsKeyBits := fs.Int64("tls-key-bits", 0, "key bits (ecc: 256/384; rsa: 2048/3072/4096; 0 = provider default)")
 	tlsDNSChannel := fs.Int64("tls-dns-channel", 0, "existing DNS channel id for dns-01")
-	tlsDNSProvider := fs.String("tls-dns-provider", "", "dns-01 provider name (cloudflare/alidns/dnspod/...), creates a DNS channel")
+	tlsDNSProvider := fs.String("tls-dns-provider", "", "dns-01 provider name (cloudflare/alidns/tencentcloud/...), creates a DNS channel")
 	tlsIPCert := fs.Bool("tls-ip-cert", false, "issue IP certificate from local public IPv4/IPv6 (Let's Encrypt only)")
 	acmeProvider := fs.String("acme-provider", "lets_encrypt", "ACME CA: lets_encrypt | lets_encrypt_staging | zerossl | google")
 	dbType := fs.String("db-type", "sqlite", "database type: sqlite | mysql | postgres")

@@ -17,7 +17,7 @@
 | `github.com/sagernet/sing-shadowsocks` | **GPL-3.0 أو الأحدث** | مرتبط بشكل غير مباشر عبر xray-core (Shadowsocks-2022) |
 | `github.com/go-sql-driver/mysql` | MPL-2.0 | سائق MySQL |
 | `github.com/hashicorp/golang-lru/v2` | MPL-2.0 | ذاكرة التخزين المؤقت LRU |
-| `github.com/go-acme/lego/v4` | معهد ماساتشوستس للتكنولوجيا | إصدار شهادة ACME |
+| `github.com/go-acme/lego/v5` | معهد ماساتشوستس للتكنولوجيا | إصدار شهادة ACME |
 | `github.com/gin-gonic/gin` | معهد ماساتشوستس للتكنولوجيا | إطار HTTP |
 | `gorm.io/gorm` | معهد ماساتشوستس للتكنولوجيا | ORM |
 | `github.com/aws/aws-sdk-go-v2` | أباتشي-2.0 | النسخ الاحتياطية S3، Route53 DNS-01 |

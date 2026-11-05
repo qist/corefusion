@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-acme/lego/v4/certcrypto"
+	"github.com/go-acme/lego/v5/certcrypto"
 )
 
 // TestResolveKeyType 覆盖 (key_type, key_bits) → lego 密钥类型的映射 ✓。

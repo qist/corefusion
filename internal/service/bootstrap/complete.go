@@ -256,7 +256,9 @@ func (d *Draft) certIPHosts() []string {
 //   - 配了域名 → 域名；
 //   - IP 证书 → 证书 SAN 里的 IPv4/IPv6（两个都展示）；
 //   - 监听地址是具体 IP → 用它；
-//   - 通配地址（0.0.0.0/::）且没有可用 IP → 回退本机公网地址，最后回退 loopback。
+//   - 既没有域名、也没有 IP SAN → 只给本机回环地址：
+//     初始化阶段未签发证书时面板只监听 127.0.0.1（不开放公网 HTTP），
+//     此时给出公网 IP 会是一个根本连不上的链接。
 func (d *Draft) accessHosts(domain string) []string {
 	if h := normalizeHost(domain); h != "" {
 		return []string{h}
@@ -266,9 +268,6 @@ func (d *Draft) accessHosts(domain string) []string {
 	}
 	if addr := strings.TrimSpace(d.ListenAddr); !isWildcardHost(addr) {
 		return []string{addr}
-	}
-	if ips := LocalPublicIPs(); len(ips) > 0 {
-		return ips
 	}
 	return []string{LoopbackAddr}
 }

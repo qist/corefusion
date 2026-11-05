@@ -27,13 +27,19 @@ func TestAccessURLsIPCertShowsBothFamilies(t *testing.T) {
 	}
 }
 
-// 通配监听地址不能出现在访问链接里。
+// 通配监听地址不能出现在访问链接里；没有域名也没有 IP SAN 时只回退 loopback
+// （未签发证书时面板只监听 127.0.0.1，给公网 IP 会连不上）。
 func TestAccessHostsNeverExposeWildcard(t *testing.T) {
 	d := &Draft{ListenAddr: "0.0.0.0", TLSMode: "acme", TLSCertPath: "/tmp/cert.pem", TLSKeyPath: "/tmp/key.pem"}
 	for _, host := range d.accessHosts("") {
 		if isWildcardHost(host) {
 			t.Fatalf("wildcard host leaked into access hosts: %q", host)
 		}
+	}
+	got := d.accessURLs("", "10111", true, false, "")
+	want := []string{"https://127.0.0.1:10111"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("accessURLs = %v, want %v", got, want)
 	}
 }
 

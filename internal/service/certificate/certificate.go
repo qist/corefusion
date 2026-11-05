@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -73,6 +74,42 @@ func (s *Service) beginCertOp(key string) (func(), bool) {
 		delete(s.opsInFlight, key)
 		s.opMu.Unlock()
 	}, true
+}
+
+// identifierLocks 按"标识符集合"串行化签发/续期 ✓（**与密钥类型无关** ✓）。
+//
+// Why（真机 2026-11-05 复现两次 ✓）：Let's Encrypt 对**同一账号 + 同一组标识符**的
+// newOrder 会**去重返回同一个 pending/ready 订单** ✓ —— 同时签 ECC + RSA 时两个
+// goroutine 各自 newOrder 却拿到同一个订单 ✗，第一个 finalize 成功把订单变成 valid ✓，
+// 第二个再 finalize 必然 403：
+//
+//	urn:ietf:params:acme:error:orderNotReady :: Order's status ("valid") is not acceptable for finalization
+//
+// 日志证据：并发（17:20:16 / 17:42:39）必坏一张 ✗；顺序签发（17:23:11→17:23:48、
+// 17:44:24）两张全成功 ✓。所以不是密钥类型的问题，而是"同一组标识符并发下单" ✗。
+//
+// 口径：同一组标识符**排队**执行 ✓（不拒掉 —— 用户要的是 ECC + RSA 都签出来 ✓），
+// 不同域名之间仍然并行 ✓。
+var identifierLocks sync.Map // map[string]*sync.Mutex
+
+// identifierLockKey 生成"顺序无关"的集合 key ✓（同一组名字换个顺序也要落同一个 key ✗）。
+func identifierLockKey(domains []string) string {
+	names := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if v := strings.ToLower(strings.TrimSpace(d)); v != "" {
+			names = append(names, v)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ",")
+}
+
+// lockIdentifiers 阻塞直到拿到该标识符集合的锁，返回释放函数 ✓。
+func lockIdentifiers(domains []string) func() {
+	v, _ := identifierLocks.LoadOrStore(identifierLockKey(domains), &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 // detachedCertOpContext 把请求上下文换成"**保留值、去掉取消**"的上下文 ✓（自带超时兜底 ✓）。
@@ -922,11 +959,6 @@ func normalizeIdentifiers(names []string) []string {
 
 // IssueACME issues a new certificate via ACME.
 func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.Certificate, error) {
-	// ⚠ 顺序很重要 ✓：**先**把上下文换成"不受断开影响"的 ✓（见 detachedCertOpContext ✓）——
-	// 证书一旦签出来就必须落库 ✓，否则又是一份"有文件、库里没有"的孤儿 ✗。
-	ctx, cancel := detachedCertOpContext(ctx)
-	defer cancel()
-
 	// 标识符先归一（去空白/去重/域名小写）✓：
 	// 证书身份 = (域名, 密钥类型) ✓，域名大小写不敏感 ✓ ——
 	// 不归一的话 `Example.com` 与 `example.com` 会变成两条记录 ✗，
@@ -944,6 +976,19 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	} else {
 		return nil, ErrCertOpInProgress
 	}
+
+	// ⚠ 同一组标识符（**不分密钥类型** ✓）必须串行 ✗：
+	// 并发的 newOrder 会被 CA 去重成同一个订单 → 后 finalize 的那张必然
+	// `orderNotReady :: Order's status ("valid")` ✗（见 identifierLocks 注释 ✓）。
+	// 排队而不是拒绝 ✓：用户要的是 ECC + RSA 两张都签出来 ✓。
+	releaseIDLock := lockIdentifiers(input.Domains)
+	defer releaseIDLock()
+
+	// ⚠ 顺序很重要 ✓：**拿到排队锁之后**才换成"不受断开影响"的上下文 ✓ ——
+	// 否则排队等待的时间会吃掉 15 分钟的超时预算 ✗（见 detachedCertOpContext ✓）。
+	// 证书一旦签出来就必须落库 ✓，否则又是一份"有文件、库里没有"的孤儿 ✗。
+	ctx, cancel := detachedCertOpContext(ctx)
+	defer cancel()
 
 	// 挑战方式**先归一化** ✓：空 = http-01（历史默认 ✓）→ 校验/下发/落库都用同一个值 ✓，
 	// 免得出现"库里记空、实际走 http-01"这种对不上的状态 ✓（续期要靠它还原 ✓）。
@@ -1117,10 +1162,7 @@ type RenewACMEInput struct {
 //   - CA / profile / 密钥类型：按库里记录与现有私钥还原 ✓；
 //   - ✗ **绝不静默降级**：dns-01 拿不到凭据就明确报错 ✓，不再偷偷换成 http-01 ✗。
 func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*entity.Certificate, error) {
-	// ⚠ 与 IssueACME 同一口径 ✓：**开跑就保证跑完并落库** ✓（客户端断开不再打断落库 ✗→✓），
-	// 同时同一张证书不允许两个续期并发 ✓（否则两边都写文件、都 Update 同一行 ✗）。
-	ctx, cancel := detachedCertOpContext(ctx)
-	defer cancel()
+	// 同一张证书不允许两个续期并发 ✓（否则两边都写文件、都 Update 同一行 ✗）。
 	if done, ok := s.beginCertOp(fmt.Sprintf("renew:%d", id)); ok {
 		defer done()
 	} else {
@@ -1140,6 +1182,17 @@ func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*
 	// 标识符（含 SAN ✓）：必须按**同一组名字**续 ✓，主域名排第一位 ✓
 	//（落盘目录以 domains[0] 为准 ✓，顺序变了就会写到别的目录去 ✗）。
 	identifiers := primaryFirst(certRecord.Domain, certIdentifiersFromJSON(certRecord.Domains))
+
+	// ⚠ 与签发共用同一把"标识符集合"锁 ✓：同域的 ECC / RSA 两张证书如果同时续期，
+	// 一样会撞上 CA 的"同组标识符订单去重"→ 后 finalize 的报
+	// `orderNotReady :: Order's status ("valid")` ✗（见 identifierLocks ✓）。
+	releaseIDLock := lockIdentifiers(identifiers)
+	defer releaseIDLock()
+
+	// ⚠ 与 IssueACME 同一口径 ✓：**拿到排队锁之后**才换成"不受断开影响"的上下文 ✓
+	// （排队时间不吃 15 分钟超时预算 ✗），一旦开跑就保证跑完并落库 ✓。
+	ctx, cancel := detachedCertOpContext(ctx)
+	defer cancel()
 
 	// ① 挑战方式：显式 > 落库 > 兜底
 	challengeType := ""

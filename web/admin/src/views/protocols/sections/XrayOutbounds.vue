@@ -1881,7 +1881,19 @@ async function loadOutbounds() {
     form.value = (data || []).map(item => {
       try {
         const cfg = typeof item.config_json === 'string' ? JSON.parse(item.config_json) : (item.config_json || {})
-        return { ...parseOutbound(cfg), _id: item.id, _enabled: item.enabled, _isDefault: item.is_default, _sortOrder: item.sort_order || 0 }
+        const parsed = parseOutbound(cfg)
+        // tag/protocol 以数据库列为准：迁移/原生写入的历史数据 config_json 里可能没有 tag，
+        // 只用 config_json 解析会把名称丢成 outbound-N，后续编辑还会把 tag 改掉、路由引用失效。
+        return {
+          ...parsed,
+          tag: item.tag || parsed.tag,
+          protocol: item.protocol || parsed.protocol,
+          remark: item.remark || parsed.remark || '',
+          _id: item.id,
+          _enabled: item.enabled,
+          _isDefault: item.is_default,
+          _sortOrder: item.sort_order || 0,
+        }
       } catch (e) { console.error('parseOutbound error:', e, item); return null }
     }).filter(Boolean)
   } catch (e) { console.error('loadOutbounds error:', e); form.value = [] }

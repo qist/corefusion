@@ -1,4 +1,15 @@
 export default {
+  site: {
+    "siteAppend": "Append (merge)",
+    "siteReplace": "Replace (overwrite)",
+    "backend": "Backend",
+    "config": "Config",
+    "rootDirectory": "Root Directory",
+    "static": "Static",
+    "upstream": "Upstream",
+    "waf": "WAF",
+    "rules": "Rules"
+  },
   singboxDns: {
     "disableExpire": "Disable Expire",
     "cacheCapacity": "Cache Capacity",

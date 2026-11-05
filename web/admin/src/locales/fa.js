@@ -1,5 +1,16 @@
 // فارسی（fa）
 export default {
+  site: {
+    "siteAppend": "افزودن (ادغام)",
+    "siteReplace": "جایگزینی (بازنویسی)",
+    "backend": "بک‌اند",
+    "config": "پیکربندی",
+    "rootDirectory": "دایرکتوری ریشه",
+    "static": "استاتیک",
+    "upstream": "بالادست",
+    "waf": "WAF",
+    "rules": "قواعد"
+  },
   singboxDns: {
     "disableExpire": "غیرفعال‌سازی انقضا",
     "cacheCapacity": "ظرفیت کش",

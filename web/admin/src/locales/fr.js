@@ -1,5 +1,16 @@
 // Français（fr）
 export default {
+  site: {
+    "siteAppend": "Ajouter (fusionner)",
+    "siteReplace": "Remplacer (écraser)",
+    "backend": "Backend",
+    "config": "Configuration",
+    "rootDirectory": "Répertoire racine",
+    "static": "Statique",
+    "upstream": "Upstream",
+    "waf": "WAF",
+    "rules": "Règles"
+  },
   singboxDns: {
     "disableExpire": "Désactiver l'expiration",
     "cacheCapacity": "Capacité du cache",

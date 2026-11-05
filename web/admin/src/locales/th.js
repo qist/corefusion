@@ -1,5 +1,16 @@
 // ไทย（th）
 export default {
+  site: {
+    "siteAppend": "ต่อท้าย (รวม)",
+    "siteReplace": "แทนที่ (เขียนทับ)",
+    "backend": "แบ็กเอนด์",
+    "config": "การกำหนดค่า",
+    "rootDirectory": "ไดเรกทอรีราก",
+    "static": "สแตติก",
+    "upstream": "อัปสตรีม",
+    "waf": "WAF",
+    "rules": "กฎ"
+  },
   singboxDns: {
     "disableExpire": "ปิดการหมดอายุ",
     "cacheCapacity": "ความจุแคช",

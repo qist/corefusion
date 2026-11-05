@@ -1,5 +1,16 @@
 // Türkçe（tr）
 export default {
+  site: {
+    "siteAppend": "Ekle (birleştir)",
+    "siteReplace": "Değiştir (üzerine yaz)",
+    "backend": "Arka uç",
+    "config": "Yapılandırma",
+    "rootDirectory": "Kök dizin",
+    "static": "Statik",
+    "upstream": "Üst akış",
+    "waf": "WAF",
+    "rules": "Kurallar"
+  },
   singboxDns: {
     "disableExpire": "Süre sonunu devre dışı bırak",
     "cacheCapacity": "Önbellek kapasitesi",

@@ -1,5 +1,16 @@
 // 日本語（ja）
 export default {
+  site: {
+    "siteAppend": "追加（マージ）",
+    "siteReplace": "置換（上書き）",
+    "backend": "バックエンド",
+    "config": "設定",
+    "rootDirectory": "ルートディレクトリ",
+    "static": "静的",
+    "upstream": "アップストリーム",
+    "waf": "WAF",
+    "rules": "ルール"
+  },
   singboxDns: {
     "disableExpire": "有効期限を無効化",
     "cacheCapacity": "キャッシュ容量",

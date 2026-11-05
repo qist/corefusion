@@ -1,5 +1,16 @@
 // 한국어（ko）
 export default {
+  site: {
+    "siteAppend": "추가(병합)",
+    "siteReplace": "교체(덮어쓰기)",
+    "backend": "백엔드",
+    "config": "설정",
+    "rootDirectory": "루트 디렉터리",
+    "static": "정적",
+    "upstream": "업스트림",
+    "waf": "WAF",
+    "rules": "규칙"
+  },
   singboxDns: {
     "disableExpire": "만료 비활성화",
     "cacheCapacity": "캐시 용량",

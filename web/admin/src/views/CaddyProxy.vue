@@ -149,8 +149,8 @@
           <el-button size="small" type="success" @click="saveSNISettings" style="margin-left:8px">{{ t('common.save') }}</el-button>
         </div>
         <el-table v-if="!isMobile" :data="sniPagedList" stripe size="small">
-          <el-table-column prop="domain" label="SNI Domain" min-width="160" />
-          <el-table-column label="Target" min-width="160">
+          <el-table-column prop="domain" :label="t('proxy.sniDomain')" min-width="160" />
+          <el-table-column :label="t('proxy.target')" min-width="160">
             <template #default="{row}">{{ row.sni_target || row.upstream }}</template>
           </el-table-column>
           <el-table-column label="PP" width="60">
@@ -192,14 +192,14 @@
             <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
           </template>
         </el-table-column>
-        <el-table-column prop="domain" label="Name" width="120" />
-        <el-table-column label="Upstream" min-width="140">
+        <el-table-column prop="domain" :label="t('common.name')" width="120" />
+        <el-table-column :label="t('site.upstream')" min-width="140">
           <template #default="{row}">{{ row.upstream }}</template>
         </el-table-column>
-        <el-table-column label="Port" width="80">
+        <el-table-column :label="t('protoCenter.port')" width="80">
           <template #default="{row}">:{{ row.path }}</template>
         </el-table-column>
-        <el-table-column label="Protocol" width="80">
+        <el-table-column :label="t('protoCenter.protocol')" width="80">
           <template #default="{row}">{{ (row.l4_protocol).toUpperCase() }}</template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="160">
@@ -247,8 +247,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="domain" :label="t('proxy.domain')" min-width="120" />
-        <el-table-column prop="upstream" label="Upstream" min-width="120" />
-        <el-table-column prop="path" label="Path" min-width="100">
+        <el-table-column prop="upstream" :label="t('site.upstream')" min-width="120" />
+        <el-table-column prop="path" :label="t('protoCenter.masque.path')" min-width="100">
           <template #default="{row}">
             <span>{{ row.path }}</span>
           </template>
@@ -262,7 +262,7 @@
             <el-tag v-else type="info" size="small">-</el-tag>
           </template>
         </el-table-column>
-<el-table-column label="WAF" width="150" v-if="wafMasterEnabled">
+<el-table-column :label="t('site.waf')" width="150" v-if="wafMasterEnabled">
 <template #default="{row}">
 <div style="display:flex;align-items:center;gap:4px">
 <!-- 本站点 WAF（location 级）：关闭 → 该路径注入 caddyguard waf_enable off -->
@@ -330,7 +330,7 @@
         </div>
       </template>
       <el-tabs v-model="wafTab">
-        <el-tab-pane label="Config" name="config-form">
+        <el-tab-pane :label="t('site.config')" name="config-form">
           <el-form :model="wafConfigForm" label-width="170px" size="small" class="waf-config-form">
             <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
             <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="wafConfigForm.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
@@ -393,7 +393,7 @@
             <el-button @click="parseWAFConfigForm">{{ t('common.reset') }}</el-button>
           </div>
         </el-tab-pane>
-        <el-tab-pane label="Source" name="config-source">
+        <el-tab-pane :label="t('service.rules.source')" name="config-source">
           <div style="margin-bottom:8px;font-size:12px;color:#909399">{{ t('proxy.wafConfigHint') }}</div>
           <el-input v-model="wafConfigContent" type="textarea" :rows="20" style="font-family:monospace;font-size:13px" />
           <div style="margin-top:8px;text-align:right">
@@ -456,7 +456,7 @@
     <!-- Site WAF Config Dialog -->
     <el-dialog v-model="siteWAFVisible" :title="`WAF: ${siteWAFDomain}`" width="800px">
       <el-tabs v-model="siteWAFTab">
-        <el-tab-pane label="Config" name="config">
+        <el-tab-pane :label="t('site.config')" name="config">
           <el-form :model="siteWAFConfig" label-width="160px" size="small" class="waf-config-form">
             <el-divider content-position="left">{{ t('proxy.wafSwitches') }}</el-divider>
             <el-form-item :label="t('proxy.wafEnable')"><el-switch v-model="siteWAFConfig.waf_enable" active-value="on" inactive-value="off" /></el-form-item>
@@ -512,7 +512,7 @@
             <el-form-item :label="t('proxy.wafRedirectUrl')" v-if="siteWAFConfig.waf_output==='redirect'"><el-input v-model="siteWAFConfig.waf_redirect_url" placeholder="https://example.com" /></el-form-item>
           </el-form>
         </el-tab-pane>
-        <el-tab-pane label="Rules" name="rules">
+        <el-tab-pane :label="t('site.rules')" name="rules">
           <el-form-item :label="t('proxy.wafRuleSource')" label-width="120px">
             <el-select v-model="siteWAFRuleMode" @change="onSiteWAFRuleModeChange" style="width:180px">
               <el-option :label="t('proxy.wafRuleGlobal')" value="global" />
@@ -553,8 +553,8 @@
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
 <span style="font-size:12px;color:#909399">{{ t('proxy.wafDomainRuleEdit') || 'Domain Rule (editable)' }}</span>
 <el-select v-model="siteWAFDomainMergeMode" size="small" style="width:140px">
-<el-option label="Append (合并)" value="append" />
-<el-option label="Replace (替换)" value="replace" />
+<el-option :label="t('site.siteAppend')" value="append" />
+<el-option :label="t('site.siteReplace')" value="replace" />
 </el-select>
 </div>
 <el-input v-model="siteWAFRuleEditingContent" type="textarea" :rows="14" style="font-family:monospace;font-size:13px" />
@@ -587,7 +587,7 @@
 <el-option v-for="ib in sniInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" :disabled="isInboundAssociated(ib)" />
 </el-select>
 </el-form-item>
-<el-form-item label="Domain">
+<el-form-item :label="t('protoCenter.routing.domain')">
 <el-input v-model="sniForm.domain" type="textarea" :rows="2" placeholder="www.example.com, api.example.com" />
 <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniDomainHint') }}</div>
 </el-form-item>
@@ -618,8 +618,8 @@
         <el-table-column prop="domain" :label="t('proxy.domain')" min-width="200" />
         <el-table-column prop="path" :label="t('proxy.path')" width="140" />
         <el-table-column prop="template" :label="t('proxy.template')" width="110" />
-        <el-table-column prop="upstream" label="Upstream" min-width="160" />
-        <el-table-column prop="backend_path" label="Backend" width="150" />
+        <el-table-column prop="upstream" :label="t('site.upstream')" min-width="160" />
+        <el-table-column prop="backend_path" :label="t('site.backend')" width="150" />
       </el-table>
       <template #footer>
         <el-button @click="importDialogVisible=false">{{ t('common.cancel') }}</el-button>
@@ -637,7 +637,7 @@
         </el-radio-group>
       </div>
       <el-form v-if="siteForm.editMode==='form'" :model="siteForm" label-width="120px">
-        <el-form-item label="Domain">
+        <el-form-item :label="t('protoCenter.routing.domain')">
           <el-input v-model="siteForm.domain" type="textarea" :rows="2" placeholder="example.com&#10;www.example.com" />
           <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.domainMultiHint') }}</div>
         </el-form-item>
@@ -647,7 +647,7 @@
             <el-radio-button value="manual">{{ t('proxy.modeManual') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="Upstream" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
+        <el-form-item :label="t('site.upstream')" v-if="siteForm.template!=='static' && siteForm.template!=='portal_forward' && siteForm.template!=='subscription_forward' && siteForm.template!=='panel_forward' && siteForm.template!=='reality' && siteForm.template!=='sni'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="127.0.0.1:8080" style="flex:1" />
             <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
@@ -667,7 +667,7 @@
         <el-form-item v-if="siteForm.template==='reality'" :label="t('proxy.templateReality')">
           <span style="font-size:12px;color:#909399">{{ t('proxy.realityDesc') }}</span>
         </el-form-item>
-        <el-form-item label="Root Directory" v-if="siteForm.template==='static'">
+        <el-form-item :label="t('site.rootDirectory')" v-if="siteForm.template==='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="/var/www/mysite" style="flex:1" />
             <el-button v-if="siteForm.upstreams.length > 1" size="small" type="danger" plain @click="siteForm.upstreams.splice(idx, 1)">-</el-button>
@@ -679,10 +679,10 @@
             <el-option v-for="ib in filteredInbounds" :key="ib.id" :label="inboundLabel(ib)" :value="ib.id" :disabled="isInboundAssociated(ib)" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='l4'" label="Port">
+        <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.port')">
           <el-input v-model="siteForm.path" placeholder="443" />
         </el-form-item>
-        <el-form-item v-else label="Path">
+        <el-form-item v-else :label="t('protoCenter.masque.path')">
           <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='redirect'" :label="t('proxy.redirectTarget')">
@@ -696,7 +696,7 @@
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
           <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />
         </el-form-item>
-        <el-form-item v-if="siteForm.template==='l4'" label="Protocol">
+        <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.protocol')">
           <el-select v-model="siteForm.l4_protocol" style="width:100%">
             <el-option label="TCP" value="tcp" />
             <el-option label="UDP" value="udp" />
@@ -724,7 +724,7 @@
             <el-option label="gRPC" value="grpc" />
             <el-option label="XHTTP" value="xhttp" />
             <el-option label="HTTPUpgrade" value="httpupgrade" />
-            <el-option label="Static" value="static" />
+            <el-option :label="t('site.static')" value="static" />
             <el-option v-if="isSpecialTemplate" :label="specialTemplateLabel" :value="siteForm.template" />
             </el-select>
         </el-form-item>

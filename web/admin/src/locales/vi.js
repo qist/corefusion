@@ -1,5 +1,16 @@
 // Tiếng Việt（vi）
 export default {
+  site: {
+    "siteAppend": "Thêm (gộp)",
+    "siteReplace": "Thay thế (ghi đè)",
+    "backend": "Backend",
+    "config": "Cấu hình",
+    "rootDirectory": "Thư mục gốc",
+    "static": "Tĩnh",
+    "upstream": "Upstream",
+    "waf": "WAF",
+    "rules": "Quy tắc"
+  },
   singboxDns: {
     "disableExpire": "Tắt hết hạn",
     "cacheCapacity": "Dung lượng bộ nhớ đệm",

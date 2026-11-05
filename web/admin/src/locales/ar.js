@@ -1,5 +1,16 @@
 // العربية（ar）
 export default {
+  site: {
+    "siteAppend": "إضافة (دمج)",
+    "siteReplace": "استبدال (كتابة فوق)",
+    "backend": "الخلفية",
+    "config": "التكوين",
+    "rootDirectory": "الدليل الجذر",
+    "static": "ثابت",
+    "upstream": "المنبع",
+    "waf": "WAF",
+    "rules": "القواعد"
+  },
   singboxDns: {
     "disableExpire": "تعطيل الانتهاء",
     "cacheCapacity": "سعة التخزين المؤقت",

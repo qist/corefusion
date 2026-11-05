@@ -1,5 +1,16 @@
 // 繁體中文（zh-TW）
 export default {
+  site: {
+    "siteAppend": "附加（合併）",
+    "siteReplace": "取代（覆寫）",
+    "backend": "後端",
+    "config": "設定",
+    "rootDirectory": "根目錄",
+    "static": "靜態",
+    "upstream": "上游",
+    "waf": "WAF",
+    "rules": "規則"
+  },
   singboxDns: {
     "disableExpire": "停用過期",
     "cacheCapacity": "快取容量",

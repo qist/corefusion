@@ -1,5 +1,16 @@
 // Bahasa Indonesia（id）
 export default {
+  site: {
+    "siteAppend": "Tambahkan (gabung)",
+    "siteReplace": "Ganti (timpa)",
+    "backend": "Backend",
+    "config": "Konfigurasi",
+    "rootDirectory": "Direktori akar",
+    "static": "Statis",
+    "upstream": "Upstream",
+    "waf": "WAF",
+    "rules": "Aturan"
+  },
   singboxDns: {
     "disableExpire": "Nonaktifkan kedaluwarsa",
     "cacheCapacity": "Kapasitas cache",

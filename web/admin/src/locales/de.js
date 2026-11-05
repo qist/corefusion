@@ -1,5 +1,16 @@
 // Deutsch（de）
 export default {
+  site: {
+    "siteAppend": "Anhängen (zusammenführen)",
+    "siteReplace": "Ersetzen (überschreiben)",
+    "backend": "Backend",
+    "config": "Konfiguration",
+    "rootDirectory": "Stammverzeichnis",
+    "static": "Statisch",
+    "upstream": "Upstream",
+    "waf": "WAF",
+    "rules": "Regeln"
+  },
   singboxDns: {
     "disableExpire": "Ablauf deaktivieren",
     "cacheCapacity": "Cache-Kapazität",

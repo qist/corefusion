@@ -1,5 +1,16 @@
 // Русский（ru）
 export default {
+  site: {
+    "siteAppend": "Добавить (объединить)",
+    "siteReplace": "Заменить (перезаписать)",
+    "backend": "Бэкенд",
+    "config": "Конфигурация",
+    "rootDirectory": "Корневой каталог",
+    "static": "Статический",
+    "upstream": "Апстрим",
+    "waf": "WAF",
+    "rules": "Правила"
+  },
   singboxDns: {
     "disableExpire": "Отключить истечение",
     "cacheCapacity": "Ёмкость кэша",

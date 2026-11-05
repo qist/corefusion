@@ -1,4 +1,15 @@
 export default {
+  site: {
+    "siteAppend": "追加（合并）",
+    "siteReplace": "替换（覆盖）",
+    "backend": "后端",
+    "config": "配置",
+    "rootDirectory": "根目录",
+    "static": "静态",
+    "upstream": "上游",
+    "waf": "WAF",
+    "rules": "规则"
+  },
   singboxDns: {
     "disableExpire": "禁用过期",
     "cacheCapacity": "缓存容量",

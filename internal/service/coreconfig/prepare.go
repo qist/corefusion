@@ -346,6 +346,8 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// 编辑器产出不到 → 这里按 balancer 的 selector 统一补。
 	if opts.CoreType != "singbox" {
 		ensureObservatoryForLeastLoad(fullConfig)
+		// xray 2026-07 起把传输字段 network 改名为 method；同值双写兼容新旧核心。
+		ApplyTransportMethodAlias(fullConfig)
 	}
 
 	data, err := json.MarshalIndent(fullConfig, "", "  ")

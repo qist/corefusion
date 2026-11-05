@@ -685,10 +685,10 @@
                 <el-input v-model="rf._masquePath" placeholder="/.well-known/masque/ip/{target}/{ipproto}/" />
                 <div class="hint">{{ t('protoCenter.masque.pathHint') }}</div>
               </el-form-item>
-              <el-form-item :label="t('protoCenter.masque.user')">
+              <el-form-item v-if="!rf._masqueWarpEnabled" :label="t('protoCenter.masque.user')">
                 <el-input v-model="rf._masqueUser" />
               </el-form-item>
-              <el-form-item :label="t('protoCenter.outbounds.password')">
+              <el-form-item v-if="!rf._masqueWarpEnabled" :label="t('protoCenter.outbounds.password')">
                 <el-input v-model="rf._masquePass" show-password />
               </el-form-item>
               <el-form-item :label="t('protoCenter.masque.headers')">
@@ -699,6 +699,25 @@
                 </div>
                 <el-button size="small" @click="rf._masqueHeaders.push({ key: '', value: '' })">+ {{ t('protoCenter.masque.headers') }}</el-button>
               </el-form-item>
+              <el-divider content-position="left">WARP</el-divider>
+              <el-form-item :label="t('protoCenter.masque.warp')">
+                <el-switch v-model="rf._masqueWarpEnabled" />
+                <div class="hint">{{ t('protoCenter.masque.warpHint') }}</div>
+              </el-form-item>
+              <template v-if="rf._masqueWarpEnabled">
+                <el-form-item :label="t('protoCenter.masque.warpPrivateKey')">
+                  <el-input v-model="rf._masqueWarpPrivateKey" type="textarea" :rows="2" placeholder="MHcCAQEE... (P-256 PKCS#8 / Base64)" />
+                  <el-button size="small" style="margin-top:6px" @click="genMasqueWarpKey">{{ t('protoCenter.masque.generateKey') }}</el-button>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.masque.warpPublicKey')">
+                  <el-input v-model="rf._masqueWarpPublicKey" type="textarea" :rows="2" placeholder="MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE..." />
+                  <div class="hint">{{ t('protoCenter.masque.warpPublicKeyHint') }}</div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.masque.warpAddress')">
+                  <el-input v-model="rf._masqueWarpAddressStr" type="textarea" :rows="2" placeholder="172.16.0.2/32&#10;2606:4700:110:8a36::2/128" />
+                  <div class="hint">{{ t('protoCenter.masque.warpAddressHint') }}</div>
+                </el-form-item>
+              </template>
             </template>
             <template v-if="rf._network === 'hysteria' || rf.protocol === 'hysteria'">
               <el-divider content-position="left">Hysteria Settings</el-divider>
@@ -1177,6 +1196,7 @@ function getDefaultOutbound() {
     _network: 'raw', _securityMode: 'none',
     _masqueHost: '', _masquePath: '/.well-known/masque/ip/{target}/{ipproto}/', _masqueUser: '', _masquePass: '',
     _masqueHeaders: [], _masqueRemoteDNSStr: '',
+    _masqueWarpEnabled: false, _masqueWarpPrivateKey: '', _masqueWarpPublicKey: '', _masqueWarpAddressStr: '',
     _raw: { headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } },
     _kcpMtu: 1350, _kcpTti: 50, _kcpUplinkCapacity: 5, _kcpDownlinkCapacity: 20, _kcpCongestion: false, _kcpReadBufferSize: 2, _kcpWriteBufferSize: 2,
     _sni: '', _alpn: [], _fingerprint: '', _allowInsecure: false,
@@ -1288,6 +1308,10 @@ function parseOutbound(ob) {
     _masquePass: (ss.masqueSettings && ss.masqueSettings.pass) || '',
     _masqueHeaders: Object.entries((ss.masqueSettings && ss.masqueSettings.headers) || {}).map(([k, v]) => ({ key: k, value: v || '' })),
     _masqueRemoteDNSStr: ((ob.settings && ob.settings.remoteDNS) || []).join(', '),
+    _masqueWarpEnabled: !!(ss.masqueSettings && ss.masqueSettings.warp),
+    _masqueWarpPrivateKey: (ss.masqueSettings && ss.masqueSettings.warp && ss.masqueSettings.warp.privateKey) || '',
+    _masqueWarpPublicKey: (ss.masqueSettings && ss.masqueSettings.warp && ss.masqueSettings.warp.publicKey) || '',
+    _masqueWarpAddressStr: ((ss.masqueSettings && ss.masqueSettings.warp && ss.masqueSettings.warp.address) || []).join('\n'),
     _network: ss.network || 'raw',
     _securityMode: ss.security || 'none',
     _raw: parseRawSettings(ss.rawSettings),
@@ -1913,8 +1937,18 @@ function buildStreamSettings(ob) {
   if (ob._network === 'masque') {
     const mq = { path: ob._masquePath || '/.well-known/masque/ip/{target}/{ipproto}/' }
     if (ob._masqueHost) mq.host = ob._masqueHost
-    if (ob._masqueUser) mq.user = ob._masqueUser
-    if (ob._masquePass) mq.pass = ob._masquePass
+    if (ob._masqueWarpEnabled) {
+      // WARP：用 P-256 设备私钥做 mTLS，不能再设置 user/pass。
+      const warp = {}
+      if (ob._masqueWarpPrivateKey) warp.privateKey = ob._masqueWarpPrivateKey
+      if (ob._masqueWarpPublicKey) warp.publicKey = ob._masqueWarpPublicKey
+      const addrs = String(ob._masqueWarpAddressStr || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+      if (addrs.length) warp.address = addrs
+      mq.warp = warp
+    } else {
+      if (ob._masqueUser) mq.user = ob._masqueUser
+      if (ob._masquePass) mq.pass = ob._masquePass
+    }
     if (ob._masqueHeaders && ob._masqueHeaders.length) {
       mq.headers = {}
       ob._masqueHeaders.forEach(h => { if (h.key) mq.headers[h.key] = h.value || '' })
@@ -2118,6 +2152,20 @@ async function moveOutbound(ob, dir) {
     ElMessage.error(t('common.failed') + ': ' + (e.message || e))
     // Revert on failure
     loadOutbounds()
+  }
+}
+
+async function genMasqueWarpKey() {
+  try {
+    const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const der = await crypto.subtle.exportKey('pkcs8', kp.privateKey)
+    const bytes = new Uint8Array(der)
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    rf._masqueWarpPrivateKey = btoa(bin)
+    ElMessage.success(t('protoCenter.masque.generateKeyOk'))
+  } catch (e) {
+    ElMessage.error(String(e))
   }
 }
 

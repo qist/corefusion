@@ -302,6 +302,22 @@ export default {
     "mem": "Memória"
   },
   "protoCenter": {
+    masque: {
+      "address": "Faixa de endereços do túnel",
+      "addressHint": "No máximo um prefixo IPv4 e um IPv6; o primeiro endereço de cada prefixo pertence ao servidor.",
+      "mtu": "MTU",
+      "mtuHint": "MTU do túnel (1280-65535), padrão 1280.",
+      "users": "Utilizadores",
+      "user": "Utilizador",
+      "email": "Nome de utilizador (email)",
+      "level": "Nível",
+      "password": "Palavra-passe",
+      "path": "Caminho",
+      "pathHint": "Deve coincidir nas duas pontas; padrão /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "Cabeçalhos extra",
+      "remoteDNS": "DNS dentro do túnel",
+    },
     "title": "Central de protocolos",
     "create": "Adicionar protocolo",
     "edit": "Editar protocolo",

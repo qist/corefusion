@@ -302,6 +302,22 @@ export default {
     "mem": "記憶體"
   },
   "protoCenter": {
+    masque: {
+      "address": "隧道位址段",
+      "addressHint": "最多一個 IPv4 + 一個 IPv6 前綴；每個前綴的第一個位址歸伺服端，其餘依序分配給隧道。",
+      "mtu": "MTU",
+      "mtuHint": "隧道 MTU（1280-65535），預設 1280。",
+      "users": "使用者",
+      "user": "使用者",
+      "email": "使用者名稱（email）",
+      "level": "等級",
+      "password": "密碼",
+      "path": "路徑",
+      "pathHint": "兩端必須一致，預設 /.well-known/masque/ip/*/*/",
+      "host": "Host（HTTP authority）",
+      "headers": "附加請求標頭",
+      "remoteDNS": "隧道內 DNS",
+    },
     "title": "協議中心",
     "create": "新增協議",
     "edit": "編輯協議",

@@ -1,5 +1,17 @@
 <template>
   <div>
+    <el-form v-if="rf.protocol === 'masque'" label-width="120px" label-position="left">
+      <el-form-item :label="t('protoCenter.outbounds.server')">
+        <el-input v-model="rf._server" placeholder="example.com" />
+      </el-form-item>
+      <el-form-item :label="t('protoCenter.outbounds.port')">
+        <el-input-number v-model="rf._port" :min="1" :max="65535" />
+      </el-form-item>
+      <el-form-item :label="t('protoCenter.masque.remoteDNS')">
+        <el-input v-model="rf._masqueRemoteDNSStr" placeholder="1.1.1.1, 2606:4700:4700::1111" />
+      </el-form-item>
+    </el-form>
+
     <!-- Standard protocols -->
     <el-form v-if="['vmess','vless','trojan','shadowsocks','socks','http','hysteria'].includes(rf.protocol)" label-width="120px" label-position="left">
       <template v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)">

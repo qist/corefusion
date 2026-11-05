@@ -302,6 +302,22 @@ export default {
     "mem": "Bộ nhớ"
   },
   "protoCenter": {
+    masque: {
+      "address": "Dải địa chỉ đường hầm",
+      "addressHint": "Tối đa một tiền tố IPv4 và một IPv6; địa chỉ đầu tiên của mỗi tiền tố thuộc về máy chủ.",
+      "mtu": "MTU",
+      "mtuHint": "MTU đường hầm (1280-65535), mặc định 1280.",
+      "users": "Người dùng",
+      "user": "Người dùng",
+      "email": "Tên người dùng (email)",
+      "level": "Cấp độ",
+      "password": "Mật khẩu",
+      "path": "Đường dẫn",
+      "pathHint": "Phải giống nhau ở hai đầu; mặc định /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "Header bổ sung",
+      "remoteDNS": "DNS trong đường hầm",
+    },
     "title": "Trung tâm giao thức",
     "create": "Thêm giao thức",
     "edit": "Chỉnh sửa giao thức",

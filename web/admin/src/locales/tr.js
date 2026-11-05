@@ -302,6 +302,22 @@ export default {
     "mem": "Bellek"
   },
   "protoCenter": {
+    masque: {
+      "address": "Tünel adres aralığı",
+      "addressHint": "En fazla bir IPv4 ve bir IPv6 öneki; her önekin ilk adresi sunucuya aittir.",
+      "mtu": "MTU",
+      "mtuHint": "Tünel MTU (1280-65535), varsayılan 1280.",
+      "users": "Kullanıcılar",
+      "user": "Kullanıcı",
+      "email": "Kullanıcı adı (email)",
+      "level": "Seviye",
+      "password": "Parola",
+      "path": "Yol",
+      "pathHint": "İki uçta aynı olmalı; varsayılan /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "Ek başlıklar",
+      "remoteDNS": "Tünel içi DNS",
+    },
     "title": "Protokol merkezi",
     "create": "Protokol ekle",
     "edit": "Protokolü düzenle",

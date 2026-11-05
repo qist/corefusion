@@ -302,6 +302,22 @@ export default {
     "mem": "Memori"
   },
   "protoCenter": {
+    masque: {
+      "address": "Rentang alamat terowongan",
+      "addressHint": "Maksimal satu prefiks IPv4 dan satu IPv6; alamat pertama tiap prefiks milik server.",
+      "mtu": "MTU",
+      "mtuHint": "MTU terowongan (1280-65535), default 1280.",
+      "users": "Pengguna",
+      "user": "Pengguna",
+      "email": "Nama pengguna (email)",
+      "level": "Level",
+      "password": "Kata sandi",
+      "path": "Path",
+      "pathHint": "Harus sama di kedua ujung; default /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "Header tambahan",
+      "remoteDNS": "DNS dalam terowongan",
+    },
     "title": "Pusat Protokol",
     "create": "Tambah Protokol",
     "edit": "Edit protokol",

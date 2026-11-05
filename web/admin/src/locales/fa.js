@@ -302,6 +302,22 @@ export default {
     "mem": "حافظه"
   },
   "protoCenter": {
+    masque: {
+      "address": "محدوده آدرس تونل",
+      "addressHint": "حداکثر یک پیشوند IPv4 و یک IPv6؛ نخستین آدرس هر پیشوند به سرور تعلق دارد.",
+      "mtu": "MTU",
+      "mtuHint": "MTU تونل (1280-65535)، پیش‌فرض 1280.",
+      "users": "کاربران",
+      "user": "کاربر",
+      "email": "نام کاربری (email)",
+      "level": "سطح",
+      "password": "گذرواژه",
+      "path": "مسیر",
+      "pathHint": "باید در دو طرف یکسان باشد؛ پیش‌فرض /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "هدرهای اضافی",
+      "remoteDNS": "DNS داخل تونل",
+    },
     "title": "مرکز پروتکل",
     "create": "افزودن پروتکل",
     "edit": "ویرایش پروتکل",

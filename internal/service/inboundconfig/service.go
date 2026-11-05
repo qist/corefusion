@@ -84,6 +84,10 @@ func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, 
 		if err := requireClientField(clients, "password", "trojan 客户端"); err != nil {
 			return "", err
 		}
+	case "masque":
+		if err := validateMasqueInbound(root, settings, clients); err != nil {
+			return "", err
+		}
 	}
 	if !changed {
 		return configJSON, nil
@@ -917,4 +921,68 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreTy
 		result = append(result, data)
 	}
 	return result, nil
+}
+
+// validateMasqueInbound 校验 MASQUE 入站的关键字段。
+// MASQUE 是 IP 隧道（RFC 9484），只能配 masque 传输 + TLS：
+//   - settings.address 必填（最多一个 IPv4 + 一个 IPv6 前缀）
+//   - 每个用户必须有 email 与 pass（HTTP Basic 认证）
+// 缺这些字段 xray 会直接拒绝启动该入站（甚至整个核心起不来）。
+func validateMasqueInbound(root, settings map[string]interface{}, clients []interface{}) error {
+	users := clients
+	if len(users) == 0 {
+		if arr, ok := settings["users"].([]interface{}); ok {
+			users = arr
+		}
+	}
+	for i, raw := range users {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		email, _ := m["email"].(string)
+		pass, _ := m["pass"].(string)
+		if strings.TrimSpace(email) == "" || strings.TrimSpace(pass) == "" {
+			return fmt.Errorf("%w: masque 用户[%d] 需要 email 与 pass（HTTP Basic 认证）", ErrProtocolSettingsMismatch, i)
+		}
+		if strings.Contains(email, ":") {
+			return fmt.Errorf("%w: masque 用户[%d] 的 email 不能包含 ':'", ErrProtocolSettingsMismatch, i)
+		}
+	}
+	if !hasNonEmptyStringArray(settings["address"]) {
+		return fmt.Errorf("%w: masque 入站缺少 settings.address（至少填一个 CIDR，如 10.0.0.1/24）", ErrProtocolSettingsMismatch)
+	}
+	ss, _ := root["streamSettings"].(map[string]interface{})
+	network, _ := ss["network"].(string)
+	if !strings.EqualFold(network, "masque") {
+		if method, _ := ss["method"].(string); !strings.EqualFold(method, "masque") {
+			return fmt.Errorf("%w: masque 入站必须使用 masque 传输（streamSettings.network/method = masque）", ErrProtocolSettingsMismatch)
+		}
+	}
+	security, _ := ss["security"].(string)
+	if !strings.EqualFold(security, "tls") {
+		return fmt.Errorf("%w: masque 入站必须使用 tls（不支持 reality 或 plaintext）", ErrProtocolSettingsMismatch)
+	}
+	return nil
+}
+
+// hasNonEmptyStringArray 判断值是否为「至少包含一个非空字符串」的数组。
+func hasNonEmptyStringArray(v interface{}) bool {
+	arr, ok := v.([]interface{})
+	if !ok {
+		if ss, ok := v.([]string); ok {
+			for _, s := range ss {
+				if strings.TrimSpace(s) != "" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	for _, item := range arr {
+		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+			return true
+		}
+	}
+	return false
 }

@@ -45,6 +45,8 @@ const (
 	ProtocolHysteria  ProtocolType = "hysteria"
 	ProtocolWireGuard ProtocolType = "wireguard"
 	ProtocolSnell     ProtocolType = "snell"
+	// MASQUE（RFC 9484 CONNECT-IP）：xray 26.9+ 支持，仅 xray 核心。
+	ProtocolMasque ProtocolType = "masque"
 )
 
 // TransportType represents the transport layer.
@@ -62,7 +64,8 @@ const (
 	TransportKCP   TransportType = "kcp"
 	TransportMKCP  TransportType = "mkcp"
 	TransportH2    TransportType = "h2"
-	TransportXHTTP TransportType = "xhttp"
+	TransportXHTTP   TransportType = "xhttp"
+	TransportMasque TransportType = "masque"
 )
 
 // TLSMode represents the TLS mode.

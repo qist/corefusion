@@ -302,6 +302,22 @@ export default {
     "mem": "Mémoire"
   },
   "protoCenter": {
+    masque: {
+      "address": "Pool d'adresses du tunnel",
+      "addressHint": "Au plus un préfixe IPv4 et un IPv6 ; la première adresse de chaque préfixe appartient au serveur.",
+      "mtu": "MTU",
+      "mtuHint": "MTU du tunnel (1280-65535), 1280 par défaut.",
+      "users": "Utilisateurs",
+      "user": "Utilisateur",
+      "email": "Nom d'utilisateur (email)",
+      "level": "Niveau",
+      "password": "Mot de passe",
+      "path": "Chemin",
+      "pathHint": "Doit être identique des deux côtés ; par défaut /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "En-têtes supplémentaires",
+      "remoteDNS": "DNS dans le tunnel",
+    },
     "title": "Centre des protocoles",
     "create": "Ajouter un protocole",
     "edit": "Modifier le protocole",

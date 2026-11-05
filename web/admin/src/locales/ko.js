@@ -302,6 +302,22 @@ export default {
     "mem": "메모리"
   },
   "protoCenter": {
+    masque: {
+      "address": "터널 주소 범위",
+      "addressHint": "IPv4와 IPv6 프리픽스를 각각 최대 하나. 각 프리픽스의 첫 주소는 서버에 할당됩니다.",
+      "mtu": "MTU",
+      "mtuHint": "터널 MTU(1280-65535), 기본 1280.",
+      "users": "사용자",
+      "user": "사용자",
+      "email": "사용자 이름(email)",
+      "level": "레벨",
+      "password": "비밀번호",
+      "path": "경로",
+      "pathHint": "양쪽이 동일해야 합니다. 기본 /.well-known/masque/ip/*/*/",
+      "host": "Host(HTTP authority)",
+      "headers": "추가 헤더",
+      "remoteDNS": "터널 내 DNS",
+    },
     "title": "프로토콜 센터",
     "create": "프로토콜 추가",
     "edit": "프로토콜 편집",

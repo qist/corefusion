@@ -302,6 +302,22 @@ export default {
     "mem": "الذاكرة"
   },
   "protoCenter": {
+    masque: {
+      "address": "نطاق عناوين النفق",
+      "addressHint": "حد أقصى بادئة IPv4 وبادئة IPv6 واحدة؛ العنوان الأول في كل بادئة يخص الخادم.",
+      "mtu": "MTU",
+      "mtuHint": "MTU النفق (1280-65535)، الافتراضي 1280.",
+      "users": "المستخدمون",
+      "user": "مستخدم",
+      "email": "اسم المستخدم (email)",
+      "level": "المستوى",
+      "password": "كلمة المرور",
+      "path": "المسار",
+      "pathHint": "يجب أن يتطابق في الطرفين؛ الافتراضي /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "ترويسات إضافية",
+      "remoteDNS": "DNS داخل النفق",
+    },
     "title": "مركز البروتوكولات",
     "create": "إضافة بروتوكول",
     "edit": "تحرير البروتوكول",

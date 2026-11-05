@@ -44,6 +44,7 @@
                 <el-option label="Hysteria" value="hysteria" />
                 <el-option label="SOCKS" value="socks" /><el-option label="HTTP" value="http" />
                 <el-option label="WireGuard" value="wireguard" />
+                <el-option label="MASQUE" value="masque" />
               </el-select>
             </el-form-item>
             <!-- 出站顶层字段（OutboundDetourConfig）——之前面板完全缺这四项 -->
@@ -242,12 +243,12 @@
         </el-tab-pane>
 
         <!-- Protocol Tab -->
-<el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','socks','http','hysteria','wireguard'].includes(rf.protocol)" :label="rf.protocol === 'wireguard' ? 'WireGuard' : t('protoCenter.outbounds.protocolSettings')" name="protocol">
+<el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','socks','http','hysteria','wireguard','masque'].includes(rf.protocol)" :label="rf.protocol === 'wireguard' ? 'WireGuard' : t('protoCenter.outbounds.protocolSettings')" name="protocol">
           <XrayOutboundProtocol :rf="rf" :server-id="serverId" :core-type="coreType" />
         </el-tab-pane>
 
         <!-- Stream Settings Tab -->
-        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria'].includes(rf.protocol)" :label="t('protoCenter.outbounds.stream')" name="stream">
+        <el-tab-pane v-if="['vmess','vless','trojan','shadowsocks','hysteria','masque'].includes(rf.protocol)" :label="t('protoCenter.outbounds.stream')" name="stream">
           <el-form label-width="140px" label-position="left">
             <el-form-item :label="t('protoCenter.outbounds.network')">
               <el-select v-model="rf._network" style="width:100%" :disabled="rf.protocol === 'hysteria'" clearable>
@@ -258,11 +259,12 @@
                 <el-option label="HTTPUpgrade" value="httpupgrade" />
                 <el-option v-if="rf.protocol === 'vless'" label="XHTTP" value="xhttp" />
                 <el-option v-if="rf.protocol === 'hysteria'" label="Hysteria" value="hysteria" />
+                <el-option v-if="rf.protocol === 'masque'" label="MASQUE" value="masque" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('protoCenter.outbounds.securityMode')">
               <el-select v-model="rf._securityMode" style="width:100%">
-                <el-option v-if="rf.protocol !== 'hysteria'" label="None" value="none" />
+                <el-option v-if="rf.protocol !== 'hysteria' && rf.protocol !== 'masque'" label="None" value="none" />
                 <el-option label="TLS" value="tls" />
                 <el-option v-if="['vless','trojan'].includes(rf.protocol)" label="Reality" value="reality" />
               </el-select>
@@ -674,6 +676,30 @@
             </template>
 
             <!-- Hysteria Settings -->
+            <template v-if="rf._network === 'masque'">
+              <el-divider content-position="left">MASQUE</el-divider>
+              <el-form-item :label="t('protoCenter.masque.host')">
+                <el-input v-model="rf._masqueHost" placeholder="example.com" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.masque.path')">
+                <el-input v-model="rf._masquePath" placeholder="/.well-known/masque/ip/{target}/{ipproto}/" />
+                <div class="hint">{{ t('protoCenter.masque.pathHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.masque.user')">
+                <el-input v-model="rf._masqueUser" />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.outbounds.password')">
+                <el-input v-model="rf._masquePass" show-password />
+              </el-form-item>
+              <el-form-item :label="t('protoCenter.masque.headers')">
+                <div v-for="(h, hi) in rf._masqueHeaders" :key="hi" style="display:flex;gap:8px;margin-bottom:6px;width:100%">
+                  <el-input v-model="h.key" placeholder="Authorization" style="width:40%" />
+                  <el-input v-model="h.value" placeholder="Bearer ..." style="flex:1" />
+                  <el-button size="small" text type="danger" @click="rf._masqueHeaders.splice(hi,1)">X</el-button>
+                </div>
+                <el-button size="small" @click="rf._masqueHeaders.push({ key: '', value: '' })">+ {{ t('protoCenter.masque.headers') }}</el-button>
+              </el-form-item>
+            </template>
             <template v-if="rf._network === 'hysteria' || rf.protocol === 'hysteria'">
               <el-divider content-position="left">Hysteria Settings</el-divider>
               <el-form label-width="160px" label-position="left">
@@ -1149,6 +1175,8 @@ function getDefaultOutbound() {
     _loopbackInboundTag: '',
     _hysteriaVersion: 2, _hysteriaAuth: '',
     _network: 'raw', _securityMode: 'none',
+    _masqueHost: '', _masquePath: '/.well-known/masque/ip/{target}/{ipproto}/', _masqueUser: '', _masquePass: '',
+    _masqueHeaders: [], _masqueRemoteDNSStr: '',
     _raw: { headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } },
     _kcpMtu: 1350, _kcpTti: 50, _kcpUplinkCapacity: 5, _kcpDownlinkCapacity: 20, _kcpCongestion: false, _kcpReadBufferSize: 2, _kcpWriteBufferSize: 2,
     _sni: '', _alpn: [], _fingerprint: '', _allowInsecure: false,
@@ -1254,6 +1282,12 @@ function parseOutbound(ob) {
     _loopbackInboundTag: (ob.settings && ob.settings.inboundTag) || '',
     _hysteriaVersion: (ob.settings && ob.settings.version) || 2,
     _hysteriaAuth: (ss.hysteriaSettings && ss.hysteriaSettings.auth) || (ob.settings && ob.settings.auth) || '',
+    _masqueHost: (ss.masqueSettings && ss.masqueSettings.host) || '',
+    _masquePath: (ss.masqueSettings && ss.masqueSettings.path) || '/.well-known/masque/ip/{target}/{ipproto}/',
+    _masqueUser: (ss.masqueSettings && ss.masqueSettings.user) || '',
+    _masquePass: (ss.masqueSettings && ss.masqueSettings.pass) || '',
+    _masqueHeaders: Object.entries((ss.masqueSettings && ss.masqueSettings.headers) || {}).map(([k, v]) => ({ key: k, value: v || '' })),
+    _masqueRemoteDNSStr: ((ob.settings && ob.settings.remoteDNS) || []).join(', '),
     _network: ss.network || 'raw',
     _securityMode: ss.security || 'none',
     _raw: parseRawSettings(ss.rawSettings),
@@ -1492,6 +1526,11 @@ function buildOutbound(ob) {
       return { publicKey: p.publicKey, endpoint: p.endpoint, preSharedKey: p.preSharedKey || undefined, keepAlive: p.keepAlive || 0, allowedIPs: allowedIPs.length ? allowedIPs : ['0.0.0.0/0'] }
     })
     delete result.streamSettings
+  } else if (ob.protocol === 'masque') {
+    result.settings = { address: ob._server, port: ob._port }
+    const dns = String(ob._masqueRemoteDNSStr || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+    if (dns.length) result.settings.remoteDNS = dns
+    result.streamSettings = buildStreamSettings(ob)
   } else if (ob.protocol === 'freedom') {
     if (ob._freedomAdvanced) {
       result.settings = {}
@@ -1871,6 +1910,17 @@ function buildStreamSettings(ob) {
     if (Object.keys(quicObj).length) fm.quicParams = quicObj
     if (Object.keys(fm).length) ss.finalmask = fm
   }
+  if (ob._network === 'masque') {
+    const mq = { path: ob._masquePath || '/.well-known/masque/ip/{target}/{ipproto}/' }
+    if (ob._masqueHost) mq.host = ob._masqueHost
+    if (ob._masqueUser) mq.user = ob._masqueUser
+    if (ob._masquePass) mq.pass = ob._masquePass
+    if (ob._masqueHeaders && ob._masqueHeaders.length) {
+      mq.headers = {}
+      ob._masqueHeaders.forEach(h => { if (h.key) mq.headers[h.key] = h.value || '' })
+    }
+    ss.masqueSettings = mq
+  }
   return ss
 }
 
@@ -2081,6 +2131,14 @@ function onProtocolChange() {
   if (rf.protocol === 'hysteria') {
     rf._network = 'hysteria'
     rf._securityMode = 'tls'
+  }
+  // MASQUE（RFC 9484）：必须 masque 传输 + TLS，默认 H3
+  if (rf.protocol === 'masque') {
+    rf._network = 'masque'
+    rf._securityMode = 'tls'
+    if (!rf._port) rf._port = 443
+    rf._alpn = ['h3']
+    if (!rf._masquePath) rf._masquePath = '/.well-known/masque/ip/{target}/{ipproto}/'
   }
 }
 

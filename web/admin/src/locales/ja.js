@@ -302,6 +302,22 @@ export default {
     "mem": "メモリ"
   },
   "protoCenter": {
+    masque: {
+      "address": "トンネルアドレス範囲",
+      "addressHint": "最大で IPv4 と IPv6 のプレフィックスを各 1 つ。各プレフィックスの先頭アドレスはサーバーに割り当てられます。",
+      "mtu": "MTU",
+      "mtuHint": "トンネルの MTU（1280-65535）、既定 1280。",
+      "users": "ユーザー",
+      "user": "ユーザー",
+      "email": "ユーザー名（email）",
+      "level": "レベル",
+      "password": "パスワード",
+      "path": "パス",
+      "pathHint": "両端で一致必須。既定 /.well-known/masque/ip/*/*/",
+      "host": "Host（HTTP authority）",
+      "headers": "追加ヘッダー",
+      "remoteDNS": "トンネル内 DNS",
+    },
     "title": "プロトコルセンター",
     "create": "プロトコルを追加",
     "edit": "プロトコルを編集",

@@ -302,6 +302,22 @@ export default {
     "mem": "Arbeitsspeicher"
   },
   "protoCenter": {
+    masque: {
+      "address": "Adresspool des Tunnels",
+      "addressHint": "Höchstens ein IPv4- und ein IPv6-Präfix; die erste Adresse jedes Präfixes gehört dem Server.",
+      "mtu": "MTU",
+      "mtuHint": "MTU des Tunnels (1280-65535), Standard 1280.",
+      "users": "Benutzer",
+      "user": "Benutzer",
+      "email": "Benutzername (email)",
+      "level": "Ebene",
+      "password": "Passwort",
+      "path": "Pfad",
+      "pathHint": "Muss auf beiden Seiten identisch sein; Standard /.well-known/masque/ip/*/*/",
+      "host": "Host (HTTP authority)",
+      "headers": "Zusätzliche Header",
+      "remoteDNS": "DNS im Tunnel",
+    },
     "title": "Protokollzentrum",
     "create": "Protokoll hinzufügen",
     "edit": "Protokoll bearbeiten",

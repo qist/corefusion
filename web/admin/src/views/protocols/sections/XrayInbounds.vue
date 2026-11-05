@@ -341,6 +341,7 @@
                 <el-option label="TUN" value="tun" />
                 <el-option label="Tunnel" value="tunnel" />
                 <el-option label="Dokodemo-door" value="dokodemo-door" />
+                <el-option label="MASQUE" value="masque" />
               </el-select>
             </el-form-item>
             <el-form-item :label="t('protoCenter.inbounds.listenType')">
@@ -453,11 +454,12 @@
                 <el-option label="httpupgrade" value="httpupgrade" />
                 <el-option v-if="rf.protocol === 'vless'" label="xhttp" value="xhttp" />
                 <el-option v-if="rf.protocol === 'hysteria'" label="Hysteria" value="hysteria" />
+                <el-option v-if="rf.protocol === 'masque'" label="MASQUE" value="masque" />
               </el-select>
             </el-form-item>
             <el-form-item label="Security">
               <el-select v-model="rf.streamSettings.security" style="width:100%" @change="onSecurityChange">
-                <el-option v-if="rf.protocol !== 'hysteria'" label="none" value="none" />
+                <el-option v-if="rf.protocol !== 'hysteria' && rf.protocol !== 'masque'" label="none" value="none" />
                 <el-option label="tls" value="tls" />
                 <el-option v-if="['vless','trojan'].includes(rf.protocol) && ['raw','xhttp','grpc'].includes(rf.streamSettings.network)" label="reality" value="reality" />
               </el-select>
@@ -1123,6 +1125,13 @@
           </template>
 
           <!-- gRPC Settings -->
+          <template v-if="rf.streamSettings.network === 'masque'">
+            <el-divider content-position="left">MASQUE</el-divider>
+            <el-form-item :label="t('protoCenter.masque.path')">
+              <el-input v-model="rf.streamSettings.masque.path" @change="emit" />
+              <div class="hint">{{ t('protoCenter.masque.pathHint') }}</div>
+            </el-form-item>
+                      </template>
           <template v-if="rf.streamSettings.network === 'grpc'">
             <el-divider content-position="left">gRPC Settings</el-divider>
             <el-form label-width="140px" label-position="left">
@@ -1827,6 +1836,7 @@ import XrayInboundProtoWireguard from './xray/protocol/XrayInboundProtoWireguard
 import XrayInboundProtoHysteria from './xray/protocol/XrayInboundProtoHysteria.vue'
 import XrayInboundProtoTun from './xray/protocol/XrayInboundProtoTun.vue'
 import XrayInboundProtoTunnel from './xray/protocol/XrayInboundProtoTunnel.vue'
+import XrayInboundProtoMasque from './xray/protocol/XrayInboundProtoMasque.vue'
 import XrayInboundSniffing from './xray/common/XrayInboundSniffing.vue'
 import XrayInboundFallback from './xray/common/XrayInboundFallback.vue'
 const PROTOCOL_COMPS = {
@@ -1834,6 +1844,7 @@ const PROTOCOL_COMPS = {
   shadowsocks: XrayInboundProtoShadowsocks, socks: XrayInboundProtoSocks, http: XrayInboundProtoHttp,
   wireguard: XrayInboundProtoWireguard, hysteria: XrayInboundProtoHysteria, tun: XrayInboundProtoTun,
   tunnel: XrayInboundProtoTunnel, 'dokodemo-door': XrayInboundProtoTunnel,
+  masque: XrayInboundProtoMasque,
 }
 function getProtocolComp(protocol) { return PROTOCOL_COMPS[protocol] || null }
 const { t } = useI18n()
@@ -2934,7 +2945,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, useSystemCA: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, useSystemCA: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, masque: { path: '/.well-known/masque/ip/{target}/{ipproto}/' }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -3005,6 +3016,13 @@ function onProtocolChange() {
     rf._portHopStart = 20000
     rf._portHopEnd = 50000
     rf._portHopInterface = ''
+  }
+  else if (p === 'masque') {
+    // MASQUE（RFC 9484 CONNECT-IP）：必须 masque 传输 + TLS，默认 H3
+    rf.settings = { clients: [{ email: genEmail(), pass: genBase64Password(), level: 0, _quota: 'unlimited', _expiry: null }], address: ['10.0.0.1/24'], mtu: 1280, _addressStr: '10.0.0.1/24' }
+    rf.streamSettings.network = 'masque'
+    rf.streamSettings.security = 'tls'
+    rf.streamSettings.tls._alpn = ['h3']
   }
   else if (p === 'tun') { rf.settings = { name: 'xray0', mtu: 1500, gateway: [], dns: [], userLevel: 0, autoSystemRoutingTable: [], autoOutboundsInterface: '' }; rf._tunGatewayStr = ''; rf._tunDnsStr = ''; rf._tunAutoRoutingStr = '' }
   else if (p === 'tunnel' || p === 'dokodemo-door') { rf.settings = { allowedNetwork: 'tcp', rewriteAddress: '', rewritePort: 0, followRedirect: false, userLevel: 0, portMap: {} }; rf._portMap = []; rf.listen = '127.0.0.1'; rf.port = genPort() }
@@ -3955,6 +3973,13 @@ function parseSettings(ib) {
     if (!settings.encryption) settings.encryption = 'none'
     if (!settings.decryption) settings.decryption = 'none'
   }
+  if (ib.protocol === 'masque') {
+    if (!settings.address) settings.address = []
+    settings._addressStr = (settings.address || []).join('\n')
+    if (!settings.clients && settings.users) { settings.clients = settings.users; delete settings.users }
+    if (!settings.clients) settings.clients = []
+    if (!settings.mtu) settings.mtu = 1280
+  }
   return settings
 }
 
@@ -4033,6 +4058,7 @@ function parseInbound(ib) {
       grpc: parseGrpcSettings(ss.grpcSettings || {}),
       httpupgrade: parseHttpupgradeSettings(ss.httpupgradeSettings || {}),
       xhttp: parseXhttpSettings(ss.xhttpSettings || ss.splithttpSettings || {}),
+      masque: { path: (ss.masqueSettings && ss.masqueSettings.path) || '/.well-known/masque/ip/{target}/{ipproto}/' },
       hysteria: parseHysteriaSettings(ss.hysteriaSettings || {}),
       http: parseHttpSettings(ss.httpSettings || {}),
     },
@@ -4089,6 +4115,11 @@ function buildInbound(ib, isApiCall = false) {
   const settings = JSON.parse(JSON.stringify(ib.settings))
   // Remove frontend-only internal fields from settings
   delete settings._encryptionType
+  if (ib.protocol === 'masque') {
+    const addrs = String(settings._addressStr || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
+    if (addrs.length) settings.address = addrs
+    delete settings._addressStr
+  }
   // For Shadowsocks single-user methods, remove clients
   if (ib.protocol === 'shadowsocks' && !isSSMultiUser(settings.method)) {
     delete settings.clients
@@ -4501,6 +4532,11 @@ function buildInbound(ib, isApiCall = false) {
       if (s._downloadInboundId) extra._downloadInboundId = Number(s._downloadInboundId)
       if (Object.keys(extra).length) xhSettings.extra = extra
       result.streamSettings.xhttpSettings = xhSettings
+    }
+    if (ib.streamSettings.network === 'masque') {
+      result.streamSettings.masqueSettings = {
+        path: (ib.streamSettings.masque && ib.streamSettings.masque.path) || '/.well-known/masque/ip/{target}/{ipproto}/'
+      }
     }
     // Add Hysteria settings if network is hysteria
     if (ib.streamSettings.network === 'hysteria' && ib.streamSettings.hysteria) {

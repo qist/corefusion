@@ -512,6 +512,10 @@
                 <el-switch v-model="rf.streamSettings.tls.disableSystemRoot" @change="emit" />
                 <div class="hint">{{ t('protoCenter.tls.disableSystemRootHint') }}</div>
               </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.useSystemCA')">
+                <el-switch v-model="rf.streamSettings.tls.useSystemCA" @change="emit" />
+                <div class="hint">{{ t('protoCenter.tls.useSystemCAHint') }}</div>
+              </el-form-item>
               <el-form-item :label="t('protoCenter.tls.enableSessionResumption')">
                 <el-switch v-model="rf.streamSettings.tls.enableSessionResumption" @change="emit" />
               </el-form-item>
@@ -1102,6 +1106,18 @@
               <el-form-item label="H Keep Alive Period">
                 <el-input-number v-model="rf.streamSettings.xhttp.extra.xmux.hKeepAlivePeriod" :min="-1" @change="emit" />
                 <div class="hint">{{ t('protoCenter.transport.xmuxKeepAliveHint') }}</div>
+              </el-form-item>
+            </el-form>
+            <el-divider content-position="left">{{ t('protoCenter.transport.downloadSettings') }}</el-divider>
+            <el-form label-width="180px" label-position="left">
+              <el-form-item :label="t('protoCenter.transport.downloadTarget')">
+                <el-select v-if="rf.streamSettings.xhttp.mode !== 'stream-one'" v-model="rf.streamSettings.xhttp.extra._downloadInboundId" clearable :placeholder="t('protoCenter.transport.downloadTargetNone')" style="width:320px" @change="emit">
+                  <el-option v-for="cand in downloadCandidates(rf)" :key="cand._id" :label="downloadCandidateLabel(cand)" :value="cand._id" />
+                </el-select>
+                <div v-else class="hint" style="color:#e6a23c">{{ t('protoCenter.transport.downloadStreamOneUnsupported') }}</div>
+                <div class="hint">{{ t('protoCenter.transport.downloadSettingsHint') }}</div>
+                <div v-if="downloadTargetMissing(rf)" class="hint" style="color:#e6a23c">{{ t('protoCenter.transport.downloadTargetMissing') }}</div>
+                <div v-else-if="downloadTargetSummary(rf)" class="hint">{{ downloadTargetSummary(rf) }}</div>
               </el-form-item>
             </el-form>
           </template>
@@ -2918,7 +2934,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, useSystemCA: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -3148,6 +3164,41 @@ function onXmuxConnections() {
     rf.streamSettings.xhttp.extra.xmux.maxConcurrency = ''
   }
   emit()
+}
+
+// 下行入口只能从本节点已管理的 xhttp 入站里选（引用式）：
+// 只存 _downloadInboundId，分享/订阅时再按目标入站当前配置解析地址、端口与密钥。
+function downloadCandidates(row) {
+  const selfId = row?._id
+  return (form.value || []).filter((ib) =>
+    ib && ib._id !== selfId &&
+    ib._enabled !== false &&
+    ib.streamSettings?.network === 'xhttp'
+  )
+}
+
+function downloadCandidateLabel(ib) {
+  const sec = ib.streamSettings?.security || 'none'
+  return `${ib.remark || ib.tag || ('#' + ib._id)} · ${ib.port || '-'} · ${sec}`
+}
+
+function downloadTarget(row) {
+  const id = row?.streamSettings?.xhttp?.extra?._downloadInboundId
+  if (!id) return null
+  return (form.value || []).find((ib) => String(ib._id) === String(id)) || null
+}
+
+function downloadTargetMissing(row) {
+  const id = row?.streamSettings?.xhttp?.extra?._downloadInboundId
+  return !!id && !downloadTarget(row)
+}
+
+function downloadTargetSummary(row) {
+  const target = downloadTarget(row)
+  if (!target) return ''
+  const sec = target.streamSettings?.security || 'none'
+  const path = target.streamSettings?.xhttp?.path || '/'
+  return `${target.remark || target.tag || ('#' + target._id)} · ${target.port || '-'} · ${sec} · ${path}`
 }
 
 function onCurvesChange() { emit() }
@@ -3415,7 +3466,7 @@ function parseTlsSettings(tls) {
     minVersion: tls.minVersion || '', maxVersion: tls.maxVersion || '',
     _cipherSuites: tls.cipherSuites ? tls.cipherSuites.split(':') : [], _curves: tls.curvePreferences || [],
     _echSockoptStr: tls.echSockopt ? JSON.stringify(tls.echSockopt, null, 2) : '',
-    rejectUnknownSni: tls.rejectUnknownSni || false, disableSystemRoot: tls.disableSystemRoot || false,
+    rejectUnknownSni: tls.rejectUnknownSni || false, disableSystemRoot: tls.disableSystemRoot || false, useSystemCA: tls.useSystemCA || false,
     enableSessionResumption: tls.enableSessionResumption || false, masterKeyLog: tls.masterKeyLog || '',
     fingerprint: clientSettings.fingerprint || '',
     _certMode: certMode, _certId: '', _certName: '',
@@ -3760,6 +3811,8 @@ function parseXhttpSettings(xh) {
         hMaxReusableSecs: xmux.hMaxReusableSecs || '1800-3000',
         hKeepAlivePeriod: xmux.hKeepAlivePeriod || 0,
       },
+      // 下行入口引用（内部字段）：只存目标入站 ID，渲染时解析
+      _downloadInboundId: extra._downloadInboundId || '',
     },
   }
 }
@@ -4275,6 +4328,7 @@ function buildInbound(ib, isApiCall = false) {
       }
       if (tls._curves && tls._curves.length) tlsSettings.curvePreferences = tls._curves
       if (tls.rejectUnknownSni) tlsSettings.rejectUnknownSni = true
+      if (tls.useSystemCA) tlsSettings.useSystemCA = true
       if (tls.disableSystemRoot) tlsSettings.disableSystemRoot = true
       if (tls.enableSessionResumption) tlsSettings.enableSessionResumption = true
       if (tls.masterKeyLog) tlsSettings.masterKeyLog = tls.masterKeyLog
@@ -4443,6 +4497,8 @@ function buildInbound(ib, isApiCall = false) {
       if (xmux.hMaxReusableSecs && xmux.hMaxReusableSecs !== '1800-3000') xmuxObj.hMaxReusableSecs = xmux.hMaxReusableSecs
       if (xmux.hKeepAlivePeriod) xmuxObj.hKeepAlivePeriod = xmux.hKeepAlivePeriod
       if (Object.keys(xmuxObj).length) extra.xmux = xmuxObj
+      // 下行入口引用：只写目标入站 ID（内部字段，核心忽略；渲染时再解析）
+      if (s._downloadInboundId) extra._downloadInboundId = Number(s._downloadInboundId)
       if (Object.keys(extra).length) xhSettings.extra = extra
       result.streamSettings.xhttpSettings = xhSettings
     }

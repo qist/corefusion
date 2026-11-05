@@ -796,6 +796,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			// 同上：无接入域名时回退节点地址，不跳过。
 			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
 			config = merged
+			// 上下行分离：按 _downloadInboundId 引用解析目标入站，失效则回退单入口。
+			h.resolveDownloadSettings(ctx, cfg, config, configs, shareDomains)
 			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
 			settings := getMap(config, "settings")
 
@@ -2949,6 +2951,19 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if headers := getMap(xhttp, "headers"); headers != nil {
 				opts["headers"] = headers
 			}
+			// xmux / downloadSettings 存在 xhttp.extra 里
+			xhttpExtra := getMap(xhttp, "extra")
+			if xhttpExtra == nil {
+				xhttpExtra = xhttp
+			}
+			if xmux := getMap(xhttpExtra, "xmux"); len(xmux) > 0 {
+				opts["reuse-settings"] = mihomoReuseFromXmux(xmux)
+			}
+			if dl := getMap(xhttpExtra, "downloadSettings"); len(dl) > 0 {
+				if ds := mihomoDownloadFromXray(dl); len(ds) > 1 {
+					opts["download-settings"] = ds
+				}
+			}
 			if len(opts) > 0 {
 				extra["xhttp-opts"] = opts
 			}
@@ -3821,4 +3836,92 @@ func (h *PublicHandler) subscriptionCapacityExclusions(ctx context.Context, memb
 		}
 	}
 	return excluded
+}
+
+// mihomoReuseFromXmux 把 xray 的 xmux 转成 mihomo 的 reuse-settings。
+func mihomoReuseFromXmux(xmux map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(xmux))
+	pairs := map[string]string{
+		"maxConcurrency":   "max-concurrency",
+		"maxConnections":   "max-connections",
+		"cMaxReuseTimes":   "c-max-reuse-times",
+		"hMaxRequestTimes": "h-max-request-times",
+		"hMaxReusableSecs": "h-max-reusable-secs",
+		"hKeepAlivePeriod": "h-keep-alive-period",
+	}
+	for k, v := range xmux {
+		if dst, ok := pairs[k]; ok {
+			out[dst] = v
+		}
+	}
+	return out
+}
+
+// mihomoDownloadFromXray 把 xray 的 downloadSettings 转成 mihomo 的
+// xhttp-opts.download-settings（字段名见 mihomo XHTTPDownloadSettings）。
+func mihomoDownloadFromXray(dl map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{})
+	if v, ok := dl["address"].(string); ok && v != "" {
+		out["server"] = v
+	}
+	switch v := dl["port"].(type) {
+	case float64:
+		if v > 0 {
+			out["port"] = int(v)
+		}
+	case int:
+		if v > 0 {
+			out["port"] = v
+		}
+	}
+	security, _ := dl["security"].(string)
+	if security == "tls" || security == "reality" {
+		out["tls"] = true
+	}
+	if tls := getMap(dl, "tlsSettings"); tls != nil {
+		if sni, _ := tls["serverName"].(string); sni != "" {
+			out["servername"] = sni
+		}
+		if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
+			out["alpn"] = alpn
+		}
+		if fp, _ := tls["fingerprint"].(string); fp != "" {
+			out["client-fingerprint"] = fp
+		}
+	}
+	if reality := getMap(dl, "realitySettings"); reality != nil {
+		if sni, _ := reality["serverName"].(string); sni != "" {
+			out["servername"] = sni
+		}
+		if fp, _ := reality["fingerprint"].(string); fp != "" {
+			out["client-fingerprint"] = fp
+		}
+		ro := map[string]interface{}{}
+		if pk, _ := reality["password"].(string); pk != "" {
+			ro["public-key"] = pk
+		}
+		if sid, _ := reality["shortId"].(string); sid != "" {
+			ro["short-id"] = sid
+		}
+		if len(ro) > 0 {
+			out["reality-opts"] = ro
+		}
+	}
+	if xh := getMap(dl, "xhttpSettings"); xh != nil {
+		if path, _ := xh["path"].(string); path != "" {
+			out["path"] = path
+		}
+		if host, _ := xh["host"].(string); host != "" {
+			out["host"] = host
+		}
+		if headers := getMap(xh, "headers"); headers != nil && len(headers) > 0 {
+			out["headers"] = headers
+		}
+		if xhx := getMap(xh, "extra"); xhx != nil {
+			if xmux := getMap(xhx, "xmux"); len(xmux) > 0 {
+				out["reuse-settings"] = mihomoReuseFromXmux(xmux)
+			}
+		}
+	}
+	return out
 }

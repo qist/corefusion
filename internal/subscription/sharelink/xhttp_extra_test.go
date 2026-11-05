@@ -103,3 +103,43 @@ func buildXhttpMap() map[string]interface{} {
 	}
 	return m
 }
+
+// TestBuildXhttpExtraKeepsDownloadSettings 锁住上下行分离的透传：
+// downloadSettings 是嵌套对象，不能被字符串白名单丢掉；内部的 _downloadInboundId
+// 属于面板内部字段，不能出现在下发给客户端的 extra 里。
+func TestBuildXhttpExtraKeepsDownloadSettings(t *testing.T) {
+	xhttp := map[string]interface{}{
+		"path": "/xh",
+		"extra": map[string]interface{}{
+			"_downloadInboundId": float64(7),
+			"downloadSettings": map[string]interface{}{
+				"address":  "dl.example.com",
+				"port":     float64(443),
+				"network":  "xhttp",
+				"security": "reality",
+				"realitySettings": map[string]interface{}{
+					"serverName":  "www.example.com",
+					"password":    "PUBKEY",
+					"shortId":     "abcd",
+					"fingerprint": "chrome",
+				},
+				"xhttpSettings": map[string]interface{}{
+					"path":  "/xh",
+					"extra": map[string]interface{}{"xmux": map[string]interface{}{"maxConcurrency": "8-16"}},
+				},
+			},
+		},
+	}
+	extra := buildXhttpExtra(xhttp)
+	if extra == "" {
+		t.Fatal("extra 为空，downloadSettings 被丢弃")
+	}
+	for _, needle := range []string{"downloadSettings", "dl.example.com", "realitySettings", "PUBKEY", "maxConcurrency"} {
+		if !strings.Contains(extra, needle) {
+			t.Errorf("extra 缺少 %q: %s", needle, extra)
+		}
+	}
+	if strings.Contains(extra, "_downloadInboundId") {
+		t.Errorf("内部字段 _downloadInboundId 不应下发: %s", extra)
+	}
+}

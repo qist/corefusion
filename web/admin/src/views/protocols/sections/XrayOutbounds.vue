@@ -297,6 +297,10 @@
               <el-form-item label="Disable System Root">
                 <el-switch v-model="rf._tlsDisableSystemRoot" />
               </el-form-item>
+              <el-form-item :label="t('protoCenter.tls.useSystemCA')">
+                <el-switch v-model="rf._tlsUseSystemCA" />
+                <div class="hint">{{ t('protoCenter.tls.useSystemCAHint') }}</div>
+              </el-form-item>
               <el-form-item label="ECH Config List">
                 <el-input v-model="rf._tlsEchConfigList" :placeholder="t('protoCenter.outbounds.tlsEchHint')" />
               </el-form-item>
@@ -1148,7 +1152,7 @@ function getDefaultOutbound() {
     _raw: { headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } },
     _kcpMtu: 1350, _kcpTti: 50, _kcpUplinkCapacity: 5, _kcpDownlinkCapacity: 20, _kcpCongestion: false, _kcpReadBufferSize: 2, _kcpWriteBufferSize: 2,
     _sni: '', _alpn: [], _fingerprint: '', _allowInsecure: false,
-    _tlsVerifyPeerCertByName: '', _tlsMinVersion: '', _tlsMaxVersion: '', _tlsCipherSuites: [], _tlsCurvePreferences: [], _tlsDisableSystemRoot: false, _tlsPinnedPeerCert: '', _tlsEchConfigList: '', _tlsMasterKeyLog: '',
+    _tlsVerifyPeerCertByName: '', _tlsMinVersion: '', _tlsMaxVersion: '', _tlsCipherSuites: [], _tlsCurvePreferences: [], _tlsDisableSystemRoot: false, _tlsUseSystemCA: false, _tlsPinnedPeerCert: '', _tlsEchConfigList: '', _tlsMasterKeyLog: '',
     _realitySni: '', _realityPublicKey: '', _realityShortId: '', _realityFingerprint: 'chrome', _realitySpiderX: '', _realityMldsa65Verify: '',
     _wsPath: '/', _wsHost: '', _wsHeaders: [], _wsHeartbeatPeriod: 0,
     _grpcServiceName: '', _grpcAuthority: '', _grpcUserAgent: '', _grpcMultiMode: false, _grpcIdleTimeout: 0, _grpcHealthCheckTimeout: 20, _grpcPermitWithoutStream: false, _grpcInitialWindowsSize: 0,
@@ -1337,6 +1341,7 @@ function parseOutbound(ob) {
     _tlsCipherSuites: tls.cipherSuites ? tls.cipherSuites.split(':') : [],
     _tlsCurvePreferences: tls.curvePreferences || [],
     _tlsDisableSystemRoot: tls.disableSystemRoot || false,
+    _tlsUseSystemCA: tls.useSystemCA || false,
     _tlsPinnedPeerCert: (tls.pinnedPeerCertSha256 || []).join(', '),
     _tlsEchConfigList: tls.echConfigList || '',
     _tlsMasterKeyLog: tls.masterKeyLog || '',
@@ -1598,6 +1603,7 @@ function buildStreamSettings(ob) {
     if (ob._fingerprint) tls.fingerprint = ob._fingerprint
     if (ob._allowInsecure) tls.allowInsecure = true
     if (ob._tlsDisableSystemRoot) tls.disableSystemRoot = true
+    if (ob._tlsUseSystemCA) tls.useSystemCA = true
     if (ob._tlsEchConfigList) tls.echConfigList = ob._tlsEchConfigList
     if (ob._tlsMasterKeyLog) tls.masterKeyLog = ob._tlsMasterKeyLog
     // ⚠ 下面 5 项 parseOutbound 会读（tls.minVersion / maxVersion / cipherSuites /

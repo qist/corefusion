@@ -1081,7 +1081,12 @@ func buildXhttpExtra(xhttp map[string]interface{}) string {
 			extra[dst] = int(v)
 		}
 	}
-	setStr("noGRPCHeader", "noGRPCHeader")
+	setBool("noGRPCHeader", "noGRPCHeader")
+	setBool("noSSEHeader", "noSSEHeader")
+	setInt("serverMaxHeaderBytes", "serverMaxHeaderBytes")
+	if headers := getMap(merged, "headers"); headers != nil && len(headers) > 0 {
+		extra["headers"] = headers
+	}
 	setStr("xPaddingBytes", "xPaddingBytes")
 	setBool("xPaddingObfsMode", "xPaddingObfsMode")
 	setStr("xPaddingKey", "xPaddingKey")
@@ -1106,11 +1111,80 @@ func buildXhttpExtra(xhttp map[string]interface{}) string {
 	if xmux := getMap(merged, "xmux"); xmux != nil && len(xmux) > 0 {
 		extra["xmux"] = xmux
 	}
+	// downloadSettings（上下行分离）：客户端专用，随 extra 下发给支持 XHTTP 分离的客户端。
+	// 必须整体透传，tlsSettings / realitySettings / xhttpSettings / sockopt 是嵌套对象，
+	// 不能像普通字段那样做字符串转换。
+	if dl := normalizeDownloadSettings(getMap(merged, "downloadSettings")); dl != nil {
+		extra["downloadSettings"] = dl
+	}
 	if len(extra) == 0 {
 		return ""
 	}
 	b, _ := json.Marshal(extra)
 	return string(b)
+}
+
+// normalizeDownloadSettings 规整 XHTTP 的 downloadSettings（上下行分离）。
+//
+// 语义（Xray discussions#4113）：
+//   - 仅客户端配置，通过分享链接的 extra 下发；
+//   - network 必须是 xhttp，security 只允许 tls / reality；
+//   - tlsSettings / realitySettings / xhttpSettings / sockopt 是独立完整的一套配置，
+//     必须原样保留，不能与上行配置合并。
+//
+// 返回 nil 表示“没有有效内容”，调用方应忽略。
+func normalizeDownloadSettings(dl map[string]interface{}) map[string]interface{} {
+	if dl == nil {
+		return nil
+	}
+	out := map[string]interface{}{
+		"network": "xhttp",
+	}
+	if v, ok := dl["address"].(string); ok && v != "" {
+		out["address"] = v
+	}
+	switch v := dl["port"].(type) {
+	case float64:
+		if v > 0 {
+			out["port"] = int(v)
+		}
+	case int:
+		if v > 0 {
+			out["port"] = v
+		}
+	}
+	if v, ok := dl["security"].(string); ok {
+		switch v {
+		case "tls", "reality":
+			out["security"] = v
+		}
+	}
+	for _, key := range []string{"tlsSettings", "realitySettings", "xhttpSettings", "sockopt"} {
+		if m := getMap(dl, key); m != nil && len(m) > 0 {
+			out[key] = stripInternalKeys(m)
+		}
+	}
+	// 只有 network（无 address/port/xhttpSettings）视为空配置。
+	if len(out) <= 1 {
+		return nil
+	}
+	return out
+}
+
+// stripInternalKeys 递归移除面板内部的下划线字段（如 _downloadInboundId）。
+func stripInternalKeys(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		if len(k) > 0 && k[0] == '_' {
+			continue
+		}
+		if child, ok := v.(map[string]interface{}); ok {
+			out[k] = stripInternalKeys(child)
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // serializeFinalMask converts finalmask config to JSON string (mirrors frontend serializeFinalMask).

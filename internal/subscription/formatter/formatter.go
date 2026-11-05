@@ -846,6 +846,14 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			if host, ok := xhttpOpts["host"].(string); ok {
 				xhttpSettings["host"] = host
 			}
+			if reuse, ok := xhttpOpts["reuse-settings"].(map[string]interface{}); ok && len(reuse) > 0 {
+				xhttpSettings["extra"] = map[string]interface{}{"xmux": xmuxFromReuse(reuse)}
+			}
+			if ds, ok := xhttpOpts["download-settings"].(map[string]interface{}); ok && len(ds) > 0 {
+				if x := downloadSettingsFromMihomo(ds); len(x) > 0 {
+					xhttpSettings["downloadSettings"] = x
+				}
+			}
 			streamSettings["xhttpSettings"] = xhttpSettings
 		}
 		// httpupgrade：以前这里**完全没写** httpupgradeSettings → 客户端按默认 path "/" 连，
@@ -2837,4 +2845,127 @@ func (f *Base64AggregateFormatter) Format(nodes []Node) ([]byte, error) {
 	}
 	encoded := base64.StdEncoding.EncodeToString(rawBytes)
 	return []byte(encoded), nil
+}
+
+// xmuxFromReuse 把 mihomo 的 reuse-settings 转回 xray 的 xmux（反向下发用）。
+func xmuxFromReuse(reuse map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(reuse))
+	pairs := map[string]string{
+		"max-concurrency":     "maxConcurrency",
+		"max-connections":     "maxConnections",
+		"c-max-reuse-times":   "cMaxReuseTimes",
+		"h-max-request-times": "hMaxRequestTimes",
+		"h-max-reusable-secs": "hMaxReusableSecs",
+		"h-keep-alive-period": "hKeepAlivePeriod",
+	}
+	for k, v := range reuse {
+		if dst, ok := pairs[k]; ok {
+			out[dst] = v
+		}
+	}
+	return out
+}
+
+// downloadSettingsFromMihomo 把 mihomo 的 xhttp-opts.download-settings 还原成
+// xray 的 downloadSettings（xray_json 订阅输出用）。
+func downloadSettingsFromMihomo(ds map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{"network": "xhttp"}
+	if v, ok := ds["server"].(string); ok && v != "" {
+		out["address"] = v
+	}
+	switch v := ds["port"].(type) {
+	case int:
+		if v > 0 {
+			out["port"] = v
+		}
+	case float64:
+		if v > 0 {
+			out["port"] = int(v)
+		}
+	}
+	reality, _ := ds["reality-opts"].(map[string]interface{})
+	security := ""
+	if tls, _ := ds["tls"].(bool); tls {
+		security = "tls"
+	}
+	if len(reality) > 0 {
+		security = "reality"
+	}
+	if security == "" {
+		// 没有 TLS/REALITY 的上下行分离不符合 xray 语义，直接丢弃。
+		return nil
+	}
+	out["security"] = security
+
+	serverName, _ := ds["servername"].(string)
+	fingerprint, _ := ds["client-fingerprint"].(string)
+
+	if security == "tls" {
+		tls := map[string]interface{}{}
+		if serverName != "" {
+			tls["serverName"] = serverName
+		}
+		if fingerprint != "" {
+			tls["fingerprint"] = fingerprint
+		}
+		if alpn := toStringList(ds["alpn"]); len(alpn) > 0 {
+			tls["alpn"] = alpn
+		}
+		if len(tls) > 0 {
+			out["tlsSettings"] = tls
+		}
+	} else {
+		r := map[string]interface{}{}
+		if serverName != "" {
+			r["serverName"] = serverName
+		}
+		if fingerprint != "" {
+			r["fingerprint"] = fingerprint
+		}
+		if pk, _ := reality["public-key"].(string); pk != "" {
+			// xray 客户端公钥字段是 password
+			r["password"] = pk
+		}
+		if sid, _ := reality["short-id"].(string); sid != "" {
+			r["shortId"] = sid
+		}
+		if len(r) > 0 {
+			out["realitySettings"] = r
+		}
+	}
+
+	xh := map[string]interface{}{}
+	if path, _ := ds["path"].(string); path != "" {
+		xh["path"] = path
+	}
+	if host, _ := ds["host"].(string); host != "" {
+		xh["host"] = host
+	}
+	if headers, ok := ds["headers"].(map[string]interface{}); ok && len(headers) > 0 {
+		xh["headers"] = headers
+	}
+	if reuse, ok := ds["reuse-settings"].(map[string]interface{}); ok && len(reuse) > 0 {
+		xh["extra"] = map[string]interface{}{"xmux": xmuxFromReuse(reuse)}
+	}
+	if len(xh) > 0 {
+		out["xhttpSettings"] = xh
+	}
+	return out
+}
+
+// toStringList 兼容 []string / []interface{}。
+func toStringList(v interface{}) []string {
+	switch arr := v.(type) {
+	case []string:
+		return arr
+	case []interface{}:
+		out := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }

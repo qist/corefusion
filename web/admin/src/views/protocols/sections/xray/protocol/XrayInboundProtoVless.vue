@@ -19,6 +19,13 @@
       <el-input v-model="rf.settings.decryption" placeholder="none" readonly />
       <div class="hint">Server-side decryption key (auto-generated)</div>
     </el-form-item>
+    <el-form-item label="Default Flow">
+      <el-select v-model="rf.settings.flow" style="width:100%" clearable>
+        <el-option label="none" value="" />
+        <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
+      </el-select>
+      <div class="hint">Inbound-level default flow (settings.flow); users without their own flow inherit it.</div>
+    </el-form-item>
     <el-divider content-position="left">
       Users
       <el-button size="small" type="primary" @click="addUser('vless')" style="margin-left:12px">+ Add User</el-button>

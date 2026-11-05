@@ -98,3 +98,50 @@ func TestTUICUUIDWithoutPasswordStaysV5(t *testing.T) {
 		t.Errorf("legacy token 应保留 token 形式: %v", proxies[0])
 	}
 }
+
+// TestParseXHTTPExtraDownloadSettings 校验 xray downloadSettings → mihomo
+// xhttp-opts.download-settings 的字段映射（address→server、公钥→reality-opts 等）。
+func TestParseXHTTPExtraDownloadSettings(t *testing.T) {
+	extra := map[string]any{
+		"downloadSettings": map[string]any{
+			"address":  "dl.example.com",
+			"port":     float64(8443),
+			"security": "reality",
+			"realitySettings": map[string]any{
+				"serverName":  "www.example.com",
+				"password":    "PUBKEY",
+				"shortId":     "abcd",
+				"fingerprint": "chrome",
+			},
+			"xhttpSettings": map[string]any{
+				"path": "/down",
+				"extra": map[string]any{
+					"xmux": map[string]any{"maxConcurrency": "8-16"},
+				},
+			},
+		},
+	}
+	opts := map[string]any{}
+	parseXHTTPExtra(extra, opts)
+
+	ds, ok := opts["download-settings"].(map[string]any)
+	if !ok {
+		t.Fatalf("未生成 download-settings: %#v", opts)
+	}
+	if ds["server"] != "dl.example.com" || ds["port"] != 8443 || ds["tls"] != true {
+		t.Errorf("基础字段映射错误: %#v", ds)
+	}
+	if ds["servername"] != "www.example.com" || ds["client-fingerprint"] != "chrome" {
+		t.Errorf("TLS 字段映射错误: %#v", ds)
+	}
+	ro, _ := ds["reality-opts"].(map[string]any)
+	if ro["public-key"] != "PUBKEY" || ro["short-id"] != "abcd" {
+		t.Errorf("reality-opts 映射错误: %#v", ds)
+	}
+	if ds["path"] != "/down" {
+		t.Errorf("path 映射错误: %#v", ds)
+	}
+	if reuse, _ := ds["reuse-settings"].(map[string]any); reuse["max-concurrency"] != "8-16" {
+		t.Errorf("reuse-settings 映射错误: %#v", ds)
+	}
+}

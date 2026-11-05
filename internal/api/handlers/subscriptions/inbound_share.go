@@ -62,11 +62,15 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	// 内部入站（@abstract / unix.sock，被外层 REALITY/TLS 入站的 fallback 引用）：
 	// 分享地址与 security 必须用**外层入口**的，否则客户端拿到的是"明文 + 抽象 socket"。
 	var entryIdx map[int64]fallbackEntry
+	var allCfgs []entity.InboundConfig
 	if h.inboundRepo != nil {
 		if cfgs, err := h.inboundRepo.ListAll(c.Request.Context(), cfg.CoreType); err == nil {
+			allCfgs = cfgs
 			entryIdx = buildFallbackEntryIndex(cfgs)
 		}
 	}
+	// 上下行分离：按 _downloadInboundId 引用解析目标入站，目标失效则自动回退单入口。
+	h.resolveDownloadSettings(c.Request.Context(), *cfg, config, allCfgs, shareDomains)
 	entry, hasEntry := entryIdx[cfg.ID]
 
 	items := make([]gin.H, 0, 4)

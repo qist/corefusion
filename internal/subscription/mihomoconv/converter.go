@@ -1007,6 +1007,113 @@ func parseXHTTPExtra(extra map[string]any, opts map[string]any) {
 			opts["reuse-settings"] = reuse
 		}
 	}
+
+	// downloadSettings（上下行分离）→ download-settings
+	// mihomo 的字段名/形状与 xray 不同（server/port/tls/servername/reality-opts），
+	// 不做映射会被静默丢弃，用户拿到的订阅就变成单入口。
+	if dlAny, ok := extra["downloadSettings"].(map[string]any); ok && len(dlAny) > 0 {
+		if ds := downloadSettingsToMihomo(dlAny, xmuxToReuse); len(ds) > 1 {
+			opts["download-settings"] = ds
+		}
+	}
+}
+
+// downloadSettingsToMihomo 把 xray 的 downloadSettings 转成 mihomo 的
+// xhttp-opts.download-settings（字段名见 mihomo adapter/outbound/vless.go 的
+// XHTTPDownloadSettings）。
+func downloadSettingsToMihomo(dl map[string]any, xmuxToReuse func(map[string]any) map[string]any) map[string]any {
+	out := make(map[string]any)
+	if v, ok := dl["address"].(string); ok && v != "" {
+		out["server"] = v
+	}
+	switch v := dl["port"].(type) {
+	case float64:
+		if v > 0 {
+			out["port"] = int(v)
+		}
+	case int:
+		if v > 0 {
+			out["port"] = v
+		}
+	}
+	security, _ := dl["security"].(string)
+	if security == "tls" || security == "reality" {
+		out["tls"] = true
+	}
+	if tls, ok := dl["tlsSettings"].(map[string]any); ok {
+		if sni, _ := tls["serverName"].(string); sni != "" {
+			out["servername"] = sni
+		}
+		if alpn := toStringSliceAny(tls["alpn"]); len(alpn) > 0 {
+			out["alpn"] = alpn
+		}
+		if fp, _ := tls["fingerprint"].(string); fp != "" {
+			out["client-fingerprint"] = fp
+		}
+	}
+	if reality, ok := dl["realitySettings"].(map[string]any); ok {
+		if sni, _ := reality["serverName"].(string); sni != "" {
+			out["servername"] = sni
+		}
+		if fp, _ := reality["fingerprint"].(string); fp != "" {
+			out["client-fingerprint"] = fp
+		}
+		ro := make(map[string]any)
+		// xray 客户端侧公钥写在 password 字段
+		if pk, _ := reality["password"].(string); pk != "" {
+			ro["public-key"] = pk
+		}
+		if sid, _ := reality["shortId"].(string); sid != "" {
+			ro["short-id"] = sid
+		}
+		if len(ro) > 0 {
+			out["reality-opts"] = ro
+		}
+	}
+	if xh, ok := dl["xhttpSettings"].(map[string]any); ok {
+		if path, _ := xh["path"].(string); path != "" {
+			out["path"] = path
+		}
+		if host, _ := xh["host"].(string); host != "" {
+			out["host"] = host
+		}
+		if headers, ok := xh["headers"].(map[string]any); ok && len(headers) > 0 {
+			hs := make(map[string]string, len(headers))
+			for k, v := range headers {
+				if s, ok := v.(string); ok && s != "" {
+					hs[k] = s
+				}
+			}
+			if len(hs) > 0 {
+				out["headers"] = hs
+			}
+		}
+		if xhx, ok := xh["extra"].(map[string]any); ok {
+			if xmux, ok := xhx["xmux"].(map[string]any); ok && len(xmux) > 0 {
+				if reuse := xmuxToReuse(xmux); len(reuse) > 0 {
+					out["reuse-settings"] = reuse
+				}
+			}
+		}
+	}
+	return out
+}
+
+// toStringSliceAny 兼容 []any / []string。
+func toStringSliceAny(v any) []string {
+	switch arr := v.(type) {
+	case []string:
+		return arr
+	case []any:
+		out := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func uniqueName(names map[string]int, name string) string {

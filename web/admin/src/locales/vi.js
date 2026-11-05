@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "Chỉ IPv6 (AAAA)",
     "visionSeed": "Seed Vision",
     "x25519Classic": "X25519 (cổ điển)",
-    "zeroRtt": "Bắt tay Zero RTT"
+    "zeroRtt": "Bắt tay Zero RTT",
+    "handshakeServer": "Máy chủ bắt tay",
+    "connectTimeout": "Hết hạn kết nối",
+    "tlsSpoofFork": "Giả mạo TLS (fork)"
   },
   misc: {
     "costsJson": "Chi phí (JSON)",

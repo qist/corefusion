@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "僅 IPv6（AAAA 記錄）",
     "visionSeed": "Vision 種子",
     "x25519Classic": "X25519（傳統）",
-    "zeroRtt": "零 RTT 握手"
+    "zeroRtt": "零 RTT 握手",
+    "handshakeServer": "握手伺服器",
+    "connectTimeout": "連線逾時",
+    "tlsSpoofFork": "TLS 偽裝（fork 特性）"
   },
   misc: {
     "costsJson": "開銷（JSON）",

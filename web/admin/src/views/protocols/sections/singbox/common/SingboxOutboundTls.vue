@@ -26,7 +26,7 @@
       <el-form-item :label="t('singbox.outboundTls.insecure')">
         <el-switch v-model="model._tlsInsecure" @change="emit" />
       </el-form-item>
-      <el-form-item label="TLS Spoof（fork 特性）">
+      <el-form-item :label="t('proto2.tlsSpoofFork')">
         <el-input v-model="model._tlsSpoof" placeholder="要伪装成的域名或 IP" @change="emit" />
         <div class="hint">
           本 fork 的 TLS spoof：把连接伪装到指定目标（如 tls.spoof = "www.bing.com"）；留空不启用。

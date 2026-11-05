@@ -62,7 +62,7 @@
           <el-input v-model="e.sni" placeholder="SNI (e.g. example.com)" @change="emit" />
         </el-col>
         <el-col :span="8">
-          <el-input v-model="e.server" placeholder="handshake server" @change="emit" />
+          <el-input v-model="e.server" :placeholder="t('proto2.handshakeServer')" @change="emit" />
         </el-col>
         <el-col :span="6">
           <el-input-number v-model="e.server_port" :min="1" :max="65535" style="width:100%" @change="emit" />
@@ -78,13 +78,13 @@
           <el-input v-model="e.detour" placeholder="detour" @change="emit" />
         </el-col>
         <el-col :span="6">
-          <el-input v-model="e.bind_interface" placeholder="bind interface" @change="emit" />
+          <el-input v-model="e.bind_interface" :placeholder="t('singbox.outboundBase.bindInterface')" @change="emit" />
         </el-col>
         <el-col :span="6">
-          <el-input v-model="e.connect_timeout" placeholder="connect timeout" @change="emit" />
+          <el-input v-model="e.connect_timeout" :placeholder="t('proto2.connectTimeout')" @change="emit" />
         </el-col>
         <el-col :span="6">
-          <el-input v-model="e.domain_resolver" placeholder="domain resolver" @change="emit" />
+          <el-input v-model="e.domain_resolver" :placeholder="t('singbox.outboundBase.domainResolver')" @change="emit" />
         </el-col>
       </el-row>
     </div>

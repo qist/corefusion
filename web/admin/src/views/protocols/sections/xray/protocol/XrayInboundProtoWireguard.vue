@@ -1,6 +1,6 @@
 <template>
   <el-form label-width="120px" label-position="left">
-    <el-form-item label="Secret Key">
+    <el-form-item :label="t('settings2.secretKey')">
       <div style="display:flex;gap:8px">
         <el-input v-model="rf.settings.secretKey" show-password style="flex:1" />
         <el-button size="small" @click="genWgKeyPair">Generate</el-button>

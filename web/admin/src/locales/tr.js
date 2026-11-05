@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "Yalnızca IPv6 (AAAA)",
     "visionSeed": "Vision tohumu",
     "x25519Classic": "X25519 (klasik)",
-    "zeroRtt": "Sıfır RTT el sıkışma"
+    "zeroRtt": "Sıfır RTT el sıkışma",
+    "handshakeServer": "El sıkışma sunucusu",
+    "connectTimeout": "Bağlantı zaman aşımı",
+    "tlsSpoofFork": "TLS sahteleme (fork)"
   },
   misc: {
     "costsJson": "Maliyet (JSON)",

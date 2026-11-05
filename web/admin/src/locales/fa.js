@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "فقط IPv6 (AAAA)",
     "visionSeed": "Seed Vision",
     "x25519Classic": "X25519 (کلاسیک)",
-    "zeroRtt": "دست‌دهی Zero RTT"
+    "zeroRtt": "دست‌دهی Zero RTT",
+    "handshakeServer": "سرور دست‌دهی",
+    "connectTimeout": "مهلت اتصال",
+    "tlsSpoofFork": "جعل TLS (fork)"
   },
   misc: {
     "costsJson": "هزینه (JSON)",

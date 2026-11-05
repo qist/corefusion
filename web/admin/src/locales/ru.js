@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "Только IPv6 (AAAA)",
     "visionSeed": "Vision Seed",
     "x25519Classic": "X25519 (классический)",
-    "zeroRtt": "Zero RTT рукопожатие"
+    "zeroRtt": "Zero RTT рукопожатие",
+    "handshakeServer": "Сервер рукопожатия",
+    "connectTimeout": "Таймаут подключения",
+    "tlsSpoofFork": "TLS-маскировка (fork)"
   },
   misc: {
     "costsJson": "Затраты (JSON)",

@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "Hanya IPv6 (AAAA)",
     "visionSeed": "Seed Vision",
     "x25519Classic": "X25519 (klasik)",
-    "zeroRtt": "Handshake Zero RTT"
+    "zeroRtt": "Handshake Zero RTT",
+    "handshakeServer": "Server handshake",
+    "connectTimeout": "Batas waktu koneksi",
+    "tlsSpoofFork": "Penyamaran TLS (fork)"
   },
   misc: {
     "costsJson": "Biaya (JSON)",

@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "Nur IPv6 (AAAA)",
     "visionSeed": "Vision-Seed",
     "x25519Classic": "X25519 (klassisch)",
-    "zeroRtt": "Zero-RTT-Handshake"
+    "zeroRtt": "Zero-RTT-Handshake",
+    "handshakeServer": "Handshake-Server",
+    "connectTimeout": "Verbindungs-Timeout",
+    "tlsSpoofFork": "TLS-Tarnung (Fork)"
   },
   misc: {
     "costsJson": "Kosten (JSON)",

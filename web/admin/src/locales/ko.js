@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "IPv6만 (AAAA)",
     "visionSeed": "Vision 시드",
     "x25519Classic": "X25519(클래식)",
-    "zeroRtt": "제로 RTT 핸드셰이크"
+    "zeroRtt": "제로 RTT 핸드셰이크",
+    "handshakeServer": "핸드셰이크 서버",
+    "connectTimeout": "연결 시간 초과",
+    "tlsSpoofFork": "TLS 스푸핑(fork 기능)"
   },
   misc: {
     "costsJson": "비용 (JSON)",

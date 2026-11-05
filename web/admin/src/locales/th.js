@@ -46,7 +46,10 @@ export default {
     "useIpv6Only": "IPv6 เท่านั้น (AAAA)",
     "visionSeed": "Seed Vision",
     "x25519Classic": "X25519 (คลาสสิก)",
-    "zeroRtt": "แฮนด์เชก Zero RTT"
+    "zeroRtt": "แฮนด์เชก Zero RTT",
+    "handshakeServer": "เซิร์ฟเวอร์แฮนด์เชก",
+    "connectTimeout": "หมดเวลาการเชื่อมต่อ",
+    "tlsSpoofFork": "การปลอมแปลง TLS (fork)"
   },
   misc: {
     "costsJson": "ค่าใช้จ่าย (JSON)",

@@ -636,10 +636,13 @@ func runServer(args []string) {
 
 	// Phase 7: TLS configuration
 	tlsEnabled := settings["tls_enabled"] == "true"
-	tlsCertPath := settings["tls_cert_path"]
-	tlsKeyPath := settings["tls_key_path"]
+	// 证书/密钥路径可能以 data 目录为基准存的是相对路径（证书库 cert.CertPath、
+	// 初始化落库都是这种形态）；直接按进程 cwd 打开会找不到 ——
+	// 生产踩过：cwd=/opt/corefusion 却去开 certs/<ip>/cert.pem。
+	tlsCertPath := resolveDataPath(dataDir, settings["tls_cert_path"])
+	tlsKeyPath := resolveDataPath(dataDir, settings["tls_key_path"])
 	mtlsEnabled := settings["mtls_enabled"] == "true"
-	mtlsCAPath := settings["mtls_ca_path"]
+	mtlsCAPath := resolveDataPath(dataDir, settings["mtls_ca_path"])
 
 	if tlsEnabled && (tlsCertPath == "" || tlsKeyPath == "") {
 		log.Println("WARNING: TLS enabled but cert/key paths not set, falling back to HTTP")
@@ -847,6 +850,35 @@ func initTrustedProxies(settings map[string]string) {
 		}
 	}
 	netutil.SetTrustedProxies(proxies)
+}
+
+// resolveDataPath 把"相对 data 目录"的路径还原成可直接打开的路径：
+// 绝对路径与空串原样返回；相对路径优先拼到 dataDir 下，拼出来的不存在时
+// 再按进程 cwd 试一次（兼容历史把路径写成相对 cwd 的部署）。
+func resolveDataPath(dataDir, p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" || filepath.IsAbs(p) {
+		return p
+	}
+	dd := strings.TrimSpace(dataDir)
+	if dd != "" {
+		joined := filepath.Join(dd, p)
+		if fileExists(joined) {
+			return joined
+		}
+	}
+	if fileExists(p) {
+		return p
+	}
+	if dd != "" {
+		return filepath.Join(dd, p)
+	}
+	return p
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // readSettings reads all panel settings from database.

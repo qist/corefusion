@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -211,6 +212,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	// HTTP
 	sb.WriteString("http {\n")
 	sb.WriteString("    include mime.types;\n")
+	// 自定义/历史配置扩展点：面板每次重新生成都会覆盖 nginx.conf，
+	// 旧机迁移过来的手写 server（如 CDN 回源 8080）放这里才不会被冲掉。
+	// 目录不存在时 nginx 对通配 include 不报错 ✓。
+	sb.WriteString("    include proxy/conf.d/*.conf;\n")
 	sb.WriteString("    default_type application/octet-stream;\n")
 
 	// 全局 TLS：DH 参数与会话票据密钥（各站点 TLS server 共用 data/ssl/，文件已由
@@ -1335,7 +1340,9 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				sb.WriteString("server {\n")
 				sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
 				if s.StreamIPv6 || globalIPv6 {
-					sb.WriteString(fmt.Sprintf("    listen [::]:%s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
+					// port 可能是 "203.0.113.10:443"（只监听指定 IPv4）——
+					// IPv6 行必须只取端口，否则会生成 listen [::]:203.0.113.10:443 这种非法写法。
+					sb.WriteString(fmt.Sprintf("    listen [::]:%s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", listenPortOnly(port)))
 				}
 				sb.WriteString("    ssl_preread on;\n")
 				sb.WriteString("    proxy_half_close on;\n")
@@ -1423,4 +1430,22 @@ func writeProxySSLUpstream(sb *strings.Builder, sni string) {
 		sb.WriteString(fmt.Sprintf("            proxy_ssl_name %s;\n", sni))
 	}
 	sb.WriteString("            proxy_ssl_verify off;\n")
+}
+
+// listenPortOnly 从 "443" / "203.0.113.10:443" / "[::1]:443" 中取出纯端口，
+// 供 IPv6 listen 复用（IPv6 行只接受 [::]:<port>）。
+func listenPortOnly(listen string) string {
+	listen = strings.TrimSpace(listen)
+	if listen == "" {
+		return "443"
+	}
+	if _, port, err := net.SplitHostPort(listen); err == nil && port != "" {
+		return port
+	}
+	if i := strings.LastIndex(listen, ":"); i >= 0 && i+1 < len(listen) {
+		if p := listen[i+1:]; p != "" && !strings.Contains(p, ":") {
+			return p
+		}
+	}
+	return listen
 }

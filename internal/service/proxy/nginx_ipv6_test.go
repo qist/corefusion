@@ -91,3 +91,22 @@ func TestNginxConfigIPv6Switch(t *testing.T) {
 		t.Fatalf("域名组内站点开启 IPv6 时，跳转 server 应同时生成 listen [::]:80：\n%s", cfg)
 	}
 }
+
+// 流监听写的是「指定 IPv4:端口」时，IPv6 行必须只拼端口，
+// 否则会生成 listen [::]:203.0.113.10:443 这种 nginx 直接报错的写法。
+func TestNginxStreamIPv6UsesPortOnly(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "www.example.com", Template: "sni", Path: "203.0.113.10:443",
+			SNITarget: "127.0.0.1:443", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true,"stream_ipv6":true}`))
+	if !strings.Contains(cfg, "listen [::]:443 reuseport") {
+		t.Fatalf("stream IPv6 监听应生成 listen [::]:443：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "listen [::]:203.0.113.10:443") {
+		t.Fatalf("stream IPv6 监听不能把地址拼进端口：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "include proxy/conf.d/*.conf;") {
+		t.Fatalf("http 段应包含自定义配置 include：\n%s", cfg)
+	}
+}

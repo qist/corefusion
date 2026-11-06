@@ -44,6 +44,11 @@ jobs:
       - name: 路径拼接静态检查（safepath）
         run: bash scripts/check-safepath.sh
 
+      # 防止把生产 IP 写进源码/注释（曾经泄露过一次）：真实公网 IP 一律拦下，
+      # 只允许私有/文档段/常见公共 DNS。
+      - name: 生产 IP 泄漏检查
+        run: python3 scripts/check-prod-ips.py
+
       - name: go vet
         run: go vet ./...
 

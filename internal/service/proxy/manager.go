@@ -2580,6 +2580,14 @@ func (m *Manager) extractFromTarGz(reader io.Reader, name, destPath string) (str
 		log.Printf("re-synced WAF rules/config from DB after %s install", name)
 	}
 
+	// 解包后必须再校正一次权限：lua 是随 nginx 包一起更新落盘的（root:root 0600），
+	// 只靠启动时修一次不够 —— 换包/重装后 WAF 会在 worker 里读不到脚本。
+	if name == "nginx" || name == "caddy" {
+		if err := EnsureRuntimePermissions(m.dataDir); err != nil {
+			log.Printf("proxy %s: ensure runtime permissions after extract: %v", name, err)
+		}
+	}
+
 	if !binaryFound {
 		return "", fmt.Errorf("binary %q not found in archive", name)
 	}

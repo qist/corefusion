@@ -1591,6 +1591,7 @@ export default {
       cfip: 'CF IP Pool',
     },
     cfip: {
+      check: 'Check connectivity',
       sources: 'API Sources',
       entries: 'IP List',
       addSource: 'Add Source',

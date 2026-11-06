@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -143,4 +144,14 @@ func (r *ShareDomainConfigRepository) ListByRegion(ctx context.Context, region s
 		Order("sort_order ASC, id ASC").
 		Find(&configs).Error
 	return configs, err
+}
+
+// UpdateHealth 写入探活结果（只动健康字段，不动 Enabled）。
+func (r *ShareDomainConfigRepository) UpdateHealth(ctx context.Context, id int64, healthy bool, latencyMs, failCount int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.ShareDomainConfig{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"healthy":    healthy,
+		"latency_ms": latencyMs,
+		"fail_count": failCount,
+		"last_check": checkedAt,
+	}).Error
 }

@@ -2009,7 +2009,10 @@ func cleanDNSConfig(dns interface{}) interface{} {
 // --- helpers ---
 
 func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry {
-	var entries []shareDomainEntry
+	// 分「全部可用」与「健康」两份：优先健康条目，
+	// 但某类全部不健康时回退全部（否则一次网络故障会把订阅地址清空）。
+	var domainAll, domainHealthy []shareDomainEntry
+	var ipAll, ipHealthy []shareDomainEntry
 
 	// Load direct and cf_domain from share_domain_configs (NOT cf_ip, that comes from cf_ip_entries)
 	if h.shareDomainRepo != nil {
@@ -2030,7 +2033,10 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if len(entry.Ports) == 0 {
 					entry.Ports = []int{entry.Port}
 				}
-				entries = append(entries, entry)
+				domainAll = append(domainAll, entry)
+				if d.Healthy {
+					domainHealthy = append(domainHealthy, entry)
+				}
 			}
 		}
 	}
@@ -2040,7 +2046,8 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 		ips, err := h.cfIPEntryRepo.List(ctx, 0)
 		if err == nil {
 			for _, ip := range ips {
-				if ip.IP == "" {
+				// 只挑用户启用且探活通过的；未探测过（默认 true）照常使用。
+				if ip.IP == "" || !ip.Enabled {
 					continue
 				}
 				entry := shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: 443}
@@ -2050,12 +2057,26 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if len(entry.Ports) == 0 {
 					entry.Ports = []int{443}
 				}
-				entries = append(entries, entry)
+				ipAll = append(ipAll, entry)
+				if ip.Healthy {
+					ipHealthy = append(ipHealthy, entry)
+				}
 			}
 		}
 	}
 
+	entries := make([]shareDomainEntry, 0, len(domainAll)+len(ipAll))
+	entries = append(entries, preferHealthy(domainAll, domainHealthy)...)
+	entries = append(entries, preferHealthy(ipAll, ipHealthy)...)
 	return entries
+}
+
+// preferHealthy 优先返回健康条目；全部不健康时回退全量，保证订阅里仍有地址。
+func preferHealthy(all, healthy []shareDomainEntry) []shareDomainEntry {
+	if len(healthy) > 0 {
+		return healthy
+	}
+	return all
 }
 
 func resolveHostPort(config map[string]interface{}, listenHost string, listenPort int, shareDomains []shareDomainEntry) (string, int) {

@@ -1591,6 +1591,7 @@ export default {
       cfip: 'CF IP 池',
     },
     cfip: {
+      check: '检测连通性',
       sources: 'API 来源',
       entries: 'IP 列表',
       addSource: '添加来源',

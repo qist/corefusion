@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -128,4 +129,14 @@ func (r *CFIPEntryRepository) DeleteBySource(ctx context.Context, sourceID int64
 // ClearAll deletes all CF IP entries.
 func (r *CFIPEntryRepository) ClearAll(ctx context.Context) error {
 	return r.db.WithContext(ctx).Where("1 = 1").Delete(&entity.CFIPEntry{}).Error
+}
+
+// UpdateHealth 写入探活结果（不改 Enabled：用户开关与探测结论分开）。
+func (r *CFIPEntryRepository) UpdateHealth(ctx context.Context, id int64, healthy bool, latencyMs, failCount int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.CFIPEntry{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"healthy":    healthy,
+		"latency_ms": latencyMs,
+		"fail_count": failCount,
+		"last_check": checkedAt,
+	}).Error
 }

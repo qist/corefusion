@@ -54,6 +54,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">{{ t('service.cfip.entries') }} ({{ entries.length }})</span>
           <div style="display:flex;gap:8px">
+            <el-button size="small" @click="checkHealth">{{ t('service.cfip.check') }}</el-button>
             <el-button size="small" type="danger" @click="clearEntries">{{ t('service.cfip.clearAll') }}</el-button>
             <el-button size="small" type="primary" @click="showAddEntry">+ {{ t('service.cfip.addIP') }}</el-button>
           </div>
@@ -64,6 +65,8 @@
           <el-switch v-model="entry.enabled" size="small" style="margin-right:4px" />
           <span style="font-family:monospace;font-size:13px">{{ entry.ip }}</span>
           <span v-if="entry.country" style="font-size:11px;color:#909399;margin-left:4px">{{ entry.country }}</span>
+          <span :style="{ marginLeft: '4px', fontSize: '12px', color: entry.healthy === false ? '#f56c6c' : '#67c23a' }">●</span>
+          <span v-if="entry.latency_ms" style="font-size:11px;color:#909399;margin-left:2px">{{ entry.latency_ms }}ms</span>
           <el-button size="small" type="danger" text @click="deleteEntry(entry)" style="margin-left:4px">X</el-button>
         </div>
       </div>
@@ -172,6 +175,14 @@ function toggleNewPort(port, checked) {
   } else {
     newEntry.value.ports = newEntry.value.ports.filter(p => p !== port)
   }
+}
+
+async function checkHealth() {
+  try {
+    await client.post('/cfip/check')
+    ElMessage.success(t('common.success'))
+    await fetchEntries()
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function fetchSources() {

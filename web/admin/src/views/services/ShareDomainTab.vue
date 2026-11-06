@@ -12,6 +12,7 @@
       <div v-for="item in directItems" :key="item.id" class="domain-item">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <el-switch v-model="item.enabled" @change="updateItem(item)" />
+          <span v-if="item.type === 'cf_domain'" :style="{ fontSize: '12px', color: item.healthy === false ? '#f56c6c' : '#67c23a' }">●</span>
           <el-input v-model="item.value" :placeholder="t('service.shareDomain.domainOrIP')" style="flex:1;min-width:180px" @change="updateItem(item)" />
           <el-input-number v-model="item.port" :min="1" :max="65535" style="width:110px" @change="updateItem(item)" />
           <!-- Node binding selector (only in global mode)；支持多选节点，空=全局 -->
@@ -35,6 +36,7 @@
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">{{ t('service.shareDomain.cfDomain') }}</span>
           <div style="display:flex;gap:8px">
+            <el-button size="small" @click="checkHealth">{{ t('service.shareDomain.check') }}</el-button>
             <el-button size="small" @click="seedDefaults">{{ t('service.shareDomain.seed') }}</el-button>
             <el-button size="small" type="danger" @click="clearAll('cf_domain')">{{ t('service.shareDomain.clearAll') }}</el-button>
             <el-button size="small" type="primary" @click="addItem('cf_domain')">+ {{ t('service.shareDomain.add') }}</el-button>
@@ -101,6 +103,14 @@ async function fetchNodeServers() {
   } catch {
     nodeServers.value = []
   }
+}
+
+async function checkHealth() {
+  try {
+    await client.post('/cfip/check')
+    ElMessage.success(t('common.success'))
+    await fetchItems()
+  } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
 async function fetchItems() {

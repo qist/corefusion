@@ -87,6 +87,7 @@ import (
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	endpointconfigSvc "corefusion/internal/service/endpointconfig"
 	geoRuleSvc "corefusion/internal/service/georule"
+	"corefusion/internal/service/healthprobe"
 	inboundconfigSvc "corefusion/internal/service/inboundconfig"
 	logManageSvc "corefusion/internal/service/logmanage"
 	mihomoSvc "corefusion/internal/service/mihomo"
@@ -1662,6 +1663,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			cfipEntryRepo := repository.NewCFIPEntryRepository(database)
 			cfipSvcInst := cfipSvc.NewService(cfipSourceRepo, cfipEntryRepo)
 			cfipSvcInst.StartScheduler(context.Background(), time.Duration(schedCfg.CFIPCheckInterval)*time.Minute)
+			// 优选域名/优选 IP 探活：定时跑 + 管理端手动触发。
+			// 连续失败才标记不健康（不改 Enabled），订阅渲染自动跳过不健康条目。
+			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo)
+			prober.StartScheduler(context.Background(), 5*time.Minute)
+			probeH := systemHandler.NewProbeHandler(prober)
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{
@@ -1679,6 +1685,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipWrite.DELETE("/entries/:id", cfipH.DeleteEntry)
 				cfipWrite.DELETE("/entries", cfipH.ClearEntries)
 				cfipWrite.POST("/seed", cfipH.SeedDefaults)
+				cfipWrite.POST("/check", probeH.Check)
 			}
 
 			// Services (moved under /node-servers/:id/services)

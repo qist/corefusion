@@ -15,6 +15,13 @@ type ShareDomainConfig struct {
 	Enabled   bool   `json:"enabled" gorm:"not null;default:true"`
 	SortOrder int    `json:"sort_order" gorm:"not null;default:0"`
 
+	// 探活状态（cf_domain / cf_ip 有效）：Enabled 是用户开关，Healthy 是探测结果。
+	// 连续失败才置 false，订阅渲染时跳过；direct 条目不参与探测。
+	Healthy   bool      `json:"healthy" gorm:"not null;default:true"`
+	LatencyMs int       `json:"latency_ms" gorm:"not null;default:0"`
+	FailCount int       `json:"fail_count" gorm:"not null;default:0"`
+	LastCheck time.Time `json:"last_check"`
+
 	// 多区域：0=全局共享域名（所有服务器通用），>0=仅该服务器使用
 	ServerID int64 `json:"server_id" gorm:"index;not null;default:0"`
 	// 多节点绑定：JSON 数组文本（如 "[2,11]"）——非空时对这些节点生效；

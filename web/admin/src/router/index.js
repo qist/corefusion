@@ -21,6 +21,17 @@ function getBasePath() {
 
 const basePath = getBasePath()
 
+// 历史 bug 会把 base 拼两次（/h7zgitxltt5z/h7zgitxltt5z/login）：这里自愈一次，
+// 否则用户从旧书签/旧跳转进来会落到不存在的路由上，表现是"登录页打不开"。
+if (basePath !== '/' && basePath !== '') {
+  const doubled = basePath + basePath
+  if (window.location.pathname.startsWith(doubled)) {
+    window.location.replace(
+      window.location.pathname.slice(basePath.length) + window.location.search + window.location.hash
+    )
+  }
+}
+
 const routes = [
   {
     path: '/init',
@@ -110,7 +121,9 @@ window.addEventListener('vite:preloadError', (e) => {
 // Navigation guard — restores user info on page refresh
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('access_token')
-  const loginPath = basePath === '/' ? '/login' : basePath + '/login'
+  // ⚠ 这里必须是路由路径，不能带 base：createWebHistory(basePath) 已经加过一次，
+  // 再拼一次就会变成 /<base>/<base>/login（真机踩到，登录页直接打不开）。
+  const loginPath = '/login'
 
   // Allow login and maintenance pages through
   if (to.path.endsWith('/login') || to.path.endsWith('/maintenance') || to.path.endsWith('/init')) {

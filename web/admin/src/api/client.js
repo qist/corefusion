@@ -4,6 +4,10 @@ import i18n from '../locales'
 
 // Detect base path from current URL
 function getBasePath() {
+  // 服务端注入的 base 最可靠（web 路径非根时，靠 URL 猜在浅路径上会猜错）
+  if (window.__CF_BASE_PATH__) {
+    return window.__CF_BASE_PATH__.replace(/\/$/, '')
+  }
   const path = window.location.pathname
   const segments = path.split('/').filter(Boolean)
   if (segments.length > 0) {

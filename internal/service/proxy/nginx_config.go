@@ -214,8 +214,10 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	sb.WriteString("    include mime.types;\n")
 	// 自定义/历史配置扩展点：面板每次重新生成都会覆盖 nginx.conf，
 	// 旧机迁移过来的手写 server（如 CDN 回源 8080）放这里才不会被冲掉。
+	// ⚠ 相对 include 是相对 **nginx.conf 所在目录**（data/proxy）解析的，
+	// 所以这里必须是 conf.d/*.conf，不能写 proxy/conf.d/*.conf。
 	// 目录不存在时 nginx 对通配 include 不报错 ✓。
-	sb.WriteString("    include proxy/conf.d/*.conf;\n")
+	sb.WriteString("    include conf.d/*.conf;\n")
 	sb.WriteString("    default_type application/octet-stream;\n")
 
 	// 全局 TLS：DH 参数与会话票据密钥（各站点 TLS server 共用 data/ssl/，文件已由

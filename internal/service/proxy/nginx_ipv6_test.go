@@ -106,7 +106,7 @@ func TestNginxStreamIPv6UsesPortOnly(t *testing.T) {
 	if strings.Contains(cfg, "listen [::]:203.0.113.10:443") {
 		t.Fatalf("stream IPv6 监听不能把地址拼进端口：\n%s", cfg)
 	}
-	if !strings.Contains(cfg, "include proxy/conf.d/*.conf;") {
+	if !strings.Contains(cfg, "include conf.d/*.conf;") {
 		t.Fatalf("http 段应包含自定义配置 include：\n%s", cfg)
 	}
 }

@@ -91,8 +91,11 @@ def load_template(db_path: str):
     return json.loads(row[0])
 
 
-# xray 核心不支持的入站协议：硬迁会生成起不来的配置，直接跳过并在报告里提示。
-XRAY_UNSUPPORTED = {"hysteria", "hysteria2", "tuic", "anytls"}
+# 需要在 xray 上跳过的入站协议。
+# ⚠ 不要凭印象判断支持性：xray 26.x（本仓库当前二进制 26.10.31）**已支持 hysteria**
+#   （protocol=hysteria + streamSettings.network=hysteria）。不确定时先用
+#   `xray -test -c <config>` 实测再决定是否加入此集合。
+XRAY_UNSUPPORTED = {"tuic", "anytls"}
 
 
 def build_inbound_config(item, core_type: str = "xray") -> dict:

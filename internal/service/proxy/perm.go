@@ -41,6 +41,8 @@ func EnsureRuntimePermissions(dataDir string) error {
 	if err := os.MkdirAll(proxyDir, 0o755); err != nil {
 		return fmt.Errorf("create proxy dir: %w", err)
 	}
+	// 已有安装可能是 0750（历史 MkdirAll 参数），显式补 g+x/o+x，否则 nginx 连 proxy 都进不去。
+	record(addModeBits(proxyDir, 0, 0o005))
 	// 2) 代理运行时目录（lua / waf-rules / conf.d / mime.types 等）：目录可进入、文件可读。
 	for _, sub := range []string{proxyDir, filepath.Join(proxyDir, "conf.d")} {
 		if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -101,7 +103,7 @@ func walkAddReadPerms(root string) error {
 			return err
 		}
 		if d.IsDir() {
-			return addModeBits(path, 0, 0o001)
+			return addModeBits(path, 0, 0o005)
 		}
 		return addModeBits(path, 0o444, 0)
 	})

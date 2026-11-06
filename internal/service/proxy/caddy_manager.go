@@ -973,7 +973,7 @@ func (m *CaddyManager) SaveAndApply(ctx context.Context, serverID int64) (string
 		return "", err
 	}
 	path := filepath.Join(m.configDir, "Caddyfile")
-	os.MkdirAll(m.configDir, 0750)
+	os.MkdirAll(m.configDir, 0755)
 	if err := os.WriteFile(path, []byte(config), 0644); err != nil {
 		return "", err
 	}

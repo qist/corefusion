@@ -55,6 +55,10 @@ func TestEnsureRuntimePermissionsFixesWAFReadability(t *testing.T) {
 	if mode := statPerm(t, logsDir); mode&0o002 == 0 && mode&0o020 == 0 {
 		t.Errorf("logs dir mode = %o, want writable by nginx group or others", mode)
 	}
+	// proxy 目录本身也必须可进入（历史版本用 0750 创建，nginx 连目录都进不去）
+	if mode := statPerm(t, filepath.Join(dataDir, "proxy")); mode&0o001 == 0 {
+		t.Errorf("proxy dir mode = %o, want others execute", mode)
+	}
 	// conf.d 目录要自动创建，方便迁移配置持久化
 	if _, err := os.Stat(filepath.Join(dataDir, "proxy", "conf.d")); err != nil {
 		t.Errorf("conf.d should be created: %v", err)

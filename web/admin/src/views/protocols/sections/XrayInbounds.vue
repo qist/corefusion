@@ -2931,6 +2931,8 @@ function resetSeed(obj) {
 }
 
 function addUser(proto) {
+  // 迁移/手写入站可能只有 password（没有 clients 数组）→ push 会抛异常，先补齐。
+  if (!Array.isArray(rf.settings.clients)) rf.settings.clients = []
   if (proto === 'vless') rf.settings.clients.push({ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
   else if (proto === 'vmess') rf.settings.clients.push({ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
   else if (proto === 'trojan') rf.settings.clients.push({ password: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })

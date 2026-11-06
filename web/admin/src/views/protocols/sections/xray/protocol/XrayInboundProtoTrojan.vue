@@ -28,6 +28,9 @@ import XrayUserItem from '../common/XrayUserItem.vue'
 import { genEmail, genBase64Password } from '../utils/xrayInboundUtils'
 const props = defineProps({ rf: { type: Object, required: true }, serverId: Number, coreType: String })
 function addUser() {
+  // 迁移/手写入站可能只有 password（没有 clients 数组）→ 直接 push 会抛
+  // "Cannot read properties of undefined (reading 'push')"，这里先补齐。
+  if (!Array.isArray(props.rf.settings.clients)) props.rf.settings.clients = []
   props.rf.settings.clients.push({ password: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
 }
 </script>

@@ -9,6 +9,9 @@
 </template>
 <script setup>
 import { ref, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({ data: String })
 const emit = defineEmits(['update'])
 const form = ref('bbr')

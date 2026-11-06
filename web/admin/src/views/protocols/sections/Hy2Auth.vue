@@ -20,6 +20,9 @@
 </template>
 <script setup>
 import { reactive, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({ data: Object })
 const emit = defineEmits(['update'])
 const form = reactive({ type: 'password', password: '' })

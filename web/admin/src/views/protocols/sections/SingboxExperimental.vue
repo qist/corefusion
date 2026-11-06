@@ -94,6 +94,9 @@
 </template>
 <script setup>
 import { reactive, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({
   data: Object,
   // 协议中心会传节点 id；订阅格式编辑（全局模板）不传 → 无节点上下文

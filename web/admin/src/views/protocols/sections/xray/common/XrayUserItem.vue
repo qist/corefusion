@@ -26,6 +26,9 @@
 
 <script setup>
 import { formatTraffic, resetTraffic } from '../utils/xrayInboundUtils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 defineProps({ user: { type: Object, required: true }, title: { type: String, default: 'User' }, index: { type: Number, default: 0 } })
 defineEmits(['remove'])
 </script>

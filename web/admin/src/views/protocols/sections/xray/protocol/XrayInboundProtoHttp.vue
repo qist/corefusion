@@ -18,6 +18,9 @@
 <script setup>
 import XrayUserItem from '../common/XrayUserItem.vue'
 import { genEmail, genPassword } from '../utils/xrayInboundUtils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({ rf: { type: Object, required: true }, serverId: Number, coreType: String })
 function addAccount() {
   props.rf.settings.accounts.push({ user: genEmail().split('@')[0], pass: genPassword(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })

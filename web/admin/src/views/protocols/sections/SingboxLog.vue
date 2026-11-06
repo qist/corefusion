@@ -32,6 +32,9 @@
 </template>
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
 const form = reactive({ disabled: false, level: 'info', output: 'stderr', timestamp: true })

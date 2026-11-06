@@ -517,6 +517,10 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		return fmt.Errorf("start process: %w", err)
 	}
 
+	// 放开 unix socket 权限：xray 默认按 umask 建成 0755，非 root 的 nginx worker
+	// 连不上（EACCES），客户端表现为连接被重置。核心异步创建 socket，放到后台轮询处理。
+	go ensureUnixSocketPerms(configPath)
+
 	p := &managedProcess{
 		ServiceID:  serviceID,
 		CoreType:   coreType,

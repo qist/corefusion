@@ -111,3 +111,65 @@ func isStaleUnixSocket(path string) bool {
 	_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 	return true
 }
+
+// ensureUnixSocketPerms 让非 root 的代理进程（nginx worker）能连上核心创建的 unix socket。
+//
+// 背景（生产实测）：3x-ui 的 xray 用 listen "/dev/shm/x.sock,0666" 显式放宽 socket 权限，
+// 迁移到 CoreFusion 后 listen 只剩路径（vanilla xray 不认 ,mode 后缀），xray 按 umask
+// 建成 0755 → nginx worker（nginx 用户）connect() 报 EACCES，客户端看到的是
+// "An existing connection was forcibly closed by the remote host"，
+// 而服务端日志里是 "connect() to unix:... failed (13: Permission denied)"。
+//
+// 核心启动是异步的（socket 在 cmd.Start 之后才创建），所以轮询等待出现后统一放开权限。
+// 只处理配置里 inbounds[].listen 明确声明的文件型 socket。
+func ensureUnixSocketPerms(configPath string) {
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var cfg struct {
+		Inbounds []struct {
+			Listen string `json:"listen"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return
+	}
+	paths := make([]string, 0, len(cfg.Inbounds))
+	for _, ib := range cfg.Inbounds {
+		if p := unixSocketPath(ib.Listen); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	if len(paths) == 0 {
+		return
+	}
+
+	const wantMode = os.FileMode(0o666)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		pending := 0
+		for _, p := range paths {
+			fi, statErr := os.Stat(p)
+			if statErr != nil || fi.Mode()&os.ModeSocket == 0 {
+				pending++
+				continue
+			}
+			if fi.Mode().Perm()&wantMode == wantMode {
+				continue
+			}
+			// 与 3x-ui 的 listen "...,0666" 保持一致：socket 只需要读写位，不要 exec 位。
+			if err := os.Chmod(p, wantMode); err != nil {
+				log.Printf("process: chmod unix socket %s: %v", p, err)
+			}
+		}
+		if pending == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Printf("process: %d unix socket(s) not ready after 10s, permissions not fixed: %v", pending, paths)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}

@@ -62,7 +62,12 @@ def unwrap(payload):
 
 
 def normalize_listen(raw: str) -> str:
-    """x-ui 的 socket 监听带权限尾巴：/dev/shm/x.sock,0666 → /dev/shm/x.sock。"""
+    """x-ui 的 socket 监听带权限尾巴：/dev/shm/x.sock,0666 → /dev/shm/x.sock。
+
+    vanilla xray 不认这个 ",mode" 后缀（只有 3x-ui 的 fork 支持），所以这里必须去掉；
+    权限由面板在核心启动后统一放开（process.ensureUnixSocketPerms），
+    否则 nginx worker（非 root）connect() 会 EACCES，客户端表现为连接被重置。
+    """
     listen = (raw or "").strip()
     if not listen:
         return ""

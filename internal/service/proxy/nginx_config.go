@@ -1036,7 +1036,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 				sb.WriteString(fmt.Sprintf("            grpc_pass %s;\n", grpcTarget))
 				// Location-level directives
-				writeLocationConfig(&sb, site.LocationConfig, nil)
+				// 本分支上方已经写过 wafBypass（set $waf_enable off），
+				// 站点配置里再带这条时要去重，否则同一 location 出现两次。
+				var grpcEmitted map[string]bool
+				if strings.TrimSpace(wafBypass) != "" {
+					grpcEmitted = map[string]bool{"set $waf_enable off;": true}
+				}
+				writeLocationConfig(&sb, site.LocationConfig, grpcEmitted)
 				sb.WriteString("        }\n")
 				continue
 			}

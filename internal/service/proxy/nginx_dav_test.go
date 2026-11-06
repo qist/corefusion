@@ -124,3 +124,28 @@ func TestNginxPreviewUsesDraftAndDeduplicates(t *testing.T) {
 		t.Fatalf("生成器已写过的 set $waf_enable off 不应重复：\n%s", cfg)
 	}
 }
+
+// gRPC location 上方已经写过 wafBypass：站点配置里再带同一条指令时只能出现一次。
+func TestNginxConfigGRPCDedupesWafBypass(t *testing.T) {
+	disabled := false
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "g.example.com", Template: "grpc", Path: "/svc",
+		ListenPort: "443", ProxyProtocol: true,
+		CertPath: "certs/a/cert.pem", KeyPath: "certs/a/key.pem",
+		LocationConfig: "set $waf_enable off;",
+		WafEnabled:     &disabled, Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	start := strings.Index(cfg, "location /svc {")
+	if start < 0 {
+		t.Fatalf("缺少 /svc 段：\n%s", cfg)
+	}
+	end := strings.Index(cfg[start:], "\n        }")
+	if end < 0 {
+		t.Fatalf("无法定位 /svc 段结尾：\n%s", cfg)
+	}
+	block := cfg[start : start+end]
+	if strings.Count(block, "set $waf_enable off;") != 1 {
+		t.Fatalf("set $waf_enable off 应只出现一次：\n%s", block)
+	}
+}

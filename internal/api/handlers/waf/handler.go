@@ -528,7 +528,8 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 	// Strip port from domain (caddyguard matches without port)
 	domain := waf.StripPort(req.Domain)
 	// Save domain config with waf_enable=on
-	config := fmt.Sprintf(`{"waf_enable":"on","rule_dir":"domains/%s"}`, domain)
+	// 多域名站点的 domain 是逗号分隔的域名组 → rule_dir 必须归一成合法目录（取首个域名）。
+	config := fmt.Sprintf(`{"waf_enable":"on","rule_dir":"%s"}`, waf.DomainRuleDirFor(domain))
 	if err := h.svc.SaveDomainConfig(c.Request.Context(), serverID, domain, config); err != nil {
 		response.InternalError(c, "ENABLE_FAILED", err.Error())
 		return

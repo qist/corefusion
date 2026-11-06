@@ -580,6 +580,10 @@ def build_plan(root, certs_dir, upstreams, skip_ipv6=False, sni_listen_override=
                 "location_config": "\n".join(keep),
                 "enabled": True,
             }
+            # gRPC / WebSocket 必须关闭站点级 WAF ✓：WAF 会改写请求头/缓冲 body，
+            # 直接破坏 HTTP/2(gRPC) 与 Upgrade 握手（用户口径：这两个模板的 WAF 一定关）。
+            if template in ("grpc", "websocket"):
+                site["waf_enabled"] = False
             if template in ("redirect", "return_code"):
                 site["backend_path"] = backend_path
             sites.append(site)

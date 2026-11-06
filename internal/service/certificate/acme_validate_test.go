@@ -10,7 +10,7 @@ import (
 // （CA 必须能从公网连到该 IP 做验证）。这里把两类都钉住。
 func TestValidateACMEDomains(t *testing.T) {
 	// ① 公网 IP：必须放行 ✓
-	ok := []string{"8.8.8.8", "203.0.113.10", "2606:4700:4700::1111"}
+	ok := []string{"8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"}
 	for _, d := range ok {
 		if err := ValidateACMEDomains([]string{d}, "http-01"); err != nil {
 			t.Errorf("公网 IP %s 应允许（LE 自 2026-01-15 支持 IP 证书）：%v", d, err)

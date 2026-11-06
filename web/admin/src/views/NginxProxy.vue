@@ -1746,7 +1746,7 @@ async function saveSiteWAFConfig() {
       if (v !== '' && v !== undefined && v !== null) cfg[k] = v
     }
     if (siteWAFRuleMode.value === 'custom') {
-      cfg.rule_dir = `domains/${siteWAFDomain.value}`
+      cfg.rule_dir = wafRuleDirFor(siteWAFDomain.value)
     } else {
       // Global mode: remove rule_dir entirely so WAF engine reads global rules
       delete cfg.rule_dir
@@ -1840,6 +1840,17 @@ function forwardDerived(template) {
   const independent = pp && pp !== '0' && pp !== listenPort
   return independent ? { upstream: `127.0.0.1:${pp}`, path: '' }
                      : { upstream: `127.0.0.1:${listenPort}`, path: '/p' }
+}
+
+// WAF 规则目录归一（与后端 waf.DomainRuleDirFor 同口径）：
+// 站点域名可能是逗号分隔的多域名组，而 rule_dir 是文件路径 —— 只能取首个域名，
+// 并过滤掉逗号/空格/通配符等非法字符，否则 WAF 引擎按路径读不到规则目录。
+function wafRuleDirFor(domain) {
+  const first = String(domain || '').split(',').map(s => s.trim()).filter(Boolean)[0] || ''
+  let name = first.toLowerCase().replace(/:\d+$/, '')
+  if (name.startsWith('*.')) name = '_wildcard.' + name.slice(2)
+  name = name.replace(/[^a-z0-9._-]/g, '_').replace(/^[.-]+|[.-]+$/g, '').slice(0, 128)
+  return 'domains/' + (name || 'default')
 }
 
 // 订阅/门户/Reality 已从「模板」下拉移到工具栏按钮（代理面板同一排）。

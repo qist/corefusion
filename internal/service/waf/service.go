@@ -615,7 +615,31 @@ func validateWAFDomainRuleDir(domain, config string) error {
 	return nil
 }
 
+// normalizeDomainConfigRuleDir 归一配置 JSON 里的 rule_dir（只改 domains/ 下的非法目录，
+// 自定义绝对路径不动）。多域名站点的 key 允许逗号/空格，但 rule_dir 是文件路径，必须合法。
+func normalizeDomainConfigRuleDir(domain, config string) string {
+	var cfg map[string]interface{}
+	if json.Unmarshal([]byte(config), &cfg) != nil {
+		return config
+	}
+	raw, ok := cfg["rule_dir"].(string)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return config
+	}
+	fixed := NormalizeRuleDir(domain, raw)
+	if fixed == raw {
+		return config
+	}
+	cfg["rule_dir"] = fixed
+	buf, err := json.Marshal(cfg)
+	if err != nil {
+		return config
+	}
+	return string(buf)
+}
+
 func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, config string) error {
+	config = normalizeDomainConfigRuleDir(domain, config)
 	if err := validateWAFDomainRuleDir(domain, config); err != nil {
 		return err
 	}
@@ -870,6 +894,8 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 			if ruleDir == "" {
 				continue // No custom rule_dir → domain uses global rules directly
 			}
+			// 多域名站点的历史 rule_dir 可能是 "domains/a.com, b.com"（非法路径）→ 归一
+			ruleDir = NormalizeRuleDir(dc.Domain, ruleDir)
 			// Three-layer merge: global+node (already in `merged`) + domain rules
 			domainMerged := s.mergeDomainRules(ctx, merged, serverID, dc.Domain)
 			// 安全审计 v6 H-4：rule_dir 来自域配置，必须解析到 waf-rules 之下，
@@ -1087,8 +1113,10 @@ func (s *Service) buildDomainJSON(ctx context.Context, serverID int64) (string, 
 		if c.Config == "" {
 			continue
 		}
-		// Config is stored as JSON string, use it directly
-		result[c.Domain] = json.RawMessage(c.Config)
+		// rule_dir 是文件路径：历史数据可能还留着 "domains/a.com, b.com" 这类非法值，
+		// 输出前统一归一（与写入侧同口径），否则 WAF 引擎读不到规则目录。
+		cfgText := normalizeDomainConfigRuleDir(c.Domain, c.Config)
+		result[c.Domain] = json.RawMessage(cfgText)
 	}
 
 	data, err := json.MarshalIndent(result, "", "    ")
@@ -1725,7 +1753,10 @@ func (s *Service) SaveDomainRuleFileWithMode(ctx context.Context, domain, name, 
 // Domain rules are stored in the DB, not on disk — the directory is only
 // needed for LandRulesForServer to write merged results to.
 func (s *Service) InitDomainRules(ctx context.Context, domain string) error {
-	domainDir := filepath.Join(s.wafRulesDir(), "domains", domain)
+	domainDir, err := safepath.ResolveUnder(s.wafRulesDir(), DomainRuleDirFor(domain))
+	if err != nil {
+		return err
+	}
 	return os.MkdirAll(domainDir, 0755)
 }
 

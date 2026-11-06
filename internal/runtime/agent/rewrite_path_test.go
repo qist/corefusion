@@ -7,8 +7,8 @@ import "testing"
 func TestRewritePathToLocalIdempotent(t *testing.T) {
 	dataDir := "/opt/corefusion/data"
 	cases := map[string]string{
-		"certs/example.com/fullchain.pem":                        "/opt/corefusion/data/certs/example.com/fullchain.pem",
-		"/opt/corefusion/data/certs/example.com/fullchain.pem":   "/opt/corefusion/data/certs/example.com/fullchain.pem",
+		"certs/example.com/fullchain.pem":                      "/opt/corefusion/data/certs/example.com/fullchain.pem",
+		"/opt/corefusion/data/certs/example.com/fullchain.pem": "/opt/corefusion/data/certs/example.com/fullchain.pem",
 		"/opt/corefusion/data/opt/corefusion/data/certs/a.pem": "/opt/corefusion/data/certs/a.pem",
 		"":                           "",
 		"/etc/ssl/private/other.pem": "/etc/ssl/private/other.pem",

@@ -81,7 +81,7 @@ func TestDiscoverPanelOriginUpdatesGRPCAddress(t *testing.T) {
 }
 
 // 配置的是 IP 时它本身就是源站，绝不能把连接换成面板探测到的公网出口 IP
-// （节点 14/19 就是因为这个从 192.168.0.151 被换成了 203.0.113.10 而永久离线）。
+// （节点 14/19 就是因为这个被换成了面板探测到的公网出口 IP 而永久离线）。
 func TestDiscoverPanelOriginSkippedForIPConfig(t *testing.T) {
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

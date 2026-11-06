@@ -1333,6 +1333,10 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 		return fmt.Errorf("%s is not installed", proxyType)
 	}
 
+	// 每次启动前都校正一次：二进制/lua 可能是刚解压的（root 0600），
+	// 不补权限会让 WAF 在 worker 里读不到脚本而静默失效。
+	_ = EnsureRuntimePermissions(m.dataDir)
+
 	// Prevent nginx and caddy from running simultaneously — they share ports 80/443.
 	var otherType ProxyType
 	switch proxyType {

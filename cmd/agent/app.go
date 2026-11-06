@@ -126,6 +126,10 @@ func resolveAgentCAPath(dataDir string) string {
 func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	dataDir := cfg.Agent.DataDir
 
+	// 与面板同口径：节点上的 nginx 也以非 root 用户运行，数据目录若是 0750
+	// 会读不到 WAF lua/规则，导致节点 WAF 静默失效。
+	_ = proxySvc.EnsureRuntimePermissions(dataDir)
+
 	// Phase 1: Initialize local SQLite database (same as Panel)
 	dbPath := filepath.Join(dataDir, "sqlite", "agent.db")
 	dbCfg := db.DefaultConfig()

@@ -33,6 +33,7 @@ import (
 	"corefusion/internal/service/bootstrap"
 	certService "corefusion/internal/service/certificate"
 	planSvc "corefusion/internal/service/plan"
+	proxySvc "corefusion/internal/service/proxy"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
 	sysService "corefusion/internal/service/system"
 	usersync "corefusion/internal/service/usersync"
@@ -330,6 +331,11 @@ func runServer(args []string) {
 
 	// Ensure data directory structure
 	initDataDir(dataDir)
+	// 代理（nginx/caddy）以非 root 用户运行：自动补齐 WAF lua/规则/日志目录的
+	// 读取与写入权限，避免新装/升级后被 0750 数据目录挡住导致 WAF 静默失效。
+	if err := proxySvc.EnsureRuntimePermissions(dataDir); err != nil {
+		log.Printf("[proxy] ensure runtime permissions: %v", err)
+	}
 
 	// 加密密钥必须在**任何 DB 初始化/数据迁移之前**就绪：
 	// 存量迁移里有一趟「历史主机名密钥加密的密文 → 用当前主密钥重写」，

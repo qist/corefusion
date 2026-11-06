@@ -1068,7 +1068,7 @@
       </el-form>
       <div v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') }}</div>
-        <el-input :model-value="generatePreview(siteForm)" type="textarea" :rows="10" readonly style="font-family:monospace;font-size:13px;background:#f5f7fa" />
+        <el-input :model-value="configPreview" type="textarea" :rows="10" readonly style="font-family:monospace;font-size:13px;background:#f5f7fa" />
         <div style="margin-top:12px">
           <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.serverConfig') }}</div>
           <el-input v-model="siteForm.server_config" type="textarea" :rows="3" style="font-family:monospace;font-size:13px" placeholder="add_header X-Frame-Options SAMEORIGIN;" />
@@ -2337,164 +2337,98 @@ function editSite(row) {
   siteDialogVisible.value = true
 }
 
-function generatePreview(site) {
-  let lines = []
-  const domain = site.domain
-  // 有效 IPv6：全局开关优先，站点级 enable_ipv6 可单独开启
-  const ipv6 = (settings.value && settings.value.ipv6) || site.enable_ipv6
-  // L4 preview
-  if (site.template === 'l4') {
-    const port = site.listen_port
-    const proto = site.l4_protocol
-    const upstreams = (site.upstreams || []).filter(u => u.trim())
-    if (upstreams.length === 0) upstreams.push(`127.0.0.1:${panelPort.value}`)
-    const upstreamName = 'l4_' + (site.domain).replace(/[^a-zA-Z0-9_]/g, '_')
-    lines.push(`upstream ${upstreamName} {`)
-    for (const up of upstreams) { lines.push(`    server ${up};`) }
-    lines.push(`}`, ``)
-    lines.push(`server {`)
-    lines.push(`    listen ${port} so_keepalive=on;`)
-    if (ipv6) lines.push(`    listen [::]:${port} ipv6only=on so_keepalive=on;`)
-    lines.push(`    proxy_socket_keepalive on;`)
-    lines.push(`    proxy_buffer_size 512k;`)
-    if (site.proxy_protocol) lines.push(`    proxy_protocol on;`)
-    lines.push(`    proxy_pass ${upstreamName};`)
-    lines.push(`    proxy_timeout 5m;`)
-    lines.push(`    proxy_connect_timeout 2s;`)
-    lines.push(`}`)
-    return lines.join('\n')
+// ── 配置预览 ──────────────────────────────────────────────────────────────
+// 直接调用后端生成器（与保存后真正落盘的配置同源）。以前这里自己拼一段 nginx
+// 语法，和生成器各写一套 → 预览里出现 try_files、server_name 用逗号分隔等
+// 与实际配置不一致的内容，用户看到的和生效的不是一回事。
+const configPreview = ref('')
+const configPreviewLoading = ref(false)
+let configPreviewTimer = null
+
+function buildSitePayload() {
+  const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
+  const pathValue = siteForm.value.template === 'l4' ? siteForm.value.listen_port : siteForm.value.path
+  return {
+    id: siteForm.value.id || 0,
+    domain: siteForm.value.domain,
+    upstream,
+    path: pathValue,
+    backend_path: siteForm.value.backend_path,
+    template: siteForm.value.template,
+    listen_port: siteForm.value.listen_port,
+    listen_socket: siteForm.value.listen_socket,
+    cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
+    dual_cert: siteForm.value.dual_cert !== false,
+    key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
+    server_config: siteForm.value.server_config,
+    location_config: siteForm.value.location_config,
+    l4_protocol: siteForm.value.l4_protocol,
+    sni_target: siteForm.value.sni_target,
+    local_port: siteForm.value.local_port,
+    proxy_protocol: siteForm.value.proxy_protocol || false,
+    is_panel: siteForm.value.is_panel,
+    priority: siteForm.value.is_panel ? 0 : 100,
+    enable_http2: siteForm.value.enable_http2 !== false,
+    enable_ipv6: siteForm.value.enable_ipv6 || false,
+    enable_quic: siteForm.value.enable_quic || false,
+    enable_early_data: siteForm.value.enable_early_data || false,
+    enable_stapling: siteForm.value.enable_stapling || false,
+    ssl_protocols: siteForm.value.ssl_protocols,
+    ssl_ciphers: siteForm.value.ssl_ciphers,
+    ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve,
+    waf_enabled: siteForm.value.waf_enabled !== false,
+    redirect_https: siteForm.value.redirect_https !== false
   }
-  // Reality preview
-  if (site.template === 'reality') {
-    const port = site.listen_port || '9443'
-    const certPath = site.cert_path || '/path/to/cert.pem'
-    const keyPath = site.key_path || '/path/to/key.pem'
-    lines.push(`server {`)
-    lines.push(`    listen 127.0.0.1:${port} ssl proxy_protocol;`)
-    if (ipv6) lines.push(`    listen [::1]:${port} ssl proxy_protocol;`)
-    lines.push(`    http2 on;`)
-    lines.push(`    server_name _;`)
-    lines.push(`    ssl_certificate ${certPath};`)
-    lines.push(`    ssl_certificate_key ${keyPath};`)
-    lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
-    lines.push(`    set_real_ip_from 127.0.0.1;`)
-    lines.push(`    real_ip_header proxy_protocol;`)
-    lines.push(`    location = / {`)
-    lines.push(`        default_type 'text/html';`)
-    lines.push(`        return 200 'Success';`)
-    lines.push(`    }`)
-    lines.push(`}`)
-    return lines.join('\n')
-  }
-  // SNI preview (stream / ssl_preread)
-  if (site.template === 'sni') {
-    const port = site.path || site.listen_port || '443'
-    const domain = site.domain || 'fallback'
-    const target = (site.sni_target || '').trim() || ((site.upstreams || []).filter(u => u.trim())[0] || '127.0.0.1:8443')
-    const localPort = site.local_port || '8443'
-    const key = String(domain).replace(/[^a-zA-Z0-9_]/g, '_')
-    lines.push(`stream {`)
-    if (domain && domain !== 'fallback') {
-      lines.push(`    upstream sni_${key} {`)
-      lines.push(`        server ${target};`)
-      lines.push(`    }`, '')
-    }
-    lines.push(`    upstream sni_fallback {`)
-    lines.push(`        server 127.0.0.1:${localPort};`)
-    lines.push(`    }`, '')
-    lines.push(`    # SNI routing on :${port}`)
-    lines.push(`    map $ssl_preread_server_name $sni_backend {`)
-    if (domain && domain !== 'fallback') lines.push(`        ${domain} sni_${key};`)
-    lines.push(`        default sni_fallback;`)
-    lines.push(`    }`, '')
-    lines.push(`    server {`)
-    lines.push(`        listen ${port} reuseport fastopen=4096 so_keepalive=on backlog=4096;`)
-    if (ipv6) lines.push(`        listen [::]:${port} reuseport fastopen=4096 so_keepalive=on backlog=4096;`)
-    lines.push(`        ssl_preread on;`)
-    lines.push(`        proxy_half_close on;`)
-    if (site.proxy_protocol) lines.push(`        proxy_protocol on;`)
-    lines.push(`        tcp_nodelay on;`)
-    lines.push(`        preread_buffer_size 128k;`)
-    lines.push(`        proxy_connect_timeout 1s;`)
-    lines.push(`        proxy_timeout 3s;`)
-    lines.push(`        proxy_pass $sni_backend;`)
-    lines.push(`    }`)
-    lines.push(`}`)
-    return lines.join('\n')
-  }
-  // HTTP preview
-  const path = site.path
-  const upstreams = (site.upstreams || []).filter(u => u.trim())
-  if (upstreams.length === 0) upstreams.push('127.0.0.1:8080')
-  const upstreamStr = upstreams.join(',')
-  lines.push(`server {`)
-  const port = site.listen_port
-  if (site.cert_path && site.key_path) {
-    lines.push(`    listen ${port} ssl;`)
-    if (ipv6) lines.push(`    listen [::]:${port} ssl;`)
-  } else {
-    lines.push(`    listen ${port};`)
-    if (ipv6) lines.push(`    listen [::]:${port};`)
-  }
-  lines.push(`    server_name ${domain};`)
-  if (site.cert_path && site.key_path) {
-    lines.push(`    ssl_certificate ${site.cert_path};`)
-    lines.push(`    ssl_certificate_key ${site.key_path};`)
-    lines.push(`    ssl_protocols TLSv1.2 TLSv1.3;`)
-    if (site.enable_stapling) {
-      lines.push(`    ssl_stapling on;`)
-      lines.push(`    ssl_stapling_verify on;`)
-      lines.push(`    ssl_trusted_certificate ${String(site.cert_path).replace(/[^/]*$/, 'fullchain.pem')};`)
-      // resolver 留空 = 关闭（用系统 resolver）：与后端一致，空则不输出
-      const resolver = ((settings.value && settings.value.ssl_resolver) || '').trim()
-      if (resolver) {
-        lines.push(`    resolver ${resolver};`)
-        lines.push(`    resolver_timeout 10s;`)
-      }
-    }
-  }
-  lines.push(``)
-  if (site.template === 'static') {
-    const rootDir = upstreams[0]
-    lines.push(`    location ${path} {`)
-    lines.push(`        root ${rootDir};`)
-    lines.push(`        index index.html index.htm;`)
-    lines.push(`        try_files $uri $uri/ =404;`)
-    lines.push(`    }`, `}`)
-    return lines.join('\n')
-  }
-  if (upstreams.length > 1) {
-    lines.push(`    upstream backend {`)
-    for (const up of upstreams) { lines.push(`        server ${up};`) }
-    lines.push(`    }`, ``)
-  }
-  lines.push(`    location ${path} {`)
-  const passTarget = upstreams.length > 1 ? 'http://backend' : `http://${upstreamStr}`
-  if (site.template === 'websocket') {
-    lines.push(`        proxy_pass ${passTarget};`)
-    lines.push(`        proxy_http_version 1.1;`)
-    lines.push(`        proxy_set_header Upgrade $http_upgrade;`)
-    lines.push(`        proxy_set_header Connection "upgrade";`)
-    lines.push(`        proxy_set_header Host $host;`)
-    lines.push(`        proxy_set_header X-Forwarded-Proto $scheme;`)
-    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
-    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
-  } else if (site.template === 'grpc') {
-    lines.push(`        grpc_pass grpc://${upstreamStr};`)
-    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
-    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
-  } else {
-    lines.push(`        proxy_pass ${passTarget};`)
-    lines.push(`        proxy_http_version 1.1;`)
-    lines.push(`        proxy_set_header Accept-Encoding "";`)
-    lines.push(`        proxy_set_header Host $host;`)
-    lines.push(`        proxy_set_header X-Real-IP $remote_addr;`)
-    lines.push(`        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`)
-    lines.push(`        proxy_set_header X-Forwarded-Proto $scheme;`)
-  }
-  lines.push(`    }`, `}`)
-  return lines.join('\n')
 }
+
+// 从完整配置里取出与当前站点相关的 server 块（预览只展示这一段）。
+// SNI/L4 没有 server_name，退化为按域名过滤相关行；再匹配不到就展示整份配置，
+// 至少保证内容真实、不误导。
+function extractPreviewBlock(config, site) {
+  const names = String(site.domain || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+  const lines = String(config || '').split('\n')
+  const blocks = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^\s*server\s*\{/.test(lines[i])) continue
+    let depth = 0
+    const buf = []
+    for (let j = i; j < lines.length; j++) {
+      const l = lines[j]
+      buf.push(l)
+      if (/\{\s*$/.test(l)) depth++
+      if (/^\s*\}\s*$/.test(l)) { depth--; if (depth === 0) { i = j; break } }
+    }
+    const text = buf.join('\n')
+    if (!/server_name/.test(text)) continue
+    if (names.some(n => new RegExp('(^|\\s)' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\s|;|$)').test(text))) blocks.push(text)
+  }
+  if (blocks.length) return blocks.join('\n\n')
+  if (site.template === 'sni' || site.template === 'l4') {
+    const hits = lines.filter(l => names.some(n => l.includes(n)) || /^\s*upstream\s+/.test(l) || /ssl_preread/.test(l))
+    if (hits.length) return hits.join('\n')
+  }
+  return config
+}
+
+async function refreshConfigPreview() {
+  if (!siteDialogVisible.value) return
+  configPreviewLoading.value = true
+  try {
+    const res = await client.post(`${nginxApi.value}/preview-site`, buildSitePayload())
+    configPreview.value = extractPreviewBlock(res?.config || '', siteForm.value)
+  } catch (e) {
+    configPreview.value = ''
+  } finally {
+    configPreviewLoading.value = false
+  }
+}
+
+function scheduleConfigPreview() {
+  clearTimeout(configPreviewTimer)
+  configPreviewTimer = setTimeout(refreshConfigPreview, 400)
+}
+
+watch(siteForm, () => scheduleConfigPreview(), { deep: true })
 
 async function applyConfig() {
   try {
@@ -2525,36 +2459,7 @@ async function saveSite() {
         return
       }
     }
-    const payload = {
-domain: siteForm.value.domain,
-upstream: upstream,
-path: pathValue,
-backend_path: siteForm.value.backend_path,
-template: siteForm.value.template,
-      listen_port: siteForm.value.listen_port,
-      listen_socket: siteForm.value.listen_socket,
-      cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
-      dual_cert: siteForm.value.dual_cert !== false,
-      key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
-      server_config: siteForm.value.server_config,
-      location_config: siteForm.value.location_config,
-      l4_protocol: siteForm.value.l4_protocol,
-      sni_target: siteForm.value.sni_target,
-      local_port: siteForm.value.local_port,
-      proxy_protocol: siteForm.value.proxy_protocol || false,
-      is_panel: siteForm.value.is_panel,
-      priority: siteForm.value.is_panel ? 0 : 100,
-      enable_http2: siteForm.value.enable_http2 !== false,
-      enable_ipv6: siteForm.value.enable_ipv6 || false,
-      enable_quic: siteForm.value.enable_quic || false,
-      enable_early_data: siteForm.value.enable_early_data || false,
-      enable_stapling: siteForm.value.enable_stapling || false,
-      ssl_protocols: siteForm.value.ssl_protocols,
-      ssl_ciphers: siteForm.value.ssl_ciphers,
-      ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve,
-      waf_enabled: siteForm.value.waf_enabled !== false,
-      redirect_https: siteForm.value.redirect_https !== false
-    }
+    const payload = buildSitePayload()
     if (siteForm.value.id) {
       await client.put(`${nginxApi.value}/sites/${siteForm.value.id}`, payload)
     } else {

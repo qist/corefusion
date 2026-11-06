@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -90,5 +91,36 @@ func TestNginxConfigStaticRespectsCustomIndexAndTryFiles(t *testing.T) {
 	}
 	if strings.Count(cfg, "try_files $uri $uri/ /index.html;") != 1 {
 		t.Fatalf("用户自定义 try_files 应原样保留一次：\n%s", cfg)
+	}
+}
+
+// 预览必须与正式生成同源：编辑草稿要覆盖库里的同 domain/path 站点，
+// 且 location_config 里的重复行、以及生成器已经写过的 set $waf_enable off 只保留一条。
+func TestNginxPreviewUsesDraftAndDeduplicates(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "p.example.com", Template: "static", Path: "/",
+		Upstream:       "/srv/old",
+		LocationConfig: "root /srv/old;\nroot /srv/old;",
+		Enabled:        true,
+	}}
+	m := newNginxTestManager(t, sites, `{}`)
+	disabled := false
+	draft := entity.NginxSite{
+		Domain: "p.example.com", Template: "static", Path: "/", Upstream: "/srv/new",
+		LocationConfig: "root /srv/new;\nset $waf_enable off;\nroot /srv/new;",
+		WafEnabled:     &disabled,
+	}
+	cfg, err := m.PreviewSiteConfig(context.Background(), 2, draft)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if strings.Contains(cfg, "/srv/old") {
+		t.Fatalf("预览应使用草稿，不能残留库里旧站点：\n%s", cfg)
+	}
+	if strings.Count(cfg, "root /srv/new;") != 1 {
+		t.Fatalf("重复的 location 指令应去重：\n%s", cfg)
+	}
+	if strings.Count(cfg, "set $waf_enable off;") != 1 {
+		t.Fatalf("生成器已写过的 set $waf_enable off 不应重复：\n%s", cfg)
 	}
 }

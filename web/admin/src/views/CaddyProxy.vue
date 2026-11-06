@@ -795,7 +795,7 @@
       </el-form>
       <div v-else>
         <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('proxy.configPreview') }}</div>
-        <el-input :model-value="generatePreview(siteForm)" type="textarea" :rows="10" readonly style="font-family:monospace;font-size:13px;background:#f5f7fa" />
+        <el-input :model-value="configPreview" type="textarea" :rows="10" readonly style="font-family:monospace;font-size:13px;background:#f5f7fa" />
         <div style="margin-top:12px">
           <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.proxyConfig') }}</div>
           <el-input v-model="siteForm.proxy_config" type="textarea" :rows="3" style="font-family:monospace;font-size:13px" placeholder="lb_policy least_conn&#10;health_uri /health&#10;health_interval 10s" />
@@ -836,7 +836,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
@@ -1640,122 +1640,89 @@ waf_enabled: row.waf_enabled !== false,
   siteDialogVisible.value = true
 }
 
-function generatePreview(site) {
-  let lines = []
-  const domain = site.domain
-  const pp = site.proxy_protocol ? 'proxy_protocol' : ''
-  if (site.template === 'l4') {
-    const port = site.path
-    const proto = site.l4_protocol
-    const upstream = site.upstream || `127.0.0.1:${panelPort.value}`
-    lines.push(`# L4 ${proto.toUpperCase()} forward on :${port}`)
-    lines.push(`{`, `\tlayer4 {`, `\t\t:${port} {`, `\t\t\troute {`, `\t\t\t\tproxy ${upstream}`)
-    if (pp) lines.push(`\t\t\t\t${pp}`)
-    lines.push(`\t\t\t}`, `\t\t}`, `\t}`, `}`)
-    return lines.join('\n')
-  }
-  if (site.template === 'reality') {
-    const port = (site.domain || ':9443').replace(/^:/, '') || '9443'
-    const certPath = site.cert_path || '/path/to/cert.pem'
-    const keyPath = site.key_path || '/path/to/key.pem'
-    lines.push(`# Reality on :${port}`)
-    lines.push(`{`)
-    lines.push(`\tservers 127.0.0.1:${port} {`)
-    lines.push(`\t\tlistener_wrappers {`)
-    lines.push(`\t\t\tproxy_protocol {`)
-    lines.push(`\t\t\t\tallow 127.0.0.1/32`)
-    lines.push(`\t\t\t}`)
-    lines.push(`\t\t\ttls`)
-    lines.push(`\t\t}`)
-    lines.push(`\t\tprotocols h1 h2`)
-    lines.push(`\t}`)
-    lines.push(`}`)
-    lines.push(``)
-    lines.push(`:${port} {`)
-    lines.push(`\tbind 127.0.0.1`)
-    lines.push(`\ttls ${certPath} ${keyPath}`)
-    lines.push(`}`)
-    return lines.join('\n')
-  }
-  // SNI preview (layer4 / tls sni)
-  if (site.template === 'sni') {
-    const port = String(site.path || '').replace(/^:/, '') || '443'
-    const domain = site.domain || 'fallback'
-    const target = (site.sni_target || '').trim() || ((site.upstreams || []).filter(u => u.trim())[0] || '127.0.0.1:443')
-    const localPort = (sniSettings.value && sniSettings.value.local_port) || '8443'
-    const matcher = String(domain).replace(/\./g, '_').replace(/\*/g, 'wildcard')
-    lines.push(`# SNI on :${port}`)
-    lines.push(`{`)
-    lines.push(`\tlayer4 {`)
-    lines.push(`\t\t:${port} {`)
-    if (domain && domain !== 'fallback') {
-      lines.push(`\t\t\t# SNI: ${domain} -> ${target}`)
-      lines.push(`\t\t\t@${matcher} tls sni ${domain}`)
-      lines.push(`\t\t\troute @${matcher} {`)
-      if (site.proxy_protocol) {
-        lines.push(`\t\t\t\tproxy ${target} {`)
-        lines.push(`\t\t\t\t\tproxy_protocol v2`)
-        lines.push(`\t\t\t\t}`)
-      } else {
-        lines.push(`\t\t\t\tproxy ${target}`)
-      }
-      lines.push(`\t\t\t}`)
-    }
-    lines.push(`\t\t\t# fallback -> 127.0.0.1:${localPort}`)
-    lines.push(`\t\t\troute {`)
-    lines.push(`\t\t\t\tproxy 127.0.0.1:${localPort}`)
-    lines.push(`\t\t\t}`)
-    lines.push(`\t\t}`)
-    lines.push(`\t}`)
-    lines.push(`}`)
-    return lines.join('\n')
-  }
-  lines.push(`${domain} {`)
-  if (site.cert_path && site.key_path) lines.push(`\ttls ${site.cert_path} ${site.key_path}`)
-  // WAF bypass for this site
-  const wafBypass = site.waf_enabled === false
-  if (site.template === 'static') {
-    const rootDir = (site.upstreams || []).filter(u => u.trim())[0]
-    lines.push(`\troot * ${rootDir}`)
-    lines.push(`\tfile_server`)
-  } else {
-    const upstreams = (site.upstreams || []).filter(u => u.trim())
-    if (upstreams.length > 0) {
-      if (wafBypass) {
-        lines.push(`\troute {`)
-        lines.push(`\t\tcaddyguard waf_enable off`)
-      }
-      lines.push(`\t${wafBypass ? '  ' : ''}reverse_proxy {`)
-      for (const up of upstreams) { lines.push(`\t\tto ${up}`) }
-      if (site.lb_policy) lines.push(`\t\tlb_policy ${site.lb_policy}`)
-      if (site.template === 'websocket') {
-        lines.push(`\t\theader_up Upgrade {>Upgrade}`, `\t\theader_up Connection {>Connection}`)
-        lines.push(`\t\theader_up Host {hostport}`)
-      }
-      lines.push(`\t\theader_up X-Real-IP {remote_host}`, `\t\theader_up X-Forwarded-For {remote_host}`)
-      lines.push(`\t\theader_up X-Forwarded-Proto {scheme}`)
-      if (pp) lines.push(`\t\t${pp}`)
-      if (site.proxy_config) {
-        for (const line of site.proxy_config.split('\n')) {
-          const trimmed = line.trim()
-          if (trimmed) lines.push(`\t\t${trimmed}`)
-        }
-      }
-      lines.push(`\t}`)
-      if (wafBypass) {
-        lines.push(`\t}`)
-      }
+// ── 配置预览 ──────────────────────────────────────────────────────────────
+// 与 Nginx 同口径：预览走后端生成器，避免前端自拼一份和实际不一致的 Caddyfile。
+const configPreview = ref('')
+const configPreviewLoading = ref(false)
+let configPreviewTimer = null
+
+function buildSitePayload() {
+  let domain = siteForm.value.domain
+  // 与保存逻辑一致：新建 HTTPS 站点且 SNI 开启时，域名自动带本地上游端口
+  if (!siteForm.value.id && sniSettings.value.enabled && siteForm.value.use_cert && siteForm.value.template !== 'l4' && siteForm.value.template !== 'sni') {
+    const localPort = sniSettings.value.local_port
+    if (domain && !domain.includes(':')) {
+      domain = domain + ':' + localPort
     }
   }
-  if (site.custom_config) {
-    for (const line of site.custom_config.split('\n')) {
-      const trimmed = line.trim()
-      if (trimmed) lines.push(`\t${trimmed}`)
-    }
+  const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
+  return {
+    id: siteForm.value.id || 0,
+    domain,
+    upstream,
+    path: siteForm.value.path,
+    backend_path: siteForm.value.backend_path,
+    template: siteForm.value.template,
+    cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
+    dual_cert: siteForm.value.dual_cert !== false,
+    key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
+    proxy_config: siteForm.value.proxy_config,
+    custom_config: siteForm.value.custom_config,
+    waf_enabled: siteForm.value.waf_enabled,
+    redirect_https: siteForm.value.redirect_https !== false,
+    lb_policy: siteForm.value.lb_policy,
+    log_enabled: siteForm.value.log_enabled || false,
+    log_path: siteForm.value.log_path,
+    log_format: siteForm.value.log_format,
+    l4_protocol: siteForm.value.l4_protocol,
+    sni_target: siteForm.value.sni_target,
+    local_port: siteForm.value.local_port,
+    proxy_protocol: siteForm.value.proxy_protocol || false,
+    is_panel: siteForm.value.is_panel,
+    priority: siteForm.value.is_panel ? 0 : 100
   }
-  lines.push(`}`)
-  return lines.join('\n')
 }
+
+// Caddyfile 的站点块形如 `example.com { ... }`：按域名匹配后截取该块。
+function extractPreviewBlock(config, site) {
+  const names = String(site.domain || '').split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+  const lines = String(config || '').split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i].trim()
+    if (!head || head.startsWith('#') || !head.endsWith('{')) continue
+    if (!names.some(n => head.startsWith(n) || head.includes(n))) continue
+    let depth = 0
+    const buf = []
+    for (let j = i; j < lines.length; j++) {
+      const l = lines[j]
+      buf.push(l)
+      if (l.includes('{')) depth++
+      if (/^\s*\}/.test(l)) { depth--; if (depth === 0) break }
+    }
+    return buf.join('\n')
+  }
+  return config
+}
+
+async function refreshConfigPreview() {
+  if (!siteDialogVisible.value) return
+  configPreviewLoading.value = true
+  try {
+    const res = await client.post(`${caddyApi.value}/preview-site`, buildSitePayload())
+    configPreview.value = extractPreviewBlock(res?.config || '', siteForm.value)
+  } catch (e) {
+    configPreview.value = ''
+  } finally {
+    configPreviewLoading.value = false
+  }
+}
+
+function scheduleConfigPreview() {
+  clearTimeout(configPreviewTimer)
+  configPreviewTimer = setTimeout(refreshConfigPreview, 400)
+}
+
+watch(siteForm, () => scheduleConfigPreview(), { deep: true })
 
 async function applyConfig() {
   try {
@@ -1794,30 +1761,7 @@ async function saveSite() {
       }
     }
     const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
-const payload = {
-domain: domain,
-upstream: upstream,
-path: siteForm.value.path,
-backend_path: siteForm.value.backend_path,
-template: siteForm.value.template,
-      cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
-      dual_cert: siteForm.value.dual_cert !== false,
-      key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
-      proxy_config: siteForm.value.proxy_config,
-      custom_config: siteForm.value.custom_config,
-waf_enabled: siteForm.value.waf_enabled,
-      redirect_https: siteForm.value.redirect_https !== false,
-      lb_policy: siteForm.value.lb_policy,
-      log_enabled: siteForm.value.log_enabled || false,
-      log_path: siteForm.value.log_path,
-      log_format: siteForm.value.log_format,
-      l4_protocol: siteForm.value.l4_protocol,
-      sni_target: siteForm.value.sni_target,
-      local_port: sniSettings.value.local_port,
-      proxy_protocol: siteForm.value.proxy_protocol || false,
-      is_panel: siteForm.value.is_panel,
-      priority: siteForm.value.is_panel ? 0 : 100
-    }
+const payload = buildSitePayload()
     if (siteForm.value.id) {
       await client.put(`${caddyApi.value}/sites/${siteForm.value.id}`, payload)
     } else {

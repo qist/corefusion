@@ -563,3 +563,20 @@ func (h *NginxHandler) DeleteAllL4(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": count})
 }
+
+// PreviewSite 用「库里已有站点 + 当前草稿」生成完整 nginx 配置，供前端预览。
+// 预览与保存后真正落盘的配置同源（同一个生成器），不再由前端另拼一份。
+func (h *NginxHandler) PreviewSite(c *gin.Context) {
+	sid, _ := h.applyServerID(c)
+	var site entity.NginxSite
+	if err := c.ShouldBindJSON(&site); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	cfg, err := h.nginxMgr.PreviewSiteConfig(c.Request.Context(), sid, site)
+	if err != nil {
+		response.InternalError(c, "PREVIEW_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"config": cfg})
+}

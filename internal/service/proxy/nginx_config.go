@@ -74,6 +74,35 @@ func isDAVLocation(locationConfig string) bool {
 		hasLocationDirective(locationConfig, "dav_ext_methods")
 }
 
+// writeLocationConfig 写出站点自定义的 location 指令：
+//   - 自动补分号；
+//   - already 里列出的指令（生成器刚写过）跳过，避免 `set $waf_enable off;` 出现两次；
+//   - 同一段里完全相同的行只保留一条（历史导入/复制粘贴造成的重复）。
+func writeLocationConfig(sb *strings.Builder, locationConfig string, already map[string]bool) {
+	if strings.TrimSpace(locationConfig) == "" {
+		return
+	}
+	written := make(map[string]bool, len(already)+8)
+	for k := range already {
+		written[k] = true
+	}
+	for _, line := range strings.Split(strings.TrimSpace(locationConfig), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
+			trimmed += ";"
+		}
+		key := strings.Join(strings.Fields(trimmed), " ")
+		if written[key] {
+			continue
+		}
+		written[key] = true
+		sb.WriteString("            " + trimmed + "\n")
+	}
+}
+
 // ensureSymlink creates a symlink, removing existing file/symlink first.
 func ensureSymlink(path, target string) {
 	os.Remove(path)
@@ -140,7 +169,36 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		return "", err
 	}
+	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, sites)
+}
 
+// PreviewSiteConfig 用「库里已有站点 + 正在编辑的草稿」生成完整配置。
+//
+// 预览必须和真实落盘同源：以前前端自己拼预览，样式/默认值（index、try_files、
+// server_name 分隔符）和生成器各写一套 → 预览说一套、实际生成另一套 ✗。
+// 这里直接复用 GenerateConfigForSites，草稿与库中同 domain/path/template 的站点互斥
+// （编辑时覆盖，新建时追加），所以预览内容就是保存后真正会写出的内容。
+func (m *NginxManager) PreviewSiteConfig(ctx context.Context, serverID int64, draft entity.NginxSite) (string, error) {
+	sourceServerID, _ := m.resolveSourceServerID(ctx, serverID)
+	sites, err := m.siteRepo.ListEnabled(ctx, sourceServerID)
+	if err != nil {
+		return "", err
+	}
+	merged := make([]entity.NginxSite, 0, len(sites)+1)
+	for _, s := range sites {
+		if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
+			continue
+		}
+		merged = append(merged, s)
+	}
+	draft.ServerID = sourceServerID
+	draft.Enabled = true
+	merged = append(merged, draft)
+	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, merged)
+}
+
+// GenerateConfigForSites 是配置生成的主体：预览与正式生成共用，保证两者完全一致。
+func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sourceServerID int64, sites []entity.NginxSite) (string, error) {
 	s, err := m.GetNginxSettingsForServer(ctx, sourceServerID)
 	if err != nil {
 		s = DefaultNginxSettings()
@@ -868,13 +926,19 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 			for _, line := range strings.Split(strings.TrimSpace(site.ServerConfig), "\n") {
 				trimmed := strings.TrimSpace(line)
-				if trimmed == "" || serverDirectiveSeen[trimmed] {
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 					continue
 				}
-				serverDirectiveSeen[trimmed] = true
+				// 先补分号再当去重键：`root /x` 与 `root /x;` 是同一条指令，
+				// 否则导入+手工编辑后会各写一遍（真机出现过重复参数）。
 				if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
 					trimmed += ";"
 				}
+				key := strings.Join(strings.Fields(trimmed), " ")
+				if serverDirectiveSeen[key] {
+					continue
+				}
+				serverDirectiveSeen[key] = true
 				sb.WriteString("        " + trimmed + "\n")
 			}
 		}
@@ -972,17 +1036,7 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 				}
 				sb.WriteString(fmt.Sprintf("            grpc_pass %s;\n", grpcTarget))
 				// Location-level directives
-				if site.LocationConfig != "" {
-					for _, line := range strings.Split(strings.TrimSpace(site.LocationConfig), "\n") {
-						trimmed := strings.TrimSpace(line)
-						if trimmed != "" {
-							if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
-								trimmed += ";"
-							}
-							sb.WriteString("            " + trimmed + "\n")
-						}
-					}
-				}
+				writeLocationConfig(&sb, site.LocationConfig, nil)
 				sb.WriteString("        }\n")
 				continue
 			}
@@ -1089,17 +1143,13 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 			}
 
 			// Location-level directives (auto-add semicolons)
-			if site.LocationConfig != "" {
-				for _, line := range strings.Split(strings.TrimSpace(site.LocationConfig), "\n") {
-					trimmed := strings.TrimSpace(line)
-					if trimmed != "" {
-						if !strings.HasSuffix(trimmed, ";") && !strings.HasSuffix(trimmed, "{") && !strings.HasSuffix(trimmed, "}") {
-							trimmed += ";"
-						}
-						sb.WriteString("            " + trimmed + "\n")
-					}
-				}
+			// 已由生成器写过的指令（例如 set $waf_enable off）不再重复，
+			// 导入多次/手工复制产生的重复行也只保留一条。
+			var emitted map[string]bool
+			if strings.TrimSpace(wafBypass) != "" {
+				emitted = map[string]bool{"set $waf_enable off;": true}
 			}
+			writeLocationConfig(&sb, site.LocationConfig, emitted)
 
 			sb.WriteString("        }\n")
 		}

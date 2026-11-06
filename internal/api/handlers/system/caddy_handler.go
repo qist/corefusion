@@ -516,3 +516,19 @@ func (h *CaddyHandler) DeleteAllL4(c *gin.Context) {
 	}
 	response.OK(c, gin.H{"deleted": count})
 }
+
+// PreviewSite 用「库里已有站点 + 当前草稿」生成完整 Caddyfile，供前端预览。
+func (h *CaddyHandler) PreviewSite(c *gin.Context) {
+	sid, _ := h.applyServerID(c)
+	var site entity.CaddySite
+	if err := c.ShouldBindJSON(&site); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	cfg, err := h.caddyMgr.PreviewSiteConfig(c.Request.Context(), sid, site)
+	if err != nil {
+		response.InternalError(c, "PREVIEW_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"config": cfg})
+}

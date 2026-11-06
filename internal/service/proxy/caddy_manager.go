@@ -158,6 +158,32 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		return "", err
 	}
+	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, sites)
+}
+
+// PreviewSiteConfig 用「已有站点 + 正在编辑的草稿」生成完整 Caddyfile，
+// 与真实落盘同源（前端不再自己拼预览，避免预览与实际不一致）。
+func (m *CaddyManager) PreviewSiteConfig(ctx context.Context, serverID int64, draft entity.CaddySite) (string, error) {
+	sourceServerID, _ := m.resolveSourceServerID(ctx, serverID)
+	sites, err := m.siteRepo.ListEnabled(ctx, sourceServerID)
+	if err != nil {
+		return "", err
+	}
+	merged := make([]entity.CaddySite, 0, len(sites)+1)
+	for _, s := range sites {
+		if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
+			continue
+		}
+		merged = append(merged, s)
+	}
+	draft.ServerID = sourceServerID
+	draft.Enabled = true
+	merged = append(merged, draft)
+	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, merged)
+}
+
+// GenerateConfigForSites 是 Caddyfile 生成主体：预览与正式生成共用。
+func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sourceServerID int64, sites []entity.CaddySite) (string, error) {
 	// Read SNI settings for proxy_protocol rules from the primary
 	sniSettings, _ := m.GetSNISettingsForServer(ctx, sourceServerID)
 

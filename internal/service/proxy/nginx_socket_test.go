@@ -34,7 +34,7 @@ func TestNginxConfigSocketOnlySiteDoesNotListenOn443(t *testing.T) {
 	if !strings.Contains(cfg, "ssl_certificate ../certs/example.com/cert.pem;") {
 		t.Fatalf("socket-only 站点丢失证书：\n%s", cfg)
 	}
-	if !strings.Contains(cfg, "try_files $uri $uri/ =404;") {
+	if !strings.Contains(cfg, "index index.html index.htm;") {
 		t.Fatalf("static 模板内容丢失：\n%s", cfg)
 	}
 }

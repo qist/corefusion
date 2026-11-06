@@ -50,7 +50,26 @@ func TestNginxConfigDAVLocationHasNoTryFiles(t *testing.T) {
 	}
 }
 
-// 用户自己写了 index / try_files 时，生成器不能再补一份默认值。
+// 普通静态目录只补 index，不补 try_files：
+// try_files 是 SPA（前端路由）才需要的东西，本地静态/下载/上传目录都不需要。
+func TestNginxConfigPlainStaticHasNoTryFiles(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "files.example.com", Template: "static", Path: "/dl",
+			Upstream: "/srv/downloads", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if strings.Contains(cfg, "try_files") {
+		t.Fatalf("普通静态目录不应默认生成 try_files：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "index index.html index.htm;") {
+		t.Fatalf("静态目录应保留默认 index：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "root /srv/downloads;") {
+		t.Fatalf("静态目录 root 丢失：\n%s", cfg)
+	}
+}
+
+// 用户自己写了 index / try_files 时（例如 SPA 的 fallback），生成器必须原样保留。
 func TestNginxConfigStaticRespectsCustomIndexAndTryFiles(t *testing.T) {
 	sites := []entity.NginxSite{
 		{

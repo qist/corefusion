@@ -1001,18 +1001,16 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 					}
 					sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
 				}
-				// index / try_files 只是"没配置时的默认值"：location_config 里写了自己的
-				// 就原样尊重，不再重复注入（用户要能自己改，不能写死）。
-				// ⚠ WebDAV 目录绝对不能带 try_files ✗：PUT/MKCOL/DELETE 这类 RFC4918 方法
-				// 会在 precontent 阶段被 try_files 判成 404，再叠加 server 级
-				// `error_page 404 =200 /index.html` 就变成"返回 200 但文件根本没落盘" ✗
-				// （真机踩过：WebDAV 客户端以为保存成功，随后 MOVE 覆盖又把原文件删掉 ✗）。
+				// 默认只补 index（目录默认页，本地静态站点必备），且用户写了就不重复。
+				// ⚠ try_files 一律不默认生成 ✗：
+				//   - 普通静态目录/下载目录根本不需要（nginx 默认就是找不到返回 404）；
+				//   - 只有 SPA（前端路由）才需要 fallback，应由站点在 location_config 里显式写；
+				//   - WebDAV/上传目录带上它会让 PUT/MKCOL/DELETE 在 precontent 阶段被判 404，
+				//     叠加 server 级 `error_page 404 =200 /index.html` 就变成
+				//     "返回 200 但文件没落盘"，客户端随后 MOVE 覆盖还会删掉原文件 ✗（真机踩过）。
 				davLocation := isDAVLocation(site.LocationConfig)
 				if !davLocation && !hasLocationDirective(site.LocationConfig, "index") {
 					sb.WriteString("            index index.html index.htm;\n")
-				}
-				if !davLocation && !hasLocationDirective(site.LocationConfig, "try_files") {
-					sb.WriteString("            try_files $uri $uri/ =404;\n")
 				}
 			case "echo_ip":
 				// 回显真实客户端 IP：落地页/探测页常用（现网 nginx 里就是 echo -n $clientRealIp）。

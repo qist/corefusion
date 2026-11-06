@@ -4878,7 +4878,9 @@ balanceTxns.value = ((res && res.items) ? res.items : []).filter(function(tx) { 
     }
     var referralInviteUrl = computed(function() {
       if (!referralCode.value || !referralCode.value.code) return ''
-      return window.location.origin + '/p?ref=' + referralCode.value.code
+      // 独立门户端口在根路径，共用面板端口才是 /p —— 不能写死 /p。
+      var portalBase = (window.location.pathname === '/p' || window.location.pathname.indexOf('/p/') === 0) ? '/p' : '/'
+      return window.location.origin + portalBase + '?ref=' + referralCode.value.code
     })
     var referralStatusText = function(s) { return { pending: t('referral.status_pending'), available: t('referral.status_available'), withdrawn: t('referral.status_withdrawn') }[s] || s || '-' }
 

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"corefusion/internal/model/entity"
@@ -48,6 +49,9 @@ func renewThresholdFor(identifiers []string) time.Duration {
 }
 
 type PublicCertRenewer struct {
+	// mu 串行化"扫描+下发"：周期检查与 Agent 重连补续可能同时触发 ✓，
+	// 不加锁会对同一张证书重复下发续期指令（节点侧还会排队再签一遍）✗。
+	mu         sync.Mutex
 	certRepo   *repository.CertificateRepository
 	serverRepo *repository.NodeServerRepository
 	// nodeCerts 是"节点↔证书"多对多 ✓（一个节点可绑多张 ✓，都要能续 ✓）
@@ -336,6 +340,9 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 	if r.issuer == nil {
 		return nil
 	}
+	// 同一时间只跑一轮扫描/下发：避免与 RenewCertsForServer（Agent 重连）重复下发 ✓。
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	certs, err := r.certRepo.FindExpiringSoon(ctx, r.window())
 	if err != nil {
 		return err
@@ -418,6 +425,9 @@ func (r *PublicCertRenewer) RenewCertsForServer(ctx context.Context, serverID in
 	if r == nil || r.issuer == nil || serverID <= 0 {
 		return
 	}
+	// 与周期检查共用一把锁：两边同时扫会重复下发同一张证书 ✓。
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	certs, err := r.certRepo.FindExpiringSoon(ctx, r.window())
 	if err != nil {
 		log.Printf("[PublicCertRenewer] on-reconnect list: %v", err)

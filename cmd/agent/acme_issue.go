@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"corefusion/internal/runtime/cert"
@@ -56,11 +57,27 @@ type issuedCert struct {
 	FullchainPEM string
 }
 
+// acmeIssueQueueMu 让**同一个节点**的证书签发/续期严格排队：一张签完再下一张 ✓。
+//
+// Why：面板的 IssuePublicCert 指令是按 cert 逐条下发的 ✗（自动续期/重连补续/手动签发
+// 都可能同时到达 ✓），Agent 以前对每条指令 `go handleIssuePublicCert` ✗ → 同一节点
+// 会并发跑多套 ACME（抢 80 端口、临时 web 配置、ACME 账号/EAB 文件）✗。
+// 自续期循环也走 issueACMECert ✓ → 与指令签发共用这一把锁，保证节点侧只有一条队列 ✓。
+var acmeIssueQueueMu sync.Mutex
+
 // issueACMECert 在**本机**完成一次 ACME 签发/续签 ✓。
 //
 // 为什么必须在节点本机做 ✗：面板常位于 SNAT 之后（只有出站、没有入站），CA 无法回调面板的 80 端口
 // 完成 http-01 验证 ✗；而节点有公网 IP 与 80 入站 ✓。IP 证书还要求 profile=shortlived ✓（RFC 8738 ✓）。
 func issueACMECert(p acmeIssueParams) (*issuedCert, error) {
+	// ⚠ 整个签发/续期过程串行：同一节点同一时间只跑一个 ACME 任务 ✓。
+	// 等待时间不计入单次签发超时（超时定时器在拿到锁之后才创建 ✓）。
+	if !acmeIssueQueueMu.TryLock() {
+		log.Printf("[acme] 本节点已有签发/续期任务在跑，排队等待其完成…")
+		acmeIssueQueueMu.Lock()
+	}
+	defer acmeIssueQueueMu.Unlock()
+
 	domains := make([]string, 0, len(p.Identifiers))
 	for _, d := range p.Identifiers {
 		if d = strings.TrimSpace(d); d != "" {

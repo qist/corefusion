@@ -128,7 +128,7 @@ func (h *PublicHandler) SetSubEndpointRepo(repo SubEndpointSource) {
 // buildProviderURL returns the back-source URL for an internal http proxy-provider.
 // It mirrors clientext buildSubLinks: an enabled standalone endpoint wins
 // (https://<domain><path>/<token>), otherwise fall back to the current request's
-// scheme://Host/sub/<token>.
+// scheme://Host + 请求路径（共用面板端口是 /sub/<token>，独立订阅端口是 /<token>）。
 //
 // 只把 format 换成 mihomo_proxies_yaml；config / platform 等主订阅参数必须继承，
 // 再追加 provider=<key>（subscription-nodes 为保留 key，不带 provider 参数）。
@@ -157,7 +157,13 @@ func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey stri
 		if host == "" {
 			host = c.Request.Host
 		}
-		base = fmt.Sprintf("%s://%s/sub/%s", scheme, host, token)
+		// 独立订阅端口在根路径服务（/<token>），共用面板端口才是 /sub/<token>；
+		// 直接沿用当前请求路径，避免把 /sub 硬编码进独立端口部署。
+		path := c.Request.URL.Path
+		if path == "" {
+			path = "/sub/" + token
+		}
+		base = fmt.Sprintf("%s://%s%s", scheme, host, path)
 	}
 	return base + buildProviderQuery(c, providerKey)
 }
@@ -589,15 +595,26 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 // resolvePortalWebPageURL 返回门户对外地址（客户端「打开网页」入口）。
 //
+// 门户总开关关闭时返回空串（调用方不写 Profile-Web-Page-Url 头）——否则客户端
+// 仍会显示一个点不开的门户入口。
+//
 // 优先级：
 //  1. panel.profile_web_page_url：管理员显式配置，原样使用；
 //  2. oauth.callback_domain（门户回调域名，独立配置）> panel.external_url：
 //     配置了独立门户端口 panel.portal_port → 门户挂在域名根路径 ""，否则挂在 "/p"；
-//  3. 请求 Host 兜底（X-Forwarded-Host > Host），路径固定 "/p"。
+//  3. 请求 Host 兜底（X-Forwarded-Host > Host）：独立门户端口 → 根路径，否则 "/p"。
+//
+// ⚠ 门户只挂在**域名根路径**（独立端口 → ""，共用面板端口 → "/p"），
+// 绝不能带面板的随机 web_path —— 否则等于把后台入口明文下发。
+// 因此所有来源的 base 都只保留 scheme + host。
 //
 // 订阅域名（sub.*）≠ 门户域名，不能用订阅请求的 Host 直接拼门户地址。
 func (h *PublicHandler) resolvePortalWebPageURL(ctx context.Context, scheme string, c *gin.Context) string {
 	if h.systemSettingRepo != nil {
+		if v, err := h.systemSettingRepo.GetByKey(ctx, portalEnabledSettingKey); err == nil &&
+			strings.EqualFold(strings.TrimSpace(v), "false") {
+			return ""
+		}
 		if v, err := h.systemSettingRepo.GetByKey(ctx, "panel.profile_web_page_url"); err == nil {
 			if u := strings.TrimSpace(v); u != "" {
 				return u
@@ -615,10 +632,7 @@ func (h *PublicHandler) resolvePortalWebPageURL(ctx context.Context, scheme stri
 		if base != "" {
 			// 门户域名默认 https（与 portal.Service.resolvePortalExternalURL 一致）；
 			// 订阅请求本身可能走内网 http，不能拿来决定门户 scheme。
-			if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-				base = "https://" + base
-			}
-			base = strings.TrimRight(base, "/")
+			base = portalBaseURL(base)
 			// 与 portal.Service.portalPagePath 同一口径：独立门户端口 → 根路径。
 			if !h.portalServesAtRoot(ctx) {
 				base += "/p"
@@ -626,7 +640,7 @@ func (h *PublicHandler) resolvePortalWebPageURL(ctx context.Context, scheme stri
 			return base
 		}
 	}
-	// 兜底：从订阅请求 Host 推断（门户路径是 /p，不是 /portal）。
+	// 兜底：从订阅请求 Host 推断（门户路径是 /p，不是 /portal；独立门户端口则在根路径）。
 	host := c.GetHeader("X-Forwarded-Host")
 	if host == "" {
 		host = c.Request.Host
@@ -637,10 +651,36 @@ func (h *PublicHandler) resolvePortalWebPageURL(ctx context.Context, scheme stri
 	if h2, _, err := net.SplitHostPort(host); err == nil {
 		host = h2
 	}
-	return fmt.Sprintf("%s://%s/p", scheme, host)
+	path := ""
+	if !h.portalServesAtRoot(ctx) {
+		path = "/p"
+	}
+	return fmt.Sprintf("%s://%s%s", scheme, host, path)
 }
 
-// portalServesAtRoot 判断门户是否以独立端口/域名根路径提供（panel.portal_port 已配置）。
+// portalEnabledSettingKey 是客户门户总开关（panel.portal_enabled），缺省视为开启。
+const portalEnabledSettingKey = "panel.portal_enabled"
+
+// portalBaseURL 只保留 scheme + host：门户永远在域名根路径下（"" 或 "/p"），
+// 传入值即使带了路径（历史 external_url / 误配），也不能把面板随机路径带出去。
+func portalBaseURL(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "https://" + base
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(base, "/")
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// portalServesAtRoot 判断门户是否以独立端口/域名根路径提供。
+// 与主启动逻辑一致：panel.portal_port 非空、非 0，且**不同于面板监听端口**
+// 才会另起独立门户服务；等于面板端口时仍共用主端口、挂在 /p。
 func (h *PublicHandler) portalServesAtRoot(ctx context.Context) bool {
 	if h.systemSettingRepo == nil {
 		return false
@@ -650,7 +690,14 @@ func (h *PublicHandler) portalServesAtRoot(ctx context.Context) bool {
 		return false
 	}
 	v = strings.TrimSpace(v)
-	return v != "" && v != "0"
+	if v == "" || v == "0" {
+		return false
+	}
+	listen := ""
+	if l, lerr := h.systemSettingRepo.GetByKey(ctx, "panel.listen_port"); lerr == nil {
+		listen = strings.TrimSpace(l)
+	}
+	return v != listen
 }
 
 func renderedNodeLinks(items []renderedSubscriptionNode) []string {

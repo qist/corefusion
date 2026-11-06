@@ -295,6 +295,29 @@ func TestPanelTLSReloadsMTLSClientCA(t *testing.T) {
 	}
 }
 
+// mTLS CA 路径误配成不存在时，必须继续用旧 CA，不能静默降级成"不验证客户端证书"。
+func TestPanelTLSApplyKeepsPreviousCAOnBadPath(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := writeServerCert(t, dir, 2)
+	caA, caAKey, caAPEM := writeCA(t, dir, "CA-A")
+	caPath := filepath.Join(dir, "mtls-ca.pem")
+	if err := os.WriteFile(caPath, caAPEM, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := newPanelTLS(certPath, keyPath, caPath, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.apply(certPath, keyPath, filepath.Join(dir, "missing-ca.pem"), true)
+	cfg, err := p.getConfigForClient(&tls.Config{NextProtos: []string{"h2", "http/1.1"}})
+	if err != nil || cfg == nil || cfg.ClientCAs == nil {
+		t.Fatalf("坏 CA 路径不应让 mTLS 失效: cfg=%v err=%v", cfg, err)
+	}
+	if err := verifyWithPool(clientLeafSignedBy(t, caA, caAKey), cfg.ClientCAs); err != nil {
+		t.Fatalf("坏 CA 路径后旧 CA 仍应生效: %v", err)
+	}
+}
+
 // 设置里路径为空（未配置）时不能被应用成"没有证书"，否则面板直接不可用。
 func TestPanelTLSApplyIgnoresEmptyPaths(t *testing.T) {
 	dir := t.TempDir()
@@ -307,5 +330,32 @@ func TestPanelTLSApplyIgnoresEmptyPaths(t *testing.T) {
 	leaf, err := p.getCertificate(nil)
 	if err != nil || leaf.Leaf == nil || leaf.Leaf.SerialNumber.Int64() != 7 {
 		t.Fatalf("空路径不应清掉当前证书: err=%v", err)
+	}
+}
+
+// 切到不存在的坏路径时，必须继续用旧证书（否则一次误配会让面板 HTTPS 全挂）。
+func TestPanelTLSApplyKeepsPreviousCertOnBadPath(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := writeServerCert(t, dir, 8)
+	p, err := newPanelTLS(certPath, keyPath, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.apply(filepath.Join(dir, "missing-cert.pem"), filepath.Join(dir, "missing-key.pem"), "", false)
+	leaf, err := p.getCertificate(nil)
+	if err != nil || leaf.Leaf == nil || leaf.Leaf.SerialNumber.Int64() != 8 {
+		t.Fatalf("坏路径不应清掉当前证书: err=%v", err)
+	}
+	if p.certPath != certPath || p.keyPath != keyPath {
+		t.Fatalf("坏路径不应覆盖当前路径: cert=%s key=%s", p.certPath, p.keyPath)
+	}
+
+	// 改回正确的新证书后仍应正常热加载 ✓
+	newDir := t.TempDir()
+	newCert, newKey := writeServerCert(t, newDir, 9)
+	p.apply(newCert, newKey, "", false)
+	leaf2, err := p.getCertificate(nil)
+	if err != nil || leaf2.Leaf == nil || leaf2.Leaf.SerialNumber.Int64() != 9 {
+		t.Fatalf("恢复正确路径后应加载新证书: err=%v", err)
 	}
 }

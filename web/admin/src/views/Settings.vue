@@ -75,7 +75,7 @@
             </el-form-item>
             <el-form-item v-if="panelForm.tls_enabled" :label="t('settings.panel.tlsCert')">
               <el-select v-model="panelForm.tls_cert_id" style="width:100%" @change="onCertSelect" :placeholder="t('settings.panel.selectCert')">
-                <el-option v-for="c in certificates" :key="c.id" :label="`${c.domain} (${c.issuer} ${c.key_type} ${c.key_bits})`" :value="c.id" />
+                <el-option v-for="c in certificates" :key="c.id" :label="certLabel(c)" :value="c.id" />
               </el-select>
             </el-form-item>
             <el-form-item v-if="panelForm.tls_enabled" :label="t('settings.panel.tlsCertPath')">
@@ -1293,11 +1293,11 @@ const googleVerifyDocURL = 'https://github.com/qist/corefusion/blob/main/docs/oa
 
 const timezones = TIMEZONES
 
-async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) panelForm.value = { ...panelForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchPanelConfig() { try { const d = await client.get('/system/panel-config'); if (d) { panelForm.value = { ...panelForm.value, ...d, tls_cert_id: d.tls_cert_id || '' }; syncPanelCertSelection() } } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchEnvConfig() { try { const d = await client.get('/system/env-config'); if (d) envForm.value = { ...envForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
 async function saveEnvConfig() { envSaving.value = true; try { await client.put('/system/env-config', envForm.value); ElMessage.success(t('common.success')) } catch (e) { ElMessage.error(t('common.failed')) } finally { envSaving.value = false } }
 async function fetchNotifyConfig() { try { const d = await client.get('/system/notification-config'); if (d) notifyForm.value = { ...notifyForm.value, ...d } } catch (e) { ElMessage.error(t('common.failed')) } }
-async function fetchCertificates() { try { const d = await client.get('/certificates', { params: { limit: 100, offset: 0 } }); certificates.value = d.items || [] } catch (e) { ElMessage.error(t('common.failed')) } }
+async function fetchCertificates() { try { const d = await client.get('/certificates', { params: { limit: 100, offset: 0 } }); certificates.value = d.items || []; syncPanelCertSelection() } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchTemplates() { try { templates.value = await client.get('/system/notification-templates') || [] } catch (e) { ElMessage.error(t('common.failed')) } }
 async function fetchEmails() {
   try { emails.value = await client.get('/acme-accounts') || [] } catch (e) { ElMessage.error(t('common.failed')) }
@@ -1305,6 +1305,25 @@ async function fetchEmails() {
     const data = await client.get('/users', { params: { limit: 100 } })
     userEmails.value = (data.items || []).filter(u => u.email).map(u => ({ id: u.id, email: u.email }))
   } catch (e) { ElMessage.error(t('common.failed')) }
+}
+
+// 证书下拉显示"证书名称"（没有名称时退回域名），避免把裸 ID 当名字。
+function certLabel(c) {
+  const name = c.name || c.domain || `#${c.id}`
+  const domain = c.domain && c.domain !== name ? ` · ${c.domain}` : ''
+  return `${name}${domain} (${c.issuer || '-'} ${c.key_type || '-'} ${c.key_bits || '-'})`
+}
+
+// 老库/初始化只写了证书路径而没写 panel.tls_cert_id → 按路径反查证书，补上关联。
+function syncPanelCertSelection() {
+  if (panelForm.value.tls_cert_id) return
+  const path = String(panelForm.value.tls_cert_path || '')
+  if (!path) return
+  const cert = certificates.value.find(c =>
+    (c.cert_path && path.includes(c.cert_path)) ||
+    (c.fullchain_path && path.includes(c.fullchain_path))
+  )
+  if (cert) panelForm.value.tls_cert_id = cert.id
 }
 
 function onCertSelect(id) {

@@ -250,6 +250,29 @@ func TestPatchChargeNavMenu(t *testing.T) {
 	}
 }
 
+// 存量模板的推荐邀请链接不能写死 /p：独立门户端口在根路径，否则生成的链接会 404。
+func TestPatchReferralInviteURL(t *testing.T) {
+	js := `    var referralInviteUrl = computed(function() {
+      if (!referralCode.value || !referralCode.value.code) return ''
+      return window.location.origin + '/p?ref=' + referralCode.value.code
+    })`
+	_, patched, changed := PatchReferralInviteURL("", js)
+	if !changed {
+		t.Fatal("写死 /p 的推荐链接应被判定为需要修改")
+	}
+	if strings.Contains(patched, `origin + '/p?ref='`) {
+		t.Error("推荐链接不应再写死 /p")
+	}
+	if !strings.Contains(patched, "window.location.pathname") {
+		t.Error("推荐链接应按当前页面路径生成")
+	}
+
+	_, again, changed2 := PatchReferralInviteURL("", patched)
+	if changed2 || again != patched {
+		t.Error("第二次调用应幂等")
+	}
+}
+
 // 存量门户导航「购买服务 / 我的账单」必须默认关闭（与 nav.logs 一致）。
 func TestPatchNavDefaultsOff(t *testing.T) {
 	const sample = `{"navigation":[{"id":"nav-services","label":"nav.store","enabled":true},{"id":"nav-billing","label":"nav.billing","enabled":true},{"id":"nav-home","label":"nav.home","enabled":true}]}`

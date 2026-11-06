@@ -527,10 +527,17 @@ func (m *Manager) GenerateConfig(ctx context.Context, serverID int64, isLocal bo
 					portalPort := ""
 					if m.settingStore != nil {
 						if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
-							portalPort = v
+							portalPort = strings.TrimSpace(v)
 						}
 					}
-					if portalPort == "" || portalPort == "0" {
+					listenPort := ""
+					if m.settingStore != nil {
+						if v, err := m.settingStore.GetByKey(ctx, "panel.listen_port"); err == nil {
+							listenPort = strings.TrimSpace(v)
+						}
+					}
+					// 空 / 0 / 与面板同端口 → 共用主端口，需要 /p；只有真正的独立端口才直通根路径。
+					if portalPort == "" || portalPort == "0" || portalPort == listenPort {
 						site.Path = "/p"
 					}
 				}

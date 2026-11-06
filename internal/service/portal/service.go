@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
@@ -453,30 +454,50 @@ func (s *Service) GetActiveConfig(ctx context.Context) (*PortalSiteConfig, error
 
 // resolvePortalExternalURL 返回门户对外基址（scheme + host，不含路径/查询）。
 // 优先级：oauth.callback_domain（门户回调域名）> panel.external_url；均未配置返回 ""。
+// ⚠ 只保留 scheme + host：门户挂在域名根路径（"" 或 "/p"），
+// 绝不能把面板的随机 web_path 带进门户地址。
 func (s *Service) resolvePortalExternalURL(ctx context.Context) string {
 	if s.settingSvc == nil {
 		return ""
 	}
+	base := ""
 	if d, _ := s.settingSvc.GetByKey(ctx, "oauth.callback_domain"); strings.TrimSpace(d) != "" {
-		base := strings.TrimSpace(d)
-		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			base = "https://" + base
-		}
+		base = strings.TrimSpace(d)
+	} else if b, _ := s.settingSvc.GetByKey(ctx, "panel.external_url"); strings.TrimSpace(b) != "" {
+		base = strings.TrimSpace(b)
+	}
+	return portalHostBase(base)
+}
+
+// portalHostBase 只保留 scheme + host（门户永远在域名根路径下）。
+func portalHostBase(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "https://" + base
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
 		return strings.TrimRight(base, "/")
 	}
-	if base, _ := s.settingSvc.GetByKey(ctx, "panel.external_url"); strings.TrimSpace(base) != "" {
-		return strings.TrimRight(strings.TrimSpace(base), "/")
-	}
-	return ""
+	return u.Scheme + "://" + u.Host
 }
 
 // portalPagePath 返回门户页面在本域名下的挂载路径（"" 或 "/p"）。
 // 与 proxy portal_forward / 充值 return_url 的生成规则一致：
-// panel.portal_port 已配置（独立门户端口）→ 门户整域名挂在根路径 ""；否则共用主端口挂在 "/p"。
+// panel.portal_port 配置为独立端口（非空、非 0、且不等于面板监听端口）→
+// 门户整域名挂在根路径 ""；否则共用主端口挂在 "/p"。
 func (s *Service) portalPagePath(ctx context.Context) string {
 	if s.settingSvc != nil {
-		if p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port"); p != "" && p != "0" {
-			return ""
+		p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port")
+		p = strings.TrimSpace(p)
+		if p != "" && p != "0" {
+			listen, _ := s.settingSvc.GetByKey(ctx, "panel.listen_port")
+			if p != strings.TrimSpace(listen) {
+				return ""
+			}
 		}
 	}
 	return "/p"

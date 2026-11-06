@@ -167,6 +167,11 @@ func TestComplete(t *testing.T) {
 	if err := db.DB.Where("`key` = ?", "panel.timezone").First(&tz).Error; err != nil || tz.Value != "Asia/Tokyo" {
 		t.Errorf("panel.timezone = %q err=%v", tz.Value, err)
 	}
+	// 门户开关必须落库（读取侧缺省按 true，不写就会把"关闭"显示成开启）。
+	var pe entity.SystemSetting
+	if err := db.DB.Where("`key` = ?", "panel.portal_enabled").First(&pe).Error; err != nil || pe.Value != "true" {
+		t.Errorf("panel.portal_enabled = %q err=%v, want true", pe.Value, err)
+	}
 	var ep entity.SubscriptionEndpoint
 	if err := db.DB.Where("domain = ?", "sub.example.com").First(&ep).Error; err != nil {
 		t.Errorf("subscription endpoint not created: %v", err)
@@ -209,6 +214,38 @@ func TestComplete(t *testing.T) {
 	}
 	if v := secretcrypto.ReadSecretEnvValue(secretcrypto.SecretEncryptionKeyName); v == "" {
 		t.Errorf("%s missing %s", secretcrypto.SecretEnvFile, secretcrypto.SecretEncryptionKeyName)
+	}
+	db.Close()
+}
+
+// 初始化时关闭客户门户 → 必须落库为 false，且不生成门户反代站点。
+func TestCompletePortalDisabled(t *testing.T) {
+	chdir(t)
+	dataDir := t.TempDir()
+	d := NewDraft(dataDir)
+	d.DataDir = dataDir
+	d.ListenPort = "18081"
+	d.AdminUsername = "cf_portal_off"
+	d.AdminPassword = "StrongPass1!"
+	d.PanelDomain = "panel-off.example.com"
+	d.PortalDomain = "portal-off.example.com"
+	d.ProxyType = ProxyNginx
+	d.SubscriptionPort = "0"
+	d.PortalPort = "0"
+	d.PortalEnabled = false
+	d.ProxyAddPanel, d.ProxyAddSubscription, d.ProxyAddPortal = true, true, true
+
+	if err := Complete(context.Background(), dataDir, d); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+
+	var pe entity.SystemSetting
+	if err := db.DB.Where("`key` = ?", "panel.portal_enabled").First(&pe).Error; err != nil || pe.Value != "false" {
+		t.Errorf("panel.portal_enabled = %q err=%v, want false", pe.Value, err)
+	}
+	var portalSite entity.NginxSite
+	if err := db.DB.Where("domain = ?", "portal-off.example.com").First(&portalSite).Error; err == nil {
+		t.Errorf("门户关闭时不应创建门户站点: %+v", portalSite)
 	}
 	db.Close()
 }

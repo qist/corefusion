@@ -293,7 +293,9 @@ func (d *Draft) accessURLs(domain, port string, tls, viaProxy bool, path string)
 		scheme = "https"
 	}
 	if viaProxy && normalizeHost(domain) != "" {
-		port, path = "", ""
+		// 代理整域名直通时由代理服务 80/443，不再带端口；
+		// 但订阅/门户的挂载路径（/sub、/p）仍要保留 —— 独立端口时调用方传的 path 本来就是空。
+		port = ""
 	}
 	hosts := d.accessHosts(domain)
 	out := make([]string, 0, len(hosts))
@@ -435,8 +437,10 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 		"panel.listen_port":       d.ListenPort,
 		"panel.subscription_port": d.SubscriptionPort,
 		"panel.portal_port":       d.PortalPort,
-		"panel.web_path":          d.WebPath,
-		"panel.data_dir":          d.DataDir,
+		// 初始化时选择关闭客户门户 → 必须落库，否则读取侧默认 true 会显示为开启。
+		"panel.portal_enabled": fmt.Sprintf("%v", d.PortalEnabled),
+		"panel.web_path":       d.WebPath,
+		"panel.data_dir":       d.DataDir,
 	}
 	for k, v := range kv {
 		if err := settingSvc.SetByKey(ctx, k, v); err != nil {
@@ -501,7 +505,11 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 
 	// 7.5 ACME 自动申请配置 + 已签发证书登记进目标库（第 7 步在初始化用的库里签发，
 	// 切库后目标库必须有记录，自动续期才有依据）。
-	persistACMEConfig(ctx, dataDir, d)
+	// 返回目标库里这张证书的 ID → 面板 TLS 选择器据此显示证书名称（而不是裸 ID）。
+	certID := persistACMEConfig(ctx, dataDir, d)
+	if certID > 0 && !d.viaProxy(d.ProxyAddPanel) && d.tlsIssued() {
+		_ = settingSvc.SetByKey(ctx, "panel.tls_cert_id", fmt.Sprintf("%d", certID))
+	}
 
 	// 8. 记录待安装任务（核心 / 代理二进制），由重启后的正式启动流程异步落地。
 	pending := PendingApply{
@@ -535,9 +543,9 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 //
 // 为什么必须做：向导第 7 步是在"初始化用的库"里签发的，Complete 随后切到目标库，
 // 不搬过来的话目标库里"没有这张证书"，自动续期无从谈起。
-func persistACMEConfig(ctx context.Context, dataDir string, d *Draft) {
+func persistACMEConfig(ctx context.Context, dataDir string, d *Draft) int64 {
 	if d.TLSMode != "acme" {
-		return
+		return 0
 	}
 	caProvider := strings.TrimSpace(d.ACMEProvider)
 
@@ -577,33 +585,37 @@ func persistACMEConfig(ctx context.Context, dataDir string, d *Draft) {
 	}
 
 	// 4. 证书记录：把已签好的证书（内容在磁盘上）登记进证书库 → 可自动续期。
-	registerIssuedCert(ctx, dataDir, d, dnsChannelID)
+	return registerIssuedCert(ctx, dataDir, d, dnsChannelID)
 }
 
 // registerIssuedCert 读回已签发的证书文件并登记进证书库
 // （与节点签发同一套解析：解析 SAN/密钥类型/签发者，provider_type=acme、auto_renew=1）。
-func registerIssuedCert(ctx context.Context, dataDir string, d *Draft, dnsChannelID int64) {
+// 返回目标库中该证书的 ID（失败时返回 0）。
+func registerIssuedCert(ctx context.Context, dataDir string, d *Draft, dnsChannelID int64) int64 {
 	certPEM, err := os.ReadFile(d.TLSCertPath)
 	if err != nil {
 		log.Printf("[bootstrap] warning: read issued cert %s: %v", d.TLSCertPath, err)
-		return
+		return 0
 	}
 	keyPEM, err := os.ReadFile(d.TLSKeyPath)
 	if err != nil {
 		log.Printf("[bootstrap] warning: read issued key %s: %v", d.TLSKeyPath, err)
-		return
+		return 0
 	}
 	svc := certsvc.NewService(repository.NewCertificateRepository(db.DB), dataDir, d.TLSEmail, normalizeCAProvider(d.ACMEProvider))
-	if _, err := svc.StoreAgentIssuedCert(ctx, certsvc.AgentIssuedCertInput{
+	rec, err := svc.StoreAgentIssuedCert(ctx, certsvc.AgentIssuedCertInput{
 		Identifiers:   d.TLSDomains,
 		CertPEM:       string(certPEM),
 		KeyPEM:        string(keyPEM),
 		CA:            d.ACMEProvider,
 		ChallengeType: d.TLSChallenge,
 		DNSChannelID:  dnsChannelID,
-	}); err != nil {
+	})
+	if err != nil {
 		log.Printf("[bootstrap] warning: register issued cert failed: %v", err)
+		return 0
 	}
+	return rec.ID
 }
 
 // createProxySites 为面板/订阅/门户创建反代站点（仅落库；代理配置在重启后生效）。
@@ -666,7 +678,8 @@ func createProxySites(ctx context.Context, dataDir string, d *Draft) {
 			specs = append(specs, siteSpec{h, subUpstream, "subscription_forward", subPath, false})
 		}
 	}
-	if d.ProxyAddPortal {
+	// 门户关闭时不创建门户站点（端口/域名配置可能仍保留在草稿里）。
+	if d.PortalEnabled && d.ProxyAddPortal {
 		if h := normalizeHost(d.PortalDomain); h != "" {
 			specs = append(specs, siteSpec{h, portalUpstream, "portal_forward", portalPath, false})
 		}

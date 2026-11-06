@@ -1826,7 +1826,7 @@ async function fetchPanelConfig() {
   } catch {}
 }
 // 镜像后端：订阅独立端口（非空、非 0、且 ≠ 主端口）→ 直通根路径；否则回退主端口 + /sub。
-// 门户独立端口（非空、非 0）→ 直通根路径；否则回退主端口 + /p。
+// 门户独立端口（非空、非 0、且 ≠ 主端口）→ 直通根路径；否则回退主端口 + /p。
 function forwardDerived(template) {
   const cfg = panelConfig.value
   const listenPort = cfg.listen_port || panelPort.value || '8080'
@@ -1837,7 +1837,7 @@ function forwardDerived(template) {
                        : { upstream: `127.0.0.1:${listenPort}`, path: '/sub' }
   }
   const pp = String(cfg.portal_port || '').trim()
-  const independent = pp && pp !== '0'
+  const independent = pp && pp !== '0' && pp !== listenPort
   return independent ? { upstream: `127.0.0.1:${pp}`, path: '' }
                      : { upstream: `127.0.0.1:${listenPort}`, path: '/p' }
 }

@@ -88,9 +88,16 @@ func (s *Service) beginCertOp(key string) (func(), bool) {
 // 日志证据：并发（17:20:16 / 17:42:39）必坏一张 ✗；顺序签发（17:23:11→17:23:48、
 // 17:44:24）两张全成功 ✓。所以不是密钥类型的问题，而是"同一组标识符并发下单" ✗。
 //
-// 口径：同一组标识符**排队**执行 ✓（不拒掉 —— 用户要的是 ECC + RSA 都签出来 ✓），
-// 不同域名之间仍然并行 ✓。
+// 口径：同一组标识符**排队**执行 ✓（不拒掉 —— 用户要的是 ECC + RSA 都签出来 ✓）。
+// 不同标识符之间是否并行由上层的"节点队列"决定：本地签发统一走 localNodeQueueMu ✓。
 var identifierLocks sync.Map // map[string]*sync.Mutex
+
+// localNodeQueueMu 让**面板本机**的签发/续期严格变成队列：一张签完/续完再下一张 ✓。
+//
+// Why：ACME 挑战（80 端口/临时 web 配置）、账号文件、EAB 都是一台机器上的共享资源 ✗；
+// 不同域名并发签发虽然 CA 层不冲突，但本机资源会互相踩 ✗（用户口径：同一节点必须串行 ✓）。
+// 远程节点同理，由 Agent 侧的 acmeIssueQueueMu 保证 ✓。
+var localNodeQueueMu sync.Mutex
 
 // identifierLockKey 生成"顺序无关"的集合 key ✓（同一组名字换个顺序也要落同一个 key ✗）。
 func identifierLockKey(domains []string) string {
@@ -977,6 +984,12 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 		return nil, ErrCertOpInProgress
 	}
 
+	// 同一节点（面板本机）的签发/续期统一排队：一张跑完再下一张 ✓，
+	// 避免并发抢 80 端口/临时 web 配置/ACME 账号与 EAB ✓。
+	// 排队在 detached 上下文之前，等待不吃 15 分钟超时预算 ✓。
+	localNodeQueueMu.Lock()
+	defer localNodeQueueMu.Unlock()
+
 	// ⚠ 同一组标识符（**不分密钥类型** ✓）必须串行 ✗：
 	// 并发的 newOrder 会被 CA 去重成同一个订单 → 后 finalize 的那张必然
 	// `orderNotReady :: Order's status ("valid")` ✗（见 identifierLocks 注释 ✓）。
@@ -1168,6 +1181,10 @@ func (s *Service) RenewACME(ctx context.Context, id int64, in RenewACMEInput) (*
 	} else {
 		return nil, ErrCertOpInProgress
 	}
+
+	// 与 IssueACME 共用同一把本机队列锁：面板本机同一时间只允许一个 ACME 操作 ✓。
+	localNodeQueueMu.Lock()
+	defer localNodeQueueMu.Unlock()
 
 	certRecord, err := s.repo.GetByID(ctx, id)
 	if err != nil {

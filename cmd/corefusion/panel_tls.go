@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,13 +142,33 @@ func (p *panelTLS) apply(certPath, keyPath, caPath string, mtls bool) {
 
 	if certPath != p.certPath || keyPath != p.keyPath {
 		log.Printf("[tls] certificate paths changed: cert=%s key=%s", certPath, keyPath)
+		// 先尝试加载新路径成功再切换；失败必须保留旧证书/旧路径 ✗ ——
+		// 否则新的坏路径会把面板打成"无证书"状态（所有 HTTPS 握手失败）✗。
+		oldCertPath, oldKeyPath := p.certPath, p.keyPath
+		oldCert := p.cert
+		oldCertStamp, oldKeyStamp := p.certStamp, p.keyStamp
 		p.certPath, p.keyPath = certPath, keyPath
 		p.cert = nil // 强制重读，即使新旧文件时间戳碰巧一致
+		if err := p.loadCertLocked(); err != nil {
+			p.certPath, p.keyPath = oldCertPath, oldKeyPath
+			p.cert = oldCert
+			p.certStamp, p.keyStamp = oldCertStamp, oldKeyStamp
+			p.logOnce("WARNING: hot reload certificate failed, keeping previous: " + err.Error())
+		} else {
+			p.lastMsg = ""
+		}
 	}
 	if caPath != p.caPath {
 		log.Printf("[tls] mTLS client CA path changed: %s", caPath)
+		// 与证书同口径：新 CA 加载失败时保留旧 CA/旧路径 ✗ ——
+		// 否则一次误配会让 mTLS 静默降级为"不验证客户端证书" ✗。
+		oldCAPath, oldPool, oldCAStamp := p.caPath, p.pool, p.caStamp
 		p.caPath = caPath
 		p.pool = nil
+		if err := p.ensureCALocked(); err != nil && strings.TrimSpace(caPath) != "" {
+			p.caPath, p.pool, p.caStamp = oldCAPath, oldPool, oldCAStamp
+			p.logOnce("WARNING: hot reload mTLS CA failed, keeping previous: " + err.Error())
+		}
 	}
 	if mtls != p.mtls {
 		if mtls {
@@ -197,31 +218,34 @@ func (p *panelTLS) ensureCertLocked() error {
 }
 
 // ensureCALocked 文件变化时重读客户端 CA；失败时保留旧 pool（mTLS 继续用旧 CA）。
-func (p *panelTLS) ensureCALocked() {
+func (p *panelTLS) ensureCALocked() error {
 	if p.caPath == "" {
-		return
+		return nil
 	}
 	st, ok := statStamp(p.caPath)
 	if !ok {
-		p.logOnce("WARNING: mTLS client CA not readable: " + p.caPath)
-		return
+		err := fmt.Errorf("mTLS client CA not readable: %s", p.caPath)
+		p.logOnce("WARNING: " + err.Error())
+		return err
 	}
 	if p.pool != nil && st == p.caStamp {
-		return
+		return nil
 	}
 	raw, err := os.ReadFile(p.caPath)
 	if err != nil {
 		p.logOnce("WARNING: read mTLS client CA failed: " + err.Error())
-		return
+		return err
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(raw) {
-		p.logOnce("WARNING: parse mTLS client CA failed: " + p.caPath)
-		return
+		err := fmt.Errorf("parse mTLS client CA failed: %s", p.caPath)
+		p.logOnce("WARNING: " + err.Error())
+		return err
 	}
 	p.pool = pool
 	p.caStamp = st
 	log.Printf("[tls] loaded mTLS client CA: %s", p.caPath)
+	return nil
 }
 
 // logOnce 相同消息只打印一次（巡检/握手都会反复触发）。

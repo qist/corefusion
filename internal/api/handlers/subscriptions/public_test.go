@@ -9,10 +9,13 @@ import (
 	"testing"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 
 	"github.com/gin-gonic/gin"
+	sqlite "github.com/qist/sqlite"
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 )
 
 func TestBuildBillingInfoEntriesRequiresExplicitSelection(t *testing.T) {
@@ -580,6 +583,18 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	if got != want0 {
 		t.Fatalf("empty-domain url = %q, want fallback %q", got, want0)
 	}
+
+	// 独立订阅端口：请求就在根路径 /<token> → 不能硬编码补 /sub。
+	h4 := &PublicHandler{}
+	c4, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c4.Request = httptest.NewRequest("GET", "/test-token", nil)
+	c4.Request.Header.Set("X-Forwarded-Proto", "https")
+	c4.Request.Header.Set("X-Forwarded-Host", "sub.example.com")
+	got = h4.buildProviderURL(c4, "test-token", "")
+	want = "https://sub.example.com/test-token?format=mihomo_proxies_yaml"
+	if got != want {
+		t.Fatalf("independent port url = %q, want %q", got, want)
+	}
 }
 
 // 内部 provider URL 必须继承主订阅的 config/platform（否则 config=win 取不到配置），
@@ -1029,5 +1044,85 @@ func TestInjectRuleSetsPlacesUnderRoute(t *testing.T) {
 	}
 	if arr, _ := routeLegacy["rule_set"].([]interface{}); len(arr) != 1 {
 		t.Fatalf("legacy rule_set should land in route.rule_set: %s", outLegacy)
+	}
+}
+
+func newPortalURLTestHandler(t *testing.T, settings map[string]string) *PublicHandler {
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Skipf("in-memory sqlite unavailable: %v", err)
+	}
+	if err := gdb.AutoMigrate(&entity.SystemSetting{}); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	repo := repository.NewSystemSettingRepository(gdb)
+	for k, v := range settings {
+		if err := repo.Set(context.Background(), k, v); err != nil {
+			t.Fatalf("set %s: %v", k, err)
+		}
+	}
+	return &PublicHandler{systemSettingRepo: repo}
+}
+
+func portalURLTestContext() *gin.Context {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/sub/token", nil)
+	c.Request.Host = "sub.example.com"
+	return c
+}
+
+// 门户关闭 → 订阅响应不再下发 Profile-Web-Page-Url（客户端不该看到点不开的门户入口）。
+func TestResolvePortalWebPageURLDisabledReturnsEmpty(t *testing.T) {
+	h := newPortalURLTestHandler(t, map[string]string{
+		"panel.portal_enabled":       "false",
+		"oauth.callback_domain":      "portal.example.com",
+		"panel.profile_web_page_url": "https://custom.example.com/help",
+	})
+	if got := h.resolvePortalWebPageURL(context.Background(), "https", portalURLTestContext()); got != "" {
+		t.Fatalf("portal disabled should return empty, got %q", got)
+	}
+}
+
+// 共用面板端口：门户挂在 /p；且任何来源的路径（例如误配进 external_url 的随机 web_path）都必须被剥掉。
+func TestResolvePortalWebPageURLSharedPortStripsPanelPath(t *testing.T) {
+	h := newPortalURLTestHandler(t, map[string]string{
+		"panel.portal_enabled": "true",
+		"panel.external_url":   "https://panel.example.com/a7x9k2m8p",
+		"panel.portal_port":    "8080",
+		"panel.listen_port":    "8080",
+	})
+	want := "https://panel.example.com/p"
+	if got := h.resolvePortalWebPageURL(context.Background(), "https", portalURLTestContext()); got != want {
+		t.Fatalf("shared port url = %q, want %q", got, want)
+	}
+}
+
+// 独立门户端口（不同于面板端口）→ 门户在域名根路径，不带 /p。
+func TestResolvePortalWebPageURLIndependentPortUsesRoot(t *testing.T) {
+	h := newPortalURLTestHandler(t, map[string]string{
+		"panel.portal_enabled":  "true",
+		"oauth.callback_domain": "portal.example.com",
+		"panel.portal_port":     "8082",
+		"panel.listen_port":     "8080",
+	})
+	want := "https://portal.example.com"
+	if got := h.resolvePortalWebPageURL(context.Background(), "https", portalURLTestContext()); got != want {
+		t.Fatalf("independent port url = %q, want %q", got, want)
+	}
+}
+
+// 没有 callback_domain/external_url 时走请求 Host 兜底，也要按独立端口决定是否加 /p。
+func TestResolvePortalWebPageURLFallbackHonoursIndependentPort(t *testing.T) {
+	h := newPortalURLTestHandler(t, map[string]string{
+		"panel.portal_enabled": "true",
+		"panel.portal_port":    "8082",
+		"panel.listen_port":    "8080",
+	})
+	want := "https://sub.example.com"
+	if got := h.resolvePortalWebPageURL(context.Background(), "https", portalURLTestContext()); got != want {
+		t.Fatalf("fallback independent url = %q, want %q", got, want)
 	}
 }

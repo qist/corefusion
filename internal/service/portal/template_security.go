@@ -1173,6 +1173,25 @@ func isCustomComponentTag(tag string) bool {
 	return strings.Contains(tag, "-") || (tag[0] >= 'A' && tag[0] <= 'Z')
 }
 
+// 存量模板的「推荐邀请链接」补丁：独立门户端口挂在根路径，旧模板写死 /p → 链接 404。
+// 改为按当前页面路径判断（/p 或根路径）。幂等：已是新版时原样返回 ✓。
+const (
+	oldReferralInviteURL = `      return window.location.origin + '/p?ref=' + referralCode.value.code`
+
+	newReferralInviteURL = `      // 独立门户端口在根路径，共用面板端口才是 /p —— 不能写死 /p。
+      var portalBase = (window.location.pathname === '/p' || window.location.pathname.indexOf('/p/') === 0) ? '/p' : '/'
+      return window.location.origin + portalBase + '?ref=' + referralCode.value.code`
+)
+
+func PatchReferralInviteURL(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+	if strings.Contains(newJS, oldReferralInviteURL) {
+		newJS = strings.Replace(newJS, oldReferralInviteURL, newReferralInviteURL, 1)
+		changed = true
+	}
+	return newHTML, newJS, changed
+}
+
 // EnsureSecurityPatches 给"当前生效的门户模板"打安全补丁（进程启动时调用一次）。
 //
 // 全程自动：不需要管理员做任何操作；只在命中旧写法时改写，并把结果落库 + 清渲染缓存。
@@ -1214,6 +1233,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 	// 客户端面：支付后轮询（C-1）/ 推荐提现（C-2）/ 订阅 IP 白名单管理（C-4）✓
 	if h6, j6, c6 := PatchClientFeatures(newHTML, newJS); c6 {
 		newHTML, newJS = h6, j6
+		changed = true
+	}
+	// 推荐邀请链接不能写死 /p（独立门户端口在根路径）✓
+	if h7, j7, c7 := PatchReferralInviteURL(newHTML, newJS); c7 {
+		newHTML, newJS = h7, j7
 		changed = true
 	}
 	// regions.auth 是真正渲染的登录卡 → config 里的区域源码也要补（自助解封卡 ✓）

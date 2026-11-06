@@ -12,6 +12,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -2812,9 +2813,6 @@ func (s *CommerceService) portalBaseURL(ctx context.Context) string {
 	base := ""
 	if d, _ := s.settingSvc.GetByKey(ctx, "oauth.callback_domain"); strings.TrimSpace(d) != "" {
 		base = strings.TrimSpace(d)
-		if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			base = "https://" + base
-		}
 	}
 	if base == "" {
 		base, _ = s.settingSvc.GetByKey(ctx, "panel.external_url")
@@ -2822,17 +2820,37 @@ func (s *CommerceService) portalBaseURL(ctx context.Context) string {
 			base = "http://localhost:8080"
 		}
 	}
-	return strings.TrimRight(base, "/")
+	return portalHostBase(base)
+}
+
+// portalHostBase 只保留 scheme + host：门户永远在域名根路径下，
+// 不能把面板随机 web_path 带进支付回跳/回调地址。
+func portalHostBase(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "https://" + base
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(base, "/")
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // portalPagePath 返回门户页面在本域名下的挂载路径（"" 或 "/p"）。
 // 与 proxy portal_forward 的生成规则一致：
 //
-//	panel.portal_port 已配置（独立门户端口）→ 门户整域名挂在根路径 "" ✓；
-//	否则门户与面板共用主端口 → 挂在 "/p" ✓。
+//	panel.portal_port 配置为独立端口（非空、非 0、且不等于面板监听端口）→
+//	门户整域名挂在根路径 "" ✓；否则门户与面板共用主端口 → 挂在 "/p" ✓。
 func (s *CommerceService) portalPagePath(ctx context.Context) string {
-	if p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port"); p != "" && p != "0" {
-		return ""
+	if p, _ := s.settingSvc.GetByKey(ctx, "panel.portal_port"); strings.TrimSpace(p) != "" && strings.TrimSpace(p) != "0" {
+		listen, _ := s.settingSvc.GetByKey(ctx, "panel.listen_port")
+		if strings.TrimSpace(p) != strings.TrimSpace(listen) {
+			return ""
+		}
 	}
 	return "/p"
 }

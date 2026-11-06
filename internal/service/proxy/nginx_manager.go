@@ -324,16 +324,11 @@ func (m *NginxManager) fillForwardDerivedFields(ctx context.Context, site *entit
 		site.Upstream = m.portalAddr(ctx)
 		// 有独立门户端口 → 整域名直通，path 留空 ✓；
 		// 否则门户与面板共用主端口 → 走 /p 路径 ✓。
-		portalPort := ""
-		if m.settingStore != nil {
-			if v, err := m.settingStore.GetByKey(ctx, "panel.portal_port"); err == nil {
-				portalPort = v
-			}
-		}
-		if portalPort == "" || portalPort == "0" {
-			site.Path = "/p"
-		} else {
+		// ⚠ 独立端口判定须与启动一致（同面板端口不算独立），否则会漏掉 /p。
+		if m.independentForwardPort(ctx, "panel.portal_port") != "" {
 			site.Path = ""
+		} else {
+			site.Path = "/p"
 		}
 	case "subscription_forward":
 		// 有独立订阅端口 → 独立订阅引擎在**根路径**服务（/:token）→ 整域名直通，path 留空 ✓；

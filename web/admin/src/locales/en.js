@@ -964,9 +964,6 @@ export default {
       vlessReverseTagHint: 'Reverse proxy inbound tag for routing',
       reverseSniffingEnable: 'Enable Sniffing',
       reverseSniffingOverride: 'Dest Override',
-      sniffingEnabled: 'Enable sniffing',
-      sniffingDestOverride: 'Sniffing protocols',
-      sniffingDestOverrideHint: 'Protocols to detect. Detection is used for routing and target restore; unchecked protocols are ignored.',
       reverseSniffingMetadataOnly: 'Metadata Only',
       reverseSniffingRouteOnly: 'Route Only',
       reverseSniffingDomainsExcluded: 'Domains Excluded',
@@ -1169,6 +1166,9 @@ export default {
       sniffingRouteOnly: 'Route only, do not replace destination',
       sniffingDomainsExcluded: 'One per line, do not reset target on match',
       sniffingIpsExcluded: 'One per line, do not reset on IP match',
+      sniffingEnabled: 'Enable sniffing',
+      sniffingDestOverride: 'Sniffing protocols',
+      sniffingDestOverrideHint: 'Protocols to detect. Detection is used for routing and target restore; unchecked protocols are ignored.',
       // gRPC user agent
       grpcUaDefault: 'Default (Go)',
       // Hysteria

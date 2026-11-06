@@ -964,9 +964,6 @@ export default {
       vlessReverseTagHint: '反向代理入站标签，用于路由系统',
       reverseSniffingEnable: '启用 Sniffing',
       reverseSniffingOverride: 'Dest Override',
-      sniffingEnabled: '启用嗅探',
-      sniffingDestOverride: '嗅探协议',
-      sniffingDestOverrideHint: '勾选需要识别的协议；识别结果用于路由和目标地址还原，不勾选则不做处理',
       reverseSniffingMetadataOnly: '仅元数据',
       reverseSniffingRouteOnly: '仅路由',
       reverseSniffingDomainsExcluded: '排除域名',
@@ -1169,6 +1166,9 @@ export default {
       sniffingRouteOnly: '仅用于路由，不替换目标地址',
       sniffingDomainsExcluded: '每行一个，嗅探结果匹配时不重置目标',
       sniffingIpsExcluded: '每行一个，目标 IP 匹配时不重置',
+      sniffingEnabled: '启用嗅探',
+      sniffingDestOverride: '嗅探协议',
+      sniffingDestOverrideHint: '勾选需要识别的协议；识别结果用于路由和目标地址还原，不勾选则不做处理',
       // gRPC user agent
       grpcUaDefault: '默认 (Go)',
       // Hysteria

@@ -1574,6 +1574,15 @@ export default {
       "cfip": "Pool de IPs CF"
     },
     "cfip": {
+      probeAuto: 'Auto (núcleo instalado)',
+      probeMissing: '(não instalado)',
+      probeTitle: 'Configurações de sondagem',
+      probeInterval: 'Intervalo (minutos)',
+      probeMaxLatency: 'Latência máx. (ms, 0 = sem limite)',
+      probeEntryNode: 'Nó de entrada da sondagem',
+      probeLocal: 'Direto (local)',
+      probeDialer: 'Discador',
+      probeHint: 'A sondagem local só filtra nós claramente inacessíveis; escolha um nó de entrada para sondar a partir da rede dele. A sondagem é um processo temporário.',
       "sources": "Fonte da API",
       "entries": "Lista de IPs",
       "addSource": "Adicionar fonte",

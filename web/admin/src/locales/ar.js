@@ -1574,6 +1574,15 @@ export default {
       "cfip": "مجموعة IP الخاصة بـ CF"
     },
     "cfip": {
+      probeAuto: 'تلقائي (النواة المثبتة)',
+      probeMissing: '(غير مثبت)',
+      probeTitle: 'إعدادات الفحص',
+      probeInterval: 'الفاصل (دقائق)',
+      probeMaxLatency: 'الحد الأقصى للتأخير (مللي ثانية، 0 = بلا حد)',
+      probeEntryNode: 'عقدة إدخال الفحص',
+      probeLocal: 'مباشر (محلي)',
+      probeDialer: 'أداة الاتصال',
+      probeHint: 'الفحص المحلي يستبعد العقد غير القابلة للوصول فقط؛ اختر عقدة إدخال للفحص من شبكتها. الفحص عملية مؤقتة.',
       "sources": "مصدر API",
       "entries": "قائمة IP",
       "addSource": "إضافة مصدر",

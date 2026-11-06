@@ -1574,6 +1574,15 @@ export default {
       "cfip": "Grupo de IP de CF"
     },
     "cfip": {
+      probeAuto: 'Auto (núcleo instalado)',
+      probeMissing: '(no instalado)',
+      probeTitle: 'Ajustes de sondeo',
+      probeInterval: 'Intervalo (minutos)',
+      probeMaxLatency: 'Latencia máx. (ms, 0 = sin límite)',
+      probeEntryNode: 'Nodo de entrada de sondeo',
+      probeLocal: 'Directo (local)',
+      probeDialer: 'Marcador',
+      probeHint: 'El sondeo local solo filtra nodos claramente inalcanzables; elija un nodo de entrada para sondear desde su red. El sondeo es un proceso temporal.',
       "sources": "Origen de API",
       "entries": "Lista de IP",
       "addSource": "Añadir origen",

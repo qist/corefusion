@@ -1282,3 +1282,57 @@ func (g *ChainLinkGenerator) GenerateEntryBalancers(ctx context.Context, serverI
 	}
 	return bal, observatory
 }
+
+// BuildXrayOutboundFromMihomoProxy 把 mihomo/clash 的 proxy map（external_nodes.proxy_json）
+// 转成 xray 风格出站（protocol + settings + streamSettings）。
+//
+// 供「CF 优选 IP/域名探活」这类需要临时拨号的场景复用：与链式代理使用同一套
+// 转换逻辑（reality / ws / grpc / hy2 obfs / 端口跳跃都在里面），避免探活走一套、
+// 线上走另一套导致「探测结果与真实可用性不一致」。
+func BuildXrayOutboundFromMihomoProxy(pm map[string]interface{}) (map[string]interface{}, error) {
+	protocol, _ := pm["type"].(string)
+	if protocol == "" {
+		return nil, fmt.Errorf("proxy json missing type")
+	}
+	host, _ := pm["server"].(string)
+	if host == "" {
+		return nil, fmt.Errorf("proxy json missing server")
+	}
+	port := 0
+	switch v := pm["port"].(type) {
+	case float64:
+		port = int(v)
+	case int:
+		port = v
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			port = int(n)
+		}
+	}
+	if port == 0 {
+		if ranges := mihomoPortRanges(pm); len(ranges) > 0 {
+			// 端口跳跃节点：port 常为 0，交给转换层用 server_ports 处理。
+			port = 0
+		}
+	}
+
+	users := extractUsersFromProxyMap(pm, protocol)
+	settings := buildExternalOutboundSettings(protocol, host, port, users)
+	if (protocol == "hysteria2" || protocol == "hysteria") && settings != nil {
+		if servers, ok := settings["servers"].([]map[string]interface{}); ok && len(servers) > 0 {
+			if obfs := mihomoHy2Obfs(pm); len(obfs) > 0 {
+				servers[0]["obfs"] = obfs
+			}
+			if ranges := mihomoPortRanges(pm); len(ranges) > 0 {
+				servers[0]["serverPorts"] = ranges
+			}
+		}
+	}
+
+	return map[string]interface{}{
+		"tag":            "probe-out",
+		"protocol":       protocol,
+		"settings":       settings,
+		"streamSettings": buildStreamFromProxyMap(pm, protocol),
+	}, nil
+}

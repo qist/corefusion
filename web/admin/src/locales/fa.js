@@ -1574,6 +1574,15 @@ export default {
       "cfip": "استخر IP در CF"
     },
     "cfip": {
+      probeAuto: 'خودکار (هسته نصب‌شده)',
+      probeMissing: '(نصب نشده)',
+      probeTitle: 'تنظیمات بررسی',
+      probeInterval: 'فاصله (دقیقه)',
+      probeMaxLatency: 'حداکثر تأخیر (میلی‌ثانیه، 0 = بدون محدودیت)',
+      probeEntryNode: 'گره ورودی بررسی',
+      probeLocal: 'مستقیم (محلی)',
+      probeDialer: 'شماره‌گیر',
+      probeHint: 'بررسی محلی فقط گره‌های غیرقابل‌دسترس را حذف می‌کند؛ برای بررسی از شبکه گره، گره ورودی انتخاب کنید. بررسی یک فرایند موقت است.',
       "sources": "منبع API",
       "entries": "فهرست IP",
       "addSource": "افزودن منبع",

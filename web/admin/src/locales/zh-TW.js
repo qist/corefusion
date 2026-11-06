@@ -1574,6 +1574,15 @@ export default {
       "cfip": "CF IP 池"
     },
     "cfip": {
+      probeAuto: '自動（已安裝的核心）',
+      probeMissing: '（未安裝）',
+      probeTitle: '探測設定',
+      probeInterval: '探測間隔（分鐘）',
+      probeMaxLatency: '延遲閾值（ms，0=不限）',
+      probeEntryNode: '探測入口節點',
+      probeLocal: '本機直連（預設）',
+      probeDialer: '撥號工具',
+      probeHint: '本機探測只能過濾明顯不通的節點；選擇入口節點可模擬該節點所在線路。探測為臨時進程，結束即退出，不與核心共用配置。',
       "sources": "API 來源",
       "entries": "IP 清單",
       "addSource": "新增來源",

@@ -1574,6 +1574,15 @@ export default {
       "cfip": "CF IP havuzu"
     },
     "cfip": {
+      probeAuto: 'Otomatik (kurulu çekirdek)',
+      probeMissing: '(kurulu değil)',
+      probeTitle: 'Yoklama ayarları',
+      probeInterval: 'Aralık (dakika)',
+      probeMaxLatency: 'Maks. gecikme (ms, 0 = sınırsız)',
+      probeEntryNode: 'Yoklama giriş düğümü',
+      probeLocal: 'Doğrudan (yerel)',
+      probeDialer: 'Çevirici',
+      probeHint: 'Yerel yoklama yalnızca açıkça erişilemeyen düğümleri eler; o düğümün ağından yoklamak için giriş düğümü seçin. Yoklama geçici bir süreçtir.',
       "sources": "API kaynağı",
       "entries": "IP listesi",
       "addSource": "Kaynak ekle",

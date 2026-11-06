@@ -1574,6 +1574,15 @@ export default {
       "cfip": "CF-IP-Pool"
     },
     "cfip": {
+      probeAuto: 'Auto (installierter Kern)',
+      probeMissing: '(nicht installiert)',
+      probeTitle: 'Prüfeinstellungen',
+      probeInterval: 'Intervall (Minuten)',
+      probeMaxLatency: 'Max. Latenz (ms, 0 = unbegrenzt)',
+      probeEntryNode: 'Prüf-Eingangsknoten',
+      probeLocal: 'Direkt (lokal)',
+      probeDialer: 'Dialer',
+      probeHint: 'Lokale Prüfung filtert nur klar unerreichbare Knoten; mit einem Eingangsknoten wird aus dessen Netz geprüft. Prüfungen laufen als temporäre Prozesse.',
       "sources": "API-Quelle",
       "entries": "IP-Liste",
       "addSource": "Quelle hinzufügen",

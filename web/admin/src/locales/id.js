@@ -1574,6 +1574,15 @@ export default {
       "cfip": "Pool IP CF"
     },
     "cfip": {
+      probeAuto: 'Otomatis (core terpasang)',
+      probeMissing: '(belum terpasang)',
+      probeTitle: 'Pengaturan pemeriksaan',
+      probeInterval: 'Interval (menit)',
+      probeMaxLatency: 'Ambang latensi (ms, 0 = tanpa batas)',
+      probeEntryNode: 'Node masuk pemeriksaan',
+      probeLocal: 'Langsung (lokal)',
+      probeDialer: 'Dialer',
+      probeHint: 'Pemeriksaan lokal hanya menyaring node yang jelas tak terjangkau; pilih node masuk untuk memeriksa dari jaringannya. Pemeriksaan adalah proses sementara.',
       "sources": "Sumber API",
       "entries": "Daftar IP",
       "addSource": "Tambah Sumber",

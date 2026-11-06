@@ -1574,6 +1574,15 @@ export default {
       "cfip": "CF IP プール"
     },
     "cfip": {
+      probeAuto: '自動（インストール済み）',
+      probeMissing: '（未インストール）',
+      probeTitle: 'プローブ設定',
+      probeInterval: '間隔（分）',
+      probeMaxLatency: '遅延しきい値（ms、0=無制限）',
+      probeEntryNode: 'プローブ入口ノード',
+      probeLocal: 'ローカル直接',
+      probeDialer: 'ダイヤラー',
+      probeHint: 'ローカルプローブは明らかに到達不能なノードのみ除外します。入口ノードを選ぶとその回線からプローブします。プローブは一時プロセスで、終了時に停止します。',
       "sources": "API ソース",
       "entries": "IP リスト",
       "addSource": "ソースを追加",

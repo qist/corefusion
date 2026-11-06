@@ -1664,15 +1664,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			cfipSvcInst := cfipSvc.NewService(cfipSourceRepo, cfipEntryRepo)
 			cfipSvcInst.StartScheduler(context.Background(), time.Duration(schedCfg.CFIPCheckInterval)*time.Minute)
 			// 优选域名/优选 IP 探活：定时跑 + 管理端手动触发。
-			// 连续失败才标记不健康（不改 Enabled），订阅渲染自动跳过不健康条目。
-			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo)
-			prober.StartScheduler(context.Background(), 5*time.Minute)
-			probeH := systemHandler.NewProbeHandler(prober)
+			// 连续失败才标记不健康（不改 Enabled），订阅渲染自动跳过不健康/超时延阈值条目。
+			// 探测配置（间隔/延迟阈值/入口节点/拨号工具）从 system_settings 读，改完下一轮生效。
+			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo, systemSettingRepo, extNodeRepo, binaryResolver, dataDir)
+			prober.StartScheduler(context.Background())
+			probeH := systemHandler.NewProbeHandler(prober, extNodeRepo, binaryResolver)
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{
 				cfipGroup.GET("/sources", cfipH.ListSources)
 				cfipGroup.GET("/entries", cfipH.ListEntries)
+				cfipGroup.GET("/probe-config", probeH.GetConfig)
 				// CF IP 池是全局出站资源，且 fetch 会发起服务端请求：
 				// 写操作仅 Admin（安全审计 v6 H-1/H-2）。
 				cfipWrite := protected.Group("/cfip").Use(middleware.RequireRole(domainuser.RoleAdmin))
@@ -1686,6 +1688,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipWrite.DELETE("/entries", cfipH.ClearEntries)
 				cfipWrite.POST("/seed", cfipH.SeedDefaults)
 				cfipWrite.POST("/check", probeH.Check)
+				cfipWrite.PUT("/probe-config", probeH.SaveConfig)
 			}
 
 			// Services (moved under /node-servers/:id/services)

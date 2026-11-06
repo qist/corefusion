@@ -1574,6 +1574,15 @@ export default {
       "cfip": "Pool d’IP CF"
     },
     "cfip": {
+      probeAuto: 'Auto (noyau installé)',
+      probeMissing: '(non installé)',
+      probeTitle: 'Paramètres de sonde',
+      probeInterval: 'Intervalle (minutes)',
+      probeMaxLatency: 'Latence max (ms, 0 = illimité)',
+      probeEntryNode: 'Nœud d\'entrée de sonde',
+      probeLocal: 'Direct (local)',
+      probeDialer: 'Dialer',
+      probeHint: 'La sonde locale ne filtre que les nœuds clairement injoignables ; choisissez un nœud d\'entrée pour sonder depuis son réseau. La sonde est un processus temporaire.',
       "sources": "Source API",
       "entries": "Liste des IP",
       "addSource": "Ajouter une source",

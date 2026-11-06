@@ -245,6 +245,8 @@ type shareDomainEntry struct {
 	Host  string
 	Port  int
 	Ports []int
+	// LatencyMs 是探活延迟（毫秒，0 表示未探测）；用于「超过阈值不进池」的筛选。
+	LatencyMs int
 }
 
 type renderedSubscriptionNode struct {
@@ -2009,10 +2011,12 @@ func cleanDNSConfig(dns interface{}) interface{} {
 // --- helpers ---
 
 func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry {
-	// 分「全部可用」与「健康」两份：优先健康条目，
-	// 但某类全部不健康时回退全部（否则一次网络故障会把订阅地址清空）。
-	var domainAll, domainHealthy []shareDomainEntry
-	var ipAll, ipHealthy []shareDomainEntry
+	// 分三档：全部可用 / 探活健康 / 健康且延迟达标。
+	// 优先用延迟达标池（用户口径：太慢的不要进池），但某一档为空时逐级回退，
+	// 否则一次网络抖动会让订阅里一个地址都不剩。
+	var domainAll, domainHealthy, domainFast []shareDomainEntry
+	var ipAll, ipHealthy, ipFast []shareDomainEntry
+	maxLatency := h.probeMaxLatencyMs(ctx)
 
 	// Load direct and cf_domain from share_domain_configs (NOT cf_ip, that comes from cf_ip_entries)
 	if h.shareDomainRepo != nil {
@@ -2026,7 +2030,7 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if d.Type == "cf_ip" {
 					continue
 				}
-				entry := shareDomainEntry{Type: d.Type, Host: d.Value, Port: d.Port}
+				entry := shareDomainEntry{Type: d.Type, Host: d.Value, Port: d.Port, LatencyMs: d.LatencyMs}
 				if d.Ports != "" {
 					json.Unmarshal([]byte(d.Ports), &entry.Ports)
 				}
@@ -2036,6 +2040,9 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				domainAll = append(domainAll, entry)
 				if d.Healthy {
 					domainHealthy = append(domainHealthy, entry)
+					if withinLatency(entry.LatencyMs, maxLatency) {
+						domainFast = append(domainFast, entry)
+					}
 				}
 			}
 		}
@@ -2050,7 +2057,7 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if ip.IP == "" || !ip.Enabled {
 					continue
 				}
-				entry := shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: 443}
+				entry := shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: 443, LatencyMs: ip.LatencyMs}
 				if ip.Ports != "" {
 					json.Unmarshal([]byte(ip.Ports), &entry.Ports)
 				}
@@ -2060,23 +2067,52 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				ipAll = append(ipAll, entry)
 				if ip.Healthy {
 					ipHealthy = append(ipHealthy, entry)
+					if withinLatency(entry.LatencyMs, maxLatency) {
+						ipFast = append(ipFast, entry)
+					}
 				}
 			}
 		}
 	}
 
 	entries := make([]shareDomainEntry, 0, len(domainAll)+len(ipAll))
-	entries = append(entries, preferHealthy(domainAll, domainHealthy)...)
-	entries = append(entries, preferHealthy(ipAll, ipHealthy)...)
+	entries = append(entries, preferFast(domainAll, domainHealthy, domainFast)...)
+	entries = append(entries, preferFast(ipAll, ipHealthy, ipFast)...)
 	return entries
 }
 
-// preferHealthy 优先返回健康条目；全部不健康时回退全量，保证订阅里仍有地址。
-func preferHealthy(all, healthy []shareDomainEntry) []shareDomainEntry {
+// preferFast 三级回退：健康且延迟达标 → 健康 → 全部。
+// 保证「太慢的不进池」，同时不会因为整池都慢就把订阅地址清空。
+func preferFast(all, healthy, fast []shareDomainEntry) []shareDomainEntry {
+	if len(fast) > 0 {
+		return fast
+	}
 	if len(healthy) > 0 {
 		return healthy
 	}
 	return all
+}
+
+// withinLatency 判断延迟是否满足阈值；max <= 0 表示不限制（未探测的 0 也视为通过）。
+func withinLatency(latencyMs, maxMs int) bool {
+	return maxMs <= 0 || latencyMs <= maxMs
+}
+
+// probeMaxLatencyMs 读取探活延迟阈值（毫秒）；读不到或非法时返回 0（不限制）。
+// 与 healthprobe.SettingMaxLatency 同键，探测配置改完对订阅渲染立即生效。
+func (h *PublicHandler) probeMaxLatencyMs(ctx context.Context) int {
+	if h.systemSettingRepo == nil {
+		return 0
+	}
+	v, err := h.systemSettingRepo.GetByKey(ctx, "cfip.probe.max_latency_ms")
+	if err != nil {
+		return 0
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func resolveHostPort(config map[string]interface{}, listenHost string, listenPort int, shareDomains []shareDomainEntry) (string, int) {

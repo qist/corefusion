@@ -1574,6 +1574,15 @@ export default {
       "cfip": "CF IP 풀"
     },
     "cfip": {
+      probeAuto: '자동(설치된 코어)',
+      probeMissing: '(미설치)',
+      probeTitle: '탐지 설정',
+      probeInterval: '간격(분)',
+      probeMaxLatency: '지연 임계값(ms, 0=무제한)',
+      probeEntryNode: '탐지 진입 노드',
+      probeLocal: '로컬 직접',
+      probeDialer: '다이얼러',
+      probeHint: '로컬 탐지는 확실히 연결 불가한 노드만 걸러냅니다. 진입 노드를 선택하면 해당 회선에서 탐지합니다. 탐지는 임시 프로세스로 종료 시 정리됩니다.',
       "sources": "API 소스",
       "entries": "IP 목록",
       "addSource": "소스 추가",

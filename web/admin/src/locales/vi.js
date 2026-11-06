@@ -1574,6 +1574,15 @@ export default {
       "cfip": "Pool IP CF"
     },
     "cfip": {
+      probeAuto: 'Tự động (lõi đã cài)',
+      probeMissing: '(chưa cài)',
+      probeTitle: 'Cài đặt kiểm tra',
+      probeInterval: 'Khoảng thời gian (phút)',
+      probeMaxLatency: 'Ngưỡng độ trễ (ms, 0 = không giới hạn)',
+      probeEntryNode: 'Nút vào kiểm tra',
+      probeLocal: 'Trực tiếp (cục bộ)',
+      probeDialer: 'Dialer',
+      probeHint: 'Kiểm tra cục bộ chỉ loại các nút rõ ràng không kết nối được; chọn nút vào để kiểm tra từ mạng của nút đó. Kiểm tra là tiến trình tạm thời.',
       "sources": "Nguồn API",
       "entries": "Danh sách IP",
       "addSource": "Thêm nguồn",

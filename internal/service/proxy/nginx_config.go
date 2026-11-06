@@ -47,6 +47,33 @@ func hasRootOrAlias(locationConfig string) bool {
 	return false
 }
 
+// hasLocationDirective 判断站点自定义 location 配置里是否已经写了某条指令。
+// 用于"默认值只在用户没写时才补"，避免生成器把参数写死、用户改不动。
+func hasLocationDirective(locationConfig, name string) bool {
+	for _, line := range strings.Split(locationConfig, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if strings.TrimSuffix(fields[0], ";") == name {
+			return true
+		}
+	}
+	return false
+}
+
+// isDAVLocation 判断是否是 WebDAV 目录（dav_methods / dav_ext_methods）。
+// 这类 location 不能加 index/try_files：try_files 在 precontent 阶段会把
+// PUT/MKCOL/DELETE 判成 404，配合 error_page 404=200 会静默吞掉写入失败。
+func isDAVLocation(locationConfig string) bool {
+	return hasLocationDirective(locationConfig, "dav_methods") ||
+		hasLocationDirective(locationConfig, "dav_ext_methods")
+}
+
 // ensureSymlink creates a symlink, removing existing file/symlink first.
 func ensureSymlink(path, target string) {
 	os.Remove(path)
@@ -974,8 +1001,19 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 					}
 					sb.WriteString(fmt.Sprintf("            root %s;\n", rootDir))
 				}
-				sb.WriteString("            index index.html index.htm;\n")
-				sb.WriteString("            try_files $uri $uri/ =404;\n")
+				// index / try_files 只是"没配置时的默认值"：location_config 里写了自己的
+				// 就原样尊重，不再重复注入（用户要能自己改，不能写死）。
+				// ⚠ WebDAV 目录绝对不能带 try_files ✗：PUT/MKCOL/DELETE 这类 RFC4918 方法
+				// 会在 precontent 阶段被 try_files 判成 404，再叠加 server 级
+				// `error_page 404 =200 /index.html` 就变成"返回 200 但文件根本没落盘" ✗
+				// （真机踩过：WebDAV 客户端以为保存成功，随后 MOVE 覆盖又把原文件删掉 ✗）。
+				davLocation := isDAVLocation(site.LocationConfig)
+				if !davLocation && !hasLocationDirective(site.LocationConfig, "index") {
+					sb.WriteString("            index index.html index.htm;\n")
+				}
+				if !davLocation && !hasLocationDirective(site.LocationConfig, "try_files") {
+					sb.WriteString("            try_files $uri $uri/ =404;\n")
+				}
 			case "echo_ip":
 				// 回显真实客户端 IP：落地页/探测页常用（现网 nginx 里就是 echo -n $clientRealIp）。
 				// $clientRealIp 由生成器顶部的 map 定义（无 XFF 时回退 PROXY protocol / remote_addr）。

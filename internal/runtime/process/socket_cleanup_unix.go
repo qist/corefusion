@@ -114,11 +114,13 @@ func isStaleUnixSocket(path string) bool {
 
 // ensureUnixSocketPerms 让非 root 的代理进程（nginx worker）能连上核心创建的 unix socket。
 //
-// 背景（生产实测）：3x-ui 的 xray 用 listen "/dev/shm/x.sock,0666" 显式放宽 socket 权限，
-// 迁移到 CoreFusion 后 listen 只剩路径（vanilla xray 不认 ,mode 后缀），xray 按 umask
-// 建成 0755 → nginx worker（nginx 用户）connect() 报 EACCES，客户端看到的是
+// 背景（生产实测）：xray-core 支持 listen "/dev/shm/x.sock,0666"（建 socket 时按后缀 chmod），
+// 但**没有写后缀**的配置（面板新建入站、手写、部分迁移数据）会按 umask 建成 0755，
+// nginx worker（nginx 用户）connect() 报 EACCES，客户端看到的是
 // "An existing connection was forcibly closed by the remote host"，
 // 而服务端日志里是 "connect() to unix:... failed (13: Permission denied)"。
+//
+// 这里只是**兜底**：优先让配置自身带 ,0666（语义明确、重启即生效）。
 //
 // 核心启动是异步的（socket 在 cmd.Start 之后才创建），所以轮询等待出现后统一放开权限。
 // 只处理配置里 inbounds[].listen 明确声明的文件型 socket。

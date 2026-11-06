@@ -62,17 +62,18 @@ def unwrap(payload):
 
 
 def normalize_listen(raw: str) -> str:
-    """x-ui 的 socket 监听带权限尾巴：/dev/shm/x.sock,0666 → /dev/shm/x.sock。
+    """保留 x-ui 的 socket 监听原样：`/dev/shm/x.sock,0666` 里的 `,mode` **不能丢**。
 
-    vanilla xray 不认这个 ",mode" 后缀（只有 3x-ui 的 fork 支持），所以这里必须去掉；
-    权限由面板在核心启动后统一放开（process.ensureUnixSocketPerms），
-    否则 nginx worker（非 root）connect() 会 EACCES，客户端表现为连接被重置。
+    `,0666` 是 xray-core 自己的特性（不是 3x-ui 私有扩展）：xray 建 unix socket 时会按这个
+    后缀 chmod。实测 Xray 26.10.31 用 `listen: "/tmp/x.sock,0666"` 启动，socket 就是 0666。
+
+    丢掉后缀的后果：socket 按 umask 建成 0755，nginx worker（非 root）connect() 报 EACCES，
+    客户端看到 "connection forcibly closed by the remote host"，服务端日志是
+    "connect() to unix:... failed (13: Permission denied)"。
     """
     listen = (raw or "").strip()
-    if not listen:
-        return ""
-    if listen.startswith("/") and "," in listen:
-        listen = listen.split(",", 1)[0]
+    if listen.startswith("unix:"):
+        listen = listen[len("unix:"):]
     return listen
 
 

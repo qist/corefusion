@@ -1,14 +1,17 @@
 <template>
   <el-form label-width="140px" label-position="left">
-    <el-form-item label="Enabled">
+    <el-form-item :label="t('protoCenter.transport.sniffingEnabled')">
       <el-switch v-model="rf.sniffing.enabled" />
     </el-form-item>
     <template v-if="rf.sniffing.enabled">
-      <el-form-item :label="t('protoCenter.outbounds.reverseSniffingOverride')">
+      <el-form-item :label="t('protoCenter.transport.sniffingDestOverride')">
         <el-checkbox-group v-model="rf.sniffing.destOverride">
-          <el-checkbox value="http" /><el-checkbox value="tls" />
-          <el-checkbox value="quic" /><el-checkbox value="fakedns" />
+          <el-checkbox value="http" label="HTTP" />
+          <el-checkbox value="tls" label="TLS" />
+          <el-checkbox value="quic" label="QUIC" />
+          <el-checkbox value="fakedns" label="FakeDNS" />
         </el-checkbox-group>
+        <div class="hint">{{ t('protoCenter.transport.sniffingDestOverrideHint') }}</div>
       </el-form-item>
       <el-form-item :label="t('protoCenter.outbounds.reverseSniffingMetadataOnly')">
         <el-switch v-model="rf.sniffing.metadataOnly" />
@@ -36,3 +39,7 @@ const props = defineProps({ rf: { type: Object, required: true } })
 const { t } = useI18n()
 function emit() {}
 </script>
+
+<style scoped>
+.hint { width: 100%; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.4; }
+</style>

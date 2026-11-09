@@ -1484,10 +1484,11 @@ async function onViewerNodeChange() {
   logLines.value = []
   closeLogStream()
   if (viewerNodeId.value === 0) {
-    // Local node: show all known types
+    // Local node: show all known types（WAF 不是进程，但按天落盘，查看器可直接读文件）
     viewerLogTypes.value = [
       ...CORE_TYPES.map(c => ({ type: c.type, label: c.label })),
       ...PROXY_TYPES.map(p => ({ type: p.type, label: p.label })),
+      { type: 'waf', label: 'WAF' },
     ]
   } else {
     // Remote node: fetch available log types
@@ -1608,11 +1609,13 @@ async function loadViewerLog() {
   }
 }
 
-async function startViewerStream() {
+async function startViewerStream(skipInitial = true) {
   closeLogStream()
   const type = viewerLogType.value
   if (!type) return
   const logPath = viewerLogPath.value
+  // WAF 没有常驻进程/stdout，日志只存在于按日文件；没选到文件时不要建立无效流。
+  if (viewerNodeId.value === 0 && !logPath && type === 'waf') return
   let path
   if (viewerNodeId.value === 0) {
     if (logPath) {
@@ -1631,7 +1634,12 @@ async function startViewerStream() {
     path = `/log-manage/nodes/${viewerNodeId.value}/logs/${type}/stream`
   }
   const params = {}
-  if (logPath) params.log_path = logPath
+  if (logPath) {
+    params.log_path = logPath
+    // 首连前已经用 GET 拉过尾部快照：SSE 只要从当前 EOF 开始 tail，别再回放旧行，
+    // 否则 500(初始) + 200(回放) 会出现"凭空多出 700 行"的错觉。
+    params.lines = skipInitial ? 0 : viewerLines.value
+  }
   const ticket = await logApi.requestTicket('logs')
   const url = logApi.buildSSEUrl(path, params, ticket)
   eventSource = logApi.createSSE(url)

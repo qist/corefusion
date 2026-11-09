@@ -879,8 +879,9 @@ func (h *Handler) StreamLog(c *gin.Context) {
 		return
 	}
 
+	// lines=0：调用方已加载尾部快照，流式只从当前 EOF 开始（不回放历史行）。
 	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "200"))
-	if lines <= 0 {
+	if lines < 0 {
 		lines = 200
 	}
 
@@ -898,11 +899,16 @@ func (h *Handler) StreamLog(c *gin.Context) {
 			return
 		}
 
-		// Send initial snapshot (tail) and anchor the incremental offset
-		logLines, nextOffset, _, err := nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, 0, lines)
+		// Send initial snapshot (tail) and anchor the incremental offset.
+		// lines=0 时读 1 行仅为拿到 EOF offset，该行不回放。
+		initialLines := lines
+		if initialLines == 0 {
+			initialLines = 1
+		}
+		logLines, nextOffset, _, err := nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, 0, initialLines)
 		if err != nil {
 			// 增量读失败（旧版 Agent 不支持 offset）→ 回退到普通 tail 读，走差分轮询
-			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, lines)
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), policy.ServerID, policy.SourceType, policy.LogPath, initialLines)
 			nextOffset = 0
 			if err != nil {
 				// Send friendly error as log content instead of HTTP 500
@@ -916,6 +922,10 @@ func (h *Handler) StreamLog(c *gin.Context) {
 				return
 			}
 		}
+		anchorLines := logLines
+		if lines == 0 {
+			logLines = nil // 不回放历史行
+		}
 		if len(logLines) > 0 {
 			for _, line := range logLines {
 				c.SSEvent("log", line)
@@ -927,7 +937,7 @@ func (h *Handler) StreamLog(c *gin.Context) {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 
-		prevLines := logLines
+		prevLines := anchorLines
 		ctx := c.Request.Context()
 		for {
 			select {
@@ -1137,6 +1147,11 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 			return
 		}
 	}
+	// lines=0：调用方已经加载过尾部快照，SSE 直接从当前 EOF 开始 tail（不回放历史行）。
+	lines, _ := strconv.Atoi(c.DefaultQuery("lines", "200"))
+	if lines < 0 {
+		lines = 200
+	}
 
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -1151,7 +1166,7 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		// If log_path is specified, stream from file
 		if logPath != "" {
 			ch := make(chan string, 64)
-			go h.svc.TailLogStreamWithType(c.Request.Context(), logPath, logType, 200, ch)
+			go h.svc.TailLogStreamWithType(c.Request.Context(), logPath, logType, lines, ch)
 			c.Stream(func(w io.Writer) bool {
 				line, ok := <-ch
 				if !ok {
@@ -1183,22 +1198,31 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 		return
 	}
 
-	// First, send existing lines (tail) and anchor the incremental offset
+	// First, send existing lines (tail) and anchor the incremental offset.
+	// lines=0 时仍需读 1 行拿到文件末尾 offset，但这一行不回放（前端已加载快照）。
+	initialLines := lines
+	if initialLines == 0 {
+		initialLines = 1
+	}
 	var logLines []string
 	var nextOffset int64
 	if logPath != "" {
-		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, logPath, 0, 500)
+		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, logPath, 0, initialLines)
 	} else {
-		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, "", 0, 500)
+		logLines, nextOffset, _, err = nodeLogMgr.ReadLogFileOnServerIncremental(c.Request.Context(), serverID, logType, "", 0, initialLines)
 	}
 	if err != nil {
 		// 增量读失败（旧版 Agent 不支持 offset）→ 回退到普通 tail 读，走差分轮询
 		if logPath != "" {
-			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, 500)
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServerWithPath(c.Request.Context(), serverID, logType, logPath, initialLines)
 		} else {
-			logLines, _, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, 500)
+			logLines, _, err = nodeLogMgr.ReadLogFileOnServer(c.Request.Context(), serverID, logType, initialLines)
 		}
 		nextOffset = 0 // 0 = 无锚点 → 差分轮询模式
+	}
+	anchorLines := logLines
+	if lines == 0 {
+		logLines = nil // 不回放历史行
 	}
 	if err == nil && len(logLines) > 0 {
 		for _, line := range logLines {
@@ -1211,7 +1235,7 @@ func (h *Handler) StreamNodeLog(c *gin.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	prevLines := logLines
+	prevLines := anchorLines
 	ctx := c.Request.Context()
 	for {
 		select {

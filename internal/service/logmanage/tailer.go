@@ -85,7 +85,9 @@ func (s *Service) TailLogStream(ctx context.Context, logPath string, lastLines i
 func (s *Service) TailLogStreamWithType(ctx context.Context, logPath string, sourceType string, lastLines int, ch chan<- string) error {
 	defer close(ch)
 
-	if lastLines <= 0 {
+	// lastLines == 0 表示"不回放历史行，直接从当前 EOF tail"（调用方已自行加载快照）。
+	// 只有负数才按默认值处理，避免首连重复回放造成日志重复。
+	if lastLines < 0 {
 		lastLines = 200
 	}
 
@@ -116,17 +118,22 @@ func (s *Service) streamFromFile(ctx context.Context, resolved string, lastLines
 	if err != nil {
 		return err
 	}
-	lines, err := readLastLines(f, lastLines)
-	f.Close()
-	if err != nil {
-		return err
-	}
-	for _, line := range lines {
-		select {
-		case <-ctx.Done():
-			return nil
-		case ch <- line:
+	if lastLines > 0 {
+		lines, err := readLastLines(f, lastLines)
+		f.Close()
+		if err != nil {
+			return err
 		}
+		for _, line := range lines {
+			select {
+			case <-ctx.Done():
+				return nil
+			case ch <- line:
+			}
+		}
+	} else {
+		// 不回放历史行：直接从文件末尾开始 tail。
+		f.Close()
 	}
 
 	info, _ := os.Stat(resolved)

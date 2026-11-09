@@ -2,10 +2,12 @@ package inboundconfig
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,6 +123,95 @@ func requireClientField(clients []interface{}, field, what string) error {
 	return nil
 }
 
+// inboundEmailSuffix 与 generateInboundEmail 的口径保持一致：
+// inbound-vless-20296 -> vless20296；短 tag 原样返回。
+func inboundEmailSuffix(tag string) string {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return ""
+	}
+	parts := strings.Split(tag, "-")
+	if len(parts) >= 3 {
+		return parts[1] + parts[len(parts)-1]
+	}
+	return tag
+}
+
+// ensureClientEmails 给没有 email 的客户端补一个稳定且唯一的 email。
+//
+// 为什么必须补：xray 的流量统计以 client.email 为键（stats user 名就是 email）。
+// xray-ui 迁移过来的客户端通常不带 email，结果这些用户的流量既不会出现在面板，
+// 也不会落到 inbound_user_traffic（只按 email 归户）。
+//
+// base 由凭据的 SHA256 派生（u<8hex>@cf.local），不是每次真随机：
+// 重复保存/重跑迁移得到同一套 email，便于对账；再拼上 `_{tag后缀}`，与订阅的
+// generateInboundEmail 同口径。已有 email 的客户端保持原样（不擅自改写存量邮箱）。
+func ensureClientEmails(coreType, tag, configJSON string) string {
+	if !strings.EqualFold(strings.TrimSpace(coreType), "xray") {
+		return configJSON
+	}
+	var root map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &root); err != nil {
+		return configJSON
+	}
+	settings, _ := root["settings"].(map[string]interface{})
+	if settings == nil {
+		return configJSON
+	}
+	suffix := inboundEmailSuffix(tag)
+	used := make(map[string]bool)
+	changed := false
+	for _, key := range []string{"clients", "users"} {
+		items, _ := settings[key].([]interface{})
+		for idx, raw := range items {
+			m, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if e, _ := m["email"].(string); strings.TrimSpace(e) != "" {
+				used[strings.TrimSpace(e)] = true
+				continue
+			}
+			seed := ""
+			for _, f := range []string{"id", "password", "auth"} {
+				if v, _ := m[f].(string); strings.TrimSpace(v) != "" {
+					seed = f + ":" + strings.TrimSpace(v)
+					break
+				}
+			}
+			if seed == "" {
+				// 没有凭据字段（极少见）：用入站 tag + 序号兜底，仍保证唯一。
+				seed = fmt.Sprintf("%s#%d", tag, idx)
+			}
+			sum := sha256.Sum256([]byte(seed))
+			base := fmt.Sprintf("u%x@cf.local", sum[:4])
+			email := base
+			if suffix != "" {
+				email = base + "_" + suffix
+			}
+			if used[email] {
+				// 同一入站里凭据重复（同一份配置复制了多个 client）：加序号区分，
+				// 否则 xray stats 会把两行合成一个，流量对不上。
+				email = base + "-" + strconv.Itoa(idx)
+				if suffix != "" {
+					email += "_" + suffix
+				}
+			}
+			used[email] = true
+			m["email"] = email
+			changed = true
+		}
+	}
+	if !changed {
+		return configJSON
+	}
+	b, err := json.Marshal(root)
+	if err != nil {
+		return configJSON
+	}
+	return string(b)
+}
+
 // syncConfigJSONMeta 让 config_json 里的 protocol/tag 与表列保持一致。
 //
 // 历史原因：前端保存时会把 protocol/tag 也塞进 config_json，之后改协议只更新了表列，
@@ -230,6 +321,9 @@ func (s *Service) Create(ctx context.Context, serverID int64, coreType, remark, 
 		return nil, err
 	}
 	configJSON = syncConfigJSONMeta(configJSON, protocol, tag)
+	// xray 流量按 client.email 统计：xray-ui 迁移来的客户端通常没有 email，
+	// 不补就永远统计不到流量（见 ensureClientEmails）。
+	configJSON = ensureClientEmails(coreType, tag, configJSON)
 	if snis := extractServerNames(configJSON); len(snis) > 0 {
 		if err := s.checkServerNamesConflict(ctx, serverID, 0, snis); err != nil {
 			return nil, err
@@ -273,6 +367,8 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 		return nil, err
 	}
 	configJSON = syncConfigJSONMeta(configJSON, protocol, tag)
+	// 同 Create：补齐缺失的 client email（已有 email 不动，幂等）。
+	configJSON = ensureClientEmails(cfg.CoreType, tag, configJSON)
 	cfg.Remark = remark
 	cfg.Protocol = protocol
 	cfg.Tag = tag
@@ -927,6 +1023,7 @@ func (s *Service) GetEnabledInbounds(ctx context.Context, serverID int64, coreTy
 // MASQUE 是 IP 隧道（RFC 9484），只能配 masque 传输 + TLS：
 //   - settings.address 必填（最多一个 IPv4 + 一个 IPv6 前缀）
 //   - 每个用户必须有 email 与 pass（HTTP Basic 认证）
+//
 // 缺这些字段 xray 会直接拒绝启动该入站（甚至整个核心起不来）。
 func validateMasqueInbound(root, settings map[string]interface{}, clients []interface{}) error {
 	users := clients

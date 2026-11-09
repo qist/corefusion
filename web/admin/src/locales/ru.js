@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Журнал пуст",
     "addToPolicy": "Добавить",
     "alreadyInPolicy": "Уже в политике",
+    "wafAutoSplit": "Автоматическое деление по дням",
     "policyCreated": "Политика \"{name}\" создана",
     "modeStdout": "Стандартный вывод",
     "modeFile": "Файл",

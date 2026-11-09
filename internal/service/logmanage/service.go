@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +85,13 @@ type CoreConfigSectionGetter interface {
 	GetSection(ctx context.Context, serverID int64, coreType, section string) (interface{}, error)
 }
 
+// ProcessAvailability reports whether a log producer is actually usable on this
+// node (binary installed and process running). Discovery uses it so logs of
+// uninstalled/stopped cores and proxies are not offered to the user.
+type ProcessAvailability interface {
+	Available(sourceType string) bool
+}
+
 // Service provides log management operations.
 type Service struct {
 	policyRepo    *repository.LogRotationPolicyRepository
@@ -95,6 +103,7 @@ type Service struct {
 	proxyBroker   ProxyLogBroker
 	coreBroker    CoreLogBrokerProvider
 	configGetter  CoreConfigSectionGetter
+	availability  ProcessAvailability
 	writers       map[string]*LogWriter
 	onModeSwitch  func(proxyType string) // callback when output mode is switched
 	clientLogDeps *ClientLogDeps         // optional: for client log packaging
@@ -131,6 +140,12 @@ func (s *Service) SetCoreLogBrokerProvider(provider CoreLogBrokerProvider) {
 // This enables deriving the log output mode from the actual protocol center config.
 func (s *Service) SetCoreConfigSectionGetter(getter CoreConfigSectionGetter) {
 	s.configGetter = getter
+}
+
+// SetProcessAvailability sets the provider used to filter discovery by whether
+// the core/proxy process is actually installed and running.
+func (s *Service) SetProcessAvailability(p ProcessAvailability) {
+	s.availability = p
 }
 
 // StartAutoWriters starts writers based on the saved LogOutputConfig and CoreLogOutputConfig.
@@ -716,6 +731,10 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 	var logs []DiscoveredLog
 
 	for _, coreType := range coreLogTypes {
+		// 未安装或未运行的核心不会产生日志，不要去"发现"它的历史默认路径。
+		if s.availability != nil && !s.availability.Available(coreType) {
+			continue
+		}
 		logMode := s.GetCoreLogMode(ctx, coreType)
 
 		switch logMode {
@@ -838,6 +857,9 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 	if s.settingStore == nil {
 		return nil, nil
 	}
+	if s.availability != nil && !s.availability.Available("nginx") {
+		return nil, nil
+	}
 
 	// Check log output mode
 	logMode := "file"
@@ -905,6 +927,9 @@ func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error
 	if s.caddySiteRepo == nil {
 		return nil, nil
 	}
+	if s.availability != nil && !s.availability.Available("caddy") {
+		return nil, nil
+	}
 
 	// Check log output mode
 	logMode := "file"
@@ -963,19 +988,51 @@ func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error
 }
 
 // discoverWAFLogs discovers WAF log files.
-// WAF writes logs by date: logs/<date>_waf.log (e.g. logs/2026-08-25_waf.log).
-// We discover the current day's log file.
+// WAF writes logs by date: logs/<date>_waf.log (e.g. logs/2026-08-25_waf.log),
+// i.e. the WAF engine itself splits logs per day. We therefore enumerate the
+// files that actually exist on disk (newest first) instead of pointing at a
+// fixed "today" path — this exposes every retained day to the log viewer.
+// WAF files are never given rotation policies (see CreatePoliciesFromDiscovered);
+// retention is handled by cleanExpiredWAFLogs.
 func (s *Service) discoverWAFLogs(ctx context.Context) ([]DiscoveredLog, error) {
-	today := time.Now().Format("2006-01-02")
-	logPath := fmt.Sprintf("logs/%s_waf.log", today)
-	return []DiscoveredLog{
-		{
+	logDir := filepath.Join(s.dataDir, "logs")
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		return nil, nil
+	}
+
+	type wafFile struct {
+		date string
+		path string
+	}
+	var files []wafFile
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, "_waf.log") {
+			continue
+		}
+		datePart := strings.TrimSuffix(name, "_waf.log")
+		if _, err := time.Parse("2006-01-02", datePart); err != nil {
+			continue
+		}
+		files = append(files, wafFile{date: datePart, path: filepath.Join(logDir, name)})
+	}
+	// Newest day first so the viewer's file selector defaults to the latest log.
+	sort.Slice(files, func(i, j int) bool { return files[i].date > files[j].date })
+
+	logs := make([]DiscoveredLog, 0, len(files))
+	for _, f := range files {
+		logs = append(logs, DiscoveredLog{
 			SourceType: "waf",
-			Domain:     "waf",
-			LogPath:    s.resolveLogPath(logPath),
+			Domain:     f.date,
+			LogPath:    f.path,
 			LogFormat:  "json",
-		},
-	}, nil
+		})
+	}
+	return logs, nil
 }
 
 // SyncPolicies creates policies for discovered logs on the local node.
@@ -999,6 +1056,11 @@ func (s *Service) SyncPoliciesForServer(ctx context.Context, serverID int64) (in
 func (s *Service) CreatePoliciesFromDiscovered(ctx context.Context, serverID int64, discovered []DiscoveredLog) (int, error) {
 	created := 0
 	for _, d := range discovered {
+		// WAF 引擎自己按天切分（logs/<date>_waf.log），再做轮转只会和它的
+		// 日期文件名打架；保留天数清理由 cleanExpiredWAFLogs 负责。
+		if d.SourceType == "waf" {
+			continue
+		}
 		// Check if policy already exists for this log path on this server
 		_, err := s.policyRepo.GetByLogPathAndServer(ctx, d.LogPath, serverID)
 		if err == nil {

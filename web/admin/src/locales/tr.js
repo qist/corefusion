@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Henüz log içeriği yok",
     "addToPolicy": "Ekle",
     "alreadyInPolicy": "Politikada zaten var",
+    "wafAutoSplit": "Günlük otomatik bölme",
     "policyCreated": "{name} politikası oluşturuldu",
     "modeStdout": "Standart çıktı",
     "modeFile": "Dosya",

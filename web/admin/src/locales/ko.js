@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "로그 내용 없음",
     "addToPolicy": "추가",
     "alreadyInPolicy": "정책에 있음",
+    "wafAutoSplit": "일별 자동 분할",
     "policyCreated": "정책 \"{name}\"이(가) 생성되었습니다",
     "modeStdout": "표준 출력",
     "modeFile": "파일",

@@ -343,6 +343,14 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
+	// 转发站点常常先以「仅端口」(:80) 创建、随后才编辑成真实域名 —— 创建时的
+	// WAF 配置生成会因域名为空被跳过，故更新后必须再补齐站点级配置（面板转发=白名单）。
+	switch existing.Template {
+	case "panel_forward", "portal_forward", "subscription_forward":
+		if h.wafProvisioner != nil {
+			h.wafProvisioner(c.Request.Context(), sid, existing.Template, existing.Domain)
+		}
+	}
 	response.OK(c, existing)
 }
 func (h *NginxHandler) DeleteSite(c *gin.Context) {

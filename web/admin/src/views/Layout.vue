@@ -124,7 +124,7 @@
           </el-input>
         </el-form-item>
         <el-form-item :label="t('auth.twofaCodeLabel')">
-          <el-input v-model="twofaCode" maxlength="6" placeholder="123456" @keyup.enter="twofaEnable" />
+          <el-input v-model="twofaCode" maxlength="6" placeholder="123456" autocomplete="one-time-code" inputmode="numeric" name="otp" @keyup.enter="twofaEnable" />
         </el-form-item>
       </el-form>
     </template>

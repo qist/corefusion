@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "ยังไม่มีเนื้อหาล็อก",
     "addToPolicy": "เพิ่ม",
     "alreadyInPolicy": "อยู่ในนโยบายแล้ว",
+    "wafAutoSplit": "แบ่งอัตโนมัติรายวัน",
     "policyCreated": "สร้างนโยบาย \"{name}\" แล้ว",
     "modeStdout": "เอาต์พุตมาตรฐาน",
     "modeFile": "ไฟล์",

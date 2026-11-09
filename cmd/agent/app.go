@@ -249,6 +249,10 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 	// Wire log mode provider so process.Manager knows the log output mode for each core
 	procMgr.SetLogModeProvider(logMgr)
 
+	// Filter discovery by real process state: don't offer logs of uninstalled/
+	// stopped cores or proxies (they have no live log output).
+	logMgr.SetProcessAvailability(&agentLogProcessAvailability{procMgr: procMgr, proxyMgr: proxyMgr})
+
 	// Wire core log broker provider so logmanage can read core process stdout
 	logMgr.SetCoreLogBrokerProvider(&agentCoreLogBrokerAdapter{processMgr: procMgr})
 
@@ -326,6 +330,40 @@ func (a *agentCoreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageS
 		return nil
 	}
 	return broker // *process.LogBroker implements LogBrokerReader (Snapshot + Subscribe)
+}
+
+// agentLogProcessAvailability reports whether a log producer is installed and
+// running on this node. Same behavior as the panel's logProcessAvailability.
+type agentLogProcessAvailability struct {
+	procMgr  *process.Manager
+	proxyMgr *proxySvc.Manager
+}
+
+func (a *agentLogProcessAvailability) Available(sourceType string) bool {
+	if a == nil {
+		return true
+	}
+	switch sourceType {
+	case "xray", "singbox":
+		if a.procMgr == nil {
+			return true
+		}
+		for _, p := range a.procMgr.ListAll() {
+			if p.CoreType == sourceType && p.State == "running" {
+				return true
+			}
+		}
+		return false
+	case "nginx", "caddy":
+		if a.proxyMgr == nil {
+			return true
+		}
+		info := a.proxyMgr.DetectProxy(proxySvc.ProxyType(sourceType))
+		return info != nil && info.Installed && info.Status == "running"
+	case "waf":
+		return a.Available("nginx") || a.Available("caddy")
+	}
+	return true
 }
 
 // agentCoreConfigGetter adapts the local DB to logmanage.CoreConfigSectionGetter.

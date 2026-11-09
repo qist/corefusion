@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Belum ada konten log",
     "addToPolicy": "Tambah",
     "alreadyInPolicy": "Sudah ada dalam kebijakan",
+    "wafAutoSplit": "Pemisahan otomatis harian",
     "policyCreated": "Kebijakan \"{name}\" telah dibuat",
     "modeStdout": "Output standar",
     "modeFile": "File",

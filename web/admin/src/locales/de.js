@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Noch keine Logeinträge",
     "addToPolicy": "Hinzufügen",
     "alreadyInPolicy": "Bereits in der Strategie",
+    "wafAutoSplit": "Täglich automatisch geteilt",
     "policyCreated": "Strategie „{name}“ erstellt",
     "modeStdout": "Standardausgabe",
     "modeFile": "Datei",

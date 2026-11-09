@@ -808,6 +808,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}
 	logManageSvc := logManageSvc.NewService(logPolicyRepo, logJobRepo, systemSettingRepo, caddySiteRepo, dataDir, proxyBrokerAdapter)
 
+	// Filter discovery by real process state: don't offer logs of uninstalled/
+	// stopped cores or proxies (they have no live log output).
+	logManageSvc.SetProcessAvailability(&logProcessAvailability{procMgr: processMgr, proxyMgr: proxyMgr})
+
 	// Wire log mode provider so process.Manager knows the log output mode for each core
 	processMgr.SetLogModeProvider(logManageSvc)
 
@@ -1265,6 +1269,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	wafH := wafHandler.NewHandler(wafSvcInst)
 	wafH.SetScheduler(wafScheduler)
+	// 面板转发站点启用站点级 WAF 时，自动补面板管理接口白名单。
+	wafH.SetPanelForwardChecker(func(ctx context.Context, serverID int64, domain string) bool {
+		return panelForwardDomainExists(ctx, caddySiteRepo, nginxSiteRepo, serverID, domain)
+	})
 	// 转发站点（面板/门户/订阅）创建时生成站点级 WAF 配置（见上方 provisionForwardWAF 定义）。
 	caddyH.SetWAFProvisioner(provisionForwardWAF)
 	nginxH.SetWAFProvisioner(provisionForwardWAF)
@@ -3756,6 +3764,84 @@ func (a *coreLogBrokerAdapter) GetCoreLogBroker(coreType string) logManageSvc.Lo
 		return nil
 	}
 	return broker // *process.LogBroker implements LogBrokerReader (Snapshot + Subscribe)
+}
+
+// panelForwardDomainExists reports whether the WAF domain belongs to a
+// panel_forward site on the given server. WAF domains may carry a port or be a
+// comma-separated group, so compare the normalized first host.
+func panelForwardDomainExists(ctx context.Context, caddyRepo *repository.CaddySiteRepository, nginxRepo *repository.NginxSiteRepository, serverID int64, domain string) bool {
+	target := normalizeWafMatchDomain(domain)
+	if target == "" {
+		return false
+	}
+	match := func(template, siteDomain string) bool {
+		return template == "panel_forward" && normalizeWafMatchDomain(siteDomain) == target
+	}
+	if caddyRepo != nil {
+		if sites, err := caddyRepo.List(ctx, serverID); err == nil {
+			for _, s := range sites {
+				if match(s.Template, s.Domain) {
+					return true
+				}
+			}
+		}
+	}
+	if nginxRepo != nil {
+		if sites, err := nginxRepo.List(ctx, serverID); err == nil {
+			for _, s := range sites {
+				if match(s.Template, s.Domain) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// normalizeWafMatchDomain lowercases a WAF domain, keeps the first host of a
+// comma-separated group and strips its port so comparisons are stable.
+func normalizeWafMatchDomain(domain string) string {
+	d := strings.TrimSpace(domain)
+	if i := strings.Index(d, ","); i >= 0 {
+		d = strings.TrimSpace(d[:i])
+	}
+	d = proxySvc.StripPort(d)
+	return strings.ToLower(strings.TrimSuffix(d, "."))
+}
+
+// logProcessAvailability adapts process.Manager + proxy.Manager to
+// logmanage.ProcessAvailability so log discovery only reports live producers.
+type logProcessAvailability struct {
+	procMgr  *process.Manager
+	proxyMgr *proxySvc.Manager
+}
+
+func (a *logProcessAvailability) Available(sourceType string) bool {
+	if a == nil {
+		return true
+	}
+	switch sourceType {
+	case "xray", "singbox":
+		if a.procMgr == nil {
+			return true
+		}
+		for _, p := range a.procMgr.ListAll() {
+			if p.CoreType == sourceType && p.State == "running" {
+				return true
+			}
+		}
+		return false
+	case "nginx", "caddy":
+		if a.proxyMgr == nil {
+			return true
+		}
+		info := a.proxyMgr.DetectProxy(proxySvc.ProxyType(sourceType))
+		return info != nil && info.Installed && info.Status == "running"
+	case "waf":
+		// WAF 没有独立进程，跟随当前代理。实际是否产生日志由文件发现决定。
+		return a.Available("nginx") || a.Available("caddy")
+	}
+	return true
 }
 
 // restoreFirewallRules scans all enabled hysteria inbound configs for the local server

@@ -374,8 +374,11 @@
               </el-table-column>
               <el-table-column :label="t('common.actions')" width="160" align="center">
                 <template #default="{row}">
+                  <el-tag v-if="row.source_type === 'waf'" type="info" size="small">
+                    {{ t('logManage.wafAutoSplit') }}
+                  </el-tag>
                   <el-button
-                    v-if="!row.has_policy"
+                    v-else-if="!row.has_policy"
                     type="primary"
                     size="small"
                     :loading="addingPath === row.log_path"
@@ -391,8 +394,11 @@
             </el-table>
             <MobileCards v-else :rows="discPagedList" title-field="log_path" :fields="discCardFields">
               <template #actions="{ row }">
+                <el-tag v-if="row.source_type === 'waf'" type="info" size="small">
+                  {{ t('logManage.wafAutoSplit') }}
+                </el-tag>
                 <el-button
-                  v-if="!row.has_policy"
+                  v-else-if="!row.has_policy"
                   type="primary"
                   size="small"
                   :loading="addingPath === row.log_path"
@@ -445,9 +451,9 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="320" fixed="right">
+            <el-table-column :label="t('common.actions')" width="380" fixed="right">
               <template #default="{row}">
-                <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
+                <div class="table-actions">
                   <el-button size="small" type="success" @click="showLogViewer(row)">
                     <el-icon><View /></el-icon>{{ t('logManage.viewLog') }}
                   </el-button>
@@ -1499,12 +1505,12 @@ async function onViewerNodeChange() {
   }
 }
 
-function onViewerLogTypeChange() {
+async function onViewerLogTypeChange() {
   viewerLogPath.value = ''
   viewerLogFiles.value = []
   logLines.value = []
   closeLogStream()
-  loadViewerLogFiles()
+  await loadViewerLogFiles()
   loadViewerLog()
 }
 
@@ -1515,6 +1521,10 @@ async function loadViewerLogFiles() {
     const r = await logApi.discoverLogs(viewerNodeId.value || 1)
     const all = Array.isArray(r) ? r : []
     viewerLogFiles.value = all.filter(d => d.source_type === viewerLogType.value)
+    // WAF 日志按天分文件：默认选最新一天，避免落在"今天还没产生日志"的空文件上
+    if (viewerLogType.value === 'waf' && viewerLogFiles.value.length > 0 && !viewerLogPath.value) {
+      viewerLogPath.value = viewerLogFiles.value[0].log_path
+    }
   } catch {
     viewerLogFiles.value = []
   }
@@ -2128,6 +2138,18 @@ onUnmounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 16px;
+}
+
+/* 操作列：多语言下列名较长，允许换行而不是裁切 */
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.table-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .mode-list {

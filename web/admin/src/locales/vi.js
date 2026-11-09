@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Chưa có nội dung nhật ký",
     "addToPolicy": "Thêm",
     "alreadyInPolicy": "Đã có trong chính sách",
+    "wafAutoSplit": "Tự động chia theo ngày",
     "policyCreated": "Đã tạo chính sách \"{name}",
     "modeStdout": "Đầu ra chuẩn",
     "modeFile": "Tệp",

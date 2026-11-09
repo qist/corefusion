@@ -33,6 +33,9 @@ type Handler struct {
 	nodeOp    NodeOperator
 	proxyMgr  ProxyReloader
 	scheduler *waf.Scheduler
+	// panelForwardCheck 判断某个域名是否是「面板转发」站点（由 router 注入）。
+	// 面板转发站点启用站点级 WAF 时，必须自动补上面板管理接口白名单。
+	panelForwardCheck func(ctx context.Context, serverID int64, domain string) bool
 }
 
 // ProxyReloader provides proxy detection and reload capability for local nodes.
@@ -66,6 +69,23 @@ func (h *Handler) SetProxyManager(mgr ProxyReloader) {
 // SetScheduler 注入 GitHub 规则源同步调度器（保存配置后立即重排定时任务）。
 func (h *Handler) SetScheduler(s *waf.Scheduler) {
 	h.scheduler = s
+}
+
+// SetPanelForwardChecker 注入「域名是否为面板转发站点」的判断函数。
+// 用于在启用站点级 WAF 时自动补面板白名单（含历史站点/手工启用场景）。
+func (h *Handler) SetPanelForwardChecker(fn func(ctx context.Context, serverID int64, domain string) bool) {
+	h.panelForwardCheck = fn
+}
+
+// ensurePanelForwardWhitelist 若域名属于面板转发站点，则补齐站点级白名单。
+// 幂等：已存在时不重复写入，也不会覆盖用户自定义规则。
+func (h *Handler) ensurePanelForwardWhitelist(ctx context.Context, serverID int64, domain string) {
+	if h.panelForwardCheck == nil || !h.panelForwardCheck(ctx, serverID, domain) {
+		return
+	}
+	if err := h.svc.EnsurePanelForwardWhitelist(ctx, serverID, domain); err != nil {
+		log.Printf("[WAF] ensure panel-forward whitelist for %s failed: %v", domain, err)
+	}
 }
 
 // localServerID is the server ID of the local node.
@@ -534,6 +554,9 @@ func (h *Handler) EnableDomain(c *gin.Context) {
 		response.InternalError(c, "ENABLE_FAILED", err.Error())
 		return
 	}
+	// 面板转发站点：启用站点级 WAF 时必须自动带上面板管理接口白名单，
+	// 否则管理请求（rule/config/log 等）会被 WAF 误拦。
+	h.ensurePanelForwardWhitelist(c.Request.Context(), serverID, domain)
 	if err := h.landAndSync(c.Request.Context(), serverID); err != nil {
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return

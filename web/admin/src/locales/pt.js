@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Nenhum conteúdo de log",
     "addToPolicy": "Adicionar",
     "alreadyInPolicy": "Já está na política",
+    "wafAutoSplit": "Divisão diária automática",
     "policyCreated": "Política \"{name}\" criada",
     "modeStdout": "Saída padrão",
     "modeFile": "Arquivo",

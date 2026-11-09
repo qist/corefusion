@@ -1810,7 +1810,8 @@ func (s *Service) upsertForwardDomainConfig(ctx context.Context, serverID int64,
 		_ = json.Unmarshal([]byte(cur), &cfg)
 	}
 	cfg["waf_enable"] = "on"
-	cfg["rule_dir"] = "domains/" + domain
+	// rule_dir 是文件系统路径：多域名站点（逗号分隔）必须归一成合法目录名。
+	cfg["rule_dir"] = DomainRuleDirFor(domain)
 	buf, err := json.Marshal(cfg)
 	if err != nil {
 		return err

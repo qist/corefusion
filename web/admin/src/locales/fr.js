@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "Aucun contenu de journal pour le moment",
     "addToPolicy": "Ajouter",
     "alreadyInPolicy": "Déjà dans la stratégie",
+    "wafAutoSplit": "Découpage quotidien automatique",
     "policyCreated": "Stratégie « {name} » créée",
     "modeStdout": "Sortie standard",
     "modeFile": "Fichier",

@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "هنوز محتوای لاگ موجود نیست",
     "addToPolicy": "افزودن",
     "alreadyInPolicy": "در سیاست موجود است",
+    "wafAutoSplit": "تقسیم خودکار روزانه",
     "policyCreated": "سیاست «{name}» ایجاد شد",
     "modeStdout": "خروجی استاندارد",
     "modeFile": "فایل",

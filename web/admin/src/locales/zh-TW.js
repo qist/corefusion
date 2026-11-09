@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "暫無日誌內容",
     "addToPolicy": "新增",
     "alreadyInPolicy": "已在策略中",
+    "wafAutoSplit": "按日自動切割",
     "policyCreated": "策略 \"{name}\" 已建立",
     "modeStdout": "標準輸出",
     "modeFile": "文件",

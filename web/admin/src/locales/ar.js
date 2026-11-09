@@ -2816,6 +2816,7 @@ export default {
     "noLogContent": "لا يوجد محتوى سجل حتى الآن",
     "addToPolicy": "إضافة",
     "alreadyInPolicy": "موجود بالفعل في السياسة",
+    "wafAutoSplit": "تقسيم يومي تلقائي",
     "policyCreated": "تم إنشاء السياسة \"{name}",
     "modeStdout": "الإخراج القياسي",
     "modeFile": "ملف",

@@ -307,7 +307,12 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		sort.Strings(sniPorts)
 		for _, port := range sniPorts {
 			sniSites := sniByPort[port]
+			// 本地 HTTPS 端口优先级：规则自身 local_port > 设置里的 local_port > 8443。
+			// 以前只看第一条规则，设置里改了端口却没建 fallback 规则时不生效。
 			localPort := sniSites[0].LocalPort
+			if localPort == "" {
+				localPort = strings.TrimSpace(sniSettings.LocalPort)
+			}
 			if localPort == "" {
 				localPort = "8443"
 			}

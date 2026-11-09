@@ -115,6 +115,19 @@ func TestCaddySNIDefaultTargetOverridesFallback(t *testing.T) {
 	}
 }
 
+// 规则未填 local_port 时，兜底目标应使用 SNI 设置里的本地 HTTPS 端口。
+func TestCaddySNIFallbackUsesSettingsLocalPort(t *testing.T) {
+	sites := []entity.CaddySite{
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9001", Enabled: true},
+	}
+	cfg := generateCaddyFor(t, newCaddyTestManager(t, sites, map[string]string{
+		"proxy.sni_local_port.2": "9443",
+	}))
+	if !strings.Contains(cfg, "# fallback -> 127.0.0.1:9443") {
+		t.Fatalf("未设置规则 local_port 时应使用设置的 9443：\n%s", cfg)
+	}
+}
+
 // 未设置默认后端时回落到 fallback 规则目标。
 func TestCaddySNIDefaultTargetUnsetUsesFallback(t *testing.T) {
 	sites := []entity.CaddySite{

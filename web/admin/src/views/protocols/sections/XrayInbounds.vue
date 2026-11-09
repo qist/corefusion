@@ -2769,11 +2769,12 @@ async function loadLocalRealityServers() {
     const nginxSites = await client.get(`${nodeBase.value}/nginx/sites`)
     if (Array.isArray(nginxSites)) {
       nginxSites.filter(s => s.template === 'reality').forEach(s => {
-        // Reality 模板有两种监听：127.0.0.1:<端口> 或 unix:<path>。
-        // Xray REALITY 的 dest 必须与之一致，否则回落握手直接失败。
+        // Reality 模板有两种监听：127.0.0.1:<端口> 或 unix socket。
+        // Xray REALITY 的 target 用**裸路径**（/dev/shm/nginx.sock）——现网既有入站
+        // 全是这个写法且实测可用；带 unix: 前缀会与既有配置不一致。
         const sock = String(s.listen_socket || '').trim().replace(/^unix:\/\//, '').replace(/^unix:/, '')
         if (sock) {
-          servers.push({ id: s.id, target: `unix:${sock}`, sni: '', source: 'nginx' })
+          servers.push({ id: s.id, target: sock, sni: '', source: 'nginx' })
           return
         }
         const port = parseInt(s.listen_port || s.domain || '9443') || 9443
@@ -3254,9 +3255,11 @@ function genRandomShortId(rf) {
   emit()
 }
 
-// Check if a target is a local Reality server (127.0.0.1:port or unix:<path>)
+// 本地 Reality 目标：127.0.0.1:<端口> 或 unix socket 路径
+// （裸路径 /dev/shm/nginx.sock；兼容历史 unix: 前缀写法）。
 function isLocalTarget(target) {
-  return !!target && (target.startsWith('127.0.0.1:') || target.startsWith('unix:'))
+  if (!target) return false
+  return target.startsWith('127.0.0.1:') || target.startsWith('/') || target.startsWith('unix:')
 }
 
 function onTargetChange() {

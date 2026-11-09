@@ -271,10 +271,10 @@ func TestNginxProdIPv6ListenRegression(t *testing.T) {
 	sites := []entity.NginxSite{
 		{ServerID: 2, Domain: "app.example.com", ListenPort: "127.0.0.1:443", CertPath: "cert.pem", KeyPath: "key.pem",
 			Enabled: true, Path: "/", Upstream: "127.0.0.1:8080"},
-		{ServerID: 2, Domain: "sni.example.com", Template: "sni", Path: "23.254.233.185:443", SNITarget: "127.0.0.1:9001", Enabled: true},
+		{ServerID: 2, Domain: "sni.example.com", Template: "sni", Path: "203.0.113.10:443", SNITarget: "127.0.0.1:9001", Enabled: true},
 	}
 	cfg := generateFor(t, newNginxTestManager(t, sites,
-		`{"ipv6":true,"ipv6_listen_addr":"[::1]:443","stream_sni_enabled":true,"stream_ipv6":true,"stream_ipv6_listen_addr":"[2001:db8::1]:443","sni_listen_addr":"23.254.233.185:443"}`))
+		`{"ipv6":true,"ipv6_listen_addr":"[::1]:443","stream_sni_enabled":true,"stream_ipv6":true,"stream_ipv6_listen_addr":"[2001:db8::1]:443","sni_listen_addr":"203.0.113.10:443"}`))
 	for _, want := range []string{
 		"        listen [::1]:443 ssl;",
 		"    listen [2001:db8::1]:443 reuseport",
@@ -283,7 +283,7 @@ func TestNginxProdIPv6ListenRegression(t *testing.T) {
 			t.Fatalf("缺少 %q：\n%s", want, cfg)
 		}
 	}
-	for _, bad := range []string{"[::1]:127.0.0.1:443", "[2001:db8::1]:23.254.233.185:443"} {
+	for _, bad := range []string{"[::1]:127.0.0.1:443", "[2001:db8::1]:203.0.113.10:443"} {
 		if strings.Contains(cfg, bad) {
 			t.Fatalf("生成了非法监听 %q：\n%s", bad, cfg)
 		}

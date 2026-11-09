@@ -202,8 +202,8 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	for _, site := range sites {
 		if site.Template == "sni" {
 			// Caddy 的 layer4 站点地址只接受 `:端口`。迁移/复用 nginx 规则时 Path 里
-			// 可能带 IP（如 23.254.233.185:443 / [::]:443）——直接拼会生成
-			// `:23.254.233.185:443` 这种非法地址，且同一端口的等价写法会被拆成多个
+			// 可能带 IP（如 203.0.113.10:443 / [::]:443）——直接拼会生成
+			// `:203.0.113.10:443` 这种非法地址，且同一端口的等价写法会被拆成多个
 			// layer4 server。这里统一归一成端口（Caddy 默认监听全部地址）。
 			port := listenPortOnly(canonicalListenAddr(site.Path))
 			if port == "" {

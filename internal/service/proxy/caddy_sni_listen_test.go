@@ -51,11 +51,11 @@ func generateCaddyFor(t *testing.T, m *CaddyManager) string {
 }
 
 // Caddy 的 layer4 站点地址只接受 `:端口`。迁移 nginx 规则时 Path 可能带 IP
-// （23.254.233.185:443 / [::]:443 / 0.0.0.0:443），必须归一到同一端口，
-// 否则会生成 `:23.254.233.185:443` 这种非法地址，或同一端口拆成多个 server。
+// （203.0.113.10:443 / [::]:443 / 0.0.0.0:443），必须归一到同一端口，
+// 否则会生成 `:203.0.113.10:443` 这种非法地址，或同一端口拆成多个 server。
 func TestCaddySNIListenAddressNormalized(t *testing.T) {
 	sites := []entity.CaddySite{
-		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "23.254.233.185:443", SNITarget: "127.0.0.1:9001", Enabled: true},
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "203.0.113.10:443", SNITarget: "127.0.0.1:9001", Enabled: true},
 		{ServerID: 2, Domain: "b.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9002", Enabled: true},
 		{ServerID: 2, Domain: "c.example.com", Template: "sni", Path: "0.0.0.0:443", SNITarget: "127.0.0.1:9003", Enabled: true},
 		{ServerID: 2, Domain: "d.example.com", Template: "sni", Path: "[::]:443", SNITarget: "127.0.0.1:9004", Enabled: true},
@@ -65,7 +65,7 @@ func TestCaddySNIListenAddressNormalized(t *testing.T) {
 	if n := strings.Count(cfg, "\t\t:443 {"); n != 1 {
 		t.Fatalf("同一端口的 SNI 规则应只有一个 layer4 server，实际 %d 个：\n%s", n, cfg)
 	}
-	if strings.Contains(cfg, ":23.254.233.185:443") || strings.Contains(cfg, ":0.0.0.0:443") {
+	if strings.Contains(cfg, ":203.0.113.10:443") || strings.Contains(cfg, ":0.0.0.0:443") {
 		t.Fatalf("Caddy 不应生成带 IP 的 layer4 地址：\n%s", cfg)
 	}
 	for _, domain := range []string{"a.example.com", "b.example.com", "c.example.com", "d.example.com"} {

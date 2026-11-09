@@ -1067,6 +1067,8 @@ func downloadSettingsToMihomo(dl map[string]any, xmuxToReuse func(map[string]any
 			ro["short-id"] = sid
 		}
 		if len(ro) > 0 {
+			// 同其它 REALITY 分支：必须保留 MLKEM 密钥共享，否则 xray 26 服务端认证失败。
+			ro["support-x25519mlkem768"] = true
 			out["reality-opts"] = ro
 		}
 	}

@@ -70,7 +70,7 @@ class Panel:
         return data
 
 
-# ---------------------------------------------------------------- 读取 3x-ui
+# ---------------------------------------------------------------- 读取 xray-ui
 
 
 def load_inbounds(db_path):
@@ -140,7 +140,7 @@ def resolve_port(ib, port_map):
 
 
 def strip_internal(obj):
-    """递归删除 3x-ui 注入的 _ 前缀字段（CoreFusion 也会删，这里提前清理便于对比）。"""
+    """递归删除 xray-ui 注入的 _ 前缀字段（CoreFusion 也会删，这里提前清理便于对比）。"""
     if isinstance(obj, dict):
         return {k: strip_internal(v) for k, v in obj.items() if not str(k).startswith("_")}
     if isinstance(obj, list):
@@ -290,7 +290,7 @@ def clean_routing(routing):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="迁移 3x-ui/xray-ui 的 Xray 配置到 CoreFusion")
+    ap = argparse.ArgumentParser(description="迁移 xray-ui 的 Xray 配置到 CoreFusion")
     ap.add_argument("--db", required=True, help="x-ui.db 路径（只读）")
     ap.add_argument("--config", help="xray 运行配置 config.json（用于出站/路由；不给则跳过）")
     ap.add_argument("--panel", default="http://127.0.0.1:8080", help="CoreFusion 面板地址")

@@ -3527,7 +3527,7 @@ function parseRealitySettings(reality) {
     target: reality.target || 'www.amazon.com:443',
     serverNamesStr: (reality.serverNames || []).join('\n'),
     privateKey: reality.privateKey || '',
-    // publicKey 有三种存法（3x-ui 导入是顶层 publicKey，面板编辑器是 settings[0].password，
+    // publicKey 有三种存法（xray-ui 导入是顶层 publicKey，面板编辑器是 settings[0].password，
     // sing-box 反推是 _realityPublicKey）。只认 settings[0].password 时，打开再保存会把
     // publicKey 抹掉 → 之后所有分享链接都缺 pbk（客户端 REALITY 直接连不上）。
     _password: cs.password || reality.publicKey || reality._realityPublicKey || reality.password || '',
@@ -4447,7 +4447,7 @@ function buildInbound(ib, isApiCall = false) {
       if (r._fingerprint) settingsObj.fingerprint = r._fingerprint
       if (r._password) settingsObj.password = r._password
       if (r._mldsa65Verify) settingsObj.mldsa65Verify = r._mldsa65Verify
-      // 同时写回顶层扁平字段：3x-ui 导入的老数据/本面板的 REALITY 取参都可能读顶层
+      // 同时写回顶层扁平字段：xray-ui 导入的老数据/本面板的 REALITY 取参都可能读顶层
       // （少了它，保存一次 publicKey 就丢，分享链接缺 pbk → 客户端认证失败）。
       if (r._fingerprint) rs.fingerprint = r._fingerprint
       if (r._password) rs.publicKey = r._password

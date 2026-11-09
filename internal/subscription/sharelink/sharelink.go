@@ -1028,6 +1028,10 @@ func setSecurityParams(params url.Values, ss map[string]interface{}, security st
 		if rp.SpiderX != "" {
 			params.Set("spx", rp.SpiderX)
 		}
+		// Xray 26.9.8+ 的 REALITY 服务端要求 ClientHello 带 X25519MLKEM768 密钥共享；
+		// 支持该 URI 扩展的客户端（Mihomo 等）导入时会据此保留 MLKEM 段，否则认证失败。
+		// Xray / sing-box 等不认识该参数的客户端会忽略，无副作用。
+		params.Set("support-x25519mlkem768", "true")
 		// pqv = post-quantum verification（服务端 mldsa65Seed 对应，选填）
 		if rp.MLDSA65Verify != "" {
 			params.Set("pqv", rp.MLDSA65Verify)

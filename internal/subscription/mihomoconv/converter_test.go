@@ -138,6 +138,9 @@ func TestParseXHTTPExtraDownloadSettings(t *testing.T) {
 	if ro["public-key"] != "PUBKEY" || ro["short-id"] != "abcd" {
 		t.Errorf("reality-opts 映射错误: %#v", ds)
 	}
+	if ro["support-x25519mlkem768"] != true {
+		t.Errorf("xhttp download-settings 的 REALITY 必须带 support-x25519mlkem768: %#v", ds)
+	}
 	if ds["path"] != "/down" {
 		t.Errorf("path 映射错误: %#v", ds)
 	}

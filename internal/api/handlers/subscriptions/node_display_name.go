@@ -8,7 +8,7 @@ import "strings"
 // 用的都是它，所以这里同时决定了「客户端列表里显示什么」和「tag 里带什么」。
 //
 // 为什么不能直接用 Tag 兜底：入站 tag 的约定是 `inbound-<协议>-<端口>`
-// （前端 genInboundTag），xray-ui / 3x-ui 迁移过来的入站 remark 往往为空、
+// （前端 genInboundTag），xray-ui 迁移过来的入站 remark 往往为空、
 // tag 形如 `inbound-20001` 或 `in-443-tcp`。直接拿来当节点名，会把**入站真实
 // 监听端口**暴露给所有订阅用户 —— 尤其是 nginx / unix socket 入站：对外是 443，
 // tag 里还留着 20001。

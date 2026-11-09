@@ -160,7 +160,7 @@ func ensureUnixSocketPerms(configPath string) {
 			if fi.Mode().Perm()&wantMode == wantMode {
 				continue
 			}
-			// 与 3x-ui 的 listen "...,0666" 保持一致：socket 只需要读写位，不要 exec 位。
+			// 与 xray-ui 的 listen "...,0666" 保持一致：socket 只需要读写位，不要 exec 位。
 			if err := os.Chmod(p, wantMode); err != nil {
 				log.Printf("process: chmod unix socket %s: %v", p, err)
 			}

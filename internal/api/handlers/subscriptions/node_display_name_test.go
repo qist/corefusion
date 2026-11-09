@@ -19,7 +19,7 @@ func TestNodeDisplayName(t *testing.T) {
 		{"", "inbound-trojan-443", "trojan"},
 		{"", "inbound-hysteria2-51071", "hysteria2"},
 		{"", "inbound-vmess-8880", "vmess"},
-		// 非标准 tag（xray-ui / 3x-ui 迁移）：去掉纯数字段
+		// 非标准 tag（xray-ui 迁移）：去掉纯数字段
 		{"", "in-443-tcp", "in-tcp"},
 		{"", "vless_20001_ws", "vless-ws"},
 		{"", "node:20001", "node"},

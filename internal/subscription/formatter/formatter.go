@@ -1819,6 +1819,8 @@ func formatURI(node Node) string {
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
 				params.Set("sid", sid)
 			}
+			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
+			params.Set("support-x25519mlkem768", "true")
 		} else if node.TLS {
 			params.Set("security", "tls")
 		} else {
@@ -1943,6 +1945,8 @@ func formatURI(node Node) string {
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
 				params.Set("sid", sid)
 			}
+			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
+			params.Set("support-x25519mlkem768", "true")
 		} else if node.TLS {
 			params.Set("security", "tls")
 		} else {

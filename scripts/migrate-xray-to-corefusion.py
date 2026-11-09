@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""xray-ui（3x-ui 分支）→ CoreFusion 迁移：只迁「入口（入站）」和「路由」，不迁出口。
+"""xray-ui → CoreFusion 迁移：只迁「入口（入站）」和「路由」，不迁出口。
 
 背景：生产 xray-ui 里只有一个 wireguard（WARP）出口，其余是 direct/blocked 内置。
 CoreFusion 的出口由管理员手工创建（WARP），所以本脚本：
@@ -62,9 +62,9 @@ def unwrap(payload):
 
 
 def normalize_listen(raw: str) -> str:
-    """保留 x-ui 的 socket 监听原样：`/dev/shm/x.sock,0666` 里的 `,mode` **不能丢**。
+    """保留 xray-ui 的 socket 监听原样：`/dev/shm/x.sock,0666` 里的 `,mode` **不能丢**。
 
-    `,0666` 是 xray-core 自己的特性（不是 3x-ui 私有扩展）：xray 建 unix socket 时会按这个
+    `,0666` 是 xray-core 自己的特性（不是 xray-ui 私有扩展）：xray 建 unix socket 时会按这个
     后缀 chmod。实测 Xray 26.10.31 用 `listen: "/tmp/x.sock,0666"` 启动，socket 就是 0666。
 
     丢掉后缀的后果：socket 按 umask 建成 0755，nginx worker（非 root）connect() 报 EACCES，

@@ -312,3 +312,42 @@ func TestXrayFormatterKeepsGRPCAuthorityAndMultiMode(t *testing.T) {
 		t.Fatalf("grpcSettings 丢了参数: %v", gs)
 	}
 }
+
+// 外部导入节点（mihomo 代理）转 URI 不能丢参数：
+//   - httpupgrade 在 mihomo 里是 ws + v2ray-http-upgrade，必须还原成 type=httpupgrade；
+//   - gRPC 的 authority / multiMode 必须写回；
+//   - REALITY 的 spiderX / mldsa65Verify 也要带上。
+func TestMihomoToURIPreservesTransportAndReality(t *testing.T) {
+	hu := MihomoToURI(map[string]interface{}{
+		"name": "hu", "type": "vless", "server": "1.2.3.4", "port": float64(443),
+		"uuid": "11111111-1111-1111-1111-111111111111", "network": "ws",
+		"tls": true, "servername": "a.com",
+		"ws-opts": map[string]interface{}{
+			"path": "/up", "headers": map[string]interface{}{"Host": "a.com"},
+			"v2ray-http-upgrade": true,
+		},
+	})
+	for _, want := range []string{"type=httpupgrade", "path=%2Fup", "host=a.com", "security=tls"} {
+		if !strings.Contains(hu, want) {
+			t.Errorf("httpupgrade 链接缺 %s: %s", want, hu)
+		}
+	}
+
+	grpc := MihomoToURI(map[string]interface{}{
+		"name": "g", "type": "vless", "server": "1.2.3.4", "port": float64(443),
+		"uuid": "11111111-1111-1111-1111-111111111111", "network": "grpc",
+		"tls": true, "servername": "a.com",
+		"grpc-opts": map[string]interface{}{
+			"grpc-service-name": "svc", "grpc-authority": "cdn.example.com", "grpc-multi-mode": true,
+		},
+		"reality-opts": map[string]interface{}{
+			"public-key": "PBK", "short-id": "SID", "spider-x": "/spx", "mldsa65-verify": "PQV",
+		},
+	})
+	for _, want := range []string{"serviceName=svc", "authority=cdn.example.com", "mode=multi",
+		"pbk=PBK", "sid=SID", "spx=%2Fspx", "pqv=PQV", "security=reality"} {
+		if !strings.Contains(grpc, want) {
+			t.Errorf("gRPC/REALITY 链接缺 %s: %s", want, grpc)
+		}
+	}
+}

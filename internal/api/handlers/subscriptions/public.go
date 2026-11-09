@@ -247,6 +247,12 @@ type shareDomainEntry struct {
 	Ports []int
 	// LatencyMs 是探活延迟（毫秒，0 表示未探测）；用于「超过阈值不进池」的筛选。
 	LatencyMs int
+	// 前置 TLS 终结参数（见 entity.ShareDomainConfig）：核心没配 TLS、TLS 在
+	// CDN/nginx/caddy 上终结时，分享产物必须按 TLS 下发。
+	TLSMode     string
+	SNI         string
+	ALPN        string
+	Fingerprint string
 }
 
 type renderedSubscriptionNode struct {
@@ -970,6 +976,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 						// 镜像的 _accessDomain 没被改写成功（类型不认识等）→ 直接用镜像自己的地址
 						mirrorHostResolved, mirrorPort = mirrorHost, cfg.Port
 					}
+					applyFrontTLS(mirrorConfig, mirrorHostResolved, accessDomainType(mirrorConfig), shareDomains)
 
 					mirrorNodeName := fmt.Sprintf("%s (镜像 %s)", nodeName, mirror.Name)
 					if mirror.Name == "" {
@@ -1047,6 +1054,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			continue
 		}
 		applyExternalNodeAccessDomain(pm, &extNode, shareDomains)
+		// 外部节点同样可能「核心明文、TLS 在 CDN/反代终结」：必须补 tls/sni 再转换，
+		// 否则各类订阅/分享链接都会按明文下发。
+		applyFrontTLSToProxy(pm, getString(extNode.LoadAccessDomain(), "type", ""), shareDomains)
 		node := mihomoProxyMapToNode(pm)
 		if node != nil && extNode.Name != "" {
 			node.Name = extNode.Name
@@ -2030,7 +2040,10 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if d.Type == "cf_ip" {
 					continue
 				}
-				entry := shareDomainEntry{Type: d.Type, Host: d.Value, Port: d.Port, LatencyMs: d.LatencyMs}
+				entry := shareDomainEntry{
+					Type: d.Type, Host: d.Value, Port: d.Port, LatencyMs: d.LatencyMs,
+					TLSMode: d.TLSMode, SNI: d.SNI, ALPN: d.ALPN, Fingerprint: d.Fingerprint,
+				}
 				if d.Ports != "" {
 					json.Unmarshal([]byte(d.Ports), &entry.Ports)
 				}
@@ -2057,7 +2070,7 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if ip.IP == "" || !ip.Enabled {
 					continue
 				}
-				entry := shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: 443, LatencyMs: ip.LatencyMs}
+				entry := shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: 443, LatencyMs: ip.LatencyMs, TLSMode: "auto"}
 				if ip.Ports != "" {
 					json.Unmarshal([]byte(ip.Ports), &entry.Ports)
 				}
@@ -2265,6 +2278,142 @@ func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConf
 		}
 	}
 	return fallbackHost(cfg.Listen), cfg.Port
+}
+
+// accessDomainType 取入站/外部节点接入域名的类型（direct / cf_domain / cf_ip / custom）。
+func accessDomainType(config map[string]interface{}) string {
+	if config == nil {
+		return ""
+	}
+	ad, ok := config["_accessDomain"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	return getString(ad, "type", "")
+}
+
+// frontTLSEntry 找到分享地址对应的域名条目；找不到且接入域名类型是 cf_* 时，
+// 视为「TLS 在 CDN 上终结」的默认条目（auto）。
+func frontTLSEntry(host, adType string, shareDomains []shareDomainEntry) *shareDomainEntry {
+	h := strings.ToLower(strings.TrimSpace(host))
+	if h != "" {
+		for i := range shareDomains {
+			if strings.ToLower(strings.TrimSpace(shareDomains[i].Host)) == h {
+				return &shareDomains[i]
+			}
+		}
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(adType)), "cf_") {
+		return &shareDomainEntry{Type: adType, Host: host, TLSMode: "auto"}
+	}
+	return nil
+}
+
+// applyFrontTLS 给「核心没配 TLS、TLS 在 CDN/nginx/caddy 上终结」的节点补客户端 TLS 参数。
+//
+// 语义（tls_mode）：
+//   - auto（默认）：cf_domain / cf_ip 自动按 TLS（CDN 必然终结 TLS）；direct/custom 不动；
+//   - on：强制 TLS（自建 nginx/caddy 挡在明文入站前的场景）；
+//   - off：不改（沿用核心配置）。
+//
+// 已有 REALITY 时不覆盖；已有 TLS 时只补缺失的 SNI / ALPN / 指纹。
+func applyFrontTLS(config map[string]interface{}, host, adType string, shareDomains []shareDomainEntry) {
+	if config == nil {
+		return
+	}
+	entry := frontTLSEntry(host, adType, shareDomains)
+	if entry == nil {
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(entry.TLSMode))
+	switch mode {
+	case "off":
+		return
+	case "on":
+		// 强制 TLS
+	default:
+		if !strings.HasPrefix(strings.ToLower(entry.Type), "cf_") {
+			return
+		}
+	}
+	ss := getMap(config, "streamSettings")
+	if ss == nil {
+		ss = map[string]interface{}{}
+		config["streamSettings"] = ss
+	}
+	sec := strings.ToLower(strings.TrimSpace(getString(ss, "security", "")))
+	if sec == "reality" {
+		return
+	}
+	if sec != "tls" {
+		ss["security"] = "tls"
+	}
+	tls := getMap(ss, "tlsSettings")
+	if tls == nil {
+		tls = map[string]interface{}{}
+		ss["tlsSettings"] = tls
+	}
+	if entry.SNI != "" {
+		tls["serverName"] = entry.SNI
+	} else if cur, _ := tls["serverName"].(string); cur == "" && !isIPHost(host) {
+		// cf_domain：域名本身就是 SNI；IP 没有可用 SNI 时不瞎写
+		tls["serverName"] = host
+	}
+	if alpns := splitCSV(entry.ALPN); len(alpns) > 0 {
+		tls["alpn"] = alpns
+	}
+	if entry.Fingerprint != "" {
+		tls["settings"] = []interface{}{map[string]interface{}{"fingerprint": entry.Fingerprint}}
+	}
+}
+
+// applyFrontTLSToProxy 对「外部导入节点」的 mihomo 代理做同样的前置 TLS 覆盖。
+func applyFrontTLSToProxy(pm map[string]interface{}, adType string, shareDomains []shareDomainEntry) {
+	if pm == nil {
+		return
+	}
+	host, _ := pm["server"].(string)
+	entry := frontTLSEntry(host, adType, shareDomains)
+	if entry == nil {
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(entry.TLSMode))
+	if mode == "off" {
+		return
+	}
+	if mode == "" || mode == "auto" {
+		if !strings.HasPrefix(strings.ToLower(entry.Type), "cf_") {
+			return
+		}
+	}
+	pm["tls"] = true
+	if entry.SNI != "" {
+		pm["sni"] = entry.SNI
+		pm["servername"] = entry.SNI
+	} else if !isIPHost(host) {
+		pm["sni"] = host
+		pm["servername"] = host
+	}
+	if alpns := splitCSV(entry.ALPN); len(alpns) > 0 {
+		pm["alpn"] = alpns
+	}
+	if entry.Fingerprint != "" {
+		pm["client-fingerprint"] = entry.Fingerprint
+	}
+}
+
+func isIPHost(h string) bool {
+	return net.ParseIP(strings.Trim(strings.TrimSpace(h), "[]")) != nil
+}
+
+func splitCSV(s string) []string {
+	out := make([]string, 0, 2)
+	for _, p := range strings.Split(s, ",") {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func resolvePort(ad map[string]interface{}, portMode string, listenPort int, shareDomains []shareDomainEntry, adType, domain string) int {
@@ -2785,6 +2934,28 @@ func mihomoProxyMapToNode(p map[string]interface{}) *formatter.Node {
 	for _, k := range copyKeys {
 		if v, ok := p[k]; ok {
 			extra[k] = v
+		}
+	}
+	// mihomo 的 httpupgrade = ws + `v2ray-http-upgrade: true`，归一成内部传输名，
+	// 否则 xray/sing-box 产物会按普通 ws 生成（握手方式不同，连不上）。
+	if wsOpts, ok := extra["ws-opts"].(map[string]interface{}); ok {
+		if up, _ := wsOpts["v2ray-http-upgrade"].(bool); up {
+			transport = "httpupgrade"
+			hu := map[string]interface{}{}
+			if path, ok := wsOpts["path"].(string); ok && path != "" {
+				hu["path"] = path
+			}
+			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok && host != "" {
+					hu["host"] = host
+				}
+			}
+			if host, ok := wsOpts["host"].(string); ok && host != "" {
+				if _, has := hu["host"]; !has {
+					hu["host"] = host
+				}
+			}
+			extra["httpupgrade-opts"] = hu
 		}
 	}
 	if len(extra) == 0 {

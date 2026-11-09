@@ -1660,6 +1660,29 @@ func mihomoProxyToNode(p map[string]interface{}) *Node {
 			extra[k] = v
 		}
 	}
+	// mihomo 把 httpupgrade 表达成 ws + `v2ray-http-upgrade: true`。不归一的话
+	// 面板会按普通 ws 下发（path/host 虽然对，但握手方式不同），服务端是
+	// httpupgrade 时直接连不上。归一到内部的 httpupgrade + httpupgrade-opts。
+	if wsOpts, ok := extra["ws-opts"].(map[string]interface{}); ok {
+		if up, _ := wsOpts["v2ray-http-upgrade"].(bool); up {
+			transport = "httpupgrade"
+			hu := map[string]interface{}{}
+			if path, ok := wsOpts["path"].(string); ok && path != "" {
+				hu["path"] = path
+			}
+			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
+				if host, ok := headers["Host"].(string); ok && host != "" {
+					hu["host"] = host
+				}
+			}
+			if host, ok := wsOpts["host"].(string); ok && host != "" {
+				if _, has := hu["host"]; !has {
+					hu["host"] = host
+				}
+			}
+			extra["httpupgrade-opts"] = hu
+		}
+	}
 	if len(extra) == 0 {
 		extra = nil
 	}
@@ -1709,6 +1732,11 @@ func formatURI(node Node) string {
 	switch node.Protocol {
 	case "vmess":
 		// vmess://base64(json)
+		netName := strings.ToLower(strings.TrimSpace(node.Transport))
+		// "raw" 是 xray 25+ 的正式名，但 vmess 链接的标准值是 tcp（客户端不认 raw）。
+		if netName == "" || netName == "raw" {
+			netName = "tcp"
+		}
 		config := map[string]interface{}{
 			"v":    "2",
 			"ps":   node.Name,
@@ -1716,7 +1744,7 @@ func formatURI(node Node) string {
 			"port": node.Port,
 			"id":   node.UUID,
 			"aid":  node.AlterID,
-			"net":  node.Transport,
+			"net":  netName,
 			"type": "none",
 			"host": "",
 			"path": "/",
@@ -1804,6 +1832,29 @@ func formatURI(node Node) string {
 				}
 			}
 		}
+		// httpupgrade / xhttp：mihomo 侧分别是 ws+`v2ray-http-upgrade` 与 xhttp-opts，
+		// 已由 mihomoProxyToNode 归一；这里把它写回 vmess 链接的 net/path/host。
+		if huOpts, ok := node.Extra["httpupgrade-opts"].(map[string]interface{}); ok {
+			config["net"] = "httpupgrade"
+			if path, ok := huOpts["path"].(string); ok && path != "" {
+				config["path"] = path
+			}
+			if host, ok := huOpts["host"].(string); ok && host != "" {
+				config["host"] = host
+			}
+		}
+		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
+			config["net"] = "xhttp"
+			if path, ok := xhttpOpts["path"].(string); ok && path != "" {
+				config["path"] = path
+			}
+			if host, ok := xhttpOpts["host"].(string); ok && host != "" {
+				config["host"] = host
+			}
+			if mode, ok := xhttpOpts["mode"].(string); ok && mode != "" {
+				config["type"] = mode
+			}
+		}
 		data, _ := json.Marshal(config)
 		return "vmess://" + base64.StdEncoding.EncodeToString(data)
 
@@ -1827,6 +1878,13 @@ func formatURI(node Node) string {
 			}
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
 				params.Set("sid", sid)
+			}
+			if spx, ok := ro["spider-x"].(string); ok && spx != "" {
+				params.Set("spx", spx)
+			}
+			// 抗量子校验（可选）：服务端配了 mldsa65Seed 时把公钥一并带上。
+			if pqv, ok := ro["mldsa65-verify"].(string); ok && pqv != "" {
+				params.Set("pqv", pqv)
 			}
 			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
 			params.Set("support-x25519mlkem768", "true")
@@ -1865,9 +1923,24 @@ func formatURI(node Node) string {
 				params.Set("ed", strconv.Itoa(int(ed)))
 			}
 		}
+		if huOpts, ok := node.Extra["httpupgrade-opts"].(map[string]interface{}); ok {
+			params.Set("type", "httpupgrade")
+			if path, ok := huOpts["path"].(string); ok && path != "" {
+				params.Set("path", path)
+			}
+			if host, ok := huOpts["host"].(string); ok && host != "" {
+				params.Set("host", host)
+			}
+		}
 		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
 			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
 				params.Set("serviceName", sn)
+			}
+			if auth, ok := grpcOpts["grpc-authority"].(string); ok && auth != "" {
+				params.Set("authority", auth)
+			}
+			if multi, ok := grpcOpts["grpc-multi-mode"].(bool); ok && multi {
+				params.Set("mode", "multi")
 			}
 		}
 		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
@@ -1953,6 +2026,13 @@ func formatURI(node Node) string {
 			}
 			if sid, ok := ro["short-id"].(string); ok && sid != "" {
 				params.Set("sid", sid)
+			}
+			if spx, ok := ro["spider-x"].(string); ok && spx != "" {
+				params.Set("spx", spx)
+			}
+			// 抗量子校验（可选）：服务端配了 mldsa65Seed 时把公钥一并带上。
+			if pqv, ok := ro["mldsa65-verify"].(string); ok && pqv != "" {
+				params.Set("pqv", pqv)
 			}
 			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
 			params.Set("support-x25519mlkem768", "true")

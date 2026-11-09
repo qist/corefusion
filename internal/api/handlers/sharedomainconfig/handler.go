@@ -59,12 +59,16 @@ func (h *Handler) ListByServer(c *gin.Context) {
 // POST /api/v1/node-servers/:id/share-domains.
 func (h *Handler) Create(c *gin.Context) {
 	var req struct {
-		Type      string  `json:"type" binding:"required"`
-		Value     string  `json:"value"`
-		Port      int     `json:"port"`
-		Ports     string  `json:"ports"`
-		ServerID  int64   `json:"server_id"`
-		ServerIDs []int64 `json:"server_ids"` // 多节点绑定；空 = 全局
+		Type        string  `json:"type" binding:"required"`
+		Value       string  `json:"value"`
+		Port        int     `json:"port"`
+		Ports       string  `json:"ports"`
+		ServerID    int64   `json:"server_id"`
+		ServerIDs   []int64 `json:"server_ids"` // 多节点绑定；空 = 全局
+		TLSMode     string  `json:"tls_mode"`
+		SNI         string  `json:"sni"`
+		ALPN        string  `json:"alpn"`
+		Fingerprint string  `json:"fingerprint"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -91,7 +95,40 @@ func (h *Handler) Create(c *gin.Context) {
 			return
 		}
 	}
+	if applyTLSFields(config, req.TLSMode, req.SNI, req.ALPN, req.Fingerprint) {
+		config.UpdatedAt = time.Now()
+		if err := h.svc.Save(c.Request.Context(), config); err != nil {
+			response.InternalError(c, "CREATE_FAILED", err.Error())
+			return
+		}
+	}
 	response.OK(c, config)
+}
+
+// applyTLSFields 写入「前置 TLS 终结」配置。
+// TLSMode 为空表示不修改；SNI/ALPN/Fingerprint 允许清空（前端删掉即恢复自动）。
+func applyTLSFields(config *entity.ShareDomainConfig, mode, sni, alpn, fp string) bool {
+	if config == nil {
+		return false
+	}
+	changed := false
+	if mode != "" && config.TLSMode != mode {
+		config.TLSMode = mode
+		changed = true
+	}
+	if config.SNI != sni {
+		config.SNI = sni
+		changed = true
+	}
+	if config.ALPN != alpn {
+		config.ALPN = alpn
+		changed = true
+	}
+	if config.Fingerprint != fp {
+		config.Fingerprint = fp
+		changed = true
+	}
+	return changed
 }
 
 // applyServerIDs 把多节点绑定列表写入实体（JSON 文本）；同时把 ServerID 同步为
@@ -123,13 +160,17 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Type      string  `json:"type"`
-		Value     string  `json:"value"`
-		Port      int     `json:"port"`
-		Ports     string  `json:"ports"`
-		Enabled   *bool   `json:"enabled"`
-		ServerID  *int64  `json:"server_id"`
-		ServerIDs []int64 `json:"server_ids"` // 多节点绑定；空数组 = 清除多选（回退 server_id 语义）
+		Type        string  `json:"type"`
+		Value       string  `json:"value"`
+		Port        int     `json:"port"`
+		Ports       string  `json:"ports"`
+		Enabled     *bool   `json:"enabled"`
+		ServerID    *int64  `json:"server_id"`
+		ServerIDs   []int64 `json:"server_ids"` // 多节点绑定；空数组 = 清除多选（回退 server_id 语义）
+		TLSMode     string  `json:"tls_mode"`
+		SNI         string  `json:"sni"`
+		ALPN        string  `json:"alpn"`
+		Fingerprint string  `json:"fingerprint"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -153,6 +194,11 @@ func (h *Handler) Update(c *gin.Context) {
 	// 多节点绑定：显式传 server_ids 字段时以它为准
 	if req.ServerIDs != nil {
 		applyServerIDs(config, req.ServerIDs)
+		config.UpdatedAt = time.Now()
+		_ = h.svc.Save(c.Request.Context(), config)
+	}
+	// 前置 TLS 终结配置（CF 优选 / nginx / caddy）
+	if applyTLSFields(config, req.TLSMode, req.SNI, req.ALPN, req.Fingerprint) {
 		config.UpdatedAt = time.Now()
 		_ = h.svc.Save(c.Request.Context(), config)
 	}

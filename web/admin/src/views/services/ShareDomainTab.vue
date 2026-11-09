@@ -12,6 +12,7 @@
         </div>
       </template>
       <div class="hint" style="margin-bottom:12px">{{ t('service.shareDomain.directHint') }}</div>
+      <div class="hint" style="margin-bottom:12px">{{ t('service.shareDomain.frontTlsHint') }}</div>
       <div v-for="item in directItems" :key="item.id" class="domain-item">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <el-switch v-model="item.enabled" @change="updateItem(item)" />
@@ -27,6 +28,14 @@
           <el-tag v-else size="small" :type="item.server_id === 0 ? 'info' : 'success'">
             {{ item.server_id === 0 ? t('service.shareDomain.allNodes') : (nodeServers.find(s => s.id === item.server_id)?.name || '#' + item.server_id) }}
           </el-tag>
+          <el-select v-model="item.tls_mode" size="small" style="width:118px" @change="updateItem(item)">
+            <el-option :label="t('service.shareDomain.tlsAuto')" value="auto" />
+            <el-option :label="t('service.shareDomain.tlsOn')" value="on" />
+            <el-option :label="t('service.shareDomain.tlsOff')" value="off" />
+          </el-select>
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.sni" size="small" :placeholder="t('service.shareDomain.sniPlaceholder')" style="width:160px" @change="updateItem(item)" />
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.alpn" size="small" placeholder="h2,http/1.1" style="width:120px" @change="updateItem(item)" />
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.fingerprint" size="small" placeholder="chrome" style="width:100px" @change="updateItem(item)" />
           <el-button size="small" type="danger" text @click="deleteItem(item)">X</el-button>
         </div>
       </div>
@@ -47,6 +56,7 @@
         </div>
       </template>
       <div class="hint" style="margin-bottom:12px">{{ t('service.shareDomain.cfDomainHint') }}</div>
+      <div class="hint" style="margin-bottom:12px">{{ t('service.shareDomain.frontTlsHint') }}</div>
       <div v-for="item in cfDomainItems" :key="item.id" class="domain-item">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <el-switch v-model="item.enabled" @change="updateItem(item)" />
@@ -65,6 +75,14 @@
               {{ p }}
             </el-checkbox>
           </div>
+          <el-select v-model="item.tls_mode" size="small" style="width:118px" @change="updateItem(item)">
+            <el-option :label="t('service.shareDomain.tlsAuto')" value="auto" />
+            <el-option :label="t('service.shareDomain.tlsOn')" value="on" />
+            <el-option :label="t('service.shareDomain.tlsOff')" value="off" />
+          </el-select>
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.sni" size="small" :placeholder="t('service.shareDomain.sniPlaceholder')" style="width:160px" @change="updateItem(item)" />
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.alpn" size="small" placeholder="h2,http/1.1" style="width:120px" @change="updateItem(item)" />
+          <el-input v-if="item.tls_mode !== 'off'" v-model="item.fingerprint" size="small" placeholder="chrome" style="width:100px" @change="updateItem(item)" />
           <el-button size="small" type="danger" text @click="deleteItem(item)">X</el-button>
         </div>
       </div>
@@ -131,6 +149,7 @@ async function fetchItems() {
     const raw = Array.isArray(data) ? data : (data?.items || [])
     items.value = raw.map(item => ({
       ...item,
+      tls_mode: item.tls_mode || 'auto',
       ports: item.ports ? JSON.parse(item.ports) : [item.port || 443],
       // 多节点绑定：server_ids JSON → 数组；旧单节点数据回填为 [server_id]
       server_ids_arr: parseServerIds(item)
@@ -159,7 +178,8 @@ async function addItem(type) {
       type,
       value: '',
       port: defaultPorts[0] || 443,
-      ports: JSON.stringify(defaultPorts)
+      ports: JSON.stringify(defaultPorts),
+      tls_mode: 'auto'
     })
     items.value.push({ ...newItem, ports: defaultPorts })
   } catch (e) {

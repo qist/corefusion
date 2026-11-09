@@ -93,6 +93,8 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 			}
 		}
 		host, port := h.hostForLink(c.Request.Context(), shareCfg, view, shareDomains)
+		// 前置 TLS 终结（CF 优选 / nginx / caddy）：分享片段与订阅同一口径。
+		applyFrontTLS(view, host, accessDomainType(view), shareDomains)
 		// 注意：这里传**完整的 settings**（而不是只挑 clients/encryption）——
 		// ss 的加密方式（method）、http/socks 的认证等都从这里取，
 		// 只挑两个键会让链接用错 cipher（如把 2022-blake3 写成 aes-256-gcm）。

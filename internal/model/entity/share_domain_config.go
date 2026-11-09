@@ -30,6 +30,18 @@ type ShareDomainConfig struct {
 	// 区域过滤：为空=所有区域，指定区域=仅该区域节点使用
 	Region string `json:"region" gorm:"size:64;index;not null;default:''"`
 
+	// ── 前置 TLS 终结（CF 优选 / nginx / caddy 挡在前面）──
+	// 入站核心本身没配 TLS，TLS 在 CDN 或反代上终结；分享出去必须按 TLS 下发，
+	// 否则客户端明文连 443，握手失败（能解析、连不上）。
+	//   TLSMode: auto（默认）= cf_domain/cf_ip 自动按 TLS；on = 强制 TLS；off = 不改（跟随核心）
+	//   SNI:     客户端 SNI（留空时 cf_domain 用域名本身，cf_ip 用核心已有的 serverName）
+	//   ALPN:    逗号分隔（h2,http/1.1）
+	//   Fingerprint: uTLS 指纹（chrome / firefox …），留空则用核心配置里的
+	TLSMode     string `json:"tls_mode" gorm:"size:16;not null;default:'auto'"`
+	SNI         string `json:"sni" gorm:"size:255"`
+	ALPN        string `json:"alpn" gorm:"size:120"`
+	Fingerprint string `json:"fingerprint" gorm:"size:32"`
+
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
 }

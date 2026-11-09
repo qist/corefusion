@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -455,9 +456,27 @@ func normalizeVariantDuration(days int) int {
 	return days
 }
 
+// normalizeVariantType 归一规格类型：只接受 traffic_pack，其余按常规套餐处理。
+func normalizeVariantType(v string) string {
+	if strings.TrimSpace(v) == entity.VariantTypeTrafficPack {
+		return entity.VariantTypeTrafficPack
+	}
+	return entity.VariantTypePlan
+}
+
+// normalizeExpiryMode 归一流量包的过期模式：只接受 extend_plan，其余按
+// align_with_plan（与套餐同期过期）处理。
+func normalizeExpiryMode(v string) string {
+	if strings.TrimSpace(v) == entity.ExpiryModeExtendPlan {
+		return entity.ExpiryModeExtendPlan
+	}
+	return entity.ExpiryModeAlignWithPlan
+}
+
 // CreateVariantInput is the input for creating a plan variant.
 type CreateVariantInput struct {
 	Name            string `json:"name" binding:"required"`
+	VariantType     string `json:"variant_type"`
 	BillingCycle    string `json:"billing_cycle"`
 	DurationDays    int    `json:"duration_days"`
 	Price           int64  `json:"price"`
@@ -466,6 +485,7 @@ type CreateVariantInput struct {
 	QuotaBytes      int64  `json:"quota_bytes"`
 	QuotaResetCycle string `json:"quota_reset_cycle"`
 	QuotaResetDay   *int   `json:"quota_reset_day"`
+	ExpiryMode      string `json:"expiry_mode"`
 	IsRecommended   bool   `json:"is_recommended"`
 	IsDefault       bool   `json:"is_default"`
 	Enabled         *bool  `json:"enabled"`
@@ -479,6 +499,13 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 		billingCycle = entity.BillingCycleMonthly
 	}
 	duration := normalizeVariantDuration(input.DurationDays)
+	// 规格类型/过期模式必须落库：以前 CreateVariantInput 没有这两个字段，
+	// 前端选了"流量包"也只会建成常规套餐，永久流量包的 extend_plan 也永远不生效。
+	variantType := normalizeVariantType(input.VariantType)
+	expiryMode := normalizeExpiryMode(input.ExpiryMode)
+	if variantType != entity.VariantTypeTrafficPack {
+		expiryMode = entity.ExpiryModeAlignWithPlan
+	}
 	currency := input.Currency
 	if currency == "" {
 		currency = s.defaultCurrency(ctx)
@@ -492,6 +519,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 	variant := &entity.PlanVariant{
 		TemplateID:      templateID,
 		Name:            input.Name,
+		VariantType:     variantType,
 		BillingCycle:    billingCycle,
 		DurationDays:    duration,
 		Price:           input.Price,
@@ -500,6 +528,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 		QuotaBytes:      input.QuotaBytes,
 		QuotaResetCycle: input.QuotaResetCycle,
 		QuotaResetDay:   input.QuotaResetDay,
+		ExpiryMode:      expiryMode,
 		IsRecommended:   input.IsRecommended,
 		IsDefault:       input.IsDefault,
 		Enabled:         enabled,
@@ -517,6 +546,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 type UpdateVariantInput struct {
 	Name            *string `json:"name"`
 	Description     *string `json:"description"`
+	VariantType     *string `json:"variant_type"`
 	BillingCycle    *string `json:"billing_cycle"`
 	DurationDays    *int    `json:"duration_days"`
 	Price           *int64  `json:"price"`
@@ -543,6 +573,9 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 	}
 	if input.Description != nil {
 		variant.Description = *input.Description
+	}
+	if input.VariantType != nil {
+		variant.VariantType = normalizeVariantType(*input.VariantType)
 	}
 	if input.BillingCycle != nil {
 		variant.BillingCycle = *input.BillingCycle
@@ -573,7 +606,11 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 		variant.QuotaResetDay = input.QuotaResetDay
 	}
 	if input.ExpiryMode != nil {
-		variant.ExpiryMode = *input.ExpiryMode
+		variant.ExpiryMode = normalizeExpiryMode(*input.ExpiryMode)
+	}
+	// 常规套餐不使用流量包过期模式，统一归零避免脏数据。
+	if variant.VariantType != entity.VariantTypeTrafficPack {
+		variant.ExpiryMode = entity.ExpiryModeAlignWithPlan
 	}
 	if input.IsRecommended != nil {
 		variant.IsRecommended = *input.IsRecommended

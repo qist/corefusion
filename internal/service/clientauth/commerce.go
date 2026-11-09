@@ -508,26 +508,38 @@ func (s *CommerceService) applyTrafficPack(ctx context.Context, client *entity.C
 	client.UpdatedAt = now
 
 	// 3. Extend plan expiry if mode is extend_plan
-	if variant.ExpiryMode == entity.ExpiryModeExtendPlan && variant.DurationDays > 0 {
-		var newExpiry time.Time
-		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
-			newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
-		} else {
-			newExpiry = now.AddDate(0, 0, variant.DurationDays)
-		}
-		client.ExpiresAt = &newExpiry
-
-		// Also update subscription expiry
-		if client.SubscriptionID != nil {
-			sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
-			if err == nil {
-				sub.ExpiresAt = &newExpiry
-				s.subRepo.Update(ctx, sub)
+	if variant.ExpiryMode == entity.ExpiryModeExtendPlan {
+		if variant.IsPermanent() {
+			// 永久流量包：直接清空到期时间（client + 订阅都 = 永不过期）。
+			client.ExpiresAt = nil
+			if client.SubscriptionID != nil {
+				if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
+					sub.ExpiresAt = nil
+					s.subRepo.Update(ctx, sub)
+				}
 			}
-		}
+			log.Printf("[commerce] traffic pack %d made client %d permanent", variant.ID, client.ID)
+		} else if variant.DurationDays > 0 {
+			var newExpiry time.Time
+			if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+				newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
+			} else {
+				newExpiry = now.AddDate(0, 0, variant.DurationDays)
+			}
+			client.ExpiresAt = &newExpiry
 
-		log.Printf("[commerce] traffic pack %d extended client %d expiry by %d days to %v",
-			variant.ID, client.ID, variant.DurationDays, newExpiry)
+			// Also update subscription expiry
+			if client.SubscriptionID != nil {
+				sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID)
+				if err == nil {
+					sub.ExpiresAt = &newExpiry
+					s.subRepo.Update(ctx, sub)
+				}
+			}
+
+			log.Printf("[commerce] traffic pack %d extended client %d expiry by %d days to %v",
+				variant.ID, client.ID, variant.DurationDays, newExpiry)
+		}
 	}
 
 	// Update client record (quota + optionally expiry)
@@ -2624,19 +2636,29 @@ func (s *CommerceService) applyTrafficPackTx(ctx context.Context, tx *gorm.DB, c
 	client.UpdatedAt = now
 
 	// 3. Extend plan expiry if mode is extend_plan
-	if variant.ExpiryMode == entity.ExpiryModeExtendPlan && variant.DurationDays > 0 {
-		var newExpiry time.Time
-		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
-			newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
-		} else {
-			newExpiry = now.AddDate(0, 0, variant.DurationDays)
-		}
-		client.ExpiresAt = &newExpiry
+	if variant.ExpiryMode == entity.ExpiryModeExtendPlan {
+		if variant.IsPermanent() {
+			// 永久流量包：client + 订阅都清空到期时间。
+			client.ExpiresAt = nil
+			if client.SubscriptionID != nil {
+				tx.Model(&entity.Subscription{}).
+					Where("id = ?", *client.SubscriptionID).
+					UpdateColumn("expires_at", nil)
+			}
+		} else if variant.DurationDays > 0 {
+			var newExpiry time.Time
+			if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
+				newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
+			} else {
+				newExpiry = now.AddDate(0, 0, variant.DurationDays)
+			}
+			client.ExpiresAt = &newExpiry
 
-		if client.SubscriptionID != nil {
-			tx.Model(&entity.Subscription{}).
-				Where("id = ?", *client.SubscriptionID).
-				UpdateColumn("expires_at", newExpiry)
+			if client.SubscriptionID != nil {
+				tx.Model(&entity.Subscription{}).
+					Where("id = ?", *client.SubscriptionID).
+					UpdateColumn("expires_at", newExpiry)
+			}
 		}
 	}
 

@@ -4431,13 +4431,13 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 // containsInt64 checks if a slice contains a specific int64 value.
 // buildPublicClientConfigItems 组装门户「更多订阅」弹窗用的格式列表。
 //
-// 可见性规则（2026-11-03）：
-//   - mihomo_configs 是具体客户端配置：必须显式关联当前套餐（plan_ids 含 plan_id）。
-//     plan_ids 为空 = 未关联 → 不返回（不再当作 universal 对所有套餐可见）。
-//   - subscription_formats 中的 singbox_json / xray_json 是具体客户端配置，规则与 mihomo_configs
-//     一致：未关联当前套餐（plan_ids 为空或不含 plan_id）→ 不返回。
-//   - subscription_formats 中的 base64_uri / raw_uri 等通用格式保留默认语义：
-//     plan_ids 为空表示内置默认格式，对所有套餐可见。
+// 可见性规则（2026-11-09 修正）：
+//   - plan_ids 为空 = 通用配置，对所有套餐可见（管理端列表里显示为 "All"）；
+//   - plan_ids 非空 = 只对这些套餐的客户端显示。
+//
+// 之前的实现把「空 plan_ids」当成了「未关联 → 不显示」，与后台列表的 "All"
+// 语义相反：库里已有的 Sing-Box / V2Ray JSON / 旧的 Clash 配置全部从门户消失，
+// 用户只看到 Base64 / Raw 两种格式（"订阅格式少了很多"）。
 func buildPublicClientConfigItems(
 	ctx context.Context,
 	mihomoRepo *repository.MihomoConfigRepository,
@@ -4454,8 +4454,8 @@ func buildPublicClientConfigItems(
 			continue
 		}
 		planIDs := []int64(cfg.PlanIDs)
-		// 未关联任何套餐 → 门户不显示。
-		if len(planIDs) == 0 || !containsInt64(planIDs, planID) {
+		// 未关联套餐 = 通用配置（All），对所有套餐可见；关联了则只对命中的套餐可见。
+		if len(planIDs) > 0 && !containsInt64(planIDs, planID) {
 			continue
 		}
 		cfgItems = append(cfgItems, gin.H{
@@ -4480,14 +4480,9 @@ func buildPublicClientConfigItems(
 		if !format.Enabled {
 			continue
 		}
-		// sing-box / xray 是具体客户端配置：必须显式关联当前套餐才在门户显示，
-		// plan_ids 为空不再当作「默认格式」对所有套餐可见（与 mihomo_configs 一致）。
-		if isPlanGatedClientFormat(format.Format) {
-			if !containsInt64([]int64(format.PlanIDs), planID) {
-				continue
-			}
-		} else if len(format.PlanIDs) > 0 && !containsInt64([]int64(format.PlanIDs), planID) {
-			// base64 / raw 等通用格式：plan_ids 为空 = 默认格式，不受套餐关联限制。
+		// 空 plan_ids = 通用格式（管理端显示 "All"），对所有套餐可见；
+		// 关联了套餐的则只对该套餐的客户端显示。
+		if len(format.PlanIDs) > 0 && !containsInt64([]int64(format.PlanIDs), planID) {
 			continue
 		}
 		fmtItems = append(fmtItems, gin.H{
@@ -4504,16 +4499,6 @@ func buildPublicClientConfigItems(
 	}
 
 	return append(cfgItems, fmtItems...), nil
-}
-
-// isPlanGatedClientFormat 判断某订阅格式是否属于「具体客户端配置」，
-// 这类格式必须显式关联套餐后才在门户可见（不允许用空 plan_ids 当默认格式全量下发）。
-func isPlanGatedClientFormat(format string) bool {
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "singbox", "sing_box", "sing-box", "singbox_json", "xray", "xray_json":
-		return true
-	}
-	return false
 }
 
 func containsInt64(slice []int64, val int64) bool {

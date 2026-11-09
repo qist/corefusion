@@ -392,8 +392,11 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('plan.effectiveDays')">
-          <el-switch v-if="variantForm.variant_type === 'plan'" v-model="variantForm.is_permanent" :active-text="t('plan.permanent')" />
-          <el-input-number v-if="variantForm.variant_type !== 'plan' || !variantForm.is_permanent" v-model="variantForm.duration_days" :min="1" style="margin-left:12px" />
+          <!-- 永久有效对所有规格类型开放：常规套餐 = 不设到期时间；
+               流量包 = 把已有套餐/订阅改为永不过期（保存时会自动用 extend_plan 语义）。 -->
+          <el-switch v-model="variantForm.is_permanent" :active-text="t('plan.permanent')" />
+          <el-input-number v-if="!variantForm.is_permanent" v-model="variantForm.duration_days" :min="1" style="margin-left:12px" />
+          <span v-if="variantForm.is_permanent" style="margin-left:12px;font-size:12px;color:#909399">{{ t('plan.permanentHint') }}</span>
         </el-form-item>
         <el-form-item :label="t('plan.priceYuan')"><el-input-number v-model="variantForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
         <el-form-item :label="t('plan.originalPriceYuan')"><el-input-number v-model="variantForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
@@ -868,8 +871,11 @@ async function saveVariant() {
     payload.price = Math.round(payload.price_yuan * 100)
     payload.original_price = Math.round(payload.original_price_yuan * 100)
     payload.quota_bytes = Math.round(payload.quota_gb * 1073741824)
-    if (payload.variant_type === 'plan' && payload.is_permanent) {
+    if (payload.is_permanent) {
       payload.duration_days = -1
+      // 流量包的"延长有效期"只有在 extend_plan 模式才生效：
+      // 勾选永久时自动切到该模式，否则 align_with_plan 会忽略这个设置。
+      if (payload.variant_type === 'traffic_pack') payload.expiry_mode = 'extend_plan'
     }
     delete payload.price_yuan
     delete payload.original_price_yuan

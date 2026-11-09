@@ -987,6 +987,25 @@
         <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort')">
           <el-input v-model="siteForm.listen_port" placeholder="443" style="width:120px" />
         </el-form-item>
+        <!-- Reality 模板：监听方式可选 127.0.0.1 端口 或 unix socket。
+             unix 形式生成 `listen unix:<path> ssl proxy_protocol;`，Xray REALITY 的 dest 可直接指向它。 -->
+        <template v-else-if="siteForm.template==='reality'">
+          <el-form-item :label="t('proxy.realityListenMode')">
+            <el-radio-group v-model="siteForm.listen_mode">
+              <el-radio-button value="tcp">{{ t('proxy.realityListenTcp') }}</el-radio-button>
+              <el-radio-button value="unix">{{ t('proxy.realityListenUnix') }}</el-radio-button>
+            </el-radio-group>
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityListenHint') }}</div>
+          </el-form-item>
+          <el-form-item v-if="siteForm.listen_mode==='unix'" :label="t('proxy.realitySocket')">
+            <el-input v-model="siteForm.listen_socket" placeholder="/dev/shm/nginx.sock" style="width:320px" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realitySocketHint') }}</div>
+          </el-form-item>
+          <el-form-item v-else :label="t('proxy.realityPort')">
+            <el-input v-model="siteForm.listen_port" placeholder="9443" style="width:160px" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityPortHint') }}</div>
+          </el-form-item>
+        </template>
         <el-form-item v-else :label="siteForm.template==='sni' ? t('proxy.sniListenAddr') : t('proxy.listenPort')">
           <el-input v-model="siteForm.listen_port" :placeholder="siteForm.template==='sni' ? '443 / 0.0.0.0:443' : '80'" style="width:160px" />
         </el-form-item>
@@ -1922,7 +1941,7 @@ async function runImport(dryRun) {
 const siteSaving = ref(false)
 const siteForm = ref({
   domain: '', upstreams: [''], path: '', backend_path: '', template: 'http',
-  listen_port: '80', listen_socket: '',
+  listen_port: '80', listen_socket: '', listen_mode: 'tcp',
   use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
   custom_config: '', server_config: '', location_config: '',
   l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2292,7 +2311,7 @@ siteForm.value = {
 // Reality 是 TLS 透传（由内核的 Reality 处理证书 ✓）✗ 不需要域名 ✗ →
   // 留空会让人以为要填 ✓，默认给 127.0.0.1 当占位 ✓（只作标识 ✓，不参与分流 ✓）
   domain: isReality ? '127.0.0.1' : '', upstreams: [''], path: '', backend_path: '', template,
-    listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '',
+    listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '', listen_mode: 'tcp',
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2339,7 +2358,7 @@ function showPanelProxy() {
   const defaultPort = settings.value.default_http_port
   siteForm.value = {
     domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'panel_forward',
-    listen_port: defaultPort, listen_socket: '',
+    listen_port: defaultPort, listen_socket: '', listen_mode: 'tcp',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2361,7 +2380,7 @@ function showForwardProxy(template) {
   const d = forwardDerived(template)
   siteForm.value = {
     domain: '', upstreams: [d.upstream], path: d.path, backend_path: d.path, template,
-    listen_port: settings.value.default_http_port, listen_socket: '',
+    listen_port: settings.value.default_http_port, listen_socket: '', listen_mode: 'tcp',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2412,7 +2431,7 @@ function editSite(row) {
     id: row.id, domain: row.domain, upstreams, path: row.path,
     backend_path: row.backend_path,
     template: row.template, listen_port: listenPort,
-    listen_socket: row.listen_socket,
+    listen_socket: row.listen_socket, listen_mode: row.listen_socket ? 'unix' : 'tcp',
     use_cert: row.template === 'reality' ? true : !!row.cert_path, cert_id: certId,
     cert_path: row.cert_path, key_path: row.key_path,
     custom_config: row.custom_config,
@@ -2459,8 +2478,10 @@ function buildSitePayload() {
     path: pathValue,
     backend_path: siteForm.value.backend_path,
     template: siteForm.value.template,
-    listen_port: siteForm.value.listen_port,
-    listen_socket: siteForm.value.listen_socket,
+    listen_port: siteForm.value.template === 'reality' && siteForm.value.listen_mode === 'unix' ? '' : siteForm.value.listen_port,
+    listen_socket: siteForm.value.template === 'reality' && siteForm.value.listen_mode === 'unix'
+      ? String(siteForm.value.listen_socket || '').trim()
+      : (siteForm.value.template === 'reality' ? '' : siteForm.value.listen_socket),
     cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
     dual_cert: siteForm.value.dual_cert !== false,
     key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',
@@ -2551,8 +2572,8 @@ async function saveSite() {
   try {
     const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
     const pathValue = siteForm.value.template === 'l4' ? (siteForm.value.listen_port) : (siteForm.value.path)
-    // Check for duplicate path on the same domain (skip SNI and L4 templates)
-    if (siteForm.value.template !== 'sni' && siteForm.value.template !== 'l4') {
+    // Check for duplicate path on the same domain (skip SNI / L4 / Reality)
+    if (!['sni', 'l4', 'reality'].includes(siteForm.value.template)) {
       const domain = siteForm.value.domain
       const dup = allSites.value.find(s =>
         s.id !== siteForm.value.id &&
@@ -2563,6 +2584,22 @@ async function saveSite() {
         ElMessage.error(t('proxy.duplicatePath'))
         siteSaving.value = false
         return
+      }
+    }
+    if (siteForm.value.template === 'reality') {
+      // Reality 模板必须挂证书（listen ... ssl 没有证书 nginx -t 直接失败）。
+      if (!siteForm.value.cert_path || !siteForm.value.key_path) {
+        ElMessage.warning(t('proxy.realityCertRequired'))
+        siteSaving.value = false
+        return
+      }
+      if (siteForm.value.listen_mode === 'unix') {
+        const sock = String(siteForm.value.listen_socket || '').trim()
+        if (!sock || !sock.includes('/')) {
+          ElMessage.warning(t('proxy.realitySocketRequired'))
+          siteSaving.value = false
+          return
+        }
       }
     }
     const payload = buildSitePayload()

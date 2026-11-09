@@ -1180,17 +1180,31 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		sb.WriteString("    }\n\n")
 	}
 
-	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required
+	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required.
+	// 监听方式二选一：127.0.0.1:<端口>（默认）或 unix:<path>。
+	// unix 形式正是 Xray REALITY 的 dest 可直接指向的形态：
+	//   listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
+	// 必须带 ssl：REALITY 会把客户端 ClientHello 转给 target，target 不吐 TLS 就握手失败。
 	for _, rs := range realitySites {
+		socket := normalizeNginxUnixSocket(rs.ListenSocket)
+		useSocket := socket != ""
 		port := rs.ListenPort
 		if port == "" {
 			port = "9443"
 		}
-		sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
+		if useSocket {
+			sb.WriteString(fmt.Sprintf("    # Reality unix:%s\n", socket))
+		} else {
+			sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
+		}
 		sb.WriteString("    server {\n")
-		sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
-		if rs.EnableIpv6 || globalIPv6 {
-			sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
+		if useSocket {
+			sb.WriteString(fmt.Sprintf("        listen unix:%s ssl proxy_protocol;\n", socket))
+		} else {
+			sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
+			if rs.EnableIpv6 || globalIPv6 {
+				sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
+			}
 		}
 		sb.WriteString("        http2 on;\n")
 		if rs.Domain == "" {
@@ -1215,7 +1229,11 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		}
 		// PROXY Protocol real_ip settings
 		sb.WriteString("        set_real_ip_from 127.0.0.1;\n")
-		if rs.EnableIpv6 || globalIPv6 {
+		if useSocket {
+			// AF_UNIX 的 peer 不是 IP，127.0.0.1 匹配不上 → 必须显式信任 unix:，
+			// 否则 $remote_addr 恒为 "unix:"（与普通 socket 站点一致）。
+			sb.WriteString("        set_real_ip_from unix:;\n")
+		} else if rs.EnableIpv6 || globalIPv6 {
 			sb.WriteString("        set_real_ip_from ::1;\n")
 		}
 		sb.WriteString("        real_ip_header proxy_protocol;\n")
@@ -1699,6 +1717,30 @@ func listenHostIsIPv6(addr string) bool {
 		return false
 	}
 	return strings.Contains(host, ":")
+}
+
+// normalizeNginxUnixSocket 归一 unix socket 监听路径：
+// 支持 "/dev/shm/nginx.sock"、"unix:/dev/shm/nginx.sock"、"unix:///dev/shm/nginx.sock"。
+// 返回空串表示「不是 unix 监听」。
+func normalizeNginxUnixSocket(addr string) string {
+	s := strings.TrimSpace(addr)
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "unix://") {
+		s = strings.TrimPrefix(s, "unix://")
+	} else if strings.HasPrefix(s, "unix:") {
+		s = strings.TrimPrefix(s, "unix:")
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	// 纯端口/IP:端口 不是 socket 路径（防止把 "9443" 当 socket）。
+	if !strings.Contains(s, "/") {
+		return ""
+	}
+	return s
 }
 
 func listenPortOnly(listen string) string {

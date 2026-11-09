@@ -42,6 +42,59 @@ func TestNginxConfigSocketOnlySiteDoesNotListenOn443(t *testing.T) {
 // websocket 回源的 URI 语义必须交给 nginx 原生规则（upstream 末尾有没有 /），
 // 不能按 backend_path 强行补 /：迁移来的 xray ws 入站需要完整路径 /efnxuvlqws，
 // 补 / 会把它剥成 / → 上游 404（实测 TROJANWS / VMESSWS 全挂）。
+// Reality 模板必须支持 unix socket 监听（Xray REALITY 的 dest 直接指向它）：
+//
+//	listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
+//
+// 且不能再生成 127.0.0.1:<端口> 的 TCP 监听。
+func TestNginxRealityUnixSocketListen(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
+		ListenSocket: "/dev/shm/nginx.sock", ListenPort: "",
+		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem",
+		Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "listen unix:/dev/shm/nginx.sock ssl proxy_protocol;") {
+		t.Fatalf("Reality 模板缺少 unix listen：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "listen 127.0.0.1:9443") {
+		t.Fatalf("使用 unix socket 时不应再监听 TCP 端口：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "set_real_ip_from unix:;") {
+		t.Fatalf("unix socket 必须信任 unix: 源，否则拿不到真实 IP：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "ssl_certificate ../certs/example.com/cert.pem;") {
+		t.Fatalf("Reality 模板必须挂证书：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "http2 on;") {
+		t.Fatalf("Reality 模板必须强制 HTTP/2：\n%s", cfg)
+	}
+}
+
+// Reality 默认仍是 127.0.0.1:<端口>，且支持 "unix:" 前缀写法。
+func TestNginxRealityPortAndUnixPrefix(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
+		ListenPort: "9443", CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem",
+		Enabled: true,
+	}, {
+		ServerID: 2, Domain: "127.0.0.2", Template: "reality", Path: "/",
+		ListenSocket: "unix:/dev/shm/reality2.sock", ListenPort: "9444",
+		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem", Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "listen 127.0.0.1:9443 ssl proxy_protocol;") {
+		t.Fatalf("Reality 默认应监听 127.0.0.1:9443：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "listen unix:/dev/shm/reality2.sock ssl proxy_protocol;") {
+		t.Fatalf("unix: 前缀写法应被归一：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "listen unix:unix:") {
+		t.Fatalf("unix: 前缀不应重复：\n%s", cfg)
+	}
+}
+
 func TestNginxConfigWebsocketKeepsUpstreamURI(t *testing.T) {
 	sites := []entity.NginxSite{{
 		ServerID: 2, Domain: "w.example.com", Template: "websocket", Path: "/efnxuvlqws",

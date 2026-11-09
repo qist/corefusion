@@ -1884,7 +1884,7 @@ const localRealityServers = ref([])
 // 所有可用的 Reality 目标（本地 + 预设）
 const allRealityTargets = computed(() => {
   const locals = localRealityServers.value.map(s => ({
-    target: `127.0.0.1:${s.port}`,
+    target: s.target || `127.0.0.1:${s.port}`,
     port: s.port,
     source: 'local',
     id: s.id,
@@ -2760,7 +2760,7 @@ async function loadLocalRealityServers() {
       caddySites.filter(s => s.template === 'reality').forEach(s => {
         const port = (s.domain || ':9443').replace(/^:/, '') || '9443'
         const sni = s.reality_sni || s._reality_sni || s.domain?.replace(/^:/, '') || `reality-local-${port}`
-        servers.push({ id: s.id, sni, port, source: 'caddy' })
+        servers.push({ id: s.id, sni, port, target: `127.0.0.1:${port}`, source: 'caddy' })
       })
     }
   } catch {}
@@ -2769,8 +2769,15 @@ async function loadLocalRealityServers() {
     const nginxSites = await client.get(`${nodeBase.value}/nginx/sites`)
     if (Array.isArray(nginxSites)) {
       nginxSites.filter(s => s.template === 'reality').forEach(s => {
+        // Reality 模板有两种监听：127.0.0.1:<端口> 或 unix:<path>。
+        // Xray REALITY 的 dest 必须与之一致，否则回落握手直接失败。
+        const sock = String(s.listen_socket || '').trim().replace(/^unix:\/\//, '').replace(/^unix:/, '')
+        if (sock) {
+          servers.push({ id: s.id, target: `unix:${sock}`, sni: '', source: 'nginx' })
+          return
+        }
         const port = parseInt(s.listen_port || s.domain || '9443') || 9443
-        servers.push({ id: s.id, port, source: 'nginx' })
+        servers.push({ id: s.id, port, target: `127.0.0.1:${port}`, source: 'nginx' })
       })
     }
   } catch {}
@@ -3247,9 +3254,9 @@ function genRandomShortId(rf) {
   emit()
 }
 
-// Check if a target is a local Reality server (127.0.0.1:port format)
+// Check if a target is a local Reality server (127.0.0.1:port or unix:<path>)
 function isLocalTarget(target) {
-  return target && target.startsWith('127.0.0.1:')
+  return !!target && (target.startsWith('127.0.0.1:') || target.startsWith('unix:'))
 }
 
 function onTargetChange() {
@@ -4747,7 +4754,7 @@ function showAdd() {
   if (localRealityServers.value.length > 0) {
     // Pick first available local server
     const ls = localRealityServers.value[0]
-    rf.streamSettings.reality.target = `127.0.0.1:${ls.port}`
+    rf.streamSettings.reality.target = ls.target || `127.0.0.1:${ls.port}`
     // 新建默认也要走同一套生成口径：speedtest 格式优先，关闭/取不到域名才回退随机
     const count = 2 + Math.floor(Math.random() * 3)
     const used = collectUsedSnis()

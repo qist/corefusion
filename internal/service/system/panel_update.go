@@ -115,13 +115,43 @@ type PanelUpdateService struct {
 
 // NewPanelUpdateService 创建面板自更新服务。
 func NewPanelUpdateService(db *gorm.DB, settingSvc *SettingService, dataDir, version string) *PanelUpdateService {
-	return &PanelUpdateService{
+	svc := &PanelUpdateService{
 		db:           db,
 		settingSvc:   settingSvc,
 		dataDir:      dataDir,
 		version:      version,
 		repo:         PanelGitHubRepo,
 		executableFn: os.Executable,
+	}
+	svc.cleanupStaleTempFiles()
+	return svc
+}
+
+// cleanupStaleTempFiles 清理历史自更新遗留的临时文件。
+//
+// 自更新成功后进程会立即重启（systemd Restart=on-failure / re-exec），
+// runUpdate 里的 defer os.Remove(tmpPath) 根本来不及执行，于是每次在线更新都会在
+// dataDir 留下一个 panel-update-*（约 100MB）。这里在服务启动时兜底清理：
+// 新进程启动时不存在「另一个正在下载的更新任务」，此时残留文件一定可以删。
+func (s *PanelUpdateService) cleanupStaleTempFiles() {
+	patterns := []string{filepath.Join(s.dataDir, "panel-update-*")}
+	if s.executableFn != nil {
+		if exe, err := s.executableFn(); err == nil && exe != "" {
+			patterns = append(patterns, filepath.Join(filepath.Dir(exe), ".panel-update-*"))
+		}
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, path := range matches {
+			if err := os.Remove(path); err != nil {
+				log.Printf("[panel-update] 清理遗留临时文件失败 %s: %v", path, err)
+				continue
+			}
+			log.Printf("[panel-update] 已清理遗留临时文件 %s", path)
+		}
 	}
 }
 
@@ -350,6 +380,9 @@ func (s *PanelUpdateService) runUpdate(jobID int64, version string) {
 		fail("applying", err)
 		return
 	}
+	// 替换完成后下载的产物已无用：这里显式删除。下面马上会重启进程，
+	// 上面的 defer 不会执行 —— 不删就会在 data/ 留下 ~100MB 的 panel-update-*。
+	os.Remove(tmpPath)
 	s.db.Model(&entity.PanelUpdateJob{}).Where("id = ?", jobID).Update("backup_path", bakPath)
 
 	// 5. 重启（进程会退出，finished_at 尽量先落库）

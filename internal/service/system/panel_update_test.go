@@ -40,6 +40,37 @@ func newPanelUpdateSvcForTest(t *testing.T) (*PanelUpdateService, *gorm.DB, stri
 	return svc, g, exe
 }
 
+// 自更新成功后进程会重启，runUpdate 里的 defer 来不及执行，会在 data/ 留下
+// 约 100MB 的 panel-update-* 与可执行文件同目录的 .panel-update-*；启动时必须兜底清理。
+func TestPanelUpdateCleansStaleTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	g := openSQLiteForTest(t, filepath.Join(dir, "panel-update.db"))
+	exe := filepath.Join(dir, "corefusion")
+	writeFakeELF(t, exe, "current")
+
+	staleData := filepath.Join(dir, "panel-update-2382949862")
+	staleExe := filepath.Join(dir, ".panel-update-123")
+	keep := filepath.Join(dir, "notes.txt")
+	for _, p := range []string{staleData, staleExe, keep} {
+		if err := os.WriteFile(p, []byte("leftover"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+
+	svc := NewPanelUpdateService(g, nil, dir, "v1")
+	svc.executableFn = func() (string, error) { return exe, nil }
+	svc.cleanupStaleTempFiles()
+
+	for _, p := range []string{staleData, staleExe} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s 应被清理，实际仍存在（err=%v）", p, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("不匹配模式的文件不应被删除：%v", err)
+	}
+}
+
 func TestNormalizeSHA256(t *testing.T) {
 	valid := strings.Repeat("a", 64)
 	cases := map[string]string{

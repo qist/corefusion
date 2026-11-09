@@ -2345,6 +2345,10 @@ function onTemplateChange(newTemplate) {
     siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
     // 从 Reality 切走时，把占位域名一起还原 ✓（避免留下莫名的 127.0.0.1 ✓）
     if (siteForm.value.domain === '127.0.0.1') siteForm.value.domain = ''
+    // Reality 的 unix socket 只属于该模板：切走后必须清空，
+    // 否则会以 listen unix:... 的形式残留在普通 HTTP 站点上。
+    siteForm.value.listen_socket = ''
+    siteForm.value.listen_mode = 'tcp'
     // Reset listen_port for non-reality if it was 9443
     if (siteForm.value.listen_port === '9443') {
       siteForm.value.listen_port = newTemplate === 'l4' ? '443' : (settings.value.default_http_port || '80')

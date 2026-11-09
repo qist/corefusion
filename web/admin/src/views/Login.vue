@@ -4,7 +4,7 @@
       <h2 style="text-align:center;margin-bottom:30px">{{ t('common.appName') }}</h2>
 
       <!-- 一步登录：用户名 + 凭据（密码 / 动态码 / 恢复码） -->
-      <el-form :model="form" @submit.prevent="handleLogin" label-position="top">
+      <el-form :model="form" :autocomplete="twofaEnabled ? 'off' : 'on'" @submit.prevent="handleLogin" label-position="top">
         <el-form-item :label="t('auth.username')">
           <el-input v-model="form.username" :placeholder="t('auth.username')" prefix-icon="User" :disabled="loading" @input="onUsernameInput" @keyup.enter="focusCredential" />
         </el-form-item>
@@ -16,7 +16,28 @@
             <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('auth.twofaDetectedHint') }}</div>
           </div>
           <el-form-item>
-            <el-input v-model="credential" :placeholder="t('auth.twofaPlaceholder')" prefix-icon="Key" style="text-align:center;font-size:18px;letter-spacing:4px" autocomplete="one-time-code" :disabled="loading" ref="credentialInput" @keyup.enter="handleLogin" />
+            <!-- 动态码/恢复码属于等效凭据：必须掩码显示，且禁止浏览器/密码管理器把静态密码自动填进来
+                 （曾出现 Chrome 把保存的密码填到本框并明文显示）。readonly 先挡住 autofill，
+                 用户聚焦后才可输入。 -->
+            <el-input
+              v-model="credential"
+              type="password"
+              show-password
+              :placeholder="t('auth.twofaPlaceholder')"
+              prefix-icon="Key"
+              style="text-align:center;font-size:18px;letter-spacing:4px"
+              autocomplete="one-time-code"
+              name="cf-otp"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+              :readonly="otpReadonly"
+              :disabled="loading"
+              ref="credentialInput"
+              @focus="otpReadonly = false"
+              @keyup.enter="handleLogin"
+            />
           </el-form-item>
         </template>
 
@@ -78,6 +99,9 @@ const credential = ref('')
 const twofaEnabled = ref(false)
 const checkingTwofa = ref(false)
 const credentialInput = ref(null)
+// 动态码框先只读，防止浏览器在渲染瞬间把已保存的密码自动填充进来并明文展示；
+// 用户点击/聚焦后解除只读（不影响正常输入与密码管理器显式填写）。
+const otpReadonly = ref(true)
 
 const currentLocaleName = computed(() => {
   const found = availableLocales.find(l => l.code === locale.value)
@@ -99,6 +123,7 @@ function onUsernameInput() {
   clearTimeout(usernameTimer)
   twofaEnabled.value = false
   credential.value = ''
+  otpReadonly.value = true
   usernameTimer = setTimeout(checkTwofaStatus, 400)
 }
 

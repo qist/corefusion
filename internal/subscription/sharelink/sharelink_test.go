@@ -346,3 +346,27 @@ func TestRealityClientParamsRandomPicksAndCaches(t *testing.T) {
 		t.Errorf("全空列表应保持空: %+v", got)
 	}
 }
+
+// xray 的 multiMode 在 grpcSettings 顶层（不是 settings.multiMode）：
+// 漏读会让链接缺 mode=multi，multiMode 服务端直接连不上。
+func TestVlessLinkKeepsGRPCMultiMode(t *testing.T) {
+	link := Generate(Node{
+		Tag: "g", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		Settings: map[string]interface{}{
+			"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}},
+		},
+		StreamSettings: map[string]interface{}{
+			"network": "grpc",
+			"grpcSettings": map[string]interface{}{
+				"serviceName": "svc",
+				"authority":   "cdn.example.com",
+				"multiMode":   true,
+			},
+		},
+	})
+	for _, want := range []string{"serviceName=svc", "mode=multi", "authority=cdn.example.com"} {
+		if !strings.Contains(link, want) {
+			t.Errorf("链接缺 %s: %s", want, link)
+		}
+	}
+}

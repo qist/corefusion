@@ -1153,3 +1153,55 @@ func TestPreferFastTiers(t *testing.T) {
 		t.Fatal("超过阈值应被过滤")
 	}
 }
+
+// 生产入站把 uTLS 指纹存在 tlsSettings.settings[0].fingerprint（xray 25+ 写法），
+// 以前只读顶层 fingerprint → sing-box / xray 产物里的指纹全部丢失。
+func TestBuildExtraKeepsTLSFingerprintFromSettings(t *testing.T) {
+	ss := map[string]interface{}{
+		"security": "tls",
+		"tlsSettings": map[string]interface{}{
+			"serverName": "a.com",
+			"settings":   []interface{}{map[string]interface{}{"fingerprint": "chrome"}},
+		},
+	}
+	extra := buildExtra(map[string]interface{}{}, ss, "vless")
+	if extra["client-fingerprint"] != "chrome" {
+		t.Fatalf("settings[0].fingerprint 应映射为 client-fingerprint，实际 %v", extra["client-fingerprint"])
+	}
+}
+
+// gRPC 的 authority / multiMode 在 grpcSettings 顶层，必须带进 grpc-opts，
+// 否则 xray 片段丢参数、mihomo/sing-box 也无法识别该整条剔除。
+func TestBuildExtraKeepsGRPCAuthorityAndMultiMode(t *testing.T) {
+	ss := map[string]interface{}{
+		"network": "grpc",
+		"grpcSettings": map[string]interface{}{
+			"serviceName": "svc", "authority": "cdn.example.com", "multiMode": true,
+		},
+	}
+	extra := buildExtra(map[string]interface{}{}, ss, "vless")
+	opts, _ := extra["grpc-opts"].(map[string]interface{})
+	if opts["grpc-service-name"] != "svc" || opts["grpc-authority"] != "cdn.example.com" || opts["grpc-multi-mode"] != true {
+		t.Fatalf("grpc-opts 丢参数: %v", opts)
+	}
+}
+
+// gRPC multiMode：mihomo / sing-box 的出站都没有该字段，发出去就是"能加载、连不上"，
+// 必须整条剔除；未开 multiMode 的普通 gRPC 节点不受影响。
+func TestGRPCMultiModeDroppedForMihomoAndSingbox(t *testing.T) {
+	opts := map[string]interface{}{"grpc-service-name": "svc", "grpc-multi-mode": true}
+	node := &formatter.Node{
+		Name: "g", Protocol: "vless", Host: "1.2.3.4", Port: 443, Transport: "grpc",
+		Extra: map[string]interface{}{"grpc-opts": opts},
+	}
+	if got := mihomoNodeDropReason(node); got != "grpc-multiMode" {
+		t.Errorf("mihomo drop reason = %q, want grpc-multiMode", got)
+	}
+	if got := singboxNodeDropReason(node); got != "grpc-multiMode" {
+		t.Errorf("singbox drop reason = %q, want grpc-multiMode", got)
+	}
+	delete(opts, "grpc-multi-mode")
+	if mihomoNodeDropReason(node) != "" || singboxNodeDropReason(node) != "" {
+		t.Error("未开 multiMode 的普通 gRPC 节点不应被剔除")
+	}
+}

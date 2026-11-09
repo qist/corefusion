@@ -199,7 +199,7 @@ func generateVmessLink(n Node) string {
 		}
 		obj["path"] = getString(grpc, "serviceName", "")
 		obj["authority"] = getString(grpc, "authority", "")
-		if getBool(getMap(grpc, "settings"), "multiMode") {
+		if grpcMultiMode(grpc) {
 			obj["type"] = "multi"
 		}
 	case "httpupgrade":
@@ -743,6 +743,17 @@ func RealityClientParams(ss map[string]interface{}) RealityParams {
 	return out
 }
 
+// grpcMultiMode 判断服务端 gRPC 是否开了 multiMode。
+// xray 的字段在 `grpcSettings.multiMode`（顶层），sing-box 反推出的是
+// `transport.settings.multiMode`；以前只读后者，xray 服务端开了 multiMode
+// 时链接里不会带 `mode=multi`，客户端会拿服务名当完整路径 → 连不上。
+func grpcMultiMode(grpc map[string]interface{}) bool {
+	if getBool(grpc, "multiMode") {
+		return true
+	}
+	return getBool(getMap(grpc, "settings"), "multiMode")
+}
+
 func getFingerprint(tls map[string]interface{}) string {
 	if tls == nil {
 		return ""
@@ -958,7 +969,7 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 		if auth := getString(grpc, "authority", ""); auth != "" {
 			params.Set("authority", auth)
 		}
-		if getBool(getMap(grpc, "settings"), "multiMode") {
+		if grpcMultiMode(grpc) {
 			params.Set("mode", "multi")
 		}
 	case "httpupgrade":

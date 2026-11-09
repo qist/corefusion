@@ -567,6 +567,21 @@ func transportUnsupportedReason(node *formatter.Node) string {
 	return "transport=" + t
 }
 
+// nodeGRPCMultiMode 判断节点是否用了 gRPC multiMode。
+// mihomo / sing-box 的出站都**没有** multiMode 字段：下发后客户端把 serviceName
+// 当成完整服务名，而服务端按"前缀"匹配 → 能加载、连不上，必须整条剔除。
+func nodeGRPCMultiMode(node *formatter.Node) bool {
+	if node == nil || node.Extra == nil {
+		return false
+	}
+	opts, ok := node.Extra["grpc-opts"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	multi, _ := opts["grpc-multi-mode"].(bool)
+	return multi
+}
+
 // mihomoNodeDropReason 返回该节点**不能**进 mihomo 片段/订阅的原因（空串=可以）。
 func mihomoNodeDropReason(node *formatter.Node) string {
 	if node == nil {
@@ -577,6 +592,9 @@ func mihomoNodeDropReason(node *formatter.Node) string {
 	}
 	if reason := transportUnsupportedReason(node); reason != "" {
 		return reason
+	}
+	if nodeGRPCMultiMode(node) {
+		return "grpc-multiMode"
 	}
 	return ""
 }
@@ -594,6 +612,10 @@ func singboxNodeDropReason(node *formatter.Node) string {
 	// "unknown field transport"，整份订阅都加载不了。
 	if reason := transportUnsupportedReason(node); reason != "" {
 		return reason
+	}
+	// gRPC multiMode：sing-box 的 transport 没有这个字段 → 服务名对不上、连不上。
+	if nodeGRPCMultiMode(node) {
+		return "grpc-multiMode"
 	}
 	// REALITY：**只有 xray 当服务端时**才不能进 sing-box 格式。xray ≥26.9.8 的 REALITY 服务端要求
 	// ClientHello 带 `X25519MLKEM768` key share 且排在 X25519 之前（xtls/reality 提交 8cdf7bf9c7f0）；

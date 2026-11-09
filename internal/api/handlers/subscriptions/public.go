@@ -2828,6 +2828,27 @@ func normalizeMihomoProtocol(t string) string {
 	return t
 }
 
+// tlsFingerprint 取 TLS 客户端指纹：兼容 `settings[0].fingerprint`（面板编辑器 /
+// xray 25+ 的写法）与顶层 `fingerprint`（老配置 / 内部视图）。
+func tlsFingerprint(tls map[string]interface{}) string {
+	if tls == nil {
+		return ""
+	}
+	if settings, ok := tls["settings"].([]interface{}); ok {
+		for _, item := range settings {
+			if s, ok := item.(map[string]interface{}); ok {
+				if fp, ok := s["fingerprint"].(string); ok && fp != "" {
+					return fp
+				}
+			}
+		}
+	}
+	if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
+		return fp
+	}
+	return ""
+}
+
 func getTLSServerName(ss map[string]interface{}) string {
 	if ss == nil {
 		return ""
@@ -2903,7 +2924,10 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if alpn := getStringSlice(tls, "alpn"); len(alpn) > 0 {
 				extra["alpn"] = alpn
 			}
-			if fp, ok := tls["fingerprint"].(string); ok && fp != "" {
+			// 指纹有两种存法：面板编辑器/xray 25+ 写 `tlsSettings.settings[0].fingerprint`，
+			// 老配置/内部视图写顶层 `fingerprint`。以前只认顶层 → 生产入站（settings[] 形态）
+			// 的 uTLS 指纹在 sing-box / xray 产物里全部丢失。
+			if fp := tlsFingerprint(tls); fp != "" {
 				extra["client-fingerprint"] = fp
 			}
 			extra["skip-cert-verify"] = getBool(tls, "allowInsecure")
@@ -3050,7 +3074,20 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 			if sn, ok := grpc["serviceName"].(string); ok && sn != "" {
 				opts["grpc-service-name"] = sn
 			}
-			// grpc-mode（multiMode）mihomo 不支持，无需映射（原先是个空 if，staticcheck SA4006 已删）
+			// authority / multiMode 是 xray gRPC 服务端 grpcSettings 的**顶层**字段。
+			// 以前只带 serviceName：multiMode 服务端拿到的是普通 gRPC（服务名被当完整路径，
+			// 直接连不上）；authority 丢了则 Host 头不对，会被反代按默认站点拒掉。
+			if auth, ok := grpc["authority"].(string); ok && auth != "" {
+				opts["grpc-authority"] = auth
+			}
+			if multi, ok := grpc["multiMode"].(bool); ok && multi {
+				opts["grpc-multi-mode"] = true
+			} else if multi, ok := getMap(grpc, "settings")["multiMode"].(bool); ok && multi {
+				// sing-box 形状：transport 的 multiMode 在 settings 里
+				opts["grpc-multi-mode"] = true
+			}
+			// mihomo 不支持 multiMode（没有对应字段），由 mihomoNodeDropReason 整条剔除，
+			// 避免发一个服务名对不上的死节点。
 			if len(opts) > 0 {
 				extra["grpc-opts"] = opts
 			}

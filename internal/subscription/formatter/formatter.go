@@ -839,11 +839,20 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 		}
 		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
 			grpcSettings := map[string]interface{}{}
-			if sn, ok := grpcOpts["grpc-service-name"].(string); ok {
+			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
 				grpcSettings["serviceName"] = sn
 			}
-			// grpc-mode/multiMode not supported by mihomo
-			streamSettings["grpcSettings"] = grpcSettings
+			// authority / multiMode 是服务端 gRPC 的顶层配置，客户端必须一致：
+			// multiMode 服务端按"服务名前缀"路由，客户端不写就会拿服务名当完整路径 → 连不上。
+			if auth, ok := grpcOpts["grpc-authority"].(string); ok && auth != "" {
+				grpcSettings["authority"] = auth
+			}
+			if multi, ok := grpcOpts["grpc-multi-mode"].(bool); ok && multi {
+				grpcSettings["multiMode"] = true
+			}
+			if len(grpcSettings) > 0 {
+				streamSettings["grpcSettings"] = grpcSettings
+			}
 		}
 		if xhttpOpts, ok := node.Extra["xhttp-opts"].(map[string]interface{}); ok {
 			xhttpSettings := map[string]interface{}{}

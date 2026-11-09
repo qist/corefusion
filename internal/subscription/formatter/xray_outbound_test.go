@@ -291,3 +291,24 @@ func TestParseURIToNodeAcceptsShadowsocksAlias(t *testing.T) {
 		}
 	}
 }
+
+// gRPC 服务端 grpcSettings 的 authority / multiMode 必须原样复制到客户端：
+// 只带 serviceName 时，multiMode 服务端会把服务名当成完整路径 → 能加载、连不上。
+func TestXrayFormatterKeepsGRPCAuthorityAndMultiMode(t *testing.T) {
+	ob := renderFirstXrayOutbound(t, Node{
+		Name: "g", Protocol: "vless", Host: "1.2.3.4", Port: 443, Transport: "grpc",
+		UUID: "11111111-1111-1111-1111-111111111111",
+		Extra: map[string]interface{}{
+			"grpc-opts": map[string]interface{}{
+				"grpc-service-name": "svc",
+				"grpc-authority":    "cdn.example.com",
+				"grpc-multi-mode":   true,
+			},
+		},
+	})
+	ss, _ := ob["streamSettings"].(map[string]interface{})
+	gs, _ := ss["grpcSettings"].(map[string]interface{})
+	if gs["serviceName"] != "svc" || gs["authority"] != "cdn.example.com" || gs["multiMode"] != true {
+		t.Fatalf("grpcSettings 丢了参数: %v", gs)
+	}
+}

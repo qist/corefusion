@@ -454,7 +454,7 @@ onUnmounted(()=>{if(timer)clearInterval(timer)})
 .sec-tab{padding:8px 14px;cursor:pointer;border-radius:4px;font-size:13px;color:var(--el-text-color-regular);transition:all .15s}
 .sec-tab:hover{background:var(--el-fill-color-light);color:var(--el-color-primary)}
 .sec-tab.active{background:var(--el-color-primary-light-9);color:var(--el-color-primary);font-weight:600}
-.ver-card{width:calc(16.66%-8px);min-width:100px;padding:10px;border:1px solid #dcdfe6;border-radius:6px;cursor:pointer;text-align:center;transition:all .2s}
+.ver-card{width:calc(16.66% - 8px);min-width:100px;padding:10px;border:1px solid #dcdfe6;border-radius:6px;cursor:pointer;text-align:center;transition:all .2s}
 .ver-card:hover{border-color:#409eff;background:#ecf5ff}
 .ver-card-current{border-color:#67c23a;background:#f0f9eb}
 </style>

@@ -18,7 +18,7 @@ jobs:
   # ── 静态检查 + 单元测试（不需要前端产物，用占位 index.html 满足 go:embed）──
   verify:
     name: vet & test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -61,7 +61,7 @@ jobs:
   # ── 前端单独构建一次，产物通过 artifact 传给各架构编译 job ──
   frontend:
     name: frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
@@ -89,7 +89,7 @@ jobs:
   build:
     name: build ${{ matrix.goarch }}
     needs: [verify, frontend]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

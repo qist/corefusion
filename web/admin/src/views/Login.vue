@@ -16,9 +16,9 @@
             <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('auth.twofaDetectedHint') }}</div>
           </div>
           <el-form-item>
-            <!-- 动态码/恢复码属于等效凭据：必须掩码显示，且禁止浏览器/密码管理器把静态密码自动填进来
-                 （曾出现 Chrome 把保存的密码填到本框并明文显示）。readonly 先挡住 autofill，
-                 用户聚焦后才可输入。 -->
+            <!-- 动态码/恢复码属于等效凭据：掩码显示 + 主动清理浏览器/密码管理器的自动填充。
+                 仅靠 autocomplete/readonly 挡不住 Chrome 的密码自动填充（实测仍会填入保存的密码），
+                 因此额外按"是否有真实按键/粘贴"判断：没有用户输入的填充一律清空。 -->
             <el-input
               v-model="credential"
               type="password"
@@ -35,7 +35,10 @@
               :readonly="otpReadonly"
               :disabled="loading"
               ref="credentialInput"
-              @focus="otpReadonly = false"
+              @focus="onOtpFocus"
+              @keydown="onOtpKeydown"
+              @paste="onOtpPaste"
+              @input="onOtpInput"
               @keyup.enter="handleLogin"
             />
           </el-form-item>
@@ -76,7 +79,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
@@ -99,9 +102,53 @@ const credential = ref('')
 const twofaEnabled = ref(false)
 const checkingTwofa = ref(false)
 const credentialInput = ref(null)
-// 动态码框先只读，防止浏览器在渲染瞬间把已保存的密码自动填充进来并明文展示；
-// 用户点击/聚焦后解除只读（不影响正常输入与密码管理器显式填写）。
+// 动态码框先只读，防止浏览器在渲染瞬间把已保存的密码自动填充进来；
+// 用户点击/聚焦后解除只读。
 const otpReadonly = ref(true)
+// 本次输入是否来自真实键盘/粘贴（自动填充不会触发 keydown/paste）。
+let otpKeyed = false
+// 该框是否被用户真正输入过（自动填充不算）；用于提交前的兜底判断。
+let otpTouched = false
+
+// 形如 6 位动态码或 5 组 4 位 hex 恢复码。
+function isOtpLike(v) {
+  const s = String(v || '').trim()
+  if (!s) return true
+  if (/^\d{6,8}$/.test(s)) return true
+  return /^[0-9a-fA-F]{4}(-[0-9a-fA-F]{4}){4}$/.test(s)
+}
+
+function onOtpKeydown() {
+  otpKeyed = true
+  otpTouched = true
+}
+
+function onOtpPaste() {
+  otpKeyed = true
+  otpTouched = true
+}
+
+// 清空 v-model 的同时把原生 input 的值也清掉：
+// 自动填充是直接改 DOM，Vue 的 model 仍是空串时不会触发重新渲染。
+function clearOtpValue() {
+  credential.value = ''
+  nextTick(() => {
+    const el = credentialInput.value?.input || credentialInput.value?.$el?.querySelector?.('input')
+    if (el && el.value) el.value = ''
+  })
+}
+
+// 聚焦：解除只读；若框内已有非用户输入的旧值（浏览器自动填充），先清空。
+function onOtpFocus() {
+  otpReadonly.value = false
+  if (!otpTouched && !isOtpLike(credential.value)) clearOtpValue()
+}
+
+function onOtpInput() {
+  // 没有按键/粘贴却出现密码形态的值 → 自动填充，清掉，避免把静态密码当动态码提交。
+  if (!otpKeyed && !isOtpLike(credential.value)) clearOtpValue()
+  otpKeyed = false
+}
 
 const currentLocaleName = computed(() => {
   const found = availableLocales.find(l => l.code === locale.value)
@@ -124,6 +171,8 @@ function onUsernameInput() {
   twofaEnabled.value = false
   credential.value = ''
   otpReadonly.value = true
+  otpKeyed = false
+  otpTouched = false
   usernameTimer = setTimeout(checkTwofaStatus, 400)
 }
 
@@ -143,6 +192,13 @@ function focusCredential() {
 }
 
 async function handleLogin() {
+  // 兜底：2FA 模式下若框内的值不是用户亲手输入/粘贴的（浏览器自动填充的密码），
+  // 直接丢掉并提示，避免把静态密码当动态码提交后只报"登录失败"。
+  if (twofaEnabled.value && !otpTouched) {
+    clearOtpValue()
+    ElMessage.warning(t('auth.twofaRequired'))
+    return
+  }
   if (!form.username.trim() || !credential.value.trim()) {
     ElMessage.warning(t('auth.invalidCredentials'))
     return

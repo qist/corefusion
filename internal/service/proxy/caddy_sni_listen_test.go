@@ -101,6 +101,33 @@ func TestCaddyPreviewSiteReplacesByID(t *testing.T) {
 	}
 }
 
+// Reality 站点可以额外给 sing-box 一个本地端口：
+// 该端口的 servers 配置不挂 proxy_protocol wrapper（sing-box 不发 PP）。
+func TestCaddyRealitySingboxPortWithoutProxyProtocol(t *testing.T) {
+	sites := []entity.CaddySite{
+		{ServerID: 2, Domain: ":9443", Template: "reality", SingboxListenPort: "9444",
+			CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem", Enabled: true},
+	}
+	cfg := generateCaddyFor(t, newCaddyTestManager(t, sites, nil))
+
+	if !strings.Contains(cfg, "\tservers 127.0.0.1:9443 {") {
+		t.Fatalf("缺少 Xray 端口的 servers 配置：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "\tservers 127.0.0.1:9444 {") {
+		t.Fatalf("缺少 sing-box 端口的 servers 配置：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, ":9443, :9444 {") {
+		t.Fatalf("站点块应同时绑定两个地址：\n%s", cfg)
+	}
+	// sing-box 的 servers 块里不能出现 proxy_protocol
+	idx := strings.Index(cfg, "\tservers 127.0.0.1:9444 {")
+	tail := cfg[idx:]
+	end := strings.Index(tail, "\n\t}")
+	if end < 0 || strings.Contains(tail[:end], "proxy_protocol") {
+		t.Fatalf("sing-box 端口不能挂 proxy_protocol wrapper：\n%s", cfg)
+	}
+}
+
 // 显式设置默认后端时优先于 fallback 规则（与 nginx 一致）。
 func TestCaddySNIDefaultTargetOverridesFallback(t *testing.T) {
 	sites := []entity.CaddySite{

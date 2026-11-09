@@ -987,8 +987,9 @@
         <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort')">
           <el-input v-model="siteForm.listen_port" placeholder="443" style="width:120px" />
         </el-form-item>
-        <!-- Reality 模板：监听方式可选 127.0.0.1 端口 或 unix socket。
-             unix 形式生成 `listen unix:<path> ssl proxy_protocol;`，Xray REALITY 的 dest 可直接指向它。 -->
+        <!-- Reality 模板：
+             - Xray 入口：127.0.0.1 端口 或 unix socket，带 PROXY Protocol（xver=1）
+             - sing-box 入口：独立的本地 TCP 端口，不带 PROXY Protocol（sing-box 不发 PP） -->
         <template v-else-if="siteForm.template==='reality'">
           <el-form-item :label="t('proxy.realityListenMode')">
             <el-radio-group v-model="siteForm.listen_mode">
@@ -1001,15 +1002,15 @@
             <el-input v-model="siteForm.listen_socket" placeholder="/dev/shm/nginx.sock" style="width:320px" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realitySocketHint') }}</div>
           </el-form-item>
-          <!-- unix 模式下额外开一个本地 TCP 端口：sing-box 的 REALITY handshake 不支持
-               unix socket，也不会发 PROXY protocol，只能连 host:port。留空 = 只监听 unix。 -->
-          <el-form-item v-if="siteForm.listen_mode==='unix'" :label="t('proxy.realityExtraPort')">
-            <el-input v-model="siteForm.listen_port" placeholder="9443" style="width:160px" />
-            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityExtraPortHint') }}</div>
-          </el-form-item>
           <el-form-item v-else :label="t('proxy.realityPort')">
             <el-input v-model="siteForm.listen_port" placeholder="9443" style="width:160px" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityPortHint') }}</div>
+          </el-form-item>
+          <!-- sing-box 只能连 host:port 且不发 PROXY Protocol：单独给一个本地端口。
+               与上面的 Xray 入口（端口/socket，带 PP）可以同时存在。留空 = 不给 sing-box。 -->
+          <el-form-item :label="t('proxy.realityExtraPort')">
+            <el-input v-model="siteForm.singbox_listen_port" placeholder="9444" style="width:160px" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityExtraPortHint') }}</div>
           </el-form-item>
         </template>
         <el-form-item v-else :label="siteForm.template==='sni' ? t('proxy.sniListenAddr') : t('proxy.listenPort')">
@@ -1947,7 +1948,7 @@ async function runImport(dryRun) {
 const siteSaving = ref(false)
 const siteForm = ref({
   domain: '', upstreams: [''], path: '', backend_path: '', template: 'http',
-  listen_port: '80', listen_socket: '', listen_mode: 'tcp',
+  listen_port: '80', listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
   use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
   custom_config: '', server_config: '', location_config: '',
   l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2317,7 +2318,7 @@ siteForm.value = {
 // Reality 是 TLS 透传（由内核的 Reality 处理证书 ✓）✗ 不需要域名 ✗ →
   // 留空会让人以为要填 ✓，默认给 127.0.0.1 当占位 ✓（只作标识 ✓，不参与分流 ✓）
   domain: isReality ? '127.0.0.1' : '', upstreams: [''], path: '', backend_path: '', template,
-    listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '', listen_mode: 'tcp',
+    listen_port: isReality ? '9443' : (template === 'l4' ? '443' : defaultPort), listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2354,6 +2355,7 @@ function onTemplateChange(newTemplate) {
     // Reality 的 unix socket 只属于该模板：切走后必须清空，
     // 否则会以 listen unix:... 的形式残留在普通 HTTP 站点上。
     siteForm.value.listen_socket = ''
+    siteForm.value.singbox_listen_port = ''
     siteForm.value.listen_mode = 'tcp'
     // Reset listen_port for non-reality if it was 9443
     if (siteForm.value.listen_port === '9443') {
@@ -2368,7 +2370,7 @@ function showPanelProxy() {
   const defaultPort = settings.value.default_http_port
   siteForm.value = {
     domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'panel_forward',
-    listen_port: defaultPort, listen_socket: '', listen_mode: 'tcp',
+    listen_port: defaultPort, listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2390,7 +2392,7 @@ function showForwardProxy(template) {
   const d = forwardDerived(template)
   siteForm.value = {
     domain: '', upstreams: [d.upstream], path: d.path, backend_path: d.path, template,
-    listen_port: settings.value.default_http_port, listen_socket: '', listen_mode: 'tcp',
+    listen_port: settings.value.default_http_port, listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
@@ -2441,7 +2443,7 @@ function editSite(row) {
     id: row.id, domain: row.domain, upstreams, path: row.path,
     backend_path: row.backend_path,
     template: row.template, listen_port: listenPort,
-    listen_socket: row.listen_socket, listen_mode: row.listen_socket ? 'unix' : 'tcp',
+    listen_socket: row.listen_socket, singbox_listen_port: row.singbox_listen_port || '', listen_mode: row.listen_socket ? 'unix' : 'tcp',
     use_cert: row.template === 'reality' ? true : !!row.cert_path, cert_id: certId,
     cert_path: row.cert_path, key_path: row.key_path,
     custom_config: row.custom_config,
@@ -2494,6 +2496,9 @@ function buildSitePayload() {
     listen_socket: siteForm.value.template === 'reality' && siteForm.value.listen_mode === 'unix'
       ? String(siteForm.value.listen_socket || '').trim()
       : (siteForm.value.template === 'reality' ? '' : siteForm.value.listen_socket),
+    singbox_listen_port: siteForm.value.template === 'reality'
+      ? String(siteForm.value.singbox_listen_port || '').trim()
+      : '',
     cert_path: siteForm.value.use_cert ? siteForm.value.cert_path : '',
     dual_cert: siteForm.value.dual_cert !== false,
     key_path: siteForm.value.use_cert ? siteForm.value.key_path : '',

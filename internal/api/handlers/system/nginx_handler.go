@@ -96,37 +96,38 @@ func (h *NginxHandler) ListSites(c *gin.Context) {
 func (h *NginxHandler) CreateSite(c *gin.Context) {
 	sid, _ := h.applyServerID(c)
 	var req struct {
-		Domain          string `json:"domain" binding:"required"`
-		Upstream        string `json:"upstream"`
-		Template        string `json:"template"`
-		Path            string `json:"path"`
-		BackendPath     string `json:"backend_path"`
-		ListenPort      string `json:"listen_port"`
-		QuicListen      string `json:"quic_listen"`
-		ListenSocket    string `json:"listen_socket"`
-		CertPath        string `json:"cert_path"`
-		KeyPath         string `json:"key_path"`
-		ServerConfig    string `json:"server_config"`
-		LocationConfig  string `json:"location_config"`
-		L4Protocol      string `json:"l4_protocol"`
-		SNITarget       string `json:"sni_target"`
-		UpstreamTLS     bool   `json:"upstream_tls"`
-		LocalPort       string `json:"local_port"`
-		ProxyProtocol   bool   `json:"proxy_protocol"`
-		EnableHttp2     bool   `json:"enable_http2"`
-		EnableIpv6      bool   `json:"enable_ipv6"`
-		IPv6ListenAddr  string `json:"ipv6_listen_addr"`
-		EnableQuic      bool   `json:"enable_quic"`
-		EnableEarlyData bool   `json:"enable_early_data"`
-		EnableStapling  bool   `json:"enable_stapling"`
-		SslProtocols    string `json:"ssl_protocols"`
-		SslCiphers      string `json:"ssl_ciphers"`
-		SslEcdhCurve    string `json:"ssl_ecdh_curve"`
-		WafEnabled      *bool  `json:"waf_enabled"`
-		RedirectHTTPS   *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
-		IsPanel         bool   `json:"is_panel"`
-		DualCert        *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
-		Priority        int    `json:"priority"`
+		Domain            string `json:"domain" binding:"required"`
+		Upstream          string `json:"upstream"`
+		Template          string `json:"template"`
+		Path              string `json:"path"`
+		BackendPath       string `json:"backend_path"`
+		ListenPort        string `json:"listen_port"`
+		QuicListen        string `json:"quic_listen"`
+		ListenSocket      string `json:"listen_socket"`
+		SingboxListenPort string `json:"singbox_listen_port"`
+		CertPath          string `json:"cert_path"`
+		KeyPath           string `json:"key_path"`
+		ServerConfig      string `json:"server_config"`
+		LocationConfig    string `json:"location_config"`
+		L4Protocol        string `json:"l4_protocol"`
+		SNITarget         string `json:"sni_target"`
+		UpstreamTLS       bool   `json:"upstream_tls"`
+		LocalPort         string `json:"local_port"`
+		ProxyProtocol     bool   `json:"proxy_protocol"`
+		EnableHttp2       bool   `json:"enable_http2"`
+		EnableIpv6        bool   `json:"enable_ipv6"`
+		IPv6ListenAddr    string `json:"ipv6_listen_addr"`
+		EnableQuic        bool   `json:"enable_quic"`
+		EnableEarlyData   bool   `json:"enable_early_data"`
+		EnableStapling    bool   `json:"enable_stapling"`
+		SslProtocols      string `json:"ssl_protocols"`
+		SslCiphers        string `json:"ssl_ciphers"`
+		SslEcdhCurve      string `json:"ssl_ecdh_curve"`
+		WafEnabled        *bool  `json:"waf_enabled"`
+		RedirectHTTPS     *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
+		IsPanel           bool   `json:"is_panel"`
+		DualCert          *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
+		Priority          int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -137,38 +138,39 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		return
 	}
 	site := &entity.NginxSite{
-		Domain:          req.Domain,
-		Upstream:        req.Upstream,
-		Template:        req.Template,
-		Path:            req.Path,
-		BackendPath:     req.BackendPath,
-		ListenPort:      req.ListenPort,
-		QuicListen:      req.QuicListen,
-		ListenSocket:    req.ListenSocket,
-		CertPath:        req.CertPath,
-		KeyPath:         req.KeyPath,
-		ServerConfig:    req.ServerConfig,
-		LocationConfig:  req.LocationConfig,
-		L4Protocol:      req.L4Protocol,
-		SNITarget:       req.SNITarget,
-		UpstreamTLS:     req.UpstreamTLS,
-		LocalPort:       req.LocalPort,
-		ProxyProtocol:   req.ProxyProtocol,
-		EnableHttp2:     req.EnableHttp2,
-		EnableIpv6:      req.EnableIpv6,
-		IPv6ListenAddr:  req.IPv6ListenAddr,
-		EnableQuic:      req.EnableQuic,
-		EnableEarlyData: req.EnableEarlyData,
-		EnableStapling:  req.EnableStapling,
-		SslProtocols:    req.SslProtocols,
-		SslCiphers:      req.SslCiphers,
-		SslEcdhCurve:    req.SslEcdhCurve,
-		WafEnabled:      req.WafEnabled,
-		RedirectHTTPS:   req.RedirectHTTPS,
-		Enabled:         true,
-		IsPanel:         req.IsPanel,
-		DualCert:        req.DualCert,
-		Priority:        req.Priority,
+		Domain:            req.Domain,
+		Upstream:          req.Upstream,
+		Template:          req.Template,
+		Path:              req.Path,
+		BackendPath:       req.BackendPath,
+		ListenPort:        req.ListenPort,
+		QuicListen:        req.QuicListen,
+		ListenSocket:      req.ListenSocket,
+		SingboxListenPort: req.SingboxListenPort,
+		CertPath:          req.CertPath,
+		KeyPath:           req.KeyPath,
+		ServerConfig:      req.ServerConfig,
+		LocationConfig:    req.LocationConfig,
+		L4Protocol:        req.L4Protocol,
+		SNITarget:         req.SNITarget,
+		UpstreamTLS:       req.UpstreamTLS,
+		LocalPort:         req.LocalPort,
+		ProxyProtocol:     req.ProxyProtocol,
+		EnableHttp2:       req.EnableHttp2,
+		EnableIpv6:        req.EnableIpv6,
+		IPv6ListenAddr:    req.IPv6ListenAddr,
+		EnableQuic:        req.EnableQuic,
+		EnableEarlyData:   req.EnableEarlyData,
+		EnableStapling:    req.EnableStapling,
+		SslProtocols:      req.SslProtocols,
+		SslCiphers:        req.SslCiphers,
+		SslEcdhCurve:      req.SslEcdhCurve,
+		WafEnabled:        req.WafEnabled,
+		RedirectHTTPS:     req.RedirectHTTPS,
+		Enabled:           true,
+		IsPanel:           req.IsPanel,
+		DualCert:          req.DualCert,
+		Priority:          req.Priority,
 	}
 	if err := h.nginxMgr.CreateSite(c.Request.Context(), sid, site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -195,38 +197,39 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Domain          *string `json:"domain"`
-		Upstream        *string `json:"upstream"`
-		Template        *string `json:"template"`
-		Path            *string `json:"path"`
-		BackendPath     *string `json:"backend_path"`
-		ListenPort      *string `json:"listen_port"`
-		QuicListen      *string `json:"quic_listen"`
-		ListenSocket    *string `json:"listen_socket"`
-		CertPath        *string `json:"cert_path"`
-		KeyPath         *string `json:"key_path"`
-		ServerConfig    *string `json:"server_config"`
-		LocationConfig  *string `json:"location_config"`
-		L4Protocol      *string `json:"l4_protocol"`
-		SNITarget       *string `json:"sni_target"`
-		UpstreamTLS     *bool   `json:"upstream_tls"`
-		LocalPort       *string `json:"local_port"`
-		ProxyProtocol   *bool   `json:"proxy_protocol"`
-		Enabled         *bool   `json:"enabled"`
-		EnableHttp2     *bool   `json:"enable_http2"`
-		EnableIpv6      *bool   `json:"enable_ipv6"`
-		IPv6ListenAddr  *string `json:"ipv6_listen_addr"`
-		EnableQuic      *bool   `json:"enable_quic"`
-		EnableEarlyData *bool   `json:"enable_early_data"`
-		EnableStapling  *bool   `json:"enable_stapling"`
-		SslProtocols    *string `json:"ssl_protocols"`
-		SslCiphers      *string `json:"ssl_ciphers"`
-		SslEcdhCurve    *string `json:"ssl_ecdh_curve"`
-		WafEnabled      *bool   `json:"waf_enabled"`
-		RedirectHTTPS   *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
-		IsPanel         *bool   `json:"is_panel"`
-		DualCert        *bool   `json:"dual_cert"`
-		Priority        *int    `json:"priority"`
+		Domain            *string `json:"domain"`
+		Upstream          *string `json:"upstream"`
+		Template          *string `json:"template"`
+		Path              *string `json:"path"`
+		BackendPath       *string `json:"backend_path"`
+		ListenPort        *string `json:"listen_port"`
+		QuicListen        *string `json:"quic_listen"`
+		ListenSocket      *string `json:"listen_socket"`
+		SingboxListenPort *string `json:"singbox_listen_port"`
+		CertPath          *string `json:"cert_path"`
+		KeyPath           *string `json:"key_path"`
+		ServerConfig      *string `json:"server_config"`
+		LocationConfig    *string `json:"location_config"`
+		L4Protocol        *string `json:"l4_protocol"`
+		SNITarget         *string `json:"sni_target"`
+		UpstreamTLS       *bool   `json:"upstream_tls"`
+		LocalPort         *string `json:"local_port"`
+		ProxyProtocol     *bool   `json:"proxy_protocol"`
+		Enabled           *bool   `json:"enabled"`
+		EnableHttp2       *bool   `json:"enable_http2"`
+		EnableIpv6        *bool   `json:"enable_ipv6"`
+		IPv6ListenAddr    *string `json:"ipv6_listen_addr"`
+		EnableQuic        *bool   `json:"enable_quic"`
+		EnableEarlyData   *bool   `json:"enable_early_data"`
+		EnableStapling    *bool   `json:"enable_stapling"`
+		SslProtocols      *string `json:"ssl_protocols"`
+		SslCiphers        *string `json:"ssl_ciphers"`
+		SslEcdhCurve      *string `json:"ssl_ecdh_curve"`
+		WafEnabled        *bool   `json:"waf_enabled"`
+		RedirectHTTPS     *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
+		IsPanel           *bool   `json:"is_panel"`
+		DualCert          *bool   `json:"dual_cert"`
+		Priority          *int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -271,6 +274,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.ListenSocket != nil {
 		existing.ListenSocket = *req.ListenSocket
+	}
+	if req.SingboxListenPort != nil {
+		existing.SingboxListenPort = *req.SingboxListenPort
 	}
 	if req.CertPath != nil {
 		existing.CertPath = *req.CertPath

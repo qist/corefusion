@@ -30,6 +30,10 @@ type CaddySite struct {
 	LogFormat     string `json:"log_format" gorm:"size:32"` // json, console
 	L4Protocol    string `json:"l4_protocol" gorm:"size:16"`
 	SNITarget     string `json:"sni_target" gorm:"size:255"`
+	// SingboxListenPort 是 Reality 模板专属的「额外本地 TCP 端口」：
+	// 该端口的 listener 不挂 proxy_protocol wrapper，供 sing-box 的 REALITY
+	// handshake 使用（sing-box 只支持 host:port，且不发 PROXY protocol）。
+	SingboxListenPort string `json:"singbox_listen_port" gorm:"size:16"`
 	// UpstreamTLS 表示"**回源这一段**（nginx/caddy → 本地内核）要不要走 TLS" ✓。
 	// grpc 原来写死 `grpc_pass grpc://`（h2c 明文）✗；入站自带 TLS 时必须 `grpcs://` ✗。
 	// 「从入站一键导入」按入站 security 自动置位 ✓，表单可手改 ✓。

@@ -405,6 +405,13 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			sb.WriteString("\t\t}\n")
 			sb.WriteString("\t\tprotocols h1 h2\n")
 			sb.WriteString("\t}\n")
+			// sing-box 入口：单独的端口，**不挂 proxy_protocol wrapper**
+			// （sing-box 的 REALITY handshake 只支持 host:port，且不发 PROXY protocol）。
+			if sbPort := strings.TrimSpace(rs.SingboxListenPort); sbPort != "" && sbPort != port {
+				sb.WriteString(fmt.Sprintf("\tservers 127.0.0.1:%s {\n", sbPort))
+				sb.WriteString("\t\tprotocols h1 h2\n")
+				sb.WriteString("\t}\n")
+			}
 		}
 	}
 	sb.WriteString("}\n\n")
@@ -415,8 +422,18 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		if port == "" {
 			port = "9443"
 		}
+		sbPort := strings.TrimSpace(rs.SingboxListenPort)
+		if sbPort == port {
+			sbPort = ""
+		}
 		sb.WriteString(fmt.Sprintf("# Reality :%s\n", port))
-		sb.WriteString(fmt.Sprintf(":%s {\n", port))
+		if sbPort != "" {
+			// 同一个站点块绑定两个本地地址：带 PP 的给 Xray，不带 PP 的给 sing-box。
+			sb.WriteString(fmt.Sprintf("# Reality sing-box :%s (no proxy_protocol)\n", sbPort))
+			sb.WriteString(fmt.Sprintf(":%s, :%s {\n", port, sbPort))
+		} else {
+			sb.WriteString(fmt.Sprintf(":%s {\n", port))
+		}
 		sb.WriteString("\tbind 127.0.0.1\n")
 		if rs.CertPath != "" && rs.KeyPath != "" {
 			sb.WriteString(fmt.Sprintf("\ttls %s %s\n", m.resolvePath(rs.CertPath), m.resolvePath(rs.KeyPath)))

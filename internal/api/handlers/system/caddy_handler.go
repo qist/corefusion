@@ -132,28 +132,29 @@ func (h *CaddyHandler) ListSites(c *gin.Context) {
 func (h *CaddyHandler) CreateSite(c *gin.Context) {
 	sid, _ := h.applyServerID(c)
 	var req struct {
-		Domain        string `json:"domain" binding:"required"`
-		Upstream      string `json:"upstream"`
-		Template      string `json:"template"`
-		Path          string `json:"path"`
-		CertPath      string `json:"cert_path"`
-		KeyPath       string `json:"key_path"`
-		ProxyConfig   string `json:"proxy_config"`
-		CustomConfig  string `json:"custom_config"`
-		WafEnabled    *bool  `json:"waf_enabled"`
-		RedirectHTTPS *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
-		LbPolicy      string `json:"lb_policy"`
-		LogEnabled    bool   `json:"log_enabled"`
-		LogPath       string `json:"log_path"`
-		LogFormat     string `json:"log_format"`
-		L4Protocol    string `json:"l4_protocol"`
-		SNITarget     string `json:"sni_target"`
-		UpstreamTLS   bool   `json:"upstream_tls"`
-		LocalPort     string `json:"local_port"`
-		ProxyProtocol bool   `json:"proxy_protocol"`
-		IsPanel       bool   `json:"is_panel"`
-		DualCert      *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
-		Priority      int    `json:"priority"`
+		Domain            string `json:"domain" binding:"required"`
+		Upstream          string `json:"upstream"`
+		Template          string `json:"template"`
+		Path              string `json:"path"`
+		CertPath          string `json:"cert_path"`
+		KeyPath           string `json:"key_path"`
+		ProxyConfig       string `json:"proxy_config"`
+		CustomConfig      string `json:"custom_config"`
+		WafEnabled        *bool  `json:"waf_enabled"`
+		RedirectHTTPS     *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
+		LbPolicy          string `json:"lb_policy"`
+		LogEnabled        bool   `json:"log_enabled"`
+		LogPath           string `json:"log_path"`
+		LogFormat         string `json:"log_format"`
+		L4Protocol        string `json:"l4_protocol"`
+		SNITarget         string `json:"sni_target"`
+		SingboxListenPort string `json:"singbox_listen_port"`
+		UpstreamTLS       bool   `json:"upstream_tls"`
+		LocalPort         string `json:"local_port"`
+		ProxyProtocol     bool   `json:"proxy_protocol"`
+		IsPanel           bool   `json:"is_panel"`
+		DualCert          *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
+		Priority          int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -174,29 +175,30 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		}
 	}
 	site := &entity.CaddySite{
-		Domain:        req.Domain,
-		Upstream:      req.Upstream,
-		Template:      req.Template,
-		Path:          req.Path,
-		CertPath:      req.CertPath,
-		KeyPath:       req.KeyPath,
-		ProxyConfig:   req.ProxyConfig,
-		CustomConfig:  req.CustomConfig,
-		WafEnabled:    req.WafEnabled,
-		RedirectHTTPS: req.RedirectHTTPS,
-		LbPolicy:      req.LbPolicy,
-		LogEnabled:    req.LogEnabled,
-		LogPath:       logPath,
-		LogFormat:     req.LogFormat,
-		L4Protocol:    req.L4Protocol,
-		SNITarget:     req.SNITarget,
-		UpstreamTLS:   req.UpstreamTLS,
-		LocalPort:     req.LocalPort,
-		ProxyProtocol: req.ProxyProtocol,
-		Enabled:       true,
-		IsPanel:       req.IsPanel,
-		DualCert:      req.DualCert,
-		Priority:      req.Priority,
+		Domain:            req.Domain,
+		Upstream:          req.Upstream,
+		Template:          req.Template,
+		Path:              req.Path,
+		CertPath:          req.CertPath,
+		KeyPath:           req.KeyPath,
+		ProxyConfig:       req.ProxyConfig,
+		CustomConfig:      req.CustomConfig,
+		WafEnabled:        req.WafEnabled,
+		RedirectHTTPS:     req.RedirectHTTPS,
+		LbPolicy:          req.LbPolicy,
+		LogEnabled:        req.LogEnabled,
+		LogPath:           logPath,
+		LogFormat:         req.LogFormat,
+		L4Protocol:        req.L4Protocol,
+		SNITarget:         req.SNITarget,
+		SingboxListenPort: req.SingboxListenPort,
+		UpstreamTLS:       req.UpstreamTLS,
+		LocalPort:         req.LocalPort,
+		ProxyProtocol:     req.ProxyProtocol,
+		Enabled:           true,
+		IsPanel:           req.IsPanel,
+		DualCert:          req.DualCert,
+		Priority:          req.Priority,
 	}
 	if err := h.caddyMgr.CreateSite(c.Request.Context(), sid, site); err != nil {
 		response.InternalError(c, "CREATE_FAILED", err.Error())
@@ -223,29 +225,30 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Domain        *string `json:"domain"`
-		Upstream      *string `json:"upstream"`
-		Template      *string `json:"template"`
-		Path          *string `json:"path"`
-		CertPath      *string `json:"cert_path"`
-		KeyPath       *string `json:"key_path"`
-		ProxyConfig   *string `json:"proxy_config"`
-		CustomConfig  *string `json:"custom_config"`
-		WafEnabled    *bool   `json:"waf_enabled"`
-		RedirectHTTPS *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
-		LbPolicy      *string `json:"lb_policy"`
-		LogEnabled    *bool   `json:"log_enabled"`
-		LogPath       *string `json:"log_path"`
-		LogFormat     *string `json:"log_format"`
-		L4Protocol    *string `json:"l4_protocol"`
-		SNITarget     *string `json:"sni_target"`
-		UpstreamTLS   *bool   `json:"upstream_tls"`
-		LocalPort     *string `json:"local_port"`
-		ProxyProtocol *bool   `json:"proxy_protocol"`
-		Enabled       *bool   `json:"enabled"`
-		IsPanel       *bool   `json:"is_panel"`
-		DualCert      *bool   `json:"dual_cert"`
-		Priority      *int    `json:"priority"`
+		Domain            *string `json:"domain"`
+		Upstream          *string `json:"upstream"`
+		Template          *string `json:"template"`
+		Path              *string `json:"path"`
+		CertPath          *string `json:"cert_path"`
+		KeyPath           *string `json:"key_path"`
+		ProxyConfig       *string `json:"proxy_config"`
+		CustomConfig      *string `json:"custom_config"`
+		WafEnabled        *bool   `json:"waf_enabled"`
+		RedirectHTTPS     *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
+		LbPolicy          *string `json:"lb_policy"`
+		LogEnabled        *bool   `json:"log_enabled"`
+		LogPath           *string `json:"log_path"`
+		LogFormat         *string `json:"log_format"`
+		L4Protocol        *string `json:"l4_protocol"`
+		SNITarget         *string `json:"sni_target"`
+		SingboxListenPort *string `json:"singbox_listen_port"`
+		UpstreamTLS       *bool   `json:"upstream_tls"`
+		LocalPort         *string `json:"local_port"`
+		ProxyProtocol     *bool   `json:"proxy_protocol"`
+		Enabled           *bool   `json:"enabled"`
+		IsPanel           *bool   `json:"is_panel"`
+		DualCert          *bool   `json:"dual_cert"`
+		Priority          *int    `json:"priority"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -322,6 +325,9 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.SNITarget != nil {
 		existing.SNITarget = *req.SNITarget
+	}
+	if req.SingboxListenPort != nil {
+		existing.SingboxListenPort = *req.SingboxListenPort
 	}
 	// 回源 TLS ✓（grpc_pass grpc:// ↔ grpcs:// ✓）：显式传了才改 ✓，避免把已有设置冲掉 ✗
 	if req.UpstreamTLS != nil {
@@ -405,6 +411,14 @@ func (h *CaddyHandler) SaveAndApply(c *gin.Context) {
 		return
 	}
 	if isLocal {
+		// 与 nginx 保持一致：只写文件不重载 = 接口名不副实，配置要等下次重启才生效
+		// （新增的监听端口/路由完全不起作用）。这里真正触发一次 reload。
+		if h.proxyMgr != nil {
+			if err := h.proxyMgr.ReloadProxy(c.Request.Context(), proxy.ProxyCaddy); err != nil {
+				response.InternalError(c, "RELOAD_FAILED", err.Error())
+				return
+			}
+		}
 		// Push config to mirror nodes so they get the updated Caddyfile.
 		if h.nodeOp != nil {
 			h.nodeOp.SyncMirrorsProxyConfig(c.Request.Context(), serverID, "caddy", []byte(config))

@@ -1180,13 +1180,11 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		sb.WriteString("    }\n\n")
 	}
 
-	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required.
-	// 监听方式：
-	//   - 127.0.0.1:<端口>（默认，带 proxy_protocol）
-	//   - unix:<path>（Xray REALITY 的 target 形态，带 proxy_protocol）
-	//   - unix:<path> + 额外本地 TCP 端口（该端口不带 proxy_protocol，供 sing-box）
-	// unix 形式正是 Xray REALITY 的 dest 可直接指向的形态：
-	//   listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
+	// Reality server blocks: forced TLS, HTTP/2, no domain required.
+	// 两个入口可以并存（PROXY Protocol 是 listen 级参数）：
+	//   - Xray 入口：unix:<path> 或 127.0.0.1:<port>，带 proxy_protocol（xver=1）
+	//   - sing-box 入口：127.0.0.1:<singbox_listen_port>，**不带** proxy_protocol
+	//     （sing-box 只支持 host:port，且不发 PROXY protocol）
 	// 必须带 ssl：REALITY 会把客户端 ClientHello 转给 target，target 不吐 TLS 就握手失败。
 	for _, rs := range realitySites {
 		socket := normalizeNginxUnixSocket(rs.ListenSocket)
@@ -1195,28 +1193,37 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		if port != "" {
 			port = listenPortOnly(port)
 		}
+		sbPort := strings.TrimSpace(rs.SingboxListenPort)
+		if sbPort != "" {
+			sbPort = listenPortOnly(sbPort)
+		}
 		if port == "" && !useSocket {
 			port = "9443"
+		}
+		// 同一端口不可能同时「要 PROXY 头」和「不要」。
+		if sbPort != "" && sbPort == port {
+			sbPort = ""
 		}
 		if useSocket {
 			sb.WriteString(fmt.Sprintf("    # Reality unix:%s\n", socket))
 		} else {
 			sb.WriteString(fmt.Sprintf("    # Reality :%s\n", port))
 		}
+		if sbPort != "" {
+			sb.WriteString(fmt.Sprintf("    # Reality sing-box :%s (no proxy_protocol)\n", sbPort))
+		}
 		sb.WriteString("    server {\n")
 		if useSocket {
 			sb.WriteString(fmt.Sprintf("        listen unix:%s ssl proxy_protocol;\n", socket))
-			// 同一个 server 额外提供一个本地 TCP 入口：sing-box 的 REALITY handshake
-			// 只支持 host:port（不支持 unix socket），并且它不会发送 PROXY protocol，
-			// 因此这条 listen 必须**不带** proxy_protocol。
-			if port != "" {
-				sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl;\n", port))
-			}
 		} else {
 			sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
 			if rs.EnableIpv6 || globalIPv6 {
 				sb.WriteString(fmt.Sprintf("        listen [::1]:%s ssl proxy_protocol;\n", port))
 			}
+		}
+		// sing-box 入口：只支持 host:port，且不发 PROXY protocol → 单独一条不带 PP 的 listen。
+		if sbPort != "" {
+			sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl;\n", sbPort))
 		}
 		sb.WriteString("        http2 on;\n")
 		if rs.Domain == "" {

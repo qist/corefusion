@@ -683,6 +683,12 @@
         <el-form-item v-if="siteForm.template==='reality'" :label="t('proxy.templateReality')">
           <span style="font-size:12px;color:#909399">{{ t('proxy.realityDesc') }}</span>
         </el-form-item>
+        <!-- sing-box 的 REALITY handshake 只支持 host:port，且不发 PROXY Protocol；
+             这里给它单独一个本地端口（不挂 proxy_protocol wrapper）。留空 = 不提供。 -->
+        <el-form-item v-if="siteForm.template==='reality'" :label="t('proxy.realityExtraPort')">
+          <el-input v-model="siteForm.singbox_listen_port" placeholder="9444" style="width:160px" />
+          <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityExtraPortHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('site.rootDirectory')" v-if="siteForm.template==='static'">
           <div v-for="(up, idx) in siteForm.upstreams" :key="idx" style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
             <el-input v-model="siteForm.upstreams[idx]" placeholder="/var/www/mysite" style="flex:1" />
@@ -1566,7 +1572,7 @@ function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
   const isReality = template === 'reality'
 siteForm.value = {
-domain: isReality ? ':9443' : '', upstreams: isReality ? [''] : [''], path: '', backend_path: '', template,
+domain: isReality ? ':9443' : '', singbox_listen_port: '', upstreams: isReality ? [''] : [''], path: '', backend_path: '', template,
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
 proxy_config: '', custom_config: '', waf_enabled: !wafDisabledTemplates.includes(template), lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
@@ -1691,6 +1697,7 @@ waf_enabled: row.waf_enabled !== false,
     log_format: row.log_format,
     l4_protocol: row.l4_protocol,
     sni_target: row.sni_target,
+    singbox_listen_port: row.singbox_listen_port || '',
     upstream_tls: row.upstream_tls === true,
     proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false),
     is_panel: row.is_panel, editMode: 'form',
@@ -1736,6 +1743,7 @@ function buildSitePayload() {
     log_format: siteForm.value.log_format,
     l4_protocol: siteForm.value.l4_protocol,
     sni_target: siteForm.value.sni_target,
+    singbox_listen_port: siteForm.value.template === 'reality' ? String(siteForm.value.singbox_listen_port || '').trim() : '',
     upstream_tls: siteForm.value.upstream_tls === true,
     local_port: siteForm.value.local_port,
     proxy_protocol: siteForm.value.proxy_protocol || false,

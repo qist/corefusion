@@ -17,7 +17,12 @@ type NginxSite struct {
 	// HTTP 监听是 127.0.0.1:443，而 QUIC 仍要监听公网 443。
 	QuicListen   string `json:"quic_listen" gorm:"size:64"`
 	ListenSocket string `json:"listen_socket" gorm:"size:255"`
-	CertPath     string `json:"cert_path" gorm:"size:512"`
+	// SingboxListenPort 是 Reality 模板专属的「额外本地 TCP 端口」：
+	// 不带 proxy_protocol，供 sing-box 的 REALITY handshake 使用
+	// （sing-box 只支持 host:port，且不发 PROXY protocol）。
+	// 与 ListenPort/ListenSocket（Xray 用，带 proxy_protocol）可以同时存在。
+	SingboxListenPort string `json:"singbox_listen_port" gorm:"size:16"`
+	CertPath          string `json:"cert_path" gorm:"size:512"`
 	// DualCert：同 CaddySite.DualCert ✓ —— nil=true=挂同域名的多张证书（ECC+RSA ✓），
 	// false=只用本站点自己那对 ✓。
 	DualCert       *bool  `json:"dual_cert" gorm:"default:true"`
@@ -29,12 +34,12 @@ type NginxSite struct {
 	// UpstreamTLS 表示"**回源这一段**（nginx → 本地内核）要不要走 TLS" ✓。
 	// grpc 原来写死 `grpc_pass grpc://`（h2c 明文）✗；入站自带 TLS 时必须 `grpcs://` ✗。
 	// 「从入站一键导入」按入站 security 自动置位 ✓，表单里可手改 ✓。
-	UpstreamTLS     bool   `json:"upstream_tls" gorm:"not null;default:false"`
-	LocalPort       string `json:"local_port" gorm:"size:16"`
-	ProxyProtocol   bool   `json:"proxy_protocol" gorm:"not null;default:false"`
-	EnableHttp2     bool   `json:"enable_http2" gorm:"not null;default:true"`
-	EnableQuic      bool   `json:"enable_quic" gorm:"not null;default:false"`
-	EnableIpv6      bool   `json:"enable_ipv6" gorm:"not null;default:false"`
+	UpstreamTLS   bool   `json:"upstream_tls" gorm:"not null;default:false"`
+	LocalPort     string `json:"local_port" gorm:"size:16"`
+	ProxyProtocol bool   `json:"proxy_protocol" gorm:"not null;default:false"`
+	EnableHttp2   bool   `json:"enable_http2" gorm:"not null;default:true"`
+	EnableQuic    bool   `json:"enable_quic" gorm:"not null;default:false"`
+	EnableIpv6    bool   `json:"enable_ipv6" gorm:"not null;default:false"`
 	// IPv6ListenAddr：站点级 IPv6 监听地址（可含端口），如 "::" / "::1" / "[2001:db8::1]:8443"。
 	// 空=使用全局 ipv6_listen_addr；仅在 IPv6 开启时生效。
 	IPv6ListenAddr  string `json:"ipv6_listen_addr" gorm:"size:64"`

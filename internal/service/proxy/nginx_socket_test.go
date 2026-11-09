@@ -101,7 +101,7 @@ func TestNginxRealityPortAndUnixPrefix(t *testing.T) {
 func TestNginxRealityUnixPlusLocalTCPPort(t *testing.T) {
 	sites := []entity.NginxSite{{
 		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
-		ListenSocket: "/dev/shm/nginx.sock", ListenPort: "9443",
+		ListenSocket: "/dev/shm/nginx.sock", SingboxListenPort: "9443",
 		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem",
 		ProxyProtocol: true, Enabled: true,
 	}}
@@ -117,15 +117,36 @@ func TestNginxRealityUnixPlusLocalTCPPort(t *testing.T) {
 	}
 }
 
+// TCP 端口模式同样可以额外给 sing-box 一个不带 PP 的端口：
+// Xray 用 listen_port（带 PP），sing-box 用 singbox_listen_port。
+func TestNginxRealityTCPPlusSingboxPort(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
+		ListenPort: "9443", SingboxListenPort: "9444",
+		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem",
+		ProxyProtocol: true, Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "        listen 127.0.0.1:9443 ssl proxy_protocol;\n") {
+		t.Fatalf("Xray 入口应带 proxy_protocol：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "        listen 127.0.0.1:9444 ssl;\n") {
+		t.Fatalf("sing-box 入口不应带 proxy_protocol：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "listen 127.0.0.1:9444 ssl proxy_protocol;") {
+		t.Fatalf("sing-box 端口不能带 proxy_protocol：\n%s", cfg)
+	}
+}
+
 // Reality 端口写法带地址时只取端口，避免生成非法 listen。
 func TestNginxRealityListenPortNormalized(t *testing.T) {
 	sites := []entity.NginxSite{{
 		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
-		ListenSocket: "/dev/shm/nginx.sock", ListenPort: "127.0.0.1:9444",
-		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem", Enabled: true,
+		ListenPort: "127.0.0.1:9444",
+		CertPath:   "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem", Enabled: true,
 	}}
 	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
-	if !strings.Contains(cfg, "        listen 127.0.0.1:9444 ssl;\n") {
+	if !strings.Contains(cfg, "        listen 127.0.0.1:9444 ssl proxy_protocol;\n") {
 		t.Fatalf("listen_port 带地址时应只取端口：\n%s", cfg)
 	}
 }

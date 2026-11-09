@@ -257,7 +257,13 @@ async function loadLocalRealityServers() {
     if (Array.isArray(caddySites)) {
       caddySites.filter(s => s.template === 'reality').forEach(s => {
         const port = parseInt((s.domain || ':9443').replace(/^:/, '')) || 9443
-        servers.push({ id: s.id, port, source: 'caddy' })
+        // sing-box 只能连「不挂 proxy_protocol 的本地端口」：优先用站点配置的 sing-box 端口。
+        const sbPort = parseInt(s.singbox_listen_port || '') || 0
+        if (sbPort) {
+          servers.push({ id: s.id, port: sbPort, source: 'caddy' })
+          return
+        }
+        unixOnlySites.value.push(`:${port}`)
       })
     }
   } catch {}
@@ -266,16 +272,16 @@ async function loadLocalRealityServers() {
     const nginxSites = await client.get(`/node-servers/${props.serverId}/nginx/sites`)
     if (Array.isArray(nginxSites)) {
       nginxSites.filter(s => s.template === 'reality').forEach(s => {
-        const sock = String(s.listen_socket || '').trim().replace(/^unix:\/\//, '').replace(/^unix:/, '')
-        const port = parseInt(s.listen_port || '') || 0
-        if (sock && !port) {
-          // sing-box 的 REALITY handshake 只支持 host:port，且不会发送 PROXY protocol，
-          // 无法直连 nginx 的 unix socket（那也是给 Xray 用的）。
-          // 这种站点需要在面板里给它补一个「本地 TCP 端口」后才能给 sing-box 用。
-          unixOnlySites.value.push(sock)
+        // sing-box 只能连「不挂 proxy_protocol 的本地端口」：
+        // Reality 站点里带 PROXY Protocol 的入口（unix socket / listen_port）是给 Xray 的，
+        // sing-box 必须用单独的 singbox_listen_port。
+        const sbPort = parseInt(s.singbox_listen_port || '') || 0
+        if (sbPort) {
+          servers.push({ id: s.id, port: sbPort, source: 'nginx' })
           return
         }
-        servers.push({ id: s.id, port: port || 9443, source: 'nginx', socket: sock })
+        const sock = String(s.listen_socket || '').trim().replace(/^unix:\/\//, '').replace(/^unix:/, '')
+        unixOnlySites.value.push(sock || `:${s.listen_port || '9443'}`)
       })
     }
   } catch {}

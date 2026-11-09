@@ -2621,11 +2621,20 @@ func (m *Manager) WriteConfigFile(proxyType ProxyType, config string) error {
 
 // ValidateConfig validates a proxy config file content.
 func (m *Manager) ValidateConfig(proxyType ProxyType, config string) error {
-	// Write to temp file and validate
-	tmpDir := filepath.Join(m.dataDir, "tmp")
-	os.MkdirAll(tmpDir, 0750)
+	// Write to temp file and validate.
+	// ⚠ 必须放在代理配置目录（data/proxy）而不是 data/tmp ✗：生成的配置里有
+	// `include mime.types`、`ssl_dhparam ../ssl/dhparam.pem` 这类**相对路径**，
+	// nginx/caddy 按配置文件所在目录解析 → 放在 tmp 下会永远报找不到文件，
+	// 导致「自定义配置」保存校验必然失败 ✓。
+	tmpDir := m.configDir
+	if tmpDir == "" {
+		tmpDir = filepath.Join(m.dataDir, "proxy")
+	}
+	os.MkdirAll(tmpDir, 0755)
 	tmpFile := filepath.Join(tmpDir, string(proxyType)+"_validate.conf")
-	os.WriteFile(tmpFile, []byte(config), 0644)
+	if err := os.WriteFile(tmpFile, []byte(config), 0644); err != nil {
+		return err
+	}
 	defer os.Remove(tmpFile)
 
 	info := m.DetectProxy(proxyType)
@@ -2642,6 +2651,9 @@ func (m *Manager) ValidateConfig(proxyType ProxyType, config string) error {
 	default:
 		return nil
 	}
+	// 与真实启动保持一致的工作目录：配置里的 logs/、runtime/、../ssl/ 等相对路径
+	// 都按 dataDir 解析（面板进程自身 cwd 是 /opt/corefusion，不是 data）。
+	cmd.Dir = m.dataDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%s", strings.TrimSpace(string(out)))

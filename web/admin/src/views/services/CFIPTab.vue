@@ -48,44 +48,8 @@
       <div v-if="!sources.length" style="text-align:center;color:#909399;padding:16px">{{ t('common.noData') }}</div>
     </el-card>
 
-    <!-- Probe config -->
-    <el-card style="margin-bottom:16px">
-      <template #header>
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:600">{{ t('service.cfip.probeTitle') }}</span>
-          <div style="display:flex;gap:8px">
-            <el-button size="small" type="primary" @click="saveProbeConfig">{{ t('common.save') }}</el-button>
-          </div>
-        </div>
-      </template>
-      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
-        <div>
-          <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeInterval') }}</div>
-          <el-input-number v-model="probeCfg.interval_minutes" :min="1" :max="1440" size="small" style="width:130px" />
-        </div>
-        <div>
-          <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeMaxLatency') }}</div>
-          <el-input-number v-model="probeCfg.max_latency_ms" :min="0" :max="60000" :step="50" size="small" style="width:150px" />
-        </div>
-        <div>
-          <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeEntryNode') }}</div>
-          <el-select v-model="probeCfg.entry_node_id" size="small" style="width:220px" filterable>
-            <el-option :label="t('service.cfip.probeLocal')" :value="0" />
-            <el-option v-for="n in extNodes" :key="n.id" :label="`${n.name || n.host} (${n.protocol || ''})`" :value="n.id" />
-          </el-select>
-        </div>
-        <div>
-          <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeDialer') }}</div>
-          <el-select v-model="probeCfg.dialer" size="small" style="width:190px">
-            <el-option :label="t('service.cfip.probeAuto')" value="" />
-            <el-option :label="dialerLabel('singbox')" value="singbox" />
-            <el-option :label="dialerLabel('xray')" value="xray" />
-            <el-option :label="dialerLabel('mihomo')" value="mihomo" />
-          </el-select>
-        </div>
-      </div>
-      <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
-    </el-card>
+    <!-- Probe config（与 CF 优选域名共用） -->
+    <CFProbeConfig />
 
     <!-- Entries -->
     <el-card>
@@ -178,6 +142,7 @@ import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 import { usePagination } from '../../composables/usePagination'
 import PaginationBar from '../../components/PaginationBar.vue'
+import CFProbeConfig from './CFProbeConfig.vue'
 
 const { t } = useI18n()
 const sources = ref([])
@@ -222,43 +187,6 @@ async function checkHealth() {
     ElMessage.success(t('common.success'))
     await fetchEntries()
   } catch (e) { ElMessage.error(t('common.failed')) }
-}
-
-const probeCfg = ref({ interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [] })
-const extNodes = ref([])
-
-async function fetchProbeConfig() {
-  try {
-    const d = await client.get('/cfip/probe-config') || {}
-    probeCfg.value = {
-      interval_minutes: d.interval_minutes ?? 5,
-      max_latency_ms: d.max_latency_ms ?? 0,
-      entry_node_id: d.entry_node_id ?? 0,
-      dialer: d.dialer || '',
-      available_dialers: d.dialers || [],
-    }
-  } catch { /* 未配置时用默认值 */ }
-}
-
-async function fetchExtNodes() {
-  try {
-    const d = await client.get('/external-nodes')
-    extNodes.value = Array.isArray(d) ? d : (d?.items || [])
-  } catch { extNodes.value = [] }
-}
-
-// 未安装的核心在下拉里直接标注，选中后检测会提示去安装。
-function dialerLabel(name) {
-  const installed = probeCfg.value.available_dialers || []
-  return installed.includes(name) ? name : `${name} ${t('service.cfip.probeMissing')}`
-}
-
-async function saveProbeConfig() {
-  try {
-    await client.put('/cfip/probe-config', probeCfg.value)
-    ElMessage.success(t('common.success'))
-    await fetchProbeConfig()
-  } catch (e) { ElMessage.error(e?.response?.data?.message || t('common.failed')) }
 }
 
 async function fetchSources() {
@@ -371,7 +299,7 @@ function formatTime(ts) {
   return new Date(ts).toLocaleString()
 }
 
-onMounted(() => { fetchSources(); fetchEntries(); fetchProbeConfig(); fetchExtNodes() })
+onMounted(() => { fetchSources(); fetchEntries() })
 </script>
 
 <style scoped>

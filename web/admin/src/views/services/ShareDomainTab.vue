@@ -1,5 +1,8 @@
 <template>
   <div v-loading="loading">
+    <!-- 优选探测设置：与 CF IP 池共用同一份后端配置 -->
+    <CFProbeConfig />
+
     <!-- Direct Domains -->
     <el-card style="margin-bottom:16px">
       <template #header>
@@ -48,6 +51,10 @@
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <el-switch v-model="item.enabled" @change="updateItem(item)" />
           <el-input v-model="item.value" :placeholder="t('service.shareDomain.domain')" style="flex:1;min-width:200px" @change="updateItem(item)" />
+          <!-- 与 CF IP 池一致：展示探测延迟/上次检测时间 -->
+          <span :style="{ fontSize: '12px', color: item.healthy === false ? '#f56c6c' : '#67c23a' }">●</span>
+          <span v-if="item.latency_ms" style="font-size:11px;color:#909399">{{ item.latency_ms }}ms</span>
+          <span v-if="item.last_check && item.last_check !== '0001-01-01T00:00:00Z'" style="font-size:11px;color:#909399">{{ formatTime(item.last_check) }}</span>
           <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
             <span style="font-size:12px;color:#909399">HTTP:</span>
             <el-checkbox v-for="p in cfHttpPorts" :key="p" :model-value="item.ports.includes(p)" @change="(v) => togglePort(item, p, v)" size="small">
@@ -71,6 +78,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
+import CFProbeConfig from './CFProbeConfig.vue'
 
 const props = defineProps({
   serverId: { type: Number, default: 0 }
@@ -210,6 +218,11 @@ async function seedDefaults() {
   } catch (e) {
     ElMessage.error(t('common.failed'))
   }
+}
+
+function formatTime(ts) {
+  if (!ts || ts === '0001-01-01T00:00:00Z') return '-'
+  return new Date(ts).toLocaleString()
 }
 
 watch(() => props.serverId, () => {

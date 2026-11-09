@@ -171,7 +171,13 @@ func (m *CaddyManager) PreviewSiteConfig(ctx context.Context, serverID int64, dr
 	}
 	merged := make([]entity.CaddySite, 0, len(sites)+1)
 	for _, s := range sites {
-		if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
+		// 编辑已有站点：按 ID 替换。若按 domain/path/template 匹配，改了域名或路径后
+		// 旧行匹配不上 → 预览里新旧两份配置同时出现（与 nginx 侧同一问题）。
+		if draft.ID > 0 {
+			if s.ID == draft.ID {
+				continue
+			}
+		} else if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
 			continue
 		}
 		merged = append(merged, s)
@@ -195,7 +201,11 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 	for _, site := range sites {
 		if site.Template == "sni" {
-			port := site.Path
+			// Caddy 的 layer4 站点地址只接受 `:端口`。迁移/复用 nginx 规则时 Path 里
+			// 可能带 IP（如 23.254.233.185:443 / [::]:443）——直接拼会生成
+			// `:23.254.233.185:443` 这种非法地址，且同一端口的等价写法会被拆成多个
+			// layer4 server。这里统一归一成端口（Caddy 默认监听全部地址）。
+			port := listenPortOnly(canonicalListenAddr(site.Path))
 			if port == "" {
 				port = "443"
 			}
@@ -289,7 +299,14 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				sb.WriteString("\t\t" + line + "\n")
 			}
 		}
-		for port, sniSites := range sniByPort {
+		// 固定端口顺序，避免 map 随机迭代导致每次生成的 Caddyfile 顺序抖动。
+		sniPorts := make([]string, 0, len(sniByPort))
+		for port := range sniByPort {
+			sniPorts = append(sniPorts, port)
+		}
+		sort.Strings(sniPorts)
+		for _, port := range sniPorts {
+			sniSites := sniByPort[port]
 			localPort := sniSites[0].LocalPort
 			if localPort == "" {
 				localPort = "8443"

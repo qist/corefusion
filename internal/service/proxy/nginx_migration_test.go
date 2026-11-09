@@ -52,6 +52,34 @@ func TestNginxConfigStreamNonTLSTarget(t *testing.T) {
 	}
 }
 
+// 显式选择的「默认后端」必须覆盖 fallback 规则（否则一键迁移后 default 又被改回本地 HTTPS）。
+func TestNginxConfigStreamDefaultTargetOverridesFallback(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9001", Enabled: true},
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:443", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites,
+		`{"stream_sni_enabled": true, "stream_default_target": "127.0.0.1:9443"}`))
+	if !strings.Contains(cfg, "upstream sni_fallback {\n    server 127.0.0.1:9443;") {
+		t.Fatalf("默认后端应使用 stream_default_target：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "    server 127.0.0.1:443;") {
+		t.Fatalf("默认后端不应再指向 fallback 规则：\n%s", cfg)
+	}
+}
+
+// 未配置默认后端时仍按 fallback 规则生成（兼容旧行为）。
+func TestNginxConfigStreamDefaultTargetUnsetUsesFallback(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9001", Enabled: true},
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:59026", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled": true}`))
+	if !strings.Contains(cfg, "upstream sni_fallback {\n    server 127.0.0.1:59026;") {
+		t.Fatalf("未设置默认后端时应沿用 fallback 规则：\n%s", cfg)
+	}
+}
+
 // 未配置非 TLS 目标时保持旧行为（直接 proxy_pass $sni_backend）。
 func TestNginxConfigStreamNonTLSTargetDisabled(t *testing.T) {
 	sites := []entity.NginxSite{

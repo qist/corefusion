@@ -115,6 +115,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		ProxyProtocol   bool   `json:"proxy_protocol"`
 		EnableHttp2     bool   `json:"enable_http2"`
 		EnableIpv6      bool   `json:"enable_ipv6"`
+		IPv6ListenAddr  string `json:"ipv6_listen_addr"`
 		EnableQuic      bool   `json:"enable_quic"`
 		EnableEarlyData bool   `json:"enable_early_data"`
 		EnableStapling  bool   `json:"enable_stapling"`
@@ -155,6 +156,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		ProxyProtocol:   req.ProxyProtocol,
 		EnableHttp2:     req.EnableHttp2,
 		EnableIpv6:      req.EnableIpv6,
+		IPv6ListenAddr:  req.IPv6ListenAddr,
 		EnableQuic:      req.EnableQuic,
 		EnableEarlyData: req.EnableEarlyData,
 		EnableStapling:  req.EnableStapling,
@@ -213,6 +215,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		Enabled         *bool   `json:"enabled"`
 		EnableHttp2     *bool   `json:"enable_http2"`
 		EnableIpv6      *bool   `json:"enable_ipv6"`
+		IPv6ListenAddr  *string `json:"ipv6_listen_addr"`
 		EnableQuic      *bool   `json:"enable_quic"`
 		EnableEarlyData *bool   `json:"enable_early_data"`
 		EnableStapling  *bool   `json:"enable_stapling"`
@@ -305,6 +308,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.EnableIpv6 != nil {
 		existing.EnableIpv6 = *req.EnableIpv6
+	}
+	if req.IPv6ListenAddr != nil {
+		existing.IPv6ListenAddr = *req.IPv6ListenAddr
 	}
 	if req.EnableQuic != nil {
 		existing.EnableQuic = *req.EnableQuic

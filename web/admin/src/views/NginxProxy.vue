@@ -120,6 +120,10 @@
               <el-switch v-model="settings.ipv6" />
               <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.ipv6GlobalHint') }}</span>
             </el-form-item>
+            <el-form-item v-if="settings.ipv6" :label="t('proxy.ipv6ListenAddr')">
+              <el-input v-model="settings.ipv6_listen_addr" style="width:260px" placeholder=":: / ::1 / [2001:db8::1]:8443" />
+              <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.ipv6ListenAddrHint') }}</span>
+            </el-form-item>
             <el-divider content-position="left">{{ t('proxy.tls') }}</el-divider>
             <el-form-item label="ssl_dhparam">
               <el-switch v-model="settings.ssl_dhparam" />
@@ -602,12 +606,45 @@
       <template v-if="settings.stream_sni_enabled">
         <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
           <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">SNI {{ t('proxy.listenPort') }}</div>
-            <el-input v-model="sniListenPort" size="small" style="width:100px" placeholder="443" />
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.sniListenAddr') }}</div>
+            <el-input v-model="settings.sni_listen_addr" size="small" style="width:190px" placeholder="443 / 0.0.0.0:443 / [::]:443" />
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.sniListenAddrHint') }}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.sniIPv6') }}</div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <el-switch v-model="settings.stream_ipv6" />
+              <el-input
+                v-if="settings.stream_ipv6"
+                v-model="settings.stream_ipv6_listen_addr"
+                size="small"
+                style="width:190px"
+                placeholder=":: / ::1 / [2001:db8::1]:8443"
+              />
+            </div>
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.ipv6ListenAddrHint') }}</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.sniDefaultBackend') }}</div>
+            <!-- 用 autocomplete 而不是 allow-create 的 select：手输地址后无需回车即写入 v-model，
+                 否则点「保存」时输入文本会丢，表现为"改了不生效、刷新还原"。 -->
+            <el-autocomplete
+              v-model="settings.stream_default_target"
+              :fetch-suggestions="querySniDefault"
+              size="small"
+              style="width:190px"
+              clearable
+              :placeholder="sniDefaultPlaceholder"
+            >
+              <template #default="{ item }">
+                <span>{{ item.label }}</span>
+              </template>
+            </el-autocomplete>
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.sniDefaultBackendHint') }}</div>
           </div>
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.localHttpsPort') }}</div>
-            <el-input v-model="sniLocalPort" size="small" style="width:100px" placeholder="8443" />
+            <el-input v-model="settings.default_https_port" size="small" style="width:140px" placeholder="127.0.0.1:8443" />
           </div>
           <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
           <el-button size="small" type="warning" @click="batchMigrate">{{ t('proxy.batchMigrate') }}</el-button>
@@ -667,7 +704,7 @@
         </MobileCards>
         <PaginationBar v-model:page="sniPage" v-model:page-size="sniSize" :total="sniTotal" />
         <div style="margin-top:12px;font-size:12px;color:#909399">
-          {{ t('proxy.sniFallback') }}: 127.0.0.1:{{ sniLocalPort }}
+          {{ t('proxy.sniFallback') }}: {{ sniDefaultEffective }}
         </div>
       </template>
     </el-card>
@@ -847,6 +884,13 @@
 <el-form-item :label="t('proxy.sniTarget')">
 <el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443" />
 </el-form-item>
+<el-form-item :label="t('proxy.sniListenAddr')">
+<el-input v-model="sniForm.listen_addr" placeholder="443 / 0.0.0.0:443 / [::]:443" />
+<div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniListenAddrHint') }}</div>
+</el-form-item>
+<el-form-item :label="t('proxy.sniIPv6')">
+<el-switch v-model="sniForm.enable_ipv6" />
+</el-form-item>
 <el-form-item :label="t('proxy.proxyProtocol')">
 <el-switch v-model="sniForm.proxy_protocol" />
 </el-form-item>
@@ -943,8 +987,8 @@
         <el-form-item v-if="siteForm.template==='l4'" :label="t('proxy.listenPort')">
           <el-input v-model="siteForm.listen_port" placeholder="443" style="width:120px" />
         </el-form-item>
-        <el-form-item v-else :label="t('proxy.listenPort')">
-          <el-input v-model="siteForm.listen_port" placeholder="80" style="width:120px" />
+        <el-form-item v-else :label="siteForm.template==='sni' ? t('proxy.sniListenAddr') : t('proxy.listenPort')">
+          <el-input v-model="siteForm.listen_port" :placeholder="siteForm.template==='sni' ? '443 / 0.0.0.0:443' : '80'" style="width:160px" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniDomain')">
           <el-input v-model="siteForm.domain" placeholder="www.example.com" />
@@ -995,6 +1039,10 @@
         </el-form-item>
         <el-form-item label="IPv6">
           <el-switch v-model="siteForm.enable_ipv6" />
+          <div v-if="siteForm.enable_ipv6" style="margin-top:6px">
+            <el-input v-model="siteForm.ipv6_listen_addr" style="width:260px" :placeholder="settings.ipv6_listen_addr || ':: / ::1 / [2001:db8::1]:8443'" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.siteIPv6ListenHint') }}</div>
+          </div>
         </el-form-item>
         <!-- SNI / L4 为 TCP 层（layer4）转发，不终止 TLS、不做 HTTP 路由：证书/日志/跳转/WAF 对其无效，隐藏之 -->
         <template v-if="!isTcpForward">
@@ -1394,8 +1442,80 @@ function onInboundSelect(id) {
 
 }
 
-const sniListenPort = ref('443')
-const sniLocalPort = ref('8443')
+// 「本地 HTTPS 端口」直接读写 settings.default_https_port（可填 8443 或 127.0.0.1:8443）。
+// 以前用独立的 ref('8443')，保存后不落库、刷新就还原 —— 现在与设置同源。
+function localHttpsTarget() {
+  const v = String(settings.value.default_https_port || '').trim()
+  if (!v) return '127.0.0.1:8443'
+  return v.includes(':') ? v : `127.0.0.1:${v}`
+}
+function localHttpsPort() {
+  const v = String(settings.value.default_https_port || '').trim() || '8443'
+  const m = v.match(/:(\d+)$/)
+  if (m) return m[1]
+  return /^\d+$/.test(v) ? v : '8443'
+}
+// SNI 默认监听地址（纯端口 / IP:端口 / [::]:端口），在设置里持久化。
+function sniListenAddr() {
+  return String(settings.value.sni_listen_addr || '443').trim() || '443'
+}
+// SNI map default（未知 SNI 的 TLS 流量）后端：可选已有规则目标，也可手动输入。
+const sniDefaultPlaceholder = computed(() => localHttpsTarget())
+const sniDefaultOptions = computed(() => {
+  // 数据源必须全量：sniRules / sniInbounds 都是完整集合，不能取分页后的表格数据，
+  // 否则下拉只会显示当前页的目标。
+  const map = new Map()
+  const add = (value, label) => {
+    const v = String(value || '').trim()
+    if (!v || map.has(v)) return
+    map.set(v, label || v)
+  }
+  for (const r of sniRules.value) {
+    if (r.domain === 'fallback' || !r.domain) continue
+    const tgt = String(r.sni_target || r.upstream || '').trim()
+    if (tgt) add(tgt, r.domain ? `${tgt}  (${r.domain})` : tgt)
+  }
+  // 所有 TLS/Reality 入站也作为候选，避免"还没生成 SNI 规则就选不到"。
+  for (const ib of sniInbounds.value) {
+    const addr = ib._isSocket ? `unix:${ib._socketPath}` : `127.0.0.1:${ib.port}`
+    add(addr, `${addr}  (${inboundLabel(ib)})`)
+  }
+  add(localHttpsTarget())
+  return Array.from(map, ([value, label]) => ({ value, label }))
+})
+// el-autocomplete 的建议回调：手动输入时也保持输入即绑定。
+function querySniDefault(query, cb) {
+  const q = String(query || '').trim().toLowerCase()
+  cb(sniDefaultOptions.value
+    .filter(o => !q || o.value.toLowerCase().includes(q) || o.label.toLowerCase().includes(q))
+    .map(o => ({ value: o.value, label: o.label })))
+}
+const sniDefaultEffective = computed(() => {
+  const v = String(settings.value.stream_default_target || '').trim()
+  if (v) return v
+  const fb = sniRules.value.find(r => r.domain === 'fallback' || !r.domain)
+  const t = fb ? String(fb.sni_target || fb.upstream || '').trim() : ''
+  return t || localHttpsTarget()
+})
+// 保证存在 fallback 规则：有显式默认后端时同步到该规则，避免表里显示与实际 default 不一致。
+async function ensureSniFallback(existing, port) {
+  const defTarget = String(settings.value.stream_default_target || '').trim()
+  const fb = (existing || []).find(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
+  if (fb) {
+    if (defTarget && String(fb.sni_target || '') !== defTarget) {
+      await client.put(`${nginxApi.value}/sites/${fb.id}`, { sni_target: defTarget })
+    }
+    return
+  }
+  await client.post(`${nginxApi.value}/sites`, {
+    domain: 'fallback', upstream: '', template: 'sni',
+    sni_target: defTarget || `127.0.0.1:${port}`,
+    local_port: port,
+    proxy_protocol: true, is_panel: false, priority: 999,
+    path: sniListenAddr(), listen_port: sniListenAddr(),
+    enable_ipv6: !!settings.value.stream_ipv6
+  })
+}
 
 // Releases
 const releasesVisible = ref(false)
@@ -1807,7 +1927,7 @@ const siteForm = ref({
   custom_config: '', server_config: '', location_config: '',
   l4_protocol: 'tcp', sni_target: '', local_port: '8443',
   proxy_protocol: false, is_panel: false,
-  enable_http2: true, enable_ipv6: false, enable_quic: false,
+  enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
   enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: true, redirect_https: true,
@@ -2095,19 +2215,9 @@ async function onSNIToggle(enabled) {
     await saveSettings()
     if (enabled) {
       await client.post(`${nginxApi.value}/sni-rules/toggle`, { enabled: true })
-      const localPort = sniLocalPort.value
-      settings.value.default_https_port = localPort
-      await saveSettings()
+      const localPort = localHttpsPort()
       const existing = await client.get(`${nginxApi.value}/sites`)
-      const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
-      if (!hasFallback) {
-        await client.post(`${nginxApi.value}/sites`, {
-          domain: 'fallback', upstream: '', template: 'sni',
-          sni_target: `127.0.0.1:${localPort}`, local_port: localPort,
-          proxy_protocol: true, is_panel: false, priority: 999,
-          listen_port: sniListenPort.value
-        })
-      }
+      await ensureSniFallback(existing, localPort)
       const res = await client.post(`${nginxApi.value}/batch-update-ports`, { port: localPort, enable: true })
       ElMessage.success(t('proxy.sniEnabled', { count: res.updated || 0 }))
     } else {
@@ -2123,20 +2233,11 @@ async function onSNIToggle(enabled) {
 }
 
 async function batchMigrate() {
-  const port = sniLocalPort.value
+  const port = localHttpsPort()
   try {
-    settings.value.default_https_port = port
     await saveSettings()
     const existing = await client.get(`${nginxApi.value}/sites`)
-    const hasFallback = (existing || []).some(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
-    if (!hasFallback) {
-      await client.post(`${nginxApi.value}/sites`, {
-        domain: 'fallback', upstream: '', template: 'sni',
-        sni_target: `127.0.0.1:${port}`, local_port: port,
-        proxy_protocol: true, is_panel: false, priority: 999,
-        listen_port: sniListenPort.value
-      })
-    }
+    await ensureSniFallback(existing, port)
     const res = await client.post(`${nginxApi.value}/batch-update-ports`, { port, enable: true })
     await applyConfig()
     ElMessage.success(t('proxy.migrationComplete', { count: res.updated || 0 }))
@@ -2196,7 +2297,7 @@ siteForm.value = {
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: isReality, is_panel: false,
-    enable_http2: true, enable_ipv6: false, enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: !wafDisabledTemplates.includes(template),
@@ -2243,7 +2344,7 @@ function showPanelProxy() {
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: false, is_panel: true,
-    enable_http2: true, enable_ipv6: false, enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: true,
@@ -2265,7 +2366,7 @@ function showForwardProxy(template) {
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: false, is_panel: false,
-    enable_http2: true, enable_ipv6: false, enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
     ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
     waf_enabled: true,
@@ -2305,7 +2406,8 @@ function editSite(row) {
     upstreams = row.upstream.split(/[,\n]/).map(s => s.trim()).filter(s => s)
     if (upstreams.length === 0) upstreams = ['']
   }
-  const listenPort = row.template === 'l4' ? (row.path || row.listen_port) : (row.listen_port)
+  // SNI / L4 的监听地址存在 path（可含 IP），编辑时必须回填，否则保存会把监听改回默认值。
+  const listenPort = ['l4', 'sni'].includes(row.template) ? (row.path || row.listen_port) : (row.listen_port)
   siteForm.value = {
     id: row.id, domain: row.domain, upstreams, path: row.path,
     backend_path: row.backend_path,
@@ -2319,8 +2421,10 @@ function editSite(row) {
     l4_protocol: row.l4_protocol,
     sni_target: row.sni_target, local_port: row.local_port,
     proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false), is_panel: row.is_panel,
+    upstream_tls: row.upstream_tls === true,
     enable_http2: row.enable_http2 !== false,
     enable_ipv6: row.enable_ipv6 || false,
+    ipv6_listen_addr: row.ipv6_listen_addr || '',
     enable_quic: row.enable_quic || false,
     enable_early_data: row.enable_early_data || false,
     enable_stapling: row.enable_stapling || false,
@@ -2347,7 +2451,7 @@ let configPreviewTimer = null
 
 function buildSitePayload() {
   const upstream = (siteForm.value.upstreams || []).filter(u => u.trim()).join(',')
-  const pathValue = siteForm.value.template === 'l4' ? siteForm.value.listen_port : siteForm.value.path
+  const pathValue = ['l4', 'sni'].includes(siteForm.value.template) ? siteForm.value.listen_port : siteForm.value.path
   return {
     id: siteForm.value.id || 0,
     domain: siteForm.value.domain,
@@ -2366,10 +2470,12 @@ function buildSitePayload() {
     sni_target: siteForm.value.sni_target,
     local_port: siteForm.value.local_port,
     proxy_protocol: siteForm.value.proxy_protocol || false,
+    upstream_tls: siteForm.value.upstream_tls === true,
     is_panel: siteForm.value.is_panel,
     priority: siteForm.value.is_panel ? 0 : 100,
     enable_http2: siteForm.value.enable_http2 !== false,
     enable_ipv6: siteForm.value.enable_ipv6 || false,
+    ipv6_listen_addr: siteForm.value.enable_ipv6 ? (siteForm.value.ipv6_listen_addr || '') : '',
     enable_quic: siteForm.value.enable_quic || false,
     enable_early_data: siteForm.value.enable_early_data || false,
     enable_stapling: siteForm.value.enable_stapling || false,
@@ -2504,7 +2610,10 @@ function copyConfig() {
 }
 
 function showAddSNI() {
-sniForm.value = { domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' }
+sniForm.value = {
+  domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link',
+  listen_addr: sniListenAddr(), enable_ipv6: !!settings.value.stream_ipv6,
+}
 sniDialogVisible.value = true
 }
 
@@ -2521,11 +2630,13 @@ async function saveSNIRule() {
         upstream: '',
         template: 'sni',
         sni_target: sniForm.value.sni_target,
-        local_port: sniLocalPort.value,
+        local_port: localHttpsPort(),
         proxy_protocol: sniForm.value.proxy_protocol,
         is_panel: false,
         priority: 50,
-        listen_port: sniListenPort.value
+        path: sniForm.value.listen_addr || sniListenAddr(),
+        listen_port: sniForm.value.listen_addr || sniListenAddr(),
+        enable_ipv6: !!sniForm.value.enable_ipv6
       })
     }
     await applyConfig()

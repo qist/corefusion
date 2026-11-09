@@ -21,9 +21,13 @@ type NginxSettings struct {
 	DefaultHttpsPort string `json:"default_https_port"`
 
 	// Network
-	// IPv6 是全局 IPv6 监听开关：打开后所有 HTTP/HTTPS/跳转/默认/stream 的 listen
-	// 都会追加对应的 [::] 监听；站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
+	// IPv6 是全局 IPv6 监听开关：打开后所有 HTTP/HTTPS/跳转/默认的 listen
+	// 都会追加对应的 IPv6 监听；站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
 	IPv6 bool `json:"ipv6"`
+	// IPv6ListenAddr 是 HTTP/HTTPS 侧 IPv6 监听地址，默认 "::"。
+	// 可只填地址（::1 / 2001:db8::1），也可带端口（[2001:db8::1]:8443）；
+	// 带端口时只作用于 HTTPS/QUIC 监听，HTTP 侧仍用各自端口，避免撞端口。
+	IPv6ListenAddr string `json:"ipv6_listen_addr"`
 
 	// TLS（全局）
 	// SslDhparam 打开后所有 TLS server 共用 data/ssl/dhparam.pem（openssl dhparam 2048 生成一次）。
@@ -151,9 +155,14 @@ type NginxSettings struct {
 	WAFEnabled bool `json:"waf_enabled"` // enable WAF access filtering (default: false)
 
 	// Stream (SNI + L4)
-	StreamSNIEnabled     bool   `json:"stream_sni_enabled"`
-	StreamSNICacheSize   string `json:"stream_sni_cache_size"`
-	StreamIPv6           bool   `json:"stream_ipv6"`
+	StreamSNIEnabled bool `json:"stream_sni_enabled"`
+	// SNIListenAddr 是 SNI 流监听的默认地址，支持纯端口 / IP:端口 / [::]:端口。
+	// 单个 SNI 规则可在站点 Path 里覆盖；为空时回退 443。
+	SNIListenAddr      string `json:"sni_listen_addr"`
+	StreamSNICacheSize string `json:"stream_sni_cache_size"`
+	StreamIPv6         bool   `json:"stream_ipv6"`
+	// StreamIPv6ListenAddr 是 stream（SNI/L4）的 IPv6 监听地址（只填主机部分，默认 "::"）。
+	StreamIPv6ListenAddr string `json:"stream_ipv6_listen_addr"`
 	StreamProxyProtocol  bool   `json:"stream_proxy_protocol"`
 	StreamConnectTimeout string `json:"stream_connect_timeout"`
 	// StreamPrereadTimeout：等待客户端发出 ClientHello/SNI 的超时（防探测/防扫描，短）。
@@ -167,6 +176,10 @@ type NginxSettings struct {
 	// StreamNonTLSTarget：非 TLS 流量（ssl_preread_protocol 为空）导向的后端，
 	// 例如 "127.0.0.1:8444"。空=不启用（非 TLS 与未知 SNI 一起走 fallback）。
 	StreamNonTLSTarget string `json:"stream_nontls_target"`
+
+	// StreamDefaultTarget：SNI map 的 default（未知 SNI 的 TLS 流量）后端，可自由选择，
+	// 例如 "127.0.0.1:8443" / "127.0.0.1:9443"。空=使用 fallback 规则（无则 127.0.0.1:8443）。
+	StreamDefaultTarget string `json:"stream_default_target"`
 
 	// Custom
 	CustomConfig string `json:"custom_config"`
@@ -184,6 +197,7 @@ func DefaultNginxSettings() *NginxSettings {
 		DefaultHttpPort:       "80",
 		DefaultHttpsPort:      "443",
 		IPv6:                  false,
+		IPv6ListenAddr:        "::",
 		SslDhparam:            false,
 		SslSessionTicket:      false,
 		SslResolver:           "8.8.8.8 1.1.1.1",
@@ -275,8 +289,10 @@ func DefaultNginxSettings() *NginxSettings {
 		WAFEnabled:                  false,
 		// Stream defaults
 		StreamSNIEnabled:     false,
+		SNIListenAddr:        "443",
 		StreamSNICacheSize:   "64",
 		StreamIPv6:           false,
+		StreamIPv6ListenAddr: "::",
 		StreamProxyProtocol:  false,
 		StreamConnectTimeout: "1s",
 		StreamPrereadTimeout: "3s",
@@ -560,6 +576,11 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	if src.StreamNonTLSTarget != "" {
 		dst.StreamNonTLSTarget = src.StreamNonTLSTarget
 	}
+	// StreamDefaultTarget **无条件**覆盖（含空值）：允许用户清空回退到 fallback 规则。
+	dst.StreamDefaultTarget = src.StreamDefaultTarget
+	if src.IPv6ListenAddr != "" {
+		dst.IPv6ListenAddr = src.IPv6ListenAddr
+	}
 	// Bool fields: always copy (can't distinguish "not set" from "false")
 	dst.IPv6 = src.IPv6
 	dst.SslDhparam = src.SslDhparam
@@ -596,7 +617,11 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	dst.LuaEnabled = src.LuaEnabled
 	dst.WAFEnabled = src.WAFEnabled
 	dst.StreamSNIEnabled = src.StreamSNIEnabled
+	dst.SNIListenAddr = src.SNIListenAddr
 	dst.StreamIPv6 = src.StreamIPv6
+	if src.StreamIPv6ListenAddr != "" {
+		dst.StreamIPv6ListenAddr = src.StreamIPv6ListenAddr
+	}
 	dst.StreamProxyProtocol = src.StreamProxyProtocol
 	dst.StreamLog = src.StreamLog
 }

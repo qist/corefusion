@@ -35,6 +35,9 @@ type NginxSite struct {
 	EnableHttp2     bool   `json:"enable_http2" gorm:"not null;default:true"`
 	EnableQuic      bool   `json:"enable_quic" gorm:"not null;default:false"`
 	EnableIpv6      bool   `json:"enable_ipv6" gorm:"not null;default:false"`
+	// IPv6ListenAddr：站点级 IPv6 监听地址（可含端口），如 "::" / "::1" / "[2001:db8::1]:8443"。
+	// 空=使用全局 ipv6_listen_addr；仅在 IPv6 开启时生效。
+	IPv6ListenAddr  string `json:"ipv6_listen_addr" gorm:"size:64"`
 	EnableEarlyData bool   `json:"enable_early_data" gorm:"not null;default:false"`
 	EnableStapling  bool   `json:"enable_stapling" gorm:"not null;default:false"`
 	SslProtocols    string `json:"ssl_protocols" gorm:"size:128"`

@@ -186,7 +186,14 @@ func (m *NginxManager) PreviewSiteConfig(ctx context.Context, serverID int64, dr
 	}
 	merged := make([]entity.NginxSite, 0, len(sites)+1)
 	for _, s := range sites {
-		if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
+		// 编辑已有站点：必须按 ID 替换。若按 domain/path/template 匹配，
+		// 一旦改了监听地址或域名，旧行不会被剔除 → 预览里同时出现新旧两份配置。
+		if draft.ID > 0 {
+			if s.ID == draft.ID {
+				continue
+			}
+		} else if s.Domain == draft.Domain && s.Path == draft.Path && s.Template == draft.Template {
+			// 新建站点：同 domain/path/template 视为同一草稿，避免重复。
 			continue
 		}
 		merged = append(merged, s)
@@ -206,6 +213,8 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	// 全局 IPv6 开关：作用于所有生成的 listen（站点 server / HTTP→HTTPS 跳转 /
 	// 默认 server / stream）。站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
 	globalIPv6 := s.IPv6
+	// HTTP 与 stream 各自可指定 IPv6 监听地址（默认 "::"），不再固定 [::]。
+	httpV6Host := ipv6ListenHost(s.IPv6ListenAddr)
 
 	// 全局 TLS 素材：开启时从库里的 base64 还原到 data/ssl/（生成在保存开关/点按钮时完成，
 	// 不在此处触发耗时生成）；远程节点由 Agent 按同一份 base64 还原，保证多节点一致。
@@ -684,7 +693,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			sb.WriteString("    server {\n")
 			sb.WriteString("        listen 80;\n")
 			if grpIPv6 {
-				sb.WriteString("        listen [::]:80;\n")
+				sb.WriteString(fmt.Sprintf("        listen %s;\n", ipv6Listen(httpV6Host, "80")))
 			}
 			sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
 			if !m.isLocalTarget(ctx, serverID) {
@@ -715,6 +724,8 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		socketProxyProtocol := false
 		hasProxyProtocol := false
 		enableIpv6 := globalIPv6
+		// 站点级 IPv6 监听地址（可含端口）优先于全局；同域名多 location 取第一个显式配置的。
+		groupV6Addr := ""
 		listenPort := ""
 		var tlsCert, tlsKey string
 		var tlsSite *entity.NginxSite
@@ -757,6 +768,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			if site.EnableIpv6 {
 				enableIpv6 = true
 			}
+			if groupV6Addr == "" && strings.TrimSpace(site.IPv6ListenAddr) != "" {
+				groupV6Addr = site.IPv6ListenAddr
+			}
+		}
+		if groupV6Addr == "" {
+			groupV6Addr = s.IPv6ListenAddr
 		}
 
 		// Default port: 443 for TLS, 80 for non-TLS
@@ -812,7 +829,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", quicListen, ds))
 			if enableIpv6 {
-				sb.WriteString(fmt.Sprintf("        listen [::]:%s quic%s;\n", quicListen, ds))
+				sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", ipv6ListenFor(groupV6Addr, quicListen), ds))
 			}
 		}
 		if hasTLS {
@@ -821,12 +838,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if hasProxyProtocol {
 					sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl proxy_protocol%s;\n", listenPort, ds))
+						sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen [::]:%s ssl%s;\n", listenPort, ds))
+						sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
 					}
 				}
 			}
@@ -886,12 +903,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if hasProxyProtocol {
 					sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen [::]:%s proxy_protocol%s;\n", listenPort, ds))
+						sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("        listen %s%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen [::]:%s%s;\n", listenPort, ds))
+						sb.WriteString(fmt.Sprintf("        listen %s%s;\n", ipv6Listen(groupV6Addr, listenPort), ds))
 					}
 				}
 			}
@@ -1227,7 +1244,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		sb.WriteString("    server {\n")
 		sb.WriteString("        listen 80;\n")
 		if globalIPv6 {
-			sb.WriteString("        listen [::]:80;\n")
+			sb.WriteString(fmt.Sprintf("        listen %s;\n", ipv6Listen(httpV6Host, "80")))
 		}
 		sb.WriteString("        location / {\n")
 		sb.WriteString("            default_type text/plain;\n")
@@ -1290,17 +1307,62 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 		// SNI routing via ssl_preread
 		if s.StreamSNIEnabled && len(sniSites) > 0 {
-			sniByPort := make(map[string][]entity.NginxSite)
-			for _, site := range sniSites {
-				port := site.Path
-				if port == "" {
-					port = "443"
-				}
-				sniByPort[port] = append(sniByPort[port], site)
+			defaultListen := canonicalListenAddr(s.SNIListenAddr)
+			if defaultListen == "" {
+				defaultListen = "443"
 			}
+			sniByPort := make(map[string][]entity.NginxSite)
+			listens := make([]string, 0, len(sniSites))
+			for _, site := range sniSites {
+				// 监听地址优先级：站点 Path → 站点 ListenPort → 全局 SNI 默认地址。
+				// 统一 canonical 化（"" / "443" / "0.0.0.0:443" / ":443" 都归一成同一个 key），
+				// 否则编辑一条规则就可能多出一个 listen 组，生成两份 SNI server。
+				addr := canonicalListenAddr(site.Path)
+				if addr == "" {
+					addr = canonicalListenAddr(site.ListenPort)
+				}
+				if addr == "" {
+					addr = defaultListen
+				}
+				if _, ok := sniByPort[addr]; !ok {
+					listens = append(listens, addr)
+				}
+				sniByPort[addr] = append(sniByPort[addr], site)
+			}
+			// 固定顺序，避免 map 随机迭代导致每次生成的配置内容/顺序抖动。
+			sort.Strings(listens)
 
-			multiPort := len(sniByPort) > 1
-			for port, portSites := range sniByPort {
+			// 通配监听（"443"）与同端口的指定 IPv4 监听（"127.0.0.1:443"）不能共存：
+			// nginx 会报 duplicate listen / bind() 冲突。通配优先，把指定 IP 组并入
+			// 通配组（域名映射保留），避免历史数据里混用两种写法时生成两个 SNI 监听。
+			wildcardPorts := make(map[string]bool)
+			for _, addr := range listens {
+				if !strings.Contains(addr, ":") {
+					wildcardPorts[addr] = true
+				}
+			}
+			mergedListens := make([]string, 0, len(listens))
+			for _, addr := range listens {
+				// 仅合并 IPv4 指定地址；IPv6（以 [ 开头）是独立监听，不冲突。
+				if !strings.HasPrefix(addr, "[") && strings.Contains(addr, ":") {
+					if p := listenPortOnly(addr); wildcardPorts[p] {
+						log.Printf("[NginxConfig] SNI listen %s 与通配监听 %s 冲突，已并入通配组", addr, p)
+						sniByPort[p] = append(sniByPort[p], sniByPort[addr]...)
+						delete(sniByPort, addr)
+						continue
+					}
+				}
+				mergedListens = append(mergedListens, addr)
+			}
+			listens = mergedListens
+
+			multiPort := len(listens) > 1
+			// 同一端口的 [::]:port 通配 IPv6 监听只能出现一次：多个指定 IPv4 监听
+			// （如 10.0.0.1:443 与 10.0.0.2:443）各自再追加 [::]:443 会被 nginx
+			// 判为 duplicate listen options。
+			v6Emitted := make(map[string]bool)
+			for _, port := range listens {
+				portSites := sniByPort[port]
 				// 多个监听地址时，map / upstream 名字必须带端口后缀：否则每组都会写出
 				// 同名的 `upstream direct_http` / `map ... $sni_backend`，
 				// nginx -t 直接报 duplicate upstream "direct_http"。
@@ -1349,25 +1411,30 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					sb.WriteString("}\n\n")
 				}
 
-				// Fallback upstream
-				var fallbackTarget string
+				// Fallback upstream（SNI map 的 default：未知 SNI 的 TLS 流量）
+				// 优先级：设置里显式选择的「默认后端」> fallback 规则 > 127.0.0.1:8443。
+				var siteFallback string
 				var fallbackPP bool
 				for _, site := range portSites {
 					if site.Domain == "fallback" || site.Domain == "" {
-						fallbackTarget = site.SNITarget
-						if fallbackTarget == "" {
-							fallbackTarget = site.Upstream
+						siteFallback = site.SNITarget
+						if siteFallback == "" {
+							siteFallback = site.Upstream
 						}
-						if fallbackTarget == "" {
+						if siteFallback == "" {
 							localPort := site.LocalPort
 							if localPort == "" {
 								localPort = "8443"
 							}
-							fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
+							siteFallback = fmt.Sprintf("127.0.0.1:%s", localPort)
 						}
 						fallbackPP = site.ProxyProtocol
 						break
 					}
+				}
+				fallbackTarget := strings.TrimSpace(s.StreamDefaultTarget)
+				if fallbackTarget == "" {
+					fallbackTarget = siteFallback
 				}
 				if fallbackTarget == "" {
 					fallbackTarget = "127.0.0.1:8443"
@@ -1385,13 +1452,17 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 
 				// ssl_preread map
-				sb.WriteString(fmt.Sprintf("# SNI routing on :%s\n", port))
+				sb.WriteString(fmt.Sprintf("# SNI routing on %s\n", port))
 				sb.WriteString(fmt.Sprintf("map $ssl_preread_server_name %s {\n", sniBackendVar))
+				// 合并监听组后可能出现同一域名两条规则：map 里重复 key 会让
+				// nginx -t 直接报 duplicate parameter，这里只保留第一条。
+				mapSeen := make(map[string]bool, len(portSites))
 				for _, site := range portSites {
 					domain := site.Domain
-					if domain == "fallback" || domain == "" {
+					if domain == "fallback" || domain == "" || mapSeen[domain] {
 						continue
 					}
+					mapSeen[domain] = true
 					sb.WriteString(fmt.Sprintf("    %s %s;\n", domain, sniUpstreamName(domain)))
 				}
 				sb.WriteString(fmt.Sprintf("    default %s;\n", fallbackUpstream))
@@ -1431,12 +1502,29 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if prereadTimeout == "" {
 					prereadTimeout = "3s"
 				}
+				// IPv6 监听：全局开关 / 全局 IPv6 / 本组任一条规则开了 IPv6，任一成立即追加。
+				// 若监听地址本身已是具体 IPv6（如 [::1]:443），不再追加 [::]:端口（会冲突）。
+				groupIPv6 := s.StreamIPv6 || globalIPv6
+				if !groupIPv6 {
+					for _, site := range portSites {
+						if site.EnableIpv6 {
+							groupIPv6 = true
+							break
+						}
+					}
+				}
 				sb.WriteString("server {\n")
 				sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
-				if s.StreamIPv6 || globalIPv6 {
+				if groupIPv6 && !listenHostIsIPv6(port) {
 					// port 可能是 "203.0.113.10:443"（只监听指定 IPv4）——
 					// IPv6 行必须只取端口，否则会生成 listen [::]:203.0.113.10:443 这种非法写法。
-					sb.WriteString(fmt.Sprintf("    listen [::]:%s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", listenPortOnly(port)))
+					p6 := listenPortOnly(port)
+					// Stream IPv6 监听地址可写成 "[2001:db8::1]:8443"：带端口时用该端口。
+					v6Listen := ipv6ListenFor(s.StreamIPv6ListenAddr, p6)
+					if k := listenPortOnly(v6Listen); !v6Emitted[k] {
+						v6Emitted[k] = true
+						sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", v6Listen))
+					}
 				}
 				sb.WriteString("    ssl_preread on;\n")
 				sb.WriteString("    proxy_half_close on;\n")
@@ -1488,12 +1576,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if proto == "udp" {
 					sb.WriteString(fmt.Sprintf("    listen %s udp so_keepalive=on;\n", port))
 					if s.StreamIPv6 || globalIPv6 {
-						sb.WriteString(fmt.Sprintf("    listen [::]:%s udp ipv6only=on so_keepalive=on;\n", port))
+						sb.WriteString(fmt.Sprintf("    listen %s udp ipv6only=on so_keepalive=on;\n", ipv6ListenFor(s.StreamIPv6ListenAddr, port)))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("    listen %s so_keepalive=on;\n", port))
 					if s.StreamIPv6 || globalIPv6 {
-						sb.WriteString(fmt.Sprintf("    listen [::]:%s ipv6only=on so_keepalive=on;\n", port))
+						sb.WriteString(fmt.Sprintf("    listen %s ipv6only=on so_keepalive=on;\n", ipv6ListenFor(s.StreamIPv6ListenAddr, port)))
 					}
 				}
 				sb.WriteString("    proxy_socket_keepalive on;\n")
@@ -1528,6 +1616,91 @@ func writeProxySSLUpstream(sb *strings.Builder, sni string) {
 
 // listenPortOnly 从 "443" / "203.0.113.10:443" / "[::1]:443" 中取出纯端口，
 // 供 IPv6 listen 复用（IPv6 行只接受 [::]:<port>）。
+// canonicalListenAddr 归一 SNI/L4 监听地址：
+//   - "" / ":443" / "0.0.0.0:443" / "*:443" / "[::]:443" → "443"（通配监听统一成纯端口）
+//   - "127.0.0.1:443" → "127.0.0.1:443"
+//   - "[::1]:443" → "[::1]:443"
+//
+// 目的：同一监听的等价写法必须落进同一个 SNI 分组，避免生成两个 listen 443。
+func canonicalListenAddr(addr string) string {
+	a := strings.TrimSpace(addr)
+	if a == "" {
+		return ""
+	}
+	// ":443" → "443"；但裸 IPv6（"::1" / "::"）不能剥前导冒号，否则会变成 "1" / ""。
+	if strings.HasPrefix(a, ":") && !strings.HasPrefix(a, "::") {
+		a = strings.TrimPrefix(a, ":")
+	}
+	if a == "" {
+		return ""
+	}
+	// 纯端口
+	if _, err := strconv.Atoi(a); err == nil {
+		return a
+	}
+	host, port, err := net.SplitHostPort(a)
+	if err != nil || port == "" {
+		return a
+	}
+	if host == "" || host == "0.0.0.0" || host == "*" || host == "::" {
+		return port
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// ipv6ListenHost 归一 IPv6 监听地址，只取主机部分，默认 "::"。
+// 支持 "::" / "[::]" / "::1" / "[::1]" / "2001:db8::1" / "[2001:db8::1]:443"。
+// 非 IPv6 写法（含 IPv4 / 纯端口）一律回退 "::"，避免生成非法 listen。
+func ipv6ListenHost(addr string) string {
+	c := canonicalListenAddr(addr)
+	if c == "" {
+		return "::"
+	}
+	if host, _, err := net.SplitHostPort(c); err == nil && host != "" {
+		c = host
+	}
+	c = strings.Trim(strings.TrimSpace(c), "[]")
+	if !strings.Contains(c, ":") {
+		return "::"
+	}
+	return c
+}
+
+// ipv6Listen 生成 nginx 的 IPv6 监听地址（形如 [::1]:443）。
+// port 允许传纯端口（"443"）或带 IPv4 地址（"127.0.0.1:443"）——必须只取端口，
+// 否则会生成 listen [::1]:127.0.0.1:443 这种非法写法（nginx: invalid port）。
+func ipv6Listen(host, port string) string {
+	return fmt.Sprintf("[%s]:%s", ipv6ListenHost(host), listenPortOnly(port))
+}
+
+// ipv6ListenFor 生成站点/组使用的 IPv6 listen：addr 可只写主机（"::1"）或带端口
+// （"[::1]:8443"）。带端口时用该端口，否则用 fallbackPort。
+func ipv6ListenFor(addr, fallbackPort string) string {
+	host, port := ipv6HostPort(addr, fallbackPort)
+	return fmt.Sprintf("[%s]:%s", host, listenPortOnly(port))
+}
+
+func ipv6HostPort(addr, fallbackPort string) (string, string) {
+	if strings.TrimSpace(addr) == "" {
+		return "::", fallbackPort
+	}
+	c := canonicalListenAddr(addr)
+	if host, port, err := net.SplitHostPort(c); err == nil && port != "" {
+		return ipv6ListenHost(host), port
+	}
+	return ipv6ListenHost(c), fallbackPort
+}
+
+// listenHostIsIPv6 reports whether the listen address already pins a specific
+// IPv6 host (e.g. "[::1]:443"). In that case adding "[::]:port" would conflict.
+func listenHostIsIPv6(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(host, ":")
+}
+
 func listenPortOnly(listen string) string {
 	listen = strings.TrimSpace(listen)
 	if listen == "" {

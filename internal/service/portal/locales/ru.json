@@ -267,6 +267,7 @@
   "plan.col_service": "Услуга",
   "plan.current_plan": "Текущий план",
   "plan.days_unit": "дней",
+  "plan.permanent": "Бессрочно",
   "plan.default_desc": "Те же узлы, лучшая цена",
   "plan.duration": "Срок действия",
   "plan.empty": "Нет доступных планов",

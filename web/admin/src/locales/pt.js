@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Vitalício",
     "cycleOneTime": "Pagamento único",
     "effectiveDays": "Dias de validade",
+    "permanent": "Permanente",
     "priceYuan": "Preço (yuan)",
     "originalPriceYuan": "Preço original (yuan)",
     "trafficGB": "Tráfego (GB)",

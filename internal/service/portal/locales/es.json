@@ -267,6 +267,7 @@
   "plan.col_service": "Servicio",
   "plan.current_plan": "Plan actual",
   "plan.days_unit": "días",
+  "plan.permanent": "Permanente",
   "plan.default_desc": "Los mismos nodos, a mejor precio",
   "plan.duration": "Duración",
   "plan.empty": "No hay planes disponibles",

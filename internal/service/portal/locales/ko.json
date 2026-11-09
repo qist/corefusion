@@ -267,6 +267,7 @@
   "plan.col_service": "서비스",
   "plan.current_plan": "현재 플랜",
   "plan.days_unit": "일",
+  "plan.permanent": "영구",
   "plan.default_desc": "같은 노드, 더 좋은 가격",
   "plan.duration": "기간",
   "plan.empty": "사용 가능한 플랜 없음",

@@ -4527,6 +4527,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     cycleLifetime: '终身',
     cycleOneTime: '一次性',
     effectiveDays: '有效天数',
+    permanent: '永久有效',
     priceYuan: '价格 (元)',
     originalPriceYuan: '原价 (元)',
     trafficGB: '流量 (GB)',

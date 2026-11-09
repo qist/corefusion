@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "À vie",
     "cycleOneTime": "Paiement unique",
     "effectiveDays": "Jours de validité",
+    "permanent": "Permanent",
     "priceYuan": "Prix (CNY)",
     "originalPriceYuan": "Prix d'origine (CNY)",
     "trafficGB": "Trafic (Go)",

@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "終身",
     "cycleOneTime": "単発",
     "effectiveDays": "有効日数",
+    "permanent": "永久",
     "priceYuan": "価格（元）",
     "originalPriceYuan": "通常価格（元）",
     "trafficGB": "通信量（GB）",

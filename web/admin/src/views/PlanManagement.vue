@@ -25,7 +25,7 @@
           </el-table-column>
           <el-table-column :label="t('plan.expiryMode')" width="160">
             <template #default="{row}">
-              <el-tag v-if="row.expiry_mode === 'extend_plan'" type="warning" size="small">{{ t('plan.extendPlan', { days: row.duration_days }) }}</el-tag>
+              <el-tag v-if="row.expiry_mode === 'extend_plan'" type="warning" size="small">{{ row.duration_days < 0 ? t('plan.permanent') : t('plan.extendPlan', { days: row.duration_days }) }}</el-tag>
               <el-tag v-else size="small">{{ t('plan.modeSamePlan') }}</el-tag>
             </template>
           </el-table-column>
@@ -342,7 +342,9 @@
         <el-table-column :label="t('plan.originalPrice')" width="90">
           <template #default="{row}">{{ row.original_price > 0 ? '¥' + (row.original_price/100).toFixed(2) : '—' }}</template>
         </el-table-column>
-        <el-table-column prop="duration_days" :label="t('plan.durationDays')" width="60" />
+        <el-table-column :label="t('plan.durationDays')" width="80">
+          <template #default="{row}">{{ row.duration_days < 0 ? t('plan.permanent') : row.duration_days }}</template>
+        </el-table-column>
         <el-table-column :label="t('plan.quota')" min-width="100">
           <template #default="{row}">{{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('plan.modeSamePlan') }}</template>
         </el-table-column>
@@ -389,7 +391,10 @@
             <el-option :label="t('plan.cycleOneTime')" value="one_time" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('plan.effectiveDays')"><el-input-number v-model="variantForm.duration_days" :min="1" /></el-form-item>
+        <el-form-item :label="t('plan.effectiveDays')">
+          <el-switch v-if="variantForm.variant_type === 'plan'" v-model="variantForm.is_permanent" :active-text="t('plan.permanent')" />
+          <el-input-number v-if="variantForm.variant_type !== 'plan' || !variantForm.is_permanent" v-model="variantForm.duration_days" :min="1" style="margin-left:12px" />
+        </el-form-item>
         <el-form-item :label="t('plan.priceYuan')"><el-input-number v-model="variantForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
         <el-form-item :label="t('plan.originalPriceYuan')"><el-input-number v-model="variantForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
         <el-form-item :label="t('plan.trafficGB')"><el-input-number v-model="variantForm.quota_gb" :min="0" :step="0.1" /> <span style="font-size:12px;color:#909399">{{ t('plan.inheritTemplate') }}</span></el-form-item>
@@ -827,7 +832,7 @@ const variantForm = ref({})
 
 function emptyVariantForm() {
   return {
-    variant_type: 'plan', name: '', billing_cycle: 'monthly', duration_days: 30,
+    variant_type: 'plan', name: '', billing_cycle: 'monthly', duration_days: 30, is_permanent: false,
     price_yuan: 0, original_price_yuan: 0, quota_gb: 0,
     is_default: false, is_recommended: false, enabled: true, sort_order: 0,
   }
@@ -846,6 +851,8 @@ function showEditVariant(row) {
   editingVariant.value = row
   variantForm.value = {
     ...row,
+    duration_days: row.duration_days < 0 ? 30 : row.duration_days,
+    is_permanent: (row.duration_days ?? 0) < 0,
     price_yuan: row.price / 100,
     original_price_yuan: row.original_price / 100,
     quota_gb: row.quota_bytes / 1073741824,
@@ -861,9 +868,13 @@ async function saveVariant() {
     payload.price = Math.round(payload.price_yuan * 100)
     payload.original_price = Math.round(payload.original_price_yuan * 100)
     payload.quota_bytes = Math.round(payload.quota_gb * 1073741824)
+    if (payload.variant_type === 'plan' && payload.is_permanent) {
+      payload.duration_days = -1
+    }
     delete payload.price_yuan
     delete payload.original_price_yuan
     delete payload.quota_gb
+    delete payload.is_permanent
     if (editingVariant.value) {
       await planApi.updatePlanVariant(editingVariant.value.id, payload)
     } else {
@@ -1388,7 +1399,7 @@ const variantCardFields = computed(() => [
   { label: t('plan.billingCycle'), text: (row) => cycleLabel(row.billing_cycle) },
   { label: t('plan.price'), text: (row) => '¥' + (row.price / 100).toFixed(2) },
   { label: t('plan.originalPrice'), text: (row) => row.original_price > 0 ? '¥' + (row.original_price / 100).toFixed(2) : '—' },
-  { label: t('plan.durationDays'), text: (row) => row.duration_days ?? '-' },
+  { label: t('plan.durationDays'), text: (row) => row.duration_days < 0 ? t('plan.permanent') : (row.duration_days ?? '-') },
   { label: t('plan.quota'), text: (row) => row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('plan.modeSamePlan') },
   { label: t('plan.tag'), text: (row) => row.is_default ? t('plan.default') : (row.is_recommended ? t('plan.recommended') : '') },
 ])

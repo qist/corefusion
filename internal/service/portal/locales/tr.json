@@ -267,6 +267,7 @@
   "plan.col_service": "Hizmet",
   "plan.current_plan": "Mevcut Plan",
   "plan.days_unit": "gün",
+  "plan.permanent": "Kalıcı",
   "plan.default_desc": "Aynı düğümler, daha iyi fiyat",
   "plan.duration": "Süre",
   "plan.empty": "Kullanılabilir plan yok",

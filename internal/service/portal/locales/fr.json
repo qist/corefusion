@@ -267,6 +267,7 @@
   "plan.col_service": "Services",
   "plan.current_plan": "Forfait actuel",
   "plan.days_unit": "jours",
+  "plan.permanent": "Permanent",
   "plan.default_desc": "Mêmes nœuds, meilleur prix",
   "plan.duration": "Durée",
   "plan.empty": "Aucun forfait disponible",

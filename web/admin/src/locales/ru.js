@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Пожизненно",
     "cycleOneTime": "Разово",
     "effectiveDays": "Срок действия (дней)",
+    "permanent": "Бессрочно",
     "priceYuan": "Цена (юаней)",
     "originalPriceYuan": "Исходная цена (юаней)",
     "trafficGB": "Трафик (ГБ)",

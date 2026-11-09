@@ -267,6 +267,7 @@
   "plan.col_service": "Dienste",
   "plan.current_plan": "Aktueller Tarif",
   "plan.days_unit": "Tage",
+  "plan.permanent": "Dauerhaft",
   "plan.default_desc": "Gleiche Knoten, besserer Preis",
   "plan.duration": "Laufzeit",
   "plan.empty": "Keine Tarife verfügbar",

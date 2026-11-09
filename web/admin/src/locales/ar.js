@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "مدى الحياة",
     "cycleOneTime": "لمرة واحدة",
     "effectiveDays": "عدد أيام الصلاحية",
+    "permanent": "دائم",
     "priceYuan": "السعر (يوان)",
     "originalPriceYuan": "السعر الأصلي (يوان)",
     "trafficGB": "البيانات (GB)",

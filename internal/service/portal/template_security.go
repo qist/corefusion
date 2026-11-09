@@ -29,6 +29,13 @@ const renderMdUntrustedJS = `
     }
 `
 
+// 永久有效的套餐规格（duration_days = -1）在门户结算摘要里不能显示成 "-1 天"。
+// 存量门户模板存在数据库里，这里做精确片段替换（幂等、不动其它定制）。
+const (
+	oldPortalDurationText = `{{ orderForm.duration_days }} {{ t('plan.days_unit') }}`
+	newPortalDurationText = `{{ orderForm.duration_days < 0 ? t('plan.permanent') : orderForm.duration_days + ' ' + t('plan.days_unit') }}`
+)
+
 // 旧/新 doLogout：旧实现只清前端本地存储 ✗（服务端仍认那个 token，被窃取后有效期内照样可用），
 // 新实现先调 `/api/v1/client-auth/logout` 让服务端把令牌版本 +1（此前签发的所有 token 立即失效）✓。
 //
@@ -1036,6 +1043,12 @@ func PatchTemplateSecurity(htmlContent, jsContent string) (newHTML, newJS string
 
 	if strings.Contains(newHTML, oldTicketRender) {
 		newHTML = strings.ReplaceAll(newHTML, oldTicketRender, newTicketRender)
+		changed = true
+	}
+
+	// 永久有效的套餐规格：结算摘要显示「永久」而不是 "-1 天"（存量模板同样生效）✓
+	if strings.Contains(newHTML, oldPortalDurationText) {
+		newHTML = strings.ReplaceAll(newHTML, oldPortalDurationText, newPortalDurationText)
 		changed = true
 	}
 

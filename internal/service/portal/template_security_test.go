@@ -596,3 +596,18 @@ func mustJSON(t *testing.T, s string) string {
 	}
 	return string(b)
 }
+
+// 永久有效规格：存量门户模板的结算摘要不能显示成 "-1 天"。
+func TestPatchPermanentDurationText(t *testing.T) {
+	html := `<span class="pay-summary-value">{{ orderForm.duration_days }} {{ t('plan.days_unit') }}</span>`
+	out, _, changed := PatchTemplateSecurity(html, "")
+	if !changed || strings.Contains(out, oldPortalDurationText) {
+		t.Fatalf("应替换旧的时长表达式，实际 %s", out)
+	}
+	if !strings.Contains(out, "orderForm.duration_days < 0") {
+		t.Fatalf("应改为永久判断，实际 %s", out)
+	}
+	if _, _, changed2 := PatchTemplateSecurity(out, ""); changed2 {
+		t.Error("第二次调用应幂等")
+	}
+}

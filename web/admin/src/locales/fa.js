@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "مادام‌العمر",
     "cycleOneTime": "یک‌باره",
     "effectiveDays": "روزهای اعتبار",
+    "permanent": "دائمی",
     "priceYuan": "قیمت (یوان)",
     "originalPriceYuan": "قیمت اصلی (یوان)",
     "trafficGB": "ترافیک (GB)",

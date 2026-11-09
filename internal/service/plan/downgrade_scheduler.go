@@ -125,12 +125,12 @@ func (s *Service) applyScheduledChange(ctx context.Context, order *entity.PlanOr
 	if now.After(base) {
 		base = now
 	}
-	newExpiry := base.AddDate(0, 0, variant.DurationDays)
+	newExpiry := variant.ExpiresFrom(base)
 
 	// Update client
 	client.PlanVariantID = variant.ID
 	client.PlanID = variant.TemplateID
-	client.ExpiresAt = &newExpiry
+	client.ExpiresAt = newExpiry
 	// 被人工停用的账号不因套餐切换而被自动恢复。
 	if client.Status != "suspended" {
 		client.Status = "active"
@@ -159,10 +159,10 @@ func (s *Service) applyScheduledChange(ctx context.Context, order *entity.PlanOr
 		if err := s.db.WithContext(ctx).Model(&entity.Subscription{}).
 			Where("id = ?", *client.SubscriptionID).
 			Updates(map[string]interface{}{
-				"used_bytes_cache": 0,
-				"upload_bytes_cache": 0,
+				"used_bytes_cache":     0,
+				"upload_bytes_cache":   0,
 				"download_bytes_cache": 0,
-				"updated_at":       now,
+				"updated_at":           now,
 			}).Error; err != nil {
 			log.Printf("[PlanChange] reset subscription usage for client %d failed: %v", client.ID, err)
 		}
@@ -189,7 +189,11 @@ func (s *Service) applyScheduledChange(ctx context.Context, order *entity.PlanOr
 		return fmt.Errorf("update order status: %w", err)
 	}
 
+	expiryText := "never"
+	if newExpiry != nil {
+		expiryText = newExpiry.Format(time.RFC3339)
+	}
 	log.Printf("[PlanChange] client %d switched to template %d variant %d (expires %s)",
-		client.ID, variant.TemplateID, variant.ID, newExpiry.Format(time.RFC3339))
+		client.ID, variant.TemplateID, variant.ID, expiryText)
 	return nil
 }

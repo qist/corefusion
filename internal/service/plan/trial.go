@@ -102,7 +102,7 @@ func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Clie
 	}
 
 	now := time.Now()
-	newExpiry := now.AddDate(0, 0, variant.DurationDays)
+	newExpiry := variant.ExpiresFrom(now)
 
 	oldVariantID := client.PlanVariantID
 	var fromVariantID *int64
@@ -115,7 +115,7 @@ func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Clie
 		FromVariantID: fromVariantID,
 		ToVariantID:   variant.ID,
 		EffectiveFrom: now,
-		EffectiveTo:   &newExpiry,
+		EffectiveTo:   newExpiry,
 		Status:        entity.OrderStatusCompleted,
 		Remark:        "trial auto-convert",
 		CreatedAt:     now,
@@ -135,7 +135,7 @@ func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Clie
 	client.QuotaBytes = quotaBytes
 	client.UsedBytes = 0
 	client.Status = "active"
-	client.ExpiresAt = &newExpiry
+	client.ExpiresAt = newExpiry
 	// 限速三字段与设备数不物化模板值：0=订阅拉取时实时继承模板，非 0=个人覆盖。
 	client.UpdatedAt = now
 	if err := s.clientRepo.Update(ctx, client); err != nil {
@@ -155,8 +155,12 @@ func (s *Service) convertTrialToVariant(ctx context.Context, client *entity.Clie
 			}).Error
 	}
 
+	expiryText := "never"
+	if newExpiry != nil {
+		expiryText = newExpiry.Format(time.RFC3339)
+	}
 	log.Printf("[Trial] client %d auto-converted to template %d variant %d (expires %s)",
-		client.ID, variant.TemplateID, variant.ID, newExpiry.Format(time.RFC3339))
+		client.ID, variant.TemplateID, variant.ID, expiryText)
 	return nil
 }
 

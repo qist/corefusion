@@ -378,3 +378,86 @@ func TestRefundActivatedRenewRollsBack(t *testing.T) {
 		t.Errorf("退款应扣回本次配额到 100，实际 %d", after.QuotaBytes)
 	}
 }
+
+// 永久有效规格：duration_days=-1 归一化后，续费不再设置到期时间。
+func TestPermanentVariantRenewClearsExpiry(t *testing.T) {
+	f := seedFlowFixture(t)
+	ctx := context.Background()
+
+	perm, err := f.plans.CreateVariant(ctx, f.high.TemplateID, plan.CreateVariantInput{
+		Name: "永久", DurationDays: -1, Price: 99900,
+	})
+	if err != nil {
+		t.Fatalf("create permanent variant: %v", err)
+	}
+	if perm.DurationDays != entity.DurationPermanent || !perm.IsPermanent() {
+		t.Fatalf("永久规格 duration_days 应为 %d，实际 %d", entity.DurationPermanent, perm.DurationDays)
+	}
+
+	// 0 仍保持历史默认 30 天，避免影响旧调用方。
+	def, err := f.plans.CreateVariant(ctx, f.high.TemplateID, plan.CreateVariantInput{Name: "默认", DurationDays: 0})
+	if err != nil {
+		t.Fatalf("create default variant: %v", err)
+	}
+	if def.DurationDays != 30 {
+		t.Fatalf("duration_days=0 应回落为 30，实际 %d", def.DurationDays)
+	}
+
+	res, err := f.plans.Renew(ctx, f.client.ID, plan.RenewInput{VariantID: perm.ID})
+	if err != nil {
+		t.Fatalf("renew permanent: %v", err)
+	}
+	if res.EffectiveTo != nil || res.ClientExpiresAt != nil {
+		t.Errorf("永久续费不应返回到期时间，实际 effective_to=%v client_expires_at=%v", res.EffectiveTo, res.ClientExpiresAt)
+	}
+
+	var client entity.Client
+	f.db.First(&client, f.client.ID)
+	if client.ExpiresAt != nil {
+		t.Fatalf("永久续费后不应有到期时间，实际 %v", client.ExpiresAt)
+	}
+	if client.PlanVariantID != perm.ID {
+		t.Errorf("续费后规格应为 %d，实际 %d", perm.ID, client.PlanVariantID)
+	}
+}
+
+// 永久有效规格新购：client/subscription 的 expires_at 都保持 NULL（不会被调度器判过期）。
+func TestPermanentPlanPurchaseSetsNoExpiry(t *testing.T) {
+	f := seedFlowFixture(t)
+	ctx := context.Background()
+
+	perm := &entity.PlanVariant{
+		TemplateID: f.high.TemplateID, Name: "永久", DurationDays: entity.DurationPermanent,
+		Price: 1000, QuotaBytes: 100, Enabled: true,
+	}
+	if err := f.db.Create(perm).Error; err != nil {
+		t.Fatalf("create permanent variant: %v", err)
+	}
+	newClient := &entity.Client{Email: "perm@example.com", Password: "x", Status: "active"}
+	if err := f.db.Create(newClient).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if err := f.db.Create(&entity.ClientBalance{ClientID: newClient.ID, Balance: 100000, Currency: "CNY"}).Error; err != nil {
+		t.Fatalf("create balance: %v", err)
+	}
+
+	if _, err := f.commerce.CreateOrder(ctx, newClient.ID, CreateOrderInput{
+		VariantID: perm.ID, OrderType: entity.OrderTypeNew, PayMethod: "balance",
+	}); err != nil {
+		t.Fatalf("purchase permanent plan: %v", err)
+	}
+
+	var client entity.Client
+	f.db.First(&client, newClient.ID)
+	if client.ExpiresAt != nil {
+		t.Fatalf("永久套餐不应有到期时间，实际 %v", client.ExpiresAt)
+	}
+	if client.SubscriptionID == nil {
+		t.Fatal("购买后应创建订阅")
+	}
+	var sub entity.Subscription
+	f.db.First(&sub, *client.SubscriptionID)
+	if sub.ExpiresAt != nil {
+		t.Fatalf("永久套餐订阅不应有到期时间，实际 %v", sub.ExpiresAt)
+	}
+}

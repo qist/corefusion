@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Ömür boyu",
     "cycleOneTime": "Tek seferlik",
     "effectiveDays": "Geçerli gün sayısı",
+    "permanent": "Kalıcı",
     "priceYuan": "Fiyat (yuan)",
     "originalPriceYuan": "Orijinal fiyat (yuan)",
     "trafficGB": "Trafik (GB)",

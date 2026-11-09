@@ -200,33 +200,33 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 
 	now := time.Now()
 	tmpl := &entity.PlanTemplate{
-		Name:                     input.Name,
-		Description:              input.Description,
-		Category:                 category,
-		NodeGroupIDs:             entity.Int64List(input.NodeGroupIDs),
-		SubNodeLimit:             input.SubNodeLimit,
-		SubRotateHours:           input.SubRotateHours,
-		DeviceLimit:              input.DeviceLimit,
-		SpeedLimitMbps:           input.SpeedLimitMbps,
-		SpeedLimitUpMbps:         input.SpeedLimitUpMbps,
-		ConcurrentLimit:          input.ConcurrentLimit,
-		DefaultQuotaBytes:        input.DefaultQuotaBytes,
-		DefaultQuotaResetCycle:   input.DefaultQuotaResetCycle,
-		DefaultQuotaResetDay:     input.DefaultQuotaResetDay,
-		SuspendOnQuotaExhausted:  suspendVal,
-		IsTrial:                  input.IsTrial,
-		TrialDurationHours:       input.TrialDurationHours,
-		BillingUsedTemplate:      input.BillingUsedTemplate,
-		BillingRemainingTemplate: input.BillingRemainingTemplate,
-		BillingResetTemplate:     input.BillingResetTemplate,
-		BillingExpiryTemplate:    input.BillingExpiryTemplate,
-		BillingNodeIDs:           entity.Int64List(input.BillingNodeIDs),
+		Name:                       input.Name,
+		Description:                input.Description,
+		Category:                   category,
+		NodeGroupIDs:               entity.Int64List(input.NodeGroupIDs),
+		SubNodeLimit:               input.SubNodeLimit,
+		SubRotateHours:             input.SubRotateHours,
+		DeviceLimit:                input.DeviceLimit,
+		SpeedLimitMbps:             input.SpeedLimitMbps,
+		SpeedLimitUpMbps:           input.SpeedLimitUpMbps,
+		ConcurrentLimit:            input.ConcurrentLimit,
+		DefaultQuotaBytes:          input.DefaultQuotaBytes,
+		DefaultQuotaResetCycle:     input.DefaultQuotaResetCycle,
+		DefaultQuotaResetDay:       input.DefaultQuotaResetDay,
+		SuspendOnQuotaExhausted:    suspendVal,
+		IsTrial:                    input.IsTrial,
+		TrialDurationHours:         input.TrialDurationHours,
+		BillingUsedTemplate:        input.BillingUsedTemplate,
+		BillingRemainingTemplate:   input.BillingRemainingTemplate,
+		BillingResetTemplate:       input.BillingResetTemplate,
+		BillingExpiryTemplate:      input.BillingExpiryTemplate,
+		BillingNodeIDs:             entity.Int64List(input.BillingNodeIDs),
 		SubscriptionProviderConfig: input.SubscriptionProviderConfig,
-		SortOrder:                input.SortOrder,
-		Enabled:                  enabled,
-		Metadata:                 input.Metadata,
-		CreatedAt:                now,
-		UpdatedAt:                now,
+		SortOrder:                  input.SortOrder,
+		Enabled:                    enabled,
+		Metadata:                   input.Metadata,
+		CreatedAt:                  now,
+		UpdatedAt:                  now,
 	}
 	if err := s.tmplRepo.Create(ctx, tmpl); err != nil {
 		return nil, fmt.Errorf("create template: %w", err)
@@ -443,6 +443,18 @@ func (s *Service) ListVariantsPaged(ctx context.Context, templateID int64, limit
 	return items, total, nil
 }
 
+// normalizeVariantDuration 归一化有效天数：负数统一为"永久有效"哨兵值，
+// 0 保持历史默认 30 天，正数原样保留。
+func normalizeVariantDuration(days int) int {
+	if days < 0 {
+		return entity.DurationPermanent
+	}
+	if days == 0 {
+		return 30
+	}
+	return days
+}
+
 // CreateVariantInput is the input for creating a plan variant.
 type CreateVariantInput struct {
 	Name            string `json:"name" binding:"required"`
@@ -466,10 +478,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 	if billingCycle == "" {
 		billingCycle = entity.BillingCycleMonthly
 	}
-	duration := input.DurationDays
-	if duration <= 0 {
-		duration = 30
-	}
+	duration := normalizeVariantDuration(input.DurationDays)
 	currency := input.Currency
 	if currency == "" {
 		currency = s.defaultCurrency(ctx)
@@ -539,7 +548,11 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 		variant.BillingCycle = *input.BillingCycle
 	}
 	if input.DurationDays != nil {
-		variant.DurationDays = *input.DurationDays
+		if *input.DurationDays < 0 {
+			variant.DurationDays = entity.DurationPermanent
+		} else {
+			variant.DurationDays = *input.DurationDays
+		}
 	}
 	if input.Price != nil {
 		variant.Price = *input.Price
@@ -1183,14 +1196,13 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 		return nil, fmt.Errorf("variant not found: %w", err)
 	}
 
-	// Calculate new expiry
+	// Calculate new expiry（永久有效的规格不设到期时间）
 	now := time.Now()
-	var newExpiry time.Time
+	base := now
 	if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
-		newExpiry = client.ExpiresAt.AddDate(0, 0, variant.DurationDays)
-	} else {
-		newExpiry = now.AddDate(0, 0, variant.DurationDays)
+		base = *client.ExpiresAt
 	}
+	newExpiry := variant.ExpiresFrom(base)
 
 	// Apply promotion if provided
 	var discountAmount int64
@@ -1226,7 +1238,7 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 		PromotionID:    promoID,
 		PromotionCode:  promoCode,
 		EffectiveFrom:  now,
-		EffectiveTo:    &newExpiry,
+		EffectiveTo:    newExpiry,
 		Status:         entity.OrderStatusCompleted,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -1238,7 +1250,7 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 	// Update client
 	client.PlanVariantID = input.VariantID
 	client.PlanID = variant.TemplateID
-	client.ExpiresAt = &newExpiry
+	client.ExpiresAt = newExpiry
 	client.Status = "active"
 	// 续费 = 累加：配额在原配额上继续加（买 N 次就是 N 份流量），已用流量不清零。
 	if variant.QuotaBytes > 0 {
@@ -1286,8 +1298,8 @@ func (s *Service) Renew(ctx context.Context, clientID int64, input RenewInput) (
 		PaidAmount:      paidAmount,
 		PromotionCode:   promoCode,
 		EffectiveFrom:   now,
-		EffectiveTo:     &newExpiry,
-		ClientExpiresAt: &newExpiry,
+		EffectiveTo:     newExpiry,
+		ClientExpiresAt: newExpiry,
 	}, nil
 }
 
@@ -1340,7 +1352,7 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 	} else {
 		effectiveFrom = now
 	}
-	newExpiry := effectiveFrom.AddDate(0, 0, variant.DurationDays)
+	newExpiry := variant.ExpiresFrom(effectiveFrom)
 
 	// Apply promotion
 	var discountAmount int64
@@ -1380,7 +1392,7 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		PromotionID:    promoID,
 		PromotionCode:  promoCode,
 		EffectiveFrom:  effectiveFrom,
-		EffectiveTo:    &newExpiry,
+		EffectiveTo:    newExpiry,
 		Status:         entity.OrderStatusScheduled,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -1419,7 +1431,7 @@ func (s *Service) Upgrade(ctx context.Context, clientID int64, input UpgradeInpu
 		PaidAmount:      paidAmount,
 		PromotionCode:   promoCode,
 		EffectiveFrom:   effectiveFrom,
-		EffectiveTo:     &newExpiry,
+		EffectiveTo:     newExpiry,
 		ClientExpiresAt: client.ExpiresAt,
 	}, nil
 }
@@ -1511,7 +1523,7 @@ func (s *Service) Downgrade(ctx context.Context, clientID int64, input Downgrade
 	} else {
 		effectiveFrom = now
 	}
-	newExpiry := effectiveFrom.AddDate(0, 0, variant.DurationDays)
+	newExpiry := variant.ExpiresFrom(effectiveFrom)
 
 	var fromVariantID *int64
 	if oldVariantID > 0 {
@@ -1527,7 +1539,7 @@ func (s *Service) Downgrade(ctx context.Context, clientID int64, input Downgrade
 		DiscountAmount: 0,
 		PaidAmount:     variant.Price,
 		EffectiveFrom:  effectiveFrom,
-		EffectiveTo:    &newExpiry,
+		EffectiveTo:    newExpiry,
 		Status:         entity.OrderStatusPending, // pending until expiry
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -1546,7 +1558,7 @@ func (s *Service) Downgrade(ctx context.Context, clientID int64, input Downgrade
 		DiscountAmount: 0,
 		PaidAmount:     variant.Price,
 		EffectiveFrom:  effectiveFrom,
-		EffectiveTo:    &newExpiry,
+		EffectiveTo:    newExpiry,
 	}, nil
 }
 
@@ -1562,6 +1574,12 @@ type AccessibleNodesResult struct {
 // This is a lightweight getter used by other services that only need template info.
 func (s *Service) GetTemplateByID(ctx context.Context, id int64) (*entity.PlanTemplate, error) {
 	return s.tmplRepo.GetByID(ctx, id)
+}
+
+// GetVariantByID returns a plan variant by ID.
+// Used by other services to check variant properties (e.g. permanent duration).
+func (s *Service) GetVariantByID(ctx context.Context, id int64) (*entity.PlanVariant, error) {
+	return s.variantRepo.GetByID(ctx, id)
 }
 
 // ResolveClientNodes resolves all nodes accessible by a client via their plan template's node groups.

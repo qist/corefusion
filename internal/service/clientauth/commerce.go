@@ -664,8 +664,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			effectiveFrom = *client.ExpiresAt
 		}
-		to := effectiveFrom.AddDate(0, 0, variant.DurationDays)
-		effectiveTo = &to
+		effectiveTo = variant.ExpiresFrom(effectiveFrom)
 		initialStatus = entity.OrderStatusScheduled
 	}
 
@@ -2263,7 +2262,7 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 					effectiveFrom = *client.ExpiresAt
 				}
-				effectiveTo := effectiveFrom.AddDate(0, 0, variant.DurationDays)
+				effectiveTo := variant.ExpiresFrom(effectiveFrom)
 				if err := tx.Model(&entity.PlanOrder{}).
 					Where("id = ?", scheduledOrder.ID).
 					Updates(map[string]interface{}{
@@ -2413,12 +2412,13 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		client.QuotaBytes = quotaBytes
 		client.UsedBytes = 0
 		client.Status = "active"
-		expiresAt := now.AddDate(0, 0, variant.DurationDays)
+		expiresAt := variant.ExpiresFrom(now)
 		// Trial plans expire after trial_duration_hours instead of the variant duration.
 		if tmpl.IsTrial && tmpl.TrialDurationHours > 0 {
-			expiresAt = now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+			t := now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+			expiresAt = &t
 		}
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = expiresAt
 	case entity.OrderTypeRenew:
 		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
 		// 已用流量不清零（用户买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
@@ -2426,8 +2426,7 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
-		expiresAt := baseTime.AddDate(0, 0, variant.DurationDays)
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = variant.ExpiresFrom(baseTime)
 		client.QuotaBytes += quotaBytes
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
@@ -2435,8 +2434,7 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		// 走到这里说明调用方没做预约判断，按新购处理以免留下半个状态。
 		client.QuotaBytes = quotaBytes
 		client.UsedBytes = 0
-		expiresAt := now.AddDate(0, 0, variant.DurationDays)
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = variant.ExpiresFrom(now)
 		client.Status = "active"
 	}
 
@@ -2524,11 +2522,12 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		client.QuotaBytes = quotaBytes
 		client.UsedBytes = 0
 		client.Status = "active"
-		expiresAt := now.AddDate(0, 0, variant.DurationDays)
+		expiresAt := variant.ExpiresFrom(now)
 		if tmpl.IsTrial && tmpl.TrialDurationHours > 0 {
-			expiresAt = now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+			t := now.Add(time.Duration(tmpl.TrialDurationHours) * time.Hour)
+			expiresAt = &t
 		}
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = expiresAt
 	case entity.OrderTypeRenew:
 		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
 		// 已用流量不清零（买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
@@ -2536,16 +2535,14 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
-		expiresAt := baseTime.AddDate(0, 0, variant.DurationDays)
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = variant.ExpiresFrom(baseTime)
 		client.QuotaBytes += quotaBytes
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
 		// 升级不在这里生效：等当前计费周期结束后由调度器切换（见 schedulePlanChange）。
 		client.QuotaBytes = quotaBytes
 		client.UsedBytes = 0
-		expiresAt := now.AddDate(0, 0, variant.DurationDays)
-		client.ExpiresAt = &expiresAt
+		client.ExpiresAt = variant.ExpiresFrom(now)
 		client.Status = "active"
 	}
 

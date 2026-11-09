@@ -471,7 +471,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
           </div>
           <div class="pay-summary-row" v-if="orderForm.duration_days">
             <span class="pay-summary-label">{{ t('order.duration') }}</span>
-            <span class="pay-summary-value">{{ orderForm.duration_days }} {{ t('plan.days_unit') }}</span>
+            <span class="pay-summary-value">{{ orderForm.duration_days < 0 ? t('plan.permanent') : orderForm.duration_days + ' ' + t('plan.days_unit') }}</span>
           </div>
           <div class="pay-summary-row" v-if="orderForm.quota_bytes">
             <span class="pay-summary-label">{{ t('order.traffic') }}</span>

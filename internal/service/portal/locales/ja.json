@@ -267,6 +267,7 @@
   "plan.col_service": "サービス",
   "plan.current_plan": "現在のプラン",
   "plan.days_unit": "日",
+  "plan.permanent": "永久",
   "plan.default_desc": "同じノード、よりお得な価格",
   "plan.duration": "期間",
   "plan.empty": "利用可能なプランがありません",

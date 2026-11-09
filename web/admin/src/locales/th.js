@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "ตลอดชีพ",
     "cycleOneTime": "ครั้งเดียว",
     "effectiveDays": "จำนวนวันใช้งาน",
+    "permanent": "ถาวร",
     "priceYuan": "ราคา (หยวน)",
     "originalPriceYuan": "ราคาเดิม (หยวน)",
     "trafficGB": "ปริมาณข้อมูล (GB)",

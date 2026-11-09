@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Trọn đời",
     "cycleOneTime": "Dùng một lần",
     "effectiveDays": "Số ngày hiệu lực",
+    "permanent": "Vĩnh viễn",
     "priceYuan": "Giá (CNY)",
     "originalPriceYuan": "Giá gốc (CNY)",
     "trafficGB": "Lưu lượng (GB)",

@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Seumur hidup",
     "cycleOneTime": "Sekali bayar",
     "effectiveDays": "Masa berlaku (hari)",
+    "permanent": "Permanen",
     "priceYuan": "Harga (CNY)",
     "originalPriceYuan": "Harga asli (CNY)",
     "trafficGB": "Kuota (GB)",

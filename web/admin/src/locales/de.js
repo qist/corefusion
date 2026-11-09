@@ -4336,6 +4336,7 @@ export default {
     "cycleLifetime": "Lebenslang",
     "cycleOneTime": "Einmalig",
     "effectiveDays": "Gültigkeitstage",
+    "permanent": "Dauerhaft",
     "priceYuan": "Preis (Yuan)",
     "originalPriceYuan": "Originalpreis (Yuan)",
     "trafficGB": "Datenvolumen (GB)",

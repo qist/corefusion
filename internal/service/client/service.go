@@ -141,9 +141,18 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 			expiresAt = &t
 		}
 	}
-	if expiresAt == nil && tmpl.DefaultQuotaResetCycle != "" {
-		t := time.Now().AddDate(0, 0, 30)
-		expiresAt = &t
+	if expiresAt == nil {
+		// 永久有效的规格不设到期时间，不能被默认值补成 30 天。
+		permanent := false
+		if input.PlanVariantID > 0 {
+			if v, verr := s.planSvc.GetVariantByID(ctx, input.PlanVariantID); verr == nil && v.IsPermanent() {
+				permanent = true
+			}
+		}
+		if !permanent && tmpl.DefaultQuotaResetCycle != "" {
+			t := time.Now().AddDate(0, 0, 30)
+			expiresAt = &t
+		}
 	}
 
 	// Create client
@@ -470,6 +479,12 @@ func (s *Service) UpdateClient(ctx context.Context, id int64, input struct {
 	}
 	if input.PlanVariantID != nil {
 		client.PlanVariantID = *input.PlanVariantID
+	}
+	// 换到永久有效的规格时清掉到期时间（planChanged 分支里的默认 30 天兜底不适用）。
+	if planChanged && input.ExpiresAt == nil {
+		if v, verr := s.planSvc.GetVariantByID(ctx, client.PlanVariantID); verr == nil && v.IsPermanent() {
+			client.ExpiresAt = nil
+		}
 	}
 
 	if err := s.clientRepo.Update(ctx, client); err != nil {

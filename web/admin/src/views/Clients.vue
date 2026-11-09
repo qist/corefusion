@@ -96,7 +96,7 @@
         </el-form-item>
         <el-form-item :label="t('client.planVariant')">
           <el-select v-model="clientForm.plan_variant_id" style="width:100%" :disabled="!clientForm.plan_id">
-            <el-option v-for="v in availableVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
+            <el-option v-for="v in availableVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + (v.duration_days < 0 ? t('plan.permanent') : v.duration_days + t('client.days'))" :value="v.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('client.quota')"><el-input v-model.number="clientForm.quota_gb" type="number" :min="0" :step="0.1" /><div class="hint">{{ t('client.quotaHint') }}</div></el-form-item>
@@ -118,7 +118,7 @@
         <el-form-item :label="t('client.clientEmail')">{{ renewForm.email }}</el-form-item>
         <el-form-item :label="t('client.selectVariant')">
           <el-select v-model="renewForm.variant_id" style="width:100%" :placeholder="t('client.selectRenewVariant')">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + (v.duration_days < 0 ? t('plan.permanent') : v.duration_days + t('client.days'))" :value="v.id" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('client.promotionCode')">
@@ -150,7 +150,7 @@
         <el-form-item :label="t('client.clientEmail')">{{ upgradeForm.email }}</el-form-item>
         <el-form-item :label="t('client.upgradeToVariant')">
           <el-select v-model="upgradeForm.variant_id" style="width:100%" :placeholder="t('client.selectUpgradeVariant')">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + (v.duration_days < 0 ? t('plan.permanent') : v.duration_days + t('client.days'))" :value="v.id" />
           </el-select>
         </el-form-item>
         <div style="color:#909399;font-size:12px;margin-left:100px;margin-bottom:12px">{{ t('client.upgradeProrationHint') }}</div>
@@ -183,7 +183,7 @@
         <el-form-item :label="t('client.clientEmail')">{{ downgradeForm.email }}</el-form-item>
         <el-form-item :label="t('client.downgradeToVariant')">
           <el-select v-model="downgradeForm.variant_id" style="width:100%" :placeholder="t('client.selectDowngradeVariant')">
-            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + v.duration_days + t('client.days')" :value="v.id" />
+            <el-option v-for="v in allVariants" :key="v.id" :label="v.name + ' - ¥' + (v.price/100).toFixed(2) + ' / ' + (v.duration_days < 0 ? t('plan.permanent') : v.duration_days + t('client.days'))" :value="v.id" />
           </el-select>
         </el-form-item>
         <div style="color:#e6a23c;font-size:12px;margin-left:100px">{{ t('client.downgradeHint') }}</div>

@@ -18,6 +18,10 @@ const (
 	VariantTypeTrafficPack = "traffic_pack" // 流量叠加包（一次性流量）
 )
 
+// DurationPermanent 是"永久有效"的魔法值。DurationDays 取该值时表示规格
+// 不设到期时间（客户端/订阅的 expires_at 保持 NULL），而不是具体的天数。
+const DurationPermanent = -1
+
 // Expiry mode constants for traffic packs.
 const (
 	ExpiryModeAlignWithPlan = "align_with_plan" // 流量包与套餐同期过期，不延长套餐时间（默认）
@@ -50,3 +54,18 @@ type PlanVariant struct {
 }
 
 func (PlanVariant) TableName() string { return "plan_variants" }
+
+// IsPermanent reports whether the variant never expires.
+func (v *PlanVariant) IsPermanent() bool {
+	return v != nil && v.DurationDays < 0
+}
+
+// ExpiresFrom returns the new expiry after applying this variant on top of base.
+// 永久有效的规格返回 nil（不设到期时间），其余按 DurationDays 天累加。
+func (v *PlanVariant) ExpiresFrom(base time.Time) *time.Time {
+	if v.IsPermanent() {
+		return nil
+	}
+	t := base.AddDate(0, 0, v.DurationDays)
+	return &t
+}

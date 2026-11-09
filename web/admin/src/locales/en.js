@@ -4607,6 +4607,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     cycleLifetime: 'Lifetime',
     cycleOneTime: 'One-time',
     effectiveDays: 'Effective Days',
+    permanent: 'Permanent',
     priceYuan: 'Price (CNY)',
     originalPriceYuan: 'Original Price (CNY)',
     trafficGB: 'Traffic (GB)',

@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Base64 ECH yapılandırması",
     "cacheId": "Önbellek kimliği",
     "defaultFlow": "Varsayılan akış",
+    "defaultFlowHint": "Kendi Flow'u olmayan kullanıcılar bu varsayılanı devralır; kullanıcı Flow'u önceliklidir.",
     "defaultMode": "Varsayılan mod",
     "eabHmacKey": "EAB HMAC anahtarı",
     "eabKeyId": "EAB anahtar kimliği",

@@ -10,6 +10,7 @@ export default {
     "base64EchConfig": "Base64 ECH 配置",
     "cacheId": "缓存 ID",
     "defaultFlow": "默认流控",
+    "defaultFlowHint": "用户未单独设置 Flow 时继承此默认值；用户级 Flow 优先。",
     "defaultMode": "默认模式",
     "eabHmacKey": "EAB HMAC 密钥",
     "eabKeyId": "EAB 密钥 ID",

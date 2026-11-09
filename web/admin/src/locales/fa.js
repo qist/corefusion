@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "پیکربندی ECH با Base64",
     "cacheId": "شناسه کش",
     "defaultFlow": "جریان پیش‌فرض",
+    "defaultFlowHint": "کاربرانی که Flow اختصاصی ندارند این مقدار پیش‌فرض را به ارث می‌برند؛ Flow کاربر اولویت دارد.",
     "defaultMode": "حالت پیش‌فرض",
     "eabHmacKey": "کلید EAB HMAC",
     "eabKeyId": "شناسه کلید EAB",

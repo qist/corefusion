@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Konfigurasi ECH Base64",
     "cacheId": "ID cache",
     "defaultFlow": "Flow bawaan",
+    "defaultFlowHint": "Pengguna tanpa Flow sendiri mewarisi nilai default ini; Flow per pengguna lebih diutamakan.",
     "defaultMode": "Mode bawaan",
     "eabHmacKey": "Kunci HMAC EAB",
     "eabKeyId": "ID kunci EAB",

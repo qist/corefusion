@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "การตั้งค่า ECH แบบ Base64",
     "cacheId": "ID แคช",
     "defaultFlow": "โฟลว์เริ่มต้น",
+    "defaultFlowHint": "ผู้ใช้ที่ไม่ได้ตั้ง Flow ของตนเองจะสืบทอดค่านี้ Flow ของผู้ใช้มีลำดับความสำคัญกว่า",
     "defaultMode": "โหมดเริ่มต้น",
     "eabHmacKey": "คีย์ EAB HMAC",
     "eabKeyId": "ID คีย์ EAB",

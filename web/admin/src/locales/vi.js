@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Cấu hình ECH Base64",
     "cacheId": "ID bộ nhớ đệm",
     "defaultFlow": "Luồng mặc định",
+    "defaultFlowHint": "Người dùng không có Flow riêng sẽ kế thừa giá trị mặc định này; Flow của người dùng được ưu tiên.",
     "defaultMode": "Chế độ mặc định",
     "eabHmacKey": "Khóa HMAC EAB",
     "eabKeyId": "ID khóa EAB",

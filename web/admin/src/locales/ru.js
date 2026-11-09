@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Конфиг ECH (Base64)",
     "cacheId": "ID кэша",
     "defaultFlow": "Поток по умолчанию",
+    "defaultFlowHint": "Пользователи без собственного Flow наследуют это значение; Flow пользователя имеет приоритет.",
     "defaultMode": "Режим по умолчанию",
     "eabHmacKey": "EAB HMAC-ключ",
     "eabKeyId": "EAB Key ID",

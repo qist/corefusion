@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "إعداد ECH بصيغة Base64",
     "cacheId": "معرف ذاكرة التخزين المؤقت",
     "defaultFlow": "التدفق الافتراضي",
+    "defaultFlowHint": "المستخدمون الذين ليس لهم Flow خاص يرثون هذه القيمة الافتراضية؛ Flow الخاص بالمستخدم له الأولوية.",
     "defaultMode": "الوضع الافتراضي",
     "eabHmacKey": "مفتاح EAB HMAC",
     "eabKeyId": "معرف مفتاح EAB",

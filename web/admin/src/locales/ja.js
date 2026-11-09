@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Base64 ECH 設定",
     "cacheId": "キャッシュ ID",
     "defaultFlow": "デフォルトフロー",
+    "defaultFlowHint": "各ユーザーが Flow を未設定の場合、この既定値を継承します（ユーザー単位の Flow が優先）。",
     "defaultMode": "デフォルトモード",
     "eabHmacKey": "EAB HMAC キー",
     "eabKeyId": "EAB キー ID",

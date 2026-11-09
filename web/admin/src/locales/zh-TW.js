@@ -11,6 +11,7 @@ export default {
     "base64EchConfig": "Base64 ECH 設定",
     "cacheId": "快取 ID",
     "defaultFlow": "預設流控",
+    "defaultFlowHint": "使用者未單獨設定 Flow 時繼承此預設值；使用者層級 Flow 優先。",
     "defaultMode": "預設模式",
     "eabHmacKey": "EAB HMAC 金鑰",
     "eabKeyId": "EAB 金鑰 ID",

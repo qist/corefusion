@@ -19,12 +19,14 @@
       <el-input v-model="rf.settings.decryption" placeholder="none" readonly />
       <div class="hint">Server-side decryption key (auto-generated)</div>
     </el-form-item>
-    <el-form-item :label="t('proto2.defaultFlow')">
+    <!-- 入站级默认 flow：Xray 会把 settings.flow 填给 flow 为空的用户（用户级优先）。
+         只有 raw+tls/reality 才支持 vision，因此这里与用户级 Flow 一样按传输能力门控。 -->
+    <el-form-item v-if="canEnableFlow" :label="t('proto2.defaultFlow')">
       <el-select v-model="rf.settings.flow" style="width:100%" clearable>
         <el-option label="none" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
       </el-select>
-      <div class="hint">Inbound-level default flow (settings.flow); users without their own flow inherit it.</div>
+      <div class="hint">{{ t('proto2.defaultFlowHint') }}</div>
     </el-form-item>
     <el-divider content-position="left">
       Users
@@ -65,7 +67,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import client from '../../../../../api/client'
@@ -84,7 +86,14 @@ const canEnableFlow = computed(() => {
 })
 
 const hasFlowUser = computed(() => {
-  return (props.rf.settings?.clients || []).some(u => u.flow)
+  // 默认流控也会让 flow 为空的用户继承 vision → Vision Seed 同样要显示。
+  return !!props.rf.settings?.flow || (props.rf.settings?.clients || []).some(u => u.flow)
+})
+
+// 传输方式不再支持 vision（非 raw+tls/reality）时清掉默认流控，
+// 否则所有 flow 为空的用户都会继承一个无效 flow，运行期握手失败。
+watch(canEnableFlow, (ok) => {
+  if (!ok && props.rf.settings?.flow) props.rf.settings.flow = ''
 })
 
 function addUser(proto) {

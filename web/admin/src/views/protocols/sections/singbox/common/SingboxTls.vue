@@ -85,6 +85,9 @@
           <el-button size="small" @click="refreshRealityTarget">{{ t('singbox.tls.refresh') }}</el-button>
         </div>
         <div class="hint">{{ t('singbox.tls.handshakeServerHint') }}</div>
+        <div v-if="unixOnlySites.length" class="hint warn-hint">
+          {{ t('singbox.tls.unixOnlySitesHint', { sites: unixOnlySites.join('、') }) }}
+        </div>
       </el-form-item>
       <el-form-item :label="t('singbox.tls.serverName')">
         <div style="display:flex;gap:8px;flex:1">
@@ -188,6 +191,8 @@ const _realityTarget = ref('')
 
 // 本地代理 Reality 握手服务器（来自 caddy/nginx 代理站点）
 const localRealityServers = ref([])
+// 只监听 unix socket 的 Reality 站点：sing-box 无法使用，用于给出提示
+const unixOnlySites = ref([])
 
 // 所有可用的 Reality 目标（预设 + 本地服务器）
 // 预设公共服务器：与 xray 编辑器同源（面板 /system/reality-targets），
@@ -245,6 +250,7 @@ async function loadCertificates() {
 // 加载本地代理 Reality 握手服务器
 async function loadLocalRealityServers() {
   const servers = []
+  unixOnlySites.value = []
   // 从 caddy 获取
   try {
     const caddySites = await client.get(`/node-servers/${props.serverId}/caddy/sites`)
@@ -260,8 +266,16 @@ async function loadLocalRealityServers() {
     const nginxSites = await client.get(`/node-servers/${props.serverId}/nginx/sites`)
     if (Array.isArray(nginxSites)) {
       nginxSites.filter(s => s.template === 'reality').forEach(s => {
-        const port = parseInt(s.listen_port || s.domain || '9443') || 9443
-        servers.push({ id: s.id, port, source: 'nginx' })
+        const sock = String(s.listen_socket || '').trim().replace(/^unix:\/\//, '').replace(/^unix:/, '')
+        const port = parseInt(s.listen_port || '') || 0
+        if (sock && !port) {
+          // sing-box 的 REALITY handshake 只支持 host:port，且不会发送 PROXY protocol，
+          // 无法直连 nginx 的 unix socket（那也是给 Xray 用的）。
+          // 这种站点需要在面板里给它补一个「本地 TCP 端口」后才能给 sing-box 用。
+          unixOnlySites.value.push(sock)
+          return
+        }
+        servers.push({ id: s.id, port: port || 9443, source: 'nginx', socket: sock })
       })
     }
   } catch {}
@@ -291,11 +305,6 @@ function onCertSelect(certId) {
   }
 }
 
-// Check if a target is a local Reality server (127.0.0.1:port format)
-function isLocalTarget(target) {
-  return target && target.startsWith('127.0.0.1:')
-}
-
 // Reality 目标选择事件
 function onRealityTargetChange(target) {
   if (!target) return
@@ -303,7 +312,9 @@ function onRealityTargetChange(target) {
   if (tgt) {
     if (tgt.source === 'local') {
       // 本地 Reality 服务器：连接地址为 127.0.0.1，SNI 优先固定前缀域名（speedtest.<域名>），
-      // 功能关闭或取不到基础域名时回退随机域名，xver=1
+      // 功能关闭或取不到基础域名时回退随机域名。
+      // 注意：sing-box 的 REALITY 服务端**不支持** PROXY Protocol（没有 xver），
+      // 本地 TCP 入口也特意不带 proxy_protocol，所以这里 xver 必须是 0。
       props.model._realityHandshakeServer = '127.0.0.1'
       props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
       const used = collectUsedSnis()
@@ -315,7 +326,7 @@ function onRealityTargetChange(target) {
         while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
       }
       props.model._tlsServerName = d
-      props.model._realityXver = 1
+      props.model._realityXver = 0
     } else {
       // 公共预设服务器：地址和 SNI 相同，xver=0
       props.model._realityHandshakeServer = tgt.sni

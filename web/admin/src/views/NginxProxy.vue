@@ -1001,6 +1001,12 @@
             <el-input v-model="siteForm.listen_socket" placeholder="/dev/shm/nginx.sock" style="width:320px" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realitySocketHint') }}</div>
           </el-form-item>
+          <!-- unix 模式下额外开一个本地 TCP 端口：sing-box 的 REALITY handshake 不支持
+               unix socket，也不会发 PROXY protocol，只能连 host:port。留空 = 只监听 unix。 -->
+          <el-form-item v-if="siteForm.listen_mode==='unix'" :label="t('proxy.realityExtraPort')">
+            <el-input v-model="siteForm.listen_port" placeholder="9443" style="width:160px" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityExtraPortHint') }}</div>
+          </el-form-item>
           <el-form-item v-else :label="t('proxy.realityPort')">
             <el-input v-model="siteForm.listen_port" placeholder="9443" style="width:160px" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.realityPortHint') }}</div>
@@ -2482,7 +2488,9 @@ function buildSitePayload() {
     path: pathValue,
     backend_path: siteForm.value.backend_path,
     template: siteForm.value.template,
-    listen_port: siteForm.value.template === 'reality' && siteForm.value.listen_mode === 'unix' ? '' : siteForm.value.listen_port,
+    listen_port: siteForm.value.template === 'reality'
+      ? String(siteForm.value.listen_port || '').trim()   // unix 模式下可留空（只监听 socket）
+      : siteForm.value.listen_port,
     listen_socket: siteForm.value.template === 'reality' && siteForm.value.listen_mode === 'unix'
       ? String(siteForm.value.listen_socket || '').trim()
       : (siteForm.value.template === 'reality' ? '' : siteForm.value.listen_socket),

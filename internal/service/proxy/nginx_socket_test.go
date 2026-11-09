@@ -95,6 +95,41 @@ func TestNginxRealityPortAndUnixPrefix(t *testing.T) {
 	}
 }
 
+// unix 模式下可额外开一个本地 TCP 端口给 sing-box：
+// sing-box 的 REALITY handshake 只支持 host:port 且不发 PROXY protocol，
+// 因此这条 listen 必须不带 proxy_protocol，而 unix 那条仍然要带。
+func TestNginxRealityUnixPlusLocalTCPPort(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
+		ListenSocket: "/dev/shm/nginx.sock", ListenPort: "9443",
+		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem",
+		ProxyProtocol: true, Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "listen unix:/dev/shm/nginx.sock ssl proxy_protocol;") {
+		t.Fatalf("缺少 unix listen：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "        listen 127.0.0.1:9443 ssl;\n") {
+		t.Fatalf("缺少给 sing-box 的本地 TCP listen（不带 proxy_protocol）：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "listen 127.0.0.1:9443 ssl proxy_protocol;") {
+		t.Fatalf("TCP listen 不能带 proxy_protocol（sing-box 不发送）：\n%s", cfg)
+	}
+}
+
+// Reality 端口写法带地址时只取端口，避免生成非法 listen。
+func TestNginxRealityListenPortNormalized(t *testing.T) {
+	sites := []entity.NginxSite{{
+		ServerID: 2, Domain: "127.0.0.1", Template: "reality", Path: "/",
+		ListenSocket: "/dev/shm/nginx.sock", ListenPort: "127.0.0.1:9444",
+		CertPath: "certs/example.com/cert.pem", KeyPath: "certs/example.com/key.pem", Enabled: true,
+	}}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{}`))
+	if !strings.Contains(cfg, "        listen 127.0.0.1:9444 ssl;\n") {
+		t.Fatalf("listen_port 带地址时应只取端口：\n%s", cfg)
+	}
+}
+
 func TestNginxConfigWebsocketKeepsUpstreamURI(t *testing.T) {
 	sites := []entity.NginxSite{{
 		ServerID: 2, Domain: "w.example.com", Template: "websocket", Path: "/efnxuvlqws",

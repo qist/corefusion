@@ -1181,15 +1181,21 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	}
 
 	// Reality server blocks: forced TLS, HTTP/2, PROXY Protocol, no domain required.
-	// 监听方式二选一：127.0.0.1:<端口>（默认）或 unix:<path>。
+	// 监听方式：
+	//   - 127.0.0.1:<端口>（默认，带 proxy_protocol）
+	//   - unix:<path>（Xray REALITY 的 target 形态，带 proxy_protocol）
+	//   - unix:<path> + 额外本地 TCP 端口（该端口不带 proxy_protocol，供 sing-box）
 	// unix 形式正是 Xray REALITY 的 dest 可直接指向的形态：
 	//   listen unix:/dev/shm/nginx.sock ssl proxy_protocol;
 	// 必须带 ssl：REALITY 会把客户端 ClientHello 转给 target，target 不吐 TLS 就握手失败。
 	for _, rs := range realitySites {
 		socket := normalizeNginxUnixSocket(rs.ListenSocket)
 		useSocket := socket != ""
-		port := rs.ListenPort
-		if port == "" {
+		port := strings.TrimSpace(rs.ListenPort)
+		if port != "" {
+			port = listenPortOnly(port)
+		}
+		if port == "" && !useSocket {
 			port = "9443"
 		}
 		if useSocket {
@@ -1200,6 +1206,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		sb.WriteString("    server {\n")
 		if useSocket {
 			sb.WriteString(fmt.Sprintf("        listen unix:%s ssl proxy_protocol;\n", socket))
+			// 同一个 server 额外提供一个本地 TCP 入口：sing-box 的 REALITY handshake
+			// 只支持 host:port（不支持 unix socket），并且它不会发送 PROXY protocol，
+			// 因此这条 listen 必须**不带** proxy_protocol。
+			if port != "" {
+				sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl;\n", port))
+			}
 		} else {
 			sb.WriteString(fmt.Sprintf("        listen 127.0.0.1:%s ssl proxy_protocol;\n", port))
 			if rs.EnableIpv6 || globalIPv6 {

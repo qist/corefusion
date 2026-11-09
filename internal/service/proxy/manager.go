@@ -2785,9 +2785,12 @@ func (m *Manager) patchWAFConfig() {
 
 // SNISettings contains SNI routing configuration.
 type SNISettings struct {
-	Enabled            bool     `json:"enabled"`
-	ListenPort         string   `json:"listen_port"`
-	LocalPort          string   `json:"local_port"`
+	Enabled    bool   `json:"enabled"`
+	ListenPort string `json:"listen_port"`
+	LocalPort  string `json:"local_port"`
+	// DefaultTarget 是 SNI 未匹配时的默认后端（未知 SNI 的 TLS 流量）。
+	// 空 = 使用 fallback 规则；再空 = 127.0.0.1:<LocalPort>。
+	DefaultTarget      string   `json:"default_target"`
 	ProxyProtocolRules []string `json:"proxy_protocol_rules"`
 }
 

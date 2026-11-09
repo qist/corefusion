@@ -100,3 +100,29 @@ func TestCaddyPreviewSiteReplacesByID(t *testing.T) {
 		t.Fatalf("编辑端口后不应保留旧 :443 分组：\n%s", cfg)
 	}
 }
+
+// 显式设置默认后端时优先于 fallback 规则（与 nginx 一致）。
+func TestCaddySNIDefaultTargetOverridesFallback(t *testing.T) {
+	sites := []entity.CaddySite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:8443", LocalPort: "8443", Enabled: true},
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9001", Enabled: true},
+	}
+	cfg := generateCaddyFor(t, newCaddyTestManager(t, sites, map[string]string{
+		"proxy.sni_default_target.2": "127.0.0.1:443",
+	}))
+	if !strings.Contains(cfg, "# fallback -> 127.0.0.1:443") {
+		t.Fatalf("默认后端应使用设置里的 127.0.0.1:443：\n%s", cfg)
+	}
+}
+
+// 未设置默认后端时回落到 fallback 规则目标。
+func TestCaddySNIDefaultTargetUnsetUsesFallback(t *testing.T) {
+	sites := []entity.CaddySite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:8443", LocalPort: "8443", Enabled: true},
+		{ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9001", Enabled: true},
+	}
+	cfg := generateCaddyFor(t, newCaddyTestManager(t, sites, nil))
+	if !strings.Contains(cfg, "# fallback -> 127.0.0.1:8443") {
+		t.Fatalf("未设置默认后端时应使用 fallback 规则：\n%s", cfg)
+	}
+}

@@ -312,7 +312,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				localPort = "8443"
 			}
 			sb.WriteString(fmt.Sprintf("\t\t:%s {\n", port))
-			var fallbackTarget string
+			var ruleFallback string
 			var fallbackPP bool
 			for _, site := range sniSites {
 				domain := site.Domain
@@ -324,7 +324,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					target = "127.0.0.1:443"
 				}
 				if domain == "fallback" || domain == "" {
-					fallbackTarget = target
+					ruleFallback = target
 					fallbackPP = site.ProxyProtocol
 					continue
 				}
@@ -341,6 +341,11 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
 				}
 				sb.WriteString("\t\t\t}\n")
+			}
+			// 优先级与 nginx 一致：设置里的默认后端 > fallback 规则 > 本地 HTTPS 端口。
+			fallbackTarget := strings.TrimSpace(sniSettings.DefaultTarget)
+			if fallbackTarget == "" {
+				fallbackTarget = ruleFallback
 			}
 			if fallbackTarget == "" {
 				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
@@ -1166,6 +1171,16 @@ func (m *CaddyManager) GetSNISettingsForServer(ctx context.Context, serverID int
 		}
 	}
 
+	// 默认后端：per-node 键存在（含空值）就以它为准，避免远程节点继承本机旧值。
+	defaultKey := perNodeSNISettingsKey("proxy.sni_default_target", serverID)
+	if v, err := m.settingStore.GetByKey(ctx, defaultKey); err == nil {
+		settings.DefaultTarget = v
+	} else if serverID > 1 {
+		if v, err := m.settingStore.GetByKey(ctx, "proxy.sni_default_target"); err == nil {
+			settings.DefaultTarget = v
+		}
+	}
+
 	rulesKey := perNodeSNISettingsKey("proxy.proxy_protocol_rules", serverID)
 	if v, err := m.settingStore.GetByKey(ctx, rulesKey); err == nil && v != "" {
 		var rules []string
@@ -1211,6 +1226,12 @@ func (m *CaddyManager) SaveSNISettings(ctx context.Context, serverID int64, sett
 
 	localPortKey := perNodeSNISettingsKey("proxy.sni_local_port", serverID)
 	if err := m.settingStore.Set(ctx, localPortKey, settings.LocalPort); err != nil {
+		return err
+	}
+
+	// 默认后端：写空也要落库（表示清空、回落到 fallback 规则）。
+	defaultKey := perNodeSNISettingsKey("proxy.sni_default_target", serverID)
+	if err := m.settingStore.Set(ctx, defaultKey, strings.TrimSpace(settings.DefaultTarget)); err != nil {
 		return err
 	}
 

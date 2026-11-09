@@ -135,6 +135,22 @@
             <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.localHttpsPort') }}</div>
             <el-input v-model="sniSettings.local_port" size="small" style="width:100px" placeholder="8443" />
           </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.sniDefaultBackend') }}</div>
+            <el-autocomplete
+              v-model="sniSettings.default_target"
+              :fetch-suggestions="querySniDefault"
+              size="small"
+              style="width:200px"
+              clearable
+              :placeholder="sniDefaultPlaceholder"
+            >
+              <template #default="{ item }">
+                <span>{{ item.label }}</span>
+              </template>
+            </el-autocomplete>
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.sniDefaultBackendHint') }}</div>
+          </div>
           <el-button size="small" type="success" @click="saveSNISettings">{{ t('common.save') }}</el-button>
           <el-button size="small" type="warning" @click="batchMigrate">{{ t('proxy.batchMigrate') }}</el-button>
         </div>
@@ -173,7 +189,7 @@
         </MobileCards>
         <PaginationBar v-model:page="sniPage" v-model:page-size="sniSize" :total="sniTotal" />
         <div style="margin-top:12px;font-size:12px;color:#909399">
-          {{ t('proxy.sniFallback') }}: 127.0.0.1:{{ sniSettings.local_port }}
+          {{ t('proxy.sniFallback') }}: {{ sniDefaultEffective }}
         </div>
       </template>
     </el-card>
@@ -1220,7 +1236,61 @@ const configViewVisible = ref(false)
 const configViewContent = ref('')
 
 // SNI
-const sniSettings = ref({ enabled: false, listen_port: '443', local_port: '8443', proxy_protocol_rules: ['127.0.0.0/8', '::1'] })
+const sniSettings = ref({ enabled: false, listen_port: '443', local_port: '8443', default_target: '', proxy_protocol_rules: ['127.0.0.0/8', '::1'] })
+
+// SNI 默认后端（未知 SNI 的 TLS 流量）：候选为已有规则目标 + TLS/Reality 入站 + 本地端口。
+const sniDefaultPlaceholder = computed(() => `127.0.0.1:${sniSettings.value.local_port || '8443'}`)
+const sniDefaultOptions = computed(() => {
+  const map = new Map()
+  const add = (value, label) => {
+    const v = String(value || '').trim()
+    if (!v || map.has(v)) return
+    map.set(v, label || v)
+  }
+  for (const r of sniRules.value) {
+    if (r.domain === 'fallback' || !r.domain) continue
+    const tgt = String(r.sni_target || r.upstream || '').trim()
+    if (tgt) add(tgt, r.domain ? `${tgt}  (${r.domain})` : tgt)
+  }
+  for (const ib of sniInbounds.value) {
+    const addr = ib._isSocket ? `unix:${ib._socketPath}` : `127.0.0.1:${ib.port}`
+    add(addr, `${addr}  (${inboundLabel(ib)})`)
+  }
+  add(sniDefaultPlaceholder.value)
+  return Array.from(map, ([value, label]) => ({ value, label }))
+})
+const sniDefaultEffective = computed(() => {
+  const v = String(sniSettings.value.default_target || '').trim()
+  if (v) return v
+  const fb = sniRules.value.find(s => s.domain === 'fallback' || !s.domain)
+  const t = fb ? String(fb.sni_target || fb.upstream || '').trim() : ''
+  return t || sniDefaultPlaceholder.value
+})
+function querySniDefault(query, cb) {
+  const q = String(query || '').trim().toLowerCase()
+  cb(sniDefaultOptions.value
+    .filter(o => !q || o.value.toLowerCase().includes(q) || o.label.toLowerCase().includes(q))
+    .map(o => ({ value: o.value, label: o.label })))
+}
+// 保证 fallback 规则与默认后端一致：有显式默认后端时同步该规则，避免表里显示与实际 default 不一致。
+async function ensureSniFallback(existing, port) {
+  const defTarget = String(sniSettings.value.default_target || '').trim()
+  const fb = (existing || []).find(s => s.template === 'sni' && (s.domain === 'fallback' || s.domain === ''))
+  if (fb) {
+    if (defTarget && String(fb.sni_target || '') !== defTarget) {
+      await client.put(`${caddyApi.value}/sites/${fb.id}`, { sni_target: defTarget })
+    }
+    return
+  }
+  await client.post(`${caddyApi.value}/sites`, {
+    domain: 'fallback', upstream: '', template: 'sni',
+    sni_target: defTarget || `127.0.0.1:${port}`,
+    local_port: port,
+    proxy_protocol: true, is_panel: false, priority: 999,
+    path: sniSettings.value.listen_port
+  })
+}
+
 const sniDialogVisible = ref(false)
 const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
 
@@ -1410,6 +1480,8 @@ async function fetchSNISettings() {
 async function saveSNISettings() {
   try {
     await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
+    // 设置变更必须重建 Caddyfile，否则默认后端/端口只改了 DB（与 nginx 侧一致）。
+    await applyConfig()
     ElMessage.success(t('common.success'))
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
@@ -1421,19 +1493,12 @@ async function onSNIToggle(enabled) {
     if (enabled) {
       // Re-enable preserved SNI rules
       await client.post(`${caddyApi.value}/sni-rules/toggle`, { enabled: true })
-      // Create fallback rule if none exist
-      const hasFallback = sniRules.value.some(s => s.domain === 'fallback' || s.domain === '')
-      if (!hasFallback) {
-        const localPort = sniSettings.value.local_port
-        await client.post(`${caddyApi.value}/sites`, {
-          domain: 'fallback', upstream: '', template: 'sni',
-          sni_target: `127.0.0.1:${localPort}`, local_port: localPort,
-          proxy_protocol: true, is_panel: false, priority: 999,
-          path: sniSettings.value.listen_port
-        })
-      }
+      // 创建/同步 fallback 规则（与 nginx 一致：有显式默认后端时同步目标）
+      const localPort = sniSettings.value.local_port
+      const existing = await client.get(`${caddyApi.value}/sites`)
+      await ensureSniFallback(existing, localPort)
       // Batch migrate HTTPS sites
-      const port = sniSettings.value.local_port
+      const port = localPort
       const res = await client.post(`${caddyApi.value}/batch-update-ports`, { port, enable: true })
       ElMessage.success(t('proxy.sniEnabled', { count: res.updated || 0 }))
     } else {
@@ -1452,14 +1517,8 @@ async function batchMigrate() {
   const port = sniSettings.value.local_port
   try {
     await client.post(`${caddyApi.value}/sni-settings`, sniSettings.value)
-    if (sniRules.value.length === 0) {
-      await client.post(`${caddyApi.value}/sites`, {
-        domain: 'fallback', upstream: '', template: 'sni',
-        sni_target: `127.0.0.1:${port}`, local_port: port,
-        proxy_protocol: true, is_panel: false, priority: 999,
-        path: sniSettings.value.listen_port
-      })
-    }
+    const existing = await client.get(`${caddyApi.value}/sites`)
+    await ensureSniFallback(existing, port)
     const res = await client.post(`${caddyApi.value}/batch-update-ports`, { port, enable: true })
     await applyConfig()
     ElMessage.success(t('proxy.migrateDone', { count: res.updated || 0 }))

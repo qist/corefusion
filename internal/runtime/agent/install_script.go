@@ -357,18 +357,23 @@ else
   GITHUB_DOWNLOAD_URL="${GITHUB_URL}/download/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"
 fi
 
+# 先下到临时文件再 mv 覆盖：重装/升级时目标二进制正在运行，直接 curl -o
+# 会命中 ETXTBSY（Text file busy）→ 下载失败。mv 换 inode 不受影响。
+AGENT_TMP="$INSTALL_DIR/corefusion-agent.new"
 echo -e "${YELLOW}Downloading Agent...${NC}"
-if curl -fsSL --connect-timeout 10 -o "$INSTALL_DIR/corefusion-agent" "$GITHUB_DOWNLOAD_URL"; then
+if curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$GITHUB_DOWNLOAD_URL"; then
   echo "Downloaded from GitHub ($GITHUB_DOWNLOAD_URL)"
-elif curl -fsSL --connect-timeout 10 -o "$INSTALL_DIR/corefusion-agent" "$PANEL_DOWNLOAD_URL"; then
+elif curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$PANEL_DOWNLOAD_URL"; then
   echo "Downloaded from panel ($PANEL_DOWNLOAD_URL)"
 else
+  rm -f "$AGENT_TMP"
   echo -e "${RED}Failed to download Agent from GitHub or panel${NC}"
   echo "  GitHub: $GITHUB_DOWNLOAD_URL"
   echo "  Panel: $PANEL_DOWNLOAD_URL"
   exit 1
 fi
-chmod +x "$INSTALL_DIR/corefusion-agent"
+chmod +x "$AGENT_TMP"
+mv -f "$AGENT_TMP" "$INSTALL_DIR/corefusion-agent"
 
 # Generate config
 echo -e "${YELLOW}Writing config...${NC}"

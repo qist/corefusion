@@ -69,6 +69,29 @@ func TestInstallScriptDownloadsFromGitHubFirst(t *testing.T) {
 	}
 }
 
+// 回归：重装/升级时旧 Agent 二进制正在运行，直接 curl -o 写目标路径会
+// ETXTBSY（Text file busy）→ 下载失败。必须先下到临时文件再 mv 覆盖。
+func TestInstallScriptDownloadsToTempThenRename(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 443).
+		WithScheme("https").
+		WithTLS(true).
+		WithBootstrapToken("tok").
+		WithServerID(8).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+	if strings.Contains(script, `-o "$INSTALL_DIR/corefusion-agent"`) {
+		t.Error("不能直接写正在运行的二进制路径（会 ETXTBSY），应写到临时文件")
+	}
+	if !strings.Contains(script, `AGENT_TMP="$INSTALL_DIR/corefusion-agent.new"`) {
+		t.Error("缺少下载临时文件变量")
+	}
+	if !strings.Contains(script, `mv -f "$AGENT_TMP" "$INSTALL_DIR/corefusion-agent"`) {
+		t.Error("下载完成后必须用 mv 原子替换")
+	}
+}
+
 // 节点机需要 nft/tc 等系统命令才能做限速/防火墙，安装脚本必须自动补齐，
 // 而不是让用户装完 Agent 才发现限速不可用。
 func TestInstallScriptInstallsRuntimeDeps(t *testing.T) {

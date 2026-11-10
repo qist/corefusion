@@ -8,7 +8,7 @@ func TestBuildOutboundConfigMasque(t *testing.T) {
 	raw := []byte(`{
 		"tag": "warp-masque-1",
 		"protocol": "masque",
-		"settings": {"address": "162.159.198.1", "port": 443, "remoteDNS": ["1.1.1.1"]},
+		"settings": {"address": "203.0.113.1", "port": 443, "remoteDNS": ["1.1.1.1"]},
 		"streamSettings": {
 			"network": "masque",
 			"security": "tls",

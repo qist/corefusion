@@ -2295,26 +2295,62 @@ func preferNodeAddress(node entity.NodeServer) string {
 // 随机抓一个（server 与界面选择无关、每次渲染还不同）；现在统一退到节点地址，
 // 结果稳定且至少是能连的地址。
 func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConfig, config, proxyConfig map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
-	// 对外端口：被 SNI 前置代理承载的入站用前置端口（默认 443），不是它自己的
-	// listen 端口 —— 这类入站只监听 unix/abstract socket 或要求 PROXY 协议头，
-	// 客户端直连它的端口必然失败。fallback 入站还要看入口配置（proxyConfig）。
-	port := h.sharePort(ctx, cfg, config)
-	if proxyConfig != nil && port == cfg.Port {
-		if p := h.sharePort(ctx, cfg, proxyConfig); p != cfg.Port {
-			port = p
-		}
+	// 端口由「承载方式」决定，不由访问域名条目决定：
+	//   - SNI 前置代理承载（unix/abstract socket、acceptProxyProtocol）→ 前置端口（默认 443）；
+	//   - UDP 协议（hysteria/hysteria2/tuic）：nginx 的 ssl_preread 只分流 TCP，
+	//     UDP 只能直连自己的监听端口（端口跳跃时是 cfg.Port/ports 范围）；
+	//   - 其余直连入站 → 自己的监听端口。
+	// fallback 内部入站的承载方式要看**入口入站**配置（proxyConfig）。
+	sniBacked := inboundBehindSNIProxy(cfg, config)
+	if !sniBacked && proxyConfig != nil {
+		sniBacked = inboundBehindSNIProxy(cfg, proxyConfig)
 	}
-	if host, p, ok := resolveAccessDomain(config, port, shareDomains); ok {
-		return host, p
-	}
-	if h.nodeServerRepo != nil {
-		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
-			if host := preferNodeAddress(*node); host != "" {
-				return host, port
+
+	port := cfg.Port
+	if sniBacked {
+		port = h.sharePort(ctx, cfg, config)
+		if proxyConfig != nil {
+			if p := h.sharePort(ctx, cfg, proxyConfig); p > 0 {
+				port = p
 			}
 		}
 	}
-	return fallbackHost(cfg.Listen), port
+
+	host, entryPort, ok := resolveAccessDomain(config, port, shareDomains)
+	if !ok {
+		// 没配置访问域名：节点自身地址 + 上面的端口。
+		if h.nodeServerRepo != nil {
+			if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
+				if host := preferNodeAddress(*node); host != "" {
+					return host, port
+				}
+			}
+		}
+		return fallbackHost(cfg.Listen), port
+	}
+
+	// 访问域名只负责换地址；端口按承载方式：
+	//   - SNI 承载 / UDP → 固定（前置端口 / 监听端口）；
+	//   - 其余（含 CDN 回源、direct/custom 反代）→ 保留访问域名条目里的端口。
+	if sniBacked || isUDPShareProtocol(cfg.Protocol) {
+		if port <= 0 {
+			port = entryPort
+		}
+		return host, port
+	}
+	if entryPort > 0 {
+		return host, entryPort
+	}
+	return host, port
+}
+
+// isUDPShareProtocol 判断该协议是否走 UDP（SNI 分流不适用，端口必须用自己的监听端口）。
+func isUDPShareProtocol(protocol string) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "hysteria", "hysteria2", "tuic":
+		return true
+	}
+	return false
 }
 
 // sharePort 返回入站对客户端应展示的端口。

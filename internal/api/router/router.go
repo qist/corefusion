@@ -1521,12 +1521,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// 子路径部署（webPath=/h7zgitxltt5z）：直接访问 "/h7zgitxltt5z"（无尾斜杠）
-		// 或站点根 "/" 必须跳到 "/h7zgitxltt5z/"。
-		// 否则该请求会落到下面的 SPA fallback 返回 index.html，而前端 vue-router 的
-		// base 是 "/h7zgitxltt5z/"，当前 path 匹配不上 base → 路由表无匹配 → 整页白屏
-		// （真机现象：域名转发面板"不跳转、打不开"）。用 302 避免 webPath 变更后被浏览器永久缓存。
+		// 必须跳到 "/h7zgitxltt5z/"。否则该请求会落到下面的 SPA fallback 返回
+		// index.html，而前端 vue-router 的 base 是 "/h7zgitxltt5z/"，当前 path
+		// 匹配不上 base → 路由表无匹配 → 整页白屏（真机现象：域名转发面板"不跳转、
+		// 打不开"）。用 302 避免 webPath 变更后被浏览器永久缓存。
 		// ⚠ 必须用未归一化的原始 path：上面的 TrimRight 已把 "/h7zgitxltt5z/" 变成
 		// "/h7zgitxltt5z"，拿它判断会把带尾斜杠的请求也 302 到自己 → 无限重定向。
+		// ⚠ 站点根 "/" **不跳转**：webPath 是隐藏管理入口（防扫描），根路径一旦
+		// 302 到 webPath，等于把随机路径主动告诉任何直连源站/域名根的人（安全审计
+		// 口径：/ 与未知路径一律 404）。
 		if target, ok := adminBaseRedirectTarget(c.Request.URL.Path, webPath); ok {
 			if q := c.Request.URL.RawQuery; q != "" {
 				target += "?" + q
@@ -3852,10 +3855,13 @@ func registerAuxiliaryRoutes(rg *gin.RouterGroup, database *gorm.DB, runtimeH *r
 // path 已去掉尾斜杠。webPath 为空表示部署在站点根，无需重定向。
 //
 // 背景：webPath="/h7zgitxltt5z" 时前端 vue-router 的 base 是 "/h7zgitxltt5z/"。
-// 若直接访问 "/h7zgitxltt5z"（无尾斜杠）或站点根 "/"，SPA fallback 会返回 index.html，
-// 但当前 path 匹配不上 base → 路由表无匹配 → 白屏。故两者都要跳到 "/h7zgitxltt5z/"。
+// 若直接访问 "/h7zgitxltt5z"（无尾斜杠），SPA fallback 会返回 index.html，
+// 但当前 path 匹配不上 base → 路由表无匹配 → 白屏。故需跳到 "/h7zgitxltt5z/"。
+//
+// ⚠ 站点根 "/" 不属于此列：webPath 是隐藏入口，"/" 必须与其它未知路径一样返回 404，
+// 不能把随机路径用 302 主动告诉直连源站/域名根的人（否则隐藏路径形同虚设）。
 func adminBaseRedirectTarget(path, webPath string) (string, bool) {
-	if webPath == "" || (path != webPath && path != "/") {
+	if webPath == "" || path != webPath {
 		return "", false
 	}
 	return webPath + "/", true

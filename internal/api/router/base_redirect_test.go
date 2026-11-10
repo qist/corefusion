@@ -2,10 +2,14 @@ package router
 
 import "testing"
 
-// 子路径部署（webPath=/h7zgitxltt5z）时，直接访问无尾斜杠的 webPath 或站点根，
-// 必须跳到 "<webPath>/"：否则 SPA fallback 返回的 index.html 里 vue-router 的 base
-// 是 "<webPath>/"，当前 path 匹配不上 base → 路由无匹配 → 整页白屏。
+// 子路径部署（webPath=/h7zgitxltt5z）时，直接访问无尾斜杠的 webPath 必须跳到
+// "<webPath>/"：否则 SPA fallback 返回的 index.html 里 vue-router 的 base 是
+// "<webPath>/"，当前 path 匹配不上 base → 路由无匹配 → 整页白屏。
 // 真机现象：https://httpdns.tycng.com/h7zgitxltt5z 转发面板"不跳转、打不开"。
+//
+// ⚠ 站点根 "/" 必须**不跳转**：webPath 是隐藏入口，根路径 302 到 webPath 等于
+// 把随机路径告诉任何直连源站/域名根的人（真机现象：https://23.254.233.185:10111/
+// 返回 302 → /h7zgitxltt5z/，隐藏路径形同虚设）。"/" 应与其它未知路径一样 404。
 func TestAdminBaseRedirectTarget(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -15,7 +19,8 @@ func TestAdminBaseRedirectTarget(t *testing.T) {
 		ok      bool
 	}{
 		{"无尾斜杠的 webPath", "/h7zgitxltt5z", "/h7zgitxltt5z", "/h7zgitxltt5z/", true},
-		{"站点根", "/", "/h7zgitxltt5z", "/h7zgitxltt5z/", true},
+		{"站点根不泄露隐藏路径（必须 404）", "/", "/h7zgitxltt5z", "", false},
+		{"未知路径不跳", "/foo", "/h7zgitxltt5z", "", false},
 		{"已带尾斜杠（必须放过，否则 302 到自己 → 无限重定向）", "/h7zgitxltt5z/", "/h7zgitxltt5z", "", false},
 		{"子路由", "/h7zgitxltt5z/login", "/h7zgitxltt5z", "", false},
 		{"根部署时根路径不跳", "/", "", "", false},

@@ -388,6 +388,23 @@ func (m *NodeServerManager) WithCRL(crl *CertRevocationList) *NodeServerManager 
 }
 
 // WithPublicCertRenewer 注入公网证书续期器 ✓（用于 Agent 重连时补做续期检查 ✓）。
+// SetPanelCertRenewer 把"面板本机续期"能力挂到公网证书续期器上 ✓。
+//
+// 为什么不在 main 里直接挂 ✗：证书服务在 router 构建时才创建（main 里只有包别名 ✓），
+// 而续期器在 router 之前就启动了 ✓ → 由 router 创建完证书服务后回调这里 ✓。
+// 挂完立刻补跑一轮：RunLoop 的首轮检查早于本函数，否则面板本机证书要等 6h ✗。
+func (m *NodeServerManager) SetPanelCertRenewer(p PanelCertRenewer) {
+	if m == nil || m.publicCertRenewer == nil || p == nil {
+		return
+	}
+	m.publicCertRenewer.WithPanelRenewer(p)
+	go func() {
+		if err := m.publicCertRenewer.CheckNow(context.Background()); err != nil {
+			log.Printf("[NodeServerManager] panel cert renew check failed: %v", err)
+		}
+	}()
+}
+
 func (m *NodeServerManager) WithPublicCertRenewer(r *PublicCertRenewer) *NodeServerManager {
 	m.publicCertRenewer = r
 	return m

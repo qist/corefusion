@@ -474,7 +474,7 @@ func runServer(args []string) {
 		WithDNSChannelResolver(certService.NewDNSChannelService(repository.NewDNSChannelRepository(db.DB)))
 	nodeMgr.WithPublicCertRenewer(publicCertRenewer)
 	go publicCertRenewer.RunLoop(context.Background())
-	log.Println("Public certificate auto-renewer started (interval=6h, renew-before=5d, node-side ACME)")
+	log.Println("Public certificate auto-renewer started (interval=6h, renew-before: IP 3d / domain 20d, node-side + panel-local ACME)")
 
 	// Phase 3: Start FailoverManager, MirrorSync, and ChainHealth monitors
 	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)

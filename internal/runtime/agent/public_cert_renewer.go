@@ -55,10 +55,12 @@ type PublicCertRenewer struct {
 	certRepo   *repository.CertificateRepository
 	serverRepo *repository.NodeServerRepository
 	// nodeCerts 是"节点↔证书"多对多 ✓（一个节点可绑多张 ✓，都要能续 ✓）
-	nodeCerts   *repository.NodeCertificateRepository
-	issuer      PublicCertIssuer
-	interval    time.Duration
-	renewBefore time.Duration // >0 时**同时覆盖**两类阈值（测试/自定义用 ✓）
+	nodeCerts *repository.NodeCertificateRepository
+	issuer    PublicCertIssuer
+	// panelRenewer 用于"没有远程节点可下发"的面板本机证书 ✓（不注入则这类证书仍只能手动续 ✓）
+	panelRenewer PanelCertRenewer
+	interval     time.Duration
+	renewBefore  time.Duration // >0 时**同时覆盖**两类阈值（测试/自定义用 ✓）
 	// dnsResolver 把库里的 `certificates.dns_channel_id` 解析成 dns-01 凭据 ✓（可选注入 ✓）。
 	//
 	// ⚠ 节点侧自动续期也必须"按创建时的选择" ✗：不下发 Challenge 时，
@@ -87,6 +89,16 @@ type PublicCertIssuer interface {
 	// 而且 Google/ZeroSSL 首次注册需要 EAB ✗。返回空串表示没有 ✓（尽力而为 ✓）。
 	IssuanceContextFor(ctx context.Context, caProvider string) (email, eabKID, eabMAC string)
 	IssuePublicCert(ctx context.Context, serverID int64, cmd *agentpb.IssuePublicCertCommand) error
+}
+
+// PanelCertRenewer 是"面板本机续期"能力（由证书服务实现 ✓）。
+//
+// 为什么需要它 ✗：面板自己用 http-01 签的证书（issuer_node_id<=0、没有绑定任何远程节点 ✓）
+// 在 checkAndRenew 里会走到"没有绑定节点 → 跳过"✗ —— 只有手动点续期才动 ✗。
+// 域名证书 90 天还好，但 Let's Encrypt 的 **IP 证书是短时证书（约 6 天 ✓）**，
+// 一旦没人点就直接过期 ✗（真机：2026-11-12 到期的面板 IP 证书一直没续 ✓）。
+type PanelCertRenewer interface {
+	RenewPanelCertificate(ctx context.Context, certID int64) error
 }
 
 // PublicCertResult 是 Agent 回传的签发结果（跨包传递用，避免循环依赖 ✓）。
@@ -129,6 +141,13 @@ func NewPublicCertRenewer(certRepo *repository.CertificateRepository, serverRepo
 		// renewBefore 留 0 = **按类型自动判定** ✓（IP=3 天、域名=20 天 ✓）；
 		// 查询窗口由 window() 取两者较大的那个 ✓。
 	}
+}
+
+// WithPanelRenewer 注入"面板本机续期"能力 ✓：
+// 没有绑定远程节点的证书（面板自己 http-01/dns-01 签的 ✓）改由面板原地续期 ✓。
+func (r *PublicCertRenewer) WithPanelRenewer(p PanelCertRenewer) *PublicCertRenewer {
+	r.panelRenewer = p
+	return r
 }
 
 // WithNodeCertificates 注入多对多仓库 ✓（缺失时退回历史的单值字段 ✓）。
@@ -213,6 +232,14 @@ func (r *PublicCertRenewer) RunLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// CheckNow 立即跑一轮检查（同 checkAndRenew ✓，互斥锁保证不与周期检查重叠 ✓）。
+//
+// 用途：router 构建出证书服务后才把"面板本机续期"能力挂上来 ✓，
+// 而 RunLoop 的首次检查发生在那之前 ✗ → 需要补跑一次，否则本机证书要等到 6h 后 ✓。
+func (r *PublicCertRenewer) CheckNow(ctx context.Context) error {
+	return r.checkAndRenew(ctx)
 }
 
 // window 是查询窗口：取两类阈值中**较大**的 ✓（否则只查短时证书的窗口会漏掉域名证书 ✗）。
@@ -363,20 +390,44 @@ func (r *PublicCertRenewer) checkAndRenew(ctx context.Context) error {
 			continue // 还早，不用续 ✓
 		}
 		servers, err := r.nodesForCertificate(ctx, c.ID)
-		// ⚠ 只让**签发节点**续期 ✓（避免多个"使用节点"重复签发、重复消耗一次性 EAB ✗）
-		servers = issuerNodes(servers, c.IssuerNodeID)
 		if err != nil {
 			log.Printf("[PublicCertRenewer] list servers for cert %d: %v", c.ID, err)
 			continue
 		}
-		if len(servers) == 0 {
-			// 没有绑定节点的证书（例如在面板本地用 dns-01 签的 ✓）不在这里处理 ✓
+		// ⚠ 只让**签发节点**续期 ✓（避免多个"使用节点"重复签发、重复消耗一次性 EAB ✗）
+		servers = issuerNodes(servers, c.IssuerNodeID)
+
+		// 拆开"远程节点"与"本机"：远程走节点本机签发 ✓；本机（或压根没绑远程节点 ✓）
+		// 走面板原地续期 ✓ —— 以前这里直接 `continue` ✗，导致面板自己的 IP 短时证书
+		// 只能手动续、到期就换不回新证书 ✗（真机：2026-11-12 到期前一直没续 ✓）。
+		remote := make([]entity.NodeServer, 0, len(servers))
+		for _, srv := range servers {
+			if !srv.IsLocal {
+				remote = append(remote, srv)
+			}
+		}
+		if len(remote) == 0 {
+			if c.IssuerNodeID > 0 {
+				// 签发它的节点已不在绑定列表里：无从续期。明确报出来，绝不偷偷换成面板本机签 ✓
+				log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s: issuer node %d is gone and no remote node bound, skip",
+					c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339), c.IssuerNodeID)
+				continue
+			}
+			if r.panelRenewer == nil {
+				log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s is panel-local but panel renewer is not configured, skip",
+					c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339))
+				continue
+			}
+			if rerr := r.panelRenewer.RenewPanelCertificate(ctx, c.ID); rerr != nil {
+				log.Printf("[PublicCertRenewer] cert %d (%v) panel-local renew failed: %v", c.ID, identifiers, rerr)
+				continue
+			}
+			log.Printf("[PublicCertRenewer] cert %d (%v) expiring %s (剩 %s，阈值 %s) → renewed on panel (challenge=%s)",
+				c.ID, identifiers, c.ExpiresAt.Format(time.RFC3339),
+				time.Until(c.ExpiresAt).Truncate(time.Hour), threshold, c.ChallengeType)
 			continue
 		}
-		for _, srv := range servers {
-			if srv.IsLocal {
-				continue // 面板本机不需要远程签发 ✓
-			}
+		for _, srv := range remote {
 			cmd, cerr := r.buildIssueCommand(ctx, c.ID, c.Issuer, identifiers, c.KeyType, c.KeyBits, c.ChallengeType, c.DNSChannelID)
 			if cerr != nil {
 				// ✗ 不静默换成 http-01 ✓：原样报出来、本轮跳过 ✓（下次修好通道/记录后自动恢复 ✓）

@@ -696,3 +696,92 @@ func TestRenewFallsBackWhenIssuerMissing(t *testing.T) {
 		t.Fatalf("签发节点缺失时应兜底给绑定节点 ✓，实际下发 %d 条", len(f.got))
 	}
 }
+
+// fakePanelRenewer 记录"面板本机续期"被调用的证书 ID ✓。
+type fakePanelRenewer struct {
+	ids []int64
+	err error
+}
+
+func (f *fakePanelRenewer) RenewPanelCertificate(ctx context.Context, certID int64) error {
+	f.ids = append(f.ids, certID)
+	return f.err
+}
+
+// 真机问题锁定：面板**自己**签的证书（issuer_node_id=0、没绑任何节点 ✓）以前在
+// checkAndRenew 里被直接 `continue` ✗ → Let's Encrypt 的 IP 短时证书（约 6 天 ✓）
+// 只能手动续，2026-11-12 到期前一直没续 ✓。现在必须交给面板本机续期 ✓。
+func TestPanelLocalCertRenewedOnPanel(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	c := seedCert(t, certRepo, `["203.0.113.48"]`, 1, 2*24*time.Hour)
+	c.IssuerNodeID = 0 // 面板本机签发
+	if err := certRepo.Update(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := &fakePanelRenewer{}
+	r := NewPublicCertRenewer(certRepo, serverRepo, &fakeIssuer{}).WithPanelRenewer(pr)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatalf("checkAndRenew: %v", err)
+	}
+	if len(pr.ids) != 1 || pr.ids[0] != c.ID {
+		t.Fatalf("面板本机证书应交给面板续期，实际调用 %v（期望 [%d]）", pr.ids, c.ID)
+	}
+}
+
+// 绑定的只有"本机面板节点"（is_local=true ✓）时同样走面板本机续期 ✓：
+// 以前是所有 IsLocal 都 `continue` ✗ → 这类证书也永远不会续 ✗。
+func TestCertBoundOnlyToLocalNodeRenewedOnPanel(t *testing.T) {
+	certRepo, serverRepo, nodeCertRepo := setupNodeCertRepo(t)
+	c := seedCert(t, certRepo, `["203.0.113.48"]`, 1, 24*time.Hour)
+	local := &entity.NodeServer{Name: "Local (Panel)", Hostname: "panel.local", IsLocal: true}
+	if err := serverRepo.Create(context.Background(), local); err != nil {
+		t.Fatal(err)
+	}
+	if err := nodeCertRepo.Associate(context.Background(), local.ID, c.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := &fakePanelRenewer{}
+	f := &fakeIssuer{}
+	r := NewPublicCertRenewer(certRepo, serverRepo, f).WithNodeCertificates(nodeCertRepo).WithPanelRenewer(pr)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatalf("checkAndRenew: %v", err)
+	}
+	if len(pr.ids) != 1 {
+		t.Fatalf("本机节点绑定的证书应由面板续期，实际 %v", pr.ids)
+	}
+	if len(f.which) != 0 {
+		t.Fatalf("不应向远程节点下发续期指令，实际 %v", f.which)
+	}
+}
+
+// 签发节点已消失（issuer_node_id>0 但不在绑定列表里 ✓）时**不能**退回面板本机续期 ✗：
+// 那样会悄悄换掉签发环境（比如节点侧才有公网 80 / EAB 一次性凭据 ✓）。
+func TestIssuerNodeGoneDoesNotFallBackToPanel(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	c := seedCert(t, certRepo, `["203.0.113.48"]`, 1, 24*time.Hour)
+	c.IssuerNodeID = 999 // 节点已不存在
+	if err := certRepo.Update(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+
+	pr := &fakePanelRenewer{}
+	r := NewPublicCertRenewer(certRepo, serverRepo, &fakeIssuer{}).WithPanelRenewer(pr)
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatalf("checkAndRenew: %v", err)
+	}
+	if len(pr.ids) != 0 {
+		t.Fatalf("签发节点消失时不应退回面板本机续期，实际 %v", pr.ids)
+	}
+}
+
+// 没注入面板续期能力时不能崩（老调用路径 / 测试 ✓），只是跳过 ✓。
+func TestPanelLocalCertWithoutRenewerSkips(t *testing.T) {
+	certRepo, serverRepo := setupRenewerDB(t)
+	seedCert(t, certRepo, `["203.0.113.48"]`, 1, 24*time.Hour)
+	r := NewPublicCertRenewer(certRepo, serverRepo, &fakeIssuer{})
+	if err := r.checkAndRenew(context.Background()); err != nil {
+		t.Fatalf("checkAndRenew: %v", err)
+	}
+}

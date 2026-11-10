@@ -1335,6 +1335,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			sharedNodeMgr.SetACMEAccountResolver(acmeEmailAdapter{svc: acmeEmailSvc})
 		}
 	}
+	// 面板**本机**签的证书（issuer_node_id<=0、未绑远程节点 ✓）也纳入自动续期 ✓：
+	// 续期器在 main 里就启动了，这里（证书服务已接好 DNS 通道/邮箱之后 ✓）把
+	// "面板本机续期"能力补挂上去，并立即补跑一轮 ✓。
+	// 否则 IP 短时证书（LE 约 6 天 ✓）只能手动点续期，一忘就过期 ✗
+	//（真机：2026-11-12 到期的面板 IP 证书一直没续 ✓）。
+	if sharedNodeMgr != nil && certSvc != nil {
+		sharedNodeMgr.SetPanelCertRenewer(certSvc)
+	}
 	// Reuse processMgr if injected from main.go (shared with LocalAgent),
 	// otherwise create a new one.
 	if processMgr == nil {

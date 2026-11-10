@@ -1151,6 +1151,19 @@ func (s *Service) IssueACME(ctx context.Context, input IssueACMEInput) (*entity.
 	return certRecord, nil
 }
 
+// RenewPanelCertificate 供"面板本机证书"的自动续期调用 ✓：
+// 等价于管理员点一次续期 —— 挑战方式 / CA / 密钥规格全部沿用库里记录（见 RenewACME 的决议口径 ✓）。
+//
+// 为什么要单独一个方法 ✗：自动续期器（runtime/agent）只认识 node 侧下发能力 ✗；
+// 面板本机签的证书（issuer_node_id<=0、未绑远程节点 ✓）只能在这里原地续 ✓。
+func (s *Service) RenewPanelCertificate(ctx context.Context, certID int64) error {
+	if certID <= 0 {
+		return fmt.Errorf("invalid certificate id %d", certID)
+	}
+	_, err := s.RenewACME(ctx, certID, RenewACMEInput{})
+	return err
+}
+
 // RenewACMEInput 描述一次续期请求 ✓。
 //
 // 决议口径（用户口径 ✓）：**创建时选了什么，续期就用什么** ✓。

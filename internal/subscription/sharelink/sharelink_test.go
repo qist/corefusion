@@ -371,3 +371,71 @@ func TestVlessLinkKeepsGRPCMultiMode(t *testing.T) {
 		}
 	}
 }
+
+// 入站没写 ws host / grpc authority 时，链接必须补 Host：
+//   - 直连节点（REALITY/TCP 等）：Host = 连接地址（面板域名或 IP），否则部分反代/客户端
+//     会拿空 Host 去请求；
+//   - TLS 节点：Host = SNI（CDN/worker 场景 Host 必须是回源域名，否则边缘 403）。
+func TestGenerateLinkFillsHostFallback(t *testing.T) {
+	clients := map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}}}
+
+	// 直连 REALITY + gRPC：Host/authority = 连接地址
+	realityLink := Generate(Node{
+		Tag: "r", Protocol: "vless", Host: "rem5ogoe5m.swsixtwo.top", Port: 38877,
+		Settings: clients,
+		StreamSettings: map[string]interface{}{
+			"network": "grpc", "security": "reality",
+			"grpcSettings":    map[string]interface{}{"serviceName": "svc"},
+			"realitySettings": map[string]interface{}{"serverName": "camouflage.example.com"},
+		},
+	})
+	if !strings.Contains(realityLink, "host=rem5ogoe5m.swsixtwo.top") {
+		t.Errorf("直连 gRPC 链接缺 host 兜底: %s", realityLink)
+	}
+	if !strings.Contains(realityLink, "authority=rem5ogoe5m.swsixtwo.top") {
+		t.Errorf("直连 gRPC 链接缺 authority 兜底: %s", realityLink)
+	}
+
+	// TLS + ws（CDN）：Host 必须是 SNI（回源域名），不是优选域名/IP
+	wsLink := Generate(Node{
+		Tag: "w", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		Settings: clients,
+		StreamSettings: map[string]interface{}{
+			"network": "ws", "security": "tls",
+			"wsSettings":  map[string]interface{}{"path": "/ws"},
+			"tlsSettings": map[string]interface{}{"serverName": "worker.example.com"},
+		},
+	})
+	if !strings.Contains(wsLink, "host=worker.example.com") {
+		t.Errorf("TLS ws 链接 Host 应取 SNI: %s", wsLink)
+	}
+
+	// 显式配置的 host 优先，不能被兜底覆盖
+	explicit := Generate(Node{
+		Tag: "e", Protocol: "vless", Host: "1.2.3.4", Port: 443,
+		Settings: clients,
+		StreamSettings: map[string]interface{}{
+			"network": "ws", "security": "tls",
+			"wsSettings":  map[string]interface{}{"path": "/ws", "host": "origin.example.com"},
+			"tlsSettings": map[string]interface{}{"serverName": "worker.example.com"},
+		},
+	})
+	if !strings.Contains(explicit, "host=origin.example.com") {
+		t.Errorf("显式 host 被覆盖: %s", explicit)
+	}
+}
+
+// allowInsecure 已被 xray 移除（配了会整份拒载），链接里不再输出该参数。
+func TestGenerateLinkOmitsAllowInsecure(t *testing.T) {
+	link := Generate(Node{
+		Tag: "v", Protocol: "vless", Host: "a.example.com", Port: 443,
+		Settings: map[string]interface{}{"clients": []interface{}{map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"}}},
+		StreamSettings: map[string]interface{}{
+			"network": "tcp", "security": "tls",
+			"tlsSettings": map[string]interface{}{"serverName": "a.example.com", "allowInsecure": true},
+		},
+	})
+	if strings.Contains(link, "allowInsecure") {
+		t.Errorf("链接不应再输出 allowInsecure: %s", link)
+	}
+}

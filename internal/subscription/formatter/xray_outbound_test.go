@@ -351,3 +351,23 @@ func TestMihomoToURIPreservesTransportAndReality(t *testing.T) {
 		}
 	}
 }
+
+// xray 26 已移除 tls.allowInsecure（配了会整份拒载），出站配置与 URI 都不能再输出。
+func TestXrayOutboundAndURIOmitAllowInsecure(t *testing.T) {
+	node := Node{
+		Name: "v", Protocol: "vless", Host: "a.example.com", Port: 443,
+		UUID: "11111111-1111-1111-1111-111111111111", TLS: true,
+		ServerName: "a.example.com", Transport: "tcp",
+		Extra: map[string]interface{}{"skip-cert-verify": true},
+	}
+	raw, err := (&XrayFormatter{}).Format([]Node{node})
+	if err != nil {
+		t.Fatalf("Format: %v", err)
+	}
+	if strings.Contains(string(raw), "allowInsecure") {
+		t.Fatalf("xray 出站不应再包含 allowInsecure: %s", raw)
+	}
+	if link := formatURI(node); strings.Contains(link, "allowInsecure") {
+		t.Fatalf("URI 不应再包含 allowInsecure: %s", link)
+	}
+}

@@ -786,9 +786,6 @@ func (f *XrayFormatter) Format(nodes []Node) ([]byte, error) {
 			if alpn := extraStringList(node.Extra["alpn"]); len(alpn) > 0 {
 				tlsSettings["alpn"] = alpn
 			}
-			if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
-				tlsSettings["allowInsecure"] = true
-			}
 			streamSettings["tlsSettings"] = tlsSettings
 		}
 		// Reality
@@ -1904,9 +1901,6 @@ func formatURI(node Node) string {
 		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
 			params.Set("alpn", alpnStr)
 		}
-		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
-			params.Set("allowInsecure", "1")
-		}
 		// Transport sub-options
 		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
 			pathHasED := false
@@ -2059,9 +2053,6 @@ func formatURI(node Node) string {
 		if alpnStr := extraALPN(node.Extra); alpnStr != "" {
 			params.Set("alpn", alpnStr)
 		}
-		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
-			params.Set("allowInsecure", "1")
-		}
 		// Transport sub-options
 		if grpcOpts, ok := node.Extra["grpc-opts"].(map[string]interface{}); ok {
 			if sn, ok := grpcOpts["grpc-service-name"].(string); ok && sn != "" {
@@ -2142,9 +2133,6 @@ func formatURI(node Node) string {
 		}
 		if v, ok := node.Extra["udp-relay-mode"].(string); ok && v != "" {
 			params.Set("udp_relay_mode", v)
-		}
-		if insecure, ok := node.Extra["skip-cert-verify"].(bool); ok && insecure {
-			params.Set("allowInsecure", "1")
 		}
 		encoded := strings.ReplaceAll(params.Encode(), "+", "%20")
 		if encoded != "" {

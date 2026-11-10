@@ -99,7 +99,7 @@ func generateVlessLink(n Node) string {
 	params.Set("type", linkTransport(network))
 	params.Set("encryption", encryption)
 
-	setNetworkParams(params, ss, network)
+	setNetworkParams(params, ss, network, linkHostFallback(ss, n.Host))
 	setSecurityParams(params, ss, security)
 	// vision 只在裸 TCP/raw 下合法（ws/grpc/xhttp/kcp 上带 flow，客户端会硬失败或数据不通）。
 	// 这里不引 formatter（会循环依赖），就地做同样的收敛。
@@ -220,6 +220,22 @@ func generateVmessLink(n Node) string {
 		obj["type"] = getString(xhttp, "mode", "auto")
 	}
 
+	// Host / gRPC authority 兜底：入站没写 host 时，客户端会用连接地址当 Host，
+	// 走 CDN/反代会被边缘 403。按「TLS SNI → 连接地址」补齐（直连节点即面板域名/IP）。
+	if fb := linkHostFallback(ss, n.Host); fb != "" {
+		if network == "grpc" {
+			if cur, _ := obj["authority"].(string); cur == "" {
+				obj["authority"] = fb
+			}
+		}
+		switch network {
+		case "ws", "httpupgrade", "xhttp", "grpc", "h2", "http":
+			if cur, _ := obj["host"].(string); cur == "" {
+				obj["host"] = fb
+			}
+		}
+	}
+
 	// TLS
 	if security == "tls" {
 		tls := getMap(ss, "tlsSettings")
@@ -250,7 +266,7 @@ func generateTrojanLink(n Node) string {
 	params := url.Values{}
 	params.Set("type", linkTransport(network))
 
-	setNetworkParams(params, ss, network)
+	setNetworkParams(params, ss, network, linkHostFallback(ss, n.Host))
 	setSecurityParams(params, ss, security)
 
 	fmData := serializeFinalMask(n.FinalMask)
@@ -911,7 +927,24 @@ func getMkcpLegacyHeader(fm map[string]interface{}) (header, seed string) {
 }
 
 // setNetworkParams sets transport-specific query params (mirrors frontend).
-func setNetworkParams(params url.Values, ss map[string]interface{}, network string) {
+// linkHostFallback 返回链接里 Host / gRPC authority 的兜底值。
+//
+// 入站没有显式配置 host/authority 时，客户端默认用**连接地址**当 Host：直连节点
+// （面板域名 / IP）这样能通，但走 CDN/反代时 Host 必须是回源域名，否则边缘直接
+// 403。优先级：TLS 的 SNI（CDN/worker 场景就是回源域名）→ 连接地址。
+// REALITY 的 SNI 是伪装域名，不能当 Host，因此只在 security=tls 时取。
+func linkHostFallback(ss map[string]interface{}, host string) string {
+	if strings.EqualFold(getString(ss, "security", ""), "tls") {
+		if tls := getMap(ss, "tlsSettings"); tls != nil {
+			if sni := getString(tls, "serverName", ""); sni != "" {
+				return sni
+			}
+		}
+	}
+	return host
+}
+
+func setNetworkParams(params url.Values, ss map[string]interface{}, network string, fallbackHost string) {
 	switch network {
 	case "tcp", "raw":
 		// Try rawSettings first (xray config format), then raw (frontend format)
@@ -951,7 +984,11 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 			http = getMap(ss, "http")
 		}
 		params.Set("path", getString(http, "path", "/"))
-		if h := getString(http, "host", ""); h != "" {
+		h := getString(http, "host", "")
+		if h == "" {
+			h = fallbackHost
+		}
+		if h != "" {
 			params.Set("host", h)
 		}
 	case "ws":
@@ -960,15 +997,27 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 			ws = getMap(ss, "ws")
 		}
 		params.Set("path", getString(ws, "path", "/"))
-		params.Set("host", getWSHost(ws))
+		h := getWSHost(ws)
+		if h == "" {
+			h = fallbackHost
+		}
+		if h != "" {
+			params.Set("host", h)
+		}
 	case "grpc":
 		grpc := getMap(ss, "grpcSettings")
 		if grpc == nil {
 			grpc = getMap(ss, "grpc")
 		}
 		params.Set("serviceName", getString(grpc, "serviceName", ""))
-		if auth := getString(grpc, "authority", ""); auth != "" {
+		auth := getString(grpc, "authority", "")
+		if auth == "" {
+			auth = fallbackHost
+		}
+		if auth != "" {
 			params.Set("authority", auth)
+			// 部分客户端（v2rayN）按 host 取 gRPC 的 Host/authority，一并写上。
+			params.Set("host", auth)
 		}
 		if grpcMultiMode(grpc) {
 			params.Set("mode", "multi")
@@ -979,14 +1028,26 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 			hu = getMap(ss, "httpupgrade")
 		}
 		params.Set("path", getString(hu, "path", "/"))
-		params.Set("host", getString(hu, "host", ""))
+		h := getString(hu, "host", "")
+		if h == "" {
+			h = fallbackHost
+		}
+		if h != "" {
+			params.Set("host", h)
+		}
 	case "xhttp":
 		xhttp := getMap(ss, "xhttpSettings")
 		if xhttp == nil {
 			xhttp = getMap(ss, "xhttp")
 		}
 		params.Set("path", getString(xhttp, "path", "/"))
-		params.Set("host", getString(xhttp, "host", ""))
+		h := getString(xhttp, "host", "")
+		if h == "" {
+			h = fallbackHost
+		}
+		if h != "" {
+			params.Set("host", h)
+		}
 		params.Set("mode", getString(xhttp, "mode", "auto"))
 		if xpb := getString(xhttp, "xPaddingBytes", ""); xpb != "" {
 			params.Set("x_padding_bytes", xpb)

@@ -293,9 +293,6 @@
                   <el-option label="android" value="android" /><el-option label="random" value="random" />
                 </el-select>
               </el-form-item>
-              <el-form-item :label="t('protoCenter.tls.allowInsecure')">
-                <el-switch v-model="rf._allowInsecure" />
-              </el-form-item>
               <el-form-item :label="t('protoCenter.tls.disableSystemRoot')">
                 <el-switch v-model="rf._tlsDisableSystemRoot" />
               </el-form-item>
@@ -1199,7 +1196,7 @@ function getDefaultOutbound() {
     _masqueWarpEnabled: false, _masqueWarpPrivateKey: '', _masqueWarpPublicKey: '', _masqueWarpAddressStr: '',
     _raw: { headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } },
     _kcpMtu: 1350, _kcpTti: 50, _kcpUplinkCapacity: 5, _kcpDownlinkCapacity: 20, _kcpCongestion: false, _kcpReadBufferSize: 2, _kcpWriteBufferSize: 2,
-    _sni: '', _alpn: [], _fingerprint: '', _allowInsecure: false,
+    _sni: '', _alpn: [], _fingerprint: '',
     _tlsVerifyPeerCertByName: '', _tlsMinVersion: '', _tlsMaxVersion: '', _tlsCipherSuites: [], _tlsCurvePreferences: [], _tlsDisableSystemRoot: false, _tlsUseSystemCA: false, _tlsPinnedPeerCert: '', _tlsEchConfigList: '', _tlsMasterKeyLog: '',
     _realitySni: '', _realityPublicKey: '', _realityShortId: '', _realityFingerprint: 'chrome', _realitySpiderX: '', _realityMldsa65Verify: '',
     _wsPath: '/', _wsHost: '', _wsHeaders: [], _wsHeartbeatPeriod: 0,
@@ -1392,7 +1389,6 @@ function parseOutbound(ob) {
     _sni: tls.serverName || '',
     _alpn: tls.alpn || [],
     _fingerprint: tls.fingerprint || '',
-    _allowInsecure: tls.allowInsecure || false,
     _tlsVerifyPeerCertByName: tls.verifyPeerCertByName || '',
     _tlsMinVersion: tls.minVersion || '',
     _tlsMaxVersion: tls.maxVersion || '',
@@ -1664,7 +1660,6 @@ function buildStreamSettings(ob) {
     if (ob._tlsVerifyPeerCertByName) tls.verifyPeerCertByName = ob._tlsVerifyPeerCertByName
     if (ob._alpn && ob._alpn.length) tls.alpn = ob._alpn
     if (ob._fingerprint) tls.fingerprint = ob._fingerprint
-    if (ob._allowInsecure) tls.allowInsecure = true
     if (ob._tlsDisableSystemRoot) tls.disableSystemRoot = true
     if (ob._tlsUseSystemCA) tls.useSystemCA = true
     if (ob._tlsEchConfigList) tls.echConfigList = ob._tlsEchConfigList

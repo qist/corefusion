@@ -1623,8 +1623,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					// <webPath>/ 下 —— 根路径已不再对外提供这些文件（见
 					// adminStaticAssetPath），不重写就会 404。
 					html = rewriteIndexAssetRefs(html, webPath)
-					// Inject base path for Vue Router
-					inlineScript = fmt.Sprintf(`window.__CF_BASE_PATH__="%s/";`, webPath)
+					inlineScript = adminBaseScript(webPath)
 					html = strings.Replace(html, "<head>", "<head><script>"+inlineScript+"</script>", 1)
 				}
 				c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -3900,6 +3899,21 @@ func adminStaticAssetPath(path, webPath string) (string, bool) {
 		return rel, true
 	}
 	return "", false
+}
+
+// adminBaseScript 返回注入给 SPA 的运行时前缀（webPath 为空时不注入）：
+//   - __CF_BASE_PATH__：vue-router 的 base（带尾斜杠，与历史行为一致）；
+//   - __CF_ASSET_BASE__：懒加载 chunk / 预加载 CSS 的资源前缀（不带尾斜杠）。
+//
+// 后端构建产物里 chunk 地址是**运行时**拼的（见 web/admin/vite.config.js 的
+// renderBuiltUrl），所以这两个变量必须在入口脚本之前就绪，两个部署形态都要正确：
+// 根部署不注入 → 前端回退到 ""，仍按 "/assets/..." 解析。
+func adminBaseScript(webPath string) string {
+	if webPath == "" {
+		return ""
+	}
+	return fmt.Sprintf(`window.__CF_BASE_PATH__="%s/";window.__CF_ASSET_BASE__="%s";`,
+		webPath, webPath)
 }
 
 // rootAssetRefRe 匹配 index.html 里指向站点根的静态资源引用：

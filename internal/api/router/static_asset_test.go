@@ -92,3 +92,23 @@ func TestRewriteIndexAssetRefs(t *testing.T) {
 		t.Errorf("根部署不应改写 index.html")
 	}
 }
+
+// 懒加载 chunk / 预加载 CSS 的地址是前端运行时拼的（vite.config.js 的
+// renderBuiltUrl），依赖这两个全局：__CF_BASE_PATH__（路由 base）与
+// __CF_ASSET_BASE__（资源前缀）。少了任何一个，隐藏路径部署下
+// online-users 这类页面都会去请求根路径 /assets/* → 404（真机现象）。
+func TestAdminBaseScript(t *testing.T) {
+	const wp = "/h7zgitxltt5z"
+	got := adminBaseScript(wp)
+	for _, want := range []string{
+		`window.__CF_BASE_PATH__="/h7zgitxltt5z/";`,
+		`window.__CF_ASSET_BASE__="/h7zgitxltt5z";`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("注入脚本缺少 %q\ngot: %s", want, got)
+		}
+	}
+	if s := adminBaseScript(""); s != "" {
+		t.Errorf("根部署不应注入脚本，got %q", s)
+	}
+}

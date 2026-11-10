@@ -18,12 +18,6 @@ import (
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
-	hyAccount "github.com/xtls/xray-core/proxy/hysteria/account"
-	"github.com/xtls/xray-core/proxy/shadowsocks"
-	ss2022 "github.com/xtls/xray-core/proxy/shadowsocks_2022"
-	"github.com/xtls/xray-core/proxy/trojan"
-	"github.com/xtls/xray-core/proxy/vless"
-	"github.com/xtls/xray-core/proxy/vmess"
 
 	"corefusion/internal/runtime/firewall"
 
@@ -164,6 +158,7 @@ func (a *LocalAgent) proxyProxyman(ctx context.Context, conn *grpc.ClientConn, r
 	case "addUser":
 		var payload struct {
 			Tag      string `json:"tag"`
+			Protocol string `json:"protocol"`
 			Email    string `json:"email"`
 			ID       string `json:"id"`
 			Password string `json:"password"`
@@ -173,9 +168,15 @@ func (a *LocalAgent) proxyProxyman(ctx context.Context, conn *grpc.ClientConn, r
 		if err := json.Unmarshal(req.Payload, &payload); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
 		}
-		account := buildXrayAccountFromParams(payload.Tag, payload.Email, payload.ID, payload.Password, payload.Flow, payload.Method)
+		// 协议由面板显式下发：Agent 侧 tag 往往只有端口（inbound-59026），
+		// 只按 tag 推断会构造出错误类型的账号 → 热加必然失败。
+		protoName := payload.Protocol
+		if protoName == "" {
+			protoName = coredata.InferProtocolFromTag(payload.Tag)
+		}
+		account := coredata.BuildXrayUserAccount(protoName, payload.ID, payload.Password, payload.Flow, payload.Method)
 		if account == nil {
-			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("unsupported protocol for tag: %s", payload.Tag)}, nil
+			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("unsupported protocol %q for tag: %s", protoName, payload.Tag)}, nil
 		}
 		user := &protocol.User{Email: payload.Email, Account: account}
 		_, err := client.AlterInbound(ctx, &proxymanCommand.AlterInboundRequest{
@@ -657,74 +658,8 @@ func buildStatsResponse(resp *statsCommand.QueryStatsResponse) (*agentpb.XrayAPI
 	return &agentpb.XrayAPIResponse{Success: true, Response: respJSON}, nil
 }
 
-// buildXrayAccountFromParams builds a xray account message from user parameters.
-// This mirrors the logic in buildXrayAccount (local.go) but takes individual params.
-func buildXrayAccountFromParams(tag, email, id, password, flow, method string) *serial.TypedMessage {
-	tagLower := strings.ToLower(tag)
-
-	if strings.Contains(tagLower, "vless") {
-		account := &vless.Account{
-			Id:   id,
-			Flow: flow,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	if strings.Contains(tagLower, "vmess") {
-		account := &vmess.Account{
-			Id: id,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	if strings.Contains(tagLower, "trojan") {
-		account := &trojan.Account{
-			Password: password,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	if strings.Contains(tagLower, "shadowsocks-2022") || strings.Contains(tagLower, "ss2022") {
-		account := &ss2022.Account{
-			Key: password,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	if strings.Contains(tagLower, "shadowsocks") || strings.Contains(tagLower, "ss-") {
-		if strings.HasPrefix(method, "2022-blake3") {
-			account := &ss2022.Account{
-				Key: password,
-			}
-			return serial.ToTypedMessage(account)
-		}
-		cipherType := shadowsocks.CipherType_AES_256_GCM
-		switch method {
-		case "aes-128-gcm":
-			cipherType = shadowsocks.CipherType_AES_128_GCM
-		case "chacha20-poly1305":
-			cipherType = shadowsocks.CipherType_CHACHA20_POLY1305
-		case "xchacha20-ietf-poly1305":
-			cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
-		case "none":
-			cipherType = shadowsocks.CipherType_UNKNOWN
-		}
-		account := &shadowsocks.Account{
-			Password:   password,
-			CipherType: cipherType,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	if strings.Contains(tagLower, "hysteria") {
-		account := &hyAccount.Account{
-			Auth: password,
-		}
-		return serial.ToTypedMessage(account)
-	}
-
-	return nil
-}
+// buildXrayAccountFromParams 已由 coredata.BuildXrayUserAccount 取代：
+// 协议由面板显式下发，避免 tag（inbound-59026）不含协议名时构造错账号类型。
 
 // ensureImplicitAPIRoutingRuleLocal ensures the API routing rule exists.
 func ensureImplicitAPIRoutingRuleLocal(routerConf *conf.RouterConfig) {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,15 +12,8 @@ import (
 
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	routerCommand "github.com/xtls/xray-core/app/router/command"
-	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
-	hyAccount "github.com/xtls/xray-core/proxy/hysteria/account"
-	"github.com/xtls/xray-core/proxy/shadowsocks"
-	ss2022 "github.com/xtls/xray-core/proxy/shadowsocks_2022"
-	"github.com/xtls/xray-core/proxy/trojan"
-	"github.com/xtls/xray-core/proxy/vless"
-	"github.com/xtls/xray-core/proxy/vmess"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/coredata"
@@ -45,12 +37,18 @@ type RemoteXrayAPI interface {
 	XrayAPIOnServer(ctx context.Context, serverID int64, req *agentpb.XrayAPIRequest) (*agentpb.XrayAPIResponse, error)
 }
 
+// ProtocolResolver 按「节点 + tag」查入站协议。
+// 入站 tag 常常只有端口（inbound-59026），调用方不传 protocol 时必须靠数据库解析，
+// 否则无法构造正确的 xray 账号类型（会把 vless 当成 trojan）。
+type ProtocolResolver func(ctx context.Context, serverID int64, tag string) string
+
 // Handler handles xray control HTTP requests.
 type Handler struct {
-	settingSvc    SettingStore
-	coreConfigSvc CoreConfigService
-	nodeOperator  RemoteXrayAPI
-	control       *coredata.ControlProvider
+	settingSvc       SettingStore
+	coreConfigSvc    CoreConfigService
+	nodeOperator     RemoteXrayAPI
+	control          *coredata.ControlProvider
+	protocolResolver ProtocolResolver
 }
 
 // NewHandler creates a new xray control handler.
@@ -58,6 +56,22 @@ func NewHandler(settingSvc SettingStore) *Handler {
 	h := &Handler{settingSvc: settingSvc}
 	h.rebuildControlProvider()
 	return h
+}
+
+// SetProtocolResolver 注入入站协议解析器（按 serverID + tag 查库）。
+func (h *Handler) SetProtocolResolver(r ProtocolResolver) {
+	h.protocolResolver = r
+}
+
+// resolveProtocol 在调用方未显式传协议时，按节点 + tag 从数据库补全。
+func (h *Handler) resolveProtocol(ctx context.Context, serverID int64, tag, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if h.protocolResolver == nil {
+		return ""
+	}
+	return h.protocolResolver(ctx, serverID, tag)
 }
 
 // SetCoreConfigService sets the core config service.
@@ -87,30 +101,12 @@ func (h *Handler) rebuildControlProvider() {
 	})
 }
 
-func ensureImplicitAPIRoutingRule(routerConf *conf.RouterConfig) {
-	if routerConf == nil {
-		return
-	}
-	for _, rawRule := range routerConf.RuleList {
-		var rule struct {
-			InboundTag  []string `json:"inboundTag"`
-			OutboundTag string   `json:"outboundTag"`
-		}
-		if err := json.Unmarshal(rawRule, &rule); err != nil {
-			continue
-		}
-		if rule.OutboundTag != "api" {
-			continue
-		}
-		for _, inboundTag := range rule.InboundTag {
-			if inboundTag == "api" {
-				return
-			}
-		}
-	}
-
-	apiRule := json.RawMessage(`{"type":"field","inboundTag":["api"],"outboundTag":"api"}`)
-	routerConf.RuleList = append([]json.RawMessage{apiRule}, routerConf.RuleList...)
+// Control 返回共享控制层（本地直连 xray gRPC / 远端经 Agent 转发）。
+//
+// 供进程内调用方复用（例如 InboundManager 热加/热删用户），避免再走
+// 「面板自身 HTTP API 回环」——面板开 TLS 时那条路会被 400 拒绝。
+func (h *Handler) Control() *coredata.ControlProvider {
+	return h.control
 }
 
 // localServerID is the server ID of the local node.
@@ -316,6 +312,9 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 // ==================== Outbound Management ====================
 
 // AddOutbound handles POST /api/v1/xray/control/outbound.
+//
+// 本地/远端统一走 ControlProvider（进程内直连 gRPC 或经 Agent 转发），
+// 与 InboundManager 热加用户共用同一套下发实现。
 func (h *Handler) AddOutbound(c *gin.Context) {
 	sid := parseServerID(c)
 	var req struct {
@@ -326,48 +325,14 @@ func (h *Handler) AddOutbound(c *gin.Context) {
 		return
 	}
 
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addOutbound", map[string]interface{}{"config": req.Outbound}); handled {
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "remote", false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "remote", true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "", false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	outboundConf := new(conf.OutboundDetourConfig)
-	if err := json.Unmarshal(req.Outbound, outboundConf); err != nil {
-		response.BadRequest(c, "INVALID_CONFIG", "failed to parse outbound config: "+err.Error())
-		return
-	}
-
-	config, err := outboundConf.Build()
-	if err != nil {
-		response.BadRequest(c, "BUILD_FAILED", "failed to build outbound config: "+err.Error())
-		return
-	}
-
-	_, err = client.AddOutbound(ctx, &proxymanCommand.AddOutboundRequest{Outbound: config})
-	if err != nil {
+	if err := h.control.AddOutbound(ctx, sid, req.Outbound); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_add_outbound", "", false, err.Error())
 		response.InternalError(c, "ADD_OUTBOUND_FAILED", err.Error())
 		return
@@ -386,36 +351,14 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 		return
 	}
 
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeOutbound", map[string]interface{}{"tag": tag}); handled {
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	_, err = client.RemoveOutbound(ctx, &proxymanCommand.RemoveOutboundRequest{Tag: tag})
-	if err != nil {
+	if err := h.control.RemoveOutbound(ctx, sid, tag); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_remove_outbound", tag, false, err.Error())
 		response.InternalError(c, "REMOVE_OUTBOUND_FAILED", err.Error())
 		return
@@ -428,7 +371,10 @@ func (h *Handler) RemoveOutbound(c *gin.Context) {
 // ==================== User Management ====================
 
 // AddUser handles POST /api/v1/xray/control/inbound/:tag/user.
-// Supported protocols: VLESS, VMess, Trojan, Shadowsocks
+// Supported protocols: VLESS, VMess, Trojan, Shadowsocks, Hysteria.
+//
+// protocol 可选：不传时按 tag 推断。新入站的 tag 往往只有端口（inbound-59026），
+// 推断不出协议，内部调用方（InboundManager）必须显式传 protocol。
 func (h *Handler) AddUser(c *gin.Context) {
 	sid := parseServerID(c)
 	tag := c.Param("tag")
@@ -442,126 +388,30 @@ func (h *Handler) AddUser(c *gin.Context) {
 		ID       string `json:"id"`
 		Password string `json:"password"`
 		Flow     string `json:"flow"`
-		Method   string `json:"method"` // Shadowsocks cipher method
+		Method   string `json:"method"`   // Shadowsocks cipher method
+		Protocol string `json:"protocol"` // 入站协议（tag 不含协议名时必须传）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
 
-	// Remote: proxy via Agent
-	payload := map[string]interface{}{
-		"tag":      tag,
-		"email":    req.Email,
-		"id":       req.ID,
-		"password": req.Password,
-		"flow":     req.Flow,
-		"method":   req.Method,
-	}
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addUser", payload); handled {
-		detail := fmt.Sprintf("tag=%s email=%s", tag, req.Email)
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
+	detail := fmt.Sprintf("tag=%s email=%s", tag, req.Email)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	// Build account based on protocol (detected from tag)
-	var account *serial.TypedMessage
-	tagLower := strings.ToLower(tag)
-
-	if strings.Contains(tagLower, "vless") {
-		// VLESS account
-		vlessAccount := &vless.Account{
-			Id:   req.ID,
-			Flow: req.Flow,
-		}
-		account = serial.ToTypedMessage(vlessAccount)
-	} else if strings.Contains(tagLower, "vmess") {
-		// VMess account
-		vmessAccount := &vmess.Account{
-			Id: req.ID,
-		}
-		account = serial.ToTypedMessage(vmessAccount)
-	} else if strings.Contains(tagLower, "hysteria") {
-		// Hysteria account - uses auth field
-		hysteriaAccount := &hyAccount.Account{
-			Auth: req.Password, // Frontend sends auth as password
-		}
-		account = serial.ToTypedMessage(hysteriaAccount)
-	} else if strings.Contains(tagLower, "shadowsocks") || strings.Contains(tagLower, "ss-") {
-		// Shadowsocks account
-		if strings.HasPrefix(req.Method, "2022-blake3") {
-			// 2022-blake3 methods use shadowsocks_2022.Account with Key
-			ss2022Account := &ss2022.Account{
-				Key: req.Password,
-			}
-			account = serial.ToTypedMessage(ss2022Account)
-		} else {
-			// Legacy methods use shadowsocks.Account with Password and CipherType
-			cipherType := shadowsocks.CipherType_AES_256_GCM
-			if req.Method != "" {
-				switch req.Method {
-				case "aes-128-gcm":
-					cipherType = shadowsocks.CipherType_AES_128_GCM
-				case "chacha20-poly1305":
-					cipherType = shadowsocks.CipherType_CHACHA20_POLY1305
-				case "xchacha20-ietf-poly1305":
-					cipherType = shadowsocks.CipherType_XCHACHA20_POLY1305
-				case "none":
-					cipherType = shadowsocks.CipherType_UNKNOWN
-				}
-			}
-			ssAccount := &shadowsocks.Account{
-				Password:   req.Password,
-				CipherType: cipherType,
-			}
-			account = serial.ToTypedMessage(ssAccount)
-		}
-	} else if req.Password != "" {
-		// Trojan account (default for password-based)
-		trojanAccount := &trojan.Account{
-			Password: req.Password,
-		}
-		account = serial.ToTypedMessage(trojanAccount)
-	}
-
-	user := &protocol.User{
-		Email:   req.Email,
-		Account: account,
-	}
-
-	_, err = client.AlterInbound(ctx, &proxymanCommand.AlterInboundRequest{
-		Tag:       tag,
-		Operation: serial.ToTypedMessage(&proxymanCommand.AddUserOperation{User: user}),
-	})
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), false, err.Error())
+	protocol := h.resolveProtocol(ctx, sid, tag, req.Protocol)
+	if err := h.control.AddUser(ctx, sid, tag, protocol, req.Email, req.ID, req.Password, req.Flow, req.Method); err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, false, err.Error())
 		response.InternalError(c, "ADD_USER_FAILED", err.Error())
 		return
 	}
 
-	audit.RecordNodeFromCtx(c, sid, "xray_add_user", fmt.Sprintf("tag=%s email=%s", tag, req.Email), true, "")
+	audit.RecordNodeFromCtx(c, sid, "xray_add_user", detail, true, "")
 	response.OK(c, gin.H{"message": "user added successfully", "email": req.Email, "tag": tag})
 }
 
@@ -575,52 +425,30 @@ func (h *Handler) RemoveUser(c *gin.Context) {
 		return
 	}
 
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeUser", map[string]interface{}{"tag": tag, "email": email}); handled {
-		detail := fmt.Sprintf("tag=%s email=%s", tag, email)
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
+	detail := fmt.Sprintf("tag=%s email=%s", tag, email)
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	_, err = client.AlterInbound(ctx, &proxymanCommand.AlterInboundRequest{
-		Tag:       tag,
-		Operation: serial.ToTypedMessage(&proxymanCommand.RemoveUserOperation{Email: email}),
-	})
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), false, err.Error())
+	if err := h.control.RemoveUser(ctx, sid, tag, email); err != nil {
+		audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, false, err.Error())
 		response.InternalError(c, "REMOVE_USER_FAILED", err.Error())
 		return
 	}
 
-	audit.RecordNodeFromCtx(c, sid, "xray_remove_user", fmt.Sprintf("tag=%s email=%s", tag, email), true, "")
+	audit.RecordNodeFromCtx(c, sid, "xray_remove_user", detail, true, "")
 	response.OK(c, gin.H{"message": "user removed from xray", "email": email, "tag": tag})
 }
 
 // ==================== Routing Management ====================
 
 // ApplyRouting handles POST /api/v1/xray/control/routing.
+//
+// 全量替换运行中 xray 的路由规则（本地直连 / 远端经 Agent），
+// 与「服务端改路由后自动下发」共用 ControlProvider.ApplyRouting。
 func (h *Handler) ApplyRouting(c *gin.Context) {
 	sid := parseServerID(c)
 	var req struct {
@@ -631,54 +459,14 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 		return
 	}
 
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "router", "applyRouting", map[string]interface{}{"routing": req.Routing}); handled {
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := routerCommand.NewRoutingServiceClient(conn)
-
-	// Parse full routing config
-	routerConf := new(conf.RouterConfig)
-	if err := json.Unmarshal(req.Routing, routerConf); err != nil {
-		response.BadRequest(c, "INVALID_CONFIG", "failed to parse routing config: "+err.Error())
-		return
-	}
-	ensureImplicitAPIRoutingRule(routerConf)
-
-	config, err := routerConf.Build()
-	if err != nil {
-		response.BadRequest(c, "BUILD_FAILED", "failed to build routing config: "+err.Error())
-		return
-	}
-
-	// Apply routing (replace all rules)
-	_, err = client.AddRule(ctx, &routerCommand.AddRuleRequest{
-		ShouldAppend: false,
-		Config:       serial.ToTypedMessage(config),
-	})
-	if err != nil {
+	if err := h.control.ApplyRouting(ctx, sid, req.Routing); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, err.Error())
 		response.InternalError(c, "APPLY_ROUTING_FAILED", err.Error())
 		return

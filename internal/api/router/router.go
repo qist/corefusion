@@ -373,6 +373,21 @@ func (a *configSyncHookAdapter) syncServerConfig(serverID int64, coreType string
 	}
 }
 
+// xrayUserAPIAdapter 把 xraycontrol.Handler 的共享控制层适配为 client.XrayUserAPI。
+// InboundManager 的用户热增删与 HTTP 管理接口因此共用同一套实现：
+// 本地节点直连 xray gRPC，远端节点经 Agent 转发——不再走面板自身的 HTTP 回环。
+type xrayUserAPIAdapter struct {
+	h *xrayControlHandler.Handler
+}
+
+func (a *xrayUserAPIAdapter) AddUser(ctx context.Context, serverID int64, tag, protocol, email, id, password, flow, method string) error {
+	return a.h.Control().AddUser(ctx, serverID, tag, protocol, email, id, password, flow, method)
+}
+
+func (a *xrayUserAPIAdapter) RemoveUser(ctx context.Context, serverID int64, tag, email string) error {
+	return a.h.Control().RemoveUser(ctx, serverID, tag, email)
+}
+
 // trafficResetHookAdapter combines inboundconfig.Service (for resetting user traffic)
 // with configsync.Service (for triggering remote sync) and nodeserver.Service
 // (for SyncData) to implement the TrafficResetHook interface.
@@ -520,12 +535,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	if dataDir == "" {
 		dataDir = "data"
-	}
-
-	// Determine listen port for internal API calls
-	apiPort := "8080"
-	if len(listenPort) > 0 && listenPort[0] != "" {
-		apiPort = listenPort[0]
 	}
 
 	// Initialize repositories
@@ -1008,7 +1017,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Client service
-	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo, apiPort, jwtSecret)
+	inboundMgr := clientSvc.NewInboundManager(inboundConfigRepo)
 	inboundMgr.SetServerRepo(nodeServerRepoForSync)
 	clientSvcInst := clientSvc.NewService(clientRepo, planSvcInst, subRepo, inboundConfigRepo, inboundMgr)
 
@@ -1310,6 +1319,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	}()
 
 	warpH := warpHandler.NewHandler(warpSvcInst)
+	// 服务端自己改出站/路由时用的「进程内热下发」入口：与前端调 /xray/control/*
+	// 共用同一套 ControlProvider（本地直连 xray gRPC，远端经 Agent 转发）。
+	// control 字段在 xrayControlH 创建后注入（handler 的创建顺序在前）。
+	xrayApply := &xrayConfigApplier{}
 	rateLimitH := rateLimitHandler.NewHandler(rateLimitSvcInst)
 	certChannelH := certsHandler.NewChannelHandler(dnsChannelSvc)
 	certEABH := certsHandler.NewEABHandler(eabConfigSvc)
@@ -1659,9 +1672,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			endpointSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
 			inboundCfgH.SetSyncHook(inboundSyncHook)
 			outboundCfgH.SetSyncHook(outboundSyncHook)
+			// 出站改动由服务端自己热下发（不再依赖前端补调 /xray/control/outbound）。
+			outboundCfgH.SetConfigApplier(xrayApply)
 			endpointCfgH.SetSyncHook(endpointSyncHook)
 			// WARP 一键创建 MASQUE 出站后需要立即下发（走同一套热下发逻辑）。
 			warpH.SetSyncHook(outboundSyncHook)
+			warpH.SetOutboundApplier(xrayApply)
 
 			// NOTE: SyncData and traffic reset hooks are injected after
 			// nodeServerSvcInst is created (see below).
@@ -2489,6 +2505,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				reloadLocalProxiesAfterCertRefresh(certID)
 			}
 			nodeServerH.SetCoreConfigService(coreConfigSvc)
+			// routing 段保存后由服务端热下发到运行中的 xray（失败不重启核心）。
+			nodeServerH.SetRoutingApplier(xrayApply)
 			nodeServerH.SetInboundConfigService(inboundConfigSvc)
 			nodeServerH.SetOutboundConfigService(outboundConfigSvc)
 			nodeServerH.SetEndpointConfigService(endpointConfigSvc)
@@ -2987,6 +3005,36 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
 			xrayControlH.SetCoreConfigService(coreConfigSvc)
 			xrayControlH.SetNodeOperator(nodeServerSvcInst)
+			// 进程内热下发入口（出站/路由）在此注入：handler 创建顺序早于 xrayControlH。
+			xrayApply.control = xrayControlH.Control()
+			// 入站 tag 常只有端口（inbound-59026）：调用方没传 protocol 时按库里的
+			// inbound_configs.protocol 补全，避免把 vless 当 trojan 构造错账号。
+			xrayControlH.SetProtocolResolver(func(ctx context.Context, serverID int64, tag string) string {
+				inbounds, err := inboundConfigRepo.ListByTag(ctx, tag)
+				if err != nil || len(inbounds) == 0 {
+					return ""
+				}
+				for i := range inbounds {
+					if inbounds[i].ServerID == serverID {
+						return inbounds[i].Protocol
+					}
+				}
+				return inbounds[0].Protocol
+			})
+
+			// 用户热同步改为进程内直连（不再走面板自身 HTTP 回环）：
+			// 面板开启 TLS 时回环请求会被 HTTPS 监听器 400 拒绝 → 热加必然失败
+			// → 回退重载核心 → xray 被频繁重启（线上实际踩到 125 次 400 / 14 次 hot add failed）。
+			if inboundMgr != nil {
+				inboundMgr.SetUserAPI(&xrayUserAPIAdapter{h: xrayControlH})
+				if configSyncSvc != nil {
+					inboundMgr.SetConfigPersister(func(ctx context.Context, serverID int64, coreType string) error {
+						// 只写盘、不重启：配置落盘后周期性 configsync 不再认为有变化，
+						// 从而不会在 5 分钟后把刚热加过用户的 xray 重启一次。
+						return configSyncSvc.SyncServerCoreHotApplied(ctx, serverID, coreType)
+					})
+				}
+			}
 
 			nodeServersGroup.GET("/:id/xray/stats", xrayStatsH.GetStats)
 			nodeServersGroup.GET("/:id/xray/stats/users", xrayStatsH.GetUserStats)
@@ -4867,4 +4915,48 @@ func (a eabConfigAdapter) ResolveEABConfig(ctx context.Context, id int64) (*cert
 		KeyID:      cfg.KeyID,
 		MACKey:     cfg.MACKey,
 	}, nil
+}
+
+// xrayConfigApplier 把「服务端自己改的出站/路由」热下发到运行中的 xray：
+// 本地节点直连 xray gRPC，远程节点经 Agent 转发，与前端调用的 /xray/control/*
+// 共用同一个 ControlProvider 实现。改完只写盘、不重启核心。
+//
+// control 在 xrayControlH 创建后才注入（outboundconfig / nodeserver / warp 这些
+// handler 的创建顺序在前），所以这里用可变字段而不是构造参数。
+type xrayConfigApplier struct {
+	control *coredata.ControlProvider
+}
+
+func (a *xrayConfigApplier) provider() (*coredata.ControlProvider, error) {
+	if a == nil || a.control == nil {
+		return nil, fmt.Errorf("xray control provider not configured")
+	}
+	return a.control, nil
+}
+
+// AddOutbound 热添加/覆盖一条出站（同 tag 会先移除，可重复下发）。
+func (a *xrayConfigApplier) AddOutbound(ctx context.Context, serverID int64, configJSON []byte) error {
+	p, err := a.provider()
+	if err != nil {
+		return err
+	}
+	return p.AddOutbound(ctx, serverID, configJSON)
+}
+
+// RemoveOutbound 从运行中的 xray 移除一条出站（不存在视为成功）。
+func (a *xrayConfigApplier) RemoveOutbound(ctx context.Context, serverID int64, tag string) error {
+	p, err := a.provider()
+	if err != nil {
+		return err
+	}
+	return p.RemoveOutbound(ctx, serverID, tag)
+}
+
+// ApplyRouting 全量替换运行中 xray 的路由规则。
+func (a *xrayConfigApplier) ApplyRouting(ctx context.Context, serverID int64, routingJSON []byte) error {
+	p, err := a.provider()
+	if err != nil {
+		return err
+	}
+	return p.ApplyRouting(ctx, serverID, routingJSON)
 }

@@ -78,8 +78,8 @@ func TestDiffRuntimeConfigInboundChanges(t *testing.T) {
 	}
 }
 
-// routing 变更：xray API 无法整体替换 → 必须重启
-func TestDiffRuntimeConfigRoutingRequiresRestart(t *testing.T) {
+// routing 变更：RouterService.AddRule + ShouldAppend=false 可整体替换 → 热应用
+func TestDiffRuntimeConfigRoutingHotAppliable(t *testing.T) {
 	newCfg := `{
 		"log": {"loglevel": "warning"},
 		"inbounds": [
@@ -93,27 +93,96 @@ func TestDiffRuntimeConfigRoutingRequiresRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !d.Unsupported {
-		t.Fatal("routing 变更必须判定为需要重启")
+	if d.Unsupported {
+		t.Fatalf("routing 变更应可热应用: %s", d.OutsideReason)
+	}
+	if d.Routing == nil {
+		t.Fatal("应识别出 routing 需要替换")
 	}
 }
 
-// outbounds 变更：与 routing 引用耦合，保守处理为需要重启
-func TestDiffRuntimeConfigOutboundRequiresRestart(t *testing.T) {
+// routing 段被删除 → 也要热应用（用空配置清空规则），不能留下旧规则
+func TestDiffRuntimeConfigRoutingRemovedHotAppliable(t *testing.T) {
+	oldCfg := `{
+		"inbounds": [{"tag": "in-a", "port": 10001, "protocol": "vless"}],
+		"routing": {"rules": [{"type": "field", "outboundTag": "direct"}]}
+	}`
+	newCfg := `{
+		"inbounds": [{"tag": "in-a", "port": 10001, "protocol": "vless"}]
+	}`
+	d, err := diffRuntimeConfig([]byte(oldCfg), []byte(newCfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Unsupported || d.Routing == nil {
+		t.Fatalf("routing 删除应产生空配置替换: unsupported=%v routing=%s", d.Unsupported, d.Routing)
+	}
+}
+
+// outbounds 变更：可热应用（改 = 先删后加，增/删按 tag）
+func TestDiffRuntimeConfigOutboundHotAppliable(t *testing.T) {
+	oldCfg := `{
+		"outbounds": [
+			{"tag": "keep", "protocol": "freedom"},
+			{"tag": "removed", "protocol": "blackhole"},
+			{"tag": "changed", "protocol": "freedom", "settings": {"domainStrategy": "AsIs"}}
+		]
+	}`
+	newCfg := `{
+		"outbounds": [
+			{"tag": "keep", "protocol": "freedom"},
+			{"tag": "changed", "protocol": "freedom", "settings": {"domainStrategy": "UseIP"}},
+			{"tag": "added", "protocol": "blackhole"}
+		]
+	}`
+	d, err := diffRuntimeConfig([]byte(oldCfg), []byte(newCfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Unsupported {
+		t.Fatalf("出站差异应可热应用: %s", d.OutsideReason)
+	}
+	if len(d.OutboundRemovals) != 1 || d.OutboundRemovals[0] != "removed" {
+		t.Fatalf("OutboundRemovals 不符: %v", d.OutboundRemovals)
+	}
+	if len(d.OutboundAdditions) != 1 || d.OutboundAdditions[0].Tag != "added" {
+		t.Fatalf("OutboundAdditions 不符: %v", d.OutboundAdditions)
+	}
+	if len(d.OutboundAlters) != 1 || d.OutboundAlters[0].Tag != "changed" {
+		t.Fatalf("OutboundAlters 不符: %v", d.OutboundAlters)
+	}
+}
+
+// dns 等 API 覆盖不到的段 → 仍必须重启
+func TestDiffRuntimeConfigDNSRequiresRestart(t *testing.T) {
 	newCfg := `{
 		"log": {"loglevel": "warning"},
 		"inbounds": [
 			{"tag": "in-a", "port": 10001, "protocol": "vless"},
 			{"tag": "in-b", "port": 10002, "protocol": "trojan"}
 		],
-		"outbounds": [{"tag": "direct", "protocol": "blackhole"}]
+		"outbounds": [{"tag": "direct", "protocol": "freedom"}],
+		"dns": {"servers": ["1.1.1.1"]}
 	}`
 	d, err := diffRuntimeConfig([]byte(baseConfig), []byte(newCfg))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !d.Unsupported {
-		t.Fatal("outbounds 变更必须判定为需要重启")
+		t.Fatal("dns 变更必须判定为需要重启")
+	}
+}
+
+// 无 tag 的出站/入站无法通过 API 定位：有变化时必须重启（不能漏应用）
+func TestDiffRuntimeConfigUntaggedRequiresRestart(t *testing.T) {
+	oldCfg := `{"inbounds":[{"port":1,"protocol":"vless"}]}`
+	newCfg := `{"inbounds":[{"port":2,"protocol":"vless"}]}`
+	d, err := diffRuntimeConfig([]byte(oldCfg), []byte(newCfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.Unsupported {
+		t.Fatal("无 tag 条目变化必须判定为需要重启")
 	}
 }
 

@@ -8,10 +8,12 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
+	"corefusion/internal/domain"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/service/audit"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
@@ -104,6 +106,13 @@ func (h *Handler) SaveProtocol(c *gin.Context) {
 
 	audit.RecordNodeFromCtx(c, serverID, "save_protocol", fmt.Sprintf("saved %s config", coreType), true, "")
 
+	// routing 段改动必须热下发到运行中的 xray（否则磁盘与运行态长期分叉）。
+	if rawRouting, ok := body["routing"]; ok && rawRouting != nil {
+		if routingJSON, merr := json.Marshal(rawRouting); merr == nil {
+			h.applyRoutingSection(c.Request.Context(), serverID, coreType, routingJSON)
+		}
+	}
+
 	// Sync to target node asynchronously
 	go h.syncConfigToServer(serverID, coreType)
 
@@ -175,6 +184,11 @@ func (h *Handler) SaveProtocolSection(c *gin.Context) {
 	}
 
 	audit.RecordNodeFromCtx(c, serverID, "save_protocol_section", fmt.Sprintf("saved %s/%s", coreType, section), true, "")
+
+	// routing 段改动热下发到运行中的 xray（本地直连 / 远端经 Agent），随后只写盘不重启。
+	if section == "routing" {
+		h.applyRoutingSection(c.Request.Context(), serverID, coreType, body)
+	}
 
 	// Sync to target node asynchronously
 	go h.syncConfigToServer(serverID, coreType)
@@ -559,6 +573,21 @@ func (h *Handler) syncConfigToServer(serverID int64, coreType string) {
 	// to each mirror's DB, then pushes the config to each mirror's Agent
 	// and applies it immediately (hot-reload).
 	h.svc.SyncMirrorsForPrimary(ctx, serverID)
+}
+
+// applyRoutingSection 把 routing 段热下发到运行中的 xray（本地直连 / 远端经 Agent）。
+//
+// 失败只记日志、不重启核心：重启会踢掉该核心全部在线连接，而且这类“保存路由”
+// 操作本来就不该触发重启。sing-box 的 route 段没有热接口，保持原有重载路径。
+func (h *Handler) applyRoutingSection(ctx context.Context, serverID int64, coreType string, routingJSON []byte) {
+	if h.routingApplier == nil || !domain.CoreType(coreType).SupportsHotApply() || len(routingJSON) == 0 {
+		return
+	}
+	actx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := h.routingApplier.ApplyRouting(actx, serverID, routingJSON); err != nil {
+		log.Printf("[nodeserver] hot apply routing (server=%d, core=%s) failed, core NOT restarted: %v", serverID, coreType, err)
+	}
 }
 
 func isValidCoreType(ct string) bool {

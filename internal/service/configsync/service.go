@@ -343,6 +343,19 @@ func (s *Service) SyncServerCore(ctx context.Context, serverID int64, coreType s
 	return s.syncCoreForServer(ctx, coreType, serverID, SyncOptions{})
 }
 
+// SyncServerCoreHotApplied 按「节点 + 核心」重新生成配置并写盘，但**不重启**本地核心。
+//
+// 用途：调用方已经把改动通过核心 API 热下发到运行中的进程（xray 的 AlterInbound
+// 增删用户）。写盘保证下次重启后配置一致，同时让周期性 configsync 不再认为
+// 「配置有变化」——否则 5 分钟后它仍会重启一次 xray，等于把热下发白白浪费。
+func (s *Service) SyncServerCoreHotApplied(ctx context.Context, serverID int64, coreType string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.syncCoreForServer(ctx, coreType, serverID, SyncOptions{
+		NoRestartCores: map[string]bool{coreType: true},
+	})
+}
+
 func (s *Service) syncCoreForServer(ctx context.Context, coreType string, serverID int64, opts SyncOptions) error {
 	// Resolve the inbound source server ID. For mirror nodes, inbounds
 	// come from the primary (partner) server.

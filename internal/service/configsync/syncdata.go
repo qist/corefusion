@@ -46,8 +46,9 @@ type RawDataProvider interface {
 }
 
 // reloadStrategyFor 按核心能力决定 SyncData 之后核心的重载方式：
-//   - 支持热下发的核心（xray 的 proxyman API 可增删改入站）→ HOT_RELOAD：
-//     Agent 只把变更热应用到运行中的进程，配置没变则完全不碰进程；
+//   - 支持热下发的核心（xray 的 proxyman / router API 可增删改入站、出站、
+//     并全量替换路由）→ HOT_RELOAD：Agent 只把变更热应用到运行中的进程，
+//     配置没变则完全不碰进程；
 //   - 其余核心（sing-box）→ RESTART：它的 v2ray API 只注册了
 //     StatsService，入站变更只能重启生效。
 func reloadStrategyFor(coreType string) agentpb.SyncDataRequest_ReloadStrategy {
@@ -349,8 +350,8 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 	if isMirror {
 		log.Printf("[DataSyncBuilder] server %d is mirror, using source server %d for data", serverID, sourceServerID)
 		// Mirror 的重载策略按核心能力决定（此处先给兜底值，拿到 coreType 后再精确设置）：
-		//   - xray：有 proxyman API（增删改入站）→ HOT_RELOAD，Agent 只热应用变更，
-		//     配置没变完全不碰进程 —— 与主节点「热下发 + 不重启」的行为保持一致；
+		//   - xray：有 proxyman/router API（增删改入站、出站、全量替换路由）→ HOT_RELOAD，
+		//     Agent 只热应用变更，配置没变完全不碰进程 —— 与主节点「热下发 + 不重启」一致；
 		//   - 其余核心：v2ray API 仅注册 StatsService，入站变更无法热下发 → RESTART。
 		// 历史行为是无条件 RESTART，导致周期性 SyncData（MirrorSync 每 10 分钟兜底）
 		// 反复重启 xray、健康检查撞上重启窗口而误报 degraded。

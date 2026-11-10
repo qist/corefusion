@@ -220,9 +220,9 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 			}
 		}
 
-		// Add user to inbound via xray gRPC
+		// Add user to inbound via xray gRPC（显式传协议，避免 tag 不含协议名时推断错）
 		if s.userManager != nil {
-			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
+			if err := s.userManager.AddUserToInboundWithProtocol(ctx, inbound.Tag, inbound.Protocol, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
 			// 上下行分离：被该入站引用的下行入站也要有同凭据账号，
@@ -557,7 +557,7 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 		}
 
 		if s.userManager != nil {
-			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
+			if err := s.userManager.AddUserToInboundWithProtocol(ctx, inbound.Tag, inbound.Protocol, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to add user %s to inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
 			// 上下行分离：下行入站补同凭据账号。
@@ -632,7 +632,7 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 
 		// Add user to inbound (this updates DB and calls xray API for all nodes)
 		if s.userManager != nil {
-			if err := s.userManager.AddUserToInbound(ctx, inbound.Tag, inboundEmail, uuid, password, flow, method); err != nil {
+			if err := s.userManager.AddUserToInboundWithProtocol(ctx, inbound.Tag, inbound.Protocol, inboundEmail, uuid, password, flow, method); err != nil {
 				log.Printf("client: failed to sync account for %s on inbound %s: %v", inboundEmail, inbound.Tag, err)
 			}
 			// 新入站若引用了下行入口，同样要为已有客户补建下行账号。

@@ -31,6 +31,15 @@ import (
 	"corefusion/pkg/netutil"
 )
 
+// XrayRoutingApplier 把路由配置热下发到运行中的 xray（本地直连 gRPC / 远端经 Agent）。
+// Implemented by xrayConfigApplier in router.go（内部复用 coredata.ControlProvider）。
+//
+// 通用协议编辑器保存 routing 段时，服务端过去只写盘、既不热下发也不重启核心，
+// 会导致「磁盘是新路由、运行中的 xray 仍是旧路由」且周期同步救不回来。
+type XrayRoutingApplier interface {
+	ApplyRouting(ctx context.Context, serverID int64, routingJSON []byte) error
+}
+
 // Handler handles node server HTTP requests.
 type Handler struct {
 	svc               *nodeserverSvc.Service
@@ -41,6 +50,7 @@ type Handler struct {
 	proxyH            *system.ProxyHandler
 	geoRuleSvc        *geoRuleSvc.Service
 	chainLinkRepo     *repository.ChainLinkRepository
+	routingApplier    XrayRoutingApplier
 	// chainLinkProvider 用于手动"同步配置"时把链式代理出站/路由/均衡器一并生成
 	// （不注入时 PrepareFullConfig 会生成**不含链式**的配置 —— 点一次"同步"就会
 	//  把节点上已有的链式出站覆盖掉，入口流量退回直连）。
@@ -107,6 +117,11 @@ func (h *Handler) SetProxyHandler(ph *system.ProxyHandler) {
 // SetGeoRuleService sets the geo rule service for triggering rule sync after core install.
 func (h *Handler) SetGeoRuleService(svc *geoRuleSvc.Service) {
 	h.geoRuleSvc = svc
+}
+
+// SetRoutingApplier 注入「路由段保存后进程内热下发」能力（目前仅 xray）。
+func (h *Handler) SetRoutingApplier(applier XrayRoutingApplier) {
+	h.routingApplier = applier
 }
 
 // auditLog records an administrative action to the audit log.

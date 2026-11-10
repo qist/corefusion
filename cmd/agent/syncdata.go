@@ -516,7 +516,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		// Determine the reload strategy:
 		// - NONE:       only update config file, don't touch the running process
 		// - RESTART:    restart the core if it's already running (default for mirror nodes)
-		// - HOT_RELOAD: (future) use xray gRPC API to add/del inbounds without restart
+		// - HOT_RELOAD: use xray gRPC API to add/del inbounds & outbounds and replace
+		//               routing without restarting
 		// Default (0/none) preserves backward compatibility: Start is a no-op if running.
 		strategy := req.ReloadStrategy
 		isRunning := false

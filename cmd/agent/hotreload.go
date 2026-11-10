@@ -27,13 +27,18 @@ import (
 //   - inbounds 的增 / 删 / 改（含端口、传输层、Reality 参数、用户）→ 可热下发：
 //     删用 RemoveInbound、增用 AddInbound、改用「先删后加」（同 tag 不允许共存，
 //     先删还能释放旧端口）；
-//   - 其余顶层段（routing / dns / outbounds / api / log…）→ **API 不支持整体替换**，
-//     回退重启，保证配置最终生效。
+//   - outbounds 的增 / 删 / 改 → 可热下发：删用 RemoveOutbound、增用 AddOutbound、
+//     改用「先删后加」（xray 的 AddHandler 拒绝重复 tag）；
+//   - routing 整体替换 → 可热下发：RouterService.AddRule + ShouldAppend=false
+//     （xray 会清空旧 rules 与 balancers 再装载，等价于全量替换）；
+//   - 其余顶层段（dns / api / log / policy…）→ **API 不支持整体替换**，回退重启，
+//     保证配置最终生效。
 // 任何一步热下发失败同样回退重启，避免「半套配置」的运行态。
 // ============================================================
 
-// inboundItem 是一个带 tag 的入站配置：Raw 用于下发、Val 用于深度比较。
-type inboundItem struct {
+// taggedItem 是一个带 tag 的配置项（inbound / outbound 通用）：
+// Raw 用于下发、Val 用于深度比较。
+type taggedItem struct {
 	Tag string
 	Raw json.RawMessage
 	Val interface{}
@@ -41,10 +46,20 @@ type inboundItem struct {
 
 // runtimeConfigDiff 是两份运行配置之间的差异。
 type runtimeConfigDiff struct {
-	Removals  []string      // 需 RemoveInbound 的 tag
-	Additions []inboundItem // 需 AddInbound 的入站
-	Alters    []inboundItem // 需「先删后加」的入站
-	// Unsupported=true 表示差异落在 proxyman API 覆盖不到的部分 → 必须重启。
+	// inbounds
+	Removals  []string     // 需 RemoveInbound 的 tag
+	Additions []taggedItem // 需 AddInbound 的入站
+	Alters    []taggedItem // 需「先删后加」的入站
+
+	// outbounds（同样按 tag 匹配）
+	OutboundRemovals  []string
+	OutboundAdditions []taggedItem
+	OutboundAlters    []taggedItem
+
+	// Routing 非 nil 表示 routing 段有变化，需要全量替换。
+	Routing json.RawMessage
+
+	// Unsupported=true 表示差异落在 xray API 覆盖不到的部分 → 必须重启。
 	Unsupported bool
 	// OutsideReason 说明不被支持的原因（Unsupported=false 时为空）。
 	OutsideReason string
@@ -52,10 +67,21 @@ type runtimeConfigDiff struct {
 
 // empty 报告是否没有任何可热应用的差异。
 func (d runtimeConfigDiff) empty() bool {
-	return !d.Unsupported && len(d.Removals) == 0 && len(d.Additions) == 0 && len(d.Alters) == 0
+	return !d.Unsupported &&
+		len(d.Removals) == 0 && len(d.Additions) == 0 && len(d.Alters) == 0 &&
+		len(d.OutboundRemovals) == 0 && len(d.OutboundAdditions) == 0 && len(d.OutboundAlters) == 0 &&
+		d.Routing == nil
 }
 
-// diffRuntimeConfig 对比两份完整 xray 配置，只把「inbounds」的差异识别为可热应用。
+// hotSections 是 xray API 能热下发的顶层段；其余段变化一律重启。
+var hotSections = map[string]bool{
+	"inbounds":  true,
+	"outbounds": true,
+	"routing":   true,
+}
+
+// diffRuntimeConfig 对比两份完整 xray 配置，识别可热应用的部分：
+// inbounds / outbounds（按 tag 增删改）与 routing（整体替换）。
 //
 // 比较按**语义**进行（解析成 interface{} 后 DeepEqual），避免键序/空白差异造成误判。
 func diffRuntimeConfig(oldCfg, newCfg []byte) (runtimeConfigDiff, error) {
@@ -75,20 +101,20 @@ func diffRuntimeConfig(oldCfg, newCfg []byte) (runtimeConfigDiff, error) {
 		return diff, fmt.Errorf("parse old config: %w", err)
 	}
 
-	// 1) inbounds 以外的任何段变化 → 不支持热应用
+	// 1) inbounds / outbounds / routing 以外的任何段变化 → 不支持热应用
 	for key, newVal := range newTop {
-		if key == "inbounds" {
+		if hotSections[key] {
 			continue
 		}
 		oldVal, exists := oldTop[key]
 		if !exists || !jsonEqual(oldVal, newVal) {
 			diff.Unsupported = true
-			diff.OutsideReason = fmt.Sprintf("section %q changed (hot reload only covers inbounds)", key)
+			diff.OutsideReason = fmt.Sprintf("section %q changed (hot reload covers inbounds/outbounds/routing only)", key)
 			return diff, nil
 		}
 	}
 	for key := range oldTop {
-		if key == "inbounds" {
+		if hotSections[key] {
 			continue
 		}
 		if _, exists := newTop[key]; !exists {
@@ -99,20 +125,82 @@ func diffRuntimeConfig(oldCfg, newCfg []byte) (runtimeConfigDiff, error) {
 	}
 
 	// 2) inbounds 差异（按 tag 匹配）
-	oldItems, err := parseInbounds(oldTop["inbounds"])
+	inboundDiff, err := diffTaggedSection("inbounds", oldTop, newTop)
 	if err != nil {
-		return diff, fmt.Errorf("parse old inbounds: %w", err)
+		return diff, err
 	}
-	newItems, err := parseInbounds(newTop["inbounds"])
+	if inboundDiff.unsupported != "" {
+		diff.Unsupported = true
+		diff.OutsideReason = inboundDiff.unsupported
+		return diff, nil
+	}
+	diff.Removals = inboundDiff.removals
+	diff.Additions = inboundDiff.additions
+	diff.Alters = inboundDiff.alters
+
+	// 3) outbounds 差异（按 tag 匹配）
+	outboundDiff, err := diffTaggedSection("outbounds", oldTop, newTop)
 	if err != nil {
-		return diff, fmt.Errorf("parse new inbounds: %w", err)
+		return diff, err
+	}
+	if outboundDiff.unsupported != "" {
+		diff.Unsupported = true
+		diff.OutsideReason = outboundDiff.unsupported
+		return diff, nil
+	}
+	diff.OutboundRemovals = outboundDiff.removals
+	diff.OutboundAdditions = outboundDiff.additions
+	diff.OutboundAlters = outboundDiff.alters
+
+	// 4) routing 整体替换（语义比较；段被删除时也要清空规则）
+	if !jsonEqual(oldTop["routing"], newTop["routing"]) {
+		if raw, ok := newTop["routing"]; ok && len(raw) > 0 {
+			diff.Routing = raw
+		} else {
+			diff.Routing = json.RawMessage(`{}`)
+		}
+	}
+	return diff, nil
+}
+
+// taggedSectionDiff 是某个「按 tag 索引」的配置段的差异。
+type taggedSectionDiff struct {
+	removals  []string
+	additions []taggedItem
+	alters    []taggedItem
+	// unsupported 非空表示该段存在无法通过 API 定位的条目（无 tag）且有变化，
+	// 调用方应回退重启。
+	unsupported string
+}
+
+// diffTaggedSection 对比一个顶层数组段（inbounds / outbounds），按 tag 匹配。
+//
+// 无 tag 的条目无法通过 API 定位：只有在整段语义未变化时才能继续热应用，
+// 否则保守回退重启（避免“漏掉未带 tag 的变更却报告成功”）。
+func diffTaggedSection(name string, oldTop, newTop map[string]json.RawMessage) (taggedSectionDiff, error) {
+	var out taggedSectionDiff
+	if jsonEqual(oldTop[name], newTop[name]) {
+		return out, nil
 	}
 
-	newByTag := make(map[string]inboundItem, len(newItems))
+	oldItems, oldUntagged, err := parseTaggedSection(name, oldTop[name])
+	if err != nil {
+		return out, fmt.Errorf("parse old %s: %w", name, err)
+	}
+	newItems, newUntagged, err := parseTaggedSection(name, newTop[name])
+	if err != nil {
+		return out, fmt.Errorf("parse new %s: %w", name, err)
+	}
+	if oldUntagged > 0 || newUntagged > 0 {
+		out.unsupported = fmt.Sprintf("%s contains untagged entries which cannot be addressed via API", name)
+		return out, nil
+	}
+
+	newByTag := make(map[string]taggedItem, len(newItems))
 	for _, it := range newItems {
 		newByTag[it.Tag] = it
 	}
-	oldByTag := make(map[string]inboundItem, len(oldItems))
+	oldByTag := make(map[string]taggedItem, len(oldItems))
 	for _, it := range oldItems {
 		oldByTag[it.Tag] = it
 	}
@@ -120,53 +208,59 @@ func diffRuntimeConfig(oldCfg, newCfg []byte) (runtimeConfigDiff, error) {
 	for _, it := range oldItems {
 		n, ok := newByTag[it.Tag]
 		if !ok {
-			diff.Removals = append(diff.Removals, it.Tag)
+			out.removals = append(out.removals, it.Tag)
 			continue
 		}
 		if !reflect.DeepEqual(it.Val, n.Val) {
-			diff.Alters = append(diff.Alters, n)
+			out.alters = append(out.alters, n)
 		}
 	}
 	for _, it := range newItems {
 		if _, ok := oldByTag[it.Tag]; !ok {
-			diff.Additions = append(diff.Additions, it)
+			out.additions = append(out.additions, it)
 		}
 	}
-	return diff, nil
+	return out, nil
 }
 
-// parseInbounds 解析 inbounds 数组，逐个取出 tag（缺失 tag 的条目会被跳过，
-// 它们无法通过 proxyman API 定位，交由整体重启兜底更稳妥）。
-func parseInbounds(raw json.RawMessage) ([]inboundItem, error) {
+// parseTaggedSection 解析 inbounds / outbounds 数组，逐个取出 tag。
+// 返回 (带 tag 的条目, 无 tag 条目数)。
+func parseTaggedSection(name string, raw json.RawMessage) ([]taggedItem, int, error) {
 	if len(raw) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 	var arr []json.RawMessage
 	if err := json.Unmarshal(raw, &arr); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	items := make([]inboundItem, 0, len(arr))
+	items := make([]taggedItem, 0, len(arr))
+	untagged := 0
 	for _, elem := range arr {
 		var head struct {
 			Tag string `json:"tag"`
 		}
 		if err := json.Unmarshal(elem, &head); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if strings.TrimSpace(head.Tag) == "" {
+			untagged++
 			continue
 		}
 		var val interface{}
 		if err := json.Unmarshal(elem, &val); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		items = append(items, inboundItem{Tag: head.Tag, Raw: elem, Val: val})
+		items = append(items, taggedItem{Tag: head.Tag, Raw: elem, Val: val})
 	}
-	return items, nil
+	return items, untagged, nil
 }
 
 // jsonEqual 语义比较两段 JSON（键序与空白不敏感）。
+// 两段都缺失 / 都为 null 时视为相等：config 里省略 routing 与写 null 等价。
 func jsonEqual(a, b json.RawMessage) bool {
+	if isEmptyJSON(a) || isEmptyJSON(b) {
+		return isEmptyJSON(a) && isEmptyJSON(b)
+	}
 	var x, y interface{}
 	if err := json.Unmarshal(a, &x); err != nil {
 		return false
@@ -175,6 +269,12 @@ func jsonEqual(a, b json.RawMessage) bool {
 		return false
 	}
 	return reflect.DeepEqual(x, y)
+}
+
+// isEmptyJSON 报告一段 JSON 是否缺失或为 null。
+func isEmptyJSON(raw json.RawMessage) bool {
+	s := strings.TrimSpace(string(raw))
+	return s == "" || s == "null"
 }
 
 // ============================================================
@@ -287,8 +387,14 @@ func (a *AgentApp) xrayProxymanCall(ctx context.Context, method string, payload 
 	return nil
 }
 
-// tryHotApplyXray 把「入站差异」热下发给运行中的 xray。
+// tryHotApplyXray 把 inbounds / outbounds / routing 的差异热下发给运行中的 xray。
 // 返回 (是否已成功热应用, 说明)：false 表示调用方应改用重启兜底。
+//
+// 下发顺序很关键：路由规则可能引用新旧出站 tag，
+//  1. 先处理出站的「改 / 增」→ 让新 tag 已存在；
+//  2. 再整体替换 routing → 规则立即切到新出站；
+//  3. 最后删出站 → 避免规则仍指向已删除的 tag 造成瞬时断流；
+//  4. inbounds 的删 / 改 / 增放最后（用户改动与出站/路由无依赖关系）。
 func (a *AgentApp) tryHotApplyXray(ctx context.Context, oldCfg, newCfg []byte) (bool, string) {
 	diff, err := diffRuntimeConfig(oldCfg, newCfg)
 	if err != nil {
@@ -301,7 +407,38 @@ func (a *AgentApp) tryHotApplyXray(ctx context.Context, oldCfg, newCfg []byte) (
 		return true, "config unchanged"
 	}
 
-	// 先删（释放 tag 与端口）→ 再改（先删后加）→ 最后加
+	// 1) 出站：改（先删后加）→ 增
+	for _, it := range diff.OutboundAlters {
+		if err := a.xrayProxymanCall(ctx, "removeOutbound", map[string]string{"tag": it.Tag}); err != nil {
+			// RemoveHandler 对不存在的 tag 也可能返回错误，继续尝试添加即可；
+			// 但若确实无法替换，交给上层重启兜底更稳妥。
+			return false, fmt.Sprintf("replace outbound %q (remove): %v", it.Tag, err)
+		}
+		if err := a.xrayProxymanCall(ctx, "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return false, fmt.Sprintf("replace outbound %q (add): %v", it.Tag, err)
+		}
+	}
+	for _, it := range diff.OutboundAdditions {
+		if err := a.xrayProxymanCall(ctx, "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return false, fmt.Sprintf("add outbound %q: %v", it.Tag, err)
+		}
+	}
+
+	// 2) 路由：全量替换（ShouldAppend=false 会清空旧 rules + balancers）
+	if diff.Routing != nil {
+		if err := a.xrayAPICall(ctx, "router", "applyRouting", map[string]json.RawMessage{"routing": diff.Routing}); err != nil {
+			return false, fmt.Sprintf("apply routing: %v", err)
+		}
+	}
+
+	// 3) 出站：删
+	for _, tag := range diff.OutboundRemovals {
+		if err := a.xrayProxymanCall(ctx, "removeOutbound", map[string]string{"tag": tag}); err != nil {
+			return false, fmt.Sprintf("remove outbound %q: %v", tag, err)
+		}
+	}
+
+	// 4) 入站：删 → 改（先删后加）→ 增
 	for _, tag := range diff.Removals {
 		if err := a.xrayProxymanCall(ctx, "removeInbound", map[string]string{"tag": tag}); err != nil {
 			return false, fmt.Sprintf("remove inbound %q: %v", tag, err)
@@ -321,8 +458,34 @@ func (a *AgentApp) tryHotApplyXray(ctx context.Context, oldCfg, newCfg []byte) (
 		}
 	}
 
-	summary := fmt.Sprintf("hot-applied inbound changes: -%d ~%d +%d",
-		len(diff.Removals), len(diff.Alters), len(diff.Additions))
+	summary := fmt.Sprintf("hot-applied xray changes: inbound -%d ~%d +%d, outbound -%d ~%d +%d, routing=%t",
+		len(diff.Removals), len(diff.Alters), len(diff.Additions),
+		len(diff.OutboundRemovals), len(diff.OutboundAlters), len(diff.OutboundAdditions),
+		diff.Routing != nil)
 	log.Printf("[HotReload] %s", summary)
 	return true, summary
+}
+
+// xrayAPICall 通过本地 XrayAPIProxy 调任意 xray gRPC 服务
+// （router 等非 proxyman 服务走这里）。
+func (a *AgentApp) xrayAPICall(ctx context.Context, service, method string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+	resp, err := a.localAgent.XrayAPIProxy(ctx, &agentpb.XrayAPIRequest{
+		Service: service,
+		Method:  method,
+		Payload: body,
+	})
+	if err != nil {
+		return err
+	}
+	if resp == nil || !resp.GetSuccess() {
+		if resp != nil {
+			return fmt.Errorf("%s", resp.GetError())
+		}
+		return fmt.Errorf("%s returned no response", method)
+	}
+	return nil
 }

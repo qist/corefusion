@@ -2,8 +2,11 @@ package warp
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,11 +26,18 @@ type HotApplySyncHook interface {
 	SyncServerConfigHotApplied(ctx context.Context, serverID int64, coreType string)
 }
 
+// XrayOutboundApplier 把出站热下发到运行中的 xray（本地直连 gRPC / 远端经 Agent）。
+// Implemented by xrayConfigApplier in router.go（内部复用 coredata.ControlProvider）。
+type XrayOutboundApplier interface {
+	AddOutbound(ctx context.Context, serverID int64, configJSON []byte) error
+}
+
 // Handler handles WARP HTTP requests.
 // All endpoints are scoped to a specific node server via the :id path parameter.
 type Handler struct {
 	svc      *warp.Service
 	syncHook ConfigSyncHook
+	applier  XrayOutboundApplier
 }
 
 // NewHandler creates a new WARP handler.
@@ -38,6 +48,11 @@ func NewHandler(svc *warp.Service) *Handler {
 // SetSyncHook 注入配置同步钩子：一键创建 MASQUE 出站后需要把新出站推到运行中的核心。
 func (h *Handler) SetSyncHook(hook ConfigSyncHook) {
 	h.syncHook = hook
+}
+
+// SetOutboundApplier 注入「新出站进程内热下发」能力（MASQUE 出站创建后立即生效）。
+func (h *Handler) SetOutboundApplier(applier XrayOutboundApplier) {
+	h.applier = applier
 }
 
 // triggerConfigSync 触发该节点的配置同步（xray 支持热下发时只写盘不重启）。
@@ -223,6 +238,16 @@ func (h *Handler) CreateMasqueOutbound(c *gin.Context) {
 		return
 	}
 	// 新出站必须下发到运行中的核心，否则路由选不到它（xray 热下发，不重启）。
+	// 服务端自己下发，不再依赖前端保存后再调 /xray/control/outbound。
+	if h.applier != nil {
+		if raw, merr := json.Marshal(result.Config); merr == nil {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+			if aerr := h.applier.AddOutbound(ctx, serverID, raw); aerr != nil {
+				log.Printf("warp: hot add masque outbound %q (server=%d) failed, core NOT restarted: %v", result.Tag, serverID, aerr)
+			}
+			cancel()
+		}
+	}
 	h.triggerConfigSync(serverID, "xray")
 	response.OK(c, result)
 }

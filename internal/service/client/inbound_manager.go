@@ -4,29 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"strings"
+	"sync"
 	"time"
 
-	"corefusion/internal/auth/jwt"
+	"corefusion/internal/coredata"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
+
+// XrayUserAPI 把用户热增删下发到运行中的 xray。
+// 本地节点由 *coredata.ControlProvider 直连 xray gRPC；远端节点经 Agent 转发。
+//
+// 关键：不再走「面板自身的 HTTP API 回环」。面板开启 TLS 时，回环请求
+// （http://127.0.0.1:<port>）会被 HTTPS 监听器以 400 拒绝，
+// 导致每次热加都失败 → 回退重载核心 → xray 被频繁重启。
+type XrayUserAPI interface {
+	AddUser(ctx context.Context, serverID int64, tag, protocol, email, id, password, flow, method string) error
+	RemoveUser(ctx context.Context, serverID int64, tag, email string) error
+}
+
+// ConfigPersister 把最新配置写盘（不重启核心）。
+// 用户热加成功后立即写盘，可让周期性 configsync 不再认为「配置有变化」，
+// 从而避免它 5 分钟后重启 xray。
+type ConfigPersister func(ctx context.Context, serverID int64, coreType string) error
 
 // InboundManager implements InboundUserManager using the inbound config repository
 // and calls xray control API for live user management.
 type InboundManager struct {
 	inboundRepo *repository.InboundConfigRepository
 	serverRepo  *repository.NodeServerRepository
-	apiBaseURL  string
-	jwtSecret   string
+	userAPI     XrayUserAPI
+
+	// configPersister 可选：热加成功后写盘（本地只写盘不重启，远端经 Agent 写文件）。
+	configPersister ConfigPersister
 
 	// coreReloader 可选：让「不支持热加用户」的核心（sing-box 的 v2ray API 只提供
 	// StatsService，没有 AlterInbound/AddUser）通过「重新生成配置 + 重启核心」生效。
 	// 由 router 在 nodeServerSvc 就绪后注入。
 	coreReloader func(ctx context.Context, serverID int64, coreType string) error
+
+	// 写盘去抖：批量建号（一个套餐几百个客户）时只生成/下发一次配置。
+	persistMu     sync.Mutex
+	persistTimers map[string]*time.Timer
 }
 
 // SetCoreReloader 注入配置重载能力（远端节点走 SyncServerData，本地走重新生成 + 重启核心）。
@@ -34,13 +55,19 @@ func (m *InboundManager) SetCoreReloader(fn func(ctx context.Context, serverID i
 	m.coreReloader = fn
 }
 
+// SetUserAPI 注入进程内用户热增删实现（通常为 *coredata.ControlProvider）。
+func (m *InboundManager) SetUserAPI(api XrayUserAPI) {
+	m.userAPI = api
+}
+
+// SetConfigPersister 注入「只写盘不重启」的配置落盘能力。
+func (m *InboundManager) SetConfigPersister(fn ConfigPersister) {
+	m.configPersister = fn
+}
+
 // NewInboundManager creates a new InboundManager.
-func NewInboundManager(inboundRepo *repository.InboundConfigRepository, apiPort, jwtSecret string) *InboundManager {
-	return &InboundManager{
-		inboundRepo: inboundRepo,
-		apiBaseURL:  "http://127.0.0.1:" + apiPort,
-		jwtSecret:   jwtSecret,
-	}
+func NewInboundManager(inboundRepo *repository.InboundConfigRepository) *InboundManager {
+	return &InboundManager{inboundRepo: inboundRepo}
 }
 
 // SetServerRepo sets the node server repository for mirror node fanout.
@@ -60,7 +87,7 @@ func (m *InboundManager) AddUserToInbound(ctx context.Context, inboundTag, email
 }
 
 // AddUserToInboundWithProtocol 与 AddUserToInbound 相同，但协议由调用方显式指定
-// （protocol 为空时仍按 tag 推断）。
+// （protocol 为空时按数据库 inbound_configs.protocol 解析，最后才按 tag 猜）。
 //
 // 上下行分离需要把上行用户的凭据原样复制到下行入站：凭据字段名随协议不同
 // （vless/vmess 是 id/uuid，trojan/ss 是 password，hysteria 是 auth），
@@ -75,13 +102,20 @@ func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inbou
 	for i := range inbounds {
 		inbound := &inbounds[i]
 
+		// 解析该入站的真实协议：显式传入 > 数据库 protocol > tag（tag 常常只有端口）。
+		p := inboundProtocol(inbound, protocol)
+		if !isSingboxInbound(inbound) && !coredata.ProtocolHasUsers(p) {
+			log.Printf("inbound_manager: skip user %s on inbound %s: protocol %q has no user accounts", email, inbound.Tag, p)
+			continue
+		}
+
 		// Check if user already exists in this inbound's config
 		if userExistsInConfig(inbound.ConfigJSON, email) {
 			continue // Skip, don't create duplicate
 		}
 
 		// Add user to config_json
-		if err := m.addUserToInboundConfig(ctx, inbound, protocol, email, uuid, password, flow, method); err != nil {
+		if err := m.addUserToInboundConfig(ctx, inbound, p, email, uuid, password, flow, method); err != nil {
 			log.Printf("inbound_manager: failed to add user %s to inbound %s (serverID=%d): %v", email, inbound.Tag, inbound.ServerID, err)
 			continue
 		}
@@ -93,12 +127,12 @@ func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inbou
 			continue
 		}
 
-		// Call xray API for real-time user addition on the primary
-		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		// 主节点热加用户（进程内直连/经 Agent，协议显式传递，不靠 tag 猜）
+		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 
 		// Fan out to mirror nodes: directly call xray API on each mirror
 		// using the primary's tag (mirror's tag is the same as primary's in new design).
-		m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 	}
 	return nil
 }
@@ -118,12 +152,9 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 
 	for i := range inbounds {
 		inbound := &inbounds[i]
-		p := protocol
-		if p == "" {
-			p = inbound.Protocol
-		}
-		if p == "" {
-			p = detectProtocol(inbound.Tag)
+		p := inboundProtocol(inbound, protocol)
+		if !isSingboxInbound(inbound) && !coredata.ProtocolHasUsers(p) {
+			continue
 		}
 
 		var config map[string]interface{}
@@ -145,8 +176,8 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 				m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "upsert user "+email)
 				continue
 			}
-			go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
-			m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+			go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+			m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 			continue
 		}
 
@@ -172,9 +203,9 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 			continue
 		}
 		// xray：先移除旧凭据再添加，避免运行时保留旧 uuid（只写库不会生效）。
-		m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
-		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
-		m.fanOutReplaceUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		m.hotRemoveUser(inbound.ServerID, inbound.Tag, email)
+		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+		m.fanOutReplaceUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 	}
 	return nil
 }
@@ -291,8 +322,8 @@ func (m *InboundManager) RemoveUserFromInbound(ctx context.Context, inboundTag, 
 			continue
 		}
 
-		// Call xray API for real-time user removal on the primary
-		go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+		// 主节点热移除用户（进程内直连/经 Agent）
+		go m.hotRemoveUser(inbound.ServerID, inbound.Tag, email)
 
 		// Fan out to mirror nodes
 		m.fanOutRemoveUserToMirrors(ctx, inbound.ServerID, inbound.Tag, email)
@@ -321,7 +352,7 @@ func (m *InboundManager) PauseUser(ctx context.Context, inboundID int64, email s
 	}
 
 	// Call xray API to remove user from running instance on primary
-	go m.callXrayRemoveUser(inbound.ServerID, inbound.Tag, email)
+	go m.hotRemoveUser(inbound.ServerID, inbound.Tag, email)
 
 	// Fan out to mirror nodes: remove user from their xray runtime
 	m.fanOutPauseToMirrors(ctx, inbound.ServerID, inbound.Tag, email, true)
@@ -356,9 +387,12 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 	}
 
 	// Extract credentials for xray API calls
+	p := inboundProtocol(inbound, "")
+	if !coredata.ProtocolHasUsers(p) {
+		return nil
+	}
 	var uuid, password, flow, method string
 	if userEntry != nil {
-		protocol := detectProtocol(inbound.Tag)
 		uuid, _ = userEntry["id"].(string)
 		if uuid == "" {
 			// sing-box 用的是 uuid 字段
@@ -368,16 +402,16 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 		auth, _ := userEntry["auth"].(string)
 		flow, _ = userEntry["flow"].(string)
 		method, _ = userEntry["method"].(string)
-		if protocol == "hysteria" && auth != "" {
+		if p == "hysteria" && auth != "" {
 			password = auth
 		}
 
 		// Call xray API to add user back on primary
-		go m.callXrayAddUser(inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 	}
 
 	// Fan out to mirror nodes: add user back to their xray runtime
-	m.fanOutResumeToMirrors(ctx, inbound.ServerID, inbound.Tag, email, uuid, password, flow, method)
+	m.fanOutResumeToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
 	return nil
 }
 
@@ -504,7 +538,7 @@ func (m *InboundManager) setUserPaused(ctx context.Context, inboundID int64, ema
 
 // fanOutAddUserToMirrors calls xray API on all mirror nodes of the given primary
 // to add the user. Uses the primary's tag (mirror's xray config uses the same tag).
-func (m *InboundManager) fanOutAddUserToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+func (m *InboundManager) fanOutAddUserToMirrors(ctx context.Context, primaryServerID int64, tag, protocol, email, uuid, password, flow, method string) {
 	if m.serverRepo == nil {
 		return
 	}
@@ -517,7 +551,7 @@ func (m *InboundManager) fanOutAddUserToMirrors(ctx context.Context, primaryServ
 			continue
 		}
 		// Use the primary's tag (mirror's tag is the same in new design)
-		go m.callXrayAddUser(mirror.ID, tag, email, uuid, password, flow, method)
+		go m.hotAddUser(mirror.ID, tag, protocol, email, uuid, password, flow, method)
 	}
 }
 
@@ -535,7 +569,7 @@ func (m *InboundManager) fanOutRemoveUserToMirrors(ctx context.Context, primaryS
 		if mirror.NodeType != entity.NodeTypeMirror {
 			continue
 		}
-		go m.callXrayRemoveUser(mirror.ID, tag, email)
+		go m.hotRemoveUser(mirror.ID, tag, email)
 	}
 }
 
@@ -553,14 +587,14 @@ func (m *InboundManager) fanOutPauseToMirrors(ctx context.Context, primaryServer
 			continue
 		}
 		if paused {
-			go m.callXrayRemoveUser(mirror.ID, tag, email)
+			go m.hotRemoveUser(mirror.ID, tag, email)
 		}
 	}
 }
 
 // fanOutReplaceUserToMirrors 在镜像节点上按「先移除、再添加」更新同一账号的凭据。
 // 放在同一个 goroutine 里顺序执行，避免 remove/add 乱序导致账号缺失。
-func (m *InboundManager) fanOutReplaceUserToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+func (m *InboundManager) fanOutReplaceUserToMirrors(ctx context.Context, primaryServerID int64, tag, protocol, email, uuid, password, flow, method string) {
 	if m.serverRepo == nil {
 		return
 	}
@@ -574,14 +608,14 @@ func (m *InboundManager) fanOutReplaceUserToMirrors(ctx context.Context, primary
 		}
 		serverID := mirror.ID
 		go func() {
-			m.callXrayRemoveUser(serverID, tag, email)
-			m.callXrayAddUser(serverID, tag, email, uuid, password, flow, method)
+			m.hotRemoveUser(serverID, tag, email)
+			m.hotAddUser(serverID, tag, protocol, email, uuid, password, flow, method)
 		}()
 	}
 }
 
 // fanOutResumeToMirrors calls xray API on all mirror nodes to resume (add back) the user.
-func (m *InboundManager) fanOutResumeToMirrors(ctx context.Context, primaryServerID int64, tag, email, uuid, password, flow, method string) {
+func (m *InboundManager) fanOutResumeToMirrors(ctx context.Context, primaryServerID int64, tag, protocol, email, uuid, password, flow, method string) {
 	if m.serverRepo == nil {
 		return
 	}
@@ -593,102 +627,105 @@ func (m *InboundManager) fanOutResumeToMirrors(ctx context.Context, primaryServe
 		if mirror.NodeType != entity.NodeTypeMirror {
 			continue
 		}
-		go m.callXrayAddUser(mirror.ID, tag, email, uuid, password, flow, method)
+		go m.hotAddUser(mirror.ID, tag, protocol, email, uuid, password, flow, method)
 	}
 }
 
-// callXrayAddUser calls xray control API to add a user on the specified server.
-// For local nodes (serverID=1), it connects to the local xray gRPC.
-// For remote nodes (serverID>1), it proxies through the Agent gRPC channel.
-func (m *InboundManager) callXrayAddUser(serverID int64, tag, email, uuid, password, flow, method string) {
-	protocol := detectProtocol(tag)
-	body := fmt.Sprintf(`{"email":"%s","id":"%s","password":"%s","flow":"%s","method":"%s"}`,
-		email, uuid, password, flow, method)
+// hotAddUser 把用户热加到运行中的 xray（本地进程内直连 gRPC，远端经 Agent）。
+//
+// 以前这里走的是「面板自身 HTTP API 回环」：面板开了 TLS 时回环请求被 HTTPS
+// 监听器 400 拒绝 → 3 次重试全失败 → 回退重载核心 → xray 被频繁重启。
+// 现在直接走进程内控制层，并且协议由调用方显式传入（tag 只有端口时也能正确建号）。
+func (m *InboundManager) hotAddUser(serverID int64, tag, protocol, email, uuid, password, flow, method string) {
+	if m.userAPI == nil {
+		log.Printf("[inbound_manager] user API not configured, cannot hot add user %s to %s (server=%d)", email, tag, serverID)
+		return
+	}
 
-	// URL includes /node-servers/:id/ prefix for server routing
-	url := fmt.Sprintf("%s/api/v1/node-servers/%d/xray/control/inbound/%s/user", m.apiBaseURL, serverID, tag)
-
-	// 热加用户会与「核心正在重启」竞态：SyncData 刚触发 restart 时 xray 还没起来，
-	// 第一次请求必然 500。以前只打一行日志就放弃 → 面板库有账号、节点配置没有，
-	// 用户连上直接 EOF（实测）。这里重试几次；仍失败则回退到「重新生成配置 + 重启核心」，
-	// 保证账号最终一定落到节点上。
+	// 与「核心正在重启」竞态：第一次可能连不上，重试几次。
 	const attempts = 3
-	lastStatus := 0
 	var lastErr error
 	for attempt := 1; attempt <= attempts; attempt++ {
-		req, err := http.NewRequest("POST", url, strings.NewReader(body))
-		if err != nil {
-			log.Printf("xray add user: request error: %v", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := m.userAPI.AddUser(ctx, serverID, tag, protocol, email, uuid, password, flow, method)
+		cancel()
+		if err == nil {
+			log.Printf("xray add user %s to %s (serverID=%d, %s): ok", email, tag, serverID, protocol)
+			// 立即写盘（不重启核心）：否则周期性 configsync 发现配置变化会重启 xray。
+			m.scheduleConfigPersist(serverID, "xray")
 			return
 		}
-		req.Header.Set("Content-Type", "application/json")
-		if token := m.generateInternalToken(); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			lastErr = err
-			log.Printf("xray add user %s to %s (serverID=%d, %s) attempt %d/%d: %v",
-				email, tag, serverID, protocol, attempt, attempts, err)
-		} else {
-			detail, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-			resp.Body.Close()
-			if resp.StatusCode == 200 {
-				log.Printf("xray add user %s to %s (serverID=%d, %s): ok", email, tag, serverID, protocol)
-				return
-			}
-			lastStatus = resp.StatusCode
-			log.Printf("xray add user %s to %s (serverID=%d) attempt %d/%d: status %d body=%s",
-				email, tag, serverID, attempt, attempts, resp.StatusCode, strings.TrimSpace(string(detail)))
-		}
+		lastErr = err
+		log.Printf("xray add user %s to %s (serverID=%d, %s) attempt %d/%d: %v",
+			email, tag, serverID, protocol, attempt, attempts, err)
 		if attempt < attempts {
 			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
 		}
 	}
 
-	if m.coreReloader == nil {
-		log.Printf("xray add user %s to %s (serverID=%d): giving up (status=%d err=%v)",
-			email, tag, serverID, lastStatus, lastErr)
+	// 失败处理：
+	//   - 本地节点：绝不自动重启核心（重启会断开本机 xray 全部在线连接，正是这次的病根）。
+	//     账号会在下次核心重启/配置生效时补上，日志里给出排查方向。
+	//   - 远程节点：保留原有的「重新生成配置 + 重启该节点核心」兜底 —— 节点与面板版本
+	//     可能不一致（旧 Agent 不认 protocol、只按 tag 猜协议），不能让账号永远落不下去。
+	if serverID != coredata.LocalServerID && m.coreReloader != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		log.Printf("[inbound_manager] hot add failed on remote server=%d tag=%s, reloading that node's core: %v", serverID, tag, lastErr)
+		if err := m.coreReloader(ctx, serverID, "xray"); err != nil {
+			log.Printf("[inbound_manager] core reload fallback failed: server=%d tag=%s err=%v", serverID, tag, err)
+		}
 		return
 	}
-	// 兜底：重新生成配置并下发（远端走 SyncServerCore，本地会重启核心），
-	// 用户账号随配置一起生效 —— 比让用户拿到"连不上的订阅"要好。
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	log.Printf("[inbound_manager] hot add failed (status=%d), reloading core: server=%d tag=%s", lastStatus, serverID, tag)
-	if err := m.coreReloader(ctx, serverID, "xray"); err != nil {
-		log.Printf("[inbound_manager] core reload fallback failed: server=%d tag=%s err=%v", serverID, tag, err)
-	}
+	log.Printf("[inbound_manager] hot add user %s to %s (serverID=%d, %s) failed after %d attempts, core NOT restarted: %v (check xray api.listen / api config)",
+		email, tag, serverID, protocol, attempts, lastErr)
 }
 
-// callXrayRemoveUser calls xray control API to remove a user from the specified server.
-// For local nodes (serverID=1), it connects to the local xray gRPC.
-// For remote nodes (serverID>1), it proxies through the Agent gRPC channel.
-func (m *InboundManager) callXrayRemoveUser(serverID int64, tag, email string) {
-	// URL includes /node-servers/:id/ prefix for server routing
-	url := fmt.Sprintf("%s/api/v1/node-servers/%d/xray/control/inbound/%s/user/%s", m.apiBaseURL, serverID, tag, email)
-	req, err := http.NewRequest("DELETE", url, nil)
-	if err != nil {
-		log.Printf("xray remove user: request error: %v", err)
+// hotRemoveUser 从运行中的 xray 热移除用户（本地直连 / 远端经 Agent）。
+func (m *InboundManager) hotRemoveUser(serverID int64, tag, email string) {
+	if m.userAPI == nil {
+		log.Printf("[inbound_manager] user API not configured, cannot hot remove user %s from %s (server=%d)", email, tag, serverID)
 		return
 	}
-	if token := m.generateInternalToken(); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("xray remove user %s from %s (serverID=%d): %v", email, tag, serverID, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := m.userAPI.RemoveUser(ctx, serverID, tag, email); err != nil {
+		log.Printf("xray remove user %s from %s (serverID=%d) failed, core NOT restarted: %v", email, tag, serverID, err)
 		return
 	}
-	defer resp.Body.Close()
+	log.Printf("xray remove user %s from %s (serverID=%d): ok", email, tag, serverID)
+	m.scheduleConfigPersist(serverID, "xray")
+}
 
-	if resp.StatusCode != 200 {
-		log.Printf("xray remove user %s from %s (serverID=%d): status %d", email, tag, serverID, resp.StatusCode)
-	} else {
-		log.Printf("xray remove user %s from %s (serverID=%d): ok", email, tag, serverID)
+// persistDelay 是热加/热删后写盘的去抖窗口：批量建号只落一次配置。
+const persistDelay = 2 * time.Second
+
+// scheduleConfigPersist 合并短时间内的多次用户变更，只写一次盘且不重启核心。
+func (m *InboundManager) scheduleConfigPersist(serverID int64, coreType string) {
+	if m.configPersister == nil {
+		return
 	}
+	key := fmt.Sprintf("%d/%s", serverID, coreType)
+
+	m.persistMu.Lock()
+	if m.persistTimers == nil {
+		m.persistTimers = make(map[string]*time.Timer)
+	}
+	if t, ok := m.persistTimers[key]; ok {
+		t.Stop()
+	}
+	m.persistTimers[key] = time.AfterFunc(persistDelay, func() {
+		m.persistMu.Lock()
+		delete(m.persistTimers, key)
+		m.persistMu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		if err := m.configPersister(ctx, serverID, coreType); err != nil {
+			log.Printf("inbound_manager: persist %s config for server %d failed: %v", coreType, serverID, err)
+		}
+	})
+	m.persistMu.Unlock()
 }
 
 // reloadCoreForInbound 重新生成并下发配置、重启核心，使配置变更生效。
@@ -728,16 +765,17 @@ func (m *InboundManager) reloadMirrorsForInbound(ctx context.Context, primarySer
 	}
 }
 
-// generateInternalToken generates a JWT token for internal API calls.
-func (m *InboundManager) generateInternalToken() string {
-	if m.jwtSecret == "" {
+// inboundProtocol 解析入站的真实协议：显式传入 > 数据库 protocol > tag 推断。
+// 线上新入站 tag 常为 inbound-<port>（不含协议名），只靠 tag 会解析失败。
+func inboundProtocol(inbound *entity.InboundConfig, explicit string) string {
+	if p := coredata.NormalizeProtocol(explicit); p != "" {
+		return p
+	}
+	if inbound == nil {
 		return ""
 	}
-	j := jwt.New(m.jwtSecret, 24*time.Hour, 7*24*time.Hour)
-	token, err := j.GenerateAccessToken(0, "internal", "super_admin")
-	if err != nil {
-		log.Printf("xray: failed to generate internal token: %v", err)
-		return ""
+	if p := coredata.NormalizeProtocol(inbound.Protocol); p != "" {
+		return p
 	}
-	return token
+	return coredata.InferProtocolFromTag(inbound.Tag)
 }

@@ -77,7 +77,7 @@ func (h *PublicHandler) resolveDownloadSettings(
 		return
 	}
 
-	host, port := h.hostForLink(ctx, target, tcfg, shareDomains)
+	host, port := h.hostForLink(ctx, target, tcfg, nil, shareDomains)
 	if host == "" || port <= 0 {
 		return
 	}

@@ -2479,6 +2479,13 @@ func parseVlessURI(body, name string) *Node {
 		if sid := params["sid"]; sid != "" {
 			ro["short-id"] = sid
 		}
+		if spx := params["spx"]; spx != "" {
+			ro["spider-x"] = spx
+		}
+		// 抗量子校验：服务端开了 mldsa65Seed 时链接带 pqv，丢了客户端会校验失败。
+		if pqv := params["pqv"]; pqv != "" {
+			ro["mldsa65-verify"] = pqv
+		}
 		extra["reality-opts"] = ro
 	}
 	if insecure := params["allowInsecure"]; insecure == "1" || insecure == "true" {
@@ -2644,6 +2651,26 @@ func parseTrojanURI(body, name string) *Node {
 	}
 	if insecure := params["allowInsecure"]; insecure == "1" || insecure == "true" {
 		extra["skip-cert-verify"] = true
+	}
+	// trojan 也支持 REALITY（比 TLS 安全）：security / pbk / sid / spx / pqv 都要带上，
+	// 否则 xray_json / sing-box 订阅里会退化成普通 TLS，握手直接失败。
+	if strings.EqualFold(params["security"], "reality") || params["pbk"] != "" {
+		ro := map[string]interface{}{}
+		if pbk := params["pbk"]; pbk != "" {
+			ro["public-key"] = pbk
+		}
+		if sid := params["sid"]; sid != "" {
+			ro["short-id"] = sid
+		}
+		if spx := params["spx"]; spx != "" {
+			ro["spider-x"] = spx
+		}
+		if pqv := params["pqv"]; pqv != "" {
+			ro["mldsa65-verify"] = pqv
+		}
+		if len(ro) > 0 {
+			extra["reality-opts"] = ro
+		}
 	}
 	switch transport {
 	case "ws":

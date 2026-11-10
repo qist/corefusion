@@ -877,11 +877,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				config = view
 			}
 			// 同上：无接入域名时回退节点地址，不跳过。
-			shareCfg, merged := h.applyFallbackEntry(cfg, config, entryIdx)
+			shareCfg, merged, proxyCfg := h.applyFallbackEntry(cfg, config, entryIdx)
 			config = merged
 			// 上下行分离：按 _downloadInboundId 引用解析目标入站，失效则回退单入口。
 			h.resolveDownloadSettings(ctx, cfg, config, configs, shareDomains)
-			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
+			host, port := h.shareAddress(ctx, shareCfg, config, proxyCfg, shareDomains)
 			// 前置 TLS（核心明文、TLS 在 CDN/nginx/caddy 上终结）：订阅里的链接必须与
 			// 分享链接接口同口径，否则 raw_uri / base64 订阅里的节点会是 security=none
 			// （客户端按明文连 443，直接失败）。必须在取 streamSettings / 构造 Node 之前调用。
@@ -998,10 +998,11 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					// Deep-copy the config and replace _accessDomain
 					mirrorConfig := deepCopyMap(config)
 					replaceAccessDomainForMirror(mirrorConfig, mirror)
-					mirrorHostResolved, mirrorPort, resolved := resolveAccessDomain(mirrorConfig, cfg.Port, shareDomains)
+					frontPort := h.sharePort(ctx, cfg, config)
+					mirrorHostResolved, mirrorPort, resolved := resolveAccessDomain(mirrorConfig, frontPort, shareDomains)
 					if !resolved {
 						// 镜像的 _accessDomain 没被改写成功（类型不认识等）→ 直接用镜像自己的地址
-						mirrorHostResolved, mirrorPort = mirrorHost, cfg.Port
+						mirrorHostResolved, mirrorPort = mirrorHost, frontPort
 					}
 					applyFrontTLS(mirrorConfig, mirrorHostResolved, accessDomainType(mirrorConfig), shareDomains)
 
@@ -2293,18 +2294,73 @@ func preferNodeAddress(node entity.NodeServer) string {
 // 关键：第 2 步是必需的 —— 启用了接入域名但下拉没选时，以前会从面板级分享域名列表里
 // 随机抓一个（server 与界面选择无关、每次渲染还不同）；现在统一退到节点地址，
 // 结果稳定且至少是能连的地址。
-func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConfig, config map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
-	if host, port, ok := resolveAccessDomain(config, cfg.Port, shareDomains); ok {
-		return host, port
+func (h *PublicHandler) shareAddress(ctx context.Context, cfg entity.InboundConfig, config, proxyConfig map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
+	// 对外端口：被 SNI 前置代理承载的入站用前置端口（默认 443），不是它自己的
+	// listen 端口 —— 这类入站只监听 unix/abstract socket 或要求 PROXY 协议头，
+	// 客户端直连它的端口必然失败。fallback 入站还要看入口配置（proxyConfig）。
+	port := h.sharePort(ctx, cfg, config)
+	if proxyConfig != nil && port == cfg.Port {
+		if p := h.sharePort(ctx, cfg, proxyConfig); p != cfg.Port {
+			port = p
+		}
+	}
+	if host, p, ok := resolveAccessDomain(config, port, shareDomains); ok {
+		return host, p
 	}
 	if h.nodeServerRepo != nil {
 		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
 			if host := preferNodeAddress(*node); host != "" {
-				return host, cfg.Port
+				return host, port
 			}
 		}
 	}
-	return fallbackHost(cfg.Listen), cfg.Port
+	return fallbackHost(cfg.Listen), port
+}
+
+// sharePort 返回入站对客户端应展示的端口。
+//
+// 面板的分流架构里，一部分入站只监听 unix socket / 抽象 socket，或者要求
+// `acceptProxyProtocol`（由 nginx/caddy 在 443 上按 SNI 分流并补 PROXY 头）。
+// 这类入站**不能直连自己的端口**：拿 xray 的监听端口生成链接，客户端连上去
+// 只会被重置。对外统一用前置 SNI 端口（`proxy.sni_listen_port[.serverID]`，
+// 默认 443）。
+func (h *PublicHandler) sharePort(ctx context.Context, cfg entity.InboundConfig, config map[string]interface{}) int {
+	if !inboundBehindSNIProxy(cfg, config) {
+		return cfg.Port
+	}
+	if h.systemSettingRepo != nil {
+		for _, key := range []string{
+			fmt.Sprintf("proxy.sni_listen_port.%d", cfg.ServerID),
+			"proxy.sni_listen_port",
+		} {
+			v, err := h.systemSettingRepo.GetByKey(ctx, key)
+			if err != nil {
+				continue
+			}
+			if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && p > 0 {
+				return p
+			}
+		}
+	}
+	return 443
+}
+
+// inboundBehindSNIProxy 判断入站是否只能经由 SNI 前置代理访问：
+//   - listen 是 unix socket 路径（/…）或抽象 socket（@…）：客户端根本连不到；
+//   - sockopt.acceptProxyProtocol：必须由 nginx/caddy 补 PROXY 协议头。
+func inboundBehindSNIProxy(cfg entity.InboundConfig, config map[string]interface{}) bool {
+	listen := strings.TrimSpace(cfg.Listen)
+	if strings.HasPrefix(listen, "/") || strings.HasPrefix(listen, "@") {
+		return true
+	}
+	if ss, ok := config["streamSettings"].(map[string]interface{}); ok {
+		if so, ok := ss["sockopt"].(map[string]interface{}); ok {
+			if b, _ := so["acceptProxyProtocol"].(bool); b {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // accessDomainType 取入站/外部节点接入域名的类型（direct / cf_domain / cf_ip / custom）。

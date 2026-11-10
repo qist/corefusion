@@ -69,7 +69,7 @@ func TestFallbackEntryIndexAndShareView(t *testing.T) {
 
 	// 不在 fallback 引用里的入站：原样返回（不能改别人的配置）
 	own := parseConfigMap(grpcInner.ConfigJSON)
-	cfg2, view2 := (&PublicHandler{}).applyFallbackEntry(entry, own, idx)
+	cfg2, view2, _ := (&PublicHandler{}).applyFallbackEntry(entry, own, idx)
 	if cfg2.ID != entry.ID || view2["streamSettings"] == nil {
 		t.Errorf("入口自身不应被改写: %+v", cfg2.ID)
 	}

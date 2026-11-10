@@ -200,18 +200,20 @@ func deepCopyMapAny(v interface{}) interface{} {
 
 // applyFallbackEntry 若 cfg 是被外层入口 fallback 引用的内部入站，返回
 // （入口配置, 合成的对外视图）；否则原样返回。
-func (h *PublicHandler) applyFallbackEntry(cfg entity.InboundConfig, config map[string]interface{}, idx map[int64]fallbackEntry) (entity.InboundConfig, map[string]interface{}) {
+func (h *PublicHandler) applyFallbackEntry(cfg entity.InboundConfig, config map[string]interface{}, idx map[int64]fallbackEntry) (entity.InboundConfig, map[string]interface{}, map[string]interface{}) {
 	e, ok := idx[cfg.ID]
 	if !ok || e.Entry == nil {
 		// 入口入站自身：REALITY 认证通过后不会再走 fallback（fallback 只在协议头解析失败时
 		// 触发），所以任何 serverNames 里的 SNI 都能用，包括 fallback 配置的那些。
-		return cfg, config
+		return cfg, config, nil
 	}
 	entryCfg := parseConfigMap(e.Entry.ConfigJSON)
 	if entryCfg == nil {
-		return cfg, config
+		return cfg, config, nil
 	}
-	return *e.Entry, fallbackShareView(config, entryCfg, e.Name)
+	// 第三个返回值是**入口入站**的配置：对外端口要按入口判断（入口可能只监听
+	// unix socket / 要求 PROXY 协议头，只能从前置 SNI 端口进）。
+	return *e.Entry, fallbackShareView(config, entryCfg, e.Name), entryCfg
 }
 
 // claimedFallbackNames 收集入口入站里"命名 fallback"的 SNI（name 非空）。

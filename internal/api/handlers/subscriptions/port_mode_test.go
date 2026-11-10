@@ -93,7 +93,7 @@ func TestShareAddressFallsBackToListenAddress(t *testing.T) {
 	cfg := entity.InboundConfig{Listen: "0.0.0.0", Port: 20001}
 	host, port := h.shareAddress(context.Background(), cfg, map[string]interface{}{
 		"_accessDomain": map[string]interface{}{"enabled": true, "type": "direct", "directDomain": ""},
-	}, []shareDomainEntry{{Type: "direct", Host: "direct.example.com", Port: 443, Ports: []int{443}}})
+	}, nil, []shareDomainEntry{{Type: "direct", Host: "direct.example.com", Port: 443, Ports: []int{443}}})
 	if host != "127.0.0.1" || port != 20001 {
 		t.Errorf("got %s:%d, want 127.0.0.1:20001", host, port)
 	}
@@ -224,7 +224,7 @@ func TestShareAddressFallsBackWhenNoAccessDomain(t *testing.T) {
 	}
 	for _, tc := range cases {
 		cfg := entity.InboundConfig{Port: tc.wantPort, Listen: tc.listen}
-		host, port := h.shareAddress(context.Background(), cfg, tc.config, nil)
+		host, port := h.shareAddress(context.Background(), cfg, tc.config, nil, nil)
 		if host != tc.want || port != tc.wantPort {
 			t.Fatalf("%s: shareAddress = %s:%d, want %s:%d", tc.name, host, port, tc.want, tc.wantPort)
 		}

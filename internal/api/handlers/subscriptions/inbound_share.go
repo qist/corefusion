@@ -86,13 +86,15 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 			continue
 		}
 		shareCfg := cfg
+		var proxyCfg map[string]interface{}
 		if hasEntry && entry.Entry != nil {
 			if entryCfg := parseConfigMap(entry.Entry.ConfigJSON); entryCfg != nil {
 				view = fallbackShareView(view, entryCfg, entry.Name)
 				shareCfg = entry.Entry
+				proxyCfg = entryCfg
 			}
 		}
-		host, port := h.hostForLink(c.Request.Context(), shareCfg, view, shareDomains)
+		host, port := h.hostForLink(c.Request.Context(), shareCfg, view, proxyCfg, shareDomains)
 		// 前置 TLS 终结（CF 优选 / nginx / caddy）：分享片段与订阅同一口径。
 		applyFrontTLS(view, host, accessDomainType(view), shareDomains)
 		// 注意：这里传**完整的 settings**（而不是只挑 clients/encryption）——
@@ -155,8 +157,8 @@ func (h *PublicHandler) InboundShareLinks(c *gin.Context) {
 	}
 
 	// 顶层 host/port 供前端显示：与被 fallback 引用时一样用外层入口的地址。
-	respCfg, respView := h.applyFallbackEntry(*cfg, config, entryIdx)
-	host, port := h.hostForLink(c.Request.Context(), &respCfg, respView, shareDomains)
+	respCfg, respView, proxyCfg := h.applyFallbackEntry(*cfg, config, entryIdx)
+	host, port := h.hostForLink(c.Request.Context(), &respCfg, respView, proxyCfg, shareDomains)
 	response.OK(c, gin.H{
 		"items":     items,
 		"users":     users,
@@ -191,11 +193,11 @@ func mihomoProxySnippet(link string) string {
 // 接入域名里已选择的域名/IP → 节点公网/内网地址 → 监听地址。
 // 关键点：启用了接入域名但下拉**没选**时不能凭空取一个面板域名（否则 server 与
 // 编辑器里选的东西对不上），也不能让 listen=0.0.0.0 兜底成 127.0.0.1 就完事。
-func (h *PublicHandler) hostForLink(ctx context.Context, cfg *entity.InboundConfig, view map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
+func (h *PublicHandler) hostForLink(ctx context.Context, cfg *entity.InboundConfig, view, proxyConfig map[string]interface{}, shareDomains []shareDomainEntry) (string, int) {
 	if cfg == nil {
 		return "", 0
 	}
-	return h.shareAddress(ctx, *cfg, view, shareDomains)
+	return h.shareAddress(ctx, *cfg, view, proxyConfig, shareDomains)
 }
 
 // inboundUser 一条用户记录 + 对外展示标识。

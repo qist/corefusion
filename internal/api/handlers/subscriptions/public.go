@@ -292,6 +292,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
+	// 订阅必须每次实时生成：节点/链接生成逻辑更新后，CDN 或反向代理缓存旧响应会让
+	// 客户端长期拿到过期链接（实测：面板已修好 TLS 输出，经 CDN 的订阅仍返回旧的
+	// security=none 链接）。这里显式禁止缓存。
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
 	// Set Subscription-Userinfo header immediately so it's available
 	// even on error responses (suspended/expired/inactive).
 	// This is critical for compatibility with subscription tools

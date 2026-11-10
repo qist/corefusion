@@ -1909,18 +1909,25 @@ func formatURI(node Node) string {
 		}
 		// Transport sub-options
 		if wsOpts, ok := node.Extra["ws-opts"].(map[string]interface{}); ok {
+			pathHasED := false
 			if path, ok := wsOpts["path"].(string); ok && path != "" {
 				params.Set("path", path)
+				// path 里已带 ?ed=N（xray 习惯写法）时不要再输出独立的 ed 参数：
+				// 否则同一条链接会出现两个 early-data 值（如 ed=4096 + path=/?ed=2560），
+				// 与原链接不一致，部分客户端会取错。
+				pathHasED = strings.Contains(path, "?ed=")
 			}
 			if headers, ok := wsOpts["headers"].(map[string]interface{}); ok {
 				if host, ok := headers["Host"].(string); ok && host != "" {
 					params.Set("host", host)
 				}
 			}
-			if ed, ok := wsOpts["max-early-data"].(int); ok && ed > 0 {
-				params.Set("ed", strconv.Itoa(ed))
-			} else if ed, ok := wsOpts["max-early-data"].(float64); ok && ed > 0 {
-				params.Set("ed", strconv.Itoa(int(ed)))
+			if !pathHasED {
+				if ed, ok := wsOpts["max-early-data"].(int); ok && ed > 0 {
+					params.Set("ed", strconv.Itoa(ed))
+				} else if ed, ok := wsOpts["max-early-data"].(float64); ok && ed > 0 {
+					params.Set("ed", strconv.Itoa(int(ed)))
+				}
 			}
 		}
 		if huOpts, ok := node.Extra["httpupgrade-opts"].(map[string]interface{}); ok {

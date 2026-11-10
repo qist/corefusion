@@ -445,8 +445,9 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 					if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
 						edStr = edStr[:ampIdx]
 					}
-					if _, err := strconv.Atoi(edStr); err == nil {
-						wsOpts["max-early-data"] = 4096
+					// 用链接里的实际值（以前写死 4096，会把 ed=2560 改掉）
+					if n, err := strconv.Atoi(edStr); err == nil && n > 0 {
+						wsOpts["max-early-data"] = n
 						wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 					}
 				}
@@ -606,10 +607,11 @@ func ConvertsV2Ray(buf []byte) ([]map[string]any, error) {
 					if err == nil {
 						query := pathURL.Query()
 						if earlyData := query.Get("ed"); earlyData != "" {
-							if _, err := strconv.Atoi(earlyData); err == nil {
+							// 用链接里的实际值（以前写死 4096）
+							if n, err := strconv.Atoi(earlyData); err == nil && n > 0 {
 								switch network {
 								case "ws":
-									wsOpts["max-early-data"] = 4096
+									wsOpts["max-early-data"] = n
 									wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 								case "httpupgrade":
 									wsOpts["v2ray-http-upgrade-fast-open"] = true
@@ -850,14 +852,15 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		headers["User-Agent"] = randUserAgent()
 		headers["Host"] = query.Get("host")
 		path := query.Get("path")
-		// Detect early data in path (e.g. /?ed=2560) — set max-early-data to 4096, keep path as-is
+		// Detect early data in path (e.g. /?ed=2560), keep path as-is.
+		// 必须沿用链接里的实际值：以前写死 4096，会把客户端要求的 2560 改掉。
 		if idx := strings.Index(path, "?ed="); idx >= 0 {
 			edStr := path[idx+4:]
 			if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
 				edStr = edStr[:ampIdx]
 			}
-			if _, err := strconv.Atoi(edStr); err == nil {
-				wsOpts["max-early-data"] = 4096
+			if n, err := strconv.Atoi(edStr); err == nil && n > 0 {
+				wsOpts["max-early-data"] = n
 				wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 			}
 		}
@@ -872,8 +875,9 @@ func handleVShareLink(names map[string]int, u *url.URL, scheme string, proxy map
 		// Also check for ed as separate query param
 		if _, exists := wsOpts["max-early-data"]; !exists {
 			if edStr := query.Get("ed"); edStr != "" {
-				if _, err := strconv.Atoi(edStr); err == nil {
-					wsOpts["max-early-data"] = 4096
+				// 用链接里的实际值（以前写死 4096）
+				if n, err := strconv.Atoi(edStr); err == nil && n > 0 {
+					wsOpts["max-early-data"] = n
 					wsOpts["early-data-header-name"] = "Sec-WebSocket-Protocol"
 				}
 			}

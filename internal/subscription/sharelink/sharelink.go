@@ -176,14 +176,15 @@ func generateVmessLink(n Node) string {
 			ws = getMap(ss, "ws") // 前端表单形态
 		}
 		path := getString(ws, "path", "/")
-		// Detect early data in path (?ed=2560), keep path as-is
+		// Detect early data in path (?ed=2560), keep path as-is.
+		// 必须沿用链接里的实际值：以前写死 4096，会把客户端的 ed=2560 改成 4096。
 		if idx := strings.Index(path, "?ed="); idx >= 0 {
 			edStr := path[idx+4:]
 			if ampIdx := strings.Index(edStr, "&"); ampIdx >= 0 {
 				edStr = edStr[:ampIdx]
 			}
-			if _, err := strconv.Atoi(edStr); err == nil {
-				obj["max-early-data"] = 4096
+			if n, err := strconv.Atoi(edStr); err == nil && n > 0 {
+				obj["max-early-data"] = n
 				obj["early-data-header-name"] = "Sec-WebSocket-Protocol"
 			}
 		}

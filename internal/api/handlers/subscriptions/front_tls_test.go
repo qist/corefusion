@@ -1,6 +1,12 @@
 package subscriptions
 
-import "testing"
+import (
+	"net/url"
+	"strings"
+	"testing"
+
+	"corefusion/internal/subscription/formatter"
+)
 
 func plainWSConfig() map[string]interface{} {
 	return map[string]interface{}{
@@ -178,5 +184,122 @@ func TestApplyFrontTLSToProxy(t *testing.T) {
 	}
 	if pm["client-fingerprint"] != "chrome" {
 		t.Fatalf("指纹未写入: %v", pm)
+	}
+}
+
+// worker 类外部节点（vless/trojan over ws + TLS）：接入域名只替换 server/port，
+// SNI / Host / 指纹 / early-data 必须保持导入时的值。以前这里会被 CDN 池的
+// SNI/指纹覆盖成 bestcf 域名 + chrome，导致 CDN 回源 403（用户实测链接）。
+func TestExternalNodeWorkerLinkKeepsSNIAndFingerprint(t *testing.T) {
+	pm := map[string]interface{}{
+		"name": "maimai.boown.com", "type": "vless", "server": "bestcf.030101.xyz", "port": float64(443),
+		"uuid": "d094c691-d4ec-4dd1-b935-83a764484716", "tls": true,
+		"sni": "maimai.boown.com", "servername": "maimai.boown.com", "client-fingerprint": "random",
+		"network": "ws",
+		"ws-opts": map[string]interface{}{
+			"path": "/?ed=2560", "headers": map[string]interface{}{"Host": "maimai.boown.com"},
+		},
+	}
+	pools := []shareDomainEntry{{
+		Type: "cf_domain", Host: "bestcf.030101.xyz", Port: 443, TLSMode: "auto",
+		SNI: "bestcf.030101.xyz", Fingerprint: "chrome",
+	}}
+	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
+
+	if got := pm["sni"]; got != "maimai.boown.com" {
+		t.Fatalf("SNI 被覆盖: %v", got)
+	}
+	if got := pm["client-fingerprint"]; got != "random" {
+		t.Fatalf("指纹被覆盖: %v", got)
+	}
+
+	link := formatter.MihomoToURI(pm)
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatalf("parse link: %v", err)
+	}
+	q := u.Query()
+	if u.Hostname() != "bestcf.030101.xyz" {
+		t.Errorf("server = %q, want 优选域名", u.Hostname())
+	}
+	if got := q.Get("sni"); got != "maimai.boown.com" {
+		t.Errorf("链接 sni = %q, want maimai.boown.com", got)
+	}
+	if got := q.Get("host"); got != "maimai.boown.com" {
+		t.Errorf("链接 host = %q, want maimai.boown.com", got)
+	}
+	if got := q.Get("fp"); got != "random" {
+		t.Errorf("链接 fp = %q, want random", got)
+	}
+	if got := q.Get("path"); got != "/?ed=2560" {
+		t.Errorf("链接 path = %q", got)
+	}
+	if got := q.Get("ed"); got != "" {
+		t.Errorf("path 已带 ?ed=2560 时不应再输出独立 ed 参数，实际 %q", got)
+	}
+}
+
+// cf_ip 池里配置了 SNI（如 time.is）时，导入节点的 SNI 同样不能被覆盖。
+func TestExternalNodeTrojanWorkerKeepsImportedSNI(t *testing.T) {
+	pm := map[string]interface{}{
+		"name": "sweet-bonus", "type": "trojan", "server": "time.is", "port": float64(443),
+		"password": "5wjtwj7qlkzlpzkx81f1jpyi15tmerun", "tls": true,
+		"sni": "sweet-bonus-aeb7.boown.com", "servername": "sweet-bonus-aeb7.boown.com",
+		"client-fingerprint": "random", "network": "ws",
+		"ws-opts": map[string]interface{}{
+			"path": "/?ed=2560", "headers": map[string]interface{}{"Host": "sweet-bonus-aeb7.boown.com"},
+		},
+	}
+	pools := []shareDomainEntry{{
+		Type: "cf_ip", Host: "time.is", Port: 443, TLSMode: "auto",
+		SNI: "time.is", Fingerprint: "chrome",
+	}}
+	applyFrontTLSToProxy(pm, nil, "cf_ip", pools)
+
+	if got := pm["sni"]; got != "sweet-bonus-aeb7.boown.com" {
+		t.Fatalf("SNI 被覆盖: %v", got)
+	}
+	link := formatter.MihomoToURI(pm)
+	if !strings.Contains(link, "sni=sweet-bonus-aeb7.boown.com") {
+		t.Fatalf("链接缺少原 SNI: %s", link)
+	}
+}
+
+// vless 导入时只写 servername（没有 sni）：生成链接必须用 servername 作为 SNI，
+// 不能被 CF 池的域名覆盖。生产数据实测形状。
+func TestExternalNodeVLESSOnlyServernameKept(t *testing.T) {
+	pm := map[string]interface{}{
+		"type": "vless", "server": "cf.877774.xyz", "port": float64(443),
+		"uuid": "d094c691-d4ec-4dd1-b935-83a764484716", "tls": true,
+		"servername": "maimai.boown.com", "client-fingerprint": "random", "network": "ws",
+		"ws-opts": map[string]interface{}{
+			"path": "/?ed=2560", "max-early-data": 2560,
+			"early-data-header-name": "Sec-WebSocket-Protocol",
+			"headers":                map[string]interface{}{"Host": "maimai.boown.com"},
+		},
+	}
+	pools := []shareDomainEntry{{
+		Type: "cf_domain", Host: "bestcf.030101.xyz", Port: 443, TLSMode: "auto", Fingerprint: "chrome",
+	}}
+	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
+
+	link := formatter.MihomoToURI(pm)
+	t.Logf("link = %s", link)
+	u, err := url.Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	if got := q.Get("sni"); got != "maimai.boown.com" {
+		t.Fatalf("sni = %q, want maimai.boown.com", got)
+	}
+	if got := q.Get("path"); got != "/?ed=2560" {
+		t.Errorf("path = %q, want /?ed=2560", got)
+	}
+	if got := q.Get("ed"); got != "" {
+		t.Errorf("不应额外输出 ed 参数（path 已带 ed），实际 %q", got)
+	}
+	if got := q.Get("fp"); got != "random" {
+		t.Errorf("fp = %q, want random", got)
 	}
 }

@@ -107,3 +107,19 @@ func TestMergeDerivedSNISitesExplicitWins(t *testing.T) {
 		t.Errorf("派生站点缺 PROXY/L4: %#v", got[1])
 	}
 }
+
+// nginx 的 unix socket 写法是 unix:/path，Caddy 必须是 unix//path（unix/ 前缀）。
+// 用错会让 Caddy 把 "unix" 当主机名，配置能加载但流量到不了后端。
+func TestCaddyProxyTargetUnixSyntax(t *testing.T) {
+	cases := map[string]string{
+		"unix:/dev/shm/x.sock": "unix//dev/shm/x.sock",
+		"unix:@abstract":       "unix/@abstract",
+		"127.0.0.1:8443":       "127.0.0.1:8443",
+		"example.com:443":      "example.com:443",
+	}
+	for in, want := range cases {
+		if got := caddyProxyTarget(in); got != want {
+			t.Errorf("caddyProxyTarget(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

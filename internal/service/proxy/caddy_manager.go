@@ -355,6 +355,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if target == "" {
 					target = "127.0.0.1:443"
 				}
+				target = caddyProxyTarget(target)
 				if domain == "fallback" || domain == "" {
 					ruleFallback = target
 					fallbackPP = site.ProxyProtocol
@@ -382,6 +383,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			if fallbackTarget == "" {
 				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
 			}
+			fallbackTarget = caddyProxyTarget(fallbackTarget)
 			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
 			sb.WriteString("\t\t\troute {\n")
 			if fallbackPP {
@@ -1044,6 +1046,7 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 	if upstream == "" {
 		upstream = m.panelAddr(context.Background())
 	}
+	upstream = caddyProxyTarget(upstream)
 	proto := site.L4Protocol
 	if proto == "" {
 		proto = "tcp"

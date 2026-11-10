@@ -196,3 +196,16 @@ func mergeDerivedCaddySNISites(serverID int64, existing []entity.CaddySite, rule
 	}
 	return out
 }
+
+// caddyProxyTarget 把内部统一的 "unix:/path" 写法转成 Caddy layer4 的写法。
+//
+// nginx 的 unix socket 是 `unix:/dev/shm/x.sock`（冒号），Caddy 是
+// `unix//dev/shm/x.sock`（`unix/` 前缀 + 绝对路径，所以是双斜杠）。
+// 直接把 nginx 写法喂给 Caddy 会被当成主机名解析，运行时连接失败
+// （配置能加载、但流量永远到不了后端）。
+func caddyProxyTarget(target string) string {
+	if strings.HasPrefix(target, "unix:") {
+		return "unix/" + strings.TrimPrefix(target, "unix:")
+	}
+	return target
+}

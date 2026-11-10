@@ -337,7 +337,7 @@
               <el-divider content-position="left">{{ t('protoCenter.inbounds.accessFrontTls') }}</el-divider>
               <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsEnable')">
                 <el-switch v-model="rf._accessTlsEnabled" />
-                <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</span>
+                <div class="hint">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</div>
               </el-form-item>
               <template v-if="rf._accessTlsEnabled">
                 <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsSni')">

@@ -3,6 +3,7 @@ package outboundconfig
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"strconv"
 
@@ -10,6 +11,7 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/domain"
+	"corefusion/internal/service/audit"
 	"corefusion/internal/service/outboundconfig"
 )
 
@@ -90,9 +92,9 @@ func (h *Handler) SetConfigApplier(applier XrayConfigApplier) {
 //   - enabled=true 时用「DB tag/protocol + config_json」重新添加，保证与磁盘一致。
 //
 // 失败只记日志、不重启核心（重启会踢掉该核心全部在线连接）。
-func (h *Handler) applyOutboundChange(ctx context.Context, serverID int64, coreType string, cfgID int64, oldTag string) {
+func (h *Handler) applyOutboundChange(ctx context.Context, serverID int64, coreType string, cfgID int64, oldTag string) error {
 	if h.applier == nil || !domain.CoreType(coreType).SupportsHotApply() {
-		return
+		return nil
 	}
 	if oldTag != "" {
 		if err := h.applier.RemoveOutbound(ctx, serverID, oldTag); err != nil {
@@ -102,15 +104,15 @@ func (h *Handler) applyOutboundChange(ctx context.Context, serverID int64, coreT
 	cfg, err := h.svc.GetByID(ctx, serverID, cfgID)
 	if err != nil {
 		log.Printf("outboundconfig: load outbound %d (server=%d) for hot apply failed: %v", cfgID, serverID, err)
-		return
+		return err
 	}
 	if !cfg.Enabled {
-		return
+		return nil
 	}
 	var ob map[string]interface{}
 	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &ob); err != nil {
 		log.Printf("outboundconfig: parse outbound %d config failed: %v", cfgID, err)
-		return
+		return err
 	}
 	// tag/protocol 以数据库列为权威（与 GetEnabledOutbounds 生成磁盘配置时一致）。
 	ob["tag"] = cfg.Tag
@@ -118,11 +120,21 @@ func (h *Handler) applyOutboundChange(ctx context.Context, serverID int64, coreT
 	raw, err := json.Marshal(ob)
 	if err != nil {
 		log.Printf("outboundconfig: marshal outbound %d config failed: %v", cfgID, err)
-		return
+		return err
 	}
 	if err := h.applier.AddOutbound(ctx, serverID, raw); err != nil {
 		log.Printf("outboundconfig: hot add outbound %q (server=%d) failed, core NOT restarted: %v", cfg.Tag, serverID, err)
+		return err
 	}
+	return nil
+}
+
+// auditErrText 把热下发错误转成审计 detail 用的字符串（nil → 空）。
+func auditErrText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return "hot apply failed: " + err.Error()
 }
 
 // List handles GET /api/v1/node-servers/:id/outbound-configs.
@@ -179,12 +191,15 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 	cfg, err := h.svc.Create(c.Request.Context(), serverID, req.CoreType, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "outbound_create", fmt.Sprintf("%s/%s", req.CoreType, req.Tag), false, err.Error())
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
 
 	// 服务端自己热下发（不再依赖前端补 /xray/control/outbound），随后只写盘不重启。
-	h.applyOutboundChange(c.Request.Context(), serverID, req.CoreType, cfg.ID, "")
+	hotErr := h.applyOutboundChange(c.Request.Context(), serverID, req.CoreType, cfg.ID, "")
+	audit.RecordNodeFromCtx(c, serverID, "outbound_create",
+		fmt.Sprintf("%s %s (%s)", cfg.CoreType, cfg.Tag, cfg.Protocol), hotErr == nil, auditErrText(hotErr))
 
 	// Trigger config sync to the target server asynchronously
 	if h.shouldSyncOutbound(serverID, req.CoreType) {
@@ -217,17 +232,27 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	oldTag := ""
+	oldCoreType := "xray"
 	if existing, gerr := h.svc.GetByID(c.Request.Context(), serverID, cfgID); gerr == nil {
 		oldTag = existing.Tag
+		if existing.CoreType != "" {
+			oldCoreType = existing.CoreType
+		}
 	}
 	cfg, err := h.svc.Update(c.Request.Context(), serverID, cfgID, req.Remark, req.Protocol, req.Tag, string(req.ConfigJSON), req.Enabled, req.IsDefault)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "outbound_update", fmt.Sprintf("%s/%s", oldCoreType, req.Tag), false, err.Error())
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
 
 	// 服务端自己热下发（改 tag 时先移除旧 tag），随后只写盘不重启。
-	h.applyOutboundChange(c.Request.Context(), serverID, cfg.CoreType, cfg.ID, oldTag)
+	hotErr := h.applyOutboundChange(c.Request.Context(), serverID, cfg.CoreType, cfg.ID, oldTag)
+	detail := fmt.Sprintf("%s %s", cfg.CoreType, cfg.Tag)
+	if oldTag != "" && oldTag != cfg.Tag {
+		detail = fmt.Sprintf("%s %s → %s", cfg.CoreType, oldTag, cfg.Tag)
+	}
+	audit.RecordNodeFromCtx(c, serverID, "outbound_update", detail, hotErr == nil, auditErrText(hotErr))
 
 	// Trigger config sync to the target server asynchronously
 	if h.shouldSyncOutbound(serverID, cfg.CoreType) {
@@ -256,16 +281,21 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), serverID, cfgID); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "outbound_delete", fmt.Sprintf("%s/%s", coreType, oldTag), false, err.Error())
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}
 
 	// 服务端自己从运行中的 xray 移除（不依赖前端），失败只记日志、不重启核心。
+	var hotErr error
 	if h.applier != nil && oldTag != "" && domain.CoreType(coreType).SupportsHotApply() {
 		if err := h.applier.RemoveOutbound(c.Request.Context(), serverID, oldTag); err != nil {
+			hotErr = err
 			log.Printf("outboundconfig: hot remove outbound %q (server=%d) failed, core NOT restarted: %v", oldTag, serverID, err)
 		}
 	}
+	audit.RecordNodeFromCtx(c, serverID, "outbound_delete",
+		fmt.Sprintf("%s %s", coreType, oldTag), hotErr == nil, auditErrText(hotErr))
 
 	// Trigger config sync to the target server asynchronously
 	if h.shouldSyncOutbound(serverID, coreType) {

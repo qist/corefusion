@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/audit"
 	"corefusion/internal/service/inboundconfig"
 )
 
@@ -235,6 +237,7 @@ func (h *Handler) Create(c *gin.Context) {
 			response.BadRequest(c, "PROTOCOL_SETTINGS_MISMATCH", err.Error())
 			return
 		}
+		audit.RecordNodeFromCtx(c, serverID, "inbound_create", fmt.Sprintf("%s/%s", req.CoreType, req.Tag), false, err.Error())
 		response.InternalError(c, "CREATE_FAILED", err.Error())
 		return
 	}
@@ -245,6 +248,8 @@ func (h *Handler) Create(c *gin.Context) {
 	// call SyncMirrorsForPrimary, which triggers SyncData to all mirror
 	// nodes. SyncData detects mirror nodes and generates config from
 	// the primary's data at runtime.
+	audit.RecordNodeFromCtx(c, serverID, "inbound_create",
+		fmt.Sprintf("%s %s:%d %s", cfg.CoreType, listen, cfg.Port, cfg.Tag), true, "")
 	h.triggerConfigSync(serverID, req.CoreType)
 	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), 0)
 
@@ -326,6 +331,7 @@ func (h *Handler) Update(c *gin.Context) {
 			response.BadRequest(c, "PROTOCOL_SETTINGS_MISMATCH", err.Error())
 			return
 		}
+		audit.RecordNodeFromCtx(c, existing.ServerID, "inbound_update", fmt.Sprintf("%s/%s", existing.CoreType, existing.Tag), false, err.Error())
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
@@ -333,6 +339,11 @@ func (h *Handler) Update(c *gin.Context) {
 	// Trigger config sync to the target server asynchronously.
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
+	detail := fmt.Sprintf("%s %s", cfg.CoreType, cfg.Tag)
+	if existing.Tag != cfg.Tag {
+		detail = fmt.Sprintf("%s %s → %s", cfg.CoreType, existing.Tag, cfg.Tag)
+	}
+	audit.RecordNodeFromCtx(c, cfg.ServerID, "inbound_update", detail, true, "")
 	h.triggerConfigSync(cfg.ServerID, cfg.CoreType)
 	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), oldTargetID)
 
@@ -396,9 +407,12 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	if err := h.svc.Delete(c.Request.Context(), id); err != nil {
+		audit.RecordNodeFromCtx(c, serverID, "inbound_delete", fmt.Sprintf("%s/%s", coreType, existing.Tag), false, err.Error())
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
 	}
+	audit.RecordNodeFromCtx(c, serverID, "inbound_delete",
+		fmt.Sprintf("%s %s:%d %s", coreType, existing.Listen, existing.Port, existing.Tag), true, "")
 
 	// Trigger config sync to the target server asynchronously.
 	// No serverID > 1 restriction: primary node changes must trigger

@@ -133,7 +133,7 @@
         </el-form-item>
         <template v-if="editForm.access_domain.enabled">
           <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
-            <el-select v-model="editForm.access_domain.type" style="width:100%" @change="onAccessDomainTypeChange">
+            <el-select v-model="editForm.access_domain.type" style="width:100%">
               <el-option :label="t('protoCenter.inbounds.accessTypeDirect')" value="direct" />
               <el-option :label="t('protoCenter.inbounds.accessTypeCFDomain')" value="cf_domain" />
               <el-option :label="t('protoCenter.inbounds.accessTypeCFIP')" value="cf_ip" />
@@ -183,36 +183,6 @@
               <el-input-number v-model="editForm.access_domain.customPort" :min="1" :max="65535" />
             </el-form-item>
           </template>
-          <!-- 前置 TLS：核心明文、TLS 在 CDN（CF 或别家）/ nginx / caddy 上终结 -->
-          <el-divider content-position="left">{{ t('protoCenter.inbounds.accessFrontTls') }}</el-divider>
-          <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsEnable')">
-            <el-switch v-model="editForm.access_domain.tls.enabled" />
-            <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</span>
-          </el-form-item>
-          <template v-if="editForm.access_domain.tls.enabled">
-            <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsSni')">
-              <el-input v-model="editForm.access_domain.tls.sni" :placeholder="t('protoCenter.inbounds.accessFrontTlsSniHint')" />
-            </el-form-item>
-            <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsAlpn')">
-              <el-select
-                :model-value="alpnToArray(editForm.access_domain.tls.alpn)"
-                style="width:100%"
-                multiple
-                clearable
-                placeholder="h2,http/1.1"
-                @update:model-value="v => editForm.access_domain.tls.alpn = alpnToString(v)"
-              >
-                <el-option v-for="a in ALPN_OPTIONS" :key="a" :label="a" :value="a" />
-              </el-select>
-            </el-form-item>
-            <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsFp')">
-              <el-select v-model="editForm.access_domain.tls.fingerprint" style="width:100%" clearable>
-                <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
-                <el-option label="safari" value="safari" /><el-option label="ios" value="ios" />
-                <el-option label="android" value="android" /><el-option label="random" value="random" />
-              </el-select>
-            </el-form-item>
-          </template>
         </template>
         <el-form-item :label="t('externalNodes.proxyConfig')">
           <el-input v-model="editForm.proxy_json" type="textarea" :rows="12" style="font-family:monospace;font-size:12px" />
@@ -259,7 +229,6 @@ import client from '../api/client'
 import * as chainApi from '../api/chainlink'
 import { useClientPagination } from '../composables/useClientPagination'
 import { useIsMobile } from '../composables/useIsMobile'
-import { ALPN_OPTIONS, alpnToArray, alpnToString } from './protocols/sections/utils/alpn'
 import PaginationBar from '../components/PaginationBar.vue'
 import MobileCards from '../components/MobileCards.vue'
 
@@ -291,24 +260,14 @@ function defaultAccessDomain() {
     customDomain: '',
     customPortMode: 'custom',
     customPort: 443,
-    // 前置 TLS：核心明文、TLS 在 CDN（CF 或别家）/ nginx / caddy 上终结时开启。
-    tls: { enabled: false, sni: '', alpn: '', fingerprint: '' },
   }
 }
 
 function normalizeAccessDomain(ad) {
-  const base = defaultAccessDomain()
-  const merged = { ...base, ...(ad || {}) }
-  if (!ad || ad.tls === undefined) {
-    // 旧数据没有 tls：按类型给默认（CF 域名/IP 默认终结 TLS），
-    // 与订阅侧的旧口径保持一致。
-    merged.tls = {
-      enabled: String(merged.type || '').startsWith('cf_'),
-      sni: '', alpn: '', fingerprint: '',
-    }
-  } else {
-    merged.tls = { ...base.tls, ...(ad.tls || {}) }
-  }
+  // 外部节点的 TLS 参数在导入的 proxy_json 里已经写全，这里只负责把地址/端口换成
+  // 所选接入域名；不再携带前置 TLS 子对象（历史上写入过的 tls 字段一并丢弃）。
+  const merged = { ...defaultAccessDomain(), ...(ad || {}) }
+  delete merged.tls
   return merged
 }
 
@@ -325,19 +284,6 @@ const editAccessDomainSelected = computed(() => {
     default: return false
   }
 })
-
-// 切换访问域名类型：CF 域名/IP 默认由 CDN 终结 TLS；直连/自定义默认跟随核心。
-function onAccessDomainTypeChange(t) {
-  const ad = editForm.value.access_domain
-  if (!ad) return
-  ad.tls = ad.tls || { enabled: false, sni: '', alpn: '', fingerprint: '' }
-  ad.tls.enabled = String(t || '').startsWith('cf_')
-  if (!ad.tls.enabled) {
-    ad.tls.sni = ''
-    ad.tls.alpn = ''
-    ad.tls.fingerprint = ''
-  }
-}
 
 function accessDomainHost(ad) {
   switch (ad?.type) {

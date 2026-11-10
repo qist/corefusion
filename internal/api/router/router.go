@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1538,14 +1539,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			return
 		}
 
-		// Check for static assets (both /assets/ and {webPath}/assets/)
-		assetPath := ""
-		if strings.HasPrefix(path, "/assets/") {
-			assetPath = path
-		} else if webPath != "" && strings.HasPrefix(path, webPath+"/assets/") {
-			assetPath = strings.TrimPrefix(path, webPath)
-		} else if strings.HasPrefix(path, "/p/") && !strings.HasSuffix(path, "/p/") {
-			// Serve portal static files (e.g. qrcode.min.js) from embed
+		// 门户静态资源（如 qrcode.min.js）保持公开：门户本身就是公开站点，
+		// 这些文件不暴露管理入口路径。
+		if strings.HasPrefix(path, "/p/") && !strings.HasSuffix(path, "/p/") {
 			filePath := "dist/portal" + strings.TrimPrefix(path, "/p")
 			data, err := adminFSBytes.ReadFile(filePath)
 			if err != nil {
@@ -1562,14 +1558,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			}
 			c.Data(200, ct, data)
 			return
-		} else if strings.Contains(path[1:], ".") && !strings.Contains(path, "..") {
-			// 根目录静态文件（favicon.ico / apple-touch-icon.png / icon-192.png 等）：
-			// 带扩展名的路径尝试按嵌入文件服务；拒绝 .. 防目录穿越；找不到则继续走 SPA/404
-			assetPath = path
 		}
 
-		if assetPath != "" {
-			filePath := "dist" + assetPath
+		// 嵌入前端静态文件：根部署按原路径服务；配了隐藏路径时只认
+		// "<webPath>/assets/..." 与 "<webPath>/<文件名>.<ext>"，根路径下的
+		// /assets/*、/favicon.ico 一律 404 —— 否则任何人拿根路径抓一份 JS 包/
+		// 图标就能确认这里跑的是 CoreFusion，隐藏入口等于白设。
+		if assetPath, ok := adminStaticAssetPath(path, webPath); ok {
+			filePath := "dist/" + assetPath
 			data, err := adminFSBytes.ReadFile(filePath)
 			if err != nil {
 				c.Status(404)
@@ -1623,8 +1619,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				html := string(data)
 				inlineScript := ""
 				if webPath != "" {
-					html = strings.ReplaceAll(html, `src="/assets/`, `src="`+webPath+"/assets/")
-					html = strings.ReplaceAll(html, `href="/assets/`, `href="`+webPath+"/assets/")
+					// /assets/*、favicon.ico、icon-*.png 等根绝对引用全部改到
+					// <webPath>/ 下 —— 根路径已不再对外提供这些文件（见
+					// adminStaticAssetPath），不重写就会 404。
+					html = rewriteIndexAssetRefs(html, webPath)
 					// Inject base path for Vue Router
 					inlineScript = fmt.Sprintf(`window.__CF_BASE_PATH__="%s/";`, webPath)
 					html = strings.Replace(html, "<head>", "<head><script>"+inlineScript+"</script>", 1)
@@ -3865,6 +3863,57 @@ func adminBaseRedirectTarget(path, webPath string) (string, bool) {
 		return "", false
 	}
 	return webPath + "/", true
+}
+
+// adminStaticAssetPath 判断请求路径能否映射到嵌入前端文件，返回相对 dist 的路径。
+//
+//   - webPath == ""（根部署）："/assets/..." 与根目录带扩展名的文件按原路径服务；
+//   - webPath != ""（隐藏入口）：只接受 "<webPath>/assets/..." 与
+//     "<webPath>/<单段文件名>.<ext>"。根路径下的 /assets/*、/favicon.ico 等
+//     一律不映射（调用方 404）——否则任何人都能靠抓一份 JS 包/图标确认这里
+//     跑的是 CoreFusion，隐藏入口形同虚设。
+//
+// 含 ".." 的路径直接拒绝（防穿越；embed.FS 本身也会拒绝）。
+func adminStaticAssetPath(path, webPath string) (string, bool) {
+	if path == "" || path[0] != '/' || strings.Contains(path, "..") {
+		return "", false
+	}
+	rel := strings.TrimPrefix(path, "/")
+
+	if webPath == "" {
+		if strings.HasPrefix(rel, "assets/") || strings.Contains(rel, ".") {
+			return rel, true
+		}
+		return "", false
+	}
+
+	prefix := strings.TrimPrefix(webPath, "/") + "/"
+	if !strings.HasPrefix(rel, prefix) {
+		return "", false
+	}
+	rel = strings.TrimPrefix(rel, prefix)
+	if strings.HasPrefix(rel, "assets/") {
+		return rel, true
+	}
+	// 根级单个文件（favicon.ico / icon-192.png / apple-touch-icon.png）
+	if rel != "" && !strings.Contains(rel, "/") && strings.Contains(rel, ".") {
+		return rel, true
+	}
+	return "", false
+}
+
+// rootAssetRefRe 匹配 index.html 里指向站点根的静态资源引用：
+// "<attr>=\"/assets/xxx.js\"" 或 "<attr>=\"/favicon.ico\""。
+// 外链（https://…）、协议相对地址（//…）与多级路径都不会被匹配。
+var rootAssetRefRe = regexp.MustCompile(`(src|href)="/((?:assets/)?[A-Za-z0-9._-]+)"`)
+
+// rewriteIndexAssetRefs 把 index.html 中的根绝对资源引用改到隐藏路径之下。
+// 子路径部署时这些文件只在 "<webPath>/" 下可访问（见 adminStaticAssetPath）。
+func rewriteIndexAssetRefs(html, webPath string) string {
+	if webPath == "" {
+		return html
+	}
+	return rootAssetRefRe.ReplaceAllString(html, `$1="`+webPath+`/$2"`)
 }
 
 // isSPARoute checks if a path matches a known SPA route.

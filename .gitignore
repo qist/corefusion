@@ -5,6 +5,7 @@ internal/app/embed/dist
 /corefusion
 /corefusion.bak
 /corefusion.bak.json
+/corefusion.bak-*
 /dist/
 geosite.dat
 geoip.metadb

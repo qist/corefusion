@@ -65,10 +65,10 @@ func (h *Handler) Create(c *gin.Context) {
 		Ports       string  `json:"ports"`
 		ServerID    int64   `json:"server_id"`
 		ServerIDs   []int64 `json:"server_ids"` // 多节点绑定；空 = 全局
-		TLSMode     string  `json:"tls_mode"`
-		SNI         string  `json:"sni"`
-		ALPN        string  `json:"alpn"`
-		Fingerprint string  `json:"fingerprint"`
+		TLSMode     *string `json:"tls_mode"`
+		SNI         *string `json:"sni"`
+		ALPN        *string `json:"alpn"`
+		Fingerprint *string `json:"fingerprint"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -105,27 +105,29 @@ func (h *Handler) Create(c *gin.Context) {
 	response.OK(c, config)
 }
 
-// applyTLSFields 写入「前置 TLS 终结」配置。
-// TLSMode 为空表示不修改；SNI/ALPN/Fingerprint 允许清空（前端删掉即恢复自动）。
-func applyTLSFields(config *entity.ShareDomainConfig, mode, sni, alpn, fp string) bool {
+// applyTLSFields 写入「前置 TLS 终结」的旧版兜底配置（分享域名条目级）。
+//
+// 新版本已把 TLS 配置移到「入口节点 → 入站 → 访问域名」，这里只为兼容历史数据：
+// 只有显式传了字段（非 nil）才修改，避免普通编辑（不带这些字段）把已有值清空。
+func applyTLSFields(config *entity.ShareDomainConfig, mode, sni, alpn, fp *string) bool {
 	if config == nil {
 		return false
 	}
 	changed := false
-	if mode != "" && config.TLSMode != mode {
-		config.TLSMode = mode
+	if mode != nil && config.TLSMode != *mode {
+		config.TLSMode = *mode
 		changed = true
 	}
-	if config.SNI != sni {
-		config.SNI = sni
+	if sni != nil && config.SNI != *sni {
+		config.SNI = *sni
 		changed = true
 	}
-	if config.ALPN != alpn {
-		config.ALPN = alpn
+	if alpn != nil && config.ALPN != *alpn {
+		config.ALPN = *alpn
 		changed = true
 	}
-	if config.Fingerprint != fp {
-		config.Fingerprint = fp
+	if fp != nil && config.Fingerprint != *fp {
+		config.Fingerprint = *fp
 		changed = true
 	}
 	return changed
@@ -167,10 +169,10 @@ func (h *Handler) Update(c *gin.Context) {
 		Enabled     *bool   `json:"enabled"`
 		ServerID    *int64  `json:"server_id"`
 		ServerIDs   []int64 `json:"server_ids"` // 多节点绑定；空数组 = 清除多选（回退 server_id 语义）
-		TLSMode     string  `json:"tls_mode"`
-		SNI         string  `json:"sni"`
-		ALPN        string  `json:"alpn"`
-		Fingerprint string  `json:"fingerprint"`
+		TLSMode     *string `json:"tls_mode"`
+		SNI         *string `json:"sni"`
+		ALPN        *string `json:"alpn"`
+		Fingerprint *string `json:"fingerprint"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

@@ -231,6 +231,7 @@ export function inboundDefaultsForType(type, customPort) {
     _directDomain: '', _directPortMode: 'config',
     _cfDomain: '', _cfIP: '', _customDomain: '',
     _customPortMode: 'custom', _accessCustomPort: 443,
+    _accessTlsEnabled: false, _accessTlsSni: '', _accessTlsAlpn: '', _accessTlsFingerprint: '',
   }
   if (!TRANSPORT_PROTOCOLS.includes(type)) base._transportType = ''
   if (type === 'shadowsocks') { base.network = 'tcp,udp' }

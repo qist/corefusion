@@ -106,14 +106,70 @@ func TestApplyFrontTLSLeavesRealityAlone(t *testing.T) {
 	}
 }
 
-// 外部导入节点：CF 优选同样要补 tls/sni，否则 raw_uri 等链接按明文下发。
+// 入口节点访问域名显式开启 TLS：优先于分享域名池，direct/custom 也补 TLS
+// （CDN 可能是别家，或自家 nginx/caddy 在前面终结）。
+func TestApplyFrontTLSUsesAccessDomainConfig(t *testing.T) {
+	cfg := plainWSConfig()
+	cfg["_accessDomain"] = map[string]interface{}{
+		"enabled": true, "type": "direct", "directDomain": "edge.example.com",
+		"tls": map[string]interface{}{
+			"enabled": true, "sni": "sni.example.com",
+			"alpn": "h2,http/1.1", "fingerprint": "firefox",
+		},
+	}
+	applyFrontTLS(cfg, "edge.example.com", "direct", nil)
+
+	ss := getMap(cfg, "streamSettings")
+	if got := getString(ss, "security", ""); got != "tls" {
+		t.Fatalf("security = %q, want tls", got)
+	}
+	tls := getMap(ss, "tlsSettings")
+	if got := getString(tls, "serverName", ""); got != "sni.example.com" {
+		t.Fatalf("SNI = %q, want sni.example.com", got)
+	}
+	if alpn := getStringSlice(tls, "alpn"); len(alpn) != 2 {
+		t.Fatalf("alpn = %v", alpn)
+	}
+	if fp := tlsFingerprint(tls); fp != "firefox" {
+		t.Fatalf("fingerprint = %q", fp)
+	}
+}
+
+// 访问域名显式关闭 TLS（跟随核心）：即使是 cf_domain 也不能覆盖。
+func TestApplyFrontTLSAccessDomainDisabledWins(t *testing.T) {
+	cfg := plainWSConfig()
+	cfg["_accessDomain"] = map[string]interface{}{
+		"enabled": true, "type": "cf_domain", "cfDomain": "cdn.example.com",
+		"tls": map[string]interface{}{"enabled": false},
+	}
+	pools := []shareDomainEntry{{Type: "cf_domain", Host: "cdn.example.com", Port: 443, TLSMode: "auto"}}
+	applyFrontTLS(cfg, "cdn.example.com", "cf_domain", pools)
+	if got := getString(getMap(cfg, "streamSettings"), "security", ""); got != "none" {
+		t.Fatalf("显式关闭 TLS 时不应覆盖核心配置，实际 %q", got)
+	}
+}
+
+// 外部节点：访问域名 tls 配置同样优先
+func TestApplyFrontTLSToProxyUsesAccessDomainConfig(t *testing.T) {
+	pm := map[string]interface{}{"server": "edge.example.com", "port": float64(443)}
+	ad := map[string]interface{}{
+		"enabled": true, "type": "direct", "directDomain": "edge.example.com",
+		"tls": map[string]interface{}{
+			"enabled": true, "sni": "sni.example.com", "fingerprint": "chrome",
+		},
+	}
+	applyFrontTLSToProxy(pm, ad, "direct", nil)
+	if pm["tls"] != true || pm["sni"] != "sni.example.com" || pm["client-fingerprint"] != "chrome" {
+		t.Fatalf("访问域名 TLS 配置未生效: %v", pm)
+	}
+}
 func TestApplyFrontTLSToProxy(t *testing.T) {
 	pm := map[string]interface{}{"server": "cdn.example.com", "port": float64(443)}
 	pools := []shareDomainEntry{{
 		Type: "cf_domain", Host: "cdn.example.com", Port: 443, TLSMode: "auto",
 		SNI: "sni.example.com", ALPN: "h2", Fingerprint: "chrome",
 	}}
-	applyFrontTLSToProxy(pm, "cf_domain", pools)
+	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
 	if pm["tls"] != true {
 		t.Fatal("外部节点应补 tls=true")
 	}

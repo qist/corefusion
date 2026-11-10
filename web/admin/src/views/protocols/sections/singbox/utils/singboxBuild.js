@@ -419,6 +419,14 @@ export function buildInbound(ib) {
     customDomain: out._customDomain,
     customPortMode: out._customPortMode,
     customPort: out._accessCustomPort,
+    // 前置 TLS：核心明文、TLS 在 CDN（CF 或别家）/ nginx / caddy 上终结时开启；
+    // enabled=false 表示跟随核心配置（不改 security）。
+    tls: {
+      enabled: !!ib._accessTlsEnabled,
+      sni: ib._accessTlsSni || '',
+      alpn: ib._accessTlsAlpn || '',
+      fingerprint: ib._accessTlsFingerprint || '',
+    },
   }
   // 面板内部字段（顶层 `_`，生成核心配置时由 CleanInboundFields 剥离）：**必须落库**，
   // 否则重开编辑器就不知道用户当初选了什么（只在生成时过滤，不在保存时丢弃）。
@@ -683,6 +691,11 @@ o._snellMode = ib.mode || ''
     o._customDomain = pick('customDomain', '_customDomain', '')
     o._customPortMode = pick('customPortMode', '_customPortMode', 'custom')
     o._accessCustomPort = pick('customPort', '_accessCustomPort', 443)
+    // 前置 TLS：历史数据没有 tls 时按类型给默认值（CF 域名/IP 默认终结 TLS）
+    o._accessTlsEnabled = ad.tls?.enabled ?? String(o._accessDomainType || 'direct').startsWith('cf_')
+    o._accessTlsSni = ad.tls?.sni || ''
+    o._accessTlsAlpn = ad.tls?.alpn || ''
+    o._accessTlsFingerprint = ad.tls?.fingerprint || ''
   }
   // 端口跳跃：同样是对象形态（旧数据可能只有扁平字段）
   {

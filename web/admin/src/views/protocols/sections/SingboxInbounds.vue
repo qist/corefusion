@@ -279,7 +279,7 @@
             </el-form-item>
             <template v-if="rf._accessDomainEnabled">
               <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
-                <el-select v-model="rf._accessDomainType" style="width:100%">
+                <el-select v-model="rf._accessDomainType" style="width:100%" @change="onAccessDomainTypeChange">
                   <el-option :label="t('protoCenter.inbounds.accessTypeDirect')" value="direct" />
                   <el-option :label="t('protoCenter.inbounds.accessTypeCFDomain')" value="cf_domain" />
                   <el-option :label="t('protoCenter.inbounds.accessTypeCFIP')" value="cf_ip" />
@@ -331,6 +331,36 @@
                 </el-form-item>
                 <el-form-item v-if="rf._customPortMode === 'custom'" :label="t('protoCenter.inbounds.customPort')">
                   <el-input-number v-model="rf._accessCustomPort" :min="1" :max="65535" />
+                </el-form-item>
+              </template>
+              <!-- 前置 TLS：核心明文、TLS 在 CDN（CF 或别家）/ nginx / caddy 上终结 -->
+              <el-divider content-position="left">{{ t('protoCenter.inbounds.accessFrontTls') }}</el-divider>
+              <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsEnable')">
+                <el-switch v-model="rf._accessTlsEnabled" />
+                <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</span>
+              </el-form-item>
+              <template v-if="rf._accessTlsEnabled">
+                <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsSni')">
+                  <el-input v-model="rf._accessTlsSni" :placeholder="t('protoCenter.inbounds.accessFrontTlsSniHint')" />
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsAlpn')">
+                  <el-select
+                    :model-value="alpnToArray(rf._accessTlsAlpn)"
+                    style="width:100%"
+                    multiple
+                    clearable
+                    placeholder="h2,http/1.1"
+                    @update:model-value="v => rf._accessTlsAlpn = alpnToString(v)"
+                  >
+                    <el-option v-for="a in ALPN_OPTIONS" :key="a" :label="a" :value="a" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsFp')">
+                  <el-select v-model="rf._accessTlsFingerprint" style="width:100%" clearable>
+                    <el-option label="chrome" value="chrome" /><el-option label="firefox" value="firefox" />
+                    <el-option label="safari" value="safari" /><el-option label="ios" value="ios" />
+                    <el-option label="android" value="android" /><el-option label="random" value="random" />
+                  </el-select>
                 </el-form-item>
               </template>
             </template>
@@ -476,6 +506,7 @@ import client from '../../../api/client'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
 import { snisOfInbound, collectUsedSnis, findNewConflicts, mergeUsedSnis } from './utils/sniUsage'
 import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
+import { ALPN_OPTIONS, alpnToArray, alpnToString } from './utils/alpn'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -547,6 +578,16 @@ const accessDomainSelected = computed(() => {
     default: return false
   }
 })
+
+// 切换访问域名类型：CF 域名/IP 默认由 CDN 终结 TLS；直连/自定义默认跟随核心。
+function onAccessDomainTypeChange(t) {
+  rf._accessTlsEnabled = String(t || '').startsWith('cf_')
+  if (!rf._accessTlsEnabled) {
+    rf._accessTlsSni = ''
+    rf._accessTlsAlpn = ''
+    rf._accessTlsFingerprint = ''
+  }
+}
 
 // QR Dialog
 const qrDlg = ref(false)

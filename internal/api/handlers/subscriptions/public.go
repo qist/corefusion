@@ -1054,9 +1054,10 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			continue
 		}
 		applyExternalNodeAccessDomain(pm, &extNode, shareDomains)
-		// 外部节点同样可能「核心明文、TLS 在 CDN/反代终结」：必须补 tls/sni 再转换，
-		// 否则各类订阅/分享链接都会按明文下发。
-		applyFrontTLSToProxy(pm, getString(extNode.LoadAccessDomain(), "type", ""), shareDomains)
+		// 外部节点同样可能「核心明文、TLS 在 CDN/反代终结」：优先用外部节点
+		// 访问域名里的 tls 配置，其次才是旧的分享域名口径。
+		extAccessDomain := extNode.LoadAccessDomain()
+		applyFrontTLSToProxy(pm, extAccessDomain, getString(extAccessDomain, "type", ""), shareDomains)
 		node := mihomoProxyMapToNode(pm)
 		if node != nil && extNode.Name != "" {
 			node.Name = extNode.Name
@@ -2309,18 +2310,65 @@ func frontTLSEntry(host, adType string, shareDomains []shareDomainEntry) *shareD
 	return nil
 }
 
+// frontTLSConfig 是「访问域名」上的前置 TLS 配置（入站与外部节点通用）。
+//
+// 配置位置：入口节点 → 入站编辑器 → 访问域名 → 开启 TLS。
+// 这是节点侧的事实（同一个域名背后可能是 CF、别的 CDN、也可能是自家 nginx/caddy），
+// 所以不再要求用户去 CF 优选域名池里配置。
+type frontTLSConfig struct {
+	Enabled     bool
+	SNI         string
+	ALPN        string
+	Fingerprint string
+}
+
+// accessDomainFrontTLS 读取 _accessDomain.tls。第二个返回值为 true 表示用户
+// 显式配置过（Enabled=false 即「跟随核心，不覆盖」）。
+func accessDomainFrontTLS(config map[string]interface{}) (frontTLSConfig, bool) {
+	if config == nil {
+		return frontTLSConfig{}, false
+	}
+	ad, ok := config["_accessDomain"].(map[string]interface{})
+	if !ok {
+		return frontTLSConfig{}, false
+	}
+	raw, ok := ad["tls"]
+	if !ok || raw == nil {
+		return frontTLSConfig{}, false
+	}
+	tlsMap, ok := raw.(map[string]interface{})
+	if !ok {
+		return frontTLSConfig{}, false
+	}
+	cfg := frontTLSConfig{}
+	cfg.Enabled, _ = tlsMap["enabled"].(bool)
+	cfg.SNI, _ = tlsMap["sni"].(string)
+	cfg.ALPN, _ = tlsMap["alpn"].(string)
+	cfg.Fingerprint, _ = tlsMap["fingerprint"].(string)
+	return cfg, true
+}
+
 // applyFrontTLS 给「核心没配 TLS、TLS 在 CDN/nginx/caddy 上终结」的节点补客户端 TLS 参数。
 //
-// 语义（tls_mode）：
-//   - auto（默认）：cf_domain / cf_ip 自动按 TLS（CDN 必然终结 TLS）；direct/custom 不动；
-//   - on：强制 TLS（自建 nginx/caddy 挡在明文入站前的场景）；
-//   - off：不改（沿用核心配置）。
+// 优先级：
+//  1. 入口节点的访问域名显式配置了 tls（_accessDomain.tls）→ 以它为准：
+//     enabled=true 强制 TLS（任何类型）；enabled=false 跟随核心、不改。
+//  2. 否则沿用旧口径（分享域名条目 tls_mode）：
+//     auto=cf_domain/cf_ip 自动 TLS；on=强制；off=不改。
 //
 // 已有 REALITY 时不覆盖；已有 TLS 时只补缺失的 SNI / ALPN / 指纹。
 func applyFrontTLS(config map[string]interface{}, host, adType string, shareDomains []shareDomainEntry) {
 	if config == nil {
 		return
 	}
+	if tlsCfg, explicit := accessDomainFrontTLS(config); explicit {
+		if !tlsCfg.Enabled {
+			return // 跟随核心
+		}
+		applyFrontTLSSettings(config, host, tlsCfg.SNI, tlsCfg.ALPN, tlsCfg.Fingerprint)
+		return
+	}
+
 	entry := frontTLSEntry(host, adType, shareDomains)
 	if entry == nil {
 		return
@@ -2336,6 +2384,11 @@ func applyFrontTLS(config map[string]interface{}, host, adType string, shareDoma
 			return
 		}
 	}
+	applyFrontTLSSettings(config, host, entry.SNI, entry.ALPN, entry.Fingerprint)
+}
+
+// applyFrontTLSSettings 把 xray 入站的 streamSettings 改成 TLS 并写入 SNI/ALPN/指纹。
+func applyFrontTLSSettings(config map[string]interface{}, host, sni, alpn, fingerprint string) {
 	ss := getMap(config, "streamSettings")
 	if ss == nil {
 		ss = map[string]interface{}{}
@@ -2353,26 +2406,37 @@ func applyFrontTLS(config map[string]interface{}, host, adType string, shareDoma
 		tls = map[string]interface{}{}
 		ss["tlsSettings"] = tls
 	}
-	if entry.SNI != "" {
-		tls["serverName"] = entry.SNI
+	if sni != "" {
+		tls["serverName"] = sni
 	} else if cur, _ := tls["serverName"].(string); cur == "" && !isIPHost(host) {
-		// cf_domain：域名本身就是 SNI；IP 没有可用 SNI 时不瞎写
+		// 域名本身就是 SNI；IP 没有可用 SNI 时不瞎写
 		tls["serverName"] = host
 	}
-	if alpns := splitCSV(entry.ALPN); len(alpns) > 0 {
+	if alpns := splitCSV(alpn); len(alpns) > 0 {
 		tls["alpn"] = alpns
 	}
-	if entry.Fingerprint != "" {
-		tls["settings"] = []interface{}{map[string]interface{}{"fingerprint": entry.Fingerprint}}
+	if fingerprint != "" {
+		tls["settings"] = []interface{}{map[string]interface{}{"fingerprint": fingerprint}}
 	}
 }
 
 // applyFrontTLSToProxy 对「外部导入节点」的 mihomo 代理做同样的前置 TLS 覆盖。
-func applyFrontTLSToProxy(pm map[string]interface{}, adType string, shareDomains []shareDomainEntry) {
+// ad 为外部节点的访问域名配置（含可选的 tls 子对象）。
+func applyFrontTLSToProxy(pm map[string]interface{}, ad map[string]interface{}, adType string, shareDomains []shareDomainEntry) {
 	if pm == nil {
 		return
 	}
 	host, _ := pm["server"].(string)
+
+	// 1) 访问域名显式配置优先
+	if tlsCfg, explicit := accessDomainFrontTLS(map[string]interface{}{"_accessDomain": ad}); explicit {
+		if tlsCfg.Enabled {
+			applyFrontTLSProxySettings(pm, host, tlsCfg)
+		}
+		return
+	}
+
+	// 2) 旧口径：分享域名条目
 	entry := frontTLSEntry(host, adType, shareDomains)
 	if entry == nil {
 		return
@@ -2386,19 +2450,29 @@ func applyFrontTLSToProxy(pm map[string]interface{}, adType string, shareDomains
 			return
 		}
 	}
+	applyFrontTLSProxySettings(pm, host, frontTLSConfig{
+		Enabled:     true,
+		SNI:         entry.SNI,
+		ALPN:        entry.ALPN,
+		Fingerprint: entry.Fingerprint,
+	})
+}
+
+// applyFrontTLSProxySettings 给 mihomo 代理写入 tls/sni/alpn/指纹。
+func applyFrontTLSProxySettings(pm map[string]interface{}, host string, tlsCfg frontTLSConfig) {
 	pm["tls"] = true
-	if entry.SNI != "" {
-		pm["sni"] = entry.SNI
-		pm["servername"] = entry.SNI
+	if tlsCfg.SNI != "" {
+		pm["sni"] = tlsCfg.SNI
+		pm["servername"] = tlsCfg.SNI
 	} else if !isIPHost(host) {
 		pm["sni"] = host
 		pm["servername"] = host
 	}
-	if alpns := splitCSV(entry.ALPN); len(alpns) > 0 {
+	if alpns := splitCSV(tlsCfg.ALPN); len(alpns) > 0 {
 		pm["alpn"] = alpns
 	}
-	if entry.Fingerprint != "" {
-		pm["client-fingerprint"] = entry.Fingerprint
+	if tlsCfg.Fingerprint != "" {
+		pm["client-fingerprint"] = tlsCfg.Fingerprint
 	}
 }
 

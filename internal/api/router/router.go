@@ -684,6 +684,18 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// mirror nodes resolve to the primary's inbound configs.
 	inboundConfigSvc.SetServerRepo(nodeServerRepoForSync)
 
+	// 存量 REALITY 入站：dest 是公网站点却留着 xver>0 的行，节点会完全连不通
+	// （REALITY 把已认证连接也判 invalid）。落库口已拦截新增/编辑，这里幂等修正历史数据。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if n, err := inboundConfigSvc.NormalizeRealityXverAll(ctx); err != nil {
+			log.Printf("[router] normalize REALITY xver failed: %v", err)
+		} else if n > 0 {
+			log.Printf("[router] normalized REALITY xver for %d inbounds", n)
+		}
+	}()
+
 	// Runtime config workflow (snapshot / dry-run / apply / rollback / disable-proxy)
 	var runtimeApplyWriter runtimeapplySvc.ConfigWriter
 	if processMgr != nil {

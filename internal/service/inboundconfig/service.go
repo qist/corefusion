@@ -91,6 +91,9 @@ func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, 
 			return "", err
 		}
 	}
+	if normalizeRealityXver(root) {
+		changed = true
+	}
 	if !changed {
 		return configJSON, nil
 	}
@@ -99,6 +102,122 @@ func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, 
 		return configJSON, nil
 	}
 	return string(b), nil
+}
+
+// normalizeRealityXver 修正 REALITY 入站的 xver。
+//
+// REALITY 的 xver>0 表示「连 dest/target 时先发 PROXY 协议头（v1/v2）」，用于把真实
+// 客户端 IP 传给后端。只有 dest 自己能解析 PROXY 时才成立 —— 即本机 unix socket
+// （面板的 /dev/shm/nginx.sock）或 127.0.0.1 / ::1 上的本地反代。
+//
+// dest 写成公网站点（www.apple.com:443 之类）时，服务器会拿 PROXY 头去握手，
+// 目标站的 ServerHello 必然异常 → REALITY 把**所有**连接（包括已认证的）判为
+// invalid，节点完全连不通，且日志只说 "target sent incorrect server hello"，
+// 极难排查。这里在落库前把这种情况强制改成 0。
+//
+// 返回是否修改了配置。
+func normalizeRealityXver(root map[string]interface{}) bool {
+	ss, _ := root["streamSettings"].(map[string]interface{})
+	if ss == nil {
+		return false
+	}
+	if sec, _ := ss["security"].(string); !strings.EqualFold(strings.TrimSpace(sec), "reality") {
+		return false
+	}
+	rs, _ := ss["realitySettings"].(map[string]interface{})
+	if rs == nil {
+		return false
+	}
+	// settings.fallbacks[].xver 是 fallback 目标自己的协议头，dest 一般是本机端口，不动。
+	target, _ := rs["target"].(string)
+	if strings.TrimSpace(target) == "" {
+		target, _ = rs["dest"].(string)
+	}
+	if realityTargetAcceptsProxy(target) {
+		return false
+	}
+	cur, ok := rs["xver"]
+	if !ok || jsonNumberIsZero(cur) {
+		return false
+	}
+	rs["xver"] = 0
+	return true
+}
+
+// realityTargetAcceptsProxy 判断 REALITY 的 dest/target 是否是「能吃 PROXY 协议头」
+// 的本地后端：unix socket 路径，或回环地址上的端口。
+func realityTargetAcceptsProxy(target string) bool {
+	t := strings.ToLower(strings.TrimSpace(target))
+	if t == "" {
+		return false
+	}
+	if strings.HasPrefix(t, "unix:") || strings.HasPrefix(t, "/") || strings.HasPrefix(t, "@") {
+		return true
+	}
+	for _, loop := range []string{"127.0.0.1:", "localhost:", "[::1]:", "::1:"} {
+		if strings.HasPrefix(t, loop) {
+			return true
+		}
+	}
+	return false
+}
+
+// jsonNumberIsZero 判断 JSON 解出来的数字是否为 0（xver 可能是 float64/int/json.Number）。
+func jsonNumberIsZero(v interface{}) bool {
+	switch n := v.(type) {
+	case float64:
+		return n == 0
+	case float32:
+		return n == 0
+	case int:
+		return n == 0
+	case int64:
+		return n == 0
+	case json.Number:
+		f, err := n.Float64()
+		return err == nil && f == 0
+	}
+	return false
+}
+
+// NormalizeRealityXverAll 对存量入站做一次 xver 规范化（幂等）。
+//
+// 历史数据里 REALITY 的 dest 若写成公网站点却又留着 xver=1，该节点会完全连不通，
+// 而日志只有 "target sent incorrect server hello"，很难定位。落库口已经拦了，
+// 这里负责把改规则之前就存在的行修正掉。
+//
+// 返回被修正的入站数量。
+func (s *Service) NormalizeRealityXverAll(ctx context.Context) (int, error) {
+	if s.repo == nil {
+		return 0, nil
+	}
+	configs, err := s.repo.ListAll(ctx, "xray")
+	if err != nil {
+		return 0, fmt.Errorf("list xray inbounds: %w", err)
+	}
+	fixed := 0
+	for i := range configs {
+		cfg := &configs[i]
+		var root map[string]interface{}
+		if err := json.Unmarshal([]byte(cfg.ConfigJSON), &root); err != nil {
+			continue
+		}
+		if !normalizeRealityXver(root) {
+			continue
+		}
+		b, err := json.Marshal(root)
+		if err != nil {
+			continue
+		}
+		cfg.ConfigJSON = string(b)
+		if err := s.repo.Update(ctx, cfg); err != nil {
+			log.Printf("[inbound-config] normalize xver for inbound %d (%s) failed: %v", cfg.ID, cfg.Tag, err)
+			continue
+		}
+		log.Printf("[inbound-config] inbound %d (%s): REALITY dest is external, xver forced to 0", cfg.ID, cfg.Tag)
+		fixed++
+	}
+	return fixed, nil
 }
 
 // requireClientField 校验每个 client 都带指定凭据字段（vless/vmess 的 id、trojan 的 password）。

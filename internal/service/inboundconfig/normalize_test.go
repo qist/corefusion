@@ -77,3 +77,43 @@ func TestNormalizeXrayInboundAcceptsValidTrojan(t *testing.T) {
 		t.Fatalf("valid trojan rejected: out=%s err=%v", out, err)
 	}
 }
+
+// xver>0 只对「本机 unix socket / 回环地址」的 REALITY dest 有意义；
+// dest 是公网站点时会让所有连接（含已认证）被判定 invalid，必须强制归零。
+func TestNormalizeXrayInboundForcesXverZeroForPublicDest(t *testing.T) {
+	out, err := normalizeXrayInboundConfig("xray", "vless",
+		`{"settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}]},`+
+			`"streamSettings":{"security":"reality","realitySettings":{"dest":"www.apple.com:443","xver":1}}}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, `"xver":0`) {
+		t.Fatalf("公网 dest 的 xver 应被改成 0：%s", out)
+	}
+}
+
+// 本机 unix socket（面板 nginx.sock）必须保留用户配置的 xver=1。
+func TestNormalizeXrayInboundKeepsXverForLocalUnixTarget(t *testing.T) {
+	out, err := normalizeXrayInboundConfig("xray", "vless",
+		`{"settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}]},`+
+			`"streamSettings":{"security":"reality","realitySettings":{"target":"/dev/shm/nginx.sock","xver":1}}}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, `"xver":1`) {
+		t.Fatalf("本机 unix target 的 xver 不应被改：%s", out)
+	}
+}
+
+// 127.0.0.1:<port> 的本地反代同样保留 xver。
+func TestNormalizeXrayInboundKeepsXverForLoopbackTarget(t *testing.T) {
+	out, err := normalizeXrayInboundConfig("xray", "vless",
+		`{"settings":{"clients":[{"id":"11111111-1111-1111-1111-111111111111"}]},`+
+			`"streamSettings":{"security":"reality","realitySettings":{"target":"127.0.0.1:8443","xver":2}}}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, `"xver":2`) {
+		t.Fatalf("回环 target 的 xver 不应被改：%s", out)
+	}
+}

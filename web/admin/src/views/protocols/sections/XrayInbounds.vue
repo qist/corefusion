@@ -722,11 +722,12 @@
                   <el-switch v-model="rf.streamSettings.reality.show" @change="emit" />
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.reality.xver')">
-                  <el-select v-model="rf.streamSettings.reality.xver" style="width:100%" filterable allow-create default-first-option @change="emit">
+                  <el-select v-model="realityXver" style="width:100%" :disabled="!realityTargetIsLocal" @change="emit">
                     <el-option label="0 (disabled)" :value="0" />
-                    <el-option label="1" :value="1" />
-                    <el-option label="2" :value="2" />
+                    <el-option label="1 (local only)" :value="1" />
+                    <el-option label="2 (local only)" :value="2" />
                   </el-select>
+                  <div class="hint">{{ t('protoCenter.reality.xverHint') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.reality.minClientVer')">
                   <el-input v-model="rf.streamSettings.reality.minClientVer" placeholder="x.y.z" @change="emit" />
@@ -3304,6 +3305,17 @@ function isLocalTarget(target) {
   return target.startsWith('127.0.0.1:') || target.startsWith('/') || target.startsWith('unix:')
 }
 
+// xver>0 会让 REALITY 先给 dest/target 发 PROXY 协议头，只有本机 unix socket /
+// 回环地址上的反代能解析；dest 写公网站点时服务端会把所有连接判为 invalid
+// （日志只说 "target sent incorrect server hello"），所以外部站点固定 0。
+const realityTargetIsLocal = computed(() => isLocalTarget(rf.streamSettings.reality.target))
+const realityXver = computed({
+  get: () => (realityTargetIsLocal.value ? (rf.streamSettings.reality.xver ?? 0) : 0),
+  set: v => {
+    rf.streamSettings.reality.xver = realityTargetIsLocal.value ? v : 0
+  },
+})
+
 function onTargetChange() {
   const target = rf.streamSettings.reality.target
   if (!target) { emit(); return }
@@ -3576,7 +3588,8 @@ function parseRealitySettings(reality) {
     _fingerprint: cs.fingerprint || reality.fingerprint || 'chrome',
     shortIdsStr: (reality.shortIds || []).join('\n'),
     show: reality.show || false,
-    xver: reality.xver || 0,
+    // 外部站点固定 0：xver>0 会向公网 dest 发 PROXY 头，REALITY 会判全部连接 invalid。
+    xver: isLocalTarget(reality.target) ? (reality.xver || 0) : 0,
     minClientVer: reality.minClientVer || '',
     maxClientVer: reality.maxClientVer || '',
     maxTimeDiff: reality.maxTimeDiff || 0,

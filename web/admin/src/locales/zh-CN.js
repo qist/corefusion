@@ -1380,7 +1380,7 @@ export default {
       spiderXHint: 'Reality 客户端爬虫路径，留空则默认 /',
       show: 'Show',
       xver: 'Xver',
-      xverHint: 'PROXY protocol 版本，0 禁用',
+      xverHint: 'PROXY protocol 版本。仅本机目标（unix socket / 127.0.0.1）需要填 1，外部站点必须为 0。',
       xverLocalBound1: '本地 Reality 自动绑定 Xver=1，预设 Xver=0',
       minClientVer: 'Min Client Ver',
       maxClientVer: 'Max Client Ver',

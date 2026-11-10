@@ -1380,7 +1380,7 @@ export default {
       spiderXHint: 'Reality client spider path, defaults to / when empty',
       show: 'Show',
       xver: 'Xver',
-      xverHint: 'PROXY protocol version, 0 to disable',
+      xverHint: 'PROXY protocol version. Only local destinations (unix socket / 127.0.0.1) need 1; external sites must stay 0.',
       xverLocalBound1: 'Local Reality auto-binds Xver=1, preset Xver=0',
       minClientVer: 'Min Client Ver',
       maxClientVer: 'Max Client Ver',

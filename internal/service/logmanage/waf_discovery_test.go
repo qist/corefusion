@@ -79,3 +79,61 @@ func TestDiscoverWAFLogsNoFiles(t *testing.T) {
 		t.Fatalf("expected no WAF entries when no files exist, got %+v", got)
 	}
 }
+
+// xray 的**进程日志**（logs/xray.log）必须能被发现并查看：
+// 启动横幅、配置解析失败、端口占用这类"起不来"的原因只写在这里，
+// xray 自己的 error 日志要先跑起来才会写 ✗（真机：这个文件一直没人看得到 ✓）。
+func TestDiscoverCoreLogsIncludesXrayStartupLog(t *testing.T) {
+	dir := t.TempDir()
+	runtimeDir := filepath.Join(dir, "runtime")
+	if err := os.MkdirAll(runtimeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `{"log":{"access":"logs/xray-access.log","error":"logs/xray-error.log"}}`
+	if err := os.WriteFile(filepath.Join(runtimeDir, "xray.jsonc"), []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &Service{dataDir: dir}
+	svc.SetProcessAvailability(fakeAvailability{"xray": true})
+	got, err := svc.discoverCoreLogs(context.Background())
+	if err != nil {
+		t.Fatalf("discoverCoreLogs: %v", err)
+	}
+
+	var startup *DiscoveredLog
+	for i := range got {
+		if got[i].Domain == "startup" {
+			startup = &got[i]
+		}
+	}
+	if startup == nil {
+		t.Fatalf("缺少 xray 进程日志（startup），实际 %+v", got)
+	}
+	if filepath.Base(startup.LogPath) != "xray.log" {
+		t.Fatalf("startup 应指向 logs/xray.log，实际 %q", startup.LogPath)
+	}
+	if !filepath.IsAbs(startup.LogPath) {
+		t.Fatalf("日志路径应为绝对路径（前端直接读文件），实际 %q", startup.LogPath)
+	}
+}
+
+// 运行时配置里 error 就是 logs/xray.log 时（默认值/旧配置）不能重复出现两条。
+func TestDiscoverCoreLogsNoDuplicateWhenErrorIsProcessLog(t *testing.T) {
+	dir := t.TempDir()
+	svc := &Service{dataDir: dir}
+	svc.SetProcessAvailability(fakeAvailability{"xray": true})
+	got, err := svc.discoverCoreLogs(context.Background())
+	if err != nil {
+		t.Fatalf("discoverCoreLogs: %v", err)
+	}
+	seen := map[string]int{}
+	for _, d := range got {
+		seen[d.LogPath]++
+	}
+	for p, n := range seen {
+		if n > 1 {
+			t.Fatalf("同一个日志文件被发现多次（%q × %d）：%+v", p, n, got)
+		}
+	}
+}

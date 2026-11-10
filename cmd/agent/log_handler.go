@@ -961,10 +961,20 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 						LogPath:    accessPath,
 					})
 				}
+				// 进程自身 stdout/stderr（logs/xray.log）：启动横幅/配置解析失败/端口占用
+				// 只写这里，xray 的 error 日志要先跑起来才有 ✓ —— 必须能被前端发现并查看 ✓。
+				if p := filepath.Join(logDir, coreType+".log"); p != accessPath && p != errorPath {
+					logs = append(logs, &agentpb.DiscoveredLogInfo{
+						SourceType: coreType,
+						Domain:     "startup",
+						LogPath:    p,
+					})
+				}
 			} else {
+				// sing-box 的进程输出同样是 logs/singbox.log ✓
 				logs = append(logs, &agentpb.DiscoveredLogInfo{
 					SourceType: coreType,
-					Domain:     mode,
+					Domain:     "startup",
 					LogPath:    filepath.Join(logDir, coreType+".log"),
 				})
 			}

@@ -759,10 +759,22 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 						LogPath:    accessPath,
 					})
 				}
+				// 进程自身 stdout/stderr（logs/xray.log）：启动横幅、配置解析失败、
+				// 端口占用这类"起不来"的原因只落在这里 —— xray 自己的 error 日志要
+				// 先跑起来才会写 ✗。以前这里只报 access/error 两个文件，前端既发现
+				// 不到也看不了启动错误 ✓（真机：xray.log 一直没人看 ✓）。
+				if p := s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType)); p != accessPath && p != errorPath {
+					logs = append(logs, DiscoveredLog{
+						SourceType: coreType,
+						Domain:     "startup",
+						LogPath:    p,
+					})
+				}
 			} else {
+				// sing-box 的进程输出就是 logs/singbox.log ✓（与 xray 的 startup 同一个含义 ✓）
 				logs = append(logs, DiscoveredLog{
 					SourceType: coreType,
-					Domain:     "file",
+					Domain:     "startup",
 					LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s.log", coreType)),
 				})
 			}

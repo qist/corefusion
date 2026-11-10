@@ -135,6 +135,24 @@ func (m *Manager) SetNginxConfigGen(fn func(ctx context.Context) (string, error)
 	m.nginxConfigGen = fn
 }
 
+// GenerateProxyConfig 用已注入的生成器重新生成指定代理的完整配置。
+//
+// 用途：入站配置变化（REALITY 的 serverNames 改了）后，把派生出来的 SNI 转发
+// 规则立刻落到 nginx/caddy 配置里，不需要用户再去「代理」页手工保存一次。
+func (m *Manager) GenerateProxyConfig(ctx context.Context, proxyType ProxyType) (string, error) {
+	switch proxyType {
+	case ProxyNginx:
+		if m.nginxConfigGen != nil {
+			return m.nginxConfigGen(ctx)
+		}
+	case ProxyCaddy:
+		if m.caddyConfigGen != nil {
+			return m.caddyConfigGen(ctx)
+		}
+	}
+	return "", fmt.Errorf("proxy %s config generator not configured", proxyType)
+}
+
 // SetOnProxyInstalled sets a callback invoked after a proxy binary install.
 // The router wires this to WAF service LandRulesForServer so that user's
 // custom WAF config (stored in DB) overwrites the tar.gz default config.lua.

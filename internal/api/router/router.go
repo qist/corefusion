@@ -318,6 +318,48 @@ func SetUserSyncer(syncer clientauthSvc.UserSyncer) {
 // sync so that mirrors take effect at the same time as the primary.
 // Outbound changes do NOT trigger mirror sync — mirrors only replicate inbounds
 // and caddy/nginx proxy configs.
+// proxySNIReloadAdapter 把「入站变化 → 重新生成并平滑重载 SNI 代理」接到
+// inboundconfig.Handler。
+//
+// 规则本体不在这里：proxy.GenerateConfigForServer 会从「被 SNI 前置代理承载的
+// REALITY 入站」的 serverNames 派生 SNI 转发规则（见 service/proxy/sni_from_reality.go）。
+// 这里只负责在入站保存/删除后把新配置落盘并 reload，避免用户还要去「代理」页
+// 手工保存一次才生效。
+type proxySNIReloadAdapter struct {
+	mgr *proxySvc.Manager
+	// nodeSvc 用于判断 serverID 是否本机；延迟注入（启动期赋值，早于任何请求）。
+	nodeSvc *nodeServerSvc.Service
+}
+
+func (a *proxySNIReloadAdapter) ReloadProxyForInbound(ctx context.Context, serverID int64) {
+	if a.mgr == nil {
+		return
+	}
+	// 只处理本机：远程节点的 nginx/caddy 配置由 Agent 端用同一套派生逻辑在运行时生成，
+	// 从面板推「本机」配置过去会写错节点。
+	if a.nodeSvc != nil && !a.nodeSvc.IsLocalServer(ctx, serverID) {
+		return
+	}
+	for _, proxyType := range []proxySvc.ProxyType{proxySvc.ProxyNginx, proxySvc.ProxyCaddy} {
+		info := a.mgr.DetectProxy(proxyType)
+		if !info.Installed || info.Status != "running" {
+			continue
+		}
+		config, err := a.mgr.GenerateProxyConfig(ctx, proxyType)
+		if err != nil {
+			log.Printf("[router] regenerate %s config after inbound change failed: %v", proxyType, err)
+			continue
+		}
+		if err := a.mgr.WriteConfigFile(proxyType, config); err != nil {
+			log.Printf("[router] write %s config after inbound change failed: %v", proxyType, err)
+			continue
+		}
+		if err := a.mgr.ReloadProxy(ctx, proxyType); err != nil {
+			log.Printf("[router] reload %s after inbound change failed: %v", proxyType, err)
+		}
+	}
+}
+
 type configSyncHookAdapter struct {
 	syncSvc           *configsyncSvc.Service
 	nodeServerSvc     *nodeServerSvc.Service
@@ -733,6 +775,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 双证书 ✓：生成器要按域名收集同域名的多张证书（ECC + RSA ✓）
 	caddyMgr.SetCertificateRepo(certRepo)
 	nginxMgr.SetCertificateRepo(certRepo)
+	// REALITY 入站的 serverNames 自动派生为 SNI 转发规则（不落库，显式站点优先）：
+	// 改 serverNames 后不必再去「代理」页手工补齐每条 SNI 映射。
+	caddyMgr.SetInboundConfigRepo(inboundConfigRepo)
+	nginxMgr.SetInboundConfigRepo(inboundConfigRepo)
 
 	// 节点归属由 handler 按请求把 serverID 传给 manager（manager 不再保存共享状态），
 	// 避免并发访问不同节点时状态互相覆盖。
@@ -1683,6 +1729,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			outboundSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
 			endpointSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
 			inboundCfgH.SetSyncHook(inboundSyncHook)
+			// 入站保存后刷新 REALITY → SNI 转发规则（nodeSvc 稍后延迟注入）。
+			sniReloadAdapter := &proxySNIReloadAdapter{mgr: proxyMgr}
+			inboundCfgH.SetSNIRuleSyncHook(sniReloadAdapter)
 			outboundCfgH.SetSyncHook(outboundSyncHook)
 			// 出站改动由服务端自己热下发（不再依赖前端补调 /xray/control/outbound）。
 			outboundCfgH.SetConfigApplier(xrayApply)
@@ -2036,6 +2085,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 节点↔证书 多对多 ✓（与 main.go 同一个 DB ✓，多实例无妨 ✓）
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService).
 				WithNodeCertificates(repository.NewNodeCertificateRepository(database))
+			// 延迟注入：SNI 重载钩子用 nodeSvc 判断本机/远程节点。
+			sniReloadAdapter.nodeSvc = nodeServerSvcInst
 
 			// Chain Proxy (chain links, external node servers, topology)
 			chainLinkRepo := repository.NewChainLinkRepository(database)

@@ -169,7 +169,28 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		return "", err
 	}
+	sites = m.withDerivedSNISites(ctx, sourceServerID, sites)
 	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, sites)
+}
+
+// withDerivedSNISites 把 REALITY 入站的 serverNames 补进 SNI 转发规则。
+//
+// 不落库：入站改了 serverNames，下次生成配置就自动跟上；显式站点（用户在
+// 「Nginx 代理」里配过的同域名规则）保持优先，不会被覆盖。
+func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID int64, sites []entity.NginxSite) []entity.NginxSite {
+	if m.inboundRepo == nil {
+		return sites
+	}
+	cfgs, err := m.inboundRepo.ListByServerID(ctx, serverID)
+	if err != nil {
+		log.Printf("[NginxManager] list inbounds for SNI derivation failed: %v", err)
+		return sites
+	}
+	var rules []derivedSNIRule
+	for _, cfg := range cfgs {
+		rules = append(rules, SNIRulesFromInbound(cfg)...)
+	}
+	return mergeDerivedNginxSNISites(serverID, sites, rules)
 }
 
 // PreviewSiteConfig 用「库里已有站点 + 正在编辑的草稿」生成完整配置。

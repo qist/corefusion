@@ -27,6 +27,14 @@ type CaddyManager struct {
 	// server ID for config generation. When set, GenerateConfigForServer checks
 	// if the target is a mirror and uses the primary's server_id to query sites.
 	nodeServerRepo *repository.NodeServerRepository
+	// inboundRepo 用于把「被 SNI 前置代理承载的 REALITY 入站」的 serverNames
+	// 自动派生为 SNI 转发规则（见 sni_from_reality.go）。可为 nil。
+	inboundRepo *repository.InboundConfigRepository
+}
+
+// SetInboundConfigRepo 注入入站仓储（REALITY serverNames → SNI 规则自动派生）。
+func (m *CaddyManager) SetInboundConfigRepo(repo *repository.InboundConfigRepository) {
+	m.inboundRepo = repo
 }
 
 // 节点归属（serverID）一律由调用方按参数传入，manager 不保存每请求可变的共享状态。
@@ -158,7 +166,26 @@ func (m *CaddyManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		return "", err
 	}
+	sites = m.withDerivedSNISites(ctx, sourceServerID, sites)
 	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, sites)
+}
+
+// withDerivedSNISites 把 REALITY 入站的 serverNames 补进 SNI 转发规则（不落库，
+// 显式站点优先）。与 nginx 侧同一口径，见 sni_from_reality.go。
+func (m *CaddyManager) withDerivedSNISites(ctx context.Context, serverID int64, sites []entity.CaddySite) []entity.CaddySite {
+	if m.inboundRepo == nil {
+		return sites
+	}
+	cfgs, err := m.inboundRepo.ListByServerID(ctx, serverID)
+	if err != nil {
+		log.Printf("[CaddyManager] list inbounds for SNI derivation failed: %v", err)
+		return sites
+	}
+	var rules []derivedSNIRule
+	for _, cfg := range cfgs {
+		rules = append(rules, SNIRulesFromInbound(cfg)...)
+	}
+	return mergeDerivedCaddySNISites(serverID, sites, rules)
 }
 
 // PreviewSiteConfig 用「已有站点 + 正在编辑的草稿」生成完整 Caddyfile，

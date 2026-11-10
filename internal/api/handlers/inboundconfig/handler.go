@@ -60,6 +60,24 @@ type SyncDataHook interface {
 	SyncServerData(ctx context.Context, serverID int64)
 }
 
+// SNIRuleSyncHook 在入站保存/删除后重新生成并重载前端 SNI 代理（nginx/caddy）。
+//
+// REALITY 的 TLS 握手在 xray 里完成，nginx/caddy 只能按 SNI 做 TCP 分流；入站的
+// realitySettings.serverNames 变了，SNI 转发规则必须跟着变，否则客户端随机挑到
+// 未映射的域名会落到 fallback（表现为节点时通时不通）。规则本身在生成配置时从
+// 入站派生（不落库），这里只负责触发「重新生成 + 平滑重载」。
+type SNIRuleSyncHook interface {
+	ReloadProxyForInbound(ctx context.Context, serverID int64)
+}
+
+// reloadProxyForInbound 异步触发 SNI 代理重载；未注入 hook 时静默跳过。
+func (h *Handler) reloadProxyForInbound(serverID int64) {
+	if h.sniSyncHook == nil {
+		return
+	}
+	go h.sniSyncHook.ReloadProxyForInbound(context.Background(), serverID)
+}
+
 // MirrorChecker checks if a server is a mirror node.
 // Mirror nodes are read-only — inbound configs can only be modified on
 // the primary node. Implemented by nodeserver.Service or a closure.
@@ -74,6 +92,12 @@ type Handler struct {
 	syncDataHook  SyncDataHook
 	mirrorChecker MirrorChecker
 	downloadSync  DownloadAccountSyncHook
+	sniSyncHook   SNIRuleSyncHook
+}
+
+// SetSNIRuleSyncHook 注入「入站变化 → 重载 SNI 代理」钩子。
+func (h *Handler) SetSNIRuleSyncHook(hook SNIRuleSyncHook) {
+	h.sniSyncHook = hook
 }
 
 // DownloadAccountSyncHook 在入站保存后，为「该入站引用的下行入口」补齐已有客户账号。
@@ -251,6 +275,8 @@ func (h *Handler) Create(c *gin.Context) {
 	audit.RecordNodeFromCtx(c, serverID, "inbound_create",
 		fmt.Sprintf("%s %s:%d %s", cfg.CoreType, listen, cfg.Port, cfg.Tag), true, "")
 	h.triggerConfigSync(serverID, req.CoreType)
+	// REALITY serverNames 变化要同步刷新 nginx/caddy 的 SNI 转发规则。
+	h.reloadProxyForInbound(serverID)
 	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), 0)
 
 	response.OK(c, cfg)
@@ -345,6 +371,8 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	audit.RecordNodeFromCtx(c, cfg.ServerID, "inbound_update", detail, true, "")
 	h.triggerConfigSync(cfg.ServerID, cfg.CoreType)
+	// REALITY serverNames 变化要同步刷新 nginx/caddy 的 SNI 转发规则。
+	h.reloadProxyForInbound(cfg.ServerID)
 	h.syncDownloadAccounts(cfg, string(req.ConfigJSON), oldTargetID)
 
 	response.OK(c, cfg)
@@ -418,6 +446,7 @@ func (h *Handler) Delete(c *gin.Context) {
 	// No serverID > 1 restriction: primary node changes must trigger
 	// mirror sync via configSyncHookAdapter → SyncMirrorsForPrimary.
 	h.triggerConfigSync(serverID, coreType)
+	h.reloadProxyForInbound(serverID)
 
 	response.OK(c, gin.H{"message": "deleted"})
 }

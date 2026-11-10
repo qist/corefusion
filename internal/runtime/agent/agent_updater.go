@@ -78,7 +78,9 @@ type AgentUpdater struct {
 
 	// 失败重试策略
 	// taskTimeout 用于判定"推进中但迟迟没有结果"的任务已卡死：
-	// Agent 侧下载超时为 10 分钟，这里留出替换/重启的余量。
+	// ⚠ 必须**大于** Agent 侧的下载超时（agentDownloadTimeout=30 分钟，见
+	// self_updater.go）✗ —— 否则慢速节点还在下载，面板先判失败并允许再次
+	// 下发，变成两个下载任务抢同一条 10M 线路（真机：HK-01 就是这样重试）✓。
 	taskTimeout  time.Duration
 	maxAttempts  int             // 含首次推送在内的最大尝试次数
 	retryBackoff []time.Duration // 第 n 次失败后的等待时间
@@ -149,7 +151,7 @@ func NewAgentUpdater(serverRepo *repository.NodeServerRepository, nodeMgr *NodeS
 		pendingUpdates:   make(map[int64]*UpdateTask),
 		interval:         6 * time.Hour,
 		maxConcurrency:   5,
-		taskTimeout:      12 * time.Minute,
+		taskTimeout:      40 * time.Minute,
 		maxAttempts:      3,
 		retryBackoff:     []time.Duration{30 * time.Second, 2 * time.Minute},
 		monitorEvery:     30 * time.Second,

@@ -91,3 +91,18 @@ func TestOnAgentReconnectClearsError(t *testing.T) {
 		t.Errorf("NextRetryAt should be cleared after success")
 	}
 }
+
+// 面板的"卡死"判定必须比 Agent 的下载超时更宽松 ✓：
+// 否则慢速节点（10Mbps、GitHub 边缘只有 ~200KB/s 时 64MB 要 5–7 分钟）还在
+// 下载，面板先判失败并允许再下发 ✗ → 两条下载抢同一条线路 ✓
+// （真机：HK-01 第一次 9 分钟被 Client.Timeout 取消，靠重试才成功）。
+func TestPanelTaskTimeoutExceedsAgentDownloadTimeout(t *testing.T) {
+	u := NewAgentUpdater(nil, nil)
+	if u.taskTimeout <= agentDownloadTimeout {
+		t.Fatalf("taskTimeout(%v) 必须大于 Agent 下载超时(%v)，否则慢速节点会被重复下发",
+			u.taskTimeout, agentDownloadTimeout)
+	}
+	if agentDownloadTimeout < 20*time.Minute {
+		t.Fatalf("下载超时 %v 对 64MB 慢速下载太短（10Mbps 线抖动时会必然失败）", agentDownloadTimeout)
+	}
+}

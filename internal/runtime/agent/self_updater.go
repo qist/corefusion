@@ -97,6 +97,14 @@ func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error
 	return nil
 }
 
+// agentDownloadTimeout 是下载 Agent 二进制（约 64MB）的 HTTP 超时。
+//
+// 为什么不是 10 分钟 ✗：10Mbps 的节点上，GitHub 边缘一旦掉到 150–200KB/s，
+// 64MB 就要 5–7 分钟；再抖一点就必然超时（真机：HK-01 第一次更新在 9 分钟
+// 时被 `Client.Timeout` 取消，靠第 2 次重试才成功 ✓）。放宽到 30 分钟给慢线
+// 留足余量；面板侧 taskTimeout 必须比它更大（见 agent_updater.go）✓。
+const agentDownloadTimeout = 30 * time.Minute
+
 // downloadFile downloads the binary from the given URL to a temp file.
 // If the URL is a GitHub URL, GitHub acceleration domain and proxy settings
 // are automatically applied from the Agent's local settings.
@@ -186,9 +194,9 @@ func (u *SelfUpdater) clientForURL(rawURL string) *http.Client {
 		accelDomain := u.getGithubAccelDomain()
 		proxyURL := u.getGithubProxyURL()
 		log.Printf("[SelfUpdater] using GitHub client (accel=%s, proxy=%s)", accelDomain, proxyURL)
-		return netutil.GitHubHTTPClientWithProxy(10*time.Minute, accelDomain, proxyURL)
+		return netutil.GitHubHTTPClientWithProxy(agentDownloadTimeout, accelDomain, proxyURL)
 	}
-	return netutil.NewHTTPClient(10 * time.Minute)
+	return netutil.NewHTTPClient(agentDownloadTimeout)
 }
 
 // normalizeChecksum 归一化校验和字符串（去 `sha256:` 前缀/空白/大小写）。

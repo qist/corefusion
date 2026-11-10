@@ -1375,6 +1375,8 @@ export default {
       "show": "顯示",
       "xver": "Xver",
       "xverHint": "PROXY protocol 版本。僅本機目標（unix socket / 127.0.0.1）需要填 1，外部站點必須為 0。",
+      "xverDisabled": "停用",
+      "xverLocalOnly": "僅本機",
       "xverLocalBound1": "本機 Reality 自動綁定 Xver=1，預設為 Xver=0",
       "minClientVer": "Min Client Ver",
       "maxClientVer": "Max Client Ver",

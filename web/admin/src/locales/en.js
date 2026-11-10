@@ -1381,6 +1381,8 @@ export default {
       show: 'Show',
       xver: 'Xver',
       xverHint: 'PROXY protocol version. Only local destinations (unix socket / 127.0.0.1) need 1; external sites must stay 0.',
+      xverDisabled: 'disabled',
+      xverLocalOnly: 'local only',
       xverLocalBound1: 'Local Reality auto-binds Xver=1, preset Xver=0',
       minClientVer: 'Min Client Ver',
       maxClientVer: 'Max Client Ver',

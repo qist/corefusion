@@ -723,9 +723,9 @@
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.reality.xver')">
                   <el-select v-model="realityXver" style="width:100%" :disabled="!realityTargetIsLocal" @change="emit">
-                    <el-option label="0 (disabled)" :value="0" />
-                    <el-option label="1 (local only)" :value="1" />
-                    <el-option label="2 (local only)" :value="2" />
+                    <el-option :label="`0 (${t('protoCenter.reality.xverDisabled')})`" :value="0" />
+                    <el-option :label="`1 (${t('protoCenter.reality.xverLocalOnly')})`" :value="1" />
+                    <el-option :label="`2 (${t('protoCenter.reality.xverLocalOnly')})`" :value="2" />
                   </el-select>
                   <div class="hint">{{ t('protoCenter.reality.xverHint') }}</div>
                 </el-form-item>

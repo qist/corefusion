@@ -105,6 +105,15 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 	}
 	for i := range expired {
 		sub := &expired[i]
+		// 永久规格：库里残留的 expires_at（规格改成永久之前的数据）不能真的把账号停掉，
+		// 只清掉到期时间。下次对账/启动时会同步修好客户记录。
+		if s.isPermanentClient(ctx, sub.ClientID) {
+			sub.ExpiresAt = nil
+			if err := s.repo.Update(ctx, sub); err != nil {
+				log.Printf("[quota-enforce] clear stale expiry of subscription %d failed: %v", sub.ID, err)
+			}
+			continue
+		}
 		sub.Status = "expired"
 		sub.QuotaState = "expired_days"
 		if err := s.repo.Update(ctx, sub); err != nil {
@@ -117,6 +126,23 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// isPermanentClient 报告该客户的套餐规格是否为「永久有效」。
+// 用于让过期任务放过永久用户（老数据可能残留 expires_at）。
+func (s *Service) isPermanentClient(ctx context.Context, clientID int64) bool {
+	if clientID <= 0 || s.clientRepo == nil || s.planSvc == nil {
+		return false
+	}
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil || client == nil || client.PlanVariantID <= 0 {
+		return false
+	}
+	variant, err := s.planSvc.GetVariantByID(ctx, client.PlanVariantID)
+	if err != nil || variant == nil {
+		return false
+	}
+	return variant.IsPermanent()
 }
 
 // blockClient suspends the client (if still active) and removes its credentials from all

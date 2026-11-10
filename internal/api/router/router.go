@@ -1033,6 +1033,18 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Inject setting store so plan service can read currency.default from DB.
 	planSvcInst.SetSettingStore(systemSettingRepo)
 
+	// 永久规格对账：规格改成「永久有效」后，历史客户/订阅仍带旧的 expires_at
+	// （订阅头显示到期时间，过期任务还会停掉账号）。启动时做一次幂等对账。
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if n, err := planSvcInst.ReconcilePermanentExpiry(ctx); err != nil {
+			log.Printf("[plan] reconcile permanent expiry on startup failed: %v", err)
+		} else if n > 0 {
+			log.Printf("[plan] startup reconcile: cleared expiry for %d permanent-plan clients", n)
+		}
+	}()
+
 	// Mihomo service
 	mihomoConfigRepo := repository.NewMihomoConfigRepository(database)
 	mihomoGeneralRepo := repository.NewMihomoGeneralRepository(database)

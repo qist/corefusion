@@ -321,6 +321,9 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	var clientEmail string
 	var tmpl *entity.PlanTemplate
 	var members []entity.NodeGroupMember
+	// permanentPlan：客户所在规格是「永久有效」。库里可能残留旧的 expires_at
+	// （规格改成永久之前的数据）→ 既不显示到期时间，也不因到期拦掉订阅。
+	var permanentPlan bool
 	if sub.ClientID > 0 && h.clientRepo != nil {
 		if cl, err := h.clientRepo.GetByID(ctx, sub.ClientID); err == nil {
 			clientEmail = cl.Email
@@ -331,14 +334,20 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 				profileTitle = maskEmailForHeader(clientEmail)
 			}
 
+			if cl.PlanVariantID > 0 && h.planSvc != nil {
+				if v, verr := h.planSvc.GetVariantByID(ctx, cl.PlanVariantID); verr == nil && v != nil && v.IsPermanent() {
+					permanentPlan = true
+				}
+			}
+
 			// Check client status first (client may be suspended while subscription is still active)
-			switch cl.Status {
-			case "suspended":
+			switch {
+			case cl.Status == "suspended":
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
 				c.String(http.StatusForbidden, t(lang, "suspended"))
 				return
-			case "expired":
+			case cl.Status == "expired" && !permanentPlan:
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
 				c.String(http.StatusForbidden, t(lang, "expired"))
@@ -369,7 +378,14 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	c.Header("Profile-Title", profileTitle)
 
-	if sub.Status != "active" {
+	if permanentPlan {
+		// 永久套餐不显示到期时间（expire=0 是各客户端的「永不过期」约定），
+		// 同时忽略库里残留的 expires_at —— 只在本次响应内生效，不写库。
+		sub.ExpiresAt = nil
+		c.Header("Subscription-Userinfo", formatSubscriptionInfo(sub))
+	}
+
+	if sub.Status != "active" && !permanentPlan {
 		c.Header("Content-Type", "text/plain; charset=utf-8")
 		c.String(http.StatusForbidden, t(lang, "inactive"))
 		return
@@ -859,6 +875,10 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			// 上下行分离：按 _downloadInboundId 引用解析目标入站，失效则回退单入口。
 			h.resolveDownloadSettings(ctx, cfg, config, configs, shareDomains)
 			host, port := h.shareAddress(ctx, shareCfg, config, shareDomains)
+			// 前置 TLS（核心明文、TLS 在 CDN/nginx/caddy 上终结）：订阅里的链接必须与
+			// 分享链接接口同口径，否则 raw_uri / base64 订阅里的节点会是 security=none
+			// （客户端按明文连 443，直接失败）。必须在取 streamSettings / 构造 Node 之前调用。
+			applyFrontTLS(config, host, accessDomainType(config), shareDomains)
 			settings := getMap(config, "settings")
 
 			linkSettings := settings

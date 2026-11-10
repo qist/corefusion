@@ -1886,8 +1886,8 @@ func formatURI(node Node) string {
 			if pqv, ok := ro["mldsa65-verify"].(string); ok && pqv != "" {
 				params.Set("pqv", pqv)
 			}
-			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
-			params.Set("support-x25519mlkem768", "true")
+			// MLKEM 只对 Mihomo 有意义（它需要 reality-opts.support-x25519mlkem768 才保留
+			// ClientHello 的 key share），不在分享链接里输出：其它客户端用不到该参数。
 		} else if node.TLS {
 			params.Set("security", "tls")
 		} else {
@@ -2041,8 +2041,8 @@ func formatURI(node Node) string {
 			if pqv, ok := ro["mldsa65-verify"].(string); ok && pqv != "" {
 				params.Set("pqv", pqv)
 			}
-			// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；支持该参数的客户端（Mihomo）据此保留。
-			params.Set("support-x25519mlkem768", "true")
+			// MLKEM 只对 Mihomo 有意义（它需要 reality-opts.support-x25519mlkem768 才保留
+			// ClientHello 的 key share），不在分享链接里输出：其它客户端用不到该参数。
 		} else if node.TLS {
 			params.Set("security", "tls")
 		} else {

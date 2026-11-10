@@ -285,9 +285,10 @@ func TestRealityClientParamsDerivesPublicKey(t *testing.T) {
 	if !strings.Contains(link, "pbk="+pbk) {
 		t.Errorf("链接缺推导出的 pbk: %s", link)
 	}
-	// Xray 26.9.8+ REALITY 需要 MLKEM 密钥共享；链接必须带该提示，Mihomo 导入时才会保留。
-	if !strings.Contains(link, "support-x25519mlkem768=true") {
-		t.Errorf("REALITY 链接缺 support-x25519mlkem768=true: %s", link)
+	// MLKEM 只对 Mihomo 的 YAML（reality-opts.support-x25519mlkem768）有意义，
+	// 分享链接里不再输出该参数。
+	if strings.Contains(link, "support-x25519mlkem768") {
+		t.Errorf("REALITY 链接不应带 support-x25519mlkem768: %s", link)
 	}
 }
 

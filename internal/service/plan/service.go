@@ -628,7 +628,94 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 	if err := s.variantRepo.Update(ctx, variant); err != nil {
 		return nil, fmt.Errorf("update variant: %w", err)
 	}
+	// 规格改成「永久有效」后，已经存在的客户/订阅仍带着旧的 expires_at：
+	// 订阅头会继续显示到期时间，过期任务还会把它们停掉。这里异步对账清空。
+	if variant.IsPermanent() {
+		go func(variantID int64) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if n, err := s.ReconcilePermanentExpiry(ctx); err != nil {
+				log.Printf("[plan] reconcile permanent expiry after variant %d update failed: %v", variantID, err)
+			} else if n > 0 {
+				log.Printf("[plan] variant %d is permanent, cleared expiry for %d clients", variantID, n)
+			}
+		}(variant.ID)
+	}
 	return variant, nil
+}
+
+// ReconcilePermanentExpiry 把「永久有效」规格（duration_days < 0）下客户与其订阅的
+// 到期时间清空，并把此前因到期被判过期的记录恢复为有效。
+//
+// 为什么需要它：把规格改成永久只影响**之后**的购买/续费；改之前已经存在的客户与
+// 订阅仍带旧的 expires_at —— 订阅响应头会显示 expire=<时间>（客户端提示「还有 N 天
+// 到期」），EnforceQuotaAndExpiry 到期后还会把账号停掉。这里做一次幂等对账。
+//
+// 返回被处理的客户数；没有需要处理的行时不做任何写入。
+func (s *Service) ReconcilePermanentExpiry(ctx context.Context) (int, error) {
+	if s.db == nil {
+		return 0, nil
+	}
+	var variants []entity.PlanVariant
+	if err := s.db.WithContext(ctx).Where("duration_days < 0").Find(&variants).Error; err != nil {
+		return 0, fmt.Errorf("list permanent variants: %w", err)
+	}
+	if len(variants) == 0 {
+		return 0, nil
+	}
+	ids := make([]int64, 0, len(variants))
+	for _, v := range variants {
+		ids = append(ids, v.ID)
+	}
+
+	var clients []entity.Client
+	if err := s.db.WithContext(ctx).
+		Where("plan_variant_id IN ? AND (expires_at IS NOT NULL OR status = ?)", ids, "expired").
+		Find(&clients).Error; err != nil {
+		return 0, fmt.Errorf("list clients on permanent variants: %w", err)
+	}
+
+	cleared := 0
+	for i := range clients {
+		cl := &clients[i]
+		wasExpired := cl.Status == "expired"
+		cl.ExpiresAt = nil
+		if wasExpired {
+			cl.Status = "active"
+			cl.SuspendedAt = nil
+			cl.SuspendReason = ""
+		}
+		if err := s.clientRepo.Update(ctx, cl); err != nil {
+			log.Printf("[plan] reconcile permanent expiry for client %d failed: %v", cl.ID, err)
+			continue
+		}
+		cleared++
+
+		// 订阅：清空到期时间；因到期过期的订阅一并恢复（配额耗尽导致的 suspended 不动）。
+		if err := s.db.WithContext(ctx).Model(&entity.Subscription{}).
+			Where("client_id = ? AND expires_at IS NOT NULL", cl.ID).
+			Update("expires_at", nil).Error; err != nil {
+			log.Printf("[plan] clear subscription expiry for client %d failed: %v", cl.ID, err)
+		}
+		if err := s.db.WithContext(ctx).Model(&entity.Subscription{}).
+			Where("client_id = ? AND status = ?", cl.ID, "expired").
+			Updates(map[string]interface{}{"status": "active", "quota_state": "normal"}).Error; err != nil {
+			log.Printf("[plan] reactivate subscription for client %d failed: %v", cl.ID, err)
+		}
+
+		// 之前被停用的账号要重新下发到各节点，否则订阅通了但节点上没这个用户。
+		if wasExpired && s.userSyncer != nil {
+			clientID := cl.ID
+			go func() {
+				sctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+				defer cancel()
+				if err := s.userSyncer.SyncUserToServers(sctx, clientID, "add"); err != nil {
+					log.Printf("[plan] re-add client %d after permanent reconcile failed: %v", clientID, err)
+				}
+			}()
+		}
+	}
+	return cleared, nil
 }
 
 // DeleteVariant deletes a plan variant.

@@ -1054,10 +1054,9 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			continue
 		}
 		applyExternalNodeAccessDomain(pm, &extNode, shareDomains)
-		// 外部节点同样可能「核心明文、TLS 在 CDN/反代终结」：优先用外部节点
-		// 访问域名里的 tls 配置，其次才是旧的分享域名口径。
-		extAccessDomain := extNode.LoadAccessDomain()
-		applyFrontTLSToProxy(pm, extAccessDomain, getString(extAccessDomain, "type", ""), shareDomains)
+		// 外部节点「保留原状」：proxy_json 是用户导入的完整配置（worker 类链接自带
+		// sni/servername/指纹/path/early-data），这里不做任何前置 TLS 改写，只在
+		// 访问域名里替换 server/port（CDN 优选）。改写 SNI 会让 CDN 回源直接 403。
 		node := mihomoProxyMapToNode(pm)
 		if node != nil && extNode.Name != "" {
 			node.Name = extNode.Name
@@ -2417,86 +2416,6 @@ func applyFrontTLSSettings(config map[string]interface{}, host, sni, alpn, finge
 	}
 	if fingerprint != "" {
 		tls["settings"] = []interface{}{map[string]interface{}{"fingerprint": fingerprint}}
-	}
-}
-
-// applyFrontTLSToProxy 对「外部导入节点」的 mihomo 代理做同样的前置 TLS 覆盖。
-// ad 为外部节点的访问域名配置（含可选的 tls 子对象）。
-func applyFrontTLSToProxy(pm map[string]interface{}, ad map[string]interface{}, adType string, shareDomains []shareDomainEntry) {
-	if pm == nil {
-		return
-	}
-	host, _ := pm["server"].(string)
-
-	// 1) 访问域名显式配置优先
-	if tlsCfg, explicit := accessDomainFrontTLS(map[string]interface{}{"_accessDomain": ad}); explicit {
-		if tlsCfg.Enabled {
-			applyFrontTLSProxySettings(pm, host, tlsCfg)
-		}
-		return
-	}
-
-	// 2) 旧口径：分享域名条目
-	entry := frontTLSEntry(host, adType, shareDomains)
-	if entry == nil {
-		return
-	}
-	mode := strings.ToLower(strings.TrimSpace(entry.TLSMode))
-	if mode == "off" {
-		return
-	}
-	if mode == "" || mode == "auto" {
-		if !strings.HasPrefix(strings.ToLower(entry.Type), "cf_") {
-			return
-		}
-	}
-	applyFrontTLSProxySettings(pm, host, frontTLSConfig{
-		Enabled:     true,
-		SNI:         entry.SNI,
-		ALPN:        entry.ALPN,
-		Fingerprint: entry.Fingerprint,
-	})
-}
-
-// applyFrontTLSProxySettings 给 mihomo 代理补齐 tls/sni/alpn/指纹。
-//
-// 外部节点的 proxy_json 里通常已经带全了 TLS 参数（worker 类单节点链接尤其如此：
-// server 可以换成优选域名，但 SNI 必须保持回源域名，否则 CDN 直接 403/证书不匹配）。
-// 因此这里只补**缺失**的字段，绝不覆盖导入时已有的 sni / servername / alpn / 指纹。
-func applyFrontTLSProxySettings(pm map[string]interface{}, host string, tlsCfg frontTLSConfig) {
-	pm["tls"] = true
-	// 已有 SNI 的两种写法：trojan 用 sni、vless/vmess 用 servername（见 mihomoProxyToNode：
-	// 生成 URI 时 sni 优先、否则取 servername）。任一存在就必须保留，并补齐另一个字段，
-	// 否则只写 sni 会让「只有 servername 的导入节点」在生成时丢掉原 SNI。
-	existingSNI, _ := pm["sni"].(string)
-	if existingSNI == "" {
-		existingSNI, _ = pm["servername"].(string)
-	}
-	sni := existingSNI
-	if sni == "" {
-		if tlsCfg.SNI != "" {
-			sni = tlsCfg.SNI
-		} else if !isIPHost(host) {
-			sni = host
-		}
-	}
-	if sni != "" {
-		if cur, _ := pm["sni"].(string); cur == "" {
-			pm["sni"] = sni
-		}
-		if cur, _ := pm["servername"].(string); cur == "" {
-			pm["servername"] = sni
-		}
-	}
-	if alpns := splitCSV(tlsCfg.ALPN); len(alpns) > 0 {
-		if _, exists := pm["alpn"]; !exists {
-			pm["alpn"] = alpns
-		}
-	}
-	if tlsCfg.Fingerprint != "" {
-		if cur, _ := pm["client-fingerprint"].(string); cur == "" {
-			pm["client-fingerprint"] = tlsCfg.Fingerprint
-		}
 	}
 }
 

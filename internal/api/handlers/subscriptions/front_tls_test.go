@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
+	"corefusion/internal/subscription/mihomoconv"
 )
 
 func plainWSConfig() map[string]interface{} {
@@ -155,41 +157,6 @@ func TestApplyFrontTLSAccessDomainDisabledWins(t *testing.T) {
 	}
 }
 
-// 外部节点：访问域名 tls 配置同样优先
-func TestApplyFrontTLSToProxyUsesAccessDomainConfig(t *testing.T) {
-	pm := map[string]interface{}{"server": "edge.example.com", "port": float64(443)}
-	ad := map[string]interface{}{
-		"enabled": true, "type": "direct", "directDomain": "edge.example.com",
-		"tls": map[string]interface{}{
-			"enabled": true, "sni": "sni.example.com", "fingerprint": "chrome",
-		},
-	}
-	applyFrontTLSToProxy(pm, ad, "direct", nil)
-	if pm["tls"] != true || pm["sni"] != "sni.example.com" || pm["client-fingerprint"] != "chrome" {
-		t.Fatalf("访问域名 TLS 配置未生效: %v", pm)
-	}
-}
-func TestApplyFrontTLSToProxy(t *testing.T) {
-	pm := map[string]interface{}{"server": "cdn.example.com", "port": float64(443)}
-	pools := []shareDomainEntry{{
-		Type: "cf_domain", Host: "cdn.example.com", Port: 443, TLSMode: "auto",
-		SNI: "sni.example.com", ALPN: "h2", Fingerprint: "chrome",
-	}}
-	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
-	if pm["tls"] != true {
-		t.Fatal("外部节点应补 tls=true")
-	}
-	if pm["sni"] != "sni.example.com" || pm["servername"] != "sni.example.com" {
-		t.Fatalf("SNI 未写入: %v", pm)
-	}
-	if pm["client-fingerprint"] != "chrome" {
-		t.Fatalf("指纹未写入: %v", pm)
-	}
-}
-
-// worker 类外部节点（vless/trojan over ws + TLS）：接入域名只替换 server/port，
-// SNI / Host / 指纹 / early-data 必须保持导入时的值。以前这里会被 CDN 池的
-// SNI/指纹覆盖成 bestcf 域名 + chrome，导致 CDN 回源 403（用户实测链接）。
 func TestExternalNodeWorkerLinkKeepsSNIAndFingerprint(t *testing.T) {
 	pm := map[string]interface{}{
 		"name": "maimai.boown.com", "type": "vless", "server": "bestcf.030101.xyz", "port": float64(443),
@@ -200,12 +167,6 @@ func TestExternalNodeWorkerLinkKeepsSNIAndFingerprint(t *testing.T) {
 			"path": "/?ed=2560", "headers": map[string]interface{}{"Host": "maimai.boown.com"},
 		},
 	}
-	pools := []shareDomainEntry{{
-		Type: "cf_domain", Host: "bestcf.030101.xyz", Port: 443, TLSMode: "auto",
-		SNI: "bestcf.030101.xyz", Fingerprint: "chrome",
-	}}
-	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
-
 	if got := pm["sni"]; got != "maimai.boown.com" {
 		t.Fatalf("SNI 被覆盖: %v", got)
 	}
@@ -250,12 +211,6 @@ func TestExternalNodeTrojanWorkerKeepsImportedSNI(t *testing.T) {
 			"path": "/?ed=2560", "headers": map[string]interface{}{"Host": "sweet-bonus-aeb7.boown.com"},
 		},
 	}
-	pools := []shareDomainEntry{{
-		Type: "cf_ip", Host: "time.is", Port: 443, TLSMode: "auto",
-		SNI: "time.is", Fingerprint: "chrome",
-	}}
-	applyFrontTLSToProxy(pm, nil, "cf_ip", pools)
-
 	if got := pm["sni"]; got != "sweet-bonus-aeb7.boown.com" {
 		t.Fatalf("SNI 被覆盖: %v", got)
 	}
@@ -278,11 +233,6 @@ func TestExternalNodeVLESSOnlyServernameKept(t *testing.T) {
 			"headers":                map[string]interface{}{"Host": "maimai.boown.com"},
 		},
 	}
-	pools := []shareDomainEntry{{
-		Type: "cf_domain", Host: "bestcf.030101.xyz", Port: 443, TLSMode: "auto", Fingerprint: "chrome",
-	}}
-	applyFrontTLSToProxy(pm, nil, "cf_domain", pools)
-
 	link := formatter.MihomoToURI(pm)
 	t.Logf("link = %s", link)
 	u, err := url.Parse(link)
@@ -301,5 +251,74 @@ func TestExternalNodeVLESSOnlyServernameKept(t *testing.T) {
 	}
 	if got := q.Get("fp"); got != "random" {
 		t.Errorf("fp = %q, want random", got)
+	}
+}
+
+// 端到端：原始 worker 链接 → 导入（ConvertsV2Ray）→ 访问域名只换 server/port →
+// 生成链接。除 server 外所有字段必须与原始完全一致（这是用户要的「保留原状」）。
+func TestExternalNodeImportRoundTripKeepsOriginal(t *testing.T) {
+	cases := []struct {
+		name string
+		uri  string
+		sni  string
+		host string
+	}{
+		{
+			name: "trojan",
+			uri: "trojan://5wjtwj7qlkzlpzkx81f1jpyi15tmerun@sweet-bonus-aeb7.boown.com:443" +
+				"?security=tls&type=ws&host=sweet-bonus-aeb7.boown.com&sni=sweet-bonus-aeb7.boown.com" +
+				"&fp=random&path=%2F%3Fed%3D2560#sweet-bonus-aeb7.boown.com",
+			sni:  "sweet-bonus-aeb7.boown.com",
+			host: "sweet-bonus-aeb7.boown.com",
+		},
+		{
+			name: "vless",
+			uri: "vless://d094c691-d4ec-4dd1-b935-83a764484716@maimai.boown.com:443" +
+				"?encryption=none&security=tls&type=ws&host=maimai.boown.com&sni=maimai.boown.com" +
+				"&fp=random&path=%2F%3Fed%3D2560#maimai.boown.com",
+			sni:  "maimai.boown.com",
+			host: "maimai.boown.com",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			proxies, err := mihomoconv.ConvertsV2Ray([]byte(c.uri))
+			if err != nil || len(proxies) == 0 {
+				t.Fatalf("导入失败: %v", err)
+			}
+			pm := proxies[0]
+
+			n := &entity.ExternalNode{Port: 443}
+			n.SetAccessDomain(map[string]interface{}{
+				"enabled": true, "type": "cf_domain", "cfDomain": "bestcf.030101.xyz",
+			})
+			applyExternalNodeAccessDomain(pm, n, nil)
+
+			link := formatter.MihomoToURI(pm)
+			t.Logf("link = %s", link)
+			u, err := url.Parse(link)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q := u.Query()
+			if u.Hostname() != "bestcf.030101.xyz" {
+				t.Errorf("server 应替换为访问域名，实际 %q", u.Hostname())
+			}
+			if got := q.Get("sni"); got != c.sni {
+				t.Errorf("sni = %q, want %q", got, c.sni)
+			}
+			if got := q.Get("host"); got != c.host {
+				t.Errorf("host = %q, want %q", got, c.host)
+			}
+			if got := q.Get("fp"); got != "random" {
+				t.Errorf("fp = %q, want random", got)
+			}
+			if got := q.Get("path"); got != "/?ed=2560" {
+				t.Errorf("path = %q, want /?ed=2560", got)
+			}
+			if got := q.Get("ed"); got != "" {
+				t.Errorf("不应额外输出 ed 参数，实际 %q", got)
+			}
+		})
 	}
 }

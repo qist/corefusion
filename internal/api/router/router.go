@@ -329,33 +329,64 @@ type proxySNIReloadAdapter struct {
 	mgr *proxySvc.Manager
 	// nodeSvc 用于判断 serverID 是否本机；延迟注入（启动期赋值，早于任何请求）。
 	nodeSvc *nodeServerSvc.Service
+	// genNginx / genCaddy 按**目标节点**生成配置（远程节点必须用 serverID 维度，
+	// 不能用面板本机的 GenerateProxyConfig）。
+	genNginx func(ctx context.Context, serverID int64) (string, error)
+	genCaddy func(ctx context.Context, serverID int64) (string, error)
 }
 
 func (a *proxySNIReloadAdapter) ReloadProxyForInbound(ctx context.Context, serverID int64) {
 	if a.mgr == nil {
 		return
 	}
-	// 只处理本机：远程节点的 nginx/caddy 配置由 Agent 端用同一套派生逻辑在运行时生成，
-	// 从面板推「本机」配置过去会写错节点。
-	if a.nodeSvc != nil && !a.nodeSvc.IsLocalServer(ctx, serverID) {
-		return
+	local := a.nodeSvc == nil || a.nodeSvc.IsLocalServer(ctx, serverID)
+
+	type proxyTarget struct {
+		kind string
+		gen  func(ctx context.Context, serverID int64) (string, error)
 	}
-	for _, proxyType := range []proxySvc.ProxyType{proxySvc.ProxyNginx, proxySvc.ProxyCaddy} {
-		info := a.mgr.DetectProxy(proxyType)
-		if !info.Installed || info.Status != "running" {
+	for _, target := range []proxyTarget{
+		{kind: "nginx", gen: a.genNginx},
+		{kind: "caddy", gen: a.genCaddy},
+	} {
+		proxyType := proxySvc.ProxyType(target.kind)
+		if local {
+			info := a.mgr.DetectProxy(proxyType)
+			if !info.Installed || info.Status != "running" {
+				continue
+			}
+			config, err := a.mgr.GenerateProxyConfig(ctx, proxyType)
+			if err != nil {
+				log.Printf("[router] regenerate %s config after inbound change failed: %v", proxyType, err)
+				continue
+			}
+			if err := a.mgr.WriteConfigFile(proxyType, config); err != nil {
+				log.Printf("[router] write %s config after inbound change failed: %v", proxyType, err)
+				continue
+			}
+			if err := a.mgr.ReloadProxy(ctx, proxyType); err != nil {
+				log.Printf("[router] reload %s after inbound change failed: %v", proxyType, err)
+			}
 			continue
 		}
-		config, err := a.mgr.GenerateProxyConfig(ctx, proxyType)
+
+		// 远程节点：Agent 不自己生成代理配置（cmd/agent 没注入 configGen），
+		// 必须由面板按该节点的站点数据生成后推送；Agent 只写盘，reload 要单独发。
+		if a.nodeSvc == nil || target.gen == nil {
+			continue
+		}
+		config, err := target.gen(ctx, serverID)
 		if err != nil {
-			log.Printf("[router] regenerate %s config after inbound change failed: %v", proxyType, err)
+			log.Printf("[router] generate %s config for server %d failed: %v", proxyType, serverID, err)
 			continue
 		}
-		if err := a.mgr.WriteConfigFile(proxyType, config); err != nil {
-			log.Printf("[router] write %s config after inbound change failed: %v", proxyType, err)
+		if err := a.nodeSvc.SyncProxyConfig(ctx, serverID, target.kind, []byte(config)); err != nil {
+			log.Printf("[router] push %s config to server %d failed: %v", proxyType, serverID, err)
 			continue
 		}
-		if err := a.mgr.ReloadProxy(ctx, proxyType); err != nil {
-			log.Printf("[router] reload %s after inbound change failed: %v", proxyType, err)
+		// Agent 收到配置只落盘；不 reload 的话运行中的进程还用旧 SNI 映射。
+		if err := a.nodeSvc.ControlProxy(ctx, serverID, target.kind, "reload"); err != nil {
+			log.Printf("[router] reload %s on server %d failed: %v", proxyType, serverID, err)
 		}
 	}
 }
@@ -1730,7 +1761,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			endpointSyncHook := &configSyncHookAdapter{syncSvc: configSyncSvc, triggerMirrorSync: false}
 			inboundCfgH.SetSyncHook(inboundSyncHook)
 			// 入站保存后刷新 REALITY → SNI 转发规则（nodeSvc 稍后延迟注入）。
-			sniReloadAdapter := &proxySNIReloadAdapter{mgr: proxyMgr}
+			sniReloadAdapter := &proxySNIReloadAdapter{
+				mgr: proxyMgr,
+				genNginx: func(ctx context.Context, serverID int64) (string, error) {
+					return nginxMgr.GenerateConfigForServer(ctx, serverID)
+				},
+				genCaddy: func(ctx context.Context, serverID int64) (string, error) {
+					return caddyMgr.GenerateConfigForServer(ctx, serverID)
+				},
+			}
 			inboundCfgH.SetSNIRuleSyncHook(sniReloadAdapter)
 			outboundCfgH.SetSyncHook(outboundSyncHook)
 			// 出站改动由服务端自己热下发（不再依赖前端补调 /xray/control/outbound）。

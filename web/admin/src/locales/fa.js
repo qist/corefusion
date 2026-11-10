@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "نسخه پروتکل PROXY. فقط مقصدهای محلی (unix socket / 127.0.0.1) به 1 نیاز دارند؛ سایت‌های خارجی باید 0 بمانند.",
       "xverDisabled": "غیرفعال",
       "xverLocalOnly": "فقط محلی",
-      "xverLocalBound1": "Reality محلی به‌طور خودکار Xver=1 را تنظیم می‌کند؛ پیش‌تنظیم Xver=0",
       "minClientVer": "حداقل نسخه کلاینت",
       "maxClientVer": "حداکثر نسخه کلاینت",
       "maxTimeDiff": "حداکثر اختلاف زمان (ms)",

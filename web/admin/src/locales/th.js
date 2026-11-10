@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "เวอร์ชันโปรโตคอล PROXY เฉพาะปลายทางในเครื่อง (unix socket / 127.0.0.1) เท่านั้นที่ต้องใช้ 1 ส่วนเว็บไซต์ภายนอกต้องเป็น 0",
       "xverDisabled": "ปิดใช้งาน",
       "xverLocalOnly": "เฉพาะในเครื่อง",
-      "xverLocalBound1": "Reality ภายในเครื่องผูก Xver=1 โดยอัตโนมัติ พรีเซ็ตใช้ Xver=0",
       "minClientVer": "Min Client Ver",
       "maxClientVer": "Max Client Ver",
       "maxTimeDiff": "Max Time Diff (ms)",

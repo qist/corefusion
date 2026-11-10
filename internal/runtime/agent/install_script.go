@@ -9,8 +9,9 @@ import (
 )
 
 // AgentInstallScript generates a bash install script for the Agent binary.
-// The script downloads the Agent (panel-first, GitHub fallback), configures it
-// with the panel address and bootstrap token, then starts the service.
+// The script downloads the Agent (GitHub Releases first, panel fallback),
+// configures it with the panel address and bootstrap token, then starts the
+// service.
 type AgentInstallScript struct {
 	// panelHost/panelPort/panelScheme 是**下载脚本和二进制**用的公开地址
 	// （通常是 CDN/反代域名），不用于 Agent 配置。
@@ -45,7 +46,7 @@ func NewAgentInstallScript(panelHost string, panelPort int) *AgentInstallScript 
 		panelGRPCPort: constants.DefaultAgentGRPCPort,
 		panelTLS:      false,
 		agentVersion:  "latest",
-		githubURL:     "https://github.com/qist/corefusion/releases/download",
+		githubURL:     "https://github.com/qist/corefusion/releases",
 	}
 }
 
@@ -112,9 +113,20 @@ func (s *AgentInstallScript) WithBootstrapEndpoint(host string, port int, tls bo
 	return s
 }
 
-// WithGitHubURL sets the GitHub Releases download base URL.
+// WithGitHubURL sets the GitHub Releases base URL (i.e. without
+// /download/<tag> or /latest/download).
 func (s *AgentInstallScript) WithGitHubURL(url string) *AgentInstallScript {
 	s.githubURL = url
+	return s
+}
+
+// WithAgentVersion sets the release tag used for the GitHub download.
+// "latest" (the default) resolves to GitHub's newest stable Release; any other
+// value is used as an explicit tag under /releases/download/<tag>/.
+func (s *AgentInstallScript) WithAgentVersion(version string) *AgentInstallScript {
+	if v := strings.TrimSpace(version); v != "" {
+		s.agentVersion = v
+	}
 	return s
 }
 
@@ -171,7 +183,8 @@ set -e
 # CoreFusion Agent Install Script
 # Generated for server_id={{.ServerID}}
 # Panel download: {{.PanelScheme}}://{{.PanelHost}}:{{.PanelPort}}
-# Agent bootstrap (direct): {{.BootstrapScheme}}://{{.BootstrapHost}}:{{.BootstrapPort}}
+# Agent bootstrap: {{.PanelScheme}}://{{.PanelHost}}:{{.PanelPort}}
+# Agent bootstrap fallback (direct): {{.BootstrapScheme}}://{{.BootstrapHost}}:{{.BootstrapPort}}
 # Agent gRPC: {{.PanelGRPCHost}}:{{.PanelGRPCPort}}
 
 PANEL_SCHEME="{{.PanelScheme}}"
@@ -205,7 +218,10 @@ NC='\033[0m'
 
 echo -e "${GREEN}=== CoreFusion Agent Installer ===${NC}"
 echo "Panel download: $PANEL_SCHEME://$PANEL_URL_HOST:$PANEL_PORT"
-echo "Agent bootstrap: $BOOTSTRAP_SCHEME://$BOOTSTRAP_HOST:$BOOTSTRAP_PORT"
+echo "Agent bootstrap: $PANEL_SCHEME://$PANEL_URL_HOST:$PANEL_PORT"
+if [ "$BOOTSTRAP_TLS" = "true" ] && { [ "$BOOTSTRAP_HOST" != "$PANEL_HOST" ] || [ "$BOOTSTRAP_PORT" != "$PANEL_PORT" ]; }; then
+  echo "Agent bootstrap fallback (direct): $BOOTSTRAP_SCHEME://$BOOTSTRAP_HOST:$BOOTSTRAP_PORT"
+fi
 echo "Agent gRPC: $PANEL_GRPC_HOST:$PANEL_GRPC_PORT"
 echo "Server ID: $SERVER_ID"
 echo ""
@@ -332,19 +348,24 @@ mkdir -p "$INSTALL_DIR/data/sqlite" \
          "$INSTALL_DIR/data/rules_tmp"
 
 # Download Agent binary
-# Strategy: try panel first (dev/test), fallback to GitHub Releases (production)
+# Strategy: GitHub Releases first (production), fall back to the panel
+# (dev/test, or nodes that cannot reach GitHub).
 PANEL_DOWNLOAD_URL="${PANEL_SCHEME}://${PANEL_HOST}:${PANEL_PORT}/api/v1/agent/download?os=${OS}&arch=${AGENT_ARCH}"
-GITHUB_DOWNLOAD_URL="${GITHUB_URL}/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"
+if [ "$AGENT_VERSION" = "latest" ] || [ -z "$AGENT_VERSION" ]; then
+  GITHUB_DOWNLOAD_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"
+else
+  GITHUB_DOWNLOAD_URL="${GITHUB_URL}/download/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"
+fi
 
 echo -e "${YELLOW}Downloading Agent...${NC}"
-if curl -fsSL -o "$INSTALL_DIR/corefusion-agent" "$PANEL_DOWNLOAD_URL" 2>/dev/null; then
-  echo "Downloaded from panel ($PANEL_DOWNLOAD_URL)"
-elif curl -fsSL -o "$INSTALL_DIR/corefusion-agent" "$GITHUB_DOWNLOAD_URL"; then
+if curl -fsSL --connect-timeout 10 -o "$INSTALL_DIR/corefusion-agent" "$GITHUB_DOWNLOAD_URL"; then
   echo "Downloaded from GitHub ($GITHUB_DOWNLOAD_URL)"
+elif curl -fsSL --connect-timeout 10 -o "$INSTALL_DIR/corefusion-agent" "$PANEL_DOWNLOAD_URL"; then
+  echo "Downloaded from panel ($PANEL_DOWNLOAD_URL)"
 else
-  echo -e "${RED}Failed to download Agent from both panel and GitHub${NC}"
-  echo "  Panel: $PANEL_DOWNLOAD_URL"
+  echo -e "${RED}Failed to download Agent from GitHub or panel${NC}"
   echo "  GitHub: $GITHUB_DOWNLOAD_URL"
+  echo "  Panel: $PANEL_DOWNLOAD_URL"
   exit 1
 fi
 chmod +x "$INSTALL_DIR/corefusion-agent"

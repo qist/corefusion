@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "إصدار بروتوكول PROXY. تحتاج الوجهات المحلية فقط (unix socket / 127.0.0.1) إلى 1؛ يجب أن تبقى المواقع الخارجية على 0.",
       "xverDisabled": "معطّل",
       "xverLocalOnly": "محلي فقط",
-      "xverLocalBound1": "يربط Reality المحلي تلقائيًا Xver=1، بينما الإعداد المسبق يستخدم Xver=0",
       "minClientVer": "أدنى إصدار للعميل",
       "maxClientVer": "أعلى إصدار للعميل",
       "maxTimeDiff": "أقصى فرق زمني (ms)",

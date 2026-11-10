@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-func TestBootstrapEndpointsFallsBackToPublic(t *testing.T) {
+func TestBootstrapEndpointsPrefersPublic(t *testing.T) {
 	a := newBootstrapApp(t, false)
 	a.cfg.Panel.Host = "203.0.113.10"
 	a.cfg.Panel.Port = 8080
@@ -23,33 +23,37 @@ func TestBootstrapEndpointsFallsBackToPublic(t *testing.T) {
 	a.cfg.Panel.PublicPort = 443
 	a.cfg.Panel.PublicTLS = true
 
+	// Direct is HTTP, public is HTTPS: only the public endpoint is used —
+	// falling back to cleartext would leak the one-time bootstrap token.
 	endpoints, err := a.bootstrapEndpoints()
 	if err != nil {
 		t.Fatalf("bootstrapEndpoints: %v", err)
 	}
-	if len(endpoints) != 2 {
-		t.Fatalf("expected direct + public endpoints, got %d", len(endpoints))
+	if len(endpoints) != 1 {
+		t.Fatalf("expected only the public endpoint, got %d", len(endpoints))
 	}
-	// Direct is HTTP, public is HTTPS: try public first to avoid sending the
-	// bootstrap token in cleartext.
 	if endpoints[0].url != "https://panel.example.com:443/api/v1/agent/bootstrap" {
 		t.Errorf("first (public) URL = %q", endpoints[0].url)
 	}
 	if endpoints[0].tlsCfg == nil || endpoints[0].tlsCfg.ServerName != "panel.example.com" {
 		t.Errorf("public endpoint must verify the CDN hostname, got %+v", endpoints[0].tlsCfg)
 	}
-	if endpoints[1].url != "http://203.0.113.10:8080/api/v1/agent/bootstrap" {
-		t.Errorf("second (direct) URL = %q", endpoints[1].url)
-	}
 
-	// Direct HTTPS is the strictest path, so it stays first when both are TLS.
+	// Both TLS: the public entry goes first (the origin port may be closed),
+	// direct stays as a fallback.
 	a.cfg.Panel.TLS = true
 	endpoints, err = a.bootstrapEndpoints()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if endpoints[0].url != "https://203.0.113.10:8080/api/v1/agent/bootstrap" {
-		t.Errorf("direct HTTPS should be first, got %q", endpoints[0].url)
+	if len(endpoints) != 2 {
+		t.Fatalf("expected public + direct endpoints, got %d", len(endpoints))
+	}
+	if endpoints[0].url != "https://panel.example.com:443/api/v1/agent/bootstrap" {
+		t.Errorf("public endpoint should be first, got %q", endpoints[0].url)
+	}
+	if endpoints[1].url != "https://203.0.113.10:8080/api/v1/agent/bootstrap" {
+		t.Errorf("second (direct fallback) URL = %q", endpoints[1].url)
 	}
 
 	// Same endpoint twice: no pointless retry.

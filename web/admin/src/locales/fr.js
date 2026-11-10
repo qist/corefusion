@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "Version du protocole PROXY. Seules les destinations locales (unix socket / 127.0.0.1) nécessitent 1 ; les sites externes doivent rester à 0.",
       "xverDisabled": "désactivé",
       "xverLocalOnly": "local uniquement",
-      "xverLocalBound1": "Reality local associe automatiquement Xver=1 ; préréglage Xver=0",
       "minClientVer": "Version client min.",
       "maxClientVer": "Version client max.",
       "maxTimeDiff": "Différence de temps max. (ms)",

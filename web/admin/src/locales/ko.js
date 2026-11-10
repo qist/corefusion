@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "PROXY protocol 버전입니다. 로컬 대상(unix socket / 127.0.0.1)만 1이 필요하며, 외부 사이트는 0이어야 합니다.",
       "xverDisabled": "비활성",
       "xverLocalOnly": "로컬 전용",
-      "xverLocalBound1": "로컬 Reality는 자동으로 Xver=1에 바인딩되며, 프리셋은 Xver=0입니다",
       "minClientVer": "Min Client Ver",
       "maxClientVer": "Max Client Ver",
       "maxTimeDiff": "Max Time Diff (ms)",

@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "PROXY protokolü sürümü. Yalnızca yerel hedefler (unix socket / 127.0.0.1) için 1 gerekir; harici siteler 0 olmalıdır.",
       "xverDisabled": "devre dışı",
       "xverLocalOnly": "yalnızca yerel",
-      "xverLocalBound1": "Yerel Reality otomatik olarak Xver=1 kullanır; ön ayar Xver=0",
       "minClientVer": "Min. istemci sürümü",
       "maxClientVer": "Maks. istemci sürümü",
       "maxTimeDiff": "Maks. zaman farkı (ms)",

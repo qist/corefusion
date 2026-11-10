@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "PROXY protocol のバージョン。ローカル宛先（unix socket / 127.0.0.1）のみ 1 が必要で、外部サイトは 0 のままにしてください。",
       "xverDisabled": "無効",
       "xverLocalOnly": "ローカルのみ",
-      "xverLocalBound1": "ローカル Reality では自動的に Xver=1 が適用され、プリセットでは Xver=0 です。",
       "minClientVer": "最小クライアント Ver",
       "maxClientVer": "最大クライアント Ver",
       "maxTimeDiff": "最大時間差（ms）",

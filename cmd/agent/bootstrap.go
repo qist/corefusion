@@ -138,30 +138,36 @@ type bootstrapResult struct {
 	ExpiresAt int64
 }
 
-// bootstrapEndpoints returns the endpoints to try. Normally the direct panel
-// listener (Host/Port/TLS) comes first, because it lets the Agent verify the
-// panel with the panel CA. The public CDN/reverse-proxy endpoint
-// (PublicHost/Port/TLS) is the fallback for nodes that cannot reach the
-// origin's HTTP port.
+// bootstrapEndpoints returns the endpoints to try.
 //
-// Exception: if the direct attempt would be cleartext HTTP while the public
-// endpoint is HTTPS, try the public endpoint first. Otherwise the one-time
-// bootstrap token would be sent over the internet without encryption.
+// The public CDN/reverse-proxy endpoint (PublicHost/Port/TLS) is preferred: the
+// origin's direct listener is often a bare HTTP port that gets closed for
+// safety, while the public entry is the same address that served the install
+// script and is guaranteed to reach the panel API. The direct listener stays as
+// a fallback.
+//
+// If the direct attempt would be cleartext HTTP, it is dropped entirely when a
+// TLS public endpoint exists: the one-time bootstrap token must never travel in
+// cleartext over the internet.
+//
+// Trust differs per hop: the public endpoint verifies the proxy's certificate
+// with the system roots, the direct endpoint uses the panel CA. The issued
+// Agent certificate is verified against the panel CA in both cases.
 func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 	tlsCfg, err := a.bootstrapTLSConfig()
 	if err != nil {
 		return nil, err
 	}
-	endpoints := []bootstrapEndpoint{{
+	direct := bootstrapEndpoint{
 		url:     bootstrapURL(a.cfg.Panel.Host, a.cfg.Panel.Port, a.cfg.Panel.TLS),
 		tlsCfg:  tlsCfg,
 		label:   "direct",
 		timeout: 8 * time.Second,
-	}}
+	}
 
 	publicHost := strings.TrimSpace(a.cfg.Panel.PublicHost)
 	if publicHost == "" {
-		return endpoints, nil
+		return []bootstrapEndpoint{direct}, nil
 	}
 	publicPort := a.cfg.Panel.PublicPort
 	if publicPort <= 0 {
@@ -170,7 +176,7 @@ func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 	if publicHost == a.cfg.Panel.Host &&
 		publicPort == a.cfg.Panel.Port &&
 		a.cfg.Panel.PublicTLS == a.cfg.Panel.TLS {
-		return endpoints, nil
+		return []bootstrapEndpoint{direct}, nil
 	}
 
 	var publicTLS *tls.Config
@@ -189,12 +195,18 @@ func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 		label:   "public",
 		timeout: 30 * time.Second,
 	}
-	if endpoints[0].tlsCfg == nil && publicEndpoint.tlsCfg != nil {
-		endpoints = []bootstrapEndpoint{publicEndpoint, endpoints[0]}
-	} else {
-		endpoints = append(endpoints, publicEndpoint)
+
+	switch {
+	case publicEndpoint.tlsCfg != nil && direct.tlsCfg == nil:
+		// 公共入口走 HTTPS 而直连是明文：只走公共入口，绝不把 token 裸奔。
+		return []bootstrapEndpoint{publicEndpoint}, nil
+	case direct.tlsCfg == nil && publicEndpoint.tlsCfg == nil:
+		// 两端都是明文（纯内网）：直连优先，公共兜底。
+		return []bootstrapEndpoint{direct, publicEndpoint}, nil
+	default:
+		// 公共 HTTPS 入口优先（源站端口可能被关闭），直连仅作兜底。
+		return []bootstrapEndpoint{publicEndpoint, direct}, nil
 	}
-	return endpoints, nil
 }
 
 func bootstrapURL(host string, port int, useTLS bool) string {

@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "Versi protokol PROXY. Hanya tujuan lokal (unix socket / 127.0.0.1) yang perlu 1; situs eksternal harus tetap 0.",
       "xverDisabled": "nonaktif",
       "xverLocalOnly": "hanya lokal",
-      "xverLocalBound1": "Reality lokal otomatis mengikat Xver=1, preset Xver=0",
       "minClientVer": "Versi Klien Min",
       "maxClientVer": "Versi Klien Maks",
       "maxTimeDiff": "Selisih Waktu Maks (ms)",

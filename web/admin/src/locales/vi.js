@@ -1377,7 +1377,6 @@ export default {
       "xverHint": "Phiên bản giao thức PROXY. Chỉ đích cục bộ (unix socket / 127.0.0.1) cần 1; trang bên ngoài phải là 0.",
       "xverDisabled": "tắt",
       "xverLocalOnly": "chỉ cục bộ",
-      "xverLocalBound1": "Reality cục bộ tự động gán Xver=1, preset đặt Xver=0",
       "minClientVer": "Phiên bản client tối thiểu",
       "maxClientVer": "Phiên bản client tối đa",
       "maxTimeDiff": "Chênh lệch thời gian tối đa (ms)",

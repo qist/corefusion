@@ -34,6 +34,41 @@ func TestInstallScriptShipsPanelCAAndProtectsConfig(t *testing.T) {
 	}
 }
 
+// 设计口径：默认从 GitHub Releases 下载 Agent，面板只做回退
+// （面板侧二进制是开发/内网场景的兜底，不应成为常态下载源）。
+func TestInstallScriptDownloadsFromGitHubFirst(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 443).
+		WithScheme("https").
+		WithTLS(true).
+		WithAgentVersion("v1.2.3").
+		WithBootstrapToken("tok").
+		WithServerID(5).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+
+	githubAt := strings.Index(script, `"$GITHUB_DOWNLOAD_URL"`)
+	panelAt := strings.Index(script, `"$PANEL_DOWNLOAD_URL"`)
+	if githubAt < 0 || panelAt < 0 || githubAt > panelAt {
+		t.Errorf("应先尝试 GitHub 再回退面板：github=%d panel=%d", githubAt, panelAt)
+	}
+	if !strings.Contains(script, `GITHUB_DOWNLOAD_URL="${GITHUB_URL}/download/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"`) {
+		t.Error("指定版本时应拼 /releases/download/<tag>/<asset>")
+	}
+
+	latest, err := NewAgentInstallScript("panel.example.com", 443).
+		WithBootstrapToken("tok").
+		WithServerID(6).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+	if !strings.Contains(latest, `GITHUB_DOWNLOAD_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"`) {
+		t.Error("未指定版本时应走 /releases/latest/download/<asset>")
+	}
+}
+
 // 节点机需要 nft/tc 等系统命令才能做限速/防火墙，安装脚本必须自动补齐，
 // 而不是让用户装完 Agent 才发现限速不可用。
 func TestInstallScriptInstallsRuntimeDeps(t *testing.T) {

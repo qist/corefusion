@@ -245,19 +245,26 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 			panelHost, grpcPort, grpcHost, grpcPort)
 	}
 
-	// Prefer the panel's direct listener for bootstrap: it is the strictest
-	// path (the Agent verifies the panel with the panel CA). The config also
-	// carries the public CDN endpoint as a fallback for nodes that cannot reach
-	// the origin's HTTP port; the Agent verifies the issued Agent certificate
-	// against the panel CA, so a TLS-terminating proxy cannot substitute one.
+	// Bootstrap goes through the public endpoint (panelHost:panelPort) by
+	// default: the origin's direct listener is often a bare HTTP port that gets
+	// closed for safety. The direct listener is carried in the config as a
+	// fallback only; the Agent verifies the issued certificate against the
+	// panel CA, so a TLS-terminating proxy cannot substitute one.
 	//
 	// If panelHost already serves gRPC directly (LAN/direct deployment), keep
-	// it; otherwise use the detected origin IP.
+	// it; otherwise use the detected origin IP for the direct fallback.
 	bootstrapHost := panelHost
 	if grpcHost != panelHost {
 		bootstrapHost = grpcHost
 	}
 	bootstrapPort, bootstrapTLS := h.panelLocalHTTP(c.Request.Context())
+
+	// Prefer the release tag matching this panel; dev builds fall back to the
+	// newest stable GitHub Release.
+	agentVersion := strings.TrimSpace(constants.Version)
+	if !strings.HasPrefix(agentVersion, "v") {
+		agentVersion = "latest"
+	}
 
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
 		WithScheme(scheme).
@@ -269,7 +276,8 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 		// 面板 CA 自动随脚本下发 → Agent 引导阶段即可校验面板身份（无需任何人工填写）
 		WithCACertPEM(h.tokenMgr.CACertPEM()).
 		WithServerID(serverID).
-		WithGitHubURL("https://github.com/qist/corefusion/releases/download")
+		WithAgentVersion(agentVersion).
+		WithGitHubURL("https://github.com/qist/corefusion/releases")
 
 	content, err := script.Generate()
 	if err != nil {

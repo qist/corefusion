@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "Regras globais do WAF",
     "wafSourceURL": "Endereço de origem",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL base dos arquivos de regras (URL raw do GitHub ou servidor HTTP(S) personalizado). Se a URL de algum arquivo estiver vazia na tabela abaixo, o download será feito a partir deste endereço + /{nome do arquivo}. Se uma URL completa for informada, o download será feito diretamente dessa URL.",
+    "wafSourceUrlDesc": "URL base dos arquivos de regras (URL raw do GitHub ou servidor HTTP(S) personalizado). Se a URL de algum arquivo estiver vazia na tabela abaixo, o download será feito a partir deste endereço + /nome do arquivo. Se uma URL completa for informada, o download será feito diretamente dessa URL.",
     "wafSyncFiles": "Sincronizar arquivos",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (deixe em branco para usar a lista padrão)",
     "wafSyncFilesDesc": "Marque os arquivos de regras que deseja sincronizar. Para cada arquivo, você pode informar o endereço completo de download (URL); se ficar vazio, será usado o endereço de origem acima.",

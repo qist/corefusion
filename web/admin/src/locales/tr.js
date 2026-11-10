@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "WAF genel kuralları",
     "wafSourceURL": "Kaynak adresi",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "Kural dosyaları için temel URL (GitHub raw URL veya özel HTTP(S) sunucusu). Aşağıdaki tabloda bir dosyanın URL'si boşsa, bu adres + /{dosya adı} üzerinden indirilir. Tam URL girilmişse, doğrudan o URL'den indirilir.",
+    "wafSourceUrlDesc": "Kural dosyaları için temel URL (GitHub raw URL veya özel HTTP(S) sunucusu). Aşağıdaki tabloda bir dosyanın URL'si boşsa, bu adres + /dosya adı üzerinden indirilir. Tam URL girilmişse, doğrudan o URL'den indirilir.",
     "wafSyncFiles": "Dosyaları senkronize et",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (boş bırakılırsa varsayılan liste kullanılır)",
     "wafSyncFilesDesc": "Senkronize edilecek kural dosyalarını seçin. Her dosya için tam indirme adresi girilebilir (URL boşsa yukarıdaki kaynak adresi + /dosya adı kullanılır).",

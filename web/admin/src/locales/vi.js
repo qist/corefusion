@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "Quy tắc toàn cục WAF",
     "wafSourceURL": "Địa chỉ nguồn",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL cơ sở của tệp quy tắc (URL raw GitHub hoặc máy chủ HTTP(S) tùy chỉnh). Nếu URL của một tệp trong bảng bên dưới để trống, tệp sẽ được tải xuống từ địa chỉ này + /{tên tệp}. Nếu đã nhập URL đầy đủ, tệp sẽ được tải trực tiếp từ URL đó.",
+    "wafSourceUrlDesc": "URL cơ sở của tệp quy tắc (URL raw GitHub hoặc máy chủ HTTP(S) tùy chỉnh). Nếu URL của một tệp trong bảng bên dưới để trống, tệp sẽ được tải xuống từ địa chỉ này + /tên tệp. Nếu đã nhập URL đầy đủ, tệp sẽ được tải trực tiếp từ URL đó.",
     "wafSyncFiles": "Tệp đồng bộ",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (để trống để dùng danh sách mặc định)",
     "wafSyncFilesDesc": "Chọn các tệp quy tắc cần đồng bộ. Mỗi tệp có thể nhập địa chỉ tải xuống đầy đủ (nếu URL để trống, sẽ ghép với địa chỉ nguồn ở trên).",

@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "قوانین سراسری WAF",
     "wafSourceURL": "آدرس مبدأ",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL پایهٔ فایل‌های قواعد (GitHub raw URL یا سرور HTTP(S) سفارشی). اگر URL یک فایل در جدول زیر خالی باشد، آن را از این آدرس + /{نام فایل} دانلود کنید. اگر URL کامل وارد شده باشد، مستقیماً از همان URL دانلود کنید.",
+    "wafSourceUrlDesc": "URL پایهٔ فایل‌های قواعد (GitHub raw URL یا سرور HTTP(S) سفارشی). اگر URL یک فایل در جدول زیر خالی باشد، آن را از این آدرس + /نام فایل دانلود کنید. اگر URL کامل وارد شده باشد، مستقیماً از همان URL دانلود کنید.",
     "wafSyncFiles": "همگام‌سازی فایل‌ها",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (برای استفاده از فهرست پیش‌فرض خالی بگذارید)",
     "wafSyncFilesDesc": "فایل‌های قاعده‌ای را که باید همگام‌سازی شوند علامت بزنید. برای هر فایل می‌توانید نشانی کامل دانلود (URL) را وارد کنید (اگر URL خالی باشد، از نشانی منبع بالا برای ترکیب استفاده می‌شود).",

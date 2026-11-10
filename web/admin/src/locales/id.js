@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "Aturan global WAF",
     "wafSourceURL": "Alamat sumber",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL dasar untuk file aturan (URL raw GitHub atau server HTTP(S) kustom). Jika URL suatu file di tabel di bawah kosong, file akan diunduh dari alamat ini + /{nama file}. Jika URL lengkap diisi, file akan diunduh langsung dari URL tersebut.",
+    "wafSourceUrlDesc": "URL dasar untuk file aturan (URL raw GitHub atau server HTTP(S) kustom). Jika URL suatu file di tabel di bawah kosong, file akan diunduh dari alamat ini + /nama file. Jika URL lengkap diisi, file akan diunduh langsung dari URL tersebut.",
     "wafSyncFiles": "File sinkronisasi",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (kosongkan untuk menggunakan daftar default)",
     "wafSyncFilesDesc": "Centang file aturan yang perlu disinkronkan. Setiap file dapat diisi alamat unduhan lengkap (jika URL kosong, gunakan alamat sumber di atas).",

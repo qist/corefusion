@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "WAF 전역 규칙",
     "wafSourceURL": "소스 주소",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "규칙 파일의 기본 URL(GitHub raw URL 또는 사용자 지정 HTTP(S) 서버)입니다. 아래 표에서 특정 파일의 URL이 비어 있으면 이 주소 + /{파일 이름}에서 다운로드합니다. 전체 URL을 입력한 경우 해당 URL에서 직접 다운로드합니다.",
+    "wafSourceUrlDesc": "규칙 파일의 기본 URL(GitHub raw URL 또는 사용자 지정 HTTP(S) 서버)입니다. 아래 표에서 특정 파일의 URL이 비어 있으면 이 주소 + /파일 이름에서 다운로드합니다. 전체 URL을 입력한 경우 해당 URL에서 직접 다운로드합니다.",
     "wafSyncFiles": "파일 동기화",
     "wafSyncFilesHint": "args.rule, cookie.rule, url.rule, ... (기본 목록을 사용하려면 비워 두세요)",
     "wafSyncFilesDesc": "동기화할 규칙 파일을 선택하세요. 각 파일에는 전체 다운로드 주소를 입력할 수 있습니다(URL이 비어 있으면 위의 원본 주소에 이어 붙입니다).",

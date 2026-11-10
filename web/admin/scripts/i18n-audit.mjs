@@ -60,9 +60,37 @@ console.log(`\n=== ④ en 有但 zh 没有（${onlyEn.length} 个）===`)
 for (const k of onlyEn.slice(0, 40)) console.log(`  ${k}`)
 if (onlyEn.length > 40) console.log(`  … 还有 ${onlyEn.length - 40} 个`)
 
+// 5) 文案必须能被 vue-i18n 的消息编译器解析：像 `/{文件名}`、整段代码样例这类
+//    字面花括号，若不转义成 {'{'} / {'}'} 或改用 tm() 取原文，运行时会在控制台
+//    刷 SyntaxError（真机：WAF 页 "Invalid token in placeholder: '文件名'"）。
+const { baseCompile } = await import('@intlify/message-compiler')
+// 代码样例（HTML/JS）由 moduleDefs.js 的 rawMessage()（tm）取原文，不参与编译。
+const RAW_KEYS = new Set(['portal.dft.freeform.html', 'portal.dft.freeform.js'])
+const compileBad = []
+for (const f of fs.readdirSync(`${SRC}/locales`)) {
+  if (!f.endsWith('.js') || f === 'index.js') continue
+  const msgs = (await import(`${SRC}/locales/${f}`)).default
+  const stack = [[msgs, '']]
+  while (stack.length) {
+    const [obj, prefix] = stack.pop()
+    for (const [k, v] of Object.entries(obj || {})) {
+      const key = prefix ? `${prefix}.${k}` : k
+      if (v && typeof v === 'object' && !Array.isArray(v)) { stack.push([v, key]); continue }
+      if (typeof v !== 'string' || RAW_KEYS.has(key)) continue
+      if (!v.includes('{') && !v.includes('}')) continue
+      let err = ''
+      try { baseCompile(v, { onError: e => { err = e.message || String(e) } }) } catch (e) { err = e.message || String(e) }
+      if (err) compileBad.push(`${f}: ${key} :: ${err}`)
+    }
+  }
+}
+console.log(`\n=== ⑤ 消息编译器无法解析的文案（${compileBad.length} 个，字面花括号要转义）===`)
+for (const line of compileBad.slice(0, 20)) console.log(`  ${line}`)
+if (compileBad.length > 20) console.log(`  … 还有 ${compileBad.length - 20} 个`)
+
 // 作为守卫用时给出退出码（CI / pre-commit 可直接调用）
-if (missingZh.length || missingEn.length || onlyZh.length || onlyEn.length) {
-  console.log('\n❌ i18n 审计未通过（存在缺失或不对称的键）')
+if (missingZh.length || missingEn.length || onlyZh.length || onlyEn.length || compileBad.length) {
+  console.log('\n❌ i18n 审计未通过（存在缺失/不对称的键，或无法编译的文案）')
   process.exit(1)
 }
-console.log('\n✅ i18n 审计通过：源码用到的键在 zh-CN / en 里都齐全，且两个语言包对称')
+console.log('\n✅ i18n 审计通过：键齐全且对称，所有文案都能被消息编译器解析')

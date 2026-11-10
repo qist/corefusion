@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "WAF 全域規則",
     "wafSourceURL": "來源位址",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "規則檔案的基礎 URL（GitHub raw URL 或自訂 HTTP(S) 伺服器）。若下方表格中某個檔案的 URL 為空，則從此位址 + /{檔名} 下載；若已填寫完整 URL，則直接從該 URL 下載。",
+    "wafSourceUrlDesc": "規則檔案的基礎 URL（GitHub raw URL 或自訂 HTTP(S) 伺服器）。若下方表格中某個檔案的 URL 為空，則從此位址 + /檔名 下載；若已填寫完整 URL，則直接從該 URL 下載。",
     "wafSyncFiles": "同步檔案",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,...（留空使用預設清單）",
     "wafSyncFilesDesc": "勾選需要同步的規則檔案。每個檔案可填寫完整下載位址（URL 為空則使用上方來源位址拼接）。",

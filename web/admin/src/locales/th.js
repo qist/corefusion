@@ -2650,7 +2650,7 @@ export default {
     "wafGlobalRules": "กฎ WAF ส่วนกลาง",
     "wafSourceURL": "ที่อยู่ต้นทาง",
     "wafSourceUrlHint": "https://raw.githubusercontent.com/qist/nginxguard/main/rule-config",
-    "wafSourceUrlDesc": "URL ฐานของไฟล์กฎ (GitHub raw URL หรือเซิร์ฟเวอร์ HTTP(S) ที่กำหนดเอง) หาก URL ของไฟล์ใดในตารางด้านล่างว่าง ให้ดาวน์โหลดจากที่อยู่นี้ + /{ชื่อไฟล์} หากระบุ URL แบบเต็ม ให้ดาวน์โหลดจาก URL นั้นโดยตรง",
+    "wafSourceUrlDesc": "URL ฐานของไฟล์กฎ (GitHub raw URL หรือเซิร์ฟเวอร์ HTTP(S) ที่กำหนดเอง) หาก URL ของไฟล์ใดในตารางด้านล่างว่าง ให้ดาวน์โหลดจากที่อยู่นี้ + /ชื่อไฟล์ หากระบุ URL แบบเต็ม ให้ดาวน์โหลดจาก URL นั้นโดยตรง",
     "wafSyncFiles": "ซิงค์ไฟล์",
     "wafSyncFilesHint": "args.rule,cookie.rule,url.rule,... (เว้นว่างเพื่อใช้รายการเริ่มต้น)",
     "wafSyncFilesDesc": "เลือกไฟล์กฎที่ต้องการซิงค์ แต่ละไฟล์สามารถกรอก URL ดาวน์โหลดแบบเต็มได้ (หาก URL ว่าง จะใช้ที่อยู่ต้นทางด้านบนมาต่อกัน)",

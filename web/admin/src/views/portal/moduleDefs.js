@@ -6,6 +6,14 @@
 // 模块代码模型（统一）：每个模块的 HTML/CSS/JS 都存在 `data.html` / `data.css` /
 // `data.js`；不再使用 `style.custom_css`（已移除）。
 
+import i18n from '../../locales'
+
+// 代码样例（HTML/JS）里天然带 { }，走 t() 会被 vue-i18n 当成占位符去编译，
+// 控制台报 "Invalid token in placeholder"/"Unbalanced closing brace"（真机
+// 现象：打开门户模块编辑器就刷一屏 SyntaxError）。tm() 返回原始文案、不做
+// 消息编译，样例代码要的正是原样输出。
+const rawMessage = (key) => i18n.global.tm(key)
+
 export const MODULE_CATEGORIES = [
   { key: 'content', labelKey: 'portal.catContent' },
   { key: 'account', labelKey: 'portal.catAccount' },
@@ -56,9 +64,9 @@ export const MODULE_DEFS = {
     icon: '🧩', labelKey: 'portal.modFreeform', category: 'content',
     defaults: (t) => ({
       data: {
-        html: t('portal.dft.freeform.html'),
+        html: rawMessage('portal.dft.freeform.html'),
         css: '.my-module {\n  padding: 20px;\n  border-radius: 12px;\n  background: var(--accent-light);\n}\n.my-module h3 {\n  color: var(--accent);\n  margin-bottom: 8px;\n}\n.my-module button {\n  padding: 6px 16px;\n  border: none;\n  border-radius: 6px;\n  background: var(--accent);\n  color: #fff;\n  cursor: pointer;\n}',
-        js: t('portal.dft.freeform.js'),
+        js: rawMessage('portal.dft.freeform.js'),
       },
       style: { custom_class: '' },
     }),

@@ -214,29 +214,47 @@ var processMgr *process.Manager
 // proxyMgr is the global proxy manager for graceful shutdown.
 var proxyMgr *proxySvc.Manager
 
-// reloadLocalProxiesAfterCertRefresh 让**面板本机**的代理重新加载证书 ✓。
+// certRefreshAction 返回证书刷新后**面板本机**代理应执行的动作。
 //
-// ⚠ 为什么必须**重启**而不是 reload ✗（真机实测 ✓）：caddy 会把证书**缓存在内存**里 ✓，
-// 即使配置文件 reload 了、磁盘上的证书文件已经是新的 ✗，握手吐出来的**还是旧证书** ✗
-// （实测：文件序列号已是 066C6B84… ✓ 而 caddy 仍吐 0596B774… ✗）。重启进程才会重新读文件 ✓。
+// nginx：reload 就会重新读取 ssl_certificate 文件（真机验证：renew 后 reload 即吐新证书），
+// 用 reload 可以做到零中断，不必为换证书重启代理。
 //
-// 代价 ✓：本机 caddy/nginx 会**短暂中断**（1~2 秒 ✓）—— 只在"本机在用的证书被续期"时发生 ✓
-// （每张证书 ~60 天一次 ✓），可以接受 ✓。
+// caddy：证书被**缓存在内存**里，reload 后握手仍吐旧证书（实测文件序列号已变、caddy 还是旧的），
+// 只有重启进程才会重新读文件。
+func certRefreshAction(pt proxySvc.ProxyType) string {
+	if pt == proxySvc.ProxyNginx {
+		return "reload"
+	}
+	return "restart"
+}
+
+// reloadLocalProxiesAfterCertRefresh 让**面板本机**的代理重新加载证书。
+//
+// 只在"本机在用的证书被续期"时触发（每张证书 ~60 天一次）：
+//   - nginx → reload（不中断连接）
+//   - caddy → restart（内存缓存，必须重启，1~2 秒中断）
 func reloadLocalProxiesAfterCertRefresh(certID int64) {
 	if proxyMgr == nil {
 		return
 	}
 	ctx := context.Background()
 	for _, pt := range []proxySvc.ProxyType{proxySvc.ProxyCaddy, proxySvc.ProxyNginx} {
-		// 「该不该重启」统一由 RestartProxy 自己判断（未安装 / 未在运行 / 用户手动停掉 → no-op），
-		// 这里不再复述同一判断，避免同一口径散落两处后各自漂移。
-		if rerr := proxyMgr.RestartProxy(ctx, pt); rerr != nil {
-			log.Printf("[cert] 证书 %d 刷新后重启本机代理 %s 失败：%v", certID, pt, rerr)
+		action := certRefreshAction(pt)
+		var rerr error
+		if action == "reload" {
+			// 「该不该 reload」由 ReloadProxy 自己判断（未安装 / 未运行 / 手动停掉 → no-op）。
+			rerr = proxyMgr.ReloadProxy(ctx, pt)
 		} else {
-			// 注意：跳过（no-op）也是 nil，所以这行只说"请求已处理"，
-			// 实际重启与否、以及跳过原因由 RestartProxy 自己记日志，别在这里把跳过说成重启。
-			log.Printf("[cert] 证书 %d 刷新：本机代理 %s 重启请求已处理（实际动作见 proxy 日志）", certID, pt)
+			// 「该不该重启」统一由 RestartProxy 自己判断（未安装 / 未在运行 / 用户手动停掉 → no-op）。
+			rerr = proxyMgr.RestartProxy(ctx, pt)
 		}
+		if rerr != nil {
+			log.Printf("[cert] 证书 %d 刷新后 %s 本机代理 %s 失败：%v", certID, action, pt, rerr)
+			continue
+		}
+		// 注意：跳过（no-op）也是 nil，所以这行只说"请求已处理"，
+		// 实际动作与跳过原因由 proxy 自己记日志，别在这里把跳过说成已执行。
+		log.Printf("[cert] 证书 %d 刷新：本机代理 %s %s 请求已处理（实际动作见 proxy 日志）", certID, pt, action)
 	}
 }
 

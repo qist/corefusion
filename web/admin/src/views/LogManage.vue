@@ -87,7 +87,7 @@
               <template #header>
                 <div class="card-header-flex">
                   <span>{{ t('logManage.coreLogOutput') }}</span>
-                  <el-button text size="small" @click="activeTab = 'output'">{{ t('common.edit') }}</el-button>
+                  <span class="header-hint">{{ t('logManage.modeControlledByProtocol') }}</span>
                 </div>
               </template>
               <div class="mode-list">
@@ -103,7 +103,7 @@
               <template #header>
                 <div class="card-header-flex">
                   <span>{{ t('logManage.proxyLogOutput') }}</span>
-                  <el-button text size="small" @click="activeTab = 'output'">{{ t('common.edit') }}</el-button>
+                  <span class="header-hint">{{ t('logManage.modeControlledByProtocol') }}</span>
                 </div>
               </template>
               <div class="mode-list">
@@ -136,125 +136,13 @@
         </el-card>
       </el-tab-pane>
 
-      <!-- ═══════════════ Tab 2: Output Config ═══════════════ -->
-      <el-tab-pane :label="t('logManage.tabOutputConfig')" name="output">
-        <!-- Core Log Output Config -->
-        <el-card shadow="hover" style="margin-bottom:16px">
-          <template #header>
-            <div class="card-header-flex">
-              <div>
-                <span style="font-weight:600">{{ t('logManage.coreLogOutput') }}</span>
-                <span class="header-hint">{{ t('logManage.coreLogOutputHint') }}</span>
-              </div>
-              <el-button type="primary" size="small" :loading="savingCoreOutput" :disabled="fetchingOutput" @click="handleSaveCoreOutput">
-                {{ t('logManage.saveOutputConfig') }}
-              </el-button>
-            </div>
-          </template>
-          <el-table v-if="!isMobile" :data="coreOutputList" stripe>
-            <el-table-column :label="t('common.name')" width="140">
-              <template #default="{row}">
-                <span style="font-weight:600">{{ row.label }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.mode')" width="200">
-              <template #default="{row}">
-                <el-tag :type="modeTagType(row.cfg.mode)" size="default" effect="dark">{{ modeLabel(row.cfg.mode) }}</el-tag>
-                <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('logManage.modeControlledByProtocol') }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.capturePath')" min-width="200">
-              <template #default="{row}">
-                <el-input
-                  v-model="row.cfg.capture_path"
-                  size="small"
-                  :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}.log`"
-                  :disabled="row.cfg.mode !== 'stdout'"
-                  style="max-width:300px"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.managed')" width="100">
-              <template #default="{row}">
-                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
-              </template>
-            </el-table-column>
-          </el-table>
-          <MobileCards v-else :rows="coreOutputList" title-field="label" :fields="coreOutputCardFields">
-            <template #actions="{ row }">
-              <el-input
-                v-model="row.cfg.capture_path"
-                size="small"
-                :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}.log`"
-                :disabled="row.cfg.mode !== 'stdout'"
-                style="max-width:300px"
-              />
-              <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
-            </template>
-          </MobileCards>
-        </el-card>
-
-        <!-- Proxy Log Output Config -->
-        <el-card shadow="hover" style="margin-bottom:16px">
-          <template #header>
-            <div class="card-header-flex">
-              <div>
-                <span style="font-weight:600">{{ t('logManage.proxyLogOutput') }}</span>
-                <span class="header-hint">{{ t('logManage.proxyLogOutputHint') }}</span>
-              </div>
-              <el-button type="primary" size="small" :loading="savingProxyOutput" :disabled="fetchingOutput" @click="handleSaveProxyOutput">
-                {{ t('logManage.saveOutputConfig') }}
-              </el-button>
-            </div>
-          </template>
-          <el-table v-if="!isMobile" :data="proxyOutputList" stripe>
-            <el-table-column :label="t('common.name')" width="140">
-              <template #default="{row}">
-                <span style="font-weight:600">{{ row.label }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.mode')" width="200">
-              <template #default="{row}">
-                <el-tag :type="modeTagType(row.cfg.mode)" size="default" effect="dark">{{ modeLabel(row.cfg.mode) }}</el-tag>
-                <span style="margin-left:8px;color:#909399;font-size:12px">{{ t('logManage.modeControlledByProtocol') }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.capturePath')" min-width="200">
-              <template #default="{row}">
-                <el-input
-                  v-model="row.cfg.capture_path"
-                  size="small"
-                  :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}-access.log`"
-                  :disabled="row.cfg.mode !== 'stdout'"
-                  style="max-width:300px"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.managed')" width="100">
-              <template #default="{row}">
-                <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
-              </template>
-            </el-table-column>
-          </el-table>
-          <MobileCards v-else :rows="proxyOutputList" title-field="label" :fields="proxyOutputCardFields">
-            <template #actions="{ row }">
-              <el-input
-                v-model="row.cfg.capture_path"
-                size="small"
-                :placeholder="row.cfg.mode === 'stdout' ? `logs/${row.type}-stdout.log` : `logs/${row.type}-access.log`"
-                :disabled="row.cfg.mode !== 'stdout'"
-                style="max-width:300px"
-              />
-              <el-switch v-model="row.cfg.managed" :disabled="row.cfg.mode !== 'stdout'" />
-            </template>
-          </MobileCards>
-        </el-card>
-
-        <!-- Writer Status (local + remote) -->
+      <!-- ═══════════════ Tab 2: Realtime Log ═══════════════ -->
+      <el-tab-pane :label="t('logManage.realtimeLog')" name="realtime">
+        <!-- Realtime log sources -->
         <el-card shadow="hover">
           <template #header>
             <div class="card-header-flex">
-              <span style="font-weight:600">LogWriter {{ t('common.status') }}</span>
+              <span style="font-weight:600">{{ t('logManage.realtimeLog') }}</span>
               <el-button text size="small" @click="fetchWriterStatuses">
                 <el-icon><Refresh /></el-icon>{{ t('common.refresh') }}
               </el-button>
@@ -269,22 +157,12 @@
             <el-table-column :label="t('common.status')" width="100">
               <template #default="{row}">
                 <el-tag v-if="row.mode === 'off'" type="info" size="small">{{ t('logManage.modeOff') }}</el-tag>
-                <el-tag v-else-if="row.mode === 'file'" type="info" size="small">{{ t('logManage.modeFile') }}</el-tag>
-                <el-tag v-else-if="row.active && !row.paused" type="success" size="small">{{ t('logManage.writerActive') }}</el-tag>
-                <el-tag v-else-if="row.paused" type="warning" size="small">{{ t('logManage.writerPaused') }}</el-tag>
-                <el-tag v-else type="info" size="small">{{ t('common.disabled') }}</el-tag>
+                <el-tag v-else type="info" size="small">{{ t('logManage.modeFile') }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column :label="t('logManage.mode')" width="90">
               <template #default="{row}">
                 <el-tag :type="modeTagType(row.mode)" size="small">{{ modeLabel(row.mode) }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('logManage.managed')" width="100">
-              <template #default="{row}">
-                <el-tag :type="row.managed ? 'success' : 'info'" size="small">
-                  {{ row.managed ? t('common.yes') : t('common.no') }}
-                </el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="file_path" :label="t('logManage.filePath')" min-width="160" show-overflow-tooltip>
@@ -307,12 +185,6 @@
                   <el-button size="small" type="primary" @click="showStdoutViewer(row.proxy_type)">
                     <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
                   </el-button>
-                  <el-button size="small" type="warning" @click="showWriterConfig(row.proxy_type)">
-                    <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
-                  </el-button>
-                  <el-button size="small" @click="showWriterFiles(row.proxy_type)">
-                    <el-icon><FolderOpened /></el-icon>
-                  </el-button>
                 </div>
               </template>
             </el-table-column>
@@ -321,12 +193,6 @@
             <template #actions="{ row }">
               <el-button size="small" type="primary" @click="showStdoutViewer(row.proxy_type)">
                 <el-icon><View /></el-icon>{{ t('logManage.viewRealtime') }}
-              </el-button>
-              <el-button size="small" type="warning" @click="showWriterConfig(row.proxy_type)">
-                <el-icon><Setting /></el-icon>{{ t('logManage.writerConfig') }}
-              </el-button>
-              <el-button size="small" @click="showWriterFiles(row.proxy_type)">
-                <el-icon><FolderOpened /></el-icon>
               </el-button>
             </template>
           </MobileCards>
@@ -882,55 +748,6 @@
       </div>
     </el-dialog>
 
-    <!-- Writer Config Dialog -->
-    <el-dialog v-model="writerConfigVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerConfig')" width="550">
-      <el-form label-width="120px" size="small">
-        <el-form-item :label="t('logManage.managed')">
-          <el-switch
-            :model-value="getOutputManaged(writerConfigType)"
-            @change="(val) => onWriterManagedToggle(writerConfigType, val)"
-            :disabled="!getOutputManagedEditable(writerConfigType)"
-          />
-          <span class="form-hint">{{ t('logManage.writerEnabledHint') }}</span>
-        </el-form-item>
-        <el-divider content-position="left">{{ t('logManage.fileSettings') }}</el-divider>
-        <el-form-item :label="t('logManage.filePath')">
-          <el-input v-model="writerForm.file_path" :placeholder="`logs/${writerConfigType}-stdout.log`" />
-        </el-form-item>
-        <el-form-item :label="t('logManage.maxSizeMB')">
-          <el-input-number v-model="writerForm.max_size_mb" :min="1" :max="10240" />
-          <span class="form-hint">MB</span>
-        </el-form-item>
-        <el-divider content-position="left">{{ t('logManage.retention') }}</el-divider>
-        <el-form-item :label="t('logManage.retainDays')">
-          <el-input-number v-model="writerForm.retain_days" :min="1" :max="365" />
-        </el-form-item>
-        <el-form-item :label="t('logManage.compress')">
-          <el-switch v-model="writerForm.compress" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="writerConfigVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="writerConfigSaving" @click="handleSaveWriterConfig">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- Writer Files Dialog -->
-    <el-dialog v-model="writerFilesVisible" :title="writerConfigType.toUpperCase() + ' ' + t('logManage.writerFiles')" width="660">
-      <el-table v-if="!isMobile" :data="wfPagedList" stripe size="small">
-        <el-table-column prop="name" :label="t('common.name')" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="size" :label="t('logManage.maxSizeMB')" width="120">
-          <template #default="{row}">{{ formatBytes(row.size) }}</template>
-        </el-table-column>
-        <el-table-column prop="modified" :label="t('logManage.startedAt')" width="180">
-          <template #default="{row}">{{ formatTime(row.modified) }}</template>
-        </el-table-column>
-      </el-table>
-      <MobileCards v-else :rows="wfPagedList" title-field="name" :fields="writerFileCardFields" />
-      <PaginationBar v-model:page="wfPage" v-model:page-size="wfSize" :total="wfTotal" />
-      <div v-if="writerFiles.length === 0" class="log-empty">{{ t('logManage.writerNoFiles') }}</div>
-    </el-dialog>
-
     <!-- Log Viewer Dialog (file-based, from policy table) -->
     <el-dialog
       v-model="logViewerVisible"
@@ -1061,25 +878,17 @@ function makeDefaultProxyOutputList() {
 }
 const coreOutputList = ref(makeDefaultCoreOutputList())
 const proxyOutputList = ref(makeDefaultProxyOutputList())
-const savingCoreOutput = ref(false)
-const savingProxyOutput = ref(false)
 const fetchingOutput = ref(false)
 let coreOutputFetchToken = 0
 let proxyOutputFetchToken = 0
 
 // ──────────── Writer ────────────
+// stdout 接管/写入器已下线：仅保留日志源状态，用于“实时日志”入口。
 const writerStatuses = ref([])
-const writerConfigVisible = ref(false)
-const writerConfigType = ref('')
-const writerConfigSaving = ref(false)
-const writerForm = ref({ file_path: '', retain_days: 30, compress: false, max_size_mb: 100 })
-const writerFilesVisible = ref(false)
-const writerFiles = ref([])
 
 const { paged: discPagedList, page: discPage, pageSize: discSize, total: discTotal } = useClientPagination(discoveredLogs, { pageKey: 'logDiscPage', pageSizeKey: 'logDiscSize' })
 const { paged: polPagedList, page: polPage, pageSize: polSize, total: polTotal } = useClientPagination(policies, { pageKey: 'logPolPage', pageSizeKey: 'logPolSize' })
 const { paged: jobPagedList, page: jobPage, pageSize: jobSize, total: jobTotal } = useClientPagination(jobs, { pageKey: 'logJobPage', pageSizeKey: 'logJobSize' })
-const { paged: wfPagedList, page: wfPage, pageSize: wfSize, total: wfTotal } = useClientPagination(writerFiles, { pageKey: 'logWfPage', pageSizeKey: 'logWfSize' })
 
 // ──────────── Log Viewer ────────────
 const nodeServers = ref([])
@@ -1123,16 +932,15 @@ function isCoreType(type) {
   return ['xray', 'singbox'].includes(type)
 }
 
+// 标准输出模式已下线：mode 只可能是 file / off，历史脏数据显示为“文件”。
 function modeLabel(mode) {
-  if (mode === 'file') return t('logManage.modeFile')
-  if (mode === 'stdout') return t('logManage.modeStdout')
-  return t('logManage.modeOff')
+  if (mode === 'off') return t('logManage.modeOff')
+  return t('logManage.modeFile')
 }
 
 function modeTagType(mode) {
-  if (mode === 'file') return 'success'
-  if (mode === 'stdout') return 'warning'
-  return 'info'
+  if (mode === 'off') return 'info'
+  return 'success'
 }
 
 function sourceTagType(source) {
@@ -1170,13 +978,9 @@ const proxyOutputCardFields = computed(() => [
   { label: t('logManage.mode'), text: (row) => modeLabel(row.cfg.mode) + ' · ' + t('logManage.modeControlledByProtocol') },
 ])
 const writerCardFields = computed(() => [
-  { label: t('common.status'), text: (row) => row.mode === 'off' ? t('logManage.modeOff') : row.mode === 'file' ? t('logManage.modeFile') : (row.active && !row.paused) ? t('logManage.writerActive') : row.paused ? t('logManage.writerPaused') : t('common.disabled') },
+  { label: t('common.status'), text: (row) => row.mode === 'off' ? t('logManage.modeOff') : t('logManage.modeFile') },
   { label: t('logManage.mode'), text: (row) => modeLabel(row.mode) },
-  { label: t('logManage.managed'), text: (row) => row.managed ? t('common.yes') : t('common.no') },
   { label: t('logManage.filePath'), text: (row) => row.mode === 'off' ? '-' : (row.file_path || '-') },
-  { label: t('logManage.maxSizeMB'), text: (row) => (row.max_size_mb || 100) + ' MB' },
-  { label: t('logManage.retainDays'), text: (row) => row.retain_days ?? '-' },
-  { label: t('logManage.compress'), text: (row) => row.compress ? t('common.yes') : t('common.no') },
 ])
 const discCardFields = computed(() => [
   { label: t('logManage.sourceType'), text: (row) => row.source_type || '-' },
@@ -1207,10 +1011,6 @@ const logJobCardFields = computed(() => [
   { label: t('logManage.freedSpace'), text: (row) => formatBytes(row.freed_bytes) },
   { label: t('logManage.startedAt'), text: (row) => row.started_at ? formatTime(row.started_at) : '-' },
   { label: t('logManage.error'), text: (row) => row.error_message || '-' },
-])
-const writerFileCardFields = computed(() => [
-  { label: t('logManage.maxSizeMB'), text: (row) => formatBytes(row.size) },
-  { label: t('logManage.startedAt'), text: (row) => row.modified ? formatTime(row.modified) : '-' },
 ])
 
 // ═══════════════ Data Fetching ═══════════════
@@ -1282,45 +1082,7 @@ async function fetchWriterStatuses() {
 
 // ═══════════════ Output Config Save ═══════════════
 
-async function handleSaveCoreOutput() {
-  if (fetchingOutput.value) {
-    ElMessage.warning(t('logManage.dataLoading') || 'Data is still loading, please wait...')
-    return
-  }
-  savingCoreOutput.value = true
-  try {
-    const data = {}
-    for (const item of coreOutputList.value) {
-      data[item.type] = item.cfg
-    }
-    await logApi.saveCoreLogOutput(data, selectedServerId.value)
 
-    ElMessage.success(t('logManage.outputConfigSaved'))
-    await fetchWriterStatuses()
-  } finally {
-    savingCoreOutput.value = false
-  }
-}
-
-async function handleSaveProxyOutput() {
-  if (fetchingOutput.value) {
-    ElMessage.warning(t('logManage.dataLoading') || 'Data is still loading, please wait...')
-    return
-  }
-  savingProxyOutput.value = true
-  try {
-    const data = {}
-    for (const item of proxyOutputList.value) {
-      data[item.type] = item.cfg
-    }
-    await logApi.saveProxyLogOutput(data, selectedServerId.value)
-
-    ElMessage.success(t('logManage.outputConfigSaved'))
-    await fetchWriterStatuses()
-  } finally {
-    savingProxyOutput.value = false
-  }
-}
 
 // ═══════════════ Policy CRUD ═══════════════
 
@@ -1732,83 +1494,6 @@ async function startStdoutStream(type) {
 }
 
 // ═══════════════ Writer Management ═══════════════
-
-function getWriterStatus(type) {
-  return writerStatuses.value.find(w => w.proxy_type === type)
-}
-
-function showWriterConfig(type) {
-  writerConfigType.value = type
-  writerConfigVisible.value = true
-  const s = getWriterStatus(type)
-  writerForm.value = {
-    file_path: s?.file_path || `logs/${type}-stdout.log`,
-    retain_days: s?.retain_days || 30,
-    compress: s?.compress || false,
-    max_size_mb: s?.max_size_mb || 100,
-  }
-}
-
-// ──────────── Managed ↔ Writer linkage ────────────
-
-// Get the managed state from the output config for a given type
-function getOutputManaged(type) {
-  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
-  const item = list.find(i => i.type === type)
-  return item ? item.cfg.managed : false
-}
-
-// Check if the managed switch is editable (only when mode === 'stdout')
-function getOutputManagedEditable(type) {
-  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
-  const item = list.find(i => i.type === type)
-  return item ? item.cfg.mode === 'stdout' : false
-}
-
-// Toggle managed state from the Writer Config dialog
-async function onWriterManagedToggle(type, val) {
-  const list = isCoreType(type) ? coreOutputList.value : proxyOutputList.value
-  const item = list.find(i => i.type === type)
-  if (!item) return
-  item.cfg.managed = val
-  // For local node: save the output config which will start/stop the writer via StartWriterManaged
-  if (selectedServerId.value <= 1) {
-    try {
-      if (isCoreType(type)) {
-        const data = {}
-        for (const it of coreOutputList.value) data[it.type] = it.cfg
-        await logApi.saveCoreLogOutput(data, selectedServerId.value)
-      } else {
-        const data = {}
-        for (const it of proxyOutputList.value) data[it.type] = it.cfg
-        await logApi.saveProxyLogOutput(data, selectedServerId.value)
-      }
-      await fetchWriterStatuses()
-    } catch { /* noop */ }
-  }
-}
-
-async function handleSaveWriterConfig() {
-  writerConfigSaving.value = true
-  try {
-    await logApi.updateWriterConfig(writerConfigType.value, writerForm.value, selectedServerId.value)
-    ElMessage.success(t('common.success'))
-    writerConfigVisible.value = false
-    await fetchWriterStatuses()
-  } finally {
-    writerConfigSaving.value = false
-  }
-}
-
-async function showWriterFiles(type) {
-  writerConfigType.value = type
-  writerFilesVisible.value = true
-  writerFiles.value = []
-  try {
-    const r = await logApi.getWriterFiles(type, selectedServerId.value)
-    writerFiles.value = Array.isArray(r) ? r : (r?.files || [])
-  } catch { /* noop */ }
-}
 
 // ═══════════════ Log Viewer (Policy-based dialog) ═══════════════
 

@@ -462,12 +462,10 @@ func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
 	a.procMgr.SeedCores(ctx)
 
 	// Start log management service (same as Panel)
-	// This restores previously enabled LogWriters that subscribe to proxy/core
-	// LogBrokers and persist captured stdout to logs/{type}-stdout.log files.
+	// stdout 接管已下线：只启动轮转调度器，不再创建 LogWriter。
 	if a.logMgr != nil {
-		a.logMgr.StartAutoWritersForServer(a.cfg.Panel.ServerID)
 		a.logMgr.Start(0, 0)
-		log.Println("[Agent] log management service started (LogWriter + rotation scheduler)")
+		log.Println("[Agent] log management service started (rotation scheduler)")
 	}
 
 	// 实时在线订阅人上报（与限速完全解耦，不依赖 nft 与限速配置，必须独立启动）

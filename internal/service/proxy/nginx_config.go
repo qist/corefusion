@@ -103,10 +103,20 @@ func writeLocationConfig(sb *strings.Builder, locationConfig string, already map
 	}
 }
 
-// ensureSymlink creates a symlink, removing existing file/symlink first.
-func ensureSymlink(path, target string) {
-	os.Remove(path)
-	os.Symlink(target, path)
+// ensureRegularLogFile ensures path is a real, regular log file.
+// 旧实现把 stdout 模式做成 `logs/stdout_*.log -> /dev/stdout` 软链：
+// 面板/Agent 重启后软链解析到**新进程自己的 stdout**，既读不到 nginx 日志，
+// 旧 nginx 也还在往已断开的管道写。现在统一成真实文件，父进程重启不影响读写。
+func ensureRegularLogFile(path string) {
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode().IsRegular() {
+			return
+		}
+		_ = os.Remove(path) // symlink / device / dir
+	}
+	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640); err == nil {
+		_ = f.Close()
+	}
 }
 
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
@@ -285,13 +295,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				} `json:"nginx"`
 			}
 			if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Nginx.Mode != "" {
-				logOutputMode = cfg.Nginx.Mode
+				logOutputMode = normalizeProxyLogMode(cfg.Nginx.Mode)
 			}
 		}
 	}
 	switch logOutputMode {
 	case "stdout":
-		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_error.log"), "/dev/stderr")
+		ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_error.log"))
 		if s.ErrorLogLevel != "" {
 			sb.WriteString(fmt.Sprintf("error_log logs/stdout_error.log %s;\n", s.ErrorLogLevel))
 		} else {
@@ -392,7 +402,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 	switch logOutputMode {
 	case "stdout":
-		ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_access.log"), "/dev/stdout")
+		ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_access.log"))
 		sb.WriteString(logFmt)
 		sb.WriteString("    access_log logs/stdout_access.log main;\n")
 	case "off":
@@ -1348,7 +1358,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 		switch logOutputMode {
 		case "stdout":
-			ensureSymlink(filepath.Join(m.dataDir, "logs", "stdout_stream.log"), "/dev/stdout")
+			ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_stream.log"))
 			sb.WriteString(streamFmtStr)
 			sb.WriteString(fmt.Sprintf("    access_log logs/stdout_stream.log stream_%s buffer=32k;\n", logFmt))
 		case "off":

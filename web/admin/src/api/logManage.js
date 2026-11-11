@@ -78,52 +78,20 @@ export async function buildProxyStdoutStreamUrl(type, serverId = 1) {
   return `${base}/log-manage/proxy/${type}/stdout-stream?server_id=${serverId}&ticket=${encodeURIComponent(ticket)}`
 }
 
-// ──────────── Log Output Config (per-node) ────────────
+// ──────────── Log Output Config (read-only, controlled by protocol center / proxy pages) ────────────
 
 export function getProxyLogOutput(serverId = 1) {
   return client.get('/log-manage/log-output', { params: { server_id: serverId } })
-}
-
-export function saveProxyLogOutput(data, serverId = 1) {
-  return client.put('/log-manage/log-output', data, { params: { server_id: serverId } })
 }
 
 export function getCoreLogOutput(serverId = 1) {
   return client.get('/log-manage/core-log-output', { params: { server_id: serverId } })
 }
 
-export function saveCoreLogOutput(data, serverId = 1) {
-  return client.put('/log-manage/core-log-output', data, { params: { server_id: serverId } })
-}
-
-export function takeoverStdout(type) {
-  return client.post(`/log-manage/log-output/takeover/${type}`)
-}
-
-export function releaseStdout(type) {
-  return client.post(`/log-manage/log-output/release/${type}`)
-}
-
-// ──────────── Writer Management (local + remote) ────────────
+// ──────────── Log sources (realtime viewer) ────────────
 
 export function getWriters(serverId = 1) {
   return client.get('/log-manage/writers', { params: { server_id: serverId } })
-}
-
-export function startWriter(type, data, serverId = 1) {
-  return client.post(`/log-manage/writers/${type}/start`, data, { params: { server_id: serverId } })
-}
-
-export function stopWriter(type, serverId = 1) {
-  return client.post(`/log-manage/writers/${type}/stop`, null, { params: { server_id: serverId } })
-}
-
-export function updateWriterConfig(type, data, serverId = 1) {
-  return client.put(`/log-manage/writers/${type}/config`, data, { params: { server_id: serverId } })
-}
-
-export function getWriterFiles(type, serverId = 1) {
-  return client.get(`/log-manage/writers/${type}/files`, { params: { server_id: serverId } })
 }
 
 // ──────────── Node-based Log Management ────────────

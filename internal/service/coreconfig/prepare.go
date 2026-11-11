@@ -840,19 +840,17 @@ func ApplyAPIInboundRouting(fullConfig map[string]interface{}) {
 }
 
 // ApplyLogMode sets the log section in the config based on the specified log mode.
-// mode values: "file" (default), "stdout", "off".
+// mode values: "file" (default), "off". 标准输出模式已下线，历史配置里的 stdout
+// 由上层（logmanage.normalizeLogMode）归一为 file，这里不再生成 stdout 配置。
 //
 // For xray:
 //   - file: preserves the user's log config from core_configs as-is (access path,
 //     error path, loglevel, dnsLog, etc. are all kept). This is the default and
 //     means "let the process write to the files specified in the config".
-//   - stdout: overrides access to "none" and error to "/dev/stderr" so the
-//     process outputs to stderr for LogBroker capture. Preserves user's loglevel.
 //   - off: sets everything to "none" to disable logging entirely.
 //
 // For singbox:
 //   - file: preserves the user's log config as-is.
-//   - stdout: overrides output to "stderr". Preserves user's level.
 //   - off: sets level to "silent".
 func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode string) {
 	if mode == "" {
@@ -862,27 +860,6 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 	switch coreType {
 	case "xray":
 		switch mode {
-		case "stdout":
-			// Route logs through stderr for LogBroker capture, but only override
-			// values that are file paths. If the user already set access/error to
-			// "" (stdout) or "none" (disabled) or "/dev/stderr", preserve their
-			// choice — the mode was derived from their config.
-			log, _ := fullConfig["log"].(map[string]interface{})
-			if log == nil {
-				log = map[string]interface{}{}
-			}
-			access, _ := log["access"].(string)
-			if access != "" && access != "none" && access != "/dev/stderr" {
-				log["access"] = "none"
-			}
-			errorVal, _ := log["error"].(string)
-			if errorVal != "" && errorVal != "none" && errorVal != "/dev/stderr" {
-				log["error"] = "/dev/stderr"
-			}
-			if log["loglevel"] == nil || log["loglevel"] == "" {
-				log["loglevel"] = "warning"
-			}
-			fullConfig["log"] = log
 		case "off":
 			fullConfig["log"] = map[string]interface{}{
 				"access":   "none",
@@ -896,16 +873,6 @@ func ApplyLogMode(fullConfig map[string]interface{}, coreType string, mode strin
 
 	case "singbox":
 		switch mode {
-		case "stdout":
-			log, _ := fullConfig["log"].(map[string]interface{})
-			if log == nil {
-				log = map[string]interface{}{}
-			}
-			log["output"] = "stderr"
-			if log["level"] == nil || log["level"] == "" {
-				log["level"] = "info"
-			}
-			fullConfig["log"] = log
 		case "off":
 			fullConfig["log"] = map[string]interface{}{
 				"level": "silent",

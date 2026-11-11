@@ -406,12 +406,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	switch caddyLogMode {
 	case "off":
 		// no global logger
-	case "stdout":
-		sb.WriteString("\n\tlog default {\n")
-		sb.WriteString("\t\toutput stdout\n")
-		sb.WriteString("\t\tformat json\n")
-		sb.WriteString("\t}\n")
-	default: // "file"
+	default: // "file"（stdout 已下线，配置生成端归一为文件）
 		sb.WriteString("\n\tlog default {\n")
 		sb.WriteString("\t\toutput file logs/caddy_access.log\n")
 		sb.WriteString("\t\tformat json\n")
@@ -663,14 +658,9 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if site.LogEnabled {
 					siteHasLog = true
 					if site.LogPath != "" {
-						// Custom per-site log file
+						// Custom per-site log file（stdout 已下线，统一落真实文件）
 						sb.WriteString("\tlog {\n")
-						switch caddyLogMode {
-						case "stdout":
-							sb.WriteString("\t\toutput stdout\n")
-						default:
-							sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", site.LogPath))
-						}
+						sb.WriteString(fmt.Sprintf("\t\toutput file %s\n", site.LogPath))
 						if site.LogFormat == "json" {
 							sb.WriteString("\t\tformat json\n")
 						}

@@ -39,6 +39,16 @@ const (
 	DefaultCaddyCapturePath = "logs/caddy-stdout.log"
 )
 
+// normalizeLogMode 归一化日志输出模式。
+// 标准输出（stdout）模式已下线：面板/Agent 负责核心与代理的日志采集和轮转，
+// 进程一律写真实文件，因此历史配置里的 stdout 统一按 file 处理，只保留 file / off。
+func normalizeLogMode(mode string) string {
+	if mode == "off" {
+		return "off"
+	}
+	return "file"
+}
+
 // GetLogOutput reads the log output configuration from database.
 func (s *Service) GetLogOutput(ctx context.Context) (*LogOutputConfig, error) {
 	return s.GetLogOutputForServer(ctx, 1)
@@ -68,6 +78,20 @@ func (s *Service) GetLogOutputForServer(ctx context.Context, serverID int64) (*L
 	if saved.Caddy.Mode == "" {
 		saved.Caddy.Mode = "file"
 	}
+	// stdout 模式已下线：读到历史配置时归一为 file（并重置 managed），
+	// 同时写回，避免每次读取都重复迁移。
+	changed := false
+	if n := normalizeLogMode(saved.Nginx.Mode); n != saved.Nginx.Mode {
+		saved.Nginx.Mode, saved.Nginx.Managed, changed = n, false, true
+	}
+	if n := normalizeLogMode(saved.Caddy.Mode); n != saved.Caddy.Mode {
+		saved.Caddy.Mode, saved.Caddy.Managed, changed = n, false, true
+	}
+	if changed {
+		if data, err := json.Marshal(&saved); err == nil {
+			_ = s.settingStore.Set(ctx, key, string(data))
+		}
+	}
 	return &saved, nil
 }
 
@@ -83,6 +107,10 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 	if s.settingStore == nil {
 		return nil
 	}
+
+	// stdout 模式已下线：任何写入都归一为 file / off。
+	cfg.Nginx.Mode = normalizeLogMode(cfg.Nginx.Mode)
+	cfg.Caddy.Mode = normalizeLogMode(cfg.Caddy.Mode)
 
 	// Get old config to detect mode changes
 	oldCfg, _ := s.GetLogOutputForServer(ctx, serverID)
@@ -138,61 +166,6 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 	}
 
 	return nil
-}
-
-// TakeoverStdout enables stdout capture for a proxy or core process.
-// It sets Managed=true and configures a capture file path.
-func (s *Service) TakeoverStdout(ctx context.Context, proxyType string) error {
-	// Check if it's a core process type
-	for _, ct := range coreLogTypes {
-		if proxyType == ct {
-			return s.takeoverCoreStdout(ctx, proxyType)
-		}
-	}
-
-	cfg, err := s.GetLogOutput(ctx)
-	if err != nil {
-		return err
-	}
-	switch proxyType {
-	case "nginx":
-		cfg.Nginx.Managed = true
-		if cfg.Nginx.CapturePath == "" {
-			cfg.Nginx.CapturePath = DefaultNginxCapturePath
-		}
-	case "caddy":
-		cfg.Caddy.Managed = true
-		if cfg.Caddy.CapturePath == "" {
-			cfg.Caddy.CapturePath = DefaultCaddyCapturePath
-		}
-	default:
-		return nil
-	}
-	return s.SaveLogOutput(ctx, cfg)
-}
-
-// ReleaseStdout disables stdout capture for a proxy or core process.
-func (s *Service) ReleaseStdout(ctx context.Context, proxyType string) error {
-	// Check if it's a core process type
-	for _, ct := range coreLogTypes {
-		if proxyType == ct {
-			return s.releaseCoreStdout(ctx, proxyType)
-		}
-	}
-
-	cfg, err := s.GetLogOutput(ctx)
-	if err != nil {
-		return err
-	}
-	switch proxyType {
-	case "nginx":
-		cfg.Nginx.Managed = false
-	case "caddy":
-		cfg.Caddy.Managed = false
-	default:
-		return nil
-	}
-	return s.SaveLogOutput(ctx, cfg)
 }
 
 // ============================================================
@@ -323,8 +296,7 @@ func (s *Service) deriveModesFromConfig(ctx context.Context, serverID int64, cfg
 // Rules:
 //   - loglevel: "none" → off
 //   - access: "none" AND error: "none" → off
-//   - access: "" OR error: "" OR error: "/dev/stderr" → stdout
-//   - Otherwise → file (has file paths)
+//   - Otherwise → file（标准输出模式已下线，access/error 为空统一按文件处理）
 func inferXrayLogMode(log map[string]interface{}) string {
 	access, _ := log["access"].(string)
 	errorVal, _ := log["error"].(string)
@@ -338,29 +310,18 @@ func inferXrayLogMode(log map[string]interface{}) string {
 		return "off"
 	}
 
-	// stdout mode — empty string means stdout in xray, /dev/stderr is LogBroker capture
-	if access == "" || errorVal == "" || errorVal == "/dev/stderr" {
-		return "stdout"
-	}
-
-	// file mode — has actual file paths
 	return "file"
 }
 
 // inferSingboxLogMode derives the output mode from the singbox log section.
 // Rules:
 //   - level: "silent" → off
-//   - output: "stderr" → stdout
-//   - Otherwise → file
+//   - Otherwise → file（stderr 即标准输出，已下线）
 func inferSingboxLogMode(log map[string]interface{}) string {
 	level, _ := log["level"].(string)
-	output, _ := log["output"].(string)
 
 	if level == "silent" {
 		return "off"
-	}
-	if output == "stderr" {
-		return "stdout"
 	}
 	return "file"
 }
@@ -378,6 +339,10 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 
 	// Get old config to detect mode changes
 	oldCfg, _ := s.GetCoreLogOutputForServer(ctx, serverID)
+
+	// stdout 模式已下线：任何写入都归一为 file / off。
+	cfg.Xray.Mode = normalizeLogMode(cfg.Xray.Mode)
+	cfg.Singbox.Mode = normalizeLogMode(cfg.Singbox.Mode)
 
 	// If mode changed (e.g. protocol center switched it), reset managed to false.
 	// The user must manually enable managed after a mode change.
@@ -481,52 +446,12 @@ func (s *Service) GetLogModeForServer(ctx context.Context, serverID int64, coreT
 	switch coreType {
 	case "xray":
 		if cfg.Xray.Mode != "" {
-			return cfg.Xray.Mode
+			return normalizeLogMode(cfg.Xray.Mode)
 		}
 	case "singbox":
 		if cfg.Singbox.Mode != "" {
-			return cfg.Singbox.Mode
+			return normalizeLogMode(cfg.Singbox.Mode)
 		}
 	}
 	return "file"
-}
-
-// takeoverCoreStdout enables stdout capture for a core process.
-func (s *Service) takeoverCoreStdout(ctx context.Context, coreType string) error {
-	cfg, err := s.GetCoreLogOutput(ctx)
-	if err != nil {
-		return err
-	}
-	switch coreType {
-	case "xray":
-		cfg.Xray.Managed = true
-		if cfg.Xray.CapturePath == "" {
-			cfg.Xray.CapturePath = DefaultXrayCapturePath
-		}
-	case "singbox":
-		cfg.Singbox.Managed = true
-		if cfg.Singbox.CapturePath == "" {
-			cfg.Singbox.CapturePath = DefaultSingboxCapturePath
-		}
-	default:
-		return nil
-	}
-	return s.SaveCoreLogOutput(ctx, cfg)
-}
-
-// releaseCoreStdout disables stdout capture for a core process.
-func (s *Service) releaseCoreStdout(ctx context.Context, coreType string) error {
-	cfg, err := s.GetCoreLogOutput(ctx)
-	if err != nil {
-		return err
-	}
-	switch coreType {
-	case "xray":
-		cfg.Xray.Managed = false
-	case "singbox":
-		cfg.Singbox.Managed = false
-	default:
-		return nil
-	}
-	return s.SaveCoreLogOutput(ctx, cfg)
 }

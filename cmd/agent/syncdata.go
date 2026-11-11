@@ -630,16 +630,6 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 	}
 
-	// 8. Refresh LogWriters based on the updated configs.
-	// core_configs may have changed (e.g. protocol center switched log mode),
-	// so we need to re-read the derived mode and update writer state.
-	// This makes LogWriter status reflect changes immediately without requiring
-	// a manual save in the log management UI.
-	if a.logMgr != nil {
-		a.logMgr.StartAutoWritersForServer(req.ServerId)
-		log.Printf("[Agent] SyncData: log writers refreshed for server %d", req.ServerId)
-	}
-
 	return resp, nil
 }
 

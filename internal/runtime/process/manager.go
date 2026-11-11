@@ -53,7 +53,8 @@ type Manager struct {
 	logModeProvider LogModeProvider
 	// logBrokers holds LogBroker instances for core processes.
 	// In file mode: broker tails the log file for real-time viewing.
-	// In stdout mode: broker captures process stdout/stderr via AttachCmd.
+	// In stdout mode: the process writes stdout/stderr to a real file and the
+	// broker tails it（不再用父进程管道，面板/Agent 重启后仍可读）。
 	// In off mode: no broker is created.
 	logBrokers map[string]*LogBroker
 }
@@ -469,12 +470,25 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	}
 
 	var logFile *os.File
+	managedLogPath := logPath
 	switch logMode {
 	case "stdout":
-		// stdout mode: LogBroker captures process output via io.Pipe
-		// （可能此前是 file 模式在 tail——AttachCmd 内部先停 tailer）
-		broker.AttachCmd(cmd)
-		log.Printf("process: started %s in stdout mode (LogBroker attached)", coreType)
+		// 不再用父进程管道：核心 stdout/stderr 直接追加写真实文件，LogBroker tail
+		// 该文件。旧实现用 io.Pipe，面板/Agent 重启后读端消失，核心再写 stdout 会
+		// EPIPE/SIGPIPE，日志也接不回来。
+		// 文件名用 .raw.log，避免与 logmanage 的 stdout capture 文件（<core>-stdout.log，
+		// 由 LogWriter 从 broker 再落一份）互相追加形成回环。
+		rawPath := filepath.Join(logDir, coreType+"-stdout.raw.log")
+		f, err := os.OpenFile(rawPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
+		if err != nil {
+			return fmt.Errorf("open stdout capture file: %w", err)
+		}
+		logFile = f
+		cmd.Stdout = f
+		cmd.Stderr = f
+		broker.TailFile(rawPath)
+		managedLogPath = rawPath
+		log.Printf("process: started %s in stdout mode (file: %s, tailed)", coreType, rawPath)
 
 	case "off":
 		// off mode: discard all output
@@ -516,6 +530,10 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		}
 		return fmt.Errorf("start process: %w", err)
 	}
+	// 子进程已持有 dup，父进程这份句柄可以关掉，避免每次重启泄漏一个 fd。
+	if logFile != nil {
+		_ = logFile.Close()
+	}
 
 	// 放开 unix socket 权限：xray 默认按 umask 建成 0755，非 root 的 nginx worker
 	// 连不上（EACCES），客户端表现为连接被重置。核心异步创建 socket，放到后台轮询处理。
@@ -526,7 +544,7 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		CoreType:   coreType,
 		BinaryPath: binaryPath,
 		ConfigPath: configPath,
-		LogPath:    logPath,
+		LogPath:    managedLogPath,
 		cmd:        cmd,
 		exitDone:   make(chan struct{}),
 		pid:        cmd.Process.Pid,

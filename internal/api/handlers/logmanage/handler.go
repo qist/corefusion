@@ -482,37 +482,10 @@ func isValidLogType(t string) bool {
 	return false
 }
 
-// TakeoverStdout enables stdout capture for a process (proxy or core).
-func (h *Handler) TakeoverStdout(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	if err := h.svc.TakeoverStdout(c.Request.Context(), proxyType); err != nil {
-		response.InternalError(c, "TAKEOVER_FAILED", err.Error())
-		return
-	}
-	response.OK(c, gin.H{"message": "stdout capture enabled", "type": proxyType})
-}
+// --- Log source status (realtime viewer only) ---
 
-// ReleaseStdout disables stdout capture for a process (proxy or core).
-func (h *Handler) ReleaseStdout(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	if err := h.svc.ReleaseStdout(c.Request.Context(), proxyType); err != nil {
-		response.InternalError(c, "RELEASE_FAILED", err.Error())
-		return
-	}
-	response.OK(c, gin.H{"message": "stdout capture disabled", "type": proxyType})
-}
-
-// --- Log Writer Management ---
-
-// GetWriterStatus returns the status of all log writers.
+// GetWriterStatus returns the current mode/status of all log sources.
+// stdout 接管/写入器已下线，这里只用于“实时日志”列表展示，不再提供启停/配置。
 func (h *Handler) GetWriterStatus(c *gin.Context) {
 	serverID, _ := strconv.ParseInt(c.Query("server_id"), 10, 64)
 	if serverID <= 0 {
@@ -538,123 +511,6 @@ func (h *Handler) GetWriterStatus(c *gin.Context) {
 		return
 	}
 	response.OK(c, writers)
-}
-
-// StartWriter starts the log writer for a process type (proxy or core).
-func (h *Handler) StartWriter(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	var req struct {
-		Mode string `json:"mode" binding:"required"` // "stdout" or "file"
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	if req.Mode != "stdout" && req.Mode != "file" {
-		response.BadRequest(c, "INVALID_MODE", "mode must be stdout or file")
-		return
-	}
-	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
-	if serverID <= 0 {
-		serverID = 1
-	}
-	if serverID == 1 {
-		if err := h.svc.StartWriter(proxyType, req.Mode); err != nil {
-			response.InternalError(c, "START_FAILED", err.Error())
-			return
-		}
-	} else {
-		if nodeLogMgr == nil {
-			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
-			return
-		}
-		if err := nodeLogMgr.StartWriterOnServer(c.Request.Context(), serverID, proxyType, req.Mode); err != nil {
-			response.InternalError(c, "START_FAILED", err.Error())
-			return
-		}
-	}
-	response.OK(c, gin.H{"message": "writer started", "type": proxyType, "mode": req.Mode})
-}
-
-// StopWriter stops the log writer for a process type (proxy or core).
-func (h *Handler) StopWriter(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
-	if serverID <= 0 {
-		serverID = 1
-	}
-	if serverID == 1 {
-		if err := h.svc.StopWriter(proxyType); err != nil {
-			response.InternalError(c, "STOP_FAILED", err.Error())
-			return
-		}
-	} else {
-		if nodeLogMgr == nil {
-			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
-			return
-		}
-		if err := nodeLogMgr.StopWriterOnServer(c.Request.Context(), serverID, proxyType); err != nil {
-			response.InternalError(c, "STOP_FAILED", err.Error())
-			return
-		}
-	}
-	response.OK(c, gin.H{"message": "writer stopped", "type": proxyType})
-}
-
-// UpdateWriterConfig updates the writer configuration.
-func (h *Handler) UpdateWriterConfig(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	var cfg logmanage.LogWriterConfig
-	if err := c.ShouldBindJSON(&cfg); err != nil {
-		response.BadRequest(c, "INVALID_REQUEST", err.Error())
-		return
-	}
-	serverID, _ := strconv.ParseInt(c.DefaultQuery("server_id", "1"), 10, 64)
-	if serverID <= 0 {
-		serverID = 1
-	}
-	if serverID == 1 {
-		if err := h.svc.UpdateWriterConfig(proxyType, cfg); err != nil {
-			response.InternalError(c, "UPDATE_FAILED", err.Error())
-			return
-		}
-	} else {
-		if nodeLogMgr == nil {
-			response.InternalError(c, "NOT_CONFIGURED", "node log manager not configured")
-			return
-		}
-		if err := nodeLogMgr.UpdateWriterConfigOnServer(c.Request.Context(), serverID, proxyType, cfg.Mode, int32(cfg.RetainDays), cfg.Compress, int32(cfg.MaxSizeMB)); err != nil {
-			response.InternalError(c, "UPDATE_FAILED", err.Error())
-			return
-		}
-	}
-	response.OK(c, gin.H{"message": "config updated", "type": proxyType})
-}
-
-// ListWriterFiles returns the rotated files for a writer.
-func (h *Handler) ListWriterFiles(c *gin.Context) {
-	proxyType := c.Param("type")
-	if !isValidLogType(proxyType) {
-		response.BadRequest(c, "INVALID_TYPE", "unsupported type")
-		return
-	}
-	files := h.svc.ListWriterFiles(proxyType)
-	if files == nil {
-		files = []logmanage.LogFileInfo{}
-	}
-	response.OK(c, files)
 }
 
 // ProxyStdoutLog returns the last N lines from a process's stdout broker.

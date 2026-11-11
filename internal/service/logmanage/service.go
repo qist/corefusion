@@ -739,6 +739,13 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 
 		switch logMode {
 		case "stdout":
+			// stdout 模式已改为进程直接写真实文件（子进程不再持有父进程管道），
+			// 纳入发现/轮转；实时查看仍走 LogBroker tail 这个文件。
+			logs = append(logs, DiscoveredLog{
+				SourceType: coreType,
+				Domain:     "startup",
+				LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.raw.log", coreType)),
+			})
 			continue
 		case "off":
 			continue
@@ -886,7 +893,12 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 		}
 	}
 	if logMode == "stdout" {
-		return nil, nil
+		// stdout 模式已改为真实文件（不再是 -> /dev/stdout 软链），同样纳入发现/轮转。
+		return []DiscoveredLog{
+			{SourceType: "nginx", Domain: "error", LogPath: s.resolveLogPath("logs/stdout_error.log")},
+			{SourceType: "nginx", Domain: "access", LogPath: s.resolveLogPath("logs/stdout_access.log")},
+			{SourceType: "nginx", Domain: "stream", LogPath: s.resolveLogPath("logs/stdout_stream.log")},
+		}, nil
 	}
 
 	v, err := s.settingStore.GetByKey(ctx, "proxy.nginx_settings")
@@ -969,6 +981,13 @@ func (s *Service) discoverCaddyLogs(ctx context.Context) ([]DiscoveredLog, error
 		Domain:     "access",
 		LogPath:    s.resolveLogPath("logs/caddy_access.log"),
 		LogFormat:  "json",
+	})
+	// caddy 进程 stdout/stderr：启动错误、端口占用、配置解析失败只会落在这里，
+	// 不纳入发现就没人看得到"起不来"的原因。
+	logs = append(logs, DiscoveredLog{
+		SourceType: "caddy",
+		Domain:     "process",
+		LogPath:    s.resolveLogPath("logs/caddy-process.log"),
 	})
 
 	// Discover per-site custom log paths (sites that override the global logger)

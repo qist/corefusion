@@ -1473,12 +1473,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				return
 			}
 
-			// Reload for file/off mode (config change only), restart for stdout mode
-			// (need to re-attach stdout pipe)
+			// stdout 已改为真实文件 + tail，不再需要为“重新接管道”而重启代理；
+			// 切换日志模式只改配置，reload 即可（nginx 会重开日志 fd，caddy 走 admin API）。
 			action := "reload"
-			if newMode == "stdout" {
-				action = "restart"
-			}
 			if err := sharedNodeMgr.ControlProxy(ctx, serverID, proxyType, action); err != nil {
 				log.Printf("router: %s %s on server %d after log mode switch: %v", action, proxyType, serverID, err)
 			} else {
@@ -3363,17 +3360,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				logManageGroup.PUT("/log-output", logManageH.SaveLogOutput)
 				logManageGroup.GET("/core-log-output", logManageH.GetCoreLogOutput)
 				logManageGroup.PUT("/core-log-output", logManageH.SaveCoreLogOutput)
-				logManageGroup.POST("/log-output/takeover/:type", logManageH.TakeoverStdout)
-				logManageGroup.POST("/log-output/release/:type", logManageH.ReleaseStdout)
 				logManageGroup.GET("/proxy/:type/stdout-log", logManageH.ProxyStdoutLog)
 				logManageGroup.GET("/proxy/:type/stdout-stream", logManageH.ProxyStdoutStream)
 				logManageGroup.GET("/core/:type/stdout-log", logManageH.ProxyStdoutLog)
 				logManageGroup.GET("/core/:type/stdout-stream", logManageH.ProxyStdoutStream)
+				// 仅用于列出日志源当前模式；stdout 接管/写入器已下线，不再提供 start/stop/config/files。
 				logManageGroup.GET("/writers", logManageH.GetWriterStatus)
-				logManageGroup.POST("/writers/:type/start", logManageH.StartWriter)
-				logManageGroup.POST("/writers/:type/stop", logManageH.StopWriter)
-				logManageGroup.PUT("/writers/:type/config", logManageH.UpdateWriterConfig)
-				logManageGroup.GET("/writers/:type/files", logManageH.ListWriterFiles)
 
 				// Database table cleanup rules
 				logManageGroup.GET("/cleanup-rules", cleanupH.ListCleanupRules)
@@ -3761,16 +3753,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			return
 		}
 
-		// Only restart for stdout mode (need to re-attach stdout pipe).
-		// For file/off mode, reload is sufficient — the config file already
-		// reflects the new log directives.
-		if newMode == "stdout" {
-			log.Printf("router: restarting %s after log mode switch to stdout", proxyType)
-			proxyMgr.RestartProxy(bgCtx, pType)
-		} else {
-			log.Printf("router: reloading %s after log mode switch to %s", proxyType, newMode)
-			proxyMgr.ReloadProxy(bgCtx, pType)
-		}
+		// stdout 已是真实文件 + tail，切换模式只需 reload 让配置生效，不再重启代理。
+		log.Printf("router: reloading %s after log mode switch to %s", proxyType, newMode)
+		proxyMgr.ReloadProxy(bgCtx, pType)
 	})
 
 	go func() {
@@ -3780,8 +3765,6 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		} else {
 			proxyMgr.AutoStartManaged()
 		}
-		// Start auto-writers after proxy is started (broker is available)
-		logManageSvc.StartAutoWriters()
 	}()
 	logManageSvc.Start(time.Duration(schedCfg.ClientLogCleanupInterval)*time.Minute, time.Duration(schedCfg.WAFLogCleanupInterval)*time.Minute)
 

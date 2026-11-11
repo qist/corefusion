@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 )
@@ -75,21 +74,6 @@ func (b *LogBroker) Subscribe() (<-chan string, func()) {
 		b.mu.Unlock()
 	}
 	return ch, cancel
-}
-
-// AttachCmd pipes cmd.Stdout and cmd.Stderr through the broker.
-func (b *LogBroker) AttachCmd(cmd *exec.Cmd) {
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-
-	go func() {
-		scanner := bufio.NewScanner(pr)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			b.append(time.Now().Format("2006/01/02 15:04:05 ") + scanner.Text())
-		}
-	}()
 }
 
 // TailFile starts tailing a log file and feeding lines to the broker.

@@ -146,7 +146,6 @@
             <el-form-item :label="t('proxy.logOutputMode')">
               <el-radio-group v-model="nginxLogMode" @change="onNginxLogModeChange">
                 <el-radio-button value="file">{{ t('proxy.logToFile') }}</el-radio-button>
-                <el-radio-button value="stdout">{{ t('proxy.logToStdout') }}</el-radio-button>
                 <el-radio-button value="off">{{ t('proxy.logOff') }}</el-radio-button>
               </el-radio-group>
               <div style="margin-top:4px;font-size:12px;color:#909399">
@@ -1221,7 +1220,6 @@ const settingsTab = useQueryState('tab', 'worker')
 const nginxLogMode = ref('file')
 const nginxLogModeHint = computed(() => {
   const m = nginxLogMode.value
-  if (m === 'stdout') return t('proxy.hintStdout')
   if (m === 'off') return t('proxy.hintLogOff')
   return t('proxy.hintFile')
 })
@@ -2205,7 +2203,7 @@ async function fetchSettings() {
   // Load log output mode (per-node)
   try {
     const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
-    if (cfg?.nginx?.mode) nginxLogMode.value = cfg.nginx.mode
+    if (cfg?.nginx?.mode) nginxLogMode.value = cfg.nginx.mode === 'off' ? 'off' : 'file'
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 

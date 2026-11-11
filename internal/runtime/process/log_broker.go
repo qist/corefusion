@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 )
@@ -78,24 +77,6 @@ func (b *LogBroker) Subscribe() (<-chan string, func()) {
 		b.mu.Unlock()
 	}
 	return ch, cancel
-}
-
-// AttachCmd pipes cmd.Stdout and cmd.Stderr through the broker.
-func (b *LogBroker) AttachCmd(cmd *exec.Cmd) {
-	// 可能此前是 file 模式在 tail 同一核心的日志——先停，避免双份写入
-	b.stopTailer()
-
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-
-	go func() {
-		scanner := bufio.NewScanner(pr)
-		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			b.append(time.Now().Format("2006/01/02 15:04:05 ") + scanner.Text())
-		}
-	}()
 }
 
 // stopTailer 停止当前 tail goroutine（若有）。broker 跨核心重启复用时调用，

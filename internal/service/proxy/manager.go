@@ -182,6 +182,99 @@ func (m *Manager) getNginxAccessLogPath() string {
 	return filepath.Join(m.dataDir, "logs", "access.log")
 }
 
+// getNginxStdoutAccessLogPath 返回 nginx stdout 模式的真实访问日志文件
+// （旧版本是 -> /dev/stdout 软链，面板重启后既读不到也写不进）。
+func (m *Manager) getNginxStdoutAccessLogPath() string {
+	return filepath.Join(m.dataDir, "logs", "stdout_access.log")
+}
+
+// getCaddyAccessLogPath 返回 caddy 统一访问日志文件（file/stdout 模式共用）。
+func (m *Manager) getCaddyAccessLogPath() string {
+	return filepath.Join(m.dataDir, "logs", "caddy_access.log")
+}
+
+// proxyAccessLogPath 返回某个代理在当前日志模式下应被 tail 的访问日志；
+// off 模式返回空串（不采集）。
+func (m *Manager) proxyAccessLogPath(proxyType ProxyType, logMode string) string {
+	if logMode == "off" {
+		return ""
+	}
+	switch proxyType {
+	case ProxyNginx:
+		if logMode == "stdout" {
+			return m.getNginxStdoutAccessLogPath()
+		}
+		return m.getNginxAccessLogPath()
+	case ProxyCaddy:
+		return m.getCaddyAccessLogPath()
+	}
+	return ""
+}
+
+// normalizeProxyLogMode 归一化代理日志输出模式。
+// 标准输出模式已下线：代理一律写真实文件、由 LogBroker tail 采集，
+// 历史配置里的 stdout 统一按 file 处理，只保留 file / off。
+func normalizeProxyLogMode(mode string) string {
+	if mode == "off" {
+		return "off"
+	}
+	return "file"
+}
+
+// getProxyLogMode 读取某个代理的日志输出模式（默认 file）。
+func (m *Manager) getProxyLogMode(proxyType ProxyType) string {
+	logMode := "file"
+	if m.settingStore == nil {
+		return logMode
+	}
+	v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config")
+	if err != nil || v == "" {
+		return logMode
+	}
+	var cfg struct {
+		Nginx struct {
+			Mode string `json:"mode"`
+		} `json:"nginx"`
+		Caddy struct {
+			Mode string `json:"mode"`
+		} `json:"caddy"`
+	}
+	if json.Unmarshal([]byte(v), &cfg) != nil {
+		return logMode
+	}
+	switch proxyType {
+	case ProxyNginx:
+		if cfg.Nginx.Mode != "" {
+			logMode = cfg.Nginx.Mode
+		}
+	case ProxyCaddy:
+		if cfg.Caddy.Mode != "" {
+			logMode = cfg.Caddy.Mode
+		}
+	}
+	return normalizeProxyLogMode(logMode)
+}
+
+// isLegacyStdoutPipeProxy 判断运行中的代理是否仍使用旧版 stdout 管道/软链日志：
+// 这类进程的日志 fd 已绑在旧父进程的管道/软链上，必须重启一次才能切到真实文件；
+// 切换之后再次重启面板就可以正常接管，无需再重启代理。
+func (m *Manager) isLegacyStdoutPipeProxy(proxyType ProxyType) bool {
+	switch proxyType {
+	case ProxyNginx:
+		if fi, err := os.Lstat(m.getNginxStdoutAccessLogPath()); err == nil {
+			return fi.Mode()&os.ModeSymlink != 0
+		}
+		return false
+	case ProxyCaddy:
+		data, err := os.ReadFile(filepath.Join(m.configDir, "Caddyfile"))
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(data), "output stdout")
+	}
+	return false
+}
+
 // proxyTimezone 返回注入给代理进程的 TZ 值：优先面板设置「时区」(panel.timezone)，
 // 回退到面板进程自身的 TZ 环境变量；两者都没有时返回空串（调用方不做覆盖，
 // 让子进程沿用系统默认时区）。
@@ -641,12 +734,7 @@ func (m *Manager) GenerateConfig(ctx context.Context, serverID int64, isLocal bo
 	switch caddyLogMode {
 	case "off":
 		// no global logger
-	case "stdout":
-		sb.WriteString("\n\tlog default {\n")
-		sb.WriteString("\t\toutput stdout\n")
-		sb.WriteString("\t\tformat json\n")
-		sb.WriteString("\t}\n")
-	default: // "file"
+	default: // "file"（stdout 已下线，统一落真实文件）
 		sb.WriteString("\n\tlog default {\n")
 		sb.WriteString("\t\toutput file logs/caddy_access.log\n")
 		sb.WriteString("\t\tformat json\n")
@@ -1379,49 +1467,24 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 		}
 
 		// Process is running but no guardian (e.g. panel restarted while proxy kept running).
-		// Determine current log mode to decide how to handle stdout capture.
-		logMode := "file"
-		if m.settingStore != nil {
-			if v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config"); err == nil && v != "" {
-				var cfg struct {
-					Nginx struct {
-						Mode string `json:"mode"`
-					} `json:"nginx"`
-					Caddy struct {
-						Mode string `json:"mode"`
-					} `json:"caddy"`
-				}
-				if json.Unmarshal([]byte(v), &cfg) == nil {
-					switch proxyType {
-					case ProxyNginx:
-						logMode = cfg.Nginx.Mode
-					case ProxyCaddy:
-						logMode = cfg.Caddy.Mode
-					}
-				}
-			}
-		}
+		logMode := m.getProxyLogMode(proxyType)
 
 		pid := m.findProxyPID(m.proxyProcessName(proxyType))
 		if pid > 0 {
-			if logMode == "stdout" {
-				// Stdout mode: the old process's stdout pipe is dead (panel restarted).
-				// We must kill and restart the proxy to re-attach the LogBroker pipe.
-				log.Printf("proxy %s: already running (pid %d) in stdout mode, restarting to re-attach stdout pipe", proxyType, pid)
+			if m.isLegacyStdoutPipeProxy(proxyType) {
+				// 旧版 stdout 是 /dev/stdout 软链或进程管道，父进程重启后日志已断；
+				// 重启一次切到真实文件，之后再重启面板即可直接接管。
+				log.Printf("proxy %s: already running (pid %d) with legacy stdout pipe, restarting once to migrate to file logging", proxyType, pid)
 				m.stopExisting(proxyType)
 				time.Sleep(1 * time.Second)
 				// Fall through to normal startup below
 			} else {
-				// File mode: just attach guardian and create a file-tailing LogBroker.
+				// 日志都已落真实文件：直接接管，不再因为 stdout 模式重启代理。
 				log.Printf("proxy %s: already running (pid %d), attaching guardian", proxyType, pid)
 				m.attachGuardian(proxyType, pid)
-				// Create LogBroker for file mode (tail access log)
 				broker := NewLogBroker()
-				if proxyType == ProxyNginx {
-					logPath := m.getNginxAccessLogPath()
-					if logPath != "" {
-						broker.TailFile(logPath)
-					}
+				if logPath := m.proxyAccessLogPath(proxyType, logMode); logPath != "" {
+					broker.TailFile(logPath)
 				}
 				m.mu.Lock()
 				m.logBrokers[proxyType] = broker
@@ -1522,43 +1585,34 @@ func (m *Manager) startProxyInternal(ctx context.Context, proxyType ProxyType) e
 	m.mu.Unlock()
 
 	// Check log output mode
-	logMode := "file"
-	if m.settingStore != nil {
-		if v, err := m.settingStore.GetByKey(context.Background(), "proxy.log_output_config"); err == nil && v != "" {
-			var cfg struct {
-				Nginx struct {
-					Mode string `json:"mode"`
-				} `json:"nginx"`
-				Caddy struct {
-					Mode string `json:"mode"`
-				} `json:"caddy"`
-			}
-			if json.Unmarshal([]byte(v), &cfg) == nil {
-				switch proxyType {
-				case ProxyNginx:
-					logMode = cfg.Nginx.Mode
-				case ProxyCaddy:
-					logMode = cfg.Caddy.Mode
-				}
-			}
+	logMode := m.getProxyLogMode(proxyType)
+
+	// caddy 的运行日志（启动错误、端口占用、配置解析失败等）默认走 stderr；
+	// file 模式下不落盘就彻底丢失。统一追加到 logs/caddy-process.log 便于排查。
+	var procLogFile *os.File
+	if proxyType == ProxyCaddy {
+		procLogPath := filepath.Join(m.dataDir, "logs", "caddy-process.log")
+		if f, err := os.OpenFile(procLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640); err == nil {
+			procLogFile = f
+			cmd.Stdout = f
+			cmd.Stderr = f
 		}
 	}
 
-	if logMode == "stdout" {
-		// Stdout mode: capture via pipe
-		broker.AttachCmd(cmd)
-	} else {
-		// File mode: tail the access log file
-		if proxyType == ProxyNginx {
-			logPath := m.getNginxAccessLogPath()
-			if logPath != "" {
-				broker.TailFile(logPath)
-			}
-		}
+	// 所有模式的访问日志都落真实文件，统一用 TailFile 采集：不再用父进程管道
+	// 或 /dev/stdout 软链，面板/Agent 重启后文件仍可读、日志不中断。
+	if logPath := m.proxyAccessLogPath(proxyType, logMode); logPath != "" {
+		broker.TailFile(logPath)
 	}
 
 	if err := cmd.Start(); err != nil {
+		if procLogFile != nil {
+			_ = procLogFile.Close()
+		}
 		return fmt.Errorf("start: %w", err)
+	}
+	if procLogFile != nil {
+		_ = procLogFile.Close() // 子进程已持有 dup，父进程这份可以关掉
 	}
 
 	go func() { cmd.Wait() }()
@@ -2110,7 +2164,13 @@ func (m *Manager) AutoStartManaged() {
 	}
 
 	if pick.running {
-		log.Printf("proxy %s: already running, keep it and skip starting the other proxy", pick.proxyType)
+		// 进程还活着（面板重启且 unit 用 KillMode=process）：不能直接 return ✗，
+		// 否则新面板既没有 Guardian，也不会重建 LogBroker（日志页一直空）。
+		// StartProxy 的“已运行”分支只做接管：attach guardian + tail 日志文件，不重启代理。
+		log.Printf("proxy %s: already running, adopting it (guardian + log tail, no restart)", pick.proxyType)
+		if err := m.StartProxy(ctx, pick.proxyType); err != nil {
+			log.Printf("adopt running %s failed: %v", pick.proxyType, err)
+		}
 		return
 	}
 	log.Printf("proxy %s: managed (%d enabled sites), syncing config and starting", pick.proxyType, pick.sites)

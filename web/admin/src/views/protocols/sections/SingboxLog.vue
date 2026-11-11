@@ -17,7 +17,6 @@
     </el-form-item>
     <el-form-item label="Output">
       <el-select v-model="outputMode" style="width:100%" @change="onOutputModeChange">
-        <el-option label="stderr (default)" value="stderr" />
         <el-option label="file" value="file" />
         <el-option label="none (discard)" value="none" />
       </el-select>
@@ -46,18 +45,18 @@ function sync() {
   form.level = props.data.level || 'info'
   form.timestamp = props.data.timestamp !== false
   const out = props.data.output || ''
-  if (out === '' || out === 'none') {
-    outputMode.value = out === 'none' ? 'none' : 'stderr'
-    form.output = ''
+  // 标准输出（stderr）已下线：历史配置统一按文件模式展示，保存时覆盖为真实路径。
+  if (out === 'none') {
+    outputMode.value = 'none'
+    form.output = 'none'
   } else {
-    outputMode.value = out === 'stderr' ? 'stderr' : 'file'
-    form.output = out === 'stderr' ? '' : out
+    outputMode.value = 'file'
+    form.output = out === 'stderr' || !out ? 'logs/singbox.log' : out
   }
 }
 
 function onOutputModeChange(val) {
-  if (val === 'file') form.output = 'logs/singbox.log'
-  else if (val === 'stderr') form.output = ''
+  if (val === 'file') form.output = form.output && form.output !== 'none' ? form.output : 'logs/singbox.log'
   else form.output = 'none'
   emit()
 }
@@ -65,9 +64,8 @@ function onOutputModeChange(val) {
 function emit() {
   const out = { level: form.level, timestamp: form.timestamp }
   if (form.disabled) out.disabled = true
-  if (outputMode.value === 'file' && form.output) out.output = form.output
-  else if (outputMode.value === 'none') out.output = 'none'
-  else out.output = 'stderr'
+  if (outputMode.value === 'none') out.output = 'none'
+  else out.output = form.output || 'logs/singbox.log'
   emitFn('update', out)
 }
 

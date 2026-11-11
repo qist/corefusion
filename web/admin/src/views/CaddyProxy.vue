@@ -104,7 +104,6 @@
       </template>
       <el-radio-group v-model="caddyLogMode" @change="onCaddyLogModeChange">
         <el-radio-button value="file">{{ t('proxy.logToFile') }}</el-radio-button>
-        <el-radio-button value="stdout">{{ t('proxy.logToStdout') }}</el-radio-button>
         <el-radio-button value="off">{{ t('proxy.logOff') }}</el-radio-button>
       </el-radio-group>
       <div style="margin-top:8px;font-size:12px;color:#909399">
@@ -894,7 +893,6 @@ const wafMasterEnabled = ref(false)
 const wafStatusSaving = ref(false)
 const caddyLogModeHint = computed(() => {
   const m = caddyLogMode.value
-  if (m === 'stdout') return t('proxy.caddyHintStdout')
   if (m === 'off') return t('proxy.caddyHintLogOff')
   return t('proxy.caddyHintFile')
 })
@@ -1384,7 +1382,7 @@ site._waf_status = 'global'
 // Load log output mode (per-node)
 try {
 const cfg = await client.get('/log-manage/log-output', { params: { server_id: props.serverId } })
-if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode
+if (cfg?.caddy?.mode) caddyLogMode.value = cfg.caddy.mode === 'off' ? 'off' : 'file'
 } catch (e) { ElMessage.error(t('common.failed')) }
 }
 

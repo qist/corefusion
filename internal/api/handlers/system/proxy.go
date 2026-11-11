@@ -725,7 +725,8 @@ func (h *ProxyHandler) SaveSNISettings(c *gin.Context) {
 
 // GetLogSettings handles GET /api/v1/proxy/log-settings.
 func (h *ProxyHandler) GetLogSettings(c *gin.Context) {
-	output := "stdout"
+	// 标准输出模式已下线，默认文件模式。
+	output := "file"
 	path := ""
 	if v, err := h.proxyMgr.GetSetting(c.Request.Context(), "proxy.log_output"); err == nil && v != "" {
 		output = v

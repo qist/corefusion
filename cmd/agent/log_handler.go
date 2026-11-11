@@ -21,9 +21,7 @@ import (
 )
 
 // handleReadLogFile reads the last N lines from a log file on the agent node.
-// In stdout mode, it first tries to read from the LogBroker's in-memory snapshot
-// (which captures real-time stdout output). If the broker has no data, it falls
-// back to reading the stdout log file (if managed=true and writer is active).
+// 标准输出模式已下线：进程直接把 stdout/stderr 写进日志文件，这里只读文件。
 func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.ReadLogFileResponse {
 	logType := req.LogType
 	lastLines := int(req.LastLines)
@@ -55,27 +53,6 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 	// We still check stdout mode via logType for the broker fallback.
 	if req.LogPath != "" {
 		logPath := a.resolveRelPath(req.LogPath)
-
-		// In stdout mode, try LogBroker snapshot first (real-time data)
-		mode := a.getLogMode(logType)
-		if mode == "stdout" && a.logMgr != nil {
-			lines, err := a.logMgr.GetProxyStdoutLog(context.Background(), logType, lastLines)
-			if err == nil && len(lines) > 0 {
-				realLines := []string{}
-				for _, l := range lines {
-					if !strings.Contains(l, "[未运行") && !strings.Contains(l, "未产生标准输出") {
-						realLines = append(realLines, l)
-					}
-				}
-				if len(realLines) > 0 {
-					return &agentpb.ReadLogFileResponse{
-						Success: true,
-						Lines:   agentFilterLines(realLines, filterEmails, filterStart, filterEnd, hasFilter),
-						LogPath: fmt.Sprintf("stdout://%s", logType),
-					}
-				}
-			}
-		}
 
 		// Read the specified file directly
 		f, err := os.Open(logPath)
@@ -111,29 +88,6 @@ func (a *AgentApp) handleReadLogFile(req *agentpb.ReadLogFileRequest) *agentpb.R
 	}
 
 	// No log_path specified — resolve by log type (original behavior)
-	// In stdout mode, try LogBroker snapshot first (real-time data)
-	mode := a.getLogMode(logType)
-	if mode == "stdout" && a.logMgr != nil {
-		lines, err := a.logMgr.GetProxyStdoutLog(context.Background(), logType, lastLines)
-		if err == nil && len(lines) > 0 {
-			// Filter out placeholder messages
-			realLines := []string{}
-			for _, l := range lines {
-				if !strings.Contains(l, "[未运行") && !strings.Contains(l, "未产生标准输出") {
-					realLines = append(realLines, l)
-				}
-			}
-			if len(realLines) > 0 {
-				return &agentpb.ReadLogFileResponse{
-					Success: true,
-					Lines:   agentFilterLines(realLines, filterEmails, filterStart, filterEnd, hasFilter),
-					LogPath: fmt.Sprintf("stdout://%s", logType),
-				}
-			}
-		}
-	}
-
-	// Fall back to file reading
 	logPath := a.resolveLogFilePath(logType)
 	if logPath == "" {
 		return &agentpb.ReadLogFileResponse{
@@ -509,20 +463,10 @@ func (a *AgentApp) readLogIncremental(req *agentpb.ReadLogFileRequest, lastLines
 const maxIncrementalReadBytes = 16 << 20
 
 // resolveLogFilePath resolves the log file path for a given log type.
-// In stdout mode, the log is persisted to logs/{type}-stdout.log by LogWriter.
-// In file mode, the log is written to the process's configured log file path.
+// 进程一律写真实文件（file 模式）或丢弃（off 模式），路径来自运行时配置/设置。
 func (a *AgentApp) resolveLogFilePath(logType string) string {
 	logDir := filepath.Join(a.dataDir, "logs")
 
-	// Determine log output mode from settings
-	mode := a.getLogMode(logType)
-
-	// In stdout mode, LogWriter persists captured stdout to {type}-stdout.log
-	if mode == "stdout" {
-		return filepath.Join(logDir, logType+"-stdout.log")
-	}
-
-	// File mode (or off): return the process's default log file path
 	switch logType {
 	case "xray":
 		// ⚠ 用户活动行（accepted + email:）只写入 **access** 日志，error 日志里
@@ -687,11 +631,7 @@ func (a *AgentApp) deriveCoreLogMode(coreType string) string {
 		if cfg.Log.Access == "none" && cfg.Log.Error == "none" {
 			return "off"
 		}
-		// stdout mode — empty string means stdout in xray, /dev/stderr is LogBroker capture
-		if cfg.Log.Access == "" || cfg.Log.Error == "" || cfg.Log.Error == "/dev/stderr" {
-			return "stdout"
-		}
-		// file mode — has actual file paths
+		// 标准输出模式已下线：access/error 为空或 /dev/stderr 一律按文件处理。
 		return "file"
 
 	case "singbox":
@@ -719,9 +659,7 @@ func (a *AgentApp) deriveCoreLogMode(coreType string) string {
 		if cfg.Log.Level == "silent" {
 			return "off"
 		}
-		if cfg.Log.Output == "stderr" || cfg.Log.Output == "" {
-			return "stdout"
-		}
+		// 标准输出（stderr）模式已下线，一律按文件处理。
 		return "file"
 	}
 	return ""
@@ -937,10 +875,6 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 	for _, coreType := range []string{"xray", "singbox"} {
 		mode := a.getLogMode(coreType)
 		switch mode {
-		case "stdout":
-			// stdout mode: LogWriter captures stdout and manages the capture file
-			// (including rotation), so we don't discover it as a separate log.
-			continue
 		case "off":
 			continue
 		default: // "file"
@@ -993,12 +927,7 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			nginxMode = cfg.Nginx.Mode
 		}
 	}
-	// In stdout mode, nginx writes to stdout which is captured by LogWriter.
-	// LogWriter manages the stdout capture file and its rotation, so we don't
-	// discover it as a separate log to avoid duplicate rotation.
-	if nginxMode == "stdout" {
-		// skip
-	} else if nginxMode != "off" {
+	if nginxMode != "off" {
 		// Read nginx settings to get actual log paths
 		type nginxLogSettings struct {
 			ErrorLog      bool   `json:"error_log"`
@@ -1057,12 +986,7 @@ func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogs
 			caddyMode = cfg.Caddy.Mode
 		}
 	}
-	// In stdout mode, caddy writes to stdout which is captured by LogWriter.
-	// LogWriter manages the stdout capture file and its rotation, so we don't
-	// discover it as a separate log to avoid duplicate rotation.
-	if caddyMode == "stdout" {
-		// skip
-	} else if caddyMode != "off" {
+	if caddyMode != "off" {
 		// 全局统一 access 日志（与 Caddyfile 生成的 "output file logs/caddy_access.log"
 		// 同名，面板本地的 discoverCaddyLogs 也始终包含它）——站点表为空时兜底。
 		logs = append(logs, &agentpb.DiscoveredLogInfo{
@@ -1241,16 +1165,10 @@ func (a *AgentApp) handleGetWriterStatus(ctx context.Context) map[string]interfa
 	writers := make([]map[string]interface{}, 0, len(statuses))
 	for _, st := range statuses {
 		writers = append(writers, map[string]interface{}{
-			"proxy_type":  st.ProxyType,
-			"mode":        st.Mode,
-			"managed":     st.Managed,
-			"active":      st.Active,
-			"paused":      st.Paused,
-			"file_path":   st.FilePath,
-			"log_dir":     st.LogDir,
-			"retain_days": st.RetainDays,
-			"compress":    st.Compress,
-			"max_size_mb": st.MaxSizeMB,
+			"proxy_type": st.ProxyType,
+			"mode":       st.Mode,
+			"file_path":  st.FilePath,
+			"log_dir":    st.LogDir,
 		})
 	}
 	return map[string]interface{}{

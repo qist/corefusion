@@ -6,47 +6,6 @@ import (
 	"testing"
 )
 
-// 旧版 nginx stdout 模式是 logs/stdout_access.log -> /dev/stdout 软链。
-// 面板/Agent 重启后软链会解析到新进程自己的 stdout：既读不到 nginx 日志，
-// 旧 nginx 也还在往已断开的管道写。这里锁定“必须是真实文件”。
-func TestEnsureRegularLogFileReplacesStdoutSymlink(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stdout_access.log")
-	if err := os.Symlink("/dev/stdout", path); err != nil {
-		t.Fatal(err)
-	}
-
-	ensureRegularLogFile(path)
-
-	info, err := os.Lstat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		t.Fatal("legacy /dev/stdout symlink was not replaced")
-	}
-	if !info.Mode().IsRegular() {
-		t.Fatalf("expected regular file, got mode %v", info.Mode())
-	}
-}
-
-// 已是普通文件时应保留原内容（O_APPEND 追加，不能截断）。
-func TestEnsureRegularLogFileKeepsExistingContent(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stdout_access.log")
-	if err := os.WriteFile(path, []byte("existing line\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-
-	ensureRegularLogFile(path)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != "existing line\n" {
-		t.Fatalf("existing content was altered: %q", data)
-	}
-}
-
 func TestNormalizeProxyLogModeRetiresStdout(t *testing.T) {
 	cases := map[string]string{
 		"stdout":  "file",

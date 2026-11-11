@@ -111,6 +111,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		LocationConfig    string `json:"location_config"`
 		L4Protocol        string `json:"l4_protocol"`
 		SNITarget         string `json:"sni_target"`
+		UpstreamSNI       string `json:"upstream_sni"`
 		UpstreamTLS       bool   `json:"upstream_tls"`
 		LocalPort         string `json:"local_port"`
 		ProxyProtocol     bool   `json:"proxy_protocol"`
@@ -153,6 +154,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		LocationConfig:    req.LocationConfig,
 		L4Protocol:        req.L4Protocol,
 		SNITarget:         req.SNITarget,
+		UpstreamSNI:       req.UpstreamSNI,
 		UpstreamTLS:       req.UpstreamTLS,
 		LocalPort:         req.LocalPort,
 		ProxyProtocol:     req.ProxyProtocol,
@@ -212,6 +214,7 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		LocationConfig    *string `json:"location_config"`
 		L4Protocol        *string `json:"l4_protocol"`
 		SNITarget         *string `json:"sni_target"`
+		UpstreamSNI       *string `json:"upstream_sni"`
 		UpstreamTLS       *bool   `json:"upstream_tls"`
 		LocalPort         *string `json:"local_port"`
 		ProxyProtocol     *bool   `json:"proxy_protocol"`
@@ -295,6 +298,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.SNITarget != nil {
 		existing.SNITarget = *req.SNITarget
+	}
+	if req.UpstreamSNI != nil {
+		existing.UpstreamSNI = *req.UpstreamSNI
 	}
 	// 回源 TLS ✓（grpc_pass grpc:// ↔ grpcs:// ✓）：显式传了才改 ✓，避免把已有设置冲掉 ✗
 	if req.UpstreamTLS != nil {

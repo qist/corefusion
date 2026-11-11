@@ -136,6 +136,9 @@
             <el-radio value="http-01">HTTP-01</el-radio>
             <el-radio value="dns-01">DNS-01</el-radio>
           </el-radio-group>
+          <div v-if="issueForm.challenge_type==='http-01'" style="font-size:11px;color:#999;margin-top:4px">
+            {{ t('certificate.http01Hint') }}
+          </div>
         </el-form-item>
         <el-form-item v-if="issueForm.cert_target==='domain' && issueForm.challenge_type==='dns-01'" :label="t('certificate.dnsChannel')">
           <el-select v-model="issueForm.dns_channel_id" style="width:100%" :placeholder="t('certificate.selectChannel')">

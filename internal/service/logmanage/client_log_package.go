@@ -471,8 +471,6 @@ func (s *Service) collectLocalNodeLogs(ctx context.Context, logType string, star
 
 	var logPath string
 	switch logMode {
-	case "stdout":
-		logPath = s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.log", logType))
 	case "off":
 		return nil, fmt.Errorf("logging is off for %s", logType)
 	default:

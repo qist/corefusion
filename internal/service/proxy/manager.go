@@ -194,16 +194,13 @@ func (m *Manager) getCaddyAccessLogPath() string {
 }
 
 // proxyAccessLogPath 返回某个代理在当前日志模式下应被 tail 的访问日志；
-// off 模式返回空串（不采集）。
+// off 模式返回空串（不采集）。标准输出模式已下线，file 模式一律走各自的真实文件。
 func (m *Manager) proxyAccessLogPath(proxyType ProxyType, logMode string) string {
 	if logMode == "off" {
 		return ""
 	}
 	switch proxyType {
 	case ProxyNginx:
-		if logMode == "stdout" {
-			return m.getNginxStdoutAccessLogPath()
-		}
 		return m.getNginxAccessLogPath()
 	case ProxyCaddy:
 		return m.getCaddyAccessLogPath()
@@ -1884,6 +1881,20 @@ func (m *Manager) GetSetting(ctx context.Context, key string) (string, error) {
 		return "", nil
 	}
 	return m.settingStore.GetByKey(ctx, key)
+}
+
+// panelScheme 返回访问面板本地监听应使用的协议。
+// 面板开启 TLS（panel.tls_enabled=true）时只有一个 HTTPS 监听（没有并行的 HTTP 端口），
+// 用 http:// 回源会握手失败（ACME 挑战 502、面板转发不通）。
+func panelScheme(store SettingStore) string {
+	if store != nil {
+		if v, err := store.GetByKey(context.Background(), "panel.tls_enabled"); err == nil {
+			if strings.EqualFold(strings.TrimSpace(v), "true") {
+				return "https"
+			}
+		}
+	}
+	return "http"
 }
 
 // panelAddr returns the panel address (host:port) for reverse_proxy directives.

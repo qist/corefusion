@@ -676,6 +676,10 @@
             <el-switch v-model="siteForm.upstream_tls" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.upstreamTlsHint') }}</div>
           </el-form-item>
+          <el-form-item v-if="siteForm.upstream_tls && siteForm.template!=='sni' && siteForm.template!=='l4'" :label="t('proxy.upstreamSni')">
+            <el-input v-model="siteForm.upstream_sni" placeholder="internal.example.com" />
+            <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.upstreamSniHint') }}</div>
+          </el-form-item>
         <el-form-item v-if="siteForm.template==='portal_forward'" :label="t('proxy.portalForwardHint')">
           <span style="font-size:12px;color:#909399">{{ t('proxy.portalForwardDesc') }}</span>
         </el-form-item>
@@ -1136,7 +1140,13 @@ function onInboundSelect(id) {
   }
   // 入站自带 TLS（xray security=tls / sing-box tls.enabled=true）时，**回源必须走 TLS** ✓
   // （否则 grpc_pass grpc:// 与核心握手失败 ✗）—— 「一键导入」自动帮你勾上 ✓
-  if (ib && ib._security === 'tls') siteForm.value.upstream_tls = true
+  if (ib && ib._security === 'tls') {
+    siteForm.value.upstream_tls = true
+    // 回源 SNI 默认用入站证书的 serverName：上游证书域名不一定是站点域名。
+    if (!siteForm.value.upstream_sni && ib._serverNames?.length) {
+      siteForm.value.upstream_sni = ib._serverNames[0]
+    }
+  }
 
 }
 
@@ -1190,6 +1200,7 @@ async function runImport(dryRun) {
 const siteSaving = ref(false)
 const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
+  upstream_sni: '', // 回源 TLS 的 SNI / Server Name（tls_server_name）
 })
 
 // Panel port
@@ -1729,6 +1740,7 @@ waf_enabled: row.waf_enabled !== false,
     sni_target: row.sni_target,
     singbox_listen_port: row.singbox_listen_port || '',
     upstream_tls: row.upstream_tls === true,
+    upstream_sni: row.upstream_sni || '',
     proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false),
     is_panel: row.is_panel, editMode: 'form',
     inbound_id: null,
@@ -1775,6 +1787,7 @@ function buildSitePayload() {
     sni_target: siteForm.value.sni_target,
     singbox_listen_port: siteForm.value.template === 'reality' ? String(siteForm.value.singbox_listen_port || '').trim() : '',
     upstream_tls: siteForm.value.upstream_tls === true,
+    upstream_sni: String(siteForm.value.upstream_sni || '').trim(),
     local_port: siteForm.value.local_port,
     proxy_protocol: siteForm.value.proxy_protocol || false,
     is_panel: siteForm.value.is_panel,

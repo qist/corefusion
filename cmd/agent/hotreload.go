@@ -309,22 +309,6 @@ func (a *AgentApp) readAppliedBasis(coreType string, fallback []byte) []byte {
 	return data
 }
 
-// initAppliedBasisFromRuntime 在 Agent 启动时把「当前运行配置文件」登记为运行态基准。
-//
-// 启动后 Reconcile 会让各核心加载这份文件，因此它如实代表进程即将运行的配置。
-// ⚠ 必须显式建立基准 ✗：面板的 SyncConfig 会**抢先写盘**（只写盘、不动进程），
-// 磁盘文件不能代表运行态；没有基准时 diff 会退化为和磁盘比 → 变更被误判为「未变」。
-func (a *AgentApp) initAppliedBasisFromRuntime() {
-	for _, ct := range []string{"xray", "singbox"} {
-		p := a.procMgr.RuntimeConfigPath(ct)
-		data, err := os.ReadFile(p)
-		if err != nil || len(data) == 0 {
-			continue
-		}
-		a.writeAppliedBasis(ct, data)
-	}
-}
-
 // runtimeConfigDiffers 判断本次下发的 configData 相对「运行态基准」是否真的发生了变化。
 //
 // ⚠ 必须和「基准」比、而不是和磁盘文件比 ✗：面板的 PanelCommand.SyncConfig 会**抢先写盘**

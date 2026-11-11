@@ -30,6 +30,9 @@ type CaddySite struct {
 	LogFormat     string `json:"log_format" gorm:"size:32"` // json, console
 	L4Protocol    string `json:"l4_protocol" gorm:"size:16"`
 	SNITarget     string `json:"sni_target" gorm:"size:255"`
+	// UpstreamSNI 是**回源 TLS 的 SNI / TLS Server Name**（生成 `tls_server_name`）。
+	// 证书域名可能与站点域名不同，必须可配置；留空回退 sni_target（兼容旧配置）→ 站点域名。
+	UpstreamSNI string `json:"upstream_sni" gorm:"size:255"`
 	// SingboxListenPort 是 Reality 模板专属的「额外本地 TCP 端口」：
 	// 该端口的 listener 不挂 proxy_protocol wrapper，供 sing-box 的 REALITY
 	// handshake 使用（sing-box 只支持 host:port，且不发 PROXY protocol）。

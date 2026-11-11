@@ -17,7 +17,6 @@ import (
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	ratelimit "corefusion/internal/runtime/agent/ratelimit"
-	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
@@ -571,52 +570,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				syncErr = fmt.Errorf("write nginx settings: %w", err)
 			}
 		}
-		// Start/stop LogWriters based on the new modes (same as Panel's SaveLogOutput/SaveCoreLogOutput)
-		if a.logMgr != nil && syncErr == nil {
-			// Parse proxy config and start/stop writers for nginx/caddy
-			if req.ProxyLogConfig != "" {
-				var proxyCfg struct {
-					Nginx struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"nginx"`
-					Caddy struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"caddy"`
-				}
-				if err := json.Unmarshal([]byte(req.ProxyLogConfig), &proxyCfg); err == nil {
-					if err := a.logMgr.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
-						log.Printf("[Agent] failed to start nginx writer: %v", err)
-					}
-					if err := a.logMgr.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
-						log.Printf("[Agent] failed to start caddy writer: %v", err)
-					}
-				}
-			}
-			// Parse core config and start/stop writers for xray/singbox
-			if req.CoreLogConfig != "" {
-				var coreCfg struct {
-					Xray struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"xray"`
-					Singbox struct {
-						Mode    string `json:"mode"`
-						Managed bool   `json:"managed"`
-					} `json:"singbox"`
-				}
-				if err := json.Unmarshal([]byte(req.CoreLogConfig), &coreCfg); err == nil {
-					if err := a.logMgr.StartWriterManaged("xray", coreCfg.Xray.Mode, coreCfg.Xray.Managed); err != nil {
-						log.Printf("[Agent] failed to start xray writer: %v", err)
-					}
-					if err := a.logMgr.StartWriterManaged("singbox", coreCfg.Singbox.Mode, coreCfg.Singbox.Managed); err != nil {
-						log.Printf("[Agent] failed to start singbox writer: %v", err)
-					}
-				}
-			}
-			log.Printf("[Agent] log writers refreshed after SyncLogConfig")
-		}
+		// 标准输出接管 / LogWriter 已下线：进程直接写真实文件，这里只需把模式与路径落库。
 		sendSyncResult("sync_log_config", map[string]interface{}{
 			"success": syncErr == nil,
 		}, syncErr)
@@ -630,35 +584,19 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		sendSyncResult("get_writer_status", resp, nil)
 
 	case *agentpb.PanelCommand_StartWriter:
-		req := c.StartWriter
-		err := a.logMgr.StartWriter(req.ProxyType, req.Mode)
 		sendSyncResult("start_writer", map[string]interface{}{
-			"success": err == nil,
-			"message": fmt.Sprintf("writer %s started mode=%s", req.ProxyType, req.Mode),
-		}, err)
+			"success": false,
+		}, fmt.Errorf("log writer 已下线：日志由进程直接写文件、日志中心负责采集与轮转"))
 
 	case *agentpb.PanelCommand_StopWriter:
-		req := c.StopWriter
-		err := a.logMgr.StopWriter(req.ProxyType)
 		sendSyncResult("stop_writer", map[string]interface{}{
-			"success": err == nil,
-			"message": fmt.Sprintf("writer %s stopped", req.ProxyType),
-		}, err)
+			"success": false,
+		}, fmt.Errorf("log writer 已下线：日志由进程直接写文件、日志中心负责采集与轮转"))
 
 	case *agentpb.PanelCommand_UpdateWriterConfig:
-		req := c.UpdateWriterConfig
-		cfg := logManageSvc.LogWriterConfig{
-			ProxyType:  req.ProxyType,
-			Mode:       req.Mode,
-			RetainDays: int(req.RetainDays),
-			Compress:   req.Compress,
-			MaxSizeMB:  int(req.MaxSizeMb),
-		}
-		err := a.logMgr.UpdateWriterConfig(req.ProxyType, cfg)
 		sendSyncResult("update_writer_config", map[string]interface{}{
-			"success": err == nil,
-			"message": fmt.Sprintf("writer %s config updated", req.ProxyType),
-		}, err)
+			"success": false,
+		}, fmt.Errorf("log writer 已下线：日志由进程直接写文件、日志中心负责采集与轮转"))
 
 	// ========== Rate Limit commands ==========
 	case *agentpb.PanelCommand_AssociateIp:

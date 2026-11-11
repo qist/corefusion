@@ -103,22 +103,6 @@ func writeLocationConfig(sb *strings.Builder, locationConfig string, already map
 	}
 }
 
-// ensureRegularLogFile ensures path is a real, regular log file.
-// 旧实现把 stdout 模式做成 `logs/stdout_*.log -> /dev/stdout` 软链：
-// 面板/Agent 重启后软链解析到**新进程自己的 stdout**，既读不到 nginx 日志，
-// 旧 nginx 也还在往已断开的管道写。现在统一成真实文件，父进程重启不影响读写。
-func ensureRegularLogFile(path string) {
-	if info, err := os.Lstat(path); err == nil {
-		if info.Mode().IsRegular() {
-			return
-		}
-		_ = os.Remove(path) // symlink / device / dir
-	}
-	if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640); err == nil {
-		_ = f.Close()
-	}
-}
-
 // nginxUpstreamKey converts a domain/name to a safe upstream block name.
 // GenerateConfig assembles an nginx.conf from settings and sites.
 func (m *NginxManager) GenerateConfig(ctx context.Context, serverID int64) (string, error) {
@@ -303,16 +287,9 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		}
 	}
 	switch logOutputMode {
-	case "stdout":
-		ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_error.log"))
-		if s.ErrorLogLevel != "" {
-			sb.WriteString(fmt.Sprintf("error_log logs/stdout_error.log %s;\n", s.ErrorLogLevel))
-		} else {
-			sb.WriteString("error_log logs/stdout_error.log;\n")
-		}
 	case "off":
 		sb.WriteString("error_log /dev/null;\n")
-	default: // "file"
+	default: // "file"（标准输出模式已下线）
 		if s.ErrorLog {
 			if s.ErrorLogLevel != "" {
 				sb.WriteString(fmt.Sprintf("error_log %s %s;\n", s.ErrorLogPath, s.ErrorLogLevel))
@@ -404,13 +381,9 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		"    'request_time: $request_time ups_status: $upstream_status ';\n"
 
 	switch logOutputMode {
-	case "stdout":
-		ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_access.log"))
-		sb.WriteString(logFmt)
-		sb.WriteString("    access_log logs/stdout_access.log main;\n")
 	case "off":
 		// no access log
-	default: // "file"
+	default: // "file"（标准输出模式已下线）
 		if s.AccessLog {
 			sb.WriteString(logFmt)
 			sb.WriteString(fmt.Sprintf("    access_log  %s main;\n", s.AccessLogPath))
@@ -731,22 +704,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListenV6))
 			}
 			sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
-			if !m.isLocalTarget(ctx, serverID) {
-				sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
-				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
-				sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
-				sb.WriteString("        }\n")
-			} else {
-				sb.WriteString("        # ACME HTTP-01 challenge support\n")
-				sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
-				sb.WriteString(fmt.Sprintf("            proxy_pass http://%s;\n", m.panelAddr(ctx)))
-				sb.WriteString("            proxy_set_header Host $host;\n")
-				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
-				sb.WriteString("        }\n")
-			}
-			sb.WriteString(fmt.Sprintf("        return 301 %s$request_uri;\n", target))
+			// ACME HTTP-01 挑战必须留在 :80，且**不能被跳转抢走**：
+			// server 级 return 在 rewrite 阶段执行、早于 location 匹配，会把挑战请求也 301 掉，
+			// 所以这里把跳转放进 location / 里，让 ^~ 挑战 location 优先命中。
+			m.writeACMEChallengeLocation(&sb, ctx, serverID, "        ")
+			sb.WriteString("        location / {\n")
+			sb.WriteString(fmt.Sprintf("            return 301 %s$request_uri;\n", target))
+			sb.WriteString("        }\n")
 			sb.WriteString("    }\n\n")
 		}
 
@@ -1016,29 +980,17 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 		}
 
-		// ACME HTTP-01 challenge support
+		// ACME HTTP-01 挑战只在**真正监听 80 的 HTTP server 块**里生成 ✓：
+		//   - CA 的 http-01 校验只会访问 80 ✗，443/TLS 块里的同名 location 是死代码；
+		//   - unix socket / 非 80 端口同理（外面根本到不了）；
+		//   - 以前无条件生成 → 「看着配了挑战、其实签不下来」✗。
+		// 未生成时证书签发仍可用：Agent 会自检挑战路径，不可用且 80 空闲就临时起服务，
+		// 80 被 nginx/caddy 占用则临时加一份只服务挑战的配置（见 cmd/agent/acme_webserver.go）。
 		//
-		// 分两种，必须区分 ✗：
-		//   - **本机（面板）**：面板自己驱动签发 ✓ → 挑战**代理回面板** ✓（面板内存里就有挑战记录 ✓）；
-		//   - **远程节点**：签发是**节点上的 Agent 在本机做**的 ✓ → 它的挑战记录在 Agent 进程内存里，
-		//     面板并不知道 ✗ → 所以**不能代理回面板** ✗，必须直接服务**节点本地的挑战目录** ✓
-		//     （Agent 会把挑战文件写在那里 ✓，见 cmd/agent/acme_webserver.go ✓）。
-		if !m.isLocalTarget(ctx, serverID) {
-			sb.WriteString("        # ACME HTTP-01 challenge support (node-local, served from disk)\n")
-			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
-			sb.WriteString(fmt.Sprintf("            alias %s/.well-known/acme-challenge/;\n", nodeACMEChallengeDir))
-			sb.WriteString("        }\n")
-		}
-		if m.isLocalTarget(ctx, serverID) {
-			panelAddr := m.panelAddr(ctx)
-			sb.WriteString("        # ACME HTTP-01 challenge support\n")
-			sb.WriteString("        location ^~ /.well-known/acme-challenge/ {\n")
-			sb.WriteString(fmt.Sprintf("            proxy_pass http://%s;\n", panelAddr))
-			sb.WriteString("            proxy_set_header Host $host;\n")
-			sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-			sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-			sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
-			sb.WriteString("        }\n")
+		// 本机（面板）→ 代理回面板（面板内存里有挑战记录）；
+		// 远程节点 → 直接服务节点本地挑战目录（签发在 Agent 本机做，面板没有记录）。
+		if !hasTLS && !socketOnly && listenPortOnly(listenPort) == "80" {
+			m.writeACMEChallengeLocation(&sb, ctx, serverID, "        ")
 		}
 
 		// Locations（去重：同域名同 location 只保留第一个，其余跳过并记日志）
@@ -1071,8 +1023,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				grpcScheme = "grpcs"
 				upstreamScheme = "https"
 			}
-			// 回源 SNI ✓：优先 sni_target ✓，否则退回域名 ✓
-			upstreamSNI := strings.TrimSpace(site.SNITarget)
+			// 回源 SNI（proxy_ssl_name / grpc_ssl_name）：优先站点显式配置；
+			// 留空回退 sni_target（兼容旧配置）→ 站点主域名。
+			// ⚠ 不能写死站点域名 ✗：上游证书的域名可能完全不同（如内网 CA 签的 internal.example.com）。
+			upstreamSNI := strings.TrimSpace(site.UpstreamSNI)
+			if upstreamSNI == "" && site.Template != "sni" && site.Template != "l4" {
+				upstreamSNI = strings.TrimSpace(site.SNITarget)
+			}
 			if upstreamSNI == "" {
 				if ds := SplitDomains(site.Domain); len(ds) > 0 {
 					upstreamSNI = ds[0]
@@ -1339,6 +1296,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		if globalIPv6 {
 			sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListenV6))
 		}
+		// 只有 TLS 站点时，这个兜底 server 仍然占着 httpListen（通常是 80）。
+		// 若不在这里提供 ACME 挑战，HTTP-01 会命中兜底的 200 "OK" → 签发必然失败
+		// （面板检测到 80 被自己管理的 nginx 占用 → 走反代模式 → 请求落到这里）。
+		if listenPortOnly(httpListen) == "80" {
+			m.writeACMEChallengeLocation(&sb, ctx, serverID, "        ")
+		}
 		sb.WriteString("        location / {\n")
 		sb.WriteString("            default_type text/plain;\n")
 		sb.WriteString("            return 200 \"CoreFusion Proxy - OK\";\n")
@@ -1382,13 +1345,9 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		}
 
 		switch logOutputMode {
-		case "stdout":
-			ensureRegularLogFile(filepath.Join(m.dataDir, "logs", "stdout_stream.log"))
-			sb.WriteString(streamFmtStr)
-			sb.WriteString(fmt.Sprintf("    access_log logs/stdout_stream.log stream_%s buffer=32k;\n", logFmt))
 		case "off":
 			// no stream log
-		default: // "file"
+		default: // "file"（标准输出模式已下线）
 			if s.StreamLog {
 				sb.WriteString(streamFmtStr)
 				sb.WriteString(fmt.Sprintf("    access_log %s stream_%s buffer=32k;\n", logPath, logFmt))
@@ -1693,6 +1652,35 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	}
 
 	return sb.String(), nil
+}
+
+// writeACMEChallengeLocation 写 ACME HTTP-01 挑战的 location。
+// 调用方必须保证所在 server 块**真的监听 80**（见调用点条件），否则就是死配置。
+//
+//   - 本机（面板）：代理回面板（挑战记录在面板内存里）；
+//   - 远程节点：直接服务节点本地挑战目录（签发由节点上的 Agent 完成，面板没有记录）。
+func (m *NginxManager) writeACMEChallengeLocation(sb *strings.Builder, ctx context.Context, serverID int64, indent string) {
+	if !m.isLocalTarget(ctx, serverID) {
+		sb.WriteString(indent + "# ACME HTTP-01 challenge support (node-local, served from disk)\n")
+		sb.WriteString(indent + "location ^~ /.well-known/acme-challenge/ {\n")
+		sb.WriteString(indent + "    alias " + nodeACMEChallengeDir + "/.well-known/acme-challenge/;\n")
+		sb.WriteString(indent + "}\n")
+		return
+	}
+	scheme := panelScheme(m.settingStore)
+	sb.WriteString(indent + "# ACME HTTP-01 challenge support\n")
+	sb.WriteString(indent + "location ^~ /.well-known/acme-challenge/ {\n")
+	sb.WriteString(indent + "    proxy_pass " + scheme + "://" + m.panelAddr(ctx) + ";\n")
+	if scheme == "https" {
+		// 面板只监听 HTTPS（panel.tls_enabled=true）时必须走 https，且不校验回环证书。
+		sb.WriteString(indent + "    proxy_ssl_server_name on;\n")
+		sb.WriteString(indent + "    proxy_ssl_verify off;\n")
+	}
+	sb.WriteString(indent + "    proxy_set_header Host $host;\n")
+	sb.WriteString(indent + "    proxy_set_header X-Real-IP $remote_addr;\n")
+	sb.WriteString(indent + "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+	sb.WriteString(indent + "    proxy_set_header X-Forwarded-Proto $scheme;\n")
+	sb.WriteString(indent + "}\n")
 }
 
 // writeProxySSLUpstream 回源走 TLS 时补 SNI 与"不校验回源证书" ✓（http/https 转发用 ✓）。

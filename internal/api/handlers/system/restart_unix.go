@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+
+	"corefusion/internal/util/systemdunit"
 )
 
 // restartProcess restarts the current process (Unix).
@@ -27,6 +29,9 @@ import (
 func restartProcess() {
 	unit := systemdUnitName()
 	if unit != "" {
+		// 老版本 unit 没有 KillMode=process：补 drop-in，避免重启面板时连带
+		// 杀掉核心/代理子进程（新装脚本生成的 unit 已内置）。
+		systemdunit.EnsureKillModeProcess(unit)
 		log.Printf("[system] restart: exiting(1); systemd will restart %s", unit)
 		os.Exit(1)
 	}

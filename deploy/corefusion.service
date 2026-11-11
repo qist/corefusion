@@ -14,6 +14,10 @@ RestartSec=3
 LimitNOFILE=1048576
 KillSignal=SIGTERM
 TimeoutStopSec=30
+# 只杀主进程（面板），不回收整个 cgroup：核心（xray/sing-box）与代理
+# （caddy/nginx）都是数据面服务，在面板重启/升级期间保持运行；新面板启动时
+# 按 PID + 二进制 inode 校验后接管（adopt），流量不中断。
+KillMode=process
 
 # 日志使用 journald：
 #   journalctl -u corefusion -f

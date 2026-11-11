@@ -462,23 +462,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 	if len(httpSites) == 0 && !hasL4 {
 		sb.WriteString(":80 {\n")
-		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
-		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
-		if !m.isLocalTarget(ctx, serverID) {
-			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
-			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-			sb.WriteString("\thandle @acme {\n")
-			sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
-			sb.WriteString("\t\tfile_server\n")
-			sb.WriteString("\t}\n")
-		}
-		if m.isLocalTarget(ctx, serverID) {
-			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
-			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-			sb.WriteString("\thandle @acme {\n")
-			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-			sb.WriteString("\t}\n")
-		}
+		m.writeACMEHandler(&sb, ctx, serverID, "\t")
 		sb.WriteString("\trespond \"CoreFusion Proxy - OK\" 200\n")
 		sb.WriteString("}\n")
 		return sb.String(), nil
@@ -552,19 +536,12 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 			sb.WriteString("# HTTP → HTTPS redirect (auto_https is off — generated manually)\n")
 			sb.WriteString(fmt.Sprintf("%s {\n", strings.Join(redirectAddrs, ", ")))
-			if !m.isLocalTarget(ctx, serverID) {
-				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-				sb.WriteString("\thandle @acme {\n")
-				sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
-				sb.WriteString("\t\tfile_server\n")
-				sb.WriteString("\t}\n")
-			} else {
-				sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-				sb.WriteString("\thandle @acme {\n")
-				sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-				sb.WriteString("\t}\n")
-			}
-			sb.WriteString(fmt.Sprintf("\tredir https://%s{uri} 302\n", primary))
+			m.writeACMEHandler(&sb, ctx, serverID, "\t")
+			// 跳转必须放在 handle 兜底块里：Caddy 的指令排序中 `redir` 在 `handle` 之前，
+			// 直接写 redir 会先执行、把 ACME 挑战请求也 302 掉（adapt 后 acme 路由会被丢弃）。
+			sb.WriteString("\thandle {\n")
+			sb.WriteString(fmt.Sprintf("\t\tredir https://%s{uri} 302\n", primary))
+			sb.WriteString("\t}\n")
 			sb.WriteString("}\n\n")
 		}
 		// When layer4 is active, non-TLS sites must use :80 to avoid
@@ -616,26 +593,15 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			sb.WriteString("\ttls " + m.resolvePath(p.Cert) + " " + m.resolvePath(p.Key) + "\n")
 		}
 
-		// ACME HTTP-01 challenge support
+		// ACME HTTP-01 挑战只在**该 site block 真的监听 80** 时生成：
+		// CA 的 http-01 校验只访问 80，带证书的块（443）或显式非 80 端口的块里
+		// 写挑战处理是死代码，还会让人误以为“已经配好了”。
+		// 未生成时签发仍可用：Agent 会自检，80 空闲就临时起服务，被 nginx/caddy
+		// 占用就临时加一份只服务挑战的配置（见 cmd/agent/acme_webserver.go）。
 		//
-		// 分两种 ✗：本机（面板）→ 挑战**代理回面板** ✓（面板驱动签发 ✓）；
-		// 远程节点 → **服务节点本地挑战目录** ✓（签发由节点上的 Agent 做 ✓，面板没有挑战记录 ✗）。
-		// 远程节点：签发由**节点上的 Agent 在本机**完成 ✓ → 挑战记录在 Agent 进程内存里，
-		// 面板并不知道 ✗ → 必须直接服务**节点本地的挑战目录** ✓（不能 reverse_proxy 回面板 ✗）。
-		if !m.isLocalTarget(ctx, serverID) {
-			sb.WriteString("\t# ACME HTTP-01 challenge support (node-local, served from disk)\n")
-			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-			sb.WriteString("\thandle @acme {\n")
-			sb.WriteString("\t\troot * /var/lib/corefusion-agent/acme-challenge\n")
-			sb.WriteString("\t\tfile_server\n")
-			sb.WriteString("\t}\n")
-		}
-		if m.isLocalTarget(ctx, serverID) {
-			sb.WriteString("\t# ACME HTTP-01 challenge support\n")
-			sb.WriteString("\t@acme path /.well-known/acme-challenge/*\n")
-			sb.WriteString("\thandle @acme {\n")
-			sb.WriteString(fmt.Sprintf("\t\treverse_proxy %s\n", m.panelAddr(ctx)))
-			sb.WriteString("\t}\n")
+		// 本机（面板）→ 挑战代理回面板；远程节点 → 服务节点本地挑战目录。
+		if caddyGroupListens80(addrs, hasCert) {
+			m.writeACMEHandler(&sb, ctx, serverID, "\t")
 		}
 
 		// Per-site log configuration:
@@ -797,6 +763,19 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					}
 					sb.WriteString(fmt.Sprintf("\t\tto %s\n", toUpstream))
 				}
+			}
+			// 回源 TLS：显式写 transport http + tls_server_name。
+			// 不写的话 Caddy 会用 to 里的主机（多为 127.0.0.1）当 SNI，
+			// 上游按 SNI 选证书时会拿错证书（证书域名可能是另一个名字）。
+			if site.UpstreamTLS && site.Template != "grpc" && !strings.Contains(site.ProxyConfig, "transport") {
+				sb.WriteString("\t\ttransport http {\n")
+				sb.WriteString("\t\t\ttls\n")
+				if sni := caddyUpstreamSNI(&site); sni != "" {
+					sb.WriteString("\t\t\ttls_server_name " + sni + "\n")
+				}
+				// 回源对象多为本机内核（自签/内部签发），与 nginx 的 proxy_ssl_verify off 对齐。
+				sb.WriteString("\t\t\ttls_insecure_skip_verify\n")
+				sb.WriteString("\t\t}\n")
 			}
 			// Load balancing policy
 			if site.LbPolicy != "" {
@@ -977,11 +956,8 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		if site.UpstreamTLS {
 			// 回源走 TLS ✓（入站自带 TLS 时必须 ✗，否则 grpc 握手失败 ✓）
 			sb.WriteString("\t\t\ttls\n")
-			sni := strings.TrimSpace(site.SNITarget)
-			if sni == "" {
-				sni = strings.TrimSpace(site.Domain)
-			}
-			if sni != "" {
+			// SNI：优先站点显式配置（证书域名可能不是站点域名）→ sni_target（旧配置）→ 站点域名。
+			if sni := caddyUpstreamSNI(site); sni != "" {
 				sb.WriteString("\t\t\ttls_server_name " + sni + "\n")
 			}
 			sb.WriteString("\t\t\ttls_insecure_skip_verify\n")
@@ -1318,7 +1294,7 @@ func (m *CaddyManager) getCaddyLogModeForServer(ctx context.Context, serverID in
 
 // BatchUpdateLogEnabled updates the log_enabled flag for all HTTP sites of a server.
 // When log output mode is "off", all sites should have log_enabled=false.
-// When log output mode is "file" or "stdout", all sites should have log_enabled=true.
+// When log output mode is "file", all sites should have log_enabled=true.
 func (m *CaddyManager) BatchUpdateLogEnabled(ctx context.Context, serverID int64, enabled bool) (int, error) {
 	sites, err := m.siteRepo.List(ctx, serverID)
 	if err != nil {
@@ -1396,6 +1372,104 @@ func writeCaddyProxyBlock(sb *strings.Builder, indent string, targets []string, 
 	}
 	if len(targets) > 1 && lb != "" {
 		sb.WriteString(fmt.Sprintf("%s\tlb_policy %s\n", indent, lb))
+	}
+	sb.WriteString(indent + "}\n")
+}
+
+// caddyUpstreamSNI 返回回源 TLS 的 SNI / TLS Server Name：
+// 站点显式 upstream_sni → sni_target（兼容旧配置）→ 站点域名（去端口）。
+func caddyUpstreamSNI(site *entity.CaddySite) string {
+	if site == nil {
+		return ""
+	}
+	if s := strings.TrimSpace(site.UpstreamSNI); s != "" {
+		return s
+	}
+	if site.Template != "sni" && site.Template != "l4" {
+		if s := strings.TrimSpace(site.SNITarget); s != "" {
+			return s
+		}
+	}
+	return strings.TrimSpace(StripPort(site.Domain))
+}
+
+// caddyAddrPort 取出 Caddy 站点地址里的显式端口（无端口返回 ""）。
+func caddyAddrPort(addr string) string {
+	a := strings.TrimSpace(addr)
+	if i := strings.Index(a, "://"); i >= 0 {
+		a = a[i+3:]
+	}
+	if a == "" {
+		return ""
+	}
+	if strings.HasPrefix(a, "[") {
+		// [::1]:8080 / [::1]
+		if i := strings.LastIndex(a, "]"); i >= 0 {
+			rest := a[i+1:]
+			if strings.HasPrefix(rest, ":") {
+				return rest[1:]
+			}
+		}
+		return ""
+	}
+	if strings.Count(a, ":") != 1 {
+		return "" // 裸域名 / IPv4 无端口 / 裸 IPv6
+	}
+	port := a[strings.LastIndex(a, ":")+1:]
+	if port == "" {
+		return ""
+	}
+	for _, r := range port {
+		if r < '0' || r > '9' {
+			return ""
+		}
+	}
+	return port
+}
+
+// caddyGroupListens80 判断该域名组的 site block 是否真的监听 80：
+// Caddy 对裸域名默认走 443（即使 auto_https off），只有显式 `http://` 或 `:80` 才是 80。
+// 带证书的块也视为 443。
+func caddyGroupListens80(addrs []string, hasCert bool) bool {
+	if hasCert {
+		return false
+	}
+	for _, a := range addrs {
+		la := strings.ToLower(strings.TrimSpace(a))
+		if strings.HasPrefix(la, "http://") {
+			return true
+		}
+		if caddyAddrPort(a) == "80" {
+			return true
+		}
+	}
+	return false
+}
+
+// writeACMEHandler 写 ACME HTTP-01 挑战处理（调用方保证该块真的监听 80）。
+// 本机（面板）→ 反代回面板；面板开启 TLS 时走 https 且跳过回环证书校验。
+// 远程节点 → 服务节点本地挑战目录（签发由 Agent 本机完成，面板没有挑战记录）。
+func (m *CaddyManager) writeACMEHandler(sb *strings.Builder, ctx context.Context, serverID int64, indent string) {
+	if !m.isLocalTarget(ctx, serverID) {
+		sb.WriteString(indent + "# ACME HTTP-01 challenge support (node-local, served from disk)\n")
+		sb.WriteString(indent + "@acme path /.well-known/acme-challenge/*\n")
+		sb.WriteString(indent + "handle @acme {\n")
+		sb.WriteString(indent + "\troot * /var/lib/corefusion-agent/acme-challenge\n")
+		sb.WriteString(indent + "\tfile_server\n")
+		sb.WriteString(indent + "}\n")
+		return
+	}
+	sb.WriteString(indent + "# ACME HTTP-01 challenge support\n")
+	sb.WriteString(indent + "@acme path /.well-known/acme-challenge/*\n")
+	sb.WriteString(indent + "handle @acme {\n")
+	if panelScheme(m.settingStore) == "https" {
+		sb.WriteString(indent + "\treverse_proxy https://" + m.panelAddr(ctx) + " {\n")
+		sb.WriteString(indent + "\t\ttransport http {\n")
+		sb.WriteString(indent + "\t\t\ttls_insecure_skip_verify\n")
+		sb.WriteString(indent + "\t\t}\n")
+		sb.WriteString(indent + "\t}\n")
+	} else {
+		sb.WriteString(indent + "\treverse_proxy " + m.panelAddr(ctx) + "\n")
 	}
 	sb.WriteString(indent + "}\n")
 }

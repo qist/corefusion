@@ -2,6 +2,8 @@
   <div style="padding:20px">
     <!-- 纯管理模式提示：本地节点不运行核心进程 -->
     <el-alert v-if="managementOnly" type="warning" :title="t('nodeServer.managementOnlyNotice')" :closable="false" show-icon style="margin-bottom:16px" />
+    <!-- 面板/Agent 重启或升级不会重启核心（启动时按 PID 接管） -->
+    <el-alert v-else type="info" :title="t('service.process.adoptHint')" :closable="false" show-icon style="margin-bottom:16px" />
     <!-- Core Process Table -->
     <h3 style="margin-bottom:16px">{{ t('service.tabs.process') }}</h3>
     <el-table v-if="!isMobile" :data="processes" v-loading="loading" stripe size="small" style="margin-bottom:24px">

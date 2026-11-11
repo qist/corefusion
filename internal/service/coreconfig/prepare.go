@@ -75,7 +75,7 @@ type PrepareFullConfigOptions struct {
 	// Only used when CoreType == "singbox" (top-level endpoints[]).
 	EndpointProvider EndpointConfigProvider
 	// LogMode controls the log section in the generated config.
-	// Values: "file" (default), "stdout", "off".
+	// Values: "file" (default), "off".
 	// If empty, defaults to "file".
 	LogMode string
 	// RateLimitEnabled indicates whether rate limiting is enabled for this node.

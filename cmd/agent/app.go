@@ -455,10 +455,6 @@ func (a *AgentApp) applySyncedConfig(ctx context.Context, coreType string, confi
 }
 
 func (a *AgentApp) StartLocalDaemons(ctx context.Context) {
-	// 建立「运行态基准」：Reconcile 会让各核心加载当前 runtime 配置，先把它登记为
-	// 已应用，后续 SyncData 的变更判定才有可信依据（面板 SyncConfig 会抢先写盘）。
-	a.initAppliedBasisFromRuntime()
-
 	a.procMgr.SeedCores(ctx)
 
 	// Start log management service (same as Panel)

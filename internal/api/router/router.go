@@ -528,18 +528,17 @@ func (a *mirrorCheckerAdapter) IsMirrorNode(ctx context.Context, serverID int64)
 	return srv.NodeType == "mirror"
 }
 
-// Shutdown stops all managed processes. Call this when the panel exits.
+// Shutdown releases the panel's hold on local services. Call this when the panel exits.
 //
-// ⚠ 这里**不停 caddy/nginx**：代理是数据面服务，不应随管理面（面板）重启而
-// 中断。面板退出后代理进程存活（unit 配 KillMode=process，systemd 只杀主
-// 进程），新面板进程启动时 StartProxy 会按 PID 收编（"already running,
-// attaching guardian"）。核心（xray/sing-box）由 Reconcile 统一 kill+重启，
-// 维持原语义。
+// ⚠ 这里**不杀任何进程**：代理（caddy/nginx）和核心（xray/sing-box）都是数据面
+// 服务，不应随管理面（面板）重启/升级而中断。unit 配了 KillMode=process，
+// systemd 只回收主进程；新面板启动时 StartProxy / Reconcile 会按 PID 校验后
+// 接管（adopt），流量不中断。
 func Shutdown() {
 	ctx := context.Background()
-	// Stop core processes
+	// Detach core processes (keep them running for adoption by the next panel process)
 	if processMgr != nil {
-		processMgr.StopAll(ctx)
+		processMgr.DetachAll(ctx)
 	}
 }
 
@@ -3728,7 +3727,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Set callback to restart proxy when log output mode is switched
-	// Restart is needed because stdout mode requires re-attaching the process's stdout to LogBroker
+	// 模式切换后 reload 代理让新的日志指令生效（不重启进程）
 	logManageSvc.SetOnModeSwitch(func(proxyType string) {
 		bgCtx := context.Background()
 

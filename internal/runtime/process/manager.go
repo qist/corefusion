@@ -21,7 +21,8 @@ import (
 )
 
 // LogModeProvider provides the log output mode for a core type.
-// Returns "file", "stdout", or "off".
+// Returns "file" or "off"（标准输出模式已下线：日志一律由进程写真实文件，
+// 面板/Agent 负责采集与轮转）。
 type LogModeProvider interface {
 	GetLogMode(ctx context.Context, coreType string) string
 }
@@ -96,6 +97,11 @@ func (m *Manager) getLogMode(coreType string) string {
 		mode = "file"
 	}
 	return mode
+}
+
+// LogPathForCore 返回核心的日志文件路径（file 模式写入、实时日志 tail 都用它）。
+func (m *Manager) LogPathForCore(coreType string) string {
+	return filepath.Join(m.dataDir, "logs", coreType+".log")
 }
 
 // BinaryResolver resolves binary paths for core types.
@@ -240,8 +246,21 @@ func (m *Manager) SeedCores(ctx context.Context) {
 	}
 }
 
-// Reconcile kills old processes and starts auto-start services fresh.
+// Reconcile 在面板/Agent 启动时恢复核心进程管理权。
+//
+// 语义（与代理一致）：**能接管就接管，不重启**。
+//   - guardian 里记录的 PID 仍存活、且二进制 inode 与命令行都对得上 → 直接接管
+//     （重建 managedProcess + Guardian + 日志 tail），流量零中断；
+//   - PID 不存在 / 已被复用 / 二进制已被替换（核心更新过）→ 清掉残留状态，
+//     需要时再按 auto_start 拉起。
+//
+// 为什么不能像以前那样"全部 kill 再拉起"：面板重启或 Agent 自更新会顺带把
+// 所有 xray/sing-box 入站打断数秒，长连接和正在传输的流量全部断；手动启动但
+// 未开 auto_start 的核心还会被杀了不恢复。
 func (m *Manager) Reconcile(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Load all guardians
 	guardians, err := m.guardRepo.List(ctx)
 	if err != nil {
@@ -249,26 +268,28 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		return
 	}
 
-	// Kill all old processes and reset status
-	for _, g := range guardians {
+	adopted := make(map[int64]bool, len(guardians))
+	for i := range guardians {
+		g := &guardians[i]
 		// Only manage local node (server_id=1) processes.
 		// Remote nodes' processes are managed by their own Agents.
 		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
 		if err != nil || svc.ServerID != 1 {
 			continue
 		}
-		if g.PID > 0 && isProcessAlive(g.PID) {
-			killProcess(g.PID)
-			// Wait a bit for process to exit and reap zombie
-			time.Sleep(500 * time.Millisecond)
-			log.Printf("reconcile: killed old process %d (service %d)", g.PID, g.ServiceID)
+		if m.adoptRunning(ctx, g, svc) {
+			adopted[g.ServiceID] = true
+			continue
+		}
+		if g.PID > 0 {
+			log.Printf("reconcile: service %d recorded pid %d is gone or not adoptable", g.ServiceID, g.PID)
 		}
 		g.ProcessStatus = "stopped"
 		g.PID = 0
-		m.guardRepo.Update(ctx, &g)
+		m.guardRepo.Update(ctx, g)
 	}
 
-	// Start auto-start services fresh
+	// Start auto-start services that were not adopted
 	autoStartList, err := m.guardRepo.ListAutoStart(ctx)
 	if err != nil {
 		log.Printf("reconcile: failed to load auto-start list: %v", err)
@@ -276,6 +297,9 @@ func (m *Manager) Reconcile(ctx context.Context) {
 	}
 
 	for _, g := range autoStartList {
+		if adopted[g.ServiceID] {
+			continue
+		}
 		svc, err := m.svcRepo.GetByID(ctx, g.ServiceID)
 		if err != nil {
 			continue
@@ -297,7 +321,114 @@ func (m *Manager) Reconcile(ctx context.Context) {
 		}
 	}
 
-	log.Printf("reconcile: done, %d processes managed", len(m.processes))
+	log.Printf("reconcile: done, %d adopted, %d processes managed", len(adopted), len(m.processes))
+}
+
+// adoptRunning 尝试接管一个仍在运行的核心进程（面板/Agent 重启或升级后）。
+// 返回 true = 已接管（进程未重启）。
+//
+// 校验必须足够严格，否则 PID 复用会把无辜进程当成核心：
+//   - /proc/<pid>/exe 与当前核心二进制的 inode 相同（二进制被替换过 → 不接管，重启加载新版）；
+//   - 命令行包含该核心的运行时配置路径（区分同机多核心）。
+func (m *Manager) adoptRunning(ctx context.Context, g *entity.ProcessGuardian, svc *entity.InboundService) bool {
+	coreType := svc.CoreType
+	pid := g.PID
+	if pid <= 0 || !isProcessAlive(pid) {
+		return false
+	}
+	if m.resolver == nil {
+		return false
+	}
+	binaryPath, _, err := m.resolver.Resolve(coreType)
+	if err != nil {
+		return false
+	}
+	if !processRunsBinary(pid, binaryPath) {
+		return false
+	}
+	configPath := m.RuntimeConfigPath(coreType)
+	relConfigPath, _ := filepath.Rel(m.dataDir, configPath)
+	if !processHasArg(pid, relConfigPath) {
+		return false
+	}
+
+	logMode := m.getLogMode(coreType)
+	logPath := m.LogPathForCore(coreType)
+	if logMode == "off" {
+		logPath = ""
+	}
+	startedAt := g.StartedAt
+	if startedAt.IsZero() {
+		startedAt = GetProcessStartTime(pid)
+	}
+	if startedAt.IsZero() {
+		startedAt = time.Now()
+	}
+
+	p := &managedProcess{
+		ServiceID:  g.ServiceID,
+		CoreType:   coreType,
+		BinaryPath: binaryPath,
+		ConfigPath: configPath,
+		LogPath:    logPath,
+		pid:        pid,
+		state:      "running",
+		startedAt:  startedAt,
+	}
+
+	m.mu.Lock()
+	if _, ok := m.processes[g.ServiceID]; ok {
+		// 已有并发 Start 抢先登记（极端竞态）：视为已接管，不重复建 guardian。
+		m.mu.Unlock()
+		return true
+	}
+	m.processes[g.ServiceID] = p
+	broker, ok := m.logBrokers[coreType]
+	if !ok || broker == nil {
+		broker = NewLogBroker()
+		m.logBrokers[coreType] = broker
+	}
+	m.mu.Unlock()
+
+	if logPath != "" {
+		broker.TailFile(logPath)
+	} else {
+		broker.stopTailer()
+	}
+
+	// 保留原始启动时间：不要用“现在”覆盖，否则核心进程页的 uptime 会从 0 重新算。
+	g.ProcessStatus = "running"
+	g.PID = pid
+	g.ManuallyStopped = false
+	if g.StartedAt.IsZero() {
+		g.StartedAt = startedAt
+	}
+	if err := m.guardRepo.Update(ctx, g); err == nil {
+		if svcNow, err := m.svcRepo.GetByID(ctx, g.ServiceID); err == nil && svcNow != nil {
+			svcNow.ProcessStatus = "running"
+			m.svcRepo.Update(ctx, svcNow)
+		}
+	}
+
+	// 运行态基准：只有当运行时配置文件的 mtime 不晚于进程启动时间时，才能确认
+	// 进程加载的就是这份配置（否则面板可能在进程启动后又写过盘但没重启核心，
+	// 把磁盘配置当作已应用会让本次变更永远不生效）。
+	if m.runtimeAppliedHook != nil {
+		if fi, statErr := os.Stat(configPath); statErr == nil && !fi.ModTime().After(startedAt) {
+			if data, rerr := os.ReadFile(configPath); rerr == nil && len(data) > 0 {
+				m.runtimeAppliedHook(coreType, data)
+			}
+		}
+	}
+
+	guardian := m.createGuardian(g.ServiceID, coreType)
+	m.mu.Lock()
+	m.guardians[g.ServiceID] = guardian
+	m.mu.Unlock()
+	guardian.Start(pid)
+
+	log.Printf("reconcile: adopted running %s (service %d, pid %d) — not restarted", coreType, g.ServiceID, pid)
+	return true
 }
 
 // Start starts a core process.
@@ -405,9 +536,9 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	// Log directory
 	logDir := filepath.Join(m.dataDir, "logs")
 	os.MkdirAll(logDir, 0750)
-	logPath := filepath.Join(logDir, coreType+".log")
+	logPath := m.LogPathForCore(coreType)
 
-	// Determine log mode
+	// Determine log mode（标准输出模式已下线：只剩 file / off）
 	logMode := m.getLogMode(coreType)
 
 	// Use relative paths from dataDir (same as proxy)
@@ -460,9 +591,8 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 
 	// Configure process output based on log mode
 	//
-	// 复用 LogBroker：订阅者（LogWriter capture、实时日志 SSE）在启动时对 broker
-	// 实例建立订阅——旧实现每次 Start 停旧建新，核心一重启所有订阅全部失效
-	// （stdout capture 永远空文件、实时日志断流，真机踩到 v0.12.232）。
+	// 复用 LogBroker：订阅者（实时日志 SSE）在启动时对 broker 实例建立订阅——
+	// 旧实现每次 Start 停旧建新，核心一重启所有订阅全部失效（实时日志断流）。
 	broker, ok := m.logBrokers[coreType]
 	if !ok || broker == nil {
 		broker = NewLogBroker()
@@ -472,24 +602,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 	var logFile *os.File
 	managedLogPath := logPath
 	switch logMode {
-	case "stdout":
-		// 不再用父进程管道：核心 stdout/stderr 直接追加写真实文件，LogBroker tail
-		// 该文件。旧实现用 io.Pipe，面板/Agent 重启后读端消失，核心再写 stdout 会
-		// EPIPE/SIGPIPE，日志也接不回来。
-		// 文件名用 .raw.log，避免与 logmanage 的 stdout capture 文件（<core>-stdout.log，
-		// 由 LogWriter 从 broker 再落一份）互相追加形成回环。
-		rawPath := filepath.Join(logDir, coreType+"-stdout.raw.log")
-		f, err := os.OpenFile(rawPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0640)
-		if err != nil {
-			return fmt.Errorf("open stdout capture file: %w", err)
-		}
-		logFile = f
-		cmd.Stdout = f
-		cmd.Stderr = f
-		broker.TailFile(rawPath)
-		managedLogPath = rawPath
-		log.Printf("process: started %s in stdout mode (file: %s, tailed)", coreType, rawPath)
-
 	case "off":
 		// off mode: discard all output
 		devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0640)
@@ -962,11 +1074,17 @@ func (m *Manager) GetUptime(serviceID int64) int64 {
 	return uptime
 }
 
-// StopAll gracefully stops all running processes (called on CoreFusion shutdown).
-func (m *Manager) StopAll(ctx context.Context) {
+// DetachAll 释放面板/Agent 对核心进程的管理权，但**不杀进程**。
+//
+// 面板重启/升级时调用：核心继续运行（unit 配置 KillMode=process，systemd 只
+// 回收主进程），新进程启动后由 Reconcile 按 PID + 二进制 inode + 配置文件参数
+// 校验接管（adopt），流量不中断。DB 里的 PID/状态保留，作为接管依据。
+//
+// 与代理（caddy/nginx）行为一致：管理面重启不影响数据面。
+func (m *Manager) DetachAll(ctx context.Context) {
 	m.mu.Lock()
 
-	// Stop all log brokers
+	// Stop all log brokers（只是停 tail goroutine，日志文件本身不动）
 	for coreType, broker := range m.logBrokers {
 		broker.Stop()
 		delete(m.logBrokers, coreType)
@@ -979,33 +1097,17 @@ func (m *Manager) StopAll(ctx context.Context) {
 		delete(m.guardians, id)
 	}
 
-	for id, p := range m.processes {
-		if p.state == "running" && p.cmd != nil && p.cmd.Process != nil {
-			killProcess(p.pid)
-			log.Printf("stopall: killed service %d (pid %d)", id, p.pid)
-		}
-		p.state = "stopped"
-	}
-
-	// Update all guardians to stopped status
-	guardians, err := m.guardRepo.List(ctx)
-	if err == nil {
-		for _, g := range guardians {
-			g.ProcessStatus = "stopped"
-			g.PID = 0
-			m.guardRepo.Update(ctx, &g)
-		}
-	}
-
+	// 关键：不清 DB 状态、不改 stopped —— 新进程要靠 PID 接管。
+	detached := len(m.processes)
 	m.processes = make(map[int64]*managedProcess)
 	m.mu.Unlock()
 
-	// Stop guardians outside of mu
+	// Stop guardians outside of mu（Guardian.Stop 只停监控循环，不发信号给进程）
 	for _, g := range guardiansToStop {
 		g.Stop()
 	}
 
-	log.Printf("stopall: all processes stopped")
+	log.Printf("detach: released %d managed processes (left running for adoption)", detached)
 }
 
 // persistState updates the guardian and service process status in the database.

@@ -18,6 +18,7 @@ import (
 
 	"corefusion/internal/constants"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/systemdunit"
 	"corefusion/pkg/netutil"
 )
 
@@ -297,6 +298,9 @@ func (u *SelfUpdater) replaceBinary(newBinaryPath string) error {
 // then exit the current process. The new process runs in a new session.
 func (u *SelfUpdater) restart() error {
 	if u.isSystemdManaged() {
+		// 老版本安装的 unit 没有 KillMode=process：不补的话 `systemctl restart`
+		// 会连核心/代理子进程一起回收，节点升级就断流。drop-in 写失败不阻断。
+		systemdunit.EnsureKillModeProcess("corefusion-agent")
 		log.Println("[SelfUpdater] restarting via systemctl")
 		cmd := exec.Command("systemctl", "restart", "corefusion-agent")
 		if err := cmd.Run(); err != nil {

@@ -36,3 +36,13 @@ func isProcessAlive(pid int) bool {
 	// This is a simplified check.
 	return p != nil
 }
+
+// processRunsBinary 在 Windows 上不做进程接管（无法可靠校验 exe inode）。
+func processRunsBinary(pid int, binaryPath string) bool {
+	return false
+}
+
+// processHasArg 在 Windows 上不做进程接管。
+func processHasArg(pid int, arg string) bool {
+	return false
+}

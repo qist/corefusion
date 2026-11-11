@@ -148,6 +148,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		LogFormat         string `json:"log_format"`
 		L4Protocol        string `json:"l4_protocol"`
 		SNITarget         string `json:"sni_target"`
+		UpstreamSNI       string `json:"upstream_sni"`
 		SingboxListenPort string `json:"singbox_listen_port"`
 		UpstreamTLS       bool   `json:"upstream_tls"`
 		LocalPort         string `json:"local_port"`
@@ -191,6 +192,7 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 		LogFormat:         req.LogFormat,
 		L4Protocol:        req.L4Protocol,
 		SNITarget:         req.SNITarget,
+		UpstreamSNI:       req.UpstreamSNI,
 		SingboxListenPort: req.SingboxListenPort,
 		UpstreamTLS:       req.UpstreamTLS,
 		LocalPort:         req.LocalPort,
@@ -241,6 +243,7 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 		LogFormat         *string `json:"log_format"`
 		L4Protocol        *string `json:"l4_protocol"`
 		SNITarget         *string `json:"sni_target"`
+		UpstreamSNI       *string `json:"upstream_sni"`
 		SingboxListenPort *string `json:"singbox_listen_port"`
 		UpstreamTLS       *bool   `json:"upstream_tls"`
 		LocalPort         *string `json:"local_port"`
@@ -325,6 +328,9 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.SNITarget != nil {
 		existing.SNITarget = *req.SNITarget
+	}
+	if req.UpstreamSNI != nil {
+		existing.UpstreamSNI = *req.UpstreamSNI
 	}
 	if req.SingboxListenPort != nil {
 		existing.SingboxListenPort = *req.SingboxListenPort

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 )
 
 // LogOutputConfig defines the log capture and output mode for nginx and caddy.
@@ -15,7 +14,7 @@ type LogOutputConfig struct {
 
 // ProxyLogMode defines how a proxy's logs are handled.
 type ProxyLogMode struct {
-	Mode        string `json:"mode"`         // "file" (proxy writes to file), "stdout" (proxy writes to stdout)
+	Mode        string `json:"mode"`         // "file" (proxy writes to file) or "off"（标准输出模式已下线）
 	Managed     bool   `json:"managed"`      // true = log management center captures stdout to file
 	CapturePath string `json:"capture_path"` // file path where captured stdout is written (e.g. "logs/nginx-stdout.log")
 }
@@ -78,14 +77,20 @@ func (s *Service) GetLogOutputForServer(ctx context.Context, serverID int64) (*L
 	if saved.Caddy.Mode == "" {
 		saved.Caddy.Mode = "file"
 	}
-	// stdout 模式已下线：读到历史配置时归一为 file（并重置 managed），
-	// 同时写回，避免每次读取都重复迁移。
+	// 标准输出模式已下线：读到历史配置时归一为 file / off，
+	// managed / capture_path 一并清空并写回，避免每次读取都重复迁移。
 	changed := false
 	if n := normalizeLogMode(saved.Nginx.Mode); n != saved.Nginx.Mode {
-		saved.Nginx.Mode, saved.Nginx.Managed, changed = n, false, true
+		saved.Nginx.Mode, changed = n, true
 	}
 	if n := normalizeLogMode(saved.Caddy.Mode); n != saved.Caddy.Mode {
-		saved.Caddy.Mode, saved.Caddy.Managed, changed = n, false, true
+		saved.Caddy.Mode, changed = n, true
+	}
+	if saved.Nginx.Managed || saved.Nginx.CapturePath != "" {
+		saved.Nginx.Managed, saved.Nginx.CapturePath, changed = false, "", true
+	}
+	if saved.Caddy.Managed || saved.Caddy.CapturePath != "" {
+		saved.Caddy.Managed, saved.Caddy.CapturePath, changed = false, "", true
 	}
 	if changed {
 		if data, err := json.Marshal(&saved); err == nil {
@@ -101,38 +106,23 @@ func (s *Service) SaveLogOutput(ctx context.Context, cfg *LogOutputConfig) error
 }
 
 // SaveLogOutputForServer saves the log output configuration for a specific server.
-// For local node (serverID=1), it also starts/stops local writers.
 // For remote nodes, the caller is responsible for syncing via gRPC.
 func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cfg *LogOutputConfig) error {
 	if s.settingStore == nil {
 		return nil
 	}
 
-	// stdout 模式已下线：任何写入都归一为 file / off。
+	// 标准输出模式已下线：任何写入都归一为 file / off。
+	// managed / capture_path 只保留字段以兼容历史配置，恒为 false / 空。
 	cfg.Nginx.Mode = normalizeLogMode(cfg.Nginx.Mode)
 	cfg.Caddy.Mode = normalizeLogMode(cfg.Caddy.Mode)
+	cfg.Nginx.Managed = false
+	cfg.Caddy.Managed = false
+	cfg.Nginx.CapturePath = ""
+	cfg.Caddy.CapturePath = ""
 
 	// Get old config to detect mode changes
 	oldCfg, _ := s.GetLogOutputForServer(ctx, serverID)
-
-	// If mode changed (e.g. protocol center switched it), reset managed to false.
-	// The user must manually enable managed after a mode change.
-	if oldCfg != nil {
-		if oldCfg.Nginx.Mode != cfg.Nginx.Mode {
-			cfg.Nginx.Managed = false
-		}
-		if oldCfg.Caddy.Mode != cfg.Caddy.Mode {
-			cfg.Caddy.Managed = false
-		}
-	}
-
-	// Auto-fix: managed should only be true when mode is stdout
-	if cfg.Nginx.Mode != "stdout" {
-		cfg.Nginx.Managed = false
-	}
-	if cfg.Caddy.Mode != "stdout" {
-		cfg.Caddy.Managed = false
-	}
 
 	key := perNodeKey(settingKeyLogOutput, serverID)
 	data, err := json.Marshal(cfg)
@@ -143,25 +133,13 @@ func (s *Service) SaveLogOutputForServer(ctx context.Context, serverID int64, cf
 		return err
 	}
 
-	// Only start/stop local writers for the local node
-	if serverID <= 1 {
-		s.syncWriterFilePath("nginx", cfg.Nginx.CapturePath)
-		s.syncWriterFilePath("caddy", cfg.Caddy.CapturePath)
-		if err := s.StartWriterManaged("nginx", cfg.Nginx.Mode, cfg.Nginx.Managed); err != nil {
-			log.Printf("logmanage: failed to start nginx writer: %v", err)
+	// 本地节点：模式变化后 reload 代理，让新的日志指令生效（不重启进程）。
+	if serverID <= 1 && s.onModeSwitch != nil {
+		if oldCfg == nil || oldCfg.Nginx.Mode != cfg.Nginx.Mode {
+			s.onModeSwitch("nginx")
 		}
-		if err := s.StartWriterManaged("caddy", cfg.Caddy.Mode, cfg.Caddy.Managed); err != nil {
-			log.Printf("logmanage: failed to start caddy writer: %v", err)
-		}
-
-		// Trigger mode switch callback if mode changed (need to restart proxy for stdout mode)
-		if s.onModeSwitch != nil {
-			if oldCfg == nil || oldCfg.Nginx.Mode != cfg.Nginx.Mode {
-				s.onModeSwitch("nginx")
-			}
-			if oldCfg == nil || oldCfg.Caddy.Mode != cfg.Caddy.Mode {
-				s.onModeSwitch("caddy")
-			}
+		if oldCfg == nil || oldCfg.Caddy.Mode != cfg.Caddy.Mode {
+			s.onModeSwitch("caddy")
 		}
 	}
 
@@ -180,7 +158,7 @@ type CoreLogOutputConfig struct {
 
 // CoreLogMode defines how a core process's logs are handled.
 type CoreLogMode struct {
-	Mode        string `json:"mode"`         // "file", "stdout", "off"
+	Mode        string `json:"mode"`         // "file" or "off"（标准输出模式已下线）
 	Managed     bool   `json:"managed"`      // true = log management center captures stdout to file
 	CapturePath string `json:"capture_path"` // file path where captured stdout is written
 }
@@ -244,12 +222,14 @@ func (s *Service) GetCoreLogOutputForServer(ctx context.Context, serverID int64)
 		modeChanged = true
 	}
 
-	// Auto-fix: managed should only be true when mode is stdout
-	if saved.Xray.Mode != "stdout" {
-		saved.Xray.Managed = false
+	// 标准输出模式已下线：managed/capture_path 恒为 false/空，读到时一并迁移。
+	if saved.Xray.Managed || saved.Xray.CapturePath != "" {
+		saved.Xray.Managed, saved.Xray.CapturePath = false, ""
+		modeChanged = true
 	}
-	if saved.Singbox.Mode != "stdout" {
-		saved.Singbox.Managed = false
+	if saved.Singbox.Managed || saved.Singbox.CapturePath != "" {
+		saved.Singbox.Managed, saved.Singbox.CapturePath = false, ""
+		modeChanged = true
 	}
 	// If mode changed, persist the corrected config so that SyncData
 	// sends the right managed values to remote agents.
@@ -337,31 +317,15 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 		return nil
 	}
 
-	// Get old config to detect mode changes
-	oldCfg, _ := s.GetCoreLogOutputForServer(ctx, serverID)
-
-	// stdout 模式已下线：任何写入都归一为 file / off。
+	// 标准输出模式已下线：任何写入都归一为 file / off。
+	// managed / capture_path 只保留字段以兼容历史配置，恒为 false / 空。
 	cfg.Xray.Mode = normalizeLogMode(cfg.Xray.Mode)
 	cfg.Singbox.Mode = normalizeLogMode(cfg.Singbox.Mode)
+	cfg.Xray.Managed = false
+	cfg.Singbox.Managed = false
+	cfg.Xray.CapturePath = ""
+	cfg.Singbox.CapturePath = ""
 
-	// If mode changed (e.g. protocol center switched it), reset managed to false.
-	// The user must manually enable managed after a mode change.
-	if oldCfg != nil {
-		if oldCfg.Xray.Mode != cfg.Xray.Mode {
-			cfg.Xray.Managed = false
-		}
-		if oldCfg.Singbox.Mode != cfg.Singbox.Mode {
-			cfg.Singbox.Managed = false
-		}
-	}
-
-	// Auto-fix: managed should only be true when mode is stdout
-	if cfg.Xray.Mode != "stdout" {
-		cfg.Xray.Managed = false
-	}
-	if cfg.Singbox.Mode != "stdout" {
-		cfg.Singbox.Managed = false
-	}
 	key := perNodeKey(settingKeyCoreLogOutput, serverID)
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -369,20 +333,6 @@ func (s *Service) SaveCoreLogOutputForServer(ctx context.Context, serverID int64
 	}
 	if err := s.settingStore.Set(ctx, key, string(data)); err != nil {
 		return err
-	}
-
-	// Only start/stop local writers for the local node
-	if serverID <= 1 {
-		coreModes := map[string]CoreLogMode{
-			"xray":    cfg.Xray,
-			"singbox": cfg.Singbox,
-		}
-		for coreType, mode := range coreModes {
-			s.syncWriterFilePath(coreType, mode.CapturePath)
-			if err := s.StartWriterManaged(coreType, mode.Mode, mode.Managed); err != nil {
-				log.Printf("logmanage: failed to start %s writer: %v", coreType, err)
-			}
-		}
 	}
 
 	return nil

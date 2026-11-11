@@ -31,6 +31,11 @@ type NginxSite struct {
 	LocationConfig string `json:"location_config" gorm:"type:longtext"`
 	L4Protocol     string `json:"l4_protocol" gorm:"size:16"`
 	SNITarget      string `json:"sni_target" gorm:"size:255"`
+	// UpstreamSNI 是**回源 TLS 的 SNI / TLS Server Name**（生成 `proxy_ssl_name`）。
+	// 证书上的域名可能和站点域名不同（例如站点 a.com 回源到证书为 internal.example.com 的
+	// 上游），所以必须可配置，不能写死成站点域名。
+	// 留空时回退：sni_target（兼容旧配置）→ 站点主域名。
+	UpstreamSNI string `json:"upstream_sni" gorm:"size:255"`
 	// UpstreamTLS 表示"**回源这一段**（nginx → 本地内核）要不要走 TLS" ✓。
 	// grpc 原来写死 `grpc_pass grpc://`（h2c 明文）✗；入站自带 TLS 时必须 `grpcs://` ✗。
 	// 「从入站一键导入」按入站 security 自动置位 ✓，表单里可手改 ✓。

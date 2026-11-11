@@ -104,7 +104,6 @@ type Service struct {
 	coreBroker    CoreLogBrokerProvider
 	configGetter  CoreConfigSectionGetter
 	availability  ProcessAvailability
-	writers       map[string]*LogWriter
 	onModeSwitch  func(proxyType string) // callback when output mode is switched
 	clientLogDeps *ClientLogDeps         // optional: for client log packaging
 }
@@ -125,7 +124,6 @@ func NewService(
 		caddySiteRepo: caddySiteRepo,
 		dataDir:       dataDir,
 		proxyBroker:   proxyBroker,
-		writers:       make(map[string]*LogWriter),
 	}
 	svc.scheduler = NewScheduler(policyRepo, svc)
 	return svc
@@ -146,51 +144,6 @@ func (s *Service) SetCoreConfigSectionGetter(getter CoreConfigSectionGetter) {
 // the core/proxy process is actually installed and running.
 func (s *Service) SetProcessAvailability(p ProcessAvailability) {
 	s.availability = p
-}
-
-// StartAutoWriters starts writers based on the saved LogOutputConfig and CoreLogOutputConfig.
-// It reads the real mode and managed flag from the output configs (not the writer internal config)
-// and uses StartWriterManaged to correctly set the paused state.
-func (s *Service) StartAutoWriters() {
-	s.StartAutoWritersForServer(1)
-}
-
-// StartAutoWritersForServer is the same as StartAutoWriters but uses the given serverID
-// for reading configs. This is needed on the Agent where the serverID may differ from 1.
-func (s *Service) StartAutoWritersForServer(serverID int64) {
-	ctx := context.Background()
-
-	// Read proxy output config
-	proxyCfg, _ := s.GetLogOutputForServer(ctx, serverID)
-	if proxyCfg != nil {
-		s.syncWriterFilePath("nginx", proxyCfg.Nginx.CapturePath)
-		s.syncWriterFilePath("caddy", proxyCfg.Caddy.CapturePath)
-		if err := s.StartWriterManaged("nginx", proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed); err != nil {
-			log.Printf("logmanage: auto-start writer for nginx failed: %v", err)
-		}
-		if err := s.StartWriterManaged("caddy", proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed); err != nil {
-			log.Printf("logmanage: auto-start writer for caddy failed: %v", err)
-		}
-	}
-
-	// Read core output config
-	coreCfg, _ := s.GetCoreLogOutputForServer(ctx, serverID)
-	if coreCfg != nil {
-		coreModes := map[string]struct {
-			Mode        string
-			Managed     bool
-			CapturePath string
-		}{
-			"xray":    {coreCfg.Xray.Mode, coreCfg.Xray.Managed, coreCfg.Xray.CapturePath},
-			"singbox": {coreCfg.Singbox.Mode, coreCfg.Singbox.Managed, coreCfg.Singbox.CapturePath},
-		}
-		for coreType, m := range coreModes {
-			s.syncWriterFilePath(coreType, m.CapturePath)
-			if err := s.StartWriterManaged(coreType, m.Mode, m.Managed); err != nil {
-				log.Printf("logmanage: auto-start writer for %s failed: %v", coreType, err)
-			}
-		}
-	}
 }
 
 // SetOnModeSwitch sets the callback for when output mode is switched.
@@ -288,359 +241,63 @@ func (s *Service) ListJobs(ctx context.Context, limit, offset int) ([]entity.Log
 	return s.jobRepo.List(ctx, limit, offset)
 }
 
-// --- Log Writer Management ---
+// --- Log Source Status ---
 
-const settingKeyLogWriters = "proxy.log_writers"
-
-// LogWriterStatus represents the status of a log writer.
+// LogWriterStatus 描述一个日志源当前的状态（类型 + 模式 + 文件）。
+// 命名沿用历史（前端字段依赖），但 LogWriter（stdout 落盘）已下线：
+// 进程一律写真实文件，由 LogBroker tail + 轮转策略管理。
 type LogWriterStatus struct {
-	ProxyType  string `json:"proxy_type"`
-	Mode       string `json:"mode"`
-	Managed    bool   `json:"managed"`
-	Active     bool   `json:"active"`
-	Paused     bool   `json:"paused"`
-	FilePath   string `json:"file_path"`
-	LogDir     string `json:"log_dir"`
-	RetainDays int    `json:"retain_days"`
-	Compress   bool   `json:"compress"`
-	MaxSizeMB  int    `json:"max_size_mb"`
+	ProxyType string `json:"proxy_type"`
+	Mode      string `json:"mode"`
+	FilePath  string `json:"file_path"`
+	LogDir    string `json:"log_dir"`
 }
 
-// StartWriter starts or updates the log writer for a proxy type.
-// The mode is the actual output mode (stdout/file/off) and is saved as-is.
-// The managed parameter controls whether the writer is active (writing to file)
-// or paused. When mode=stdout but managed=false, the writer is created and
-// subscribed to the broker (so stdout is still viewable in real-time), but
-// file writing is paused.
-func (s *Service) StartWriter(proxyType string, mode string) error {
-	return s.StartWriterManaged(proxyType, mode, true)
-}
-
-// StartWriterManaged is like StartWriter but with an explicit managed flag.
-// When managed=false and mode=stdout, the writer is paused (not writing to file)
-// but still subscribed to the broker for real-time viewing.
-func (s *Service) StartWriterManaged(proxyType string, mode string, managed bool) error {
-	// Save config with the REAL mode (not EffectiveWriterMode)
-	cfg := s.loadWriterConfig(proxyType)
-	cfg.Mode = mode
-	s.saveWriterConfig(proxyType, cfg)
-
-	// Determine if the writer should be active
-	shouldPause := mode != "stdout" || !managed
-
-	// If writer already exists, just toggle pause state
-	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
-		if shouldPause {
-			w.SetPaused(true)
-			log.Printf("logmanage: paused writer for %s (mode=%s, managed=%v)", proxyType, mode, managed)
-		} else {
-			w.SetPaused(false)
-			log.Printf("logmanage: resumed writer for %s (mode=%s, managed=%v)", proxyType, mode, managed)
-		}
-		return nil
-	}
-
-	// Create new writer
-	writer := NewLogWriter(cfg, s.dataDir)
-	if err := writer.SetMode(mode); err != nil {
-		return err
-	}
-	s.writers[proxyType] = writer
-
-	// Always subscribe to LogBroker (keeps running even when paused)
-	go s.subscribeToBroker(proxyType, writer)
-
-	if shouldPause {
-		writer.SetPaused(true)
-	}
-
-	log.Printf("logmanage: started writer for %s mode=%s managed=%v", proxyType, mode, managed)
-	return nil
-}
-
-// syncWriterFilePath updates the writer config's file path from the output config's capture_path.
-// If the writer is already active and the file path changed, it restarts the writer.
-func (s *Service) syncWriterFilePath(proxyType string, capturePath string) {
-	// Use default capture path if not specified
-	if capturePath == "" {
-		switch proxyType {
-		case "nginx":
-			capturePath = "logs/nginx-stdout.log"
-		case "caddy":
-			capturePath = "logs/caddy-stdout.log"
-		case "xray":
-			capturePath = "logs/xray-stdout.log"
-		case "singbox":
-			capturePath = "logs/singbox-stdout.log"
-		default:
-			return
-		}
-	}
-	cfg := s.loadWriterConfig(proxyType)
-	if cfg.FilePath == capturePath {
-		return // already in sync
-	}
-	cfg.FilePath = capturePath
-	s.saveWriterConfig(proxyType, cfg)
-
-	// If writer is active, restart it to pick up the new file path
-	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
-		w.Stop()
-		delete(s.writers, proxyType)
-		if err := s.StartWriter(proxyType, cfg.Mode); err != nil {
-			log.Printf("logmanage: failed to restart writer for %s after file path change: %v", proxyType, err)
-		}
-	}
-}
-
-// subscribeToBroker subscribes to the proxy/core LogBroker and writes lines to the writer.
-// Keeps retrying and re-subscribing as long as the writer exists.
-func (s *Service) subscribeToBroker(proxyType string, writer *LogWriter) {
-	// Determine if this is a core type or proxy type
-	isCore := false
-	for _, ct := range coreLogTypes {
-		if proxyType == ct {
-			isCore = true
-			break
-		}
-	}
-
-	for {
-		var broker LogBrokerReader
-
-		if isCore {
-			// Core type: use coreBroker
-			if s.coreBroker == nil {
-				time.Sleep(2 * time.Second)
-				continue
-			}
-			broker = s.coreBroker.GetCoreLogBroker(proxyType)
-		} else {
-			// Proxy type: use proxyBroker
-			if s.proxyBroker == nil {
-				time.Sleep(2 * time.Second)
-				continue
-			}
-			broker = s.proxyBroker.GetLogBroker(proxyType)
-		}
-
-		if broker == nil {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		// Write existing snapshot to file first (catches up on lines produced
-		// before the writer subscribed, e.g. process startup output)
-		for _, line := range broker.Snapshot() {
-			writer.WriteLine(line)
-		}
-
-		ch, cancel := broker.Subscribe()
-		writer.SetCancel(cancel)
-		log.Printf("logmanage: subscribed to %s log broker", proxyType)
-
-		// Read lines until channel closes
-		for line := range ch {
-			writer.WriteLine(line) // respects pause state internally
-		}
-
-		// Channel closed (broker restarted), re-subscribe
-		cancel()
-		log.Printf("logmanage: %s broker channel closed, re-subscribing...", proxyType)
-		time.Sleep(1 * time.Second)
-	}
-}
-
-// StopWriter stops the log writer for a proxy type.
-func (s *Service) StopWriter(proxyType string) error {
-	writer, ok := s.writers[proxyType]
-	if !ok {
-		return fmt.Errorf("writer for %s not found", proxyType)
-	}
-	writer.Stop()
-	delete(s.writers, proxyType)
-
-	// Update config
-	cfg := s.loadWriterConfig(proxyType)
-	cfg.ProxyType = proxyType
-	s.saveWriterConfig(proxyType, cfg)
-
-	return nil
-}
-
-// GetWriterStatus returns the status of all log writers.
-// The mode and managed fields are read from the actual LogOutputConfig / CoreLogOutputConfig
-// (not the writer's internal config) so they always reflect the real process output mode.
+// GetWriterStatus 返回各日志源当前模式与文件路径，供「实时日志」列表使用。
 func (s *Service) GetWriterStatus() []LogWriterStatus {
-	// Read real modes from output configs
-	proxyCfg, _ := s.GetLogOutput(context.Background())
-	coreCfg, _ := s.GetCoreLogOutput(context.Background())
+	ctx := context.Background()
+	proxyCfg, _ := s.GetLogOutput(ctx)
+	coreCfg, _ := s.GetCoreLogOutput(ctx)
 
-	realModes := map[string]struct {
-		Mode    string
-		Managed bool
-	}{}
+	modes := make(map[string]string)
 	if proxyCfg != nil {
-		realModes["nginx"] = struct {
-			Mode    string
-			Managed bool
-		}{proxyCfg.Nginx.Mode, proxyCfg.Nginx.Managed}
-		realModes["caddy"] = struct {
-			Mode    string
-			Managed bool
-		}{proxyCfg.Caddy.Mode, proxyCfg.Caddy.Managed}
+		modes["nginx"] = proxyCfg.Nginx.Mode
+		modes["caddy"] = proxyCfg.Caddy.Mode
 	}
 	if coreCfg != nil {
-		realModes["xray"] = struct {
-			Mode    string
-			Managed bool
-		}{coreCfg.Xray.Mode, coreCfg.Xray.Managed}
-		realModes["singbox"] = struct {
-			Mode    string
-			Managed bool
-		}{coreCfg.Singbox.Mode, coreCfg.Singbox.Managed}
+		modes["xray"] = coreCfg.Xray.Mode
+		modes["singbox"] = coreCfg.Singbox.Mode
 	}
 
-	var statuses []LogWriterStatus
+	logDir := filepath.Join(s.dataDir, "logs")
+	statuses := make([]LogWriterStatus, 0, len(allLogTypes))
 	for _, pType := range allLogTypes {
-		// Writer-specific config (file rotation settings)
-		wCfg := s.loadWriterConfig(pType)
-
-		// Real mode and managed from output config
-		rm := realModes[pType]
-		mode := rm.Mode
+		mode := modes[pType]
 		if mode == "" {
 			mode = "file"
 		}
-		managed := rm.Managed
-
-		active := false
-		paused := true
-		if w, ok := s.writers[pType]; ok {
-			active = w.IsActive()
-			paused = w.IsPaused()
-		}
-		// If no writer exists, derive paused from mode+managed
-		if _, ok := s.writers[pType]; !ok {
-			paused = mode != "stdout" || !managed
-		}
-
-		logDir := filepath.Join(s.dataDir, "logs")
-		filePath := wCfg.FilePath
-		if filePath == "" {
-			if pType == "waf" {
-				// ⚠ WAF 按日期写文件（logs/<date>_waf.log），没有 stdout capture
-				// 概念——通用默认值 logs/waf-stdout.log 是错的（界面上误导）。
-				filePath = fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02"))
-			} else {
-				filePath = fmt.Sprintf("logs/%s-stdout.log", pType)
-			}
-		}
-		if w, ok := s.writers[pType]; ok {
-			logDir = w.GetLogDir()
-			filePath = w.GetFilePath()
-		}
 		statuses = append(statuses, LogWriterStatus{
-			ProxyType:  pType,
-			Mode:       mode,
-			Managed:    managed,
-			Active:     active,
-			Paused:     paused,
-			FilePath:   filePath,
-			LogDir:     logDir,
-			RetainDays: wCfg.RetainDays,
-			Compress:   wCfg.Compress,
-			MaxSizeMB:  wCfg.MaxSizeMB,
+			ProxyType: pType,
+			Mode:      mode,
+			FilePath:  s.logFileForSource(pType),
+			LogDir:    logDir,
 		})
 	}
 	return statuses
 }
 
-// UpdateWriterConfig updates the writer configuration and restarts if active.
-func (s *Service) UpdateWriterConfig(proxyType string, cfg LogWriterConfig) error {
-	cfg.ProxyType = proxyType
-
-	// If mode is empty, load from saved config
-	if cfg.Mode == "" {
-		saved := s.loadWriterConfig(proxyType)
-		cfg.Mode = saved.Mode
+// logFileForSource 返回日志源默认的落盘文件（仅用于界面展示）。
+func (s *Service) logFileForSource(sourceType string) string {
+	switch sourceType {
+	case "nginx":
+		return s.resolveLogPath("logs/access.log")
+	case "caddy":
+		return s.resolveLogPath("logs/caddy_access.log")
+	case "waf":
+		return s.resolveLogPath(fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02")))
+	default:
+		return s.resolveLogPath(fmt.Sprintf("logs/%s.log", sourceType))
 	}
-	// If file_path is empty, keep the existing one
-	if cfg.FilePath == "" {
-		saved := s.loadWriterConfig(proxyType)
-		cfg.FilePath = saved.FilePath
-	}
-
-	s.saveWriterConfig(proxyType, cfg)
-
-	// Restart writer if it was active
-	if w, ok := s.writers[proxyType]; ok && w.IsActive() {
-		w.Stop()
-		delete(s.writers, proxyType)
-		return s.StartWriter(proxyType, cfg.Mode)
-	}
-	return nil
-}
-
-// ListWriterFiles returns the log files for a proxy type's writer.
-func (s *Service) ListWriterFiles(proxyType string) []LogFileInfo {
-	w, ok := s.writers[proxyType]
-	if !ok {
-		return nil
-	}
-	return w.ListLogFiles()
-}
-
-func (s *Service) loadWriterConfig(proxyType string) LogWriterConfig {
-	// waf 无 stdout capture 概念：WAF 按日期写文件（logs/<date>_waf.log）
-	defaultPath := fmt.Sprintf("logs/%s-stdout.log", proxyType)
-	if proxyType == "waf" {
-		defaultPath = fmt.Sprintf("logs/%s_waf.log", time.Now().Format("2006-01-02"))
-	}
-	cfg := LogWriterConfig{
-		ProxyType:  proxyType,
-		Mode:       "file",
-		FilePath:   defaultPath,
-		RetainDays: 30,
-		Compress:   false,
-		MaxSizeMB:  100,
-	}
-	if s.settingStore == nil {
-		return cfg
-	}
-	key := settingKeyLogWriters + "." + proxyType
-	v, err := s.settingStore.GetByKey(context.Background(), key)
-	if err != nil || v == "" {
-		return cfg
-	}
-	var saved LogWriterConfig
-	if json.Unmarshal([]byte(v), &saved) == nil {
-		if saved.Mode != "" {
-			cfg.Mode = saved.Mode
-		}
-		if saved.FilePath != "" {
-			cfg.FilePath = saved.FilePath
-		}
-		if saved.RetainDays > 0 {
-			cfg.RetainDays = saved.RetainDays
-		}
-		if saved.MaxSizeMB > 0 {
-			cfg.MaxSizeMB = saved.MaxSizeMB
-		}
-		cfg.Compress = saved.Compress
-	}
-	return cfg
-}
-
-func (s *Service) saveWriterConfig(proxyType string, cfg LogWriterConfig) {
-	if s.settingStore == nil {
-		return
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		return
-	}
-	s.settingStore.Set(context.Background(), settingKeyLogWriters+"."+proxyType, string(data))
 }
 
 // --- Discovery ---
@@ -738,15 +395,6 @@ func (s *Service) discoverCoreLogs(ctx context.Context) ([]DiscoveredLog, error)
 		logMode := s.GetCoreLogMode(ctx, coreType)
 
 		switch logMode {
-		case "stdout":
-			// stdout 模式已改为进程直接写真实文件（子进程不再持有父进程管道），
-			// 纳入发现/轮转；实时查看仍走 LogBroker tail 这个文件。
-			logs = append(logs, DiscoveredLog{
-				SourceType: coreType,
-				Domain:     "startup",
-				LogPath:    s.resolveLogPath(fmt.Sprintf("logs/%s-stdout.raw.log", coreType)),
-			})
-			continue
 		case "off":
 			continue
 		default: // "file"
@@ -892,15 +540,10 @@ func (s *Service) discoverNginxLogs(ctx context.Context) ([]DiscoveredLog, error
 			logMode = cfg.Nginx.Mode
 		}
 	}
-	if logMode == "stdout" {
-		// stdout 模式已改为真实文件（不再是 -> /dev/stdout 软链），同样纳入发现/轮转。
-		return []DiscoveredLog{
-			{SourceType: "nginx", Domain: "error", LogPath: s.resolveLogPath("logs/stdout_error.log")},
-			{SourceType: "nginx", Domain: "access", LogPath: s.resolveLogPath("logs/stdout_access.log")},
-			{SourceType: "nginx", Domain: "stream", LogPath: s.resolveLogPath("logs/stdout_stream.log")},
-		}, nil
+	// off 模式 nginx 不写日志（error_log /dev/null），不参与发现/轮转。
+	if normalizeLogMode(logMode) == "off" {
+		return nil, nil
 	}
-
 	v, err := s.settingStore.GetByKey(ctx, "proxy.nginx_settings")
 	if err != nil || v == "" {
 		return nil, nil

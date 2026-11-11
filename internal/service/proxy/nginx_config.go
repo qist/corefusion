@@ -1557,12 +1557,18 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				// IPv6 监听：全局开关 / 全局 IPv6 / 本组任一条规则开了 IPv6，任一成立即追加。
 				// 若监听地址本身已是具体 IPv6（如 [::1]:443），不再追加 [::]:端口（会冲突）。
 				groupIPv6 := s.StreamIPv6 || globalIPv6
-				if !groupIPv6 {
-					for _, site := range portSites {
-						if site.EnableIpv6 {
-							groupIPv6 = true
-							break
-						}
+				var siteV6Listens []string
+				siteV6Seen := make(map[string]bool)
+				for _, site := range portSites {
+					if !site.EnableIpv6 {
+						continue
+					}
+					groupIPv6 = true
+					// 站点级 ipv6_listen_addr 必须真正生效（之前 SNI 只用全局地址，
+					// 填了也不落地 → “开关关联不上 IPv6 监听”）。
+					if v := siteV6Listen(site.IPv6ListenAddr, listenPortOnly(port)); v != "" && !siteV6Seen[v] {
+						siteV6Seen[v] = true
+						siteV6Listens = append(siteV6Listens, v)
 					}
 				}
 				sb.WriteString("server {\n")
@@ -1571,10 +1577,19 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					// port 可能是 "203.0.113.10:443"（只监听指定 IPv4）——
 					// IPv6 行必须只取端口，否则会生成 listen [::]:203.0.113.10:443 这种非法写法。
 					p6 := listenPortOnly(port)
-					// Stream IPv6 监听地址可写成 "[2001:db8::1]:8443"：带端口时用该端口。
-					v6Listen := ipv6ListenFor(s.StreamIPv6ListenAddr, p6)
-					if k := listenPortOnly(v6Listen); !v6Emitted[k] {
-						v6Emitted[k] = true
+					// 站点显式指定了 IPv6 地址就用站点地址（可带端口）；否则用 stream 全局地址
+					// （可写成 "[2001:db8::1]:8443"，带端口时用该端口）。
+					v6Listens := siteV6Listens
+					if len(v6Listens) == 0 {
+						v6Listens = []string{ipv6ListenFor(s.StreamIPv6ListenAddr, p6)}
+					}
+					for _, v6Listen := range v6Listens {
+						// 按完整地址去重：同为 [::]:443 的多个 IPv4 组只写一次，
+						// 但不同 IPv6 地址各自保留。
+						if v6Emitted[v6Listen] {
+							continue
+						}
+						v6Emitted[v6Listen] = true
 						sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", v6Listen))
 					}
 				}
@@ -1627,13 +1642,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				sb.WriteString("server {\n")
 				if proto == "udp" {
 					sb.WriteString(fmt.Sprintf("    listen %s udp so_keepalive=on;\n", port))
-					if s.StreamIPv6 || globalIPv6 {
-						sb.WriteString(fmt.Sprintf("    listen %s udp ipv6only=on so_keepalive=on;\n", ipv6ListenFor(s.StreamIPv6ListenAddr, port)))
+					if v6 := l4V6Listen(s.StreamIPv6ListenAddr, site.IPv6ListenAddr, site.EnableIpv6, s.StreamIPv6 || globalIPv6, port); v6 != "" {
+						sb.WriteString(fmt.Sprintf("    listen %s udp ipv6only=on so_keepalive=on;\n", v6))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("    listen %s so_keepalive=on;\n", port))
-					if s.StreamIPv6 || globalIPv6 {
-						sb.WriteString(fmt.Sprintf("    listen %s ipv6only=on so_keepalive=on;\n", ipv6ListenFor(s.StreamIPv6ListenAddr, port)))
+					if v6 := l4V6Listen(s.StreamIPv6ListenAddr, site.IPv6ListenAddr, site.EnableIpv6, s.StreamIPv6 || globalIPv6, port); v6 != "" {
+						sb.WriteString(fmt.Sprintf("    listen %s ipv6only=on so_keepalive=on;\n", v6))
 					}
 				}
 				sb.WriteString("    proxy_socket_keepalive on;\n")
@@ -1752,6 +1767,44 @@ func ipv6ListenHost(addr string) string {
 // 否则会生成 listen [::1]:127.0.0.1:443 这种非法写法（nginx: invalid port）。
 func ipv6Listen(host, port string) string {
 	return fmt.Sprintf("[%s]:%s", ipv6ListenHost(host), listenPortOnly(port))
+}
+
+// siteV6Listen 把站点级 ipv6_listen_addr 归一成 `[host]:port`。
+// 只接受真正的 IPv6 地址：空 / IPv4（如误填 23.254.233.185:443）/ 非法值返回空串，
+// 由调用方回退到全局设置，避免把 IPv4 或垃圾值写成 IPv6 监听。
+func siteV6Listen(addr, fallbackPort string) string {
+	a := strings.TrimSpace(addr)
+	if a == "" {
+		return ""
+	}
+	c := canonicalListenAddr(a)
+	host, port := "", ""
+	if h, p, err := net.SplitHostPort(c); err == nil {
+		host, port = h, p
+	} else {
+		host = strings.Trim(a, "[]")
+	}
+	host = strings.Trim(host, "[]")
+	ip := net.ParseIP(host)
+	if ip == nil || ip.To4() != nil {
+		return ""
+	}
+	if port == "" {
+		port = listenPortOnly(fallbackPort)
+	}
+	return fmt.Sprintf("[%s]:%s", host, listenPortOnly(port))
+}
+
+// l4V6Listen 返回 L4 站点要追加的 IPv6 监听：站点显式地址优先，否则用全局 stream 地址；
+// 站点与全局都没开 IPv6 时返回空串。
+func l4V6Listen(globalAddr, siteAddr string, siteEnabled, globalEnabled bool, port string) string {
+	if !siteEnabled && !globalEnabled {
+		return ""
+	}
+	if v := siteV6Listen(siteAddr, port); v != "" {
+		return v
+	}
+	return ipv6ListenFor(globalAddr, port)
 }
 
 // globalListen 归一全局监听地址（v4）：空 → 默认值；"80" / "127.0.0.1:80" 均可。

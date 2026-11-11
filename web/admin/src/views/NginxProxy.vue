@@ -899,7 +899,11 @@
 <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniListenAddrHint') }}</div>
 </el-form-item>
 <el-form-item :label="t('proxy.sniIPv6')">
-<el-switch v-model="sniForm.enable_ipv6" />
+  <el-switch v-model="sniForm.enable_ipv6" />
+  <div v-if="sniForm.enable_ipv6" style="margin-top:6px">
+    <el-input v-model="sniForm.ipv6_listen_addr" style="width:260px" :placeholder="settings.stream_ipv6_listen_addr || '[::]:443'" />
+    <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.siteIPv6ListenHint') }}</div>
+  </div>
 </el-form-item>
 <el-form-item :label="t('proxy.proxyProtocol')">
 <el-switch v-model="sniForm.proxy_protocol" />
@@ -1080,7 +1084,7 @@
         <el-form-item label="IPv6">
           <el-switch v-model="siteForm.enable_ipv6" />
           <div v-if="siteForm.enable_ipv6" style="margin-top:6px">
-            <el-input v-model="siteForm.ipv6_listen_addr" style="width:260px" :placeholder="settings.https_listen_v6 || '[::1]:443'" />
+            <el-input v-model="siteForm.ipv6_listen_addr" style="width:260px" :placeholder="(isTcpForward ? settings.stream_ipv6_listen_addr : settings.https_listen_v6) || '[::1]:443'" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.siteIPv6ListenHint') }}</div>
           </div>
         </el-form-item>
@@ -2043,7 +2047,7 @@ const configViewContent = ref('')
 
 // SNI
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
+const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link', ipv6_listen_addr: '' })
 
 // SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
@@ -2721,7 +2725,7 @@ function copyConfig() {
 function showAddSNI() {
 sniForm.value = {
   domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link',
-  listen_addr: sniListenAddr(), enable_ipv6: !!settings.value.stream_ipv6,
+  listen_addr: sniListenAddr(), enable_ipv6: !!settings.value.stream_ipv6, ipv6_listen_addr: '',
 }
 sniDialogVisible.value = true
 }
@@ -2745,7 +2749,8 @@ async function saveSNIRule() {
         priority: 50,
         path: sniForm.value.listen_addr || sniListenAddr(),
         listen_port: sniForm.value.listen_addr || sniListenAddr(),
-        enable_ipv6: !!sniForm.value.enable_ipv6
+        enable_ipv6: !!sniForm.value.enable_ipv6,
+        ipv6_listen_addr: sniForm.value.enable_ipv6 ? (sniForm.value.ipv6_listen_addr || '') : ''
       })
     }
     await applyConfig()

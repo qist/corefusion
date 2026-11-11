@@ -33,17 +33,17 @@ func hasListen(listens []string, want string) bool {
 func TestNginxSNIIPv6UsesSiteAddress(t *testing.T) {
 	site := entity.NginxSite{
 		ServerID: 2, Domain: "a.example.com", Template: "sni",
-		Path: "23.254.233.185:443", SNITarget: "127.0.0.1:443",
+		Path: "203.0.113.10:443", SNITarget: "127.0.0.1:443",
 		Enabled: true, EnableIpv6: true, IPv6ListenAddr: "[2001:db8::5]:443",
 	}
 	cfg := generateFor(t, newNginxTestManager(t, []entity.NginxSite{site},
-		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2607::1]:443"}`))
+		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2001:db8::1]:443"}`))
 	listens := streamListens(cfg)
 
 	if !hasListen(listens, "listen [2001:db8::5]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") {
 		t.Fatalf("SNI 站点级 IPv6 地址未生效，listens=%v", listens)
 	}
-	if strings.Contains(cfg, "[2607::1]:443") {
+	if strings.Contains(cfg, "[2001:db8::1]:443") {
 		t.Fatalf("站点显式指定地址时不应再套用全局地址：%v", listens)
 	}
 }
@@ -52,33 +52,33 @@ func TestNginxSNIIPv6UsesSiteAddress(t *testing.T) {
 func TestNginxSNIIPv6FallsBackToGlobal(t *testing.T) {
 	site := entity.NginxSite{
 		ServerID: 2, Domain: "a.example.com", Template: "sni",
-		Path: "23.254.233.185:443", SNITarget: "127.0.0.1:443",
+		Path: "203.0.113.10:443", SNITarget: "127.0.0.1:443",
 		Enabled: true, EnableIpv6: true,
 	}
 	cfg := generateFor(t, newNginxTestManager(t, []entity.NginxSite{site},
-		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2607::1]:443"}`))
-	if !hasListen(streamListens(cfg), "listen [2607::1]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") {
+		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2001:db8::1]:443"}`))
+	if !hasListen(streamListens(cfg), "listen [2001:db8::1]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") {
 		t.Fatalf("留空时应回退全局 stream IPv6 地址：%v", streamListens(cfg))
 	}
 }
 
-// 误把 IPv4 地址填进 IPv6 输入框（生产实际出现过 23.254.233.185:443）时，
+// 误把 IPv4 地址填进 IPv6 输入框（生产实际出现过 203.0.113.10:443）时，
 // 不能生成非法监听，应回退全局值。
 func TestNginxSNIIPv6IgnoresInvalidIPv4(t *testing.T) {
 	site := entity.NginxSite{
 		ServerID: 2, Domain: "a.example.com", Template: "sni",
-		Path: "23.254.233.185:443", SNITarget: "127.0.0.1:443",
-		Enabled: true, EnableIpv6: true, IPv6ListenAddr: "23.254.233.185:443",
+		Path: "203.0.113.10:443", SNITarget: "127.0.0.1:443",
+		Enabled: true, EnableIpv6: true, IPv6ListenAddr: "203.0.113.10:443",
 	}
 	cfg := generateFor(t, newNginxTestManager(t, []entity.NginxSite{site},
-		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2607::1]:443"}`))
+		`{"stream_sni_enabled":true,"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2001:db8::1]:443"}`))
 	listens := streamListens(cfg)
 
-	if hasListen(listens, "listen [23.254.233.185]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") ||
-		strings.Contains(cfg, "listen [23.254.233.185]") {
+	if hasListen(listens, "listen [203.0.113.10]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") ||
+		strings.Contains(cfg, "listen [203.0.113.10]") {
 		t.Fatalf("IPv4 被误当成 IPv6 监听：%v", listens)
 	}
-	if !hasListen(listens, "listen [2607::1]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") {
+	if !hasListen(listens, "listen [2001:db8::1]:443 reuseport fastopen=4096 so_keepalive=on backlog=4096;") {
 		t.Fatalf("非法站点地址应回退全局值：%v", listens)
 	}
 }
@@ -91,7 +91,7 @@ func TestNginxL4IPv6UsesSiteAddress(t *testing.T) {
 		Enabled: true, EnableIpv6: true, IPv6ListenAddr: "[2001:db8::6]",
 	}
 	cfg := generateFor(t, newNginxTestManager(t, []entity.NginxSite{site},
-		`{"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2607::1]:443"}`))
+		`{"stream_ipv6":false,"ipv6":false,"stream_ipv6_listen_addr":"[2001:db8::1]:443"}`))
 	if !hasListen(streamListens(cfg), "listen [2001:db8::6]:9443 ipv6only=on so_keepalive=on;") {
 		t.Fatalf("L4 站点级 IPv6 地址未生效：%v", streamListens(cfg))
 	}

@@ -1770,7 +1770,7 @@ func ipv6Listen(host, port string) string {
 }
 
 // siteV6Listen 把站点级 ipv6_listen_addr 归一成 `[host]:port`。
-// 只接受真正的 IPv6 地址：空 / IPv4（如误填 23.254.233.185:443）/ 非法值返回空串，
+// 只接受真正的 IPv6 地址：空 / IPv4（误把 IPv4 监听地址填进来）/ 非法值返回空串，
 // 由调用方回退到全局设置，避免把 IPv4 或垃圾值写成 IPv6 监听。
 func siteV6Listen(addr, fallbackPort string) string {
 	a := strings.TrimSpace(addr)

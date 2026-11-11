@@ -32,6 +32,10 @@ type NginxSettings struct {
 	HTTPSListen   string `json:"https_listen"`
 	HTTPSListenV6 string `json:"https_listen_v6"`
 
+	// QUIC（HTTP/3）全局监听：空 = 跟随 HTTPS 监听；站点级 quic_listen 优先。
+	QUICListen   string `json:"quic_listen"`
+	QUICListenV6 string `json:"quic_listen_v6"`
+
 	// Network
 	// IPv6 是全局 IPv6 监听开关：打开后所有 HTTP/HTTPS/跳转/默认的 listen
 	// 都会追加对应的 IPv6 监听；站点级 enable_ipv6 可在全局关闭时单独为该站点开启。

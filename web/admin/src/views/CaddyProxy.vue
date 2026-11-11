@@ -607,7 +607,10 @@
 <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniDomainHint') }}</div>
 </el-form-item>
 <el-form-item :label="t('proxy.sniTarget')">
-<el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443" />
+<el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443, 127.0.0.1:8444（多个用逗号分隔）" />
+</el-form-item>
+<el-form-item :label="t('proxy.sniListenPort')">
+<el-input v-model="sniForm.listen_port" placeholder="443" />
 </el-form-item>
 <el-form-item :label="t('proxy.proxyProtocol')">
 <el-switch v-model="sniForm.proxy_protocol" />
@@ -703,6 +706,9 @@
         <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.port')">
           <el-input v-model="siteForm.path" placeholder="443" />
         </el-form-item>
+        <el-form-item v-else-if="siteForm.template==='sni'" :label="t('proxy.sniListenPort')">
+          <el-input v-model="siteForm.path" placeholder="443" />
+        </el-form-item>
         <el-form-item v-else :label="t('protoCenter.masque.path')">
           <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
@@ -715,7 +721,7 @@
           <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.returnCodeHint') }}</div>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
-          <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443" />
+          <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443, 127.0.0.1:8443（多个用逗号分隔）" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.protocol')">
           <el-select v-model="siteForm.l4_protocol" style="width:100%">
@@ -1296,7 +1302,7 @@ async function ensureSniFallback(existing, port) {
 }
 
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
+const sniForm = ref({ domain: '', sni_target: '', listen_port: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
 
 // SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
@@ -1899,7 +1905,7 @@ function copyConfig() {
 }
 
 function showAddSNI() {
-sniForm.value = { domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' }
+sniForm.value = { domain: '', sni_target: '', listen_port: sniSettings.value.listen_port || '443', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' }
 sniDialogVisible.value = true
 }
 
@@ -1920,7 +1926,7 @@ async function saveSNIRule() {
         proxy_protocol: sniForm.value.proxy_protocol,
         is_panel: false,
         priority: 50,
-        path: sniSettings.value.listen_port
+        path: sniForm.value.listen_port || sniSettings.value.listen_port || '443'
       })
     }
     await applyConfig()

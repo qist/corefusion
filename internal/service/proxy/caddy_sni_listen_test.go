@@ -166,3 +166,22 @@ func TestCaddySNIDefaultTargetUnsetUsesFallback(t *testing.T) {
 		t.Fatalf("未设置默认后端时应使用 fallback 规则：\n%s", cfg)
 	}
 }
+
+// SNI 目标支持逗号分隔的多个后端（负载均衡）：生成 caddy layer4 的
+// `proxy t1 t2 { ... }`，并在站点配置了 lb_policy 时写入。
+func TestCaddySNIMultiTarget(t *testing.T) {
+	sites := []entity.CaddySite{
+		{
+			ServerID: 2, Domain: "a.example.com", Template: "sni", Path: "443",
+			SNITarget: "127.0.0.1:9001, 127.0.0.1:9002, unix:/dev/shm/x.sock",
+			LbPolicy:  "round_robin", Enabled: true,
+		},
+	}
+	cfg := generateCaddyFor(t, newCaddyTestManager(t, sites, nil))
+	if !strings.Contains(cfg, "proxy 127.0.0.1:9001 127.0.0.1:9002 unix//dev/shm/x.sock {") {
+		t.Fatalf("多目标 SNI 未生成多 upstream：\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "lb_policy round_robin") {
+		t.Fatalf("多目标 SNI 未写入 lb_policy：\n%s", cfg)
+	}
+}

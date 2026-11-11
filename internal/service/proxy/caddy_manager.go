@@ -344,55 +344,45 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				localPort = "8443"
 			}
 			sb.WriteString(fmt.Sprintf("\t\t:%s {\n", port))
-			var ruleFallback string
+			var ruleFallback []string
 			var fallbackPP bool
 			for _, site := range sniSites {
 				domain := site.Domain
-				target := site.SNITarget
-				if target == "" {
-					target = site.Upstream
+				raw := site.SNITarget
+				if raw == "" {
+					raw = site.Upstream
 				}
-				if target == "" {
-					target = "127.0.0.1:443"
+				if raw == "" {
+					raw = "127.0.0.1:443"
 				}
-				target = caddyProxyTarget(target)
+				targets := splitCaddyTargets(raw)
+				if len(targets) == 0 {
+					targets = []string{"127.0.0.1:443"}
+				}
 				if domain == "fallback" || domain == "" {
-					ruleFallback = target
+					ruleFallback = targets
 					fallbackPP = site.ProxyProtocol
 					continue
 				}
 				matcher := strings.ReplaceAll(domain, ".", "_")
 				matcher = strings.ReplaceAll(matcher, "*", "wildcard")
-				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, target))
+				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, strings.Join(targets, ", ")))
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
 				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
-				if site.ProxyProtocol {
-					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", target))
-					sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
-					sb.WriteString("\t\t\t\t}\n")
-				} else {
-					sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", target))
-				}
+				writeCaddyProxyBlock(&sb, "\t\t\t\t", targets, site.ProxyProtocol, site.LbPolicy)
 				sb.WriteString("\t\t\t}\n")
 			}
 			// 优先级与 nginx 一致：设置里的默认后端 > fallback 规则 > 本地 HTTPS 端口。
-			fallbackTarget := strings.TrimSpace(sniSettings.DefaultTarget)
-			if fallbackTarget == "" {
-				fallbackTarget = ruleFallback
+			fallbackTargets := ruleFallback
+			if dt := strings.TrimSpace(sniSettings.DefaultTarget); dt != "" {
+				fallbackTargets = splitCaddyTargets(dt)
 			}
-			if fallbackTarget == "" {
-				fallbackTarget = fmt.Sprintf("127.0.0.1:%s", localPort)
+			if len(fallbackTargets) == 0 {
+				fallbackTargets = splitCaddyTargets(fmt.Sprintf("127.0.0.1:%s", localPort))
 			}
-			fallbackTarget = caddyProxyTarget(fallbackTarget)
-			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", fallbackTarget))
+			sb.WriteString(fmt.Sprintf("\t\t\t# fallback -> %s\n", strings.Join(fallbackTargets, ", ")))
 			sb.WriteString("\t\t\troute {\n")
-			if fallbackPP {
-				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s {\n", fallbackTarget))
-				sb.WriteString("\t\t\t\t\tproxy_protocol v2\n")
-				sb.WriteString("\t\t\t\t}\n")
-			} else {
-				sb.WriteString(fmt.Sprintf("\t\t\t\tproxy %s\n", fallbackTarget))
-			}
+			writeCaddyProxyBlock(&sb, "\t\t\t\t", fallbackTargets, fallbackPP, "")
 			sb.WriteString("\t\t\t}\n")
 			sb.WriteString("\t\t}\n")
 		}
@@ -1375,4 +1365,37 @@ func normalizeCaddySiteDomain(site *entity.CaddySite) {
 	if normalized := NormalizeDomainField(site.Domain); normalized != "" {
 		site.Domain = normalized
 	}
+}
+
+// splitCaddyTargets 拆分逗号分隔的多个后端，逐个补 scheme（caddy proxy 支持多 upstream）。
+func splitCaddyTargets(raw string) []string {
+	var out []string
+	for _, t := range strings.Split(raw, ",") {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		out = append(out, caddyProxyTarget(t))
+	}
+	return out
+}
+
+// writeCaddyProxyBlock 生成 proxy 指令：单目标且不需要 proxy_protocol 时保持单行；
+// 多目标时展开成块，按需写 lb_policy（空 = caddy 默认随机）。
+func writeCaddyProxyBlock(sb *strings.Builder, indent string, targets []string, pp bool, lb string) {
+	if len(targets) == 0 {
+		return
+	}
+	if len(targets) == 1 && !pp {
+		sb.WriteString(fmt.Sprintf("%sproxy %s\n", indent, targets[0]))
+		return
+	}
+	sb.WriteString(fmt.Sprintf("%sproxy %s {\n", indent, strings.Join(targets, " ")))
+	if pp {
+		sb.WriteString(indent + "\tproxy_protocol v2\n")
+	}
+	if len(targets) > 1 && lb != "" {
+		sb.WriteString(fmt.Sprintf("%s\tlb_policy %s\n", indent, lb))
+	}
+	sb.WriteString(indent + "}\n")
 }

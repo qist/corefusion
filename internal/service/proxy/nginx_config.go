@@ -759,6 +759,11 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		socketProxyProtocol := false
 		hasProxyProtocol := false
 		enableIpv6 := globalIPv6
+		// 系统内部站点（non-tls.invalid / unix-nginx-0.invalid 等）不继承全局 IPv6：
+		// 它们只被本机前置层回源，多开一个公网 v6 监听没有意义，也容易和 TLS 端口冲突。
+		if strings.HasSuffix(primary, ".invalid") {
+			enableIpv6 = false
+		}
 		// 站点级 IPv6 监听地址（可含端口）优先于全局；同域名多 location 取第一个显式配置的。
 		groupV6Addr := ""
 		listenPort := ""
@@ -866,13 +871,21 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 		// Listen directives - IPv4 and IPv6 separately
 		if enableQuic && hasTLS && !socketOnly {
+			// QUIC 监听优先级：站点 quic_listen > 全局 quic_listen > HTTPS 监听。
 			quicListen := listenPort
+			if strings.TrimSpace(s.QUICListen) != "" {
+				quicListen = globalListen(s.QUICListen, listenPort)
+			}
 			if tlsSite != nil && tlsSite.QuicListen != "" {
 				quicListen = tlsSite.QuicListen
 			}
+			quicV6 := httpsListenV6
+			if strings.TrimSpace(s.QUICListenV6) != "" {
+				quicV6 = globalListenV6(s.QUICListenV6, quicListen)
+			}
 			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", quicListen, ds))
 			if enableIpv6 {
-				sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", v6ListenWith(httpsListenV6, groupV6Addr, quicListen, true), ds))
+				sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", v6ListenWith(quicV6, groupV6Addr, quicListen, true), ds))
 			}
 		}
 		if hasTLS {

@@ -8,8 +8,8 @@ import (
 	"corefusion/internal/model/entity"
 )
 
-// 生产回归：non-tls.invalid 站点（listen 127.0.0.1:8444）在全局 IPv6 开启时，
-// IPv6 监听必须复用**站点自己的端口**（[::1]:8444）。
+// 生产回归：non-tls.invalid 是系统内部站点，默认**不继承**全局 IPv6；
+// 只有站点显式 enable_ipv6 时才生成，且必须复用站点自己的端口（[::1]:8444）。
 //
 // 若误用全局 IPv6 地址里的端口（[::1]:443），会与 TLS 站点的
 // `listen [::1]:443 ssl proxy_protocol` 冲突：
@@ -26,7 +26,7 @@ func TestNginxConfigNonTLSIPv6UsesSitePort(t *testing.T) {
 		{
 			ServerID: 1, Domain: "non-tls.invalid", Template: "return_code",
 			Path: "/", ListenPort: "127.0.0.1:8444", ProxyProtocol: true,
-			BackendPath: "403", Enabled: true,
+			BackendPath: "403", Enabled: true, EnableIpv6: true,
 		},
 	}
 	m := newNginxTestManager(t, sites,
@@ -37,7 +37,7 @@ func TestNginxConfigNonTLSIPv6UsesSitePort(t *testing.T) {
 	}
 
 	if !strings.Contains(cfg, "listen [::1]:8444 proxy_protocol;") {
-		t.Fatalf("non-tls 站点缺少 [::1]:8444 监听：\n%s", cfg)
+		t.Fatalf("non-tls 站点显式开启 IPv6 后缺少 [::1]:8444 监听：\n%s", cfg)
 	}
 	// 同一个 IPv6 端口不能既被 TLS server 以 ssl 监听、又被 non-tls server 以明文监听。
 	if strings.Contains(cfg, "listen [::1]:443 proxy_protocol;") {
@@ -73,5 +73,25 @@ func TestNginxConfigGlobalListenSplit(t *testing.T) {
 		if !strings.Contains(cfg, want) {
 			t.Fatalf("缺少 %q：\n%s", want, cfg)
 		}
+	}
+}
+
+// 系统内部站点（*.invalid）未显式开启 IPv6 时，即使全局 IPv6 打开也不生成 v6 监听。
+func TestNginxConfigInternalSiteSkipsGlobalIPv6(t *testing.T) {
+	sites := []entity.NginxSite{
+		{
+			ServerID: 1, Domain: "non-tls.invalid", Template: "return_code",
+			Path: "/", ListenPort: "127.0.0.1:8444", ProxyProtocol: true,
+			BackendPath: "403", Enabled: true,
+		},
+	}
+	m := newNginxTestManager(t, sites,
+		`{"ipv6": true, "http_listen_v6": "[::1]:80", "https_listen_v6": "[::1]:443"}`)
+	cfg, err := m.GenerateConfigForServer(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(cfg, "listen [::1]:8444") {
+		t.Fatalf("系统站点未开 enable_ipv6 却生成了 IPv6 监听：\n%s", cfg)
 	}
 }

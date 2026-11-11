@@ -244,8 +244,11 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	// 全局 IPv6 开关：作用于所有生成的 listen（站点 server / HTTP→HTTPS 跳转 /
 	// 默认 server / stream）。站点级 enable_ipv6 可在全局关闭时单独为该站点开启。
 	globalIPv6 := s.IPv6
-	// HTTP 与 stream 各自可指定 IPv6 监听地址（默认 "::"），不再固定 [::]。
-	httpV6Host := ipv6ListenHost(s.IPv6ListenAddr)
+	// 全局监听拆成 http/https × v4/v6 四项，避免一个 ipv6_listen_addr 被 80/443 复用。
+	httpListen := globalListen(s.HTTPListen, "80")
+	httpsListen := globalListen(s.HTTPSListen, "443")
+	httpListenV6 := globalListenV6(s.HTTPListenV6, httpListen)
+	httpsListenV6 := globalListenV6(s.HTTPSListenV6, httpsListen)
 
 	// 全局 TLS 素材：开启时从库里的 base64 还原到 data/ssl/（生成在保存开关/点按钮时完成，
 	// 不在此处触发耗时生成）；远程节点由 Agent 按同一份 base64 还原，保证多节点一致。
@@ -674,12 +677,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	//（ListenPort="80" ✓ / 非证书站点未写端口（默认 80 ✓））。
 	// 没开 80 就**不生成** HTTP→HTTPS 跳转 ✓（跳转 server 抢不到 :80、跳了也白跳 ✗）。
 	port80Open := false
+	httpPortOnly := listenPortOnly(httpListen)
 	for _, s := range httpSites {
 		p := s.ListenPort
 		if p == "" && s.CertPath == "" && s.KeyPath == "" && s.ListenSocket == "" {
-			p = "80"
+			p = httpListen
 		}
-		if p == "80" {
+		if listenPortOnly(p) == httpPortOnly {
 			port80Open = true
 			break
 		}
@@ -722,9 +726,9 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 			sb.WriteString("    # HTTP → HTTPS redirect (auto-generated; per-site switch)\n")
 			sb.WriteString("    server {\n")
-			sb.WriteString("        listen 80;\n")
+			sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListen))
 			if grpIPv6 {
-				sb.WriteString(fmt.Sprintf("        listen %s;\n", ipv6Listen(httpV6Host, "80")))
+				sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListenV6))
 			}
 			sb.WriteString(fmt.Sprintf("        server_name %s;\n", serverNames))
 			if !m.isLocalTarget(ctx, serverID) {
@@ -758,6 +762,8 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		// 站点级 IPv6 监听地址（可含端口）优先于全局；同域名多 location 取第一个显式配置的。
 		groupV6Addr := ""
 		listenPort := ""
+		httpsPortExplicit := false
+		httpPortExplicit := false
 		var tlsCert, tlsKey string
 		var tlsSite *entity.NginxSite
 		for _, site := range siteList {
@@ -782,8 +788,15 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 				hasSocket = true
 			}
-			if site.ListenPort != "" && listenPort == "" {
-				listenPort = site.ListenPort
+			if site.ListenPort != "" {
+				if site.CertPath != "" && site.KeyPath != "" {
+					httpsPortExplicit = true
+				} else {
+					httpPortExplicit = true
+				}
+				if listenPort == "" {
+					listenPort = site.ListenPort
+				}
 			}
 			if site.CertPath != "" && site.KeyPath != "" {
 				hasTLS = true
@@ -803,16 +816,15 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				groupV6Addr = site.IPv6ListenAddr
 			}
 		}
-		if groupV6Addr == "" {
-			groupV6Addr = s.IPv6ListenAddr
-		}
+		// 旧的全局 ipv6_listen_addr 已在 mergeNginxSettings 中迁移为
+		// http_listen_v6 / https_listen_v6，这里只保留站点级覆盖。
 
 		// Default port: 443 for TLS, 80 for non-TLS
-		if listenPort == "" || (hasTLS && listenPort == "80") {
+		if listenPort == "" || (hasTLS && listenPortOnly(listenPort) == "80") {
 			if hasTLS {
-				listenPort = "443"
+				listenPort = httpsListen
 			} else {
-				listenPort = "80"
+				listenPort = httpListen
 			}
 		}
 		// 通配/兜底域名（"" 或 "_"）显式 default_server，避免"默认站点"随生成顺序漂移
@@ -860,7 +872,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 			sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", quicListen, ds))
 			if enableIpv6 {
-				sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", ipv6ListenFor(groupV6Addr, quicListen), ds))
+				sb.WriteString(fmt.Sprintf("        listen %s quic%s;\n", v6ListenWith(httpsListenV6, groupV6Addr, quicListen, true), ds))
 			}
 		}
 		if hasTLS {
@@ -869,12 +881,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if hasProxyProtocol {
 					sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
+						sb.WriteString(fmt.Sprintf("        listen %s ssl proxy_protocol%s;\n", v6ListenWith(httpsListenV6, groupV6Addr, listenPort, httpsPortExplicit), ds))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
+						sb.WriteString(fmt.Sprintf("        listen %s ssl%s;\n", v6ListenWith(httpsListenV6, groupV6Addr, listenPort, httpsPortExplicit), ds))
 					}
 				}
 			}
@@ -934,12 +946,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if hasProxyProtocol {
 					sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", ipv6ListenFor(groupV6Addr, listenPort), ds))
+						sb.WriteString(fmt.Sprintf("        listen %s proxy_protocol%s;\n", v6ListenWith(httpListenV6, groupV6Addr, listenPort, httpPortExplicit), ds))
 					}
 				} else {
 					sb.WriteString(fmt.Sprintf("        listen %s%s;\n", listenPort, ds))
 					if enableIpv6 {
-						sb.WriteString(fmt.Sprintf("        listen %s%s;\n", ipv6Listen(groupV6Addr, listenPort), ds))
+						sb.WriteString(fmt.Sprintf("        listen %s%s;\n", v6ListenWith(httpListenV6, groupV6Addr, listenPort, httpPortExplicit), ds))
 					}
 				}
 			}
@@ -1310,9 +1322,9 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	// Default server if no HTTP sites (ensures :80 always responds)
 	if len(httpSites) == 0 {
 		sb.WriteString("    server {\n")
-		sb.WriteString("        listen 80;\n")
+		sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListen))
 		if globalIPv6 {
-			sb.WriteString(fmt.Sprintf("        listen %s;\n", ipv6Listen(httpV6Host, "80")))
+			sb.WriteString(fmt.Sprintf("        listen %s;\n", httpListenV6))
 		}
 		sb.WriteString("        location / {\n")
 		sb.WriteString("            default_type text/plain;\n")
@@ -1739,6 +1751,65 @@ func ipv6ListenHost(addr string) string {
 // 否则会生成 listen [::1]:127.0.0.1:443 这种非法写法（nginx: invalid port）。
 func ipv6Listen(host, port string) string {
 	return fmt.Sprintf("[%s]:%s", ipv6ListenHost(host), listenPortOnly(port))
+}
+
+// globalListen 归一全局监听地址（v4）：空 → 默认值；"80" / "127.0.0.1:80" 均可。
+func globalListen(addr, def string) string {
+	a := strings.TrimSpace(addr)
+	if a == "" {
+		a = def
+	}
+	if c := canonicalListenAddr(a); c != "" {
+		return c
+	}
+	return def
+}
+
+// globalListenV6 归一全局 IPv6 监听地址：支持 "[::]:80" / "[::1]:80" / "::1"（只填主机）。
+// 只填主机时端口跟随同协议 v4 监听（fallbackAddr）。
+func globalListenV6(addr, fallbackAddr string) string {
+	host := ipv6ListenHost(fallbackAddr)
+	port := listenPortOnly(fallbackAddr)
+	a := strings.TrimSpace(addr)
+	if a != "" {
+		if h, p, err := net.SplitHostPort(canonicalListenAddr(a)); err == nil && p != "" {
+			return fmt.Sprintf("[%s]:%s", ipv6ListenHost(h), listenPortOnly(p))
+		}
+		if strings.Contains(strings.Trim(a, "[]"), ":") {
+			host = ipv6ListenHost(a)
+		}
+	}
+	return fmt.Sprintf("[%s]:%s", host, port)
+}
+
+// v6ListenWith 生成站点级 IPv6 监听：
+//   - 站点显式 ipv6_listen_addr（可带端口）完整优先；
+//   - 只写主机时端口跟随站点；
+//   - 未配置时用对应协议（HTTP/HTTPS）的全局 IPv6 主机；
+//     站点未显式 listen_port 时端口也用全局 IPv6 地址里的端口，显式时跟随站点端口。
+func v6ListenWith(globalV6, siteV6, sitePort string, sitePortExplicit bool) string {
+	a := strings.TrimSpace(siteV6)
+	if a != "" {
+		if h, p, err := net.SplitHostPort(canonicalListenAddr(a)); err == nil && p != "" {
+			return fmt.Sprintf("[%s]:%s", ipv6ListenHost(h), listenPortOnly(p))
+		}
+		return fmt.Sprintf("[%s]:%s", ipv6ListenHost(a), listenPortOnly(sitePort))
+	}
+	if sitePortExplicit {
+		return fmt.Sprintf("[%s]:%s", ipv6ListenHost(globalV6), listenPortOnly(sitePort))
+	}
+	if strings.TrimSpace(globalV6) != "" {
+		return canonicalIPv6Listen(globalV6)
+	}
+	return fmt.Sprintf("[%s]:%s", ipv6ListenHost(globalV6), listenPortOnly(sitePort))
+}
+
+// canonicalIPv6Listen 归一 "[host]:port"；非法时退化为 [::]:port。
+func canonicalIPv6Listen(addr string) string {
+	if h, p, err := net.SplitHostPort(canonicalListenAddr(addr)); err == nil && p != "" {
+		return fmt.Sprintf("[%s]:%s", ipv6ListenHost(h), listenPortOnly(p))
+	}
+	return fmt.Sprintf("[%s]:%s", ipv6ListenHost(addr), listenPortOnly(addr))
 }
 
 // ipv6ListenFor 生成站点/组使用的 IPv6 listen：addr 可只写主机（"::1"）或带端口

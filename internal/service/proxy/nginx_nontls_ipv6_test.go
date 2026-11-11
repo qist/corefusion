@@ -44,3 +44,34 @@ func TestNginxConfigNonTLSIPv6UsesSitePort(t *testing.T) {
 		t.Fatalf("生成了与 TLS 端口冲突的 [::1]:443 proxy_protocol：\n%s", cfg)
 	}
 }
+
+// 全局监听拆成 http/https × v4/v6 四项：站点未显式指定 listen_port 时各用各的地址，
+// 不会出现 HTTP 站点复用 HTTPS 的 IPv6 端口（反之亦然）。
+func TestNginxConfigGlobalListenSplit(t *testing.T) {
+	sites := []entity.NginxSite{
+		{
+			ServerID: 1, Domain: "tls.example.com", CertPath: "cert.pem", KeyPath: "key.pem",
+			Enabled: true, Path: "/", Upstream: "127.0.0.1:8080",
+		},
+		{
+			ServerID: 1, Domain: "plain.example.com",
+			Enabled: true, Path: "/", Upstream: "127.0.0.1:8080",
+		},
+	}
+	m := newNginxTestManager(t, sites,
+		`{"ipv6":true,"http_listen":"127.0.0.1:8080","https_listen":"127.0.0.1:8443","http_listen_v6":"[::1]:8080","https_listen_v6":"[::1]:8443"}`)
+	cfg, err := m.GenerateConfigForServer(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"listen 127.0.0.1:8443 ssl;",
+		"listen [::1]:8443 ssl;",
+		"listen 127.0.0.1:8080;",
+		"listen [::1]:8080;",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("缺少 %q：\n%s", want, cfg)
+		}
+	}
+}

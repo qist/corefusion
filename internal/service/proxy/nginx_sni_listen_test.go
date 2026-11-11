@@ -163,10 +163,12 @@ func TestNginxStreamIPv6ListenAddr(t *testing.T) {
 	}
 }
 
-// 全局 IPv6 监听地址带端口时：HTTPS/QUIC 用该端口，HTTP 仍用自身端口（否则撞端口）。
+// 全局 IPv6 监听地址带端口时：作为 HTTPS 的默认监听端口；
+// HTTP 仍用 HTTP 自己的端口（否则撞端口）。
+// 站点显式 listen_port 时以站点为准（见 TestNginxSiteIPv6PortFollowsSitePort）。
 func TestNginxGlobalIPv6ListenAddrWithPort(t *testing.T) {
 	sites := []entity.NginxSite{
-		{ServerID: 2, Domain: "v6.example.com", ListenPort: "443", CertPath: "cert.pem", KeyPath: "key.pem",
+		{ServerID: 2, Domain: "v6.example.com", CertPath: "cert.pem", KeyPath: "key.pem",
 			Enabled: true, Path: "/", Upstream: "127.0.0.1:8080"},
 		{ServerID: 2, Domain: "v6.example.com", ListenPort: "80",
 			Enabled: true, Path: "/", Upstream: "127.0.0.1:8080"},

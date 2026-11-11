@@ -108,21 +108,26 @@
               <el-switch v-model="settings.use_epoll" />
               <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('proxy.useEpollHint') }}</span>
             </el-form-item>
-            <el-divider content-position="left">{{ t('proxy.defaultPorts') }}</el-divider>
-            <el-form-item :label="t('proxy.defaultHttpPort')">
-              <el-input v-model="settings.default_http_port" style="width:200px" placeholder="80" />
+            <el-divider content-position="left">{{ t('proxy.globalListen') }}</el-divider>
+            <el-form-item :label="t('proxy.listenHttp')">
+              <el-input v-model="settings.http_listen" style="width:240px" placeholder="80 / 0.0.0.0:80 / 127.0.0.1:80" />
             </el-form-item>
-            <el-form-item :label="t('proxy.defaultHttpsPort')">
-              <el-input v-model="settings.default_https_port" style="width:200px" placeholder="443" />
+            <el-form-item :label="t('proxy.listenHttps')">
+              <el-input v-model="settings.https_listen" style="width:240px" placeholder="443 / 0.0.0.0:443 / 127.0.0.1:443" />
             </el-form-item>
+            <el-form-item v-if="settings.ipv6" :label="t('proxy.listenHttpV6')">
+              <el-input v-model="settings.http_listen_v6" style="width:240px" placeholder="[::]:80 / [::1]:80" />
+            </el-form-item>
+            <el-form-item v-if="settings.ipv6" :label="t('proxy.listenHttpsV6')">
+              <el-input v-model="settings.https_listen_v6" style="width:240px" placeholder="[::]:443 / [::1]:443" />
+            </el-form-item>
+            <div style="font-size:12px;color:#909399;margin:-4px 0 12px 150px">
+              {{ t('proxy.globalListenHint') }}
+            </div>
             <el-divider content-position="left">{{ t('proxy.network') }}</el-divider>
             <el-form-item label="IPv6">
               <el-switch v-model="settings.ipv6" />
               <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.ipv6GlobalHint') }}</span>
-            </el-form-item>
-            <el-form-item v-if="settings.ipv6" :label="t('proxy.ipv6ListenAddr')">
-              <el-input v-model="settings.ipv6_listen_addr" style="width:260px" placeholder=":: / ::1 / [2001:db8::1]:8443" />
-              <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.ipv6ListenAddrHint') }}</span>
             </el-form-item>
             <el-divider content-position="left">{{ t('proxy.tls') }}</el-divider>
             <el-form-item label="ssl_dhparam">
@@ -643,7 +648,7 @@
           </div>
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.localHttpsPort') }}</div>
-            <el-input v-model="settings.default_https_port" size="small" style="width:140px" placeholder="127.0.0.1:8443" />
+            <el-input :model-value="localHttpsTarget()" size="small" style="width:190px" disabled />
           </div>
           <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
           <el-button size="small" type="warning" @click="batchMigrate">{{ t('proxy.batchMigrate') }}</el-button>
@@ -1065,7 +1070,7 @@
         <el-form-item label="IPv6">
           <el-switch v-model="siteForm.enable_ipv6" />
           <div v-if="siteForm.enable_ipv6" style="margin-top:6px">
-            <el-input v-model="siteForm.ipv6_listen_addr" style="width:260px" :placeholder="settings.ipv6_listen_addr || ':: / ::1 / [2001:db8::1]:8443'" />
+            <el-input v-model="siteForm.ipv6_listen_addr" style="width:260px" :placeholder="settings.https_listen_v6 || '[::1]:443'" />
             <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.siteIPv6ListenHint') }}</div>
           </div>
         </el-form-item>
@@ -1466,15 +1471,22 @@ function onInboundSelect(id) {
 
 }
 
-// 「本地 HTTPS 端口」直接读写 settings.default_https_port（可填 8443 或 127.0.0.1:8443）。
-// 以前用独立的 ref('8443')，保存后不落库、刷新就还原 —— 现在与设置同源。
+// 全局监听地址：http/https × v4/v6 独立配置；旧字段 default_* 仅作迁移回退。
+function globalHttpListen() {
+  return String(settings.value.http_listen || globalHttpListen() || '80').trim() || '80'
+}
+function globalHttpsListen() {
+  return String(settings.value.https_listen || globalHttpsListen() || '443').trim() || '443'
+}
+
+// 「本地 HTTPS 目标」跟随 https_listen（可填 443 / 127.0.0.1:443）。
 function localHttpsTarget() {
-  const v = String(settings.value.default_https_port || '').trim()
+  const v = globalHttpsListen()
   if (!v) return '127.0.0.1:8443'
   return v.includes(':') ? v : `127.0.0.1:${v}`
 }
 function localHttpsPort() {
-  const v = String(settings.value.default_https_port || '').trim() || '8443'
+  const v = globalHttpsListen()
   const m = v.match(/:(\d+)$/)
   if (m) return m[1]
   return /^\d+$/.test(v) ? v : '8443'
@@ -2245,7 +2257,7 @@ async function onSNIToggle(enabled) {
       const res = await client.post(`${nginxApi.value}/batch-update-ports`, { port: localPort, enable: true })
       ElMessage.success(t('proxy.sniEnabled', { count: res.updated || 0 }))
     } else {
-      settings.value.default_https_port = '443'
+      settings.value.https_listen = '443'
       await saveSettings()
       await client.post(`${nginxApi.value}/sni-rules/toggle`, { enabled: false })
       await client.post(`${nginxApi.value}/batch-update-ports`, { port: '443', enable: false })
@@ -2336,7 +2348,7 @@ const wafDisabledTemplates = ['reality', 'websocket', 'grpc', 'xhttp', 'httpupgr
 
 function showAddSite(template) {
   siteDialogTitle.value = t('proxy.addSite')
-  const defaultPort = settings.value.default_http_port
+  const defaultPort = globalHttpListen()
   const isReality = template === 'reality'
 siteForm.value = {
 // Reality 是 TLS 透传（由内核的 Reality 处理证书 ✓）✗ 不需要域名 ✗ →
@@ -2347,7 +2359,7 @@ siteForm.value = {
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: isReality, is_panel: false,
-    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: !wafDisabledTemplates.includes(template),
@@ -2383,7 +2395,7 @@ function onTemplateChange(newTemplate) {
     siteForm.value.listen_mode = 'tcp'
     // Reset listen_port for non-reality if it was 9443
     if (siteForm.value.listen_port === '9443') {
-      siteForm.value.listen_port = newTemplate === 'l4' ? '443' : (settings.value.default_http_port || '80')
+      siteForm.value.listen_port = newTemplate === 'l4' ? '443' : (globalHttpListen() || '80')
     }
     siteForm.value.ssl_protocols = ''
   }
@@ -2391,7 +2403,7 @@ function onTemplateChange(newTemplate) {
 
 function showPanelProxy() {
   siteDialogTitle.value = t('proxy.proxyPanel')
-  const defaultPort = settings.value.default_http_port
+  const defaultPort = globalHttpListen()
   siteForm.value = {
     domain: '_', upstreams: [`127.0.0.1:${panelPort.value}`], path: '', template: 'panel_forward',
     listen_port: defaultPort, listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
@@ -2399,7 +2411,7 @@ function showPanelProxy() {
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: false, is_panel: true,
-    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
   waf_enabled: true,
@@ -2416,12 +2428,12 @@ function showForwardProxy(template) {
   const d = forwardDerived(template)
   siteForm.value = {
     domain: '', upstreams: [d.upstream], path: d.path, backend_path: d.path, template,
-    listen_port: settings.value.default_http_port, listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
+    listen_port: globalHttpListen(), listen_socket: '', singbox_listen_port: '', listen_mode: 'tcp',
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
     proxy_protocol: false, is_panel: false,
-    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: settings.value.ipv6_listen_addr || '', enable_quic: false,
+    enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
     ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
     waf_enabled: true,
@@ -2440,8 +2452,8 @@ function onSiteCertSelect(id) {
 }
 
 function onToggleCert(enabled) {
-  const defaultHttp = settings.value.default_http_port
-  const defaultHttps = settings.value.default_https_port
+  const defaultHttp = globalHttpListen()
+  const defaultHttps = globalHttpsListen()
   if (enabled && (siteForm.value.listen_port === defaultHttp || siteForm.value.listen_port === '')) {
     siteForm.value.listen_port = defaultHttps
   } else if (!enabled && siteForm.value.listen_port === defaultHttps) {

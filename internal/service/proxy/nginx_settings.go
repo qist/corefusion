@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"runtime"
 )
 
@@ -16,9 +17,20 @@ type NginxSettings struct {
 	WorkerShutdownTimeout string `json:"worker_shutdown_timeout"`
 	Daemon                bool   `json:"daemon"`
 
-	// Default ports
+	// Default ports（兼容旧配置，仅作为 http_listen/https_listen 的迁移来源）
 	DefaultHttpPort  string `json:"default_http_port"`
 	DefaultHttpsPort string `json:"default_https_port"`
+
+	// 全局监听地址：v4/v6 与 http/https 完全独立。
+	// 站点未显式指定 listen_port 时使用；站点显式指定时以站点为准（IPv6 端口跟随站点）。
+	//   HTTPListen    默认 "80"           可填 "80" / "0.0.0.0:80" / "127.0.0.1:80"
+	//   HTTPListenV6  默认 "[::]:80"      可填 "[::]:80" / "[::1]:80"
+	//   HTTPSListen   默认 "443"          可填 "443" / "0.0.0.0:443" / "127.0.0.1:443"
+	//   HTTPSListenV6 默认 "[::]:443"     可填 "[::]:443" / "[::1]:443"
+	HTTPListen    string `json:"http_listen"`
+	HTTPListenV6  string `json:"http_listen_v6"`
+	HTTPSListen   string `json:"https_listen"`
+	HTTPSListenV6 string `json:"https_listen_v6"`
 
 	// Network
 	// IPv6 是全局 IPv6 监听开关：打开后所有 HTTP/HTTPS/跳转/默认的 listen
@@ -196,6 +208,10 @@ func DefaultNginxSettings() *NginxSettings {
 		Daemon:                false,
 		DefaultHttpPort:       "80",
 		DefaultHttpsPort:      "443",
+		HTTPListen:            "80",
+		HTTPListenV6:          "[::]:80",
+		HTTPSListen:           "443",
+		HTTPSListenV6:         "[::]:443",
 		IPv6:                  false,
 		IPv6ListenAddr:        "::",
 		SslDhparam:            false,
@@ -370,6 +386,38 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.DefaultHttpsPort != "" {
 		dst.DefaultHttpsPort = src.DefaultHttpsPort
+	}
+	// 全局监听地址：新字段优先；旧库（只有 default_* + ipv6_listen_addr）自动迁移成
+	// 独立的 http/https × v4/v6 四项，避免一个 ipv6_listen_addr 被 80/443 复用。
+	if src.HTTPListen != "" {
+		dst.HTTPListen = src.HTTPListen
+	} else if src.DefaultHttpPort != "" {
+		dst.HTTPListen = src.DefaultHttpPort
+	}
+	if src.HTTPSListen != "" {
+		dst.HTTPSListen = src.HTTPSListen
+	} else if src.DefaultHttpsPort != "" {
+		dst.HTTPSListen = src.DefaultHttpsPort
+	}
+	if src.IPv6ListenAddr != "" {
+		host := ipv6ListenHost(src.IPv6ListenAddr)
+		// 旧字段带端口时只作用于 HTTPS/QUIC（历史语义），HTTP 仍用自身端口。
+		httpsPort := listenPortOnly(dst.HTTPSListen)
+		if _, p, err := net.SplitHostPort(canonicalListenAddr(src.IPv6ListenAddr)); err == nil && p != "" {
+			httpsPort = p
+		}
+		if src.HTTPListenV6 == "" {
+			dst.HTTPListenV6 = fmt.Sprintf("[%s]:%s", host, listenPortOnly(dst.HTTPListen))
+		}
+		if src.HTTPSListenV6 == "" {
+			dst.HTTPSListenV6 = fmt.Sprintf("[%s]:%s", host, httpsPort)
+		}
+	}
+	if src.HTTPListenV6 != "" {
+		dst.HTTPListenV6 = src.HTTPListenV6
+	}
+	if src.HTTPSListenV6 != "" {
+		dst.HTTPSListenV6 = src.HTTPSListenV6
 	}
 	// SslResolver **无条件**覆盖 ✓（含空值 ✓）：允许用户**显式清空 = 关闭** ✗→✓
 	// —— 若只搬非空值 ✗，用户清空后会被默认值（8.8.8.8 1.1.1.1）覆盖回来 ✗。

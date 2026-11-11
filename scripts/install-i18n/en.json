@@ -111,7 +111,15 @@
     "step_wait_ready": "Waiting for service readiness",
     "err_service_failed": "Service failed to start; check the log",
     "err_systemd_not_running": "corefusion.service did not stay running; check the log above",
-    "warn_ready_timeout": "No readiness log within 40 seconds; continuing with known information"
+    "warn_ready_timeout": "No readiness log within 40 seconds; continuing with known information",
+    "step_firewall": "Firewall is enabled (%s)",
+    "ok_fw_disabled": "No active firewall detected; no port allowance needed",
+    "fw_manual": "To avoid locking yourself out, the installer does not modify the firewall; review and run these commands manually:",
+    "fw_perm": "Permanently allow Agent gRPC port %s/tcp:",
+    "fw_temp": "Temporarily allow the setup wizard port %s/tcp:",
+    "fw_temp_remove": "Remove the temporary rule after setup:",
+    "fw_nft_remove": "Delete by handle: %s",
+    "fw_persist": "nftables/iptables rules are lost on reboot; persist them yourself if needed (e.g. nft list ruleset > /etc/nftables.conf or netfilter-persistent save)"
   },
   "usage": [
     "CoreFusion Panel Multi-Environment Installer",

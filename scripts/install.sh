@@ -213,6 +213,14 @@ step_wait_ready=等待服务就绪
 err_service_failed=服务启动失败，请检查日志
 err_systemd_not_running=corefusion.service 未能保持运行，请检查上面的日志
 warn_ready_timeout=40 秒内未捕获到就绪日志，仍继续输出已知信息
+step_firewall=检测到防火墙已启用（%s）
+ok_fw_disabled=未检测到已启用的防火墙，无需放行端口
+fw_manual=为避免误改规则导致主机失联，安装脚本不会自动修改防火墙；请确认后手动执行：
+fw_perm=永久放行 Agent gRPC 端口 %s/tcp：
+fw_temp=临时放行初始化向导端口 %s/tcp：
+fw_temp_remove=初始化完成后删除临时规则：
+fw_nft_remove=按 handle 删除：%s
+fw_persist=nftables/iptables 规则重启后会失效，需要持久化时请自行保存（如 nft list ruleset > /etc/nftables.conf 或 netfilter-persistent save）
 EOF
 }
 
@@ -329,6 +337,14 @@ step_wait_ready=Waiting for service readiness
 err_service_failed=Service failed to start; check the log
 err_systemd_not_running=corefusion.service did not stay running; check the log above
 warn_ready_timeout=No readiness log within 40 seconds; continuing with known information
+step_firewall=Firewall is enabled (%s)
+ok_fw_disabled=No active firewall detected; no port allowance needed
+fw_manual=To avoid locking yourself out, the installer does not modify the firewall; review and run these commands manually:
+fw_perm=Permanently allow Agent gRPC port %s/tcp:
+fw_temp=Temporarily allow the setup wizard port %s/tcp:
+fw_temp_remove=Remove the temporary rule after setup:
+fw_nft_remove=Delete by handle: %s
+fw_persist=nftables/iptables rules are lost on reboot; persist them yourself if needed (e.g. nft list ruleset > /etc/nftables.conf or netfilter-persistent save)
 EOF
 }
 
@@ -445,6 +461,14 @@ step_wait_ready=انتظار برای آماده شدن سرویس
 err_service_failed=سرویس راه‌اندازی نشد؛ لاگ را بررسی کنید
 err_systemd_not_running=corefusion.service در حال اجرا نماند؛ لاگ بالا را بررسی کنید
 warn_ready_timeout=در 40 ثانیه پیام آماده‌بودن پیدا نشد؛ با اطلاعات موجود ادامه می‌دهیم
+step_firewall=فایروال فعال است (%s)
+ok_fw_disabled=فایروال فعالی یافت نشد؛ نیازی به باز کردن پورت نیست
+fw_manual=برای جلوگیری از قطع دسترسی به میزبان، اسکریپت نصب فایروال را تغییر نمی‌دهد؛ لطفاً این دستورها را بررسی و دستی اجرا کنید:
+fw_perm=باز کردن دائمی پورت Agent gRPC %s/tcp:
+fw_temp=باز کردن موقت پورت جادوگر راه‌اندازی %s/tcp:
+fw_temp_remove=پس از پایان راه‌اندازی، قانون موقت را حذف کنید:
+fw_nft_remove=حذف با handle: %s
+fw_persist=قوانین nftables/iptables پس از ریبوت از بین می‌روند؛ در صورت نیاز خودتان ذخیره کنید (مثلاً nft list ruleset > /etc/nftables.conf یا netfilter-persistent save)
 EOF
 }
 
@@ -561,6 +585,14 @@ step_wait_ready=Ожидание готовности службы
 err_service_failed=Служба не запустилась; проверьте журнал
 err_systemd_not_running=corefusion.service не остаётся запущенной; проверьте журнал выше
 warn_ready_timeout=За 40 секунд не найдено сообщение о готовности; продолжаем с известными данными
+step_firewall=Обнаружен активный фаервол (%s)
+ok_fw_disabled=Активный фаервол не обнаружен; открывать порты не нужно
+fw_manual=Чтобы не потерять доступ к хосту, установщик не меняет фаервол; проверьте и выполните команды вручную:
+fw_perm=Постоянно открыть порт Agent gRPC %s/tcp:
+fw_temp=Временно открыть порт мастера инициализации %s/tcp:
+fw_temp_remove=После инициализации удалите временное правило:
+fw_nft_remove=Удалить по handle: %s
+fw_persist=Правила nftables/iptables теряются после перезагрузки; при необходимости сохраните их сами (например, nft list ruleset > /etc/nftables.conf или netfilter-persistent save)
 EOF
 }
 
@@ -1127,6 +1159,96 @@ install_deps() {
 	ok "$(t ok_deps)"
 }
 
+# ── 防火墙端口提示（只检测，不自动修改） ─────────────────────
+# 自动改防火墙一旦写错就可能把主机/面板自己挡在门外，出问题也难以界定责任，
+# 所以这里只做**只读检测**，把需要放行的规则打印出来，由用户确认后手动执行。
+AGENT_GRPC_PORT="${CF_AGENT_GRPC_PORT:-18443}"
+FW_KIND="none"
+FW_CHAIN=""
+
+# 找出策略为 drop 的 nftables input 基础链：输出 "<family> <table> <chain>"。
+nft_input_chain() {
+	command -v nft >/dev/null 2>&1 || return 0
+	nft list ruleset 2>/dev/null | awk '
+		/^[[:space:]]*table[[:space:]]/ { fam=$2; tbl=$3 }
+		/^[[:space:]]*chain[[:space:]]/ { ch=$2 }
+		/hook[[:space:]]+input/ && /policy[[:space:]]+drop/ { print fam " " tbl " " ch; exit }
+	'
+}
+
+detect_firewall() {
+	FW_KIND="none"
+	FW_CHAIN=""
+	if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -qi '^Status:[[:space:]]*active'; then
+		FW_KIND="ufw"; return 0
+	fi
+	if command -v firewall-cmd >/dev/null 2>&1 && [ "$(LC_ALL=C firewall-cmd --state 2>/dev/null || true)" = "running" ]; then
+		FW_KIND="firewalld"; return 0
+	fi
+	FW_CHAIN="$(nft_input_chain)"
+	if [ -n "$FW_CHAIN" ]; then FW_KIND="nft"; return 0; fi
+	if command -v iptables >/dev/null 2>&1 && iptables -S INPUT 2>/dev/null | grep -q '^-P INPUT DROP'; then
+		FW_KIND="iptables"; return 0
+	fi
+}
+
+# print_firewall_hints [wizard_port]：打印用户需要手动执行的放行命令。
+print_firewall_hints() {
+	local wizard_port="${1:-}" fam tbl ch
+	detect_firewall
+	if [ "$FW_KIND" = "none" ]; then
+		ok "$(t ok_fw_disabled)"
+		return 0
+	fi
+	step "$(t step_firewall "$FW_KIND")"
+	echo " $(t fw_manual)"
+	case "$FW_KIND" in
+	ufw)
+		echo " $(t fw_perm "$AGENT_GRPC_PORT")"
+		echo "   ufw allow $AGENT_GRPC_PORT/tcp comment 'corefusion-agent'"
+		if [ -n "$wizard_port" ]; then
+			echo " $(t fw_temp "$wizard_port")"
+			echo "   ufw allow $wizard_port/tcp comment 'corefusion-init'"
+			echo " $(t fw_temp_remove)"
+			echo "   ufw delete allow $wizard_port/tcp"
+		fi
+		;;
+	firewalld)
+		echo " $(t fw_perm "$AGENT_GRPC_PORT")"
+		echo "   firewall-cmd --permanent --add-port=$AGENT_GRPC_PORT/tcp && firewall-cmd --reload"
+		if [ -n "$wizard_port" ]; then
+			echo " $(t fw_temp "$wizard_port")"
+			echo "   firewall-cmd --add-port=$wizard_port/tcp --timeout=2h"
+		fi
+		;;
+	nft)
+		read -r fam tbl ch <<<"$FW_CHAIN"
+		echo " $(t fw_perm "$AGENT_GRPC_PORT")"
+		echo "   nft insert rule $fam $tbl $ch tcp dport $AGENT_GRPC_PORT accept"
+		if [ -n "$wizard_port" ]; then
+			echo " $(t fw_temp "$wizard_port")"
+			echo "   nft insert rule $fam $tbl $ch tcp dport $wizard_port accept"
+			echo " $(t fw_temp_remove)"
+			echo "   nft -a list chain $fam $tbl $ch"
+			echo " $(t fw_nft_remove "nft delete rule $fam $tbl $ch handle <N>")"
+		fi
+		echo " $(t fw_persist)"
+		;;
+	iptables)
+		echo " $(t fw_perm "$AGENT_GRPC_PORT")"
+		echo "   iptables -I INPUT -p tcp --dport $AGENT_GRPC_PORT -j ACCEPT"
+		if [ -n "$wizard_port" ]; then
+			echo " $(t fw_temp "$wizard_port")"
+			echo "   iptables -I INPUT -p tcp --dport $wizard_port -j ACCEPT"
+			echo " $(t fw_temp_remove)"
+			echo "   iptables -D INPUT -p tcp --dport $wizard_port -j ACCEPT"
+		fi
+		echo " $(t fw_persist)"
+		;;
+	esac
+	echo ""
+}
+
 # ── 源码模式依赖版本选择 ─────────────────────────────────────
 # 纯 shell 版本比较：ver_ge A B 表示 A >= B（支持 1.27 / 1.27.3 / 22.14.0）
 ver_ge() {
@@ -1405,14 +1527,23 @@ start_nohup() {
 
 service_log() {
 	if [ "$HAS_SYSTEMD" = "1" ] && [ "$START_MODE" = "systemd" ]; then
-		journalctl -u corefusion -o cat --since "@${START_TS}" --no-pager 2>/dev/null || true
+		local out extra
+		out="$(journalctl -u corefusion -o cat --since "@${START_TS}" --no-pager 2>/dev/null || true)"
+		# 容器/systemd-in-container 里 journald 常常拿不到 unit 归属（_SYSTEMD_UNIT 缺失）：
+		# `journalctl -u` 只剩 systemd 自己的 Started 行，没有面板日志。检测不到关键行时
+		# 按进程名补查一次，否则首启向导地址永远解析不到、就绪检测一直超时。
+		if ! grep -Eq 'init wizard listening|starting on .*\((HTTP|HTTPS)\)|初始化令牌|Initialize token' <<<"$out"; then
+			extra="$(journalctl _COMM=corefusion -o cat --since "@${START_TS}" --no-pager 2>/dev/null || true)"
+			if [ -n "$extra" ]; then out="$out"$'\n'"$extra"; fi
+		fi
+		printf '%s\n' "$out"
 	else
 		tail -n 200 "$LOG_FILE" 2>/dev/null || true
 	fi
 }
 
 print_init_info() {
-	local log url token ip scheme port listen_addr loopback_only
+	local log url token ip scheme port wizard_port listen_addr loopback_only
 	log="$(service_log)"
 
 	url="$(printf '%s\n' "$log" | sed -n 's/^.*访问地址:[[:space:]]*//p' | tail -n1)"
@@ -1429,6 +1560,13 @@ print_init_info() {
 	case "$port" in
 		''|*[!0-9]*) port="8080" ;;
 	esac
+	# 首启向导只打印访问地址、没有 "starting on" 行：从 URL 里取真实监听端口
+	# （IPv6 也适用：贪婪匹配到最后一个冒号）。
+	wizard_port=""
+	if [ -n "$url" ]; then
+		wizard_port="$(printf '%s' "$url" | sed -n 's#^[a-zA-Z]*://.*:\([0-9][0-9]*\)/.*#\1#p')"
+		[ -n "$wizard_port" ] && port="$wizard_port"
+	fi
 	# 仅回环监听时，用本机 IP 拼出来的地址是访问不到的，单独提示
 	loopback_only=0
 	case "$listen_addr" in
@@ -1488,6 +1626,8 @@ print_init_info() {
 		echo " $(t info_nohup_hint)"
 	fi
 	echo "=================================================================="
+	# 防火墙只做检测：把需要用户手动执行的放行命令打印出来，不自动改动规则。
+	print_firewall_hints "$wizard_port"
 }
 
 uninstall() {
@@ -1602,6 +1742,7 @@ if [ "$START_SERVICE" = "0" ]; then
 	else
 		printf '%s\n' "$(t manual_start_nohup "$INSTALL_DIR")"
 	fi
+	print_firewall_hints
 	printf '%s\n' "$(t init_url_in_log)"
 	exit 0
 fi

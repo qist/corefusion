@@ -399,25 +399,38 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	} else if src.DefaultHttpsPort != "" {
 		dst.HTTPSListen = src.DefaultHttpsPort
 	}
-	if src.IPv6ListenAddr != "" {
-		host := ipv6ListenHost(src.IPv6ListenAddr)
-		// 旧字段带端口时只作用于 HTTPS/QUIC（历史语义），HTTP 仍用自身端口。
-		httpsPort := listenPortOnly(dst.HTTPSListen)
-		if _, p, err := net.SplitHostPort(canonicalListenAddr(src.IPv6ListenAddr)); err == nil && p != "" {
-			httpsPort = p
-		}
-		if src.HTTPListenV6 == "" {
-			dst.HTTPListenV6 = fmt.Sprintf("[%s]:%s", host, listenPortOnly(dst.HTTPListen))
-		}
-		if src.HTTPSListenV6 == "" {
-			dst.HTTPSListenV6 = fmt.Sprintf("[%s]:%s", host, httpsPort)
-		}
-	}
-	if src.HTTPListenV6 != "" {
+
+	httpV6Explicit := src.HTTPListenV6 != ""
+	httpsV6Explicit := src.HTTPSListenV6 != ""
+	if httpV6Explicit {
 		dst.HTTPListenV6 = src.HTTPListenV6
 	}
-	if src.HTTPSListenV6 != "" {
+	if httpsV6Explicit {
 		dst.HTTPSListenV6 = src.HTTPSListenV6
+	}
+	// 旧 ipv6_listen_addr：主机部分同时用于 HTTP/HTTPS；带端口时只作用于 HTTPS
+	// （历史语义），并视为显式 v6 端口。
+	if src.IPv6ListenAddr != "" {
+		host := ipv6ListenHost(src.IPv6ListenAddr)
+		if !httpV6Explicit {
+			dst.HTTPListenV6 = fmt.Sprintf("[%s]:%s", host, listenPortOnly(dst.HTTPListen))
+		}
+		if !httpsV6Explicit {
+			httpsPort := listenPortOnly(dst.HTTPSListen)
+			if _, p, err := net.SplitHostPort(canonicalListenAddr(src.IPv6ListenAddr)); err == nil && p != "" {
+				httpsPort = p
+			}
+			dst.HTTPSListenV6 = fmt.Sprintf("[%s]:%s", host, httpsPort)
+			httpsV6Explicit = true
+		}
+	}
+
+	// 未显式配置的 IPv6 端口跟随同协议 IPv4，避免出现 v4=8443 / v6=443 的割裂。
+	if !httpV6Explicit {
+		dst.HTTPListenV6 = fmt.Sprintf("[%s]:%s", ipv6ListenHost(dst.HTTPListenV6), listenPortOnly(dst.HTTPListen))
+	}
+	if !httpsV6Explicit {
+		dst.HTTPSListenV6 = fmt.Sprintf("[%s]:%s", ipv6ListenHost(dst.HTTPSListenV6), listenPortOnly(dst.HTTPSListen))
 	}
 	// SslResolver **无条件**覆盖 ✓（含空值 ✓）：允许用户**显式清空 = 关闭** ✗→✓
 	// —— 若只搬非空值 ✗，用户清空后会被默认值（8.8.8.8 1.1.1.1）覆盖回来 ✗。

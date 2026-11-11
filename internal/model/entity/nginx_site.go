@@ -56,12 +56,16 @@ type NginxSite struct {
 	WafEnabled      *bool  `json:"waf_enabled" gorm:"default:true"` // per-location WAF switch (nil=true=inherit, false=disable WAF for this location)
 	// RedirectHTTPS：HTTP → HTTPS **跳转开关** ✓（nil=true=开 ✓，与 WafEnabled 同范式 ✓）。
 	// ⚠ 前提是该节点**开启了 80 端口**（存在 listen 80 的启用站点 ✓）——没开 80 时不生成跳转 ✗。
-	RedirectHTTPS *bool     `json:"redirect_https" gorm:"default:true"`
-	Enabled       bool      `json:"enabled" gorm:"not null;default:true"`
-	IsPanel       bool      `json:"is_panel" gorm:"not null;default:false"`
-	Priority      int       `json:"priority" gorm:"not null;default:100"`
-	CreatedAt     time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt     time.Time `json:"updated_at" gorm:"not null"`
+	RedirectHTTPS *bool `json:"redirect_https" gorm:"default:true"`
+	// RedirectKeepPort：跳转是否保留内部监听端口（默认 false = 只跳 443）。
+	// HTTPS 常监听在 8443 等内部端口、由 443 的 SNI/前置代理回源；
+	// 把内部端口写进 Location 会暴露端口，CDN 后面还会直接连不上。
+	RedirectKeepPort bool      `json:"redirect_keep_port" gorm:"not null;default:false"`
+	Enabled          bool      `json:"enabled" gorm:"not null;default:true"`
+	IsPanel          bool      `json:"is_panel" gorm:"not null;default:false"`
+	Priority         int       `json:"priority" gorm:"not null;default:100"`
+	CreatedAt        time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt        time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (NginxSite) TableName() string { return "nginx_sites" }

@@ -817,6 +817,10 @@
           <el-switch v-model="siteForm.redirect_https" />
           <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectHttpsHint') }}</div>
         </el-form-item>
+        <el-form-item v-if="siteForm.redirect_https" :label="t('proxy.redirectKeepPort')">
+          <el-switch v-model="siteForm.redirect_keep_port" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectKeepPortHint') }}</div>
+        </el-form-item>
         <el-divider content-position="left">WAF</el-divider>
         <el-form-item :label="t('proxy.wafLocationEnabled')">
           <el-switch v-model="siteForm.waf_enabled" />
@@ -1198,7 +1202,7 @@ async function runImport(dryRun) {
 }
 
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, redirect_keep_port: false, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
   upstream_sni: '', // 回源 TLS 的 SNI / Server Name（tls_server_name）
 })
@@ -1731,6 +1735,7 @@ template: row.template,
     custom_config: row.custom_config,
 waf_enabled: row.waf_enabled !== false,
       redirect_https: row.redirect_https !== false,
+    redirect_keep_port: row.redirect_keep_port === true,
       dual_cert: row.dual_cert !== false,
     lb_policy: row.lb_policy,
     log_enabled: row.log_enabled || false,
@@ -1779,6 +1784,7 @@ function buildSitePayload() {
     custom_config: siteForm.value.custom_config,
     waf_enabled: siteForm.value.waf_enabled,
     redirect_https: siteForm.value.redirect_https !== false,
+    redirect_keep_port: siteForm.value.redirect_keep_port === true,
     lb_policy: siteForm.value.lb_policy,
     log_enabled: siteForm.value.log_enabled || false,
     log_path: siteForm.value.log_path,

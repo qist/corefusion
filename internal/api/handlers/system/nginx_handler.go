@@ -125,7 +125,8 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		SslCiphers        string `json:"ssl_ciphers"`
 		SslEcdhCurve      string `json:"ssl_ecdh_curve"`
 		WafEnabled        *bool  `json:"waf_enabled"`
-		RedirectHTTPS     *bool  `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
+		RedirectHTTPS     *bool  `json:"redirect_https"`     // HTTP→HTTPS 跳转开关 ✓（nil=开 ✓；生成器还会判 80 端口是否开启 ✓）
+		RedirectKeepPort  bool   `json:"redirect_keep_port"` // 跳转是否保留内部监听端口（默认 false = 只跳 443）
 		IsPanel           bool   `json:"is_panel"`
 		DualCert          *bool  `json:"dual_cert"` // 是否挂同域名的多张证书（ECC+RSA）；nil=是
 		Priority          int    `json:"priority"`
@@ -169,6 +170,7 @@ func (h *NginxHandler) CreateSite(c *gin.Context) {
 		SslEcdhCurve:      req.SslEcdhCurve,
 		WafEnabled:        req.WafEnabled,
 		RedirectHTTPS:     req.RedirectHTTPS,
+		RedirectKeepPort:  req.RedirectKeepPort,
 		Enabled:           true,
 		IsPanel:           req.IsPanel,
 		DualCert:          req.DualCert,
@@ -229,7 +231,8 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 		SslCiphers        *string `json:"ssl_ciphers"`
 		SslEcdhCurve      *string `json:"ssl_ecdh_curve"`
 		WafEnabled        *bool   `json:"waf_enabled"`
-		RedirectHTTPS     *bool   `json:"redirect_https"` // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
+		RedirectHTTPS     *bool   `json:"redirect_https"`     // HTTP→HTTPS 跳转开关 ✓（nil=不改 ✓）
+		RedirectKeepPort  *bool   `json:"redirect_keep_port"` // 跳转是否保留端口（nil=不改；false=只跳 443）
 		IsPanel           *bool   `json:"is_panel"`
 		DualCert          *bool   `json:"dual_cert"`
 		Priority          *int    `json:"priority"`
@@ -347,6 +350,9 @@ func (h *NginxHandler) UpdateSite(c *gin.Context) {
 	}
 	if req.RedirectHTTPS != nil {
 		existing.RedirectHTTPS = req.RedirectHTTPS
+	}
+	if req.RedirectKeepPort != nil {
+		existing.RedirectKeepPort = *req.RedirectKeepPort
 	}
 	if req.IsPanel != nil {
 		existing.IsPanel = *req.IsPanel

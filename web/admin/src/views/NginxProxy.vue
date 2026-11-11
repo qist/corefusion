@@ -1151,6 +1151,10 @@
           <el-switch v-model="siteForm.redirect_https" />
           <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectHttpsHint') }}</div>
         </el-form-item>
+        <el-form-item v-if="siteForm.redirect_https" :label="t('proxy.redirectKeepPort')">
+          <el-switch v-model="siteForm.redirect_keep_port" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectKeepPortHint') }}</div>
+        </el-form-item>
         <el-divider content-position="left">WAF</el-divider>
         <el-form-item :label="t('proxy.wafLocationEnabled')">
           <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
@@ -1986,7 +1990,7 @@ const siteForm = ref({
   enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
   enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
-  waf_enabled: true, redirect_https: true,
+  waf_enabled: true, redirect_https: true, redirect_keep_port: false,
   editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
   upstream_sni: '', // 回源 TLS 的 SNI / Server Name（proxy_ssl_name / grpc_ssl_name）
@@ -2522,6 +2526,7 @@ function editSite(row) {
     ssl_ecdh_curve: row.ssl_ecdh_curve,
     waf_enabled: row.waf_enabled !== false,
       redirect_https: row.redirect_https !== false,
+    redirect_keep_port: row.redirect_keep_port === true,
       dual_cert: row.dual_cert !== false,
     editMode: 'form',
     inbound_id: null,
@@ -2580,7 +2585,8 @@ function buildSitePayload() {
     ssl_ciphers: siteForm.value.ssl_ciphers,
     ssl_ecdh_curve: siteForm.value.ssl_ecdh_curve,
     waf_enabled: siteForm.value.waf_enabled !== false,
-    redirect_https: siteForm.value.redirect_https !== false
+    redirect_https: siteForm.value.redirect_https !== false,
+    redirect_keep_port: siteForm.value.redirect_keep_port === true
   }
 }
 

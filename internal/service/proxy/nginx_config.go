@@ -676,25 +676,32 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		// 生成独立的 `server { listen 80; ... }` 块 ✓：ACME 挑战留在 :80 ✓，其余 301 到 https ✓。
 		grpHasTLS := false
 		redirectEnabled := false
+		keepPort := false
 		grpIPv6 := globalIPv6
 		tlsPort := "443"
 		for _, s := range siteList {
 			if s.CertPath != "" && s.KeyPath != "" {
 				grpHasTLS = true
-				if s.ListenPort != "" && s.ListenPort != "80" {
-					tlsPort = s.ListenPort
+				if s.ListenPort != "" && listenPortOnly(s.ListenPort) != "80" {
+					tlsPort = listenPortOnly(s.ListenPort)
 				}
 			}
 			if s.RedirectHTTPS == nil || *s.RedirectHTTPS {
 				redirectEnabled = true
+			}
+			if s.RedirectKeepPort {
+				keepPort = true
 			}
 			if s.EnableIpv6 {
 				grpIPv6 = true
 			}
 		}
 		if grpHasTLS && port80Open && redirectEnabled && primary != "" {
+			// 默认只跳 https://域名（不暴露内部监听端口）：HTTPS 常监听 8443 等内部
+			// 端口、由 443 的 SNI/前置代理回源；把 8443 写进 Location 既暴露内部端口，
+			// CDN 后面还会让客户端直连 8443 失败。需要保留端口时站点可显式打开。
 			target := "https://" + primary
-			if tlsPort != "443" {
+			if keepPort && tlsPort != "" && tlsPort != "443" {
 				target = fmt.Sprintf("https://%s:%s", primary, tlsPort)
 			}
 			sb.WriteString("    # HTTP → HTTPS redirect (auto-generated; per-site switch)\n")

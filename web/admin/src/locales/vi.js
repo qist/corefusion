@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "Khi tắt, Location này sẽ không kiểm tra WAF",
     "redirectHttps": "Chuyển hướng HTTP→HTTPS",
     "redirectHttpsHint": "Khi bật, yêu cầu HTTP của tên miền này tự động 301 sang HTTPS (điều kiện: node đã mở cổng 80); đường dẫn xác minh ACME không bị ảnh hưởng",
+    "redirectKeepPort": "Giữ cổng khi chuyển hướng",
+    "redirectKeepPortHint": "Mặc định chuyển hướng tới 443 và không lộ cổng nội bộ như 8443. Chỉ bật khi HTTPS được phục vụ trực tiếp trên cổng khác.",
     "wafEnabledHintCaddy": "WAF đã bật — Caddyfile sẽ bao gồm cấu hình caddyguard",
     "wafDisabledHintCaddy": "WAF đã tắt — sẽ không tạo cấu hình WAF nào",
     "wafLocationEnabledHintCaddy": "Khi tắt, các yêu cầu đến đường dẫn của trang này sẽ bỏ qua kiểm tra WAF (caddyguard waf_enable off); khi gộp các site cùng tên miền nhưng khác đường dẫn, việc điều khiển dựa trên công tắc cấp đường dẫn",

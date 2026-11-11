@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "เมื่อปิดใช้งาน Location นี้จะไม่ตรวจสอบ WAF",
     "redirectHttps": "เปลี่ยนเส้นทาง HTTP→HTTPS",
     "redirectHttpsHint": "เมื่อเปิดใช้งาน คำขอ HTTP ของโดเมนนี้จะเปลี่ยนเส้นทาง 301 ไปยัง HTTPS โดยอัตโนมัติ (เงื่อนไข: โหนดนี้เปิดพอร์ต 80 แล้ว) เส้นทางการตรวจสอบ ACME จะไม่ได้รับผลกระทบ",
+    "redirectKeepPort": "คงพอร์ตในการเปลี่ยนเส้นทาง",
+    "redirectKeepPortHint": "โดยค่าเริ่มต้นจะเปลี่ยนเส้นทางไป 443 และไม่เปิดเผยพอร์ตภายในเช่น 8443 เปิดเฉพาะเมื่อให้บริการ HTTPS บนพอร์ตอื่นโดยตรง",
     "wafEnabledHintCaddy": "เปิดใช้งาน WAF แล้ว — Caddyfile จะมีการกำหนดค่า caddyguard",
     "wafDisabledHintCaddy": "ปิดใช้งาน WAF แล้ว — จะไม่สร้างการกำหนดค่า WAF ใด ๆ",
     "wafLocationEnabledHintCaddy": "เมื่อปิดใช้งาน คำขอในพาธของไซต์นี้จะข้ามการตรวจสอบ WAF (caddyguard waf_enable off); เมื่อรวมไซต์ที่ใช้โดเมนเดียวกันแต่มีพาธต่างกัน จะควบคุมด้วยสวิตช์ระดับพาธ",

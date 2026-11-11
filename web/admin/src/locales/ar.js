@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "عند التعطيل، لن يُجرى فحص WAF على هذا Location",
     "redirectHttps": "إعادة توجيه HTTP→HTTPS",
     "redirectHttpsHint": "عند التفعيل، تُعاد توجيه طلبات HTTP لهذا النطاق تلقائيًا إلى HTTPS برمز 301 (بشرط تفعيل المنفذ 80 على هذه العقدة)؛ لا تتأثر مسارات تحقق ACME",
+    "redirectKeepPort": "الاحتفاظ بمنفذ إعادة التوجيه",
+    "redirectKeepPortHint": "افتراضيًا يتم التوجيه إلى 443 ولا يتم كشف المنافذ الداخلية مثل 8443. فعّله فقط إذا كان HTTPS يعمل مباشرة على منفذ غير 443.",
     "wafEnabledHintCaddy": "تم تفعيل WAF — سيتضمن Caddyfile إعدادات caddyguard",
     "wafDisabledHintCaddy": "تم تعطيل WAF — لن يتم إنشاء أي إعدادات WAF",
     "wafLocationEnabledHintCaddy": "عند التعطيل، ستتجاوز الطلبات إلى مسار هذا الموقع فحص WAF (caddyguard waf_enable off)؛ عند دمج مواقع النطاق نفسه ذات المسارات المختلفة، يتحكم المفتاح على مستوى المسار",

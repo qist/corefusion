@@ -23,13 +23,15 @@ type CaddySite struct {
 	// RedirectHTTPS：HTTP → HTTPS **跳转开关** ✓（nil=true=开 ✓，与 WafEnabled 同范式 ✓）。
 	// ⚠ 前提是该节点**开启了 80 端口**（存在绑定 :80 的启用站点 ✓）——没开 80 时不生成跳转 ✗，
 	//   否则跳转块抢不到 :80、跳了也白跳 ✗。生成器会同时判这两个条件 ✓。
-	RedirectHTTPS *bool  `json:"redirect_https" gorm:"default:true"`
-	LbPolicy      string `json:"lb_policy" gorm:"size:32"` // round_robin, least_conn, etc.
-	LogEnabled    bool   `json:"log_enabled" gorm:"not null;default:false"`
-	LogPath       string `json:"log_path" gorm:"size:255"`  // e.g. logs/example.com.log
-	LogFormat     string `json:"log_format" gorm:"size:32"` // json, console
-	L4Protocol    string `json:"l4_protocol" gorm:"size:16"`
-	SNITarget     string `json:"sni_target" gorm:"size:255"`
+	RedirectHTTPS *bool `json:"redirect_https" gorm:"default:true"`
+	// RedirectKeepPort：跳转是否保留内部监听端口（默认 false = 只跳 443）。
+	RedirectKeepPort bool   `json:"redirect_keep_port" gorm:"not null;default:false"`
+	LbPolicy         string `json:"lb_policy" gorm:"size:32"` // round_robin, least_conn, etc.
+	LogEnabled       bool   `json:"log_enabled" gorm:"not null;default:false"`
+	LogPath          string `json:"log_path" gorm:"size:255"`  // e.g. logs/example.com.log
+	LogFormat        string `json:"log_format" gorm:"size:32"` // json, console
+	L4Protocol       string `json:"l4_protocol" gorm:"size:16"`
+	SNITarget        string `json:"sni_target" gorm:"size:255"`
 	// UpstreamSNI 是**回源 TLS 的 SNI / TLS Server Name**（生成 `tls_server_name`）。
 	// 证书域名可能与站点域名不同，必须可配置；留空回退 sni_target（兼容旧配置）→ 站点域名。
 	UpstreamSNI string `json:"upstream_sni" gorm:"size:255"`

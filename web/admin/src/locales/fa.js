@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "پس از غیرفعال‌سازی، WAF برای این Location بررسی نمی‌شود",
     "redirectHttps": "تغییر مسیر HTTP→HTTPS",
     "redirectHttpsHint": "پس از فعال‌سازی، درخواست‌های HTTP این دامنه به‌صورت خودکار با 301 به HTTPS هدایت می‌شوند (پیش‌نیاز: پورت 80 برای این نود فعال باشد)؛ مسیر تأیید ACME تحت تأثیر قرار نمی‌گیرد",
+    "redirectKeepPort": "حفظ پورت در تغییرمسیر",
+    "redirectKeepPortHint": "به‌طور پیش‌فرض به 443 تغییرمسیر می‌دهد و پورت‌های داخلی مثل 8443 افشا نمی‌شوند. فقط وقتی HTTPS مستقیماً روی پورت غیر 443 است فعال کنید.",
     "wafEnabledHintCaddy": "WAF فعال است — Caddyfile شامل پیکربندی caddyguard خواهد بود",
     "wafDisabledHintCaddy": "WAF غیرفعال است — هیچ پیکربندی WAF تولید نخواهد شد",
     "wafLocationEnabledHintCaddy": "پس از غیرفعال‌سازی، درخواست‌های این مسیر سایت از بررسی WAF عبور می‌کنند (caddyguard waf_enable off)؛ هنگام ادغام سایت‌های یک دامنه با مسیرهای مختلف، کنترل با کلید سطح مسیر انجام می‌شود",

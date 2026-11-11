@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "비활성화하면 이 Location에서는 WAF 검사를 수행하지 않습니다",
     "redirectHttps": "HTTP→HTTPS 리디렉션",
     "redirectHttpsHint": "활성화하면 이 도메인의 HTTP 요청이 자동으로 HTTPS로 301 리디렉션됩니다(전제: 해당 노드에서 80 포트가 열려 있어야 함). ACME 검증 경로는 영향을 받지 않습니다",
+    "redirectKeepPort": "리디렉션 포트 유지",
+    "redirectKeepPortHint": "기본적으로 443으로 리디렉션하며 8443 같은 내부 수신 포트를 노출하지 않습니다. HTTPS를 443이 아닌 포트로 직접 서비스할 때만 켜세요.",
     "wafEnabledHintCaddy": "WAF 활성화됨 — Caddyfile에 caddyguard 구성이 포함됩니다",
     "wafDisabledHintCaddy": "WAF 비활성화됨 — WAF 구성이 생성되지 않습니다",
     "wafLocationEnabledHintCaddy": "비활성화하면 이 사이트 경로의 요청은 WAF 검사를 건너뜁니다(caddyguard waf_enable off). 동일 도메인의 다른 경로 사이트를 병합할 때는 경로 수준 스위치로 제어됩니다",

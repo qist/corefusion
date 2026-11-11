@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "無効にすると、この Location では WAF チェックが実行されません",
     "redirectHttps": "HTTP→HTTPS リダイレクト",
     "redirectHttpsHint": "有効にすると、このドメインの HTTP リクエストは自動的に HTTPS へ 301 リダイレクトされます（前提：このノードで 80 ポートが有効になっていること）。ACME 検証パスは影響を受けません",
+    "redirectKeepPort": "リダイレクトでポートを保持",
+    "redirectKeepPortHint": "既定では 443 へリダイレクトし、内部待受ポート（8443 など）を公開しません。HTTPS を 443 以外のポートで直接公開する場合のみ有効にしてください。",
     "wafEnabledHintCaddy": "WAF は有効です — Caddyfile に caddyguard 設定が含まれます",
     "wafDisabledHintCaddy": "WAF は無効です — WAF 設定は生成されません",
     "wafLocationEnabledHintCaddy": "無効にすると、このサイトパスへのリクエストは WAF 検査をスキップします（caddyguard waf_enable off）。同一ドメインで異なるパスを持つサイトを統合する場合、パス単位のスイッチで制御されます",

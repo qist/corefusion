@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "關閉後此 Location 不執行 WAF 檢查",
     "redirectHttps": "HTTP→HTTPS 跳轉",
     "redirectHttpsHint": "啟用後，此網域的 HTTP 請求會自動以 301 跳轉至 HTTPS（前提：此節點已開啟 80 埠）；ACME 驗證路徑不受影響",
+    "redirectKeepPort": "跳轉保留連接埠",
+    "redirectKeepPortHint": "預設跳轉到 443，不把內部監聽埠（如 8443）暴露給用戶端；僅當 HTTPS 直接對外使用非 443 連接埠時才需要開啟。",
     "wafEnabledHintCaddy": "WAF 已啟用 — Caddyfile 將包含 caddyguard 設定",
     "wafDisabledHintCaddy": "WAF 已關閉 — 不會產生任何 WAF 設定",
     "wafLocationEnabledHintCaddy": "關閉後，此網站路徑的請求將跳過 WAF 偵測（caddyguard waf_enable off）；同一網域不同路徑的網站合併時，依路徑層級開關控制",

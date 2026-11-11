@@ -518,10 +518,13 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 		// ⚠ ACME HTTP-01 挑战必须留在 :80 ✓（CA 只走明文 80 验证 ✓），其余请求 302 到 https ✓。
 		// ⚠ 跳转目标域名原样保留端口 ✓（如 domain=p.xxx.top:8443 → https://p.xxx.top:8443{uri} ✓）。
 		redirectEnabled := false
+		keepPort := false
 		for _, s := range siteList {
 			if s.RedirectHTTPS == nil || *s.RedirectHTTPS {
 				redirectEnabled = true
-				break
+			}
+			if s.RedirectKeepPort {
+				keepPort = true
 			}
 		}
 		if hasCert && port80Open && redirectEnabled && !strings.HasSuffix(primary, ":80") {
@@ -539,8 +542,14 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			m.writeACMEHandler(&sb, ctx, serverID, "\t")
 			// 跳转必须放在 handle 兜底块里：Caddy 的指令排序中 `redir` 在 `handle` 之前，
 			// 直接写 redir 会先执行、把 ACME 挑战请求也 302 掉（adapt 后 acme 路由会被丢弃）。
+			// 默认剥掉站点地址里的内部端口（如 sub.example.com:8443 → sub.example.com）：
+			// 客户端只会走 443，带 8443 既暴露内部端口、又会让 CDN 后面的访问失败。
+			redirectHost := primary
+			if !keepPort {
+				redirectHost = StripPort(primary)
+			}
 			sb.WriteString("\thandle {\n")
-			sb.WriteString(fmt.Sprintf("\t\tredir https://%s{uri} 302\n", primary))
+			sb.WriteString(fmt.Sprintf("\t\tredir https://%s{uri} 302\n", redirectHost))
 			sb.WriteString("\t}\n")
 			sb.WriteString("}\n\n")
 		}

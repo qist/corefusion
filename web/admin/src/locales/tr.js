@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "Devre dışı bırakıldığında bu Location'da WAF denetimi yapılmaz",
     "redirectHttps": "HTTP→HTTPS yönlendirmesi",
     "redirectHttpsHint": "Etkinleştirildiğinde bu alan adına gelen HTTP istekleri otomatik olarak HTTPS'e 301 ile yönlendirilir (ön koşul: bu düğümde 80 numaralı bağlantı noktası açık olmalıdır); ACME doğrulama yolu etkilenmez",
+    "redirectKeepPort": "Yönlendirmede bağlantı noktasını koru",
+    "redirectKeepPortHint": "Varsayılan olarak 443'e yönlendirir ve 8443 gibi dahili portları açığa çıkarmaz. Yalnızca HTTPS doğrudan 443 dışı bir portta sunuluyorsa açın.",
     "wafEnabledHintCaddy": "WAF etkin — Caddyfile caddyguard yapılandırmasını içerecek",
     "wafDisabledHintCaddy": "WAF devre dışı — herhangi bir WAF yapılandırması oluşturulmaz",
     "wafLocationEnabledHintCaddy": "Devre dışı bırakıldığında bu site yolundaki istekler WAF denetimini atlar (caddyguard waf_enable off); aynı alan adı altındaki farklı yol siteleri birleştirildiğinde yol düzeyindeki anahtar geçerlidir",

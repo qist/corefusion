@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "Jika dimatikan, Location ini tidak menjalankan pemeriksaan WAF",
     "redirectHttps": "Pengalihan HTTP→HTTPS",
     "redirectHttpsHint": "Jika diaktifkan, permintaan HTTP untuk domain ini otomatis dialihkan 301 ke HTTPS (syarat: node ini sudah mengaktifkan port 80); jalur verifikasi ACME tidak terpengaruh",
+    "redirectKeepPort": "Pertahankan Port Pengalihan",
+    "redirectKeepPortHint": "Secara default mengalihkan ke 443 dan tidak membocorkan port internal seperti 8443. Aktifkan hanya jika HTTPS dilayani langsung di port non-443.",
     "wafEnabledHintCaddy": "WAF diaktifkan — Caddyfile akan menyertakan konfigurasi caddyguard",
     "wafDisabledHintCaddy": "WAF dimatikan — tidak ada konfigurasi WAF yang akan dibuat",
     "wafLocationEnabledHintCaddy": "Jika dimatikan, permintaan pada jalur situs ini akan melewati pemeriksaan WAF (caddyguard waf_enable off); saat situs dengan domain sama tetapi jalur berbeda digabungkan, kontrol dilakukan per tingkat jalur",

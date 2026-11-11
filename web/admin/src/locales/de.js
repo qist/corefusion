@@ -2568,6 +2568,8 @@ export default {
     "wafEnabledHint": "Wenn deaktiviert, wird für diese Location keine WAF-Prüfung ausgeführt",
     "redirectHttps": "HTTP→HTTPS-Weiterleitung",
     "redirectHttpsHint": "Wenn aktiviert, werden HTTP-Anfragen für diese Domain automatisch mit 301 auf HTTPS umgeleitet (Voraussetzung: Port 80 ist auf diesem Knoten aktiviert); der ACME-Validierungspfad ist nicht betroffen",
+    "redirectKeepPort": "Port bei Weiterleitung beibehalten",
+    "redirectKeepPortHint": "Standardmäßig wird auf 443 umgeleitet; interne Ports wie 8443 werden nie offengelegt. Nur aktivieren, wenn HTTPS direkt auf einem anderen Port läuft.",
     "wafEnabledHintCaddy": "WAF aktiviert – die Caddyfile enthält die caddyguard-Konfiguration",
     "wafDisabledHintCaddy": "WAF deaktiviert – es wird keine WAF-Konfiguration erzeugt",
     "wafLocationEnabledHintCaddy": "Wenn deaktiviert, überspringen Anfragen an diesen Website-Pfad die WAF-Prüfung (caddyguard waf_enable off); bei der Zusammenführung von Websites mit derselben Domain und unterschiedlichen Pfaden gilt der pfadspezifische Schalter",

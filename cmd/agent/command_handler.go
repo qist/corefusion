@@ -428,11 +428,8 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		submitAsyncTask("install_binary",
 			fmt.Sprintf("install_binary:%s:%s", req.CoreType, req.Version),
 			func(ctx context.Context) (interface{}, error) {
-				err := a.localAgent.InstallBinary(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
-				if err != nil {
-					return nil, err
-				}
-				return map[string]interface{}{"core_type": req.CoreType, "version": req.Version}, nil
+				// 同步执行：外层任务就是真实安装任务，结果（含失败原因）才会回传给面板。
+				return a.localAgent.InstallBinarySync(ctx, req.CoreType, req.Version, req.DownloadUrl, req.AssetName)
 			})
 
 	case *agentpb.PanelCommand_InstallProxy:
@@ -441,10 +438,11 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		submitAsyncTask("install_proxy",
 			fmt.Sprintf("install_proxy:%s:%s", req.ProxyType, req.TagName),
 			func(ctx context.Context) (interface{}, error) {
-				if req.DownloadUrl != "" {
-					return nil, a.localAgent.InstallProxyVersion(ctx, req.ProxyType, req.DownloadUrl, req.TagName)
+				// 同步执行：外层任务就是真实安装任务，结果（含失败原因）才会回传给面板。
+				if err := a.localAgent.InstallProxyVersionSync(ctx, req.ProxyType, req.DownloadUrl); err != nil {
+					return nil, err
 				}
-				return nil, a.localAgent.InstallProxy(ctx, req.ProxyType)
+				return map[string]interface{}{"proxy_type": req.ProxyType, "version": req.TagName}, nil
 			})
 
 	// ========== Synchronous read operations: execute and send TaskResult ==========

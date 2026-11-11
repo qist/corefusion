@@ -588,40 +588,49 @@ func (a *LocalAgent) ListBinaries() *agentpb.ListBinariesResponse {
 	return &agentpb.ListBinariesResponse{Binaries: binaries}
 }
 
-// InstallProxy 安装代理二进制（caddy/nginx）（异步）。
-func (a *LocalAgent) InstallProxy(ctx context.Context, proxyType string) error {
+// InstallProxySync 同步安装代理二进制（最新版）。
+// 供**已经处在异步任务里**的调用方使用（Agent 命令处理）。若在任务里再 Submit，
+// 外层任务会立刻返回成功，真正的下载结果只落在内层任务上，面板永远看不到失败。
+func (a *LocalAgent) InstallProxySync(ctx context.Context, proxyType string) error {
 	if a.proxyMgr == nil {
 		return fmt.Errorf("proxy manager not configured")
 	}
+	return a.proxyMgr.InstallProxy(ctx, proxyType)
+}
+
+// InstallProxy 安装代理二进制（caddy/nginx）（异步）。
+func (a *LocalAgent) InstallProxy(ctx context.Context, proxyType string) error {
 	taskID := GenerateTaskID()
 	idempotencyKey := fmt.Sprintf("install-proxy-%s", proxyType)
 	a.taskQueue.Submit(taskID, "install_proxy", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
-			return nil, a.proxyMgr.InstallProxy(ctx, proxyType)
+			return nil, a.InstallProxySync(ctx, proxyType)
 		},
 		nil,
 	)
 	return nil
 }
 
-// InstallProxyVersion 安装指定版本的代理二进制（caddy/nginx）（异步）。
-// downloadURL 为空时回退到自动获取最新版本。
-func (a *LocalAgent) InstallProxyVersion(ctx context.Context, proxyType, downloadURL, tagName string) error {
+// InstallProxyVersionSync 同步安装指定版本的代理二进制（downloadURL 为空时回退最新版）。
+func (a *LocalAgent) InstallProxyVersionSync(ctx context.Context, proxyType, downloadURL string) error {
 	if a.proxyMgr == nil {
 		return fmt.Errorf("proxy manager not configured")
 	}
+	if downloadURL != "" {
+		return a.proxyMgr.DownloadAndInstallProxy(ctx, proxyType, downloadURL)
+	}
+	return a.proxyMgr.InstallProxy(ctx, proxyType)
+}
+
+// InstallProxyVersion 安装指定版本的代理二进制（caddy/nginx）（异步）。
+// downloadURL 为空时回退到自动获取最新版本。
+func (a *LocalAgent) InstallProxyVersion(ctx context.Context, proxyType, downloadURL, tagName string) error {
 	taskID := GenerateTaskID()
 	idempotencyKey := fmt.Sprintf("install-proxy-%s-%s", proxyType, tagName)
 	a.taskQueue.Submit(taskID, "install_proxy", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
-			if downloadURL != "" {
-				if err := a.proxyMgr.DownloadAndInstallProxy(ctx, proxyType, downloadURL); err != nil {
-					return nil, err
-				}
-			} else {
-				if err := a.proxyMgr.InstallProxy(ctx, proxyType); err != nil {
-					return nil, err
-				}
+			if err := a.InstallProxyVersionSync(ctx, proxyType, downloadURL); err != nil {
+				return nil, err
 			}
 			return map[string]interface{}{"proxy_type": proxyType, "version": tagName}, nil
 		},
@@ -630,20 +639,21 @@ func (a *LocalAgent) InstallProxyVersion(ctx context.Context, proxyType, downloa
 	return nil
 }
 
+// InstallBinarySync 同步安装核心二进制（xray/singbox）。
+func (a *LocalAgent) InstallBinarySync(ctx context.Context, coreType, version, downloadURL, assetName string) (interface{}, error) {
+	if a.binaryInst == nil {
+		return nil, fmt.Errorf("binary installer not configured")
+	}
+	return a.binaryInst.Install(ctx, coreType, version, downloadURL, assetName)
+}
+
 // InstallBinary 安装核心二进制（xray/singbox）（异步）。
 func (a *LocalAgent) InstallBinary(ctx context.Context, coreType, version, downloadURL, assetName string) error {
-	if a.binaryInst == nil {
-		return fmt.Errorf("binary installer not configured")
-	}
 	taskID := GenerateTaskID()
 	idempotencyKey := fmt.Sprintf("install-binary-%s-%s", coreType, version)
 	a.taskQueue.Submit(taskID, "install_binary", idempotencyKey,
 		func(ctx context.Context) (interface{}, error) {
-			result, err := a.binaryInst.Install(ctx, coreType, version, downloadURL, assetName)
-			if err != nil {
-				return nil, err
-			}
-			return result, nil
+			return a.InstallBinarySync(ctx, coreType, version, downloadURL, assetName)
 		},
 		nil,
 	)

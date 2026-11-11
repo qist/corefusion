@@ -1540,13 +1540,39 @@ async function showReleases() {
   } catch (e) { releases.value = [] } finally { releasesLoading.value = false }
 }
 
+// 远程节点的下载是异步任务，POST 返回时二进制还没落地；必须等 /status 里的
+// 版本变成目标版本再启动，否则会把旧二进制拉起来并让页面显示旧版本。
+function versionMatches(info, tagName) {
+  if (!info || !info.installed) return false
+  const want = String(tagName || '').replace(/^v/i, '')
+  const got = String(info.version || '').replace(/^v/i, '')
+  return !want || got === want
+}
+
+async function waitProxyVersion(tagName, timeoutMs = 300000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      const st = await client.get(`${proxyApi.value}/status`)
+      if (versionMatches(st?.caddy, tagName)) return true
+    } catch (e) { /* 节点暂时繁忙，继续轮询 */ }
+    await new Promise(resolve => setTimeout(resolve, 2000))
+  }
+  return false
+}
+
 async function downloadVersion(url, tagName) {
   downloading.value = true
   downloadProgress.value = t('proxy.downloading', { name: tagName })
   try {
     await client.post(`${proxyApi.value}/download`, { type: 'caddy', download_url: url, tag_name: tagName })
+    const installed = await waitProxyVersion(tagName)
     try { await client.post(`${proxyApi.value}/start?type=caddy`) } catch {}
-    ElMessage.success(t('proxy.downloadSuccess'))
+    if (installed) {
+      ElMessage.success(t('proxy.downloadSuccess'))
+    } else {
+      ElMessage.error(t('common.failed'))
+    }
     releasesVisible.value = false
     fetchProxyInfo()
   } catch (e) {

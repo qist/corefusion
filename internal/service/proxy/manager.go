@@ -1125,19 +1125,18 @@ func (m *Manager) InstallProxy(ctx context.Context, proxyType ProxyType) error {
 }
 
 // DownloadAndInstallProxy downloads a specific proxy binary version via the given URL,
-// installs it, and restarts the proxy if it was running.
+// installs it, and restarts the proxy if it is running.
 func (m *Manager) DownloadAndInstallProxy(ctx context.Context, proxyType ProxyType, downloadURL string) error {
-	// Check if proxy is currently running
-	wasRunning := m.DetectProxy(proxyType).Status == "running"
-
 	// Download the specific version
 	if _, err := m.DownloadAsset(ctx, downloadURL, string(proxyType)); err != nil {
 		return fmt.Errorf("download %s: %w", proxyType, err)
 	}
 
-	// If proxy was running, restart it to pick up the new binary
-	if wasRunning {
-		log.Printf("proxy %s: was running, restarting after version update", proxyType)
+	// ⚠ 运行状态必须在**下载完成后**再判断：面板「代理管理」页下载成功会紧接着
+	// 调 start，下载期间旧二进制可能已经被拉起来了。若用下载前的状态，替换完成后
+	// 不会重启，出现「文件是新版本、进程还跑着旧版本」。
+	if m.DetectProxy(proxyType).Status == "running" {
+		log.Printf("proxy %s: running after version update, restarting to load the new binary", proxyType)
 		if err := m.RestartProxy(ctx, proxyType); err != nil {
 			return fmt.Errorf("restart %s after update: %w", proxyType, err)
 		}
@@ -2435,7 +2434,10 @@ func (m *Manager) DownloadAsset(ctx context.Context, downloadURL, name string) (
 
 	accelURL := netutil.AccelerateGitHubURL(downloadURL, m.githubAccelDomain())
 	req, _ := http.NewRequestWithContext(ctx, "GET", accelURL, nil)
-	client := m.githubHTTPClient(300 * time.Second)
+	// 二进制包有十几到几十 MB，直连 GitHub 实测只有约 80KB/s，5 分钟会在下载
+	// 中途超时（任务报 "download caddy: context deadline exceeded"，界面却已提示成功）。
+	// 与 Agent 自更新一致，给到 30 分钟。
+	client := m.githubHTTPClient(30 * time.Minute)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err

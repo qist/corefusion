@@ -175,20 +175,21 @@ func (h *ProxyHandler) DownloadVersion(c *gin.Context) {
 	}
 	// Local node: download the asset
 	proxyType := proxy.ProxyType(req.Type)
-	wasRunning := h.proxyMgr.DetectProxy(proxyType).Status == "running"
 	path, err := h.proxyMgr.DownloadAsset(c.Request.Context(), req.DownloadURL, req.Type)
 	if err != nil {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
 	}
-	// If proxy was running, restart it to pick up the new binary
-	if wasRunning {
+	// 运行状态在下载完成后判断：下载期间可能已有 start 请求把旧二进制拉起，
+	// 不重启会出现「文件已更新、进程仍跑旧版本」。
+	running := h.proxyMgr.DetectProxy(proxyType).Status == "running"
+	if running {
 		if err := h.proxyMgr.RestartProxy(c.Request.Context(), proxyType); err != nil {
 			response.InternalError(c, "RESTART_FAILED", err.Error())
 			return
 		}
 	}
-	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type, "restarted": wasRunning})
+	response.OK(c, gin.H{"path": path, "version": req.TagName, "type": req.Type, "restarted": running})
 }
 
 // Start handles POST /api/v1/node-servers/:id/proxy/start.

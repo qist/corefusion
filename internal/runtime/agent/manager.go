@@ -1515,6 +1515,13 @@ func (h *heartbeatServiceImpl) handleTaskResult(ac *AgentConnection, report *age
 		case ch <- report.TaskResult:
 		default: // channel full, shouldn't happen with buffer size 1
 		}
+		return
+	}
+	// 安装类命令面板只等 TASK_QUEUED 确认就返回，最终结果没有等待者。
+	// 失败时补一条面板日志，否则「界面提示成功但没装上」只能去节点上看 Agent 日志。
+	if report.TaskResult.Status == agentpb.TaskStatus_TASK_FAILED {
+		log.Printf("[agent] server %d task %s (%s) failed: %s",
+			ac.ServerID, taskID, report.TaskResult.TaskType, report.TaskResult.Error)
 	}
 }
 

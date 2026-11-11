@@ -33,6 +33,25 @@ import (
 // 返回的 detail 会被序列化为 JSON 存入 TaskResult.DetailJson。
 type TaskFunc func(ctx context.Context) (detail interface{}, err error)
 
+const (
+	taskTimeoutDefault = 5 * time.Minute
+	// 安装二进制/代理要下载十几到几十 MB（xray/nginx/caddy 等）。慢链路上
+	// （直连 GitHub 实测约 80KB/s）5 分钟会在下载中途被 context 掐断，
+	// 表现为「界面提示更新成功，但版本没变/二进制没装上」。与 Agent 自更新
+	// 的 30 分钟下载超时保持一致。
+	taskTimeoutInstall = 30 * time.Minute
+)
+
+// taskTimeout 返回某类任务的执行超时。
+func taskTimeout(taskType string) time.Duration {
+	switch taskType {
+	case "install_binary", "install_proxy":
+		return taskTimeoutInstall
+	default:
+		return taskTimeoutDefault
+	}
+}
+
 // TaskResultCallback 在任务完成后被调用，用于回传结果。
 // 对于远程 Agent，通过 stream 发送 TaskResult。
 // 对于本地面板，通过 channel 传递。
@@ -181,7 +200,7 @@ func (tq *TaskQueue) executeTask(entry *taskEntry) {
 	log.Printf("[TaskQueue] task running: id=%s type=%s", entry.ID, entry.Type)
 
 	// 执行
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), taskTimeout(entry.Type))
 	defer cancel()
 
 	detail, err := entry.Execute(ctx)

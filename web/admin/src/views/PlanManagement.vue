@@ -468,6 +468,37 @@
         </el-form-item>
       </el-form>
 
+      <el-divider content-position="left">{{ t('plan.providerDefaults') }}</el-divider>
+      <el-form label-width="140px" size="small">
+        <el-form-item :label="t('plan.providerInterval')">
+          <el-input-number v-model="providerForm.internal_defaults.interval" :min="0" controls-position="right" style="width:160px" />
+        </el-form-item>
+        <el-form-item :label="t('plan.pathTemplate')">
+          <el-input v-model="providerForm.internal_defaults.path" placeholder="./providers/{key}.yaml" style="width:320px" />
+          <div class="form-hint">{{ t('plan.providerDefaultsHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('plan.healthCheck')">
+          <el-switch v-model="providerForm.internal_defaults.hc_enable" />
+          <el-input v-model="providerForm.internal_defaults.hc_url" style="width:300px;margin-left:8px" :disabled="!providerForm.internal_defaults.hc_enable" placeholder="https://www.gstatic.com/generate_204" />
+          <el-input-number v-model="providerForm.internal_defaults.hc_interval" :min="0" controls-position="right" style="width:130px;margin-left:8px" :disabled="!providerForm.internal_defaults.hc_enable" />
+        </el-form-item>
+      </el-form>
+
+      <el-divider content-position="left">{{ t('plan.allNodesOverride') }}</el-divider>
+      <div class="form-hint" style="margin:-4px 0 10px 16px">{{ t('plan.allNodesOverrideHint') }}</div>
+      <el-form label-width="140px" size="small">
+        <el-form-item :label="t('plan.providerInterval')">
+          <el-input-number v-model="providerForm.all_nodes.interval" :min="0" controls-position="right" style="width:160px" :placeholder="t('plan.inheritDefault')" />
+        </el-form-item>
+        <el-form-item :label="t('plan.providerPath')">
+          <el-input v-model="providerForm.all_nodes.path" style="width:320px" :placeholder="t('plan.inheritDefault')" />
+        </el-form-item>
+        <el-form-item :label="t('plan.healthCheckUrl')">
+          <el-input v-model="providerForm.all_nodes.hc_url" style="width:300px" :placeholder="t('plan.inheritDefault')" />
+          <el-input-number v-model="providerForm.all_nodes.hc_interval" :min="0" controls-position="right" style="width:130px;margin-left:8px" />
+        </el-form-item>
+      </el-form>
+
       <el-divider content-position="left">{{ t('plan.externalProviders') }}</el-divider>
       <el-table :data="providerForm.external_providers" size="small" stripe>
         <el-table-column :label="t('common.name')" width="130">
@@ -489,6 +520,12 @@
         </el-table-column>
         <el-table-column :label="t('plan.providerInterval')" width="110">
           <template #default="{row}"><el-input-number v-model="row.interval" :min="0" controls-position="right" style="width:100%" /></template>
+        </el-table-column>
+        <el-table-column :label="t('plan.healthCheckUrl')" min-width="170">
+          <template #default="{row}"><el-input v-model="row.hc_url" placeholder="https://www.gstatic.com/generate_204" /></template>
+        </el-table-column>
+        <el-table-column :label="t('plan.healthCheckInterval')" width="120">
+          <template #default="{row}"><el-input-number v-model="row.hc_interval" :min="0" controls-position="right" style="width:100%" /></template>
         </el-table-column>
         <el-table-column width="70">
           <template #default="{ $index }">
@@ -985,7 +1022,13 @@ async function fetchNodeGroups() {
 // 外部 provider 与组 → 来源映射属于套餐配置，保存在 subscription_provider_config。
 const providerDialog = ref(false)
 const providerSaving = ref(false)
-const providerForm = ref({ internal_providers: {}, external_providers: [], group_use: [] })
+const providerForm = ref({
+  internal_providers: {},
+  external_providers: [],
+  group_use: [],
+  internal_defaults: { interval: 3600, path: '', hc_enable: true, hc_url: 'https://www.gstatic.com/generate_204', hc_interval: 3600 },
+  all_nodes: { interval: 0, path: '', hc_url: '', hc_interval: 0 },
+})
 const mihomoGroupNames = ref([])
 
 const providerInternalGroups = computed(() => {
@@ -1003,6 +1046,11 @@ async function showProvidersDialog(tpl) {
   currentTemplate.value = tpl
   let cfg = {}
   try { cfg = JSON.parse(tpl.subscription_provider_config || '{}') } catch { cfg = {} }
+  const hc = (obj) => (obj && typeof obj === 'object' ? obj : {})
+  const dflt = cfg.internal_defaults || {}
+  const dfltHc = hc(dflt['health-check'])
+  const allNodes = cfg.all_nodes_provider || {}
+  const allNodesHc = hc(allNodes['health-check'])
   providerForm.value = {
     internal_providers: cfg.internal_providers || {},
     external_providers: Object.entries(cfg.external_providers || {}).map(([name, p]) => ({
@@ -1011,13 +1059,28 @@ async function showProvidersDialog(tpl) {
       url: p.url || '',
       path: p.path || '',
       interval: p.interval || 3600,
-      // 保留 health-check / filter / override 等未在表格里编辑的字段，保存时原样带回。
+      hc_url: hc(p['health-check']).url || '',
+      hc_interval: hc(p['health-check']).interval || 0,
+      // 保留 filter / override 等未在表格里编辑的字段，保存时原样带回。
       raw: { ...p },
     })),
     group_use: Object.entries(cfg.group_use || {}).map(([group, keys]) => ({
       group,
       keys: Array.isArray(keys) ? [...keys] : [],
     })),
+    internal_defaults: {
+      interval: dflt.interval || 3600,
+      path: dflt.path || '',
+      hc_enable: dfltHc.enable !== false,
+      hc_url: dfltHc.url || 'https://www.gstatic.com/generate_204',
+      hc_interval: dfltHc.interval || 3600,
+    },
+    all_nodes: {
+      interval: allNodes.interval || 0,
+      path: allNodes.path || '',
+      hc_url: allNodesHc.url || '',
+      hc_interval: allNodesHc.interval || 0,
+    },
   }
   providerDialog.value = true
   await fetchNodeGroups()
@@ -1044,7 +1107,7 @@ async function fetchMihomoGroupNames() {
 }
 
 function addExternalProvider() {
-  providerForm.value.external_providers.push({ name: '', type: 'http', url: '', path: '', interval: 3600 })
+  providerForm.value.external_providers.push({ name: '', type: 'http', url: '', path: '', interval: 3600, hc_url: '', hc_interval: 0, raw: {} })
 }
 function addGroupMapping() {
   providerForm.value.group_use.push({ group: '', keys: [] })
@@ -1062,6 +1125,18 @@ async function saveProviders() {
     else delete entry.path
     if (p.interval) entry.interval = Number(p.interval)
     else delete entry.interval
+    if (p.hc_url) {
+      const prevHc = (entry['health-check'] && typeof entry['health-check'] === 'object') ? entry['health-check'] : {}
+      entry['health-check'] = {
+        ...prevHc,
+        enable: true,
+        url: String(p.hc_url).trim(),
+        interval: Number(p.hc_interval || prevHc.interval || 3600),
+      }
+    } else if (p.hc_interval) {
+      const prevHc = (entry['health-check'] && typeof entry['health-check'] === 'object') ? entry['health-check'] : {}
+      entry['health-check'] = { ...prevHc, interval: Number(p.hc_interval) }
+    }
     if (entry.type === 'http' && !entry.url) {
       ElMessage.error(t('plan.providerUrlRequired', { name }))
       return
@@ -1076,6 +1151,36 @@ async function saveProviders() {
     groupUse[group] = keys
   }
   const cfg = { external_providers: external, group_use: groupUse }
+
+  // 内部 provider（自动生成 + subscription-nodes）的默认参数
+  const dflt = providerForm.value.internal_defaults || {}
+  const internalDefaults = { interval: Number(dflt.interval) || 0 }
+  if ((dflt.path || '').trim()) internalDefaults.path = dflt.path.trim()
+  if (dflt.hc_enable) {
+    internalDefaults['health-check'] = {
+      enable: true,
+      url: (dflt.hc_url || '').trim() || 'https://www.gstatic.com/generate_204',
+      interval: Number(dflt.hc_interval) || 3600,
+    }
+  }
+  cfg.internal_defaults = internalDefaults
+
+  // subscription-nodes 覆盖：留空的字段由后端继承 internal_defaults
+  const an = providerForm.value.all_nodes || {}
+  const allNodes = {}
+  if (an.interval) allNodes.interval = Number(an.interval)
+  if ((an.path || '').trim()) allNodes.path = an.path.trim()
+  if ((an.hc_url || '').trim()) {
+    allNodes['health-check'] = {
+      enable: true,
+      url: an.hc_url.trim(),
+      interval: Number(an.hc_interval) || Number(dflt.hc_interval) || 3600,
+    }
+  } else if (an.hc_interval) {
+    allNodes['health-check'] = { enable: true, interval: Number(an.hc_interval) }
+  }
+  if (Object.keys(allNodes).length > 0) cfg.all_nodes_provider = allNodes
+
   if (providerForm.value.internal_providers && Object.keys(providerForm.value.internal_providers).length > 0) {
     cfg.internal_providers = providerForm.value.internal_providers
   }

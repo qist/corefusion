@@ -43,6 +43,10 @@ type subscriptionProviderPlan struct {
 	Internal map[string]*internalProviderDef
 	External map[string]map[string]interface{}
 	GroupUse map[string][]string
+	// Defaults 是自动生成的内部 provider 的默认参数（interval/path/health-check 等）。
+	Defaults internalProviderDef
+	// AllNodes 是保留 provider `subscription-nodes` 的覆盖参数（nil = 全用 Defaults）。
+	AllNodes *internalProviderDef
 	// Keys 是具体的 provider key（内部 + 外部，按字典序），不含保留的 subscription-nodes。
 	Keys []string
 	// NodeNames：provider key → 该来源下的节点名（原始模式展开用）。
@@ -130,6 +134,11 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 		}
 	}
 	plan.GroupUse = cfg.GroupUse
+	plan.Defaults = *internalDefFromConfig("", 0, cfg.InternalDefaults)
+	if internalProviderConfigured(cfg.AllNodesProvider) {
+		d := internalDefFromConfig(providercfg.ReservedAllNodesKey, 0, cfg.AllNodesProvider)
+		plan.AllNodes = d
+	}
 
 	groupNames := map[int64]string{}
 	if tmpl != nil && h.planSvc != nil {
@@ -155,7 +164,7 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 				key = fmt.Sprintf("group-%d", gid)
 			}
 			key = uniqueProviderKey(key, plan.Internal, nil)
-			plan.Internal[key] = &internalProviderDef{Key: key, NodeGroupID: gid}
+			plan.Internal[key] = applyProviderKeyTemplate(mergeProviderDefs(&plan.Defaults, &internalProviderDef{Key: key, NodeGroupID: gid}), key)
 		}
 	} else {
 		keys := make([]string, 0, len(cfg.InternalProviders))
@@ -175,18 +184,8 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 				continue
 			}
 			key = uniqueProviderKey(key, plan.Internal, nil)
-			plan.Internal[key] = &internalProviderDef{
-				Key:           key,
-				NodeGroupID:   def.NodeGroupID,
-				Interval:      def.Interval,
-				Path:          def.Path,
-				Filter:        def.Filter,
-				ExcludeFilter: def.ExcludeFilter,
-				HealthCheck:   def.HealthCheck,
-				Override:      def.Override,
-				Prefix:        def.AdditionalPrefix,
-				Suffix:        def.AdditionalSuffix,
-			}
+			explicit := internalDefFromConfig(key, def.NodeGroupID, def)
+			plan.Internal[key] = applyProviderKeyTemplate(mergeProviderDefs(&plan.Defaults, explicit), key)
 		}
 	}
 
@@ -280,9 +279,11 @@ func (h *PublicHandler) buildProviderDefinitions(c *gin.Context, token string, p
 		}
 	}
 	// 保留 provider：本套餐全部节点（无 provider 参数，回落全部节点）。
+	// 参数优先 all_nodes_provider，其次 internal_defaults；都为空时用内置默认。
+	allDef := applyProviderKeyTemplate(mergeProviderDefs(&plan.Defaults, plan.AllNodes), providercfg.ReservedAllNodesKey)
 	defs = append(defs, mihomoProviderDefinition{
 		Key:    providercfg.ReservedAllNodesKey,
-		Fields: buildSubscriptionNodesProviderFields(h.buildProviderURL(c, token, providercfg.ReservedAllNodesKey)),
+		Fields: buildInternalProviderFields(providercfg.ReservedAllNodesKey, allDef, h.buildProviderURL(c, token, providercfg.ReservedAllNodesKey)),
 	})
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Key < defs[j].Key })
 	return defs
@@ -335,6 +336,89 @@ func filterProxyNames(names []string, filter, excludeFilter string) []string {
 
 // buildInternalProviderFields 生成内部 provider 对客户端输出的字段。
 // node_group_id 是面板内部字段，必须剥掉；url 由调用方按当前请求参数生成。
+// internalDefFromConfig 把套餐配置里的 provider 参数转成内部定义。
+// path 支持 {key} 占位（如 ./providers/{key}.yaml），多 provider 时不会互相覆盖。
+func internalDefFromConfig(key string, nodeGroupID int64, p providercfg.InternalProvider) *internalProviderDef {
+	return &internalProviderDef{
+		Key:           key,
+		NodeGroupID:   nodeGroupID,
+		Interval:      p.Interval,
+		Path:          strings.TrimSpace(p.Path),
+		Filter:        p.Filter,
+		ExcludeFilter: p.ExcludeFilter,
+		HealthCheck:   p.HealthCheck,
+		Override:      p.Override,
+		Prefix:        p.AdditionalPrefix,
+		Suffix:        p.AdditionalSuffix,
+	}
+}
+
+// applyProviderKeyTemplate 把 path 里的 {key} 占位替换成实际 provider key
+// （默认模板 ./providers/{key}.yaml 用于所有自动生成的 provider）。
+func applyProviderKeyTemplate(def *internalProviderDef, key string) *internalProviderDef {
+	if def != nil && key != "" && strings.Contains(def.Path, "{key}") {
+		def.Path = strings.ReplaceAll(def.Path, "{key}", key)
+	}
+	return def
+}
+
+// internalProviderConfigured 判断用户是否给 provider 配过任何参数。
+func internalProviderConfigured(p providercfg.InternalProvider) bool {
+	return p.Interval > 0 ||
+		strings.TrimSpace(p.Path) != "" ||
+		strings.TrimSpace(p.Filter) != "" ||
+		strings.TrimSpace(p.ExcludeFilter) != "" ||
+		len(p.HealthCheck) > 0 ||
+		len(p.Override) > 0 ||
+		strings.TrimSpace(p.AdditionalPrefix) != "" ||
+		strings.TrimSpace(p.AdditionalSuffix) != ""
+}
+
+// mergeProviderDefs 以 base 为默认、over 里的非零字段覆盖 base。
+func mergeProviderDefs(base, over *internalProviderDef) *internalProviderDef {
+	if base == nil && over == nil {
+		return &internalProviderDef{}
+	}
+	out := internalProviderDef{}
+	if base != nil {
+		out = *base
+	}
+	if over == nil {
+		return &out
+	}
+	if over.Key != "" {
+		out.Key = over.Key
+	}
+	if over.NodeGroupID != 0 {
+		out.NodeGroupID = over.NodeGroupID
+	}
+	if over.Interval > 0 {
+		out.Interval = over.Interval
+	}
+	if over.Path != "" {
+		out.Path = over.Path
+	}
+	if over.Filter != "" {
+		out.Filter = over.Filter
+	}
+	if over.ExcludeFilter != "" {
+		out.ExcludeFilter = over.ExcludeFilter
+	}
+	if len(over.HealthCheck) > 0 {
+		out.HealthCheck = over.HealthCheck
+	}
+	if len(over.Override) > 0 {
+		out.Override = over.Override
+	}
+	if over.Prefix != "" {
+		out.Prefix = over.Prefix
+	}
+	if over.Suffix != "" {
+		out.Suffix = over.Suffix
+	}
+	return &out
+}
+
 func buildInternalProviderFields(key string, def *internalProviderDef, url string) map[string]interface{} {
 	fields := map[string]interface{}{
 		"type": "http",

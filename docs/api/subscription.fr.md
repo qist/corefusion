@@ -85,9 +85,9 @@ Abonnement dynamique Clash/Mihomo (actualisation périodique) :
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Mode fournisseur et plusieurs domaines d'abonnement
@@ -116,7 +116,7 @@ Types de fournisseurs :
 | Genre | Clé | Remarques |
 |---|---|---|
 | Interne | Nom du groupe de nœuds nettoyé | Généré par groupe de nœuds de plan ; contient uniquement les nœuds de ce groupe |
-| Réservé | `subscription-nodes` | Tous les nœuds du plan ; sa source URL **omet** le paramètre `provider` |
+| Réservé (obsolète) | `subscription-nodes` | N’est plus émis dans `proxy-providers` ; un groupe qui le référence est développé vers les providers concrets, sinon les nœuds sont intégrés directement |
 | Externe | Nom configuré sur le forfait | Source externe (`http` YAML ou `file`) |
 
 Champs communs par fournisseur :

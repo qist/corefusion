@@ -941,7 +941,7 @@ Additional notes:
 
 - `proxy-providers` inside a shared format (`config_json`) is ignored (avoids cross-plan leakage); providers come from plan node groups and external sources;
 - Internal and external provider cache paths are always derived from “internal provider defaults → cache path template” (default `./providers/{key}.yaml`); external sources cannot set their own;
-- The reserved provider `subscription-nodes` means all nodes of the plan and omits the `provider` parameter in its source URL.
+- The legacy reserved provider `subscription-nodes` is no longer emitted: groups using "all nodes" expand to concrete providers, or inline nodes when the plan has none.
 
 ---
 

@@ -85,9 +85,9 @@ Assinatura dinâmica Clash/Mihomo (atualização periódica):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Modo provedor e vários domínios de assinatura
@@ -116,7 +116,7 @@ Tipos de provedores:
 | Gentil | Chave | Notas |
 |---|---|---|
 | Interno | Nome do grupo de nós higienizado | Gerado por grupo de nós do plano; contém apenas os nós desse grupo |
-| Reservado | `subscription-nodes` | Todos os nós do plano; sua fonte URL **omite** o parâmetro `provider` |
+| Reservado (obsoleto) | `subscription-nodes` | Não é mais emitido em `proxy-providers`; um grupo que o referencia é expandido para providers concretos ou, sem eles, os nós são inlineados |
 | Externo | Nome configurado no plano | Fonte externa (`http` YAML ou `file`) |
 
 Campos comuns por provedor:

@@ -938,7 +938,7 @@ https://sub.example.com/<token>?format=raw_uri
 
 - 共享订阅格式（`config_json`）里写的 `proxy-providers` 会被忽略（避免多套餐串配置），provider 由套餐的节点组与外部来源自动生成；
 - 内部 / 外部 provider 的缓存路径统一由「内部 Provider 默认参数 → 缓存路径模板」生成（默认 `./providers/{key}.yaml`），外部来源也不能单独指定；
-- 保留 provider `subscription-nodes` 表示本套餐全部节点，回源 URL 不带 `provider` 参数。
+- 旧版的保留 provider `subscription-nodes` 已不再下发：引用“全部节点”的组会展开为具体 provider，套餐没有具体 provider 时直接内联节点。
 
 ---
 

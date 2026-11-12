@@ -85,9 +85,9 @@ Langganan dinamis Clash/Mihomo (penyegaran berkala):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Mode penyedia dan beberapa domain langganan
@@ -116,7 +116,7 @@ Jenis penyedia:
 | Baik hati | Kunci | Catatan |
 |---|---|---|
 | Dalaman | Nama grup node yang disanitasi | Dihasilkan per grup simpul rencana; hanya berisi node grup itu |
-| Dicadangkan | `subscription-nodes` | Semua simpul rencana; sumbernya URL **menghilangkan** parameter `provider` |
+| Dicadangkan (usang) | `subscription-nodes` | Tidak lagi dikirim dalam `proxy-providers`; grup yang merujuknya diperluas ke provider konkret, atau node disisipkan langsung bila tidak ada |
 | Eksternal | Nama dikonfigurasikan pada paket | Sumber eksternal (`http` YAML atau `file`) |
 
 Bidang umum per penyedia:

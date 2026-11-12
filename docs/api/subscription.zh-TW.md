@@ -85,9 +85,9 @@ Clash/Mihomo動態訂閱（定期刷新）：
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. 提供者模式和多個訂閱域
@@ -116,7 +116,7 @@ proxy-groups:
 | 種類 | 鑰匙 | 註解 |
 |---|---|---|
 | 內部 | 清理後的節點群組名稱 | 按計劃節點組產生；僅包含該組的節點 |
-| 保留 | `subscription-nodes` | 計畫的所有節點；其來源 URL **省略** `provider` 參數 |
+| 保留 provider（已棄用） | `subscription-nodes` | 不再出現在下發的 `proxy-providers` 中；群組引用時會展開為具體 provider，沒有具體 provider 時直接內聯節點 |
 | 外部 | 計劃中配置的名稱 | 外部來源（`http` YAML 或 `file`） |
 
 每個提供者的常用欄位：

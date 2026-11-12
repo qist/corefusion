@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Intervalle de mise à jour (s)",
     "providerDefaults": "Valeurs par défaut des providers internes",
     "providerDefaultsHint": "Le chemin accepte le jeton {key} ; chaque provider remplace par sa propre clé.",
-    "allNodesOverride": "Surcharges pour tous les nœuds (subscription-nodes)",
-    "allNodesOverrideHint": "Les champs vides héritent des valeurs ci-dessus. Ne remplissez que les surcharges.",
     "inheritDefault": "Vide = hériter par défaut",
     "healthCheck": "Contrôle de santé",
     "healthCheckUrl": "URL de contrôle de santé",

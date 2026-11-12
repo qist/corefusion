@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "更新間隔(秒)",
     "providerDefaults": "內部 Provider 預設參數",
     "providerDefaultsHint": "路徑支援 {key} 佔位，自動產生的每個 provider 會替換成自己的 key。",
-    "allNodesOverride": "全部節點（subscription-nodes）覆寫",
-    "allNodesOverrideHint": "留空則繼承上方預設參數；只填需要覆寫的項目即可。",
     "inheritDefault": "留空繼承預設",
     "healthCheck": "健康檢查",
     "healthCheckUrl": "探測 URL",

@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Aktualisierungsintervall (s)",
     "providerDefaults": "Standardwerte für interne Provider",
     "providerDefaultsHint": "Der Pfad unterstützt den Platzhalter {key}; jeder Provider setzt seinen eigenen Key ein.",
-    "allNodesOverride": "Überschreibungen für alle Knoten (subscription-nodes)",
-    "allNodesOverrideHint": "Leere Felder übernehmen die Standardwerte oben. Nur Abweichungen eintragen.",
     "inheritDefault": "Leer = Standard übernehmen",
     "healthCheck": "Health-Check",
     "healthCheckUrl": "Health-Check-URL",

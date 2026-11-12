@@ -85,9 +85,9 @@ curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-h
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. حالت ارائه دهنده و دامنه های اشتراک چندگانه
@@ -116,7 +116,7 @@ proxy-groups:
 | مهربان | کلید | یادداشت ها |
 |---|---|---|
 | داخلی | نام گروه گره پاکسازی شده | تولید در هر گروه گره طرح. فقط شامل گره های آن گروه است |
-| رزرو شده است | `subscription-nodes` | تمام گره های طرح؛ منبع آن URL **پارامتر `provider` را حذف می کند** |
+| رزرو شده (منسوخ) | `subscription-nodes` | دیگر در `proxy-providers` ارسال نمی‌شود؛ گروهی که به آن ارجاع دهد به providerهای مشخص گسترش می‌یابد و در نبود آن‌ها گره‌ها مستقیماً درج می‌شوند |
 | خارجی | نام در طرح پیکربندی شده است | منبع خارجی (`http` YAML یا `file`) |
 
 فیلدهای رایج برای هر ارائه دهنده:

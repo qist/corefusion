@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Chu kỳ cập nhật (giây)",
     "providerDefaults": "Mặc định provider nội bộ",
     "providerDefaultsHint": "Đường dẫn hỗ trợ {key}; mỗi provider sẽ thay bằng khóa của mình.",
-    "allNodesOverride": "Ghi đè tất cả nút (subscription-nodes)",
-    "allNodesOverrideHint": "Trường trống sẽ kế thừa mặc định phía trên. Chỉ điền mục cần ghi đè.",
     "inheritDefault": "Trống = kế thừa mặc định",
     "healthCheck": "Kiểm tra sức khỏe",
     "healthCheckUrl": "URL kiểm tra",

@@ -85,9 +85,9 @@ curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-h
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Chế độ nhà cung cấp và nhiều miền đăng ký
@@ -116,7 +116,7 @@ Các loại nhà cung cấp:
 | loại | Chìa khóa | Ghi chú |
 |---|---|---|
 | nội bộ | Tên nhóm nút được vệ sinh | Được tạo cho mỗi nhóm nút kế hoạch; chỉ chứa các nút của nhóm đó |
-| Đã đặt trước | `subscription-nodes` | Tất cả các nút của kế hoạch; nguồn URL của nó **bỏ qua** tham số `provider` |
+| Đã đặt trước (không dùng) | `subscription-nodes` | Không còn xuất hiện trong `proxy-providers`; nhóm tham chiếu sẽ được mở rộng thành các provider cụ thể, nếu không có thì nhúng trực tiếp các nút |
 | Bên ngoài | Tên được cấu hình trên gói | Nguồn bên ngoài (`http` YAML hoặc `file`) |
 
 Các trường phổ biến cho mỗi nhà cung cấp:

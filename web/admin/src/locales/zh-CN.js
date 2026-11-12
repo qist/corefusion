@@ -4499,8 +4499,6 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     providerInterval: '更新间隔(秒)',
     providerDefaults: '内部 Provider 默认参数',
     providerDefaultsHint: '路径支持 {key} 占位，自动生成的每个 provider 会替换成自己的 key。',
-    allNodesOverride: '全部节点（subscription-nodes）覆盖',
-    allNodesOverrideHint: '留空则继承上面的默认参数；只填需要覆盖的项即可。',
     inheritDefault: '留空继承默认',
     healthCheck: '健康检查',
     healthCheckUrl: '探测 URL',

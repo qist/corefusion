@@ -85,9 +85,9 @@ Clash/Mihomo dynamic subscription (periodic refresh):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Provider mode and multiple subscription domains
@@ -116,7 +116,7 @@ Provider kinds:
 | Kind | Key | Notes |
 |---|---|---|
 | Internal | Sanitized node-group name | Generated per plan node group; contains only that group's nodes |
-| Reserved | `subscription-nodes` | All nodes of the plan; its source URL **omits** the `provider` parameter |
+| Reserved (deprecated) | `subscription-nodes` | No longer emitted in `proxy-providers`; a group referencing it expands to concrete providers, or inlines nodes when the plan has none |
 | External | Name configured on the plan | External source (`http` YAML or `file`) |
 
 Common fields per provider:

@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "بازه به‌روزرسانی (ثانیه)",
     "providerDefaults": "پیش‌فرض‌های ارائه‌دهنده داخلی",
     "providerDefaultsHint": "مسیر از جای‌نگهدار {key} پشتیبانی می‌کند و هر ارائه‌دهنده کلید خودش را جایگزین می‌کند.",
-    "allNodesOverride": "بازنویسی همه گره‌ها (subscription-nodes)",
-    "allNodesOverrideHint": "فیلدهای خالی پیش‌فرض بالا را به ارث می‌برند. فقط موارد بازنویسی را پر کنید.",
     "inheritDefault": "خالی = ارث‌بری پیش‌فرض",
     "healthCheck": "بررسی سلامت",
     "healthCheckUrl": "URL بررسی سلامت",

@@ -85,9 +85,9 @@ curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-h
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. وضع الموفر ومجالات الاشتراك المتعددة
@@ -116,7 +116,7 @@ proxy-groups:
 | نوع | مفتاح | ملاحظات |
 |---|---|---|
 | داخلي | اسم مجموعة العقدة المعقمة | يتم إنشاؤها لكل مجموعة عقدة خطة؛ يحتوي فقط على عقد تلك المجموعة |
-| محفوظة | `subscription-nodes` | جميع العقد في الخطة؛ مصدره URL ** يتجاهل ** معلمة `provider` |
+| محجوز (مهجور) | `subscription-nodes` | لم يعد يُرسل في `proxy-providers`؛ يتم توسيع المجموعة التي تشير إليه إلى مزوّدات محددة، أو تضمين العقد مباشرة عند عدم وجودها |
 | خارجي | الاسم الذي تم تكوينه على الخطة | مصدر خارجي (`http` YAML أو `file`) |
 
 الحقول المشتركة لكل مزود:

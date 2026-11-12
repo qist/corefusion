@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "ช่วงอัปเดต (วินาที)",
     "providerDefaults": "ค่าเริ่มต้นของผู้ให้บริการภายใน",
     "providerDefaultsHint": "พาธรองรับ {key} และแต่ละผู้ให้บริการจะแทนที่ด้วยคีย์ของตน",
-    "allNodesOverride": "การแทนที่สำหรับทุกโหนด (subscription-nodes)",
-    "allNodesOverrideHint": "ช่องว่างจะสืบค่าเริ่มต้นด้านบน กรอกเฉพาะรายการที่ต้องการแทนที่",
     "inheritDefault": "ว่าง = สืบค่าเริ่มต้น",
     "healthCheck": "ตรวจสอบสถานะ",
     "healthCheckUrl": "URL ตรวจสอบสถานะ",

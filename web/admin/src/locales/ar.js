@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "فترة التحديث (ثانية)",
     "providerDefaults": "الإعدادات الافتراضية للمزوّدات الداخلية",
     "providerDefaultsHint": "يدعم المسار العنصر {key} ويستبدله كل مزوّد بمفتاحه.",
-    "allNodesOverride": "تجاوزات جميع العقد (subscription-nodes)",
-    "allNodesOverrideHint": "الحقول الفارغة ترث الإعدادات أعلاه. املأ فقط ما تريد تجاوزه.",
     "inheritDefault": "فارغ = وراثة الافتراضي",
     "healthCheck": "فحص الحالة",
     "healthCheckUrl": "رابط فحص الحالة",

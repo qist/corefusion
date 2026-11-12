@@ -29,9 +29,6 @@ type Config struct {
 	// interval / path（支持 {key} 占位）/ health-check / filter / override 等。
 	// 各节点组仍可在 internal_providers 里单独覆盖。
 	InternalDefaults InternalProvider `json:"internal_defaults"`
-	// AllNodesProvider 是保留 provider `subscription-nodes`（本套餐全部节点）的参数。
-	// 未配置的字段回退 InternalDefaults；都为空时用内置默认值。
-	AllNodesProvider InternalProvider `json:"all_nodes_provider"`
 }
 
 // InternalProvider 是由面板节点组生成的 provider。

@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Intervalo de actualización (s)",
     "providerDefaults": "Valores por defecto de providers internos",
     "providerDefaultsHint": "La ruta admite el marcador {key}; cada provider lo sustituye por su propia clave.",
-    "allNodesOverride": "Anulaciones de todos los nodos (subscription-nodes)",
-    "allNodesOverrideHint": "Los campos vacíos heredan los valores anteriores. Rellena solo lo que quieras anular.",
     "inheritDefault": "Vacío = heredar valor por defecto",
     "healthCheck": "Comprobación de estado",
     "healthCheckUrl": "URL de comprobación",

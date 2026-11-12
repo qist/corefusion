@@ -45,8 +45,6 @@ type subscriptionProviderPlan struct {
 	GroupUse map[string][]string
 	// Defaults 是自动生成的内部 provider 的默认参数（interval/path/health-check 等）。
 	Defaults internalProviderDef
-	// AllNodes 是保留 provider `subscription-nodes` 的覆盖参数（nil = 全用 Defaults）。
-	AllNodes *internalProviderDef
 	// Keys 是具体的 provider key（内部 + 外部，按字典序），不含保留的 subscription-nodes。
 	Keys []string
 	// NodeNames：provider key → 该来源下的节点名（原始模式展开用）。
@@ -135,10 +133,6 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 	}
 	plan.GroupUse = cfg.GroupUse
 	plan.Defaults = *internalDefFromConfig("", 0, cfg.InternalDefaults)
-	if internalProviderConfigured(cfg.AllNodesProvider) {
-		d := internalDefFromConfig(providercfg.ReservedAllNodesKey, 0, cfg.AllNodesProvider)
-		plan.AllNodes = d
-	}
 
 	groupNames := map[int64]string{}
 	if tmpl != nil && h.planSvc != nil {
@@ -365,18 +359,6 @@ func applyProviderKeyTemplate(def *internalProviderDef, key string) *internalPro
 	return def
 }
 
-// internalProviderConfigured 判断用户是否给 provider 配过任何参数。
-func internalProviderConfigured(p providercfg.InternalProvider) bool {
-	return p.Interval > 0 ||
-		strings.TrimSpace(p.Path) != "" ||
-		strings.TrimSpace(p.Filter) != "" ||
-		strings.TrimSpace(p.ExcludeFilter) != "" ||
-		len(p.HealthCheck) > 0 ||
-		len(p.Override) > 0 ||
-		strings.TrimSpace(p.AdditionalPrefix) != "" ||
-		strings.TrimSpace(p.AdditionalSuffix) != ""
-}
-
 // mergeProviderDefs 以 base 为默认、over 里的非零字段覆盖 base。
 func mergeProviderDefs(base, over *internalProviderDef) *internalProviderDef {
 	if base == nil && over == nil {
@@ -466,22 +448,6 @@ func buildInternalProviderFields(key string, def *internalProviderDef, url strin
 		fields["override"] = override
 	}
 	return fields
-}
-
-// buildSubscriptionNodesProviderFields 生成保留 provider subscription-nodes 的字段，
-// 其数据源不带 provider 参数，返回本套餐全部节点。
-func buildSubscriptionNodesProviderFields(url string) map[string]interface{} {
-	return map[string]interface{}{
-		"type":     "http",
-		"url":      url,
-		"interval": 3600,
-		"path":     "./providers/subscription-nodes.yaml",
-		"health-check": map[string]interface{}{
-			"enable":   true,
-			"url":      "https://www.gstatic.com/generate_204",
-			"interval": 3600,
-		},
-	}
 }
 
 func buildExternalProviderFields(key string, fields map[string]interface{}) map[string]interface{} {

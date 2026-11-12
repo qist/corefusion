@@ -86,9 +86,9 @@ Clash/Mihomo 动态订阅（节点定时回源刷新）写法：
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -99,7 +99,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Provider 模式与多订阅域名
@@ -117,7 +117,7 @@ Provider 分三类：
 | 类型 | key | 说明 |
 |---|---|---|
 | 内部 provider | 套餐节点组名（清洗后） | 按套餐的节点组自动生成，只包含该组的节点 |
-| 保留 provider | `subscription-nodes` | 本套餐全部节点；回源 URL **不带** `provider` 参数 |
+| 保留 provider（已弃用） | `subscription-nodes` | 不再出现在下发的 `proxy-providers` 中；组引用它会展开为具体 provider，没有具体 provider 时直接内联节点 |
 | 外部 provider | 套餐里配置的名称 | 外部来源（`http` 拉 YAML / `file` 本地文件） |
 
 每个 provider 的公共字段：

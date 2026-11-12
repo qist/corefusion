@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Intervalo de atualização (s)",
     "providerDefaults": "Padrões de providers internos",
     "providerDefaultsHint": "O caminho aceita o marcador {key}; cada provider substitui pela própria chave.",
-    "allNodesOverride": "Substituições de todos os nós (subscription-nodes)",
-    "allNodesOverrideHint": "Campos vazios herdam os padrões acima. Preencha apenas o que quiser substituir.",
     "inheritDefault": "Vazio = herdar padrão",
     "healthCheck": "Verificação de saúde",
     "healthCheckUrl": "URL de verificação",

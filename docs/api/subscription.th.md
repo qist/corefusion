@@ -85,9 +85,9 @@ curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-h
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. โหมดผู้ให้บริการและโดเมนการสมัครสมาชิกหลายรายการ
@@ -116,7 +116,7 @@ proxy-groups:
 | ชนิด | คีย์ | หมายเหตุ |
 |---|---|---|
 | ภายใน | ชื่อกลุ่มโหนดที่ผ่านการฆ่าเชื้อแล้ว | สร้างต่อกลุ่มโหนดแผน มีเพียงโหนดของกลุ่มนั้นเท่านั้น |
-| สงวนไว้ | `subscription-nodes` | โหนดทั้งหมดของแผน ต้นทาง URL **ละเว้น** พารามิเตอร์ `provider` |
+| สงวนไว้ (เลิกใช้) | `subscription-nodes` | ไม่ถูกส่งออกใน `proxy-providers` อีกต่อไป กลุ่มที่อ้างถึงจะถูกขยายเป็น provider จริง หรือฝังโหนดโดยตรงหากไม่มี provider |
 | ภายนอก | ชื่อที่กำหนดค่าไว้ในแผน | แหล่งสัญญาณภายนอก (`http` YAML หรือ `file`) |
 
 ช่องทั่วไปต่อผู้ให้บริการ:

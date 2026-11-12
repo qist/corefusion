@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "업데이트 간격(초)",
     "providerDefaults": "내부 프로바이더 기본값",
     "providerDefaultsHint": "경로는 {key} 자리표시자를 지원하며 각 프로바이더의 key로 치환됩니다.",
-    "allNodesOverride": "전체 노드(subscription-nodes) 재정의",
-    "allNodesOverrideHint": "비워 두면 위의 기본값을 상속합니다. 재정의할 항목만 입력하세요.",
     "inheritDefault": "비움 = 기본값 상속",
     "healthCheck": "상태 확인",
     "healthCheckUrl": "상태 확인 URL",

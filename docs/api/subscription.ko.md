@@ -85,9 +85,9 @@ Clash/Mihomo 동적 구독(주기적 새로 고침):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. 공급자 모드 및 여러 구독 도메인
@@ -116,7 +116,7 @@ proxy-groups:
 | 종류 | 열쇠 | 메모 |
 |---|---|---|
 | 내부 | 정리된 노드 그룹 이름 | 계획 노드 그룹별로 생성됩니다. 해당 그룹의 노드만 포함 |
-| 예약됨 | `subscription-nodes` | 계획의 모든 노드 해당 소스 URL는 `provider` 매개변수를 **생략**합니다. |
+| 예약됨(사용 중지) | `subscription-nodes` | 더 이상 `proxy-providers`에 포함되지 않습니다. 그룹이 참조하면 구체 provider로 확장되고, 구체 provider가 없으면 노드를 직접 인라인합니다 |
 | 외부 | 계획에 구성된 이름 | 외부 소스(`http` YAML 또는 `file`) |
 
 공급자별 공통 필드:

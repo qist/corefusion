@@ -85,9 +85,9 @@ Clash/Mihomo dinamik aboneliği (periyodik yenileme):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Sağlayıcı modu ve birden fazla abonelik alanı
@@ -116,7 +116,7 @@ Sağlayıcı türleri:
 | tür | Anahtar | Notlar |
 |---|---|---|
 | Dahili | Temizlenmiş düğüm grubu adı | Plan düğüm grubu başına oluşturulur; yalnızca o grubun düğümlerini içerir |
-| Ayrılmış | `subscription-nodes` | Planın tüm düğümleri; kaynağı URL `provider` parametresini **çıkarır** |
+| Ayrılmış (kullanımdan kaldırıldı) | `subscription-nodes` | Artık `proxy-providers` içinde gönderilmez; ona başvuran grup somut provider'lara genişletilir, yoksa düğümler doğrudan satır içine alınır |
 | Harici | Planda yapılandırılan ad | Harici kaynak (`http` YAML veya `file`) |
 
 Sağlayıcı başına ortak alanlar:

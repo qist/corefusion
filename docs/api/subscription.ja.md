@@ -85,9 +85,9 @@ Clash/Mihomo 動的サブスクリプション (定期更新):
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. プロバイダー モードと複数のサブスクリプション ドメイン
@@ -116,7 +116,7 @@ proxy-groups:
 | 種類 | キー | 注意事項 |
 |---|---|---|
 | 内部 | サニタイズされたノードグループ名 | プラン ノード グループごとに生成されます。そのグループのノードのみが含まれます |
-| 予約済み | `subscription-nodes` | プランのすべてのノード。ソース URL は `provider` パラメータを **省略** |
+| 予約済み（廃止） | `subscription-nodes` | 配信される `proxy-providers` には出力されません。グループが参照すると具体 provider に展開され、具体 provider が無い場合はノードを直接インラインします |
 | 外部 | プランに設定されている名前 | 外部ソース (`http` YAML または `file`) |
 
 プロバイダーごとの共通フィールド:

@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Güncelleme Aralığı (sn)",
     "providerDefaults": "Dahili sağlayıcı varsayılanları",
     "providerDefaultsHint": "Yol {key} yer tutucusunu destekler; her sağlayıcı kendi anahtarını yazar.",
-    "allNodesOverride": "Tüm düğümler (subscription-nodes) geçersiz kılmaları",
-    "allNodesOverrideHint": "Boş alanlar yukarıdaki varsayılanları devralır. Yalnızca geçersiz kılınacakları doldurun.",
     "inheritDefault": "Boş = varsayılanı devral",
     "healthCheck": "Sağlık kontrolü",
     "healthCheckUrl": "Sağlık kontrolü URL’si",

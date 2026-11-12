@@ -37,8 +37,7 @@ func TestProviderDefaultsApplyToInternalProviders(t *testing.T) {
 				"interval": 900,
 				"path": "./providers/{key}.yaml",
 				"health-check": {"enable": true, "url": "https://probe.example.com/204", "interval": 600}
-			},
-			"all_nodes_provider": {"path": "./providers/all-nodes.yaml"}
+			}
 		}`,
 	}
 	h := &PublicHandler{}

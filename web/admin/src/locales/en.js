@@ -4569,8 +4569,6 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     providerInterval: 'Update Interval (s)',
     providerDefaults: 'Internal Provider Defaults',
     providerDefaultsHint: 'Path supports the {key} placeholder; each generated provider substitutes its own key.',
-    allNodesOverride: 'All Nodes (subscription-nodes) Overrides',
-    allNodesOverrideHint: 'Empty fields inherit the defaults above. Only fill what you want to override.',
     inheritDefault: 'Empty = inherit default',
     healthCheck: 'Health Check',
     healthCheckUrl: 'Health Check URL',

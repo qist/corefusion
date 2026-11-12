@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Interval Pembaruan (dtk)",
     "providerDefaults": "Default provider internal",
     "providerDefaultsHint": "Path mendukung placeholder {key}; setiap provider menggantinya dengan key-nya sendiri.",
-    "allNodesOverride": "Override semua node (subscription-nodes)",
-    "allNodesOverrideHint": "Kolom kosong mewarisi default di atas. Isi hanya yang ingin di-override.",
     "inheritDefault": "Kosong = warisi default",
     "healthCheck": "Pemeriksaan kesehatan",
     "healthCheckUrl": "URL pemeriksaan",

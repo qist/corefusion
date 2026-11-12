@@ -85,9 +85,9 @@ curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-h
 
 ```yaml
 proxy-providers:
-  subscription-nodes:
+  office:
     type: http
-    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml"
+    url: "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_yaml&provider=office"
     interval: 3600
     health-check:
       enable: true
@@ -98,7 +98,7 @@ proxy-groups:
   - name: PROXY
     type: select
     use:
-      - subscription-nodes
+      - office
 ```
 
 ## 6. Режим провайдера и несколько доменов подписки
@@ -116,7 +116,7 @@ proxy-groups:
 | Добрый | Ключ | Примечания |
 |---|---|---|
 | Внутренний | Очищенное имя группы узлов | Создается для каждой группы узлов плана; содержит только узлы этой группы |
-| Зарезервировано | `subscription-nodes` | Все узлы плана; его источник URL **опускает** параметр `provider` |
+| Зарезервировано (устарело) | `subscription-nodes` | Больше не выводится в `proxy-providers`; группа, ссылающаяся на него, разворачивается в конкретные provider, а при их отсутствии узлы встраиваются напрямую |
 | Внешний | Имя настроено в плане | Внешний источник (`http` YAML или `file`) |
 
 Общие поля для каждого поставщика:

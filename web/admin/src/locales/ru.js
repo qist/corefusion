@@ -4310,8 +4310,6 @@ export default {
     "providerInterval": "Интервал обновления (с)",
     "providerDefaults": "Параметры внутренних provider по умолчанию",
     "providerDefaultsHint": "Путь поддерживает плейсхолдер {key}; каждый provider подставляет свой ключ.",
-    "allNodesOverride": "Переопределение для всех узлов (subscription-nodes)",
-    "allNodesOverrideHint": "Пустые поля наследуют значения выше. Заполняйте только то, что нужно переопределить.",
     "inheritDefault": "Пусто = наследовать по умолчанию",
     "healthCheck": "Проверка доступности",
     "healthCheckUrl": "URL проверки",

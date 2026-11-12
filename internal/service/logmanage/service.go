@@ -125,7 +125,7 @@ func NewService(
 		dataDir:       dataDir,
 		proxyBroker:   proxyBroker,
 	}
-	svc.scheduler = NewScheduler(policyRepo, svc)
+	svc.scheduler = NewScheduler(policyRepo, jobRepo, svc)
 	return svc
 }
 

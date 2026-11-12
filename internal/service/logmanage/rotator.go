@@ -244,16 +244,31 @@ func (s *Service) cleanExpired(policy *entity.LogRotationPolicy) (int, int64, er
 
 // signalNginxReopen sends the reopen signal to nginx.
 func (s *Service) signalNginxReopen() {
-	// Try to find nginx binary
-	nginxPath, err := exec.LookPath("nginx")
-	if err != nil {
-		log.Printf("logmanage: nginx not found in PATH, skipping reopen signal")
-		return
+	// 面板/Agent 托管的 nginx 不在 PATH 里（二进制名是 nginx-linux-amd64，位于
+	// data/binaries/proxy/），旧实现直接 LookPath 失败 → 跳过 reopen：
+	// rename 之后 nginx 仍写老文件，新的 access.log 永远为 0。
+	// 这里优先用托管二进制，并用与启动完全相同的 cwd/配置，保证 -s reopen
+	// 能找到运行中的 master（pid 文件是配置里的相对路径 runtime/nginx.pid）。
+	if s.dataDir != "" {
+		if matches, _ := filepath.Glob(filepath.Join(s.dataDir, "binaries", "proxy", "nginx*")); len(matches) > 0 {
+			cmd := exec.Command(matches[0], "-c", "proxy/nginx.conf", "-s", "reopen")
+			cmd.Dir = s.dataDir
+			if output, err := cmd.CombinedOutput(); err != nil {
+				log.Printf("logmanage: nginx -s reopen failed (%s): %v, output: %s", matches[0], err, strings.TrimSpace(string(output)))
+			}
+			return
+		}
 	}
 
+	// 非托管场景（系统 nginx）：保持原行为，靠 PATH 里的 nginx 发信号。
+	nginxPath, err := exec.LookPath("nginx")
+	if err != nil {
+		log.Printf("logmanage: nginx not found (managed binary and PATH), skipping reopen signal")
+		return
+	}
 	cmd := exec.Command(nginxPath, "-s", "reopen")
 	if output, err := cmd.CombinedOutput(); err != nil {
-		log.Printf("logmanage: nginx -s reopen failed: %v, output: %s", err, string(output))
+		log.Printf("logmanage: nginx -s reopen failed: %v, output: %s", err, strings.TrimSpace(string(output)))
 	}
 }
 

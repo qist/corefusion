@@ -289,17 +289,31 @@
             </div>
           </el-form-item>
         </el-form>
+        <el-divider content-position="left">{{ t('subfmt.customOutbounds') }}</el-divider>
+        <el-form label-width="140px" size="small">
+          <el-form-item :label="t('subfmt.customOutboundsLabel')">
+            <el-input v-model="modelValue._customProxiesStr" type="textarea" :rows="10"
+              :placeholder="t('subfmt.customOutboundsPlaceholder')" @change="emitModel" />
+            <div style="font-size:12px;color:#909399;line-height:1.6;margin-top:4px">
+              {{ t('subfmt.customOutboundsHint') }}
+            </div>
+          </el-form-item>
+        </el-form>
         <el-divider content-position="left">{{ t('subfmt.proxyGroups') }}</el-divider>
         <div v-for="(g, i) in proxyGroups" :key="i" style="border:1px solid #e4e7ed;border-radius:6px;padding:12px;margin-bottom:8px">
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
             <el-input v-model="g.name" size="small" :placeholder="t('mihomo.groupNamePlaceholder')" style="width:120px" @change="emitProxyGroups" />
-            <el-select v-model="g.type" size="small" style="width:120px" @change="emitProxyGroups">
+            <el-select v-model="g.type" size="small" style="width:120px" @change="onGroupTypeChange(g)">
               <el-option label="select" value="select" /><el-option label="url-test" value="url-test" /><el-option label="fallback" value="fallback" /><el-option label="load-balance" value="load-balance" /><el-option label="relay" value="relay" />
             </el-select>
             <el-switch v-model="g.hidden" size="small" @change="emitProxyGroups" />
             <span style="font-size:12px;color:#909399">{{ t('mihomo.hidden') }}</span>
             <el-switch v-model="g._hasExternalNodes" size="small" @change="emitProxyGroups" />
             <span style="font-size:12px;color:#909399">{{ t('mihomo.subscribeAddNodes') }}</span>
+            <el-switch v-model="g._healthCheck" size="small"
+              :title="healthCheckApplicable(g) ? t('mihomo.healthCheckHint') : t('mihomo.healthCheckNotApplicable')"
+              @change="emitProxyGroups" />
+            <span style="font-size:12px;color:#909399">{{ t('mihomo.healthCheck') }}</span>
             <el-button size="small" type="danger" text @click="proxyGroups.splice(i,1);emitProxyGroups()">X</el-button>
           </div>
           <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('mihomo.proxyListHint') }}</div>
@@ -313,23 +327,26 @@
           <template v-if="g._showAdvanced">
             <el-divider style="margin:8px 0" />
             <el-form label-width="120px" size="small">
-              <el-form-item :label="t('subfmt.groupURL')">
-                <el-input v-model="g.url" size="small" placeholder="https://www.gstatic.com/generate_204" @change="emitProxyGroups" />
-              </el-form-item>
-              <el-form-item :label="t('subfmt.groupInterval')">
-                <el-input-number v-model="g.interval" :min="0" size="small" @change="emitProxyGroups" />
-                <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.seconds') }}</span>
-              </el-form-item>
-              <el-form-item :label="t('subfmt.groupLazy')">
-                <el-switch v-model="g.lazy" @change="emitProxyGroups" />
-              </el-form-item>
-              <el-form-item :label="t('subfmt.groupTimeout')">
-                <el-input-number v-model="g.timeout" :min="0" size="small" @change="emitProxyGroups" />
-                <span style="font-size:12px;color:#909399;margin-left:8px">ms</span>
-              </el-form-item>
-              <el-form-item :label="t('subfmt.groupMaxFailed')">
-                <el-input-number v-model="g['max-failed-times']" :min="0" size="small" @change="emitProxyGroups" />
-              </el-form-item>
+              <template v-if="healthCheckEnabled(g)">
+                <el-form-item :label="t('subfmt.groupURL')">
+                  <el-input v-model="g.url" size="small" placeholder="https://www.gstatic.com/generate_204" @change="emitProxyGroups" />
+                </el-form-item>
+                <el-form-item :label="t('subfmt.groupInterval')">
+                  <el-input-number v-model="g.interval" :min="0" size="small" @change="emitProxyGroups" />
+                  <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.seconds') }}</span>
+                </el-form-item>
+                <el-form-item :label="t('subfmt.groupLazy')">
+                  <el-switch v-model="g.lazy" @change="emitProxyGroups" />
+                </el-form-item>
+                <el-form-item :label="t('subfmt.groupTimeout')">
+                  <el-input-number v-model="g.timeout" :min="0" size="small" @change="emitProxyGroups" />
+                  <span style="font-size:12px;color:#909399;margin-left:8px">ms</span>
+                </el-form-item>
+                <el-form-item :label="t('subfmt.groupMaxFailed')">
+                  <el-input-number v-model="g['max-failed-times']" :min="0" size="small" @change="emitProxyGroups" />
+                </el-form-item>
+              </template>
+              <div v-else style="font-size:12px;color:#909399;margin:0 0 12px">{{ t('mihomo.healthCheckOffHint') }}</div>
               <el-form-item :label="t('subfmt.groupEmptyFallback')">
                 <el-select v-model="g['empty-fallback']" size="small" style="width:150px" clearable @change="emitProxyGroups">
                   <el-option label="COMPATIBLE" value="COMPATIBLE" /><el-option label="PASS" value="PASS" /><el-option label="REJECT" value="REJECT" />
@@ -359,7 +376,7 @@
             </el-form>
           </template>
         </div>
-        <el-button size="small" @click="proxyGroups.push({name:'PROXY-'+(proxyGroups.length+1),type:'select',_proxiesStr:'DIRECT',_showAdvanced:false,hidden:false,_hasExternalNodes:false,url:'https://www.gstatic.com/generate_204',interval:300,lazy:true,timeout:5000,'max-failed-times':5,'empty-fallback':''});emitProxyGroups()">+ {{ t('subfmt.addGroup') }}</el-button>
+        <el-button size="small" @click="proxyGroups.push({name:'PROXY-'+(proxyGroups.length+1),type:'select',_proxiesStr:'DIRECT',_showAdvanced:false,hidden:false,_hasExternalNodes:false,_healthCheck:false,'empty-fallback':''});emitProxyGroups()">+ {{ t('subfmt.addGroup') }}</el-button>
       </el-tab-pane>
 
       <!-- Rule Providers -->
@@ -768,6 +785,21 @@ function syncRuleProviders() {
 function emitHosts() { emit('update:hosts', [...props.hosts]) }
 function emitTunnels() { emit('update:tunnels', [...props.tunnels]) }
 function emitProxyGroups() { emit('update:proxyGroups', [...props.proxyGroups]) }
+
+// select / relay 默认不做健康检查（mihomo 不会自动探测），但允许手动开启：
+// 部分客户端会用 url 对组做手动测速，或用户切到 url-test 时想保留同一套参数。
+function healthCheckApplicable(g) {
+  const type = g?.type || 'select'
+  return type !== 'select' && type !== 'relay'
+}
+function healthCheckEnabled(g) {
+  return g?._healthCheck !== false
+}
+function onGroupTypeChange(g) {
+  // 切到探测类型时默认打开（用户可再手动关），切到 select/relay 强制关闭
+  g._healthCheck = healthCheckApplicable(g)
+  emitProxyGroups()
+}
 function emitRuleProviders() { emit('update:ruleProviders', { ...props.ruleProviders }) }
 function emitProxyProviders() { emit('update:proxyProviders', { ...props.proxyProviders }) }
 function emitDns() { emit('update:dns', { ...props.dns }) }

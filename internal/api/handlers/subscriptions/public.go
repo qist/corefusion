@@ -630,10 +630,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	// Record access
 	if h.accessLog != nil {
-		ip := netutil.GetRealIP(c.Request)
+		ip, realIP, cdnIP := accessLogIPFields(c.Request)
 		ua := c.Request.UserAgent()
-		realIP := c.GetHeader("X-Real-IP")
-		cdnIP := c.GetHeader("CF-Connecting-IP")
 		cdnProvider := detectCDNProvider(c)
 		go func() {
 			h.recordAccess(sub.ID, http.StatusOK, "hit", ip, ua, realIP, cdnIP, cdnProvider)
@@ -1777,8 +1775,9 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, plans map[string
 		}
 		name := getString(group, "name", "")
 		plan := plans[name]
+		groupType := getString(group, "type", "select")
 		yaml.WriteString("  - name: " + formatYAMLString(name) + "\n")
-		yaml.WriteString("    type: " + getString(group, "type", "select") + "\n")
+		yaml.WriteString("    type: " + groupType + "\n")
 
 		// 静态 proxies 原样保留（特别出口如 DIRECT、其它组名等）+ 原始模式注入的节点名
 		proxies := dedupeStrings(append(getStringSlice(group, "proxies"), plan.Proxies...))
@@ -1804,21 +1803,32 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, plans map[string
 			yaml.WriteString("      - " + formatYAMLString("DIRECT") + "\n")
 		}
 
-		// Optional fields
-		if url := getString(group, "url", ""); url != "" {
-			yaml.WriteString("    url: " + formatYAMLString(url) + "\n")
+		// 健康检查字段只对会主动探测的组类型有意义：select / relay 默认不探测，
+		// 带 url/interval 只会让客户端显示一个永远"超时"的延迟，且会把只承载
+		// 内网路由的出站组（如 WireGuard 旁路）误标成故障。
+		// 面板 UI 的「健康检查」开关以内部字段 `_healthCheck` 落库：显式 true 时
+		// 按用户选择输出（select/relay 也能开），显式 false 时其它类型也一并关闭；
+		// 没有该字段的历史模板按类型默认（select/relay 不输出）。
+		needsHealthCheck := proxyGroupNeedsHealthCheck(groupType)
+		if v, ok := group["_healthCheck"].(bool); ok {
+			needsHealthCheck = v
 		}
-		if interval := getInt(group, "interval", 0); interval > 0 {
-			yaml.WriteString(fmt.Sprintf("    interval: %d\n", interval))
-		}
-		if lazy, ok := group["lazy"].(bool); ok && lazy {
-			yaml.WriteString("    lazy: true\n")
-		}
-		if timeout := getInt(group, "timeout", 0); timeout > 0 {
-			yaml.WriteString(fmt.Sprintf("    timeout: %d\n", timeout))
-		}
-		if maxFailed := getInt(group, "max-failed-times", 0); maxFailed > 0 {
-			yaml.WriteString(fmt.Sprintf("    max-failed-times: %d\n", maxFailed))
+		if needsHealthCheck {
+			if url := getString(group, "url", ""); url != "" {
+				yaml.WriteString("    url: " + formatYAMLString(url) + "\n")
+			}
+			if interval := getInt(group, "interval", 0); interval > 0 {
+				yaml.WriteString(fmt.Sprintf("    interval: %d\n", interval))
+			}
+			if lazy, ok := group["lazy"].(bool); ok && lazy {
+				yaml.WriteString("    lazy: true\n")
+			}
+			if timeout := getInt(group, "timeout", 0); timeout > 0 {
+				yaml.WriteString(fmt.Sprintf("    timeout: %d\n", timeout))
+			}
+			if maxFailed := getInt(group, "max-failed-times", 0); maxFailed > 0 {
+				yaml.WriteString(fmt.Sprintf("    max-failed-times: %d\n", maxFailed))
+			}
 		}
 		if filter := getString(group, "filter", ""); filter != "" {
 			yaml.WriteString("    filter: " + formatYAMLString(filter) + "\n")
@@ -1843,9 +1853,24 @@ func writeProxyGroups(yaml *strings.Builder, value interface{}, plans map[string
 			if handled[key] || strings.HasPrefix(key, "_") {
 				continue
 			}
+			// 探测相关字段与 url/interval 同源：关闭健康检查时一并省略
+			if !needsHealthCheck && (key == "tolerance" || key == "expected-status") {
+				continue
+			}
 			writeYAMLField(yaml, key, group[key], 2)
 		}
 	}
+}
+
+// proxyGroupNeedsHealthCheck 判断该代理组类型是否会主动做健康检查。
+// mihomo 只有 url-test / fallback / load-balance 等类型会探测，
+// select / relay 只按用户选择转发，配置 url/interval 不会生效。
+func proxyGroupNeedsHealthCheck(groupType string) bool {
+	switch strings.ToLower(strings.TrimSpace(groupType)) {
+	case "select", "relay":
+		return false
+	}
+	return true
 }
 
 func dedupeStrings(values []string) []string {
@@ -3907,10 +3932,8 @@ func (h *PublicHandler) logDeniedAccess(c *gin.Context, subID int64, statusCode 
 	if h.accessLog == nil {
 		return
 	}
-	ip := netutil.GetRealIP(c.Request)
+	ip, realIP, cdnIP := accessLogIPFields(c.Request)
 	ua := c.Request.UserAgent()
-	realIP := c.GetHeader("X-Real-IP")
-	cdnIP := c.GetHeader("CF-Connecting-IP")
 	cdnProvider := detectCDNProvider(c)
 	go h.recordAccess(subID, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
 }
@@ -3924,10 +3947,8 @@ func (h *PublicHandler) RecordDeniedAccess(c *gin.Context, statusCode int, hitRe
 		return
 	}
 	token := c.Param("token")
-	ip := netutil.GetRealIP(c.Request)
+	ip, realIP, cdnIP := accessLogIPFields(c.Request)
 	ua := c.Request.UserAgent()
-	realIP := c.GetHeader("X-Real-IP")
-	cdnIP := c.GetHeader("CF-Connecting-IP")
 	cdnProvider := detectCDNProvider(c)
 	go func() {
 		var subID int64
@@ -4000,6 +4021,29 @@ func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Su
 }
 
 // detectCDNProvider checks CDN-specific headers to identify the CDN provider.
+// accessLogIPFields 返回订阅访问日志的三个 IP 字段（口径必须与限流/审计一致）：
+//
+//	ip     —— 可信代理感知后的客户端真实 IP（netutil.GetRealIP）
+//	realIP —— 同 ip（历史列保留：API 仍返回 real_ip，但不能落 raw header）
+//	cdnIP  —— 直连对端（CDN 边缘节点），仅当它 != ip 且是公网地址时记录
+//
+// 旧实现把 X-Real-IP / CF-Connecting-IP 原样落库：X-Real-IP 任意来源都能伪造，
+// 且在 Cloudflare 直连回源的部署里它是**边缘节点 IP**，管理端「订阅访问日志」
+// 于是全列显示 CDN IP（生产 23.254.233.185 踩到）。展示层已改为优先 ip，
+// 这里同步纠正落库口径，避免新数据继续写脏。
+func accessLogIPFields(r *http.Request) (ip, realIP, cdnIP string) {
+	ip = netutil.GetRealIP(r)
+	realIP = ip
+	peer := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(peer); err == nil {
+		peer = host
+	}
+	if peer != "" && peer != ip && !netutil.IsPrivateIP(peer) {
+		cdnIP = peer
+	}
+	return
+}
+
 func detectCDNProvider(c *gin.Context) string {
 	if c.GetHeader("CF-Connecting-IP") != "" {
 		return "cloudflare"

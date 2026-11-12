@@ -55,8 +55,16 @@ func TestLogDeniedAccessRecordsFailure(t *testing.T) {
 			if row.RiskLevel != "high" {
 				t.Fatalf("risk_level = %q, want high", row.RiskLevel)
 			}
-			if row.RealIP != "203.0.113.9" {
-				t.Fatalf("real_ip = %q", row.RealIP)
+			// 无可信代理时 X-Real-IP 是任意来源都能伪造的 → 必须忽略；
+			// 三个 IP 字段统一落在 TCP 直连地址上（展示层用 ip）。
+			if row.IP != "192.0.2.1" {
+				t.Fatalf("ip = %q, want 192.0.2.1", row.IP)
+			}
+			if row.RealIP != "192.0.2.1" {
+				t.Fatalf("real_ip = %q, want the trusted-proxy-aware IP", row.RealIP)
+			}
+			if row.CDNIP != "" {
+				t.Fatalf("cdn_ip = %q, want empty for a direct request", row.CDNIP)
 			}
 			return
 		}

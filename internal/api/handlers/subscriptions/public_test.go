@@ -902,6 +902,58 @@ func TestGenerateMihomoYAMLIsValidYAML(t *testing.T) {
 	}
 }
 
+// 自定义出站（如 WireGuard 旁路隧道）必须原样写进顶层 proxies，
+// 但**绝不能进任何代理组** —— 它只承载内网路由，一旦被 AUTO/url-test
+// 选中，公网流量会整段不可用。
+func TestGenerateMihomoYAMLCustomOutboundStaysOutOfGroups(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{
+		"proxies": [{"name":"wg-home","type":"wireguard","server":"1.2.3.4","port":51820,
+			"private-key":"priv","ip":"10.0.0.4","udp":true,
+			"peers":[{"server":"1.2.3.4","port":51820,"public-key":"pub","allowed-ips":["192.168.100.0/24"]}]}],
+		"proxy-groups": [{"name":"AUTO","type":"url-test","_hasExternalNodes":true,
+			"url":"https://www.gstatic.com/generate_204","interval":300}]
+	}`}
+	proxyMaps := []map[string]interface{}{{
+		"name": "node-a", "type": "vmess", "server": "a.example.com", "port": 443, "uuid": "u", "cipher": "auto",
+	}}
+	out := string((&PublicHandler{}).generateMihomoYAML(cfg, nil, proxyMaps, nil))
+
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("invalid yaml: %v\n%s", err, out)
+	}
+	proxies, _ := doc["proxies"].([]interface{})
+	found := false
+	for _, raw := range proxies {
+		p, ok := raw.(map[string]interface{})
+		if !ok || p["name"] != "wg-home" {
+			continue
+		}
+		found = true
+		if p["type"] != "wireguard" {
+			t.Fatalf("custom outbound type changed: %#v", p["type"])
+		}
+		peers, _ := p["peers"].([]interface{})
+		if len(peers) != 1 {
+			t.Fatalf("custom outbound peers lost: %s", out)
+		}
+	}
+	if !found {
+		t.Fatalf("custom outbound missing from top-level proxies: %s", out)
+	}
+
+	groups, _ := doc["proxy-groups"].([]interface{})
+	for _, raw := range groups {
+		g, _ := raw.(map[string]interface{})
+		names, _ := g["proxies"].([]interface{})
+		for _, n := range names {
+			if s, _ := n.(string); s == "wg-home" {
+				t.Fatalf("custom outbound must never be injected into groups: %s", out)
+			}
+		}
+	}
+}
+
 // 组来源优先级：group_use > _hasExternalNodes；_hasExternalNodes 使用具体 provider
 // （没有具体来源时回落 subscription-nodes）。
 func TestBuildMihomoGroupPlansPriority(t *testing.T) {
@@ -1310,5 +1362,117 @@ func TestGRPCMultiModeDroppedForMihomoAndSingbox(t *testing.T) {
 	delete(opts, "grpc-multi-mode")
 	if mihomoNodeDropReason(node) != "" || singboxNodeDropReason(node) != "" {
 		t.Error("未开 multiMode 的普通 gRPC 节点不应被剔除")
+	}
+}
+
+// select / relay 组不做健康检查：模板里遗留的 url/interval/lazy/timeout/
+// max-failed-times/tolerance/expected-status 一律不下发，否则客户端会把
+// 只承载内网的出站组（WireGuard 旁路）标成"超时"。其它类型必须保留。
+func TestGenerateMihomoYAMLGroupHealthCheckByType(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{
+		"proxy-groups": [
+			{"name":"wg","type":"select","proxies":["wg1","DIRECT"],
+				"url":"https://www.gstatic.com/generate_204","interval":300,"lazy":true,
+				"timeout":5000,"max-failed-times":5,"tolerance":50,"expected-status":"204"},
+			{"name":"AUTO","type":"url-test","proxies":["node-a"],
+				"url":"https://www.gstatic.com/generate_204","interval":300,"lazy":true,
+				"timeout":5000,"max-failed-times":5,"tolerance":50,"expected-status":"204"}
+		]
+	}`}
+	out := string((&PublicHandler{}).generateMihomoYAML(cfg, nil, nil, nil))
+
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("invalid yaml: %v\n%s", err, out)
+	}
+	groups, _ := doc["proxy-groups"].([]interface{})
+	if len(groups) != 2 {
+		t.Fatalf("expect 2 groups: %s", out)
+	}
+	byName := map[string]map[string]interface{}{}
+	for _, raw := range groups {
+		g, _ := raw.(map[string]interface{})
+		if n, _ := g["name"].(string); n != "" {
+			byName[n] = g
+		}
+	}
+
+	healthKeys := []string{"url", "interval", "lazy", "timeout", "max-failed-times", "tolerance", "expected-status"}
+	if g := byName["wg"]; g != nil {
+		for _, k := range healthKeys {
+			if _, ok := g[k]; ok {
+				t.Errorf("select group must not carry %q: %s", k, out)
+			}
+		}
+	} else {
+		t.Fatalf("select group missing: %s", out)
+	}
+
+	if g := byName["AUTO"]; g != nil {
+		if g["url"] != "https://www.gstatic.com/generate_204" {
+			t.Errorf("url-test group should keep url: %s", out)
+		}
+		if g["interval"] != 300 {
+			t.Errorf("url-test group should keep interval: %s", out)
+		}
+		if g["lazy"] != true {
+			t.Errorf("url-test group should keep lazy: %s", out)
+		}
+		if g["timeout"] != 5000 {
+			t.Errorf("url-test group should keep timeout: %s", out)
+		}
+		if g["max-failed-times"] != 5 {
+			t.Errorf("url-test group should keep max-failed-times: %s", out)
+		}
+	} else {
+		t.Fatalf("url-test group missing: %s", out)
+	}
+}
+
+// 面板「健康检查」开关（_healthCheck）优先于类型默认：
+//   - select 显式 true → 按用户选择输出探测字段；
+//   - url-test 显式 false → 关闭探测；
+//   - _healthCheck 本身是内部字段，绝不能出现在客户端配置里。
+func TestGenerateMihomoYAMLGroupHealthCheckExplicitToggle(t *testing.T) {
+	cfg := &entity.MihomoConfig{ConfigJSON: `{
+		"proxy-groups": [
+			{"name":"WG-ON","type":"select","proxies":["wg1","DIRECT"],"_healthCheck":true,
+				"url":"https://www.gstatic.com/generate_204","interval":300,"timeout":5000},
+			{"name":"AUTO-OFF","type":"url-test","proxies":["node-a"],"_healthCheck":false,
+				"url":"https://www.gstatic.com/generate_204","interval":300,"timeout":5000}
+		]
+	}`}
+	out := string((&PublicHandler{}).generateMihomoYAML(cfg, nil, nil, nil))
+
+	if strings.Contains(out, "_healthCheck") {
+		t.Fatalf("internal field must never be emitted: %s", out)
+	}
+	var doc map[string]interface{}
+	if err := yaml.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("invalid yaml: %v\n%s", err, out)
+	}
+	groups, _ := doc["proxy-groups"].([]interface{})
+	byName := map[string]map[string]interface{}{}
+	for _, raw := range groups {
+		g, _ := raw.(map[string]interface{})
+		if n, _ := g["name"].(string); n != "" {
+			byName[n] = g
+		}
+	}
+	if g := byName["WG-ON"]; g == nil {
+		t.Fatalf("WG-ON missing: %s", out)
+	} else {
+		if g["url"] != "https://www.gstatic.com/generate_204" || g["interval"] != 300 {
+			t.Errorf("explicitly enabled select group should keep health fields: %s", out)
+		}
+	}
+	if g := byName["AUTO-OFF"]; g == nil {
+		t.Fatalf("AUTO-OFF missing: %s", out)
+	} else {
+		for _, k := range []string{"url", "interval", "timeout", "max-failed-times"} {
+			if _, ok := g[k]; ok {
+				t.Errorf("explicitly disabled group must not carry %q: %s", k, out)
+			}
+		}
 	}
 }

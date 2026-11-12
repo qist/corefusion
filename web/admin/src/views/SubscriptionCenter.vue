@@ -427,7 +427,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
-import { load as yamlLoad } from 'js-yaml'
+import { load as yamlLoad, dump as yamlDump } from 'js-yaml'
 import client from '../api/client'
 import MihomoConfig from './protocols/sections/MihomoConfig.vue'
 import SingboxFormatConfig from './protocols/sections/SingboxFormatConfig.vue'
@@ -600,7 +600,7 @@ function showCreateFormat() {
   fmtForm.value = { name: '', client_type: 'clash', format: 'mihomo_yaml', content_type: '', extension: '', description: '', platform: '', plan_ids: [], enabled: true, listeners_json: '', proxy_groups_json: '', rule_providers_json: '', proxy_providers_json: '', dns_json: '', general_json: '' }
   hosts.value = []
   tunnels.value = []
-  proxyGroups.value = [{ name: 'PROXY', type: 'select', proxies: [], _proxiesStr: 'DIRECT', _showAdvanced: false, hidden: false, lazy: true, url: 'https://www.gstatic.com/generate_204', interval: 300, timeout: 5000, 'max-failed-times': 5, 'empty-fallback': '' }]
+  proxyGroups.value = [{ name: 'PROXY', type: 'select', proxies: [], _proxiesStr: 'DIRECT', _showAdvanced: false, hidden: false, _healthCheck: false, 'empty-fallback': '' }]
   ruleProviders.value = {}
   ruleSetArr.value = []
   proxyProviders.value = {}
@@ -927,18 +927,25 @@ async function handleImportYAML() {
         })
         // Mark if this group had external node references OR has use field
         const hasExternalNodes = originalProxies.length !== filteredProxies.length || !!(g.use && g.use.length > 0)
+        const groupType = g.type || 'select'
+        // 显式开关（_healthCheck）优先；历史模板没有该字段时按类型默认：
+        // select / relay 默认关闭（存量模板保存一次即清理），其它类型默认开启。
+        // url 等参数保留在表单里，用户手动打开开关后可直接使用。
+        const healthApplicable = groupType !== 'select' && groupType !== 'relay'
+        const healthCheck = typeof g._healthCheck === 'boolean' ? g._healthCheck : healthApplicable
         return {
           name: g.name,
-          type: g.type || 'select',
+          type: groupType,
           _proxiesStr: filteredProxies.join('\n'),
           _showAdvanced: false,
           _hasExternalNodes: hasExternalNodes,
           hidden: g.hidden || false,
-          url: g.url || 'https://www.gstatic.com/generate_204',
-          interval: g.interval || 300,
-          lazy: g.lazy !== false,
-          timeout: g.timeout || 5000,
-          'max-failed-times': g['max-failed-times'] || 5,
+          _healthCheck: healthCheck,
+          url: g.url || '',
+          interval: g.interval || 0,
+          lazy: g.lazy === true,
+          timeout: g.timeout || 0,
+          'max-failed-times': g['max-failed-times'] || 0,
           'empty-fallback': g['empty-fallback'] || ''
         }
       })
@@ -1054,19 +1061,27 @@ function showEditFormat(row) {
   // Parse proxy groups (support both hyphen and underscore keys)
   try {
     const groups = config['proxy-groups'] || config.proxy_groups || []
-    proxyGroups.value = groups.map(g => ({
-      ...g,
-      _proxiesStr: (g.proxies || []).join('\n'),
-      _showAdvanced: false,
-      _hasExternalNodes: g._hasExternalNodes || false,
-      hidden: g.hidden || false,
-      lazy: g.lazy !== false,
-      url: g.url || 'https://www.gstatic.com/generate_204',
-      interval: g.interval || 300,
-      timeout: g.timeout || 5000,
-      'max-failed-times': g['max-failed-times'] || 5,
-      'empty-fallback': g['empty-fallback'] || ''
-    }))
+    proxyGroups.value = groups.map(g => {
+      const groupType = g.type || 'select'
+      // 显式开关优先；历史模板没有 _healthCheck 时按类型默认（select/relay 关）。
+      const healthApplicable = groupType !== 'select' && groupType !== 'relay'
+      const healthCheck = typeof g._healthCheck === 'boolean' ? g._healthCheck : healthApplicable
+      return {
+        ...g,
+        type: groupType,
+        _proxiesStr: (g.proxies || []).join('\n'),
+        _showAdvanced: false,
+        _hasExternalNodes: g._hasExternalNodes || false,
+        hidden: g.hidden || false,
+        _healthCheck: healthCheck,
+        url: g.url || '',
+        interval: g.interval || 0,
+        lazy: g.lazy === true,
+        timeout: g.timeout || 0,
+        'max-failed-times': g['max-failed-times'] || 0,
+        'empty-fallback': g['empty-fallback'] || ''
+      }
+    })
   } catch { proxyGroups.value = [] }
 
   // Parse rule providers (support both hyphen and underscore keys)
@@ -1234,7 +1249,12 @@ function showEditFormat(row) {
       _rematchTarget: (gen.proxies && gen.proxies.find(p => p.type === 'rematch') || {})['target-rematch-name'] || '',
       _directOutEnabled: !!(gen.proxies && gen.proxies.find(p => p.type === 'direct' && p['interface-name'])),
       _directInterface: (gen.proxies && gen.proxies.find(p => p.type === 'direct' && p['interface-name']) || {})['interface-name'] || '',
-      _directRoutingMark: (gen.proxies && gen.proxies.find(p => p.type === 'direct' && p['interface-name']) || {})['routing-mark'] || 0
+      _directRoutingMark: (gen.proxies && gen.proxies.find(p => p.type === 'direct' && p['interface-name']) || {})['routing-mark'] || 0,
+      // 自定义出站：proxies 里除三个内置特殊出站之外的全部条目（如 WireGuard）
+      _customProxiesStr: (() => {
+        const extra = (gen.proxies || []).filter(p => p && p.type !== 'dns' && p.type !== 'rematch' && !(p.type === 'direct' && p['interface-name']))
+        return extra.length ? yamlDump(extra, { lineWidth: 120, noRefs: true }) : ''
+      })()
     }
     // Parse tunnels
     if (gen.tunnels && Array.isArray(gen.tunnels)) {
@@ -1255,13 +1275,28 @@ function showEditFormat(row) {
     } else {
       hosts.value = []
     }
-  } catch { generalConfig.value = { mixed_port: 10801, port: 0, socks_port: 0, redir_port: 0, tproxy_port: 0, allow_lan: true, bind_address: '*', _authStr: '', _skipAuthStr: '127.0.0.1/8\n::1/128', _lanAllowedStr: '0.0.0.0/0\n::/0', _lanDisallowedStr: '', find_process_mode: 'strict', mode: 'rule', log_level: 'info', _unifiedDelay: true } }
+  } catch { generalConfig.value = { mixed_port: 10801, port: 0, socks_port: 0, redir_port: 0, tproxy_port: 0, allow_lan: true, bind_address: '*', _authStr: '', _skipAuthStr: '127.0.0.1/8\n::1/128', _lanAllowedStr: '0.0.0.0/0\n::/0', _lanDisallowedStr: '', find_process_mode: 'strict', mode: 'rule', log_level: 'info', _unifiedDelay: true, _customProxiesStr: '' } }
   fmtTab.value = 'basic'
   fmtDialog.value = true
 }
 
 async function saveFormat() {
   const fmt = fmtForm.value.format || selectedFormatType.value || 'mihomo_yaml'
+
+  // 自定义出站：先校验再保存，别把语法错误悄悄丢掉（否则用户以为存上了，
+  // 实际订阅里没有这条出站）。
+  let customProxies = []
+  if (fmt === 'mihomo_yaml' && (generalConfig.value._customProxiesStr || '').trim()) {
+    try {
+      const parsed = yamlLoad(generalConfig.value._customProxiesStr)
+      if (!Array.isArray(parsed)) throw new Error('must be a YAML list')
+      customProxies = parsed.filter(p => p && typeof p === 'object' && p.name)
+      if (customProxies.length !== parsed.length) throw new Error('every item needs a name')
+    } catch (e) {
+      ElMessage.error(t('subfmt.customOutboundsInvalid') + ': ' + (e?.message || e))
+      return
+    }
+  }
 
   // Build nsPolicy from JSON
   let nsPolicy = {}
@@ -1326,11 +1361,16 @@ async function saveFormat() {
     'proxy-groups': proxyGroups.value.map(g => {
       const group = { name: g.name, type: g.type, proxies: (g._proxiesStr || '').split('\n').map(s => s.trim()).filter(Boolean) }
       if (g._hasExternalNodes) group._hasExternalNodes = true
-      if (g.url) group.url = g.url
-      if (g.interval) group.interval = g.interval
-      if (g.lazy) group.lazy = true
-      if (g.timeout) group.timeout = g.timeout
-      if (g['max-failed-times']) group['max-failed-times'] = g['max-failed-times']
+      // 健康检查：开关以 _healthCheck 落库（内部字段，服务端不会下发给客户端）；
+      // 有 url 才写探测参数。select/relay 默认关闭，但用户手动开启后按选择输出。
+      if (typeof g._healthCheck === 'boolean') group._healthCheck = g._healthCheck
+      if (g._healthCheck !== false && g.url) {
+        group.url = g.url
+        if (g.interval) group.interval = g.interval
+        if (g.lazy) group.lazy = true
+        if (g.timeout) group.timeout = g.timeout
+        if (g['max-failed-times']) group['max-failed-times'] = g['max-failed-times']
+      }
       if (g['empty-fallback']) group['empty-fallback'] = g['empty-fallback']
       if (g.filter) group.filter = g.filter
       if (g['exclude-filter']) group['exclude-filter'] = g['exclude-filter']
@@ -1408,7 +1448,9 @@ async function saveFormat() {
     proxies: [
       ...(generalConfig.value._dnsOutEnabled ? [{ name: 'dns-out', type: 'dns' }] : []),
       ...(generalConfig.value._rematchOutEnabled ? [{ name: 'rematch', type: 'rematch', 'target-rematch-name': generalConfig.value._rematchTarget || undefined }] : []),
-      ...(generalConfig.value._directOutEnabled ? [{ name: generalConfig.value._directInterface + '-direct', type: 'direct', 'interface-name': generalConfig.value._directInterface, 'routing-mark': generalConfig.value._directRoutingMark || undefined }] : [])
+      ...(generalConfig.value._directOutEnabled ? [{ name: generalConfig.value._directInterface + '-direct', type: 'direct', 'interface-name': generalConfig.value._directInterface, 'routing-mark': generalConfig.value._directRoutingMark || undefined }] : []),
+      // 自定义出站：只写进顶层 proxies，不进任何代理组
+      ...customProxies
     ],
   }
   }

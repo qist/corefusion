@@ -159,7 +159,7 @@
             </el-table-column>
             <el-table-column prop="subscription_id" :label="t('security.subscriptionId')" width="110" />
             <el-table-column :label="t('security.remoteIp')" width="150" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.real_ip || row.ip || '-' }}</template>
+              <template #default="{ row }">{{ row.ip || row.real_ip || '-' }}</template>
             </el-table-column>
             <el-table-column :label="t('security.userAgent')" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">{{ row.user_agent || '-' }}</template>
@@ -417,7 +417,7 @@ const subAccessCardFields = computed(() => [
   { label: t('common.time'), text: (row) => formatTime(row.created_at) || '-' },
   { label: t('security.client'), text: (row) => row.client_email || '-' },
   { label: t('security.subscriptionId'), text: (row) => row.subscription_id || '-' },
-  { label: t('security.remoteIp'), text: (row) => row.real_ip || row.ip || '-' },
+  { label: t('security.remoteIp'), text: (row) => row.ip || row.real_ip || '-' },
   { label: t('security.userAgent'), text: (row) => row.user_agent || '-' },
   { label: t('security.statusCode'), text: (row) => row.status_code || '-' },
   { label: t('security.riskLevel'), text: (row) => row.risk_level || '-' },

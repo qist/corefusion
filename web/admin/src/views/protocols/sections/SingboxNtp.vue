@@ -2,15 +2,16 @@
   <div>
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
       <div style="font-size:12px;line-height:1.7">
-        sing-box 的 NTP 客户端（顶层 <code>ntp</code> 段）。TLS/证书校验依赖系统时间，节点时钟漂移会导致握手失败。<br>
-        文档：<a href="https://sing-box.sagernet.org/configuration/ntp/" target="_blank">sing-box / NTP</a>
+        {{ t('protoHint.ntp.alert') }}<br>
+        {{ t('protoHint.ntp.docsLabel') }}
+        <a href="https://sing-box.sagernet.org/configuration/ntp/" target="_blank">sing-box / NTP</a>
       </div>
     </el-alert>
 
     <el-form label-width="160px" label-position="left">
       <el-form-item label="Enabled">
         <el-switch v-model="form.enabled" @change="emit" />
-        <span class="hint-inline">关闭时该段落输出空对象 {{ '{}' }}</span>
+        <span class="hint-inline">{{ t('protoHint.ntp.disabledHint') }} {{ '{}' }}</span>
       </el-form-item>
       <template v-if="form.enabled">
         <el-form-item label="Server">
@@ -18,11 +19,11 @@
         </el-form-item>
         <el-form-item :label="t('singbox.outboundBase.serverPort')">
           <el-input-number v-model="form.server_port" :min="0" :max="65535" style="width:100%" @change="emit" />
-          <div class="hint">留 0 使用默认 123</div>
+          <div class="hint">{{ t('protoHint.ntp.defaultPort') }}</div>
         </el-form-item>
         <el-form-item label="Interval">
           <el-input v-model="form.interval" placeholder="30m" @change="emit" />
-          <div class="hint">如 30m / 1h</div>
+          <div class="hint">{{ t('protoHint.ntp.interval') }}</div>
         </el-form-item>
 
         <el-divider content-position="left">Dial Fields</el-divider>
@@ -34,7 +35,7 @@
         </el-form-item>
         <el-form-item :label="t('singbox.outboundBase.routingMark')">
           <el-input-number v-model="form.routing_mark" :min="0" style="width:100%" @change="emit" />
-          <div class="hint">仅 Linux</div>
+          <div class="hint">{{ t('protoHint.ntp.linuxOnly') }}</div>
         </el-form-item>
       </template>
     </el-form>

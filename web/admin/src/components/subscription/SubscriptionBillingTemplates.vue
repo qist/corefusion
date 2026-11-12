@@ -97,7 +97,7 @@
                   <el-select v-model="billingNodeIds" multiple filterable collapse-tags collapse-tags-tooltip
                     :placeholder="t('subscription.billingNodesPlaceholder')"
                     style="width: 100%" :loading="billingNodesLoading">
-                    <el-option v-for="opt in billingNodeOptions" :key="opt.member_id" :label="opt.display_label" :value="opt.member_id" />
+                    <el-option v-for="opt in billingNodeOptions" :key="opt.member_id" :label="billingNodeLabel(opt)" :value="opt.member_id" />
                   </el-select>
                   <div style="font-size: 12px; color: #909399; margin-top: 4px">
                     {{ t('subscription.billingNodesHint') }}
@@ -224,6 +224,14 @@ function selectPlanById(planId) {
   }
   billingNodeIds.value = [...(plan?.billing_node_ids || [])]
   fetchBillingNodeOptions(planId)
+}
+
+// 节点下拉标签在本地组装：后端 display_label 里带死了中文「外部节点」，英文界面会漏中文。
+function billingNodeLabel(o) {
+  const host = o?.type === 'external'
+    ? t('plan.nodeGroupExternal')
+    : (o?.server_name || t('plan.localNode'))
+  return `${host} - ${o?.node_name || ''} (${o?.protocol}:${o?.port})`
 }
 
 async function fetchBillingNodeOptions(planId) {

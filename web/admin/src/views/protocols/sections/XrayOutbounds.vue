@@ -49,28 +49,28 @@
             </el-form-item>
             <!-- 出站顶层字段（OutboundDetourConfig）——之前面板完全缺这四项 -->
             <el-form-item :label="t('xrayUi.sendThrough')">
-              <el-input v-model="rf._sendThrough" placeholder="0.0.0.0 / :: / 指定源地址" @change="emit" />
-              <div class="hint">出站连接的源地址；多线多 IP 机器、链式代理常用</div>
+              <el-input v-model="rf._sendThrough" :placeholder="t('protoHint.xray.sendThroughPh')" @change="emit" />
+              <div class="hint">{{ t('protoHint.xray.sendThrough') }}</div>
             </el-form-item>
             <el-form-item :label="t('xrayUi.targetStrategy')">
               <el-select v-model="rf._targetStrategy" style="width:100%" clearable @change="emit">
-                <el-option label="(默认)" value="" /><el-option label="AsIs" value="AsIs" />
+                <el-option :label="t('common.defaultOption')" value="" /><el-option label="AsIs" value="AsIs" />
                 <el-option label="UseIP" value="UseIP" /><el-option label="UseIPv4" value="UseIPv4" />
                 <el-option label="UseIPv6" value="UseIPv6" /><el-option label="ForceIP" value="ForceIP" />
                 <el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
               </el-select>
-              <div class="hint">出站级目标地址解析策略（与 freedom 的 domainStrategy 是两个不同字段）</div>
+              <div class="hint">{{ t('protoHint.xray.targetStrategy') }}</div>
             </el-form-item>
             <el-form-item :label="t('xrayUi.xudpConcurrency')">
               <el-input-number v-model="rf._xudpConcurrency" :min="0" :max="1024" @change="emit" />
-              <div class="hint">UDP over TCP（XUDP）单连接内的并发上限，0 = 用默认</div>
+              <div class="hint">{{ t('protoHint.xray.xudpConcurrency') }}</div>
             </el-form-item>
             <el-form-item :label="t('xrayUi.xudpProxyUdp443')">
               <el-select v-model="rf._xudpProxyUDP443" style="width:100%" clearable @change="emit">
-                <el-option label="(默认)" value="" /><el-option label="reject" value="reject" />
+                <el-option :label="t('common.defaultOption')" value="" /><el-option label="reject" value="reject" />
                 <el-option label="allow" value="allow" /><el-option label="skip" value="skip" />
               </el-select>
-              <div class="hint">443 端口的 UDP 是否走代理：reject / allow / skip</div>
+              <div class="hint">{{ t('protoHint.xray.udp443') }}</div>
             </el-form-item>
             <template v-if="rf.protocol === 'freedom'">
               <el-form-item :label="t('protoCenter.outbounds.advancedSettings')">
@@ -86,19 +86,16 @@
                 </el-form-item>
                 <el-form-item :label="t('xrayUi.targetStrategy')">
                   <el-select v-model="rf._freedomTargetStrategy" style="width:100%" clearable @change="emit">
-                    <el-option label="(默认)" value="" /><el-option label="AsIs" value="AsIs" />
+                    <el-option :label="t('common.defaultOption')" value="" /><el-option label="AsIs" value="AsIs" />
                     <el-option label="UseIP" value="UseIP" /><el-option label="UseIPv4" value="UseIPv4" />
                     <el-option label="UseIPv6" value="UseIPv6" /><el-option label="ForceIP" value="ForceIP" />
                     <el-option label="ForceIPv4" value="ForceIPv4" /><el-option label="ForceIPv6" value="ForceIPv6" />
                   </el-select>
-                  <div class="hint">freedom 的 targetStrategy（优先于 domainStrategy 决定解析方式）</div>
+                  <div class="hint">{{ t('protoHint.xray.freedomTargetStrategy') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('xrayUi.ipsBlockedDeprecated')">
                   <el-input v-model="rf._freedomIpsBlocked" type="textarea" :rows="2" placeholder="10.0.0.0/8" @change="emit" />
-                  <div class="hint">
-                    该字段已被 Xray 废弃：v26 起会告警并迁移到 <b>finalRules</b>（下面那个），建议直接用 Final Rules；
-                    这里保留仅为兼容旧配置的来回编辑。
-                  </div>
+                  <div class="hint" v-html="t('protoHint.xray.ipsBlockedDeprecated')"></div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.outbounds.redirect')">
                   <el-input v-model="rf._freedomRedirect" :placeholder="t('protoCenter.outbounds.freedomRedirectHint')" @change="emit" />
@@ -190,8 +187,8 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item :label="t('xrayUi.customResponseData')">
-                  <el-input v-model="rf._blackholeCustomData" placeholder="自定义响应内容（探测对抗）" @change="emit" />
-                  <div class="hint">type=http 时返回的响应体内容（可用 \r\n 等转义）</div>
+                  <el-input v-model="rf._blackholeCustomData" :placeholder="t('protoHint.xray.blackholeCustomDataPh')" @change="emit" />
+                  <div class="hint">{{ t('protoHint.xray.blackholeCustomData') }}</div>
                 </el-form-item>
               </template>
             </template>
@@ -772,7 +769,7 @@
               <el-form-item :label="t('xrayUi.acceptProxyProtocol')"><el-switch v-model="rf._sockoptAcceptProxyProtocol" @change="emit" /></el-form-item>
               <el-form-item :label="t('xrayUi.penetrate')">
                 <el-switch v-model="rf._sockoptPenetrate" @change="emit" />
-                <div class="hint">用入站连接的原目标地址直连发送（出站专用，常见于透明代理/中转）</div>
+                <div class="hint">{{ t('protoHint.xray.directSend') }}</div>
               </el-form-item>
               <el-form-item :label="t('protoCenter.sockopt.dialerProxy')">
                 <el-input v-model="rf._sockoptDialerProxy" @change="emit" />

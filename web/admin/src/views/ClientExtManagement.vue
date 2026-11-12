@@ -841,7 +841,7 @@ async function viewRepairLogs(row) {
   repairLogDialogVisible.value = true
 }
 
-function sharedAccountTypeLabel(t) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: t('clientExt.other') }[t] || t }
+function sharedAccountTypeLabel(v) { return { apple_id: 'Apple ID', netflix: 'Netflix', other: t('clientExt.other') }[v] || v }
 
 // ════════════ IP Whitelist ════════════
 function formatTime(ts) {

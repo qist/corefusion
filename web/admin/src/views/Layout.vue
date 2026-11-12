@@ -355,12 +355,12 @@ function downloadRecoveryCodes() {
   const codes = twofaRecovery.value
   if (!codes || codes.length === 0) return
   const lines = [
-    'CoreFusion - 双步验证恢复码',
-    '账号: ' + (authStore.username || ''),
-    '生成时间: ' + new Date().toLocaleString(),
+    t('auth.recoveryFileTitle'),
+    t('auth.recoveryFileAccount') + ': ' + (authStore.username || ''),
+    t('auth.recoveryFileGeneratedAt') + ': ' + new Date().toLocaleString(),
     '',
-    '每个恢复码只能使用一次，请妥善保存（建议离线保管）。',
-    '使用方式: 登录页输入用户名后，直接粘贴恢复码即可登录。',
+    t('auth.recoveryFileNote'),
+    t('auth.recoveryFileUsage'),
     '',
     ...codes,
     '',

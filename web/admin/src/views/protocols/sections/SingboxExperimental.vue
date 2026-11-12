@@ -5,14 +5,14 @@
     <el-form label-width="160px" label-position="left">
       <el-form-item label="Enabled">
         <el-switch v-model="clashApi.enabled" @change="onClashToggle" />
-        <div class="hint" v-if="isNodeContext">默认关闭。节点流量统计由 v2ray_api 负责；clash_api 仅供第三方面板（yacd / metacubexd）连接</div>
-        <div class="hint" v-else>客户端侧的控制与流量展示走 Clash API（yacd / metacubexd 等第三方面板）；不启用则订阅里不带该段</div>
+        <div class="hint" v-if="isNodeContext">{{ t('protoHint.experimental.clashNode') }}</div>
+        <div class="hint" v-else>{{ t('protoHint.experimental.clashClient') }}</div>
       </el-form-item>
       <template v-if="clashApi.enabled">
         <el-form-item :label="t('subfmt.externalController')">
           <el-input v-model="clashApi.external_controller" placeholder="127.0.0.1:9090" @change="emit" />
-          <div class="hint" v-if="isNodeContext">Clash API listening address（不要与 v2ray_api 的 10086 冲突）</div>
-          <div class="hint" v-else>Clash API listening address（客户端本机，通常是 127.0.0.1:9090）</div>
+          <div class="hint" v-if="isNodeContext">{{ t('protoHint.experimental.clashListenNode') }}</div>
+          <div class="hint" v-else>{{ t('protoHint.experimental.clashListenClient') }}</div>
         </el-form-item>
         <el-form-item label="Secret">
           <el-input v-model="clashApi.secret" :placeholder="t('proto2.optionalAuthSecret')" @change="emit" />
@@ -52,14 +52,11 @@
       </el-form-item>
       <el-form-item v-if="cacheFile.enabled" :label="t('proto2.storeDns')">
         <el-switch v-model="cacheFile.store_dns" @change="emit" />
-        <div class="hint">
-          DNS 缓存也落盘（重启后保留）。旧版的 <code>store_rdrc</code> / <code>rdrc_timeout</code> 已被它取代 ——
-          带着旧字段核心会**直接拒绝启动**，所以面板读到旧字段时会自动迁移到这里、不再回写旧字段。
-        </div>
+        <div class="hint">{{ t('protoHint.experimental.cacheFile') }}</div>
       </el-form-item>
       <el-form-item v-if="cacheFile.enabled" :label="t('proto2.flushInterval')">
         <el-input v-model="cacheFile.flush_interval" placeholder="1m" @change="emit" />
-        <div class="hint">刷盘间隔（duration，如 1m / 30s）；留空用核心默认</div>
+        <div class="hint">{{ t('protoHint.experimental.flushInterval') }}</div>
       </el-form-item>
     </el-form>
 
@@ -70,15 +67,11 @@
       客户端侧的控制/流量展示走 Clash API（见上）。
     -->
     <template v-if="isNodeContext">
-      <el-divider content-position="left">v2ray API（流量统计）</el-divider>
+      <el-divider content-position="left">{{ t('protoHint.experimental.v2rayApiDivider') }}</el-divider>
       <el-form label-width="160px" label-position="left">
         <el-form-item label="Enabled">
           <el-tag type="success" size="small">always on</el-tag>
-          <div class="hint">
-            面板按订阅用户统计流量依赖此项（与 xray 的 StatsService 协议一致），下发配置时会自动启用。<br />
-            注意：节点必须使用带 <code>with_v2ray_api</code> 的 sing-box 构建（官方 release 不含该 tag，
-            缺失时核心启动即失败），请安装 <code>qist/singbox-binaries</code> 的产物。
-          </div>
+          <div class="hint" v-html="t('protoHint.experimental.v2rayApi')"></div>
         </el-form-item>
         <el-form-item label="Listen">
           <el-input v-model="v2rayApi.listen" placeholder="127.0.0.1:10086" @change="emit" />
@@ -86,7 +79,7 @@
         </el-form-item>
         <el-form-item :label="t('proto2.statsService')">
           <el-switch v-model="v2rayApi.stats" @change="emit" />
-          <div class="hint">Enable stats service for traffic monitoring（用户/入站/出站白名单由面板自动补齐）</div>
+          <div class="hint">{{ t('protoHint.experimental.statsService') }}</div>
         </el-form-item>
       </el-form>
     </template>

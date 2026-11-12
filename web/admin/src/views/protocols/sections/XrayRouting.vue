@@ -125,7 +125,7 @@
             <el-option label="netbsd" value="netbsd" /><el-option label="dragonfly" value="dragonfly" />
             <el-option label="solaris" value="solaris" />
           </el-select>
-          <div class="hint">按**运行核心的机器**的操作系统分流（= Go 的 GOOS，大小写不敏感）；匹配到多个时命中任意一个即可</div>
+          <div class="hint">{{ t('protoHint.xrayRouting.osMatch') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.routing.user')"><el-select v-model="rf._user" multiple filterable allow-create default-first-option :placeholder="t('protoCenter.routing.selectOrType')" style="width:100%"><el-option v-for="tag in userTags" :key="tag" :label="tag" :value="tag" /></el-select></el-form-item>
         <el-form-item :label="t('protoCenter.routing.vlessRoute')"><el-input v-model="rf._vlessRoute" placeholder="53,443,1000-2000" /></el-form-item>
@@ -207,10 +207,7 @@
           <el-form-item :label="t('misc.costsJson')">
             <el-input v-model="bf._costsJson" type="textarea" :rows="4"
               placeholder='[{"match": "tag:out-1", "value": 1.0}, {"regexp": true, "match": "^hk-", "value": 0.5}]' />
-            <div class="hint">
-              leastLoad 的权重表，数组元素：<b>match</b>（出站 tag 或正则）+ <b>value</b>（float，越小越优先）+
-              可选 <b>regexp:true</b>（把 match 当正则）。留空则不写该字段。
-            </div>
+            <div class="hint">{{ t('protoHint.xrayRouting.costsHint') }}</div>
           </el-form-item>
         </template>
       </el-form>

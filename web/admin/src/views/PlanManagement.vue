@@ -91,7 +91,7 @@
 <div v-for="node in templateNodes[tpl.id].slice(0,5)" :key="node.member_id" style="font-size:12px;line-height:1.8">
 <el-tag :type="node.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ node.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
 <el-tag v-if="node.has_mirror" type="warning" size="small" style="margin-right:4px">{{ t('plan.mirrored') }}</el-tag>
-<span style="color:#409eff">{{ node.server_name }}</span> - {{ node.node_name }}
+<span style="color:#409eff">{{ nodeGroupName(node) }}</span> - {{ node.node_name }}
 <span style="color:#909399">({{ node.protocol }}:{{ node.port }})</span>
 </div>
                 <div v-if="templateNodes[tpl.id].length > 5" style="font-size:12px;color:#909399;margin-top:4px">...{{ t('plan.totalCount') }} {{ templateNodes[tpl.id].length }} {{ t('plan.unitNodes') }}</div>
@@ -440,12 +440,12 @@
 <el-checkbox :value="opt.member_id">
 <el-tag :type="opt.type==='inbound'?'':'success'" size="small" style="margin-right:4px">{{ opt.type==='inbound'?t('plan.nodeTypeInbound'):t('plan.nodeTypeExternal') }}</el-tag>
 <el-tag v-if="opt.has_mirror" type="warning" size="small" style="margin-right:4px">{{ t('plan.mirrored') }}</el-tag>
-<span style="color:#409eff">{{ opt.server_name }}</span> - {{ opt.node_name }}
+<span style="color:#409eff">{{ nodeGroupName(opt) }}</span> - {{ opt.node_name }}
 <span style="color:#909399;font-size:12px">({{ opt.protocol }}:{{ opt.port }})</span>
 </el-checkbox>
 </div>
         </el-checkbox-group>
-        <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" description="{{ t('plan.noRelatedNodesHint') }}" />
+        <el-empty v-if="!billingNodesLoading && billingNodeOptions.length === 0" :description="t('plan.noRelatedNodesHint')" />
       </div>
       <template #footer>
         <el-button @click="billingNodesDialog=false">{{ t('common.cancel') }}</el-button>
@@ -1433,6 +1433,8 @@ function inboundLabel(ib) {
 
 const inboundServerName = (id) => { const ib = inbounds.value.find(i => i.id === id); return ib ? (ib.server_name || t('plan.localNode')) : '—' }
 const extNodeName = (id) => { const n = extNodes.value.find(n => n.id === id); return n ? n.name : '#' + id }
+// 外部节点的 server_name 由后端写死成中文「外部节点」，英文界面会漏中文 → 本地按 i18n 组装
+const nodeGroupName = (n) => (n?.type === 'external' ? t('plan.nodeGroupExternal') : (n?.server_name || t('plan.localNode')))
 
 // ──────── 手机端卡片字段（与桌面表格列对应） ────────
 const trafficPackCardFields = computed(() => [

@@ -29,15 +29,15 @@
         </el-form-item>
         <el-form-item :label="t('singboxDns.cacheCapacity')">
           <el-input-number v-model="form.cache_capacity" :min="0" @change="emit" />
-          <div class="hint">DNS 缓存条目上限（0 = 用核心默认）</div>
+          <div class="hint">{{ t('protoHint.dns.cacheCapacity') }}</div>
         </el-form-item>
         <el-form-item :label="t('singboxDns.optimistic')">
           <el-switch v-model="form.optimistic_enabled" @change="emit" />
-          <div class="hint">乐观缓存：过期条目先返回、同时后台刷新（明显降延迟；代价是可能短暂返回陈旧记录）</div>
+          <div class="hint">{{ t('protoHint.dns.optimistic') }}</div>
         </el-form-item>
         <el-form-item v-if="form.optimistic_enabled" :label="t('singboxDns.optimisticTimeout')">
           <el-input v-model="form.optimistic_timeout" placeholder="3s" @change="emit" />
-          <div class="hint">后台刷新的等待上限；留空则按核心的简写形式写 <code>optimistic: true</code></div>
+          <div class="hint" v-html="t('protoHint.dns.optimisticTimeout')"></div>
         </el-form-item>
         <el-form-item :label="t('singboxDns.reverseMapping')">
           <el-switch v-model="form.reverse_mapping" @change="emit" />
@@ -49,11 +49,11 @@
         </el-form-item>
         <el-form-item :label="t('singboxDns.finalServer')">
           <el-input v-model="form.final" placeholder="dns-remote" @change="emit" />
-          <div class="hint">Tag of the final DNS server used as fallback（不能指向 fakeip server）</div>
+          <div class="hint">{{ t('protoHint.dns.finalFallback') }}</div>
         </el-form-item>
         <el-alert type="warning" :closable="false" style="margin-bottom:12px">
           <span style="font-size:12px">
-            <code>domain_matcher</code>（已移除，写入会导致核心启动失败）与 <code>independent_cache</code>（1.14 起弃用）已从界面移除。
+            <span v-html="t('protoHint.dns.removedFields')"></span>
           </span>
         </el-alert>
       </el-form>
@@ -62,10 +62,7 @@
       <el-divider content-position="left">FakeIP / Hosts</el-divider>
       <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
         <div style="font-size:12px;line-height:1.8">
-          sing-box 1.14 起，顶层 <code>dns.fakeip</code> 与 <code>dns.hosts</code> 都已被移除，写入会让核心启动失败。<br>
-          <b>FakeIP</b>：在下方 DNS Servers 添加 <code>type = fakeip</code> 的 server（填 inet4_range / inet6_range），
-          再用 DNS Rule 把 <code>query_type = A,AAAA</code> 指向它；注意 fakeip 不能作为 Final / 默认 server。<br>
-          <b>Hosts</b>：添加 <code>type = hosts</code> 的 server，在 “Predefined” 里填域名到 IP 的映射。
+          <span v-html="t('protoHint.dns.fakeipNotice')"></span>
         </div>
       </el-alert>
 
@@ -117,7 +114,7 @@
       <!-- Static Hosts：顶层 dns.hosts 已被移除，改由 type=hosts 的 DNS server 承载 -->
       <el-divider content-position="left">Static Hosts</el-divider>
       <div class="hint" style="margin-bottom:8px">
-        顶层 <code>dns.hosts</code> 已被 sing-box 1.14 移除；请添加 <code>type = hosts</code> 的 DNS server，在其 “Predefined” 字段里写域名映射。
+        <span v-html="t('protoHint.dns.hostsRemoved')"></span>
       </div>
     </template>
 
@@ -137,7 +134,7 @@
         <template v-if="REMOTE_TYPES.includes(srvForm.type)">
           <el-form-item :label="t('protoCenter.outbounds.server')">
             <el-input v-model="srvForm.server" placeholder="8.8.8.8 / dns.google / 1.1.1.1" />
-            <div class="hint">sing-box 1.12+ 使用 <code>server</code>（旧字段 <code>address</code> 已移除）</div>
+            <div class="hint" v-html="t('protoHint.dns.serverField')"></div>
           </el-form-item>
           <el-form-item :label="t('singbox.outboundBase.serverPort')">
             <el-input-number v-model="srvForm.server_port" :min="0" :max="65535" placeholder="53" />
@@ -161,17 +158,17 @@
             <el-input v-model="srvForm.inet6_range" placeholder="fc00::/18" />
           </el-form-item>
           <el-alert type="warning" :closable="false" style="margin-bottom:12px"
-            title="fakeip 不能作为 Final / 默认 server，请在 DNS Rule 里用 query_type A,AAAA 指向它。" />
+            :title="t('protoHint.dns.fakeipCantBeFinal')" />
         </template>
         <!-- hosts -->
         <template v-if="srvForm.type === 'hosts'">
           <el-form-item :label="t('singboxDns.predefined')">
             <el-input v-model="srvForm._predefinedStr" type="textarea" :rows="5"
               placeholder="example.com=1.2.3.4&#10;test.com=1.1.1.1, 2.2.2.2" />
-            <div class="hint">每行一条：<code>域名=IP[,IP...]</code></div>
+            <div class="hint" v-html="t('protoHint.dns.hostsLines')"></div>
           </el-form-item>
           <el-form-item :label="t('protoCenter.masque.path')">
-            <el-input v-model="srvForm._hostsPathStr" type="textarea" :rows="2" placeholder="每行一个 hosts 文件路径" />
+            <el-input v-model="srvForm._hostsPathStr" type="textarea" :rows="2" :placeholder="t('protoHint.dns.hostsPath')" />
           </el-form-item>
         </template>
         <!-- local / dhcp / mdns -->
@@ -186,14 +183,14 @@
         <!-- 依赖 endpoint 的类型 -->
         <el-form-item v-if="ENDPOINT_TYPES.includes(srvForm.type)" :label="t('singboxDns.endpointTag')">
           <el-input v-model="srvForm.endpoint" :placeholder="t('singboxDns.endpointTagHint')" />
-          <div class="hint">该类型的 DNS server 需要引用 endpoints 段里的 tag</div>
+          <div class="hint">{{ t('protoHint.dns.endpointTag') }}</div>
         </el-form-item>
         <el-form-item :label="t('xrayIn.detour')">
           <el-input v-model="srvForm.detour" :placeholder="t('singboxDns.outboundTagOptional')" />
         </el-form-item>
         <el-form-item :label="t('singbox.outboundBase.domainResolver')">
-          <el-input v-model="srvForm.domain_resolver" placeholder="用于解析 server 域名的 DNS server tag" />
-          <div class="hint">Server 填域名时必填（否则核心报 missing domain resolver）</div>
+          <el-input v-model="srvForm.domain_resolver" :placeholder="t('protoHint.dns.domainResolverTag')" />
+          <div class="hint">{{ t('protoHint.dns.domainResolverHint') }}</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -240,11 +237,11 @@
         </el-form-item>
         <el-form-item :label="t('singboxDns.queryDnssec')">
           <el-switch v-model="ruleForm._queryDnssec" />
-          <div class="hint">匹配"查询是否请求 DNSSEC"（关 = 不带 DO 位）</div>
+          <div class="hint">{{ t('protoHint.dns.dnssec') }}</div>
         </el-form-item>
         <el-form-item :label="t('singboxDns.queryClientSubnet')">
           <el-input v-model="ruleForm._queryClientSubnet" type="textarea" :rows="2" placeholder="1.2.3.0/24" />
-          <div class="hint">匹配查询里的 ECS 客户端子网，每行一条</div>
+          <div class="hint">{{ t('protoHint.dns.ecs') }}</div>
         </el-form-item>
         <el-form-item :label="t('protoCenter.outbounds.server')">
           <el-input v-model="ruleForm.server" placeholder="dns-server tag" />
@@ -265,54 +262,47 @@
         </el-form-item>
         <el-form-item v-if="ruleForm.action === 'route' || ruleForm.action === 'evaluate'" :label="t('singboxDns.speculative')">
           <el-switch v-model="ruleForm.speculative" />
-          <div class="hint">乐观并发：同时向多个 server 发起查询、取最快返回（仅 action=route 有效）</div>
+          <div class="hint">{{ t('protoHint.dns.speculative') }}</div>
         </el-form-item>
         <el-form-item v-if="ruleForm.action === 'evaluate'" :label="t('singboxDns.evaluateTag')">
           <el-input v-model="ruleForm.evaluateTag" placeholder="ev" />
-          <div class="hint">
-            evaluate 的 tag。**配对规则（实测）**：evaluate 带 tag → 下面的 match_response 必须写同一个 tag；
-            evaluate 不带 tag → match_response 只能写 true。配错核心 FATAL。
-          </div>
+          <div class="hint">{{ t('protoHint.dns.evaluatePairing') }}</div>
         </el-form-item>
         <el-form-item v-if="ruleForm.action === 'evaluate'" :label="t('singboxDns.evaluateTimeout')">
           <el-input v-model="ruleForm.evaluateTimeout" placeholder="5s" />
         </el-form-item>
         <el-form-item :label="t('singboxDns.matchResponse')">
           <el-switch v-model="ruleForm.matchResponse" />
-          <div class="hint">
-            匹配**上一次 evaluate 的结果**（而不是查询本身）。必须先有一条 action=evaluate 的规则，
-            否则核心 FATAL：`response-based matching requires a preceding evaluate action`。
-            开启后 ip_cidr / ip_is_private / ip_accept_any / response_* 都变成**按应答**匹配。
-          </div>
+          <div class="hint">{{ t('protoHint.dns.matchResponse') }}</div>
         </el-form-item>
         <template v-if="ruleForm.matchResponse">
           <el-form-item :label="t('singboxDns.responseTag')">
-            <el-input v-model="ruleForm.matchResponseTag" placeholder="留空 = 匹配最近一次不带 tag 的 evaluate（写 true）" />
+            <el-input v-model="ruleForm.matchResponseTag" :placeholder="t('protoHint.dns.matchResponseTag')" />
           </el-form-item>
           <el-form-item :label="t('singboxDns.responseRCode')">
             <el-select v-model="ruleForm.responseRcode" style="width:100%" clearable>
-              <el-option label="(不限)" value="" /><el-option label="NOERROR" value="NOERROR" />
+              <el-option :label="t('common.any')" value="" /><el-option label="NOERROR" value="NOERROR" />
               <el-option label="NXDOMAIN" value="NXDOMAIN" /><el-option label="SERVFAIL" value="SERVFAIL" />
               <el-option label="REFUSED" value="REFUSED" /><el-option label="FORMERR" value="FORMERR" />
               <el-option label="NOTIMP" value="NOTIMP" />
             </el-select>
-            <div class="hint">非法 rcode 核心会 FATAL（`unknown rcode`），所以这里用下拉而不是自由输入</div>
+            <div class="hint">{{ t('protoHint.dns.rcodeHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxDns.ipAcceptAny')">
             <el-switch v-model="ruleForm.ipAcceptAny" />
-            <div class="hint">应答里出现任意 IP 就算命中（去广告/黑洞场景常用）</div>
+            <div class="hint">{{ t('protoHint.dns.ipAcceptAny') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxDns.responseAnswer')">
             <el-input v-model="ruleForm._responseAnswer" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
-            <div class="hint">按**应答记录**匹配，每行一条 **zone 格式完整 RR**（只写 IP 会报 `not a TTL`）</div>
+            <div class="hint">{{ t('protoHint.dns.responseAnswer') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxDns.responseNs')">
             <el-input v-model="ruleForm._responseNs" type="textarea" :rows="2" placeholder="a.example. 300 IN NS ns.example." />
-            <div class="hint">同上，匹配 NS 记录</div>
+            <div class="hint">{{ t('protoHint.dns.responseNs') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxDns.responseExtra')">
             <el-input v-model="ruleForm._responseExtra" type="textarea" :rows="2" placeholder="a.example. 300 IN A 1.2.3.4" />
-            <div class="hint">同上，匹配 additional 段记录</div>
+            <div class="hint">{{ t('protoHint.dns.responseExtra') }}</div>
           </el-form-item>
         </template>
       </el-form>
@@ -326,6 +316,9 @@
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 const props = defineProps({ data: Object })
 const emitFn = defineEmits(['update'])
 const enabled = ref(true)
@@ -343,14 +336,14 @@ const editingServerIdx = ref(-1)
 // sing-box 支持的 DNS server 类型（constant/dns.go）
 // 注意：legacy / 无 type 已被移除；predefined 已改名为 hosts；h3 = http3
 const DNS_SERVER_TYPES = [
-  { value: 'udp', label: 'udp — 明文 UDP' },
-  { value: 'tcp', label: 'tcp — 明文 TCP' },
+  { value: 'udp', label: t('protoHint.dns.typeUdp') },
+  { value: 'tcp', label: t('protoHint.dns.typeTcp') },
   { value: 'tls', label: 'tls — DNS over TLS' },
   { value: 'https', label: 'https — DoH' },
   { value: 'h3', label: 'h3 — DoH (HTTP/3)' },
   { value: 'quic', label: 'quic — DoQ' },
-  { value: 'local', label: 'local — 系统解析器' },
-  { value: 'hosts', label: 'hosts — 静态记录' },
+  { value: 'local', label: t('protoHint.dns.typeLocal') },
+  { value: 'hosts', label: t('protoHint.dns.hostsTypeLabel') },
   { value: 'fakeip', label: 'fakeip — Fake IP' },
   { value: 'dhcp', label: 'dhcp' },
   { value: 'mdns', label: 'mdns' },
@@ -366,21 +359,21 @@ const NO_SERVER_TYPES = ['local', 'dhcp', 'mdns', 'hosts', 'fakeip', 'resolved',
 // 支持拨号字段（detour / domain_resolver）的类型：hosts、fakeip 与 endpoint 类不支持
 const DIAL_TYPES = ['udp', 'tcp', 'tls', 'https', 'h3', 'quic', 'local', 'dhcp', 'mdns']
 const TYPE_HINTS = {
-  udp: '明文 UDP，server 填 IP 或域名',
-  tcp: '明文 TCP',
-  tls: 'server 填域名时需同时填 TLS Server Name',
-  https: 'DoH，路径一般为 /dns-query',
-  h3: 'DoH over HTTP/3，路径一般为 /dns-query',
-  quic: 'DoQ，端口通常 853',
-  local: '使用系统解析器（Linux 可启用 Prefer Go）',
-  hosts: '静态域名记录 + 可选 hosts 文件路径',
-  fakeip: '需在 DNS Rule 中用 query_type A,AAAA 指向；不能作为默认 server',
-  dhcp: '从 DHCP 获取 DNS，需指定 Interface',
-  mdns: '局域网组播 DNS，需指定 Interface',
-  resolved: '使用 systemd-resolved',
-  tailscale: '需引用 endpoints 段的 tailscale endpoint tag',
-  openconnect: '需引用 endpoints 段的 openconnect endpoint tag',
-  openvpn: '需引用 endpoints 段的 openvpn endpoint tag',
+  udp: t('protoHint.dns.hintUdp'),
+  tcp: t('protoHint.dns.hintTcp'),
+  tls: t('protoHint.dns.hintTls'),
+  https: t('protoHint.dns.hintHttps'),
+  h3: t('protoHint.dns.hintH3'),
+  quic: t('protoHint.dns.hintQuic'),
+  local: t('protoHint.dns.hintLocal'),
+  hosts: t('protoHint.dns.hintHosts'),
+  fakeip: t('protoHint.dns.hintFakeip'),
+  dhcp: t('protoHint.dns.hintDhcp'),
+  mdns: t('protoHint.dns.hintMdns'),
+  resolved: t('protoHint.dns.hintResolved'),
+  tailscale: t('protoHint.dns.hintTailscale'),
+  openconnect: t('protoHint.dns.hintOpenconnect'),
+  openvpn: t('protoHint.dns.hintOpenvpn'),
 }
 const srvForm = reactive({
   type: 'udp', tag: '', server: '', server_port: 0, detour: '', domain_resolver: '',
@@ -463,7 +456,7 @@ function saveServer() {
     if (srvForm.inet4_range) srv.inet4_range = srvForm.inet4_range
     if (srvForm.inet6_range) srv.inet6_range = srvForm.inet6_range
     if (!srvForm.inet4_range && !srvForm.inet6_range) {
-      ElMessage.error('fakeip server 必须至少填写 IPv4 Range 或 IPv6 Range')
+      ElMessage.error(t('protoHint.dns.fakeipRangeRequired'))
       return
     }
   }
@@ -473,10 +466,10 @@ function saveServer() {
       const s = line.trim()
       if (!s) continue
       const eq = s.indexOf('=')
-      if (eq < 0) { ElMessage.error(`Predefined 行格式应为 域名=IP：${s}`); return }
+      if (eq < 0) { ElMessage.error(t('protoHint.dns.predefinedFormat') + s); return }
       const domain = s.slice(0, eq).trim()
       const ips = s.slice(eq + 1).split(',').map(x => x.trim()).filter(Boolean)
-      if (!domain || !ips.length) { ElMessage.error(`Predefined 行格式应为 域名=IP：${s}`); return }
+      if (!domain || !ips.length) { ElMessage.error(t('protoHint.dns.predefinedFormat') + s); return }
       predefined[domain] = ips.length === 1 ? ips[0] : ips
     }
     if (Object.keys(predefined).length) srv.predefined = predefined

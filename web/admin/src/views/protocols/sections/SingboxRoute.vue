@@ -7,10 +7,7 @@
         <el-select v-model="form.final" style="width:100%" filterable allow-create clearable @change="emit">
           <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
         </el-select>
-        <div class="hint">
-          未命中任何规则的流量走该出站。**留空 = 使用出站列表第一个**（与 xray 的默认出站语义一致）；
-          想让代理出口兜底：选出口节点 tag，或清空后把非直连出站在「出站」列表里上移到第一位。
-        </div>
+        <div class="hint">{{ t('singboxRoute.hint.finalOutbound') }}</div>
       </el-form-item>
       <el-form-item :label="t('subfmt.tunAutoDetect')">
         <el-switch v-model="form.auto_detect_interface" @change="emit" />
@@ -21,14 +18,11 @@
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultNetworkStrategy')">
         <el-select v-model="form.default_network_strategy" style="width:100%" clearable @change="onNetStrategyChange">
-          <el-option label="(默认)" value="" />
+          <el-option :label="t('common.defaultOption')" value="" />
           <el-option label="hybrid" value="hybrid" />
           <el-option label="fallback" value="fallback" />
         </el-select>
-        <div class="hint">
-          多网卡/多网络时的选路策略。实测合法值**只有 hybrid / fallback**（写别的核心会 FATAL
-          `unknown network strategy`）；且必须同时开启上面的 Auto Detect Interface。
-        </div>
+        <div class="hint">{{ t('singboxRoute.hint.networkStrategy') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultNetworkType')">
         <el-select v-model="form.default_network_type" multiple clearable style="width:100%" @change="emit">
@@ -41,15 +35,15 @@
           <el-option label="wifi" value="wifi" /><el-option label="cellular" value="cellular" />
           <el-option label="ethernet" value="ethernet" /><el-option label="other" value="other" />
         </el-select>
-        <div class="hint">strategy=fallback 时的退化网络类型</div>
+        <div class="hint">{{ t('singboxRoute.hint.fallbackNetworkType') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultFallbackDelay')">
         <el-input v-model="form.default_fallback_delay" placeholder="300ms" @change="emit" />
-        <div class="hint">回退等待时长（duration，如 300ms / 1s；非法值核心会拒绝启动）</div>
+        <div class="hint">{{ t('singboxRoute.hint.fallbackDelay') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultHttpClient')">
-        <el-input v-model="form.default_http_client" placeholder="出站 tag" @change="emit" />
-        <div class="hint">内部 HTTP 请求（如规则集下载）默认走哪个出站</div>
+        <el-input v-model="form.default_http_client" :placeholder="t('singboxRoute.hint.httpClientPlaceholder')" @change="emit" />
+        <div class="hint">{{ t('singboxRoute.hint.defaultHttpClient') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultStrategy')">
         <el-select v-model="form.default_domain_strategy" style="width:100%" clearable @change="emit">
@@ -67,9 +61,7 @@
       Rule Sets
       <el-button size="small" type="primary" @click="addRuleSet" style="margin-left:12px">Add Rule Set</el-button>
     </el-divider>
-    <div v-if="!form.ruleSets.length" class="hint" style="margin-bottom:8px">
-      未定义任何 rule_set。规则里引用 rule_set 前，先在这里定义（remote 从 URL 拉取 / local 读本地文件 / inline 直接写规则）。
-    </div>
+    <div v-if="!form.ruleSets.length" class="hint" style="margin-bottom:8px">{{ t('singboxRoute.hint.noRuleSet') }}</div>
     <div v-for="(rs, ri) in form.ruleSets" :key="'rs' + ri"
          style="border:1px dashed #dcdfe6;border-radius:6px;padding:10px;margin-bottom:10px">
       <div style="display:flex;gap:8px;align-items:center">
@@ -79,7 +71,7 @@
         </el-select>
         <el-input v-model="rs.tag" :placeholder="t('singboxRoute.tagHint')" style="flex:1" @change="emit" />
         <el-select v-model="rs.format" style="width:130px" clearable @change="emit">
-          <el-option label="(默认)" value="" /><el-option label="source" value="source" />
+          <el-option :label="t('common.defaultOption')" value="" /><el-option label="source" value="source" />
           <el-option label="binary" value="binary" />
         </el-select>
         <el-button size="small" type="danger" text @click="form.ruleSets.splice(ri,1);emit()">X</el-button>
@@ -87,29 +79,25 @@
       <template v-if="rs.type === 'remote'">
         <el-input v-model="rs.url" placeholder="https://…/geosite-cn.srs" style="margin-top:8px" @change="emit" />
         <div style="display:flex;gap:8px;margin-top:8px">
-          <el-input v-model="rs.update_interval" placeholder="更新间隔，如 1d" @change="emit" />
+          <el-input v-model="rs.update_interval" :placeholder="t('singboxRoute.hint.updateIntervalPlaceholder')" @change="emit" />
           <el-input v-model="rs.download_detour" :placeholder="t('singboxRoute.downloadDetourHint')" @change="emit" />
           <el-input v-model="rs.http_client" placeholder="http_client tag" @change="emit" />
         </div>
         <el-input v-model="rs.initial_path" :placeholder="t('singboxRoute.initialPathHint')" style="margin-top:8px" @change="emit" />
-        <div class="hint">initial_path 必须包含 <code>&lt;tag&gt;</code> 占位符（实测否则 FATAL `missing &lt;tag&gt; placeholder in initial_path`），留空则用缓存目录默认值</div>
+        <div class="hint">{{ t('singboxRoute.hint.initialPath') }}</div>
       </template>
       <template v-else-if="rs.type === 'local'">
         <el-select v-model="rs.path" filterable allow-create default-first-option
-          placeholder="从规则库选择，或手动输入路径" style="width:100%;margin-top:8px" @change="onLocalPathChange(rs)">
+          :placeholder="t('singboxRoute.hint.localPathPlaceholder')" style="width:100%;margin-top:8px" @change="onLocalPathChange(rs)">
           <el-option v-for="f in geoRuleFiles" :key="f.id" :value="`rules/${f.file_name}`"
             :label="`rules/${f.file_name}（${formatSize(f.file_size)}）`" />
         </el-select>
-        <div class="hint">
-          下拉选项来自「规则文件管理」已下载到 <code>data/rules</code> 的文件（面板与节点同路径，相对工作目录解析）；
-          也可手动输入路径（核心启动时**读取该文件**：路径不存在会 FATAL）。
-          选 <code>.srs</code> 自动带 format=binary、<code>.json</code> 自动带 source。
-        </div>
+        <div class="hint">{{ t('singboxRoute.hint.localRuleFile') }}</div>
       </template>
       <template v-else>
         <el-input v-model="rs._rulesJson" type="textarea" :rows="3" style="margin-top:8px"
           placeholder='[{"domain_suffix": ["a.example"]}]' @change="emit" />
-        <div class="hint">inline 规则数组（JSON）。注意：inline **不支持多 tag**（实测 FATAL `inline rule-set does not support multiple tags`）</div>
+        <div class="hint">{{ t('singboxRoute.hint.inlineRule') }}</div>
       </template>
     </div>
 
@@ -175,14 +163,11 @@
           <el-form-item :label="t('singboxRoute.subRulesJson')">
             <el-input v-model="rf._subRules" type="textarea" :rows="8"
               placeholder='[{"domain_suffix":[".example.com"]},{"ip_cidr":["10.0.0.0/8"]}]' />
-            <div class="hint">
-              JSON 数组，元素为普通规则对象。example:
-              <code>[{"domain_suffix":[".example.com"]},{"port_range":["1000:2000"]}]</code>
-            </div>
+            <div class="hint">{{ t('singboxRoute.hint.subRulesExample') }} <code>[{"domain_suffix":[".example.com"]},{"port_range":["1000:2000"]}]</code></div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.invert')">
             <el-switch v-model="rf.invert" />
-            <span class="hint-inline">逻辑取反（不匹配子规则时命中）</span>
+            <span class="hint-inline">{{ t('singboxRoute.hint.invertSubRules') }}</span>
           </el-form-item>
         </template>
 
@@ -234,7 +219,7 @@
             <el-col :span="12">
               <el-form-item :label="t('protoCenter.port')">
                 <el-input v-model="rf._port" placeholder="53,443 (single ports)" />
-                <div class="hint">仅单个端口，逗号分隔；端口范围请用下面的 Port Range</div>
+                <div class="hint">{{ t('singboxRoute.hint.portOnly') }}</div>
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -294,43 +279,43 @@
 
           <el-form-item :label="t('subfmt.groupRuleSet')">
             <el-select v-model="rf._ruleSet" multiple filterable allow-create default-first-option
-              placeholder="选择上方 Rule Sets 已定义的 tag（也可手填）" style="width:100%">
+              :placeholder="t('singboxRoute.hint.ruleSetPlaceholder')" style="width:100%">
               <el-option v-for="rs in ruleSetTags" :key="rs" :label="rs" :value="rs" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.matchSourceIp')" v-if="rf._ruleSet?.length">
             <el-switch v-model="rf._ruleSetIPCIDRMatchSource" />
-            <span class="hint-inline">rule_set 中的 ip_cidr 匹配源地址（rule_set_ip_cidr_match_source）</span>
+            <span class="hint-inline">{{ t('singboxRoute.hint.ruleSetIpCidrMatchSource') }}</span>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.clashMode')">
             <el-select v-model="rf._clashMode" style="width:100%" clearable filterable allow-create @change="emit">
-              <el-option label="(不限)" value="" /><el-option label="rule" value="rule" />
+              <el-option :label="t('singboxRoute.hint.clashModeAny')" value="" /><el-option label="rule" value="rule" />
               <el-option label="global" value="global" /><el-option label="direct" value="direct" />
             </el-select>
-            <div class="hint">按外部控制器（clash_api）当前模式匹配</div>
+            <div class="hint">{{ t('singboxRoute.hint.clashMode') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.interfaceAddressJson')">
             <el-input v-model="rf._interfaceAddressJson" type="textarea" :rows="2"
               placeholder='{"eth0": ["192.168.1.10/32"]}' @change="emit" />
-            <div class="hint">本地**接口名 → 地址段**映射（JSON，map 形式）；JSON 非法会被忽略</div>
+            <div class="hint">{{ t('singboxRoute.hint.interfaceAddress') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.networkInterfaceAddressJson')">
             <el-input v-model="rf._networkInterfaceAddressJson" type="textarea" :rows="2"
               placeholder='{"wifi": ["10.0.0.1/32"]}' @change="emit" />
-            <div class="hint">按**网络类型 → 地址段**匹配（JSON；键是 wifi/cellular/ethernet/other）</div>
+            <div class="hint">{{ t('singboxRoute.hint.networkInterfaceAddress') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.defaultInterfaceAddress')">
             <el-input v-model="rf._defaultInterfaceAddress" type="textarea" :rows="2" placeholder="10.0.0.1/32" @change="emit" />
-            <div class="hint">系统未识别接口时的兜底地址段，每行一条</div>
+            <div class="hint">{{ t('singboxRoute.hint.defaultInterfaceAddress') }}</div>
           </el-form-item>
 
           <el-form-item :label="t('singboxRoute.invert')">
             <el-switch v-model="rf.invert" />
-            <span class="hint-inline">整条规则取反</span>
+            <span class="hint-inline">{{ t('singboxRoute.hint.invertRule') }}</span>
           </el-form-item>
 
           <el-collapse>
-            <el-collapse-item title="Legacy GeoIP / Geosite（xray 兼容字段，sing-box 1.8+ 建议改用 rule_set）">
+            <el-collapse-item :title="t('singboxRoute.hint.legacyGeo')">
               <el-form-item :label="t('singboxRoute.geosite')">
                 <el-input v-model="rf._geosite" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneCodePerLine')" />
               </el-form-item>
@@ -362,14 +347,11 @@
               <el-option label="drop" value="drop" />
               <el-option label="reply" value="reply" />
             </el-select>
-            <div class="hint">拒绝方式（default=关连接 / drop=直接丢包 / reply=回 ICMP 或 TCP RST）</div>
+            <div class="hint">{{ t('singboxRoute.hint.rejectMethod') }}</div>
           </el-form-item>
           <el-form-item v-if="rf.rejectMethod !== 'drop'" :label="t('singboxRoute.noDrop')">
             <el-switch v-model="rf.noDrop" @change="emit" />
-            <div class="hint">
-              不立刻断开该连接（"静默拦截"体验）；**method=drop 时不能开** ——
-              实测会 FATAL `no_drop is not available in current context`
-            </div>
+            <div class="hint">{{ t('singboxRoute.hint.noDrop') }}</div>
           </el-form-item>
         </template>
         <el-form-item :label="t('protoCenter.routing.outbound')">
@@ -382,55 +364,52 @@
         <template v-if="rf.action === 'route-options'">
           <el-form-item :label="t('singboxRoute.tlsFragment')">
             <el-switch v-model="rf.tlsFragment" @change="onTlsFragmentChange" />
-            <div class="hint">
-              对命中流量做 TLS 分片（抗特征）；与下面的 Record Fragment <b>互斥</b>
-              —— 同时给核心会拒绝启动（实测 `tls_fragment and tls_record_fragment are mutually exclusive`）
-            </div>
+            <div class="hint">{{ t('singboxRoute.hint.tlsFragment') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.tlsRecordFragment')">
             <el-switch v-model="rf.tlsRecordFragment" @change="onTlsRecordFragmentChange" />
-            <div class="hint">按 TLS 记录分片；与上面的 TLS Fragment 互斥</div>
+            <div class="hint">{{ t('singboxRoute.hint.tlsRecordFragment') }}</div>
           </el-form-item>
           <el-form-item v-if="rf.tlsFragment || rf.tlsRecordFragment" :label="t('singboxRoute.fragmentFallbackDelay')">
             <el-input v-model="rf.tlsFragmentFallbackDelay" placeholder="100ms" @change="emit" />
-            <div class="hint">分片失败后的回退延迟（duration，如 100ms / 1s；非法值核心会拒绝启动）</div>
+            <div class="hint">{{ t('singboxRoute.hint.fragmentFallbackDelay') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.networkStrategy')">
             <el-select v-model="rf.networkStrategy" style="width:100%" clearable @change="emit">
-              <el-option label="(默认)" value="" /><el-option label="hybrid" value="hybrid" />
+              <el-option :label="t('common.defaultOption')" value="" /><el-option label="hybrid" value="hybrid" />
               <el-option label="fallback" value="fallback" />
             </el-select>
-            <div class="hint">该规则命中的连接用哪种选路策略（只有 hybrid / fallback 合法）</div>
+            <div class="hint">{{ t('singboxRoute.hint.ruleNetworkStrategy') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.fallbackDelay')">
             <el-input-number v-model="rf.fallbackDelay" :min="0" @change="emit" />
-            <div class="hint">回退延迟，单位毫秒（0 = 不写）</div>
+            <div class="hint">{{ t('singboxRoute.hint.ruleFallbackDelay') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.udpDisableDomainUnmapping')">
             <el-switch v-model="rf.udpDisableDomainUnmapping" @change="emit" />
-            <div class="hint">关闭 UDP 的域名反查（该字段 1.13 起已从 inbound 迁到规则动作）</div>
+            <div class="hint">{{ t('singboxRoute.hint.udpDisableDomainUnmapping') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.udpConnect')">
             <el-switch v-model="rf.udpConnect" @change="emit" />
           </el-form-item>
           <el-form-item :label="t('xrayIn.udpTimeout')">
             <el-input v-model="rf.udpTimeout" placeholder="5m" @change="emit" />
-            <div class="hint">UDP 会话超时（duration；非法值核心会拒绝启动）</div>
+            <div class="hint">{{ t('singboxRoute.hint.udpTimeout') }}</div>
           </el-form-item>
           <el-form-item :label="t('singboxRoute.tlsSpoof')">
             <el-input v-model="rf.tlsSpoof" placeholder="www.bing.com" @change="emit" />
-            <div class="hint">本 fork 的 TLS spoof 的 route-options 形式（伪装目标，域名或 IP）；留空不启用</div>
+            <div class="hint">{{ t('singboxRoute.hint.tlsSpoof') }}</div>
           </el-form-item>
           <el-form-item v-if="rf.tlsSpoof" :label="t('singboxRoute.tlsSpoofMethod')">
             <el-select v-model="rf.tlsSpoofMethod" style="width:100%" clearable @change="emit">
-              <el-option label="(默认)" value="" />
+              <el-option :label="t('common.defaultOption')" value="" />
               <el-option label="wrong-sequence" value="wrong-sequence" />
               <el-option label="wrong-checksum" value="wrong-checksum" />
               <el-option label="wrong-ack" value="wrong-ack" />
               <el-option label="wrong-md5" value="wrong-md5" />
               <el-option label="wrong-timestamp" value="wrong-timestamp" />
             </el-select>
-            <div class="hint">必须配合上面的 TLS Spoof（实测：单独给会 FATAL `spoof_method requires spoof`）</div>
+            <div class="hint">{{ t('singboxRoute.hint.tlsSpoofMethod') }}</div>
           </el-form-item>
         </template>
         <!-- 规则级 strategy / domain_resolver 都不是 sing-box 字段；
@@ -450,7 +429,7 @@
           </el-form-item>
         </template>
         <el-form-item v-else label=" ">
-          <span class="hint">Strategy / DNS Server 仅在 Action = resolve 时可用（sing-box 会拒绝其它情况下的这两种字段）</span>
+          <span class="hint">{{ t('singboxRoute.hint.resolveOnly') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -682,7 +661,7 @@ function parseJsonOrNull(v) {
     const o = JSON.parse(t)
     return (o && typeof o === 'object' && !Array.isArray(o)) ? o : null
   } catch (e) {
-    console.warn('interface_address JSON 解析失败，已忽略:', e)
+    console.warn('interface_address JSON parse failed, ignored:', e)
     return null
   }
 }
@@ -756,15 +735,15 @@ function buildRuleFromForm() {
       try {
         sub = JSON.parse(rf._subRules)
       } catch (e) {
-        ElMessage.error('Sub Rules 不是合法 JSON: ' + e.message)
+        ElMessage.error(t('singboxRoute.hint.subRulesInvalid') + e.message)
         return null
       }
       if (!Array.isArray(sub) || sub.length === 0) {
-        ElMessage.error('逻辑规则的 Sub Rules 必须是非空 JSON 数组')
+        ElMessage.error(t('singboxRoute.hint.subRulesEmpty'))
         return null
       }
     } else {
-      ElMessage.error('逻辑规则必须填写 Sub Rules（sing-box 要求 rules 必填）')
+      ElMessage.error(t('singboxRoute.hint.subRulesRequired'))
       return null
     }
     rule.rules = sub
@@ -793,13 +772,13 @@ function buildRuleFromForm() {
   // sing-box: port / source_port 是 uint16 数字列表；端口范围必须走 port_range / source_port_range（"1000:2000"）
   if (rf._port) {
     const pr = portNumbers(rf._port)
-    if (!pr.ok) { ElMessage.error(`Port 只支持数字端口（1-65535）："${pr.bad}" 非法；端口范围请填 Port Range`); return null }
+    if (!pr.ok) { ElMessage.error(`${t('singboxRoute.hint.portNumberOnly')}"${pr.bad}" ${t('singboxRoute.hint.portRangeHint')}`); return null }
     if (pr.nums.length) rule.port = pr.nums
   }
   if (rf._portRange) rule.port_range = commas(rf._portRange)
   if (rf._sourcePort) {
     const spr = portNumbers(rf._sourcePort)
-    if (!spr.ok) { ElMessage.error(`Source Port 只支持数字端口（1-65535）："${spr.bad}" 非法；端口范围请填 Source Port Range`); return null }
+    if (!spr.ok) { ElMessage.error(`${t('singboxRoute.hint.sourcePortNumberOnly')}"${spr.bad}" ${t('singboxRoute.hint.sourcePortRangeHint')}`); return null }
     if (spr.nums.length) rule.source_port = spr.nums
   }
   if (rf._sourcePortRange) rule.source_port_range = commas(rf._sourcePortRange)
@@ -999,7 +978,7 @@ function build() {
       } else if (x.type === 'local') {
         if (x.path) rs.path = x.path
       } else if (x._rulesJson) {
-        try { rs.rules = JSON.parse(x._rulesJson) } catch (e) { console.warn('inline rules JSON 解析失败，已忽略:', e) }
+        try { rs.rules = JSON.parse(x._rulesJson) } catch (e) { console.warn('inline rules JSON parse failed, ignored:', e) }
       }
       return rs
     })

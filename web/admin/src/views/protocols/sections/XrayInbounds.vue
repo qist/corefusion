@@ -359,7 +359,7 @@
               <el-input-number v-model="rf.port" :min="1" :max="65535" />
             </el-form-item>
             <el-form-item v-if="rf._listenType === 'sock'" :label="t('protoCenter.inbounds.socketPath')">
-              <el-input v-model="rf._socketPath" :placeholder="'/dev/shm/' + rf.protocol + '.sock 或 @name（抽象 socket）'" />
+              <el-input v-model="rf._socketPath" :placeholder="'/dev/shm/' + rf.protocol + '.sock ' + t('protoHint.xrayIn.socketPathSuffix')" />
             </el-form-item>
             <!-- 抽象 socket（@name）没有文件权限位：带 ,0666 会绑定到字面量路径 -->
             <el-form-item v-if="rf._listenType === 'sock' && !isAbstractSocketPath(rf._socketPath)" :label="t('protoCenter.inbounds.socketPerm')">
@@ -645,10 +645,7 @@
                 <el-form-item :label="t('xrayIn.echSockopt')">
                   <el-input v-model="rf.streamSettings.tls._echSockoptStr" type="textarea" :rows="3"
                     placeholder='{"interfaceName": "eth0", "mark": 255, "tcpFastOpen": true}' @change="emit" />
-                  <div class="hint">
-                    ECH 连接套用 socket 选项（JSON，与 streamSettings.sockopt 同结构，如 interfaceName / mark /
-                    tcpFastOpen / domainStrategy 等）；留空则不写。
-                  </div>
+                  <div class="hint">{{ t('protoHint.xrayIn.echSockoptHint') }}</div>
                 </el-form-item>
               </el-form>
             </template>
@@ -688,7 +685,7 @@
                   </div>
                   <div class="hint">{{ t('protoCenter.reality.serverNamesHint') }}</div>
                   <div v-if="sniConflicts.length" class="hint" style="color:#e6a23c">
-                    {{ t('protoCenter.reality.serverNamesConflict') }}：{{ sniConflicts.map(c => c.sni + '（已被 ' + c.by + ' 使用）').join('，') }}
+                    {{ t('protoHint.xrayIn.sniConflictList', { list: sniConflicts.map(c => t('protoHint.xrayIn.sniUsedBy', { sni: c.sni, by: c.by })).join(t('common.listSeparator')) }) }}
                   </div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.reality.privateKey')">
@@ -805,11 +802,13 @@
                   <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
                     <span>{{ r.label }}</span>
                     <el-tag v-if="r.conflict" size="small" type="warning" style="margin-left:8px">
-                      已被 {{ r.conflict.port_range }} → {{ r.conflict.target_port }} 占用
+                      {{ t('protoHint.inbounds.portRangeOccupied', { range: r.conflict.port_range, target: r.conflict.target_port }) }}
                     </el-tag>
                   </el-option>
                 </el-select>
-                <div v-if="portHopUsageHint" class="hint">{{ portHopUsageHint }}</div>
+                <div v-if="portHopUsageHint.length" class="hint">
+                  <div v-for="(h, i) in portHopUsageHint" :key="i">{{ h }}</div>
+                </div>
               </el-form-item>
               <el-form-item v-if="rf._portHopMode === 'manual'" :label="t('protoCenter.inbounds.portRange')">
                 <div style="display:flex;gap:8px;align-items:center">
@@ -3397,9 +3396,9 @@ const portHopRangeOptions = computed(() => {
 const portHopUsageHint = computed(() => {
   const parts = []
   const used = portHopRules.value.map(r => `${r.port_range} → ${r.target_port}`)
-  if (used.length) parts.push('本节点已用端口段：' + used.join('，'))
-  if (portHopSuggest.value) parts.push('空闲可用段：' + portHopSuggest.value)
-  return parts.join('；')
+  if (used.length) parts.push(t('protoHint.inbounds.portHopUsed', { list: used.join(t('common.listSeparator')) }))
+  if (portHopSuggest.value) parts.push(t('protoHint.inbounds.portHopFree', { list: portHopSuggest.value }))
+  return parts
 })
 const dataDir = ref('/opt/corefusion/data') // default fallback
 async function loadInterfaces() {
@@ -4922,7 +4921,7 @@ async function saveInbound() {
       const usedByOthers = usedByOthersMap(self)
       const dups = findNewConflicts(mySnis, self ? snisOfInbound(self) : [], usedByOthers)
       if (dups.length) {
-        const details = dups.map(s => `"${s}" (已被 ${usedByOthers.get(s)} 使用)`).join(', ')
+        const details = dups.map(s => t('protoHint.xrayIn.sniUsedBy', { sni: s, by: usedByOthers.get(s) })).join(t('common.listSeparator'))
         ElMessage.error(t('protoCenter.reality.serverNamesConflict') + ': ' + details)
         return
       }
@@ -5040,7 +5039,7 @@ async function saveInbound() {
               interface: newIface
             })
           } catch (fwErr) {
-            ElMessage.error(fwErr?.response?.data?.message || '端口跳跃防火墙规则应用失败')
+            ElMessage.error(fwErr?.response?.data?.message || t('protoHint.inbounds.portHopFwFailed'))
           }
         } else if (isEnabled && wasEnabled) {
           // Port hop stayed enabled: check if port range, target port, or interface changed

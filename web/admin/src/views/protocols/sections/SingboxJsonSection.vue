@@ -3,18 +3,18 @@
     <el-alert type="info" :closable="false" show-icon style="margin-bottom:12px">
       <div style="font-size:12px;line-height:1.7">
         {{ meta.desc }}<br>
-        文档：<a :href="meta.docUrl" target="_blank">{{ meta.docUrl }}</a>
+        {{ t('protoHint.json.docs') }} <a :href="meta.docUrl" target="_blank">{{ meta.docUrl }}</a>
       </div>
     </el-alert>
 
     <!-- 列表型段落（services / certificate_providers / http_clients / network_namespaces） -->
     <template v-if="meta.mode === 'list'">
       <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
-        <el-select v-model="addType" placeholder="选择类型后添加" style="width:260px" clearable>
+        <el-select v-model="addType" :placeholder="t('protoHint.json.addPlaceholder')" style="width:260px" clearable>
           <el-option v-for="tp in meta.types" :key="tp" :label="tp" :value="tp" />
         </el-select>
-        <el-button type="primary" @click="addItem">添加</el-button>
-        <span class="hint" v-if="!meta.types.length">该段落无 type 概念，直接添加后编辑字段</span>
+        <el-button type="primary" @click="addItem">{{ t('protoHint.json.add') }}</el-button>
+        <span class="hint" v-if="!meta.types.length">{{ t('protoHint.json.noTypeHint') }}</span>
       </div>
 
       <div v-for="(it, i) in items" :key="'it'+i" class="rule-item">
@@ -24,11 +24,11 @@
             <el-tag v-if="it.tag" size="small" type="success">{{ it.tag }}</el-tag>
             <span v-if="it._err" style="font-size:12px;color:#f56c6c">{{ it._err }}</span>
           </div>
-          <el-button size="small" type="danger" text @click="rmItem(i)">删除</el-button>
+          <el-button size="small" type="danger" text @click="rmItem(i)">{{ t('protoHint.json.delete') }}</el-button>
         </div>
         <el-input v-model="it._json" type="textarea" :rows="7" spellcheck="false" @change="applyItem(i)" />
       </div>
-      <div v-if="!items.length" style="text-align:center;color:#909399;padding:24px">暂无条目</div>
+      <div v-if="!items.length" style="text-align:center;color:#909399;padding:24px">{{ t('protoHint.json.empty') }}</div>
     </template>
 
     <!-- 对象型段落（certificate） -->
@@ -49,7 +49,10 @@
 // 类型清单取自 sing-box 官方 schema.json，模板字段取自各文档示例。
 import { computed, reactive, ref, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'
+
+const { t } = useI18n()
 
 const props = defineProps({ data: Object, coreType: String, serverId: Number, sectionKey: String })
 const emitFn = defineEmits(['update'])
@@ -57,7 +60,7 @@ const emitFn = defineEmits(['update'])
 const REGISTRY = {
   services: {
     mode: 'list',
-    desc: 'sing-box 顶层 services 段（与 inbounds/outbounds 并列）。服务端常用：hysteria-realm（P2P 中继）、usbip-server（共享 USB 设备）、ssm-api、api、ccm/ocm/derp/resolved；oom-killer 用于内存超限时自动重启核心，可填 memory_limit / safety_margin（如 256M）、min_interval / max_interval（duration）。',
+    desc: t('protoHint.json.descServices'),
     docUrl: 'https://sing-box.sagernet.org/configuration/service/',
     types: ['api', 'ccm', 'derp', 'dynamic', 'hysteria-realm', 'ocm', 'oom-killer', 'resolved', 'ssm-api', 'usbip-client', 'usbip-server'],
     // 注意：listen_port 留空（listenPort: true 标记），创建时用后端 free-port 填入，
@@ -78,7 +81,7 @@ const REGISTRY = {
   },
   certificate_providers: {
     mode: 'list',
-    desc: '证书提供者（可被 TLS 的 certificate_provider 引用）。acme 用于自动签发，cloudflare-origin-ca / tailscale 用于其托管证书。',
+    desc: t('protoHint.json.descCertProviders'),
     docUrl: 'https://sing-box.sagernet.org/configuration/certificate-provider/',
     types: ['acme', 'cloudflare-origin-ca', 'tailscale'],
     templates: {
@@ -89,14 +92,14 @@ const REGISTRY = {
   },
   http_clients: {
     mode: 'list',
-    desc: '可复用的 HTTP 客户端（被 dashboard / rule_set / acme 等通过 tag 引用）。字段与拨号字段一致（detour / bind_interface / tls / headers…）。',
+    desc: t('protoHint.json.descHttpClients'),
     docUrl: 'https://sing-box.sagernet.org/configuration/http-client/',
     types: [],
     templates: { default: { tag: 'http-client-1' } },
   },
   network_namespaces: {
     mode: 'list',
-    desc: '网络命名空间。unshare 会在独立 netns 中运行（需 CAP_SYS_ADMIN），tag 用于 outbound/dial 的 netns 字段引用。',
+    desc: t('protoHint.json.descNamespaces'),
     docUrl: 'https://sing-box.sagernet.org/configuration/network-namespace/',
     types: ['unshare', 'default'],
     templates: {
@@ -106,12 +109,12 @@ const REGISTRY = {
   },
   certificate: {
     mode: 'object',
-    desc: '全局证书段：store=system 使用系统证书库（默认）；也可内联 certificate/key 或给目录。',
+    desc: t('protoHint.json.descCertificate'),
     docUrl: 'https://sing-box.sagernet.org/configuration/certificate/',
     templates: [
       { name: 'store: system', value: { store: 'system' } },
       { name: 'store: mozilla', value: { store: 'mozilla' } },
-      { name: 'certificate_path 目录', value: { certificate_directory_path: '/etc/ssl/certs' } },
+      { name: t('protoHint.json.presetCertPath'), value: { certificate_directory_path: '/etc/ssl/certs' } },
     ],
   },
 }
@@ -182,14 +185,14 @@ function applyItem(i) {
   const it = items[i]
   try {
     const v = JSON.parse(it._json)
-    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('必须是 JSON 对象')
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(t('protoHint.json.mustBeObject'))
     it._raw = v
     it.type = v.type || ''
     it.tag = v.tag || ''
     it._err = ''
   } catch (e) {
-    it._err = 'JSON 无效：' + e.message
-    ElMessage.error(`第 ${i + 1} 项 JSON 无效：${e.message}`)
+    it._err = t('protoHint.json.invalidJson') + e.message
+    ElMessage.error(t('protoHint.json.itemInvalid', { n: i + 1 }) + e.message)
     return
   }
   emit()
@@ -200,10 +203,10 @@ function applyObjectTemplate(t) { objJson.value = pretty(t.value); applyObject()
 function applyObject() {
   try {
     const v = JSON.parse(objJson.value)
-    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('必须是 JSON 对象')
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(t('protoHint.json.mustBeObject'))
     emitFn('update', v)
   } catch (e) {
-    ElMessage.error('JSON 无效：' + e.message)
+    ElMessage.error(t('protoHint.json.invalidJson') + e.message)
   }
 }
 

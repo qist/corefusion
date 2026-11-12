@@ -180,7 +180,7 @@
         </el-form-item>
         <el-form-item :label="t('protoCenter.masque.remoteDNS')">
           <el-input v-model="rf._wgRemoteDNS" placeholder="1.1.1.1, 8.8.8.8" @change="emit" />
-          <div class="hint">WireGuard 隧道内使用的 DNS 服务器，逗号分隔（写入 settings.remoteDNS；替代已废弃的 dns 字段）</div>
+          <div class="hint">{{ t('protoHint.xrayOutboundProtocol.wgDns') }}</div>
         </el-form-item>
       </el-form>
       <el-divider content-position="left">Peers</el-divider>

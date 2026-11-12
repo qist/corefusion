@@ -116,7 +116,7 @@
           </el-form-item>
           <el-form-item :label="t('proto2.expectIps')">
             <el-input v-model="ruleForm._expectIPsStr" type="textarea" :rows="2" placeholder="geoip:cn" />
-            <div class="hint">匹配该域名的 DNS 查询：只接受解析结果落在这些 IP/geoip 里的应答（与 expectedIPs 是两个独立字段）</div>
+            <div class="hint">{{ t('protoHint.xrayDns.expectedIps') }}</div>
           </el-form-item>
           <el-form-item :label="t('protoCenter.dns.unexpectedIPs')">
             <el-input v-model="ruleForm._unexpectedIPsStr" type="textarea" :rows="2" placeholder="geoip:cloudflare" />

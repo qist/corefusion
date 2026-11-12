@@ -577,13 +577,13 @@ async function regenerateBootstrapToken() {
 // 恢复步骤：只替换 bootstrap.token，不动其它配置（配置里的 host/port 仍然有效）
 function buildRecoveryCmd(token) {
   return [
-    '# 1) 把新的 Bootstrap Token 写进 Agent 配置（只替换 token 这一行）',
+    t('nodeServer.recoveryStep1'),
     `sed -i 's|^[[:space:]]*token:.*|  token: "${token}"|' /opt/corefusion-agent/config.yaml`,
     '',
-    '# 2) 重启 Agent（证书失效时它会每 5 分钟自动重试引导，无需手工再等）',
+    t('nodeServer.recoveryStep2'),
     'systemctl restart corefusion-agent || (pkill -9 -x corefusion-agent; sleep 1; cd /opt/corefusion-agent && setsid nohup ./corefusion-agent -config config.yaml >> /tmp/agent.log 2>&1 &)',
     '',
-    '# 3) 看结果：出现 "bootstrapping with panel" / "connected to panel" 即恢复',
+    t('nodeServer.recoveryStep3'),
     'journalctl -u corefusion-agent -n 20 --no-pager | grep -iE "bootstrap|mTLS|connected to panel"',
   ].join('\n')
 }

@@ -196,7 +196,7 @@
             <template v-if="rf.type === 'direct'">
               <el-form-item :label="t('xrayIn.overrideAddress')">
                 <el-input v-model="rf.override_address" placeholder="1.2.3.4" />
-                <div class="hint">把命中该入站的流量转发到该地址</div>
+                <div class="hint">{{ t('protoHint.inbounds.forwardTo') }}</div>
               </el-form-item>
               <el-form-item :label="t('xrayIn.overridePort')">
                 <el-input-number v-model="rf.override_port" :min="0" :max="65535" style="width:100%" />
@@ -211,12 +211,12 @@
               <el-divider content-position="left">{{ t('xrayIn.portHopping') }}</el-divider>
               <el-form-item :label="t('protoCenter.inbounds.enableAccessDomain')">
                 <el-switch v-model="rf._portHopEnabled" />
-                <span class="hint" style="margin-left:8px">端口段转发到本入站端口（保存时自动增删防火墙规则）</span>
+                <span class="hint" style="margin-left:8px">{{ t('protoHint.inbounds.portRangeFwd') }}</span>
               </el-form-item>
               <template v-if="rf._portHopEnabled">
                 <el-form-item :label="t('protoCenter.inbounds.targetPort')">
                   <el-input-number v-model="rf.listen_port" :min="1" :max="65535" disabled />
-                  <div class="hint">当前入站监听端口（端口段会转发到这里）</div>
+                  <div class="hint">{{ t('protoHint.inbounds.listenPort') }}</div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.inbounds.rangeMode')">
                   <el-select v-model="rf._portHopMode" style="width:100%">
@@ -230,7 +230,7 @@
                     <el-option v-for="r in portHopRangeOptions" :key="r.value" :label="r.label" :value="r.value">
                       <span>{{ r.label }}</span>
                       <el-tag v-if="r.conflict" size="small" type="warning" style="margin-left:8px">
-                        已被 {{ r.conflict.port_range }} → {{ r.conflict.target_port }} 占用
+                        {{ t('protoHint.inbounds.occupied', { range: r.conflict.port_range, target: r.conflict.target_port }) }}
                       </el-tag>
                     </el-option>
                   </el-select>
@@ -250,14 +250,14 @@
                     </el-select>
                     <el-button size="small" @click="loadInterfaces">Refresh</el-button>
                   </div>
-                  <div class="hint">留空表示所有网卡</div>
+                  <div class="hint">{{ t('protoHint.inbounds.allInterfaces') }}</div>
                 </el-form-item>
               </template>
             </template>
             <el-divider content-position="left">{{ t('xrayIn.advancedListen') }}</el-divider>
             <el-form-item :label="t('xrayIn.detour')">
               <el-input v-model="rf.detour" placeholder="direct" />
-              <div class="hint">inbound 级 detour（把该入站流量交给指定 outbound）</div>
+              <div class="hint">{{ t('protoHint.inbounds.detour') }}</div>
             </el-form-item>
             <el-row :gutter="12">
               <el-col :span="8"><el-form-item :label="t('protoCenter.sockopt.tcpFastOpen')"><el-switch v-model="rf.tcp_fast_open" /></el-form-item></el-col>
@@ -266,7 +266,7 @@
             </el-row>
             <el-form-item :label="t('xrayIn.udpTimeout')">
               <el-input v-model="rf.udp_timeout" placeholder="5m" />
-              <div class="hint">UDP NAT 超时，如 5m / 300s</div>
+              <div class="hint">{{ t('protoHint.inbounds.udpTimeout') }}</div>
             </el-form-item>
           </el-form>
 
@@ -718,7 +718,7 @@ async function save() {
         }
       } catch (fwErr) {
         // 端口段冲突等错误必须让用户看到（否则以为保存成功但规则没生效）
-        ElMessage.error(fwErr?.response?.data?.message || '端口跳跃防火墙规则应用失败')
+        ElMessage.error(fwErr?.response?.data?.message || t('protoHint.inbounds.firewallFailed'))
       }
     }
 
@@ -1245,9 +1245,9 @@ const portHopRangeOptions = computed(() => {
 const portHopUsageHint = computed(() => {
   const parts = []
   const used = portHopRules.value.map(r => `${r.port_range} → ${r.target_port}`)
-  if (used.length) parts.push('本节点已用端口段：' + used.join('，'))
-  if (portHopSuggest.value) parts.push('空闲可用段：' + portHopSuggest.value)
-  return parts.join('；')
+  if (used.length) parts.push(t('protoHint.inbounds.usedRanges') + used.join(', '))
+  if (portHopSuggest.value) parts.push(t('protoHint.inbounds.freeRanges') + portHopSuggest.value)
+  return parts.join('; ')
 })
 // 端口跳跃：网卡列表（留空 = 全部网卡）
 const ifaceList = ref([])

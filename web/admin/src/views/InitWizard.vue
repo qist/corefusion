@@ -545,7 +545,10 @@ const strength = computed(() => {
   if (/[^A-Za-z0-9]/.test(p)) s++
   return s
 })
-const strengthText = computed(() => ({ 0: '弱', 1: '弱', 2: '一般', 3: '中', 4: '强', 5: '很强' }[strength.value] || '弱'))
+const strengthText = computed(() => {
+  const keys = ['init.strengthWeak', 'init.strengthWeak', 'init.strengthFair', 'init.strengthMedium', 'init.strengthStrong', 'init.strengthVeryStrong']
+  return t(keys[strength.value] || keys[0])
+})
 const strengthColor = computed(() => (strength.value >= 4 ? '#67c23a' : strength.value >= 2 ? '#e6a23c' : '#f56c6c'))
 
 function errMsg(e) { return e?.response?.data?.message || e?.message || 'error' }

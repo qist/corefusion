@@ -27,15 +27,12 @@
         <el-switch v-model="model._tlsInsecure" @change="emit" />
       </el-form-item>
       <el-form-item :label="t('proto2.tlsSpoofFork')">
-        <el-input v-model="model._tlsSpoof" placeholder="要伪装成的域名或 IP" @change="emit" />
-        <div class="hint">
-          本 fork 的 TLS spoof：把连接伪装到指定目标（如 tls.spoof = "www.bing.com"）；留空不启用。
-          填了 spoof 才能选下面的 method（核心源码有 `spoof_method requires spoof` 校验）。
-        </div>
+        <el-input v-model="model._tlsSpoof" :placeholder="t('protoHint.tls.spoofPh')" @change="emit" />
+        <div class="hint">{{ t('protoHint.tls.spoofHint') }}</div>
       </el-form-item>
       <el-form-item :label="t('proto2.spoofMethod')">
         <el-select v-model="model._tlsSpoofMethod" style="width:100%" clearable @change="emit">
-          <el-option label="(默认)" value="" />
+          <el-option :label="t('common.defaultOption')" value="" />
           <el-option label="wrong-sequence" value="wrong-sequence" />
           <el-option label="wrong-checksum" value="wrong-checksum" />
           <el-option label="wrong-ack" value="wrong-ack" />
@@ -45,7 +42,7 @@
       </el-form-item>
       <el-form-item :label="t('singboxRoute.tlsRecordFragment')">
         <el-switch v-model="model._tlsRecordFragment" @change="emit" />
-        <div class="hint">TLS 记录分片（抗特征），配合下面的回退延迟</div>
+        <div class="hint">{{ t('protoHint.tls.recordFragment') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.fragmentFallbackDelay')">
         <el-input v-model="model._tlsFragmentFallbackDelay" placeholder="500ms" @change="emit" />

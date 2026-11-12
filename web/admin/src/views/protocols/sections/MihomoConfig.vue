@@ -339,10 +339,10 @@
                 <el-switch v-model="g['disable-udp']" @change="emitProxyGroups" />
               </el-form-item>
               <el-form-item :label="t('subfmt.groupFilter')">
-                <el-input v-model="g.filter" size="small" placeholder='(?i)港|hk' @change="emitProxyGroups" />
+                <el-input v-model="g.filter" size="small" placeholder='(?i)hk|sg' @change="emitProxyGroups" />
               </el-form-item>
               <el-form-item :label="t('subfmt.groupExcludeFilter')">
-                <el-input v-model="g['exclude-filter']" size="small" placeholder='美|日' @change="emitProxyGroups" />
+                <el-input v-model="g['exclude-filter']" size="small" placeholder='us|jp' @change="emitProxyGroups" />
               </el-form-item>
               <el-form-item :label="t('subfmt.groupExcludeType')">
                 <el-input v-model="g['exclude-type']" size="small" placeholder="Shadowsocks|Http" @change="emitProxyGroups" />

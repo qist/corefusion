@@ -28,22 +28,22 @@
     <!-- 通用监听字段（sing-box Listen Fields） -->
     <el-divider content-position="left">Advanced</el-divider>
     <el-form-item label="Detour">
-      <el-input v-model="model.detour" placeholder="将入站流量交给该 outbound（如 direct）" @change="emit" />
-      <div class="hint">inbound 级 detour，等价于对该入站加一条 route 规则</div>
+      <el-input v-model="model.detour" :placeholder="t('protoHint.listen.detourPh')" @change="emit" />
+      <div class="hint">{{ t('protoHint.listen.detour') }}</div>
     </el-form-item>
     <el-form-item :label="t('protoCenter.sockopt.tcpFastOpen')">
       <el-switch v-model="model.tcp_fast_open" @change="emit" />
     </el-form-item>
     <el-form-item :label="t('xrayIn.tcpMultiPath')">
       <el-switch v-model="model.tcp_multi_path" @change="emit" />
-      <div class="hint">仅 Linux，需内核支持 MPTCP</div>
+      <div class="hint">{{ t('protoHint.listen.mptcp') }}</div>
     </el-form-item>
     <el-form-item :label="t('xrayIn.udpFragment')">
       <el-switch v-model="model.udp_fragment" @change="emit" />
     </el-form-item>
     <el-form-item :label="t('xrayIn.udpTimeout')">
       <el-input v-model="model.udp_timeout" placeholder="5m" @change="emit" />
-      <div class="hint">UDP NAT 超时，如 5m / 300s</div>
+      <div class="hint">{{ t('protoHint.listen.udpTimeout') }}</div>
     </el-form-item>
   </el-form>
 </template>

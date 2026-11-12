@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: subscription.md | locale: ja | updated: 2026-11-12 -->
 # サブスクリプション API (パブリック)
 
 > 言語： [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · 日本語 · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -21,6 +21,7 @@
 | `format` | 出力形式。サブスクリプションのデフォルトをオーバーライドします。以下を参照してください |
 | `config` | 構成テンプレート名 (管理 UI の「サブスクリプション形式」で定義)。このリクエストの `format` と同じ形式を使用する必要があります。それ以外の場合は無視されます |
 | `platform` | 構成テンプレートをプラットフォーム名で照合します (`config` が省略された場合に使用されます)。形式も一致する必要があります |
+| `providers` | `mihomo_yaml` のみ: `1` / `true` は **プロバイダー モード** を有効にします (`proxy-providers` を発行し、`use` 経由で参照します)。デフォルトまたはその他の値では、ノードは `proxies` の下にインライン化されます。 §6 を参照 |
 
 ### サポートされている `format` 値
 
@@ -42,7 +43,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 使用量と有効期限 (バイト/Unix 秒)。 **403 でも送信される**ため、クライアントは残りの手当を表示できます |
 | `Profile-Update-Interval` | `6` | 推奨される更新間隔 (時間) |
 | `Profile-Title` | `CoreFusion` | プロファイル名 (Clash Verge Rev / V2RayN などで表示) |
-| `Profile-Web-Page-Url` | `https://portal.example.com` | ポータル ページのリンク (クライアントの「Web ページを開く」) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | ポータル URL (クライアントの「Web ページを開く」。ポータルに独自のポートがある場合はルート パス、それ以外の場合は /p) |
 | `Content-Type` | フォーマットごと: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 
@@ -71,6 +72,13 @@ curl -L "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_ya
 
 # 4) Check usage (headers only)
 curl -sI "https://panel.example.com/sub/abcd1234efgh5678" | grep -i subscription-userinfo
+
+# 5) Clash dynamic subscription: config template + Provider mode
+curl -L "https://sub.example.com/abcd1234efgh5678?format=clash&config=out&providers=1"
+
+# 6) sing-box / Xray with their own config templates (rules come from the template)
+curl -L "https://sub.example.com/abcd1234efgh5678?format=singbox_json&config=sing-box-home"
+curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-home"
 ```
 
 Clash/Mihomo 動的サブスクリプション (定期更新):
@@ -93,9 +101,52 @@ proxy-groups:
       - subscription-nodes
 ```
 
-## 6. 注意事項
+## 6. プロバイダー モードと複数のサブスクリプション ドメイン
+
+### 6.1 `providers=1` が発するもの
+
+`format=mihomo_yaml&providers=1` (または `format=clash&providers=1`) の場合:
+
+- 最上位レベルでノードをインライン化しなくなり、`proxy-providers:` が発行されます。
+- プロキシ グループは、`use: [<provider-key>...]` 経由でノード ソースを参照します。
+- 共有サブスクリプション形式 (`mihomo_configs.config_json`) で書かれた `proxy-providers` は **無視**されます (共有設定は複数のプランに対応します。ハードコーディングされたプロバイダーはプラン間で漏洩します)。グループ → ソース マッピングは、「プラン管理 → グループ → ソース マッピング」の下に存在します。
+
+プロバイダーの種類:
+
+| 種類 | キー | 注意事項 |
+|---|---|---|
+| 内部 | サニタイズされたノードグループ名 | プラン ノード グループごとに生成されます。そのグループのノードのみが含まれます |
+| 予約済み | `subscription-nodes` | プランのすべてのノード。ソース URL は `provider` パラメータを **省略** |
+| 外部 | プランに設定されている名前 | 外部ソース (`http` YAML または `file`) |
+
+プロバイダーごとの共通フィールド:
+
+- `url` — `format=mihomo_proxies_yaml` でこのサブスクリプションをポイントし、メイン リクエストから `config` / `platform` を継承します。内部プロバイダーは `provider=<key>` を追加します。
+- `path` — **常に「内部プロバイダーのデフォルト → キャッシュ パス テンプレート」から導出されます** (デフォルトの `./providers/{key}.yaml`、`{key}` が置き換えられます)。外部プロバイダーも独自のパスを設定できません。
+- `health-check` — `enable / url / interval`;内部プロバイダーはデフォルトを継承し、外部プロバイダーはプランでそれを構成します。
+- `interval` — 秒単位の更新間隔。
+
+### 6.2 プロバイダー URL (マルチドメイン) に入るドメイン
+
+「サブスクリプション センター → サブスクリプション エンドポイント」には、**複数** のレコード (ドメイン + パス + 有効) が保持される場合があります。プロバイダー `url` は次の順序でドメインを選択します。
+
+1. **このリクエストが実際に使用したドメイン**: `X-Forwarded-Host` (ポート ストリップ) の最初の値、それ以外の場合は `Host`。 **有効な**エンドポイントと一致する必要があります。
+2. 何も一致しない場合は、**最小の ID** を持つ有効なエンドポイントにフォールバックします。
+3. パスは一致したエンドポイント (`path`、デフォルトは `/`) から取得され、`https://<domain><path>/<token>?format=mihomo_proxies_yaml...` になります。
+
+結果:
+
+- 新しいドメインを介して取得するクライアントは、プロバイダー内でそのドメインを取得します。**パネルの変更は必要ありません**。
+- リスト内でまだ有効になっている古いドメインはハードコーディングされなくなりました。
+- クライアントが古いプロバイダー URL をキャッシュしていた場合、サブスクリプションを更新する (またはプロバイダーのキャッシュをクリアする/クライアントを再起動する) と、プロバイダーが切り替わります。
+
+リバース プロキシは `X-Forwarded-Proto` および `X-Forwarded-Host` を転送する必要があります。それ以外の場合は、フォールバック エンドポイントが使用されます。
+
+## 7. 注意事項
 
 - **形式と構成は密接に結合しています**: `config`/`platform` によって選択されたテンプレートは、このリクエストの `format` と一致する必要があります。一致しないテンプレートは無視されます。これにより、Mihomo ルールが sing-box/Xray JSON に挿入されなくなります。
+- **`providers=1` は、Mihomo YAML にのみ影響します**: sing-box / Xray / Base64 / raw 無視します (ノードはインラインのままです)。
 - **レート制限**: サブスクリプション エンドポイントには独自の制限があります (`SubscribeRateLimit`)。虐待的なクライアントは拒否されます。
 - **アクセス ログ**: すべての取得で IP / UA / CDN 情報が記録され、管理 UI の「サブスクリプション アクセス ログ」の下に表示されます。
 - 専用のサブスクリプション ポートにドメインが構成されていない場合、リクエストの `X-Forwarded-Proto` / `X-Forwarded-Host` が使用されます。リバース プロキシが両方のヘッダーを転送することを確認してください。
+- マルチドメイン展開では、エンドポイント リストをクライアントが実際に使用するドメインと一致させてください。 §6.2 を参照してください。

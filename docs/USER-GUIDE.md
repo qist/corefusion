@@ -861,31 +861,84 @@ cd /opt/corefusion
 
 ## 9. 订阅中心
 
-订阅中心用于管理订阅链接和端点。
+订阅中心负责把节点打包成客户端可用的订阅：先定义「订阅格式」（输出什么、带哪些规则、对哪些套餐可见），再定义「订阅端点」（对外域名 / 路径），最后把链接发给客户。
 
 ### 9.1 订阅格式管理
 
-1. 进入「订阅中心」→「订阅格式管理」
-2. 新增格式：
-   - 格式名称
-   - 输出格式（Base64、YAML、JSON 等）
-   - 包含的协议
-3. 保存格式
+「订阅中心」→「订阅格式管理」，一行对应一种客户端输出：
+
+| 字段 | 说明 |
+|---|---|
+| 名称 | 唯一；`?config=<名称>` 用它匹配，客户订阅详情里也会显示该名字 |
+| 客户端类型 | clash / shadowrocket / singbox / v2ray，仅用于分类展示 |
+| 输出格式 | `mihomo_yaml`（Clash/Mihomo）、`singbox_json`、`xray_json`、`base64_uri`、`raw_uri` |
+| Content-Type / 扩展名 | 下发的响应头与文件名 |
+| 平台 | win / mac / android / ios / universal；`?platform=` 用它匹配，留空 = 通用 |
+| 绑定套餐 | 不选 = 所有套餐可用；选中后只有这些套餐的客户能看到/用到 |
+| 规则 | 该格式自己的分流规则（Mihomo 用结构化编辑器，sing-box / Xray 逐条填 JSON）。**不同格式的规则互不转换、互不通用** |
+
+说明：
+
+- 同一种输出格式可以建多份（例如 `out`、`home`），客户链接里用 `config=` 指定；
+- 客户订阅未指定 `config` 时，按「订阅绑定的配置 → `platform` 匹配 → 默认配置」的顺序取；
+- sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）。
 
 ### 9.2 订阅端点管理
 
-1. 进入「订阅中心」→「订阅端点管理」
-2. 新增端点：
-   - 端点名称
-   - 监听地址
-   - 路径
-   - 关联格式
-3. 保存端点
+「订阅中心」→「订阅端点管理」，一行是一条对外访问地址：
+
+| 字段 | 说明 |
+|---|---|
+| 域名 | 订阅对外域名 |
+| 路径 | 域名下的前缀，默认 `/` |
+| 启用 | 关闭后不参与链接生成 |
+| 说明 | 备注 |
+
+- 可以配置**多条**（多域名）；全部启用时，provider 里的域名按「本次请求实际使用的域名」优先（见 9.4）；
+- 独立订阅端口在根路径服务（`/<token>`，无 `/sub` 前缀）；与面板共用端口时是 `/sub/<token>`；
+- 反向代理必须透传 `X-Forwarded-Proto` / `X-Forwarded-Host`，否则只能回落到第一个启用端点。
 
 ### 9.3 订阅链接
 
-- 访问 `http://your-domain/sub/:token` 获取订阅
-- 支持 `?format=yaml` 等参数指定格式
+基础形式：`https://<订阅域名>/<token>`（与面板共用端口时为 `https://<面板域名>/sub/<token>`）
+
+| 参数 | 说明 |
+|---|---|
+| `format` | 输出格式，支持别名：`clash` → mihomo_yaml、`singbox`/`sing-box` → singbox_json、`xray` → xray_json、`raw` → raw_uri、`base64`/`v2ray` → base64_uri |
+| `config` | 套用某份订阅格式（填名称），格式必须与 `format` 一致，否则忽略 |
+| `platform` | 按平台匹配配置模板（未指定 `config` 时生效） |
+| `providers` | `1` / `true`：Clash 进入 Provider 模式（`proxy-providers` + 组内 `use`）；缺省为节点内联 |
+
+示例：
+
+```bash
+# Clash 动态订阅（配置模板 + providers）
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray（只在创建了对应格式的配置时有意义）
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# 通用客户端 / 明文
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 多域名与 Provider 模式
+
+`providers=1` 时，生成的 `proxy-providers` 里每个 provider 的 `url` 会指回订阅端点，域名选择规则：
+
+1. 优先**本次请求实际使用的域名**（`X-Forwarded-Host` 的第一个值，去掉端口；没有则用 `Host`），且必须命中一条**已启用**的端点；
+2. 没命中时回落到 **ID 最小**的启用端点；
+3. 路径取命中端点的 `path`，拼成 `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`。
+
+因此换域名不需要改面板配置：客户端改用新域名拉订阅，provider 里就会是新域名；旧域名留在端点列表且启用也不会被写死。客户端已缓存旧 provider 地址时，更新一次订阅（或清 providers 缓存 / 重启客户端）即可。
+
+补充：
+
+- 共享订阅格式（`config_json`）里写的 `proxy-providers` 会被忽略（避免多套餐串配置），provider 由套餐的节点组与外部来源自动生成；
+- 内部 / 外部 provider 的缓存路径统一由「内部 Provider 默认参数 → 缓存路径模板」生成（默认 `./providers/{key}.yaml`），外部来源也不能单独指定；
+- 保留 provider `subscription-nodes` 表示本套餐全部节点，回源 URL 不带 `provider` 参数。
 
 ---
 
@@ -918,11 +971,16 @@ cd /opt/corefusion
 
 ### 10.3 订阅详情
 
-点击客户进入详情页，可查看：
-- 订阅链接
-- 流量使用
-- 订单历史
-- 交易记录
+客户管理列表 →「订阅」列点「详情」，弹窗按客户套餐可用的订阅格式列出链接：
+
+- **Clash / Mihomo**：两条——节点内联版 与 `providers=1`（proxy-providers）版，链接带 `config=<配置名>`；
+- **Sing-box / Xray**：只有创建了对应格式的订阅格式（且该配置对客户套餐可见）才显示，链接带 `config=<配置名>`；
+- **Base64 URI / Raw URI**：始终显示（不带 config）；
+- 每行可单独复制；点击某行会切换下方二维码，二维码对应当前选中的格式。
+
+所以只建了 Clash 配置时，弹窗里就只有 Clash + Base64 + Raw；没建 sing-box / xray 配置就不会出现它们的链接。
+
+同时可查看：流量使用、订单历史、交易记录。
 
 ---
 

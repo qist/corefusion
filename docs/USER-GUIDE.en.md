@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-10-26 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-12 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -864,31 +864,84 @@ Routing resources manage subscription routing rules.
 
 ## 9. Subscription center
 
-The subscription center manages subscription links and endpoints.
+The subscription center packages nodes into client-ready subscriptions: define subscription **formats** (what to emit, which rules, which plans can see them), then subscription **endpoints** (public domain / path), then hand the links out.
 
 ### 9.1 Subscription formats
 
-1. Open “Subscription center” → “Subscription formats”;
-2. Add a format:
-   - Format name
-   - Output format (Base64, YAML, JSON, etc.)
-   - Included protocols
-3. Save.
+“Subscription center” → “Subscription formats”; one row per client output:
+
+| Field | Description |
+|---|---|
+| Name | Unique; `?config=<name>` matches on it and the customer dialog shows it |
+| Client type | clash / shadowrocket / singbox / v2ray — display grouping only |
+| Output format | `mihomo_yaml` (Clash/Mihomo), `singbox_json`, `xray_json`, `base64_uri`, `raw_uri` |
+| Content-Type / extension | Response header and filename |
+| Platform | win / mac / android / ios / universal; matched by `?platform=`, empty = universal |
+| Bound plans | Empty = available to every plan; otherwise only those plans can use it |
+| Rules | Per-format routing rules (structured editor for Mihomo, raw JSON per rule for sing-box / Xray). **Rules are not converted between formats** |
+
+Notes:
+
+- Several configs may exist for the same output format (e.g. `out`, `home`); pick one with `config=` in the link;
+- Without `config`, the order is “config bound to the subscription → `platform` match → default”;
+- sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3).
 
 ### 9.2 Subscription endpoints
 
-1. Open “Subscription center” → “Subscription endpoints”;
-2. Add an endpoint:
-   - Endpoint name
-   - Listen address
-   - Path
-   - Associated format
-3. Save.
+“Subscription center” → “Subscription endpoints”; one row per public address:
+
+| Field | Description |
+|---|---|
+| Domain | Public subscription domain |
+| Path | Prefix under the domain, default `/` |
+| Enabled | Disabled endpoints are ignored when building links |
+| Description | Free-text note |
+
+- **Multiple rows (multi-domain)** are supported; when several are enabled the provider domain follows the domain used by the current request (see 9.4);
+- A dedicated subscription port serves at the root (`/<token>`, no `/sub`); when sharing the panel port it is `/sub/<token>`;
+- Reverse proxies must forward `X-Forwarded-Proto` / `X-Forwarded-Host`, otherwise the first enabled endpoint is used.
 
 ### 9.3 Subscription links
 
-- Fetch a subscription at `http://your-domain/sub/:token`
-- Use parameters such as `?format=yaml` to select a format
+Base form: `https://<sub-domain>/<token>` (panel port: `https://<panel-domain>/sub/<token>`)
+
+| Parameter | Description |
+|---|---|
+| `format` | Output format; aliases: `clash` → mihomo_yaml, `singbox`/`sing-box` → singbox_json, `xray` → xray_json, `raw` → raw_uri, `base64`/`v2ray` → base64_uri |
+| `config` | Apply a subscription format by name; must match `format`, otherwise ignored |
+| `platform` | Match a config by platform (when `config` is omitted) |
+| `providers` | `1` / `true`: Clash Provider mode (`proxy-providers` + `use`); default inlines nodes |
+
+Examples:
+
+```bash
+# Clash dynamic subscription (config template + providers)
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray (only meaningful when such a config exists)
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# generic clients / plain text
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 Multi-domain and Provider mode
+
+With `providers=1` every `proxy-providers` entry points back to the subscription endpoint. Domain selection:
+
+1. **The domain this request used** (`X-Forwarded-Host` first value, port stripped, else `Host`) if it matches an **enabled** endpoint;
+2. Otherwise the enabled endpoint with the **lowest ID**;
+3. The path comes from that endpoint: `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+So changing the domain needs no panel change: clients fetching via the new domain get the new domain inside providers, and an old domain left enabled is no longer hard-coded. If a client cached the old provider URL, update the subscription (or clear the provider cache / restart the client).
+
+Additional notes:
+
+- `proxy-providers` inside a shared format (`config_json`) is ignored (avoids cross-plan leakage); providers come from plan node groups and external sources;
+- Internal and external provider cache paths are always derived from “internal provider defaults → cache path template” (default `./providers/{key}.yaml`); external sources cannot set their own;
+- The reserved provider `subscription-nodes` means all nodes of the plan and omits the `provider` parameter in its source URL.
 
 ---
 
@@ -921,12 +974,16 @@ Customer management handles end users.
 
 ### 10.3 Subscription details
 
-Click a customer to see:
+Customer management → “Subscription” column → “Details”. The dialog lists links for every format available to the customer's plan:
 
-- Subscription link
-- Traffic usage
-- Order history
-- Transaction history
+- **Clash / Mihomo**: two rows — inlined nodes and `providers=1` (proxy-providers), both carrying `config=<name>`;
+- **Sing-box / Xray**: shown only when a config of that format exists and is visible to the plan; links carry `config=<name>`;
+- **Base64 URI / Raw URI**: always shown (no `config`);
+- Each row has its own copy button; clicking a row switches the QR code below to that format.
+
+So with only a Clash config, the dialog shows Clash + Base64 + Raw; sing-box / Xray links appear only after their configs are created.
+
+The same dialog also shows traffic usage, order history and transaction history.
 
 ---
 

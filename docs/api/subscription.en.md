@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: en | updated: 2026-10-23 -->
+<!-- source: subscription.md | locale: en | updated: 2026-11-12 -->
 # Subscription API (public)
 
 > Languages: [简体中文](subscription.md) · English · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -21,6 +21,7 @@ Fetches a user's subscription node list. **This is the most-used endpoint for en
 | `format` | Output format; overrides the subscription default. See below |
 | `config` | Configuration template name (defined under “Subscription formats” in the admin UI). Must use the same format as this request's `format`, otherwise it is ignored |
 | `platform` | Match a configuration template by platform name (used when `config` is omitted); the format must also match |
+| `providers` | `mihomo_yaml` only: `1` / `true` enables **Provider mode** (emit `proxy-providers` and reference them via `use`); default or any other value keeps nodes inlined under `proxies`. See §6 |
 
 ### Supported `format` values
 
@@ -71,6 +72,13 @@ curl -L "https://panel.example.com/sub/abcd1234efgh5678?format=mihomo_proxies_ya
 
 # 4) Check usage (headers only)
 curl -sI "https://panel.example.com/sub/abcd1234efgh5678" | grep -i subscription-userinfo
+
+# 5) Clash dynamic subscription: config template + Provider mode
+curl -L "https://sub.example.com/abcd1234efgh5678?format=clash&config=out&providers=1"
+
+# 6) sing-box / Xray with their own config templates (rules come from the template)
+curl -L "https://sub.example.com/abcd1234efgh5678?format=singbox_json&config=sing-box-home"
+curl -L "https://sub.example.com/abcd1234efgh5678?format=xray_json&config=xray-home"
 ```
 
 Clash/Mihomo dynamic subscription (periodic refresh):
@@ -93,9 +101,52 @@ proxy-groups:
       - subscription-nodes
 ```
 
-## 6. Notes
+## 6. Provider mode and multiple subscription domains
+
+### 6.1 What `providers=1` emits
+
+With `format=mihomo_yaml&providers=1` (or `format=clash&providers=1`) the YAML:
+
+- no longer inlines nodes at the top level — it emits `proxy-providers:`;
+- proxy groups reference node sources via `use: [<provider-key>...]`;
+- any `proxy-providers` written in a shared subscription format (`mihomo_configs.config_json`) is **ignored** (a shared config serves several plans; hard-coded providers would leak across plans). Group → source mappings live under “Plan management → group → source mapping”.
+
+Provider kinds:
+
+| Kind | Key | Notes |
+|---|---|---|
+| Internal | Sanitized node-group name | Generated per plan node group; contains only that group's nodes |
+| Reserved | `subscription-nodes` | All nodes of the plan; its source URL **omits** the `provider` parameter |
+| External | Name configured on the plan | External source (`http` YAML or `file`) |
+
+Common fields per provider:
+
+- `url` — points back to this subscription with `format=mihomo_proxies_yaml`, inheriting `config` / `platform` from the main request; internal providers append `provider=<key>`;
+- `path` — **always derived from “internal provider defaults → cache path template”** (default `./providers/{key}.yaml`, `{key}` substituted). External providers cannot set their own path either;
+- `health-check` — `enable / url / interval`; internal providers inherit the defaults, external providers configure it on the plan;
+- `interval` — refresh interval in seconds.
+
+### 6.2 Which domain goes into the provider URL (multi-domain)
+
+“Subscription center → Subscription endpoints” may hold **several** records (domain + path + enabled). The provider `url` picks the domain in this order:
+
+1. **The domain this request actually used**: the first value of `X-Forwarded-Host` (port stripped), otherwise `Host`; it must match an **enabled** endpoint;
+2. If nothing matches, fall back to the enabled endpoint with the **lowest ID**;
+3. The path comes from the matched endpoint (`path`, default `/`), yielding `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+Consequences:
+
+- A client fetching through a new domain gets that domain inside the provider — **no panel change needed**;
+- An old domain still enabled in the list is no longer hard-coded;
+- If a client cached the old provider URL, updating the subscription (or clearing the provider cache / restarting the client) switches it over.
+
+Reverse proxies must forward `X-Forwarded-Proto` and `X-Forwarded-Host`; otherwise the fallback endpoint is used.
+
+## 7. Notes
 
 - **Format and config are tightly coupled**: the template selected by `config`/`platform` must match this request's `format`; mismatched templates are ignored — this prevents injecting Mihomo rules into sing-box/Xray JSON.
+- **`providers=1` only affects Mihomo YAML**: sing-box / Xray / base64 / raw ignore it (nodes stay inlined).
 - **Rate limiting**: the subscription endpoint has its own limit (`SubscribeRateLimit`); abusive clients are rejected.
 - **Access log**: every fetch records IP / UA / CDN information, visible under “Subscription access log” in the admin UI.
 - Without a domain configured on a dedicated subscription port, the request's `X-Forwarded-Proto` / `X-Forwarded-Host` are used; make sure your reverse proxy forwards both headers.
+- In multi-domain deployments keep the endpoints list aligned with the domains clients actually use; see §6.2.

@@ -397,7 +397,7 @@ def main():
         h1, _, rest = body.partition('\n')
         rest = rest.lstrip('\n')
         header = [
-            '<!-- source: %s.md | locale: %s | updated: 2026-10-23 -->' % (base, locale),
+            '<!-- source: %s.md | locale: %s | updated: %s -->' % (base, locale, time.strftime('%Y-%m-%d')),
             h1,
             '',
         ]

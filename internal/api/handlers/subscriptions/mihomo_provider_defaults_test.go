@@ -120,3 +120,65 @@ func TestProviderDefaultsFallbackUnchanged(t *testing.T) {
 		t.Fatalf("默认值不应改变：%+v", allDef)
 	}
 }
+
+// 外部 provider 的缓存路径不单独配置：与内部 provider 一致按默认模板生成，
+// 手写的历史 path 会被忽略；health-check 原样透传。
+func TestExternalProviderPathFollowsInternalTemplate(t *testing.T) {
+	tmpl := &entity.PlanTemplate{
+		NodeGroupIDs: []int64{1},
+		SubscriptionProviderConfig: `{
+			"internal_defaults": {"path": "./providers/{key}.yaml"},
+			"external_providers": {
+				"singbox": {
+					"type": "http",
+					"url": "https://example.com/oneclash.yaml",
+					"path": "./profiles/proxies/mihomo.yaml",
+					"interval": 1800,
+					"health-check": {"enable": true, "url": "https://cp.cloudflare.com/generate_204", "interval": 3600}
+				}
+			}
+		}`,
+	}
+	h := &PublicHandler{}
+	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+
+	ext := findProviderDef(defs, "singbox")
+	if ext == nil {
+		t.Fatalf("外部 provider 缺失：%+v", defs)
+	}
+	if ext["path"] != "./providers/singbox.yaml" {
+		t.Fatalf("外部 provider 的 path 应按默认模板生成，实际：%v", ext["path"])
+	}
+	hc, _ := ext["health-check"].(map[string]interface{})
+	if hc["url"] != "https://cp.cloudflare.com/generate_204" || hc["interval"] != float64(3600) {
+		t.Fatalf("外部 provider health-check 应原样保留：%+v", hc)
+	}
+}
+
+// 没有配置路径模板时，外部 provider 回落到 ./providers/<key>.yaml。
+func TestExternalProviderPathFallback(t *testing.T) {
+	tmpl := &entity.PlanTemplate{
+		NodeGroupIDs: []int64{1},
+		SubscriptionProviderConfig: `{
+			"external_providers": {
+				"singbox": {
+					"type": "http",
+					"url": "https://example.com/oneclash.yaml",
+					"path": "./profiles/proxies/mihomo.yaml"
+				}
+			}
+		}`,
+	}
+	h := &PublicHandler{}
+	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+
+	ext := findProviderDef(defs, "singbox")
+	if ext == nil {
+		t.Fatalf("外部 provider 缺失：%+v", defs)
+	}
+	if ext["path"] != "./providers/singbox.yaml" {
+		t.Fatalf("外部 provider 的 path 应回落到默认值，实际：%v", ext["path"])
+	}
+}

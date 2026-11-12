@@ -211,6 +211,12 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 		for k, v := range cfg.ExternalProviders[rawKey] {
 			fields[k] = v
 		}
+		// 外部 provider 的缓存路径不允许单独配置：与内部 provider 一致，
+		// 统一按 internal_defaults.path 模板（缺省 ./providers/{key}.yaml）生成。
+		delete(fields, "path")
+		if tpl := strings.TrimSpace(plan.Defaults.Path); tpl != "" {
+			fields["path"] = strings.ReplaceAll(tpl, "{key}", key)
+		}
 		plan.External[key] = fields
 	}
 

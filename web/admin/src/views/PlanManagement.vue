@@ -500,6 +500,7 @@
       </el-form>
 
       <el-divider content-position="left">{{ t('plan.externalProviders') }}</el-divider>
+      <div class="form-hint" style="margin:-4px 0 10px 16px">{{ t('plan.externalPathHint') }}</div>
       <el-table :data="providerForm.external_providers" size="small" stripe>
         <el-table-column :label="t('common.name')" width="130">
           <template #default="{row}"><el-input v-model="row.name" /></template>
@@ -515,14 +516,16 @@
         <el-table-column label="URL" min-width="200">
           <template #default="{row}"><el-input v-model="row.url" /></template>
         </el-table-column>
-        <el-table-column :label="t('plan.providerPath')" width="150">
-          <template #default="{row}"><el-input v-model="row.path" placeholder="./providers/" /></template>
-        </el-table-column>
         <el-table-column :label="t('plan.providerInterval')" width="110">
           <template #default="{row}"><el-input-number v-model="row.interval" :min="0" controls-position="right" style="width:100%" /></template>
         </el-table-column>
-        <el-table-column :label="t('plan.healthCheckUrl')" min-width="170">
-          <template #default="{row}"><el-input v-model="row.hc_url" placeholder="https://www.gstatic.com/generate_204" /></template>
+        <!-- 缓存路径不单独配置：与内部 provider 共用同一路径模板，后端生成 -->
+        <el-table-column :label="t('plan.healthCheckUrl')" min-width="260">
+          <template #default="{row}">
+            <el-select v-model="row.hc_url" filterable allow-create clearable default-first-option style="width:100%" :placeholder="t('plan.healthCheckPlaceholder')">
+              <el-option v-for="u in HEALTH_CHECK_URLS" :key="u" :label="u" :value="u" />
+            </el-select>
+          </template>
         </el-table-column>
         <el-table-column :label="t('plan.healthCheckInterval')" width="120">
           <template #default="{row}"><el-input-number v-model="row.hc_interval" :min="0" controls-position="right" style="width:100%" /></template>
@@ -547,7 +550,7 @@
         <el-table-column :label="t('plan.providerKeys')" min-width="240">
           <template #default="{row}">
             <el-select v-model="row.keys" multiple filterable allow-create style="width:100%">
-              <el-option v-for="k in providerKeyOptions" :key="k" :label="k" :value="k" />
+              <el-option v-for="k in providerKeyOptions" :key="k" :label="k === 'subscription-nodes' ? t('plan.providerKeysAllNodes') : k" :value="k" />
             </el-select>
           </template>
         </el-table-column>
@@ -1031,12 +1034,22 @@ const providerForm = ref({
 })
 const mihomoGroupNames = ref([])
 
+// 外部 provider 的健康检查探测地址预设，可下拉选择也可手填。
+const HEALTH_CHECK_URLS = [
+  'https://www.gstatic.com/generate_204',
+  'http://www.gstatic.com/generate_204',
+  'https://cp.cloudflare.com/generate_204',
+  'https://www.google.com/generate_204',
+  'https://connectivitycheck.platform.hicloud.com/generate_204',
+]
+
 const providerInternalGroups = computed(() => {
   const ids = currentTemplate.value?.node_group_ids || []
   return nodeGroups.value.filter(g => ids.includes(g.id))
 })
 const providerKeyOptions = computed(() => {
-  const set = new Set()
+  // subscription-nodes 是后端保留 provider（本套餐全部节点），不在 internal/external 列表中
+  const set = new Set(['subscription-nodes'])
   providerInternalGroups.value.forEach(g => { if (g.name) set.add(g.name) })
   providerForm.value.external_providers.forEach(p => { if (p.name) set.add(p.name) })
   return [...set]
@@ -1057,7 +1070,6 @@ async function showProvidersDialog(tpl) {
       name,
       type: p.type || 'http',
       url: p.url || '',
-      path: p.path || '',
       interval: p.interval || 3600,
       hc_url: hc(p['health-check']).url || '',
       hc_interval: hc(p['health-check']).interval || 0,
@@ -1121,8 +1133,8 @@ async function saveProviders() {
     const entry = { ...(p.raw || {}), type: p.type || 'http' }
     if (p.url) entry.url = p.url.trim()
     else delete entry.url
-    if (p.path) entry.path = p.path.trim()
-    else delete entry.path
+    // 缓存路径与内部 provider 一致，由后端按默认模板生成，这里不再保留历史值
+    delete entry.path
     if (p.interval) entry.interval = Number(p.interval)
     else delete entry.interval
     if (p.hc_url) {
@@ -1133,9 +1145,9 @@ async function saveProviders() {
         url: String(p.hc_url).trim(),
         interval: Number(p.hc_interval || prevHc.interval || 3600),
       }
-    } else if (p.hc_interval) {
-      const prevHc = (entry['health-check'] && typeof entry['health-check'] === 'object') ? entry['health-check'] : {}
-      entry['health-check'] = { ...prevHc, interval: Number(p.hc_interval) }
+    } else {
+      // 清空探测 URL = 关闭健康检查
+      delete entry['health-check']
     }
     if (entry.type === 'http' && !entry.url) {
       ElMessage.error(t('plan.providerUrlRequired', { name }))

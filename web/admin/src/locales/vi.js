@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "Cổng HTTPS cục bộ",
     "batchMigrate": "Di chuyển một chạm",
     "sniFallback": "Quy tắc dự phòng",
+    "sniAutoDerivedHint": "serverNames của inbound Reality được tự động suy ra thành quy tắc SNI, không cần tạo thủ công. Chỉ thêm quy tắc tại đây cho inbound không phải Reality hoặc SNI cố định.",
     "settings": "Cấu hình",
     "logSettings": "Cấu hình nhật ký",
     "logOutput": "Phương thức xuất nhật ký",

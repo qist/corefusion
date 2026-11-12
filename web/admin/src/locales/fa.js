@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "پورت HTTPS محلی",
     "batchMigrate": "مهاجرت یک‌کلیکی",
     "sniFallback": "قاعده پیش‌فرض",
+    "sniAutoDerivedHint": "serverNames ورودی‌های Reality به‌صورت خودکار به قواعد SNI تبدیل می‌شوند و نیازی به ساخت دستی نیست. قواعد را فقط برای ورودی‌های غیر Reality یا SNI ثابت اینجا اضافه کنید.",
     "settings": "پیکربندی",
     "logSettings": "پیکربندی گزارش",
     "logOutput": "روش خروجی گزارش",

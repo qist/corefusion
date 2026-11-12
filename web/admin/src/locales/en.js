@@ -2974,6 +2974,7 @@ wafAutoSyncDesc: 'Automatically sync from source on schedule, then push to all n
     addSNIRule: 'Add SNI Rule',
     batchMigrate: 'Batch Migrate',
     sniFallback: 'Fallback Rule',
+    'sniAutoDerivedHint': 'Reality inbound serverNames are derived into SNI rules automatically, no manual rule needed. Add rules here only for non-Reality inbounds or fixed SNI cases.',
     settings: 'Settings',
     logSettings: 'Log Settings',
     nginxSettings: 'Nginx Settings',

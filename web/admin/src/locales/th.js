@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "พอร์ต HTTPS ภายในเครื่อง",
     "batchMigrate": "ย้ายในคลิกเดียว",
     "sniFallback": "กฎสำรอง",
+    "sniAutoDerivedHint": "serverNames ของ inbound แบบ Reality จะถูกสร้างเป็นกฎ SNI โดยอัตโนมัติ ไม่จำเป็นต้องสร้างด้วยมือ เพิ่มกฎที่นี่เฉพาะ inbound ที่ไม่ใช่ Reality หรือกรณี SNI แบบคงที่",
     "settings": "การกำหนดค่า",
     "logSettings": "การกำหนดค่าบันทึก",
     "logOutput": "วิธีการส่งออกบันทึก",

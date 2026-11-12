@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "Yerel HTTPS bağlantı noktası",
     "batchMigrate": "Tek tıkla taşı",
     "sniFallback": "Yedek kural",
+    "sniAutoDerivedHint": "Reality inbound serverNames değerleri otomatik olarak SNI kurallarına türetilir, elle kural oluşturmanız gerekmez. Burada yalnızca Reality dışı inbound’lar veya sabit SNI durumları için kural ekleyin.",
     "settings": "Yapılandırma",
     "logSettings": "Günlük yapılandırması",
     "logOutput": "Günlük çıktı yöntemi",

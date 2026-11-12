@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "Локальный порт HTTPS",
     "batchMigrate": "Миграция в один клик",
     "sniFallback": "Резервное правило",
+    "sniAutoDerivedHint": "serverNames входящих подключений Reality автоматически преобразуются в правила SNI, создавать их вручную не нужно. Добавляйте правила здесь только для не-Reality подключений или фиксированного SNI.",
     "settings": "Конфигурация",
     "logSettings": "Настройка логов",
     "logOutput": "Способ вывода логов",

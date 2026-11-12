@@ -125,6 +125,13 @@
         </div>
       </template>
       <template v-if="sniSettings.enabled">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-bottom:16px"
+          :title="t('proxy.sniAutoDerivedHint')"
+        />
         <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
           <div>
             <div style="font-size:12px;color:#909399;margin-bottom:4px">SNI {{ t('proxy.listenPort') }}</div>
@@ -590,6 +597,7 @@
 
 <!-- SNI Dialog -->
 <el-dialog v-model="sniDialogVisible" :title="t('proxy.addSNIRule')" width="560">
+<el-alert type="warning" :closable="false" show-icon style="margin-bottom:12px" :title="t('proxy.sniAutoDerivedHint')" />
 <el-form :model="sniForm" label-width="120px">
 <el-form-item :label="t('proxy.inboundMode')">
 <el-radio-group v-model="sniForm.inbound_mode">

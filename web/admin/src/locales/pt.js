@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "Porta HTTPS local",
     "batchMigrate": "Migração com um clique",
     "sniFallback": "Regra de fallback",
+    "sniAutoDerivedHint": "Os serverNames dos inbounds Reality são derivados automaticamente em regras SNI, não é necessário criar manualmente. Adicione regras aqui apenas para inbounds não-Reality ou SNI fixo.",
     "settings": "Configuração",
     "logSettings": "Configuração de logs",
     "logOutput": "Modo de saída de logs",

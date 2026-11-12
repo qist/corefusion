@@ -2999,6 +2999,7 @@ wafAutoSyncDesc: '按计划自动从规则源同步规则，然后推送到所�
     addSNIRule: '添加 SNI 规则',
     batchMigrate: '一键迁移',
     sniFallback: '兜底规则',
+    'sniAutoDerivedHint': 'Reality 入站的 serverNames 会自动派生 SNI 分流规则，无需在此手动创建；仅非 Reality 入站或需要固定 SNI 时才手动添加。',
     settings: '配置',
     logSettings: '日志配置',
     nginxSettings: 'Nginx 配置',

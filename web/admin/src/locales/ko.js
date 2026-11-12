@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "로컬 HTTPS 포트",
     "batchMigrate": "원클릭 마이그레이션",
     "sniFallback": "폴백 규칙",
+    "sniAutoDerivedHint": "Reality 인바운드의 serverNames는 자동으로 SNI 규칙으로 파생되므로 수동으로 만들 필요가 없습니다. 비 Reality 인바운드나 고정 SNI 상황에서만 여기에서 규칙을 추가하세요.",
     "settings": "설정",
     "logSettings": "로그 설정",
     "logOutput": "로그 출력 방식",

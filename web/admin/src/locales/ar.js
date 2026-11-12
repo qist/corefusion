@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "منفذ HTTPS المحلي",
     "batchMigrate": "الترحيل بنقرة واحدة",
     "sniFallback": "قاعدة احتياطية",
+    "sniAutoDerivedHint": "يتم اشتقاق serverNames لاتصالات Reality تلقائيًا إلى قواعد SNI، لذا لا حاجة لإنشائها يدويًا. أضف القواعد هنا فقط لاتصالات غير Reality أو حالات SNI الثابت.",
     "settings": "الإعدادات",
     "logSettings": "إعدادات السجل",
     "logOutput": "طريقة إخراج السجل",

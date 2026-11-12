@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "Port HTTPS lokal",
     "batchMigrate": "Migrasi sekali klik",
     "sniFallback": "Aturan cadangan",
+    "sniAutoDerivedHint": "serverNames pada inbound Reality otomatis diturunkan menjadi aturan SNI, tidak perlu dibuat manual. Tambahkan aturan di sini hanya untuk inbound non-Reality atau SNI tetap.",
     "settings": "Konfigurasi",
     "logSettings": "Konfigurasi log",
     "logOutput": "Metode keluaran log",

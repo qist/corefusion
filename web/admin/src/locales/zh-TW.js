@@ -2752,6 +2752,7 @@ export default {
     "localHttpsPort": "本機 HTTPS 連接埠",
     "batchMigrate": "一鍵遷移",
     "sniFallback": "備援規則",
+    "sniAutoDerivedHint": "Reality 入站的 serverNames 會自動派生 SNI 分流規則，無需在此手動建立；僅非 Reality 入站或需要固定 SNI 時才手動新增。",
     "settings": "設定",
     "logSettings": "日誌設定",
     "logOutput": "日誌輸出方式",

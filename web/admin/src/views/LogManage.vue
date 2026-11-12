@@ -1737,26 +1737,30 @@ async function handleCleanupTable(row) {
 
 // ═══════════════ Lifecycle ═══════════════
 
-// Auto-initialize viewer when tab is first opened
-watch(activeTab, (val) => {
+// 标签页是懒加载的：首次进入该标签时才拉数据。
+// ⚠ 必须同时处理「直接带 ?tab=cleanup 打开/F5」的情况 —— 此时 activeTab 的初始值
+// 就是 cleanup，watch 不会触发（不是 immediate），页面会一直空着直到手动刷新/切标签。
+function loadTabData(val) {
   if (val === 'viewer' && viewerLogTypes.value.length === 0) {
     onViewerNodeChange()
   }
-  if (val === 'cleanup' && cleanupRules.value.length === 0) {
-    fetchCleanupRules()
+  if (val === 'cleanup') {
+    if (cleanupRules.value.length === 0) fetchCleanupRules()
+    if (schedulerItems.value.length === 0) fetchSchedulerConfig()
   }
-  if (val === 'cleanup' && schedulerItems.value.length === 0) {
-    fetchSchedulerConfig()
-  }
-})
+}
 
-onMounted(() => {
+watch(activeTab, loadTabData)
+
+onMounted(async () => {
   fetchData()
   fetchStatus()
   fetchCoreLogOutput()
   fetchProxyLogOutput()
   fetchWriterStatuses()
-  fetchNodeServers()
+  await fetchNodeServers()
+  // 首屏就落在懒加载标签（cleanup / viewer）时补一次加载
+  loadTabData(activeTab.value)
 })
 
 onUnmounted(() => {

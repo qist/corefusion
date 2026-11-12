@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "來源 IP",
     "user": "使用者",
     "detail": "詳情",
-    "nodeAuditTitle": "節點操作日誌"
+    "nodeAuditTitle": "節點操作日誌",
+    "subAccessTitle": "訂閱存取日誌",
+    "subscriptionId": "訂閱 ID",
+    "client": "客戶",
+    "userAgent": "User-Agent",
+    "statusCode": "狀態碼",
   },
   "runtime": {
     "snapshots": "設定快照",

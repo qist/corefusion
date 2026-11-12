@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP المصدر",
     "user": "المستخدم",
     "detail": "التفاصيل",
-    "nodeAuditTitle": "سجل عمليات العقدة"
+    "nodeAuditTitle": "سجل عمليات العقدة",
+    "subAccessTitle": "سجل الوصول إلى الاشتراكات",
+    "subscriptionId": "معرّف الاشتراك",
+    "client": "العميل",
+    "userAgent": "User-Agent",
+    "statusCode": "رمز الحالة",
   },
   "runtime": {
     "snapshots": "لقطة الإعدادات",

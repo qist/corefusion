@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -168,6 +169,26 @@ func (r *AccessLogRepository) ListBySubscriptionID(ctx context.Context, subID in
 
 	r.db.WithContext(ctx).Model(&entity.SubscriptionAccessLog{}).Where("subscription_id = ?", subID).Count(&total)
 	err := r.db.WithContext(ctx).Where("subscription_id = ?", subID).Order("created_at DESC").Limit(limit).Offset(offset).Find(&logs).Error
+	return logs, total, err
+}
+
+// ListAll retrieves access logs across subscriptions (审计页用)。
+// subscriptionID / ip 为 0/空时不过滤。
+func (r *AccessLogRepository) ListAll(ctx context.Context, subscriptionID int64, ip string, limit, offset int) ([]entity.SubscriptionAccessLog, int64, error) {
+	var logs []entity.SubscriptionAccessLog
+	var total int64
+
+	q := r.db.WithContext(ctx).Model(&entity.SubscriptionAccessLog{})
+	if subscriptionID > 0 {
+		q = q.Where("subscription_id = ?", subscriptionID)
+	}
+	if ip = strings.TrimSpace(ip); ip != "" {
+		q = q.Where("ip = ? OR real_ip = ?", ip, ip)
+	}
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	err := q.Order("id DESC").Limit(limit).Offset(offset).Find(&logs).Error
 	return logs, total, err
 }
 

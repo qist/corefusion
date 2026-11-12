@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP source",
     "user": "Utilisateur",
     "detail": "Détails",
-    "nodeAuditTitle": "Journal des opérations du nœud"
+    "nodeAuditTitle": "Journal des opérations du nœud",
+    "subAccessTitle": "Journal d'accès aux abonnements",
+    "subscriptionId": "ID d'abonnement",
+    "client": "Client",
+    "userAgent": "User-Agent",
+    "statusCode": "Code d'état",
   },
   "runtime": {
     "snapshots": "Instantané de configuration",

@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "Quell-IP",
     "user": "Benutzer",
     "detail": "Details",
-    "nodeAuditTitle": "Knoten-Aktionsprotokoll"
+    "nodeAuditTitle": "Knoten-Aktionsprotokoll",
+    "subAccessTitle": "Abo-Zugriffsprotokoll",
+    "subscriptionId": "Abo-ID",
+    "client": "Kunde",
+    "userAgent": "User-Agent",
+    "statusCode": "Statuscode",
   },
   "runtime": {
     "snapshots": "Konfigurations-Snapshot",

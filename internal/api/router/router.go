@@ -3247,6 +3247,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				securityGroup.GET("/audit-events", securityH.ListAuditEvents)
 				// 导出 CSV：前端 Security.vue "导出"按钮调的就是这个（原先后端没有 → 404）✓
 				securityGroup.GET("/audit-events/export", securityH.ExportAuditEvents)
+				// 订阅访问日志：/subscriptions/:id/access-logs 只有单订阅视图，
+				// 管理端需要一个全局排查入口（curl 拉订阅后能看到记录）。
+				securityGroup.GET("/subscription-access-logs", securityH.ListSubscriptionAccessLogs)
 			}
 
 			// Backups — admin for read/manage; destructive restore/delete/upload

@@ -31,19 +31,25 @@
           </el-form>
 
           <el-table v-if="!isMobile" :data="auditList" v-loading="auditLoading" border stripe size="default">
-            <el-table-column prop="created_at" :label="t('common.time')" width="180" />
-            <el-table-column prop="user" :label="t('security.user')" width="140" show-overflow-tooltip />
+            <el-table-column :label="t('common.time')" width="170">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('security.user')" width="130" show-overflow-tooltip>
+              <template #default="{ row }">{{ auditUser(row) }}</template>
+            </el-table-column>
             <el-table-column prop="remote_ip" :label="t('security.remoteIp')" width="140" />
-            <el-table-column prop="category" :label="t('security.category')" width="130" />
-            <el-table-column prop="event_type" :label="t('security.eventType')" width="180" show-overflow-tooltip />
-            <el-table-column :label="t('security.result')" width="100">
+            <el-table-column prop="category" :label="t('security.category')" width="110" />
+            <el-table-column prop="event_type" :label="t('security.eventType')" min-width="180" show-overflow-tooltip />
+            <el-table-column :label="t('security.result')" width="95">
               <template #default="{ row }">
                 <el-tag :type="row.result === 'success' ? 'success' : row.result === 'failure' ? 'danger' : 'warning'" size="small">
                   {{ row.result }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="detail" :label="t('security.detail')" min-width="220" show-overflow-tooltip />
+            <el-table-column :label="t('security.detail')" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ auditDetail(row) }}</template>
+            </el-table-column>
           </el-table>
           <MobileCards
             v-else
@@ -127,6 +133,66 @@
           </div>
         </el-card>
       </el-tab-pane>
+
+      <!-- ===================== 订阅访问日志 ===================== -->
+      <el-tab-pane :label="t('security.subAccessTitle')" name="subAccess">
+        <el-card shadow="never">
+          <el-form :inline="true" class="filter-form" @submit.prevent>
+            <el-form-item :label="t('security.subscriptionId')">
+              <el-input v-model="subAccessQuery.subscription_id" clearable placeholder="ID" style="width:120px" />
+            </el-form-item>
+            <el-form-item :label="t('security.remoteIp')">
+              <el-input v-model="subAccessQuery.ip" clearable :placeholder="t('security.remoteIp')" style="width:160px" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="loadSubAccess(1)">{{ t('common.query') }}</el-button>
+              <el-button @click="resetSubAccess">{{ t('common.reset') }}</el-button>
+            </el-form-item>
+          </el-form>
+
+          <el-table v-if="!isMobile" :data="subAccessList" v-loading="subAccessLoading" border stripe size="default">
+            <el-table-column :label="t('common.time')" width="170">
+              <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('security.client')" min-width="170" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.client_email || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="subscription_id" :label="t('security.subscriptionId')" width="110" />
+            <el-table-column :label="t('security.remoteIp')" width="150" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.real_ip || row.ip || '-' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('security.userAgent')" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.user_agent || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="status_code" :label="t('security.statusCode')" width="100" />
+            <el-table-column :label="t('security.result')" width="95">
+              <template #default="{ row }">
+                <el-tag :type="row.status_code >= 200 && row.status_code < 300 ? 'success' : 'danger'" size="small">
+                  {{ row.hit_result || row.status_code }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+          <MobileCards
+            v-else
+            :rows="subAccessList"
+            title-field="client_email"
+            :fields="subAccessCardFields"
+          />
+
+          <div class="pager">
+            <el-pagination
+              v-model:current-page="subAccessQuery.page"
+              v-model:page-size="subAccessQuery.limit"
+              :total="subAccessTotal"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              @current-change="loadSubAccess"
+              @size-change="loadSubAccess(1)"
+            />
+          </div>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -135,7 +201,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  listAuditEvents, exportAuditEvents,
+  listAuditEvents, exportAuditEvents, listSubscriptionAccessLogs,
 } from '../api/security'
 import { listNodeAuditLogs, exportNodeAuditLogs, listNodeServers } from '../api/nodeServer'
 import { useIsMobile } from '../composables/useIsMobile'
@@ -279,21 +345,52 @@ function exportNodeAudit() {
     window.URL.revokeObjectURL(url)
   }).catch(() => {})
 }
-function formatNodeAuditTime(time) {
+// 统一时间格式：后端返回 RFC3339（带纳秒+时区），直接渲染会把列撑爆。
+function formatTime(time) {
   if (!time) return ''
   const d = new Date(time)
   if (isNaN(d)) return String(time)
-  return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+const formatNodeAuditTime = formatTime
+
+// 审计事件只存 user_id / reason，前端要用可读字段（原先取 row.user / row.detail 永远为空）。
+const auditUser = (row) => row.user_name || (row.user_id ? '#' + row.user_id : '-')
+const auditDetail = (row) => row.reason || row.metadata_json || '-'
+
+// ---------------- 订阅访问日志 ----------------
+const subAccessList = ref([])
+const subAccessTotal = ref(0)
+const subAccessLoading = ref(false)
+const subAccessQuery = reactive({ page: 1, limit: 20, subscription_id: '', ip: '' })
+function loadSubAccess(p) {
+  if (p) subAccessQuery.page = p
+  subAccessLoading.value = true
+  listSubscriptionAccessLogs({
+    limit: subAccessQuery.limit,
+    offset: (subAccessQuery.page - 1) * subAccessQuery.limit,
+    subscription_id: String(subAccessQuery.subscription_id || '').trim() || undefined,
+    ip: String(subAccessQuery.ip || '').trim() || undefined,
+  }).then((r) => {
+    subAccessList.value = r.items || []
+    subAccessTotal.value = r.total || 0
+  }).catch(() => {}).finally(() => { subAccessLoading.value = false })
+}
+function resetSubAccess() {
+  subAccessQuery.subscription_id = ''
+  subAccessQuery.ip = ''
+  loadSubAccess(1)
 }
 
 // 手机端卡片字段（与桌面表格列对应）
 const auditCardFields = computed(() => [
-  { label: t('common.time'), text: (row) => row.created_at || '-' },
-  { label: t('security.user'), text: (row) => row.user || '-' },
+  { label: t('common.time'), text: (row) => formatTime(row.created_at) || '-' },
+  { label: t('security.user'), text: (row) => auditUser(row) },
   { label: t('security.remoteIp'), text: (row) => row.remote_ip || '-' },
   { label: t('security.category'), text: (row) => row.category || '-' },
   { label: t('security.result'), text: (row) => row.result || '-' },
-  { label: t('security.detail'), text: (row) => row.detail || '-' },
+  { label: t('security.detail'), text: (row) => auditDetail(row) },
 ])
 const nodeAuditCardFields = computed(() => [
   { label: 'ID', text: (row) => (row.id ?? '-') },
@@ -304,6 +401,14 @@ const nodeAuditCardFields = computed(() => [
   { label: t('common.status'), text: (row) => (row.success ? '✓' : '✗') },
   { label: t('common.time'), text: (row) => formatNodeAuditTime(row.created_at) || '-' },
 ])
+const subAccessCardFields = computed(() => [
+  { label: t('common.time'), text: (row) => formatTime(row.created_at) || '-' },
+  { label: t('security.client'), text: (row) => row.client_email || '-' },
+  { label: t('security.subscriptionId'), text: (row) => row.subscription_id || '-' },
+  { label: t('security.remoteIp'), text: (row) => row.real_ip || row.ip || '-' },
+  { label: t('security.userAgent'), text: (row) => row.user_agent || '-' },
+  { label: t('security.statusCode'), text: (row) => row.status_code || '-' },
+])
 
 onMounted(() => { loadAudit(1) })
 
@@ -313,6 +418,7 @@ watch(activeTab, (val) => {
     if (nodeAuditList.value.length === 0) loadNodeAudit(1)
     if (serverOptions.value.length === 0) loadServerOptions()
   }
+  if (val === 'subAccess' && subAccessList.value.length === 0) loadSubAccess(1)
 })
 </script>
 

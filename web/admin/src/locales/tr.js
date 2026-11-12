@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "Kaynak IP",
     "user": "Kullanıcı",
     "detail": "Ayrıntılar",
-    "nodeAuditTitle": "Düğüm işlem günlüğü"
+    "nodeAuditTitle": "Düğüm işlem günlüğü",
+    "subAccessTitle": "Abonelik erişim günlüğü",
+    "subscriptionId": "Abonelik Kimliği",
+    "client": "Müşteri",
+    "userAgent": "User-Agent",
+    "statusCode": "Durum kodu",
   },
   "runtime": {
     "snapshots": "Yapılandırma anlık görüntüsü",

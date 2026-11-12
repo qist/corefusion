@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP-адрес источника",
     "user": "Пользователь",
     "detail": "Подробности",
-    "nodeAuditTitle": "Журнал операций с узлом"
+    "nodeAuditTitle": "Журнал операций с узлом",
+    "subAccessTitle": "Журнал доступа к подпискам",
+    "subscriptionId": "ID подписки",
+    "client": "Клиент",
+    "userAgent": "User-Agent",
+    "statusCode": "Код состояния",
   },
   "runtime": {
     "snapshots": "Снимок конфигурации",

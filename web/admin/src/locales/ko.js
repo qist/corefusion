@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "소스 IP",
     "user": "사용자",
     "detail": "상세",
-    "nodeAuditTitle": "노드 작업 로그"
+    "nodeAuditTitle": "노드 작업 로그",
+    "subAccessTitle": "구독 접속 로그",
+    "subscriptionId": "구독 ID",
+    "client": "고객",
+    "userAgent": "User-Agent",
+    "statusCode": "상태 코드",
   },
   "runtime": {
     "snapshots": "구성 스냅샷",

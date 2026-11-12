@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP nguồn",
     "user": "Người dùng",
     "detail": "Chi tiết",
-    "nodeAuditTitle": "Nhật ký thao tác node"
+    "nodeAuditTitle": "Nhật ký thao tác node",
+    "subAccessTitle": "Nhật ký truy cập đăng ký",
+    "subscriptionId": "ID đăng ký",
+    "client": "Khách hàng",
+    "userAgent": "User-Agent",
+    "statusCode": "Mã trạng thái",
   },
   "runtime": {
     "snapshots": "Bản chụp cấu hình",

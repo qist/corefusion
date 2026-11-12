@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP Sumber",
     "user": "Pengguna",
     "detail": "Detail",
-    "nodeAuditTitle": "Log Operasi Node"
+    "nodeAuditTitle": "Log Operasi Node",
+    "subAccessTitle": "Log akses langganan",
+    "subscriptionId": "ID langganan",
+    "client": "Pelanggan",
+    "userAgent": "User-Agent",
+    "statusCode": "Kode status",
   },
   "runtime": {
     "snapshots": "Snapshot Konfigurasi",

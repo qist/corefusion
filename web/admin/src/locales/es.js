@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP de origen",
     "user": "Usuario",
     "detail": "Detalles",
-    "nodeAuditTitle": "Registro de operaciones del nodo"
+    "nodeAuditTitle": "Registro de operaciones del nodo",
+    "subAccessTitle": "Registro de accesos a suscripciones",
+    "subscriptionId": "ID de suscripción",
+    "client": "Cliente",
+    "userAgent": "User-Agent",
+    "statusCode": "Código de estado",
   },
   "runtime": {
     "snapshots": "Instantánea de configuración",

@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "送信元 IP",
     "user": "ユーザー",
     "detail": "詳細",
-    "nodeAuditTitle": "ノード操作ログ"
+    "nodeAuditTitle": "ノード操作ログ",
+    "subAccessTitle": "サブスクリプションアクセスログ",
+    "subscriptionId": "サブスクリプション ID",
+    "client": "顧客",
+    "userAgent": "User-Agent",
+    "statusCode": "ステータスコード",
   },
   "runtime": {
     "snapshots": "設定スナップショット",

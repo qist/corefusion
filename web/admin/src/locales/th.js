@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP ต้นทาง",
     "user": "ผู้ใช้",
     "detail": "รายละเอียด",
-    "nodeAuditTitle": "บันทึกการดำเนินการโหนด"
+    "nodeAuditTitle": "บันทึกการดำเนินการโหนด",
+    "subAccessTitle": "บันทึกการเข้าถึงการสมัครใช้งาน",
+    "subscriptionId": "ID การสมัครใช้งาน",
+    "client": "ลูกค้า",
+    "userAgent": "User-Agent",
+    "statusCode": "รหัสสถานะ",
   },
   "runtime": {
     "snapshots": "สแนปช็อตการกำหนดค่า",

@@ -5189,7 +5189,12 @@ export default {
     "remoteIp": "IP مبدأ",
     "user": "کاربر",
     "detail": "جزئیات",
-    "nodeAuditTitle": "گزارش عملیات گره"
+    "nodeAuditTitle": "گزارش عملیات گره",
+    "subAccessTitle": "گزارش دسترسی اشتراک",
+    "subscriptionId": "شناسه اشتراک",
+    "client": "مشتری",
+    "userAgent": "User-Agent",
+    "statusCode": "کد وضعیت",
   },
   "runtime": {
     "snapshots": "اسنپ‌شات پیکربندی",

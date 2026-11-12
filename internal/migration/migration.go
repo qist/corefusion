@@ -1676,6 +1676,9 @@ func seedDefaultLogCleanupRules(db *gorm.DB) {
 	var count int64
 	db.Model(&entity.LogCleanupRule{}).Count(&count)
 	if count > 0 {
+		// 老库：规则表已有数据，只为「后来新增的日志表」幂等补规则
+		//（新表否则永远没有清理规则，会无限增长）。
+		ensureMissingLogCleanupRules(db)
 		return
 	}
 
@@ -1705,6 +1708,12 @@ func seedDefaultLogCleanupRules(db *gorm.DB) {
 		{Category: "commerce", Table: "charge_callback_events", DisplayName: "Charge Callback Events", RetainDays: 180, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "commerce", Table: "charge_callback_retries", DisplayName: "Charge Callback Retries (resolved)", RetainDays: 180, Enabled: true, CleanupCron: "0 */6 * * *"},
 
+		// ── 其他日志类表（后加的表：幂等补齐，见 ensureMissingLogCleanupRules）──
+		{Category: "commerce", Table: "callback_nonces", DisplayName: "Callback Nonces (anti-replay)", RetainDays: 7, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "notification_send_logs", DisplayName: "Notification Send Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "backup_records", DisplayName: "Backup Records", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "panel_update_jobs", DisplayName: "Panel Update Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+
 		// ── Client log tables (90-day retention) ──
 		{Category: "client", Table: "client_self_unban_logs", DisplayName: "Client Self-Unban Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
 		{Category: "client", Table: "shared_account_repair_logs", DisplayName: "Shared Account Repair Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
@@ -1724,4 +1733,39 @@ func seedDefaultLogCleanupRules(db *gorm.DB) {
 		}
 	}
 	log.Printf("seeded %d default log cleanup rules", len(defaults))
+
+	ensureMissingLogCleanupRules(db)
+}
+
+// ensureMissingLogCleanupRules 为「后来新增、但库里已有规则」的日志表补默认清理规则。
+//
+// seedDefaultLogCleanupRules 只在规则表为空时执行，老库升级后新表的清理规则会永久缺失
+// （例如 notification_send_logs / callback_nonces / backup_records / panel_update_jobs），
+// 这些表只增不减。这里按 table_name 幂等补齐：只插入缺失项，绝不覆盖用户已改过的规则。
+func ensureMissingLogCleanupRules(db *gorm.DB) {
+	extras := []entity.LogCleanupRule{
+		{Category: "commerce", Table: "callback_nonces", DisplayName: "Callback Nonces (anti-replay)", RetainDays: 7, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "audit", Table: "notification_send_logs", DisplayName: "Notification Send Logs", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "backup_records", DisplayName: "Backup Records", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+		{Category: "runtime", Table: "panel_update_jobs", DisplayName: "Panel Update Jobs (completed)", RetainDays: 90, Enabled: true, CleanupCron: "0 */6 * * *"},
+	}
+	now := time.Now()
+	added := 0
+	for i := range extras {
+		var count int64
+		db.Model(&entity.LogCleanupRule{}).Where("table_name = ?", extras[i].Table).Count(&count)
+		if count > 0 {
+			continue
+		}
+		extras[i].CreatedAt = now
+		extras[i].UpdatedAt = now
+		if err := db.Create(&extras[i]).Error; err != nil {
+			log.Printf("WARNING: add log cleanup rule %s failed: %v", extras[i].Table, err)
+			continue
+		}
+		added++
+	}
+	if added > 0 {
+		log.Printf("added %d missing log cleanup rules", added)
+	}
 }

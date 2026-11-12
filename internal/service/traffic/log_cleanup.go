@@ -3,28 +3,50 @@ package traffic
 import (
 	"context"
 	"log"
+	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/cronutil"
 )
+
+// cleanupScanInterval 是调度扫描粒度：每轮读一次规则表，按各规则自己的
+// cleanup_cron 判断是否到点。1 分钟足够（最小可供配置的周期就是几小时）。
+//
+// 以前是一个全局 ticker（scheduler.log_cleanup_interval，默认 6h）把所有规则一起跑，
+// 每条规则上配的 cleanup_cron 根本没被使用 —— 界面能改、实际不生效。
+const cleanupScanInterval = time.Minute
 
 // LogCleanupService periodically removes old log/event records from the database
 // to prevent unbounded growth. Cleanup rules are configurable via the log_cleanup_rules table.
+//
+// 调度语义：
+//   - 每条规则按自己的 cleanup_cron 独立排期（支持 0 */6 * * * / 每天 / 每周 / @every 6h）；
+//   - 规则改完 1 分钟内自动重新排期，无需重启面板；
+//   - cron 非法/为空时回落到 fallbackInterval（scheduler.log_cleanup_interval）；
+//   - 启动时仍会对所有启用规则补跑一次（与旧行为一致，避免长期停机后积压）。
 type LogCleanupService struct {
-	db       *gorm.DB
-	interval time.Duration // how often to run scheduled cleanup
+	db               *gorm.DB
+	fallbackInterval time.Duration // cron 非法/为空时的兜底周期
+
+	mu       sync.Mutex
+	nextRun  map[int64]time.Time // 规则 ID → 下一次执行时间
+	cronSeen map[int64]string    // 规则 ID → 上次排期时的 cron（用于识别修改）
 }
 
 // NewLogCleanupService creates a new log cleanup service.
-func NewLogCleanupService(db *gorm.DB, cleanupInterval time.Duration) *LogCleanupService {
-	if cleanupInterval <= 0 {
-		cleanupInterval = 6 * time.Hour
+func NewLogCleanupService(db *gorm.DB, fallbackInterval time.Duration) *LogCleanupService {
+	if fallbackInterval <= 0 {
+		fallbackInterval = 6 * time.Hour
 	}
 	return &LogCleanupService{
-		db:       db,
-		interval: cleanupInterval,
+		db:               db,
+		fallbackInterval: fallbackInterval,
+		nextRun:          map[int64]time.Time{},
+		cronSeen:         map[int64]string{},
 	}
 }
 
@@ -34,21 +56,121 @@ func (s *LogCleanupService) Start(ctx context.Context) {
 }
 
 func (s *LogCleanupService) loop(ctx context.Context) {
-	// Run once shortly after startup
+	// Run once shortly after startup（先补跑一轮，再按 cron 排期）
 	time.Sleep(30 * time.Second)
 	s.RunScheduledCleanup(ctx)
+	s.reschedule(time.Now())
 
-	ticker := time.NewTicker(s.interval)
+	ticker := time.NewTicker(cleanupScanInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			s.RunScheduledCleanup(ctx)
+		case now := <-ticker.C:
+			s.runDue(now)
 		}
 	}
+}
+
+// reschedule 按当前规则重新计算所有下次执行时间（不执行清理）。
+func (s *LogCleanupService) reschedule(now time.Time) {
+	rules, err := s.ListRules()
+	if err != nil {
+		log.Printf("[LogCleanup] failed to load rules: %v", err)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := make(map[int64]bool, len(rules))
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		active[rule.ID] = true
+		cron := strings.TrimSpace(rule.CleanupCron)
+		s.cronSeen[rule.ID] = cron
+		s.nextRun[rule.ID] = s.nextFor(cron, now)
+	}
+	for id := range s.nextRun {
+		if !active[id] {
+			delete(s.nextRun, id)
+			delete(s.cronSeen, id)
+		}
+	}
+}
+
+// nextFor 计算下一次执行时间：cron 合法按 cron，否则按兜底周期。
+func (s *LogCleanupService) nextFor(cron string, now time.Time) time.Time {
+	if next, ok := cronutil.NextRotation(cron, now); ok {
+		return next
+	}
+	return now.Add(s.fallbackInterval)
+}
+
+// runDue 执行所有「已到点」的规则，并为每条规则重新排期。
+//
+// 每轮都会重新读规则表 → 改 cron / 启停 / 保留天数都无需重启面板，
+// 最多 1 分钟内生效。
+func (s *LogCleanupService) runDue(now time.Time) {
+	rules, err := s.ListRules()
+	if err != nil {
+		log.Printf("[LogCleanup] failed to load rules: %v", err)
+		return
+	}
+
+	due := make([]entity.LogCleanupRule, 0, 4)
+
+	s.mu.Lock()
+	active := make(map[int64]bool, len(rules))
+	for _, rule := range rules {
+		if !rule.Enabled {
+			continue
+		}
+		active[rule.ID] = true
+		cron := strings.TrimSpace(rule.CleanupCron)
+
+		// cron 变了（或第一次见到这条规则）→ 重新排期，本轮不执行。
+		if seen, ok := s.cronSeen[rule.ID]; !ok || seen != cron {
+			s.cronSeen[rule.ID] = cron
+			s.nextRun[rule.ID] = s.nextFor(cron, now)
+			continue
+		}
+
+		next, ok := s.nextRun[rule.ID]
+		if !ok {
+			s.nextRun[rule.ID] = s.nextFor(cron, now)
+			continue
+		}
+		if now.Before(next) {
+			continue
+		}
+
+		due = append(due, rule)
+		s.nextRun[rule.ID] = s.nextFor(cron, now)
+	}
+
+	for id := range s.nextRun {
+		if !active[id] {
+			delete(s.nextRun, id)
+			delete(s.cronSeen, id)
+		}
+	}
+	s.mu.Unlock()
+
+	// 实际清理放到锁外：删大量历史行可能耗时，不能卡住 /cleanup-rules 的查询。
+	for _, rule := range due {
+		s.cleanupTable(rule)
+	}
+}
+
+// NextRunAt 返回某条规则的下次执行时间（供管理端展示；未启用/未排期返回 false）。
+func (s *LogCleanupService) NextRunAt(id int64) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	next, ok := s.nextRun[id]
+	return next, ok
 }
 
 // RunScheduledCleanup executes cleanup for all enabled rules.

@@ -476,6 +476,8 @@
             </div>
           </template>
 
+          <div style="margin:-4px 0 10px;font-size:12px;color:#909399">{{ t('logManage.cleanupHotReloadHint') }}</div>
+
           <!-- Category filter -->
           <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center">
             <span style="font-size:13px;color:#606266">{{ t('logManage.cleanupCategory') }}:</span>
@@ -515,14 +517,32 @@
                 />
               </template>
             </el-table-column>
-            <el-table-column :label="t('logManage.cleanupColInterval')" width="160">
+            <el-table-column :label="t('logManage.cleanupColInterval')" width="190">
               <template #default="{row}">
-                <el-select v-model="row.cleanup_cron" size="small" style="width:130px" @change="handleCleanupRuleChange(row)">
+                <el-select
+                  v-model="row.cleanup_cron"
+                  size="small"
+                  style="width:160px"
+                  filterable
+                  allow-create
+                  default-first-option
+                  :placeholder="t('logManage.cleanupCronCustom')"
+                  @change="handleCleanupRuleChange(row)"
+                >
+                  <el-option :label="t('logManage.cleanupInterval1h')" value="0 * * * *" />
                   <el-option :label="t('logManage.cleanupInterval6h')" value="0 */6 * * *" />
                   <el-option :label="t('logManage.cleanupInterval12h')" value="0 */12 * * *" />
                   <el-option :label="t('logManage.cleanupIntervalDaily')" value="0 0 * * *" />
                   <el-option :label="t('logManage.cleanupIntervalWeekly')" value="0 0 * * 0" />
                 </el-select>
+                <div style="font-size:11px;color:#909399;margin-top:2px">{{ row.cleanup_cron }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.cleanupColNextRun')" width="160">
+              <template #default="{row}">
+                <el-tag v-if="!row.cron_valid" type="warning" size="small">{{ t('logManage.cleanupCronInvalid') }}</el-tag>
+                <span v-else-if="row.next_run_at" style="font-size:12px">{{ formatTime(row.next_run_at) }}</span>
+                <span v-else style="font-size:12px;color:#909399">{{ t('logManage.cleanupNextRunPending') }}</span>
               </template>
             </el-table-column>
             <el-table-column :label="t('common.status')" width="70">
@@ -553,7 +573,17 @@
                 style="width:100px"
                 @change="handleCleanupRuleChange(row)"
               />
-              <el-select v-model="row.cleanup_cron" size="small" style="width:130px" @change="handleCleanupRuleChange(row)">
+              <el-select
+                v-model="row.cleanup_cron"
+                size="small"
+                style="width:160px"
+                filterable
+                allow-create
+                default-first-option
+                :placeholder="t('logManage.cleanupCronCustom')"
+                @change="handleCleanupRuleChange(row)"
+              >
+                <el-option :label="t('logManage.cleanupInterval1h')" value="0 * * * *" />
                 <el-option :label="t('logManage.cleanupInterval6h')" value="0 */6 * * *" />
                 <el-option :label="t('logManage.cleanupInterval12h')" value="0 */12 * * *" />
                 <el-option :label="t('logManage.cleanupIntervalDaily')" value="0 0 * * *" />
@@ -591,22 +621,24 @@
             </div>
           </template>
           <el-table v-if="!isMobile" :data="schedulerItems" v-loading="schedulerLoading" stripe size="small">
-            <el-table-column prop="label" :label="t('logManage.schedulerColName')" min-width="280" />
-            <el-table-column :label="t('logManage.schedulerColInterval')" width="180">
+            <el-table-column :label="t('logManage.schedulerColName')" min-width="280">
+              <template #default="{row}">{{ schedulerLabel(row) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('logManage.schedulerColInterval')" width="200">
               <template #default="{row}">
                 <el-input-number
                   v-model="row.value"
                   :min="1"
-                  :max="10080"
+                  :max="row.unit === 'day' ? 3650 : 10080"
                   size="small"
                   style="width:120px"
                 />
-                <span style="margin-left:6px;font-size:12px;color:#909399">{{ t('logManage.schedulerUnitMin') }}</span>
+                <span style="margin-left:6px;font-size:12px;color:#909399">{{ schedulerUnitLabel(row) }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="t('logManage.schedulerColDefault')" width="120">
+            <el-table-column :label="t('logManage.schedulerColDefault')" width="130">
               <template #default="{row}">
-                <span style="font-size:12px;color:#909399">{{ row.default }} {{ t('logManage.schedulerUnitMin') }}</span>
+                <span style="font-size:12px;color:#909399">{{ row.default }} {{ schedulerUnitLabel(row) }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -615,11 +647,11 @@
               <el-input-number
                 v-model="row.value"
                 :min="1"
-                :max="10080"
+                :max="row.unit === 'day' ? 3650 : 10080"
                 size="small"
                 style="width:120px"
               />
-              <span style="font-size:12px;color:#909399">{{ t('logManage.schedulerUnitMin') }}</span>
+              <span style="font-size:12px;color:#909399">{{ schedulerUnitLabel(row) }}</span>
             </template>
           </MobileCards>
           <div style="margin-top:8px;font-size:11px;color:#909399">
@@ -792,7 +824,7 @@ import { useIsMobile } from '../composables/useIsMobile'
 import PaginationBar from '../components/PaginationBar.vue'
 import MobileCards from '../components/MobileCards.vue'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { isMobile } = useIsMobile()
 
 // ──────────── Active Tab (persisted via URL query) ────────────
@@ -999,9 +1031,11 @@ const logPolicyCardFields = computed(() => [
 const cleanupCardFields = computed(() => [
   { label: t('common.type'), text: (row) => row.category || '-' },
   { label: t('logManage.cleanupColDbTable'), text: (row) => row.table_name || '-' },
+  { label: t('logManage.cleanupColInterval'), text: (row) => row.cleanup_cron || '-' },
+  { label: t('logManage.cleanupColNextRun'), text: (row) => row.cron_valid === false ? t('logManage.cleanupCronInvalid') : (row.next_run_at ? formatTime(row.next_run_at) : t('logManage.cleanupNextRunPending')) },
 ])
 const schedulerCardFields = computed(() => [
-  { label: t('logManage.schedulerColDefault'), text: (row) => row.default != null ? row.default + ' ' + t('logManage.schedulerUnitMin') : '-' },
+  { label: t('logManage.schedulerColDefault'), text: (row) => row.default != null ? row.default + ' ' + schedulerUnitLabel(row) : '-' },
 ])
 const logJobCardTitle = (row) => row.id != null ? '#' + row.id : ''
 const logJobCardFields = computed(() => [
@@ -1647,6 +1681,15 @@ async function handleCleanupAll() {
 const schedulerItems = ref([])
 const schedulerLoading = ref(false)
 const schedulerSaving = ref(false)
+
+// 调度项名称按 key 走 i18n（后端 label 只作兜底，避免各语言都显示英文）。
+function schedulerLabel(row) {
+  const key = 'logManage.sched_' + String(row.key || '').replace(/^scheduler\./, '')
+  return te(key) ? t(key) : (row.label || row.key || '')
+}
+function schedulerUnitLabel(row) {
+  return row.unit === 'day' ? t('logManage.schedulerUnitDay') : t('logManage.schedulerUnitMin')
+}
 
 async function fetchSchedulerConfig() {
   schedulerLoading.value = true

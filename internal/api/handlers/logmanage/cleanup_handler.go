@@ -3,11 +3,13 @@ package logmanage
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/cronutil"
 	trafficSvc "corefusion/internal/service/traffic"
 )
 
@@ -31,6 +33,8 @@ type CleanupService interface {
 	UpdateRule(rule *entity.LogCleanupRule) error
 	CleanupNow(ctx context.Context) ([]trafficSvc.CleanupResult, int64, error)
 	CleanupTableByName(ctx context.Context, tableName string) (int64, error)
+	// NextRunAt 返回该规则在调度器里的下次执行时间（未启用/未排期返回 false）。
+	NextRunAt(id int64) (time.Time, bool)
 }
 
 // NewCleanupHandler creates a new cleanup handler.
@@ -44,6 +48,14 @@ func (h *CleanupHandler) WithSettingStore(s SettingStore) *CleanupHandler {
 	return h
 }
 
+// cleanupRuleItem 是清理规则的列表视图：除规则字段外，带上「下次执行时间」与
+// 「cron 是否合法」，否则界面上配了周期也看不出到底有没有被调度。
+type cleanupRuleItem struct {
+	entity.LogCleanupRule
+	NextRunAt *time.Time `json:"next_run_at"`
+	CronValid bool       `json:"cron_valid"`
+}
+
 // ListCleanupRules returns all log cleanup rules.
 func (h *CleanupHandler) ListCleanupRules(c *gin.Context) {
 	rules, err := h.cleanupSvc.ListRules()
@@ -51,10 +63,17 @@ func (h *CleanupHandler) ListCleanupRules(c *gin.Context) {
 		response.InternalError(c, "LIST_FAILED", err.Error())
 		return
 	}
-	if rules == nil {
-		rules = []entity.LogCleanupRule{}
+	items := make([]cleanupRuleItem, 0, len(rules))
+	for _, rule := range rules {
+		item := cleanupRuleItem{LogCleanupRule: rule}
+		_, item.CronValid = cronutil.NextRotation(rule.CleanupCron, time.Now())
+		if next, ok := h.cleanupSvc.NextRunAt(rule.ID); ok {
+			t := next
+			item.NextRunAt = &t
+		}
+		items = append(items, item)
 	}
-	response.OK(c, rules)
+	response.OK(c, items)
 }
 
 // UpdateCleanupRule updates a cleanup rule's retain days, enabled status, etc.
@@ -128,7 +147,9 @@ func (h *CleanupHandler) CleanupTable(c *gin.Context) {
 
 // ──────────── Scheduler Interval Config ────────────
 
-// defaultSchedulerIntervals maps setting keys to default values (in minutes).
+// defaultSchedulerIntervals maps setting keys to default values.
+// 除 scheduler.waf_log_retain_days 是「天」以外，其余都是「分钟」；
+// 单位由 schedulerUnits 决定，界面不再一律显示成分钟。
 var defaultSchedulerIntervals = map[string]int{
 	"scheduler.log_cleanup_interval":         360,  // 6h
 	"scheduler.client_log_cleanup_interval":  10,   // 10m
@@ -144,8 +165,14 @@ var defaultSchedulerIntervals = map[string]int{
 }
 
 // schedulerLabels maps setting keys to human-readable labels.
+// schedulerUnits 决定界面单位：day = 天，min = 分钟。
+var schedulerUnits = map[string]string{
+	"scheduler.waf_log_retain_days": "day",
+}
+
+// schedulerLabels 是英文兜底名称（前端按 key 走 i18n，取不到译文时才用它）。
 var schedulerLabels = map[string]string{
-	"scheduler.log_cleanup_interval":         "DB Log Cleanup Check Interval",
+	"scheduler.log_cleanup_interval":         "DB Log Cleanup Fallback Interval (invalid cron)",
 	"scheduler.client_log_cleanup_interval":  "Client Log Package Cleanup Interval",
 	"scheduler.waf_log_cleanup_interval":     "WAF Log File Cleanup Interval",
 	"scheduler.waf_log_retain_days":          "WAF Log Retain Days",
@@ -176,6 +203,7 @@ func (h *CleanupHandler) GetSchedulerConfig(c *gin.Context) {
 		Label   string `json:"label"`
 		Value   int    `json:"value"`
 		Default int    `json:"default"`
+		Unit    string `json:"unit"` // min | day
 	}
 
 	items := make([]SchedulerItem, 0, len(defaultSchedulerIntervals))
@@ -186,11 +214,16 @@ func (h *CleanupHandler) GetSchedulerConfig(c *gin.Context) {
 				val = n
 			}
 		}
+		unit := "min"
+		if u, ok := schedulerUnits[key]; ok {
+			unit = u
+		}
 		items = append(items, SchedulerItem{
 			Key:     key,
 			Label:   schedulerLabels[key],
 			Value:   val,
 			Default: def,
+			Unit:    unit,
 		})
 	}
 	response.OK(c, gin.H{"items": items})

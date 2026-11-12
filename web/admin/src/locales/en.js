@@ -2334,67 +2334,67 @@ trustedProxies: 'Trusted Proxies',
         // name is the backend lookup key (referenced by node_monitor.go / traffic_quota.go), not translated.
         node_down: {
           label: 'Node Offline Alert',
-          name: '节点离线告警',
+          name: 'Node offline alert',
           subject: '',
           content: "🚨 Node Offline Alert\n\nNode: {'{'}node{'}'}\nTime: {'{'}time{'}'}\n\nThe node lost connection, please check it ASAP!"
         },
         node_recovered: {
           label: 'Node Recovered',
-          name: '节点恢复通知',
+          name: 'Node recovered',
           subject: '',
           content: "✅ Node Recovered\n\nNode: {'{'}node{'}'}\nTime: {'{'}time{'}'}\n\nThe node is back online, service restored."
         },
         backup_daily: {
           label: 'Daily Backup Report',
-          name: '每日备份报告',
+          name: 'Daily backup report',
           subject: '',
           content: "📦 Daily Backup Report\n\nTime: {'{'}time{'}'}\nFile: {'{'}backup_file{'}'}\nSize: {'{'}size{'}'}\nStatus: Success ✅"
         },
         backup_failed: {
           label: 'Backup Failed Alert',
-          name: '备份失败告警',
+          name: 'Backup failed',
           subject: '',
           content: "❌ Backup Failed\n\nTime: {'{'}time{'}'}\nFile: {'{'}backup_file{'}'}\n\nThe backup task failed. Please check backup config and storage!"
         },
         cert_expire: {
           label: 'Certificate Expiry (Admin)',
-          name: '证书到期提醒',
+          name: 'Certificate expiry reminder',
           subject: "Certificate expiring: {'{'}domain{'}'}",
           content: "Certificate Expiry Notice\n\nDomain: {'{'}domain{'}'}\nExpires on: {'{'}expire_date{'}'}\nDays left: {'{'}days{'}'}\n\nPlease renew the certificate in time to avoid service interruption."
         },
         sys_announce: {
           label: 'Maintenance Notice',
-          name: '系统维护公告',
+          name: 'Maintenance announcement',
           subject: '',
           content: "📢 Maintenance Notice\n\n{'{'}message{'}'}\n\nTime: {'{'}time{'}'}\n\nService may be briefly interrupted during maintenance. Thank you for your understanding."
         },
         user_register: {
           label: 'New User Registered',
-          name: '新用户注册通知',
+          name: 'New user registration',
           subject: '',
           content: "👤 New User Registered\n\nUser: {'{'}user{'}'}\nTime: {'{'}time{'}'}\n\nA new user has joined!"
         },
         node_quota: {
           label: 'Traffic Quota Alert',
-          name: '节点流量配额告警',
+          name: 'Node traffic quota alert',
           subject: '',
           content: "📊 Traffic Quota Alert\n\nNode: {'{'}node{'}'}\nUsed: {'{'}used{'}'} GB / Quota: {'{'}quota{'}'} GB ({'{'}percent{'}'})\nTime: {'{'}time{'}'}\n\nMonthly traffic reached the alert threshold. Please watch this node!"
         },
         process_crash: {
           label: 'Core Process Crash Alert',
-          name: '核心进程异常告警',
+          name: 'Core process crash alert',
           subject: '',
           content: "⚠️ Core Process Crash Alert\n\nProcess: {'{'}core{'}'}\nTime: {'{'}time{'}'}\nRestart: attempt {'{'}restarts{'}'}/{'{'}max{'}'}\nInfo: {'{'}message{'}'}\n\nThe process exited unexpectedly. The guardian is restarting it automatically — please watch its status!"
         },
         sub_expire: {
           label: 'Subscription Expiry (to Client)',
-          name: '订阅到期提醒',
+          name: 'Subscription expiry reminder',
           subject: 'Your subscription is expiring soon',
           content: "Dear user,\n\nYour subscription will expire on {'{'}expire_date{'}'} ({'{'}days{'}'} days left).\n\nTo avoid service interruption, please renew at the profile center.\n\n— CoreFusion"
         },
         balance_low_sub: {
           label: 'Low Balance (to Client)',
-          name: '余额不足提醒',
+          name: 'Low balance reminder',
           subject: 'Low balance notice',
           content: "Dear user,\n\nYour balance is {'{'}balance{'}'} CNY, below the alert threshold.\n\nA low balance may affect your service. Please top up in time.\n\n— CoreFusion"
         }

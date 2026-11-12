@@ -5626,7 +5626,7 @@ export default {
       "handshakeServer": "Máy chủ bắt tay",
       "handshakeServerPlaceholder": "Chọn cấu hình có sẵn hoặc nhập tùy chỉnh",
       "handshakeServerHint": "Chọn máy chủ proxy cục bộ hoặc đích công khai, hỗ trợ nhập tùy chỉnh",
-      "unixOnlySitesHint": "Các site Reality sau không có cổng sing-box dùng được (chưa cấu hình hoặc入口 dùng PROXY Protocol): {sites}. Hãy nhập cổng sing-box trong cài đặt Reality.",
+      "unixOnlySitesHint": "Các site Reality sau không có cổng sing-box dùng được (chưa cấu hình hoặc điểm vào có dùng PROXY Protocol): {sites}. Hãy nhập cổng sing-box trong cài đặt Reality.",
       "handshakePort": "Cổng bắt tay",
       "privateKey": "Khóa riêng tư",
       "publicKey": "Khóa công khai",

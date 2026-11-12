@@ -1437,10 +1437,13 @@ const selectedPreset = ref('')
 
 // 监控类模板：由节点健康监控/流量配额检查/备份任务/进程守护自动触发，Cron 不适用
 // （监控频率在「监控设置」里配置；备份/进程崩溃由事件即时触发）
+const monitorPresetKeys = ['node_down', 'node_recovered', 'node_quota', 'process_crash', 'backup_failed', 'backup_daily']
+// 兼容历史中文命名的模板（preset 名会随界面语言变化）
 const monitorTemplateNames = ['节点离线告警', '节点恢复通知', '节点流量配额告警', '核心进程异常告警', '备份失败告警', '每日备份报告']
 const isMonitorTemplate = computed(() =>
-  (selectedPreset.value && ['node_down', 'node_recovered', 'node_quota', 'process_crash', 'backup_failed', 'backup_daily'].includes(selectedPreset.value)) ||
-  monitorTemplateNames.includes(tmplForm.value.name)
+  (selectedPreset.value && monitorPresetKeys.includes(selectedPreset.value)) ||
+  monitorTemplateNames.includes(tmplForm.value.name) ||
+  monitorPresetKeys.some(k => tmplForm.value.name === t(`settings.templates.presets.${k}.name`))
 )
 
 function applyPreset(key) {

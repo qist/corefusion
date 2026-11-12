@@ -7,74 +7,74 @@
           <el-divider content-position="left">{{ t('subfmt.ports') }}</el-divider>
           <el-form-item :label="t('subfmt.mixedPort')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._mixedPortEnabled" @change="emit" />
-              <el-input-number v-model="modelValue.mixed_port" :min="0" :max="65535" :disabled="!modelValue._mixedPortEnabled" @change="emit" />
+              <el-switch v-model="modelValue._mixedPortEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue.mixed_port" :min="0" :max="65535" :disabled="!modelValue._mixedPortEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.httpPort')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._portEnabled" @change="emit" />
-              <el-input-number v-model="modelValue.port" :min="0" :max="65535" :disabled="!modelValue._portEnabled" @change="emit" />
+              <el-switch v-model="modelValue._portEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue.port" :min="0" :max="65535" :disabled="!modelValue._portEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.socksPort')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._socksPortEnabled" @change="emit" />
-              <el-input-number v-model="modelValue.socks_port" :min="0" :max="65535" :disabled="!modelValue._socksPortEnabled" @change="emit" />
+              <el-switch v-model="modelValue._socksPortEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue.socks_port" :min="0" :max="65535" :disabled="!modelValue._socksPortEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.redirPort')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._redirPortEnabled" @change="emit" />
-              <el-input-number v-model="modelValue.redir_port" :min="0" :max="65535" :disabled="!modelValue._redirPortEnabled" @change="emit" />
+              <el-switch v-model="modelValue._redirPortEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue.redir_port" :min="0" :max="65535" :disabled="!modelValue._redirPortEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tproxyPort')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tproxyPortEnabled" @change="emit" />
-              <el-input-number v-model="modelValue.tproxy_port" :min="0" :max="65535" :disabled="!modelValue._tproxyPortEnabled" @change="emit" />
+              <el-switch v-model="modelValue._tproxyPortEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue.tproxy_port" :min="0" :max="65535" :disabled="!modelValue._tproxyPortEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.network') }}</el-divider>
-          <el-form-item :label="t('subfmt.allowLan')"><el-switch v-model="modelValue.allow_lan" @change="emit" /></el-form-item>
-          <el-form-item :label="t('subfmt.bindAddress')"><el-input v-model="modelValue.bind_address" placeholder="*" style="width:200px" @change="emit" /></el-form-item>
-          <el-form-item :label="t('subfmt.ipv6')"><el-switch v-model="modelValue.ipv6" @change="emit" /></el-form-item>
+          <el-form-item :label="t('subfmt.allowLan')"><el-switch v-model="modelValue.allow_lan" @change="emitModel" /></el-form-item>
+          <el-form-item :label="t('subfmt.bindAddress')"><el-input v-model="modelValue.bind_address" placeholder="*" style="width:200px" @change="emitModel" /></el-form-item>
+          <el-form-item :label="t('subfmt.ipv6')"><el-switch v-model="modelValue.ipv6" @change="emitModel" /></el-form-item>
           <el-divider content-position="left">{{ t('subfmt.auth') }}</el-divider>
           <el-form-item :label="t('subfmt.authentication')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._authEnabled" @change="emit" />
-              <el-input v-model="modelValue._authStr" type="textarea" :rows="2" placeholder="username:password" :disabled="!modelValue._authEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._authEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._authStr" type="textarea" :rows="2" placeholder="username:password" :disabled="!modelValue._authEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.skipAuthPrefixes')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._skipAuthEnabled" @change="emit" />
-              <el-input v-model="modelValue._skipAuthStr" type="textarea" :rows="2" placeholder="127.0.0.1/8&#10;::1/128" :disabled="!modelValue._skipAuthEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._skipAuthEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._skipAuthStr" type="textarea" :rows="2" placeholder="127.0.0.1/8&#10;::1/128" :disabled="!modelValue._skipAuthEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.advanced') }}</el-divider>
           <el-form-item :label="t('subfmt.mode')">
-            <el-select v-model="modelValue.mode" style="width:200px" @change="emit">
+            <el-select v-model="modelValue.mode" style="width:200px" @change="emitModel">
               <el-option label="rule" value="rule" /><el-option label="global" value="global" /><el-option label="direct" value="direct" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('subfmt.logLevel')">
-            <el-select v-model="modelValue.log_level" style="width:200px" @change="emit">
+            <el-select v-model="modelValue.log_level" style="width:200px" @change="emitModel">
               <el-option label="silent" value="silent" /><el-option label="error" value="error" /><el-option label="warning" value="warning" /><el-option label="info" value="info" /><el-option label="debug" value="debug" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('subfmt.findProcessMode')">
-            <el-select v-model="modelValue.find_process_mode" style="width:200px" @change="emit">
+            <el-select v-model="modelValue.find_process_mode" style="width:200px" @change="emitModel">
               <el-option :label="t('subfmt.findProcessStrict')" value="strict" /><el-option label="always" value="always" /><el-option label="off" value="off" />
             </el-select>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.profile') }}</el-divider>
           <el-form-item :label="t('subfmt.storeSelected')">
-            <el-switch v-model="modelValue._storeSelected" @change="emit" />
+            <el-switch v-model="modelValue._storeSelected" @change="emitModel" />
             <div class="hint">{{ t('subfmt.storeSelectedHint') }}</div>
           </el-form-item>
           <el-form-item :label="t('subfmt.storeFakeIP')">
-            <el-switch v-model="modelValue._storeFakeIP" @change="emit" />
+            <el-switch v-model="modelValue._storeFakeIP" @change="emitModel" />
             <div class="hint">{{ t('subfmt.storeFakeIPHint') }}</div>
           </el-form-item>
         </el-form>
@@ -95,171 +95,171 @@
       <el-tab-pane :label="t('subfmt.tun')" name="tun">
         <el-form label-width="180px" size="small">
           <el-form-item :label="t('subfmt.tunEnable')">
-            <el-switch v-model="modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunDevice')">
-            <el-input v-model="modelValue._tunDevice" size="small" placeholder="utun" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-input v-model="modelValue._tunDevice" size="small" placeholder="utun" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emitModel" />
             <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.tunAutoAssign') }}</span>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunStack')">
-            <el-select v-model="modelValue._tunStack" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emit">
+            <el-select v-model="modelValue._tunStack" style="width:200px" :disabled="!modelValue._tunEnabled" @change="emitModel">
               <el-option label="system" value="system" /><el-option label="gvisor" value="gvisor" /><el-option label="mixed" value="mixed" />
             </el-select>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunDnsHijack')">
-            <el-input v-model="modelValue._tunDnsHijack" type="textarea" :rows="2" placeholder="127.0.0.1:53" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-input v-model="modelValue._tunDnsHijack" type="textarea" :rows="2" placeholder="127.0.0.1:53" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunAutoRoute')">
-            <el-switch v-model="modelValue._tunAutoRoute" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunAutoRoute" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunAutoDetect')">
-            <el-switch v-model="modelValue._tunAutoDetect" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunAutoDetect" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunAutoRedirect')">
-            <el-switch v-model="modelValue._tunAutoRedirect" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunAutoRedirect" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunEndpointNAT')">
-            <el-switch v-model="modelValue._tunEndpointNAT" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunEndpointNAT" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunMTU')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunMTUEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input-number v-model="modelValue._tunMTU" :min="1280" :max="65535" :disabled="!modelValue._tunEnabled || !modelValue._tunMTUEnabled" @change="emit" />
+              <el-switch v-model="modelValue._tunMTUEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue._tunMTU" :min="1280" :max="65535" :disabled="!modelValue._tunEnabled || !modelValue._tunMTUEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunStrictRoute')">
-            <el-switch v-model="modelValue._tunStrictRoute" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunStrictRoute" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunGSO')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunGSO" :disabled="!modelValue._tunEnabled" @change="emit" />
+              <el-switch v-model="modelValue._tunGSO" :disabled="!modelValue._tunEnabled" @change="emitModel" />
               <span style="font-size:12px;color:#909399">{{ t('mihomo.linuxOnly') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunGSOMaxSize')" v-if="modelValue._tunGSO">
-            <el-input-number v-model="modelValue._tunGSOMaxSize" :min="0" :max="65536" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-input-number v-model="modelValue._tunGSOMaxSize" :min="0" :max="65536" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.tunIPv6Addr')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIPv6Enabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIPv6Addr" size="small" placeholder="fdfe:dcba:9876::1/126" :disabled="!modelValue._tunEnabled || !modelValue._tunIPv6Enabled" style="width:250px" @change="emit" />
+              <el-switch v-model="modelValue._tunIPv6Enabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIPv6Addr" size="small" placeholder="fdfe:dcba:9876::1/126" :disabled="!modelValue._tunEnabled || !modelValue._tunIPv6Enabled" style="width:250px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunUDPTimeout')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunUDPTimeoutEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input-number v-model="modelValue._tunUDPTimeout" :min="0" :disabled="!modelValue._tunEnabled || !modelValue._tunUDPTimeoutEnabled" @change="emit" />
+              <el-switch v-model="modelValue._tunUDPTimeoutEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue._tunUDPTimeout" :min="0" :disabled="!modelValue._tunEnabled || !modelValue._tunUDPTimeoutEnabled" @change="emitModel" />
               <span style="font-size:12px;color:#909399">{{ t('mihomo.seconds') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunDisableICMP')">
-            <el-switch v-model="modelValue._tunDisableICMP" :disabled="!modelValue._tunEnabled" @change="emit" />
+            <el-switch v-model="modelValue._tunDisableICMP" :disabled="!modelValue._tunEnabled" @change="emitModel" />
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.tunRoute') }}</el-divider>
           <el-form-item :label="t('subfmt.tunRouteAddrV4')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteAddrV4Enabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteAddrV4" type="textarea" :rows="2" placeholder="0.0.0.0/1&#10;128.0.0.0/1" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrV4Enabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteAddrV4Enabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteAddrV4" type="textarea" :rows="2" placeholder="0.0.0.0/1&#10;128.0.0.0/1" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrV4Enabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunRouteAddrV6')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteAddrV6Enabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteAddrV6" type="textarea" :rows="2" placeholder="::/1&#10;8000::/1" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrV6Enabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteAddrV6Enabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteAddrV6" type="textarea" :rows="2" placeholder="::/1&#10;8000::/1" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrV6Enabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunRouteExcludeV4')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteExcludeV4Enabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteExcludeV4" type="textarea" :rows="2" placeholder="192.168.0.0/16" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeV4Enabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteExcludeV4Enabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteExcludeV4" type="textarea" :rows="2" placeholder="192.168.0.0/16" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeV4Enabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunRouteExcludeV6')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteExcludeV6Enabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteExcludeV6" type="textarea" :rows="2" placeholder="fc00::/7" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeV6Enabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteExcludeV6Enabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteExcludeV6" type="textarea" :rows="2" placeholder="fc00::/7" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeV6Enabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunRouteAddressSet')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteAddrSetEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteAddrSet" type="textarea" :rows="2" placeholder="ruleset-1&#10;ruleset-2" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrSetEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteAddrSetEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteAddrSet" type="textarea" :rows="2" placeholder="ruleset-1&#10;ruleset-2" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteAddrSetEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunRouteExcludeSet')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunRouteExcludeSetEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunRouteExcludeSet" type="textarea" :rows="2" placeholder="ruleset-3&#10;ruleset-4" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeSetEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunRouteExcludeSetEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunRouteExcludeSet" type="textarea" :rows="2" placeholder="ruleset-3&#10;ruleset-4" :disabled="!modelValue._tunEnabled || !modelValue._tunRouteExcludeSetEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.tunInterface') }}</el-divider>
           <el-form-item :label="t('subfmt.tunIncludeInterface')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludeIfEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludeIf" type="textarea" :rows="2" placeholder="eth0" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeIfEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludeIfEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludeIf" type="textarea" :rows="2" placeholder="eth0" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeIfEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunExcludeInterface')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunExcludeIfEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunExcludeIf" type="textarea" :rows="2" placeholder="eth1" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeIfEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunExcludeIfEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunExcludeIf" type="textarea" :rows="2" placeholder="eth1" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeIfEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.tunUserFilter') }}</el-divider>
           <el-form-item :label="t('subfmt.tunIncludeUID')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludeUIDEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludeUID" type="textarea" :rows="2" placeholder="0" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeUIDEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludeUIDEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludeUID" type="textarea" :rows="2" placeholder="0" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeUIDEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunExcludeUID')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunExcludeUIDEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunExcludeUID" type="textarea" :rows="2" placeholder="1000" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeUIDEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunExcludeUIDEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunExcludeUID" type="textarea" :rows="2" placeholder="1000" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeUIDEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunIncludeUIDRange')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludeUIDRangeEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludeUIDRange" type="textarea" :rows="2" placeholder="1000:9999" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeUIDRangeEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludeUIDRangeEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludeUIDRange" type="textarea" :rows="2" placeholder="1000:9999" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeUIDRangeEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunExcludeUIDRange')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunExcludeUIDRangeEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunExcludeUIDRange" type="textarea" :rows="2" placeholder="1000:9999" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeUIDRangeEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunExcludeUIDRangeEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunExcludeUIDRange" type="textarea" :rows="2" placeholder="1000:9999" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeUIDRangeEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.tunMACFilter') }}</el-divider>
           <el-form-item :label="t('subfmt.tunIncludeMAC')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludeMACEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludeMAC" type="textarea" :rows="2" placeholder="00:11:22:33:44:55" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeMACEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludeMACEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludeMAC" type="textarea" :rows="2" placeholder="00:11:22:33:44:55" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeMACEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunExcludeMAC')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunExcludeMACEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunExcludeMAC" type="textarea" :rows="2" placeholder="00:11:22:33:44:55" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeMACEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunExcludeMACEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunExcludeMAC" type="textarea" :rows="2" placeholder="00:11:22:33:44:55" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludeMACEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.tunAndroid') }}</el-divider>
           <el-form-item :label="t('subfmt.tunIncludeAndroidUser')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludeAndroidUserEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludeAndroidUser" type="textarea" :rows="2" placeholder="0&#10;10" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeAndroidUserEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludeAndroidUserEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludeAndroidUser" type="textarea" :rows="2" placeholder="0&#10;10" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludeAndroidUserEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunIncludePackage')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunIncludePkgEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunIncludePkg" type="textarea" :rows="2" placeholder="com.android.chrome" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludePkgEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunIncludePkgEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunIncludePkg" type="textarea" :rows="2" placeholder="com.android.chrome" :disabled="!modelValue._tunEnabled || !modelValue._tunIncludePkgEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tunExcludePackage')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tunExcludePkgEnabled" :disabled="!modelValue._tunEnabled" @change="emit" />
-              <el-input v-model="modelValue._tunExcludePkg" type="textarea" :rows="2" placeholder="com.android.captiveportallogin" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludePkgEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tunExcludePkgEnabled" :disabled="!modelValue._tunEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tunExcludePkg" type="textarea" :rows="2" placeholder="com.android.captiveportallogin" :disabled="!modelValue._tunEnabled || !modelValue._tunExcludePkgEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
         </el-form>
@@ -271,21 +271,21 @@
         <el-form label-width="140px" size="small">
           <el-form-item :label="t('subfmt.dnsOutbound')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._dnsOutEnabled" @change="emit" />
+              <el-switch v-model="modelValue._dnsOutEnabled" @change="emitModel" />
               <span style="font-size:12px;color:#909399">{{ t('mihomo.dnsOutHint') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.rematchOutbound')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._rematchOutEnabled" @change="emit" />
-              <el-input v-model="modelValue._rematchTarget" size="small" placeholder="target-rematch-name" style="width:200px" :disabled="!modelValue._rematchOutEnabled" @change="emit" />
+              <el-switch v-model="modelValue._rematchOutEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._rematchTarget" size="small" placeholder="target-rematch-name" style="width:200px" :disabled="!modelValue._rematchOutEnabled" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.directOutbound')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._directOutEnabled" @change="emit" />
-              <el-input v-model="modelValue._directInterface" size="small" placeholder="en1" style="width:100px" :disabled="!modelValue._directOutEnabled" @change="emit" />
-              <el-input-number v-model="modelValue._directRoutingMark" :min="0" :max="65535" size="small" placeholder="6667" style="width:120px" :disabled="!modelValue._directOutEnabled" @change="emit" />
+              <el-switch v-model="modelValue._directOutEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._directInterface" size="small" placeholder="en1" style="width:100px" :disabled="!modelValue._directOutEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue._directRoutingMark" :min="0" :max="65535" size="small" placeholder="6667" style="width:120px" :disabled="!modelValue._directOutEnabled" @change="emitModel" />
             </div>
           </el-form-item>
         </el-form>
@@ -498,61 +498,61 @@
       <el-tab-pane :label="t('subfmt.sniffer')" name="sniffer">
         <el-form label-width="180px" size="small">
           <el-form-item :label="t('subfmt.snifferEnable')">
-            <el-switch v-model="modelValue._snifferEnabled" @change="emit" />
+            <el-switch v-model="modelValue._snifferEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferForceDNS')">
-            <el-switch v-model="modelValue._snifferForceDNS" :disabled="!modelValue._snifferEnabled" @change="emit" />
+            <el-switch v-model="modelValue._snifferForceDNS" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferParsePureIP')">
-            <el-switch v-model="modelValue._snifferParsePureIP" :disabled="!modelValue._snifferEnabled" @change="emit" />
+            <el-switch v-model="modelValue._snifferParsePureIP" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferOverrideDest')">
-            <el-switch v-model="modelValue._snifferOverrideDest" :disabled="!modelValue._snifferEnabled" @change="emit" />
+            <el-switch v-model="modelValue._snifferOverrideDest" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.snifferSniff') }}</el-divider>
           <el-form-item label="HTTP">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferHTTP" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferHTTPPorts" size="small" placeholder="80, 8080-8880" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" style="width:200px" @change="emit" />
-              <el-switch v-model="modelValue._snifferHTTPOverride" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" @change="emit" />
+              <el-switch v-model="modelValue._snifferHTTP" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferHTTPPorts" size="small" placeholder="80, 8080-8880" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" style="width:200px" @change="emitModel" />
+              <el-switch v-model="modelValue._snifferHTTPOverride" :disabled="!modelValue._snifferEnabled || !modelValue._snifferHTTP" @change="emitModel" />
               <span style="font-size:12px;color:#909399">{{ t('mihomo.overrideTarget') }}</span>
             </div>
           </el-form-item>
           <el-form-item label="TLS">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferTLS" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferTLSPorts" size="small" placeholder="443, 8443" :disabled="!modelValue._snifferEnabled || !modelValue._snifferTLS" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._snifferTLS" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferTLSPorts" size="small" placeholder="443, 8443" :disabled="!modelValue._snifferEnabled || !modelValue._snifferTLS" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item label="QUIC">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferQUIC" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferQUICPorts" size="small" placeholder="443, 8443" :disabled="!modelValue._snifferEnabled || !modelValue._snifferQUIC" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._snifferQUIC" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferQUICPorts" size="small" placeholder="443, 8443" :disabled="!modelValue._snifferEnabled || !modelValue._snifferQUIC" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-divider content-position="left">{{ t('subfmt.snifferFilter') }}</el-divider>
           <el-form-item :label="t('subfmt.snifferForceDomain')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferForceDomainEnabled" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferForceDomain" type="textarea" :rows="2" placeholder="+.v2ex.com" :disabled="!modelValue._snifferEnabled || !modelValue._snifferForceDomainEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._snifferForceDomainEnabled" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferForceDomain" type="textarea" :rows="2" placeholder="+.v2ex.com" :disabled="!modelValue._snifferEnabled || !modelValue._snifferForceDomainEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferSkipDomain')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferSkipDomainEnabled" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferSkipDomain" type="textarea" :rows="2" :placeholder="t('proto2.mijiaCloud')" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDomainEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._snifferSkipDomainEnabled" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferSkipDomain" type="textarea" :rows="2" :placeholder="t('proto2.mijiaCloud')" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDomainEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferSkipSrcAddr')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferSkipSrcEnabled" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferSkipSrcAddr" type="textarea" :rows="2" placeholder="192.168.0.3/32" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipSrcEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._snifferSkipSrcEnabled" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferSkipSrcAddr" type="textarea" :rows="2" placeholder="192.168.0.3/32" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipSrcEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.snifferSkipDstAddr')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._snifferSkipDstEnabled" :disabled="!modelValue._snifferEnabled" @change="emit" />
-              <el-input v-model="modelValue._snifferSkipDstAddr" type="textarea" :rows="2" placeholder="192.168.0.3/32" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDstEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._snifferSkipDstEnabled" :disabled="!modelValue._snifferEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._snifferSkipDstAddr" type="textarea" :rows="2" placeholder="192.168.0.3/32" :disabled="!modelValue._snifferEnabled || !modelValue._snifferSkipDstEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
         </el-form>
@@ -561,27 +561,27 @@
       <!-- GeoData -->
       <el-tab-pane :label="t('subfmt.geodata')" name="geodata">
         <el-form label-width="140px" size="small">
-          <el-form-item :label="t('subfmt.geoAutoUpdate')"><el-switch v-model="modelValue._geoAutoUpdate" @change="emit" /></el-form-item>
+          <el-form-item :label="t('subfmt.geoAutoUpdate')"><el-switch v-model="modelValue._geoAutoUpdate" @change="emitModel" /></el-form-item>
           <el-form-item :label="t('subfmt.geoUpdateInterval')">
-            <el-input-number v-model="modelValue._geoUpdateInterval" :min="1" :max="168" :disabled="!modelValue._geoAutoUpdate" @change="emit" />
+            <el-input-number v-model="modelValue._geoUpdateInterval" :min="1" :max="168" :disabled="!modelValue._geoAutoUpdate" @change="emitModel" />
             <span style="font-size:12px;color:#909399;margin-left:8px">{{ t('mihomo.hours') }}</span>
           </el-form-item>
           <el-form-item :label="t('subfmt.geoIPUrl')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._geoIPEnabled" @change="emit" />
-              <el-input v-model="modelValue._geoIPUrl" size="small" placeholder="https://.../geoip.dat" :disabled="!modelValue._geoIPEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._geoIPEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._geoIPUrl" size="small" placeholder="https://.../geoip.dat" :disabled="!modelValue._geoIPEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.geositeUrl')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._geositeEnabled" @change="emit" />
-              <el-input v-model="modelValue._geositeUrl" size="small" placeholder="https://.../geosite.dat" :disabled="!modelValue._geositeEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._geositeEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._geositeUrl" size="small" placeholder="https://.../geosite.dat" :disabled="!modelValue._geositeEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.mmdbUrl')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._mmdbEnabled" @change="emit" />
-              <el-input v-model="modelValue._mmdbUrl" size="small" placeholder="https://.../geoip.metadb" :disabled="!modelValue._mmdbEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._mmdbEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._mmdbUrl" size="small" placeholder="https://.../geoip.metadb" :disabled="!modelValue._mmdbEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
         </el-form>
@@ -592,30 +592,30 @@
         <el-form label-width="140px" size="small">
           <el-form-item :label="t('subfmt.externalController')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._extControllerEnabled" @change="emit" />
-              <el-input v-model="modelValue._extController" size="small" placeholder="0.0.0.0:9093" :disabled="!modelValue._extControllerEnabled" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._extControllerEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._extController" size="small" placeholder="0.0.0.0:9093" :disabled="!modelValue._extControllerEnabled" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.extControllerTLS')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._extControllerTLSEnabled" :disabled="!modelValue._extControllerEnabled" @change="emit" />
-              <el-input v-model="modelValue._extControllerTLS" size="small" placeholder="0.0.0.0:8443" :disabled="!modelValue._extControllerEnabled || !modelValue._extControllerTLSEnabled" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._extControllerTLSEnabled" :disabled="!modelValue._extControllerEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._extControllerTLS" size="small" placeholder="0.0.0.0:8443" :disabled="!modelValue._extControllerEnabled || !modelValue._extControllerTLSEnabled" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.extControllerSecret')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._extSecretEnabled" @change="emit" />
-              <el-input v-model="modelValue._extSecret" size="small" placeholder="secret" :disabled="!modelValue._extSecretEnabled" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._extSecretEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._extSecret" size="small" placeholder="secret" :disabled="!modelValue._extSecretEnabled" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.externalUIName')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._extUIEnabled" @change="emit" />
-              <el-input v-model="modelValue._extUIName" size="small" placeholder="metacubexd" :disabled="!modelValue._extUIEnabled" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._extUIEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._extUIName" size="small" placeholder="metacubexd" :disabled="!modelValue._extUIEnabled" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.externalUIUrl')">
-            <el-input v-model="modelValue._extUIUrl" size="small" placeholder="https://github.com/..." :disabled="!modelValue._extUIEnabled" @change="emit" />
+            <el-input v-model="modelValue._extUIUrl" size="small" placeholder="https://github.com/..." :disabled="!modelValue._extUIEnabled" @change="emitModel" />
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -625,12 +625,12 @@
         <el-form label-width="140px" size="small">
           <el-form-item :label="t('subfmt.tlsCertificate')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._tlsEnabled" @change="emit" />
-              <el-input v-model="modelValue._tlsCert" type="textarea" :rows="3" :placeholder="t('mihomo.tlsCertPlaceholder')" :disabled="!modelValue._tlsEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._tlsEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._tlsCert" type="textarea" :rows="3" :placeholder="t('mihomo.tlsCertPlaceholder')" :disabled="!modelValue._tlsEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tlsKey')">
-            <el-input v-model="modelValue._tlsKey" type="textarea" :rows="3" :placeholder="t('mihomo.tlsKeyPlaceholder')" :disabled="!modelValue._tlsEnabled" @change="emit" />
+            <el-input v-model="modelValue._tlsKey" type="textarea" :rows="3" :placeholder="t('mihomo.tlsKeyPlaceholder')" :disabled="!modelValue._tlsEnabled" @change="emitModel" />
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -657,31 +657,31 @@
         <el-form label-width="140px" size="small">
           <el-form-item :label="t('subfmt.interfaceName')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._interfaceEnabled" @change="emit" />
-              <el-input v-model="modelValue._interfaceName" size="small" placeholder="en0" :disabled="!modelValue._interfaceEnabled" style="width:200px" @change="emit" />
+              <el-switch v-model="modelValue._interfaceEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._interfaceName" size="small" placeholder="en0" :disabled="!modelValue._interfaceEnabled" style="width:200px" @change="emitModel" />
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.routingMark')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._routingMarkEnabled" @change="emit" />
-              <el-input-number v-model="modelValue._routingMark" :min="0" :max="65535" :disabled="!modelValue._routingMarkEnabled" @change="emit" />
+              <el-switch v-model="modelValue._routingMarkEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue._routingMark" :min="0" :max="65535" :disabled="!modelValue._routingMarkEnabled" @change="emitModel" />
             </div>
           </el-form-item>
-          <el-form-item :label="t('subfmt.tcpConcurrent')"><el-switch v-model="modelValue._tcpConcurrent" @change="emit" /></el-form-item>
+          <el-form-item :label="t('subfmt.tcpConcurrent')"><el-switch v-model="modelValue._tcpConcurrent" @change="emitModel" /></el-form-item>
           <el-form-item :label="t('subfmt.keepAliveIdle')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._keepAliveEnabled" @change="emit" />
-              <el-input-number v-model="modelValue._keepAliveIdle" :min="0" :disabled="!modelValue._keepAliveEnabled" @change="emit" />
+              <el-switch v-model="modelValue._keepAliveEnabled" @change="emitModel" />
+              <el-input-number v-model="modelValue._keepAliveIdle" :min="0" :disabled="!modelValue._keepAliveEnabled" @change="emitModel" />
               <span style="font-size:12px;color:#909399">{{ t('mihomo.seconds') }}</span>
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.lanControl')">
-            <el-input v-model="modelValue._lanAllowedStr" type="textarea" :rows="2" placeholder="0.0.0.0/0&#10;::/0" @change="emit" />
+            <el-input v-model="modelValue._lanAllowedStr" type="textarea" :rows="2" placeholder="0.0.0.0/0&#10;::/0" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.lanDisallowedIPs')">
             <div style="display:flex;gap:8px;align-items:center">
-              <el-switch v-model="modelValue._lanDisallowedEnabled" @change="emit" />
-              <el-input v-model="modelValue._lanDisallowedStr" type="textarea" :rows="2" :disabled="!modelValue._lanDisallowedEnabled" style="flex:1" @change="emit" />
+              <el-switch v-model="modelValue._lanDisallowedEnabled" @change="emitModel" />
+              <el-input v-model="modelValue._lanDisallowedStr" type="textarea" :rows="2" :disabled="!modelValue._lanDisallowedEnabled" style="flex:1" @change="emitModel" />
             </div>
           </el-form-item>
         </el-form>
@@ -691,13 +691,13 @@
       <el-tab-pane :label="t('subfmt.experimental')" name="experimental">
         <el-form label-width="180px" size="small">
           <el-form-item :label="t('subfmt.quicDisableGso')">
-            <el-switch v-model="modelValue._quicDisableGso" @change="emit" />
+            <el-switch v-model="modelValue._quicDisableGso" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.quicDisableEcn')">
-            <el-switch v-model="modelValue._quicDisableEcn" @change="emit" />
+            <el-switch v-model="modelValue._quicDisableEcn" @change="emitModel" />
           </el-form-item>
           <el-form-item :label="t('subfmt.dialerIP4PConvert')">
-            <el-switch v-model="modelValue._dialerIP4PConvert" @change="emit" />
+            <el-switch v-model="modelValue._dialerIP4PConvert" @change="emitModel" />
           </el-form-item>
         </el-form>
       </el-tab-pane>
@@ -722,6 +722,14 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'update:hosts', 'update:proxyGroups', 'update:ruleProviders', 'update:proxyProviders', 'update:dns', 'update:tunnels'])
+
+// ⚠ 不能把 defineEmits 返回的 emit 直接当 @change 处理器（旧写法 @change="emit"）：
+// el-switch 会传 boolean、el-input-number 会传 number，Vue 内部把它当事件名执行
+// `event.startsWith("update:")` → 直接抛 "e.startsWith is not a function"。
+// modelValue 是对象、子字段由 v-model 原地修改，这里只需通知父组件一次更新。
+function emitModel() {
+  emit('update:modelValue', props.modelValue)
+}
 
 const tab = useQueryState('mtab', 'basic')
 const ruleProvidersList = ref(Object.entries(props.ruleProviders || {}).map(([name, rp]) => ({

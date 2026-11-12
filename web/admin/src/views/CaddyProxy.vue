@@ -793,10 +793,10 @@
             </el-select>
           </el-form-item>
           <el-form-item :label="t('proxy.certPath')">
-            <el-input v-model="siteForm.cert_path" placeholder="/path/to/cert.pem" @change="emit" />
+            <el-input v-model="siteForm.cert_path" placeholder="/path/to/cert.pem"  />
           </el-form-item>
           <el-form-item :label="t('proxy.keyPath')">
-            <el-input v-model="siteForm.key_path" placeholder="/path/to/key.pem" @change="emit" />
+            <el-input v-model="siteForm.key_path" placeholder="/path/to/key.pem"  />
           </el-form-item>
         </template>
         <el-divider content-position="left">{{ t('proxy.logSettings') }}</el-divider>

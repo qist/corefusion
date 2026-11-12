@@ -4021,6 +4021,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     downgrade: '降级',
     orders: '订单',
     subDetail: '订阅详情',
+    subFormatHint: '不同客户端请复制对应格式的地址；二维码对应当前选中的格式。',
     scanToImport: '扫码导入',
     qrGenerating: '二维码生成中...',
     showQrCode: '显示二维码',

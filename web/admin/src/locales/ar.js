@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "تخفيض",
     "orders": "الطلب",
     "subDetail": "تفاصيل الاشتراك",
+    subFormatHint: "انسخ الرابط المطابق لعميلك؛ رمز QR يتبع الصيغة المحددة.",
     "scanToImport": "استيراد بمسح رمز QR",
     "qrGenerating": "جارٍ إنشاء رمز QR...",
     "showQrCode": "إظهار رمز QR",

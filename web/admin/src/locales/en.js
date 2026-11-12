@@ -4092,6 +4092,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     downgrade: 'Downgrade',
     orders: 'Orders',
     subDetail: 'Subscription Detail',
+    subFormatHint: 'Copy the link matching your client; the QR code follows the selected format.',
     scanToImport: 'Scan to Import',
     qrGenerating: 'QR code generating...',
     showQrCode: 'Show QR Code',

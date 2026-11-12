@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "Düşür",
     "orders": "Sipariş",
     "subDetail": "Abonelik ayrıntıları",
+    subFormatHint: "İstemcinize uygun bağlantıyı kopyalayın; QR kodu seçilen biçimi izler.",
     "scanToImport": "QR ile içe aktar",
     "qrGenerating": "QR kod oluşturuluyor...",
     "showQrCode": "QR kodu göster",

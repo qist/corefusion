@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "Деградация",
     "orders": "Заказ",
     "subDetail": "Детали подписки",
+    subFormatHint: "Скопируйте ссылку нужного формата; QR-код соответствует выбранному формату.",
     "scanToImport": "Импорт по QR-коду",
     "qrGenerating": "Создание QR-кода...",
     "showQrCode": "Показать QR-код",

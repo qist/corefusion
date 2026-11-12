@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "Rétrograder",
     "orders": "Commande",
     "subDetail": "Détails de l’abonnement",
+    subFormatHint: "Copiez le lien correspondant à votre client ; le QR code suit le format sélectionné.",
     "scanToImport": "Importer via QR code",
     "qrGenerating": "Génération du QR code…",
     "showQrCode": "Afficher le QR code",

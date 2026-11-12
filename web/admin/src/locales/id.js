@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "Turunkan",
     "orders": "Pesanan",
     "subDetail": "Detail langganan",
+    subFormatHint: "Salin tautan sesuai klien Anda; kode QR mengikuti format yang dipilih.",
     "scanToImport": "Impor via pindai kode",
     "qrGenerating": "Membuat kode QR...",
     "showQrCode": "Tampilkan kode QR",

@@ -240,18 +240,28 @@
     </el-dialog>
 
     <!-- Subscription Detail Dialog -->
-    <el-dialog v-model="subDetailDialog" :title="t('client.subDetail')" width="420">
-      <div style="text-align:center">
-        <div style="margin-bottom:12px;font-weight:500">{{ subDetailEmail }}</div>
-        <div class="sub-link" style="word-break:break-all;font-family:monospace;font-size:12px;background:#f5f7fa;padding:10px;border-radius:6px;text-align:left">
-          {{ subDetailUrl }}
-          <el-button size="small" text @click="copyText(subDetailUrl)" style="float:right">{{ t('common.copy') }}</el-button>
+    <el-dialog v-model="subDetailDialog" :title="t('client.subDetail')" width="560">
+      <div style="margin-bottom:6px;font-weight:500">{{ subDetailEmail }}</div>
+      <div style="font-size:12px;color:#909399;margin-bottom:10px">{{ t('client.subFormatHint') }}</div>
+      <div
+        v-for="(item, idx) in subDetailLinks"
+        :key="item.format"
+        style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #ebeef5;border-radius:6px;margin-bottom:8px;cursor:pointer"
+        :style="{ borderColor: idx === subDetailSelected ? '#409eff' : '#ebeef5', background: idx === subDetailSelected ? '#ecf5ff' : '#f5f7fa' }"
+        @click="selectSubLink(idx)"
+      >
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500">{{ item.label }}</div>
+          <div style="word-break:break-all;font-family:monospace;font-size:12px;color:#606266">{{ item.url }}</div>
         </div>
-        <div v-if="subDetailQr" style="margin:16px 0">
+        <el-button size="small" text @click.stop="copyText(item.url)">{{ t('common.copy') }}</el-button>
+      </div>
+      <div style="text-align:center">
+        <div v-if="subDetailQr" style="margin:8px 0">
           <img :src="subDetailQr" style="max-width:200px;border:1px solid #eee;border-radius:8px" />
           <div style="font-size:12px;color:#909399;margin-top:8px">{{ t('client.scanToImport') }}</div>
         </div>
-        <div v-else-if="subDetailQrLoading" style="margin:16px 0;height:220px;display:flex;align-items:center;justify-content:center;color:#909399">
+        <div v-else-if="subDetailQrLoading" style="margin:8px 0;height:220px;display:flex;align-items:center;justify-content:center;color:#909399">
           {{ t('client.qrGenerating') }}
         </div>
         <el-button v-else size="small" :loading="subDetailQrLoading" @click="generateSubDetailQr" style="margin-top:8px">{{ t('client.showQrCode') }}</el-button>
@@ -321,7 +331,16 @@ const resetPwdForm = ref({ id: 0, email: '', password: '' })
 // Subscription Detail
 const subDetailDialog = ref(false)
 const subDetailEmail = ref('')
-const subDetailUrl = ref('')
+// 同一 token 按客户端格式给出多个链接（后端 normalizeSubscriptionFormat 支持这些别名）。
+const SUB_FORMATS = [
+  { format: 'mihomo_yaml', label: 'Clash / Mihomo' },
+  { format: 'singbox_json', label: 'Sing-box' },
+  { format: 'xray_json', label: 'Xray / V2Ray' },
+  { format: 'base64_uri', label: 'Base64 URI' },
+]
+const subDetailLinks = ref([])
+const subDetailSelected = ref(0)
+const subDetailUrl = computed(() => subDetailLinks.value[subDetailSelected.value]?.url || '')
 const subDetailQr = ref('')
 const subDetailQrLoading = ref(false)
 
@@ -346,22 +365,24 @@ const isPrivateHost = (h) => {
   return host === '::1' || host === 'localhost' || /^f[cd]/i.test(host) || /^fe80/i.test(host)
 }
 // 订阅链接：独立端点域名走 HTTPS；否则按当前访问 scheme，非 HTTPS + 公网地址（外网）不显示。
-const subUrl = (row) => {
+// format 为空是历史 raw 链接（默认格式），详情弹窗按客户端格式分别给出。
+const subUrl = (row, format) => {
   const token = getClientToken(row)
   if (!token) return ''
+  const query = format ? '?format=' + encodeURIComponent(format) : ''
   const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
   if (ep && ep.domain) {
     const path = ep.path || '/'
     const basePath = path.endsWith('/') ? path : path + '/'
-    return 'https://' + ep.domain + basePath + token
+    return 'https://' + ep.domain + basePath + token + query
   }
   const scheme = window.location.protocol === 'https:' ? 'https' : 'http'
   const host = window.location.hostname
   if (scheme === 'http' && !isPrivateHost(host)) return ''
   const subPort = panelSettings.value.subscription_port
   const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
-  if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token
-  return scheme + '://' + host + '/sub/' + token
+  if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token + query
+  return scheme + '://' + host + '/sub/' + token + query
 }
 
 // Helpers
@@ -520,12 +541,23 @@ async function resetPwd() {
 
 function showSubDetail(row) {
   subDetailEmail.value = row.email
-  subDetailUrl.value = subUrl(row)
-  if (!subDetailUrl.value) ElMessage.warning(t('client.subInsecureHidden'))
-  else if (subDetailUrl.value.startsWith('http://')) ElMessage.warning(t('client.subInsecure'))
+  const links = SUB_FORMATS
+    .map(f => ({ ...f, url: subUrl(row, f.format) }))
+    .filter(item => item.url)
+  subDetailLinks.value = links
+  subDetailSelected.value = 0
+  if (!links.length) ElMessage.warning(t('client.subInsecureHidden'))
+  else if (links[0].url.startsWith('http://')) ElMessage.warning(t('client.subInsecure'))
   subDetailQr.value = ''
   subDetailQrLoading.value = false
   subDetailDialog.value = true
+  void generateSubDetailQr()
+}
+
+function selectSubLink(idx) {
+  if (idx === subDetailSelected.value) return
+  subDetailSelected.value = idx
+  subDetailQr.value = ''
   void generateSubDetailQr()
 }
 

@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "ダウングレード",
     "orders": "注文",
     "subDetail": "サブスクリプションの詳細",
+    subFormatHint: "クライアントに合わせた形式のリンクをコピーしてください。QR コードは選択中の形式です。",
     "scanToImport": "スキャンしてインポート",
     "qrGenerating": "QRコードを生成中...",
     "showQrCode": "QRコードを表示",

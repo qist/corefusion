@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "تنزل",
     "orders": "سفارش",
     "subDetail": "جزئیات اشتراک",
+    subFormatHint: "پیوند متناسب با کلاینت خود را کپی کنید؛ کد QR مطابق قالب انتخاب‌شده است.",
     "scanToImport": "ورود با اسکن کد",
     "qrGenerating": "در حال تولید کد QR...",
     "showQrCode": "نمایش کد QR",

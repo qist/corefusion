@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "Hạ cấp",
     "orders": "Đơn hàng",
     "subDetail": "Chi tiết đăng ký",
+    subFormatHint: "Sao chép liên kết phù hợp với ứng dụng của bạn; mã QR theo định dạng đang chọn.",
     "scanToImport": "Quét mã QR để nhập",
     "qrGenerating": "Đang tạo mã QR...",
     "showQrCode": "Hiển thị mã QR",

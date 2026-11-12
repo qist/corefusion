@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "降級",
     "orders": "訂單",
     "subDetail": "訂閱詳情",
+    subFormatHint: "不同用戶端請複製對應格式的位址；二維碼對應目前選取的格式。",
     "scanToImport": "掃碼匯入",
     "qrGenerating": "二維碼生成中...",
     "showQrCode": "顯示二維碼",

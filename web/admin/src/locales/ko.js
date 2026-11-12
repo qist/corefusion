@@ -3838,6 +3838,7 @@ export default {
     "downgrade": "다운그레이드",
     "orders": "주문",
     "subDetail": "구독 상세",
+    subFormatHint: "클라이언트에 맞는 형식의 링크를 복사하세요. QR 코드는 선택한 형식입니다.",
     "scanToImport": "QR 스캔으로 가져오기",
     "qrGenerating": "QR 코드 생성 중...",
     "showQrCode": "QR 코드 표시",

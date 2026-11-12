@@ -57,6 +57,11 @@ func (h *Handler) Register(c *gin.Context) {
 
 	result, err := h.svc.Register(c.Request.Context(), input)
 	if err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_register", Result: "failure",
+			RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+			Metadata: map[string]any{"email": input.Email},
+		})
 		if err.Error() == "registration is closed" {
 			response.Forbidden(c, "REGISTRATION_CLOSED", err.Error())
 			return
@@ -68,6 +73,11 @@ func (h *Handler) Register(c *gin.Context) {
 		response.InternalError(c, "REGISTER_FAILED", err.Error())
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_register", Result: "success",
+		UserID: result.Client.ID, RemoteIP: netutil.GetRealIP(c.Request),
+		Metadata: map[string]any{"email": input.Email},
+	})
 
 	// Get client info
 	clientInfo, _ := h.svc.GetMe(c.Request.Context(), result.Client.ID)
@@ -174,9 +184,17 @@ func (h *Handler) RotateToken(c *gin.Context) {
 
 	newToken, err := h.svc.RotateToken(c.Request.Context(), clientID)
 	if err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_rotate_token", Result: "failure",
+			UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+		})
 		response.InternalError(c, "ROTATE_FAILED", err.Error())
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_rotate_token", Result: "success",
+		UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request),
+	})
 
 	response.OK(c, gin.H{"token": newToken, "message": "token rotated"})
 }
@@ -199,9 +217,18 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 	}
 
 	if err := h.svc.UpdateSettings(c.Request.Context(), clientID, req.IPWhitelist, req.DeviceLimit); err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_update_settings", Result: "failure",
+			UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+		})
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_update_settings", Result: "success",
+		UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request),
+		Metadata: map[string]any{"device_limit": req.DeviceLimit, "ip_whitelist_set": strings.TrimSpace(req.IPWhitelist) != ""},
+	})
 
 	response.OK(c, gin.H{"message": "settings updated"})
 }
@@ -224,9 +251,17 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	if err := h.svc.ChangePassword(c.Request.Context(), clientID, req.OldPassword, req.NewPassword); err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_change_password", Result: "failure",
+			UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+		})
 		response.BadRequest(c, "CHANGE_FAILED", err.Error())
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_change_password", Result: "success",
+		UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request),
+	})
 
 	response.OK(c, gin.H{"message": "password changed"})
 }
@@ -336,9 +371,17 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Logout(c.Request.Context(), clientID); err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "client_logout", Result: "failure",
+			UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request), Reason: err.Error(),
+		})
 		response.InternalError(c, "LOGOUT_FAILED", "failed to revoke tokens")
 		return
 	}
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "client_logout", Result: "success",
+		UserID: clientID, RemoteIP: netutil.GetRealIP(c.Request),
+	})
 	c.Header("Cache-Control", "no-store")
 	response.OK(c, gin.H{"message": "logged out"})
 }

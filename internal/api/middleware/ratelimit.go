@@ -124,10 +124,32 @@ func rateLimitByIP(l *rateLimiter, code, message string) gin.HandlerFunc {
 	}
 }
 
+// subscribeDeniedRecorder 可选钩子：订阅被限流时落一条访问日志。
+//
+// 429 在 handler 之前就返回，handler 里的 recordAccess 看不到，管理端因此完全
+// 不知道有请求被限流（用户看到的现象就是"日志里没记录"）。由 router 注入实现，
+// 中间件本身不依赖数据库。
+var subscribeDeniedRecorder func(c *gin.Context, statusCode int, hitResult string)
+
+// SetSubscribeDeniedRecorder 注入订阅限流访问日志记录器（router 启动时调用一次）。
+func SetSubscribeDeniedRecorder(fn func(c *gin.Context, statusCode int, hitResult string)) {
+	subscribeDeniedRecorder = fn
+}
+
 // SubscribeRateLimit 挂在公开订阅端点上（`/sub/:token`、根路径 `/:token`）。
 func SubscribeRateLimit() gin.HandlerFunc {
-	return rateLimitByIP(subscribeLimiter, "TOO_MANY_REQUESTS",
-		"too many subscription requests, please retry later")
+	return func(c *gin.Context) {
+		if !subscribeLimiter.Allow(netutil.GetRealIP(c.Request)) {
+			if fn := subscribeDeniedRecorder; fn != nil {
+				fn(c, http.StatusTooManyRequests, "rate_limited")
+			}
+			response.TooManyRequests(c, "TOO_MANY_REQUESTS",
+				"too many subscription requests, please retry later")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
 }
 
 // RegisterRateLimit 挂在 Portal 注册 / 刷新端点上。

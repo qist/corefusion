@@ -5195,6 +5195,7 @@ export default {
     "client": "Müşteri",
     "userAgent": "User-Agent",
     "statusCode": "Durum kodu",
+    riskLevel: "Risk düzeyi",
   },
   "runtime": {
     "snapshots": "Yapılandırma anlık görüntüsü",

@@ -1200,6 +1200,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	planH := planHandler.NewHandler(planSvcInst)
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundConfigRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst, extNodeRepo, mihomoConfigRepo, mihomoRuleRepo, systemSettingRepo, accessLogRepo)
+	// 订阅被限流（429）也落一条访问日志：429 在 handler 之前返回，
+	// 不带这个钩子的话管理端「订阅访问日志」看不到限流记录。
+	middleware.SetSubscribeDeniedRecorder(publicSubH.RecordDeniedAccess)
 	publicSubH.SetRateLimitPusher(rateLimitSvcInst, nodeServerRepoForSync)
 	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
@@ -4160,6 +4163,9 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	planSvcInst2 := planSvc.NewService(database, planTmplRepo2, planVariantRepo2, nodeGroupRepo2, nodeGroupMemberRepo2, promoRepo2, planOrderRepo2, clientRepo, inboundRepo, extNodeRepo2)
 
 	publicSubH := subsHandler.NewPublicHandler(subRepo, inboundRepo, shareDomainRepo, cfIPEntryRepo, clientRepo, planSvcInst2, extNodeRepo2, mihomoConfigRepo2, mihomoRuleRepo2, systemSettingRepo, accessLogRepo)
+	// 订阅被限流（429）也落一条访问日志：429 在 handler 之前返回，
+	// 不带这个钩子的话管理端「订阅访问日志」看不到限流记录。
+	middleware.SetSubscribeDeniedRecorder(publicSubH.RecordDeniedAccess)
 	publicSubH.SetSubEndpointRepo(repository.NewSubscriptionEndpointRepository(database))
 	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 
@@ -4521,6 +4527,9 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		systemSettingRepo, repository.NewAccessLogRepository(database),
 	)
 	portalPublicSubH.SetSubEndpointRepo(subEndpointRepo2)
+	// 订阅被限流（429）也落一条访问日志：429 在 handler 之前返回，
+	// 不带这个钩子的话管理端「订阅访问日志」看不到限流记录。
+	middleware.SetSubscribeDeniedRecorder(portalPublicSubH.RecordDeniedAccess)
 	if tracker := initNetworkTrafficAccounting(subRepo, clientRepo, inboundConfigRepo); tracker != nil {
 		portalPublicSubH.SetNetworkTracker(tracker)
 	}

@@ -5195,6 +5195,7 @@ export default {
     "client": "Khách hàng",
     "userAgent": "User-Agent",
     "statusCode": "Mã trạng thái",
+    riskLevel: "Mức rủi ro",
   },
   "runtime": {
     "snapshots": "Bản chụp cấu hình",

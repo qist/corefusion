@@ -1014,9 +1014,11 @@ func (h *Handler) Upload(c *gin.Context) {
 
 	cert, err := h.certSvc.Upload(c.Request.Context(), input)
 	if err != nil {
+		audit.RecordNodeFromCtx(c, 0, "cert_upload", input.Domain, false, err.Error())
 		response.InternalError(c, "UPLOAD_FAILED", err.Error())
 		return
 	}
+	audit.RecordNodeFromCtx(c, 0, "cert_upload", fmt.Sprintf("uploaded cert %d: %s", cert.ID, cert.Domain), true, "")
 
 	// Trigger distribution — uploaded cert may replace an existing one
 	// referenced by node configs with the same domain.

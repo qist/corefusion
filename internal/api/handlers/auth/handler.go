@@ -162,9 +162,19 @@ func (h *Handler) Logout(c *gin.Context) {
 	if userID > 0 {
 		if err := h.authSvc.Logout(c.Request.Context(), userID); err != nil {
 			log.Printf("[auth] logout: revoke tokens for user %d failed: %v", userID, err)
+			audit.Record(audit.Event{
+				Category: "auth", EventType: "admin_logout",
+				UserID: userID, RemoteIP: c.ClientIP(),
+				Result: "failure", Reason: err.Error(),
+			})
 			response.InternalError(c, "LOGOUT_FAILED", "failed to revoke tokens")
 			return
 		}
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "admin_logout",
+			UserID: userID, RemoteIP: c.ClientIP(),
+			Result: "success",
+		})
 	}
 	response.OK(c, gin.H{"message": "logged out"})
 }

@@ -5195,6 +5195,7 @@ export default {
     "client": "Pelanggan",
     "userAgent": "User-Agent",
     "statusCode": "Kode status",
+    riskLevel: "Tingkat risiko",
   },
   "runtime": {
     "snapshots": "Snapshot Konfigurasi",

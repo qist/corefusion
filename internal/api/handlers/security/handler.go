@@ -168,6 +168,7 @@ func (h *Handler) ListSubscriptionAccessLogs(c *gin.Context) {
 			"user_agent":      l.UserAgent,
 			"status_code":     l.StatusCode,
 			"hit_result":      l.HitResult,
+			"risk_level":      l.RiskLevel,
 			"created_at":      l.CreatedAt,
 		})
 	}

@@ -165,11 +165,19 @@
               <template #default="{ row }">{{ row.user_agent || '-' }}</template>
             </el-table-column>
             <el-table-column prop="status_code" :label="t('security.statusCode')" width="100" />
-            <el-table-column :label="t('security.result')" width="95">
+            <el-table-column :label="t('security.result')" width="120">
               <template #default="{ row }">
                 <el-tag :type="row.status_code >= 200 && row.status_code < 300 ? 'success' : 'danger'" size="small">
                   {{ row.hit_result || row.status_code }}
                 </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('security.riskLevel')" width="95">
+              <template #default="{ row }">
+                <el-tag v-if="row.risk_level" :type="riskTagType(row.risk_level)" size="small" effect="plain">
+                  {{ row.risk_level }}
+                </el-tag>
+                <span v-else>-</span>
               </template>
             </el-table-column>
           </el-table>
@@ -361,6 +369,9 @@ const auditUser = (row) => row.user_name || (row.user_id ? '#' + row.user_id : '
 const auditDetail = (row) => row.reason || row.metadata_json || '-'
 
 // ---------------- 订阅访问日志 ----------------
+// 风险等级由后端按状态码/命中结果/UA 给出（high = 未知 token、被限流）。
+const riskTagType = (level) => ({ high: 'danger', medium: 'warning', low: 'info' })[level] || 'info'
+
 const subAccessList = ref([])
 const subAccessTotal = ref(0)
 const subAccessLoading = ref(false)
@@ -409,6 +420,7 @@ const subAccessCardFields = computed(() => [
   { label: t('security.remoteIp'), text: (row) => row.real_ip || row.ip || '-' },
   { label: t('security.userAgent'), text: (row) => row.user_agent || '-' },
   { label: t('security.statusCode'), text: (row) => row.status_code || '-' },
+  { label: t('security.riskLevel'), text: (row) => row.risk_level || '-' },
 ])
 
 onMounted(() => { loadAudit(1) })

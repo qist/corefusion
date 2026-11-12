@@ -5370,6 +5370,7 @@ ctx.moduleTitle           — 当前模块标题`,
     client: '客户',
     userAgent: 'User-Agent',
     statusCode: '状态码',
+    riskLevel: '风险等级',
   },
   runtime: {
     snapshots: '配置快照',

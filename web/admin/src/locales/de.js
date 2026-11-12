@@ -5195,6 +5195,7 @@ export default {
     "client": "Kunde",
     "userAgent": "User-Agent",
     "statusCode": "Statuscode",
+    riskLevel: "Risikostufe",
   },
   "runtime": {
     "snapshots": "Konfigurations-Snapshot",

@@ -5195,6 +5195,7 @@ export default {
     "client": "ลูกค้า",
     "userAgent": "User-Agent",
     "statusCode": "รหัสสถานะ",
+    riskLevel: "ระดับความเสี่ยง",
   },
   "runtime": {
     "snapshots": "สแนปช็อตการกำหนดค่า",

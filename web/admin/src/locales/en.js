@@ -5433,6 +5433,7 @@ ctx.moduleTitle           — Current module title`,
     client: 'Customer',
     userAgent: 'User-Agent',
     statusCode: 'Status code',
+    riskLevel: 'Risk level',
   },
   runtime: {
     snapshots: 'Config Snapshots',

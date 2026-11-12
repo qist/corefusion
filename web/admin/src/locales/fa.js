@@ -5195,6 +5195,7 @@ export default {
     "client": "مشتری",
     "userAgent": "User-Agent",
     "statusCode": "کد وضعیت",
+    riskLevel: "سطح خطر",
   },
   "runtime": {
     "snapshots": "اسنپ‌شات پیکربندی",

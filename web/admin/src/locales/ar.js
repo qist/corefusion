@@ -5195,6 +5195,7 @@ export default {
     "client": "العميل",
     "userAgent": "User-Agent",
     "statusCode": "رمز الحالة",
+    riskLevel: "مستوى الخطورة",
   },
   "runtime": {
     "snapshots": "لقطة الإعدادات",

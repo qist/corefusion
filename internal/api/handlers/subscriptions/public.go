@@ -310,6 +310,7 @@ type billingTemplateConfig struct {
 func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
+		h.logDeniedAccess(c, 0, http.StatusBadRequest, "missing_token")
 		c.JSON(http.StatusBadRequest, gin.H{"code": "MISSING_TOKEN", "message": "token is required"})
 		return
 	}
@@ -318,6 +319,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	sub, err := h.subRepo.GetByToken(ctx, token)
 	if err != nil {
+		// 未知 token 也记一条（subID=0）：扫描/爆破订阅 token 的行为要能看见。
+		h.logDeniedAccess(c, 0, http.StatusNotFound, "not_found")
 		c.JSON(http.StatusNotFound, gin.H{"code": "SUBSCRIPTION_NOT_FOUND", "message": "subscription not found"})
 		return
 	}
@@ -382,11 +385,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			case cl.Status == "suspended":
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
+				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "suspended")
 				c.String(http.StatusForbidden, t(lang, "suspended"))
 				return
 			case cl.Status == "expired" && !permanentPlan:
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
+				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "expired")
 				c.String(http.StatusForbidden, t(lang, "expired"))
 				return
 			}
@@ -396,6 +401,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			if !netutil.IPWhitelistAllows(cl.IPWhitelist, netutil.GetRealIP(c.Request)) {
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
+				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "ip_not_allowed")
 				c.String(http.StatusForbidden, t(lang, "ip_not_allowed"))
 				return
 			}
@@ -424,6 +430,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	if sub.Status != "active" && !permanentPlan {
 		c.Header("Content-Type", "text/plain; charset=utf-8")
+		h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "inactive")
 		c.String(http.StatusForbidden, t(lang, "inactive"))
 		return
 	}
@@ -629,7 +636,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		cdnIP := c.GetHeader("CF-Connecting-IP")
 		cdnProvider := detectCDNProvider(c)
 		go func() {
-			h.recordAccess(sub.ID, ip, ua, realIP, cdnIP, cdnProvider)
+			h.recordAccess(sub.ID, http.StatusOK, "hit", ip, ua, realIP, cdnIP, cdnProvider)
 		}()
 
 		// Feed the network-layer (nftables) accounting bridge: record this
@@ -3807,7 +3814,31 @@ func getFinalMask(config map[string]interface{}) map[string]interface{} {
 	return nil
 }
 
-func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProvider string) {
+// subscriptionAccessRisk 给出这次拉取的风险等级。
+//
+// 判据刻意保守（不做黑名单，只分级）：
+//   - 失败访问里 not_found（未知 token，多为扫描/爆破）与 rate_limited 记 high；
+//   - 其它失败（暂停/到期/IP 不在白名单/订阅未激活）记 medium；
+//   - 成功但 UA 为空记 medium（正常客户端都会带 UA）；
+//   - 其余记 low。
+func subscriptionAccessRisk(statusCode int, hitResult, ua string) string {
+	if statusCode >= 400 {
+		switch hitResult {
+		case "not_found", "rate_limited":
+			return "high"
+		default:
+			return "medium"
+		}
+	}
+	if strings.TrimSpace(ua) == "" {
+		return "medium"
+	}
+	return "low"
+}
+
+// recordAccess 写一条订阅访问日志。
+// statusCode / hitResult 由调用方给出：成功下发是 200/hit，失败路径各有自己的值。
+func (h *PublicHandler) recordAccess(subID int64, statusCode int, hitResult, ip, ua, realIP, cdnIP, cdnProvider string) {
 	if h.accessLog == nil {
 		return
 	}
@@ -3818,12 +3849,54 @@ func (h *PublicHandler) recordAccess(subID int64, ip, ua, realIP, cdnIP, cdnProv
 		RealIP:         realIP,
 		CDNIP:          cdnIP,
 		CDNProvider:    cdnProvider,
-		StatusCode:     200,
-		HitResult:      "hit",
+		StatusCode:     statusCode,
+		HitResult:      hitResult,
+		RiskLevel:      subscriptionAccessRisk(statusCode, hitResult, ua),
 	}
 	if err := h.accessLog.Create(context.Background(), logEntry); err != nil {
 		log.Printf("sub: failed to record access: %v", err)
 	}
+}
+
+// logDeniedAccess 记录一次失败/被拒的订阅拉取（400/403/404/429）。
+//
+// 以前只有成功下发才写库，token 过期/暂停/被限流的请求在管理端完全看不到 ——
+// 「curl 拉了一次但日志里没记录」正是这个原因。
+func (h *PublicHandler) logDeniedAccess(c *gin.Context, subID int64, statusCode int, hitResult string) {
+	if h.accessLog == nil {
+		return
+	}
+	ip := netutil.GetRealIP(c.Request)
+	ua := c.Request.UserAgent()
+	realIP := c.GetHeader("X-Real-IP")
+	cdnIP := c.GetHeader("CF-Connecting-IP")
+	cdnProvider := detectCDNProvider(c)
+	go h.recordAccess(subID, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
+}
+
+// RecordDeniedAccess 供订阅限流中间件调用：429 在 handler 之前就返回了，
+// 这里补一条访问日志（能按 token 查到订阅就带上 ID，查不到记 0）。
+//
+// 注意：会查一次库，必须异步，不能阻塞被限流的响应。
+func (h *PublicHandler) RecordDeniedAccess(c *gin.Context, statusCode int, hitResult string) {
+	if h.accessLog == nil {
+		return
+	}
+	token := c.Param("token")
+	ip := netutil.GetRealIP(c.Request)
+	ua := c.Request.UserAgent()
+	realIP := c.GetHeader("X-Real-IP")
+	cdnIP := c.GetHeader("CF-Connecting-IP")
+	cdnProvider := detectCDNProvider(c)
+	go func() {
+		var subID int64
+		if token != "" && h.subRepo != nil {
+			if sub, err := h.subRepo.GetByToken(context.Background(), token); err == nil && sub != nil {
+				subID = sub.ID
+			}
+		}
+		h.recordAccess(subID, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
+	}()
 }
 
 // pushRateLimitAssociation pushes the user's IP to all nodes that have rate limiting enabled.

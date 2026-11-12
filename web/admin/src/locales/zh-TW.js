@@ -5195,6 +5195,7 @@ export default {
     "client": "客戶",
     "userAgent": "User-Agent",
     "statusCode": "狀態碼",
+    riskLevel: "風險等級",
   },
   "runtime": {
     "snapshots": "設定快照",

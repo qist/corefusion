@@ -211,7 +211,8 @@ const { t } = useI18n()
 const { isMobile } = useIsMobile()
 const activeTab = ref('audit')
 
-const auditCategories = ['auth', 'subscription', 'access', 'security', 'order', 'client', 'system']
+// 后端实际写入的分类：auth（登录/2FA）+ 中间件产出的管理写操作分类
+const auditCategories = ['auth', 'admin', 'client', 'plan', 'subscription', 'system']
 
 // ---------------- 审计 ----------------
 const auditList = ref([])

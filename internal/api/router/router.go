@@ -1747,6 +1747,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// 实测不带任何凭据 `GET /api/v1/waf/rules` 返回 200 与规则内容 ✗（安全审计 v5 C1）。
 		protected := v1.Group("")
 		protected.Use(middleware.AuthRequired())
+		// 管理端写操作审计（POST/PUT/PATCH/DELETE → security_audit_events）。
+		// 必须注册在下面任何路由之前，否则 Gin 快照了空的 handler 链。
+		protected.Use(middleware.AuditWrites())
 		{
 			// WAF Rule Library（全局配置，会下发到所有节点）
 			//   读：任意已登录用户；写 / 同步 / 下发：管理员（与 charge-sites 等全局配置一致）

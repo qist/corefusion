@@ -261,9 +261,19 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 	userID := c.GetInt64("user_id")
 	if err := h.authSvc.ChangePassword(c.Request.Context(), userID, req.OldPassword, req.NewPassword); err != nil {
+		audit.Record(audit.Event{
+			Category: "auth", EventType: "admin_change_password",
+			UserID: userID, RemoteIP: c.ClientIP(),
+			Result: "failure", Reason: err.Error(),
+		})
 		response.BadRequest(c, "CHANGE_PASSWORD_FAILED", err.Error())
 		return
 	}
 
+	audit.Record(audit.Event{
+		Category: "auth", EventType: "admin_change_password",
+		UserID: userID, RemoteIP: c.ClientIP(),
+		Result: "success",
+	})
 	response.OK(c, gin.H{"message": "password changed"})
 }

@@ -631,10 +631,13 @@ func (h *Handler) SyncUser(c *gin.Context) {
 		return
 	}
 
+	detail := fmt.Sprintf("client_id=%d action=%s", req.ClientID, req.Action)
 	if err := h.svc.SyncUserToServers(c.Request.Context(), req.ClientID, req.Action); err != nil {
+		h.auditLog(c, 0, "sync_user", detail, false, err.Error())
 		response.InternalError(c, "SYNC_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, 0, "sync_user", detail, true, "")
 
 	response.OK(c, gin.H{"synced": true, "client_id": req.ClientID, "action": req.Action})
 }
@@ -649,9 +652,11 @@ func (h *Handler) SyncUserRemoval(c *gin.Context) {
 	}
 
 	if err := h.svc.SyncUserRemoval(c.Request.Context(), clientID); err != nil {
+		h.auditLog(c, 0, "sync_user_removal", fmt.Sprintf("client_id=%d", clientID), false, err.Error())
 		response.InternalError(c, "SYNC_REMOVAL_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, 0, "sync_user_removal", fmt.Sprintf("client_id=%d", clientID), true, "")
 
 	response.OK(c, gin.H{"removed": true, "client_id": clientID})
 }
@@ -1255,11 +1260,14 @@ func (h *Handler) MigrateCertificate(c *gin.Context) {
 		response.BadRequest(c, "SAME_CERT", "old and new certificate IDs are the same")
 		return
 	}
+	detail := fmt.Sprintf("old_cert_id=%d new_cert_id=%d", req.OldCertID, req.NewCertID)
 	result, err := h.svc.MigrateCertificate(c.Request.Context(), req.OldCertID, req.NewCertID)
 	if err != nil {
+		h.auditLog(c, 0, "migrate_certificate", detail, false, err.Error())
 		response.InternalError(c, "MIGRATE_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, 0, "migrate_certificate", detail, true, "")
 	response.OK(c, result)
 }
 
@@ -1347,9 +1355,11 @@ func (h *Handler) RetryDistribution(c *gin.Context) {
 		return
 	}
 	if err := h.svc.RetryDistribution(c.Request.Context(), id); err != nil {
+		h.auditLog(c, 0, "retry_distribution", fmt.Sprintf("queue_id=%d", id), false, err.Error())
 		response.InternalError(c, "RETRY_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, 0, "retry_distribution", fmt.Sprintf("queue_id=%d", id), true, "")
 	response.OK(c, gin.H{"retried": true, "id": id})
 }
 
@@ -1480,9 +1490,11 @@ func (h *Handler) AddServerTag(c *gin.Context) {
 		return
 	}
 	if err := h.svc.AddServerTag(c.Request.Context(), id, req.TagKey, req.TagValue); err != nil {
+		h.auditLog(c, id, "add_server_tag", req.TagKey+"="+req.TagValue, false, err.Error())
 		response.InternalError(c, "ADD_TAG_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "add_server_tag", req.TagKey+"="+req.TagValue, true, "")
 	response.OK(c, gin.H{"added": true, "server_id": id, "tag_key": req.TagKey})
 }
 
@@ -1499,9 +1511,11 @@ func (h *Handler) RemoveServerTag(c *gin.Context) {
 		return
 	}
 	if err := h.svc.RemoveServerTag(c.Request.Context(), id, tagKey); err != nil {
+		h.auditLog(c, id, "remove_server_tag", tagKey, false, err.Error())
 		response.InternalError(c, "REMOVE_TAG_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "remove_server_tag", tagKey, true, "")
 	response.OK(c, gin.H{"removed": true, "server_id": id, "tag_key": tagKey})
 }
 
@@ -1530,9 +1544,11 @@ func (h *Handler) ForceReconnect(c *gin.Context) {
 		return
 	}
 	if err := h.svc.ForceReconnect(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "force_reconnect", "", false, err.Error())
 		response.InternalError(c, "FORCE_RECONNECT_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "force_reconnect", "", true, "")
 	response.OK(c, gin.H{"disconnected": true, "server_id": id})
 }
 
@@ -1559,9 +1575,11 @@ func (h *Handler) InstallBinary(c *gin.Context) {
 	}
 	result, err := h.svc.InstallBinary(c.Request.Context(), id, req.CoreType, req.Version, req.DownloadURL, req.AssetName)
 	if err != nil {
+		h.auditLog(c, id, "install_binary", req.CoreType+" "+req.Version, false, err.Error())
 		response.InternalError(c, "INSTALL_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "install_binary", req.CoreType+" "+req.Version, true, "")
 
 	// After a core binary is installed, ensure default geo rule files
 	// (geoip.dat, geosite.dat) are seeded and trigger an async sync to
@@ -1592,9 +1610,11 @@ func (h *Handler) InstallProxy(c *gin.Context) {
 	}
 	result, err := h.svc.InstallProxy(c.Request.Context(), id, req.Type, "", "")
 	if err != nil {
+		h.auditLog(c, id, "install_proxy", req.Type, false, err.Error())
 		response.InternalError(c, "INSTALL_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "install_proxy", req.Type, true, "")
 	response.OK(c, result)
 }
 
@@ -1994,9 +2014,11 @@ func (h *Handler) ResumeTrafficSuspended(c *gin.Context) {
 	}
 
 	if err := quotaSvc.ResumeServer(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "resume_traffic", "", false, err.Error())
 		response.InternalError(c, "RESUME_FAILED", err.Error())
 		return
 	}
+	h.auditLog(c, id, "resume_traffic", "", true, "")
 	response.OK(c, gin.H{"message": "server resumed successfully"})
 }
 

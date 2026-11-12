@@ -331,13 +331,9 @@ const resetPwdForm = ref({ id: 0, email: '', password: '' })
 // Subscription Detail
 const subDetailDialog = ref(false)
 const subDetailEmail = ref('')
-// 同一 token 按客户端格式给出多个链接（后端 normalizeSubscriptionFormat 支持这些别名）。
-const SUB_FORMATS = [
-  { format: 'mihomo_yaml', label: 'Clash / Mihomo' },
-  { format: 'singbox_json', label: 'Sing-box' },
-  { format: 'xray_json', label: 'Xray / V2Ray' },
-  { format: 'base64_uri', label: 'Base64 URI' },
-]
+// 可用的订阅格式来自「订阅格式」（mihomo configs）：只有已创建且绑定了本客户套餐的
+// 格式才出现在详情里；Clash 另给一条 providers=1（proxy-providers）地址。
+const mihomoConfigs = ref([])
 const subDetailLinks = ref([])
 const subDetailSelected = ref(0)
 const subDetailUrl = computed(() => subDetailLinks.value[subDetailSelected.value]?.url || '')
@@ -364,25 +360,84 @@ const isPrivateHost = (h) => {
   }
   return host === '::1' || host === 'localhost' || /^f[cd]/i.test(host) || /^fe80/i.test(host)
 }
-// 订阅链接：独立端点域名走 HTTPS；否则按当前访问 scheme，非 HTTPS + 公网地址（外网）不显示。
-// format 为空是历史 raw 链接（默认格式），详情弹窗按客户端格式分别给出。
-const subUrl = (row, format) => {
+// 订阅链接基址：独立端点域名走 HTTPS；否则按当前访问 scheme，非 HTTPS + 公网地址（外网）不显示。
+const subUrl = (row) => {
   const token = getClientToken(row)
   if (!token) return ''
-  const query = format ? '?format=' + encodeURIComponent(format) : ''
   const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
   if (ep && ep.domain) {
     const path = ep.path || '/'
     const basePath = path.endsWith('/') ? path : path + '/'
-    return 'https://' + ep.domain + basePath + token + query
+    return 'https://' + ep.domain + basePath + token
   }
   const scheme = window.location.protocol === 'https:' ? 'https' : 'http'
   const host = window.location.hostname
   if (scheme === 'http' && !isPrivateHost(host)) return ''
   const subPort = panelSettings.value.subscription_port
   const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
-  if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token + query
-  return scheme + '://' + host + '/sub/' + token + query
+  if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token
+  return scheme + '://' + host + '/sub/' + token
+}
+
+// 「订阅格式」列表：mihomo configs（含 format/platform/plan_ids/enabled）。
+async function fetchMihomoConfigs() {
+  try {
+    const r = await client.get('/mihomo/configs', { params: { limit: 500, offset: 0 } })
+    const list = Array.isArray(r) ? r : (r?.items || [])
+    mihomoConfigs.value = list.filter(c => c && c.enabled !== false)
+  } catch {
+    mihomoConfigs.value = []
+  }
+}
+
+// 配置对本客户套餐是否可见：plan_ids 为空 = 通用。
+const configFitsPlan = (cfg, planID) => {
+  const ids = Array.isArray(cfg.plan_ids) ? cfg.plan_ids : []
+  return ids.length === 0 || (!!planID && ids.includes(planID))
+}
+
+// 某格式下可用的配置：优先客户订阅绑定的那份，其次通用（platform 为空），最后第一份。
+const pickConfigForFormat = (format, row) => {
+  const list = mihomoConfigs.value
+    .filter(c => (c.format || 'mihomo_yaml') === format && configFitsPlan(c, row.plan_id))
+    .slice()
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)))
+  if (!list.length) return null
+  const sub = subscriptions.value.find(s => s.id === row.subscription_id)
+  const boundID = sub?.mihomo_config_id
+  return list.find(c => c.id === boundID) || list.find(c => !c.platform) || list[0]
+}
+
+// 详情里的链接：base64/raw 始终有；Clash 有配置时给「内联 + providers」两条；
+// sing-box / xray 只有创建并绑定了对应配置才出现（没配置就不显示该行）。
+function buildSubLinks(row) {
+  const base = subUrl(row)
+  if (!base) return []
+  const sep = base.indexOf('?') >= 0 ? '&' : '?'
+  const withQuery = (format, extra) => base + sep + 'format=' + format + (extra || '')
+  const withConfig = (cfg) => '&config=' + encodeURIComponent(cfg.name)
+  const links = []
+
+  const clash = pickConfigForFormat('mihomo_yaml', row)
+  if (clash) {
+    const label = 'Clash / Mihomo · ' + clash.name
+    links.push({ format: 'mihomo_yaml', label, url: withQuery('mihomo_yaml', withConfig(clash)) })
+    links.push({ format: 'mihomo_yaml_providers', label: label + ' · providers', url: withQuery('mihomo_yaml', withConfig(clash) + '&providers=1') })
+  }
+
+  const singbox = pickConfigForFormat('singbox_json', row)
+  if (singbox) {
+    links.push({ format: 'singbox_json', label: 'Sing-box · ' + singbox.name, url: withQuery('singbox_json', withConfig(singbox)) })
+  }
+
+  const xray = pickConfigForFormat('xray_json', row)
+  if (xray) {
+    links.push({ format: 'xray_json', label: 'Xray / V2Ray · ' + xray.name, url: withQuery('xray_json', withConfig(xray)) })
+  }
+
+  links.push({ format: 'base64_uri', label: 'Base64 URI', url: withQuery('base64_uri') })
+  links.push({ format: 'raw_uri', label: 'Raw URI', url: withQuery('raw_uri') })
+  return links
 }
 
 // Helpers
@@ -539,11 +594,10 @@ async function resetPwd() {
   } catch {}
 }
 
-function showSubDetail(row) {
+async function showSubDetail(row) {
   subDetailEmail.value = row.email
-  const links = SUB_FORMATS
-    .map(f => ({ ...f, url: subUrl(row, f.format) }))
-    .filter(item => item.url)
+  await fetchMihomoConfigs()
+  const links = buildSubLinks(row)
   subDetailLinks.value = links
   subDetailSelected.value = 0
   if (!links.length) ElMessage.warning(t('client.subInsecureHidden'))

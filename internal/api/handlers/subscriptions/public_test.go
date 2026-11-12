@@ -621,6 +621,38 @@ func TestBuildProviderURLInheritsSubscriptionParams(t *testing.T) {
 	}
 }
 
+// 多域名订阅端点：provider 里的域名必须跟随本次请求实际使用的域名，
+// 否则永远写死第一个端点 → 换域名后客户端拿到的还是旧域名（拉不到 provider）。
+func TestBuildProviderURLPrefersRequestDomain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &PublicHandler{}
+	h.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
+		{ID: 1, Domain: "old.example.com", Path: "/", Enabled: true},
+		{ID: 2, Domain: "new.example.com", Path: "/", Enabled: true},
+	}})
+
+	newCtx := func(host string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("GET", "/sub/tok?format=mihomo_yaml&providers=1", nil)
+		c.Request.Header.Set("X-Forwarded-Proto", "https")
+		c.Request.Header.Set("X-Forwarded-Host", host)
+		return c
+	}
+
+	got := h.buildProviderURL(newCtx("new.example.com"), "tok", "office")
+	want := "https://new.example.com/tok?format=mihomo_proxies_yaml&provider=office"
+	if got != want {
+		t.Fatalf("provider url 应使用请求域名：got %q, want %q", got, want)
+	}
+
+	// 请求域名不在端点列表里 → 仍按 ID 回落第一个启用端点
+	got = h.buildProviderURL(newCtx("panel.example.com"), "tok", "office")
+	want = "https://old.example.com/tok?format=mihomo_proxies_yaml&provider=office"
+	if got != want {
+		t.Fatalf("未知域名应回落到第一个端点：got %q, want %q", got, want)
+	}
+}
+
 // fakeSubEndpointSource 实现 PublicHandler.SubEndpointSource 最小接口。
 type fakeSubEndpointSource struct {
 	endpoints []entity.SubscriptionEndpoint

@@ -125,10 +125,29 @@ func (h *PublicHandler) SetSubEndpointRepo(repo SubEndpointSource) {
 	h.subEndpointRepo = repo
 }
 
+// requestDomain 取本次订阅请求的域名（去掉端口与多级代理的逗号列表）。
+func requestDomain(c *gin.Context) string {
+	host := c.GetHeader("X-Forwarded-Host")
+	if host == "" {
+		host = c.Request.Host
+	}
+	if i := strings.Index(host, ","); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.TrimSpace(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host
+}
+
 // buildProviderURL returns the back-source URL for an internal http proxy-provider.
 // It mirrors clientext buildSubLinks: an enabled standalone endpoint wins
 // (https://<domain><path>/<token>), otherwise fall back to the current request's
 // scheme://Host + 请求路径（共用面板端口是 /sub/<token>，独立订阅端口是 /<token>）。
+//
+// 订阅端点可能配了多个域名：优先用本次请求实际使用的那个域名，否则按 ID 取第一个。
+// 否则多域名时永远写死第一个（换域名后 provider 里还是旧域名，客户端拉不到节点）。
 //
 // 只把 format 换成 mihomo_proxies_yaml；config / platform 等主订阅参数必须继承，
 // 再追加 provider=<key>（subscription-nodes 为保留 key，不带 provider 参数）。
@@ -137,13 +156,24 @@ func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey stri
 	if h.subEndpointRepo != nil {
 		endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context())
 		if err == nil {
-			for _, ep := range endpoints {
-				if ep.Domain == "" {
+			domain := requestDomain(c)
+			var chosen *entity.SubscriptionEndpoint
+			for i := range endpoints {
+				ep := &endpoints[i]
+				if strings.TrimSpace(ep.Domain) == "" {
 					continue
 				}
-				path := strings.TrimRight(ep.Path, "/")
-				base = fmt.Sprintf("https://%s%s/%s", ep.Domain, path, token)
-				break
+				if chosen == nil {
+					chosen = ep
+				}
+				if domain != "" && strings.EqualFold(strings.TrimSpace(ep.Domain), domain) {
+					chosen = ep
+					break
+				}
+			}
+			if chosen != nil {
+				path := strings.TrimRight(chosen.Path, "/")
+				base = fmt.Sprintf("https://%s%s/%s", chosen.Domain, path, token)
 			}
 		}
 	}

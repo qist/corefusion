@@ -26,9 +26,10 @@ func findProviderDef(defs []mihomoProviderDefinition, key string) map[string]int
 	return nil
 }
 
-// internal_defaults 要能控制自动生成的内部 provider 与保留的 subscription-nodes：
+// internal_defaults 要能控制自动生成的内部 provider：
 // path 支持 {key} 占位，多 provider 不会互相覆盖；health-check 可换成自定义探测地址。
-func TestProviderDefaultsApplyToInternalAndAllNodes(t *testing.T) {
+// subscription-nodes 不再作为可见 provider 输出（节点组已覆盖全部节点）。
+func TestProviderDefaultsApplyToInternalProviders(t *testing.T) {
 	tmpl := &entity.PlanTemplate{
 		NodeGroupIDs: []int64{1},
 		SubscriptionProviderConfig: `{
@@ -56,20 +57,8 @@ func TestProviderDefaultsApplyToInternalAndAllNodes(t *testing.T) {
 		t.Fatalf("path 模板 {key} 未替换：%v", groupDef["path"])
 	}
 
-	// 保留的 subscription-nodes：覆盖 path，interval/health-check 继承默认
-	allDef := findProviderDef(defs, "subscription-nodes")
-	if allDef == nil {
-		t.Fatalf("subscription-nodes 缺失：%+v", defs)
-	}
-	if allDef["path"] != "./providers/all-nodes.yaml" {
-		t.Fatalf("all_nodes_provider.path 未生效：%v", allDef["path"])
-	}
-	if allDef["interval"] != 900 {
-		t.Fatalf("subscription-nodes 应继承 internal_defaults.interval：%v", allDef["interval"])
-	}
-	hc, _ := allDef["health-check"].(map[string]interface{})
-	if hc["url"] != "https://probe.example.com/204" || hc["interval"] != float64(600) {
-		t.Fatalf("subscription-nodes 应继承 internal_defaults.health-check：%+v", hc)
+	if findProviderDef(defs, "subscription-nodes") != nil {
+		t.Fatalf("subscription-nodes 不应再输出：%+v", defs)
 	}
 }
 
@@ -108,16 +97,20 @@ func TestInternalProviderOverridesDefaults(t *testing.T) {
 	}
 }
 
-// 不配置任何默认参数时，输出保持历史默认（3600 / ./providers/<key>.yaml）。
+// 不配置任何默认参数时，组 provider 输出保持历史默认（3600 / ./providers/<key>.yaml），
+// 且不会出现 subscription-nodes。
 func TestProviderDefaultsFallbackUnchanged(t *testing.T) {
 	tmpl := &entity.PlanTemplate{NodeGroupIDs: []int64{1}}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
 	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
 
-	allDef := findProviderDef(defs, "subscription-nodes")
-	if allDef["interval"] != 3600 || allDef["path"] != "./providers/subscription-nodes.yaml" {
-		t.Fatalf("默认值不应改变：%+v", allDef)
+	groupDef := findProviderDef(defs, "group-1")
+	if groupDef["interval"] != 3600 || groupDef["path"] != "./providers/group-1.yaml" {
+		t.Fatalf("默认值不应改变：%+v", groupDef)
+	}
+	if findProviderDef(defs, "subscription-nodes") != nil {
+		t.Fatalf("subscription-nodes 不应再输出：%+v", defs)
 	}
 }
 

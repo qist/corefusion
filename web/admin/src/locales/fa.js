@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "کارت شبکه خروجی",
     "routingMark": "علامت مسیریابی",
     "tcpConcurrent": "همزمانی TCP",
+    "unifiedDelay": "تأخير یکپارچه",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hosts سفارشی",
     "hostsHint": "نگاشت دامنه، با پشتیبانی از IP، lan (کارت شبکه محلی) و نام مستعار",

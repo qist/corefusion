@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Giao diện mạng ra",
     "routingMark": "Đánh dấu định tuyến",
     "tcpConcurrent": "TCP đồng thời",
+    "unifiedDelay": "Độ trễ đồng nhất",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hosts tùy chỉnh",
     "hostsHint": "Ánh xạ tên miền, hỗ trợ IP, lan (card mạng cục bộ), bí danh",

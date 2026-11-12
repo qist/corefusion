@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Исходящий сетевой интерфейс",
     "routingMark": "Метка маршрута",
     "tcpConcurrent": "Параллельные TCP-соединения",
+    "unifiedDelay": "Унифицированная задержка",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Пользовательские Hosts",
     "hostsHint": "Сопоставление доменов: поддерживаются IP, lan (локальный сетевой интерфейс) и псевдонимы",

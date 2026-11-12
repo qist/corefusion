@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Antarmuka Jaringan Keluar",
     "routingMark": "Penanda Rute",
     "tcpConcurrent": "Konkurensi TCP",
+    "unifiedDelay": "Latensi terpadu",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hosts Kustom",
     "hostsHint": "Pemetaan domain, mendukung IP, lan (kartu jaringan lokal), alias",

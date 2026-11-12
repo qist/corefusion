@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "아웃바운드 네트워크 인터페이스",
     "routingMark": "라우팅 마크",
     "tcpConcurrent": "TCP 동시 연결 수",
+    "unifiedDelay": "통합 지연",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "사용자 지정 Hosts",
     "hostsHint": "도메인 매핑, IP, lan(로컬 네트워크 인터페이스), 별칭 지원",

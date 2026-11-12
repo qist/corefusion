@@ -284,13 +284,10 @@ func (h *PublicHandler) buildProviderDefinitions(c *gin.Context, token string, p
 			})
 		}
 	}
-	// 保留 provider：本套餐全部节点（无 provider 参数，回落全部节点）。
-	// 参数优先 all_nodes_provider，其次 internal_defaults；都为空时用内置默认。
-	allDef := applyProviderKeyTemplate(mergeProviderDefs(&plan.Defaults, plan.AllNodes), providercfg.ReservedAllNodesKey)
-	defs = append(defs, mihomoProviderDefinition{
-		Key:    providercfg.ReservedAllNodesKey,
-		Fields: buildInternalProviderFields(providercfg.ReservedAllNodesKey, allDef, h.buildProviderURL(c, token, providercfg.ReservedAllNodesKey)),
-	})
+	// 注意：不再输出保留 provider `subscription-nodes`。它只是"本套餐全部节点"的
+	// 兜底来源，节点组/外部源已经覆盖了同样的节点；客户端会把它当成一个可见的
+	// provider 分组列出来，对使用者没有意义。需要全部节点的组在
+	// buildMihomoGroupPlans 里直接展开为具体节点内联。
 	sort.Slice(defs, func(i, j int) bool { return defs[i].Key < defs[j].Key })
 	return defs
 }
@@ -519,6 +516,8 @@ func resolveGroupSources(name string, hasExternal bool, legacyUse []string, opts
 		if len(opts.SpecificProviderKeys) > 0 {
 			return opts.SpecificProviderKeys
 		}
+		// 没有具体 provider：不再回落 subscription-nodes 分组，
+		// 由 buildMihomoGroupPlans 把全部节点直接内联进组。
 		return []string{providercfg.ReservedAllNodesKey}
 	}
 	return nil
@@ -549,17 +548,41 @@ func buildMihomoGroupPlans(cfg map[string]interface{}, opts *mihomoRenderOptions
 		seen := map[string]bool{}
 		if opts.ProviderMode {
 			use := make([]string, 0, len(sources))
-			for _, rawKey := range sources {
-				key := providercfg.SanitizeKey(rawKey)
-				if key == "" || seen[key] {
-					continue
+			needsAllNodes := false
+			addKey := func(key string) {
+				if key == "" || key == providercfg.ReservedAllNodesKey || seen[key] {
+					return
 				}
 				if !providerDefinitionExists(opts.ProviderDefinitions, key) {
-					log.Printf("[subscription] group %q references unknown provider %q, skip", name, rawKey)
-					continue
+					log.Printf("[subscription] group %q references unknown provider %q, skip", name, key)
+					return
 				}
 				seen[key] = true
 				use = append(use, key)
+			}
+			for _, rawKey := range sources {
+				key := providercfg.SanitizeKey(rawKey)
+				if key == providercfg.ReservedAllNodesKey {
+					// subscription-nodes 不再作为可见 provider 输出：
+					// 有具体 provider 时展开成它们，没有时直接内联全部节点。
+					if len(opts.SpecificProviderKeys) > 0 {
+						for _, specific := range opts.SpecificProviderKeys {
+							addKey(providercfg.SanitizeKey(specific))
+						}
+					} else {
+						needsAllNodes = true
+					}
+					continue
+				}
+				addKey(key)
+			}
+			// 组需要外部节点但没有任何具体 provider：把全部节点名内联进组，
+			// 客户端看到的是节点本身，而不是 subscription-nodes 分组。
+			if len(use) == 0 && (needsAllNodes || hasExternal) {
+				names := append([]string{}, opts.ProviderNodeNames[providercfg.ReservedAllNodesKey]...)
+				names = filterProxyNames(names, getString(group, "filter", ""), getString(group, "exclude-filter", ""))
+				plans[name] = mihomoGroupPlan{Proxies: names}
+				continue
 			}
 			plans[name] = mihomoGroupPlan{Use: use}
 			continue

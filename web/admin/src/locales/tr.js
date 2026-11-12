@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Giden ağ arabirimi",
     "routingMark": "Yönlendirme işareti",
     "tcpConcurrent": "TCP eşzamanlılığı",
+    "unifiedDelay": "Birleşik gecikme",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Özel Hosts",
     "hostsHint": "Alan adı eşleme; IP, lan (yerel ağ kartı) ve takma ad destekler",

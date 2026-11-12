@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "واجهة الشبكة الصادرة",
     "routingMark": "علامة التوجيه",
     "tcpConcurrent": "تزامن TCP",
+    "unifiedDelay": "زمن تأخير موحّد",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hosts مخصصة",
     "hostsHint": "تعيين النطاقات، مع دعم IP وlan (واجهة الشبكة المحلية) والاسم المستعار",

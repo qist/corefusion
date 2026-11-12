@@ -734,6 +734,74 @@ func TestGenerateMihomoYAMLProviderModeUsesProviders(t *testing.T) {
 	}
 }
 
+// 组只引用具体 provider 时也永远不能输出 subscription-nodes 分组。
+func TestGenerateMihomoYAMLNeverEmitsSubscriptionNodesProvider(t *testing.T) {
+	config := &entity.MihomoConfig{
+		ConfigJSON: `{"proxy-groups":[
+			{"name":"PROXY","type":"select","proxies":["DIRECT"],"_hasExternalNodes":true}
+		]}`,
+	}
+	defs := []mihomoProviderDefinition{
+		{Key: "office", Fields: map[string]interface{}{"type": "http", "url": "https://example.com/office"}},
+		{Key: "subscription-nodes", Fields: map[string]interface{}{"type": "http", "url": "https://example.com/all"}},
+	}
+	opts := &mihomoRenderOptions{
+		ProviderMode:         true,
+		ProviderDefinitions:  defs,
+		SpecificProviderKeys: []string{"office"},
+		GroupUse:             map[string][]string{"PROXY": {"office"}},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, nil, opts))
+
+	if strings.Contains(out, "subscription-nodes") {
+		t.Fatalf("subscription-nodes provider must never be emitted: %s", out)
+	}
+	if !strings.Contains(out, "  office:") {
+		t.Fatalf("referenced provider should remain: %s", out)
+	}
+}
+
+// 组没有具体来源时不再显示 subscription-nodes 分组，而是把全部节点内联。
+func TestGenerateMihomoYAMLFallbackInlinesAllNodes(t *testing.T) {
+	config := &entity.MihomoConfig{
+		ConfigJSON: `{"proxy-groups":[
+			{"name":"PROXY","type":"select","_hasExternalNodes":true}
+		]}`,
+	}
+	proxyMaps := []map[string]interface{}{
+		{"name": "node-a", "type": "ss", "server": "1.2.3.4", "port": 443},
+	}
+	defs := []mihomoProviderDefinition{
+		{Key: "subscription-nodes", Fields: map[string]interface{}{"type": "http", "url": "https://example.com/all"}},
+	}
+	opts := &mihomoRenderOptions{
+		ProviderMode:        true,
+		ProviderDefinitions: defs,
+		ProviderNodeNames:   map[string][]string{"subscription-nodes": {"node-a"}},
+	}
+	out := string((&PublicHandler{}).generateMihomoYAML(config, nil, proxyMaps, opts))
+
+	if strings.Contains(out, "subscription-nodes") {
+		t.Fatalf("fallback must not expose subscription-nodes: %s", out)
+	}
+	if !strings.Contains(out, "proxies:") || !strings.Contains(out, "node-a") {
+		t.Fatalf("fallback should inline all nodes: %s", out)
+	}
+}
+
+// 历史模板没有 unified-delay 时补默认 true；模板显式 false 必须保留。
+func TestGenerateMihomoYAMLUnifiedDelayDefault(t *testing.T) {
+	out := string((&PublicHandler{}).generateMihomoYAML(&entity.MihomoConfig{ConfigJSON: `{"mode":"rule"}`}, nil, nil, nil))
+	if !strings.Contains(out, "unified-delay: true") {
+		t.Fatalf("missing unified-delay default: %s", out)
+	}
+
+	out = string((&PublicHandler{}).generateMihomoYAML(&entity.MihomoConfig{ConfigJSON: `{"unified-delay":false}`}, nil, nil, nil))
+	if !strings.Contains(out, "unified-delay: false") {
+		t.Fatalf("explicit unified-delay false should be kept: %s", out)
+	}
+}
+
 // 共享 YAML 里的 proxy-providers 不能输出：一份 YAML 被多个套餐复用，会串套餐。
 func TestGenerateMihomoYAMLIgnoresSharedProviders(t *testing.T) {
 	config := &entity.MihomoConfig{
@@ -811,8 +879,11 @@ func TestGenerateMihomoYAMLIsValidYAML(t *testing.T) {
 		t.Fatalf("provider mode YAML is invalid: %v\n%s", err, out)
 	}
 	providers, ok := doc["proxy-providers"].(map[string]interface{})
-	if !ok || len(providers) != 3 {
-		t.Fatalf("provider mode should emit proxy-providers: %s", out)
+	if !ok || len(providers) != 2 {
+		t.Fatalf("provider mode should emit referenced providers only: %s", out)
+	}
+	if _, exists := providers["subscription-nodes"]; exists {
+		t.Fatalf("unreferenced subscription-nodes provider should be dropped: %s", out)
 	}
 	singbox, _ := providers["singbox"].(map[string]interface{})
 	if singbox["unknown-field"] != "keep" {
@@ -858,11 +929,15 @@ func TestBuildMihomoGroupPlansPriority(t *testing.T) {
 		t.Fatalf("group without mapping/_hasExternalNodes should not be injected")
 	}
 
-	// 没有任何具体 provider 时回落 subscription-nodes
+	// 没有任何具体 provider 时不显示 subscription-nodes 分组，直接内联全部节点
 	opts.SpecificProviderKeys = nil
+	opts.ProviderNodeNames = map[string][]string{"subscription-nodes": {"node-a"}}
 	plans = buildMihomoGroupPlans(cfg, opts)
-	if got := strings.Join(plans["FALLBACK"].Use, ","); got != "subscription-nodes" {
-		t.Fatalf("fallback should be subscription-nodes: got %q", got)
+	if got := strings.Join(plans["FALLBACK"].Use, ","); got != "" {
+		t.Fatalf("fallback must not use subscription-nodes: got %q", got)
+	}
+	if got := strings.Join(plans["FALLBACK"].Proxies, ","); got != "node-a" {
+		t.Fatalf("fallback should inline all nodes: got %q", got)
 	}
 }
 

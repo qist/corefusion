@@ -668,6 +668,7 @@
             </div>
           </el-form-item>
           <el-form-item :label="t('subfmt.tcpConcurrent')"><el-switch v-model="modelValue._tcpConcurrent" @change="emitModel" /></el-form-item>
+          <el-form-item :label="t('subfmt.unifiedDelay')"><el-switch v-model="modelValue._unifiedDelay" @change="emitModel" /></el-form-item>
           <el-form-item :label="t('subfmt.keepAliveIdle')">
             <div style="display:flex;gap:8px;align-items:center">
               <el-switch v-model="modelValue._keepAliveEnabled" @change="emitModel" />

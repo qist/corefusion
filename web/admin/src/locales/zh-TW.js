@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "出口網卡",
     "routingMark": "路由標記",
     "tcpConcurrent": "TCP 並行",
+    "unifiedDelay": "統一延遲",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "自訂 Hosts",
     "hostsHint": "網域對應，支援 IP、lan（本機網卡）、別名",

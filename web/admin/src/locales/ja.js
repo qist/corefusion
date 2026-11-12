@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "出力NIC",
     "routingMark": "ルーティングマーク",
     "tcpConcurrent": "TCP 同時接続数",
+    "unifiedDelay": "統一遅延",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "カスタム Hosts",
     "hostsHint": "ドメインマッピング（IP、lan（ローカルNIC）、エイリアスに対応）",

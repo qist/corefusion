@@ -1327,9 +1327,27 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	// Parse config_json
 	var cfg map[string]interface{}
 	json.Unmarshal([]byte(config.ConfigJSON), &cfg)
+	if cfg == nil {
+		cfg = map[string]interface{}{}
+	}
+	// 历史模板没有 unified-delay：按 mihomo 文档补默认 true（统一 RTT，消除不同
+	// 协议握手带来的延迟差异）。模板显式配置 false 时保留 false。
+	if _, ok := cfg["unified-delay"]; !ok {
+		cfg["unified-delay"] = true
+	}
 
 	providerMode := opts != nil && opts.ProviderMode
 	groupPlans := buildMihomoGroupPlans(cfg, opts)
+	// Provider 模式下，没有具体来源的组会退化为内联节点（不再输出
+	// subscription-nodes 分组）；这些节点必须出现在顶层 proxies 里。
+	inlineNames := map[string]bool{}
+	if providerMode {
+		for _, plan := range groupPlans {
+			for _, name := range plan.Proxies {
+				inlineNames[name] = true
+			}
+		}
+	}
 
 	var staticProxies []interface{}
 	for _, key := range getSortedKeys(cfg) {
@@ -1361,10 +1379,10 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 	}
 
 	if providerMode {
-		writeMihomoProxyProviders(&yaml, opts.ProviderDefinitions)
+		writeMihomoProxyProviders(&yaml, dropReservedAllNodesProvider(opts.ProviderDefinitions))
 	}
 
-	writeMihomoProxiesSection(&yaml, staticProxies, proxyMaps, providerMode)
+	writeMihomoProxiesSection(&yaml, staticProxies, proxyMaps, providerMode, inlineNames)
 
 	// Inject rules from database
 	if len(rules) > 0 {
@@ -1381,14 +1399,17 @@ func (h *PublicHandler) generateMihomoYAML(config *entity.MihomoConfig, rules []
 
 // writeMihomoProxiesSection 输出唯一一段顶层 proxies：
 //   - 原始模式：共享配置里的特殊出站 + 动态生成的节点（同名时动态节点优先）；
-//   - Provider 模式：只输出特殊出站，节点由 provider 拉取（否则重名会让 mihomo 整份拒载）。
-func writeMihomoProxiesSection(yaml *strings.Builder, static []interface{}, generated []map[string]interface{}, providerMode bool) {
+//   - Provider 模式：特殊出站 + 没有具体 provider 来源时内联的节点
+//     （provider 已覆盖的节点不能内联，重名会让 mihomo 整份拒载）。
+func writeMihomoProxiesSection(yaml *strings.Builder, static []interface{}, generated []map[string]interface{}, providerMode bool, inlineNames map[string]bool) {
 	generatedNames := map[string]bool{}
-	if !providerMode {
-		for _, proxyMap := range generated {
-			if name, _ := proxyMap["name"].(string); name != "" {
-				generatedNames[name] = true
-			}
+	for _, proxyMap := range generated {
+		name, _ := proxyMap["name"].(string)
+		if name == "" {
+			continue
+		}
+		if !providerMode || inlineNames[name] {
+			generatedNames[name] = true
 		}
 	}
 	entries := make([]map[string]interface{}, 0, len(static)+len(generated))
@@ -1404,6 +1425,12 @@ func writeMihomoProxiesSection(yaml *strings.Builder, static []interface{}, gene
 	}
 	if !providerMode {
 		entries = append(entries, generated...)
+	} else if len(inlineNames) > 0 {
+		for _, proxyMap := range generated {
+			if name, _ := proxyMap["name"].(string); name != "" && inlineNames[name] {
+				entries = append(entries, proxyMap)
+			}
+		}
 	}
 	if len(entries) == 0 {
 		return
@@ -1663,6 +1690,20 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 		return data
 	}
 	return b
+}
+
+// dropReservedAllNodesProvider 防御性移除保留 provider `subscription-nodes`：
+// 它是"本套餐全部节点"的兜底来源，节点组/外部源已经覆盖同样的节点；客户端会把
+// proxy-provider 当成可见分组，多列一个"全部节点"对使用者没有意义。
+func dropReservedAllNodesProvider(defs []mihomoProviderDefinition) []mihomoProviderDefinition {
+	out := make([]mihomoProviderDefinition, 0, len(defs))
+	for _, def := range defs {
+		if def.Key == providercfg.ReservedAllNodesKey {
+			continue
+		}
+		out = append(out, def)
+	}
+	return out
 }
 
 // writeMihomoProxyProviders 输出套餐级 proxy-providers 段。

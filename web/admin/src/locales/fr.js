@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Interface de sortie",
     "routingMark": "Marque de routage",
     "tcpConcurrent": "Concurrence TCP",
+    "unifiedDelay": "Latence unifiée",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hôtes personnalisés",
     "hostsHint": "Mappage de domaines avec prise en charge des IP, de lan (interface réseau locale) et des alias",

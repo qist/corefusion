@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "การ์ดเครือข่ายขาออก",
     "routingMark": "มาร์กเส้นทาง",
     "tcpConcurrent": "TCP พร้อมกัน",
+    "unifiedDelay": "ความหน่วงแบบรวม",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Hosts ที่กำหนดเอง",
     "hostsHint": "การแมปโดเมน รองรับ IP, lan (การ์ดเครือข่ายภายใน) และนามแฝง",

@@ -3186,6 +3186,7 @@ export default {
     "interfaceName": "Ausgehende Netzwerkkarte",
     "routingMark": "Routing-Markierung",
     "tcpConcurrent": "TCP-Parallelität",
+    "unifiedDelay": "Einheitliche Latenz",
     "keepAliveIdle": "TCP KeepAlive",
     "hosts": "Benutzerdefinierte Hosts",
     "hostsHint": "Domainzuordnung, unterstützt IP, lan (lokale Netzwerkkarte), Alias",

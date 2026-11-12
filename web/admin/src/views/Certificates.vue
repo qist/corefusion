@@ -260,7 +260,7 @@
           <el-select v-model="eabForm.ca_provider" style="width:100%">
             <el-option label="Google Public CA" value="google" />
             <el-option label="ZeroSSL" value="zerossl" />
-            <el-option label="Let's Encrypt（不需要 EAB）" value="lets_encrypt" />
+            <el-option :label="t('certificate.letsEncryptNoEab')" value="lets_encrypt" />
           </el-select>
         </el-form-item>
         <!-- ZeroSSL：给它一个邮箱就能自动领一对 EAB ✓（和 acme.sh 的机制完全一致 ✓） -->

@@ -122,10 +122,10 @@
               <el-input v-model="settings.https_listen_v6" style="width:240px" placeholder="[::]:443 / [::1]:443" />
             </el-form-item>
             <el-form-item :label="t('proxy.listenQuic')">
-              <el-input v-model="settings.quic_listen" style="width:240px" placeholder="443（留空跟随 HTTPS）" />
+              <el-input v-model="settings.quic_listen" style="width:240px" :placeholder="t('proxy.quicListenPlaceholder')" />
             </el-form-item>
             <el-form-item v-if="settings.ipv6" :label="t('proxy.listenQuicV6')">
-              <el-input v-model="settings.quic_listen_v6" style="width:240px" placeholder="[::]:443（留空跟随 HTTPS v6）" />
+              <el-input v-model="settings.quic_listen_v6" style="width:240px" :placeholder="t('proxy.quicListenV6Placeholder')" />
             </el-form-item>
             <div style="font-size:12px;color:#909399;margin:-4px 0 12px 150px">
               {{ t('proxy.globalListenHint') }}
@@ -892,7 +892,7 @@
 <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniDomainHint') }}</div>
 </el-form-item>
 <el-form-item :label="t('proxy.sniTarget')">
-<el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443, 127.0.0.1:8444（多个用逗号分隔）" />
+<el-input v-model="sniForm.sni_target" :placeholder="t('proxy.sniTargetPlaceholder')" />
 </el-form-item>
 <el-form-item :label="t('proxy.sniListenAddr')">
 <el-input v-model="sniForm.listen_addr" placeholder="443 / 0.0.0.0:443 / [::]:443" />
@@ -1041,7 +1041,7 @@
           <el-input v-model="siteForm.path" :placeholder="t('proxy.pathHint')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
-          <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443, 127.0.0.1:8443（多个用逗号分隔）" />
+          <el-input v-model="siteForm.sni_target" :placeholder="t('proxy.siteSniTargetPlaceholder')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.protocol')">
           <el-select v-model="siteForm.l4_protocol" style="width:100%">

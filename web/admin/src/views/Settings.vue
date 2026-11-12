@@ -192,7 +192,7 @@
               <el-switch v-model="notifyForm.telegram_enabled" />
             </el-form-item>
             <el-form-item v-if="notifyForm.telegram_enabled" :label="t('settings.telegram.botToken')">
-              <el-input v-model="notifyForm.telegram_bot_token" type="password" show-password placeholder="完整格式：123456789:AAHxxx...（含冒号前的数字 ID）" />
+              <el-input v-model="notifyForm.telegram_bot_token" type="password" show-password :placeholder="t('settings.telegram.botTokenPlaceholder')" />
               <div class="hint">{{ t('settings.telegram.botTokenHint') }}</div>
             </el-form-item>
             <el-form-item v-if="notifyForm.telegram_enabled" :label="t('settings.telegram.chatId')">
@@ -779,8 +779,8 @@
         <el-card>
           <el-alert type="info" :closable="false" show-icon style="margin-bottom:16px">
             <span style="font-size:12px">
-              Google 正式授权需要：公共可访问的隐私权政策 + 服务条款链接（门户编辑器"设置 → 合规文档"配置内容，登录页自动展示）。
-              详见 <a :href="googleVerifyDocURL" target="_blank" rel="noopener" style="color:#409eff">docs/oauth-google-verification.md</a>
+              {{ t('settings.oauth.googleVerifyNotice') }}
+              <a :href="googleVerifyDocURL" target="_blank" rel="noopener" style="color:#409eff">docs/oauth-google-verification.md</a>
             </span>
           </el-alert>
           <el-form :model="oauthForm" label-width="160px" style="max-width:600px">
@@ -1102,8 +1102,8 @@
         </el-form-item>
         <el-form-item v-if="tmplForm.audience === 'subscriber'" :label="t('settings.templates.eventKey')">
           <el-select v-model="tmplForm.event_key" filterable allow-create clearable style="width:100%" :placeholder="t('settings.templates.eventKeyPlaceholder')">
-            <el-option label="订阅到期提醒（subscription_expire）" value="subscription_expire" />
-            <el-option label="余额不足提醒（balance_low）" value="balance_low" />
+            <el-option :label="t('settings.templates.eventSubscriptionExpire')" value="subscription_expire" />
+            <el-option :label="t('settings.templates.eventBalanceLow')" value="balance_low" />
           </el-select>
           <div style="font-size:11px;color:#999;margin-top:4px">{{ t('settings.templates.eventKeyHint') }}</div>
         </el-form-item>
@@ -1233,7 +1233,7 @@ const selfUnbanForm = ref({ enabled: false, cooldown_hours: 24, applicable_statu
 const selfUnbanSaving = ref(false)
 
 // Security config (encryption key)
-const encryptionKeyStatus = ref({ configured: false, text: '未配置', type: 'danger' })
+const encryptionKeyStatus = ref({ configured: false, text: t('settings.security.statusNotConfigured'), type: 'danger' })
 const generatingKey = ref(false)
 // JWT secret
 const jwtSecretStatus = ref({ configured: false, preview: '' })

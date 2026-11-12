@@ -607,7 +607,7 @@
 <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.sniDomainHint') }}</div>
 </el-form-item>
 <el-form-item :label="t('proxy.sniTarget')">
-<el-input v-model="sniForm.sni_target" placeholder="127.0.0.1:8443, 127.0.0.1:8444（多个用逗号分隔）" />
+<el-input v-model="sniForm.sni_target" :placeholder="t('proxy.sniTargetPlaceholder')" />
 </el-form-item>
 <el-form-item :label="t('proxy.sniListenPort')">
 <el-input v-model="sniForm.listen_port" placeholder="443" />
@@ -725,7 +725,7 @@
           <div style="color:#909399;font-size:12px;margin-top:4px">{{ t('proxy.returnCodeHint') }}</div>
         </el-form-item>
         <el-form-item v-if="siteForm.template==='sni'" :label="t('proxy.sniTarget')">
-          <el-input v-model="siteForm.sni_target" placeholder="127.0.0.1:443, 127.0.0.1:8443（多个用逗号分隔）" />
+          <el-input v-model="siteForm.sni_target" :placeholder="t('proxy.siteSniTargetPlaceholder')" />
         </el-form-item>
         <el-form-item v-if="siteForm.template==='l4'" :label="t('protoCenter.protocol')">
           <el-select v-model="siteForm.l4_protocol" style="width:100%">
@@ -804,8 +804,8 @@
           <el-switch v-model="siteForm.log_enabled" />
         </el-form-item>
         <el-form-item v-if="siteForm.log_enabled" :label="t('proxy.logPath')">
-          <el-input v-model="siteForm.log_path" placeholder="留空则使用全局统一日志 (logs/caddy_access.log)" />
-          <div style="font-size:11px;color:#909399;margin-top:4px">填写自定义路径则该站点独立输出日志文件；留空则输出到全局统一日志</div>
+          <el-input v-model="siteForm.log_path" :placeholder="t('proxy.logPathPlaceholder')" />
+          <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.logPathHint') }}</div>
         </el-form-item>
         <el-form-item v-if="siteForm.log_enabled" :label="t('proxy.logFormat')">
           <el-select v-model="siteForm.log_format" style="width:100%">

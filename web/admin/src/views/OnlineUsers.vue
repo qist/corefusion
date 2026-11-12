@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">{{ t('menu.onlineUsers') }}</h2>
-        <p class="page-subtitle">所有节点实时在线订阅人总览</p>
+        <p class="page-subtitle">{{ t('onlineUsers.subtitle') }}</p>
       </div>
       <div class="header-actions">
         <el-select v-model="filterNode" :placeholder="t('onlineUsers.filterNode')" clearable style="width:180px" @change="applyFilter">

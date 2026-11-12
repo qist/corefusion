@@ -35,7 +35,7 @@
 
 `format` 支持别名（大小写不敏感，便于用户手写/客户端默认）：`clash` / `clash_yaml` / `mihomo` / `yaml` → `mihomo_yaml`；`singbox` / `sing-box` → `singbox_json`；`xray` → `xray_json`；`base64` / `v2ray` / `v2rayn` / `uri` → `base64_uri`；`raw` → `raw_uri`。无法识别的值按 `base64_uri` 处理。
 
-> 协议与格式存在兼容矩阵：例如 `anytls` 只进 sing-box/Mihomo 格式；sing-box 服务端的 REALITY 节点不会出现在 Xray/sing-box JSON 订阅中。客户端不识别的节点会被自动剔除，不会整份失败。
+> 协议与格式存在兼容矩阵：例如 `anytls` 只进 sing-box/Mihomo 格式；**xray 服务端的 REALITY 节点不会出现在 sing-box 订阅里**（sing-box 不支持 xray 的 REALITY 实现，见 sing-box#4520），但仍会正常出现在 Xray 订阅中；**sing-box 服务端的 REALITY 节点在 Xray / sing-box 两种订阅里都能用**。客户端不识别的节点会被自动剔除，不会整份失败。
 
 ## 3. 响应头
 
@@ -140,7 +140,7 @@ Provider 分三类：
 - 旧域名如果还留在端点列表里且处于启用状态也没关系，不会再被写死；
 - 客户端此前缓存了旧 provider 地址时，更新一次订阅（或清 providers 缓存 / 重启客户端）即可切换。
 
-反代务必透传 `X-Forwarded-Proto` 与 `X-Forwarded-Host`，否则只能回落到第一个启用端点。
+反代务必透传 `X-Forwarded-Proto` 与 `X-Forwarded-Host`，否则只能回落到第一个启用端点。面板生成 Caddy / Nginx 站点模板时已自动写入这两个头（`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`），手工维护的反代配置请自行补齐。
 
 ## 7. 注意事项
 

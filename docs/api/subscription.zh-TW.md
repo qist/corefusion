@@ -34,7 +34,7 @@
 | `singbox_json` | sing-box JSON 完整配置 | sing-box/SFI/FLClash（sing-box核心） |
 | `xray_json` | Xray JSON 完整配置 | Xray-核心 |
 
-> 協定/格式相容性適用：例如，`anytls` 僅出現在 sing-box/Mihomo 格式中；sing-box 伺服器上的 REALITY 節點不會出現在 Xray/sing-box ZXQ0332QZ ZXQ0332QZ sing-box ZXQ0332QZ ZXQ0332QZ。客戶端無法辨識的節點會自動刪除，而不是讓整個訂閱失敗。
+> 協定/格式相容性適用：例如，`anytls` 僅出現在 sing-box/Mihomo 格式中； **xray 服務的 REALITY 節點不包含在 sing-box 訂閱中**（ZXQQ00320Z 不支援sing-box#4520），但仍出現在 Xray 訂閱中，而 **REALITY 節點提供服務sing-box 的作品適用於 Xray 和 sing-box 訂閱**。客戶端無法辨識的節點會自動刪除，而不是讓整個訂閱失敗。
 
 ## 3. 響應標頭
 
@@ -47,7 +47,7 @@
 | `Content-Type` | 每種格式：`text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 
-## 4. 狀態代碼
+## 4. 狀態碼
 
 | HTTP | 程式碼 | 意義 |
 |---|---|---|
@@ -117,7 +117,7 @@ proxy-groups:
 |---|---|---|
 | 內部 | 清理後的節點群組名稱 | 按計劃節點組產生；僅包含該組的節點 |
 | 保留 | `subscription-nodes` | 計畫的所有節點；其來源 URL **省略** `provider` 參數 |
-| 外部 | 計劃中配置的名稱 | 外部來源（`http`、YAML 或 `file`） |
+| 外部 | 計劃中配置的名稱 | 外部來源（`http` YAML 或 `file`） |
 
 每個提供者的常用欄位：
 
@@ -132,7 +132,7 @@ proxy-groups:
 
 1. **此請求實際使用的域**：`X-Forwarded-Host`的第一個值（連接埠剝離），否則為`Host`；它必須與**啟用**端點相符；
 2. 如果沒有符合的內容，則回退到具有**最低 ID** 的已啟用端點；
-3. 此路徑來自符合的端點（`path`，預設 `/`），產生 `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`。
+3. 此路徑來自匹配的端點（`path`，預設 `/`），產生 `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`。
 
 後果：
 
@@ -140,13 +140,13 @@ proxy-groups:
 - 清單中仍啟用的舊網域不再是硬編碼；
 - 如果用戶端快取了舊的提供者 URL，則更新訂閱（或清除提供者快取/重新啟動用戶端）會將其切換。
 
-反向代理必須轉發`X-Forwarded-Proto`和`X-Forwarded-Host`；否則使用回退端點。
+反向代理必須轉發`X-Forwarded-Proto`和`X-Forwarded-Host`；否則使用回退端點。此面板產生的 Caddy / Nginx 網站範本已包含兩個標頭 (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`)；如果您手動維護代理配置，請手動新增它們。
 
 ## 7. 註解
 
-- **格式和設定緊密耦合**：`config`/`platform`選擇的範本必須與該要求的`format`相符；不匹配的範本將被忽略－這可以防止將 Mihomo 規則注入 sing-box/Xray JSON。
+- **格式和配置緊密耦合**：`config`/`platform`選擇的模板必須與該要求的`format`匹配；不匹配的模板將被忽略——這可以防止將 Mihomo 規則注入 sing-box/Xray ZXQ0091。
 - **`providers=1` 僅影響 Mihomo YAML**：sing-box / Xray / base64 / raw 忽略它（節點保持內聯）。
-- **速率限制**：訂閱端點有自己的限制（`SubscribeRateLimit`）；濫用職權的顧客會被拒絕。
+- 
 - **存取日誌**：每次抓取都會記錄IP / UA / CDN訊息，在管理介面的「訂閱存取日誌」下可見。
 - 如果專用訂閱埠上沒有設定網域，則使用要求的 `X-Forwarded-Proto` / `X-Forwarded-Host`；請確保您的反向代理轉送兩個標頭。
 - 在多域部署中，使端點清單與用戶端實際使用的網域保持一致；請參閱第 6.2 節。

@@ -20,21 +20,21 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 |---|---|
 | `format` | Ausgabeformat; überschreibt den Abonnementstandard. Siehe unten |
 | `config` | Name der Konfigurationsvorlage (definiert unter „Abonnementformate“ in der Admin-Benutzeroberfläche). Muss dasselbe Format wie `format` dieser Anfrage verwenden, andernfalls wird es ignoriert |
-| `platform` | Ordnen Sie eine Konfigurationsvorlage anhand des Plattformnamens zu (wird verwendet, wenn `config` weggelassen wird); Auch das Format muss übereinstimmen |
+| `platform` | Ordnen Sie eine Konfigurationsvorlage anhand des Plattformnamens zu (wird verwendet, wenn `config` weggelassen wird). Auch das Format muss übereinstimmen |
 | `providers` | Nur `mihomo_yaml`: `1` / `true` aktiviert den **Provider-Modus** (`proxy-providers` ausgeben und über `use` referenzieren); Der Standardwert oder ein anderer Wert sorgt dafür, dass die Knoten unter `proxies` inline bleiben. Siehe §6 |
 
 ### Unterstützte `format`-Werte
 
 | Wert | Ausgabe | Kunden |
 |---|---|---|
-| `base64_uri` (Standard) | Durch Zeilenumbrüche verbundene Freigabelinks, als Ganzes base64-kodiert | V2RayN, Shadowrocket, Surge und andere generische Clients |
+| `base64_uri` (Standard) | Durch Zeilenumbrüche verbundene Freigabelinks, als Ganzes base64-codiert | V2RayN, Shadowrocket, Surge und andere generische Clients |
 | `raw_uri` | Mit Zeilenumbruch verbundene Freigabelinks, einfacher Text | Clients, die einfache Links/Debugging benötigen |
 | `mihomo_yaml` | Vollständige Clash/Mihomo YAML-Konfiguration (mit Proxy-Gruppen, Regeln) | Clash.Meta / mihomo / Clash Verge Rev |
 | `mihomo_proxies_yaml` | YAML nur mit der Knotenliste `proxies:` | Mihomo-Proxy-Provider-Quelle (mit geplanter Aktualisierung) |
 | `singbox_json` | Vollständige sing-box JSON-Konfiguration | sing-box / SFI / FLClash (sing-box-Kern) |
 | `xray_json` | Vollständige Xray JSON-Konfiguration | Xray-Kern |
 
-> Es gilt Protokoll-/Formatkompatibilität: Beispielsweise erscheint `anytls` nur in den sing-box/Mihomo-Formaten; REALITY-Knoten auf einem sing-box-Server werden in Xray/sing-box JSON-Abonnements nicht angezeigt. Knoten, die der Client nicht erkennen kann, werden automatisch gelöscht, anstatt dass das gesamte Abonnement fehlschlägt.
+> Es gilt Protokoll-/Formatkompatibilität: Beispielsweise erscheint `anytls` nur in den sing-box/Mihomo-Formaten; **REALITY-Knoten, die von xray bedient werden, sind von sing-box-Abonnements ausgeschlossen** (sing-box unterstützt nicht die REALITY-Implementierung von xray, siehe sing-box#4520), werden aber weiterhin in Xray-Abonnements angezeigt, während **REALITY-Knoten von bedient werden sing-box funktioniert sowohl in Xray- als auch in sing-box-Abonnements**. Knoten, die der Client nicht erkennen kann, werden automatisch gelöscht, anstatt dass das gesamte Abonnement fehlschlägt.
 
 ## 3. Antwortheader
 
@@ -122,7 +122,7 @@ Anbieterarten:
 Gemeinsame Felder pro Anbieter:
 
 - `url` – verweist auf dieses Abonnement mit `format=mihomo_proxies_yaml` und erbt `config` / `platform` von der Hauptanfrage; interne Anbieter hängen `provider=<key>` an;
-- `path` – **immer abgeleitet von „internen Anbieterstandards → Cache-Pfadvorlage“** (Standard: `./providers/{key}.yaml`, ersetzt durch `{key}`). Auch externe Anbieter können keinen eigenen Weg vorgeben;
+- `path` – **immer abgeleitet von „internen Anbieterstandards → Cache-Pfadvorlage“** (Standard `./providers/{key}.yaml`, ersetzt durch `{key}`). Auch externe Anbieter können keinen eigenen Weg vorgeben;
 - `health-check` — `enable / url / interval`; interne Anbieter erben die Standardeinstellungen, externe Anbieter konfigurieren sie im Plan;
 - `interval` – Aktualisierungsintervall in Sekunden.
 
@@ -131,7 +131,7 @@ Gemeinsame Felder pro Anbieter:
 „Abonnementcenter → Abonnementendpunkte“ kann **mehrere** Datensätze enthalten (Domäne + Pfad + aktiviert). Der Anbieter `url` wählt die Domain in dieser Reihenfolge aus:
 
 1. **Die von dieser Anfrage tatsächlich verwendete Domäne**: der erste Wert von `X-Forwarded-Host` (Port entfernt), andernfalls `Host`; es muss mit einem **aktivierten** Endpunkt übereinstimmen;
-2. Wenn nichts übereinstimmt, greifen Sie auf den aktivierten Endpunkt mit der **niedrigsten ID** zurück.
+2. Wenn nichts übereinstimmt, greifen Sie auf den aktivierten Endpunkt mit der **niedrigsten ID** zurück;
 3. Der Pfad kommt vom übereinstimmenden Endpunkt (`path`, Standard `/`) und ergibt `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
 
 Folgen:
@@ -140,7 +140,7 @@ Folgen:
 - Eine alte, noch in der Liste aktivierte Domain ist nicht mehr fest codiert;
 - Wenn ein Client den alten Anbieter URL zwischengespeichert hat, wird er durch Aktualisieren des Abonnements (oder Löschen des Anbietercaches/Neustarten des Clients) umgeschaltet.
 
-Reverse-Proxys müssen `X-Forwarded-Proto` und `X-Forwarded-Host` weiterleiten; andernfalls wird der Fallback-Endpunkt verwendet.
+Reverse-Proxys müssen `X-Forwarded-Proto` und `X-Forwarded-Host` weiterleiten; andernfalls wird der Fallback-Endpunkt verwendet. Die vom Panel generierten Caddy-/Nginx-Site-Vorlagen enthalten bereits beide Header (`header_up X-Forwarded-Host {host}`/`proxy_set_header X-Forwarded-Host $host;`); Fügen Sie sie manuell hinzu, wenn Sie die Proxy-Konfiguration manuell verwalten.
 
 ## 7. Notizen
 

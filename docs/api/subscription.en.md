@@ -34,7 +34,7 @@ Fetches a user's subscription node list. **This is the most-used endpoint for en
 | `singbox_json` | Full sing-box JSON configuration | sing-box / SFI / FLClash (sing-box core) |
 | `xray_json` | Full Xray JSON configuration | Xray-core |
 
-> Protocol/format compatibility applies: for example, `anytls` only appears in sing-box/Mihomo formats; REALITY nodes on a sing-box server do not appear in Xray/sing-box JSON subscriptions. Nodes the client cannot recognize are dropped automatically instead of failing the whole subscription.
+> Protocol/format compatibility applies: for example, `anytls` only appears in sing-box/Mihomo formats; **REALITY nodes served by xray are excluded from sing-box subscriptions** (sing-box does not support xray's REALITY implementation, see sing-box#4520) but still appear in Xray subscriptions, while **REALITY nodes served by sing-box work in both Xray and sing-box subscriptions**. Nodes the client cannot recognize are dropped automatically instead of failing the whole subscription.
 
 ## 3. Response headers
 
@@ -140,7 +140,7 @@ Consequences:
 - An old domain still enabled in the list is no longer hard-coded;
 - If a client cached the old provider URL, updating the subscription (or clearing the provider cache / restarting the client) switches it over.
 
-Reverse proxies must forward `X-Forwarded-Proto` and `X-Forwarded-Host`; otherwise the fallback endpoint is used.
+Reverse proxies must forward `X-Forwarded-Proto` and `X-Forwarded-Host`; otherwise the fallback endpoint is used. The panel's generated Caddy / Nginx site templates already include both headers (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); add them manually if you maintain the proxy config by hand.
 
 ## 7. Notes
 

@@ -34,7 +34,7 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 | `singbox_json` | Configuration complète sing-box JSON | sing-box/SFI/FLClash (noyau sing-box) |
 | `xray_json` | Configuration complète Xray JSON | Xray-noyau |
 
-> La compatibilité protocole/format s'applique : par exemple, `anytls` n'apparaît qu'aux formats sing-box/Mihomo ; Les nœuds REALITY sur un serveur sing-box n'apparaissent pas dans les abonnements Xray/sing-box JSON. Les nœuds que le client ne peut pas reconnaître sont automatiquement supprimés au lieu de faire échouer l'intégralité de l'abonnement.
+> La compatibilité protocole/format s'applique : par exemple, `anytls` n'apparaît qu'aux formats sing-box/Mihomo ; **Les nœuds REALITY servis par xray sont exclus des abonnements sing-box** (sing-box ne prend pas en charge l'implémentation REALITY de xray, voir sing-box#4520) mais apparaissent toujours dans les abonnements Xray, tandis que **les nœuds REALITY servis par sing-box fonctionne avec les abonnements Xray et sing-box**. Les nœuds que le client ne peut pas reconnaître sont automatiquement supprimés au lieu de faire échouer l'ensemble de l'abonnement.
 
 ## 3. En-têtes de réponse
 
@@ -43,7 +43,7 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Utilisation et expiration (octets / secondes Unix). **Également envoyé sur 403**, afin que les clients puissent montrer l'allocation restante |
 | `Profile-Update-Interval` | `6` | Intervalle d'actualisation suggéré (heures) |
 | `Profile-Title` | `CoreFusion` | Nom du profil (affiché par Clash Verge Rev / V2RayN, etc.) |
-| `Profile-Web-Page-Url` | `https://portal.example.com` | Portail URL (« ouvrir la page web » dans les clients ; chemin racine lorsque le portail possède son propre port, sinon /p) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Portail URL (« page web ouverte » dans les clients ; chemin racine lorsque le portail possède son propre port, sinon /p) |
 | `Content-Type` | Par format : `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 
@@ -124,7 +124,7 @@ Champs communs par fournisseur :
 - `url` — renvoie à cet abonnement avec `format=mihomo_proxies_yaml`, héritant de `config` / `platform` de la requête principale ; les fournisseurs internes ajoutent `provider=<key>` ;
 - `path` — **toujours dérivé des « valeurs par défaut du fournisseur interne → modèle de chemin de cache »** (`./providers/{key}.yaml` par défaut, remplacé par `{key}`). Les fournisseurs externes ne peuvent pas non plus définir leur propre chemin ;
 - `health-check` — `enable / url / interval` ; les fournisseurs internes héritent des valeurs par défaut, les fournisseurs externes les configurent sur le plan ;
-- `interval` — intervalle de rafraîchissement en secondes.
+- `interval` — intervalle d'actualisation en secondes.
 
 ### 6.2 Quel domaine va au fournisseur URL (multi-domaine)
 
@@ -138,9 +138,9 @@ Conséquences :
 
 - Un client récupérant via un nouveau domaine obtient ce domaine au sein du fournisseur — **aucun changement de panneau n'est nécessaire** ;
 - Un ancien domaine toujours activé dans la liste n'est plus codé en dur ;
-- Si un client a mis en cache l'ancien fournisseur URL, la mise à jour de l'abonnement (ou l'effacement du cache du fournisseur/le redémarrage du client) le fait basculer.
+- Si un client a mis en cache l'ancien fournisseur URL, la mise à jour de l'abonnement (ou la suppression du cache du fournisseur/le redémarrage du client) le fait basculer.
 
-Les proxys inverses doivent transmettre les `X-Forwarded-Proto` et `X-Forwarded-Host` ; sinon, le point de terminaison de secours est utilisé.
+Les proxys inverses doivent transmettre les `X-Forwarded-Proto` et `X-Forwarded-Host` ; sinon, le point de terminaison de secours est utilisé. Les modèles de site Caddy / Nginx générés par le panneau incluent déjà les deux en-têtes (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`) ; ajoutez-les manuellement si vous gérez la configuration du proxy à la main.
 
 ## 7. Remarques
 

@@ -34,7 +34,7 @@ Tìm nạp danh sách nút đăng ký của người dùng. **Đây là điểm 
 | `singbox_json` | Cấu hình sing-box JSON đầy đủ | sing-box / SFI / FLClash (lõi sing-box) |
 | `xray_json` | Cấu hình Xray JSON đầy đủ | Lõi Xray |
 
-> Áp dụng khả năng tương thích giao thức/định dạng: ví dụ: `anytls` chỉ xuất hiện ở định dạng sing-box/Mihomo; Các nút REALITY trên máy chủ sing-box không xuất hiện trong đăng ký Xray/sing-box JSON. Các nút mà khách hàng không thể nhận ra sẽ tự động bị loại bỏ thay vì toàn bộ đăng ký bị lỗi.
+> Áp dụng khả năng tương thích giao thức/định dạng: ví dụ: `anytls` chỉ xuất hiện ở định dạng sing-box/Mihomo; **Các nút REALITY do xray phân phối được loại trừ khỏi đăng ký sing-box** (sing-box không hỗ trợ triển khai REALITY của xray, xem sing-box#4520) nhưng vẫn xuất hiện trong đăng ký Xray, trong khi các nút **REALITY được phân phối của sing-box hoạt động ở cả đăng ký Xray và sing-box**. Các nút mà khách hàng không thể nhận ra sẽ tự động bị loại bỏ thay vì toàn bộ đăng ký bị lỗi.
 
 ## 3. Tiêu đề phản hồi
 
@@ -121,7 +121,7 @@ Các loại nhà cung cấp:
 
 Các trường phổ biến cho mỗi nhà cung cấp:
 
-- `url` - quay lại đăng ký này với `format=mihomo_proxies_yaml`, kế thừa `config` / `platform` từ yêu cầu chính; nhà cung cấp nội bộ nối thêm `provider=<key>`;
+- `url` - quay lại đăng ký này với `format=mihomo_proxies_yaml`, kế thừa `config` / `platform` từ yêu cầu chính; nhà cung cấp nội bộ bổ sung `provider=<key>`;
 - `path` — **luôn bắt nguồn từ “mặc định của nhà cung cấp nội bộ → mẫu đường dẫn bộ đệm”** (`./providers/{key}.yaml` mặc định, `{key}` được thay thế). Các nhà cung cấp bên ngoài cũng không thể thiết lập con đường riêng của họ;
 - `health-check` — `enable / url / interval`; nhà cung cấp nội bộ kế thừa các giá trị mặc định, nhà cung cấp bên ngoài định cấu hình nó trên gói;
 - `interval` - khoảng thời gian làm mới tính bằng giây.
@@ -138,13 +138,13 @@ Hậu quả:
 
 - Một khách hàng đang tìm nạp thông qua một miền mới sẽ nhận được miền đó bên trong nhà cung cấp — **không cần thay đổi bảng điều khiển**;
 - Tên miền cũ vẫn được bật trong danh sách không còn được mã hóa cứng nữa;
-- Nếu một khách hàng đã lưu vào bộ nhớ đệm của nhà cung cấp cũ URL, việc cập nhật đăng ký (hoặc xóa bộ nhớ đệm của nhà cung cấp/khởi động lại khách hàng) sẽ chuyển đổi đăng ký đó.
+- Nếu một khách hàng đã lưu vào bộ đệm của nhà cung cấp cũ URL, việc cập nhật đăng ký (hoặc xóa bộ nhớ đệm của nhà cung cấp/khởi động lại khách hàng) sẽ chuyển đổi đăng ký đó.
 
-Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` và `X-Forwarded-Host`; nếu không thì điểm cuối dự phòng sẽ được sử dụng.
+Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` và `X-Forwarded-Host`; nếu không thì điểm cuối dự phòng sẽ được sử dụng. Các mẫu trang web Caddy / Nginx do bảng điều khiển tạo đã bao gồm cả hai tiêu đề (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); thêm chúng theo cách thủ công nếu bạn duy trì cấu hình proxy bằng tay.
 
 ## 7. Ghi chú
 
-- **Định dạng và cấu hình được kết hợp chặt chẽ**: mẫu được `config`/`platform` chọn phải khớp với `format` của yêu cầu này; các mẫu không khớp sẽ bị bỏ qua - điều này ngăn cản việc đưa các quy tắc Mihomo vào sing-box/Xray JSON.
+- **Định dạng và cấu hình được kết hợp chặt chẽ**: mẫu được `config`/`platform` chọn phải khớp với `format` của yêu cầu này; các mẫu không khớp sẽ bị bỏ qua - điều này ngăn việc đưa các quy tắc Mihomo vào sing-box/Xray JSON.
 - **`providers=1` chỉ ảnh hưởng đến Mihomo YAML**: sing-box / Xray / base64 / raw bỏ qua nó (các nút vẫn nằm trong dòng).
 - **Giới hạn tỷ lệ**: điểm cuối đăng ký có giới hạn riêng (`SubscribeRateLimit`); khách hàng lạm dụng bị từ chối.
 - **Nhật ký truy cập**: mọi lần tìm nạp đều ghi lại thông tin IP / UA / CDN, hiển thị trong phần “Nhật ký truy cập đăng ký” trong giao diện người dùng quản trị viên.

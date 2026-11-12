@@ -959,6 +959,7 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		sb.WriteString("\t\theader_up Host {hostport}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	case "grpc":
 		sb.WriteString("\t\ttransport http {\n")
@@ -976,22 +977,26 @@ func (m *CaddyManager) proxyHeaders(site *entity.CaddySite) string {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 	case "xhttp", "httpupgrade":
 		sb.WriteString("\t\theader_up Upgrade {>Upgrade}\n")
 		sb.WriteString("\t\theader_up Connection {>Connection}\n")
 		sb.WriteString("\t\theader_up Host {hostport}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	case "panel_forward":
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 		// 面板实时日志等 SSE 长连接：立即刷新，不缓冲上游响应。（Caddy 默认即 -1，显式声明防回退。）
 		sb.WriteString("\t\tflush_interval -1\n")
 	default:
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	}
 	return sb.String()

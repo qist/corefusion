@@ -34,7 +34,7 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 | `singbox_json` | Configuración completa sing-box JSON | sing-box / SFI / FLClash (núcleo sing-box) |
 | `xray_json` | Configuración completa Xray JSON | Xray-núcleo |
 
-> Se aplica la compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en formatos sing-box/Mihomo; Los nodos REALITY en un servidor sing-box no aparecen en las suscripciones Xray/sing-box JSON. Los nodos que el cliente no puede reconocer se eliminan automáticamente en lugar de fallar en toda la suscripción.
+> Se aplica la compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en formatos sing-box/Mihomo; **Los nodos REALITY atendidos por xray están excluidos de las suscripciones sing-box** (sing-box no admite la implementación REALITY de xray, consulte sing-box#4520) pero aún aparecen en las suscripciones Xray, mientras que **los nodos REALITY atendidos por sing-box funciona en las suscripciones Xray y sing-box**. Los nodos que el cliente no puede reconocer se eliminan automáticamente en lugar de fallar en toda la suscripción.
 
 ## 3. Encabezados de respuesta
 
@@ -108,7 +108,7 @@ proxy-groups:
 Con `format=mihomo_yaml&providers=1` (o `format=clash&providers=1`) el YAML:
 
 - ya no incluye nodos en el nivel superior: emite `proxy-providers:`;
-- los grupos proxy hacen referencia a fuentes de nodos a través de `use: [<provider-key>...]`;
+- los grupos de proxy hacen referencia a fuentes de nodos a través de `use: [<provider-key>...]`;
 - cualquier `proxy-providers` escrito en un formato de suscripción compartida (`mihomo_configs.config_json`) se **ignora** (una configuración compartida sirve para varios planes; los proveedores codificados se filtrarían entre los planes). Grupo → asignaciones de fuentes se encuentran en “Gestión de planes → grupo → asignación de fuentes”.
 
 Tipos de proveedores:
@@ -140,11 +140,11 @@ Consecuencias:
 - Un dominio antiguo que todavía está habilitado en la lista ya no está codificado;
 - Si un cliente almacenó en caché el antiguo proveedor URL, actualizar la suscripción (o borrar el caché del proveedor/reiniciar el cliente) lo cambia.
 
-Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` y `X-Forwarded-Host`; de lo contrario, se utiliza el punto final alternativo.
+Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` y `X-Forwarded-Host`; de lo contrario, se utiliza el punto final alternativo. Las plantillas de sitio Caddy/Nginx generadas por el panel ya incluyen ambos encabezados (`header_up X-Forwarded-Host {host}`/`proxy_set_header X-Forwarded-Host $host;`); agréguelos manualmente si mantiene la configuración del proxy a mano.
 
 ## 7. Notas
 
-- **El formato y la configuración están estrechamente relacionados**: la plantilla seleccionada por `config`/`platform` debe coincidir con la `format` de esta solicitud; las plantillas que no coinciden se ignoran; esto evita inyectar reglas de Mihomo en sing-box/Xray JSON.
+- **El formato y la configuración están estrechamente relacionados**: la plantilla seleccionada por `config`/`platform` debe coincidir con el `format` de esta solicitud; las plantillas que no coinciden se ignoran; esto evita inyectar reglas de Mihomo en sing-box/Xray JSON.
 - **`providers=1` solo afecta a Mihomo YAML**: sing-box / Xray / base64 / raw ignórelo (los nodos permanecen en línea).
 - **Limitación de tasa**: el punto final de suscripción tiene su propio límite (`SubscribeRateLimit`); Los clientes abusivos son rechazados.
 - **Registro de acceso**: cada recuperación registra información de IP/UA/CDN, visible en "Registro de acceso de suscripción" en la interfaz de usuario del administrador.

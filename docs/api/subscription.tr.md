@@ -34,7 +34,7 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 | `singbox_json` | Tam sing-box JSON yapılandırması | sing-box / SFI / FLClash (sing-box çekirdeği) |
 | `xray_json` | Tam Xray JSON yapılandırması | Xray-çekirdek |
 
-> Protokol/format uyumluluğu geçerlidir: örneğin, `anytls` yalnızca sing-box/Mihomo formatlarında görünür; sing-box sunucusundaki REALITY düğümleri, Xray/sing-box JSON aboneliklerinde görünmez. Aboneliğin tamamının başarısız olması yerine istemcinin tanıyamadığı düğümler otomatik olarak bırakılır.
+> Protokol/format uyumluluğu geçerlidir: örneğin, `anytls` yalnızca sing-box/Mihomo formatlarında görünür; **xray tarafından sunulan REALITY düğümleri, sing-box aboneliklerinden hariç tutulur** (sing-box, xray'nin REALITY uygulamasını desteklemez, bkz. sing-box#4520) ancak yine de Xray aboneliklerinde görünürken **REALITY düğümleri hizmet verir sing-box tarafından hem Xray hem de sing-box aboneliklerinde çalışır**. İstemcinin tanıyamadığı düğümler, tüm aboneliğin başarısız olması yerine otomatik olarak bırakılır.
 
 ## 3. Yanıt başlıkları
 
@@ -107,7 +107,7 @@ proxy-groups:
 
 `format=mihomo_yaml&providers=1` (veya `format=clash&providers=1`) ile YAML:
 
-- artık en üst düzeydeki düğümleri satır içi olarak kullanmıyor; `proxy-providers:` yayınlıyor;
+- artık en üst seviyedeki satır içi düğümleri kullanmıyor; `proxy-providers:` yayınlıyor;
 - proxy grupları `use: [<provider-key>...]` aracılığıyla düğüm kaynaklarına referans verir;
 - paylaşılan abonelik biçiminde (`mihomo_configs.config_json`) yazılan herhangi bir `proxy-providers` **yoksayılır** (paylaşılan bir yapılandırma çeşitli planlara hizmet eder; sabit kodlanmış sağlayıcılar planlar arasında sızıntı yapar). Grup → kaynak eşlemeleri “Plan yönetimi → grup → kaynak eşleme” altında yayınlanır.
 
@@ -122,7 +122,7 @@ Sağlayıcı türleri:
 Sağlayıcı başına ortak alanlar:
 
 - `url` — ana istekten `config` / `platform`'yi devralan `format=mihomo_proxies_yaml` ile bu aboneliğe işaret eder; dahili sağlayıcılar `provider=<key>`'yi ekler;
-- `path` — **her zaman “dahili sağlayıcı varsayılanları → önbellek yolu şablonundan” türetilmiştir** (varsayılan `./providers/{key}.yaml`, `{key}` değiştirildi). Dış sağlayıcılar da kendi yollarını belirleyemez;
+- `path` — **her zaman “dahili sağlayıcı varsayılanlarından → önbellek yolu şablonundan” türetilmiştir** (varsayılan `./providers/{key}.yaml`, `{key}` değiştirildi). Dış sağlayıcılar da kendi yollarını belirleyemez;
 - `health-check` — `enable / url / interval`; dahili sağlayıcılar varsayılanları devralır, harici sağlayıcılar bunu planda yapılandırır;
 - `interval` — saniye cinsinden yenileme aralığı.
 
@@ -140,7 +140,7 @@ Sonuçlar:
 - Listede hâlâ etkin olan eski bir alan adı artık sabit kodlu değildir;
 - Bir istemci eski sağlayıcı URL'yi önbelleğe aldıysa, aboneliğin güncellenmesi (veya sağlayıcı önbelleğinin temizlenmesi / istemcinin yeniden başlatılması) onu değiştirir.
 
-Ters proxy'ler `X-Forwarded-Proto` ve `X-Forwarded-Host`'yi iletmelidir; aksi halde geri dönüş uç noktası kullanılır.
+Ters proxy'ler `X-Forwarded-Proto` ve `X-Forwarded-Host`'yi iletmelidir; aksi halde geri dönüş uç noktası kullanılır. Panelin oluşturulan Caddy / Nginx site şablonları zaten her iki başlığı da içerir (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); Proxy yapılandırmasını elle koruyorsanız bunları manuel olarak ekleyin.
 
 ## 7. Notlar
 
@@ -148,5 +148,5 @@ Ters proxy'ler `X-Forwarded-Proto` ve `X-Forwarded-Host`'yi iletmelidir; aksi ha
 - **`providers=1` yalnızca Mihomo YAML'yi etkiler**: sing-box / Xray / base64 / raw bunu yok sayar (düğümler satır içi kalır).
 - **Hız sınırlaması**: Abonelik uç noktasının kendi sınırı vardır (`SubscribeRateLimit`); Kötü niyetli müşteriler reddedilir.
 - **Erişim günlüğü**: Her getirme işleminde IP / UA / CDN bilgileri kaydedilir ve yönetici arayüzünde "Abonelik erişim günlüğü" altında görünür.
-- Özel bir abonelik bağlantı noktasında yapılandırılmış bir etki alanı olmadan, isteğin `X-Forwarded-Proto` / `X-Forwarded-Host`'si kullanılır; ters proxy'nizin her iki başlığı da ilettiğinden emin olun.
+- Özel bir abonelik bağlantı noktasında yapılandırılan bir etki alanı olmadan, isteğin `X-Forwarded-Proto` / `X-Forwarded-Host`'si kullanılır; ters proxy'nizin her iki başlığı da ilettiğinden emin olun.
 - Çok alanlı dağıtımlarda, uç nokta listesini istemcilerin gerçekte kullandığı alan adlarıyla uyumlu tutun; bkz. §6.2.

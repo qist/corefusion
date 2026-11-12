@@ -958,6 +958,7 @@ func (m *Manager) proxyHeaders(site *entity.ProxySite) string {
 		sb.WriteString("\t\theader_up Host {hostport}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	case "grpc":
 		sb.WriteString("\t\ttransport http {\n")
@@ -979,9 +980,11 @@ func (m *Manager) proxyHeaders(site *entity.ProxySite) string {
 		sb.WriteString("\t\t}\n")
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 	default:
 		sb.WriteString("\t\theader_up X-Real-IP {remote_host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-For {remote_host}\n")
+		sb.WriteString("\t\theader_up X-Forwarded-Host {host}\n")
 		sb.WriteString("\t\theader_up X-Forwarded-Proto {scheme}\n")
 	}
 	// Note: proxy_protocol is only for layer4 blocks, not reverse_proxy

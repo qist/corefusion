@@ -1143,10 +1143,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				sb.WriteString("            proxy_http_version 1.1;\n")
 				sb.WriteString("            proxy_set_header Upgrade $http_upgrade;\n")
 				sb.WriteString("            proxy_set_header Connection $connection_upgrade;\n")
-				sb.WriteString("            proxy_set_header Host $host;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
-				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+				writeNginxProxyHeaders(&sb)
 				sb.WriteString("            proxy_set_header X-NginX-Proxy true;\n")
 				if site.UpstreamTLS {
 					writeProxySSLUpstream(&sb, upstreamSNI)
@@ -1163,10 +1160,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if site.UpstreamTLS {
 					writeProxySSLUpstream(&sb, upstreamSNI)
 				}
-				sb.WriteString("            proxy_set_header Host $host;\n")
-				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+				writeNginxProxyHeaders(&sb)
 				sb.WriteString("            proxy_set_header Connection \"\";\n")
 				sb.WriteString("            proxy_buffering off;\n")
 				sb.WriteString("            proxy_cache off;\n")
@@ -1179,10 +1173,7 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if site.UpstreamTLS {
 					writeProxySSLUpstream(&sb, upstreamSNI)
 				}
-				sb.WriteString("            proxy_set_header Host $host;\n")
-				sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
-				sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+				writeNginxProxyHeaders(&sb)
 			}
 
 			// Location-level directives (auto-add semicolons)
@@ -1676,6 +1667,19 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	return sb.String(), nil
 }
 
+// writeNginxProxyHeaders 写反代的公共请求头。
+//
+// X-Forwarded-Host 必须带：订阅 provider URL 按「本次请求实际使用的域名」生成
+// （多域名端点换域名后 provider 里要跟着变，见 docs/api/subscription.md §6.2）。
+// 缺这个头时面板只能回落到第一个启用端点，表现为「换了域名，provider 里还是旧域名」。
+func writeNginxProxyHeaders(sb *strings.Builder) {
+	sb.WriteString("            proxy_set_header Host $host;\n")
+	sb.WriteString("            proxy_set_header X-Forwarded-Host $host;\n")
+	sb.WriteString("            proxy_set_header X-Real-IP $remote_addr;\n")
+	sb.WriteString("            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
+	sb.WriteString("            proxy_set_header X-Forwarded-Proto $scheme;\n")
+}
+
 // writeACMEChallengeLocation 写 ACME HTTP-01 挑战的 location。
 // 调用方必须保证所在 server 块**真的监听 80**（见调用点条件），否则就是死配置。
 //
@@ -1699,6 +1703,7 @@ func (m *NginxManager) writeACMEChallengeLocation(sb *strings.Builder, ctx conte
 		sb.WriteString(indent + "    proxy_ssl_verify off;\n")
 	}
 	sb.WriteString(indent + "    proxy_set_header Host $host;\n")
+	sb.WriteString(indent + "    proxy_set_header X-Forwarded-Host $host;\n")
 	sb.WriteString(indent + "    proxy_set_header X-Real-IP $remote_addr;\n")
 	sb.WriteString(indent + "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n")
 	sb.WriteString(indent + "    proxy_set_header X-Forwarded-Proto $scheme;\n")

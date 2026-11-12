@@ -899,7 +899,7 @@ Notes:
 
 - **Multiple rows (multi-domain)** are supported; when several are enabled the provider domain follows the domain used by the current request (see 9.4);
 - A dedicated subscription port serves at the root (`/<token>`, no `/sub`); when sharing the panel port it is `/sub/<token>`;
-- Reverse proxies must forward `X-Forwarded-Proto` / `X-Forwarded-Host`, otherwise the first enabled endpoint is used.
+- Reverse proxies must forward `X-Forwarded-Proto` / `X-Forwarded-Host`, otherwise the first enabled endpoint is used. The panel's generated Caddy / Nginx site templates include both headers; hand-maintained proxy configs need them added manually.
 
 ### 9.3 Subscription links
 

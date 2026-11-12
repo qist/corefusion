@@ -896,7 +896,7 @@ cd /opt/corefusion
 
 - 可以配置**多条**（多域名）；全部启用时，provider 里的域名按「本次请求实际使用的域名」优先（见 9.4）；
 - 独立订阅端口在根路径服务（`/<token>`，无 `/sub` 前缀）；与面板共用端口时是 `/sub/<token>`；
-- 反向代理必须透传 `X-Forwarded-Proto` / `X-Forwarded-Host`，否则只能回落到第一个启用端点。
+- 反向代理必须透传 `X-Forwarded-Proto` / `X-Forwarded-Host`，否则只能回落到第一个启用端点。面板生成的 Caddy / Nginx 站点模板已自动写入这两个头；手工维护的反代配置需自行补齐。
 
 ### 9.3 订阅链接
 

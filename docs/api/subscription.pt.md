@@ -34,13 +34,13 @@ Busca a lista de nós de assinatura de um usuário. **Este é o endpoint mais us
 | `singbox_json` | Configuração completa do sing-box JSON | sing-box / SFI / FLClash (núcleo sing-box) |
 | `xray_json` | Configuração completa Xray JSON | Núcleo Xray |
 
-> A compatibilidade de protocolo/formato se aplica: por exemplo, `anytls` aparece apenas nos formatos sing-box/Mihomo; Os nós REALITY em um servidor sing-box não aparecem nas assinaturas Xray/sing-box JSON. Os nós que o cliente não consegue reconhecer são descartados automaticamente em vez de falharem em toda a assinatura.
+> A compatibilidade de protocolo/formato se aplica: por exemplo, `anytls` aparece apenas nos formatos sing-box/Mihomo; **Nós REALITY atendidos por xray são excluídos das assinaturas sing-box** (sing-box não suporta a implementação xray de REALITY, consulte sing-box#4520), mas ainda aparecem em assinaturas Xray, enquanto **nós REALITY atendidos por sing-box funcionam em assinaturas Xray e sing-box**. Os nós que o cliente não consegue reconhecer são descartados automaticamente em vez de causar falha em toda a assinatura.
 
 ## 3. Cabeçalhos de resposta
 
 | Cabeçalho | Exemplo | Descrição |
 |---|---|---|
-| `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Uso e expiração (bytes/segundos Unix). **Também enviado em 403**, para que os clientes possam mostrar o valor restante |
+| `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Uso e expiração (bytes/segundos Unix). **Também enviado no 403**, para que os clientes possam mostrar o valor restante |
 | `Profile-Update-Interval` | `6` | Intervalo de atualização sugerido (horas) |
 | `Profile-Title` | `CoreFusion` | Nome do perfil (mostrado por Clash Verge Rev / V2RayN, etc.) |
 | `Profile-Web-Page-Url` | `https://portal.example.com` | Portal URL (“página web aberta” em clientes; caminho raiz quando o portal possui porta própria, caso contrário /p) |
@@ -132,7 +132,7 @@ Campos comuns por provedor:
 
 1. **O domínio que esta solicitação realmente usou**: o primeiro valor de `X-Forwarded-Host` (porta removida), caso contrário, `Host`; deve corresponder a um endpoint **ativado**;
 2. Se nada corresponder, volte para o endpoint habilitado com o **ID mais baixo**;
-3. O caminho vem do terminal correspondente (`path`, padrão `/`), produzindo `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+3. O caminho vem do endpoint correspondente (`path`, padrão `/`), produzindo `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
 
 Consequências:
 
@@ -140,13 +140,13 @@ Consequências:
 - Um domínio antigo ainda habilitado na lista não está mais codificado;
 - Se um cliente armazenou em cache o provedor antigo URL, atualizar a assinatura (ou limpar o cache do provedor/reiniciar o cliente) fará a troca.
 
-Os proxies reversos devem encaminhar `X-Forwarded-Proto` e `X-Forwarded-Host`; caso contrário, o endpoint de fallback será usado.
+Os proxies reversos devem encaminhar `X-Forwarded-Proto` e `X-Forwarded-Host`; caso contrário, o endpoint de fallback será usado. Os modelos de site Caddy / Nginx gerados pelo painel já incluem ambos os cabeçalhos (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); adicione-os manualmente se você mantiver a configuração do proxy manualmente.
 
 ## 7. Notas
 
 - **O formato e a configuração estão fortemente acoplados**: o modelo selecionado por `config`/`platform` deve corresponder ao `format` desta solicitação; modelos incompatíveis são ignorados — isso evita a injeção de regras Mihomo em sing-box/Xray JSON.
 - **`providers=1` afeta apenas Mihomo YAML**: sing-box / Xray / base64 / raw ignore-o (os nós permanecem alinhados).
 - **Limitação de taxa**: o endpoint da assinatura tem seu próprio limite (`SubscribeRateLimit`); clientes abusivos são rejeitados.
-- **Log de acesso**: cada busca registra informações de IP / UA / CDN, visíveis em “Registro de acesso de assinatura” na UI do administrador.
-- Sem domínio configurado em porta de assinatura dedicada, são utilizados os `X-Forwarded-Proto`/`X-Forwarded-Host` da solicitação; certifique-se de que seu proxy reverso encaminhe ambos os cabeçalhos.
+- **Registro de acesso**: cada busca registra informações de IP/UA/CDN, visíveis em “Registro de acesso de assinatura” na UI do administrador.
+- Sem um domínio configurado em uma porta de assinatura dedicada, são utilizados os `X-Forwarded-Proto`/`X-Forwarded-Host` da solicitação; certifique-se de que seu proxy reverso encaminhe ambos os cabeçalhos.
 - Em implantações de vários domínios, mantenha a lista de endpoints alinhada com os domínios que os clientes realmente usam; ver §6.2.

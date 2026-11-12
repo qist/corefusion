@@ -34,7 +34,7 @@
 | `singbox_json` | 전체 sing-box JSON 구성 | sing-box / SFI / FLClash (sing-box 코어) |
 | `xray_json` | 전체 Xray JSON 구성 | Xray 코어 |
 
-> 프로토콜/형식 호환성이 적용됩니다. 예를 들어 `anytls`는 sing-box/Mihomo 형식에만 나타납니다. sing-box 서버의 REALITY 노드는 Xray/sing-box JSON 구독에 표시되지 않습니다. 클라이언트가 인식할 수 없는 노드는 전체 구독이 실패하는 대신 자동으로 삭제됩니다.
+> 프로토콜/형식 호환성이 적용됩니다. 예를 들어 `anytls`는 sing-box/Mihomo 형식에만 나타납니다. **xray가 제공하는 REALITY 노드는 sing-box 구독에서 제외됩니다**(sing-box는 xray의 REALITY 구현을 지원하지 않습니다. sing-box#4520 참조). 그러나 **REALITY 노드는 제공되는 반면 Xray 구독에는 계속 나타납니다. by sing-box Xray 및 sing-box 구독** 모두에서 작동합니다. 클라이언트가 인식할 수 없는 노드는 전체 구독이 실패하는 대신 자동으로 삭제됩니다.
 
 ## 3. 응답 헤더
 
@@ -43,7 +43,7 @@
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | 사용량 및 만료(바이트/Unix 초). **403으로도 전송됨** 고객이 남은 허용량을 표시할 수 있음 |
 | `Profile-Update-Interval` | `6` | 제안된 새로 고침 간격(시간) |
 | `Profile-Title` | `CoreFusion` | 프로필 이름(Clash Verge Rev/V2RayN 등으로 표시) |
-| `Profile-Web-Page-Url` | `https://portal.example.com` | 포털 URL(클라이언트의 "웹 페이지 열기", 포털에 자체 포트가 있는 경우 루트 경로, 그렇지 않은 경우 /p) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Portal URL(클라이언트의 "웹 페이지 열기", 포털에 자체 포트가 있는 경우 루트 경로, 그렇지 않은 경우 /p) |
 | `Content-Type` | 형식별: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 
@@ -51,9 +51,9 @@
 
 | HTTP | 코드 | 의미 |
 |---|---|---|
-| 200 | — | 일반(본문은 `format`에서 렌더링된 구독입니다) |
+| 200 | — | 일반(본문은 `format`에서 렌더링된 구독) |
 | 400 | `MISSING_TOKEN` | URL에 토큰이 없습니다. |
-| 403 | (일반 텍스트) | 구독이 일시 중지/만료/비활성화되었습니다. 메시지는 `Accept-Language`를 통해 현지화(zh/en/ja/ko)되었으며 이유는 한 줄입니다. |
+| 403 | (일반 텍스트) | 구독이 일시 중지/만료/비활성화되었습니다. 메시지는 `Accept-Language`를 통해 현지화(zh/en/ja/ko)되었으며 한 줄 이유입니다. |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | 토큰이 존재하지 않습니다 |
 
 > 취소된 구독은 존재하지 않는 구독으로 처리됩니다(404).
@@ -123,7 +123,7 @@ proxy-groups:
 
 - `url` — 기본 요청에서 `config` / `platform`를 상속하여 `format=mihomo_proxies_yaml`를 사용하여 이 구독을 다시 가리킵니다. 내부 공급자는 `provider=<key>`를 추가합니다.
 - `path` — **항상 "내부 공급자 기본값 → 캐시 경로 템플릿"에서 파생됩니다**(기본값 `./providers/{key}.yaml`, `{key}` 대체). 외부 공급자도 자체 경로를 설정할 수 없습니다.
-- `health-check` - `enable / url / interval`; 내부 공급자는 기본값을 상속하고 외부 공급자는 계획에 따라 이를 구성합니다.
+- `health-check` — `enable / url / interval`; 내부 공급자는 기본값을 상속하고 외부 공급자는 계획에 따라 이를 구성합니다.
 - `interval` — 새로 고침 간격(초)입니다.
 
 ### 6.2 공급자 URL(다중 도메인)에 들어가는 도메인
@@ -140,13 +140,13 @@ proxy-groups:
 - 목록에 여전히 활성화되어 있는 이전 도메인은 더 이상 하드 코딩되지 않습니다.
 - 클라이언트가 이전 공급자 URL를 캐시한 경우 구독을 업데이트(또는 공급자 캐시 지우기/클라이언트 다시 시작)하여 전환합니다.
 
-역방향 프록시는 `X-Forwarded-Proto` 및 `X-Forwarded-Host`를 전달해야 합니다. 그렇지 않으면 대체 엔드포인트가 사용됩니다.
+역방향 프록시는 `X-Forwarded-Proto` 및 `X-Forwarded-Host`를 전달해야 합니다. 그렇지 않으면 대체 엔드포인트가 사용됩니다. 패널에서 생성된 Caddy / Nginx 사이트 템플릿에는 이미 두 헤더(`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`)가 모두 포함되어 있습니다. 프록시 구성을 직접 유지 관리하는 경우 수동으로 추가하세요.
 
 ## 7. 메모
 
-- **형식과 구성은 밀접하게 결합되어 있습니다**: `config`/`platform`에서 선택한 템플릿은 이 요청의 `format`와 일치해야 합니다. 일치하지 않는 템플릿은 무시됩니다. 이렇게 하면 sing-box/Xray JSON에 Mihomo 규칙을 삽입하는 것을 방지할 수 있습니다.
+- **형식과 구성은 밀접하게 결합되어 있습니다**: `config`/`platform`에서 선택한 템플릿은 이 요청의 `format`와 일치해야 합니다. 일치하지 않는 템플릿은 무시됩니다. 이는 sing-box/Xray JSON에 Mihomo 규칙을 삽입하는 것을 방지합니다.
 - **`providers=1`는 Mihomo YAML에만 영향을 미칩니다**: sing-box / Xray / base64 / raw는 무시합니다(노드는 인라인 상태로 유지됩니다).
 - **속도 제한**: 구독 엔드포인트에는 자체 제한(`SubscribeRateLimit`)이 있습니다. 악의적인 클라이언트는 거부됩니다.
-- **액세스 로그**: ​​가져올 때마다 관리 UI의 '구독 액세스 로그'에 표시되는 IP / UA / CDN 정보를 기록합니다.
+- **액세스 로그**: ​​모든 가져오기는 관리 UI의 "구독 액세스 로그" 아래에 표시되는 IP / UA / CDN 정보를 기록합니다.
 - 전용 구독 포트에 도메인이 구성되어 있지 않으면 요청의 `X-Forwarded-Proto` / `X-Forwarded-Host`가 사용됩니다. 역방향 프록시가 두 헤더를 모두 전달하는지 확인하세요.
 - 다중 도메인 배포에서는 클라이언트가 실제로 사용하는 도메인에 맞춰 끝점 목록을 유지합니다. §6.2를 참조하세요.

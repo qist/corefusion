@@ -20,7 +20,7 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 |---|---|
 | `format` | Format keluaran; mengesampingkan default langganan. Lihat di bawah |
 | `config` | Nama template konfigurasi (ditentukan pada “Format langganan” di UI admin). Harus menggunakan format yang sama dengan `format` permintaan ini, jika tidak maka akan diabaikan |
-| `platform` | Cocokkan templat konfigurasi berdasarkan nama platform (digunakan ketika `config` dihilangkan); formatnya juga harus cocok |
+| `platform` | Cocokkan template konfigurasi berdasarkan nama platform (digunakan ketika `config` dihilangkan); formatnya juga harus cocok |
 | `providers` | Hanya `mihomo_yaml`: `1` / `true` mengaktifkan **Mode Penyedia** (memancarkan `proxy-providers` dan mereferensikannya melalui `use`); default atau nilai lainnya membuat node tetap berada di bawah `proxies`. Lihat §6 |
 
 ### Nilai `format` yang didukung
@@ -34,7 +34,7 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 | `singbox_json` | Konfigurasi penuh sing-box JSON | sing-box / SFI / FLClash (inti sing-box) |
 | `xray_json` | Konfigurasi penuh Xray JSON | Xray-inti |
 
-> Kompatibilitas protokol/format berlaku: misalnya, `anytls` hanya muncul dalam format sing-box/Mihomo; Node REALITY di server sing-box tidak muncul di langganan Xray/sing-box JSON. Node yang tidak dapat dikenali oleh klien akan dihapus secara otomatis alih-alih menggagalkan seluruh langganan.
+> Kompatibilitas protokol/format berlaku: misalnya, `anytls` hanya muncul dalam format sing-box/Mihomo; **REALITY node yang dilayani oleh xray dikecualikan dari langganan sing-box** (sing-box tidak mendukung implementasi REALITY xray, lihat sing-box#4520) namun masih muncul di langganan Xray, sementara **REALITY node dilayani oleh sing-box berfungsi di langganan Xray dan sing-box**. Node yang tidak dapat dikenali klien akan dihapus secara otomatis alih-alih menggagalkan seluruh langganan.
 
 ## 3. Header respons
 
@@ -140,7 +140,7 @@ Konsekuensi:
 - Domain lama yang masih diaktifkan dalam daftar tidak lagi di-hardcode;
 - Jika klien menyimpan cache penyedia lama URL, memperbarui langganan (atau menghapus cache penyedia/memulai ulang klien) akan mengalihkannya.
 
-Proksi terbalik harus meneruskan `X-Forwarded-Proto` dan `X-Forwarded-Host`; jika tidak, titik akhir cadangan akan digunakan.
+Proksi terbalik harus meneruskan `X-Forwarded-Proto` dan `X-Forwarded-Host`; jika tidak, titik akhir cadangan akan digunakan. Templat situs Caddy/Nginx yang dihasilkan panel sudah menyertakan kedua header (`header_up X-Forwarded-Host {host}`/`proxy_set_header X-Forwarded-Host $host;`); tambahkan secara manual jika Anda mempertahankan konfigurasi proxy dengan tangan.
 
 ## 7. Catatan
 

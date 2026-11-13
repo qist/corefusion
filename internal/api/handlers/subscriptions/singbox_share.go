@@ -186,6 +186,11 @@ func singboxViewForUser(config map[string]interface{}, user map[string]interface
 	if v, ok := user["flow"].(string); ok && v != "" {
 		client["flow"] = v
 	}
+	// vmess 的 alterId 必须带到链接里（sing-box 入站用户字段名就是 alterId；
+	// 分享链接 vmess 分支读 clients[].alterId）。旧实现写死 0，alterId>0 的节点连不上。
+	if v, ok := user["alterId"]; ok && v != nil {
+		client["alterId"] = v
+	}
 	if v, ok := user["method"].(string); ok && v != "" {
 		client["method"] = v
 	}

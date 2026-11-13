@@ -721,9 +721,14 @@ func stripStandaloneCoreFromLogOutputSettings(db *gorm.DB, dead []string) {
 // 用户配置过的原样保留。幂等：替换后即不满足条件。
 func migrateSeedSingboxDefaults(db *gorm.DB) {
 	// 默认值与 coreconfig.DefaultSectionJSON["singbox"] 保持一致（那边改这里也要改）
+	//
+	// ⚠ DNS 已改为默认**关闭**（DefaultSectionJSON 里是 `{}`）：这里不再给空壳节点
+	// 塞 DNS server，否则用户把 DNS 关掉后，下次启动又会被这条迁移打开。
+	// legacyDNSDefault 只用于识别「历史迁移自动写入、用户从未改过」的旧默认值，
+	// 把它们清理成 `{}`；真被用户改过的（与旧默认不完全一致）原样保留。
 	const (
-		ntpDefault = `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`
-		dnsDefault = `{"servers":[{"type":"local","tag":"dns-local"},{"type":"udp","server":"1.1.1.1","server_port":53,"tag":"dns-remote"}],"rules":[],"final":"dns-remote"}`
+		ntpDefault       = `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`
+		legacyDNSDefault = `{"servers":[{"type":"local","tag":"dns-local"},{"type":"udp","server":"1.1.1.1","server_port":53,"tag":"dns-remote"}],"rules":[],"final":"dns-remote"}`
 	)
 	type row struct {
 		ID      int64
@@ -752,11 +757,12 @@ func migrateSeedSingboxDefaults(db *gorm.DB) {
 			}
 			def = ntpDefault
 		case "dns":
-			servers, _ := v["servers"].([]interface{})
-			if len(servers) != 0 {
-				continue // 配过 DNS server，保留
+			// DNS 默认关闭：只在「这一行就是历史自动写入的旧默认值」时清空。
+			// 其余情况（用户自己配的 DNS、或本来就是空对象）一律不动。
+			if !sameJSONMap(v, legacyDNSDefault) {
+				continue
 			}
-			def = dnsDefault
+			def = `{}`
 		}
 		if err := db.Table("core_configs").Where("id = ?", r.ID).Update("config_json", def).Error; err != nil {
 			log.Printf("[migration] seed singbox %s (id=%d) failed: %v", r.Section, r.ID, err)
@@ -767,6 +773,18 @@ func migrateSeedSingboxDefaults(db *gorm.DB) {
 	if updated > 0 {
 		log.Printf("[migration] seeded defaults for %d empty singbox ntp/dns sections", updated)
 	}
+}
+
+// sameJSONMap 判断已解析的 JSON 对象与给定 JSON 文本是否语义相同
+// （map 序列化键有序，可直接比较字符串）。
+func sameJSONMap(v map[string]interface{}, raw string) bool {
+	var other map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &other); err != nil {
+		return false
+	}
+	a, errA := json.Marshal(v)
+	b, errB := json.Marshal(other)
+	return errA == nil && errB == nil && string(a) == string(b)
 }
 
 // migrateUniqueIndexes drops legacy single-column unique indexes and

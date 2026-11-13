@@ -289,6 +289,12 @@
               <div v-if="!accessDomainSelected" class="hint warn-hint" style="margin-bottom:12px">
                 {{ t('protoCenter.inbounds.accessDomainNotSelected') }}
               </div>
+              <!-- 自带 TLS 的 sing-box 入站的地址/端口注意事项。只提示、不锁死：
+                   用户仍可按原设计选 direct/custom/cf_* 与端口模式；SNI 分流没开
+                   proxy_protocol 时 443 是正常可用的。 -->
+              <div v-if="selfTlsAccessHint" class="hint warn-hint" style="margin-bottom:12px">
+                {{ t('protoCenter.inbounds.singboxTlsAccessHint') }}
+              </div>
               <!-- Direct -->
               <template v-if="rf._accessDomainType === 'direct'">
                 <el-form-item :label="t('protoCenter.inbounds.directDomain')">
@@ -576,6 +582,29 @@ const accessDomainSelected = computed(() => {
     case 'cf_ip': return true
     case 'custom': return !!rf._customDomain
     default: return false
+  }
+})
+
+// 自带 TLS 的 sing-box 入站（TLS 在核心内完成）在使用访问域名时的注意事项：
+//   - CDN（cf_domain / cf_ip）会终结 TLS → 客户端连不到核心的 TLS，必然失败；
+//   - 面板 nginx 的 443 SNI 分流通常是 `proxy_protocol on`（给 xray REALITY 用），
+//     而 sing-box 1.13+ 已移除入站 proxy_protocol 字段 → 多了 PROXY 头，握手失败。
+//
+// 只做提示，不改用户选择：SNI 分流没开 proxy_protocol 时 443 完全正常，
+// 用户也可以继续按原设计选「使用配置端口 / 使用入站端口」。
+const selfTlsAccessHint = computed(() => {
+  if (!rf._accessDomainEnabled || !rf._tlsEnabled || rf._accessTlsEnabled) return false
+  if (rf._realityEnabled) return false
+  switch (rf._accessDomainType) {
+    case 'cf_domain':
+    case 'cf_ip':
+      return true // CDN 一定会终结 TLS
+    case 'direct':
+      return rf._directPortMode !== 'inbound'
+    case 'custom':
+      return rf._customPortMode !== 'inbound'
+    default:
+      return false
   }
 })
 

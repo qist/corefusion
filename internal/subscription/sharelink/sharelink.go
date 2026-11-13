@@ -122,14 +122,23 @@ func generateVmessLink(n Node) string {
 	network := getString(ss, "network", "raw")
 	security := getString(ss, "security", "none")
 
+	// aid / scy 必须跟随用户条目：xray 的 vmess 用户本来就带 alterId 与 security
+	//（alterId>0 的旧节点、security=aes-128-gcm 的节点），写死 0/auto 会让客户端
+	// 用错加密方式/ID 长度，表现为「能连上但立刻断开」。
+	alterID := getClientIntField(clients, "alterId", 0)
+	scy := getClientField(clients, "security")
+	if scy == "" {
+		scy = "auto"
+	}
+
 	obj := map[string]interface{}{
 		"v":    "2",
 		"ps":   n.Tag,
 		"add":  n.Host,
 		"port": n.Port,
 		"id":   getClientField(clients, "id"),
-		"aid":  0,
-		"scy":  "auto",
+		"aid":  alterID,
+		"scy":  scy,
 		"net":  linkTransport(network),
 		"type": "none",
 		"host": "",
@@ -317,6 +326,13 @@ func generateHysteriaLink(n Node) string {
 	if insecure, ok := hy["insecure"].(bool); ok && insecure {
 		params.Set("insecure", "1")
 	}
+	// tls.allowInsecure 也是"跳过证书校验"的声明：hy2 的 TLS 在协议内，
+	// 面板上勾了它但链接里不带 insecure，客户端会因自签证书直接握手失败。
+	if tls := getMap(ss, "tlsSettings"); tls != nil {
+		if ins, _ := tls["allowInsecure"].(bool); ins {
+			params.Set("insecure", "1")
+		}
+	}
 
 	if fm := n.FinalMask; fm != nil {
 		// xray 口径：salamander 写在 finalmask.udp[] 里，仅当上面没拿到 obfs 时使用
@@ -356,11 +372,22 @@ func generateHysteriaLink(n Node) string {
 	}
 
 	// Hysteria specific settings（hy 已在上面取过 hysteriaSettings）
+	//
+	// ⚠ 参数名必须写 `up` / `down`：mihomo（common/convert/converter.go 的 hysteria2
+	// 分支）与 sing-box 客户端只认这两个键，`upmbps`/`downmbps` 会被忽略 →
+	// 服务端限了带宽、客户端仍按默认值狂发，看起来"参数不全"。
+	// 同时保留旧键，兼容只认 upmbps/downmbps 的第三方客户端（多余参数会被忽略）。
 	if upMbps, ok := hy["up_mbps"]; ok {
-		params.Set("upmbps", fmt.Sprintf("%v", upMbps))
+		if s := fmt.Sprintf("%v", upMbps); s != "" && s != "0" {
+			params.Set("up", s)
+			params.Set("upmbps", s)
+		}
 	}
 	if downMbps, ok := hy["down_mbps"]; ok {
-		params.Set("downmbps", fmt.Sprintf("%v", downMbps))
+		if s := fmt.Sprintf("%v", downMbps); s != "" && s != "0" {
+			params.Set("down", s)
+			params.Set("downmbps", s)
+		}
 	}
 
 	return fmt.Sprintf("hysteria2://%s@%s:%d?%s#%s",
@@ -543,6 +570,29 @@ func getClientField(clients []interface{}, field string) string {
 		}
 	}
 	return ""
+}
+
+// getClientIntField 读取用户条目里的整数字段（vmess 的 alterId 等）。
+// 兼容 JSON 反序列化后的 float64 与直接构造的 int。
+func getClientIntField(clients []interface{}, field string, def int) int {
+	if len(clients) == 0 {
+		return def
+	}
+	c, ok := clients[0].(map[string]interface{})
+	if !ok {
+		return def
+	}
+	switch v := c[field].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case string:
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	return def
 }
 
 // clientFieldAliases 返回字段的等价写法（按优先级）。

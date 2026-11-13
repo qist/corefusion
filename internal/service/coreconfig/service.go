@@ -75,10 +75,14 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"geodata": `{}`,
 	},
 	"singbox": {
-		"log":      `{"level":"info","timestamp":true}`,
-		"dns":      `{"servers":[{"type":"local","tag":"dns-local"},{"type":"udp","server":"1.1.1.1","server_port":53,"tag":"dns-remote"}],"rules":[],"final":"dns-remote"}`,
+		"log": `{"level":"info","timestamp":true}`,
+		// DNS 默认**关闭**：sing-box 不写 dns 段时用系统解析器，够用且少一层故障面；
+		// 需要自定义解析（DoH/分流/fakeip）时再在「DNS」段显式开启。
+		// 注意：DNS 关闭时必须同时清掉 route.default_domain_resolver 等引用，
+		// 否则核心启动 FATAL（见 coreconfig.stripSingboxDNSReferences）。
+		"dns":      `{}`,
 		"ntp":      `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`,
-		"route":    `{"rules":[],"auto_detect_interface":true,"final":"direct"}`,
+		"route":    `{"rules":[{"ip_is_private":true,"outbound":"direct"}],"auto_detect_interface":true,"final":"direct"}`,
 		"inbounds": `[]`,
 		// endpoints（wireguard/tun/tailscale 出口端点）：前端 section 清单里一直有，
 		// 后端却缺了这个 key → 打开是空、保存还会丢数据（2026-10-08 补）。

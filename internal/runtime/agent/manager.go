@@ -77,6 +77,9 @@ type NodeServerManager struct {
 
 	// 实时在线订阅人快照（由 Agent ONLINE_USERS 上报刷新，带 TTL 过期）
 	onlineStore *NodeOnlineStore
+	// onlineUsersHook 在收到 ONLINE_USERS 上报后回调（面板据此按「核心观测 IP」
+	// 驱动限速关联；可空）。回调必须轻量，重活由调用方自己起 goroutine。
+	onlineUsersHook func(serverID int64, users []*agentpb.OnlineUserEntry)
 
 	// Data sync provider: reads panel DB tables to build SyncDataRequest
 	dataSyncProvider DataSyncProvider
@@ -1581,6 +1584,15 @@ func (m *NodeServerManager) DisconnectServer(ctx context.Context, serverID int64
 // UpdateOnlineUsers 用 Agent 上报的数据刷新某节点的在线快照。
 func (m *NodeServerManager) UpdateOnlineUsers(serverID int64, users []*agentpb.OnlineUserEntry) {
 	m.onlineStore.Update(serverID, users)
+	if m.onlineUsersHook != nil {
+		m.onlineUsersHook(serverID, users)
+	}
+}
+
+// SetOnlineUsersHook 注入「收到在线订阅人上报」的回调。
+// 面板用它把**核心观测到的真实连接 IP** 驱动到限速/设备数（替代按订阅 HTTP IP）。
+func (m *NodeServerManager) SetOnlineUsersHook(fn func(serverID int64, users []*agentpb.OnlineUserEntry)) {
+	m.onlineUsersHook = fn
 }
 
 // GetNodeOnlineUsers 返回某节点当前在线订阅人（未过期）及刷新时间。
@@ -2067,7 +2079,7 @@ func (h *heartbeatServiceImpl) handleCrashReport(ac *AgentConnection, report *ag
 func (h *heartbeatServiceImpl) handleOnlineUsersReport(ac *AgentConnection, report *agentpb.AgentReport) {
 	users := report.GetOnlineUsers()
 	// 空列表也刷新时间戳：表示节点在线但当前无订阅人在线
-	h.mgr.onlineStore.Update(ac.ServerID, users)
+	h.mgr.UpdateOnlineUsers(ac.ServerID, users)
 }
 
 // ============================================================

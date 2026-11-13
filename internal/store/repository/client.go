@@ -74,6 +74,13 @@ func (r *ClientRepository) GetByEmail(ctx context.Context, email string) (*entit
 	return &client, err
 }
 
+// GetBySubscriptionID 按订阅反查客户（限速/设备数归户用）。
+func (r *ClientRepository) GetBySubscriptionID(ctx context.Context, subID int64) (*entity.Client, error) {
+	var client entity.Client
+	err := r.db.WithContext(ctx).Where("subscription_id = ?", subID).First(&client).Error
+	return &client, err
+}
+
 // FindByIDs returns clients keyed by ID for the given IDs.
 func (r *ClientRepository) FindByIDs(ctx context.Context, ids []int64) (map[int64]*entity.Client, error) {
 	result := make(map[int64]*entity.Client)

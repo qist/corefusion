@@ -19,6 +19,7 @@ import (
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
+	ratelimitsvc "corefusion/internal/service/ratelimit"
 	"corefusion/internal/service/traffic"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
@@ -644,11 +645,11 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			h.networkTracker.RecordAccess(sub.ID, sub.ClientID, ip)
 		}
 
-		// Push IP association to rate limit agents (P0 trigger source).
-		// When a user accesses their subscription URL, we know their real IP
-		// and which subscription they belong to — push this to every node
-		// that has rate limiting enabled, so the agent can apply nft+tc rules.
-		if h.rateLimitPusher != nil && sub.ClientID > 0 {
+		// 限速 IP 关联（默认**不再**按订阅 HTTP IP 推送）：
+		// 订阅域名可能走代理/加速器，HTTP 层 IP ≠ 客户端连到节点的源 IP。
+		// 权威来源是核心观测 IP（xray GetUsersStats → 面板/Agent 关联），
+		// 旧行为只在 CF_RATELIMIT_IP_SOURCE=legacy 时保留，便于紧急回滚。
+		if h.rateLimitPusher != nil && sub.ClientID > 0 && ratelimitsvc.LegacyIPSource() {
 			clientIP := netutil.GetRealIP(c.Request)
 			go h.pushRateLimitAssociation(clientIP, sub, tmpl)
 		}

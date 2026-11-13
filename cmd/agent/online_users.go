@@ -9,6 +9,7 @@ import (
 
 	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/pkg/netutil"
 )
 
 // onlineUsersReporter 定期查询 xray GetUsersStats，计算实时速率，
@@ -53,9 +54,25 @@ func newOnlineUsersReporter(statsAddr string, gate *coreProbeGate) *onlineUsersR
 }
 
 // SetEmailMapping replaces the email -> subscriptionID mapping.
+//
+// 同时登记「完整 email」与「去掉 _shortTag 的 base email」两种键：
+// xray 返回的 email 是完整形式（user@example.com_vless12345），而聚合/归户
+// 用的是 base email。此前只存完整键、查询却用 base email，导致映射永远查不到。
 func (r *onlineUsersReporter) SetEmailMapping(m map[string]int64) {
+	normalized := make(map[string]int64, len(m)*2)
+	for email, subID := range m {
+		if email == "" || subID <= 0 {
+			continue
+		}
+		normalized[email] = subID
+		if base := stripShortTag(email); base != email {
+			if _, exists := normalized[base]; !exists {
+				normalized[base] = subID
+			}
+		}
+	}
 	r.mu.Lock()
-	r.emailMap = m
+	r.emailMap = normalized
 	r.mu.Unlock()
 }
 
@@ -108,14 +125,17 @@ func (r *onlineUsersReporter) Collect(ctx context.Context) ([]*agentpb.OnlineUse
 			continue
 		}
 
-		// 解析订阅 ID：先剥离 shortTag 匹配映射，再尝试从 email 提取数字
+		// 解析订阅 ID：完整 email → base email → 旧格式解析。
+		// 解析不出来也照样上报（SubscriptionId=0）：面板有 clients/subscriptions 表，
+		// 可以按 email 反查并驱动限速；在 Agent 侧直接 continue 会让管理端创建的
+		// 账号（email 形如 user@example.com_vless12345）永远拿不到核心观测 IP。
 		baseEmail := stripShortTag(email)
-		subID := emailMap[baseEmail]
+		subID := emailMap[email]
 		if subID == 0 {
-			subID = extractSubIDFromEmail(baseEmail)
+			subID = emailMap[baseEmail]
 		}
 		if subID == 0 {
-			continue
+			subID = extractSubIDFromEmail(baseEmail)
 		}
 		seen[baseEmail] = struct{}{}
 
@@ -132,7 +152,7 @@ func (r *onlineUsersReporter) Collect(ctx context.Context) ([]*agentpb.OnlineUse
 		var lastSeen int64
 		for _, ip := range user.GetIps() {
 			ipStr := ip.GetIp()
-			if ipStr == "" || isPrivateOrLoopback(ipStr) {
+			if ipStr == "" || !netutil.IsPublicClientIP(ipStr) {
 				continue
 			}
 			ls := ip.GetLastSeen()
@@ -230,16 +250,6 @@ func stripShortTag(email string) string {
 		}
 	}
 	return email
-}
-
-// isPrivateOrLoopback reports whether an IP is private/loopback/unspecified.
-func isPrivateOrLoopback(ip string) bool {
-	return strings.HasPrefix(ip, "127.") ||
-		strings.HasPrefix(ip, "10.") ||
-		strings.HasPrefix(ip, "192.168.") ||
-		strings.HasPrefix(ip, "169.254.") ||
-		ip == "::1" || ip == "0.0.0.0" || ip == "::" ||
-		strings.HasPrefix(ip, "fe80:")
 }
 
 // sendOnlineUsersReport collects online users and sends them to the Panel

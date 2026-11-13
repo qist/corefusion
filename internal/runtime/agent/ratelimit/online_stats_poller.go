@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"corefusion/internal/coredata"
+	"corefusion/pkg/netutil"
 )
 
 // OnlineStatsPoller polls the Xray Stats API for online user IPs
@@ -72,10 +73,24 @@ func (p *OnlineStatsPoller) WithResultCallback(fn func(ok bool)) *OnlineStatsPol
 
 // SetEmailMapping sets the email → subscriptionID mapping.
 // This is called by the Panel when syncing data to the Agent.
+// 同时登记完整 email 与去掉 _tag 后缀的 base email（xray 返回完整 form，
+// 而 base email 才是面向客户的邮箱）。
 func (p *OnlineStatsPoller) SetEmailMapping(mapping map[string]int64) {
+	normalized := make(map[string]int64, len(mapping)*2)
+	for email, subID := range mapping {
+		if email == "" || subID <= 0 {
+			continue
+		}
+		normalized[email] = subID
+		if base := stripTagSuffix(email); base != email {
+			if _, exists := normalized[base]; !exists {
+				normalized[base] = subID
+			}
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.emailToSubID = mapping
+	p.emailToSubID = normalized
 }
 
 // UpdateEmailMapping adds or updates a single email → subscriptionID mapping.
@@ -180,6 +195,9 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 
 		subID, ok := emailMap[user.Email]
 		if !ok {
+			subID, ok = emailMap[stripTagSuffix(user.Email)]
+		}
+		if !ok {
 			continue // no subscription mapping for this email
 		}
 
@@ -188,8 +206,8 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 			if ipEntry.Ip == "" {
 				continue
 			}
-			// Skip localhost and private IPs
-			if isPrivateIP(ipEntry.Ip) {
+			// 只处理公网客户端地址：回环/私网/链路本地/ULA/CGNAT 不能作为限速键。
+			if !netutil.IsPublicClientIP(ipEntry.Ip) {
 				continue
 			}
 
@@ -207,12 +225,14 @@ func (p *OnlineStatsPoller) poll(ctx context.Context) {
 	}
 }
 
-// isPrivateIP checks if an IP is a private/loopback address.
-func isPrivateIP(ip string) bool {
-	return strings.HasPrefix(ip, "127.") ||
-		strings.HasPrefix(ip, "10.") ||
-		strings.HasPrefix(ip, "192.168.") ||
-		ip == "::1" ||
-		ip == "0.0.0.0" ||
-		ip == "::"
+// stripTagSuffix 去掉面板账号 email 末尾的 _<tagSuffix>
+// （user@example.com_vless12345 → user@example.com）。tag 段不含 '@'。
+func stripTagSuffix(email string) string {
+	if idx := strings.LastIndex(email, "_"); idx > 0 {
+		tail := email[idx+1:]
+		if !strings.Contains(tail, "@") {
+			return email[:idx]
+		}
+	}
+	return email
 }

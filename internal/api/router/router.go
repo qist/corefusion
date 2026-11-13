@@ -802,6 +802,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	warpSvcInst.SetOutboundRepository(outboundConfigRepo)
 	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
 	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
+	// 核心观测 IP 归户：邮箱/订阅 → 客户 → 限速参数（按节点下发，不再用订阅 HTTP IP）
+	rateLimitSvcInst.SetObservedDeps(clientRepo, planTmplRepo)
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	eabConfigSvc := certService.NewEABConfigService(eabConfigRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)
@@ -1423,6 +1425,42 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		configSyncSvc.SetRemoteSyncer(sharedNodeMgr)
 		// Wire rate limit service so PushIPAssociation can reach remote Agents.
 		rateLimitSvcInst.SetNodeOperator(sharedNodeMgr)
+		// 远端节点：Agent 上报的 ONLINE_USERS 里就是核心观测到的真实连接 IP，
+		// 直接按节点驱动限速关联（订阅 IP 不再参与）。
+		sharedNodeMgr.SetOnlineUsersHook(func(serverID int64, users []*agentpb.OnlineUserEntry) {
+			observed := rateLimitSvc.ObservedUsersFromProto(users)
+			if len(observed) == 0 {
+				return
+			}
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				rateLimitSvcInst.HandleObservedUsers(ctx, serverID, observed)
+			}()
+		})
+	}
+	// 本地节点没有独立 Agent 进程：面板自己轮询 xray GetUsersStats。
+	// 远程节点由上面的 ONLINE_USERS 钩子驱动，两者同一套归户/下发逻辑。
+	if locals, err := nodeServerRepoForSync.ListLocal(context.Background()); err == nil && len(locals) > 0 {
+		localServerID := locals[0].ID
+		statsGetter := func(ctx context.Context, key string) (string, error) {
+			return systemSettingSvc.GetByKey(ctx, key)
+		}
+		rateLimitSvcInst.StartLocalObserver(
+			localServerID,
+			15*time.Second,
+			func(ctx context.Context) string {
+				return coredata.ResolveStatsAddr(ctx, coredata.StatsAddrDeps{SettingGetter: statsGetter})
+			},
+			func() bool {
+				if processMgr != nil && !processMgr.IsCoreRunning("xray") {
+					return false
+				}
+				// 本地限速未启用时不必每 15s 探测（启用后会自然恢复）。
+				cfg, err := rateLimitConfigRepo.GetByServerID(context.Background(), localServerID)
+				return err == nil && cfg != nil && cfg.Enabled
+			},
+		)
 	}
 	// 客户限速变更 → 推送节点立即生效（Agent action=update）
 	clientSvcInst.SetRateLimitUpdater(rateLimitSvcInst)

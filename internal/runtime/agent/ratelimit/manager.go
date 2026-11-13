@@ -94,19 +94,40 @@ func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate 
 		return fmt.Errorf("rate limit manager not initialized")
 	}
 
+	// 幂等短路：核心观测 IP 每 15s 会被重复下发，如果归属与限速参数都没变，
+	// 只刷新 LastSeen，不再重跑一遍 nft/tc 命令（否则每轮都会删/加规则）。
+	if _, entry := m.registry.LookupByIP(ip); entry != nil && entry.SubscriptionID == subID {
+		if rate == nil {
+			m.registry.TouchIP(ip)
+			return nil
+		}
+		if cur := m.registry.GetRateConfig(subID); cur != nil && *cur == *rate {
+			m.registry.TouchIP(ip)
+			return nil
+		}
+	}
+
 	// 1. 在 MarkRegistry 中记录映射
 	mark := m.registry.AssociateIP(ip, subID, rate)
 
-	// 2. 设备数限制检查：如果该订阅已有 deviceLimit 个 IP，阻断新 IP
+	// 2. 设备数限制检查：如果该订阅已有 deviceLimit 个 IP，阻断新 IP。
+	//
+	// ⚠ 全局 BlockIP（nft `ip saddr <ip> drop`）会误伤同一 NAT/代理出口上的
+	// 其他订阅。默认只记录"超限"，不再自动全局阻断；需要旧行为时显式设置
+	// CF_DEVICE_LIMIT_BLOCK=global。按订阅维度的阻断在 P2 单独实现。
 	if rate != nil && rate.DeviceLimit > 0 {
 		ipCount := m.registry.GetSubscriptionIPCount(subID)
 		if ipCount > int(rate.DeviceLimit) {
-			// 超过设备限制，阻断新 IP
-			if err := m.backend.BlockIP(ctx, ip, mark); err != nil {
-				log.Printf("[RateLimitManager] block excess device ip=%s sub=%d (count=%d, limit=%d): %v",
-					ip, subID, ipCount, rate.DeviceLimit, err)
+			if DeviceLimitGlobalBlockEnabled() {
+				if err := m.backend.BlockIP(ctx, ip, mark); err != nil {
+					log.Printf("[RateLimitManager] block excess device ip=%s sub=%d (count=%d, limit=%d): %v",
+						ip, subID, ipCount, rate.DeviceLimit, err)
+				} else {
+					log.Printf("[RateLimitManager] blocked excess device ip=%s sub=%d (count=%d, limit=%d)",
+						ip, subID, ipCount, rate.DeviceLimit)
+				}
 			} else {
-				log.Printf("[RateLimitManager] blocked excess device ip=%s sub=%d (count=%d, limit=%d)",
+				log.Printf("[RateLimitManager] device over limit (log-only, no global drop) ip=%s sub=%d (count=%d, limit=%d)",
 					ip, subID, ipCount, rate.DeviceLimit)
 			}
 			// 仍然持久化记录，便于后续检查
@@ -373,7 +394,12 @@ func (m *Manager) CheckDeviceLimit(ctx context.Context, subID int64) error {
 		return entries[i].lastSeen.After(entries[j].lastSeen)
 	})
 
-	// 阻断超出限制的 IP
+	// 阻断超出限制的 IP（默认只告警：全局 drop 会误伤共享出口，见 limitsource.go）
+	if !DeviceLimitGlobalBlockEnabled() {
+		log.Printf("[RateLimitManager] device limit exceeded (log-only): sub=%d active=%d limit=%d",
+			subID, len(entries), deviceLimit)
+		return nil
+	}
 	blocked := 0
 	for i := int(deviceLimit); i < len(entries); i++ {
 		e := entries[i]

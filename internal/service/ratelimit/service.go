@@ -22,6 +22,10 @@ import (
 type Service struct {
 	repo   *repository.RateLimitConfigRepository
 	nodeOp NodeOperator
+
+	// 核心观测 IP 归户所需（SetObservedDeps 注入）：邮箱/订阅 → 客户 → 限速参数
+	observedClientRepo   *repository.ClientRepository
+	observedPlanTmplRepo *repository.PlanTemplateRepository
 }
 
 // ErrNodeUnsupported 表示节点的内核/依赖不支持限流（启用被拒绝时返回，Handler 映射为 400）。
@@ -325,19 +329,25 @@ func (s *Service) SyncConfigToAgent(ctx context.Context, serverID int64) error {
 }
 
 // PushIPAssociation pushes an IP association to a specific server's Agent.
-// This is called when a user accesses their subscription URL.
 // ⚠ 不做 IsOnline 前置门：本地节点要能收到关联（离线远程由底层立刻报错跳过）。
 func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error {
 	if s.nodeOp == nil {
 		return fmt.Errorf("node operator not configured")
 	}
 
-	// 仅对启用限流的节点推送（此前注释声称有检查但实现遗漏 → 未启用节点
-	// 的 Agent 反复收到 AssociateIP 报 "not initialized" 日志噪音）。
+	// 仅对启用限流的节点推送（未启用节点的 Agent 会反复报 "not initialized"）。
 	if cfg, err := s.repo.GetByServerID(ctx, serverID); err != nil || cfg == nil || !cfg.Enabled {
 		return nil
 	}
+	return s.pushIPAssociation(ctx, serverID, ip, subID, maxDownMbps, maxUpMbps, connLimit, deviceLimit)
+}
 
+// pushIPAssociation 是去掉「节点是否启用」检查的版本：批量观测归户时
+// 每个节点只查一次配置，避免按 IP 重复查库。
+func (s *Service) pushIPAssociation(ctx context.Context, serverID int64, ip string, subID int64, maxDownMbps, maxUpMbps, connLimit, deviceLimit int32) error {
+	if s.nodeOp == nil {
+		return fmt.Errorf("node operator not configured")
+	}
 	req := &agentpb.AssociateIPRequest{
 		Ip:             ip,
 		SubscriptionId: subID,
@@ -350,7 +360,6 @@ func (s *Service) PushIPAssociation(ctx context.Context, serverID int64, ip stri
 	if err := s.nodeOp.AssociateIP(ctx, serverID, req); err != nil {
 		return fmt.Errorf("push IP association to server %d: %w", serverID, err)
 	}
-
 	return nil
 }
 

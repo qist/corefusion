@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/service/audit"
 	"corefusion/internal/service/auth"
 	"corefusion/internal/service/clientauth"
+	ratelimitsvc "corefusion/internal/service/ratelimit"
 	systemSvc "corefusion/internal/service/system"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
@@ -126,8 +127,10 @@ func (h *Handler) Login(c *gin.Context) {
 	clientInfo, _ := h.svc.GetMe(c.Request.Context(), result.Client.ID)
 	result.Client = clientInfo
 
-	// Push rate limit IP association on login (P0 trigger source)
-	if h.rateLimitPusher != nil && result.Client.ID > 0 {
+	// 限速 IP 关联：默认不再按登录 HTTP IP 推送（门户域名可能走代理，
+	// HTTP 层 IP ≠ 客户端连到节点的源 IP）。权威来源是核心观测 IP
+	// （xray GetUsersStats → ONLINE_USERS/本机轮询）。legacy 仅用于回滚。
+	if h.rateLimitPusher != nil && result.Client.ID > 0 && ratelimitsvc.LegacyIPSource() {
 		clientIP := netutil.GetRealIP(c.Request)
 		go h.pushRateLimitOnLogin(clientIP, result.Client.ID)
 	}

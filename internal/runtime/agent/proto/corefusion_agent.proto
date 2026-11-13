@@ -552,6 +552,20 @@ message OnlineUserEntry {
   string plan_name             = 11; // 套餐名称
   int32  speed_limit_down_mbps = 12; // 下载限速 Mbps（0=不限）
   int32  speed_limit_up_mbps   = 13; // 上传限速 Mbps（0=不限）
+
+  // 连接所在内核：xray / singbox。
+  // 同一订阅可能同时连两个核心（各有一行），面板据此显示「套餐走的是哪个核心」。
+  // sing-box 没有按用户的连接 IP，sessions 为空，但有 user 级流量统计。
+  string core_type = 14;
+
+  // 核心里的完整账号名（形如 user@example.com_vless29660，带 _shortTag 后缀）。
+  // 面板用它反查「这条连接走的是哪个入口」；email 已被剥离后缀，无法还原。
+  string account_email = 15;
+
+  // 面板富化：连接所在的入站（入口）。由 account_email 后缀匹配入站 tag 得到。
+  string inbound_tag  = 16;
+  string inbound_name = 17; // 入站备注；为空时前端显示 tag
+  int32  inbound_port = 18;
 }
 
 message CoreStatus {

@@ -54,6 +54,12 @@ func ResolveClashAPIAddr() string {
 
 // FetchClashConnections 读取 sing-box 的实时连接列表。
 func FetchClashConnections(ctx context.Context, addr string) (*ClashConnectionsResponse, error) {
+	return FetchClashConnectionsWithSecret(ctx, addr, "")
+}
+
+// FetchClashConnectionsWithSecret 同 FetchClashConnections，但带上 clash_api 的 secret。
+// 用户给 yacd/metacubexd 配了 secret 时，面板读取同样要鉴权（Bearer）。
+func FetchClashConnectionsWithSecret(ctx context.Context, addr, secret string) (*ClashConnectionsResponse, error) {
 	if strings.TrimSpace(addr) == "" {
 		addr = ResolveClashAPIAddr()
 	}
@@ -61,6 +67,9 @@ func FetchClashConnections(ctx context.Context, addr string) (*ClashConnectionsR
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
+	}
+	if s := strings.TrimSpace(secret); s != "" {
+		req.Header.Set("Authorization", "Bearer "+s)
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)

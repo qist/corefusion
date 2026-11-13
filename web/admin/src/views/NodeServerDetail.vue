@@ -315,7 +315,7 @@
 
           <el-alert v-if="onlineError" type="error" :closable="false" style="margin-bottom:12px">{{ onlineError }}</el-alert>
 
-          <el-table v-if="!isMobile" :data="onlineData?.users || []" v-loading="onlineLoading" row-key="subscription_id" border stripe size="small">
+          <el-table v-if="!isMobile" :data="onlineData?.users || []" v-loading="onlineLoading" :row-key="onlineRowKey" border stripe size="small">
             <el-table-column type="expand">
               <template #default="{row}">
                 <el-table :data="row.sessions || []" size="mini" border>
@@ -324,15 +324,33 @@
                     <template #default="{row:s}">{{ formatAgo(s.last_seen) }}</template>
                   </el-table-column>
                   <el-table-column :label="t('onlineUsers.duration')" min-width="110">
-                    <template #default="{row:s}">{{ formatDuration((s.last_seen || 0) - (s.connected_since || 0)) }}</template>
+                    <template #default="{row:s}">{{ formatSessionDuration(s) }}</template>
                   </el-table-column>
                 </el-table>
+                <div v-if="!(row.sessions || []).length" style="padding:6px 4px;font-size:12px;color:#909399">
+                  {{ t('onlineUsers.noIp') }}
+                </div>
               </template>
             </el-table-column>
             <el-table-column :label="t('onlineUsers.subscription')" min-width="240">
               <template #default="{row}">
                 <div>{{ row.email }}</div>
                 <div style="font-size:12px;color:#909399">ID: {{ row.subscription_id }}</div>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('onlineUsers.inbound')" min-width="180" show-overflow-tooltip>
+              <template #default="{row}">
+                <span v-if="row.inbound_name || row.inbound_tag">
+                  {{ row.inbound_name || row.inbound_tag }}<span v-if="row.inbound_port" style="color:#909399">:{{ row.inbound_port }}</span>
+                </span>
+                <span v-else style="color:#c0c4cc">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('onlineUsers.core')" width="110" align="center">
+              <template #default="{row}">
+                <el-tag v-if="row.core_type === 'singbox'" size="small" type="warning">sing-box</el-tag>
+                <el-tag v-else-if="row.core_type === 'xray'" size="small" type="success">xray</el-tag>
+                <span v-else style="color:#c0c4cc">-</span>
               </template>
             </el-table-column>
             <el-table-column :label="t('onlineUsers.clientPlan')" min-width="170" show-overflow-tooltip>
@@ -342,7 +360,12 @@
               </template>
             </el-table-column>
             <el-table-column :label="t('onlineUsers.devices')" width="90" align="center">
-              <template #default="{row}">{{ (row.sessions || []).length }}</template>
+              <template #default="{row}">
+                <el-tooltip v-if="!(row.sessions || []).length" :content="t('onlineUsers.noIp')" placement="top">
+                  <span style="color:#c0c4cc">—</span>
+                </el-tooltip>
+                <span v-else>{{ (row.sessions || []).length }}</span>
+              </template>
             </el-table-column>
             <el-table-column :label="t('onlineUsers.speedLimit')" width="140" align="center">
               <template #default="{row}">
@@ -369,7 +392,7 @@
               <template #default="{row}">{{ formatAgo(row.last_seen) }}</template>
             </el-table-column>
             <el-table-column :label="t('onlineUsers.duration')" width="100">
-              <template #default="{row}">{{ formatDuration((row.last_seen || 0) - (row.first_seen || 0)) }}</template>
+              <template #default="{row}">{{ formatDuration(onlineNow() - (row.first_seen || 0)) }}</template>
             </el-table-column>
           </el-table>
           <MobileCards
@@ -411,30 +434,84 @@
             :closable="false"
             style="margin-bottom:8px"
           >{{ connReasonText }}</el-alert>
-          <el-table
-            v-else
-            :data="connData?.items || []"
-            v-loading="connLoading"
-            border
-            stripe
-            size="small"
-          >
-            <el-table-column prop="source_ip" :label="t('onlineUsers.connSource')" min-width="160">
-              <template #default="{ row }">{{ row.source_ip }}<span v-if="row.source_port" style="color:#909399">:{{ row.source_port }}</span></template>
-            </el-table-column>
-            <el-table-column prop="inbound" :label="t('onlineUsers.connInbound')" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="destination" :label="t('onlineUsers.connDestination')" min-width="200" show-overflow-tooltip />
-            <el-table-column :label="t('onlineUsers.connTraffic')" width="160">
-              <template #default="{ row }">↑{{ formatBytes(row.upload) }} ↓{{ formatBytes(row.download) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('onlineUsers.duration')" width="110">
-              <template #default="{ row }">{{ formatDuration((connData?.updated_at || 0) - (row.start || 0)) }}</template>
-            </el-table-column>
-          </el-table>
-          <el-empty
-            v-if="!connLoading && !connData?.unsupported && (!connData?.items || connData.items.length === 0)"
-            :description="t('onlineUsers.connEmpty')"
-          />
+          <template v-else>
+            <!-- 几千条活跃连接时：服务端分页（默认 50、上限 200）+ 入口/关键字筛选，
+                 前端只渲染当前页，避免整表渲染把页面卡死。 -->
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+              <el-input
+                v-model="connKeyword"
+                :placeholder="t('onlineUsers.connSearch')"
+                clearable
+                size="small"
+                style="width:200px"
+                @input="onConnKeywordInput"
+                @clear="onConnFilterChange"
+              >
+                <template #prefix><el-icon><Search /></el-icon></template>
+              </el-input>
+              <el-select
+                v-model="connInbound"
+                :placeholder="t('onlineUsers.connInbound')"
+                clearable
+                size="small"
+                style="width:230px"
+                @change="onConnFilterChange"
+              >
+                <el-option
+                  v-for="it in connData?.by_inbound || []"
+                  :key="it.inbound_tag"
+                  :label="(it.inbound_name || it.inbound_tag) + ' (' + it.count + ')'"
+                  :value="it.inbound_tag"
+                />
+              </el-select>
+              <el-tag effect="plain" size="small">{{ t('onlineUsers.connTotal') }} {{ connData?.total || 0 }}</el-tag>
+              <el-tag effect="plain" size="small">↑ {{ formatBytes(connData?.upload_total) }} / ↓ {{ formatBytes(connData?.download_total) }}</el-tag>
+              <span v-if="connData?.total > (connData?.items || []).length" style="font-size:12px;color:#e6a23c">
+                {{ t('onlineUsers.connPagedHint') }}
+              </span>
+            </div>
+            <el-table
+              :data="connData?.items || []"
+              v-loading="connLoading"
+              border
+              stripe
+              size="small"
+            >
+              <el-table-column prop="source_ip" :label="t('onlineUsers.connSource')" min-width="160">
+                <template #default="{ row }">{{ row.source_ip }}<span v-if="row.source_port" style="color:#909399">:{{ row.source_port }}</span></template>
+              </el-table-column>
+              <el-table-column :label="t('onlineUsers.connInbound')" min-width="200" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span v-if="row.inbound_name || row.inbound_tag">{{ row.inbound_name || row.inbound_tag }}<span v-if="row.inbound_port" style="color:#909399">:{{ row.inbound_port }}</span></span>
+                  <span v-else style="color:#909399">{{ row.inbound }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="destination" :label="t('onlineUsers.connDestination')" min-width="200" show-overflow-tooltip />
+              <el-table-column :label="t('onlineUsers.connTraffic')" width="160">
+                <template #default="{ row }">↑{{ formatBytes(row.upload) }} ↓{{ formatBytes(row.download) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('onlineUsers.duration')" width="110">
+                <template #default="{ row }">{{ formatDuration((connData?.updated_at || 0) - (row.start || 0)) }}</template>
+              </el-table-column>
+            </el-table>
+            <el-empty
+              v-if="!connLoading && (!connData?.items || connData.items.length === 0)"
+              :description="t('onlineUsers.connEmpty')"
+            />
+            <div v-if="(connData?.total || 0) > 0" style="display:flex;justify-content:flex-end;margin-top:10px">
+              <el-pagination
+                v-model:current-page="connPage"
+                v-model:page-size="connPageSize"
+                :total="connData?.total || 0"
+                :page-sizes="[50, 100, 200]"
+                layout="total, sizes, prev, pager, next"
+                background
+                small
+                @current-change="loadSingboxConnections"
+                @size-change="onConnFilterChange"
+              />
+            </div>
+          </template>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -871,6 +948,11 @@ async function loadOnlineUsers() {
 const connData = ref(null)
 const connLoading = ref(false)
 const connError = ref('')
+const connKeyword = ref('')
+const connInbound = ref('')
+const connPage = ref(1)
+const connPageSize = ref(50)
+let connSearchDebounce = null
 const connReasonText = computed(() => {
   const r = String(connData.value?.reason || '')
   if (r === 'remote_node') return t('onlineUsers.connRemote')
@@ -878,11 +960,35 @@ const connReasonText = computed(() => {
   return r || t('onlineUsers.connRemote')
 })
 
+function onConnKeywordInput() {
+  clearTimeout(connSearchDebounce)
+  connSearchDebounce = setTimeout(onConnFilterChange, 400)
+}
+function onConnFilterChange() {
+  connPage.value = 1
+  loadSingboxConnections()
+}
+
 async function loadSingboxConnections() {
+  // 上一轮还没回来就跳过：连接多时 15s 轮询容易叠加请求。
+  if (connLoading.value) return
   connLoading.value = true
   connError.value = ''
   try {
-    connData.value = await client.get(`/node-servers/${serverId}/singbox/connections`)
+    const params = {
+      limit: connPageSize.value,
+      offset: (connPage.value - 1) * connPageSize.value,
+    }
+    const kw = (connKeyword.value || '').trim()
+    if (kw) params.keyword = kw
+    if (connInbound.value) params.inbound = connInbound.value
+    const data = await client.get(`/node-servers/${serverId}/singbox/connections`, { params })
+    connData.value = data
+    // 筛选后页数变少：自动回到第一页，避免停在空白页
+    if (data?.total != null && params.offset >= data.total && connPage.value > 1) {
+      connPage.value = 1
+      loadSingboxConnections()
+    }
   } catch (e) {
     connError.value = e?.response?.data?.message || t('onlineUsers.loadFailed')
   } finally {
@@ -913,6 +1019,20 @@ function formatDuration(sec) {
   const pad = (n) => String(n).padStart(2, '0')
   return (h > 0 ? h + ':' : '') + pad(m) + ':' + pad(s)
 }
+// session 级时长：xray 的 last_seen 实际是「最后一次新建连接」的时间，
+// 用 last_seen - connected_since 会恒为 0；改用快照时间（=现在）减去接入时间。
+function formatSessionDuration(s) {
+  if (!s || !s.connected_since) return '-'
+  return formatDuration(Math.max(0, onlineNow() - s.connected_since))
+}
+// 在线条目时长：同理用快照刷新时间。
+function onlineNow() {
+  return onlineData.value?.updated_at || Math.floor(Date.now() / 1000)
+}
+// 同一订阅可能同时连 xray 与 sing-box（各一行），row-key 必须包含核心。
+function onlineRowKey(row) {
+  return [row.subscription_id, row.core_type || '', row.email || ''].join('|')
+}
 function formatAgo(ts) {
   if (!ts) return '-'
   const diff = Math.max(0, Math.floor(Date.now() / 1000) - ts)
@@ -926,7 +1046,12 @@ function startOnlinePolling() {
   loadOnlineUsers()
   loadSingboxConnections()
   // 连接列表变化快，10s 一轮；在线用户仍是 15s。
-  onlineTimer = setInterval(() => { loadOnlineUsers(); loadSingboxConnections() }, 15000)
+  onlineTimer = setInterval(() => {
+    // 页面在后台时不刷新：几千条连接时后台重渲染会明显卡顿。
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+    loadOnlineUsers()
+    loadSingboxConnections()
+  }, 15000)
 }
 function stopOnlinePolling() {
   if (onlineTimer) { clearInterval(onlineTimer); onlineTimer = null }
@@ -946,15 +1071,17 @@ const certCardFields = computed(() => [
 // 在线用户卡片（桌面端展开列的会话明细在手机端不展示，设备数保留）
 const onlineCardFields = computed(() => [
   { label: t('onlineUsers.subscription'), text: (row) => (row.subscription_id != null ? 'ID: ' + row.subscription_id : '-') },
+  { label: t('onlineUsers.core'), text: (row) => row.core_type || '-' },
+  { label: t('onlineUsers.inbound'), text: (row) => (row.inbound_name || row.inbound_tag || '-') + (row.inbound_port ? ':' + row.inbound_port : '') },
   { label: t('onlineUsers.clientPlan'), text: (row) => (row.client_name || row.email || '-') + (row.plan_name ? ' / ' + row.plan_name : '') },
-  { label: t('onlineUsers.devices'), text: (row) => String((row.sessions || []).length) },
+  { label: t('onlineUsers.devices'), text: (row) => (row.sessions || []).length ? String((row.sessions || []).length) : t('onlineUsers.noIpShort') },
   { label: t('onlineUsers.speedLimit'), text: (row) => ((row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0) ? '↓' + (row.speed_limit_down_mbps || 0) + ' / ↑' + (row.speed_limit_up_mbps || 0) + ' Mbps' : t('onlineUsers.unlimited') },
   { label: t('onlineUsers.upRate'), text: (row) => formatRate(row.uplink_rate) },
   { label: t('onlineUsers.downRate'), text: (row) => formatRate(row.downlink_rate) },
   { label: t('onlineUsers.totalUp'), text: (row) => formatBytes(row.uplink_bytes) },
   { label: t('onlineUsers.totalDown'), text: (row) => formatBytes(row.downlink_bytes) },
   { label: t('onlineUsers.lastActive'), text: (row) => formatAgo(row.last_seen) },
-  { label: t('onlineUsers.duration'), text: (row) => formatDuration((row.last_seen || 0) - (row.first_seen || 0)) },
+  { label: t('onlineUsers.duration'), text: (row) => formatDuration(onlineNow() - (row.first_seen || 0)) },
 ])
 
 onMounted(() => {

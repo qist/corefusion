@@ -5,6 +5,9 @@
     <el-form label-width="160px" label-position="left">
       <el-form-item label="Enabled">
         <el-switch v-model="clashApi.enabled" @change="onClashToggle" />
+        <el-tag v-if="isNodeContext && !clashApi.enabled" size="small" type="info" effect="plain" style="margin-left:8px">
+          {{ t('protoHint.experimental.clashAutoOn') }}
+        </el-tag>
         <div class="hint" v-if="isNodeContext">{{ t('protoHint.experimental.clashNode') }}</div>
         <div class="hint" v-else>{{ t('protoHint.experimental.clashClient') }}</div>
       </el-form-item>

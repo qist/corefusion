@@ -70,6 +70,8 @@ type AgentApp struct {
 
 	// Online users reporter — collects real-time online subscribers for the Panel
 	onlineUsersReporter *onlineUsersReporter
+	// sing-box 版：v2ray_api 只有按用户流量（没有连接 IP），在线状态按流量增量推断
+	singboxOnlineReporter *onlineUsersReporter
 
 	// grpcHostOverride is set when an already-installed Agent discovers the
 	// panel's origin address at runtime (old configs only have panel.host,
@@ -658,13 +660,20 @@ func (a *AgentApp) initRateLimitWith(ctx context.Context, config entity.RateLimi
 // real-time online subscriber data to the Panel via the heartbeat stream.
 // Unlike startOnlineStatsPoller, it does NOT depend on nft availability.
 func (a *AgentApp) startOnlineUsersReporter(ctx context.Context) {
-	statsAddr := a.getStatsAddr()
-	if statsAddr == "" {
-		return
+	if statsAddr := a.getStatsAddr(); statsAddr != "" {
+		a.onlineUsersReporter = newOnlineUsersReporter(statsAddr, a.coreGate)
+		if a.database != nil {
+			a.onlineUsersReporter.SetEmailMapping(a.buildEmailToSubIDMapping(ctx))
+		}
 	}
-	a.onlineUsersReporter = newOnlineUsersReporter(statsAddr, a.coreGate)
-	if a.database != nil {
-		a.onlineUsersReporter.SetEmailMapping(a.buildEmailToSubIDMapping(ctx))
+	// sing-box 用 v2ray_api：只有按用户流量，没有连接 IP。
+	// 地址解析失败（没装 sing-box / 没开 v2ray_api）时不创建 reporter。
+	if sbAddr := resolveSingboxStatsAddr(ctx, a.dataDir, &agentSettingStore{repo: a.settingRepo}); sbAddr != "" {
+		a.singboxOnlineReporter = newSingboxOnlineUsersReporter(sbAddr, a.coreGate)
+		if a.database != nil {
+			a.singboxOnlineReporter.SetEmailMapping(a.buildEmailToSubIDMapping(ctx))
+		}
+		log.Printf("[Agent] sing-box online reporter enabled (stats=%s, no connection IP)", sbAddr)
 	}
 }
 

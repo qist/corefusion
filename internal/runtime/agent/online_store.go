@@ -52,8 +52,17 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 			u.FirstSeen = u.LastSeen
 		}
 		for _, sess := range u.Sessions {
-			if sess != nil && (sess.LastSeen <= 0 || sess.LastSeen > now+60) {
+			if sess == nil {
+				continue
+			}
+			if sess.LastSeen <= 0 || sess.LastSeen > now+60 {
 				sess.LastSeen = u.LastSeen
+			}
+			// 会话级「连接时长」= last_seen - connected_since：
+			// 缺省 0 会得到 498484 小时；比 last_seen 还晚则是负时长。
+			// 旧 Agent / sing-box 推断条目没有这个字段，统一按最后活跃时间兜底。
+			if sess.ConnectedSince <= 0 || sess.ConnectedSince > sess.LastSeen {
+				sess.ConnectedSince = sess.LastSeen
 			}
 		}
 	}

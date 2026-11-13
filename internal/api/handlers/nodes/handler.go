@@ -70,13 +70,34 @@ func (h *Handler) GetAllOnlineUsers(c *gin.Context) {
 
 // GetSingboxConnections handles GET /api/v1/node-servers/:id/singbox/connections.
 // 返回该节点 sing-box 的实时连接（clash_api /connections）。
+//
 // sing-box 的连接不含用户字段，无法归户到订阅；目前只支持面板本机节点，
 // 远端节点需要 Agent 转发（未实现），会返回 unsupported + reason。
+//
+// 活跃连接可能有几千条：必须分页（默认 50、上限 200）+ 服务端筛选，
+// 否则一次返回全量会让前端渲染卡死。响应另带 by_inbound 聚合供筛选下拉使用。
 func (h *Handler) GetSingboxConnections(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid node id")
 		return
 	}
-	response.OK(c, h.nodeSvc.GetSingboxConnections(c.Request.Context(), id))
+	limit := 50
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
+		limit = v
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := 0
+	if v, err := strconv.Atoi(c.Query("offset")); err == nil && v > 0 {
+		offset = v
+	}
+	res := h.nodeSvc.GetSingboxConnections(c.Request.Context(), id, node.SingboxConnectionFilter{
+		Keyword: c.Query("keyword"),
+		Inbound: c.Query("inbound"),
+		Limit:   limit,
+		Offset:  offset,
+	})
+	response.OK(c, res)
 }

@@ -3572,8 +3572,19 @@ type OnlineUserEntry struct {
 	PlanName           string `protobuf:"bytes,11,opt,name=plan_name,json=planName,proto3" json:"plan_name,omitempty"`                                    // 套餐名称
 	SpeedLimitDownMbps int32  `protobuf:"varint,12,opt,name=speed_limit_down_mbps,json=speedLimitDownMbps,proto3" json:"speed_limit_down_mbps,omitempty"` // 下载限速 Mbps（0=不限）
 	SpeedLimitUpMbps   int32  `protobuf:"varint,13,opt,name=speed_limit_up_mbps,json=speedLimitUpMbps,proto3" json:"speed_limit_up_mbps,omitempty"`       // 上传限速 Mbps（0=不限）
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// 连接所在内核：xray / singbox。
+	// 同一订阅可能同时连两个核心（各有一行），面板据此显示「套餐走的是哪个核心」。
+	// sing-box 没有按用户的连接 IP，sessions 为空，但有 user 级流量统计。
+	CoreType string `protobuf:"bytes,14,opt,name=core_type,json=coreType,proto3" json:"core_type,omitempty"`
+	// 核心里的完整账号名（形如 user@example.com_vless29660，带 _shortTag 后缀）。
+	// 面板用它反查「这条连接走的是哪个入口」；email 已被剥离后缀，无法还原。
+	AccountEmail string `protobuf:"bytes,15,opt,name=account_email,json=accountEmail,proto3" json:"account_email,omitempty"`
+	// 面板富化：连接所在的入站（入口）。由 account_email 后缀匹配入站 tag 得到。
+	InboundTag    string `protobuf:"bytes,16,opt,name=inbound_tag,json=inboundTag,proto3" json:"inbound_tag,omitempty"`
+	InboundName   string `protobuf:"bytes,17,opt,name=inbound_name,json=inboundName,proto3" json:"inbound_name,omitempty"` // 入站备注；为空时前端显示 tag
+	InboundPort   int32  `protobuf:"varint,18,opt,name=inbound_port,json=inboundPort,proto3" json:"inbound_port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *OnlineUserEntry) Reset() {
@@ -3693,6 +3704,41 @@ func (x *OnlineUserEntry) GetSpeedLimitDownMbps() int32 {
 func (x *OnlineUserEntry) GetSpeedLimitUpMbps() int32 {
 	if x != nil {
 		return x.SpeedLimitUpMbps
+	}
+	return 0
+}
+
+func (x *OnlineUserEntry) GetCoreType() string {
+	if x != nil {
+		return x.CoreType
+	}
+	return ""
+}
+
+func (x *OnlineUserEntry) GetAccountEmail() string {
+	if x != nil {
+		return x.AccountEmail
+	}
+	return ""
+}
+
+func (x *OnlineUserEntry) GetInboundTag() string {
+	if x != nil {
+		return x.InboundTag
+	}
+	return ""
+}
+
+func (x *OnlineUserEntry) GetInboundName() string {
+	if x != nil {
+		return x.InboundName
+	}
+	return ""
+}
+
+func (x *OnlineUserEntry) GetInboundPort() int32 {
+	if x != nil {
+		return x.InboundPort
 	}
 	return 0
 }
@@ -9218,7 +9264,7 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"inboundTag\x12\x1a\n" +
 	"\bprotocol\x18\x03 \x01(\tR\bprotocol\x12'\n" +
 	"\x0fconnected_since\x18\x04 \x01(\x03R\x0econnectedSince\x12\x1b\n" +
-	"\tlast_seen\x18\x05 \x01(\x03R\blastSeen\"\xfc\x03\n" +
+	"\tlast_seen\x18\x05 \x01(\x03R\blastSeen\"\xa5\x05\n" +
 	"\x0fOnlineUserEntry\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\x03R\x0esubscriptionId\x12\x14\n" +
 	"\x05email\x18\x02 \x01(\tR\x05email\x12\x1d\n" +
@@ -9236,7 +9282,13 @@ const file_corefusion_agent_proto_rawDesc = "" +
 	"clientName\x12\x1b\n" +
 	"\tplan_name\x18\v \x01(\tR\bplanName\x121\n" +
 	"\x15speed_limit_down_mbps\x18\f \x01(\x05R\x12speedLimitDownMbps\x12-\n" +
-	"\x13speed_limit_up_mbps\x18\r \x01(\x05R\x10speedLimitUpMbps\"\xdc\x01\n" +
+	"\x13speed_limit_up_mbps\x18\r \x01(\x05R\x10speedLimitUpMbps\x12\x1b\n" +
+	"\tcore_type\x18\x0e \x01(\tR\bcoreType\x12#\n" +
+	"\raccount_email\x18\x0f \x01(\tR\faccountEmail\x12\x1f\n" +
+	"\vinbound_tag\x18\x10 \x01(\tR\n" +
+	"inboundTag\x12!\n" +
+	"\finbound_name\x18\x11 \x01(\tR\vinboundName\x12!\n" +
+	"\finbound_port\x18\x12 \x01(\x05R\vinboundPort\"\xdc\x01\n" +
 	"\n" +
 	"CoreStatus\x12\x1b\n" +
 	"\tcore_type\x18\x01 \x01(\tR\bcoreType\x12\x14\n" +

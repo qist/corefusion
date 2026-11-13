@@ -2,6 +2,7 @@ package agent
 
 import (
 	"testing"
+	"time"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
@@ -49,5 +50,28 @@ func TestGetAllSummaryDedupesSubscriptionsAndDevices(t *testing.T) {
 	}
 	if got.OnlineDevices != 3 {
 		t.Fatalf("在线设备应为 3（去重后的 IP），实际 %d", got.OnlineDevices)
+	}
+}
+
+// 会话级时长 = last_seen - connected_since：缺省 0 会得到 498484 小时，
+// 比 last_seen 晚则是负时长。快照入库时必须统一修正。
+func TestUpdateNormalizesSessionConnectedSince(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	now := time.Now().Unix()
+	s.Update(1, []*agentpb.OnlineUserEntry{{
+		SubscriptionId: 1, Email: "a@example.com", LastSeen: now,
+		Sessions: []*agentpb.OnlineSession{
+			{Ip: "1.1.1.1", LastSeen: now},                           // 缺 ConnectedSince
+			{Ip: "2.2.2.2", LastSeen: now, ConnectedSince: now + 30}, // 倒挂
+		},
+	}})
+	snap, ok := s.GetFresh(1)
+	if !ok || snap == nil || len(snap.Users) != 1 {
+		t.Fatalf("snapshot missing: %+v", snap)
+	}
+	for _, sess := range snap.Users[0].Sessions {
+		if sess.ConnectedSince <= 0 || sess.ConnectedSince > sess.LastSeen {
+			t.Errorf("session %s 的 connected_since=%d / last_seen=%d 未归一", sess.Ip, sess.ConnectedSince, sess.LastSeen)
+		}
 	}
 }

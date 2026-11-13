@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"mime"
@@ -731,6 +732,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	nodeSvc := nodeService.NewService(nodeRepo, sharedNodeMgr, subRepo, clientRepo, planTmplRepo)
 	// 「实时连接」需要判断节点是否本机（sing-box clash_api 只在回环）。
 	nodeSvc.SetNodeServerRepo(nodeServerRepoForSync)
+	// 在线列表显示「连接的是哪个入口」：按账号名后缀反查入站。
+	nodeSvc.SetInboundRepo(inboundConfigRepo)
+	// 「实时连接」按运行中配置里的 clash_api 地址读取（用户可能改过端口）。
+	nodeSvc.SetClashAPIAddr(func() string { return singboxClashAPIListen(dataDir) })
+	nodeSvc.SetClashAPISecret(func() string { return singboxClashAPISecret(dataDir) })
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
 	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planSvcInst)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
@@ -1453,7 +1459,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		if sharedNodeMgr != nil {
 			rateLimitSvcInst.SetOnlineUsersSink(sharedNodeMgr.UpdateOnlineUsersSnapshot)
 		}
-		rateLimitSvcInst.StartLocalObserver(
+		obs := rateLimitSvcInst.StartLocalObserver(
 			localServerID,
 			15*time.Second,
 			func(ctx context.Context) string {
@@ -1468,6 +1474,24 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				return processMgr.IsCoreRunning("xray")
 			},
 		)
+		// sing-box 也接进同一份在线快照：v2ray_api 只有按用户流量、没有连接 IP，
+		// 观测器按「最近是否还有流量增量」推断在线（见 singboxIdleTTL），
+		// 面板因此能显示「哪个套餐在用 sing-box + 用了多少流量」。
+		singboxStatsAddr := func(ctx context.Context) string {
+			if v, err := systemSettingSvc.GetByKey(ctx, "singbox.stats_addr"); err == nil && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+			if addr := singboxV2RayAPIListen(dataDir); addr != "" {
+				return addr
+			}
+			return coredata.DefaultSingboxStatsAddr
+		}
+		obs.EnableSingbox(singboxStatsAddr, func() bool {
+			if processMgr == nil {
+				return true
+			}
+			return processMgr.IsCoreRunning("singbox")
+		})
 	}
 	// 客户限速变更 → 推送节点立即生效（Agent action=update）
 	clientSvcInst.SetRateLimitUpdater(rateLimitSvcInst)
@@ -5212,4 +5236,49 @@ func (a *xrayConfigApplier) ApplyRouting(ctx context.Context, serverID int64, ro
 		return err
 	}
 	return p.ApplyRouting(ctx, serverID, routingJSON)
+}
+
+// singboxV2RayAPIListen 从运行中的 sing-box 配置解析 v2ray_api.listen。
+//
+// 面板在渲染配置时会注入 experimental.v2ray_api（见 coreconfig.EnsureSingboxV2RayAPI），
+// 但用户可能改过端口，所以优先读真正生效的 runtime/singbox.jsonc；读不到时由调用方
+// 回退到默认地址（127.0.0.1:10086）。
+func singboxV2RayAPIListen(dataDir string) string {
+	return singboxExperimentalAddr(dataDir, "v2ray_api", "listen")
+}
+
+// singboxClashAPIListen 从运行中的配置解析 clash_api.external_controller。
+// 面板「实时连接」按这个地址读取，用户改过端口也能跟上。
+func singboxClashAPIListen(dataDir string) string {
+	return singboxExperimentalAddr(dataDir, "clash_api", "external_controller")
+}
+
+// singboxClashAPISecret 从运行中的配置解析 clash_api.secret（用于面板读取鉴权）。
+func singboxClashAPISecret(dataDir string) string {
+	return singboxExperimentalAddr(dataDir, "clash_api", "secret")
+}
+
+// singboxExperimentalAddr 读取 runtime/singbox.jsonc 里 experimental.<section>.<field>。
+func singboxExperimentalAddr(dataDir, section, field string) string {
+	if strings.TrimSpace(dataDir) == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(dataDir, "runtime", "singbox.jsonc"))
+	if err != nil {
+		return ""
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(coreconfigSvc.StripJSONC(raw), &cfg); err != nil {
+		return ""
+	}
+	exp, _ := cfg["experimental"].(map[string]interface{})
+	if exp == nil {
+		return ""
+	}
+	sec, _ := exp[section].(map[string]interface{})
+	if sec == nil {
+		return ""
+	}
+	v, _ := sec[field].(string)
+	return strings.TrimSpace(v)
 }

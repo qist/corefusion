@@ -75,8 +75,28 @@
             <span v-else style="color:#c0c4cc">-</span>
           </template>
         </el-table-column>
+        <el-table-column :label="t('onlineUsers.inbound')" min-width="170" show-overflow-tooltip>
+          <template #default="{row}">
+            <span v-if="row.inbound_name || row.inbound_tag">
+              {{ row.inbound_name || row.inbound_tag }}<span v-if="row.inbound_port" style="color:#909399">:{{ row.inbound_port }}</span>
+            </span>
+            <span v-else style="color:#c0c4cc">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('onlineUsers.core')" width="110" align="center">
+          <template #default="{row}">
+            <el-tag v-if="row.core_type === 'singbox'" size="small" type="warning">sing-box</el-tag>
+            <el-tag v-else-if="row.core_type === 'xray'" size="small" type="success">xray</el-tag>
+            <span v-else style="color:#c0c4cc">-</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('onlineUsers.devices')" width="90" align="center">
-          <template #default="{row}">{{ row.session_count }}</template>
+          <template #default="{row}">
+            <el-tooltip v-if="!row.session_count" :content="t('onlineUsers.noIp')" placement="top">
+              <span style="color:#c0c4cc">—</span>
+            </el-tooltip>
+            <span v-else>{{ row.session_count }}</span>
+          </template>
         </el-table-column>
         <el-table-column :label="t('onlineUsers.upRate')" width="110" sortable :sort-method="(a,b)=>a.uplink_rate-b.uplink_rate">
           <template #default="{row}">{{ formatRate(row.uplink_rate) }}</template>
@@ -103,7 +123,7 @@
           <template #default="{row}">{{ formatAgo(row.last_seen) }}</template>
         </el-table-column>
         <el-table-column :label="t('onlineUsers.duration')" width="100">
-          <template #default="{row}">{{ formatDuration((row.last_seen || 0) - (row.first_seen || 0)) }}</template>
+          <template #default="{row}">{{ formatDuration(onlineNow() - (row.first_seen || 0)) }}</template>
         </el-table-column>
         <template #empty>
           <el-empty :description="t('onlineUsers.noOnline')" />
@@ -220,14 +240,16 @@ const { isMobile } = useIsMobile()
 // 手机端卡片字段（与在线用户表列对应）
 const onlineCardFields = computed(() => [
   { label: t('onlineUsers.client'), text: (row) => row.email },
+  { label: t('onlineUsers.core'), text: (row) => row.core_type || '-' },
+  { label: t('onlineUsers.inbound'), text: (row) => (row.inbound_name || row.inbound_tag || '-') + (row.inbound_port ? ':' + row.inbound_port : '') },
   { label: t('onlineUsers.plan'), text: (row) => row.plan_name || '-' },
-  { label: t('onlineUsers.devices'), text: (row) => String(row.session_count ?? 0) },
+  { label: t('onlineUsers.devices'), text: (row) => row.session_count ? String(row.session_count) : t('onlineUsers.noIpShort') },
   { label: t('onlineUsers.upRate'), text: (row) => formatRate(row.uplink_rate) },
   { label: t('onlineUsers.downRate'), text: (row) => formatRate(row.downlink_rate) },
   { label: t('onlineUsers.totalUpDown'), text: (row) => `↑${formatBytes(row.uplink_bytes)} ↓${formatBytes(row.downlink_bytes)}` },
   { label: t('onlineUsers.speedLimit'), text: (row) => ((row.speed_limit_down_mbps || 0) > 0 || (row.speed_limit_up_mbps || 0) > 0) ? `↓${row.speed_limit_down_mbps || 0} / ↑${row.speed_limit_up_mbps || 0} Mbps` : t('onlineUsers.unlimited') },
   { label: t('onlineUsers.lastActive'), text: (row) => formatAgo(row.last_seen) },
-  { label: t('onlineUsers.duration'), text: (row) => formatDuration((row.last_seen || 0) - (row.first_seen || 0)) },
+  { label: t('onlineUsers.duration'), text: (row) => formatDuration(onlineNow() - (row.first_seen || 0)) },
 ])
 
 function formatRate(bps) {
@@ -242,6 +264,11 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
   return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB'
+}
+// 在线时长用「现在 - 首次出现」：xray 的 last_seen 是最后建连时间，
+// 用它相减会恒为 0（甚至负值）。
+function onlineNow() {
+  return Math.floor(Date.now() / 1000)
 }
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0s'

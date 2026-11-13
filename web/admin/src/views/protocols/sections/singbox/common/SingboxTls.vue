@@ -139,6 +139,7 @@ import client from '../../../../../api/client'
 import { REALITY_PROTOCOLS, REALITY_TRANSPORTS } from '../utils/singboxDefaults'
 import { collectUsedSnis as collectUsedSnisShared, mergeUsedSnis } from '../../utils/sniUsage'
 import { loadLocalSniConfig, genLocalSniDomains, defaultLocalSniConfig } from '../../utils/localSni'
+import { findCertByRef } from '../../utils/certbind'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -236,12 +237,9 @@ async function loadCertificates() {
   try {
     const res = await client.get('/certificates', { params: { limit: 100 } })
     certificates.value = res?.items || []
-    // 如果已有证书路径，尝试匹配证书ID
+    // 如果已有证书路径，尝试匹配证书ID（目录别名精确匹配，见 utils/certbind）
     if (props.model._tlsCertPath) {
-      const found = certificates.value.find(c =>
-        (c.fullchain_path && props.model._tlsCertPath.includes(c.fullchain_path)) ||
-        (c.cert_path && props.model._tlsCertPath.includes(c.cert_path))
-      )
+      const found = findCertByRef(certificates.value, [props.model._tlsCertPath, props.model._tlsKeyPath])
       if (found) props.model._certId = found.id
     }
   } catch {}

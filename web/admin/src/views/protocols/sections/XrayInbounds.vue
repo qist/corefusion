@@ -1850,6 +1850,7 @@ import { PORT_HOP_PRESETS, findConflict } from './utils/portHopPresets'
 import { loadLocalSniConfig, genLocalSniDomains, defaultLocalSniConfig } from './utils/localSni'
 import { genRemark, genInboundTag } from './utils/nodeNaming'
 import { ALPN_OPTIONS, alpnToArray, alpnToString } from './utils/alpn'
+import { findCertByRef } from './utils/certbind'
 import { useQueryState } from '../../../composables/useQueryState'
 import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
@@ -3440,30 +3441,65 @@ async function genMldsa65(rf) {
 
 function onCertModeChange(rf) {
   rf.streamSettings.tls._certId = ''
+  rf.streamSettings.tls._certName = ''
   rf.streamSettings.tls._certificateFile = ''
   rf.streamSettings.tls._keyFile = ''
   rf.streamSettings.tls._certificateContent = ''
   rf.streamSettings.tls._keyContent = ''
+  rf._certBind = null
   emit()
 }
 
-function onCertSelect(rf) {
-  const certId = rf.streamSettings.tls._certId
-  if (!certId) { rf.streamSettings.tls._certName = ''; emit(); return }
-  const cert = certList.value.find(c => c.id === certId)
-  if (!cert) return
+// fetchCertPem 从下载接口按需取回 PEM（列表接口按安全要求不下发证书内容与私钥）。
+async function fetchCertPem(certId, format) {
+  const pem = await client.get(`/certificates/${certId}/download`, {
+    params: { format },
+    responseType: 'text',
+    suppressErrorMessage: true,
+  })
+  const text = typeof pem === 'string' ? pem : ''
+  if (!text.includes('-----BEGIN')) throw new Error('certificate content unavailable')
+  return text
+}
+
+async function onCertSelect(rf) {
   const tls = rf.streamSettings.tls
+  const certId = tls._certId
+  if (!certId) {
+    tls._certName = ''
+    rf._certBind = null
+    emit()
+    return
+  }
+  const cert = certList.value.find(c => String(c.id) === String(certId))
+  if (!cert) return
   tls._certName = cert.name + ' (' + cert.domain + ')'
+  // 显式记下绑定关系：证书改名/换目录后，编辑时仍能认回这一张。
+  rf._certBind = { id: cert.id, name: cert.name || '', domain: cert.domain || '' }
   if (tls._certMode === 'file') {
     tls._certificateFile = cert.cert_path || cert.fullchain_path || ''
     tls._keyFile = cert.key_path || ''
     tls._certificateContent = ''
     tls._keyContent = ''
   } else {
-    tls._certificateContent = cert.cert_content || ''
-    tls._keyContent = cert.key_content || ''
     tls._certificateFile = ''
     tls._keyFile = ''
+    // 列表接口不下发 PEM/私钥 → 内容模式必须按需取；取不到就退回文件路径模式，
+    // 绝不再写入一对空内容（那会让 TLS 入站因为「证书为空」起不来）。
+    try {
+      const [certPem, keyPem] = await Promise.all([
+        fetchCertPem(cert.id, 'cert'),
+        fetchCertPem(cert.id, 'key'),
+      ])
+      tls._certificateContent = certPem
+      tls._keyContent = keyPem
+    } catch {
+      tls._certMode = 'file'
+      tls._certificateFile = cert.cert_path || cert.fullchain_path || ''
+      tls._keyFile = cert.key_path || ''
+      tls._certificateContent = ''
+      tls._keyContent = ''
+    }
   }
   emit()
 }
@@ -3492,35 +3528,52 @@ async function loadCertList() {
   } catch (e) { console.error('loadCertList failed:', e) }
 }
 
-// matchCertIds 把"已保存的证书文件路径"反查回**证书中心里的那张证书** ✓，
-// 让"选择证书"下拉在**编辑时**能回显出证书名 ✓。
+// matchCertIds 把"已保存的证书文件路径"反查回**证书中心里的那张证书**，
+// 让"选择证书"下拉在**编辑时**能回显出证书名。
 //
-// ⚠ 原实现有两个坑 ✗（真机上就是因此"编辑时看不到绑定的证书" ✗）：
-//   ① `loadCertList()` 与 `loadInbounds()` 在 onMounted 里**并发赛跑** ✗ ——
-//      证书列表先回来时 `form.value` 还是空的 ✗ → 匹配循环空转 ✓ → `_certId` 始终为 '' ✗；
-//   ② 用"去掉前导 ../ 之后**严格相等**" ✗ —— 而路径可能已被加工成绝对路径（`dataDir + '/' + …` ✓）
-//      或 `../../../certs/…` ✓ → 严格相等匹配不上 ✗。
-// 现在：抽成函数 ✓ 在"证书列表回来"和"inbound 加载完"**两处**都调用 ✓（与顺序无关 ✓），
-// 并用**双向 includes** 比较（sing-box 侧就是这么做的 ✓，所以它没这个问题 ✓）。
-function stripCertPrefix(p) {
-  return String(p || '').replace(/^(\.\.\/)+/, '').replace(/^\/+/, '')
+// 关联来源分两级（都对加载顺序无要求，loadCertList / loadInbounds 完成后各调一次）：
+//   ① 显式绑定 `_certBind`（保存入站时随 config_json 一起落库）——证书改名/换目录
+//      或者路径被手工改过，也仍然认得出是哪一张；
+//   ② 历史数据没有绑定 → 按**目录别名**反查（certs/<domain>、certs/<name>、
+//      以及库里的 cert_path/fullchain_path 所在目录），见 utils/certbind.js。
+//
+// 旧实现用 `includes` 做子串匹配：既匹配不到名称目录（certs/gg 这种，真机上
+// 就是它导致编辑时下拉老空着），又会把 certs/test.tycng.com 误配到
+// certs/google-test.tycng.com。现在改为目录级精确比较。
+function certLabel(cert) {
+  return cert.name ? cert.name + ' (' + cert.domain + ')' : cert.domain
+}
+
+// tlsRefPaths 收集入站里可能引用证书的路径（表单字段 + 原始 certificates[]）。
+function tlsRefPaths(tls) {
+  if (!tls) return []
+  const refs = [tls._certificateFile, tls._keyFile]
+  const stored = tls.certificates && tls.certificates[0]
+  if (stored) refs.push(stored.certificateFile, stored.keyFile)
+  return refs.filter(Boolean)
 }
 
 function matchCertIds() {
-  if (!Array.isArray(form.value) || !certList.value.length) return
+  if (!Array.isArray(form.value)) return
   form.value.forEach(ib => {
     const tls = ib.streamSettings && ib.streamSettings.tls
     if (!tls || tls._certId) return
-    const raw = tls._certificateFile || (tls.certificates && tls.certificates[0] && tls.certificates[0].certificateFile) || ''
-    if (!raw) return
-    const target = stripCertPrefix(raw)
-    const found = certList.value.find(c => [c.cert_path, c.fullchain_path].filter(Boolean).some(p => {
-      const cp = stripCertPrefix(p)
-      return cp && (target.includes(cp) || cp.includes(target))
-    }))
+
+    const bind = ib._certBind
+    if (bind && bind.id) {
+      const byId = certList.value.find(c => String(c.id) === String(bind.id))
+      if (byId) {
+        tls._certId = byId.id
+        tls._certName = certLabel(byId)
+        return
+      }
+    }
+
+    if (!certList.value.length) return
+    const found = findCertByRef(certList.value, tlsRefPaths(tls))
     if (found) {
       tls._certId = found.id
-      tls._certName = found.name + ' (' + found.domain + ')'
+      tls._certName = certLabel(found)
     }
   })
 }
@@ -4145,6 +4198,8 @@ function parseInbound(ib) {
     _tunGatewayStr: (ib.settings?.gateway || []).join(', '),
     _tunDnsStr: (ib.settings?.dns || []).join(', '),
     _tunAutoRoutingStr: (ib.settings?.autoSystemRoutingTable || []).join(', '),
+    // 证书中心的显式绑定（随 config_json 落库，运行时渲染前会被剥离）
+    _certBind: ib._certBind && ib._certBind.id ? ib._certBind : null,
     // Port Hop config
     _portHopEnabled: ib._portHop?.enabled || ib._portHopEnabled || false,
     _portHopMode: ib._portHop?.mode || ib._portHopMode || 'preset',
@@ -4487,6 +4542,17 @@ function buildInbound(ib, isApiCall = false) {
         }
         tlsSettings.certificates = [certObj]
       }
+      // 记录「这个入站用的是证书中心的哪一张证书」：证书改名 / 落地目录变化后，
+      // 编辑时仍能回显，不必靠路径反查（历史数据仍走 matchCertIds 的别名匹配）。
+      // 运行时渲染前由 coreconfig.CleanInboundFields 剥离所有顶层 _ 字段。
+      if (tls._certId) {
+        const bound = certList.value.find(c => String(c.id) === String(tls._certId))
+        result._certBind = {
+          id: tls._certId,
+          name: bound?.name || ib._certBind?.name || '',
+          domain: bound?.domain || ib._certBind?.domain || '',
+        }
+      }
       result.streamSettings.tlsSettings = tlsSettings
     }
     // Add Reality settings if security is reality
@@ -4818,6 +4884,7 @@ function showAdd() {
   rf._portHopStart = d._portHopStart
   rf._portHopEnd = d._portHopEnd
   rf._portHopInterface = d._portHopInterface
+  rf._certBind = null
   activeTab.value = 'basic'
   dlg.value = true
   // Auto-select: prefer local Reality server (speedtest-format domains), else random preset
@@ -4890,6 +4957,8 @@ function showEdit(i) {
   rf._portHopStart = ib._portHopStart || 20000
   rf._portHopEnd = ib._portHopEnd || 50000
   rf._portHopInterface = ib._portHopInterface || ''
+  // 证书中心绑定（编辑时回显「选择证书」用）
+  rf._certBind = ib._certBind ? JSON.parse(JSON.stringify(ib._certBind)) : null
   activeTab.value = 'basic'
   dlg.value = true
 }
@@ -4978,6 +5047,7 @@ async function saveInbound() {
       delete apiJson._portHop
       delete apiJson._wgPublicKey
       delete apiJson._listenType
+      delete apiJson._certBind
       // Only remove existing inbound when editing (not creating new)
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         try {
@@ -5240,6 +5310,9 @@ async function loadInbounds() {
       return { ...parsed, _id: item.id, _enabled: item.enabled }
     })
   } catch { form.value = [] }
+  // 列表刷新（保存后 / 重载）也要回显证书关联：证书列表可能已经在内存里，
+  // 不重新匹配的话 parseInbound 的 _certId 一直是空 → 再打开编辑下拉又空着。
+  matchCertIds()
 }
 
 function emit() { /* no longer needed, saves directly to API */ }

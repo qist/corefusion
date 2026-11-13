@@ -6947,6 +6947,23 @@ ctx.moduleTitle           — 当前模块标题`,
         "addFallback": "添加 ALPN Fallback"
       },
     },
+    services: {
+      "alert": "services 段用于 sing-box 的内置服务。hysteria-realm 是 hysteria2 的 rendezvous 服务：客户端在 hysteria2 入站/出站的 realm 中填它的 server_url + realm_id + token。",
+      "addPlaceholder": "选择服务类型",
+      "addService": "添加服务",
+      "empty": "暂无服务",
+      "tlsHint": "realm 客户端通过 https:// 连接，实际部署需要配置证书",
+      "alpnHint": "逗号分隔，默认 h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "每个用户由名称 + token 标识，客户端在 realm 配置里填 token",
+      "userName": "名称",
+      "userToken": "Token",
+      "generateToken": "生成",
+      "maxRealmsHint": "max_realms：该用户可同时创建的中继数量，0 = 不限制",
+      "addUser": "添加用户",
+      "mustBeObject": "必须是 JSON 对象",
+      "invalidJson": "JSON 无效："
+    },
   },
   init: {
     strengthWeak: '弱',

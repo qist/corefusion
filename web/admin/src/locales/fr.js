@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "Filtrage UDP",
         "udpNatMax": "Nombre maximal de NAT UDP"
       }
+    },
+    "services": {
+      "alert": "La section services contient les services intégrés de sing-box. hysteria-realm est le service de rendez-vous de hysteria2 : renseignez server_url, realm_id et token dans le realm de l’entrée/sortie hysteria2.",
+      "addPlaceholder": "Choisir le type de service",
+      "addService": "Ajouter un service",
+      "empty": "Aucun service",
+      "tlsHint": "Les clients realm se connectent en https://, un certificat est donc nécessaire en pratique",
+      "alpnHint": "Séparés par des virgules, h2 par défaut",
+      "http2Section": "HTTP/2",
+      "usersHint": "Chaque utilisateur est identifié par un nom et un token ; le client place le token dans la configuration realm",
+      "userName": "Nom",
+      "userToken": "Token",
+      "generateToken": "Générer",
+      "maxRealmsHint": "max_realms : nombre de relais que cet utilisateur peut créer simultanément, 0 = illimité",
+      "addUser": "Ajouter un utilisateur",
+      "mustBeObject": "Doit être un objet JSON",
+      "invalidJson": "JSON invalide : "
     }
   },
   "init": {

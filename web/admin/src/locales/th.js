@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "การกรอง UDP",
         "udpNatMax": "จำนวน UDP NAT สูงสุด"
       }
+    },
+    "services": {
+      "alert": "ส่วน services เก็บบริการในตัวของ sing-box hysteria-realm คือบริการ rendezvous ของ hysteria2 โดยกรอก server_url, realm_id และ token ใน realm ของอินบาวด์/เอาต์บาวด์ hysteria2",
+      "addPlaceholder": "เลือกประเภทบริการ",
+      "addService": "เพิ่มบริการ",
+      "empty": "ยังไม่มีบริการ",
+      "tlsHint": "ไคลเอนต์ realm เชื่อมต่อผ่าน https:// จึงต้องมีใบรับรองในการใช้งานจริง",
+      "alpnHint": "คั่นด้วยจุลภาค ค่าเริ่มต้น h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "ผู้ใช้แต่ละรายระบุด้วยชื่อและ token ไคลเอนต์จะใส่ token ใน การตั้งค่า realm",
+      "userName": "ชื่อ",
+      "userToken": "Token",
+      "generateToken": "สร้าง",
+      "maxRealmsHint": "max_realms: จำนวนรีเลย์ที่ผู้ใช้นี้สร้างพร้อมกันได้ 0 = ไม่จำกัด",
+      "addUser": "เพิ่มผู้ใช้",
+      "mustBeObject": "ต้องเป็นออบเจกต์ JSON",
+      "invalidJson": "JSON ไม่ถูกต้อง: "
     }
   },
   "init": {

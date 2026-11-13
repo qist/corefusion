@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "تصفية UDP",
         "udpNatMax": "الحد الأقصى لـ UDP NAT"
       }
+    },
+    "services": {
+      "alert": "يحتوي قسم services على خدمات sing-box المدمجة. hysteria-realm هو خدمة الالتقاء الخاصة بـ hysteria2: ضع server_url وrealm_id وtoken في realm الخاص بالوارد/الصادر hysteria2.",
+      "addPlaceholder": "اختر نوع الخدمة",
+      "addService": "إضافة خدمة",
+      "empty": "لا توجد خدمات",
+      "tlsHint": "يتصل عملاء realm عبر https:// لذا يلزم وجود شهادة في الاستخدام الفعلي",
+      "alpnHint": "مفصولة بفواصل، الافتراضي h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "يُعرَّف كل مستخدم بالاسم وtoken، ويضع العميل token في إعداد realm",
+      "userName": "الاسم",
+      "userToken": "Token",
+      "generateToken": "توليد",
+      "maxRealmsHint": "max_realms: عدد المرحّلات التي يمكن لهذا المستخدم إنشاؤها في وقت واحد، 0 = بلا حد",
+      "addUser": "إضافة مستخدم",
+      "mustBeObject": "يجب أن يكون كائن JSON",
+      "invalidJson": "JSON غير صالح: "
     }
   },
   "init": {

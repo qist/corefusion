@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "UDP 過濾",
         "udpNatMax": "UDP NAT 最大數量"
       }
+    },
+    "services": {
+      "alert": "services 段用於 sing-box 的內建服務。hysteria-realm 是 hysteria2 的 rendezvous 服務：用戶端在 hysteria2 入站/出站的 realm 中填它的 server_url + realm_id + token。",
+      "addPlaceholder": "選擇服務類型",
+      "addService": "新增服務",
+      "empty": "暫無服務",
+      "tlsHint": "realm 用戶端透過 https:// 連線，實際部署需要設定憑證",
+      "alpnHint": "逗號分隔，預設 h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "每個使用者由名稱 + token 識別，用戶端在 realm 設定裡填 token",
+      "userName": "名稱",
+      "userToken": "Token",
+      "generateToken": "產生",
+      "maxRealmsHint": "max_realms：該使用者可同時建立的中繼數量，0 = 不限制",
+      "addUser": "新增使用者",
+      "mustBeObject": "必須是 JSON 物件",
+      "invalidJson": "JSON 無效："
     }
   },
   "init": {

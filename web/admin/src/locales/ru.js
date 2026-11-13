@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "Фильтрация UDP",
         "udpNatMax": "Макс. количество UDP NAT"
       }
+    },
+    "services": {
+      "alert": "Раздел services содержит встроенные службы sing-box. hysteria-realm — служба рандеву для hysteria2: в realm входящего/исходящего указываются server_url, realm_id и token.",
+      "addPlaceholder": "Выберите тип службы",
+      "addService": "Добавить службу",
+      "empty": "Служб нет",
+      "tlsHint": "Клиенты realm подключаются по https://, поэтому на практике нужен сертификат",
+      "alpnHint": "Через запятую, по умолчанию h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "Пользователь определяется именем и token; клиент указывает token в конфигурации realm",
+      "userName": "Имя",
+      "userToken": "Token",
+      "generateToken": "Создать",
+      "maxRealmsHint": "max_realms: сколько реле пользователь может создать одновременно, 0 = без ограничений",
+      "addUser": "Добавить пользователя",
+      "mustBeObject": "Должен быть объект JSON",
+      "invalidJson": "Некорректный JSON: "
     }
   },
   "init": {

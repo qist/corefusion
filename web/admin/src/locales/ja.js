@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "UDP フィルタリング",
         "udpNatMax": "UDP NAT 最大数"
       }
+    },
+    "services": {
+      "alert": "services セクションは sing-box の組み込みサービスを保持します。hysteria-realm は hysteria2 のランデブーサービスで、hysteria2 の inbound/outbound の realm に server_url・realm_id・token を設定して使用します。",
+      "addPlaceholder": "サービスタイプを選択",
+      "addService": "サービスを追加",
+      "empty": "サービスがありません",
+      "tlsHint": "realm クライアントは https:// で接続するため、実運用では証明書が必要です",
+      "alpnHint": "カンマ区切り、既定は h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "各ユーザーは名前と token で識別され、クライアントは realm 設定に token を入れます",
+      "userName": "名前",
+      "userToken": "Token",
+      "generateToken": "生成",
+      "maxRealmsHint": "max_realms: このユーザーが同時に作成できるリレー数、0 = 無制限",
+      "addUser": "ユーザーを追加",
+      "mustBeObject": "JSON オブジェクトである必要があります",
+      "invalidJson": "JSON が無効です: "
     }
   },
   "init": {

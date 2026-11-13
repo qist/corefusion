@@ -7011,6 +7011,23 @@ ctx.moduleTitle           — Current module title`,
         "addFallback": "Add ALPN Fallback"
       },
     },
+    services: {
+      "alert": "The services section holds sing-box built-in services. hysteria-realm is the hysteria2 rendezvous service: point the hysteria2 inbound/outbound realm at its server_url with a realm_id and token.",
+      "addPlaceholder": "Select service type",
+      "addService": "Add Service",
+      "empty": "No services",
+      "tlsHint": "Realm clients connect over https://, so a certificate is required in practice",
+      "alpnHint": "Comma separated, defaults to h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "Each user is identified by a name and token; clients put the token in the realm config",
+      "userName": "Name",
+      "userToken": "Token",
+      "generateToken": "Generate",
+      "maxRealmsHint": "max_realms: how many realms this user may create at once, 0 = unlimited",
+      "addUser": "Add User",
+      "mustBeObject": "Must be a JSON object",
+      "invalidJson": "Invalid JSON: "
+    },
   },
   init: {
     strengthWeak: 'Weak',

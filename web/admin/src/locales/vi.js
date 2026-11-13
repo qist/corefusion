@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "Lọc UDP",
         "udpNatMax": "Số lượng UDP NAT tối đa"
       }
+    },
+    "services": {
+      "alert": "Mục services chứa các dịch vụ tích hợp của sing-box. hysteria-realm là dịch vụ rendezvous của hysteria2: điền server_url, realm_id và token vào realm của inbound/outbound hysteria2.",
+      "addPlaceholder": "Chọn loại dịch vụ",
+      "addService": "Thêm dịch vụ",
+      "empty": "Chưa có dịch vụ",
+      "tlsHint": "Máy khách realm kết nối qua https:// nên thực tế cần chứng chỉ",
+      "alpnHint": "Phân tách bằng dấu phẩy, mặc định h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "Mỗi người dùng được nhận diện bằng tên và token; máy khách đặt token trong cấu hình realm",
+      "userName": "Tên",
+      "userToken": "Token",
+      "generateToken": "Tạo",
+      "maxRealmsHint": "max_realms: số relay người dùng này có thể tạo cùng lúc, 0 = không giới hạn",
+      "addUser": "Thêm người dùng",
+      "mustBeObject": "Phải là một đối tượng JSON",
+      "invalidJson": "JSON không hợp lệ: "
     }
   },
   "init": {

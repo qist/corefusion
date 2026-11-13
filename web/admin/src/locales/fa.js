@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "فیلتر UDP",
         "udpNatMax": "حداکثر تعداد UDP NAT"
       }
+    },
+    "services": {
+      "alert": "بخش services شامل سرویس‌های داخلی sing-box است. hysteria-realm سرویس رندوو برای hysteria2 است: در realm ورودی/خروجی مقدار server_url و realm_id و token را تنظیم کنید.",
+      "addPlaceholder": "نوع سرویس را انتخاب کنید",
+      "addService": "افزودن سرویس",
+      "empty": "سرویسی وجود ندارد",
+      "tlsHint": "کلاینت‌های realm از طریق https:// متصل می‌شوند، بنابراین در عمل به گواهی نیاز است",
+      "alpnHint": "با کاما جدا کنید، پیش‌فرض h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "هر کاربر با نام و token شناسایی می‌شود؛ کلاینت token را در تنظیمات realm قرار می‌دهد",
+      "userName": "نام",
+      "userToken": "Token",
+      "generateToken": "تولید",
+      "maxRealmsHint": "max_realms: تعداد رله‌هایی که این کاربر می‌تواند هم‌زمان بسازد، 0 = نامحدود",
+      "addUser": "افزودن کاربر",
+      "mustBeObject": "باید یک شیء JSON باشد",
+      "invalidJson": "JSON نامعتبر: "
     }
   },
   "init": {

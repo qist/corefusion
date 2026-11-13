@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "UDP filtresi",
         "udpNatMax": "UDP NAT üst sınırı"
       }
+    },
+    "services": {
+      "alert": "services bölümü sing-box yerleşik servislerini tutar. hysteria-realm, hysteria2 için rendezvous servisidir: hysteria2 giriş/çıkış realm ayarında server_url, realm_id ve token girilir.",
+      "addPlaceholder": "Servis türü seçin",
+      "addService": "Servis ekle",
+      "empty": "Servis yok",
+      "tlsHint": "Realm istemcileri https:// ile bağlanır, bu yüzden gerçek kurulumda sertifika gerekir",
+      "alpnHint": "Virgülle ayrılmış, varsayılan h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "Her kullanıcı ad ve token ile tanımlanır; istemci token’ı realm yapılandırmasına yazar",
+      "userName": "Ad",
+      "userToken": "Token",
+      "generateToken": "Oluştur",
+      "maxRealmsHint": "max_realms: bu kullanıcının aynı anda oluşturabileceği röle sayısı, 0 = sınırsız",
+      "addUser": "Kullanıcı ekle",
+      "mustBeObject": "JSON nesnesi olmalıdır",
+      "invalidJson": "Geçersiz JSON: "
     }
   },
   "init": {

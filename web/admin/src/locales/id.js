@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "Pemfilteran UDP",
         "udpNatMax": "Jumlah maksimum UDP NAT"
       }
+    },
+    "services": {
+      "alert": "Bagian services menyimpan layanan bawaan sing-box. hysteria-realm adalah layanan rendezvous hysteria2: isi server_url, realm_id, dan token pada realm inbound/outbound hysteria2.",
+      "addPlaceholder": "Pilih jenis layanan",
+      "addService": "Tambah layanan",
+      "empty": "Belum ada layanan",
+      "tlsHint": "Klien realm terhubung lewat https://, jadi dalam praktiknya perlu sertifikat",
+      "alpnHint": "Dipisahkan koma, default h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "Setiap pengguna diidentifikasi dengan nama dan token; klien menaruh token di konfigurasi realm",
+      "userName": "Nama",
+      "userToken": "Token",
+      "generateToken": "Buat",
+      "maxRealmsHint": "max_realms: berapa relai yang dapat dibuat pengguna ini sekaligus, 0 = tanpa batas",
+      "addUser": "Tambah pengguna",
+      "mustBeObject": "Harus berupa objek JSON",
+      "invalidJson": "JSON tidak valid: "
     }
   },
   "init": {

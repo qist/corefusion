@@ -159,6 +159,7 @@ import SingboxInbounds from './sections/SingboxInbounds.vue'
 import SingboxOutbounds from './sections/SingboxOutbounds.vue'
 import SingboxExperimental from './sections/SingboxExperimental.vue'
 import SingboxEndpoints from './sections/SingboxEndpoints.vue'
+import SingboxServices from './sections/SingboxServices.vue'
 import SingboxNtp from './sections/SingboxNtp.vue'
 import SingboxJsonSection from './sections/SingboxJsonSection.vue'
 import JsonPreview from './sections/JsonPreview.vue'
@@ -204,7 +205,7 @@ function getSections() {
 
 const COMPS = {
   xray: {log:XrayLog,api:XrayApi,dns:XrayDns,routing:XrayRouting,policy:XrayPolicy,inbounds:XrayInbounds,outbounds:XrayOutbounds,stats:XrayStats,metrics:XrayMetrics,fakedns:XrayFakeDns,observatory:XrayObservatory,burstObservatory:XrayBurstObs,version:XrayVersion,geodata:XrayGeodata,_preview:JsonPreview},
-  singbox: {log:SingboxLog,dns:SingboxDns,ntp:SingboxNtp,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,services:SingboxJsonSection,certificate:SingboxJsonSection,certificate_providers:SingboxJsonSection,http_clients:SingboxJsonSection,network_namespaces:SingboxJsonSection,experimental:SingboxExperimental,_preview:JsonPreview},
+  singbox: {log:SingboxLog,dns:SingboxDns,ntp:SingboxNtp,route:SingboxRoute,inbounds:SingboxInbounds,outbounds:SingboxOutbounds,endpoints:SingboxEndpoints,services:SingboxServices,certificate:SingboxJsonSection,certificate_providers:SingboxJsonSection,http_clients:SingboxJsonSection,network_namespaces:SingboxJsonSection,experimental:SingboxExperimental,_preview:JsonPreview},
 }
 
 const selectedCore = ref('')

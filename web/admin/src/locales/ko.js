@@ -6756,6 +6756,23 @@ export default {
         "udpFiltering": "UDP 필터링",
         "udpNatMax": "UDP NAT 최대 개수"
       }
+    },
+    "services": {
+      "alert": "services 섹션은 sing-box 내장 서비스를 보관합니다. hysteria-realm은 hysteria2의 랑데부 서비스이며, hysteria2 인바운드/아웃바운드의 realm에 server_url·realm_id·token을 설정해 사용합니다.",
+      "addPlaceholder": "서비스 유형 선택",
+      "addService": "서비스 추가",
+      "empty": "서비스 없음",
+      "tlsHint": "realm 클라이언트는 https://로 연결하므로 실제 배포에는 인증서가 필요합니다",
+      "alpnHint": "쉼표로 구분, 기본값 h2",
+      "http2Section": "HTTP/2",
+      "usersHint": "각 사용자는 이름과 token으로 식별되며, 클라이언트는 realm 설정에 token을 넣습니다",
+      "userName": "이름",
+      "userToken": "Token",
+      "generateToken": "생성",
+      "maxRealmsHint": "max_realms: 이 사용자가 동시에 만들 수 있는 릴레이 수, 0 = 무제한",
+      "addUser": "사용자 추가",
+      "mustBeObject": "JSON 객체여야 합니다",
+      "invalidJson": "잘못된 JSON: "
     }
   },
   "init": {

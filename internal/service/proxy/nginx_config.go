@@ -171,6 +171,11 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 //
 // 不落库：入站改了 serverNames，下次生成配置就自动跟上；显式站点（用户在
 // 「Nginx 代理」里配过的同域名规则）保持优先，不会被覆盖。
+//
+// sing-box 的规则（ProxyProtocol=false）只在该节点 SNI 分流**不加 PROXY 头**时
+// 才派生：nginx stream 的 proxy_protocol 是**按 listen 组**写死的，同端口上无法
+// 让部分域名带、部分域名不带。若全局开了 proxy_protocol，把 sing-box REALITY 的
+// 域名映射到它的端口只会让握手必然失败（比落到 fallback 更糟），这里直接跳过。
 func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID int64, sites []entity.NginxSite) []entity.NginxSite {
 	if m.inboundRepo == nil {
 		return sites
@@ -180,11 +185,51 @@ func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID int64, 
 		log.Printf("[NginxManager] list inbounds for SNI derivation failed: %v", err)
 		return sites
 	}
+	proxyProtocolOn := false
+	if s, serr := m.GetNginxSettingsForServer(ctx, serverID); serr == nil && s != nil {
+		proxyProtocolOn = s.StreamProxyProtocol
+	}
+	// fallback 站点的 ProxyProtocol 同样会让整组 listen 写出 `proxy_protocol on`
+	//（见 stream server 块的 fallbackPP），所以也要算进来。
+	if !proxyProtocolOn {
+		for _, site := range sites {
+			if (site.Domain == "fallback" || site.Domain == "") && site.ProxyProtocol {
+				proxyProtocolOn = true
+				break
+			}
+		}
+	}
 	var rules []derivedSNIRule
 	for _, cfg := range cfgs {
 		rules = append(rules, SNIRulesFromInbound(cfg)...)
 	}
+	rules, skippedSingbox := filterDerivedSNIRules(rules, proxyProtocolOn)
+	if skippedSingbox > 0 {
+		log.Printf("[NginxManager] node %d: skipped %d sing-box REALITY SNI rule(s) — "+
+			"stream proxy_protocol is on, sing-box does not support the PROXY protocol "+
+			"(turn it off for that listen if those inbounds must be reachable on 443)",
+			serverID, skippedSingbox)
+	}
 	return mergeDerivedNginxSNISites(serverID, sites, rules)
+}
+
+// filterDerivedSNIRules 在 SNI 分流带 PROXY 头时剔除 sing-box 的派生规则。
+// 拆成纯函数便于单测（nginx 的 proxy_protocol 是按 listen 组写死的，
+// 同端口无法做到「部分域名带、部分不带」）。
+func filterDerivedSNIRules(rules []derivedSNIRule, proxyProtocolOn bool) ([]derivedSNIRule, int) {
+	if !proxyProtocolOn {
+		return rules, 0
+	}
+	out := make([]derivedSNIRule, 0, len(rules))
+	skipped := 0
+	for _, r := range rules {
+		if r.FromSingbox {
+			skipped++
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, skipped
 }
 
 // PreviewSiteConfig 用「库里已有站点 + 正在编辑的草稿」生成完整配置。

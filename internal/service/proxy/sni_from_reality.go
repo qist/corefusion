@@ -14,6 +14,10 @@ type derivedSNIRule struct {
 	Domain        string
 	Target        string
 	ProxyProtocol bool
+	// FromSingbox 标记该规则来自 sing-box 入站（核心不支持 PROXY 协议）。
+	// nginx 的 443 分流若全局开了 proxy_protocol，就只能跳过这类规则：
+	// 导到一个必然握手失败的后端，比落到 fallback 更糟。
+	FromSingbox bool
 }
 
 // SNIRulesFromInbound 从「被前置 SNI 代理承载的 REALITY 入站」派生 SNI 规则。
@@ -40,6 +44,10 @@ func SNIRulesFromInbound(cfg entity.InboundConfig) []derivedSNIRule {
 	}
 	ss, _ := doc["streamSettings"].(map[string]interface{})
 	if ss == nil {
+		// sing-box 入站没有 streamSettings，REALITY 在顶层 type + tls.reality。
+		if _, isSingbox := doc["type"]; isSingbox {
+			return singboxRealitySNIRules(cfg, doc)
+		}
 		return nil
 	}
 	if sec, _ := ss["security"].(string); !strings.EqualFold(sec, "reality") {
@@ -75,6 +83,88 @@ func SNIRulesFromInbound(cfg entity.InboundConfig) []derivedSNIRule {
 		out = append(out, derivedSNIRule{Domain: name, Target: target, ProxyProtocol: proxyProtocol})
 	}
 	return out
+}
+
+// singboxRealitySNIRules 从 sing-box REALITY 入站派生 SNI 规则。
+//
+// sing-box 的 REALITY 同样在核心内完成 TLS 握手，前置代理只能按 SNI 做 TCP
+// 分流；它的服务名是单个 `tls.server_name`（不是 xray 的 serverNames 列表）。
+//
+// 与 xray 的差别：xray 只在「必须走前置」（unix socket / acceptProxyProtocol）
+// 时派生，而 sing-box 完全没有 proxy_protocol 能力，只要它在直连端口监听，
+// 443 上的同名 SNI 就该转到这个端口，客户端才能「统一用 443」访问。
+// 生成的规则一律 ProxyProtocol=false；节点 nginx 若全局开了 proxy_protocol，
+// 调用方会跳过这些规则（见 NginxManager.withDerivedSNISites）。
+func singboxRealitySNIRules(cfg entity.InboundConfig, doc map[string]interface{}) []derivedSNIRule {
+	tlsCfg, _ := doc["tls"].(map[string]interface{})
+	if tlsCfg == nil {
+		return nil
+	}
+	if enabled, _ := tlsCfg["enabled"].(bool); !enabled {
+		return nil
+	}
+	reality, _ := tlsCfg["reality"].(map[string]interface{})
+	if reality == nil {
+		return nil
+	}
+	if enabled, _ := reality["enabled"].(bool); !enabled {
+		return nil
+	}
+	// 协议不支持 REALITY 时（前端会拦住）配置里可能只是残留字段，跳过。
+	if proto, _ := doc["type"].(string); !singboxRealityProtocol(proto) {
+		return nil
+	}
+	name, _ := tlsCfg["server_name"].(string)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	target := singboxListenTarget(cfg)
+	if target == "" {
+		return nil
+	}
+	return []derivedSNIRule{{
+		Domain:        name,
+		Target:        target,
+		ProxyProtocol: false,
+		FromSingbox:   true,
+	}}
+}
+
+// singboxRealityProtocol 返回该 sing-box 入站协议是否支持 REALITY 服务端。
+// 与前端 supportsReality 一致：仅 vless / vmess / trojan（传输另有限制，
+// 这里不参与 SNI 派生判断）。
+func singboxRealityProtocol(proto string) bool {
+	switch strings.ToLower(strings.TrimSpace(proto)) {
+	case "vless", "vmess", "trojan":
+		return true
+	}
+	return false
+}
+
+// singboxListenTarget 返回 sing-box 入站对前置代理暴露的后端地址：
+// unix / 抽象 socket 用 `unix:` 写法（nginx 可直接用），TCP 监听用 127.0.0.1:port。
+func singboxListenTarget(cfg entity.InboundConfig) string {
+	listen := strings.TrimSpace(cfg.Listen)
+	if strings.HasPrefix(listen, "/") {
+		path := strings.SplitN(listen, ",", 2)[0]
+		if path == "" {
+			return ""
+		}
+		return "unix:" + path
+	}
+	if strings.HasPrefix(listen, "@") {
+		return "unix:" + listen
+	}
+	if cfg.Port <= 0 {
+		return ""
+	}
+	host := listen
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s:%d", host, cfg.Port)
 }
 
 // inboundSNITarget 返回该入站对 SNI 前置代理暴露的后端地址，以及是否真的需要前置代理。

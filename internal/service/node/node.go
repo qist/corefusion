@@ -5,7 +5,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"corefusion/internal/coredata"
 	"corefusion/internal/model/entity"
 	agentsvc "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
@@ -14,11 +16,12 @@ import (
 
 // Service handles node business logic.
 type Service struct {
-	repo         *repository.NodeRepository
-	nodeOnline   nodeOnlineProvider
-	subRepo      *repository.SubscriptionRepository
-	clientRepo   *repository.ClientRepository
-	planTmplRepo *repository.PlanTemplateRepository
+	repo           *repository.NodeRepository
+	nodeServerRepo *repository.NodeServerRepository
+	nodeOnline     nodeOnlineProvider
+	subRepo        *repository.SubscriptionRepository
+	clientRepo     *repository.ClientRepository
+	planTmplRepo   *repository.PlanTemplateRepository
 }
 
 // nodeOnlineProvider 提供节点实时在线订阅人数据，由 runtime/agent.NodeServerManager 实现。
@@ -63,15 +66,11 @@ func (s *Service) GetOnlineUsers(serverID int64, f NodeOnlineFilter) *NodeOnline
 	if !ok {
 		return res
 	}
-	var subs, devs, upRate, downRate int64
+	var upRate, downRate int64
 	for _, u := range users {
-		subs++
-		devs += int64(len(u.Sessions))
 		upRate += u.UplinkRate
 		downRate += u.DownlinkRate
 	}
-	res.OnlineSubscriptions = subs
-	res.OnlineDevices = devs
 	res.TotalUplinkRate = upRate
 	res.TotalDownlinkRate = downRate
 	res.UpdatedAt = updatedAt
@@ -81,6 +80,25 @@ func (s *Service) GetOnlineUsers(serverID int64, f NodeOnlineFilter) *NodeOnline
 
 	// 富化（填充客户端名等，关键字可据此筛选）
 	s.enrichOnlineUsers(users)
+
+	// 汇总在富化之后做：同一订阅的多个入站账号（email 带不同 _tag）要按订阅 ID
+	// 去重，否则「在线订阅人」会按账号数虚高；设备数按 IP 去重（同 IP 多入站算一台）。
+	subs := make(map[string]struct{}, len(users))
+	devices := make(map[string]struct{})
+	for _, u := range users {
+		if u.GetSubscriptionId() > 0 {
+			subs[strconv.FormatInt(u.GetSubscriptionId(), 10)] = struct{}{}
+		} else if u.GetEmail() != "" {
+			subs["e:"+u.GetEmail()] = struct{}{}
+		}
+		for _, sess := range u.GetSessions() {
+			if sess != nil && sess.GetIp() != "" {
+				devices[sess.GetIp()] = struct{}{}
+			}
+		}
+	}
+	res.OnlineSubscriptions = int64(len(subs))
+	res.OnlineDevices = int64(len(devices))
 
 	// 关键字筛选
 	kw := strings.ToLower(strings.TrimSpace(f.Keyword))
@@ -322,7 +340,10 @@ func (s *Service) GetAllOnlineUsersGlobal(f GlobalOnlineFilter) *GlobalOnlineRes
 
 	kw := strings.ToLower(strings.TrimSpace(f.Keyword))
 	nodeNameCache := map[int64]string{}
-	var totalSubs, totalDevs int64
+	// 汇总同样按订阅 ID / IP 去重（与单节点视图、online-summary 口径一致），
+	// 否则一个客户在 N 个入站都有账号时会显示 N 个在线订阅人。
+	subs := make(map[string]struct{})
+	devices := make(map[string]struct{})
 	matched := make([]*GlobalOnlineUser, 0)
 	for serverID, snap := range snaps {
 		name, ok := nodeNameCache[serverID]
@@ -331,8 +352,16 @@ func (s *Service) GetAllOnlineUsersGlobal(f GlobalOnlineFilter) *GlobalOnlineRes
 			nodeNameCache[serverID] = name
 		}
 		for _, u := range snap.Users {
-			totalSubs++
-			totalDevs += int64(len(u.Sessions))
+			for _, sess := range u.GetSessions() {
+				if sess != nil && sess.GetIp() != "" {
+					devices[sess.GetIp()] = struct{}{}
+				}
+			}
+			if u.GetSubscriptionId() > 0 {
+				subs[strconv.FormatInt(u.GetSubscriptionId(), 10)] = struct{}{}
+			} else if u.GetEmail() != "" {
+				subs["e:"+u.GetEmail()] = struct{}{}
+			}
 
 			// 节点筛选
 			if f.ServerID > 0 && serverID != f.ServerID {
@@ -374,8 +403,8 @@ func (s *Service) GetAllOnlineUsersGlobal(f GlobalOnlineFilter) *GlobalOnlineRes
 		return matched[i].SubscriptionID < matched[j].SubscriptionID
 	})
 
-	res.TotalSubscriptions = totalSubs
-	res.TotalDevices = totalDevs
+	res.TotalSubscriptions = int64(len(subs))
+	res.TotalDevices = int64(len(devices))
 	res.FilteredTotal = int64(len(matched))
 
 	// 分页切片（Limit<=0 表示返回全部）
@@ -444,4 +473,102 @@ type UpdateNodeInput struct {
 	Region    *string `json:"region"`
 	Tags      *string `json:"tags"`
 	Status    *int    `json:"status"`
+}
+
+// SetNodeServerRepo 注入节点服务仓储（判断本机节点用；未注入时按 serverID==1 兜底）。
+func (s *Service) SetNodeServerRepo(repo *repository.NodeServerRepository) {
+	s.nodeServerRepo = repo
+}
+
+// SingboxConnection 是 sing-box 的实时连接（来自 clash_api /connections）。
+//
+// sing-box 的 connections **不含用户字段**，所以这里只能给「源 IP + 入站」，
+// 无法像 xray 一样归户到订阅；订阅级在线用户仍以 xray 的 GetUsersStats 为准。
+type SingboxConnection struct {
+	ID          string `json:"id"`
+	SourceIP    string `json:"source_ip"`
+	SourcePort  string `json:"source_port"`
+	Inbound     string `json:"inbound"`
+	Network     string `json:"network"`
+	Destination string `json:"destination"`
+	Upload      int64  `json:"upload"`
+	Download    int64  `json:"download"`
+	Start       int64  `json:"start"`
+	Chains      string `json:"chains"`
+	Rule        string `json:"rule"`
+}
+
+// SingboxConnectionsResult 是「实时连接」接口响应。
+type SingboxConnectionsResult struct {
+	Items         []SingboxConnection `json:"items"`
+	Total         int                 `json:"total"`
+	UploadTotal   int64               `json:"upload_total"`
+	DownloadTotal int64               `json:"download_total"`
+	UpdatedAt     int64               `json:"updated_at"`
+	// Unsupported=true 时 Reason 说明为什么拿不到（远端节点 / 未开 clash_api）。
+	Unsupported bool   `json:"unsupported"`
+	Reason      string `json:"reason"`
+}
+
+// GetSingboxConnections 读取某节点 sing-box 的实时连接。
+//
+// 目前只支持**面板本机节点**：sing-box 的 clash_api 只监听回环，远端节点需要
+// Agent 转发该 HTTP 请求（尚未实现），因此远端返回 Unsupported 并给出原因。
+func (s *Service) GetSingboxConnections(ctx context.Context, serverID int64) *SingboxConnectionsResult {
+	res := &SingboxConnectionsResult{Items: []SingboxConnection{}, UpdatedAt: time.Now().Unix()}
+	if s.repo == nil {
+		res.Unsupported, res.Reason = true, "node repository not configured"
+		return res
+	}
+	if s.nodeServerRepo != nil {
+		srv, err := s.nodeServerRepo.GetByID(ctx, serverID)
+		if err != nil || srv == nil {
+			res.Unsupported, res.Reason = true, "node not found"
+			return res
+		}
+		if !srv.IsLocal {
+			res.Unsupported, res.Reason = true, "remote_node"
+			return res
+		}
+	} else if serverID != 1 {
+		res.Unsupported, res.Reason = true, "remote_node"
+		return res
+	}
+	resp, err := coredata.FetchClashConnections(ctx, coredata.ResolveClashAPIAddr())
+	if err != nil {
+		res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
+		return res
+	}
+	res.UploadTotal = resp.UploadTotal
+	res.DownloadTotal = resp.DownloadTotal
+	for _, c := range resp.Connections {
+		dest := c.Metadata.Host
+		if dest == "" {
+			dest = c.Metadata.DestinationIP
+		}
+		if c.Metadata.DestinationPort != "" {
+			dest += ":" + c.Metadata.DestinationPort
+		}
+		var start int64
+		if t, err := time.Parse(time.RFC3339Nano, c.Start); err == nil {
+			start = t.Unix()
+		}
+		res.Items = append(res.Items, SingboxConnection{
+			ID:          c.ID,
+			SourceIP:    c.Metadata.SourceIP,
+			SourcePort:  c.Metadata.SourcePort,
+			Inbound:     c.Metadata.Type,
+			Network:     c.Metadata.Network,
+			Destination: dest,
+			Upload:      c.Upload,
+			Download:    c.Download,
+			Start:       start,
+			Chains:      strings.Join(c.Chains, " → "),
+			Rule:        c.Rule,
+		})
+	}
+	// 最近建立的连接排前面。
+	sort.Slice(res.Items, func(i, j int) bool { return res.Items[i].Start > res.Items[j].Start })
+	res.Total = len(res.Items)
+	return res
 }

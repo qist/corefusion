@@ -26,7 +26,18 @@ type Service struct {
 	// 核心观测 IP 归户所需（SetObservedDeps 注入）：邮箱/订阅 → 客户 → 限速参数
 	observedClientRepo   *repository.ClientRepository
 	observedPlanTmplRepo *repository.PlanTemplateRepository
+
+	// onlineSink 把**本地节点**观测到的在线用户写进面板在线快照（NodeOnlineStore）。
+	// 远端节点走 Agent 的 ONLINE_USERS 心跳；本地节点没有独立 Agent 进程，
+	// 必须由面板自己轮询核心后补上，否则「在线订阅人 / 在线用户」永远是空。
+	onlineSink OnlineUsersSink
 }
+
+// OnlineUsersSink 把在线用户快照写入面板内存缓存（按 serverID）。
+type OnlineUsersSink func(serverID int64, users []*agentpb.OnlineUserEntry)
+
+// SetOnlineUsersSink 注入在线快照写入能力（由 router 装配为 NodeServerManager）。
+func (s *Service) SetOnlineUsersSink(fn OnlineUsersSink) { s.onlineSink = fn }
 
 // ErrNodeUnsupported 表示节点的内核/依赖不支持限流（启用被拒绝时返回，Handler 映射为 400）。
 type ErrNodeUnsupported struct{ Reason string }

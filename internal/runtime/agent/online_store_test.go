@@ -30,3 +30,24 @@ func TestUpdateOnlineUsersInvokesHook(t *testing.T) {
 		t.Fatalf("online snapshot not refreshed: %+v ok=%v", got, ok)
 	}
 }
+
+// 同一订阅在多个入站各有一个账号（email 带不同 _tag）时，「在线订阅人」与
+// 「在线设备」必须去重：否则一个客户端挂 3 个入站会显示 3 个订阅人。
+func TestGetAllSummaryDedupesSubscriptionsAndDevices(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	s.Update(1, []*agentpb.OnlineUserEntry{
+		{SubscriptionId: 7, Email: "a@example.com", Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}, {Ip: "5.6.7.8"}}},
+		{SubscriptionId: 7, Email: "a@example.com", Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}}},
+		{SubscriptionId: 0, Email: "b@example.com", Sessions: []*agentpb.OnlineSession{{Ip: "9.9.9.9"}}},
+	})
+	got := s.GetAllSummary()[1]
+	if got == nil {
+		t.Fatal("missing summary for server 1")
+	}
+	if got.OnlineSubscriptions != 2 {
+		t.Fatalf("在线订阅人应为 2（订阅 7 + 未归户的 b），实际 %d", got.OnlineSubscriptions)
+	}
+	if got.OnlineDevices != 3 {
+		t.Fatalf("在线设备应为 3（去重后的 IP），实际 %d", got.OnlineDevices)
+	}
+}

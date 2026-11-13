@@ -330,6 +330,9 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	if opts.CoreType == "singbox" {
 		EnsureSingboxV2RayAPI(fullConfig)
 		PopulateSingboxStatsTargets(fullConfig)
+		// clash_api 用于面板「实时连接」：sing-box 没有按用户的在线 IP 接口，
+		// 只有 /connections 能给出「源 IP + 入站 + 目标 + 流量 + 起始时间」。
+		EnsureSingboxClashAPI(fullConfig)
 	}
 
 	// 10. Apply log mode to the config's log section
@@ -1239,6 +1242,10 @@ func MigrateSingboxLegacyFields(fullConfig map[string]interface{}) {
 // defaultSingboxV2RayAPIListen 是 sing-box v2ray_api 的默认监听地址。
 const defaultSingboxV2RayAPIListen = "127.0.0.1:10086"
 
+// defaultSingboxClashAPIListen 是面板读取「实时连接」的 clash_api 地址。
+// 9090 已在 nodeserver.reservedPorts 里保留，不会被业务入站占用。
+const defaultSingboxClashAPIListen = "127.0.0.1:9090"
+
 // migrateSingboxLegacyDNS 把历史 DNS 配置归一为 sing-box 1.14+ 的格式。
 //
 // 背景（均以真实二进制 `sing-box check` 验证过）：
@@ -1254,6 +1261,10 @@ const defaultSingboxV2RayAPIListen = "127.0.0.1:10086"
 func migrateSingboxLegacyDNS(fullConfig map[string]interface{}) {
 	dns, ok := fullConfig["dns"].(map[string]interface{})
 	if !ok || dns == nil {
+		// DNS 关闭（面板默认）：必须同时清掉对 DNS server tag 的引用。
+		// 否则 sing-box 启动直接 FATAL：
+		//   initialize outbound[0]: default domain resolver not found: dns-remote
+		stripSingboxDNSReferences(fullConfig)
 		return
 	}
 
@@ -1395,6 +1406,8 @@ func migrateSingboxLegacyDNS(fullConfig map[string]interface{}) {
 	// "missing route.default_domain_resolver or domain_resolver in dial fields"
 	// 并在 1.14+ 直接 FATAL（1.15 构建实测）。这里在缺失时自动补一个可用 tag。
 	if len(servers) == 0 {
+		// DNS 关闭：反过来要清掉所有 DNS server 引用（见 stripSingboxDNSReferences）。
+		stripSingboxDNSReferences(fullConfig)
 		return
 	}
 	route, _ := fullConfig["route"].(map[string]interface{})
@@ -1407,6 +1420,49 @@ func migrateSingboxLegacyDNS(fullConfig map[string]interface{}) {
 	}
 	if tag := pickDefaultDomainResolver(dns, servers); tag != "" {
 		route["default_domain_resolver"] = tag
+	}
+}
+
+// stripSingboxDNSReferences 在 DNS 关闭（无 dns 段 / servers 为空）时清掉所有
+// 「引用某个 DNS server tag」的字段。sing-box 对这些引用做严格校验（1.15 实测）：
+//   - route.default_domain_resolver → "initialize outbound[0]: default domain resolver not found: <tag>"
+//   - outbound/endpoint 的 domain_resolver → "domain resolver not found: <tag>"
+//
+// 两者都会让核心启动 FATAL。面板默认关闭 DNS，所以必须在渲染前兜底删除，
+// 否则用户只要在路由编辑器里留过默认解析器（默认值就是 dns-remote），核心就起不来。
+func stripSingboxDNSReferences(fullConfig map[string]interface{}) {
+	if fullConfig == nil {
+		return
+	}
+	if route, ok := fullConfig["route"].(map[string]interface{}); ok {
+		delete(route, "default_domain_resolver")
+		if rules, ok := route["rules"].([]interface{}); ok {
+			for _, raw := range rules {
+				rule, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				delete(rule, "domain_resolver")
+				if action, _ := rule["action"].(string); action == "resolve" {
+					// 没有 server tag 的 resolve 合法（使用默认解析器）；
+					// 但默认解析器此时也不存在，保留 server 会 FATAL。
+					delete(rule, "server")
+				}
+			}
+		}
+	}
+	for _, key := range []string{"outbounds", "endpoints", "inbounds"} {
+		items, ok := fullConfig[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, raw := range items {
+			m, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			delete(m, "domain_resolver")
+		}
 	}
 }
 
@@ -1581,6 +1637,39 @@ func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
 			clashAPI["external_controller"] = "127.0.0.1:9090"
 			log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 127.0.0.1:9090", listen)
 		}
+	}
+}
+
+// EnsureSingboxClashAPI 确保 sing-box 暴露 clash_api（默认 127.0.0.1:9090）。
+//
+// 用途：面板「实时连接」读取 /connections（源 IP、入站、目标、上下行、起始时间）。
+// 只监听回环、不设 secret —— 与 v2ray_api 一样属于本机内部接口，不对外暴露。
+//
+// 用户显式配置了 external_controller 时保持原样（尊重自定义端口），仅在其与
+// v2ray_api 抢同一端口时避让到默认值。
+func EnsureSingboxClashAPI(fullConfig map[string]interface{}) {
+	exp, ok := fullConfig["experimental"].(map[string]interface{})
+	if !ok || exp == nil {
+		exp = map[string]interface{}{}
+		fullConfig["experimental"] = exp
+	}
+	v2listen := ""
+	if v2api, ok := exp["v2ray_api"].(map[string]interface{}); ok {
+		v2listen, _ = v2api["listen"].(string)
+	}
+	clashAPI, ok := exp["clash_api"].(map[string]interface{})
+	if !ok || clashAPI == nil {
+		clashAPI = map[string]interface{}{}
+		exp["clash_api"] = clashAPI
+	}
+	ctrl, _ := clashAPI["external_controller"].(string)
+	if strings.TrimSpace(ctrl) == "" {
+		clashAPI["external_controller"] = defaultSingboxClashAPIListen
+		return
+	}
+	if v2listen != "" && ctrl == v2listen {
+		clashAPI["external_controller"] = defaultSingboxClashAPIListen
+		log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 %s", v2listen, defaultSingboxClashAPIListen)
 	}
 }
 

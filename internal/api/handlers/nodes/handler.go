@@ -67,3 +67,16 @@ func (h *Handler) GetAllOnlineUsers(c *gin.Context) {
 		"total_devices":       res.TotalDevices,
 	})
 }
+
+// GetSingboxConnections handles GET /api/v1/node-servers/:id/singbox/connections.
+// 返回该节点 sing-box 的实时连接（clash_api /connections）。
+// sing-box 的连接不含用户字段，无法归户到订阅；目前只支持面板本机节点，
+// 远端节点需要 Agent 转发（未实现），会返回 unsupported + reason。
+func (h *Handler) GetSingboxConnections(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid node id")
+		return
+	}
+	response.OK(c, h.nodeSvc.GetSingboxConnections(c.Request.Context(), id))
+}

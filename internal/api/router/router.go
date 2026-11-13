@@ -729,6 +729,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	middleware.InitTicketStore(60 * time.Second)
 	userSvc := userService.NewService(userRepo)
 	nodeSvc := nodeService.NewService(nodeRepo, sharedNodeMgr, subRepo, clientRepo, planTmplRepo)
+	// 「实时连接」需要判断节点是否本机（sing-box clash_api 只在回环）。
+	nodeSvc.SetNodeServerRepo(nodeServerRepoForSync)
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
 	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planSvcInst)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
@@ -1446,19 +1448,24 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		statsGetter := func(ctx context.Context, key string) (string, error) {
 			return systemSettingSvc.GetByKey(ctx, key)
 		}
+		// 本地节点的「在线订阅人 / 在线用户」：没有 Agent 心跳，必须由面板自己
+		// 把观测结果写进在线快照（远端节点走 Agent 的 ONLINE_USERS）。
+		if sharedNodeMgr != nil {
+			rateLimitSvcInst.SetOnlineUsersSink(sharedNodeMgr.UpdateOnlineUsersSnapshot)
+		}
 		rateLimitSvcInst.StartLocalObserver(
 			localServerID,
 			15*time.Second,
 			func(ctx context.Context) string {
 				return coredata.ResolveStatsAddr(ctx, coredata.StatsAddrDeps{SettingGetter: statsGetter})
 			},
+			// 门禁只看核心是否在跑：在线用户展示与限速解耦，未开启限速的节点
+			// 同样要能看到在线订阅人（限速归户在 HandleObservedUsers 内部自行判断）。
 			func() bool {
-				if processMgr != nil && !processMgr.IsCoreRunning("xray") {
-					return false
+				if processMgr == nil {
+					return true
 				}
-				// 本地限速未启用时不必每 15s 探测（启用后会自然恢复）。
-				cfg, err := rateLimitConfigRepo.GetByServerID(context.Background(), localServerID)
-				return err == nil && cfg != nil && cfg.Enabled
+				return processMgr.IsCoreRunning("xray")
 			},
 		)
 	}
@@ -2847,6 +2854,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				// Supplementary: Server Management
 				nodeServersGroup.GET("/:id/status", nodeServerH.GetServerStatus)
 				nodeServersGroup.GET("/:id/online-users", nodeH.GetOnlineUsers)
+				// sing-box 实时连接（clash_api /connections，仅本机节点）
+				nodeServersGroup.GET("/:id/singbox/connections", nodeH.GetSingboxConnections)
 				nodeServersGroup.GET("/online-summary", nodeH.GetOnlineSummary)
 				nodeServersGroup.GET("/online-users", nodeH.GetAllOnlineUsers)
 				// Stop/control the core process — most destructive, super_admin only.

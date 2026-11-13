@@ -245,6 +245,9 @@ function formatBytes(bytes) {
 }
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0s'
+  // 防御：first_seen 缺失时 last_seen - 0 会得到 50 万小时这种值（旧 Agent 上报）。
+  // 后端已做归一，这里再兜一层，超过 30 天一律按「未知」显示。
+  if (sec > 30 * 86400) return '-'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   const s = Math.floor(sec % 60)

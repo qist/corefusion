@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strconv"
 	"sync"
 	"time"
 
@@ -34,11 +35,32 @@ func NewNodeOnlineStore(ttlSec int64) *NodeOnlineStore {
 }
 
 // Update 刷新某节点的在线快照（同时重置刷新时间）。
+//
+// 顺手归一 first_seen/last_seen：旧版 Agent 或异常数据里 first_seen 可能为 0，
+// 前端用 last_seen - first_seen 算「连接时长」会得到 50 万小时这种离谱值。
+// first_seen 缺失/晚于 last_seen 时按「本次采样」处理。
 func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntry) {
+	now := time.Now().Unix()
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		if u.LastSeen <= 0 || u.LastSeen > now+60 {
+			u.LastSeen = now
+		}
+		if u.FirstSeen <= 0 || u.FirstSeen > u.LastSeen {
+			u.FirstSeen = u.LastSeen
+		}
+		for _, sess := range u.Sessions {
+			if sess != nil && (sess.LastSeen <= 0 || sess.LastSeen > now+60) {
+				sess.LastSeen = u.LastSeen
+			}
+		}
+	}
 	s.mu.Lock()
 	s.data[serverID] = &NodeOnlineSnapshot{
 		Users:     users,
-		UpdatedAt: time.Now().Unix(),
+		UpdatedAt: now,
 	}
 	s.mu.Unlock()
 }
@@ -81,14 +103,29 @@ func (s *NodeOnlineStore) GetAllSummary() map[int64]*NodeOnlineSummary {
 		if now-snap.UpdatedAt > s.ttlSec {
 			continue
 		}
-		var subs, devs int64
+		// 同一订阅会在多个入站各有账号（email 带不同 _tag），按订阅 ID 去重；
+		// 解析不出订阅 ID 的（旧版 Agent）退回 base email 去重。
+		// 设备数同理按 IP 去重（同 IP 从两个入站接入只算一台设备）。
+		subs := make(map[string]struct{}, len(snap.Users))
+		devs := make(map[string]struct{})
 		for _, u := range snap.Users {
-			subs++
-			devs += int64(len(u.Sessions))
+			if u == nil {
+				continue
+			}
+			if u.GetSubscriptionId() > 0 {
+				subs["s:"+strconv.FormatInt(u.GetSubscriptionId(), 10)] = struct{}{}
+			} else if u.GetEmail() != "" {
+				subs["e:"+u.GetEmail()] = struct{}{}
+			}
+			for _, sess := range u.GetSessions() {
+				if sess != nil && sess.GetIp() != "" {
+					devs[sess.GetIp()] = struct{}{}
+				}
+			}
 		}
 		result[serverID] = &NodeOnlineSummary{
-			OnlineSubscriptions: subs,
-			OnlineDevices:       devs,
+			OnlineSubscriptions: int64(len(subs)),
+			OnlineDevices:       int64(len(devs)),
 		}
 	}
 	return result

@@ -394,6 +394,47 @@
               @current-change="onOnlinePageChange"
             />
           </div>
+
+          <!-- sing-box 实时连接：sing-box 的连接不含用户字段，只能给源 IP/入站/目标 -->
+          <el-divider content-position="left">
+            <span style="display:inline-flex;align-items:center;gap:8px">
+              {{ t('onlineUsers.connections') }}
+              <el-button size="small" text :loading="connLoading" @click="loadSingboxConnections">
+                <el-icon><Refresh /></el-icon>
+              </el-button>
+            </span>
+          </el-divider>
+          <div style="font-size:12px;color:#909399;margin-bottom:8px">{{ t('onlineUsers.connectionsHint') }}</div>
+          <el-alert
+            v-if="connData?.unsupported"
+            type="info"
+            :closable="false"
+            style="margin-bottom:8px"
+          >{{ connReasonText }}</el-alert>
+          <el-table
+            v-else
+            :data="connData?.items || []"
+            v-loading="connLoading"
+            border
+            stripe
+            size="small"
+          >
+            <el-table-column prop="source_ip" :label="t('onlineUsers.connSource')" min-width="160">
+              <template #default="{ row }">{{ row.source_ip }}<span v-if="row.source_port" style="color:#909399">:{{ row.source_port }}</span></template>
+            </el-table-column>
+            <el-table-column prop="inbound" :label="t('onlineUsers.connInbound')" min-width="200" show-overflow-tooltip />
+            <el-table-column prop="destination" :label="t('onlineUsers.connDestination')" min-width="200" show-overflow-tooltip />
+            <el-table-column :label="t('onlineUsers.connTraffic')" width="160">
+              <template #default="{ row }">↑{{ formatBytes(row.upload) }} ↓{{ formatBytes(row.download) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('onlineUsers.duration')" width="110">
+              <template #default="{ row }">{{ formatDuration((connData?.updated_at || 0) - (row.start || 0)) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-empty
+            v-if="!connLoading && !connData?.unsupported && (!connData?.items || connData.items.length === 0)"
+            :description="t('onlineUsers.connEmpty')"
+          />
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -824,6 +865,31 @@ async function loadOnlineUsers() {
   }
 }
 
+// ── sing-box 实时连接（clash_api /connections）──
+// sing-box 的连接不含用户字段，只能展示「源 IP + 入站 + 目标 + 流量 + 时长」；
+// 订阅级在线用户仍以 xray 的 GetUsersStats 为准。
+const connData = ref(null)
+const connLoading = ref(false)
+const connError = ref('')
+const connReasonText = computed(() => {
+  const r = String(connData.value?.reason || '')
+  if (r === 'remote_node') return t('onlineUsers.connRemote')
+  if (r.startsWith('clash_api_unavailable')) return t('onlineUsers.connUnavailable')
+  return r || t('onlineUsers.connRemote')
+})
+
+async function loadSingboxConnections() {
+  connLoading.value = true
+  connError.value = ''
+  try {
+    connData.value = await client.get(`/node-servers/${serverId}/singbox/connections`)
+  } catch (e) {
+    connError.value = e?.response?.data?.message || t('onlineUsers.loadFailed')
+  } finally {
+    connLoading.value = false
+  }
+}
+
 function formatRate(bps) {
   if (!bps || bps <= 0) return '0 B/s'
   if (bps < 1024) return bps + ' B/s'
@@ -839,6 +905,8 @@ function formatBytes(bytes) {
 }
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0s'
+  // 防御：first_seen 缺失时 last_seen - 0 会算出 50 万小时（旧 Agent 上报）。
+  if (sec > 30 * 86400) return '-'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   const s = Math.floor(sec % 60)
@@ -856,7 +924,9 @@ function formatAgo(ts) {
 let onlineTimer = null
 function startOnlinePolling() {
   loadOnlineUsers()
-  onlineTimer = setInterval(loadOnlineUsers, 15000)
+  loadSingboxConnections()
+  // 连接列表变化快，10s 一轮；在线用户仍是 15s。
+  onlineTimer = setInterval(() => { loadOnlineUsers(); loadSingboxConnections() }, 15000)
 }
 function stopOnlinePolling() {
   if (onlineTimer) { clearInterval(onlineTimer); onlineTimer = null }

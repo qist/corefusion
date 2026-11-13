@@ -1595,6 +1595,13 @@ func (m *NodeServerManager) SetOnlineUsersHook(fn func(serverID int64, users []*
 	m.onlineUsersHook = fn
 }
 
+// UpdateOnlineUsersSnapshot 只刷新在线快照、不触发限速钩子。
+// 本地节点（面板进程内管理核心、没有独立 Agent 进程）由 rateLimit 的
+// LocalObserver 直接观测，限速归户已在同一进程里完成，不需要再绕钩子一圈。
+func (m *NodeServerManager) UpdateOnlineUsersSnapshot(serverID int64, users []*agentpb.OnlineUserEntry) {
+	m.onlineStore.Update(serverID, users)
+}
+
 // GetNodeOnlineUsers 返回某节点当前在线订阅人（未过期）及刷新时间。
 func (m *NodeServerManager) GetNodeOnlineUsers(serverID int64) ([]*agentpb.OnlineUserEntry, int64, bool) {
 	snap, ok := m.onlineStore.GetFresh(serverID)

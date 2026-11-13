@@ -129,6 +129,13 @@ func (s *Service) enrichOnlineUsers(users []*agentpb.OnlineUserEntry) {
 	for _, u := range users {
 		if u.GetSubscriptionId() > 0 {
 			subIDs = append(subIDs, u.GetSubscriptionId())
+			continue
+		}
+		// Agent 侧解析不出订阅 ID（管理端账号 email 形如 user@example.com_vless12345，
+		// 或旧版 Agent 直接上报 0）→ 面板按邮箱回查客户，补上订阅 ID。
+		if subID := s.resolveOnlineSubIDByEmail(ctx, u.GetEmail()); subID > 0 {
+			u.SubscriptionId = subID
+			subIDs = append(subIDs, subID)
 		}
 	}
 	if len(subIDs) == 0 {
@@ -199,6 +206,27 @@ func (s *Service) enrichOnlineUsers(users []*agentpb.OnlineUserEntry) {
 		u.SpeedLimitDownMbps = int32(downLimit)
 		u.SpeedLimitUpMbps = int32(upLimit)
 	}
+}
+
+// resolveOnlineSubIDByEmail 按账号 email 反查客户订阅 ID。
+// xray 账号 email 带 _tag 后缀（user@example.com_vless12345），客户表里是 base email。
+func (s *Service) resolveOnlineSubIDByEmail(ctx context.Context, email string) int64 {
+	if s.clientRepo == nil || email == "" {
+		return 0
+	}
+	candidates := []string{email}
+	if idx := strings.LastIndex(email, "_"); idx > 0 {
+		if tail := email[idx+1:]; !strings.Contains(tail, "@") {
+			candidates = append(candidates, email[:idx])
+		}
+	}
+	for _, candidate := range candidates {
+		cl, err := s.clientRepo.GetByEmail(ctx, candidate)
+		if err == nil && cl != nil && cl.SubscriptionID != nil && *cl.SubscriptionID > 0 {
+			return *cl.SubscriptionID
+		}
+	}
+	return 0
 }
 
 // OnlineSummaryItem 节点在线汇总项。

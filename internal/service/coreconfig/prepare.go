@@ -899,19 +899,21 @@ func EnsureOnlineStatsPolicy(fullConfig map[string]interface{}, coreType string)
 
 	policy, ok := fullConfig["policy"].(map[string]interface{})
 	if !ok {
-		return
+		// 缺 policy 段时补一个：statsUserOnline 是「按用户取连接 IP」的唯一开关，
+		// 缺失会让 GetUsersStats 拿不到 IPs，IP 维度限速/设备数直接失效。
+		policy = map[string]interface{}{}
+		fullConfig["policy"] = policy
 	}
 	levels, ok := policy["levels"].(map[string]interface{})
 	if !ok {
-		return
+		levels = map[string]interface{}{}
+		policy["levels"] = levels
 	}
 	level0, ok := levels["0"].(map[string]interface{})
 	if !ok {
 		level0 = map[string]interface{}{}
 		levels["0"] = level0
 	}
-	// Only add when rate limiting is enabled; nodes without rate limiting
-	// keep the default (no online tracking) to avoid the extra memory overhead.
 	level0["statsUserOnline"] = true
 }
 

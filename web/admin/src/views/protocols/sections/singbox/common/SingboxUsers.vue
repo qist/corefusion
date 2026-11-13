@@ -27,6 +27,9 @@
         <el-option label="" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
       </el-select>
+      <span class="user-traffic" :title="t('proto2.trafficUsed')">
+        {{ t('proto2.trafficUsed') }}: ↑ {{ formatTraffic(u._usedUp) }} ↓ {{ formatTraffic(u._usedDown) }}
+      </span>
       <el-button size="small" type="danger" text @click="model.users.splice(ui, 1); emit()">X</el-button>
     </div>
     <el-button size="small" @click="addUser">{{ t('singbox.users.addUser') }}</el-button>
@@ -36,6 +39,7 @@
 <script setup>
 import { useI18n } from 'vue-i18n'
 import { UUID_PROTOCOLS, PASSWORD_PROTOCOLS, PSK_PROTOCOLS, AUTH_USER_PROTOCOLS, USERKEY_PROTOCOLS, generateUuid, generatePassword, generateUsername, generateKey, generateEmail } from '../utils/singboxDefaults'
+import { formatTraffic } from '../../utils/traffic'
 
 const { t } = useI18n()
 const props = defineProps({
@@ -60,4 +64,5 @@ function addUser() {
 
 <style scoped>
 .user-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
+.user-traffic { color: #909399; font-size: 12px; white-space: nowrap; }
 </style>

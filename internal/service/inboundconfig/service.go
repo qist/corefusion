@@ -496,12 +496,17 @@ func (s *Service) Update(ctx context.Context, id int64, remark, protocol, tag, l
 	cfg.ConfigJSON = configJSON
 	cfg.Enabled = enabled
 	cfg.UpdatedAt = time.Now()
+	// ⚠ 保留名单必须在写库前算好：仓储 Update 会把 cfg.ConfigJSON **就地替换成密文**
+	// （enc: 前缀）。写库后再解析必然失败 → 拿到空名单 → Prune 删光该入站的全部流量行，
+	// 表现为「改一下入口配置，用户已用流量被清零」（用户反馈的大 bug）。
+	keepEmails, keepOK := userEmails(cfg.ConfigJSON)
 	if err := s.repo.Update(ctx, cfg); err != nil {
 		return nil, err
 	}
-	// 用户可能在这次保存里被移除：清掉已不在配置里的流量行
-	if s.traffic != nil {
-		if err := s.traffic.Prune(ctx, cfg.ServerID, cfg.ID, userEmails(cfg.ConfigJSON)); err != nil {
+	// 用户可能在这次保存里被移除：清掉已不在配置里的流量行。
+	// 解析失败时宁可不清理，也不能把存量流量当成「用户已全部删除」。
+	if s.traffic != nil && keepOK {
+		if err := s.traffic.Prune(ctx, cfg.ServerID, cfg.ID, keepEmails); err != nil {
 			log.Printf("inboundconfig: prune traffic rows failed for %s: %v", cfg.Tag, err)
 		}
 	}
@@ -819,12 +824,19 @@ func (s *Service) updateSubscriptionTraffic(ctx context.Context, statsEmail stri
 		log.Printf("trafficsync: failed to update subscription %d traffic: %v", *client.SubscriptionID, err)
 	}
 
-	// Update client's last_node_usage_at to reflect real-time activity
+	// 同步客户行的 used_bytes 与活跃时间。
+	// 管理端「客户管理」列表读的是 clients.used_bytes，而流量一直只累加到
+	// subscriptions.used_bytes_cache → 列表里的已用流量永远是 0（用户反馈
+	// 「使用流量没有友好展示」）。这里与订阅缓存一起原子累加，两者口径一致；
+	// 续费/升级不清零时两边都保留，重置时 ResetUsage 也会同时清零。
 	now := time.Now()
 	if err := s.db.WithContext(ctx).Model(&entity.Client{}).
 		Where("id = ?", client.ID).
-		Update("last_node_usage_at", now).Error; err != nil {
-		log.Printf("trafficsync: failed to update client %d last_node_usage_at: %v", client.ID, err)
+		Updates(map[string]interface{}{
+			"used_bytes":         gorm.Expr("used_bytes + ?", total),
+			"last_node_usage_at": now,
+		}).Error; err != nil {
+		log.Printf("trafficsync: failed to update client %d usage: %v", client.ID, err)
 	}
 }
 
@@ -897,14 +909,20 @@ func matchedEmails(configJSON, email string) []string {
 }
 
 // userEmails 返回 config_json 里全部用户身份字段（用于删除已移除用户的流量行）。
-func userEmails(configJSON string) []string {
+// 第二个返回值表示解析是否成功：解析失败时调用方必须放弃清理，避免把「读不出来」
+// 误当成「没有用户」而删光流量行。
+func userEmails(configJSON string) ([]string, bool) {
+	var inbound map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &inbound); err != nil {
+		return nil, false
+	}
 	var out []string
-	forEachUser(configJSON, func(m map[string]interface{}) {
+	walkUsers(inbound, func(m map[string]interface{}) {
 		if e := userEmailOf(m); e != "" {
 			out = append(out, e)
 		}
 	})
-	return out
+	return out, true
 }
 
 // EnrichWithTraffic 把 inbound_user_traffic 的计数注回 config_json 的用户对象，
@@ -1069,6 +1087,12 @@ func (s *Service) resetSubscriptionTrafficForServer(ctx context.Context, serverI
 			"upload_bytes_cache":   0,
 			"download_bytes_cache": 0,
 		})
+
+	// 客户列表的已用流量（clients.used_bytes）同口径清零，否则节点重置后
+	// 「客户管理」仍显示旧值。
+	s.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("subscription_id IN ?", subIDs).
+		Update("used_bytes", 0)
 
 	log.Printf("resetTraffic: reset traffic cache for %d subscriptions on server %d", len(subIDs), serverID)
 }

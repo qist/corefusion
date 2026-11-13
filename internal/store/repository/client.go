@@ -124,6 +124,18 @@ func (r *ClientRepository) UpdateUsage(ctx context.Context, id int64, usedBytes 
 	return r.db.WithContext(ctx).Model(&entity.Client{}).Where("id = ?", id).Update("used_bytes", usedBytes).Error
 }
 
+// AddUsedBytes 按订阅 ID 原子累加客户的已用流量。
+// 与 subscriptions.used_bytes_cache 同口径：管理端「客户管理」读 clients.used_bytes，
+// 而流量归户原来只写订阅缓存 → 客户列表的已用流量永远显示 0。
+func (r *ClientRepository) AddUsedBytes(ctx context.Context, subscriptionID, delta int64) error {
+	if subscriptionID <= 0 || delta == 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Model(&entity.Client{}).
+		Where("subscription_id = ?", subscriptionID).
+		Update("used_bytes", gorm.Expr("used_bytes + ?", delta)).Error
+}
+
 func (r *ClientRepository) UpdateSubscriptionID(ctx context.Context, id int64, subID int64) error {
 	return r.db.WithContext(ctx).Model(&entity.Client{}).Where("id = ?", id).Update("subscription_id", subID).Error
 }

@@ -116,6 +116,88 @@ func TestEnrichWithTrafficInjectsForDisplay(t *testing.T) {
 	}
 }
 
+// 修改入口配置不能清零用户流量：仓储 Update 会把 ConfigJSON 就地替换成密文，
+// 若写库后才解析用户名单，Prune 会拿到空名单删光该入站的全部流量行。
+func TestUpdateInboundKeepsUserTraffic(t *testing.T) {
+	svc := newTrafficService(t)
+	ctx := context.Background()
+
+	cfg := &entity.InboundConfig{
+		ServerID: 1, CoreType: "xray", Protocol: "vless",
+		Tag: "inbound-vless-1", ConfigJSON: trafficInboundJSON, Enabled: true,
+	}
+	if err := svc.repo.Create(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.traffic.AddUsage(ctx, 1, cfg.ID, "a@xray.com", 11, 22); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.Update(ctx, cfg.ID, cfg.Remark, cfg.Protocol, cfg.Tag, cfg.Listen, cfg.Port, trafficInboundJSON, true); err != nil {
+		t.Fatal(err)
+	}
+
+	var rows []entity.InboundUserTraffic
+	if err := svc.db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("改配置不应删除流量行，实际 %d 行", len(rows))
+	}
+	if rows[0].UsedUp != 11 || rows[0].UsedDown != 22 {
+		t.Fatalf("改配置不应重置流量，实际 up=%d down=%d", rows[0].UsedUp, rows[0].UsedDown)
+	}
+}
+
+// 客户列表读的是 clients.used_bytes，流量归户必须同时累加它（与订阅缓存同口径），
+// 否则管理端「客户管理」的已用流量永远是 0。
+func TestUpdateTrafficAccumulatesClientUsedBytes(t *testing.T) {
+	svc := newTrafficService(t)
+	ctx := context.Background()
+	if err := svc.db.AutoMigrate(&entity.Client{}, &entity.Subscription{}); err != nil {
+		t.Fatal(err)
+	}
+
+	sub := &entity.Subscription{ClientID: 1, Token: "tok", Status: "active", QuotaBytes: 1000}
+	if err := svc.db.Create(sub).Error; err != nil {
+		t.Fatal(err)
+	}
+	subID := sub.ID
+	client := &entity.Client{Email: "a@xray.com", Status: "active", SubscriptionID: &subID}
+	if err := svc.db.Create(client).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &entity.InboundConfig{
+		ServerID: 1, CoreType: "xray", Protocol: "vless",
+		Tag: "inbound-vless-1", ConfigJSON: trafficInboundJSON, Enabled: true,
+	}
+	if err := svc.repo.Create(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateTraffic(ctx, 1, "inbound-vless-1", "a@xray.com", 100, 200); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateTraffic(ctx, 1, "inbound-vless-1", "a@xray.com", 5, 7); err != nil {
+		t.Fatal(err)
+	}
+
+	var got entity.Client
+	if err := svc.db.First(&got, client.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.UsedBytes != 312 {
+		t.Fatalf("clients.used_bytes 应累加到 312，实际 %d", got.UsedBytes)
+	}
+	var gotSub entity.Subscription
+	if err := svc.db.First(&gotSub, sub.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotSub.UsedBytesCache != 312 {
+		t.Fatalf("订阅缓存应与客户已用一致（312），实际 %d", gotSub.UsedBytesCache)
+	}
+}
+
 func TestResetTrafficOnNewTable(t *testing.T) {
 	svc := newTrafficService(t)
 	ctx := context.Background()

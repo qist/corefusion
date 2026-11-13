@@ -71,6 +71,13 @@ func (b *NetworkTrafficBridge) handleEvent(ctx context.Context, ev TrafficDeltaE
 
 	if err := b.subRepo.AddUsedBytes(ctx, ev.SubID, delta); err != nil {
 		log.Printf("[nft-bridge] add used bytes for sub %d failed: %v", ev.SubID, err)
+		return
+	}
+	// 客户列已用流量与订阅缓存同口径累加（管理端「客户管理」读 clients.used_bytes）。
+	if b.clientRepo != nil {
+		if err := b.clientRepo.AddUsedBytes(ctx, ev.SubID, delta); err != nil {
+			log.Printf("[nft-bridge] add used bytes for client of sub %d failed: %v", ev.SubID, err)
+		}
 	}
 }
 

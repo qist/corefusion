@@ -33,13 +33,15 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column :label="t('client.usage')" width="160">
+      <el-table-column :label="t('client.usage')" width="200">
         <template #default="{row}">
-          <el-progress :percentage="usagePercent(row)" :color="usageColor(row)" :stroke-width="12" :format="() => formatBytes(row.used_bytes)" />
+          <div class="usage-cell">
+            <el-progress :percentage="usagePercent(row)" :color="usageColor(row)" :stroke-width="10" :show-text="false" />
+            <div class="usage-text" :title="t('client.quota') + ': ' + formatQuota(row.quota_bytes)">
+              {{ formatBytes(row.used_bytes) }} / {{ formatQuota(row.quota_bytes) }}
+            </div>
+          </div>
         </template>
-      </el-table-column>
-      <el-table-column :label="t('client.quota')" width="100">
-        <template #default="{row}">{{ formatBytes(row.quota_bytes) }}</template>
       </el-table-column>
       <el-table-column :label="t('client.expires')" width="100">
         <template #default="{row}">{{ row.expires_at ? row.expires_at.substring(0,10) : '-' }}</template>
@@ -441,12 +443,17 @@ function buildSubLinks(row) {
 }
 
 // Helpers
+// 0 字节就是 0 B；「不限流量」只属于配额字段（formatQuota）。
 const formatBytes = (b) => {
-  if (!b || b <= 0) return t('client.unlimited')
-  if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB'
-  if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB'
-  return (b / 1024).toFixed(0) + ' KB'
+  const n = Number(b) || 0
+  if (n <= 0) return '0 B'
+  if (n >= 1099511627776) return (n / 1099511627776).toFixed(2) + ' TB'
+  if (n >= 1073741824) return (n / 1073741824).toFixed(2) + ' GB'
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB'
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB'
+  return n + ' B'
 }
+const formatQuota = (b) => (Number(b) > 0 ? formatBytes(b) : t('client.unlimited'))
 const usagePercent = (row) => row.quota_bytes > 0 ? Math.min(100, Math.round(row.used_bytes / row.quota_bytes * 100)) : 0
 const usageColor = (row) => usagePercent(row) > 80 ? '#f56c6c' : '#409eff'
 const statusType = (s) => ({ active: 'success', suspended: 'danger', expired: 'warning' }[s] || 'info')
@@ -458,8 +465,7 @@ const clientCardFields = computed(() => [
   { label: t('client.plan'), text: (row) => row.plan_id ? templateName(row.plan_id) + (row.plan_variant_id ? ' / ' + variantName(row.plan_variant_id) : '') : '-' },
   { label: t('client.downloadSpeedLimit'), text: (row) => row.speed_limit_mbps ? row.speed_limit_mbps + 'Mbps' : '-' },
   { label: t('client.uploadSpeedLimit'), text: (row) => row.speed_limit_up_mbps ? row.speed_limit_up_mbps + 'Mbps' : '-' },
-  { label: t('client.usage'), text: (row) => row.used_bytes > 0 ? formatBytes(row.used_bytes) : '0 KB' },
-  { label: t('client.quota'), text: (row) => formatBytes(row.quota_bytes) },
+  { label: t('client.usage'), text: (row) => formatBytes(row.used_bytes) + ' / ' + formatQuota(row.quota_bytes) },
   { label: t('client.expires'), text: (row) => row.expires_at ? row.expires_at.substring(0, 10) : '-' },
   { label: t('client.status'), text: (row) => statusLabel(row.status) },
 ])
@@ -654,4 +660,8 @@ async function fetchPanelSettings() {
   } catch {}
 }
 </script>
-<style scoped>.hint { font-size:12px; color:#909399; margin-top:4px }</style>
+<style scoped>
+.hint { font-size:12px; color:#909399; margin-top:4px }
+.usage-cell { display:flex; flex-direction:column; gap:4px }
+.usage-text { font-size:12px; color:#606266; line-height:1 }
+</style>

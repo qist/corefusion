@@ -1,6 +1,17 @@
 // Pure utility helpers shared across Xray inbound components.
 // Single source of truth so protocol sub-components don't duplicate logic.
 
+import {
+  generateUuid,
+  generatePassword,
+  generateShadowsocksKey,
+  randomBytes,
+  bytesToBase64,
+} from '../../utils/credentials'
+import { formatTraffic } from '../../utils/traffic'
+
+export { formatTraffic }
+
 export function genId(len = 10) {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
   let r = ''
@@ -17,30 +28,19 @@ export function genPort() { return Math.floor(Math.random() * 50000 + 10000) }
 export function genPath() { return '/' + genId(10) }
 
 export function genUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = Math.random() * 16 | 0
-    const v = c === 'x' ? r : (r & 0x3 | 0x8)
-    return v.toString(16)
-  })
+  return generateUuid()
 }
 
 export function genPassword() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let r = ''
-  for (let i = 0; i < 12; i++) r += chars.charAt(Math.floor(Math.random() * chars.length))
-  return r
+  return generatePassword()
 }
 
 export function genBase64Password() {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return btoa(String.fromCharCode(...bytes))
+  return generatePassword()
 }
 
 export function genAES128Key() {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  return btoa(String.fromCharCode(...bytes))
+  return bytesToBase64(randomBytes(16))
 }
 
 export function genEmail() { return Math.random().toString(36).substring(2, 8) + '@xray.com' }
@@ -53,27 +53,7 @@ export function isSSMultiUser(method) {
 }
 
 export function genSSPassword(method) {
-  if (isSS2022(method)) {
-    // 2022-blake3 methods use base64 encoded key
-    const length = method === '2022-blake3-aes-128-gcm' ? 16 : 32
-    const bytes = new Uint8Array(length)
-    crypto.getRandomValues(bytes)
-    return btoa(String.fromCharCode(...bytes))
-  }
-  // Legacy methods use plain text password
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let r = ''
-  for (let i = 0; i < 16; i++) r += chars.charAt(Math.floor(Math.random() * chars.length))
-  return r
-}
-
-export function formatTraffic(bytes) {
-  if (!bytes) return '0 B'
-  const u = ['B', 'KB', 'MB', 'GB', 'TB']
-  let i = 0
-  let b = bytes
-  while (b >= 1024 && i < u.length - 1) { b /= 1024; i++ }
-  return b.toFixed(1) + ' ' + u[i]
+  return generateShadowsocksKey(method)
 }
 
 export function resetTraffic(u) { u._usedUp = 0; u._usedDown = 0 }

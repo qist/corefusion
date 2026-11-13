@@ -79,30 +79,15 @@ export const DEFAULT_PORTS = {
 
 // ---------- 生成器 ----------
 
-export function generateUuid() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-    const r = (Math.random() * 16) | 0
-    const v = c === 'x' ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
-}
-
-export function generatePassword(len = 16) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-  let r = ''
-  for (let i = 0; i < len; i++) r += chars.charAt(Math.floor(Math.random() * chars.length))
-  return r
-}
+// 凭据生成统一走 sections/utils/credentials（与 xray 编辑器、后端 client/credentials.go 同口径）：
+// UUID v4；密码 = 32 字节随机数 base64；psk = 32 字节随机数 base64url。
+import { generateUuid, generatePassword, generatePsk } from '../../utils/credentials'
+export { generateUuid, generatePassword }
+export { generatePsk as generateKey }
 
 export function generateUsername() { return 'user' + Math.random().toString(36).substring(2, 8) }
 
 export function generateEmail() { return Math.random().toString(36).substring(2, 8) + '@singbox.com' }
-
-// base64url 随机密钥（用于 snell userkey 等）
-export function generateKey() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32))
-  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
 
 // 随机未使用端口（对齐 xray：10000-60000 范围随机）
 export function generatePort() { return Math.floor(Math.random() * 50000 + 10000) }

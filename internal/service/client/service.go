@@ -2,8 +2,6 @@ package client
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -204,21 +202,8 @@ func (s *Service) CreateClient(ctx context.Context, input CreateClientInput) (*e
 		// Generate unique email for this inbound: {email}_{tag_prefix}
 		inboundEmail := generateInboundEmail(input.Email, inbound.Tag)
 
-		// Generate protocol credentials
-		uuid := generateUUID()
-		password := generateToken(16)
-		flow := ""
-		method := ""
-
-		// Extract flow and method from inbound config
-		var cfg map[string]interface{}
-		if json.Unmarshal([]byte(inbound.ConfigJSON), &cfg) == nil {
-			if settings, ok := cfg["settings"].(map[string]interface{}); ok {
-				if enc, ok := settings["encryption"].(string); ok {
-					_ = enc // VLESS encryption
-				}
-			}
-		}
+		// Generate protocol credentials（统一口径见 credentials.go）
+		uuid, password, flow, method := credentialsForInbound(&inbound)
 
 		// Add user to inbound via xray gRPC（显式传协议，避免 tag 不含协议名时推断错）
 		if s.userManager != nil {
@@ -541,20 +526,7 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 		}
 
 		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
-		uuid := generateUUID()
-		password := generateToken(16)
-		flow := ""
-		method := ""
-
-		// Extract flow and method from inbound config
-		var cfg map[string]interface{}
-		if json.Unmarshal([]byte(inbound.ConfigJSON), &cfg) == nil {
-			if settings, ok := cfg["settings"].(map[string]interface{}); ok {
-				if enc, ok := settings["encryption"].(string); ok {
-					_ = enc
-				}
-			}
-		}
+		uuid, password, flow, method := credentialsForInbound(&inbound)
 
 		if s.userManager != nil {
 			if err := s.userManager.AddUserToInboundWithProtocol(ctx, inbound.Tag, inbound.Protocol, inboundEmail, uuid, password, flow, method); err != nil {
@@ -624,11 +596,8 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 			continue
 		}
 
-		// Generate credentials
-		uuid := generateUUID()
-		password := generateToken(16)
-		flow := ""
-		method := ""
+		// Generate credentials（统一口径见 credentials.go）
+		uuid, password, flow, method := credentialsForInbound(inbound)
 
 		// Add user to inbound (this updates DB and calls xray API for all nodes)
 		if s.userManager != nil {
@@ -690,18 +659,7 @@ func generateInboundEmail(baseEmail, tag string) string {
 }
 
 func generateToken(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
-func generateUUID() string {
-	b := make([]byte, 16)
-	rand.Read(b)
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	return randomHex(n)
 }
 
 // hashClientPassword hashes a password using bcrypt.

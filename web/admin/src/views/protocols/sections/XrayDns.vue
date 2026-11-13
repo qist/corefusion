@@ -250,9 +250,9 @@ function buildRuleServer(s) {
 
 function sync() {
   if (!props.data || Object.keys(props.data).length === 0) { enabled.value = false; return }
-  // Check if disabled
-  if (props.data._disabled) { enabled.value = false; return }
-  enabled.value = true
+  // 停用的段也要把值载回表单：否则重新打开开关时，emit() 会用默认值覆盖
+  // 之前保存的内容（“关了再开，DNS 配置全没了”）。
+  enabled.value = !props.data._disabled
   form.queryStrategy = props.data.queryStrategy || 'UseIP'
   form.clientIp = props.data.clientIp || ''
   form.tag = props.data.tag || ''

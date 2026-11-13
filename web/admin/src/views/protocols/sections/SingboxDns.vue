@@ -606,8 +606,9 @@ function normalizeLegacyServer(s) {
 
 function sync() {
   if (!props.data || Object.keys(props.data).length === 0) { enabled.value = false; return }
-  if (props.data._disabled) { enabled.value = false; return }
-  enabled.value = true
+  // 停用的段也要把值载回表单：否则用户重新打开开关时，emit() 会用默认值
+  // 覆盖掉之前保存的内容（表现为“关了再开，DNS 配置全没了”）。
+  enabled.value = !props.data._disabled
   form.strategy = props.data.strategy || ''
   form.disable_cache = props.data.disable_cache || false
   form.disable_expire = props.data.disable_expire || false

@@ -1321,6 +1321,13 @@ async function saveFormat() {
     'tproxy-port': generalConfig.value._tproxyPortEnabled ? (generalConfig.value.tproxy_port || 0) : 0,
     'allow-lan': generalConfig.value.allow_lan,
     'bind-address': generalConfig.value.bind_address || '*',
+    // 以下字段模板里可编辑、载入时也会解析，但此前保存时被丢掉：
+    // 重新打开弹窗就回到默认值（用户反馈「改了没生效」）。
+    'interface-name': generalConfig.value._interfaceEnabled ? generalConfig.value._interfaceName : undefined,
+    'routing-mark': generalConfig.value._routingMarkEnabled ? generalConfig.value._routingMark : undefined,
+    'skip-auth-prefixes': generalConfig.value._skipAuthEnabled ? splitLines(generalConfig.value._skipAuthStr) : undefined,
+    'lan-allowed-ips': lanAllowedSaveValue(),
+    'lan-disallowed-ips': generalConfig.value._lanDisallowedEnabled ? splitLines(generalConfig.value._lanDisallowedStr) : undefined,
     'mode': generalConfig.value.mode || 'rule',
     'log-level': generalConfig.value.log_level || 'info',
     'ipv6': generalConfig.value.ipv6 !== false,
@@ -1356,7 +1363,16 @@ async function saveFormat() {
       'fake-ip-range': dnsConfig.value._fakeIPRange || '198.18.0.1/16',
       'fake-ip-filter-mode': dnsConfig.value._fakeIPFilterMode || 'blacklist',
       'fake-ip-filter': dnsConfig.value._fakeIPFilterEnabled ? (dnsConfig.value._fakeIPFilterStr || '').split('\n').map(s => s.trim()).filter(Boolean) : [],
-      'nameserver-policy': Object.keys(nsPolicy).length > 0 ? nsPolicy : undefined
+      'nameserver-policy': Object.keys(nsPolicy).length > 0 ? nsPolicy : undefined,
+      // 代理节点 DNS / 直连 DNS / fallback-filter：载入时解析、模板里可编辑，
+      // 但旧保存逻辑没写回，导致保存后开关又变回关闭、填写的内容丢失。
+      ...(dnsConfig.value._proxyServerNSEnabled
+        ? { 'proxy-server-nameserver': splitLines(dnsConfig.value._proxyServerNSStr) }
+        : {}),
+      ...(dnsConfig.value._directNSEnabled
+        ? { 'direct-nameserver': splitLines(dnsConfig.value._directNSStr) }
+        : {}),
+      ...(buildFallbackFilter(dnsConfig.value) ? { 'fallback-filter': buildFallbackFilter(dnsConfig.value) } : {})
     },
     'proxy-groups': proxyGroups.value.map(g => {
       const group = { name: g.name, type: g.type, proxies: (g._proxiesStr || '').split('\n').map(s => s.trim()).filter(Boolean) }
@@ -1374,6 +1390,13 @@ async function saveFormat() {
       if (g['empty-fallback']) group['empty-fallback'] = g['empty-fallback']
       if (g.filter) group.filter = g.filter
       if (g['exclude-filter']) group['exclude-filter'] = g['exclude-filter']
+      // 组级高级项：模板里都能编辑，此前保存时被丢掉（改了不生效）
+      if (g.hidden) group.hidden = true
+      if (g['disable-udp']) group['disable-udp'] = true
+      if (g['exclude-type']) group['exclude-type'] = g['exclude-type']
+      if (g['include-all']) group['include-all'] = true
+      if (g['interface-name']) group['interface-name'] = g['interface-name']
+      if (g['routing-mark'] > 0) group['routing-mark'] = g['routing-mark']
       return group
     }),
     'rule-providers': ruleProviders.value,
@@ -1422,6 +1445,7 @@ async function saveFormat() {
         .concat(generalConfig.value._tunRouteAddrV6Enabled ? (generalConfig.value._tunRouteAddrV6 || '').split('\n') : [])
         .map(s => s.trim()).filter(Boolean) : undefined,
       'route-exclude-address': generalConfig.value._tunRouteExcludeV4Enabled ? (generalConfig.value._tunRouteExcludeV4 || '').split('\n').map(s => s.trim()).filter(Boolean) : undefined,
+      'inet6-route-exclude-address': generalConfig.value._tunRouteExcludeV6Enabled ? splitLines(generalConfig.value._tunRouteExcludeV6) : undefined,
       'route-address-set': generalConfig.value._tunRouteAddrSetEnabled ? (generalConfig.value._tunRouteAddrSet || '').split('\n').map(s => s.trim()).filter(Boolean) : undefined,
       'route-exclude-address-set': generalConfig.value._tunRouteExcludeSetEnabled ? (generalConfig.value._tunRouteExcludeSet || '').split('\n').map(s => s.trim()).filter(Boolean) : undefined,
       'include-interface': generalConfig.value._tunIncludeIfEnabled ? (generalConfig.value._tunIncludeIf || '').split('\n').map(s => s.trim()).filter(Boolean) : undefined,
@@ -1522,6 +1546,35 @@ function deleteProxyProvider(name) { delete proxyProviders.value[name]; proxyPro
 function parsePorts(str) {
   if (!str) return []
   return str.split(',').map(s => s.trim()).filter(Boolean)
+}
+
+// 多行输入 → 数组（DNS / 通用设置的列表字段统一走这里）
+function splitLines(v) {
+  return String(v || '').split('\n').map(s => s.trim()).filter(Boolean)
+}
+
+// lan-allowed-ips 没有独立开关：与载入时的默认值一致就不写，避免给所有配置
+// 注入一条冗余字段；用户改成别的网段时才会落盘。
+function lanAllowedSaveValue() {
+  const list = splitLines(generalConfig.value._lanAllowedStr)
+  if (!list.length) return undefined
+  const isDefault = list.length === 2 && list[0] === '0.0.0.0/0' && list[1] === '::/0'
+  if (isDefault && !generalConfig.value._lanAllowedEnabled) return undefined
+  return list
+}
+
+// fallback-filter：只在用户改动过（或 fallback 本身开启）时落盘，
+// 避免给所有模板写入一份默认值。
+function buildFallbackFilter(d) {
+  const geoip = d._fallbackGeoIP !== false
+  const hasIPCIDR = d._fallbackIPCIDREnabled
+  const hasDomain = d._fallbackDomainEnabled
+  if (!d._fallbackEnabled && geoip && !hasIPCIDR && !hasDomain) return null
+  const ff = { geoip }
+  if (geoip) ff['geoip-code'] = d._fallbackGeoCode || 'CN'
+  if (hasIPCIDR) ff.ipcidr = splitLines(d._fallbackIPCIDRStr)
+  if (hasDomain) ff.domain = splitLines(d._fallbackDomainStr)
+  return ff
 }
 async function deleteFormat(row) { await ElMessageBox.confirm(t('subfmt.deleteConfirm', { name: row.name }), t('common.confirm')); await client.delete(`/mihomo/configs/${row.id}`); ElMessage.success(t('common.success')); fetchFormats() }
 

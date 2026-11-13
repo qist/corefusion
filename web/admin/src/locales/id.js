@@ -1,4 +1,4 @@
-// Bahasa Indonesia（id）
+// id
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "Aktifkan server SSH",
           "taildropDirectory": "Direktori Taildrop",
           "stateDirectory": "Direktori status",
-          "onDemand": "Mulai sesuai permintaan"
+          "onDemand": "Mulai sesuai permintaan",
+          "sshDisablePty": "Nonaktifkan PTY",
+          "sshDisableSftp": "Nonaktifkan SFTP",
+          "sshDisableForwarding": "Nonaktifkan penerusan port"
         },
         "oc": {
           "serverConfig": "Konfigurasi server",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "Otoritas Sertifikat",
           "tlsCertPath": "Jalur sertifikat",
           "system": "Gunakan integrasi jaringan sistem",
-          "name": "Nama konfigurasi"
+          "name": "Nama konfigurasi",
+          "tlsClientCert": "Sertifikat klien",
+          "tlsClientCertPath": "Jalur sertifikat klien",
+          "tlsClientKey": "Kunci klien",
+          "tlsClientKeyPath": "Jalur kunci klien",
+          "tlsClientKeyPassword": "Kata sandi kunci klien",
+          "tlsMcaCert": "Sertifikat MCA",
+          "tlsMcaCertPath": "Jalur sertifikat MCA",
+          "tlsMcaKey": "Kunci MCA",
+          "tlsMcaKeyPath": "Jalur kunci MCA",
+          "tlsMcaKeyPassword": "Kata sandi kunci MCA",
+          "tnccCerts": "Sertifikat klien TNC",
+          "tnccCert": "Sertifikat (PEM sebaris)",
+          "tnccCertPath": "Jalur sertifikat",
+          "formEntries": "Entri formulir",
+          "formId": "ID formulir",
+          "submissionKey": "Kunci pengiriman",
+          "formName": "Nama",
+          "formValue": "Nilai",
+          "formPromote": "Promosikan",
+          "onDemand": "Sesuai permintaan"
         },
         "ovpn": {
           "address": "Alamat",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "Gateway rute",
           "routeMetric": "Metrik rute",
           "redirectGateway": "Gateway pengalihan",
-          "redirectGatewayFlags": "Tanda gateway",
+          "redirectGatewayFlags": "Flag pengalihan gateway",
           "authRetryNone": "Jangan coba lagi",
           "authRetryInteracted": "Coba lagi interaktif",
           "authRetryUninteracted": "Coba lagi noninteraktif",
@@ -6598,17 +6621,44 @@ export default {
           "pushBlockOutsideDns": "Blokir DNS eksternal",
           "pushPingInterval": "Interval ping",
           "pushPingRestart": "Mulai ulang Ping",
-          "pingInterval": "Interval Ping",
-          "pingRestart": "Mulai ulang Ping",
+          "pingInterval": "Interval ping",
+          "pingRestart": "Mulai ulang ping",
           "renegotiateInterval": "Interval negosiasi ulang",
           "renegotiateDisabled": "Nonaktifkan negosiasi ulang",
           "renegotiateBytes": "Byte negosiasi ulang",
           "renegotiatePackets": "Paket negosiasi ulang",
           "handshakeWindow": "Jendela handshake",
           "listenConfig": "Pengaturan listen",
-          "timing": "Pengaturan waktu"
+          "timing": "Pengaturan waktu",
+          "onDemand": "Sesuai permintaan",
+          "pullFilters": "Filter pull",
+          "pullFilterText": "Teks",
+          "redirectPrivate": "Alihkan jaringan privat",
+          "blockIPv6": "Blokir IPv6",
+          "pingRestartDisabled": "Nonaktifkan mulai ulang ping",
+          "tlsTimeout": "Batas waktu TLS",
+          "explicitExitNotify": "Notifikasi keluar eksplisit",
+          "timingSection": "Pewaktuan",
+          "pushDhcpOptions": "Kirim opsi DHCP",
+          "pushRedirectGatewayFlags": "Kirim flag pengalihan",
+          "pushDnsServerPriority": "Prioritas",
+          "pushDnsServerAddresses": "Alamat",
+          "pushDnsServerResolveDomains": "Domain yang diresolusi",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "Transport",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage sertifikat jarak jauh",
+          "tlsRemoteCertEku": "EKU sertifikat jarak jauh",
+          "tlsRemoteCertTls": "Jenis sertifikat jarak jauh",
+          "remoteCertSection": "Verifikasi sertifikat jarak jauh",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "Jenis",
+          "controlWrapKey": "Kunci (sebaris)",
+          "controlWrapKeyPath": "Jalur kunci",
+          "controlWrapDirection": "Arah",
+          "controlWrapForceCookie": "Paksa Cookie"
         },
-        masque: {
+        "masque": {
           "path": "Jalur",
           "pathHint": "Templat jalur server, mis. /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "Versi HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = gunakan nilai default (1280)",
           "serverAddressHint": "Kumpulan alamat tunnel, maksimal satu prefiks IPv4 dan satu IPv6",
           "detourHint": "Tag outbound untuk dial (proxy berantai)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "Multi-antrean",

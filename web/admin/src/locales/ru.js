@@ -1,4 +1,4 @@
-// Русский（ru）
+// ru
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "Включить сервер SSH",
           "taildropDirectory": "Каталог Taildrop",
           "stateDirectory": "Каталог состояния",
-          "onDemand": "Запуск по требованию"
+          "onDemand": "Запуск по требованию",
+          "sshDisablePty": "Отключить PTY",
+          "sshDisableSftp": "Отключить SFTP",
+          "sshDisableForwarding": "Отключить переадресацию"
         },
         "oc": {
           "serverConfig": "Конфигурация сервера",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "Центр сертификации",
           "tlsCertPath": "Путь к сертификату",
           "system": "Использовать системную сетевую интеграцию",
-          "name": "Название конфигурации"
+          "name": "Название конфигурации",
+          "tlsClientCert": "Клиентский сертификат",
+          "tlsClientCertPath": "Путь к клиентскому сертификату",
+          "tlsClientKey": "Клиентский ключ",
+          "tlsClientKeyPath": "Путь к клиентскому ключу",
+          "tlsClientKeyPassword": "Пароль клиентского ключа",
+          "tlsMcaCert": "Сертификат MCA",
+          "tlsMcaCertPath": "Путь к сертификату MCA",
+          "tlsMcaKey": "Ключ MCA",
+          "tlsMcaKeyPath": "Путь к ключу MCA",
+          "tlsMcaKeyPassword": "Пароль ключа MCA",
+          "tnccCerts": "Клиентские сертификаты TNC",
+          "tnccCert": "Сертификат (встроенный PEM)",
+          "tnccCertPath": "Путь к сертификату",
+          "formEntries": "Поля формы",
+          "formId": "ID формы",
+          "submissionKey": "Ключ отправки",
+          "formName": "Имя",
+          "formValue": "Значение",
+          "formPromote": "Приоритет",
+          "onDemand": "По требованию"
         },
         "ovpn": {
           "address": "Адрес",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "Шлюз маршрута",
           "routeMetric": "Метрика маршрута",
           "redirectGateway": "Перенаправлять шлюз",
-          "redirectGatewayFlags": "Флаги шлюза",
+          "redirectGatewayFlags": "Флаги перенаправления шлюза",
           "authRetryNone": "Не повторять",
           "authRetryInteracted": "Интерактивный повтор",
           "authRetryUninteracted": "Неинтерактивный повтор",
@@ -6598,17 +6621,44 @@ export default {
           "pushBlockOutsideDns": "Блокировать внешний DNS",
           "pushPingInterval": "Интервал Ping",
           "pushPingRestart": "Перезапуск Ping",
-          "pingInterval": "Интервал Ping",
-          "pingRestart": "Перезапуск Ping",
+          "pingInterval": "Интервал ping",
+          "pingRestart": "Перезапуск ping",
           "renegotiateInterval": "Интервал пересогласования",
           "renegotiateDisabled": "Отключить пересогласование",
           "renegotiateBytes": "Байты пересогласования",
           "renegotiatePackets": "Пакеты пересогласования",
           "handshakeWindow": "Окно рукопожатия",
           "listenConfig": "Настройки прослушивания",
-          "timing": "Настройки времени"
+          "timing": "Настройки времени",
+          "onDemand": "По требованию",
+          "pullFilters": "Фильтры pull",
+          "pullFilterText": "Текст",
+          "redirectPrivate": "Перенаправлять частные сети",
+          "blockIPv6": "Блокировать IPv6",
+          "pingRestartDisabled": "Отключить перезапуск ping",
+          "tlsTimeout": "Тайм-аут TLS",
+          "explicitExitNotify": "Уведомление о выходе",
+          "timingSection": "Тайминги",
+          "pushDhcpOptions": "Передавать DHCP-опции",
+          "pushRedirectGatewayFlags": "Передавать флаги перенаправления",
+          "pushDnsServerPriority": "Приоритет",
+          "pushDnsServerAddresses": "Адреса",
+          "pushDnsServerResolveDomains": "Разрешать домены",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "Транспорт",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage удалённого сертификата",
+          "tlsRemoteCertEku": "EKU удалённого сертификата",
+          "tlsRemoteCertTls": "Тип удалённого сертификата",
+          "remoteCertSection": "Проверка удалённого сертификата",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "Тип",
+          "controlWrapKey": "Ключ (встроенный)",
+          "controlWrapKeyPath": "Путь к ключу",
+          "controlWrapDirection": "Направление",
+          "controlWrapForceCookie": "Требовать cookie"
         },
-        masque: {
+        "masque": {
           "path": "Путь",
           "pathHint": "Шаблон пути сервера, например /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "Версия HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = значение по умолчанию (1280)",
           "serverAddressHint": "Пул адресов туннеля: не более одного префикса IPv4 и IPv6",
           "detourHint": "Тег исходящего для соединения (цепочка прокси)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "Мультиочередь",

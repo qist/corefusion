@@ -1,4 +1,4 @@
-// Türkçe（tr）
+// tr
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "SSH sunucusunu etkinleştir",
           "taildropDirectory": "Taildrop dizini",
           "stateDirectory": "Durum dizini",
-          "onDemand": "Talep üzerine başlat"
+          "onDemand": "Talep üzerine başlat",
+          "sshDisablePty": "PTY’yi devre dışı bırak",
+          "sshDisableSftp": "SFTP’yi devre dışı bırak",
+          "sshDisableForwarding": "Port yönlendirmeyi devre dışı bırak"
         },
         "oc": {
           "serverConfig": "Sunucu yapılandırması",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "Sertifika yetkilisi",
           "tlsCertPath": "Sertifika yolu",
           "system": "Sistem ağ entegrasyonunu kullan",
-          "name": "Yapılandırma adı"
+          "name": "Yapılandırma adı",
+          "tlsClientCert": "İstemci sertifikası",
+          "tlsClientCertPath": "İstemci sertifikası yolu",
+          "tlsClientKey": "İstemci anahtarı",
+          "tlsClientKeyPath": "İstemci anahtarı yolu",
+          "tlsClientKeyPassword": "İstemci anahtarı parolası",
+          "tlsMcaCert": "MCA sertifikası",
+          "tlsMcaCertPath": "MCA sertifikası yolu",
+          "tlsMcaKey": "MCA anahtarı",
+          "tlsMcaKeyPath": "MCA anahtarı yolu",
+          "tlsMcaKeyPassword": "MCA anahtarı parolası",
+          "tnccCerts": "TNC istemci sertifikaları",
+          "tnccCert": "Sertifika (satır içi PEM)",
+          "tnccCertPath": "Sertifika yolu",
+          "formEntries": "Form alanları",
+          "formId": "Form kimliği",
+          "submissionKey": "Gönderim anahtarı",
+          "formName": "Ad",
+          "formValue": "Değer",
+          "formPromote": "Öne çıkar",
+          "onDemand": "İsteğe bağlı"
         },
         "ovpn": {
           "address": "Adres",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "Yönlendirme ağ geçidi",
           "routeMetric": "Yönlendirme metriği",
           "redirectGateway": "Ağ geçidini yönlendir",
-          "redirectGatewayFlags": "Ağ geçidi bayrakları",
+          "redirectGatewayFlags": "Ağ geçidi yönlendirme bayrakları",
           "authRetryNone": "Yeniden deneme yok",
           "authRetryInteracted": "Etkileşimli yeniden deneme",
           "authRetryUninteracted": "Etkileşimsiz yeniden deneme",
@@ -6600,15 +6623,42 @@ export default {
           "pushPingRestart": "Ping yeniden başlatma",
           "pingInterval": "Ping aralığı",
           "pingRestart": "Ping yeniden başlatma",
-          "renegotiateInterval": "Yeniden anlaşma aralığı",
-          "renegotiateDisabled": "Yeniden anlaşmayı devre dışı bırak",
-          "renegotiateBytes": "Yeniden anlaşma baytı",
-          "renegotiatePackets": "Yeniden anlaşma paketleri",
+          "renegotiateInterval": "Yeniden müzakere aralığı",
+          "renegotiateDisabled": "Yeniden müzakereyi devre dışı bırak",
+          "renegotiateBytes": "Yeniden müzakere baytı",
+          "renegotiatePackets": "Yeniden müzakere paketi",
           "handshakeWindow": "El sıkışma penceresi",
           "listenConfig": "Dinleme ayarları",
-          "timing": "Zaman ayarları"
+          "timing": "Zaman ayarları",
+          "onDemand": "İsteğe bağlı",
+          "pullFilters": "Çekme filtreleri",
+          "pullFilterText": "Metin",
+          "redirectPrivate": "Özel ağları yönlendir",
+          "blockIPv6": "IPv6’yı engelle",
+          "pingRestartDisabled": "Ping yeniden başlatmayı devre dışı bırak",
+          "tlsTimeout": "TLS zaman aşımı",
+          "explicitExitNotify": "Açık çıkış bildirimi",
+          "timingSection": "Zamanlama",
+          "pushDhcpOptions": "DHCP seçeneklerini gönder",
+          "pushRedirectGatewayFlags": "Yönlendirme bayraklarını gönder",
+          "pushDnsServerPriority": "Öncelik",
+          "pushDnsServerAddresses": "Adresler",
+          "pushDnsServerResolveDomains": "Çözülecek alan adları",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "Taşıma",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Uzak sertifika Key Usage",
+          "tlsRemoteCertEku": "Uzak sertifika EKU",
+          "tlsRemoteCertTls": "Uzak sertifika türü",
+          "remoteCertSection": "Uzak sertifika doğrulaması",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "Tür",
+          "controlWrapKey": "Anahtar (satır içi)",
+          "controlWrapKeyPath": "Anahtar yolu",
+          "controlWrapDirection": "Yön",
+          "controlWrapForceCookie": "Cookie’yi zorla"
         },
-        masque: {
+        "masque": {
           "path": "Yol",
           "pathHint": "Sunucu yol şablonu, örn. /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "HTTP Sürümü",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = varsayılan değeri kullan (1280)",
           "serverAddressHint": "Tünel adres havuzu, en fazla bir IPv4 ve bir IPv6 öneki",
           "detourHint": "Arama için kullanılan giden etiketi (zincir proxy)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "Çoklu kuyruk",

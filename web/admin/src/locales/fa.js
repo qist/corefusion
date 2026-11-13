@@ -1,4 +1,4 @@
-// فارسی（fa）
+// fa
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "فعال‌سازی سرور SSH",
           "taildropDirectory": "پوشه Taildrop",
           "stateDirectory": "پوشه وضعیت",
-          "onDemand": "شروع در صورت نیاز"
+          "onDemand": "شروع در صورت نیاز",
+          "sshDisablePty": "غیرفعال‌سازی PTY",
+          "sshDisableSftp": "غیرفعال‌سازی SFTP",
+          "sshDisableForwarding": "غیرفعال‌سازی ارسال پورت"
         },
         "oc": {
           "serverConfig": "پیکربندی سرور",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "مرجع صدور گواهی",
           "tlsCertPath": "مسیر گواهی",
           "system": "استفاده از یکپارچه‌سازی شبکه سیستم",
-          "name": "نام پیکربندی"
+          "name": "نام پیکربندی",
+          "tlsClientCert": "گواهی کلاینت",
+          "tlsClientCertPath": "مسیر گواهی کلاینت",
+          "tlsClientKey": "کلید خصوصی کلاینت",
+          "tlsClientKeyPath": "مسیر کلید خصوصی کلاینت",
+          "tlsClientKeyPassword": "گذرواژه کلید خصوصی کلاینت",
+          "tlsMcaCert": "گواهی MCA",
+          "tlsMcaCertPath": "مسیر گواهی MCA",
+          "tlsMcaKey": "کلید MCA",
+          "tlsMcaKeyPath": "مسیر کلید MCA",
+          "tlsMcaKeyPassword": "گذرواژه کلید MCA",
+          "tnccCerts": "گواهی‌های کلاینت TNC",
+          "tnccCert": "گواهی (PEM درون‌خطی)",
+          "tnccCertPath": "مسیر گواهی",
+          "formEntries": "فیلدهای فرم",
+          "formId": "شناسه فرم",
+          "submissionKey": "کلید ارسال",
+          "formName": "نام",
+          "formValue": "مقدار",
+          "formPromote": "اولویت",
+          "onDemand": "در صورت نیاز"
         },
         "ovpn": {
           "address": "نشانی",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "درگاه مسیر",
           "routeMetric": "متریک مسیر",
           "redirectGateway": "درگاه تغییرمسیر",
-          "redirectGatewayFlags": "پرچم‌های درگاه",
+          "redirectGatewayFlags": "پرچم‌های تغییر مسیر دروازه",
           "authRetryNone": "بدون تلاش مجدد",
           "authRetryInteracted": "تلاش مجدد تعاملی",
           "authRetryUninteracted": "تلاش مجدد غیرتعاملی",
@@ -6606,9 +6629,36 @@ export default {
           "renegotiatePackets": "بسته‌های مذاکره مجدد",
           "handshakeWindow": "پنجره دست‌دهی",
           "listenConfig": "تنظیمات شنود",
-          "timing": "تنظیمات زمان"
+          "timing": "تنظیمات زمان",
+          "onDemand": "در صورت نیاز",
+          "pullFilters": "فیلترهای Pull",
+          "pullFilterText": "متن",
+          "redirectPrivate": "تغییر مسیر شبکه خصوصی",
+          "blockIPv6": "مسدودسازی IPv6",
+          "pingRestartDisabled": "غیرفعال‌سازی راه‌اندازی مجدد Ping",
+          "tlsTimeout": "مهلت TLS",
+          "explicitExitNotify": "اعلان خروج صریح",
+          "timingSection": "زمان‌بندی",
+          "pushDhcpOptions": "ارسال گزینه‌های DHCP",
+          "pushRedirectGatewayFlags": "ارسال پرچم‌های تغییر مسیر",
+          "pushDnsServerPriority": "اولویت",
+          "pushDnsServerAddresses": "آدرس‌ها",
+          "pushDnsServerResolveDomains": "حل دامنه‌ها",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "انتقال",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage گواهی راه دور",
+          "tlsRemoteCertEku": "EKU گواهی راه دور",
+          "tlsRemoteCertTls": "نوع گواهی راه دور",
+          "remoteCertSection": "بررسی گواهی راه دور",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "نوع",
+          "controlWrapKey": "کلید (درون‌خطی)",
+          "controlWrapKeyPath": "مسیر کلید",
+          "controlWrapDirection": "جهت",
+          "controlWrapForceCookie": "اجبار Cookie"
         },
-        masque: {
+        "masque": {
           "path": "مسیر",
           "pathHint": "قالب مسیر سرور، مثلاً /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "نسخه HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = استفاده از مقدار پیش‌فرض (1280)",
           "serverAddressHint": "استخر آدرس تونل؛ حداکثر یک پیشوند IPv4 و یک IPv6",
           "detourHint": "برچسب خروجی برای اتصال (پروکسی زنجیره‌ای)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "چند صف",

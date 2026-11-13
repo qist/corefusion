@@ -1,4 +1,4 @@
-// العربية（ar）
+// ar
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "تفعيل خادم SSH",
           "taildropDirectory": "دليل Taildrop",
           "stateDirectory": "دليل الحالة",
-          "onDemand": "التشغيل عند الطلب"
+          "onDemand": "التشغيل عند الطلب",
+          "sshDisablePty": "تعطيل PTY",
+          "sshDisableSftp": "تعطيل SFTP",
+          "sshDisableForwarding": "تعطيل إعادة توجيه المنافذ"
         },
         "oc": {
           "serverConfig": "إعدادات الخادم",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "جهة إصدار الشهادات",
           "tlsCertPath": "مسار الشهادة",
           "system": "استخدام تكامل شبكة النظام",
-          "name": "اسم التكوين"
+          "name": "اسم التكوين",
+          "tlsClientCert": "شهادة العميل",
+          "tlsClientCertPath": "مسار شهادة العميل",
+          "tlsClientKey": "مفتاح العميل",
+          "tlsClientKeyPath": "مسار مفتاح العميل",
+          "tlsClientKeyPassword": "كلمة مرور مفتاح العميل",
+          "tlsMcaCert": "شهادة MCA",
+          "tlsMcaCertPath": "مسار شهادة MCA",
+          "tlsMcaKey": "مفتاح MCA",
+          "tlsMcaKeyPath": "مسار مفتاح MCA",
+          "tlsMcaKeyPassword": "كلمة مرور مفتاح MCA",
+          "tnccCerts": "شهادات عميل TNC",
+          "tnccCert": "شهادة (PEM مضمّن)",
+          "tnccCertPath": "مسار الشهادة",
+          "formEntries": "حقول النموذج",
+          "formId": "معرّف النموذج",
+          "submissionKey": "مفتاح الإرسال",
+          "formName": "الاسم",
+          "formValue": "القيمة",
+          "formPromote": "تفضيل",
+          "onDemand": "عند الطلب"
         },
         "ovpn": {
           "address": "العنوان",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "بوابة المسار",
           "routeMetric": "مقياس المسار",
           "redirectGateway": "بوابة إعادة التوجيه",
-          "redirectGatewayFlags": "أعلام البوابة",
+          "redirectGatewayFlags": "أعلام إعادة توجيه البوابة",
           "authRetryNone": "عدم إعادة المحاولة",
           "authRetryInteracted": "إعادة المحاولة التفاعلية",
           "authRetryUninteracted": "إعادة المحاولة غير التفاعلية",
@@ -6606,9 +6629,36 @@ export default {
           "renegotiatePackets": "حزم إعادة التفاوض",
           "handshakeWindow": "نافذة المصافحة",
           "listenConfig": "إعدادات الاستماع",
-          "timing": "إعدادات الوقت"
+          "timing": "إعدادات الوقت",
+          "onDemand": "عند الطلب",
+          "pullFilters": "مرشحات السحب",
+          "pullFilterText": "النص",
+          "redirectPrivate": "إعادة توجيه الشبكات الخاصة",
+          "blockIPv6": "حظر IPv6",
+          "pingRestartDisabled": "تعطيل إعادة تشغيل Ping",
+          "tlsTimeout": "مهلة TLS",
+          "explicitExitNotify": "إشعار خروج صريح",
+          "timingSection": "التوقيت",
+          "pushDhcpOptions": "دفع خيارات DHCP",
+          "pushRedirectGatewayFlags": "دفع أعلام إعادة التوجيه",
+          "pushDnsServerPriority": "الأولوية",
+          "pushDnsServerAddresses": "العناوين",
+          "pushDnsServerResolveDomains": "النطاقات المطلوب حلها",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "النقل",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage للشهادة البعيدة",
+          "tlsRemoteCertEku": "EKU للشهادة البعيدة",
+          "tlsRemoteCertTls": "نوع الشهادة البعيدة",
+          "remoteCertSection": "التحقق من الشهادة البعيدة",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "النوع",
+          "controlWrapKey": "المفتاح (مضمّن)",
+          "controlWrapKeyPath": "مسار المفتاح",
+          "controlWrapDirection": "الاتجاه",
+          "controlWrapForceCookie": "إجبار Cookie"
         },
-        masque: {
+        "masque": {
           "path": "المسار",
           "pathHint": "قالب مسار الخادم، مثال /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "إصدار HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = استخدام القيمة الافتراضية (1280)",
           "serverAddressHint": "مجموعة عناوين النفق، بحد أقصى بادئة IPv4 واحدة وبادئة IPv6 واحدة",
           "detourHint": "وسم الصادر المستخدم للاتصال (وكيل متسلسل)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "طوابير متعددة",

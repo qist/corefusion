@@ -1,4 +1,4 @@
-// 한국어（ko）
+// ko
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "SSH 서버 사용",
           "taildropDirectory": "Taildrop 디렉터리",
           "stateDirectory": "상태 디렉터리",
-          "onDemand": "필요 시 시작"
+          "onDemand": "필요 시 시작",
+          "sshDisablePty": "PTY 비활성화",
+          "sshDisableSftp": "SFTP 비활성화",
+          "sshDisableForwarding": "포트 포워딩 비활성화"
         },
         "oc": {
           "serverConfig": "서버 구성",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "인증 기관",
           "tlsCertPath": "인증서 경로",
           "system": "시스템 네트워크 통합 사용",
-          "name": "구성 이름"
+          "name": "구성 이름",
+          "tlsClientCert": "클라이언트 인증서",
+          "tlsClientCertPath": "클라이언트 인증서 경로",
+          "tlsClientKey": "클라이언트 개인 키",
+          "tlsClientKeyPath": "클라이언트 개인 키 경로",
+          "tlsClientKeyPassword": "클라이언트 개인 키 암호",
+          "tlsMcaCert": "MCA 인증서",
+          "tlsMcaCertPath": "MCA 인증서 경로",
+          "tlsMcaKey": "MCA 개인 키",
+          "tlsMcaKeyPath": "MCA 개인 키 경로",
+          "tlsMcaKeyPassword": "MCA 개인 키 암호",
+          "tnccCerts": "TNC 클라이언트 인증서",
+          "tnccCert": "인증서 (인라인 PEM)",
+          "tnccCertPath": "인증서 경로",
+          "formEntries": "폼 항목",
+          "formId": "폼 ID",
+          "submissionKey": "제출 키",
+          "formName": "이름",
+          "formValue": "값",
+          "formPromote": "우선 적용",
+          "onDemand": "온디맨드"
         },
         "ovpn": {
           "address": "주소",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "라우트 게이트웨이",
           "routeMetric": "라우트 메트릭",
           "redirectGateway": "게이트웨이 리디렉션",
-          "redirectGatewayFlags": "게이트웨이 플래그",
+          "redirectGatewayFlags": "게이트웨이 리디렉션 플래그",
           "authRetryNone": "재시도 안 함",
           "authRetryInteracted": "대화형 재시도",
           "authRetryUninteracted": "비대화형 재시도",
@@ -6606,9 +6629,36 @@ export default {
           "renegotiatePackets": "재협상 패킷",
           "handshakeWindow": "핸드셰이크 윈도",
           "listenConfig": "수신 대기 설정",
-          "timing": "시간 설정"
+          "timing": "시간 설정",
+          "onDemand": "온디맨드",
+          "pullFilters": "풀 필터",
+          "pullFilterText": "텍스트",
+          "redirectPrivate": "사설망 리디렉션",
+          "blockIPv6": "IPv6 차단",
+          "pingRestartDisabled": "Ping 재시작 비활성화",
+          "tlsTimeout": "TLS 시간 초과",
+          "explicitExitNotify": "명시적 종료 알림",
+          "timingSection": "타이밍",
+          "pushDhcpOptions": "DHCP 옵션 푸시",
+          "pushRedirectGatewayFlags": "리디렉션 플래그 푸시",
+          "pushDnsServerPriority": "우선순위",
+          "pushDnsServerAddresses": "주소",
+          "pushDnsServerResolveDomains": "도메인 확인",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "전송",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "원격 인증서 Key Usage",
+          "tlsRemoteCertEku": "원격 인증서 EKU",
+          "tlsRemoteCertTls": "원격 인증서 유형",
+          "remoteCertSection": "원격 인증서 검증",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "유형",
+          "controlWrapKey": "키 (인라인)",
+          "controlWrapKeyPath": "키 경로",
+          "controlWrapDirection": "방향",
+          "controlWrapForceCookie": "쿠키 강제"
         },
-        masque: {
+        "masque": {
           "path": "경로",
           "pathHint": "서버 경로 템플릿 (예: /.well-known/masque/ip/{target}/{ipproto}/)",
           "version": "HTTP 버전",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = 기본값 사용 (1280)",
           "serverAddressHint": "터널 주소 풀. IPv4와 IPv6 접두사를 각각 하나까지",
           "detourHint": "다이얼에 사용할 아웃바운드 태그 (체인 프록시)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "다중 큐",

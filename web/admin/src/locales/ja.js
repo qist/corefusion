@@ -1,4 +1,4 @@
-// 日本語（ja）
+// ja
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "SSHサーバーを有効にする",
           "taildropDirectory": "Taildropディレクトリ",
           "stateDirectory": "状態ディレクトリ",
-          "onDemand": "オンデマンド起動"
+          "onDemand": "オンデマンド起動",
+          "sshDisablePty": "PTY を無効化",
+          "sshDisableSftp": "SFTP を無効化",
+          "sshDisableForwarding": "ポート転送を無効化"
         },
         "oc": {
           "serverConfig": "サーバー設定",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "認証局",
           "tlsCertPath": "証明書のパス",
           "system": "システムのネットワーク統合を使用",
-          "name": "設定名"
+          "name": "設定名",
+          "tlsClientCert": "クライアント証明書",
+          "tlsClientCertPath": "クライアント証明書パス",
+          "tlsClientKey": "クライアント秘密鍵",
+          "tlsClientKeyPath": "クライアント秘密鍵パス",
+          "tlsClientKeyPassword": "クライアント秘密鍵のパスワード",
+          "tlsMcaCert": "MCA 証明書",
+          "tlsMcaCertPath": "MCA 証明書パス",
+          "tlsMcaKey": "MCA 秘密鍵",
+          "tlsMcaKeyPath": "MCA 秘密鍵パス",
+          "tlsMcaKeyPassword": "MCA 秘密鍵のパスワード",
+          "tnccCerts": "TNC クライアント証明書",
+          "tnccCert": "証明書（インライン PEM）",
+          "tnccCertPath": "証明書パス",
+          "formEntries": "フォーム項目",
+          "formId": "フォーム ID",
+          "submissionKey": "送信キー",
+          "formName": "名前",
+          "formValue": "値",
+          "formPromote": "優先",
+          "onDemand": "オンデマンド"
         },
         "ovpn": {
           "address": "アドレス",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "ルートゲートウェイ",
           "routeMetric": "ルートメトリック",
           "redirectGateway": "ゲートウェイのリダイレクト",
-          "redirectGatewayFlags": "ゲートウェイフラグ",
+          "redirectGatewayFlags": "ゲートウェイリダイレクトフラグ",
           "authRetryNone": "再試行しない",
           "authRetryInteracted": "対話型再試行",
           "authRetryUninteracted": "非対話型再試行",
@@ -6602,13 +6625,40 @@ export default {
           "pingRestart": "Ping 再起動",
           "renegotiateInterval": "再ネゴシエーション間隔",
           "renegotiateDisabled": "再ネゴシエーションを無効化",
-          "renegotiateBytes": "再ネゴシエーションバイト数",
-          "renegotiatePackets": "再ネゴシエーションパケット数",
+          "renegotiateBytes": "再ネゴシエーションのバイト数",
+          "renegotiatePackets": "再ネゴシエーションのパケット数",
           "handshakeWindow": "ハンドシェイクウィンドウ",
           "listenConfig": "待ち受け設定",
-          "timing": "時間設定"
+          "timing": "時間設定",
+          "onDemand": "オンデマンド",
+          "pullFilters": "プルフィルター",
+          "pullFilterText": "テキスト",
+          "redirectPrivate": "プライベートをリダイレクト",
+          "blockIPv6": "IPv6 をブロック",
+          "pingRestartDisabled": "Ping 再起動を無効化",
+          "tlsTimeout": "TLS タイムアウト",
+          "explicitExitNotify": "明示的な終了通知",
+          "timingSection": "タイミング",
+          "pushDhcpOptions": "DHCP オプションをプッシュ",
+          "pushRedirectGatewayFlags": "リダイレクトフラグをプッシュ",
+          "pushDnsServerPriority": "優先度",
+          "pushDnsServerAddresses": "アドレス",
+          "pushDnsServerResolveDomains": "解決ドメイン",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "トランスポート",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "リモート証明書 Key Usage",
+          "tlsRemoteCertEku": "リモート証明書 EKU",
+          "tlsRemoteCertTls": "リモート証明書の種類",
+          "remoteCertSection": "リモート証明書の検証",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "種類",
+          "controlWrapKey": "キー（インライン）",
+          "controlWrapKeyPath": "キーパス",
+          "controlWrapDirection": "方向",
+          "controlWrapForceCookie": "Cookie を強制"
         },
-        masque: {
+        "masque": {
           "path": "パス",
           "pathHint": "サーバーパスのテンプレート（例: /.well-known/masque/ip/{target}/{ipproto}/）",
           "version": "HTTP バージョン",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = 既定値を使用 (1280)",
           "serverAddressHint": "トンネルのアドレスプール。IPv4 と IPv6 のプレフィックスを各 1 つまで",
           "detourHint": "ダイヤルに使うアウトバウンドタグ（チェーンプロキシ）"
-        },
+        }
       },
       "tun": {
         "multiQueue": "マルチキュー",

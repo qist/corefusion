@@ -37,6 +37,18 @@ function headersFromList(list) {
   return out
 }
 
+// OpenVPN control_wrap（tls_auth / tls_crypt / tls_crypt_v2）
+function buildControlWrap(ep) {
+  if (!ep.control_wrap_type) return null
+  const cw = { type: ep.control_wrap_type }
+  if (ep.control_wrap_key) cw.key = splitCSV(ep.control_wrap_key)
+  if (ep.control_wrap_key_path) cw.key_path = ep.control_wrap_key_path
+  if (ep.control_wrap_direction) cw.direction = ep.control_wrap_direction
+  // force_cookie 只有入站（服务端）的 control_wrap 才有
+  if (ep.type === 'openvpn-server' && ep.control_wrap_force_cookie) cw.force_cookie = true
+  return cw
+}
+
 // HTTP/2 + QUIC 选项（sing-box 把 http2/http3 变体字段平铺进同一对象）：
 // version 1 没有额外字段；2 用 HTTP2Options；3（含 0=默认 3）用 QUICOptions。
 function applyHTTPVersionOptions(out, ep, versions) {
@@ -226,8 +238,19 @@ export function endpointDefaultsForType(type, customPort) {
         system_interface_mtu: 0,
         udp_timeout: '5m',
         ssh_server: false,
+        // TailscaleSSHServerOptions：三项全 false 时 sing-box 写布尔值，否则写对象
+        ssh_disable_pty: false,
+        ssh_disable_sftp: false,
+        ssh_disable_forwarding: false,
         taildrop_directory: '',
         on_demand: false,
+        // 拨号字段（DialerOptions）
+        detour: '', bind_interface: '', inet4_bind_address: '', inet6_bind_address: '',
+        bind_address_no_port: false, protect_path: '', routing_mark: 0, reuse_addr: false,
+        netns: '', connect_timeout: '', tcp_fast_open: false, tcp_multi_path: false,
+        disable_tcp_keep_alive: false, tcp_keep_alive: '', tcp_keep_alive_interval: '',
+        udp_fragment: false, domain_resolver: '', network_strategy: '',
+        _networkType: '', _fallbackNetworkType: '', fallback_delay: '',
       }
 
     case 'openconnect':
@@ -291,6 +314,31 @@ export function endpointDefaultsForType(type, customPort) {
         tls_system_trust_disabled: false,
         tls_certificate_authority: '',
         tls_certificate_authority_path: '',
+        tls_client_certificate: '',
+        tls_client_certificate_path: '',
+        tls_client_key: '',
+        tls_client_key_path: '',
+        tls_client_key_password: '',
+        tls_mca_certificate: '',
+        tls_mca_certificate_path: '',
+        tls_mca_key: '',
+        tls_mca_key_path: '',
+        tls_mca_key_password: '',
+        // TNC 客户端证书 / 表单字段 / 按需连接 / UDP NAT
+        tncc_certificates: [],
+        form_entries: [],
+        on_demand: false,
+        udp_timeout: '5m',
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
+        // 拨号字段
+        detour: '', bind_interface: '', inet4_bind_address: '', inet6_bind_address: '',
+        bind_address_no_port: false, protect_path: '', routing_mark: 0, reuse_addr: false,
+        netns: '', connect_timeout: '', tcp_fast_open: false, tcp_multi_path: false,
+        disable_tcp_keep_alive: false, tcp_keep_alive: '', tcp_keep_alive_interval: '',
+        udp_fragment: false, domain_resolver: '', network_strategy: '',
+        _networkType: '', _fallbackNetworkType: '', fallback_delay: '',
       }
 
     case 'openvpn-client':
@@ -357,7 +405,42 @@ export function endpointDefaultsForType(type, customPort) {
         redirect_gateway: false,
         redirect_gateway_flags: [],
         _redirectGatewayFlagsStr: '',
+        redirect_private: false,
+        block_ipv6: false,
+        pull_filters: [],
+        // 重协商 / 心跳
+        ping_interval: '',
+        ping_restart: '',
+        ping_restart_disabled: false,
+        renegotiate_interval: '',
+        renegotiate_disabled: false,
+        renegotiate_bytes: 0,
+        renegotiate_packets: 0,
+        tls_timeout: '',
+        handshake_window: '',
+        explicit_exit_notify: 0,
+        // TLS 远端证书约束 + control wrap
+        tls_remote_certificate_ku: '',
+        tls_remote_certificate_eku: '',
+        tls_remote_certificate_tls: '',
+        control_wrap_type: '',
+        control_wrap_key: '',
+        control_wrap_key_path: '',
+        control_wrap_direction: '',
+        // UDP NAT / 按需
+        udp_timeout: '5m',
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
+        on_demand: false,
         system: false,
+        // 拨号字段
+        detour: '', bind_interface: '', inet4_bind_address: '', inet6_bind_address: '',
+        bind_address_no_port: false, protect_path: '', routing_mark: 0, reuse_addr: false,
+        netns: '', connect_timeout: '', tcp_fast_open: false, tcp_multi_path: false,
+        disable_tcp_keep_alive: false, tcp_keep_alive: '', tcp_keep_alive_interval: '',
+        udp_fragment: false, domain_resolver: '', network_strategy: '',
+        _networkType: '', _fallbackNetworkType: '', fallback_delay: '',
       }
 
     case 'openvpn-server':
@@ -418,11 +501,15 @@ export function endpointDefaultsForType(type, customPort) {
         _pushRoutesStr: '',
         push_dns: [],
         _pushDnsStr: '',
+        // []OpenVPNPushDNSServerOptions：{priority, addresses[], resolve_domains[], dnssec, transport, sni}
         push_dns_servers: [],
-        _pushDnsServersStr: '',
         push_search_domains: [],
         _pushSearchDomainsStr: '',
+        push_dhcp_options: [],
+        _pushDhcpOptionsStr: '',
         push_redirect_gateway: false,
+        push_redirect_gateway_flags: [],
+        _pushRedirectGatewayFlagsStr: '',
         push_block_outside_dns: false,
         push_ping_interval: '',
         push_ping_restart: '',
@@ -434,6 +521,23 @@ export function endpointDefaultsForType(type, customPort) {
         renegotiate_bytes: 0,
         renegotiate_packets: 0,
         handshake_window: '1m',
+        // OpenVPNEndpointOptions 的 UDP NAT
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
+        // TLS 远端证书约束 + control wrap（入站多一个 force_cookie）
+        tls_remote_certificate_ku: '',
+        tls_remote_certificate_eku: '',
+        tls_remote_certificate_tls: '',
+        control_wrap_type: '',
+        control_wrap_key: '',
+        control_wrap_key_path: '',
+        control_wrap_direction: '',
+        control_wrap_force_cookie: false,
+        // 监听字段（ListenOptions）
+        bind_interface: '', routing_mark: 0, reuse_addr: false, netns: '',
+        tcp_fast_open: false, tcp_multi_path: false, disable_tcp_keep_alive: false,
+        tcp_keep_alive: '', tcp_keep_alive_interval: '', udp_fragment: false, detour: '',
       }
 
     case 'masque-client':
@@ -524,6 +628,39 @@ export function endpointDefaultsForType(type, customPort) {
   }
 }
 
+// 列表字段统一转成逗号分隔字符串给表单
+function listToStr(v) {
+  if (Array.isArray(v)) return v.join(', ')
+  return v || ''
+}
+
+// DialerOptions 反向解析（tailscale / openconnect / openvpn-client）
+function parseDialOptions(ep) {
+  return {
+    detour: ep.detour || '',
+    bind_interface: ep.bind_interface || '',
+    inet4_bind_address: ep.inet4_bind_address || '',
+    inet6_bind_address: ep.inet6_bind_address || '',
+    bind_address_no_port: ep.bind_address_no_port || false,
+    protect_path: ep.protect_path || '',
+    routing_mark: ep.routing_mark || 0,
+    reuse_addr: ep.reuse_addr || false,
+    netns: ep.netns || '',
+    connect_timeout: ep.connect_timeout || '',
+    tcp_fast_open: ep.tcp_fast_open || false,
+    tcp_multi_path: ep.tcp_multi_path || false,
+    disable_tcp_keep_alive: ep.disable_tcp_keep_alive || false,
+    tcp_keep_alive: ep.tcp_keep_alive || '',
+    tcp_keep_alive_interval: ep.tcp_keep_alive_interval || '',
+    udp_fragment: ep.udp_fragment || false,
+    domain_resolver: typeof ep.domain_resolver === 'string' ? ep.domain_resolver : (ep.domain_resolver?.server || ''),
+    network_strategy: ep.network_strategy || '',
+    _networkType: Array.isArray(ep.network_type) ? ep.network_type.join(', ') : '',
+    _fallbackNetworkType: Array.isArray(ep.fallback_network_type) ? ep.fallback_network_type.join(', ') : '',
+    fallback_delay: ep.fallback_delay || '',
+  }
+}
+
 // 表单模型 -> sing-box 配置（各类型的字段映射）
 function buildEndpointTyped(ep) {
   switch (ep.type) {
@@ -593,9 +730,22 @@ function buildEndpointTyped(ep) {
       if (ep.system_interface_name) out.system_interface_name = ep.system_interface_name
       if (ep.system_interface_mtu > 0) out.system_interface_mtu = ep.system_interface_mtu
       if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
-      if (ep.ssh_server) out.ssh_server = true
+      // ssh_server 既接受布尔也接受对象；有 disable_* 时必须写对象，
+      // 否则开关会被静默丢弃（TailscaleSSHServerOptions.MarshalJSON）
+      if (ep.ssh_server) {
+        if (ep.ssh_disable_pty || ep.ssh_disable_sftp || ep.ssh_disable_forwarding) {
+          const ssh = { enabled: true }
+          if (ep.ssh_disable_pty) ssh.disable_pty = true
+          if (ep.ssh_disable_sftp) ssh.disable_sftp = true
+          if (ep.ssh_disable_forwarding) ssh.disable_forwarding = true
+          out.ssh_server = ssh
+        } else {
+          out.ssh_server = true
+        }
+      }
       if (ep.taildrop_directory) out.taildrop_directory = ep.taildrop_directory
       if (ep.on_demand) out.on_demand = true
+      applyDialOptions(out, ep)
       return out
     }
 
@@ -666,15 +816,54 @@ function buildEndpointTyped(ep) {
       if (ep.trojan_interval) out.trojan_interval = ep.trojan_interval
       if (ep.queue_length > 0) out.queue_length = ep.queue_length
       if (ep.allow_insecure_crypto) out.allow_insecure_crypto = true
+      if (ep.on_demand) out.on_demand = true
+      // UDP NAT
+      if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
+      if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
+      if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
+      if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
       // TLS
       const tls = {}
       if (ep.tls_insecure) tls.insecure = true
       if (ep.tls_server_name) tls.server_name = ep.tls_server_name
       if (ep.tls_peer_fingerprint) tls.peer_fingerprint = ep.tls_peer_fingerprint.split(',').map(s => s.trim()).filter(Boolean)
       if (ep.tls_system_trust_disabled) tls.system_trust_disabled = true
-      if (ep.tls_certificate_authority) tls.certificate_authority = ep.tls_certificate_authority
+      if (ep.tls_certificate_authority) tls.certificate_authority = splitCSV(ep.tls_certificate_authority)
       if (ep.tls_certificate_authority_path) tls.certificate_authority_path = ep.tls_certificate_authority_path
+      if (ep.tls_client_certificate) tls.client_certificate = splitCSV(ep.tls_client_certificate)
+      if (ep.tls_client_certificate_path) tls.client_certificate_path = ep.tls_client_certificate_path
+      if (ep.tls_client_key) tls.client_key = splitCSV(ep.tls_client_key)
+      if (ep.tls_client_key_path) tls.client_key_path = ep.tls_client_key_path
+      if (ep.tls_client_key_password) tls.client_key_password = ep.tls_client_key_password
+      if (ep.tls_mca_certificate) tls.mca_certificate = splitCSV(ep.tls_mca_certificate)
+      if (ep.tls_mca_certificate_path) tls.mca_certificate_path = ep.tls_mca_certificate_path
+      if (ep.tls_mca_key) tls.mca_key = splitCSV(ep.tls_mca_key)
+      if (ep.tls_mca_key_path) tls.mca_key_path = ep.tls_mca_key_path
+      if (ep.tls_mca_key_password) tls.mca_key_password = ep.tls_mca_key_password
       if (Object.keys(tls).length) out.tls = tls
+      // TNC 客户端证书（tncc.certificates）
+      const tnccCerts = (ep.tncc_certificates || [])
+        .filter(c => c && (c.certificate || c.certificate_path))
+        .map(c => {
+          const cert = {}
+          if (c.certificate) cert.certificate = splitCSV(c.certificate)
+          if (c.certificate_path) cert.certificate_path = c.certificate_path
+          return cert
+        })
+      if (tnccCerts.length) out.tncc = { ...(out.tncc || {}), certificates: tnccCerts }
+      // 表单字段（form_entries）
+      const formEntries = (ep.form_entries || [])
+        .filter(f => f && (f.form_id || f.name))
+        .map(f => {
+          const entry = { name: f.name || '' }
+          if (f.form_id) entry.form_id = f.form_id
+          if (f.submission_key) entry.submission_key = f.submission_key
+          if (f.value) entry.value = f.value
+          if (f.promote) entry.promote = true
+          return entry
+        })
+      if (formEntries.length) out.form_entries = formEntries
+      applyDialOptions(out, ep)
       return out
     }
 
@@ -687,7 +876,7 @@ function buildEndpointTyped(ep) {
       if (ep.servers?.length) out.servers = ep.servers
       if (ep.remote_random) out.remote_random = true
       if (ep.network) out.network = ep.network
-      if (ep.address?.length) out.address = ep.address
+      if (ep.address?.length || ep._addressStr) out.address = ep.address?.length ? ep.address : splitCSV(ep._addressStr)
       if (ep.peer_address) out.peer_address = ep.peer_address
       if (ep.peer_address_ipv6) out.peer_address_ipv6 = ep.peer_address_ipv6
       if (ep.topology) out.topology = ep.topology
@@ -717,15 +906,23 @@ function buildEndpointTyped(ep) {
       if (ep.tls_version_max) tls.version_max = ep.tls_version_max
       if (ep.tls_cipher) tls.cipher = ep.tls_cipher
       if (ep.tls_groups) tls.groups = ep.tls_groups
+      if (ep.tls_remote_certificate_ku) tls.remote_certificate_ku = splitCSV(ep.tls_remote_certificate_ku)
+      if (ep.tls_remote_certificate_eku) tls.remote_certificate_eku = ep.tls_remote_certificate_eku
+      if (ep.tls_remote_certificate_tls) tls.remote_certificate_tls = ep.tls_remote_certificate_tls
+      const cw = buildControlWrap(ep)
+      if (cw) tls.control_wrap = cw
       if (Object.keys(tls).length) out.tls = tls
       // Cipher
       if (ep.cipher) out.cipher = ep.cipher
       if (ep.data_ciphers?.length) out.data_ciphers = ep.data_ciphers
       if (ep.data_ciphers_fallback) out.data_ciphers_fallback = ep.data_ciphers_fallback
       if (ep.auth) out.auth = ep.auth
-      if (ep.mss_fix > 0) out.mss_fix = ep.mss_fix
+      // mss_fix 与 mss_fix_disabled 互斥（核心会直接 FATAL）
       if (ep.mss_fix_disabled) out.mss_fix_disabled = true
-      if (ep.mss_fix_mode) out.mss_fix_mode = ep.mss_fix_mode
+      else if (ep.mss_fix > 0) {
+        out.mss_fix = ep.mss_fix
+        if (ep.mss_fix_mode) out.mss_fix_mode = ep.mss_fix_mode
+      }
       if (ep.fragment > 0) out.fragment = ep.fragment
       if (ep.replay_window > 0) out.replay_window = ep.replay_window
       if (ep.replay_window_time) out.replay_window_time = ep.replay_window_time
@@ -738,14 +935,40 @@ function buildEndpointTyped(ep) {
       if (ep.route_metric > 0) out.route_metric = ep.route_metric
       if (ep.redirect_gateway) out.redirect_gateway = true
       if (ep.redirect_gateway_flags?.length) out.redirect_gateway_flags = ep.redirect_gateway_flags
+      if (ep.redirect_private) out.redirect_private = true
+      if (ep.block_ipv6) out.block_ipv6 = true
+      const pullFilters = (ep.pull_filters || [])
+        .filter(f => f && f.action && f.text)
+        .map(f => ({ action: f.action, text: f.text }))
+      if (pullFilters.length) out.pull_filters = pullFilters
+      if (ep.ping_interval) out.ping_interval = ep.ping_interval
+      if (ep.ping_restart_disabled) out.ping_restart_disabled = true
+      else if (ep.ping_restart) out.ping_restart = ep.ping_restart
+      if (ep.renegotiate_disabled) out.renegotiate_disabled = true
+      else if (ep.renegotiate_interval) out.renegotiate_interval = ep.renegotiate_interval
+      if (ep.renegotiate_bytes > 0) out.renegotiate_bytes = ep.renegotiate_bytes
+      if (ep.renegotiate_packets > 0) out.renegotiate_packets = ep.renegotiate_packets
+      if (ep.tls_timeout) out.tls_timeout = ep.tls_timeout
+      if (ep.handshake_window) out.handshake_window = ep.handshake_window
+      if (ep.explicit_exit_notify > 0) out.explicit_exit_notify = ep.explicit_exit_notify
+      if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
+      if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
+      if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
+      if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
+      if (ep.on_demand) out.on_demand = true
       if (ep.system) out.system = true
       if (ep.name) out.name = ep.name
+      applyDialOptions(out, ep)
       return out
     }
 
     case 'openvpn-server': {
       const out = { type: 'openvpn-server' }
       if (ep.tag) out.tag = ep.tag
+      applyListenOptions(out, ep)
+      if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
+      if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
+      if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
       if (ep.system) out.system = true
       if (ep.name) out.name = ep.name
       if (ep.mtu > 0) out.mtu = ep.mtu
@@ -754,7 +977,7 @@ function buildEndpointTyped(ep) {
       if (ep.remote) out.remote = ep.remote
       if (ep.remote_port > 0) out.remote_port = ep.remote_port
       if (ep.max_clients > 0) out.max_clients = ep.max_clients
-      if (ep.address?.length) out.address = ep.address
+      if (ep.address?.length || ep._addressStr) out.address = ep.address?.length ? ep.address : splitCSV(ep._addressStr)
       if (ep.peer_address) out.peer_address = ep.peer_address
       if (ep.peer_address_ipv6) out.peer_address_ipv6 = ep.peer_address_ipv6
       if (ep.topology) out.topology = ep.topology
@@ -782,24 +1005,45 @@ function buildEndpointTyped(ep) {
       if (ep.tls_version_max) tls.version_max = ep.tls_version_max
       if (ep.tls_cipher) tls.cipher = ep.tls_cipher
       if (ep.tls_groups) tls.groups = ep.tls_groups
+      if (ep.tls_remote_certificate_ku) tls.remote_certificate_ku = splitCSV(ep.tls_remote_certificate_ku)
+      if (ep.tls_remote_certificate_eku) tls.remote_certificate_eku = ep.tls_remote_certificate_eku
+      if (ep.tls_remote_certificate_tls) tls.remote_certificate_tls = ep.tls_remote_certificate_tls
+      const cw = buildControlWrap(ep)
+      if (cw) tls.control_wrap = cw
       if (Object.keys(tls).length) out.tls = tls
       // Cipher
       if (ep.cipher) out.cipher = ep.cipher
       if (ep.data_ciphers?.length) out.data_ciphers = ep.data_ciphers
       if (ep.data_ciphers_fallback) out.data_ciphers_fallback = ep.data_ciphers_fallback
       if (ep.auth) out.auth = ep.auth
-      if (ep.mss_fix > 0) out.mss_fix = ep.mss_fix
+      // mss_fix 与 mss_fix_disabled 互斥（核心会直接 FATAL）
       if (ep.mss_fix_disabled) out.mss_fix_disabled = true
-      if (ep.mss_fix_mode) out.mss_fix_mode = ep.mss_fix_mode
+      else if (ep.mss_fix > 0) {
+        out.mss_fix = ep.mss_fix
+        if (ep.mss_fix_mode) out.mss_fix_mode = ep.mss_fix_mode
+      }
       if (ep.replay_window > 0) out.replay_window = ep.replay_window
       if (ep.replay_window_time) out.replay_window_time = ep.replay_window_time
       // Push
       const push = {}
       if (ep.push_routes?.length) push.routes = ep.push_routes
       if (ep.push_dns?.length) push.dns = ep.push_dns
-      if (ep.push_dns_servers?.length) push.dns_servers = ep.push_dns_servers
+      const dnsServers = (ep.push_dns_servers || [])
+        .filter(d => d && (d.addresses?.length || d.addresses))
+        .map(d => {
+          const entry = { addresses: Array.isArray(d.addresses) ? d.addresses : splitCSV(d.addresses) }
+          if (d.priority > 0) entry.priority = d.priority
+          if (d.resolve_domains?.length) entry.resolve_domains = d.resolve_domains
+          if (d.dnssec) entry.dnssec = d.dnssec
+          if (d.transport) entry.transport = d.transport
+          if (d.sni) entry.sni = d.sni
+          return entry
+        })
+      if (dnsServers.length) push.dns_servers = dnsServers
       if (ep.push_search_domains?.length) push.search_domains = ep.push_search_domains
+      if (ep.push_dhcp_options?.length) push.dhcp_options = ep.push_dhcp_options
       if (ep.push_redirect_gateway) push.redirect_gateway = true
+      if (ep.push_redirect_gateway_flags?.length) push.redirect_gateway_flags = ep.push_redirect_gateway_flags
       if (ep.push_block_outside_dns) push.block_outside_dns = true
       if (ep.push_ping_interval) push.ping_interval = ep.push_ping_interval
       if (ep.push_ping_restart) push.ping_restart = ep.push_ping_restart
@@ -807,8 +1051,8 @@ function buildEndpointTyped(ep) {
       // Timing
       if (ep.ping_interval) out.ping_interval = ep.ping_interval
       if (ep.ping_restart) out.ping_restart = ep.ping_restart
-      if (ep.renegotiate_interval) out.renegotiate_interval = ep.renegotiate_interval
       if (ep.renegotiate_disabled) out.renegotiate_disabled = true
+      else if (ep.renegotiate_interval) out.renegotiate_interval = ep.renegotiate_interval
       if (ep.renegotiate_bytes > 0) out.renegotiate_bytes = ep.renegotiate_bytes
       if (ep.renegotiate_packets > 0) out.renegotiate_packets = ep.renegotiate_packets
       if (ep.handshake_window && ep.handshake_window !== '1m') out.handshake_window = ep.handshake_window
@@ -953,9 +1197,13 @@ export function parseEndpoint(ep) {
         system_interface_name: ep.system_interface_name || '',
         system_interface_mtu: ep.system_interface_mtu || 0,
         udp_timeout: ep.udp_timeout || '5m',
-        ssh_server: ep.ssh_server || false,
+        ssh_server: ep.ssh_server === true || (!!ep.ssh_server && ep.ssh_server.enabled !== false),
+        ssh_disable_pty: ep.ssh_server?.disable_pty || false,
+        ssh_disable_sftp: ep.ssh_server?.disable_sftp || false,
+        ssh_disable_forwarding: ep.ssh_server?.disable_forwarding || false,
         taildrop_directory: ep.taildrop_directory || '',
         on_demand: ep.on_demand || false,
+        ...parseDialOptions(ep),
       }
 
     case 'openconnect':
@@ -1007,8 +1255,35 @@ export function parseEndpoint(ep) {
         tls_server_name: ep.tls?.server_name || '',
         tls_peer_fingerprint: Array.isArray(ep.tls?.peer_fingerprint) ? ep.tls.peer_fingerprint.join(', ') : '',
         tls_system_trust_disabled: ep.tls?.system_trust_disabled || false,
-        tls_certificate_authority: ep.tls?.certificate_authority || '',
+        tls_certificate_authority: listToStr(ep.tls?.certificate_authority),
         tls_certificate_authority_path: ep.tls?.certificate_authority_path || '',
+        tls_client_certificate: listToStr(ep.tls?.client_certificate),
+        tls_client_certificate_path: ep.tls?.client_certificate_path || '',
+        tls_client_key: listToStr(ep.tls?.client_key),
+        tls_client_key_path: ep.tls?.client_key_path || '',
+        tls_client_key_password: ep.tls?.client_key_password || '',
+        tls_mca_certificate: listToStr(ep.tls?.mca_certificate),
+        tls_mca_certificate_path: ep.tls?.mca_certificate_path || '',
+        tls_mca_key: listToStr(ep.tls?.mca_key),
+        tls_mca_key_path: ep.tls?.mca_key_path || '',
+        tls_mca_key_password: ep.tls?.mca_key_password || '',
+        tncc_certificates: (ep.tncc?.certificates || []).map(c => ({
+          certificate: listToStr(c.certificate),
+          certificate_path: c.certificate_path || '',
+        })),
+        form_entries: (ep.form_entries || []).map(f => ({
+          form_id: f.form_id || '',
+          submission_key: f.submission_key || '',
+          name: f.name || '',
+          value: f.value || '',
+          promote: f.promote || false,
+        })),
+        on_demand: ep.on_demand || false,
+        udp_timeout: ep.udp_timeout || '5m',
+        udp_mapping: ep.udp_mapping || '',
+        udp_filtering: ep.udp_filtering || '',
+        udp_nat_max: ep.udp_nat_max || 0,
+        ...parseDialOptions(ep),
       }
 
     case 'openvpn-client':
@@ -1049,6 +1324,13 @@ export function parseEndpoint(ep) {
         tls_version_max: ep.tls?.version_max || '',
         tls_cipher: ep.tls?.cipher || '',
         tls_groups: ep.tls?.groups || '',
+        tls_remote_certificate_ku: listToStr(ep.tls?.remote_certificate_ku),
+        tls_remote_certificate_eku: ep.tls?.remote_certificate_eku || '',
+        tls_remote_certificate_tls: ep.tls?.remote_certificate_tls || '',
+        control_wrap_type: ep.tls?.control_wrap?.type || '',
+        control_wrap_key: listToStr(ep.tls?.control_wrap?.key),
+        control_wrap_key_path: ep.tls?.control_wrap?.key_path || '',
+        control_wrap_direction: ep.tls?.control_wrap?.direction || '',
         cipher: ep.cipher || '',
         data_ciphers: ep.data_ciphers || [],
         _dataCiphersStr: (ep.data_ciphers || []).join(', '),
@@ -1071,8 +1353,27 @@ export function parseEndpoint(ep) {
         redirect_gateway: ep.redirect_gateway || false,
         redirect_gateway_flags: ep.redirect_gateway_flags || [],
         _redirectGatewayFlagsStr: (ep.redirect_gateway_flags || []).join(', '),
+        redirect_private: ep.redirect_private || false,
+        block_ipv6: ep.block_ipv6 || false,
+        pull_filters: (ep.pull_filters || []).map(f => ({ action: f.action || '', text: f.text || '' })),
+        ping_interval: ep.ping_interval || '',
+        ping_restart: ep.ping_restart || '',
+        ping_restart_disabled: ep.ping_restart_disabled || false,
+        renegotiate_interval: ep.renegotiate_interval || '',
+        renegotiate_disabled: ep.renegotiate_disabled || false,
+        renegotiate_bytes: ep.renegotiate_bytes || 0,
+        renegotiate_packets: ep.renegotiate_packets || 0,
+        tls_timeout: ep.tls_timeout || '',
+        handshake_window: ep.handshake_window || '',
+        explicit_exit_notify: ep.explicit_exit_notify || 0,
+        udp_timeout: ep.udp_timeout || '5m',
+        udp_mapping: ep.udp_mapping || '',
+        udp_filtering: ep.udp_filtering || '',
+        udp_nat_max: ep.udp_nat_max || 0,
+        on_demand: ep.on_demand || false,
         system: ep.system || false,
         name: ep.name || '',
+        ...parseDialOptions(ep),
       }
 
     case 'openvpn-server':
@@ -1113,6 +1414,14 @@ export function parseEndpoint(ep) {
         tls_version_max: ep.tls?.version_max || '',
         tls_cipher: ep.tls?.cipher || '',
         tls_groups: ep.tls?.groups || '',
+        tls_remote_certificate_ku: listToStr(ep.tls?.remote_certificate_ku),
+        tls_remote_certificate_eku: ep.tls?.remote_certificate_eku || '',
+        tls_remote_certificate_tls: ep.tls?.remote_certificate_tls || '',
+        control_wrap_type: ep.tls?.control_wrap?.type || '',
+        control_wrap_key: listToStr(ep.tls?.control_wrap?.key),
+        control_wrap_key_path: ep.tls?.control_wrap?.key_path || '',
+        control_wrap_direction: ep.tls?.control_wrap?.direction || '',
+        control_wrap_force_cookie: ep.tls?.control_wrap?.force_cookie || false,
         cipher: ep.cipher || '',
         data_ciphers: ep.data_ciphers || [],
         _dataCiphersStr: (ep.data_ciphers || []).join(', '),
@@ -1128,10 +1437,21 @@ export function parseEndpoint(ep) {
         push_dns: ep.push?.dns || [],
         _pushDnsStr: (ep.push?.dns || []).join(', '),
         push_dns_servers: ep.push?.dns_servers || [],
-        _pushDnsServersStr: (ep.push?.dns_servers || []).join(', '),
+        push_dns_servers: (ep.push?.dns_servers || []).map(d => ({
+          priority: d.priority || 0,
+          addresses: d.addresses || [],
+          resolve_domains: d.resolve_domains || [],
+          dnssec: d.dnssec || '',
+          transport: d.transport || '',
+          sni: d.sni || '',
+        })),
         push_search_domains: ep.push?.search_domains || [],
         _pushSearchDomainsStr: (ep.push?.search_domains || []).join(', '),
+        push_dhcp_options: ep.push?.dhcp_options || [],
+        _pushDhcpOptionsStr: (ep.push?.dhcp_options || []).join(', '),
         push_redirect_gateway: ep.push?.redirect_gateway || false,
+        push_redirect_gateway_flags: ep.push?.redirect_gateway_flags || [],
+        _pushRedirectGatewayFlagsStr: (ep.push?.redirect_gateway_flags || []).join(', '),
         push_block_outside_dns: ep.push?.block_outside_dns || false,
         push_ping_interval: ep.push?.ping_interval || '',
         push_ping_restart: ep.push?.ping_restart || '',

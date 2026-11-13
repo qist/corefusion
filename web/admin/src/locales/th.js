@@ -1,4 +1,4 @@
-// ไทย（th）
+// th
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "เปิดใช้เซิร์ฟเวอร์ SSH",
           "taildropDirectory": "ไดเรกทอรี Taildrop",
           "stateDirectory": "ไดเรกทอรีสถานะ",
-          "onDemand": "เริ่มตามต้องการ"
+          "onDemand": "เริ่มตามต้องการ",
+          "sshDisablePty": "ปิดใช้ PTY",
+          "sshDisableSftp": "ปิดใช้ SFTP",
+          "sshDisableForwarding": "ปิดการส่งต่อพอร์ต"
         },
         "oc": {
           "serverConfig": "การกำหนดค่าเซิร์ฟเวอร์",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "ผู้ออกใบรับรอง",
           "tlsCertPath": "เส้นทางใบรับรอง",
           "system": "ใช้การผสานรวมเครือข่ายของระบบ",
-          "name": "ชื่อการกำหนดค่า"
+          "name": "ชื่อการกำหนดค่า",
+          "tlsClientCert": "ใบรับรองไคลเอนต์",
+          "tlsClientCertPath": "พาธใบรับรองไคลเอนต์",
+          "tlsClientKey": "คีย์ไคลเอนต์",
+          "tlsClientKeyPath": "พาธคีย์ไคลเอนต์",
+          "tlsClientKeyPassword": "รหัสผ่านคีย์ไคลเอนต์",
+          "tlsMcaCert": "ใบรับรอง MCA",
+          "tlsMcaCertPath": "พาธใบรับรอง MCA",
+          "tlsMcaKey": "คีย์ MCA",
+          "tlsMcaKeyPath": "พาธคีย์ MCA",
+          "tlsMcaKeyPassword": "รหัสผ่านคีย์ MCA",
+          "tnccCerts": "ใบรับรองไคลเอนต์ TNC",
+          "tnccCert": "ใบรับรอง (PEM แบบฝัง)",
+          "tnccCertPath": "พาธใบรับรอง",
+          "formEntries": "ฟิลด์ฟอร์ม",
+          "formId": "ID ฟอร์ม",
+          "submissionKey": "คีย์ส่งข้อมูล",
+          "formName": "ชื่อ",
+          "formValue": "ค่า",
+          "formPromote": "เลื่อนขึ้นเป็นค่าเริ่มต้น",
+          "onDemand": "ตามต้องการ"
         },
         "ovpn": {
           "address": "ที่อยู่",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "เกตเวย์เส้นทาง",
           "routeMetric": "เมตริกเส้นทาง",
           "redirectGateway": "เกตเวย์เปลี่ยนเส้นทาง",
-          "redirectGatewayFlags": "แฟล็กเกตเวย์",
+          "redirectGatewayFlags": "แฟล็กเปลี่ยนเส้นทางเกตเวย์",
           "authRetryNone": "ไม่ลองใหม่",
           "authRetryInteracted": "ลองใหม่แบบโต้ตอบ",
           "authRetryUninteracted": "ลองใหม่แบบไม่โต้ตอบ",
@@ -6598,17 +6621,44 @@ export default {
           "pushBlockOutsideDns": "บล็อก DNS ภายนอก",
           "pushPingInterval": "ช่วงเวลา Ping",
           "pushPingRestart": "รีสตาร์ทเมื่อ Ping",
-          "pingInterval": "ช่วงเวลา Ping",
-          "pingRestart": "รีสตาร์ทเมื่อ Ping",
-          "renegotiateInterval": "ช่วงเจรจาใหม่",
+          "pingInterval": "ช่วงเวลา ping",
+          "pingRestart": "รีสตาร์ต ping",
+          "renegotiateInterval": "ช่วงเวลาเจรจาใหม่",
           "renegotiateDisabled": "ปิดการเจรจาใหม่",
           "renegotiateBytes": "ไบต์เจรจาใหม่",
           "renegotiatePackets": "แพ็กเก็ตเจรจาใหม่",
-          "handshakeWindow": "ช่วงแฮนด์เชก",
+          "handshakeWindow": "หน้าต่างจับมือ",
           "listenConfig": "การตั้งค่าการรับฟัง",
-          "timing": "การตั้งเวลา"
+          "timing": "การตั้งเวลา",
+          "onDemand": "ตามต้องการ",
+          "pullFilters": "ตัวกรอง pull",
+          "pullFilterText": "ข้อความ",
+          "redirectPrivate": "เปลี่ยนเส้นทางเครือข่ายส่วนตัว",
+          "blockIPv6": "บล็อก IPv6",
+          "pingRestartDisabled": "ปิดการรีสตาร์ต ping",
+          "tlsTimeout": "หมดเวลา TLS",
+          "explicitExitNotify": "แจ้งออกอย่างชัดเจน",
+          "timingSection": "การตั้งเวลา",
+          "pushDhcpOptions": "ส่งตัวเลือก DHCP",
+          "pushRedirectGatewayFlags": "ส่งแฟล็กเปลี่ยนเส้นทาง",
+          "pushDnsServerPriority": "ลำดับความสำคัญ",
+          "pushDnsServerAddresses": "ที่อยู่",
+          "pushDnsServerResolveDomains": "โดเมนที่ต้องการแปลง",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "การขนส่ง",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage ของใบรับรองระยะไกล",
+          "tlsRemoteCertEku": "EKU ของใบรับรองระยะไกล",
+          "tlsRemoteCertTls": "ประเภทใบรับรองระยะไกล",
+          "remoteCertSection": "การตรวจสอบใบรับรองระยะไกล",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "ประเภท",
+          "controlWrapKey": "คีย์ (แบบฝัง)",
+          "controlWrapKeyPath": "พาธคีย์",
+          "controlWrapDirection": "ทิศทาง",
+          "controlWrapForceCookie": "บังคับ Cookie"
         },
-        masque: {
+        "masque": {
           "path": "พาธ",
           "pathHint": "เทมเพลตพาธของเซิร์ฟเวอร์ เช่น /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "เวอร์ชัน HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = ใช้ค่าเริ่มต้น (1280)",
           "serverAddressHint": "พูลที่อยู่ของอุโมงค์ สูงสุดหนึ่งคำนำหน้า IPv4 และหนึ่ง IPv6",
           "detourHint": "แท็กเอาต์บาวด์ที่ใช้เชื่อมต่อ (พร็อกซีแบบเชน)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "หลายคิว",

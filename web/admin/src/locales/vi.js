@@ -1,4 +1,4 @@
-// Tiếng Việt（vi）
+// vi
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "Bật máy chủ SSH",
           "taildropDirectory": "Thư mục Taildrop",
           "stateDirectory": "Thư mục trạng thái",
-          "onDemand": "Khởi động theo yêu cầu"
+          "onDemand": "Khởi động theo yêu cầu",
+          "sshDisablePty": "Tắt PTY",
+          "sshDisableSftp": "Tắt SFTP",
+          "sshDisableForwarding": "Tắt chuyển tiếp cổng"
         },
         "oc": {
           "serverConfig": "Cấu hình máy chủ",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "Cơ quan cấp chứng chỉ",
           "tlsCertPath": "Đường dẫn chứng chỉ",
           "system": "Sử dụng tích hợp mạng hệ thống",
-          "name": "Tên cấu hình"
+          "name": "Tên cấu hình",
+          "tlsClientCert": "Chứng chỉ máy khách",
+          "tlsClientCertPath": "Đường dẫn chứng chỉ máy khách",
+          "tlsClientKey": "Khóa máy khách",
+          "tlsClientKeyPath": "Đường dẫn khóa máy khách",
+          "tlsClientKeyPassword": "Mật khẩu khóa máy khách",
+          "tlsMcaCert": "Chứng chỉ MCA",
+          "tlsMcaCertPath": "Đường dẫn chứng chỉ MCA",
+          "tlsMcaKey": "Khóa MCA",
+          "tlsMcaKeyPath": "Đường dẫn khóa MCA",
+          "tlsMcaKeyPassword": "Mật khẩu khóa MCA",
+          "tnccCerts": "Chứng chỉ máy khách TNC",
+          "tnccCert": "Chứng chỉ (PEM nội tuyến)",
+          "tnccCertPath": "Đường dẫn chứng chỉ",
+          "formEntries": "Trường biểu mẫu",
+          "formId": "ID biểu mẫu",
+          "submissionKey": "Khóa gửi",
+          "formName": "Tên",
+          "formValue": "Giá trị",
+          "formPromote": "Ưu tiên",
+          "onDemand": "Theo nhu cầu"
         },
         "ovpn": {
           "address": "Địa chỉ",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "Cổng tuyến đường",
           "routeMetric": "Chỉ số tuyến đường",
           "redirectGateway": "Cổng chuyển hướng",
-          "redirectGatewayFlags": "Cờ cổng",
+          "redirectGatewayFlags": "Cờ chuyển hướng cổng",
           "authRetryNone": "Không thử lại",
           "authRetryInteracted": "Thử lại tương tác",
           "authRetryUninteracted": "Thử lại không tương tác",
@@ -6598,17 +6621,44 @@ export default {
           "pushBlockOutsideDns": "Chặn DNS bên ngoài",
           "pushPingInterval": "Khoảng thời gian ping",
           "pushPingRestart": "Khởi động lại khi Ping",
-          "pingInterval": "Chu kỳ Ping",
-          "pingRestart": "Khởi động lại khi Ping",
-          "renegotiateInterval": "Chu kỳ tái thương lượng",
-          "renegotiateDisabled": "Tắt tái thương lượng",
-          "renegotiateBytes": "Byte tái thương lượng",
-          "renegotiatePackets": "Gói tin tái thương lượng",
+          "pingInterval": "Khoảng ping",
+          "pingRestart": "Khởi động lại ping",
+          "renegotiateInterval": "Khoảng thương lượng lại",
+          "renegotiateDisabled": "Tắt thương lượng lại",
+          "renegotiateBytes": "Byte thương lượng lại",
+          "renegotiatePackets": "Gói thương lượng lại",
           "handshakeWindow": "Cửa sổ bắt tay",
           "listenConfig": "Cài đặt lắng nghe",
-          "timing": "Cài đặt thời gian"
+          "timing": "Cài đặt thời gian",
+          "onDemand": "Theo nhu cầu",
+          "pullFilters": "Bộ lọc pull",
+          "pullFilterText": "Văn bản",
+          "redirectPrivate": "Chuyển hướng mạng riêng",
+          "blockIPv6": "Chặn IPv6",
+          "pingRestartDisabled": "Tắt khởi động lại ping",
+          "tlsTimeout": "Thời gian chờ TLS",
+          "explicitExitNotify": "Thông báo thoát rõ ràng",
+          "timingSection": "Định thời",
+          "pushDhcpOptions": "Đẩy tùy chọn DHCP",
+          "pushRedirectGatewayFlags": "Đẩy cờ chuyển hướng",
+          "pushDnsServerPriority": "Ưu tiên",
+          "pushDnsServerAddresses": "Địa chỉ",
+          "pushDnsServerResolveDomains": "Tên miền phân giải",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "Vận chuyển",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage chứng chỉ từ xa",
+          "tlsRemoteCertEku": "EKU chứng chỉ từ xa",
+          "tlsRemoteCertTls": "Loại chứng chỉ từ xa",
+          "remoteCertSection": "Xác minh chứng chỉ từ xa",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "Loại",
+          "controlWrapKey": "Khóa (nội tuyến)",
+          "controlWrapKeyPath": "Đường dẫn khóa",
+          "controlWrapDirection": "Hướng",
+          "controlWrapForceCookie": "Bắt buộc Cookie"
         },
-        masque: {
+        "masque": {
           "path": "Đường dẫn",
           "pathHint": "Mẫu đường dẫn máy chủ, ví dụ /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "Phiên bản HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = dùng giá trị mặc định (1280)",
           "serverAddressHint": "Bể địa chỉ đường hầm, tối đa một tiền tố IPv4 và một IPv6",
           "detourHint": "Thẻ outbound dùng để kết nối (proxy chuỗi)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "Đa hàng đợi",

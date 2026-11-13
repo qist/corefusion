@@ -1,4 +1,4 @@
-// 繁體中文（zh-TW）
+// zh-TW
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "啟用 SSH 伺服器",
           "taildropDirectory": "Taildrop 目錄",
           "stateDirectory": "狀態目錄",
-          "onDemand": "隨需啟動"
+          "onDemand": "隨需啟動",
+          "sshDisablePty": "停用 PTY",
+          "sshDisableSftp": "停用 SFTP",
+          "sshDisableForwarding": "停用連接埠轉送"
         },
         "oc": {
           "serverConfig": "伺服器設定",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "憑證頒發機構",
           "tlsCertPath": "憑證路徑",
           "system": "使用系統網路整合",
-          "name": "設定名稱"
+          "name": "設定名稱",
+          "tlsClientCert": "用戶端憑證",
+          "tlsClientCertPath": "用戶端憑證路徑",
+          "tlsClientKey": "用戶端私鑰",
+          "tlsClientKeyPath": "用戶端私鑰路徑",
+          "tlsClientKeyPassword": "用戶端私鑰密碼",
+          "tlsMcaCert": "MCA 憑證",
+          "tlsMcaCertPath": "MCA 憑證路徑",
+          "tlsMcaKey": "MCA 私鑰",
+          "tlsMcaKeyPath": "MCA 私鑰路徑",
+          "tlsMcaKeyPassword": "MCA 私鑰密碼",
+          "tnccCerts": "TNC 用戶端憑證",
+          "tnccCert": "憑證（內嵌 PEM）",
+          "tnccCertPath": "憑證路徑",
+          "formEntries": "表單欄位",
+          "formId": "表單 ID",
+          "submissionKey": "提交鍵",
+          "formName": "欄位名稱",
+          "formValue": "欄位值",
+          "formPromote": "提升為預設值",
+          "onDemand": "隨選連線"
         },
         "ovpn": {
           "address": "位址",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "路由閘道",
           "routeMetric": "路由度量",
           "redirectGateway": "重新導向閘道",
-          "redirectGatewayFlags": "閘道旗標",
+          "redirectGatewayFlags": "重新導向閘道旗標",
           "authRetryNone": "不重試",
           "authRetryInteracted": "互動重試",
           "authRetryUninteracted": "非互動重試",
@@ -6599,16 +6622,43 @@ export default {
           "pushPingInterval": "Ping 間隔",
           "pushPingRestart": "Ping 重新啟動",
           "pingInterval": "Ping 間隔",
-          "pingRestart": "Ping 重新啟動",
+          "pingRestart": "Ping 重啟逾時",
           "renegotiateInterval": "重新協商間隔",
           "renegotiateDisabled": "停用重新協商",
-          "renegotiateBytes": "重新協商位元組",
-          "renegotiatePackets": "重新協商封包",
+          "renegotiateBytes": "重新協商位元組數",
+          "renegotiatePackets": "重新協商封包數",
           "handshakeWindow": "握手視窗",
           "listenConfig": "監聽設定",
-          "timing": "時間設定"
+          "timing": "時間設定",
+          "onDemand": "隨選連線",
+          "pullFilters": "拉取過濾規則",
+          "pullFilterText": "比對文字",
+          "redirectPrivate": "重新導向私有網段",
+          "blockIPv6": "封鎖 IPv6",
+          "pingRestartDisabled": "停用 Ping 重啟",
+          "tlsTimeout": "TLS 逾時",
+          "explicitExitNotify": "明確退出通知",
+          "timingSection": "計時",
+          "pushDhcpOptions": "推送 DHCP 選項",
+          "pushRedirectGatewayFlags": "推送重新導向閘道旗標",
+          "pushDnsServerPriority": "優先順序",
+          "pushDnsServerAddresses": "位址",
+          "pushDnsServerResolveDomains": "解析網域",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "傳輸",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "遠端憑證 Key Usage",
+          "tlsRemoteCertEku": "遠端憑證 EKU",
+          "tlsRemoteCertTls": "遠端憑證類型",
+          "remoteCertSection": "遠端憑證驗證",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "類型",
+          "controlWrapKey": "金鑰（內嵌）",
+          "controlWrapKeyPath": "金鑰路徑",
+          "controlWrapDirection": "方向",
+          "controlWrapForceCookie": "強制 Cookie"
         },
-        masque: {
+        "masque": {
           "path": "路徑",
           "pathHint": "伺服器路徑範本，例如 /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "HTTP 版本",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = 使用預設值 (1280)",
           "serverAddressHint": "通道位址池，最多一個 IPv4 和一個 IPv6 前綴",
           "detourHint": "用於撥號的出站 tag（鏈式代理）"
-        },
+        }
       },
       "tun": {
         "multiQueue": "多佇列",

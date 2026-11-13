@@ -1,4 +1,4 @@
-// Português（pt）
+// pt
 export default {
   "protoHint": {
     "xrayOutboundProtocol": {
@@ -6438,7 +6438,10 @@ export default {
           "sshServer": "Ativar servidor SSH",
           "taildropDirectory": "Diretório do Taildrop",
           "stateDirectory": "Diretório de estado",
-          "onDemand": "Iniciar sob demanda"
+          "onDemand": "Iniciar sob demanda",
+          "sshDisablePty": "Desativar PTY",
+          "sshDisableSftp": "Desativar SFTP",
+          "sshDisableForwarding": "Desativar reencaminhamento de portas"
         },
         "oc": {
           "serverConfig": "Configuração do servidor",
@@ -6502,7 +6505,27 @@ export default {
           "tlsCert": "Autoridade de certificação",
           "tlsCertPath": "Caminho do certificado",
           "system": "Usar integração de rede do sistema",
-          "name": "Nome da configuração"
+          "name": "Nome da configuração",
+          "tlsClientCert": "Certificado de cliente",
+          "tlsClientCertPath": "Caminho do certificado de cliente",
+          "tlsClientKey": "Chave do cliente",
+          "tlsClientKeyPath": "Caminho da chave do cliente",
+          "tlsClientKeyPassword": "Palavra-passe da chave do cliente",
+          "tlsMcaCert": "Certificado MCA",
+          "tlsMcaCertPath": "Caminho do certificado MCA",
+          "tlsMcaKey": "Chave MCA",
+          "tlsMcaKeyPath": "Caminho da chave MCA",
+          "tlsMcaKeyPassword": "Palavra-passe da chave MCA",
+          "tnccCerts": "Certificados de cliente TNC",
+          "tnccCert": "Certificado (PEM embutido)",
+          "tnccCertPath": "Caminho do certificado",
+          "formEntries": "Campos de formulário",
+          "formId": "ID do formulário",
+          "submissionKey": "Chave de submissão",
+          "formName": "Nome",
+          "formValue": "Valor",
+          "formPromote": "Promover",
+          "onDemand": "A pedido"
         },
         "ovpn": {
           "address": "Endereço",
@@ -6542,7 +6565,7 @@ export default {
           "routeGateway": "Gateway da rota",
           "routeMetric": "Métrica da rota",
           "redirectGateway": "Redirecionar gateway",
-          "redirectGatewayFlags": "Sinalizadores do gateway",
+          "redirectGatewayFlags": "Indicadores de redirecionamento de gateway",
           "authRetryNone": "Não tentar novamente",
           "authRetryInteracted": "Nova tentativa interativa",
           "authRetryUninteracted": "Nova tentativa não interativa",
@@ -6599,16 +6622,43 @@ export default {
           "pushPingInterval": "Intervalo de ping",
           "pushPingRestart": "Reinício do ping",
           "pingInterval": "Intervalo de ping",
-          "pingRestart": "Reinício do ping",
+          "pingRestart": "Reinício de ping",
           "renegotiateInterval": "Intervalo de renegociação",
           "renegotiateDisabled": "Desativar renegociação",
           "renegotiateBytes": "Bytes de renegociação",
           "renegotiatePackets": "Pacotes de renegociação",
           "handshakeWindow": "Janela de handshake",
           "listenConfig": "Configurações de escuta",
-          "timing": "Configurações de hora"
+          "timing": "Configurações de hora",
+          "onDemand": "A pedido",
+          "pullFilters": "Filtros pull",
+          "pullFilterText": "Texto",
+          "redirectPrivate": "Redirecionar redes privadas",
+          "blockIPv6": "Bloquear IPv6",
+          "pingRestartDisabled": "Desativar reinício de ping",
+          "tlsTimeout": "Tempo limite TLS",
+          "explicitExitNotify": "Notificação de saída explícita",
+          "timingSection": "Temporização",
+          "pushDhcpOptions": "Enviar opções DHCP",
+          "pushRedirectGatewayFlags": "Enviar indicadores de redirecionamento",
+          "pushDnsServerPriority": "Prioridade",
+          "pushDnsServerAddresses": "Endereços",
+          "pushDnsServerResolveDomains": "Domínios a resolver",
+          "pushDnsServerDnssec": "DNSSEC",
+          "pushDnsServerTransport": "Transporte",
+          "pushDnsServerSni": "SNI",
+          "tlsRemoteCertKu": "Key Usage do certificado remoto",
+          "tlsRemoteCertEku": "EKU do certificado remoto",
+          "tlsRemoteCertTls": "Tipo de certificado remoto",
+          "remoteCertSection": "Verificação do certificado remoto",
+          "controlWrap": "Control Wrap",
+          "controlWrapType": "Tipo",
+          "controlWrapKey": "Chave (embutida)",
+          "controlWrapKeyPath": "Caminho da chave",
+          "controlWrapDirection": "Direção",
+          "controlWrapForceCookie": "Forçar cookie"
         },
-        masque: {
+        "masque": {
           "path": "Caminho",
           "pathHint": "Modelo de caminho do servidor, ex. /.well-known/masque/ip/{target}/{ipproto}/",
           "version": "Versão HTTP",
@@ -6637,7 +6687,7 @@ export default {
           "mtuHint": "0 = usar o valor predefinido (1280)",
           "serverAddressHint": "Conjunto de endereços do túnel, no máximo um prefixo IPv4 e um IPv6",
           "detourHint": "Etiqueta de saída usada para ligar (proxy em cadeia)"
-        },
+        }
       },
       "tun": {
         "multiQueue": "Multifila",

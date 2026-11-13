@@ -70,7 +70,13 @@
               </el-select>
             </el-form-item>
           </el-form>
-          <SingboxOutboundBase v-if="isServerType(rf.type)" :model="rf" @update="noop" />
+          <SingboxOutboundBase
+            v-if="isServerType(rf.type) || ['direct', 'tor', 'bridge'].includes(rf.type)"
+            :model="rf"
+            :is-proxy="isServerType(rf.type)"
+            :show-dial="['direct', 'tor', 'bridge'].includes(rf.type)"
+            @update="noop"
+          />
         </el-tab-pane>
 
         <!-- Protocol: 协议专属设置 -->
@@ -147,7 +153,6 @@ import SingboxObVless from './singbox/outbounds/SingboxObVless.vue'
 import SingboxObVmess from './singbox/outbounds/SingboxObVmess.vue'
 import SingboxObTrojan from './singbox/outbounds/SingboxObTrojan.vue'
 import SingboxObShadowsocks from './singbox/outbounds/SingboxObShadowsocks.vue'
-import SingboxObShadowsocks2022 from './singbox/outbounds/SingboxObShadowsocks2022.vue'
 import SingboxObTuic from './singbox/outbounds/SingboxObTuic.vue'
 import SingboxObHysteria2 from './singbox/outbounds/SingboxObHysteria2.vue'
 import SingboxObHysteria from './singbox/outbounds/SingboxObHysteria.vue'
@@ -180,7 +185,6 @@ const sbOutboundCardFields = computed(() => [
 const OUTBOUND_TYPES = [
   { value: 'direct', label: 'Direct' },
   { value: 'block', label: 'Block' },
-  { value: 'dns', label: 'DNS' },
   { value: 'selector', label: 'Selector' },
   { value: 'urltest', label: 'URLTest' },
   { value: 'socks', label: 'SOCKS' },
@@ -203,7 +207,7 @@ const OUTBOUND_TYPES = [
 ]
 const PROTOCOL_COMPS = {
   vmess: SingboxObVmess, vless: SingboxObVless, trojan: SingboxObTrojan,
-  shadowsocks: SingboxObShadowsocks, shadowsocks2022: SingboxObShadowsocks2022,
+  shadowsocks: SingboxObShadowsocks, shadowsocks2022: SingboxObShadowsocks,
   tuic: SingboxObTuic, hysteria2: SingboxObHysteria2, hysteria: SingboxObHysteria,
   http: SingboxObHttp, socks: SingboxObHttp, anytls: SingboxObAnyTls,
   shadowtls: SingboxObShadowtls, snell: SingboxObSnell,

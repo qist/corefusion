@@ -201,6 +201,14 @@
               <el-form-item :label="t('xrayIn.overridePort')">
                 <el-input-number v-model="rf.override_port" :min="0" :max="65535" style="width:100%" />
               </el-form-item>
+              <el-form-item :label="t('singbox.listen.network')">
+                <el-select v-model="rf.network" style="width:100%" clearable>
+                  <el-option label="" value="" />
+                  <el-option label="tcp" value="tcp" />
+                  <el-option label="udp" value="udp" />
+                  <el-option label="tcp,udp" value="tcp,udp" />
+                </el-select>
+              </el-form-item>
             </template>
 
             <!-- 通用监听字段（sing-box Listen Fields） -->
@@ -539,6 +547,9 @@ import SingboxNaive from './singbox/inbounds/SingboxNaive.vue'
 import SingboxTun from './singbox/inbounds/SingboxTun.vue'
 import SingboxTproxy from './singbox/inbounds/SingboxTproxy.vue'
 import SingboxCloudflared from './singbox/inbounds/SingboxCloudflared.vue'
+import SingboxAnytls from './singbox/inbounds/SingboxAnytls.vue'
+import SingboxHttpMixed from './singbox/inbounds/SingboxHttpMixed.vue'
+import SingboxTrojan from './singbox/inbounds/SingboxTrojan.vue'
 
 const props = defineProps({ data: Array, coreType: String, serverId: Number, serverInfo: { type: Object, default: () => ({}) } })
 const emitFn = defineEmits(['update'])
@@ -552,11 +563,13 @@ const PROTOCOL_COMPS = {
   shadowtls: SingboxShadowtls, hysteria: SingboxHysteria, snell: SingboxSnell,
   naive: SingboxNaive, tun: SingboxTun, tproxy: SingboxTproxy,
   cloudflared: SingboxCloudflared,
+  anytls: SingboxAnytls, http: SingboxHttpMixed, mixed: SingboxHttpMixed, socks: SingboxHttpMixed,
+  trojan: SingboxTrojan,
 }
 function getProtocolComp(t) { return PROTOCOL_COMPS[t] || null }
 
 // 有协议专属 tab 的类型（其余参数全部由通用 tab 提供）
-const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'snell', 'naive', 'tun', 'tproxy', 'cloudflared']
+const PROTO_SPECIFIC_TYPES = ['shadowsocks', 'hysteria2', 'tuic', 'shadowtls', 'hysteria', 'snell', 'naive', 'tun', 'tproxy', 'cloudflared', 'anytls', 'http', 'mixed', 'socks', 'trojan']
 function hasProtoTab(t) { return PROTO_SPECIFIC_TYPES.includes(t) }
 
 // 访问地址：优先使用 server 域名/IP（由父级传入 data 时可附带），无则用 listen
@@ -709,8 +722,8 @@ async function save() {
     remark: cfg._remark || cfg.tag || '',
     protocol: cfg.type,
     tag: cfg.tag,
-    listen: cfg.listen || '0.0.0.0',
-    port: cfg.listen_port || 0,
+    listen: (cfg.type === 'tun' || cfg.type === 'cloudflared') ? '' : (cfg.listen || '0.0.0.0'),
+    port: (cfg.type === 'tun' || cfg.type === 'cloudflared') ? 0 : (cfg.listen_port || 0),
     enabled: cfg._enabled !== false,
     config_json: configJson,
   }
@@ -804,8 +817,8 @@ async function toggleEnabled(row) {
       remark: ib._remark || ib.tag || '',
       protocol: cfg.type,
       tag: cfg.tag,
-      listen: cfg.listen || '0.0.0.0',
-      port: cfg.listen_port || 0,
+      listen: (cfg.type === 'tun' || cfg.type === 'cloudflared') ? '' : (cfg.listen || '0.0.0.0'),
+      port: (cfg.type === 'tun' || cfg.type === 'cloudflared') ? 0 : (cfg.listen_port || 0),
       enabled: ib._enabled !== false,
       config_json: configJson,
     })

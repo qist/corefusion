@@ -35,6 +35,62 @@
           <el-option label="1.3" value="1.3" />
         </el-select>
       </el-form-item>
+      <el-form-item :label="t('singbox.tls.maxVersion')">
+        <el-select v-model="model._tlsMaxVersion" style="width:100%" clearable @change="emit">
+          <el-option label="" value="" />
+          <el-option label="1.0" value="1.0" />
+          <el-option label="1.1" value="1.1" />
+          <el-option label="1.2" value="1.2" />
+          <el-option label="1.3" value="1.3" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.cipherSuites')">
+        <el-input v-model="model._tlsCipherSuites" type="textarea" :rows="2" :placeholder="t('singbox.tls.cipherSuitesPlaceholder')" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.curvePreferences')">
+        <el-select v-model="model._tlsCurvePreferences" style="width:100%" multiple clearable @change="emit">
+          <el-option v-for="c in curves" :key="c" :label="c" :value="c" />
+        </el-select>
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.handshakeTimeout')">
+        <el-input v-model="model._tlsHandshakeTimeout" placeholder="5s" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.kernelTx')">
+        <el-switch v-model="model._tlsKernelTx" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.kernelRx')">
+        <el-switch v-model="model._tlsKernelRx" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.clientAuthentication')">
+        <el-select v-model="model._tlsClientAuth" style="width:100%" clearable @change="emit">
+          <el-option label="" value="" />
+          <el-option label="no" value="no" />
+          <el-option label="request" value="request" />
+          <el-option label="require-any" value="require-any" />
+          <el-option label="verify-if-given" value="verify-if-given" />
+          <el-option label="require-and-verify" value="require-and-verify" />
+        </el-select>
+      </el-form-item>
+      <el-form-item v-if="model._tlsClientAuth && model._tlsClientAuth !== 'no'" :label="t('singbox.tls.clientCertPathList')">
+        <el-input v-model="model._tlsClientCertPath" type="textarea" :rows="2" :placeholder="t('singbox.tls.clientCertPathListHint')" @change="emit" />
+      </el-form-item>
+      <el-form-item v-if="model._tlsClientAuth && model._tlsClientAuth !== 'no'" :label="t('singbox.tls.clientCertSha256')">
+        <el-input v-model="model._tlsClientCertSha256" type="textarea" :rows="2" :placeholder="t('singbox.tls.sha256Hint')" @change="emit" />
+      </el-form-item>
+      <el-form-item v-if="model._tlsClientAuth && model._tlsClientAuth !== 'no'" :label="t('singbox.tls.clientCertPubKeySha256')">
+        <el-input v-model="model._tlsClientCertPubKeySha256" type="textarea" :rows="2" :placeholder="t('singbox.tls.sha256Hint')" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.ech')">
+        <el-switch v-model="model._tlsEchEnabled" @change="emit" />
+      </el-form-item>
+      <template v-if="model._tlsEchEnabled">
+        <el-form-item :label="t('singbox.tls.echKey')">
+          <el-input v-model="model._tlsEchKey" type="textarea" :rows="2" :placeholder="t('singbox.tls.echKeyHint')" @change="emit" />
+        </el-form-item>
+        <el-form-item :label="t('singbox.tls.echKeyPath')">
+          <el-input v-model="model._tlsEchKeyPath" placeholder="/path/to/ech.key" @change="emit" />
+        </el-form-item>
+      </template>
       <!-- 客户端 uTLS 指纹（fp）：sing-box 入站没有 utls 字段，值存内部字段 _utlsFingerprint，
            写入分享链接的 fp 参数（不影响服务端行为）。与 xray 编辑器一样可自由选择。 -->
       <el-form-item :label="t('singbox.tls.utlsFingerprint')">
@@ -98,6 +154,18 @@
       </el-form-item>
       <el-form-item :label="t('singbox.tls.handshakePort')">
         <el-input-number v-model="model._realityHandshakePort" :min="1" :max="65535" style="width:100%" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.handshakeDetour')">
+        <el-input v-model="model._realityHandshakeDetour" :placeholder="t('protoHint.listen.detourPh')" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.handshakeBindInterface')">
+        <el-input v-model="model._realityHandshakeBindInterface" placeholder="eth0" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.handshakeConnectTimeout')">
+        <el-input v-model="model._realityHandshakeConnectTimeout" placeholder="5s" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.tls.handshakeTcpFastOpen')">
+        <el-switch v-model="model._realityHandshakeTcpFastOpen" @change="emit" />
       </el-form-item>
       <el-form-item :label="t('singbox.tls.privateKey')">
         <div style="display:flex;gap:8px;flex:1">
@@ -186,6 +254,8 @@ const certificates = ref([])
 
 // uTLS 指纹候选项（与 sing-box 出站组件 SingboxOutboundTls.vue 保持一致）
 const utlsFingerprints = ['chrome', 'firefox', 'edge', 'safari', '360', 'qq', 'ios', 'android', 'random', 'randomized']
+// TLS 曲线候选项（option/tls.go CurvePreference）
+const curves = ['P256', 'P384', 'P521', 'X25519', 'X25519MLKEM768']
 
 // Reality 目标选择
 const _realityTarget = ref('')

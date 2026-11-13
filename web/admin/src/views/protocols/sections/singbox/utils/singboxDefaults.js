@@ -6,7 +6,7 @@ import { genRemark, genInboundTag } from '../../utils/nodeNaming'
 // 需要 TLS 的 Inbound 协议（InboundTLSOptionsContainer，源码验证）
 // vless/vmess/trojan/hysteria2/tuic/naive/anytls/mixed/hysteria 有 InboundTLSOptionsContainer
 // socks/shadowsocks/shadowtls/snell/wireguard/tun 无 TLS 字段
-export const TLS_ENABLED_PROTOCOLS = ['vless', 'vmess', 'trojan', 'hysteria2', 'tuic', 'naive', 'anytls', 'mixed', 'hysteria']
+export const TLS_ENABLED_PROTOCOLS = ['vless', 'vmess', 'trojan', 'hysteria2', 'tuic', 'naive', 'anytls', 'mixed', 'http', 'hysteria']
 
 // 支持 V2Ray Transport 的协议（源码验证：仅 vless/vmess/trojan 有 Transport 字段）
 export const TRANSPORT_PROTOCOLS = ['vless', 'vmess', 'trojan']
@@ -48,14 +48,17 @@ export function supportsReality(type, transportType) {
 
 // ---------- 出站支持矩阵 ----------
 
-// 出站（客户端）协议：支持 TLS
-export const OUTBOUND_TLS_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'tuic', 'http', 'socks', 'anytls', 'shadowtls', 'snell', 'naive']
+// 出站（客户端）协议：支持 TLS（源码校验：snell / socks 没有 OutboundTLSOptionsContainer）
+export const OUTBOUND_TLS_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'tuic', 'http', 'anytls', 'shadowtls', 'naive']
 // 出站（客户端）协议：支持 V2Ray Transport
 export const OUTBOUND_TRANSPORT_PROTOCOLS = ['vmess', 'vless', 'trojan']
 // 出站（客户端）协议：支持 Multiplex
 export const OUTBOUND_MULTIPLEX_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks']
 // 出站（客户端）协议：使用服务器地址（server/server_port）
-export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'shadowsocks', 'shadowsocks2022', 'tuic', 'anytls', 'shadowtls', 'snell', 'naive', 'http', 'socks']
+export const OUTBOUND_SERVER_PROTOCOLS = ['vmess', 'vless', 'trojan', 'hysteria2', 'hysteria', 'shadowsocks', 'shadowsocks2022', 'tuic', 'anytls', 'shadowtls', 'snell', 'naive', 'http', 'socks', 'ssh']
+// 出站（客户端）协议：有 network 字段的协议（sing-box 源码校验）
+// trojan/anytls/shadowtls/naive/http 没有 network 字段，写出去会 unknown field
+export const OUTBOUND_NETWORK_PROTOCOLS = ['vmess', 'vless', 'shadowsocks', 'shadowsocks2022', 'hysteria2', 'hysteria', 'tuic', 'snell', 'socks']
 // 出站（客户端）协议：协议专属设置（需要 Protocol tab）
 export const OUTBOUND_PROTOCOL_PROTOCOLS = ['vmess', 'vless', 'trojan', 'shadowsocks', 'shadowsocks2022', 'hysteria2', 'hysteria', 'tuic', 'anytls', 'shadowtls', 'snell', 'naive', 'bridge', 'http', 'socks', 'selector', 'urltest', 'direct', 'block', 'dns', 'tor', 'ssh']
 
@@ -83,7 +86,9 @@ export const DEFAULT_PORTS = {
 // UUID v4；密码 = 32 字节随机数 base64；psk = 32 字节随机数 base64url。
 import { generateUuid, generatePassword, generatePsk } from '../../utils/credentials'
 export { generateUuid, generatePassword }
-export { generatePsk as generateKey }
+// 注意：export { generatePsk as generateKey } 只建立导出别名，不会在本模块内定义
+// generateKey；本文件里的 userDefaultsForType 需要本地绑定。
+export const generateKey = generatePsk
 
 export function generateUsername() { return 'user' + Math.random().toString(36).substring(2, 8) }
 
@@ -108,6 +113,7 @@ export function userDefaultsForType(type) {
   const u = { name: generateEmail() }
   if (UUID_PROTOCOLS.includes(type)) u.uuid = generateUuid()
   if (PASSWORD_PROTOCOLS.includes(type)) u.password = generatePassword()
+  if (type === 'tuic') u.password = generatePassword()
   if (PSK_PROTOCOLS.includes(type)) u.password = generateKey()
   if (AUTH_USER_PROTOCOLS.includes(type)) { u.username = generateUsername(); u.password = generatePassword() }
   if (USERKEY_PROTOCOLS.includes(type)) u.userkey = generateKey()
@@ -134,6 +140,21 @@ export function inboundDefaultsForType(type, customPort) {
     udp_fragment: false,
     udp_timeout: '',
     detour: '',
+    // Listen Fields（sing-box ListenOptions，源码 inbound.go）
+    bind_interface: '', routing_mark: 0, reuse_addr: false, netns: '',
+    disable_tcp_keep_alive: false, tcp_keep_alive: '', tcp_keep_alive_interval: '',
+    // socks / http / mixed 入站支持 domain_resolver（字符串形式或对象）
+    domain_resolver: '',
+    // http / mixed
+    set_system_proxy: false,
+    _httpVersion: '1,2',
+    _httpIdleTimeout: '', _httpKeepAlivePeriod: '', _httpStreamRecvWindow: '',
+    _httpConnRecvWindow: '', _httpMaxConcurrentStreams: 0,
+    _httpInitialPacketSize: 0, _httpDisablePathMtu: false,
+    // AnyTLS padding_scheme（每行一条）
+    _anytlsPaddingScheme: '',
+    // Trojan fallback
+    _trojanFallbackServer: '', _trojanFallbackPort: 0, _trojanFallbackHsn: [],
     // Port Hopping（端口跳跃）：字段与 xray 一致，供防火墙规则增删与恢复读取
     _portHopEnabled: false,
     _portHopMode: 'preset',
@@ -152,10 +173,16 @@ export function inboundDefaultsForType(type, customPort) {
     users: USER_PROTOCOLS.includes(type) ? [userDefaultsForType(type)] : [],
     method: '2022-blake3-aes-256-gcm',
     password: '',
+    // shadowsocks inbound：多目的地（destinations）与托管模式（option/shadowsocks.go）
+    destinations: [], managed: false,
     // hysteria2
     up: '', down: '', up_mbps: '', down_mbps: '', ignore_client_bandwidth: false, masquerade: '',
-    // hysteria2 obfs (sing-box: {type, password} 结构体)
+    // hysteria2 obfs (sing-box: {type, password} + gecko {min_packet_size,max_packet_size})
     _hy2ObfsType: '', _hy2ObfsPassword: '',
+    _hy2ObfsMinPacketSize: 0, _hy2ObfsMaxPacketSize: 0,
+    // hysteria2 masquerade（type: none/proxy/file/string）
+    _hy2MasqType: 'none', _hy2MasqUrl: '', _hy2MasqRewriteHost: false,
+    _hy2MasqDirectory: '', _hy2MasqStatusCode: 0, _hy2MasqContent: '',
     // hysteria2 bbr_profile (standard/conservative/aggressive)
     _hy2BbrProfile: '',
     // hysteria2 QUIC options (QUICOptions = HTTP2Options + QUIC fields)
@@ -195,7 +222,15 @@ export function inboundDefaultsForType(type, customPort) {
     // tls
     _tlsEnabled: TLS_ENABLED_PROTOCOLS.includes(type),
     _tlsServerName: '', _tlsAlpn: type === 'hysteria2' || type === 'tuic' || type === 'hysteria' ? ['h3'] : ['h2', 'http/1.1'], _tlsMinVersion: '1.2', _tlsCertPath: '', _tlsKeyPath: '',
+    // 入站 TLS 其余字段（option/tls.go InboundTLSOptions）
+    _tlsMaxVersion: '', _tlsCipherSuites: '', _tlsCurvePreferences: [],
+    _tlsHandshakeTimeout: '', _tlsClientAuth: '', _tlsClientCertPath: '',
+    _tlsClientCertSha256: '', _tlsClientCertPubKeySha256: '',
+    _tlsKernelTx: false, _tlsKernelRx: false,
+    // 入站 ECH（InboundECHOptions）
+    _tlsEchEnabled: false, _tlsEchKey: '', _tlsEchKeyPath: '',
     _realityEnabled: false, _realityHandshakeServer: '', _realityHandshakePort: 443,
+    _realityHandshakeDetour: '', _realityHandshakeBindInterface: '', _realityHandshakeConnectTimeout: '', _realityHandshakeTcpFastOpen: false,
     _realityPrivateKey: '', _realityPublicKey: '', _realityShortIds: '', _realityMaxTimeDiff: '',
     _utlsEnabled: false, _utlsFingerprint: 'chrome',
     _certId: '',
@@ -210,6 +245,7 @@ export function inboundDefaultsForType(type, customPort) {
     // multiplex
     _multiplexEnabled: false, _multiplexProtocol: 'smux', _multiplexMaxConn: 0,
     _multiplexMinStreams: 0, _multiplexMaxStreams: 0, _multiplexPadding: false,
+    _multiplexBrutalUp: 0, _multiplexBrutalDown: 0,
     // remark + enabled + access domain (对齐 xray)
     _remark: genRemark(), _enabled: true,
     _accessDomainEnabled: false, _accessDomainType: 'direct',
@@ -239,6 +275,13 @@ export function inboundDefaultsForType(type, customPort) {
     base._shadowtlsHandshakeTcpMultiPath = false
     base._shadowtlsHandshakeDisableTcpKeepAlive = false
     base._shadowtlsHandshakeDomainResolver = ''
+    // handshake DialerOptions 其余字段
+    base._shadowtlsHandshakeInet4BindAddress = ''
+    base._shadowtlsHandshakeInet6BindAddress = ''
+    base._shadowtlsHandshakeBindAddressNoPort = false
+    base._shadowtlsHandshakeNetns = ''
+    base._shadowtlsHandshakeTcpKeepAlive = ''
+    base._shadowtlsHandshakeTcpKeepAliveInterval = ''
     // 顶层参数
     base._shadowtlsStrictMode = false
     base._shadowtlsWildcardSni = ''
@@ -299,9 +342,31 @@ export function inboundDefaultsForType(type, customPort) {
     base._cfdControlDetour = ''
     base._cfdControlBindInterface = ''
     base._cfdControlRoutingMark = 0
+    base._cfdControlReuseAddr = false
+    base._cfdControlConnectTimeout = ''
+    base._cfdControlTcpFastOpen = false
+    base._cfdControlTcpMultiPath = false
+    base._cfdControlDisableTcpKeepAlive = false
+    base._cfdControlTcpKeepAlive = ''
+    base._cfdControlTcpKeepAliveInterval = ''
+    base._cfdControlNetns = ''
+    base._cfdControlInet4BindAddress = ''
+    base._cfdControlInet6BindAddress = ''
+    base._cfdControlBindAddressNoPort = false
     base._cfdTunnelDetour = ''
     base._cfdTunnelBindInterface = ''
     base._cfdTunnelRoutingMark = 0
+    base._cfdTunnelReuseAddr = false
+    base._cfdTunnelConnectTimeout = ''
+    base._cfdTunnelTcpFastOpen = false
+    base._cfdTunnelTcpMultiPath = false
+    base._cfdTunnelDisableTcpKeepAlive = false
+    base._cfdTunnelTcpKeepAlive = ''
+    base._cfdTunnelTcpKeepAliveInterval = ''
+    base._cfdTunnelNetns = ''
+    base._cfdTunnelInet4BindAddress = ''
+    base._cfdTunnelInet6BindAddress = ''
+    base._cfdTunnelBindAddressNoPort = false
   }
   return base
 }

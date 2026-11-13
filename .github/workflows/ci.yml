@@ -75,6 +75,11 @@ jobs:
         working-directory: web/admin
         run: npm ci
 
+      # 16 个语言包键集合必须一致（新增文案只改 zh/en 会在这里失败）
+      - name: npm run i18n:audit
+        working-directory: web/admin
+        run: npm run i18n:audit
+
       - name: npm run build
         working-directory: web/admin
         run: npm run build

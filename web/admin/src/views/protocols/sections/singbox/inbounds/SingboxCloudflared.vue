@@ -64,6 +64,39 @@
     <el-form-item :label="t('singbox.protocol.cloudflared.routingMark')">
       <el-input-number v-model="model._cfdControlRoutingMark" :min="0" style="width:100%" @change="emit" />
     </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.reuseAddr')">
+      <el-switch v-model="model._cfdControlReuseAddr" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.connectTimeout')">
+      <el-input v-model="model._cfdControlConnectTimeout" placeholder="5s" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpFastOpen')">
+      <el-switch v-model="model._cfdControlTcpFastOpen" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpMultiPath')">
+      <el-switch v-model="model._cfdControlTcpMultiPath" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.disableTcpKeepAlive')">
+      <el-switch v-model="model._cfdControlDisableTcpKeepAlive" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpKeepAlive')">
+      <el-input v-model="model._cfdControlTcpKeepAlive" placeholder="5m" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpKeepAliveInterval')">
+      <el-input v-model="model._cfdControlTcpKeepAliveInterval" placeholder="45s" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.netns')">
+      <el-input v-model="model._cfdControlNetns" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.inet4BindAddress')">
+      <el-input v-model="model._cfdControlInet4BindAddress" placeholder="0.0.0.0" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.inet6BindAddress')">
+      <el-input v-model="model._cfdControlInet6BindAddress" placeholder="::" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.bindAddressNoPort')">
+      <el-switch v-model="model._cfdControlBindAddressNoPort" @change="emit" />
+    </el-form-item>
 
     <!-- Tunnel Dialer -->
     <el-divider content-position="left">{{ t('singbox.protocol.cloudflared.tunnelDialer') }}</el-divider>
@@ -75,6 +108,39 @@
     </el-form-item>
     <el-form-item :label="t('singbox.protocol.cloudflared.routingMark')">
       <el-input-number v-model="model._cfdTunnelRoutingMark" :min="0" style="width:100%" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.reuseAddr')">
+      <el-switch v-model="model._cfdTunnelReuseAddr" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.connectTimeout')">
+      <el-input v-model="model._cfdTunnelConnectTimeout" placeholder="5s" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpFastOpen')">
+      <el-switch v-model="model._cfdTunnelTcpFastOpen" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpMultiPath')">
+      <el-switch v-model="model._cfdTunnelTcpMultiPath" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.disableTcpKeepAlive')">
+      <el-switch v-model="model._cfdTunnelDisableTcpKeepAlive" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpKeepAlive')">
+      <el-input v-model="model._cfdTunnelTcpKeepAlive" placeholder="5m" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.tcpKeepAliveInterval')">
+      <el-input v-model="model._cfdTunnelTcpKeepAliveInterval" placeholder="45s" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.netns')">
+      <el-input v-model="model._cfdTunnelNetns" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.inet4BindAddress')">
+      <el-input v-model="model._cfdTunnelInet4BindAddress" placeholder="0.0.0.0" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.inet6BindAddress')">
+      <el-input v-model="model._cfdTunnelInet6BindAddress" placeholder="::" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.cloudflared.bindAddressNoPort')">
+      <el-switch v-model="model._cfdTunnelBindAddressNoPort" @change="emit" />
     </el-form-item>
   </el-form>
 </template>

@@ -53,6 +53,24 @@
     <el-form-item :label="t('singbox.protocol.shadowtls.domainResolver')">
       <el-input v-model="model._shadowtlsHandshakeDomainResolver" placeholder="" @change="emit" />
     </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.inet4BindAddress')">
+      <el-input v-model="model._shadowtlsHandshakeInet4BindAddress" placeholder="0.0.0.0" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.inet6BindAddress')">
+      <el-input v-model="model._shadowtlsHandshakeInet6BindAddress" placeholder="::" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.bindAddressNoPort')">
+      <el-switch v-model="model._shadowtlsHandshakeBindAddressNoPort" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.netns')">
+      <el-input v-model="model._shadowtlsHandshakeNetns" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.tcpKeepAlive')">
+      <el-input v-model="model._shadowtlsHandshakeTcpKeepAlive" placeholder="5m" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.protocol.shadowtls.tcpKeepAliveInterval')">
+      <el-input v-model="model._shadowtlsHandshakeTcpKeepAliveInterval" placeholder="45s" @change="emit" />
+    </el-form-item>
 
     <!-- 按 SNI 握手 -->
     <el-divider content-position="left">{{ t('singbox.protocol.shadowtls.hsnSection') }}</el-divider>

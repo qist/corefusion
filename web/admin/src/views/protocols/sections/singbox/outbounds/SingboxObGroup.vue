@@ -19,6 +19,10 @@
       <el-form-item :label="t('singbox.obProtocol.tolerance')">
         <el-input-number v-model="model.tolerance" :min="0" style="width:100%" @change="emit" />
       </el-form-item>
+      <el-form-item :label="t('singbox.obProtocol.idleTimeout')">
+        <el-input v-model="model.idle_timeout" placeholder="30m" @change="emit" />
+        <div class="hint">{{ t('singbox.obProtocol.idleTimeoutHint') }}</div>
+      </el-form-item>
     </template>
     <el-form-item :label="t('singbox.obProtocol.interruptConns')">
       <el-switch v-model="model.interrupt_exist_connections" @change="emit" />
@@ -34,3 +38,7 @@ defineProps({ model: { type: Object, required: true } })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
 </script>
+
+<style scoped>
+.hint { color: #909399; font-size: 12px; margin-top: 4px; }
+</style>

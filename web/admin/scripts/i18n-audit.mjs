@@ -60,6 +60,26 @@ console.log(`\n=== ④ en 有但 zh 没有（${onlyEn.length} 个）===`)
 for (const k of onlyEn.slice(0, 40)) console.log(`  ${k}`)
 if (onlyEn.length > 40) console.log(`  … 还有 ${onlyEn.length - 40} 个`)
 
+// 4.5) 其它语言包必须与 zh-CN 键集合一致。
+// 缺键时 vue-i18n 会回退到 en（界面不至于显示键名），但仍属未翻译；
+// 新增文案只改 zh/en 就会在这里暴露，避免 14 个语言包长期落后。
+const OTHER_LOCALES = fs.readdirSync(`${SRC}/locales`)
+  .filter(f => f.endsWith('.js') && !['index.js', 'zh-CN.js', 'en.js'].includes(f))
+const otherProblems = []
+for (const f of OTHER_LOCALES) {
+  const code = f.replace(/\.js$/, '')
+  const msgs = flatten((await import(`${SRC}/locales/${f}`)).default)
+  const miss = [...zh].filter(k => !msgs.has(k))
+  const extra = [...msgs].filter(k => !zh.has(k))
+  if (miss.length || extra.length) otherProblems.push({ code, miss, extra })
+}
+console.log(`\n=== ⑥ 其它语言包与 zh-CN 的键差异（${otherProblems.length} 个语言有差异）===`)
+for (const p of otherProblems) {
+  console.log(`  ${p.code}: 缺 ${p.miss.length} 个${p.extra.length ? `，多 ${p.extra.length} 个` : ''}`)
+  if (p.miss.length) console.log(`    缺: ${p.miss.slice(0, 8).join(', ')}${p.miss.length > 8 ? ' …' : ''}`)
+  if (p.extra.length) console.log(`    多: ${p.extra.slice(0, 8).join(', ')}${p.extra.length > 8 ? ' …' : ''}`)
+}
+
 // 5) 文案必须能被 vue-i18n 的消息编译器解析：像 `/{文件名}`、整段代码样例这类
 //    字面花括号，若不转义成 {'{'} / {'}'} 或改用 tm() 取原文，运行时会在控制台
 //    刷 SyntaxError（真机：WAF 页 "Invalid token in placeholder: '文件名'"）。
@@ -89,7 +109,7 @@ for (const line of compileBad.slice(0, 20)) console.log(`  ${line}`)
 if (compileBad.length > 20) console.log(`  … 还有 ${compileBad.length - 20} 个`)
 
 // 作为守卫用时给出退出码（CI / pre-commit 可直接调用）
-if (missingZh.length || missingEn.length || onlyZh.length || onlyEn.length || compileBad.length) {
+if (missingZh.length || missingEn.length || onlyZh.length || onlyEn.length || otherProblems.length || compileBad.length) {
   console.log('\n❌ i18n 审计未通过（存在缺失/不对称的键，或无法编译的文案）')
   process.exit(1)
 }

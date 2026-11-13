@@ -4,15 +4,29 @@ import { supportsReality, TRANSPORT_PROTOCOLS, AUTH_USER_PROTOCOLS } from './sin
 
 export function buildInbound(ib) {
   const out = { type: ib.type, tag: ib.tag }
-  if (ib.listen) out.listen = ib.listen
-  if (ib.listen_port) out.listen_port = ib.listen_port
+  // tun / cloudflared 没有 ListenOptions（源码 TunInboundOptions / CloudflaredInboundOptions），
+  // 写出 listen/listen_port 会被 strict decode 判为 unknown field
+  if (ib.type !== 'tun' && ib.type !== 'cloudflared') {
+    if (ib.listen) out.listen = ib.listen
+    if (ib.listen_port) out.listen_port = ib.listen_port
+  }
   if (ib.domain_strategy) out.domain_strategy = ib.domain_strategy
   // 通用监听字段（sing-box Listen Fields）
-  if (ib.tcp_fast_open) out.tcp_fast_open = true
-  if (ib.tcp_multi_path) out.tcp_multi_path = true
-  if (ib.udp_fragment) out.udp_fragment = true
-  if (ib.udp_timeout) out.udp_timeout = ib.udp_timeout
-  if (ib.detour) out.detour = ib.detour
+  // tun / cloudflared 没有 ListenOptions，所有监听字段都不能写
+  if (ib.type !== 'tun' && ib.type !== 'cloudflared') {
+    if (ib.bind_interface) out.bind_interface = ib.bind_interface
+    if (ib.routing_mark) out.routing_mark = ib.routing_mark
+    if (ib.reuse_addr) out.reuse_addr = true
+    if (ib.netns) out.netns = ib.netns
+    if (ib.disable_tcp_keep_alive) out.disable_tcp_keep_alive = true
+    if (ib.tcp_keep_alive) out.tcp_keep_alive = ib.tcp_keep_alive
+    if (ib.tcp_keep_alive_interval) out.tcp_keep_alive_interval = ib.tcp_keep_alive_interval
+    if (ib.tcp_fast_open) out.tcp_fast_open = true
+    if (ib.tcp_multi_path) out.tcp_multi_path = true
+    if (ib.udp_fragment) out.udp_fragment = true
+    if (ib.udp_timeout) out.udp_timeout = ib.udp_timeout
+    if (ib.detour) out.detour = ib.detour
+  }
   // sniff 相关：sing-box 1.13 起入站不再接受这些字段，但后端
   // coreconfig.MigrateSingboxLegacyFields 会据此生成等价的 route action
   // （action: sniff / hijack-dns），因此这里仍按 legacy 字段写出。
@@ -27,13 +41,32 @@ export function buildInbound(ib) {
   }
   // NetworkList: sing-box 要求 ["tcp","udp"] 数组或单个 "tcp"/"udp" 字符串
   // 表单用逗号分隔字符串表达（如 "tcp,udp"），build 时转换为数组
-  if (ib.network && (ib.type === 'shadowsocks' || ib.type === 'naive')) {
+  if (ib.network && (ib.type === 'shadowsocks' || ib.type === 'naive' || ib.type === 'direct')) {
     const nets = ib.network.split(',').map(s => s.trim()).filter(Boolean)
     if (nets.length === 1) {
       out.network = nets[0]
     } else if (nets.length > 1) {
       out.network = nets
     }
+  }
+
+  // HTTP / mixed / socks：domain_resolver + set_system_proxy + HTTP 版本/HTTP2/QUIC
+  if (['http', 'mixed', 'socks'].includes(ib.type)) {
+    if (ib.domain_resolver) out.domain_resolver = ib.domain_resolver
+    if (ib.set_system_proxy && ib.type !== 'socks') out.set_system_proxy = true
+  }
+  if (ib.type === 'http') {
+    if (ib._httpVersion) {
+      const versions = String(ib._httpVersion).split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+      if (versions.length) out.version = versions
+    }
+    if (ib._httpIdleTimeout) out.idle_timeout = ib._httpIdleTimeout
+    if (ib._httpKeepAlivePeriod) out.keep_alive_period = ib._httpKeepAlivePeriod
+    if (ib._httpStreamRecvWindow) out.stream_receive_window = ib._httpStreamRecvWindow
+    if (ib._httpConnRecvWindow) out.connection_receive_window = ib._httpConnRecvWindow
+    if (ib._httpMaxConcurrentStreams) out.max_concurrent_streams = ib._httpMaxConcurrentStreams
+    if (ib._httpInitialPacketSize) out.initial_packet_size = ib._httpInitialPacketSize
+    if (ib._httpDisablePathMtu) out.disable_path_mtu_discovery = true
   }
 
   // TUN
@@ -78,6 +111,7 @@ export function buildInbound(ib) {
     if (ib._tunUdpMapping) out.udp_mapping = ib._tunUdpMapping
     if (ib._tunUdpFiltering) out.udp_filtering = ib._tunUdpFiltering
     if (ib._tunUdpNatMax) out.udp_nat_max = ib._tunUdpNatMax
+    if (ib._tunMultiQueue) out.multi_queue = true
     // Platform HTTP Proxy
     if (ib._tunPlatformHttpProxyEnabled) {
       const hp = { enabled: true }
@@ -112,22 +146,30 @@ export function buildInbound(ib) {
     if (ib.datagram_version) out.datagram_version = ib.datagram_version
     if (ib.grace_period) out.grace_period = ib.grace_period
     if (ib.region) out.region = ib.region
-    // ControlDialer
-    if (ib._cfdControlDetour || ib._cfdControlBindInterface || ib._cfdControlRoutingMark) {
-      const cd = {}
-      if (ib._cfdControlDetour) cd.detour = ib._cfdControlDetour
-      if (ib._cfdControlBindInterface) cd.bind_interface = ib._cfdControlBindInterface
-      if (ib._cfdControlRoutingMark) cd.routing_mark = ib._cfdControlRoutingMark
-      if (Object.keys(cd).length) out.control_dialer = cd
+    // ControlDialer / TunnelDialer（DialerOptions 完整字段）
+    const buildDial = (p) => {
+      const d = {}
+      const v = (k) => ib[p + k]
+      if (v('Detour')) d.detour = v('Detour')
+      if (v('BindInterface')) d.bind_interface = v('BindInterface')
+      if (v('RoutingMark')) d.routing_mark = v('RoutingMark')
+      if (v('ReuseAddr')) d.reuse_addr = true
+      if (v('ConnectTimeout')) d.connect_timeout = v('ConnectTimeout')
+      if (v('TcpFastOpen')) d.tcp_fast_open = true
+      if (v('TcpMultiPath')) d.tcp_multi_path = true
+      if (v('DisableTcpKeepAlive')) d.disable_tcp_keep_alive = true
+      if (v('TcpKeepAlive')) d.tcp_keep_alive = v('TcpKeepAlive')
+      if (v('TcpKeepAliveInterval')) d.tcp_keep_alive_interval = v('TcpKeepAliveInterval')
+      if (v('Netns')) d.netns = v('Netns')
+      if (v('Inet4BindAddress')) d.inet4_bind_address = v('Inet4BindAddress')
+      if (v('Inet6BindAddress')) d.inet6_bind_address = v('Inet6BindAddress')
+      if (v('BindAddressNoPort')) d.bind_address_no_port = true
+      return d
     }
-    // TunnelDialer
-    if (ib._cfdTunnelDetour || ib._cfdTunnelBindInterface || ib._cfdTunnelRoutingMark) {
-      const td = {}
-      if (ib._cfdTunnelDetour) td.detour = ib._cfdTunnelDetour
-      if (ib._cfdTunnelBindInterface) td.bind_interface = ib._cfdTunnelBindInterface
-      if (ib._cfdTunnelRoutingMark) td.routing_mark = ib._cfdTunnelRoutingMark
-      if (Object.keys(td).length) out.tunnel_dialer = td
-    }
+    const cd = buildDial('_cfdControl')
+    if (Object.keys(cd).length) out.control_dialer = cd
+    const td = buildDial('_cfdTunnel')
+    if (Object.keys(td).length) out.tunnel_dialer = td
   }
 
   // Users
@@ -140,7 +182,11 @@ export function buildInbound(ib) {
       if (!isAuthUser && u.name) user.name = u.name
       if (u.uuid) user.uuid = u.uuid
       if (u.username) user.username = u.username
-      if (u.password) user.password = u.password
+      if (u.password) {
+        // Hysteria(v1) 的用户凭据字段是 auth_str / auth，没有 password
+        if (ib.type === 'hysteria') user.auth_str = u.password
+        else user.password = u.password
+      }
       if (u.userkey) user.userkey = u.userkey
       if (u.alterId !== undefined && u.alterId !== null) user.alterId = u.alterId
       if (u.flow) user.flow = u.flow
@@ -149,9 +195,29 @@ export function buildInbound(ib) {
   }
 
   // Shadowsocks
+  // 源码约束（protocol/shadowsocks/inbound.go）：users / destinations 互斥，
+  // 且 managed 不能与 users/destinations 同时出现，否则核心直接 FATAL 拒载。
   if (ib.type === 'shadowsocks') {
     if (ib.method) out.method = ib.method
-    if (ib.users?.[0]?.password && !out.users.some(x => x.password)) { out.password = ib.users[0].password }
+    const dests = Array.isArray(ib.destinations) ? ib.destinations.filter(d => d && d.server) : []
+    if (ib.managed) {
+      delete out.users
+      delete out.password
+      out.managed = true
+    } else if (dests.length) {
+      // relay 模式（destinations）必须使用 2022-blake3-* 方法，且顶层 password 是服务端 PSK
+      delete out.users
+      out.password = ib.password || ib.users?.[0]?.password || ''
+      out.destinations = dests.map(d => {
+        const dest = { server: d.server }
+        if (d.name) dest.name = d.name
+        if (d.password) dest.password = d.password
+        if (d.server_port) dest.server_port = d.server_port
+        return dest
+      })
+    } else if (ib.users?.[0]?.password && !(out.users || []).some(x => x.password)) {
+      out.password = ib.users[0].password
+    }
   }
 
   // Hysteria2
@@ -159,14 +225,30 @@ export function buildInbound(ib) {
     if (ib.up_mbps) out.up_mbps = ib.up_mbps
     if (ib.down_mbps) out.down_mbps = ib.down_mbps
     if (ib.ignore_client_bandwidth) out.ignore_client_bandwidth = ib.ignore_client_bandwidth
-    // obfs: sing-box 要求 {type, password} 结构体
+    // obfs: sing-box 要求 {type, password}；gecko 额外支持 min/max_packet_size
     if (ib._hy2ObfsType) {
       out.obfs = { type: ib._hy2ObfsType }
       if (ib._hy2ObfsPassword) out.obfs.password = ib._hy2ObfsPassword
+      if (ib._hy2ObfsType === 'gecko') {
+        if (ib._hy2ObfsMinPacketSize) out.obfs.min_packet_size = ib._hy2ObfsMinPacketSize
+        if (ib._hy2ObfsMaxPacketSize) out.obfs.max_packet_size = ib._hy2ObfsMaxPacketSize
+      }
     }
-    // masquerade: 可以是 URL 字符串或 JSON 对象
-    if (ib.masquerade) {
-      try { out.masquerade = JSON.parse(ib.masquerade) } catch { out.masquerade = ib.masquerade }
+    // masquerade: proxy(url) / file(directory) / string (status_code + content)
+    switch (ib._hy2MasqType) {
+      case 'proxy':
+        if (ib._hy2MasqUrl) {
+          out.masquerade = { type: 'proxy', url: ib._hy2MasqUrl }
+          if (ib._hy2MasqRewriteHost) out.masquerade.rewrite_host = true
+        }
+        break
+      case 'file':
+        if (ib._hy2MasqDirectory) out.masquerade = { type: 'file', directory: ib._hy2MasqDirectory }
+        break
+      case 'string':
+        out.masquerade = { type: 'string', content: ib._hy2MasqContent || '' }
+        if (ib._hy2MasqStatusCode) out.masquerade.status_code = ib._hy2MasqStatusCode
+        break
     }
     // bbr_profile
     if (ib._hy2BbrProfile) out.bbr_profile = ib._hy2BbrProfile
@@ -210,7 +292,17 @@ export function buildInbound(ib) {
   if (ib.type === 'hysteria') {
     if (ib.up) out.up = ib.up
     if (ib.down) out.down = ib.down
+    if (ib.up_mbps) out.up_mbps = ib.up_mbps
+    if (ib.down_mbps) out.down_mbps = ib.down_mbps
     if (ib.obfs) out.obfs = ib.obfs
+    // QUIC options（Hysteria v1 也使用 QUICOptions）
+    if (ib._hy2InitialPacketSize) out.initial_packet_size = ib._hy2InitialPacketSize
+    if (ib._hy2DisablePathMtu) out.disable_path_mtu_discovery = true
+    if (ib._hy2IdleTimeout) out.idle_timeout = ib._hy2IdleTimeout
+    if (ib._hy2KeepAlivePeriod) out.keep_alive_period = ib._hy2KeepAlivePeriod
+    if (ib._hy2StreamRecvWindow) out.stream_receive_window = ib._hy2StreamRecvWindow
+    if (ib._hy2ConnRecvWindow) out.connection_receive_window = ib._hy2ConnRecvWindow
+    if (ib._hy2MaxConcurrentStreams) out.max_concurrent_streams = ib._hy2MaxConcurrentStreams
   }
 
   // TUIC
@@ -251,6 +343,12 @@ export function buildInbound(ib) {
       if (ib._shadowtlsHandshakeTcpMultiPath) hs.tcp_multi_path = true
       if (ib._shadowtlsHandshakeDisableTcpKeepAlive) hs.disable_tcp_keep_alive = true
       if (ib._shadowtlsHandshakeDomainResolver) hs.domain_resolver = ib._shadowtlsHandshakeDomainResolver
+      if (ib._shadowtlsHandshakeInet4BindAddress) hs.inet4_bind_address = ib._shadowtlsHandshakeInet4BindAddress
+      if (ib._shadowtlsHandshakeInet6BindAddress) hs.inet6_bind_address = ib._shadowtlsHandshakeInet6BindAddress
+      if (ib._shadowtlsHandshakeBindAddressNoPort) hs.bind_address_no_port = true
+      if (ib._shadowtlsHandshakeNetns) hs.netns = ib._shadowtlsHandshakeNetns
+      if (ib._shadowtlsHandshakeTcpKeepAlive) hs.tcp_keep_alive = ib._shadowtlsHandshakeTcpKeepAlive
+      if (ib._shadowtlsHandshakeTcpKeepAliveInterval) hs.tcp_keep_alive_interval = ib._shadowtlsHandshakeTcpKeepAliveInterval
       out.handshake = hs
     }
     // handshake_for_server_name: [{sni, server, server_port, ...dial}] → map
@@ -283,13 +381,33 @@ export function buildInbound(ib) {
     if (ib.version) out.version = ib.version
     if (ib.psk) out.psk = ib.psk
     // v5: obfs_mode (source field is obfs_mode, not obfs)
-    if (ib.obfs) out.obfs_mode = ib.obfs
-    if (ib.obfs_host) out.obfs_host = ib.obfs_host
+    // 注意：入站 v5 只有 obfs_mode，obfs_host 是 v4 出站字段，写进 v5 入站会 unknown field
+    if (ib.version === 5 && ib.obfs) out.obfs_mode = ib.obfs
     // v6: mode
-    if (ib._snellMode) out.mode = ib._snellMode
+    if (ib.version === 6 && ib._snellMode) out.mode = ib._snellMode
   }
-  // AnyTLS
-  if (ib.type === 'anytls') { /* password in users */ }
+  // AnyTLS（入站 padding_scheme：字符串数组，空 = 用 sing-box 默认方案）
+  if (ib.type === 'anytls') {
+    const scheme = String(ib._anytlsPaddingScheme || '').split('\n').map(s => s.trim()).filter(Boolean)
+    if (scheme.length) out.padding_scheme = scheme
+  }
+  // Trojan fallback：{server, server_port} / fallback_for_alpn: {alpn: {server, server_port}}
+  if (ib.type === 'trojan') {
+    if (ib._trojanFallbackServer) {
+      out.fallback = { server: ib._trojanFallbackServer }
+      if (ib._trojanFallbackPort) out.fallback.server_port = ib._trojanFallbackPort
+    }
+    if (Array.isArray(ib._trojanFallbackHsn) && ib._trojanFallbackHsn.length) {
+      const map = {}
+      for (const e of ib._trojanFallbackHsn) {
+        if (!e.alpn || !e.server) continue
+        const fb = { server: e.server }
+        if (e.server_port) fb.server_port = e.server_port
+        map[e.alpn] = fb
+      }
+      if (Object.keys(map).length) out.fallback_for_alpn = map
+    }
+  }
 
   // Naive
   if (ib.type === 'naive') {
@@ -303,10 +421,28 @@ export function buildInbound(ib) {
     if (ib._tlsServerName) tls.server_name = ib._tlsServerName
     if (ib._tlsAlpn?.length) tls.alpn = ib._tlsAlpn
     if (ib._tlsMinVersion) tls.min_version = ib._tlsMinVersion
+    if (ib._tlsMaxVersion) tls.max_version = ib._tlsMaxVersion
+    if (ib._tlsCipherSuites) {
+      tls.cipher_suites = String(ib._tlsCipherSuites).split(/[\n,]/).map(s => s.trim()).filter(Boolean)
+    }
+    if (Array.isArray(ib._tlsCurvePreferences) && ib._tlsCurvePreferences.length) {
+      tls.curve_preferences = ib._tlsCurvePreferences
+    }
+    if (ib._tlsHandshakeTimeout) tls.handshake_timeout = ib._tlsHandshakeTimeout
+    if (ib._tlsKernelTx) tls.kernel_tx = true
+    if (ib._tlsKernelRx) tls.kernel_rx = true
     // Reality 与标准证书模式互斥：启用 Reality 时不输出证书字段
     if (ib._realityEnabled && realityOk) {
       tls.reality = { enabled: true }
-      if (ib._realityHandshakeServer) tls.reality.handshake = { server: ib._realityHandshakeServer, server_port: ib._realityHandshakePort }
+      if (ib._realityHandshakeServer) {
+        const hs = { server: ib._realityHandshakeServer }
+        if (ib._realityHandshakePort) hs.server_port = ib._realityHandshakePort
+        if (ib._realityHandshakeDetour) hs.detour = ib._realityHandshakeDetour
+        if (ib._realityHandshakeBindInterface) hs.bind_interface = ib._realityHandshakeBindInterface
+        if (ib._realityHandshakeConnectTimeout) hs.connect_timeout = ib._realityHandshakeConnectTimeout
+        if (ib._realityHandshakeTcpFastOpen) hs.tcp_fast_open = true
+        tls.reality.handshake = hs
+      }
       if (ib._realityPrivateKey) tls.reality.private_key = ib._realityPrivateKey
       // 入站(服务端) reality 不含 public_key（仅给客户端/分享链接使用）
       const sids = ib._realityShortIds ? ib._realityShortIds.split('\n').map(s => s.trim()).filter(Boolean) : []
@@ -317,6 +453,24 @@ export function buildInbound(ib) {
       // 注意：utls 是出站(客户端)TLS 字段，入站(服务端)不支持，不输出
       if (ib._tlsCertPath) tls.certificate_path = ib._tlsCertPath
       if (ib._tlsKeyPath) tls.key_path = ib._tlsKeyPath
+      // 客户端证书验证（mTLS）
+      if (ib._tlsClientAuth) tls.client_authentication = ib._tlsClientAuth
+      if (ib._tlsClientCertPath) {
+        tls.client_certificate_path = String(ib._tlsClientCertPath).split('\n').map(s => s.trim()).filter(Boolean)
+      }
+      // 客户端证书指纹（base64 SHA-256）：InboundTLSOptions
+      if (ib._tlsClientCertSha256) {
+        tls.client_certificate_sha256 = String(ib._tlsClientCertSha256).split('\n').map(s => s.trim()).filter(Boolean)
+      }
+      if (ib._tlsClientCertPubKeySha256) {
+        tls.client_certificate_public_key_sha256 = String(ib._tlsClientCertPubKeySha256).split('\n').map(s => s.trim()).filter(Boolean)
+      }
+      // ECH（InboundECHOptions：enabled/key/key_path）
+      if (ib._tlsEchEnabled) {
+        tls.ech = { enabled: true }
+        if (ib._tlsEchKey) tls.ech.key = String(ib._tlsEchKey).split('\n').map(s => s.trim()).filter(Boolean)
+        if (ib._tlsEchKeyPath) tls.ech.key_path = ib._tlsEchKeyPath
+      }
     }
     out.tls = tls
   }
@@ -392,6 +546,12 @@ export function buildInbound(ib) {
     if (ib._multiplexMinStreams) mp.min_streams = ib._multiplexMinStreams
     if (ib._multiplexMaxStreams) mp.max_streams = ib._multiplexMaxStreams
     if (ib._multiplexPadding) mp.padding = ib._multiplexPadding
+    // InboundMultiplexOptions 也支持 brutal
+    if (ib._multiplexBrutalUp > 0 || ib._multiplexBrutalDown > 0) {
+      mp.brutal = { enabled: true }
+      if (ib._multiplexBrutalUp > 0) mp.brutal.up_mbps = ib._multiplexBrutalUp
+      if (ib._multiplexBrutalDown > 0) mp.brutal.down_mbps = ib._multiplexBrutalDown
+    }
     out.multiplex = mp
   }
 
@@ -471,6 +631,19 @@ export function parseInbound(ib) {
   o._tlsServerName = ib.tls?.server_name || ''
   o._tlsAlpn = ib.tls?.alpn || []
   o._tlsMinVersion = ib.tls?.min_version || ''
+  o._tlsMaxVersion = ib.tls?.max_version || ''
+  o._tlsCipherSuites = (ib.tls?.cipher_suites || []).join('\n')
+  o._tlsCurvePreferences = ib.tls?.curve_preferences || []
+  o._tlsHandshakeTimeout = ib.tls?.handshake_timeout || ''
+  o._tlsClientAuth = ib.tls?.client_authentication || ''
+  o._tlsClientCertPath = (ib.tls?.client_certificate_path || []).join('\n')
+  o._tlsClientCertSha256 = (ib.tls?.client_certificate_sha256 || []).join('\n')
+  o._tlsClientCertPubKeySha256 = (ib.tls?.client_certificate_public_key_sha256 || []).join('\n')
+  o._tlsKernelTx = ib.tls?.kernel_tx || false
+  o._tlsKernelRx = ib.tls?.kernel_rx || false
+  o._tlsEchEnabled = ib.tls?.ech?.enabled || false
+  o._tlsEchKey = (ib.tls?.ech?.key || []).join('\n')
+  o._tlsEchKeyPath = ib.tls?.ech?.key_path || ''
   o._tlsCertPath = ib.tls?.certificate_path || ''
   o._tlsKeyPath = ib.tls?.key_path || ''
   // 客户端 uTLS 指纹：字段存在于配置就用它（允许为空 = 不下发 fp），
@@ -482,6 +655,10 @@ export function parseInbound(ib) {
   o._realityEnabled = ib.tls?.reality?.enabled || false
   o._realityHandshakeServer = ib.tls?.reality?.handshake?.server || ''
   o._realityHandshakePort = ib.tls?.reality?.handshake?.server_port || 443
+  o._realityHandshakeDetour = ib.tls?.reality?.handshake?.detour || ''
+  o._realityHandshakeBindInterface = ib.tls?.reality?.handshake?.bind_interface || ''
+  o._realityHandshakeConnectTimeout = ib.tls?.reality?.handshake?.connect_timeout || ''
+  o._realityHandshakeTcpFastOpen = ib.tls?.reality?.handshake?.tcp_fast_open || false
   o._realityPrivateKey = ib.tls?.reality?.private_key || ''
   // 优先顶层 _realityPublicKey（编辑器保存的），兼容历史写在 tls.reality.public_key 的数据
   o._realityPublicKey = ib._realityPublicKey || ib.tls?.reality?.public_key || ''
@@ -515,19 +692,75 @@ export function parseInbound(ib) {
   o._multiplexMinStreams = ib.multiplex?.min_streams || 0
   o._multiplexMaxStreams = ib.multiplex?.max_streams || 0
   o._multiplexPadding = ib.multiplex?.padding || false
+  o._multiplexBrutalUp = ib.multiplex?.brutal?.up_mbps || 0
+  o._multiplexBrutalDown = ib.multiplex?.brutal?.down_mbps || 0
   // new protocol fields
-  o.version = ib.version || 0
+  if (ib.type === 'shadowtls' || ib.type === 'snell') o.version = ib.version || 0
   o.psk = ib.psk || ''
   o.userkey = ib.userkey || ''
-o.obfs = ib.obfs_mode || ''
-o.obfs_host = ib.obfs_host || ''
-o._snellMode = ib.mode || ''
+  o.obfs = ib.obfs_mode || ''
+  o._snellMode = ib.mode || ''
+  // AnyTLS 入站 padding_scheme（数组 → 每行一条）
+  o._anytlsPaddingScheme = (ib.padding_scheme || []).join('\n')
+  // Trojan fallback
+  o._trojanFallbackServer = ib.fallback?.server || ''
+  o._trojanFallbackPort = ib.fallback?.server_port || 0
+  if (ib.fallback_for_alpn && typeof ib.fallback_for_alpn === 'object') {
+    o._trojanFallbackHsn = Object.entries(ib.fallback_for_alpn).map(([alpn, fb]) => ({
+      alpn,
+      server: fb?.server || '',
+      server_port: fb?.server_port || 0,
+    }))
+  } else {
+    o._trojanFallbackHsn = []
+  }
+  // Hysteria(v1)：用户凭据 auth_str → 表单 password（与 build 对称）
+  if (ib.type === 'hysteria') {
+    o.users = (ib.users || []).map(u => ({ ...u, password: u.auth_str || u.password || '' }))
+  }
+  // http / mixed / socks
+  o.domain_resolver = typeof ib.domain_resolver === 'string' ? ib.domain_resolver : (ib.domain_resolver?.server || '')
+  o.set_system_proxy = ib.set_system_proxy || false
+  if (ib.type === 'http') {
+    o._httpVersion = Array.isArray(ib.version) ? ib.version.join(',') : (ib.version || '1,2')
+    o._httpIdleTimeout = ib.idle_timeout || ''
+    o._httpKeepAlivePeriod = ib.keep_alive_period || ''
+    o._httpStreamRecvWindow = ib.stream_receive_window || ''
+    o._httpConnRecvWindow = ib.connection_receive_window || ''
+    o._httpMaxConcurrentStreams = ib.max_concurrent_streams || 0
+    o._httpInitialPacketSize = ib.initial_packet_size || 0
+    o._httpDisablePathMtu = ib.disable_path_mtu_discovery || false
+  }
   // Hysteria2 obfs: sing-box stores as {type, password} struct → recover to _hy2 fields
   if (ib.type === 'hysteria2' && ib.obfs && typeof ib.obfs === 'object') {
     o._hy2ObfsType = ib.obfs.type || ''
     o._hy2ObfsPassword = ib.obfs.password || ''
+    o._hy2ObfsMinPacketSize = ib.obfs.min_packet_size || 0
+    o._hy2ObfsMaxPacketSize = ib.obfs.max_packet_size || 0
     // Clear the raw obfs so it doesn't get re-output as string
     o.obfs = ''
+  }
+  // Hysteria2 masquerade（string / {type,...}）
+  o._hy2MasqType = 'none'
+  o._hy2MasqUrl = ''
+  o._hy2MasqRewriteHost = false
+  o._hy2MasqDirectory = ''
+  o._hy2MasqStatusCode = 0
+  o._hy2MasqContent = ''
+  if (typeof ib.masquerade === 'string') {
+    o._hy2MasqType = 'proxy'
+    o._hy2MasqUrl = ib.masquerade
+  } else if (ib.masquerade && typeof ib.masquerade === 'object') {
+    o._hy2MasqType = ib.masquerade.type || 'none'
+    if (o._hy2MasqType === 'proxy') {
+      o._hy2MasqUrl = ib.masquerade.url || ''
+      o._hy2MasqRewriteHost = ib.masquerade.rewrite_host || false
+    } else if (o._hy2MasqType === 'file') {
+      o._hy2MasqDirectory = ib.masquerade.directory || ''
+    } else if (o._hy2MasqType === 'string') {
+      o._hy2MasqStatusCode = ib.masquerade.status_code || 0
+      o._hy2MasqContent = ib.masquerade.content || ''
+    }
   }
   // Hysteria2 bbr_profile + QUIC options
   o._hy2BbrProfile = ib.bbr_profile || ''
@@ -583,6 +816,12 @@ o._snellMode = ib.mode || ''
   o._shadowtlsHandshakeTcpMultiPath = ib.handshake?.tcp_multi_path || false
   o._shadowtlsHandshakeDisableTcpKeepAlive = ib.handshake?.disable_tcp_keep_alive || false
   o._shadowtlsHandshakeDomainResolver = ib.handshake?.domain_resolver || ''
+  o._shadowtlsHandshakeInet4BindAddress = ib.handshake?.inet4_bind_address || ''
+  o._shadowtlsHandshakeInet6BindAddress = ib.handshake?.inet6_bind_address || ''
+  o._shadowtlsHandshakeBindAddressNoPort = ib.handshake?.bind_address_no_port || false
+  o._shadowtlsHandshakeNetns = ib.handshake?.netns || ''
+  o._shadowtlsHandshakeTcpKeepAlive = ib.handshake?.tcp_keep_alive || ''
+  o._shadowtlsHandshakeTcpKeepAliveInterval = ib.handshake?.tcp_keep_alive_interval || ''
   // handshake_for_server_name: map → 数组形式
   if (ib.handshake_for_server_name && typeof ib.handshake_for_server_name === 'object') {
     o._shadowtlsHsn = Object.entries(ib.handshake_for_server_name).map(([sni, hs]) => ({
@@ -600,12 +839,17 @@ o._snellMode = ib.mode || ''
   }
   o._shadowtlsStrictMode = ib.strict_mode || false
   o._shadowtlsWildcardSni = ib.wildcard_sni || ''
-  if (typeof ib.masquerade === 'string') o.masquerade = ib.masquerade
-  else if (ib.masquerade) o.masquerade = JSON.stringify(ib.masquerade)
-  else o.masquerade = ''
   // remark + enabled + access domain (对齐 xray，表单专用字段)
   o._remark = ib._remark || ''
   o._enabled = ib._enabled !== false
+  // Listen Fields
+  o.bind_interface = ib.bind_interface || ''
+  o.routing_mark = ib.routing_mark || 0
+  o.reuse_addr = ib.reuse_addr || false
+  o.netns = ib.netns || ''
+  o.disable_tcp_keep_alive = ib.disable_tcp_keep_alive || false
+  o.tcp_keep_alive = ib.tcp_keep_alive || ''
+  o.tcp_keep_alive_interval = ib.tcp_keep_alive_interval || ''
   // tun parse
   o._tunNetns = ib.netns || ''
   o._tunMtu = ib.mtu || 0
@@ -642,6 +886,7 @@ o._snellMode = ib.mode || ''
   o._tunUdpMapping = ib.udp_mapping || ''
   o._tunUdpFiltering = ib.udp_filtering || ''
   o._tunUdpNatMax = ib.udp_nat_max || 0
+  o._tunMultiQueue = ib.multi_queue || false
   // platform http_proxy
   const hp = ib.platform?.http_proxy
   o._tunPlatformHttpProxyEnabled = hp?.enabled || false
@@ -668,9 +913,31 @@ o._snellMode = ib.mode || ''
     o._cfdControlDetour = ib.control_dialer?.detour || ''
     o._cfdControlBindInterface = ib.control_dialer?.bind_interface || ''
     o._cfdControlRoutingMark = ib.control_dialer?.routing_mark || 0
+    o._cfdControlReuseAddr = ib.control_dialer?.reuse_addr || false
+    o._cfdControlConnectTimeout = ib.control_dialer?.connect_timeout || ''
+    o._cfdControlTcpFastOpen = ib.control_dialer?.tcp_fast_open || false
+    o._cfdControlTcpMultiPath = ib.control_dialer?.tcp_multi_path || false
+    o._cfdControlDisableTcpKeepAlive = ib.control_dialer?.disable_tcp_keep_alive || false
+    o._cfdControlTcpKeepAlive = ib.control_dialer?.tcp_keep_alive || ''
+    o._cfdControlTcpKeepAliveInterval = ib.control_dialer?.tcp_keep_alive_interval || ''
+    o._cfdControlNetns = ib.control_dialer?.netns || ''
+    o._cfdControlInet4BindAddress = ib.control_dialer?.inet4_bind_address || ''
+    o._cfdControlInet6BindAddress = ib.control_dialer?.inet6_bind_address || ''
+    o._cfdControlBindAddressNoPort = ib.control_dialer?.bind_address_no_port || false
     o._cfdTunnelDetour = ib.tunnel_dialer?.detour || ''
     o._cfdTunnelBindInterface = ib.tunnel_dialer?.bind_interface || ''
     o._cfdTunnelRoutingMark = ib.tunnel_dialer?.routing_mark || 0
+    o._cfdTunnelReuseAddr = ib.tunnel_dialer?.reuse_addr || false
+    o._cfdTunnelConnectTimeout = ib.tunnel_dialer?.connect_timeout || ''
+    o._cfdTunnelTcpFastOpen = ib.tunnel_dialer?.tcp_fast_open || false
+    o._cfdTunnelTcpMultiPath = ib.tunnel_dialer?.tcp_multi_path || false
+    o._cfdTunnelDisableTcpKeepAlive = ib.tunnel_dialer?.disable_tcp_keep_alive || false
+    o._cfdTunnelTcpKeepAlive = ib.tunnel_dialer?.tcp_keep_alive || ''
+    o._cfdTunnelTcpKeepAliveInterval = ib.tunnel_dialer?.tcp_keep_alive_interval || ''
+    o._cfdTunnelNetns = ib.tunnel_dialer?.netns || ''
+    o._cfdTunnelInet4BindAddress = ib.tunnel_dialer?.inet4_bind_address || ''
+    o._cfdTunnelInet6BindAddress = ib.tunnel_dialer?.inet6_bind_address || ''
+    o._cfdTunnelBindAddressNoPort = ib.tunnel_dialer?.bind_address_no_port || false
   }
   o._remark = ib._remark || ''
   // 访问域名：入库形态是 _accessDomain 对象（与 xray 一致），扁平字段仅作旧数据兜底。

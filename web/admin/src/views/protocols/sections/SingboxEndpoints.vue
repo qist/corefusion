@@ -111,6 +111,30 @@
                 <el-input-number v-model="rf.workers" :min="0" />
                 <span class="hint">{{ t('singbox.protocol.endpoint.workersHint') }}</span>
               </el-form-item>
+              <el-divider content-position="left">{{ t('singbox.protocol.endpoint.udpSection') }}</el-divider>
+              <el-form-item :label="t('singbox.protocol.endpoint.udpTimeout')">
+                <el-input v-model="rf.udp_timeout" placeholder="5m" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.udpMapping')">
+                <el-select v-model="rf.udp_mapping" style="width:100%" clearable>
+                  <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                  <el-option label="endpoint_independent" value="endpoint_independent" />
+                  <el-option label="address_dependent" value="address_dependent" />
+                  <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.udpFiltering')">
+                <el-select v-model="rf.udp_filtering" style="width:100%" clearable>
+                  <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                  <el-option label="endpoint_independent" value="endpoint_independent" />
+                  <el-option label="address_dependent" value="address_dependent" />
+                  <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.udpNatMax')">
+                <el-input-number v-model="rf.udp_nat_max" :min="0" />
+                <span class="hint">{{ t('singbox.protocol.endpoint.udpNatMaxHint') }}</span>
+              </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.system')">
                 <el-switch v-model="rf.system" />
               </el-form-item>

@@ -4030,7 +4030,7 @@ func (h *PublicHandler) pushRateLimitAssociation(clientIP string, sub *entity.Su
 //
 // 旧实现把 X-Real-IP / CF-Connecting-IP 原样落库：X-Real-IP 任意来源都能伪造，
 // 且在 Cloudflare 直连回源的部署里它是**边缘节点 IP**，管理端「订阅访问日志」
-// 于是全列显示 CDN IP（生产 23.254.233.185 踩到）。展示层已改为优先 ip，
+// 于是全列显示 CDN IP（生产环境踩到过）。展示层已改为优先 ip，
 // 这里同步纠正落库口径，避免新数据继续写脏。
 func accessLogIPFields(r *http.Request) (ip, realIP, cdnIP string) {
 	ip = netutil.GetRealIP(r)

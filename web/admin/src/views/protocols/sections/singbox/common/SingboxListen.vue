@@ -31,6 +31,29 @@
       <el-input v-model="model.detour" :placeholder="t('protoHint.listen.detourPh')" @change="emit" />
       <div class="hint">{{ t('protoHint.listen.detour') }}</div>
     </el-form-item>
+    <el-form-item :label="t('singbox.listen.bindInterface')">
+      <el-input v-model="model.bind_interface" placeholder="eth0" @change="emit" />
+      <div class="hint">{{ t('singbox.listen.bindInterfaceHint') }}</div>
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.routingMark')">
+      <el-input-number v-model="model.routing_mark" :min="0" style="width:100%" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.reuseAddr')">
+      <el-switch v-model="model.reuse_addr" @change="emit" />
+      <div class="hint">{{ t('singbox.listen.reuseAddrHint') }}</div>
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.netns')">
+      <el-input v-model="model.netns" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.disableTcpKeepAlive')">
+      <el-switch v-model="model.disable_tcp_keep_alive" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.tcpKeepAlive')">
+      <el-input v-model="model.tcp_keep_alive" placeholder="5m" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.listen.tcpKeepAliveInterval')">
+      <el-input v-model="model.tcp_keep_alive_interval" placeholder="45s" @change="emit" />
+    </el-form-item>
     <el-form-item :label="t('protoCenter.sockopt.tcpFastOpen')">
       <el-switch v-model="model.tcp_fast_open" @change="emit" />
     </el-form-item>

@@ -52,6 +52,11 @@ export function endpointDefaultsForType(type, customPort) {
         peers: [],
         workers: 0,
         on_demand: false,
+        // UDP NAT（option/wireguard.go WireGuardEndpointOptions）
+        udp_timeout: '5m',
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
         // Peer defaults
         peer_address: '',
         peer_port: 0,
@@ -343,6 +348,11 @@ function buildEndpointTyped(ep) {
       }
       if (ep.workers > 0) out.workers = ep.workers
       if (ep.on_demand) out.on_demand = true
+      // UDP NAT：UDPTimeout 是 Duration，UDPNATBehavior 是枚举字符串
+      if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
+      if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
+      if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
+      if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
       return out
     }
 
@@ -650,6 +660,10 @@ export function parseEndpoint(ep) {
         })),
         workers: ep.workers || 0,
         on_demand: ep.on_demand || false,
+        udp_timeout: ep.udp_timeout || '5m',
+        udp_mapping: ep.udp_mapping || '',
+        udp_filtering: ep.udp_filtering || '',
+        udp_nat_max: ep.udp_nat_max || 0,
       }
 
     case 'tailscale':

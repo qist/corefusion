@@ -23,6 +23,14 @@
       <el-form-item :label="t('singbox.multiplex.padding')">
         <el-switch v-model="model._multiplexPadding" @change="emit" />
       </el-form-item>
+      <el-divider content-position="left">{{ t('singbox.multiplex.brutal') }}</el-divider>
+      <el-form-item :label="t('singbox.multiplex.brutalUp')">
+        <el-input-number v-model="model._multiplexBrutalUp" :min="0" style="width:100%" @change="emit" />
+        <div class="hint">{{ t('singbox.multiplex.brutalHint') }}</div>
+      </el-form-item>
+      <el-form-item :label="t('singbox.multiplex.brutalDown')">
+        <el-input-number v-model="model._multiplexBrutalDown" :min="0" style="width:100%" @change="emit" />
+      </el-form-item>
     </template>
   </el-form>
 </template>
@@ -35,3 +43,7 @@ defineProps({ model: { type: Object, required: true } })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
 </script>
+
+<style scoped>
+.hint { color: #909399; font-size: 12px; margin-top: 4px; }
+</style>

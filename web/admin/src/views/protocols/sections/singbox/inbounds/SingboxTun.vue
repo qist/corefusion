@@ -162,6 +162,10 @@
     <el-form-item :label="t('singbox.protocol.tun.udpNatMax')">
       <el-input-number v-model="model._tunUdpNatMax" :min="0" style="width:100%" @change="emit" />
     </el-form-item>
+    <el-form-item :label="t('singbox.protocol.tun.multiQueue')">
+      <el-switch v-model="model._tunMultiQueue" @change="emit" />
+      <div class="hint">{{ t('singbox.protocol.tun.multiQueueHint') }}</div>
+    </el-form-item>
 
     <!-- 其他 -->
     <el-divider content-position="left">{{ t('singbox.protocol.tun.advancedSection') }}</el-divider>

@@ -1,14 +1,22 @@
 <template>
-  <el-form label-width="150px" label-position="left">
-    <!-- Bridge 出站：纯 tag 类型，无协议专属字段（仅基础 tag/base 由容器层提供） -->
-    <div style="color:#909399;font-size:12px;padding:8px 0">
-      {{ t('singbox.obBridge.hint') }}
-    </div>
+  <el-form label-width="170px" label-position="left">
+    <el-form-item :label="t('singbox.obBridge.interface')">
+      <el-input v-model="model.interface" placeholder="br0" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.obBridge.bridgeName')">
+      <el-input v-model="model.bridge_name" placeholder="sing-box" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.obBridge.iproute2TableIndex')">
+      <el-input-number v-model="model.iproute2_table_index" :min="0" style="width:100%" @change="emit" />
+    </el-form-item>
+    <el-form-item :label="t('singbox.obBridge.iproute2RuleIndex')">
+      <el-input-number v-model="model.iproute2_rule_index" :min="0" style="width:100%" @change="emit" />
+    </el-form-item>
   </el-form>
 </template>
 
 <script setup>
-// Bridge 出站：无协议专属字段（仅基础 tag 由容器层提供）
+// Bridge 出站：option/bridge.go BridgeOutboundOptions
 import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 defineProps({ model: { type: Object, required: true } })

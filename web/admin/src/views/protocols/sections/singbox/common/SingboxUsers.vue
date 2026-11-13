@@ -10,8 +10,8 @@
         <el-input v-model="u.username" :placeholder="t('singbox.users.username')" style="width:130px" @change="emit" />
         <el-button size="small" @click="u.username = generateUsername(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
-      <template v-if="PASSWORD_PROTOCOLS.includes(model.type) || AUTH_USER_PROTOCOLS.includes(model.type)">
-        <el-input v-model="u.password" :placeholder="t('singbox.users.password')" style="width:150px" @change="emit" />
+      <template v-if="PASSWORD_PROTOCOLS.includes(model.type) || AUTH_USER_PROTOCOLS.includes(model.type) || model.type === 'tuic'">
+        <el-input v-model="u.password" :placeholder="model.type === 'hysteria' ? 'auth_str' : t('singbox.users.password')" style="width:150px" @change="emit" />
         <el-button size="small" @click="u.password = generatePassword(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
       <template v-if="PSK_PROTOCOLS.includes(model.type)">
@@ -53,6 +53,7 @@ function addUser() {
   const u = { name: generateEmail() }
   if (UUID_PROTOCOLS.includes(props.model.type)) { u.uuid = generateUuid(); if (props.model.type === 'vless') u.flow = 'xtls-rprx-vision'; if (props.model.type === 'vmess') u.alterId = 0 }
   if (PASSWORD_PROTOCOLS.includes(props.model.type)) u.password = generatePassword()
+  if (props.model.type === 'tuic') u.password = generatePassword()
   if (PSK_PROTOCOLS.includes(props.model.type)) u.password = generateKey()
   if (AUTH_USER_PROTOCOLS.includes(props.model.type)) { u.username = generateUsername(); u.password = generatePassword() }
   if (USERKEY_PROTOCOLS.includes(props.model.type)) u.userkey = generateKey()

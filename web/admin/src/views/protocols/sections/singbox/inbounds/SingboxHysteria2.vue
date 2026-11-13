@@ -18,6 +18,7 @@
     <el-form-item :label="t('singbox.protocol.hysteria2.obfsType')">
       <el-select v-model="model._hy2ObfsType" clearable style="width:100%" @change="onObfsTypeChange">
         <el-option label="Salamander" value="salamander" />
+        <el-option label="Gecko" value="gecko" />
       </el-select>
     </el-form-item>
     <el-form-item v-if="model._hy2ObfsType" :label="t('singbox.protocol.hysteria2.obfsPassword')">
@@ -26,13 +27,44 @@
         <el-button size="small" @click="genObfsPassword">{{ t('singbox.tls.generate') }}</el-button>
       </div>
     </el-form-item>
+    <template v-if="model._hy2ObfsType === 'gecko'">
+      <el-form-item :label="t('singbox.protocol.hysteria2.obfsMinPacketSize')">
+        <el-input-number v-model="model._hy2ObfsMinPacketSize" :min="0" style="width:100%" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.protocol.hysteria2.obfsMaxPacketSize')">
+        <el-input-number v-model="model._hy2ObfsMaxPacketSize" :min="0" style="width:100%" @change="emit" />
+      </el-form-item>
+    </template>
 
     <!-- 伪装 -->
     <el-divider content-position="left">{{ t('singbox.protocol.hysteria2.masquerade') }}</el-divider>
-    <el-form-item :label="t('singbox.protocol.hysteria2.masquerade')">
-      <el-input v-model="model.masquerade" :placeholder="t('singbox.protocol.hysteria2.masqueradePlaceholder')" @change="emit" />
-      <div class="hint">{{ t('singbox.protocol.hysteria2.masqueradeHint') }}</div>
+    <el-form-item :label="t('singbox.protocol.hysteria2.masqueradeType')">
+      <el-select v-model="model._hy2MasqType" style="width:100%" @change="emit">
+        <el-option :label="t('singbox.protocol.hysteria2.masqNone')" value="none" />
+        <el-option :label="t('singbox.protocol.hysteria2.masqProxy')" value="proxy" />
+        <el-option :label="t('singbox.protocol.hysteria2.masqFile')" value="file" />
+        <el-option :label="t('singbox.protocol.hysteria2.masqString')" value="string" />
+      </el-select>
     </el-form-item>
+    <template v-if="model._hy2MasqType === 'proxy'">
+      <el-form-item :label="t('singbox.protocol.hysteria2.masqUrl')">
+        <el-input v-model="model._hy2MasqUrl" placeholder="https://example.com" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.protocol.hysteria2.masqRewriteHost')">
+        <el-switch v-model="model._hy2MasqRewriteHost" @change="emit" />
+      </el-form-item>
+    </template>
+    <el-form-item v-if="model._hy2MasqType === 'file'" :label="t('singbox.protocol.hysteria2.masqDirectory')">
+      <el-input v-model="model._hy2MasqDirectory" placeholder="/var/www/html" @change="emit" />
+    </el-form-item>
+    <template v-if="model._hy2MasqType === 'string'">
+      <el-form-item :label="t('singbox.protocol.hysteria2.masqStatusCode')">
+        <el-input-number v-model="model._hy2MasqStatusCode" :min="0" :max="599" style="width:100%" @change="emit" />
+      </el-form-item>
+      <el-form-item :label="t('singbox.protocol.hysteria2.masqContent')">
+        <el-input v-model="model._hy2MasqContent" type="textarea" :rows="3" @change="emit" />
+      </el-form-item>
+    </template>
 
     <!-- BBR & Debug -->
     <el-divider content-position="left">{{ t('singbox.protocol.hysteria2.advanced') }}</el-divider>

@@ -14,14 +14,12 @@
         <el-button size="small" @click="model.password = generatePassword(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </div>
     </el-form-item>
-    <el-form-item :label="t('singbox.obProtocol.strictMode')">
-      <el-switch v-model="model._shadowtlsStrictMode" @change="emit" />
-    </el-form-item>
   </el-form>
 </template>
 
 <script setup>
-// ShadowTLS 出站：专属设置(Version/Password/StrictMode)
+// ShadowTLS 出站：option/shadowtls.go ShadowTLSOutboundOptions
+// version / password / tls；strict_mode 仅入站有，出站不写。
 import { useI18n } from 'vue-i18n'
 import { generatePassword } from '../utils/singboxDefaults'
 const { t } = useI18n()

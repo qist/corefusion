@@ -3,7 +3,12 @@
 // 支持的类型：wireguard, tailscale, openconnect, openvpn-client, openvpn-server
 
 // 支持的端点类型列表
-export const ENDPOINT_TYPES = ['wireguard', 'tailscale', 'openconnect', 'openvpn-client', 'openvpn-server']
+// masque-client / masque-server 是 sing-box 1.13+ 的 MASQUE（RFC 9484 CONNECT-IP）端点：
+// 客户端 endpoint 当出站用，服务端 endpoint 当入站用（挂到 route 即可）。
+export const ENDPOINT_TYPES = [
+  'wireguard', 'tailscale', 'openconnect', 'openvpn-client', 'openvpn-server',
+  'masque-client', 'masque-server',
+]
 
 // 端点类型显示名
 export const ENDPOINT_TYPE_LABELS = {
@@ -12,6 +17,134 @@ export const ENDPOINT_TYPE_LABELS = {
   openconnect: 'OpenConnect',
   'openvpn-client': 'OpenVPN Client',
   'openvpn-server': 'OpenVPN Server',
+  'masque-client': 'MASQUE Client',
+  'masque-server': 'MASQUE Server',
+}
+
+// 逗号/换行分隔的字符串 → 数组（端点表单的列表字段统一走它）
+function splitCSV(v) {
+  if (Array.isArray(v)) return v
+  return String(v || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean)
+}
+
+// 表单的 [{key,value}] → 配置的 {k:v}（headers 类型）
+function headersFromList(list) {
+  const out = {}
+  if (!Array.isArray(list)) return out
+  for (const h of list) {
+    if (h && h.key) out[h.key] = h.value || ''
+  }
+  return out
+}
+
+// HTTP/2 + QUIC 选项（sing-box 把 http2/http3 变体字段平铺进同一对象）：
+// version 1 没有额外字段；2 用 HTTP2Options；3（含 0=默认 3）用 QUICOptions。
+function applyHTTPVersionOptions(out, ep, versions) {
+  const list = versions || [ep.version > 0 ? ep.version : 3]
+  if (!list.includes(2) && !list.includes(3)) return
+  if (ep.idle_timeout) out.idle_timeout = ep.idle_timeout
+  if (ep.keep_alive_period) out.keep_alive_period = ep.keep_alive_period
+  if (ep.stream_receive_window) out.stream_receive_window = ep.stream_receive_window
+  if (ep.connection_receive_window) out.connection_receive_window = ep.connection_receive_window
+  if (ep.max_concurrent_streams > 0) out.max_concurrent_streams = ep.max_concurrent_streams
+  if (list.includes(3)) {
+    if (ep.initial_packet_size > 0) out.initial_packet_size = ep.initial_packet_size
+    if (ep.disable_path_mtu_discovery) out.disable_path_mtu_discovery = true
+  }
+}
+
+// MASQUE 端点共用的 UDP NAT 字段（MASQUEEndpointOptions）
+function applyMasqueEndpointOptions(out, ep) {
+  if (ep.system) out.system = true
+  if (ep.name) out.name = ep.name
+  if (ep.mtu > 0) out.mtu = ep.mtu
+  if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
+  if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
+  if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
+}
+
+// 客户端 endpoint 的拨号字段（DialerOptions）
+function applyDialOptions(out, ep) {
+  if (ep.detour) out.detour = ep.detour
+  if (ep.bind_interface) out.bind_interface = ep.bind_interface
+  if (ep.inet4_bind_address) out.inet4_bind_address = ep.inet4_bind_address
+  if (ep.inet6_bind_address) out.inet6_bind_address = ep.inet6_bind_address
+  if (ep.bind_address_no_port) out.bind_address_no_port = true
+  if (ep.protect_path) out.protect_path = ep.protect_path
+  if (ep.routing_mark > 0) out.routing_mark = ep.routing_mark
+  if (ep.reuse_addr) out.reuse_addr = true
+  if (ep.netns) out.netns = ep.netns
+  if (ep.connect_timeout) out.connect_timeout = ep.connect_timeout
+  if (ep.tcp_fast_open) out.tcp_fast_open = true
+  if (ep.tcp_multi_path) out.tcp_multi_path = true
+  if (ep.disable_tcp_keep_alive) out.disable_tcp_keep_alive = true
+  if (ep.tcp_keep_alive) out.tcp_keep_alive = ep.tcp_keep_alive
+  if (ep.tcp_keep_alive_interval) out.tcp_keep_alive_interval = ep.tcp_keep_alive_interval
+  if (ep.udp_fragment) out.udp_fragment = true
+  if (ep.domain_resolver) out.domain_resolver = ep.domain_resolver
+  if (ep.network_strategy) out.network_strategy = ep.network_strategy
+  const netTypes = splitCSV(ep._networkType)
+  if (netTypes.length) out.network_type = netTypes
+  const fallbackTypes = splitCSV(ep._fallbackNetworkType)
+  if (fallbackTypes.length) out.fallback_network_type = fallbackTypes
+  if (ep.fallback_delay) out.fallback_delay = ep.fallback_delay
+}
+
+// 服务端 endpoint 的监听字段（ListenOptions）
+function applyListenOptions(out, ep) {
+  if (ep.listen) out.listen = ep.listen
+  if (ep.listen_port) out.listen_port = ep.listen_port
+  if (ep.bind_interface) out.bind_interface = ep.bind_interface
+  if (ep.routing_mark > 0) out.routing_mark = ep.routing_mark
+  if (ep.reuse_addr) out.reuse_addr = true
+  if (ep.netns) out.netns = ep.netns
+  if (ep.tcp_fast_open) out.tcp_fast_open = true
+  if (ep.tcp_multi_path) out.tcp_multi_path = true
+  if (ep.disable_tcp_keep_alive) out.disable_tcp_keep_alive = true
+  if (ep.tcp_keep_alive) out.tcp_keep_alive = ep.tcp_keep_alive
+  if (ep.tcp_keep_alive_interval) out.tcp_keep_alive_interval = ep.tcp_keep_alive_interval
+  if (ep.udp_fragment) out.udp_fragment = true
+  if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
+  if (ep.detour) out.detour = ep.detour
+}
+
+// 入站 TLS（服务端 endpoint）：只有开启了才写 tls 对象
+function buildInboundTLS(ep) {
+  if (ep.tls_enabled === false) return null
+  const tls = { enabled: true }
+  if (ep.tls_server_name) tls.server_name = ep.tls_server_name
+  const alpn = splitCSV(ep._tlsAlpnStr)
+  if (alpn.length) tls.alpn = alpn
+  if (ep.tls_certificate) tls.certificate = [ep.tls_certificate.trim()].filter(Boolean)
+  if (ep.tls_certificate_path) tls.certificate_path = ep.tls_certificate_path
+  if (ep.tls_key) tls.key = [ep.tls_key.trim()].filter(Boolean)
+  if (ep.tls_key_path) tls.key_path = ep.tls_key_path
+  if (ep.tls_client_authentication) tls.client_authentication = ep.tls_client_authentication
+  if (ep.tls_client_certificate) tls.client_certificate = [ep.tls_client_certificate.trim()].filter(Boolean)
+  if (ep.tls_client_certificate_path) tls.client_certificate_path = [ep.tls_client_certificate_path.trim()].filter(Boolean)
+  if (ep.tls_version_min && ep.tls_version_min !== '1.2') tls.min_version = ep.tls_version_min
+  if (ep.tls_version_max) tls.max_version = ep.tls_version_max
+  return tls
+}
+
+// 出站 TLS（客户端 endpoint）
+function buildOutboundTLS(ep) {
+  if (ep.tls_enabled === false) return null
+  const tls = { enabled: true }
+  if (ep.tls_server_name) tls.server_name = ep.tls_server_name
+  if (ep.tls_insecure) tls.insecure = true
+  if (ep.tls_disable_sni) tls.disable_sni = true
+  const alpn = splitCSV(ep._tlsAlpnStr)
+  if (alpn.length) tls.alpn = alpn
+  if (ep.tls_certificate) tls.certificate = [ep.tls_certificate.trim()].filter(Boolean)
+  if (ep.tls_certificate_path) tls.certificate_path = ep.tls_certificate_path
+  if (ep.tls_client_certificate) tls.client_certificate = [ep.tls_client_certificate.trim()].filter(Boolean)
+  if (ep.tls_client_certificate_path) tls.client_certificate_path = ep.tls_client_certificate_path
+  if (ep.tls_client_key) tls.client_key = [ep.tls_client_key.trim()].filter(Boolean)
+  if (ep.tls_client_key_path) tls.client_key_path = ep.tls_client_key_path
+  if (ep.tls_version_min) tls.min_version = ep.tls_version_min
+  if (ep.tls_version_max) tls.max_version = ep.tls_version_max
+  return tls
 }
 
 // 节点「名称 / 标签」生成器与 xray 共用（见 sections/utils/nodeNaming.js），不另起一套。
@@ -301,6 +434,89 @@ export function endpointDefaultsForType(type, customPort) {
         renegotiate_bytes: 0,
         renegotiate_packets: 0,
         handshake_window: '1m',
+      }
+
+    case 'masque-client':
+      return {
+        ...base,
+        tag: 'mq-c-' + randSuffix(),
+        name: 'MASQUE-Client-' + randSuffix(),
+        system: false,
+        mtu: 0,
+        server: '',
+        server_port: 443,
+        username: '',
+        password: '',
+        // 官方默认 path 是 "/"（WARP 风格）；RFC 9484 模板可自行改成
+        // "/.well-known/masque/ip/{target}/{ipproto}/"
+        path: '/',
+        version: 3,
+        disable_version_fallback: false,
+        headers: [],
+        advertise_routes: [],
+        _advertiseRoutesStr: '',
+        udp_timeout: '5m',
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
+        on_demand: false,
+        // HTTP/2 与 QUIC 的平铺字段（按 version 落盘）
+        idle_timeout: '', keep_alive_period: '10s',
+        stream_receive_window: '', connection_receive_window: '',
+        max_concurrent_streams: 0,
+        initial_packet_size: 0, disable_path_mtu_discovery: false,
+        // TLS（客户端）
+        tls_enabled: true, tls_server_name: '', tls_insecure: false, tls_disable_sni: false,
+        tls_alpn: [], _tlsAlpnStr: 'h3',
+        tls_certificate: '', tls_certificate_path: '',
+        tls_client_certificate: '', tls_client_certificate_path: '',
+        tls_client_key: '', tls_client_key_path: '',
+        tls_version_min: '', tls_version_max: '',
+        // 拨号字段（DialerOptions）：放进默认模型，避免 build 的透传逻辑把
+        // 空值/零值当成"界面未建模的字段"原样写进配置
+        detour: '', bind_interface: '', inet4_bind_address: '', inet6_bind_address: '',
+        bind_address_no_port: false, protect_path: '', routing_mark: 0, reuse_addr: false,
+        netns: '', connect_timeout: '', tcp_fast_open: false, tcp_multi_path: false,
+        disable_tcp_keep_alive: false, tcp_keep_alive: '', tcp_keep_alive_interval: '',
+        udp_fragment: false, domain_resolver: '', network_strategy: '',
+        _networkType: '', _fallbackNetworkType: '', fallback_delay: '',
+      }
+
+    case 'masque-server':
+      return {
+        ...base,
+        tag: 'mq-s-' + randSuffix(),
+        name: 'MASQUE-Server-' + randSuffix(),
+        system: false,
+        mtu: 0,
+        listen: '0.0.0.0',
+        listen_port: listenPort,
+        // 服务器自己的 TUN 地址池（必填，最多一个 IPv4 + 一个 IPv6 前缀）
+        address: [],
+        _addressStr: '',
+        path: '/.well-known/masque/ip/{target}/{ipproto}/',
+        version: [1, 2, 3],
+        users: [],
+        advertise_routes: [],
+        _advertiseRoutesStr: '',
+        udp_timeout: '5m',
+        udp_mapping: '',
+        udp_filtering: '',
+        udp_nat_max: 0,
+        idle_timeout: '', keep_alive_period: '',
+        stream_receive_window: '', connection_receive_window: '',
+        max_concurrent_streams: 0,
+        initial_packet_size: 0, disable_path_mtu_discovery: false,
+        // TLS（服务端，HTTP/3 必需）
+        tls_enabled: true, tls_server_name: '', tls_alpn: [], _tlsAlpnStr: '',
+        tls_certificate: '', tls_certificate_path: '',
+        tls_key: '', tls_key_path: '',
+        tls_client_authentication: '', tls_client_certificate: '', tls_client_certificate_path: '',
+        tls_version_min: '1.2', tls_version_max: '',
+        // 监听字段（ListenOptions）
+        bind_interface: '', routing_mark: 0, reuse_addr: false, netns: '',
+        tcp_fast_open: false, tcp_multi_path: false, disable_tcp_keep_alive: false,
+        tcp_keep_alive: '', tcp_keep_alive_interval: '', udp_fragment: false, detour: '',
       }
 
     default:
@@ -599,6 +815,53 @@ function buildEndpointTyped(ep) {
       return out
     }
 
+    case 'masque-client': {
+      const out = { type: 'masque-client' }
+      if (ep.tag) out.tag = ep.tag
+      applyMasqueEndpointOptions(out, ep)
+      if (ep.server) out.server = ep.server
+      if (ep.server_port) out.server_port = ep.server_port
+      if (ep.username) out.username = ep.username
+      if (ep.password) out.password = ep.password
+      if (ep.path) out.path = ep.path
+      if (ep.version > 0) out.version = ep.version
+      if (ep.disable_version_fallback) out.disable_version_fallback = true
+      const hdrs = headersFromList(ep.headers)
+      if (Object.keys(hdrs).length) out.headers = hdrs
+      const routes = ep._advertiseRoutesStr ? splitCSV(ep._advertiseRoutesStr) : (ep.advertise_routes || [])
+      if (routes.length) out.advertise_routes = routes
+      if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
+      if (ep.on_demand) out.on_demand = true
+      applyHTTPVersionOptions(out, ep)
+      applyDialOptions(out, ep)
+      const tls = buildOutboundTLS(ep)
+      if (tls) out.tls = tls
+      return out
+    }
+
+    case 'masque-server': {
+      const out = { type: 'masque-server' }
+      if (ep.tag) out.tag = ep.tag
+      applyMasqueEndpointOptions(out, ep)
+      applyListenOptions(out, ep)
+      const addrs = splitCSV(ep._addressStr) || ep.address
+      if (Array.isArray(addrs) && addrs.length) out.address = addrs
+      if (ep.path) out.path = ep.path
+      const versions = Array.isArray(ep.version) ? ep.version : splitCSV(ep.version)
+      if (versions.length) out.version = versions.map(v => parseInt(v, 10)).filter(n => !isNaN(n))
+      if (ep.users?.length) {
+        out.users = ep.users
+          .filter(u => u && (u.username || u.password))
+          .map(u => ({ username: u.username || '', password: u.password || '' }))
+      }
+      const routes = ep._advertiseRoutesStr ? splitCSV(ep._advertiseRoutesStr) : (ep.advertise_routes || [])
+      if (routes.length) out.advertise_routes = routes
+      applyHTTPVersionOptions(out, ep, out.version)
+      const tls = buildInboundTLS(ep)
+      if (tls) out.tls = tls
+      return out
+    }
+
     default:
       return { type: ep.type, tag: ep.tag }
   }
@@ -880,6 +1143,128 @@ export function parseEndpoint(ep) {
         renegotiate_packets: ep.renegotiate_packets || 0,
         handshake_window: ep.handshake_window || '1m',
       }
+
+    case 'masque-client': {
+      const tls = ep.tls || {}
+      return {
+        ...base,
+        system: ep.system || false,
+        name: ep.name || '',
+        mtu: ep.mtu || 0,
+        server: ep.server || '',
+        server_port: ep.server_port || 443,
+        username: ep.username || '',
+        password: ep.password || '',
+        path: ep.path || '/',
+        version: ep.version || 3,
+        disable_version_fallback: ep.disable_version_fallback || false,
+        headers: Object.entries(ep.headers || {}).map(([k, v]) => ({ key: k, value: v || '' })),
+        advertise_routes: ep.advertise_routes || [],
+        _advertiseRoutesStr: (ep.advertise_routes || []).join(', '),
+        udp_timeout: ep.udp_timeout || '5m',
+        udp_mapping: ep.udp_mapping || '',
+        udp_filtering: ep.udp_filtering || '',
+        udp_nat_max: ep.udp_nat_max || 0,
+        on_demand: ep.on_demand || false,
+        idle_timeout: ep.idle_timeout || '',
+        keep_alive_period: ep.keep_alive_period || '',
+        stream_receive_window: ep.stream_receive_window || '',
+        connection_receive_window: ep.connection_receive_window || '',
+        max_concurrent_streams: ep.max_concurrent_streams || 0,
+        initial_packet_size: ep.initial_packet_size || 0,
+        disable_path_mtu_discovery: ep.disable_path_mtu_discovery || false,
+        tls_enabled: tls.enabled === true,
+        tls_server_name: tls.server_name || '',
+        tls_insecure: tls.insecure || false,
+        tls_disable_sni: tls.disable_sni || false,
+        tls_alpn: Array.isArray(tls.alpn) ? tls.alpn : [],
+        _tlsAlpnStr: Array.isArray(tls.alpn) ? tls.alpn.join(', ') : '',
+        tls_certificate: Array.isArray(tls.certificate) ? tls.certificate.join('\n') : (tls.certificate || ''),
+        tls_certificate_path: tls.certificate_path || '',
+        tls_client_certificate: Array.isArray(tls.client_certificate) ? tls.client_certificate.join('\n') : (tls.client_certificate || ''),
+        tls_client_certificate_path: tls.client_certificate_path || '',
+        tls_client_key: Array.isArray(tls.client_key) ? tls.client_key.join('\n') : (tls.client_key || ''),
+        tls_client_key_path: tls.client_key_path || '',
+        tls_version_min: tls.min_version || '',
+        tls_version_max: tls.max_version || '',
+        detour: ep.detour || '',
+        bind_interface: ep.bind_interface || '',
+        inet4_bind_address: ep.inet4_bind_address || '',
+        inet6_bind_address: ep.inet6_bind_address || '',
+        bind_address_no_port: ep.bind_address_no_port || false,
+        protect_path: ep.protect_path || '',
+        routing_mark: ep.routing_mark || 0,
+        reuse_addr: ep.reuse_addr || false,
+        netns: ep.netns || '',
+        connect_timeout: ep.connect_timeout || '',
+        tcp_fast_open: ep.tcp_fast_open || false,
+        tcp_multi_path: ep.tcp_multi_path || false,
+        disable_tcp_keep_alive: ep.disable_tcp_keep_alive || false,
+        tcp_keep_alive: ep.tcp_keep_alive || '',
+        tcp_keep_alive_interval: ep.tcp_keep_alive_interval || '',
+        udp_fragment: ep.udp_fragment || false,
+        domain_resolver: ep.domain_resolver || '',
+        network_strategy: ep.network_strategy || '',
+        _networkType: Array.isArray(ep.network_type) ? ep.network_type.join(', ') : '',
+        _fallbackNetworkType: Array.isArray(ep.fallback_network_type) ? ep.fallback_network_type.join(', ') : '',
+        fallback_delay: ep.fallback_delay || '',
+      }
+    }
+
+    case 'masque-server': {
+      const tls = ep.tls || {}
+      const versions = Array.isArray(ep.version) ? ep.version : (ep.version ? [ep.version] : [1, 2, 3])
+      return {
+        ...base,
+        system: ep.system || false,
+        name: ep.name || '',
+        mtu: ep.mtu || 0,
+        listen: ep.listen || '0.0.0.0',
+        listen_port: ep.listen_port || 0,
+        address: Array.isArray(ep.address) ? ep.address : [],
+        _addressStr: Array.isArray(ep.address) ? ep.address.join(', ') : '',
+        path: ep.path || '/.well-known/masque/ip/{target}/{ipproto}/',
+        version: versions,
+        users: (ep.users || []).map(u => ({ username: u.username || '', password: u.password || '' })),
+        advertise_routes: ep.advertise_routes || [],
+        _advertiseRoutesStr: (ep.advertise_routes || []).join(', '),
+        udp_timeout: ep.udp_timeout || '5m',
+        udp_mapping: ep.udp_mapping || '',
+        udp_filtering: ep.udp_filtering || '',
+        udp_nat_max: ep.udp_nat_max || 0,
+        idle_timeout: ep.idle_timeout || '',
+        keep_alive_period: ep.keep_alive_period || '',
+        stream_receive_window: ep.stream_receive_window || '',
+        connection_receive_window: ep.connection_receive_window || '',
+        max_concurrent_streams: ep.max_concurrent_streams || 0,
+        initial_packet_size: ep.initial_packet_size || 0,
+        disable_path_mtu_discovery: ep.disable_path_mtu_discovery || false,
+        tls_enabled: tls.enabled === true,
+        tls_server_name: tls.server_name || '',
+        tls_alpn: Array.isArray(tls.alpn) ? tls.alpn : [],
+        _tlsAlpnStr: Array.isArray(tls.alpn) ? tls.alpn.join(', ') : '',
+        tls_certificate: Array.isArray(tls.certificate) ? tls.certificate.join('\n') : (tls.certificate || ''),
+        tls_certificate_path: tls.certificate_path || '',
+        tls_key: Array.isArray(tls.key) ? tls.key.join('\n') : (tls.key || ''),
+        tls_key_path: tls.key_path || '',
+        tls_client_authentication: tls.client_authentication || '',
+        tls_client_certificate: Array.isArray(tls.client_certificate) ? tls.client_certificate.join('\n') : (tls.client_certificate || ''),
+        tls_client_certificate_path: Array.isArray(tls.client_certificate_path) ? tls.client_certificate_path.join('\n') : (tls.client_certificate_path || ''),
+        tls_version_min: tls.min_version || '1.2',
+        tls_version_max: tls.max_version || '',
+        bind_interface: ep.bind_interface || '',
+        routing_mark: ep.routing_mark || 0,
+        reuse_addr: ep.reuse_addr || false,
+        netns: ep.netns || '',
+        tcp_fast_open: ep.tcp_fast_open || false,
+        tcp_multi_path: ep.tcp_multi_path || false,
+        disable_tcp_keep_alive: ep.disable_tcp_keep_alive || false,
+        tcp_keep_alive: ep.tcp_keep_alive || '',
+        tcp_keep_alive_interval: ep.tcp_keep_alive_interval || '',
+        udp_fragment: ep.udp_fragment || false,
+        detour: ep.detour || '',
+      }
+    }
 
     default:
       return base

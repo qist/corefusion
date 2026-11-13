@@ -662,6 +662,262 @@
                 <el-input v-model="rf.name" />
               </el-form-item>
             </template>
+
+            <!-- ===== MASQUE Client ===== -->
+            <template v-if="rf.type === 'masque-client'">
+              <el-divider content-position="left">MASQUE Client</el-divider>
+              <el-form-item :label="t('singbox.protocol.endpoint.oc.server')">
+                <el-input v-model="rf.server" placeholder="masque.example.com" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.serverPortLabel')">
+                <el-input-number v-model="rf.server_port" :min="1" :max="65535" style="width:100%" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.oc.username')">
+                <el-input v-model="rf.username" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.oc.password')">
+                <el-input v-model="rf.password" show-password />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.path')">
+                <el-input v-model="rf.path" placeholder="/" />
+                <div class="hint">{{ t('singbox.protocol.endpoint.masque.pathHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.version')">
+                <el-select v-model="rf.version" style="width:100%">
+                  <el-option :label="t('singbox.protocol.endpoint.masque.versionAuto')" :value="0" />
+                  <el-option label="HTTP/1.1" :value="1" />
+                  <el-option label="HTTP/2" :value="2" />
+                  <el-option label="HTTP/3 (QUIC)" :value="3" />
+                </el-select>
+                <div class="hint">{{ t('singbox.protocol.endpoint.masque.versionHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.disableVersionFallback')">
+                <el-switch v-model="rf.disable_version_fallback" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.mtu')">
+                <el-input-number v-model="rf.mtu" :min="0" />
+                <span class="hint">{{ t('singbox.protocol.endpoint.masque.mtuHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.system')">
+                <el-switch v-model="rf.system" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.headers')">
+                <div v-for="(h, hi) in (rf.headers || [])" :key="hi" style="display:flex;gap:8px;margin-bottom:6px;width:100%">
+                  <el-input v-model="h.key" placeholder="Authorization" style="width:40%" />
+                  <el-input v-model="h.value" placeholder="Bearer ..." style="flex:1" />
+                  <el-button size="small" text type="danger" @click="rf.headers.splice(hi,1)">X</el-button>
+                </div>
+                <el-button size="small" @click="rf.headers.push({ key: '', value: '' })">+ {{ t('singbox.protocol.endpoint.masque.addHeader') }}</el-button>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ts.advertiseRoutes')">
+                <el-input v-model="rf._advertiseRoutesStr" placeholder="0.0.0.0/0, ::/0" />
+                <div class="hint">{{ t('singbox.protocol.endpoint.ts.advertiseRoutesHint') }}</div>
+              </el-form-item>
+              <el-divider content-position="left">{{ t('singbox.protocol.endpoint.udpSection') }}</el-divider>
+              <div>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpTimeout')">
+                    <el-input v-model="rf.udp_timeout" placeholder="5m" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpMapping')">
+                    <el-select v-model="rf.udp_mapping" style="width:100%" clearable>
+                      <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                      <el-option label="endpoint_independent" value="endpoint_independent" />
+                      <el-option label="address_dependent" value="address_dependent" />
+                      <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpFiltering')">
+                    <el-select v-model="rf.udp_filtering" style="width:100%" clearable>
+                      <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                      <el-option label="endpoint_independent" value="endpoint_independent" />
+                      <el-option label="address_dependent" value="address_dependent" />
+                      <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpNatMax')">
+                    <el-input-number v-model="rf.udp_nat_max" :min="0" />
+                    <span class="hint">{{ t('singbox.protocol.endpoint.udpNatMaxHint') }}</span>
+                  </el-form-item>
+              </div>
+              <el-collapse>
+                <el-collapse-item :title="t('singbox.protocol.endpoint.masque.httpSection')">
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.idleTimeout')">
+                    <el-input v-model="rf.idle_timeout" placeholder="30s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.keepAlivePeriod')">
+                    <el-input v-model="rf.keep_alive_period" placeholder="10s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.streamReceiveWindow')">
+                    <el-input v-model="rf.stream_receive_window" placeholder="8MB" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.connectionReceiveWindow')">
+                    <el-input v-model="rf.connection_receive_window" placeholder="20MB" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.maxConcurrentStreams')">
+                    <el-input-number v-model="rf.max_concurrent_streams" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.initialPacketSize')">
+                    <el-input-number v-model="rf.initial_packet_size" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.disablePathMtu')">
+                    <el-switch v-model="rf.disable_path_mtu_discovery" />
+                  </el-form-item>
+                </el-collapse-item>
+                <el-collapse-item :title="t('singbox.protocol.endpoint.masque.dialSection')">
+                  <el-form-item :label="t('singbox.outboundBase.detour')">
+                    <el-input v-model="rf.detour" :placeholder="t('singbox.protocol.endpoint.masque.detourHint')" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.bindInterface')">
+                    <el-input v-model="rf.bind_interface" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.outboundBase.inet4BindAddress')">
+                    <el-input v-model="rf.inet4_bind_address" placeholder="0.0.0.0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.outboundBase.inet6BindAddress')">
+                    <el-input v-model="rf.inet6_bind_address" placeholder="::" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.outboundBase.connectTimeout')">
+                    <el-input v-model="rf.connect_timeout" placeholder="5s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.routingMark')">
+                    <el-input-number v-model="rf.routing_mark" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.netns')">
+                    <el-input v-model="rf.netns" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.tcpKeepAlive')">
+                    <el-input v-model="rf.tcp_keep_alive" placeholder="5m" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.tcpKeepAliveInterval')">
+                    <el-input v-model="rf.tcp_keep_alive_interval" placeholder="45s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.outboundBase.domainResolver')">
+                    <el-input v-model="rf.domain_resolver" />
+                  </el-form-item>
+                </el-collapse-item>
+              </el-collapse>
+              <el-form-item :label="t('singbox.protocol.endpoint.name')">
+                <el-input v-model="rf.name" />
+              </el-form-item>
+            </template>
+
+            <!-- ===== MASQUE Server ===== -->
+            <template v-if="rf.type === 'masque-server'">
+              <el-divider content-position="left">MASQUE Server</el-divider>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.listen')">
+                <el-input v-model="rf.listen" placeholder="0.0.0.0" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.listenPortLabel')">
+                <el-input-number v-model="rf.listen_port" :min="0" :max="65535" style="width:100%" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.address')">
+                <el-input v-model="rf._addressStr" :placeholder="t('singbox.protocol.wireguard.addressPlaceholder')" @change="onAddressChange" />
+                <div class="hint">{{ t('singbox.protocol.endpoint.masque.serverAddressHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.path')">
+                <el-input v-model="rf.path" placeholder="/.well-known/masque/ip/{target}/{ipproto}/" />
+                <div class="hint">{{ t('singbox.protocol.endpoint.masque.pathHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.masque.versions')">
+                <el-select v-model="rf.version" multiple style="width:100%">
+                  <el-option label="HTTP/1.1" :value="1" />
+                  <el-option label="HTTP/2" :value="2" />
+                  <el-option label="HTTP/3 (QUIC)" :value="3" />
+                </el-select>
+                <div class="hint">{{ t('singbox.protocol.endpoint.masque.versionsHint') }}</div>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.mtu')">
+                <el-input-number v-model="rf.mtu" :min="0" />
+                <span class="hint">{{ t('singbox.protocol.endpoint.masque.mtuHint') }}</span>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.system')">
+                <el-switch v-model="rf.system" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ts.advertiseRoutes')">
+                <el-input v-model="rf._advertiseRoutesStr" placeholder="0.0.0.0/0, ::/0" />
+                <div class="hint">{{ t('singbox.protocol.endpoint.ts.advertiseRoutesHint') }}</div>
+              </el-form-item>
+              <el-divider content-position="left">{{ t('singbox.protocol.endpoint.udpSection') }}</el-divider>
+              <div>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpTimeout')">
+                    <el-input v-model="rf.udp_timeout" placeholder="5m" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpMapping')">
+                    <el-select v-model="rf.udp_mapping" style="width:100%" clearable>
+                      <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                      <el-option label="endpoint_independent" value="endpoint_independent" />
+                      <el-option label="address_dependent" value="address_dependent" />
+                      <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpFiltering')">
+                    <el-select v-model="rf.udp_filtering" style="width:100%" clearable>
+                      <el-option :label="t('singbox.protocol.endpoint.udpBehaviorDefault')" value="" />
+                      <el-option label="endpoint_independent" value="endpoint_independent" />
+                      <el-option label="address_dependent" value="address_dependent" />
+                      <el-option label="address_and_port_dependent" value="address_and_port_dependent" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.udpNatMax')">
+                    <el-input-number v-model="rf.udp_nat_max" :min="0" />
+                    <span class="hint">{{ t('singbox.protocol.endpoint.udpNatMaxHint') }}</span>
+                  </el-form-item>
+              </div>
+              <el-collapse>
+                <el-collapse-item :title="t('singbox.protocol.endpoint.masque.httpSection')">
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.idleTimeout')">
+                    <el-input v-model="rf.idle_timeout" placeholder="30s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.keepAlivePeriod')">
+                    <el-input v-model="rf.keep_alive_period" placeholder="10s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.streamReceiveWindow')">
+                    <el-input v-model="rf.stream_receive_window" placeholder="8MB" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.connectionReceiveWindow')">
+                    <el-input v-model="rf.connection_receive_window" placeholder="20MB" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.maxConcurrentStreams')">
+                    <el-input-number v-model="rf.max_concurrent_streams" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.initialPacketSize')">
+                    <el-input-number v-model="rf.initial_packet_size" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.protocol.endpoint.masque.disablePathMtu')">
+                    <el-switch v-model="rf.disable_path_mtu_discovery" />
+                  </el-form-item>
+                </el-collapse-item>
+                <el-collapse-item :title="t('singbox.protocol.endpoint.masque.listenSection')">
+                  <el-form-item :label="t('singbox.listen.bindInterface')">
+                    <el-input v-model="rf.bind_interface" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.routingMark')">
+                    <el-input-number v-model="rf.routing_mark" :min="0" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.reuseAddr')">
+                    <el-switch v-model="rf.reuse_addr" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.netns')">
+                    <el-input v-model="rf.netns" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.tcpKeepAlive')">
+                    <el-input v-model="rf.tcp_keep_alive" placeholder="5m" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.tcpKeepAliveInterval')">
+                    <el-input v-model="rf.tcp_keep_alive_interval" placeholder="45s" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.listen.disableTcpKeepAlive')">
+                    <el-switch v-model="rf.disable_tcp_keep_alive" />
+                  </el-form-item>
+                  <el-form-item :label="t('singbox.outboundBase.detour')">
+                    <el-input v-model="rf.detour" :placeholder="t('singbox.protocol.endpoint.masque.detourHint')" />
+                  </el-form-item>
+                </el-collapse-item>
+              </el-collapse>
+              <el-form-item :label="t('singbox.protocol.endpoint.name')">
+                <el-input v-model="rf.name" />
+              </el-form-item>
+            </template>
           </el-form>
         </el-tab-pane>
 
@@ -836,6 +1092,115 @@
           <el-button size="small" @click="addOvpnUser">+ {{ t('singbox.protocol.endpoint.ovpn.addUser') }}</el-button>
         </el-tab-pane>
 
+        <!-- ========== TLS Tab - MASQUE ========== -->
+        <el-tab-pane v-if="rf.type === 'masque-client' || rf.type === 'masque-server'" :label="t('singbox.protocol.endpoint.oc.tls')" name="mq-tls">
+          <el-form label-width="170px" label-position="left" size="small">
+            <el-form-item :label="t('singbox.protocol.endpoint.masque.tlsEnabled')">
+              <el-switch v-model="rf.tls_enabled" />
+              <div class="hint">{{ t('singbox.protocol.endpoint.masque.tlsRequiredHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('singbox.protocol.endpoint.oc.tlsServerName')">
+              <el-input v-model="rf.tls_server_name" placeholder="masque.example.com" />
+            </el-form-item>
+            <el-form-item :label="t('singbox.protocol.endpoint.masque.tlsAlpn')">
+              <el-input v-model="rf._tlsAlpnStr" :placeholder="rf.version === 2 ? 'h2' : 'h3'" />
+              <div class="hint">{{ t('singbox.protocol.endpoint.masque.tlsAlpnHint') }}</div>
+            </el-form-item>
+
+            <!-- 客户端 -->
+            <template v-if="rf.type === 'masque-client'">
+              <el-form-item :label="t('singbox.protocol.endpoint.oc.tlsInsecure')">
+                <el-switch v-model="rf.tls_insecure" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.outboundTls.disableSni')">
+                <el-switch v-model="rf.tls_disable_sni" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsCert')">
+                <el-input v-model="rf.tls_certificate" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsCertPath')">
+                <el-input v-model="rf.tls_certificate_path" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientCert')">
+                <el-input v-model="rf.tls_client_certificate" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientCertPath')">
+                <el-input v-model="rf.tls_client_certificate_path" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientKey')">
+                <el-input v-model="rf.tls_client_key" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientKeyPath')">
+                <el-input v-model="rf.tls_client_key_path" />
+              </el-form-item>
+            </template>
+
+            <!-- 服务端 -->
+            <template v-else>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsCert')">
+                <el-input v-model="rf.tls_certificate" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsCertPath')">
+                <el-input v-model="rf.tls_certificate_path" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsKey')">
+                <el-input v-model="rf.tls_key" type="textarea" :rows="3" show-password />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsKeyPath')">
+                <el-input v-model="rf.tls_key_path" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.verifyClientCert')">
+                <el-select v-model="rf.tls_client_authentication" style="width:100%" clearable>
+                  <el-option :label="t('singbox.protocol.endpoint.masque.clientAuthDefault')" value="" />
+                  <el-option label="no" value="no" />
+                  <el-option label="request" value="request" />
+                  <el-option label="require-any" value="require-any" />
+                  <el-option label="verify-if-given" value="verify-if-given" />
+                  <el-option label="require-and-verify" value="require-and-verify" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientCert')">
+                <el-input v-model="rf.tls_client_certificate" type="textarea" :rows="3" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsClientCertPath')">
+                <el-input v-model="rf.tls_client_certificate_path" type="textarea" :rows="2" />
+              </el-form-item>
+            </template>
+
+            <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsVersionMin')">
+              <el-select v-model="rf.tls_version_min" style="width:100%" clearable>
+                <el-option label="1.2" value="1.2" />
+                <el-option label="1.3" value="1.3" />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('singbox.protocol.endpoint.ovpn.tlsVersionMax')">
+              <el-select v-model="rf.tls_version_max" style="width:100%" clearable>
+                <el-option label="1.2" value="1.2" />
+                <el-option label="1.3" value="1.3" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
+
+        <!-- ========== Users Tab - MASQUE Server ========== -->
+        <el-tab-pane v-if="rf.type === 'masque-server'" :label="t('singbox.protocol.endpoint.ovpn.users')" name="users">
+          <div v-for="(u, ui) in rf.users" :key="ui" class="peer-item">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span style="font-weight:600">{{ t('singbox.protocol.endpoint.ovpn.user') }} #{{ ui + 1 }}</span>
+              <el-button size="small" type="danger" text @click="rf.users.splice(ui,1)">{{ t('common.delete') }}</el-button>
+            </div>
+            <el-form label-width="100px" label-position="left" size="small">
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.username')">
+                <el-input v-model="u.username" />
+              </el-form-item>
+              <el-form-item :label="t('singbox.protocol.endpoint.ovpn.password')">
+                <el-input v-model="u.password" show-password />
+              </el-form-item>
+            </el-form>
+          </div>
+          <el-button size="small" @click="addOvpnUser">+ {{ t('singbox.protocol.endpoint.ovpn.addUser') }}</el-button>
+        </el-tab-pane>
+
         <!-- ========== Servers Tab - OpenVPN Client ========== -->
         <el-tab-pane v-if="rf.type === 'openvpn-client'" :label="t('singbox.protocol.endpoint.ovpn.servers')" name="ovpn-servers">
           <div class="hint" style="margin-bottom:12px">{{ t('singbox.protocol.endpoint.ovpn.serversHint') }}</div>
@@ -925,6 +1290,8 @@ watch(() => rf.type, (newType) => {
     openconnect: ['basic'],
     'openvpn-client': ['basic', 'ovpn-tls', 'ovpn-servers'],
     'openvpn-server': ['basic', 'users', 'ovpn-srv-tls'],
+    'masque-client': ['basic', 'mq-tls'],
+    'masque-server': ['basic', 'mq-tls', 'users'],
   }
   if (!validTabs[newType]?.includes(activeTab.value)) {
     activeTab.value = 'basic'
@@ -1077,9 +1444,11 @@ function onRemarkChange(val) {
   const prefix = rf.type === 'tailscale' ? 'ts-' :
                  rf.type === 'openconnect' ? 'oc-' :
                  rf.type === 'openvpn-client' ? 'ovpn-c-' :
-                 rf.type === 'openvpn-server' ? 'ovpn-s-' : 'wg-'
+                 rf.type === 'openvpn-server' ? 'ovpn-s-' :
+                 rf.type === 'masque-client' ? 'mq-c-' :
+                 rf.type === 'masque-server' ? 'mq-s-' : 'wg-'
   const suffix = val ? val.toLowerCase().replace(/\s+/g, '-').substring(0, 20) : Math.random().toString(36).substring(2, 6)
-  if (!rf.tag || rf.tag.match(/^(wg|ts|oc|ovpn)-/)) {
+  if (!rf.tag || rf.tag.match(/^(wg|ts|oc|ovpn|mq)-/)) {
     rf.tag = prefix + suffix
   }
 }

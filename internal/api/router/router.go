@@ -759,6 +759,23 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 面板拼装配置时写入未知字段（如 dns.servers[].address、route 规则的 strategy）
 	// 在 sing-box 上会直接 FATAL，纯 JSON 语法检查发现不了。
 	coreConfigSvc.SetBinaryValidator(binariesSvc.NewValidator(binaryResolver))
+	// 按目标核心版本决定传输字段写 network 还是 method（xray 26.7.11 起才认 method，
+	// 更旧的版本会静默忽略 method 并退化成裸 TCP）。
+	coreconfigSvc.SetCoreVersionProvider(func(ctx context.Context, serverID int64, coreType string) string {
+		if sharedNodeMgr != nil && !sharedNodeMgr.IsLocalServer(serverID) {
+			_, bins, err := sharedNodeMgr.GetRemoteState(ctx, serverID)
+			if err != nil {
+				return ""
+			}
+			for _, b := range bins {
+				if strings.EqualFold(b.GetCoreType(), coreType) {
+					return b.GetVersion()
+				}
+			}
+			return ""
+		}
+		return binaryResolver.Version(coreType)
+	})
 	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, notifTmplRepo)
 	// 存量明文敏感配置（SMTP 密码 / Telegram token / OAuth secret）统一 AES-256-GCM 加密落库，幂等
 	if serr := systemSettingSvc.EncryptExistingSecrets(context.Background()); serr != nil {

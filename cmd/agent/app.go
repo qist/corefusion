@@ -19,6 +19,7 @@ import (
 	"corefusion/internal/runtime/firewall"
 	"corefusion/internal/runtime/process"
 	binariesSvc "corefusion/internal/service/binaries"
+	coreconfigSvc "corefusion/internal/service/coreconfig"
 	logManageSvc "corefusion/internal/service/logmanage"
 	proxySvc "corefusion/internal/service/proxy"
 	"corefusion/internal/store/db"
@@ -159,6 +160,10 @@ func NewAgentApp(cfg *AgentConfig) (*AgentApp, error) {
 
 	// Phase 3: Create binary resolver + process.Manager (same as Panel)
 	binaryResolver := binariesSvc.NewResolver(dataDir)
+	// Agent 本机生成配置时按本机核心版本决定写 network 还是 method。
+	coreconfigSvc.SetCoreVersionProvider(func(ctx context.Context, serverID int64, coreType string) string {
+		return binaryResolver.Version(coreType)
+	})
 	procMgr := process.NewManager(dataDir, svcRepo, guardianRepo, crashLogRepo, binaryResolver)
 
 	// Set config generator: generates config from local database (populated by SyncData).

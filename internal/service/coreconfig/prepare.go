@@ -88,6 +88,10 @@ type PrepareFullConfigOptions struct {
 	// rules are merged into the config, and a relay-in inbound is added if
 	// the server is configured as a chain exit.
 	ChainLinkProvider ChainLinkProvider
+	// CoreVersion 是目标节点上核心的实际版本（如 "Xray 26.7.11 ..."）。
+	// 用于决定生成 `network` 还是 `method` 传输字段。为空时由
+	// CoreVersionProvider 按 ServerID 查询；仍查不到则按旧版本处理。
+	CoreVersion string
 }
 
 // PrepareFullConfig applies all standard config preparation steps to produce
@@ -351,8 +355,8 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// 编辑器产出不到 → 这里按 balancer 的 selector 统一补。
 	if opts.CoreType != "singbox" {
 		ensureObservatoryForLeastLoad(fullConfig)
-		// xray 2026-07 起把传输字段 network 改名为 method；同值双写兼容新旧核心。
-		ApplyTransportMethodAlias(fullConfig)
+		// xray 26.7.11+ 用 method（network 被静默忽略），旧核心只认 network。
+		ApplyTransportMethodAlias(fullConfig, resolveCoreVersion(opts))
 	}
 
 	data, err := json.MarshalIndent(fullConfig, "", "  ")

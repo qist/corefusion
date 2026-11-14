@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
+	"time"
 )
 
 // BinaryInfo contains information about an installed binary.
@@ -16,9 +18,20 @@ type BinaryInfo struct {
 	Installed  bool   `json:"installed"`
 }
 
+// cachedVersion 按二进制文件的修改时间/大小缓存版本号，
+// 避免每次生成配置都 exec 一次核心。
+type cachedVersion struct {
+	modTime time.Time
+	size    int64
+	version string
+}
+
 // Resolver resolves binary paths and versions for core types.
 type Resolver struct {
 	dataDir string
+
+	mu          sync.Mutex
+	versionMemo map[string]cachedVersion
 }
 
 // NewResolver creates a new binary resolver.
@@ -30,7 +43,7 @@ func NewResolver(dataDir string) *Resolver {
 			absDir = abs
 		}
 	}
-	return &Resolver{dataDir: absDir}
+	return &Resolver{dataDir: absDir, versionMemo: make(map[string]cachedVersion)}
 }
 
 // Resolve returns the binary path and version for a given core type.
@@ -43,6 +56,31 @@ func (r *Resolver) Resolve(coreType string) (binaryPath, version string, err err
 
 	version = r.detectVersion(binaryPath)
 	return binaryPath, version, nil
+}
+
+// Version 返回已安装核心的版本（未安装或探测失败返回空串）。
+// 二进制文件未变化时复用缓存，避免频繁 exec。
+func (r *Resolver) Version(coreType string) string {
+	path := r.binaryPath(coreType)
+	info, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	r.mu.Lock()
+	if c, ok := r.versionMemo[coreType]; ok && c.modTime.Equal(info.ModTime()) && c.size == info.Size() {
+		r.mu.Unlock()
+		return c.version
+	}
+	r.mu.Unlock()
+
+	version := r.detectVersion(path)
+	if version == "unknown" {
+		version = ""
+	}
+	r.mu.Lock()
+	r.versionMemo[coreType] = cachedVersion{modTime: info.ModTime(), size: info.Size(), version: version}
+	r.mu.Unlock()
+	return version
 }
 
 // ListInstalled returns all installed core binaries with their versions.

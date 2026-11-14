@@ -71,8 +71,7 @@ export default {
       "experimental": {
           "flushInterval": "刷盘间隔（duration，如 1m / 30s）；留空用核心默认",
           "statsService": "Enable stats service for traffic monitoring（用户/入站/出站白名单由面板自动补齐）",
-          "clashNode": "面板「实时连接」需要它：本机节点自动注入 127.0.0.1:9090（仅回环，不对外暴露）；节点流量统计仍由 v2ray_api 负责。若还要给 yacd / metacubexd 等第三方面板用，可在这里显式开启并改地址。",
-          "clashAutoOn": "面板已自动开启 127.0.0.1:9090 供「实时连接」使用（仅本机回环读取，不对外暴露）",
+          "clashNode": "Clash API 为可选：关闭时生成的配置里不会写入 clash_api。面板「实时连接」会读取它（仅本机回环，不对外暴露）；节点流量统计仍由 v2ray_api 负责。需要 yacd / metacubexd 等第三方面板时再开启。",
           "clashClient": "客户端侧的控制与流量展示走 Clash API（yacd / metacubexd 等第三方面板）；不启用则订阅里不带该段",
           "clashListenNode": "Clash API listening address（不要与 v2ray_api 的 10086 冲突）",
           "clashListenClient": "Clash API listening address（客户端本机，通常是 127.0.0.1:9090）",
@@ -730,7 +729,7 @@ export default {
     connTraffic: '上传 / 下载',
     connEmpty: '暂无实时连接',
     connRemote: '远端节点暂不支持：需要 Agent 转发 clash_api',
-    connUnavailable: 'clash_api 不可用，请重启 sing-box 让新配置生效',
+    connUnavailable: "clash_api 不可用：请在协议中心 → 实验性配置中开启 Clash API，然后重启 sing-box",
   },
   dashboard: {
     title: '仪表盘',

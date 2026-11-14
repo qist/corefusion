@@ -330,9 +330,9 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	if opts.CoreType == "singbox" {
 		EnsureSingboxV2RayAPI(fullConfig)
 		PopulateSingboxStatsTargets(fullConfig)
-		// clash_api 用于面板「实时连接」：sing-box 没有按用户的在线 IP 接口，
-		// 只有 /connections 能给出「源 IP + 入站 + 目标 + 流量 + 起始时间」。
-		EnsureSingboxClashAPI(fullConfig)
+		// clash_api 是**可选**的：只有用户在「实验性配置」里显式开启才会写入。
+		// 面板「实时连接」依赖它，但默认关闭时不生成，避免用户关掉后配置里
+		// 仍被强行补回 127.0.0.1:9090（此处不再自动注入）。
 	}
 
 	// 10. Apply log mode to the config's log section
@@ -1634,44 +1634,16 @@ func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
 	// clash_api 是可选的（默认不配置）。仅在用户显式配置且端口与 v2ray_api 冲突时避让。
 	if clashAPI, ok := exp["clash_api"].(map[string]interface{}); ok && clashAPI != nil {
 		if ctrl, _ := clashAPI["external_controller"].(string); ctrl != "" && ctrl == listen {
-			clashAPI["external_controller"] = "127.0.0.1:9090"
-			log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 127.0.0.1:9090", listen)
+			clashAPI["external_controller"] = defaultSingboxClashAPIListen
+			log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 %s", listen, defaultSingboxClashAPIListen)
 		}
 	}
 }
 
-// EnsureSingboxClashAPI 确保 sing-box 暴露 clash_api（默认 127.0.0.1:9090）。
+// EnsureSingboxClashAPI 已移除：clash_api 属于可选实验性配置，只在用户显式
+// 开启时保留，不再由面板自动注入（否则用户关闭后配置里仍会出现 127.0.0.1:9090）。
 //
-// 用途：面板「实时连接」读取 /connections（源 IP、入站、目标、上下行、起始时间）。
-// 只监听回环、不设 secret —— 与 v2ray_api 一样属于本机内部接口，不对外暴露。
-//
-// 用户显式配置了 external_controller 时保持原样（尊重自定义端口），仅在其与
-// v2ray_api 抢同一端口时避让到默认值。
-func EnsureSingboxClashAPI(fullConfig map[string]interface{}) {
-	exp, ok := fullConfig["experimental"].(map[string]interface{})
-	if !ok || exp == nil {
-		exp = map[string]interface{}{}
-		fullConfig["experimental"] = exp
-	}
-	v2listen := ""
-	if v2api, ok := exp["v2ray_api"].(map[string]interface{}); ok {
-		v2listen, _ = v2api["listen"].(string)
-	}
-	clashAPI, ok := exp["clash_api"].(map[string]interface{})
-	if !ok || clashAPI == nil {
-		clashAPI = map[string]interface{}{}
-		exp["clash_api"] = clashAPI
-	}
-	ctrl, _ := clashAPI["external_controller"].(string)
-	if strings.TrimSpace(ctrl) == "" {
-		clashAPI["external_controller"] = defaultSingboxClashAPIListen
-		return
-	}
-	if v2listen != "" && ctrl == v2listen {
-		clashAPI["external_controller"] = defaultSingboxClashAPIListen
-		log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 %s", v2listen, defaultSingboxClashAPIListen)
-	}
-}
+// 与 v2ray_api 抢同一端口时的避让逻辑仍保留在 EnsureSingboxV2RayAPI 中。
 
 // PopulateSingboxStatsTargets 自动填充 v2ray_api.stats 的白名单。
 //

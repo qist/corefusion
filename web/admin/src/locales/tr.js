@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "Yıkama aralığı (örn. 1m / 30s); boş çekirdek varsayılanını kullanır",
       "statsService": "Trafik izleme için istatistik hizmetini etkinleştirin (kullanıcı/gelen/giden izin verilenler listeleri panel tarafından doldurulur)",
-      "clashNode": "\"Canlı bağlantılar\" görünümü buna ihtiyaç duyar: panel düğümünde 127.0.0.1:9090 otomatik eklenir (yalnızca loopback, dışarı açılmaz). Düğüm trafik muhasebesi yine v2ray_api ile yapılır. yacd / metacubexd de kullanacaksanız burada açın.",
-      "clashAutoOn": "Panel \"Canlı bağlantılar\" için 127.0.0.1:9090 adresini zaten etkinleştirdi (yalnızca loopback, dışarı açılmaz)",
+      "clashNode": "Clash API istege baglidir: kapaliyken olusturulan yapilandirmaya clash_api yazilmaz. \"Canli baglantilar\" gorunumu bunu okur (yalnizca loopback, disari acilmaz); dugum trafik muhasebesi yine v2ray_api ile yapilir. yacd / metacubexd de kullanacaksaniz etkinlestirin.",
       "clashClient": "İstemci tarafı kontrolü ve trafik gösterimi Clash API (yacd / metacubexd vb.) kullanır; devre dışı bırakıldığında bu bölüm abonelikten çıkarılır.",
       "clashListenNode": "Clash API dinleme adresi (v2ray_api'nin 10086'sıyla çakışmamalıdır)",
       "clashListenClient": "Clash API dinleme adresi (istemci yerel, genellikle 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "Yukari / Asagi",
     "connEmpty": "Canli baglanti yok",
     "connRemote": "Uzak dugumler henuz desteklenmiyor: Agent clash_api yi iletmeli",
-    "connUnavailable": "clash_api kullanilamiyor - yeni yapilandirmanin gecerli olmasi icin sing-box i yeniden baslatin"
+    "connUnavailable": "clash_api kullanilamiyor: Protokoller -> Deneysel bolumunde Clash API yi etkinlestirip sing-box i yeniden baslatin"
   },
   "dashboard": {
     "title": "Kontrol Paneli",

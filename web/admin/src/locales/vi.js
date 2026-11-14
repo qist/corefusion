@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "Khoảng thời gian xả (ví dụ: 1m / 30 giây); trống sử dụng mặc định cốt lõi",
       "statsService": "Kích hoạt dịch vụ thống kê để theo dõi lưu lượng truy cập (danh sách cho phép người dùng/vào/ra được bảng điều khiển điền vào)",
-      "clashNode": "Mục \"Kết nối trực tiếp\" cần nó: trên nút bảng điều khiển, 127.0.0.1:9090 được tự động chèn (chỉ loopback, không lộ ra ngoài). Thống kê lưu lượng nút vẫn do v2ray_api đảm nhận. Chỉ bật ở đây nếu bạn cũng muốn yacd / metacubexd.",
-      "clashAutoOn": "Bảng điều khiển đã tự bật 127.0.0.1:9090 cho \"Kết nối trực tiếp\" (chỉ loopback, không lộ ra ngoài)",
+      "clashNode": "Clash API la tuy chon: khi tat, clash_api se khong duoc ghi vao cau hinh tao ra. Muc \"Ket noi truc tiep\" doc no (chi loopback, khong lo ra ngoai); thong ke luu luong nut van do v2ray_api dam nhan. Bat neu ban cung muon dung yacd / metacubexd.",
       "clashClient": "Kiểm soát phía máy khách và hiển thị lưu lượng truy cập sử dụng Clash API (yacd / metacubexd, v.v.); khi bị tắt, phần này sẽ bị bỏ qua khỏi đăng ký.",
       "clashListenNode": "Clash API địa chỉ nghe (không được va chạm với 10086 của v2ray_api)",
       "clashListenClient": "Clash API địa chỉ nghe (máy khách cục bộ, thường là 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "Tai len / Xuong",
     "connEmpty": "Khong co ket noi truc tiep",
     "connRemote": "Chua ho tro nut tu xa: Agent phai chuyen tiep clash_api",
-    "connUnavailable": "clash_api khong kha dung - khoi dong lai sing-box de ap dung cau hinh moi"
+    "connUnavailable": "clash_api khong kha dung: hay bat Clash API trong Giao thuc -> Thuc nghiem roi khoi dong lai sing-box"
   },
   "dashboard": {
     "title": "Bảng điều khiển",

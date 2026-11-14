@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "Interval pembilasan (misalnya 1m / 30s); kosong menggunakan default inti",
       "statsService": "Aktifkan layanan statistik untuk pemantauan lalu lintas (daftar izin pengguna/masuk/keluar diisi oleh panel)",
-      "clashNode": "Tampilan \"Koneksi langsung\" membutuhkannya: pada node panel, 127.0.0.1:9090 disuntikkan otomatis (hanya loopback, tidak diekspos). Akuntansi trafik node tetap memakai v2ray_api. Aktifkan di sini hanya jika juga ingin yacd / metacubexd.",
-      "clashAutoOn": "Panel sudah mengaktifkan 127.0.0.1:9090 untuk \"Koneksi langsung\" (hanya loopback, tidak diekspos)",
+      "clashNode": "Clash API bersifat opsional: saat dimatikan, clash_api tidak ditulis ke konfigurasi yang dihasilkan. Tampilan \"Koneksi langsung\" membacanya (hanya loopback, tidak diekspos); akuntansi trafik node tetap memakai v2ray_api. Aktifkan jika juga ingin yacd / metacubexd.",
       "clashClient": "Kontrol sisi klien dan tampilan lalu lintas menggunakan Clash API (yacd / metacubexd dll.); ketika dinonaktifkan, bagian ini dihilangkan dari langganan.",
       "clashListenNode": "Clash API alamat mendengarkan (tidak boleh bertabrakan dengan 10086 v2ray_api)",
       "clashListenClient": "Clash API alamat mendengarkan (klien lokal, biasanya 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "Unggah / Unduh",
     "connEmpty": "Tidak ada koneksi langsung",
     "connRemote": "Node remote belum didukung: Agent harus meneruskan clash_api",
-    "connUnavailable": "clash_api tidak tersedia - mulai ulang sing-box agar konfigurasi baru berlaku"
+    "connUnavailable": "clash_api tidak tersedia: aktifkan Clash API di Protokol -> Eksperimental, lalu mulai ulang sing-box"
   },
   "dashboard": {
     "title": "Dasbor",

@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "Intervalle de rinçage (par exemple 1 m/30 s) ; vide utilise la valeur par défaut du noyau",
       "statsService": "Activer le service de statistiques pour la surveillance du trafic (les listes d'autorisation des utilisateurs/entrants/sortants sont remplies par le panneau)",
-      "clashNode": "La vue « Connexions en direct » en dépend : sur le nœud du panel, 127.0.0.1:9090 est injecté automatiquement (loopback uniquement, non exposé). La comptabilité du trafic reste assurée par v2ray_api. À activer seulement si vous voulez aussi yacd / metacubexd.",
-      "clashAutoOn": "Le panel a déjà activé 127.0.0.1:9090 pour « Connexions en direct » (loopback uniquement, non exposé)",
+      "clashNode": "L'API Clash est facultative : desactivee, clash_api n'est pas ecrit dans la configuration generee. La vue « Connexions en direct » le lit (loopback uniquement, non expose) ; la comptabilite du trafic reste assuree par v2ray_api. A activer si vous voulez aussi yacd / metacubexd.",
       "clashClient": "Le contrôle côté client et l'affichage du trafic utilisent le Clash API (yacd / metacubexd etc.) ; lorsqu'elle est désactivée, cette section est omise de l'abonnement.",
       "clashListenNode": "Clash API adresse d'écoute (ne doit pas entrer en collision avec le 10086 de v2ray_api)",
       "clashListenClient": "Clash API adresse d'écoute (client local, généralement 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "Montant / Descendant",
     "connEmpty": "Aucune connexion en direct",
     "connRemote": "Noeuds distants non pris en charge : l Agent doit relayer clash_api",
-    "connUnavailable": "clash_api indisponible - redemarrez sing-box pour appliquer la nouvelle configuration"
+    "connUnavailable": "clash_api indisponible : activez l'API Clash dans Protocoles -> Experimentation, puis redemarrez sing-box"
   },
   "dashboard": {
     "title": "Tableau de bord",

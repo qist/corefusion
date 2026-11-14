@@ -373,6 +373,49 @@ func TestEnsureSingboxV2RayAPIAvoidsClashPortConflict(t *testing.T) {
 	}
 }
 
+// 用户关闭 Clash API 后，生成的运行时配置里不能再被强行补回 clash_api。
+func TestPrepareFullConfigSingboxDoesNotInjectClashAPI(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{},
+		"route":    map[string]interface{}{"rules": []interface{}{}},
+	}
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+	exp, _ := full["experimental"].(map[string]interface{})
+	if exp == nil {
+		t.Fatal("缺少 experimental 段")
+	}
+	if _, exists := exp["clash_api"]; exists {
+		t.Errorf("未开启 Clash API 时不应生成 clash_api: %#v", exp["clash_api"])
+	}
+}
+
+// 用户显式开启的 clash_api 必须原样保留。
+func TestPrepareFullConfigSingboxKeepsUserClashAPI(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{},
+		"route":    map[string]interface{}{"rules": []interface{}{}},
+		"experimental": map[string]interface{}{
+			"clash_api": map[string]interface{}{"external_controller": "127.0.0.1:9091"},
+		},
+	}
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+	exp, _ := full["experimental"].(map[string]interface{})
+	clash, _ := exp["clash_api"].(map[string]interface{})
+	if clash == nil || clash["external_controller"] != "127.0.0.1:9091" {
+		t.Errorf("用户显式配置的 clash_api 被改动: %#v", exp["clash_api"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // stats 白名单：必须补入 users，否则按用户计费恒为 0
 // ---------------------------------------------------------------------------

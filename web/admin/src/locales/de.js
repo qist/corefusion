@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "Spülintervall (z. B. 1 m / 30 s); empty verwendet den Kernstandard",
       "statsService": "Aktivieren Sie den Statistikdienst für die Verkehrsüberwachung (Benutzer-/eingehende/ausgehende Zulassungslisten werden vom Panel ausgefüllt).",
-      "clashNode": "Die Ansicht \"Live-Verbindungen\" braucht es: auf dem Panel-Knoten wird 127.0.0.1:9090 automatisch injiziert (nur Loopback, nicht exponiert). Die Traffic-Abrechnung läuft weiter über v2ray_api. Nur aktivieren, wenn zusätzlich yacd / metacubexd o. ä. genutzt werden soll.",
-      "clashAutoOn": "Das Panel hat 127.0.0.1:9090 für \"Live-Verbindungen\" bereits aktiviert (nur Loopback, nicht exponiert)",
+      "clashNode": "Clash API ist optional: ist es aus, wird clash_api nicht in die erzeugte Konfiguration geschrieben. Die Ansicht \"Live-Verbindungen\" liest es (nur Loopback, nicht exponiert); die Traffic-Abrechnung laeuft weiter ueber v2ray_api. Aktivieren, wenn zusaetzlich yacd / metacubexd genutzt werden soll.",
       "clashClient": "Clientseitige Steuerung und Verkehrsanzeige nutzen das Clash API (yacd / metacubexd etc.); Wenn er deaktiviert ist, wird dieser Abschnitt im Abonnement weggelassen.",
       "clashListenNode": "Clash API Abhöradresse (darf nicht mit 10086 von v2ray_api kollidieren)",
       "clashListenClient": "Clash API Abhöradresse (lokal auf dem Client, normalerweise 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "Auf/Ab",
     "connEmpty": "Keine Live-Verbindungen",
     "connRemote": "Remote-Knoten noch nicht unterstuetzt: der Agent muss clash_api weiterleiten",
-    "connUnavailable": "clash_api nicht verfuegbar - sing-box neu starten, damit die neue Konfiguration greift"
+    "connUnavailable": "clash_api nicht verfuegbar: Clash API unter Protokolle -> Experimentell aktivieren und sing-box neu starten"
   },
   "dashboard": {
     "title": "Armaturenbrett",

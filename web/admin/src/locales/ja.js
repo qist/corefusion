@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "フラッシュ間隔 (例: 1 分 / 30 秒)。空の場合はコアのデフォルトを使用します",
       "statsService": "トラフィック監視の統計サービスを有効にする (ユーザー/受信/送信の許可リストはパネルによって入力されます)",
-      "clashNode": "パネルの「リアルタイム接続」で使用します：パネル本体ノードでは 127.0.0.1:9090 を自動注入します（ループバックのみ、外部非公開）。ノードの流量集計は引き続き v2ray_api が担当します。yacd / metacubexd など第三者ダッシュボードにも使う場合のみ、ここで明示的に有効化しアドレスを変更してください。",
-      "clashAutoOn": "パネルが「リアルタイム接続」用に 127.0.0.1:9090 を自動で有効化しています（ループバックのみ、外部非公開）",
+      "clashNode": "Clash API は任意です：オフの場合、生成される設定に clash_api は書き込まれません。パネルの「リアルタイム接続」がこれを読み取ります（ループバックのみ、外部非公開）。ノードの流量集計は引き続き v2ray_api が担当します。yacd / metacubexd も使う場合に有効化してください。",
       "clashClient": "クライアント側の制御とトラフィック表示は Clash API (yacd / metacubexd など) を使用します。無効にすると、このセクションはサブスクリプションから省略されます。",
       "clashListenNode": "Clash API リスニング アドレス (v2ray_api の 10086 と衝突してはなりません)",
       "clashListenClient": "Clash API リスニング アドレス (クライアント ローカル、通常 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "上り / 下り",
     "connEmpty": "接続はありません",
     "connRemote": "リモートノードは未対応：Agent が clash_api を中継する必要があります",
-    "connUnavailable": "clash_api を利用できません。sing-box を再起動して新しい設定を反映してください"
+    "connUnavailable": "clash_api を利用できません：プロトコル → 実験的設定で Clash API を有効にして sing-box を再起動してください"
   },
   "dashboard": {
     "title": "ダッシュボード",

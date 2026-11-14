@@ -72,8 +72,7 @@ export default {
     "experimental": {
       "flushInterval": "세척 간격(예: 1m/30s) 비어 있으면 핵심 기본값을 사용합니다.",
       "statsService": "트래픽 모니터링을 위한 통계 서비스 활성화(사용자/인바운드/아웃바운드 허용 목록은 패널에서 채워짐)",
-      "clashNode": "패널 \"실시간 연결\"에서 사용합니다: 패널 본체 노드에는 127.0.0.1:9090 이 자동 주입됩니다(루프백 전용, 외부 비노출). 노드 트래픽 집계는 여전히 v2ray_api가 담당합니다. yacd / metacubexd 등 서드파티 대시보드에도 쓰려면 여기서 직접 켜고 주소를 바꾸세요.",
-      "clashAutoOn": "패널이 \"실시간 연결\"용으로 127.0.0.1:9090 을 자동 활성화했습니다(루프백 전용, 외부 비노출)",
+      "clashNode": "Clash API는 선택 사항입니다: 끄면 생성되는 설정에 clash_api가 기록되지 않습니다. 패널 \"실시간 연결\"이 이를 읽습니다(루프백 전용, 외부 비노출). 노드 트래픽 집계는 여전히 v2ray_api가 담당합니다. yacd / metacubexd도 사용하려면 켜세요.",
       "clashClient": "클라이언트 측 제어 및 트래픽 표시는 Clash API (yacd / Metacubexd 등)을 사용합니다. 비활성화되면 이 섹션이 구독에서 생략됩니다.",
       "clashListenNode": "Clash API 수신 주소(v2ray_api의 10086과 충돌해서는 안 됨)",
       "clashListenClient": "Clash API 수신 주소(클라이언트 로컬, 일반적으로 127.0.0.1:9090)",
@@ -732,7 +731,7 @@ export default {
     "connTraffic": "업로드 / 다운로드",
     "connEmpty": "실시간 연결이 없습니다",
     "connRemote": "원격 노드는 아직 지원되지 않습니다. Agent가 clash_api를 중계해야 합니다",
-    "connUnavailable": "clash_api를 사용할 수 없습니다. sing-box를 재시작해 새 설정을 적용하세요"
+    "connUnavailable": "clash_api를 사용할 수 없습니다: 프로토콜 -> 실험적 설정에서 Clash API를 켠 뒤 sing-box를 재시작하세요"
   },
   "dashboard": {
     "title": "대시보드",

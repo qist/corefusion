@@ -164,12 +164,45 @@ func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher fu
 				c.Tag, ph.PortRange, ph.TargetPort, ph.Interface)
 		}
 	}
+
+	// 入站开启「自动创建防火墙放行规则」时，重启后也要把放行规则补回来
+	// （firewalld 的 --permanent 规则本身会保留，ufw/nft/iptables 则可能丢失）。
+	for _, c := range configs {
+		if !c.Enabled {
+			continue
+		}
+		allow, network := ParseAllowFromConfig(c.ConfigJSON)
+		if !allow {
+			continue
+		}
+		// Unix Socket 入站不监听 TCP 端口（port 只是订阅标识），不创建放行规则。
+		if IsUnixSocketListen(c.Listen) {
+			continue
+		}
+		port := c.Port
+		if port <= 0 {
+			if cfg, err := decodeConfig(c.ConfigJSON); err == nil {
+				if p, ok := cfg["port"].(float64); ok {
+					port = int(p)
+				}
+			}
+		}
+		if port <= 0 {
+			continue
+		}
+		if err := AllowPort(port, network); err != nil {
+			log.Printf("[Firewall] failed to restore allow rule for inbound %s (port %d): %v", c.Tag, port, err)
+		} else {
+			log.Printf("[Firewall] restored allow rule: inbound=%s port=%d network=%s", c.Tag, port, network)
+		}
+	}
 }
 
 // InboundConfigInfo holds the minimal info needed from an inbound config for firewall restoration.
 type InboundConfigInfo struct {
 	Tag        string
 	Protocol   string
+	Listen     string
 	Port       int
 	ConfigJSON string
 	Enabled    bool

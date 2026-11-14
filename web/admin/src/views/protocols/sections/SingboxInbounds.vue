@@ -260,6 +260,11 @@
                   </div>
                   <div class="hint">{{ t('protoHint.inbounds.allInterfaces') }}</div>
                 </el-form-item>
+                <!-- 动态端口（端口段 → 入站端口）同样需要放行，否则开防火墙时客户端连不上。 -->
+                <el-form-item :label="t('protoCenter.inbounds.fwAllow')">
+                  <el-switch v-model="rf._fwAllow" />
+                  <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
+                </el-form-item>
               </template>
             </template>
             <el-divider content-position="left">{{ t('xrayIn.advancedListen') }}</el-divider>
@@ -317,6 +322,11 @@
                     <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
+                <!-- tun/cloudflared 没有监听端口，无需放行 -->
+                <el-form-item v-if="rf._directPortMode === 'inbound' && rf.type !== 'tun' && rf.type !== 'cloudflared'" :label="t('protoCenter.inbounds.fwAllow')">
+                  <el-switch v-model="rf._fwAllow" />
+                  <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
+                </el-form-item>
               </template>
               <!-- CF Domain -->
               <el-form-item v-if="rf._accessDomainType === 'cf_domain'" :label="t('protoCenter.inbounds.cfDomainSelect')">
@@ -342,6 +352,10 @@
                     <el-radio value="custom">{{ t('protoCenter.inbounds.customPortCustom') }}</el-radio>
                     <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
                   </el-radio-group>
+                </el-form-item>
+                <el-form-item v-if="rf._customPortMode === 'inbound' && rf.type !== 'tun' && rf.type !== 'cloudflared'" :label="t('protoCenter.inbounds.fwAllow')">
+                  <el-switch v-model="rf._fwAllow" />
+                  <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
                 </el-form-item>
                 <el-form-item v-if="rf._customPortMode === 'custom'" :label="t('protoCenter.inbounds.customPort')">
                   <el-input-number v-model="rf._accessCustomPort" :min="1" :max="65535" />
@@ -674,6 +688,7 @@ function showAdd() {
   Object.assign(rf, inboundDefaultsForType('vless', takeFreePort(props.serverId)))
   rf._id = null
   dlg.value = true
+  loadFirewallStatus()
 }
 
 function showEdit(row) {
@@ -683,6 +698,7 @@ function showEdit(row) {
   // 带上自身 id：SNI 互斥比较时要排除自己（utils/sniUsage 按 id 判断）
   rf._id = row._id ?? row.id ?? null
   dlg.value = true
+  loadFirewallStatus()
 }
 
 function onTypeChange() {
@@ -694,6 +710,8 @@ function onTypeChange() {
 }
 
 async function save() {
+  // tun/cloudflared 没有监听端口：强制关闭放行标记，避免重启恢复时误加规则
+  if (rf.type === 'tun' || rf.type === 'cloudflared') rf._fwAllow = false
   const cfg = buildInbound(rf)
   if (!cfg.tag) { ElMessage.warning(t('singbox.inbound.tagRequired')); return }
 
@@ -764,6 +782,27 @@ async function save() {
       }
     }
 
+    // 使用入站端口 / 动态端口时，按需创建防火墙放行规则。
+    // 端口修改、或切到 tun/cloudflared（无监听端口）时都要同步增删旧规则。
+    {
+      const oldIb = editIdx.value >= 0 ? form[editIdx.value] : null
+      const oldAllow = !!oldIb?._fwAllow
+      const oldPort = oldIb?.listen_port || 0
+      const newPort = (rf.type === 'tun' || rf.type === 'cloudflared') ? 0 : (rf.listen_port || 0)
+      const wantAllow = !!rf._fwAllow && newPort > 0
+      const portChanged = oldPort !== newPort
+      try {
+        if (oldAllow && oldPort > 0 && (!wantAllow || portChanged)) {
+          await client.post(`${nodeBase.value}/firewall/remove-port`, { port: oldPort })
+        }
+        if (wantAllow && (!oldAllow || portChanged)) {
+          await client.post(`${nodeBase.value}/firewall/allow-port`, { port: newPort })
+        }
+      } catch (fwErr) {
+        ElMessage.error(fwErr?.response?.data?.message || t('protoHint.inbounds.firewallFailed'))
+      }
+    }
+
     // Restart sing-box to apply changes (no hot-reload API)
     await restartCore()
     ElMessage.success(t('common.success'))
@@ -790,6 +829,14 @@ function handleAction(cmd, row) {
           if (ib._id) {
             await client.delete(`${nodeBase.value}/inbound-configs/${ib._id}`)
             await restartCore()
+          }
+          // 使用入站端口时创建的防火墙放行规则，删除入站时一并撤销
+          if (ib._fwAllow && (ib.listen_port || 0) > 0) {
+            try {
+              await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.listen_port })
+            } catch (fwErr) {
+              console.warn('Failed to remove firewall allow rule on delete:', fwErr)
+            }
           }
           form.splice(i, 1)
           ElMessage.success(t('common.deleteSuccess'))
@@ -1270,6 +1317,19 @@ async function restartCore() {
 // ==================== Access Domain data loading ====================
 
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+// 防火墙状态：打开编辑框时查询，用于提示「保存时会自动放行端口」。
+const fwStatus = ref({ enabled: false, kind: 'none' })
+const fwAllowHint = computed(() => {
+  if (!fwStatus.value?.enabled) return t('protoCenter.inbounds.fwAllowNoFirewall')
+  return t('protoCenter.inbounds.fwAllowDetected', { kind: fwStatus.value.kind })
+})
+async function loadFirewallStatus() {
+  try {
+    fwStatus.value = (await client.get(`${nodeBase.value}/firewall/status`)) || { enabled: false, kind: 'none' }
+  } catch {
+    fwStatus.value = { enabled: false, kind: 'none' }
+  }
+}
 // 端口跳跃预设段来自 utils/portHopPresets（与 xray 编辑器同一份定义）；历史值也显示。
 const portHopRules = ref([])
 const portHopSuggest = ref('')

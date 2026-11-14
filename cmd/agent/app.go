@@ -495,25 +495,28 @@ func (a *AgentApp) restoreFirewallRules(ctx context.Context) {
 	if a.inboundConfigRepo == nil {
 		return
 	}
-	// Read all enabled hysteria inbounds for this server from local DB
-	configs, err := a.inboundConfigRepo.List(ctx, a.cfg.Panel.ServerID, "xray")
-	if err != nil {
-		log.Printf("[Agent] firewall restore: failed to list inbound configs: %v", err)
-		return
-	}
-
+	// 读取全部入站（xray + sing-box）：端口跳跃规则按 config 自行判断，
+	// 「自动创建防火墙放行规则」则对所有带 _fwAllow 的入站生效。
 	var infos []firewall.InboundConfigInfo
-	for _, c := range configs {
-		if !c.Enabled || c.Protocol != "hysteria" {
+	for _, coreType := range []string{"xray", "singbox"} {
+		configs, err := a.inboundConfigRepo.List(ctx, a.cfg.Panel.ServerID, coreType)
+		if err != nil {
+			log.Printf("[Agent] firewall restore: failed to list %s inbound configs: %v", coreType, err)
 			continue
 		}
-		infos = append(infos, firewall.InboundConfigInfo{
-			Tag:        c.Tag,
-			Protocol:   c.Protocol,
-			Port:       c.Port,
-			ConfigJSON: c.ConfigJSON,
-			Enabled:    c.Enabled,
-		})
+		for _, c := range configs {
+			if !c.Enabled {
+				continue
+			}
+			infos = append(infos, firewall.InboundConfigInfo{
+				Tag:        c.Tag,
+				Protocol:   c.Protocol,
+				Listen:     c.Listen,
+				Port:       c.Port,
+				ConfigJSON: c.ConfigJSON,
+				Enabled:    c.Enabled,
+			})
+		}
 	}
 
 	firewall.RestoreRules(ctx, firewall.LocalApplier{}, func() ([]firewall.InboundConfigInfo, error) {

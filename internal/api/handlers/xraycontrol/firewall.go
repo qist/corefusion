@@ -388,3 +388,80 @@ func matchIptablesDeleteArgs(s string, portSpec string, targetPort int) ([]strin
 	}
 	return nil, false
 }
+
+// ── 入站端口防火墙放行（firewalld / ufw / nftables / iptables）──
+
+// FirewallPortRule 是放行/撤销放行的请求体。
+type FirewallPortRule struct {
+	Port    int    `json:"port"`
+	Network string `json:"network"` // tcp / udp / tcp,udp；空 = 两者
+}
+
+// FirewallStatus handles GET /api/v1/node-servers/:id/firewall/status.
+// 返回节点上检测到的防火墙类型与是否启用，供编辑器决定是否展示「自动放行」选项。
+func (h *Handler) FirewallStatus(c *gin.Context) {
+	if resp, handled, failed := h.remoteXrayAPI(c, "firewall", "status", struct{}{}); handled {
+		if failed || resp == nil {
+			return
+		}
+		var result interface{}
+		json.Unmarshal(resp, &result)
+		response.OK(c, result)
+		return
+	}
+	response.OK(c, firewall.Detect())
+}
+
+// AllowFirewallPort handles POST /api/v1/node-servers/:id/firewall/allow-port.
+func (h *Handler) AllowFirewallPort(c *gin.Context) {
+	var req FirewallPortRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
+		return
+	}
+	if req.Port <= 0 || req.Port > 65535 {
+		response.BadRequest(c, "INVALID_PARAMS", "port must be 1-65535")
+		return
+	}
+	if resp, handled, failed := h.remoteXrayAPI(c, "firewall", "allow", req); handled {
+		if failed || resp == nil {
+			return
+		}
+		var result interface{}
+		json.Unmarshal(resp, &result)
+		response.OK(c, result)
+		return
+	}
+	if err := firewall.AllowPort(req.Port, req.Network); err != nil {
+		response.InternalError(c, "FIREWALL_ALLOW_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"port": req.Port, "network": req.Network})
+}
+
+// RemoveFirewallPort handles POST /api/v1/node-servers/:id/firewall/remove-port.
+func (h *Handler) RemoveFirewallPort(c *gin.Context) {
+	var req FirewallPortRule
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
+		return
+	}
+	if req.Port <= 0 || req.Port > 65535 {
+		response.BadRequest(c, "INVALID_PARAMS", "port must be 1-65535")
+		return
+	}
+	if resp, handled, failed := h.remoteXrayAPI(c, "firewall", "unallow", req); handled {
+		if failed || resp == nil {
+			return
+		}
+		var result interface{}
+		json.Unmarshal(resp, &result)
+		response.OK(c, result)
+		return
+	}
+	if err := firewall.RemovePort(req.Port, req.Network); err != nil {
+		response.InternalError(c, "FIREWALL_REMOVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, gin.H{"port": req.Port, "network": req.Network})
+}

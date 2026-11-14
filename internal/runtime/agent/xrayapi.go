@@ -788,6 +788,34 @@ func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequ
 		resp, _ := json.Marshal(map[string]string{"message": "firewall rule removed", "type": ftype})
 		return &agentpb.XrayAPIResponse{Success: true, Response: resp}, nil
 
+	case "status":
+		st := firewall.Detect()
+		resp, _ := json.Marshal(st)
+		return &agentpb.XrayAPIResponse{Success: true, Response: resp}, nil
+
+	case "allow", "unallow":
+		var payload struct {
+			Port    int    `json:"port"`
+			Network string `json:"network"`
+		}
+		if err := json.Unmarshal(req.Payload, &payload); err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
+		}
+		if payload.Port <= 0 || payload.Port > 65535 {
+			return &agentpb.XrayAPIResponse{Success: false, Error: "port must be 1-65535"}, nil
+		}
+		var err error
+		if req.Method == "allow" {
+			err = firewall.AllowPort(payload.Port, payload.Network)
+		} else {
+			err = firewall.RemovePort(payload.Port, payload.Network)
+		}
+		if err != nil {
+			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+		}
+		resp, _ := json.Marshal(map[string]interface{}{"port": payload.Port, "network": payload.Network})
+		return &agentpb.XrayAPIResponse{Success: true, Response: resp}, nil
+
 	default:
 		return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("unknown firewall method: %s", req.Method)}, nil
 	}

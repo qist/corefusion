@@ -629,6 +629,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		dataDir = "data"
 	}
 
+	// 启动时探测一次本机防火墙（firewalld / ufw / nftables / iptables），
+	// 入站编辑器的「自动创建防火墙放行规则」与启动恢复都依赖它。
+	firewall.Init()
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(database)
 	nodeRepo := repository.NewNodeRepository(database)
@@ -3271,6 +3275,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServersGroup.DELETE("/:id/xray/control/inbound/:tag/user/:email", xrayControlH.RemoveUser)
 			nodeServersGroup.POST("/:id/xray/control/firewall/apply", xrayControlH.ApplyFirewallRules)
 			nodeServersGroup.POST("/:id/xray/control/firewall/remove", xrayControlH.RemoveFirewallRules)
+			// 入站端口放行（firewalld/ufw/nftables/iptables）：编辑器据此决定是否展示
+			// 「自动创建防火墙放行规则」，保存入站时按需放行/撤销。
+			nodeServersGroup.GET("/:id/firewall/status", xrayControlH.FirewallStatus)
+			nodeServersGroup.POST("/:id/firewall/allow-port", xrayControlH.AllowFirewallPort)
+			nodeServersGroup.POST("/:id/firewall/remove-port", xrayControlH.RemoveFirewallPort)
 			// sing-box 的 hysteria2/hysteria 端口跳跃（端口段 → 入站端口转发）。
 			// 防火墙规则本身与核心无关（nft/iptables DNAT），因此复用同一套实现，
 			// 只是给 sing-box 编辑器一个同名的调用入口。
@@ -4181,26 +4190,22 @@ func restoreFirewallRules(ctx context.Context, repo *repository.InboundConfigRep
 	// 端口跳跃规则与核心无关（nft DNAT 端口段 → 入站端口），因此 xray 的 hysteria
 	// 与 sing-box 的 hysteria2/hysteria 都要恢复；否则机器重启后 sing-box 的
 	// 端口跳跃会静默失效（配置里 _portHop 还在，但规则没了）。
-	targets := []struct {
-		coreType  string
-		protocols map[string]bool
-	}{
-		{"xray", map[string]bool{"hysteria": true}},
-		{"singbox", map[string]bool{"hysteria2": true, "hysteria": true}},
-	}
-	for _, t := range targets {
-		configs, err := repo.List(ctx, 1, t.coreType)
+	// 同时这里也覆盖「自动创建防火墙放行规则」（_fwAllow）：ufw / nft / iptables
+	// 的放行规则重启后可能丢失，需要按入站配置补回来。
+	for _, coreType := range []string{"xray", "singbox"} {
+		configs, err := repo.List(ctx, 1, coreType)
 		if err != nil {
-			log.Printf("[Firewall] failed to list %s inbound configs for rule restore: %v", t.coreType, err)
+			log.Printf("[Firewall] failed to list %s inbound configs for rule restore: %v", coreType, err)
 			continue
 		}
 		for _, c := range configs {
-			if !c.Enabled || !t.protocols[c.Protocol] {
+			if !c.Enabled {
 				continue
 			}
 			infos = append(infos, firewall.InboundConfigInfo{
 				Tag:        c.Tag,
 				Protocol:   c.Protocol,
+				Listen:     c.Listen,
 				Port:       c.Port,
 				ConfigJSON: c.ConfigJSON,
 				Enabled:    c.Enabled,

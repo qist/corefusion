@@ -398,6 +398,12 @@
                     <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
                   </el-radio-group>
                 </el-form-item>
+                <!-- 使用入站端口时，端口直接暴露给客户端：防火墙开启时需要放行。
+                     Unix Socket 不监听 TCP 端口，无需放行。 -->
+                <el-form-item v-if="rf._directPortMode === 'inbound' && rf._listenType !== 'sock'" :label="t('protoCenter.inbounds.fwAllow')">
+                  <el-switch v-model="rf._fwAllow" />
+                  <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
+                </el-form-item>
               </template>
               <!-- CF Domain -->
               <el-form-item v-if="rf._accessDomainType === 'cf_domain'" :label="t('protoCenter.inbounds.cfDomainSelect')">
@@ -423,6 +429,10 @@
                     <el-radio value="custom">{{ t('protoCenter.inbounds.customPortCustom') }}</el-radio>
                     <el-radio value="inbound">{{ t('protoCenter.inbounds.directPortInbound') }}</el-radio>
                   </el-radio-group>
+                </el-form-item>
+                <el-form-item v-if="rf._customPortMode === 'inbound' && rf._listenType !== 'sock'" :label="t('protoCenter.inbounds.fwAllow')">
+                  <el-switch v-model="rf._fwAllow" />
+                  <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
                 </el-form-item>
                 <el-form-item v-if="rf._customPortMode === 'custom'" :label="t('protoCenter.inbounds.customPort')">
                   <el-input-number v-model="rf._accessCustomPort" :min="1" :max="65535" />
@@ -825,6 +835,12 @@
                   <el-button size="small" @click="loadInterfaces">Refresh</el-button>
                 </div>
                 <div class="hint">Leave empty for all interfaces. Firewall rules will be applied automatically on save.</div>
+              </el-form-item>
+              <!-- 动态端口（端口段 → 入站端口）同样需要放行，否则开了防火墙客户端连不上。
+                   Unix Socket 不监听 TCP 端口，无需放行。 -->
+              <el-form-item v-if="rf._listenType !== 'sock'" :label="t('protoCenter.inbounds.fwAllow')">
+                <el-switch v-model="rf._fwAllow" />
+                <span class="hint" style="margin-left:8px">{{ fwAllowHint }}</span>
               </el-form-item>
             </template>
           </el-form>
@@ -1885,6 +1901,21 @@ defineEmits(['update'])
 
 // Helper to build node-server-scoped API paths
 const nodeBase = computed(() => `/node-servers/${props.serverId}`)
+
+// 防火墙状态（打开编辑框时查询）：用于提示「保存时会自动放行端口」。
+// 未检测到启用的防火墙时开关仍可打开，但后端是 no-op（没有过滤就不需要放行）。
+const fwStatus = ref({ enabled: false, kind: 'none' })
+const fwAllowHint = computed(() => {
+  if (!fwStatus.value?.enabled) return t('protoCenter.inbounds.fwAllowNoFirewall')
+  return t('protoCenter.inbounds.fwAllowDetected', { kind: fwStatus.value.kind })
+})
+async function loadFirewallStatus() {
+  try {
+    fwStatus.value = (await client.get(`${nodeBase.value}/firewall/status`)) || { enabled: false, kind: 'none' }
+  } catch {
+    fwStatus.value = { enabled: false, kind: 'none' }
+  }
+}
 const apiBase = computed(() => `${nodeBase.value}/binaries`)
 
 const form = ref([])
@@ -3018,6 +3049,8 @@ function getDefaultInbound() {
     // Port Hop
     _portHopEnabled: false, _portHopMode: 'preset', _portHopRange: '10000-19999',
     _portHopStart: 20000, _portHopEnd: 50000, _portHopInterface: '',
+    // 使用入站端口 / 动态端口时自动创建防火墙放行规则
+    _fwAllow: false,
   }
 }
 
@@ -3093,6 +3126,8 @@ function onListenTypeChange(val) {
     // 所以切到 Unix Socket 时**保留原端口**，不要清 0。
     rf._savedPort = rf.port
     rf.listen = ''
+    // Unix Socket 不监听 TCP 端口：不创建防火墙放行规则（旧端口规则在保存时撤销）
+    rf._fwAllow = false
     if (!rf._socketPath) rf._socketPath = '/dev/shm/' + rf.protocol + '.sock'
     if (!rf._socketPerm) rf._socketPerm = '0666'
   } else {
@@ -4227,6 +4262,8 @@ function parseInbound(ib) {
     _accessTlsSni: ib._accessDomain?.tls?.sni || '',
     _accessTlsAlpn: ib._accessDomain?.tls?.alpn || '',
     _accessTlsFingerprint: ib._accessDomain?.tls?.fingerprint || '',
+    // 使用入站端口时是否自动创建防火墙放行规则（随 config_json 落库）
+    _fwAllow: !!ib._fwAllow,
   }
 }
 
@@ -4303,6 +4340,8 @@ function buildInbound(ib, isApiCall = false) {
       end: ib._portHopEnd || 50000,
       interface: ib._portHopInterface || '',
     },
+    // 使用入站端口 / 动态端口时自动创建防火墙放行规则（内部字段，核心忽略）
+    _fwAllow: !!ib._fwAllow,
   }
   // Add sockopt only if enabled
   const sk = ib.sockopt || {}
@@ -4889,9 +4928,11 @@ function showAdd() {
   rf._portHopStart = d._portHopStart
   rf._portHopEnd = d._portHopEnd
   rf._portHopInterface = d._portHopInterface
+  rf._fwAllow = false
   rf._certBind = null
   activeTab.value = 'basic'
   dlg.value = true
+  loadFirewallStatus()
   // Auto-select: prefer local Reality server (speedtest-format domains), else random preset
   if (localRealityServers.value.length > 0) {
     // Pick first available local server
@@ -4962,10 +5003,12 @@ function showEdit(i) {
   rf._portHopStart = ib._portHopStart || 20000
   rf._portHopEnd = ib._portHopEnd || 50000
   rf._portHopInterface = ib._portHopInterface || ''
+  rf._fwAllow = !!ib._fwAllow
   // 证书中心绑定（编辑时回显「选择证书」用）
   rf._certBind = ib._certBind ? JSON.parse(JSON.stringify(ib._certBind)) : null
   activeTab.value = 'basic'
   dlg.value = true
+  loadFirewallStatus()
 }
 
 async function saveInbound() {
@@ -5003,6 +5046,8 @@ async function saveInbound() {
   }
 
   // Build config for database (with relative paths)
+  // Unix Socket 不监听 TCP 端口：强制关闭放行标记，避免重启恢复时误加规则
+  if (rf._listenType === 'sock') rf._fwAllow = false
   const ib = buildInbound(rf, false)
   // Build config for API call (with absolute paths)
   const apiConfig = buildInbound(rf, true)
@@ -5050,6 +5095,7 @@ async function saveInbound() {
       // Remove internal fields before sending to xray
       delete apiJson._accessDomain
       delete apiJson._portHop
+      delete apiJson._fwAllow
       delete apiJson._wgPublicKey
       delete apiJson._listenType
       delete apiJson._certBind
@@ -5156,6 +5202,31 @@ async function saveInbound() {
       }
     }
 
+    // 使用入站端口 / 动态端口（端口跳跃）时，按需创建防火墙放行规则。
+    // Unix Socket 不监听 TCP 端口：不创建，且从 TCP 改过来时要把旧端口的规则撤掉。
+    {
+      const oldIb = editIdx.value >= 0 ? form.value[editIdx.value] : null
+      const oldSock = oldIb?._listenType === 'sock'
+      const newSock = rf._listenType === 'sock'
+      const oldAllow = !!oldIb?._fwAllow
+      const oldPort = oldIb?.port || 0
+      const newPort = rf.port || 0
+      const wantAllow = !newSock && !!rf._fwAllow && newPort > 0
+      // 端口改了（或 TCP↔Socket 切换）都要先删旧规则再加新规则
+      const portChanged = oldPort !== newPort
+      try {
+        if (oldAllow && oldPort > 0 && (oldSock || !wantAllow || portChanged)) {
+          await client.post(`${nodeBase.value}/firewall/remove-port`, { port: oldPort })
+        }
+        if (wantAllow && (!oldAllow || oldSock || portChanged)) {
+          await client.post(`${nodeBase.value}/firewall/allow-port`, { port: newPort })
+        }
+      } catch (fwErr) {
+        // 放行失败要让用户看到（否则以为保存成功、客户端却连不上）
+        ElMessage.error(fwErr?.response?.data?.message || t('protoHint.inbounds.firewallFailed'))
+      }
+    }
+
     ElMessage.success(t('common.success'))
     dlg.value = false
     await loadInbounds()
@@ -5227,6 +5298,14 @@ async function toggleEnabled(row) {
               console.warn('Failed to apply firewall rules on enable:', fwErr)
             }
           }
+          // Unix Socket 不监听 TCP 端口，不创建放行规则
+          if (ib._listenType !== 'sock' && ib._fwAllow && (ib.port || 0) > 0) {
+            try {
+              await client.post(`${nodeBase.value}/firewall/allow-port`, { port: ib.port })
+            } catch (fwErr) {
+              console.warn('Failed to allow inbound port on enable:', fwErr)
+            }
+          }
         } else {
           // Disable: remove inbound from xray runtime
           await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
@@ -5243,6 +5322,13 @@ async function toggleEnabled(row) {
               })
             } catch (fwErr) {
               console.warn('Failed to remove firewall rules on disable:', fwErr)
+            }
+          }
+          if (ib._fwAllow && (ib.port || 0) > 0) {
+            try {
+              await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.port })
+            } catch (fwErr) {
+              console.warn('Failed to remove inbound port allow rule on disable:', fwErr)
             }
           }
         }
@@ -5286,6 +5372,14 @@ async function rmInbound(i) {
       })
     } catch (fwErr) {
       console.warn('Failed to remove firewall rules on delete:', fwErr)
+    }
+  }
+  // 使用入站端口时创建的防火墙放行规则，删除入站时一并撤销
+  if (ib._fwAllow && (ib.port || 0) > 0) {
+    try {
+      await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.port })
+    } catch (fwErr) {
+      console.warn('Failed to remove firewall allow rule on delete:', fwErr)
     }
   }
   form.value.splice(i, 1)

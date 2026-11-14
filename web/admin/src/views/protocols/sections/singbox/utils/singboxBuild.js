@@ -615,6 +615,8 @@ export function buildInbound(ib) {
     end: out._portHopEnd,
     interface: out._portHopInterface,
   }
+  // 使用入站端口 / 动态端口时自动创建防火墙放行规则（内部字段，核心忽略）
+  out._fwAllow = !!ib._fwAllow
   return out
 }
 
@@ -979,5 +981,6 @@ export function parseInbound(ib) {
     o._portHopEnd = pick('end', '_portHopEnd', 19999)
     o._portHopInterface = pick('interface', '_portHopInterface', '')
   }
+  o._fwAllow = !!ib._fwAllow
   return o
 }

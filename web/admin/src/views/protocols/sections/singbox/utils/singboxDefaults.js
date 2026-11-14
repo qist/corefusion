@@ -255,6 +255,8 @@ export function inboundDefaultsForType(type, customPort) {
     _cfDomain: '', _cfIP: '', _customDomain: '',
     _customPortMode: 'custom', _accessCustomPort: 443,
     _accessTlsEnabled: false, _accessTlsSni: '', _accessTlsAlpn: '', _accessTlsFingerprint: '',
+    // 使用入站端口 / 动态端口时自动创建防火墙放行规则
+    _fwAllow: false,
   }
   if (!TRANSPORT_PROTOCOLS.includes(type)) base._transportType = ''
   if (type === 'shadowsocks') { base.network = 'tcp,udp' }

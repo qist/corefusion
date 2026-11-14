@@ -5011,6 +5011,14 @@ function showEdit(i) {
   loadFirewallStatus()
 }
 
+// hy/hy2 端口跳跃的端口段（客户端访问的端口），未开启返回空。
+function fwPortHopRange(ib) {
+  if (!ib || ib.protocol !== 'hysteria' || !ib._portHopEnabled) return ''
+  return ib._portHopMode === 'preset'
+    ? (ib._portHopRange || '20000-50000')
+    : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+}
+
 async function saveInbound() {
   // Preserve _paused flags from existing form data when editing
   // This ensures paused users stay paused even if the edit dialog lost the flag
@@ -5203,6 +5211,7 @@ async function saveInbound() {
     }
 
     // 使用入站端口 / 动态端口（端口跳跃）时，按需创建防火墙放行规则。
+    // hy2 端口跳跃：监听端口和端口段都要放行（客户端访问的是端口段，DNAT 到监听端口）。
     // Unix Socket 不监听 TCP 端口：不创建，且从 TCP 改过来时要把旧端口的规则撤掉。
     {
       const oldIb = editIdx.value >= 0 ? form.value[editIdx.value] : null
@@ -5211,15 +5220,26 @@ async function saveInbound() {
       const oldAllow = !!oldIb?._fwAllow
       const oldPort = oldIb?.port || 0
       const newPort = rf.port || 0
+      const oldRange = fwPortHopRange(oldIb)
+      const newRange = fwPortHopRange(rf)
       const wantAllow = !newSock && !!rf._fwAllow && newPort > 0
-      // 端口改了（或 TCP↔Socket 切换）都要先删旧规则再加新规则
+      // 端口改了 / 端口段改了（或 TCP↔Socket 切换）都要先删旧规则再加新规则
       const portChanged = oldPort !== newPort
+      const rangeChanged = oldRange !== newRange
       try {
-        if (oldAllow && oldPort > 0 && (oldSock || !wantAllow || portChanged)) {
-          await client.post(`${nodeBase.value}/firewall/remove-port`, { port: oldPort })
+        if (oldAllow && oldPort > 0 && (oldSock || !wantAllow || portChanged || rangeChanged)) {
+          await client.post(`${nodeBase.value}/firewall/remove-port`, {
+            port: oldPort,
+            port_range: oldRange || undefined,
+            network: oldRange ? 'udp' : undefined,
+          })
         }
-        if (wantAllow && (!oldAllow || oldSock || portChanged)) {
-          await client.post(`${nodeBase.value}/firewall/allow-port`, { port: newPort })
+        if (wantAllow && (!oldAllow || oldSock || portChanged || rangeChanged)) {
+          await client.post(`${nodeBase.value}/firewall/allow-port`, {
+            port: newPort,
+            port_range: newRange || undefined,
+            network: newRange ? 'udp' : undefined,
+          })
         }
       } catch (fwErr) {
         // 放行失败要让用户看到（否则以为保存成功、客户端却连不上）
@@ -5298,10 +5318,15 @@ async function toggleEnabled(row) {
               console.warn('Failed to apply firewall rules on enable:', fwErr)
             }
           }
-          // Unix Socket 不监听 TCP 端口，不创建放行规则
+          // Unix Socket 不监听 TCP 端口，不创建放行规则；hy 端口跳跃要连端口段一起放行
           if (ib._listenType !== 'sock' && ib._fwAllow && (ib.port || 0) > 0) {
+            const range = fwPortHopRange(ib)
             try {
-              await client.post(`${nodeBase.value}/firewall/allow-port`, { port: ib.port })
+              await client.post(`${nodeBase.value}/firewall/allow-port`, {
+                port: ib.port,
+                port_range: range || undefined,
+                network: range ? 'udp' : undefined,
+              })
             } catch (fwErr) {
               console.warn('Failed to allow inbound port on enable:', fwErr)
             }
@@ -5325,8 +5350,13 @@ async function toggleEnabled(row) {
             }
           }
           if (ib._fwAllow && (ib.port || 0) > 0) {
+            const range = fwPortHopRange(ib)
             try {
-              await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.port })
+              await client.post(`${nodeBase.value}/firewall/remove-port`, {
+                port: ib.port,
+                port_range: range || undefined,
+                network: range ? 'udp' : undefined,
+              })
             } catch (fwErr) {
               console.warn('Failed to remove inbound port allow rule on disable:', fwErr)
             }
@@ -5376,8 +5406,13 @@ async function rmInbound(i) {
   }
   // 使用入站端口时创建的防火墙放行规则，删除入站时一并撤销
   if (ib._fwAllow && (ib.port || 0) > 0) {
+    const range = fwPortHopRange(ib)
     try {
-      await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.port })
+      await client.post(`${nodeBase.value}/firewall/remove-port`, {
+        port: ib.port,
+        port_range: range || undefined,
+        network: range ? 'udp' : undefined,
+      })
     } catch (fwErr) {
       console.warn('Failed to remove firewall allow rule on delete:', fwErr)
     }

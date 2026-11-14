@@ -709,6 +709,14 @@ function onTypeChange() {
   Object.assign(rf, inboundDefaultsForType(type, takeFreePort(props.serverId)))
 }
 
+// hy/hy2 端口跳跃的端口段（客户端访问的端口），未开启返回空。
+function fwPortHopRange(ib) {
+  if (!ib || (ib.type !== 'hysteria2' && ib.type !== 'hysteria') || !ib._portHopEnabled) return ''
+  return ib._portHopMode === 'preset'
+    ? (ib._portHopRange || '20000-50000')
+    : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+}
+
 async function save() {
   // tun/cloudflared 没有监听端口：强制关闭放行标记，避免重启恢复时误加规则
   if (rf.type === 'tun' || rf.type === 'cloudflared') rf._fwAllow = false
@@ -783,20 +791,32 @@ async function save() {
     }
 
     // 使用入站端口 / 动态端口时，按需创建防火墙放行规则。
+    // hy2 端口跳跃：监听端口和端口段都要放行（客户端访问端口段，DNAT 到监听端口）。
     // 端口修改、或切到 tun/cloudflared（无监听端口）时都要同步增删旧规则。
     {
       const oldIb = editIdx.value >= 0 ? form[editIdx.value] : null
       const oldAllow = !!oldIb?._fwAllow
       const oldPort = oldIb?.listen_port || 0
       const newPort = (rf.type === 'tun' || rf.type === 'cloudflared') ? 0 : (rf.listen_port || 0)
+      const oldRange = fwPortHopRange(oldIb)
+      const newRange = fwPortHopRange(rf)
       const wantAllow = !!rf._fwAllow && newPort > 0
       const portChanged = oldPort !== newPort
+      const rangeChanged = oldRange !== newRange
       try {
-        if (oldAllow && oldPort > 0 && (!wantAllow || portChanged)) {
-          await client.post(`${nodeBase.value}/firewall/remove-port`, { port: oldPort })
+        if (oldAllow && oldPort > 0 && (!wantAllow || portChanged || rangeChanged)) {
+          await client.post(`${nodeBase.value}/firewall/remove-port`, {
+            port: oldPort,
+            port_range: oldRange || undefined,
+            network: oldRange ? 'udp' : undefined,
+          })
         }
-        if (wantAllow && (!oldAllow || portChanged)) {
-          await client.post(`${nodeBase.value}/firewall/allow-port`, { port: newPort })
+        if (wantAllow && (!oldAllow || portChanged || rangeChanged)) {
+          await client.post(`${nodeBase.value}/firewall/allow-port`, {
+            port: newPort,
+            port_range: newRange || undefined,
+            network: newRange ? 'udp' : undefined,
+          })
         }
       } catch (fwErr) {
         ElMessage.error(fwErr?.response?.data?.message || t('protoHint.inbounds.firewallFailed'))
@@ -832,8 +852,13 @@ function handleAction(cmd, row) {
           }
           // 使用入站端口时创建的防火墙放行规则，删除入站时一并撤销
           if (ib._fwAllow && (ib.listen_port || 0) > 0) {
+            const range = fwPortHopRange(ib)
             try {
-              await client.post(`${nodeBase.value}/firewall/remove-port`, { port: ib.listen_port })
+              await client.post(`${nodeBase.value}/firewall/remove-port`, {
+                port: ib.listen_port,
+                port_range: range || undefined,
+                network: range ? 'udp' : undefined,
+              })
             } catch (fwErr) {
               console.warn('Failed to remove firewall allow rule on delete:', fwErr)
             }

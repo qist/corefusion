@@ -795,25 +795,48 @@ func (a *LocalAgent) proxyFirewall(ctx context.Context, req *agentpb.XrayAPIRequ
 
 	case "allow", "unallow":
 		var payload struct {
-			Port    int    `json:"port"`
-			Network string `json:"network"`
+			Port      int    `json:"port"`
+			PortRange string `json:"port_range"`
+			Network   string `json:"network"`
 		}
 		if err := json.Unmarshal(req.Payload, &payload); err != nil {
 			return &agentpb.XrayAPIResponse{Success: false, Error: fmt.Sprintf("parse payload: %v", err)}, nil
 		}
-		if payload.Port <= 0 || payload.Port > 65535 {
+		if payload.Port == 0 && payload.PortRange == "" {
+			return &agentpb.XrayAPIResponse{Success: false, Error: "port or port_range is required"}, nil
+		}
+		if payload.Port < 0 || payload.Port > 65535 {
 			return &agentpb.XrayAPIResponse{Success: false, Error: "port must be 1-65535"}, nil
 		}
+		if payload.PortRange != "" {
+			if _, err := firewall.ParsePortSpecs(payload.PortRange); err != nil {
+				return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+			}
+		}
 		var err error
-		if req.Method == "allow" {
-			err = firewall.AllowPort(payload.Port, payload.Network)
-		} else {
-			err = firewall.RemovePort(payload.Port, payload.Network)
+		if payload.Port > 0 {
+			if req.Method == "allow" {
+				err = firewall.AllowPort(payload.Port, payload.Network)
+			} else {
+				err = firewall.RemovePort(payload.Port, payload.Network)
+			}
+			if err != nil {
+				return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+			}
 		}
-		if err != nil {
-			return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+		if payload.PortRange != "" {
+			if req.Method == "allow" {
+				err = firewall.AllowPortRange(payload.PortRange, payload.Network)
+			} else {
+				err = firewall.RemovePortRange(payload.PortRange, payload.Network)
+			}
+			if err != nil {
+				return &agentpb.XrayAPIResponse{Success: false, Error: err.Error()}, nil
+			}
 		}
-		resp, _ := json.Marshal(map[string]interface{}{"port": payload.Port, "network": payload.Network})
+		resp, _ := json.Marshal(map[string]interface{}{
+			"port": payload.Port, "port_range": payload.PortRange, "network": payload.Network,
+		})
 		return &agentpb.XrayAPIResponse{Success: true, Response: resp}, nil
 
 	default:

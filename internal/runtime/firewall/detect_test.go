@@ -103,6 +103,127 @@ func TestPortSpecCovers(t *testing.T) {
 }
 
 // 启动恢复时不能重复插入：已有覆盖该端口的 ACCEPT 规则就跳过。
+func TestParsePortSpecs(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    [][2]int
+		wantErr bool
+	}{
+		{"20000-50000", [][2]int{{20000, 50000}}, false},
+		{"20000:50000", [][2]int{{20000, 50000}}, false},
+		{"443", [][2]int{{443, 443}}, false},
+		{"20000-29999,30000-39999", [][2]int{{20000, 29999}, {30000, 39999}}, false},
+		{"443,443", [][2]int{{443, 443}}, false},
+		{"0-100", nil, true},
+		{"100-99", nil, true},
+		{"70000-80000", nil, true},
+		{"abc", nil, true},
+		{"", nil, true},
+	}
+	for _, tc := range cases {
+		got, err := ParsePortSpecs(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Fatalf("ParsePortSpecs(%q) expected error", tc.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("ParsePortSpecs(%q) error: %v", tc.in, err)
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("ParsePortSpecs(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestPortSpecRangeCovers(t *testing.T) {
+	cases := []struct {
+		spec   string
+		lo, hi int
+		sep    string
+		want   bool
+	}{
+		{"20000:50000", 20000, 50000, ":", true},
+		{"10000:60000", 20000, 50000, ":", true},
+		{"20001:50000", 20000, 50000, ":", false},
+		{"20000:49999", 20000, 50000, ":", false},
+		{"20000-50000", 20000, 50000, "-", true},
+		{"443", 443, 443, ":", true},
+		{"443", 444, 444, ":", false},
+	}
+	for _, tc := range cases {
+		if got := portSpecRangeCovers(tc.spec, tc.lo, tc.hi, tc.sep); got != tc.want {
+			t.Fatalf("portSpecRangeCovers(%q, %d-%d, %q) = %v, want %v", tc.spec, tc.lo, tc.hi, tc.sep, got, tc.want)
+		}
+	}
+}
+
+func TestIptablesOutputCoversRange(t *testing.T) {
+	output := `-P INPUT DROP
+-A INPUT -p udp -m udp --dport 20000:30000 -j ACCEPT
+-A INPUT -p udp -m multiport --dports 1000:2000,40000:45000 -j ACCEPT`
+	if !iptablesOutputCoversRange(output, "udp", 20000, 30000) {
+		t.Fatal("exact range should be covered")
+	}
+	if !iptablesOutputCoversRange(output, "udp", 21000, 29000) {
+		t.Fatal("inner range should be covered")
+	}
+	if iptablesOutputCoversRange(output, "udp", 19999, 30000) {
+		t.Fatal("partially covered range should not be covered")
+	}
+	if iptablesOutputCoversRange(output, "tcp", 20000, 30000) {
+		t.Fatal("protocol mismatch should not be covered")
+	}
+	if !iptablesOutputCoversRange(output, "udp", 40000, 45000) {
+		t.Fatal("multiport range should be covered")
+	}
+}
+
+func TestUFWStatusRangeCovers(t *testing.T) {
+	output := `Status: active
+To                         Action      From
+--                         ------      ----
+20000:50000/udp            ALLOW       Anywhere
+443/tcp                    ALLOW       Anywhere`
+	if !ufwStatusRangeCovers(output, "udp", 20000, 50000) {
+		t.Fatal("exact ufw range should be covered")
+	}
+	if !ufwStatusRangeCovers(output, "udp", 30000, 40000) {
+		t.Fatal("inner ufw range should be covered")
+	}
+	if ufwStatusRangeCovers(output, "udp", 19999, 50000) {
+		t.Fatal("partially covered ufw range should not be covered")
+	}
+	if ufwStatusRangeCovers(output, "tcp", 20000, 50000) {
+		t.Fatal("protocol mismatch should not be covered")
+	}
+}
+
+func TestNftOutputCoversRange(t *testing.T) {
+	output := `chain input {
+		type filter hook input priority filter; policy drop;
+		udp dport 20000-50000 counter packets 0 bytes 0 accept
+		udp dport { 10000-15000, 30000-40000 } accept
+		tcp dport 443 accept
+}`
+	if !nftOutputCoversRange(output, "udp", 20000, 50000) {
+		t.Fatal("exact nft range should be covered")
+	}
+	if !nftOutputCoversRange(output, "udp", 25000, 45000) {
+		t.Fatal("inner nft range should be covered")
+	}
+	if nftOutputCoversRange(output, "udp", 19999, 50000) {
+		t.Fatal("partially covered nft range should not be covered")
+	}
+	if !nftOutputCoversRange(output, "udp", 30000, 40000) {
+		t.Fatal("nft set range should be covered")
+	}
+	if nftOutputCoversRange(output, "tcp", 20000, 50000) {
+		t.Fatal("protocol mismatch should not be covered")
+	}
+}
+
 func TestIptablesOutputCoversPort(t *testing.T) {
 	output := `-P INPUT DROP
 -A INPUT -i lo -j ACCEPT
@@ -220,6 +341,29 @@ func TestNftLineExactPort(t *testing.T) {
 	for _, tc := range cases {
 		if got := nftLineExactPort(strings.Fields(tc.line), tc.proto, tc.port); got != tc.want {
 			t.Fatalf("nftLineExactPort(%q, %s/%d) = %v, want %v", tc.line, tc.proto, tc.port, got, tc.want)
+		}
+	}
+}
+
+// `nft -a list chain` 的 drop 行尾是 "# handle N"：
+// 判定 drop 必须看注释前的规则体，否则新 accept 会被 append 到兜底 drop 之后（永远不生效）。
+func TestNftDenyRule(t *testing.T) {
+	cases := []struct {
+		line   string
+		handle string
+		deny   bool
+	}{
+		{"\t\tcounter packets 292588 bytes 15547311 drop # handle 15", "15", true},
+		{"\t\tip saddr 142.171.0.0/16 drop # handle 12", "12", true},
+		{"\t\tudp dport 443 reject # handle 7", "7", true},
+		{"\t\ttcp dport 39999 accept # handle 4", "", false},
+		{"\t\ttype filter hook input priority filter; policy drop;", "", false},
+		{"", "", false},
+	}
+	for _, tc := range cases {
+		handle, deny := nftDenyRule(tc.line)
+		if deny != tc.deny || handle != tc.handle {
+			t.Fatalf("nftDenyRule(%q) = (%q,%v), want (%q,%v)", tc.line, handle, deny, tc.handle, tc.deny)
 		}
 	}
 }

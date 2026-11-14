@@ -46,6 +46,114 @@ func (LocalApplier) Remove(portRange string, targetPort int, iface string) error
 	return removeRule(useNft, portRange, targetPort, iface)
 }
 
+// DynamicPortSpecs 汇总入站配置里客户端会访问的所有动态端口段（去重、规范成 "起-止"）。
+// 兼容多种写法：
+//   - 面板 _portHop（range / start-end）
+//   - xray hysteriaSettings.hopPorts / udpHop.ports（"10000-19999,30000"）
+//   - finalmask.quicParams.udpHop.ports（顶层或 streamSettings 内）
+//   - sing-box server_ports（["20000:29999"]）以及直接写 ports 的旧配置
+func DynamicPortSpecs(configJSON string, listenPort int) []string {
+	cfg, err := decodeConfig(configJSON)
+	if err != nil {
+		return nil
+	}
+	var raw []string
+	if ph := ParsePortHopFromConfig(configJSON, listenPort); ph != nil {
+		raw = append(raw, ph.PortRange)
+	}
+	for _, path := range []string{"streamSettings.hysteriaSettings", "hysteriaSettings"} {
+		if m := mapAt(cfg, path); m != nil {
+			raw = append(raw, portValuesAt(m, "hopPorts")...)
+			if hop, _ := m["udpHop"].(map[string]interface{}); hop != nil {
+				raw = append(raw, portValuesAt(hop, "ports")...)
+			}
+		}
+	}
+	for _, path := range []string{"streamSettings.finalmask.quicParams", "finalmask.quicParams", "quicParams"} {
+		if m := mapAt(cfg, path); m != nil {
+			if hop, _ := m["udpHop"].(map[string]interface{}); hop != nil {
+				raw = append(raw, portValuesAt(hop, "ports")...)
+			}
+		}
+	}
+	raw = append(raw, portValuesAt(cfg, "ports")...)
+	raw = append(raw, portValuesAt(cfg, "server_ports")...)
+	return normalizePortSpecs(raw)
+}
+
+// normalizePortSpecs 拆分多段字符串、校验并去重（非法项跳过，兼容模板变量）。
+func normalizePortSpecs(raw []string) []string {
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		for _, token := range splitPortSpecs(v) {
+			lo, hi, ok := parsePortRangeToken(token)
+			if !ok {
+				continue
+			}
+			key := strconv.Itoa(lo)
+			if hi != lo {
+				key = fmt.Sprintf("%d-%d", lo, hi)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, key)
+			if len(out) >= maxPortSpecs {
+				return out
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// mapAt 按 "a.b.c" 取嵌套对象，缺失返回 nil。
+func mapAt(root map[string]interface{}, path string) map[string]interface{} {
+	cur := root
+	for _, key := range strings.Split(path, ".") {
+		next, _ := cur[key].(map[string]interface{})
+		if next == nil {
+			return nil
+		}
+		cur = next
+	}
+	return cur
+}
+
+// portValuesAt 读取 string / 数字 / 字符串数组形式的端口值。
+func portValuesAt(m map[string]interface{}, key string) []string {
+	switch v := m[key].(type) {
+	case string:
+		if strings.TrimSpace(v) != "" {
+			return []string{v}
+		}
+	case float64:
+		return []string{strconv.Itoa(int(v))}
+	case int:
+		return []string{strconv.Itoa(v)}
+	case []string:
+		return v
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			switch t := item.(type) {
+			case string:
+				if strings.TrimSpace(t) != "" {
+					out = append(out, t)
+				}
+			case float64:
+				out = append(out, strconv.Itoa(int(t)))
+			}
+		}
+		return out
+	}
+	return nil
+}
+
 // ParsePortHopFromConfig parses an inbound config_json and extracts port hop settings.
 // Returns nil if port hopping is not enabled.
 func ParsePortHopFromConfig(configJSON string, port int) *PortHopConfig {
@@ -167,6 +275,9 @@ func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher fu
 
 	// 入站开启「自动创建防火墙放行规则」时，重启后也要把放行规则补回来
 	// （firewalld 的 --permanent 规则本身会保留，ufw/nft/iptables 则可能丢失）。
+	// 同一端口/端口段被多个入站共用时只处理一次：放行规则是节点级的，
+	// 按入站重复调用既浪费时间，也容易在覆盖判断失效时留下重复规则。
+	allowSeen := make(map[string]bool, len(configs))
 	for _, c := range configs {
 		if !c.Enabled {
 			continue
@@ -190,12 +301,37 @@ func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher fu
 		if port <= 0 {
 			continue
 		}
-		if err := AllowPort(port, network); err != nil {
-			log.Printf("[Firewall] failed to restore allow rule for inbound %s (port %d): %v", c.Tag, port, err)
-		} else {
-			log.Printf("[Firewall] restored allow rule: inbound=%s port=%d network=%s", c.Tag, port, network)
+		// 动态端口：hy2/hysteria 客户端访问的是端口段（面板 _portHop 的 DNAT，或核心
+		// 原生 hopPorts / server_ports / ports 多段写法）。监听端口与所有端口段都要放行；
+		// QUIC 只走 UDP。
+		specs := DynamicPortSpecs(c.ConfigJSON, port)
+		if len(specs) > 0 {
+			network = "udp"
+		}
+		if key := allowKey(port, network); !allowSeen[key] {
+			allowSeen[key] = true
+			if err := AllowPort(port, network); err != nil {
+				log.Printf("[Firewall] failed to restore allow rule for inbound %s (port %d): %v", c.Tag, port, err)
+			} else {
+				log.Printf("[Firewall] restored allow rule: inbound=%s port=%d network=%s", c.Tag, port, network)
+			}
+		}
+		for _, spec := range specs {
+			if key := "range:" + spec + "|udp"; !allowSeen[key] {
+				allowSeen[key] = true
+				if err := AllowPortRange(spec, "udp"); err != nil {
+					log.Printf("[Firewall] failed to restore allow range for inbound %s (%s): %v", c.Tag, spec, err)
+				} else {
+					log.Printf("[Firewall] restored allow range: inbound=%s range=%s network=udp", c.Tag, spec)
+				}
+			}
 		}
 	}
+}
+
+// allowKey 生成放行去重键（端口 + 协议）：空 network 会被 normalizeProtos 展开成 tcp+udp。
+func allowKey(port int, network string) string {
+	return fmt.Sprintf("port:%d|%s", port, strings.TrimSpace(strings.ToLower(network)))
 }
 
 // InboundConfigInfo holds the minimal info needed from an inbound config for firewall restoration.
@@ -328,16 +464,49 @@ func applyNft(portRange string, targetPort int, iface string) error {
 	if iface != "" {
 		rule = fmt.Sprintf("iifname %s %s", iface, rule)
 	}
+	// 幂等：RestoreRules 重启时会先 flush，但 Apply API / 重复调用没有 flush，
+	// 同一条 DNAT 规则已经存在时直接跳过，避免启动一次多一条。
+	if nftPortHopRuleExists(portRange, targetPort, iface) {
+		return nil
+	}
 	return exec.Command("nft", "add", "rule", "inet", "hysteria_porthopping", "prerouting", rule).Run()
 }
 
-func applyIptables(portRange string, targetPort int, iface string) error {
-	args := []string{"-t", "nat", "-A", "PREROUTING"}
-	if iface != "" {
-		args = append(args, "-i", iface)
+// nftPortHopRuleExists 判断 hysteria_porthopping 表里是否已有同目标的 DNAT 规则。
+func nftPortHopRuleExists(portRange string, targetPort int, iface string) bool {
+	out, err := exec.Command("nft", "-a", "list", "table", "inet", "hysteria_porthopping").Output()
+	if err != nil {
+		return false
 	}
-	args = append(args, "-p", "udp", "--dport", portRange, "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
-	return exec.Command("iptables", args...).Run()
+	wantDport := "udp dport " + portRange
+	wantTarget := fmt.Sprintf("redirect to :%d", targetPort)
+	for _, line := range strings.Split(string(out), "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.Contains(t, wantDport) || !strings.Contains(t, wantTarget) {
+			continue
+		}
+		if iface != "" && !strings.Contains(t, iface) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func applyIptables(portRange string, targetPort int, iface string) error {
+	spec := []string{"-t", "nat"}
+	if iface != "" {
+		spec = append(spec, "-i", iface)
+	}
+	spec = append(spec, "-p", "udp", "--dport", portRange, "-j", "REDIRECT", "--to-ports", fmt.Sprintf("%d", targetPort))
+
+	// 幂等：先 -C 查同一规则是否已存在（老版本没有 flush 动作，重启会重复 -A）。
+	checkArgs := append([]string{"-t", "nat", "-C", "PREROUTING"}, spec[2:]...)
+	if err := exec.Command("iptables", checkArgs...).Run(); err == nil {
+		return nil
+	}
+	addArgs := append([]string{"-t", "nat", "-A", "PREROUTING"}, spec[2:]...)
+	return exec.Command("iptables", addArgs...).Run()
 }
 
 func removeRule(useNft bool, portRange string, targetPort int, iface string) error {

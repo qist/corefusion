@@ -201,6 +201,125 @@ func RemovePort(port int, network string) error {
 	return nil
 }
 
+// ParsePortSpecs 解析端口规格：支持多段与不同写法，返回去重后的 [lo,hi] 列表。
+//
+//	"20000-29999"                      → [[20000,29999]]
+//	"20000:29999"                      → [[20000,29999]]（sing-box server_ports 写法）
+//	"20000-29999,30000-39999"          → 两段（mihomo ports / xray hopPorts 写法）
+//	"443" 或 "443,8443"                → 单端口
+//
+// 任何一段非法都返回错误（用于接口参数校验）。
+func ParsePortSpecs(spec string) ([][2]int, error) {
+	tokens := splitPortSpecs(spec)
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("empty port range")
+	}
+	if len(tokens) > maxPortSpecs {
+		return nil, fmt.Errorf("too many port ranges (max %d)", maxPortSpecs)
+	}
+	seen := make(map[[2]int]bool, len(tokens))
+	out := make([][2]int, 0, len(tokens))
+	for _, token := range tokens {
+		lo, hi, ok := parsePortRangeToken(token)
+		if !ok {
+			return nil, fmt.Errorf("invalid port range: %q", token)
+		}
+		r := [2]int{lo, hi}
+		if seen[r] {
+			continue
+		}
+		seen[r] = true
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+const maxPortSpecs = 64
+
+// splitPortSpecs 按逗号/分号/空白拆分多段规格。
+func splitPortSpecs(spec string) []string {
+	return strings.FieldsFunc(spec, func(r rune) bool {
+		switch r {
+		case ',', ';', ' ', '\t', '\n', '\r':
+			return true
+		}
+		return false
+	})
+}
+
+// parsePortRangeToken 解析单个 "起-止" / "起:止" / 单端口。
+func parsePortRangeToken(token string) (int, int, bool) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, 0, false
+	}
+	loStr, hiStr, found := strings.Cut(token, "-")
+	if !found {
+		loStr, hiStr, found = strings.Cut(token, ":")
+	}
+	if !found {
+		p, err := strconv.Atoi(token)
+		if err != nil || p <= 0 || p > 65535 {
+			return 0, 0, false
+		}
+		return p, p, true
+	}
+	lo, err1 := strconv.Atoi(strings.TrimSpace(loStr))
+	hi, err2 := strconv.Atoi(strings.TrimSpace(hiStr))
+	if err1 != nil || err2 != nil || lo <= 0 || hi > 65535 || lo > hi {
+		return 0, 0, false
+	}
+	return lo, hi, true
+}
+
+// AllowPortRange 放行端口段（hy2 端口跳跃的访问端口，支持多段），幂等。
+func AllowPortRange(spec string, network string) error {
+	ranges, err := ParsePortSpecs(spec)
+	if err != nil {
+		return err
+	}
+	protos, err := normalizeProtos(network)
+	if err != nil {
+		return err
+	}
+	st := Detect()
+	if !st.Enabled {
+		return nil
+	}
+	for _, r := range ranges {
+		for _, proto := range protos {
+			if err := allowRangeProto(st.Kind, r[0], r[1], proto); err != nil {
+				return fmt.Errorf("%s allow %d-%d/%s: %w", st.Kind, r[0], r[1], proto, err)
+			}
+		}
+	}
+	return nil
+}
+
+// RemovePortRange 撤销 AllowPortRange 添加的放行规则。
+func RemovePortRange(spec string, network string) error {
+	ranges, err := ParsePortSpecs(spec)
+	if err != nil {
+		return err
+	}
+	protos, err := normalizeProtos(network)
+	if err != nil {
+		return err
+	}
+	st := Detect()
+	if !st.Enabled {
+		return nil
+	}
+	for _, r := range ranges {
+		for _, proto := range protos {
+			if err := removeRangeProto(st.Kind, r[0], r[1], proto); err != nil {
+				return fmt.Errorf("%s remove %d-%d/%s: %w", st.Kind, r[0], r[1], proto, err)
+			}
+		}
+	}
+	return nil
+}
+
 // allowProto 放行单个协议/端口。所有实现都必须**幂等**：
 // 面板/Agent 每次启动都会按入站配置恢复一遍放行规则，已经放行过的端口绝不能再加一条。
 func allowProto(kind string, port int, proto string) error {
@@ -221,6 +340,67 @@ func allowProto(kind string, port int, proto string) error {
 		}
 		_, err := runOut("iptables", "-w", "-I", "INPUT", "-p", proto, "--dport", strconv.Itoa(port), "-j", "ACCEPT")
 		return err
+	}
+	return nil
+}
+
+// allowRangeProto 放行端口段。与 allowProto 一样必须幂等。
+func allowRangeProto(kind string, lo, hi int, proto string) error {
+	switch kind {
+	case KindFirewalld:
+		return firewalldPortSpec("--add-port", fmt.Sprintf("%d-%d", lo, hi), proto)
+	case KindUFW:
+		if ufwStatusCoversRange(proto, lo, hi) {
+			return nil
+		}
+		_, err := runOut("ufw", "allow", fmt.Sprintf("%d:%d/%s", lo, hi, proto))
+		return err
+	case KindNftables:
+		return nftAllowRange(lo, hi, proto)
+	case KindIptables:
+		if iptablesCoversRange(proto, lo, hi) {
+			return nil
+		}
+		_, err := runOut("iptables", "-w", "-I", "INPUT", "-p", proto,
+			"--dport", fmt.Sprintf("%d:%d", lo, hi), "-j", "ACCEPT")
+		return err
+	}
+	return nil
+}
+
+func removeRangeProto(kind string, lo, hi int, proto string) error {
+	switch kind {
+	case KindFirewalld:
+		return firewalldPortSpec("--remove-port", fmt.Sprintf("%d-%d", lo, hi), proto)
+	case KindUFW:
+		for i := 0; i < 16; i++ {
+			out, err := runOut("ufw", "delete", "allow", fmt.Sprintf("%d:%d/%s", lo, hi, proto))
+			if err == nil {
+				continue
+			}
+			lower := strings.ToLower(out)
+			if strings.Contains(lower, "could not delete") || strings.Contains(lower, "not found") {
+				return nil
+			}
+			return err
+		}
+		return nil
+	case KindNftables:
+		return nftRemoveRange(lo, hi, proto)
+	case KindIptables:
+		for i := 0; i < 16; i++ {
+			out, err := runOut("iptables", "-w", "-D", "INPUT", "-p", proto,
+				"--dport", fmt.Sprintf("%d:%d", lo, hi), "-j", "ACCEPT")
+			if err == nil {
+				continue
+			}
+			lower := strings.ToLower(out)
+			if strings.Contains(lower, "bad rule") || strings.Contains(lower, "matching rule") {
+				return nil
+			}
+			return err
+		}
+		return nil
 	}
 	return nil
 }
@@ -258,6 +438,38 @@ func iptablesOutputCoversPort(output, proto string, port int) bool {
 		if spec, ok := flagValue(fields, "--dports"); ok {
 			for _, item := range strings.Split(spec, ",") {
 				if portSpecCovers(item, port, ":") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func iptablesCoversRange(proto string, lo, hi int) bool {
+	out, err := runOut("iptables", "-w", "-S", "INPUT")
+	if err != nil {
+		return false
+	}
+	return iptablesOutputCoversRange(out, proto, lo, hi)
+}
+
+// iptablesOutputCoversRange 判断已有 ACCEPT 规则是否完整覆盖 [lo,hi] 端口段。
+func iptablesOutputCoversRange(output, proto string, lo, hi int) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "-A" || fields[1] != "INPUT" || !hasJumpAccept(fields) {
+			continue
+		}
+		if p, ok := flagValue(fields, "-p"); ok && !strings.EqualFold(p, proto) {
+			continue
+		}
+		if spec, ok := flagValue(fields, "--dport"); ok && portSpecRangeCovers(spec, lo, hi, ":") {
+			return true
+		}
+		if spec, ok := flagValue(fields, "--dports"); ok {
+			for _, item := range strings.Split(spec, ",") {
+				if portSpecRangeCovers(item, lo, hi, ":") {
 					return true
 				}
 			}
@@ -305,6 +517,25 @@ func portSpecCovers(spec string, port int, sep string) bool {
 	return port >= low && port <= high
 }
 
+// portSpecRangeCovers 判断端口规则是否**完整覆盖** [lo,hi]（单端口规则只覆盖同值）。
+func portSpecRangeCovers(spec string, lo, hi int, sep string) bool {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return false
+	}
+	a, b, found := strings.Cut(spec, sep)
+	if !found {
+		v, err := strconv.Atoi(spec)
+		return err == nil && v == lo && lo == hi
+	}
+	x, err1 := strconv.Atoi(strings.TrimSpace(a))
+	y, err2 := strconv.Atoi(strings.TrimSpace(b))
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return x <= lo && y >= hi
+}
+
 // ufwCoversPort 检查 `ufw status` 里是否已有覆盖该端口的 ALLOW 规则。
 // 典型输出：`443/tcp                    ALLOW       Anywhere`。
 func ufwCoversPort(port int, proto string) bool {
@@ -337,6 +568,41 @@ func ufwStatusCoversPort(output, proto string, port int) bool {
 			continue
 		}
 		if portSpecCovers(spec, port, ":") || portSpecCovers(spec, port, "-") {
+			return true
+		}
+	}
+	return false
+}
+
+func ufwStatusCoversRange(proto string, lo, hi int) bool {
+	out, err := runOut("ufw", "status")
+	if err != nil {
+		return false
+	}
+	return ufwStatusRangeCovers(out, proto, lo, hi)
+}
+
+func ufwStatusRangeCovers(output, proto string, lo, hi int) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		spec, specProto, ok := strings.Cut(fields[0], "/")
+		if !ok || !strings.EqualFold(specProto, proto) {
+			continue
+		}
+		allowed := false
+		for _, f := range fields[1:] {
+			if strings.EqualFold(f, "ALLOW") {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			continue
+		}
+		if portSpecRangeCovers(spec, lo, hi, ":") || portSpecRangeCovers(spec, lo, hi, "-") {
 			return true
 		}
 	}
@@ -381,13 +647,18 @@ func removeProto(kind string, port int, proto string) error {
 }
 
 func firewalldPort(op string, port int, proto string) error {
-	spec := fmt.Sprintf("%d/%s", port, proto)
+	return firewalldPortSpec(op, strconv.Itoa(port), proto)
+}
+
+// firewalldPortSpec 用 "443" / "20000-50000" 形式的端口规格操作 firewalld。
+func firewalldPortSpec(op, spec, proto string) error {
+	full := spec + "/" + proto
 	if op == "--add-port" {
-		if out, err := runOut("firewall-cmd", "--permanent", "--query-port="+spec); err == nil && strings.EqualFold(out, "yes") {
+		if out, err := runOut("firewall-cmd", "--permanent", "--query-port="+full); err == nil && strings.EqualFold(out, "yes") {
 			return nil // 已放行
 		}
 	}
-	if _, err := runOut("firewall-cmd", "--permanent", op+"="+spec); err != nil {
+	if _, err := runOut("firewall-cmd", "--permanent", op+"="+full); err != nil {
 		return err
 	}
 	_, err := runOut("firewall-cmd", "--reload")
@@ -398,20 +669,40 @@ func firewalldPort(op string, port int, proto string) error {
 // 之所以优先复用 inet/ip filter：nftables 的多条 base chain 独立判决，
 // drop 链里拒绝的包不会因为我们另建的 accept 链而放行。
 func nftAllow(port int, proto string) error {
-	chain := nftInputChain()
-	if chain == "" {
-		runOut("nft", "add", "table", "inet", "corefusion_fw")
-		runOut("nft", "add", "chain", "inet", "corefusion_fw", "input",
-			"{ type filter hook input priority 0; policy accept; }")
-		chain = "inet corefusion_fw input"
-	}
+	chain := nftEnsureInputChain()
 	parts := strings.Split(chain, " ")
 	if out, err := runOut("nft", append([]string{"list", "chain"}, parts...)...); err == nil {
 		if nftOutputCoversPort(out, proto, port) {
 			return nil // 已存在（含端口段 / 集合规则覆盖）
 		}
 	}
+	// 老版本可能给同一端口留下多条精确规则：先清掉我们自己的，保证只剩一条。
+	_ = nftDeleteMatching(chain, port, proto)
 	return nftInsertRule(chain, fmt.Sprintf("%s dport %d accept", proto, port))
+}
+
+// nftAllowRange 放行端口段（幂等，支持已有规则覆盖判断）。
+func nftAllowRange(lo, hi int, proto string) error {
+	chain := nftEnsureInputChain()
+	parts := strings.Split(chain, " ")
+	if out, err := runOut("nft", append([]string{"list", "chain"}, parts...)...); err == nil {
+		if nftOutputCoversRange(out, proto, lo, hi) {
+			return nil
+		}
+	}
+	_ = nftDeleteRangeMatching(chain, lo, hi, proto)
+	return nftInsertRule(chain, fmt.Sprintf("%s dport %d-%d accept", proto, lo, hi))
+}
+
+// nftEnsureInputChain 返回可用的 input 过滤链；没有现成链时建一张专用表。
+func nftEnsureInputChain() string {
+	if chain := nftInputChain(); chain != "" {
+		return chain
+	}
+	runOut("nft", "add", "table", "inet", "corefusion_fw")
+	runOut("nft", "add", "chain", "inet", "corefusion_fw", "input",
+		"{ type filter hook input priority 0; policy accept; }")
+	return "inet corefusion_fw input"
 }
 
 // nftOutputCoversPort 解析 `nft list chain` 的输出做覆盖判断（纯函数，便于单测）。
@@ -429,6 +720,28 @@ func nftOutputCoversPort(output, proto string, port int) bool {
 			}
 			for _, item := range nftPortTokens(fields[i+1:]) {
 				if portSpecCovers(item, port, "-") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// nftOutputCoversRange 判断已有 accept 规则是否完整覆盖 [lo,hi]。
+// 支持 `tcp dport 20000-50000 accept`、`tcp dport 1024-65535 accept`、集合写法。
+func nftOutputCoversRange(output, proto string, lo, hi int) bool {
+	for _, line := range strings.Split(output, "\n") {
+		fields := strings.Fields(line)
+		if !hasToken(fields, "accept") || !nftLineMatchesProto(fields, proto) {
+			continue
+		}
+		for i, f := range fields {
+			if f != "dport" {
+				continue
+			}
+			for _, item := range nftPortTokens(fields[i+1:]) {
+				if portSpecRangeCovers(item, lo, hi, "-") {
 					return true
 				}
 			}
@@ -492,16 +805,8 @@ func nftInsertRule(chain, rule string) error {
 	out, _ := runOut("nft", append([]string{"-a", "list", "chain"}, parts...)...)
 	position := ""
 	for _, line := range strings.Split(out, "\n") {
-		t := strings.TrimSpace(line)
-		if !strings.HasSuffix(t, "drop") && !strings.HasSuffix(t, "reject") {
-			continue
-		}
-		idx := strings.LastIndex(t, "handle ")
-		if idx < 0 {
-			continue
-		}
-		handle := strings.TrimSpace(t[idx+len("handle "):])
-		if _, err := strconv.ParseUint(handle, 10, 64); err == nil {
+		handle, deny := nftDenyRule(line)
+		if deny {
 			position = handle // 取最后一条（兜底 drop）
 		}
 	}
@@ -512,6 +817,42 @@ func nftInsertRule(chain, rule string) error {
 	args = append(args, strings.Fields(rule)...)
 	_, err := runOut("nft", args...)
 	return err
+}
+
+// nftDenyRule 判断一条 `nft -a list chain` 输出是否是 drop/reject 规则，
+// 并取出它的 handle。
+//
+// 注意不能对整行做 HasSuffix("drop")：带 -a 时行尾是 `# handle 12` 注释，
+// 真正的判定目标是注释之前的规则体（常见形态 `counter packets 0 bytes 0 drop`）。
+func nftDenyRule(line string) (handle string, deny bool) {
+	t := strings.TrimSpace(line)
+	if t == "" {
+		return "", false
+	}
+	// 去掉 " # handle N" 注释
+	body := t
+	if idx := strings.Index(t, "#"); idx >= 0 {
+		body = strings.TrimSpace(t[:idx])
+		handle = nftHandle(t[idx:])
+	}
+	if handle == "" {
+		handle = nftHandle(t)
+	}
+	fields := strings.Fields(body)
+	if len(fields) == 0 {
+		return "", false
+	}
+	last := strings.ToLower(fields[len(fields)-1])
+	if last != "drop" && last != "reject" {
+		return "", false
+	}
+	if handle == "" {
+		return "", false
+	}
+	if _, err := strconv.ParseUint(handle, 10, 64); err != nil {
+		return "", false
+	}
+	return handle, true
 }
 
 // nftInputChain 返回现成的 input base chain（"inet filter input" / "ip filter input"）。
@@ -533,6 +874,58 @@ func nftRemove(port int, proto string) error {
 		}
 	}
 	return nil
+}
+
+func nftRemoveRange(lo, hi int, proto string) error {
+	chains := []string{"inet filter input", "ip filter input", "inet corefusion_fw input"}
+	for _, chain := range chains {
+		if err := nftDeleteRangeMatching(chain, lo, hi, proto); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nftDeleteRangeMatching 删除我们添加的 `<proto> dport <lo>-<hi> accept` 规则（可能有多条）。
+func nftDeleteRangeMatching(chain string, lo, hi int, proto string) error {
+	parts := strings.Split(chain, " ")
+	out, err := runOut("nft", append([]string{"-a", "list", "chain"}, parts...)...)
+	if err != nil {
+		return nil // 链不存在
+	}
+	spec := fmt.Sprintf("%d-%d", lo, hi)
+	handles := make([]string, 0, 2)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if !hasToken(fields, "accept") || !nftLineExactRange(fields, proto, spec) {
+			continue
+		}
+		if handle := nftHandle(line); handle != "" {
+			handles = append(handles, handle)
+		}
+	}
+	for _, handle := range handles {
+		del := append([]string{"delete", "rule"}, parts...)
+		del = append(del, "handle", handle)
+		if _, err := runOut("nft", del...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func nftLineExactRange(fields []string, proto, spec string) bool {
+	if !nftLineMatchesProto(fields, proto) {
+		return false
+	}
+	for i, f := range fields {
+		if f != "dport" {
+			continue
+		}
+		toks := nftPortTokens(fields[i+1:])
+		return len(toks) == 1 && toks[0] == spec
+	}
+	return false
 }
 
 // nftDeleteMatching 删除指定链里由我们添加的 `<proto> dport <port> accept` 规则（按 handle）。

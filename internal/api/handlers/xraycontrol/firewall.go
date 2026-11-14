@@ -392,9 +392,12 @@ func matchIptablesDeleteArgs(s string, portSpec string, targetPort int) ([]strin
 // ── 入站端口防火墙放行（firewalld / ufw / nftables / iptables）──
 
 // FirewallPortRule 是放行/撤销放行的请求体。
+// PortRange 用于 hy2/hysteria 端口跳跃：客户端访问的是端口段（DNAT 到 Port）。
+// Network 为 tcp / udp / tcp,udp；空 = 两者。
 type FirewallPortRule struct {
-	Port    int    `json:"port"`
-	Network string `json:"network"` // tcp / udp / tcp,udp；空 = 两者
+	Port      int    `json:"port"`
+	PortRange string `json:"port_range"`
+	Network   string `json:"network"`
 }
 
 // FirewallStatus handles GET /api/v1/node-servers/:id/firewall/status.
@@ -419,8 +422,8 @@ func (h *Handler) AllowFirewallPort(c *gin.Context) {
 		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
-	if req.Port <= 0 || req.Port > 65535 {
-		response.BadRequest(c, "INVALID_PARAMS", "port must be 1-65535")
+	if err := validateFirewallPortRule(req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
 	if resp, handled, failed := h.remoteXrayAPI(c, "firewall", "allow", req); handled {
@@ -432,11 +435,19 @@ func (h *Handler) AllowFirewallPort(c *gin.Context) {
 		response.OK(c, result)
 		return
 	}
-	if err := firewall.AllowPort(req.Port, req.Network); err != nil {
-		response.InternalError(c, "FIREWALL_ALLOW_FAILED", err.Error())
-		return
+	if req.Port > 0 {
+		if err := firewall.AllowPort(req.Port, req.Network); err != nil {
+			response.InternalError(c, "FIREWALL_ALLOW_FAILED", err.Error())
+			return
+		}
 	}
-	response.OK(c, gin.H{"port": req.Port, "network": req.Network})
+	if req.PortRange != "" {
+		if err := firewall.AllowPortRange(req.PortRange, req.Network); err != nil {
+			response.InternalError(c, "FIREWALL_ALLOW_FAILED", err.Error())
+			return
+		}
+	}
+	response.OK(c, gin.H{"port": req.Port, "port_range": req.PortRange, "network": req.Network})
 }
 
 // RemoveFirewallPort handles POST /api/v1/node-servers/:id/firewall/remove-port.
@@ -446,8 +457,8 @@ func (h *Handler) RemoveFirewallPort(c *gin.Context) {
 		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
-	if req.Port <= 0 || req.Port > 65535 {
-		response.BadRequest(c, "INVALID_PARAMS", "port must be 1-65535")
+	if err := validateFirewallPortRule(req); err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
 	if resp, handled, failed := h.remoteXrayAPI(c, "firewall", "unallow", req); handled {
@@ -459,9 +470,32 @@ func (h *Handler) RemoveFirewallPort(c *gin.Context) {
 		response.OK(c, result)
 		return
 	}
-	if err := firewall.RemovePort(req.Port, req.Network); err != nil {
-		response.InternalError(c, "FIREWALL_REMOVE_FAILED", err.Error())
-		return
+	if req.Port > 0 {
+		if err := firewall.RemovePort(req.Port, req.Network); err != nil {
+			response.InternalError(c, "FIREWALL_REMOVE_FAILED", err.Error())
+			return
+		}
 	}
-	response.OK(c, gin.H{"port": req.Port, "network": req.Network})
+	if req.PortRange != "" {
+		if err := firewall.RemovePortRange(req.PortRange, req.Network); err != nil {
+			response.InternalError(c, "FIREWALL_REMOVE_FAILED", err.Error())
+			return
+		}
+	}
+	response.OK(c, gin.H{"port": req.Port, "port_range": req.PortRange, "network": req.Network})
+}
+
+func validateFirewallPortRule(req FirewallPortRule) error {
+	if req.Port == 0 && req.PortRange == "" {
+		return fmt.Errorf("port or port_range is required")
+	}
+	if req.Port < 0 || req.Port > 65535 {
+		return fmt.Errorf("port must be 1-65535")
+	}
+	if req.PortRange != "" {
+		if _, err := firewall.ParsePortSpecs(req.PortRange); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -629,6 +629,42 @@ export default {
 .top-bar { flex: 1; }
 .top-val { width: 42px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
 @media (max-width: 768px) {
+  .dashboard { padding: 0 0 16px; }
+  /* 标题与操作行换行，避免互相挤压 */
+  .dash-header { flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+  .dash-title { font-size: 18px; }
+  .dash-sub { display: block; margin-top: 2px; font-size: 12px; }
+  .dash-actions { width: 100%; justify-content: space-between; }
+  .dash-updated { font-size: 11px; }
+
+  /* 汇总卡：每行两张，高度自适应，避免固定 116px 内文字溢出 */
+  .summary-row { margin-bottom: 12px; }
+  .summary-row :deep(.el-col) { flex: 0 0 calc(50% - 8px); max-width: calc(50% - 8px); min-width: 0; }
+  .summary-card { height: auto; min-height: 92px; }
+  .summary-card :deep(.el-card__body) { padding: 10px 12px; gap: 6px; }
+  .sum-label { font-size: 12px; }
+  .sum-ico { width: 22px; height: 22px; font-size: 13px; }
+  .sum-value { font-size: 22px; }
+  .sum-unit { font-size: 12px; }
+  .sum-foot { font-size: 11px; gap: 6px; }
+
+  /* 筛选区：每个控件占一半宽度，搜索框独占一行 */
+  .card-head { align-items: flex-start; }
+  .filters { width: 100%; }
+  .f-select { flex: 1 1 calc(50% - 4px); width: auto; min-width: 0; }
+  .f-input { flex: 1 1 100%; width: auto; min-width: 0; }
+
+  /* 节点卡一列显示，信息更完整 */
+  .node-col { margin-bottom: 10px; padding: 0 !important; }
+  .node-card { min-height: 0; padding: 12px 12px 12px 16px; }
+
+  /* 集群资源：三个环形图换行排布 */
+  .cluster-grid { flex-wrap: wrap; gap: 8px; }
+  .cluster-item { flex: 1 1 calc(33.333% - 8px); min-width: 96px; padding: 12px 6px 10px; }
+  .cluster-item :deep(.el-progress--dashboard) { transform: scale(.86); transform-origin: center; }
+  .ci-label { font-size: 12px; white-space: nowrap; }
+  .cluster-foot { gap: 10px; font-size: 12px; }
+
   /* 手机端：节点名占满剩余宽度，负载条收窄成指示条，避免名称被截断 */
   .top-name { flex: 1; min-width: 0; width: auto; }
   .top-bar { flex: none; width: 56px; }

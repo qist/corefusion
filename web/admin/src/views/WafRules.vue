@@ -16,7 +16,8 @@
     </div>
 
     <!-- Global Rules Table -->
-    <el-table :data="globalRules" stripe style="width:100%" @row-click="openRuleEditor" class="rules-table">
+    <div class="table-scroll" v-if="isMobile">
+      <el-table :data="globalRules" stripe style="width:100%" @row-click="openRuleEditor" class="rules-table">
       <el-table-column prop="name" :label="t('proxy.wafRule')" width="150" />
       <el-table-column :label="t('proxy.wafMergeMode')" width="100">
         <template #default="{ row }">
@@ -49,10 +50,17 @@
           </div>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </div>
+    <MobileCards v-else :rows="globalRules" title-field="name" :fields="ruleCardFields">
+      <template #actions="{ row }">
+        <el-button size="small" @click="openRuleEditor(row)">{{ t('common.edit') }}</el-button>
+        <el-button size="small" type="danger" @click="deleteRule(row)">{{ t('common.delete') }}</el-button>
+      </template>
+    </MobileCards>
 
     <!-- Add New Rule -->
-    <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+    <div style="margin-top:16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <el-input v-model="newRuleName" placeholder="custom.rule" style="width:200px" />
       <el-select v-model="newRuleMergeMode" style="width:140px">
         <el-option label="Replace" value="replace" />
@@ -117,8 +125,11 @@ import {
   listWafRules, getWafRule, saveWafRule, deleteWafRule,
   syncWafFromGitHub, syncWafAll,
 } from '../api/waf'
+import MobileCards from '../components/MobileCards.vue'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 const globalRules = ref([])
 const syncing = ref(false)
@@ -128,6 +139,14 @@ const ruleEditorVisible = ref(false)
 const editingRule = ref({ name: '', content: '', merge_mode: 'replace' })
 const newRuleName = ref('')
 const newRuleMergeMode = ref('replace')
+
+const ruleCardFields = computed(() => [
+  { label: t('proxy.wafMergeMode'), text: (row) => row.merge_mode || 'replace' },
+  { label: t('proxy.wafRuleDesc'), text: (row) => wafRuleDesc(row.name) },
+  { label: t('proxy.wafSize'), text: (row) => formatWafSize(row.content ? row.content.length : 0) },
+  { label: t('proxy.wafHash'), text: (row) => row.hash ? row.hash.substring(0, 12) + '...' : '-' },
+  { label: t('common.updatedAt'), text: (row) => formatTime(row.updated_at) },
+])
 
 const ruleDescriptions = {
   'args.rule': 'URL argument rules',
@@ -267,7 +286,14 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin-bottom: 16px;
+}
+@media (max-width: 768px) {
+  .waf-rules-page { padding: 0; }
+  .page-header > div:first-child { min-width: 0; }
+  .page-header h2 { font-size: 18px; }
 }
 .rules-table {
   cursor: pointer;

@@ -41,7 +41,7 @@
       <!-- Subscription Formats -->
       <el-tab-pane :label="t('subfmt.title')" name="formats">
         <!-- Format Type Selection -->
-        <div v-if="!selectedFormatType" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:800px;margin:40px auto">
+        <div v-if="!selectedFormatType" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;max-width:800px;margin:40px auto">
           <el-card v-for="ft in formatTypes" :key="ft.type" shadow="hover" style="cursor:pointer;text-align:center" @click="selectFormatType(ft.type)">
             <div style="font-size:32px;margin-bottom:12px">{{ ft.icon }}</div>
             <div style="font-size:16px;font-weight:500;margin-bottom:8px">{{ ft.name }}</div>
@@ -64,7 +64,7 @@
             </div>
           </div>
           <el-card>
-            <el-table :data="filteredFormats" v-loading="fmtLoading" stripe size="small">
+            <el-table v-if="!isMobile" :data="filteredFormats" v-loading="fmtLoading" stripe size="small">
               <el-table-column prop="id" label="ID" width="50" />
               <el-table-column prop="name" :label="t('subfmt.name')" width="150" />
               <el-table-column prop="description" :label="t('subfmt.description')" show-overflow-tooltip />
@@ -81,6 +81,17 @@
                 </template>
               </el-table-column>
             </el-table>
+            <MobileCards
+              v-else
+              :rows="filteredFormats"
+              :fields="formatCardFields"
+            >
+              <template #actions="{ row }">
+                <el-button size="small" @click="showFormatRules(row)">{{ t('subfmt.rules') }}</el-button>
+                <el-button size="small" @click="showEditFormat(row)">{{ t('common.edit') }}</el-button>
+                <el-button size="small" type="danger" @click="deleteFormat(row)">{{ t('common.delete') }}</el-button>
+              </template>
+            </MobileCards>
             <PaginationBar
               v-model:page="fmtPage"
               v-model:page-size="fmtSize"
@@ -98,7 +109,7 @@
           <el-button type="primary" size="small" @click="showCreateEndpoint">{{ t('subend.create') }}</el-button>
         </div>
         <el-card>
-          <el-table :data="endpoints" v-loading="epLoading" stripe size="small">
+          <el-table v-if="!isMobile" :data="endpoints" v-loading="epLoading" stripe size="small">
             <el-table-column prop="id" label="ID" width="50" />
             <el-table-column prop="domain" :label="t('subend.domain')" width="200" />
             <el-table-column prop="path" :label="t('subend.path')" width="120"><template #default="{row}">{{ row.path || '/' }}</template></el-table-column>
@@ -113,6 +124,12 @@
               </template>
             </el-table-column>
           </el-table>
+          <MobileCards v-else :rows="endpoints" :fields="endpointCardFields">
+            <template #actions="{ row }">
+              <el-button size="small" @click="showEditEndpoint(row)">{{ t('common.edit') }}</el-button>
+              <el-button size="small" type="danger" @click="deleteEndpoint(row)">{{ t('common.delete') }}</el-button>
+            </template>
+          </MobileCards>
           <PaginationBar
             v-model:page="epPage"
             v-model:page-size="epSize"
@@ -569,6 +586,21 @@ const subscriptionCardFields = computed(() => [
   { label: t('common.status'), text: (row) => row.status },
   { label: t('subscription.quotaState'), text: (row) => row.quota_state },
   { label: `${t('subscription.usedBytes')} / ${t('subscription.quotaBytes')}`, text: (row) => `${fmtBytes(row.used_bytes_cache)} / ${row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited')}` },
+])
+
+// 移动端卡片字段（表格在手机上列太多会被挤成条状）
+const formatCardFields = computed(() => [
+  { label: t('subfmt.description'), text: (row) => row.description || '' },
+  { label: t('subfmt.platform'), text: (row) => row.platform || 'Universal' },
+  { label: t('subfmt.planIds'), text: (row) => (!row.plan_ids || row.plan_ids.length === 0) ? 'All' : `${row.plan_ids.length} plans` },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
+])
+
+const endpointCardFields = computed(() => [
+  { label: t('subend.domain'), text: (row) => row.domain || '' },
+  { label: t('subend.path'), text: (row) => row.path || '/' },
+  { label: t('subend.description'), text: (row) => row.description || '' },
+  { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
 ])
 
 // Fetch

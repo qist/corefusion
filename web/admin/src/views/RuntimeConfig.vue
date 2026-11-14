@@ -289,7 +289,7 @@
     <!-- 任务详情 -->
     <el-dialog v-model="jobDialog" :title="`${t('runtime.detail')} #${jobDetail.job?.id}`" width="800px">
       <template v-if="jobDetail.job">
-        <el-descriptions :column="2" border size="small">
+        <el-descriptions :column="isMobile ? 1 : 2" border size="small">
           <el-descriptions-item :label="t('runtime.jobType')">{{ opLabel(jobDetail.job.operation_kind) }}</el-descriptions-item>
           <el-descriptions-item :label="t('runtime.status')">
             <el-tag :type="statusTagType(jobDetail.job.status)" size="small">{{ jobDetail.job.status }}</el-tag>

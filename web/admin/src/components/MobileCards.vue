@@ -1,15 +1,18 @@
 <template>
   <div class="mobile-cards">
-    <el-card v-for="(row, i) in rows" :key="rowKey(row, i)" shadow="never" class="mobile-card">
-      <div class="mc-title">{{ cardTitle(row, i) }}</div>
-      <div v-for="f in visibleFields(row)" :key="f.label" class="mc-field">
-        <span class="mc-label">{{ f.label }}</span>
-        <span class="mc-value">{{ f.value }}</span>
-      </div>
-      <div v-if="$slots.actions" class="mc-actions">
-        <slot name="actions" :row="row" />
-      </div>
-    </el-card>
+    <el-empty v-if="!rows.length" :description="t('common.noData')" :image-size="60" />
+    <template v-else>
+      <el-card v-for="(row, i) in rows" :key="rowKey(row, i)" shadow="never" class="mobile-card">
+        <div class="mc-title">{{ cardTitle(row, i) }}</div>
+        <div v-for="f in visibleFields(row)" :key="f.label" class="mc-field">
+          <span class="mc-label">{{ f.label }}</span>
+          <span class="mc-value">{{ f.value }}</span>
+        </div>
+        <div v-if="$slots.actions" class="mc-actions">
+          <slot name="actions" :row="row" />
+        </div>
+      </el-card>
+    </template>
   </div>
 </template>
 
@@ -17,6 +20,10 @@
 // 移动端表格替代品：把行渲染成卡片。
 // fields: [{ label, text: (row)=>string, hide?: (row)=>bool }]
 // titleField: 卡片标题取 row 的哪个字段；actions 插槽复用页面现有按钮。
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   fields: { type: Array, default: () => [] },

@@ -34,7 +34,7 @@
       </el-result>
 
       <template v-else-if="!fatal">
-        <el-steps :active="step" finish-status="success" align-center style="margin-bottom:24px">
+        <el-steps :active="step" finish-status="success" align-center :simple="isMobile" style="margin-bottom:24px">
           <el-step :title="t('init.stepDB')" />
           <el-step :title="t('init.stepDataDir')" />
           <el-step :title="t('init.stepEnv')" />
@@ -376,6 +376,7 @@
 
 <script setup>
 import { reactive, ref, computed, onMounted, watch } from 'vue'
+import { useIsMobile } from '../composables/useIsMobile'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
@@ -387,6 +388,7 @@ import {
 } from '../api/init'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 const router = useRouter()
 
 const step = ref(0)
@@ -750,5 +752,12 @@ onMounted(async () => {
 .init-card {
   width: 100%;
   max-width: 720px;
+}
+@media (max-width: 768px) {
+  .init-container { padding: 8px; }
+  .init-card { max-width: 100%; }
+  .init-card :deep(.el-card__body) { padding: 12px; }
+  .init-card h2 { font-size: 18px; }
+  .init-card p { font-size: 12px; margin-bottom: 14px !important; }
 }
 </style>

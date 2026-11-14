@@ -252,4 +252,8 @@ async function handlePasskeyLogin() {
 <style scoped>
 .login-container { height:100vh; display:flex; align-items:center; justify-content:center; background:#f5f7fa; }
 .login-card { width:400px; }
+@media (max-width: 768px) {
+  .login-container { height:auto; min-height:100vh; padding:24px 12px; align-items:flex-start; }
+  .login-card { width:100%; max-width:400px; margin:auto; }
+}
 </style>

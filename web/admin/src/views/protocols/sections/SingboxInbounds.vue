@@ -120,7 +120,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <MobileCards v-else :rows="inbPaged" title-field="tag" :fields="sbInboundCardFields">
+    <MobileCards v-else :rows="inbPaged" :title-fn="inboundCardTitle" :fields="sbInboundCardFields">
       <template #actions="{ row }">
         <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
         <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
@@ -1165,10 +1165,14 @@ function hasUserList(ib) {
   return (ib.users?.length || 0) > 0
 }
 
+// 手机端卡片标题用「节点名称」（备注），没有备注时退回入站标签
+function inboundCardTitle(row) {
+  return row._remark || row.tag || ''
+}
+
 // 手机端卡片字段（与桌面表格列一一对应；启用开关在 actions 插槽里）
 const sbInboundCardFields = computed(() => [
-  { label: t('protoCenter.inbounds.remark'), text: (row) => row._remark || row.tag || '-' },
-  { label: t('singbox.inbound.tag'), text: (row) => row.tag || '-' },
+  { label: t('singbox.inbound.tag'), text: (row) => row.tag || '-', hide: (row) => !row.tag },
   { label: t('singbox.inbound.port'), text: (row) => row.listen_port || '-' },
   { label: t('singbox.inbound.protocol'), text: (row) => [(row.type || '').toUpperCase(), row._transportType || '', row._tlsEnabled ? 'TLS' : '', row._realityEnabled ? 'Reality' : ''].filter(Boolean).join(', ') || '-' },
   { label: t('singbox.inbound.users'), text: (row) => {

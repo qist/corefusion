@@ -197,7 +197,7 @@
       <el-tab-pane :label="t('nodeServer.dashboard')" name="dashboard">
         <div v-loading="dashboardLoading">
           <el-row :gutter="16" style="margin-bottom:16px">
-            <el-col :span="6">
+            <el-col :xs="12" :sm="6">
               <el-card shadow="hover">
                 <div style="text-align:center">
                   <div style="font-size:32px;font-weight:700;color:#409eff">{{ dashboard.total || 0 }}</div>
@@ -205,7 +205,7 @@
                 </div>
               </el-card>
             </el-col>
-            <el-col :span="6">
+            <el-col :xs="12" :sm="6">
               <el-card shadow="hover">
                 <div style="text-align:center">
                   <div style="font-size:32px;font-weight:700;color:#67c23a">{{ dashboard.online || 0 }}</div>
@@ -213,7 +213,7 @@
                 </div>
               </el-card>
             </el-col>
-            <el-col :span="6">
+            <el-col :xs="12" :sm="6">
               <el-card shadow="hover">
                 <div style="text-align:center">
                   <div style="font-size:32px;font-weight:700;color:#f56c6c">{{ dashboard.offline || 0 }}</div>
@@ -221,7 +221,7 @@
                 </div>
               </el-card>
             </el-col>
-            <el-col :span="6">
+            <el-col :xs="12" :sm="6">
               <el-card shadow="hover">
                 <div style="text-align:center">
                   <div style="font-size:32px;font-weight:700;color:#e6a23c">{{ dashboard.degraded || 0 }}</div>
@@ -233,25 +233,25 @@
 
         <el-card shadow="hover" style="margin-bottom:16px">
           <template #header><span>{{ t('nodeServer.regionOverview') }}</span></template>
-          <el-table :data="regions" v-loading="regionsLoading" size="small">
+          <div class="table-scroll"><el-table :data="regions" v-loading="regionsLoading" size="small">
             <el-table-column prop="region" :label="t('nodeServer.region')" width="100" />
             <el-table-column prop="region_label" :label="t('nodeServer.regionLabel')" width="120" />
             <el-table-column prop="total" :label="t('nodeServer.total')" width="80" />
             <el-table-column prop="online" :label="t('nodeServer.online')" width="80" />
             <el-table-column prop="offline" :label="t('nodeServer.offline')" width="80" />
             <el-table-column prop="billable" :label="t('nodeServer.billable')" width="80" />
-          </el-table>
+          </el-table></div>
         </el-card>
 
         <el-row :gutter="16">
-            <el-col :span="12">
+            <el-col :xs="24" :md="12">
               <el-card shadow="hover">
                 <template #header><span>{{ t('nodeServer.speedTest') }}</span></template>
                 <div style="margin-bottom:8px">
                   <el-button size="small" type="primary" :loading="speedTestLoading" @click="runSpeedTestAll">{{ t('nodeServer.testAll') }}</el-button>
                   <el-button size="small" @click="loadSpeedTestResults">{{ t('common.refresh') }}</el-button>
                 </div>
-                <el-table :data="speedTestResults" size="small" max-height="300">
+                <div class="table-scroll"><el-table :data="speedTestResults" size="small" max-height="300">
                   <el-table-column prop="server_id" label="ID" width="50" />
                   <el-table-column prop="server_name" :label="t('common.name')" width="120" show-overflow-tooltip />
                   <el-table-column :label="t('nodeServer.latency')" width="100">
@@ -260,10 +260,10 @@
                     </template>
                   </el-table-column>
                   <el-table-column prop="error" :label="t('nodeServer.error')" show-overflow-tooltip />
-                </el-table>
+                </el-table></div>
               </el-card>
             </el-col>
-            <el-col :span="12">
+            <el-col :xs="24" :md="12">
               <el-card shadow="hover">
                 <template #header><span>{{ t('nodeServer.trafficStats') }}</span></template>
                 <div v-if="trafficStats && trafficStats.enabled" style="padding:2px 0">
@@ -288,7 +288,7 @@
       <!-- ════════════ CA 证书中心 Tab ════════════ -->
       <el-tab-pane :label="t('nodeServer.caCenter')" name="ca">
         <el-row :gutter="16" style="margin-bottom:16px">
-          <el-col :span="12">
+          <el-col :xs="24" :md="12">
             <el-card shadow="hover">
               <template #header>
                 <div style="display:flex;justify-content:space-between;align-items:center">
@@ -321,7 +321,7 @@
               </div>
             </el-card>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :md="12">
             <el-card shadow="hover">
               <template #header><span>{{ t('nodeServer.userSyncQueue') }}</span></template>
               <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
@@ -335,7 +335,7 @@
 
         <el-card shadow="hover" style="margin-bottom:16px">
           <template #header><span>{{ t('nodeServer.agentCerts') }}</span></template>
-          <el-table :data="agentCerts" v-loading="agentCertsLoading" size="small">
+          <div class="table-scroll"><el-table :data="agentCerts" v-loading="agentCertsLoading" size="small">
             <el-table-column prop="server_id" label="ID" width="50" />
             <el-table-column prop="server_name" :label="t('common.name')" width="140" show-overflow-tooltip />
             <el-table-column prop="hostname" :label="t('nodeServer.hostname')" width="160" show-overflow-tooltip />
@@ -353,12 +353,12 @@
                 <el-button size="small" @click="renewCert(row.server_id)">{{ t('nodeServer.renew') }}</el-button>
               </template>
             </el-table-column>
-          </el-table>
+          </el-table></div>
         </el-card>
 
         <el-card shadow="hover" style="margin-bottom:16px">
           <template #header><span>{{ t('nodeServer.certRevocations') }}</span></template>
-          <el-table :data="revocations" v-loading="revocationsLoading" size="small">
+          <div class="table-scroll"><el-table :data="revocations" v-loading="revocationsLoading" size="small">
             <el-table-column prop="server_id" label="ID" width="50" />
             <el-table-column prop="cert_serial" :label="t('nodeServer.certSerial')" width="160" show-overflow-tooltip />
             <el-table-column prop="reason" :label="t('nodeServer.reason')" width="140" />
@@ -368,7 +368,7 @@
             <el-table-column :label="t('nodeServer.effectiveAt')" width="160">
               <template #default="{row}">{{ formatTime(row.effective_at) }}</template>
             </el-table-column>
-          </el-table>
+          </el-table></div>
         </el-card>
 
         <el-card shadow="hover">
@@ -383,7 +383,7 @@
               </el-select>
             </div>
           </template>
-          <el-table :data="distQueue" v-loading="distQueueLoading" size="small">
+          <div class="table-scroll"><el-table :data="distQueue" v-loading="distQueueLoading" size="small">
             <el-table-column prop="id" label="ID" width="50" />
             <el-table-column prop="server_id" :label="t('nodeServer.serverId')" width="80" />
             <el-table-column prop="certificate_id" :label="t('nodeServer.certId')" width="80" />
@@ -401,7 +401,7 @@
                 <el-button size="small" type="danger" @click="deleteDistItem(row.id)">{{ t('common.delete') }}</el-button>
               </template>
             </el-table-column>
-          </el-table>
+          </el-table></div>
         </el-card>
       </el-tab-pane>
 
@@ -417,7 +417,7 @@
           <el-button size="small" type="primary" @click="resetAuditPage">{{ t('common.search') }}</el-button>
           <el-button size="small" v-if="$can('admin')" @click="exportAuditLogs">{{ t('common.export') }}</el-button>
         </div>
-        <el-table :data="auditLogs" v-loading="auditLoading" stripe size="small">
+        <div class="table-scroll"><el-table :data="auditLogs" v-loading="auditLoading" stripe size="small">
           <el-table-column prop="id" label="ID" width="50" />
           <el-table-column :label="t('nodeServer.serverId')" min-width="140">
             <template #default="{row}">{{ row.server_name || row.server_id || '-' }}</template>
@@ -436,7 +436,7 @@
           <el-table-column :label="t('common.time')" width="155">
             <template #default="{row}">{{ formatTime(row.created_at) }}</template>
           </el-table-column>
-        </el-table>
+        </el-table></div>
         <PaginationBar v-model:page="auditPage" v-model:page-size="auditPageSize" :total="auditTotal" @change="loadAuditLogs" />
       </el-tab-pane>
 
@@ -1831,4 +1831,10 @@ onUnmounted(() => {
 .status-dot.online { background: #67c23a; }
 .status-dot.offline { background: #f56c6c; }
 .status-dot.degraded { background: #e6a23c; }
+
+@media (max-width: 768px) {
+  /* 工具栏与新增按钮在窄屏分行，按钮独占一行更好点 */
+  .el-tab-pane > div[style*="display:flex"] { flex-wrap: wrap; }
+  .el-tab-pane > div[style*="space-between"] > .el-button { width: 100%; }
+}
 </style>

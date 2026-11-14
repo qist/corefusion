@@ -65,7 +65,7 @@
             <span style="font-size:12px;color:var(--el-text-color-secondary)">{{ t('dbStats.poolDesc') }}</span>
           </div>
         </template>
-        <el-descriptions :column="3" border>
+        <el-descriptions :column="isMobile ? 1 : 3" border>
           <el-descriptions-item :label="t('dbStats.maxOpenConns')">{{ poolStats.max_open_connections }}</el-descriptions-item>
           <el-descriptions-item :label="t('dbStats.openConns')">{{ poolStats.open_connections }}</el-descriptions-item>
           <el-descriptions-item :label="t('dbStats.inUse')">
@@ -238,7 +238,7 @@
               </div>
             </el-col>
             <el-col :span="16">
-              <el-descriptions :column="2" border>
+              <el-descriptions :column="isMobile ? 1 : 2" border>
                 <el-descriptions-item :label="t('dbStats.mysql.bufferSize')">{{ formatBytes(statsData.mysql.buffer_pool_size) }}</el-descriptions-item>
                 <el-descriptions-item :label="t('dbStats.mysql.bufferUsed')">{{ formatBytes(statsData.mysql.buffer_pool_used) }}</el-descriptions-item>
                 <el-descriptions-item :label="t('dbStats.mysql.bufferFree')">{{ formatBytes(statsData.mysql.buffer_pool_free) }}</el-descriptions-item>
@@ -414,7 +414,7 @@
               </div>
             </el-col>
             <el-col :span="16">
-              <el-descriptions :column="2" border>
+              <el-descriptions :column="isMobile ? 1 : 2" border>
                 <el-descriptions-item :label="t('dbStats.pg.blksRead')">{{ formatNum(statsData.postgres.blks_read) }}</el-descriptions-item>
                 <el-descriptions-item :label="t('dbStats.pg.blksHit')">{{ formatNum(statsData.postgres.blks_hit) }}</el-descriptions-item>
                 <el-descriptions-item :label="t('dbStats.pg.tuplesReturned')">{{ formatNum(statsData.postgres.tuples_returned) }}</el-descriptions-item>
@@ -474,8 +474,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../api/client'
+import { useIsMobile } from '../composables/useIsMobile'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 
 const loading = ref(false)
 const resetting = ref(false)

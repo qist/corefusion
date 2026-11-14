@@ -122,7 +122,7 @@
         </template>
       </el-table-column>
     </el-table>
-    <MobileCards v-else :rows="inbPaged" title-field="tag" :fields="xrayInboundCardFields">
+    <MobileCards v-else :rows="inbPaged" :title-fn="inboundCardTitle" :fields="xrayInboundCardFields">
       <template #actions="{ row }">
         <el-switch v-model="row._enabled" size="small" @change="toggleEnabled(row)" />
         <el-dropdown trigger="click" @command="(cmd) => handleAction(cmd, row)">
@@ -2245,9 +2245,14 @@ function getUsers(ib) {
   return []
 }
 
+// 手机端卡片标题用「节点名称」（备注），没有备注时退回入站标签
+function inboundCardTitle(row) {
+  return row._remark || row.tag || ''
+}
+
 // 手机端卡片字段（与桌面表格列一一对应；启用开关在 actions 插槽里）
 const xrayInboundCardFields = computed(() => [
-  { label: t('protoCenter.inbounds.remark'), text: (row) => row._remark || '-' },
+  { label: t('protoCenter.inbounds.tag'), text: (row) => row.tag || '-', hide: (row) => !row.tag },
   { label: t('protoCenter.inbounds.port'), text: (row) => row.port ?? '-' },
   { label: t('protoCenter.inbounds.protocol'), text: (row) => [(row.protocol || '').toUpperCase(), row.streamSettings?.network || 'raw', row.streamSettings?.security === 'tls' ? 'TLS' : '', row.streamSettings?.security === 'reality' ? 'Reality' : ''].filter(Boolean).join(', ') },
   { label: t('protoCenter.inbounds.users'), text: (row) => {

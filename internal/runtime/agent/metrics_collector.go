@@ -204,6 +204,18 @@ func (mc *MetricsCollector) SetRemoteTrafficProvider(fn func(ctx context.Context
 	mc.remoteTrafficFn = fn
 }
 
+// nonNegativeRate 把差分算出的速率裁剪到 >=0。
+//
+// 累计计数器并非单调递增：核心重启 / 配置热重载会清零，trafficsync 每 30s 用
+// reset_=true 抢读同一份 counter 也会让它"倒退"。差分因此会算出负速率，
+// 负速率没有意义，落库后还会把实时图表画到基线以下、让 UI 显示异常值。
+func nonNegativeRate(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
 // collectFromLocalStats 采集本地节点（面板自身）的主机指标并落库。
 // 本地节点不发送心跳，且不应走独立 agent 的 GetStatus gRPC 接口，
 // 因此直接调用注入的 StatsService（读本机 /proc）。
@@ -371,8 +383,8 @@ func (mc *MetricsCollector) collectRemoteMetrics(ctx context.Context, serverID i
 	if last, ok := mc.lastTrafficStats[serverID]; ok {
 		elapsed := now.Sub(last.timestamp).Seconds()
 		if elapsed > 0 {
-			metric.TrafficUplink = int64(float64(trafficUp-last.uplink) / elapsed)
-			metric.TrafficDownlink = int64(float64(trafficDown-last.downlink) / elapsed)
+			metric.TrafficUplink = nonNegativeRate(int64(float64(trafficUp-last.uplink) / elapsed))
+			metric.TrafficDownlink = nonNegativeRate(int64(float64(trafficDown-last.downlink) / elapsed))
 		}
 	}
 	mc.lastTrafficStats[serverID] = &trafficCounter{

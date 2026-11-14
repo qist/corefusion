@@ -110,6 +110,7 @@
                 </div>
                 <span style="font-size:10px;color:#606266;min-width:38px;text-align:right">{{ formatBytes(row.traffic_used_bytes) }}/{{ formatBytes(row.traffic_quota_bytes) }}</span>
               </div>
+              <span v-else-if="row.traffic_used_bytes > 0" style="font-size:11px;color:#606266">{{ formatBytes(row.traffic_used_bytes) }}</span>
               <span v-else-if="row.traffic_suspended" style="color:#f56c6c;font-size:11px">⚠ {{ t('nodeServer.trafficSuspended') }}</span>
               <span v-else style="color:#c0c4cc;font-size:11px">-</span>
             </template>
@@ -641,13 +642,17 @@
           <span v-else>{{ t('nodeServer.trafficUnlimited') }}</span>
         </el-descriptions-item>
         <el-descriptions-item :label="t('nodeServer.monthlyUsedTraffic')">
-          <span v-if="detailData.traffic_quota_bytes > 0">
+          <!-- 流量统计与配额解耦：没配配额也显示已用流量（后端一直在累计）。 -->
+          <span>
             {{ formatBytes(detailData.traffic_used_bytes) }}
+          </span>
+          <template v-if="detailData.traffic_quota_bytes > 0">
+            <span style="color:#909399"> / {{ formatBytes(detailData.traffic_quota_bytes) }}</span>
             <el-progress :percentage="Math.min((detailData.traffic_used_bytes / detailData.traffic_quota_bytes) * 100, 100)"
               :color="detailData.traffic_suspended ? '#f56c6c' : (detailData.traffic_used_bytes / detailData.traffic_quota_bytes > 0.8 ? '#e6a23c' : '#409eff')"
               :stroke-width="6" :show-text="true" style="width:120px;display:inline-block;vertical-align:middle;margin-left:8px" />
-          </span>
-          <span v-else>-</span>
+          </template>
+          <span v-else style="color:#909399"> / {{ t('nodeServer.trafficUnlimited') }}</span>
         </el-descriptions-item>
         <el-descriptions-item :label="t('nodeServer.billingDay')">{{ detailData.traffic_quota_reset_day || 1 }}{{ t('nodeServer.billingDaySuffix') }}</el-descriptions-item>
         <el-descriptions-item :label="t('nodeServer.trafficStatus')">

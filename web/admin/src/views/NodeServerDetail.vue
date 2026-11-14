@@ -22,6 +22,7 @@
         <div><span style="color:#909399">{{ t('nodeServer.hostname') }}: </span>{{ server.hostname }}</div>
         <div><span style="color:#909399">{{ t('nodeServer.region') }}: </span>{{ server.region || '-' }}</div>
         <div><span style="color:#909399">{{ t('nodeServer.nodeType') }}: </span>{{ nodeTypeLabel(server.node_type) }}</div>
+        <div v-if="server.bandwidth_mbps"><span style="color:#909399">{{ t('nodeServer.bandwidthMbps') }}: </span>{{ server.bandwidth_mbps }} Mbps</div>
         <div v-if="server.agent_version"><span style="color:#909399">{{ t('nodeServer.agentVersion') }}: </span>{{ server.agent_version }}</div>
         <div v-if="server.last_heartbeat_at"><span style="color:#909399">{{ t('nodeServer.lastHeartbeat') }}: </span>{{ formatTime(server.last_heartbeat_at) }}</div>
       </div>
@@ -58,6 +59,57 @@
             <el-tag size="small" :type="server.is_local ? 'warning' : 'info'">{{ server.is_local ? t('common.yes') : t('common.no') }}</el-tag>
           </el-descriptions-item>
         </el-descriptions>
+
+        <!--
+          资源与流量：数据来自最新一条 server_metric（GetByID 已内嵌 resource_usage），
+          与列表页是同一份数据，只是此前概览页没有展示。
+          流量统计与配额解耦：没配月流量配额时也照样显示已用流量。
+        -->
+        <el-card v-if="server" shadow="never" style="margin-top:16px" body-style="padding:16px 20px">
+          <template #header>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+              <span style="font-weight:600">{{ t('dashboard.systemInfo') }}</span>
+              <span v-if="usage && usage.last_updated" style="font-size:12px;color:#909399">
+                {{ t('dashboard.lastUpdated') }}: {{ formatTime(usage.last_updated) }}
+              </span>
+            </div>
+          </template>
+
+          <div v-if="!usage" style="color:#909399;font-size:13px">{{ t('common.noData') }}</div>
+          <template v-else>
+            <el-row :gutter="24">
+              <el-col v-for="item in usageBars" :key="item.key" :xs="24" :sm="8" style="margin-bottom:10px">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:#606266;margin-bottom:4px;gap:8px">
+                  <span>{{ item.label }}</span>
+                  <span style="color:#909399">{{ item.text }}</span>
+                </div>
+                <el-progress :percentage="item.percent" :color="item.color" :stroke-width="8" :show-text="false" />
+              </el-col>
+            </el-row>
+
+            <el-divider style="margin:8px 0 12px" />
+
+            <el-descriptions :column="isMobile ? 1 : 3" size="small" border>
+              <el-descriptions-item :label="t('dashboard.netTraffic')">
+                ↓{{ formatRate(usage.net_rx_bytes_sec) }} ↑{{ formatRate(usage.net_tx_bytes_sec) }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('dashboard.userTraffic')">
+                ↓{{ formatRate(usage.traffic_downlink) }} ↑{{ formatRate(usage.traffic_uplink) }}
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('nodeServer.monthlyUsedTraffic')">
+                <span>{{ formatBytes(server.traffic_used_bytes) }}</span>
+                <span v-if="server.traffic_quota_bytes > 0" style="color:#909399"> / {{ formatBytes(server.traffic_quota_bytes) }}</span>
+                <span v-else style="color:#909399"> / {{ t('nodeServer.trafficUnlimited') }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item :label="t('dashboard.connections')">{{ usage.tcp_connections || 0 }}</el-descriptions-item>
+              <el-descriptions-item :label="t('dashboard.systemLoad')">{{ (usage.load_1m || 0).toFixed(2) }}</el-descriptions-item>
+              <el-descriptions-item v-if="usage.egress_interface" :label="t('nodeServer.egressInterface')">
+                {{ usage.egress_interface }}
+                ↓{{ formatBytes(usage.egress_rx_bytes) }} ↑{{ formatBytes(usage.egress_tx_bytes) }}
+              </el-descriptions-item>
+            </el-descriptions>
+          </template>
+        </el-card>
 
         <!--
           证书失效恢复入口：只在 Agent 证书过期/未签发时出现。
@@ -647,6 +699,53 @@ function formatTime(ts) {
 
 function goBack() { router.push('/node-servers') }
 
+// ── 概览页资源/流量 ──
+// server.resource_usage 是后端 GetByID 内嵌的最新一条 server_metric；
+// traffic_used_bytes 是内核（xray/sing-box）用户流量累计，与是否配置配额无关。
+const usage = computed(() => server.value?.resource_usage || null)
+
+function clampPercent(v) {
+  const n = Number(v) || 0
+  return Math.max(0, Math.min(100, n))
+}
+function usageColor(v, normal) {
+  const n = Number(v) || 0
+  return n >= 90 ? '#f56c6c' : n >= 75 ? '#e6a23c' : normal
+}
+const usageBars = computed(() => {
+  const u = usage.value
+  if (!u) return []
+  const pct = (v) => (Number(v) || 0).toFixed(1) + '%'
+  const parts = (used, total) => {
+    if (!total) return ''
+    return `${formatBytes(used)} / ${formatBytes(total)}`
+  }
+  return [
+    {
+      key: 'cpu',
+      label: t('dashboard.cpu'),
+      text: pct(u.cpu_usage) + (u.cpu_cores ? ` · ${u.cpu_cores}C` : ''),
+      percent: clampPercent(u.cpu_usage),
+      color: usageColor(u.cpu_usage, '#409eff'),
+    },
+    {
+      key: 'mem',
+      label: t('dashboard.memory'),
+      text: `${parts(u.mem_used_bytes, u.mem_total_bytes)} (${pct(u.mem_usage)})`,
+      percent: clampPercent(u.mem_usage),
+      color: usageColor(u.mem_usage, '#67c23a'),
+    },
+    {
+      key: 'disk',
+      label: t('dashboard.disk'),
+      text: `${parts(u.disk_used_bytes, u.disk_total_bytes)} (${pct(u.disk_usage)})`,
+      percent: clampPercent(u.disk_usage),
+      color: usageColor(u.disk_usage, '#e6a23c'),
+    },
+  ]
+})
+
+
 function certExpiringSoon(ts) {
   if (!ts) return false
   const days = (new Date(ts).getTime() - Date.now()) / 86400000
@@ -750,6 +849,23 @@ async function loadServer() {
     server.value = await client.get(`/node-servers/${serverId}`)
   } catch (e) {
     ElMessage.error(t('common.loadFailed'))
+  }
+}
+
+// 概览里的 CPU/内存/网卡/流量速率是实时值：停在概览页时定期刷新，
+// 切到别的标签或页面不可见时就不请求（避免无意义的后台轮询）。
+let usageTimer = null
+function startUsagePolling() {
+  stopUsagePolling()
+  usageTimer = setInterval(() => {
+    if (document.hidden || activeTab.value !== 'overview') return
+    loadServer()
+  }, 10000)
+}
+function stopUsagePolling() {
+  if (usageTimer) {
+    clearInterval(usageTimer)
+    usageTimer = null
   }
 }
 
@@ -1091,10 +1207,12 @@ onMounted(() => {
   loadPanelAgentVersion()
   loadGithubReleases()
   startOnlinePolling()
+  startUsagePolling()
 })
 
 onUnmounted(() => {
   stopPolling()
+  stopUsagePolling()
   stopOnlinePolling()
   clearTimeout(onlineSearchDebounce)
 })

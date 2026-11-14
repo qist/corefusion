@@ -108,7 +108,8 @@ function buildPoints(field) {
   const n = arr.length
   return arr.map((p, i) => {
     const x = n === 1 ? chartW / 2 : (i / (n - 1)) * chartW
-    const v = p[field] || 0
+    // 历史数据里可能有负速率（核心重启/计数器回退），按 0 画，避免线跑到基线以下。
+    const v = Math.max(0, p[field] || 0)
     const y = chartH - padY - (v / maxRate.value) * (chartH - padY * 2)
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')

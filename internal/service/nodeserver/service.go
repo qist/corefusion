@@ -680,6 +680,8 @@ func (s *Service) ListWithResourceUsage(ctx context.Context, q *dto.NodeServerLi
 }
 
 // metricToResourceUsage converts a ServerMetric entity to a ResourceUsage VO.
+// 速率字段做非负裁剪：历史库里存在负值（核心重启 / trafficsync 抢读 counter
+// 导致差分倒退），直接透出会把实时图表画到基线以下。
 func metricToResourceUsage(m *entity.ServerMetric) *vo.ResourceUsage {
 	if m == nil || m.ID == 0 {
 		return nil
@@ -696,20 +698,28 @@ func metricToResourceUsage(m *entity.ServerMetric) *vo.ResourceUsage {
 		DiskUsedBytes:     m.DiskUsageBytes,
 		DiskTotalBytes:    m.DiskTotalBytes,
 		DiskUsage:         m.DiskUsage,
-		DiskReadBytesSec:  m.DiskReadBytesSec,
-		DiskWriteBytesSec: m.DiskWriteBytesSec,
-		NetRxBytesSec:     m.NetRxBytes,
-		NetTxBytesSec:     m.NetTxBytes,
+		DiskReadBytesSec:  clampRate(m.DiskReadBytesSec),
+		DiskWriteBytesSec: clampRate(m.DiskWriteBytesSec),
+		NetRxBytesSec:     clampRate(m.NetRxBytes),
+		NetTxBytesSec:     clampRate(m.NetTxBytes),
 		TCPConnections:    m.TCPConnections,
 		Load1m:            m.Load1m,
 		UptimeSeconds:     m.UptimeSeconds,
-		TrafficUplink:     m.TrafficUplink,
-		TrafficDownlink:   m.TrafficDownlink,
+		TrafficUplink:     clampRate(m.TrafficUplink),
+		TrafficDownlink:   clampRate(m.TrafficDownlink),
 		EgressInterface:   m.EgressInterface,
 		EgressRxBytes:     m.EgressRxBytes,
 		EgressTxBytes:     m.EgressTxBytes,
 		LastUpdated:       m.CreatedAt,
 	}
+}
+
+// clampRate 把速率裁剪到 >=0（负速率是计数器回退的产物，没有物理意义）。
+func clampRate(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	return v
 }
 
 // HasMetricsCollector returns true if the metrics collector is available.

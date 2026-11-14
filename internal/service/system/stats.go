@@ -315,6 +315,105 @@ func (s *StatsService) readNetwork(stats *SystemStats) {
 	}
 }
 
+// CollectEgressCounters 返回出口网卡的累计 rx/tx（字节）与网卡名。
+//
+// 远程节点的 Agent 会上报 egress_interface/egress_rx/tx；本地节点（面板自身）
+// 不跑 Agent、没有心跳，此前这些字段永远是空——概览里只有远程节点能看到
+// 「出口网卡」累计流量。这里直接读本机 /proc 补齐同一份数据：
+//   - iface 非空：取该网卡；
+//   - iface 为空：取默认路由网卡（/proc/net/route）；
+//   - 仍取不到：汇总所有非回环网卡，名称标记为 "local"。
+func (s *StatsService) CollectEgressCounters(iface string) (string, int64, int64) {
+	iface = strings.TrimSpace(iface)
+	if iface == "" {
+		if data, err := os.ReadFile("/proc/net/route"); err == nil {
+			iface = parseDefaultRouteInterface(string(data))
+		}
+	}
+	if iface != "" {
+		if data, err := os.ReadFile("/proc/net/dev"); err == nil {
+			if rx, tx, ok := parseInterfaceCounters(string(data), iface); ok {
+				return iface, rx, tx
+			}
+		}
+	}
+	if data, err := os.ReadFile("/proc/net/dev"); err == nil {
+		rx, tx := sumNonLoopbackCounters(string(data))
+		return "local", rx, tx
+	}
+	// 非 Linux / 读不到 /proc：返回空网卡名，前端会隐藏「出口网卡」一行。
+	return "", 0, 0
+}
+
+// parseDefaultRouteInterface 从 /proc/net/route 找出默认路由（Destination=0、
+// Mask=0、RTF_UP）对应的网卡名；没有默认路由时返回空。
+func parseDefaultRouteInterface(data string) string {
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 8 || fields[0] == "Iface" {
+			continue
+		}
+		// Iface Destination Gateway Flags RefCnt Use Metric Mask
+		if fields[1] != "00000000" || fields[7] != "00000000" {
+			continue
+		}
+		flags, err := strconv.ParseUint(fields[3], 16, 32)
+		if err != nil || flags&0x1 == 0 { // RTF_UP
+			continue
+		}
+		return fields[0]
+	}
+	return ""
+}
+
+// parseInterfaceCounters 读取 /proc/net/dev 里指定网卡的累计 rx/tx 字节。
+func parseInterfaceCounters(data, iface string) (int64, int64, bool) {
+	for _, line := range strings.Split(data, "\n") {
+		idx := strings.Index(line, ":")
+		if idx < 0 {
+			continue
+		}
+		if strings.TrimSpace(line[:idx]) != iface {
+			continue
+		}
+		fields := strings.Fields(line[idx+1:])
+		// recv_bytes ... (8 项) transmit_bytes
+		if len(fields) < 9 {
+			return 0, 0, false
+		}
+		rx, _ := strconv.ParseInt(fields[0], 10, 64)
+		tx, _ := strconv.ParseInt(fields[8], 10, 64)
+		return rx, tx, true
+	}
+	return 0, 0, false
+}
+
+// sumNonLoopbackCounters 汇总所有非回环网卡的累计 rx/tx（字节）。
+func sumNonLoopbackCounters(data string) (int64, int64) {
+	var rx, tx int64
+	for _, line := range strings.Split(data, "\n") {
+		idx := strings.Index(line, ":")
+		if idx < 0 {
+			continue
+		}
+		iface := strings.TrimSpace(line[:idx])
+		if iface == "lo" || iface == "" {
+			continue
+		}
+		fields := strings.Fields(line[idx+1:])
+		if len(fields) < 9 {
+			continue
+		}
+		if v, err := strconv.ParseInt(fields[0], 10, 64); err == nil {
+			rx += v
+		}
+		if v, err := strconv.ParseInt(fields[8], 10, 64); err == nil {
+			tx += v
+		}
+	}
+	return rx, tx
+}
+
 func (s *StatsService) readConnections(stats *SystemStats) {
 	data, err := os.ReadFile("/proc/net/tcp")
 	if err == nil {

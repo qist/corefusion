@@ -2529,6 +2529,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					return up, down
 				}
 				metricsCollector.SetLocalTrafficProvider(collectLocalTraffic)
+				// 本地节点的出口网卡累计流量：远程由 Agent 心跳上报，本地没有 Agent，
+				// 直接读本机 /proc；节点配置了 egress_interface 就按它取，否则用默认路由网卡。
+				metricsCollector.SetLocalEgressProvider(func(serverID int64) (string, int64, int64) {
+					iface := ""
+					if srv, err := nodeServerRepo.GetByID(context.Background(), serverID); err == nil && srv != nil {
+						iface = srv.EgressInterface
+					}
+					return statsSvc.CollectEgressCounters(iface)
+				})
 				metricsCollector.SetRemoteTrafficProvider(func(ctx context.Context, serverID int64) (int64, int64) {
 					// 通过 coredata.Provider 查询远程节点用户流量
 					// 协议兼容：sing-box V2Ray API 使用与 xray 相同的 StatsService protobuf

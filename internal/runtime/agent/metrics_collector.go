@@ -56,6 +56,10 @@ type MetricsCollector struct {
 	// 远程节点 xray 核心用户流量采集器；若设置，按 serverID 查询远程节点 xray 累计流量。
 	// 通过 coredata.CoreDataProvider 在 router.go 中注入实现。
 	remoteTrafficFn func(ctx context.Context, serverID int64) (uplink int64, downlink int64)
+
+	// 本地节点出口网卡累计流量采集器；若设置，返回 (网卡名, 累计 rx, 累计 tx)。
+	// 远程节点由 Agent 心跳上报 egress_*，本地节点没有 Agent，需要面板自己读 /proc。
+	localEgressFn func(serverID int64) (iface string, rx int64, tx int64)
 }
 
 // netCounter tracks network byte counters for rate calculation.
@@ -197,6 +201,14 @@ func (mc *MetricsCollector) SetLocalTrafficProvider(fn func() (int64, int64)) {
 	mc.localTrafficFn = fn
 }
 
+// SetLocalEgressProvider 注入本地节点出口网卡累计流量采集器。
+//
+// 远程节点的 egress_interface / egress_rx / egress_tx 来自 Agent 心跳；
+// 本地节点不跑 Agent，若不注入这里，概览里本地节点永远没有「出口网卡」数据。
+func (mc *MetricsCollector) SetLocalEgressProvider(fn func(serverID int64) (string, int64, int64)) {
+	mc.localEgressFn = fn
+}
+
 // SetRemoteTrafficProvider 注入远程节点 xray 核心用户流量采集函数。
 // 该函数应通过 coredata.CoreDataProvider 查询指定 serverID 的 xray 累计用户流量。
 // 速率由 collectRemoteMetrics 基于两次采样差分计算。
@@ -204,8 +216,7 @@ func (mc *MetricsCollector) SetRemoteTrafficProvider(fn func(ctx context.Context
 	mc.remoteTrafficFn = fn
 }
 
-// nonNegativeRate 把差分算出的速率裁剪到 >=0。
-//
+// nonNegativeRate 把差分算出的速率裁剪到 >=0。//
 // 累计计数器并非单调递增：核心重启 / 配置热重载会清零，trafficsync 每 30s 用
 // reset_=true 抢读同一份 counter 也会让它"倒退"。差分因此会算出负速率，
 // 负速率没有意义，落库后还会把实时图表画到基线以下、让 UI 显示异常值。
@@ -234,6 +245,14 @@ func (mc *MetricsCollector) collectFromLocalStats(serverID int64) {
 	var trafficUp, trafficDown int64
 	if mc.localTrafficFn != nil {
 		trafficUp, trafficDown = mc.localTrafficFn()
+	}
+	// 出口网卡累计流量：本地节点没有 Agent 心跳，由面板直接读 /proc 补齐
+	if mc.localEgressFn != nil {
+		if iface, rx, tx := mc.localEgressFn(serverID); iface != "" {
+			metric.EgressInterface = iface
+			metric.EgressRxBytes = rx
+			metric.EgressTxBytes = tx
+		}
 	}
 
 	mc.mu.Lock()

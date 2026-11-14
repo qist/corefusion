@@ -976,13 +976,9 @@
             <!-- ===== MASQUE Client ===== -->
             <template v-if="rf.type === 'masque-client'">
               <el-divider content-position="left">MASQUE Client</el-divider>
-              <!-- 一键导入 WARP MASQUE：与 xray 出站页同源（同一套 /warp API），
-                   但 sing-box 没有 warp 字段 → 后端用注册私钥签发自签客户端证书做 mTLS。 -->
-              <el-form-item>
-                <el-button size="small" type="primary" @click="importWarpMasque">
-                  ⚡ {{ t('protoCenter.outbounds.warpImport') || 'WARP' }} MASQUE
-                </el-button>
-              </el-form-item>
+              <!-- 不提供 WARP 一键导入：sing-box 的 masque-client 只能等服务端用 ADDRESS_ASSIGN
+                   下发隧道地址，WARP 边缘不下发 → 会话永远不 ready，出站包被静默丢弃。
+                   WARP 请走 WireGuard 端点，WARP MASQUE 请走 xray 出站。 -->
               <el-form-item :label="t('singbox.protocol.endpoint.oc.server')">
                 <el-input v-model="rf.server" placeholder="masque.example.com" />
               </el-form-item>
@@ -1731,8 +1727,6 @@ async function showAdd() {
 // 差别只在字段名 —— sing-box 的 wireguard 在 `endpoints` 里，peer 用 address/port ✓，
 // 且 WARP 必需的 `reserved` 要写成 "148, 154, 190"（构建器会 split 后再 parseInt ✓）。
 async function importWarp() {
-  // MASQUE 端点走 mTLS 材料派生，字段完全不同，单独一条路径。
-  if (rf.type === 'masque-client') return importWarpMasque()
   try {
     const warpBase = `/node-servers/${props.serverId}/warp`
     let status
@@ -1769,56 +1763,6 @@ async function importWarp() {
       _allowedIPsStr: '0.0.0.0/0, ::/0',
       reserved,
     }]
-    ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
-  } catch (e) {
-    ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e))
-  }
-}
-
-// importWarpMasque：一键导入 WARP MASQUE → sing-box masque-client 端点。
-//
-// sing-box 没有 xray 的 masqueSettings.warp，只能用标准 mTLS：后端用注册的
-// P-256 私钥签发客户端证书，并把边缘证书公钥（SHA256 pin）一并返回。
-async function importWarpMasque() {
-  try {
-    const warpBase = `/node-servers/${props.serverId}/warp`
-    let status = null
-    try { status = await client.get(`${warpBase}/status`, { params: { core_type: 'singbox' } }) } catch { status = null }
-    // status 取该核型下最新 active 记录，可能是旧的 WireGuard 设备 → 不是 masque 就新注册一台。
-    if (!status || String(status.tunnel_type || '').toLowerCase() !== 'masque') {
-      ElMessage.info(t('protoCenter.outbounds.warpRegistering'))
-      status = await client.post(`${warpBase}/masque/register`, { core_type: 'singbox' })
-    }
-    if (!status || !status.private_key || !status.public_key) {
-      ElMessage.error(t('protoCenter.outbounds.warpRegisterFailed'))
-      return
-    }
-    if (!status.masque_client_certificate || !status.masque_client_key || !status.masque_certificate_public_key_sha256) {
-      ElMessage.error(t('protoCenter.outbounds.warpRegisterFailed'))
-      return
-    }
-
-    rf.tag = 'warp-masque-' + Math.random().toString(36).substring(2, 6)
-    if (!rf._remark) rf._remark = 'WARP MASQUE'
-    const ports = String(status.endpoint_ports || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0)
-    rf.server = status.endpoint || '162.159.198.2'
-    rf.server_port = ports[0] || 443
-    // WARP 官方客户端参数：HTTP/3 + 固定 SNI，path 必须是 "/"（RFC 模板路径会 404）。
-    rf.path = '/'
-    rf.version = 3
-    rf.mtu = 1280
-    rf.system = false
-    rf.tls_enabled = true
-    rf.tls_server_name = 'consumer-masque.cloudflareclient.com'
-    // xray 的 masque 传输把 authority 落到 SNI；sing-box 的 authority 取 Host 头，
-    // 不显式给会变成 IP:port，WARP 边缘按域名分流时可能拒绝。
-    rf.headers = [{ key: 'Host', value: 'consumer-masque.cloudflareclient.com' }]
-    rf._tlsAlpnStr = 'h3'
-    rf.tls_alpn = ['h3']
-    rf.tls_insecure = false
-    rf.tls_certificate_public_key_sha256 = status.masque_certificate_public_key_sha256
-    rf.tls_client_certificate = status.masque_client_certificate
-    rf.tls_client_key = status.masque_client_key
     ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
   } catch (e) {
     ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e))

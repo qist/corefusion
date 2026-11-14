@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "稽核日誌",
+    "email": "電子郵件",
     "category": "類別",
     "eventType": "事件類型",
     "result": "結果",

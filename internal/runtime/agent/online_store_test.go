@@ -55,6 +55,99 @@ func TestGetAllSummaryDedupesSubscriptionsAndDevices(t *testing.T) {
 
 // 会话级时长 = last_seen - connected_since：缺省 0 会得到 498484 小时，
 // 比 last_seen 晚则是负时长。快照入库时必须统一修正。
+// 站点级「在线时长」必须跨短连接保持：Agent 每次上报的 first_seen 会因
+// 差分基线清理 / Agent 重启而重置，面板要按「连续在线」自己记起点。
+func TestUpdateKeepsOnlineSinceAcrossShortGaps(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	entry := func(firstSeen int64) []*agentpb.OnlineUserEntry {
+		return []*agentpb.OnlineUserEntry{{
+			SubscriptionId: 5, Email: "a@example.com", CoreType: "xray",
+			FirstSeen: firstSeen, LastSeen: time.Now().Unix(),
+			Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4", ConnectedSince: firstSeen}},
+		}}
+	}
+
+	s.Update(1, entry(time.Now().Unix()))
+	snap, _ := s.GetFresh(1)
+	first := snap.Users[0].FirstSeen
+	sessFirst := snap.Users[0].Sessions[0].ConnectedSince
+	if first <= 0 {
+		t.Fatalf("first_seen 未设置: %d", first)
+	}
+
+	// 下一轮上报 Agent 把 first_seen 重置成「现在」（模拟基线重建），面板应保留原起点。
+	s.Update(1, entry(time.Now().Unix()))
+	snap, _ = s.GetFresh(1)
+	if got := snap.Users[0].FirstSeen; got != first {
+		t.Fatalf("短间隔重连不应重置订阅级起点: got %d want %d", got, first)
+	}
+	if got := snap.Users[0].Sessions[0].ConnectedSince; got != sessFirst {
+		t.Fatalf("短间隔重连不应重置会话级起点: got %d want %d", got, sessFirst)
+	}
+}
+
+// 超过 graceSec 没有上报则视为新的一次在线，起点重新计时（避免把「昨天的在线」算进来）。
+func TestUpdateResetsOnlineSinceAfterLongGap(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	users := []*agentpb.OnlineUserEntry{{
+		SubscriptionId: 5, Email: "a@example.com", CoreType: "xray",
+		LastSeen: time.Now().Unix(),
+		Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}},
+	}}
+	s.Update(1, users)
+
+	// 模拟 10 分钟没收到该节点的上报。
+	s.mu.Lock()
+	for _, st := range s.sessions[1] {
+		st.since = time.Now().Unix() - 600
+		st.lastSeen = time.Now().Unix() - 600
+	}
+	s.mu.Unlock()
+
+	s.Update(1, []*agentpb.OnlineUserEntry{{
+		SubscriptionId: 5, Email: "a@example.com", CoreType: "xray",
+		LastSeen: time.Now().Unix(),
+		Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}},
+	}})
+	snap, _ := s.GetFresh(1)
+	if got := snap.Users[0].FirstSeen; time.Now().Unix()-got > 5 {
+		t.Fatalf("超过 grace 后应重新计时，实际 first_seen=%d", got)
+	}
+}
+
+// 同一订阅换 IP：订阅级时长继续累加，新 IP 的会话时长从 0 开始。
+func TestUpdateTracksSessionsPerIP(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	now := time.Now().Unix()
+	s.Update(1, []*agentpb.OnlineUserEntry{{
+		SubscriptionId: 5, Email: "a@example.com", CoreType: "xray", LastSeen: now,
+		Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}},
+	}})
+	first := s.mustGet(1).Users[0].FirstSeen
+
+	s.Update(1, []*agentpb.OnlineUserEntry{{
+		SubscriptionId: 5, Email: "a@example.com", CoreType: "xray", LastSeen: now,
+		Sessions: []*agentpb.OnlineSession{{Ip: "5.6.7.8"}},
+	}})
+	u := s.mustGet(1).Users[0]
+	if u.FirstSeen != first {
+		t.Fatalf("订阅级起点应保持: got %d want %d", u.FirstSeen, first)
+	}
+	if got := u.Sessions[0].ConnectedSince; time.Now().Unix()-got > 5 {
+		t.Fatalf("新 IP 的会话时长应从本次开始，实际 connected_since=%d", got)
+	}
+}
+
+func (s *NodeOnlineStore) mustGet(serverID int64) *NodeOnlineSnapshot {
+	snap, ok := s.GetFresh(serverID)
+	if !ok || snap == nil {
+		panic("missing snapshot")
+	}
+	return snap
+}
+
+// 会话级时长 = now - connected_since：缺省 0 会得到 498484 小时，
+// 比采样时间还晚则是负时长。快照入库时必须统一修正。
 func TestUpdateNormalizesSessionConnectedSince(t *testing.T) {
 	s := NewNodeOnlineStore(60)
 	now := time.Now().Unix()
@@ -70,8 +163,9 @@ func TestUpdateNormalizesSessionConnectedSince(t *testing.T) {
 		t.Fatalf("snapshot missing: %+v", snap)
 	}
 	for _, sess := range snap.Users[0].Sessions {
-		if sess.ConnectedSince <= 0 || sess.ConnectedSince > sess.LastSeen {
-			t.Errorf("session %s 的 connected_since=%d / last_seen=%d 未归一", sess.Ip, sess.ConnectedSince, sess.LastSeen)
+		// 起点由面板侧记录（面板时钟），只要求是「最近一次采样」附近且非 0/未来值。
+		if sess.ConnectedSince <= 0 || sess.ConnectedSince > now+5 {
+			t.Errorf("session %s 的 connected_since=%d 未归一（now=%d）", sess.Ip, sess.ConnectedSince, now)
 		}
 	}
 }

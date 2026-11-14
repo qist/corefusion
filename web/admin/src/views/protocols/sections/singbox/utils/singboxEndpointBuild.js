@@ -148,6 +148,8 @@ function buildOutboundTLS(ep) {
   if (ep.tls_disable_sni) tls.disable_sni = true
   const alpn = splitCSV(ep._tlsAlpnStr)
   if (alpn.length) tls.alpn = alpn
+  // 证书公钥 pin（base64 SHA256）：WARP MASQUE 边缘是自签证书，缺了它握手必失败。
+  if (ep.tls_certificate_public_key_sha256) tls.certificate_public_key_sha256 = splitCSV(ep.tls_certificate_public_key_sha256)
   if (ep.tls_certificate) tls.certificate = [ep.tls_certificate.trim()].filter(Boolean)
   if (ep.tls_certificate_path) tls.certificate_path = ep.tls_certificate_path
   if (ep.tls_client_certificate) tls.client_certificate = [ep.tls_client_certificate.trim()].filter(Boolean)
@@ -573,6 +575,7 @@ export function endpointDefaultsForType(type, customPort) {
         tls_enabled: true, tls_server_name: '', tls_insecure: false, tls_disable_sni: false,
         tls_alpn: [], _tlsAlpnStr: 'h3',
         tls_certificate: '', tls_certificate_path: '',
+        tls_certificate_public_key_sha256: '',
         tls_client_certificate: '', tls_client_certificate_path: '',
         tls_client_key: '', tls_client_key_path: '',
         tls_version_min: '', tls_version_max: '',
@@ -1501,6 +1504,7 @@ export function parseEndpoint(ep) {
         _tlsAlpnStr: Array.isArray(tls.alpn) ? tls.alpn.join(', ') : '',
         tls_certificate: Array.isArray(tls.certificate) ? tls.certificate.join('\n') : (tls.certificate || ''),
         tls_certificate_path: tls.certificate_path || '',
+        tls_certificate_public_key_sha256: Array.isArray(tls.certificate_public_key_sha256) ? tls.certificate_public_key_sha256.join('\n') : (tls.certificate_public_key_sha256 || ''),
         tls_client_certificate: Array.isArray(tls.client_certificate) ? tls.client_certificate.join('\n') : (tls.client_certificate || ''),
         tls_client_certificate_path: tls.client_certificate_path || '',
         tls_client_key: Array.isArray(tls.client_key) ? tls.client_key.join('\n') : (tls.client_key || ''),

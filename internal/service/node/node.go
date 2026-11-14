@@ -576,15 +576,21 @@ func matchOnlineUser(u *agentpb.OnlineUserEntry, nodeName, kw string) bool {
 }
 
 // nodeName 取节点名，失败回退为 "#<id>"。
+// 在线用户的 serverID 是 node_servers 的主键（Agent 上报的节点 ID），
+// 必须查 node_servers；旧实现查 nodes 表必然查不到，面板上只能显示 "#<id>"。
 func (s *Service) nodeName(serverID int64) string {
-	if s.repo == nil {
-		return "#" + strconv.FormatInt(serverID, 10)
+	ctx := context.Background()
+	if s.nodeServerRepo != nil {
+		if srv, err := s.nodeServerRepo.GetByID(ctx, serverID); err == nil && srv != nil && srv.Name != "" {
+			return srv.Name
+		}
 	}
-	n, err := s.repo.GetByID(context.Background(), serverID)
-	if err != nil || n == nil || n.Name == "" {
-		return "#" + strconv.FormatInt(serverID, 10)
+	if s.repo != nil {
+		if n, err := s.repo.GetByID(ctx, serverID); err == nil && n != nil && n.Name != "" {
+			return n.Name
+		}
 	}
-	return n.Name
+	return "#" + strconv.FormatInt(serverID, 10)
 }
 
 // CreateNodeInput is the input for creating a node.

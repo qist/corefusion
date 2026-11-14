@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "監査ログ",
+    "email": "メールアドレス",
     "category": "カテゴリ",
     "eventType": "イベントタイプ",
     "result": "結果",

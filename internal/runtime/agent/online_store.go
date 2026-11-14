@@ -21,6 +21,19 @@ type NodeOnlineStore struct {
 	mu     sync.RWMutex
 	data   map[int64]*NodeOnlineSnapshot
 	ttlSec int64
+	// graceSec：「连续在线」容忍的断开秒数。短连接客户端会频繁上下线
+	// （xray 的在线 IP 也有自己的保留窗口），只要在 graceSec 内重新出现，
+	// 就视为同一次在线，在线时长继续累加；超过则重新计时。
+	graceSec int64
+	// sessions: serverID -> 会话键 -> 连续在线状态。
+	// 会话键分两级：订阅级（core|s:<subID>）与会话级（订阅键|ip:<ip>）。
+	sessions map[int64]map[string]*onlineSession
+}
+
+// onlineSession 记录面板侧观测到的一次「连续在线」。
+type onlineSession struct {
+	since    int64 // 本次连续在线的起点（面板时钟，unix 秒）
+	lastSeen int64 // 面板最后一次看到该会话的时间
 }
 
 // NewNodeOnlineStore 创建在线存储；ttlSec 为快照过期秒数（默认 60s）。
@@ -29,18 +42,37 @@ func NewNodeOnlineStore(ttlSec int64) *NodeOnlineStore {
 		ttlSec = 60
 	}
 	return &NodeOnlineStore{
-		data:   make(map[int64]*NodeOnlineSnapshot),
-		ttlSec: ttlSec,
+		data:     make(map[int64]*NodeOnlineSnapshot),
+		ttlSec:   ttlSec,
+		graceSec: ttlSec,
+		sessions: make(map[int64]map[string]*onlineSession),
 	}
 }
 
 // Update 刷新某节点的在线快照（同时重置刷新时间）。
 //
-// 顺手归一 first_seen/last_seen：旧版 Agent 或异常数据里 first_seen 可能为 0，
-// 前端用 last_seen - first_seen 算「连接时长」会得到 50 万小时这种离谱值。
-// first_seen 缺失/晚于 last_seen 时按「本次采样」处理。
+// 在线时长不能直接用 Agent 上报的 first_seen / connected_since：
+// Agent 重启、差分基线被清理、核心计数器归零、以及短连接客户端频繁上下线，
+// 都会让这个值反复归零，页面上「在线时长」就永远只有几秒。
+// 这里在面板侧按「连续在线」跟踪：同一订阅（或同一 IP 会话）在 graceSec 内
+// 重新出现就保留原起点，超过 graceSec 没出现才视为新的一次在线。
+//
+// 同时归一 last_seen：旧版 Agent 或异常数据里可能为 0 或超前，
+// 前端按「现在 - first_seen」或「last_seen - connected_since」算时长会得到
+// 50 万小时这种离谱值或负值。
 func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntry) {
 	now := time.Now().Unix()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	states := s.sessions[serverID]
+	if states == nil {
+		states = make(map[string]*onlineSession)
+		s.sessions[serverID] = states
+	}
+	seen := make(map[string]struct{}, len(users)*2)
+
 	for _, u := range users {
 		if u == nil {
 			continue
@@ -48,9 +80,16 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 		if u.LastSeen <= 0 || u.LastSeen > now+60 {
 			u.LastSeen = now
 		}
-		if u.FirstSeen <= 0 || u.FirstSeen > u.LastSeen {
+
+		userKey := onlineUserKey(u)
+		if userKey != "" {
+			u.FirstSeen = touchOnlineSession(states, userKey, now, s.graceSec)
+			seen[userKey] = struct{}{}
+		} else if u.FirstSeen <= 0 || u.FirstSeen > u.LastSeen {
+			// 无法归户的匿名条目：只做基础归一，不参与连续在线跟踪。
 			u.FirstSeen = u.LastSeen
 		}
+
 		for _, sess := range u.Sessions {
 			if sess == nil {
 				continue
@@ -58,20 +97,55 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 			if sess.LastSeen <= 0 || sess.LastSeen > now+60 {
 				sess.LastSeen = u.LastSeen
 			}
-			// 会话级「连接时长」= last_seen - connected_since：
-			// 缺省 0 会得到 498484 小时；比 last_seen 还晚则是负时长。
-			// 旧 Agent / sing-box 推断条目没有这个字段，统一按最后活跃时间兜底。
-			if sess.ConnectedSince <= 0 || sess.ConnectedSince > sess.LastSeen {
-				sess.ConnectedSince = sess.LastSeen
+			if userKey == "" || sess.GetIp() == "" {
+				// 没有 IP 或无法归户：按最后活跃时间兜底，避免 0/负时长。
+				if sess.ConnectedSince <= 0 || sess.ConnectedSince > now {
+					sess.ConnectedSince = sess.LastSeen
+				}
+				continue
 			}
+			sessKey := userKey + "|ip:" + sess.GetIp()
+			sess.ConnectedSince = touchOnlineSession(states, sessKey, now, s.graceSec)
+			seen[sessKey] = struct{}{}
 		}
 	}
-	s.mu.Lock()
+
+	// 清理超时未再出现的会话状态，避免长期运行时无限增长。
+	for key, st := range states {
+		if _, ok := seen[key]; !ok && now-st.lastSeen > s.graceSec {
+			delete(states, key)
+		}
+	}
+
 	s.data[serverID] = &NodeOnlineSnapshot{
 		Users:     users,
 		UpdatedAt: now,
 	}
-	s.mu.Unlock()
+}
+
+// touchOnlineSession 返回该会话本次「连续在线」的起点（面板时钟）。
+// 在 graceSec 内出现过就沿用旧起点，否则以 now 重新开始。
+func touchOnlineSession(states map[string]*onlineSession, key string, now, graceSec int64) int64 {
+	st := states[key]
+	if st == nil || now-st.lastSeen > graceSec {
+		states[key] = &onlineSession{since: now, lastSeen: now}
+		return now
+	}
+	st.lastSeen = now
+	return st.since
+}
+
+// onlineUserKey 生成订阅级的会话键：同一订阅在多个入站各有账号时共用一条，
+// xray / sing-box 分开计数。无法归户时返回空串（不参与跟踪）。
+func onlineUserKey(u *agentpb.OnlineUserEntry) string {
+	core := u.GetCoreType()
+	if u.GetSubscriptionId() > 0 {
+		return core + "|s:" + strconv.FormatInt(u.GetSubscriptionId(), 10)
+	}
+	if email := u.GetEmail(); email != "" {
+		return core + "|e:" + email
+	}
+	return ""
 }
 
 // GetFresh 返回未过期的在线快照；已过期视为无数据。
@@ -92,6 +166,7 @@ func (s *NodeOnlineStore) GetFresh(serverID int64) (*NodeOnlineSnapshot, bool) {
 func (s *NodeOnlineStore) Remove(serverID int64) {
 	s.mu.Lock()
 	delete(s.data, serverID)
+	delete(s.sessions, serverID)
 	s.mu.Unlock()
 }
 

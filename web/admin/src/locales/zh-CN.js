@@ -5613,6 +5613,7 @@ ctx.moduleTitle           — 当前模块标题`,
   },
   security: {
     auditTitle: '审计日志',
+    email: '邮箱',
     category: '类别',
     eventType: '事件类型',
     result: '结果',

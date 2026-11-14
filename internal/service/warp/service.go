@@ -68,6 +68,11 @@ type WarpStatus struct {
 	KeyType       string `json:"key_type,omitempty"`
 	TunnelType    string `json:"tunnel_type,omitempty"`
 	EndpointPorts string `json:"endpoint_ports,omitempty"`
+	// MASQUE 记录额外派生 sing-box masque-client 的 mTLS 材料（xray 直接用
+	// private/public key，不需要这组字段）。
+	MasqueClientCertificate          string `json:"masque_client_certificate,omitempty"`
+	MasqueClientKey                  string `json:"masque_client_key,omitempty"`
+	MasqueCertificatePublicKeySHA256 string `json:"masque_certificate_public_key_sha256,omitempty"`
 }
 
 // WarpConfigItem is a list item for WARP configs.
@@ -301,7 +306,7 @@ func (s *Service) Reset(warpID int64) error {
 
 // configToStatus converts a WarpConfig entity to a WarpStatus response.
 func (s *Service) configToStatus(cfg *entity.WarpConfig) *WarpStatus {
-	return &WarpStatus{
+	status := &WarpStatus{
 		ID:            cfg.ID,
 		Status:        cfg.Status,
 		Registered:    cfg.Status != "not_registered",
@@ -320,6 +325,16 @@ func (s *Service) configToStatus(cfg *entity.WarpConfig) *WarpStatus {
 		TunnelType:    cfg.TunnelType,
 		EndpointPorts: cfg.EndpointPorts,
 	}
+	// sing-box 的 masque-client 没有 xray 那种 warp 字段，要用标准 mTLS；
+	// 这里顺带把派生材料返回给前端「一键导入」直接填写。派生失败不影响状态查询。
+	if strings.EqualFold(cfg.TunnelType, masqueTunnel) {
+		if tls, err := BuildMasqueClientTLS(cfg); err == nil {
+			status.MasqueClientCertificate = tls.ClientCertificate
+			status.MasqueClientKey = tls.ClientKey
+			status.MasqueCertificatePublicKeySHA256 = tls.CertificatePublicKeySHA256
+		}
+	}
+	return status
 }
 
 // generateKeyPair generates a Curve25519 key pair for WireGuard.

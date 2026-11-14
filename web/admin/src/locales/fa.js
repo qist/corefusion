@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "گزارش حسابرسی",
+    "email": "ایمیل",
     "category": "دسته‌بندی",
     "eventType": "نوع رویداد",
     "result": "نتیجه",

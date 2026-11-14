@@ -1011,8 +1011,8 @@ function formatBytes(bytes) {
 }
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0s'
-  // 防御：first_seen 缺失时 last_seen - 0 会算出 50 万小时（旧 Agent 上报）。
-  if (sec > 30 * 86400) return '-'
+  // 防御：异常数据（旧版上报的 first_seen=0）会算出 50 万小时，超过 365 天按未知。
+  if (sec > 365 * 86400) return '-'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   const s = Math.floor(sec % 60)

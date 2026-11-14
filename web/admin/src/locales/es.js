@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "Registro de auditoría",
+    "email": "Correo electrónico",
     "category": "Categoría",
     "eventType": "Tipo de evento",
     "result": "Resultado",

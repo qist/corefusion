@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "Журнал аудита",
+    "email": "Эл. почта",
     "category": "Категория",
     "eventType": "Тип события",
     "result": "Результат",

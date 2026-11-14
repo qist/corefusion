@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "Denetim günlüğü",
+    "email": "E-posta",
     "category": "Kategori",
     "eventType": "Olay türü",
     "result": "Sonuç",

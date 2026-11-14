@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "سجل التدقيق",
+    "email": "البريد الإلكتروني",
     "category": "الفئة",
     "eventType": "نوع الحدث",
     "result": "النتيجة",

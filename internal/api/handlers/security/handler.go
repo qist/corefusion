@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -51,6 +52,15 @@ func (h *Handler) ListAuditEvents(c *gin.Context) {
 	if v := c.Query("remote_ip"); v != "" {
 		tx = tx.Where("remote_ip = ?", v)
 	}
+	// 按操作人/客户邮箱模糊筛选：审计只存 user_id（客户端事件存 clients.id，
+	// 管理端事件存 users.id），所以两张表都要查；登录失败这类还没落到
+	// user_id 的事件，邮箱只在 metadata_json 里，也一并匹配。
+	if v := strings.TrimSpace(c.Query("email")); v != "" {
+		like := "%" + v + "%"
+		adminSub := h.db.Model(&entity.User{}).Select("id").Where("email LIKE ? OR username LIKE ?", like, like)
+		clientSub := h.db.Model(&entity.Client{}).Select("id").Where("email LIKE ? OR nickname LIKE ?", like, like)
+		tx = tx.Where("(user_id IN (?) OR user_id IN (?) OR metadata_json LIKE ?)", adminSub, clientSub, like)
+	}
 
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
@@ -62,11 +72,32 @@ func (h *Handler) ListAuditEvents(c *gin.Context) {
 		response.InternalError(c, "QUERY_FAILED", err.Error())
 		return
 	}
-	// 审计只存 user_id：列表补用户名，前端「用户」列才有内容（原先直接透传 entity，前端取
-	// row.user 永远为空）。
-	names := h.auditUserNames(c.Request.Context(), events)
+	// 审计只存 user_id：列表补用户名/邮箱，前端「用户」列才有内容（原先直接透传 entity，前端取
+	// row.user 永远为空）。客户端事件（client_*）的 user_id 是 clients.id，管理端事件是 users.id。
+	users, clients := h.auditAccounts(c.Request.Context(), events)
 	items := make([]gin.H, 0, len(events))
 	for _, e := range events {
+		actorName, actorEmail := "", ""
+		uid := keyOfPtr(e.UserID)
+		if isClientAuditEvent(e.EventType) {
+			if cl, ok := clients[uid]; ok {
+				actorName, actorEmail = cl.Nickname, cl.Email
+			}
+		} else if u, ok := users[uid]; ok {
+			actorName, actorEmail = u.Username, u.Email
+		}
+		// 兜底：ID 落在另一张表，或事件没写 user_id（登录失败只存了 metadata.email）。
+		if actorName == "" && actorEmail == "" {
+			if u, ok := users[uid]; ok {
+				actorName, actorEmail = u.Username, u.Email
+			} else if cl, ok := clients[uid]; ok {
+				actorName, actorEmail = cl.Nickname, cl.Email
+			}
+		}
+		if actorName == "" && actorEmail == "" {
+			actorName = auditMetadataEmail(e.MetadataJSON)
+			actorEmail = actorName
+		}
 		items = append(items, gin.H{
 			"id":            e.ID,
 			"category":      e.Category,
@@ -74,7 +105,8 @@ func (h *Handler) ListAuditEvents(c *gin.Context) {
 			"service_id":    e.ServiceID,
 			"endpoint_id":   e.EndpointID,
 			"user_id":       e.UserID,
-			"user_name":     names[keyOfPtr(e.UserID)],
+			"user_name":     actorName,
+			"user_email":    actorEmail,
 			"remote_ip":     e.RemoteIP,
 			"result":        e.Result,
 			"reason":        e.Reason,
@@ -93,9 +125,29 @@ func keyOfPtr(p *int64) int64 {
 	return *p
 }
 
-// auditUserNames 批量查 user_id → 用户名。
-func (h *Handler) auditUserNames(ctx context.Context, events []entity.SecurityAuditEvent) map[int64]string {
-	out := map[int64]string{}
+// isClientAuditEvent 判断审计事件的操作主体是否为订阅客户（clients 表）。
+func isClientAuditEvent(eventType string) bool {
+	return strings.HasPrefix(eventType, "client_")
+}
+
+// auditMetadataEmail 取出 metadata_json 里的 email（登录失败等事件只记在这里）。
+func auditMetadataEmail(meta string) string {
+	if meta == "" {
+		return ""
+	}
+	var m struct {
+		Email string `json:"email"`
+	}
+	if err := json.Unmarshal([]byte(meta), &m); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Email)
+}
+
+// auditAccounts 批量查 user_id → 管理端用户 / 客户（两张表都可能命中）。
+func (h *Handler) auditAccounts(ctx context.Context, events []entity.SecurityAuditEvent) (map[int64]entity.User, map[int64]entity.Client) {
+	users := map[int64]entity.User{}
+	clients := map[int64]entity.Client{}
 	ids := make([]int64, 0, len(events))
 	seen := map[int64]bool{}
 	for _, e := range events {
@@ -106,16 +158,21 @@ func (h *Handler) auditUserNames(ctx context.Context, events []entity.SecurityAu
 		ids = append(ids, *e.UserID)
 	}
 	if len(ids) == 0 {
-		return out
+		return users, clients
 	}
-	var users []entity.User
-	if err := h.db.WithContext(ctx).Select("id", "username").Where("id IN ?", ids).Find(&users).Error; err != nil {
-		return out
+	var us []entity.User
+	if err := h.db.WithContext(ctx).Select("id", "username", "email").Where("id IN ?", ids).Find(&us).Error; err == nil {
+		for _, u := range us {
+			users[u.ID] = u
+		}
 	}
-	for _, u := range users {
-		out[u.ID] = u.Username
+	var cs []entity.Client
+	if err := h.db.WithContext(ctx).Select("id", "email", "nickname").Where("id IN ?", ids).Find(&cs).Error; err == nil {
+		for _, cl := range cs {
+			clients[cl.ID] = cl
+		}
 	}
-	return out
+	return users, clients
 }
 
 // ListSubscriptionAccessLogs handles GET /api/v1/security/subscription-access-logs.
@@ -141,6 +198,13 @@ func (h *Handler) ListSubscriptionAccessLogs(c *gin.Context) {
 	}
 	if v := strings.TrimSpace(c.Query("ip")); v != "" {
 		tx = tx.Where("ip = ? OR real_ip = ?", v, v)
+	}
+	// 按客户邮箱模糊筛选：日志只存 subscription_id，先反查「客户 → 订阅」。
+	if v := strings.TrimSpace(c.Query("email")); v != "" {
+		like := "%" + v + "%"
+		clientIDs := h.db.Model(&entity.Client{}).Select("id").Where("email LIKE ?", like)
+		subIDs := h.db.Model(&entity.Subscription{}).Select("id").Where("client_id IN (?)", clientIDs)
+		tx = tx.Where("subscription_id IN (?)", subIDs)
 	}
 
 	var total int64
@@ -235,6 +299,13 @@ func (h *Handler) ExportAuditEvents(c *gin.Context) {
 	}
 	if v := c.Query("remote_ip"); v != "" {
 		tx = tx.Where("remote_ip = ?", v)
+	}
+	// 与列表一致：支持按操作人/客户邮箱模糊筛选（管理端 users + 客户端 clients + metadata）。
+	if v := strings.TrimSpace(c.Query("email")); v != "" {
+		like := "%" + v + "%"
+		adminSub := h.db.Model(&entity.User{}).Select("id").Where("email LIKE ? OR username LIKE ?", like, like)
+		clientSub := h.db.Model(&entity.Client{}).Select("id").Where("email LIKE ? OR nickname LIKE ?", like, like)
+		tx = tx.Where("(user_id IN (?) OR user_id IN (?) OR metadata_json LIKE ?)", adminSub, clientSub, like)
 	}
 
 	// 上限走**设置项**（设置页 → 面板设置 → 导出上限）✓，原来是写死的 50000 ✗。

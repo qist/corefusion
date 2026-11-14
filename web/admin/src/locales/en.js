@@ -5676,6 +5676,7 @@ ctx.moduleTitle           — Current module title`,
   },
   security: {
     auditTitle: 'Audit Log',
+    email: 'Email',
     category: 'Category',
     eventType: 'Event Type',
     result: 'Result',

@@ -20,6 +20,9 @@
                 <el-option label="warning" value="warning" />
               </el-select>
             </el-form-item>
+            <el-form-item :label="t('security.email')">
+              <el-input v-model="auditQuery.email" clearable :placeholder="t('security.email')" style="width:180px" />
+            </el-form-item>
             <el-form-item :label="t('security.remoteIp')">
               <el-input v-model="auditQuery.remote_ip" clearable :placeholder="t('security.remoteIp')" style="width:150px" />
             </el-form-item>
@@ -34,8 +37,11 @@
             <el-table-column :label="t('common.time')" width="170">
               <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column :label="t('security.user')" width="130" show-overflow-tooltip>
-              <template #default="{ row }">{{ auditUser(row) }}</template>
+            <el-table-column :label="t('security.user')" width="180" show-overflow-tooltip>
+              <template #default="{ row }">
+                <div>{{ auditUser(row) }}</div>
+                <div v-if="row.user_email && row.user_email !== row.user_name" style="font-size:12px;color:#909399">{{ row.user_email }}</div>
+              </template>
             </el-table-column>
             <el-table-column prop="remote_ip" :label="t('security.remoteIp')" width="140" />
             <el-table-column prop="category" :label="t('security.category')" width="110" />
@@ -141,6 +147,9 @@
             <el-form-item :label="t('security.subscriptionId')">
               <el-input v-model="subAccessQuery.subscription_id" clearable placeholder="ID" style="width:120px" />
             </el-form-item>
+            <el-form-item :label="t('security.email')">
+              <el-input v-model="subAccessQuery.email" clearable :placeholder="t('security.email')" style="width:180px" />
+            </el-form-item>
             <el-form-item :label="t('security.remoteIp')">
               <el-input v-model="subAccessQuery.ip" clearable :placeholder="t('security.remoteIp')" style="width:160px" />
             </el-form-item>
@@ -226,7 +235,7 @@ const auditCategories = ['auth', 'admin', 'client', 'plan', 'subscription', 'sys
 const auditList = ref([])
 const auditTotal = ref(0)
 const auditLoading = ref(false)
-const auditQuery = reactive({ page: 1, limit: 20, category: '', event_type: '', result: '', remote_ip: '' })
+const auditQuery = reactive({ page: 1, limit: 20, category: '', event_type: '', result: '', remote_ip: '', email: '' })
 
 function loadAudit(p) {
   if (p) auditQuery.page = p
@@ -238,6 +247,7 @@ function loadAudit(p) {
     event_type: auditQuery.event_type || undefined,
     result: auditQuery.result || undefined,
     remote_ip: auditQuery.remote_ip || undefined,
+    email: auditQuery.email.trim() || undefined,
   }
   listAuditEvents(params).then((r) => {
     auditList.value = r.items || []
@@ -245,7 +255,7 @@ function loadAudit(p) {
   }).catch(() => {}).finally(() => { auditLoading.value = false })
 }
 function resetAudit() {
-  auditQuery.category = ''; auditQuery.event_type = ''; auditQuery.result = ''; auditQuery.remote_ip = ''
+  auditQuery.category = ''; auditQuery.event_type = ''; auditQuery.result = ''; auditQuery.remote_ip = ''; auditQuery.email = ''
   loadAudit(1)
 }
 function exportAudit() {
@@ -255,6 +265,7 @@ function exportAudit() {
     event_type: auditQuery.event_type || undefined,
     result: auditQuery.result || undefined,
     remote_ip: auditQuery.remote_ip || undefined,
+    email: auditQuery.email.trim() || undefined,
   }
   exportAuditEvents(params).then((blob) => {
     const url = window.URL.createObjectURL(new Blob([blob]))
@@ -365,7 +376,7 @@ function formatTime(time) {
 const formatNodeAuditTime = formatTime
 
 // 审计事件只存 user_id / reason，前端要用可读字段（原先取 row.user / row.detail 永远为空）。
-const auditUser = (row) => row.user_name || (row.user_id ? '#' + row.user_id : '-')
+const auditUser = (row) => row.user_name || row.user_email || (row.user_id ? '#' + row.user_id : '-')
 const auditDetail = (row) => row.reason || row.metadata_json || '-'
 
 // ---------------- 订阅访问日志 ----------------
@@ -375,7 +386,7 @@ const riskTagType = (level) => ({ high: 'danger', medium: 'warning', low: 'info'
 const subAccessList = ref([])
 const subAccessTotal = ref(0)
 const subAccessLoading = ref(false)
-const subAccessQuery = reactive({ page: 1, limit: 20, subscription_id: '', ip: '' })
+const subAccessQuery = reactive({ page: 1, limit: 20, subscription_id: '', ip: '', email: '' })
 function loadSubAccess(p) {
   if (p) subAccessQuery.page = p
   subAccessLoading.value = true
@@ -384,6 +395,7 @@ function loadSubAccess(p) {
     offset: (subAccessQuery.page - 1) * subAccessQuery.limit,
     subscription_id: String(subAccessQuery.subscription_id || '').trim() || undefined,
     ip: String(subAccessQuery.ip || '').trim() || undefined,
+    email: String(subAccessQuery.email || '').trim() || undefined,
   }).then((r) => {
     subAccessList.value = r.items || []
     subAccessTotal.value = r.total || 0
@@ -392,13 +404,14 @@ function loadSubAccess(p) {
 function resetSubAccess() {
   subAccessQuery.subscription_id = ''
   subAccessQuery.ip = ''
+  subAccessQuery.email = ''
   loadSubAccess(1)
 }
 
 // 手机端卡片字段（与桌面表格列对应）
 const auditCardFields = computed(() => [
   { label: t('common.time'), text: (row) => formatTime(row.created_at) || '-' },
-  { label: t('security.user'), text: (row) => auditUser(row) },
+  { label: t('security.user'), text: (row) => row.user_email && row.user_email !== row.user_name ? `${auditUser(row)} (${row.user_email})` : auditUser(row) },
   { label: t('security.remoteIp'), text: (row) => row.remote_ip || '-' },
   { label: t('security.category'), text: (row) => row.category || '-' },
   { label: t('security.result'), text: (row) => row.result || '-' },

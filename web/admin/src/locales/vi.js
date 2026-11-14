@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "Nhật ký kiểm toán",
+    "email": "Email",
     "category": "Danh mục",
     "eventType": "Loại sự kiện",
     "result": "Kết quả",

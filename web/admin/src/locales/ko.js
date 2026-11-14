@@ -5436,6 +5436,7 @@ export default {
   },
   "security": {
     "auditTitle": "감사 로그",
+    "email": "이메일",
     "category": "카테고리",
     "eventType": "이벤트 유형",
     "result": "결과",

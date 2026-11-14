@@ -1,7 +1,15 @@
 package warp
 
 import (
+	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	crand "crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"strings"
 	"testing"
 
@@ -180,5 +188,78 @@ func TestCreateMasqueOutboundRejectsOtherServer(t *testing.T) {
 	}
 	if _, err := svc.CreateMasqueOutbound(2, cfg.ID, MasqueOutboundInput{}); err == nil {
 		t.Fatal("expected server mismatch error")
+	}
+}
+
+// TestBuildMasqueClientTLS 校验 sing-box masque-client 的 mTLS 材料派生：
+// 客户端证书必须使用注册的 P-256 私钥，pin 必须是边缘公钥的 SHA256。
+func TestBuildMasqueClientTLS(t *testing.T) {
+	clientKey, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		t.Fatalf("generate client key: %v", err)
+	}
+	clientDER, err := x509.MarshalECPrivateKey(clientKey)
+	if err != nil {
+		t.Fatalf("marshal client key: %v", err)
+	}
+	edgeKey, err := ecdsa.GenerateKey(elliptic.P256(), crand.Reader)
+	if err != nil {
+		t.Fatalf("generate edge key: %v", err)
+	}
+	edgeDER, err := x509.MarshalPKIXPublicKey(&edgeKey.PublicKey)
+	if err != nil {
+		t.Fatalf("marshal edge key: %v", err)
+	}
+
+	cfg := masqueWarpConfig()
+	cfg.PrivateKey = base64.StdEncoding.EncodeToString(clientDER)
+	cfg.PublicKey = base64.StdEncoding.EncodeToString(edgeDER)
+
+	material, err := BuildMasqueClientTLS(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	certBlock, _ := pem.Decode([]byte(material.ClientCertificate))
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		t.Fatal("client certificate is not PEM")
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse client certificate: %v", err)
+	}
+	certPub, ok := cert.PublicKey.(*ecdsa.PublicKey)
+	if !ok || !certPub.Equal(&clientKey.PublicKey) {
+		t.Error("client certificate public key does not match registered WARP key")
+	}
+	if len(cert.ExtKeyUsage) == 0 || cert.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth {
+		t.Errorf("client certificate EKU = %v, want clientAuth", cert.ExtKeyUsage)
+	}
+
+	keyBlock, _ := pem.Decode([]byte(material.ClientKey))
+	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
+		t.Fatal("client key is not PEM EC PRIVATE KEY")
+	}
+	parsedKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse client key: %v", err)
+	}
+	if !parsedKey.Equal(clientKey) {
+		t.Error("client key does not match registered WARP private key")
+	}
+
+	pin, err := base64.StdEncoding.DecodeString(material.CertificatePublicKeySHA256)
+	if err != nil {
+		t.Fatalf("decode pin: %v", err)
+	}
+	want := sha256.Sum256(edgeDER)
+	if !bytes.Equal(pin, want[:]) {
+		t.Error("pin is not SHA256 of edge public key")
+	}
+
+	// 非 masque 记录必须拒绝，避免把 WireGuard 凭据当 mTLS 材料。
+	cfg.TunnelType = "wireguard"
+	if _, err := BuildMasqueClientTLS(cfg); err == nil {
+		t.Error("expected error for non-masque record")
 	}
 }

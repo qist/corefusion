@@ -53,14 +53,14 @@
                 <template #default="{row:s}">{{ formatAgo(s.last_seen) }}</template>
               </el-table-column>
               <el-table-column :label="t('onlineUsers.duration')" min-width="110">
-                <template #default="{row:s}">{{ formatDuration((s.last_seen || 0) - (s.connected_since || 0)) }}</template>
+                <template #default="{row:s}">{{ formatDuration(onlineNow() - (s.connected_since || 0)) }}</template>
               </el-table-column>
             </el-table>
           </template>
         </el-table-column>
         <el-table-column :label="t('onlineUsers.node')" min-width="130">
           <template #default="{row}">
-            <el-link type="primary" @click="goNode(row.server_id)">{{ row.node_name }}</el-link>
+            <el-link type="primary" @click="goNode(row.server_id)">{{ row.node_name || ('#' + row.server_id) }}</el-link>
           </template>
         </el-table-column>
         <el-table-column :label="t('onlineUsers.client')" min-width="200">
@@ -137,7 +137,7 @@
       >
         <template #actions="{ row }">
           <span style="font-size:12px;color:#909399">{{ t('onlineUsers.node') }}:
-            <el-link type="primary" @click="goNode(row.server_id)">{{ row.node_name }}</el-link>
+            <el-link type="primary" @click="goNode(row.server_id)">{{ row.node_name || ('#' + row.server_id) }}</el-link>
           </span>
         </template>
       </MobileCards>
@@ -224,7 +224,7 @@ async function loadData() {
     // 节点下拉选项：仅在未做节点筛选时根据当前结果补充（避免覆盖）
     if (!filterNode.value) {
       const map = new Map(nodeOptions.value.map(o => [o.id, o.name]))
-      list.forEach(u => { if (!map.has(u.server_id)) map.set(u.server_id, u.node_name) })
+      list.forEach(u => { if (!map.has(u.server_id)) map.set(u.server_id, u.node_name || ('#' + u.server_id)) })
       nodeOptions.value = [...map.entries()].map(([id, name]) => ({ id, name }))
     }
   } catch (e) {
@@ -265,16 +265,16 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
   return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB'
 }
-// 在线时长用「现在 - 首次出现」：xray 的 last_seen 是最后建连时间，
-// 用它相减会恒为 0（甚至负值）。
+// 在线时长用「现在 - 首次出现」：面板已按「连续在线」跟踪 first_seen
+// （短连接/Agent 重启不会重置），这里只负责格式化。
 function onlineNow() {
   return Math.floor(Date.now() / 1000)
 }
 function formatDuration(sec) {
   if (!sec || sec <= 0) return '0s'
-  // 防御：first_seen 缺失时 last_seen - 0 会得到 50 万小时这种值（旧 Agent 上报）。
-  // 后端已做归一，这里再兜一层，超过 30 天一律按「未知」显示。
-  if (sec > 30 * 86400) return '-'
+  // 防御：异常数据（如旧版上报的 first_seen=0）会算出 50 万小时这种值，
+  // 超过 365 天一律按「未知」显示；正常连续在线不会超过这个量级。
+  if (sec > 365 * 86400) return '-'
   const h = Math.floor(sec / 3600)
   const m = Math.floor((sec % 3600) / 60)
   const s = Math.floor(sec % 60)

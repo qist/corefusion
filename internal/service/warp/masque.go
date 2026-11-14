@@ -4,12 +4,15 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	crand "crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"strings"
@@ -470,6 +473,106 @@ func BuildMasqueOutboundConfig(cfg *entity.WarpConfig, in MasqueOutboundInput) (
 		return "", "", err
 	}
 	return string(data), tag, nil
+}
+
+// MasqueClientTLS 是 sing-box masque-client 端点所需的 mTLS 材料。
+//
+// xray 有 masqueSettings.warp（直接给 privateKey/publicKey），sing-box 没有这个
+// 字段，只能走标准 mTLS：用注册时的 P-256 私钥即时签发一张自签客户端证书
+// （Cloudflare 只校验公钥与注册时一致），并把边缘证书公钥固定下来
+// （WARP 边缘是自签证书，不做 pin 会因证书链校验失败）。
+type MasqueClientTLS struct {
+	ClientCertificate string `json:"client_certificate"`
+	ClientKey         string `json:"client_key"`
+	// CertificatePublicKeySHA256 对应 sing-box tls.certificate_public_key_sha256：
+	// base64(SHA256(PKIX SubjectPublicKeyInfo DER))。
+	CertificatePublicKeySHA256 string `json:"certificate_public_key_sha256"`
+}
+
+// BuildMasqueClientTLS 用已注册的 MASQUE 凭据派生 sing-box 客户端 TLS 材料。
+func BuildMasqueClientTLS(cfg *entity.WarpConfig) (*MasqueClientTLS, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("warp config not found")
+	}
+	if !strings.EqualFold(cfg.TunnelType, masqueTunnel) {
+		return nil, fmt.Errorf("该 WARP 记录不是 MASQUE 设备（tunnel_type=%q），请重新注册 MASQUE", cfg.TunnelType)
+	}
+	if cfg.PrivateKey == "" || cfg.PublicKey == "" {
+		return nil, fmt.Errorf("WARP 记录缺少 MASQUE 凭据（private/public key）")
+	}
+
+	priv, err := parseECPrivateKey(cfg.PrivateKey)
+	if err != nil {
+		return nil, fmt.Errorf("parse WARP private key: %w", err)
+	}
+
+	// 边缘公钥固定值：注册响应里已经是 base64(PKIX DER)，直接哈希。
+	pubDER, err := base64.StdEncoding.DecodeString(strings.TrimSpace(cfg.PublicKey))
+	if err != nil {
+		return nil, fmt.Errorf("decode edge public key: %w", err)
+	}
+	if _, err := x509.ParsePKIXPublicKey(pubDER); err != nil {
+		return nil, fmt.Errorf("parse edge public key: %w", err)
+	}
+	sum := sha256.Sum256(pubDER)
+
+	serial, err := crand.Int(crand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, fmt.Errorf("generate certificate serial: %w", err)
+	}
+	now := time.Now()
+	tmpl := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "warp-masque"},
+		NotBefore:             now.Add(-24 * time.Hour),
+		NotAfter:              now.AddDate(10, 0, 0),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	certDER, err := x509.CreateCertificate(crand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	if err != nil {
+		return nil, fmt.Errorf("create client certificate: %w", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return nil, fmt.Errorf("marshal client key: %w", err)
+	}
+
+	out := &MasqueClientTLS{
+		ClientCertificate:          string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})),
+		ClientKey:                  string(pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})),
+		CertificatePublicKeySHA256: base64.StdEncoding.EncodeToString(sum[:]),
+	}
+	return out, nil
+}
+
+// parseECPrivateKey 兼容 PEM / base64 两种形态，以及 SEC1（EC PRIVATE KEY）
+// 与 PKCS#8（PRIVATE KEY）两种编码。
+func parseECPrivateKey(s string) (*ecdsa.PrivateKey, error) {
+	s = strings.TrimSpace(s)
+	var der []byte
+	if block, _ := pem.Decode([]byte(s)); block != nil {
+		der = block.Bytes
+	} else {
+		raw, err := base64.StdEncoding.DecodeString(s)
+		if err != nil {
+			return nil, fmt.Errorf("decode base64: %w", err)
+		}
+		der = raw
+	}
+	if key, err := x509.ParseECPrivateKey(der); err == nil {
+		return key, nil
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(der)
+	if err != nil {
+		return nil, fmt.Errorf("not a SEC1/PKCS#8 EC private key: %w", err)
+	}
+	key, ok := parsed.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("private key is %T, want ECDSA", parsed)
+	}
+	return key, nil
 }
 
 // CreateMasqueOutbound 用已注册的 MASQUE 设备直接创建一条 xray 出站。

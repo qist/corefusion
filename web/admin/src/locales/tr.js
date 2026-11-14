@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS için body/post/file_upload denetimlerini atla (gecikmeyi azaltır)",
     "wafMultipartStreaming": "Multipart akış taraması",
     "wafMultipartStreamingHint": "Multipart geçici dosyasında body akış taramasını aç (post.rule)",
+    "wafMatchCache": "Eşleşme Önbelleği",
+    "wafMatchCacheHint": "Sınırlı segmentli eşleşme önbelleği (sıcak 3072 + geçici 1024); yalnızca genel, alan adı düzeyinde geçersiz kılma yok; off = her seferinde tam kural algılama (A/B karşılaştırması)",
     "wafUploadFilenameScan": "Yüklenen dosya adı tarama sınırı (bayt)",
     "wafUploadFilenameScanHint": "0 = multipart geçici dosyasının tamamını tara; N = yalnızca ilk N baytı tara",
     "wafPostBodyScan": "Post Body tarama sınırı (bayt)",

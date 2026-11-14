@@ -1483,6 +1483,7 @@ const DefaultCaddyWAFConfig = `{
     "referer_check": "off",
     "file_upload_check": "on",
     "bodyless": "on",
+    "match_cache": "on",
     "multipart_streaming_check": "off",
     "upload_filename_scan_limit": 0,
     "post_body_scan_limit": 2097152,
@@ -1538,6 +1539,12 @@ config_referer_check = "off"
 config_file_upload_check = "on"
 --enable/disable bodyless method skip (GET/HEAD/OPTIONS skip body/post/file_upload checks)
 config_bodyless = "on"
+--enable/disable bounded segmented match cache (worker-level, hot 3072 + probation 1024)
+--"on"  (default) = cache small-input (<=512B) match results to speed up repeated detection;
+--                  cache only optimizes detection speed, it never changes detection results
+--"off"           = always run full rule detection (for A/B consistency testing)
+--global only: the cache pool is process-shared (key has no domain), domain.json cannot override
+config_match_cache = "on"
 --enable/disable multipart temp-file body streaming scan (post.rule)
 config_multipart_streaming_check = "off"
 --multipart upload filename scan limit in bytes

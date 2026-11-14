@@ -395,6 +395,10 @@
               <el-switch v-model="wafConfigForm.multipart_streaming_check" active-value="on" inactive-value="off" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMultipartStreamingHint') }}</span>
             </el-form-item>
+            <el-form-item :label="t('proxy.wafMatchCache')">
+              <el-switch v-model="wafConfigForm.match_cache" active-value="on" inactive-value="off" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMatchCacheHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafUploadFilenameScan')">
               <el-input v-model="wafConfigForm.upload_filename_scan_limit" placeholder="0" style="width:120px" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafUploadFilenameScanHint') }}</span>
@@ -1642,7 +1646,7 @@ const wafConfigForm = ref({
   url_check: 'on', url_args_check: 'on', user_agent_check: 'on', header_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'on', file_upload_check: 'on',
   cc_check: 'on', cc_rate: '', cc_mode: 'ip', cc_block_ttl: '',
-  bodyless: 'on', multipart_streaming_check: 'off',
+  bodyless: 'on', multipart_streaming_check: 'off', match_cache: 'on',
   upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
@@ -1658,7 +1662,7 @@ function parseLuaConfig(text) {
   }
   const keys = ['waf_enable','trust_proxy_headers','white_url_check','white_ip_check','white_ua_check',
     'black_ip_check','url_check','url_args_check','user_agent_check','header_check','cookie_check','post_check',
-    'referer_check','file_upload_check','bodyless','multipart_streaming_check',
+    'referer_check','file_upload_check','bodyless','multipart_streaming_check','match_cache',
     'upload_filename_scan_limit','post_body_scan_limit','cc_check','cc_rate','cc_mode','cc_block_ttl',
     'waf_output','waf_redirect_url','log_dir','rule_dir']
   for (const k of keys) {
@@ -1694,6 +1698,7 @@ function parseWAFConfigForm() {
     file_upload_check: get('file_upload_check') || 'on',
     bodyless: get('bodyless') || 'on',
     multipart_streaming_check: get('multipart_streaming_check') || 'off',
+    match_cache: get('match_cache') || 'on',
     upload_filename_scan_limit: get('upload_filename_scan_limit') || '0',
     post_body_scan_limit: get('post_body_scan_limit') || '2097152',
     cc_check: get('cc_check') || 'on',
@@ -1730,6 +1735,16 @@ async function saveWAFConfigForm() {
   set('file_upload_check', wafConfigForm.value.file_upload_check)
   set('bodyless', wafConfigForm.value.bodyless)
   set('multipart_streaming_check', wafConfigForm.value.multipart_streaming_check)
+  set('match_cache', wafConfigForm.value.match_cache)
+  // 旧版 config.lua 没有 config_match_cache：set() 只替换已存在的行，需补插一次
+  if (!text.includes('config_match_cache')) {
+    const matchCacheLine = `config_match_cache = "${wafConfigForm.value.match_cache || 'on'}"`
+    if (/config_bodyless\s*=\s*"[^"]*"/.test(text)) {
+      text = text.replace(/(config_bodyless\s*=\s*"[^"]*")/, `$1\n${matchCacheLine}`)
+    } else {
+      text = `${text.replace(/\s*$/, '')}\n${matchCacheLine}\n`
+    }
+  }
   // upload_filename_scan_limit and post_body_scan_limit are Lua numbers (no quotes)
   const ulScanLimit = wafConfigForm.value.upload_filename_scan_limit
   if (ulScanLimit !== '' && ulScanLimit != null) {

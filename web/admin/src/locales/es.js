@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS omiten las comprobaciones de body/post/file_upload (menor latencia)",
     "wafMultipartStreaming": "Escaneo en streaming de multipart",
     "wafMultipartStreamingHint": "Activar el escaneo en streaming del cuerpo de los archivos temporales multipart (post.rule)",
+    "wafMatchCache": "Caché de coincidencias",
+    "wafMatchCacheHint": "Caché segmentada acotada (zona activa 3072 + zona temporal 1024); solo global, sin anulación por dominio; off = detección completa de reglas cada vez (comparación A/B)",
     "wafUploadFilenameScan": "Límite de escaneo del nombre de archivo subido (bytes)",
     "wafUploadFilenameScanHint": "0 = escanear todo el archivo temporal multipart; N = escanear solo los primeros N bytes",
     "wafPostBodyScan": "Límite de escaneo del cuerpo POST (bytes)",

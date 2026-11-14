@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS melewati pemeriksaan body/post/file_upload (mengurangi latensi)",
     "wafMultipartStreaming": "Pemindaian streaming multipart",
     "wafMultipartStreamingHint": "Aktifkan pemindaian streaming body file sementara multipart (post.rule)",
+    "wafMatchCache": "Cache Kecocokan",
+    "wafMatchCacheHint": "Cache segmen terbatas (hot 3072 + probation 1024); hanya global, tidak dapat ditimpa per domain; off = deteksi aturan penuh setiap kali (perbandingan A/B)",
     "wafUploadFilenameScan": "Batas pemindaian nama file unggahan (byte)",
     "wafUploadFilenameScanHint": "0 = pindai seluruh file sementara multipart; N = pindai hanya N byte pertama",
     "wafPostBodyScan": "Batas pemindaian body POST (byte)",

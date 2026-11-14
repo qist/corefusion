@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS 略過 body/post/file_upload 檢查（降低延遲）",
     "wafMultipartStreaming": "Multipart 串流掃描",
     "wafMultipartStreamingHint": "啟用 multipart 暫存檔 body 串流掃描 (post.rule)",
+    "wafMatchCache": "匹配快取",
+    "wafMatchCacheHint": "有界分段匹配快取 (熱點 3072 + 暫存區 1024)；僅全域生效，不支援網域層級覆寫；off = 每次完整規則偵測 (A/B 對比)",
     "wafUploadFilenameScan": "上傳檔名掃描限制（位元組）",
     "wafUploadFilenameScanHint": "0 = 掃描整個 multipart 暫存檔；N = 只掃描前 N 位元組",
     "wafPostBodyScan": "Post Body 掃描限制（位元組）",

@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS는 body/post/file_upload 검사 건너뛰기 (지연 감소)",
     "wafMultipartStreaming": "Multipart 스트리밍 검사",
     "wafMultipartStreamingHint": "multipart 임시 파일 body 스트리밍 검사 활성화 (post.rule)",
+    "wafMatchCache": "매치 캐시",
+    "wafMatchCacheHint": "유계 세그먼트 매치 캐시(핫 3072 + 예비 1024). 전역 전용이며 도메인별 재정의를 지원하지 않습니다. off = 매번 전체 규칙 검사 (A/B 비교)",
     "wafUploadFilenameScan": "업로드 파일명 검사 제한 (바이트)",
     "wafUploadFilenameScanHint": "0 = multipart 임시 파일 전체 검사; N = 처음 N바이트만 검사",
     "wafPostBodyScan": "Post Body 검사 제한 (바이트)",

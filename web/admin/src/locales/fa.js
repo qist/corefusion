@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS از بررسی body/post/file_upload صرف‌نظر می‌کنند (کاهش تأخیر)",
     "wafMultipartStreaming": "اسکن جریانی Multipart",
     "wafMultipartStreamingHint": "فعال‌سازی اسکن جریانی body فایل موقت multipart (post.rule)",
+    "wafMatchCache": "کش تطابق",
+    "wafMatchCacheHint": "کش تطابق قطعه‌بندی‌شده محدود (۳۰۷۲ فعال + ۱۰۲۴ موقت)؛ فقط سراسری و بدون بازنویسی در سطح دامنه؛ off = تشخیص کامل قواعد در هر بار (مقایسه A/B)",
     "wafUploadFilenameScan": "محدودیت اسکن نام فایل آپلود (بایت)",
     "wafUploadFilenameScanHint": "0 = اسکن کل فایل موقت multipart؛ N = فقط N بایت اول اسکن شود",
     "wafPostBodyScan": "محدودیت اسکن Post Body (بایت)",

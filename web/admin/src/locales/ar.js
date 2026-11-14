@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "تخطي فحص body/post/file_upload لـ GET/HEAD/OPTIONS (لتقليل التأخير)",
     "wafMultipartStreaming": "فحص Multipart المتدفق",
     "wafMultipartStreamingHint": "تفعيل الفحص المتدفق لـ body في ملف multipart المؤقت (post.rule)",
+    "wafMatchCache": "ذاكرة التطابق",
+    "wafMatchCacheHint": "ذاكرة تطابق مقسمة محدودة (النشطة 3072 + المؤقتة 1024)؛ عامة فقط ولا تدعم التجاوز على مستوى النطاق؛ off = فحص كامل للقواعد في كل مرة (مقارنة A/B)",
     "wafUploadFilenameScan": "حد فحص أسماء ملفات الرفع (بايت)",
     "wafUploadFilenameScanHint": "0 = فحص ملف multipart المؤقت بالكامل؛ N = فحص أول N بايت فقط",
     "wafPostBodyScan": "حد فحص Post Body (بايت)",

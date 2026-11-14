@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "Пропуск проверок body/post/file_upload для GET/HEAD/OPTIONS (снижает задержку)",
     "wafMultipartStreaming": "Потоковое сканирование multipart",
     "wafMultipartStreamingHint": "Включить потоковое сканирование body через временный файл multipart (post.rule)",
+    "wafMatchCache": "Кэш совпадений",
+    "wafMatchCacheHint": "Ограниченный сегментированный кэш совпадений (горячая часть 3072 + буфер 1024); только глобально, без переопределения на уровне домена; off = полная проверка правил каждый раз (сравнение A/B)",
     "wafUploadFilenameScan": "Ограничение сканирования имени загружаемого файла (байты)",
     "wafUploadFilenameScanHint": "0 = сканировать весь временный multipart-файл; N = сканировать только первые N байт",
     "wafPostBodyScan": "Ограничение сканирования тела POST-запроса (байты)",

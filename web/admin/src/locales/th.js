@@ -2823,6 +2823,8 @@ export default {
     "wafBodylessHint": "GET/HEAD/OPTIONS ข้ามการตรวจสอบ body/post/file_upload (ลดความหน่วง)",
     "wafMultipartStreaming": "สแกน Multipart แบบสตรีมมิ่ง",
     "wafMultipartStreamingHint": "เปิดการสแกน body ของไฟล์ชั่วคราว multipart แบบสตรีมมิ่ง (post.rule)",
+    "wafMatchCache": "แคชการจับคู่",
+    "wafMatchCacheHint": "แคชการจับคู่แบบแบ่งส่วนจำกัด (hot 3072 + probation 1024) ใช้ได้เฉพาะระดับ global ไม่รองรับการแทนที่ระดับโดเมน; off = ตรวจจับกฎเต็มรูปแบบทุกครั้ง (เทียบ A/B)",
     "wafUploadFilenameScan": "ขีดจำกัดการสแกนชื่อไฟล์อัปโหลด (ไบต์)",
     "wafUploadFilenameScanHint": "0 = สแกนไฟล์ชั่วคราว multipart ทั้งหมด; N = สแกนเฉพาะ N ไบต์แรก",
     "wafPostBodyScan": "ขีดจำกัดการสแกน Post Body (ไบต์)",

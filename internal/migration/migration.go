@@ -297,6 +297,10 @@ func RunDataMigrations(db *gorm.DB) error {
 	// 加密为 "enc:" 形式（幂等，只处理不带前缀的存量明文）
 	migrateConfigJSONEncryption(db)
 
+	// 把 sing-box 历史端点（存在 core_configs.endpoints 段）迁到 endpoint_configs 表，
+	// 让端点编辑器与运行时配置使用同一份数据（幂等）
+	migrateSingboxEndpointsToTable(db)
+
 	// Migrate geo rules from per-node (server_id=1) to global (server_id=0)
 	migrateGeoRulesToGlobal(db)
 
@@ -1444,6 +1448,111 @@ func migrateConfigJSONEncryption(db *gorm.DB) {
 			if err := db.Table("warp_configs").Where("id = ?", r.ID).Update(col, enc).Error; err != nil {
 				log.Printf("[migration] warp encryption write %s#%d failed: %v", col, r.ID, err)
 			}
+		}
+	}
+}
+
+// migrateSingboxEndpointsToTable 把 sing-box 历史端点从 core_configs.endpoints
+// 段搬进 endpoint_configs 表。
+//
+// 背景：端点编辑器（WireGuard/Tailscale/OpenConnect/OpenVPN/MASQUE）只读写
+// endpoint_configs，而 PrepareFullConfig 会把 core_configs.endpoints 与
+// endpoint_configs **合并**下发 —— 于是历史端点仍在生成的配置里生效，却不在
+// 端点列表里显示，表现为「新建一个把旧的顶掉，生成的 JSON 里却有多个」。
+//
+// 迁移后清空文档段，端点表成为唯一来源；只要有任一端点没成功落表就保留文档段，
+// 避免运行时丢端点。幂等：文档段置空后不会再处理。
+func migrateSingboxEndpointsToTable(db *gorm.DB) {
+	type coreRow struct {
+		ID         int64
+		ServerID   int64
+		ConfigJSON string
+	}
+	var rows []coreRow
+	if err := db.Table("core_configs").
+		Select("id, server_id, config_json").
+		Where("core_type = ? AND section = ?", "singbox", "endpoints").
+		Scan(&rows).Error; err != nil {
+		log.Printf("[migration] singbox endpoints: scan core_configs failed: %v", err)
+		return
+	}
+
+	for _, r := range rows {
+		// 配置可能整包加密（含 private_key 的端点必然加密），先解密再解析。
+		raw := repository.DecryptConfigJSON(r.ConfigJSON)
+		var eps []map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &eps); err != nil || len(eps) == 0 {
+			continue
+		}
+
+		var existingTags []string
+		if err := db.Table("endpoint_configs").
+			Where("server_id = ? AND core_type = ?", r.ServerID, "singbox").
+			Pluck("tag", &existingTags).Error; err != nil {
+			log.Printf("[migration] singbox endpoints: list existing tags for server %d failed: %v", r.ServerID, err)
+			continue
+		}
+		have := make(map[string]bool, len(existingTags))
+		for _, tag := range existingTags {
+			have[tag] = true
+		}
+
+		covered := true // 文档段里的每个端点都能在端点表找到同 tag 的记录
+		migrated := 0
+		for _, ep := range eps {
+			tag, _ := ep["tag"].(string)
+			if tag == "" {
+				// 无 tag 的端点本身就不是合法 sing-box 端点，保留文档段人工处理。
+				covered = false
+				continue
+			}
+			if have[tag] {
+				continue // 端点表已有（新编辑器建的），以表里的记录为准
+			}
+
+			body, err := json.Marshal(ep)
+			if err != nil {
+				log.Printf("[migration] singbox endpoints: marshal %q failed: %v", tag, err)
+				covered = false
+				continue
+			}
+			endpointType := "wireguard"
+			if t, ok := ep["type"].(string); ok && t != "" {
+				endpointType = t
+			}
+			now := time.Now()
+			cfg := entity.EndpointConfig{
+				Remark:       tag,
+				CoreType:     "singbox",
+				EndpointType: endpointType,
+				Tag:          tag,
+				ConfigJSON:   repository.EncryptConfigJSON(string(body)),
+				Enabled:      true,
+				ServerID:     r.ServerID,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			}
+			if err := db.Create(&cfg).Error; err != nil {
+				log.Printf("[migration] singbox endpoints: insert %q for server %d failed: %v", tag, r.ServerID, err)
+				covered = false
+				continue
+			}
+			have[tag] = true
+			migrated++
+		}
+
+		if !covered {
+			if migrated > 0 {
+				log.Printf("[migration] singbox endpoints: server %d migrated %d endpoint(s), kept core_configs#%d (not all covered)", r.ServerID, migrated, r.ID)
+			}
+			continue
+		}
+		if err := db.Table("core_configs").Where("id = ?", r.ID).Update("config_json", "[]").Error; err != nil {
+			log.Printf("[migration] singbox endpoints: clear core_configs#%d failed: %v", r.ID, err)
+			continue
+		}
+		if migrated > 0 {
+			log.Printf("[migration] singbox endpoints: server %d migrated %d endpoint(s) to endpoint_configs", r.ServerID, migrated)
 		}
 	}
 }

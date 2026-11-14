@@ -71,7 +71,9 @@
               <el-button size="small" :loading="validating" @click="validateConfig">
                 {{ t('protoCenter.validate.btn') }}
               </el-button>
-              <div v-if="activeSection !== '_preview' && activeSection !== 'inbounds' && activeSection !== 'outbounds' && activeSection !== 'routing'">
+              <!-- endpoints 与 inbounds/outbounds 一样由各自的编辑器直接落库（endpoint_configs / inbound_configs），
+                   这里再保存会把列表整份写回 core_configs 的文档段 → 与端点表重复并在运行时复活已停用端点 -->
+              <div v-if="activeSection !== '_preview' && activeSection !== 'inbounds' && activeSection !== 'outbounds' && activeSection !== 'routing' && activeSection !== 'endpoints'">
                 <el-button size="small" @click="resetSection">{{ t('common.reset') }}</el-button>
                 <el-button size="small" type="primary" :loading="saving" @click="saveSection">{{ t('common.save') }}</el-button>
               </div>

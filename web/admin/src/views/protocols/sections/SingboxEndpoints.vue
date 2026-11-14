@@ -2051,15 +2051,65 @@ async function restartCore() {
   }
 }
 
-async function loadEndpoints() {
-  let apiItems = []
-  const loaded = new Set()
+async function fetchEndpointConfigs() {
   try {
     const res = await client.get(`${nodeBase.value}/endpoint-configs`, { params: { core_type: 'singbox' } })
-    apiItems = res?.items || (Array.isArray(res) ? res : [])
+    return res?.items || (Array.isArray(res) ? res : [])
   } catch {
-    apiItems = []
+    return []
   }
+}
+
+// 已和端点表对齐过的文档段内容（serverId + JSON），避免每次 load 都重复 PUT
+const reconciledDocSections = new Set()
+
+// 把 core_configs.endpoints 段里的历史端点迁到 endpoint_configs（与后端启动迁移
+// 同一逻辑，幂等）。旧版编辑器把端点直接存在配置文档里，而端点编辑器只读写
+// endpoint_configs；两份并存时列表只显示表里的记录，生成的配置却会合并两份 ——
+// 表现为「新建一条把旧的顶掉，生成的 JSON 里却有多个」。
+async function adoptLegacyDocEndpoints(apiItems) {
+  const docEps = (Array.isArray(props.data) ? props.data : []).filter(ep => ep && typeof ep === 'object' && ep.tag)
+  if (!docEps.length) return false
+  const docKey = `${props.serverId}:${JSON.stringify(docEps)}`
+  if (reconciledDocSections.has(docKey)) return false
+  const known = new Set(apiItems.map(ep => ep.tag).filter(Boolean))
+  let adopted = 0
+  for (const ep of docEps) {
+    if (known.has(ep.tag)) continue
+    try {
+      await client.post(`${nodeBase.value}/endpoint-configs`, {
+        core_type: 'singbox',
+        endpoint_type: ep.type || 'wireguard',
+        remark: ep.tag,
+        tag: ep.tag,
+        enabled: true,
+        config_json: ep,
+      })
+      known.add(ep.tag)
+      adopted++
+    } catch (e) {
+      console.error('adopt legacy endpoint failed:', ep.tag, e)
+    }
+  }
+  // 文档段里的端点全部能在端点表找到后才清空文档段，让端点表成为唯一来源；
+  // 有迁移失败的端点就保留文档段（运行时仍靠它，不能丢端点）。
+  if (docEps.every(ep => known.has(ep.tag))) {
+    try {
+      await client.put(`${nodeBase.value}/protocols/singbox/section/endpoints`, [])
+      reconciledDocSections.add(docKey)
+    } catch (e) {
+      console.error('clear endpoints section failed:', e)
+    }
+  }
+  return adopted > 0
+}
+
+async function loadEndpoints() {
+  let apiItems = await fetchEndpointConfigs()
+  if (await adoptLegacyDocEndpoints(apiItems)) {
+    apiItems = await fetchEndpointConfigs()
+  }
+  const loaded = new Set()
 
   form.splice(0, form.length)
 
@@ -2074,17 +2124,16 @@ async function loadEndpoints() {
     form.push(parsed)
   }
 
-  if (!apiItems.length && Array.isArray(props.data)) {
+  // 文档段里尚未迁移成功的端点仍要显示（否则运行时在用、列表却看不到）
+  if (Array.isArray(props.data)) {
     for (const ep of props.data) {
-      if (ENDPOINT_TYPES.includes(ep.type)) {
-        const parsed = parseEndpoint(JSON.parse(JSON.stringify(ep)))
-        if (parsed.tag && !loaded.has(parsed.tag)) {
-          parsed._id = null
-          parsed._enabled = parsed._enabled !== false
-          form.push(parsed)
-          loaded.add(parsed.tag)
-        }
-      }
+      if (!ep || !ENDPOINT_TYPES.includes(ep.type)) continue
+      if (!ep.tag || loaded.has(ep.tag)) continue
+      const parsed = parseEndpoint(JSON.parse(JSON.stringify(ep)))
+      parsed._id = null
+      parsed._enabled = parsed._enabled !== false
+      form.push(parsed)
+      loaded.add(parsed.tag)
     }
   }
   emitFn('update', form.map(r => buildEndpoint(r)))

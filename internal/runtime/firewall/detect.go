@@ -655,7 +655,11 @@ func firewalldPortSpec(op, spec, proto string) error {
 	full := spec + "/" + proto
 	if op == "--add-port" {
 		if out, err := runOut("firewall-cmd", "--permanent", "--query-port="+full); err == nil && strings.EqualFold(out, "yes") {
-			return nil // 已放行
+			return nil // 精确匹配已放行
+		}
+		// 已被范围规则覆盖时同样跳过（否则每次调用都会多一个单端口条目）
+		if out, err := runOut("firewall-cmd", "--permanent", "--list-ports"); err == nil && firewalldListCovers(out, spec, proto) {
+			return nil
 		}
 	}
 	if _, err := runOut("firewall-cmd", "--permanent", op+"="+full); err != nil {
@@ -665,19 +669,52 @@ func firewalldPortSpec(op, spec, proto string) error {
 	return err
 }
 
+// firewalldListCovers 判断 `firewall-cmd --list-ports` 输出里是否已有覆盖目标规格的条目。
+// 输出形如：`443/tcp 20000-50000/udp`。
+func firewalldListCovers(output, spec, proto string) bool {
+	wantLo, wantHi, ok := parsePortRangeToken(spec)
+	if !ok {
+		return false
+	}
+	for _, item := range strings.Fields(output) {
+		ports, itemProto, found := strings.Cut(item, "/")
+		if !found || !strings.EqualFold(itemProto, proto) {
+			continue
+		}
+		if wantLo == wantHi {
+			if portSpecCovers(ports, wantLo, "-") {
+				return true
+			}
+			continue
+		}
+		if portSpecRangeCovers(ports, wantLo, wantHi, "-") {
+			return true
+		}
+	}
+	return false
+}
+
 // nftAllow 把 accept 规则加到已有的 input 过滤链；没有现成链时建一张专用表。
 // 之所以优先复用 inet/ip filter：nftables 的多条 base chain 独立判决，
 // drop 链里拒绝的包不会因为我们另建的 accept 链而放行。
 func nftAllow(port int, proto string) error {
 	chain := nftEnsureInputChain()
 	parts := strings.Split(chain, " ")
-	if out, err := runOut("nft", append([]string{"list", "chain"}, parts...)...); err == nil {
+	if out, err := runOut("nft", append([]string{"-a", "list", "chain"}, parts...)...); err == nil {
 		if nftOutputCoversPort(out, proto, port) {
-			return nil // 已存在（含端口段 / 集合规则覆盖）
+			handles := nftExactPortHandles(out, proto, port)
+			if len(handles) == 0 {
+				return nil // 仅被管理员自建的范围/集合规则覆盖，不动它
+			}
+			// 已有唯一且位于兜底 drop 之前的规则：直接返回。
+			if len(handles) == 1 && nftRuleBeforeDeny(out, handles[0]) {
+				return nil
+			}
+			// 历史重复（老版本每次启动 append 一条）或位置不对（append 在 drop 之后）：
+			// 清掉我们自己的这些规则，下面统一重新插到 drop 之前，保证只剩一条且生效。
+			_ = nftDeleteHandles(chain, handles)
 		}
 	}
-	// 老版本可能给同一端口留下多条精确规则：先清掉我们自己的，保证只剩一条。
-	_ = nftDeleteMatching(chain, port, proto)
 	return nftInsertRule(chain, fmt.Sprintf("%s dport %d accept", proto, port))
 }
 
@@ -685,13 +722,37 @@ func nftAllow(port int, proto string) error {
 func nftAllowRange(lo, hi int, proto string) error {
 	chain := nftEnsureInputChain()
 	parts := strings.Split(chain, " ")
-	if out, err := runOut("nft", append([]string{"list", "chain"}, parts...)...); err == nil {
+	if out, err := runOut("nft", append([]string{"-a", "list", "chain"}, parts...)...); err == nil {
 		if nftOutputCoversRange(out, proto, lo, hi) {
-			return nil
+			handles := nftExactRangeHandles(out, proto, fmt.Sprintf("%d-%d", lo, hi))
+			if len(handles) == 0 {
+				return nil
+			}
+			if len(handles) == 1 && nftRuleBeforeDeny(out, handles[0]) {
+				return nil
+			}
+			_ = nftDeleteHandles(chain, handles)
 		}
 	}
-	_ = nftDeleteRangeMatching(chain, lo, hi, proto)
 	return nftInsertRule(chain, fmt.Sprintf("%s dport %d-%d accept", proto, lo, hi))
+}
+
+// nftRuleBeforeDeny 判断指定 handle 的规则是否排在链里最后一条 drop/reject 之前。
+// 排在兜底 drop 后面的 accept 永远匹配不到，需要重插。
+func nftRuleBeforeDeny(output, handle string) bool {
+	ruleIdx, denyIdx := -1, -1
+	for i, line := range strings.Split(output, "\n") {
+		if nftHandle(line) == handle {
+			ruleIdx = i
+		}
+		if _, deny := nftDenyRule(line); deny {
+			denyIdx = i
+		}
+	}
+	if ruleIdx < 0 {
+		return false
+	}
+	return denyIdx < 0 || ruleIdx < denyIdx
 }
 
 // nftEnsureInputChain 返回可用的 input 过滤链；没有现成链时建一张专用表。
@@ -893,9 +954,13 @@ func nftDeleteRangeMatching(chain string, lo, hi int, proto string) error {
 	if err != nil {
 		return nil // 链不存在
 	}
-	spec := fmt.Sprintf("%d-%d", lo, hi)
+	return nftDeleteHandles(chain, nftExactRangeHandles(out, proto, fmt.Sprintf("%d-%d", lo, hi)))
+}
+
+// nftExactRangeHandles 从 `nft -a list chain` 输出里取出指定端口段的 handle。
+func nftExactRangeHandles(output, proto, spec string) []string {
 	handles := make([]string, 0, 2)
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
 		if !hasToken(fields, "accept") || !nftLineExactRange(fields, proto, spec) {
 			continue
@@ -904,14 +969,21 @@ func nftDeleteRangeMatching(chain string, lo, hi int, proto string) error {
 			handles = append(handles, handle)
 		}
 	}
+	return handles
+}
+
+// nftDeleteHandles 按 handle 删除规则；忽略单条删除失败（规则可能已被并发删除）。
+func nftDeleteHandles(chain string, handles []string) error {
+	parts := strings.Split(chain, " ")
+	var lastErr error
 	for _, handle := range handles {
 		del := append([]string{"delete", "rule"}, parts...)
 		del = append(del, "handle", handle)
 		if _, err := runOut("nft", del...); err != nil {
-			return err
+			lastErr = err
 		}
 	}
-	return nil
+	return lastErr
 }
 
 func nftLineExactRange(fields []string, proto, spec string) bool {
@@ -937,8 +1009,14 @@ func nftDeleteMatching(chain string, port int, proto string) error {
 	if err != nil {
 		return nil // 链不存在 = 没有需要删除的规则
 	}
+	return nftDeleteHandles(chain, nftExactPortHandles(out, proto, port))
+}
+
+// nftExactPortHandles 从 `nft -a list chain` 输出里取出我们添加的
+// `<proto> dport <port> accept` 规则的 handle（不含管理员自建的范围/集合规则）。
+func nftExactPortHandles(output, proto string, port int) []string {
 	handles := make([]string, 0, 2)
-	for _, line := range strings.Split(out, "\n") {
+	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
 		if !hasToken(fields, "accept") || !nftLineExactPort(fields, proto, port) {
 			continue
@@ -947,14 +1025,7 @@ func nftDeleteMatching(chain string, port int, proto string) error {
 			handles = append(handles, handle)
 		}
 	}
-	for _, handle := range handles {
-		del := append([]string{"delete", "rule"}, parts...)
-		del = append(del, "handle", handle)
-		if _, err := runOut("nft", del...); err != nil {
-			return err
-		}
-	}
-	return nil
+	return handles
 }
 
 func nftLineExactPort(fields []string, proto string, port int) bool {

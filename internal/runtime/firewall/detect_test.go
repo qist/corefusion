@@ -367,3 +367,26 @@ func TestNftDenyRule(t *testing.T) {
 		}
 	}
 }
+
+// firewalld 的 --list-ports 里已有范围规则时不能再加单端口条目。
+func TestFirewalldListCovers(t *testing.T) {
+	list := "443/tcp 20000-50000/udp 60000-60010/tcp"
+	cases := []struct {
+		spec  string
+		proto string
+		want  bool
+	}{
+		{"443", "tcp", true},
+		{"443", "udp", false},
+		{"30000", "udp", true},
+		{"60005", "tcp", true},
+		{"50001", "udp", false},
+		{"20000-29999", "udp", true},
+		{"40000-50001", "udp", false},
+	}
+	for _, tc := range cases {
+		if got := firewalldListCovers(list, tc.spec, tc.proto); got != tc.want {
+			t.Fatalf("firewalldListCovers(%q,%q) = %v, want %v", tc.spec, tc.proto, got, tc.want)
+		}
+	}
+}

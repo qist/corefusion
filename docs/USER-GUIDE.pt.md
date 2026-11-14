@@ -3,6 +3,8 @@
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · Português · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > Este guia é para usuários do CoreFusion e cobre todo o fluxo de trabalho, desde a instalação até as operações diárias.
 
 ---
@@ -165,7 +167,7 @@ Valores suportados: `zh` / `en` / `fa` / `ru`; `--lang=ru` também é aceito. Um
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construindo a partir da fonte
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` clona o repositório (ou usa o checkout existente quando o script está dentro dele) e executa `make panel`. As versões do conjunto de ferramentas são escolhidas por ambiente:
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | Bandeira | Descrição |
 |------|-------------|
 | `-d, --dir <PATH>` | Diretório de instalação, padrão `/opt/corefusion` |
-| `-v, --version <TAG>` | Versão do painel, por ex. `v0.13.0-alpha.26`; padrão `latest` |
+| `-v, --version <TAG>` | Versão do painel, por ex. `v0.13.0-beta.82`; padrão `latest` |
 | `--binary` | Use o binário da versão GitHub (padrão) |
 | `--source` | Construa a partir do código-fonte e prepare Go/Node correspondente |
 | `--local <FILE>` | Use um binário local (instalação offline) |

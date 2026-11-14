@@ -164,7 +164,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub 下载加速（作为 URL 前缀）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -184,7 +184,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 源码编译安装
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` 会克隆源码（脚本位于源码目录内时直接使用现有源码）并执行 `make panel`。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 参数 | 说明 |
 |------|------|
 | `-d, --dir <PATH>` | 安装目录，默认 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.26`，默认 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-beta.82`，默认 `latest` |
 | `--binary` | 使用 GitHub Release 二进制（默认） |
 | `--source` | 源码编译安装，自动准备匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二进制文件（离线安装） |
@@ -243,6 +243,8 @@ make panel-linux-arm64
 | `--lang <LANG>` | 输出语言：`zh` / `en` / `fa` / `ru`（默认跟随系统 `LANG`） |
 | `--uninstall` | 停止服务并删除程序（保留数据与 `.env`） |
 | `--purge` | 与 `--uninstall` 连用，同时删除数据目录与 `.env` |
+
+> 官方 Release 只提供 `amd64` / `arm64` 二进制；其它架构必须配合 `--source` 编译，否则下载会 404。
 
 相关环境变量：
 
@@ -721,13 +723,13 @@ cd /opt/corefusion
 
 ### 5.3 一键部署
 
-1. 添加节点后，点击「Bootstrap 命令」
-2. 复制安装命令
-3. 在远程节点上以 root 执行：
+1. 添加节点后，在节点列表的操作菜单选择「部署命令」（节点详情页也有「Bootstrap 安装命令」）
+2. 复制命令，其中带一次性注册令牌（24 小时过期，不要重复使用）
+3. 在远程节点上以 root 执行，命令形如：
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<面板地址>:<面板端口>/api/v1/agent/install?id=<节点ID>&token=<一次性令牌>&port=<面板端口>")
    ```
-4. Agent 将自动下载、注册并启动
+4. Agent 会下载安装包、注册到面板并启动
 
 ### 5.4 节点详情
 
@@ -764,21 +766,34 @@ cd /opt/corefusion
 
 ### 6.2 配置模块
 
+两个核心的模块并不一一对应，面板按所选核心展示：
+
+**Xray-core**
+
 - **日志**：访问日志、错误日志、输出方式
 - **API**：gRPC API 监听地址、服务列表
 - **DNS**：DNS 服务器、查询策略、静态 Hosts
 - **路由**：路由规则、负载均衡、VLESS 路由
-- **入站**：入站列表、协议配置、传输、TLS
-- **出站**：出站列表、协议配置、传输
-- **传输**：WebSocket、gRPC、XHTTP、TUN 等
+- **入站 / 出站**：协议、传输、TLS
+- **传输**：WebSocket、gRPC、XHTTP 等（TUN 属于入站协议，不是传输层）
 - **TLS**：证书、ALPN、uTLS 指纹、ECH
 - **Reality**：Target 管理、密钥对、Short ID
-- **健康检测**：探测 URL、间隔、并发
-- **FakeDNS**：IP 池、池大小
-- **指标**：Prometheus 指标监听
-- **策略**：连接超时、缓冲区、统计
-- **Geo 数据**：自动更新、资源文件
-- **版本限制**：最低/最高版本
+- **健康检测 / FakeDNS / 指标 / 策略 / Geo 数据 / 版本限制**：探测、IP 池、Prometheus、超时缓冲、资源文件、核心版本区间
+
+**sing-box**
+
+- **日志**：级别、时间戳、输出
+- **NTP**：时间同步
+- **DNS**：DNS 服务器与规则
+- **路由**：`final` 默认出站、**Rule Sets（规则集）**、**Rules（路由规则）**、默认域名解析器、网络策略与回退（见 6.6）
+- **入站 / 出站**：协议、传输、TLS
+- **端点（Endpoints）**：WireGuard（含 WARP 配置）、MASQUE 客户端等；可同时存在多个，用 `tag` 区分
+- **内置服务**：sing-box 顶层 `services`，如 `hysteria-realm`、DERP、`resolved`
+- **证书 / HTTP 客户端 / 网络命名空间**：按需展开的 JSON 段
+- **实验性**：`clash_api` 等；**未开启时不会写入生成的配置**
+
+> sing-box 1.12 起已移除路由里的 `geosite` / `geoip` 字段，Geo 分流统一走 `rule_set`；
+> 旧字段会让核心解码失败（`unknown field`）。
 
 ### 6.3 入站配置
 
@@ -791,6 +806,9 @@ cd /opt/corefusion
 4. 配置传输方式（TCP、WebSocket、gRPC 等）
 5. 配置 TLS（证书、ALPN）
 6. 保存并应用到核心
+
+> 新建入站默认监听 `::`（Linux 下为双栈，同时接受 IPv4 与 IPv6）；只有需要限定网卡或只监听
+> IPv4 时才改成 `0.0.0.0` 或具体地址。
 
 ### 6.4 出站配置
 
@@ -809,6 +827,107 @@ cd /opt/corefusion
    - sing-box JSON
    - Xray JSON
 3. 复制链接或生成二维码
+
+### 6.6 sing-box 路由与规则集
+
+「协议中心」→ sing-box →「路由」分为两部分：**Rule Sets（规则集）** 声明可复用的规则文件，
+**Rules（路由规则）** 决定匹配条件与出站。规则自上而下匹配，命中即停。
+
+#### 6.6.1 Rule Sets
+
+| 字段 | 说明 |
+|------|------|
+| tag | 规则集标识，Rules 通过它引用；全局唯一 |
+| 类型 | `local` 读取节点本地文件；`remote` 由核心按 `update_interval` 自行下载 |
+| 格式 | `.srs` 选 `binary`（默认）；源格式 `.json` 选 `source` |
+| 路径 | `local` 的 `path` 相对节点数据目录，文件放在 `data/rules/` 时填 `rules/xxx.srs` |
+| URL | `remote` 的下载地址；`download_detour` 指定下载走的出站（通常 `direct`） |
+
+本地规则集（推荐，文件先在「分流资源 → 规则管理」下载）：
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> 只在面板下载文件还不够：`local` 规则集必须先「推送到所有节点」，文件真正落到节点的
+> `data/rules/` 后核心才能加载，否则启动会因找不到文件失败。
+
+远程规则集（节点需能访问该 URL）：
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+选择本地文件时标签会按文件名自动带出（`rules/geosite-cn.srs` → `geosite-cn`），远程按 URL 末段
+推导；格式也会按扩展名自动补（`.srs` → `binary`，`.json` → `source`）。自动填入的值可以随手改，
+已填写的不会被覆盖。
+
+> `download_detour` 从 sing-box 1.14 起标记为弃用（1.16 移除），当前 1.15 仍兼容；
+> 新配置建议改用顶层 `http_clients` 配合 `route.default_http_client`。
+
+#### 6.6.2 Rules
+
+| 字段 | 匹配 |
+|------|------|
+| `domain` | 精确域名 |
+| `domain_suffix` | 域名后缀（含子域） |
+| `domain_keyword` | 子串匹配 |
+| `domain_regex` | 正则 |
+| `ip_cidr` / `ip_is_private` | 目标 IP |
+| `source_ip_cidr` | 来源 IP |
+| `port` / `port_range` | 目标端口 |
+| `network` | `tcp` / `udp` |
+| `rule_set` | 引用 Rule Sets 的 tag |
+| `outbound` | 命中的出站 tag（须存在于「出站」或「端点」） |
+| `type: "logical"` | 组合条件，`mode` 为 `and` / `or` |
+
+同一条规则里的多个字段是「与」关系（例如 `network` + `port`），不必再套 `logical`；
+只有需要「或 / 非」组合时才用 `type: "logical"`。`rule_set` 要写在 `rules` 的子规则里，
+不能与 `rules` 平级：
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 从 xray 规则迁移
+
+| xray | sing-box |
+|------|----------|
+| 裸字符串（含 `domain` 数组里的裸值，子串匹配） | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]`；明确要后缀时用 `"domain_suffix": ["a.com"]`，精确匹配用 `"domain": ["a.com"]` |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+注意：
+
+- **tag 不跨核心通用**：xray 的出站 tag 不能直接写进 sing-box 规则，必须换成 sing-box
+  「出站 / 端点」里真实存在的 tag；
+- 出站或端点 tag 写错报 `outbound not found`，规则集 tag 写错报 `rule-set not found`；
+- 直连 / 白名单规则放在最前面，命中后不会再被后面的规则覆盖。
 
 ---
 
@@ -842,20 +961,57 @@ cd /opt/corefusion
 
 ## 8. 分流资源
 
-分流资源用于管理订阅分流规则。
+分流资源集中管理订阅与路由共用的公共资源，页面共 5 个标签页：
 
-### 8.1 功能
+| 标签页 | 用途 |
+|--------|------|
+| 直连 & CF 优选域名 | 入口直连域名 / IP、Cloudflare 优选域名，供订阅与外部节点改写访问地址 |
+| CF IP 池 | 优选 IP 源、端口与探测参数，供「访问域名」取值 |
+| WAF 全局规则 | 反向代理 WAF 的规则源与规则文件，同步后推送到节点 |
+| 规则管理 | 规则文件（`.srs` / `.json` / `.dat`）的下载、定时同步与推送 |
+| 外部节点 | 导入 v2ray URI / Base64 / 订阅 URL 等外部节点（见 16.3） |
 
-- 管理分流规则
-- 配置分流策略
-- 支持多种分流格式
+### 8.1 直连 & CF 优选域名
 
-### 8.2 操作
+- **直连访问**：填写入口域名或 IP，默认端口 443，可绑定节点，留空表示全局；
+- **CF 优选域名**：Cloudflare 优选域名 + 端口，可检测连通性；
+- 这两类值会作为「访问域名」候选，用于订阅下发与外部节点改写（见 16.3）。
 
-1. 进入「分流资源」页面
-2. 新增分流规则
-3. 配置规则名称、类型、条件
-4. 保存并应用
+### 8.2 CF IP 池
+
+- 维护优选 IP 源（含 `bestproxy` 类源）、抓取间隔与端口；
+- 「探测设置」决定探测间隔、延迟阈值与探测入口节点；本机探测只能过滤明显不通的 IP，
+  选择入口节点可模拟该节点所在线路；
+- 「访问域名」选 CF IP 池但未指定具体值时，会从池中随机取一条（含该条目端口）。
+
+### 8.3 WAF 全局规则
+
+- 配置 WAF 规则源地址与需要同步的规则文件；
+- 同步后推送到节点，由节点上的代理（Nginx / Caddy）加载；
+- 单个文件填了完整 URL 时直接按该 URL 下载，否则用「源地址 + /文件名」。
+
+### 8.4 规则管理（路由规则文件）
+
+本页只负责把规则文件下载到面板并推送到节点，**不会自动生效**；要参与分流，需到
+「协议中心 → sing-box → 路由」的 Rule Sets 与 Rules 中引用（写法见 6.6）。
+
+- **规则仓库**：填 `owner/repo`（GitHub，可浏览文件）或完整下载 URL；可设置定时同步
+  （每 6 / 12 小时、每天凌晨 3 点、每天午夜、每周日）；
+- **添加文件**：用于仓库 release 之外的单文件（如 SagerNet 的 `.srs` 分支文件），
+  填完整 URL 后自动下载；
+- **文件列表**：显示名称、大小、最后更新与「自动同步」开关，可单独「下载」；页面顶部「推送到所有节点」会把全部规则文件下发到各节点；
+- 文件下载到面板 `data/rules/`，推送到节点后位于节点数据目录的 `rules/`，sing-box 中按
+  `rules/<文件名>` 引用；
+- 格式选择：
+  - `.srs`：sing-box 二进制规则集，推荐，体积最小；
+  - `.json`：源格式规则集，`rule_set` 需写 `format: "source"`；
+  - `.dat`：xray 的 `geosite.dat` / `geoip.dat`，sing-box 不能直接使用。
+
+> 页面顶部的「使用说明」折叠块内含引用示例、xray 写法对照与常见错误，可随时展开查看。
+
+### 8.5 外部节点
+
+外部节点的导入与管理见 [16.3 外部节点](#163-外部节点)。
 
 ---
 
@@ -881,6 +1037,8 @@ cd /opt/corefusion
 
 - 同一种输出格式可以建多份（例如 `out`、`home`），客户链接里用 `config=` 指定；
 - 客户订阅未指定 `config` 时，按「订阅绑定的配置 → `platform` 匹配 → 默认配置」的顺序取；
+- sing-box 模板可自带 `route.rule_set` 供客户端使用，通常写成 `remote` 由客户端自行下载；
+  「规则管理」推送到节点 `rules/` 的本地文件只供节点上的核心使用，客户端订阅拿不到；
 - sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）。
 
 ### 9.2 订阅端点管理
@@ -1216,14 +1374,18 @@ https://sub.example.com/<token>?format=raw_uri
 
 - 在线订阅数
 - 在线设备/IP 数
-- 在线节点数
-- 实时速率
-- 累计流量
+- 每个订阅的节点、IP、连接时间
+- 实时上行 / 下行速率
+- 总上行 / 总下行 / 累计流量
+
+> 「总上行 / 总下行 / 累计流量」按**连续在线区间**累加：短连接重连、核心重启或流量计数器
+> 复位都不会清零，只有超过 60 秒没有再次上报才视为新的一次在线并重新计数。
+> 它与核心自身「本次启动后的累计流量」口径不同，更适合观察用户本次在线期间的实际用量。
 
 ### 17.2 筛选
 
 - 按节点筛选
-- 搜索邮箱/客户/节点/IP
+- 搜索邮箱 / 客户 / 节点 / IP
 
 ---
 
@@ -1537,6 +1699,10 @@ https://sub.example.com/<token>?format=raw_uri
 # 运行数据库迁移
 ./corefusion migrate
 
+# 非交互初始化 / 重置初始化状态（见 3.4、3.5）
+./corefusion init --help
+./corefusion reset-init
+
 # 离线管理命令（无法登录时使用）
 ./corefusion admin reset-password -u admin -p '新口令'
 ./corefusion admin 2fa reset -u admin
@@ -1547,10 +1713,11 @@ https://sub.example.com/<token>?format=raw_uri
 ./corefusion help
 ```
 
-> 本机无 systemd 单元，重启方式为结束旧进程后重新 `nohup` 启动；日志见 `/var/log/corefusion.log`。
+> 有 systemd 时用 `systemctl restart corefusion` 与 `journalctl -u corefusion -f` 管理；
+> 没有 systemd（容器等）时结束旧进程后重新 `nohup` 启动，日志见 `data/logs/panel.log`。
 
 ---
 
-> **文档版本**：v1.0  
-> **最后更新**：2026-10-10  
-> **适用版本**：CoreFusion v1.0+
+> **文档版本**：v1.1  
+> **最后更新**：2026-11-14  
+> **适用版本**：CoreFusion v0.13.0-beta.x

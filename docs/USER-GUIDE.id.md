@@ -3,6 +3,8 @@
 
 > Bahasa: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · Bahasa Indonesia · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > Panduan ini ditujukan untuk pengguna CoreFusion dan mencakup alur kerja lengkap mulai dari instalasi hingga pengoperasian sehari-hari.
 
 ---
@@ -165,7 +167,7 @@ Nilai yang didukung: `zh` / `en` / `fa` / `ru`; `--lang=ru` juga diterima. Nilai
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Membangun dari sumbernya
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` mengkloning repositori (atau menggunakan checkout yang ada saat skrip ada di dalamnya) dan menjalankan `make panel`. Versi Toolchain dipilih per lingkungan:
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | Bendera | Deskripsi |
 |------|-------------|
 | `-d, --dir <PATH>` | Instal direktori, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-alpha.26`; bawaan `latest` |
+| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-beta.82`; bawaan `latest` |
 | `--binary` | Gunakan biner Rilis GitHub (default) |
 | `--source` | Bangun dari sumber dan siapkan Go/Node.js yang cocok |
 | `--local <FILE>` | Gunakan biner lokal (instal offline) |

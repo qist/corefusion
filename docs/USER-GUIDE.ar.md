@@ -3,6 +3,8 @@
 
 > اللغات: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · العربية · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > هذا الدليل مخصص لمستخدمي CoreFusion ويغطي سير العمل الكامل بدءًا من التثبيت وحتى العمليات اليومية.
 
 ---
@@ -165,7 +167,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 البناء من المصدر
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 يقوم `--source` باستنساخ المستودع (أو يستخدم عملية السحب الموجودة عندما يكون البرنامج النصي بداخله) ويقوم بتشغيل `make panel`. يتم اختيار إصدارات Toolchain لكل بيئة:
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | العلم | الوصف |
 |------|-------------|
 | `-d, --dir <PATH>` | دليل التثبيت، الافتراضي `/opt/corefusion` |
-| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-alpha.26`; الافتراضي `latest` |
+| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-beta.82`; الافتراضي `latest` |
 | `--binary` | استخدم الإصدار الثنائي GitHub (افتراضي) |
 | `--source` | البناء من المصدر وإعداد مطابقة Go / Node |
 | `--local <FILE>` | استخدام ثنائي محلي (تثبيت دون اتصال) |

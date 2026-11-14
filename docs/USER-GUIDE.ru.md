@@ -3,6 +3,8 @@
 
 > Языки: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · Русский · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > Это руководство предназначено для пользователей CoreFusion и охватывает весь рабочий процесс: от установки до повседневной эксплуатации.
 
 ---
@@ -165,7 +167,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Сборка из исходного кода
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` клонирует репозиторий (или использует существующую проверку, когда в нем находится скрипт) и запускает `make panel`. Версии Toolchain выбираются для каждой среды:
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | Флаг | Описание |
 |------|-------------|
 | `-d, --dir <PATH>` | Каталог установки, по умолчанию `/opt/corefusion` |
-| `-v, --version <TAG>` | Панельная версия, напр. `v0.13.0-alpha.26`; по умолчанию `latest` |
+| `-v, --version <TAG>` | Панельная версия, напр. `v0.13.0-beta.82`; по умолчанию `latest` |
 | `--binary` | Используйте двоичный файл выпуска GitHub (по умолчанию). |
 | `--source` | Сборка из исходного кода и подготовка соответствующего Go/Node. |
 | `--local <FILE>` | Используйте локальный двоичный файл (автономная установка) |

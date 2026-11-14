@@ -3,6 +3,8 @@
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > Hướng dẫn này dành cho người dùng CoreFusion và bao gồm toàn bộ quy trình làm việc từ cài đặt đến vận hành hàng ngày.
 
 ---
@@ -165,7 +167,7 @@ Giá trị hỗ trợ: `zh` / `en` / `fa` / `ru`; cũng chấp nhận `--lang=ru
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Xây dựng từ nguồn
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` sao chép kho lưu trữ (hoặc sử dụng thanh toán hiện có khi tập lệnh nằm trong đó) và chạy `make panel`. Các phiên bản chuỗi công cụ được chọn cho mỗi môi trường:
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | Cờ | Mô tả |
 |------|-------------|
 | `-d, --dir <PATH>` | Thư mục cài đặt, mặc định `/opt/corefusion` |
-| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-alpha.26`; mặc định `latest` |
+| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-beta.82`; mặc định `latest` |
 | `--binary` | Sử dụng mã nhị phân phát hành GitHub (mặc định) |
 | `--source` | Xây dựng từ nguồn và chuẩn bị Go/Node phù hợp |
 | `--local <FILE>` | Sử dụng tệp nhị phân cục bộ (cài đặt ngoại tuyến) |

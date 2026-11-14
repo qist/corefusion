@@ -11,8 +11,8 @@
 #
 # 用法：
 #   curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
-#   sudo bash scripts/install.sh --version v0.13.0-alpha.2
-#   sudo bash scripts/install.sh --source --version v0.13.0-alpha.2
+#   sudo bash scripts/install.sh --version v0.13.0-beta.82
+#   sudo bash scripts/install.sh --source --version v0.13.0-beta.82
 #   sudo bash scripts/install.sh --arch arm64 --local ./dist/corefusion-linux-arm64
 #   sudo bash scripts/install.sh --uninstall
 #
@@ -155,7 +155,7 @@ err_node_glibc=glibc %s 无法运行官方 Node %s，且无 glibc-217 构建；�
 step_install_node=安装 Node.js %s.x（%s）
 err_node_download=下载 Node.js 失败：%s
 ok_node=Node %s 已就绪
-err_latest=无法获取最新版本号，请用 --version 指定（例如 --version v0.13.0-alpha.2）
+err_latest=无法获取最新版本号，请用 --version 指定（例如 --version v0.13.0-beta.82）
 step_download=下载 CoreFusion %s（linux-%s）
 err_download=下载失败：%s
 err_sha=sha256 校验失败：%s
@@ -279,7 +279,7 @@ err_node_glibc=glibc %s cannot run official Node %s, and no glibc-217 build is a
 step_install_node=Installing Node.js %s.x (%s)
 err_node_download=Failed to download Node.js: %s
 ok_node=Node %s ready
-err_latest=Cannot get the latest version; specify --version (e.g. --version v0.13.0-alpha.2)
+err_latest=Cannot get the latest version; specify --version (e.g. --version v0.13.0-beta.82)
 step_download=Downloading CoreFusion %s (linux-%s)
 err_download=Download failed: %s
 err_sha=sha256 verification failed: %s
@@ -403,7 +403,7 @@ err_node_glibc=glibc %s نمی‌تواند Node رسمی %s را اجرا کن�
 step_install_node=نصب Node.js %s.x (%s)
 err_node_download=دانلود Node.js ناموفق بود: %s
 ok_node=Node %s آماده است
-err_latest=آخرین نسخه دریافت نشد؛ با --version مشخص کنید (مثلاً --version v0.13.0-alpha.2)
+err_latest=آخرین نسخه دریافت نشد؛ با --version مشخص کنید (مثلاً --version v0.13.0-beta.82)
 step_download=دانلود CoreFusion %s (linux-%s)
 err_download=دانلود ناموفق بود: %s
 err_sha=بررسی sha256 ناموفق بود: %s
@@ -527,7 +527,7 @@ err_node_glibc=glibc %s не может запустить официальны�
 step_install_node=Установка Node.js %s.x (%s)
 err_node_download=Не удалось скачать Node.js: %s
 ok_node=Node %s готов
-err_latest=Не удалось получить последнюю версию; укажите --version (например, --version v0.13.0-alpha.2)
+err_latest=Не удалось получить последнюю версию; укажите --version (например, --version v0.13.0-beta.82)
 step_download=Загрузка CoreFusion %s (linux-%s)
 err_download=Ошибка загрузки: %s
 err_sha=Ошибка проверки sha256: %s
@@ -607,7 +607,7 @@ Usage:
 
 Install options:
   -d, --dir <PATH>        Install directory (default: /opt/corefusion)
-  -v, --version <TAG>     Panel version, e.g. v0.13.0-alpha.2 (default: latest)
+  -v, --version <TAG>     Panel version, e.g. v0.13.0-beta.82 (default: latest)
       --source            Build from source (installs matching Go/Node versions)
       --binary            Use GitHub Release binary (default)
       --local <FILE>      Use a local binary (offline install)
@@ -627,8 +627,8 @@ Uninstall options:
 
 Examples:
   curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
-  sudo bash scripts/install.sh --version v0.13.0-alpha.2
-  sudo bash scripts/install.sh --source --version v0.13.0-alpha.2
+  sudo bash scripts/install.sh --version v0.13.0-beta.82
+  sudo bash scripts/install.sh --source --version v0.13.0-beta.82
   sudo bash scripts/install.sh --mirror https://ghproxy.net --version latest
   sudo bash scripts/install.sh --local ./dist/corefusion-linux-arm64
   sudo bash scripts/install.sh --uninstall
@@ -657,7 +657,7 @@ EOF
 
 گزینه‌های نصب:
   -d, --dir <PATH>        مسیر نصب (پیش‌فرض: /opt/corefusion)
-  -v, --version <TAG>     نسخه پنل، مثلاً v0.13.0-alpha.2 (پیش‌فرض: latest)
+  -v, --version <TAG>     نسخه پنل، مثلاً v0.13.0-beta.82 (پیش‌فرض: latest)
       --source            ساخت از سورس (نسخه‌های مناسب Go/Node نصب می‌شود)
       --binary            استفاده از باینری GitHub Release (پیش‌فرض)
       --local <FILE>      استفاده از باینری محلی (نصب آفلاین)
@@ -677,8 +677,8 @@ EOF
 
 نمونه‌ها:
   curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
-  sudo bash scripts/install.sh --version v0.13.0-alpha.2
-  sudo bash scripts/install.sh --source --version v0.13.0-alpha.2
+  sudo bash scripts/install.sh --version v0.13.0-beta.82
+  sudo bash scripts/install.sh --source --version v0.13.0-beta.82
   sudo bash scripts/install.sh --mirror https://ghproxy.net --version latest
   sudo bash scripts/install.sh --local ./dist/corefusion-linux-arm64
   sudo bash scripts/install.sh --uninstall
@@ -707,7 +707,7 @@ EOF
 
 Параметры установки:
   -d, --dir <PATH>        Каталог установки (по умолчанию: /opt/corefusion)
-  -v, --version <TAG>     Версия панели, например v0.13.0-alpha.2 (по умолчанию: latest)
+  -v, --version <TAG>     Версия панели, например v0.13.0-beta.82 (по умолчанию: latest)
       --source            Сборка из исходников (подбирает нужные версии Go/Node)
       --binary            Использовать бинарник из GitHub Release (по умолчанию)
       --local <FILE>      Использовать локальный бинарник (офлайн-установка)
@@ -727,8 +727,8 @@ EOF
 
 Примеры:
   curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
-  sudo bash scripts/install.sh --version v0.13.0-alpha.2
-  sudo bash scripts/install.sh --source --version v0.13.0-alpha.2
+  sudo bash scripts/install.sh --version v0.13.0-beta.82
+  sudo bash scripts/install.sh --source --version v0.13.0-beta.82
   sudo bash scripts/install.sh --mirror https://ghproxy.net --version latest
   sudo bash scripts/install.sh --local ./dist/corefusion-linux-arm64
   sudo bash scripts/install.sh --uninstall
@@ -757,7 +757,7 @@ CoreFusion 面板多环境安装脚本
 
 安装选项：
   -d, --dir <PATH>        安装目录（默认 /opt/corefusion）
-  -v, --version <TAG>     面板版本，如 v0.13.0-alpha.2（默认 latest）
+  -v, --version <TAG>     面板版本，如 v0.13.0-beta.82（默认 latest）
       --source            源码编译安装（自动安装匹配的 Go/Node 版本）
       --binary            使用 GitHub Release 二进制（默认）
       --local <FILE>      使用本地二进制文件（离线安装）
@@ -777,8 +777,8 @@ CoreFusion 面板多环境安装脚本
 
 示例：
   curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash
-  sudo bash scripts/install.sh --version v0.13.0-alpha.2
-  sudo bash scripts/install.sh --source --version v0.13.0-alpha.2
+  sudo bash scripts/install.sh --version v0.13.0-beta.82
+  sudo bash scripts/install.sh --source --version v0.13.0-beta.82
   sudo bash scripts/install.sh --mirror https://ghproxy.net --version latest
   sudo bash scripts/install.sh --local ./dist/corefusion-linux-arm64
   sudo bash scripts/install.sh --uninstall

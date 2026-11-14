@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-12 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-14 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Supported values: `zh` / `en` / `fa` / `ru`; `--lang=ru` is also accepted. An un
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Building from source
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` clones the repository (or uses the existing checkout when the script is inside it) and runs `make panel`. Toolchain versions are chosen per environment:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flag | Description |
 |------|-------------|
 | `-d, --dir <PATH>` | Install directory, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0-alpha.26`; default `latest` |
+| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0-beta.82`; default `latest` |
 | `--binary` | Use the GitHub Release binary (default) |
 | `--source` | Build from source and prepare matching Go / Node |
 | `--local <FILE>` | Use a local binary (offline install) |
@@ -243,6 +243,9 @@ make panel-linux-arm64
 | `--lang <LANG>` | Output language: `zh` / `en` / `fa` / `ru` (default: system `LANG`) |
 | `--uninstall` | Stop the service and remove the program (keeps data and `.env`) |
 | `--purge` | With `--uninstall`, also remove the data directory and `.env` |
+
+> Official releases only ship `amd64` / `arm64` binaries. Other architectures require `--source`,
+> otherwise the download returns 404.
 
 Related environment variables:
 
@@ -721,15 +724,16 @@ Node management is the core of CoreFusion and supports several node types.
 
 ### 5.3 One-click deployment
 
-1. After adding the node, click “Bootstrap command”;
-2. Copy the install command;
-3. Run it as root on the remote node:
+1. After adding the node, choose “Deploy command” in the node list (the detail page also offers
+   “Bootstrap install command”);
+2. Copy the command — it contains a one-time registration token (valid for 24 hours, do not reuse);
+3. Run it as root on the remote node; it looks like:
 
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<panel-host>:<panel-port>/api/v1/agent/install?id=<node-id>&token=<one-time-token>&port=<panel-port>")
    ```
 
-4. The Agent downloads, registers and starts automatically.
+4. The Agent downloads the package, registers with the panel and starts.
 
 ### 5.4 Node details
 
@@ -767,21 +771,34 @@ The protocol center configures protocol parameters for the core processes.
 
 ### 6.2 Configuration modules
 
+Modules differ between the two cores; the panel shows the set that matches the selected core:
+
+**Xray-core**
+
 - **Log**: access log, error log, output mode
 - **API**: gRPC API listen address, service list
 - **DNS**: DNS servers, query strategy, static hosts
 - **Routing**: routing rules, load balancing, VLESS routing
-- **Inbounds**: inbound list, protocol settings, transport, TLS
-- **Outbounds**: outbound list, protocol settings, transport
-- **Transport**: WebSocket, gRPC, XHTTP, TUN, etc.
+- **Inbounds / Outbounds**: protocol, transport, TLS
+- **Transport**: WebSocket, gRPC, XHTTP, etc. (TUN is an inbound protocol, not a transport)
 - **TLS**: certificates, ALPN, uTLS fingerprint, ECH
 - **Reality**: target management, key pairs, short IDs
-- **Health check**: probe URL, interval, concurrency
-- **FakeDNS**: IP pool, pool size
-- **Metrics**: Prometheus metrics listener
-- **Policy**: connection timeouts, buffers, statistics
-- **Geo data**: auto-update, resource files
-- **Version limits**: minimum / maximum version
+- **Health check / FakeDNS / Metrics / Policy / Geo data / Version limits**: probes, IP pool, Prometheus, timeouts and buffers, resource files, core version range
+
+**sing-box**
+
+- **Log**: level, timestamp, output
+- **NTP**: time synchronization
+- **DNS**: DNS servers and rules
+- **Routing**: `final` default outbound, **Rule Sets**, **Rules**, default domain resolver, network strategy and fallback (see 6.6)
+- **Inbounds / Outbounds**: protocol, transport, TLS
+- **Endpoints**: WireGuard (including WARP configurations), MASQUE clients and similar; several can coexist and are distinguished by `tag`
+- **Services**: the top-level sing-box `services` array, such as `hysteria-realm`, DERP or `resolved`
+- **Certificates / HTTP clients / Network namespaces**: JSON sections you expand only when needed
+- **Experimental**: `clash_api` and similar; **nothing is written to the generated config unless enabled**
+
+> sing-box 1.12 removed the `geosite` / `geoip` routing fields; Geo-based routing now goes through
+> `rule_set`. Keeping the old fields makes the core fail to decode the config (`unknown field`).
 
 ### 6.3 Inbound configuration
 
@@ -794,6 +811,9 @@ The protocol center configures protocol parameters for the core processes.
 4. Choose the transport (TCP, WebSocket, gRPC, etc.);
 5. Configure TLS (certificate, ALPN);
 6. Save and apply to the core.
+
+> New inbounds listen on `::` by default (dual stack on Linux, handling both IPv4 and IPv6).
+> Change it to `0.0.0.0` or a specific address only when you need to restrict the interface.
 
 ### 6.4 Outbound configuration
 
@@ -812,6 +832,112 @@ The protocol center configures protocol parameters for the core processes.
    - sing-box JSON
    - Xray JSON
 3. Copy the link or generate a QR code.
+
+### 6.6 sing-box routing and rule sets
+
+In “Protocol center” → sing-box → “Routing” there are two parts: **Rule Sets** declare reusable
+rule files, and **Rules** decide the match conditions and the outbound. Rules are evaluated from
+top to bottom and the first match wins.
+
+#### 6.6.1 Rule Sets
+
+| Field | Description |
+|-------|-------------|
+| tag | Rule-set identifier referenced by Rules; must be unique |
+| Type | `local` reads a file on the node; `remote` lets the core download it on `update_interval` |
+| Format | `binary` for `.srs` (default); `source` for source-format `.json` |
+| Path | `local` paths are relative to the node data directory; files in `data/rules/` use `rules/xxx.srs` |
+| URL | Download address for `remote`; `download_detour` selects the outbound used for the download (usually `direct`) |
+
+Local rule sets (recommended; download the files first under “Service resources → Rule files”):
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> Downloading the file on the panel is not enough: a `local` rule set must first be pushed to the
+> nodes (“Push to all nodes”) so the file exists in the node's `data/rules/`; otherwise the core
+> fails to start because the file cannot be found.
+
+Remote rule sets (the node must be able to reach the URL):
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+When you pick a local file the tag is derived from the file name (`rules/geosite-cn.srs` →
+`geosite-cn`); for remote sets it comes from the end of the URL. The format is also filled in from
+the extension (`.srs` → `binary`, `.json` → `source`). Derived values can be edited freely, and
+values you already typed are never overwritten.
+
+> `download_detour` has been deprecated since sing-box 1.14 and will be removed in 1.16; it still
+> works in 1.15. New configurations should use top-level `http_clients` with
+> `route.default_http_client` instead.
+
+#### 6.6.2 Rules
+
+| Field | Matches |
+|-------|---------|
+| `domain` | Exact domain |
+| `domain_suffix` | Domain suffix, including subdomains |
+| `domain_keyword` | Substring match |
+| `domain_regex` | Regular expression |
+| `ip_cidr` / `ip_is_private` | Destination IP |
+| `source_ip_cidr` | Source IP |
+| `port` / `port_range` | Destination port |
+| `network` | `tcp` / `udp` |
+| `rule_set` | Tags of the Rule Sets to use |
+| `outbound` | Outbound tag to use (must exist under “Outbounds” or “Endpoints”) |
+| `type: "logical"` | Combined conditions with `mode` set to `and` / `or` |
+
+Multiple fields in one rule are combined with AND (for example `network` + `port`), so no
+`logical` wrapper is needed. Use `type: "logical"` only for OR / NOT combinations. `rule_set`
+must be placed inside the `rules` sub-rules, not next to `rules`:
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 Migrating xray rules
+
+| xray | sing-box |
+|------|----------|
+| Bare string (including bare values in `domain`; substring match) | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]`; use `"domain_suffix": ["a.com"]` for a real suffix match or `"domain": ["a.com"]` for an exact match |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+Notes:
+
+- **Tags are not shared between cores**: an xray outbound tag cannot be used in a sing-box rule;
+  use a tag that really exists under sing-box “Outbounds” or “Endpoints”.
+- A wrong outbound or endpoint tag reports `outbound not found`; a wrong rule-set tag reports
+  `rule-set not found`.
+- Put direct / allow-list rules first; once a rule matches, later rules no longer apply.
 
 ---
 
@@ -845,20 +971,61 @@ Proxy management configures the Caddy or Nginx reverse proxy.
 
 ## 8. Routing resources
 
-Routing resources manage subscription routing rules.
+Routing resources collect the shared assets used by subscriptions and routing. The page has five tabs:
 
-### 8.1 Features
+| Tab | Purpose |
+|-----|---------|
+| Direct & CF preferred domains | Ingress direct domains / IPs and Cloudflare preferred domains, used when rewriting access addresses in subscriptions and external nodes |
+| CF IP pool | Preferred IP sources, ports and probe settings, consumed by “Access domain” |
+| WAF global rules | Rule sources and rule files for the reverse-proxy WAF, pushed to nodes |
+| Rule files | Download, scheduled sync and push of rule files (`.srs` / `.json` / `.dat`) |
+| External nodes | Import external nodes from v2ray URI / Base64 / subscription URL (see 16.3) |
 
-- Manage routing rules
-- Configure routing policies
-- Support multiple routing formats
+### 8.1 Direct & CF preferred domains
 
-### 8.2 Usage
+- **Direct access**: ingress domain or IP, port 443 by default; bind nodes or leave empty for global;
+- **CF preferred domains**: Cloudflare preferred domain plus port, with a connectivity check;
+- Both feed the “Access domain” candidates used by subscriptions and external-node rewriting (see 16.3).
 
-1. Open “Routing resources”;
-2. Add a routing rule;
-3. Set the rule name, type and conditions;
-4. Save and apply.
+### 8.2 CF IP pool
+
+- Maintain preferred IP sources (including `bestproxy` style sources), fetch interval and ports;
+- “Probe settings” control the probe interval, latency threshold and probe entry node; local probing
+  only filters clearly unreachable IPs, while selecting an entry node simulates that node's line;
+- When “Access domain” uses the CF IP pool without a concrete value, one entry (with its port) is
+  picked at random.
+
+### 8.3 WAF global rules
+
+- Configure the WAF rule source URL and the rule files to sync;
+- After syncing they are pushed to nodes and loaded by the node proxy (Nginx / Caddy);
+- A file with a full URL is downloaded from that URL; otherwise “source URL + /file name” is used.
+
+### 8.4 Rule files (routing rule files)
+
+This tab only downloads rule files on the panel and pushes them to nodes; nothing takes effect
+automatically. To use them in routing, reference them under “Protocol center → sing-box → Routing”
+in Rule Sets and Rules (see 6.6).
+
+- **Rule repositories**: enter `owner/repo` (GitHub, browsable) or a full download URL; scheduled
+  sync can run every 6 / 12 hours, daily at 03:00, daily at midnight or weekly on Sunday;
+- **Add file**: for single files outside a repository release (for example SagerNet `.srs` branch
+  files); enter the full URL and it is downloaded automatically;
+- **File list**: shows name, size, last update and the “Auto sync” switch, with per-file “Download”;
+  the “Push to all nodes” button at the top pushes every rule file to all nodes;
+- Files are downloaded into the panel's `data/rules/` and, once pushed, live under the node data
+  directory's `rules/`; reference them in sing-box as `rules/<file name>`;
+- Formats:
+  - `.srs`: sing-box binary rule set, recommended and smallest;
+  - `.json`: source-format rule set; `rule_set` must set `format: "source"`;
+  - `.dat`: xray `geosite.dat` / `geoip.dat`, which sing-box cannot use directly.
+
+> The collapsible “Usage” block at the top of the page contains reference examples, the xray mapping
+> table and common errors.
+
+### 8.5 External nodes
+
+Importing and managing external nodes is covered in [16.3 External nodes](#163-external-nodes).
 
 ---
 
@@ -884,6 +1051,9 @@ Notes:
 
 - Several configs may exist for the same output format (e.g. `out`, `home`); pick one with `config=` in the link;
 - Without `config`, the order is “config bound to the subscription → `platform` match → default”;
+- A sing-box template may carry its own `route.rule_set` for clients, normally as `remote` so the
+  client downloads it; local files pushed to a node's `rules/` under “Rule files” are only available
+  to the core on that node, not to client subscriptions;
 - sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3).
 
 ### 9.2 Subscription endpoints
@@ -1221,9 +1391,15 @@ Online users shows real-time online status.
 
 - Online subscriptions
 - Online devices / IPs
-- Online nodes
-- Real-time rate
-- Total traffic
+- Node, IP and connection time for each subscription
+- Real-time uplink / downlink rate
+- Total uplink / total downlink / total traffic
+
+> Total uplink, total downlink and total traffic accumulate over a **continuous online session**:
+> short-lived reconnects, core restarts and counter resets do not clear them. Only after 60
+> seconds without a new report does a new session start from zero. This is a different measure
+> from the core's own “traffic since this start” counter and better reflects what a user actually
+> used during the current session.
 
 ### 17.2 Filtering
 
@@ -1542,6 +1718,10 @@ The panel binary supports these subcommands (no arguments starts the server):
 # Run database migrations
 ./corefusion migrate
 
+# Non-interactive init / reset init state (see 3.4, 3.5)
+./corefusion init --help
+./corefusion reset-init
+
 # Offline administration (when you cannot sign in)
 ./corefusion admin reset-password -u admin -p 'new-password'
 ./corefusion admin 2fa reset -u admin
@@ -1552,10 +1732,12 @@ The panel binary supports these subcommands (no arguments starts the server):
 ./corefusion help
 ```
 
-> Without a systemd unit, restart by stopping the old process and starting it again with `nohup`; logs are in `<install-dir>/data/logs/panel.log`.
+> With systemd, use `systemctl restart corefusion` and `journalctl -u corefusion -f`; without
+> systemd (containers and similar), stop the old process and start it again with `nohup`, logs are
+> in `data/logs/panel.log`.
 
 ---
 
-> **Document version**: v1.0
-> **Last updated**: 2026-10-23
-> **Applies to**: CoreFusion v1.0+
+> **Document version**: v1.1
+> **Last updated**: 2026-11-14
+> **Applies to**: CoreFusion v0.13.0-beta.x

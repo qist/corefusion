@@ -3,6 +3,8 @@
 
 > 언어: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · 한국어 · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > 이 가이드는 CoreFusion 사용자를 위한 것이며 설치부터 일상 작업까지 전체 작업 흐름을 다루고 있습니다.
 
 ---
@@ -165,7 +167,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 소스에서 빌드하기
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source`는 저장소를 복제하고(또는 스크립트가 내부에 있을 때 기존 체크아웃을 사용) `make panel`를 실행합니다. 툴체인 버전은 환경에 따라 선택됩니다.
@@ -229,7 +231,7 @@ make panel-linux-arm64
 | 깃발 | 설명 |
 |------|-------------|
 | `-d, --dir <PATH>` | 설치 디렉토리, 기본값 `/opt/corefusion` |
-| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-alpha.26`; 기본 `latest` |
+| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-beta.82`; 기본 `latest` |
 | `--binary` | GitHub 릴리스 바이너리 사용(기본값) |
 | `--source` | 소스에서 빌드하고 일치하는 Go/Node 준비 |
 | `--local <FILE>` | 로컬 바이너리 사용(오프라인 설치) |

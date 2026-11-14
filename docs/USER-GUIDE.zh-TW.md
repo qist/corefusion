@@ -3,6 +3,8 @@
 
 > 語言： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · 繁體中文 · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
 
+> ⚠️ 本译文尚未同步最新源文
+
 > 本手冊面向 CoreFusion 使用者，涵蓋從安裝部署到日常運維的完整操作流程。
 
 ---
@@ -165,7 +167,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-alpha.26
+sudo bash install.sh --version v0.13.0-beta.82
 
 # GitHub 下載加速（作為 URL 字首）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +187,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 原始碼編譯安裝
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-alpha.26
+sudo bash install.sh --source --version v0.13.0-beta.82
 ```
 
 `--source` 會克隆原始碼（指令碼位於原始碼目錄內時直接使用現有原始碼）並執行 `make panel`。
@@ -230,7 +232,7 @@ make panel-linux-arm64
 | 引數 | 說明 |
 |------|------|
 | `-d, --dir <PATH>` | 安裝目錄，預設 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-alpha.26`，預設 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-beta.82`，預設 `latest` |
 | `--binary` | 使用 GitHub Release 二進位制（預設） |
 | `--source` | 原始碼編譯安裝，自動準備匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二進位制檔案（離線安裝） |

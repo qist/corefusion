@@ -41,13 +41,17 @@ type nodeOnlineProvider interface {
 
 // NodeOnlineResult 是返回给前端的节点在线订阅人聚合视图。
 type NodeOnlineResult struct {
-	OnlineSubscriptions int64                      `json:"online_subscriptions"`
-	OnlineDevices       int64                      `json:"online_devices"`
-	TotalUplinkRate     int64                      `json:"total_uplink_rate"`
-	TotalDownlinkRate   int64                      `json:"total_downlink_rate"`
-	UpdatedAt           int64                      `json:"updated_at"`
-	FilteredTotal       int64                      `json:"filtered_total"` // 符合筛选条件的总数（分页 total）
-	Users               []*agentpb.OnlineUserEntry `json:"users"`          // 本页数据
+	OnlineSubscriptions int64 `json:"online_subscriptions"`
+	OnlineDevices       int64 `json:"online_devices"`
+	TotalUplinkRate     int64 `json:"total_uplink_rate"`
+	TotalDownlinkRate   int64 `json:"total_downlink_rate"`
+	// 本次连续在线区间内的累计流量（所有在线条目求和，不受筛选/分页影响）。
+	// 与 online_users 每条记录的 uplink_bytes/downlink_bytes 同口径。
+	TotalUplinkBytes   int64                      `json:"total_uplink_bytes"`
+	TotalDownlinkBytes int64                      `json:"total_downlink_bytes"`
+	UpdatedAt          int64                      `json:"updated_at"`
+	FilteredTotal      int64                      `json:"filtered_total"` // 符合筛选条件的总数（分页 total）
+	Users              []*agentpb.OnlineUserEntry `json:"users"`          // 本页数据
 }
 
 // NodeOnlineFilter 是单节点在线用户查询的过滤条件（服务端分页与筛选）。
@@ -106,13 +110,17 @@ func (s *Service) GetOnlineUsers(serverID int64, f NodeOnlineFilter) *NodeOnline
 	if !ok {
 		return res
 	}
-	var upRate, downRate int64
+	var upRate, downRate, upBytes, downBytes int64
 	for _, u := range users {
 		upRate += u.UplinkRate
 		downRate += u.DownlinkRate
+		upBytes += u.UplinkBytes
+		downBytes += u.DownlinkBytes
 	}
 	res.TotalUplinkRate = upRate
 	res.TotalDownlinkRate = downRate
+	res.TotalUplinkBytes = upBytes
+	res.TotalDownlinkBytes = downBytes
 	res.UpdatedAt = updatedAt
 	if users == nil {
 		return res
@@ -448,10 +456,13 @@ type GlobalOnlineFilter struct {
 
 // GlobalOnlineResponse 是全局在线用户页的响应。
 type GlobalOnlineResponse struct {
-	TotalSubscriptions int64               `json:"total_subscriptions"` // 全部节点在线订阅总数（不受筛选/分页影响）
-	TotalDevices       int64               `json:"total_devices"`       // 全部节点在线设备总数（不受筛选/分页影响）
-	FilteredTotal      int64               `json:"filtered_total"`      // 符合筛选条件的订阅总数（分页 total）
-	Users              []*GlobalOnlineUser `json:"users"`               // 本页数据
+	TotalSubscriptions int64 `json:"total_subscriptions"` // 全部节点在线订阅总数（不受筛选/分页影响）
+	TotalDevices       int64 `json:"total_devices"`       // 全部节点在线设备总数（不受筛选/分页影响）
+	// 本次连续在线区间内的累计流量（所有节点求和，不受筛选/分页影响）
+	TotalUplinkBytes   int64               `json:"total_uplink_bytes"`
+	TotalDownlinkBytes int64               `json:"total_downlink_bytes"`
+	FilteredTotal      int64               `json:"filtered_total"` // 符合筛选条件的订阅总数（分页 total）
+	Users              []*GlobalOnlineUser `json:"users"`          // 本页数据
 }
 
 // GetAllOnlineUsersGlobal 返回所有节点在线订阅人的合并视图（全局在线用户页）。
@@ -497,6 +508,8 @@ func (s *Service) GetAllOnlineUsersGlobal(f GlobalOnlineFilter) *GlobalOnlineRes
 			} else if u.GetEmail() != "" {
 				subs["e:"+u.GetEmail()] = struct{}{}
 			}
+			res.TotalUplinkBytes += u.GetUplinkBytes()
+			res.TotalDownlinkBytes += u.GetDownlinkBytes()
 
 			// 节点筛选
 			if f.ServerID > 0 && serverID != f.ServerID {

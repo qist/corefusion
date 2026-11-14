@@ -307,4 +307,17 @@ onUnmounted(() => { if (timer) clearInterval(timer); clearTimeout(searchDebounce
 .sum-label { font-size: 13px; color: #909399; margin-bottom: 8px; }
 .sum-value { font-size: 28px; font-weight: 600; color: #303133; }
 .pager-wrap { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+@media (max-width: 768px) {
+  .online-users-page { padding: 0; }
+  .page-title { font-size: 18px; }
+  .page-subtitle { font-size: 12px; }
+  .header-actions { width: 100%; gap: 8px; }
+  .summary-row { margin-bottom: 12px; }
+  /* 三张汇总卡保持一行，压缩高度避免占满首屏 */
+  .summary-row :deep(.el-col) { flex: 0 0 calc(33.333% - 8px); max-width: calc(33.333% - 8px); }
+  .summary-card :deep(.el-card__body) { padding: 10px 6px; }
+  .sum-label { font-size: 11px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sum-value { font-size: 20px; }
+}
 </style>

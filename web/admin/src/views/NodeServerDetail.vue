@@ -299,8 +299,8 @@
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <el-tag type="success" effect="dark">{{ t('onlineUsers.totalSubscriptions') }} {{ onlineData?.online_subscriptions || 0 }}</el-tag>
               <el-tag type="info" effect="dark">{{ t('onlineUsers.totalDevices') }} {{ onlineData?.online_devices || 0 }}</el-tag>
-              <el-tag effect="plain">{{ t('onlineUsers.totalUp') }} {{ formatRate(onlineData?.total_uplink_rate || 0) }}</el-tag>
-              <el-tag effect="plain">{{ t('onlineUsers.totalDown') }} {{ formatRate(onlineData?.total_downlink_rate || 0) }}</el-tag>
+              <el-tag effect="plain">{{ t('onlineUsers.totalUp') }} {{ formatBytes(onlineData?.total_uplink_bytes || 0) }}</el-tag>
+              <el-tag effect="plain">{{ t('onlineUsers.totalDown') }} {{ formatBytes(onlineData?.total_downlink_bytes || 0) }}</el-tag>
             </div>
             <div style="display:flex;gap:8px;align-items:center">
               <el-input v-model="onlineKeyword" :placeholder="t('onlineUsers.search')" clearable size="small" style="width:200px" @input="onOnlineKeywordInput" @clear="onOnlineFilterChange">

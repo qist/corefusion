@@ -34,6 +34,14 @@ type NodeOnlineStore struct {
 type onlineSession struct {
 	since    int64 // 本次连续在线的起点（面板时钟，unix 秒）
 	lastSeen int64 // 面板最后一次看到该会话的时间
+	// 流量累加：核心只提供「用户级累计计数器」，而且核心重启/流量复位会归零，
+	// 直接展示计数器就等于展示「这次核心跑起来之后的流量」（和在线时长对不上）。
+	// 这里按连续在线区间做增量累加：up/down 是上一次采样到的计数器值，
+	// cumUp/cumDown 是本次连续在线区间内的累计流量。
+	up      int64
+	down    int64
+	cumUp   int64
+	cumDown int64
 }
 
 // NewNodeOnlineStore 创建在线存储；ttlSec 为快照过期秒数（默认 60s）。
@@ -88,6 +96,17 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 		} else if u.FirstSeen <= 0 || u.FirstSeen > u.LastSeen {
 			// 无法归户的匿名条目：只做基础归一，不参与连续在线跟踪。
 			u.FirstSeen = u.LastSeen
+		}
+
+		// 流量同样按「连续在线区间」累加，口径与在线时长一致：
+		// 短连接重连、计数器复位都不清零，超过 graceSec 没出现才重新开始。
+		// 累加结果直接写回上报条目，前端无需改字段。
+		if trafficKey := onlineTrafficKey(u); trafficKey != "" {
+			up, down := accumulateOnlineTraffic(states, trafficKey, now, s.graceSec,
+				u.GetUplinkBytes(), u.GetDownlinkBytes())
+			u.UplinkBytes = up
+			u.DownlinkBytes = down
+			seen[trafficKey] = struct{}{}
 		}
 
 		for _, sess := range u.Sessions {
@@ -146,6 +165,58 @@ func onlineUserKey(u *agentpb.OnlineUserEntry) string {
 		return core + "|e:" + email
 	}
 	return ""
+}
+
+// onlineTrafficKey 生成流量累加的键。
+//
+// 不能复用 onlineUserKey：一个订阅在多个入站各有一个账号，每个账号的
+// 流量计数器是独立的；用订阅级键会把不同账号的计数器混在一起差分。
+// 账号名（AccountEmail，带 _shortTag）是核心里的唯一计数主体，优先用它。
+func onlineTrafficKey(u *agentpb.OnlineUserEntry) string {
+	core := u.GetCoreType()
+	account := u.GetAccountEmail()
+	if account == "" {
+		account = u.GetEmail()
+	}
+	if account == "" {
+		if u.GetSubscriptionId() <= 0 {
+			return ""
+		}
+		account = "s:" + strconv.FormatInt(u.GetSubscriptionId(), 10)
+	}
+	return core + "|t:" + account
+}
+
+// accumulateOnlineTraffic 把核心计数器换算成「本次连续在线区间内的累计流量」。
+//
+//   - 首次出现：以当前计数器为基线，累计从 0 开始（之前那些流量属于更早的在线）；
+//   - graceSec 内再次出现：累加本次增量（短连接重连不清零）；
+//   - 计数器回退（核心重启 / 流量复位）：按新计数器从头累加，不丢当前值；
+//   - 超过 graceSec 没出现：视为新的一次在线，重新取基线。
+//
+// 返回值写回上报条目的 uplink_bytes / downlink_bytes，前端可直接展示。
+func accumulateOnlineTraffic(states map[string]*onlineSession, key string, now, graceSec, up, down int64) (int64, int64) {
+	up = max(up, 0)
+	down = max(down, 0)
+
+	st := states[key]
+	if st == nil || now-st.lastSeen > graceSec {
+		states[key] = &onlineSession{since: now, lastSeen: now, up: up, down: down}
+		return 0, 0
+	}
+	st.lastSeen = now
+	st.cumUp += counterDelta(up, st.up)
+	st.cumDown += counterDelta(down, st.down)
+	st.up, st.down = up, down
+	return st.cumUp, st.cumDown
+}
+
+// counterDelta 计算单调计数器的增量；回退说明计数器被复位，从 0 重新算。
+func counterDelta(cur, prev int64) int64 {
+	if cur >= prev {
+		return cur - prev
+	}
+	return cur
 }
 
 // GetFresh 返回未过期的在线快照；已过期视为无数据。

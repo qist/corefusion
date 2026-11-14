@@ -59,12 +59,14 @@ func (h *Handler) GetAllOnlineUsers(c *gin.Context) {
 	})
 	// 用统一分页响应包裹：items=本页用户，total=筛选后总数；同时附带全局汇总。
 	response.OK(c, gin.H{
-		"items":               res.Users,
-		"total":               res.FilteredTotal,
-		"limit":               p.Limit,
-		"offset":              p.Offset,
-		"total_subscriptions": res.TotalSubscriptions,
-		"total_devices":       res.TotalDevices,
+		"items":                res.Users,
+		"total":                res.FilteredTotal,
+		"limit":                p.Limit,
+		"offset":               p.Offset,
+		"total_subscriptions":  res.TotalSubscriptions,
+		"total_devices":        res.TotalDevices,
+		"total_uplink_bytes":   res.TotalUplinkBytes,
+		"total_downlink_bytes": res.TotalDownlinkBytes,
 	})
 }
 

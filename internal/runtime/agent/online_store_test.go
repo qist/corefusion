@@ -146,6 +146,100 @@ func (s *NodeOnlineStore) mustGet(serverID int64) *NodeOnlineSnapshot {
 	return snap
 }
 
+// trafficEntry 构造一条带流量计数器的上报（核心给的是「用户级累计计数器」）。
+func trafficEntry(account string, subID, up, down int64) []*agentpb.OnlineUserEntry {
+	return []*agentpb.OnlineUserEntry{{
+		SubscriptionId: subID, Email: "a@example.com", AccountEmail: account,
+		CoreType: "xray", LastSeen: time.Now().Unix(),
+		UplinkBytes: up, DownlinkBytes: down,
+		Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}},
+	}}
+}
+
+// 「累计流量」必须是本次连续在线区间内的总量，而不是核心计数器的当前值：
+// 短连接重连（同一账号在 grace 内重现）要继续累加，计数器复位也不能清零。
+func TestUpdateAccumulatesTrafficAcrossShortGaps(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+
+	// 首次出现：以当前计数器为基线，累计从 0 开始。
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 100, 1000))
+	u := s.mustGet(1).Users[0]
+	if u.GetUplinkBytes() != 0 || u.GetDownlinkBytes() != 0 {
+		t.Fatalf("首次出现应只记录基线，实际 up=%d down=%d", u.GetUplinkBytes(), u.GetDownlinkBytes())
+	}
+
+	// 同一账号继续在线：累计 = 增量。
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 300, 1500))
+	u = s.mustGet(1).Users[0]
+	if u.GetUplinkBytes() != 200 || u.GetDownlinkBytes() != 500 {
+		t.Fatalf("应累加增量 200/500，实际 up=%d down=%d", u.GetUplinkBytes(), u.GetDownlinkBytes())
+	}
+
+	// 计数器复位（核心重启）：当前值本身是新产生的流量，不能丢。
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 50, 100))
+	u = s.mustGet(1).Users[0]
+	if u.GetUplinkBytes() != 250 || u.GetDownlinkBytes() != 600 {
+		t.Fatalf("计数器复位后应继续累加 250/600，实际 up=%d down=%d", u.GetUplinkBytes(), u.GetDownlinkBytes())
+	}
+}
+
+// 超过 graceSec 没出现视为新的一次在线：时长与流量都要重新开始。
+func TestUpdateResetsTrafficAfterLongGap(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 100, 1000))
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 400, 4000))
+	if u := s.mustGet(1).Users[0]; u.GetUplinkBytes() != 300 {
+		t.Fatalf("前置累计应为 300，实际 %d", u.GetUplinkBytes())
+	}
+
+	// 模拟 10 分钟没有任何上报，然后带着很大的计数器回来。
+	s.mu.Lock()
+	old := time.Now().Unix() - 600
+	for _, st := range s.sessions[1] {
+		st.lastSeen = old
+	}
+	s.mu.Unlock()
+	s.Update(1, trafficEntry("a@example.com_vless1", 5, 5000, 50000))
+	u := s.mustGet(1).Users[0]
+	if u.GetUplinkBytes() != 0 || u.GetDownlinkBytes() != 0 {
+		t.Fatalf("跨过 grace 后应重新累计，实际 up=%d down=%d", u.GetUplinkBytes(), u.GetDownlinkBytes())
+	}
+}
+
+// 同一订阅的多个入站账号各有独立计数器，不能互相差分（否则会算出负数或漏算）。
+func TestUpdateAccumulatesTrafficPerAccount(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	s.Update(1, []*agentpb.OnlineUserEntry{
+		{SubscriptionId: 5, Email: "a@example.com", AccountEmail: "a@example.com_vless1", CoreType: "xray",
+			LastSeen: time.Now().Unix(), UplinkBytes: 1000, DownlinkBytes: 10000,
+			Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}}},
+		{SubscriptionId: 5, Email: "a@example.com", AccountEmail: "a@example.com_trojan2", CoreType: "xray",
+			LastSeen: time.Now().Unix(), UplinkBytes: 10, DownlinkBytes: 20,
+			Sessions: []*agentpb.OnlineSession{{Ip: "5.6.7.8"}}},
+	})
+	s.Update(1, []*agentpb.OnlineUserEntry{
+		{SubscriptionId: 5, Email: "a@example.com", AccountEmail: "a@example.com_vless1", CoreType: "xray",
+			LastSeen: time.Now().Unix(), UplinkBytes: 1100, DownlinkBytes: 10200,
+			Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}}},
+		{SubscriptionId: 5, Email: "a@example.com", AccountEmail: "a@example.com_trojan2", CoreType: "xray",
+			LastSeen: time.Now().Unix(), UplinkBytes: 30, DownlinkBytes: 60,
+			Sessions: []*agentpb.OnlineSession{{Ip: "5.6.7.8"}}},
+	})
+
+	users := s.mustGet(1).Users
+	want := map[string][2]int64{
+		"a@example.com_vless1":  {100, 200},
+		"a@example.com_trojan2": {20, 40},
+	}
+	for _, u := range users {
+		w := want[u.GetAccountEmail()]
+		if u.GetUplinkBytes() != w[0] || u.GetDownlinkBytes() != w[1] {
+			t.Errorf("账号 %s 累计 up=%d down=%d，期望 %d/%d",
+				u.GetAccountEmail(), u.GetUplinkBytes(), u.GetDownlinkBytes(), w[0], w[1])
+		}
+	}
+}
+
 // 会话级时长 = now - connected_since：缺省 0 会得到 498484 小时，
 // 比采样时间还晚则是负时长。快照入库时必须统一修正。
 func TestUpdateNormalizesSessionConnectedSince(t *testing.T) {

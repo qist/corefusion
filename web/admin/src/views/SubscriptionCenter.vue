@@ -331,8 +331,8 @@
           <el-option v-for="(_, name) in ruleProviders" :key="name" :label="name" :value="name" />
         </el-select>
         <el-input v-if="newRuleType!=='RULE-SET'" v-model="newRuleValue" size="small" placeholder="cn, private" style="width:130px" />
-        <el-select v-model="newRuleOutbound" size="small" allow-create filterable style="width:100px">
-          <el-option label="PROXY" value="PROXY" /><el-option label="DIRECT" value="DIRECT" /><el-option label="BLOCK" value="BLOCK" />
+        <el-select v-model="newRuleOutbound" size="small" allow-create filterable style="width:140px">
+          <el-option v-for="tag in outboundTagOptions" :key="tag" :label="tag" :value="tag" />
         </el-select>
         <el-button size="small" type="primary" @click="addRule">{{ t('subfmt.addRule') }}</el-button>
       </div>
@@ -400,7 +400,7 @@
         </el-form-item>
         <el-form-item :label="t('subfmt.outboundTag')">
           <el-select v-model="ruleEditForm.outbound_tag" allow-create filterable style="width:100%">
-            <el-option label="PROXY" value="PROXY" /><el-option label="DIRECT" value="DIRECT" /><el-option label="BLOCK" value="BLOCK" />
+            <el-option v-for="tag in outboundTagOptions" :key="tag" :label="tag" :value="tag" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="ruleEditForm.rule_type !== 'MATCH'" :label="t('subfmt.ruleAction')">
@@ -520,6 +520,27 @@ const newRuleType = ref('domain_suffix')
 const newRuleValue = ref('')
 const newRuleProvider = ref('')
 const newRuleOutbound = ref('DIRECT')
+// 该格式实际存在的出站标签（代理组 + config_json 里的自定义出站）。
+// 导入 YAML 时节点会被过滤，但代理组/自定义出站保留，规则应能直接选到这些标签，
+// 否则只能手输，标签一旦拼错客户端就会因 "proxy not found" 拒载整份配置。
+const formatOutboundTags = ref([])
+const outboundTagOptions = computed(() => {
+  // Clash/Mihomo 的内置屏蔽出站是 REJECT（BLOCK 是 sing-box 的写法，客户端会报
+  // proxy not found），这里只能给 Mihomo 认的标签。
+  const out = ['PROXY', 'DIRECT', 'REJECT', 'REJECT-DROP']
+  for (const tag of formatOutboundTags.value) {
+    if (tag && !out.includes(tag)) out.push(tag)
+  }
+  return out
+})
+function readFormatConfig(configEntity) {
+  try { return JSON.parse(configEntity?.config_json || '{}') } catch { return {} }
+}
+function readOutboundTags(cfg) {
+  const groups = (cfg['proxy-groups'] || cfg.proxy_groups || []).map(g => g?.name)
+  const proxies = (cfg.proxies || []).map(p => p?.name)
+  return [...new Set([...groups, ...proxies].filter(Boolean))]
+}
 
 // 原文规则（sing-box / xray）：规则不互通不转换，逐条存该格式自己的 JSON 原文
 const rulesFmt = ref('mihomo_yaml')
@@ -550,7 +571,9 @@ const xrayConfig = ref({})
 // 「导入 JSON」：粘贴 sing-box / xray 配置文本，解析后填入各标签页
 const importJSONDialog = ref(false)
 const importJSONContent = ref('')
-const singboxRuleSetExample = '{"tag":"geosite-cn","type":"remote","format":"srs","url":"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs","download_detour":"proxy"}'
+// download_detour 只能指向订阅里真实存在的出站：订阅只生成「节点 tag + direct/block」，
+// 示例里写 proxy 在客户端会直接报 outbound not found。
+const singboxRuleSetExample = '{"tag":"geosite-cn","type":"remote","format":"srs","url":"https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs","download_detour":"direct"}'
 const ruleSetLines = computed(() =>
   ruleSetText.value.split('\n').map(s => s.trim()).filter(Boolean)
 )
@@ -1618,6 +1641,8 @@ async function showFormatRules(row) {
   rawRuleItems.value = []
   ruleSetText.value = ''
   formatRules.value = []
+  formatOutboundTags.value = []
+  ruleProviders.value = {}
   rulesDialog.value = true
   await reloadRules()
 }
@@ -1639,6 +1664,13 @@ async function reloadRules() {
       if (rulesFmt.value === 'singbox_json') ruleSetText.value = readRuleSetLines(r.config)
       return
     }
+    // 出站标签候选来自该格式自己的 config_json：导入 YAML 时节点会被过滤，
+    // 但代理组与自定义出站保留，新建/编辑规则时要能直接选到这些标签。
+    const cfg = readFormatConfig(r.config)
+    formatOutboundTags.value = readOutboundTags(cfg)
+    // RULE-SET 规则的规则集候选同理：直接「规则」按钮进来时不会走编辑弹窗，
+    // 不在这里补就会拿到上一个格式残留（或空）的 ruleProviders。
+    ruleProviders.value = cfg['rule-providers'] || cfg.rule_providers || {}
     formatRules.value = rules.map((rule, i) => ({
       ...parseRuleString(rule.rule_string || '', i),
       id: rule.id,
@@ -1648,6 +1680,8 @@ async function reloadRules() {
   } catch {
     formatRules.value = []
     rawRuleItems.value = []
+    formatOutboundTags.value = []
+    ruleProviders.value = {}
   }
 }
 

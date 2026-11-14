@@ -607,8 +607,15 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		// 原样注入，不做任何跨格式转换（Mihomo 规则进不了这里，见 config 格式过滤）。
 		data = injectJSONRules(data, mihomoRules, "route")
 		// 外部规则集与 Clash 引入 rule-providers 的方式一致：定义存 config_json，
-		// 这里原样注入到顶层 rule_set，规则里用 {"rule_set":["tag"]} 引用。
+		// 这里原样注入到 route.rule_set，规则里用 {"rule_set":["tag"]} 引用。
 		data = injectRuleSets(data, mihomoConfig)
+		// 固定生成 tag=proxy 的 selector：导入配置的规则/final 常用 proxy 指代
+		// 原代理组，没有这个组时只能回落默认节点。
+		data = injectProxyGroup(data, "singbox")
+		// 出站是订阅动态生成的（节点名 + direct/block），导入配置里的 final/规则/
+		// rule_set 出站引用会指向原配置的代理组；悬空引用在 sing-box 上要么启动
+		// FATAL，要么命中即断。这里统一清理掉，保证订阅至少能启动。
+		data = sanitizeJSONRoute(data, "route", "singbox")
 		contentType = f.ContentType()
 	case formatter.FormatXrayJSON:
 		// 与 sing-box 一致：直接用**配置派生的节点**，不要从链接反解。
@@ -623,6 +630,12 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "routing", "policy")
 		// xray 自己的 routing 规则原文注入，不转换。
 		data = injectJSONRules(data, mihomoRules, "routing")
+		// xray 没有 selector 出站：用 random 策略的 balancer 承载 proxy 组，
+		// 并把引用 proxy 的规则改成 balancerTag（见 injectProxyGroup）。
+		data = injectProxyGroup(data, "xray")
+		// 与 sing-box 同理：清理指向不存在出站/负载均衡的悬空引用，
+		// 否则命中该规则的连接会被 xray 直接丢弃（non existing outTag）。
+		data = sanitizeJSONRoute(data, "routing", "xray")
 		contentType = f.ContentType()
 	default:
 		joined := strings.Join(append(billingLinks, links...), "\n")
@@ -1479,6 +1492,13 @@ func mergeFormatSections(data []byte, cfg *entity.MihomoConfig, allow ...string)
 		if !ok || v == nil {
 			continue
 		}
+		if key == "dns" && looksLikeMihomoDNS(v) {
+			// sing-box / xray 的 dns 段与 Mihomo 完全不同（servers/strategy vs
+			// nameserver/enhanced-mode）。历史订阅格式把整份 Mihomo 配置存进过
+			// JSON 格式行，直接合并会让客户端因未知字段启动失败。
+			log.Printf("[subscription] shared config %q: Mihomo-shaped dns skipped for JSON format", cfg.Name)
+			continue
+		}
 		if m, isMap := v.(map[string]interface{}); isMap {
 			if d, has := m["_disabled"]; has && d == true {
 				continue
@@ -1547,7 +1567,13 @@ func injectJSONRules(data []byte, rules []entity.MihomoRule, section string) []b
 		if raw == "" {
 			continue
 		}
-		parsed = append(parsed, parseRuleJSON(raw)...)
+		items := parseRuleJSON(raw)
+		if len(items) == 0 {
+			// 历史/误填的 Mihomo 行语法进不了 JSON 数组，静默丢弃会让用户以为规则生效了。
+			log.Printf("[subscription] %s rule skipped (not valid JSON): %.120s", section, raw)
+			continue
+		}
+		parsed = append(parsed, items...)
 	}
 	if len(parsed) == 0 {
 		return data
@@ -1678,6 +1704,12 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 		existing = append(existing, m)
 		changed = true
 	}
+	// 历史配置里的 `rule-set`（连字符）是 sing-box 不认的字段：merge 会把整段 route
+	// 原样带进订阅，只补 rule_set 不删旧键，客户端仍会因 unknown field "rule-set" FATAL。
+	if _, has := route["rule-set"]; has {
+		delete(route, "rule-set")
+		changed = true
+	}
 	if !changed {
 		return data
 	}
@@ -1689,6 +1721,642 @@ func injectRuleSets(data []byte, cfg *entity.MihomoConfig) []byte {
 		return data
 	}
 	return b
+}
+
+// proxyGroupTag 是订阅里固定生成的「代理组」标签。
+//
+// 导入配置的规则/final 习惯用 proxy 指代原配置的代理组，而订阅只生成
+// 「节点 tag + direct/block」。没有这个组时这些规则只能回落默认节点
+// （等于全部裸连同一台）。固定生成一个 proxy 组，让它们按原意走代理。
+const proxyGroupTag = "proxy"
+
+// injectProxyGroup 给生成的订阅补一个 tag=proxy 的出站组：
+//   - sing-box：type=selector，成员是全部节点（默认第一个节点，客户端可手选）；
+//   - xray：routing.balancers 里加一个 random 策略的 balancer（xray 没有 selector
+//     出站），并把 outboundTag=proxy 的规则改写成 balancerTag=proxy。
+//
+// 已存在同名出站（例如节点备注就叫 proxy）时不动，避免 duplicate tag 让整份配置拒载。
+// 必须在 sanitizeJSONRoute 之前调用：否则 proxy 会被当成悬空引用回落默认节点。
+func injectProxyGroup(data []byte, core string) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg == nil {
+		return data
+	}
+	outbounds, _ := cfg["outbounds"].([]interface{})
+	nodeTags := make([]string, 0, len(outbounds))
+	for _, item := range outbounds {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		if strings.EqualFold(tag, proxyGroupTag) {
+			// 节点自己就叫 proxy：再生成同名组会让客户端整份拒载
+			return data
+		}
+		if tag == "direct" || tag == "block" {
+			continue
+		}
+		nodeTags = append(nodeTags, tag)
+	}
+	if len(nodeTags) == 0 {
+		return data
+	}
+	tags := make([]interface{}, 0, len(nodeTags))
+	for _, tag := range nodeTags {
+		tags = append(tags, tag)
+	}
+
+	if core == "singbox" {
+		cfg["outbounds"] = append(outbounds, map[string]interface{}{
+			"type":      "selector",
+			"tag":       proxyGroupTag,
+			"outbounds": tags,
+			"default":   nodeTags[0],
+		})
+		log.Printf("[subscription] singbox: injected selector %q with %d nodes", proxyGroupTag, len(nodeTags))
+	} else {
+		routing, _ := cfg["routing"].(map[string]interface{})
+		if routing == nil {
+			routing = map[string]interface{}{}
+		}
+		balancers, _ := routing["balancers"].([]interface{})
+		for _, item := range balancers {
+			if m, ok := item.(map[string]interface{}); ok {
+				if tag, _ := m["tag"].(string); strings.EqualFold(tag, proxyGroupTag) {
+					return data
+				}
+			}
+		}
+		balancers = append(balancers, map[string]interface{}{
+			"tag":      proxyGroupTag,
+			"selector": tags,
+			"strategy": map[string]interface{}{"type": "random"},
+		})
+		routing["balancers"] = balancers
+		// xray 的 outboundTag 必须是真实出站，规则引用 proxy 时改成 balancerTag。
+		if rules, ok := routing["rules"].([]interface{}); ok {
+			for _, item := range rules {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if out, _ := m["outboundTag"].(string); strings.EqualFold(out, proxyGroupTag) {
+					delete(m, "outboundTag")
+					m["balancerTag"] = proxyGroupTag
+				}
+			}
+		}
+		cfg["routing"] = routing
+		log.Printf("[subscription] xray: injected balancer %q with %d nodes", proxyGroupTag, len(nodeTags))
+	}
+
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return data
+	}
+	return b
+}
+
+// looksLikeMihomoDNS 判断 config_json 里的 dns 段是不是 Mihomo 形状。
+// 这些键是 Mihomo 独有、sing-box / xray 都不认的字段，命中任意一个就说明
+// 这段 dns 不能合并给 JSON 格式（否则客户端会因未知字段拒载）。
+func looksLikeMihomoDNS(v interface{}) bool {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	for _, key := range []string{
+		"enhanced-mode", "fake-ip-range", "fake-ip-filter", "fallback-filter",
+		"nameserver-policy", "proxy-server-nameserver", "direct-nameserver",
+		"default-nameserver", "fallback",
+	} {
+		if _, has := m[key]; has {
+			return true
+		}
+	}
+	return false
+}
+
+// sanitizeJSONRoute 清理合并后的路由段里指向不存在出站 / 规则集的引用。
+//
+// 为什么必须在服务端做：xray / sing-box 订阅的出站是按套餐动态生成的
+// （节点名 + direct / block），而 config_json 与规则里的标签是用户从其它客户端
+// 导入的，通常指向原配置的代理组（proxy、🚀 节点选择…）。这些标签不会被生成：
+//   - sing-box：route.final 悬空 → 启动 FATAL（default outbound not found）；
+//     规则命中悬空出站 → 该连接失败（outbound not found）；
+//     rule_set 引用不存在的 tag → 启动 FATAL（rule-set not found）；
+//     rule_set.download_detour 悬空 → 启动 FATAL（拉取规则集失败）。
+//   - xray：规则命中不存在的 outboundTag → 连接被丢弃（non existing outTag）；
+//     规则只剩 outboundTag、没有任何匹配字段 → 启动 FATAL
+//     （this rule has no effective fields）。
+//
+// 策略：
+//   - 悬空出站：先做语义明确的别名映射（REJECT/blocked → block、DIRECT → direct），
+//     再回落到默认出站（outbounds 第一条 = 节点）。规则保留在原位置，仍按原顺序
+//     命中并走代理，避免"删掉规则后被后面的 catch-all 误伤"；
+//   - 无法修复的引用（规则集/tag 不存在、final/download_detour 悬空、字段类型非法）
+//     直接删除，保证订阅至少能启动；日志保留线索。
+//
+// core 取 "singbox" 或 "xray"，section 取 "route" 或 "routing"。
+func sanitizeJSONRoute(data []byte, section, core string) []byte {
+	if len(data) == 0 {
+		return data
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg == nil {
+		return data
+	}
+	sec, _ := cfg[section].(map[string]interface{})
+	// sing-box 的 dns 段即使没有 route 也要清理（detour/final 悬空同样 FATAL）。
+	if sec == nil && core != "singbox" {
+		return data
+	}
+
+	outboundTags := map[string]bool{}
+	defaultTag := ""
+	if outbounds, ok := cfg["outbounds"].([]interface{}); ok {
+		for _, item := range outbounds {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if tag, _ := m["tag"].(string); tag != "" {
+				outboundTags[tag] = true
+				if defaultTag == "" {
+					// 未命中任何规则时的默认出站 = outbounds 第一条（客户端语义）。
+					defaultTag = tag
+				}
+			}
+		}
+	}
+
+	changed := false
+	if core == "singbox" {
+		dns, _ := cfg["dns"].(map[string]interface{})
+		changed = sanitizeSingboxDNS(dns, outboundTags) || changed
+		if sec != nil {
+			changed = sanitizeSingboxRoute(sec, outboundTags, singboxDNSTags(dns), defaultTag) || changed
+		}
+	} else {
+		changed = sanitizeXrayRoute(sec, outboundTags, defaultTag) || changed
+	}
+	if !changed {
+		return data
+	}
+	if sec != nil {
+		cfg[section] = sec
+	}
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return data
+	}
+	return b
+}
+
+// singboxRuleSetUsable 校验一条 rule_set 定义能否随订阅下发给客户端，返回其 tag。
+// 只有两种能下发：
+//   - remote：必须有 tag + format(source/binary) + url；
+//   - inline：必须有 tag + 非空 rules。
+//
+// local 指向客户端本机文件（订阅不会传文件，启动即 open no such file FATAL），
+// 缺 tag/format/url 或 format 非法（如误写成 mihomo 的 yaml）也会让核心拒载整份配置。
+func singboxRuleSetUsable(m map[string]interface{}) (string, bool) {
+	tag, _ := m["tag"].(string)
+	if tag == "" {
+		return "", false
+	}
+	switch typ, _ := m["type"].(string); typ {
+	case "remote":
+		format, _ := m["format"].(string)
+		if format != "source" && format != "binary" {
+			return "", false
+		}
+		if u, _ := m["url"].(string); u == "" {
+			return "", false
+		}
+	case "inline":
+		rules, _ := m["rules"].([]interface{})
+		if len(rules) == 0 {
+			return "", false
+		}
+	default:
+		return "", false
+	}
+	return tag, true
+}
+
+// singboxDNSTags 收集 dns.servers[].tag，用于校验 route.default_domain_resolver。
+func singboxDNSTags(dns map[string]interface{}) map[string]bool {
+	tags := map[string]bool{}
+	if dns == nil {
+		return tags
+	}
+	servers, _ := dns["servers"].([]interface{})
+	for _, item := range servers {
+		if m, ok := item.(map[string]interface{}); ok {
+			if tag, _ := m["tag"].(string); tag != "" {
+				tags[tag] = true
+			}
+		}
+	}
+	return tags
+}
+
+// sanitizeSingboxDNS 清理 DNS 段里指向不存在出站/服务器的引用：
+//   - dns.servers[].detour 悬空 → 启动 FATAL（outbound detour not found）；
+//   - dns.final 悬空 → 启动 FATAL（default DNS server not found）。
+func sanitizeSingboxDNS(dns map[string]interface{}, outboundTags map[string]bool) bool {
+	if dns == nil {
+		return false
+	}
+	changed := false
+	if servers, ok := dns["servers"].([]interface{}); ok {
+		for _, item := range servers {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if detour, _ := m["detour"].(string); detour != "" && !outboundTags[detour] {
+				log.Printf("[subscription] singbox: dns server %q detour %q not in outbounds, removed", getString(m, "tag", ""), detour)
+				delete(m, "detour")
+				changed = true
+			}
+		}
+	}
+	tags := singboxDNSTags(dns)
+	if final, _ := dns["final"].(string); final != "" && !tags[final] {
+		log.Printf("[subscription] singbox: dns.final %q not in dns servers, removed", final)
+		delete(dns, "final")
+		changed = true
+	}
+	return changed
+}
+
+// jsonOutboundAliases 把各生态里语义明确的等价出站标签映射到订阅生成的标签。
+// 只做不会改变分流含义的映射（大小写/常见黑名单 tag），未知 tag 再回落到默认出站。
+var jsonOutboundAliases = map[string]string{
+	"direct":      "direct",
+	"block":       "block",
+	"reject":      "block",
+	"reject-drop": "block",
+	"blocked":     "block",
+}
+
+func jsonOutboundAlias(tag string) string {
+	return jsonOutboundAliases[strings.ToLower(strings.TrimSpace(tag))]
+}
+
+// resolveJSONOutbound 把规则里的出站标签解析成订阅里实际存在的 tag：
+// 精确匹配 → 别名（REJECT/blocked → block）→ 大小写不敏感匹配（PROXY → proxy、
+// DIRECT → direct）。导入配置里大写写法很常见，直接丢给客户端会 outbound not found。
+// 返回空表示解析不到，调用方再回落到默认出站。
+func resolveJSONOutbound(tag string, outboundTags map[string]bool) string {
+	if outboundTags[tag] {
+		return tag
+	}
+	if mapped := jsonOutboundAlias(tag); mapped != "" && outboundTags[mapped] {
+		return mapped
+	}
+	for existing := range outboundTags {
+		if strings.EqualFold(existing, tag) {
+			return existing
+		}
+	}
+	return ""
+}
+
+func sanitizeSingboxRoute(sec map[string]interface{}, outboundTags, dnsTags map[string]bool, defaultTag string) bool {
+	changed := false
+
+	ruleSetTags := map[string]bool{}
+	if sets, ok := sec["rule_set"].([]interface{}); ok {
+		kept := make([]interface{}, 0, len(sets))
+		for _, item := range sets {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				changed = true
+				continue
+			}
+			tag, ok := singboxRuleSetUsable(m)
+			if !ok {
+				log.Printf("[subscription] singbox: invalid rule_set %v dropped (need remote+tag+format+url, inline+tag+rules; local has no client file)", m)
+				changed = true
+				continue
+			}
+			ruleSetTags[tag] = true
+			if detour, _ := m["download_detour"].(string); detour != "" && !outboundTags[detour] {
+				log.Printf("[subscription] singbox: rule_set %q download_detour %q not in outbounds, removed", getString(m, "tag", ""), detour)
+				delete(m, "download_detour")
+				changed = true
+			}
+			// http_clients 段不会随订阅下发（config_json 的合并白名单里没有它），
+			// 悬空引用会让核心启动 FATAL（http_client not found）。
+			if hc, _ := m["http_client"].(string); hc != "" {
+				log.Printf("[subscription] singbox: rule_set %q http_client %q is not delivered, removed", getString(m, "tag", ""), hc)
+				delete(m, "http_client")
+				changed = true
+			}
+			kept = append(kept, m)
+		}
+		if len(kept) != len(sets) {
+			if len(kept) == 0 {
+				delete(sec, "rule_set")
+			} else {
+				sec["rule_set"] = kept
+			}
+			changed = true
+		}
+	}
+
+	if final, _ := sec["final"].(string); final != "" && !outboundTags[final] {
+		log.Printf("[subscription] singbox: route.final %q not in outbounds, removed", final)
+		delete(sec, "final")
+		changed = true
+	}
+
+	// default_domain_resolver 指向不存在的 DNS server tag 会让核心启动 FATAL
+	// （default domain resolver not found）。值既可能是字符串也可能是对象。
+	switch v := sec["default_domain_resolver"].(type) {
+	case string:
+		if v != "" && !dnsTags[v] {
+			log.Printf("[subscription] singbox: route.default_domain_resolver %q not in dns servers, removed", v)
+			delete(sec, "default_domain_resolver")
+			changed = true
+		}
+	case map[string]interface{}:
+		if tag, _ := v["server"].(string); tag != "" && !dnsTags[tag] {
+			log.Printf("[subscription] singbox: route.default_domain_resolver.server %q not in dns servers, removed", tag)
+			delete(sec, "default_domain_resolver")
+			changed = true
+		}
+	}
+
+	if rules, ok := sec["rules"].([]interface{}); ok {
+		kept := make([]interface{}, 0, len(rules))
+		for _, item := range rules {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				log.Printf("[subscription] singbox: non-object route rule skipped")
+				changed = true
+				continue
+			}
+			keep, modified := fixSingboxRuleRefs(m, outboundTags, ruleSetTags, defaultTag)
+			if !keep {
+				log.Printf("[subscription] singbox: route rule references missing rule_set or invalid fields, skipped: %v", m)
+				changed = true
+				continue
+			}
+			if modified {
+				changed = true
+			}
+			kept = append(kept, m)
+		}
+		if len(kept) != len(rules) {
+			sec["rules"] = kept
+			changed = true
+		}
+	}
+	return changed
+}
+
+// fixSingboxRuleRefs 修正/校验一条规则（含 logical 子规则）的出站与规则集引用。
+//
+// 悬空出站不直接丢规则：先按别名映射（REJECT → block 等），再回落到默认出站
+// （outbounds 第一条）。这样原规则仍然按原位置命中、走代理，不会被后面的
+// catch-all（例如 MATCH → direct）误伤；只有规则集引用不存在或字段类型非法才丢弃。
+func fixSingboxRuleRefs(rule map[string]interface{}, outboundTags, ruleSetTags map[string]bool, defaultTag string) (keep bool, changed bool) {
+	// 1.11+ 的 action 规则（reject / sniff / resolve…）不用 outbound。
+	action := ""
+	if raw, has := rule["action"]; has {
+		v, ok := raw.(string)
+		if !ok {
+			return false, false
+		}
+		action = v
+	}
+	if raw, has := rule["outbound"]; has {
+		out, ok := raw.(string)
+		if !ok {
+			return false, false
+		}
+		if (action == "" || action == "route") && out != "" && !outboundTags[out] {
+			target := resolveJSONOutbound(out, outboundTags)
+			if target == "" {
+				target = defaultTag
+			}
+			if target == "" {
+				return false, false
+			}
+			log.Printf("[subscription] singbox: route rule outbound %q not in outbounds, rewritten to %q", out, target)
+			rule["outbound"] = target
+			changed = true
+		}
+	}
+	if raw, has := rule["rule_set"]; has {
+		tags, ok := raw.([]interface{})
+		if !ok {
+			return false, false
+		}
+		for _, item := range tags {
+			tag, _ := item.(string)
+			if tag != "" && !ruleSetTags[tag] {
+				return false, false
+			}
+		}
+	}
+	if raw, has := rule["rules"]; has {
+		nested, ok := raw.([]interface{})
+		if !ok {
+			return false, false
+		}
+		for _, item := range nested {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				return false, false
+			}
+			nestedKeep, nestedChanged := fixSingboxRuleRefs(m, outboundTags, ruleSetTags, defaultTag)
+			if !nestedKeep {
+				return false, false
+			}
+			changed = changed || nestedChanged
+		}
+	}
+	return true, changed
+}
+
+func sanitizeXrayRoute(sec map[string]interface{}, outboundTags map[string]bool, defaultTag string) bool {
+	changed := false
+
+	// 先修剪 balancer 的 selector：指向不存在出站的成员会让该 balancer 永远选不中，
+	// 成员全被剪掉时整个 balancer 也没意义。
+	balancerTags := map[string]bool{}
+	if balancers, ok := sec["balancers"].([]interface{}); ok {
+		kept := make([]interface{}, 0, len(balancers))
+		for _, item := range balancers {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				changed = true
+				continue
+			}
+			// xray 对空 selector 直接 FATAL（empty selector list），
+			// selector 缺失/类型不对同样会被拒载，必须整条丢弃。
+			selector, okSel := m["selector"].([]interface{})
+			if !okSel || len(selector) == 0 {
+				log.Printf("[subscription] xray: balancer %q has no selector, dropped", getString(m, "tag", ""))
+				changed = true
+				continue
+			}
+			keptSel := make([]interface{}, 0, len(selector))
+			for _, s := range selector {
+				tag, _ := s.(string)
+				if tag != "" && outboundTags[tag] {
+					keptSel = append(keptSel, s)
+				}
+			}
+			if len(keptSel) == 0 {
+				log.Printf("[subscription] xray: balancer %q has no existing outbound, dropped", getString(m, "tag", ""))
+				changed = true
+				continue
+			}
+			if len(keptSel) != len(selector) {
+				m["selector"] = keptSel
+				changed = true
+			}
+			// fallbackTag 悬空同样会让 xray 启动失败（not all dependencies are resolved）。
+			if fb, _ := m["fallbackTag"].(string); fb != "" && !outboundTags[fb] {
+				log.Printf("[subscription] xray: balancer %q fallbackTag %q not in outbounds, removed", getString(m, "tag", ""), fb)
+				delete(m, "fallbackTag")
+				changed = true
+			}
+			if tag, _ := m["tag"].(string); tag != "" {
+				balancerTags[tag] = true
+			}
+			kept = append(kept, m)
+		}
+		if len(kept) != len(balancers) {
+			sec["balancers"] = kept
+			changed = true
+		}
+	}
+
+	if rules, ok := sec["rules"].([]interface{}); ok {
+		kept := make([]interface{}, 0, len(rules))
+		for _, item := range rules {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				log.Printf("[subscription] xray: non-object routing rule skipped")
+				changed = true
+				continue
+			}
+			if !xrayRuleHasMatcher(m) {
+				log.Printf("[subscription] xray: routing rule has no effective fields, skipped: %v", m)
+				changed = true
+				continue
+			}
+			if tag, _ := m["outboundTag"].(string); tag != "" {
+				// 语义等价的标签先映射（blocked/REJECT → block、DIRECT → direct）；
+				// 其余悬空 tag（原配置的 proxy / 代理组）回落到默认出站，
+				// 保持规则仍按原位置命中并走代理，而不是整条丢弃后被 catch-all 误伤。
+				if !outboundTags[tag] {
+					target := resolveJSONOutbound(tag, outboundTags)
+					if target == "" {
+						target = defaultTag
+					}
+					if target == "" {
+						log.Printf("[subscription] xray: routing rule outboundTag %q not in outbounds, skipped", tag)
+						changed = true
+						continue
+					}
+					log.Printf("[subscription] xray: routing rule outboundTag %q not in outbounds, rewritten to %q", tag, target)
+					m["outboundTag"] = target
+					changed = true
+				}
+			}
+			if tag, _ := m["balancerTag"].(string); tag != "" && !balancerTags[tag] {
+				// balancer 被剪掉后规则不能留着悬空 balancerTag（xray 会报错/丢弃连接），
+				// 改成显式默认出站。
+				if defaultTag == "" {
+					log.Printf("[subscription] xray: routing rule balancerTag %q not in balancers, skipped", tag)
+					changed = true
+					continue
+				}
+				log.Printf("[subscription] xray: routing rule balancerTag %q not in balancers, rewritten to outboundTag %q", tag, defaultTag)
+				delete(m, "balancerTag")
+				m["outboundTag"] = defaultTag
+				changed = true
+			}
+			kept = append(kept, m)
+		}
+		if len(kept) != len(rules) {
+			sec["rules"] = kept
+			changed = true
+		}
+	}
+	return changed
+}
+
+// xrayMatcherKeys 是 xray 路由规则里真正的匹配字段（见 infra/conf/router.go 的
+// FieldRule）。不在这个集合里的键（例如把 Mihomo 的 domain_suffix 直接粘进来）
+// xray 会忽略；如果一条规则除了 outboundTag 没有任何有效匹配字段，xray 启动即
+// FATAL（this rule has no effective fields），整份订阅会被拒载。
+var xrayMatcherKeys = map[string]bool{
+	"domain":     true,
+	"domains":    true,
+	"ip":         true,
+	"port":       true,
+	"network":    true,
+	"sourceIP":   true,
+	"source":     true,
+	"sourcePort": true,
+	"user":       true,
+	"vlessRoute": true,
+	"inboundTag": true,
+	"protocol":   true,
+	"attrs":      true,
+	"localIP":    true,
+	"localPort":  true,
+	"process":    true,
+	"localOS":    true,
+	"webhook":    true,
+}
+
+// xrayRuleHasMatcher 判断规则里是否有真正的匹配字段。
+func xrayRuleHasMatcher(rule map[string]interface{}) bool {
+	for key, value := range rule {
+		if !xrayMatcherKeys[key] {
+			continue
+		}
+		switch v := value.(type) {
+		case nil:
+			continue
+		case string:
+			if v != "" {
+				return true
+			}
+		case []interface{}:
+			if len(v) > 0 {
+				return true
+			}
+		case map[string]interface{}:
+			if len(v) > 0 {
+				return true
+			}
+		case bool:
+			if v {
+				return true
+			}
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // dropReservedAllNodesProvider 防御性移除保留 provider `subscription-nodes`：

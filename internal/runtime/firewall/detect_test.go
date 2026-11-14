@@ -390,3 +390,49 @@ func TestFirewalldListCovers(t *testing.T) {
 		}
 	}
 }
+
+// TCP 入站只放行 TCP，QUIC 系只放行 UDP，避免多余规则。
+func TestListenNetwork(t *testing.T) {
+	cases := []struct {
+		protocol string
+		config   string
+		want     string
+	}{
+		{"vless", `{"streamSettings":{"network":"raw"}}`, "tcp"},
+		{"vless", `{"streamSettings":{"network":"kcp"}}`, "udp"},
+		{"vless", `{"streamSettings":{"network":"mkcp"}}`, "udp"},
+		{"vless", `{"streamSettings":{"method":"mkcp"}}`, "udp"},
+		{"vless", `{"streamSettings":{"network":"websocket"}}`, "tcp"},
+		{"vless", `{"streamSettings":{"network":"quic"}}`, "udp"},
+		{"vmess", `{}`, "tcp"},
+		{"trojan", `{}`, "tcp"},
+		{"anytls", `{}`, "tcp"},
+		{"http", `{}`, "tcp"},
+		{"hysteria", `{}`, "udp"},
+		{"hysteria2", `{}`, "udp"},
+		{"tuic", `{}`, "udp"},
+		{"wireguard", `{}`, "udp"},
+		{"masque", `{}`, "udp"},
+		{"shadowsocks", `{}`, "tcp,udp"},
+		{"socks", `{}`, "tcp,udp"},
+		{"mixed", `{}`, "tcp,udp"},
+		{"dokodemo-door", `{"settings":{"network":"udp"}}`, "udp"},
+		{"dokodemo-door", `{"settings":{"network":"tcp"}}`, "tcp"},
+		{"vless", `{"transport":{"type":"quic"}}`, "udp"},
+		{"unknown-proto", `{}`, ""},
+		// XHTTP / MASQUE 的 H2(H3) 由 tls alpn 决定
+		{"vless", `{"streamSettings":{"method":"xhttp","tlsSettings":{"alpn":["h3"]}}}`, "udp"},
+		{"vless", `{"streamSettings":{"method":"xhttp","tlsSettings":{"alpn":["h2"]}}}`, "tcp"},
+		{"vless", `{"streamSettings":{"method":"xhttp","tlsSettings":{"alpn":["h2","h3"]}}}`, "tcp,udp"},
+		{"vless", `{"streamSettings":{"method":"xhttp"}}`, "tcp"},
+		{"masque", `{"streamSettings":{"method":"masque","tlsSettings":{"alpn":["h3"]}}}`, "udp"},
+		{"masque", `{"streamSettings":{"method":"masque","tlsSettings":{"alpn":["h2"]}}}`, "tcp"},
+		{"masque", `{"streamSettings":{"method":"masque","tlsSettings":{"alpn":["h2","h3"]}}}`, "tcp,udp"},
+		{"masque", `{"streamSettings":{"method":"masque"}}`, "udp"},
+	}
+	for _, tc := range cases {
+		if got := ListenNetwork(tc.protocol, tc.config); got != tc.want {
+			t.Fatalf("ListenNetwork(%q) = %q, want %q", tc.protocol, got, tc.want)
+		}
+	}
+}

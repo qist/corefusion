@@ -6,6 +6,8 @@ import (
 	"log"
 	"strconv"
 	"strings"
+
+	"corefusion/internal/domain"
 )
 
 // InboundConfigProvider loads enabled inbound configs for a server.
@@ -1902,7 +1904,7 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 
 		// Convert streamSettings to transport + tls
 		if ss, ok := m["streamSettings"].(map[string]interface{}); ok {
-			network, _ := ss["network"].(string)
+			network := domain.StreamTransport(ss)
 			security, _ := ss["security"].(string)
 			// ⚠ 传输名**不能直接透传** ✗：`raw` 是 xray 对 TCP 的新叫法，sing-box 里没有这个类型，
 			// 透传会导致核心拒绝启动：

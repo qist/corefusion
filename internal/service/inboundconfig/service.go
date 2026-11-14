@@ -13,6 +13,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/firewall"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
@@ -1193,11 +1194,8 @@ func validateMasqueInbound(root, settings map[string]interface{}, clients []inte
 		return fmt.Errorf("%w: masque 入站缺少 settings.address（至少填一个 CIDR，如 10.0.0.1/24）", ErrProtocolSettingsMismatch)
 	}
 	ss, _ := root["streamSettings"].(map[string]interface{})
-	network, _ := ss["network"].(string)
-	if !strings.EqualFold(network, "masque") {
-		if method, _ := ss["method"].(string); !strings.EqualFold(method, "masque") {
-			return fmt.Errorf("%w: masque 入站必须使用 masque 传输（streamSettings.network/method = masque）", ErrProtocolSettingsMismatch)
-		}
+	if !strings.EqualFold(domain.StreamTransport(ss), "masque") {
+		return fmt.Errorf("%w: masque 入站必须使用 masque 传输（streamSettings.network/method = masque）", ErrProtocolSettingsMismatch)
 	}
 	security, _ := ss["security"].(string)
 	if !strings.EqualFold(security, "tls") {

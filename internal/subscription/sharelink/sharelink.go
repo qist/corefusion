@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"corefusion/internal/domain"
 	realityutil "corefusion/internal/reality"
 )
 
@@ -92,7 +93,7 @@ func generateVlessLink(n Node) string {
 	uuid := getClientField(clients, "id")
 	flow := getClientField(clients, "flow")
 	encryption := getString(n.Settings, "encryption", "none")
-	network := getString(ss, "network", "raw")
+	network := streamNetwork(ss, "raw")
 	security := getString(ss, "security", "none")
 
 	params := url.Values{}
@@ -119,7 +120,7 @@ func generateVlessLink(n Node) string {
 func generateVmessLink(n Node) string {
 	ss := n.StreamSettings
 	clients := getClients(n.Settings)
-	network := getString(ss, "network", "raw")
+	network := streamNetwork(ss, "raw")
 	security := getString(ss, "security", "none")
 
 	// aid / scy 必须跟随用户条目：xray 的 vmess 用户本来就带 alterId 与 security
@@ -179,7 +180,7 @@ func generateVmessLink(n Node) string {
 		if seed != "" {
 			obj["seed"] = seed
 		}
-	case "ws":
+	case "ws", "websocket":
 		ws := getMap(ss, "wsSettings") // xray 入站形态
 		if ws == nil {
 			ws = getMap(ss, "ws") // 前端表单形态
@@ -219,7 +220,7 @@ func generateVmessLink(n Node) string {
 		}
 		obj["path"] = getString(hu, "path", "/")
 		obj["host"] = getString(hu, "host", "")
-	case "xhttp":
+	case "xhttp", "splithttp":
 		xhttp := getMap(ss, "xhttpSettings")
 		if xhttp == nil {
 			xhttp = getMap(ss, "xhttp")
@@ -238,7 +239,7 @@ func generateVmessLink(n Node) string {
 			}
 		}
 		switch network {
-		case "ws", "httpupgrade", "xhttp", "grpc", "h2", "http":
+		case "ws", "websocket", "httpupgrade", "xhttp", "splithttp", "grpc", "h2", "http":
 			if cur, _ := obj["host"].(string); cur == "" {
 				obj["host"] = fb
 			}
@@ -269,7 +270,7 @@ func generateTrojanLink(n Node) string {
 	ss := n.StreamSettings
 	clients := getClients(n.Settings)
 	password := getClientField(clients, "password")
-	network := getString(ss, "network", "raw")
+	network := streamNetwork(ss, "raw")
 	security := getString(ss, "security", "tls")
 
 	params := url.Values{}
@@ -483,7 +484,7 @@ func generateAuthLink(scheme string, n Node) string {
 	}
 
 	params := url.Values{}
-	network := getString(ss, "network", "")
+	network := streamNetwork(ss, "")
 	if network != "" && network != "tcp" && network != "raw" {
 		params.Set("network", network)
 	}
@@ -507,6 +508,14 @@ func generateAuthLink(scheme string, n Node) string {
 }
 
 // --- helpers ---
+
+// streamNetwork 读取传输方式并兼容 xray 新字段 method（旧字段 network 仍可用）。
+func streamNetwork(ss map[string]interface{}, def string) string {
+	if v := domain.StreamTransport(ss); v != "" {
+		return v
+	}
+	return def
+}
 
 // linkTransport 把内部（xray）传输名转换成**分享链接里的标准写法**：
 //   - xray 25 起把 TCP 传输改名为 "raw"（"tcp" 是旧名），但链接里的标准值是 **"tcp"**：
@@ -1041,7 +1050,7 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 		if h != "" {
 			params.Set("host", h)
 		}
-	case "ws":
+	case "ws", "websocket":
 		ws := getMap(ss, "wsSettings")
 		if ws == nil {
 			ws = getMap(ss, "ws")
@@ -1085,7 +1094,7 @@ func setNetworkParams(params url.Values, ss map[string]interface{}, network stri
 		if h != "" {
 			params.Set("host", h)
 		}
-	case "xhttp":
+	case "xhttp", "splithttp":
 		xhttp := getMap(ss, "xhttpSettings")
 		if xhttp == nil {
 			xhttp = getMap(ss, "xhttp")

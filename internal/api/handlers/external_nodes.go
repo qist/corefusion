@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"corefusion/internal/api/middleware"
+	"corefusion/internal/domain"
 	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/model/entity"
 	"corefusion/pkg/netutil"
@@ -21,6 +22,19 @@ import (
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/mihomoconv"
 )
+
+// externalLinkNetwork 读取外部节点的传输方式（兼容 xray 新字段 method），
+// 并转成分享链接里的标准写法：raw→tcp、mkcp→kcp。
+func externalLinkNetwork(ss map[string]interface{}) string {
+	switch net := domain.StreamTransport(ss); net {
+	case "raw":
+		return "tcp"
+	case "mkcp":
+		return "kcp"
+	default:
+		return net
+	}
+}
 
 // ExternalNodeHandler handles external node source and node API requests.
 type ExternalNodeHandler struct {
@@ -517,7 +531,7 @@ func outboundMapToURI(ob map[string]interface{}) string {
 			params = append(params, "encryption="+enc)
 		}
 		if ss != nil {
-			if net, ok := ss["network"].(string); ok && net != "" {
+			if net := externalLinkNetwork(ss); net != "" {
 				params = append(params, "type="+net)
 			}
 			if sec, ok := ss["security"].(string); ok && sec != "none" {
@@ -550,7 +564,7 @@ func outboundMapToURI(ob map[string]interface{}) string {
 		uri := fmt.Sprintf("vmess://%s@%s:%d", uuid, address, port)
 		params := []string{}
 		if ss != nil {
-			if net, ok := ss["network"].(string); ok && net != "" {
+			if net := externalLinkNetwork(ss); net != "" {
 				params = append(params, "type="+net)
 			}
 		}

@@ -489,7 +489,7 @@
           <el-form label-width="120px" label-position="left">
             <el-form-item :label="t('protoCenter.routing.network')">
               <el-select v-model="rf.streamSettings.network" style="width:100%" :disabled="rf.protocol === 'hysteria'" @change="onNetworkChange">
-                <el-option label="raw" value="raw" /><el-option label="ws" value="ws" />
+                <el-option label="raw" value="raw" /><el-option label="websocket" value="ws" />
                 <el-option label="mKCP" value="mkcp" /><el-option label="grpc" value="grpc" />
                 <el-option label="httpupgrade" value="httpupgrade" />
                 <el-option v-if="rf.protocol === 'vless'" label="xhttp" value="xhttp" />
@@ -3137,6 +3137,18 @@ function onListenTypeChange(val) {
   }
 }
 
+// xray 25+ 传输名有新旧两套写法：tcp/raw、kcp/mkcp、ws/websocket、xhttp/splithttp。
+// 统一成编辑器下拉框使用的名字，避免旧配置回显成空白。
+function normalizeNetwork(v) {
+  switch (String(v || '').toLowerCase()) {
+    case '', 'tcp': return 'raw'
+    case 'kcp': return 'mkcp'
+    case 'websocket': return 'ws'
+    case 'splithttp': return 'xhttp'
+    default: return String(v).toLowerCase()
+  }
+}
+
 function onNetworkChange() {
   // Reset incompatible security when network changes
   if (rf.streamSettings.security === 'reality' && !['raw', 'xhttp', 'grpc'].includes(rf.streamSettings.network)) {
@@ -4208,7 +4220,7 @@ function parseInbound(ib) {
     settings: parseSettings(ib),
     _portMap: ib.settings && ib.settings.portMap ? Object.entries(ib.settings.portMap).map(([local, remote]) => ({ local, remote })) : [],
     streamSettings: {
-      network: ss.network || 'raw', security: ss.security || 'none',
+      network: normalizeNetwork(ss.network || ss.method), security: ss.security || 'none',
       tls: parseTlsSettings(tls),
       reality: parseRealitySettings(ss.realitySettings || {}),
       raw: parseRawSettings(ss.rawSettings || ss.tcpSettings || {}),
@@ -5011,6 +5023,19 @@ function showEdit(i) {
   loadFirewallStatus()
 }
 
+// 入站实际监听的传输协议：TCP 入站不必放行 UDP，QUIC 系（hy2/tuic/kcp/quic）只放行 UDP。
+function fwNetwork(ib) {
+  if (!ib) return ''
+  const proto = String(ib.protocol || '').toLowerCase()
+  const ssNet = String(ib.streamSettings?.network || '').toLowerCase()
+  if (['kcp', 'mkcp', 'quic', 'hysteria'].includes(ssNet) || ib.streamSettings?.hysteriaSettings) return 'udp'
+  if (['hysteria', 'hysteria2', 'tuic', 'wireguard', 'masque', 'shadowquic'].includes(proto)) return 'udp'
+  if (['socks', 'mixed', 'shadowsocks', 'ss'].includes(proto)) return 'tcp,udp'
+  if (['vless', 'vmess', 'trojan', 'anytls', 'http', 'naive', 'snell', 'ssh',
+    'shadowtls', 'tunnel', 'dokodemo-door', 'tun'].includes(proto)) return 'tcp'
+  return ''
+}
+
 // hy/hy2 端口跳跃的端口段（客户端访问的端口），未开启返回空。
 function fwPortHopRange(ib) {
   if (!ib || ib.protocol !== 'hysteria' || !ib._portHopEnabled) return ''
@@ -5231,14 +5256,14 @@ async function saveInbound() {
           await client.post(`${nodeBase.value}/firewall/remove-port`, {
             port: oldPort,
             port_range: oldRange || undefined,
-            network: oldRange ? 'udp' : undefined,
+            network: oldRange ? 'udp' : (fwNetwork(oldIb) || undefined),
           })
         }
         if (wantAllow && (!oldAllow || oldSock || portChanged || rangeChanged)) {
           await client.post(`${nodeBase.value}/firewall/allow-port`, {
             port: newPort,
             port_range: newRange || undefined,
-            network: newRange ? 'udp' : undefined,
+            network: newRange ? 'udp' : (fwNetwork(rf) || undefined),
           })
         }
       } catch (fwErr) {
@@ -5325,7 +5350,7 @@ async function toggleEnabled(row) {
               await client.post(`${nodeBase.value}/firewall/allow-port`, {
                 port: ib.port,
                 port_range: range || undefined,
-                network: range ? 'udp' : undefined,
+                network: range ? 'udp' : (fwNetwork(ib) || undefined),
               })
             } catch (fwErr) {
               console.warn('Failed to allow inbound port on enable:', fwErr)
@@ -5355,7 +5380,7 @@ async function toggleEnabled(row) {
               await client.post(`${nodeBase.value}/firewall/remove-port`, {
                 port: ib.port,
                 port_range: range || undefined,
-                network: range ? 'udp' : undefined,
+                network: range ? 'udp' : (fwNetwork(ib) || undefined),
               })
             } catch (fwErr) {
               console.warn('Failed to remove inbound port allow rule on disable:', fwErr)
@@ -5411,7 +5436,7 @@ async function rmInbound(i) {
       await client.post(`${nodeBase.value}/firewall/remove-port`, {
         port: ib.port,
         port_range: range || undefined,
-        network: range ? 'udp' : undefined,
+        network: range ? 'udp' : (fwNetwork(ib) || undefined),
       })
     } catch (fwErr) {
       console.warn('Failed to remove firewall allow rule on delete:', fwErr)

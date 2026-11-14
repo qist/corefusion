@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
@@ -810,12 +811,12 @@ func renderedFormatterNodes(items []renderedSubscriptionNode) []formatter.Node {
 // sing-box 形状在 `transport.type`（面板两种形状都存）。
 func configTransportOf(config map[string]interface{}) string {
 	if ss := getMap(config, "streamSettings"); ss != nil {
-		if net := getString(ss, "network", ""); net != "" {
+		if net := domain.StreamTransport(ss); net != "" {
 			return net
 		}
 	}
 	if tr := getMap(config, "transport"); tr != nil {
-		return getString(tr, "type", "")
+		return domain.NormalizeTransport(getString(tr, "type", ""))
 	}
 	return ""
 }
@@ -995,7 +996,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 			if protocol == "hysteria" {
 				protocol = "hysteria2"
 			}
-			transport := normalizeNodeTransport(getString(ss, "network", "raw"))
+			transport := normalizeNodeTransport(domain.StreamTransport(ss))
 			// REALITY 的客户端 SNI 由 sharelink 随机挑（serverNames 里可能含空串），
 			// 必须与链接用同一个值；getTLSServerName 只认 serverNames[0]。
 			serverName := getTLSServerName(ss)
@@ -4057,7 +4058,7 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 	// MASQUE：HTTP 请求参数在 streamSettings.masqueSettings，`path` 必须与服务端**完全一致**
 	// （RFC 6570 模板，客户端写错或漏写都会被边缘/服务端当普通请求，隧道建不起来）。
 	// 只由 XrayFormatter 消费；mihomo / sing-box 都没有对应的出站字段。
-	if strings.EqualFold(getString(ss, "network", ""), "masque") {
+	if strings.EqualFold(domain.StreamTransport(ss), "masque") {
 		if mq := getMap(ss, "masqueSettings"); mq != nil {
 			if path := getString(mq, "path", ""); path != "" {
 				extra["masque-path"] = path
@@ -4066,7 +4067,10 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 	}
 
 	// Transport sub-options (only mihomo-supported transports)
-	network := getString(ss, "network", "raw")
+	network := domain.StreamTransport(ss)
+	if network == "" {
+		network = "raw"
+	}
 	supportedTransports := map[string]bool{"tcp": true, "raw": true, "ws": true, "grpc": true, "xhttp": true, "h2": true, "http": true, "httpupgrade": true}
 	if !supportedTransports[network] {
 		// Unsupported transport (kcp, mkcp, quic, etc.) - skip transport sub-options
@@ -4091,7 +4095,7 @@ func buildExtra(config, ss map[string]interface{}, protocol string) map[string]i
 	// XrayFormatter 从 kcp-settings 读 mtu/tti/... 并原样带上 finalmask（Xray 25+ 的
 	// mkcp-legacy header/seed 就在 finalmask.udp 里）——缺了这段，xray 片段就会变成
 	// 一个参数全丢的 network: tcp 节点。
-	if rawNetwork := strings.ToLower(getString(ss, "network", "raw")); rawNetwork == "kcp" || rawNetwork == "mkcp" {
+	if rawNetwork := domain.StreamTransport(ss); rawNetwork == "kcp" || rawNetwork == "mkcp" {
 		if kcp := getMap(ss, "kcpSettings"); kcp != nil {
 			ks := map[string]interface{}{}
 			for _, key := range []string{"mtu", "tti", "uplinkCapacity", "downlinkCapacity", "congestion", "readBufferSize", "writeBufferSize"} {

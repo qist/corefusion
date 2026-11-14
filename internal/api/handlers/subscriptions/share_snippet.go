@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/sharelink"
@@ -65,7 +66,7 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 	// 一旦改成 tcp，片段就会变成一个"少了全部传输参数、但看起来能用"的坏节点
 	// （sing-box 的 kcp、mihomo 的 kcp 都是这么漏出去的）——应该由各格式的
 	// 支持性判断整条剔除，并在弹窗里明说原因。
-	transport := normalizeNodeTransport(getString(ss, "network", "raw"))
+	transport := normalizeNodeTransport(domain.StreamTransport(ss))
 	settings := getMap(view, "settings")
 	uuid := getString(client, "id", "")
 	if uuid == "" {
@@ -92,7 +93,7 @@ func formatterNodeForShare(name string, cfg *entity.InboundConfig, view, client 
 		UUID:       uuid,
 		Password:   ss2022ClientPassword(view, cfg.Protocol, password),
 		Flow: formatter.FlowForTransport(getString(client, "flow", ""),
-			getString(getMap(view, "streamSettings"), "network", "")),
+			domain.StreamTransport(getMap(view, "streamSettings"))),
 		Encryption: nodeEncryption(cfg.Protocol, settings),
 		Extra:      extra,
 	}

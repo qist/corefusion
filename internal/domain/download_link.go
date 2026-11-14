@@ -56,7 +56,7 @@ func IsXHTTPInbound(configJSON string) bool {
 	if ss == nil {
 		return false
 	}
-	network, _ := ss["network"].(string)
+	network := StreamTransport(ss)
 	return strings.EqualFold(network, "xhttp")
 }
 

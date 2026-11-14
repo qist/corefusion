@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/providercfg"
@@ -1830,7 +1831,7 @@ func fillInboundTransportSecurity(rows []InboundWithServer) {
 			continue
 		}
 		if ss, ok := cfg["streamSettings"].(map[string]interface{}); ok {
-			if n, ok := ss["network"].(string); ok && n != "" && n != "raw" && n != "tcp" {
+			if n := domain.StreamTransport(ss); n != "" && n != "raw" && n != "tcp" {
 				rows[i].Transport = n
 			}
 			if sec, ok := ss["security"].(string); ok && sec != "" && sec != "none" {

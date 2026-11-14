@@ -290,6 +290,10 @@ func RestoreRules(ctx context.Context, applier FirewallApplier, configFetcher fu
 		if IsUnixSocketListen(c.Listen) {
 			continue
 		}
+		// 未显式指定协议时按入站类型推断：TCP 入站不必放行 UDP，QUIC 系只放行 UDP。
+		if strings.TrimSpace(network) == "" {
+			network = ListenNetwork(c.Protocol, c.ConfigJSON)
+		}
 		port := c.Port
 		if port <= 0 {
 			if cfg, err := decodeConfig(c.ConfigJSON); err == nil {

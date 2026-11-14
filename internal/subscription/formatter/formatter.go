@@ -546,6 +546,18 @@ func SanitizeNodeName(name string) string {
 // 以前这里直接按"tcp/raw"整段跳过，伪装参数被丢掉、客户端按裸 TCP 连 → 连不上。
 func buildSingboxTransport(node Node) map[string]interface{} {
 	transport := strings.ToLower(strings.TrimSpace(node.Transport))
+	// xray 25+ 的传输名有新旧两套：tcp/raw、kcp/mkcp、ws/websocket、xhttp/splithttp。
+	// sing-box 只认其中一套，这里统一成 sing-box 侧的名字。
+	switch transport {
+	case "tcp":
+		transport = "raw"
+	case "mkcp":
+		transport = "kcp"
+	case "websocket":
+		transport = "ws"
+	case "splithttp":
+		transport = "xhttp"
+	}
 	switch transport {
 	case "", "tcp", "raw":
 		if _, has := node.Extra["http-opts"]; !has {
@@ -629,6 +641,20 @@ func buildSingboxTransport(node Node) map[string]interface{} {
 		}
 	}
 	return t
+}
+
+// mihomoTransportName 把 xray 25+ 的新传输名映射成 mihomo 认的写法。
+// mihomo 没有 "websocket" / "splithttp"，只认 ws / xhttp；裸 TCP 不写 network。
+func mihomoTransportName(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "websocket":
+		return "ws"
+	case "splithttp":
+		return "xhttp"
+	case "tcp", "raw":
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(t))
 }
 
 // XrayFormatter formats nodes as Xray JSON.
@@ -1183,7 +1209,8 @@ func (f *MihomoFormatter) Format(nodes []Node) ([]byte, error) {
 				transport = "http"
 			}
 		}
-		if transport != "" && transport != "raw" && transport != "tcp" && transport != "kcp" && transport != "mkcp" && transport != "quic" {
+		transport = mihomoTransportName(transport)
+		if transport != "" && transport != "kcp" && transport != "mkcp" && transport != "quic" {
 			yaml += fmt.Sprintf("    network: %s\n", transport)
 		}
 		// Render all Extra fields

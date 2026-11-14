@@ -709,6 +709,19 @@ function onTypeChange() {
   Object.assign(rf, inboundDefaultsForType(type, takeFreePort(props.serverId)))
 }
 
+// 入站实际监听的传输协议：TCP 入站不必放行 UDP，QUIC 系（hy2/tuic/quic 传输）只放行 UDP。
+function fwNetwork(ib) {
+  if (!ib) return ''
+  const proto = String(ib.type || ib.protocol || '').toLowerCase()
+  const tr = String(ib._transportType || ib.transport?.type || '').toLowerCase()
+  if (tr === 'quic') return 'udp'
+  if (['hysteria', 'hysteria2', 'tuic', 'shadowquic', 'masque'].includes(proto)) return 'udp'
+  if (['socks', 'mixed', 'shadowsocks'].includes(proto)) return 'tcp,udp'
+  if (['vless', 'vmess', 'trojan', 'anytls', 'http', 'naive', 'snell', 'ssh',
+    'shadowtls', 'tun', 'cloudflared'].includes(proto)) return 'tcp'
+  return ''
+}
+
 // hy/hy2 端口跳跃的端口段（客户端访问的端口），未开启返回空。
 function fwPortHopRange(ib) {
   if (!ib || (ib.type !== 'hysteria2' && ib.type !== 'hysteria') || !ib._portHopEnabled) return ''
@@ -808,14 +821,14 @@ async function save() {
           await client.post(`${nodeBase.value}/firewall/remove-port`, {
             port: oldPort,
             port_range: oldRange || undefined,
-            network: oldRange ? 'udp' : undefined,
+            network: oldRange ? 'udp' : (fwNetwork(oldIb) || undefined),
           })
         }
         if (wantAllow && (!oldAllow || portChanged || rangeChanged)) {
           await client.post(`${nodeBase.value}/firewall/allow-port`, {
             port: newPort,
             port_range: newRange || undefined,
-            network: newRange ? 'udp' : undefined,
+            network: newRange ? 'udp' : (fwNetwork(rf) || undefined),
           })
         }
       } catch (fwErr) {
@@ -857,7 +870,7 @@ function handleAction(cmd, row) {
               await client.post(`${nodeBase.value}/firewall/remove-port`, {
                 port: ib.listen_port,
                 port_range: range || undefined,
-                network: range ? 'udp' : undefined,
+                network: range ? 'udp' : (fwNetwork(ib) || undefined),
               })
             } catch (fwErr) {
               console.warn('Failed to remove firewall allow rule on delete:', fwErr)

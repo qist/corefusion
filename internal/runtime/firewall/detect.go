@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"corefusion/internal/domain"
 )
 
 // 防火墙类型。检测顺序：firewalld → ufw → nftables → iptables → none。
@@ -1056,6 +1058,110 @@ func nftHandle(line string) string {
 		return ""
 	}
 	return handle
+}
+
+// ListenNetwork 推断入站实际监听的传输协议（tcp / udp / tcp,udp）。
+// 空返回值表示无法判断，调用方按 tcp+udp 处理（保守放行）。
+//
+// 背景：TCP 入站（vless/trojan/anytls…）只监听 TCP，放行 UDP 没有意义；
+// QUIC 系（hy2/tuic/masque/kcp/quic 传输）只监听 UDP。
+func ListenNetwork(protocol, configJSON string) string {
+	proto := strings.ToLower(strings.TrimSpace(protocol))
+	cfg, _ := decodeConfig(configJSON)
+	if cfg == nil {
+		cfg = map[string]interface{}{}
+	}
+	ss, _ := cfg["streamSettings"].(map[string]interface{})
+	if ss != nil {
+		// xray 25+ 用 method（新枚举名）并兼容 network（旧名）；统一归一后再判断。
+		switch domain.StreamTransport(ss) {
+		case "mkcp", "quic", "hysteria":
+			return "udp"
+		case "xhttp":
+			// XHTTP 走 H2（TCP）还是 H3（UDP）由 tls alpn 决定，默认 h2。
+			return alpnListenNetwork(ss, "tcp")
+		case "masque":
+			// MASQUE 默认 h3（UDP）；alpn 含 h2 时同时提供 TCP。
+			return alpnListenNetwork(ss, "udp")
+		}
+		if _, ok := ss["hysteriaSettings"].(map[string]interface{}); ok {
+			return "udp"
+		}
+	}
+	if tr, ok := cfg["transport"].(map[string]interface{}); ok {
+		if typ, _ := tr["type"].(string); domain.NormalizeTransport(typ) == "quic" {
+			return "udp"
+		}
+	}
+	// dokodemo-door / tunnel 可以在 settings.network 里指定 udp
+	if proto == "dokodemo-door" || proto == "tunnel" {
+		if settings, ok := cfg["settings"].(map[string]interface{}); ok {
+			if n, _ := settings["network"].(string); strings.EqualFold(strings.TrimSpace(n), "udp") {
+				return "udp"
+			}
+		}
+	}
+	switch proto {
+	case "hysteria", "hysteria2", "tuic", "wireguard", "shadowquic", "quic":
+		return "udp"
+	case "masque":
+		if ss != nil {
+			return alpnListenNetwork(ss, "udp")
+		}
+		return "udp"
+	case "socks", "mixed", "shadowsocks", "ss":
+		return "tcp,udp"
+	case "vless", "vmess", "trojan", "anytls", "http", "naive", "snell", "ssh",
+		"shadowtls", "tunnel", "dokodemo-door", "tun", "cloudflared":
+		return "tcp"
+	}
+	return ""
+}
+
+// alpnListenNetwork 按 tls alpn 判断 XHTTP/MASQUE 实际监听 TCP 还是 UDP：
+// h2 → TCP，h3 → UDP，两者都有 → 同端口双栈。没有 alpn 时用 def（xhttp 默认 h2、masque 默认 h3）。
+func alpnListenNetwork(ss map[string]interface{}, def string) string {
+	hasH2, hasH3 := false, false
+	for _, a := range tlsALPN(ss) {
+		switch strings.ToLower(strings.TrimSpace(a)) {
+		case "h2":
+			hasH2 = true
+		case "h3":
+			hasH3 = true
+		}
+	}
+	switch {
+	case hasH2 && hasH3:
+		return "tcp,udp"
+	case hasH2:
+		return "tcp"
+	case hasH3:
+		return "udp"
+	}
+	return def
+}
+
+func tlsALPN(ss map[string]interface{}) []string {
+	var out []string
+	for _, key := range []string{"tlsSettings", "tls"} {
+		m, ok := ss[key].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch v := m["alpn"].(type) {
+		case []interface{}:
+			for _, item := range v {
+				if s, ok := item.(string); ok {
+					out = append(out, s)
+				}
+			}
+		case []string:
+			out = append(out, v...)
+		case string:
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // ParseAllowFromConfig 从入站 config_json 里读取「自动创建防火墙放行规则」标记。

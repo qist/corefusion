@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/sharelink"
 )
@@ -69,7 +70,7 @@ func (h *PublicHandler) resolveDownloadSettings(
 		return
 	}
 	tss := getMap(tcfg, "streamSettings")
-	if !strings.EqualFold(getString(tss, "network", ""), "xhttp") {
+	if !strings.EqualFold(domain.StreamTransport(tss), "xhttp") {
 		return
 	}
 	security := strings.ToLower(getString(tss, "security", ""))

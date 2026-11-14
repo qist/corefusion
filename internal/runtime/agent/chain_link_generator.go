@@ -610,7 +610,7 @@ func copyExitInboundTransport(streamSettings, cfg map[string]interface{}, transp
 		if len(g) > 0 {
 			streamSettings["grpcSettings"] = g
 		}
-	case "ws":
+	case "ws", "websocket":
 		w := map[string]interface{}{}
 		if v := firstString(tr, "path"); v != "" {
 			w["path"] = v

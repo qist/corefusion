@@ -246,3 +246,50 @@ func TestSingboxVmessSecurity(t *testing.T) {
 		}
 	}
 }
+
+// xray 25+ 的 network 新旧名字（tcp/raw、kcp/mkcp、ws/websocket、xhttp/splithttp）
+// 都要能映射成 sing-box 的 transport。
+func TestSingBoxTransportAliases(t *testing.T) {
+	cases := []struct {
+		transport string
+		wantType  string // "" = 不写 transport
+	}{
+		{"tcp", ""},
+		{"raw", ""},
+		{"websocket", "ws"},
+		{"ws", "ws"},
+		{"mkcp", "kcp"},
+		{"kcp", "kcp"},
+		{"splithttp", "xhttp"},
+		{"xhttp", "xhttp"},
+	}
+	for _, tc := range cases {
+		tr := buildSingboxTransport(Node{Transport: tc.transport})
+		if tc.wantType == "" {
+			if tr != nil {
+				t.Fatalf("transport %q: 裸 TCP 不该有 transport: %v", tc.transport, tr)
+			}
+			continue
+		}
+		if tr == nil || tr["type"] != tc.wantType {
+			t.Fatalf("transport %q => %v, want type %q", tc.transport, tr, tc.wantType)
+		}
+	}
+}
+
+func TestMihomoTransportName(t *testing.T) {
+	cases := map[string]string{
+		"websocket": "ws",
+		"ws":        "ws",
+		"splithttp": "xhttp",
+		"xhttp":     "xhttp",
+		"tcp":       "",
+		"raw":       "",
+		"grpc":      "grpc",
+	}
+	for in, want := range cases {
+		if got := mihomoTransportName(in); got != want {
+			t.Fatalf("mihomoTransportName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "Repository \"{name}\" löschen? Alle zugehörigen Regeldateien werden ebenfalls gelöscht.",
       "available": "Verfügbar",
       "downloading": "Download läuft",
-      "error": "Fehler"
+      "error": "Fehler",
+      guide: {
+        "title": "Anleitung: sing-box-Regeldateien und ihre Referenzierung",
+        "subtitle": "Diese Seite lädt Regeldateien nur herunter und verteilt sie. Damit sie beim Routing wirken, müssen sie unter „Protokollzentrum → sing-box → Routing“ in Rule Sets und Rules referenziert werden.",
+        "formatsTitle": "Dateiformate",
+        "formatSrs": "Binäres sing-box-Regelset. Funktioniert für local und remote, kleinste Größe, empfohlen.",
+        "formatJson": "sing-box-Regelset im Quellformat (rule_set benötigt format=source).",
+        "formatDat": "xray-Format geosite.dat / geoip.dat. sing-box kann es nicht direkt lesen – konvertieren oder .srs verwenden.",
+        "refTitle": "Referenzierung in sing-box",
+        "refDesc": "Lokale Datei (empfohlen): Dateien liegen in data/rules, der Pfad wird relativ zum Arbeitsverzeichnis von sing-box (data-Verzeichnis des Knotens) aufgelöst.",
+        "refRemote": "Remote-Datei: Der Core lädt und aktualisiert sie selbst, der Knoten muss die URL erreichen können.",
+        "examplesTitle": "Beispiele",
+        "exampleMixed": "Gemischte Bedingungen: Domain-Suffix / Schlüsselwort / Regelset. Regeln werden von oben nach unten geprüft, der erste Treffer gilt.",
+        "exampleLogical": "Logische Regel: alle Bedingungen (and) oder eine beliebige (or). type: logical muss explizit gesetzt werden.",
+        "mapTitle": "xray-Entsprechung",
+        "mapDesc": "Beim Migrieren von xray diese Tabelle verwenden. Die Routing-Felder geosite / geoip wurden in sing-box 1.12+ entfernt.",
+        "pitfallTitle": "Häufige Fehler",
+        "pitfall1": "Tags müssen eindeutig sein und rule_set-Werte exakt einem deklarierten Tag entsprechen, sonst rule-set not found.",
+        "pitfall2": "outbound muss ein realer Tag aus outbounds / endpoints sein; Tags sind zwischen xray und sing-box nicht austauschbar.",
+        "pitfall3": "Relativen Pfad wie rules/xxx.srs verwenden; fehlt die Datei, startet der Core nicht (FATAL).",
+        "pitfall4": "Regeln werden von oben nach unten geprüft, direct-Allowlists daher zuerst platzieren."
+      }
     },
     "warp": {
       "title": "WARP-Konfiguration",

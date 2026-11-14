@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "リポジトリ \"{name}\" を削除しますか? 関連するすべてのルールファイルも削除されます。",
       "available": "利用可能",
       "downloading": "ダウンロード中",
-      "error": "エラー"
+      "error": "エラー",
+      guide: {
+        "title": "ガイド：sing-box ルールファイルと参照方法",
+        "subtitle": "このページはルールファイルのダウンロードと配信のみを行います。実際の振り分けには「プロトコルセンター → sing-box → ルーティング」の Rule Sets と Rules で参照してください。",
+        "formatsTitle": "ファイル形式",
+        "formatSrs": "sing-box バイナリルールセット。local / remote のどちらでも使え、サイズが最小で推奨です。",
+        "formatJson": "sing-box ソース形式のルールセット（rule_set に format=source が必要）。",
+        "formatDat": "xray の geosite.dat / geoip.dat 形式。sing-box では直接使えないため、変換するか .srs を使用してください。",
+        "refTitle": "sing-box での参照",
+        "refDesc": "ローカルファイル（推奨）：data/rules に保存され、sing-box の作業ディレクトリ（ノードの data ディレクトリ）からの相対パスで解決されます。",
+        "refRemote": "リモートファイル：コアが自動でダウンロード・更新するため、ノードからその URL に到達できる必要があります。",
+        "examplesTitle": "例",
+        "exampleMixed": "複合条件：ドメインサフィックス / キーワード / ルールセット。上から順に評価し、最初の一致で確定します。",
+        "exampleLogical": "論理ルール：全条件（and）またはいずれか（or）。type: logical の明示が必要です。",
+        "mapTitle": "xray との対応",
+        "mapDesc": "xray から移行する際はこの表に従って置き換えてください。geosite / geoip のルーティング項目は sing-box 1.12+ で削除されました。",
+        "pitfallTitle": "よくある誤り",
+        "pitfall1": "tag は一意である必要があり、rule_set の値は定義した tag と完全に一致しないと rule-set not found になります。",
+        "pitfall2": "outbound は outbounds / endpoints に実在する tag を指定してください。xray と sing-box の tag は共用できません。",
+        "pitfall3": "パスは rules/xxx.srs のような相対形式で指定してください。ファイルが無いとコアが FATAL で起動に失敗します。",
+        "pitfall4": "ルールは上から順に評価されるため、direct の許可リストは先頭に置いてください。"
+      }
     },
     "warp": {
       "title": "WARP 設定",

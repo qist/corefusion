@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "{name}\" deposu silinsin mi? İlgili tüm kural dosyaları da silinecek.",
       "available": "Kullanılabilir",
       "downloading": "İndiriliyor",
-      "error": "Hata"
+      "error": "Hata",
+      guide: {
+        "title": "Kılavuz: sing-box kural dosyaları ve referans verme",
+        "subtitle": "Bu sayfa yalnızca kural dosyalarını indirir ve dağıtır. Yönlendirmeyi etkilemesi için «Protokol merkezi → sing-box → Yönlendirme» altındaki Rule Sets ve Rules bölümünde referans verin.",
+        "formatsTitle": "Dosya biçimleri",
+        "formatSrs": "sing-box ikili kural seti. Hem local hem remote için çalışır, en küçük boyut, önerilir.",
+        "formatJson": "sing-box kaynak biçimli kural seti (rule_set için format=source gerekir).",
+        "formatDat": "xray geosite.dat / geoip.dat biçimi. sing-box doğrudan okuyamaz — dönüştürün veya .srs kullanın.",
+        "refTitle": "sing-box içinde referans",
+        "refDesc": "Yerel dosya (önerilir): dosyalar data/rules içinde tutulur, yol sing-box çalışma dizinine (düğüm data dizini) göre çözülür.",
+        "refRemote": "Uzak dosya: çekirdek kendisi indirip günceller, bu yüzden düğüm o URL’e erişebilmelidir.",
+        "examplesTitle": "Örnekler",
+        "exampleMixed": "Karışık koşullar: alan adı soneki / anahtar kelime / kural seti. Kurallar yukarıdan aşağı değerlendirilir, ilk eşleşme geçerlidir.",
+        "exampleLogical": "Mantıksal kural: tüm koşullar (and) veya herhangi biri (or). type: logical açıkça yazılmalıdır.",
+        "mapTitle": "xray karşılığı",
+        "mapDesc": "xray’den geçişte bu tabloyu kullanın. geosite / geoip yönlendirme alanları sing-box 1.12+ sürümünde kaldırıldı.",
+        "pitfallTitle": "Sık yapılan hatalar",
+        "pitfall1": "Etiketler benzersiz olmalı ve rule_set değerleri tanımlı etiketle tam eşleşmelidir, aksi halde rule-set not found alırsınız.",
+        "pitfall2": "outbound, outbounds / endpoints içinde gerçekten var olan bir etiket olmalıdır; etiketler xray ile sing-box arasında ortak değildir.",
+        "pitfall3": "rules/xxx.srs gibi göreli yol kullanın; dosya yoksa çekirdek FATAL ile başlamaz.",
+        "pitfall4": "Kurallar yukarıdan aşağı değerlendirilir, direct izin listelerini en başa koyun."
+      }
     },
     "warp": {
       "title": "WARP yapılandırması",

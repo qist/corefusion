@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "Confirmer la suppression du dépôt « {name} » ? Tous les fichiers de règles associés seront également supprimés.",
       "available": "Disponible",
       "downloading": "Téléchargement en cours",
-      "error": "Erreur"
+      "error": "Erreur",
+      guide: {
+        "title": "Guide : fichiers de règles sing-box et référencement",
+        "subtitle": "Cette page ne fait que télécharger et distribuer les fichiers de règles. Pour agir sur le routage, référencez-les dans Rule Sets et Rules sous « Centre de protocoles → sing-box → Routage ».",
+        "formatsTitle": "Formats de fichiers",
+        "formatSrs": "Jeu de règles binaire sing-box. Fonctionne en local et distant, taille minimale, recommandé.",
+        "formatJson": "Jeu de règles au format source sing-box (rule_set nécessite format=source).",
+        "formatDat": "Format xray geosite.dat / geoip.dat. sing-box ne peut pas le lire directement — convertissez-le ou utilisez .srs.",
+        "refTitle": "Référencement dans sing-box",
+        "refDesc": "Fichier local (recommandé) : les fichiers sont dans data/rules et le chemin est résolu par rapport au répertoire de travail de sing-box (répertoire data du nœud).",
+        "refRemote": "Fichier distant : le cœur le télécharge et le met à jour, le nœud doit donc pouvoir atteindre cette URL.",
+        "examplesTitle": "Exemples",
+        "exampleMixed": "Conditions mixtes : suffixe de domaine / mot-clé / jeu de règles. Les règles sont évaluées de haut en bas, la première correspondance est retenue.",
+        "exampleLogical": "Règle logique : toutes les conditions (and) ou au moins une (or). type: logical doit être explicite.",
+        "mapTitle": "Équivalent xray",
+        "mapDesc": "Utilisez ce tableau lors d’une migration depuis xray. Les champs de routage geosite / geoip ont été supprimés depuis sing-box 1.12+.",
+        "pitfallTitle": "Erreurs courantes",
+        "pitfall1": "Les tags doivent être uniques et les valeurs rule_set doivent correspondre exactement à un tag déclaré, sinon rule-set not found.",
+        "pitfall2": "outbound doit être un tag réel des outbounds / endpoints ; les tags ne sont pas partagés entre xray et sing-box.",
+        "pitfall3": "Utilisez un chemin relatif comme rules/xxx.srs ; si le fichier manque, le cœur échoue au démarrage (FATAL).",
+        "pitfall4": "Les règles sont évaluées de haut en bas : placez les listes blanches direct en premier."
+      }
     },
     "warp": {
       "title": "Configuration WARP",

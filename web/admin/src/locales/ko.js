@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "저장소 \"{name}\"을(를) 삭제하시겠습니까? 연결된 모든 규칙 파일도 함께 삭제됩니다.",
       "available": "사용 가능",
       "downloading": "다운로드 중",
-      "error": "오류"
+      "error": "오류",
+      guide: {
+        "title": "가이드: sing-box 규칙 파일과 참조 방법",
+        "subtitle": "이 페이지는 규칙 파일 다운로드와 배포만 담당합니다. 실제 분기에 적용하려면 「프로토콜 센터 → sing-box → 라우팅」의 Rule Sets 와 Rules 에서 참조해야 합니다.",
+        "formatsTitle": "파일 형식",
+        "formatSrs": "sing-box 바이너리 규칙 세트. local / remote 모두 사용 가능하며 용량이 가장 작아 권장합니다.",
+        "formatJson": "sing-box 소스 형식 규칙 세트(rule_set 에 format=source 필요).",
+        "formatDat": "xray 의 geosite.dat / geoip.dat 형식입니다. sing-box 에서 직접 사용할 수 없으므로 변환하거나 .srs 를 사용하세요.",
+        "refTitle": "sing-box 에서 참조",
+        "refDesc": "로컬 파일(권장): data/rules 에 저장되며 sing-box 작업 디렉터리(노드 data 디렉터리) 기준 상대 경로로 해석됩니다.",
+        "refRemote": "원격 파일: 코어가 직접 다운로드하고 주기적으로 갱신하므로 노드에서 해당 URL 에 접근할 수 있어야 합니다.",
+        "examplesTitle": "예시",
+        "exampleMixed": "혼합 조건: 도메인 접미사 / 키워드 / 규칙 세트. 규칙은 위에서 아래로 평가되고 첫 일치에서 멈춥니다.",
+        "exampleLogical": "논리 규칙: 모든 조건(and) 또는 일부 조건(or). type: logical 을 반드시 명시해야 합니다.",
+        "mapTitle": "xray 표기 대응",
+        "mapDesc": "xray 에서 마이그레이션할 때 이 표대로 바꾸세요. geosite / geoip 라우팅 필드는 sing-box 1.12+ 에서 제거되었습니다.",
+        "pitfallTitle": "자주 하는 실수",
+        "pitfall1": "tag 는 고유해야 하며 rule_set 값이 선언한 tag 와 정확히 일치해야 합니다. 그렇지 않으면 rule-set not found 가 발생합니다.",
+        "pitfall2": "outbound 는 outbounds / endpoints 에 실제로 존재하는 tag 여야 합니다. xray 와 sing-box 의 tag 는 호환되지 않습니다.",
+        "pitfall3": "경로는 rules/xxx.srs 처럼 상대 경로로 쓰세요. 파일이 없으면 코어가 FATAL 로 시작에 실패합니다.",
+        "pitfall4": "규칙은 위에서 아래로 평가되므로 direct 허용 목록을 앞에 두어야 합니다."
+      }
     },
     "warp": {
       "title": "WARP 구성",

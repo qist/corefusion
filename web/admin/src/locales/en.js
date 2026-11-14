@@ -1939,6 +1939,27 @@ export default {
       available: 'Available',
       downloading: 'Downloading',
       error: 'Error',
+      guide: {
+        "title": "Guide: sing-box rule files and how to reference them",
+        "subtitle": "This page only downloads and pushes rule files. To affect routing, reference them in Rule Sets and Rules under Protocol Center → sing-box → Routing.",
+        "formatsTitle": "File formats",
+        "formatSrs": "sing-box binary rule set. Works for both local and remote rule sets, smallest size, recommended.",
+        "formatJson": "sing-box source rule set (rule_set needs format=source).",
+        "formatDat": "xray geosite.dat / geoip.dat format. sing-box cannot read it directly - convert it or use .srs.",
+        "refTitle": "Referencing in sing-box",
+        "refDesc": "Local file (recommended): files live in data/rules and the path is resolved relative to the sing-box working directory (node data dir).",
+        "refRemote": "Remote file: the core downloads and refreshes it, so the node must be able to reach that URL.",
+        "examplesTitle": "Examples",
+        "exampleMixed": "Mixed conditions: domain suffix / keyword / rule set. Rules are matched top-down and stop on the first match.",
+        "exampleLogical": "Logical rule: all conditions (and) or any condition (or). type: logical must be set explicitly.",
+        "mapTitle": "xray equivalent",
+        "mapDesc": "Use this table when migrating from xray. geosite / geoip routing fields were removed in sing-box 1.12+.",
+        "pitfallTitle": "Common mistakes",
+        "pitfall1": "Tags must be unique, and rule_set values must match a declared tag exactly, otherwise rule-set not found.",
+        "pitfall2": "outbound must be a real tag from outbounds / endpoints; tags are not shared between xray and sing-box.",
+        "pitfall3": "Use a relative path such as rules/xxx.srs; a missing file makes the core fail at startup (FATAL).",
+        "pitfall4": "Rules match top-down, so put direct allowlists first or later rules will override them."
+      }
     },
     warp: {
       title: 'WARP Configuration',

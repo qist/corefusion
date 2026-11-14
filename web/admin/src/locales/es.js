@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "¿Eliminar el repositorio \"{name}\"? También se eliminarán todos los archivos de reglas asociados.",
       "available": "Disponible",
       "downloading": "Descargando",
-      "error": "Error"
+      "error": "Error",
+      guide: {
+        "title": "Guía: archivos de reglas de sing-box y cómo referenciarlos",
+        "subtitle": "Esta página solo descarga y distribuye archivos de reglas. Para que afecten al enrutamiento, referéncialos en Rule Sets y Rules en «Centro de protocolos → sing-box → Enrutamiento».",
+        "formatsTitle": "Formatos de archivo",
+        "formatSrs": "Conjunto de reglas binario de sing-box. Sirve para local y remoto, tamaño mínimo, recomendado.",
+        "formatJson": "Conjunto de reglas en formato fuente de sing-box (rule_set requiere format=source).",
+        "formatDat": "Formato xray geosite.dat / geoip.dat. sing-box no puede leerlo directamente: conviértelo o usa .srs.",
+        "refTitle": "Referencia en sing-box",
+        "refDesc": "Archivo local (recomendado): los archivos están en data/rules y la ruta se resuelve respecto al directorio de trabajo de sing-box (directorio data del nodo).",
+        "refRemote": "Archivo remoto: el núcleo lo descarga y actualiza, así que el nodo debe poder acceder a esa URL.",
+        "examplesTitle": "Ejemplos",
+        "exampleMixed": "Condiciones mixtas: sufijo de dominio / palabra clave / conjunto de reglas. Se evalúan de arriba abajo y gana la primera coincidencia.",
+        "exampleLogical": "Regla lógica: todas las condiciones (and) o cualquiera (or). Debe indicarse type: logical.",
+        "mapTitle": "Equivalente en xray",
+        "mapDesc": "Usa esta tabla al migrar desde xray. Los campos de enrutamiento geosite / geoip se eliminaron en sing-box 1.12+.",
+        "pitfallTitle": "Errores comunes",
+        "pitfall1": "Los tags deben ser únicos y los valores de rule_set deben coincidir exactamente con un tag declarado, si no: rule-set not found.",
+        "pitfall2": "outbound debe ser un tag real de outbounds / endpoints; los tags no se comparten entre xray y sing-box.",
+        "pitfall3": "Usa una ruta relativa como rules/xxx.srs; si el archivo falta, el núcleo falla al iniciar (FATAL).",
+        "pitfall4": "Las reglas se evalúan de arriba abajo: coloca las listas blancas direct primero."
+      }
     },
     "warp": {
       "title": "Configuración de WARP",

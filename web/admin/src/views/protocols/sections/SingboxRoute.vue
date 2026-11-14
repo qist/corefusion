@@ -65,7 +65,7 @@
     <div v-for="(rs, ri) in form.ruleSets" :key="'rs' + ri"
          style="border:1px dashed #dcdfe6;border-radius:6px;padding:10px;margin-bottom:10px">
       <div style="display:flex;gap:8px;align-items:center">
-        <el-select v-model="rs.type" style="width:140px" @change="emit">
+        <el-select v-model="rs.type" style="width:140px" @change="onRuleSetTypeChange(rs)">
           <el-option label="remote" value="remote" /><el-option label="local" value="local" />
           <el-option label="inline" value="inline" />
         </el-select>
@@ -77,7 +77,7 @@
         <el-button size="small" type="danger" text @click="form.ruleSets.splice(ri,1);emit()">X</el-button>
       </div>
       <template v-if="rs.type === 'remote'">
-        <el-input v-model="rs.url" placeholder="https://…/geosite-cn.srs" style="margin-top:8px" @change="emit" />
+        <el-input v-model="rs.url" placeholder="https://…/geosite-cn.srs" style="margin-top:8px" @change="onRemoteUrlChange(rs)" />
         <div style="display:flex;gap:8px;margin-top:8px">
           <el-input v-model="rs.update_interval" :placeholder="t('singboxRoute.hint.updateIntervalPlaceholder')" @change="emit" />
           <el-input v-model="rs.download_detour" :placeholder="t('singboxRoute.downloadDetourHint')" @change="emit" />
@@ -811,6 +811,19 @@ function buildRuleFromForm() {
 function saveRule() {
   const rule = buildRuleFromForm()
   if (!rule) return // 校验失败
+  // legacy geosite / geoip → rule_set：规则库里有同名 .srs/.json 才转换，
+  // 找不到对应文件的仍保留原字段（避免生成引用不到规则集的配置）。
+  const geo = migrateLegacyGeo(rf)
+  if (geo.tags.length) {
+    rule.rule_set = [...new Set([...(rule.rule_set || []), ...geo.tags])]
+    if (geo.source) rule.rule_set_ip_cidr_match_source = true
+  }
+  if (geo.geosite.length) rule.geosite = geo.geosite; else delete rule.geosite
+  if (geo.geoip.length) rule.geoip = geo.geoip; else delete rule.geoip
+  if (geo.sourceGeoip.length) rule.source_geoip = geo.sourceGeoip; else delete rule.source_geoip
+  // 规则里手输（allow-create）的新 tag：若规则库里正好有同名规则文件，
+  // 自动在 Rule Sets 里补一条 local 定义，省去再手动加一遍（tag/path 仍可改）
+  ensureRuleSetDefs(rule.rule_set)
   // 保留 UI 状态字段（供列表展示；build() 会剔除）
   rule._domain = rf._domain
   rule._domainSuffix = rf._domainSuffix
@@ -821,7 +834,10 @@ function saveRule() {
   rule._protocol = [...(rf._protocol || [])]
   rule._inboundTag = [...(rf._inboundTag || [])]
   rule._authUser = rf._authUser
-  rule._ruleSet = [...(rf._ruleSet || [])]
+  rule._ruleSet = [...(rule.rule_set || [])]
+  rule._geosite = geo.geosite.join('\n')
+  rule._geoip = geo.geoip.join('\n')
+  rule._sourceGeoip = geo.sourceGeoip.join('\n')
 
   if (editIdx.value >= 0) form.rules[editIdx.value] = rule
   else form.rules.push(rule)
@@ -833,6 +849,57 @@ function addRuleSet() {
   form.ruleSets.push({ type: 'remote', tag: '', format: '', url: '', path: '', update_interval: '1d',
     download_detour: '', http_client: '', initial_path: '', _rulesJson: '' })
   emit()
+}
+
+// 规则引用了尚未定义的 tag 时，按「规则文件管理」里的同名文件自动补一条 local 定义；
+// 没有同名文件就保持原样（不凭空造一个无 path 的非法定义）。
+function ensureRuleSetDefs(tags) {
+  const known = new Set(ruleSetTags.value)
+  for (const tag of tags || []) {
+    const name = String(tag || '').trim()
+    if (!name || known.has(name)) continue
+    const f = geoRuleFiles.value.find(x => tagFromSource(x.file_name) === name)
+    if (!f) continue
+    form.ruleSets.push({
+      type: 'local', tag: name, format: /\.json$/i.test(f.file_name) ? 'source' : 'binary',
+      url: '', path: `rules/${f.file_name}`, update_interval: '', download_detour: '',
+      http_client: '', initial_path: '', _rulesJson: '',
+    })
+    known.add(name)
+  }
+}
+
+// xray 风格 geosite:openai / geoip:cn → sing-box rule_set tag：
+// geosite:openai → geosite-openai，geoip:cn → geoip-cn；已是 xxx-yyy 形式的原样保留。
+function legacyTag(raw, prefix) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  const m = s.match(/^(geosite|geoip)\s*:\s*(.+)$/i)
+  if (m) return `${m[1].toLowerCase()}-${m[2].trim()}`
+  if (/^(geosite|geoip)-/i.test(s)) return s
+  return `${prefix}-${s}`
+}
+
+// legacy geosite/geoip → rule_set：规则库里存在同名规则文件（geosite-cn.srs 等）才迁移；
+// 找不到文件的留在原字段里，保持现有行为不变。source_geoip 迁移后按源 IP 匹配。
+function migrateLegacyGeo(rf) {
+  const files = new Set(geoRuleFiles.value.map(f => tagFromSource(f.file_name)))
+  const out = { tags: [], source: false, geosite: [], geoip: [], sourceGeoip: [] }
+  const take = (raw, prefix, isSource) => {
+    const keep = []
+    for (const v of lines(raw)) {
+      const tag = legacyTag(v, prefix)
+      if (tag && files.has(tag)) {
+        if (!out.tags.includes(tag)) out.tags.push(tag)
+        if (isSource) out.source = true
+      } else keep.push(v)
+    }
+    return keep
+  }
+  out.geosite = take(rf._geosite, 'geosite', false)
+  out.geoip = take(rf._geoip, 'geoip', false)
+  out.sourceGeoip = take(rf._sourceGeoip, 'geoip', true)
+  return out
 }
 
 // ── 规则库联动：local rule_set 从「规则文件管理」已下载的文件中下拉选择 ──
@@ -860,8 +927,32 @@ function onLocalPathChange(rs) {
     if (String(rs.path || '').endsWith('.srs')) rs.format = 'binary'
     else if (String(rs.path || '').endsWith('.json')) rs.format = 'source'
   }
+  autoFillTag(rs)
   emit()
 }
+
+// 从规则文件路径 / 远程 URL 推导 tag：去掉目录与 .srs/.json 后缀。
+// 例：rules/geosite-cn.srs → geosite-cn；https://x/y/geoip-cn.srs?raw=1 → geoip-cn
+function tagFromSource(src) {
+  const clean = String(src || '').trim().split(/[?#]/)[0]
+  if (!clean) return ''
+  const base = clean.split('/').filter(Boolean).pop() || ''
+  return base.replace(/\.(srs|json)$/i, '').trim()
+}
+
+// 选择规则文件后自动带上 tag；用户已手填的值不覆盖（仍可随时改）
+function autoFillTag(rs) {
+  if (!rs || String(rs.tag || '').trim()) return false
+  const src = rs.type === 'local' ? rs.path : rs.type === 'remote' ? rs.url : ''
+  const tag = tagFromSource(src)
+  if (!tag) return false
+  rs.tag = tag
+  return true
+}
+
+function onRuleSetTypeChange(rs) { autoFillTag(rs); emit() }
+
+function onRemoteUrlChange(rs) { autoFillTag(rs); emit() }
 
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 

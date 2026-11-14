@@ -1,5 +1,72 @@
 <template>
   <div>
+    <!-- 使用说明：规则文件如何被 sing-box 引用 -->
+    <el-card shadow="never" class="guide-card">
+      <el-collapse v-model="guideOpen">
+        <el-collapse-item name="guide" :title="t('service.rules.guide.title')">
+          <div class="guide-sub">{{ t('service.rules.guide.subtitle') }}</div>
+
+          <h4>{{ t('service.rules.guide.formatsTitle') }}</h4>
+          <ul class="guide-list">
+            <li><code>.srs</code> — {{ t('service.rules.guide.formatSrs') }}</li>
+            <li><code>.json</code> — {{ t('service.rules.guide.formatJson') }}</li>
+            <li><code>.dat</code> — {{ t('service.rules.guide.formatDat') }}</li>
+          </ul>
+
+          <h4>{{ t('service.rules.guide.refTitle') }}</h4>
+          <div class="guide-sub">{{ t('service.rules.guide.refDesc') }}</div>
+          <pre class="guide-code">"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" }
+  ],
+  "rules": [
+    { "rule_set": ["geosite-cn"], "outbound": "direct" }
+  ]
+}</pre>
+          <div class="guide-sub">{{ t('service.rules.guide.refRemote') }}</div>
+          <pre class="guide-code">{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }</pre>
+
+          <h4>{{ t('service.rules.guide.examplesTitle') }}</h4>
+          <div class="guide-sub">{{ t('service.rules.guide.exampleMixed') }}</div>
+          <pre class="guide-code">"rules": [
+  { "domain_suffix": ["gstatic.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp-jm7s" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp-jm7s" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp-jm7s" }
+]</pre>
+          <div class="guide-sub">{{ t('service.rules.guide.exampleLogical') }}</div>
+          <pre class="guide-code">{ "type": "logical", "mode": "and",
+  "rules": [ { "port": 443 }, { "network": "tcp" } ],
+  "rule_set": ["geosite-google"], "outbound": "warp-jm7s" }</pre>
+
+          <h4>{{ t('service.rules.guide.mapTitle') }}</h4>
+          <div class="guide-sub">{{ t('service.rules.guide.mapDesc') }}</div>
+          <table class="guide-table">
+            <tr>
+              <th>xray</th><th>sing-box</th>
+            </tr>
+            <tr><td><code>geosite:cn</code></td><td><code>"rule_set": ["geosite-cn"]</code></td></tr>
+            <tr><td><code>geoip:cn</code></td><td><code>"rule_set": ["geoip-cn"]</code></td></tr>
+            <tr><td><code>domain:example.com</code></td><td><code>"domain_suffix": ["example.com"]</code></td></tr>
+            <tr><td><code>full:example.com</code></td><td><code>"domain": ["example.com"]</code></td></tr>
+            <tr><td><code>example.com</code>（裸串）</td><td><code>"domain_keyword": ["example.com"]</code></td></tr>
+            <tr><td><code>ip: ["1.2.3.0/24"]</code></td><td><code>"ip_cidr": ["1.2.3.0/24"]</code></td></tr>
+            <tr><td><code>outboundTag</code></td><td><code>"outbound"</code></td></tr>
+          </table>
+
+          <h4>{{ t('service.rules.guide.pitfallTitle') }}</h4>
+          <ul class="guide-list">
+            <li>{{ t('service.rules.guide.pitfall1') }}</li>
+            <li>{{ t('service.rules.guide.pitfall2') }}</li>
+            <li>{{ t('service.rules.guide.pitfall3') }}</li>
+            <li>{{ t('service.rules.guide.pitfall4') }}</li>
+          </ul>
+        </el-collapse-item>
+      </el-collapse>
+    </el-card>
+
     <!-- Sources -->
     <div style="display:flex;justify-content:space-between;margin-bottom:16px">
       <h3>{{ t('service.rules.sources') }}</h3>
@@ -187,6 +254,9 @@ import MobileCards from '../../components/MobileCards.vue'
 
 const { t } = useI18n()
 const { isMobile } = useIsMobile()
+
+// 使用说明默认收起，避免遮挡规则文件列表
+const guideOpen = ref([])
 
 // Sources
 const sources = ref([])
@@ -509,3 +579,49 @@ onMounted(() => {
   fetchSources().then(() => fetchFiles())
 })
 </script>
+
+<style scoped>
+.guide-card {
+  margin-bottom: 16px;
+}
+.guide-sub {
+  font-size: 12px;
+  color: #909399;
+  margin: 4px 0 8px;
+}
+.guide-list {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.guide-code {
+  margin: 0 0 12px;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+.guide-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.guide-table th,
+.guide-table td {
+  border: 1px solid #ebeef5;
+  padding: 4px 10px;
+  text-align: left;
+}
+.guide-table th {
+  background: #fafafa;
+  font-weight: 600;
+}
+h4 {
+  margin: 16px 0 4px;
+  font-size: 14px;
+}
+</style>

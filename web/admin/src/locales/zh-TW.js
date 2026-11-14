@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "確定要刪除儲存庫「{name}」嗎？將同時刪除所有關聯的規則檔案。",
       "available": "可用",
       "downloading": "下載中",
-      "error": "錯誤"
+      "error": "錯誤",
+      guide: {
+        "title": "使用說明：sing-box 規則檔案與引用",
+        "subtitle": "本頁只負責下載與推送規則檔案。要在分流中生效，還需在「協議中心 → sing-box → 路由」的 Rule Sets 與 Rules 中引用。",
+        "formatsTitle": "檔案格式",
+        "formatSrs": "sing-box 二進位規則集，local / remote 規則集皆可用，體積最小，推薦。",
+        "formatJson": "sing-box 來源格式規則集（rule_set 需 format=source）。",
+        "formatDat": "xray 的 geosite.dat / geoip.dat 格式，sing-box 無法直接使用，需轉換或改用 .srs。",
+        "refTitle": "在 sing-box 中引用",
+        "refDesc": "本機檔案（推薦）：檔案下載到 data/rules，路徑依 sing-box 工作目錄（節點 data 目錄）相對解析。",
+        "refRemote": "遠端檔案：由核心自行下載並定期更新，需確保節點能存取該 URL。",
+        "examplesTitle": "幾個範例",
+        "exampleMixed": "混合條件：網域後綴 / 關鍵字 / 規則集。規則自上而下比對，命中即停。",
+        "exampleLogical": "邏輯規則：多個條件同時成立（and）或任一成立（or），需明確寫 type: logical。",
+        "mapTitle": "xray 寫法對照",
+        "mapDesc": "從 xray 遷移時依此表替換；sing-box 1.12+ 已移除 geosite / geoip 路由欄位。",
+        "pitfallTitle": "常見錯誤",
+        "pitfall1": "tag 必須唯一，規則中的 rule_set 值要與 Rule Sets 定義的 tag 完全一致，否則報 rule-set not found。",
+        "pitfall2": "outbound 必須是 outbounds / endpoints 中真實存在的 tag；xray 與 sing-box 的 tag 不通用。",
+        "pitfall3": "路徑請寫相對形式 rules/xxx.srs；檔案不存在時核心會 FATAL 啟動失敗。",
+        "pitfall4": "規則自上而下比對，direct 白名單要放前面，否則會被後面的規則覆蓋。"
+      }
     },
     "warp": {
       "title": "WARP 設定",

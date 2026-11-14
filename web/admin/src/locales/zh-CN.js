@@ -1939,6 +1939,27 @@ export default {
       available: '可用',
       downloading: '下载中',
       error: '错误',
+      guide: {
+        "title": "使用说明：sing-box 规则文件与引用",
+        "subtitle": "本页只负责下载与推送规则文件。要在分流中生效，还需在「协议中心 → sing-box → 路由」的 Rule Sets 与 Rules 中引用。",
+        "formatsTitle": "文件格式",
+        "formatSrs": "sing-box 二进制规则集，local / remote 规则集都可用，体积最小，推荐。",
+        "formatJson": "sing-box 源格式规则集（rule_set 需 format=source）。",
+        "formatDat": "xray 的 geosite.dat / geoip.dat 格式，sing-box 无法直接使用，需转换或改用 .srs。",
+        "refTitle": "在 sing-box 中引用",
+        "refDesc": "本地文件（推荐）：文件下载到 data/rules，路径按 sing-box 工作目录（节点 data 目录）相对解析。",
+        "refRemote": "远程文件：由核心自行下载并定期更新，需保证节点能访问该 URL。",
+        "examplesTitle": "几个示例",
+        "exampleMixed": "混合条件：域名后缀 / 关键字 / 规则集。规则自上而下匹配，命中即停。",
+        "exampleLogical": "逻辑规则：多个条件同时满足（and）或任一满足（or），需显式写 type: logical。",
+        "mapTitle": "xray 写法对照",
+        "mapDesc": "从 xray 迁移时按此表替换；sing-box 1.12+ 已移除 geosite / geoip 路由字段。",
+        "pitfallTitle": "常见错误",
+        "pitfall1": "tag 必须唯一，规则里的 rule_set 值要与 Rule Sets 中定义的 tag 完全一致，否则报 rule-set not found。",
+        "pitfall2": "outbound 必须是 outbounds / endpoints 中真实存在的 tag；xray 与 sing-box 的 tag 不通用。",
+        "pitfall3": "路径写相对形式 rules/xxx.srs；文件不存在时核心会 FATAL 启动失败。",
+        "pitfall4": "规则自上而下匹配，direct 白名单要放在前面，否则会被后面的规则覆盖。"
+      }
     },
     warp: {
       title: 'WARP 配置',

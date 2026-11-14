@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "Hapus repositori \"{name}\"? Semua file aturan terkait juga akan dihapus.",
       "available": "Tersedia",
       "downloading": "Mengunduh",
-      "error": "Kesalahan"
+      "error": "Kesalahan",
+      guide: {
+        "title": "Panduan: file aturan sing-box dan cara mereferensikannya",
+        "subtitle": "Halaman ini hanya mengunduh dan mendistribusikan file aturan. Agar berpengaruh pada routing, referensikan di Rule Sets dan Rules pada «Pusat protokol → sing-box → Routing».",
+        "formatsTitle": "Format file",
+        "formatSrs": "Rule set biner sing-box. Bisa untuk local maupun remote, ukuran paling kecil, disarankan.",
+        "formatJson": "Rule set format sumber sing-box (rule_set memerlukan format=source).",
+        "formatDat": "Format xray geosite.dat / geoip.dat. sing-box tidak bisa membacanya langsung — konversi atau gunakan .srs.",
+        "refTitle": "Referensi di sing-box",
+        "refDesc": "File lokal (disarankan): file berada di data/rules dan path diselesaikan relatif terhadap direktori kerja sing-box (direktori data node).",
+        "refRemote": "File remote: core mengunduh dan memperbaruinya sendiri, jadi node harus dapat mengakses URL tersebut.",
+        "examplesTitle": "Contoh",
+        "exampleMixed": "Kondisi campuran: sufiks domain / kata kunci / rule set. Aturan dievaluasi dari atas ke bawah dan berhenti pada kecocokan pertama.",
+        "exampleLogical": "Aturan logika: semua kondisi (and) atau salah satu (or). type: logical harus ditulis eksplisit.",
+        "mapTitle": "Padanan xray",
+        "mapDesc": "Gunakan tabel ini saat migrasi dari xray. Field routing geosite / geoip dihapus sejak sing-box 1.12+.",
+        "pitfallTitle": "Kesalahan umum",
+        "pitfall1": "Tag harus unik dan nilai rule_set harus sama persis dengan tag yang dideklarasikan, jika tidak muncul rule-set not found.",
+        "pitfall2": "outbound harus tag yang benar-benar ada di outbounds / endpoints; tag tidak berlaku lintas xray dan sing-box.",
+        "pitfall3": "Gunakan path relatif seperti rules/xxx.srs; jika file tidak ada, core gagal start (FATAL).",
+        "pitfall4": "Aturan dievaluasi dari atas ke bawah, jadi letakkan allowlist direct di depan."
+      }
     },
     "warp": {
       "title": "Konfigurasi WARP",

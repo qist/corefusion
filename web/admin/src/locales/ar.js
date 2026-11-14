@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "هل تريد حذف المستودع \"{name}\"؟ سيتم أيضًا حذف جميع ملفات القواعد المرتبطة به.",
       "available": "متاح",
       "downloading": "جارٍ التنزيل",
-      "error": "خطأ"
+      "error": "خطأ",
+      guide: {
+        "title": "دليل: ملفات قواعد sing-box وكيفية الإشارة إليها",
+        "subtitle": "هذه الصفحة تنزّل ملفات القواعد وتوزّعها فقط. لكي تؤثر في التوجيه يجب الإشارة إليها في Rule Sets و Rules ضمن «مركز البروتوكولات → sing-box → التوجيه».",
+        "formatsTitle": "صيغ الملفات",
+        "formatSrs": "مجموعة قواعد ثنائية لـ sing-box، تعمل مع local و remote، أصغر حجمًا ومستحسنة.",
+        "formatJson": "مجموعة قواعد بصيغة المصدر لـ sing-box (يتطلب rule_set الخيار format=source).",
+        "formatDat": "صيغة xray ‏geosite.dat / geoip.dat، ولا يستطيع sing-box قراءتها مباشرة — حوّلها أو استخدم ‎.srs.",
+        "refTitle": "الإشارة داخل sing-box",
+        "refDesc": "ملف محلي (مستحسن): توضع الملفات في data/rules ويُحلّ المسار نسبةً إلى مجلد عمل sing-box (مجلد data للعقدة).",
+        "refRemote": "ملف بعيد: يقوم النواة بتنزيله وتحديثه، لذا يجب أن تتمكن العقدة من الوصول إلى ذلك الرابط.",
+        "examplesTitle": "أمثلة",
+        "exampleMixed": "شروط مختلطة: لاحقة النطاق / كلمة مفتاحية / مجموعة قواعد. تُقيَّم القواعد من أعلى إلى أسفل وتتوقف عند أول تطابق.",
+        "exampleLogical": "قاعدة منطقية: كل الشروط (and) أو أي شرط (or). يجب كتابة type: logical صراحةً.",
+        "mapTitle": "المقابل في xray",
+        "mapDesc": "استخدم هذا الجدول عند الانتقال من xray. أُزيلت حقول geosite / geoip في sing-box 1.12+.",
+        "pitfallTitle": "أخطاء شائعة",
+        "pitfall1": "يجب أن تكون الوسوم فريدة وأن تطابق قيم rule_set الوسم المعلن تمامًا وإلا ظهر rule-set not found.",
+        "pitfall2": "يجب أن يكون outbound وسمًا موجودًا فعليًا في outbounds / endpoints، والوسوم لا تُشارك بين xray و sing-box.",
+        "pitfall3": "استخدم مسارًا نسبيًا مثل rules/xxx.srs، وعند غياب الملف يفشل تشغيل النواة (FATAL).",
+        "pitfall4": "تُقيَّم القواعد من أعلى إلى أسفل، لذا ضع قوائم direct المسموحة في المقدمة."
+      }
     },
     "warp": {
       "title": "إعداد WARP",

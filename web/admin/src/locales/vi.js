@@ -1921,7 +1921,28 @@ export default {
       "deleteSourceConfirm": "Xác nhận xóa kho \"{name}\"? Tất cả tệp quy tắc liên quan cũng sẽ bị xóa.",
       "available": "Khả dụng",
       "downloading": "Đang tải xuống",
-      "error": "Lỗi"
+      "error": "Lỗi",
+      guide: {
+        "title": "Hướng dẫn: tệp quy tắc sing-box và cách tham chiếu",
+        "subtitle": "Trang này chỉ tải và phân phối tệp quy tắc. Để có hiệu lực định tuyến, hãy tham chiếu chúng trong Rule Sets và Rules tại «Trung tâm giao thức → sing-box → Định tuyến».",
+        "formatsTitle": "Định dạng tệp",
+        "formatSrs": "Bộ quy tắc nhị phân sing-box. Dùng được cho cả local và remote, dung lượng nhỏ nhất, khuyến nghị.",
+        "formatJson": "Bộ quy tắc định dạng nguồn sing-box (rule_set cần format=source).",
+        "formatDat": "Định dạng xray geosite.dat / geoip.dat. sing-box không đọc trực tiếp được — hãy chuyển đổi hoặc dùng .srs.",
+        "refTitle": "Tham chiếu trong sing-box",
+        "refDesc": "Tệp cục bộ (khuyến nghị): tệp nằm trong data/rules, đường dẫn được giải theo thư mục làm việc của sing-box (thư mục data của nút).",
+        "refRemote": "Tệp từ xa: lõi tự tải và cập nhật, nên nút phải truy cập được URL đó.",
+        "examplesTitle": "Ví dụ",
+        "exampleMixed": "Điều kiện hỗn hợp: hậu tố tên miền / từ khóa / bộ quy tắc. Quy tắc được xét từ trên xuống và dừng ở kết quả khớp đầu tiên.",
+        "exampleLogical": "Quy tắc logic: tất cả điều kiện (and) hoặc bất kỳ điều kiện nào (or). Phải ghi rõ type: logical.",
+        "mapTitle": "Tương đương xray",
+        "mapDesc": "Dùng bảng này khi chuyển từ xray. Các trường định tuyến geosite / geoip đã bị loại bỏ từ sing-box 1.12+.",
+        "pitfallTitle": "Lỗi thường gặp",
+        "pitfall1": "Tag phải duy nhất và giá trị rule_set phải khớp chính xác với tag đã khai báo, nếu không sẽ báo rule-set not found.",
+        "pitfall2": "outbound phải là tag có thật trong outbounds / endpoints; tag không dùng chung giữa xray và sing-box.",
+        "pitfall3": "Dùng đường dẫn tương đối như rules/xxx.srs; thiếu tệp thì lõi FATAL không khởi động được.",
+        "pitfall4": "Quy tắc xét từ trên xuống, nên đặt danh sách cho phép direct lên trước."
+      }
     },
     "warp": {
       "title": "Cấu hình WARP",

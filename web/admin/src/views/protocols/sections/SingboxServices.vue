@@ -31,7 +31,7 @@
             <el-input v-model="it.tag" placeholder="realm" />
           </el-form-item>
           <el-form-item :label="t('singbox.listen.listen')">
-            <el-input v-model="it.listen" placeholder="0.0.0.0" />
+            <el-input v-model="it.listen" placeholder="::" />
           </el-form-item>
           <el-form-item :label="t('singbox.listen.listenPort')">
             <el-input-number v-model="it.listen_port" :min="0" :max="65535" style="width:100%" />

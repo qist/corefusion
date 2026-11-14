@@ -67,16 +67,16 @@ const REGISTRY = {
     // 避免与面板自身端口（8080/8443）或已有入站/端点撞端口。
     templates: {
       api: { type: 'api', tag: 'api', listen: '127.0.0.1', listenPort: true },
-      ccm: { type: 'ccm', tag: 'ccm', listen: '0.0.0.0', listenPort: true },
-      derp: { type: 'derp', tag: 'derp', listen: '0.0.0.0', listenPort: true },
+      ccm: { type: 'ccm', tag: 'ccm', listen: '::', listenPort: true },
+      derp: { type: 'derp', tag: 'derp', listen: '::', listenPort: true },
       dynamic: { type: 'dynamic', tag: 'dynamic' },
-      'hysteria-realm': { type: 'hysteria-realm', tag: 'realm', listen: '0.0.0.0', listenPort: true, users: [{ name: 'realm1', token: 'CHANGE_ME', max_realms: 0 }] },
-      ocm: { type: 'ocm', tag: 'ocm', listen: '0.0.0.0', listenPort: true },
+      'hysteria-realm': { type: 'hysteria-realm', tag: 'realm', listen: '::', listenPort: true, users: [{ name: 'realm1', token: 'CHANGE_ME', max_realms: 0 }] },
+      ocm: { type: 'ocm', tag: 'ocm', listen: '::', listenPort: true },
       'oom-killer': { type: 'oom-killer', tag: 'oom-killer' },
       resolved: { type: 'resolved', tag: 'resolved' },
-      'ssm-api': { type: 'ssm-api', tag: 'ssm-api', listen: '0.0.0.0', listenPort: true },
+      'ssm-api': { type: 'ssm-api', tag: 'ssm-api', listen: '::', listenPort: true },
       'usbip-client': { type: 'usbip-client', tag: 'usbip-client', server: '', server_port: 3240, devices: [] },
-      'usbip-server': { type: 'usbip-server', tag: 'usbip-server', listen: '0.0.0.0', listenPort: true, devices: [] },
+      'usbip-server': { type: 'usbip-server', tag: 'usbip-server', listen: '::', listenPort: true, devices: [] },
     },
   },
   certificate_providers: {

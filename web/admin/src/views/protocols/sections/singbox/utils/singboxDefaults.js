@@ -129,7 +129,9 @@ export function inboundDefaultsForType(type, customPort) {
   const base = {
     type,
     tag: genInboundTag(type, port),
-    listen: '0.0.0.0',
+    // sing-box 默认监听地址就是 "::"（Go 的 IPv6 通配地址，Linux 下双栈同时收 v4/v6）。
+    // 写 0.0.0.0 只监听 IPv4，IPv6 客户端会连不上。
+    listen: '::',
     listen_port: port,
     domain_strategy: '',
     sniff: true,
@@ -374,5 +376,8 @@ export function inboundDefaultsForType(type, customPort) {
 // 通用公网访问地址解析（镜像 xray 的 getAccessHostPort）
 export function resolveAccessHost(ib, serverInfo) {
   // serverInfo: { address, domain } from parent if available
-  return (serverInfo && (serverInfo.domain || serverInfo.address)) || (ib && ib.listen === '0.0.0.0' ? '' : (ib && ib.listen)) || ''
+  const listen = ib && ib.listen
+  // 通配监听地址不能直接当访问地址展示（0.0.0.0 / :: / [::]）
+  const wildcard = !listen || listen === '0.0.0.0' || listen === '::' || listen === '[::]'
+  return (serverInfo && (serverInfo.domain || serverInfo.address)) || (wildcard ? '' : listen) || ''
 }

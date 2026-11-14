@@ -1122,7 +1122,7 @@
             <template v-if="rf.type === 'masque-server'">
               <el-divider content-position="left">MASQUE Server</el-divider>
               <el-form-item :label="t('singbox.protocol.endpoint.ovpn.listen')">
-                <el-input v-model="rf.listen" placeholder="0.0.0.0" />
+                <el-input v-model="rf.listen" placeholder="::" />
               </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.listenPortLabel')">
                 <el-input-number v-model="rf.listen_port" :min="0" :max="65535" style="width:100%" />

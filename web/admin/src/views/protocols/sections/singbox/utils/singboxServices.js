@@ -31,7 +31,7 @@ export function serviceDefaultsForType(type, listenPort = 0) {
     return {
       type,
       tag: 'realm-' + randSuffix(),
-      listen: '0.0.0.0',
+      listen: '::',
       listen_port: listenPort || 0,
       // TLS（realm 客户端用 https://server_url 连接，实际部署必须开）
       _tlsEnabled: true,
@@ -139,7 +139,7 @@ export function parseService(cfg) {
   const tls = cfg.tls || {}
   return {
     ...base,
-    listen: cfg.listen || '0.0.0.0',
+    listen: cfg.listen || '::',
     listen_port: cfg.listen_port || 0,
     _tlsEnabled: tls.enabled === true,
     _tlsCertificate: Array.isArray(tls.certificate) ? tls.certificate.join('\n') : (tls.certificate || ''),

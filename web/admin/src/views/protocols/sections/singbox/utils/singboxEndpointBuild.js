@@ -596,7 +596,7 @@ export function endpointDefaultsForType(type, customPort) {
         name: 'MASQUE-Server-' + randSuffix(),
         system: false,
         mtu: 0,
-        listen: '0.0.0.0',
+        listen: '::',
         listen_port: listenPort,
         // 服务器自己的 TUN 地址池（必填，最多一个 IPv4 + 一个 IPv6 前缀）
         address: [],
@@ -1543,7 +1543,7 @@ export function parseEndpoint(ep) {
         system: ep.system || false,
         name: ep.name || '',
         mtu: ep.mtu || 0,
-        listen: ep.listen || '0.0.0.0',
+        listen: ep.listen || '::',
         listen_port: ep.listen_port || 0,
         address: Array.isArray(ep.address) ? ep.address : [],
         _addressStr: Array.isArray(ep.address) ? ep.address.join(', ') : '',

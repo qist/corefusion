@@ -388,7 +388,7 @@
   "sub.copy": "คัดลอก",
   "sub.copy_link": "คัดลอกลิงก์",
   "sub.default_config": "ค่าเริ่มต้น",
-  "sub.proxy_providers": "Proxy Providers",
+  "sub.proxy_providers": "ผู้ให้บริการพร็อกซี",
   "sub.description": "ดูลิงก์และสถานะการสมัครสมาชิกของคุณ",
   "sub.fmt_base64": "รูปแบบ Base64 สากล เข้ากันได้กับไคลเอนต์ส่วนใหญ่",
   "sub.fmt_clash": "การตั้งค่า Clash/Mihomo YAML",

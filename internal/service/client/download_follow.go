@@ -8,6 +8,7 @@ import (
 
 	"corefusion/internal/domain"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/inbounduser"
 )
 
 // downloadAccount 是「某客户在某个下行入站上应有的账号」。
@@ -110,9 +111,15 @@ func (s *Service) resolveDownloadAccountFrom(cfgs []entity.InboundConfig, target
 	for _, c := range seen {
 		cred = c
 	}
+	// 下行入站里可能已有该客户的账号（tag 改过时后缀是旧的）：沿用实际 email，
+	// 避免 Upsert 时又建一条新邮箱的重复账号。
+	email := inbounduser.ResolveEmail(target.ConfigJSON, clientEmail, target.Tag)
+	if email == "" {
+		email = generateInboundEmail(clientEmail, target.Tag)
+	}
 	return &downloadAccount{
 		Target:   target,
-		Email:    generateInboundEmail(clientEmail, target.Tag),
+		Email:    email,
 		UUID:     cred.uuid,
 		Password: cred.password,
 		Flow:     cred.flow,
@@ -240,7 +247,11 @@ func (s *Service) PruneDownloadAccounts(ctx context.Context, uplinkInboundID, ol
 		if s.otherUplinkReferences(ctx, oldTargetID, uplinkInboundID, client.Email) {
 			return
 		}
-		targetEmail := generateInboundEmail(client.Email, oldTarget.Tag)
+		// 按真实存在的账号删除（tag 改过时后缀是旧的），找不到就跳过。
+		targetEmail := inbounduser.ResolveEmail(oldTarget.ConfigJSON, client.Email, oldTarget.Tag)
+		if targetEmail == "" {
+			return
+		}
 		if err := s.userManager.RemoveUserFromInbound(ctx, oldTarget.Tag, targetEmail); err != nil {
 			log.Printf("client: prune download account %s from inbound %s failed: %v", targetEmail, oldTarget.Tag, err)
 			return

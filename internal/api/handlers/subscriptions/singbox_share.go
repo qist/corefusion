@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	realityutil "corefusion/internal/reality"
+	"corefusion/internal/service/inbounduser"
 	"corefusion/internal/subscription/formatter"
 )
 
@@ -235,18 +236,10 @@ func findSingboxUserForSubscription(config map[string]interface{}, clientEmail, 
 	if clientEmail == "" {
 		return nil
 	}
-	inboundEmail := generateInboundEmail(clientEmail, tag)
-	users, _ := config["users"].([]interface{})
-	for _, u := range users {
-		user, ok := u.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if name, _ := user["name"].(string); name == inboundEmail {
-			return user
-		}
-	}
-	return nil
+	// 与 xray 侧共用同一套定位逻辑：先按当前 tag 精确匹配，失败再按
+	// {客户邮箱}_ 前缀兜底 —— 入站 tag 被改过时账号名后缀仍是旧 tag，
+	// 只做精确匹配会让该节点从订阅里消失。
+	return inbounduser.FindEntryInConfig(config, clientEmail, tag)
 }
 
 // singboxToXrayStreamSettings 由 sing-box 的 transport / tls 反推 xray 的 streamSettings，

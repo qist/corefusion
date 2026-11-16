@@ -3537,13 +3537,21 @@ func getStringSlice(m map[string]interface{}, key string) []string {
 
 // findClientByEmail finds a specific client entry in the inbound config by matching the email pattern.
 // The email pattern is: {client_email}_{tag_prefix}
+//
+// 兜底：入站 tag 被改过（例如 inbound-vmess-28307 → inbound-vmess-36832）时，该入站里
+// 存量账号的 email 后缀仍是旧 tag，精确匹配会失败 → 该节点在订阅里直接消失（真机踩到：
+// 节点健在、套餐节点组里也有它，订阅就是不输出）。同一入站内某客户的 email 一定等于
+// clientEmail 或 clientEmail_<后缀>，因此精确匹配失败时按这个前缀兜底；仍找不到才跳过
+// （绝不使用别的客户的凭据）。
 func findClientByEmail(settings map[string]interface{}, clientEmail, tag string) map[string]interface{} {
-	if settings == nil {
+	if settings == nil || clientEmail == "" {
 		return nil
 	}
 	// Generate the expected inbound email (same logic as service/client/inbound_manager.go)
 	inboundEmail := generateInboundEmail(clientEmail, tag)
+	prefix := clientEmail + "_"
 
+	var fallback map[string]interface{}
 	for _, key := range []string{"clients", "users"} {
 		arr, ok := settings[key].([]interface{})
 		if !ok {
@@ -3554,12 +3562,16 @@ func findClientByEmail(settings map[string]interface{}, clientEmail, tag string)
 			if !ok {
 				continue
 			}
-			if user["email"] == inboundEmail {
+			email, _ := user["email"].(string)
+			if email == inboundEmail {
 				return user
+			}
+			if fallback == nil && (email == clientEmail || strings.HasPrefix(email, prefix)) {
+				fallback = user
 			}
 		}
 	}
-	return nil
+	return fallback
 }
 
 // virtualEntryIsDuplicate 判断 external_node_servers 虚拟入口是否是同一外部节点的

@@ -290,6 +290,12 @@ func (s *Service) clientLogCleanupLoop(interval time.Duration) {
 // These are used to filter log lines — only lines containing one of these emails are included.
 func buildInboundEmails(clientEmail string, nodes []entryNodeInfo) map[string]bool {
 	emails := make(map[string]bool)
+	// 入站 tag 被改过时，日志里的账号名后缀仍是旧 tag，按当前 tag 拼出来的 email
+	// 匹配不到 → 该节点的日志会整段缺失。补上 {客户端邮箱}_ 前缀兜底
+	// （前缀只可能匹配该客户自己的账号，不会串到别人）。
+	if clientEmail != "" {
+		emails[clientEmail+"_"] = true
+	}
 	for _, node := range nodes {
 		ie := generateInboundEmail(clientEmail, node.Tag)
 		emails[ie] = true

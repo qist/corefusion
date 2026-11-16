@@ -10,6 +10,7 @@ import (
 
 	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
+	"corefusion/internal/service/inbounduser"
 	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
@@ -354,12 +355,18 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 	accessResult, err := s.planSvc.GetAccessibleNodes(ctx, client.PlanID)
 	if err == nil {
 		for _, inbound := range accessResult.InboundConfigs {
-			inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
-			if s.userManager != nil {
+			if s.userManager == nil {
+				continue
+			}
+			// 按入站里**真实存在的账号**删除：tag 改过时按当前 tag 拼出的 email
+			// 匹配不到存量账号，删客户会留下仍可认证的「僵尸账号」（安全问题）。
+			if inboundEmail := inbounduser.ResolveEmail(inbound.ConfigJSON, client.Email, inbound.Tag); inboundEmail != "" {
 				s.userManager.RemoveUserFromInbound(ctx, inbound.Tag, inboundEmail)
-				// 上下行分离：下行入站里的同客户账号一并删除，避免残留可认证账号。
-				if target := s.downloadTargetOf(ctx, inbound); target != nil {
-					s.userManager.RemoveUserFromInbound(ctx, target.Tag, generateInboundEmail(client.Email, target.Tag))
+			}
+			// 上下行分离：下行入站里的同客户账号一并删除，避免残留可认证账号。
+			if target := s.downloadTargetOf(ctx, inbound); target != nil {
+				if targetEmail := inbounduser.ResolveEmail(target.ConfigJSON, client.Email, target.Tag); targetEmail != "" {
+					s.userManager.RemoveUserFromInbound(ctx, target.Tag, targetEmail)
 				}
 			}
 		}
@@ -525,6 +532,12 @@ func (s *Service) generateAccountsForClient(ctx context.Context, client *entity.
 			continue
 		}
 
+		// 已有账号（含改过 tag 的旧后缀账号）就不要再建一条：重复账号会让
+		// 订阅/流量统计口径分裂，客户端也可能拿到两条同节点。
+		if inboundEmailTakenForClient(inbound.ConfigJSON, client.Email, inbound.Tag) {
+			continue
+		}
+
 		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
 		uuid, password, flow, method := credentialsForInbound(&inbound)
 
@@ -591,8 +604,11 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 	for _, client := range clients {
 		inboundEmail := generateInboundEmail(client.Email, inbound.Tag)
 
-		// Check if account already exists
-		if userExistsInConfig(inbound.ConfigJSON, inboundEmail) {
+		// 判重必须按「客户」而不是「按当前 tag 拼出的那个 email」：入站 tag 改过
+		// （inbound-vmess-36833 → inbound-vmess-36832）时，存量账号后缀仍是旧 tag，
+		// 精确比对会判「没有」→ 全量同步再给同一客户加一条新 email，同一入站出现
+		// 两个账号（订阅/流量统计口径分裂，用户看到重复节点）。
+		if inboundEmailTakenForClient(inbound.ConfigJSON, client.Email, inbound.Tag) {
 			continue
 		}
 
@@ -620,6 +636,11 @@ func (s *Service) SyncAccountsForNewInbound(ctx context.Context, templateID int6
 }
 
 // pauseResumeAll pauses or resumes users in all accessible inbounds of a plan template.
+//
+// 操作对象必须是**入站里真实存在的账号 email**：入站 tag 改过时，按当前 tag 拼出的
+// email 与存量账号后缀不一致，Pause/Resume 会打到一个不存在的账号上 —— 表现为
+// 「暂停了但仍能连」「恢复后仍连不上」。这里用 ResolveEmail 定位实际账号，
+// 该入站本来就没有这个客户时直接跳过（不凭空创建账号）。
 func (s *Service) pauseResumeAll(ctx context.Context, email string, planID int64, pause bool) {
 	if s.userManager == nil {
 		return
@@ -629,20 +650,22 @@ func (s *Service) pauseResumeAll(ctx context.Context, email string, planID int64
 		return
 	}
 	for _, inbound := range accessResult.InboundConfigs {
-		inboundEmail := generateInboundEmail(email, inbound.Tag)
-		if pause {
-			s.userManager.PauseUser(ctx, inbound.ID, inboundEmail)
-		} else {
-			s.userManager.ResumeUser(ctx, inbound.ID, inboundEmail)
+		if inboundEmail := inbounduser.ResolveEmail(inbound.ConfigJSON, email, inbound.Tag); inboundEmail != "" {
+			if pause {
+				s.userManager.PauseUser(ctx, inbound.ID, inboundEmail)
+			} else {
+				s.userManager.ResumeUser(ctx, inbound.ID, inboundEmail)
+			}
 		}
 		// 上下行分离：下行入站里同客户的账号也要一起暂停/恢复，
 		// 否则只封上行、下行仍可用（或反之恢复不完整）。
 		if target := s.downloadTargetOf(ctx, inbound); target != nil {
-			targetEmail := generateInboundEmail(email, target.Tag)
-			if pause {
-				s.userManager.PauseUser(ctx, target.ID, targetEmail)
-			} else {
-				s.userManager.ResumeUser(ctx, target.ID, targetEmail)
+			if targetEmail := inbounduser.ResolveEmail(target.ConfigJSON, email, target.Tag); targetEmail != "" {
+				if pause {
+					s.userManager.PauseUser(ctx, target.ID, targetEmail)
+				} else {
+					s.userManager.ResumeUser(ctx, target.ID, targetEmail)
+				}
 			}
 		}
 	}
@@ -673,6 +696,18 @@ func hashClientPassword(pwd string) (string, error) {
 
 // userExistsInConfig checks if a user with the given email already exists
 // in the inbound config JSON's settings.clients or settings.users array.
+// inboundEmailTakenForClient 判断某客户在入站里是否已有账号。
+//
+// 先按当前 tag 拼出的 email 精确比对（正常路径）；失败再按「同一客户」兜底
+// （email == clientEmail 或 email 以 clientEmail+"_" 开头）。兜底只用于判重，
+// 绝不会复用别人的账号：能匹配到的 email 一定以该客户邮箱开头。
+//
+// 为什么需要兜底：入站 tag 被改过时（端口一起变），存量账号 email 后缀仍是旧 tag，
+// 全量同步账号/新建入站补账号若只做精确比对，就会给同一客户再加一条 → 重复账号。
+func inboundEmailTakenForClient(configJSON, clientEmail, tag string) bool {
+	return inbounduser.FindEntry(configJSON, clientEmail, tag) != nil
+}
+
 func userExistsInConfig(configJSON, email string) bool {
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {

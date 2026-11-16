@@ -2,6 +2,7 @@ package usersync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/inbounduser"
 	"corefusion/internal/service/plan"
 	"corefusion/internal/store/repository"
 )
@@ -128,14 +130,25 @@ func (s *UserSyncService) syncUserToServer(
 			continue
 		}
 
+		// 必须作用在**入站里真实存在的账号**上：
+		//   - 原来用 client.Email（裸邮箱）删除/添加，而 xray 里账号是
+		//     {邮箱}_{tag 后缀} → 删除永远匹配不到（流量用尽封禁不断开），
+		//     添加则会造一个 uuid=clientID 的无效账号；
+		//   - 入站 tag 改过时后缀还会变（_vmess36833 → _vmess36832），
+		//     按当前 tag 猜 email 同样打不中存量账号。
+		// 这里直接按客户定位现有条目，用它的真实 email 与凭据下发。
+		entry := inbounduser.FindEntry(inbound.ConfigJSON, client.Email, inbound.Tag)
+		if entry == nil {
+			// 该入站里没有这个客户的账号：恢复/新建应走 SyncAccountsForNewInbound
+			// （按套餐节点组补号），这里不凭空创建。
+			continue
+		}
+
 		req := &agentpb.AlterUsersRequest{
 			CoreType:   inbound.CoreType,
 			InboundTag: inbound.Tag,
 			Action:     action,
-			Users: []*agentpb.UserOp{{
-				Email: client.Email,
-				Uuid:  fmt.Sprintf("%d", client.ID),
-			}},
+			Users:      []*agentpb.UserOp{buildUserOp(entry, inbound, action)},
 		}
 
 		if err := s.nodeMgr.AlterUsers(ctx, serverID, req); err != nil {
@@ -146,6 +159,48 @@ func (s *UserSyncService) syncUserToServer(
 	}
 
 	return nil
+}
+
+// buildUserOp 用入站里现存账号条目构造下发参数。
+// remove 只需要 email；add/update 需要真实凭据（uuid/password/flow/method）。
+func buildUserOp(entry map[string]interface{}, inbound *entity.InboundConfig, action string) *agentpb.UserOp {
+	op := &agentpb.UserOp{Email: inbounduser.EntryEmail(entry)}
+	if action == "remove" {
+		return op
+	}
+	if v, ok := entry["id"].(string); ok {
+		op.Uuid = v
+	}
+	if op.Uuid == "" {
+		if v, ok := entry["uuid"].(string); ok {
+			op.Uuid = v
+		}
+	}
+	op.Password, _ = entry["password"].(string)
+	if auth, ok := entry["auth"].(string); ok && auth != "" {
+		// hysteria 用 auth 字段
+		op.Password = auth
+	}
+	op.Flow, _ = entry["flow"].(string)
+	op.Encryption, _ = entry["encryption"].(string)
+	if op.Encryption == "" {
+		// shadowsocks 的 cipher method 是入站级字段（settings.method），不在条目里
+		op.Encryption = inboundSettingsMethod(inbound.ConfigJSON)
+	}
+	return op
+}
+
+// inboundSettingsMethod 读取入站 settings.method（shadowsocks cipher）。
+func inboundSettingsMethod(configJSON string) string {
+	var config struct {
+		Settings struct {
+			Method string `json:"method"`
+		} `json:"settings"`
+	}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		return ""
+	}
+	return config.Settings.Method
 }
 
 // SyncUserRemoval removes a user from all servers.
@@ -176,11 +231,16 @@ func (s *UserSyncService) SyncUserRemoval(ctx context.Context, clientID int64) e
 			defer wg.Done()
 			inbounds, _ := s.inboundRepo.ListByServerID(ctx, sid)
 			for _, ib := range inbounds {
+				// 按客户定位真实账号：tag 改过时后缀是旧的，裸邮箱永远删不掉。
+				email := inbounduser.ResolveEmail(ib.ConfigJSON, client.Email, ib.Tag)
+				if email == "" {
+					continue
+				}
 				req := &agentpb.AlterUsersRequest{
 					CoreType:   ib.CoreType,
 					InboundTag: ib.Tag,
 					Action:     "remove",
-					Users:      []*agentpb.UserOp{{Email: client.Email}},
+					Users:      []*agentpb.UserOp{{Email: email}},
 				}
 				s.nodeMgr.AlterUsers(ctx, sid, req)
 			}

@@ -11,6 +11,7 @@ import (
 	"corefusion/internal/model/entity"
 	agentsvc "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
+	"corefusion/internal/service/inbounduser"
 	"corefusion/internal/store/repository"
 )
 
@@ -350,6 +351,12 @@ func (s *Service) fillInboundForServer(ctx context.Context, serverID int64, user
 				}
 			}
 		}
+		if cfg == nil && account != "" {
+			// 兜底：入站 tag 被改过时，核心里的账号名后缀仍是旧 tag，
+			// 按当前 tag 推导的 suffix 永远匹配不到。这里按「账号名」直接反查一次
+			// （只在按 suffix 失败时才建索引，正常配置无额外开销）。
+			cfg = byAccountInbound(cfgs, strings.ToLower(account))
+		}
 		if cfg == nil {
 			continue
 		}
@@ -361,6 +368,22 @@ func (s *Service) fillInboundForServer(ctx context.Context, serverID int64, user
 		u.InboundName = name
 		u.InboundPort = int32(cfg.Port)
 	}
+}
+
+// byAccountInbound 按「核心账号名」反查它属于哪个入站（大小写不敏感）。
+// 用于 tag 改过、后缀与当前 tag 对不上的历史账号。
+func byAccountInbound(cfgs []entity.InboundConfig, account string) *entity.InboundConfig {
+	if account == "" {
+		return nil
+	}
+	for i := range cfgs {
+		for _, name := range inbounduser.Names(cfgs[i].ConfigJSON) {
+			if strings.EqualFold(name, account) {
+				return &cfgs[i]
+			}
+		}
+	}
+	return nil
 }
 
 // resolveOnlineSubIDByEmail 按账号 email 反查客户订阅 ID。

@@ -590,10 +590,15 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			} else {
 				req.ConfigContent = configData
 				req.ConfigCoreType = coreType
-				// 拿到 coreType 后精确设置 mirror 的重载策略（见上方 isMirror 处的说明）
-				if isMirror {
-					req.ReloadStrategy = reloadStrategyFor(coreType)
-				}
+				// 重载策略按核心能力决定，**所有节点**都适用：
+				//   - xray → HOT_RELOAD：Agent 只把差异热应用到运行中的进程，配置没变完全不碰进程；
+				//   - 其余核心 → RESTART：v2ray API 只注册了 StatsService，入站变更无法热下发。
+				//
+				// 以前这里只对 mirror 节点设置，普通远端节点留在默认的 NONE：
+				// Agent 的 NONE 分支是「配置有变化就重启核心」，于是每次保存入站（面板已经热下发过、
+				// 这里只是顺便补推证书）都会把远程节点的 xray 重启一次 —— 表现为「开关一个节点，
+				// xray 就重启」。本地节点不受影响（不发 SyncData），正是用户看到的「面板侧不重启」。
+				req.ReloadStrategy = reloadStrategyFor(coreType)
 				log.Printf("[DataSyncBuilder] server %d: generated final config via PrepareFullConfig (%d bytes, reload=%s)",
 					serverID, len(configData), req.ReloadStrategy)
 			}

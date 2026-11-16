@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -194,5 +197,90 @@ func TestDiffRuntimeConfigNoOldConfig(t *testing.T) {
 	}
 	if !d.Unsupported {
 		t.Fatal("缺旧配置时应判定为需要重启")
+	}
+}
+
+// 面板保存时自己会热下发一次，随后 SyncData 又会对同一个 tag 下发同样的变更。
+// 热应用必须幂等：入站「增」要先删同 tag（删不到也算成功），否则 xray 报 existing tag
+// 会让调用方回退重启核心（用户看到的「开关一个节点，xray 重启了」）。
+func TestApplyRuntimeConfigDiffAdditionsAreIdempotent(t *testing.T) {
+	diff := runtimeConfigDiff{
+		Additions: []taggedItem{{Tag: "in-added", Raw: json.RawMessage(`{"tag":"in-added"}`)}},
+	}
+	var methods []string
+	call := func(ctx context.Context, service, method string, payload any) error {
+		methods = append(methods, method)
+		if method == "removeInbound" {
+			// 已经不存在（面板先热删过）：错误必须被忽略
+			return errors.New("rpc error: code = Unknown desc = common: not enough information for making a decision")
+		}
+		return nil
+	}
+	if err := applyRuntimeConfigDiff(context.Background(), diff, call); err != nil {
+		t.Fatalf("applyRuntimeConfigDiff: %v", err)
+	}
+	if len(methods) != 2 || methods[0] != "removeInbound" || methods[1] != "addInbound" {
+		t.Fatalf("调用顺序 = %v, want [removeInbound addInbound]", methods)
+	}
+}
+
+// 面板先热删过 → Agent 再删同一个入站会得到 missing-handler 错误，此时应视为已删除，
+// 不能回退重启核心。
+func TestApplyRuntimeConfigDiffToleratesMissingInboundOnRemove(t *testing.T) {
+	diff := runtimeConfigDiff{Removals: []string{"in-gone"}}
+	call := func(ctx context.Context, service, method string, payload any) error {
+		return errors.New("common: not enough information for making a decision")
+	}
+	if err := applyRuntimeConfigDiff(context.Background(), diff, call); err != nil {
+		t.Fatalf("missing handler should be tolerated, got %v", err)
+	}
+}
+
+// 真正的下发失败（例如控制面不可达）仍要返回错误，交给调用方重启兜底。
+func TestApplyRuntimeConfigDiffPropagatesRealRemoveError(t *testing.T) {
+	diff := runtimeConfigDiff{Removals: []string{"in-x"}}
+	call := func(ctx context.Context, service, method string, payload any) error {
+		return errors.New("rpc error: code = Unavailable desc = transport is closing")
+	}
+	if err := applyRuntimeConfigDiff(context.Background(), diff, call); err == nil {
+		t.Fatal("expected error for real failure")
+	}
+}
+
+// 「改」同样是先删后加，删除失败（已不存在）不应阻断后续添加。
+func TestApplyRuntimeConfigDiffAltersIgnoreRemoveError(t *testing.T) {
+	diff := runtimeConfigDiff{
+		Alters: []taggedItem{{Tag: "in-changed", Raw: json.RawMessage(`{"tag":"in-changed"}`)}},
+	}
+	var methods []string
+	call := func(ctx context.Context, service, method string, payload any) error {
+		methods = append(methods, method)
+		if method == "removeInbound" {
+			return errors.New("boom")
+		}
+		return nil
+	}
+	if err := applyRuntimeConfigDiff(context.Background(), diff, call); err != nil {
+		t.Fatalf("applyRuntimeConfigDiff: %v", err)
+	}
+	if len(methods) != 2 || methods[0] != "removeInbound" || methods[1] != "addInbound" {
+		t.Fatalf("调用顺序 = %v", methods)
+	}
+}
+
+func TestIsXrayMissingHandlerErr(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{errors.New("common: not enough information for making a decision"), true},
+		{errors.New("handler not found"), true},
+		{errors.New("rpc error: code = Unavailable desc = transport is closing"), false},
+	}
+	for _, tc := range cases {
+		if got := isXrayMissingHandlerErr(tc.err); got != tc.want {
+			t.Errorf("isXrayMissingHandlerErr(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }

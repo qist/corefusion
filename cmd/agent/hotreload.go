@@ -390,64 +390,96 @@ func (a *AgentApp) tryHotApplyXray(ctx context.Context, oldCfg, newCfg []byte) (
 	if diff.empty() {
 		return true, "config unchanged"
 	}
-
-	// 1) 出站：改（先删后加）→ 增
-	for _, it := range diff.OutboundAlters {
-		if err := a.xrayProxymanCall(ctx, "removeOutbound", map[string]string{"tag": it.Tag}); err != nil {
-			// RemoveHandler 对不存在的 tag 也可能返回错误，继续尝试添加即可；
-			// 但若确实无法替换，交给上层重启兜底更稳妥。
-			return false, fmt.Sprintf("replace outbound %q (remove): %v", it.Tag, err)
-		}
-		if err := a.xrayProxymanCall(ctx, "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
-			return false, fmt.Sprintf("replace outbound %q (add): %v", it.Tag, err)
-		}
+	if err := applyRuntimeConfigDiff(ctx, diff, a.xrayAPICall); err != nil {
+		return false, err.Error()
 	}
-	for _, it := range diff.OutboundAdditions {
-		if err := a.xrayProxymanCall(ctx, "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
-			return false, fmt.Sprintf("add outbound %q: %v", it.Tag, err)
-		}
-	}
-
-	// 2) 路由：全量替换（ShouldAppend=false 会清空旧 rules + balancers）
-	if diff.Routing != nil {
-		if err := a.xrayAPICall(ctx, "router", "applyRouting", map[string]json.RawMessage{"routing": diff.Routing}); err != nil {
-			return false, fmt.Sprintf("apply routing: %v", err)
-		}
-	}
-
-	// 3) 出站：删
-	for _, tag := range diff.OutboundRemovals {
-		if err := a.xrayProxymanCall(ctx, "removeOutbound", map[string]string{"tag": tag}); err != nil {
-			return false, fmt.Sprintf("remove outbound %q: %v", tag, err)
-		}
-	}
-
-	// 4) 入站：删 → 改（先删后加）→ 增
-	for _, tag := range diff.Removals {
-		if err := a.xrayProxymanCall(ctx, "removeInbound", map[string]string{"tag": tag}); err != nil {
-			return false, fmt.Sprintf("remove inbound %q: %v", tag, err)
-		}
-	}
-	for _, it := range diff.Alters {
-		if err := a.xrayProxymanCall(ctx, "removeInbound", map[string]string{"tag": it.Tag}); err != nil {
-			return false, fmt.Sprintf("replace inbound %q (remove): %v", it.Tag, err)
-		}
-		if err := a.xrayProxymanCall(ctx, "addInbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
-			return false, fmt.Sprintf("replace inbound %q (add): %v", it.Tag, err)
-		}
-	}
-	for _, it := range diff.Additions {
-		if err := a.xrayProxymanCall(ctx, "addInbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
-			return false, fmt.Sprintf("add inbound %q: %v", it.Tag, err)
-		}
-	}
-
 	summary := fmt.Sprintf("hot-applied xray changes: inbound -%d ~%d +%d, outbound -%d ~%d +%d, routing=%t",
 		len(diff.Removals), len(diff.Alters), len(diff.Additions),
 		len(diff.OutboundRemovals), len(diff.OutboundAlters), len(diff.OutboundAdditions),
 		diff.Routing != nil)
 	log.Printf("[HotReload] %s", summary)
 	return true, summary
+}
+
+// applyRuntimeConfigDiff 按差异把配置下发到运行中的 xray。
+//
+// 关键是**幂等**：面板保存改动时既会自己调 /xray/control/* 热下发，也会（为了补推证书）
+// 触发一次 SyncData。两条链路会先后对同一个 tag 下发同样的变更，如果这里不做幂等：
+//   - 「增」直接 addInbound → xray 报 existing tag → 回退重启核心（用户看到的就是
+//     「开关一个节点，xray 重启了」）；
+//   - 「删」碰到已经删掉的 tag → xray 报 not enough information for making a decision
+//     → 同样回退重启。
+//
+// 因此「增/改」一律先删同 tag（删不到忽略），「删」遇到 xray 的 missing-handler 错误
+// 视为成功；只有真正的下发失败才返回错误交给调用方重启兜底。
+func applyRuntimeConfigDiff(ctx context.Context, diff runtimeConfigDiff, call func(ctx context.Context, service, method string, payload any) error) error {
+	// 1) 出站：改（先删后加）→ 增
+	for _, it := range diff.OutboundAlters {
+		_ = call(ctx, "proxyman", "removeOutbound", map[string]string{"tag": it.Tag})
+		if err := call(ctx, "proxyman", "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return fmt.Errorf("replace outbound %q: %w", it.Tag, err)
+		}
+	}
+	for _, it := range diff.OutboundAdditions {
+		_ = call(ctx, "proxyman", "removeOutbound", map[string]string{"tag": it.Tag})
+		if err := call(ctx, "proxyman", "addOutbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return fmt.Errorf("add outbound %q: %w", it.Tag, err)
+		}
+	}
+
+	// 2) 路由：全量替换（ShouldAppend=false 会清空旧 rules + balancers）
+	if diff.Routing != nil {
+		if err := call(ctx, "router", "applyRouting", map[string]json.RawMessage{"routing": diff.Routing}); err != nil {
+			return fmt.Errorf("apply routing: %w", err)
+		}
+	}
+
+	// 3) 出站：删（不存在视为成功：面板可能已经删过）
+	for _, tag := range diff.OutboundRemovals {
+		if err := call(ctx, "proxyman", "removeOutbound", map[string]string{"tag": tag}); err != nil && !isXrayMissingHandlerErr(err) {
+			return fmt.Errorf("remove outbound %q: %w", tag, err)
+		}
+	}
+
+	// 4) 入站：删 → 改（先删后加）→ 增
+	for _, tag := range diff.Removals {
+		if err := call(ctx, "proxyman", "removeInbound", map[string]string{"tag": tag}); err != nil && !isXrayMissingHandlerErr(err) {
+			return fmt.Errorf("remove inbound %q: %w", tag, err)
+		}
+	}
+	for _, it := range diff.Alters {
+		_ = call(ctx, "proxyman", "removeInbound", map[string]string{"tag": it.Tag})
+		if err := call(ctx, "proxyman", "addInbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return fmt.Errorf("replace inbound %q: %w", it.Tag, err)
+		}
+	}
+	for _, it := range diff.Additions {
+		_ = call(ctx, "proxyman", "removeInbound", map[string]string{"tag": it.Tag})
+		if err := call(ctx, "proxyman", "addInbound", map[string]json.RawMessage{"config": it.Raw}); err != nil {
+			return fmt.Errorf("add inbound %q: %w", it.Tag, err)
+		}
+	}
+	return nil
+}
+
+// isXrayMissingHandlerErr 判断错误是否只是「该 handler 不存在」。
+// xray 对不存在的 tag 删入站时返回 common.ErrNoClue
+// （"not enough information for making a decision"），语义上等价于「已经删掉了」。
+func isXrayMissingHandlerErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"not enough information for making a decision",
+		"handler not found",
+		"not found",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // xrayAPICall 通过本地 XrayAPIProxy 调任意 xray gRPC 服务

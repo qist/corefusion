@@ -42,6 +42,14 @@ function addUser() {
   // 迁移/手写入站可能只有 password（没有 clients 数组）→ 直接 push 会抛
   // "Cannot read properties of undefined (reading 'push')"，这里先补齐。
   if (!Array.isArray(props.rf.settings.clients)) props.rf.settings.clients = []
-  props.rf.settings.clients.push({ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
+  // alterId / security 是入站级习惯参数（订阅里的 aid/scy 直接取自用户条目）：
+  // 新用户跟第一条「主账号」同步，避免同一入站里出现两套值。
+  const main = props.rf.settings.clients[0] || {}
+  props.rf.settings.clients.push({
+    id: genUUID(), email: genEmail(),
+    alterId: Number(main.alterId) || 0,
+    security: main.security || 'auto',
+    level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0
+  })
 }
 </script>

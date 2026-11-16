@@ -100,7 +100,14 @@ function addUser(proto) {
   // 迁移/手写入站可能只有 password（没有 clients 数组）→ 直接 push 会抛
   // "Cannot read properties of undefined (reading 'push')"，这里先补齐。
   if (!Array.isArray(props.rf.settings.clients)) props.rf.settings.clients = []
-  props.rf.settings.clients.push({ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
+  // flow 是入站级参数：跟主账号同步（用户级优先，其次入站级 settings.flow）。
+  // 主账号流式而新账号为空会被 xray 直接拒绝（client flow is empty）。
+  const main = props.rf.settings.clients[0] || {}
+  props.rf.settings.clients.push({
+    id: genUUID(), email: genEmail(),
+    flow: main.flow || props.rf.settings.flow || '',
+    level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0
+  })
 }
 
 async function generateVlessEnc() {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -114,8 +115,24 @@ func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inbou
 			continue // Skip, don't create duplicate
 		}
 
+		// 入站主账号的共享参数（flow / alterId / security）：落盘与运行时热加必须同值。
+		var tmpl inboundUserTemplate
+		var parsed map[string]interface{}
+		if json.Unmarshal([]byte(inbound.ConfigJSON), &parsed) == nil {
+			tmpl = inboundTemplateOf(inbound, parsed, p)
+		}
+		effFlow := flow
+		if tmpl.Flow != "" {
+			effFlow = tmpl.Flow
+		}
+		// flow 是入站级参数，不能跨入站沿用（上下行复制会把上行的 vision 带到
+		// 主账号是普通 vless 的下行入站）；vless/trojan 一律以目标入站模板为准。
+		if p == "vless" || p == "trojan" {
+			effFlow = tmpl.Flow
+		}
+
 		// Add user to config_json
-		if err := m.addUserToInboundConfig(ctx, inbound, p, email, uuid, password, flow, method); err != nil {
+		if err := m.addUserToInboundConfig(ctx, inbound, tmpl, p, email, uuid, password, effFlow, method); err != nil {
 			log.Printf("inbound_manager: failed to add user %s to inbound %s (serverID=%d): %v", email, inbound.Tag, inbound.ServerID, err)
 			continue
 		}
@@ -128,11 +145,11 @@ func (m *InboundManager) AddUserToInboundWithProtocol(ctx context.Context, inbou
 		}
 
 		// 主节点热加用户（进程内直连/经 Agent，协议显式传递，不靠 tag 猜）
-		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
 
 		// Fan out to mirror nodes: directly call xray API on each mirror
 		// using the primary's tag (mirror's tag is the same as primary's in new design).
-		m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+		m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
 	}
 	return nil
 }
@@ -163,9 +180,20 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 			continue
 		}
 
+		// 入站主账号的共享参数（flow / alterId / security）：落盘与运行时热加必须同值。
+		tmpl := inboundTemplateOf(inbound, config, p)
+		effFlow := flow
+		if tmpl.Flow != "" {
+			effFlow = tmpl.Flow
+		}
+		// flow 是入站级参数：vless/trojan 一律以目标入站模板为准，不沿用上行凭据里的 flow。
+		if p == "vless" || p == "trojan" {
+			effFlow = tmpl.Flow
+		}
+
 		existing := findInboundUserEntry(config, email)
 		if existing == nil {
-			if err := m.addUserToInboundConfig(ctx, inbound, p, email, uuid, password, flow, method); err != nil {
+			if err := m.addUserToInboundConfig(ctx, inbound, tmpl, p, email, uuid, password, effFlow, method); err != nil {
 				log.Printf("inbound_manager: failed to add user %s to inbound %s: %v", email, inbound.Tag, err)
 				continue
 			}
@@ -176,16 +204,19 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 				m.reloadMirrorsForInbound(ctx, inbound.ServerID, inbound.CoreType, "upsert user "+email)
 				continue
 			}
-			go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
-			m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+			go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
+			m.fanOutAddUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
 			continue
 		}
 
 		curUUID, curPassword, curFlow, curMethod := entryCredentials(existing, p)
-		if curUUID == uuid && curPassword == password && curFlow == flow && curMethod == method {
+		// 共享参数也要跟「主账号」对齐：只比凭据会漏掉历史自动建号留下的
+		// flow 空 / alterId=0 / 缺 security（订阅侧参数与主账号不同）。
+		sharedInSync := templateInSync(existing, p, tmpl)
+		if curUUID == uuid && curPassword == password && curFlow == effFlow && curMethod == method && sharedInSync {
 			continue
 		}
-		applyUserCredentials(existing, p, uuid, password, flow, method)
+		applyUserCredentials(existing, p, uuid, password, effFlow, method, tmpl.AlterID, tmpl.Security)
 
 		data, err := json.Marshal(config)
 		if err != nil {
@@ -204,8 +235,8 @@ func (m *InboundManager) UpsertUserInbound(ctx context.Context, inboundTag, prot
 		}
 		// xray：先移除旧凭据再添加，避免运行时保留旧 uuid（只写库不会生效）。
 		m.hotRemoveUser(inbound.ServerID, inbound.Tag, email)
-		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
-		m.fanOutReplaceUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, flow, method)
+		go m.hotAddUser(inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
+		m.fanOutReplaceUserToMirrors(ctx, inbound.ServerID, inbound.Tag, p, email, uuid, password, effFlow, method)
 	}
 	return nil
 }
@@ -242,6 +273,128 @@ func inboundUserIdentityOf(u map[string]interface{}) string {
 	return ""
 }
 
+// settingUsers 取 xray 入站 settings 里的用户数组（clients 优先，兼容 users）。
+func settingUsers(settings map[string]interface{}) []interface{} {
+	for _, key := range []string{"clients", "users"} {
+		if arr, ok := settings[key].([]interface{}); ok && len(arr) > 0 {
+			return arr
+		}
+	}
+	return nil
+}
+
+// inboundUserTemplate 是「入站级习惯参数」：自动建号的新用户必须与主账号一致，
+// 否则订阅输出的客户端参数会与服务端账号参数分叉，出现「主账号能拨号、新用户连不上」。
+//
+// 目前有两类：
+//   - VLESS / Trojan 的 flow（xtls-rprx-vision）：xray 在 Build 时会把入站级
+//     settings.flow 填给 flow 为空的用户。若新用户条目 flow 仍为空，订阅也不会输出
+//     flow，客户端按空 flow 连接 → 服务端命中 `client flow is empty` 直接拒绝。
+//   - VMess 的 alterId / security：服务端不校验，但订阅的 aid/scy 取自用户条目，
+//     不一致会让新客户的加密参数与主账号不同。
+type inboundUserTemplate struct {
+	Flow     string
+	AlterID  int
+	Security string
+}
+
+// firstUserMap 取用户数组的第一条（入站里手工建的主账号）。
+func firstUserMap(users []interface{}) map[string]interface{} {
+	for _, item := range users {
+		if m, ok := item.(map[string]interface{}); ok {
+			return m
+		}
+	}
+	return nil
+}
+
+// inboundTemplateOf 读取入站主账号的共享参数。
+// 入站还没有用户时，VLESS 回退到入站级 settings.flow（xray 会把它填给 flow 为空的用户）。
+func inboundTemplateOf(inbound *entity.InboundConfig, config map[string]interface{}, protocol string) inboundUserTemplate {
+	tmpl := inboundUserTemplate{}
+	p := strings.ToLower(strings.TrimSpace(protocol))
+	if inbound != nil && isSingboxInbound(inbound) {
+		users, _ := config["users"].([]interface{})
+		main := firstUserMap(users)
+		if main == nil {
+			return tmpl
+		}
+		switch p {
+		case "vless":
+			tmpl.Flow = getStrField(main, "flow")
+		case "vmess":
+			tmpl.AlterID = intField(main["alterId"])
+		}
+		return tmpl
+	}
+	settings, _ := config["settings"].(map[string]interface{})
+	main := firstUserMap(settingUsers(settings))
+	switch p {
+	case "vless":
+		if main != nil {
+			tmpl.Flow = getStrField(main, "flow")
+		}
+		if tmpl.Flow == "" {
+			tmpl.Flow = getStrField(settings, "flow")
+		}
+	case "trojan":
+		if main != nil {
+			tmpl.Flow = getStrField(main, "flow")
+		}
+	case "vmess":
+		if main != nil {
+			tmpl.AlterID = intField(main["alterId"])
+			tmpl.Security = getStrField(main, "security")
+		}
+	}
+	return tmpl
+}
+
+// templateInSync 判断已有用户条目的「入站级共享参数」是否与主账号一致。
+// 模板值为空表示该入站没有约束，不强行写入（保持历史数据原样）。
+func templateInSync(u map[string]interface{}, protocol string, tmpl inboundUserTemplate) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "vless", "trojan":
+		return tmpl.Flow == "" || getStrField(u, "flow") == tmpl.Flow
+	case "vmess":
+		if intField(u["alterId"]) != tmpl.AlterID {
+			return false
+		}
+		return tmpl.Security == "" || getStrField(u, "security") == tmpl.Security
+	}
+	return true
+}
+
+// intField 把配置里的数字（json 解出来是 float64，也可能是 int/字符串）读成 int。
+func intField(v interface{}) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	case int:
+		return n
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return int(i)
+		}
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+			return i
+		}
+	}
+	return 0
+}
+
+func getStrField(m map[string]interface{}, key string) string {
+	v, _ := m[key].(string)
+	return strings.TrimSpace(v)
+}
+
 // entryCredentials 按协议读取用户条目里的凭据字段。
 func entryCredentials(u map[string]interface{}, protocol string) (uuid, password, flow, method string) {
 	uuid, _ = u["id"].(string)
@@ -265,7 +418,9 @@ func entryCredentials(u map[string]interface{}, protocol string) (uuid, password
 }
 
 // applyUserCredentials 按协议把凭据写进用户条目（保留 level 等其它字段）。
-func applyUserCredentials(u map[string]interface{}, protocol, uuid, password, flow, method string) {
+// alterID / security 只对 vmess 有意义，由调用方从入站主账号取，保证同一入站的
+// 自动建号账号与主账号口径一致（否则订阅里的 scy/aid 会两套值）。
+func applyUserCredentials(u map[string]interface{}, protocol, uuid, password, flow, method string, alterID int, security string) {
 	switch strings.ToLower(protocol) {
 	case "vless":
 		u["id"] = uuid
@@ -275,14 +430,18 @@ func applyUserCredentials(u map[string]interface{}, protocol, uuid, password, fl
 		}
 	case "vmess":
 		u["id"] = uuid
-		if _, ok := u["alterId"]; !ok {
-			u["alterId"] = 0
+		u["alterId"] = alterID
+		if security != "" {
+			u["security"] = security
 		}
 		if _, ok := u["level"]; !ok {
 			u["level"] = 0
 		}
 	case "trojan":
 		u["password"] = password
+		if flow != "" {
+			u["flow"] = flow
+		}
 		delete(u, "id")
 	case "hysteria":
 		u["auth"] = password
@@ -416,7 +575,9 @@ func (m *InboundManager) ResumeUser(ctx context.Context, inboundID int64, email 
 }
 
 // addUserToInboundConfig adds a user entry to the specified inbound's config_json.
-func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *entity.InboundConfig, protocol, email, uuid, password, flow, method string) error {
+// tmpl 是入站主账号的共享参数（flow / alterId / security），由调用方读好后传入，
+// 保证「新账号条目」与「运行时热加账号」用的是同一套值。
+func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *entity.InboundConfig, tmpl inboundUserTemplate, protocol, email, uuid, password, flow, method string) error {
 	var config map[string]interface{}
 	if err := json.Unmarshal([]byte(inbound.ConfigJSON), &config); err != nil {
 		return err
@@ -427,11 +588,20 @@ func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *en
 	if protocol == "" {
 		protocol = detectProtocol(inbound.Tag)
 	}
+	// flow 是入站级参数：以目标入站的模板为准（不做跨入站沿用）。
+	if tmpl.Flow != "" {
+		flow = tmpl.Flow
+	}
 
 	// sing-box 入站没有 settings，用户挂在顶层 users[]，字段名也与 xray 不同
 	if isSingboxInbound(inbound) {
 		sbProtocol := singboxProtocolOf(config, inbound.Tag)
 		user := singboxUserEntry(sbProtocol, email, uuid, password, flow, method)
+		// vmess 的 alterId 要跟入站里已有的主账号一致（VMessUser 有此字段，
+		// 老 alterId>0 的节点上补 0 会让客户端与服务端级别不一致）。
+		if sbProtocol == "vmess" && tmpl.AlterID > 0 {
+			user["alterId"] = tmpl.AlterID
+		}
 		users, _ := config["users"].([]interface{})
 		config["users"] = append(users, user)
 		data, err := json.Marshal(config)
@@ -459,17 +629,26 @@ func (m *InboundManager) addUserToInboundConfig(ctx context.Context, inbound *en
 		user["level"] = 0
 	case "vmess":
 		user["id"] = uuid
-		user["alterId"] = 0
+		user["alterId"] = tmpl.AlterID
+		if tmpl.Security != "" {
+			user["security"] = tmpl.Security
+		}
 		user["level"] = 0
 	case "trojan":
 		user["password"] = password
+		if flow != "" {
+			user["flow"] = flow
+		}
 		user["level"] = 0
 	case "hysteria":
 		user["auth"] = password
 		user["level"] = 0
 	case "shadowsocks":
 		user["password"] = password
-		user["method"] = method
+		// method 是入站级参数：取不到就别写（写空串会让 xray 用 "" 解析 cipher）。
+		if method != "" {
+			user["method"] = method
+		}
 		user["level"] = 0
 	default:
 		user["id"] = uuid

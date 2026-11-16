@@ -51,7 +51,17 @@ function emit() { emitFn('update') }
 
 function addUser() {
   const u = { name: generateEmail() }
-  if (UUID_PROTOCOLS.includes(props.model.type)) { u.uuid = generateUuid(); if (props.model.type === 'vless') u.flow = 'xtls-rprx-vision'; if (props.model.type === 'vmess') u.alterId = 0 }
+  // alterId 属于入站级习惯参数：新用户跟第一条「主账号」同步（VMessUser 有此字段，
+  // 老 alterId>0 的节点上补 0 会与主账号不一致）。
+  if (UUID_PROTOCOLS.includes(props.model.type)) {
+    u.uuid = generateUuid()
+    // flow / alterId 都是入站级习惯参数：跟第一条「主账号」同步。
+    // 以前 vless 无条件写 vision、vmess 一律 0，主账号是普通 vless 时
+    // 新账号只能走 vision（旧客户端不支持就整条连不上）。
+    const main = (props.model.users || [])[0] || {}
+    if (props.model.type === 'vless') u.flow = main.flow || ''
+    if (props.model.type === 'vmess') u.alterId = Number(main.alterId) || 0
+  }
   if (PASSWORD_PROTOCOLS.includes(props.model.type)) u.password = generatePassword()
   if (props.model.type === 'tuic') u.password = generatePassword()
   if (PSK_PROTOCOLS.includes(props.model.type)) u.password = generateKey()

@@ -89,30 +89,13 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 
 	case *agentpb.PanelCommand_SyncProxyConfig:
 		req := c.SyncProxyConfig
-		// For nginx, ensure stdout/stderr symlinks exist so that the config's
-		// access_log/error_log directives referencing logs/stdout_*.log resolve
-		// correctly. The panel creates these locally via ensureSymlink, but
-		// remote agents need to create them on their own filesystem.
+		// nginx 的 stdout_access.log / stdout_error.log / stdout_stream.log 不再创建：
+		// 标准输出模式已下线，日志模式只剩 file / off，生成的配置一律写真实文件
+		// （logs/access.log、logs/error.log、logs/stream.log）。
+		// 这里只做一次自愈清理：历史遗留的 -> /dev/stdout|/dev/stderr 软链会删掉，
+		// 免得它们继续把日志吞到进程 stdout（面板侧读不到）。
 		if req.ProxyType == "nginx" {
-			logsDir := filepath.Join(a.dataDir, "logs")
-			os.MkdirAll(logsDir, 0755)
-			for _, link := range []struct{ name, target string }{
-				{"stdout_error.log", "/dev/stderr"},
-				{"stdout_access.log", "/dev/stdout"},
-				{"stdout_stream.log", "/dev/stdout"},
-			} {
-				linkPath := filepath.Join(logsDir, link.name)
-				if fi, err := os.Lstat(linkPath); err == nil {
-					// Already exists — check if it's the correct symlink
-					if fi.Mode()&os.ModeSymlink != 0 {
-						if existing, err := os.Readlink(linkPath); err == nil && existing == link.target {
-							continue // correct symlink already in place
-						}
-					}
-					os.Remove(linkPath) // remove stale file/symlink
-				}
-				os.Symlink(link.target, linkPath)
-			}
+			cleanupLegacyStdoutLogLinks(filepath.Join(a.dataDir, "logs"))
 		}
 		// Land TLS certificates to disk before writing the proxy config,
 		// so that cert path references in the config are valid immediately.

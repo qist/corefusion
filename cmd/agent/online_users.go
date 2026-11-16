@@ -183,7 +183,9 @@ func (r *onlineUsersReporter) collectXray(ctx context.Context) ([]*agentpb.Onlin
 		var lastSeen int64
 		for _, ip := range user.GetIps() {
 			ipStr := ip.GetIp()
-			if ipStr == "" || !netutil.IsPublicClientIP(ipStr) {
+			// 展示用口径：私网/CGNAT 客户端也要保留（内网连入的节点否则整条记录消失）。
+			// 限速/设备统计仍由面板侧按 IsPublicClientIP 过滤，不受影响。
+			if ipStr == "" || !netutil.IsUsableClientIP(ipStr) {
 				continue
 			}
 			ls := ip.GetLastSeen()

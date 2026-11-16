@@ -44,3 +44,35 @@ func IsPublicClientIP(raw string) bool {
 	}
 	return true
 }
+
+// IsUsableClientIP 判断是否是「可用于在线用户展示」的客户端地址。
+//
+// 与 IsPublicClientIP 的区别：后者用于限速/设备统计，必须只认公网可路由地址
+// （私网地址不能拿去打 nft 标记，也不能把 127.0.0.1 算成一台设备）；
+// 但**展示**在线用户时如果也按公网过滤，内网客户端（例如机房内网 192.168.x.x
+// 连入的节点）会整条记录消失 —— 用户会以为该节点没有在线用户。
+//
+// 因此这里放宽到私网与 CGNAT，只排除无法归属到具体设备的地址：
+// 未指定 / 回环 / 链路本地 / 多播。
+func IsUsableClientIP(raw string) bool {
+	v := strings.TrimSpace(raw)
+	v = strings.TrimPrefix(v, "[")
+	v = strings.TrimSuffix(v, "]")
+	if v == "" {
+		return false
+	}
+	addr, err := netip.ParseAddr(v)
+	if err != nil {
+		return false
+	}
+	addr = addr.Unmap()
+	if !addr.IsValid() ||
+		addr.IsUnspecified() ||
+		addr.IsLoopback() ||
+		addr.IsLinkLocalUnicast() ||
+		addr.IsLinkLocalMulticast() ||
+		addr.IsMulticast() {
+		return false
+	}
+	return true
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -144,6 +145,9 @@ func (h *Handler) remoteXrayAPI(c *gin.Context, service, method string, payload 
 
 	resp, err := h.control.RemoteCall(c.Request.Context(), serverID, service, method, payload)
 	if err != nil {
+		// 具体原因必须进日志：审计表里原来只写死 "remote API failed"，
+		// 排查「进程在跑但热更失败」时看不到是 xray 拒绝还是控制面连不上。
+		log.Printf("[xraycontrol] %s.%s on server %d failed: %v", service, method, serverID, err)
 		response.InternalError(c, "REMOTE_API_FAILED", err.Error())
 		return nil, true, true
 	}

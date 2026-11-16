@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "นำไปใช้กับรันไทม์ Xray ไม่สำเร็จ",
     "persistedButNotRunning": "{persistedMessage} เนื่องจาก Xray ยังไม่เริ่มทำงาน",
+    "persistedButApiUnavailable": "{persistedMessage} แต่ไม่สามารถเชื่อมต่อ API ควบคุม Xray ได้ (โปรเซสกำลังทำงาน): {message}",
     "persistedButApplyFailed": "{persistedMessage} แต่ไม่สามารถนำไปใช้กับรันไทม์ Xray ได้: {message}"
   },
   "legal": {

@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "套用至 Xray 執行階段失敗",
     "persistedButNotRunning": "{persistedMessage}，Xray 未啟動",
+    "persistedButApiUnavailable": "{persistedMessage}，但 Xray 控制介面無法連線（行程正在執行）：{message}",
     "persistedButApplyFailed": "{persistedMessage}，但套用至 Xray 執行階段失敗: {message}"
   },
   "legal": {

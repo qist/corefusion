@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "Áp dụng vào Xray runtime thất bại",
     "persistedButNotRunning": "{persistedMessage}, Xray chưa khởi động",
+    "persistedButApiUnavailable": "{persistedMessage}, nhưng API điều khiển Xray không truy cập được (tiến trình đang chạy): {message}",
     "persistedButApplyFailed": "{persistedMessage}, nhưng áp dụng vào Xray runtime thất bại: {message}"
   },
   "legal": {

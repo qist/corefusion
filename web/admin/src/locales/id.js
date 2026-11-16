@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "Gagal menerapkan ke runtime Xray",
     "persistedButNotRunning": "{persistedMessage}, Xray belum berjalan",
+    "persistedButApiUnavailable": "{persistedMessage}, tetapi API kontrol Xray tidak dapat dijangkau (proses berjalan): {message}",
     "persistedButApplyFailed": "{persistedMessage}, tetapi gagal menerapkan ke runtime Xray: {message}"
   },
   "legal": {

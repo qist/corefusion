@@ -634,6 +634,7 @@ export default {
   xrayRuntime: {
     applyFailed: 'Failed to apply to Xray runtime',
     persistedButNotRunning: '{persistedMessage}, Xray is not running',
+    persistedButApiUnavailable: '{persistedMessage}, but the Xray control API is unreachable (process is running): {message}',
     persistedButApplyFailed: '{persistedMessage}, but failed to apply to Xray runtime: {message}',
   },
   legal: {

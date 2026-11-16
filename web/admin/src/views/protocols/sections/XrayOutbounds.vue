@@ -1154,7 +1154,7 @@ import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
 import XrayOutboundProtocol from './xray/outbounds/XrayOutboundProtocol.vue'
 import { genOutboundTag } from './utils/nodeNaming'
-import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
+import { notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Array, coreType: String, serverId: Number })
 
@@ -2021,14 +2021,8 @@ async function saveOutbound() {
       await client.post(`/node-servers/${props.serverId}/outbound-configs`, payload)
     }
 
-    // Apply to running xray via gRPC
+    // Apply to running xray via gRPC（是否在运行由热更结果决定，不再先查 process-status）
     try {
-      if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.outbounds.savedToDb')))) {
-        ElMessage.success(t('common.success'))
-        dlg.value = false
-        loadOutbounds()
-        return
-      }
       // Remove existing outbound first if editing
       if (editIdx.value >= 0 && form.value[editIdx.value]._id) {
         await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true }).catch(() => {})
@@ -2039,7 +2033,7 @@ async function saveOutbound() {
       }
     } catch (xrayErr) {
       console.warn('Failed to apply outbound to xray:', xrayErr)
-      notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'))
+      await notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'), client, props.serverId)
     }
 
     ElMessage.success(t('common.success'))
@@ -2056,11 +2050,9 @@ async function removeOutbound(ob) {
   // Remove from xray runtime
   if (ob.tag) {
     try {
-      if (await ensureXrayRunning(client, props.serverId, t('protoCenter.outbounds.deletedFromDb'))) {
-        await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
-      }
+      await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true })
     } catch (e) {
-      notifyXrayRuntimeApplyFailure(e, t('protoCenter.outbounds.deletedFromDb'))
+      await notifyXrayRuntimeApplyFailure(e, t('protoCenter.outbounds.deletedFromDb'), client, props.serverId)
     }
   }
   form.value.splice(i, 1)
@@ -2082,21 +2074,20 @@ async function toggleEnabled(ob) {
 
     // Apply to running xray via gRPC
     try {
-      if (await ensureXrayRunning(client, props.serverId, '')) {
-        if (ob._enabled) {
-          // Enable: add outbound to xray runtime
-          // Remove existing first to avoid duplicate
-          try {
-            await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true })
-          } catch {}
-          await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
-        } else {
-          // Disable: remove outbound from xray runtime
+      if (ob._enabled) {
+        // Enable: add outbound to xray runtime
+        // Remove existing first to avoid duplicate
+        try {
           await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true })
-        }
+        } catch {}
+        await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true })
+      } else {
+        // Disable: remove outbound from xray runtime
+        await client.delete(`${nodeBase.value}/xray/control/outbound/${outbound.tag}`, { suppressErrorMessage: true })
       }
     } catch (xrayErr) {
       console.warn('Failed to apply toggle to xray runtime:', xrayErr)
+      await notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'), client, props.serverId)
     }
 
     ElMessage.success(ob._enabled ? t('common.enabled') : t('common.disabled'))
@@ -2123,22 +2114,21 @@ async function moveOutbound(ob, dir) {
     arr.forEach((ob, idx) => { ob._sortOrder = idx })
     // Trigger config sync to running xray
     try {
-      if (await ensureXrayRunning(client, props.serverId, '')) {
-        // Reload outbounds in xray runtime by removing and re-adding all
-        for (const ob of arr) {
-          if (ob.tag && ob._enabled !== false) {
-            try { await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true }) } catch {}
-          }
+      // Reload outbounds in xray runtime by removing and re-adding all
+      for (const ob of arr) {
+        if (ob.tag && ob._enabled !== false) {
+          try { await client.delete(`${nodeBase.value}/xray/control/outbound/${ob.tag}`, { suppressErrorMessage: true }) } catch {}
         }
-        for (const ob of arr) {
-          if (ob._enabled !== false) {
-            const outbound = buildOutbound(ob)
-            try { await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true }) } catch {}
-          }
+      }
+      for (const ob of arr) {
+        if (ob._enabled !== false) {
+          const outbound = buildOutbound(ob)
+          try { await client.post(`${nodeBase.value}/xray/control/outbound`, { outbound }, { suppressErrorMessage: true }) } catch {}
         }
       }
     } catch (xrayErr) {
       console.warn('Failed to apply reorder to xray runtime:', xrayErr)
+      await notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.outbounds.savedToDb'), client, props.serverId)
     }
   } catch (e) {
     ElMessage.error(t('common.failed') + ': ' + (e.message || e))

@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "Xray çalışma zamanına uygulanamadı",
     "persistedButNotRunning": "{persistedMessage}, Xray başlatılmadı",
+    "persistedButApiUnavailable": "{persistedMessage}, ancak Xray kontrol API'sine ulaşılamıyor (süreç çalışıyor): {message}",
     "persistedButApplyFailed": "{persistedMessage}, ancak Xray çalışma zamanına uygulanırken başarısız oldu: {message}"
   },
   "legal": {

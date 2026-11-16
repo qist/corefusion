@@ -1875,7 +1875,7 @@ import { genRemark, genInboundTag } from './utils/nodeNaming'
 import { ALPN_OPTIONS, alpnToArray, alpnToString } from './utils/alpn'
 import { findCertByRef } from './utils/certbind'
 import { useQueryState } from '../../../composables/useQueryState'
-import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
+import { notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 import { generateQrDataUrl, isQrDataTooLargeError } from '../../../utils/qrcode'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
@@ -2688,9 +2688,12 @@ async function confirmAddUser() {
         userEntry.id = newUser.id
         userEntry.flow = newUser.flow || ''
       } else if (addUserProtocol.value === 'vmess') {
+        // alterId / security 是入站级习惯参数（订阅里的 aid/scy 直接取自用户条目）：
+        // 新用户跟第一条「主账号」同步，避免同一入站里出现两套值。
+        const mainUser = users[0] || {}
         userEntry.id = newUser.id
-        userEntry.alterId = 0
-        userEntry.security = 'auto'
+        userEntry.alterId = Number(mainUser.alterId) || 0
+        userEntry.security = mainUser.security || 'auto'
       } else if (addUserProtocol.value === 'trojan') {
         userEntry.password = newUser.password
       } else if (addUserProtocol.value === 'shadowsocks') {
@@ -3026,8 +3029,11 @@ function resetSeed(obj) {
 function addUser(proto) {
   // 迁移/手写入站可能只有 password（没有 clients 数组）→ push 会抛异常，先补齐。
   if (!Array.isArray(rf.settings.clients)) rf.settings.clients = []
-  if (proto === 'vless') rf.settings.clients.push({ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
-  else if (proto === 'vmess') rf.settings.clients.push({ id: genUUID(), email: genEmail(), alterId: 0, security: 'auto', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
+  // 「主账号」= 第一条用户：入站级习惯参数（flow / alterId / security）跟它同步，
+  // 否则同一入站里两套值，订阅客户端参数与服务端账号不一致会连不上。
+  const mainUser = rf.settings.clients[0] || {}
+  if (proto === 'vless') rf.settings.clients.push({ id: genUUID(), email: genEmail(), flow: mainUser.flow || rf.settings.flow || '', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
+  else if (proto === 'vmess') rf.settings.clients.push({ id: genUUID(), email: genEmail(), alterId: Number(mainUser.alterId) || 0, security: mainUser.security || 'auto', level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
   else if (proto === 'trojan') rf.settings.clients.push({ password: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
   else if (proto === 'hysteria') rf.settings.clients.push({ auth: genBase64Password(), email: genEmail(), level: 0, _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
   else if (proto === 'shadowsocks') rf.settings.clients.push({ password: genBase64Password(), email: genEmail(), _quota: 'unlimited', _expiry: null, _usedUp: 0, _usedDown: 0 })
@@ -5128,12 +5134,8 @@ async function saveInbound() {
 
     // Apply to running xray via gRPC (no restart) - use absolute paths
     try {
-      if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.inbounds.savedToDb')))) {
-        ElMessage.success(t('common.success'))
-        dlg.value = false
-        loadInbounds()
-        return
-      }
+      // 不做「先查进程状态」的门禁：远程节点的状态来自 Agent 缓存，刚重启时会
+      // 误报 stopped。直接尝试热更，失败后再按真实进程状态给提示。
       const apiJson = { ...apiConfig }
       delete apiJson._remark
       delete apiJson._enabled
@@ -5167,7 +5169,7 @@ async function saveInbound() {
     } catch (xrayErr) {
       console.warn('Failed to apply to xray runtime:', xrayErr)
       // Don't fail the whole operation if xray apply fails
-      notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.inbounds.savedToDb'))
+      await notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.inbounds.savedToDb'), client, props.serverId)
     }
 
     // Auto-manage firewall rules for port hopping
@@ -5314,95 +5316,95 @@ async function toggleEnabled(row) {
       config_json: configJson,
     })
 
-    // Apply to running xray via gRPC
+    // Apply to running xray via gRPC. 是否在运行由热更结果决定，不再先查 process-status：
+    // 远程节点的状态来自 Agent 心跳缓存，核心刚重启时会误报 stopped，导致热更被跳过。
     try {
-      if (await ensureXrayRunning(client, props.serverId, '')) {
-        if (ib._enabled) {
-          // Enable: add inbound to xray runtime
-          const apiConfig = buildInbound(ib, true)
-          delete apiConfig._remark
-          delete apiConfig._enabled
-          delete apiConfig._id
-          delete apiConfig._accessDomain
-          delete apiConfig._portHop
-          delete apiConfig._wgPublicKey
-          delete apiConfig._listenType
-          // Remove existing first to avoid duplicate
-          try {
-            await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
-          } catch {}
-          await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiConfig }, { suppressErrorMessage: true })
-          // Safety net: remove any paused users from xray runtime
-          const allClients = ib.settings?.clients || ib.settings?.users || []
-          for (const u of allClients) {
-            if (u._paused && u.email) {
-              try {
-                await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}/user/${encodeURIComponent(u.email)}`, { suppressErrorMessage: true })
-              } catch {}
-            }
-          }
-          // Apply firewall rules if port hopping is enabled
-          if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
-            const portRange = ib._portHopMode === 'preset'
-              ? (ib._portHopRange || '20000-50000')
-              : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
-            try {
-              await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
-                port_range: portRange,
-                target_port: ib.port || 0,
-                interface: ib._portHopInterface || ''
-              })
-            } catch (fwErr) {
-              console.warn('Failed to apply firewall rules on enable:', fwErr)
-            }
-          }
-          // Unix Socket 不监听 TCP 端口，不创建放行规则；hy 端口跳跃要连端口段一起放行
-          if (ib._listenType !== 'sock' && ib._fwAllow && (ib.port || 0) > 0) {
-            const range = fwPortHopRange(ib)
-            try {
-              await client.post(`${nodeBase.value}/firewall/allow-port`, {
-                port: ib.port,
-                port_range: range || undefined,
-                network: range ? 'udp' : (fwNetwork(ib) || undefined),
-              })
-            } catch (fwErr) {
-              console.warn('Failed to allow inbound port on enable:', fwErr)
-            }
-          }
-        } else {
-          // Disable: remove inbound from xray runtime
+      if (ib._enabled) {
+        // Enable: add inbound to xray runtime
+        const apiConfig = buildInbound(ib, true)
+        delete apiConfig._remark
+        delete apiConfig._enabled
+        delete apiConfig._id
+        delete apiConfig._accessDomain
+        delete apiConfig._portHop
+        delete apiConfig._wgPublicKey
+        delete apiConfig._listenType
+        // Remove existing first to avoid duplicate
+        try {
           await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
-          // Remove firewall rules if port hopping was enabled
-          if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
-            const portRange = ib._portHopMode === 'preset'
-              ? (ib._portHopRange || '20000-50000')
-              : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+        } catch {}
+        await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiConfig }, { suppressErrorMessage: true })
+        // Safety net: remove any paused users from xray runtime
+        const allClients = ib.settings?.clients || ib.settings?.users || []
+        for (const u of allClients) {
+          if (u._paused && u.email) {
             try {
-              await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
-                port_range: portRange,
-                target_port: ib.port || 0,
-                interface: ib._portHopInterface || ''
-              })
-            } catch (fwErr) {
-              console.warn('Failed to remove firewall rules on disable:', fwErr)
-            }
+              await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}/user/${encodeURIComponent(u.email)}`, { suppressErrorMessage: true })
+            } catch {}
           }
-          if (ib._fwAllow && (ib.port || 0) > 0) {
-            const range = fwPortHopRange(ib)
-            try {
-              await client.post(`${nodeBase.value}/firewall/remove-port`, {
-                port: ib.port,
-                port_range: range || undefined,
-                network: range ? 'udp' : (fwNetwork(ib) || undefined),
-              })
-            } catch (fwErr) {
-              console.warn('Failed to remove inbound port allow rule on disable:', fwErr)
-            }
+        }
+        // Apply firewall rules if port hopping is enabled
+        if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
+          const portRange = ib._portHopMode === 'preset'
+            ? (ib._portHopRange || '20000-50000')
+            : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+          try {
+            await client.post(`${nodeBase.value}/xray/control/firewall/apply`, {
+              port_range: portRange,
+              target_port: ib.port || 0,
+              interface: ib._portHopInterface || ''
+            })
+          } catch (fwErr) {
+            console.warn('Failed to apply firewall rules on enable:', fwErr)
+          }
+        }
+        // Unix Socket 不监听 TCP 端口，不创建放行规则；hy 端口跳跃要连端口段一起放行
+        if (ib._listenType !== 'sock' && ib._fwAllow && (ib.port || 0) > 0) {
+          const range = fwPortHopRange(ib)
+          try {
+            await client.post(`${nodeBase.value}/firewall/allow-port`, {
+              port: ib.port,
+              port_range: range || undefined,
+              network: range ? 'udp' : (fwNetwork(ib) || undefined),
+            })
+          } catch (fwErr) {
+            console.warn('Failed to allow inbound port on enable:', fwErr)
+          }
+        }
+      } else {
+        // Disable: remove inbound from xray runtime
+        await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
+        // Remove firewall rules if port hopping was enabled
+        if (ib.protocol === 'hysteria' && ib._portHopEnabled) {
+          const portRange = ib._portHopMode === 'preset'
+            ? (ib._portHopRange || '20000-50000')
+            : `${ib._portHopStart || 20000}-${ib._portHopEnd || 50000}`
+          try {
+            await client.post(`${nodeBase.value}/xray/control/firewall/remove`, {
+              port_range: portRange,
+              target_port: ib.port || 0,
+              interface: ib._portHopInterface || ''
+            })
+          } catch (fwErr) {
+            console.warn('Failed to remove firewall rules on disable:', fwErr)
+          }
+        }
+        if (ib._fwAllow && (ib.port || 0) > 0) {
+          const range = fwPortHopRange(ib)
+          try {
+            await client.post(`${nodeBase.value}/firewall/remove-port`, {
+              port: ib.port,
+              port_range: range || undefined,
+              network: range ? 'udp' : (fwNetwork(ib) || undefined),
+            })
+          } catch (fwErr) {
+            console.warn('Failed to remove inbound port allow rule on disable:', fwErr)
           }
         }
       }
     } catch (xrayErr) {
       console.warn('Failed to apply toggle to xray runtime:', xrayErr)
+      await notifyXrayRuntimeApplyFailure(xrayErr, t('protoCenter.inbounds.savedToDb'), client, props.serverId)
     }
 
     ElMessage.success(ib._enabled ? t('common.enabled') : t('common.disabled'))
@@ -5420,11 +5422,9 @@ async function rmInbound(i) {
   // Also remove from xray runtime
   if (ib.tag) {
     try {
-      if (await ensureXrayRunning(client, props.serverId, t('protoCenter.inbounds.deletedFromDb'))) {
-        await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
-      }
+      await client.delete(`${nodeBase.value}/xray/control/inbound/${ib.tag}`, { suppressErrorMessage: true })
     } catch (e) {
-      notifyXrayRuntimeApplyFailure(e, t('protoCenter.inbounds.deletedFromDb'))
+      await notifyXrayRuntimeApplyFailure(e, t('protoCenter.inbounds.deletedFromDb'), client, props.serverId)
     }
   }
   // Remove firewall rules if port hopping was enabled

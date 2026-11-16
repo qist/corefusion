@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "No se pudo aplicar al entorno de ejecución de Xray",
     "persistedButNotRunning": "{persistedMessage}, Xray no está iniciado",
+    "persistedButApiUnavailable": "{persistedMessage}, pero la API de control de Xray no responde (el proceso está en ejecución): {message}",
     "persistedButApplyFailed": "{persistedMessage}, pero no se pudo aplicar al entorno de ejecución de Xray: {message}"
   },
   "legal": {

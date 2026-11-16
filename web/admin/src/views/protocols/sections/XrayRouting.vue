@@ -274,7 +274,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
-import { ensureXrayRunning, notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
+import { notifyXrayRuntimeApplyFailure } from '../../../utils/xrayRuntime'
 const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
@@ -471,15 +471,11 @@ async function saveAndApply(routing) {
     return
   }
   try {
-    if (!(await ensureXrayRunning(client, props.serverId, t('protoCenter.routing.savedToDb')))) {
-      ElMessage.success(t('common.success'))
-      return
-    }
-    // Apply to xray runtime
+    // Apply to xray runtime（是否在运行由热更结果决定，不再先查 process-status）
     await client.post(`${nodeBase.value}/xray/control/routing`, { routing }, { suppressErrorMessage: true })
   } catch (e) {
     console.warn('Failed to apply routing to xray:', e)
-    notifyXrayRuntimeApplyFailure(e, t('protoCenter.routing.savedToDb'))
+    await notifyXrayRuntimeApplyFailure(e, t('protoCenter.routing.savedToDb'), client, props.serverId)
     return
   }
   ElMessage.success(t('common.success'))

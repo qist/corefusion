@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "Не удалось применить изменения к среде выполнения Xray",
     "persistedButNotRunning": "{persistedMessage}, Xray не запущен",
+    "persistedButApiUnavailable": "{persistedMessage}, но API управления Xray недоступен (процесс запущен): {message}",
     "persistedButApplyFailed": "{persistedMessage}, но не удалось применить изменения к среде выполнения Xray: {message}"
   },
   "legal": {

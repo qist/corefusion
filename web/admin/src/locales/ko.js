@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "Xray 런타임에 적용하지 못했습니다",
     "persistedButNotRunning": "{persistedMessage}, Xray가 시작되지 않았습니다",
+    "persistedButApiUnavailable": "{persistedMessage}, 하지만 Xray 제어 API에 연결할 수 없습니다(프로세스는 실행 중): {message}",
     "persistedButApplyFailed": "{persistedMessage}, Xray 런타임에 적용하지 못했습니다: {message}"
   },
   "legal": {

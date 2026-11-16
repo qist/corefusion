@@ -636,6 +636,7 @@ export default {
   "xrayRuntime": {
     "applyFailed": "فشل التطبيق على بيئة تشغيل Xray",
     "persistedButNotRunning": "{persistedMessage}، Xray غير قيد التشغيل",
+    "persistedButApiUnavailable": "{persistedMessage}، لكن واجهة تحكم Xray غير متاحة (العملية تعمل): {message}",
     "persistedButApplyFailed": "{persistedMessage}، ولكن فشل التطبيق على بيئة تشغيل Xray: {message}"
   },
   "legal": {

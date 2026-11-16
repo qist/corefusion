@@ -174,8 +174,20 @@ func (c *XrayClient) dial(ctx context.Context) (*grpc.ClientConn, error) {
 	defer c.connMu.Unlock()
 
 	if c.conn != nil {
-		if c.conn.GetState() != connectivity.Shutdown {
+		// 只复用**可用**的连接：旧实现只排除 Shutdown，xray 重启后残留的连接会停在
+		// TransientFailure/Connecting（状态不是 Shutdown），后续 RPC 直接失败
+		// （"context deadline exceeded"），表现为「进程明明在跑，热更却随机失败」。
+		switch c.conn.GetState() {
+		case connectivity.Ready:
 			return c.conn, nil
+		case connectivity.Idle, connectivity.Connecting:
+			// 给 grpc 一点时间自行重连（xray 刚重启时最常见的中间态）
+			waitCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			err := WaitForReady(waitCtx, c.conn)
+			cancel()
+			if err == nil {
+				return c.conn, nil
+			}
 		}
 		c.conn.Close()
 		c.conn = nil

@@ -53,6 +53,17 @@ type Service struct {
 	coreRunning func(coreType string) bool
 	// gateState 记录上次门禁结果，仅在变化时打日志，避免刷屏。
 	gateState map[string]bool
+
+	// deltaSink 把每轮读到的**增量**交给面板在线视图（速率展示）。
+	// 核心计数器被本服务 reset 掉，其它组件不能再拿它做差分。
+	deltaSink func(users []coredata.UserTraffic, window time.Duration)
+}
+
+// SetUserDeltaSink 注入「本轮各账号增量」的消费方（面板在线速率）。
+func (s *Service) SetUserDeltaSink(fn func(users []coredata.UserTraffic, window time.Duration)) {
+	s.mu.Lock()
+	s.deltaSink = fn
+	s.mu.Unlock()
 }
 
 // SetCoreProbeGate 注入「核心是否可探测」门禁（通常用 process.Manager.IsCoreRunning）。
@@ -236,6 +247,17 @@ func (s *Service) sync() {
 				// Merge: add sing-box user traffic to xray user traffic
 				allUsers = mergeUserTraffic(allUsers, sr.Users)
 			}
+		}
+	}
+
+	// 把本轮增量交给在线视图：本地节点「上行/下行速率」直接用它换算，
+	// 不能再对同一份（已被本服务清零的）计数器做差分。
+	if len(allUsers) > 0 {
+		s.mu.RLock()
+		sink := s.deltaSink
+		s.mu.RUnlock()
+		if sink != nil {
+			sink(allUsers, s.interval)
 		}
 	}
 

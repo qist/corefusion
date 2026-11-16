@@ -833,6 +833,23 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
 	// 核心观测 IP 归户：邮箱/订阅 → 客户 → 限速参数（按节点下发，不再用订阅 HTTP IP）
 	rateLimitSvcInst.SetObservedDeps(clientRepo, planTmplRepo)
+	// 本地节点在线速率：trafficsync 每轮把核心计数器 reset 读成增量，
+	// 在线视图直接复用这份增量（否则同一份计数器被清零后差分只剩 0）。
+	trafficSyncSvc.SetUserDeltaSink(func(users []coredata.UserTraffic, window time.Duration) {
+		if rateLimitSvcInst == nil || len(users) == 0 {
+			return
+		}
+		deltas := make([]rateLimitSvc.LocalUserDelta, 0, len(users))
+		for _, u := range users {
+			deltas = append(deltas, rateLimitSvc.LocalUserDelta{
+				Email:  u.Email,
+				Up:     u.Uplink,
+				Down:   u.Downlink,
+				Window: int64(window / time.Second),
+			})
+		}
+		rateLimitSvcInst.SetLocalUserDeltas(deltas)
+	})
 	dnsChannelSvc := certService.NewDNSChannelService(dnsChannelRepo)
 	eabConfigSvc := certService.NewEABConfigService(eabConfigRepo)
 	acmeEmailSvc := certService.NewACMEEmailService(acmeAccountRepo)

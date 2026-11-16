@@ -201,6 +201,7 @@ func (o *LocalObserver) pollXray(ctx context.Context) {
 	}
 
 	now := time.Now().Unix()
+	deltas := o.localDeltas()
 	users := make([]ObservedUser, 0, len(resp.GetUsers()))
 	entries := make([]*agentpb.OnlineUserEntry, 0, len(resp.GetUsers()))
 	publicIPs := 0
@@ -239,9 +240,16 @@ func (o *LocalObserver) pollXray(ctx context.Context) {
 			dl, ul = t.GetDownlink(), t.GetUplink()
 		}
 		baseEmail := stripObservedEmailTag(u.GetEmail())
-		// 采样 key 用 base email：条目里存的也是 base email，cleanupSamples
-		// 才能对得上（否则每轮都被当成「已下线」删掉 → first_seen 归零）。
-		dlRate, ulRate, firstSeen, _ := o.rateFor(coreXray, baseEmail, dl, ul, now, true)
+		// 采样 key 必须用**账号全名**（email_shortTag），不能用 base email：
+		// 同一订阅在多个入站各有一个账号时，两个账号的累计计数器互相覆盖，
+		// 差分会把对方的值当成本账号的基线（速率跳变/归零、first_seen 反复重建、
+		// 在线时长看起来被「重置」）。cleanupSamples 必须用同一个键。
+		dlRate, ulRate, firstSeen, _ := o.rateFor(coreXray, u.GetEmail(), dl, ul, now, true)
+		// 速率优先用 trafficsync 本轮增量换算：核心计数器每 30s 被它清零，
+		// 再拿同一份计数器差分只会得到 0 或清零后的残值（见 SetLocalUserDeltas）。
+		if d, u2, ok := deltaRate(deltas, u.GetEmail(), now); ok {
+			dlRate, ulRate = d, u2
+		}
 		// xray 的 lastSeen 是「最后一次活动」，可能早于我们第一次采样到它的时间；
 		// 这种倒挂会让前端算出负时长。统一以较早者为准。
 		if firstSeen > lastSeen {
@@ -358,13 +366,24 @@ func (o *LocalObserver) pollSingbox(ctx context.Context) {
 		return
 	}
 	now := time.Now().Unix()
+	deltas := o.localDeltas()
 	entries := make([]*agentpb.OnlineUserEntry, 0, len(usersTraffic))
 	for _, ut := range usersTraffic {
 		if strings.TrimSpace(ut.Email) == "" {
 			continue
 		}
 		baseEmail := stripObservedEmailTag(ut.Email)
-		dlRate, ulRate, firstSeen, active := o.rateFor(coreSingbox, baseEmail, ut.Downlink, ut.Uplink, now, false)
+		// 与 pollXray 同理：按账号全名采样，同一订阅的多个入站账号互不覆盖。
+		dlRate, ulRate, firstSeen, active := o.rateFor(coreSingbox, ut.Email, ut.Downlink, ut.Uplink, now, false)
+		// sing-box 的「在线」靠流量增量推断：计数器被 trafficsync 每 30s 清零后，
+		// 差分几乎恒为 0 → 用户会被判成离线而整行消失。用 trafficsync 的增量
+		// 既有正确速率，也能可靠地判定「这一轮是否有流量」。
+		if d, u2, ok := deltaRate(deltas, ut.Email, now); ok {
+			dlRate, ulRate = d, u2
+			if d > 0 || u2 > 0 {
+				active = true
+			}
+		}
 		if !active {
 			continue
 		}
@@ -386,8 +405,34 @@ func (o *LocalObserver) pollSingbox(ctx context.Context) {
 	o.cleanupSamples(coreSingbox, entries)
 }
 
+// localDeltas 取 trafficsync 最近一轮的各账号增量（没有则返回 nil）。
+func (o *LocalObserver) localDeltas() map[string]localUserDelta {
+	if o.svc == nil {
+		return nil
+	}
+	return o.svc.LocalUserDeltas()
+}
+
+// deltaRate 用 trafficsync 的一轮增量换算速率（B/s）。
+//
+// 增量覆盖 trafficsync 的一个周期，直接除以周期即平均速率；不复用核心计数器
+// （那份计数器每轮都被 trafficsync 清零，见 Service.SetLocalUserDeltas）。
+// 增量超过两个周期没更新（trafficsync 停了 / 核心没跑）返回 ok=false，
+// 调用方回落到计数器差分，避免把上一轮的速率一直挂在界面上。
+func deltaRate(deltas map[string]localUserDelta, account string, now int64) (dlRate, ulRate int64, ok bool) {
+	d, found := deltas[account]
+	if !found || d.window <= 0 {
+		return 0, 0, false
+	}
+	if now-d.at > 2*d.window+10 {
+		return 0, 0, false
+	}
+	return d.down / d.window, d.up / d.window, true
+}
+
 // rateFor 用两次采样的累计流量差分出 bps 速率（与 Agent 侧 online_users.go 同口径）。
-// 计数器回退（trafficsync 周期性 reset / 核心重启）时按新会话处理，速率记 0。
+// 计数器回退（trafficsync 周期性 reset / 核心重启）时按新会话处理，速率记 0；
+// 本地面板因此只把它当兜底，速率优先取 deltaRate。
 //
 // xray 条目每次采样都算「在线」（alwaysActive=true），最后活跃时间随采样推进；
 // sing-box 条目没有连接 IP，只能靠流量增量更新 lastActive，返回它是否仍在 TTL 内。
@@ -436,7 +481,12 @@ func (o *LocalObserver) cleanupSamples(core string, entries []*agentpb.OnlineUse
 	now := time.Now().Unix()
 	live := make(map[string]struct{}, len(entries))
 	for _, e := range entries {
-		live[core+"|"+e.GetEmail()] = struct{}{}
+		// 与 rateFor 的键保持一致：账号全名优先，取不到才退回 base email。
+		account := e.GetAccountEmail()
+		if account == "" {
+			account = e.GetEmail()
+		}
+		live[core+"|"+account] = struct{}{}
 	}
 	for k, v := range o.samples {
 		if !strings.HasPrefix(k, core+"|") {

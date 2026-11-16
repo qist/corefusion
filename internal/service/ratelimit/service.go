@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,6 +32,11 @@ type Service struct {
 	// 远端节点走 Agent 的 ONLINE_USERS 心跳；本地节点没有独立 Agent 进程，
 	// 必须由面板自己轮询核心后补上，否则「在线订阅人 / 在线用户」永远是空。
 	onlineSink OnlineUsersSink
+
+	// localDeltas 是 trafficsync 每轮从核心读到的**增量**（见 SetLocalUserDeltas）。
+	// 本地面板的在线速率必须用它，不能再对核心累计计数器做差分。
+	localDeltaMu sync.RWMutex
+	localDeltas  map[string]localUserDelta
 }
 
 // OnlineUsersSink 把在线用户快照写入面板内存缓存（按 serverID）。
@@ -38,6 +44,62 @@ type OnlineUsersSink func(serverID int64, users []*agentpb.OnlineUserEntry)
 
 // SetOnlineUsersSink 注入在线快照写入能力（由 router 装配为 NodeServerManager）。
 func (s *Service) SetOnlineUsersSink(fn OnlineUsersSink) { s.onlineSink = fn }
+
+// LocalUserDelta 是 trafficsync 一轮内某账号的增量流量（不是累计值）。
+type LocalUserDelta struct {
+	Email  string
+	Up     int64
+	Down   int64
+	Window int64 // 该增量覆盖的秒数（trafficsync 周期）
+}
+
+// localUserDelta 存储一轮增量及其时间戳，供在线速率换算。
+type localUserDelta struct {
+	up, down int64
+	at       int64
+	window   int64
+}
+
+// SetLocalUserDeltas 由 trafficsync 每轮调用，注入「本轮各账号增量」。
+//
+// 为什么不能自己差分核心计数器：trafficsync 用 `QueryStats(reset_=true)` 每 30s
+// 把 xray / sing-box 的 `user>>>…>>>traffic` 计数器清零，同一份计数器再被
+// LocalObserver 以 15s 周期读取时，两次采样之间往往夹着一次清零：
+// 计数器「倒退」→ 差分被判定为回绕 → 速率记 0；没跨清零的那次也只统计到
+// 清零后的残值（甚至几 B/s）。于是「总上行/总下行」在涨，速率却一直是 0。
+// 这里直接复用 trafficsync 已经算好的增量，速率与计费口径完全一致。
+func (s *Service) SetLocalUserDeltas(deltas []LocalUserDelta) {
+	now := time.Now().Unix()
+	next := make(map[string]localUserDelta, len(deltas))
+	for _, d := range deltas {
+		email := strings.TrimSpace(d.Email)
+		if email == "" {
+			continue
+		}
+		window := d.Window
+		if window <= 0 {
+			window = 30
+		}
+		next[email] = localUserDelta{up: d.Up, down: d.Down, at: now, window: window}
+	}
+	s.localDeltaMu.Lock()
+	s.localDeltas = next
+	s.localDeltaMu.Unlock()
+}
+
+// LocalUserDeltas 返回最近一轮增量的快照（key = 核心账号全名）。
+func (s *Service) LocalUserDeltas() map[string]localUserDelta {
+	s.localDeltaMu.RLock()
+	defer s.localDeltaMu.RUnlock()
+	if len(s.localDeltas) == 0 {
+		return nil
+	}
+	out := make(map[string]localUserDelta, len(s.localDeltas))
+	for k, v := range s.localDeltas {
+		out[k] = v
+	}
+	return out
+}
 
 // ErrNodeUnsupported 表示节点的内核/依赖不支持限流（启用被拒绝时返回，Handler 映射为 400）。
 type ErrNodeUnsupported struct{ Reason string }

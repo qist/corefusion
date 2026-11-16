@@ -3,11 +3,12 @@ package ratelimitsvc
 import (
 	"testing"
 	"time"
+
+	agentpb "corefusion/internal/runtime/agent/proto"
 )
 
-// xray 的采样 key 必须是 base email 且跨轮稳定：key 与条目存的 email 不一致时，
-// cleanupSamples 每轮都会把样本删掉 → first_seen 归零 → 前端算出
-// 「498484 小时」的连接时长。
+// 采样 key 必须跨轮稳定：key 与条目存的账号不一致时，cleanupSamples 每轮都会
+// 把样本删掉 → first_seen 归零 → 前端算出「498484 小时」的连接时长。
 func TestRateForKeepsFirstSeenAcrossPolls(t *testing.T) {
 	o := &LocalObserver{samples: map[string]*localOnlineSample{}}
 
@@ -21,6 +22,50 @@ func TestRateForKeepsFirstSeenAcrossPolls(t *testing.T) {
 	}
 	if dlRate != 6 { // (200-100)/15
 		t.Fatalf("下行速率 = %d, want 6", dlRate)
+	}
+}
+
+// 同一订阅的多个入站账号（email 带不同 _shortTag）各有独立计数器：
+// 采样键必须区分账号，否则两个账号的累计值互相覆盖 → 速率跳变、first_seen 反复重建。
+func TestRateForIsolatesAccountsOfSameSubscription(t *testing.T) {
+	o := &LocalObserver{samples: map[string]*localOnlineSample{}}
+
+	if _, _, firstA, _ := o.rateFor(coreXray, "a@example.com_vless1", 1000, 100, 1000, true); firstA != 1000 {
+		t.Fatalf("账号 A 首次采样 first_seen 应为 1000，实际 %d", firstA)
+	}
+	// 账号 B 首次出现：不能继承 A 的基线
+	dlB, ulB, firstB, _ := o.rateFor(coreXray, "a@example.com_anytls2", 900000, 5000, 1000, true)
+	if dlB != 0 || ulB != 0 {
+		t.Fatalf("账号 B 首次采样速率应为 0，实际 dl=%d ul=%d（继承了账号 A 的基线）", dlB, ulB)
+	}
+	if firstB != 1000 {
+		t.Fatalf("账号 B 首次采样 first_seen 应为 1000，实际 %d", firstB)
+	}
+	// 账号 A 正常增长：按自身基线算速率，不能被 B 的 900000 影响
+	dlA, ulA, firstA2, _ := o.rateFor(coreXray, "a@example.com_vless1", 1300, 130, 1015, true)
+	if dlA != 20 || ulA != 2 {
+		t.Fatalf("账号 A 速率应为 dl=20 ul=2，实际 dl=%d ul=%d", dlA, ulA)
+	}
+	if firstA2 != 1000 {
+		t.Fatalf("账号 A 的 first_seen 不应被账号 B 覆盖：%d", firstA2)
+	}
+	if len(o.samples) != 2 {
+		t.Fatalf("两个账号应各有一份样本，实际 %d", len(o.samples))
+	}
+}
+
+// cleanupSamples 的存活键必须与 rateFor 一致（账号全名），否则条目会被当成下线删掉。
+func TestCleanupSamplesUsesAccountEmailKey(t *testing.T) {
+	now := time.Now().Unix()
+	o := &LocalObserver{samples: map[string]*localOnlineSample{
+		coreXray + "|a@example.com_vless1": {lastActive: now},
+	}}
+	o.cleanupSamples(coreXray, []*agentpb.OnlineUserEntry{{
+		Email:        "a@example.com",
+		AccountEmail: "a@example.com_vless1",
+	}})
+	if _, ok := o.samples[coreXray+"|a@example.com_vless1"]; !ok {
+		t.Fatal("在线条目对应的账号样本不应被清理")
 	}
 }
 
@@ -56,6 +101,48 @@ func TestRateForIsolatesCores(t *testing.T) {
 	}
 	if len(o.samples) != 2 {
 		t.Fatalf("应有两份独立样本，实际 %d", len(o.samples))
+	}
+}
+
+// 速率必须用 trafficsync 的增量换算，而不是对核心计数器做差分：
+// trafficsync 每 30s 用 reset_=true 清零同一份计数器，差分只会得到 0/残值。
+func TestDeltaRateFromTrafficsyncDeltas(t *testing.T) {
+	now := int64(1_000_000)
+	deltas := map[string]localUserDelta{
+		"a@example.com_vless1": {down: 450_000, up: 150_000, at: now, window: 30},
+	}
+	dl, ul, ok := deltaRate(deltas, "a@example.com_vless1", now)
+	if !ok {
+		t.Fatal("有新鲜增量时必须返回速率")
+	}
+	if dl != 15_000 || ul != 5_000 {
+		t.Fatalf("速率应为 15000/5000 B/s，实际 %d/%d", dl, ul)
+	}
+	// 同一订阅的另一个账号没有增量 → 不能串到 A 的速率
+	if _, _, ok := deltaRate(deltas, "a@example.com_anytls2", now); ok {
+		t.Fatal("未上报增量的账号不应拿到别的账号的速率")
+	}
+	// 增量过期（trafficsync 停了）→ 回落到计数器差分
+	if _, _, ok := deltaRate(deltas, "a@example.com_vless1", now+2*30+11); ok {
+		t.Fatal("过期增量不应继续展示旧速率")
+	}
+}
+
+// SetLocalUserDeltas 每轮整体替换：上一轮有流量、本轮没有的账号必须归零。
+func TestSetLocalUserDeltasReplacesSnapshot(t *testing.T) {
+	s := &Service{}
+	s.SetLocalUserDeltas([]LocalUserDelta{{Email: "a@x.com", Up: 300, Down: 600, Window: 30}})
+	d := s.LocalUserDeltas()["a@x.com"]
+	if d.up != 300 || d.down != 600 || d.window != 30 {
+		t.Fatalf("增量未落库: %+v", d)
+	}
+	s.SetLocalUserDeltas([]LocalUserDelta{{Email: "b@x.com", Up: 1, Down: 2, Window: 30}})
+	if _, ok := s.LocalUserDeltas()["a@x.com"]; ok {
+		t.Fatal("本轮没有增量的账号应被移除，否则界面会一直显示上一轮的速率")
+	}
+	dl, ul, ok := deltaRate(s.LocalUserDeltas(), "b@x.com", d.at)
+	if !ok || dl != 0 || ul != 0 {
+		t.Fatalf("小增量按周期换算后应为 0 B/s（不四舍五入），实际 %d/%d ok=%v", dl, ul, ok)
 	}
 }
 

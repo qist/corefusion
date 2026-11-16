@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "Giden Etiketi",
       "addressPortStrategy": "Adres Port Stratejisi",
       "trustedXff": "Güvenilen X-Forwarded-For",
-      "trustedXffHint": "Her satıra bir IP/CIDR",
+      "trustedXffHint": "Her satıra bir başlık adı (örn. X-Forwarded-For), IP/CIDR değil",
       "happyEyeballs": "Mutlu Gözbebekleri",
       "happyEyeballsHint": "RFC-8305 yarışı, domainStrategy AsIs dışında olmalı",
       "tryDelayMs": "Deneme Gecikmesi (ms)",

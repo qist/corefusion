@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "Tag Keluar",
       "addressPortStrategy": "Strategi Alamat Port",
       "trustedXff": "X-Forwarded-For Tepercaya",
-      "trustedXffHint": "Satu IP/CIDR per baris",
+      "trustedXffHint": "Satu nama header per baris (mis. X-Forwarded-For), bukan IP/CIDR",
       "happyEyeballs": "Bola Mata Bahagia",
       "happyEyeballsHint": "Balapan RFC-8305, domainStrategy harus diatur selain AsIs",
       "tryDelayMs": "Jeda Coba (ms)",

@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "Тег исходящего",
       "addressPortStrategy": "Стратегия адреса и порта",
       "trustedXff": "Доверенный X-Forwarded-For",
-      "trustedXffHint": "По одному IP/CIDR в строке",
+      "trustedXffHint": "По одному имени заголовка в строке (например, X-Forwarded-For), не IP/CIDR",
       "happyEyeballs": "Счастливые глаза",
       "happyEyeballsHint": "Гонка RFC-8305; требуется domainStrategy, отличный от AsIs",
       "tryDelayMs": "Задержка попытки (мс)",

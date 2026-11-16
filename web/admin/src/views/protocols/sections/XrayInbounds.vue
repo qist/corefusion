@@ -1317,7 +1317,7 @@
               </el-select>
             </el-form-item>
             <el-form-item :label="t('protoCenter.sockopt.trustedXff')">
-              <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" placeholder="IP/CIDR" @change="emit" />
+              <el-input v-model="rf.sockopt._trustedXffStr" type="textarea" :rows="2" :placeholder="t('protoCenter.sockopt.trustedXffHint')" @change="emit" />
             </el-form-item>
           </el-form>
 

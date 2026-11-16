@@ -1767,7 +1767,7 @@ export default {
       dialerProxyHint: '出站标签',
       addressPortStrategy: 'Address Port Strategy',
       trustedXff: 'Trusted X-Forwarded-For',
-      trustedXffHint: '一行一个 IP/CIDR',
+      trustedXffHint: '一行一个请求头名称（如 X-Forwarded-For），不是 IP/CIDR',
       happyEyeballs: 'Happy Eyeballs',
       happyEyeballsHint: 'RFC-8305 竞速，需设置 domainStrategy 非 AsIs',
       tryDelayMs: 'Try Delay (ms)',

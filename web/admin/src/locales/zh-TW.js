@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "出站標籤",
       "addressPortStrategy": "位址連接埠策略",
       "trustedXff": "受信任的 X-Forwarded-For",
-      "trustedXffHint": "每行一個 IP/CIDR",
+      "trustedXffHint": "每行一個請求標頭名稱（如 X-Forwarded-For），不是 IP/CIDR",
       "happyEyeballs": "Happy Eyeballs",
       "happyEyeballsHint": "RFC-8305 競速，需設定 domainStrategy 為非 AsIs",
       "tryDelayMs": "嘗試延遲 (毫秒)",

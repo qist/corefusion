@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "Étiquette de sortie",
       "addressPortStrategy": "Stratégie d'adresse et de port",
       "trustedXff": "X-Forwarded-For de confiance",
-      "trustedXffHint": "Une IP/CIDR par ligne",
+      "trustedXffHint": "Un nom d'en-tête par ligne (ex. X-Forwarded-For), pas d'IP/CIDR",
       "happyEyeballs": "Des globes oculaires heureux",
       "happyEyeballsHint": "Course RFC-8305, nécessite domainStrategy ≠ AsIs",
       "tryDelayMs": "Délai d'essai (ms)",

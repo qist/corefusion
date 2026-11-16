@@ -1767,7 +1767,7 @@ export default {
       dialerProxyHint: 'Outbound tag',
       addressPortStrategy: 'Address Port Strategy',
       trustedXff: 'Trusted X-Forwarded-For',
-      trustedXffHint: 'One IP/CIDR per line',
+      trustedXffHint: 'One header name per line (e.g. X-Forwarded-For), not IP/CIDR',
       happyEyeballs: 'Happy Eyeballs',
       happyEyeballsHint: 'RFC-8305 racing, requires domainStrategy not AsIs',
       tryDelayMs: 'Try Delay (ms)',

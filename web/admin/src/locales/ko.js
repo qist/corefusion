@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "아웃바운드 태그",
       "addressPortStrategy": "주소 포트 전략",
       "trustedXff": "신뢰할 X-Forwarded-For",
-      "trustedXffHint": "한 줄에 하나의 IP/CIDR",
+      "trustedXffHint": "한 줄에 하나의 헤더 이름(예: X-Forwarded-For). IP/CIDR가 아닙니다",
       "happyEyeballs": "행복한 눈알",
       "happyEyeballsHint": "RFC-8305 경쟁, domainStrategy를 AsIs가 아닌 값으로 설정해야 합니다",
       "tryDelayMs": "시도 지연(ms)",

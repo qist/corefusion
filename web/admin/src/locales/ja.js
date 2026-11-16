@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "アウトバウンドタグ",
       "addressPortStrategy": "アドレスポート戦略",
       "trustedXff": "信頼済み X-Forwarded-For",
-      "trustedXffHint": "1 行につき 1 つの IP/CIDR",
+      "trustedXffHint": "1 行に 1 つのヘッダー名（例: X-Forwarded-For）。IP/CIDR ではありません",
       "happyEyeballs": "幸せな目玉",
       "happyEyeballsHint": "RFC-8305 レース。domainStrategy を AsIs 以外に設定する必要があります",
       "tryDelayMs": "試行遅延 (ms)",

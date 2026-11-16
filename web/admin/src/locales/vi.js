@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "Nhãn gửi đi",
       "addressPortStrategy": "Chiến lược địa chỉ cổng",
       "trustedXff": "X-Forwarded-For đáng tin cậy",
-      "trustedXffHint": "Mỗi dòng một IP/CIDR",
+      "trustedXffHint": "Mỗi dòng một tên header (vd. X-Forwarded-For), không phải IP/CIDR",
       "happyEyeballs": "Mắt Hạnh Phúc",
       "happyEyeballsHint": "RFC-8305 đua kết nối, cần đặt domainStrategy khác AsIs",
       "tryDelayMs": "Thử độ trễ (ms)",

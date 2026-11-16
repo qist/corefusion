@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "برچسب خروجی",
       "addressPortStrategy": "راهبرد آدرس و پورت",
       "trustedXff": "X-Forwarded-For مورد اعتماد",
-      "trustedXffHint": "در هر خط یک IP/CIDR",
+      "trustedXffHint": "در هر خط یک نام هدر (مثلاً X-Forwarded-For)، نه IP/CIDR",
       "happyEyeballs": "کره چشم مبارک",
       "happyEyeballsHint": "مسابقه RFC-8305؛ نیازمند تنظیم domainStrategy غیر از AsIs",
       "tryDelayMs": "تأخیر تلاش (ms)",

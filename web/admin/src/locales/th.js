@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "แท็กขาออก",
       "addressPortStrategy": "กลยุทธ์ที่อยู่และพอร์ต",
       "trustedXff": "X-Forwarded-For ที่เชื่อถือได้",
-      "trustedXffHint": "หนึ่ง IP/CIDR ต่อบรรทัด",
+      "trustedXffHint": "หนึ่งชื่อเฮดเดอร์ต่อบรรทัด (เช่น X-Forwarded-For) ไม่ใช่ IP/CIDR",
       "happyEyeballs": "ดวงตาแห่งความสุข",
       "happyEyeballsHint": "การแข่งแบบ RFC-8305 ต้องตั้งค่า domainStrategy ให้ไม่ใช่ AsIs",
       "tryDelayMs": "ดีเลย์การลอง (ms)",

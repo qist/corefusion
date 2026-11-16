@@ -1750,7 +1750,7 @@ export default {
       "dialerProxyHint": "وسم الصادر",
       "addressPortStrategy": "استراتيجية العنوان والمنفذ",
       "trustedXff": "X-Forwarded-For الموثوق",
-      "trustedXffHint": "عنوان IP/CIDR واحد في كل سطر",
+      "trustedXffHint": "اسم ترويسة واحد في كل سطر (مثل X-Forwarded-For)، وليس IP/CIDR",
       "happyEyeballs": "مقل العيون سعيدة",
       "happyEyeballsHint": "سباق RFC-8305، يتطلب تعيين domainStrategy إلى قيمة غير AsIs",
       "tryDelayMs": "تأخير المحاولة (ms)",

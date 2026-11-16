@@ -1476,3 +1476,81 @@ func TestGenerateMihomoYAMLGroupHealthCheckExplicitToggle(t *testing.T) {
 		}
 	}
 }
+
+// 入站 tag 被改过（如 inbound-vmess-28307 → inbound-vmess-36832）时，存量账号的
+// email 后缀仍是旧 tag；精确匹配失败必须按 clientEmail_ 前缀兜底，否则节点会在
+// 订阅里直接消失（真机：HK-Test 在套餐节点组里，订阅就是不输出）。
+func TestFindClientByEmailFallsBackToStaleTagSuffix(t *testing.T) {
+	settings := map[string]interface{}{
+		"clients": []interface{}{
+			map[string]interface{}{"email": "other@x.com_vmess11111", "id": "a"},
+			map[string]interface{}{"email": "user@example.com_vmess28307", "id": "b"},
+		},
+	}
+	got := findClientByEmail(settings, "user@example.com", "inbound-vmess-36832")
+	if got == nil {
+		t.Fatal("应回退匹配到旧 tag 后缀的同客户账号")
+	}
+	if got["id"] != "b" {
+		t.Fatalf("匹配到别人的账号: %v", got)
+	}
+}
+
+func TestFindClientByEmailPrefersExactMatch(t *testing.T) {
+	settings := map[string]interface{}{
+		"clients": []interface{}{
+			map[string]interface{}{"email": "user@example.com_vmess28307", "id": "old"},
+			map[string]interface{}{"email": "user@example.com_vmess36832", "id": "new"},
+		},
+	}
+	got := findClientByEmail(settings, "user@example.com", "inbound-vmess-36832")
+	if got == nil || got["id"] != "new" {
+		t.Fatalf("应优先精确匹配当前 tag, got %v", got)
+	}
+}
+
+// 没有该客户的账号时必须返回 nil：绝不能借用别的客户的凭据。
+func TestFindClientByEmailDoesNotLeakOtherClients(t *testing.T) {
+	settings := map[string]interface{}{
+		"clients": []interface{}{
+			map[string]interface{}{"email": "other@x.com_vmess11111", "id": "a"},
+			map[string]interface{}{"email": "third@y.com", "id": "c"},
+		},
+	}
+	if got := findClientByEmail(settings, "user@example.com", "inbound-vmess-36832"); got != nil {
+		t.Fatalf("不应返回别人的账号: %v", got)
+	}
+}
+
+// 前缀兜底只在同一入站内生效：email 里含 clientEmail 但不以其 + "_" 开头的不能算。
+func TestFindClientByEmailPrefixBoundary(t *testing.T) {
+	settings := map[string]interface{}{
+		"users": []interface{}{
+			map[string]interface{}{"email": "user@example.com.evil_vmess1", "id": "x"},
+		},
+	}
+	if got := findClientByEmail(settings, "user@example.com", "inbound-vmess-1"); got != nil {
+		t.Fatalf("相似前缀不应匹配: %v", got)
+	}
+}
+
+// 真实场景复现：HK-Test 入站 tag 从 inbound-vmess-28307 改成 inbound-vmess-36832，
+// 该入站里 user@example.com 的账号 email 仍是旧后缀 _vmess28307。
+func TestFindClientByEmailRealWorldHkTestTagRename(t *testing.T) {
+	if got := generateInboundEmail("user@example.com", "inbound-vmess-36832"); got != "user@example.com_vmess36832" {
+		t.Fatalf("generateInboundEmail = %q", got)
+	}
+	settings := map[string]interface{}{
+		"clients": []interface{}{
+			map[string]interface{}{"email": "seed@xray.local", "id": "seed"},
+			map[string]interface{}{"email": "user@example.com_vmess28307", "id": "11111111-1111-1111-1111-111111111111", "security": "auto"},
+		},
+	}
+	got := findClientByEmail(settings, "user@example.com", "inbound-vmess-36832")
+	if got == nil {
+		t.Fatal("HK-Test 节点不应从订阅中消失")
+	}
+	if got["id"] != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("凭据错误: %v", got)
+	}
+}

@@ -67,10 +67,10 @@ func TestRemoveOutboundTreatsMissingAsSuccess(t *testing.T) {
 // 应自动「先删该 email 再加一次」，而不是把错误抛给用户。
 func TestAddUserRetriesWhenUserAlreadyExists(t *testing.T) {
 	f := &scriptedRemote{errs: map[string][]string{
-		"addUser": {"rpc error: code = Unknown desc = User 4wo1rz@xray.com already exists"},
+		"addUser": {"rpc error: code = Unknown desc = User seed@xray.local already exists"},
 	}}
 	p := scriptedProvider(f)
-	err := p.AddUser(context.Background(), 4, "inbound-vmess-1", "vmess", "4wo1rz@xray.com", "uuid", "", "", "auto")
+	err := p.AddUser(context.Background(), 4, "inbound-vmess-1", "vmess", "seed@xray.local", "uuid", "", "", "auto")
 	if err != nil {
 		t.Fatalf("AddUser should recover from existing user, got %v", err)
 	}

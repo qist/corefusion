@@ -548,7 +548,21 @@ func (h *Handler) GetAgentVersion(c *gin.Context) {
 	}
 
 	if agentPath == "" {
-		response.NotFound(c, "AGENT_BINARY_NOT_FOUND", "agent binary not found on panel")
+		// 面板本地没有 Agent 二进制（开发环境/精简部署的常见状态）：
+		// 返回 200 + 空字段，而不是 404。
+		//
+		// 404 的语义是「资源不存在/请求出错」，会被调用方、监控、日志当成故障；
+		// 而这里只是「面板没有本地包」。该接口用于开发与「从面板本地分发 Agent」，
+		// 生产环境本来就该从 GitHub 获取版本与产物（见 GET /agent/releases）。
+		// 前端把 version 为空视为「无本地源」，会自动回退到 GitHub。
+		response.OK(c, gin.H{
+			"version":      "",
+			"checksum":     "",
+			"binary_size":  0,
+			"binary_path":  "",
+			"built_at":     "",
+			"download_url": "",
+		})
 		return
 	}
 

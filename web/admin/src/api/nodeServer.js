@@ -218,7 +218,8 @@ export function getPendingAgentUpdates() {
 }
 
 export function getAgentVersion() {
-  // 404 = 面板本地没有 Agent 二进制，属正常状态，不弹错误提示
+  // 面板本地没有 Agent 二进制时后端返回 200 + 空字段（version === ''），
+  // 属正常状态（生产一般从 GitHub 获取版本与产物），不弹错误提示。
   return client.get('/agent/version', { suppressErrorMessage: true })
 }
 

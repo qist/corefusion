@@ -202,3 +202,33 @@ func TestGetAgentOriginReturnsDetectedOrigin(t *testing.T) {
 		t.Fatalf("unexpected origin response: %+v", body)
 	}
 }
+
+// 面板本地没有 Agent 二进制时，版本接口应返回 200 + 空字段（而不是 404）：
+// 该接口是开发/本地分发用的，生产从 GitHub 取版本；404 会被调用方与监控当成故障。
+func TestGetAgentVersionWithoutLocalBinary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &Handler{dataDir: t.TempDir()}
+	r := gin.New()
+	r.GET("/agent/version", h.GetAgentVersion)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/agent/version", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Version     string `json:"version"`
+			Checksum    string `json:"checksum"`
+			BinarySize  int64  `json:"binary_size"`
+			DownloadURL string `json:"download_url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v (body=%s)", err, w.Body.String())
+	}
+	if resp.Data.Version != "" || resp.Data.Checksum != "" || resp.Data.DownloadURL != "" || resp.Data.BinarySize != 0 {
+		t.Fatalf("空状态应返回空字段, got %+v", resp.Data)
+	}
+}

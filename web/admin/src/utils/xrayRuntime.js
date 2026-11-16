@@ -14,13 +14,29 @@ function warnWithCooldown(message) {
   ElMessage.warning(message)
 }
 
+// xray 的业务错误说明控制面是通的（消息已送达、被 xray 拒绝），既不是「进程未启动」
+// 也不是「控制接口不可用」。例如 existing tag found（tag 冲突）、配置非法等。
+const XRAY_BIZ_ERROR_RE = /existing tag|existing handler|not enough information for making a decision|failed to build|failed to parse|invalid (?:config|params)|unsupported|already exists/i
+
 export function isXrayNotRunningError(error) {
   const code = error?.response?.data?.code || ''
   const message = error?.response?.data?.message || error?.message || ''
+  if (XRAY_BIZ_ERROR_RE.test(message)) {
+    return false
+  }
   if (code === 'CONNECT_FAILED' || code === 'REMOTE_API_FAILED') {
     return true
   }
   return /failed to connect to xray|connect to xray|context deadline exceeded|connection refused|dial xray/i.test(message)
+}
+
+// cleanXrayErrorMessage 去掉 gRPC 包装噪音，只留下 xray 给出的原因。
+function cleanXrayErrorMessage(message) {
+  return String(message || '')
+    .replace(/^remote error:\s*/i, '')
+    .replace(/^rpc error:\s*code = \w+\s*desc =\s*/i, '')
+    .replace(/^rpc error:\s*/i, '')
+    .trim()
 }
 
 // probeXrayProcessState 只用于「热更失败之后」的归因，不再作为保存前的门禁。
@@ -48,7 +64,8 @@ export async function probeXrayProcessState(client, serverId) {
 // 后者才是真的没运行。旧文案一律写成「Xray 未启动」，把用户引向错误的方向。
 export async function notifyXrayRuntimeApplyFailure(error, persistedMessage, client, serverId) {
   const t = i18n.global.t
-  const message = error?.response?.data?.message || error?.message || ''
+  const rawMessage = error?.response?.data?.message || error?.message || ''
+  const message = cleanXrayErrorMessage(rawMessage)
 
   if (isXrayNotRunningError(error)) {
     const state = client && serverId != null ? await probeXrayProcessState(client, serverId) : ''

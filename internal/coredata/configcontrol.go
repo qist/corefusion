@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	routercore "github.com/xtls/xray-core/app/router"
@@ -89,8 +90,29 @@ func BuildInboundConfig(configJSON []byte) (*xraycore.InboundHandlerConfig, stri
 }
 
 // AddInbound 把一条入站热下发到运行中的 xray（本地直连 gRPC / 远端经 Agent）。
-// 幂等语义：同 tag 已存在时先移除再添加（入站配置里已包含该入站的全部用户）。
+//
+// 幂等 + 竞态兜底：同 tag 已存在时先移除再添加（xray 的 AddHandler 拒绝重复 tag）。
+// 面板保存时前端会先 DELETE 再 POST，而 Agent 的热重载（SyncData HOT_RELOAD）也可能
+// 同时对同一个 tag 做「先删后加」——两条链路交叉时 add 会撞上 xray 的
+// `existing tag found`（真机踩到：用户看到「控制接口不可用」）。所以每次尝试都先删，
+// 撞上重复 tag 就再试一次。
 func (p *ControlProvider) AddInbound(ctx context.Context, serverID int64, configJSON []byte) error {
+	const attempts = 2
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		lastErr = p.addInboundOnce(ctx, serverID, configJSON)
+		if lastErr == nil {
+			return nil
+		}
+		if !IsExistingTagErr(lastErr) {
+			return lastErr
+		}
+	}
+	return lastErr
+}
+
+// addInboundOnce 执行一次「先删同 tag，再添加」。
+func (p *ControlProvider) addInboundOnce(ctx context.Context, serverID int64, configJSON []byte) error {
 	if p.isLocal != nil && p.isLocal(serverID) {
 		inbound, tag, err := BuildInboundConfig(configJSON)
 		if err != nil {
@@ -123,7 +145,45 @@ func (p *ControlProvider) AddInbound(ctx context.Context, serverID int64, config
 	return nil
 }
 
-// RemoveInbound 从运行中的 xray 热移除一条入站（不存在视为成功）。
+// IsExistingTagErr 判断错误是否为「该 tag 已存在」——这种错误重试（先删后加）可以恢复。
+func IsExistingTagErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "existing tag") || strings.Contains(msg, "existing handler")
+}
+
+// IsMissingHandlerErr 判断错误是否只是「该对象已经不存在」。
+//
+// xray 删除不存在的入站/出站时返回 common.ErrNoClue：
+//   - 入站/出站：`not enough information for making a decision`
+//   - 用户：`user ... not found` / `not found`
+//
+// 这类错误语义上等价于「已经删掉了」：面板保存/关闭入口时，前端会主动 DELETE，
+// 而 Agent 的热重载可能已经先删过同一个 tag（两条链路并发），此时再删就会拿到它。
+// 必须按幂等成功处理，否则用户会看到「已保存，但控制接口不可用」的假告警
+// （真机踩到：关闭入口后端口确实已关闭、操作其实成功）。
+func IsMissingHandlerErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, needle := range []string{
+		"not enough information for making a decision",
+		"handler not found",
+		"not found",
+		"does not exist",
+	} {
+		if strings.Contains(msg, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveInbound 从运行中的 xray 热移除一条入站。
+// 不存在视为成功（面板与 Agent 热重载可能都在删同一个 tag）；其它错误照常返回。
 func (p *ControlProvider) RemoveInbound(ctx context.Context, serverID int64, tag string) error {
 	if tag == "" {
 		return nil
@@ -134,12 +194,17 @@ func (p *ControlProvider) RemoveInbound(ctx context.Context, serverID int64, tag
 			return err
 		}
 		defer conn.Close()
-		_, _ = proxymanCommand.NewHandlerServiceClient(conn).RemoveInbound(ctx,
+		_, err = proxymanCommand.NewHandlerServiceClient(conn).RemoveInbound(ctx,
 			&proxymanCommand.RemoveInboundRequest{Tag: tag})
+		if err != nil && !IsMissingHandlerErr(err) {
+			return fmt.Errorf("remove inbound %s: %w", tag, err)
+		}
 		return nil
 	}
 
-	_, _ = p.RemoteCall(ctx, serverID, "proxyman", "removeInbound", map[string]interface{}{"tag": tag})
+	if _, err := p.RemoteCall(ctx, serverID, "proxyman", "removeInbound", map[string]interface{}{"tag": tag}); err != nil && !IsMissingHandlerErr(err) {
+		return fmt.Errorf("remove inbound %s on server %d: %w", tag, serverID, err)
+	}
 	return nil
 }
 
@@ -183,7 +248,8 @@ func (p *ControlProvider) AddOutbound(ctx context.Context, serverID int64, confi
 	return nil
 }
 
-// RemoveOutbound 从运行中的 xray 热移除一条出站（不存在视为成功）。
+// RemoveOutbound 从运行中的 xray 热移除一条出站。
+// 不存在视为成功（面板与 Agent 热重载可能都在删同一个 tag）；其它错误照常返回。
 func (p *ControlProvider) RemoveOutbound(ctx context.Context, serverID int64, tag string) error {
 	if tag == "" {
 		return nil
@@ -194,8 +260,9 @@ func (p *ControlProvider) RemoveOutbound(ctx context.Context, serverID int64, ta
 			return err
 		}
 		defer conn.Close()
-		if _, err := proxymanCommand.NewHandlerServiceClient(conn).RemoveOutbound(ctx,
-			&proxymanCommand.RemoveOutboundRequest{Tag: tag}); err != nil {
+		_, err = proxymanCommand.NewHandlerServiceClient(conn).RemoveOutbound(ctx,
+			&proxymanCommand.RemoveOutboundRequest{Tag: tag})
+		if err != nil && !IsMissingHandlerErr(err) {
 			return fmt.Errorf("remove outbound %s: %w", tag, err)
 		}
 		return nil
@@ -203,7 +270,7 @@ func (p *ControlProvider) RemoveOutbound(ctx context.Context, serverID int64, ta
 
 	if _, err := p.RemoteCall(ctx, serverID, "proxyman", "removeOutbound", map[string]interface{}{
 		"tag": tag,
-	}); err != nil {
+	}); err != nil && !IsMissingHandlerErr(err) {
 		return fmt.Errorf("remove outbound %s on server %d: %w", tag, serverID, err)
 	}
 	return nil

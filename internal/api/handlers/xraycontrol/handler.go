@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
 
-	proxymanCommand "github.com/xtls/xray-core/app/proxyman/command"
 	routerCommand "github.com/xtls/xray-core/app/router/command"
 	"github.com/xtls/xray-core/common/serial"
 	"github.com/xtls/xray-core/infra/conf"
@@ -204,6 +203,11 @@ func (h *Handler) connect(ctx context.Context, serverID int64) (*grpc.ClientConn
 // ==================== Inbound Management ====================
 
 // AddInbound handles POST /api/v1/xray/control/inbound.
+//
+// 统一走 ControlProvider.AddInbound：它会先删同 tag 再添加，并在「Agent 热重载
+// 同时做先删后加」的竞态下重试。以前这里直接 addInbound，前端保存时若与
+// Agent 的热重载交叉，就会撞上 xray 的 `existing tag found: inbound-vless-xxx`
+// 并把错误抛给用户（被误显示成「控制接口不可用」）。
 func (h *Handler) AddInbound(c *gin.Context) {
 	sid := parseServerID(c)
 	var req struct {
@@ -213,49 +217,14 @@ func (h *Handler) AddInbound(c *gin.Context) {
 		response.BadRequest(c, "INVALID_PARAMS", err.Error())
 		return
 	}
-
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "addInbound", map[string]interface{}{"config": req.Inbound}); handled {
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "remote", false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "remote", true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "", false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	inboundConf := new(conf.InboundDetourConfig)
-	if err := json.Unmarshal(req.Inbound, inboundConf); err != nil {
-		response.BadRequest(c, "INVALID_CONFIG", "failed to parse inbound config: "+err.Error())
-		return
-	}
-
-	config, err := inboundConf.Build()
-	if err != nil {
-		response.BadRequest(c, "BUILD_FAILED", "failed to build inbound config: "+err.Error())
-		return
-	}
-
-	_, err = client.AddInbound(ctx, &proxymanCommand.AddInboundRequest{Inbound: config})
-	if err != nil {
+	if err := h.control.AddInbound(ctx, sid, req.Inbound); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_add_inbound", "", false, err.Error())
 		response.InternalError(c, "ADD_INBOUND_FAILED", err.Error())
 		return
@@ -266,6 +235,10 @@ func (h *Handler) AddInbound(c *gin.Context) {
 }
 
 // RemoveInbound handles DELETE /api/v1/xray/control/inbound/:tag.
+//
+// 统一走 ControlProvider.RemoveInbound：「该 tag 已不存在」按成功处理（面板删除时
+// Agent 热重载可能已经先删过，xray 会返回 not enough information for making a
+// decision；以前这里直接透传成 500，前端会提示「控制接口不可用」，但实际已删成功）。
 func (h *Handler) RemoveInbound(c *gin.Context) {
 	sid := parseServerID(c)
 	tag := c.Param("tag")
@@ -273,37 +246,14 @@ func (h *Handler) RemoveInbound(c *gin.Context) {
 		response.BadRequest(c, "INVALID_PARAMS", "tag is required")
 		return
 	}
-
-	// Remote: proxy via Agent
-	if resp, handled, errOcc := h.remoteXrayAPI(c, "proxyman", "removeInbound", map[string]interface{}{"tag": tag}); handled {
-		if errOcc {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, "remote API failed")
-		} else {
-			audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, true, "")
-		}
-		if resp != nil {
-			var result interface{}
-			json.Unmarshal(resp, &result)
-			response.OK(c, result)
-		}
+	if h.control == nil {
+		response.InternalError(c, "NOT_CONFIGURED", "control provider not configured")
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
-
-	conn, err := h.connect(ctx, sid)
-	if err != nil {
-		audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, err.Error())
-		response.InternalError(c, "CONNECT_FAILED", err.Error())
-		return
-	}
-	defer conn.Close()
-
-	client := proxymanCommand.NewHandlerServiceClient(conn)
-
-	_, err = client.RemoveInbound(ctx, &proxymanCommand.RemoveInboundRequest{Tag: tag})
-	if err != nil {
+	if err := h.control.RemoveInbound(ctx, sid, tag); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_remove_inbound", tag, false, err.Error())
 		response.InternalError(c, "REMOVE_INBOUND_FAILED", err.Error())
 		return

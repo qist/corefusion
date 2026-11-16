@@ -1,9 +1,9 @@
-<!-- source: portal-api.md | locale: fa | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: fa | updated: 2026-11-16 -->
 # مرجع پورتال API (کارفرما / پورتال API)
 
 > زبان‌ها: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · فارسی
 
-> مرجع رابط **کامل** برای فرانت اند پورتال (`/p` یا یک پورت پورتال اختصاصی) و مشتریان شخص ثالث.
+> مرجع رابط **کامل** برای فرانت اند پورتال (`/p` یا یک درگاه پورتال اختصاصی) و مشتریان شخص ثالث.
 > تعاریف مسیر: `internal/api/router/router.go` (`clientAuthGroup` / `clientAuthProtected` / `/api/v1/public/*`).
 
 ## 1. کنوانسیون های عمومی
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | مقالات عمومی (فقط منتشر شده) |
 | GET | `/api/v1/public/articles/:slug` | جزئیات مقاله |
 | GET | `/api/v1/public/client-configs` | پیکربندی دانلود مشتری |
-| GET | `/sub/:token` | تحویل اشتراک (`format` base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json و غیره را برمی‌گرداند؛ لغو/غایب → 404، معلق/منقضی شده/غیرفعال → 403 را ببینید. [subscription.md](./subscription.fa.md)) |
+| GET | `/sub/:token` | تحویل اشتراک (`format` base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json و غیره را برمی‌گرداند؛ لغو/غایب → 404، معلق/منقضی شده/غیرفعال → 403 را ببینید. [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | قابلیت مشاهده ارائه دهنده OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | وضعیت نگهداری (عمومی). در صورت فعال بودن، پورتال یک صفحه تعمیر و نگهداری را نشان می دهد |
 
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | روش | مسیر | توضیحات |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | مشتری فعلی: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (پاکت `data`) |
+| PUT | `/api/v1/client-auth/settings` | تنظیمات سلف سرویس مشتری را به روز کنید: بدنه: `{ip_whitelist, device_limit}`. یک `ip_whitelist` خالی به معنای عدم محدودیت منبع IP است |
 | POST | `/api/v1/client-auth/change-password` | بدنه: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | زمان سرور (همگام سازی ساعت مشتری) |
 | GET | `/api/v1/client-auth/connection-info` | پارامترهای اتصال طرح فعلی: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -147,7 +148,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
 | GET | `/api/v1/client-auth/balance/transactions` | تراکنش های موجود (`type`: شارژ/مصرف/بازپرداخت؛ صفحه بندی شده) |
-| GET | `/api/v1/client-auth/charge/sites` | سایت های شارژ موجود (`ListChargeSites`: فقط فعال) |
+| GET | `/api/v1/client-auth/charge/sites` | سایت‌های شارژ موجود (`ListChargeSites`: فقط فعال) |
 | POST | `/api/v1/client-auth/charge/create` | ایجاد یک سفارش شارژ (به پرداخت شخص ثالث هدایت می شود) |
 | GET | `/api/v1/client-auth/charge/orders` | لیست سفارش شارژ |
 | GET | `/api/v1/client-auth/charge/orders/:id` | جزئیات سفارش شارژ مجدد |
@@ -222,10 +223,10 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/self-unban` | سلف سرویس لغو ممنوعیت (تلاش ها توسط خط مشی محدود شده است) |
 
 > فهرست مجاز IP **فقط برای URL های اشتراک اعمال می شود** (`/sub/:token`). ورود به سیستم/OAuth یا پورتال را مسدود نمی کند
-> سایر نقاط پایانی تأیید اعتبار مشتری اگر کاربر لیست مجاز یا اشتراک URL نداشته باشد، دسترسی همیشه مجاز است. این
+> سایر نقاط پایانی تأیید اعتبار مشتری اگر کاربر لیست مجاز یا اشتراک URL نداشته باشد، دسترسی همیشه مجاز است. را
 > لیست مجاز یک تنظیم برای هر کاربر است. سوئیچ جهانی وجود ندارد
 
-**جریان خود لغو ممنوعیت**: فقط برای `auto_quota` (ممنوعیت خودکار بیش از حد ترافیک) زمانی که سمت سرپرست
+**جریان خود لغو ممنوعیت**: فقط برای `auto_quota` (ممنوع خودکار بیش از حد ترافیک) در دسترس است که سمت سرپرست
 `self_unban.enabled` روشن است. ورود به سیستم (گذرواژه یا پاسخ به تماس OAuth) `require_self_unban=true` + `self_unban_token` را برمی‌گرداند
 (typ=self_unban، 15 دقیقه معتبر، **فقط** قابل استفاده در `POST /self-unban`؛ سایر نقاط پایانی 403/`SELF_UNBAN_TOKEN_SCOPE` را برمی‌گردانند).
 سپس پورتال کارت unban را نشان می دهد. پس از لغو ممنوعیت موفقیت آمیز، کاربر دوباره وارد سیستم می شود. تماس‌های OAuth این را از طریق ارائه می‌کنند
@@ -252,8 +253,8 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
   - دامنه پنل اصلی: `GET /p/legal/privacy`، `GET /p/legal/terms`
   - دامنه پورتال اختصاصی (استقرار ریشه): `GET /legal/privacy`، `GET /legal/terms`
 - **منطق نمایش**: URL یا محتوا، **URL برنده** (به صورت خارجی در یک برگه جدید باز می شود). در صورت ارائه محتوا، روی آن کلیک کنید
- کارت ورود به سیستم Markdown را در یک گفتگو (`renderMd`) با استفاده از زبان پورتال فعلی ارائه می‌کند.
-- در زمان اجرا از طریق `/api/v1/public/portal-config` تحویل داده شد. جزء ورود به سیستم مصرف می کند
+ کارت ورود به سیستم، Markdown را در یک گفتگو (`renderMd`) با استفاده از زبان پورتال فعلی ارائه می‌کند.
+- تحویل در زمان اجرا از طریق `/api/v1/public/portal-config`. جزء ورود به سیستم مصرف می کند
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
 - تأیید Google OAuth مستلزم این است که این پیوندها برای عموم قابل دسترسی باشند → از پیوندهای مستقل بالا در
  صفحه رضایت؛ `docs/oauth-google-verification.md` را ببینید (شامل الگوهای خط مشی رازداری / شرایط).

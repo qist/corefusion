@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: ar | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: ar | updated: 2026-11-16 -->
 # المشرف API
 
 > اللغات: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · العربية · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - قاعدة URL: `https://<panel-domain>/api/v1`
 - المصادقة: `Authorization: Bearer <admin_token>` (من `POST /api/v1/auth/login`)
 - تنسيقات الاستجابة/الخطأ الشائعة واصطلاحات الحد الأقصى للمعدل: راجع [README.md](./README.ar.md)
-- مصدر الحقيقة: `internal/api/router/router.go` (يختلف العدد حسب الإصدار؛ الكود هو المرجع)؛ إذا لم يتفق هذا الجدول، **الرمز يفوز**
+- مصدر الحقيقة: `internal/api/router/router.go` (يختلف العدد حسب الإصدار؛ الكود موثوق)؛ إذا لم يتفق هذا الجدول، **الرمز يفوز**
 
 ## علامات الإذن
 
@@ -17,8 +17,11 @@
 | عام | لا يلزم تسجيل الدخول (قد يستمر تطبيق حراسة الصيانة / تحديد السعر) |
 | عام · السعر محدود | لا يوجد تسجيل دخول، مع حد سعر مخصص |
 | تم تسجيل الدخول | يتطلب رمزًا مميزًا للمسؤول عند تسجيل الدخول (`AuthRequired`) |
+| المشغل | يتطلب الدور ≥ `operator` (`RequireRole(RoleOperator)`) |
 | المشرف | يتطلب الدور ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | المشرف الفائق | يتطلب الدور = `super_admin` |
+| العميل (عام) | لا يلزم وجود رمز مميز للعميل (تسجيل الدخول/التسجيل، وما إلى ذلك) |
+| العميل (تسجيل الدخول) | يتطلب `Authorization: Bearer <client_token>` (الرمز المميز لعميل البوابة الإلكترونية، وليس الرمز المميز للمسؤول) |
 
 مستويات الدور: `viewer(10) < operator(20) < admin(30) < super_admin(40)`؛ تقوم الأدوار غير الكافية بإرجاع 403 `INSUFFICIENT_ROLE`.
 
@@ -140,18 +143,22 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [الهدايا](#الهدايا)
 - [تكوين الإحالة](#تكوين-الإحالة)
 - [عمليات سحب الإحالة](#عمليات-سحب-الإحالة)
+- قوائم السماح [IP (ملخص)](#ip-allow-lists-summary)
 - [قوائم IP المسموح بها (ملخص)](#قوائم-ip-المسموح-بها-ملخص)
 - [روابط OAuth الخاصة بالعميل](#روابط-oauth-الخاصة-بالعميل)
 - [التذاكر (المسؤول)](#التذاكر-المسؤول)
 - [مقالات](#مقالات)
 - [الحسابات المشتركة](#الحسابات-المشتركة)
 - [الشهادات](#الشهادات)
+- تكوين [EAB](#eab-configuration)
+- حسابات [ACME](#acme-accounts)
 - [قنوات الشهادة](#قنوات-الشهادة)
 - [التكوين EAB](#التكوين-eab)
+- مكتبة قواعد [WAF](#waf-rule-library)
 - [حسابات ACME](#حسابات-acme)
 - [المدمج في كاليفورنيا](#المدمج-في-كاليفورنيا)
 - [القواعد الجغرافية](#القواعد-الجغرافية)
-- [مكتبة القواعد WAF](#مكتبة-القواعد-waf)
+- [مكتبة قواعد WAF](#مكتبة-قواعد-waf)
 - [إدارة السجل](#إدارة-السجل)
 - [النسخ الاحتياطية](#النسخ-الاحتياطية)
 - [إعدادات النظام](#إعدادات-النظام)
@@ -165,11 +172,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [مصادقة العميل والأعمال (نفس المجموعة في محرك الإدارة)](#مصادقة-العميل-والأعمال-نفس-المجموعة-في-محرك-الإدارة)
 - [تسليم الاشتراك](#تسليم-الاشتراك)
 - [سير عمل تكوين وقت التشغيل](#سير-عمل-تكوين-وقت-التشغيل)
-- [سياسات الوصول إلى الخدمة (متقاعدة)](#سياسات-الوصول-إلى-الخدمة-متقاعدة)
-- [مراقبة الحصص المرورية](#مراقبة-الحصص-المرورية)
-- [الفحوصات الصحية](#الفحوصات-الصحية)
-- [صفحة البوابة](#صفحة-البوابة)
-- [تحديات ACME](#تحديات-acme)
+- تحديات [ACME](#acme-challenges)
 
 ---
 
@@ -196,8 +199,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | عام | إكمال تسجيل الدخول |
 | POST | `/api/v1/auth/passkey/register/begin` | تم تسجيل الدخول | ابدأ التسجيل |
 | POST | `/api/v1/auth/passkey/register/finish` | تم تسجيل الدخول | التسجيل الكامل |
-| GET | `/api/v1/auth/passkey/rpids` | تم تسجيل الدخول | القائمة المسموح بها لمعرف RP |
-| POST | `/api/v1/auth/passkey/rpids` | تم تسجيل الدخول | قم بتحديث القائمة المسموح بها لمعرف RP |
+| GET | `/api/v1/auth/passkey/rpids` | المشرف | القائمة المسموح بها لمعرف RP |
+| POST | `/api/v1/auth/passkey/rpids` | المشرف | قم بتحديث القائمة المسموح بها لمعرف RP |
 | GET | `/api/v1/auth/passkey/status` | عام | الحالة |
 | POST | `/api/v1/auth/refresh` | عام | تحديث |
 | POST | `/api/v1/auth/ticket` | تم تسجيل الدخول | إصدار تذكرة قصيرة الأجل لمرة واحدة |
@@ -220,17 +223,17 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/clients` | تم تسجيل الدخول | قائمة العملاء |
-| POST | `/api/v1/clients` | تم تسجيل الدخول | إنشاء العميل. الجسم: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. مطلوب `plan_id`؛ قد يكون `password` فارغًا (يمكن للعملاء تعيينه لاحقًا في البوابة) |
-| DELETE | `/api/v1/clients/:id` | تم تسجيل الدخول | حذف العميل |
+| POST | `/api/v1/clients` | المشغل | إنشاء العميل. الجسم: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. مطلوب `plan_id`؛ قد يكون `password` فارغًا (يمكن للعملاء تعيينه لاحقًا في البوابة) |
+| DELETE | `/api/v1/clients/:id` | المشغل | حذف العميل |
 | GET | `/api/v1/clients/:id` | تم تسجيل الدخول | احصل على العميل |
-| PUT | `/api/v1/clients/:id` | تم تسجيل الدخول | تحديث العميل |
-| POST | `/api/v1/clients/:id/downgrade` | تم تسجيل الدخول | خفض مستوى العميل |
+| PUT | `/api/v1/clients/:id` | المشغل | تحديث العميل |
+| POST | `/api/v1/clients/:id/downgrade` | المشغل | خفض مستوى العميل |
 | GET | `/api/v1/clients/:id/orders` | تم تسجيل الدخول | قائمة طلبات العملاء |
-| POST | `/api/v1/clients/:id/renew` | تم تسجيل الدخول | تجديد العميل |
-| POST | `/api/v1/clients/:id/reset-usage` | تم تسجيل الدخول | إعادة ضبط الاستخدام |
-| POST | `/api/v1/clients/:id/restore` | تم تسجيل الدخول | استئناف العميل |
-| POST | `/api/v1/clients/:id/suspend` | تم تسجيل الدخول | تعليق العميل |
-| POST | `/api/v1/clients/:id/upgrade` | تم تسجيل الدخول | ترقية العميل |
+| POST | `/api/v1/clients/:id/renew` | المشغل | تجديد العميل |
+| POST | `/api/v1/clients/:id/reset-usage` | المشغل | إعادة ضبط الاستخدام |
+| POST | `/api/v1/clients/:id/restore` | المشغل | استئناف العميل |
+| POST | `/api/v1/clients/:id/suspend` | المشغل | تعليق العميل |
+| POST | `/api/v1/clients/:id/upgrade` | المشغل | ترقية العميل |
 
 ### قوالب الخطة
 
@@ -239,17 +242,17 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | تم تسجيل الدخول | قائمة القالب |
-| POST | `/api/v1/plan-templates` | تم تسجيل الدخول | إنشاء قالب |
-| DELETE | `/api/v1/plan-templates/:id` | تم تسجيل الدخول | حذف القالب |
+| POST | `/api/v1/plan-templates` | المشرف | إنشاء قالب |
+| DELETE | `/api/v1/plan-templates/:id` | المشرف | حذف القالب |
 | GET | `/api/v1/plan-templates/:id` | تم تسجيل الدخول | تفاصيل القالب |
-| PUT | `/api/v1/plan-templates/:id` | تم تسجيل الدخول | تحديث القالب |
+| PUT | `/api/v1/plan-templates/:id` | المشرف | تحديث القالب |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | تم تسجيل الدخول | الحصول على العقد المتاحة |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | تم تسجيل الدخول | احصل على خيارات العقدة القابلة للفوترة |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | تم تسجيل الدخول | تعيين مجموعات عقدة القالب |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | تم تسجيل الدخول | مزامنة الحسابات مع القالب |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | المشرف | تعيين مجموعات عقدة القالب |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | المشرف | مزامنة الحسابات مع القالب |
 | GET | `/api/v1/plan-templates/:id/variants` | تم تسجيل الدخول | قائمة البديل |
-| POST | `/api/v1/plan-templates/:id/variants` | تم تسجيل الدخول | إنشاء البديل |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | تم تسجيل الدخول | مزامنة كافة الحسابات |
+| POST | `/api/v1/plan-templates/:id/variants` | المشرف | إنشاء البديل |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | المشرف | مزامنة كافة الحسابات |
 
 ### متغيرات الخطة
 
@@ -257,8 +260,8 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | تم تسجيل الدخول | حذف البديل |
-| PUT | `/api/v1/plan-variants/:id` | تم تسجيل الدخول | تحديث البديل |
+| DELETE | `/api/v1/plan-variants/:id` | المشرف | حذف البديل |
+| PUT | `/api/v1/plan-variants/:id` | المشرف | تحديث البديل |
 
 ### حزم المرور
 
@@ -267,20 +270,20 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | تم تسجيل الدخول | قائمة حزمة المرور |
-| POST | `/api/v1/traffic-packs` | تم تسجيل الدخول | إنشاء حزمة المرور |
-| DELETE | `/api/v1/traffic-packs/:id` | تم تسجيل الدخول | حذف حزمة المرور |
-| PUT | `/api/v1/traffic-packs/:id` | تم تسجيل الدخول | تحديث حزمة المرور |
+| POST | `/api/v1/traffic-packs` | المشرف | إنشاء حزمة المرور |
+| DELETE | `/api/v1/traffic-packs/:id` | المشرف | حذف حزمة المرور |
+| PUT | `/api/v1/traffic-packs/:id` | المشرف | تحديث حزمة المرور |
 
 ### كوبونات
 
 إنشاء والتحقق من صحة واسترداد القسائم.
 
-| طريقة | المسار | إذن | الوصف |
+| الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | تم تسجيل الدخول | قائمة الكوبونات |
-| POST | `/api/v1/promotions` | تم تسجيل الدخول | إنشاء قسيمة |
-| DELETE | `/api/v1/promotions/:id` | تم تسجيل الدخول | حذف القسيمة |
-| PUT | `/api/v1/promotions/:id` | تم تسجيل الدخول | تحديث القسيمة |
+| POST | `/api/v1/promotions` | المشرف | إنشاء قسيمة |
+| DELETE | `/api/v1/promotions/:id` | المشرف | حذف القسيمة |
+| PUT | `/api/v1/promotions/:id` | المشرف | تحديث القسيمة |
 | POST | `/api/v1/promotions/validate` | تم تسجيل الدخول | التحقق من صحة القسيمة |
 
 ### مجموعات العقدة
@@ -290,16 +293,16 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | تم تسجيل الدخول | قائمة مجموعات العقدة |
-| POST | `/api/v1/node-groups` | تم تسجيل الدخول | إنشاء مجموعة العقدة |
-| DELETE | `/api/v1/node-groups/:id` | تم تسجيل الدخول | حذف مجموعة العقدة |
-| PUT | `/api/v1/node-groups/:id` | تم تسجيل الدخول | تحديث مجموعة العقدة |
+| POST | `/api/v1/node-groups` | المشرف | إنشاء مجموعة العقدة |
+| DELETE | `/api/v1/node-groups/:id` | المشرف | حذف مجموعة العقدة |
+| PUT | `/api/v1/node-groups/:id` | المشرف | تحديث مجموعة العقدة |
 | GET | `/api/v1/node-groups/:id/members` | تم تسجيل الدخول | قائمة أعضاء المجموعة |
-| POST | `/api/v1/node-groups/:id/members` | تم تسجيل الدخول | إضافة عضو المجموعة |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | تم تسجيل الدخول | إزالة عضو المجموعة |
+| POST | `/api/v1/node-groups/:id/members` | المشرف | إضافة عضو المجموعة |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | المشرف | إزالة عضو المجموعة |
 
 ### خوادم العقدة
 
-الموارد الأساسية: العقدة CRUD، تسليم التكوين الأساسي (xray/sing-box)، تكوين الوارد/الصادر/نقطة النهاية، التحكم في العمليات، الشهادات، WAF، حدود المعدل، التنقل بين المنافذ، الوكلاء المتسلسلون، النسخ الاحتياطي/النسخ الاحتياطي الأساسي، تثبيت/ترقية الوكيل، التحكم في وقت التشغيل xray. العديد من المسارات الفرعية، مجمعة حسب عائلة المعالم.
+الموارد الأساسية: عقدة CRUD، تسليم التكوين الأساسي (xray/sing-box)، تكوين الوارد/الصادر/نقطة النهاية، التحكم في العمليات، الشهادات، WAF، حدود المعدل، التنقل بين المنافذ، الوكلاء المتسلسلون، النسخ الاحتياطي/النسخ الاحتياطي الأساسي، تثبيت/ترقية الوكيل، التحكم في وقت التشغيل xray. العديد من المسارات الفرعية، مجمعة حسب عائلة المعالم.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
@@ -313,12 +316,12 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/binaries/install` | المشرف | تثبيت/ترقية الأساسية |
 | GET | `/api/v1/node-servers/:id/binaries/interfaces` | المشرف | قائمة واجهة الشبكة |
 | POST | `/api/v1/node-servers/:id/binaries/mldsa65-key` | المشرف | قم بإنشاء مفتاح MLDSA65 |
-| POST | `/api/v1/node-servers/:id/binaries/reality-key` | المشرف | إنشاء زوج مفاتيح REALITY |
+| POST | `/api/v1/node-servers/:id/binaries/reality-key` | المشرف | إنشاء زوج المفاتيح REALITY |
 | POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | المشرف | اشتقاق المفتاح العام من المفتاح الخاص REALITY |
 | GET | `/api/v1/node-servers/:id/binaries/releases` | المشرف | الإصدارات المتاحة |
 | POST | `/api/v1/node-servers/:id/binaries/vlessenc` | المشرف | إنشاء معلمات التشفير VLESS |
 | POST | `/api/v1/node-servers/:id/binaries/wg-key` | المشرف | قم بإنشاء مفتاح WireGuard |
-| POST | `/api/v1/node-servers/:id/binaries/x25519-key` | المشرف | إنشاء زوج المفاتيح X25519 |
+| POST | `/api/v1/node-servers/:id/binaries/x25519-key` | المشرف | إنشاء زوج مفاتيح X25519 |
 | GET | `/api/v1/node-servers/:id/bootstrap-cmd` | المشرف | الحصول على أمر bootstrap للوكيل |
 | POST | `/api/v1/node-servers/:id/bootstrap-token` | المشرف | إنشاء رمز التمهيد |
 | POST | `/api/v1/node-servers/:id/caddy/batch-update-log-enabled` | المشرف | مفاتيح سجل التحديث المجمع |
@@ -328,7 +331,8 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | المشرف | حفظ وتطبيق |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | المشرف | قائمة الموقع |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | المشرف | إنشاء موقع |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | استيراد المواقع |
+| POST | `/api/v1/node-servers/:id/caddy/import` | المشرف | استيراد المواقع |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | المشرف | معاينة موقع Caddy المعروض |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | المشرف | حذف الموقع |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | المشرف | تحديث الموقع |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | المشرف | احذف جميع قواعد SNI |
@@ -353,6 +357,9 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/force-reconnect` | المشرف | فرض إعادة الاتصال |
 | GET | `/api/v1/node-servers/:id/free-port` | المشرف | طلب منفذ مجاني |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | المشرف | ادفع إلى هذه العقدة |
+| GET | `/api/v1/node-servers/:id/firewall/status` | المشرف | اكتشاف جدار الحماية (جدار الحماية/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | المشرف | السماح بمنفذ الاستماع الوارد (يدعم النطاق المتعدد) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | المشرف | إلغاء بدل المنفذ الوارد (بما في ذلك التكرارات) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | المشرف | قائمة |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | المشرف | إنشاء |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | المشرف | حذف |
@@ -373,8 +380,9 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/nginx/settings` | المشرف | حفظ الإعدادات |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | المشرف | قائمة الموقع |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | المشرف | إنشاء موقع |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | استيراد المواقع |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | إنشاء ملفات شهادة SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | المشرف | استيراد المواقع |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | المشرف | معاينة موقع Nginx المعروض |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | المشرف | إنشاء ملفات شهادة SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | المشرف | حذف الموقع |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | المشرف | تحديث الموقع |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | المشرف | احذف جميع قواعد SNI |
@@ -457,6 +465,7 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | المشرف | مسح الكل |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | المشرف | تطبيق قواعد جدار الحماية للتنقل بين المنافذ |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | المشرف | إزالة قواعد جدار الحماية للتنقل بين المنافذ |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | المشرف | اتصالات sing-box المباشرة (clash_api، العقدة المحلية فقط) |
 | POST | `/api/v1/node-servers/:id/speed-test` | المشرف | اختبار سرعة العقدة |
 | GET | `/api/v1/node-servers/:id/status` | المشرف | حالة العقدة |
 | POST | `/api/v1/node-servers/:id/sync` | المشرف | تكوين عقدة المزامنة (إنشاء ودفع) |
@@ -487,7 +496,7 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | GET | `/api/v1/node-servers/:id/waf/rules` | المشرف | قائمة قواعد العقدة WAF |
 | DELETE | `/api/v1/node-servers/:id/waf/rules/:name` | المشرف | حذف قواعد العقدة WAF |
 | GET | `/api/v1/node-servers/:id/waf/rules/:name` | المشرف | تفاصيل قاعدة العقدة WAF |
-| PUT | `/api/v1/node-servers/:id/waf/rules/:name` | المشرف | حفظ قواعد العقدة WAF |
+| PUT | `/api/v1/node-servers/:id/waf/rules/:name` | المشرف | احفظ قواعد العقدة WAF |
 | GET | `/api/v1/node-servers/:id/waf/status` | المشرف | حالة العقدة WAF |
 | PUT | `/api/v1/node-servers/:id/waf/status` | المشرف | تبديل العقدة WAF |
 | POST | `/api/v1/node-servers/:id/waf/sync` | المشرف | المزامنة مع هذه العقدة |
@@ -496,6 +505,8 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | GET | `/api/v1/node-servers/:id/warp/config` | المشرف | قراءة التكوين |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | المشرف | إنشاء التكوين |
 | POST | `/api/v1/node-servers/:id/warp/register` | المشرف | سجل |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | المشرف | تسجيل ملف تعريف WARP MASQUE (الخطوة 1 من 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | المشرف | قم بإنشاء sing-box MASQUE صادرًا من ملف تعريف WARP |
 | GET | `/api/v1/node-servers/:id/warp/status` | المشرف | الحالة |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | المشرف | الحصول على معلومات الموازن |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | المشرف | تحديد هدف الموازن |
@@ -544,8 +555,8 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | تم تسجيل الدخول | سجل تدقيق العقدة |
-| GET | `/api/v1/node-audit-logs/export` | تم تسجيل الدخول | تصدير سجلات تدقيق العقدة |
+| GET | `/api/v1/node-audit-logs` | المشرف | سجل تدقيق العقدة |
+| GET | `/api/v1/node-audit-logs/export` | المشرف | تصدير سجلات تدقيق العقدة |
 
 ### العقد (النموذج القديم، متقاعد)
 
@@ -568,21 +579,21 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/subscriptions` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/subscriptions/:id` | تم تسجيل الدخول | حذف |
+| POST | `/api/v1/subscriptions` | المشغل | إنشاء |
+| DELETE | `/api/v1/subscriptions/:id` | المشغل | حذف |
 | GET | `/api/v1/subscriptions/:id` | تم تسجيل الدخول | التفاصيل |
-| PUT | `/api/v1/subscriptions/:id` | تم تسجيل الدخول | تحديث |
+| PUT | `/api/v1/subscriptions/:id` | المشغل | تحديث |
 | GET | `/api/v1/subscriptions/:id/access-logs` | تم تسجيل الدخول | سجل الوصول |
-| POST | `/api/v1/subscriptions/:id/enable` | تم تسجيل الدخول | تمكين |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | تم تسجيل الدخول | إعادة ضبط الاستخدام |
-| POST | `/api/v1/subscriptions/:id/restore` | تم تسجيل الدخول | استئناف |
-| POST | `/api/v1/subscriptions/:id/revoke` | تم تسجيل الدخول | إبطال |
-| POST | `/api/v1/subscriptions/:id/rotate` | تم تسجيل الدخول | تدوير |
+| POST | `/api/v1/subscriptions/:id/enable` | المشغل | تمكين |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | المشغل | إعادة ضبط الاستخدام |
+| POST | `/api/v1/subscriptions/:id/restore` | المشغل | استئناف |
+| POST | `/api/v1/subscriptions/:id/revoke` | المشغل | إبطال |
+| POST | `/api/v1/subscriptions/:id/rotate` | المشغل | تدوير |
 | GET | `/api/v1/subscriptions/:id/rotations` | تم تسجيل الدخول | تاريخ التناوب |
 
 ### تنسيقات الاشتراك
 
-> تم إيقاف `/api/v1/subscription-formats` CRUD من الجانب الإداري بتاريخ 2026-10-20: نقطة الدخول الفعلية هي
+> تم إيقاف `/api/v1/subscription-formats` CRUD من جانب المسؤول بتاريخ 2026-10-20: نقطة الدخول الفعلية هي
 > `/api/v1/mihomo/configs` (مركز تنسيق الاشتراك). يبقى الجدول `subscription_formats`،
 > تُستخدم فقط كبيانات أولية لنقطة النهاية `/api/v1/public/client-configs` العامة.
 
@@ -593,10 +604,10 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/subscription-endpoints` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/subscription-endpoints/:id` | تم تسجيل الدخول | حذف |
+| POST | `/api/v1/subscription-endpoints` | المشرف | إنشاء |
+| DELETE | `/api/v1/subscription-endpoints/:id` | المشرف | حذف |
 | GET | `/api/v1/subscription-endpoints/:id` | تم تسجيل الدخول | التفاصيل |
-| PUT | `/api/v1/subscription-endpoints/:id` | تم تسجيل الدخول | تحديث |
+| PUT | `/api/v1/subscription-endpoints/:id` | المشرف | تحديث |
 
 ### مشاركة المجالات
 
@@ -605,11 +616,11 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/share-domains` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/share-domains/:id` | تم تسجيل الدخول | حذف |
-| PUT | `/api/v1/share-domains/:id` | تم تسجيل الدخول | تحديث |
-| DELETE | `/api/v1/share-domains/all` | تم تسجيل الدخول | مسح الكل |
-| POST | `/api/v1/share-domains/seed` | تم تسجيل الدخول | تهيئة البيانات الافتراضية |
+| POST | `/api/v1/share-domains` | المشرف | إنشاء |
+| DELETE | `/api/v1/share-domains/:id` | المشرف | حذف |
+| PUT | `/api/v1/share-domains/:id` | المشرف | تحديث |
+| DELETE | `/api/v1/share-domains/all` | المشرف | مسح الكل |
+| POST | `/api/v1/share-domains/seed` | المشرف | تهيئة البيانات الافتراضية |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | تم تسجيل الدخول | مسح الإدخالات |
+| DELETE | `/api/v1/cfip/entries` | المشرف | مسح الإدخالات |
 | GET | `/api/v1/cfip/entries` | تم تسجيل الدخول | قائمة الدخول |
-| POST | `/api/v1/cfip/entries` | تم تسجيل الدخول | إضافة إدخال |
-| DELETE | `/api/v1/cfip/entries/:id` | تم تسجيل الدخول | حذف الإدخال |
-| POST | `/api/v1/cfip/fetch-all` | تم تسجيل الدخول | جلب كافة المصادر |
-| POST | `/api/v1/cfip/seed` | تم تسجيل الدخول | تهيئة البيانات الافتراضية |
+| POST | `/api/v1/cfip/entries` | المشرف | إضافة إدخال |
+| DELETE | `/api/v1/cfip/entries/:id` | المشرف | حذف الإدخال |
+| POST | `/api/v1/cfip/fetch-all` | المشرف | جلب كافة المصادر |
+| GET | `/api/v1/cfip/probe-config` | تم تسجيل الدخول | تكوين مسبار IP المفضل لـ CF (عقد الإدخال + برامج الاتصال المثبتة) |
+| PUT | `/api/v1/cfip/probe-config` | المشرف | حفظ الفاصل الزمني للتحقيق / حد الكمون / عقدة الإدخال / المسجل |
+| POST | `/api/v1/cfip/check` | المشرف | تحقق من جميع المجالات/عناوين IP المفضلة الآن |
+| POST | `/api/v1/cfip/seed` | المشرف | تهيئة البيانات الافتراضية |
 | GET | `/api/v1/cfip/sources` | تم تسجيل الدخول | قائمة مصادر البيانات |
-| POST | `/api/v1/cfip/sources` | تم تسجيل الدخول | إنشاء مصدر البيانات |
-| DELETE | `/api/v1/cfip/sources/:id` | تم تسجيل الدخول | حذف مصدر البيانات |
-| PUT | `/api/v1/cfip/sources/:id` | تم تسجيل الدخول | تحديث مصدر البيانات |
-| POST | `/api/v1/cfip/sources/:id/fetch` | تم تسجيل الدخول | جلب هذا المصدر |
+| POST | `/api/v1/cfip/sources` | المشرف | إنشاء مصدر البيانات |
+| DELETE | `/api/v1/cfip/sources/:id` | المشرف | حذف مصدر البيانات |
+| PUT | `/api/v1/cfip/sources/:id` | المشرف | تحديث مصدر البيانات |
+| POST | `/api/v1/cfip/sources/:id/fetch` | المشرف | جلب هذا المصدر |
 
 ### تكوين الاشتراك (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/mihomo/configs` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | حذف |
+| POST | `/api/v1/mihomo/configs` | المشرف | إنشاء |
+| DELETE | `/api/v1/mihomo/configs/:id` | المشرف | حذف |
 | GET | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | التفاصيل |
-| PUT | `/api/v1/mihomo/configs/:id` | تم تسجيل الدخول | تحديث |
+| PUT | `/api/v1/mihomo/configs/:id` | المشرف | تحديث |
 | GET | `/api/v1/mihomo/configs/:id/rules` | تم تسجيل الدخول | قائمة القواعد |
-| POST | `/api/v1/mihomo/configs/:id/rules` | تم تسجيل الدخول | إنشاء القاعدة |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | إعادة ترتيب القواعد |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | تحديث القاعدة |
-| DELETE | `/api/v1/mihomo/rules/:id` | تم تسجيل الدخول | حذف القاعدة |
+| POST | `/api/v1/mihomo/configs/:id/rules` | المشرف | إنشاء القاعدة |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | المشرف | إعادة ترتيب القواعد |
+| PUT | `/api/v1/mihomo/rules/:id` | المشرف | تحديث القاعدة |
+| DELETE | `/api/v1/mihomo/rules/:id` | المشرف | حذف القاعدة |
 
 ### مواقع إعادة الشحن
 
@@ -652,20 +666,20 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | تم تسجيل الدخول | قائمة الموقع |
-| POST | `/api/v1/charge-sites` | تم تسجيل الدخول | إنشاء موقع |
-| DELETE | `/api/v1/charge-sites/:id` | تم تسجيل الدخول | حذف الموقع |
-| GET | `/api/v1/charge-sites/:id` | تم تسجيل الدخول | تفاصيل الموقع |
-| PUT | `/api/v1/charge-sites/:id` | تم تسجيل الدخول | تحديث الموقع |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | تم تسجيل الدخول | مسح المفتاح القديم |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | تم تسجيل الدخول | إنشاء ملف التحقق |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | تم تسجيل الدخول | إنشاء ملف التحقق |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | تم تسجيل الدخول | الحصول على وثيقة التكامل |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | تم تسجيل الدخول | تدوير مفتاح التوقيع |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | تم تسجيل الدخول | التحقق من المجال DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | تم تسجيل الدخول | التحقق من المجال HTTP التحدي |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | تم تسجيل الدخول | التحقق من المجال DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | تم تسجيل الدخول | تحدي التحقق من المجال HTTP |
+| GET | `/api/v1/charge-sites` | المشرف | قائمة الموقع |
+| POST | `/api/v1/charge-sites` | المشرف | إنشاء موقع |
+| DELETE | `/api/v1/charge-sites/:id` | المشرف | حذف الموقع |
+| GET | `/api/v1/charge-sites/:id` | المشرف | تفاصيل الموقع |
+| PUT | `/api/v1/charge-sites/:id` | المشرف | تحديث الموقع |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | المشرف | مسح المفتاح القديم |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | المشرف | إنشاء ملف التحقق |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | المشرف | إنشاء ملف التحقق |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | المشرف | الحصول على وثيقة التكامل |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | المشرف | تدوير مفتاح التوقيع |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | المشرف | التحقق من المجال DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | المشرف | التحقق من المجال HTTP التحدي |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | المشرف | التحقق من المجال DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | المشرف | التحقق من المجال HTTP التحدي |
 
 ### أوامر إعادة الشحن
 
@@ -673,10 +687,10 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | تم تسجيل الدخول | قائمة الطلبات |
-| GET | `/api/v1/charge-orders/:id` | تم تسجيل الدخول | تفاصيل الطلب |
-| POST | `/api/v1/charge-orders/:id/refund` | تم تسجيل الدخول | استرداد |
-| GET | `/api/v1/charge-orders/export-csv` | تم تسجيل الدخول | تصدير أوامر إعادة الشحن CSV |
+| GET | `/api/v1/charge-orders` | المشرف | قائمة الطلبات |
+| GET | `/api/v1/charge-orders/:id` | المشرف | تفاصيل الطلب |
+| POST | `/api/v1/charge-orders/:id/refund` | المشرف | استرداد |
+| GET | `/api/v1/charge-orders/export-csv` | المشرف | تصدير أوامر إعادة الشحن CSV |
 
 ### بطاقات إعادة الشحن
 
@@ -684,12 +698,12 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | تم تسجيل الدخول | قائمة البطاقات |
-| POST | `/api/v1/charge-cards` | تم تسجيل الدخول | إنشاء بطاقة |
-| DELETE | `/api/v1/charge-cards/:id` | تم تسجيل الدخول | حذف البطاقة |
-| GET | `/api/v1/charge-cards/:id/usages` | تم تسجيل الدخول | سجلات استخدام البطاقة |
-| POST | `/api/v1/charge-cards/batch` | تم تسجيل الدخول | إنشاء بطاقات بكميات كبيرة |
-| GET | `/api/v1/charge-cards/export-csv` | تم تسجيل الدخول | بطاقات التصدير CSV |
+| GET | `/api/v1/charge-cards` | المشرف | قائمة البطاقات |
+| POST | `/api/v1/charge-cards` | المشرف | إنشاء بطاقة |
+| DELETE | `/api/v1/charge-cards/:id` | المشرف | حذف البطاقة |
+| GET | `/api/v1/charge-cards/:id/usages` | المشرف | سجلات استخدام البطاقة |
+| POST | `/api/v1/charge-cards/batch` | المشرف | إنشاء بطاقات بكميات كبيرة |
+| GET | `/api/v1/charge-cards/export-csv` | المشرف | بطاقات التصدير CSV |
 
 ### أحداث رد الاتصال
 
@@ -705,7 +719,7 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/charge-callback-retries` | تم تسجيل الدخول | قائمة رد الاتصال الفاشلة |
+| GET | `/api/v1/charge-callback-retries` | تم تسجيل الدخول | فشل قائمة رد الاتصال |
 | POST | `/api/v1/charge-callback-retries/:id/retry` | المشرف | أعد محاولة رد الاتصال |
 
 ### رصيد العميل
@@ -725,8 +739,8 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | تم تسجيل الدخول | قائمة الهدايا |
-| POST | `/api/v1/client-gifts` | تم تسجيل الدخول | إنشاء هدية |
-| POST | `/api/v1/client-gifts/batch` | تم تسجيل الدخول | إنشاء الهدايا بكميات كبيرة |
+| POST | `/api/v1/client-gifts` | المشرف | إنشاء هدية |
+| POST | `/api/v1/client-gifts/batch` | المشرف | إنشاء الهدايا بكميات كبيرة |
 | GET | `/api/v1/client-gifts/search-clients` | تم تسجيل الدخول | عملاء البحث |
 
 ### تكوين الإحالة
@@ -746,9 +760,9 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | تم تسجيل الدخول | قائمة طلبات السحب |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | تم تسجيل الدخول | الموافقة على الانسحاب |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | تم تسجيل الدخول | رفض الانسحاب |
+| GET | `/api/v1/referral-withdrawals` | المشرف | قائمة طلبات السحب |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | المشرف | الموافقة على الانسحاب |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | المشرف | رفض الانسحاب |
 
 ### قوائم IP المسموح بها (ملخص)
 
@@ -764,7 +778,7 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/client-oauth-bindings` | تم تسجيل الدخول | قائمة ربط OAuth للعميل |
+| GET | `/api/v1/client-oauth-bindings` | تم تسجيل الدخول | قائمة ربط OAuth للعملاء |
 
 ### التذاكر (المسؤول)
 
@@ -774,9 +788,9 @@ Cloudflare CDN تجمع IP وإدارة المصدر.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | تم تسجيل الدخول | قائمة التذاكر |
 | GET | `/api/v1/tickets/:id` | تم تسجيل الدخول | تفاصيل التذكرة |
-| POST | `/api/v1/tickets/:id/assign` | تم تسجيل الدخول | تخصيص تذكرة |
-| POST | `/api/v1/tickets/:id/close` | تم تسجيل الدخول | إغلاق التذكرة |
-| POST | `/api/v1/tickets/:id/reply` | تم تسجيل الدخول | الرد على التذكرة |
+| POST | `/api/v1/tickets/:id/assign` | المشغل | تخصيص تذكرة |
+| POST | `/api/v1/tickets/:id/close` | المشغل | إغلاق التذكرة |
+| POST | `/api/v1/tickets/:id/reply` | المشغل | الرد على التذكرة |
 
 ### مقالات
 
@@ -785,10 +799,10 @@ CRUD لمقالات البوابة.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/articles` | تم تسجيل الدخول | قائمة المقالات |
-| POST | `/api/v1/articles` | تم تسجيل الدخول | إنشاء مقالة |
-| DELETE | `/api/v1/articles/:id` | تم تسجيل الدخول | حذف المادة |
+| POST | `/api/v1/articles` | المشرف | إنشاء مقالة |
+| DELETE | `/api/v1/articles/:id` | المشرف | حذف المادة |
 | GET | `/api/v1/articles/:id` | تم تسجيل الدخول | تفاصيل المادة |
-| PUT | `/api/v1/articles/:id` | تم تسجيل الدخول | تحديث المادة |
+| PUT | `/api/v1/articles/:id` | المشرف | تحديث المادة |
 
 ### الحسابات المشتركة
 
@@ -797,10 +811,10 @@ CRUD لمقالات البوابة.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | تم تسجيل الدخول | قائمة الحسابات المشتركة |
-| POST | `/api/v1/shared-accounts` | تم تسجيل الدخول | إنشاء حساب مشترك |
-| DELETE | `/api/v1/shared-accounts/:id` | تم تسجيل الدخول | حذف الحساب المشترك |
+| POST | `/api/v1/shared-accounts` | المشرف | إنشاء حساب مشترك |
+| DELETE | `/api/v1/shared-accounts/:id` | المشرف | حذف الحساب المشترك |
 | GET | `/api/v1/shared-accounts/:id` | تم تسجيل الدخول | تفاصيل الحساب المشترك |
-| PUT | `/api/v1/shared-accounts/:id` | تم تسجيل الدخول | تحديث الحساب المشترك |
+| PUT | `/api/v1/shared-accounts/:id` | المشرف | تحديث الحساب المشترك |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | تم تسجيل الدخول | إصلاح السجلات |
 
 ### الشهادات
@@ -809,32 +823,32 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/certificates` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/certificates/:id` | تم تسجيل الدخول | حذف |
-| GET | `/api/v1/certificates/:id` | تم تسجيل الدخول | التفاصيل |
-| PUT | `/api/v1/certificates/:id` | تم تسجيل الدخول | تحديث |
-| GET | `/api/v1/certificates/:id/download` | تم تسجيل الدخول | تحميل |
-| POST | `/api/v1/certificates/:id/renew` | تم تسجيل الدخول | تجديد العميل |
-| GET | `/api/v1/certificates/check-port` | تم تسجيل الدخول | تحقق من المنفذ |
-| GET | `/api/v1/certificates/detect-ip` | تم تسجيل الدخول | دقق في IP |
-| GET | `/api/v1/certificates/export` | تم تسجيل الدخول | تصدير |
-| POST | `/api/v1/certificates/issue` | تم تسجيل الدخول | قضية. الجسم: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` افتراضيًا http-01؛ `dns_channel_id` يحدد قناة DNS (موفر DNS الذي تم تكوينه + بيانات الاعتماد) |
-| POST | `/api/v1/certificates/issue-on-node` | تم تسجيل الدخول | مشكلة في العقدة |
-| POST | `/api/v1/certificates/upload` | تم تسجيل الدخول | تحميل |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | الاستعلام عن حالة المهمة في الخلفية |
+| GET | `/api/v1/certificates` | المشرف | قائمة |
+| POST | `/api/v1/certificates` | المشرف | إنشاء |
+| DELETE | `/api/v1/certificates/:id` | المشرف | حذف |
+| GET | `/api/v1/certificates/:id` | المشرف | التفاصيل |
+| PUT | `/api/v1/certificates/:id` | المشرف | تحديث |
+| GET | `/api/v1/certificates/:id/download` | المشرف | تحميل |
+| POST | `/api/v1/certificates/:id/renew` | المشرف | تجديد العميل |
+| GET | `/api/v1/certificates/check-port` | المشرف | تحقق من المنفذ |
+| GET | `/api/v1/certificates/detect-ip` | المشرف | دقق في IP |
+| GET | `/api/v1/certificates/export` | المشرف | تصدير |
+| POST | `/api/v1/certificates/issue` | المشرف | قضية. الجسم: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` افتراضيًا http-01؛ `dns_channel_id` يحدد قناة DNS (موفر DNS الذي تم تكوينه + بيانات الاعتماد) |
+| POST | `/api/v1/certificates/issue-on-node` | المشرف | مشكلة في العقدة |
+| POST | `/api/v1/certificates/upload` | المشرف | تحميل |
+| GET | `/api/v1/certificate-tasks/:id` | المشرف | الاستعلام عن حالة مهمة الخلفية |
 
 ### قنوات الشهادة
 
-تكوين قناة ACME (CA).
+تكوين قناة (CA) ACME.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/cert-channels` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/cert-channels/:id` | تم تسجيل الدخول | حذف |
-| PUT | `/api/v1/cert-channels/:id` | تم تسجيل الدخول | تحديث |
-| GET | `/api/v1/cert-channels/providers` | تم تسجيل الدخول | مزود |
+| GET | `/api/v1/cert-channels` | المشرف | قائمة |
+| POST | `/api/v1/cert-channels` | المشرف | إنشاء |
+| DELETE | `/api/v1/cert-channels/:id` | المشرف | حذف |
+| PUT | `/api/v1/cert-channels/:id` | المشرف | تحديث |
+| GET | `/api/v1/cert-channels/providers` | المشرف | مزود |
 
 ### التكوين EAB
 
@@ -842,12 +856,12 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/eab-configs` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/eab-configs/:id` | تم تسجيل الدخول | حذف |
-| PUT | `/api/v1/eab-configs/:id` | تم تسجيل الدخول | تحديث |
-| POST | `/api/v1/eab-configs/fetch-google` | تم تسجيل الدخول | قم بإحضار Google EAB من GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | تم تسجيل الدخول | قم بإحضار ZeroSSL EAB بالبريد الإلكتروني بنقرة واحدة |
+| GET | `/api/v1/eab-configs` | المشرف | قائمة |
+| POST | `/api/v1/eab-configs` | المشرف | إنشاء |
+| DELETE | `/api/v1/eab-configs/:id` | المشرف | حذف |
+| PUT | `/api/v1/eab-configs/:id` | المشرف | تحديث |
+| POST | `/api/v1/eab-configs/fetch-google` | المشرف | قم بإحضار Google EAB من GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | المشرف | قم بإحضار ZeroSSL EAB بالبريد الإلكتروني بنقرة واحدة |
 
 ### حسابات ACME
 
@@ -855,11 +869,11 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/acme-accounts` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/acme-accounts/:id` | تم تسجيل الدخول | حذف |
-| PUT | `/api/v1/acme-accounts/:id` | تم تسجيل الدخول | تحديث |
-| GET | `/api/v1/acme-accounts/default` | تم تسجيل الدخول | الحصول على الإعدادات الافتراضية |
+| GET | `/api/v1/acme-accounts` | المشرف | قائمة |
+| POST | `/api/v1/acme-accounts` | المشرف | إنشاء |
+| DELETE | `/api/v1/acme-accounts/:id` | المشرف | حذف |
+| PUT | `/api/v1/acme-accounts/:id` | المشرف | تحديث |
+| GET | `/api/v1/acme-accounts/default` | المشرف | الحصول على الإعدادات الافتراضية |
 
 ### المدمج في كاليفورنيا
 
@@ -867,14 +881,14 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | تم تسجيل الدخول | قائمة شهادات الوكيل |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | تم تسجيل الدخول | تجديد شهادة الوكيل |
-| GET | `/api/v1/ca/distribution-queue` | تم تسجيل الدخول | قائمة انتظار توزيع الشهادات |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | تم تسجيل الدخول | حذف إدخال قائمة انتظار التوزيع |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | تم تسجيل الدخول | أعد محاولة توزيع الشهادة |
-| GET | `/api/v1/ca/revocations` | تم تسجيل الدخول | قائمة الإلغاء |
-| GET | `/api/v1/ca/revocations/export` | تم تسجيل الدخول | تصدير CRL |
-| GET | `/api/v1/ca/status` | تم تسجيل الدخول | حالة المرجع المصدق (CA). |
+| GET | `/api/v1/ca/agent-certs` | المشرف | قائمة شهادات الوكيل |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | المشرف | تجديد شهادة الوكيل |
+| GET | `/api/v1/ca/distribution-queue` | المشرف | قائمة انتظار توزيع الشهادات |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | المشرف | حذف إدخال قائمة انتظار التوزيع |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | المشرف | أعد محاولة توزيع الشهادة |
+| GET | `/api/v1/ca/revocations` | المشرف | قائمة الإلغاء |
+| GET | `/api/v1/ca/revocations/export` | المشرف | تصدير CRL |
+| GET | `/api/v1/ca/status` | المشرف | حالة المرجع المصدق (CA). |
 
 ### القواعد الجغرافية
 
@@ -883,41 +897,41 @@ CRUD لمقالات البوابة.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | تم تسجيل الدخول | قائمة الملفات |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | تم تسجيل الدخول | حذف الملف |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | تم تسجيل الدخول | تبديل المزامنة التلقائية |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | تم تسجيل الدخول | تحميل |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | المشرف | حذف الملف |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | المشرف | تبديل المزامنة التلقائية |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | المشرف | تحميل |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | تم تسجيل الدخول | تنزيل الملف |
 | GET | `/api/v1/geo-rules/github-assets` | تم تسجيل الدخول | جلب أصول مستودع GitHub |
-| POST | `/api/v1/geo-rules/push-all` | تم تسجيل الدخول | ادفع إلى جميع العقد |
-| POST | `/api/v1/geo-rules/seed` | تم تسجيل الدخول | تهيئة البيانات الافتراضية |
+| POST | `/api/v1/geo-rules/push-all` | المشرف | ادفع إلى جميع العقد |
+| POST | `/api/v1/geo-rules/seed` | المشرف | تهيئة البيانات الافتراضية |
 | GET | `/api/v1/geo-rules/sources` | تم تسجيل الدخول | قائمة مصادر البيانات |
-| POST | `/api/v1/geo-rules/sources` | تم تسجيل الدخول | إنشاء مصدر البيانات |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | تم تسجيل الدخول | حذف مصدر البيانات |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | تم تسجيل الدخول | تحديث مصدر البيانات |
+| POST | `/api/v1/geo-rules/sources` | المشرف | إنشاء مصدر البيانات |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | المشرف | حذف مصدر البيانات |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | المشرف | تحديث مصدر البيانات |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | تم تسجيل الدخول | جلب أصول الإصدار |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | تم تسجيل الدخول | إضافة ملف |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | تم تسجيل الدخول | تبديل المزامنة المجدولة |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | تم تسجيل الدخول | حدد الملف |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | تم تسجيل الدخول | مزامنة مصدر البيانات هذا |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | المشرف | إضافة ملف |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | المشرف | تبديل المزامنة المجدولة |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | المشرف | حدد الملف |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | المشرف | مزامنة مصدر البيانات هذا |
 | GET | `/api/v1/geo-rules/status` | تم تسجيل الدخول | الحالة |
-| POST | `/api/v1/geo-rules/sync-all` | تم تسجيل الدخول | مزامنة الكل |
+| POST | `/api/v1/geo-rules/sync-all` | المشرف | مزامنة الكل |
 | GET | `/api/v1/geo-rules/sync-status/:key` | تم تسجيل الدخول | تقدم المزامنة |
 
-### مكتبة القواعد WAF
+### مكتبة قواعد WAF
 
 قواعد WAF العالمية: مصدر GitHub، والمزامنة، والتسليم إلى جميع العقد.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | تم تسجيل الدخول | مصدر البيانات GitHub |
-| PUT | `/api/v1/waf/github-source` | تم تسجيل الدخول | حفظ مصدر البيانات GitHub |
-| POST | `/api/v1/waf/push-all` | تم تسجيل الدخول | ادفع إلى جميع العقد |
+| PUT | `/api/v1/waf/github-source` | المشرف | حفظ مصدر البيانات GitHub |
+| POST | `/api/v1/waf/push-all` | المشرف | ادفع إلى جميع العقد |
 | GET | `/api/v1/waf/rules` | تم تسجيل الدخول | قائمة القواعد |
-| DELETE | `/api/v1/waf/rules/:name` | تم تسجيل الدخول | حذف القاعدة |
+| DELETE | `/api/v1/waf/rules/:name` | المشرف | حذف القاعدة |
 | GET | `/api/v1/waf/rules/:name` | تم تسجيل الدخول | الحصول على القاعدة |
-| PUT | `/api/v1/waf/rules/:name` | تم تسجيل الدخول | حفظ القاعدة |
-| POST | `/api/v1/waf/sync-all` | تم تسجيل الدخول | مزامنة الكل |
-| POST | `/api/v1/waf/sync-github` | تم تسجيل الدخول | المزامنة من GitHub |
+| PUT | `/api/v1/waf/rules/:name` | المشرف | حفظ القاعدة |
+| POST | `/api/v1/waf/sync-all` | المشرف | مزامنة الكل |
+| POST | `/api/v1/waf/sync-github` | المشرف | المزامنة من GitHub |
 
 ### إدارة السجل
 
@@ -925,43 +939,37 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | تم تسجيل الدخول | تنظيف كل شيء الآن |
-| GET | `/api/v1/log-manage/cleanup-rules` | تم تسجيل الدخول | قائمة قواعد التنظيف |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | تم تسجيل الدخول | تحديث قاعدة التنظيف |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | تم تسجيل الدخول | قم بتنظيف الجدول المحدد الآن |
-| GET | `/api/v1/log-manage/core-log-output` | تم تسجيل الدخول | تكوين إخراج السجل الأساسي |
-| PUT | `/api/v1/log-manage/core-log-output` | تم تسجيل الدخول | حفظ تكوين إخراج السجل الأساسي |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | تم تسجيل الدخول | قراءة سجلات stdout الأساسية |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | تم تسجيل الدخول | تيار stdout الأساسية |
-| POST | `/api/v1/log-manage/discover` | تم تسجيل الدخول | اكتشف ملفات سجل العقدة |
-| GET | `/api/v1/log-manage/log-output` | تم تسجيل الدخول | سجل تكوين الإخراج |
-| PUT | `/api/v1/log-manage/log-output` | تم تسجيل الدخول | حفظ تكوين إخراج السجل |
-| POST | `/api/v1/log-manage/log-output/release/:type` | تم تسجيل الدخول | الافراج عن سجل الاستيلاء stdout |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | تم تسجيل الدخول | تولي سجل stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | تم تسجيل الدخول | قائمة ملفات سجل العقدة |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | تم تسجيل الدخول | قراءة سجلات العقدة |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | تم تسجيل الدخول | تدوير سجلات العقدة |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | تم تسجيل الدخول | سجلات عقدة الدفق |
-| GET | `/api/v1/log-manage/policies` | تم تسجيل الدخول | قائمة السياسات |
-| POST | `/api/v1/log-manage/policies` | تم تسجيل الدخول | إنشاء سياسة |
-| DELETE | `/api/v1/log-manage/policies/:id` | تم تسجيل الدخول | حذف السياسة |
-| GET | `/api/v1/log-manage/policies/:id` | تم تسجيل الدخول | تفاصيل السياسة |
-| PUT | `/api/v1/log-manage/policies/:id` | تم تسجيل الدخول | تحديث السياسة |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | تم تسجيل الدخول | قائمة مهام التنظيف |
-| GET | `/api/v1/log-manage/policies/:id/log` | تم تسجيل الدخول | قراءة السجلات |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | تم تسجيل الدخول | سجلات الدفق |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | تم تسجيل الدخول | تدوير |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | تم تسجيل الدخول | قراءة سجلات stdout الأساسية |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | تم تسجيل الدخول | تيار stdout الأساسية |
-| GET | `/api/v1/log-manage/scheduler-config` | تم تسجيل الدخول | جدولة التكوين |
-| PUT | `/api/v1/log-manage/scheduler-config` | تم تسجيل الدخول | تحديث تكوين الجدولة |
-| GET | `/api/v1/log-manage/status` | تم تسجيل الدخول | الحالة |
-| POST | `/api/v1/log-manage/sync` | تم تسجيل الدخول | سياسات تنظيف المزامنة |
-| GET | `/api/v1/log-manage/writers` | تم تسجيل الدخول | حالة الكاتب |
-| PUT | `/api/v1/log-manage/writers/:type/config` | تم تسجيل الدخول | تحديث تكوين الكاتب |
-| GET | `/api/v1/log-manage/writers/:type/files` | تم تسجيل الدخول | قائمة ملفات سجل الكاتب |
-| POST | `/api/v1/log-manage/writers/:type/start` | تم تسجيل الدخول | ابدأ الكاتب |
-| POST | `/api/v1/log-manage/writers/:type/stop` | تم تسجيل الدخول | وقف الكاتب |
+| POST | `/api/v1/log-manage/cleanup-all` | المشرف | تنظيف كل شيء الآن |
+| GET | `/api/v1/log-manage/cleanup-rules` | المشرف | قائمة قواعد التنظيف |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | المشرف | تحديث قاعدة التنظيف |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | المشرف | قم بتنظيف الجدول المحدد الآن |
+| GET | `/api/v1/log-manage/core-log-output` | المشرف | تكوين إخراج السجل الأساسي |
+| PUT | `/api/v1/log-manage/core-log-output` | المشرف | حفظ تكوين إخراج السجل الأساسي |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | المشرف | قراءة سجلات stdout الأساسية |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | المشرف | تيار stdout الأساسية |
+| POST | `/api/v1/log-manage/discover` | المشرف | اكتشف ملفات سجل العقدة |
+| GET | `/api/v1/log-manage/log-output` | المشرف | سجل تكوين الإخراج |
+| PUT | `/api/v1/log-manage/log-output` | المشرف | حفظ تكوين إخراج السجل |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | المشرف | قائمة ملفات سجل العقدة |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | المشرف | قراءة سجلات العقدة |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | المشرف | تدوير سجلات العقدة |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | المشرف | سجلات عقدة الدفق |
+| GET | `/api/v1/log-manage/policies` | المشرف | قائمة السياسات |
+| POST | `/api/v1/log-manage/policies` | المشرف | إنشاء سياسة |
+| DELETE | `/api/v1/log-manage/policies/:id` | المشرف | حذف السياسة |
+| GET | `/api/v1/log-manage/policies/:id` | المشرف | تفاصيل السياسة |
+| PUT | `/api/v1/log-manage/policies/:id` | المشرف | تحديث السياسة |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | المشرف | قائمة مهام التنظيف |
+| GET | `/api/v1/log-manage/policies/:id/log` | المشرف | قراءة السجلات |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | المشرف | سجلات الدفق |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | المشرف | تدوير |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | المشرف | قراءة سجلات stdout الأساسية |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | المشرف | تيار stdout الأساسية |
+| GET | `/api/v1/log-manage/scheduler-config` | المشرف | جدولة التكوين |
+| PUT | `/api/v1/log-manage/scheduler-config` | المشرف | تحديث تكوين الجدولة |
+| GET | `/api/v1/log-manage/status` | المشرف | الحالة |
+| POST | `/api/v1/log-manage/sync` | المشرف | سياسات تنظيف المزامنة |
+| GET | `/api/v1/log-manage/writers` | المشرف | حالة الكاتب |
 
 ### النسخ الاحتياطية
 
@@ -969,16 +977,16 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | المشرف | حذف النسخة الاحتياطية |
+| DELETE | `/api/v1/backups/:id` | المشرف الفائق | حذف النسخة الاحتياطية |
 | GET | `/api/v1/backups/:id/download` | المشرف | تحميل النسخة الاحتياطية |
-| POST | `/api/v1/backups/:id/restore` | المشرف | استعادة من النسخة الاحتياطية |
-| POST | `/api/v1/backups/:id/upload-ftp` | المشرف | تحميل إلى FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | المشرف | تحميل إلى S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | المشرف | تحميل إلى WebDAV |
+| POST | `/api/v1/backups/:id/restore` | المشرف الفائق | استعادة من النسخة الاحتياطية |
+| POST | `/api/v1/backups/:id/upload-ftp` | المشرف الفائق | تحميل إلى FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | المشرف الفائق | تحميل إلى S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | المشرف الفائق | تحميل إلى WebDAV |
 | POST | `/api/v1/backups/create` | المشرف | إنشاء نسخة احتياطية كاملة (مع تفريغ قاعدة البيانات) |
 | GET | `/api/v1/backups/list` | المشرف | قائمة النسخ الاحتياطي الكاملة |
-| POST | `/api/v1/backups/remote-restore` | المشرف | استعادة من بعيد |
-| GET | `/api/v1/backups/restore-status` | المشرف | استعادة التقدم |
+| POST | `/api/v1/backups/remote-restore` | المشرف الفائق | استعادة من بعيد |
+| GET | `/api/v1/backups/restore-status` | المشرف الفائق | استعادة التقدم |
 | GET | `/api/v1/backups/schedules` | المشرف | قائمة الوظائف المجدولة |
 | POST | `/api/v1/backups/schedules` | المشرف | إنشاء مهمة مجدولة |
 | DELETE | `/api/v1/backups/schedules/:id` | المشرف | حذف المهمة المجدولة |
@@ -988,7 +996,7 @@ CRUD لمقالات البوابة.
 | DELETE | `/api/v1/backups/storages/:id` | المشرف | حذف تكوين التخزين |
 | PUT | `/api/v1/backups/storages/:id` | المشرف | تحديث تكوين التخزين |
 | GET | `/api/v1/backups/storages/:id/files` | المشرف | قائمة ملفات النسخ الاحتياطي عن بعد |
-| POST | `/api/v1/backups/upload-restore` | المشرف | تحميل النسخ الاحتياطي والاستعادة |
+| POST | `/api/v1/backups/upload-restore` | المشرف الفائق | تحميل النسخ الاحتياطي والاستعادة |
 
 ### إعدادات النظام
 
@@ -1001,8 +1009,8 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/system/config-file/:coreType` | المشرف | قراءة ملف التكوين الأساسي |
 | GET | `/api/v1/system/db-config` | المشرف | تكوين قاعدة البيانات |
 | PUT | `/api/v1/system/db-config` | المشرف | تحديث تكوين قاعدة البيانات |
-| POST | `/api/v1/system/db-config/migrate` | المشرف | ترحيل بيانات قاعدة البيانات |
-| POST | `/api/v1/system/db-config/switch` | المشرف | تبديل قاعدة البيانات (مع الترحيل بخطوة واحدة) |
+| POST | `/api/v1/system/db-config/migrate` | المشرف الفائق | ترحيل بيانات قاعدة البيانات |
+| POST | `/api/v1/system/db-config/switch` | المشرف الفائق | تبديل قاعدة البيانات (مع الترحيل بخطوة واحدة) |
 | POST | `/api/v1/system/db-config/test` | المشرف | اختبار اتصال قاعدة البيانات |
 | GET | `/api/v1/system/db-pool-stats` | المشرف | إحصائيات تجمع الاتصال |
 | GET | `/api/v1/system/db-stats` | المشرف | إحصائيات قاعدة البيانات |
@@ -1011,13 +1019,13 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/system/encryption-key-status` | المشرف | حالة مفتاح التشفير |
 | GET | `/api/v1/system/env-config` | المشرف | تكوين .env |
 | PUT | `/api/v1/system/env-config` | المشرف | قم بتحديث تكوين .env |
-| POST | `/api/v1/system/generate-encryption-key` | المشرف | إنشاء مفتاح التشفير |
+| POST | `/api/v1/system/generate-encryption-key` | المشرف الفائق | إنشاء مفتاح التشفير |
 | GET | `/api/v1/system/github-config` | المشرف | التكوين GitHub |
 | PUT | `/api/v1/system/github-config` | المشرف | تحديث تكوين GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | المشرف | حالة المفتاح JWT |
 | GET | `/api/v1/system/maintenance` | عام | حالة وضع الصيانة (عام) |
 | PUT | `/api/v1/system/maintenance` | المشرف | تبديل وضع الصيانة |
-| POST | `/api/v1/system/migrate-data` | المشرف | ترحيل البيانات |
+| POST | `/api/v1/system/migrate-data` | المشرف الفائق | ترحيل البيانات |
 | GET | `/api/v1/system/notification-config` | المشرف | تكوين الإخطار |
 | PUT | `/api/v1/system/notification-config` | المشرف | تحديث تكوين الإخطار |
 | GET | `/api/v1/system/notification-templates` | المشرف | قائمة القالب |
@@ -1029,14 +1037,14 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/system/panel-config` | المشرف | تكوين اللوحة |
 | PUT | `/api/v1/system/panel-config` | المشرف | تحديث تكوين اللوحة |
 | GET | `/api/v1/system/reality-targets` | المشرف | قائمة الأهداف REALITY |
-| PUT | `/api/v1/system/reality-targets` | المشرف | تحديث هدف REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | المشرف | إعادة تعيين هدف REALITY إلى الوضع الافتراضي |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | قراءة إعداد SNI المحلي لـ Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | تحديث إعداد SNI المحلي لـ Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | المشرف | إعادة إنشاء مفتاح JWT |
+| PUT | `/api/v1/system/reality-targets` | المشرف | تحديث الهدف REALITY |
+| POST | `/api/v1/system/reality-targets/reset` | المشرف الفائق | إعادة تعيين هدف REALITY إلى الوضع الافتراضي |
+| GET | `/api/v1/system/reality-local-sni` | المشرف | اقرأ تكوين Reality المحلي SNI |
+| PUT | `/api/v1/system/reality-local-sni` | المشرف | قم بتحديث تكوين Reality المحلي SNI |
+| POST | `/api/v1/system/regenerate-jwt-secret` | المشرف الفائق | إعادة إنشاء مفتاح JWT |
 | GET | `/api/v1/system/releases` | المشرف | الإصدارات المتاحة |
-| POST | `/api/v1/system/restart` | المشرف | إعادة التشغيل |
-| POST | `/api/v1/system/rollback` | المشرف | التراجع عن النظام |
+| POST | `/api/v1/system/restart` | المشرف الفائق | إعادة التشغيل |
+| POST | `/api/v1/system/rollback` | المشرف الفائق | التراجع عن النظام |
 | GET | `/api/v1/system/settings` | المشرف | قراءة الإعدادات |
 | PUT | `/api/v1/system/settings/batch` | المشرف | إعدادات التحديث بالجملة |
 | GET | `/api/v1/system/stats` | المشرف | حالة النظام |
@@ -1045,7 +1053,7 @@ CRUD لمقالات البوابة.
 | POST | `/api/v1/system/telegram-chat-id` | المشرف | احصل على معرف الدردشة Telegram |
 | POST | `/api/v1/system/test-smtp` | المشرف | اختبار SMTP |
 | POST | `/api/v1/system/test-telegram` | المشرف | اختبار Telegram |
-| POST | `/api/v1/system/update` | المشرف | ترقية النظام |
+| POST | `/api/v1/system/update` | المشرف الفائق | ترقية النظام |
 | GET | `/api/v1/system/update-jobs` | المشرف | ترقية قائمة الوظائف |
 | POST | `/api/v1/system/upload-mtls-ca` | المشرف | تحميل شهادة mTLS CA |
 
@@ -1055,8 +1063,9 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | تم تسجيل الدخول | قائمة أحداث التدقيق |
-| GET | `/api/v1/security/audit-events/export` | تم تسجيل الدخول | أحداث تدقيق التصدير |
+| GET | `/api/v1/security/audit-events` | المشرف | قائمة أحداث التدقيق |
+| GET | `/api/v1/security/audit-events/export` | المشرف | أحداث تدقيق التصدير |
+| GET | `/api/v1/security/subscription-access-logs` | المشرف | سجلات جلب الاشتراك (التصفية حسب معرف الاشتراك / IP / البريد الإلكتروني للعميل) |
 
 ### المقاييس
 
@@ -1064,9 +1073,9 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | تم تسجيل الدخول | مقاييس الشهادة |
-| GET | `/api/v1/metrics/nodes` | تم تسجيل الدخول | مقاييس العقدة |
-| GET | `/api/v1/metrics/overview` | تم تسجيل الدخول | نظرة عامة |
+| GET | `/api/v1/metrics/certificates` | المشرف | مقاييس الشهادة |
+| GET | `/api/v1/metrics/nodes` | المشرف | مقاييس العقدة |
+| GET | `/api/v1/metrics/overview` | المشرف | نظرة عامة |
 
 ### قوالب البوابة
 
@@ -1074,20 +1083,20 @@ CRUD لمقالات البوابة.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | تم تسجيل الدخول | قالب نشط |
-| PUT | `/api/v1/portal/active` | تم تسجيل الدخول | تحديث القالب النشط |
-| DELETE | `/api/v1/portal/cache` | تم تسجيل الدخول | مسح ذاكرة التخزين المؤقت للبوابة |
-| GET | `/api/v1/portal/cache` | تم تسجيل الدخول | حالة ذاكرة التخزين المؤقت |
-| PUT | `/api/v1/portal/cache/dev-mode` | تم تسجيل الدخول | تبديل وضع تطوير ذاكرة التخزين المؤقت |
-| POST | `/api/v1/portal/cache/rebuild` | تم تسجيل الدخول | إعادة بناء ذاكرة التخزين المؤقت للبوابة |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | حزم اللغات المضمنة |
-| POST | `/api/v1/portal/reset` | تم تسجيل الدخول | استعادة القالب الافتراضي |
-| GET | `/api/v1/portal/templates` | تم تسجيل الدخول | قائمة |
-| POST | `/api/v1/portal/templates` | تم تسجيل الدخول | إنشاء |
-| DELETE | `/api/v1/portal/templates/:id` | تم تسجيل الدخول | حذف |
-| GET | `/api/v1/portal/templates/:id` | تم تسجيل الدخول | التفاصيل |
-| PUT | `/api/v1/portal/templates/:id` | تم تسجيل الدخول | تحديث |
-| POST | `/api/v1/portal/templates/:id/activate` | تم تسجيل الدخول | تفعيل القالب |
+| GET | `/api/v1/portal/active` | المشرف | قالب نشط |
+| PUT | `/api/v1/portal/active` | المشرف | تحديث القالب النشط |
+| DELETE | `/api/v1/portal/cache` | المشرف | مسح ذاكرة التخزين المؤقت للبوابة |
+| GET | `/api/v1/portal/cache` | المشرف | حالة ذاكرة التخزين المؤقت |
+| PUT | `/api/v1/portal/cache/dev-mode` | المشرف | تبديل وضع تطوير ذاكرة التخزين المؤقت |
+| POST | `/api/v1/portal/cache/rebuild` | المشرف | إعادة بناء ذاكرة التخزين المؤقت للبوابة |
+| GET | `/api/v1/portal/lang/builtin` | المشرف | حزم اللغات المضمنة |
+| POST | `/api/v1/portal/reset` | المشرف | استعادة القالب الافتراضي |
+| GET | `/api/v1/portal/templates` | المشرف | قائمة |
+| POST | `/api/v1/portal/templates` | المشرف | إنشاء |
+| DELETE | `/api/v1/portal/templates/:id` | المشرف | حذف |
+| GET | `/api/v1/portal/templates/:id` | المشرف | التفاصيل |
+| PUT | `/api/v1/portal/templates/:id` | المشرف | تحديث |
+| POST | `/api/v1/portal/templates/:id/activate` | المشرف | تفعيل القالب |
 
 > `/portal/templates` CRUD هو **API** متقدم: تستخدم واجهة مستخدم البوابة الإلكترونية بشكل أساسي `PUT /api/v1/portal/active`
 > (تكوين الموقع الكامل بلقطة واحدة)؛ إدارة/تبديل قوالب متعددة مع هذه المجموعة. كلاهما مدعوم ولا يتعارضان.
@@ -1099,11 +1108,11 @@ CRUD لمقالات البوابة.
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
 | POST | `/api/v1/agent/bootstrap` | عام | تسجيل التمهيد الأول للوكيل (تقارير الوكيل باستخدام رمز التمهيد؛ عام) |
-| GET | `/api/v1/agent/releases` | المشرف | إصدارات الوكيل المتاحة (لصفحة الترقية) |
+| GET | `/api/v1/agent/releases` | المشرف | إصدارات الوكيل المتوفرة (لصفحة الترقية) |
 | GET | `/api/v1/agent/version` | المشرف | إصدار الوكيل الحالي على اللوحة |
 | GET | `/api/v1/agent/download` | عام | وكيل التحميل |
 | GET | `/api/v1/agent/install` | عام | الحصول على البرنامج النصي للتثبيت |
-| GET | `/api/v1/agent/origin` | 公开 | عنوان أصل اللوحة (عام) |
+| GET | `/api/v1/agent/origin` | عام | عنوان أصل اللوحة (عام) |
 
 ### تهمة إدخال رد الاتصال
 
@@ -1130,85 +1139,81 @@ CRUD لمقالات البوابة.
 | GET | `/api/v1/public/articles` | عام | قائمة المقالات العامة |
 | GET | `/api/v1/public/articles/:slug` | عام | تفاصيل المقال العام |
 | GET | `/api/v1/public/client-configs` | عام | تكوين تنزيل العميل (عام) |
-| GET | `/api/v1/public/portal-config` | عام | تكوين وقت تشغيل البوابة الإلكترونية (اسم الموقع، والموضوع، واللغات، ومستندات الامتثال؛ عامة) |
+| GET | `/api/v1/public/portal-config` | عام | تكوين وقت تشغيل البوابة الإلكترونية (اسم الموقع والموضوع واللغات ومستندات الامتثال؛ عامة) |
 | GET | `/api/v1/public/settings` | عام | الإعدادات العامة (على سبيل المثال، Registration_enabled؛ public) |
 | GET | `/api/v1/public/subscription-endpoints` | عام | قائمة نقاط نهاية الاشتراك الممكّنة (عامة) |
 
 ### مصادقة العميل والأعمال (نفس المجموعة في محرك الإدارة)
 
-نقاط نهاية العميل المطابقة للبوابة؛ راجع `portal-api.en.md` للحصول على التفاصيل.
+نقاط نهاية العميل مماثلة للبوابة الإلكترونية. إنهم يستخدمون **الرمز المميز للعميل** (`Authorization: Bearer <client_token>`)، وليس الرمز المميز للمسؤول؛ راجع `portal-api.en.md` للحصول على التفاصيل.
 
 | الطريقة | المسار | إذن | الوصف |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | عام | قائمة المقالات |
-| GET | `/api/v1/client-auth/articles/:slug` | عام | الحصول على المادة |
-| GET | `/api/v1/client-auth/balance` | عام | احصل على التوازن |
-| GET | `/api/v1/client-auth/balance/transactions` | عام | معاملات الرصيد |
-| POST | `/api/v1/client-auth/change-password` | عام | تغيير كلمة المرور |
-| POST | `/api/v1/client-auth/charge/create` | عام | إنشاء أمر إعادة الشحن |
-| GET | `/api/v1/client-auth/charge/orders` | عام | قائمة أوامر إعادة الشحن |
-| GET | `/api/v1/client-auth/charge/orders/:id` | عام | احصل على تفاصيل طلب إعادة الشحن |
-| POST | `/api/v1/client-auth/charge/redeem-card` | عام | استرداد البطاقة |
-| GET | `/api/v1/client-auth/charge/sites` | عام | قائمة مواقع إعادة الشحن |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | عام | الاستعلام عن حالة إعادة الشحن |
-| GET | `/api/v1/client-auth/checktime` | عام | الحصول على وقت الخادم (مزامنة الساعة) |
-| GET | `/api/v1/client-auth/connection-info` | عام | احصل على معلمات اتصال الخطة |
-| GET | `/api/v1/client-auth/gifts` | عام | قائمة الهدايا |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | عام | المطالبة بالهدية |
-| GET | `/api/v1/client-auth/invoices` | عام | قائمة الطلبات |
-| GET | `/api/v1/client-auth/invoices/:id` | عام | تفاصيل الطلب |
-| GET | `/api/v1/client-auth/settings/whitelist` | عام | قائمة IP المسموح بها |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عام | إزالة من قائمة IP المسموح بها |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | عام | إضافة IP تلقائيًا |
-| POST | `/api/v1/client-auth/login` | عام | تسجيل الدخول |
-| POST | `/api/v1/client-auth/logout` | عام | تسجيل الخروج |
-| POST | `/api/v1/client-auth/logs/package` | عام | إنشاء حزمة السجل |
-| GET | `/api/v1/client-auth/logs/packages` | عام | قائمة حزم السجل |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | عام | حذف حزمة السجل |
-| GET | `/api/v1/client-auth/logs/packages/:id` | عام | الحصول على حزمة السجل |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | عام | قم بتنزيل حزمة السجل |
-| GET | `/api/v1/client-auth/logs/types` | عام | سجل فحص صحة الحزمة |
-| GET | `/api/v1/client-auth/me` | عام | احصل على المستخدم الحالي الذي قام بتسجيل الدخول |
-| GET | `/api/v1/client-auth/nodes` | عام | قائمة العقدة الخاصة بي |
-| GET | `/api/v1/client-auth/nodes/:id/config` | عام | تكوين العقدة |
-| GET | `/api/v1/client-auth/nodes/:id/link` | عام | رابط مشاركة العقدة |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | عام | عقدة رمز الاستجابة السريعة |
-| GET | `/api/v1/client-auth/oauth/:provider` | عام | يأذن |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | عام | رد الاتصال |
-| GET | `/api/v1/client-auth/oauth/providers` | عام | حالة المزود |
-| GET | `/api/v1/client-auth/orders` | عام | قائمة الطلبات |
-| POST | `/api/v1/client-auth/orders` | عام | إنشاء الطلب |
-| GET | `/api/v1/client-auth/orders/:id` | عام | تفاصيل الطلب |
-| GET | `/api/v1/client-auth/plans` | عام | قائمة الخطة |
-| GET | `/api/v1/client-auth/plans/:id` | عام | تفاصيل الخطة |
-| GET | `/api/v1/client-auth/referral/code` | عام | الحصول على رمز التحقق من الإحالة |
-| GET | `/api/v1/client-auth/referral/records` | عام | قائمة سجلات الإحالة |
-| GET | `/api/v1/client-auth/referral/stats` | عام | احصل على إحصائيات الإحالة |
-| POST | `/api/v1/client-auth/referral/withdraw` | عام | طلب الانسحاب |
-| GET | `/api/v1/client-auth/referral/withdrawals` | عام | قائمة عمليات سحب الإحالة |
-| POST | `/api/v1/client-auth/refresh` | عام | تحديث |
-| POST | `/api/v1/client-auth/register` | عام | سجل |
-| POST | `/api/v1/client-auth/reset-subscription` | عام | إعادة تعيين الاشتراك |
-| PUT | `/api/v1/client-auth/settings` | عام | تحديث الملف الشخصي |
-| POST | `/api/v1/client-auth/rotate-token` | عام | تدوير رمز الاشتراك |
-| POST | `/api/v1/client-auth/self-unban` | عام | إلغاء حظر الخدمة الذاتية |
-| PUT | `/api/v1/client-auth/settings` | عام | تحديث الإعدادات |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | عام | إضافة IP تلقائيًا |
-| GET | `/api/v1/client-auth/settings/whitelist` | عام | قائمة IP المسموح بها |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عام | إزالة من قائمة IP المسموح بها |
-| GET | `/api/v1/client-auth/shared-accounts` | عام | قائمة الحسابات المشتركة |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | عام | الحصول على حساب مشترك |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | عام | طلب حساب مشترك |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | عام | طلب إصلاح |
-| POST | `/api/v1/client-auth/ticket` | عام | إصدار تذكرة قصيرة الأجل لمرة واحدة |
-| GET | `/api/v1/client-auth/tickets` | عام | قائمة التذاكر |
-| POST | `/api/v1/client-auth/tickets` | عام | إنشاء تذكرة |
-| GET | `/api/v1/client-auth/tickets/:id` | عام | احصل على تذكرة |
-| POST | `/api/v1/client-auth/tickets/:id/close` | عام | إغلاق التذكرة |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | عام | الرد على التذكرة |
-| GET | `/api/v1/client-auth/traffic-history` | عام | تاريخ المرور |
-| GET | `/api/v1/client-auth/traffic-packs` | عام | قائمة حزمة المرور |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | عام | شراء حزمة المرور |
+| GET | `/api/v1/client-auth/articles` | العميل (تسجيل الدخول) | قائمة المقالات |
+| GET | `/api/v1/client-auth/articles/:slug` | العميل (تسجيل الدخول) | الحصول على المادة |
+| GET | `/api/v1/client-auth/balance` | العميل (تسجيل الدخول) | احصل على التوازن |
+| GET | `/api/v1/client-auth/balance/transactions` | العميل (تسجيل الدخول) | معاملات الرصيد |
+| POST | `/api/v1/client-auth/change-password` | العميل (تسجيل الدخول) | تغيير كلمة المرور |
+| POST | `/api/v1/client-auth/charge/create` | العميل (تسجيل الدخول) | إنشاء أمر إعادة الشحن |
+| GET | `/api/v1/client-auth/charge/orders` | العميل (تسجيل الدخول) | قائمة أوامر إعادة الشحن |
+| GET | `/api/v1/client-auth/charge/orders/:id` | العميل (تسجيل الدخول) | احصل على تفاصيل طلب إعادة الشحن |
+| POST | `/api/v1/client-auth/charge/redeem-card` | العميل (تسجيل الدخول) | استرداد البطاقة |
+| GET | `/api/v1/client-auth/charge/sites` | العميل (تسجيل الدخول) | قائمة مواقع إعادة الشحن |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | العميل (تسجيل الدخول) | الاستعلام عن حالة إعادة الشحن |
+| GET | `/api/v1/client-auth/checktime` | العميل (تسجيل الدخول) | الحصول على وقت الخادم (مزامنة الساعة) |
+| GET | `/api/v1/client-auth/connection-info` | العميل (تسجيل الدخول) | احصل على معلمات اتصال الخطة |
+| GET | `/api/v1/client-auth/gifts` | العميل (تسجيل الدخول) | قائمة الهدايا |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | العميل (تسجيل الدخول) | المطالبة بالهدية |
+| GET | `/api/v1/client-auth/invoices` | العميل (تسجيل الدخول) | قائمة الطلبات |
+| GET | `/api/v1/client-auth/invoices/:id` | العميل (تسجيل الدخول) | تفاصيل الطلب |
+| POST | `/api/v1/client-auth/login` | العميل (عام) | تسجيل الدخول |
+| POST | `/api/v1/client-auth/logout` | العميل (تسجيل الدخول) | تسجيل الخروج |
+| POST | `/api/v1/client-auth/logs/package` | العميل (تسجيل الدخول) | إنشاء حزمة السجل |
+| GET | `/api/v1/client-auth/logs/packages` | العميل (تسجيل الدخول) | قائمة حزم السجل |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | العميل (تسجيل الدخول) | حذف حزمة السجل |
+| GET | `/api/v1/client-auth/logs/packages/:id` | العميل (تسجيل الدخول) | الحصول على حزمة السجل |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | العميل (تسجيل الدخول) | قم بتنزيل حزمة السجل |
+| GET | `/api/v1/client-auth/logs/types` | العميل (تسجيل الدخول) | سجل فحص صحة الحزمة |
+| GET | `/api/v1/client-auth/me` | العميل (تسجيل الدخول) | احصل على المستخدم الحالي الذي قام بتسجيل الدخول |
+| GET | `/api/v1/client-auth/nodes` | العميل (تسجيل الدخول) | قائمة العقدة الخاصة بي |
+| GET | `/api/v1/client-auth/nodes/:id/config` | العميل (تسجيل الدخول) | تكوين العقدة |
+| GET | `/api/v1/client-auth/nodes/:id/link` | العميل (تسجيل الدخول) | رابط مشاركة العقدة |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | العميل (تسجيل الدخول) | عقدة رمز الاستجابة السريعة |
+| GET | `/api/v1/client-auth/oauth/:provider` | العميل (عام) | يأذن |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | العميل (عام) | رد الاتصال |
+| GET | `/api/v1/client-auth/oauth/providers` | العميل (عام) | حالة المزود |
+| GET | `/api/v1/client-auth/orders` | العميل (تسجيل الدخول) | قائمة الطلبات |
+| POST | `/api/v1/client-auth/orders` | العميل (تسجيل الدخول) | إنشاء الطلب |
+| GET | `/api/v1/client-auth/orders/:id` | العميل (تسجيل الدخول) | تفاصيل الطلب |
+| GET | `/api/v1/client-auth/plans` | العميل (تسجيل الدخول) | قائمة الخطة |
+| GET | `/api/v1/client-auth/plans/:id` | العميل (تسجيل الدخول) | تفاصيل الخطة |
+| GET | `/api/v1/client-auth/referral/code` | العميل (تسجيل الدخول) | الحصول على رمز التحقق من الإحالة |
+| GET | `/api/v1/client-auth/referral/records` | العميل (تسجيل الدخول) | قائمة سجلات الإحالة |
+| GET | `/api/v1/client-auth/referral/stats` | العميل (تسجيل الدخول) | احصل على إحصائيات الإحالة |
+| POST | `/api/v1/client-auth/referral/withdraw` | العميل (تسجيل الدخول) | طلب الانسحاب |
+| GET | `/api/v1/client-auth/referral/withdrawals` | العميل (تسجيل الدخول) | قائمة عمليات سحب الإحالة |
+| POST | `/api/v1/client-auth/refresh` | العميل (عام) | تحديث |
+| POST | `/api/v1/client-auth/register` | العميل (عام) | سجل |
+| POST | `/api/v1/client-auth/reset-subscription` | العميل (تسجيل الدخول) | إعادة تعيين الاشتراك |
+| POST | `/api/v1/client-auth/rotate-token` | العميل (تسجيل الدخول) | تدوير رمز الاشتراك |
+| POST | `/api/v1/client-auth/self-unban` | العميل (تسجيل الدخول) | إلغاء حظر الخدمة الذاتية |
+| PUT | `/api/v1/client-auth/settings` | العميل (تسجيل الدخول) | تحديث الإعدادات |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | العميل (تسجيل الدخول) | إضافة IP تلقائيًا |
+| GET | `/api/v1/client-auth/settings/whitelist` | العميل (تسجيل الدخول) | قائمة IP المسموح بها |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | العميل (تسجيل الدخول) | إزالة من قائمة IP المسموح بها |
+| GET | `/api/v1/client-auth/shared-accounts` | العميل (تسجيل الدخول) | قائمة الحسابات المشتركة |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | العميل (تسجيل الدخول) | الحصول على حساب مشترك |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | العميل (تسجيل الدخول) | طلب حساب مشترك |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | العميل (تسجيل الدخول) | طلب إصلاح |
+| POST | `/api/v1/client-auth/ticket` | العميل (تسجيل الدخول) | إصدار تذكرة قصيرة الأجل لمرة واحدة |
+| GET | `/api/v1/client-auth/tickets` | العميل (تسجيل الدخول) | قائمة التذاكر |
+| POST | `/api/v1/client-auth/tickets` | العميل (تسجيل الدخول) | إنشاء تذكرة |
+| GET | `/api/v1/client-auth/tickets/:id` | العميل (تسجيل الدخول) | احصل على تذكرة |
+| POST | `/api/v1/client-auth/tickets/:id/close` | العميل (تسجيل الدخول) | إغلاق التذكرة |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | العميل (تسجيل الدخول) | الرد على التذكرة |
+| GET | `/api/v1/client-auth/traffic-history` | العميل (تسجيل الدخول) | تاريخ المرور |
+| GET | `/api/v1/client-auth/traffic-packs` | العميل (تسجيل الدخول) | قائمة حزمة المرور |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | العميل (تسجيل الدخول) | شراء حزمة المرور |
 
 ### تسليم الاشتراك
 

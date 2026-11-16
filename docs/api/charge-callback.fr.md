@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: fr | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: fr | updated: 2026-11-16 -->
 # Rappel de frais API
 
 > Langues : [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · Français · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -92,14 +92,15 @@ def sign_callback(body: dict, secret: str) -> str:
 2. Liste blanche d'adresses IP (si `callback_whitelist` est configuré, les adresses IP non répertoriées sont **bloquées en dur** ; sinon ignorées et seule la signature est vérifiée)
 3. Fenêtre `timestamp` + protection contre la relecture `nonce` (INSERT atomique)
 4. Vérification HMAC (accepte les secrets actifs et hérités)
-5. La commande existe et appartient au site → idempotence (succès des retours déjà payés) → **validation du montant et de la devise** → validation transactionnelle (livre de solde + statut de la commande)
+5. La commande existe et appartient au site → idempotence (succès des retours déjà payés) → **validation du blocage du montant et de la devise** → validation transactionnelle (livre du solde + statut de la commande)
 
 Le traitement est **idempotent** : les rappels répétés avec le même `trade_no` ne sont pas publiés deux fois. Les anomalies de signature/taux sont enregistrées sous forme d’« événements de rappel », que les administrateurs peuvent inspecter et réessayer manuellement.
 
 ## 5. Réponses
 
-- Succès : 2xx (après que le panel ait validé le paiement)
-- Échec : 4xx/5xx + `{ "code": "...", "message": "..." }` ; les codes typiques incluent `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, inadéquation de montant, etc.
+- Succès : HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (après que le panel ait validé le paiement)
+- Échec : HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}` ; la raison concrète est dans `message` (mauvaise signature, IP non sur liste blanche, commande introuvable, inadéquation montant/devise, relecture occasionnelle, etc.)
+- Un `site_id` non valide dans le chemin renvoie `INVALID_SITE_ID` ; un corps non-JSON renvoie `INVALID_REQUEST`
 
 > Chaque rappel porte `X-Request-ID` (généré par le panneau en cas d'absence) ; les journaux et les événements sont traçables de bout en bout. Donnez cet ID à votre administrateur lors du dépannage.
 

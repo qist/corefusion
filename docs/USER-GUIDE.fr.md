@@ -1,9 +1,7 @@
-<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-10-26 -->
+<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-16 -->
 # Guide d'utilisation CoreFusion
 
 > Langues : [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · Français · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
-
-> ⚠️ 本译文尚未同步最新源文
 
 > Ce guide est destiné aux utilisateurs du CoreFusion et couvre l'intégralité du flux de travail, de l'installation aux opérations quotidiennes.
 
@@ -148,26 +146,26 @@ Si le panneau écoute uniquement sur `127.0.0.1` (par exemple derrière un proxy
 
 ### 2.2.1 Sortie multilingue
 
-L'installateur intègre quatre langues d'interface : chinois simplifié, anglais, persan (فارسی) et russe (Русский). La langue est détectée automatiquement via `LANG`, ou peut être choisie explicitement :
+Le programme d'installation comprend quatre langues d'interface utilisateur : chinois simplifié, anglais, persan (فارسی) et russe (Русский). Il détecte automatiquement le système `LANG`, ou vous pouvez choisir explicitement :
 
 ```bash
-# Anglais
+# English
 sudo bash install.sh --lang en
 
-# Persan via une variable d'environnement
+# Persian via environment variable
 sudo CF_LANG=fa bash install.sh
 
-# Transmettre des options lors d'une installation par pipe
+# Pass options through a pipe
 curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
 ```
 
-Valeurs prises en charge : `zh` / `en` / `fa` / `ru` ; `--lang=ru` est également accepté. Une valeur explicite non prise en charge échoue avec la liste des langues disponibles.
+Valeurs prises en charge : `zh` / `en` / `fa` / `ru` ; `--lang=ru` est également accepté. Une valeur explicite non prise en charge échoue avec la liste des langues disponibles.
 
 ### 2.3 Épinglage de version / miroirs / installation hors ligne
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -187,15 +185,15 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construire à partir des sources
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source` clone le référentiel (ou utilise l'extraction existante lorsque le script s'y trouve) et exécute `make panel`. Les versions de la chaîne d'outils sont choisies par environnement :
 
 | Dépendance | Sélection |
 |------------|-----------|
-| Allez | Lecture de `toolchain` / `go` dans `go.mod` (actuellement **Go 1.27+**) ; si la version du système est trop ancienne, la chaîne d'outils correspondante est téléchargée sur `<install-dir>/.toolchain` |
-| Nœud | **Nœud 22 LTS** par défaut (Vite nécessite ≥ 18) ; une version officielle correspondante est téléchargée en cas de besoin |
+| Allez | Lecture de `toolchain` / `go` dans `go.mod` (actuellement **Go 1.27+**) ; si la version du système est trop ancienne, la chaîne d'outils correspondante est téléchargée sur `<install-dir>/.toolchain` |
+| Nœud | **Nœud 22 LTS** par défaut (Vite nécessite ≥ 18) ; une version officielle correspondante est téléchargée en cas de besoin |
 | Nœud (glibc < 2.28) | Utilise la version `unofficial-builds` glibc-217 (par exemple CentOS 7) |
 | Nœud (Alpin / Musl) | Utilise la distribution `nodejs` / `npm` |
 
@@ -231,7 +229,7 @@ make panel-linux-arm64
 | Drapeau | Descriptif |
 |------|-------------|
 | `-d, --dir <PATH>` | Répertoire d'installation, par défaut `/opt/corefusion` |
-| `-v, --version <TAG>` | Version panneau, par ex. `v0.13.0-beta.82` ; par défaut `latest` |
+| `-v, --version <TAG>` | Version panneau, par ex. `v0.13.0-beta.90` ; par défaut `latest` |
 | `--binary` | Utiliser le binaire GitHub Release (par défaut) |
 | `--source` | Construire à partir des sources et préparer la correspondance Go/Node |
 | `--local <FILE>` | Utiliser un binaire local (installation hors ligne) |
@@ -240,11 +238,14 @@ make panel-linux-arm64
 | `--repo <URL>` | Dépôt source, `https://github.com/qist/corefusion.git` par défaut |
 | `--ref <REF>` | Branche/balise source ; par défaut, `--version`, sinon `main` |
 | `--no-deps` | Ignorer l'installation des dépendances du système |
-| `--no-start` | Installer et écrire le fichier de service sans démarrer |
+| `--no-start` | Installez et écrivez le fichier de service sans démarrer |
 | `--cpu-info` | Détection de l'environnement d'impression et dépendances manquantes, puis quittez |
-| `--lang <LANG>` | Langue de sortie : `zh` / `en` / `fa` / `ru` (par défaut : `LANG` du système) |
+| `--lang <LANG>` | Langue de sortie : `zh` / `en` / `fa` / `ru` (par défaut : système `LANG`) |
 | `--uninstall` | Arrêtez le service et supprimez le programme (conserve les données et `.env`) |
 | `--purge` | Avec `--uninstall`, supprimez également le répertoire de données et `.env` |
+
+> Les versions officielles ne contiennent que les binaires `amd64` / `arm64`. D'autres architectures nécessitent `--source`,
+> sinon le téléchargement renvoie 404.
 
 Variables d'environnement associées :
 
@@ -254,7 +255,7 @@ Variables d'environnement associées :
 | `CF_NODE_MAJOR` | Remplacer la version majeure du nœud (22 par défaut) |
 | `CF_GO_MIRROR` | Aller au miroir de téléchargement de la chaîne d'outils |
 | `CF_SKIP_DEPS` | Définissez sur `1` dans le script d'installation de l'agent pour ignorer l'installation des dépendances. |
-| `CF_LANG` | Remplacer la langue de sortie de l'installateur (équivalent à `--lang`) |
+| `CF_LANG` | Remplacer la langue de sortie du programme d'installation (identique à `--lang`) |
 
 ### 2.6 Disposition du répertoire
 
@@ -263,7 +264,7 @@ Variables d'environnement associées :
 ├── corefusion                 # panel binary
 ├── corefusion.bak             # previous version (when upgrading)
 ├── .env                       # environment file (0600, generated by the setup wizard)
-├── .env.secret                # fichier de clé de chiffrement (0600, généré au premier démarrage)
+├── .env.secret                # encryption key file (0600, generated on first start)
 ├── .toolchain/                # Go / Node downloaded for source builds
 └── data/                      # data directory (SAFE_PATHS)
     ├── sqlite/app.db          # default SQLite database
@@ -397,12 +398,12 @@ CF_DB_MAX_IDLE_CONNS=10
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Définissez sur `0` pour désactiver la comptabilité du trafic basée sur iptables (activée par défaut) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Table iptables utilisée pour la comptabilité du trafic, par défaut `corefusion` |
 
-> **La clé de chiffrement réside dans `.env.secret`** : au premier démarrage, `CF_SECRET_ENCRYPTION_KEY` est écrite dans `.env.secret` (0600, même répertoire que `.env`) et non plus dans `.env` ; une ancienne clé présente dans `.env` y est migrée automatiquement. Sauvegardez ce fichier séparément : sans lui, toutes les valeurs `enc:` deviennent indéchiffrables.
+> **La clé de cryptage se trouve dans `.env.secret`** : au premier démarrage, `CF_SECRET_ENCRYPTION_KEY` est écrit dans `.env.secret` (0600, même répertoire que `.env`) au lieu de `.env` ; une clé héritée dans `.env` est migrée automatiquement. Sauvegardez ce fichier séparément : sa perte rend chaque valeur `enc:` indéchiffrable.
 
 > Les proxys inverses de confiance pour résoudre les adresses IP des clients réels ne sont plus configurés via des variables d'environnement ;
 > ils sont stockés sous le nom `panel.trusted_proxies` dans **Paramètres → Réseau**.
 
-> `.env` et `.env.secret` contiennent des secrets ; le panneau resserre leurs autorisations sur `0600` au démarrage. Ne les validez jamais dans le dépôt.
+> `.env` et `.env.secret` contiennent des secrets ; le panneau resserre ses autorisations sur `0600` au démarrage. Ne les commettez jamais.
 
 ### 2.10 Docker (facultatif, créez votre propre image)
 
@@ -475,7 +476,7 @@ L'assistant comporte 8 étapes. Vous pouvez revenir à tout moment ; rien n'est 
 | 2. Répertoire de données | Écrit à `SAFE_PATHS` dans `.env` |
 | 3. Clés de cryptage | `JWT_SECRET` et `CF_SECRET_ENCRYPTION_KEY` |
 | 4. Noyaux | Quels cœurs proxy installer |
-| 5. Mandataire | Aucun/Nginx/Caddy |
+| 5. Mandataire | Aucun / Nginx / Caddy |
 | 6. Sites et domaines | Ports, chemin Web, compte administrateur, devise, fuseau horaire, domaines |
 | 7. Certificat HTTPS | Désactivé / téléchargement / ACME |
 | 8. Résumé | Vérifiez, téléchargez `.env`, enregistrez et redémarrez |
@@ -522,7 +523,7 @@ Avec un proxy sélectionné, le panneau écoute généralement uniquement sur `1
 | Adresse d'écoute | Dérivé automatiquement : proxy → `127.0.0.1` ; pas de proxy avec certificat → `0.0.0.0` ; sinon → `127.0.0.1` |
 | Port du panneau | Port gratuit aléatoire par défaut ; changez-le si vous le souhaitez (par exemple 8080) |
 | Port d'abonnement | Facultatif ; `0` partage le port du panneau |
-| Port portail | Facultatif; `0` partage le port du panneau |
+| Port portail | Facultatif ; `0` partage le port du panneau |
 | Chemin Internet | Chemin de l'interface utilisateur d'administration, `/` par défaut ; le API est toujours `/api/v1` |
 | Nom d'utilisateur/mot de passe administrateur | Aléatoire par défaut ; **le mot de passe n'est affiché qu'une seule fois dans le résumé** — enregistrez-le |
 | Mode d'accès | « Domaine » ou « IP » |
@@ -533,7 +534,7 @@ La saisie des domaines écrit les paramètres correspondants (domaine de rappel,
 
 #### Étape 7 : certificat HTTPS
 
-| Origine | Descriptif |
+| Source | Descriptif |
 |--------|-------------|
 | Désactiver HTTPS | Le panel/portail/abonnements sont servis sur HTTP (non sécurisé) ; avec un proxy inverse, vous pouvez ajouter TLS côté proxy plus tard |
 | Télécharger le certificat | Coller le certificat PEM et la clé privée PEM (mode d'accès au domaine uniquement) |
@@ -723,24 +724,26 @@ La gestion des nœuds est au cœur du CoreFusion et prend en charge plusieurs ty
 
 ### 5.3 Déploiement en un clic
 
-1. Après avoir ajouté le nœud, cliquez sur « Commande Bootstrap » ;
-2. Copiez la commande d'installation ;
-3. Exécutez-le en tant qu'utilisateur root sur le nœud distant :
+1. Après avoir ajouté le nœud, choisissez « Commande de déploiement » dans la liste des nœuds (la page de détail propose également
+ « Commande d'installation Bootstrap » );
+2. Copiez la commande — elle contient un jeton d'enregistrement unique (valable 24 heures, ne pas réutiliser) ;
+3. Exécutez-le en tant que root sur le nœud distant ; ça ressemble à :
 
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<panel-host>:<panel-port>/api/v1/agent/install?id=<node-id>&token=<one-time-token>&port=<panel-port>")
    ```
 
-4. L'agent télécharge, s'enregistre et démarre automatiquement.
+4. L'agent télécharge le package, s'enregistre auprès du panneau et démarre.
 
 ### 5.4 Détails du nœud
 
 Cliquez sur un nœud pour ouvrir sa page de détails :
 
-- **Aperçu** : informations de base, statut de l'agent, statut du certificat
+- **Aperçu** : informations de base, statut de l'agent, statut du certificat ; Les cartes de ressources affichent l'utilisation du processeur/de la mémoire/du disque, le taux d'augmentation/de baisse de la carte réseau, le taux de trafic des utilisateurs principaux, le trafic utilisé mensuellement, les connexions TCP, la charge du système et le trafic cumulé de la carte réseau de sortie (actualisation silencieuse toutes les 10 s).
 - **Centre de protocole** : configuration du processus principal
 - **Proxy** : configuration Caddy / Nginx
 - **Processus principaux** : démarrer/arrêter/redémarrer
+- **Trafic principal** : trafic utilisateur transmis par le noyau et son total mensuel
 - **WARP** : configuration WARP
 - **Domaines directs** : gestion de domaine
 - **Limite de débit** : gestion du trafic
@@ -764,26 +767,45 @@ Le centre de protocole configure les paramètres de protocole pour les processus
 
 | Noyau | Descriptif |
 |------|-------------|
-| Xray-noyau | VLESS / VMess / Trojan / Shadowsocks et plus |
-| sing-box | Plateforme proxy universelle modulaire avec prise en charge TUN ; supporte les protocoles Hysteria2 / TUIC et d'autres protocoles QUIC |
+| Noyau Xray | VLESS / VMess / Trojan / Shadowsocks et plus |
+| sing-box | Plateforme proxy universelle modulaire avec prise en charge TUN ; transporte Hysteria2 / TUIC et d'autres protocoles QUIC |
 
 ### 6.2 Modules de configuration
+
+Les modules diffèrent entre les deux cœurs ; le panneau affiche l'ensemble qui correspond au noyau sélectionné :
+
+**Xray-core**
 
 - **Journal** : journal d'accès, journal d'erreurs, mode de sortie
 - **API** : adresse d'écoute gRPC API, liste de services
 - **DNS** : serveurs DNS, stratégie de requête, hôtes statiques
 - **Routage** : règles de routage, équilibrage de charge, routage VLESS
-- **Entrants** : liste entrante, paramètres de protocole, transport, TLS
-- **Sortants** : liste sortante, paramètres de protocole, transport
-- **Transport** : WebSocket, gRPC, XHTTP, TUN, etc.
+- **Entrée / Sortie** : protocole, transport, TLS
+- **Transport** : WebSocket, gRPC, XHTTP, etc. (TUN est un protocole entrant, pas un transport)
 - **TLS** : certificats, ALPN, empreinte digitale uTLS, ECH
 - **Reality** : gestion des cibles, bi-clés, identifiants courts
-- **Bilan de santé** : sonde URL, intervalle, simultanéité
-- **FakeDNS** : pool IP, taille du pool
-- **Métriques** : écouteur de métriques Prometheus
-- **Politique** : délais d'attente de connexion, tampons, statistiques
-- **Données géographiques** : mise à jour automatique, fichiers de ressources
-- **Limites de version** : version minimale/maximale
+- ** Bilan de santé / FakeDNS / Métriques / Politique / Données géographiques / Limites de version ** : sondes, pool IP, Prometheus, délais d'attente et tampons, fichiers de ressources, plage de versions principales
+
+**sing-box**
+
+- **Journal** : niveau, horodatage, sortie
+- **NTP** : synchronisation de l'heure
+- **DNS** : serveurs et règles DNS
+- **Routage** : sortant par défaut `final`, **Ensembles de règles**, **Règles**, résolveur de domaine par défaut, stratégie réseau et solution de secours (voir 6.6)
+- **Inbounds / Outbounds** : protocole, transport, TLS
+- **Points de terminaison** : WireGuard (y compris les configurations WARP), clients MASQUE et similaires ; plusieurs peuvent coexister et se distinguent par `tag`
+
+> Lorsque « utiliser l'intégration réseau du système » est activé, le **nom** du point de terminaison est le nom de l'interface du noyau :
+> au maximum 15 caractères, lettres/chiffres/`._-` uniquement. Un nom trop long ou invalide revient automatiquement
+> au point de terminaison `tag`. Les nouveaux points de terminaison sont préfixés par protocole (`wg-` / `ts-` / `oc-` / `ovpn-c-` /
+> `ovpn-s-` / `mq-c-` / `mq-s-`) et les enregistrements hérités tels que `WireGuard-xxxxxx` sont affichés normalisés
+> dès que l'éditeur est ouvert.
+- **Services** : la baie sing-box `services` de niveau supérieur, telle que `hysteria-realm`, DERP ou `resolved`
+- **Certificats / Clients HTTP / Espaces de noms réseau ** : sections JSON que vous développez uniquement en cas de besoin
+- **Expérimental** : `clash_api` et similaire ; **rien n'est écrit dans la configuration générée à moins d'être activé**
+
+> sing-box 1.12 a supprimé les champs de routage `geosite` / `geoip` ; Le routage géolocalisé passe désormais par
+> `rule_set`. En conservant les anciens champs, le noyau ne parvient pas à décoder la configuration (`unknown field`).
 
 ### 6.3 Configuration entrante
 
@@ -796,6 +818,31 @@ Le centre de protocole configure les paramètres de protocole pour les processus
 4. Choisissez le transport (TCP, WebSocket, gRPC, etc.) ;
 5. Configurer TLS (certificat, ALPN) ;
 6. Enregistrez et appliquez au noyau.
+
+> Les nouveaux entrants écoutent sur `::` par défaut (double pile sur Linux, gérant à la fois IPv4 et IPv6).
+> Remplacez-le par `0.0.0.0` ou une adresse spécifique uniquement lorsque vous devez restreindre l'interface.
+
+Les modes de port « Utiliser le port entrant » proposent également de **créer automatiquement des règles d'autorisation du pare-feu** : ouvrir le
+l'éditeur entrant sonde d'abord le pare-feu du nœud, et lorsque firewalld / ufw / nftables / iptables est détecté
+vous pouvez autoriser le port lors de la sauvegarde selon le protocole d'écoute (TCP/UDP).
+
+- Le saut de port hy2 / hysteria autorise à la fois le port d'écoute et chaque plage de ports dynamiques (par exemple `20000-30000`) ; plusieurs plages sont séparées par des virgules ;
+- L'allocation est idempotente : une règle de couverture existante (plage de ports / multiport) n'est pas recréée ;
+- Changer le port révoque l'ancienne règle avant d'autoriser la nouvelle ; la suppression du port entrant, la désactivation du saut de port ou le passage à Unix Socket / tun (pas de port d'écoute) le nettoie ;
+- Lorsqu'aucun pare-feu activé n'est détecté, seul un indice est affiché et aucune règle n'est écrite.
+
+### 6.3.1 Chemin du proxy inverse (Domaine d'accès → Front TLS → Chemin du proxy inverse)
+
+Lorsque le propre chemin de transport du flux entrant est `/` mais qu'un nginx / caddy externe le monte sous un sous-chemin
+(par exemple `location /apps { proxy_pass http://127.0.0.1:8080/; }`), les clients doivent se connecter à `/apps` ou au
+La demande n'atteint jamais cet emplacement : l'abonnement est toujours téléchargé, mais le nœud ne se connecte pas.
+Remplissez **Chemin du proxy inverse** sous « Domaine d'accès → Front TLS » :
+
+- Entrez `/apps` ou `/apps?ed=2560` (avec les premières données) ; les abonnements et les liens de partage **remplacent** le chemin de transport entrant par celui-ci ;
+- S'applique à ws, httpupgrade, xhttp et h2/http ; les transports sans chemin (raw/tcp, kcp) sont ignorés ;
+- Il est indépendant de l'endroit où se termine TLS : le chemin s'applique toujours lorsque Front TLS est désactivé (suivez le noyau) ;
+- gRPC n'a pas de concept de préfixe URL (le chemin client est toujours `/{serviceName}/…`), donc le chemin est **fusionné dans serviceName**
+(`/apps` + `svc` → `apps/svc`) ; le proxy inverse doit supprimer ce préfixe dans `grpc_pass`.
 
 ### 6.4 Configuration sortante
 
@@ -815,6 +862,112 @@ Le centre de protocole configure les paramètres de protocole pour les processus
    - Xray JSON
 3. Copiez le lien ou générez un code QR.
 
+### 6.6 Routage et ensembles de règles sing-box
+
+Dans « Centre de protocole » → sing-box → « Routage », il y a deux parties : **Ensembles de règles** déclarent réutilisables
+les fichiers de règles et les **Règles** décident des conditions de correspondance et du trafic sortant. Les règles sont évaluées à partir de
+de haut en bas et le premier match gagne.
+
+#### 6.6.1 Ensembles de règles
+
+| Champ | Descriptif |
+|-------|-------------|
+| étiquette | Identificateur d'ensemble de règles référencé par Rules ; doit être unique |
+| Tapez | `local` lit un fichier sur le nœud ; `remote` permet au noyau de le télécharger sur `update_interval` |
+| Formater | `binary` pour `.srs` (par défaut) ; `source` pour le format source `.json` |
+| Chemin | Les chemins `local` sont relatifs au répertoire de données du nœud ; les fichiers dans `data/rules/` utilisent `rules/xxx.srs` |
+| URL | Adresse de téléchargement pour `remote` ; `download_detour` sélectionne le sortant utilisé pour le téléchargement (généralement `direct`) |
+
+Ensembles de règles locales (recommandé ; téléchargez d'abord les fichiers sous « Ressources de service → Fichiers de règles ») :
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> Le téléchargement du fichier sur le panneau ne suffit pas : un jeu de règles `local` doit d'abord être poussé vers le
+> nœuds (« Push to all nodes ») pour que le fichier existe dans le `data/rules/` du nœud ; sinon le noyau
+> ne démarre pas car le fichier est introuvable.
+
+Ensembles de règles distants (le nœud doit pouvoir atteindre le URL) :
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+Lorsque vous choisissez un fichier local, la balise est dérivée du nom du fichier (`rules/geosite-cn.srs` →
+`geosite-cn`); pour les postes distants, il provient de l'extrémité du URL. Le format est également rempli à partir de
+l'extension (`.srs` → `binary`, `.json` → `source`). Les valeurs dérivées peuvent être modifiées librement et
+les valeurs que vous avez déjà saisies ne sont jamais écrasées.
+
+> `download_detour` est obsolète depuis sing-box 1.14 et sera supprimé dans la version 1.16 ; c'est encore
+> fonctionne en 1.15. Les nouvelles configurations doivent utiliser le `http_clients` de niveau supérieur avec
+> `route.default_http_client` à la place.
+
+#### 6.6.2 Règles
+
+| Champ | Matchs |
+|-------|---------|
+| `domain` | Domaine exact |
+| `domain_suffix` | Suffixe de domaine, y compris les sous-domaines |
+| `domain_keyword` | Correspondance de sous-chaîne |
+| `domain_regex` | Expression régulière |
+| `ip_cidr` / `ip_is_private` | IP de destination |
+| `source_ip_cidr` | Adresse IP source |
+| `port` / `port_range` | Port de destination |
+| `network` | `tcp` / `udp` |
+| `rule_set` | Balises des jeux de règles à utiliser |
+| `outbound` | Balise sortante à utiliser (doit exister sous « Outbounds » ou « Endpoints ») |
+| `type: "logical"` | Conditions combinées avec `mode` réglé sur `and` / `or` |
+
+Plusieurs champs dans une règle sont combinés avec AND (par exemple `network` + `port`), donc non
+Le wrapper `logical` est nécessaire. Utilisez `type: "logical"` uniquement pour les combinaisons OU/NON. `rule_set`
+doit être placé à l'intérieur des sous-règles `rules`, et non à côté de `rules` :
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 Migration des règles xray
+
+| xray | sing-box |
+|------|----------|
+| Chaîne nue (y compris les valeurs nues dans `domain` ; correspondance de sous-chaîne) | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]` ; utilisez `"domain_suffix": ["a.com"]` pour une correspondance de suffixe réelle ou `"domain": ["a.com"]` pour une correspondance exacte |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+Remarques :
+
+- **Les balises ne sont pas partagées entre les cœurs** : une balise sortante xray ne peut pas être utilisée dans une règle sing-box ;
+ utilisez une balise qui existe réellement sous sing-box « Outbounds » ou « Endpoints ».
+- Une mauvaise balise sortante ou de point de terminaison signale `outbound not found` ; un mauvais ensemble de règles signale une balise
+ `rule-set not found`.
+- Mettez les règles de liste directe/autorisée en premier ; une fois qu'une règle correspond, les règles ultérieures ne s'appliquent plus.
+
 ---
 
 ## 7. Gestion des procurations
@@ -823,7 +976,7 @@ La gestion du proxy configure le proxy inverse Caddy ou Nginx.
 
 ### 7.1 Types de proxy
 
-- **Caddy** : automatique HTTPS, HTTP/2, HTTP/3
+- **Caddy** : HTTPS automatique, HTTP/1.1 et HTTP/2 (HTTP/3 / QUIC est désactivé pour éviter un conflit UDP 443 avec le routage layer4)
 - **Nginx** : configuration flexible et hautes performances
 
 ### 7.2 Configuration du site
@@ -842,55 +995,172 @@ La gestion du proxy configure le proxy inverse Caddy ou Nginx.
 - **local_port** : port d'écoute local, par ex. `8443`
 - **portal_forward** : règle de transfert de portail
 - **subscription_forward** : règle de transfert d'abonnement
+- **Routage SNI** : lorsqu'un entrant utilise TLS / REALITY et que les clients se connectent toujours sur 443, le panneau dérive
+ 443 règles de routage TCP de ClientHello SNI (à la fois xray `streamSettings` et sing-box `tls.reality`) ;
+ le proxy frontal ne transmet que TCP et TLS se termine toujours à l'intérieur du noyau
 
 ---
 
 ## 8. Ressources de routage
 
-Les ressources de routage gèrent les règles de routage des abonnements.
+Les ressources de routage collectent les ressources partagées utilisées par les abonnements et le routage. La page comporte cinq onglets :
 
-### 8.1 Caractéristiques
+| Onglet | Objectif |
+|-----|---------|
+| Domaines privilégiés Direct & CF | Domaines/IP directs d'entrée et domaines préférés Cloudflare, utilisés lors de la réécriture des adresses d'accès dans les abonnements et les nœuds externes |
+| Pool IP CF | Sources IP préférées, ports et paramètres de sonde, consommés par le « domaine d'accès » |
+| Règles globales WAF | Sources de règles et fichiers de règles pour le proxy inverse WAF, transmis aux nœuds |
+| Fichiers de règles | Téléchargement, synchronisation programmée et push des fichiers de règles (`.srs` / `.json` / `.dat`) |
+| Nœuds externes | Importer des nœuds externes depuis v2ray URI / Base64 / abonnement URL (voir 16.3) |
 
-- Gérer les règles de routage
-- Configurer les politiques de routage
-- Prend en charge plusieurs formats de routage
+### 8.1 Domaines privilégiés Direct & CF
 
-### 8.2 Utilisation
+- **Accès direct** : domaine d'entrée ou IP, port 443 par défaut ; lier les nœuds ou laisser vide pour global ;
+- **Domaines préférés CF** : domaine préféré Cloudflare plus port, avec vérification de connectivité ;
+- Tous deux alimentent les candidats « Domaine d’accès » utilisés par les souscriptions et la réécriture de nœuds externes (voir 16.3).
 
-1. Ouvrez « Ressources de routage » ;
-2. Ajoutez une règle de routage ;
-3. Définissez le nom, le type et les conditions de la règle ;
-4. Enregistrez et postulez.
+### 8.2 Pool IP CF
+
+- Conserver les sources IP préférées (y compris les sources de style `bestproxy`), l'intervalle de récupération et les ports ;
+- Les « Paramètres de la sonde » contrôlent l'intervalle de la sonde, le seuil de latence et le nœud d'entrée de la sonde ; sondage local
+ filtre uniquement les adresses IP clairement inaccessibles, tandis que la sélection d'un nœud d'entrée simule la ligne de ce nœud ;
+- Le « composeur » peut être automatique (cœurs installés), `singbox`, `xray` ou `mihomo` ; noyaux qui ne sont pas
+ installés ne sont pas répertoriés. Le sondage s'exécute comme un processus temporaire qui se termine une fois terminé et ne lit jamais ou
+ écrit la propre configuration du noyau ;
+- Lorsque « Domaine d'accès » utilise le pool IP CF sans valeur concrète, une entrée (avec son port) est
+ choisi au hasard.
+
+### 8.3 Règles globales WAF
+
+- Configurez la source de règles WAF URL et les fichiers de règles à synchroniser ;
+- Après la synchronisation, ils sont poussés vers les nœuds et chargés par le proxy de nœud (Nginx / Caddy) ;
+- Un fichier avec un URL complet est téléchargé à partir de ce URL ; sinon « source URL + /nom du fichier » est utilisé ;
+- Le « Cache de correspondance » (`match_cache` / `config_match_cache`) est activé par défaut : un cache limité à l'échelle du processus.
+ le cache des résultats de correspondance de règles à chaud réduit le parcours des règles par requête. Il est uniquement mondial, sans
+ remplacement par domaine ; désactivez-le temporairement pour la comparaison A/B lors de l'enquête sur les faux positifs
+ (la désactivation signifie une évaluation complète des règles sur chaque requête et une utilisation plus élevée du processeur).
+
+### 8.4 Fichiers de règles (fichiers de règles de routage)
+
+Cet onglet télécharge uniquement les fichiers de règles sur le panneau et les pousse vers les nœuds ; rien ne prend effet
+automatiquement. Pour les utiliser dans le routage, référencez-les sous « Centre de protocole → sing-box → Routage »
+dans Ensembles de règles et Règles (voir 6.6).
+
+- **Dépôts de règles** : saisissez `owner/repo` (GitHub, consultable) ou un téléchargement complet URL ; programmé
+ la synchronisation peut s'exécuter toutes les 6/12 heures, quotidiennement à 03h00, quotidiennement à minuit ou chaque semaine le dimanche ;
+- **Ajouter un fichier** : pour les fichiers uniques en dehors d'une version du référentiel (par exemple la branche SagerNet `.srs`
+ fichiers); entrez le URL complet et il sera téléchargé automatiquement ;
+- **Liste des fichiers** : affiche le nom, la taille, la dernière mise à jour et le commutateur « Synchronisation automatique », avec « Télécharger » par fichier ;
+ le bouton « Pousser vers tous les nœuds » en haut pousse chaque fichier de règles vers tous les nœuds ;
+- Les fichiers sont téléchargés dans le `data/rules/` du panneau et, une fois poussés, se trouvent sous les données du nœud
+ `rules/` du répertoire ; référencez-les dans sing-box comme `rules/<file name>` ;
+- Formats :
+  - `.srs` : ensemble de règles binaires sing-box, recommandé et le plus petit ;
+  - `.json` : ensemble de règles de format source ; `rule_set` doit définir `format: "source"` ;
+  - `.dat` : xray `geosite.dat` / `geoip.dat`, que sing-box ne peut pas utiliser directement.
+
+> Le bloc « Utilisation » pliable en haut de la page contient des exemples de référence, le mappage xray
+> tableau et erreurs courantes.
+
+### 8.5 Nœuds externes
+
+L'importation et la gestion des nœuds externes sont traitées dans [16.3 Nœuds externes](#163-external-nodes).
 
 ---
 
 ## 9. Centre d'abonnement
 
-Le centre d'abonnement gère les liens d'abonnement et les points de terminaison.
+Le centre d'abonnement regroupe les nœuds en abonnements prêts pour le client : définissez les **formats** d'abonnement (quoi émettre, quelles règles, quels plans peuvent les voir), puis les **points de terminaison** d'abonnement (domaine/chemin public), puis distribuez les liens.
 
 ### 9.1 Formats d'abonnement
 
-1. Ouvrez « Centre d'abonnement » → « Formats d'abonnement » ;
-2. Ajoutez un format :
-   - Nom du format
-   - Format de sortie (Base64, YAML, JSON, etc.)
-   - Protocoles inclus
-3. Enregistrez.
+« Centre d'abonnement » → « Formats d'abonnement » ; une ligne par sortie client :
+
+| Champ | Descriptif |
+|---|---|
+| Nom | Unique ; `?config=<name>` correspond et la boîte de dialogue client l'affiche |
+| Type de client | clash / shadowrocket / singbox / v2ray — regroupement d'affichage uniquement |
+| Format de sortie | `mihomo_yaml` (Clash/Mihomo), `singbox_json`, `xray_json`, `base64_uri`, `raw_uri` |
+| Type de contenu / extension | En-tête de réponse et nom de fichier |
+| Plateforme | gagner / mac / android / ios / universel ; assorti à `?platform=`, vide = universel |
+| Plans liés | Vide = disponible pour tous les forfaits ; sinon, seuls ces plans peuvent l'utiliser |
+| Règles | Règles de routage par format (éditeur structuré pour Mihomo, JSON brut par règle pour sing-box / Xray). **Les règles ne sont pas converties entre les formats** |
+
+Remarques :
+
+- Plusieurs configurations peuvent exister pour le même format de sortie (par exemple `out`, `home`) ; choisissez-en un avec `config=` dans le lien ;
+- Sans `config`, l'ordre est « configuration liée à l'abonnement → correspondance `platform` → par défaut » ;
+- Un modèle sing-box peut comporter son propre `route.rule_set` pour les clients, normalement sous le nom de `remote`.
+ le client le télécharge ; les fichiers locaux poussés vers le `rules/` d'un nœud sous « Fichiers de règles » sont uniquement disponibles
+ au cœur de ce nœud, et non aux abonnements clients ;
+- Lors de la génération de modèles sing-box / Xray, le panneau supprime les références pendantes (`final`, `dns.final`,
+ `default_domain_resolver`, `download_detour`, `rule_set` local, définitions `rule_set` non valides, vide
+ `balancer`, etc.) afin que le client n'échoue pas au démarrage avec une erreur FATALE ;
+- Les alias sortants dans les règles sont résolus par rapport aux balises réelles (`REJECT` / `blocked` → `block`, `DIRECT` →
+ `direct`, insensible à la casse) ; les sortants insolubles reviennent au sortant par défaut et à la règle
+ conserve sa position;
+- Un groupe avec `tag = proxy` est toujours généré : un `selector` pour sing-box et un équilibreur `random` pour
+ Xray et `outbound: proxy` dans les règles sont réécrites en `balancerTag` correspondante. L'éditeur de règles se charge
+ les candidats sortants de manière dynamique à partir de « groupes proxy + sortants personnalisés », et les balises saisies manuellement sont
+ toujours validé ;
+- Les configurations sing-box / Xray doivent être créées séparément ; s'ils n'existent pas, ils n'apparaissent pas dans les liens clients (voir 10.3).
 
 ### 9.2 Points de terminaison d'abonnement
 
-1. Ouvrez « Centre d'abonnement » → « Points de terminaison d'abonnement » ;
-2. Ajoutez un point de terminaison :
-   - Nom du point de terminaison
-   - Adresse d'écoute
-   - Chemin
-   - Format associé
-3. Enregistrez.
+« Centre d'abonnement » → « Points de terminaison d'abonnement » ; une ligne par adresse publique :
+
+| Champ | Descriptif |
+|---|---|
+| Domaine | Domaine public d'abonnement |
+| Chemin | Préfixe sous le domaine, par défaut `/` |
+| Activé | Les points de terminaison désactivés sont ignorés lors de la création de liens |
+| Descriptif | Note en texte libre |
+
+- **Plusieurs lignes (multi-domaines)** sont prises en charge ; lorsque plusieurs sont activés, le domaine du fournisseur suit le domaine utilisé par la requête en cours (voir 9.4) ;
+- Un port d'abonnement dédié sert à la racine (`/<token>`, pas de `/sub`) ; lors du partage du port du panneau, il s'agit de `/sub/<token>` ;
+- Les proxys inverses doivent transmettre `X-Forwarded-Proto` / `X-Forwarded-Host`, sinon le premier point de terminaison activé est utilisé. Les modèles de site Caddy / Nginx générés par le panneau incluent les deux en-têtes ; les configurations de proxy gérées manuellement nécessitent leur ajout manuel.
 
 ### 9.3 Liens d'abonnement
 
-- Récupérer un abonnement sur `http://your-domain/sub/:token`
-- Utilisez des paramètres tels que `?format=yaml` pour sélectionner un format
+Forme de base : `https://<sub-domain>/<token>` (port du panneau : `https://<panel-domain>/sub/<token>`)
+
+| Paramètre | Descriptif |
+|---|---|
+| `format` | Format de sortie ; Alias : `clash` → mihomo_yaml, `singbox`/`sing-box` → singbox_json, `xray` → xray_json, `raw` → raw_uri, `base64`/`v2ray` → base64_uri |
+| `config` | Appliquer un format d'abonnement par nom ; doit correspondre à `format`, sinon ignoré |
+| `platform` | Faire correspondre une configuration par plate-forme (lorsque `config` est omis) |
+| `providers` | `1` / `true` : Mode fournisseur Clash (`proxy-providers` + `use`) ; nœuds en ligne par défaut |
+
+Exemples :
+
+```bash
+# Clash dynamic subscription (config template + providers)
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray (only meaningful when such a config exists)
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# generic clients / plain text
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 Mode multi-domaine et fournisseur
+
+Avec `providers=1`, chaque entrée `proxy-providers` renvoie au point de terminaison de l'abonnement. Sélection de domaine :
+
+1. **Le domaine utilisé par cette requête** (première valeur de `X-Forwarded-Host`, port supprimé, sinon `Host`) s'il correspond à un point de terminaison **activé** ;
+2. Sinon, le point de terminaison activé avec l'**ID le plus bas** ;
+3. Le chemin provient de ce point de terminaison : `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+Ainsi, le changement de domaine ne nécessite aucun changement de panneau : les clients récupérant via le nouveau domaine obtiennent le nouveau domaine chez les fournisseurs, et un ancien domaine laissé activé n'est plus codé en dur. Si un client a mis en cache l'ancien fournisseur URL, mettez à jour l'abonnement (ou effacez le cache du fournisseur/redémarrez le client).
+
+Notes complémentaires :
+
+- `proxy-providers` dans un format partagé (`config_json`) est ignoré (évite les fuites entre plans) ; les fournisseurs proviennent de groupes de nœuds de plan et de sources externes ;
+- Les chemins de cache du fournisseur interne et externe sont toujours dérivés des « paramètres par défaut du fournisseur interne → modèle de chemin de cache » (`./providers/{key}.yaml` par défaut) ; les sources externes ne peuvent pas définir les leurs ;
+- L'ancien fournisseur réservé `subscription-nodes` n'est plus émis : les groupes utilisant « tous les nœuds » se développent en fournisseurs concrets, ou en nœuds en ligne lorsque le plan n'en a pas.
 
 ---
 
@@ -908,7 +1178,7 @@ La gestion client gère les utilisateurs finaux.
    - Planifier
    - Quota de trafic
    - Heure d'expiration
-4. Enregistrez.
+4. Sauvegarder.
 
 ### 10.2 Actions du client
 
@@ -923,12 +1193,16 @@ La gestion client gère les utilisateurs finaux.
 
 ### 10.3 Détails de l'abonnement
 
-Cliquez sur un client pour voir :
+Gestion des clients → colonne « Abonnement » → « Détails ». La boîte de dialogue répertorie les liens pour chaque format disponible pour le forfait du client :
 
-- Lien d'abonnement
-- Utilisation du trafic
-- Historique des commandes
-- Historique des transactions
+- **Clash / Mihomo** : deux lignes – nœuds en ligne et `providers=1` (fournisseurs proxy), tous deux portant `config=<name>` ;
+- **Sing-box / Xray** : affiché uniquement lorsqu'une configuration de ce format existe et est visible sur le plan ; les liens portent `config=<name>` ;
+- **Base64 URI / Raw URI** : toujours affiché (pas de `config`) ;
+- Chaque ligne possède son propre bouton de copie ; cliquer sur une ligne fait passer le code QR ci-dessous à ce format.
+
+Ainsi, avec uniquement une configuration Clash, la boîte de dialogue affiche Clash + Base64 + Raw ; Les liens sing-box / Xray apparaissent uniquement après la création de leurs configurations.
+
+La même boîte de dialogue affiche également l'utilisation du trafic, l'historique des commandes et l'historique des transactions.
 
 ---
 
@@ -955,7 +1229,7 @@ La gestion des forfaits configure les forfaits que vous vendez.
    - Trafic (GB, `0` = illimité)
    - Limite de concurrence
    - Limite de débit (Mbps)
-2. Sauvegarder.
+2. Enregistrez.
 
 ### 11.3 Modules supplémentaires de trafic
 
@@ -985,18 +1259,18 @@ La gestion des forfaits configure les forfaits que vous vendez.
 
 La gestion des recharges gère les sites de recharge, les commandes et les cartes de recharge.
 
-> **Note sur l'intégration des paiements**
+> **Intégration des paiements**
 >
-> Le panneau **ne se connecte pas directement aux établissements de paiement** (Alipay, WeChat Pay, Stripe, banques, etc.) ; il se connecte uniquement à une **plateforme de paiement intermédiaire**, qui s'intègre à l'établissement de paiement correspondant, gère la contractualisation, l'acquisition et le règlement, puis renvoie les résultats de paiement au panneau via l'[API de callback de paiement](api/charge-callback.md).
+> Le panel **ne s'intègre pas directement aux établissements de paiement** (Alipay, WeChat Pay, Stripe, banques, etc.). Il se connecte uniquement à une **plate-forme de paiement intermédiaire**, qui à son tour s'intègre à l'établissement de paiement correspondant, gère la passation des contrats, l'acquisition et le règlement, et rapporte les résultats du paiement via l'API](api/charge-callback.md) de rappel de charge [.
 >
-> La plateforme de paiement intermédiaire **ne fait pas partie de ce projet et doit être développée par l'exploitant (ou reposer sur son propre système)**. Une fois déployée, enregistrez-la dans « Sites de recharge » et validez le domaine pour l'utiliser comme point d'entrée de recharge ; le site de recharge désigne cette plateforme intermédiaire, et non l'établissement de paiement. Les qualifications de paiement, les frais, le règlement et la conformité sont convenus et assumés par l'exploitant, l'établissement de paiement et la plateforme intermédiaire.
+> La plateforme de paiement intermédiaire ne fait **pas partie de ce projet ; les opérateurs doivent le développer eux-mêmes (ou utiliser leur propre système)**. Une fois déployé, enregistrez-le sous « Sites de recharge » et effectuez la vérification du domaine pour l'utiliser comme point d'entrée de recharge ; le site de recharge ici est cette plateforme intermédiaire, et non l'établissement de paiement lui-même. Les conditions de paiement, les frais, le règlement et la conformité sont convenus et supportés par l'opérateur, l'établissement de paiement et la plateforme intermédiaire.
 
 ### 12.1 Sites de recharge
 
 1. Ouvrez « Gestion des recharges » → « Sites de recharge » ;
 2. Ajouter un site :
    - Nom du site
-   - Méthodes de paiement prises en charge par cette plateforme intermédiaire (Alipay, WeChat, USDT, Stripe, etc., fournies par son intégration aux établissements de paiement)
+   - Modes de paiement pris en charge par cette plateforme intermédiaire (Alipay, WeChat, USDT, Stripe, etc., fournis grâce à son intégration avec les établissements de paiement)
    - Devise
    - Taux de change
 3. Enregistrer ;
@@ -1045,15 +1319,15 @@ La gestion des tickets gère les demandes d’assistance client.
 ### 13.1 Liste des billets
 
 - Voir tous les billets
-- Filter by status (open, replied, closed)
+- Filtrer par statut (ouvert, répondu, fermé)
 - Filtrer par catégorie (technique, facturation, compte, autre)
 - Filtrer par priorité (faible, normale, élevée, urgente)
 
 ### 13.2 Actions sur les tickets
 
-- **View / reply**: open a ticket and reply
-- **Assign**: assign a ticket to an administrator
-- **Close**: close a resolved ticket
+- **Afficher / Répondre** : ouvrez un ticket et répondez
+- **Attribuer** : attribuer un ticket à un administrateur
+- **Fermer** : fermer un ticket résolu
 
 ---
 
@@ -1061,30 +1335,30 @@ La gestion des tickets gère les demandes d’assistance client.
 
 La gestion des certificats gère les certificats TLS.
 
-### 14.1 Issuing a certificate
+### 14.1 Délivrance d'un certificat
 
-1. Open “Certificate management”;
+1. Ouvrir « Gestion des certificats » ;
 2. Cliquez sur « Émettre un certificat » ;
 3. Remplissez :
    - Liste de domaines (une par ligne)
    - Type de certificat (domaine / IP)
    - Type de clé (ECC/RSA)
-   - Validation method (DNS-01 / HTTP-01)
+   - Méthode de validation (DNS-01 / HTTP-01)
    - Fournisseur DNS
-   - Issuance location (panel host / node)
+   - Lieu d'émission (hôte du panneau/nœud)
 4. Cliquez sur « Problème ».
 
 ### 14.2 Actions de certificat
 
-- **Renew**: renew manually
-- **Deploy**: deploy to a node
-- **Distribute**: push to all associated nodes
+- **Renouveler** : renouveler manuellement
+- **Déployer** : déployer sur un nœud
+- **Distribuer** : envoyer vers tous les nœuds associés
 - **Migrer** : déplacer les références d'un ancien certificat vers un nouveau
 - **Télécharger** : télécharger `cert` / `fullchain` / `privkey`
 
 ### 14.3 Télécharger un certificat
 
-1. Click “Upload certificate”;
+1. Cliquez sur « Télécharger le certificat » ;
 2. Choisissez la méthode :
    - Collez le contenu
    - Télécharger des fichiers
@@ -1148,9 +1422,13 @@ Les proxys chaînés configurent des liens à sorties multiples.
 
 - Importer des nœuds externes (v2ray URI, Base64 URI, abonnement URL)
 - Enregistrer les entrées externes
-- Gérer les nœuds externes (modifier / supprimer individuellement)
-- Domaine d'accès : configurer l'accélération CDN / l'IP préférée par nœud (domaine direct, domaine CF préféré, pool d'IP CF, personnalisé). Seuls server/port livrés dans les abonnements sont réécrits ; SNI/Host restent tels qu'importés. Si désactivé, l'adresse/le port importés sont utilisés
-- Lorsque « domaine CF préféré / pool d'IP CF » est sélectionné sans valeur précise, une entrée est choisie aléatoirement dans le pool (avec son port) ; « direct / personnalisé » exige une valeur explicite, sinon retour à l'adresse du nœud
+- Gérer les nœuds externes (modifier/supprimer individuellement)
+- Domaine d'accès : configurez l'accélération CDN/IP préférée par nœud (domaine direct, CF préféré
+ domaine, pool IP CF, personnalisé). Seul le serveur/port livré dans les abonnements est réécrit ;
+ SNI/Host reste tel qu’importé. Lorsqu'il est désactivé, l'adresse/le port importé est utilisé
+- Lorsque « Domaine préféré CF / Pool IP CF » est sélectionné sans valeur spécifique, une entrée est sélectionnée
+ au hasard de la piscine (avec son port) ; "direct / custom" nécessite une valeur explicite, sinon
+ il revient à la propre adresse du nœud
 
 ---
 
@@ -1162,9 +1440,15 @@ Les utilisateurs en ligne affichent leur statut en ligne en temps réel.
 
 - Abonnements en ligne
 - Appareils/IP en ligne
-- Nœuds en ligne
-- Tarif en temps réel
-- Trafic total
+- Nœud, IP et temps de connexion pour chaque abonnement
+- Taux de liaison montante/descendante en temps réel
+- Liaison montante totale / Liaison descendante totale / Trafic total
+
+> La liaison montante totale, la liaison descendante totale et le trafic total s'accumulent au cours d'une **session en ligne continue** :
+> les reconnexions de courte durée, les redémarrages du cœur et les réinitialisations des compteurs ne les effacent pas. Seulement après 60 ans
+> secondes sans nouveau rapport, une nouvelle session démarre-t-elle à zéro. C'est une mesure différente
+> à partir du compteur de « trafic depuis ce début » du noyau et reflète mieux ce qu'un utilisateur a réellement
+> utilisé pendant la session en cours.
 
 ### 17.2 Filtrage
 
@@ -1395,13 +1679,21 @@ La gestion des journaux affiche les journaux système.
 
 ## 25. Extensions d'opérations
 
-Les extensions d'opérations configurent des extensions facultatives.
+« Extensions d'opérations » (`/client-ext`) configure le marketing de référence, les commissions et les retraits ;
+« Documents juridiques » (`/legal-documents`) gère les accords côté portail.
 
-### 25.1 Caractéristiques
+### 25.1 Parrainages et commissions
 
-- Extensions personnalisées
-- Configuration des extensions
-- Gestion des extensions
+- **Configuration de remise** : taux de remise (pourcentage du premier paiement de l'invité, `0` = désactivé), mode commission (premier achat uniquement / tous les achats), montant minimum de retrait (le solde de commission doit l'atteindre avant qu'un retrait puisse être demandé)
+- **Codes d'invitation** : lorsqu'elle est activée, l'inscription nécessite un code d'invitation ; définir la longueur du code, les jours d'expiration et les utilisations maximales (`0` = illimité) et générer/afficher la liste des codes
+- **Examen de retrait** : filtrer par en attente/approuvé/rejeté ; ajoutez une note de traitement et enregistrez le mode de paiement et l'adresse du portefeuille
+- **Enregistrements de parrainage** : invitant, invité, montant de la commission et statut de la commission
+
+### 25.2 Documents juridiques
+
+- Gérez séparément la « Politique de confidentialité » et les « Conditions de service », un document Markdown par région, avec aperçu en direct ;
+- Chaque document peut utiliser un URL externe au lieu de la page intégrée ; lorsqu'elle est vide, la page intégrée URL est utilisée (copiable sur la page) ;
+- Le portail affiche la version des paramètres régionaux actuels et revient aux paramètres régionaux par défaut en cas d'absence.
 
 ---
 
@@ -1445,7 +1737,7 @@ Les extensions d'opérations configurent des extensions facultatives.
 - Vérifiez que le port du portail est ouvert
 - Vérifiez la configuration du chemin du portail
 - **Important** : assurez-vous que le proxy inverse transfère le domaine du portail vers le **port du moteur du portail**, et non vers le port du panneau principal : le transfert vers le mauvais port affiche une page vierge ou le panneau au lieu du portail. Vérifiez `upstream` / `local_port` dans l'enregistrement du site proxy.
-- Ouvrez `http://<portal-domain>:<portal-port>` directement pour vérifier le moteur de portail lui-même
+- Ouvrez directement `http://<portal-domain>:<portal-port>` pour vérifier le moteur de portail lui-même
 - Vérifiez la configuration du proxy inverse
 - Vérifiez les journaux du portail
 
@@ -1483,6 +1775,10 @@ Le binaire du panneau prend en charge ces sous-commandes (aucun argument ne dém
 # Run database migrations
 ./corefusion migrate
 
+# Non-interactive init / reset init state (see 3.4, 3.5)
+./corefusion init --help
+./corefusion reset-init
+
 # Offline administration (when you cannot sign in)
 ./corefusion admin reset-password -u admin -p 'new-password'
 ./corefusion admin 2fa reset -u admin
@@ -1493,10 +1789,12 @@ Le binaire du panneau prend en charge ces sous-commandes (aucun argument ne dém
 ./corefusion help
 ```
 
-> Sans unité systemd, redémarrez en arrêtant l'ancien processus et en le redémarrant avec `nohup` ; les journaux sont dans `<install-dir>/data/logs/panel.log`.
+> Avec systemd, utilisez `systemctl restart corefusion` et `journalctl -u corefusion -f` ; sans
+> systemd (conteneurs et similaires), arrêtez l'ancien processus et redémarrez-le avec `nohup`, les journaux sont
+> dans `data/logs/panel.log`.
 
 ---
 
-> **Version du document** : v1.0
-> **Dernière mise à jour** : 2026-10-23
-> **S'applique à** : CoreFusion v1.0+
+> **Version du document** : v1.1
+> **Dernière mise à jour** : 2026-11-16
+> **S'applique à** : CoreFusion v0.13.0-beta.x

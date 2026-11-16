@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: fr | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: fr | updated: 2026-11-16 -->
 # Référence du portail API (Client / Portail API)
 
 > Langues : [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · Français · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -22,7 +22,7 @@
 - Les jetons d'accès durent 24h, actualisent les jetons 7 jours ;
 - Le JWT contient `tv` (token_version) : la déconnexion/déconnexion forcée l'incrémente et invalide tous les anciens jetons
  (`clients.token_version`, voir `internal/service/clientauth/service.go`) ;
-- Chaque point de terminaison protégé passe par `ClientAuthMiddleware` (vérification de version + garde en mode maintenance).
+- Chaque point de terminaison protégé passe par `ClientAuthMiddleware` (vérification de version + protection en mode maintenance).
 
 ### 1.3 Enveloppe de réponse
 
@@ -78,7 +78,7 @@ Au 401, appelez `POST /api/v1/client-auth/refresh` une fois et réessayez ; si 
 | GET | `/api/v1/public/articles` | Articles publics (publiés uniquement) |
 | GET | `/api/v1/public/articles/:slug` | Détail de l'article |
 | GET | `/api/v1/public/client-configs` | Configuration du téléchargement du client |
-| GET | `/sub/:token` | Livraison de l'abonnement (`format` renvoie base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc. ; révoqué/manquant → 404, suspendu/expiré/inactif → 403. Voir [subscription.md](./subscription.fr.md)) |
+| GET | `/sub/:token` | Livraison de l'abonnement (`format` renvoie base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc. ; révoqué/manquant → 404, suspendu/expiré/inactif → 403. Voir [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilité du fournisseur OAuth : `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Statut de maintenance (public). Le portail affiche une page de maintenance lorsqu'il est activé |
 
@@ -105,6 +105,7 @@ Au 401, appelez `POST /api/v1/client-auth/refresh` une fois et réessayez ; si 
 | Méthode | Chemin | Descriptif |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Client actuel : `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (enveloppe `data`) |
+| PUT | `/api/v1/client-auth/settings` | Mettre à jour les paramètres de libre-service client : Corps : `{ip_whitelist, device_limit}` ; un `ip_whitelist` vide signifie aucune restriction d'adresse IP source |
 | POST | `/api/v1/client-auth/change-password` | Corps : `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Heure du serveur (synchronisation de l'horloge client) |
 | GET | `/api/v1/client-auth/connection-info` | Paramètres de connexion du plan actuel : `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -221,14 +222,14 @@ Au 401, appelez `POST /api/v1/client-auth/refresh` une fois et réessayez ; si 
 | POST | `/api/v1/client-auth/settings/auto-add-ip` | Ajouter l'adresse IP actuelle à la liste verte |
 | POST | `/api/v1/client-auth/self-unban` | Annulation du bannissement en libre-service (tentatives limitées par la politique) |
 
-> La liste verte IP **s'applique uniquement aux URL d'abonnement** (`/sub/:token`) ; il ne bloque pas la connexion au portail/OAuth ou
-> d'autres points de terminaison d'authentification client. Si l'utilisateur n'a pas de liste verte ou d'abonnement URL, l'accès est toujours autorisé. Le
+> The IP allow-list **only applies to subscription URLs** (`/sub/:token`); il ne bloque pas la connexion au portail/OAuth ou
+> d'autres points de terminaison d'authentification client. If the user has no allow-list or no subscription URL, access is always allowed. Le
 > la liste verte est un paramètre par utilisateur ; il n'y a pas de commutateur global.
 
-**Flux d'auto-débannissement** : disponible uniquement pour `auto_quota` (interdiction automatique de dépassement de trafic) lorsque le côté administrateur
-`self_unban.enabled` est allumé. La connexion (mot de passe ou rappel OAuth) renvoie `require_self_unban=true` + `self_unban_token`
-(typ=self_unban, valide 15 minutes, **uniquement** utilisable sur `POST /self-unban` ; les autres points de terminaison renvoient 403/`SELF_UNBAN_TOKEN_SCOPE`).
-Le portail affiche alors la carte de déblocage ; après un bannissement réussi, l'utilisateur se reconnecte. Les rappels OAuth fournissent cela via
+**Self-unban flow**: available only for `auto_quota` (automatic ban on traffic overage) when the admin-side
+`self_unban.enabled` est activé. Sign-in (password or OAuth callback) returns `require_self_unban=true` + `self_unban_token`
+(typ=self_unban, valid 15 minutes, **only** usable on `POST /self-unban`; other endpoints return 403/`SELF_UNBAN_TOKEN_SCOPE`).
+Le portail affiche alors la carte de déblocage ; after a successful unban the user signs in again. Les rappels OAuth fournissent cela via
 le fragment URL `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 
 ## 16. Codes d'erreur (extrait)

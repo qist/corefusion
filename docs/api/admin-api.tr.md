@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: tr | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: tr | updated: 2026-11-16 -->
 # Yönetici API
 
 > Diller: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · Türkçe · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - Temel URL: `https://<panel-domain>/api/v1`
 - Yetki: `Authorization: Bearer <admin_token>` (`POST /api/v1/auth/login`'den)
 - Yaygın yanıt/hata formatları ve hız sınırı kuralları: bkz. [README.md](./README.tr.md)
-- Gerçeğin kaynağı: `internal/api/router/router.go` (sayı sürüme göre değişir; kod esastır); eğer bu tablo aynı fikirde değilse **kod kazanır**
+- Doğruluk kaynağı: `internal/api/router/router.go` (sayı sürüme göre değişir; kod yetkilidir); eğer bu tablo aynı fikirde değilse **kod kazanır**
 
 ## İzin işaretleri
 
@@ -17,8 +17,11 @@
 | halka açık | Oturum açmanıza gerek yok (bakım koruması/hız sınırlaması hâlâ geçerli olabilir) |
 | Herkese açık · ücret sınırlı | Özel bir ücret sınırıyla oturum açmaya gerek yok |
 | Oturum açıldı | Oturum açılmış bir yönetici belirteci gerektirir (`AuthRequired`) |
+| Operatör | Rol gerektirir ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Yönetici | Rol gerektirir ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Süper yönetici | Rol gerektirir = `super_admin` |
+| Müşteri (genel) | İstemci belirtecine gerek yok (oturum açma/kaydolma vb.) |
+| Müşteri (oturum açmış) | `Authorization: Bearer <client_token>` gerektirir (yönetici belirteci değil, portal istemci belirteci) |
 
 Rol seviyeleri: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; yetersiz roller 403 `INSUFFICIENT_ROLE` döndürüyor.
 
@@ -196,15 +199,15 @@ Oturum açma, çıkış yapma, şifre değiştirme, 2FA (TOTP), Passkey (WebAuth
 | POST | `/api/v1/auth/passkey/login/finish` | halka açık | Oturum açma işlemini tamamlayın |
 | POST | `/api/v1/auth/passkey/register/begin` | Oturum açıldı | Kaydı başlat |
 | POST | `/api/v1/auth/passkey/register/finish` | Oturum açıldı | Kaydı tamamla |
-| GET | `/api/v1/auth/passkey/rpids` | Oturum açıldı | RP ID izin verilenler listesi |
-| POST | `/api/v1/auth/passkey/rpids` | Oturum açıldı | RP Kimliği izin verilenler listesini güncelle |
+| GET | `/api/v1/auth/passkey/rpids` | Yönetici | RP ID izin verilenler listesi |
+| POST | `/api/v1/auth/passkey/rpids` | Yönetici | RP Kimliği izin verilenler listesini güncelle |
 | GET | `/api/v1/auth/passkey/status` | halka açık | Durum |
 | POST | `/api/v1/auth/refresh` | halka açık | Yenile |
 | POST | `/api/v1/auth/ticket` | Oturum açıldı | Bir kerelik kısa ömürlü bilet düzenleyin |
 
 ### Yönetici hesapları
 
-Yönetici paneli kullanıcı hesapları. Listeleme yönetici gerektirir; oluşturma/güncelleme/silme süper yönetici gerektirir (ayrıcalığın artırılmasını önler).
+Yönetici paneli kullanıcı hesapları. Listeleme yönetici gerektirir; oluşturma/güncelleme/silme süper yönetici gerektirir (ayrıcalığın yükseltilmesini önler).
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
@@ -220,17 +223,17 @@ Aboneler (portal hesapları) için CRUD, askıya alma/devam ettirme, yükseltme/
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Oturum açıldı | Müşterileri listeleyin |
-| POST | `/api/v1/clients` | Oturum açıldı | Müşteri oluşturun. gövde: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` gereklidir; `password` boş olabilir (müşteriler bunu daha sonra portalda ayarlayabilir) |
-| DELETE | `/api/v1/clients/:id` | Oturum açıldı | Müşteriyi sil |
+| POST | `/api/v1/clients` | Operatör | Müşteri oluşturun. gövde: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` gereklidir; `password` boş olabilir (müşteriler bunu daha sonra portalda ayarlayabilir) |
+| DELETE | `/api/v1/clients/:id` | Operatör | Müşteriyi sil |
 | GET | `/api/v1/clients/:id` | Oturum açıldı | Müşteri edinin |
-| PUT | `/api/v1/clients/:id` | Oturum açıldı | Müşteriyi güncelle |
-| POST | `/api/v1/clients/:id/downgrade` | Oturum açıldı | Müşterinin düzeyini düşür |
+| PUT | `/api/v1/clients/:id` | Operatör | Müşteriyi güncelle |
+| POST | `/api/v1/clients/:id/downgrade` | Operatör | Müşterinin düzeyini düşür |
 | GET | `/api/v1/clients/:id/orders` | Oturum açıldı | Müşteri sipariş listesi |
-| POST | `/api/v1/clients/:id/renew` | Oturum açıldı | Müşteriyi yenile |
-| POST | `/api/v1/clients/:id/reset-usage` | Oturum açıldı | Kullanımı sıfırla |
-| POST | `/api/v1/clients/:id/restore` | Oturum açıldı | Müşteriyi devam ettir |
-| POST | `/api/v1/clients/:id/suspend` | Oturum açıldı | Müşteriyi askıya al |
-| POST | `/api/v1/clients/:id/upgrade` | Oturum açıldı | Müşteriyi yükseltin |
+| POST | `/api/v1/clients/:id/renew` | Operatör | Müşteriyi yenile |
+| POST | `/api/v1/clients/:id/reset-usage` | Operatör | Kullanımı sıfırla |
+| POST | `/api/v1/clients/:id/restore` | Operatör | Müşteriyi devam ettir |
+| POST | `/api/v1/clients/:id/suspend` | Operatör | Müşteriyi askıya al |
+| POST | `/api/v1/clients/:id/upgrade` | Operatör | Müşteriyi yükseltin |
 
 ### Şablonları planlayın
 
@@ -239,17 +242,17 @@ Planlar (varyantlar, fatura döngüleri, fiyatlar, trafik kotaları) ve şablon 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Oturum açıldı | Şablon listesi |
-| POST | `/api/v1/plan-templates` | Oturum açıldı | Şablon oluştur |
-| DELETE | `/api/v1/plan-templates/:id` | Oturum açıldı | Şablonu sil |
+| POST | `/api/v1/plan-templates` | Yönetici | Şablon oluştur |
+| DELETE | `/api/v1/plan-templates/:id` | Yönetici | Şablonu sil |
 | GET | `/api/v1/plan-templates/:id` | Oturum açıldı | Şablon ayrıntıları |
-| PUT | `/api/v1/plan-templates/:id` | Oturum açıldı | Şablonu güncelle |
+| PUT | `/api/v1/plan-templates/:id` | Yönetici | Şablonu güncelle |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Oturum açıldı | Kullanılabilir düğümleri al |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Oturum açıldı | Faturalandırılabilir düğüm seçeneklerini edinin |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Oturum açıldı | Şablon düğüm gruplarını ayarlama |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Oturum açıldı | Hesapları şablona senkronize et |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Yönetici | Şablon düğüm gruplarını ayarlama |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Yönetici | Hesapları şablona senkronize et |
 | GET | `/api/v1/plan-templates/:id/variants` | Oturum açıldı | Varyant listesi |
-| POST | `/api/v1/plan-templates/:id/variants` | Oturum açıldı | Varyant oluştur |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Oturum açıldı | Tüm hesapları senkronize et |
+| POST | `/api/v1/plan-templates/:id/variants` | Yönetici | Varyant oluştur |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Yönetici | Tüm hesapları senkronize et |
 
 ### Plan varyantları
 
@@ -257,8 +260,8 @@ Plan değişkenlerini güncelleyin ve silin (oluşturma, plan şablonlarının a
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Oturum açıldı | Varyantı sil |
-| PUT | `/api/v1/plan-variants/:id` | Oturum açıldı | Varyantı güncelle |
+| DELETE | `/api/v1/plan-variants/:id` | Yönetici | Varyantı sil |
+| PUT | `/api/v1/plan-variants/:id` | Yönetici | Varyantı güncelle |
 
 ### Trafik paketleri
 
@@ -267,9 +270,9 @@ Ayrı olarak satın alınabilen trafik paketleri.
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Oturum açıldı | Trafik paketi listesi |
-| POST | `/api/v1/traffic-packs` | Oturum açıldı | Trafik paketi oluştur |
-| DELETE | `/api/v1/traffic-packs/:id` | Oturum açıldı | Trafik paketini sil |
-| PUT | `/api/v1/traffic-packs/:id` | Oturum açıldı | Trafik paketini güncelle |
+| POST | `/api/v1/traffic-packs` | Yönetici | Trafik paketi oluştur |
+| DELETE | `/api/v1/traffic-packs/:id` | Yönetici | Trafik paketini sil |
+| PUT | `/api/v1/traffic-packs/:id` | Yönetici | Trafik paketini güncelle |
 
 ### Kuponlar
 
@@ -278,9 +281,9 @@ Kuponları oluşturun, doğrulayın ve kullanın.
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Oturum açıldı | Kuponları listele |
-| POST | `/api/v1/promotions` | Oturum açıldı | Kupon oluştur |
-| DELETE | `/api/v1/promotions/:id` | Oturum açıldı | Kuponu sil |
-| PUT | `/api/v1/promotions/:id` | Oturum açıldı | Kuponu güncelle |
+| POST | `/api/v1/promotions` | Yönetici | Kupon oluştur |
+| DELETE | `/api/v1/promotions/:id` | Yönetici | Kuponu sil |
+| PUT | `/api/v1/promotions/:id` | Yönetici | Kuponu güncelle |
 | POST | `/api/v1/promotions/validate` | Oturum açıldı | Kuponu doğrula |
 
 ### Düğüm grupları
@@ -290,12 +293,12 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Oturum açıldı | Düğüm gruplarını listeleyin |
-| POST | `/api/v1/node-groups` | Oturum açıldı | Düğüm grubu oluştur |
-| DELETE | `/api/v1/node-groups/:id` | Oturum açıldı | Düğüm grubunu sil |
-| PUT | `/api/v1/node-groups/:id` | Oturum açıldı | Düğüm grubunu güncelle |
+| POST | `/api/v1/node-groups` | Yönetici | Düğüm grubu oluştur |
+| DELETE | `/api/v1/node-groups/:id` | Yönetici | Düğüm grubunu sil |
+| PUT | `/api/v1/node-groups/:id` | Yönetici | Düğüm grubunu güncelle |
 | GET | `/api/v1/node-groups/:id/members` | Oturum açıldı | Grup üyelerini listeleyin |
-| POST | `/api/v1/node-groups/:id/members` | Oturum açıldı | Grup üyesi ekle |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Oturum açıldı | Grup üyesini kaldır |
+| POST | `/api/v1/node-groups/:id/members` | Yönetici | Grup üyesi ekle |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Yönetici | Grup üyesini kaldır |
 
 ### Düğüm sunucuları
 
@@ -316,7 +319,7 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/binaries/reality-key` | Yönetici | REALITY anahtar çifti oluştur |
 | POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | Yönetici | Genel anahtarı REALITY özel anahtarından türetin |
 | GET | `/api/v1/node-servers/:id/binaries/releases` | Yönetici | Mevcut versiyonlar |
-| POST | `/api/v1/node-servers/:id/binaries/vlessenc` | Yönetici | VLESS şifreleme parametreleri oluşturun |
+| POST | `/api/v1/node-servers/:id/binaries/vlessenc` | Yönetici | VLESS şifreleme parametrelerini oluşturun |
 | POST | `/api/v1/node-servers/:id/binaries/wg-key` | Yönetici | WireGuard anahtarı oluştur |
 | POST | `/api/v1/node-servers/:id/binaries/x25519-key` | Yönetici | X25519 anahtar çifti oluştur |
 | GET | `/api/v1/node-servers/:id/bootstrap-cmd` | Yönetici | Agent önyükleme komutunu al |
@@ -328,7 +331,8 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Yönetici | Kaydet ve uygula |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Yönetici | Site listesi |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Yönetici | Site oluştur |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Siteleri içe aktar |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Yönetici | Siteleri içe aktar |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Yönetici | Oluşturulan Caddy sitesini önizleyin |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Yönetici | Siteyi sil |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Yönetici | Siteyi güncelle |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Yönetici | Tüm SNI kurallarını sil |
@@ -352,7 +356,10 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | GET | `/api/v1/node-servers/:id/failover-status` | Yönetici | Yük devretme durumu |
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Yönetici | Yeniden bağlanmaya zorla |
 | GET | `/api/v1/node-servers/:id/free-port` | Yönetici | Ücretsiz bir bağlantı noktası isteyin |
-| POST | `/api/v1/node-servers/:id/geo-rules/push` | Yönetici | Bu düğüme gönder |
+| POST | `/api/v1/node-servers/:id/geo-rules/push` | Yönetici | Bu düğüme it |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Yönetici | Güvenlik duvarı algılama (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Yönetici | Gelen dinleme bağlantı noktasına izin ver (çoklu aralık desteklenir) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Yönetici | Gelen bağlantı noktası iznini iptal edin (kopyalar dahil) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Yönetici | Liste |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Yönetici | Oluştur |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Yönetici | Sil |
@@ -373,8 +380,9 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Yönetici | Ayarları kaydet |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Yönetici | Site listesi |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Yönetici | Site oluştur |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Siteleri içe aktar |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL sertifika dosyaları oluştur |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Yönetici | Siteleri içe aktar |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Yönetici | Önizlemeyle oluşturulan Nginx sitesi |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Yönetici | SSL sertifika dosyaları oluşturun |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Yönetici | Siteyi sil |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Yönetici | Siteyi güncelle |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Yönetici | Tüm SNI kurallarını sil |
@@ -457,6 +465,7 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Yönetici | Tümünü temizle |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Yönetici | Bağlantı noktası atlamalı güvenlik duvarı kurallarını uygulama |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Yönetici | Bağlantı noktası atlamalı güvenlik duvarı kurallarını kaldırın |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Yönetici | Canlı sing-box bağlantıları (clash_api, yalnızca yerel düğüm) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Yönetici | Düğüm hızı testi |
 | GET | `/api/v1/node-servers/:id/status` | Yönetici | Düğüm durumu |
 | POST | `/api/v1/node-servers/:id/sync` | Yönetici | Düğüm yapılandırmasını senkronize et (oluştur ve gönder) |
@@ -483,7 +492,7 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | PUT | `/api/v1/node-servers/:id/waf/domain-rules/:domain/:name` | Yönetici | Alan kuralı dosyasını kaydet |
 | GET | `/api/v1/node-servers/:id/waf/domain-status` | Yönetici | Etki alanı koruma durumu |
 | POST | `/api/v1/node-servers/:id/waf/enable-domain` | Yönetici | Etki alanı korumasını etkinleştir |
-| POST | `/api/v1/node-servers/:id/waf/push` | Yönetici | Bu düğüme gönder |
+| POST | `/api/v1/node-servers/:id/waf/push` | Yönetici | Bu düğüme it |
 | GET | `/api/v1/node-servers/:id/waf/rules` | Yönetici | Düğüm WAF kural listesi |
 | DELETE | `/api/v1/node-servers/:id/waf/rules/:name` | Yönetici | Düğüm WAF kurallarını sil |
 | GET | `/api/v1/node-servers/:id/waf/rules/:name` | Yönetici | Düğüm WAF kural ayrıntıları |
@@ -496,6 +505,8 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | GET | `/api/v1/node-servers/:id/warp/config` | Yönetici | Yapılandırmayı oku |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Yönetici | Yapılandırma oluştur |
 | POST | `/api/v1/node-servers/:id/warp/register` | Yönetici | Kayıt ol |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Yönetici | WARP MASQUE profilini kaydedin (adım 1/2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Yönetici | WARP profilinden sing-box MASQUE giden bağlantısı oluşturma |
 | GET | `/api/v1/node-servers/:id/warp/status` | Yönetici | Durum |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Yönetici | Dengeleyici bilgilerini alın |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Yönetici | Dengeleyici hedefini ayarla |
@@ -544,12 +555,12 @@ Düğüm tarafı operasyon denetimi ve dışa aktarımı.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Oturum açıldı | Düğüm denetim günlüğü |
-| GET | `/api/v1/node-audit-logs/export` | Oturum açıldı | Düğüm denetim günlüklerini dışa aktar |
+| GET | `/api/v1/node-audit-logs` | Yönetici | Düğüm denetim günlüğü |
+| GET | `/api/v1/node-audit-logs/export` | Yönetici | Düğüm denetim günlüklerini dışa aktar |
 
 ### Düğümler (eski model, kullanımdan kaldırıldı)
 
-> `/api/v1/nodes` CRUD, 2026-10-20 tarihinde kullanımdan kaldırıldı: düğümler `/api/v1/node-servers` aracılığıyla eşit şekilde yönetiliyor.
+> `/api/v1/nodes` CRUD, 2026-10-20 tarihinde kullanımdan kaldırıldı: düğümler, `/api/v1/node-servers` aracılığıyla eşit şekilde yönetiliyor.
 > Çevrimiçi kullanıcı sorguları `/api/v1/node-servers/{online-users,online-summary,:id/online-users}`'de kalır.
 
 ### Bölgeye genel bakış
@@ -568,22 +579,22 @@ Abonelik kaydı yönetimi: iptal etme, jetonu döndürme, günlüklere erişim, 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Oturum açıldı | Liste |
-| POST | `/api/v1/subscriptions` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/subscriptions/:id` | Oturum açıldı | Sil |
+| POST | `/api/v1/subscriptions` | Operatör | Oluştur |
+| DELETE | `/api/v1/subscriptions/:id` | Operatör | Sil |
 | GET | `/api/v1/subscriptions/:id` | Oturum açıldı | Ayrıntılar |
-| PUT | `/api/v1/subscriptions/:id` | Oturum açıldı | Güncelleme |
+| PUT | `/api/v1/subscriptions/:id` | Operatör | Güncelleme |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Oturum açıldı | Erişim günlüğü |
-| POST | `/api/v1/subscriptions/:id/enable` | Oturum açıldı | Etkinleştir |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Oturum açıldı | Kullanımı sıfırla |
-| POST | `/api/v1/subscriptions/:id/restore` | Oturum açıldı | Devam et |
-| POST | `/api/v1/subscriptions/:id/revoke` | Oturum açıldı | İptal et |
-| POST | `/api/v1/subscriptions/:id/rotate` | Oturum açıldı | Döndür |
+| POST | `/api/v1/subscriptions/:id/enable` | Operatör | Etkinleştir |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Operatör | Kullanımı sıfırla |
+| POST | `/api/v1/subscriptions/:id/restore` | Operatör | Devam et |
+| POST | `/api/v1/subscriptions/:id/revoke` | Operatör | İptal et |
+| POST | `/api/v1/subscriptions/:id/rotate` | Operatör | Döndür |
 | GET | `/api/v1/subscriptions/:id/rotations` | Oturum açıldı | Rotasyon geçmişi |
 
 ### Abonelik formatları
 
 > Yönetici tarafı `/api/v1/subscription-formats` CRUD, 2026-10-20 tarihinde kullanımdan kaldırıldı: gerçek giriş noktası
-> `/api/v1/mihomo/configs` (abonelik formatı merkezi). `subscription_formats` tablosu kalır,
+> `/api/v1/mihomo/configs` (abonelik biçimi merkezi). `subscription_formats` tablosu kalır,
 > yalnızca genel `/api/v1/public/client-configs` uç noktası için çekirdek verileri olarak kullanılır.
 
 ### Abonelik uç noktaları
@@ -593,23 +604,23 @@ Abonelik kaydı yönetimi: iptal etme, jetonu döndürme, günlüklere erişim, 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Oturum açıldı | Liste |
-| POST | `/api/v1/subscription-endpoints` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Oturum açıldı | Sil |
+| POST | `/api/v1/subscription-endpoints` | Yönetici | Oluştur |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Yönetici | Sil |
 | GET | `/api/v1/subscription-endpoints/:id` | Oturum açıldı | Ayrıntılar |
-| PUT | `/api/v1/subscription-endpoints/:id` | Oturum açıldı | Güncelleme |
+| PUT | `/api/v1/subscription-endpoints/:id` | Yönetici | Güncelleme |
 
 ### Alanları paylaş
 
-İstemci bağlantılarında kullanılan etki alanı/IP havuzuna erişim.
+İstemci bağlantılarında kullanılan etki alanına/IP havuzuna erişin.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Oturum açıldı | Liste |
-| POST | `/api/v1/share-domains` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/share-domains/:id` | Oturum açıldı | Sil |
-| PUT | `/api/v1/share-domains/:id` | Oturum açıldı | Güncelleme |
-| DELETE | `/api/v1/share-domains/all` | Oturum açıldı | Tümünü temizle |
-| POST | `/api/v1/share-domains/seed` | Oturum açıldı | Varsayılan verileri başlat |
+| POST | `/api/v1/share-domains` | Yönetici | Oluştur |
+| DELETE | `/api/v1/share-domains/:id` | Yönetici | Sil |
+| PUT | `/api/v1/share-domains/:id` | Yönetici | Güncelleme |
+| DELETE | `/api/v1/share-domains/all` | Yönetici | Tümünü temizle |
+| POST | `/api/v1/share-domains/seed` | Yönetici | Varsayılan verileri başlat |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP havuzu ve kaynak yönetimi.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Oturum açıldı | Girişleri temizle |
+| DELETE | `/api/v1/cfip/entries` | Yönetici | Girişleri temizle |
 | GET | `/api/v1/cfip/entries` | Oturum açıldı | Giriş listesi |
-| POST | `/api/v1/cfip/entries` | Oturum açıldı | Giriş ekle |
-| DELETE | `/api/v1/cfip/entries/:id` | Oturum açıldı | Girişi sil |
-| POST | `/api/v1/cfip/fetch-all` | Oturum açıldı | Tüm kaynakları getir |
-| POST | `/api/v1/cfip/seed` | Oturum açıldı | Varsayılan verileri başlat |
+| POST | `/api/v1/cfip/entries` | Yönetici | Giriş ekle |
+| DELETE | `/api/v1/cfip/entries/:id` | Yönetici | Girişi sil |
+| POST | `/api/v1/cfip/fetch-all` | Yönetici | Tüm kaynakları getir |
+| GET | `/api/v1/cfip/probe-config` | Oturum açıldı | CF tercihli IP araştırma yapılandırması (giriş düğümleri + kurulu çeviriciler) |
+| PUT | `/api/v1/cfip/probe-config` | Yönetici | Prob aralığını / gecikme sınırını / giriş düğümünü / çeviriciyi kaydet |
+| POST | `/api/v1/cfip/check` | Yönetici | Tercih edilen tüm alanları/IP'leri şimdi araştırın |
+| POST | `/api/v1/cfip/seed` | Yönetici | Varsayılan verileri başlat |
 | GET | `/api/v1/cfip/sources` | Oturum açıldı | Veri kaynağı listesi |
-| POST | `/api/v1/cfip/sources` | Oturum açıldı | Veri kaynağı oluştur |
-| DELETE | `/api/v1/cfip/sources/:id` | Oturum açıldı | Veri kaynağını sil |
-| PUT | `/api/v1/cfip/sources/:id` | Oturum açıldı | Veri kaynağını güncelle |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Oturum açıldı | Bu kaynağı getir |
+| POST | `/api/v1/cfip/sources` | Yönetici | Veri kaynağı oluştur |
+| DELETE | `/api/v1/cfip/sources/:id` | Yönetici | Veri kaynağını sil |
+| PUT | `/api/v1/cfip/sources/:id` | Yönetici | Veri kaynağını güncelle |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Yönetici | Bu kaynağı getir |
 
 ### Abonelik yapılandırması (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Abonelik şablonu yapılandırması: gruplar, kurallar, kural sağlayıcılar, Y
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Oturum açıldı | Liste |
-| POST | `/api/v1/mihomo/configs` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Sil |
+| POST | `/api/v1/mihomo/configs` | Yönetici | Oluştur |
+| DELETE | `/api/v1/mihomo/configs/:id` | Yönetici | Sil |
 | GET | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Ayrıntılar |
-| PUT | `/api/v1/mihomo/configs/:id` | Oturum açıldı | Güncelleme |
+| PUT | `/api/v1/mihomo/configs/:id` | Yönetici | Güncelleme |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Oturum açıldı | Kural listesi |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Oturum açıldı | Kural oluştur |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Kuralları yeniden sırala |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Kuralı güncelle |
-| DELETE | `/api/v1/mihomo/rules/:id` | Oturum açıldı | Kuralı sil |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Yönetici | Kural oluştur |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Yönetici | Kuralları yeniden sırala |
+| PUT | `/api/v1/mihomo/rules/:id` | Yönetici | Kuralı güncelle |
+| DELETE | `/api/v1/mihomo/rules/:id` | Yönetici | Kuralı sil |
 
 ### Siteleri şarj edin
 
@@ -652,20 +666,20 @@ Abonelik şablonu yapılandırması: gruplar, kurallar, kural sağlayıcılar, Y
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Oturum açıldı | Site listesi |
-| POST | `/api/v1/charge-sites` | Oturum açıldı | Site oluştur |
-| DELETE | `/api/v1/charge-sites/:id` | Oturum açıldı | Siteyi sil |
-| GET | `/api/v1/charge-sites/:id` | Oturum açıldı | Site ayrıntıları |
-| PUT | `/api/v1/charge-sites/:id` | Oturum açıldı | Siteyi güncelle |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Oturum açıldı | Eski anahtarı temizle |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Oturum açıldı | Doğrulama dosyası oluştur |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Oturum açıldı | Doğrulama dosyası oluştur |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Oturum açıldı | Entegrasyon belgesini alın |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Oturum açıldı | İmzalama anahtarını döndür |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Oturum açıldı | DNS alan adını doğrulayın |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Oturum açıldı | Etki alanı HTTP sorgulamasını doğrulayın |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Oturum açıldı | DNS alan adını doğrulayın |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Oturum açıldı | Etki alanı HTTP sorgulamasını doğrulayın |
+| GET | `/api/v1/charge-sites` | Yönetici | Site listesi |
+| POST | `/api/v1/charge-sites` | Yönetici | Site oluştur |
+| DELETE | `/api/v1/charge-sites/:id` | Yönetici | Siteyi sil |
+| GET | `/api/v1/charge-sites/:id` | Yönetici | Site ayrıntıları |
+| PUT | `/api/v1/charge-sites/:id` | Yönetici | Siteyi güncelle |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Yönetici | Eski anahtarı temizle |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Yönetici | Doğrulama dosyası oluştur |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Yönetici | Doğrulama dosyası oluştur |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Yönetici | Entegrasyon belgesini alın |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Yönetici | İmzalama anahtarını döndür |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Yönetici | DNS alan adını doğrulayın |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Yönetici | Etki alanı HTTP sorgulamasını doğrulayın |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Yönetici | DNS alan adını doğrulayın |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Yönetici | Etki alanı HTTP sorgulamasını doğrulayın |
 
 ### Siparişleri yeniden doldur
 
@@ -673,10 +687,10 @@ Sipariş sorgularını, geri ödemeleri ve CSV ihracatını yeniden doldurun.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Oturum açıldı | Sipariş listesi |
-| GET | `/api/v1/charge-orders/:id` | Oturum açıldı | Sipariş ayrıntıları |
-| POST | `/api/v1/charge-orders/:id/refund` | Oturum açıldı | Geri ödeme |
-| GET | `/api/v1/charge-orders/export-csv` | Oturum açıldı | Yükleme siparişlerini dışa aktar CSV |
+| GET | `/api/v1/charge-orders` | Yönetici | Sipariş listesi |
+| GET | `/api/v1/charge-orders/:id` | Yönetici | Sipariş ayrıntıları |
+| POST | `/api/v1/charge-orders/:id/refund` | Yönetici | Geri ödeme |
+| GET | `/api/v1/charge-orders/export-csv` | Yönetici | Yükleme siparişlerini dışa aktar CSV |
 
 ### Kartları şarj et
 
@@ -684,12 +698,12 @@ Toplu kart oluşturma, kullanım kayıtları, CSV dışa aktarma.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Oturum açıldı | Kart listesi |
-| POST | `/api/v1/charge-cards` | Oturum açıldı | Kart oluştur |
-| DELETE | `/api/v1/charge-cards/:id` | Oturum açıldı | Kartı sil |
-| GET | `/api/v1/charge-cards/:id/usages` | Oturum açıldı | Kart kullanım kayıtları |
-| POST | `/api/v1/charge-cards/batch` | Oturum açıldı | Toplu kart oluşturma |
-| GET | `/api/v1/charge-cards/export-csv` | Oturum açıldı | Kartları dışa aktarma CSV |
+| GET | `/api/v1/charge-cards` | Yönetici | Kart listesi |
+| POST | `/api/v1/charge-cards` | Yönetici | Kart oluştur |
+| DELETE | `/api/v1/charge-cards/:id` | Yönetici | Kartı sil |
+| GET | `/api/v1/charge-cards/:id/usages` | Yönetici | Kart kullanım kayıtları |
+| POST | `/api/v1/charge-cards/batch` | Yönetici | Toplu kart oluşturma |
+| GET | `/api/v1/charge-cards/export-csv` | Yönetici | Kartları dışa aktarma CSV |
 
 ### Geri arama olaylarını ücretlendir
 
@@ -725,8 +739,8 @@ Talep edilebilir hediyeler verin (günler/trafik).
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Oturum açıldı | Hediye listesi |
-| POST | `/api/v1/client-gifts` | Oturum açıldı | Hediye oluştur |
-| POST | `/api/v1/client-gifts/batch` | Oturum açıldı | Toplu olarak hediyeler oluşturun |
+| POST | `/api/v1/client-gifts` | Yönetici | Hediye oluştur |
+| POST | `/api/v1/client-gifts/batch` | Yönetici | Toplu olarak hediyeler oluşturun |
 | GET | `/api/v1/client-gifts/search-clients` | Oturum açıldı | Müşterileri arayın |
 
 ### Yönlendirme yapılandırması
@@ -746,9 +760,9 @@ Para çekme isteklerini inceleyin.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Oturum açıldı | Para çekme talebi listesi |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Oturum açıldı | Para çekmeyi onayla |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Oturum açıldı | Para çekmeyi reddet |
+| GET | `/api/v1/referral-withdrawals` | Yönetici | Para çekme talebi listesi |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Yönetici | Para çekmeyi onayla |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Yönetici | Para çekmeyi reddet |
 
 ### IP izin verilenler listeleri (özet)
 
@@ -760,7 +774,7 @@ Tüm müşteriler genelinde IP izin verilenler listesi görünümü.
 
 ### Müşteri OAuth bağlamaları
 
-Müşterinin üçüncü taraf hesap bağlamalarını sorgulayın.
+Müşterinin üçüncü taraf hesap bağlantılarını sorgulayın.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
@@ -774,9 +788,9 @@ Bilet yanıtı, atama ve kapatma.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Oturum açıldı | Bilet listesi |
 | GET | `/api/v1/tickets/:id` | Oturum açıldı | Bilet ayrıntıları |
-| POST | `/api/v1/tickets/:id/assign` | Oturum açıldı | Bilet ata |
-| POST | `/api/v1/tickets/:id/close` | Oturum açıldı | Bileti kapat |
-| POST | `/api/v1/tickets/:id/reply` | Oturum açıldı | Bilete yanıt ver |
+| POST | `/api/v1/tickets/:id/assign` | Operatör | Bilet ata |
+| POST | `/api/v1/tickets/:id/close` | Operatör | Bileti kapat |
+| POST | `/api/v1/tickets/:id/reply` | Operatör | Bilete yanıt ver |
 
 ### Makaleler
 
@@ -785,10 +799,10 @@ Portal makaleleri için CRUD.
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Oturum açıldı | Makale listesi |
-| POST | `/api/v1/articles` | Oturum açıldı | Makale oluştur |
-| DELETE | `/api/v1/articles/:id` | Oturum açıldı | Makaleyi sil |
+| POST | `/api/v1/articles` | Yönetici | Makale oluştur |
+| DELETE | `/api/v1/articles/:id` | Yönetici | Makaleyi sil |
 | GET | `/api/v1/articles/:id` | Oturum açıldı | Makale ayrıntıları |
-| PUT | `/api/v1/articles/:id` | Oturum açıldı | Makaleyi güncelle |
+| PUT | `/api/v1/articles/:id` | Yönetici | Makaleyi güncelle |
 
 ### Paylaşılan hesaplar
 
@@ -797,10 +811,10 @@ Paylaşılan hesaplar (akış vb.) için kayıtların düzenlenmesi ve onarılma
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Oturum açıldı | Paylaşılan hesap listesi |
-| POST | `/api/v1/shared-accounts` | Oturum açıldı | Paylaşılan hesap oluştur |
-| DELETE | `/api/v1/shared-accounts/:id` | Oturum açıldı | Paylaşılan hesabı sil |
+| POST | `/api/v1/shared-accounts` | Yönetici | Paylaşılan hesap oluştur |
+| DELETE | `/api/v1/shared-accounts/:id` | Yönetici | Paylaşılan hesabı sil |
 | GET | `/api/v1/shared-accounts/:id` | Oturum açıldı | Paylaşılan hesap ayrıntıları |
-| PUT | `/api/v1/shared-accounts/:id` | Oturum açıldı | Paylaşılan hesabı güncelle |
+| PUT | `/api/v1/shared-accounts/:id` | Yönetici | Paylaşılan hesabı güncelle |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Oturum açıldı | Kayıtları onar |
 
 ### Sertifikalar
@@ -809,20 +823,20 @@ Kamu sertifikası (ACME) verilmesi, yüklenmesi, yenilenmesi ve dışa aktarılm
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Oturum açıldı | Liste |
-| POST | `/api/v1/certificates` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/certificates/:id` | Oturum açıldı | Sil |
-| GET | `/api/v1/certificates/:id` | Oturum açıldı | Ayrıntılar |
-| PUT | `/api/v1/certificates/:id` | Oturum açıldı | Güncelleme |
-| GET | `/api/v1/certificates/:id/download` | Oturum açıldı | İndir |
-| POST | `/api/v1/certificates/:id/renew` | Oturum açıldı | Müşteriyi yenile |
-| GET | `/api/v1/certificates/check-port` | Oturum açıldı | Bağlantı noktasını kontrol et |
-| GET | `/api/v1/certificates/detect-ip` | Oturum açıldı | Prob IP'si |
-| GET | `/api/v1/certificates/export` | Oturum açıldı | İhracat |
-| POST | `/api/v1/certificates/issue` | Oturum açıldı | Sayı. gövde: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` varsayılan olarak http-01'e ayarlanır; `dns_channel_id`, bir DNS kanalını seçer (yapılandırılmış bir DNS sağlayıcı + kimlik bilgileri) |
-| POST | `/api/v1/certificates/issue-on-node` | Oturum açıldı | Düğüme sorun |
-| POST | `/api/v1/certificates/upload` | Oturum açıldı | Yükle |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Arka plan görevi durumunu sorgula |
+| GET | `/api/v1/certificates` | Yönetici | Liste |
+| POST | `/api/v1/certificates` | Yönetici | Oluştur |
+| DELETE | `/api/v1/certificates/:id` | Yönetici | Sil |
+| GET | `/api/v1/certificates/:id` | Yönetici | Ayrıntılar |
+| PUT | `/api/v1/certificates/:id` | Yönetici | Güncelleme |
+| GET | `/api/v1/certificates/:id/download` | Yönetici | İndir |
+| POST | `/api/v1/certificates/:id/renew` | Yönetici | Müşteriyi yenile |
+| GET | `/api/v1/certificates/check-port` | Yönetici | Bağlantı noktasını kontrol et |
+| GET | `/api/v1/certificates/detect-ip` | Yönetici | Prob IP'si |
+| GET | `/api/v1/certificates/export` | Yönetici | İhracat |
+| POST | `/api/v1/certificates/issue` | Yönetici | Sayı. gövde: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` varsayılan olarak http-01'e ayarlanır; `dns_channel_id`, bir DNS kanalını seçer (yapılandırılmış bir DNS sağlayıcı + kimlik bilgileri) |
+| POST | `/api/v1/certificates/issue-on-node` | Yönetici | Düğüme sorun |
+| POST | `/api/v1/certificates/upload` | Yönetici | Yükle |
+| GET | `/api/v1/certificate-tasks/:id` | Yönetici | Arka plan görevi durumunu sorgula |
 
 ### Sertifika kanalları
 
@@ -830,11 +844,11 @@ ACME kanal (CA) yapılandırması.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Oturum açıldı | Liste |
-| POST | `/api/v1/cert-channels` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/cert-channels/:id` | Oturum açıldı | Sil |
-| PUT | `/api/v1/cert-channels/:id` | Oturum açıldı | Güncelleme |
-| GET | `/api/v1/cert-channels/providers` | Oturum açıldı | sağlayıcı |
+| GET | `/api/v1/cert-channels` | Yönetici | Liste |
+| POST | `/api/v1/cert-channels` | Yönetici | Oluştur |
+| DELETE | `/api/v1/cert-channels/:id` | Yönetici | Sil |
+| PUT | `/api/v1/cert-channels/:id` | Yönetici | Güncelleme |
+| GET | `/api/v1/cert-channels/providers` | Yönetici | sağlayıcı |
 
 ### EAB yapılandırması
 
@@ -842,12 +856,12 @@ ZeroSSL / Google gibi harici hesapları bağlayan kimlik bilgileri.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Oturum açıldı | Liste |
-| POST | `/api/v1/eab-configs` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/eab-configs/:id` | Oturum açıldı | Sil |
-| PUT | `/api/v1/eab-configs/:id` | Oturum açıldı | Güncelleme |
-| POST | `/api/v1/eab-configs/fetch-google` | Oturum açıldı | GCP'den Google EAB'yi getir |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Oturum açıldı | Tek tıklamayla ZeroSSL EAB'yi e-postayla alın |
+| GET | `/api/v1/eab-configs` | Yönetici | Liste |
+| POST | `/api/v1/eab-configs` | Yönetici | Oluştur |
+| DELETE | `/api/v1/eab-configs/:id` | Yönetici | Sil |
+| PUT | `/api/v1/eab-configs/:id` | Yönetici | Güncelleme |
+| POST | `/api/v1/eab-configs/fetch-google` | Yönetici | GCP'den Google EAB'yi getir |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Yönetici | Tek tıklamayla ZeroSSL EAB'yi e-postayla alın |
 
 ### ACME hesapları
 
@@ -855,11 +869,11 @@ Panel tarafı ACME hesabı (iletişim e-postası) yönetimi.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Oturum açıldı | Liste |
-| POST | `/api/v1/acme-accounts` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/acme-accounts/:id` | Oturum açıldı | Sil |
-| PUT | `/api/v1/acme-accounts/:id` | Oturum açıldı | Güncelleme |
-| GET | `/api/v1/acme-accounts/default` | Oturum açıldı | Varsayılanları al |
+| GET | `/api/v1/acme-accounts` | Yönetici | Liste |
+| POST | `/api/v1/acme-accounts` | Yönetici | Oluştur |
+| DELETE | `/api/v1/acme-accounts/:id` | Yönetici | Sil |
+| PUT | `/api/v1/acme-accounts/:id` | Yönetici | Güncelleme |
+| GET | `/api/v1/acme-accounts/default` | Yönetici | Varsayılanları al |
 
 ### Dahili CA
 
@@ -867,40 +881,40 @@ Dahili panel CA: Aracı sertifikası verme/yenileme/iptal etme, CRL dışa aktar
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Oturum açıldı | Temsilci sertifika listesi |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Oturum açıldı | Temsilci sertifikasını yenileyin |
-| GET | `/api/v1/ca/distribution-queue` | Oturum açıldı | Sertifika dağıtım kuyruğu |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Oturum açıldı | Dağıtım kuyruğu girişini sil |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Oturum açıldı | Sertifika dağıtımını yeniden dene |
-| GET | `/api/v1/ca/revocations` | Oturum açıldı | İptal listesi |
-| GET | `/api/v1/ca/revocations/export` | Oturum açıldı | CRL'yi dışa aktar |
-| GET | `/api/v1/ca/status` | Oturum açıldı | CA durumu |
+| GET | `/api/v1/ca/agent-certs` | Yönetici | Temsilci sertifika listesi |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Yönetici | Temsilci sertifikasını yenileyin |
+| GET | `/api/v1/ca/distribution-queue` | Yönetici | Sertifika dağıtım kuyruğu |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Yönetici | Dağıtım kuyruğu girişini sil |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Yönetici | Sertifika dağıtımını yeniden dene |
+| GET | `/api/v1/ca/revocations` | Yönetici | İptal listesi |
+| GET | `/api/v1/ca/revocations/export` | Yönetici | CRL'yi dışa aktar |
+| GET | `/api/v1/ca/status` | Yönetici | CA durumu |
 
 ### Coğrafi kurallar
 
-Geoip/jeosit veri kaynaklarının ve dosyalarının senkronizasyonu ve teslimi.
+Geoip/geosit veri kaynaklarının ve dosyalarının senkronizasyonu ve teslimi.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Oturum açıldı | Dosya listesi |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Oturum açıldı | Dosyayı sil |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Oturum açıldı | Otomatik senkronizasyonu aç/kapat |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Oturum açıldı | İndir |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Yönetici | Dosyayı sil |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Yönetici | Otomatik senkronizasyonu aç/kapat |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Yönetici | İndir |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Oturum açıldı | Dosyayı indir |
-| GET | `/api/v1/geo-rules/github-assets` | Oturum açıldı | GitHub deposu varlıklarını getir |
-| POST | `/api/v1/geo-rules/push-all` | Oturum açıldı | Tüm düğümlere gönder |
-| POST | `/api/v1/geo-rules/seed` | Oturum açıldı | Varsayılan verileri başlat |
+| GET | `/api/v1/geo-rules/github-assets` | Oturum açıldı | GitHub veri havuzu varlıklarını getir |
+| POST | `/api/v1/geo-rules/push-all` | Yönetici | Tüm düğümlere gönder |
+| POST | `/api/v1/geo-rules/seed` | Yönetici | Varsayılan verileri başlat |
 | GET | `/api/v1/geo-rules/sources` | Oturum açıldı | Veri kaynağı listesi |
-| POST | `/api/v1/geo-rules/sources` | Oturum açıldı | Veri kaynağı oluştur |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Oturum açıldı | Veri kaynağını sil |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Oturum açıldı | Veri kaynağını güncelle |
+| POST | `/api/v1/geo-rules/sources` | Yönetici | Veri kaynağı oluştur |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Yönetici | Veri kaynağını sil |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Yönetici | Veri kaynağını güncelle |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Oturum açıldı | Sürüm varlıklarını getir |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Oturum açıldı | Dosya ekle |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Oturum açıldı | Planlanmış senkronizasyonu değiştir |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Oturum açıldı | Dosya seç |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Oturum açıldı | Bu veri kaynağını senkronize edin |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Yönetici | Dosya ekle |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Yönetici | Planlanmış senkronizasyonu değiştir |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Yönetici | Dosya seç |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Yönetici | Bu veri kaynağını senkronize edin |
 | GET | `/api/v1/geo-rules/status` | Oturum açıldı | Durum |
-| POST | `/api/v1/geo-rules/sync-all` | Oturum açıldı | Tümünü senkronize et |
+| POST | `/api/v1/geo-rules/sync-all` | Yönetici | Tümünü senkronize et |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Oturum açıldı | Senkronizasyon ilerlemesi |
 
 ### WAF kural kitaplığı
@@ -910,14 +924,14 @@ Genel WAF kuralları: GitHub kaynağı, senkronizasyonu, tüm düğümlere tesli
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Oturum açıldı | GitHub veri kaynağı |
-| PUT | `/api/v1/waf/github-source` | Oturum açıldı | GitHub veri kaynağını kaydet |
-| POST | `/api/v1/waf/push-all` | Oturum açıldı | Tüm düğümlere gönder |
+| PUT | `/api/v1/waf/github-source` | Yönetici | GitHub veri kaynağını kaydet |
+| POST | `/api/v1/waf/push-all` | Yönetici | Tüm düğümlere gönder |
 | GET | `/api/v1/waf/rules` | Oturum açıldı | Kural listesi |
-| DELETE | `/api/v1/waf/rules/:name` | Oturum açıldı | Kuralı sil |
+| DELETE | `/api/v1/waf/rules/:name` | Yönetici | Kuralı sil |
 | GET | `/api/v1/waf/rules/:name` | Oturum açıldı | Kuralı al |
-| PUT | `/api/v1/waf/rules/:name` | Oturum açıldı | Kuralı kaydet |
-| POST | `/api/v1/waf/sync-all` | Oturum açıldı | Tümünü senkronize et |
-| POST | `/api/v1/waf/sync-github` | Oturum açıldı | GitHub'den senkronizasyon |
+| PUT | `/api/v1/waf/rules/:name` | Yönetici | Kuralı kaydet |
+| POST | `/api/v1/waf/sync-all` | Yönetici | Tümünü senkronize et |
+| POST | `/api/v1/waf/sync-github` | Yönetici | GitHub'den senkronizasyon |
 
 ### Günlük yönetimi
 
@@ -925,43 +939,37 @@ Düğüm/çekirdek günlük okuma ve akışı, temizleme politikaları, günlük
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Oturum açıldı | Şimdi her şeyi temizle |
-| GET | `/api/v1/log-manage/cleanup-rules` | Oturum açıldı | Temizleme kuralı listesi |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Oturum açıldı | Temizleme kuralını güncelle |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Oturum açıldı | Belirtilen tabloyu şimdi temizleyin |
-| GET | `/api/v1/log-manage/core-log-output` | Oturum açıldı | Çekirdek günlük çıkışı yapılandırması |
-| PUT | `/api/v1/log-manage/core-log-output` | Oturum açıldı | Çekirdek günlük çıkışı yapılandırmasını kaydet |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Oturum açıldı | Çekirdek stdout günlüklerini okuyun |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Oturum açıldı | Çekirdek stdout akışı |
-| POST | `/api/v1/log-manage/discover` | Oturum açıldı | Düğüm günlük dosyalarını keşfedin |
-| GET | `/api/v1/log-manage/log-output` | Oturum açıldı | Günlük çıkışı yapılandırması |
-| PUT | `/api/v1/log-manage/log-output` | Oturum açıldı | Günlük çıkışı yapılandırmasını kaydet |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Oturum açıldı | Günlük stdout'un devralınmasını serbest bırakın |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Oturum açıldı | Log stdout'u devralın |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Oturum açıldı | Düğüm günlük dosyası listesi |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Oturum açıldı | Düğüm günlüklerini okuyun |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Oturum açıldı | Düğüm günlüklerini döndür |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Oturum açıldı | Düğüm günlüklerini akışla |
-| GET | `/api/v1/log-manage/policies` | Oturum açıldı | Politika listesi |
-| POST | `/api/v1/log-manage/policies` | Oturum açıldı | Politika oluştur |
-| DELETE | `/api/v1/log-manage/policies/:id` | Oturum açıldı | Politikayı sil |
-| GET | `/api/v1/log-manage/policies/:id` | Oturum açıldı | Politika ayrıntıları |
-| PUT | `/api/v1/log-manage/policies/:id` | Oturum açıldı | Politikayı güncelle |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Oturum açıldı | Temizleme işi listesi |
-| GET | `/api/v1/log-manage/policies/:id/log` | Oturum açıldı | Günlükleri oku |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Oturum açıldı | Akış günlükleri |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Oturum açıldı | Döndür |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Oturum açıldı | Çekirdek stdout günlüklerini okuyun |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Oturum açıldı | Çekirdek stdout akışı |
-| GET | `/api/v1/log-manage/scheduler-config` | Oturum açıldı | Planlama yapılandırması |
-| PUT | `/api/v1/log-manage/scheduler-config` | Oturum açıldı | Planlama yapılandırmasını güncelle |
-| GET | `/api/v1/log-manage/status` | Oturum açıldı | Durum |
-| POST | `/api/v1/log-manage/sync` | Oturum açıldı | Temizleme politikalarını senkronize et |
-| GET | `/api/v1/log-manage/writers` | Oturum açıldı | Yazar durumu |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Oturum açıldı | Yazar yapılandırmasını güncelle |
-| GET | `/api/v1/log-manage/writers/:type/files` | Oturum açıldı | Yazar günlük dosyası listesi |
-| POST | `/api/v1/log-manage/writers/:type/start` | Oturum açıldı | Yazarı başlat |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Oturum açıldı | Yazarı durdur |
+| POST | `/api/v1/log-manage/cleanup-all` | Yönetici | Şimdi her şeyi temizle |
+| GET | `/api/v1/log-manage/cleanup-rules` | Yönetici | Temizleme kuralı listesi |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Yönetici | Temizleme kuralını güncelle |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Yönetici | Belirtilen tabloyu şimdi temizleyin |
+| GET | `/api/v1/log-manage/core-log-output` | Yönetici | Çekirdek günlük çıkışı yapılandırması |
+| PUT | `/api/v1/log-manage/core-log-output` | Yönetici | Çekirdek günlük çıkışı yapılandırmasını kaydet |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Yönetici | Çekirdek stdout günlüklerini okuyun |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Yönetici | Çekirdek stdout akışı |
+| POST | `/api/v1/log-manage/discover` | Yönetici | Düğüm günlük dosyalarını keşfedin |
+| GET | `/api/v1/log-manage/log-output` | Yönetici | Günlük çıkışı yapılandırması |
+| PUT | `/api/v1/log-manage/log-output` | Yönetici | Günlük çıkışı yapılandırmasını kaydet |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Yönetici | Düğüm günlük dosyası listesi |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Yönetici | Düğüm günlüklerini okuyun |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Yönetici | Düğüm günlüklerini döndür |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Yönetici | Düğüm günlüklerini akışla |
+| GET | `/api/v1/log-manage/policies` | Yönetici | Politika listesi |
+| POST | `/api/v1/log-manage/policies` | Yönetici | Politika oluştur |
+| DELETE | `/api/v1/log-manage/policies/:id` | Yönetici | Politikayı sil |
+| GET | `/api/v1/log-manage/policies/:id` | Yönetici | Politika ayrıntıları |
+| PUT | `/api/v1/log-manage/policies/:id` | Yönetici | Politikayı güncelle |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Yönetici | Temizleme işi listesi |
+| GET | `/api/v1/log-manage/policies/:id/log` | Yönetici | Günlükleri oku |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Yönetici | Akış günlükleri |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Yönetici | Döndür |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Yönetici | Çekirdek stdout günlüklerini okuyun |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Yönetici | Çekirdek stdout akışı |
+| GET | `/api/v1/log-manage/scheduler-config` | Yönetici | Planlama yapılandırması |
+| PUT | `/api/v1/log-manage/scheduler-config` | Yönetici | Planlama yapılandırmasını güncelle |
+| GET | `/api/v1/log-manage/status` | Yönetici | Durum |
+| POST | `/api/v1/log-manage/sync` | Yönetici | Temizleme politikalarını senkronize et |
+| GET | `/api/v1/log-manage/writers` | Yönetici | Yazar durumu |
 
 ### Yedeklemeler
 
@@ -969,16 +977,16 @@ Veritabanı/tam yedeklemeler, geri yükleme, planlanmış işler, FTP/S3/WebDAV 
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Yönetici | Yedeği sil |
+| DELETE | `/api/v1/backups/:id` | Süper yönetici | Yedeği sil |
 | GET | `/api/v1/backups/:id/download` | Yönetici | Yedeği indir |
-| POST | `/api/v1/backups/:id/restore` | Yönetici | Yedeklemeden geri yükle |
-| POST | `/api/v1/backups/:id/upload-ftp` | Yönetici | FTP'ye yükle |
-| POST | `/api/v1/backups/:id/upload-s3` | Yönetici | S3'ye yükle |
-| POST | `/api/v1/backups/:id/upload-webdav` | Yönetici | WebDAV'ye yükle |
+| POST | `/api/v1/backups/:id/restore` | Süper yönetici | Yedeklemeden geri yükle |
+| POST | `/api/v1/backups/:id/upload-ftp` | Süper yönetici | FTP'ye yükle |
+| POST | `/api/v1/backups/:id/upload-s3` | Süper yönetici | S3'ye yükle |
+| POST | `/api/v1/backups/:id/upload-webdav` | Süper yönetici | WebDAV'ye yükle |
 | POST | `/api/v1/backups/create` | Yönetici | Tam yedekleme oluştur (DB dökümüyle) |
 | GET | `/api/v1/backups/list` | Yönetici | Tam yedekleme listesi |
-| POST | `/api/v1/backups/remote-restore` | Yönetici | Uzaktan geri yükleme |
-| GET | `/api/v1/backups/restore-status` | Yönetici | İlerlemeyi geri yükle |
+| POST | `/api/v1/backups/remote-restore` | Süper yönetici | Uzaktan geri yükle |
+| GET | `/api/v1/backups/restore-status` | Süper yönetici | İlerlemeyi geri yükle |
 | GET | `/api/v1/backups/schedules` | Yönetici | Zamanlanmış iş listesi |
 | POST | `/api/v1/backups/schedules` | Yönetici | Zamanlanmış iş oluştur |
 | DELETE | `/api/v1/backups/schedules/:id` | Yönetici | Planlanan işi sil |
@@ -988,7 +996,7 @@ Veritabanı/tam yedeklemeler, geri yükleme, planlanmış işler, FTP/S3/WebDAV 
 | DELETE | `/api/v1/backups/storages/:id` | Yönetici | Depolama yapılandırmasını sil |
 | PUT | `/api/v1/backups/storages/:id` | Yönetici | Depolama yapılandırmasını güncelleyin |
 | GET | `/api/v1/backups/storages/:id/files` | Yönetici | Uzaktan yedekleme dosya listesi |
-| POST | `/api/v1/backups/upload-restore` | Yönetici | Yedeklemeyi yükleyin ve geri yükleyin |
+| POST | `/api/v1/backups/upload-restore` | Süper yönetici | Yedeklemeyi yükleyin ve geri yükleyin |
 
 ### Sistem ayarları
 
@@ -1001,8 +1009,8 @@ Veritabanı yapılandırması ve geçişi, panel ayarları, JWT anahtarları, SM
 | GET | `/api/v1/system/config-file/:coreType` | Yönetici | Çekirdek yapılandırma dosyasını okuyun |
 | GET | `/api/v1/system/db-config` | Yönetici | Veritabanı yapılandırması |
 | PUT | `/api/v1/system/db-config` | Yönetici | Veritabanı yapılandırmasını güncelle |
-| POST | `/api/v1/system/db-config/migrate` | Yönetici | Veritabanı verilerini taşı |
-| POST | `/api/v1/system/db-config/switch` | Yönetici | Veritabanını değiştir (tek adımlı geçişle) |
+| POST | `/api/v1/system/db-config/migrate` | Süper yönetici | Veritabanı verilerini taşı |
+| POST | `/api/v1/system/db-config/switch` | Süper yönetici | Veritabanını değiştir (tek adımlı geçişle) |
 | POST | `/api/v1/system/db-config/test` | Yönetici | Veritabanı bağlantısını test edin |
 | GET | `/api/v1/system/db-pool-stats` | Yönetici | Bağlantı havuzu istatistikleri |
 | GET | `/api/v1/system/db-stats` | Yönetici | Veritabanı istatistikleri |
@@ -1011,13 +1019,13 @@ Veritabanı yapılandırması ve geçişi, panel ayarları, JWT anahtarları, SM
 | GET | `/api/v1/system/encryption-key-status` | Yönetici | Şifreleme anahtarı durumu |
 | GET | `/api/v1/system/env-config` | Yönetici | .env yapılandırması |
 | PUT | `/api/v1/system/env-config` | Yönetici | .env yapılandırmasını güncelleyin |
-| POST | `/api/v1/system/generate-encryption-key` | Yönetici | Şifreleme anahtarı oluştur |
+| POST | `/api/v1/system/generate-encryption-key` | Süper yönetici | Şifreleme anahtarı oluştur |
 | GET | `/api/v1/system/github-config` | Yönetici | GitHub yapılandırması |
 | PUT | `/api/v1/system/github-config` | Yönetici | GitHub yapılandırmasını güncelleyin |
 | GET | `/api/v1/system/jwt-secret-status` | Yönetici | JWT anahtar durumu |
 | GET | `/api/v1/system/maintenance` | halka açık | Bakım modu durumu (genel) |
 | PUT | `/api/v1/system/maintenance` | Yönetici | Bakım modunu değiştir |
-| POST | `/api/v1/system/migrate-data` | Yönetici | Verileri taşı |
+| POST | `/api/v1/system/migrate-data` | Süper yönetici | Verileri taşı |
 | GET | `/api/v1/system/notification-config` | Yönetici | Bildirim yapılandırması |
 | PUT | `/api/v1/system/notification-config` | Yönetici | Bildirim yapılandırmasını güncelle |
 | GET | `/api/v1/system/notification-templates` | Yönetici | Şablon listesi |
@@ -1030,13 +1038,13 @@ Veritabanı yapılandırması ve geçişi, panel ayarları, JWT anahtarları, SM
 | PUT | `/api/v1/system/panel-config` | Yönetici | Panel yapılandırmasını güncelle |
 | GET | `/api/v1/system/reality-targets` | Yönetici | REALITY hedef listesi |
 | PUT | `/api/v1/system/reality-targets` | Yönetici | REALITY hedefini güncelleyin |
-| POST | `/api/v1/system/reality-targets/reset` | Yönetici | REALITY hedefini varsayılana sıfırla |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality yerel SNI yapılandırmasını oku |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality yerel SNI yapılandırmasını güncelle |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Yönetici | JWT anahtarını yeniden oluştur |
+| POST | `/api/v1/system/reality-targets/reset` | Süper yönetici | REALITY hedefini varsayılana sıfırla |
+| GET | `/api/v1/system/reality-local-sni` | Yönetici | Reality yerel SNI yapılandırmasını okuyun |
+| PUT | `/api/v1/system/reality-local-sni` | Yönetici | Reality yerel SNI yapılandırmasını güncelleyin |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Süper yönetici | JWT anahtarını yeniden oluşturun |
 | GET | `/api/v1/system/releases` | Yönetici | Mevcut versiyonlar |
-| POST | `/api/v1/system/restart` | Yönetici | Yeniden başlat |
-| POST | `/api/v1/system/rollback` | Yönetici | Sistem geri alma |
+| POST | `/api/v1/system/restart` | Süper yönetici | Yeniden başlat |
+| POST | `/api/v1/system/rollback` | Süper yönetici | Sistem geri alma |
 | GET | `/api/v1/system/settings` | Yönetici | Ayarları oku |
 | PUT | `/api/v1/system/settings/batch` | Yönetici | Toplu güncelleme ayarları |
 | GET | `/api/v1/system/stats` | Yönetici | Sistem durumu |
@@ -1045,7 +1053,7 @@ Veritabanı yapılandırması ve geçişi, panel ayarları, JWT anahtarları, SM
 | POST | `/api/v1/system/telegram-chat-id` | Yönetici | Telegram Sohbet Kimliğini Alın |
 | POST | `/api/v1/system/test-smtp` | Yönetici | SMTP'yi test edin |
 | POST | `/api/v1/system/test-telegram` | Yönetici | Telegram'yi test edin |
-| POST | `/api/v1/system/update` | Yönetici | Sistem yükseltmesi |
+| POST | `/api/v1/system/update` | Süper yönetici | Sistem yükseltmesi |
 | GET | `/api/v1/system/update-jobs` | Yönetici | İş listesini yükselt |
 | POST | `/api/v1/system/upload-mtls-ca` | Yönetici | mTLS CA sertifikasını yükleyin |
 
@@ -1055,8 +1063,9 @@ Olay sorgularını denetleyin ve dışa aktarın.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Oturum açıldı | Denetim etkinliği listesi |
-| GET | `/api/v1/security/audit-events/export` | Oturum açıldı | Denetim olaylarını dışa aktar |
+| GET | `/api/v1/security/audit-events` | Yönetici | Denetim etkinliği listesi |
+| GET | `/api/v1/security/audit-events/export` | Yönetici | Denetim etkinliklerini dışa aktar |
+| GET | `/api/v1/security/subscription-access-logs` | Yönetici | Abonelik getirme günlükleri (abonelik kimliğine / IP'ye / istemci e-postasına göre filtreleyin) |
 
 ### Metrikler
 
@@ -1064,9 +1073,9 @@ Panelde toplu ölçümler (düğümler/sertifikalar/hizmetler).
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Oturum açıldı | Sertifika metrikleri |
-| GET | `/api/v1/metrics/nodes` | Oturum açıldı | Düğüm metrikleri |
-| GET | `/api/v1/metrics/overview` | Oturum açıldı | Genel Bakış |
+| GET | `/api/v1/metrics/certificates` | Yönetici | Sertifika metrikleri |
+| GET | `/api/v1/metrics/nodes` | Yönetici | Düğüm metrikleri |
+| GET | `/api/v1/metrics/overview` | Yönetici | Genel Bakış |
 
 ### Portal şablonları
 
@@ -1074,22 +1083,22 @@ Portal şablonları, etkinleştirme yapılandırması ve önbellek yönetimi.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Oturum açıldı | Aktif şablon |
-| PUT | `/api/v1/portal/active` | Oturum açıldı | Etkin şablonu güncelle |
-| DELETE | `/api/v1/portal/cache` | Oturum açıldı | Portal önbelleğini temizle |
-| GET | `/api/v1/portal/cache` | Oturum açıldı | Önbellek durumu |
-| PUT | `/api/v1/portal/cache/dev-mode` | Oturum açıldı | Önbellek geliştirme modunu değiştir |
-| POST | `/api/v1/portal/cache/rebuild` | Oturum açıldı | Portal önbelleğini yeniden oluştur |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Yerleşik dil paketleri |
-| POST | `/api/v1/portal/reset` | Oturum açıldı | Varsayılan şablonu geri yükle |
-| GET | `/api/v1/portal/templates` | Oturum açıldı | Liste |
-| POST | `/api/v1/portal/templates` | Oturum açıldı | Oluştur |
-| DELETE | `/api/v1/portal/templates/:id` | Oturum açıldı | Sil |
-| GET | `/api/v1/portal/templates/:id` | Oturum açıldı | Ayrıntılar |
-| PUT | `/api/v1/portal/templates/:id` | Oturum açıldı | Güncelleme |
-| POST | `/api/v1/portal/templates/:id/activate` | Oturum açıldı | Şablonu etkinleştir |
+| GET | `/api/v1/portal/active` | Yönetici | Aktif şablon |
+| PUT | `/api/v1/portal/active` | Yönetici | Etkin şablonu güncelle |
+| DELETE | `/api/v1/portal/cache` | Yönetici | Portal önbelleğini temizle |
+| GET | `/api/v1/portal/cache` | Yönetici | Önbellek durumu |
+| PUT | `/api/v1/portal/cache/dev-mode` | Yönetici | Önbellek geliştirme modunu değiştir |
+| POST | `/api/v1/portal/cache/rebuild` | Yönetici | Portal önbelleğini yeniden oluştur |
+| GET | `/api/v1/portal/lang/builtin` | Yönetici | Yerleşik dil paketleri |
+| POST | `/api/v1/portal/reset` | Yönetici | Varsayılan şablonu geri yükle |
+| GET | `/api/v1/portal/templates` | Yönetici | Liste |
+| POST | `/api/v1/portal/templates` | Yönetici | Oluştur |
+| DELETE | `/api/v1/portal/templates/:id` | Yönetici | Sil |
+| GET | `/api/v1/portal/templates/:id` | Yönetici | Ayrıntılar |
+| PUT | `/api/v1/portal/templates/:id` | Yönetici | Güncelleme |
+| POST | `/api/v1/portal/templates/:id/activate` | Yönetici | Şablonu etkinleştir |
 
-> `/portal/templates` CRUD **gelişmiş bir API**'dir: portal kullanıcı arayüzü öncelikle `PUT /api/v1/portal/active`'yi kullanır
+> `/portal/templates` CRUD **gelişmiş bir API**'dir: portal kullanıcı arayüzü öncelikli olarak `PUT /api/v1/portal/active`'yi kullanır
 > (tek seferlik tam site yapılandırması); Bu grupla birden fazla şablonu yönetin/değiştirin. Her ikisi de desteklenir ve çakışmaz.
 
 ### Aracı kurulumu
@@ -1103,7 +1112,7 @@ Düğüm Aracısı komut dosyasını yükler ve indirir (genel).
 | GET | `/api/v1/agent/version` | Yönetici | Paneldeki mevcut Agent sürümü |
 | GET | `/api/v1/agent/download` | halka açık | Aracıyı İndir |
 | GET | `/api/v1/agent/install` | halka açık | Yükleme komut dosyasını al |
-| GET | `/api/v1/agent/origin` | 公开 | Panel kaynak adresi (genel) |
+| GET | `/api/v1/agent/origin` | halka açık | Panel menşe adresi (genel) |
 
 ### Geri arama girişini ücretlendir
 
@@ -1136,79 +1145,75 @@ Oturum açmadan portal çalışma zamanı yapılandırması (bakım koruması + 
 
 ### İstemci kimlik doğrulaması ve iş (yönetici motorunda aynı ayar)
 
-Portalla aynı istemci uç noktaları; ayrıntılar için `portal-api.en.md`'ye bakın.
+İstemci uç noktaları portalla aynıdır. Yönetici jetonu değil, **istemci jetonu** (`Authorization: Bearer <client_token>`) kullanıyorlar; ayrıntılar için `portal-api.en.md`'ye bakın.
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | halka açık | Makaleleri listele |
-| GET | `/api/v1/client-auth/articles/:slug` | halka açık | Makaleyi al |
-| GET | `/api/v1/client-auth/balance` | halka açık | Bakiyeyi alın |
-| GET | `/api/v1/client-auth/balance/transactions` | halka açık | Bakiye işlemleri |
-| POST | `/api/v1/client-auth/change-password` | halka açık | Şifreyi değiştir |
-| POST | `/api/v1/client-auth/charge/create` | halka açık | Yükleme siparişi oluştur |
-| GET | `/api/v1/client-auth/charge/orders` | halka açık | Yeniden yükleme siparişlerini listeleyin |
-| GET | `/api/v1/client-auth/charge/orders/:id` | halka açık | Yeniden yükleme siparişi ayrıntılarını alın |
-| POST | `/api/v1/client-auth/charge/redeem-card` | halka açık | Kartı kullan |
-| GET | `/api/v1/client-auth/charge/sites` | halka açık | Şarj sitelerini listeleyin |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | halka açık | Yeniden yükleme durumunu sorgula |
-| GET | `/api/v1/client-auth/checktime` | halka açık | Sunucu saatini alın (saat senkronizasyonu) |
-| GET | `/api/v1/client-auth/connection-info` | halka açık | Plan bağlantı parametrelerini alın |
-| GET | `/api/v1/client-auth/gifts` | halka açık | Hediyeleri listele |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | halka açık | Hediye talep et |
-| GET | `/api/v1/client-auth/invoices` | halka açık | Sipariş listesi |
-| GET | `/api/v1/client-auth/invoices/:id` | halka açık | Sipariş ayrıntıları |
-| GET | `/api/v1/client-auth/settings/whitelist` | halka açık | IP izin verilenler listesini listele |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | halka açık | IP izin verilenler listesinden kaldır |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | halka açık | Otomatik IP ekle |
-| POST | `/api/v1/client-auth/login` | halka açık | Oturum aç |
-| POST | `/api/v1/client-auth/logout` | halka açık | Oturumu kapat |
-| POST | `/api/v1/client-auth/logs/package` | halka açık | Günlük paketi oluştur |
-| GET | `/api/v1/client-auth/logs/packages` | halka açık | Günlük paketlerini listeleme |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | halka açık | Günlük paketini sil |
-| GET | `/api/v1/client-auth/logs/packages/:id` | halka açık | Günlük paketini al |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | halka açık | Günlük paketini indirin |
-| GET | `/api/v1/client-auth/logs/types` | halka açık | Günlük paketi durum denetimi |
-| GET | `/api/v1/client-auth/me` | halka açık | Geçerli oturum açmış kullanıcıyı al |
-| GET | `/api/v1/client-auth/nodes` | halka açık | Düğüm listem |
-| GET | `/api/v1/client-auth/nodes/:id/config` | halka açık | Düğüm yapılandırması |
-| GET | `/api/v1/client-auth/nodes/:id/link` | halka açık | Düğüm paylaşım bağlantısı |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | halka açık | Düğüm QR kodu |
-| GET | `/api/v1/client-auth/oauth/:provider` | halka açık | Yetkilendir |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | halka açık | Geri arama |
-| GET | `/api/v1/client-auth/oauth/providers` | halka açık | Sağlayıcı durumu |
-| GET | `/api/v1/client-auth/orders` | halka açık | Sipariş listesi |
-| POST | `/api/v1/client-auth/orders` | halka açık | Sipariş oluştur |
-| GET | `/api/v1/client-auth/orders/:id` | halka açık | Sipariş ayrıntıları |
-| GET | `/api/v1/client-auth/plans` | halka açık | Plan listesi |
-| GET | `/api/v1/client-auth/plans/:id` | halka açık | Plan ayrıntıları |
-| GET | `/api/v1/client-auth/referral/code` | halka açık | Yönlendirme doğrulama kodunu alın |
-| GET | `/api/v1/client-auth/referral/records` | halka açık | Yönlendirme kayıtlarını listeleyin |
-| GET | `/api/v1/client-auth/referral/stats` | halka açık | Yönlendirme istatistiklerini alın |
-| POST | `/api/v1/client-auth/referral/withdraw` | halka açık | Para çekme isteği |
-| GET | `/api/v1/client-auth/referral/withdrawals` | halka açık | Yönlendirmeden çekilenleri listeleme |
-| POST | `/api/v1/client-auth/refresh` | halka açık | Yenile |
-| POST | `/api/v1/client-auth/register` | halka açık | Kayıt ol |
-| POST | `/api/v1/client-auth/reset-subscription` | halka açık | Aboneliği sıfırla |
-| PUT | `/api/v1/client-auth/settings` | halka açık | Profili güncelle |
-| POST | `/api/v1/client-auth/rotate-token` | halka açık | Abonelik jetonunu döndür |
-| POST | `/api/v1/client-auth/self-unban` | halka açık | Self servis yasağını kaldır |
-| PUT | `/api/v1/client-auth/settings` | halka açık | Ayarları güncelle |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | halka açık | Otomatik IP ekle |
-| GET | `/api/v1/client-auth/settings/whitelist` | halka açık | IP izin verilenler listesini listele |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | halka açık | IP izin verilenler listesinden kaldır |
-| GET | `/api/v1/client-auth/shared-accounts` | halka açık | Paylaşılan hesapları listeleme |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | halka açık | Paylaşılan hesabı al |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | halka açık | Paylaşılan hesap iste |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | halka açık | Onarım talebi |
-| POST | `/api/v1/client-auth/ticket` | halka açık | Bir kerelik kısa ömürlü bilet düzenleyin |
-| GET | `/api/v1/client-auth/tickets` | halka açık | Biletleri listele |
-| POST | `/api/v1/client-auth/tickets` | halka açık | Bilet oluştur |
-| GET | `/api/v1/client-auth/tickets/:id` | halka açık | Bilet al |
-| POST | `/api/v1/client-auth/tickets/:id/close` | halka açık | Bileti kapat |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | halka açık | Bilete yanıt ver |
-| GET | `/api/v1/client-auth/traffic-history` | halka açık | Trafik geçmişi |
-| GET | `/api/v1/client-auth/traffic-packs` | halka açık | Trafik paketi listesi |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | halka açık | Trafik paketi satın al |
+| GET | `/api/v1/client-auth/articles` | Müşteri (oturum açmış) | Makaleleri listele |
+| GET | `/api/v1/client-auth/articles/:slug` | Müşteri (oturum açmış) | Makaleyi al |
+| GET | `/api/v1/client-auth/balance` | Müşteri (oturum açmış) | Bakiyeyi alın |
+| GET | `/api/v1/client-auth/balance/transactions` | Müşteri (oturum açmış) | Bakiye işlemleri |
+| POST | `/api/v1/client-auth/change-password` | Müşteri (oturum açmış) | Şifreyi değiştir |
+| POST | `/api/v1/client-auth/charge/create` | Müşteri (oturum açmış) | Yükleme siparişi oluştur |
+| GET | `/api/v1/client-auth/charge/orders` | Müşteri (oturum açmış) | Yeniden yükleme siparişlerini listeleyin |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Müşteri (oturum açmış) | Yeniden yükleme siparişi ayrıntılarını alın |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Müşteri (oturum açmış) | Kartı kullan |
+| GET | `/api/v1/client-auth/charge/sites` | Müşteri (oturum açmış) | Şarj sitelerini listeleyin |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Müşteri (oturum açmış) | Yeniden yükleme durumunu sorgula |
+| GET | `/api/v1/client-auth/checktime` | Müşteri (oturum açmış) | Sunucu saatini alın (saat senkronizasyonu) |
+| GET | `/api/v1/client-auth/connection-info` | Müşteri (oturum açmış) | Plan bağlantı parametrelerini alın |
+| GET | `/api/v1/client-auth/gifts` | Müşteri (oturum açmış) | Hediyeleri listele |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Müşteri (oturum açmış) | Hediye talep et |
+| GET | `/api/v1/client-auth/invoices` | Müşteri (oturum açmış) | Sipariş listesi |
+| GET | `/api/v1/client-auth/invoices/:id` | Müşteri (oturum açmış) | Sipariş ayrıntıları |
+| POST | `/api/v1/client-auth/login` | Müşteri (genel) | Oturum aç |
+| POST | `/api/v1/client-auth/logout` | Müşteri (oturum açmış) | Oturumu kapat |
+| POST | `/api/v1/client-auth/logs/package` | Müşteri (oturum açmış) | Günlük paketi oluştur |
+| GET | `/api/v1/client-auth/logs/packages` | Müşteri (oturum açmış) | Günlük paketlerini listeleme |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Müşteri (oturum açmış) | Günlük paketini sil |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Müşteri (oturum açmış) | Günlük paketini al |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Müşteri (oturum açmış) | Günlük paketini indirin |
+| GET | `/api/v1/client-auth/logs/types` | Müşteri (oturum açmış) | Günlük paketi durum denetimi |
+| GET | `/api/v1/client-auth/me` | Müşteri (oturum açmış) | Geçerli oturum açmış kullanıcıyı al |
+| GET | `/api/v1/client-auth/nodes` | Müşteri (oturum açmış) | Düğüm listem |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Müşteri (oturum açmış) | Düğüm yapılandırması |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Müşteri (oturum açmış) | Düğüm paylaşım bağlantısı |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Müşteri (oturum açmış) | Düğüm QR kodu |
+| GET | `/api/v1/client-auth/oauth/:provider` | Müşteri (genel) | Yetkilendir |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Müşteri (genel) | Geri arama |
+| GET | `/api/v1/client-auth/oauth/providers` | Müşteri (genel) | Sağlayıcı durumu |
+| GET | `/api/v1/client-auth/orders` | Müşteri (oturum açmış) | Sipariş listesi |
+| POST | `/api/v1/client-auth/orders` | Müşteri (oturum açmış) | Sipariş oluştur |
+| GET | `/api/v1/client-auth/orders/:id` | Müşteri (oturum açmış) | Sipariş ayrıntıları |
+| GET | `/api/v1/client-auth/plans` | Müşteri (oturum açmış) | Plan listesi |
+| GET | `/api/v1/client-auth/plans/:id` | Müşteri (oturum açmış) | Plan ayrıntıları |
+| GET | `/api/v1/client-auth/referral/code` | Müşteri (oturum açmış) | Yönlendirme doğrulama kodunu alın |
+| GET | `/api/v1/client-auth/referral/records` | Müşteri (oturum açmış) | Yönlendirme kayıtlarını listeleyin |
+| GET | `/api/v1/client-auth/referral/stats` | Müşteri (oturum açmış) | Yönlendirme istatistiklerini alın |
+| POST | `/api/v1/client-auth/referral/withdraw` | Müşteri (oturum açmış) | Para çekme isteği |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Müşteri (oturum açmış) | Yönlendirmeden çekilenleri listeleme |
+| POST | `/api/v1/client-auth/refresh` | Müşteri (genel) | Yenile |
+| POST | `/api/v1/client-auth/register` | Müşteri (genel) | Kayıt ol |
+| POST | `/api/v1/client-auth/reset-subscription` | Müşteri (oturum açmış) | Aboneliği sıfırla |
+| POST | `/api/v1/client-auth/rotate-token` | Müşteri (oturum açmış) | Abonelik jetonunu döndür |
+| POST | `/api/v1/client-auth/self-unban` | Müşteri (oturum açmış) | Self servis yasağını kaldır |
+| PUT | `/api/v1/client-auth/settings` | Müşteri (oturum açmış) | Ayarları güncelle |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Müşteri (oturum açmış) | Otomatik IP ekle |
+| GET | `/api/v1/client-auth/settings/whitelist` | Müşteri (oturum açmış) | IP izin verilenler listesini listele |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Müşteri (oturum açmış) | IP izin verilenler listesinden kaldır |
+| GET | `/api/v1/client-auth/shared-accounts` | Müşteri (oturum açmış) | Paylaşılan hesapları listeleme |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Müşteri (oturum açmış) | Paylaşılan hesabı al |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Müşteri (oturum açmış) | Paylaşılan hesap iste |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Müşteri (oturum açmış) | Onarım talebi |
+| POST | `/api/v1/client-auth/ticket` | Müşteri (oturum açmış) | Bir kerelik kısa ömürlü bilet düzenleyin |
+| GET | `/api/v1/client-auth/tickets` | Müşteri (oturum açmış) | Biletleri listele |
+| POST | `/api/v1/client-auth/tickets` | Müşteri (oturum açmış) | Bilet oluştur |
+| GET | `/api/v1/client-auth/tickets/:id` | Müşteri (oturum açmış) | Bilet al |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Müşteri (oturum açmış) | Bileti kapat |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Müşteri (oturum açmış) | Bilete yanıt ver |
+| GET | `/api/v1/client-auth/traffic-history` | Müşteri (oturum açmış) | Trafik geçmişi |
+| GET | `/api/v1/client-auth/traffic-packs` | Müşteri (oturum açmış) | Trafik paketi listesi |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Müşteri (oturum açmış) | Trafik paketi satın al |
 
 ### Abonelik teslimi
 
@@ -1220,7 +1225,7 @@ Müşterilerin abonelikleri alması için genel giriş noktası; bkz. `subscript
 
 ### Çalışma zamanı yapılandırma iş akışı
 
-Anlık görüntüleri yapılandırma / prova / uygulama / geri alma (`apply`, `rollback` ve `disable-proxy` yönetici gerektirir).
+Anlık görüntüleri yapılandırma / prova / uygulama / geri alma (`apply`, `rollback` ve `disable-proxy`, yönetici gerektirir).
 
 | Yöntem | Yol | İzin | Açıklama |
 |---|---|---|---|

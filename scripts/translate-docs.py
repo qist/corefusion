@@ -81,10 +81,12 @@ LINK_EN_RE = re.compile(r'\]\(([^)#]+)\.en\.md(#[^)]*)?\)')
 URL = 'https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=en&tl={}'
 
 BRAND_RE = re.compile(
-    r'(?i)\b(CoreFusion|Telegram|GitHub|GitLab|Docker|Nginx|Xray|sing-box|VLESS|VMess|'
+    r'(?i)\b(CoreFusion|Telegram|GitHub|GitLab|Docker|Nginx|Caddy|Xray|sing-box|Mihomo|Clash|'
+    r'Surge|Quantumult|Shadowrocket|V2RayN|AnyTLS|NaiveProxy|'
+    r'VLESS|VMess|'
     r'Trojan|Shadowsocks|Hysteria2|TUIC|WireGuard|Cloudflare|ZeroSSL|Google|Apple|'
     r'Windows|Linux|macOS|Android|iOS|systemd|SQLite|MySQL|PostgreSQL|Redis|WebDAV|'
-    r'FTP|SMTP|JWT|TOTP|WebAuthn|Passkey|REALITY|X25519|MLDSA65|ECH|ACME|EAB|WAF|'
+    r'FTP|SMTP|JWT|TOTP|WebAuthn|Passkey|REALITY|X25519|MLDSA65|ECH|ACME|EAB|WAF|WARP|MASQUE|'
     r'CDN|DNS|HTTP|HTTPS|API|CLI|YAML|JSON|CSV|UUID|URL|URI|TCP|UDP|QUIC|TLS|SNI|'
     r'S3|SLA|SSH|SFTP)\b'
 )

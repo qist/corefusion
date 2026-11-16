@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: id | updated: 2026-10-23 -->
+<!-- source: README.md | locale: id | updated: 2026-11-16 -->
 # Dokumentasi CoreFusion API
 
 > Bahasa: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · Bahasa Indonesia · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@ Dokumentasi API untuk **integrator eksternal, pengembangan sekunder, dan klien p
 | Dokumen | Penonton | Konten |
 |---|---|---|
 | [langganan.md](./subscription.id.md) | Pelanggan / pengembang klien | Titik akhir langganan (`/sub/:token`): format, header, kode status, contoh |
-| [portal-api.md](./portal-api.id.md) | Frontend portal/klien pihak ketiga | Portal klien API (`/api/v1/client-auth/*`, `/api/v1/public/*`): pendaftaran, masuk, paket, pesanan, saldo, tiket |
+| [portal-api.md](./portal-api.md) | Frontend portal/klien pihak ketiga | Portal klien API (`/api/v1/client-auth/*`, `/api/v1/public/*`): pendaftaran, masuk, paket, pesanan, saldo, tiket |
 | [biaya-panggilan balik.md](./charge-callback.id.md) | Penyedia pembayaran | Penandatanganan dan verifikasi panggilan balik pembayaran |
-| [admin-api.id.md](./admin-api.id.md) | Pengembangan / otomatisasi panel | Tabel rute admin lengkap API (`/api/v1/*`, dikelompokkan berdasarkan modul) |
+| [admin-api.en.md](./admin-api.id.md) | Pengembangan / otomatisasi panel | Tabel rute admin lengkap API (`/api/v1/*`, dikelompokkan berdasarkan modul) |
 
 ---
 
@@ -30,12 +30,12 @@ Panel dapat mengekspos tiga mesin secara bersamaan, berbagi satu database:
 
 | Penulis | Kredensial | Berlaku untuk |
 |---|---|---|
-| **Otorisasi Admin** | `Authorization: Bearer <admin_token>` (dari `/api/v1/auth/login`) | Admin API |
+| **Otorisasi admin** | `Authorization: Bearer <admin_token>` (dari `/api/v1/auth/login`) | Admin API |
 | **Otentikasi klien** | `Authorization: Bearer <client_token>` (dari `/api/v1/client-auth/login`) | Portal API |
 | **Token berlangganan** | Token di URL: `/sub/<token>` | Pengambilan langganan, tanpa header |
 
 - Token akses klien bertahan 24 jam, menyegarkan token 7 hari; JWT berisi `tv` (token_version), jadi logout/keluar paksa akan membatalkan semua token lama.
-- Peran Admin: `viewer` / `admin` / `operator` / `super_admin`; beberapa operasi tulis memerlukan `RequireRole(RoleAdmin)` atau lebih tinggi.
+- Tingkat peran admin: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Pembacaan umumnya hanya memerlukan sesi masuk; penulisan memerlukan `operator` / `admin` / `super_admin` per modul. Lihat kolom “Izin” di [admin-api.md](./admin-api.id.md).
 
 ## 3. Format tanggapan
 
@@ -75,4 +75,4 @@ Rute ini mengembalikan aset HTML/statis dan berada di luar dokumen API; terdafta
 
 ## 6. Sumber kebenaran
 
-`internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kode adalah acuan). Tabel rute di [admin-api.md](./admin-api.id.md) dihasilkan dari kode; jika tidak sesuai dengan kode, **kode menang**.
+`internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kodenya resmi). Tabel rute di [admin-api.md](./admin-api.md) dihasilkan dari kode; jika tidak sesuai dengan kode, **kode menang**.

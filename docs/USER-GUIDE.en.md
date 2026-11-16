@@ -165,7 +165,7 @@ Supported values: `zh` / `en` / `fa` / `ru`; `--lang=ru` is also accepted. An un
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Building from source
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source` clones the repository (or uses the existing checkout when the script is inside it) and runs `make panel`. Toolchain versions are chosen per environment:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flag | Description |
 |------|-------------|
 | `-d, --dir <PATH>` | Install directory, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0-beta.82`; default `latest` |
+| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0-beta.90`; default `latest` |
 | `--binary` | Use the GitHub Release binary (default) |
 | `--source` | Build from source and prepare matching Go / Node |
 | `--local <FILE>` | Use a local binary (offline install) |
@@ -739,10 +739,11 @@ Node management is the core of CoreFusion and supports several node types.
 
 Click a node to open its detail page:
 
-- **Overview**: basic info, Agent status, certificate status
+- **Overview**: basic info, Agent status, certificate status; resource cards show CPU / memory / disk usage, NIC up/down rate, core user-traffic rate, monthly used traffic, TCP connections, system load and egress NIC cumulative traffic (silent refresh every 10s)
 - **Protocol center**: core process configuration
 - **Proxy**: Caddy / Nginx configuration
 - **Core processes**: start / stop / restart
+- **Core traffic**: user traffic forwarded by the core and its monthly total
 - **WARP**: WARP configuration
 - **Direct domains**: domain management
 - **Rate limit**: traffic shaping
@@ -793,6 +794,12 @@ Modules differ between the two cores; the panel shows the set that matches the s
 - **Routing**: `final` default outbound, **Rule Sets**, **Rules**, default domain resolver, network strategy and fallback (see 6.6)
 - **Inbounds / Outbounds**: protocol, transport, TLS
 - **Endpoints**: WireGuard (including WARP configurations), MASQUE clients and similar; several can coexist and are distinguished by `tag`
+
+> With “use system network integration” enabled, the endpoint's **name** is the kernel interface name:
+> at most 15 characters, letters/digits/`._-` only. A too-long or invalid name automatically falls back
+> to the endpoint `tag`. New endpoints are prefixed per protocol (`wg-` / `ts-` / `oc-` / `ovpn-c-` /
+> `ovpn-s-` / `mq-c-` / `mq-s-`), and legacy records such as `WireGuard-xxxxxx` are shown normalized
+> as soon as the editor is opened.
 - **Services**: the top-level sing-box `services` array, such as `hysteria-realm`, DERP or `resolved`
 - **Certificates / HTTP clients / Network namespaces**: JSON sections you expand only when needed
 - **Experimental**: `clash_api` and similar; **nothing is written to the generated config unless enabled**
@@ -814,6 +821,28 @@ Modules differ between the two cores; the panel shows the set that matches the s
 
 > New inbounds listen on `::` by default (dual stack on Linux, handling both IPv4 and IPv6).
 > Change it to `0.0.0.0` or a specific address only when you need to restrict the interface.
+
+The “Use inbound port” port modes also offer **create firewall allow rules automatically**: opening the
+inbound editor probes the node firewall first, and when firewalld / ufw / nftables / iptables is detected
+you can allow the port on save according to the listening protocol (TCP/UDP).
+
+- hy2 / hysteria port hopping allows both the listening port and every dynamic port range (e.g. `20000-30000`); multiple ranges are comma-separated;
+- Allowance is idempotent: an existing covering rule (port range / multiport) is not created again;
+- Changing the port revokes the old rule before allowing the new one; deleting the inbound, disabling port hopping or switching to Unix Socket / tun (no listening port) cleans it up;
+- When no enabled firewall is detected, only a hint is shown and no rule is written.
+
+### 6.3.1 Reverse proxy path (Access domain → Front TLS → Reverse proxy path)
+
+When the inbound's own transport path is `/` but an outer nginx / caddy mounts it under a sub-path
+(e.g. `location /apps { proxy_pass http://127.0.0.1:8080/; }`), clients must connect to `/apps` or the
+request never reaches that location — the subscription still downloads, but the node does not connect.
+Fill **Reverse proxy path** under “Access domain → Front TLS”:
+
+- Enter `/apps` or `/apps?ed=2560` (with early data); subscriptions and share links **replace** the inbound transport path with it;
+- Applies to ws, httpupgrade, xhttp and h2/http; transports without a path (raw/tcp, kcp) are ignored;
+- It is independent of where TLS terminates: the path still applies when Front TLS is off (follow the core);
+- gRPC has no URL-prefix concept (the client path is always `/{serviceName}/…`), so the path is **merged into serviceName**
+  (`/apps` + `svc` → `apps/svc`); the reverse proxy must strip that prefix in `grpc_pass`.
 
 ### 6.4 Outbound configuration
 
@@ -947,7 +976,7 @@ Proxy management configures the Caddy or Nginx reverse proxy.
 
 ### 7.1 Proxy types
 
-- **Caddy**: automatic HTTPS, HTTP/2, HTTP/3
+- **Caddy**: automatic HTTPS, HTTP/1.1 and HTTP/2 (HTTP/3 / QUIC is disabled to avoid a UDP 443 conflict with layer4 routing)
 - **Nginx**: high performance, flexible configuration
 
 ### 7.2 Site configuration
@@ -966,6 +995,9 @@ Proxy management configures the Caddy or Nginx reverse proxy.
 - **local_port**: local listen port, e.g. `8443`
 - **portal_forward**: portal forwarding rule
 - **subscription_forward**: subscription forwarding rule
+- **SNI routing**: when an inbound uses TLS / REALITY and clients always connect on 443, the panel derives
+  443 TCP routing rules from the ClientHello SNI (both xray `streamSettings` and sing-box `tls.reality`);
+  the front proxy only forwards TCP and TLS is still terminated inside the core
 
 ---
 
@@ -992,6 +1024,9 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 - Maintain preferred IP sources (including `bestproxy` style sources), fetch interval and ports;
 - “Probe settings” control the probe interval, latency threshold and probe entry node; local probing
   only filters clearly unreachable IPs, while selecting an entry node simulates that node's line;
+- The “dialer” may be automatic (installed cores), `singbox`, `xray` or `mihomo`; cores that are not
+  installed are not listed. Probing runs as a temporary process that exits when done and never reads or
+  writes the core's own configuration;
 - When “Access domain” uses the CF IP pool without a concrete value, one entry (with its port) is
   picked at random.
 
@@ -999,7 +1034,11 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 
 - Configure the WAF rule source URL and the rule files to sync;
 - After syncing they are pushed to nodes and loaded by the node proxy (Nginx / Caddy);
-- A file with a full URL is downloaded from that URL; otherwise “source URL + /file name” is used.
+- A file with a full URL is downloaded from that URL; otherwise “source URL + /file name” is used;
+- “Match cache” (`match_cache` / `config_match_cache`) is enabled by default: a process-wide bounded
+  cache of hot rule-match results reduces per-request rule traversal. It is global-only with no
+  per-domain override; temporarily disable it for A/B comparison when investigating false positives
+  (disabling means a full rule evaluation on every request and higher CPU usage).
 
 ### 8.4 Rule files (routing rule files)
 
@@ -1054,6 +1093,16 @@ Notes:
 - A sing-box template may carry its own `route.rule_set` for clients, normally as `remote` so the
   client downloads it; local files pushed to a node's `rules/` under “Rule files” are only available
   to the core on that node, not to client subscriptions;
+- When generating sing-box / Xray templates the panel removes dangling references (`final`, `dns.final`,
+  `default_domain_resolver`, `download_detour`, local `rule_set`, invalid `rule_set` definitions, empty
+  `balancer`, etc.) so the client does not fail at startup with a FATAL error;
+- Outbound aliases in rules are resolved against real tags (`REJECT` / `blocked` → `block`, `DIRECT` →
+  `direct`, case-insensitive); unresolvable outbounds fall back to the default outbound and the rule
+  keeps its position;
+- A group with `tag = proxy` is always generated: a `selector` for sing-box and a `random` balancer for
+  Xray, and `outbound: proxy` in rules is rewritten to the matching `balancerTag`. The rule editor loads
+  outbound candidates dynamically from “proxy groups + custom outbounds”, and manually entered tags are
+  still validated;
 - sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3).
 
 ### 9.2 Subscription endpoints
@@ -1630,13 +1679,21 @@ Log management shows system logs.
 
 ## 25. Operations extensions
 
-Operations extensions configure optional extensions.
+“Operations extensions” (`/client-ext`) configures referral marketing, commission and withdrawals;
+“Legal documents” (`/legal-documents`) maintains the portal-side agreements.
 
-### 25.1 Features
+### 25.1 Referrals and commission
 
-- Custom extensions
-- Extension configuration
-- Extension management
+- **Rebate config**: rebate rate (percentage of the invitee's first payment, `0` = disabled), commission mode (first purchase only / all purchases), minimum withdrawal amount (the commission balance must reach it before a withdrawal can be requested)
+- **Invite codes**: when enabled, registration requires an invite code; set code length, expiry days and max uses (`0` = unlimited), and generate/view the code list
+- **Withdrawal review**: filter by pending / approved / rejected; add a processing note and record the payout method and wallet address
+- **Referral records**: inviter, invitee, commission amount and commission status
+
+### 25.2 Legal documents
+
+- Maintain “Privacy Policy” and “Terms of Service” separately, one Markdown document per locale, with live preview;
+- Each document may use an external URL instead of the built-in page; when empty the built-in page URL is used (copyable on the page);
+- The portal shows the version for the current locale and falls back to the default locale when missing.
 
 ---
 
@@ -1739,5 +1796,5 @@ The panel binary supports these subcommands (no arguments starts the server):
 ---
 
 > **Document version**: v1.1
-> **Last updated**: 2026-11-14
+> **Last updated**: 2026-11-16
 > **Applies to**: CoreFusion v0.13.0-beta.x

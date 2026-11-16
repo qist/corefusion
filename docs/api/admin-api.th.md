@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: th | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: th | updated: 2026-11-16 -->
 # แอดมิน API
 
 > ภาษา: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · ไทย · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - ฐาน URL: `https://<panel-domain>/api/v1`
 - การรับรองความถูกต้อง: `Authorization: Bearer <admin_token>` (จาก `POST /api/v1/auth/login`)
 - รูปแบบการตอบสนอง/ข้อผิดพลาดทั่วไปและแบบแผนการจำกัดอัตรา: ดู [README.md](./README.th.md)
-- แหล่งที่มาของความจริง: `internal/api/router/router.go` (จำนวนขึ้นอยู่กับเวอร์ชัน โค้ดเป็นหลัก); หากตารางนี้ไม่เห็นด้วย **โค้ดจะชนะ**
+- แหล่งที่มาของความจริง: `internal/api/router/router.go` (จำนวนแตกต่างกันไปตามเวอร์ชัน รหัสนี้เชื่อถือได้); หากตารางนี้ไม่เห็นด้วย **โค้ดจะชนะ**
 
 ## เครื่องหมายอนุญาต
 
@@ -17,8 +17,11 @@
 | สาธารณะ | ไม่จำเป็นต้องลงชื่อเข้าใช้ (อาจมีเจ้าหน้าที่ดูแลบำรุงรักษา / การจำกัดอัตรา) |
 | สาธารณะ · จำกัดอัตรา | ไม่มีการลงชื่อเข้าใช้ โดยมีการจำกัดอัตราเฉพาะ |
 | ลงชื่อเข้าใช้แล้ว | ต้องมีโทเค็นผู้ดูแลระบบที่ลงชื่อเข้าใช้ (`AuthRequired`) |
+| ผู้ดำเนินการ | ต้องการบทบาท ≥ `operator` (`RequireRole(RoleOperator)`) |
 | ผู้ดูแลระบบ | ต้องการบทบาท ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | ผู้ดูแลระบบขั้นสูง | ต้องการบทบาท = `super_admin` |
+| ลูกค้า (สาธารณะ) | ไม่จำเป็นต้องมีโทเค็นไคลเอนต์ (ลงชื่อเข้าใช้ / ลงทะเบียน ฯลฯ ) |
+| ลูกค้า (ลงชื่อเข้าใช้) | ต้องใช้ `Authorization: Bearer <client_token>` (โทเค็นพอร์ทัลไคลเอ็นต์ ไม่ใช่โทเค็นผู้ดูแลระบบ) |
 
 ระดับบทบาท: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; บทบาทไม่เพียงพอส่งคืน 403 `INSUFFICIENT_ROLE`
 
@@ -79,7 +82,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 }
 ```
 
-### 3. ตัวอย่างการตอบสนองข้อผิดพลาด
+### 3. ตัวอย่างการตอบกลับข้อผิดพลาด
 
 **401 ไม่ผ่านการรับรองความถูกต้อง:**
 
@@ -140,16 +143,20 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [ยอดลูกค้า](#ยอดลกคา)
 - [ของขวัญ](#ของขวญ)
 - [การกำหนดค่าการอ้างอิง](#การกำหนดคาการอางอง)
+- รายการที่อนุญาต [IP (สรุป) ](#ip-allow-lists-summary)
 - [การถอนการอ้างอิง](#การถอนการอางอง)
 - [รายการอนุญาต IP (สรุป)](#รายการอนญาต-ip-สรป)
 - [การเชื่อมโยง OAuth ของลูกค้า](#การเชอมโยง-oauth-ของลกคา)
 - [ตั๋ว (ผู้ดูแลระบบ)](#ตว-ผดแลระบบ)
 - [บทความ](#บทความ)
 - [บัญชีที่ใช้ร่วมกัน](#บญชทใชรวมกน)
+- การกำหนดค่า [EAB](#eab-configuration)
+- บัญชี [ACME](#acme-accounts)
+- [CA](#built-in-ca) ในตัว
 - [ใบรับรอง](#ใบรบรอง)
+- ไลบรารีกฎ [WAF](#waf-rule-library)
 - [ช่องทางการรับรอง](#ชองทางการรบรอง)
 - [การกำหนดค่า EAB](#การกำหนดคา-eab)
-- [CA](#built-in-ca) ในตัว
 - [บัญชี ACME](#บญช-acme)
 - [CA ในตัว](#ca-ในตว)
 - [กฎทางภูมิศาสตร์](#กฎทางภมศาสตร)
@@ -161,15 +168,11 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [เมตริก](#เมตรก)
 - [เทมเพลตพอร์ทัล](#เทมเพลตพอรทล)
 - [การติดตั้งตัวแทน](#การตดตงตวแทน)
+- นโยบายการเข้าถึงบริการ [ (เลิกใช้แล้ว) ](#service-access-policies-retired)
 - [เรียกเก็บเงินรายการโทรกลับ](#เรยกเกบเงนรายการโทรกลบ)
 - [ขาเข้า (พร้อมโหนด)](#ขาเขา-พรอมโหนด)
 - [การกำหนดค่าสาธารณะ](#การกำหนดคาสาธารณะ)
 - [การตรวจสอบสิทธิ์ลูกค้าและธุรกิจ (ชุดเดียวกันในเครื่องมือผู้ดูแลระบบ)](#การตรวจสอบสทธลกคาและธรกจ-ชดเดยวกนในเครองมอผดแลระบบ)
-- [การจัดส่งการสมัครสมาชิก](#การจดสงการสมครสมาชก)
-- [เวิร์กโฟลว์การกำหนดค่ารันไทม์](#เวรกโฟลวการกำหนดคารนไทม)
-- [นโยบายการเข้าถึงบริการ (เลิกใช้แล้ว)](#นโยบายการเขาถงบรการ-เลกใชแลว)
-- [การตรวจสอบโควต้าการจราจร](#การตรวจสอบโควตาการจราจร)
-- [การตรวจสุขภาพ](#การตรวจสขภาพ)
 
 ---
 
@@ -181,7 +184,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 |---|---|---|---|
 | POST | `/api/v1/auth/2fa/disable` | ลงชื่อเข้าใช้แล้ว | ปิดการใช้งาน |
 | POST | `/api/v1/auth/2fa/enable` | ลงชื่อเข้าใช้แล้ว | เปิดใช้งาน |
-| POST | `/api/v1/auth/2fa/recovery-codes` | ลงชื่อเข้าใช้แล้ว | สร้างรหัสการกู้คืนใหม่ |
+| POST | `/api/v1/auth/2fa/recovery-codes` | ลงชื่อเข้าใช้แล้ว | สร้างรหัสกู้คืนใหม่ |
 | POST | `/api/v1/auth/2fa/setup` | ลงชื่อเข้าใช้แล้ว | การตั้งค่า |
 | GET | `/api/v1/auth/2fa/status` | ลงชื่อเข้าใช้แล้ว | สถานะ |
 | POST | `/api/v1/auth/change-password` | ลงชื่อเข้าใช้แล้ว | เปลี่ยนรหัสผ่าน |
@@ -196,15 +199,15 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | สาธารณะ | ลงชื่อเข้าใช้ให้เสร็จสิ้น |
 | POST | `/api/v1/auth/passkey/register/begin` | ลงชื่อเข้าใช้แล้ว | เริ่มการลงทะเบียน |
 | POST | `/api/v1/auth/passkey/register/finish` | ลงชื่อเข้าใช้แล้ว | ลงทะเบียนให้เสร็จสมบูรณ์ |
-| GET | `/api/v1/auth/passkey/rpids` | ลงชื่อเข้าใช้แล้ว | รายการที่อนุญาต RP ID |
-| POST | `/api/v1/auth/passkey/rpids` | ลงชื่อเข้าใช้แล้ว | อัปเดตรายการที่อนุญาตของ RP ID |
+| GET | `/api/v1/auth/passkey/rpids` | ผู้ดูแลระบบ | รายการที่อนุญาต RP ID |
+| POST | `/api/v1/auth/passkey/rpids` | ผู้ดูแลระบบ | อัปเดตรายการที่อนุญาตของ RP ID |
 | GET | `/api/v1/auth/passkey/status` | สาธารณะ | สถานะ |
 | POST | `/api/v1/auth/refresh` | สาธารณะ | รีเฟรช |
 | POST | `/api/v1/auth/ticket` | ลงชื่อเข้าใช้แล้ว | ออกตั๋วอายุสั้นครั้งเดียว |
 
 ### บัญชีผู้ดูแลระบบ
 
-บัญชีผู้ใช้แผงผู้ดูแลระบบ รายการต้องมีผู้ดูแลระบบ สร้าง/อัปเดต/ลบ ต้องใช้ผู้ดูแลระบบขั้นสูง (ป้องกันการเลื่อนระดับสิทธิ์)
+บัญชีผู้ใช้แผงผู้ดูแลระบบ รายการต้องมีผู้ดูแลระบบ สร้าง/อัปเดต/ลบ ต้องใช้ผู้ดูแลระบบระดับสูง (ป้องกันการเลื่อนระดับสิทธิ์)
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
@@ -220,17 +223,17 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/clients` | ลงชื่อเข้าใช้แล้ว | รายชื่อลูกค้า |
-| POST | `/api/v1/clients` | ลงชื่อเข้าใช้แล้ว | สร้างลูกค้า. ร่างกาย: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. จำเป็นต้องมี `plan_id`; `password` อาจว่างเปล่า (ลูกค้าสามารถตั้งค่าได้ในภายหลังในพอร์ทัล) |
-| DELETE | `/api/v1/clients/:id` | ลงชื่อเข้าใช้แล้ว | ลบลูกค้า |
+| POST | `/api/v1/clients` | ผู้ดำเนินการ | สร้างลูกค้า. ร่างกาย: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. จำเป็นต้องมี `plan_id`; `password` อาจว่างเปล่า (ลูกค้าสามารถตั้งค่าได้ในภายหลังในพอร์ทัล) |
+| DELETE | `/api/v1/clients/:id` | ผู้ดำเนินการ | ลบลูกค้า |
 | GET | `/api/v1/clients/:id` | ลงชื่อเข้าใช้แล้ว | รับลูกค้า |
-| PUT | `/api/v1/clients/:id` | ลงชื่อเข้าใช้แล้ว | อัพเดทลูกค้าครับ |
-| POST | `/api/v1/clients/:id/downgrade` | ลงชื่อเข้าใช้แล้ว | ดาวน์เกรดลูกค้า |
+| PUT | `/api/v1/clients/:id` | ผู้ดำเนินการ | อัพเดทลูกค้าครับ |
+| POST | `/api/v1/clients/:id/downgrade` | ผู้ดำเนินการ | ดาวน์เกรดลูกค้า |
 | GET | `/api/v1/clients/:id/orders` | ลงชื่อเข้าใช้แล้ว | รายการสั่งซื้อของลูกค้า |
-| POST | `/api/v1/clients/:id/renew` | ลงชื่อเข้าใช้แล้ว | ต่ออายุลูกค้า |
-| POST | `/api/v1/clients/:id/reset-usage` | ลงชื่อเข้าใช้แล้ว | รีเซ็ตการใช้งาน |
-| POST | `/api/v1/clients/:id/restore` | ลงชื่อเข้าใช้แล้ว | ดำเนินการต่อลูกค้า |
-| POST | `/api/v1/clients/:id/suspend` | ลงชื่อเข้าใช้แล้ว | ระงับลูกค้า |
-| POST | `/api/v1/clients/:id/upgrade` | ลงชื่อเข้าใช้แล้ว | อัพเกรดลูกค้า |
+| POST | `/api/v1/clients/:id/renew` | ผู้ดำเนินการ | ต่ออายุลูกค้า |
+| POST | `/api/v1/clients/:id/reset-usage` | ผู้ดำเนินการ | รีเซ็ตการใช้งาน |
+| POST | `/api/v1/clients/:id/restore` | ผู้ดำเนินการ | ดำเนินการต่อลูกค้า |
+| POST | `/api/v1/clients/:id/suspend` | ผู้ดำเนินการ | ระงับลูกค้า |
+| POST | `/api/v1/clients/:id/upgrade` | ผู้ดำเนินการ | อัพเกรดลูกค้า |
 
 ### แม่แบบแผน
 
@@ -239,17 +242,17 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | ลงชื่อเข้าใช้แล้ว | รายการเทมเพลต |
-| POST | `/api/v1/plan-templates` | ลงชื่อเข้าใช้แล้ว | สร้างเทมเพลต |
-| DELETE | `/api/v1/plan-templates/:id` | ลงชื่อเข้าใช้แล้ว | ลบเทมเพลต |
+| POST | `/api/v1/plan-templates` | ผู้ดูแลระบบ | สร้างเทมเพลต |
+| DELETE | `/api/v1/plan-templates/:id` | ผู้ดูแลระบบ | ลบเทมเพลต |
 | GET | `/api/v1/plan-templates/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดเทมเพลต |
-| PUT | `/api/v1/plan-templates/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตเทมเพลต |
+| PUT | `/api/v1/plan-templates/:id` | ผู้ดูแลระบบ | อัปเดตเทมเพลต |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | ลงชื่อเข้าใช้แล้ว | รับโหนดที่พร้อมใช้งาน |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | ลงชื่อเข้าใช้แล้ว | รับตัวเลือกโหนดที่เรียกเก็บเงินได้ |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | ลงชื่อเข้าใช้แล้ว | ตั้งค่ากลุ่มโหนดเทมเพลต |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | ลงชื่อเข้าใช้แล้ว | ซิงค์บัญชีกับเทมเพลต |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | ผู้ดูแลระบบ | ตั้งค่ากลุ่มโหนดเทมเพลต |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | ผู้ดูแลระบบ | ซิงค์บัญชีกับเทมเพลต |
 | GET | `/api/v1/plan-templates/:id/variants` | ลงชื่อเข้าใช้แล้ว | รายการตัวแปร |
-| POST | `/api/v1/plan-templates/:id/variants` | ลงชื่อเข้าใช้แล้ว | สร้างตัวแปร |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | ลงชื่อเข้าใช้แล้ว | ซิงค์บัญชีทั้งหมด |
+| POST | `/api/v1/plan-templates/:id/variants` | ผู้ดูแลระบบ | สร้างตัวแปร |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | ผู้ดูแลระบบ | ซิงค์บัญชีทั้งหมด |
 
 ### ตัวแปรแผน
 
@@ -257,8 +260,8 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | ลงชื่อเข้าใช้แล้ว | ลบตัวแปร |
-| PUT | `/api/v1/plan-variants/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตตัวแปร |
+| DELETE | `/api/v1/plan-variants/:id` | ผู้ดูแลระบบ | ลบตัวแปร |
+| PUT | `/api/v1/plan-variants/:id` | ผู้ดูแลระบบ | อัปเดตตัวแปร |
 
 ### ชุดจราจร
 
@@ -267,20 +270,20 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | ลงชื่อเข้าใช้แล้ว | รายการชุดการจราจร |
-| POST | `/api/v1/traffic-packs` | ลงชื่อเข้าใช้แล้ว | สร้างชุดการรับส่งข้อมูล |
-| DELETE | `/api/v1/traffic-packs/:id` | ลงชื่อเข้าใช้แล้ว | ลบชุดการรับส่งข้อมูล |
-| PUT | `/api/v1/traffic-packs/:id` | ลงชื่อเข้าใช้แล้ว | อัพเดตชุดการจราจร |
+| POST | `/api/v1/traffic-packs` | ผู้ดูแลระบบ | สร้างชุดการรับส่งข้อมูล |
+| DELETE | `/api/v1/traffic-packs/:id` | ผู้ดูแลระบบ | ลบชุดการรับส่งข้อมูล |
+| PUT | `/api/v1/traffic-packs/:id` | ผู้ดูแลระบบ | อัพเดตชุดการจราจร |
 
 ### คูปอง
 
 สร้าง ตรวจสอบ และแลกคูปอง
 
-| วิธี | เส้นทาง | การอนุญาต | คำอธิบาย |
+| วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/promotions` | ลงชื่อเข้าใช้แล้ว | แสดงรายการคูปอง |
-| POST | `/api/v1/promotions` | ลงชื่อเข้าใช้แล้ว | สร้างคูปอง |
-| DELETE | `/api/v1/promotions/:id` | ลงชื่อเข้าใช้แล้ว | ลบคูปอง |
-| PUT | `/api/v1/promotions/:id` | ลงชื่อเข้าใช้แล้ว | อัพเดทคูปอง |
+| GET | `/api/v1/promotions` | ลงชื่อเข้าใช้แล้ว | รายการคูปอง |
+| POST | `/api/v1/promotions` | ผู้ดูแลระบบ | สร้างคูปอง |
+| DELETE | `/api/v1/promotions/:id` | ผู้ดูแลระบบ | ลบคูปอง |
+| PUT | `/api/v1/promotions/:id` | ผู้ดูแลระบบ | อัพเดทคูปอง |
 | POST | `/api/v1/promotions/validate` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบคูปอง |
 
 ### กลุ่มโหนด
@@ -290,16 +293,16 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | ลงชื่อเข้าใช้แล้ว | แสดงรายการกลุ่มโหนด |
-| POST | `/api/v1/node-groups` | ลงชื่อเข้าใช้แล้ว | สร้างกลุ่มโหนด |
-| DELETE | `/api/v1/node-groups/:id` | ลงชื่อเข้าใช้แล้ว | ลบกลุ่มโหนด |
-| PUT | `/api/v1/node-groups/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตกลุ่มโหนด |
+| POST | `/api/v1/node-groups` | ผู้ดูแลระบบ | สร้างกลุ่มโหนด |
+| DELETE | `/api/v1/node-groups/:id` | ผู้ดูแลระบบ | ลบกลุ่มโหนด |
+| PUT | `/api/v1/node-groups/:id` | ผู้ดูแลระบบ | อัปเดตกลุ่มโหนด |
 | GET | `/api/v1/node-groups/:id/members` | ลงชื่อเข้าใช้แล้ว | รายชื่อสมาชิกกลุ่ม |
-| POST | `/api/v1/node-groups/:id/members` | ลงชื่อเข้าใช้แล้ว | เพิ่มสมาชิกกลุ่ม |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | ลงชื่อเข้าใช้แล้ว | ลบสมาชิกกลุ่ม |
+| POST | `/api/v1/node-groups/:id/members` | ผู้ดูแลระบบ | เพิ่มสมาชิกกลุ่ม |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | ผู้ดูแลระบบ | ลบสมาชิกกลุ่ม |
 
 ### เซิร์ฟเวอร์โหนด
 
-ทรัพยากรหลัก: โหนด CRUD, การส่งมอบการกำหนดค่าคอร์ (xray/sing-box), การกำหนดค่าขาเข้า/ขาออก/ปลายทาง, การควบคุมกระบวนการ, ใบรับรอง, WAF, ขีดจำกัดอัตรา, การข้ามพอร์ต, พร็อกซีแบบลูกโซ่, มิเรอร์/การสำรองข้อมูลหลัก, การติดตั้ง/อัปเกรดเอเจนต์, การควบคุมรันไทม์ xray เส้นทางย่อยจำนวนมาก จัดกลุ่มตามตระกูลฟีเจอร์
+ทรัพยากรหลัก: โหนด CRUD, การจัดส่งการกำหนดค่าคอร์ (xray/sing-box), การกำหนดค่าขาเข้า/ขาออก/ปลายทาง, การควบคุมกระบวนการ, ใบรับรอง, WAF, การจำกัดอัตรา, การข้ามพอร์ต, พร็อกซีแบบลูกโซ่, มิเรอร์/การสำรองข้อมูลหลัก, การติดตั้ง/อัปเกรดเอเจนต์, การควบคุมรันไทม์ xray เส้นทางย่อยจำนวนมาก จัดกลุ่มตามตระกูลฟีเจอร์
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
@@ -328,7 +331,8 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | ผู้ดูแลระบบ | บันทึกและนำไปใช้ |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | ผู้ดูแลระบบ | รายการไซต์ |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | ผู้ดูแลระบบ | สร้างไซต์ |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | นำเข้าไซต์ |
+| POST | `/api/v1/node-servers/:id/caddy/import` | ผู้ดูแลระบบ | นำเข้าไซต์ |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | ผู้ดูแลระบบ | ดูตัวอย่างไซต์ Caddy ที่แสดงผล |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | ผู้ดูแลระบบ | ลบไซต์ |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | ผู้ดูแลระบบ | อัปเดตไซต์ |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | ผู้ดูแลระบบ | ลบกฎ SNI ทั้งหมด |
@@ -353,6 +357,9 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/force-reconnect` | ผู้ดูแลระบบ | บังคับให้เชื่อมต่อใหม่ |
 | GET | `/api/v1/node-servers/:id/free-port` | ผู้ดูแลระบบ | ขอพอร์ตฟรี |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | ผู้ดูแลระบบ | ดันไปที่โหนดนี้ |
+| GET | `/api/v1/node-servers/:id/firewall/status` | ผู้ดูแลระบบ | การตรวจจับไฟร์วอลล์ (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | ผู้ดูแลระบบ | อนุญาตพอร์ตการฟังขาเข้า (รองรับหลายช่วง) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | ผู้ดูแลระบบ | เพิกถอนค่าเผื่อพอร์ตขาเข้า (รวมถึงรายการที่ซ้ำกัน) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | ผู้ดูแลระบบ | รายการ |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | ผู้ดูแลระบบ | สร้าง |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | ผู้ดูแลระบบ | ลบ |
@@ -373,8 +380,9 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | ผู้ดูแลระบบ | บันทึกการตั้งค่า |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | ผู้ดูแลระบบ | รายการไซต์ |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | ผู้ดูแลระบบ | สร้างไซต์ |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | นำเข้าไซต์ |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | สร้างไฟล์ใบรับรอง SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | ผู้ดูแลระบบ | นำเข้าไซต์ |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | ผู้ดูแลระบบ | ดูตัวอย่างไซต์ Nginx ที่แสดงผล |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | ผู้ดูแลระบบ | สร้างไฟล์ใบรับรอง SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | ผู้ดูแลระบบ | ลบไซต์ |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | ผู้ดูแลระบบ | อัปเดตไซต์ |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | ผู้ดูแลระบบ | ลบกฎ SNI ทั้งหมด |
@@ -457,10 +465,11 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | ผู้ดูแลระบบ | เคลียร์ทั้งหมด |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | ผู้ดูแลระบบ | ใช้กฎไฟร์วอลล์การข้ามพอร์ต |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | ผู้ดูแลระบบ | ลบกฎไฟร์วอลล์การข้ามพอร์ต |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | ผู้ดูแลระบบ | การเชื่อมต่อ sing-box แบบสด (clash_api, โหนดในเครื่องเท่านั้น) |
 | POST | `/api/v1/node-servers/:id/speed-test` | ผู้ดูแลระบบ | การทดสอบความเร็วของโหนด |
 | GET | `/api/v1/node-servers/:id/status` | ผู้ดูแลระบบ | สถานะของโหนด |
 | POST | `/api/v1/node-servers/:id/sync` | ผู้ดูแลระบบ | ซิงค์การกำหนดค่าโหนด (สร้างและพุช) |
-| POST | `/api/v1/node-servers/:id/sync-data` | ผู้ดูแลระบบขั้นสูง | พุชข้อมูลพาเนลไปยังโหนด (ซิงค์ผู้ใช้/การสมัครสมาชิก/แผนทั้งหมด) |
+| POST | `/api/v1/node-servers/:id/sync-data` | ผู้ดูแลระบบขั้นสูง | พุชข้อมูลแผงไปยังโหนด (ซิงค์ผู้ใช้/การสมัครสมาชิก/แผนทั้งหมด) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | ผู้ดูแลระบบ | ซิงค์โหนดมิเรอร์ |
 | GET | `/api/v1/node-servers/:id/tags` | ผู้ดูแลระบบ | รายการแท็ก |
 | POST | `/api/v1/node-servers/:id/tags` | ผู้ดูแลระบบ | เพิ่มแท็ก |
@@ -496,6 +505,8 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | GET | `/api/v1/node-servers/:id/warp/config` | ผู้ดูแลระบบ | อ่านการกำหนดค่า |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | ผู้ดูแลระบบ | สร้างการกำหนดค่า |
 | POST | `/api/v1/node-servers/:id/warp/register` | ผู้ดูแลระบบ | ลงทะเบียน |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | ผู้ดูแลระบบ | ลงทะเบียนโปรไฟล์ WARP MASQUE (ขั้นตอนที่ 1 จาก 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | ผู้ดูแลระบบ | สร้าง sing-box MASQUE ขาออกจากโปรไฟล์ WARP |
 | GET | `/api/v1/node-servers/:id/warp/status` | ผู้ดูแลระบบ | สถานะ |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | ผู้ดูแลระบบ | รับข้อมูลบาลานเซอร์ |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | ผู้ดูแลระบบ | ตั้งเป้าหมายบาลานเซอร์ |
@@ -544,8 +555,8 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | ลงชื่อเข้าใช้แล้ว | บันทึกการตรวจสอบโหนด |
-| GET | `/api/v1/node-audit-logs/export` | ลงชื่อเข้าใช้แล้ว | ส่งออกบันทึกการตรวจสอบโหนด |
+| GET | `/api/v1/node-audit-logs` | ผู้ดูแลระบบ | บันทึกการตรวจสอบโหนด |
+| GET | `/api/v1/node-audit-logs/export` | ผู้ดูแลระบบ | ส่งออกบันทึกการตรวจสอบโหนด |
 
 ### โหนด (โมเดลดั้งเดิม เลิกใช้แล้ว)
 
@@ -568,16 +579,16 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/subscriptions` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/subscriptions/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
+| POST | `/api/v1/subscriptions` | ผู้ดำเนินการ | สร้าง |
+| DELETE | `/api/v1/subscriptions/:id` | ผู้ดำเนินการ | ลบ |
 | GET | `/api/v1/subscriptions/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
-| PUT | `/api/v1/subscriptions/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
+| PUT | `/api/v1/subscriptions/:id` | ผู้ดำเนินการ | อัปเดต |
 | GET | `/api/v1/subscriptions/:id/access-logs` | ลงชื่อเข้าใช้แล้ว | บันทึกการเข้าถึง |
-| POST | `/api/v1/subscriptions/:id/enable` | ลงชื่อเข้าใช้แล้ว | เปิดใช้งาน |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | ลงชื่อเข้าใช้แล้ว | รีเซ็ตการใช้งาน |
-| POST | `/api/v1/subscriptions/:id/restore` | ลงชื่อเข้าใช้แล้ว | ดำเนินการต่อ |
-| POST | `/api/v1/subscriptions/:id/revoke` | ลงชื่อเข้าใช้แล้ว | เพิกถอน |
-| POST | `/api/v1/subscriptions/:id/rotate` | ลงชื่อเข้าใช้แล้ว | หมุน |
+| POST | `/api/v1/subscriptions/:id/enable` | ผู้ดำเนินการ | เปิดใช้งาน |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | ผู้ดำเนินการ | รีเซ็ตการใช้งาน |
+| POST | `/api/v1/subscriptions/:id/restore` | ผู้ดำเนินการ | ดำเนินการต่อ |
+| POST | `/api/v1/subscriptions/:id/revoke` | ผู้ดำเนินการ | เพิกถอน |
+| POST | `/api/v1/subscriptions/:id/rotate` | ผู้ดำเนินการ | หมุน |
 | GET | `/api/v1/subscriptions/:id/rotations` | ลงชื่อเข้าใช้แล้ว | ประวัติการหมุน |
 
 ### รูปแบบการสมัครสมาชิก
@@ -588,15 +599,15 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 
 ### จุดสิ้นสุดการสมัครสมาชิก
 
-โดเมนการสมัครสมาชิกเฉพาะ (พร็อกซีแบบย้อนกลับไปยังเส้นทาง `/sub` ของแผงควบคุม)
+โดเมนการสมัครสมาชิกเฉพาะ (พร็อกซีแบบย้อนกลับไปยังพาธ `/sub` ของแผงควบคุม)
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/subscription-endpoints` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/subscription-endpoints/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
+| POST | `/api/v1/subscription-endpoints` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/subscription-endpoints/:id` | ผู้ดูแลระบบ | ลบ |
 | GET | `/api/v1/subscription-endpoints/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
-| PUT | `/api/v1/subscription-endpoints/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
+| PUT | `/api/v1/subscription-endpoints/:id` | ผู้ดูแลระบบ | อัปเดต |
 
 ### แบ่งปันโดเมน
 
@@ -605,11 +616,11 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/share-domains` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/share-domains/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| PUT | `/api/v1/share-domains/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| DELETE | `/api/v1/share-domains/all` | ลงชื่อเข้าใช้แล้ว | เคลียร์ทั้งหมด |
-| POST | `/api/v1/share-domains/seed` | ลงชื่อเข้าใช้แล้ว | เริ่มต้นข้อมูลเริ่มต้น |
+| POST | `/api/v1/share-domains` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/share-domains/:id` | ผู้ดูแลระบบ | ลบ |
+| PUT | `/api/v1/share-domains/:id` | ผู้ดูแลระบบ | อัปเดต |
+| DELETE | `/api/v1/share-domains/all` | ผู้ดูแลระบบ | เคลียร์ทั้งหมด |
+| POST | `/api/v1/share-domains/seed` | ผู้ดูแลระบบ | เริ่มต้นข้อมูลเริ่มต้น |
 
 ### Cloudflare ไอพี
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP พูลและการจัดการแหล่ง�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | ลงชื่อเข้าใช้แล้ว | ล้างรายการ |
+| DELETE | `/api/v1/cfip/entries` | ผู้ดูแลระบบ | ล้างรายการ |
 | GET | `/api/v1/cfip/entries` | ลงชื่อเข้าใช้แล้ว | รายการเข้า |
-| POST | `/api/v1/cfip/entries` | ลงชื่อเข้าใช้แล้ว | เพิ่มรายการ |
-| DELETE | `/api/v1/cfip/entries/:id` | ลงชื่อเข้าใช้แล้ว | ลบรายการ |
-| POST | `/api/v1/cfip/fetch-all` | ลงชื่อเข้าใช้แล้ว | ดึงข้อมูลแหล่งที่มาทั้งหมด |
-| POST | `/api/v1/cfip/seed` | ลงชื่อเข้าใช้แล้ว | เริ่มต้นข้อมูลเริ่มต้น |
+| POST | `/api/v1/cfip/entries` | ผู้ดูแลระบบ | เพิ่มรายการ |
+| DELETE | `/api/v1/cfip/entries/:id` | ผู้ดูแลระบบ | ลบรายการ |
+| POST | `/api/v1/cfip/fetch-all` | ผู้ดูแลระบบ | ดึงข้อมูลแหล่งที่มาทั้งหมด |
+| GET | `/api/v1/cfip/probe-config` | ลงชื่อเข้าใช้แล้ว | การกำหนดค่าโพรบ IP ที่ต้องการ CF (โหนดรายการ + ตัวหมุนหมายเลขที่ติดตั้ง) |
+| PUT | `/api/v1/cfip/probe-config` | ผู้ดูแลระบบ | บันทึกช่วงโพรบ / ขีดจำกัดเวลาแฝง / โหนดรายการ / ตัวหมุนหมายเลข |
+| POST | `/api/v1/cfip/check` | ผู้ดูแลระบบ | ตรวจสอบโดเมน/IP ที่ต้องการทั้งหมดทันที |
+| POST | `/api/v1/cfip/seed` | ผู้ดูแลระบบ | เริ่มต้นข้อมูลเริ่มต้น |
 | GET | `/api/v1/cfip/sources` | ลงชื่อเข้าใช้แล้ว | รายการแหล่งข้อมูล |
-| POST | `/api/v1/cfip/sources` | ลงชื่อเข้าใช้แล้ว | สร้างแหล่งข้อมูล |
-| DELETE | `/api/v1/cfip/sources/:id` | ลงชื่อเข้าใช้แล้ว | ลบแหล่งข้อมูล |
-| PUT | `/api/v1/cfip/sources/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตแหล่งข้อมูล |
-| POST | `/api/v1/cfip/sources/:id/fetch` | ลงชื่อเข้าใช้แล้ว | ดึงแหล่งที่มานี้ |
+| POST | `/api/v1/cfip/sources` | ผู้ดูแลระบบ | สร้างแหล่งข้อมูล |
+| DELETE | `/api/v1/cfip/sources/:id` | ผู้ดูแลระบบ | ลบแหล่งข้อมูล |
+| PUT | `/api/v1/cfip/sources/:id` | ผู้ดูแลระบบ | อัปเดตแหล่งข้อมูล |
+| POST | `/api/v1/cfip/sources/:id/fetch` | ผู้ดูแลระบบ | ดึงแหล่งที่มานี้ |
 
 ### การกำหนดค่าการสมัครสมาชิก (Mihomo/Clash)
 
@@ -636,36 +650,36 @@ Cloudflare CDN IP พูลและการจัดการแหล่ง�
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/mihomo/configs` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
+| POST | `/api/v1/mihomo/configs` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/mihomo/configs/:id` | ผู้ดูแลระบบ | ลบ |
 | GET | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
-| PUT | `/api/v1/mihomo/configs/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
+| PUT | `/api/v1/mihomo/configs/:id` | ผู้ดูแลระบบ | อัปเดต |
 | GET | `/api/v1/mihomo/configs/:id/rules` | ลงชื่อเข้าใช้แล้ว | รายการกฎ |
-| POST | `/api/v1/mihomo/configs/:id/rules` | ลงชื่อเข้าใช้แล้ว | สร้างกฎ |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | จัดเรียงกฎใหม่ |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | อัปเดตกฎ |
-| DELETE | `/api/v1/mihomo/rules/:id` | ลงชื่อเข้าใช้แล้ว | ลบกฎ |
+| POST | `/api/v1/mihomo/configs/:id/rules` | ผู้ดูแลระบบ | สร้างกฎ |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | ผู้ดูแลระบบ | เรียงลำดับกฎใหม่ |
+| PUT | `/api/v1/mihomo/rules/:id` | ผู้ดูแลระบบ | อัปเดตกฎ |
+| DELETE | `/api/v1/mihomo/rules/:id` | ผู้ดูแลระบบ | ลบกฎ |
 
 ### เว็บไซต์เติมเงิน
 
-Third-party payment site integration: signing keys, verification files, domain verification, integration docs.
+การรวมไซต์การชำระเงินของบุคคลที่สาม: คีย์การลงนาม ไฟล์การยืนยัน การตรวจสอบโดเมน เอกสารการรวม
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | ลงชื่อเข้าใช้แล้ว | รายการไซต์ |
-| POST | `/api/v1/charge-sites` | ลงชื่อเข้าใช้แล้ว | สร้างไซต์ |
-| DELETE | `/api/v1/charge-sites/:id` | ลงชื่อเข้าใช้แล้ว | ลบไซต์ |
-| GET | `/api/v1/charge-sites/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดเว็บไซต์ |
-| PUT | `/api/v1/charge-sites/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตไซต์ |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | ลงชื่อเข้าใช้แล้ว | ล้างกุญแจเก่า |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | ลงชื่อเข้าใช้แล้ว | สร้างไฟล์การยืนยัน |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | ลงชื่อเข้าใช้แล้ว | สร้างไฟล์การยืนยัน |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | ลงชื่อเข้าใช้แล้ว | รับเอกสารบูรณาการ |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | ลงชื่อเข้าใช้แล้ว | หมุนคีย์การลงนาม |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบโดเมน DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | ลงชื่อเข้าใช้แล้ว | ยืนยันความท้าทายโดเมน HTTP |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบโดเมน DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | ลงชื่อเข้าใช้แล้ว | ยืนยันความท้าทายของโดเมน HTTP |
+| GET | `/api/v1/charge-sites` | ผู้ดูแลระบบ | รายการไซต์ |
+| POST | `/api/v1/charge-sites` | ผู้ดูแลระบบ | สร้างไซต์ |
+| DELETE | `/api/v1/charge-sites/:id` | ผู้ดูแลระบบ | ลบไซต์ |
+| GET | `/api/v1/charge-sites/:id` | ผู้ดูแลระบบ | รายละเอียดเว็บไซต์ |
+| PUT | `/api/v1/charge-sites/:id` | ผู้ดูแลระบบ | อัปเดตไซต์ |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | ผู้ดูแลระบบ | ล้างกุญแจเก่า |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | ผู้ดูแลระบบ | สร้างไฟล์การยืนยัน |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | ผู้ดูแลระบบ | สร้างไฟล์การยืนยัน |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | ผู้ดูแลระบบ | รับเอกสารบูรณาการ |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | ผู้ดูแลระบบ | หมุนคีย์การลงนาม |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | ผู้ดูแลระบบ | ตรวจสอบโดเมน DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | ผู้ดูแลระบบ | ยืนยันความท้าทายโดเมน HTTP |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | ผู้ดูแลระบบ | ตรวจสอบโดเมน DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | ผู้ดูแลระบบ | ยืนยันความท้าทายโดเมน HTTP |
 
 ### สั่งเติมเงิน
 
@@ -673,10 +687,10 @@ Third-party payment site integration: signing keys, verification files, domain v
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | ลงชื่อเข้าใช้แล้ว | รายการสั่งซื้อ |
-| GET | `/api/v1/charge-orders/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดการสั่งซื้อ |
-| POST | `/api/v1/charge-orders/:id/refund` | ลงชื่อเข้าใช้แล้ว | การคืนเงิน |
-| GET | `/api/v1/charge-orders/export-csv` | ลงชื่อเข้าใช้แล้ว | ส่งออกคำสั่งเติมเงิน CSV |
+| GET | `/api/v1/charge-orders` | ผู้ดูแลระบบ | รายการสั่งซื้อ |
+| GET | `/api/v1/charge-orders/:id` | ผู้ดูแลระบบ | รายละเอียดการสั่งซื้อ |
+| POST | `/api/v1/charge-orders/:id/refund` | ผู้ดูแลระบบ | การคืนเงิน |
+| GET | `/api/v1/charge-orders/export-csv` | ผู้ดูแลระบบ | ส่งออกคำสั่งเติมเงิน CSV |
 
 ### บัตรเติมเงิน
 
@@ -684,12 +698,12 @@ Third-party payment site integration: signing keys, verification files, domain v
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | ลงชื่อเข้าใช้แล้ว | รายการการ์ด |
-| POST | `/api/v1/charge-cards` | ลงชื่อเข้าใช้แล้ว | สร้างการ์ด |
-| DELETE | `/api/v1/charge-cards/:id` | ลงชื่อเข้าใช้แล้ว | ลบการ์ด |
-| GET | `/api/v1/charge-cards/:id/usages` | ลงชื่อเข้าใช้แล้ว | บันทึกการใช้บัตร |
-| POST | `/api/v1/charge-cards/batch` | ลงชื่อเข้าใช้แล้ว | สร้างการ์ดจำนวนมาก |
-| GET | `/api/v1/charge-cards/export-csv` | ลงชื่อเข้าใช้แล้ว | ส่งออกการ์ด CSV |
+| GET | `/api/v1/charge-cards` | ผู้ดูแลระบบ | รายการการ์ด |
+| POST | `/api/v1/charge-cards` | ผู้ดูแลระบบ | สร้างการ์ด |
+| DELETE | `/api/v1/charge-cards/:id` | ผู้ดูแลระบบ | ลบการ์ด |
+| GET | `/api/v1/charge-cards/:id/usages` | ผู้ดูแลระบบ | บันทึกการใช้บัตร |
+| POST | `/api/v1/charge-cards/batch` | ผู้ดูแลระบบ | สร้างการ์ดจำนวนมาก |
+| GET | `/api/v1/charge-cards/export-csv` | ผู้ดูแลระบบ | ส่งออกการ์ด CSV |
 
 ### ชาร์จกิจกรรมการโทรกลับ
 
@@ -725,8 +739,8 @@ Third-party payment site integration: signing keys, verification files, domain v
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | ลงชื่อเข้าใช้แล้ว | รายการของขวัญ |
-| POST | `/api/v1/client-gifts` | ลงชื่อเข้าใช้แล้ว | สร้างของขวัญ |
-| POST | `/api/v1/client-gifts/batch` | ลงชื่อเข้าใช้แล้ว | จำนวนมากสร้างของขวัญ |
+| POST | `/api/v1/client-gifts` | ผู้ดูแลระบบ | สร้างของขวัญ |
+| POST | `/api/v1/client-gifts/batch` | ผู้ดูแลระบบ | จำนวนมากสร้างของขวัญ |
 | GET | `/api/v1/client-gifts/search-clients` | ลงชื่อเข้าใช้แล้ว | ค้นหาลูกค้า |
 
 ### การกำหนดค่าการอ้างอิง
@@ -746,9 +760,9 @@ Third-party payment site integration: signing keys, verification files, domain v
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | ลงชื่อเข้าใช้แล้ว | รายการขอถอนเงิน |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | ลงชื่อเข้าใช้แล้ว | อนุมัติการถอนเงิน |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | ลงชื่อเข้าใช้แล้ว | ปฏิเสธการถอนเงิน |
+| GET | `/api/v1/referral-withdrawals` | ผู้ดูแลระบบ | รายการขอถอนเงิน |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | ผู้ดูแลระบบ | อนุมัติการถอนเงิน |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | ผู้ดูแลระบบ | ปฏิเสธการถอนเงิน |
 
 ### รายการอนุญาต IP (สรุป)
 
@@ -774,9 +788,9 @@ Third-party payment site integration: signing keys, verification files, domain v
 |---|---|---|---|
 | GET | `/api/v1/tickets` | ลงชื่อเข้าใช้แล้ว | รายการตั๋ว |
 | GET | `/api/v1/tickets/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดตั๋ว |
-| POST | `/api/v1/tickets/:id/assign` | ลงชื่อเข้าใช้แล้ว | กำหนดตั๋ว |
-| POST | `/api/v1/tickets/:id/close` | ลงชื่อเข้าใช้แล้ว | ปิดตั๋ว |
-| POST | `/api/v1/tickets/:id/reply` | ลงชื่อเข้าใช้แล้ว | ตอบเรื่องตั๋วครับ |
+| POST | `/api/v1/tickets/:id/assign` | ผู้ดำเนินการ | กำหนดตั๋ว |
+| POST | `/api/v1/tickets/:id/close` | ผู้ดำเนินการ | ปิดตั๋ว |
+| POST | `/api/v1/tickets/:id/reply` | ผู้ดำเนินการ | ตอบเรื่องตั๋วครับ |
 
 ### บทความ
 
@@ -785,10 +799,10 @@ CRUD สำหรับบทความพอร์ทัล
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/articles` | ลงชื่อเข้าใช้แล้ว | รายการบทความ |
-| POST | `/api/v1/articles` | ลงชื่อเข้าใช้แล้ว | สร้างบทความ |
-| DELETE | `/api/v1/articles/:id` | ลงชื่อเข้าใช้แล้ว | ลบบทความ |
+| POST | `/api/v1/articles` | ผู้ดูแลระบบ | สร้างบทความ |
+| DELETE | `/api/v1/articles/:id` | ผู้ดูแลระบบ | ลบบทความ |
 | GET | `/api/v1/articles/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดบทความ |
-| PUT | `/api/v1/articles/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตบทความ |
+| PUT | `/api/v1/articles/:id` | ผู้ดูแลระบบ | อัปเดตบทความ |
 
 ### บัญชีที่ใช้ร่วมกัน
 
@@ -797,10 +811,10 @@ CRUD สำหรับบทความพอร์ทัล
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | ลงชื่อเข้าใช้แล้ว | รายการบัญชีที่ใช้ร่วมกัน |
-| POST | `/api/v1/shared-accounts` | ลงชื่อเข้าใช้แล้ว | สร้างบัญชีที่ใช้ร่วมกัน |
-| DELETE | `/api/v1/shared-accounts/:id` | ลงชื่อเข้าใช้แล้ว | ลบบัญชีที่ใช้ร่วมกัน |
+| POST | `/api/v1/shared-accounts` | ผู้ดูแลระบบ | สร้างบัญชีที่ใช้ร่วมกัน |
+| DELETE | `/api/v1/shared-accounts/:id` | ผู้ดูแลระบบ | ลบบัญชีที่ใช้ร่วมกัน |
 | GET | `/api/v1/shared-accounts/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดบัญชีที่ใช้ร่วมกัน |
-| PUT | `/api/v1/shared-accounts/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตบัญชีที่ใช้ร่วมกัน |
+| PUT | `/api/v1/shared-accounts/:id` | ผู้ดูแลระบบ | อัปเดตบัญชีที่ใช้ร่วมกัน |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | ลงชื่อเข้าใช้แล้ว | บันทึกการซ่อมแซม |
 
 ### ใบรับรอง
@@ -809,20 +823,20 @@ CRUD สำหรับบทความพอร์ทัล
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/certificates` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/certificates/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| GET | `/api/v1/certificates/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
-| PUT | `/api/v1/certificates/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| GET | `/api/v1/certificates/:id/download` | ลงชื่อเข้าใช้แล้ว | ดาวน์โหลด |
-| POST | `/api/v1/certificates/:id/renew` | ลงชื่อเข้าใช้แล้ว | ต่ออายุลูกค้า |
-| GET | `/api/v1/certificates/check-port` | ลงชื่อเข้าใช้แล้ว | ตรวจสอบพอร์ต |
-| GET | `/api/v1/certificates/detect-ip` | ลงชื่อเข้าใช้แล้ว | โพรบ IP |
-| GET | `/api/v1/certificates/export` | ลงชื่อเข้าใช้แล้ว | ส่งออก |
-| POST | `/api/v1/certificates/issue` | ลงชื่อเข้าใช้แล้ว | ปัญหา ร่างกาย: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` มีค่าเริ่มต้นเป็น http-01; `dns_channel_id` เลือกช่อง DNS (ผู้ให้บริการ DNS ที่กำหนดค่าไว้ + ข้อมูลรับรอง) |
-| POST | `/api/v1/certificates/issue-on-node` | ลงชื่อเข้าใช้แล้ว | ออกไปยังโหนด |
-| POST | `/api/v1/certificates/upload` | ลงชื่อเข้าใช้แล้ว | อัปโหลด |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | ตรวจสอบสถานะงานเบื้องหลัง |
+| GET | `/api/v1/certificates` | ผู้ดูแลระบบ | รายการ |
+| POST | `/api/v1/certificates` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/certificates/:id` | ผู้ดูแลระบบ | ลบ |
+| GET | `/api/v1/certificates/:id` | ผู้ดูแลระบบ | รายละเอียด |
+| PUT | `/api/v1/certificates/:id` | ผู้ดูแลระบบ | อัปเดต |
+| GET | `/api/v1/certificates/:id/download` | ผู้ดูแลระบบ | ดาวน์โหลด |
+| POST | `/api/v1/certificates/:id/renew` | ผู้ดูแลระบบ | ต่ออายุลูกค้า |
+| GET | `/api/v1/certificates/check-port` | ผู้ดูแลระบบ | ตรวจสอบพอร์ต |
+| GET | `/api/v1/certificates/detect-ip` | ผู้ดูแลระบบ | โพรบ IP |
+| GET | `/api/v1/certificates/export` | ผู้ดูแลระบบ | ส่งออก |
+| POST | `/api/v1/certificates/issue` | ผู้ดูแลระบบ | ปัญหา ร่างกาย: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` มีค่าเริ่มต้นเป็น http-01; `dns_channel_id` เลือกช่อง DNS (ผู้ให้บริการ DNS ที่กำหนดค่าไว้ + ข้อมูลรับรอง) |
+| POST | `/api/v1/certificates/issue-on-node` | ผู้ดูแลระบบ | ออกไปยังโหนด |
+| POST | `/api/v1/certificates/upload` | ผู้ดูแลระบบ | อัปโหลด |
+| GET | `/api/v1/certificate-tasks/:id` | ผู้ดูแลระบบ | สืบค้นสถานะงานพื้นหลัง |
 
 ### ช่องทางการรับรอง
 
@@ -830,11 +844,11 @@ CRUD สำหรับบทความพอร์ทัล
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/cert-channels` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/cert-channels/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| PUT | `/api/v1/cert-channels/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| GET | `/api/v1/cert-channels/providers` | ลงชื่อเข้าใช้แล้ว | ผู้ให้บริการ |
+| GET | `/api/v1/cert-channels` | ผู้ดูแลระบบ | รายการ |
+| POST | `/api/v1/cert-channels` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/cert-channels/:id` | ผู้ดูแลระบบ | ลบ |
+| PUT | `/api/v1/cert-channels/:id` | ผู้ดูแลระบบ | อัปเดต |
+| GET | `/api/v1/cert-channels/providers` | ผู้ดูแลระบบ | ผู้ให้บริการ |
 
 ### การกำหนดค่า EAB
 
@@ -842,12 +856,12 @@ CRUD สำหรับบทความพอร์ทัล
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/eab-configs` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/eab-configs/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| PUT | `/api/v1/eab-configs/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| POST | `/api/v1/eab-configs/fetch-google` | ลงชื่อเข้าใช้แล้ว | ดึงข้อมูล Google EAB จาก GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | ลงชื่อเข้าใช้แล้ว | ดึงข้อมูล ZeroSSL EAB ด้วยอีเมลได้ในคลิกเดียว |
+| GET | `/api/v1/eab-configs` | ผู้ดูแลระบบ | รายการ |
+| POST | `/api/v1/eab-configs` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/eab-configs/:id` | ผู้ดูแลระบบ | ลบ |
+| PUT | `/api/v1/eab-configs/:id` | ผู้ดูแลระบบ | อัปเดต |
+| POST | `/api/v1/eab-configs/fetch-google` | ผู้ดูแลระบบ | ดึงข้อมูล Google EAB จาก GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | ผู้ดูแลระบบ | ดึงข้อมูล ZeroSSL EAB ด้วยอีเมลได้ในคลิกเดียว |
 
 ### บัญชี ACME
 
@@ -855,11 +869,11 @@ CRUD สำหรับบทความพอร์ทัล
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/acme-accounts` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/acme-accounts/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| PUT | `/api/v1/acme-accounts/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| GET | `/api/v1/acme-accounts/default` | ลงชื่อเข้าใช้แล้ว | รับค่าเริ่มต้น |
+| GET | `/api/v1/acme-accounts` | ผู้ดูแลระบบ | รายการ |
+| POST | `/api/v1/acme-accounts` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/acme-accounts/:id` | ผู้ดูแลระบบ | ลบ |
+| PUT | `/api/v1/acme-accounts/:id` | ผู้ดูแลระบบ | อัปเดต |
+| GET | `/api/v1/acme-accounts/default` | ผู้ดูแลระบบ | รับค่าเริ่มต้น |
 
 ### CA ในตัว
 
@@ -867,57 +881,57 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | ลงชื่อเข้าใช้แล้ว | รายการใบรับรองตัวแทน |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | ลงชื่อเข้าใช้แล้ว | ต่ออายุใบรับรองตัวแทน |
-| GET | `/api/v1/ca/distribution-queue` | ลงชื่อเข้าใช้แล้ว | คิวการแจกใบรับรอง |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | ลงชื่อเข้าใช้แล้ว | ลบรายการคิวการแจกจ่าย |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | ลงชื่อเข้าใช้แล้ว | ลองแจกจ่ายใบรับรองอีกครั้ง |
-| GET | `/api/v1/ca/revocations` | ลงชื่อเข้าใช้แล้ว | รายการเพิกถอน |
-| GET | `/api/v1/ca/revocations/export` | ลงชื่อเข้าใช้แล้ว | ส่งออก CRL |
-| GET | `/api/v1/ca/status` | ลงชื่อเข้าใช้แล้ว | สถานะแคลิฟอร์เนีย |
+| GET | `/api/v1/ca/agent-certs` | ผู้ดูแลระบบ | รายการใบรับรองตัวแทน |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | ผู้ดูแลระบบ | ต่ออายุใบรับรองตัวแทน |
+| GET | `/api/v1/ca/distribution-queue` | ผู้ดูแลระบบ | คิวการแจกใบรับรอง |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | ผู้ดูแลระบบ | ลบรายการคิวการแจกจ่าย |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | ผู้ดูแลระบบ | ลองแจกจ่ายใบรับรองอีกครั้ง |
+| GET | `/api/v1/ca/revocations` | ผู้ดูแลระบบ | รายการเพิกถอน |
+| GET | `/api/v1/ca/revocations/export` | ผู้ดูแลระบบ | ส่งออก CRL |
+| GET | `/api/v1/ca/status` | ผู้ดูแลระบบ | สถานะแคลิฟอร์เนีย |
 
 ### กฎทางภูมิศาสตร์
 
-การซิงค์และการส่งมอบแหล่งข้อมูลและไฟล์ geoip/geosite
+ซิงค์และจัดส่งแหล่งข้อมูลและไฟล์ geoip/geosite
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | ลงชื่อเข้าใช้แล้ว | รายการไฟล์ |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | ลงชื่อเข้าใช้แล้ว | ลบไฟล์ |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | ลงชื่อเข้าใช้แล้ว | สลับการซิงค์อัตโนมัติ |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | ลงชื่อเข้าใช้แล้ว | ดาวน์โหลด |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | ผู้ดูแลระบบ | ลบไฟล์ |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | ผู้ดูแลระบบ | สลับการซิงค์อัตโนมัติ |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | ผู้ดูแลระบบ | ดาวน์โหลด |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | ลงชื่อเข้าใช้แล้ว | ดาวน์โหลดไฟล์ |
 | GET | `/api/v1/geo-rules/github-assets` | ลงชื่อเข้าใช้แล้ว | ดึงข้อมูลเนื้อหาที่เก็บ GitHub |
-| POST | `/api/v1/geo-rules/push-all` | ลงชื่อเข้าใช้แล้ว | ดันไปที่โหนดทั้งหมด |
-| POST | `/api/v1/geo-rules/seed` | ลงชื่อเข้าใช้แล้ว | เริ่มต้นข้อมูลเริ่มต้น |
+| POST | `/api/v1/geo-rules/push-all` | ผู้ดูแลระบบ | ดันไปที่โหนดทั้งหมด |
+| POST | `/api/v1/geo-rules/seed` | ผู้ดูแลระบบ | เริ่มต้นข้อมูลเริ่มต้น |
 | GET | `/api/v1/geo-rules/sources` | ลงชื่อเข้าใช้แล้ว | รายการแหล่งข้อมูล |
-| POST | `/api/v1/geo-rules/sources` | ลงชื่อเข้าใช้แล้ว | สร้างแหล่งข้อมูล |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | ลงชื่อเข้าใช้แล้ว | ลบแหล่งข้อมูล |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | ลงชื่อเข้าใช้แล้ว | อัปเดตแหล่งข้อมูล |
+| POST | `/api/v1/geo-rules/sources` | ผู้ดูแลระบบ | สร้างแหล่งข้อมูล |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | ผู้ดูแลระบบ | ลบแหล่งข้อมูล |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | ผู้ดูแลระบบ | อัปเดตแหล่งข้อมูล |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | ลงชื่อเข้าใช้แล้ว | ดึงเนื้อหาที่เผยแพร่ |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | ลงชื่อเข้าใช้แล้ว | เพิ่มไฟล์ |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | ลงชื่อเข้าใช้แล้ว | สลับการซิงค์ตามกำหนดเวลา |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | ลงชื่อเข้าใช้แล้ว | เลือกไฟล์ |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | ลงชื่อเข้าใช้แล้ว | ซิงค์แหล่งข้อมูลนี้ |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | ผู้ดูแลระบบ | เพิ่มไฟล์ |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | ผู้ดูแลระบบ | สลับการซิงค์ตามกำหนดเวลา |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | ผู้ดูแลระบบ | เลือกไฟล์ |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | ผู้ดูแลระบบ | ซิงค์แหล่งข้อมูลนี้ |
 | GET | `/api/v1/geo-rules/status` | ลงชื่อเข้าใช้แล้ว | สถานะ |
-| POST | `/api/v1/geo-rules/sync-all` | ลงชื่อเข้าใช้แล้ว | ซิงค์ทั้งหมด |
+| POST | `/api/v1/geo-rules/sync-all` | ผู้ดูแลระบบ | ซิงค์ทั้งหมด |
 | GET | `/api/v1/geo-rules/sync-status/:key` | ลงชื่อเข้าใช้แล้ว | ความคืบหน้าการซิงค์ |
 
 ### ไลบรารีกฎ WAF
 
-กฎ WAF สากล: แหล่งที่มาของ GitHub, ซิงค์, จัดส่งไปยังโหนดทั้งหมด
+กฎ WAF สากล: แหล่งที่มา GitHub, ซิงค์, จัดส่งไปยังโหนดทั้งหมด
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | ลงชื่อเข้าใช้แล้ว | แหล่งข้อมูล GitHub |
-| PUT | `/api/v1/waf/github-source` | ลงชื่อเข้าใช้แล้ว | บันทึกแหล่งข้อมูล GitHub |
-| POST | `/api/v1/waf/push-all` | ลงชื่อเข้าใช้แล้ว | ดันไปที่โหนดทั้งหมด |
+| PUT | `/api/v1/waf/github-source` | ผู้ดูแลระบบ | บันทึกแหล่งข้อมูล GitHub |
+| POST | `/api/v1/waf/push-all` | ผู้ดูแลระบบ | ดันไปที่โหนดทั้งหมด |
 | GET | `/api/v1/waf/rules` | ลงชื่อเข้าใช้แล้ว | รายการกฎ |
-| DELETE | `/api/v1/waf/rules/:name` | ลงชื่อเข้าใช้แล้ว | ลบกฎ |
+| DELETE | `/api/v1/waf/rules/:name` | ผู้ดูแลระบบ | ลบกฎ |
 | GET | `/api/v1/waf/rules/:name` | ลงชื่อเข้าใช้แล้ว | รับกฎ |
-| PUT | `/api/v1/waf/rules/:name` | ลงชื่อเข้าใช้แล้ว | บันทึกกฎ |
-| POST | `/api/v1/waf/sync-all` | ลงชื่อเข้าใช้แล้ว | ซิงค์ทั้งหมด |
-| POST | `/api/v1/waf/sync-github` | ลงชื่อเข้าใช้แล้ว | ซิงค์จาก GitHub |
+| PUT | `/api/v1/waf/rules/:name` | ผู้ดูแลระบบ | บันทึกกฎ |
+| POST | `/api/v1/waf/sync-all` | ผู้ดูแลระบบ | ซิงค์ทั้งหมด |
+| POST | `/api/v1/waf/sync-github` | ผู้ดูแลระบบ | ซิงค์จาก GitHub |
 
 ### การจัดการบันทึก
 
@@ -925,43 +939,37 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | ลงชื่อเข้าใช้แล้ว | ทำความสะอาดทุกอย่างตอนนี้ |
-| GET | `/api/v1/log-manage/cleanup-rules` | ลงชื่อเข้าใช้แล้ว | รายการกฎการล้างข้อมูล |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดตกฎการล้างข้อมูล |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | ลงชื่อเข้าใช้แล้ว | Clean up the specified table now |
-| GET | `/api/v1/log-manage/core-log-output` | ลงชื่อเข้าใช้แล้ว | การกำหนดค่าเอาต์พุตบันทึกหลัก |
-| PUT | `/api/v1/log-manage/core-log-output` | ลงชื่อเข้าใช้แล้ว | Save core log output config |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | ลงชื่อเข้าใช้แล้ว | อ่านบันทึก stdout หลัก |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | ลงชื่อเข้าใช้แล้ว | สตรีมคอร์ stdout |
-| POST | `/api/v1/log-manage/discover` | ลงชื่อเข้าใช้แล้ว | ค้นหาไฟล์บันทึกของโหนด |
-| GET | `/api/v1/log-manage/log-output` | ลงชื่อเข้าใช้แล้ว | บันทึกการกำหนดค่าเอาต์พุต |
-| PUT | `/api/v1/log-manage/log-output` | ลงชื่อเข้าใช้แล้ว | บันทึกการกำหนดค่าเอาต์พุตบันทึก |
-| POST | `/api/v1/log-manage/log-output/release/:type` | ลงชื่อเข้าใช้แล้ว | ปล่อยบันทึกการครอบครอง stdout |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | ลงชื่อเข้าใช้แล้ว | ยึดครอง log stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | ลงชื่อเข้าใช้แล้ว | รายการไฟล์บันทึกของโหนด |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | ลงชื่อเข้าใช้แล้ว | อ่านบันทึกของโหนด |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | ลงชื่อเข้าใช้แล้ว | หมุนเวียนบันทึกของโหนด |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | ลงชื่อเข้าใช้แล้ว | บันทึกโหนดสตรีม |
-| GET | `/api/v1/log-manage/policies` | ลงชื่อเข้าใช้แล้ว | รายการนโยบาย |
-| POST | `/api/v1/log-manage/policies` | ลงชื่อเข้าใช้แล้ว | สร้างนโยบาย |
-| DELETE | `/api/v1/log-manage/policies/:id` | ลงชื่อเข้าใช้แล้ว | ลบนโยบาย |
-| GET | `/api/v1/log-manage/policies/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียดนโยบาย |
-| PUT | `/api/v1/log-manage/policies/:id` | ลงชื่อเข้าใช้แล้ว | ปรับปรุงนโยบาย |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | ลงชื่อเข้าใช้แล้ว | รายการงานทำความสะอาด |
-| GET | `/api/v1/log-manage/policies/:id/log` | ลงชื่อเข้าใช้แล้ว | อ่านบันทึก |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | ลงชื่อเข้าใช้แล้ว | บันทึกสตรีม |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | ลงชื่อเข้าใช้แล้ว | หมุน |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | ลงชื่อเข้าใช้แล้ว | อ่านบันทึก stdout หลัก |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | ลงชื่อเข้าใช้แล้ว | สตรีมคอร์ stdout |
-| GET | `/api/v1/log-manage/scheduler-config` | ลงชื่อเข้าใช้แล้ว | การกำหนดค่ากำหนดการ |
-| PUT | `/api/v1/log-manage/scheduler-config` | ลงชื่อเข้าใช้แล้ว | อัปเดตการกำหนดค่าการกำหนดเวลา |
-| GET | `/api/v1/log-manage/status` | ลงชื่อเข้าใช้แล้ว | สถานะ |
-| POST | `/api/v1/log-manage/sync` | ลงชื่อเข้าใช้แล้ว | ซิงค์นโยบายการล้างข้อมูล |
-| GET | `/api/v1/log-manage/writers` | ลงชื่อเข้าใช้แล้ว | สถานะนักเขียน |
-| PUT | `/api/v1/log-manage/writers/:type/config` | ลงชื่อเข้าใช้แล้ว | อัปเดตการกำหนดค่าตัวเขียน |
-| GET | `/api/v1/log-manage/writers/:type/files` | ลงชื่อเข้าใช้แล้ว | รายการไฟล์บันทึกของผู้เขียน |
-| POST | `/api/v1/log-manage/writers/:type/start` | ลงชื่อเข้าใช้แล้ว | เริ่มเขียน |
-| POST | `/api/v1/log-manage/writers/:type/stop` | ลงชื่อเข้าใช้แล้ว | หยุดนักเขียน. |
+| POST | `/api/v1/log-manage/cleanup-all` | ผู้ดูแลระบบ | ทำความสะอาดทุกอย่างตอนนี้ |
+| GET | `/api/v1/log-manage/cleanup-rules` | ผู้ดูแลระบบ | รายการกฎการล้างข้อมูล |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | ผู้ดูแลระบบ | อัปเดตกฎการล้างข้อมูล |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | ผู้ดูแลระบบ | ทำความสะอาดตารางที่ระบุทันที |
+| GET | `/api/v1/log-manage/core-log-output` | ผู้ดูแลระบบ | การกำหนดค่าเอาต์พุตบันทึกหลัก |
+| PUT | `/api/v1/log-manage/core-log-output` | ผู้ดูแลระบบ | บันทึกการกำหนดค่าเอาต์พุตบันทึกหลัก |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | ผู้ดูแลระบบ | อ่านบันทึก stdout หลัก |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | ผู้ดูแลระบบ | สตรีมคอร์ stdout |
+| POST | `/api/v1/log-manage/discover` | ผู้ดูแลระบบ | ค้นหาไฟล์บันทึกของโหนด |
+| GET | `/api/v1/log-manage/log-output` | ผู้ดูแลระบบ | บันทึกการกำหนดค่าเอาต์พุต |
+| PUT | `/api/v1/log-manage/log-output` | ผู้ดูแลระบบ | บันทึกการกำหนดค่าเอาต์พุตบันทึก |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | ผู้ดูแลระบบ | รายการไฟล์บันทึกของโหนด |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | ผู้ดูแลระบบ | อ่านบันทึกของโหนด |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | ผู้ดูแลระบบ | หมุนเวียนบันทึกของโหนด |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | ผู้ดูแลระบบ | บันทึกโหนดสตรีม |
+| GET | `/api/v1/log-manage/policies` | ผู้ดูแลระบบ | รายการนโยบาย |
+| POST | `/api/v1/log-manage/policies` | ผู้ดูแลระบบ | สร้างนโยบาย |
+| DELETE | `/api/v1/log-manage/policies/:id` | ผู้ดูแลระบบ | ลบนโยบาย |
+| GET | `/api/v1/log-manage/policies/:id` | ผู้ดูแลระบบ | รายละเอียดนโยบาย |
+| PUT | `/api/v1/log-manage/policies/:id` | ผู้ดูแลระบบ | ปรับปรุงนโยบาย |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | ผู้ดูแลระบบ | รายการงานทำความสะอาด |
+| GET | `/api/v1/log-manage/policies/:id/log` | ผู้ดูแลระบบ | อ่านบันทึก |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | ผู้ดูแลระบบ | บันทึกสตรีม |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | ผู้ดูแลระบบ | หมุน |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | ผู้ดูแลระบบ | อ่านบันทึก stdout หลัก |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | ผู้ดูแลระบบ | สตรีมคอร์ stdout |
+| GET | `/api/v1/log-manage/scheduler-config` | ผู้ดูแลระบบ | การกำหนดค่ากำหนดการ |
+| PUT | `/api/v1/log-manage/scheduler-config` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่าการกำหนดเวลา |
+| GET | `/api/v1/log-manage/status` | ผู้ดูแลระบบ | สถานะ |
+| POST | `/api/v1/log-manage/sync` | ผู้ดูแลระบบ | ซิงค์นโยบายการล้างข้อมูล |
+| GET | `/api/v1/log-manage/writers` | ผู้ดูแลระบบ | สถานะนักเขียน |
 
 ### การสำรองข้อมูล
 
@@ -969,16 +977,16 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | ผู้ดูแลระบบ | ลบข้อมูลสำรอง |
+| DELETE | `/api/v1/backups/:id` | ผู้ดูแลระบบขั้นสูง | ลบข้อมูลสำรอง |
 | GET | `/api/v1/backups/:id/download` | ผู้ดูแลระบบ | ดาวน์โหลดข้อมูลสำรอง |
-| POST | `/api/v1/backups/:id/restore` | ผู้ดูแลระบบ | กู้คืนจากข้อมูลสำรอง |
-| POST | `/api/v1/backups/:id/upload-ftp` | ผู้ดูแลระบบ | อัปโหลดไปที่ FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | ผู้ดูแลระบบ | อัปโหลดไปที่ S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | ผู้ดูแลระบบ | อัปโหลดไปที่ WebDAV |
+| POST | `/api/v1/backups/:id/restore` | ผู้ดูแลระบบขั้นสูง | กู้คืนจากข้อมูลสำรอง |
+| POST | `/api/v1/backups/:id/upload-ftp` | ผู้ดูแลระบบขั้นสูง | อัปโหลดไปที่ FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | ผู้ดูแลระบบขั้นสูง | อัปโหลดไปที่ S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | ผู้ดูแลระบบขั้นสูง | อัปโหลดไปที่ WebDAV |
 | POST | `/api/v1/backups/create` | ผู้ดูแลระบบ | สร้างการสำรองข้อมูลเต็มรูปแบบ (พร้อมดัมพ์ DB) |
 | GET | `/api/v1/backups/list` | ผู้ดูแลระบบ | รายการสำรองข้อมูลทั้งหมด |
-| POST | `/api/v1/backups/remote-restore` | ผู้ดูแลระบบ | กู้คืนจากระยะไกล |
-| GET | `/api/v1/backups/restore-status` | ผู้ดูแลระบบ | ฟื้นฟูความคืบหน้า |
+| POST | `/api/v1/backups/remote-restore` | ผู้ดูแลระบบขั้นสูง | กู้คืนจากระยะไกล |
+| GET | `/api/v1/backups/restore-status` | ผู้ดูแลระบบขั้นสูง | ฟื้นฟูความคืบหน้า |
 | GET | `/api/v1/backups/schedules` | ผู้ดูแลระบบ | รายการงานที่กำหนดเวลาไว้ |
 | POST | `/api/v1/backups/schedules` | ผู้ดูแลระบบ | สร้างงานที่กำหนดเวลาไว้ |
 | DELETE | `/api/v1/backups/schedules/:id` | ผู้ดูแลระบบ | ลบงานที่กำหนดเวลาไว้ |
@@ -988,7 +996,7 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | DELETE | `/api/v1/backups/storages/:id` | ผู้ดูแลระบบ | ลบการกำหนดค่าพื้นที่เก็บข้อมูล |
 | PUT | `/api/v1/backups/storages/:id` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่าพื้นที่เก็บข้อมูล |
 | GET | `/api/v1/backups/storages/:id/files` | ผู้ดูแลระบบ | รายการไฟล์สำรองข้อมูลระยะไกล |
-| POST | `/api/v1/backups/upload-restore` | ผู้ดูแลระบบ | อัปโหลดการสำรองและกู้คืน |
+| POST | `/api/v1/backups/upload-restore` | ผู้ดูแลระบบขั้นสูง | อัปโหลดการสำรองและกู้คืน |
 
 ### การตั้งค่าระบบ
 
@@ -1001,8 +1009,8 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/system/config-file/:coreType` | ผู้ดูแลระบบ | อ่านไฟล์กำหนดค่าหลัก |
 | GET | `/api/v1/system/db-config` | ผู้ดูแลระบบ | การกำหนดค่าฐานข้อมูล |
 | PUT | `/api/v1/system/db-config` | ผู้ดูแลระบบ | อัพเดตการกำหนดค่าฐานข้อมูล |
-| POST | `/api/v1/system/db-config/migrate` | ผู้ดูแลระบบ | ย้ายข้อมูลฐานข้อมูล |
-| POST | `/api/v1/system/db-config/switch` | ผู้ดูแลระบบ | สลับฐานข้อมูล (พร้อมการโยกย้ายขั้นตอนเดียว) |
+| POST | `/api/v1/system/db-config/migrate` | ผู้ดูแลระบบขั้นสูง | ย้ายข้อมูลฐานข้อมูล |
+| POST | `/api/v1/system/db-config/switch` | ผู้ดูแลระบบขั้นสูง | สลับฐานข้อมูล (พร้อมการโยกย้ายขั้นตอนเดียว) |
 | POST | `/api/v1/system/db-config/test` | ผู้ดูแลระบบ | ทดสอบการเชื่อมต่อฐานข้อมูล |
 | GET | `/api/v1/system/db-pool-stats` | ผู้ดูแลระบบ | สถิติพูลการเชื่อมต่อ |
 | GET | `/api/v1/system/db-stats` | ผู้ดูแลระบบ | สถิติฐานข้อมูล |
@@ -1011,13 +1019,13 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/system/encryption-key-status` | ผู้ดูแลระบบ | สถานะคีย์การเข้ารหัส |
 | GET | `/api/v1/system/env-config` | ผู้ดูแลระบบ | การกำหนดค่า .env |
 | PUT | `/api/v1/system/env-config` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่า .env |
-| POST | `/api/v1/system/generate-encryption-key` | ผู้ดูแลระบบ | สร้างคีย์เข้ารหัส |
+| POST | `/api/v1/system/generate-encryption-key` | ผู้ดูแลระบบขั้นสูง | สร้างคีย์เข้ารหัส |
 | GET | `/api/v1/system/github-config` | ผู้ดูแลระบบ | การกำหนดค่า GitHub |
 | PUT | `/api/v1/system/github-config` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่า GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | ผู้ดูแลระบบ | สถานะคีย์ JWT |
 | GET | `/api/v1/system/maintenance` | สาธารณะ | สถานะโหมดการบำรุงรักษา (สาธารณะ) |
 | PUT | `/api/v1/system/maintenance` | ผู้ดูแลระบบ | สลับโหมดการบำรุงรักษา |
-| POST | `/api/v1/system/migrate-data` | ผู้ดูแลระบบ | ย้ายข้อมูล |
+| POST | `/api/v1/system/migrate-data` | ผู้ดูแลระบบขั้นสูง | ย้ายข้อมูล |
 | GET | `/api/v1/system/notification-config` | ผู้ดูแลระบบ | การกำหนดค่าการแจ้งเตือน |
 | PUT | `/api/v1/system/notification-config` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่าการแจ้งเตือน |
 | GET | `/api/v1/system/notification-templates` | ผู้ดูแลระบบ | รายการเทมเพลต |
@@ -1030,22 +1038,22 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | PUT | `/api/v1/system/panel-config` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่าพาเนล |
 | GET | `/api/v1/system/reality-targets` | ผู้ดูแลระบบ | รายการเป้าหมาย REALITY |
 | PUT | `/api/v1/system/reality-targets` | ผู้ดูแลระบบ | อัพเดตเป้าหมาย REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | ผู้ดูแลระบบ | รีเซ็ตเป้าหมาย REALITY เป็นค่าเริ่มต้น |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | อ่านการตั้งค่า SNI ภายในเครื่องของ Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | อัปเดตการตั้งค่า SNI ภายในเครื่องของ Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | ผู้ดูแลระบบ | สร้างคีย์ JWT ใหม่ |
+| POST | `/api/v1/system/reality-targets/reset` | ผู้ดูแลระบบขั้นสูง | รีเซ็ตเป้าหมาย REALITY เป็นค่าเริ่มต้น |
+| GET | `/api/v1/system/reality-local-sni` | ผู้ดูแลระบบ | อ่านการกำหนดค่า SNI ในเครื่อง Reality |
+| PUT | `/api/v1/system/reality-local-sni` | ผู้ดูแลระบบ | อัปเดตการกำหนดค่า Reality ในเครื่อง SNI |
+| POST | `/api/v1/system/regenerate-jwt-secret` | ผู้ดูแลระบบขั้นสูง | สร้างคีย์ JWT ใหม่ |
 | GET | `/api/v1/system/releases` | ผู้ดูแลระบบ | รุ่นที่มีจำหน่าย |
-| POST | `/api/v1/system/restart` | ผู้ดูแลระบบ | รีสตาร์ท |
-| POST | `/api/v1/system/rollback` | ผู้ดูแลระบบ | การย้อนกลับของระบบ |
+| POST | `/api/v1/system/restart` | ผู้ดูแลระบบขั้นสูง | รีสตาร์ท |
+| POST | `/api/v1/system/rollback` | ผู้ดูแลระบบขั้นสูง | การย้อนกลับของระบบ |
 | GET | `/api/v1/system/settings` | ผู้ดูแลระบบ | อ่านการตั้งค่า |
 | PUT | `/api/v1/system/settings/batch` | ผู้ดูแลระบบ | การตั้งค่าการอัปเดตจำนวนมาก |
 | GET | `/api/v1/system/stats` | ผู้ดูแลระบบ | สถานะของระบบ |
 | GET | `/api/v1/system/subscription-billing-templates` | ผู้ดูแลระบบ | เทมเพลตการเรียกเก็บเงินการสมัครสมาชิก |
 | PUT | `/api/v1/system/subscription-billing-templates` | ผู้ดูแลระบบ | อัปเดตเทมเพลตการเรียกเก็บเงินการสมัครสมาชิก |
-| POST | `/api/v1/system/telegram-chat-id` | ผู้ดูแลระบบ | รับ ID แชท Telegram |
+| POST | `/api/v1/system/telegram-chat-id` | ผู้ดูแลระบบ | รับรหัสแชท Telegram |
 | POST | `/api/v1/system/test-smtp` | ผู้ดูแลระบบ | ทดสอบ SMTP |
 | POST | `/api/v1/system/test-telegram` | ผู้ดูแลระบบ | ทดสอบ Telegram |
-| POST | `/api/v1/system/update` | ผู้ดูแลระบบ | การอัพเกรดระบบ |
+| POST | `/api/v1/system/update` | ผู้ดูแลระบบขั้นสูง | การอัพเกรดระบบ |
 | GET | `/api/v1/system/update-jobs` | ผู้ดูแลระบบ | อัพเกรดรายการงาน |
 | POST | `/api/v1/system/upload-mtls-ca` | ผู้ดูแลระบบ | อัปโหลดใบรับรอง mTLS CA |
 
@@ -1055,8 +1063,9 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | ลงชื่อเข้าใช้แล้ว | รายการกิจกรรมการตรวจสอบ |
-| GET | `/api/v1/security/audit-events/export` | ลงชื่อเข้าใช้แล้ว | ส่งออกเหตุการณ์การตรวจสอบ |
+| GET | `/api/v1/security/audit-events` | ผู้ดูแลระบบ | รายการกิจกรรมการตรวจสอบ |
+| GET | `/api/v1/security/audit-events/export` | ผู้ดูแลระบบ | ส่งออกเหตุการณ์การตรวจสอบ |
+| GET | `/api/v1/security/subscription-access-logs` | ผู้ดูแลระบบ | บันทึกการดึงข้อมูลการสมัครสมาชิก (กรองตาม ID การสมัครสมาชิก / IP / อีเมลไคลเอนต์) |
 
 ### เมตริก
 
@@ -1064,9 +1073,9 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | ลงชื่อเข้าใช้แล้ว | ตัวชี้วัดใบรับรอง |
-| GET | `/api/v1/metrics/nodes` | ลงชื่อเข้าใช้แล้ว | ตัวชี้วัดโหนด |
-| GET | `/api/v1/metrics/overview` | ลงชื่อเข้าใช้แล้ว | ภาพรวม |
+| GET | `/api/v1/metrics/certificates` | ผู้ดูแลระบบ | ตัวชี้วัดใบรับรอง |
+| GET | `/api/v1/metrics/nodes` | ผู้ดูแลระบบ | ตัวชี้วัดโหนด |
+| GET | `/api/v1/metrics/overview` | ผู้ดูแลระบบ | ภาพรวม |
 
 ### เทมเพลตพอร์ทัล
 
@@ -1074,20 +1083,20 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | ลงชื่อเข้าใช้แล้ว | เทมเพลตที่ใช้งานอยู่ |
-| PUT | `/api/v1/portal/active` | ลงชื่อเข้าใช้แล้ว | อัปเดตเทมเพลตที่ใช้งานอยู่ |
-| DELETE | `/api/v1/portal/cache` | ลงชื่อเข้าใช้แล้ว | ล้างแคชพอร์ทัล |
-| GET | `/api/v1/portal/cache` | ลงชื่อเข้าใช้แล้ว | สถานะแคช |
-| PUT | `/api/v1/portal/cache/dev-mode` | ลงชื่อเข้าใช้แล้ว | สลับโหมดการพัฒนาแคช |
-| POST | `/api/v1/portal/cache/rebuild` | ลงชื่อเข้าใช้แล้ว | สร้างแคชพอร์ทัลใหม่ |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | ชุดภาษาที่มีในตัว |
-| POST | `/api/v1/portal/reset` | ลงชื่อเข้าใช้แล้ว | คืนค่าเทมเพลตเริ่มต้น |
-| GET | `/api/v1/portal/templates` | ลงชื่อเข้าใช้แล้ว | รายการ |
-| POST | `/api/v1/portal/templates` | ลงชื่อเข้าใช้แล้ว | สร้าง |
-| DELETE | `/api/v1/portal/templates/:id` | ลงชื่อเข้าใช้แล้ว | ลบ |
-| GET | `/api/v1/portal/templates/:id` | ลงชื่อเข้าใช้แล้ว | รายละเอียด |
-| PUT | `/api/v1/portal/templates/:id` | ลงชื่อเข้าใช้แล้ว | อัปเดต |
-| POST | `/api/v1/portal/templates/:id/activate` | ลงชื่อเข้าใช้แล้ว | เปิดใช้งานเทมเพลต |
+| GET | `/api/v1/portal/active` | ผู้ดูแลระบบ | เทมเพลตที่ใช้งานอยู่ |
+| PUT | `/api/v1/portal/active` | ผู้ดูแลระบบ | อัปเดตเทมเพลตที่ใช้งานอยู่ |
+| DELETE | `/api/v1/portal/cache` | ผู้ดูแลระบบ | ล้างแคชพอร์ทัล |
+| GET | `/api/v1/portal/cache` | ผู้ดูแลระบบ | สถานะแคช |
+| PUT | `/api/v1/portal/cache/dev-mode` | ผู้ดูแลระบบ | สลับโหมดการพัฒนาแคช |
+| POST | `/api/v1/portal/cache/rebuild` | ผู้ดูแลระบบ | สร้างแคชพอร์ทัลใหม่ |
+| GET | `/api/v1/portal/lang/builtin` | ผู้ดูแลระบบ | ชุดภาษาในตัว |
+| POST | `/api/v1/portal/reset` | ผู้ดูแลระบบ | คืนค่าเทมเพลตเริ่มต้น |
+| GET | `/api/v1/portal/templates` | ผู้ดูแลระบบ | รายการ |
+| POST | `/api/v1/portal/templates` | ผู้ดูแลระบบ | สร้าง |
+| DELETE | `/api/v1/portal/templates/:id` | ผู้ดูแลระบบ | ลบ |
+| GET | `/api/v1/portal/templates/:id` | ผู้ดูแลระบบ | รายละเอียด |
+| PUT | `/api/v1/portal/templates/:id` | ผู้ดูแลระบบ | อัปเดต |
+| POST | `/api/v1/portal/templates/:id/activate` | ผู้ดูแลระบบ | เปิดใช้งานเทมเพลต |
 
 > `/portal/templates` CRUD เป็น **ขั้นสูง API**: UI พอร์ทัลใช้ `PUT /api/v1/portal/active` เป็นหลัก
 > (การกำหนดค่าแบบเต็มไซต์เพียงครั้งเดียว); จัดการ/สลับหลายเทมเพลตกับกลุ่มนี้ ทั้งสองได้รับการสนับสนุนและไม่ขัดแย้งกัน
@@ -1103,7 +1112,7 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 | GET | `/api/v1/agent/version` | ผู้ดูแลระบบ | เวอร์ชันตัวแทนปัจจุบันบนแผงควบคุม |
 | GET | `/api/v1/agent/download` | สาธารณะ | ดาวน์โหลดตัวแทน |
 | GET | `/api/v1/agent/install` | สาธารณะ | รับสคริปต์การติดตั้ง |
-| GET | `/api/v1/agent/origin` | 公开 | ที่อยู่ต้นทางของแผงควบคุม (สาธารณะ) |
+| GET | `/api/v1/agent/origin` | สาธารณะ | ที่อยู่ต้นทางของแผง (สาธารณะ) |
 
 ### เรียกเก็บเงินรายการโทรกลับ
 
@@ -1136,79 +1145,75 @@ CA แผงภายใน: การออก/ต่ออายุ/เพิ�
 
 ### การตรวจสอบสิทธิ์ลูกค้าและธุรกิจ (ชุดเดียวกันในเครื่องมือผู้ดูแลระบบ)
 
-จุดสิ้นสุดไคลเอ็นต์เหมือนกับพอร์ทัล ดู `portal-api.en.md` สำหรับรายละเอียด
+จุดสิ้นสุดของไคลเอ็นต์เหมือนกับพอร์ทัล พวกเขาใช้ **โทเค็นไคลเอ็นต์** (`Authorization: Bearer <client_token>`) ไม่ใช่โทเค็นของผู้ดูแลระบบ ดู `portal-api.en.md` สำหรับรายละเอียด
 
 | วิธีการ | เส้นทาง | การอนุญาต | คำอธิบาย |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | สาธารณะ | แสดงรายการบทความ |
-| GET | `/api/v1/client-auth/articles/:slug` | สาธารณะ | รับบทความ |
-| GET | `/api/v1/client-auth/balance` | สาธารณะ | ได้รับความสมดุล |
-| GET | `/api/v1/client-auth/balance/transactions` | สาธารณะ | ธุรกรรมยอดคงเหลือ |
-| POST | `/api/v1/client-auth/change-password` | สาธารณะ | เปลี่ยนรหัสผ่าน |
-| POST | `/api/v1/client-auth/charge/create` | สาธารณะ | สร้างคำสั่งเติมเงิน |
-| GET | `/api/v1/client-auth/charge/orders` | สาธารณะ | แสดงรายการคำสั่งเติมเงิน |
-| GET | `/api/v1/client-auth/charge/orders/:id` | สาธารณะ | รับรายละเอียดการสั่งซื้อการเติมเงิน |
-| POST | `/api/v1/client-auth/charge/redeem-card` | สาธารณะ | แลกบัตร |
-| GET | `/api/v1/client-auth/charge/sites` | สาธารณะ | รายชื่อเว็บไซต์เติมเงิน |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | สาธารณะ | สอบถามสถานะการเติมเงิน |
-| GET | `/api/v1/client-auth/checktime` | สาธารณะ | รับเวลาเซิร์ฟเวอร์ (ซิงค์นาฬิกา) |
-| GET | `/api/v1/client-auth/connection-info` | สาธารณะ | รับพารามิเตอร์การเชื่อมต่อแผน |
-| GET | `/api/v1/client-auth/gifts` | สาธารณะ | รายการของขวัญ |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | สาธารณะ | เรียกร้องของขวัญ |
-| GET | `/api/v1/client-auth/invoices` | สาธารณะ | รายการสั่งซื้อ |
-| GET | `/api/v1/client-auth/invoices/:id` | สาธารณะ | รายละเอียดการสั่งซื้อ |
-| GET | `/api/v1/client-auth/settings/whitelist` | สาธารณะ | แสดงรายการรายการที่อนุญาต IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | สาธารณะ | ลบออกจากรายการอนุญาต IP |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | สาธารณะ | เพิ่ม IP อัตโนมัติ |
-| POST | `/api/v1/client-auth/login` | สาธารณะ | เข้าสู่ระบบ |
-| POST | `/api/v1/client-auth/logout` | สาธารณะ | ออกจากระบบ |
-| POST | `/api/v1/client-auth/logs/package` | สาธารณะ | สร้างบันเดิลบันทึก |
-| GET | `/api/v1/client-auth/logs/packages` | สาธารณะ | แสดงรายการบันเดิลบันทึก |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | สาธารณะ | ลบบันเดิลบันทึก |
-| GET | `/api/v1/client-auth/logs/packages/:id` | สาธารณะ | รับบันเดิลบันทึก |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | สาธารณะ | ดาวน์โหลดบันเดิลบันทึก |
-| GET | `/api/v1/client-auth/logs/types` | สาธารณะ | การตรวจสุขภาพบันเดิลบันทึก |
-| GET | `/api/v1/client-auth/me` | สาธารณะ | รับผู้ใช้ที่ลงชื่อเข้าใช้ปัจจุบัน |
-| GET | `/api/v1/client-auth/nodes` | สาธารณะ | รายการโหนดของฉัน |
-| GET | `/api/v1/client-auth/nodes/:id/config` | สาธารณะ | การกำหนดค่าโหนด |
-| GET | `/api/v1/client-auth/nodes/:id/link` | สาธารณะ | ลิงก์แชร์โหนด |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | สาธารณะ | รหัส QR ของโหนด |
-| GET | `/api/v1/client-auth/oauth/:provider` | สาธารณะ | อนุญาต |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | สาธารณะ | โทรกลับ |
-| GET | `/api/v1/client-auth/oauth/providers` | สาธารณะ | สถานะผู้ให้บริการ |
-| GET | `/api/v1/client-auth/orders` | สาธารณะ | รายการสั่งซื้อ |
-| POST | `/api/v1/client-auth/orders` | สาธารณะ | สร้างคำสั่งซื้อ |
-| GET | `/api/v1/client-auth/orders/:id` | สาธารณะ | รายละเอียดการสั่งซื้อ |
-| GET | `/api/v1/client-auth/plans` | สาธารณะ | รายการแผน |
-| GET | `/api/v1/client-auth/plans/:id` | สาธารณะ | รายละเอียดแผน |
-| GET | `/api/v1/client-auth/referral/code` | สาธารณะ | รับรหัสยืนยันการอ้างอิง |
-| GET | `/api/v1/client-auth/referral/records` | สาธารณะ | แสดงรายการบันทึกการอ้างอิง |
-| GET | `/api/v1/client-auth/referral/stats` | สาธารณะ | รับสถิติการอ้างอิง |
-| POST | `/api/v1/client-auth/referral/withdraw` | สาธารณะ | ขอถอนเงิน |
-| GET | `/api/v1/client-auth/referral/withdrawals` | สาธารณะ | แสดงรายการการถอนการอ้างอิง |
-| POST | `/api/v1/client-auth/refresh` | สาธารณะ | รีเฟรช |
-| POST | `/api/v1/client-auth/register` | สาธารณะ | ลงทะเบียน |
-| POST | `/api/v1/client-auth/reset-subscription` | สาธารณะ | รีเซ็ตการสมัครรับข้อมูล |
-| PUT | `/api/v1/client-auth/settings` | สาธารณะ | อัพเดตโปรไฟล์ |
-| POST | `/api/v1/client-auth/rotate-token` | สาธารณะ | หมุนเวียนโทเค็นการสมัครสมาชิก |
-| POST | `/api/v1/client-auth/self-unban` | สาธารณะ | ยกเลิกการแบนแบบบริการตนเอง |
-| PUT | `/api/v1/client-auth/settings` | สาธารณะ | อัปเดตการตั้งค่า |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | สาธารณะ | เพิ่ม IP อัตโนมัติ |
-| GET | `/api/v1/client-auth/settings/whitelist` | สาธารณะ | แสดงรายการรายการที่อนุญาต IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | สาธารณะ | ลบออกจากรายการอนุญาต IP |
-| GET | `/api/v1/client-auth/shared-accounts` | สาธารณะ | แสดงรายการบัญชีที่ใช้ร่วมกัน |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | สาธารณะ | รับบัญชีที่ใช้ร่วมกัน |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | สาธารณะ | ขอบัญชีที่ใช้ร่วมกัน |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | สาธารณะ | แจ้งซ่อม |
-| POST | `/api/v1/client-auth/ticket` | สาธารณะ | ออกตั๋วอายุสั้นครั้งเดียว |
-| GET | `/api/v1/client-auth/tickets` | สาธารณะ | รายการตั๋ว |
-| POST | `/api/v1/client-auth/tickets` | สาธารณะ | สร้างตั๋ว |
-| GET | `/api/v1/client-auth/tickets/:id` | สาธารณะ | รับตั๋ว |
-| POST | `/api/v1/client-auth/tickets/:id/close` | สาธารณะ | ปิดตั๋ว |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | สาธารณะ | ตอบเรื่องตั๋วครับ |
-| GET | `/api/v1/client-auth/traffic-history` | สาธารณะ | ประวัติการเข้าชม |
-| GET | `/api/v1/client-auth/traffic-packs` | สาธารณะ | รายการชุดการจราจร |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | สาธารณะ | ซื้อชุดจราจร |
+| GET | `/api/v1/client-auth/articles` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการบทความ |
+| GET | `/api/v1/client-auth/articles/:slug` | ลูกค้า (ลงชื่อเข้าใช้) | รับบทความ |
+| GET | `/api/v1/client-auth/balance` | ลูกค้า (ลงชื่อเข้าใช้) | ได้รับความสมดุล |
+| GET | `/api/v1/client-auth/balance/transactions` | ลูกค้า (ลงชื่อเข้าใช้) | ธุรกรรมยอดคงเหลือ |
+| POST | `/api/v1/client-auth/change-password` | ลูกค้า (ลงชื่อเข้าใช้) | เปลี่ยนรหัสผ่าน |
+| POST | `/api/v1/client-auth/charge/create` | ลูกค้า (ลงชื่อเข้าใช้) | สร้างคำสั่งเติมเงิน |
+| GET | `/api/v1/client-auth/charge/orders` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการคำสั่งเติมเงิน |
+| GET | `/api/v1/client-auth/charge/orders/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รับรายละเอียดการสั่งซื้อการเติมเงิน |
+| POST | `/api/v1/client-auth/charge/redeem-card` | ลูกค้า (ลงชื่อเข้าใช้) | แลกบัตร |
+| GET | `/api/v1/client-auth/charge/sites` | ลูกค้า (ลงชื่อเข้าใช้) | รายชื่อเว็บไซต์เติมเงิน |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | ลูกค้า (ลงชื่อเข้าใช้) | สอบถามสถานะการเติมเงิน |
+| GET | `/api/v1/client-auth/checktime` | ลูกค้า (ลงชื่อเข้าใช้) | รับเวลาเซิร์ฟเวอร์ (ซิงค์นาฬิกา) |
+| GET | `/api/v1/client-auth/connection-info` | ลูกค้า (ลงชื่อเข้าใช้) | รับพารามิเตอร์การเชื่อมต่อแผน |
+| GET | `/api/v1/client-auth/gifts` | ลูกค้า (ลงชื่อเข้าใช้) | รายการของขวัญ |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | ลูกค้า (ลงชื่อเข้าใช้) | เรียกร้องของขวัญ |
+| GET | `/api/v1/client-auth/invoices` | ลูกค้า (ลงชื่อเข้าใช้) | รายการสั่งซื้อ |
+| GET | `/api/v1/client-auth/invoices/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รายละเอียดการสั่งซื้อ |
+| POST | `/api/v1/client-auth/login` | ลูกค้า (สาธารณะ) | เข้าสู่ระบบ |
+| POST | `/api/v1/client-auth/logout` | ลูกค้า (ลงชื่อเข้าใช้) | ออกจากระบบ |
+| POST | `/api/v1/client-auth/logs/package` | ลูกค้า (ลงชื่อเข้าใช้) | สร้างบันเดิลบันทึก |
+| GET | `/api/v1/client-auth/logs/packages` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการบันเดิลบันทึก |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | ลูกค้า (ลงชื่อเข้าใช้) | ลบบันเดิลบันทึก |
+| GET | `/api/v1/client-auth/logs/packages/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รับบันเดิลบันทึก |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | ลูกค้า (ลงชื่อเข้าใช้) | ดาวน์โหลดบันเดิลบันทึก |
+| GET | `/api/v1/client-auth/logs/types` | ลูกค้า (ลงชื่อเข้าใช้) | การตรวจสุขภาพบันเดิลบันทึก |
+| GET | `/api/v1/client-auth/me` | ลูกค้า (ลงชื่อเข้าใช้) | รับผู้ใช้ที่ลงชื่อเข้าใช้ปัจจุบัน |
+| GET | `/api/v1/client-auth/nodes` | ลูกค้า (ลงชื่อเข้าใช้) | รายการโหนดของฉัน |
+| GET | `/api/v1/client-auth/nodes/:id/config` | ลูกค้า (ลงชื่อเข้าใช้) | การกำหนดค่าโหนด |
+| GET | `/api/v1/client-auth/nodes/:id/link` | ลูกค้า (ลงชื่อเข้าใช้) | ลิงก์แชร์โหนด |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | ลูกค้า (ลงชื่อเข้าใช้) | รหัส QR ของโหนด |
+| GET | `/api/v1/client-auth/oauth/:provider` | ลูกค้า (สาธารณะ) | อนุญาต |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | ลูกค้า (สาธารณะ) | โทรกลับ |
+| GET | `/api/v1/client-auth/oauth/providers` | ลูกค้า (สาธารณะ) | สถานะผู้ให้บริการ |
+| GET | `/api/v1/client-auth/orders` | ลูกค้า (ลงชื่อเข้าใช้) | รายการสั่งซื้อ |
+| POST | `/api/v1/client-auth/orders` | ลูกค้า (ลงชื่อเข้าใช้) | สร้างคำสั่งซื้อ |
+| GET | `/api/v1/client-auth/orders/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รายละเอียดการสั่งซื้อ |
+| GET | `/api/v1/client-auth/plans` | ลูกค้า (ลงชื่อเข้าใช้) | รายการแผน |
+| GET | `/api/v1/client-auth/plans/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รายละเอียดแผน |
+| GET | `/api/v1/client-auth/referral/code` | ลูกค้า (ลงชื่อเข้าใช้) | รับรหัสยืนยันการอ้างอิง |
+| GET | `/api/v1/client-auth/referral/records` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการบันทึกการอ้างอิง |
+| GET | `/api/v1/client-auth/referral/stats` | ลูกค้า (ลงชื่อเข้าใช้) | รับสถิติการอ้างอิง |
+| POST | `/api/v1/client-auth/referral/withdraw` | ลูกค้า (ลงชื่อเข้าใช้) | ขอถอนเงิน |
+| GET | `/api/v1/client-auth/referral/withdrawals` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการการถอนการอ้างอิง |
+| POST | `/api/v1/client-auth/refresh` | ลูกค้า (สาธารณะ) | รีเฟรช |
+| POST | `/api/v1/client-auth/register` | ลูกค้า (สาธารณะ) | ลงทะเบียน |
+| POST | `/api/v1/client-auth/reset-subscription` | ลูกค้า (ลงชื่อเข้าใช้) | รีเซ็ตการสมัครรับข้อมูล |
+| POST | `/api/v1/client-auth/rotate-token` | ลูกค้า (ลงชื่อเข้าใช้) | หมุนเวียนโทเค็นการสมัครสมาชิก |
+| POST | `/api/v1/client-auth/self-unban` | ลูกค้า (ลงชื่อเข้าใช้) | ยกเลิกการแบนแบบบริการตนเอง |
+| PUT | `/api/v1/client-auth/settings` | ลูกค้า (ลงชื่อเข้าใช้) | อัปเดตการตั้งค่า |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | ลูกค้า (ลงชื่อเข้าใช้) | เพิ่ม IP อัตโนมัติ |
+| GET | `/api/v1/client-auth/settings/whitelist` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการรายการที่อนุญาต IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | ลูกค้า (ลงชื่อเข้าใช้) | ลบออกจากรายการอนุญาต IP |
+| GET | `/api/v1/client-auth/shared-accounts` | ลูกค้า (ลงชื่อเข้าใช้) | แสดงรายการบัญชีที่ใช้ร่วมกัน |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รับบัญชีที่ใช้ร่วมกัน |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | ลูกค้า (ลงชื่อเข้าใช้) | ขอบัญชีที่ใช้ร่วมกัน |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | ลูกค้า (ลงชื่อเข้าใช้) | แจ้งซ่อม |
+| POST | `/api/v1/client-auth/ticket` | ลูกค้า (ลงชื่อเข้าใช้) | ออกตั๋วอายุสั้นครั้งเดียว |
+| GET | `/api/v1/client-auth/tickets` | ลูกค้า (ลงชื่อเข้าใช้) | รายการตั๋ว |
+| POST | `/api/v1/client-auth/tickets` | ลูกค้า (ลงชื่อเข้าใช้) | สร้างตั๋ว |
+| GET | `/api/v1/client-auth/tickets/:id` | ลูกค้า (ลงชื่อเข้าใช้) | รับตั๋ว |
+| POST | `/api/v1/client-auth/tickets/:id/close` | ลูกค้า (ลงชื่อเข้าใช้) | ปิดตั๋ว |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | ลูกค้า (ลงชื่อเข้าใช้) | ตอบเรื่องตั๋วครับ |
+| GET | `/api/v1/client-auth/traffic-history` | ลูกค้า (ลงชื่อเข้าใช้) | ประวัติการเข้าชม |
+| GET | `/api/v1/client-auth/traffic-packs` | ลูกค้า (ลงชื่อเข้าใช้) | รายการชุดการจราจร |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | ลูกค้า (ลงชื่อเข้าใช้) | ซื้อชุดจราจร |
 
 ### การจัดส่งการสมัครสมาชิก
 

@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: pt | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: pt | updated: 2026-11-16 -->
 # Referência do Portal API (Cliente / Portal API)
 
 > Idiomas: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · Português · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -31,7 +31,7 @@ alguns pontos de extremidade da lista retornam `{ "items": [...], "total": N }` 
 Erros retornam `{ "code": "ERROR_CODE", "message": "...", "request_id": "...", "can_retry": ... }`
 (HTTP 4xx/5xx).
 
-### 1.4 Unidades de quantidade
+### 1.4 Unidades de valor
 
 Os campos de pedido/saldo são **centavos inteiros**: `990` = ¥9,90 (`currency: "CNY"`).
 
@@ -78,7 +78,7 @@ No 401, ligue para `POST /api/v1/client-auth/refresh` uma vez e tente novamente;
 | GET | `/api/v1/public/articles` | Artigos públicos (apenas publicados) |
 | GET | `/api/v1/public/articles/:slug` | Detalhe do artigo |
 | GET | `/api/v1/public/client-configs` | Configuração de download do cliente |
-| GET | `/sub/:token` | Entrega de assinatura (`format` retorna base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revogado/ausente → 404, suspenso/expirado/inativo → 403. Consulte [subscription.md](./subscription.pt.md)) |
+| GET | `/sub/:token` | Entrega de assinatura (`format` retorna base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revogado/ausente → 404, suspenso/expirado/inativo → 403. Consulte [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilidade do provedor OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Status de manutenção (público). O portal mostra uma página de manutenção quando ativado |
 
@@ -105,6 +105,7 @@ No 401, ligue para `POST /api/v1/client-auth/refresh` uma vez e tente novamente;
 | Método | Caminho | Descrição |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Cliente atual: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (envelope `data`) |
+| PUT | `/api/v1/client-auth/settings` | Atualizar configurações de autoatendimento do cliente: Corpo: `{ip_whitelist, device_limit}`; um `ip_whitelist` vazio significa que não há restrição de IP de origem |
 | POST | `/api/v1/client-auth/change-password` | Corpo: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Hora do servidor (sincronização do relógio do cliente) |
 | GET | `/api/v1/client-auth/connection-info` | Parâmetros de conexão do plano atual: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -255,7 +256,7 @@ Os links “Política de Privacidade · Termos de Serviço” na parte inferior 
  o cartão de login renderiza Markdown em uma caixa de diálogo (`renderMd`) usando o idioma atual do portal.
 - Entregue em tempo de execução via `/api/v1/public/portal-config`; o componente de login consome
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
-- A verificação Google OAuth exige que esses links sejam acessíveis publicamente → use os links independentes acima no
+- A verificação OAuth Google exige que esses links sejam acessíveis publicamente → use os links independentes acima no
  tela de consentimento; consulte `docs/oauth-google-verification.md` (contém modelos de política/termos de privacidade).
 
 ## 18. Exemplo de integração

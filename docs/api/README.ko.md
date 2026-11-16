@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: ko | updated: 2026-10-23 -->
+<!-- source: README.md | locale: ko | updated: 2026-11-16 -->
 # CoreFusion API 문서
 
 > 언어: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · 한국어 · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@
 | 문서 | 청중 | 내용 |
 |---|---|---|
 | [subscription.md](./subscription.ko.md) | 구독자/클라이언트 개발자 | 구독 엔드포인트(`/sub/:token`): 형식, 헤더, 상태 코드, 예 |
-| [portal-api.md](./portal-api.ko.md) | 포털 프런트엔드/타사 클라이언트 | 클라이언트 포털 API (`/api/v1/client-auth/*`, `/api/v1/public/*`): 가입, 로그인, 요금제, 주문, 잔액, 티켓 |
+| [portal-api.md](./portal-api.md) | 포털 프런트엔드/타사 클라이언트 | 클라이언트 포털 API (`/api/v1/client-auth/*`, `/api/v1/public/*`): 가입, 로그인, 요금제, 주문, 잔액, 티켓 |
 | [충전-콜백.md](./charge-callback.ko.md) | 결제 제공업체 | 결제 콜백 서명 및 확인 |
-| [admin-api.ko.md](./admin-api.ko.md) | 패널 개발/자동화 | 전체 관리자 API 경로 테이블(`/api/v1/*`, 모듈별로 그룹화됨) |
+| [admin-api.en.md](./admin-api.ko.md) | 패널 개발/자동화 | 전체 관리자 API 경로 테이블(`/api/v1/*`, 모듈별로 그룹화됨) |
 
 ---
 
@@ -35,7 +35,7 @@
 | **구독 토큰** | URL의 토큰: `/sub/<token>` | 구독 가져오기, 헤더 없음 |
 
 - 클라이언트 액세스 토큰은 24시간 동안 지속되고 새로 고침 토큰은 7일 동안 지속됩니다. JWT에는 `tv`(token_version)가 포함되어 있으므로 로그아웃/강제 로그아웃은 모든 이전 토큰을 무효화합니다.
-- 관리자 역할: `viewer` / `admin` / `operator` / `super_admin`; 일부 쓰기 작업에는 `RequireRole(RoleAdmin)` 이상이 필요합니다.
+- 관리자 역할 수준: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. 읽기에는 일반적으로 로그인된 세션만 필요합니다. 쓰기에는 모듈당 `operator` / `admin` / `super_admin`가 필요합니다. [admin-api.md](./admin-api.ko.md)의 "권한" 열을 참조하세요.
 
 ## 3. 응답 형식
 
@@ -59,8 +59,8 @@
 ## 4. 속도 제한 및 유지 관리 모드
 
 - 공용 엔드포인트(`/api/v1/public/*`, `/sub/*`, 가입/로그인)는 속도가 제한됩니다.
-- 로그인도 `LoginRateLimit`를 사용하고 구독 가져오기는 `SubscribeRateLimit`를 사용합니다.
-- 유지 관리 모드에서는 공용 엔드포인트 및 구독이 유지 관리 메시지를 반환합니다. 관리자 API는 영향을 받지 않습니다.
+- 로그인도 `LoginRateLimit`를 사용하고, 구독 가져오기는 `SubscribeRateLimit`를 사용합니다.
+- 유지 관리 모드에서는 공개 엔드포인트 및 구독이 유지 관리 메시지를 반환합니다. 관리자 API는 영향을 받지 않습니다.
 
 ## 5. 프런트엔드 페이지 경로(API 아님)
 
@@ -75,4 +75,4 @@
 
 ## 6. 진실의 근원
 
-`internal/api/router/router.go`(개수는 버전에 따라 달라집니다. 코드가 우선입니다). [admin-api.md](./admin-api.ko.md)의 경로 테이블은 코드에서 생성됩니다. 코드와 일치하지 않으면 **코드가 승리합니다**.
+`internal/api/router/router.go`(수는 버전에 따라 다르며 코드는 신뢰할 수 있음) [admin-api.md](./admin-api.md)의 경로 테이블은 코드에서 생성됩니다. 코드와 일치하지 않으면 **코드가 승리합니다**.

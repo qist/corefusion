@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: th | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: th | updated: 2026-11-16 -->
 # การอ้างอิงพอร์ทัล API (ไคลเอนต์ / พอร์ทัล API)
 
 > ภาษา: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · ไทย · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,8 +78,8 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | บทความสาธารณะ (เผยแพร่เท่านั้น) |
 | GET | `/api/v1/public/articles/:slug` | รายละเอียดบทความ |
 | GET | `/api/v1/public/client-configs` | การกำหนดค่าการดาวน์โหลดไคลเอ็นต์ |
-| GET | `/sub/:token` | การจัดส่งการสมัครสมาชิก (`format` ส่งคืน base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json ฯลฯ ; เพิกถอน/หายไป → 404, ถูกระงับ/หมดอายุ/ไม่ได้ใช้งาน → 403 ดู [subscription.md](./subscription.th.md)) |
-| GET | `/api/v1/client-auth/oauth/providers` | การมองเห็นผู้ให้บริการ OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
+| GET | `/sub/:token` | การจัดส่งการสมัครสมาชิก (`format` ส่งคืน base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json ฯลฯ ; เพิกถอน/หายไป → 404, ถูกระงับ/หมดอายุ/ไม่ได้ใช้งาน → 403 ดู [subscription.md](./subscription.md)) |
+| GET | `/api/v1/client-auth/oauth/providers` | การเปิดเผยผู้ให้บริการ OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | สถานะการบำรุงรักษา (สาธารณะ) พอร์ทัลแสดงหน้าการบำรุงรักษาเมื่อเปิดใช้งาน |
 
 > ทั้งหมดนี้รวมถึงเจ้าหน้าที่บำรุงรักษาและการจำกัดอัตราสาธารณะ API
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | วิธีการ | เส้นทาง | คำอธิบาย |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | ไคลเอ็นต์ปัจจุบัน: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (ซอง `data`) |
+| PUT | `/api/v1/client-auth/settings` | อัปเดตการตั้งค่าบริการตนเองของไคลเอ็นต์: เนื้อหา: `{ip_whitelist, device_limit}`; `ip_whitelist` ที่ว่างเปล่าหมายความว่าไม่มีการจำกัด Source-IP |
 | POST | `/api/v1/client-auth/change-password` | ร่างกาย: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | เวลาเซิร์ฟเวอร์ (ซิงค์นาฬิกาไคลเอนต์) |
 | GET | `/api/v1/client-auth/connection-info` | พารามิเตอร์การเชื่อมต่อแผนปัจจุบัน: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -146,7 +147,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | วิธีการ | เส้นทาง | คำอธิบาย |
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
-| GET | `/api/v1/client-auth/balance/transactions` | ธุรกรรมยอดคงเหลือ (`type`: เรียกเก็บเงิน/ใช้/คืนเงิน; มีการแบ่งหน้า) |
+| GET | `/api/v1/client-auth/balance/transactions` | ธุรกรรมยอดคงเหลือ (`type`: เรียกเก็บเงิน/ใช้/คืนเงิน; แบ่งหน้า) |
 | GET | `/api/v1/client-auth/charge/sites` | ไซต์เติมเงินที่มีอยู่ (`ListChargeSites`: เปิดใช้งานเท่านั้น) |
 | POST | `/api/v1/client-auth/charge/create` | สร้างคำสั่งเติมเงิน (เปลี่ยนเส้นทางไปยังการชำระเงินของบุคคลที่สาม) |
 | GET | `/api/v1/client-auth/charge/orders` | รายการสั่งซื้อเติมเงิน |
@@ -186,7 +187,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | วิธีการ | เส้นทาง | คำอธิบาย |
 |---|---|---|
 | GET | `/api/v1/client-auth/referral/code` | รหัสอ้างอิงและลิงค์ของฉัน |
-| GET | `/api/v1/client-auth/referral/stats` | สถิติค่าคอมมิชชั่น (`commission_rate`, `available_commission`, `min_withdraw_amount`) |
+| GET | `/api/v1/client-auth/referral/stats` | สถิติค่าคอมมิชชัน (`commission_rate`, `available_commission`, `min_withdraw_amount`) |
 | GET | `/api/v1/client-auth/referral/records` | บันทึกการอ้างอิง |
 | GET | `/api/v1/client-auth/referral/withdrawals` | บันทึกการถอนเงิน |
 | POST | `/api/v1/client-auth/referral/withdraw` | ขอถอนเงิน |
@@ -221,11 +222,11 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/settings/auto-add-ip` | เพิ่ม IP ปัจจุบันลงในรายการที่อนุญาต |
 | POST | `/api/v1/client-auth/self-unban` | ยกเลิกการแบนแบบบริการตนเอง (ความพยายามถูกจำกัดโดยนโยบาย) |
 
-> รายการที่อนุญาต IP **ใช้กับ URL การสมัครสมาชิกเท่านั้น** (`/sub/:token`) มันไม่ได้บล็อกการลงชื่อเข้าใช้พอร์ทัล/OAuth หรือ
+> รายการที่อนุญาต IP **ใช้กับ URL การสมัครรับข้อมูลเท่านั้น** (`/sub/:token`) มันไม่ได้บล็อกการลงชื่อเข้าใช้พอร์ทัล/OAuth หรือ
 > จุดสิ้นสุดการตรวจสอบสิทธิ์ไคลเอ็นต์อื่นๆ หากผู้ใช้ไม่มีรายการที่อนุญาตหรือไม่มีการสมัครสมาชิก URL การเข้าถึงจะได้รับอนุญาตเสมอ ที่
 > รายการที่อนุญาตคือการตั้งค่าต่อผู้ใช้ ไม่มีสวิตช์ส่วนกลาง
 
-**ขั้นตอนการยกเลิกการแบนด้วยตนเอง**: ใช้ได้เฉพาะกับ `auto_quota` (การแบนอัตโนมัติสำหรับปริมาณการเข้าชมที่มากเกินไป) เมื่อฝั่งผู้ดูแลระบบ
+**ขั้นตอนการปลดแบนด้วยตนเอง**: ใช้ได้เฉพาะกับ `auto_quota` (การแบนอัตโนมัติสำหรับปริมาณการรับส่งข้อมูลที่มากเกินไป) เมื่อฝั่งผู้ดูแลระบบ
 `self_unban.enabled` เปิดอยู่ การลงชื่อเข้าใช้ (รหัสผ่านหรือการโทรกลับ OAuth) ส่งคืน `require_self_unban=true` + `self_unban_token`
 (typ=self_unban ใช้ได้ 15 นาที **เท่านั้น** ใช้งานได้บน `POST /self-unban` จุดปลายอื่นส่งคืน 403/`SELF_UNBAN_TOKEN_SCOPE`)
 พอร์ทัลจะแสดงการ์ดปลดแบน หลังจากยกเลิกการแบนสำเร็จ ผู้ใช้จะลงชื่อเข้าใช้อีกครั้ง การเรียกกลับ OAuth จะส่งสิ่งนี้ผ่านทาง
@@ -246,14 +247,14 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 ลิงก์ “นโยบายความเป็นส่วนตัว · ข้อกำหนดในการให้บริการ” ที่ด้านล่างของการ์ดลงชื่อเข้าใช้ (เช่นเดียวกับไซต์ทั่วไป การคลิกจะเปิดเนื้อหา):
 
 - **การกำหนดค่า**: ตัวแก้ไขพอร์ทัล → การตั้งค่า → ทั่วไป → เอกสารการปฏิบัติตามข้อกำหนด (**แก้ไขเนื้อหาตามภาษา**);
- คุณยังสามารถ `PUT /api/v1/portal/active` ด้วยฟิลด์ที่มีโครงสร้าง `privacy_policy_url` / `privacy_policy_content` /
+ คุณยังสามารถ `PUT /api/v1/portal/active` พร้อมฟิลด์ที่มีโครงสร้าง `privacy_policy_url` / `privacy_policy_content` /
  `terms_of_service_url` / `terms_of_service_content` (ไม่มี = ไม่เปลี่ยนแปลง เนื้อหาเป็นแมป `{"zh-CN":"...","en":"..."}`)
 - **หน้าที่เข้าถึงได้แบบสแตนด์อโลน** (แสดงผลโดยเซิร์ฟเวอร์ ง่ายสำหรับโปรแกรมรวบรวมข้อมูลการตรวจสอบ Google รองรับ `?lang=xx`):
   - โดเมนแผงหลัก: `GET /p/legal/privacy`, `GET /p/legal/terms`
   - โดเมนพอร์ทัลเฉพาะ (การปรับใช้รูท): `GET /legal/privacy`, `GET /legal/terms`
-- **ตรรกะการแสดงผล**: URL หรือเนื้อหา **URL ชนะ** (เปิดจากภายนอกในแท็บใหม่) หากมีเนื้อหาให้คลิก
+- **ตรรกะการแสดงผล**: URL หรือเนื้อหา **URL ชนะ** (เปิดภายนอกในแท็บใหม่) หากมีเนื้อหาให้คลิก
  การ์ดลงชื่อเข้าใช้จะแสดง Markdown ในกล่องโต้ตอบ (`renderMd`) โดยใช้ภาษาพอร์ทัลปัจจุบัน
-- ส่งที่รันไทม์ผ่าน `/api/v1/public/portal-config`; องค์ประกอบการลงชื่อเข้าใช้สิ้นเปลือง
+- ส่งขณะรันไทม์ผ่าน `/api/v1/public/portal-config`; องค์ประกอบการลงชื่อเข้าใช้สิ้นเปลือง
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
 - การตรวจสอบ Google OAuth กำหนดให้ลิงก์เหล่านี้เข้าถึงได้แบบสาธารณะ → ใช้ลิงก์แบบสแตนด์อโลนด้านบนใน
  หน้าจอยินยอม ดู `docs/oauth-google-verification.md` (ประกอบด้วยนโยบายความเป็นส่วนตัว / เทมเพลตข้อกำหนด)

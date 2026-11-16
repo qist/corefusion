@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: ja | updated: 2026-11-16 -->
 # 管理者 API
 
 > 言語： [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · 日本語 · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - ベース URL: `https://<panel-domain>/api/v1`
 - 認証: `Authorization: Bearer <admin_token>` (`POST /api/v1/auth/login` から)
 - 一般的な応答/エラー形式とレート制限規則: [README.md](./README.ja.md) を参照してください。
-- 真実の情報源: `internal/api/router/router.go` (件数はバージョンにより変動します。コードが優先されます)。この表が一致しない場合、**コードが優先されます**
+- 真実の情報源: `internal/api/router/router.go` (カウントはバージョンによって異なります。コードは信頼できます)。この表が一致しない場合、**コードが優先されます**
 
 ## 許可マーカー
 
@@ -17,8 +17,11 @@
 | 公開 | サインインは必要ありません (メンテナンス ガード/レート制限が引き続き適用される場合があります) |
 | パブリック・レート制限あり | サインイン不要、専用のレート制限あり |
 | 要サインイン | サインインした管理者トークン (`AuthRequired`) が必要です |
+| オペレーター | `operator` (`RequireRole(RoleOperator)`) 以上のロールが必要です |
 | 管理者 | `admin` (`RequireRole(RoleAdmin)`) 以上のロールが必要です |
 | スーパー管理者 | 役割 = `super_admin` が必要です |
+| クライアント（パブリック） | クライアントトークンは必要ありません（サインイン/登録など） |
+| クライアント (サインイン済み) | `Authorization: Bearer <client_token>` (管理者トークンではなくポータル クライアント トークン) が必要です |
 
 役割レベル: `viewer(10) < operator(20) < admin(30) < super_admin(40)`;役割が不十分な場合は、403 `INSUFFICIENT_ROLE` が返されます。
 
@@ -150,7 +153,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [EAB構成](#eab構成)
 - [ACME アカウント](#acme-アカウント)
 - [内蔵 CA](#内蔵-ca)
-- [地理的ルール](#地理的ルール)
+- [地域ルール](#地域ルール)
 - [WAF ルール ライブラリ](#waf-ルール-ライブラリ)
 - [ログ管理](#ログ管理)
 - [バックアップ](#バックアップ)
@@ -190,21 +193,21 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | GET | `/api/v1/auth/login/2fa-status` | 公開 | アカウントで 2FA が有効になっているかどうかを確認する |
 | POST | `/api/v1/auth/logout` | 要サインイン | サインアウト |
 | GET | `/api/v1/auth/me` | 要サインイン | 現在サインインしているユーザー |
-| GET | `/api/v1/auth/passkey/credentials` | 要サインイン | Passkey 資格情報リスト |
-| DELETE | `/api/v1/auth/passkey/credentials/:id` | 要サインイン | Passkey 資格情報を削除する |
+| GET | `/api/v1/auth/passkey/credentials` | 要サインイン | Passkey credential list |
+| DELETE | `/api/v1/auth/passkey/credentials/:id` | 要サインイン | Delete Passkey credential |
 | POST | `/api/v1/auth/passkey/login/begin` | 公開 | サインインを開始する |
 | POST | `/api/v1/auth/passkey/login/finish` | 公開 | サインインを完了する |
 | POST | `/api/v1/auth/passkey/register/begin` | 要サインイン | 登録を開始する |
 | POST | `/api/v1/auth/passkey/register/finish` | 要サインイン | 登録を完了する |
-| GET | `/api/v1/auth/passkey/rpids` | 要サインイン | RP ID 許可リスト |
-| POST | `/api/v1/auth/passkey/rpids` | 要サインイン | RP ID 許可リストを更新する |
+| GET | `/api/v1/auth/passkey/rpids` | 管理者 | RP ID 許可リスト |
+| POST | `/api/v1/auth/passkey/rpids` | 管理者 | RP ID 許可リストを更新する |
 | GET | `/api/v1/auth/passkey/status` | 公開 | ステータス |
 | POST | `/api/v1/auth/refresh` | 公開 | リフレッシュ |
-| POST | `/api/v1/auth/ticket` | 要サインイン | 1 回限りの有効期間の短いチケットを発行する |
+| POST | `/api/v1/auth/ticket` | 要サインイン | Issue one-time short-lived ticket |
 
 ### 管理者アカウント
 
-管理パネルのユーザーアカウント。リストには管理者が必要です。作成/更新/削除にはスーパー管理者が必要です (権限昇格を防ぎます)。
+Admin panel user accounts.リストには管理者が必要です。作成/更新/削除にはスーパー管理者が必要です (権限昇格を防ぎます)。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
@@ -220,17 +223,17 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/clients` | 要サインイン | 顧客をリストアップする |
-| POST | `/api/v1/clients` | 要サインイン | 顧客を作成します。本体：`{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`。 `plan_id` は必須です。 `password` は空の場合があります (顧客は後でポータルで設定できます) |
-| DELETE | `/api/v1/clients/:id` | 要サインイン | 顧客の削除 |
+| POST | `/api/v1/clients` | オペレーター | 顧客を作成します。本体：`{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`。 `plan_id` は必須です。 `password` は空の場合があります (顧客は後でポータルで設定できます) |
+| DELETE | `/api/v1/clients/:id` | オペレーター | 顧客の削除 |
 | GET | `/api/v1/clients/:id` | 要サインイン | 顧客を獲得する |
-| PUT | `/api/v1/clients/:id` | 要サインイン | 顧客を更新する |
-| POST | `/api/v1/clients/:id/downgrade` | 要サインイン | 顧客をダウングレードする |
+| PUT | `/api/v1/clients/:id` | オペレーター | 顧客を更新する |
+| POST | `/api/v1/clients/:id/downgrade` | オペレーター | 顧客をダウングレードする |
 | GET | `/api/v1/clients/:id/orders` | 要サインイン | 顧客注文リスト |
-| POST | `/api/v1/clients/:id/renew` | 要サインイン | 顧客を更新する |
-| POST | `/api/v1/clients/:id/reset-usage` | 要サインイン | 使用量をリセットする |
-| POST | `/api/v1/clients/:id/restore` | 要サインイン | 顧客の履歴書 |
-| POST | `/api/v1/clients/:id/suspend` | 要サインイン | 顧客の一時停止 |
-| POST | `/api/v1/clients/:id/upgrade` | 要サインイン | 顧客をアップグレードする |
+| POST | `/api/v1/clients/:id/renew` | オペレーター | 顧客を更新する |
+| POST | `/api/v1/clients/:id/reset-usage` | オペレーター | 使用量をリセットする |
+| POST | `/api/v1/clients/:id/restore` | オペレーター | 顧客の履歴書 |
+| POST | `/api/v1/clients/:id/suspend` | オペレーター | 顧客の一時停止 |
+| POST | `/api/v1/clients/:id/upgrade` | オペレーター | 顧客をアップグレードする |
 
 ### 計画テンプレート
 
@@ -239,17 +242,17 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | 要サインイン | テンプレート一覧 |
-| POST | `/api/v1/plan-templates` | 要サインイン | テンプレートの作成 |
-| DELETE | `/api/v1/plan-templates/:id` | 要サインイン | テンプレートの削除 |
+| POST | `/api/v1/plan-templates` | 管理者 | テンプレートの作成 |
+| DELETE | `/api/v1/plan-templates/:id` | 管理者 | テンプレートの削除 |
 | GET | `/api/v1/plan-templates/:id` | 要サインイン | テンプレートの詳細 |
-| PUT | `/api/v1/plan-templates/:id` | 要サインイン | テンプレートを更新する |
+| PUT | `/api/v1/plan-templates/:id` | 管理者 | テンプレートを更新する |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | 要サインイン | 利用可能なノードを取得する |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | 要サインイン | 課金対象ノードのオプションを取得する |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | 要サインイン | テンプレートノードグループを設定する |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | 要サインイン | アカウントをテンプレートに同期する |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | 管理者 | テンプレートノードグループの設定 |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | 管理者 | アカウントをテンプレートに同期する |
 | GET | `/api/v1/plan-templates/:id/variants` | 要サインイン | バリアントリスト |
-| POST | `/api/v1/plan-templates/:id/variants` | 要サインイン | バリアントの作成 |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | 要サインイン | すべてのアカウントを同期する |
+| POST | `/api/v1/plan-templates/:id/variants` | 管理者 | バリアントの作成 |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | 管理者 | すべてのアカウントを同期する |
 
 ### プランのバリエーション
 
@@ -257,8 +260,8 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | 要サインイン | バリアントの削除 |
-| PUT | `/api/v1/plan-variants/:id` | 要サインイン | バリアントを更新する |
+| DELETE | `/api/v1/plan-variants/:id` | 管理者 | バリアントの削除 |
+| PUT | `/api/v1/plan-variants/:id` | 管理者 | バリアントを更新する |
 
 ### トラフィックパック
 
@@ -267,9 +270,9 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | 要サインイン | トラフィックパックリスト |
-| POST | `/api/v1/traffic-packs` | 要サインイン | トラフィックパックを作成する |
-| DELETE | `/api/v1/traffic-packs/:id` | 要サインイン | トラフィックパックを削除する |
-| PUT | `/api/v1/traffic-packs/:id` | 要サインイン | トラフィックパックを更新する |
+| POST | `/api/v1/traffic-packs` | 管理者 | トラフィックパックを作成する |
+| DELETE | `/api/v1/traffic-packs/:id` | 管理者 | トラフィックパックを削除する |
+| PUT | `/api/v1/traffic-packs/:id` | 管理者 | トラフィックパックを更新する |
 
 ### クーポン
 
@@ -278,9 +281,9 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | 要サインイン | クーポン一覧 |
-| POST | `/api/v1/promotions` | 要サインイン | クーポンの作成 |
-| DELETE | `/api/v1/promotions/:id` | 要サインイン | クーポンを削除する |
-| PUT | `/api/v1/promotions/:id` | 要サインイン | クーポンを更新する |
+| POST | `/api/v1/promotions` | 管理者 | クーポンの作成 |
+| DELETE | `/api/v1/promotions/:id` | 管理者 | クーポンを削除する |
+| PUT | `/api/v1/promotions/:id` | 管理者 | クーポンを更新する |
 | POST | `/api/v1/promotions/validate` | 要サインイン | クーポンの検証 |
 
 ### ノードグループ
@@ -290,12 +293,12 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | 要サインイン | ノードグループのリストを表示する |
-| POST | `/api/v1/node-groups` | 要サインイン | ノードグループの作成 |
-| DELETE | `/api/v1/node-groups/:id` | 要サインイン | ノードグループの削除 |
-| PUT | `/api/v1/node-groups/:id` | 要サインイン | ノードグループの更新 |
+| POST | `/api/v1/node-groups` | 管理者 | ノードグループの作成 |
+| DELETE | `/api/v1/node-groups/:id` | 管理者 | ノードグループの削除 |
+| PUT | `/api/v1/node-groups/:id` | 管理者 | ノードグループの更新 |
 | GET | `/api/v1/node-groups/:id/members` | 要サインイン | グループメンバーをリストする |
-| POST | `/api/v1/node-groups/:id/members` | 要サインイン | グループメンバーを追加 |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | 要サインイン | グループメンバーを削除する |
+| POST | `/api/v1/node-groups/:id/members` | 管理者 | グループメンバーを追加 |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | 管理者 | グループメンバーを削除する |
 
 ### ノードサーバー
 
@@ -328,7 +331,8 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 管理者 | 保存して適用する |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 管理者 | サイトリスト |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 管理者 | サイトの作成 |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | サイトをインポート |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 管理者 | インポートサイト |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | 管理者 | レンダリングされた Caddy サイトをプレビューする |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理者 | サイトの削除 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理者 | 更新サイト |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 管理者 | すべての SNI ルールを削除します |
@@ -353,6 +357,9 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/force-reconnect` | 管理者 | 強制再接続 |
 | GET | `/api/v1/node-servers/:id/free-port` | 管理者 | 空きポートをリクエストする |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | 管理者 | このノードにプッシュする |
+| GET | `/api/v1/node-servers/:id/firewall/status` | 管理者 | ファイアウォール検出 (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | 管理者 | 受信リスニングポートを許可します (マルチレンジをサポート) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | 管理者 | 受信ポートの許可を取り消します (重複を含む) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | 管理者 | リスト |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | 管理者 | 作成 |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | 管理者 | 削除 |
@@ -373,8 +380,9 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 管理者 | 設定を保存する |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 管理者 | サイトリスト |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 管理者 | サイトの作成 |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | サイトをインポート |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL 証明書ファイルを生成 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 管理者 | インポートサイト |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | 管理者 | レンダリングされた Nginx サイトのプレビュー |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理者 | SSL証明書ファイルを生成する |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理者 | サイトの削除 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理者 | 更新サイト |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 管理者 | すべての SNI ルールを削除します |
@@ -394,7 +402,7 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | GET | `/api/v1/node-servers/:id/protocols/:coreType/config-file` | 管理者 | コア構成ファイルを読み取る |
 | GET | `/api/v1/node-servers/:id/protocols/:coreType/section/:section` | 管理者 | プロトコルセクションを読む |
 | PUT | `/api/v1/node-servers/:id/protocols/:coreType/section/:section` | 管理者 | プロトコルセクションの保存 |
-| POST | `/api/v1/node-servers/:id/protocols/:coreType/validate` | 管理者 | 構成を検証します (実際のコアの予行演習) |
+| POST | `/api/v1/node-servers/:id/protocols/:coreType/validate` | 管理者 | 構成の検証 (実際のコアの予行演習) |
 | GET | `/api/v1/node-servers/:id/proxy-status` | 管理者 | リモートプロキシステータス |
 | POST | `/api/v1/node-servers/:id/proxy/batch-update-ports` | 管理者 | ポートの一括更新 |
 | GET | `/api/v1/node-servers/:id/proxy/config` | 管理者 | 構成の読み取り |
@@ -457,6 +465,7 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | 管理者 | すべてクリア |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | 管理者 | ポートホッピングファイアウォールルールを適用する |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | 管理者 | ポートホッピングファイアウォールルールを削除する |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | 管理者 | ライブ sing-box 接続 (clash_api、ローカル ノードのみ) |
 | POST | `/api/v1/node-servers/:id/speed-test` | 管理者 | ノード速度テスト |
 | GET | `/api/v1/node-servers/:id/status` | 管理者 | ノードのステータス |
 | POST | `/api/v1/node-servers/:id/sync` | 管理者 | ノード構成の同期 (生成およびプッシュ) |
@@ -496,6 +505,8 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | GET | `/api/v1/node-servers/:id/warp/config` | 管理者 | 構成の読み取り |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | 管理者 | 構成の生成 |
 | POST | `/api/v1/node-servers/:id/warp/register` | 管理者 | 登録する |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | 管理者 | WARP MASQUE プロファイルの登録 (ステップ 1/2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | 管理者 | WARP プロファイルから sing-box MASQUE アウトバウンドを作成する |
 | GET | `/api/v1/node-servers/:id/warp/status` | 管理者 | ステータス |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 管理者 | バランサー情報の取得 |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 管理者 | バランサーのターゲットを設定する |
@@ -544,8 +555,8 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | 要サインイン | ノード監査ログ |
-| GET | `/api/v1/node-audit-logs/export` | 要サインイン | ノード監査ログのエクスポート |
+| GET | `/api/v1/node-audit-logs` | 管理者 | ノード監査ログ |
+| GET | `/api/v1/node-audit-logs/export` | 管理者 | ノード監査ログのエクスポート |
 
 ### ノード (レガシー モデル、廃止)
 
@@ -568,21 +579,21 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | 要サインイン | リスト |
-| POST | `/api/v1/subscriptions` | 要サインイン | 作成 |
-| DELETE | `/api/v1/subscriptions/:id` | 要サインイン | 削除 |
+| POST | `/api/v1/subscriptions` | オペレーター | 作成 |
+| DELETE | `/api/v1/subscriptions/:id` | オペレーター | 削除 |
 | GET | `/api/v1/subscriptions/:id` | 要サインイン | 詳細 |
-| PUT | `/api/v1/subscriptions/:id` | 要サインイン | アップデート |
+| PUT | `/api/v1/subscriptions/:id` | オペレーター | アップデート |
 | GET | `/api/v1/subscriptions/:id/access-logs` | 要サインイン | アクセスログ |
-| POST | `/api/v1/subscriptions/:id/enable` | 要サインイン | 有効にする |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | 要サインイン | 使用量をリセットする |
-| POST | `/api/v1/subscriptions/:id/restore` | 要サインイン | 再開 |
-| POST | `/api/v1/subscriptions/:id/revoke` | 要サインイン | 取り消し |
-| POST | `/api/v1/subscriptions/:id/rotate` | 要サインイン | 回転 |
+| POST | `/api/v1/subscriptions/:id/enable` | オペレーター | 有効にする |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | オペレーター | 使用量をリセットする |
+| POST | `/api/v1/subscriptions/:id/restore` | オペレーター | 再開 |
+| POST | `/api/v1/subscriptions/:id/revoke` | オペレーター | 取り消し |
+| POST | `/api/v1/subscriptions/:id/rotate` | オペレーター | 回転 |
 | GET | `/api/v1/subscriptions/:id/rotations` | 要サインイン | 回転履歴 |
 
 ### 購読形式
 
-> 管理側 `/api/v1/subscription-formats` CRUD は 2026 年 10 月 20 日に廃止されました。実際のエントリ ポイントは次のとおりです。
+> 管理側 `/api/v1/subscription-formats` CRUD は 2026 年 10 月 20 日に廃止されました。実際のエントリ ポイントは
 > `/api/v1/mihomo/configs`（サブスクリプションフォーマットセンター）。 `subscription_formats` テーブルは残りますが、
 > パブリック `/api/v1/public/client-configs` エンドポイントのシード データとしてのみ使用されます。
 
@@ -593,10 +604,10 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | 要サインイン | リスト |
-| POST | `/api/v1/subscription-endpoints` | 要サインイン | 作成 |
-| DELETE | `/api/v1/subscription-endpoints/:id` | 要サインイン | 削除 |
+| POST | `/api/v1/subscription-endpoints` | 管理者 | 作成 |
+| DELETE | `/api/v1/subscription-endpoints/:id` | 管理者 | 削除 |
 | GET | `/api/v1/subscription-endpoints/:id` | 要サインイン | 詳細 |
-| PUT | `/api/v1/subscription-endpoints/:id` | 要サインイン | アップデート |
+| PUT | `/api/v1/subscription-endpoints/:id` | 管理者 | アップデート |
 
 ### ドメインを共有する
 
@@ -605,11 +616,11 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | 要サインイン | リスト |
-| POST | `/api/v1/share-domains` | 要サインイン | 作成 |
-| DELETE | `/api/v1/share-domains/:id` | 要サインイン | 削除 |
-| PUT | `/api/v1/share-domains/:id` | 要サインイン | アップデート |
-| DELETE | `/api/v1/share-domains/all` | 要サインイン | すべてクリア |
-| POST | `/api/v1/share-domains/seed` | 要サインイン | デフォルトデータの初期化 |
+| POST | `/api/v1/share-domains` | 管理者 | 作成 |
+| DELETE | `/api/v1/share-domains/:id` | 管理者 | 削除 |
+| PUT | `/api/v1/share-domains/:id` | 管理者 | アップデート |
+| DELETE | `/api/v1/share-domains/all` | 管理者 | すべてクリア |
+| POST | `/api/v1/share-domains/seed` | 管理者 | デフォルトデータの初期化 |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | 要サインイン | エントリをクリアする |
+| DELETE | `/api/v1/cfip/entries` | 管理者 | エントリをクリアする |
 | GET | `/api/v1/cfip/entries` | 要サインイン | エントリーリスト |
-| POST | `/api/v1/cfip/entries` | 要サインイン | エントリを追加 |
-| DELETE | `/api/v1/cfip/entries/:id` | 要サインイン | エントリの削除 |
-| POST | `/api/v1/cfip/fetch-all` | 要サインイン | すべてのソースを取得する |
-| POST | `/api/v1/cfip/seed` | 要サインイン | デフォルトデータの初期化 |
+| POST | `/api/v1/cfip/entries` | 管理者 | エントリを追加 |
+| DELETE | `/api/v1/cfip/entries/:id` | 管理者 | エントリの削除 |
+| POST | `/api/v1/cfip/fetch-all` | 管理者 | すべてのソースを取得する |
+| GET | `/api/v1/cfip/probe-config` | 要サインイン | CF 優先 IP プローブ構成 (エントリ ノード + インストールされているダイヤラー) |
+| PUT | `/api/v1/cfip/probe-config` | 管理者 | プローブ間隔 / 遅延制限 / エントリ ノード / ダイヤラを保存 |
+| POST | `/api/v1/cfip/check` | 管理者 | すべての優先ドメイン/IP を今すぐ調査します |
+| POST | `/api/v1/cfip/seed` | 管理者 | デフォルトデータの初期化 |
 | GET | `/api/v1/cfip/sources` | 要サインイン | データソースリスト |
-| POST | `/api/v1/cfip/sources` | 要サインイン | データソースの作成 |
-| DELETE | `/api/v1/cfip/sources/:id` | 要サインイン | データソースの削除 |
-| PUT | `/api/v1/cfip/sources/:id` | 要サインイン | データソースを更新する |
-| POST | `/api/v1/cfip/sources/:id/fetch` | 要サインイン | このソースを取得します |
+| POST | `/api/v1/cfip/sources` | 管理者 | データソースの作成 |
+| DELETE | `/api/v1/cfip/sources/:id` | 管理者 | データソースの削除 |
+| PUT | `/api/v1/cfip/sources/:id` | 管理者 | データソースを更新する |
+| POST | `/api/v1/cfip/sources/:id/fetch` | 管理者 | このソースを取得します |
 
 ### サブスクリプション構成 (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Cloudflare CDN IP プールとソースの管理。
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | 要サインイン | リスト |
-| POST | `/api/v1/mihomo/configs` | 要サインイン | 作成 |
-| DELETE | `/api/v1/mihomo/configs/:id` | 要サインイン | 削除 |
+| POST | `/api/v1/mihomo/configs` | 管理者 | 作成 |
+| DELETE | `/api/v1/mihomo/configs/:id` | 管理者 | 削除 |
 | GET | `/api/v1/mihomo/configs/:id` | 要サインイン | 詳細 |
-| PUT | `/api/v1/mihomo/configs/:id` | 要サインイン | アップデート |
+| PUT | `/api/v1/mihomo/configs/:id` | 管理者 | アップデート |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 要サインイン | ルール一覧 |
-| POST | `/api/v1/mihomo/configs/:id/rules` | 要サインイン | ルールの作成 |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | ルールを並べ替え |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | ルールを更新 |
-| DELETE | `/api/v1/mihomo/rules/:id` | 要サインイン | ルールの削除 |
+| POST | `/api/v1/mihomo/configs/:id/rules` | 管理者 | ルールの作成 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 管理者 | 並べ替えルール |
+| PUT | `/api/v1/mihomo/rules/:id` | 管理者 | 更新ルール |
+| DELETE | `/api/v1/mihomo/rules/:id` | 管理者 | ルールの削除 |
 
 ### リチャージサイト
 
@@ -652,20 +666,20 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | 要サインイン | サイトリスト |
-| POST | `/api/v1/charge-sites` | 要サインイン | サイトの作成 |
-| DELETE | `/api/v1/charge-sites/:id` | 要サインイン | サイトの削除 |
-| GET | `/api/v1/charge-sites/:id` | 要サインイン | サイト詳細 |
-| PUT | `/api/v1/charge-sites/:id` | 要サインイン | 更新サイト |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 要サインイン | 古いキーをクリアする |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | 要サインイン | 検証ファイルの生成 |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 要サインイン | 検証ファイルの生成 |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | 要サインイン | 統合ドキュメントを入手する |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | 要サインイン | 署名キーをローテーションする |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | 要サインイン | ドメイン DNS を確認する |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | 要サインイン | ドメイン HTTP チャレンジを検証する |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 要サインイン | ドメイン DNS を確認する |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 要サインイン | ドメイン HTTP チャレンジを検証する |
+| GET | `/api/v1/charge-sites` | 管理者 | サイトリスト |
+| POST | `/api/v1/charge-sites` | 管理者 | サイトの作成 |
+| DELETE | `/api/v1/charge-sites/:id` | 管理者 | サイトの削除 |
+| GET | `/api/v1/charge-sites/:id` | 管理者 | サイト詳細 |
+| PUT | `/api/v1/charge-sites/:id` | 管理者 | 更新サイト |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 管理者 | 古いキーをクリアする |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | 管理者 | 検証ファイルの生成 |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 管理者 | 検証ファイルの生成 |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | 管理者 | 統合ドキュメントを入手する |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | 管理者 | 署名キーをローテーションする |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | 管理者 | ドメイン DNS を確認する |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | 管理者 | ドメイン HTTP チャレンジを検証する |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 管理者 | ドメイン DNS を確認する |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 管理者 | ドメイン HTTP チャレンジを検証する |
 
 ### リチャージ注文
 
@@ -673,10 +687,10 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | 要サインイン | 注文リスト |
-| GET | `/api/v1/charge-orders/:id` | 要サインイン | 注文の詳細 |
-| POST | `/api/v1/charge-orders/:id/refund` | 要サインイン | 払い戻し |
-| GET | `/api/v1/charge-orders/export-csv` | 要サインイン | リチャージ注文のエクスポート CSV |
+| GET | `/api/v1/charge-orders` | 管理者 | 注文リスト |
+| GET | `/api/v1/charge-orders/:id` | 管理者 | 注文の詳細 |
+| POST | `/api/v1/charge-orders/:id/refund` | 管理者 | 払い戻し |
+| GET | `/api/v1/charge-orders/export-csv` | 管理者 | リチャージ注文のエクスポート CSV |
 
 ### カードをリチャージする
 
@@ -684,12 +698,12 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | 要サインイン | カードリスト |
-| POST | `/api/v1/charge-cards` | 要サインイン | カードの作成 |
-| DELETE | `/api/v1/charge-cards/:id` | 要サインイン | カードの削除 |
-| GET | `/api/v1/charge-cards/:id/usages` | 要サインイン | カード利用記録 |
-| POST | `/api/v1/charge-cards/batch` | 要サインイン | カードを一括生成する |
-| GET | `/api/v1/charge-cards/export-csv` | 要サインイン | エクスポートカード CSV |
+| GET | `/api/v1/charge-cards` | 管理者 | カードリスト |
+| POST | `/api/v1/charge-cards` | 管理者 | カードの作成 |
+| DELETE | `/api/v1/charge-cards/:id` | 管理者 | カードの削除 |
+| GET | `/api/v1/charge-cards/:id/usages` | 管理者 | カード利用記録 |
+| POST | `/api/v1/charge-cards/batch` | 管理者 | カードを一括生成する |
+| GET | `/api/v1/charge-cards/export-csv` | 管理者 | エクスポートカード CSV |
 
 ### チャージコールバックイベント
 
@@ -725,8 +739,8 @@ Cloudflare CDN IP プールとソースの管理。
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | 要サインイン | ギフトリスト |
-| POST | `/api/v1/client-gifts` | 要サインイン | ギフトを作成する |
-| POST | `/api/v1/client-gifts/batch` | 要サインイン | ギフトを一括作成 |
+| POST | `/api/v1/client-gifts` | 管理者 | ギフトを作成する |
+| POST | `/api/v1/client-gifts/batch` | 管理者 | ギフトを一括作成 |
 | GET | `/api/v1/client-gifts/search-clients` | 要サインイン | 顧客を検索する |
 
 ### 紹介構成
@@ -746,9 +760,9 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | 要サインイン | 出金依頼リスト |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | 要サインイン | 出金の承認 |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | 要サインイン | 出金を拒否する |
+| GET | `/api/v1/referral-withdrawals` | 管理者 | 出金依頼リスト |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | 管理者 | 出金の承認 |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | 管理者 | 出金を拒否する |
 
 ### IP許可リスト(概要)
 
@@ -774,9 +788,9 @@ Cloudflare CDN IP プールとソースの管理。
 |---|---|---|---|
 | GET | `/api/v1/tickets` | 要サインイン | チケット一覧 |
 | GET | `/api/v1/tickets/:id` | 要サインイン | チケット詳細 |
-| POST | `/api/v1/tickets/:id/assign` | 要サインイン | チケットの割り当て |
-| POST | `/api/v1/tickets/:id/close` | 要サインイン | チケットを閉じる |
-| POST | `/api/v1/tickets/:id/reply` | 要サインイン | チケットへの返信 |
+| POST | `/api/v1/tickets/:id/assign` | オペレーター | チケットの割り当て |
+| POST | `/api/v1/tickets/:id/close` | オペレーター | チケットを閉じる |
+| POST | `/api/v1/tickets/:id/reply` | オペレーター | チケットへの返信 |
 
 ### 記事
 
@@ -785,10 +799,10 @@ Cloudflare CDN IP プールとソースの管理。
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/articles` | 要サインイン | 記事一覧 |
-| POST | `/api/v1/articles` | 要サインイン | 記事を作成する |
-| DELETE | `/api/v1/articles/:id` | 要サインイン | 記事の削除 |
+| POST | `/api/v1/articles` | 管理者 | 記事を作成する |
+| DELETE | `/api/v1/articles/:id` | 管理者 | 記事の削除 |
 | GET | `/api/v1/articles/:id` | 要サインイン | 記事詳細 |
-| PUT | `/api/v1/articles/:id` | 要サインイン | 記事を更新 |
+| PUT | `/api/v1/articles/:id` | 管理者 | 記事を更新 |
 
 ### 共有アカウント
 
@@ -797,10 +811,10 @@ Cloudflare CDN IP プールとソースの管理。
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | 要サインイン | 共有アカウントリスト |
-| POST | `/api/v1/shared-accounts` | 要サインイン | 共有アカウントを作成する |
-| DELETE | `/api/v1/shared-accounts/:id` | 要サインイン | 共有アカウントを削除する |
+| POST | `/api/v1/shared-accounts` | 管理者 | 共有アカウントを作成する |
+| DELETE | `/api/v1/shared-accounts/:id` | 管理者 | 共有アカウントを削除する |
 | GET | `/api/v1/shared-accounts/:id` | 要サインイン | 共有アカウントの詳細 |
-| PUT | `/api/v1/shared-accounts/:id` | 要サインイン | 共有アカウントを更新する |
+| PUT | `/api/v1/shared-accounts/:id` | 管理者 | 共有アカウントを更新する |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | 要サインイン | 修理記録 |
 
 ### 証明書
@@ -809,20 +823,20 @@ Cloudflare CDN IP プールとソースの管理。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | 要サインイン | リスト |
-| POST | `/api/v1/certificates` | 要サインイン | 作成 |
-| DELETE | `/api/v1/certificates/:id` | 要サインイン | 削除 |
-| GET | `/api/v1/certificates/:id` | 要サインイン | 詳細 |
-| PUT | `/api/v1/certificates/:id` | 要サインイン | アップデート |
-| GET | `/api/v1/certificates/:id/download` | 要サインイン | ダウンロード |
-| POST | `/api/v1/certificates/:id/renew` | 要サインイン | 顧客を更新する |
-| GET | `/api/v1/certificates/check-port` | 要サインイン | ポートを確認してください |
-| GET | `/api/v1/certificates/detect-ip` | 要サインイン | プローブIP |
-| GET | `/api/v1/certificates/export` | 要サインイン | エクスポート |
-| POST | `/api/v1/certificates/issue` | 要サインイン | 問題。本体：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。 `challenge_type` のデフォルトは http-01 です。 `dns_channel_id` は、DNS チャネル (構成された DNS プロバイダー + 資格情報) を選択します。 |
-| POST | `/api/v1/certificates/issue-on-node` | 要サインイン | ノードに発行する |
-| POST | `/api/v1/certificates/upload` | 要サインイン | アップロード |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | バックグラウンドタスクの状態を照会 |
+| GET | `/api/v1/certificates` | 管理者 | リスト |
+| POST | `/api/v1/certificates` | 管理者 | 作成 |
+| DELETE | `/api/v1/certificates/:id` | 管理者 | 削除 |
+| GET | `/api/v1/certificates/:id` | 管理者 | 詳細 |
+| PUT | `/api/v1/certificates/:id` | 管理者 | アップデート |
+| GET | `/api/v1/certificates/:id/download` | 管理者 | ダウンロード |
+| POST | `/api/v1/certificates/:id/renew` | 管理者 | 顧客を更新する |
+| GET | `/api/v1/certificates/check-port` | 管理者 | ポートを確認してください |
+| GET | `/api/v1/certificates/detect-ip` | 管理者 | プローブIP |
+| GET | `/api/v1/certificates/export` | 管理者 | エクスポート |
+| POST | `/api/v1/certificates/issue` | 管理者 | 問題。本体：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。 `challenge_type` のデフォルトは http-01 です。 `dns_channel_id` は、DNS チャネル (構成された DNS プロバイダー + 資格情報) を選択します。 |
+| POST | `/api/v1/certificates/issue-on-node` | 管理者 | ノードに発行する |
+| POST | `/api/v1/certificates/upload` | 管理者 | アップロード |
+| GET | `/api/v1/certificate-tasks/:id` | 管理者 | バックグラウンドタスクのステータスをクエリする |
 
 ### 証明書チャネル
 
@@ -830,11 +844,11 @@ ACME チャネル (CA) 構成。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | 要サインイン | リスト |
-| POST | `/api/v1/cert-channels` | 要サインイン | 作成 |
-| DELETE | `/api/v1/cert-channels/:id` | 要サインイン | 削除 |
-| PUT | `/api/v1/cert-channels/:id` | 要サインイン | アップデート |
-| GET | `/api/v1/cert-channels/providers` | 要サインイン | プロバイダー |
+| GET | `/api/v1/cert-channels` | 管理者 | リスト |
+| POST | `/api/v1/cert-channels` | 管理者 | 作成 |
+| DELETE | `/api/v1/cert-channels/:id` | 管理者 | 削除 |
+| PUT | `/api/v1/cert-channels/:id` | 管理者 | アップデート |
+| GET | `/api/v1/cert-channels/providers` | 管理者 | プロバイダー |
 
 ### EAB構成
 
@@ -842,12 +856,12 @@ ZeroSSL / Google などの外部アカウントをバインドする認証情報
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | 要サインイン | リスト |
-| POST | `/api/v1/eab-configs` | 要サインイン | 作成 |
-| DELETE | `/api/v1/eab-configs/:id` | 要サインイン | 削除 |
-| PUT | `/api/v1/eab-configs/:id` | 要サインイン | アップデート |
-| POST | `/api/v1/eab-configs/fetch-google` | 要サインイン | GCP から Google EAB を取得する |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | 要サインイン | ワンクリックでメールで ZeroSSL EAB を取得します |
+| GET | `/api/v1/eab-configs` | 管理者 | リスト |
+| POST | `/api/v1/eab-configs` | 管理者 | 作成 |
+| DELETE | `/api/v1/eab-configs/:id` | 管理者 | 削除 |
+| PUT | `/api/v1/eab-configs/:id` | 管理者 | アップデート |
+| POST | `/api/v1/eab-configs/fetch-google` | 管理者 | GCP から Google EAB を取得する |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | 管理者 | ワンクリックでメールで ZeroSSL EAB を取得します |
 
 ### ACME アカウント
 
@@ -855,11 +869,11 @@ ZeroSSL / Google などの外部アカウントをバインドする認証情報
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | 要サインイン | リスト |
-| POST | `/api/v1/acme-accounts` | 要サインイン | 作成 |
-| DELETE | `/api/v1/acme-accounts/:id` | 要サインイン | 削除 |
-| PUT | `/api/v1/acme-accounts/:id` | 要サインイン | アップデート |
-| GET | `/api/v1/acme-accounts/default` | 要サインイン | デフォルトを取得する |
+| GET | `/api/v1/acme-accounts` | 管理者 | リスト |
+| POST | `/api/v1/acme-accounts` | 管理者 | 作成 |
+| DELETE | `/api/v1/acme-accounts/:id` | 管理者 | 削除 |
+| PUT | `/api/v1/acme-accounts/:id` | 管理者 | アップデート |
+| GET | `/api/v1/acme-accounts/default` | 管理者 | デフォルトを取得する |
 
 ### 内蔵 CA
 
@@ -867,40 +881,40 @@ ZeroSSL / Google などの外部アカウントをバインドする認証情報
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | 要サインイン | エージェント証明書リスト |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 要サインイン | エージェント証明書を更新する |
-| GET | `/api/v1/ca/distribution-queue` | 要サインイン | 証明書配布キュー |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | 要サインイン | 配布キューエントリの削除 |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | 要サインイン | 証明書の配布を再試行します |
-| GET | `/api/v1/ca/revocations` | 要サインイン | 失効リスト |
-| GET | `/api/v1/ca/revocations/export` | 要サインイン | CRL のエクスポート |
-| GET | `/api/v1/ca/status` | 要サインイン | CA ステータス |
+| GET | `/api/v1/ca/agent-certs` | 管理者 | エージェント証明書リスト |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 管理者 | エージェント証明書を更新する |
+| GET | `/api/v1/ca/distribution-queue` | 管理者 | 証明書配布キュー |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | 管理者 | 配布キューエントリの削除 |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | 管理者 | 証明書の配布を再試行します |
+| GET | `/api/v1/ca/revocations` | 管理者 | 失効リスト |
+| GET | `/api/v1/ca/revocations/export` | 管理者 | CRL のエクスポート |
+| GET | `/api/v1/ca/status` | 管理者 | CA ステータス |
 
-### 地理的ルール
+### 地域ルール
 
 geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | 要サインイン | ファイルリスト |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | 要サインイン | ファイルの削除 |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 要サインイン | 自動同期の切り替え |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | 要サインイン | ダウンロード |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | 管理者 | ファイルの削除 |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 管理者 | 自動同期の切り替え |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | 管理者 | ダウンロード |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | 要サインイン | ファイルをダウンロードする |
 | GET | `/api/v1/geo-rules/github-assets` | 要サインイン | GitHub リポジトリ アセットを取得する |
-| POST | `/api/v1/geo-rules/push-all` | 要サインイン | すべてのノードにプッシュする |
-| POST | `/api/v1/geo-rules/seed` | 要サインイン | デフォルトデータの初期化 |
+| POST | `/api/v1/geo-rules/push-all` | 管理者 | すべてのノードにプッシュする |
+| POST | `/api/v1/geo-rules/seed` | 管理者 | デフォルトデータの初期化 |
 | GET | `/api/v1/geo-rules/sources` | 要サインイン | データソースリスト |
-| POST | `/api/v1/geo-rules/sources` | 要サインイン | データソースの作成 |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 要サインイン | データソースの削除 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | 要サインイン | データソースを更新する |
+| POST | `/api/v1/geo-rules/sources` | 管理者 | データソースの作成 |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 管理者 | データソースの削除 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | 管理者 | データソースを更新する |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | 要サインイン | アセットのフェッチ・リリース |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 要サインイン | ファイルを追加 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 要サインイン | スケジュールされた同期を切り替えます |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 要サインイン | ファイルを選択 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 要サインイン | このデータソースを同期します |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 管理者 | ファイルを追加 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 管理者 | スケジュールされた同期を切り替えます |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 管理者 | ファイルを選択 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 管理者 | このデータソースを同期します |
 | GET | `/api/v1/geo-rules/status` | 要サインイン | ステータス |
-| POST | `/api/v1/geo-rules/sync-all` | 要サインイン | すべてを同期する |
+| POST | `/api/v1/geo-rules/sync-all` | 管理者 | すべてを同期する |
 | GET | `/api/v1/geo-rules/sync-status/:key` | 要サインイン | 同期の進行状況 |
 
 ### WAF ルール ライブラリ
@@ -909,15 +923,15 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/waf/github-source` | 要サインイン | GitHub データソース |
-| PUT | `/api/v1/waf/github-source` | 要サインイン | GitHub データ ソースの保存 |
-| POST | `/api/v1/waf/push-all` | 要サインイン | すべてのノードにプッシュする |
+| GET | `/api/v1/waf/github-source` | 要サインイン | GitHub データ ソース |
+| PUT | `/api/v1/waf/github-source` | 管理者 | GitHub データ ソースの保存 |
+| POST | `/api/v1/waf/push-all` | 管理者 | すべてのノードにプッシュする |
 | GET | `/api/v1/waf/rules` | 要サインイン | ルール一覧 |
-| DELETE | `/api/v1/waf/rules/:name` | 要サインイン | ルールの削除 |
+| DELETE | `/api/v1/waf/rules/:name` | 管理者 | ルールの削除 |
 | GET | `/api/v1/waf/rules/:name` | 要サインイン | ルールの取得 |
-| PUT | `/api/v1/waf/rules/:name` | 要サインイン | ルールの保存 |
-| POST | `/api/v1/waf/sync-all` | 要サインイン | すべてを同期する |
-| POST | `/api/v1/waf/sync-github` | 要サインイン | GitHubから同期 |
+| PUT | `/api/v1/waf/rules/:name` | 管理者 | ルールの保存 |
+| POST | `/api/v1/waf/sync-all` | 管理者 | すべてを同期する |
+| POST | `/api/v1/waf/sync-github` | 管理者 | GitHubから同期 |
 
 ### ログ管理
 
@@ -925,43 +939,37 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | 要サインイン | 今すぐすべてをクリーンアップしてください |
-| GET | `/api/v1/log-manage/cleanup-rules` | 要サインイン | クリーンアップ ルールのリスト |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 要サインイン | クリーンアップ ルールを更新する |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | 要サインイン | 指定されたテーブルを今すぐクリーンアップします |
-| GET | `/api/v1/log-manage/core-log-output` | 要サインイン | コアログ出力構成 |
-| PUT | `/api/v1/log-manage/core-log-output` | 要サインイン | コアログ出力構成を保存する |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | 要サインイン | コア標準出力ログを読み取る |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 要サインイン | ストリームコア標準出力 |
-| POST | `/api/v1/log-manage/discover` | 要サインイン | ノードログファイルの検出 |
-| GET | `/api/v1/log-manage/log-output` | 要サインイン | ログ出力設定 |
-| PUT | `/api/v1/log-manage/log-output` | 要サインイン | ログ出力設定を保存する |
-| POST | `/api/v1/log-manage/log-output/release/:type` | 要サインイン | リリースログの標準出力引き継ぎ |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | 要サインイン | ログの標準出力を引き継ぐ |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 要サインイン | ノードログファイルリスト |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 要サインイン | ノードログの読み取り |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 要サインイン | ノードログをローテーションする |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 要サインイン | ストリームノードログ |
-| GET | `/api/v1/log-manage/policies` | 要サインイン | ポリシー一覧 |
-| POST | `/api/v1/log-manage/policies` | 要サインイン | ポリシーの作成 |
-| DELETE | `/api/v1/log-manage/policies/:id` | 要サインイン | ポリシーの削除 |
-| GET | `/api/v1/log-manage/policies/:id` | 要サインイン | ポリシーの詳細 |
-| PUT | `/api/v1/log-manage/policies/:id` | 要サインイン | ポリシーの更新 |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | 要サインイン | クリーンアップジョブリスト |
-| GET | `/api/v1/log-manage/policies/:id/log` | 要サインイン | ログの読み取り |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | 要サインイン | ストリームログ |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | 要サインイン | 回転 |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 要サインイン | コア標準出力ログを読み取る |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 要サインイン | ストリームコア標準出力 |
-| GET | `/api/v1/log-manage/scheduler-config` | 要サインイン | スケジュール設定 |
-| PUT | `/api/v1/log-manage/scheduler-config` | 要サインイン | スケジュール設定を更新する |
-| GET | `/api/v1/log-manage/status` | 要サインイン | ステータス |
-| POST | `/api/v1/log-manage/sync` | 要サインイン | 同期クリーンアップポリシー |
-| GET | `/api/v1/log-manage/writers` | 要サインイン | ライターステータス |
-| PUT | `/api/v1/log-manage/writers/:type/config` | 要サインイン | ライター構成を更新する |
-| GET | `/api/v1/log-manage/writers/:type/files` | 要サインイン | ライターログファイルリスト |
-| POST | `/api/v1/log-manage/writers/:type/start` | 要サインイン | ライターを開始する |
-| POST | `/api/v1/log-manage/writers/:type/stop` | 要サインイン | ライターを停止する |
+| POST | `/api/v1/log-manage/cleanup-all` | 管理者 | 今すぐすべてをクリーンアップしてください |
+| GET | `/api/v1/log-manage/cleanup-rules` | 管理者 | クリーンアップ ルールのリスト |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 管理者 | クリーンアップ ルールを更新する |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | 管理者 | 指定されたテーブルを今すぐクリーンアップします |
+| GET | `/api/v1/log-manage/core-log-output` | 管理者 | コアログ出力構成 |
+| PUT | `/api/v1/log-manage/core-log-output` | 管理者 | コアログ出力構成を保存する |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | 管理者 | コア標準出力ログを読み取る |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 管理者 | ストリームコア標準出力 |
+| POST | `/api/v1/log-manage/discover` | 管理者 | ノードログファイルの検出 |
+| GET | `/api/v1/log-manage/log-output` | 管理者 | ログ出力設定 |
+| PUT | `/api/v1/log-manage/log-output` | 管理者 | ログ出力設定を保存する |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 管理者 | ノードログファイルリスト |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 管理者 | ノードログの読み取り |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 管理者 | ノードログをローテーションする |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 管理者 | ストリームノードログ |
+| GET | `/api/v1/log-manage/policies` | 管理者 | ポリシー一覧 |
+| POST | `/api/v1/log-manage/policies` | 管理者 | ポリシーの作成 |
+| DELETE | `/api/v1/log-manage/policies/:id` | 管理者 | ポリシーの削除 |
+| GET | `/api/v1/log-manage/policies/:id` | 管理者 | ポリシーの詳細 |
+| PUT | `/api/v1/log-manage/policies/:id` | 管理者 | ポリシーの更新 |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | 管理者 | クリーンアップジョブリスト |
+| GET | `/api/v1/log-manage/policies/:id/log` | 管理者 | ログの読み取り |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | 管理者 | ストリームログ |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | 管理者 | 回転 |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 管理者 | コア標準出力ログを読み取る |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 管理者 | ストリームコア標準出力 |
+| GET | `/api/v1/log-manage/scheduler-config` | 管理者 | スケジュール設定 |
+| PUT | `/api/v1/log-manage/scheduler-config` | 管理者 | スケジュール設定を更新する |
+| GET | `/api/v1/log-manage/status` | 管理者 | ステータス |
+| POST | `/api/v1/log-manage/sync` | 管理者 | 同期クリーンアップポリシー |
+| GET | `/api/v1/log-manage/writers` | 管理者 | ライターステータス |
 
 ### バックアップ
 
@@ -969,16 +977,16 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | 管理者 | バックアップの削除 |
+| DELETE | `/api/v1/backups/:id` | スーパー管理者 | バックアップの削除 |
 | GET | `/api/v1/backups/:id/download` | 管理者 | バックアップをダウンロードする |
-| POST | `/api/v1/backups/:id/restore` | 管理者 | バックアップから復元する |
-| POST | `/api/v1/backups/:id/upload-ftp` | 管理者 | FTPにアップロード |
-| POST | `/api/v1/backups/:id/upload-s3` | 管理者 | S3にアップロード |
-| POST | `/api/v1/backups/:id/upload-webdav` | 管理者 | WebDAVにアップロード |
+| POST | `/api/v1/backups/:id/restore` | スーパー管理者 | バックアップから復元する |
+| POST | `/api/v1/backups/:id/upload-ftp` | スーパー管理者 | FTPにアップロード |
+| POST | `/api/v1/backups/:id/upload-s3` | スーパー管理者 | S3にアップロード |
+| POST | `/api/v1/backups/:id/upload-webdav` | スーパー管理者 | WebDAVにアップロード |
 | POST | `/api/v1/backups/create` | 管理者 | 完全バックアップの作成 (DB ダンプ付き) |
 | GET | `/api/v1/backups/list` | 管理者 | 完全なバックアップリスト |
-| POST | `/api/v1/backups/remote-restore` | 管理者 | リモートから復元する |
-| GET | `/api/v1/backups/restore-status` | 管理者 | 復元の進行状況 |
+| POST | `/api/v1/backups/remote-restore` | スーパー管理者 | リモートから復元する |
+| GET | `/api/v1/backups/restore-status` | スーパー管理者 | 復元の進行状況 |
 | GET | `/api/v1/backups/schedules` | 管理者 | スケジュールされたジョブのリスト |
 | POST | `/api/v1/backups/schedules` | 管理者 | スケジュールされたジョブを作成する |
 | DELETE | `/api/v1/backups/schedules/:id` | 管理者 | スケジュールされたジョブを削除する |
@@ -988,7 +996,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | DELETE | `/api/v1/backups/storages/:id` | 管理者 | ストレージ構成の削除 |
 | PUT | `/api/v1/backups/storages/:id` | 管理者 | ストレージ構成を更新する |
 | GET | `/api/v1/backups/storages/:id/files` | 管理者 | リモートバックアップファイルリスト |
-| POST | `/api/v1/backups/upload-restore` | 管理者 | バックアップと復元をアップロードする |
+| POST | `/api/v1/backups/upload-restore` | スーパー管理者 | バックアップと復元をアップロードする |
 
 ### システム設定
 
@@ -1001,8 +1009,8 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/system/config-file/:coreType` | 管理者 | コア構成ファイルを読み取る |
 | GET | `/api/v1/system/db-config` | 管理者 | データベース構成 |
 | PUT | `/api/v1/system/db-config` | 管理者 | データベース構成を更新する |
-| POST | `/api/v1/system/db-config/migrate` | 管理者 | データベースデータを移行する |
-| POST | `/api/v1/system/db-config/switch` | 管理者 | データベースの切り替え (ワンステップ移行あり) |
+| POST | `/api/v1/system/db-config/migrate` | スーパー管理者 | データベースデータを移行する |
+| POST | `/api/v1/system/db-config/switch` | スーパー管理者 | データベースの切り替え (ワンステップ移行あり) |
 | POST | `/api/v1/system/db-config/test` | 管理者 | データベース接続のテスト |
 | GET | `/api/v1/system/db-pool-stats` | 管理者 | 接続プールの統計 |
 | GET | `/api/v1/system/db-stats` | 管理者 | データベース統計 |
@@ -1011,13 +1019,13 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/system/encryption-key-status` | 管理者 | 暗号化キーのステータス |
 | GET | `/api/v1/system/env-config` | 管理者 | .env構成 |
 | PUT | `/api/v1/system/env-config` | 管理者 | .env 構成を更新する |
-| POST | `/api/v1/system/generate-encryption-key` | 管理者 | 暗号化キーを生成する |
+| POST | `/api/v1/system/generate-encryption-key` | スーパー管理者 | 暗号化キーを生成する |
 | GET | `/api/v1/system/github-config` | 管理者 | GitHub構成 |
 | PUT | `/api/v1/system/github-config` | 管理者 | GitHub 構成を更新する |
 | GET | `/api/v1/system/jwt-secret-status` | 管理者 | JWT キーのステータス |
 | GET | `/api/v1/system/maintenance` | 公開 | メンテナンスモードのステータス（公開） |
 | PUT | `/api/v1/system/maintenance` | 管理者 | メンテナンスモードの切り替え |
-| POST | `/api/v1/system/migrate-data` | 管理者 | データの移行 |
+| POST | `/api/v1/system/migrate-data` | スーパー管理者 | データの移行 |
 | GET | `/api/v1/system/notification-config` | 管理者 | 通知設定 |
 | PUT | `/api/v1/system/notification-config` | 管理者 | 通知構成を更新する |
 | GET | `/api/v1/system/notification-templates` | 管理者 | テンプレート一覧 |
@@ -1028,15 +1036,15 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | POST | `/api/v1/system/notification-templates/:id/send` | 管理者 | テスト通知を送信する |
 | GET | `/api/v1/system/panel-config` | 管理者 | パネル構成 |
 | PUT | `/api/v1/system/panel-config` | 管理者 | パネル構成を更新する |
-| GET | `/api/v1/system/reality-targets` | 管理者 | REALITY ターゲットリスト |
+| GET | `/api/v1/system/reality-targets` | 管理者 | REALITYターゲットリスト |
 | PUT | `/api/v1/system/reality-targets` | 管理者 | REALITY ターゲットを更新 |
-| POST | `/api/v1/system/reality-targets/reset` | 管理者 | REALITY ターゲットをデフォルトにリセット |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality ローカル SNI 設定を取得 |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality ローカル SNI 設定を更新 |
-| POST | `/api/v1/system/regenerate-jwt-secret` | 管理者 | JWTキーを再生成します |
+| POST | `/api/v1/system/reality-targets/reset` | スーパー管理者 | REALITY ターゲットをデフォルトにリセット |
+| GET | `/api/v1/system/reality-local-sni` | 管理者 | Reality ローカル SNI 構成を読み取る |
+| PUT | `/api/v1/system/reality-local-sni` | 管理者 | Reality ローカル SNI 構成を更新する |
+| POST | `/api/v1/system/regenerate-jwt-secret` | スーパー管理者 | JWTキーを再生成します |
 | GET | `/api/v1/system/releases` | 管理者 | 利用可能なバージョン |
-| POST | `/api/v1/system/restart` | 管理者 | 再起動 |
-| POST | `/api/v1/system/rollback` | 管理者 | システムのロールバック |
+| POST | `/api/v1/system/restart` | スーパー管理者 | 再起動 |
+| POST | `/api/v1/system/rollback` | スーパー管理者 | システムのロールバック |
 | GET | `/api/v1/system/settings` | 管理者 | 設定の読み取り |
 | PUT | `/api/v1/system/settings/batch` | 管理者 | 一括更新設定 |
 | GET | `/api/v1/system/stats` | 管理者 | システムステータス |
@@ -1045,7 +1053,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | POST | `/api/v1/system/telegram-chat-id` | 管理者 | Telegram チャット ID を取得する |
 | POST | `/api/v1/system/test-smtp` | 管理者 | SMTPをテストする |
 | POST | `/api/v1/system/test-telegram` | 管理者 | Telegramをテストする |
-| POST | `/api/v1/system/update` | 管理者 | システムアップグレード |
+| POST | `/api/v1/system/update` | スーパー管理者 | システムアップグレード |
 | GET | `/api/v1/system/update-jobs` | 管理者 | アップグレードジョブリスト |
 | POST | `/api/v1/system/upload-mtls-ca` | 管理者 | mTLS CA 証明書をアップロードする |
 
@@ -1055,8 +1063,9 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | 要サインイン | 監査イベントのリスト |
-| GET | `/api/v1/security/audit-events/export` | 要サインイン | 監査イベントのエクスポート |
+| GET | `/api/v1/security/audit-events` | 管理者 | 監査イベントのリスト |
+| GET | `/api/v1/security/audit-events/export` | 管理者 | 監査イベントのエクスポート |
+| GET | `/api/v1/security/subscription-access-logs` | 管理者 | サブスクリプション取得ログ (サブスクリプション ID / IP / クライアントの電子メールによるフィルター) |
 
 ### メトリクス
 
@@ -1064,9 +1073,9 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | 要サインイン | 証明書のメトリクス |
-| GET | `/api/v1/metrics/nodes` | 要サインイン | ノードメトリクス |
-| GET | `/api/v1/metrics/overview` | 要サインイン | 概要 |
+| GET | `/api/v1/metrics/certificates` | 管理者 | 証明書のメトリクス |
+| GET | `/api/v1/metrics/nodes` | 管理者 | ノードメトリクス |
+| GET | `/api/v1/metrics/overview` | 管理者 | 概要 |
 
 ### ポータルテンプレート
 
@@ -1074,20 +1083,20 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | 要サインイン | アクティブなテンプレート |
-| PUT | `/api/v1/portal/active` | 要サインイン | アクティブなテンプレートを更新する |
-| DELETE | `/api/v1/portal/cache` | 要サインイン | ポータルのキャッシュをクリアする |
-| GET | `/api/v1/portal/cache` | 要サインイン | キャッシュステータス |
-| PUT | `/api/v1/portal/cache/dev-mode` | 要サインイン | キャッシュ開発モードの切り替え |
-| POST | `/api/v1/portal/cache/rebuild` | 要サインイン | ポータルキャッシュを再構築する |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | 組み込み言語パック |
-| POST | `/api/v1/portal/reset` | 要サインイン | デフォルトのテンプレートを復元する |
-| GET | `/api/v1/portal/templates` | 要サインイン | リスト |
-| POST | `/api/v1/portal/templates` | 要サインイン | 作成 |
-| DELETE | `/api/v1/portal/templates/:id` | 要サインイン | 削除 |
-| GET | `/api/v1/portal/templates/:id` | 要サインイン | 詳細 |
-| PUT | `/api/v1/portal/templates/:id` | 要サインイン | アップデート |
-| POST | `/api/v1/portal/templates/:id/activate` | 要サインイン | テンプレートをアクティブ化する |
+| GET | `/api/v1/portal/active` | 管理者 | アクティブなテンプレート |
+| PUT | `/api/v1/portal/active` | 管理者 | アクティブなテンプレートを更新する |
+| DELETE | `/api/v1/portal/cache` | 管理者 | ポータルのキャッシュをクリアする |
+| GET | `/api/v1/portal/cache` | 管理者 | キャッシュステータス |
+| PUT | `/api/v1/portal/cache/dev-mode` | 管理者 | キャッシュ開発モードの切り替え |
+| POST | `/api/v1/portal/cache/rebuild` | 管理者 | ポータルキャッシュを再構築する |
+| GET | `/api/v1/portal/lang/builtin` | 管理者 | 組み込みの言語パック |
+| POST | `/api/v1/portal/reset` | 管理者 | デフォルトのテンプレートを復元する |
+| GET | `/api/v1/portal/templates` | 管理者 | リスト |
+| POST | `/api/v1/portal/templates` | 管理者 | 作成 |
+| DELETE | `/api/v1/portal/templates/:id` | 管理者 | 削除 |
+| GET | `/api/v1/portal/templates/:id` | 管理者 | 詳細 |
+| PUT | `/api/v1/portal/templates/:id` | 管理者 | アップデート |
+| POST | `/api/v1/portal/templates/:id/activate` | 管理者 | テンプレートをアクティブ化する |
 
 > `/portal/templates` CRUD は **高度な API** です。ポータル UI は主に `PUT /api/v1/portal/active` を使用します
 > (ワンショットのフルサイト構成);このグループで複数のテンプレートを管理/切り替えます。どちらもサポートされており、競合しません。
@@ -1103,7 +1112,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 | GET | `/api/v1/agent/version` | 管理者 | パネル上の現在のエージェントのバージョン |
 | GET | `/api/v1/agent/download` | 公開 | ダウンロードエージェント |
 | GET | `/api/v1/agent/install` | 公開 | インストールスクリプトを取得する |
-| GET | `/api/v1/agent/origin` | 公开 | パネルのオリジンアドレス（公開） |
+| GET | `/api/v1/agent/origin` | 公開 | パネル発信元アドレス (パブリック) |
 
 ### チャージコールバックエントリ
 
@@ -1136,79 +1145,75 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 ### クライアント認証とビジネス (管理エンジンで同じ設定)
 
-クライアント エンドポイントはポータルと同一です。詳細については、`portal-api.en.md`を参照してください。
+クライアント エンドポイントはポータルと同一です。管理者トークンではなく、**クライアント トークン** (`Authorization: Bearer <client_token>`) を使用します。詳細については、`portal-api.en.md`を参照してください。
 
 | 方法 | パス | 許可 | 説明 |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | 公開 | 記事一覧 |
-| GET | `/api/v1/client-auth/articles/:slug` | 公開 | 記事を取得 |
-| GET | `/api/v1/client-auth/balance` | 公開 | バランスを取る |
-| GET | `/api/v1/client-auth/balance/transactions` | 公開 | 残高取引 |
-| POST | `/api/v1/client-auth/change-password` | 公開 | パスワードを変更する |
-| POST | `/api/v1/client-auth/charge/create` | 公開 | リチャージ注文を作成する |
-| GET | `/api/v1/client-auth/charge/orders` | 公開 | リチャージ注文をリストする |
-| GET | `/api/v1/client-auth/charge/orders/:id` | 公開 | リチャージ注文の詳細を取得する |
-| POST | `/api/v1/client-auth/charge/redeem-card` | 公開 | カードを引き換える |
-| GET | `/api/v1/client-auth/charge/sites` | 公開 | リチャージサイトをリストアップする |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | 公開 | 充電ステータスのクエリ |
-| GET | `/api/v1/client-auth/checktime` | 公開 | サーバー時刻の取得 (クロック同期) |
-| GET | `/api/v1/client-auth/connection-info` | 公開 | プランの接続パラメータを取得する |
-| GET | `/api/v1/client-auth/gifts` | 公開 | ギフトをリストアップする |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | 公開 | ギフトを受け取る |
-| GET | `/api/v1/client-auth/invoices` | 公開 | 注文リスト |
-| GET | `/api/v1/client-auth/invoices/:id` | 公開 | 注文の詳細 |
-| GET | `/api/v1/client-auth/settings/whitelist` | 公開 | IP許可リストをリストする |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公開 | IP許可リストから削除 |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公開 | IPの自動追加 |
-| POST | `/api/v1/client-auth/login` | 公開 | サインイン |
-| POST | `/api/v1/client-auth/logout` | 公開 | サインアウト |
-| POST | `/api/v1/client-auth/logs/package` | 公開 | ログバンドルの作成 |
-| GET | `/api/v1/client-auth/logs/packages` | 公開 | ログバンドルをリストする |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | 公開 | ログバンドルを削除する |
-| GET | `/api/v1/client-auth/logs/packages/:id` | 公開 | ログバンドルを取得する |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | 公開 | ログバンドルをダウンロードする |
-| GET | `/api/v1/client-auth/logs/types` | 公開 | ログバンドルのヘルスチェック |
-| GET | `/api/v1/client-auth/me` | 公開 | 現在サインインしているユーザーを取得する |
-| GET | `/api/v1/client-auth/nodes` | 公開 | 私のノードリスト |
-| GET | `/api/v1/client-auth/nodes/:id/config` | 公開 | ノード構成 |
-| GET | `/api/v1/client-auth/nodes/:id/link` | 公開 | ノード共有リンク |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | 公開 | ノードQRコード |
-| GET | `/api/v1/client-auth/oauth/:provider` | 公開 | 承認する |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | 公開 | コールバック |
-| GET | `/api/v1/client-auth/oauth/providers` | 公開 | プロバイダーのステータス |
-| GET | `/api/v1/client-auth/orders` | 公開 | 注文リスト |
-| POST | `/api/v1/client-auth/orders` | 公開 | 注文の作成 |
-| GET | `/api/v1/client-auth/orders/:id` | 公開 | 注文の詳細 |
-| GET | `/api/v1/client-auth/plans` | 公開 | プラン一覧 |
-| GET | `/api/v1/client-auth/plans/:id` | 公開 | プラン詳細 |
-| GET | `/api/v1/client-auth/referral/code` | 公開 | 紹介確認コードを取得する |
-| GET | `/api/v1/client-auth/referral/records` | 公開 | 紹介記録の一覧表示 |
-| GET | `/api/v1/client-auth/referral/stats` | 公開 | 紹介統計を取得する |
-| POST | `/api/v1/client-auth/referral/withdraw` | 公開 | 撤回リクエスト |
-| GET | `/api/v1/client-auth/referral/withdrawals` | 公開 | 紹介の引き出しをリストする |
-| POST | `/api/v1/client-auth/refresh` | 公開 | リフレッシュ |
-| POST | `/api/v1/client-auth/register` | 公開 | 登録する |
-| POST | `/api/v1/client-auth/reset-subscription` | 公開 | サブスクリプションをリセットする |
-| PUT | `/api/v1/client-auth/settings` | 公開 | プロフィールを更新する |
-| POST | `/api/v1/client-auth/rotate-token` | 公開 | サブスクリプション トークンをローテーションする |
-| POST | `/api/v1/client-auth/self-unban` | 公開 | セルフサービスの禁止解除 |
-| PUT | `/api/v1/client-auth/settings` | 公開 | 設定を更新する |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公開 | IPの自動追加 |
-| GET | `/api/v1/client-auth/settings/whitelist` | 公開 | IP許可リストをリストする |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公開 | IP許可リストから削除 |
-| GET | `/api/v1/client-auth/shared-accounts` | 公開 | 共有アカウントをリストする |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | 公開 | 共有アカウントを取得する |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 公開 | 共有アカウントをリクエストする |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 公開 | 修理依頼 |
-| POST | `/api/v1/client-auth/ticket` | 公開 | 1 回限りの有効期限の短いチケットを発行する |
-| GET | `/api/v1/client-auth/tickets` | 公開 | チケットをリストする |
-| POST | `/api/v1/client-auth/tickets` | 公開 | チケットの作成 |
-| GET | `/api/v1/client-auth/tickets/:id` | 公開 | チケットを取得する |
-| POST | `/api/v1/client-auth/tickets/:id/close` | 公開 | チケットを閉じる |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | 公開 | チケットへの返信 |
-| GET | `/api/v1/client-auth/traffic-history` | 公開 | 交通履歴 |
-| GET | `/api/v1/client-auth/traffic-packs` | 公開 | トラフィックパックリスト |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | 公開 | トラフィックパックを購入する |
+| GET | `/api/v1/client-auth/articles` | クライアント (サインイン済み) | 記事一覧 |
+| GET | `/api/v1/client-auth/articles/:slug` | クライアント (サインイン済み) | 記事を取得 |
+| GET | `/api/v1/client-auth/balance` | クライアント (サインイン済み) | バランスをとる |
+| GET | `/api/v1/client-auth/balance/transactions` | クライアント (サインイン済み) | 残高取引 |
+| POST | `/api/v1/client-auth/change-password` | クライアント (サインイン済み) | パスワードを変更する |
+| POST | `/api/v1/client-auth/charge/create` | クライアント (サインイン済み) | リチャージ注文を作成する |
+| GET | `/api/v1/client-auth/charge/orders` | クライアント (サインイン済み) | リチャージ注文をリストする |
+| GET | `/api/v1/client-auth/charge/orders/:id` | クライアント (サインイン済み) | リチャージ注文の詳細を取得する |
+| POST | `/api/v1/client-auth/charge/redeem-card` | クライアント (サインイン済み) | カードを引き換える |
+| GET | `/api/v1/client-auth/charge/sites` | クライアント (サインイン済み) | リチャージサイトをリストアップする |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | クライアント (サインイン済み) | 充電ステータスのクエリ |
+| GET | `/api/v1/client-auth/checktime` | クライアント (サインイン済み) | サーバー時刻の取得 (クロック同期) |
+| GET | `/api/v1/client-auth/connection-info` | クライアント (サインイン済み) | プランの接続パラメータを取得する |
+| GET | `/api/v1/client-auth/gifts` | クライアント (サインイン済み) | ギフトをリストアップする |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | クライアント (サインイン済み) | ギフトを受け取る |
+| GET | `/api/v1/client-auth/invoices` | クライアント (サインイン済み) | 注文リスト |
+| GET | `/api/v1/client-auth/invoices/:id` | クライアント (サインイン済み) | 注文の詳細 |
+| POST | `/api/v1/client-auth/login` | クライアント（パブリック） | サインイン |
+| POST | `/api/v1/client-auth/logout` | クライアント (サインイン済み) | サインアウト |
+| POST | `/api/v1/client-auth/logs/package` | クライアント (サインイン済み) | ログバンドルの作成 |
+| GET | `/api/v1/client-auth/logs/packages` | クライアント (サインイン済み) | ログバンドルをリストする |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | クライアント (サインイン済み) | ログバンドルを削除する |
+| GET | `/api/v1/client-auth/logs/packages/:id` | クライアント (サインイン済み) | ログバンドルを取得する |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | クライアント (サインイン済み) | ログバンドルをダウンロードする |
+| GET | `/api/v1/client-auth/logs/types` | クライアント (サインイン済み) | ログバンドルのヘルスチェック |
+| GET | `/api/v1/client-auth/me` | クライアント (サインイン済み) | 現在サインインしているユーザーを取得する |
+| GET | `/api/v1/client-auth/nodes` | クライアント (サインイン済み) | 私のノードリスト |
+| GET | `/api/v1/client-auth/nodes/:id/config` | クライアント (サインイン済み) | ノード構成 |
+| GET | `/api/v1/client-auth/nodes/:id/link` | クライアント (サインイン済み) | ノード共有リンク |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | クライアント (サインイン済み) | ノードQRコード |
+| GET | `/api/v1/client-auth/oauth/:provider` | クライアント（パブリック） | 承認する |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | クライアント（パブリック） | コールバック |
+| GET | `/api/v1/client-auth/oauth/providers` | クライアント（パブリック） | プロバイダーのステータス |
+| GET | `/api/v1/client-auth/orders` | クライアント (サインイン済み) | 注文リスト |
+| POST | `/api/v1/client-auth/orders` | クライアント (サインイン済み) | 注文の作成 |
+| GET | `/api/v1/client-auth/orders/:id` | クライアント (サインイン済み) | 注文の詳細 |
+| GET | `/api/v1/client-auth/plans` | クライアント (サインイン済み) | プラン一覧 |
+| GET | `/api/v1/client-auth/plans/:id` | クライアント (サインイン済み) | プラン詳細 |
+| GET | `/api/v1/client-auth/referral/code` | クライアント (サインイン済み) | 紹介確認コードを取得する |
+| GET | `/api/v1/client-auth/referral/records` | クライアント (サインイン済み) | 紹介記録の一覧表示 |
+| GET | `/api/v1/client-auth/referral/stats` | クライアント (サインイン済み) | 紹介統計を取得する |
+| POST | `/api/v1/client-auth/referral/withdraw` | クライアント (サインイン済み) | 撤回リクエスト |
+| GET | `/api/v1/client-auth/referral/withdrawals` | クライアント (サインイン済み) | 紹介の引き出しをリストする |
+| POST | `/api/v1/client-auth/refresh` | クライアント（パブリック） | リフレッシュ |
+| POST | `/api/v1/client-auth/register` | クライアント（パブリック） | 登録する |
+| POST | `/api/v1/client-auth/reset-subscription` | クライアント (サインイン済み) | サブスクリプションをリセットする |
+| POST | `/api/v1/client-auth/rotate-token` | クライアント (サインイン済み) | サブスクリプション トークンをローテーションする |
+| POST | `/api/v1/client-auth/self-unban` | クライアント (サインイン済み) | セルフサービスの禁止解除 |
+| PUT | `/api/v1/client-auth/settings` | クライアント (サインイン済み) | 設定を更新する |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | クライアント (サインイン済み) | IPの自動追加 |
+| GET | `/api/v1/client-auth/settings/whitelist` | クライアント (サインイン済み) | IP許可リストをリストする |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | クライアント (サインイン済み) | IP許可リストから削除 |
+| GET | `/api/v1/client-auth/shared-accounts` | クライアント (サインイン済み) | 共有アカウントをリストする |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | クライアント (サインイン済み) | 共有アカウントを取得する |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | クライアント (サインイン済み) | 共有アカウントをリクエストする |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | クライアント (サインイン済み) | 修理依頼 |
+| POST | `/api/v1/client-auth/ticket` | クライアント (サインイン済み) | 1 回限りの有効期限の短いチケットを発行する |
+| GET | `/api/v1/client-auth/tickets` | クライアント (サインイン済み) | チケットをリストする |
+| POST | `/api/v1/client-auth/tickets` | クライアント (サインイン済み) | チケットの作成 |
+| GET | `/api/v1/client-auth/tickets/:id` | クライアント (サインイン済み) | チケットを取得する |
+| POST | `/api/v1/client-auth/tickets/:id/close` | クライアント (サインイン済み) | チケットを閉じる |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | クライアント (サインイン済み) | チケットへの返信 |
+| GET | `/api/v1/client-auth/traffic-history` | クライアント (サインイン済み) | 交通履歴 |
+| GET | `/api/v1/client-auth/traffic-packs` | クライアント (サインイン済み) | トラフィックパックリスト |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | クライアント (サインイン済み) | トラフィックパックを購入する |
 
 ### 定期購入の配信
 
@@ -1242,7 +1247,7 @@ geoip/geosite データ ソースとファイルの同期と配信。
 
 ### サービス アクセス ポリシー (廃止)
 
-> `/services/:id/access-policies` と `/services/:id/ip-bans` は 2026 年 10 月 20 日に廃止されました。
+> `/services/:id/access-policies` および `/services/:id/ip-bans` は 2026 年 10 月 20 日に廃止されました。
 > 管理者呼び出しや接続パスがこれらのポリシーを消費することはありません。
 
 ### トラフィッククォータの監視

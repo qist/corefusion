@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: de | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: de | updated: 2026-11-16 -->
 # Abonnement API (öffentlich)
 
 > Sprachen: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · Deutsch · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 | `config` | Name der Konfigurationsvorlage (definiert unter „Abonnementformate“ in der Admin-Benutzeroberfläche). Muss dasselbe Format wie `format` dieser Anfrage verwenden, andernfalls wird es ignoriert |
 | `platform` | Ordnen Sie eine Konfigurationsvorlage anhand des Plattformnamens zu (wird verwendet, wenn `config` weggelassen wird). Auch das Format muss übereinstimmen |
 | `providers` | Nur `mihomo_yaml`: `1` / `true` aktiviert den **Provider-Modus** (`proxy-providers` ausgeben und über `use` referenzieren); Der Standardwert oder ein anderer Wert sorgt dafür, dass die Knoten unter `proxies` inline bleiben. Siehe §6 |
+| `provider` | Nur `mihomo_proxies_yaml`: Mit einem Anbieterschlüssel wird nur die Knotenteilmenge dieser Quelle zurückgegeben (Abrechnungspseudoknoten ausgeschlossen); empty gibt alle Knoten zurück. Das vom Panel generierte `proxy-providers.url` schließt es automatisch ein |
 
 ### Unterstützte `format`-Werte
 
@@ -34,7 +35,7 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 | `singbox_json` | Vollständige sing-box JSON-Konfiguration | sing-box / SFI / FLClash (sing-box-Kern) |
 | `xray_json` | Vollständige Xray JSON-Konfiguration | Xray-Kern |
 
-> Es gilt Protokoll-/Formatkompatibilität: Beispielsweise erscheint `anytls` nur in den sing-box/Mihomo-Formaten; **REALITY-Knoten, die von xray bedient werden, sind von sing-box-Abonnements ausgeschlossen** (sing-box unterstützt nicht die REALITY-Implementierung von xray, siehe sing-box#4520), werden aber weiterhin in Xray-Abonnements angezeigt, während **REALITY-Knoten von bedient werden sing-box funktioniert sowohl in Xray- als auch in sing-box-Abonnements**. Knoten, die der Client nicht erkennen kann, werden automatisch gelöscht, anstatt dass das gesamte Abonnement fehlschlägt.
+> Es gilt Protokoll-/Formatkompatibilität: Beispielsweise erscheint `anytls` nur in den Formaten sing-box/Mihomo; **REALITY-Knoten, die von xray bedient werden, sind von sing-box-Abonnements ausgeschlossen** (sing-box unterstützt die REALITY-Implementierung von xray nicht, siehe sing-box#4520), werden aber weiterhin in Xray-Abonnements angezeigt, während **REALITY-Knoten von bedient werden sing-box funktioniert sowohl in Xray- als auch in sing-box-Abonnements**. Knoten, die der Client nicht erkennen kann, werden automatisch gelöscht, anstatt dass das gesamte Abonnement fehlschlägt.
 
 ## 3. Antwortheader
 
@@ -53,8 +54,9 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 |---|---|---|
 | 200 | — | Normal (Hauptteil ist das in `format` gerenderte Abonnement) |
 | 400 | `MISSING_TOKEN` | Kein Token im URL |
-| 403 | (Klartext) | Abonnement ausgesetzt / abgelaufen / inaktiv. Die Nachricht wird über `Accept-Language` lokalisiert (zh/en/ja/ko) und ist ein einzeiliger Grund |
+| 403 | (Klartext) | Abonnement ausgesetzt/abgelaufen/inaktiv/IP nicht auf der Whitelist. Die Nachricht wird über `Accept-Language` lokalisiert (zh/en/ja/ko/ru) und ist ein einzeiliger Grund |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Token existiert nicht |
+| 429 | `TOO_MANY_REQUESTS` | Ratenlimit für Abonnement-Endpunkt (`SubscribeRateLimit`) erreicht; JSON-Fehler, versuchen Sie es später noch einmal |
 
 > Widerrufene Abonnements werden als nicht vorhanden behandelt (404).
 
@@ -116,13 +118,13 @@ Anbieterarten:
 | Freundlich | Schlüssel | Notizen |
 |---|---|---|
 | Intern | Bereinigter Knotengruppenname | Pro Planknotengruppe generiert; enthält nur die Knoten dieser Gruppe |
-| Reserviert (veraltet) | `subscription-nodes` | Wird nicht mehr in `proxy-providers` ausgegeben; eine referenzierende Gruppe wird in konkrete Anbieter aufgelöst, ohne konkrete Anbieter werden Knoten direkt eingebettet |
+| Reserviert (veraltet) | `subscription-nodes` | Wird in `proxy-providers` nicht mehr ausgegeben; Eine Gruppe, die darauf verweist, wird auf konkrete Anbieter erweitert oder Knoten eingefügt, wenn der Plan keine enthält |
 | Extern | Im Plan konfigurierter Name | Externe Quelle (`http` YAML oder `file`) |
 
 Gemeinsame Felder pro Anbieter:
 
 - `url` – verweist auf dieses Abonnement mit `format=mihomo_proxies_yaml` und erbt `config` / `platform` von der Hauptanfrage; interne Anbieter hängen `provider=<key>` an;
-- `path` – **immer abgeleitet von „internen Anbieterstandards → Cache-Pfadvorlage“** (Standard `./providers/{key}.yaml`, ersetzt durch `{key}`). Auch externe Anbieter können keinen eigenen Weg vorgeben;
+- `path` – **immer abgeleitet von „internen Anbieterstandards → Cache-Pfadvorlage“** (Standard `./providers/{key}.yaml`, `{key}` ersetzt). Auch externe Anbieter können keinen eigenen Weg vorgeben;
 - `health-check` — `enable / url / interval`; interne Anbieter erben die Standardeinstellungen, externe Anbieter konfigurieren sie im Plan;
 - `interval` – Aktualisierungsintervall in Sekunden.
 
@@ -131,7 +133,7 @@ Gemeinsame Felder pro Anbieter:
 „Abonnementcenter → Abonnementendpunkte“ kann **mehrere** Datensätze enthalten (Domäne + Pfad + aktiviert). Der Anbieter `url` wählt die Domain in dieser Reihenfolge aus:
 
 1. **Die von dieser Anfrage tatsächlich verwendete Domäne**: der erste Wert von `X-Forwarded-Host` (Port entfernt), andernfalls `Host`; es muss mit einem **aktivierten** Endpunkt übereinstimmen;
-2. Wenn nichts übereinstimmt, greifen Sie auf den aktivierten Endpunkt mit der **niedrigsten ID** zurück;
+2. Wenn nichts übereinstimmt, greifen Sie auf den aktivierten Endpunkt mit der **niedrigsten ID** zurück.
 3. Der Pfad kommt vom übereinstimmenden Endpunkt (`path`, Standard `/`) und ergibt `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
 
 Folgen:
@@ -144,7 +146,7 @@ Reverse-Proxys müssen `X-Forwarded-Proto` und `X-Forwarded-Host` weiterleiten; 
 
 ## 7. Notizen
 
-- **Format und Konfiguration sind eng miteinander verbunden**: Die von `config`/`platform` ausgewählte Vorlage muss mit der `format` dieser Anfrage übereinstimmen; Nicht übereinstimmende Vorlagen werden ignoriert – dies verhindert das Einfügen von Mihomo-Regeln in sing-box/Xray JSON.
+- **Format und Konfiguration sind eng miteinander verbunden**: Die von `config`/`platform` ausgewählte Vorlage muss mit der `format` dieser Anfrage übereinstimmen. Nicht übereinstimmende Vorlagen werden ignoriert – dies verhindert das Einfügen von Mihomo-Regeln in sing-box/Xray JSON.
 - **`providers=1` betrifft nur Mihomo YAML**: sing-box / Xray / base64 / raw ignorieren es (Knoten bleiben inline).
 - **Ratenbegrenzung**: Der Abonnementendpunkt hat sein eigenes Limit (`SubscribeRateLimit`); Beleidigende Klienten werden abgewiesen.
 - **Zugriffsprotokoll**: Bei jedem Abruf werden IP-/UA-/CDN-Informationen aufgezeichnet, sichtbar unter „Abonnement-Zugriffsprotokoll“ in der Admin-Benutzeroberfläche.

@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: vi | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: vi | updated: 2026-11-16 -->
 # Đăng ký API (công khai)
 
 > Ngôn ngữ: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · Tiếng Việt · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@ Tìm nạp danh sách nút đăng ký của người dùng. **Đây là điểm 
 | `config` | Tên mẫu cấu hình (được xác định trong “Định dạng đăng ký” trong giao diện người dùng quản trị viên). Phải sử dụng cùng định dạng với `format` của yêu cầu này, nếu không nó sẽ bị bỏ qua |
 | `platform` | Khớp mẫu cấu hình theo tên nền tảng (được sử dụng khi bỏ qua `config`); định dạng cũng phải phù hợp |
 | `providers` | Chỉ `mihomo_yaml`: `1` / `true` bật **Chế độ nhà cung cấp** (phát ra `proxy-providers` và tham chiếu chúng qua `use`); mặc định hoặc bất kỳ giá trị nào khác giữ cho các nút nằm trong `proxies`. Xem §6 |
+| `provider` | Chỉ `mihomo_proxies_yaml`: chỉ với khóa nhà cung cấp, tập hợp con nút của nguồn đó được trả về (loại trừ các nút giả thanh toán); trống trả về tất cả các nút. `proxy-providers.url` do bảng tạo tự động bao gồm nó |
 
 ### Các giá trị `format` được hỗ trợ
 
@@ -53,8 +54,9 @@ Tìm nạp danh sách nút đăng ký của người dùng. **Đây là điểm 
 |---|---|---|
 | 200 | — | Bình thường (nội dung là đăng ký được hiển thị trong `format`) |
 | 400 | `MISSING_TOKEN` | Không có mã thông báo trong URL |
-| 403 | (văn bản thuần túy) | Đăng ký bị đình chỉ/hết hạn/không hoạt động. Thông báo được bản địa hóa (zh/en/ja/ko) qua `Accept-Language` và là lý do một dòng |
+| 403 | (văn bản thuần túy) | Đăng ký bị đình chỉ/hết hạn/không hoạt động/IP không nằm trong danh sách trắng. Thông báo được bản địa hóa (zh/en/ja/ko/ru) thông qua `Accept-Language` và là lý do một dòng |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Mã thông báo không tồn tại |
+| 429 | `TOO_MANY_REQUESTS` | Đã đạt giới hạn tốc độ điểm cuối đăng ký (`SubscribeRateLimit`); Lỗi JSON, thử lại sau |
 
 > Đăng ký bị thu hồi được coi là không tồn tại (404).
 
@@ -116,13 +118,13 @@ Các loại nhà cung cấp:
 | loại | Chìa khóa | Ghi chú |
 |---|---|---|
 | nội bộ | Tên nhóm nút được vệ sinh | Được tạo cho mỗi nhóm nút kế hoạch; chỉ chứa các nút của nhóm đó |
-| Đã đặt trước (không dùng) | `subscription-nodes` | Không còn xuất hiện trong `proxy-providers`; nhóm tham chiếu sẽ được mở rộng thành các provider cụ thể, nếu không có thì nhúng trực tiếp các nút |
+| Dành riêng (không dùng nữa) | `subscription-nodes` | Không còn phát ra trong `proxy-providers`; một nhóm tham chiếu đến nó sẽ mở rộng đến các nhà cung cấp cụ thể hoặc các nút nội tuyến khi kế hoạch không có |
 | Bên ngoài | Tên được cấu hình trên gói | Nguồn bên ngoài (`http` YAML hoặc `file`) |
 
 Các trường phổ biến cho mỗi nhà cung cấp:
 
 - `url` - quay lại đăng ký này với `format=mihomo_proxies_yaml`, kế thừa `config` / `platform` từ yêu cầu chính; nhà cung cấp nội bộ bổ sung `provider=<key>`;
-- `path` — **luôn bắt nguồn từ “mặc định của nhà cung cấp nội bộ → mẫu đường dẫn bộ đệm”** (`./providers/{key}.yaml` mặc định, `{key}` được thay thế). Các nhà cung cấp bên ngoài cũng không thể thiết lập con đường riêng của họ;
+- `path` — **luôn bắt nguồn từ “giá trị mặc định của nhà cung cấp nội bộ → mẫu đường dẫn bộ đệm”** (`./providers/{key}.yaml` mặc định, `{key}` được thay thế). Các nhà cung cấp bên ngoài cũng không thể thiết lập con đường riêng của họ;
 - `health-check` — `enable / url / interval`; nhà cung cấp nội bộ kế thừa các giá trị mặc định, nhà cung cấp bên ngoài định cấu hình nó trên gói;
 - `interval` - khoảng thời gian làm mới tính bằng giây.
 
@@ -138,7 +140,7 @@ Hậu quả:
 
 - Một khách hàng đang tìm nạp thông qua một miền mới sẽ nhận được miền đó bên trong nhà cung cấp — **không cần thay đổi bảng điều khiển**;
 - Tên miền cũ vẫn được bật trong danh sách không còn được mã hóa cứng nữa;
-- Nếu một khách hàng đã lưu vào bộ đệm của nhà cung cấp cũ URL, việc cập nhật đăng ký (hoặc xóa bộ nhớ đệm của nhà cung cấp/khởi động lại khách hàng) sẽ chuyển đổi đăng ký đó.
+- Nếu một khách hàng đã lưu vào bộ nhớ đệm của nhà cung cấp cũ URL, việc cập nhật đăng ký (hoặc xóa bộ nhớ đệm của nhà cung cấp/khởi động lại khách hàng) sẽ chuyển đổi đăng ký đó.
 
 Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` và `X-Forwarded-Host`; nếu không thì điểm cuối dự phòng sẽ được sử dụng. Các mẫu trang web Caddy / Nginx do bảng điều khiển tạo đã bao gồm cả hai tiêu đề (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); thêm chúng theo cách thủ công nếu bạn duy trì cấu hình proxy bằng tay.
 
@@ -147,6 +149,6 @@ Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` và `X-Forwarded-Host`
 - **Định dạng và cấu hình được kết hợp chặt chẽ**: mẫu được `config`/`platform` chọn phải khớp với `format` của yêu cầu này; các mẫu không khớp sẽ bị bỏ qua - điều này ngăn việc đưa các quy tắc Mihomo vào sing-box/Xray JSON.
 - **`providers=1` chỉ ảnh hưởng đến Mihomo YAML**: sing-box / Xray / base64 / raw bỏ qua nó (các nút vẫn nằm trong dòng).
 - **Giới hạn tỷ lệ**: điểm cuối đăng ký có giới hạn riêng (`SubscribeRateLimit`); khách hàng lạm dụng bị từ chối.
-- **Nhật ký truy cập**: mọi lần tìm nạp đều ghi lại thông tin IP / UA / CDN, hiển thị trong phần “Nhật ký truy cập đăng ký” trong giao diện người dùng quản trị viên.
+- **Nhật ký truy cập**: mọi lần tìm nạp đều ghi lại thông tin IP / UA / CDN, hiển thị trong “Nhật ký truy cập đăng ký” trong giao diện người dùng quản trị viên.
 - Nếu không có miền được định cấu hình trên cổng đăng ký chuyên dụng, `X-Forwarded-Proto` / `X-Forwarded-Host` của yêu cầu sẽ được sử dụng; đảm bảo proxy ngược của bạn chuyển tiếp cả hai tiêu đề.
 - Trong triển khai đa miền, hãy giữ danh sách điểm cuối được căn chỉnh với các miền mà khách hàng thực sự sử dụng; xem §6.2.

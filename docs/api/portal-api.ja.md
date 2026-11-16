@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: ja | updated: 2026-11-16 -->
 # ポータル API リファレンス (クライアント / ポータル API)
 
 > 言語： [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · 日本語 · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | 公開記事（公開のみ） |
 | GET | `/api/v1/public/articles/:slug` | 記事詳細 |
 | GET | `/api/v1/public/client-configs` | クライアントのダウンロード構成 |
-| GET | `/sub/:token` | サブスクリプション配信 (`format` は、base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json などを返します。取り消し/欠落 → 404、一時停止/期限切れ/非アクティブ → 403 を参照。[subscription.md](./subscription.ja.md) を参照) |
+| GET | `/sub/:token` | サブスクリプション配信 (`format` は、base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json などを返します。取り消し/欠落 → 404、一時停止/期限切れ/非アクティブ → 403 を参照。[subscription.md](./subscription.md) を参照) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth プロバイダーの可視性: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | メンテナンス状況（公開）。有効にすると、ポータルにメンテナンス ページが表示されます |
 
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | 方法 | パス | 説明 |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | 現在のクライアント: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (`data` エンベロープ) |
+| PUT | `/api/v1/client-auth/settings` | クライアントのセルフサービス設定を更新します。本文: `{ip_whitelist, device_limit}`;空の `ip_whitelist` は送信元 IP 制限がないことを意味します |
 | POST | `/api/v1/client-auth/change-password` | 本体：`{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | サーバー時刻 (クライアント時計の同期) |
 | GET | `/api/v1/client-auth/connection-info` | 最新プランの接続パラメータ: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -147,14 +148,14 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
 | GET | `/api/v1/client-auth/balance/transactions` | 残高トランザクション (`type`: チャージ/消費/返金、ページ分割) |
-| GET | `/api/v1/client-auth/charge/sites` | 利用可能な充電サイト (`ListChargeSites`: 有効のみ) |
-| POST | `/api/v1/client-auth/charge/create` | リチャージ注文の作成 (サードパーティの支払いにリダイレクト) |
+| GET | `/api/v1/client-auth/charge/sites` | 利用可能なリチャージ サイト (`ListChargeSites`: 有効のみ) |
+| POST | `/api/v1/client-auth/charge/create` | リチャージ注文を作成する（サードパーティの支払いにリダイレクト） |
 | GET | `/api/v1/client-auth/charge/orders` | リチャージ注文リスト |
 | GET | `/api/v1/client-auth/charge/orders/:id` | リチャージ注文の詳細 |
 | GET | `/api/v1/client-auth/charge/status/:trade_no` | trade_no ごとに支払いステータスをポーリングします |
 | POST | `/api/v1/client-auth/charge/redeem-card` | リチャージカードを引き換える |
 
-> クライアントを削除すると、残高とトランザクションに**カスケード**されます (`internal/service/client/service.go` の `DeleteClient` を参照)。
+> クライアントを削除すると、その残高とトランザクションに **カスケード** されます (`internal/service/client/service.go` の `DeleteClient` を参照)。
 
 ## 9. ギフト/トラフィック履歴
 
@@ -178,7 +179,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 
 | 方法 | パス | 説明 |
 |---|---|---|
-| GET | `/api/v1/client-auth/articles` | 記事一覧（カテゴリフィルターあり） |
+| GET | `/api/v1/client-auth/articles` | 記事一覧（カテゴリーフィルターあり） |
 | GET | `/api/v1/client-auth/articles/:slug` | 記事詳細 |
 
 ## 12. 紹介 (デフォルトでは無効になっています。ポータル エディターで有効にできます)
@@ -200,36 +201,36 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/shared-accounts/:id/apply` | アクセスをリクエストする |
 | POST | `/api/v1/client-auth/shared-accounts/:id/repair` | ワンクリック修復 |
 
-## 14. ログバンドル (加入者診断)
+## 14. Log bundles (subscriber diagnostics)
 
 | 方法 | パス | 説明 |
 |---|---|---|
-| GET | `/api/v1/client-auth/logs/types` | バンドルできるログの種類 |
+| GET | `/api/v1/client-auth/logs/types` | Log types that can be bundled |
 | GET | `/api/v1/client-auth/logs/packages` | 私のログバンドル |
-| POST | `/api/v1/client-auth/logs/package` | ログ バンドル ジョブの作成 (エントリ ノードのみ) |
-| GET | `/api/v1/client-auth/logs/packages/:id` | ジョブのステータス (準備完了/処理中/失敗) |
+| POST | `/api/v1/client-auth/logs/package` | Create a log bundling job (entry nodes only) |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Job status (ready/processing/failed) |
 | GET | `/api/v1/client-auth/logs/packages/:id/download` | ダウンロード (`POST /ticket` を優先し、`?ticket=` を追加) |
 | DELETE | `/api/v1/client-auth/logs/packages/:id` | ログバンドルを削除する |
 
-## 15. セキュリティ設定 / IP許可リスト / 自己禁止解除
+## 15. Security settings / IP allow-list / self-unban
 
 | 方法 | パス | 説明 |
 |---|---|---|
-| GET/PUT | `/api/v1/client-auth/settings` | クライアント設定: `{ip_whitelist, device_limit}` (PUT) |
+| GET/PUT | `/api/v1/client-auth/settings` | Client settings: `{ip_whitelist, device_limit}` (PUT) |
 | GET | `/api/v1/client-auth/settings/whitelist` | 許可リスト (ベア配列) |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 許可リストのエントリを削除する |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 現在の IP を許可リストに追加します |
-| POST | `/api/v1/client-auth/self-unban` | セルフサービスの禁止解除 (ポリシーにより試行が制限されています) |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Delete an allow-list entry |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Add the current IP to the allow-list |
+| POST | `/api/v1/client-auth/self-unban` | Self-service unban (attempts limited by policy) |
 
 > IP 許可リストは **サブスクリプション URL にのみ適用されます** (`/sub/:token`)。ポータルのサインイン/OAuth はブロックされません。
-> 他のクライアント認証エンドポイント。ユーザーに許可リストがない場合、またはサブスクリプション URL がない場合、アクセスは常に許可されます。の
-> ホワイトリストはユーザーごとの設定です。グローバルスイッチはありません。
+> other client-auth endpoints.ユーザーに許可リストがない場合、またはサブスクリプション URL がない場合、アクセスは常に許可されます。の
+> allow-list is a per-user setting; there is no global switch.
 
 **自己禁止フロー**: 管理者側の場合、`auto_quota` (トラフィック超過の自動禁止) でのみ利用可能
 `self_unban.enabled`がオンです。サインイン (パスワードまたは OAuth コールバック) は `require_self_unban=true` + `self_unban_token` を返します
 (typ=self_unban、有効な 15 分、`POST /self-unban` でのみ使用可能、他のエンドポイントは 403/`SELF_UNBAN_TOKEN_SCOPE` を返します)。
-次に、ポータルに禁止解除カードが表示されます。禁止解除に成功すると、ユーザーは再度サインインします。 OAuth コールバックはこれを経由して配信します
-URL フラグメント `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`。
+The portal then shows the unban card;禁止解除に成功すると、ユーザーは再度サインインします。 OAuth callbacks deliver this via
+the URL fragment `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 
 ## 16. エラーコード（抜粋）
 
@@ -245,13 +246,13 @@ URL フラグメント `#require_self_unban=1&self_unban_token=..&self_unban_hin
 
 サインイン カードの下部にある「プライバシー ポリシー · 利用規約」のリンク (通常のサイトと同じです。クリックするとコンテンツが開きます)。
 
-- **設定**: ポータル エディター → 設定 → 一般 → コンプライアンス ドキュメント (**言語ごとにコンテンツを編集**);
- 構造化フィールド `PUT /api/v1/portal/active` を使用することもできます `privacy_policy_url` / `privacy_policy_content` /
+- **設定**: ポータル エディター → 設定 → 一般 → コンプライアンス ドキュメント (**言語ごとにコンテンツを編集**)。
+ 構造化フィールド `privacy_policy_url` / `privacy_policy_content` / を使用して `PUT /api/v1/portal/active` を実行することもできます。
  `terms_of_service_url` / `terms_of_service_content` (nil = 変更なし、コンテンツは `{"zh-CN":"...","en":"..."}` マップ)。
-- **スタンドアロンのアクセス可能なページ** (サーバーレンダリング、Google 検証クローラーにとって簡単、`?lang=xx` をサポート):
+- **スタンドアロンでアクセス可能なページ** (サーバーレンダリング、Google 検証クローラーにとって簡単、`?lang=xx` をサポート):
   - メインパネルドメイン: `GET /p/legal/privacy`、`GET /p/legal/terms`
   - 専用ポータル ドメイン (ルート展開): `GET /legal/privacy`、`GET /legal/terms`
-- **表示ロジック**: URL またはコンテンツ、**URL が優先** (新しいタブで外部に開きます)。コンテンツが提供されている場合は、
+- **表示ロジック**: URL またはコンテンツ、**URL が勝ち** (新しいタブで外部に開きます)。コンテンツが提供されている場合は、
  サインイン カードは、現在のポータル言語を使用してダイアログ (`renderMd`) に Markdown をレンダリングします。
 - 実行時に `/api/v1/public/portal-config` 経由で配信されます。サインインコンポーネントは消費します
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`。

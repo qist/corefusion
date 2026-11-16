@@ -16,8 +16,11 @@
 | 公开 | 无需登录（仍可能有维护模式守卫 / 限流） |
 | 公开·限流 | 无需登录，且带专用限流 |
 | 登录 | 需已登录的管理端 token（`AuthRequired`） |
+| 操作员 | 需角色 ≥ `operator`（`RequireRole(RoleOperator)`） |
 | 管理员 | 需角色 ≥ `admin`（`RequireRole(RoleAdmin)`） |
 | 超级管理员 | 需角色 = `super_admin` |
+| 客户端公开 | 无需客户端 token（登录 / 注册等） |
+| 客户端登录 | 需 `Authorization: Bearer <client_token>`（客户端门户口令，不是管理员 token） |
 
 角色等级：`viewer(10) < operator(20) < admin(30) < super_admin(40)`；不满足返回 403 `INSUFFICIENT_ROLE`。
 
@@ -195,8 +198,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | 公开 | 登录完成 |
 | POST | `/api/v1/auth/passkey/register/begin` | 登录 | 注册发起 |
 | POST | `/api/v1/auth/passkey/register/finish` | 登录 | 注册完成 |
-| GET | `/api/v1/auth/passkey/rpids` | 登录 | RP ID 白名单列表 |
-| POST | `/api/v1/auth/passkey/rpids` | 登录 | 更新 RP ID 白名单 |
+| GET | `/api/v1/auth/passkey/rpids` | 管理员 | RP ID 白名单列表 |
+| POST | `/api/v1/auth/passkey/rpids` | 管理员 | 更新 RP ID 白名单 |
 | GET | `/api/v1/auth/passkey/status` | 公开 | 状态 |
 | POST | `/api/v1/auth/refresh` | 公开 | 刷新 |
 | POST | `/api/v1/auth/ticket` | 登录 | 签发一次性短时票据 |
@@ -219,17 +222,17 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/clients` | 登录 | 列表客户 |
-| POST | `/api/v1/clients` | 登录 | 创建客户。body：`{"email":"user@example.com","password":"明文密码","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`。`plan_id` 必填，`password` 可空（客户后续在门户自设） |
-| DELETE | `/api/v1/clients/:id` | 登录 | 删除客户 |
+| POST | `/api/v1/clients` | 操作员 | 创建客户。body：`{"email":"user@example.com","password":"明文密码","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`。`plan_id` 必填，`password` 可空（客户后续在门户自设） |
+| DELETE | `/api/v1/clients/:id` | 操作员 | 删除客户 |
 | GET | `/api/v1/clients/:id` | 登录 | 获取客户 |
-| PUT | `/api/v1/clients/:id` | 登录 | 更新客户 |
-| POST | `/api/v1/clients/:id/downgrade` | 登录 | 客户降级 |
+| PUT | `/api/v1/clients/:id` | 操作员 | 更新客户 |
+| POST | `/api/v1/clients/:id/downgrade` | 操作员 | 客户降级 |
 | GET | `/api/v1/clients/:id/orders` | 登录 | 客户的订单列表 |
-| POST | `/api/v1/clients/:id/renew` | 登录 | 客户续费 |
-| POST | `/api/v1/clients/:id/reset-usage` | 登录 | 重置用量 |
-| POST | `/api/v1/clients/:id/restore` | 登录 | 恢复客户 |
-| POST | `/api/v1/clients/:id/suspend` | 登录 | 暂停客户 |
-| POST | `/api/v1/clients/:id/upgrade` | 登录 | 客户升级 |
+| POST | `/api/v1/clients/:id/renew` | 操作员 | 客户续费 |
+| POST | `/api/v1/clients/:id/reset-usage` | 操作员 | 重置用量 |
+| POST | `/api/v1/clients/:id/restore` | 操作员 | 恢复客户 |
+| POST | `/api/v1/clients/:id/suspend` | 操作员 | 暂停客户 |
+| POST | `/api/v1/clients/:id/upgrade` | 操作员 | 客户升级 |
 
 ### 套餐模板
 
@@ -238,17 +241,17 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | 登录 | 模板列表 |
-| POST | `/api/v1/plan-templates` | 登录 | 创建模板 |
-| DELETE | `/api/v1/plan-templates/:id` | 登录 | 删除模板 |
+| POST | `/api/v1/plan-templates` | 管理员 | 创建模板 |
+| DELETE | `/api/v1/plan-templates/:id` | 管理员 | 删除模板 |
 | GET | `/api/v1/plan-templates/:id` | 登录 | 模板详情 |
-| PUT | `/api/v1/plan-templates/:id` | 登录 | 更新模板 |
+| PUT | `/api/v1/plan-templates/:id` | 管理员 | 更新模板 |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | 登录 | 获取可用节点 |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | 登录 | 获取计费节点选项 |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | 登录 | 设置模板节点分组 |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | 登录 | 同步账号给模板 |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | 管理员 | 设置模板节点分组 |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | 管理员 | 同步账号给模板 |
 | GET | `/api/v1/plan-templates/:id/variants` | 登录 | 变体列表 |
-| POST | `/api/v1/plan-templates/:id/variants` | 登录 | 创建变体 |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | 登录 | 同步全部账号 |
+| POST | `/api/v1/plan-templates/:id/variants` | 管理员 | 创建变体 |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | 管理员 | 同步全部账号 |
 
 ### 套餐变体
 
@@ -256,8 +259,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | 登录 | 删除变体 |
-| PUT | `/api/v1/plan-variants/:id` | 登录 | 更新变体 |
+| DELETE | `/api/v1/plan-variants/:id` | 管理员 | 删除变体 |
+| PUT | `/api/v1/plan-variants/:id` | 管理员 | 更新变体 |
 
 ### 流量包
 
@@ -266,9 +269,9 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | 登录 | 流量包列表 |
-| POST | `/api/v1/traffic-packs` | 登录 | 创建流量包 |
-| DELETE | `/api/v1/traffic-packs/:id` | 登录 | 删除流量包 |
-| PUT | `/api/v1/traffic-packs/:id` | 登录 | 更新流量包 |
+| POST | `/api/v1/traffic-packs` | 管理员 | 创建流量包 |
+| DELETE | `/api/v1/traffic-packs/:id` | 管理员 | 删除流量包 |
+| PUT | `/api/v1/traffic-packs/:id` | 管理员 | 更新流量包 |
 
 ### 优惠码
 
@@ -277,9 +280,9 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | 登录 | 列表优惠码 |
-| POST | `/api/v1/promotions` | 登录 | 创建优惠码 |
-| DELETE | `/api/v1/promotions/:id` | 登录 | 删除优惠码 |
-| PUT | `/api/v1/promotions/:id` | 登录 | 更新优惠码 |
+| POST | `/api/v1/promotions` | 管理员 | 创建优惠码 |
+| DELETE | `/api/v1/promotions/:id` | 管理员 | 删除优惠码 |
+| PUT | `/api/v1/promotions/:id` | 管理员 | 更新优惠码 |
 | POST | `/api/v1/promotions/validate` | 登录 | 校验优惠码 |
 
 ### 节点分组
@@ -289,12 +292,12 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | 登录 | 列表节点分组 |
-| POST | `/api/v1/node-groups` | 登录 | 创建节点分组 |
-| DELETE | `/api/v1/node-groups/:id` | 登录 | 删除节点分组 |
-| PUT | `/api/v1/node-groups/:id` | 登录 | 更新节点分组 |
+| POST | `/api/v1/node-groups` | 管理员 | 创建节点分组 |
+| DELETE | `/api/v1/node-groups/:id` | 管理员 | 删除节点分组 |
+| PUT | `/api/v1/node-groups/:id` | 管理员 | 更新节点分组 |
 | GET | `/api/v1/node-groups/:id/members` | 登录 | 列表分组成员 |
-| POST | `/api/v1/node-groups/:id/members` | 登录 | 新增分组成员 |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | 登录 | 移除分组成员 |
+| POST | `/api/v1/node-groups/:id/members` | 管理员 | 新增分组成员 |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | 管理员 | 移除分组成员 |
 
 ### 节点服务器
 
@@ -328,6 +331,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 管理员 | 站点列表 |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 管理员 | 创建站点 |
 | POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | 导入站点配置 |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | 管理员 | 预览 Caddy 站点渲染结果 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理员 | 删除站点 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 管理员 | 更新站点 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 管理员 | 删除全部 SNI 规则 |
@@ -352,6 +356,9 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/force-reconnect` | 管理员 | 强制重连 |
 | GET | `/api/v1/node-servers/:id/free-port` | 管理员 | 申请空闲端口 |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | 管理员 | 下发到该节点 |
+| GET | `/api/v1/node-servers/:id/firewall/status` | 管理员 | 防火墙探测（firewalld/ufw/nft/iptables） |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | 管理员 | 放行入站监听端口（支持多段端口） |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | 管理员 | 撤销入站端口放行（含历史重复规则） |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | 管理员 | 列表 |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | 管理员 | 创建 |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | 管理员 | 删除 |
@@ -373,6 +380,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 管理员 | 站点列表 |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 管理员 | 创建站点 |
 | POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | 导入站点配置 |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | 管理员 | 预览 Nginx 站点渲染结果 |
 | POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | 生成 SSL 证书文件 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理员 | 删除站点 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 管理员 | 更新站点 |
@@ -456,6 +464,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | 管理员 | 清空全部 |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | 管理员 | 应用端口跳跃防火墙规则 |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | 管理员 | 移除端口跳跃防火墙规则 |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | 管理员 | sing-box 实时连接（clash_api，仅本机节点） |
 | POST | `/api/v1/node-servers/:id/speed-test` | 管理员 | 节点测速 |
 | GET | `/api/v1/node-servers/:id/status` | 管理员 | 节点状态 |
 | POST | `/api/v1/node-servers/:id/sync` | 管理员 | 同步节点配置（生成并下发） |
@@ -495,6 +504,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | GET | `/api/v1/node-servers/:id/warp/config` | 管理员 | 读取配置 |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | 管理员 | 生成配置 |
 | POST | `/api/v1/node-servers/:id/warp/register` | 管理员 | 注册 |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | 管理员 | 注册 WARP MASQUE 配置（两步流程第一步） |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | 管理员 | 由 WARP 配置创建 sing-box MASQUE 出站 |
 | GET | `/api/v1/node-servers/:id/warp/status` | 管理员 | 状态 |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 管理员 | 获取均衡器信息 |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 管理员 | 设置均衡器目标 |
@@ -543,8 +554,8 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | 登录 | 节点审计日志 |
-| GET | `/api/v1/node-audit-logs/export` | 登录 | 导出节点审计日志 |
+| GET | `/api/v1/node-audit-logs` | 管理员 | 节点审计日志 |
+| GET | `/api/v1/node-audit-logs/export` | 管理员 | 导出节点审计日志 |
 
 ### 节点（旧版模型，已下线）
 
@@ -567,16 +578,16 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | 登录 | 列表 |
-| POST | `/api/v1/subscriptions` | 登录 | 创建 |
-| DELETE | `/api/v1/subscriptions/:id` | 登录 | 删除 |
+| POST | `/api/v1/subscriptions` | 操作员 | 创建 |
+| DELETE | `/api/v1/subscriptions/:id` | 操作员 | 删除 |
 | GET | `/api/v1/subscriptions/:id` | 登录 | 详情 |
-| PUT | `/api/v1/subscriptions/:id` | 登录 | 更新 |
+| PUT | `/api/v1/subscriptions/:id` | 操作员 | 更新 |
 | GET | `/api/v1/subscriptions/:id/access-logs` | 登录 | 访问日志 |
-| POST | `/api/v1/subscriptions/:id/enable` | 登录 | 启用 |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | 登录 | 重置用量 |
-| POST | `/api/v1/subscriptions/:id/restore` | 登录 | 恢复 |
-| POST | `/api/v1/subscriptions/:id/revoke` | 登录 | 吊销 |
-| POST | `/api/v1/subscriptions/:id/rotate` | 登录 | 轮换 |
+| POST | `/api/v1/subscriptions/:id/enable` | 操作员 | 启用 |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | 操作员 | 重置用量 |
+| POST | `/api/v1/subscriptions/:id/restore` | 操作员 | 恢复 |
+| POST | `/api/v1/subscriptions/:id/revoke` | 操作员 | 吊销 |
+| POST | `/api/v1/subscriptions/:id/rotate` | 操作员 | 轮换 |
 | GET | `/api/v1/subscriptions/:id/rotations` | 登录 | 轮换历史 |
 
 ### 订阅格式
@@ -592,10 +603,10 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | 登录 | 列表 |
-| POST | `/api/v1/subscription-endpoints` | 登录 | 创建 |
-| DELETE | `/api/v1/subscription-endpoints/:id` | 登录 | 删除 |
+| POST | `/api/v1/subscription-endpoints` | 管理员 | 创建 |
+| DELETE | `/api/v1/subscription-endpoints/:id` | 管理员 | 删除 |
 | GET | `/api/v1/subscription-endpoints/:id` | 登录 | 详情 |
-| PUT | `/api/v1/subscription-endpoints/:id` | 登录 | 更新 |
+| PUT | `/api/v1/subscription-endpoints/:id` | 管理员 | 更新 |
 
 ### 分享域名
 
@@ -604,11 +615,11 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | 登录 | 列表 |
-| POST | `/api/v1/share-domains` | 登录 | 创建 |
-| DELETE | `/api/v1/share-domains/:id` | 登录 | 删除 |
-| PUT | `/api/v1/share-domains/:id` | 登录 | 更新 |
-| DELETE | `/api/v1/share-domains/all` | 登录 | 清空全部 |
-| POST | `/api/v1/share-domains/seed` | 登录 | 初始化默认数据 |
+| POST | `/api/v1/share-domains` | 管理员 | 创建 |
+| DELETE | `/api/v1/share-domains/:id` | 管理员 | 删除 |
+| PUT | `/api/v1/share-domains/:id` | 管理员 | 更新 |
+| DELETE | `/api/v1/share-domains/all` | 管理员 | 清空全部 |
+| POST | `/api/v1/share-domains/seed` | 管理员 | 初始化默认数据 |
 
 ### Cloudflare IP
 
@@ -616,17 +627,20 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | 登录 | 清空条目 |
+| DELETE | `/api/v1/cfip/entries` | 管理员 | 清空条目 |
 | GET | `/api/v1/cfip/entries` | 登录 | 条目列表 |
-| POST | `/api/v1/cfip/entries` | 登录 | 新增条目 |
-| DELETE | `/api/v1/cfip/entries/:id` | 登录 | 删除条目 |
-| POST | `/api/v1/cfip/fetch-all` | 登录 | 拉取全部来源 |
-| POST | `/api/v1/cfip/seed` | 登录 | 初始化默认数据 |
+| POST | `/api/v1/cfip/entries` | 管理员 | 新增条目 |
+| DELETE | `/api/v1/cfip/entries/:id` | 管理员 | 删除条目 |
+| POST | `/api/v1/cfip/fetch-all` | 管理员 | 拉取全部来源 |
+| GET | `/api/v1/cfip/probe-config` | 登录 | CF 优选探测配置（含入口节点与已装拨号核心） |
+| PUT | `/api/v1/cfip/probe-config` | 管理员 | 保存探测间隔/延迟阈值/入口节点/拨号核心 |
+| POST | `/api/v1/cfip/check` | 管理员 | 立即探测全部优选域名/IP |
+| POST | `/api/v1/cfip/seed` | 管理员 | 初始化默认数据 |
 | GET | `/api/v1/cfip/sources` | 登录 | 数据源列表 |
-| POST | `/api/v1/cfip/sources` | 登录 | 创建数据源 |
-| DELETE | `/api/v1/cfip/sources/:id` | 登录 | 删除数据源 |
-| PUT | `/api/v1/cfip/sources/:id` | 登录 | 更新数据源 |
-| POST | `/api/v1/cfip/sources/:id/fetch` | 登录 | 拉取该来源 |
+| POST | `/api/v1/cfip/sources` | 管理员 | 创建数据源 |
+| DELETE | `/api/v1/cfip/sources/:id` | 管理员 | 删除数据源 |
+| PUT | `/api/v1/cfip/sources/:id` | 管理员 | 更新数据源 |
+| POST | `/api/v1/cfip/sources/:id/fetch` | 管理员 | 拉取该来源 |
 
 ### 订阅配置（Mihomo/Clash）
 
@@ -635,15 +649,15 @@ CF CDN IP 池与来源管理。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | 登录 | 列表 |
-| POST | `/api/v1/mihomo/configs` | 登录 | 创建 |
-| DELETE | `/api/v1/mihomo/configs/:id` | 登录 | 删除 |
+| POST | `/api/v1/mihomo/configs` | 管理员 | 创建 |
+| DELETE | `/api/v1/mihomo/configs/:id` | 管理员 | 删除 |
 | GET | `/api/v1/mihomo/configs/:id` | 登录 | 详情 |
-| PUT | `/api/v1/mihomo/configs/:id` | 登录 | 更新 |
+| PUT | `/api/v1/mihomo/configs/:id` | 管理员 | 更新 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 登录 | 规则列表 |
-| POST | `/api/v1/mihomo/configs/:id/rules` | 登录 | 创建规则 |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | 规则排序 |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | 更新规则 |
-| DELETE | `/api/v1/mihomo/rules/:id` | 登录 | 删除规则 |
+| POST | `/api/v1/mihomo/configs/:id/rules` | 管理员 | 创建规则 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 管理员 | 规则排序 |
+| PUT | `/api/v1/mihomo/rules/:id` | 管理员 | 更新规则 |
+| DELETE | `/api/v1/mihomo/rules/:id` | 管理员 | 删除规则 |
 
 ### 充值站点
 
@@ -651,20 +665,20 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | 登录 | 站点列表 |
-| POST | `/api/v1/charge-sites` | 登录 | 创建站点 |
-| DELETE | `/api/v1/charge-sites/:id` | 登录 | 删除站点 |
-| GET | `/api/v1/charge-sites/:id` | 登录 | 站点详情 |
-| PUT | `/api/v1/charge-sites/:id` | 登录 | 更新站点 |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 登录 | 清除旧密钥 |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | 登录 | 生成验签文件 |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 登录 | 生成验签文件 |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | 登录 | 获取对接文档 |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | 登录 | 轮换签名密钥 |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | 登录 | 验证域名 DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | 登录 | 验证域名 HTTP 挑战 |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 登录 | 验证域名 DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 登录 | 验证域名 HTTP 挑战 |
+| GET | `/api/v1/charge-sites` | 管理员 | 站点列表 |
+| POST | `/api/v1/charge-sites` | 管理员 | 创建站点 |
+| DELETE | `/api/v1/charge-sites/:id` | 管理员 | 删除站点 |
+| GET | `/api/v1/charge-sites/:id` | 管理员 | 站点详情 |
+| PUT | `/api/v1/charge-sites/:id` | 管理员 | 更新站点 |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 管理员 | 清除旧密钥 |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | 管理员 | 生成验签文件 |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 管理员 | 生成验签文件 |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | 管理员 | 获取对接文档 |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | 管理员 | 轮换签名密钥 |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | 管理员 | 验证域名 DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | 管理员 | 验证域名 HTTP 挑战 |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 管理员 | 验证域名 DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 管理员 | 验证域名 HTTP 挑战 |
 
 ### 充值订单
 
@@ -672,10 +686,10 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | 登录 | 订单列表 |
-| GET | `/api/v1/charge-orders/:id` | 登录 | 订单详情 |
-| POST | `/api/v1/charge-orders/:id/refund` | 登录 | 退款 |
-| GET | `/api/v1/charge-orders/export-csv` | 登录 | 导出充值订单 CSV |
+| GET | `/api/v1/charge-orders` | 管理员 | 订单列表 |
+| GET | `/api/v1/charge-orders/:id` | 管理员 | 订单详情 |
+| POST | `/api/v1/charge-orders/:id/refund` | 管理员 | 退款 |
+| GET | `/api/v1/charge-orders/export-csv` | 管理员 | 导出充值订单 CSV |
 
 ### 充值卡密
 
@@ -683,12 +697,12 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | 登录 | 卡密列表 |
-| POST | `/api/v1/charge-cards` | 登录 | 创建卡密 |
-| DELETE | `/api/v1/charge-cards/:id` | 登录 | 删除卡密 |
-| GET | `/api/v1/charge-cards/:id/usages` | 登录 | 卡密使用记录 |
-| POST | `/api/v1/charge-cards/batch` | 登录 | 批量生成卡密 |
-| GET | `/api/v1/charge-cards/export-csv` | 登录 | 导出卡密 CSV |
+| GET | `/api/v1/charge-cards` | 管理员 | 卡密列表 |
+| POST | `/api/v1/charge-cards` | 管理员 | 创建卡密 |
+| DELETE | `/api/v1/charge-cards/:id` | 管理员 | 删除卡密 |
+| GET | `/api/v1/charge-cards/:id/usages` | 管理员 | 卡密使用记录 |
+| POST | `/api/v1/charge-cards/batch` | 管理员 | 批量生成卡密 |
+| GET | `/api/v1/charge-cards/export-csv` | 管理员 | 导出卡密 CSV |
 
 ### 支付回调事件
 
@@ -724,8 +738,8 @@ CF CDN IP 池与来源管理。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | 登录 | 礼品列表 |
-| POST | `/api/v1/client-gifts` | 登录 | 创建礼品 |
-| POST | `/api/v1/client-gifts/batch` | 登录 | 批量创建礼品 |
+| POST | `/api/v1/client-gifts` | 管理员 | 创建礼品 |
+| POST | `/api/v1/client-gifts/batch` | 管理员 | 批量创建礼品 |
 | GET | `/api/v1/client-gifts/search-clients` | 登录 | 搜索客户 |
 
 ### 推广配置
@@ -745,9 +759,9 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | 登录 | 提现申请列表 |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | 登录 | 批准提现 |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | 登录 | 拒绝提现 |
+| GET | `/api/v1/referral-withdrawals` | 管理员 | 提现申请列表 |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | 管理员 | 批准提现 |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | 管理员 | 拒绝提现 |
 
 ### IP 白名单（汇总）
 
@@ -773,9 +787,9 @@ CF CDN IP 池与来源管理。
 |---|---|---|---|
 | GET | `/api/v1/tickets` | 登录 | 工单列表 |
 | GET | `/api/v1/tickets/:id` | 登录 | 工单详情 |
-| POST | `/api/v1/tickets/:id/assign` | 登录 | 指派工单 |
-| POST | `/api/v1/tickets/:id/close` | 登录 | 关闭工单 |
-| POST | `/api/v1/tickets/:id/reply` | 登录 | 回复工单 |
+| POST | `/api/v1/tickets/:id/assign` | 操作员 | 指派工单 |
+| POST | `/api/v1/tickets/:id/close` | 操作员 | 关闭工单 |
+| POST | `/api/v1/tickets/:id/reply` | 操作员 | 回复工单 |
 
 ### 文章
 
@@ -784,10 +798,10 @@ CF CDN IP 池与来源管理。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/articles` | 登录 | 文章列表 |
-| POST | `/api/v1/articles` | 登录 | 创建文章 |
-| DELETE | `/api/v1/articles/:id` | 登录 | 删除文章 |
+| POST | `/api/v1/articles` | 管理员 | 创建文章 |
+| DELETE | `/api/v1/articles/:id` | 管理员 | 删除文章 |
 | GET | `/api/v1/articles/:id` | 登录 | 文章详情 |
-| PUT | `/api/v1/articles/:id` | 登录 | 更新文章 |
+| PUT | `/api/v1/articles/:id` | 管理员 | 更新文章 |
 
 ### 共享账号
 
@@ -796,10 +810,10 @@ CF CDN IP 池与来源管理。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | 登录 | 共享账号列表 |
-| POST | `/api/v1/shared-accounts` | 登录 | 创建共享账号 |
-| DELETE | `/api/v1/shared-accounts/:id` | 登录 | 删除共享账号 |
+| POST | `/api/v1/shared-accounts` | 管理员 | 创建共享账号 |
+| DELETE | `/api/v1/shared-accounts/:id` | 管理员 | 删除共享账号 |
 | GET | `/api/v1/shared-accounts/:id` | 登录 | 共享账号详情 |
-| PUT | `/api/v1/shared-accounts/:id` | 登录 | 更新共享账号 |
+| PUT | `/api/v1/shared-accounts/:id` | 管理员 | 更新共享账号 |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | 登录 | 修复记录 |
 
 ### 证书
@@ -808,19 +822,19 @@ CF CDN IP 池与来源管理。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | 登录 | 列表 |
-| POST | `/api/v1/certificates` | 登录 | 创建 |
-| DELETE | `/api/v1/certificates/:id` | 登录 | 删除 |
-| GET | `/api/v1/certificates/:id` | 登录 | 详情 |
-| PUT | `/api/v1/certificates/:id` | 登录 | 更新 |
-| GET | `/api/v1/certificates/:id/download` | 登录 | 下载 |
-| POST | `/api/v1/certificates/:id/renew` | 登录 | 客户续费 |
-| GET | `/api/v1/certificates/check-port` | 登录 | 检查端口 |
-| GET | `/api/v1/certificates/detect-ip` | 登录 | 探测IP |
-| GET | `/api/v1/certificates/export` | 登录 | 导出 |
-| POST | `/api/v1/certificates/issue` | 登录 | 签发。body：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。`challenge_type` 缺省 http-01；`dns_channel_id` 指定 DNS 通道（面板配置好的 DNS 提供者+凭据） |
-| POST | `/api/v1/certificates/issue-on-node` | 登录 | 签发到节点 |
-| POST | `/api/v1/certificates/upload` | 登录 | 上传 |
+| GET | `/api/v1/certificates` | 管理员 | 列表 |
+| POST | `/api/v1/certificates` | 管理员 | 创建 |
+| DELETE | `/api/v1/certificates/:id` | 管理员 | 删除 |
+| GET | `/api/v1/certificates/:id` | 管理员 | 详情 |
+| PUT | `/api/v1/certificates/:id` | 管理员 | 更新 |
+| GET | `/api/v1/certificates/:id/download` | 管理员 | 下载 |
+| POST | `/api/v1/certificates/:id/renew` | 管理员 | 客户续费 |
+| GET | `/api/v1/certificates/check-port` | 管理员 | 检查端口 |
+| GET | `/api/v1/certificates/detect-ip` | 管理员 | 探测IP |
+| GET | `/api/v1/certificates/export` | 管理员 | 导出 |
+| POST | `/api/v1/certificates/issue` | 管理员 | 签发。body：`{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`。`challenge_type` 缺省 http-01；`dns_channel_id` 指定 DNS 通道（面板配置好的 DNS 提供者+凭据） |
+| POST | `/api/v1/certificates/issue-on-node` | 管理员 | 签发到节点 |
+| POST | `/api/v1/certificates/upload` | 管理员 | 上传 |
 | GET | `/api/v1/certificate-tasks/:id` | 管理员 | 查询后台任务状态 |
 
 ### 证书通道
@@ -829,11 +843,11 @@ ACME 通道（CA）配置。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | 登录 | 列表 |
-| POST | `/api/v1/cert-channels` | 登录 | 创建 |
-| DELETE | `/api/v1/cert-channels/:id` | 登录 | 删除 |
-| PUT | `/api/v1/cert-channels/:id` | 登录 | 更新 |
-| GET | `/api/v1/cert-channels/providers` | 登录 | 提供商 |
+| GET | `/api/v1/cert-channels` | 管理员 | 列表 |
+| POST | `/api/v1/cert-channels` | 管理员 | 创建 |
+| DELETE | `/api/v1/cert-channels/:id` | 管理员 | 删除 |
+| PUT | `/api/v1/cert-channels/:id` | 管理员 | 更新 |
+| GET | `/api/v1/cert-channels/providers` | 管理员 | 提供商 |
 
 ### EAB 配置
 
@@ -841,12 +855,12 @@ ZeroSSL / Google 等外部账号绑定凭据。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | 登录 | 列表 |
-| POST | `/api/v1/eab-configs` | 登录 | 创建 |
-| DELETE | `/api/v1/eab-configs/:id` | 登录 | 删除 |
-| PUT | `/api/v1/eab-configs/:id` | 登录 | 更新 |
-| POST | `/api/v1/eab-configs/fetch-google` | 登录 | 从 GCP 获取 Google EAB |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | 登录 | 用邮箱一键获取 ZeroSSL EAB |
+| GET | `/api/v1/eab-configs` | 管理员 | 列表 |
+| POST | `/api/v1/eab-configs` | 管理员 | 创建 |
+| DELETE | `/api/v1/eab-configs/:id` | 管理员 | 删除 |
+| PUT | `/api/v1/eab-configs/:id` | 管理员 | 更新 |
+| POST | `/api/v1/eab-configs/fetch-google` | 管理员 | 从 GCP 获取 Google EAB |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | 管理员 | 用邮箱一键获取 ZeroSSL EAB |
 
 ### ACME 账号
 
@@ -854,11 +868,11 @@ ZeroSSL / Google 等外部账号绑定凭据。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | 登录 | 列表 |
-| POST | `/api/v1/acme-accounts` | 登录 | 创建 |
-| DELETE | `/api/v1/acme-accounts/:id` | 登录 | 删除 |
-| PUT | `/api/v1/acme-accounts/:id` | 登录 | 更新 |
-| GET | `/api/v1/acme-accounts/default` | 登录 | 获取默认 |
+| GET | `/api/v1/acme-accounts` | 管理员 | 列表 |
+| POST | `/api/v1/acme-accounts` | 管理员 | 创建 |
+| DELETE | `/api/v1/acme-accounts/:id` | 管理员 | 删除 |
+| PUT | `/api/v1/acme-accounts/:id` | 管理员 | 更新 |
+| GET | `/api/v1/acme-accounts/default` | 管理员 | 获取默认 |
 
 ### 内置 CA
 
@@ -866,14 +880,14 @@ ZeroSSL / Google 等外部账号绑定凭据。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | 登录 | Agent 证书列表 |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 登录 | 续期 Agent 证书 |
-| GET | `/api/v1/ca/distribution-queue` | 登录 | 证书分发队列 |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | 登录 | 删除分发队列条目 |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | 登录 | 重试证书分发 |
-| GET | `/api/v1/ca/revocations` | 登录 | 吊销列表 |
-| GET | `/api/v1/ca/revocations/export` | 登录 | 导出 CRL |
-| GET | `/api/v1/ca/status` | 登录 | CA 状态 |
+| GET | `/api/v1/ca/agent-certs` | 管理员 | Agent 证书列表 |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 管理员 | 续期 Agent 证书 |
+| GET | `/api/v1/ca/distribution-queue` | 管理员 | 证书分发队列 |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | 管理员 | 删除分发队列条目 |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | 管理员 | 重试证书分发 |
+| GET | `/api/v1/ca/revocations` | 管理员 | 吊销列表 |
+| GET | `/api/v1/ca/revocations/export` | 管理员 | 导出 CRL |
+| GET | `/api/v1/ca/status` | 管理员 | CA 状态 |
 
 ### Geo 规则
 
@@ -882,24 +896,24 @@ geoip/geosite 数据源与文件的同步、下发。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | 登录 | 文件列表 |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | 登录 | 删除文件 |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 登录 | 开关自动同步 |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | 登录 | 下载 |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | 管理员 | 删除文件 |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 管理员 | 开关自动同步 |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | 管理员 | 下载 |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | 登录 | 下载文件 |
 | GET | `/api/v1/geo-rules/github-assets` | 登录 | 拉取 GitHub 仓库资产 |
-| POST | `/api/v1/geo-rules/push-all` | 登录 | 下发到全部节点 |
-| POST | `/api/v1/geo-rules/seed` | 登录 | 初始化默认数据 |
+| POST | `/api/v1/geo-rules/push-all` | 管理员 | 下发到全部节点 |
+| POST | `/api/v1/geo-rules/seed` | 管理员 | 初始化默认数据 |
 | GET | `/api/v1/geo-rules/sources` | 登录 | 数据源列表 |
-| POST | `/api/v1/geo-rules/sources` | 登录 | 创建数据源 |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 登录 | 删除数据源 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | 登录 | 更新数据源 |
+| POST | `/api/v1/geo-rules/sources` | 管理员 | 创建数据源 |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 管理员 | 删除数据源 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | 管理员 | 更新数据源 |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | 登录 | 拉取 Release 资产 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 登录 | 添加文件 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 登录 | 开关定时同步 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 登录 | 选择文件 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 登录 | 同步该数据源 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 管理员 | 添加文件 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 管理员 | 开关定时同步 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 管理员 | 选择文件 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 管理员 | 同步该数据源 |
 | GET | `/api/v1/geo-rules/status` | 登录 | 状态 |
-| POST | `/api/v1/geo-rules/sync-all` | 登录 | 同步全部 |
+| POST | `/api/v1/geo-rules/sync-all` | 管理员 | 同步全部 |
 | GET | `/api/v1/geo-rules/sync-status/:key` | 登录 | 同步进度 |
 
 ### WAF 规则库
@@ -909,14 +923,14 @@ geoip/geosite 数据源与文件的同步、下发。
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | 登录 | GitHub 数据源 |
-| PUT | `/api/v1/waf/github-source` | 登录 | 保存 GitHub 数据源 |
-| POST | `/api/v1/waf/push-all` | 登录 | 下发到全部节点 |
+| PUT | `/api/v1/waf/github-source` | 管理员 | 保存 GitHub 数据源 |
+| POST | `/api/v1/waf/push-all` | 管理员 | 下发到全部节点 |
 | GET | `/api/v1/waf/rules` | 登录 | 规则列表 |
-| DELETE | `/api/v1/waf/rules/:name` | 登录 | 删除规则 |
+| DELETE | `/api/v1/waf/rules/:name` | 管理员 | 删除规则 |
 | GET | `/api/v1/waf/rules/:name` | 登录 | 获取规则 |
-| PUT | `/api/v1/waf/rules/:name` | 登录 | 保存规则 |
-| POST | `/api/v1/waf/sync-all` | 登录 | 同步全部 |
-| POST | `/api/v1/waf/sync-github` | 登录 | 从 GitHub 同步 |
+| PUT | `/api/v1/waf/rules/:name` | 管理员 | 保存规则 |
+| POST | `/api/v1/waf/sync-all` | 管理员 | 同步全部 |
+| POST | `/api/v1/waf/sync-github` | 管理员 | 从 GitHub 同步 |
 
 ### 日志管理
 
@@ -924,43 +938,37 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | 登录 | 立即全量清理 |
-| GET | `/api/v1/log-manage/cleanup-rules` | 登录 | 清理规则列表 |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 登录 | 更新清理规则 |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | 登录 | 立即清理指定表 |
-| GET | `/api/v1/log-manage/core-log-output` | 登录 | 核心日志输出配置 |
-| PUT | `/api/v1/log-manage/core-log-output` | 登录 | 保存核心日志输出配置 |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | 登录 | 读取核心 stdout 日志 |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 登录 | 流式跟随核心 stdout |
-| POST | `/api/v1/log-manage/discover` | 登录 | 发现节点日志文件 |
-| GET | `/api/v1/log-manage/log-output` | 登录 | 日志输出配置 |
-| PUT | `/api/v1/log-manage/log-output` | 登录 | 保存日志输出配置 |
-| POST | `/api/v1/log-manage/log-output/release/:type` | 登录 | 释放日志 stdout 接管 |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | 登录 | 接管日志 stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 登录 | 节点日志文件列表 |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 登录 | 读取节点日志 |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 登录 | 轮转节点日志 |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 登录 | 流式跟随节点日志 |
-| GET | `/api/v1/log-manage/policies` | 登录 | 策略列表 |
-| POST | `/api/v1/log-manage/policies` | 登录 | 创建策略 |
-| DELETE | `/api/v1/log-manage/policies/:id` | 登录 | 删除策略 |
-| GET | `/api/v1/log-manage/policies/:id` | 登录 | 策略详情 |
-| PUT | `/api/v1/log-manage/policies/:id` | 登录 | 更新策略 |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | 登录 | 清理任务列表 |
-| GET | `/api/v1/log-manage/policies/:id/log` | 登录 | 读取日志 |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | 登录 | 流式跟随日志 |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | 登录 | 轮换 |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 登录 | 读取核心 stdout 日志 |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 登录 | 流式跟随核心 stdout |
-| GET | `/api/v1/log-manage/scheduler-config` | 登录 | 调度配置 |
-| PUT | `/api/v1/log-manage/scheduler-config` | 登录 | 更新调度配置 |
-| GET | `/api/v1/log-manage/status` | 登录 | 状态 |
-| POST | `/api/v1/log-manage/sync` | 登录 | 同步清理策略 |
-| GET | `/api/v1/log-manage/writers` | 登录 | 写入器状态 |
-| PUT | `/api/v1/log-manage/writers/:type/config` | 登录 | 更新写入器配置 |
-| GET | `/api/v1/log-manage/writers/:type/files` | 登录 | 写入器日志文件列表 |
-| POST | `/api/v1/log-manage/writers/:type/start` | 登录 | 启动写入器 |
-| POST | `/api/v1/log-manage/writers/:type/stop` | 登录 | 停止写入器 |
+| POST | `/api/v1/log-manage/cleanup-all` | 管理员 | 立即全量清理 |
+| GET | `/api/v1/log-manage/cleanup-rules` | 管理员 | 清理规则列表 |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 管理员 | 更新清理规则 |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | 管理员 | 立即清理指定表 |
+| GET | `/api/v1/log-manage/core-log-output` | 管理员 | 核心日志输出配置 |
+| PUT | `/api/v1/log-manage/core-log-output` | 管理员 | 保存核心日志输出配置 |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | 管理员 | 读取核心 stdout 日志 |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 管理员 | 流式跟随核心 stdout |
+| POST | `/api/v1/log-manage/discover` | 管理员 | 发现节点日志文件 |
+| GET | `/api/v1/log-manage/log-output` | 管理员 | 日志输出配置 |
+| PUT | `/api/v1/log-manage/log-output` | 管理员 | 保存日志输出配置 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 管理员 | 节点日志文件列表 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 管理员 | 读取节点日志 |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 管理员 | 轮转节点日志 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 管理员 | 流式跟随节点日志 |
+| GET | `/api/v1/log-manage/policies` | 管理员 | 策略列表 |
+| POST | `/api/v1/log-manage/policies` | 管理员 | 创建策略 |
+| DELETE | `/api/v1/log-manage/policies/:id` | 管理员 | 删除策略 |
+| GET | `/api/v1/log-manage/policies/:id` | 管理员 | 策略详情 |
+| PUT | `/api/v1/log-manage/policies/:id` | 管理员 | 更新策略 |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | 管理员 | 清理任务列表 |
+| GET | `/api/v1/log-manage/policies/:id/log` | 管理员 | 读取日志 |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | 管理员 | 流式跟随日志 |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | 管理员 | 轮换 |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 管理员 | 读取核心 stdout 日志 |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 管理员 | 流式跟随核心 stdout |
+| GET | `/api/v1/log-manage/scheduler-config` | 管理员 | 调度配置 |
+| PUT | `/api/v1/log-manage/scheduler-config` | 管理员 | 更新调度配置 |
+| GET | `/api/v1/log-manage/status` | 管理员 | 状态 |
+| POST | `/api/v1/log-manage/sync` | 管理员 | 同步清理策略 |
+| GET | `/api/v1/log-manage/writers` | 管理员 | 写入器状态 |
 
 ### 备份
 
@@ -968,16 +976,16 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | 管理员 | 删除备份 |
+| DELETE | `/api/v1/backups/:id` | 超级管理员 | 删除备份 |
 | GET | `/api/v1/backups/:id/download` | 管理员 | 下载备份 |
-| POST | `/api/v1/backups/:id/restore` | 管理员 | 从备份恢复 |
-| POST | `/api/v1/backups/:id/upload-ftp` | 管理员 | 上传到 FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | 管理员 | 上传到 S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | 管理员 | 上传到 WebDAV |
+| POST | `/api/v1/backups/:id/restore` | 超级管理员 | 从备份恢复 |
+| POST | `/api/v1/backups/:id/upload-ftp` | 超级管理员 | 上传到 FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | 超级管理员 | 上传到 S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | 超级管理员 | 上传到 WebDAV |
 | POST | `/api/v1/backups/create` | 管理员 | 创建全量备份（含 DB dump） |
 | GET | `/api/v1/backups/list` | 管理员 | 全量备份列表 |
-| POST | `/api/v1/backups/remote-restore` | 管理员 | 从远端恢复 |
-| GET | `/api/v1/backups/restore-status` | 管理员 | 恢复进度 |
+| POST | `/api/v1/backups/remote-restore` | 超级管理员 | 从远端恢复 |
+| GET | `/api/v1/backups/restore-status` | 超级管理员 | 恢复进度 |
 | GET | `/api/v1/backups/schedules` | 管理员 | 定时任务列表 |
 | POST | `/api/v1/backups/schedules` | 管理员 | 创建定时任务 |
 | DELETE | `/api/v1/backups/schedules/:id` | 管理员 | 删除定时任务 |
@@ -987,7 +995,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | DELETE | `/api/v1/backups/storages/:id` | 管理员 | 删除存储配置 |
 | PUT | `/api/v1/backups/storages/:id` | 管理员 | 更新存储配置 |
 | GET | `/api/v1/backups/storages/:id/files` | 管理员 | 远端备份文件列表 |
-| POST | `/api/v1/backups/upload-restore` | 管理员 | 上传备份并恢复 |
+| POST | `/api/v1/backups/upload-restore` | 超级管理员 | 上传备份并恢复 |
 
 ### 系统设置
 
@@ -1000,8 +1008,8 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/system/config-file/:coreType` | 管理员 | 读取核心配置文件 |
 | GET | `/api/v1/system/db-config` | 管理员 | 数据库配置 |
 | PUT | `/api/v1/system/db-config` | 管理员 | 更新数据库配置 |
-| POST | `/api/v1/system/db-config/migrate` | 管理员 | 迁移数据库数据 |
-| POST | `/api/v1/system/db-config/switch` | 管理员 | 切换数据库（含一步迁移） |
+| POST | `/api/v1/system/db-config/migrate` | 超级管理员 | 迁移数据库数据 |
+| POST | `/api/v1/system/db-config/switch` | 超级管理员 | 切换数据库（含一步迁移） |
 | POST | `/api/v1/system/db-config/test` | 管理员 | 测试数据库连接 |
 | GET | `/api/v1/system/db-pool-stats` | 管理员 | 连接池统计 |
 | GET | `/api/v1/system/db-stats` | 管理员 | 数据库统计 |
@@ -1010,13 +1018,13 @@ geoip/geosite 数据源与文件的同步、下发。
 | GET | `/api/v1/system/encryption-key-status` | 管理员 | 加密密钥状态 |
 | GET | `/api/v1/system/env-config` | 管理员 | .env 配置 |
 | PUT | `/api/v1/system/env-config` | 管理员 | 更新 .env 配置 |
-| POST | `/api/v1/system/generate-encryption-key` | 管理员 | 生成加密密钥 |
+| POST | `/api/v1/system/generate-encryption-key` | 超级管理员 | 生成加密密钥 |
 | GET | `/api/v1/system/github-config` | 管理员 | GitHub 配置 |
 | PUT | `/api/v1/system/github-config` | 管理员 | 更新 GitHub 配置 |
 | GET | `/api/v1/system/jwt-secret-status` | 管理员 | JWT 密钥状态 |
 | GET | `/api/v1/system/maintenance` | 公开 | 维护模式状态（公开） |
 | PUT | `/api/v1/system/maintenance` | 管理员 | 切换维护模式 |
-| POST | `/api/v1/system/migrate-data` | 管理员 | 迁移数据 |
+| POST | `/api/v1/system/migrate-data` | 超级管理员 | 迁移数据 |
 | GET | `/api/v1/system/notification-config` | 管理员 | 通知配置 |
 | PUT | `/api/v1/system/notification-config` | 管理员 | 更新通知配置 |
 | GET | `/api/v1/system/notification-templates` | 管理员 | 模板列表 |
@@ -1029,13 +1037,13 @@ geoip/geosite 数据源与文件的同步、下发。
 | PUT | `/api/v1/system/panel-config` | 管理员 | 更新面板配置 |
 | GET | `/api/v1/system/reality-targets` | 管理员 | REALITY 目标列表 |
 | PUT | `/api/v1/system/reality-targets` | 管理员 | 更新 REALITY 目标 |
-| POST | `/api/v1/system/reality-targets/reset` | 管理员 | 重置 REALITY 目标为默认 |
+| POST | `/api/v1/system/reality-targets/reset` | 超级管理员 | 重置 REALITY 目标为默认 |
 | GET | `/api/v1/system/reality-local-sni` | 管理员 | 读取 Reality 本地 SNI 配置 |
 | PUT | `/api/v1/system/reality-local-sni` | 管理员 | 更新 Reality 本地 SNI 配置 |
-| POST | `/api/v1/system/regenerate-jwt-secret` | 管理员 | 重新生成 JWT 密钥 |
+| POST | `/api/v1/system/regenerate-jwt-secret` | 超级管理员 | 重新生成 JWT 密钥 |
 | GET | `/api/v1/system/releases` | 管理员 | 可用版本列表 |
-| POST | `/api/v1/system/restart` | 管理员 | 重启 |
-| POST | `/api/v1/system/rollback` | 管理员 | 系统回滚 |
+| POST | `/api/v1/system/restart` | 超级管理员 | 重启 |
+| POST | `/api/v1/system/rollback` | 超级管理员 | 系统回滚 |
 | GET | `/api/v1/system/settings` | 管理员 | 读取设置 |
 | PUT | `/api/v1/system/settings/batch` | 管理员 | 批量更新设置 |
 | GET | `/api/v1/system/stats` | 管理员 | 系统状态 |
@@ -1044,7 +1052,7 @@ geoip/geosite 数据源与文件的同步、下发。
 | POST | `/api/v1/system/telegram-chat-id` | 管理员 | 获取 Telegram Chat ID |
 | POST | `/api/v1/system/test-smtp` | 管理员 | 测试 SMTP |
 | POST | `/api/v1/system/test-telegram` | 管理员 | 测试 Telegram |
-| POST | `/api/v1/system/update` | 管理员 | 系统升级 |
+| POST | `/api/v1/system/update` | 超级管理员 | 系统升级 |
 | GET | `/api/v1/system/update-jobs` | 管理员 | 升级任务列表 |
 | POST | `/api/v1/system/upload-mtls-ca` | 管理员 | 上传 mTLS CA 证书 |
 
@@ -1054,8 +1062,9 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | 登录 | 审计事件列表 |
-| GET | `/api/v1/security/audit-events/export` | 登录 | 导出审计事件 |
+| GET | `/api/v1/security/audit-events` | 管理员 | 审计事件列表 |
+| GET | `/api/v1/security/audit-events/export` | 管理员 | 导出审计事件 |
+| GET | `/api/v1/security/subscription-access-logs` | 管理员 | 订阅拉取日志（按订阅 ID / IP / 客户邮箱筛选） |
 
 ### 指标
 
@@ -1063,9 +1072,9 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | 登录 | 证书指标 |
-| GET | `/api/v1/metrics/nodes` | 登录 | 节点指标 |
-| GET | `/api/v1/metrics/overview` | 登录 | 总览 |
+| GET | `/api/v1/metrics/certificates` | 管理员 | 证书指标 |
+| GET | `/api/v1/metrics/nodes` | 管理员 | 节点指标 |
+| GET | `/api/v1/metrics/overview` | 管理员 | 总览 |
 
 ### 门户模板
 
@@ -1073,20 +1082,20 @@ geoip/geosite 数据源与文件的同步、下发。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | 登录 | 当前激活模板 |
-| PUT | `/api/v1/portal/active` | 登录 | 更新激活模板 |
-| DELETE | `/api/v1/portal/cache` | 登录 | 清空门户缓存 |
-| GET | `/api/v1/portal/cache` | 登录 | 缓存状态 |
-| PUT | `/api/v1/portal/cache/dev-mode` | 登录 | 切换缓存开发模式 |
-| POST | `/api/v1/portal/cache/rebuild` | 登录 | 重建门户缓存 |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | 内置语言包 |
-| POST | `/api/v1/portal/reset` | 登录 | 恢复默认模板 |
-| GET | `/api/v1/portal/templates` | 登录 | 列表 |
-| POST | `/api/v1/portal/templates` | 登录 | 创建 |
-| DELETE | `/api/v1/portal/templates/:id` | 登录 | 删除 |
-| GET | `/api/v1/portal/templates/:id` | 登录 | 详情 |
-| PUT | `/api/v1/portal/templates/:id` | 登录 | 更新 |
-| POST | `/api/v1/portal/templates/:id/activate` | 登录 | 激活模板 |
+| GET | `/api/v1/portal/active` | 管理员 | 当前激活模板 |
+| PUT | `/api/v1/portal/active` | 管理员 | 更新激活模板 |
+| DELETE | `/api/v1/portal/cache` | 管理员 | 清空门户缓存 |
+| GET | `/api/v1/portal/cache` | 管理员 | 缓存状态 |
+| PUT | `/api/v1/portal/cache/dev-mode` | 管理员 | 切换缓存开发模式 |
+| POST | `/api/v1/portal/cache/rebuild` | 管理员 | 重建门户缓存 |
+| GET | `/api/v1/portal/lang/builtin` | 管理员 | 内置语言包 |
+| POST | `/api/v1/portal/reset` | 管理员 | 恢复默认模板 |
+| GET | `/api/v1/portal/templates` | 管理员 | 列表 |
+| POST | `/api/v1/portal/templates` | 管理员 | 创建 |
+| DELETE | `/api/v1/portal/templates/:id` | 管理员 | 删除 |
+| GET | `/api/v1/portal/templates/:id` | 管理员 | 详情 |
+| PUT | `/api/v1/portal/templates/:id` | 管理员 | 更新 |
+| POST | `/api/v1/portal/templates/:id/activate` | 管理员 | 激活模板 |
 
 > `/portal/templates` CRUD 是**高级 API**：门户 UI 的主路径是 `PUT /api/v1/portal/active`
 > （整站配置一次提交），多模板管理/切换才需要走这组接口。两者都受支持，不冲突。
@@ -1135,79 +1144,75 @@ geoip/geosite 数据源与文件的同步、下发。
 
 ### 客户认证与业务（管理端引擎上的同一套）
 
-与门户一致的客户接口，完整说明见 portal-api.md。
+与门户一致的客户接口，认证使用**客户端 token**（`Authorization: Bearer <client_token>`），不是管理员 token；完整说明见 portal-api.md。
 
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | 公开 | 列表文章 |
-| GET | `/api/v1/client-auth/articles/:slug` | 公开 | 获取文章 |
-| GET | `/api/v1/client-auth/balance` | 公开 | 获取余额 |
-| GET | `/api/v1/client-auth/balance/transactions` | 公开 | 余额流水 |
-| POST | `/api/v1/client-auth/change-password` | 公开 | 修改密码 |
-| POST | `/api/v1/client-auth/charge/create` | 公开 | 创建充值订单 |
-| GET | `/api/v1/client-auth/charge/orders` | 公开 | 列表充值订单 |
-| GET | `/api/v1/client-auth/charge/orders/:id` | 公开 | 获取充值订单详情 |
-| POST | `/api/v1/client-auth/charge/redeem-card` | 公开 | 卡密兑换 |
-| GET | `/api/v1/client-auth/charge/sites` | 公开 | 列表充值站点 |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | 公开 | 查询充值状态 |
-| GET | `/api/v1/client-auth/checktime` | 公开 | 获取服务器时间（校时） |
-| GET | `/api/v1/client-auth/connection-info` | 公开 | 获取套餐连接参数 |
-| GET | `/api/v1/client-auth/gifts` | 公开 | 列表礼品 |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | 公开 | 领取礼品 |
-| GET | `/api/v1/client-auth/invoices` | 公开 | 订单列表 |
-| GET | `/api/v1/client-auth/invoices/:id` | 公开 | 订单详情 |
-| GET | `/api/v1/client-auth/settings/whitelist` | 公开 | 列表IP白名单 |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公开 | 移除IP白名单 |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公开 | 自动新增IP |
-| POST | `/api/v1/client-auth/login` | 公开 | 登录 |
-| POST | `/api/v1/client-auth/logout` | 公开 | 登出 |
-| POST | `/api/v1/client-auth/logs/package` | 公开 | 创建日志日志包 |
-| GET | `/api/v1/client-auth/logs/packages` | 公开 | 列表日志日志包 |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | 公开 | 删除日志日志包 |
-| GET | `/api/v1/client-auth/logs/packages/:id` | 公开 | 获取日志日志包 |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | 公开 | 下载日志日志包 |
-| GET | `/api/v1/client-auth/logs/types` | 公开 | 日志日志包健康检查 |
-| GET | `/api/v1/client-auth/me` | 公开 | 获取当前登录用户 |
-| GET | `/api/v1/client-auth/nodes` | 公开 | 我的节点列表 |
-| GET | `/api/v1/client-auth/nodes/:id/config` | 公开 | 节点配置 |
-| GET | `/api/v1/client-auth/nodes/:id/link` | 公开 | 节点分享链接 |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | 公开 | 节点二维码 |
-| GET | `/api/v1/client-auth/oauth/:provider` | 公开 | 授权 |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | 公开 | 回调 |
-| GET | `/api/v1/client-auth/oauth/providers` | 公开 | 提供商状态 |
-| GET | `/api/v1/client-auth/orders` | 公开 | 订单列表 |
-| POST | `/api/v1/client-auth/orders` | 公开 | 创建订单 |
-| GET | `/api/v1/client-auth/orders/:id` | 公开 | 订单详情 |
-| GET | `/api/v1/client-auth/plans` | 公开 | 套餐列表 |
-| GET | `/api/v1/client-auth/plans/:id` | 公开 | 套餐详情 |
-| GET | `/api/v1/client-auth/referral/code` | 公开 | 获取推广验证码 |
-| GET | `/api/v1/client-auth/referral/records` | 公开 | 列表推广记录 |
-| GET | `/api/v1/client-auth/referral/stats` | 公开 | 获取推广统计 |
-| POST | `/api/v1/client-auth/referral/withdraw` | 公开 | Request提现 |
-| GET | `/api/v1/client-auth/referral/withdrawals` | 公开 | 列表推广提现 |
-| POST | `/api/v1/client-auth/refresh` | 公开 | 刷新 |
-| POST | `/api/v1/client-auth/register` | 公开 | 注册 |
-| POST | `/api/v1/client-auth/reset-subscription` | 公开 | 重置订阅 |
-| PUT | `/api/v1/client-auth/settings` | 公开 | 更新资料 |
-| POST | `/api/v1/client-auth/rotate-token` | 公开 | 轮换订阅 token |
-| POST | `/api/v1/client-auth/self-unban` | 公开 | 自助解封 |
-| PUT | `/api/v1/client-auth/settings` | 公开 | 更新设置 |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 公开 | 自动新增IP |
-| GET | `/api/v1/client-auth/settings/whitelist` | 公开 | 列表IP白名单 |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 公开 | 移除IP白名单 |
-| GET | `/api/v1/client-auth/shared-accounts` | 公开 | 列表共享账号 |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | 公开 | 获取共享账号 |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 公开 | 申请共享账号 |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 公开 | Request修复 |
-| POST | `/api/v1/client-auth/ticket` | 公开 | 签发一次性短时票据 |
-| GET | `/api/v1/client-auth/tickets` | 公开 | 列表工单 |
-| POST | `/api/v1/client-auth/tickets` | 公开 | 创建工单 |
-| GET | `/api/v1/client-auth/tickets/:id` | 公开 | 获取工单 |
-| POST | `/api/v1/client-auth/tickets/:id/close` | 公开 | 关闭工单 |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | 公开 | 回复工单 |
-| GET | `/api/v1/client-auth/traffic-history` | 公开 | 流量历史 |
-| GET | `/api/v1/client-auth/traffic-packs` | 公开 | 流量包列表 |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | 公开 | 购买流量包 |
+| GET | `/api/v1/client-auth/articles` | 客户端登录 | 列表文章 |
+| GET | `/api/v1/client-auth/articles/:slug` | 客户端登录 | 获取文章 |
+| GET | `/api/v1/client-auth/balance` | 客户端登录 | 获取余额 |
+| GET | `/api/v1/client-auth/balance/transactions` | 客户端登录 | 余额流水 |
+| POST | `/api/v1/client-auth/change-password` | 客户端登录 | 修改密码 |
+| POST | `/api/v1/client-auth/charge/create` | 客户端登录 | 创建充值订单 |
+| GET | `/api/v1/client-auth/charge/orders` | 客户端登录 | 列表充值订单 |
+| GET | `/api/v1/client-auth/charge/orders/:id` | 客户端登录 | 获取充值订单详情 |
+| POST | `/api/v1/client-auth/charge/redeem-card` | 客户端登录 | 卡密兑换 |
+| GET | `/api/v1/client-auth/charge/sites` | 客户端登录 | 列表充值站点 |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | 客户端登录 | 查询充值状态 |
+| GET | `/api/v1/client-auth/checktime` | 客户端登录 | 获取服务器时间（校时） |
+| GET | `/api/v1/client-auth/connection-info` | 客户端登录 | 获取套餐连接参数 |
+| GET | `/api/v1/client-auth/gifts` | 客户端登录 | 列表礼品 |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | 客户端登录 | 领取礼品 |
+| GET | `/api/v1/client-auth/invoices` | 客户端登录 | 订单列表 |
+| GET | `/api/v1/client-auth/invoices/:id` | 客户端登录 | 订单详情 |
+| POST | `/api/v1/client-auth/login` | 客户端公开 | 登录 |
+| POST | `/api/v1/client-auth/logout` | 客户端登录 | 登出 |
+| POST | `/api/v1/client-auth/logs/package` | 客户端登录 | 创建日志日志包 |
+| GET | `/api/v1/client-auth/logs/packages` | 客户端登录 | 列表日志日志包 |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | 客户端登录 | 删除日志日志包 |
+| GET | `/api/v1/client-auth/logs/packages/:id` | 客户端登录 | 获取日志日志包 |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | 客户端登录 | 下载日志日志包 |
+| GET | `/api/v1/client-auth/logs/types` | 客户端登录 | 日志日志包健康检查 |
+| GET | `/api/v1/client-auth/me` | 客户端登录 | 获取当前登录用户 |
+| GET | `/api/v1/client-auth/nodes` | 客户端登录 | 我的节点列表 |
+| GET | `/api/v1/client-auth/nodes/:id/config` | 客户端登录 | 节点配置 |
+| GET | `/api/v1/client-auth/nodes/:id/link` | 客户端登录 | 节点分享链接 |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | 客户端登录 | 节点二维码 |
+| GET | `/api/v1/client-auth/oauth/:provider` | 客户端公开 | 授权 |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | 客户端公开 | 回调 |
+| GET | `/api/v1/client-auth/oauth/providers` | 客户端公开 | 提供商状态 |
+| GET | `/api/v1/client-auth/orders` | 客户端登录 | 订单列表 |
+| POST | `/api/v1/client-auth/orders` | 客户端登录 | 创建订单 |
+| GET | `/api/v1/client-auth/orders/:id` | 客户端登录 | 订单详情 |
+| GET | `/api/v1/client-auth/plans` | 客户端登录 | 套餐列表 |
+| GET | `/api/v1/client-auth/plans/:id` | 客户端登录 | 套餐详情 |
+| GET | `/api/v1/client-auth/referral/code` | 客户端登录 | 获取推广验证码 |
+| GET | `/api/v1/client-auth/referral/records` | 客户端登录 | 列表推广记录 |
+| GET | `/api/v1/client-auth/referral/stats` | 客户端登录 | 获取推广统计 |
+| POST | `/api/v1/client-auth/referral/withdraw` | 客户端登录 | Request提现 |
+| GET | `/api/v1/client-auth/referral/withdrawals` | 客户端登录 | 列表推广提现 |
+| POST | `/api/v1/client-auth/refresh` | 客户端公开 | 刷新 |
+| POST | `/api/v1/client-auth/register` | 客户端公开 | 注册 |
+| POST | `/api/v1/client-auth/reset-subscription` | 客户端登录 | 重置订阅 |
+| POST | `/api/v1/client-auth/rotate-token` | 客户端登录 | 轮换订阅 token |
+| POST | `/api/v1/client-auth/self-unban` | 客户端登录 | 自助解封 |
+| PUT | `/api/v1/client-auth/settings` | 客户端登录 | 更新设置 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 客户端登录 | 自动新增IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | 客户端登录 | 列表IP白名单 |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 客户端登录 | 移除IP白名单 |
+| GET | `/api/v1/client-auth/shared-accounts` | 客户端登录 | 列表共享账号 |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | 客户端登录 | 获取共享账号 |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 客户端登录 | 申请共享账号 |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 客户端登录 | Request修复 |
+| POST | `/api/v1/client-auth/ticket` | 客户端登录 | 签发一次性短时票据 |
+| GET | `/api/v1/client-auth/tickets` | 客户端登录 | 列表工单 |
+| POST | `/api/v1/client-auth/tickets` | 客户端登录 | 创建工单 |
+| GET | `/api/v1/client-auth/tickets/:id` | 客户端登录 | 获取工单 |
+| POST | `/api/v1/client-auth/tickets/:id/close` | 客户端登录 | 关闭工单 |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | 客户端登录 | 回复工单 |
+| GET | `/api/v1/client-auth/traffic-history` | 客户端登录 | 流量历史 |
+| GET | `/api/v1/client-auth/traffic-packs` | 客户端登录 | 流量包列表 |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | 客户端登录 | 购买流量包 |
 
 ### 订阅下发
 

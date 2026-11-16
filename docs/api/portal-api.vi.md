@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: vi | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: vi | updated: 2026-11-16 -->
 # Tham khảo Cổng thông tin API (Khách hàng / Cổng thông tin API)
 
 > Ngôn ngữ: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · Tiếng Việt · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 | GET | `/api/v1/public/articles` | Bài viết công khai (chỉ được xuất bản) |
 | GET | `/api/v1/public/articles/:slug` | Chi tiết bài viết |
 | GET | `/api/v1/public/client-configs` | Cấu hình tải xuống của khách hàng |
-| GET | `/sub/:token` | Phân phối đăng ký (`format` trả về base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, v.v.; bị thu hồi/thiếu → 404, bị treo/hết hạn/không hoạt động → 403. Xem [subscription.md](./subscription.vi.md)) |
+| GET | `/sub/:token` | Phân phối đăng ký (`format` trả về base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, v.v.; bị thu hồi/thiếu → 404, bị treo/hết hạn/không hoạt động → 403. Xem [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Khả năng hiển thị của nhà cung cấp OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Trạng thái bảo trì (công khai). Cổng thông tin hiển thị trang bảo trì khi được bật |
 
@@ -90,7 +90,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 |---|---|---|---|
 | POST | `/api/v1/client-auth/register` | — | Đăng ký. Thân máy: `{email, password, referral_code?}`. Trả về `{access_token, refresh_token, client}`; tỷ lệ đăng ký giới hạn |
 | POST | `/api/v1/client-auth/login` | — | Đăng nhập. Nội dung: `{email, password}`. Phản ứng tương tự; phát hành JWT với `token_version` |
-| POST | `/api/v1/client-auth/refresh` | — | Làm mới. Thân máy: `{refresh_token}`. Trả về mã thông báo truy cập/làm mới mới (phiên bản đã được kiểm tra; mã thông báo làm mới cũ sẽ chết ngay sau khi đăng xuất) |
+| POST | `/api/v1/client-auth/refresh` | — | Làm mới. Thân máy: `{refresh_token}`. Trả về mã thông báo truy cập/làm mới mới (đã kiểm tra phiên bản; mã thông báo làm mới cũ sẽ chết ngay sau khi đăng xuất) |
 | POST | `/api/v1/client-auth/logout` | ✓ | Đăng xuất: thu hồi phía máy chủ (`token_version +1`) → tất cả các mã thông báo cũ cho khách hàng đều không hợp lệ |
 | POST | `/api/v1/client-auth/rotate-token` | ✓ | Xoay mã thông báo đăng ký |
 | POST | `/api/v1/client-auth/ticket` | ✓ | Phát hành **vé ngắn hạn một lần** (đối với các luồng `window.open`, chẳng hạn như “gói nhật ký tải xuống” nơi không thể đặt tiêu đề) |
@@ -105,6 +105,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 | phương pháp | Đường dẫn | Mô tả |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Khách hàng hiện tại: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (phong bì `data`) |
+| PUT | `/api/v1/client-auth/settings` | Cập nhật cài đặt tự phục vụ của khách hàng: Nội dung: `{ip_whitelist, device_limit}`; `ip_whitelist` trống có nghĩa là không có hạn chế IP nguồn |
 | POST | `/api/v1/client-auth/change-password` | Thân máy: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Thời gian máy chủ (đồng bộ hóa đồng hồ máy khách) |
 | GET | `/api/v1/client-auth/connection-info` | Thông số kết nối gói hiện tại: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -122,7 +123,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 
 | phương pháp | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/api/v1/client-auth/nodes` | Các nút hiển thị với gói hiện tại: `{items:[...]}` (hiển thị các trường như tên/giao thức/vận chuyển/vùng) |
+| GET | `/api/v1/client-auth/nodes` | Các nút hiển thị với gói hiện tại: `{items:[...]}` (hiển thị các trường như tên/giao thức/vận chuyển/khu vực) |
 | GET | `/api/v1/client-auth/nodes/:id/config` | Cấu hình nút đầy đủ |
 | GET | `/api/v1/client-auth/nodes/:id/link` | Liên kết chia sẻ (vless://, v.v.) |
 | GET | `/api/v1/client-auth/nodes/:id/qrcode` | Hình ảnh mã QR |
@@ -146,7 +147,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 | phương pháp | Đường dẫn | Mô tả |
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
-| GET | `/api/v1/client-auth/balance/transactions` | Giao dịch số dư (`type`: tính phí/tiêu dùng/hoàn tiền; phân trang) |
+| GET | `/api/v1/client-auth/balance/transactions` | Giao dịch số dư (`type`: tính phí/tiêu thụ/hoàn tiền; phân trang) |
 | GET | `/api/v1/client-auth/charge/sites` | Các trang web nạp tiền có sẵn (`ListChargeSites`: chỉ được bật) |
 | POST | `/api/v1/client-auth/charge/create` | Tạo lệnh nạp tiền (chuyển hướng đến thanh toán của bên thứ ba) |
 | GET | `/api/v1/client-auth/charge/orders` | Danh sách đơn hàng nạp tiền |
@@ -160,7 +161,7 @@ Trên 401, hãy gọi `POST /api/v1/client-auth/refresh` một lần và thử l
 
 | phương pháp | Đường dẫn | Mô tả |
 |---|---|---|
-| GET | `/api/v1/client-auth/gifts` | Quà tặng có thể yêu cầu (mảng trần; `type`: ngày/byte) |
+| GET | `/api/v1/client-auth/gifts` | Quà tặng có thể yêu cầu (mảng trống; `type`: ngày/byte) |
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Yêu cầu |
 | GET | `/api/v1/client-auth/traffic-history` | Lịch sử lưu lượng truy cập hàng tháng: `{data:{history:[{period_start,total_bytes,...}], months}}` |
 

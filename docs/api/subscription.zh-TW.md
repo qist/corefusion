@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: zh-TW | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: zh-TW | updated: 2026-11-16 -->
 # 訂閱API（公開）
 
 > 語言： [简体中文](subscription.md) · [English](subscription.en.md) · 繁體中文 · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@
 | `config` | 配置範本名稱（在管理 UI 中的「訂閱格式」下定義）。必須使用與該請求的`format`相同的格式，否則將被忽略 |
 | `platform` | 依平台名稱比對組態範本（省略`config`時使用）；格式也必須符合 |
 | `providers` | 僅 `mihomo_yaml`：`1` / `true` 啟用**提供者模式**（發出 `proxy-providers` 並透過 `use` 引用它們）；預設值或任何其他值使節點內聯在 `proxies` 下。參見§6 |
+| `provider` | 僅 `mihomo_proxies_yaml`：僅使用提供者金鑰傳回來源的節點子集（不包括計費偽節點）；空返回所有節點。面板產生的`proxy-providers.url`自動包含它 |
 
 ### 支援的 `format` 值
 
@@ -53,8 +54,9 @@
 |---|---|---|
 | 200 | — | 正常（body為`format`中渲染的訂閱） |
 | 400 | `MISSING_TOKEN` | URL中沒有令牌 |
-| 403 | （純文字） | 訂閱暫停/過期/無效。該訊息透過 `Accept-Language` 本地化 (zh/en/ja/ko)，並且是單行原因 |
+| 403 | （純文字） | 訂閱暫停/過期/無效/IP 未列入白名單。該訊息透過 `Accept-Language` 本地化 (zh/en/ja/ko/ru)，並且是單行原因 |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | 令牌不存在 |
+| 429 | `TOO_MANY_REQUESTS` | 達到訂閱端點速率限制（`SubscribeRateLimit`）；JSON 錯誤，請稍後再試 |
 
 > 撤銷的訂閱被視為不存在 (404)。
 
@@ -116,13 +118,13 @@ proxy-groups:
 | 種類 | 鑰匙 | 註解 |
 |---|---|---|
 | 內部 | 清理後的節點群組名稱 | 按計劃節點組產生；僅包含該組的節點 |
-| 保留 provider（已棄用） | `subscription-nodes` | 不再出現在下發的 `proxy-providers` 中；群組引用時會展開為具體 provider，沒有具體 provider 時直接內聯節點 |
-| 外部 | 計劃中配置的名稱 | 外部來源（`http` YAML 或 `file`） |
+| 保留（已棄用） | `subscription-nodes` | `proxy-providers`中不再發射；引用它的群組擴展到特定提供者，或當計劃沒有時內聯節點 |
+| 外部 | 計劃中配置的名稱 | 外部來源（`http`、YAML 或 `file`） |
 
 每個提供者的常用欄位：
 
 - `url` — 以 `format=mihomo_proxies_yaml` 指向此訂閱，從主請求繼承 `config` / `platform`；內部提供者附加 `provider=<key>`；
-- `path` — **始終源自「內部提供者預設值 → 快取路徑範本」**（預設值 `./providers/{key}.yaml`、`{key}` 被取代）。外部提供者也無法設定自己的路徑；
+- `path` — **始終源自「內部提供者預設值 → 快取路徑範本」**（預設值 `./providers/{key}.yaml`，替換為 `{key}`）。外部提供者也無法設定自己的路徑；
 - `health-check` — `enable / url / interval`；內部提供者繼承預設值，外部提供者在計畫上配置它；
 - `interval` — 刷新間隔（以秒為單位）。
 
@@ -132,7 +134,7 @@ proxy-groups:
 
 1. **此請求實際使用的域**：`X-Forwarded-Host`的第一個值（連接埠剝離），否則為`Host`；它必須與**啟用**端點相符；
 2. 如果沒有符合的內容，則回退到具有**最低 ID** 的已啟用端點；
-3. 此路徑來自匹配的端點（`path`，預設 `/`），產生 `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`。
+3. 此路徑來自符合的端點（`path`，預設 `/`），產生 `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`。
 
 後果：
 
@@ -144,9 +146,9 @@ proxy-groups:
 
 ## 7. 註解
 
-- **格式和配置緊密耦合**：`config`/`platform`選擇的模板必須與該要求的`format`匹配；不匹配的模板將被忽略——這可以防止將 Mihomo 規則注入 sing-box/Xray ZXQ0091。
+- **格式和配置緊密耦合**：`config`/`platform`選擇的模板必須與該要求的`format`匹配；不匹配的模板將被忽略——這可以防止將 Mihomo 規則注入 sing-box/Xray JSON。
 - **`providers=1` 僅影響 Mihomo YAML**：sing-box / Xray / base64 / raw 忽略它（節點保持內聯）。
-- 
-- **存取日誌**：每次抓取都會記錄IP / UA / CDN訊息，在管理介面的「訂閱存取日誌」下可見。
+- **速率限制**：訂閱端點有自己的限制（`SubscribeRateLimit`）；濫用職權的顧客會被拒絕。
+- **存取日誌**：每次抓取都會記錄 IP / UA / CDN 訊息，在管理介面的「訂閱存取日誌」下可見。
 - 如果專用訂閱埠上沒有設定網域，則使用要求的 `X-Forwarded-Proto` / `X-Forwarded-Host`；請確保您的反向代理轉送兩個標頭。
 - 在多域部署中，使端點清單與用戶端實際使用的網域保持一致；請參閱第 6.2 節。

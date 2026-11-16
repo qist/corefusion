@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: ko | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: ko | updated: 2026-11-16 -->
 # 충전 콜백 API
 
 > 언어: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · 한국어 · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -98,10 +98,11 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. 응답
 
-- 성공: 2xx(패널이 지불을 게시한 후)
-- 실패: 4xx/5xx + `{ "code": "...", "message": "..." }`; 일반적인 코드에는 `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, 금액 불일치 등이 포함됩니다.
+- 성공: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (패널이 지불을 게시한 후)
+- 실패: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; 구체적인 이유는 `message`에 있습니다(잘못된 서명, 화이트리스트에 없는 IP, 주문을 찾을 수 없음, 금액/통화 불일치, nonce 재생 등).
+- 경로의 잘못된 `site_id`는 `INVALID_SITE_ID`를 반환합니다. JSON가 아닌 본문은 `INVALID_REQUEST`를 반환합니다.
 
-> 모든 콜백에는 `X-Request-ID`(없는 경우 패널에서 생성됨)가 포함됩니다. 로그와 이벤트는 처음부터 끝까지 추적 가능합니다. 문제를 해결할 때 관리자에게 이 ID를 제공하세요.
+> 모든 콜백에는 `X-Request-ID`(없을 경우 패널에서 생성됨)가 포함됩니다. 로그와 이벤트는 처음부터 끝까지 추적 가능합니다. 문제를 해결할 때 관리자에게 이 ID를 제공하세요.
 
 ## 6. 테스트 및 문제 해결
 

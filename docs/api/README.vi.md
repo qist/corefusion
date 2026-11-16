@@ -1,16 +1,16 @@
-<!-- source: README.md | locale: vi | updated: 2026-10-23 -->
+<!-- source: README.md | locale: vi | updated: 2026-11-16 -->
 # Tài liệu CoreFusion API
 
 > Ngôn ngữ: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · Tiếng Việt · [العربية](README.ar.md) · [فارسی](README.fa.md)
 
 Tài liệu API dành cho **các nhà tích hợp bên ngoài, nhà phát triển thứ cấp và khách hàng bên thứ ba**. Tất cả các đường dẫn đều liên quan đến miền triển khai.
 
-| tài liệu | Khán giả | Nội dung |
+| tài liệu | khán giả | Nội dung |
 |---|---|---|
 | [subscription.md](./subscription.vi.md) | Người đăng ký / nhà phát triển khách hàng | Điểm cuối đăng ký (`/sub/:token`): định dạng, tiêu đề, mã trạng thái, ví dụ |
-| [portal-api.md](./portal-api.vi.md) | Giao diện cổng thông tin / khách hàng của bên thứ ba | Cổng thông tin khách hàng API (`/api/v1/client-auth/*`, `/api/v1/public/*`): đăng ký, đăng nhập, gói, đơn đặt hàng, số dư, vé |
+| [portal-api.md](./portal-api.md) | Giao diện cổng thông tin / khách hàng của bên thứ ba | Cổng thông tin khách hàng API (`/api/v1/client-auth/*`, `/api/v1/public/*`): đăng ký, đăng nhập, gói, đơn đặt hàng, số dư, vé |
 | [charge-callback.md](./charge-callback.vi.md) | Nhà cung cấp thanh toán | Ký và xác minh cuộc gọi lại thanh toán |
-| [admin-api.vi.md](./admin-api.vi.md) | Phát triển/tự động hóa bảng điều khiển | Bảng lộ trình API quản trị đầy đủ (`/api/v1/*`, được nhóm theo mô-đun) |
+| [admin-api.en.md](./admin-api.vi.md) | Phát triển/tự động hóa bảng điều khiển | Bảng lộ trình API quản trị đầy đủ (`/api/v1/*`, được nhóm theo mô-đun) |
 
 ---
 
@@ -35,7 +35,7 @@ Bảng điều khiển có thể hiển thị ba công cụ cùng lúc, chia s�
 | **Mã thông báo đăng ký** | Mã thông báo trong URL: `/sub/<token>` | Tìm nạp đăng ký, không có tiêu đề |
 
 - Mã thông báo truy cập của khách hàng kéo dài 24 giờ, mã thông báo làm mới 7 ngày; JWT chứa `tv` (token_version), do đó việc đăng xuất/đăng xuất bắt buộc sẽ làm mất hiệu lực tất cả các mã thông báo cũ.
-- Vai trò quản trị viên: `viewer` / `admin` / `operator` / `super_admin`; một số thao tác ghi yêu cầu `RequireRole(RoleAdmin)` hoặc cao hơn.
+- Cấp độ vai trò quản trị viên: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Việc đọc thường chỉ cần một phiên đăng nhập; ghi yêu cầu `operator` / `admin` / `super_admin` trên mỗi mô-đun. Xem cột “Quyền” trong [admin-api.md](./admin-api.vi.md).
 
 ## 3. Định dạng phản hồi
 
@@ -75,4 +75,4 @@ Các tuyến này trả về nội dung HTML/tĩnh và nằm ngoài tài liệu 
 
 ## 6. Nguồn sự thật
 
-`internal/api/router/router.go` (số lượng thay đổi theo phiên bản; mã nguồn là chuẩn). Bảng lộ trình trong [admin-api.md](./admin-api.vi.md) được tạo từ mã; nếu nó không đồng ý với mã, **mã sẽ thắng**.
+`internal/api/router/router.go` (số lượng thay đổi theo phiên bản; mã có thẩm quyền). Bảng lộ trình trong [admin-api.md](./admin-api.md) được tạo từ mã; nếu nó không đồng ý với mã, **mã sẽ thắng**.

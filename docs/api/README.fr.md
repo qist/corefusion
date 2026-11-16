@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: fr | updated: 2026-10-23 -->
+<!-- source: README.md | locale: fr | updated: 2026-11-16 -->
 # Documentation CoreFusion API
 
 > Langues : [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · Français · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@ Documentation API pour **intégrateurs externes, développement secondaire et cl
 | Documenter | Public | Contenu |
 |---|---|---|
 | [abonnement.md](./subscription.fr.md) | Abonnés / développeurs clients | Point de terminaison d'abonnement (`/sub/:token`) : formats, en-têtes, codes d'état, exemples |
-| [portal-api.md](./portal-api.fr.md) | Frontend du portail / clients tiers | Portail client API (`/api/v1/client-auth/*`, `/api/v1/public/*`) : inscription, connexion, plans, commandes, solde, billets |
+| [portal-api.md](./portal-api.md) | Frontend du portail / clients tiers | Portail client API (`/api/v1/client-auth/*`, `/api/v1/public/*`) : inscription, connexion, plans, commandes, solde, billets |
 | [charge-callback.md](./charge-callback.fr.md) | Fournisseurs de paiement | Signature et vérification du rappel de paiement |
-| [admin-api.fr.md](./admin-api.fr.md) | Développement / automatisation de panneaux | Table de routage d'administration complète API (`/api/v1/*`, regroupée par module) |
+| [admin-api.en.md](./admin-api.fr.md) | Développement / automatisation de panneaux | Table de routage d'administration complète API (`/api/v1/*`, regroupée par module) |
 
 ---
 
@@ -35,7 +35,7 @@ Le panneau peut exposer trois moteurs en même temps, partageant une seule base 
 | **Jeton d'abonnement** | Jeton dans le URL : `/sub/<token>` | Récupération d'abonnement, pas d'en-tête |
 
 - Les jetons d'accès client durent 24 heures, actualisent les jetons 7 jours ; le JWT contient `tv` (token_version), donc la déconnexion/déconnexion forcée invalide tous les anciens jetons.
-- Rôles d'administrateur : `viewer` / `admin` / `operator` / `super_admin` ; certaines opérations d'écriture nécessitent `RequireRole(RoleAdmin)` ou une version ultérieure.
+- Niveaux de rôle d'administrateur : `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Les lectures ne nécessitent généralement qu’une session connectée ; les écritures nécessitent `operator` / `admin` / `super_admin` par module. Voir la colonne « Autorisation » dans [admin-api.md](./admin-api.fr.md).
 
 ## 3. Format de réponse
 
@@ -75,4 +75,4 @@ Ces routes renvoient des ressources HTML/statiques et se trouvent en dehors de l
 
 ## 6. Source de vérité
 
-`internal/api/router/router.go` (le nombre varie selon la version ; le code fait foi). La table de routage dans [admin-api.md](./admin-api.fr.md) est générée à partir du code ; s'il n'est pas d'accord avec le code, **le code gagne**.
+`internal/api/router/router.go` (le nombre varie selon la version ; le code fait autorité). La table de routage dans [admin-api.md](./admin-api.md) est générée à partir du code ; s'il n'est pas d'accord avec le code, **le code gagne**.

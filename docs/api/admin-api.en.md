@@ -17,8 +17,11 @@ The complete admin API route table for **panel development / automation / integr
 | Public | No sign-in required (maintenance guard / rate limiting may still apply) |
 | Public · rate-limited | No sign-in, with a dedicated rate limit |
 | Signed in | Requires a signed-in admin token (`AuthRequired`) |
+| Operator | Requires role ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Admin | Requires role ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Super admin | Requires role = `super_admin` |
+| Client (public) | No client token required (sign-in / register, etc.) |
+| Client (signed in) | Requires `Authorization: Bearer <client_token>` (a portal client token, not an admin token) |
 
 Role levels: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; insufficient roles return 403 `INSUFFICIENT_ROLE`.
 
@@ -196,8 +199,8 @@ Sign-in, sign-out, password change, 2FA (TOTP), Passkey (WebAuthn) and one-time 
 | POST | `/api/v1/auth/passkey/login/finish` | Public | Complete sign-in |
 | POST | `/api/v1/auth/passkey/register/begin` | Signed in | Start registration |
 | POST | `/api/v1/auth/passkey/register/finish` | Signed in | Complete registration |
-| GET | `/api/v1/auth/passkey/rpids` | Signed in | RP ID allow-list |
-| POST | `/api/v1/auth/passkey/rpids` | Signed in | Update RP ID allow-list |
+| GET | `/api/v1/auth/passkey/rpids` | Admin | RP ID allow-list |
+| POST | `/api/v1/auth/passkey/rpids` | Admin | Update RP ID allow-list |
 | GET | `/api/v1/auth/passkey/status` | Public | Status |
 | POST | `/api/v1/auth/refresh` | Public | Refresh |
 | POST | `/api/v1/auth/ticket` | Signed in | Issue one-time short-lived ticket |
@@ -220,17 +223,17 @@ CRUD, suspend/resume, upgrade/downgrade, renewal and usage reset for subscribers
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Signed in | List customers |
-| POST | `/api/v1/clients` | Signed in | Create customer. body: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` is required; `password` may be empty (customers can set it later in the portal) |
-| DELETE | `/api/v1/clients/:id` | Signed in | Delete customer |
+| POST | `/api/v1/clients` | Operator | Create customer. body: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` is required; `password` may be empty (customers can set it later in the portal) |
+| DELETE | `/api/v1/clients/:id` | Operator | Delete customer |
 | GET | `/api/v1/clients/:id` | Signed in | Get customer |
-| PUT | `/api/v1/clients/:id` | Signed in | Update customer |
-| POST | `/api/v1/clients/:id/downgrade` | Signed in | Downgrade customer |
+| PUT | `/api/v1/clients/:id` | Operator | Update customer |
+| POST | `/api/v1/clients/:id/downgrade` | Operator | Downgrade customer |
 | GET | `/api/v1/clients/:id/orders` | Signed in | Customer order list |
-| POST | `/api/v1/clients/:id/renew` | Signed in | Renew customer |
-| POST | `/api/v1/clients/:id/reset-usage` | Signed in | Reset usage |
-| POST | `/api/v1/clients/:id/restore` | Signed in | Resume customer |
-| POST | `/api/v1/clients/:id/suspend` | Signed in | Suspend customer |
-| POST | `/api/v1/clients/:id/upgrade` | Signed in | Upgrade customer |
+| POST | `/api/v1/clients/:id/renew` | Operator | Renew customer |
+| POST | `/api/v1/clients/:id/reset-usage` | Operator | Reset usage |
+| POST | `/api/v1/clients/:id/restore` | Operator | Resume customer |
+| POST | `/api/v1/clients/:id/suspend` | Operator | Suspend customer |
+| POST | `/api/v1/clients/:id/upgrade` | Operator | Upgrade customer |
 
 ### Plan templates
 
@@ -239,17 +242,17 @@ Plans (variants, billing cycles, prices, traffic quotas) and template-level node
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Signed in | Template list |
-| POST | `/api/v1/plan-templates` | Signed in | Create template |
-| DELETE | `/api/v1/plan-templates/:id` | Signed in | Delete template |
+| POST | `/api/v1/plan-templates` | Admin | Create template |
+| DELETE | `/api/v1/plan-templates/:id` | Admin | Delete template |
 | GET | `/api/v1/plan-templates/:id` | Signed in | Template details |
-| PUT | `/api/v1/plan-templates/:id` | Signed in | Update template |
+| PUT | `/api/v1/plan-templates/:id` | Admin | Update template |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Signed in | Get available nodes |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Signed in | Get billable node options |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Signed in | Set template node groups |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Signed in | Sync accounts to template |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Admin | Set template node groups |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Admin | Sync accounts to template |
 | GET | `/api/v1/plan-templates/:id/variants` | Signed in | Variant list |
-| POST | `/api/v1/plan-templates/:id/variants` | Signed in | Create variant |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Signed in | Sync all accounts |
+| POST | `/api/v1/plan-templates/:id/variants` | Admin | Create variant |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Admin | Sync all accounts |
 
 ### Plan variants
 
@@ -257,8 +260,8 @@ Update and delete plan variants (creation is nested under plan templates).
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Signed in | Delete variant |
-| PUT | `/api/v1/plan-variants/:id` | Signed in | Update variant |
+| DELETE | `/api/v1/plan-variants/:id` | Admin | Delete variant |
+| PUT | `/api/v1/plan-variants/:id` | Admin | Update variant |
 
 ### Traffic packs
 
@@ -267,9 +270,9 @@ Traffic packs that can be purchased separately.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Signed in | Traffic pack list |
-| POST | `/api/v1/traffic-packs` | Signed in | Create traffic pack |
-| DELETE | `/api/v1/traffic-packs/:id` | Signed in | Delete traffic pack |
-| PUT | `/api/v1/traffic-packs/:id` | Signed in | Update traffic pack |
+| POST | `/api/v1/traffic-packs` | Admin | Create traffic pack |
+| DELETE | `/api/v1/traffic-packs/:id` | Admin | Delete traffic pack |
+| PUT | `/api/v1/traffic-packs/:id` | Admin | Update traffic pack |
 
 ### Coupons
 
@@ -278,9 +281,9 @@ Create, validate and redeem coupons.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Signed in | List coupons |
-| POST | `/api/v1/promotions` | Signed in | Create coupon |
-| DELETE | `/api/v1/promotions/:id` | Signed in | Delete coupon |
-| PUT | `/api/v1/promotions/:id` | Signed in | Update coupon |
+| POST | `/api/v1/promotions` | Admin | Create coupon |
+| DELETE | `/api/v1/promotions/:id` | Admin | Delete coupon |
+| PUT | `/api/v1/promotions/:id` | Admin | Update coupon |
 | POST | `/api/v1/promotions/validate` | Signed in | Validate coupon |
 
 ### Node groups
@@ -290,12 +293,12 @@ Organize nodes into groups referenced by plans.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Signed in | List node groups |
-| POST | `/api/v1/node-groups` | Signed in | Create node group |
-| DELETE | `/api/v1/node-groups/:id` | Signed in | Delete node group |
-| PUT | `/api/v1/node-groups/:id` | Signed in | Update node group |
+| POST | `/api/v1/node-groups` | Admin | Create node group |
+| DELETE | `/api/v1/node-groups/:id` | Admin | Delete node group |
+| PUT | `/api/v1/node-groups/:id` | Admin | Update node group |
 | GET | `/api/v1/node-groups/:id/members` | Signed in | List group members |
-| POST | `/api/v1/node-groups/:id/members` | Signed in | Add group member |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Signed in | Remove group member |
+| POST | `/api/v1/node-groups/:id/members` | Admin | Add group member |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Admin | Remove group member |
 
 ### Node servers
 
@@ -328,7 +331,8 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Save and apply |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Site list |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Create site |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Import sites |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Admin | Import sites |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Admin | Preview rendered Caddy site |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Delete site |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Update site |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Delete all SNI rules |
@@ -353,6 +357,9 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Admin | Force reconnect |
 | GET | `/api/v1/node-servers/:id/free-port` | Admin | Request a free port |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | Admin | Push to this node |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Admin | Firewall detection (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Admin | Allow inbound listening port (multi-range supported) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Admin | Revoke inbound port allowance (including duplicates) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Admin | List |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Admin | Create |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Delete |
@@ -373,8 +380,9 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Save settings |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Site list |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Create site |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Import sites |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Generate SSL certificate files |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Admin | Import sites |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Admin | Preview rendered Nginx site |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Admin | Generate SSL certificate files |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Delete site |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Update site |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Delete all SNI rules |
@@ -457,6 +465,7 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Admin | Clear all |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Admin | Apply port-hopping firewall rules |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Admin | Remove port-hopping firewall rules |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Admin | Live sing-box connections (clash_api, local node only) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Node speed test |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Node status |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Sync node config (generate and push) |
@@ -496,6 +505,8 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | GET | `/api/v1/node-servers/:id/warp/config` | Admin | Read config |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Admin | Generate config |
 | POST | `/api/v1/node-servers/:id/warp/register` | Admin | Register |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Admin | Register WARP MASQUE profile (step 1 of 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Admin | Create a sing-box MASQUE outbound from a WARP profile |
 | GET | `/api/v1/node-servers/:id/warp/status` | Admin | Status |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Get balancer info |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Set balancer target |
@@ -544,8 +555,8 @@ Node-side operation audit and export.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Signed in | Node audit log |
-| GET | `/api/v1/node-audit-logs/export` | Signed in | Export node audit logs |
+| GET | `/api/v1/node-audit-logs` | Admin | Node audit log |
+| GET | `/api/v1/node-audit-logs/export` | Admin | Export node audit logs |
 
 ### Nodes (legacy model, retired)
 
@@ -568,16 +579,16 @@ Subscription record management: revoke, rotate token, access logs, usage reset.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Signed in | List |
-| POST | `/api/v1/subscriptions` | Signed in | Create |
-| DELETE | `/api/v1/subscriptions/:id` | Signed in | Delete |
+| POST | `/api/v1/subscriptions` | Operator | Create |
+| DELETE | `/api/v1/subscriptions/:id` | Operator | Delete |
 | GET | `/api/v1/subscriptions/:id` | Signed in | Details |
-| PUT | `/api/v1/subscriptions/:id` | Signed in | Update |
+| PUT | `/api/v1/subscriptions/:id` | Operator | Update |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Signed in | Access log |
-| POST | `/api/v1/subscriptions/:id/enable` | Signed in | Enable |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Signed in | Reset usage |
-| POST | `/api/v1/subscriptions/:id/restore` | Signed in | Resume |
-| POST | `/api/v1/subscriptions/:id/revoke` | Signed in | Revoke |
-| POST | `/api/v1/subscriptions/:id/rotate` | Signed in | Rotate |
+| POST | `/api/v1/subscriptions/:id/enable` | Operator | Enable |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Operator | Reset usage |
+| POST | `/api/v1/subscriptions/:id/restore` | Operator | Resume |
+| POST | `/api/v1/subscriptions/:id/revoke` | Operator | Revoke |
+| POST | `/api/v1/subscriptions/:id/rotate` | Operator | Rotate |
 | GET | `/api/v1/subscriptions/:id/rotations` | Signed in | Rotation history |
 
 ### Subscription formats
@@ -593,10 +604,10 @@ Dedicated subscription domains (reverse-proxied to the panel's `/sub` path).
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Signed in | List |
-| POST | `/api/v1/subscription-endpoints` | Signed in | Create |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Signed in | Delete |
+| POST | `/api/v1/subscription-endpoints` | Admin | Create |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Admin | Delete |
 | GET | `/api/v1/subscription-endpoints/:id` | Signed in | Details |
-| PUT | `/api/v1/subscription-endpoints/:id` | Signed in | Update |
+| PUT | `/api/v1/subscription-endpoints/:id` | Admin | Update |
 
 ### Share domains
 
@@ -605,11 +616,11 @@ Access domain/IP pool used in client links.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Signed in | List |
-| POST | `/api/v1/share-domains` | Signed in | Create |
-| DELETE | `/api/v1/share-domains/:id` | Signed in | Delete |
-| PUT | `/api/v1/share-domains/:id` | Signed in | Update |
-| DELETE | `/api/v1/share-domains/all` | Signed in | Clear all |
-| POST | `/api/v1/share-domains/seed` | Signed in | Initialize default data |
+| POST | `/api/v1/share-domains` | Admin | Create |
+| DELETE | `/api/v1/share-domains/:id` | Admin | Delete |
+| PUT | `/api/v1/share-domains/:id` | Admin | Update |
+| DELETE | `/api/v1/share-domains/all` | Admin | Clear all |
+| POST | `/api/v1/share-domains/seed` | Admin | Initialize default data |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP pool and source management.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Signed in | Clear entries |
+| DELETE | `/api/v1/cfip/entries` | Admin | Clear entries |
 | GET | `/api/v1/cfip/entries` | Signed in | Entry list |
-| POST | `/api/v1/cfip/entries` | Signed in | Add entry |
-| DELETE | `/api/v1/cfip/entries/:id` | Signed in | Delete entry |
-| POST | `/api/v1/cfip/fetch-all` | Signed in | Fetch all sources |
-| POST | `/api/v1/cfip/seed` | Signed in | Initialize default data |
+| POST | `/api/v1/cfip/entries` | Admin | Add entry |
+| DELETE | `/api/v1/cfip/entries/:id` | Admin | Delete entry |
+| POST | `/api/v1/cfip/fetch-all` | Admin | Fetch all sources |
+| GET | `/api/v1/cfip/probe-config` | Signed in | CF preferred-IP probe config (entry nodes + installed dialers) |
+| PUT | `/api/v1/cfip/probe-config` | Admin | Save probe interval / latency limit / entry node / dialer |
+| POST | `/api/v1/cfip/check` | Admin | Probe all preferred domains/IPs now |
+| POST | `/api/v1/cfip/seed` | Admin | Initialize default data |
 | GET | `/api/v1/cfip/sources` | Signed in | Data source list |
-| POST | `/api/v1/cfip/sources` | Signed in | Create data source |
-| DELETE | `/api/v1/cfip/sources/:id` | Signed in | Delete data source |
-| PUT | `/api/v1/cfip/sources/:id` | Signed in | Update data source |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Signed in | Fetch this source |
+| POST | `/api/v1/cfip/sources` | Admin | Create data source |
+| DELETE | `/api/v1/cfip/sources/:id` | Admin | Delete data source |
+| PUT | `/api/v1/cfip/sources/:id` | Admin | Update data source |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Admin | Fetch this source |
 
 ### Subscription config (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Subscription template configuration: groups, rules, rule-providers, YAML preview
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Signed in | List |
-| POST | `/api/v1/mihomo/configs` | Signed in | Create |
-| DELETE | `/api/v1/mihomo/configs/:id` | Signed in | Delete |
+| POST | `/api/v1/mihomo/configs` | Admin | Create |
+| DELETE | `/api/v1/mihomo/configs/:id` | Admin | Delete |
 | GET | `/api/v1/mihomo/configs/:id` | Signed in | Details |
-| PUT | `/api/v1/mihomo/configs/:id` | Signed in | Update |
+| PUT | `/api/v1/mihomo/configs/:id` | Admin | Update |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Signed in | Rule list |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Signed in | Create rule |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Reorder rules |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Update rule |
-| DELETE | `/api/v1/mihomo/rules/:id` | Signed in | Delete rule |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Admin | Create rule |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Admin | Reorder rules |
+| PUT | `/api/v1/mihomo/rules/:id` | Admin | Update rule |
+| DELETE | `/api/v1/mihomo/rules/:id` | Admin | Delete rule |
 
 ### Recharge sites
 
@@ -652,20 +666,20 @@ Third-party payment site integration: signing keys, verification files, domain v
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Signed in | Site list |
-| POST | `/api/v1/charge-sites` | Signed in | Create site |
-| DELETE | `/api/v1/charge-sites/:id` | Signed in | Delete site |
-| GET | `/api/v1/charge-sites/:id` | Signed in | Site details |
-| PUT | `/api/v1/charge-sites/:id` | Signed in | Update site |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Signed in | Clear old key |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Signed in | Generate verification file |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Signed in | Generate verification file |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Signed in | Get integration doc |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Signed in | Rotate signing key |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Signed in | Verify domain DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Signed in | Verify domain HTTP challenge |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Signed in | Verify domain DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Signed in | Verify domain HTTP challenge |
+| GET | `/api/v1/charge-sites` | Admin | Site list |
+| POST | `/api/v1/charge-sites` | Admin | Create site |
+| DELETE | `/api/v1/charge-sites/:id` | Admin | Delete site |
+| GET | `/api/v1/charge-sites/:id` | Admin | Site details |
+| PUT | `/api/v1/charge-sites/:id` | Admin | Update site |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Admin | Clear old key |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Admin | Generate verification file |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Admin | Generate verification file |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Admin | Get integration doc |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Admin | Rotate signing key |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Admin | Verify domain DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Admin | Verify domain HTTP challenge |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Admin | Verify domain DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Admin | Verify domain HTTP challenge |
 
 ### Recharge orders
 
@@ -673,10 +687,10 @@ Recharge order queries, refunds, CSV export.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Signed in | Order list |
-| GET | `/api/v1/charge-orders/:id` | Signed in | Order details |
-| POST | `/api/v1/charge-orders/:id/refund` | Signed in | Refund |
-| GET | `/api/v1/charge-orders/export-csv` | Signed in | Export recharge orders CSV |
+| GET | `/api/v1/charge-orders` | Admin | Order list |
+| GET | `/api/v1/charge-orders/:id` | Admin | Order details |
+| POST | `/api/v1/charge-orders/:id/refund` | Admin | Refund |
+| GET | `/api/v1/charge-orders/export-csv` | Admin | Export recharge orders CSV |
 
 ### Recharge cards
 
@@ -684,12 +698,12 @@ Bulk card generation, usage records, CSV export.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Signed in | Card list |
-| POST | `/api/v1/charge-cards` | Signed in | Create card |
-| DELETE | `/api/v1/charge-cards/:id` | Signed in | Delete card |
-| GET | `/api/v1/charge-cards/:id/usages` | Signed in | Card usage records |
-| POST | `/api/v1/charge-cards/batch` | Signed in | Bulk generate cards |
-| GET | `/api/v1/charge-cards/export-csv` | Signed in | Export cards CSV |
+| GET | `/api/v1/charge-cards` | Admin | Card list |
+| POST | `/api/v1/charge-cards` | Admin | Create card |
+| DELETE | `/api/v1/charge-cards/:id` | Admin | Delete card |
+| GET | `/api/v1/charge-cards/:id/usages` | Admin | Card usage records |
+| POST | `/api/v1/charge-cards/batch` | Admin | Bulk generate cards |
+| GET | `/api/v1/charge-cards/export-csv` | Admin | Export cards CSV |
 
 ### Charge callback events
 
@@ -725,8 +739,8 @@ Issue claimable gifts (days/traffic).
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Signed in | Gift list |
-| POST | `/api/v1/client-gifts` | Signed in | Create gift |
-| POST | `/api/v1/client-gifts/batch` | Signed in | Bulk create gifts |
+| POST | `/api/v1/client-gifts` | Admin | Create gift |
+| POST | `/api/v1/client-gifts/batch` | Admin | Bulk create gifts |
 | GET | `/api/v1/client-gifts/search-clients` | Signed in | Search customers |
 
 ### Referral config
@@ -746,9 +760,9 @@ Review withdrawal requests.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Signed in | Withdrawal request list |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Signed in | Approve withdrawal |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Signed in | Reject withdrawal |
+| GET | `/api/v1/referral-withdrawals` | Admin | Withdrawal request list |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Admin | Approve withdrawal |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Admin | Reject withdrawal |
 
 ### IP allow-lists (summary)
 
@@ -774,9 +788,9 @@ Ticket reply, assignment and closure.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Signed in | Ticket list |
 | GET | `/api/v1/tickets/:id` | Signed in | Ticket details |
-| POST | `/api/v1/tickets/:id/assign` | Signed in | Assign ticket |
-| POST | `/api/v1/tickets/:id/close` | Signed in | Close ticket |
-| POST | `/api/v1/tickets/:id/reply` | Signed in | Reply to ticket |
+| POST | `/api/v1/tickets/:id/assign` | Operator | Assign ticket |
+| POST | `/api/v1/tickets/:id/close` | Operator | Close ticket |
+| POST | `/api/v1/tickets/:id/reply` | Operator | Reply to ticket |
 
 ### Articles
 
@@ -785,10 +799,10 @@ CRUD for portal articles.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Signed in | Article list |
-| POST | `/api/v1/articles` | Signed in | Create article |
-| DELETE | `/api/v1/articles/:id` | Signed in | Delete article |
+| POST | `/api/v1/articles` | Admin | Create article |
+| DELETE | `/api/v1/articles/:id` | Admin | Delete article |
 | GET | `/api/v1/articles/:id` | Signed in | Article details |
-| PUT | `/api/v1/articles/:id` | Signed in | Update article |
+| PUT | `/api/v1/articles/:id` | Admin | Update article |
 
 ### Shared accounts
 
@@ -797,10 +811,10 @@ Issuance and repair records for shared accounts (streaming, etc.).
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Signed in | Shared account list |
-| POST | `/api/v1/shared-accounts` | Signed in | Create shared account |
-| DELETE | `/api/v1/shared-accounts/:id` | Signed in | Delete shared account |
+| POST | `/api/v1/shared-accounts` | Admin | Create shared account |
+| DELETE | `/api/v1/shared-accounts/:id` | Admin | Delete shared account |
 | GET | `/api/v1/shared-accounts/:id` | Signed in | Shared account details |
-| PUT | `/api/v1/shared-accounts/:id` | Signed in | Update shared account |
+| PUT | `/api/v1/shared-accounts/:id` | Admin | Update shared account |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Signed in | Repair records |
 
 ### Certificates
@@ -809,20 +823,20 @@ Public certificate (ACME) issuance, upload, renewal and export; issuance on a sp
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Signed in | List |
-| POST | `/api/v1/certificates` | Signed in | Create |
-| DELETE | `/api/v1/certificates/:id` | Signed in | Delete |
-| GET | `/api/v1/certificates/:id` | Signed in | Details |
-| PUT | `/api/v1/certificates/:id` | Signed in | Update |
-| GET | `/api/v1/certificates/:id/download` | Signed in | Download |
-| POST | `/api/v1/certificates/:id/renew` | Signed in | Renew customer |
-| GET | `/api/v1/certificates/check-port` | Signed in | Check port |
-| GET | `/api/v1/certificates/detect-ip` | Signed in | Probe IP |
-| GET | `/api/v1/certificates/export` | Signed in | Export |
-| POST | `/api/v1/certificates/issue` | Signed in | Issue. body: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaults to http-01; `dns_channel_id` selects a DNS channel (a configured DNS provider + credentials) |
-| POST | `/api/v1/certificates/issue-on-node` | Signed in | Issue to node |
-| POST | `/api/v1/certificates/upload` | Signed in | Upload |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Query background task status |
+| GET | `/api/v1/certificates` | Admin | List |
+| POST | `/api/v1/certificates` | Admin | Create |
+| DELETE | `/api/v1/certificates/:id` | Admin | Delete |
+| GET | `/api/v1/certificates/:id` | Admin | Details |
+| PUT | `/api/v1/certificates/:id` | Admin | Update |
+| GET | `/api/v1/certificates/:id/download` | Admin | Download |
+| POST | `/api/v1/certificates/:id/renew` | Admin | Renew customer |
+| GET | `/api/v1/certificates/check-port` | Admin | Check port |
+| GET | `/api/v1/certificates/detect-ip` | Admin | Probe IP |
+| GET | `/api/v1/certificates/export` | Admin | Export |
+| POST | `/api/v1/certificates/issue` | Admin | Issue. body: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaults to http-01; `dns_channel_id` selects a DNS channel (a configured DNS provider + credentials) |
+| POST | `/api/v1/certificates/issue-on-node` | Admin | Issue to node |
+| POST | `/api/v1/certificates/upload` | Admin | Upload |
+| GET | `/api/v1/certificate-tasks/:id` | Admin | Query background task status |
 
 ### Certificate channels
 
@@ -830,11 +844,11 @@ ACME channel (CA) configuration.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Signed in | List |
-| POST | `/api/v1/cert-channels` | Signed in | Create |
-| DELETE | `/api/v1/cert-channels/:id` | Signed in | Delete |
-| PUT | `/api/v1/cert-channels/:id` | Signed in | Update |
-| GET | `/api/v1/cert-channels/providers` | Signed in | Provider |
+| GET | `/api/v1/cert-channels` | Admin | List |
+| POST | `/api/v1/cert-channels` | Admin | Create |
+| DELETE | `/api/v1/cert-channels/:id` | Admin | Delete |
+| PUT | `/api/v1/cert-channels/:id` | Admin | Update |
+| GET | `/api/v1/cert-channels/providers` | Admin | Provider |
 
 ### EAB configuration
 
@@ -842,12 +856,12 @@ Credentials binding external accounts such as ZeroSSL / Google.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Signed in | List |
-| POST | `/api/v1/eab-configs` | Signed in | Create |
-| DELETE | `/api/v1/eab-configs/:id` | Signed in | Delete |
-| PUT | `/api/v1/eab-configs/:id` | Signed in | Update |
-| POST | `/api/v1/eab-configs/fetch-google` | Signed in | Fetch Google EAB from GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Signed in | Fetch ZeroSSL EAB with an email in one click |
+| GET | `/api/v1/eab-configs` | Admin | List |
+| POST | `/api/v1/eab-configs` | Admin | Create |
+| DELETE | `/api/v1/eab-configs/:id` | Admin | Delete |
+| PUT | `/api/v1/eab-configs/:id` | Admin | Update |
+| POST | `/api/v1/eab-configs/fetch-google` | Admin | Fetch Google EAB from GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Admin | Fetch ZeroSSL EAB with an email in one click |
 
 ### ACME accounts
 
@@ -855,11 +869,11 @@ Panel-side ACME account (contact email) management.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Signed in | List |
-| POST | `/api/v1/acme-accounts` | Signed in | Create |
-| DELETE | `/api/v1/acme-accounts/:id` | Signed in | Delete |
-| PUT | `/api/v1/acme-accounts/:id` | Signed in | Update |
-| GET | `/api/v1/acme-accounts/default` | Signed in | Get defaults |
+| GET | `/api/v1/acme-accounts` | Admin | List |
+| POST | `/api/v1/acme-accounts` | Admin | Create |
+| DELETE | `/api/v1/acme-accounts/:id` | Admin | Delete |
+| PUT | `/api/v1/acme-accounts/:id` | Admin | Update |
+| GET | `/api/v1/acme-accounts/default` | Admin | Get defaults |
 
 ### Built-in CA
 
@@ -867,14 +881,14 @@ Internal panel CA: Agent certificate issuance/renewal/revocation, CRL export, di
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Signed in | Agent certificate list |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Signed in | Renew Agent certificate |
-| GET | `/api/v1/ca/distribution-queue` | Signed in | Certificate distribution queue |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Signed in | Delete distribution queue entry |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Signed in | Retry certificate distribution |
-| GET | `/api/v1/ca/revocations` | Signed in | Revocation list |
-| GET | `/api/v1/ca/revocations/export` | Signed in | Export CRL |
-| GET | `/api/v1/ca/status` | Signed in | CA status |
+| GET | `/api/v1/ca/agent-certs` | Admin | Agent certificate list |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Admin | Renew Agent certificate |
+| GET | `/api/v1/ca/distribution-queue` | Admin | Certificate distribution queue |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Admin | Delete distribution queue entry |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Admin | Retry certificate distribution |
+| GET | `/api/v1/ca/revocations` | Admin | Revocation list |
+| GET | `/api/v1/ca/revocations/export` | Admin | Export CRL |
+| GET | `/api/v1/ca/status` | Admin | CA status |
 
 ### Geo rules
 
@@ -883,24 +897,24 @@ Sync and delivery of geoip/geosite data sources and files.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Signed in | File list |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Signed in | Delete file |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Signed in | Toggle auto sync |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Signed in | Download |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Admin | Delete file |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Admin | Toggle auto sync |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Admin | Download |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Signed in | Download file |
 | GET | `/api/v1/geo-rules/github-assets` | Signed in | Fetch GitHub repository assets |
-| POST | `/api/v1/geo-rules/push-all` | Signed in | Push to all nodes |
-| POST | `/api/v1/geo-rules/seed` | Signed in | Initialize default data |
+| POST | `/api/v1/geo-rules/push-all` | Admin | Push to all nodes |
+| POST | `/api/v1/geo-rules/seed` | Admin | Initialize default data |
 | GET | `/api/v1/geo-rules/sources` | Signed in | Data source list |
-| POST | `/api/v1/geo-rules/sources` | Signed in | Create data source |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Signed in | Delete data source |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Signed in | Update data source |
+| POST | `/api/v1/geo-rules/sources` | Admin | Create data source |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Admin | Delete data source |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Admin | Update data source |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Signed in | Fetch Release assets |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Signed in | Add file |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Signed in | Toggle scheduled sync |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Signed in | Select file |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Signed in | Sync this data source |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Admin | Add file |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Admin | Toggle scheduled sync |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Admin | Select file |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Admin | Sync this data source |
 | GET | `/api/v1/geo-rules/status` | Signed in | Status |
-| POST | `/api/v1/geo-rules/sync-all` | Signed in | Sync all |
+| POST | `/api/v1/geo-rules/sync-all` | Admin | Sync all |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Signed in | Sync progress |
 
 ### WAF rule library
@@ -910,14 +924,14 @@ Global WAF rules: GitHub source, sync, delivery to all nodes.
 | Method | Path | Permission | Description |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Signed in | GitHub data source |
-| PUT | `/api/v1/waf/github-source` | Signed in | Save GitHub data source |
-| POST | `/api/v1/waf/push-all` | Signed in | Push to all nodes |
+| PUT | `/api/v1/waf/github-source` | Admin | Save GitHub data source |
+| POST | `/api/v1/waf/push-all` | Admin | Push to all nodes |
 | GET | `/api/v1/waf/rules` | Signed in | Rule list |
-| DELETE | `/api/v1/waf/rules/:name` | Signed in | Delete rule |
+| DELETE | `/api/v1/waf/rules/:name` | Admin | Delete rule |
 | GET | `/api/v1/waf/rules/:name` | Signed in | Get rule |
-| PUT | `/api/v1/waf/rules/:name` | Signed in | Save rule |
-| POST | `/api/v1/waf/sync-all` | Signed in | Sync all |
-| POST | `/api/v1/waf/sync-github` | Signed in | Sync from GitHub |
+| PUT | `/api/v1/waf/rules/:name` | Admin | Save rule |
+| POST | `/api/v1/waf/sync-all` | Admin | Sync all |
+| POST | `/api/v1/waf/sync-github` | Admin | Sync from GitHub |
 
 ### Log management
 
@@ -925,43 +939,37 @@ Node/core log reading and streaming, cleanup policies, log writer control.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Signed in | Clean up everything now |
-| GET | `/api/v1/log-manage/cleanup-rules` | Signed in | Cleanup rule list |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Signed in | Update cleanup rule |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Signed in | Clean up the specified table now |
-| GET | `/api/v1/log-manage/core-log-output` | Signed in | Core log output config |
-| PUT | `/api/v1/log-manage/core-log-output` | Signed in | Save core log output config |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Signed in | Read core stdout logs |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Signed in | Stream core stdout |
-| POST | `/api/v1/log-manage/discover` | Signed in | Discover node log files |
-| GET | `/api/v1/log-manage/log-output` | Signed in | Log output config |
-| PUT | `/api/v1/log-manage/log-output` | Signed in | Save log output config |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Signed in | Release log stdout takeover |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Signed in | Take over log stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Signed in | Node log file list |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Signed in | Read node logs |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Signed in | Rotate node logs |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Signed in | Stream node logs |
-| GET | `/api/v1/log-manage/policies` | Signed in | Policy list |
-| POST | `/api/v1/log-manage/policies` | Signed in | Create policy |
-| DELETE | `/api/v1/log-manage/policies/:id` | Signed in | Delete policy |
-| GET | `/api/v1/log-manage/policies/:id` | Signed in | Policy details |
-| PUT | `/api/v1/log-manage/policies/:id` | Signed in | Update policy |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Signed in | Cleanup job list |
-| GET | `/api/v1/log-manage/policies/:id/log` | Signed in | Read logs |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Signed in | Stream logs |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Signed in | Rotate |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Signed in | Read core stdout logs |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Signed in | Stream core stdout |
-| GET | `/api/v1/log-manage/scheduler-config` | Signed in | Scheduling config |
-| PUT | `/api/v1/log-manage/scheduler-config` | Signed in | Update scheduling config |
-| GET | `/api/v1/log-manage/status` | Signed in | Status |
-| POST | `/api/v1/log-manage/sync` | Signed in | Sync cleanup policies |
-| GET | `/api/v1/log-manage/writers` | Signed in | Writer status |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Signed in | Update writer config |
-| GET | `/api/v1/log-manage/writers/:type/files` | Signed in | Writer log file list |
-| POST | `/api/v1/log-manage/writers/:type/start` | Signed in | Start writer |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Signed in | Stop writer |
+| POST | `/api/v1/log-manage/cleanup-all` | Admin | Clean up everything now |
+| GET | `/api/v1/log-manage/cleanup-rules` | Admin | Cleanup rule list |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Admin | Update cleanup rule |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Admin | Clean up the specified table now |
+| GET | `/api/v1/log-manage/core-log-output` | Admin | Core log output config |
+| PUT | `/api/v1/log-manage/core-log-output` | Admin | Save core log output config |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Admin | Read core stdout logs |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Admin | Stream core stdout |
+| POST | `/api/v1/log-manage/discover` | Admin | Discover node log files |
+| GET | `/api/v1/log-manage/log-output` | Admin | Log output config |
+| PUT | `/api/v1/log-manage/log-output` | Admin | Save log output config |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Admin | Node log file list |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Admin | Read node logs |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Admin | Rotate node logs |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Admin | Stream node logs |
+| GET | `/api/v1/log-manage/policies` | Admin | Policy list |
+| POST | `/api/v1/log-manage/policies` | Admin | Create policy |
+| DELETE | `/api/v1/log-manage/policies/:id` | Admin | Delete policy |
+| GET | `/api/v1/log-manage/policies/:id` | Admin | Policy details |
+| PUT | `/api/v1/log-manage/policies/:id` | Admin | Update policy |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Admin | Cleanup job list |
+| GET | `/api/v1/log-manage/policies/:id/log` | Admin | Read logs |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Admin | Stream logs |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Admin | Rotate |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Admin | Read core stdout logs |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Admin | Stream core stdout |
+| GET | `/api/v1/log-manage/scheduler-config` | Admin | Scheduling config |
+| PUT | `/api/v1/log-manage/scheduler-config` | Admin | Update scheduling config |
+| GET | `/api/v1/log-manage/status` | Admin | Status |
+| POST | `/api/v1/log-manage/sync` | Admin | Sync cleanup policies |
+| GET | `/api/v1/log-manage/writers` | Admin | Writer status |
 
 ### Backups
 
@@ -969,16 +977,16 @@ Database/full backups, restore, scheduled jobs, FTP/S3/WebDAV remote storage.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Admin | Delete backup |
+| DELETE | `/api/v1/backups/:id` | Super admin | Delete backup |
 | GET | `/api/v1/backups/:id/download` | Admin | Download backup |
-| POST | `/api/v1/backups/:id/restore` | Admin | Restore from backup |
-| POST | `/api/v1/backups/:id/upload-ftp` | Admin | Upload to FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | Admin | Upload to S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | Admin | Upload to WebDAV |
+| POST | `/api/v1/backups/:id/restore` | Super admin | Restore from backup |
+| POST | `/api/v1/backups/:id/upload-ftp` | Super admin | Upload to FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | Super admin | Upload to S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | Super admin | Upload to WebDAV |
 | POST | `/api/v1/backups/create` | Admin | Create full backup (with DB dump) |
 | GET | `/api/v1/backups/list` | Admin | Full backup list |
-| POST | `/api/v1/backups/remote-restore` | Admin | Restore from remote |
-| GET | `/api/v1/backups/restore-status` | Admin | Restore progress |
+| POST | `/api/v1/backups/remote-restore` | Super admin | Restore from remote |
+| GET | `/api/v1/backups/restore-status` | Super admin | Restore progress |
 | GET | `/api/v1/backups/schedules` | Admin | Scheduled job list |
 | POST | `/api/v1/backups/schedules` | Admin | Create scheduled job |
 | DELETE | `/api/v1/backups/schedules/:id` | Admin | Delete scheduled job |
@@ -988,7 +996,7 @@ Database/full backups, restore, scheduled jobs, FTP/S3/WebDAV remote storage.
 | DELETE | `/api/v1/backups/storages/:id` | Admin | Delete storage config |
 | PUT | `/api/v1/backups/storages/:id` | Admin | Update storage config |
 | GET | `/api/v1/backups/storages/:id/files` | Admin | Remote backup file list |
-| POST | `/api/v1/backups/upload-restore` | Admin | Upload backup and restore |
+| POST | `/api/v1/backups/upload-restore` | Super admin | Upload backup and restore |
 
 ### System settings
 
@@ -1001,8 +1009,8 @@ Database config and migration, panel settings, JWT keys, SMTP/Telegram tests, no
 | GET | `/api/v1/system/config-file/:coreType` | Admin | Read core config file |
 | GET | `/api/v1/system/db-config` | Admin | Database config |
 | PUT | `/api/v1/system/db-config` | Admin | Update database config |
-| POST | `/api/v1/system/db-config/migrate` | Admin | Migrate database data |
-| POST | `/api/v1/system/db-config/switch` | Admin | Switch database (with one-step migration) |
+| POST | `/api/v1/system/db-config/migrate` | Super admin | Migrate database data |
+| POST | `/api/v1/system/db-config/switch` | Super admin | Switch database (with one-step migration) |
 | POST | `/api/v1/system/db-config/test` | Admin | Test database connection |
 | GET | `/api/v1/system/db-pool-stats` | Admin | Connection pool statistics |
 | GET | `/api/v1/system/db-stats` | Admin | Database statistics |
@@ -1011,13 +1019,13 @@ Database config and migration, panel settings, JWT keys, SMTP/Telegram tests, no
 | GET | `/api/v1/system/encryption-key-status` | Admin | Encryption key status |
 | GET | `/api/v1/system/env-config` | Admin | .env configuration |
 | PUT | `/api/v1/system/env-config` | Admin | Update .env configuration |
-| POST | `/api/v1/system/generate-encryption-key` | Admin | Generate encryption key |
+| POST | `/api/v1/system/generate-encryption-key` | Super admin | Generate encryption key |
 | GET | `/api/v1/system/github-config` | Admin | GitHub configuration |
 | PUT | `/api/v1/system/github-config` | Admin | Update GitHub config |
 | GET | `/api/v1/system/jwt-secret-status` | Admin | JWT key status |
 | GET | `/api/v1/system/maintenance` | Public | Maintenance mode status (public) |
 | PUT | `/api/v1/system/maintenance` | Admin | Toggle maintenance mode |
-| POST | `/api/v1/system/migrate-data` | Admin | Migrate data |
+| POST | `/api/v1/system/migrate-data` | Super admin | Migrate data |
 | GET | `/api/v1/system/notification-config` | Admin | Notification config |
 | PUT | `/api/v1/system/notification-config` | Admin | Update notification config |
 | GET | `/api/v1/system/notification-templates` | Admin | Template list |
@@ -1030,13 +1038,13 @@ Database config and migration, panel settings, JWT keys, SMTP/Telegram tests, no
 | PUT | `/api/v1/system/panel-config` | Admin | Update panel config |
 | GET | `/api/v1/system/reality-targets` | Admin | REALITY target list |
 | PUT | `/api/v1/system/reality-targets` | Admin | Update REALITY target |
-| POST | `/api/v1/system/reality-targets/reset` | Admin | Reset REALITY target to default |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Read Reality local SNI config |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Update Reality local SNI config |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Admin | Regenerate JWT key |
+| POST | `/api/v1/system/reality-targets/reset` | Super admin | Reset REALITY target to default |
+| GET | `/api/v1/system/reality-local-sni` | Admin | Read Reality local SNI config |
+| PUT | `/api/v1/system/reality-local-sni` | Admin | Update Reality local SNI config |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Super admin | Regenerate JWT key |
 | GET | `/api/v1/system/releases` | Admin | Available versions |
-| POST | `/api/v1/system/restart` | Admin | Restart |
-| POST | `/api/v1/system/rollback` | Admin | System rollback |
+| POST | `/api/v1/system/restart` | Super admin | Restart |
+| POST | `/api/v1/system/rollback` | Super admin | System rollback |
 | GET | `/api/v1/system/settings` | Admin | Read settings |
 | PUT | `/api/v1/system/settings/batch` | Admin | Bulk update settings |
 | GET | `/api/v1/system/stats` | Admin | System status |
@@ -1045,7 +1053,7 @@ Database config and migration, panel settings, JWT keys, SMTP/Telegram tests, no
 | POST | `/api/v1/system/telegram-chat-id` | Admin | Get Telegram Chat ID |
 | POST | `/api/v1/system/test-smtp` | Admin | Test SMTP |
 | POST | `/api/v1/system/test-telegram` | Admin | Test Telegram |
-| POST | `/api/v1/system/update` | Admin | System upgrade |
+| POST | `/api/v1/system/update` | Super admin | System upgrade |
 | GET | `/api/v1/system/update-jobs` | Admin | Upgrade job list |
 | POST | `/api/v1/system/upload-mtls-ca` | Admin | Upload mTLS CA certificate |
 
@@ -1055,8 +1063,9 @@ Audit event queries and export.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Signed in | Audit event list |
-| GET | `/api/v1/security/audit-events/export` | Signed in | Export audit events |
+| GET | `/api/v1/security/audit-events` | Admin | Audit event list |
+| GET | `/api/v1/security/audit-events/export` | Admin | Export audit events |
+| GET | `/api/v1/security/subscription-access-logs` | Admin | Subscription fetch logs (filter by subscription ID / IP / client email) |
 
 ### Metrics
 
@@ -1064,9 +1073,9 @@ Panel aggregated metrics (nodes/certificates/services).
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Signed in | Certificate metrics |
-| GET | `/api/v1/metrics/nodes` | Signed in | Node metrics |
-| GET | `/api/v1/metrics/overview` | Signed in | Overview |
+| GET | `/api/v1/metrics/certificates` | Admin | Certificate metrics |
+| GET | `/api/v1/metrics/nodes` | Admin | Node metrics |
+| GET | `/api/v1/metrics/overview` | Admin | Overview |
 
 ### Portal templates
 
@@ -1074,20 +1083,20 @@ Portal templates, activation config and cache management.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Signed in | Active template |
-| PUT | `/api/v1/portal/active` | Signed in | Update active template |
-| DELETE | `/api/v1/portal/cache` | Signed in | Clear portal cache |
-| GET | `/api/v1/portal/cache` | Signed in | Cache status |
-| PUT | `/api/v1/portal/cache/dev-mode` | Signed in | Toggle cache development mode |
-| POST | `/api/v1/portal/cache/rebuild` | Signed in | Rebuild portal cache |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Built-in language packs |
-| POST | `/api/v1/portal/reset` | Signed in | Restore default template |
-| GET | `/api/v1/portal/templates` | Signed in | List |
-| POST | `/api/v1/portal/templates` | Signed in | Create |
-| DELETE | `/api/v1/portal/templates/:id` | Signed in | Delete |
-| GET | `/api/v1/portal/templates/:id` | Signed in | Details |
-| PUT | `/api/v1/portal/templates/:id` | Signed in | Update |
-| POST | `/api/v1/portal/templates/:id/activate` | Signed in | Activate template |
+| GET | `/api/v1/portal/active` | Admin | Active template |
+| PUT | `/api/v1/portal/active` | Admin | Update active template |
+| DELETE | `/api/v1/portal/cache` | Admin | Clear portal cache |
+| GET | `/api/v1/portal/cache` | Admin | Cache status |
+| PUT | `/api/v1/portal/cache/dev-mode` | Admin | Toggle cache development mode |
+| POST | `/api/v1/portal/cache/rebuild` | Admin | Rebuild portal cache |
+| GET | `/api/v1/portal/lang/builtin` | Admin | Built-in language packs |
+| POST | `/api/v1/portal/reset` | Admin | Restore default template |
+| GET | `/api/v1/portal/templates` | Admin | List |
+| POST | `/api/v1/portal/templates` | Admin | Create |
+| DELETE | `/api/v1/portal/templates/:id` | Admin | Delete |
+| GET | `/api/v1/portal/templates/:id` | Admin | Details |
+| PUT | `/api/v1/portal/templates/:id` | Admin | Update |
+| POST | `/api/v1/portal/templates/:id/activate` | Admin | Activate template |
 
 > `/portal/templates` CRUD is an **advanced API**: the portal UI primarily uses `PUT /api/v1/portal/active`
 > (one-shot full-site config); manage/switch multiple templates with this group. Both are supported and do not conflict.
@@ -1103,7 +1112,7 @@ Node Agent install script and download (public).
 | GET | `/api/v1/agent/version` | Admin | Current Agent version on the panel |
 | GET | `/api/v1/agent/download` | Public | Download Agent |
 | GET | `/api/v1/agent/install` | Public | Get install script |
-| GET | `/api/v1/agent/origin` | 公开 | Panel origin address (public) |
+| GET | `/api/v1/agent/origin` | Public | Panel origin address (public) |
 
 ### Charge callback entry
 
@@ -1136,79 +1145,75 @@ Portal runtime config without sign-in (maintenance guard + public rate limit).
 
 ### Client auth and business (same set on the admin engine)
 
-Client endpoints identical to the portal; see `portal-api.en.md` for details.
+Client endpoints identical to the portal. They use a **client token** (`Authorization: Bearer <client_token>`), not an admin token; see `portal-api.en.md` for details.
 
 | Method | Path | Permission | Description |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | Public | List articles |
-| GET | `/api/v1/client-auth/articles/:slug` | Public | Get article |
-| GET | `/api/v1/client-auth/balance` | Public | Get balance |
-| GET | `/api/v1/client-auth/balance/transactions` | Public | Balance transactions |
-| POST | `/api/v1/client-auth/change-password` | Public | Change password |
-| POST | `/api/v1/client-auth/charge/create` | Public | Create recharge order |
-| GET | `/api/v1/client-auth/charge/orders` | Public | List recharge orders |
-| GET | `/api/v1/client-auth/charge/orders/:id` | Public | Get recharge order details |
-| POST | `/api/v1/client-auth/charge/redeem-card` | Public | Redeem card |
-| GET | `/api/v1/client-auth/charge/sites` | Public | List recharge sites |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Public | Query recharge status |
-| GET | `/api/v1/client-auth/checktime` | Public | Get server time (clock sync) |
-| GET | `/api/v1/client-auth/connection-info` | Public | Get plan connection parameters |
-| GET | `/api/v1/client-auth/gifts` | Public | List gifts |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | Public | Claim gift |
-| GET | `/api/v1/client-auth/invoices` | Public | Order list |
-| GET | `/api/v1/client-auth/invoices/:id` | Public | Order details |
-| GET | `/api/v1/client-auth/settings/whitelist` | Public | List IP allow-list |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Public | Remove from IP allow-list |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Public | Auto-add IP |
-| POST | `/api/v1/client-auth/login` | Public | Sign in |
-| POST | `/api/v1/client-auth/logout` | Public | Sign out |
-| POST | `/api/v1/client-auth/logs/package` | Public | Create log bundle |
-| GET | `/api/v1/client-auth/logs/packages` | Public | List log bundles |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | Public | Delete log bundle |
-| GET | `/api/v1/client-auth/logs/packages/:id` | Public | Get log bundle |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Public | Download log bundle |
-| GET | `/api/v1/client-auth/logs/types` | Public | Log bundle health check |
-| GET | `/api/v1/client-auth/me` | Public | Get current signed-in user |
-| GET | `/api/v1/client-auth/nodes` | Public | My node list |
-| GET | `/api/v1/client-auth/nodes/:id/config` | Public | Node config |
-| GET | `/api/v1/client-auth/nodes/:id/link` | Public | Node share link |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Public | Node QR code |
-| GET | `/api/v1/client-auth/oauth/:provider` | Public | Authorize |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | Public | Callback |
-| GET | `/api/v1/client-auth/oauth/providers` | Public | Provider status |
-| GET | `/api/v1/client-auth/orders` | Public | Order list |
-| POST | `/api/v1/client-auth/orders` | Public | Create order |
-| GET | `/api/v1/client-auth/orders/:id` | Public | Order details |
-| GET | `/api/v1/client-auth/plans` | Public | Plan list |
-| GET | `/api/v1/client-auth/plans/:id` | Public | Plan details |
-| GET | `/api/v1/client-auth/referral/code` | Public | Get referral verification code |
-| GET | `/api/v1/client-auth/referral/records` | Public | List referral records |
-| GET | `/api/v1/client-auth/referral/stats` | Public | Get referral stats |
-| POST | `/api/v1/client-auth/referral/withdraw` | Public | Request withdrawal |
-| GET | `/api/v1/client-auth/referral/withdrawals` | Public | List referral withdrawals |
-| POST | `/api/v1/client-auth/refresh` | Public | Refresh |
-| POST | `/api/v1/client-auth/register` | Public | Register |
-| POST | `/api/v1/client-auth/reset-subscription` | Public | Reset subscription |
-| PUT | `/api/v1/client-auth/settings` | Public | Update profile |
-| POST | `/api/v1/client-auth/rotate-token` | Public | Rotate subscription token |
-| POST | `/api/v1/client-auth/self-unban` | Public | Self-service unban |
-| PUT | `/api/v1/client-auth/settings` | Public | Update settings |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Public | Auto-add IP |
-| GET | `/api/v1/client-auth/settings/whitelist` | Public | List IP allow-list |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Public | Remove from IP allow-list |
-| GET | `/api/v1/client-auth/shared-accounts` | Public | List shared accounts |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | Public | Get shared account |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Public | Request shared account |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Public | Repair request |
-| POST | `/api/v1/client-auth/ticket` | Public | Issue one-time short-lived ticket |
-| GET | `/api/v1/client-auth/tickets` | Public | List tickets |
-| POST | `/api/v1/client-auth/tickets` | Public | Create ticket |
-| GET | `/api/v1/client-auth/tickets/:id` | Public | Get ticket |
-| POST | `/api/v1/client-auth/tickets/:id/close` | Public | Close ticket |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | Public | Reply to ticket |
-| GET | `/api/v1/client-auth/traffic-history` | Public | Traffic history |
-| GET | `/api/v1/client-auth/traffic-packs` | Public | Traffic pack list |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | Public | Buy traffic pack |
+| GET | `/api/v1/client-auth/articles` | Client (signed in) | List articles |
+| GET | `/api/v1/client-auth/articles/:slug` | Client (signed in) | Get article |
+| GET | `/api/v1/client-auth/balance` | Client (signed in) | Get balance |
+| GET | `/api/v1/client-auth/balance/transactions` | Client (signed in) | Balance transactions |
+| POST | `/api/v1/client-auth/change-password` | Client (signed in) | Change password |
+| POST | `/api/v1/client-auth/charge/create` | Client (signed in) | Create recharge order |
+| GET | `/api/v1/client-auth/charge/orders` | Client (signed in) | List recharge orders |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Client (signed in) | Get recharge order details |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Client (signed in) | Redeem card |
+| GET | `/api/v1/client-auth/charge/sites` | Client (signed in) | List recharge sites |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Client (signed in) | Query recharge status |
+| GET | `/api/v1/client-auth/checktime` | Client (signed in) | Get server time (clock sync) |
+| GET | `/api/v1/client-auth/connection-info` | Client (signed in) | Get plan connection parameters |
+| GET | `/api/v1/client-auth/gifts` | Client (signed in) | List gifts |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Client (signed in) | Claim gift |
+| GET | `/api/v1/client-auth/invoices` | Client (signed in) | Order list |
+| GET | `/api/v1/client-auth/invoices/:id` | Client (signed in) | Order details |
+| POST | `/api/v1/client-auth/login` | Client (public) | Sign in |
+| POST | `/api/v1/client-auth/logout` | Client (signed in) | Sign out |
+| POST | `/api/v1/client-auth/logs/package` | Client (signed in) | Create log bundle |
+| GET | `/api/v1/client-auth/logs/packages` | Client (signed in) | List log bundles |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Client (signed in) | Delete log bundle |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Client (signed in) | Get log bundle |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Client (signed in) | Download log bundle |
+| GET | `/api/v1/client-auth/logs/types` | Client (signed in) | Log bundle health check |
+| GET | `/api/v1/client-auth/me` | Client (signed in) | Get current signed-in user |
+| GET | `/api/v1/client-auth/nodes` | Client (signed in) | My node list |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Client (signed in) | Node config |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Client (signed in) | Node share link |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Client (signed in) | Node QR code |
+| GET | `/api/v1/client-auth/oauth/:provider` | Client (public) | Authorize |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Client (public) | Callback |
+| GET | `/api/v1/client-auth/oauth/providers` | Client (public) | Provider status |
+| GET | `/api/v1/client-auth/orders` | Client (signed in) | Order list |
+| POST | `/api/v1/client-auth/orders` | Client (signed in) | Create order |
+| GET | `/api/v1/client-auth/orders/:id` | Client (signed in) | Order details |
+| GET | `/api/v1/client-auth/plans` | Client (signed in) | Plan list |
+| GET | `/api/v1/client-auth/plans/:id` | Client (signed in) | Plan details |
+| GET | `/api/v1/client-auth/referral/code` | Client (signed in) | Get referral verification code |
+| GET | `/api/v1/client-auth/referral/records` | Client (signed in) | List referral records |
+| GET | `/api/v1/client-auth/referral/stats` | Client (signed in) | Get referral stats |
+| POST | `/api/v1/client-auth/referral/withdraw` | Client (signed in) | Request withdrawal |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Client (signed in) | List referral withdrawals |
+| POST | `/api/v1/client-auth/refresh` | Client (public) | Refresh |
+| POST | `/api/v1/client-auth/register` | Client (public) | Register |
+| POST | `/api/v1/client-auth/reset-subscription` | Client (signed in) | Reset subscription |
+| POST | `/api/v1/client-auth/rotate-token` | Client (signed in) | Rotate subscription token |
+| POST | `/api/v1/client-auth/self-unban` | Client (signed in) | Self-service unban |
+| PUT | `/api/v1/client-auth/settings` | Client (signed in) | Update settings |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Client (signed in) | Auto-add IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Client (signed in) | List IP allow-list |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Client (signed in) | Remove from IP allow-list |
+| GET | `/api/v1/client-auth/shared-accounts` | Client (signed in) | List shared accounts |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Client (signed in) | Get shared account |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Client (signed in) | Request shared account |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Client (signed in) | Repair request |
+| POST | `/api/v1/client-auth/ticket` | Client (signed in) | Issue one-time short-lived ticket |
+| GET | `/api/v1/client-auth/tickets` | Client (signed in) | List tickets |
+| POST | `/api/v1/client-auth/tickets` | Client (signed in) | Create ticket |
+| GET | `/api/v1/client-auth/tickets/:id` | Client (signed in) | Get ticket |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Client (signed in) | Close ticket |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Client (signed in) | Reply to ticket |
+| GET | `/api/v1/client-auth/traffic-history` | Client (signed in) | Traffic history |
+| GET | `/api/v1/client-auth/traffic-packs` | Client (signed in) | Traffic pack list |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Client (signed in) | Buy traffic pack |
 
 ### Subscription delivery
 

@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: es | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: es | updated: 2026-11-16 -->
 # Devolución de llamada de cargo API
 
 > Idiomas: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · Español · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -98,13 +98,14 @@ El procesamiento es **idempotent**: las devoluciones de llamada repetidas con el
 
 ## 5. Respuestas
 
-- Éxito: 2xx (después de que el panel haya publicado el pago)
-- Fallo: 4xx/5xx + `{ "code": "...", "message": "..." }`; Los códigos típicos incluyen `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, falta de coincidencia de cantidades, etc.
+- Éxito: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (después de que el panel haya registrado el pago)
+- Fallo: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; el motivo concreto está en `message` (firma incorrecta, IP no incluida en la lista blanca, pedido no encontrado, discrepancia en monto/moneda, repetición nonce, etc.)
+- Un `site_id` no válido en la ruta devuelve `INVALID_SITE_ID`; un cuerpo que no es JSON devuelve `INVALID_REQUEST`
 
 > Cada devolución de llamada lleva `X-Request-ID` (generado por el panel si está ausente); los registros y eventos son rastreables de extremo a extremo. Proporcione esta identificación a su administrador cuando solucione problemas.
 
 ## 6. Pruebas y solución de problemas
 
-- Los administradores pueden obtener el **documento de integración** de cada sitio: `GET /api/v1/charge-sites/{id}/integration-doc` (incluye ejemplos de devolución de llamada reales de URL del sitio).
+- Los administradores pueden obtener el **documento de integración** de cada sitio: `GET /api/v1/charge-sites/{id}/integration-doc` (incluye ejemplos de devolución de llamada reales del sitio URL).
 - Eventos de devolución de llamada: `GET /api/v1/charge-callback-events`; reintentos: `GET /api/v1/charge-callback-retries`, `POST /api/v1/charge-callback-retries/{id}/retry`.
 - Rotación secreta: `POST /api/v1/charge-sites/{id}/rotate-secret` (el secreto anterior se mantiene durante una ventana de transición).

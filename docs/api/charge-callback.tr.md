@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: tr | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: tr | updated: 2026-11-16 -->
 # Geri Aramayı Şarj Et API
 
 > Diller: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · Türkçe · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -12,7 +12,7 @@ POST /api/v1/charge/callback/{site_id}
 Content-Type: application/json
 ```
 
-`site_id`, yönetici tarafındaki "bağlı site" kimliğidir (tamsayı). Geri arama, sunucudan sunucuya yapılır ve **HMAC imzalama** ile Taşıyıcı kimlik doğrulaması yerine isteğe bağlı bir IP izin verilenler listesi kullanır.
+`site_id`, yönetici tarafı "bağlı site" kimliğidir (tamsayı). Geri arama, sunucudan sunucuya yapılır ve **HMAC imzalama** ile Taşıyıcı kimlik doğrulaması yerine isteğe bağlı bir IP izin verilenler listesi kullanır.
 
 ## 2. Talep gövdesi
 
@@ -98,8 +98,9 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. Yanıtlar
 
-- Başarı: 2xx (panel ödemeyi gönderdikten sonra)
-- Arıza: 4xx/5xx + `{ "code": "...", "message": "..." }`; tipik kodlar arasında `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, miktar uyumsuzluğu vb. bulunur.
+- Başarılı: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (panel ödemeyi gönderdikten sonra)
+- Arıza: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; somut neden `message`'dedir (kötü imza, IP'nin beyaz listeye alınmaması, sipariş bulunamadı, tutar/para birimi uyumsuzluğu, tekrar oynatılmaması vb.)
+- Yoldaki geçersiz bir `site_id`, `INVALID_SITE_ID` değerini döndürür; JSON olmayan bir gövde `INVALID_REQUEST` değerini döndürür
 
 > Her geri arama `X-Request-ID`'yi taşır (yoksa panel tarafından oluşturulur); Günlükler ve olaylar uçtan uca izlenebilir. Sorun giderme sırasında bu kimliği yöneticinize verin.
 

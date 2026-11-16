@@ -164,7 +164,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub 下载加速（作为 URL 前缀）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -184,7 +184,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 源码编译安装
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source` 会克隆源码（脚本位于源码目录内时直接使用现有源码）并执行 `make panel`。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 参数 | 说明 |
 |------|------|
 | `-d, --dir <PATH>` | 安装目录，默认 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-beta.82`，默认 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-beta.90`，默认 `latest` |
 | `--binary` | 使用 GitHub Release 二进制（默认） |
 | `--source` | 源码编译安装，自动准备匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二进制文件（离线安装） |
@@ -734,10 +734,11 @@ cd /opt/corefusion
 ### 5.4 节点详情
 
 点击节点进入详情页，可查看：
-- **概览**：基本信息、Agent 状态、证书状态
+- **概览**：基本信息、Agent 状态、证书状态；资源卡片显示 CPU / 内存 / 磁盘占用、网卡上下行速率、内核用户流量速率、本月已用流量、TCP 连接数、系统负载与出口网卡累计流量（10 秒静默刷新）
 - **协议中心**：核心进程配置
 - **代理**：Caddy/Nginx 配置
 - **核心进程**：启动/停止/重启
+- **核心流量**：内核转发的用户流量速率与本月累计
 - **WARP**：WARP 配置
 - **直连域名**：域名管理
 - **限速**：流量限速配置
@@ -788,6 +789,11 @@ cd /opt/corefusion
 - **路由**：`final` 默认出站、**Rule Sets（规则集）**、**Rules（路由规则）**、默认域名解析器、网络策略与回退（见 6.6）
 - **入站 / 出站**：协议、传输、TLS
 - **端点（Endpoints）**：WireGuard（含 WARP 配置）、MASQUE 客户端等；可同时存在多个，用 `tag` 区分
+
+> 端点开启「使用系统网络集成」时，「配置名称」就是内核网卡名：最长 15 字符、只能含字母数字与 `._-`，
+> 超长或含非法字符会自动改用端点 `tag`。新建端点默认按协议带前缀（`wg-` / `ts-` / `oc-` /
+> `ovpn-c-` / `ovpn-s-` / `mq-c-` / `mq-s-`），存量记录里旧的 `WireGuard-xxxxxx` 一类长名字
+> 打开编辑器时就会显示为规范化后的名字。
 - **内置服务**：sing-box 顶层 `services`，如 `hysteria-realm`、DERP、`resolved`
 - **证书 / HTTP 客户端 / 网络命名空间**：按需展开的 JSON 段
 - **实验性**：`clash_api` 等；**未开启时不会写入生成的配置**
@@ -809,6 +815,26 @@ cd /opt/corefusion
 
 > 新建入站默认监听 `::`（Linux 下为双栈，同时接受 IPv4 与 IPv6）；只有需要限定网卡或只监听
 > IPv4 时才改成 `0.0.0.0` 或具体地址。
+
+端口模式的「使用入站端口」还带 **自动创建防火墙放行规则**：打开入站编辑时会先探测节点防火墙，
+检测到 firewalld / ufw / nftables / iptables 时可在保存时按监听协议（TCP/UDP）自动放行端口。
+
+- hy2 / hysteria 的端口跳跃会同时放行监听端口与全部动态端口段（如 `20000-30000`），多段用逗号分隔；
+- 放行是幂等的：已有覆盖规则（含端口段 / multiport）不会重复创建；
+- 修改端口会先撤销旧规则再放行新端口；删除入站、关闭端口跳跃或切到 Unix Socket / tun（无监听端口）时自动清理；
+- 未检测到已启用的防火墙时只显示提示，不会写入任何规则。
+
+### 6.3.1 反代路径（接入域名 → 前置 TLS → 反代路径）
+
+入站的传输路径是 `/`，而外层 nginx / caddy 把它挂在子路径上时（例如
+`location /apps { proxy_pass http://127.0.0.1:8080/; }`），客户端必须连 `/apps` 才打得中，
+否则订阅能拉、节点连不上。在「访问域名 → 前置 TLS」里填 **反代路径** 即可：
+
+- 填 `/apps` 或 `/apps?ed=2560`（带早数据），订阅与分享链接会用它**替换**该入站的传输路径；
+- 支持 ws、httpupgrade、xhttp、h2/http；raw/tcp、kcp 等无路径的传输会被忽略；
+- 该字段与「是否由外层终结 TLS」无关：即使关闭前置 TLS（跟随核心），填了路径也生效；
+- gRPC 没有 URL 前缀概念，客户端路径恒为 `/{serviceName}/…`，填写的路径会**并入 serviceName**
+  （`/apps` + `svc` → `apps/svc`），反代需在 `grpc_pass` 上把该前缀去掉。
 
 ### 6.4 出站配置
 
@@ -937,7 +963,7 @@ cd /opt/corefusion
 
 ### 7.1 代理类型
 
-- **Caddy**：自动 HTTPS、HTTP/2、HTTP/3
+- **Caddy**：自动 HTTPS、HTTP/1.1 与 HTTP/2（不启用 HTTP/3 / QUIC，避免 UDP 443 与 layer4 分流冲突）
 - **Nginx**：高性能、灵活配置
 
 ### 7.2 站点配置
@@ -956,6 +982,8 @@ cd /opt/corefusion
 - **local_port**：本地监听端口，如 `8443`
 - **portal_forward**：门户转发规则
 - **subscription_forward**：订阅转发规则
+- **SNI 分流**：入站为 TLS / REALITY 且客户端统一走 443 时，面板按 ClientHello 的 SNI 派生 443 TCP 分流规则
+  （xray 的 `streamSettings` 与 sing-box 的 `tls.reality` 都会识别），前置代理只做 TCP 转发，TLS 仍在核心内终结
 
 ---
 
@@ -982,13 +1010,18 @@ cd /opt/corefusion
 - 维护优选 IP 源（含 `bestproxy` 类源）、抓取间隔与端口；
 - 「探测设置」决定探测间隔、延迟阈值与探测入口节点；本机探测只能过滤明显不通的 IP，
   选择入口节点可模拟该节点所在线路；
+- 「拨号工具」可选自动（使用已安装的核心）、`singbox`、`xray` 或 `mihomo`；未安装的核心不会出现在下拉里。
+  探测以临时进程运行，结束即退出，不读写核心自己的配置；
 - 「访问域名」选 CF IP 池但未指定具体值时，会从池中随机取一条（含该条目端口）。
 
 ### 8.3 WAF 全局规则
 
 - 配置 WAF 规则源地址与需要同步的规则文件；
 - 同步后推送到节点，由节点上的代理（Nginx / Caddy）加载；
-- 单个文件填了完整 URL 时直接按该 URL 下载，否则用「源地址 + /文件名」。
+- 单个文件填了完整 URL 时直接按该 URL 下载，否则用「源地址 + /文件名」；
+- 「匹配缓存」（`match_cache` / `config_match_cache`）默认开启：进程级有界缓存热点规则的匹配结果，
+  降低每次请求的规则遍历开销。缓存仅在全局配置生效，不支持域名级覆盖；排查误报时可临时关闭做 A/B 对比
+  （关闭后每次请求都做完整规则检测，CPU 开销更高）。
 
 ### 8.4 规则管理（路由规则文件）
 
@@ -1039,6 +1072,13 @@ cd /opt/corefusion
 - 客户订阅未指定 `config` 时，按「订阅绑定的配置 → `platform` 匹配 → 默认配置」的顺序取；
 - sing-box 模板可自带 `route.rule_set` 供客户端使用，通常写成 `remote` 由客户端自行下载；
   「规则管理」推送到节点 `rules/` 的本地文件只供节点上的核心使用，客户端订阅拿不到；
+- sing-box / Xray 模板生成时会清理悬空引用（`final`、`dns.final`、`default_domain_resolver`、
+  `download_detour`、本地 `rule_set`、非法 `rule_set` 定义、空 `balancer` 等），避免客户端启动即 FATAL；
+- 规则里的出站别名会按真实 tag 解析（`REJECT` / `blocked` → `block`、`DIRECT` → `direct`，大小写不敏感），
+  无法解析的出站回落到默认出站，规则保留原位置；
+- 固定生成 `tag = proxy` 的组：sing-box 用 `selector`，Xray 用 `random` balancer，并把规则里的
+  `outbound: proxy` 自动改写成对应的 `balancerTag`。规则编辑器的出站候选从「代理组 + 自定义出站」动态读取，
+  手填的 tag 仍会校验；
 - sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）。
 
 ### 9.2 订阅端点管理
@@ -1611,13 +1651,20 @@ https://sub.example.com/<token>?format=raw_uri
 
 ## 25. 运营扩展
 
-运营扩展用于配置扩展功能。
+运营扩展（`/client-ext`）用于配置邀请推广、返佣与提现；「合规文档」（`/legal-documents`）用于维护门户侧协议。
 
-### 25.1 功能
+### 25.1 邀请推广与返佣
 
-- 自定义扩展
-- 扩展配置
-- 扩展管理
+- **返利配置**：返利比例（被邀请人首次付费金额的百分比，`0` = 关闭返利）、佣金模式（仅首次付费 / 所有付费）、最低提现金额（佣金余额达到该值才可申请提现）
+- **邀请码**：启用后注册必须填写邀请码；可设置邀请码长度、过期天数、最大使用次数（`0` = 不限），并生成/查看邀请码列表
+- **提现审核**：按待处理 / 通过 / 拒绝筛选；审核时填写处理备注，记录打款方式与钱包地址
+- **邀请记录**：邀请人、被邀请人、佣金金额与佣金状态
+
+### 25.2 合规文档
+
+- 分别维护「隐私政策」与「服务条款」，按语言（locale）各存一份 Markdown，右侧实时预览；
+- 每份文档可填写外链 URL 覆盖内置页面，未填时使用内置页面地址（页面内可直接复制链接）；
+- 门户按当前语言展示对应版本，缺失语言时回退默认语言。
 
 ---
 
@@ -1719,5 +1766,5 @@ https://sub.example.com/<token>?format=raw_uri
 ---
 
 > **文档版本**：v1.1  
-> **最后更新**：2026-11-14  
+> **最后更新**：2026-11-16  
 > **适用版本**：CoreFusion v0.13.0-beta.x

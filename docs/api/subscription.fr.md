@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: fr | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: fr | updated: 2026-11-16 -->
 # Abonnement API (public)
 
 > Langues : [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · Français · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 | `config` | Nom du modèle de configuration (défini sous « Formats d'abonnement » dans l'interface utilisateur d'administration). Doit utiliser le même format que le `format` de cette requête, sinon il est ignoré |
 | `platform` | Faire correspondre un modèle de configuration par nom de plate-forme (utilisé lorsque `config` est omis) ; le format doit également correspondre |
 | `providers` | `mihomo_yaml` uniquement : `1` / `true` active le **Mode fournisseur** (émet des `proxy-providers` et les référence via `use`) ; par défaut ou toute autre valeur conserve les nœuds intégrés sous `proxies`. Voir §6 |
+| `provider` | `mihomo_proxies_yaml` uniquement : avec une clé de fournisseur, seul le sous-ensemble de nœuds de cette source est renvoyé (pseudo-nœuds de facturation exclus) ; vide renvoie tous les nœuds. Le `proxy-providers.url` généré par le panneau l'inclut automatiquement |
 
 ### Valeurs `format` prises en charge
 
@@ -34,7 +35,7 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 | `singbox_json` | Configuration complète sing-box JSON | sing-box/SFI/FLClash (noyau sing-box) |
 | `xray_json` | Configuration complète Xray JSON | Xray-noyau |
 
-> La compatibilité protocole/format s'applique : par exemple, `anytls` n'apparaît qu'aux formats sing-box/Mihomo ; **Les nœuds REALITY servis par xray sont exclus des abonnements sing-box** (sing-box ne prend pas en charge l'implémentation REALITY de xray, voir sing-box#4520) mais apparaissent toujours dans les abonnements Xray, tandis que **les nœuds REALITY servis par sing-box fonctionne avec les abonnements Xray et sing-box**. Les nœuds que le client ne peut pas reconnaître sont automatiquement supprimés au lieu de faire échouer l'ensemble de l'abonnement.
+> La compatibilité protocole/format s'applique : par exemple, `anytls` n'apparaît qu'aux formats sing-box/Mihomo ; **Les nœuds REALITY servis par xray sont exclus des abonnements sing-box** (sing-box ne prend pas en charge l'implémentation REALITY de xray, voir sing-box#4520) mais apparaissent toujours dans les abonnements Xray, tandis que **les nœuds REALITY servis par Le sing-box fonctionne avec les abonnements Xray et sing-box**. Les nœuds que le client ne peut pas reconnaître sont automatiquement supprimés au lieu de faire échouer l'ensemble de l'abonnement.
 
 ## 3. En-têtes de réponse
 
@@ -53,8 +54,9 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 |---|---|---|
 | 200 | — | Normal (le corps est l'abonnement rendu dans `format`) |
 | 400 | `MISSING_TOKEN` | Aucun jeton dans le URL |
-| 403 | (texte brut) | Abonnement suspendu / expiré / inactif. Le message est localisé (zh/en/ja/ko) via `Accept-Language` et constitue un motif sur une seule ligne. |
+| 403 | (texte brut) | Abonnement suspendu / expiré / inactif / IP non listée blanche. Le message est localisé (zh/en/ja/ko/ru) via `Accept-Language` et constitue un motif sur une seule ligne. |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Le jeton n'existe pas |
+| 429 | `TOO_MANY_REQUESTS` | Limite de débit du point de terminaison d'abonnement (`SubscribeRateLimit`) atteinte ; Erreur JSON, réessayez plus tard |
 
 > Les abonnements révoqués sont traités comme inexistants (404).
 
@@ -116,7 +118,7 @@ Types de fournisseurs :
 | Genre | Clé | Remarques |
 |---|---|---|
 | Interne | Nom du groupe de nœuds nettoyé | Généré par groupe de nœuds de plan ; contient uniquement les nœuds de ce groupe |
-| Réservé (obsolète) | `subscription-nodes` | N’est plus émis dans `proxy-providers` ; un groupe qui le référence est développé vers les providers concrets, sinon les nœuds sont intégrés directement |
+| Réservé (obsolète) | `subscription-nodes` | N'est plus émis dans `proxy-providers` ; un groupe qui le référence s'étend à des fournisseurs concrets ou à des nœuds intégrés lorsque le plan n'en a pas |
 | Externe | Nom configuré sur le forfait | Source externe (`http` YAML ou `file`) |
 
 Champs communs par fournisseur :

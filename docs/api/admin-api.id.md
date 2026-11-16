@@ -1,14 +1,14 @@
-<!-- source: admin-api.md | locale: id | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: id | updated: 2026-11-16 -->
 # Admin API
 
 > Bahasa: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · Bahasa Indonesia · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
 
-Tabel rute admin lengkap API untuk **pengembangan panel/otomatisasi/integrator**.
+Tabel rute lengkap admin API untuk **pengembangan panel/otomatisasi/integrator**.
 
 - Basis URL: `https://<panel-domain>/api/v1`
 - Otentikasi: `Authorization: Bearer <admin_token>` (dari `POST /api/v1/auth/login`)
 - Format respons/kesalahan umum dan konvensi batas kecepatan: lihat [README.md](./README.id.md)
-- Sumber kebenaran: `internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kode adalah acuan); jika tabel ini tidak sesuai, **kode menang**
+- Sumber kebenaran: `internal/api/router/router.go` (jumlahnya bervariasi menurut versi; kodenya resmi); jika tabel ini tidak sesuai, **kode menang**
 
 ## Penanda izin
 
@@ -17,8 +17,11 @@ Tabel rute admin lengkap API untuk **pengembangan panel/otomatisasi/integrator**
 | Publik | Tidak perlu login (penjaga pemeliharaan/pembatasan tarif mungkin masih berlaku) |
 | Publik · tarif terbatas | Tidak perlu masuk, dengan batas tarif khusus |
 | Masuk | Memerlukan token admin masuk (`AuthRequired`) |
+| Operator | Membutuhkan peran ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Admin | Membutuhkan peran ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Admin super | Membutuhkan peran = `super_admin` |
+| Klien (publik) | Tidak diperlukan token klien (masuk/daftar, dll.) |
+| Klien (masuk) | Memerlukan `Authorization: Bearer <client_token>` (token klien portal, bukan token admin) |
 
 Tingkat peran: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; peran yang tidak mencukupi mengembalikan 403 `INSUFFICIENT_ROLE`.
 
@@ -147,9 +150,11 @@ Semua titik akhir daftar menggunakan `limit` (ukuran halaman, default 20) dan `o
 - [Akun bersama](#akun-bersama)
 - [Sertifikat](#sertifikat)
 - [Saluran sertifikat](#saluran-sertifikat)
+- Konfigurasi [EAB](#eab-configuration)
+- Akun [ACME](#acme-accounts)
+- [CA](#built-in-ca) bawaan
 - [Konfigurasi EAB](#konfigurasi-eab)
 - [akun ACME](#akun-acme)
-- [CA](#built-in-ca) bawaan
 - [CA bawaan](#ca-bawaan)
 - [Aturan geografis](#aturan-geografis)
 - [Pustaka aturan WAF](#pustaka-aturan-waf)
@@ -168,8 +173,6 @@ Semua titik akhir daftar menggunakan `limit` (ukuran halaman, default 20) dan `o
 - [Alur kerja konfigurasi runtime](#alur-kerja-konfigurasi-runtime)
 - [Kebijakan akses layanan (pensiun)](#kebijakan-akses-layanan-pensiun)
 - [Pemantauan kuota lalu lintas](#pemantauan-kuota-lalu-lintas)
-- [Pemeriksaan kesehatan](#pemeriksaan-kesehatan)
-- [Halaman portal](#halaman-portal)
 
 ---
 
@@ -196,8 +199,8 @@ Masuk, keluar, ubah kata sandi, 2FA (TOTP), Passkey (WebAuthn) dan tiket satu ka
 | POST | `/api/v1/auth/passkey/login/finish` | Publik | Selesaikan proses masuk |
 | POST | `/api/v1/auth/passkey/register/begin` | Masuk | Mulai pendaftaran |
 | POST | `/api/v1/auth/passkey/register/finish` | Masuk | Pendaftaran lengkap |
-| GET | `/api/v1/auth/passkey/rpids` | Masuk | Daftar RP ID yang diizinkan |
-| POST | `/api/v1/auth/passkey/rpids` | Masuk | Perbarui daftar izin ID RP |
+| GET | `/api/v1/auth/passkey/rpids` | Admin | Daftar RP ID yang diizinkan |
+| POST | `/api/v1/auth/passkey/rpids` | Admin | Perbarui daftar izin ID RP |
 | GET | `/api/v1/auth/passkey/status` | Publik | Status |
 | POST | `/api/v1/auth/refresh` | Publik | Segarkan |
 | POST | `/api/v1/auth/ticket` | Masuk | Menerbitkan tiket berumur pendek satu kali |
@@ -220,36 +223,36 @@ CRUD, suspend/resume, upgrade/downgrade, pembaharuan dan reset penggunaan untuk 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Masuk | Daftar pelanggan |
-| POST | `/api/v1/clients` | Masuk | Buat pelanggan. tubuh: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` diperlukan; `password` mungkin kosong (pelanggan dapat mengaturnya nanti di portal) |
-| DELETE | `/api/v1/clients/:id` | Masuk | Hapus pelanggan |
+| POST | `/api/v1/clients` | Operator | Buat pelanggan. tubuh: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` diperlukan; `password` mungkin kosong (pelanggan dapat mengaturnya nanti di portal) |
+| DELETE | `/api/v1/clients/:id` | Operator | Hapus pelanggan |
 | GET | `/api/v1/clients/:id` | Masuk | Dapatkan pelanggan |
-| PUT | `/api/v1/clients/:id` | Masuk | Perbarui pelanggan |
-| POST | `/api/v1/clients/:id/downgrade` | Masuk | Turunkan versi pelanggan |
+| PUT | `/api/v1/clients/:id` | Operator | Perbarui pelanggan |
+| POST | `/api/v1/clients/:id/downgrade` | Operator | Turunkan versi pelanggan |
 | GET | `/api/v1/clients/:id/orders` | Masuk | Daftar pesanan pelanggan |
-| POST | `/api/v1/clients/:id/renew` | Masuk | Perbarui pelanggan |
-| POST | `/api/v1/clients/:id/reset-usage` | Masuk | Setel ulang penggunaan |
-| POST | `/api/v1/clients/:id/restore` | Masuk | Lanjutkan pelanggan |
-| POST | `/api/v1/clients/:id/suspend` | Masuk | Tangguhkan pelanggan |
-| POST | `/api/v1/clients/:id/upgrade` | Masuk | Tingkatkan pelanggan |
+| POST | `/api/v1/clients/:id/renew` | Operator | Perbarui pelanggan |
+| POST | `/api/v1/clients/:id/reset-usage` | Operator | Setel ulang penggunaan |
+| POST | `/api/v1/clients/:id/restore` | Operator | Lanjutkan pelanggan |
+| POST | `/api/v1/clients/:id/suspend` | Operator | Tangguhkan pelanggan |
+| POST | `/api/v1/clients/:id/upgrade` | Operator | Tingkatkan pelanggan |
 
 ### Templat rencana
 
-Paket (varian, siklus penagihan, harga, kuota lalu lintas) dan otorisasi node tingkat templat.
+Paket (varian, siklus penagihan, harga, kuota lalu lintas) dan otorisasi node tingkat template.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Masuk | Daftar templat |
-| POST | `/api/v1/plan-templates` | Masuk | Buat templat |
-| DELETE | `/api/v1/plan-templates/:id` | Masuk | Hapus templat |
+| POST | `/api/v1/plan-templates` | Admin | Buat templat |
+| DELETE | `/api/v1/plan-templates/:id` | Admin | Hapus templat |
 | GET | `/api/v1/plan-templates/:id` | Masuk | Detail templat |
-| PUT | `/api/v1/plan-templates/:id` | Masuk | Perbarui templat |
+| PUT | `/api/v1/plan-templates/:id` | Admin | Perbarui templat |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Masuk | Dapatkan node yang tersedia |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Masuk | Dapatkan opsi node yang dapat ditagih |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Masuk | Tetapkan grup simpul templat |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Masuk | Sinkronkan akun ke templat |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Admin | Tetapkan grup simpul templat |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Admin | Sinkronkan akun ke templat |
 | GET | `/api/v1/plan-templates/:id/variants` | Masuk | Daftar varian |
-| POST | `/api/v1/plan-templates/:id/variants` | Masuk | Buat varian |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Masuk | Sinkronkan semua akun |
+| POST | `/api/v1/plan-templates/:id/variants` | Admin | Buat varian |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Admin | Sinkronkan semua akun |
 
 ### Varian rencana
 
@@ -257,8 +260,8 @@ Perbarui dan hapus varian paket (pembuatan disarangkan di bawah templat paket).
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Masuk | Hapus varian |
-| PUT | `/api/v1/plan-variants/:id` | Masuk | Perbarui varian |
+| DELETE | `/api/v1/plan-variants/:id` | Admin | Hapus varian |
+| PUT | `/api/v1/plan-variants/:id` | Admin | Perbarui varian |
 
 ### Paket lalu lintas
 
@@ -267,9 +270,9 @@ Paket lalu lintas yang dapat dibeli secara terpisah.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Masuk | Daftar paket lalu lintas |
-| POST | `/api/v1/traffic-packs` | Masuk | Buat paket lalu lintas |
-| DELETE | `/api/v1/traffic-packs/:id` | Masuk | Hapus paket lalu lintas |
-| PUT | `/api/v1/traffic-packs/:id` | Masuk | Perbarui paket lalu lintas |
+| POST | `/api/v1/traffic-packs` | Admin | Buat paket lalu lintas |
+| DELETE | `/api/v1/traffic-packs/:id` | Admin | Hapus paket lalu lintas |
+| PUT | `/api/v1/traffic-packs/:id` | Admin | Perbarui paket lalu lintas |
 
 ### Kupon
 
@@ -278,9 +281,9 @@ Buat, validasi, dan tukarkan kupon.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Masuk | Daftar kupon |
-| POST | `/api/v1/promotions` | Masuk | Buat kupon |
-| DELETE | `/api/v1/promotions/:id` | Masuk | Hapus kupon |
-| PUT | `/api/v1/promotions/:id` | Masuk | Perbarui kupon |
+| POST | `/api/v1/promotions` | Admin | Buat kupon |
+| DELETE | `/api/v1/promotions/:id` | Admin | Hapus kupon |
+| PUT | `/api/v1/promotions/:id` | Admin | Perbarui kupon |
 | POST | `/api/v1/promotions/validate` | Masuk | Validasi kupon |
 
 ### Grup simpul
@@ -290,12 +293,12 @@ Atur node ke dalam kelompok yang direferensikan oleh rencana.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Masuk | Daftar grup simpul |
-| POST | `/api/v1/node-groups` | Masuk | Buat grup simpul |
-| DELETE | `/api/v1/node-groups/:id` | Masuk | Hapus grup simpul |
-| PUT | `/api/v1/node-groups/:id` | Masuk | Perbarui grup simpul |
+| POST | `/api/v1/node-groups` | Admin | Buat grup simpul |
+| DELETE | `/api/v1/node-groups/:id` | Admin | Hapus grup simpul |
+| PUT | `/api/v1/node-groups/:id` | Admin | Perbarui grup simpul |
 | GET | `/api/v1/node-groups/:id/members` | Masuk | Daftar anggota kelompok |
-| POST | `/api/v1/node-groups/:id/members` | Masuk | Tambahkan anggota grup |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Masuk | Hapus anggota grup |
+| POST | `/api/v1/node-groups/:id/members` | Admin | Tambahkan anggota grup |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Admin | Hapus anggota grup |
 
 ### Server simpul
 
@@ -314,7 +317,7 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | GET | `/api/v1/node-servers/:id/binaries/interfaces` | Admin | Daftar antarmuka jaringan |
 | POST | `/api/v1/node-servers/:id/binaries/mldsa65-key` | Admin | Hasilkan kunci MLDSA65 |
 | POST | `/api/v1/node-servers/:id/binaries/reality-key` | Admin | Hasilkan pasangan kunci REALITY |
-| POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | Admin | Dapatkan kunci publik dari kunci pribadi REALITY |
+| POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | Admin | Turunkan kunci publik dari kunci pribadi REALITY |
 | GET | `/api/v1/node-servers/:id/binaries/releases` | Admin | Versi yang tersedia |
 | POST | `/api/v1/node-servers/:id/binaries/vlessenc` | Admin | Hasilkan parameter enkripsi VLESS |
 | POST | `/api/v1/node-servers/:id/binaries/wg-key` | Admin | Hasilkan kunci WireGuard |
@@ -328,7 +331,8 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Simpan dan terapkan |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Daftar situs |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Buat situs |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Impor situs |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Admin | Impor situs |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Admin | Pratinjau situs Caddy yang dirender |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Hapus situs |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Perbarui situs |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Hapus semua aturan SNI |
@@ -353,6 +357,9 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Admin | Paksa sambungkan kembali |
 | GET | `/api/v1/node-servers/:id/free-port` | Admin | Minta port gratis |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | Admin | Dorong ke simpul ini |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Admin | Deteksi firewall (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Admin | Izinkan port mendengarkan masuk (mendukung multi-rentang) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Admin | Cabut tunjangan port masuk (termasuk duplikat) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Admin | Daftar |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Admin | Buat |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Hapus |
@@ -373,8 +380,9 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Simpan pengaturan |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Daftar situs |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Buat situs |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Impor situs |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Hasilkan file sertifikat SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Admin | Impor situs |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Admin | Pratinjau yang diberikan situs Nginx |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Admin | Hasilkan file sertifikat SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Hapus situs |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Perbarui situs |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Hapus semua aturan SNI |
@@ -457,6 +465,7 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Admin | Hapus semuanya |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Admin | Terapkan aturan firewall port-hopping |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Admin | Hapus aturan firewall port-hopping |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Admin | Koneksi sing-box langsung (clash_api, khusus node lokal) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Tes kecepatan simpul |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Status simpul |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Konfigurasi simpul sinkronisasi (hasilkan dan dorong) |
@@ -496,6 +505,8 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | GET | `/api/v1/node-servers/:id/warp/config` | Admin | Baca konfigurasi |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Admin | Hasilkan konfigurasi |
 | POST | `/api/v1/node-servers/:id/warp/register` | Admin | Daftar |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Admin | Daftarkan profil WARP MASQUE (langkah 1 dari 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Admin | Buat keluar sing-box MASQUE dari profil WARP |
 | GET | `/api/v1/node-servers/:id/warp/status` | Admin | Status |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Dapatkan info penyeimbang |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Tetapkan target penyeimbang |
@@ -544,8 +555,8 @@ Audit dan ekspor operasi sisi node.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Masuk | Log audit simpul |
-| GET | `/api/v1/node-audit-logs/export` | Masuk | Ekspor log audit simpul |
+| GET | `/api/v1/node-audit-logs` | Admin | Log audit simpul |
+| GET | `/api/v1/node-audit-logs/export` | Admin | Ekspor log audit simpul |
 
 ### Node (model lama, sudah tidak digunakan lagi)
 
@@ -568,16 +579,16 @@ Manajemen catatan langganan: mencabut, memutar token, mengakses log, mengatur ul
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Masuk | Daftar |
-| POST | `/api/v1/subscriptions` | Masuk | Buat |
-| DELETE | `/api/v1/subscriptions/:id` | Masuk | Hapus |
+| POST | `/api/v1/subscriptions` | Operator | Buat |
+| DELETE | `/api/v1/subscriptions/:id` | Operator | Hapus |
 | GET | `/api/v1/subscriptions/:id` | Masuk | Detail |
-| PUT | `/api/v1/subscriptions/:id` | Masuk | Pembaruan |
+| PUT | `/api/v1/subscriptions/:id` | Operator | Pembaruan |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Masuk | Catatan akses |
-| POST | `/api/v1/subscriptions/:id/enable` | Masuk | Aktifkan |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Masuk | Setel ulang penggunaan |
-| POST | `/api/v1/subscriptions/:id/restore` | Masuk | Lanjutkan |
-| POST | `/api/v1/subscriptions/:id/revoke` | Masuk | Cabut |
-| POST | `/api/v1/subscriptions/:id/rotate` | Masuk | Putar |
+| POST | `/api/v1/subscriptions/:id/enable` | Operator | Aktifkan |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Operator | Setel ulang penggunaan |
+| POST | `/api/v1/subscriptions/:id/restore` | Operator | Lanjutkan |
+| POST | `/api/v1/subscriptions/:id/revoke` | Operator | Cabut |
+| POST | `/api/v1/subscriptions/:id/rotate` | Operator | Putar |
 | GET | `/api/v1/subscriptions/:id/rotations` | Masuk | Sejarah rotasi |
 
 ### Format berlangganan
@@ -593,10 +604,10 @@ Domain langganan khusus (diproksi terbalik ke jalur `/sub` panel).
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Masuk | Daftar |
-| POST | `/api/v1/subscription-endpoints` | Masuk | Buat |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Masuk | Hapus |
+| POST | `/api/v1/subscription-endpoints` | Admin | Buat |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Admin | Hapus |
 | GET | `/api/v1/subscription-endpoints/:id` | Masuk | Detail |
-| PUT | `/api/v1/subscription-endpoints/:id` | Masuk | Pembaruan |
+| PUT | `/api/v1/subscription-endpoints/:id` | Admin | Pembaruan |
 
 ### Bagikan domain
 
@@ -605,11 +616,11 @@ Akses domain/kumpulan IP yang digunakan dalam tautan klien.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Masuk | Daftar |
-| POST | `/api/v1/share-domains` | Masuk | Buat |
-| DELETE | `/api/v1/share-domains/:id` | Masuk | Hapus |
-| PUT | `/api/v1/share-domains/:id` | Masuk | Pembaruan |
-| DELETE | `/api/v1/share-domains/all` | Masuk | Hapus semuanya |
-| POST | `/api/v1/share-domains/seed` | Masuk | Inisialisasi data default |
+| POST | `/api/v1/share-domains` | Admin | Buat |
+| DELETE | `/api/v1/share-domains/:id` | Admin | Hapus |
+| PUT | `/api/v1/share-domains/:id` | Admin | Pembaruan |
+| DELETE | `/api/v1/share-domains/all` | Admin | Hapus semuanya |
+| POST | `/api/v1/share-domains/seed` | Admin | Inisialisasi data default |
 
 ### IP Cloudflare
 
@@ -617,17 +628,20 @@ Cloudflare CDN Kumpulan IP dan manajemen sumber.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Masuk | Hapus entri |
+| DELETE | `/api/v1/cfip/entries` | Admin | Hapus entri |
 | GET | `/api/v1/cfip/entries` | Masuk | Daftar entri |
-| POST | `/api/v1/cfip/entries` | Masuk | Tambahkan entri |
-| DELETE | `/api/v1/cfip/entries/:id` | Masuk | Hapus entri |
-| POST | `/api/v1/cfip/fetch-all` | Masuk | Ambil semua sumber |
-| POST | `/api/v1/cfip/seed` | Masuk | Inisialisasi data default |
+| POST | `/api/v1/cfip/entries` | Admin | Tambahkan entri |
+| DELETE | `/api/v1/cfip/entries/:id` | Admin | Hapus entri |
+| POST | `/api/v1/cfip/fetch-all` | Admin | Ambil semua sumber |
+| GET | `/api/v1/cfip/probe-config` | Masuk | Konfigurasi probe IP pilihan CF (node entri + dialer terpasang) |
+| PUT | `/api/v1/cfip/probe-config` | Admin | Simpan interval pemeriksaan / batas latensi / simpul entri / dialer |
+| POST | `/api/v1/cfip/check` | Admin | Selidiki semua domain/IP pilihan sekarang |
+| POST | `/api/v1/cfip/seed` | Admin | Inisialisasi data default |
 | GET | `/api/v1/cfip/sources` | Masuk | Daftar sumber data |
-| POST | `/api/v1/cfip/sources` | Masuk | Buat sumber data |
-| DELETE | `/api/v1/cfip/sources/:id` | Masuk | Hapus sumber data |
-| PUT | `/api/v1/cfip/sources/:id` | Masuk | Perbarui sumber data |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Masuk | Ambil sumber ini |
+| POST | `/api/v1/cfip/sources` | Admin | Buat sumber data |
+| DELETE | `/api/v1/cfip/sources/:id` | Admin | Hapus sumber data |
+| PUT | `/api/v1/cfip/sources/:id` | Admin | Perbarui sumber data |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Admin | Ambil sumber ini |
 
 ### Konfigurasi langganan (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Konfigurasi templat langganan: grup, aturan, penyedia aturan, pratinjau YAML.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Masuk | Daftar |
-| POST | `/api/v1/mihomo/configs` | Masuk | Buat |
-| DELETE | `/api/v1/mihomo/configs/:id` | Masuk | Hapus |
+| POST | `/api/v1/mihomo/configs` | Admin | Buat |
+| DELETE | `/api/v1/mihomo/configs/:id` | Admin | Hapus |
 | GET | `/api/v1/mihomo/configs/:id` | Masuk | Detail |
-| PUT | `/api/v1/mihomo/configs/:id` | Masuk | Pembaruan |
+| PUT | `/api/v1/mihomo/configs/:id` | Admin | Pembaruan |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Masuk | Daftar aturan |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Masuk | Buat aturan |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Urutkan ulang aturan |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Perbarui aturan |
-| DELETE | `/api/v1/mihomo/rules/:id` | Masuk | Hapus aturan |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Admin | Buat aturan |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Admin | Susun ulang aturan |
+| PUT | `/api/v1/mihomo/rules/:id` | Admin | Perbarui aturan |
+| DELETE | `/api/v1/mihomo/rules/:id` | Admin | Hapus aturan |
 
 ### Isi ulang situs
 
@@ -652,20 +666,20 @@ Integrasi situs pembayaran pihak ketiga: kunci penandatanganan, file verifikasi,
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Masuk | Daftar situs |
-| POST | `/api/v1/charge-sites` | Masuk | Buat situs |
-| DELETE | `/api/v1/charge-sites/:id` | Masuk | Hapus situs |
-| GET | `/api/v1/charge-sites/:id` | Masuk | Detail situs |
-| PUT | `/api/v1/charge-sites/:id` | Masuk | Perbarui situs |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Masuk | Hapus kunci lama |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Masuk | Hasilkan file verifikasi |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Masuk | Hasilkan file verifikasi |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Masuk | Dapatkan dokumen integrasi |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Masuk | Putar kunci penandatanganan |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Masuk | Verifikasi domain DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Masuk | Verifikasi tantangan domain HTTP |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Masuk | Verifikasi domain DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Masuk | Verifikasi tantangan domain HTTP |
+| GET | `/api/v1/charge-sites` | Admin | Daftar situs |
+| POST | `/api/v1/charge-sites` | Admin | Buat situs |
+| DELETE | `/api/v1/charge-sites/:id` | Admin | Hapus situs |
+| GET | `/api/v1/charge-sites/:id` | Admin | Detail situs |
+| PUT | `/api/v1/charge-sites/:id` | Admin | Perbarui situs |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Admin | Hapus kunci lama |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Admin | Hasilkan file verifikasi |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Admin | Hasilkan file verifikasi |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Admin | Dapatkan dokumen integrasi |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Admin | Putar kunci penandatanganan |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Admin | Verifikasi domain DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Admin | Verifikasi tantangan domain HTTP |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Admin | Verifikasi domain DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Admin | Verifikasi tantangan domain HTTP |
 
 ### Isi ulang pesanan
 
@@ -673,10 +687,10 @@ Isi ulang pertanyaan pesanan, pengembalian uang, ekspor CSV.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Masuk | Daftar pesanan |
-| GET | `/api/v1/charge-orders/:id` | Masuk | Detail pesanan |
-| POST | `/api/v1/charge-orders/:id/refund` | Masuk | Pengembalian dana |
-| GET | `/api/v1/charge-orders/export-csv` | Masuk | Ekspor pesanan isi ulang CSV |
+| GET | `/api/v1/charge-orders` | Admin | Daftar pesanan |
+| GET | `/api/v1/charge-orders/:id` | Admin | Detail pesanan |
+| POST | `/api/v1/charge-orders/:id/refund` | Admin | Pengembalian dana |
+| GET | `/api/v1/charge-orders/export-csv` | Admin | Ekspor pesanan isi ulang CSV |
 
 ### Isi ulang kartu
 
@@ -684,12 +698,12 @@ Pembuatan kartu massal, catatan penggunaan, ekspor CSV.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Masuk | Daftar kartu |
-| POST | `/api/v1/charge-cards` | Masuk | Buat kartu |
-| DELETE | `/api/v1/charge-cards/:id` | Masuk | Hapus kartu |
-| GET | `/api/v1/charge-cards/:id/usages` | Masuk | Catatan penggunaan kartu |
-| POST | `/api/v1/charge-cards/batch` | Masuk | Buat kartu secara massal |
-| GET | `/api/v1/charge-cards/export-csv` | Masuk | Ekspor kartu CSV |
+| GET | `/api/v1/charge-cards` | Admin | Daftar kartu |
+| POST | `/api/v1/charge-cards` | Admin | Buat kartu |
+| DELETE | `/api/v1/charge-cards/:id` | Admin | Hapus kartu |
+| GET | `/api/v1/charge-cards/:id/usages` | Admin | Catatan penggunaan kartu |
+| POST | `/api/v1/charge-cards/batch` | Admin | Buat kartu secara massal |
+| GET | `/api/v1/charge-cards/export-csv` | Admin | Ekspor kartu CSV |
 
 ### Mengisi acara panggilan balik
 
@@ -701,7 +715,7 @@ Audit acara panggilan balik.
 
 ### Biaya percobaan ulang panggilan balik
 
-Coba ulang panggilan balik yang gagal secara manual.
+Percobaan ulang manual dari panggilan balik yang gagal.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
@@ -716,7 +730,7 @@ Tampilan admin saldo dan transaksi.
 |---|---|---|---|
 | GET | `/api/v1/client-balances` | Masuk | Daftar saldo pelanggan |
 | GET | `/api/v1/client-balances/transactions` | Masuk | Transaksi saldo (admin) |
-| GET | `/api/v1/client-balances/transactions/export-csv` | Masuk | Transaksi saldo ekspor CSV |
+| GET | `/api/v1/client-balances/transactions/export-csv` | Masuk | Ekspor saldo transaksi CSV |
 
 ### Hadiah
 
@@ -725,8 +739,8 @@ Mengeluarkan hadiah yang dapat diklaim (hari/lalu lintas).
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Masuk | Daftar hadiah |
-| POST | `/api/v1/client-gifts` | Masuk | Buat hadiah |
-| POST | `/api/v1/client-gifts/batch` | Masuk | Buat hadiah secara massal |
+| POST | `/api/v1/client-gifts` | Admin | Buat hadiah |
+| POST | `/api/v1/client-gifts/batch` | Admin | Buat hadiah secara massal |
 | GET | `/api/v1/client-gifts/search-clients` | Masuk | Cari pelanggan |
 
 ### Konfigurasi rujukan
@@ -746,9 +760,9 @@ Tinjau permintaan penarikan.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Masuk | Daftar permintaan penarikan |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Masuk | Setujui penarikan |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Masuk | Tolak penarikan |
+| GET | `/api/v1/referral-withdrawals` | Admin | Daftar permintaan penarikan |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Admin | Setujui penarikan |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Admin | Tolak penarikan |
 
 ### Daftar IP yang diizinkan (ringkasan)
 
@@ -774,9 +788,9 @@ Balasan tiket, penugasan, dan penutupan.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Masuk | Daftar tiket |
 | GET | `/api/v1/tickets/:id` | Masuk | Detail tiket |
-| POST | `/api/v1/tickets/:id/assign` | Masuk | Tetapkan tiket |
-| POST | `/api/v1/tickets/:id/close` | Masuk | Tutup tiket |
-| POST | `/api/v1/tickets/:id/reply` | Masuk | Membalas tiket |
+| POST | `/api/v1/tickets/:id/assign` | Operator | Tetapkan tiket |
+| POST | `/api/v1/tickets/:id/close` | Operator | Tutup tiket |
+| POST | `/api/v1/tickets/:id/reply` | Operator | Membalas tiket |
 
 ### Artikel
 
@@ -785,10 +799,10 @@ CRUD untuk artikel portal.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Masuk | Daftar artikel |
-| POST | `/api/v1/articles` | Masuk | Buat artikel |
-| DELETE | `/api/v1/articles/:id` | Masuk | Hapus artikel |
+| POST | `/api/v1/articles` | Admin | Buat artikel |
+| DELETE | `/api/v1/articles/:id` | Admin | Hapus artikel |
 | GET | `/api/v1/articles/:id` | Masuk | Detail artikel |
-| PUT | `/api/v1/articles/:id` | Masuk | Perbarui artikel |
+| PUT | `/api/v1/articles/:id` | Admin | Perbarui artikel |
 
 ### Akun bersama
 
@@ -797,10 +811,10 @@ Catatan penerbitan dan perbaikan untuk akun bersama (streaming, dll.).
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Masuk | Daftar akun bersama |
-| POST | `/api/v1/shared-accounts` | Masuk | Buat akun bersama |
-| DELETE | `/api/v1/shared-accounts/:id` | Masuk | Hapus akun bersama |
+| POST | `/api/v1/shared-accounts` | Admin | Buat akun bersama |
+| DELETE | `/api/v1/shared-accounts/:id` | Admin | Hapus akun bersama |
 | GET | `/api/v1/shared-accounts/:id` | Masuk | Detail akun bersama |
-| PUT | `/api/v1/shared-accounts/:id` | Masuk | Perbarui akun bersama |
+| PUT | `/api/v1/shared-accounts/:id` | Admin | Perbarui akun bersama |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Masuk | Catatan perbaikan |
 
 ### Sertifikat
@@ -809,20 +823,20 @@ Penerbitan, pengunggahan, pembaruan dan ekspor sertifikat publik (ACME); penerbi
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Masuk | Daftar |
-| POST | `/api/v1/certificates` | Masuk | Buat |
-| DELETE | `/api/v1/certificates/:id` | Masuk | Hapus |
-| GET | `/api/v1/certificates/:id` | Masuk | Detail |
-| PUT | `/api/v1/certificates/:id` | Masuk | Pembaruan |
-| GET | `/api/v1/certificates/:id/download` | Masuk | Unduh |
-| POST | `/api/v1/certificates/:id/renew` | Masuk | Perbarui pelanggan |
-| GET | `/api/v1/certificates/check-port` | Masuk | Periksa pelabuhan |
-| GET | `/api/v1/certificates/detect-ip` | Masuk | Selidiki IP |
-| GET | `/api/v1/certificates/export` | Masuk | Ekspor |
-| POST | `/api/v1/certificates/issue` | Masuk | Masalah. tubuh: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaultnya adalah http-01; `dns_channel_id` memilih saluran DNS (penyedia DNS yang dikonfigurasi + kredensial) |
-| POST | `/api/v1/certificates/issue-on-node` | Masuk | Masalah ke node |
-| POST | `/api/v1/certificates/upload` | Masuk | Unggah |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Periksa status tugas latar belakang |
+| GET | `/api/v1/certificates` | Admin | Daftar |
+| POST | `/api/v1/certificates` | Admin | Buat |
+| DELETE | `/api/v1/certificates/:id` | Admin | Hapus |
+| GET | `/api/v1/certificates/:id` | Admin | Detail |
+| PUT | `/api/v1/certificates/:id` | Admin | Pembaruan |
+| GET | `/api/v1/certificates/:id/download` | Admin | Unduh |
+| POST | `/api/v1/certificates/:id/renew` | Admin | Perbarui pelanggan |
+| GET | `/api/v1/certificates/check-port` | Admin | Periksa pelabuhan |
+| GET | `/api/v1/certificates/detect-ip` | Admin | Selidiki IP |
+| GET | `/api/v1/certificates/export` | Admin | Ekspor |
+| POST | `/api/v1/certificates/issue` | Admin | Masalah. tubuh: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` defaultnya adalah http-01; `dns_channel_id` memilih saluran DNS (penyedia DNS yang dikonfigurasi + kredensial) |
+| POST | `/api/v1/certificates/issue-on-node` | Admin | Masalah ke node |
+| POST | `/api/v1/certificates/upload` | Admin | Unggah |
+| GET | `/api/v1/certificate-tasks/:id` | Admin | Status tugas latar belakang kueri |
 
 ### Saluran sertifikat
 
@@ -830,11 +844,11 @@ Konfigurasi saluran ACME (CA).
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Masuk | Daftar |
-| POST | `/api/v1/cert-channels` | Masuk | Buat |
-| DELETE | `/api/v1/cert-channels/:id` | Masuk | Hapus |
-| PUT | `/api/v1/cert-channels/:id` | Masuk | Pembaruan |
-| GET | `/api/v1/cert-channels/providers` | Masuk | Penyedia |
+| GET | `/api/v1/cert-channels` | Admin | Daftar |
+| POST | `/api/v1/cert-channels` | Admin | Buat |
+| DELETE | `/api/v1/cert-channels/:id` | Admin | Hapus |
+| PUT | `/api/v1/cert-channels/:id` | Admin | Pembaruan |
+| GET | `/api/v1/cert-channels/providers` | Admin | Penyedia |
 
 ### Konfigurasi EAB
 
@@ -842,12 +856,12 @@ Kredensial mengikat akun eksternal seperti ZeroSSL / Google.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Masuk | Daftar |
-| POST | `/api/v1/eab-configs` | Masuk | Buat |
-| DELETE | `/api/v1/eab-configs/:id` | Masuk | Hapus |
-| PUT | `/api/v1/eab-configs/:id` | Masuk | Pembaruan |
-| POST | `/api/v1/eab-configs/fetch-google` | Masuk | Ambil Google EAB dari GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Masuk | Ambil ZeroSSL EAB dengan email dalam satu klik |
+| GET | `/api/v1/eab-configs` | Admin | Daftar |
+| POST | `/api/v1/eab-configs` | Admin | Buat |
+| DELETE | `/api/v1/eab-configs/:id` | Admin | Hapus |
+| PUT | `/api/v1/eab-configs/:id` | Admin | Pembaruan |
+| POST | `/api/v1/eab-configs/fetch-google` | Admin | Ambil Google EAB dari GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Admin | Ambil ZeroSSL EAB dengan email dalam satu klik |
 
 ### akun ACME
 
@@ -855,11 +869,11 @@ Manajemen akun ACME sisi panel (email kontak).
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Masuk | Daftar |
-| POST | `/api/v1/acme-accounts` | Masuk | Buat |
-| DELETE | `/api/v1/acme-accounts/:id` | Masuk | Hapus |
-| PUT | `/api/v1/acme-accounts/:id` | Masuk | Pembaruan |
-| GET | `/api/v1/acme-accounts/default` | Masuk | Dapatkan default |
+| GET | `/api/v1/acme-accounts` | Admin | Daftar |
+| POST | `/api/v1/acme-accounts` | Admin | Buat |
+| DELETE | `/api/v1/acme-accounts/:id` | Admin | Hapus |
+| PUT | `/api/v1/acme-accounts/:id` | Admin | Pembaruan |
+| GET | `/api/v1/acme-accounts/default` | Admin | Dapatkan default |
 
 ### CA bawaan
 
@@ -867,14 +881,14 @@ Panel internal CA: Penerbitan/perpanjangan/pencabutan sertifikat agen, ekspor CR
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Masuk | Daftar sertifikat agen |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Masuk | Perpanjang sertifikat Agen |
-| GET | `/api/v1/ca/distribution-queue` | Masuk | Antrian distribusi sertifikat |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Masuk | Hapus entri antrian distribusi |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Masuk | Coba lagi distribusi sertifikat |
-| GET | `/api/v1/ca/revocations` | Masuk | Daftar pencabutan |
-| GET | `/api/v1/ca/revocations/export` | Masuk | Ekspor CRL |
-| GET | `/api/v1/ca/status` | Masuk | status CA |
+| GET | `/api/v1/ca/agent-certs` | Admin | Daftar sertifikat agen |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Admin | Perpanjang sertifikat Agen |
+| GET | `/api/v1/ca/distribution-queue` | Admin | Antrian distribusi sertifikat |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Admin | Hapus entri antrian distribusi |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Admin | Coba lagi distribusi sertifikat |
+| GET | `/api/v1/ca/revocations` | Admin | Daftar pencabutan |
+| GET | `/api/v1/ca/revocations/export` | Admin | Ekspor CRL |
+| GET | `/api/v1/ca/status` | Admin | status CA |
 
 ### Aturan geografis
 
@@ -883,24 +897,24 @@ Sinkronisasi dan pengiriman sumber data dan file geoip/geosite.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Masuk | Daftar berkas |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Masuk | Hapus berkas |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Masuk | Alihkan sinkronisasi otomatis |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Masuk | Unduh |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Admin | Hapus berkas |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Admin | Alihkan sinkronisasi otomatis |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Admin | Unduh |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Masuk | Unduh berkas |
 | GET | `/api/v1/geo-rules/github-assets` | Masuk | Ambil aset repositori GitHub |
-| POST | `/api/v1/geo-rules/push-all` | Masuk | Dorong ke semua node |
-| POST | `/api/v1/geo-rules/seed` | Masuk | Inisialisasi data default |
+| POST | `/api/v1/geo-rules/push-all` | Admin | Dorong ke semua node |
+| POST | `/api/v1/geo-rules/seed` | Admin | Inisialisasi data default |
 | GET | `/api/v1/geo-rules/sources` | Masuk | Daftar sumber data |
-| POST | `/api/v1/geo-rules/sources` | Masuk | Buat sumber data |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Masuk | Hapus sumber data |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Masuk | Perbarui sumber data |
+| POST | `/api/v1/geo-rules/sources` | Admin | Buat sumber data |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Admin | Hapus sumber data |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Admin | Perbarui sumber data |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Masuk | Ambil aset Rilis |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Masuk | Tambahkan berkas |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Masuk | Alihkan sinkronisasi terjadwal |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Masuk | Pilih berkas |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Masuk | Sinkronkan sumber data ini |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Admin | Tambahkan berkas |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Admin | Alihkan sinkronisasi terjadwal |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Admin | Pilih berkas |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Admin | Sinkronkan sumber data ini |
 | GET | `/api/v1/geo-rules/status` | Masuk | Status |
-| POST | `/api/v1/geo-rules/sync-all` | Masuk | Sinkronkan semua |
+| POST | `/api/v1/geo-rules/sync-all` | Admin | Sinkronkan semua |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Masuk | Sinkronkan kemajuan |
 
 ### Pustaka aturan WAF
@@ -910,14 +924,14 @@ Aturan WAF global: sumber GitHub, sinkronisasi, pengiriman ke semua node.
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Masuk | Sumber data GitHub |
-| PUT | `/api/v1/waf/github-source` | Masuk | Simpan sumber data GitHub |
-| POST | `/api/v1/waf/push-all` | Masuk | Dorong ke semua node |
+| PUT | `/api/v1/waf/github-source` | Admin | Simpan sumber data GitHub |
+| POST | `/api/v1/waf/push-all` | Admin | Dorong ke semua node |
 | GET | `/api/v1/waf/rules` | Masuk | Daftar aturan |
-| DELETE | `/api/v1/waf/rules/:name` | Masuk | Hapus aturan |
+| DELETE | `/api/v1/waf/rules/:name` | Admin | Hapus aturan |
 | GET | `/api/v1/waf/rules/:name` | Masuk | Dapatkan aturan |
-| PUT | `/api/v1/waf/rules/:name` | Masuk | Simpan aturan |
-| POST | `/api/v1/waf/sync-all` | Masuk | Sinkronkan semua |
-| POST | `/api/v1/waf/sync-github` | Masuk | Sinkronisasi dari GitHub |
+| PUT | `/api/v1/waf/rules/:name` | Admin | Simpan aturan |
+| POST | `/api/v1/waf/sync-all` | Admin | Sinkronkan semua |
+| POST | `/api/v1/waf/sync-github` | Admin | Sinkronisasi dari GitHub |
 
 ### Manajemen catatan
 
@@ -925,43 +939,37 @@ Pembacaan dan streaming log node/inti, kebijakan pembersihan, kontrol penulis lo
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Masuk | Bersihkan semuanya sekarang |
-| GET | `/api/v1/log-manage/cleanup-rules` | Masuk | Daftar aturan pembersihan |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Masuk | Perbarui aturan pembersihan |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Masuk | Bersihkan tabel yang ditentukan sekarang |
-| GET | `/api/v1/log-manage/core-log-output` | Masuk | Konfigurasi keluaran log inti |
-| PUT | `/api/v1/log-manage/core-log-output` | Masuk | Simpan konfigurasi keluaran log inti |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Masuk | Baca log stdout inti |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Masuk | Streaming inti stdout |
-| POST | `/api/v1/log-manage/discover` | Masuk | Temukan file log simpul |
-| GET | `/api/v1/log-manage/log-output` | Masuk | Konfigurasi keluaran log |
-| PUT | `/api/v1/log-manage/log-output` | Masuk | Simpan konfigurasi keluaran log |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Masuk | Rilis log pengambilalihan stdout |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Masuk | Ambil alih log stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Masuk | Daftar file log simpul |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Masuk | Baca log simpul |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Masuk | Memutar log simpul |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Masuk | Log simpul aliran |
-| GET | `/api/v1/log-manage/policies` | Masuk | Daftar kebijakan |
-| POST | `/api/v1/log-manage/policies` | Masuk | Buat kebijakan |
-| DELETE | `/api/v1/log-manage/policies/:id` | Masuk | Hapus kebijakan |
-| GET | `/api/v1/log-manage/policies/:id` | Masuk | Detail kebijakan |
-| PUT | `/api/v1/log-manage/policies/:id` | Masuk | Perbarui kebijakan |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Masuk | Daftar pekerjaan pembersihan |
-| GET | `/api/v1/log-manage/policies/:id/log` | Masuk | Baca log |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Masuk | Log aliran |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Masuk | Putar |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Masuk | Baca log stdout inti |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Masuk | Streaming inti stdout |
-| GET | `/api/v1/log-manage/scheduler-config` | Masuk | Konfigurasi penjadwalan |
-| PUT | `/api/v1/log-manage/scheduler-config` | Masuk | Perbarui konfigurasi penjadwalan |
-| GET | `/api/v1/log-manage/status` | Masuk | Status |
-| POST | `/api/v1/log-manage/sync` | Masuk | Sinkronkan kebijakan pembersihan |
-| GET | `/api/v1/log-manage/writers` | Masuk | Status penulis |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Masuk | Perbarui konfigurasi penulis |
-| GET | `/api/v1/log-manage/writers/:type/files` | Masuk | Daftar file log penulis |
-| POST | `/api/v1/log-manage/writers/:type/start` | Masuk | Mulai penulis |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Masuk | Hentikan penulis |
+| POST | `/api/v1/log-manage/cleanup-all` | Admin | Bersihkan semuanya sekarang |
+| GET | `/api/v1/log-manage/cleanup-rules` | Admin | Daftar aturan pembersihan |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Admin | Perbarui aturan pembersihan |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Admin | Bersihkan tabel yang ditentukan sekarang |
+| GET | `/api/v1/log-manage/core-log-output` | Admin | Konfigurasi keluaran log inti |
+| PUT | `/api/v1/log-manage/core-log-output` | Admin | Simpan konfigurasi keluaran log inti |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Admin | Baca log stdout inti |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Admin | Streaming inti stdout |
+| POST | `/api/v1/log-manage/discover` | Admin | Temukan file log simpul |
+| GET | `/api/v1/log-manage/log-output` | Admin | Konfigurasi keluaran log |
+| PUT | `/api/v1/log-manage/log-output` | Admin | Simpan konfigurasi keluaran log |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Admin | Daftar file log simpul |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Admin | Baca log simpul |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Admin | Memutar log simpul |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Admin | Log simpul aliran |
+| GET | `/api/v1/log-manage/policies` | Admin | Daftar kebijakan |
+| POST | `/api/v1/log-manage/policies` | Admin | Buat kebijakan |
+| DELETE | `/api/v1/log-manage/policies/:id` | Admin | Hapus kebijakan |
+| GET | `/api/v1/log-manage/policies/:id` | Admin | Detail kebijakan |
+| PUT | `/api/v1/log-manage/policies/:id` | Admin | Perbarui kebijakan |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Admin | Daftar pekerjaan pembersihan |
+| GET | `/api/v1/log-manage/policies/:id/log` | Admin | Baca log |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Admin | Log aliran |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Admin | Putar |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Admin | Baca log stdout inti |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Admin | Streaming inti stdout |
+| GET | `/api/v1/log-manage/scheduler-config` | Admin | Konfigurasi penjadwalan |
+| PUT | `/api/v1/log-manage/scheduler-config` | Admin | Perbarui konfigurasi penjadwalan |
+| GET | `/api/v1/log-manage/status` | Admin | Status |
+| POST | `/api/v1/log-manage/sync` | Admin | Sinkronkan kebijakan pembersihan |
+| GET | `/api/v1/log-manage/writers` | Admin | Status penulis |
 
 ### Cadangan
 
@@ -969,16 +977,16 @@ Basis data/pencadangan penuh, pemulihan, pekerjaan terjadwal, penyimpanan jarak 
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Admin | Hapus cadangan |
+| DELETE | `/api/v1/backups/:id` | Admin super | Hapus cadangan |
 | GET | `/api/v1/backups/:id/download` | Admin | Unduh cadangan |
-| POST | `/api/v1/backups/:id/restore` | Admin | Pulihkan dari cadangan |
-| POST | `/api/v1/backups/:id/upload-ftp` | Admin | Unggah ke FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | Admin | Unggah ke S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | Admin | Unggah ke WebDAV |
+| POST | `/api/v1/backups/:id/restore` | Admin super | Pulihkan dari cadangan |
+| POST | `/api/v1/backups/:id/upload-ftp` | Admin super | Unggah ke FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | Admin super | Unggah ke S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | Admin super | Unggah ke WebDAV |
 | POST | `/api/v1/backups/create` | Admin | Buat cadangan penuh (dengan DB dump) |
 | GET | `/api/v1/backups/list` | Admin | Daftar cadangan lengkap |
-| POST | `/api/v1/backups/remote-restore` | Admin | Pulihkan dari jarak jauh |
-| GET | `/api/v1/backups/restore-status` | Admin | Pulihkan kemajuan |
+| POST | `/api/v1/backups/remote-restore` | Admin super | Pulihkan dari jarak jauh |
+| GET | `/api/v1/backups/restore-status` | Admin super | Pulihkan kemajuan |
 | GET | `/api/v1/backups/schedules` | Admin | Daftar pekerjaan terjadwal |
 | POST | `/api/v1/backups/schedules` | Admin | Buat pekerjaan terjadwal |
 | DELETE | `/api/v1/backups/schedules/:id` | Admin | Hapus pekerjaan terjadwal |
@@ -988,7 +996,7 @@ Basis data/pencadangan penuh, pemulihan, pekerjaan terjadwal, penyimpanan jarak 
 | DELETE | `/api/v1/backups/storages/:id` | Admin | Hapus konfigurasi penyimpanan |
 | PUT | `/api/v1/backups/storages/:id` | Admin | Perbarui konfigurasi penyimpanan |
 | GET | `/api/v1/backups/storages/:id/files` | Admin | Daftar file cadangan jarak jauh |
-| POST | `/api/v1/backups/upload-restore` | Admin | Unggah cadangan dan pulihkan |
+| POST | `/api/v1/backups/upload-restore` | Admin super | Unggah cadangan dan pulihkan |
 
 ### Pengaturan sistem
 
@@ -1001,8 +1009,8 @@ Konfigurasi dan migrasi database, pengaturan panel, kunci JWT, tes SMTP/Telegram
 | GET | `/api/v1/system/config-file/:coreType` | Admin | Baca file konfigurasi inti |
 | GET | `/api/v1/system/db-config` | Admin | Konfigurasi basis data |
 | PUT | `/api/v1/system/db-config` | Admin | Perbarui konfigurasi basis data |
-| POST | `/api/v1/system/db-config/migrate` | Admin | Migrasikan data basis data |
-| POST | `/api/v1/system/db-config/switch` | Admin | Beralih database (dengan migrasi satu langkah) |
+| POST | `/api/v1/system/db-config/migrate` | Admin super | Migrasikan data basis data |
+| POST | `/api/v1/system/db-config/switch` | Admin super | Beralih database (dengan migrasi satu langkah) |
 | POST | `/api/v1/system/db-config/test` | Admin | Uji koneksi basis data |
 | GET | `/api/v1/system/db-pool-stats` | Admin | Statistik kumpulan koneksi |
 | GET | `/api/v1/system/db-stats` | Admin | Statistik basis data |
@@ -1011,13 +1019,13 @@ Konfigurasi dan migrasi database, pengaturan panel, kunci JWT, tes SMTP/Telegram
 | GET | `/api/v1/system/encryption-key-status` | Admin | Status kunci enkripsi |
 | GET | `/api/v1/system/env-config` | Admin | konfigurasi .env |
 | PUT | `/api/v1/system/env-config` | Admin | Perbarui konfigurasi .env |
-| POST | `/api/v1/system/generate-encryption-key` | Admin | Hasilkan kunci enkripsi |
+| POST | `/api/v1/system/generate-encryption-key` | Admin super | Hasilkan kunci enkripsi |
 | GET | `/api/v1/system/github-config` | Admin | Konfigurasi GitHub |
 | PUT | `/api/v1/system/github-config` | Admin | Perbarui konfigurasi GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | Admin | Status kunci JWT |
 | GET | `/api/v1/system/maintenance` | Publik | Status mode pemeliharaan (publik) |
 | PUT | `/api/v1/system/maintenance` | Admin | Alihkan mode pemeliharaan |
-| POST | `/api/v1/system/migrate-data` | Admin | Migrasikan data |
+| POST | `/api/v1/system/migrate-data` | Admin super | Migrasikan data |
 | GET | `/api/v1/system/notification-config` | Admin | Konfigurasi notifikasi |
 | PUT | `/api/v1/system/notification-config` | Admin | Perbarui konfigurasi notifikasi |
 | GET | `/api/v1/system/notification-templates` | Admin | Daftar templat |
@@ -1030,13 +1038,13 @@ Konfigurasi dan migrasi database, pengaturan panel, kunci JWT, tes SMTP/Telegram
 | PUT | `/api/v1/system/panel-config` | Admin | Perbarui konfigurasi panel |
 | GET | `/api/v1/system/reality-targets` | Admin | Daftar target REALITY |
 | PUT | `/api/v1/system/reality-targets` | Admin | Perbarui target REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | Admin | Setel ulang target REALITY ke default |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Baca konfigurasi SNI lokal Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Perbarui konfigurasi SNI lokal Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Admin | Regenerasi kunci JWT |
+| POST | `/api/v1/system/reality-targets/reset` | Admin super | Setel ulang target REALITY ke default |
+| GET | `/api/v1/system/reality-local-sni` | Admin | Baca konfigurasi Reality lokal SNI |
+| PUT | `/api/v1/system/reality-local-sni` | Admin | Perbarui konfigurasi SNI lokal SNI |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Admin super | Regenerasi kunci JWT |
 | GET | `/api/v1/system/releases` | Admin | Versi yang tersedia |
-| POST | `/api/v1/system/restart` | Admin | Mulai ulang |
-| POST | `/api/v1/system/rollback` | Admin | Kemunduran sistem |
+| POST | `/api/v1/system/restart` | Admin super | Mulai ulang |
+| POST | `/api/v1/system/rollback` | Admin super | Kemunduran sistem |
 | GET | `/api/v1/system/settings` | Admin | Baca pengaturan |
 | PUT | `/api/v1/system/settings/batch` | Admin | Pengaturan pembaruan massal |
 | GET | `/api/v1/system/stats` | Admin | Status sistem |
@@ -1045,7 +1053,7 @@ Konfigurasi dan migrasi database, pengaturan panel, kunci JWT, tes SMTP/Telegram
 | POST | `/api/v1/system/telegram-chat-id` | Admin | Dapatkan ID Obrolan Telegram |
 | POST | `/api/v1/system/test-smtp` | Admin | Uji SMTP |
 | POST | `/api/v1/system/test-telegram` | Admin | Uji Telegram |
-| POST | `/api/v1/system/update` | Admin | Peningkatan sistem |
+| POST | `/api/v1/system/update` | Admin super | Peningkatan sistem |
 | GET | `/api/v1/system/update-jobs` | Admin | Tingkatkan daftar pekerjaan |
 | POST | `/api/v1/system/upload-mtls-ca` | Admin | Unggah sertifikat mTLS CA |
 
@@ -1055,8 +1063,9 @@ Audit kueri acara dan ekspor.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Masuk | Daftar acara audit |
-| GET | `/api/v1/security/audit-events/export` | Masuk | Ekspor peristiwa audit |
+| GET | `/api/v1/security/audit-events` | Admin | Daftar acara audit |
+| GET | `/api/v1/security/audit-events/export` | Admin | Ekspor peristiwa audit |
+| GET | `/api/v1/security/subscription-access-logs` | Admin | Log pengambilan langganan (filter berdasarkan ID langganan/IP/email klien) |
 
 ### Metrik
 
@@ -1064,9 +1073,9 @@ Metrik gabungan panel (node/sertifikat/layanan).
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Masuk | Metrik sertifikat |
-| GET | `/api/v1/metrics/nodes` | Masuk | Metrik simpul |
-| GET | `/api/v1/metrics/overview` | Masuk | Ikhtisar |
+| GET | `/api/v1/metrics/certificates` | Admin | Metrik sertifikat |
+| GET | `/api/v1/metrics/nodes` | Admin | Metrik simpul |
+| GET | `/api/v1/metrics/overview` | Admin | Ikhtisar |
 
 ### Templat portal
 
@@ -1074,22 +1083,22 @@ Templat portal, konfigurasi aktivasi, dan manajemen cache.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Masuk | Templat aktif |
-| PUT | `/api/v1/portal/active` | Masuk | Perbarui template aktif |
-| DELETE | `/api/v1/portal/cache` | Masuk | Hapus cache portal |
-| GET | `/api/v1/portal/cache` | Masuk | Status cache |
-| PUT | `/api/v1/portal/cache/dev-mode` | Masuk | Alihkan mode pengembangan cache |
-| POST | `/api/v1/portal/cache/rebuild` | Masuk | Membangun kembali cache portal |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Paket bahasa bawaan |
-| POST | `/api/v1/portal/reset` | Masuk | Kembalikan templat default |
-| GET | `/api/v1/portal/templates` | Masuk | Daftar |
-| POST | `/api/v1/portal/templates` | Masuk | Buat |
-| DELETE | `/api/v1/portal/templates/:id` | Masuk | Hapus |
-| GET | `/api/v1/portal/templates/:id` | Masuk | Detail |
-| PUT | `/api/v1/portal/templates/:id` | Masuk | Pembaruan |
-| POST | `/api/v1/portal/templates/:id/activate` | Masuk | Aktifkan templat |
+| GET | `/api/v1/portal/active` | Admin | Templat aktif |
+| PUT | `/api/v1/portal/active` | Admin | Perbarui template aktif |
+| DELETE | `/api/v1/portal/cache` | Admin | Hapus cache portal |
+| GET | `/api/v1/portal/cache` | Admin | Status cache |
+| PUT | `/api/v1/portal/cache/dev-mode` | Admin | Alihkan mode pengembangan cache |
+| POST | `/api/v1/portal/cache/rebuild` | Admin | Membangun kembali cache portal |
+| GET | `/api/v1/portal/lang/builtin` | Admin | Paket bahasa bawaan |
+| POST | `/api/v1/portal/reset` | Admin | Kembalikan templat default |
+| GET | `/api/v1/portal/templates` | Admin | Daftar |
+| POST | `/api/v1/portal/templates` | Admin | Buat |
+| DELETE | `/api/v1/portal/templates/:id` | Admin | Hapus |
+| GET | `/api/v1/portal/templates/:id` | Admin | Detail |
+| PUT | `/api/v1/portal/templates/:id` | Admin | Pembaruan |
+| POST | `/api/v1/portal/templates/:id/activate` | Admin | Aktifkan templat |
 
-> `/portal/templates` CRUD adalah **API tingkat lanjut**: UI portal terutama menggunakan `PUT /api/v1/portal/active`
+> `/portal/templates` CRUD adalah **API tingkat lanjut**: UI portal utamanya menggunakan `PUT /api/v1/portal/active`
 > (konfigurasi situs lengkap sekali pakai); kelola/ganti beberapa templat dengan grup ini. Keduanya mendukung dan tidak bertentangan.
 
 ### Instalasi agen
@@ -1103,11 +1112,11 @@ Skrip instalasi Node Agent dan unduh (publik).
 | GET | `/api/v1/agent/version` | Admin | Versi Agen saat ini di panel |
 | GET | `/api/v1/agent/download` | Publik | Unduh Agen |
 | GET | `/api/v1/agent/install` | Publik | Dapatkan skrip pemasangan |
-| GET | `/api/v1/agent/origin` | 公开 | Alamat asal panel (publik) |
+| GET | `/api/v1/agent/origin` | Publik | Alamat asal panel (publik) |
 
 ### Biaya entri panggilan balik
 
-Callback platform pembayaran pihak ketiga (publik, terverifikasi tanda tangan).
+Callback platform pembayaran pihak ketiga (publik, tanda tangan terverifikasi).
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
@@ -1131,84 +1140,80 @@ Konfigurasi waktu proses portal tanpa masuk (penjaga pemeliharaan + batas tarif 
 | GET | `/api/v1/public/articles/:slug` | Publik | Detail artikel publik |
 | GET | `/api/v1/public/client-configs` | Publik | Konfigurasi pengunduhan klien (publik) |
 | GET | `/api/v1/public/portal-config` | Publik | Konfigurasi runtime portal (nama situs, tema, bahasa, dokumen kepatuhan; publik) |
-| GET | `/api/v1/public/settings` | Publik | Pengaturan publik (misalnya registrasi_diaktifkan; publik) |
+| GET | `/api/v1/public/settings` | Publik | Pengaturan publik (mis. registrasi_diaktifkan; publik) |
 | GET | `/api/v1/public/subscription-endpoints` | Publik | Daftar titik akhir langganan yang diaktifkan (publik) |
 
 ### Otentikasi klien dan bisnis (set yang sama di mesin admin)
 
-Titik akhir klien identik dengan portal; lihat `portal-api.en.md` untuk detailnya.
+Titik akhir klien identik dengan portal. Mereka menggunakan **token klien** (`Authorization: Bearer <client_token>`), bukan token admin; lihat `portal-api.en.md` untuk detailnya.
 
 | Metode | Jalan | Izin | Deskripsi |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | Publik | Daftar artikel |
-| GET | `/api/v1/client-auth/articles/:slug` | Publik | Dapatkan artikel |
-| GET | `/api/v1/client-auth/balance` | Publik | Dapatkan keseimbangan |
-| GET | `/api/v1/client-auth/balance/transactions` | Publik | Transaksi saldo |
-| POST | `/api/v1/client-auth/change-password` | Publik | Ubah kata sandi |
-| POST | `/api/v1/client-auth/charge/create` | Publik | Buat pesanan isi ulang |
-| GET | `/api/v1/client-auth/charge/orders` | Publik | Daftar pesanan isi ulang |
-| GET | `/api/v1/client-auth/charge/orders/:id` | Publik | Dapatkan detail pesanan isi ulang |
-| POST | `/api/v1/client-auth/charge/redeem-card` | Publik | Tukarkan kartu |
-| GET | `/api/v1/client-auth/charge/sites` | Publik | Daftar situs isi ulang |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Publik | Status isi ulang kueri |
-| GET | `/api/v1/client-auth/checktime` | Publik | Dapatkan waktu server (sinkronisasi jam) |
-| GET | `/api/v1/client-auth/connection-info` | Publik | Dapatkan parameter koneksi paket |
-| GET | `/api/v1/client-auth/gifts` | Publik | Daftar hadiah |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | Publik | Klaim hadiah |
-| GET | `/api/v1/client-auth/invoices` | Publik | Daftar pesanan |
-| GET | `/api/v1/client-auth/invoices/:id` | Publik | Detail pesanan |
-| GET | `/api/v1/client-auth/settings/whitelist` | Publik | Daftar daftar IP yang diizinkan |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Publik | Hapus dari daftar IP yang diizinkan |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Publik | Tambahkan IP secara otomatis |
-| POST | `/api/v1/client-auth/login` | Publik | Masuk |
-| POST | `/api/v1/client-auth/logout` | Publik | Keluar |
-| POST | `/api/v1/client-auth/logs/package` | Publik | Buat bundel log |
-| GET | `/api/v1/client-auth/logs/packages` | Publik | Daftar bundel log |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | Publik | Hapus bundel log |
-| GET | `/api/v1/client-auth/logs/packages/:id` | Publik | Dapatkan bundel log |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Publik | Unduh bundel log |
-| GET | `/api/v1/client-auth/logs/types` | Publik | Pemeriksaan kesehatan bundel log |
-| GET | `/api/v1/client-auth/me` | Publik | Dapatkan pengguna yang masuk saat ini |
-| GET | `/api/v1/client-auth/nodes` | Publik | Daftar simpul saya |
-| GET | `/api/v1/client-auth/nodes/:id/config` | Publik | Konfigurasi simpul |
-| GET | `/api/v1/client-auth/nodes/:id/link` | Publik | Tautan berbagi simpul |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Publik | Kode QR simpul |
-| GET | `/api/v1/client-auth/oauth/:provider` | Publik | Otorisasi |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | Publik | Panggilan balik |
-| GET | `/api/v1/client-auth/oauth/providers` | Publik | Status penyedia |
-| GET | `/api/v1/client-auth/orders` | Publik | Daftar pesanan |
-| POST | `/api/v1/client-auth/orders` | Publik | Buat pesanan |
-| GET | `/api/v1/client-auth/orders/:id` | Publik | Detail pesanan |
-| GET | `/api/v1/client-auth/plans` | Publik | Daftar rencana |
-| GET | `/api/v1/client-auth/plans/:id` | Publik | Detail rencana |
-| GET | `/api/v1/client-auth/referral/code` | Publik | Dapatkan kode verifikasi rujukan |
-| GET | `/api/v1/client-auth/referral/records` | Publik | Daftar catatan rujukan |
-| GET | `/api/v1/client-auth/referral/stats` | Publik | Dapatkan statistik rujukan |
-| POST | `/api/v1/client-auth/referral/withdraw` | Publik | Minta penarikan |
-| GET | `/api/v1/client-auth/referral/withdrawals` | Publik | Daftar penarikan rujukan |
-| POST | `/api/v1/client-auth/refresh` | Publik | Segarkan |
-| POST | `/api/v1/client-auth/register` | Publik | Daftar |
-| POST | `/api/v1/client-auth/reset-subscription` | Publik | Setel ulang langganan |
-| PUT | `/api/v1/client-auth/settings` | Publik | Perbarui profil |
-| POST | `/api/v1/client-auth/rotate-token` | Publik | Putar token berlangganan |
-| POST | `/api/v1/client-auth/self-unban` | Publik | Pembatalan larangan layanan mandiri |
-| PUT | `/api/v1/client-auth/settings` | Publik | Perbarui pengaturan |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Publik | Tambahkan IP secara otomatis |
-| GET | `/api/v1/client-auth/settings/whitelist` | Publik | Daftar daftar IP yang diizinkan |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Publik | Hapus dari daftar IP yang diizinkan |
-| GET | `/api/v1/client-auth/shared-accounts` | Publik | Daftar akun bersama |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | Publik | Dapatkan akun bersama |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Publik | Minta akun bersama |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Publik | Permintaan perbaikan |
-| POST | `/api/v1/client-auth/ticket` | Publik | Menerbitkan tiket berumur pendek satu kali |
-| GET | `/api/v1/client-auth/tickets` | Publik | Daftar tiket |
-| POST | `/api/v1/client-auth/tickets` | Publik | Buat tiket |
-| GET | `/api/v1/client-auth/tickets/:id` | Publik | Dapatkan tiket |
-| POST | `/api/v1/client-auth/tickets/:id/close` | Publik | Tutup tiket |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | Publik | Membalas tiket |
-| GET | `/api/v1/client-auth/traffic-history` | Publik | Sejarah lalu lintas |
-| GET | `/api/v1/client-auth/traffic-packs` | Publik | Daftar paket lalu lintas |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | Publik | Beli paket lalu lintas |
+| GET | `/api/v1/client-auth/articles` | Klien (masuk) | Daftar artikel |
+| GET | `/api/v1/client-auth/articles/:slug` | Klien (masuk) | Dapatkan artikel |
+| GET | `/api/v1/client-auth/balance` | Klien (masuk) | Dapatkan keseimbangan |
+| GET | `/api/v1/client-auth/balance/transactions` | Klien (masuk) | Transaksi saldo |
+| POST | `/api/v1/client-auth/change-password` | Klien (masuk) | Ubah kata sandi |
+| POST | `/api/v1/client-auth/charge/create` | Klien (masuk) | Buat pesanan isi ulang |
+| GET | `/api/v1/client-auth/charge/orders` | Klien (masuk) | Daftar pesanan isi ulang |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Klien (masuk) | Dapatkan detail pesanan isi ulang |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Klien (masuk) | Tukarkan kartu |
+| GET | `/api/v1/client-auth/charge/sites` | Klien (masuk) | Daftar situs isi ulang |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Klien (masuk) | Status isi ulang kueri |
+| GET | `/api/v1/client-auth/checktime` | Klien (masuk) | Dapatkan waktu server (sinkronisasi jam) |
+| GET | `/api/v1/client-auth/connection-info` | Klien (masuk) | Dapatkan parameter koneksi paket |
+| GET | `/api/v1/client-auth/gifts` | Klien (masuk) | Daftar hadiah |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Klien (masuk) | Klaim hadiah |
+| GET | `/api/v1/client-auth/invoices` | Klien (masuk) | Daftar pesanan |
+| GET | `/api/v1/client-auth/invoices/:id` | Klien (masuk) | Detail pesanan |
+| POST | `/api/v1/client-auth/login` | Klien (publik) | Masuk |
+| POST | `/api/v1/client-auth/logout` | Klien (masuk) | Keluar |
+| POST | `/api/v1/client-auth/logs/package` | Klien (masuk) | Buat bundel log |
+| GET | `/api/v1/client-auth/logs/packages` | Klien (masuk) | Daftar bundel log |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Klien (masuk) | Hapus bundel log |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Klien (masuk) | Dapatkan bundel log |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Klien (masuk) | Unduh bundel log |
+| GET | `/api/v1/client-auth/logs/types` | Klien (masuk) | Pemeriksaan kesehatan bundel log |
+| GET | `/api/v1/client-auth/me` | Klien (masuk) | Dapatkan pengguna yang masuk saat ini |
+| GET | `/api/v1/client-auth/nodes` | Klien (masuk) | Daftar simpul saya |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Klien (masuk) | Konfigurasi simpul |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Klien (masuk) | Tautan berbagi simpul |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Klien (masuk) | Kode QR simpul |
+| GET | `/api/v1/client-auth/oauth/:provider` | Klien (publik) | Otorisasi |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Klien (publik) | Panggilan balik |
+| GET | `/api/v1/client-auth/oauth/providers` | Klien (publik) | Status penyedia |
+| GET | `/api/v1/client-auth/orders` | Klien (masuk) | Daftar pesanan |
+| POST | `/api/v1/client-auth/orders` | Klien (masuk) | Buat pesanan |
+| GET | `/api/v1/client-auth/orders/:id` | Klien (masuk) | Detail pesanan |
+| GET | `/api/v1/client-auth/plans` | Klien (masuk) | Daftar rencana |
+| GET | `/api/v1/client-auth/plans/:id` | Klien (masuk) | Detail rencana |
+| GET | `/api/v1/client-auth/referral/code` | Klien (masuk) | Dapatkan kode verifikasi rujukan |
+| GET | `/api/v1/client-auth/referral/records` | Klien (masuk) | Daftar catatan rujukan |
+| GET | `/api/v1/client-auth/referral/stats` | Klien (masuk) | Dapatkan statistik rujukan |
+| POST | `/api/v1/client-auth/referral/withdraw` | Klien (masuk) | Minta penarikan |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Klien (masuk) | Daftar penarikan rujukan |
+| POST | `/api/v1/client-auth/refresh` | Klien (publik) | Segarkan |
+| POST | `/api/v1/client-auth/register` | Klien (publik) | Daftar |
+| POST | `/api/v1/client-auth/reset-subscription` | Klien (masuk) | Setel ulang langganan |
+| POST | `/api/v1/client-auth/rotate-token` | Klien (masuk) | Putar token berlangganan |
+| POST | `/api/v1/client-auth/self-unban` | Klien (masuk) | Pembatalan larangan layanan mandiri |
+| PUT | `/api/v1/client-auth/settings` | Klien (masuk) | Perbarui pengaturan |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Klien (masuk) | Tambahkan IP secara otomatis |
+| GET | `/api/v1/client-auth/settings/whitelist` | Klien (masuk) | Daftar daftar IP yang diizinkan |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Klien (masuk) | Hapus dari daftar IP yang diizinkan |
+| GET | `/api/v1/client-auth/shared-accounts` | Klien (masuk) | Daftar akun bersama |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Klien (masuk) | Dapatkan akun bersama |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Klien (masuk) | Minta akun bersama |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Klien (masuk) | Permintaan perbaikan |
+| POST | `/api/v1/client-auth/ticket` | Klien (masuk) | Menerbitkan tiket berumur pendek satu kali |
+| GET | `/api/v1/client-auth/tickets` | Klien (masuk) | Daftar tiket |
+| POST | `/api/v1/client-auth/tickets` | Klien (masuk) | Buat tiket |
+| GET | `/api/v1/client-auth/tickets/:id` | Klien (masuk) | Dapatkan tiket |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Klien (masuk) | Tutup tiket |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Klien (masuk) | Membalas tiket |
+| GET | `/api/v1/client-auth/traffic-history` | Klien (masuk) | Sejarah lalu lintas |
+| GET | `/api/v1/client-auth/traffic-packs` | Klien (masuk) | Daftar paket lalu lintas |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Klien (masuk) | Beli paket lalu lintas |
 
 ### Pengiriman langganan
 

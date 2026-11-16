@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: es | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: es | updated: 2026-11-16 -->
 # Suscripción API (pública)
 
 > Idiomas: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · Español · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 | `config` | Nombre de la plantilla de configuración (definido en "Formatos de suscripción" en la interfaz de usuario del administrador). Debe utilizar el mismo formato que el `format` de esta solicitud; de lo contrario, se ignora. |
 | `platform` | Haga coincidir una plantilla de configuración por nombre de plataforma (se usa cuando se omite `config`); el formato también debe coincidir |
 | `providers` | Solo `mihomo_yaml`: `1` / `true` habilita el **modo Proveedor** (emite `proxy-providers` y hace referencia a ellos a través de `use`); El valor predeterminado o cualquier otro valor mantiene los nodos alineados en `proxies`. Ver §6 |
+| `provider` | Solo `mihomo_proxies_yaml`: con una clave de proveedor solo se devuelve el subconjunto de nodos de esa fuente (se excluyen los pseudonodos de facturación); vacío devuelve todos los nodos. `proxy-providers.url` generado por panel lo incluye automáticamente |
 
 ### Valores `format` admitidos
 
@@ -29,12 +30,12 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 |---|---|---|
 | `base64_uri` (predeterminado) | Enlaces compartidos unidos a nueva línea, codificados en base64 en su conjunto | V2RayN, Shadowrocket, Surge y otros clientes genéricos |
 | `raw_uri` | Enlaces compartidos unidos a nueva línea, texto sin formato | Clientes que necesitan enlaces simples/depuración |
-| `mihomo_yaml` | Configuración completa de Clash/Mihomo YAML (con grupos de proxy, reglas) | Clash.Meta / mihomo / Choque Verge Rev |
-| `mihomo_proxies_yaml` | YAML con solo la lista de nodos `proxies:` | fuente del proveedor de proxy mihomo (con actualización programada) |
+| `mihomo_yaml` | Configuración completa de Clash/Mihomo YAML (con grupos de proxy, reglas) | Clash.Meta / mihomo / Clash Verge Rev |
+| `mihomo_proxies_yaml` | YAML con solo la lista de nodos `proxies:` | Fuente del proveedor de proxy mihomo (con actualización programada) |
 | `singbox_json` | Configuración completa sing-box JSON | sing-box / SFI / FLClash (núcleo sing-box) |
 | `xray_json` | Configuración completa Xray JSON | Xray-núcleo |
 
-> Se aplica la compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en formatos sing-box/Mihomo; **Los nodos REALITY atendidos por xray están excluidos de las suscripciones sing-box** (sing-box no admite la implementación REALITY de xray, consulte sing-box#4520) pero aún aparecen en las suscripciones Xray, mientras que **los nodos REALITY atendidos por sing-box funciona en las suscripciones Xray y sing-box**. Los nodos que el cliente no puede reconocer se eliminan automáticamente en lugar de fallar en toda la suscripción.
+> Se aplica la compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en los formatos sing-box/Mihomo; **Los nodos REALITY atendidos por xray están excluidos de las suscripciones sing-box** (sing-box no admite la implementación REALITY de xray, consulte sing-box#4520) pero aún aparecen en las suscripciones Xray, mientras que **los nodos REALITY atendidos por sing-box funciona con las suscripciones Xray y sing-box**. Los nodos que el cliente no puede reconocer se eliminan automáticamente en lugar de fallar en toda la suscripción.
 
 ## 3. Encabezados de respuesta
 
@@ -53,8 +54,9 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 |---|---|---|
 | 200 | — | Normal (el cuerpo es la suscripción representada en `format`) |
 | 400 | `MISSING_TOKEN` | Sin token en el URL |
-| 403 | (texto sin formato) | Suscripción suspendida/caducada/inactiva. El mensaje está localizado (zh/en/ja/ko) a través de `Accept-Language` y es un motivo de una sola línea. |
+| 403 | (texto sin formato) | Suscripción suspendida/vencida/inactiva/IP no incluida en la lista blanca. El mensaje está localizado (zh/en/ja/ko/ru) a través de `Accept-Language` y es un motivo de una sola línea. |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | El token no existe |
+| 429 | `TOO_MANY_REQUESTS` | Se alcanzó el límite de tasa de punto final de suscripción (`SubscribeRateLimit`); Error JSON, vuelva a intentarlo más tarde |
 
 > Las suscripciones revocadas se consideran inexistentes (404).
 
@@ -108,7 +110,7 @@ proxy-groups:
 Con `format=mihomo_yaml&providers=1` (o `format=clash&providers=1`) el YAML:
 
 - ya no incluye nodos en el nivel superior: emite `proxy-providers:`;
-- los grupos de proxy hacen referencia a fuentes de nodos a través de `use: [<provider-key>...]`;
+- los grupos proxy hacen referencia a fuentes de nodos a través de `use: [<provider-key>...]`;
 - cualquier `proxy-providers` escrito en un formato de suscripción compartida (`mihomo_configs.config_json`) se **ignora** (una configuración compartida sirve para varios planes; los proveedores codificados se filtrarían entre los planes). Grupo → asignaciones de fuentes se encuentran en “Gestión de planes → grupo → asignación de fuentes”.
 
 Tipos de proveedores:
@@ -116,7 +118,7 @@ Tipos de proveedores:
 | amable | clave | Notas |
 |---|---|---|
 | Interno | Nombre del grupo de nodos desinfectado | Generado por grupo de nodos del plan; contiene solo los nodos de ese grupo |
-| Reservado (obsoleto) | `subscription-nodes` | Ya no se emite en `proxy-providers`; un grupo que lo referencia se expande a providers concretos o, si no hay ninguno, se inlinean los nodos |
+| Reservado (obsoleto) | `subscription-nodes` | Ya no se emite en `proxy-providers`; un grupo que hace referencia a él se expande a proveedores concretos o integra nodos cuando el plan no tiene ninguno |
 | Externo | Nombre configurado en el plan | Fuente externa (`http` YAML o `file`) |
 
 Campos comunes por proveedor:
@@ -140,13 +142,13 @@ Consecuencias:
 - Un dominio antiguo que todavía está habilitado en la lista ya no está codificado;
 - Si un cliente almacenó en caché el antiguo proveedor URL, actualizar la suscripción (o borrar el caché del proveedor/reiniciar el cliente) lo cambia.
 
-Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` y `X-Forwarded-Host`; de lo contrario, se utiliza el punto final alternativo. Las plantillas de sitio Caddy/Nginx generadas por el panel ya incluyen ambos encabezados (`header_up X-Forwarded-Host {host}`/`proxy_set_header X-Forwarded-Host $host;`); agréguelos manualmente si mantiene la configuración del proxy a mano.
+Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` y `X-Forwarded-Host`; de lo contrario, se utiliza el punto final alternativo. Las plantillas de sitio Caddy / Nginx generadas por el panel ya incluyen ambos encabezados (`header_up X-Forwarded-Host {host}` / `proxy_set_header X-Forwarded-Host $host;`); agréguelos manualmente si mantiene la configuración del proxy a mano.
 
 ## 7. Notas
 
-- **El formato y la configuración están estrechamente relacionados**: la plantilla seleccionada por `config`/`platform` debe coincidir con el `format` de esta solicitud; las plantillas que no coinciden se ignoran; esto evita inyectar reglas de Mihomo en sing-box/Xray JSON.
+- **El formato y la configuración están estrechamente relacionados**: la plantilla seleccionada por `config`/`platform` debe coincidir con la `format` de esta solicitud; las plantillas que no coinciden se ignoran; esto evita inyectar reglas Mihomo en sing-box/Xray JSON.
 - **`providers=1` solo afecta a Mihomo YAML**: sing-box / Xray / base64 / raw ignórelo (los nodos permanecen en línea).
-- **Limitación de tasa**: el punto final de suscripción tiene su propio límite (`SubscribeRateLimit`); Los clientes abusivos son rechazados.
+- **Limitación de velocidad**: el punto final de suscripción tiene su propio límite (`SubscribeRateLimit`); Los clientes abusivos son rechazados.
 - **Registro de acceso**: cada recuperación registra información de IP/UA/CDN, visible en "Registro de acceso de suscripción" en la interfaz de usuario del administrador.
 - Sin un dominio configurado en un puerto de suscripción dedicado, se utilizan los `X-Forwarded-Proto` / `X-Forwarded-Host` de la solicitud; asegúrese de que su proxy inverso reenvíe ambos encabezados.
 - En implementaciones de múltiples dominios, mantenga la lista de puntos finales alineada con los dominios que los clientes realmente usan; ver §6.2.

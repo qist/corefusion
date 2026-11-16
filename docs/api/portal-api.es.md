@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: es | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: es | updated: 2026-11-16 -->
 # Referencia Portal API (Cliente/Portal API)
 
 > Idiomas: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · Español · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ Al 401, llame a `POST /api/v1/client-auth/refresh` una vez y vuelva a intentarlo
 | GET | `/api/v1/public/articles` | Artículos públicos (solo publicados) |
 | GET | `/api/v1/public/articles/:slug` | Detalle del artículo |
 | GET | `/api/v1/public/client-configs` | Configuración de descarga del cliente |
-| GET | `/sub/:token` | Entrega de suscripción (`format` devuelve base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revocada/faltante → 404, suspendida/vencida/inactiva → 403. Consulte [subscription.md](./subscription.es.md)) |
+| GET | `/sub/:token` | Entrega de suscripción (`format` devuelve base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, etc.; revocada/faltante → 404, suspendida/vencida/inactiva → 403. Consulte [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilidad del proveedor de OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Estado de mantenimiento (público). El portal muestra una página de mantenimiento cuando está habilitado |
 
@@ -105,6 +105,7 @@ Al 401, llame a `POST /api/v1/client-auth/refresh` una vez y vuelva a intentarlo
 | Método | Camino | Descripción |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Cliente actual: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (sobre `data`) |
+| PUT | `/api/v1/client-auth/settings` | Actualizar la configuración de autoservicio del cliente: Cuerpo: `{ip_whitelist, device_limit}`; un `ip_whitelist` vacío significa que no hay restricción de IP de origen |
 | POST | `/api/v1/client-auth/change-password` | Cuerpo: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Hora del servidor (sincronización del reloj del cliente) |
 | GET | `/api/v1/client-auth/connection-info` | Parámetros de conexión del plan actual: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -248,7 +249,7 @@ Los enlaces "Política de privacidad · Términos de servicio" en la parte infer
 - **Configuración**: editor del portal → Configuración → General → Documentos de cumplimiento (**editar contenido por idioma**);
  también puedes `PUT /api/v1/portal/active` con campos estructurados `privacy_policy_url` / `privacy_policy_content` /
  `terms_of_service_url` / `terms_of_service_content` (nulo = sin cambios; el contenido es un mapa `{"zh-CN":"...","en":"..."}`).
-- **Páginas accesibles independientes** (renderizadas por el servidor, fáciles para los rastreadores de verificación Google; compatible con `?lang=xx`):
+- **Páginas accesibles independientes** (representadas por el servidor, fáciles para los rastreadores de verificación Google; compatible con `?lang=xx`):
   - Dominio del panel principal: `GET /p/legal/privacy`, `GET /p/legal/terms`
   - Dominio de portal dedicado (implementación raíz): `GET /legal/privacy`, `GET /legal/terms`
 - **Lógica de visualización**: URL o contenido, **URL gana** (se abre externamente en una nueva pestaña); si se proporciona contenido, haga clic en el

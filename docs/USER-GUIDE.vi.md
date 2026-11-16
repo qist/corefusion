@@ -1,9 +1,7 @@
-<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-10-26 -->
+<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-16 -->
 # Hướng dẫn vận hành CoreFusion
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
-
-> ⚠️ 本译文尚未同步最新源文
 
 > Hướng dẫn này dành cho người dùng CoreFusion và bao gồm toàn bộ quy trình làm việc từ cài đặt đến vận hành hàng ngày.
 
@@ -148,26 +146,26 @@ Nếu bảng điều khiển chỉ nghe trên `127.0.0.1` (ví dụ: sau proxy n
 
 ### 2.2.1 Đầu ra đa ngôn ngữ
 
-Trình cài đặt hỗ trợ bốn ngôn ngữ giao diện: tiếng Trung giản thể, tiếng Anh, tiếng Ba Tư (فارسی) và tiếng Nga (Русский). Ngôn ngữ được tự động phát hiện từ `LANG` của hệ thống hoặc có thể chỉ định rõ ràng:
+Trình cài đặt bao gồm bốn ngôn ngữ giao diện người dùng: Tiếng Trung giản thể, tiếng Anh, tiếng Ba Tư (فارسی) và tiếng Nga (Русский). Nó tự động phát hiện hệ thống `LANG` hoặc bạn có thể chọn rõ ràng:
 
 ```bash
-# Tiếng Anh
+# English
 sudo bash install.sh --lang en
 
-# Tiếng Ba Tư qua biến môi trường
+# Persian via environment variable
 sudo CF_LANG=fa bash install.sh
 
-# Truyền tham số khi cài đặt qua pipe
+# Pass options through a pipe
 curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
 ```
 
-Giá trị hỗ trợ: `zh` / `en` / `fa` / `ru`; cũng chấp nhận `--lang=ru`. Nếu chỉ định ngôn ngữ không được hỗ trợ, chương trình sẽ báo lỗi kèm danh sách ngôn ngữ khả dụng.
+Các giá trị được hỗ trợ: `zh` / `en` / `fa` / `ru`; `--lang=ru` cũng được chấp nhận. Giá trị rõ ràng không được hỗ trợ không thành công với danh sách các ngôn ngữ có sẵn.
 
 ### 2.3 Phiên bản ghim/gương/cài đặt offline
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -182,12 +180,12 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 > Nếu không có `--version`, tập lệnh sẽ sử dụng mục mới nhất trong danh sách Bản phát hành GitHub.
 > Hầu hết các bản phát hành đều là bản phát hành trước nên điểm cuối `/releases/latest` không được sử dụng.
 >
-> Bản phát hành chính thức chỉ cung cấp `amd64` / `arm64`; sử dụng `--source` hoặc nhị phân được biên dịch chéo với `--local` cho các kiến ​​trúc khác.
+> Bản phát hành chính thức chỉ cung cấp `amd64` / `arm64`; sử dụng `--source` hoặc tệp nhị phân được biên dịch chéo với `--local` cho các kiến ​​trúc khác.
 
 ### 2.4 Xây dựng từ nguồn
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source` sao chép kho lưu trữ (hoặc sử dụng thanh toán hiện có khi tập lệnh nằm trong đó) và chạy `make panel`. Các phiên bản chuỗi công cụ được chọn cho mỗi môi trường:
@@ -195,7 +193,7 @@ sudo bash install.sh --source --version v0.13.0-beta.82
 | phụ thuộc | Lựa chọn |
 |------------|-----------|
 | Đi | Đọc từ `toolchain` / `go` trong `go.mod` (hiện **Go 1.27+**); nếu phiên bản hệ thống quá cũ, chuỗi công cụ phù hợp sẽ được tải xuống `<install-dir>/.toolchain` |
-| Nút | **Node 22 LTS** theo mặc định (Vite yêu cầu ≥ 18); bản dựng chính thức phù hợp sẽ được tải xuống khi cần |
+| nút | **Node 22 LTS** theo mặc định (Vite yêu cầu ≥ 18); bản dựng chính thức phù hợp sẽ được tải xuống khi cần |
 | Nút (glibc < 2,28) | Sử dụng bản dựng `unofficial-builds` glibc-217 (ví dụ: CentOS 7) |
 | Nút (Alpine / Musl) | Sử dụng bản phân phối `nodejs` / `npm` |
 
@@ -231,20 +229,23 @@ make panel-linux-arm64
 | Cờ | Mô tả |
 |------|-------------|
 | `-d, --dir <PATH>` | Thư mục cài đặt, mặc định `/opt/corefusion` |
-| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-beta.82`; mặc định `latest` |
+| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-beta.90`; mặc định `latest` |
 | `--binary` | Sử dụng mã nhị phân phát hành GitHub (mặc định) |
 | `--source` | Xây dựng từ nguồn và chuẩn bị Go/Node phù hợp |
 | `--local <FILE>` | Sử dụng tệp nhị phân cục bộ (cài đặt ngoại tuyến) |
 | `--arch <ARCH>` | Kiến trúc mục tiêu: `amd64` / `arm64` / `armv7` / `armv6` / `386` / `ppc64le` / `s390x` / `riscv64` / `loong64` |
 | `--mirror <URL>` | Tiền tố tải xuống GitHub, ví dụ: `https://ghproxy.net` |
-| `--repo <URL>` | Kho lưu trữ nguồn, mặc định `https://github.com/qist/corefusion.git` |
+| `--repo <URL>` | Kho nguồn, mặc định `https://github.com/qist/corefusion.git` |
 | `--ref <REF>` | Nhánh/thẻ nguồn; mặc định là `--version`, nếu không thì `main` |
 | `--no-deps` | Bỏ qua cài đặt phụ thuộc hệ thống |
 | `--no-start` | Cài đặt và ghi tệp dịch vụ mà không cần khởi động |
-| `--cpu-info` | In phát hiện môi trường và các phần phụ thuộc bị thiếu, sau đó thoát |
-| `--lang <LANG>` | Ngôn ngữ đầu ra: `zh` / `en` / `fa` / `ru` (mặc định: `LANG` hệ thống) |
+| `--cpu-info` | In phát hiện môi trường và thiếu phần phụ thuộc, sau đó thoát |
+| `--lang <LANG>` | Ngôn ngữ đầu ra: `zh` / `en` / `fa` / `ru` (mặc định: hệ thống `LANG`) |
 | `--uninstall` | Dừng dịch vụ và xóa chương trình (giữ dữ liệu và `.env`) |
-| `--purge` | Với `--uninstall`, cũng xóa thư mục dữ liệu và `.env` |
+| `--purge` | Với `--uninstall` cũng xóa luôn thư mục data và `.env` |
+
+> Các bản phát hành chính thức chỉ xuất xưởng các tệp nhị phân `amd64` / `arm64`. Các kiến trúc khác yêu cầu `--source`,
+> nếu không thì quá trình tải xuống sẽ trả về 404.
 
 Các biến môi trường liên quan:
 
@@ -254,7 +255,7 @@ Các biến môi trường liên quan:
 | `CF_NODE_MAJOR` | Ghi đè phiên bản chính của Node (mặc định 22) |
 | `CF_GO_MIRROR` | Đi nhân bản tải xuống chuỗi công cụ |
 | `CF_SKIP_DEPS` | Đặt thành `1` trong tập lệnh cài đặt Tác nhân để bỏ qua cài đặt phụ thuộc |
-| `CF_LANG` | Ghi đè ngôn ngữ đầu ra của trình cài đặt (giống `--lang`) |
+| `CF_LANG` | Ghi đè ngôn ngữ đầu ra của trình cài đặt (giống như `--lang`) |
 
 ### 2.6 Bố cục thư mục
 
@@ -263,7 +264,7 @@ Các biến môi trường liên quan:
 ├── corefusion                 # panel binary
 ├── corefusion.bak             # previous version (when upgrading)
 ├── .env                       # environment file (0600, generated by the setup wizard)
-├── .env.secret                # tệp khóa mã hóa (0600, tạo ở lần khởi động đầu)
+├── .env.secret                # encryption key file (0600, generated on first start)
 ├── .toolchain/                # Go / Node downloaded for source builds
 └── data/                      # data directory (SAFE_PATHS)
     ├── sqlite/app.db          # default SQLite database
@@ -352,7 +353,7 @@ SAFE_PATHS=data                       # relative to the install directory
 
 `CF_DB_TYPE` là tính năng phát hiện tùy chọn và ghi đè (`sqlite` / `mysql` / `postgres`).
 
-> **Mật khẩu được mã hóa**: DSN MySQL/PostgreSQL được bảng điều khiển ghi (trình hướng dẫn thiết lập / chuyển đổi cơ sở dữ liệu)
+> **Mật khẩu được mã hóa**: DSN MySQL/PostgreSQL được bảng điều khiển ghi (trình hướng dẫn thiết lập/chuyển đổi cơ sở dữ liệu)
 > được lưu trữ trong `.env` dưới dạng `enc:...` (AES-256-GCM, khóa `CF_SECRET_ENCRYPTION_KEY`).
 > Chúng được giải mã khi đọc; DSN văn bản gốc được viết bằng tay vẫn hoạt động.
 
@@ -397,12 +398,12 @@ CF_DB_MAX_IDLE_CONNS=10
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Đặt thành `0` để tắt tính năng tính toán lưu lượng truy cập dựa trên iptables (được bật theo mặc định) |
 | `CF_NETWORK_TRAFFIC_TABLE` | bảng iptables được sử dụng để tính toán lưu lượng, `corefusion` mặc định |
 
-> **Khóa mã hóa nằm trong `.env.secret`**: ở lần khởi động đầu, `CF_SECRET_ENCRYPTION_KEY` được ghi vào `.env.secret` (0600, cùng thư mục với `.env`) chứ không ghi vào `.env`; khóa cũ trong `.env` sẽ được tự động chuyển sang. Hãy sao lưu riêng tệp này — nếu mất, mọi giá trị `enc:` sẽ không thể giải mã.
+> **Khóa mã hóa tồn tại trong `.env.secret`**: khi khởi động lần đầu, `CF_SECRET_ENCRYPTION_KEY` được ghi vào `.env.secret` (0600, cùng thư mục với `.env`) thay vì `.env`; khóa kế thừa trong `.env` được di chuyển tự động. Sao lưu tệp này một cách riêng biệt — việc mất nó sẽ khiến mọi giá trị `enc:` không thể giải mã được.
 
 > Proxy ngược đáng tin cậy để phân giải IP máy khách thực không còn được định cấu hình thông qua các biến môi trường;
 > chúng được lưu trữ dưới dạng `panel.trusted_proxies` trong **Cài đặt → Mạng**.
 
-> Cả `.env` và `.env.secret` đều chứa bí mật; bảng điều khiển siết quyền thành `0600` khi khởi động. Không bao giờ commit chúng.
+> Cả `.env` và `.env.secret` đều chứa đựng bí mật; bảng điều khiển thắt chặt quyền của họ đối với `0600` khi bắt đầu. Không bao giờ cam kết chúng.
 
 ### 2.10 Docker (tùy chọn, xây dựng hình ảnh của riêng bạn)
 
@@ -442,7 +443,7 @@ ss -lntp | grep corefusion
 ## 3. Cấu hình ban đầu
 
 Trong lần khởi động đầu tiên, nếu `.env` không có `CF_DB_DSN` hợp lệ thì bảng điều khiển **chưa** phục vụ giao diện người dùng quản trị viên. Nó bắt đầu
-**trình hướng dẫn thiết lập** trên một cổng ngẫu nhiên vào năm 18000–18999 bằng mã thông báo một lần, sau đó khởi động lại như bảng thông thường sau khi được lưu.
+**trình hướng dẫn thiết lập** trên một cổng ngẫu nhiên trong khoảng thời gian 18000–18999 bằng mã thông báo một lần, sau đó khởi động lại như bảng thông thường sau khi được lưu.
 
 ### 3.1 Mở trình hướng dẫn thiết lập
 
@@ -522,7 +523,7 @@ Với proxy được chọn, bảng điều khiển thường chỉ lắng nghe 
 | Nghe địa chỉ | Xuất phát tự động: proxy → `127.0.0.1`; không có proxy có chứng chỉ → `0.0.0.0`; mặt khác → `127.0.0.1` |
 | Cổng bảng điều khiển | Cổng miễn phí ngẫu nhiên theo mặc định; thay đổi nó nếu bạn thích (ví dụ: 8080) |
 | Cổng đăng ký | Tùy chọn; `0` chia sẻ cổng bảng điều khiển |
-| Cổng cổng thông tin | Không bắt buộc; `0` chia sẻ cổng bảng điều khiển |
+| Cổng cổng thông tin | Tùy chọn; `0` chia sẻ cổng bảng điều khiển |
 | Đường dẫn web | Đường dẫn giao diện người dùng quản trị viên, `/` mặc định; API luôn là `/api/v1` |
 | Tên người dùng/mật khẩu quản trị viên | Ngẫu nhiên theo mặc định; **mật khẩu chỉ được hiển thị một lần trong phần tóm tắt** — hãy lưu nó |
 | Chế độ truy cập | “Tên miền” hoặc “IP” |
@@ -545,7 +546,7 @@ Tùy chọn ACME:
 - **Mục tiêu**: miền được định cấu hình hoặc IP công cộng (chứng chỉ IP chỉ được Let's Encrypt hỗ trợ);
 - **Thử thách**: `HTTP-01` (yêu cầu cổng 80) hoặc `DNS-01` (ký tự đại diện, không có cổng 80; chọn nhà cung cấp DNS và nhập thông tin xác thực);
 - **Loại / kích thước khóa**: ECC 256/384 hoặc RSA 2048/3072/4096;
-- **Google CA công cộng**: yêu cầu EAB; nhập Key ID/HMAC theo cách thủ công hoặc sử dụng tài khoản dịch vụ GCP.
+- **Google CA công khai**: yêu cầu EAB; nhập Key ID/HMAC theo cách thủ công hoặc sử dụng tài khoản dịch vụ GCP.
 
 > Chứng chỉ IP tự động phát hiện IPv4/IPv6 công khai của máy chủ. Đằng sau proxy, địa chỉ được phát hiện là của máy chủ chứ không phải proxy đầu ra.
 > Chứng chỉ tên miền cũng có thể được cấp sau trong phần “Chứng chỉ”.
@@ -723,24 +724,26 @@ Quản lý nút là cốt lõi của CoreFusion và hỗ trợ một số loại
 
 ### 5.3 Triển khai bằng một cú nhấp chuột
 
-1. Sau khi thêm nút, hãy nhấp vào “Lệnh Bootstrap”;
-2. Sao chép lệnh cài đặt;
-3. Chạy nó với quyền root trên nút từ xa:
+1. Sau khi thêm nút, chọn “Triển khai lệnh” trong danh sách nút (trang chi tiết cũng cung cấp
+ “Lệnh cài đặt Bootstrap”);
+2. Sao chép lệnh - nó chứa mã thông báo đăng ký một lần (có giá trị trong 24 giờ, không sử dụng lại);
+3. Chạy nó với quyền root trên nút từ xa; nó trông giống như:
 
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<panel-host>:<panel-port>/api/v1/agent/install?id=<node-id>&token=<one-time-token>&port=<panel-port>")
    ```
 
-4. Tác nhân tải xuống, đăng ký và bắt đầu tự động.
+4. Đại lý tải gói xuống, đăng ký với bảng điều khiển và bắt đầu.
 
 ### 5.4 Chi tiết nút
 
 Nhấp vào một nút để mở trang chi tiết của nó:
 
-- **Tổng quan**: thông tin cơ bản, trạng thái Đại lý, trạng thái chứng chỉ
+- **Tổng quan**: thông tin cơ bản, trạng thái Đại lý, trạng thái chứng chỉ; thẻ tài nguyên hiển thị mức sử dụng CPU/bộ nhớ/đĩa, tốc độ tăng/giảm NIC, tốc độ lưu lượng người dùng cốt lõi, lưu lượng sử dụng hàng tháng, kết nối TCP, tải hệ thống và lưu lượng tích lũy NIC đầu ra (làm mới im lặng cứ sau 10 giây)
 - **Trung tâm giao thức**: cấu hình quy trình cốt lõi
 - **Proxy**: Cấu hình Caddy / Nginx
 - **Quy trình cốt lõi**: bắt đầu / dừng / khởi động lại
+- **Lưu lượng truy cập cốt lõi**: lưu lượng truy cập người dùng được chuyển tiếp theo lõi và tổng lưu lượng hàng tháng của nó
 - **WARP**: Cấu hình WARP
 - **Miền trực tiếp**: quản lý miền
 - **Giới hạn tỷ lệ**: định hình lưu lượng truy cập
@@ -769,21 +772,40 @@ Trung tâm giao thức cấu hình các tham số giao thức cho các quy trìn
 
 ### 6.2 Mô-đun cấu hình
 
+Các mô-đun khác nhau giữa hai lõi; bảng điều khiển hiển thị tập hợp phù hợp với lõi đã chọn:
+
+**Lõi Xray**
+
 - **Nhật ký**: nhật ký truy cập, nhật ký lỗi, chế độ đầu ra
 - **API**: gRPC API địa chỉ nghe, danh sách dịch vụ
 - **DNS**: Máy chủ DNS, chiến lược truy vấn, máy chủ tĩnh
 - **Định tuyến**: quy tắc định tuyến, cân bằng tải, định tuyến VLESS
-- **Inbounds**: danh sách gửi đến, cài đặt giao thức, vận chuyển, TLS
-- **Lối đi**: danh sách gửi đi, cài đặt giao thức, vận chuyển
-- **Giao thông vận tải**: WebSocket, gRPC, XHTTP, TUN, v.v.
+- **Inbounds / Outbounds**: giao thức, vận chuyển, TLS
+- **Truyền tải**: WebSocket, gRPC, XHTTP, v.v. (TUN là giao thức gửi đến, không phải giao thức truyền tải)
 - **TLS**: chứng chỉ, ALPN, dấu vân tay uTLS, ECH
 - **Reality**: quản lý mục tiêu, cặp khóa, ID ngắn
-- **Kiểm tra tình trạng**: đầu dò URL, khoảng thời gian, đồng thời
-- **FakeDNS**: Nhóm IP, kích thước nhóm
-- **Số liệu**: Trình nghe số liệu Prometheus
-- **Chính sách**: hết thời gian kết nối, bộ đệm, số liệu thống kê
-- **Dữ liệu địa lý**: tự động cập nhật, tệp tài nguyên
-- **Giới hạn phiên bản**: phiên bản tối thiểu / tối đa
+- **Kiểm tra tình trạng / FakeDNS / Số liệu / Chính sách / Dữ liệu địa lý / Giới hạn phiên bản**: đầu dò, nhóm IP, Prometheus, thời gian chờ và bộ đệm, tệp tài nguyên, phạm vi phiên bản cốt lõi
+
+**sing-box**
+
+- **Nhật ký**: cấp độ, dấu thời gian, đầu ra
+- **NTP**: đồng bộ hóa thời gian
+- **DNS**: Máy chủ và quy tắc DNS
+- **Định tuyến**: `final` gửi đi mặc định, **Bộ quy tắc**, **Quy tắc**, trình phân giải tên miền mặc định, chiến lược mạng và dự phòng (xem 6.6)
+- **Inbounds / Outbounds**: giao thức, vận chuyển, TLS
+- **Điểm cuối**: WireGuard (bao gồm cấu hình WARP), máy khách MASQUE và tương tự; một số có thể cùng tồn tại và được phân biệt bởi `tag`
+
+> Khi bật “sử dụng tích hợp mạng hệ thống”, **name** của điểm cuối là tên giao diện kernel:
+> tối đa 15 ký tự, chỉ chữ cái/chữ số/`._-`. Tên quá dài hoặc không hợp lệ sẽ tự động bị lùi lại
+> đến điểm cuối `tag`. Điểm cuối mới được đặt trước cho mỗi giao thức (`wg-` / `ts-` / `oc-` / `ovpn-c-` /
+> `ovpn-s-` / `mq-c-` / `mq-s-`) và các bản ghi kế thừa như `WireGuard-xxxxxx` được hiển thị chuẩn hóa
+> ngay khi trình soạn thảo được mở.
+- **Dịch vụ**: mảng sing-box `services` cấp cao nhất, chẳng hạn như `hysteria-realm`, DERP hoặc `resolved`
+- **Chứng chỉ / Máy khách HTTP / Không gian tên mạng**: Các phần JSON bạn chỉ mở rộng khi cần
+- **Thử nghiệm**: `clash_api` và tương tự; **không có gì được ghi vào cấu hình được tạo trừ khi được bật**
+
+> sing-box 1.12 đã loại bỏ các trường định tuyến `geosite` / `geoip`; Định tuyến dựa trên địa lý hiện đã được thực hiện
+> `rule_set`. Việc giữ lại các trường cũ khiến lõi không giải mã được cấu hình (`unknown field`).
 
 ### 6.3 Cấu hình gửi đến
 
@@ -796,6 +818,31 @@ Trung tâm giao thức cấu hình các tham số giao thức cho các quy trìn
 4. Chọn phương tiện vận chuyển (TCP, WebSocket, gRPC, v.v.);
 5. Định cấu hình TLS (chứng chỉ, ALPN);
 6. Lưu và áp dụng cho lõi.
+
+> Theo mặc định, các luồng gửi đến mới nghe trên `::` (ngăn xếp kép trên Linux, xử lý cả IPv4 và IPv6).
+> Chỉ thay đổi nó thành `0.0.0.0` hoặc một địa chỉ cụ thể khi bạn cần hạn chế giao diện.
+
+Chế độ cổng “Sử dụng cổng vào” cũng cung cấp **tự động tạo các quy tắc cho phép tường lửa**: mở
+trình soạn thảo gửi đến sẽ thăm dò tường lửa của nút trước tiên và khi phát hiện thấy tường lửa / ufw / nftables / iptables
+bạn có thể cho phép lưu cổng theo giao thức nghe (TCP/UDP).
+
+- nhảy cổng hy2 / hysteria cho phép cả cổng nghe và mọi phạm vi cổng động (ví dụ: `20000-30000`); nhiều phạm vi được phân tách bằng dấu phẩy;
+- Phụ cấp không có giá trị bình thường: quy tắc bao trùm hiện có (phạm vi cổng / đa cổng) không được tạo lại;
+- Việc thay đổi cổng sẽ thu hồi quy tắc cũ trước khi cho phép quy tắc mới; xóa thư đến, vô hiệu hóa cổng nhảy hoặc chuyển sang Unix Socket/tun (không có cổng nghe) sẽ dọn sạch nó;
+- Khi không phát hiện thấy tường lửa nào được kích hoạt, chỉ có một gợi ý được hiển thị và không có quy tắc nào được viết.
+
+### 6.3.1 Đường dẫn proxy ngược (Miền truy cập → TLS phía trước → Đường dẫn proxy ngược)
+
+Khi đường truyền tải riêng của đường vào là `/` nhưng nginx / caddy bên ngoài gắn nó dưới một đường dẫn phụ
+(ví dụ: `location /apps { proxy_pass http://127.0.0.1:8080/; }`), máy khách phải kết nối với `/apps` hoặc
+yêu cầu không bao giờ đến được vị trí đó — đăng ký vẫn tải xuống nhưng nút không kết nối.
+Điền **Đường dẫn proxy ngược** trong “Miền truy cập → Mặt trước TLS”:
+
+- Nhập `/apps` hoặc `/apps?ed=2560` (có dữ liệu ban đầu); đăng ký và chia sẻ liên kết **thay thế** đường dẫn vận chuyển đến bằng nó;
+- Áp dụng cho ws, httpupgrade, xhttp và h2/http; truyền tải không có đường dẫn (raw/tcp, kcp) bị bỏ qua;
+- Nó độc lập với nơi TLS kết thúc: đường dẫn vẫn được áp dụng khi Front TLS tắt (đi theo lõi);
+- gRPC không có khái niệm tiền tố URL (đường dẫn máy khách luôn là `/{serviceName}/…`), vì vậy đường dẫn được **sáp nhập vào serviceName**
+(`/apps` + `svc` → `apps/svc`); proxy ngược phải loại bỏ tiền tố đó trong `grpc_pass`.
 
 ### 6.4 Cấu hình gửi đi
 
@@ -815,6 +862,112 @@ Trung tâm giao thức cấu hình các tham số giao thức cho các quy trìn
    - Xray JSON
 3. Sao chép liên kết hoặc tạo mã QR.
 
+### 6.6 Bộ quy tắc và định tuyến sing-box
+
+Trong “Trung tâm giao thức” → sing-box → “Định tuyến” có hai phần: **Bộ quy tắc** khai báo có thể sử dụng lại
+các tệp quy tắc và **Quy tắc** quyết định các điều kiện đối sánh và dữ liệu gửi đi. Các quy tắc được đánh giá từ
+từ trên xuống dưới và trận đầu tiên thắng.
+
+#### 6.6.1 Bộ quy tắc
+
+| trường | Mô tả |
+|-------|-------------|
+| gắn thẻ | Mã định danh bộ quy tắc được tham chiếu bởi Quy tắc; phải là duy nhất |
+| loại | `local` đọc tệp trên nút; `remote` cho phép lõi tải xuống trên `update_interval` |
+| định dạng | `binary` cho `.srs` (mặc định); `source` cho định dạng nguồn `.json` |
+| Đường dẫn | Đường dẫn `local` có liên quan đến thư mục dữ liệu nút; các tệp trong `data/rules/` sử dụng `rules/xxx.srs` |
+| URL | Địa chỉ tải xuống cho `remote`; `download_detour` chọn đường ra được sử dụng để tải xuống (thường là `direct`) |
+
+Bộ quy tắc cục bộ (được khuyến nghị; trước tiên hãy tải xuống các tệp trong phần “Tài nguyên dịch vụ → Tệp quy tắc”):
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> Tải xuống tệp trên bảng điều khiển là chưa đủ: trước tiên, bộ quy tắc `local` phải được đẩy lên
+> các nút (“Đẩy tới tất cả các nút”) để tệp tồn tại trong `data/rules/` của nút; nếu không thì cốt lõi
+> không khởi động được vì không tìm thấy tập tin.
+
+Bộ quy tắc từ xa (nút phải có khả năng tiếp cận URL):
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+Khi bạn chọn một tệp cục bộ, thẻ được lấy từ tên tệp (`rules/geosite-cn.srs` →
+`geosite-cn`); đối với bộ điều khiển từ xa, nó nằm ở cuối URL. Định dạng cũng được điền từ
+phần mở rộng (`.srs` → `binary`, `.json` → `source`). Các giá trị dẫn xuất có thể được chỉnh sửa tự do và
+các giá trị bạn đã gõ sẽ không bao giờ bị ghi đè.
+
+> `download_detour` không được dùng nữa kể từ sing-box 1.14 và sẽ bị xóa trong 1.16; nó vẫn còn
+> hoạt động trong 1.15. Các cấu hình mới nên sử dụng `http_clients` cấp cao nhất với
+> Thay vào đó là `route.default_http_client`.
+
+#### 6.6.2 Quy tắc
+
+| trường | Trận đấu |
+|-------|---------|
+| `domain` | Tên miền chính xác |
+| `domain_suffix` | Hậu tố tên miền, bao gồm cả tên miền phụ |
+| `domain_keyword` | So khớp chuỗi con |
+| `domain_regex` | Biểu thức chính quy |
+| `ip_cidr` / `ip_is_private` | IP đích |
+| `source_ip_cidr` | IP nguồn |
+| `port` / `port_range` | Cảng đích |
+| `network` | `tcp` / `udp` |
+| `rule_set` | Thẻ của Bộ quy tắc sẽ sử dụng |
+| `outbound` | Thẻ gửi đi để sử dụng (phải tồn tại trong “Outbounds” hoặc “Endpoints”) |
+| `type: "logical"` | Các điều kiện kết hợp với `mode` được đặt thành `and` / `or` |
+
+Nhiều trường trong một quy tắc được kết hợp với AND (ví dụ `network` + `port`), do đó không
+Cần có trình bao bọc `logical`. Chỉ sử dụng `type: "logical"` cho các kết hợp OR / NOT. `rule_set`
+phải được đặt bên trong các quy tắc phụ `rules`, không được đặt bên cạnh `rules`:
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 Di chuyển quy tắc xray
+
+| xray | sing-box |
+|------|----------|
+| Chuỗi trần (bao gồm các giá trị trần trong `domain`; khớp chuỗi con) | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]`; sử dụng `"domain_suffix": ["a.com"]` để khớp hậu tố thực hoặc `"domain": ["a.com"]` để khớp chính xác |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+Ghi chú:
+
+- **Thẻ không được chia sẻ giữa các lõi**: không thể sử dụng thẻ gửi đi xray trong quy tắc sing-box;
+ sử dụng thẻ thực sự tồn tại trong sing-box “Outbounds” hoặc “Endpoint”.
+- Thẻ điểm cuối hoặc thẻ gửi đi sai báo cáo `outbound not found`; báo cáo thẻ đặt quy tắc sai
+ `rule-set not found`.
+- Đặt quy tắc trực tiếp/danh sách cho phép lên hàng đầu; khi một quy tắc phù hợp, các quy tắc sau này sẽ không còn áp dụng nữa.
+
 ---
 
 ## 7. Quản lý proxy
@@ -823,7 +976,7 @@ Quản lý proxy định cấu hình proxy ngược Caddy hoặc Nginx.
 
 ### 7.1 Các loại proxy
 
-- **Caddy**: HTTPS tự động, HTTP/2, HTTP/3
+- **Caddy**: HTTPS, HTTP/1.1 và HTTP/2 tự động (HTTP/3 / QUIC bị tắt để tránh xung đột UDP 443 với định tuyến lớp4)
 - **Nginx**: hiệu suất cao, cấu hình linh hoạt
 
 ### 7.2 Cấu hình trang web
@@ -842,55 +995,172 @@ Quản lý proxy định cấu hình proxy ngược Caddy hoặc Nginx.
 - **local_port**: cổng nghe cục bộ, ví dụ: `8443`
 - **portal_forward**: quy tắc chuyển tiếp cổng thông tin
 - **subscription_forward**: quy tắc chuyển tiếp đăng ký
+- **Định tuyến SNI**: khi một người đến sử dụng TLS / REALITY và các máy khách luôn kết nối trên 443, bảng điều khiển sẽ xuất phát
+ 443 quy tắc định tuyến TCP từ ClientHello SNI (cả xray `streamSettings` và sing-box `tls.reality`);
+ proxy phía trước chỉ chuyển tiếp TCP và TLS vẫn bị chấm dứt bên trong lõi
 
 ---
 
 ## 8. Tài nguyên định tuyến
 
-Tài nguyên định tuyến quản lý các quy tắc định tuyến đăng ký.
+Tài nguyên định tuyến thu thập tài sản được chia sẻ được sử dụng bởi đăng ký và định tuyến. Trang này có năm tab:
 
-### 8.1 Tính năng
+| Thẻ | Mục đích |
+|-----|---------|
+| Tên miền ưa thích Direct & CF | Nhập miền trực tiếp / IP và miền ưu tiên Cloudflare, được sử dụng khi viết lại địa chỉ truy cập trong đăng ký và các nút bên ngoài |
+| Nhóm IP CF | Các nguồn IP, cổng và cài đặt thăm dò ưa thích, được sử dụng bởi “Miền truy cập” |
+| Quy tắc toàn cầu WAF | Nguồn quy tắc và tệp quy tắc cho proxy ngược WAF, được đẩy tới các nút |
+| Tệp quy tắc | Tải xuống, đồng bộ hóa theo lịch và đẩy các tệp quy tắc (`.srs` / `.json` / `.dat`) |
+| Các nút bên ngoài | Nhập các nút bên ngoài từ v2ray URI / Base64 / đăng ký URL (xem 16.3) |
 
-- Quản lý quy tắc định tuyến
-- Định cấu hình chính sách định tuyến
-- Hỗ trợ nhiều định dạng định tuyến
+### 8.1 Tên miền ưa thích Direct & CF
 
-### 8.2 Cách sử dụng
+- **Truy cập trực tiếp**: nhập tên miền hoặc IP, cổng 443 theo mặc định; liên kết các nút hoặc để trống cho toàn cầu;
+- **Miền ưu tiên CF**: Miền ưu tiên Cloudflare cộng với cổng, có kiểm tra kết nối;
+- Cả hai đều cung cấp các ứng cử viên “Miền truy cập” được sử dụng bởi các đăng ký và viết lại nút bên ngoài (xem 16.3).
 
-1. Mở “Tài nguyên định tuyến”;
-2. Thêm quy tắc định tuyến;
-3. Đặt tên quy tắc, loại và điều kiện;
-4. Lưu và áp dụng.
+### Nhóm IP 8.2 CF
+
+- Duy trì các nguồn IP ưa thích (bao gồm các nguồn kiểu `bestproxy`), khoảng thời gian tìm nạp và cổng;
+- “Cài đặt đầu dò” kiểm soát khoảng thời gian thăm dò, ngưỡng độ trễ và nút đầu vào thăm dò; thăm dò địa phương
+ chỉ lọc các IP rõ ràng là không thể truy cập được, trong khi việc chọn một nút đầu vào sẽ mô phỏng đường dây của nút đó;
+- “Trình quay số” có thể tự động (lõi đã cài đặt), `singbox`, `xray` hoặc `mihomo`; lõi không phải
+ cài đặt không được liệt kê. Việc thăm dò chạy như một quá trình tạm thời và sẽ thoát khi hoàn tất và không bao giờ đọc hoặc
+ ghi cấu hình riêng của lõi;
+- Khi “Miền truy cập” sử dụng nhóm IP CF mà không có giá trị cụ thể, một mục nhập (với cổng của nó) sẽ được
+ được chọn ngẫu nhiên.
+
+### 8.3 Quy tắc chung WAF
+
+- Định cấu hình nguồn quy tắc WAF URL và các tệp quy tắc để đồng bộ hóa;
+- Sau khi đồng bộ hóa, chúng được đẩy đến các nút và được tải bởi proxy nút (Nginx / Caddy);
+- Một tệp có URL đầy đủ được tải xuống từ URL đó; nếu không thì sử dụng “nguồn URL + /tên tệp”;
+- “Bộ nhớ đệm trùng khớp” (`match_cache` / `config_match_cache`) được bật theo mặc định: giới hạn toàn quy trình
+ bộ nhớ đệm của các kết quả so khớp quy tắc nóng giúp giảm việc truyền tải quy tắc theo yêu cầu. Nó chỉ có trên toàn cầu và không có
+ ghi đè theo từng miền; tạm thời vô hiệu hóa nó để so sánh A/B khi điều tra các kết quả dương tính giả
+ (vô hiệu hóa có nghĩa là đánh giá quy tắc đầy đủ cho mọi yêu cầu và mức sử dụng CPU cao hơn).
+
+### 8.4 Tệp quy tắc (tệp quy tắc định tuyến)
+
+Tab này chỉ tải xuống các tệp quy tắc trên bảng điều khiển và đẩy chúng đến các nút; không có gì có hiệu lực
+tự động. Để sử dụng chúng trong định tuyến, hãy tham khảo chúng trong “Trung tâm giao thức → sing-box → Định tuyến”
+trong Bộ quy tắc và quy tắc (xem 6.6).
+
+- **Kho lưu trữ quy tắc**: nhập `owner/repo` (GitHub, có thể duyệt) hoặc tải xuống đầy đủ URL; theo lịch trình
+ đồng bộ hóa có thể chạy 6/12 giờ một lần, hàng ngày lúc 03:00, hàng ngày lúc nửa đêm hoặc hàng tuần vào Chủ nhật;
+- **Thêm tệp**: đối với các tệp đơn lẻ bên ngoài bản phát hành kho lưu trữ (ví dụ: nhánh SagerNet `.srs`
+ tập tin); nhập URL đầy đủ và nó sẽ được tải xuống tự động;
+- **Danh sách tệp**: hiển thị tên, kích thước, bản cập nhật gần đây nhất và nút chuyển “Tự động đồng bộ hóa”, với “Tải xuống” cho mỗi tệp;
+ nút “Đẩy tới tất cả các nút” ở trên cùng sẽ đẩy mọi tệp quy tắc đến tất cả các nút;
+- Các tệp được tải xuống `data/rules/` của bảng điều khiển và sau khi được đẩy, sẽ nằm dưới dữ liệu nút
+ `rules/` của thư mục; tham chiếu chúng trong sing-box là `rules/<file name>`;
+- Định dạng:
+  - `.srs`: Bộ quy tắc nhị phân sing-box, được khuyến nghị và nhỏ nhất;
+  - `.json`: bộ quy tắc định dạng nguồn; `rule_set` phải đặt `format: "source"`;
+  - `.dat`: xray `geosite.dat` / `geoip.dat`, sing-box không thể sử dụng trực tiếp.
+
+> Khối “Cách sử dụng” có thể thu gọn ở đầu trang chứa các ví dụ tham khảo, ánh xạ xray
+> bảng và các lỗi thường gặp.
+
+### 8.5 Nút bên ngoài
+
+Nhập và quản lý các nút bên ngoài được đề cập trong [16.3 Nút bên ngoài](#163-external-nodes).
 
 ---
 
 ## 9. Trung tâm đăng ký
 
-Trung tâm đăng ký quản lý các liên kết đăng ký và điểm cuối.
+Trung tâm đăng ký đóng gói các nút thành các đăng ký sẵn sàng cho khách hàng: xác định **định dạng** đăng ký (nội dung sẽ phát ra, quy tắc nào, gói nào có thể nhìn thấy chúng), sau đó đăng ký **điểm cuối** (miền công cộng / đường dẫn), sau đó phân phối các liên kết.
 
 ### 9.1 Định dạng đăng ký
 
-1. Mở “Trung tâm đăng ký” → “Các định dạng đăng ký”;
-2. Thêm một định dạng:
-   - Tên định dạng
-   - Định dạng đầu ra (Base64, YAML, JSON, v.v.)
-   - Các giao thức đi kèm
-3. Lưu.
+“Trung tâm đăng ký” → “Các hình thức đăng ký”; một hàng cho mỗi đầu ra của khách hàng:
+
+| trường | Mô tả |
+|---|---|
+| Tên | Độc đáo; `?config=<name>` khớp với nó và hộp thoại khách hàng hiển thị nó |
+| Loại khách hàng | clash / shadowrocket / singbox / v2ray — chỉ hiển thị nhóm |
+| định dạng đầu ra | `mihomo_yaml` (Clash/Mihomo), `singbox_json`, `xray_json`, `base64_uri`, `raw_uri` |
+| Loại nội dung/phần mở rộng | Tiêu đề phản hồi và tên tệp |
+| Nền tảng | giành chiến thắng/mac/android/ios/phổ quát; khớp với `?platform=`, trống = phổ quát |
+| kế hoạch ràng buộc | Trống = có sẵn cho mọi gói; nếu không thì chỉ những kế hoạch đó mới có thể sử dụng nó |
+| Quy tắc | Quy tắc định tuyến theo định dạng (trình soạn thảo có cấu trúc cho Mihomo, JSON thô cho mỗi quy tắc cho sing-box / Xray). **Quy tắc không được chuyển đổi giữa các định dạng** |
+
+Ghi chú:
+
+- Một số cấu hình có thể tồn tại cho cùng một định dạng đầu ra (ví dụ: `out`, `home`); chọn một cái có `config=` trong liên kết;
+- Nếu không có `config`, thứ tự là “cấu hình được liên kết với đăng ký → trận đấu `platform` → mặc định”;
+- Mẫu sing-box có thể mang `route.rule_set` riêng cho máy khách, thông thường là `remote` nên
+ khách hàng tải nó xuống; các tệp cục bộ được đẩy tới `rules/` của nút trong “Tệp quy tắc” chỉ khả dụng
+ tới lõi trên nút đó, không phải đăng ký của khách hàng;
+- Khi tạo các mẫu sing-box / Xray, bảng điều khiển sẽ loại bỏ các tham chiếu lơ lửng (`final`, `dns.final`,
+ `default_domain_resolver`, `download_detour`, `rule_set` cục bộ, định nghĩa `rule_set` không hợp lệ, trống
+ `balancer`, v.v.) để máy khách không bị lỗi khi khởi động với lỗi NGHIÊM TRỌNG;
+- Bí danh gửi đi trong quy tắc được giải quyết dựa trên thẻ thực (`REJECT` / `blocked` → `block`, `DIRECT` →
+ `direct`, không phân biệt chữ hoa chữ thường); các lệnh gửi đi không thể giải quyết được sẽ quay trở lại lệnh gửi đi mặc định và quy tắc
+ giữ vị trí của nó;
+- Một nhóm có `tag = proxy` luôn được tạo: `selector` cho sing-box và bộ cân bằng `random` cho
+ Xray và `outbound: proxy` trong các quy tắc được viết lại thành `balancerTag` phù hợp. Trình chỉnh sửa quy tắc tải
+ các ứng viên gửi đi một cách linh hoạt từ “nhóm proxy + các lượt gửi đi tùy chỉnh” và các thẻ được nhập theo cách thủ công là
+ vẫn được xác nhận;
+- Cấu hình sing-box / Xray phải được tạo riêng; nếu chúng không tồn tại thì chúng sẽ không xuất hiện trong liên kết khách hàng (xem 10.3).
 
 ### 9.2 Điểm cuối đăng ký
 
-1. Mở “Trung tâm đăng ký” → “Điểm cuối đăng ký”;
-2. Thêm một điểm cuối:
-   - Tên điểm cuối
-   - Nghe địa chỉ
-   - Đường dẫn
-   - Định dạng liên kết
-3. Lưu.
+“Trung tâm đăng ký” → “Điểm cuối đăng ký”; một hàng cho mỗi địa chỉ công cộng:
+
+| trường | Mô tả |
+|---|---|
+| Tên miền | Miền đăng ký công khai |
+| Đường dẫn | Tiền tố trong miền, mặc định `/` |
+| Đã bật | Điểm cuối bị vô hiệu hóa sẽ bị bỏ qua khi xây dựng liên kết |
+| Mô tả | Ghi chú văn bản tự do |
+
+- **Nhiều hàng (đa miền)** được hỗ trợ; khi một số miền được bật, miền của nhà cung cấp sẽ tuân theo miền được yêu cầu hiện tại sử dụng (xem 9.4);
+- Cổng đăng ký chuyên dụng phục vụ ở thư mục gốc (`/<token>`, không có `/sub`); khi chia sẻ cổng bảng điều khiển thì đó là `/sub/<token>`;
+- Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` / `X-Forwarded-Host`, nếu không thì điểm cuối được kích hoạt đầu tiên sẽ được sử dụng. Các mẫu trang web Caddy / Nginx do bảng điều khiển tạo ra bao gồm cả hai tiêu đề; cấu hình proxy được duy trì bằng tay cần được thêm chúng theo cách thủ công.
 
 ### 9.3 Liên kết đăng ký
 
-- Lấy đăng ký tại `http://your-domain/sub/:token`
-- Sử dụng các tham số như `?format=yaml` để chọn định dạng
+Dạng cơ sở: `https://<sub-domain>/<token>` (cổng bảng điều khiển: `https://<panel-domain>/sub/<token>`)
+
+| tham số | Mô tả |
+|---|---|
+| `format` | Định dạng đầu ra; bí danh: `clash` → mihomo_yaml, `singbox`/`sing-box` → singbox_json, `xray` → xray_json, `raw` → raw_uri, `base64`/`v2ray` → base64_uri |
+| `config` | Áp dụng định dạng đăng ký theo tên; phải khớp với `format`, nếu không thì bỏ qua |
+| `platform` | Khớp cấu hình theo nền tảng (khi bỏ qua `config`) |
+| `providers` | `1` / `true`: Chế độ nhà cung cấp Clash (`proxy-providers` + `use`); nút nội tuyến mặc định |
+
+Ví dụ:
+
+```bash
+# Clash dynamic subscription (config template + providers)
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray (only meaningful when such a config exists)
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# generic clients / plain text
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 Chế độ đa miền và nhà cung cấp
+
+Với `providers=1`, mọi mục nhập `proxy-providers` đều quay trở lại điểm cuối đăng ký. Lựa chọn tên miền:
+
+1. **Miền mà yêu cầu này đã sử dụng** (giá trị đầu tiên `X-Forwarded-Host`, cổng bị loại bỏ, nếu không thì là `Host`) nếu nó khớp với điểm cuối **được bật**;
+2. Nếu không thì điểm cuối được bật có **ID thấp nhất**;
+3. Đường dẫn xuất phát từ điểm cuối đó: `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+Vì vậy, việc thay đổi miền không cần thay đổi bảng điều khiển: các máy khách tìm nạp qua miền mới sẽ nhận được miền mới bên trong nhà cung cấp và miền cũ được kích hoạt không còn được mã hóa cứng nữa. Nếu máy khách đã lưu vào bộ đệm của nhà cung cấp cũ URL, hãy cập nhật đăng ký (hoặc xóa bộ đệm của nhà cung cấp/khởi động lại máy khách).
+
+Ghi chú bổ sung:
+
+- `proxy-providers` bên trong định dạng dùng chung (`config_json`) bị bỏ qua (tránh rò rỉ nhiều kế hoạch); các nhà cung cấp đến từ các nhóm nút kế hoạch và các nguồn bên ngoài;
+- Đường dẫn bộ đệm của nhà cung cấp nội bộ và bên ngoài luôn được lấy từ “mặc định của nhà cung cấp nội bộ → mẫu đường dẫn bộ đệm” (`./providers/{key}.yaml` mặc định); các nguồn bên ngoài không thể tự thiết lập;
+- Nhà cung cấp dành riêng cũ `subscription-nodes` không còn được phát hành nữa: các nhóm sử dụng "tất cả các nút" sẽ mở rộng sang các nhà cung cấp cụ thể hoặc các nút nội tuyến khi không có gói nào.
 
 ---
 
@@ -905,10 +1175,10 @@ Quản lý khách hàng xử lý người dùng cuối.
 3. Điền vào:
    - Email
    - Mật khẩu
-   - Kế hoạch
+   - kế hoạch
    - Hạn ngạch giao thông
    - Thời gian hết hạn
-4. Lưu.
+4. Cứu.
 
 ### 10.2 Hành động của khách hàng
 
@@ -916,19 +1186,23 @@ Quản lý khách hàng xử lý người dùng cuối.
 - **Tạm dừng**: tạm dừng dịch vụ
 - **Tiếp tục**: khôi phục khách hàng bị đình chỉ
 - **Đặt lại lưu lượng truy cập**: đặt lại lưu lượng truy cập đã sử dụng
-- **Đặt lại mật khẩu**: đặt lại mật khẩu của khách hàng
+- **Reset mật khẩu**: đặt lại mật khẩu của khách hàng
 - **Gia hạn**: gia hạn thời hạn sử dụng
 - **Nâng cấp/hạ cấp**: thay đổi gói
 - **Xóa**: xóa khách hàng
 
 ### 10.3 Chi tiết đăng ký
 
-Bấm vào một khách hàng để xem:
+Quản lý khách hàng → cột “Đăng ký” → “Chi tiết”. Hộp thoại liệt kê các liên kết cho mọi định dạng có sẵn cho gói của khách hàng:
 
-- Liên kết đăng ký
-- Sử dụng lưu lượng truy cập
-- Lịch sử đặt hàng
-- Lịch sử giao dịch
+- **Clash / Mihomo**: hai hàng — các nút nội tuyến và `providers=1` (nhà cung cấp proxy), cả hai đều mang `config=<name>`;
+- **Sing-box / Xray**: chỉ hiển thị khi cấu hình có định dạng đó tồn tại và hiển thị với gói; liên kết mang `config=<name>`;
+- **Base64 URI / Raw URI**: luôn hiển thị (không có `config`);
+- Mỗi hàng có nút sao chép riêng; nhấp vào một hàng sẽ chuyển mã QR bên dưới sang định dạng đó.
+
+Vì vậy, chỉ với cấu hình Clash, hộp thoại sẽ hiển thị Clash + Base64 + Raw; Các liên kết sing-box / Xray chỉ xuất hiện sau khi cấu hình của chúng được tạo.
+
+Hộp thoại tương tự cũng hiển thị mức sử dụng lưu lượng truy cập, lịch sử đặt hàng và lịch sử giao dịch.
 
 ---
 
@@ -955,7 +1229,7 @@ Quản lý kế hoạch định cấu hình các kế hoạch bạn bán.
    - Lưu lượng truy cập (GB, `0` = không giới hạn)
    - Giới hạn đồng thời
    - Giới hạn tốc độ (Mbps)
-2. Cứu.
+2. Lưu.
 
 ### 11.3 Tiện ích giao thông
 
@@ -985,18 +1259,18 @@ Quản lý kế hoạch định cấu hình các kế hoạch bạn bán.
 
 Quản lý nạp tiền xử lý các trang nạp tiền, đơn đặt hàng và thẻ nạp tiền.
 
-> **Lưu ý về tích hợp thanh toán**
+> **Tích hợp thanh toán**
 >
-> Bảng điều khiển **không kết nối trực tiếp với tổ chức thanh toán** (Alipay, WeChat Pay, Stripe, ngân hàng, v.v.) mà chỉ kết nối với **nền tảng thanh toán trung gian**. Nền tảng này tích hợp với tổ chức thanh toán tương ứng, thực hiện ký kết, thu tiền và quyết toán, rồi gửi kết quả thanh toán về bảng điều khiển qua [API gọi lại thanh toán](api/charge-callback.md).
+> Bảng điều khiển **không tích hợp trực tiếp với các tổ chức thanh toán** (Alipay, WeChat Pay, Stripe, ngân hàng, v.v.). Nó chỉ kết nối với **nền tảng thanh toán trung gian**, sau đó tích hợp với tổ chức thanh toán tương ứng, xử lý hợp đồng, mua và thanh toán, đồng thời báo cáo kết quả thanh toán qua API](api/charge-callback.md) gọi lại [charge.
 >
-> Nền tảng thanh toán trung gian **không thuộc phạm vi dự án này và phải do nhà vận hành tự phát triển (hoặc dùng hệ thống riêng)**. Sau khi triển khai, hãy đăng ký tại «Trang web nạp tiền» và hoàn tất xác minh tên miền để dùng làm cổng nạp tiền; trang nạp tiền ở đây chính là nền tảng trung gian đó, không phải tổ chức thanh toán. Tư cách thanh toán, phí, quyết toán và tuân thủ do nhà vận hành cùng tổ chức thanh toán và nền tảng trung gian thỏa thuận và chịu trách nhiệm.
+> Nền tảng thanh toán trung gian **không phải là một phần của dự án này; các nhà khai thác phải tự phát triển nó (hoặc sử dụng hệ thống của riêng họ)**. Sau khi triển khai, hãy đăng ký nó trong “Trang web nạp tiền” và hoàn tất xác minh tên miền để sử dụng nó làm điểm nạp tiền; trang nạp tiền ở đây là nền tảng trung gian đó, không phải bản thân tổ chức thanh toán. Điều kiện thanh toán, phí, quyết toán và tuân thủ được nhà điều hành, tổ chức thanh toán và nền tảng trung gian đồng ý và chịu trách nhiệm.
 
 ### 12.1 Địa điểm nạp tiền
 
 1. Mở “Quản lý nạp tiền” → “Trang web nạp tiền”;
 2. Thêm một trang web:
    - Tên trang web
-   - Các phương thức thanh toán mà nền tảng trung gian đó hỗ trợ (Alipay, WeChat, USDT, Stripe, v.v., do nền tảng tích hợp với tổ chức thanh toán cung cấp)
+   - Các phương thức thanh toán được hỗ trợ bởi nền tảng trung gian đó (Alipay, WeChat, USDT, Stripe, v.v., được cung cấp thông qua việc tích hợp với các tổ chức thanh toán)
    - Tiền tệ
    - Tỷ giá hối đoái
 3. Lưu;
@@ -1124,7 +1398,7 @@ Hạn ngạch lưu lượng truy cập giám sát lưu lượng truy cập hàng
 
 ## 16. Proxy chuỗi
 
-Proxy chuỗi cấu hình liên kết nhiều lối ra.
+Proxy chuỗi cấu hình liên kết nhiều lối thoát.
 
 ### 16.1 Tạo liên kết
 
@@ -1148,9 +1422,13 @@ Proxy chuỗi cấu hình liên kết nhiều lối ra.
 
 - Nhập các nút bên ngoài (v2ray URI, Base64 URI, đăng ký URL)
 - Đăng ký các mục bên ngoài
-- Quản lý nút bên ngoài (sửa / xóa riêng lẻ)
-- Tên miền truy cập: cấu hình tăng tốc CDN / IP ưu tiên cho từng nút (tên miền trực tiếp, tên miền CF ưu tiên, pool IP CF, tùy chỉnh). Chỉ ghi đè server/port gửi trong đăng ký; SNI/Host giữ nguyên như khi nhập. Khi tắt, dùng địa chỉ/cổng đã nhập
-- Khi chọn «tên miền CF ưu tiên / pool IP CF» mà không có giá trị cụ thể, hệ thống chọn ngẫu nhiên một mục từ pool (kèm cổng của mục đó); «trực tiếp / tùy chỉnh» yêu cầu giá trị rõ ràng, nếu không sẽ quay về địa chỉ của chính nút
+- Quản lý các nút bên ngoài (chỉnh sửa/xóa riêng lẻ)
+- Miền truy cập: định cấu hình IP ưa thích / tăng tốc CDN cho mỗi nút (miền trực tiếp, ưu tiên CF
+ tên miền, nhóm IP CF, tùy chỉnh). Chỉ máy chủ/cổng được phân phối trong đăng ký mới được viết lại;
+ SNI/Máy chủ vẫn giữ nguyên như đã nhập. Khi bị tắt, địa chỉ/cổng đã nhập sẽ được sử dụng
+- Khi "Miền ưa thích CF / Nhóm IP CF" được chọn mà không có giá trị cụ thể, một mục nhập sẽ được chọn
+ ngẫu nhiên từ nhóm (với cổng của nó); "trực tiếp / tùy chỉnh" yêu cầu giá trị rõ ràng, nếu không
+ nó quay trở lại địa chỉ của nút đó
 
 ---
 
@@ -1162,9 +1440,15 @@ Người dùng trực tuyến hiển thị trạng thái trực tuyến theo th�
 
 - Đăng ký trực tuyến
 - Thiết bị / IP trực tuyến
-- Nút trực tuyến
-- Tỷ lệ thời gian thực
-- Tổng lưu lượng truy cập
+- Nút, IP và thời gian kết nối cho mỗi thuê bao
+- Tốc độ đường lên / đường xuống thời gian thực
+- Tổng số đường lên / tổng số đường xuống / tổng lưu lượng truy cập
+
+> Tổng số đường lên, tổng số đường xuống và tổng lưu lượng truy cập tích lũy qua **phiên trực tuyến liên tục**:
+> kết nối lại trong thời gian ngắn, khởi động lại lõi và đặt lại bộ đếm không xóa chúng. Chỉ sau 60
+> giây mà không có báo cáo mới thì phiên mới sẽ bắt đầu từ số 0. Đây là một biện pháp khác
+> từ bộ đếm "lưu lượng truy cập kể từ lần bắt đầu này" của chính lõi và phản ánh tốt hơn những gì người dùng thực sự
+> được sử dụng trong phiên hiện tại.
 
 ### 17.2 Lọc
 
@@ -1268,7 +1552,7 @@ Cài đặt hệ thống cấu hình các thông số bảng điều khiển.
 - Quản lý khóa mã hóa
 - Quản lý khóa JWT
 - danh sách đen IP
-- Passkey miền được liệt kê cho phép
+- Các miền được liệt kê cho phép Passkey
 
 ### 20.3 OAuth
 
@@ -1395,13 +1679,21 @@ Quản lý nhật ký hiển thị nhật ký hệ thống.
 
 ## 25. Tiện ích mở rộng hoạt động
 
-Tiện ích mở rộng hoạt động định cấu hình tiện ích mở rộng tùy chọn.
+“Tiện ích mở rộng hoạt động” (`/client-ext`) định cấu hình tiếp thị giới thiệu, hoa hồng và rút tiền;
+“Tài liệu pháp lý” (`/legal-documents`) duy trì các thỏa thuận phía cổng thông tin.
 
-### 25.1 Tính năng
+### 25.1 Giới thiệu và hoa hồng
 
-- Tiện ích mở rộng tùy chỉnh
-- Cấu hình tiện ích mở rộng
-- Quản lý tiện ích mở rộng
+- **Cấu hình giảm giá**: tỷ lệ giảm giá (phần trăm của khoản thanh toán đầu tiên của người được mời, `0` = bị vô hiệu hóa), chế độ hoa hồng (chỉ mua lần đầu / tất cả các giao dịch mua), số tiền rút tối thiểu (số dư hoa hồng phải đạt đến mức đó trước khi có thể yêu cầu rút tiền)
+- **Mã mời**: khi được bật, việc đăng ký sẽ yêu cầu mã mời; đặt độ dài mã, ngày hết hạn và số lần sử dụng tối đa (`0` = không giới hạn) và tạo/xem danh sách mã
+- **Xem xét rút tiền**: lọc theo trạng thái chờ xử lý/được phê duyệt/bị từ chối; thêm ghi chú xử lý và ghi lại phương thức thanh toán và địa chỉ ví
+- **Hồ sơ giới thiệu**: người mời, người được mời, số tiền hoa hồng và trạng thái hoa hồng
+
+### 25.2 Văn bản pháp luật
+
+- Duy trì riêng “Chính sách quyền riêng tư” và “Điều khoản dịch vụ”, một tài liệu Markdown cho mỗi ngôn ngữ, có bản xem trước trực tiếp;
+- Mỗi tài liệu có thể sử dụng URL bên ngoài thay vì trang tích hợp sẵn; khi trống, trang tích hợp URL được sử dụng (có thể sao chép trên trang);
+- Cổng thông tin hiển thị phiên bản cho ngôn ngữ hiện tại và quay lại ngôn ngữ mặc định khi bị thiếu.
 
 ---
 
@@ -1469,7 +1761,7 @@ Tiện ích mở rộng hoạt động định cấu hình tiện ích mở rộ
 |------|---------|
 | `/` | Bảng quản trị (cổng thông tin cũng tồn tại ở `/` khi không có công cụ cổng thông tin chuyên dụng nào được định cấu hình) |
 | `/sub/:token` | Tìm nạp đăng ký (khi không có cổng đăng ký chuyên dụng nào được định cấu hình) |
-| `/p` | Trang cổng thông tin (khi không có cổng cổng chuyên dụng nào được cấu hình) |
+| `/p` | Trang cổng thông tin (khi không có cổng cổng chuyên dụng nào được định cấu hình) |
 | `/:token` | Tìm nạp đăng ký (với cổng đăng ký chuyên dụng, không có tiền tố `/sub`) |
 
 ### C. Công cụ dòng lệnh
@@ -1483,6 +1775,10 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 # Run database migrations
 ./corefusion migrate
 
+# Non-interactive init / reset init state (see 3.4, 3.5)
+./corefusion init --help
+./corefusion reset-init
+
 # Offline administration (when you cannot sign in)
 ./corefusion admin reset-password -u admin -p 'new-password'
 ./corefusion admin 2fa reset -u admin
@@ -1493,10 +1789,12 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 ./corefusion help
 ```
 
-> Nếu không có thiết bị systemd, hãy khởi động lại bằng cách dừng quy trình cũ và bắt đầu lại với `nohup`; nhật ký nằm trong `<install-dir>/data/logs/panel.log`.
+> Với systemd, hãy sử dụng `systemctl restart corefusion` và `journalctl -u corefusion -f`; không có
+> systemd (thùng chứa và tương tự), hãy dừng quy trình cũ và bắt đầu lại với `nohup`, nhật ký sẽ được lưu
+> trong `data/logs/panel.log`.
 
 ---
 
-> **Phiên bản tài liệu**: v1.0
-> **Cập nhật lần cuối**: 23-10-2026
-> **Áp dụng cho**: CoreFusion v1.0+
+> **Phiên bản tài liệu**: v1.1
+> **Cập nhật lần cuối**: 2026-11-16
+> **Áp dụng cho**: CoreFusion v0.13.0-beta.x

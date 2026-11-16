@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: ru | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: ru | updated: 2026-11-16 -->
 # Администратор API
 
 > Языки: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · Русский · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - База URL: `https://<panel-domain>/api/v1`
 - Аутентификация: `Authorization: Bearer <admin_token>` (из `POST /api/v1/auth/login`)
 - Общие форматы ответов/ошибок и соглашения об ограничении скорости: см. [README.md](./README.ru.md).
-- Источник истины: `internal/api/router/router.go` (количество зависит от версии; приоритет имеет код); если эта таблица не согласна, **код выигрывает**
+- Источник истины: `internal/api/router/router.go` (количество зависит от версии; код является авторитетным); если эта таблица не согласна, **код выигрывает**
 
 ## Маркеры разрешений
 
@@ -17,8 +17,11 @@
 | Публичный | Вход в систему не требуется (защита обслуживания/ограничение скорости все еще могут применяться) |
 | Публичный · с ограниченной ставкой | Без входа в систему, с выделенным ограничением скорости |
 | Требуется вход | Требуется токен администратора для входа в систему (`AuthRequired`). |
+| Оператор | Требуется роль ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Администратор | Требуется роль ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Суперадминистратор | Требуется роль = `super_admin`. |
+| Клиент (публичный) | Токен клиента не требуется (вход/регистрация и т. д.) |
+| Клиент (вошел в систему) | Требуется `Authorization: Bearer <client_token>` (токен клиента портала, а не токен администратора) |
 
 Уровни ролей: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; недостаточно ролей возвращает 403 `INSUFFICIENT_ROLE`.
 
@@ -147,6 +150,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [Общие аккаунты](#общие-аккаунты)
 - [Сертификаты](#сертификаты)
 - [Каналы сертификатов](#каналы-сертификатов)
+- Конфигурация [EAB](#eab-configuration)
 - [Конфигурация EAB](#конфигурация-eab)
 - [Счета ACME](#счета-acme)
 - [Встроенный центр сертификации](#встроенный-центр-сертификации)
@@ -169,7 +173,6 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [Мониторинг квот трафика](#мониторинг-квот-трафика)
 - [Проверка здоровья](#проверка-здоровья)
 - [Страница портала](#страница-портала)
-- [ACME задачи](#acme-задачи)
 
 ---
 
@@ -196,8 +199,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | Публичный | Завершить вход |
 | POST | `/api/v1/auth/passkey/register/begin` | Требуется вход | Начать регистрацию |
 | POST | `/api/v1/auth/passkey/register/finish` | Требуется вход | Завершить регистрацию |
-| GET | `/api/v1/auth/passkey/rpids` | Требуется вход | Список разрешенных идентификаторов RP |
-| POST | `/api/v1/auth/passkey/rpids` | Требуется вход | Обновить список разрешенных идентификаторов RP |
+| GET | `/api/v1/auth/passkey/rpids` | Администратор | Список разрешенных идентификаторов RP |
+| POST | `/api/v1/auth/passkey/rpids` | Администратор | Обновить список разрешенных идентификаторов RP |
 | GET | `/api/v1/auth/passkey/status` | Публичный | Статус |
 | POST | `/api/v1/auth/refresh` | Публичный | Обновить |
 | POST | `/api/v1/auth/ticket` | Требуется вход | Выдать одноразовый билет с коротким сроком действия |
@@ -220,17 +223,17 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Требуется вход | Список клиентов |
-| POST | `/api/v1/clients` | Требуется вход | Создать клиента. корпус: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. Требуется `plan_id`; `password` может быть пустым (клиенты могут установить его позже на портале) |
-| DELETE | `/api/v1/clients/:id` | Требуется вход | Удалить клиента |
+| POST | `/api/v1/clients` | Оператор | Создать клиента. корпус: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. Требуется `plan_id`; `password` может быть пустым (клиенты могут установить его позже на портале) |
+| DELETE | `/api/v1/clients/:id` | Оператор | Удалить клиента |
 | GET | `/api/v1/clients/:id` | Требуется вход | Получить клиента |
-| PUT | `/api/v1/clients/:id` | Требуется вход | Обновить клиента |
-| POST | `/api/v1/clients/:id/downgrade` | Требуется вход | Понизить версию клиента |
+| PUT | `/api/v1/clients/:id` | Оператор | Обновить клиента |
+| POST | `/api/v1/clients/:id/downgrade` | Оператор | Понизить версию клиента |
 | GET | `/api/v1/clients/:id/orders` | Требуется вход | Список заказов клиентов |
-| POST | `/api/v1/clients/:id/renew` | Требуется вход | Продлить клиента |
-| POST | `/api/v1/clients/:id/reset-usage` | Требуется вход | Сбросить использование |
-| POST | `/api/v1/clients/:id/restore` | Требуется вход | Возобновить клиента |
-| POST | `/api/v1/clients/:id/suspend` | Требуется вход | Заблокировать клиента |
-| POST | `/api/v1/clients/:id/upgrade` | Требуется вход | Обновить клиента |
+| POST | `/api/v1/clients/:id/renew` | Оператор | Продлить клиента |
+| POST | `/api/v1/clients/:id/reset-usage` | Оператор | Сбросить использование |
+| POST | `/api/v1/clients/:id/restore` | Оператор | Возобновить клиента |
+| POST | `/api/v1/clients/:id/suspend` | Оператор | Заблокировать клиента |
+| POST | `/api/v1/clients/:id/upgrade` | Оператор | Обновить клиента |
 
 ### Шаблоны планов
 
@@ -239,17 +242,17 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Требуется вход | Список шаблонов |
-| POST | `/api/v1/plan-templates` | Требуется вход | Создать шаблон |
-| DELETE | `/api/v1/plan-templates/:id` | Требуется вход | Удалить шаблон |
+| POST | `/api/v1/plan-templates` | Администратор | Создать шаблон |
+| DELETE | `/api/v1/plan-templates/:id` | Администратор | Удалить шаблон |
 | GET | `/api/v1/plan-templates/:id` | Требуется вход | Детали шаблона |
-| PUT | `/api/v1/plan-templates/:id` | Требуется вход | Обновить шаблон |
+| PUT | `/api/v1/plan-templates/:id` | Администратор | Обновить шаблон |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Требуется вход | Получить доступные узлы |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Требуется вход | Получите оплачиваемые варианты узлов |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Требуется вход | Установить группы узлов шаблона |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Требуется вход | Синхронизировать аккаунты с шаблоном |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Администратор | Установить группы узлов шаблона |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Администратор | Синхронизировать аккаунты с шаблоном |
 | GET | `/api/v1/plan-templates/:id/variants` | Требуется вход | Список вариантов |
-| POST | `/api/v1/plan-templates/:id/variants` | Требуется вход | Создать вариант |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Требуется вход | Синхронизировать все учетные записи |
+| POST | `/api/v1/plan-templates/:id/variants` | Администратор | Создать вариант |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Администратор | Синхронизировать все учетные записи |
 
 ### Варианты плана
 
@@ -257,8 +260,8 @@ CRUD, приостановка/возобновление, обновление/
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Требуется вход | Удалить вариант |
-| PUT | `/api/v1/plan-variants/:id` | Требуется вход | Обновить вариант |
+| DELETE | `/api/v1/plan-variants/:id` | Администратор | Удалить вариант |
+| PUT | `/api/v1/plan-variants/:id` | Администратор | Обновить вариант |
 
 ### Пакеты трафика
 
@@ -267,9 +270,9 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Требуется вход | Список пакетов трафика |
-| POST | `/api/v1/traffic-packs` | Требуется вход | Создать пакет трафика |
-| DELETE | `/api/v1/traffic-packs/:id` | Требуется вход | Удалить пакет трафика |
-| PUT | `/api/v1/traffic-packs/:id` | Требуется вход | Обновить пакет трафика |
+| POST | `/api/v1/traffic-packs` | Администратор | Создать пакет трафика |
+| DELETE | `/api/v1/traffic-packs/:id` | Администратор | Удалить пакет трафика |
+| PUT | `/api/v1/traffic-packs/:id` | Администратор | Обновить пакет трафика |
 
 ### Купоны
 
@@ -278,9 +281,9 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Требуется вход | Список купонов |
-| POST | `/api/v1/promotions` | Требуется вход | Создать купон |
-| DELETE | `/api/v1/promotions/:id` | Требуется вход | Удалить купон |
-| PUT | `/api/v1/promotions/:id` | Требуется вход | Обновить купон |
+| POST | `/api/v1/promotions` | Администратор | Создать купон |
+| DELETE | `/api/v1/promotions/:id` | Администратор | Удалить купон |
+| PUT | `/api/v1/promotions/:id` | Администратор | Обновить купон |
 | POST | `/api/v1/promotions/validate` | Требуется вход | Подтвердить купон |
 
 ### Группы узлов
@@ -290,12 +293,12 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Требуется вход | Список групп узлов |
-| POST | `/api/v1/node-groups` | Требуется вход | Создать группу узлов |
-| DELETE | `/api/v1/node-groups/:id` | Требуется вход | Удалить группу узлов |
-| PUT | `/api/v1/node-groups/:id` | Требуется вход | Обновить группу узлов |
+| POST | `/api/v1/node-groups` | Администратор | Создать группу узлов |
+| DELETE | `/api/v1/node-groups/:id` | Администратор | Удалить группу узлов |
+| PUT | `/api/v1/node-groups/:id` | Администратор | Обновить группу узлов |
 | GET | `/api/v1/node-groups/:id/members` | Требуется вход | Список участников группы |
-| POST | `/api/v1/node-groups/:id/members` | Требуется вход | Добавить участника группы |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Требуется вход | Удалить участника группы |
+| POST | `/api/v1/node-groups/:id/members` | Администратор | Добавить участника группы |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Администратор | Удалить участника группы |
 
 ### Узловые серверы
 
@@ -309,16 +312,16 @@ CRUD, приостановка/возобновление, обновление/
 | GET | `/api/v1/node-servers/:id` | Администратор | Подробности |
 | PUT | `/api/v1/node-servers/:id` | Администратор | Обновить |
 | GET | `/api/v1/node-servers/:id/binaries` | Администратор | Установленный основной список |
-| POST | `/api/v1/node-servers/:id/binaries/ech-generate` | Администратор | Создать пару ключей ECH. |
+| POST | `/api/v1/node-servers/:id/binaries/ech-generate` | Администратор | Создайте пару ключей ECH. |
 | POST | `/api/v1/node-servers/:id/binaries/install` | Администратор | Установить/обновить ядро |
 | GET | `/api/v1/node-servers/:id/binaries/interfaces` | Администратор | Список сетевых интерфейсов |
 | POST | `/api/v1/node-servers/:id/binaries/mldsa65-key` | Администратор | Сгенерировать ключ MLDSA65 |
-| POST | `/api/v1/node-servers/:id/binaries/reality-key` | Администратор | Создать пару ключей REALITY. |
+| POST | `/api/v1/node-servers/:id/binaries/reality-key` | Администратор | Создайте пару ключей REALITY. |
 | POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | Администратор | Получить открытый ключ из закрытого ключа REALITY. |
 | GET | `/api/v1/node-servers/:id/binaries/releases` | Администратор | Доступные версии |
 | POST | `/api/v1/node-servers/:id/binaries/vlessenc` | Администратор | Сгенерируйте параметры шифрования VLESS |
 | POST | `/api/v1/node-servers/:id/binaries/wg-key` | Администратор | Сгенерировать ключ WireGuard |
-| POST | `/api/v1/node-servers/:id/binaries/x25519-key` | Администратор | Создайте пару ключей X25519. |
+| POST | `/api/v1/node-servers/:id/binaries/x25519-key` | Администратор | Создать пару ключей X25519. |
 | GET | `/api/v1/node-servers/:id/bootstrap-cmd` | Администратор | Получить команду начальной загрузки агента |
 | POST | `/api/v1/node-servers/:id/bootstrap-token` | Администратор | Создать токен начальной загрузки |
 | POST | `/api/v1/node-servers/:id/caddy/batch-update-log-enabled` | Администратор | Переключатели журнала массового обновления |
@@ -328,7 +331,8 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Администратор | Сохраните и примените |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Администратор | Список сайтов |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Администратор | Создать сайт |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Импорт сайтов |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Администратор | Импортировать сайты |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Администратор | Предварительный просмотр визуализированного сайта Caddy |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Администратор | Удалить сайт |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Администратор | Обновить сайт |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Администратор | Удалить все правила SNI. |
@@ -353,6 +357,9 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Администратор | Принудительное переподключение |
 | GET | `/api/v1/node-servers/:id/free-port` | Администратор | Запросить бесплатный порт |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | Администратор | Нажмите на этот узел |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Администратор | Обнаружение брандмауэра (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Администратор | Разрешить входящий порт прослушивания (поддерживается несколько диапазонов) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Администратор | Отменить разрешение входящего порта (включая дубликаты) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Администратор | Список |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Администратор | Создать |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Администратор | Удалить |
@@ -373,8 +380,9 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Администратор | Сохранить настройки |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Администратор | Список сайтов |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Администратор | Создать сайт |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Импорт сайтов |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Создать файлы SSL-сертификата |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Администратор | Импортировать сайты |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Администратор | Предварительный просмотр отрисованного сайта Nginx |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Администратор | Создание файлов сертификатов SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Администратор | Удалить сайт |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Администратор | Обновить сайт |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Администратор | Удалить все правила SNI. |
@@ -413,7 +421,7 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/proxy/nginx-settings` | Администратор | Сохраните настройки nginx. |
 | GET | `/api/v1/node-servers/:id/proxy/releases` | Администратор | Доступные версии |
 | POST | `/api/v1/node-servers/:id/proxy/reload` | Администратор | Перезагрузить конфигурацию |
-| POST | `/api/v1/node-servers/:id/proxy/restart` | Администратор | Перезапустить |
+| POST | `/api/v1/node-servers/:id/proxy/restart` | Администратор | Перезагрузить |
 | GET | `/api/v1/node-servers/:id/proxy/sites` | Администратор | Список сайтов |
 | POST | `/api/v1/node-servers/:id/proxy/sites` | Администратор | Создать сайт |
 | DELETE | `/api/v1/node-servers/:id/proxy/sites/:siteId` | Администратор | Удалить сайт |
@@ -446,7 +454,7 @@ CRUD, приостановка/возобновление, обновление/
 | PUT | `/api/v1/node-servers/:id/services/:serviceId/endpoints/:endpointId` | Администратор | Обновить конечную точку |
 | PUT | `/api/v1/node-servers/:id/services/:serviceId/guardian` | Администратор | Обновить конфигурацию супервизора |
 | GET | `/api/v1/node-servers/:id/services/:serviceId/process-status` | Администратор | Получить статус обработки |
-| POST | `/api/v1/node-servers/:id/services/:serviceId/restart` | Администратор | Перезапустить |
+| POST | `/api/v1/node-servers/:id/services/:serviceId/restart` | Администратор | Перезагрузить |
 | POST | `/api/v1/node-servers/:id/services/:serviceId/start` | Администратор | Старт |
 | POST | `/api/v1/node-servers/:id/services/:serviceId/stop` | Администратор | Стоп |
 | GET | `/api/v1/node-servers/:id/services/process-status` | Администратор | Все статусы процессов |
@@ -457,6 +465,7 @@ CRUD, приостановка/возобновление, обновление/
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Администратор | Очистить все |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Администратор | Применить правила брандмауэра с переключением портов |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Администратор | Удалить правила брандмауэра с переключением портов |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Администратор | Живые соединения sing-box (clash_api, только локальный узел) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Администратор | Тест скорости узла |
 | GET | `/api/v1/node-servers/:id/status` | Администратор | Статус узла |
 | POST | `/api/v1/node-servers/:id/sync` | Администратор | Конфигурация узла синхронизации (генерация и отправка) |
@@ -496,6 +505,8 @@ CRUD, приостановка/возобновление, обновление/
 | GET | `/api/v1/node-servers/:id/warp/config` | Администратор | Чтение конфигурации |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Администратор | Создать конфигурацию |
 | POST | `/api/v1/node-servers/:id/warp/register` | Администратор | Зарегистрироваться |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Администратор | Зарегистрируйте профиль WARP MASQUE (шаг 1 из 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Администратор | Создайте исходящую маску sing-box MASQUE из профиля WARP. |
 | GET | `/api/v1/node-servers/:id/warp/status` | Администратор | Статус |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Администратор | Получить информацию о балансировщике |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Администратор | Установить цель балансировщика |
@@ -544,8 +555,8 @@ CRUD, приостановка/возобновление, обновление/
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Требуется вход | Журнал аудита узла |
-| GET | `/api/v1/node-audit-logs/export` | Требуется вход | Экспортировать журналы аудита узла |
+| GET | `/api/v1/node-audit-logs` | Администратор | Журнал аудита узла |
+| GET | `/api/v1/node-audit-logs/export` | Администратор | Экспортировать журналы аудита узла |
 
 ### Узлы (устаревшая модель, снята с производства)
 
@@ -568,23 +579,23 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Требуется вход | Список |
-| POST | `/api/v1/subscriptions` | Требуется вход | Создать |
-| DELETE | `/api/v1/subscriptions/:id` | Требуется вход | Удалить |
+| POST | `/api/v1/subscriptions` | Оператор | Создать |
+| DELETE | `/api/v1/subscriptions/:id` | Оператор | Удалить |
 | GET | `/api/v1/subscriptions/:id` | Требуется вход | Подробности |
-| PUT | `/api/v1/subscriptions/:id` | Требуется вход | Обновить |
+| PUT | `/api/v1/subscriptions/:id` | Оператор | Обновить |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Требуется вход | Журнал доступа |
-| POST | `/api/v1/subscriptions/:id/enable` | Требуется вход | Включить |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Требуется вход | Сбросить использование |
-| POST | `/api/v1/subscriptions/:id/restore` | Требуется вход | Резюме |
-| POST | `/api/v1/subscriptions/:id/revoke` | Требуется вход | Отозвать |
-| POST | `/api/v1/subscriptions/:id/rotate` | Требуется вход | Поворот |
+| POST | `/api/v1/subscriptions/:id/enable` | Оператор | Включить |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Оператор | Сбросить использование |
+| POST | `/api/v1/subscriptions/:id/restore` | Оператор | Резюме |
+| POST | `/api/v1/subscriptions/:id/revoke` | Оператор | Отозвать |
+| POST | `/api/v1/subscriptions/:id/rotate` | Оператор | Поворот |
 | GET | `/api/v1/subscriptions/:id/rotations` | Требуется вход | История ротации |
 
 ### Форматы подписки
 
 > Поддержка `/api/v1/subscription-formats` CRUD на стороне администратора была прекращена 20 октября 2026 г.: фактическая точка входа:
 > `/api/v1/mihomo/configs` (центр формата подписки). Таблица `subscription_formats` остается,
-> используется только в качестве начальных данных для общедоступной конечной точки `/api/v1/public/client-configs`.
+> используется только в качестве исходных данных для общедоступной конечной точки `/api/v1/public/client-configs`.
 
 ### Конечные точки подписки
 
@@ -593,10 +604,10 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Требуется вход | Список |
-| POST | `/api/v1/subscription-endpoints` | Требуется вход | Создать |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Требуется вход | Удалить |
+| POST | `/api/v1/subscription-endpoints` | Администратор | Создать |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Администратор | Удалить |
 | GET | `/api/v1/subscription-endpoints/:id` | Требуется вход | Подробности |
-| PUT | `/api/v1/subscription-endpoints/:id` | Требуется вход | Обновить |
+| PUT | `/api/v1/subscription-endpoints/:id` | Администратор | Обновить |
 
 ### Делитесь доменами
 
@@ -605,11 +616,11 @@ CRUD, приостановка/возобновление, обновление/
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Требуется вход | Список |
-| POST | `/api/v1/share-domains` | Требуется вход | Создать |
-| DELETE | `/api/v1/share-domains/:id` | Требуется вход | Удалить |
-| PUT | `/api/v1/share-domains/:id` | Требуется вход | Обновить |
-| DELETE | `/api/v1/share-domains/all` | Требуется вход | Очистить все |
-| POST | `/api/v1/share-domains/seed` | Требуется вход | Инициализировать данные по умолчанию |
+| POST | `/api/v1/share-domains` | Администратор | Создать |
+| DELETE | `/api/v1/share-domains/:id` | Администратор | Удалить |
+| PUT | `/api/v1/share-domains/:id` | Администратор | Обновить |
+| DELETE | `/api/v1/share-domains/all` | Администратор | Очистить все |
+| POST | `/api/v1/share-domains/seed` | Администратор | Инициализировать данные по умолчанию |
 
 ### Cloudflare ИП
 
@@ -617,17 +628,20 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Требуется вход | Очистить записи |
+| DELETE | `/api/v1/cfip/entries` | Администратор | Очистить записи |
 | GET | `/api/v1/cfip/entries` | Требуется вход | Список участников |
-| POST | `/api/v1/cfip/entries` | Требуется вход | Добавить запись |
-| DELETE | `/api/v1/cfip/entries/:id` | Требуется вход | Удалить запись |
-| POST | `/api/v1/cfip/fetch-all` | Требуется вход | Получить все источники |
-| POST | `/api/v1/cfip/seed` | Требуется вход | Инициализировать данные по умолчанию |
+| POST | `/api/v1/cfip/entries` | Администратор | Добавить запись |
+| DELETE | `/api/v1/cfip/entries/:id` | Администратор | Удалить запись |
+| POST | `/api/v1/cfip/fetch-all` | Администратор | Получить все источники |
+| GET | `/api/v1/cfip/probe-config` | Требуется вход | Конфигурация зонда с предпочтительным IP-адресом CF (входные узлы + установленные дозвонщики) |
+| PUT | `/api/v1/cfip/probe-config` | Администратор | Сохранить интервал проверки/предел задержки/узел входа/дозвонщик |
+| POST | `/api/v1/cfip/check` | Администратор | Проверьте все предпочтительные домены/IP-адреса прямо сейчас |
+| POST | `/api/v1/cfip/seed` | Администратор | Инициализировать данные по умолчанию |
 | GET | `/api/v1/cfip/sources` | Требуется вход | Список источников данных |
-| POST | `/api/v1/cfip/sources` | Требуется вход | Создать источник данных |
-| DELETE | `/api/v1/cfip/sources/:id` | Требуется вход | Удалить источник данных |
-| PUT | `/api/v1/cfip/sources/:id` | Требуется вход | Обновить источник данных |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Требуется вход | Получить этот источник |
+| POST | `/api/v1/cfip/sources` | Администратор | Создать источник данных |
+| DELETE | `/api/v1/cfip/sources/:id` | Администратор | Удалить источник данных |
+| PUT | `/api/v1/cfip/sources/:id` | Администратор | Обновить источник данных |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Администратор | Получить этот источник |
 
 ### Конфигурация подписки (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Требуется вход | Список |
-| POST | `/api/v1/mihomo/configs` | Требуется вход | Создать |
-| DELETE | `/api/v1/mihomo/configs/:id` | Требуется вход | Удалить |
+| POST | `/api/v1/mihomo/configs` | Администратор | Создать |
+| DELETE | `/api/v1/mihomo/configs/:id` | Администратор | Удалить |
 | GET | `/api/v1/mihomo/configs/:id` | Требуется вход | Подробности |
-| PUT | `/api/v1/mihomo/configs/:id` | Требуется вход | Обновить |
+| PUT | `/api/v1/mihomo/configs/:id` | Администратор | Обновить |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Требуется вход | Список правил |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Требуется вход | Создать правило |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Упорядочить правила |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Обновить правило |
-| DELETE | `/api/v1/mihomo/rules/:id` | Требуется вход | Удалить правило |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Администратор | Создать правило |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Администратор | Изменение порядка правил |
+| PUT | `/api/v1/mihomo/rules/:id` | Администратор | Обновить правило |
+| DELETE | `/api/v1/mihomo/rules/:id` | Администратор | Удалить правило |
 
 ### Сайты пополнения счета
 
@@ -652,31 +666,31 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Требуется вход | Список сайтов |
-| POST | `/api/v1/charge-sites` | Требуется вход | Создать сайт |
-| DELETE | `/api/v1/charge-sites/:id` | Требуется вход | Удалить сайт |
-| GET | `/api/v1/charge-sites/:id` | Требуется вход | Детали сайта |
-| PUT | `/api/v1/charge-sites/:id` | Требуется вход | Обновить сайт |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Требуется вход | Очистить старый ключ |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Требуется вход | Создать файл проверки |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Требуется вход | Создать файл проверки |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Требуется вход | Получить документацию по интеграции |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Требуется вход | Поворот ключа подписи |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Требуется вход | Подтвердить домен DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Требуется вход | Проверка домена HTTP |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Требуется вход | Подтвердить домен DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Требуется вход | Проверка домена HTTP |
+| GET | `/api/v1/charge-sites` | Администратор | Список сайтов |
+| POST | `/api/v1/charge-sites` | Администратор | Создать сайт |
+| DELETE | `/api/v1/charge-sites/:id` | Администратор | Удалить сайт |
+| GET | `/api/v1/charge-sites/:id` | Администратор | Детали сайта |
+| PUT | `/api/v1/charge-sites/:id` | Администратор | Обновить сайт |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Администратор | Очистить старый ключ |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Администратор | Создать файл проверки |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Администратор | Создать файл проверки |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Администратор | Получить документацию по интеграции |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Администратор | Поворот ключа подписи |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Администратор | Подтвердить домен DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Администратор | Проверка домена HTTP |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Администратор | Подтвердить домен DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Администратор | Проверка домена HTTP |
 
 ### Заказы на пополнение счета
 
-Запросы на пополнение счета, возврат средств, экспорт CSV.
+Запросы на пополнение баланса, возврат средств, экспорт CSV.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Требуется вход | Список заказов |
-| GET | `/api/v1/charge-orders/:id` | Требуется вход | Детали заказа |
-| POST | `/api/v1/charge-orders/:id/refund` | Требуется вход | Возврат |
-| GET | `/api/v1/charge-orders/export-csv` | Требуется вход | Экспортные заказы на пополнение счета CSV |
+| GET | `/api/v1/charge-orders` | Администратор | Список заказов |
+| GET | `/api/v1/charge-orders/:id` | Администратор | Детали заказа |
+| POST | `/api/v1/charge-orders/:id/refund` | Администратор | Возврат |
+| GET | `/api/v1/charge-orders/export-csv` | Администратор | Экспортные заказы на пополнение баланса CSV |
 
 ### Карты пополнения
 
@@ -684,12 +698,12 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Требуется вход | Список карт |
-| POST | `/api/v1/charge-cards` | Требуется вход | Создать карту |
-| DELETE | `/api/v1/charge-cards/:id` | Требуется вход | Удалить карту |
-| GET | `/api/v1/charge-cards/:id/usages` | Требуется вход | Записи об использовании карты |
-| POST | `/api/v1/charge-cards/batch` | Требуется вход | Массовое создание карточек |
-| GET | `/api/v1/charge-cards/export-csv` | Требуется вход | Экспортные карты CSV |
+| GET | `/api/v1/charge-cards` | Администратор | Список карт |
+| POST | `/api/v1/charge-cards` | Администратор | Создать карту |
+| DELETE | `/api/v1/charge-cards/:id` | Администратор | Удалить карту |
+| GET | `/api/v1/charge-cards/:id/usages` | Администратор | Записи об использовании карты |
+| POST | `/api/v1/charge-cards/batch` | Администратор | Массовое создание карточек |
+| GET | `/api/v1/charge-cards/export-csv` | Администратор | Экспортные карты CSV |
 
 ### События обратного вызова для оплаты
 
@@ -725,8 +739,8 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Требуется вход | Список подарков |
-| POST | `/api/v1/client-gifts` | Требуется вход | Создать подарок |
-| POST | `/api/v1/client-gifts/batch` | Требуется вход | Массовое создание подарков |
+| POST | `/api/v1/client-gifts` | Администратор | Создать подарок |
+| POST | `/api/v1/client-gifts/batch` | Администратор | Массовое создание подарков |
 | GET | `/api/v1/client-gifts/search-clients` | Требуется вход | Поиск клиентов |
 
 ### Реферальная конфигурация
@@ -746,9 +760,9 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Требуется вход | Список запросов на вывод средств |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Требуется вход | Одобрить вывод |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Требуется вход | Отклонить вывод средств |
+| GET | `/api/v1/referral-withdrawals` | Администратор | Список запросов на вывод средств |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Администратор | Одобрить вывод |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Администратор | Отклонить вывод средств |
 
 ### Списки разрешенных IP-адресов (сводка)
 
@@ -774,9 +788,9 @@ Cloudflare CDN Управление пулом IP-адресов и источн
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Требуется вход | Список билетов |
 | GET | `/api/v1/tickets/:id` | Требуется вход | Детали билета |
-| POST | `/api/v1/tickets/:id/assign` | Требуется вход | Назначить билет |
-| POST | `/api/v1/tickets/:id/close` | Требуется вход | Закрыть заявку |
-| POST | `/api/v1/tickets/:id/reply` | Требуется вход | Ответ на билет |
+| POST | `/api/v1/tickets/:id/assign` | Оператор | Назначить билет |
+| POST | `/api/v1/tickets/:id/close` | Оператор | Закрыть заявку |
+| POST | `/api/v1/tickets/:id/reply` | Оператор | Ответ на билет |
 
 ### Статьи
 
@@ -785,22 +799,22 @@ CRUD для статей портала.
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Требуется вход | Список статей |
-| POST | `/api/v1/articles` | Требуется вход | Создать статью |
-| DELETE | `/api/v1/articles/:id` | Требуется вход | Удалить статью |
+| POST | `/api/v1/articles` | Администратор | Создать статью |
+| DELETE | `/api/v1/articles/:id` | Администратор | Удалить статью |
 | GET | `/api/v1/articles/:id` | Требуется вход | Подробности статьи |
-| PUT | `/api/v1/articles/:id` | Требуется вход | Обновить статью |
+| PUT | `/api/v1/articles/:id` | Администратор | Обновить статью |
 
 ### Общие аккаунты
 
-Записи о выдаче и исправлении общих учетных записей (стриминг и т. д.).
+Записи о выпуске и восстановлении общих учетных записей (стриминг и т. д.).
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Требуется вход | Общий список аккаунтов |
-| POST | `/api/v1/shared-accounts` | Требуется вход | Создать общий аккаунт |
-| DELETE | `/api/v1/shared-accounts/:id` | Требуется вход | Удалить общий аккаунт |
+| POST | `/api/v1/shared-accounts` | Администратор | Создать общий аккаунт |
+| DELETE | `/api/v1/shared-accounts/:id` | Администратор | Удалить общий аккаунт |
 | GET | `/api/v1/shared-accounts/:id` | Требуется вход | Общие данные аккаунта |
-| PUT | `/api/v1/shared-accounts/:id` | Требуется вход | Обновить общий аккаунт |
+| PUT | `/api/v1/shared-accounts/:id` | Администратор | Обновить общий аккаунт |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Требуется вход | Восстановить записи |
 
 ### Сертификаты
@@ -809,20 +823,20 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Требуется вход | Список |
-| POST | `/api/v1/certificates` | Требуется вход | Создать |
-| DELETE | `/api/v1/certificates/:id` | Требуется вход | Удалить |
-| GET | `/api/v1/certificates/:id` | Требуется вход | Подробности |
-| PUT | `/api/v1/certificates/:id` | Требуется вход | Обновить |
-| GET | `/api/v1/certificates/:id/download` | Требуется вход | Скачать |
-| POST | `/api/v1/certificates/:id/renew` | Требуется вход | Продлить клиента |
-| GET | `/api/v1/certificates/check-port` | Требуется вход | Проверьте порт |
-| GET | `/api/v1/certificates/detect-ip` | Требуется вход | IP-зонд |
-| GET | `/api/v1/certificates/export` | Требуется вход | Экспорт |
-| POST | `/api/v1/certificates/issue` | Требуется вход | Проблема. корпус: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. Для `challenge_type` по умолчанию используется http-01; `dns_channel_id` выбирает канал DNS (настроенный провайдер DNS + учетные данные) |
-| POST | `/api/v1/certificates/issue-on-node` | Требуется вход | Выдать на узел |
-| POST | `/api/v1/certificates/upload` | Требуется вход | Загрузить |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Запросить статус фоновой задачи |
+| GET | `/api/v1/certificates` | Администратор | Список |
+| POST | `/api/v1/certificates` | Администратор | Создать |
+| DELETE | `/api/v1/certificates/:id` | Администратор | Удалить |
+| GET | `/api/v1/certificates/:id` | Администратор | Подробности |
+| PUT | `/api/v1/certificates/:id` | Администратор | Обновить |
+| GET | `/api/v1/certificates/:id/download` | Администратор | Скачать |
+| POST | `/api/v1/certificates/:id/renew` | Администратор | Продлить клиента |
+| GET | `/api/v1/certificates/check-port` | Администратор | Проверьте порт |
+| GET | `/api/v1/certificates/detect-ip` | Администратор | IP-зонд |
+| GET | `/api/v1/certificates/export` | Администратор | Экспорт |
+| POST | `/api/v1/certificates/issue` | Администратор | Проблема. корпус: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. Для `challenge_type` по умолчанию используется http-01; `dns_channel_id` выбирает канал DNS (настроенный провайдер DNS + учетные данные) |
+| POST | `/api/v1/certificates/issue-on-node` | Администратор | Выдать на узел |
+| POST | `/api/v1/certificates/upload` | Администратор | Загрузить |
+| GET | `/api/v1/certificate-tasks/:id` | Администратор | Запрос состояния фоновой задачи |
 
 ### Каналы сертификатов
 
@@ -830,11 +844,11 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Требуется вход | Список |
-| POST | `/api/v1/cert-channels` | Требуется вход | Создать |
-| DELETE | `/api/v1/cert-channels/:id` | Требуется вход | Удалить |
-| PUT | `/api/v1/cert-channels/:id` | Требуется вход | Обновить |
-| GET | `/api/v1/cert-channels/providers` | Требуется вход | Поставщик |
+| GET | `/api/v1/cert-channels` | Администратор | Список |
+| POST | `/api/v1/cert-channels` | Администратор | Создать |
+| DELETE | `/api/v1/cert-channels/:id` | Администратор | Удалить |
+| PUT | `/api/v1/cert-channels/:id` | Администратор | Обновить |
+| GET | `/api/v1/cert-channels/providers` | Администратор | Поставщик |
 
 ### Конфигурация EAB
 
@@ -842,24 +856,24 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Требуется вход | Список |
-| POST | `/api/v1/eab-configs` | Требуется вход | Создать |
-| DELETE | `/api/v1/eab-configs/:id` | Требуется вход | Удалить |
-| PUT | `/api/v1/eab-configs/:id` | Требуется вход | Обновить |
-| POST | `/api/v1/eab-configs/fetch-google` | Требуется вход | Получить Google EAB из GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Требуется вход | Получите ZeroSSL EAB по электронной почте в один клик |
+| GET | `/api/v1/eab-configs` | Администратор | Список |
+| POST | `/api/v1/eab-configs` | Администратор | Создать |
+| DELETE | `/api/v1/eab-configs/:id` | Администратор | Удалить |
+| PUT | `/api/v1/eab-configs/:id` | Администратор | Обновить |
+| POST | `/api/v1/eab-configs/fetch-google` | Администратор | Получить Google EAB из GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Администратор | Получите ZeroSSL EAB по электронной почте в один клик |
 
 ### Счета ACME
 
-Управление учетной записью ACME (контактный адрес электронной почты) на панели.
+Управление учетной записью ACME (контактный адрес электронной почты) на стороне панели.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Требуется вход | Список |
-| POST | `/api/v1/acme-accounts` | Требуется вход | Создать |
-| DELETE | `/api/v1/acme-accounts/:id` | Требуется вход | Удалить |
-| PUT | `/api/v1/acme-accounts/:id` | Требуется вход | Обновить |
-| GET | `/api/v1/acme-accounts/default` | Требуется вход | Получить значения по умолчанию |
+| GET | `/api/v1/acme-accounts` | Администратор | Список |
+| POST | `/api/v1/acme-accounts` | Администратор | Создать |
+| DELETE | `/api/v1/acme-accounts/:id` | Администратор | Удалить |
+| PUT | `/api/v1/acme-accounts/:id` | Администратор | Обновить |
+| GET | `/api/v1/acme-accounts/default` | Администратор | Получить значения по умолчанию |
 
 ### Встроенный центр сертификации
 
@@ -867,14 +881,14 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Требуется вход | Список сертификатов агента |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Требуется вход | Продлить сертификат агента |
-| GET | `/api/v1/ca/distribution-queue` | Требуется вход | Очередь распространения сертификатов |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Требуется вход | Удалить запись очереди распределения |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Требуется вход | Повторить распространение сертификата |
-| GET | `/api/v1/ca/revocations` | Требуется вход | Список отзыва |
-| GET | `/api/v1/ca/revocations/export` | Требуется вход | Экспорт списка отзыва сертификатов |
-| GET | `/api/v1/ca/status` | Требуется вход | Статус ЦС |
+| GET | `/api/v1/ca/agent-certs` | Администратор | Список сертификатов агента |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Администратор | Продлить сертификат агента |
+| GET | `/api/v1/ca/distribution-queue` | Администратор | Очередь распространения сертификатов |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Администратор | Удалить запись очереди распределения |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Администратор | Повторить распространение сертификата |
+| GET | `/api/v1/ca/revocations` | Администратор | Список отзыва |
+| GET | `/api/v1/ca/revocations/export` | Администратор | Экспорт списка отзыва сертификатов |
+| GET | `/api/v1/ca/status` | Администратор | Статус ЦС |
 
 ### Гео правила
 
@@ -883,24 +897,24 @@ CRUD для статей портала.
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Требуется вход | Список файлов |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Требуется вход | Удалить файл |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Требуется вход | Включить автоматическую синхронизацию |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Требуется вход | Скачать |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Администратор | Удалить файл |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Администратор | Включить автоматическую синхронизацию |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Администратор | Скачать |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Требуется вход | Скачать файл |
 | GET | `/api/v1/geo-rules/github-assets` | Требуется вход | Получить ресурсы репозитория GitHub. |
-| POST | `/api/v1/geo-rules/push-all` | Требуется вход | Отправить на все узлы |
-| POST | `/api/v1/geo-rules/seed` | Требуется вход | Инициализировать данные по умолчанию |
+| POST | `/api/v1/geo-rules/push-all` | Администратор | Отправить на все узлы |
+| POST | `/api/v1/geo-rules/seed` | Администратор | Инициализировать данные по умолчанию |
 | GET | `/api/v1/geo-rules/sources` | Требуется вход | Список источников данных |
-| POST | `/api/v1/geo-rules/sources` | Требуется вход | Создать источник данных |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Требуется вход | Удалить источник данных |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Требуется вход | Обновить источник данных |
+| POST | `/api/v1/geo-rules/sources` | Администратор | Создать источник данных |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Администратор | Удалить источник данных |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Администратор | Обновить источник данных |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Требуется вход | Получить ресурсы выпуска |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Требуется вход | Добавить файл |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Требуется вход | Переключить синхронизацию по расписанию |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Требуется вход | Выберите файл |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Требуется вход | Синхронизировать этот источник данных |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Администратор | Добавить файл |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Администратор | Переключить синхронизацию по расписанию |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Администратор | Выберите файл |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Администратор | Синхронизировать этот источник данных |
 | GET | `/api/v1/geo-rules/status` | Требуется вход | Статус |
-| POST | `/api/v1/geo-rules/sync-all` | Требуется вход | Синхронизировать все |
+| POST | `/api/v1/geo-rules/sync-all` | Администратор | Синхронизировать все |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Требуется вход | Синхронизировать прогресс |
 
 ### Библиотека правил WAF
@@ -910,14 +924,14 @@ CRUD для статей портала.
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Требуется вход | Источник данных GitHub |
-| PUT | `/api/v1/waf/github-source` | Требуется вход | Сохранить источник данных GitHub |
-| POST | `/api/v1/waf/push-all` | Требуется вход | Отправить на все узлы |
+| PUT | `/api/v1/waf/github-source` | Администратор | Сохранить источник данных GitHub |
+| POST | `/api/v1/waf/push-all` | Администратор | Отправить на все узлы |
 | GET | `/api/v1/waf/rules` | Требуется вход | Список правил |
-| DELETE | `/api/v1/waf/rules/:name` | Требуется вход | Удалить правило |
+| DELETE | `/api/v1/waf/rules/:name` | Администратор | Удалить правило |
 | GET | `/api/v1/waf/rules/:name` | Требуется вход | Получить правило |
-| PUT | `/api/v1/waf/rules/:name` | Требуется вход | Сохранить правило |
-| POST | `/api/v1/waf/sync-all` | Требуется вход | Синхронизировать все |
-| POST | `/api/v1/waf/sync-github` | Требуется вход | Синхронизация с GitHub |
+| PUT | `/api/v1/waf/rules/:name` | Администратор | Сохранить правило |
+| POST | `/api/v1/waf/sync-all` | Администратор | Синхронизировать все |
+| POST | `/api/v1/waf/sync-github` | Администратор | Синхронизация с GitHub |
 
 ### Управление журналами
 
@@ -925,43 +939,37 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Требуется вход | Очистите все сейчас |
-| GET | `/api/v1/log-manage/cleanup-rules` | Требуется вход | Список правил очистки |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Требуется вход | Обновить правило очистки |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Требуется вход | Очистить указанную таблицу сейчас |
-| GET | `/api/v1/log-manage/core-log-output` | Требуется вход | Конфигурация вывода основного журнала |
-| PUT | `/api/v1/log-manage/core-log-output` | Требуется вход | Сохранить конфигурацию вывода основного журнала |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Требуется вход | Чтение основных журналов стандартного вывода |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Требуется вход | Поток основного стандартного вывода |
-| POST | `/api/v1/log-manage/discover` | Требуется вход | Откройте для себя файлы журналов узла |
-| GET | `/api/v1/log-manage/log-output` | Требуется вход | Конфигурация вывода журнала |
-| PUT | `/api/v1/log-manage/log-output` | Требуется вход | Сохранить конфигурацию вывода журнала |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Требуется вход | Перехват стандартного вывода журнала выпуска |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Требуется вход | Взять на себя стандартный вывод журнала |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Требуется вход | Список файлов журнала узла |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Требуется вход | Чтение журналов узлов |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Требуется вход | Поворот журналов узлов |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Требуется вход | Журналы потокового узла |
-| GET | `/api/v1/log-manage/policies` | Требуется вход | Список политик |
-| POST | `/api/v1/log-manage/policies` | Требуется вход | Создать политику |
-| DELETE | `/api/v1/log-manage/policies/:id` | Требуется вход | Удалить политику |
-| GET | `/api/v1/log-manage/policies/:id` | Требуется вход | Подробности политики |
-| PUT | `/api/v1/log-manage/policies/:id` | Требуется вход | Обновить политику |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Требуется вход | Список заданий по очистке |
-| GET | `/api/v1/log-manage/policies/:id/log` | Требуется вход | Чтение журналов |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Требуется вход | Журналы потоков |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Требуется вход | Поворот |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Требуется вход | Чтение основных журналов стандартного вывода |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Требуется вход | Поток основного стандартного вывода |
-| GET | `/api/v1/log-manage/scheduler-config` | Требуется вход | Конфигурация планирования |
-| PUT | `/api/v1/log-manage/scheduler-config` | Требуется вход | Обновить конфигурацию планирования |
-| GET | `/api/v1/log-manage/status` | Требуется вход | Статус |
-| POST | `/api/v1/log-manage/sync` | Требуется вход | Синхронизировать политики очистки |
-| GET | `/api/v1/log-manage/writers` | Требуется вход | Статус писателя |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Требуется вход | Обновить конфигурацию записи |
-| GET | `/api/v1/log-manage/writers/:type/files` | Требуется вход | Список файлов журнала записи |
-| POST | `/api/v1/log-manage/writers/:type/start` | Требуется вход | Начать писать |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Требуется вход | Остановить писателя |
+| POST | `/api/v1/log-manage/cleanup-all` | Администратор | Очистите все сейчас |
+| GET | `/api/v1/log-manage/cleanup-rules` | Администратор | Список правил очистки |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Администратор | Обновить правило очистки |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Администратор | Очистить указанную таблицу сейчас |
+| GET | `/api/v1/log-manage/core-log-output` | Администратор | Конфигурация вывода основного журнала |
+| PUT | `/api/v1/log-manage/core-log-output` | Администратор | Сохранить конфигурацию вывода основного журнала |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Администратор | Чтение основных журналов стандартного вывода |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Администратор | Поток основного стандартного вывода |
+| POST | `/api/v1/log-manage/discover` | Администратор | Откройте для себя файлы журналов узла |
+| GET | `/api/v1/log-manage/log-output` | Администратор | Конфигурация вывода журнала |
+| PUT | `/api/v1/log-manage/log-output` | Администратор | Сохранить конфигурацию вывода журнала |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Администратор | Список файлов журнала узла |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Администратор | Чтение журналов узлов |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Администратор | Поворот журналов узлов |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Администратор | Журналы потокового узла |
+| GET | `/api/v1/log-manage/policies` | Администратор | Список политик |
+| POST | `/api/v1/log-manage/policies` | Администратор | Создать политику |
+| DELETE | `/api/v1/log-manage/policies/:id` | Администратор | Удалить политику |
+| GET | `/api/v1/log-manage/policies/:id` | Администратор | Подробности политики |
+| PUT | `/api/v1/log-manage/policies/:id` | Администратор | Обновить политику |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Администратор | Список заданий по очистке |
+| GET | `/api/v1/log-manage/policies/:id/log` | Администратор | Чтение журналов |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Администратор | Журналы потоков |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Администратор | Поворот |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Администратор | Чтение основных журналов стандартного вывода |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Администратор | Поток основного стандартного вывода |
+| GET | `/api/v1/log-manage/scheduler-config` | Администратор | Конфигурация планирования |
+| PUT | `/api/v1/log-manage/scheduler-config` | Администратор | Обновить конфигурацию планирования |
+| GET | `/api/v1/log-manage/status` | Администратор | Статус |
+| POST | `/api/v1/log-manage/sync` | Администратор | Синхронизировать политики очистки |
+| GET | `/api/v1/log-manage/writers` | Администратор | Статус писателя |
 
 ### Резервные копии
 
@@ -969,16 +977,16 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Администратор | Удалить резервную копию |
+| DELETE | `/api/v1/backups/:id` | Суперадминистратор | Удалить резервную копию |
 | GET | `/api/v1/backups/:id/download` | Администратор | Скачать резервную копию |
-| POST | `/api/v1/backups/:id/restore` | Администратор | Восстановление из резервной копии |
-| POST | `/api/v1/backups/:id/upload-ftp` | Администратор | Загрузить в FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | Администратор | Загрузить в S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | Администратор | Загрузить в WebDAV |
+| POST | `/api/v1/backups/:id/restore` | Суперадминистратор | Восстановление из резервной копии |
+| POST | `/api/v1/backups/:id/upload-ftp` | Суперадминистратор | Загрузить в FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | Суперадминистратор | Загрузить в S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | Суперадминистратор | Загрузить в WebDAV |
 | POST | `/api/v1/backups/create` | Администратор | Создать полную резервную копию (с дампом БД) |
 | GET | `/api/v1/backups/list` | Администратор | Полный список резервных копий |
-| POST | `/api/v1/backups/remote-restore` | Администратор | Восстановление с удаленного доступа |
-| GET | `/api/v1/backups/restore-status` | Администратор | Восстановить прогресс |
+| POST | `/api/v1/backups/remote-restore` | Суперадминистратор | Восстановление с удаленного доступа |
+| GET | `/api/v1/backups/restore-status` | Суперадминистратор | Восстановить прогресс |
 | GET | `/api/v1/backups/schedules` | Администратор | Список запланированных работ |
 | POST | `/api/v1/backups/schedules` | Администратор | Создать запланированное задание |
 | DELETE | `/api/v1/backups/schedules/:id` | Администратор | Удалить запланированное задание |
@@ -988,7 +996,7 @@ CRUD для статей портала.
 | DELETE | `/api/v1/backups/storages/:id` | Администратор | Удалить конфигурацию хранилища |
 | PUT | `/api/v1/backups/storages/:id` | Администратор | Обновить конфигурацию хранилища |
 | GET | `/api/v1/backups/storages/:id/files` | Администратор | Список файлов удаленных резервных копий |
-| POST | `/api/v1/backups/upload-restore` | Администратор | Загрузите резервную копию и восстановите |
+| POST | `/api/v1/backups/upload-restore` | Суперадминистратор | Загрузите резервную копию и восстановите |
 
 ### Системные настройки
 
@@ -1001,8 +1009,8 @@ CRUD для статей портала.
 | GET | `/api/v1/system/config-file/:coreType` | Администратор | Чтение основного файла конфигурации |
 | GET | `/api/v1/system/db-config` | Администратор | Конфигурация базы данных |
 | PUT | `/api/v1/system/db-config` | Администратор | Обновить конфигурацию базы данных |
-| POST | `/api/v1/system/db-config/migrate` | Администратор | Перенос данных базы данных |
-| POST | `/api/v1/system/db-config/switch` | Администратор | Переключить базу данных (с одноэтапной миграцией) |
+| POST | `/api/v1/system/db-config/migrate` | Суперадминистратор | Перенос данных базы данных |
+| POST | `/api/v1/system/db-config/switch` | Суперадминистратор | Переключить базу данных (с одноэтапной миграцией) |
 | POST | `/api/v1/system/db-config/test` | Администратор | Проверить подключение к базе данных |
 | GET | `/api/v1/system/db-pool-stats` | Администратор | Статистика пула подключений |
 | GET | `/api/v1/system/db-stats` | Администратор | Статистика базы данных |
@@ -1011,13 +1019,13 @@ CRUD для статей портала.
 | GET | `/api/v1/system/encryption-key-status` | Администратор | Статус ключа шифрования |
 | GET | `/api/v1/system/env-config` | Администратор | Конфигурация .env |
 | PUT | `/api/v1/system/env-config` | Администратор | Обновить конфигурацию .env |
-| POST | `/api/v1/system/generate-encryption-key` | Администратор | Создать ключ шифрования |
+| POST | `/api/v1/system/generate-encryption-key` | Суперадминистратор | Создать ключ шифрования |
 | GET | `/api/v1/system/github-config` | Администратор | Конфигурация GitHub |
 | PUT | `/api/v1/system/github-config` | Администратор | Обновить конфигурацию GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | Администратор | Статус ключа JWT |
 | GET | `/api/v1/system/maintenance` | Публичный | Статус режима обслуживания (общедоступный) |
 | PUT | `/api/v1/system/maintenance` | Администратор | Переключить режим обслуживания |
-| POST | `/api/v1/system/migrate-data` | Администратор | Перенос данных |
+| POST | `/api/v1/system/migrate-data` | Суперадминистратор | Перенос данных |
 | GET | `/api/v1/system/notification-config` | Администратор | Конфигурация уведомлений |
 | PUT | `/api/v1/system/notification-config` | Администратор | Обновить конфигурацию уведомлений |
 | GET | `/api/v1/system/notification-templates` | Администратор | Список шаблонов |
@@ -1030,13 +1038,13 @@ CRUD для статей портала.
 | PUT | `/api/v1/system/panel-config` | Администратор | Обновить конфигурацию панели |
 | GET | `/api/v1/system/reality-targets` | Администратор | Целевой список REALITY |
 | PUT | `/api/v1/system/reality-targets` | Администратор | Обновить цель REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | Администратор | Сбросить цель REALITY по умолчанию |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Прочитать локальную конфигурацию SNI Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Обновить локальную конфигурацию SNI Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Администратор | Восстановить ключ JWT |
+| POST | `/api/v1/system/reality-targets/reset` | Суперадминистратор | Сбросить цель REALITY по умолчанию |
+| GET | `/api/v1/system/reality-local-sni` | Администратор | Прочтите локальную конфигурацию Reality SNI. |
+| PUT | `/api/v1/system/reality-local-sni` | Администратор | Обновите локальную конфигурацию Reality SNI. |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Суперадминистратор | Восстановить ключ JWT |
 | GET | `/api/v1/system/releases` | Администратор | Доступные версии |
-| POST | `/api/v1/system/restart` | Администратор | Перезапустить |
-| POST | `/api/v1/system/rollback` | Администратор | Откат системы |
+| POST | `/api/v1/system/restart` | Суперадминистратор | Перезагрузить |
+| POST | `/api/v1/system/rollback` | Суперадминистратор | Откат системы |
 | GET | `/api/v1/system/settings` | Администратор | Чтение настроек |
 | PUT | `/api/v1/system/settings/batch` | Администратор | Настройки массового обновления |
 | GET | `/api/v1/system/stats` | Администратор | Статус системы |
@@ -1045,7 +1053,7 @@ CRUD для статей портала.
 | POST | `/api/v1/system/telegram-chat-id` | Администратор | Получить идентификатор чата Telegram |
 | POST | `/api/v1/system/test-smtp` | Администратор | Тест SMTP |
 | POST | `/api/v1/system/test-telegram` | Администратор | Тест Telegram |
-| POST | `/api/v1/system/update` | Администратор | Обновление системы |
+| POST | `/api/v1/system/update` | Суперадминистратор | Обновление системы |
 | GET | `/api/v1/system/update-jobs` | Администратор | Обновить список вакансий |
 | POST | `/api/v1/system/upload-mtls-ca` | Администратор | Загрузите сертификат CA mTLS |
 
@@ -1055,8 +1063,9 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Требуется вход | Список событий аудита |
-| GET | `/api/v1/security/audit-events/export` | Требуется вход | События экспортного аудита |
+| GET | `/api/v1/security/audit-events` | Администратор | Список событий аудита |
+| GET | `/api/v1/security/audit-events/export` | Администратор | События экспортного аудита |
+| GET | `/api/v1/security/subscription-access-logs` | Администратор | Журналы получения подписки (фильтрация по идентификатору подписки/IP/электронной почте клиента) |
 
 ### Метрики
 
@@ -1064,9 +1073,9 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Требуется вход | Метрики сертификата |
-| GET | `/api/v1/metrics/nodes` | Требуется вход | Метрики узла |
-| GET | `/api/v1/metrics/overview` | Требуется вход | Обзор |
+| GET | `/api/v1/metrics/certificates` | Администратор | Метрики сертификата |
+| GET | `/api/v1/metrics/nodes` | Администратор | Метрики узла |
+| GET | `/api/v1/metrics/overview` | Администратор | Обзор |
 
 ### Шаблоны порталов
 
@@ -1074,20 +1083,20 @@ CRUD для статей портала.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Требуется вход | Активный шаблон |
-| PUT | `/api/v1/portal/active` | Требуется вход | Обновить активный шаблон |
-| DELETE | `/api/v1/portal/cache` | Требуется вход | Очистить кэш портала |
-| GET | `/api/v1/portal/cache` | Требуется вход | Статус кэша |
-| PUT | `/api/v1/portal/cache/dev-mode` | Требуется вход | Переключить режим разработки кэша |
-| POST | `/api/v1/portal/cache/rebuild` | Требуется вход | Восстановить кэш портала |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Встроенные языковые пакеты |
-| POST | `/api/v1/portal/reset` | Требуется вход | Восстановить шаблон по умолчанию |
-| GET | `/api/v1/portal/templates` | Требуется вход | Список |
-| POST | `/api/v1/portal/templates` | Требуется вход | Создать |
-| DELETE | `/api/v1/portal/templates/:id` | Требуется вход | Удалить |
-| GET | `/api/v1/portal/templates/:id` | Требуется вход | Подробности |
-| PUT | `/api/v1/portal/templates/:id` | Требуется вход | Обновить |
-| POST | `/api/v1/portal/templates/:id/activate` | Требуется вход | Активировать шаблон |
+| GET | `/api/v1/portal/active` | Администратор | Активный шаблон |
+| PUT | `/api/v1/portal/active` | Администратор | Обновить активный шаблон |
+| DELETE | `/api/v1/portal/cache` | Администратор | Очистить кэш портала |
+| GET | `/api/v1/portal/cache` | Администратор | Статус кэша |
+| PUT | `/api/v1/portal/cache/dev-mode` | Администратор | Переключить режим разработки кэша |
+| POST | `/api/v1/portal/cache/rebuild` | Администратор | Восстановить кэш портала |
+| GET | `/api/v1/portal/lang/builtin` | Администратор | Встроенные языковые пакеты |
+| POST | `/api/v1/portal/reset` | Администратор | Восстановить шаблон по умолчанию |
+| GET | `/api/v1/portal/templates` | Администратор | Список |
+| POST | `/api/v1/portal/templates` | Администратор | Создать |
+| DELETE | `/api/v1/portal/templates/:id` | Администратор | Удалить |
+| GET | `/api/v1/portal/templates/:id` | Администратор | Подробности |
+| PUT | `/api/v1/portal/templates/:id` | Администратор | Обновить |
+| POST | `/api/v1/portal/templates/:id/activate` | Администратор | Активировать шаблон |
 
 > `/portal/templates` CRUD — это **расширенный API**: пользовательский интерфейс портала в основном использует `PUT /api/v1/portal/active`.
 > (однократная полная конфигурация сайта); управлять/переключать несколько шаблонов с помощью этой группы. Оба поддерживаются и не конфликтуют.
@@ -1103,7 +1112,7 @@ CRUD для статей портала.
 | GET | `/api/v1/agent/version` | Администратор | Текущая версия Агента на панели |
 | GET | `/api/v1/agent/download` | Публичный | Скачать агент |
 | GET | `/api/v1/agent/install` | Публичный | Получить скрипт установки |
-| GET | `/api/v1/agent/origin` | 公开 | Адрес источника панели (публичный) |
+| GET | `/api/v1/agent/origin` | Публичный | Адрес происхождения панели (публичный) |
 
 ### Запись об обратном вызове
 
@@ -1136,79 +1145,75 @@ CRUD для статей портала.
 
 ### Аутентификация и бизнес клиента (то же, что и в системе администратора)
 
-Клиентские конечные точки, идентичные порталу; подробности см. в `portal-api.en.md`.
+Клиентские конечные точки идентичны порталу. Они используют **токен клиента** (`Authorization: Bearer <client_token>`), а не токен администратора; подробности см. в `portal-api.en.md`.
 
 | Метод | Путь | Разрешение | Описание |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | Публичный | Список статей |
-| GET | `/api/v1/client-auth/articles/:slug` | Публичный | Получить статью |
-| GET | `/api/v1/client-auth/balance` | Публичный | Получить баланс |
-| GET | `/api/v1/client-auth/balance/transactions` | Публичный | Балансовые операции |
-| POST | `/api/v1/client-auth/change-password` | Публичный | Изменить пароль |
-| POST | `/api/v1/client-auth/charge/create` | Публичный | Создать заказ на пополнение счета |
-| GET | `/api/v1/client-auth/charge/orders` | Публичный | Список заказов на пополнение счета |
-| GET | `/api/v1/client-auth/charge/orders/:id` | Публичный | Получить подробную информацию о заказе на пополнение счета |
-| POST | `/api/v1/client-auth/charge/redeem-card` | Публичный | Погасить карту |
-| GET | `/api/v1/client-auth/charge/sites` | Публичный | Список сайтов пополнения счета |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Публичный | Запросить статус пополнения счета |
-| GET | `/api/v1/client-auth/checktime` | Публичный | Получить время сервера (синхронизация часов) |
-| GET | `/api/v1/client-auth/connection-info` | Публичный | Получить параметры подключения плана |
-| GET | `/api/v1/client-auth/gifts` | Публичный | Список подарков |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | Публичный | Получить подарок |
-| GET | `/api/v1/client-auth/invoices` | Публичный | Список заказов |
-| GET | `/api/v1/client-auth/invoices/:id` | Публичный | Детали заказа |
-| GET | `/api/v1/client-auth/settings/whitelist` | Публичный | Список разрешенных IP-адресов |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Публичный | Удалить из списка разрешенных IP-адресов |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Публичный | Автоматическое добавление IP |
-| POST | `/api/v1/client-auth/login` | Публичный | Войти |
-| POST | `/api/v1/client-auth/logout` | Публичный | Выйти |
-| POST | `/api/v1/client-auth/logs/package` | Публичный | Создать пакет журналов |
-| GET | `/api/v1/client-auth/logs/packages` | Публичный | Получение списка пакетов журналов |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | Публичный | Удалить пакет журналов |
-| GET | `/api/v1/client-auth/logs/packages/:id` | Публичный | Получить пакет журналов |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Публичный | Скачать пакет журналов |
-| GET | `/api/v1/client-auth/logs/types` | Публичный | Проверка работоспособности пакета журналов |
-| GET | `/api/v1/client-auth/me` | Публичный | Получить текущего вошедшего пользователя |
-| GET | `/api/v1/client-auth/nodes` | Публичный | Мой список узлов |
-| GET | `/api/v1/client-auth/nodes/:id/config` | Публичный | Конфигурация узла |
-| GET | `/api/v1/client-auth/nodes/:id/link` | Публичный | Ссылка на общий доступ к узлу |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Публичный | QR-код узла |
-| GET | `/api/v1/client-auth/oauth/:provider` | Публичный | Авторизовать |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | Публичный | Обратный звонок |
-| GET | `/api/v1/client-auth/oauth/providers` | Публичный | Статус провайдера |
-| GET | `/api/v1/client-auth/orders` | Публичный | Список заказов |
-| POST | `/api/v1/client-auth/orders` | Публичный | Создать заказ |
-| GET | `/api/v1/client-auth/orders/:id` | Публичный | Детали заказа |
-| GET | `/api/v1/client-auth/plans` | Публичный | Список планов |
-| GET | `/api/v1/client-auth/plans/:id` | Публичный | Детали плана |
-| GET | `/api/v1/client-auth/referral/code` | Публичный | Получить код подтверждения реферала |
-| GET | `/api/v1/client-auth/referral/records` | Публичный | Список реферальных записей |
-| GET | `/api/v1/client-auth/referral/stats` | Публичный | Получить статистику рефералов |
-| POST | `/api/v1/client-auth/referral/withdraw` | Публичный | Запросить вывод средств |
-| GET | `/api/v1/client-auth/referral/withdrawals` | Публичный | Список выводов рефералов |
-| POST | `/api/v1/client-auth/refresh` | Публичный | Обновить |
-| POST | `/api/v1/client-auth/register` | Публичный | Зарегистрироваться |
-| POST | `/api/v1/client-auth/reset-subscription` | Публичный | Сбросить подписку |
-| PUT | `/api/v1/client-auth/settings` | Публичный | Обновить профиль |
-| POST | `/api/v1/client-auth/rotate-token` | Публичный | Ротация токена подписки |
-| POST | `/api/v1/client-auth/self-unban` | Публичный | Самообслуживание разблокирует |
-| PUT | `/api/v1/client-auth/settings` | Публичный | Обновить настройки |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Публичный | Автоматическое добавление IP |
-| GET | `/api/v1/client-auth/settings/whitelist` | Публичный | Список разрешенных IP-адресов |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Публичный | Удалить из списка разрешенных IP-адресов |
-| GET | `/api/v1/client-auth/shared-accounts` | Публичный | Список общих учетных записей |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | Публичный | Получить общий аккаунт |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Публичный | Запросить общий аккаунт |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Публичный | Заявка на ремонт |
-| POST | `/api/v1/client-auth/ticket` | Публичный | Выдать одноразовый билет с коротким сроком действия |
-| GET | `/api/v1/client-auth/tickets` | Публичный | Список билетов |
-| POST | `/api/v1/client-auth/tickets` | Публичный | Создать билет |
-| GET | `/api/v1/client-auth/tickets/:id` | Публичный | Получить билет |
-| POST | `/api/v1/client-auth/tickets/:id/close` | Публичный | Закрыть заявку |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | Публичный | Ответ на билет |
-| GET | `/api/v1/client-auth/traffic-history` | Публичный | История трафика |
-| GET | `/api/v1/client-auth/traffic-packs` | Публичный | Список пакетов трафика |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | Публичный | Купить пакет трафика |
+| GET | `/api/v1/client-auth/articles` | Клиент (вошел в систему) | Список статей |
+| GET | `/api/v1/client-auth/articles/:slug` | Клиент (вошел в систему) | Получить статью |
+| GET | `/api/v1/client-auth/balance` | Клиент (вошел в систему) | Получить баланс |
+| GET | `/api/v1/client-auth/balance/transactions` | Клиент (вошел в систему) | Балансовые операции |
+| POST | `/api/v1/client-auth/change-password` | Клиент (вошел в систему) | Изменить пароль |
+| POST | `/api/v1/client-auth/charge/create` | Клиент (вошел в систему) | Создать заказ на пополнение счета |
+| GET | `/api/v1/client-auth/charge/orders` | Клиент (вошел в систему) | Список заказов на пополнение счета |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Клиент (вошел в систему) | Получить подробную информацию о заказе на пополнение счета |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Клиент (вошел в систему) | Погасить карту |
+| GET | `/api/v1/client-auth/charge/sites` | Клиент (вошел в систему) | Список сайтов пополнения счета |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Клиент (вошел в систему) | Запросить статус пополнения баланса |
+| GET | `/api/v1/client-auth/checktime` | Клиент (вошел в систему) | Получить время сервера (синхронизация часов) |
+| GET | `/api/v1/client-auth/connection-info` | Клиент (вошел в систему) | Получить параметры подключения плана |
+| GET | `/api/v1/client-auth/gifts` | Клиент (вошел в систему) | Список подарков |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Клиент (вошел в систему) | Получить подарок |
+| GET | `/api/v1/client-auth/invoices` | Клиент (вошел в систему) | Список заказов |
+| GET | `/api/v1/client-auth/invoices/:id` | Клиент (вошел в систему) | Детали заказа |
+| POST | `/api/v1/client-auth/login` | Клиент (публичный) | Войти |
+| POST | `/api/v1/client-auth/logout` | Клиент (вошел в систему) | Выйти |
+| POST | `/api/v1/client-auth/logs/package` | Клиент (вошел в систему) | Создать пакет журналов |
+| GET | `/api/v1/client-auth/logs/packages` | Клиент (вошел в систему) | Получение списка пакетов журналов |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Клиент (вошел в систему) | Удалить пакет журналов |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Клиент (вошел в систему) | Получить пакет журналов |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Клиент (вошел в систему) | Скачать пакет журналов |
+| GET | `/api/v1/client-auth/logs/types` | Клиент (вошел в систему) | Проверка работоспособности пакета журналов |
+| GET | `/api/v1/client-auth/me` | Клиент (вошел в систему) | Получить текущего вошедшего пользователя |
+| GET | `/api/v1/client-auth/nodes` | Клиент (вошел в систему) | Мой список узлов |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Клиент (вошел в систему) | Конфигурация узла |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Клиент (вошел в систему) | Ссылка на общий доступ к узлу |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Клиент (вошел в систему) | QR-код узла |
+| GET | `/api/v1/client-auth/oauth/:provider` | Клиент (публичный) | Авторизовать |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Клиент (публичный) | Обратный звонок |
+| GET | `/api/v1/client-auth/oauth/providers` | Клиент (публичный) | Статус провайдера |
+| GET | `/api/v1/client-auth/orders` | Клиент (вошел в систему) | Список заказов |
+| POST | `/api/v1/client-auth/orders` | Клиент (вошел в систему) | Создать заказ |
+| GET | `/api/v1/client-auth/orders/:id` | Клиент (вошел в систему) | Детали заказа |
+| GET | `/api/v1/client-auth/plans` | Клиент (вошел в систему) | Список планов |
+| GET | `/api/v1/client-auth/plans/:id` | Клиент (вошел в систему) | Детали плана |
+| GET | `/api/v1/client-auth/referral/code` | Клиент (вошел в систему) | Получить код подтверждения реферала |
+| GET | `/api/v1/client-auth/referral/records` | Клиент (вошел в систему) | Список реферальных записей |
+| GET | `/api/v1/client-auth/referral/stats` | Клиент (вошел в систему) | Получить статистику рефералов |
+| POST | `/api/v1/client-auth/referral/withdraw` | Клиент (вошел в систему) | Запросить вывод средств |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Клиент (вошел в систему) | Список выводов рефералов |
+| POST | `/api/v1/client-auth/refresh` | Клиент (публичный) | Обновить |
+| POST | `/api/v1/client-auth/register` | Клиент (публичный) | Зарегистрироваться |
+| POST | `/api/v1/client-auth/reset-subscription` | Клиент (вошел в систему) | Сбросить подписку |
+| POST | `/api/v1/client-auth/rotate-token` | Клиент (вошел в систему) | Ротация токена подписки |
+| POST | `/api/v1/client-auth/self-unban` | Клиент (вошел в систему) | Самообслуживание разблокирует |
+| PUT | `/api/v1/client-auth/settings` | Клиент (вошел в систему) | Обновить настройки |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Клиент (вошел в систему) | Автоматическое добавление IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Клиент (вошел в систему) | Список разрешенных IP-адресов |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Клиент (вошел в систему) | Удалить из списка разрешенных IP-адресов |
+| GET | `/api/v1/client-auth/shared-accounts` | Клиент (вошел в систему) | Список общих учетных записей |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Клиент (вошел в систему) | Получить общий аккаунт |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Клиент (вошел в систему) | Запросить общий аккаунт |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Клиент (вошел в систему) | Заявка на ремонт |
+| POST | `/api/v1/client-auth/ticket` | Клиент (вошел в систему) | Выдать одноразовый билет с коротким сроком действия |
+| GET | `/api/v1/client-auth/tickets` | Клиент (вошел в систему) | Список билетов |
+| POST | `/api/v1/client-auth/tickets` | Клиент (вошел в систему) | Создать билет |
+| GET | `/api/v1/client-auth/tickets/:id` | Клиент (вошел в систему) | Получить билет |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Клиент (вошел в систему) | Закрыть заявку |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Клиент (вошел в систему) | Ответ на билет |
+| GET | `/api/v1/client-auth/traffic-history` | Клиент (вошел в систему) | История трафика |
+| GET | `/api/v1/client-auth/traffic-packs` | Клиент (вошел в систему) | Список пакетов трафика |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Клиент (вошел в систему) | Купить пакет трафика |
 
 ### Доставка подписки
 

@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: ar | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: ar | updated: 2026-11-16 -->
 # مرجع البوابة API (العميل / البوابة API)
 
 > اللغات: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · العربية · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | المقالات العامة (المنشورة فقط) |
 | GET | `/api/v1/public/articles/:slug` | تفاصيل المادة |
 | GET | `/api/v1/public/client-configs` | تكوين تنزيل العميل |
-| GET | `/sub/:token` | تسليم الاشتراك (`format` يُرجع base64_uri / Raw_uri / mihomo_yaml /ingbox_json / xray_json، وما إلى ذلك؛ ملغى/مفقود → 404، معلق/منتهية الصلاحية/غير نشط → 403. راجع [subscription.md](./subscription.ar.md)) |
+| GET | `/sub/:token` | تسليم الاشتراك (`format` يُرجع base64_uri / Raw_uri / mihomo_yaml /ingbox_json / xray_json، وما إلى ذلك؛ ملغى/مفقود → 404، معلق/منتهية الصلاحية/غير نشط → 403. راجع [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | رؤية موفر OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | حالة الصيانة (عامة). تعرض البوابة صفحة الصيانة عند تمكينها |
 
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | الطريقة | المسار | الوصف |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | العميل الحالي: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (مغلف `data`) |
+| PUT | `/api/v1/client-auth/settings` | تحديث إعدادات الخدمة الذاتية للعميل: Body: `{ip_whitelist, device_limit}`; يعني `ip_whitelist` الفارغ عدم وجود قيود على IP المصدر |
 | POST | `/api/v1/client-auth/change-password` | الجسم: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | وقت الخادم (مزامنة ساعة العميل) |
 | GET | `/api/v1/client-auth/connection-info` | معلمات اتصال الخطة الحالية: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -222,13 +223,13 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/self-unban` | إلغاء حظر الخدمة الذاتية (المحاولات المقيدة بالسياسة) |
 
 > قائمة IP المسموح بها **تنطبق فقط على عناوين URL الخاصة بالاشتراك** (`/sub/:token`)؛ لا يمنع تسجيل الدخول إلى البوابة الإلكترونية/OAuth أو
-> نقاط نهاية مصادقة العميل الأخرى. إذا لم يكن لدى المستخدم قائمة مسموح بها أو لم يكن لديه اشتراك URL، فسيتم السماح بالوصول دائمًا. ال
+> نقاط نهاية مصادقة العميل الأخرى. إذا لم يكن لدى المستخدم قائمة مسموح بها أو ليس لديه اشتراك URL، فسيتم السماح بالوصول دائمًا. ال
 > القائمة المسموح بها هي إعداد لكل مستخدم؛ لا يوجد التبديل العالمي.
 
 **تدفق إلغاء الحظر الذاتي**: متاح فقط لـ `auto_quota` (الحظر التلقائي على زيادة حركة المرور) عندما يكون الجانب الإداري
 `self_unban.enabled` قيد التشغيل. يؤدي تسجيل الدخول (كلمة المرور أو رد اتصال OAuth) إلى إرجاع `require_self_unban=true` + `self_unban_token`
 (typ=self_unban، صالحة لمدة 15 دقيقة، **فقط** قابلة للاستخدام على `POST /self-unban`؛ وترجع نقاط النهاية الأخرى 403/`SELF_UNBAN_TOKEN_SCOPE`).
-ثم تظهر البوابة بطاقة إلغاء الحظر؛ بعد إلغاء الحظر بنجاح، يقوم المستخدم بتسجيل الدخول مرة أخرى. تقوم عمليات رد اتصال OAuth بتسليم هذا عبر
+تعرض البوابة بعد ذلك بطاقة إلغاء الحظر؛ بعد إلغاء الحظر بنجاح، يقوم المستخدم بتسجيل الدخول مرة أخرى. تقوم عمليات رد اتصال OAuth بتسليم هذا عبر
 جزء URL `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 
 ## 16. رموز الخطأ (مقتطفات)

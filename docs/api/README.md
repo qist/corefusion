@@ -34,7 +34,7 @@
 | **订阅 Token** | URL 路径中的 token：`/sub/<token>` | 订阅拉取，无需 Header |
 
 - 客户端 access token 有效期 24h，refresh token 7 天；JWT 含 `tv`（token_version），登出/踢下线后旧 token 全部失效。
-- 管理端角色：`viewer` / `admin` / `operator` / `super_admin`，部分写操作要求 `RequireRole(RoleAdmin)` 以上。
+- 管理端角色等级：`viewer(10) < operator(20) < admin(30) < super_admin(40)`。读操作通常登录即可，写操作按模块分别要求 `operator` / `admin` / `super_admin`；逐条见 [admin-api.md](./admin-api.md) 的「权限」列。
 
 ## 3. 响应格式约定
 

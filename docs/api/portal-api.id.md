@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: id | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: id | updated: 2026-11-16 -->
 # Referensi Portal API (Klien / Portal API)
 
 > Bahasa: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · Bahasa Indonesia · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ Pada 401, panggil `POST /api/v1/client-auth/refresh` sekali dan coba lagi; jika 
 | GET | `/api/v1/public/articles` | Artikel publik (hanya diterbitkan) |
 | GET | `/api/v1/public/articles/:slug` | Detil artikel |
 | GET | `/api/v1/public/client-configs` | Konfigurasi pengunduhan klien |
-| GET | `/sub/:token` | Pengiriman langganan (`format` mengembalikan base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, dll.; dicabut/hilang → 404, ditangguhkan/kedaluwarsa/tidak aktif → 403. Lihat [subscription.md](./subscription.id.md)) |
+| GET | `/sub/:token` | Pengiriman langganan (`format` mengembalikan base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json, dll.; dicabut/hilang → 404, ditangguhkan/kedaluwarsa/tidak aktif → 403. Lihat [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Visibilitas penyedia OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Status pemeliharaan (publik). Portal menampilkan halaman pemeliharaan saat diaktifkan |
 
@@ -105,6 +105,7 @@ Pada 401, panggil `POST /api/v1/client-auth/refresh` sekali dan coba lagi; jika 
 | Metode | Jalan | Deskripsi |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Klien saat ini: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (amplop `data`) |
+| PUT | `/api/v1/client-auth/settings` | Perbarui pengaturan layanan mandiri klien: Isi: `{ip_whitelist, device_limit}`; `ip_whitelist` yang kosong berarti tidak ada batasan IP sumber |
 | POST | `/api/v1/client-auth/change-password` | Tubuh: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Waktu server (sinkronisasi jam klien) |
 | GET | `/api/v1/client-auth/connection-info` | Parameter koneksi paket saat ini: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -247,7 +248,7 @@ Tautan “Kebijakan Privasi · Ketentuan Layanan” di bagian bawah kartu masuk 
 
 - **Konfigurasi**: editor portal → Pengaturan → Umum → Dokumen kepatuhan (**edit konten per bahasa**);
  Anda juga dapat `PUT /api/v1/portal/active` dengan bidang terstruktur `privacy_policy_url` / `privacy_policy_content` /
- `terms_of_service_url` / `terms_of_service_content` (nihil = tidak berubah; konten adalah peta `{"zh-CN":"...","en":"..."}`).
+ `terms_of_service_url` / `terms_of_service_content` (nihil = tidak berubah; kontennya adalah peta `{"zh-CN":"...","en":"..."}`).
 - **Halaman mandiri yang dapat diakses** (dirender oleh server, mudah untuk crawler verifikasi Google; mendukung `?lang=xx`):
   - Domain panel utama: `GET /p/legal/privacy`, `GET /p/legal/terms`
   - Domain portal khusus (penyebaran root): `GET /legal/privacy`, `GET /legal/terms`
@@ -256,7 +257,7 @@ Tautan “Kebijakan Privasi · Ketentuan Layanan” di bagian bawah kartu masuk 
 - Dikirim saat runtime melalui `/api/v1/public/portal-config`; komponen masuk dikonsumsi
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
 - Verifikasi OAuth Google mengharuskan tautan ini dapat diakses publik → gunakan tautan mandiri di atas di
- layar persetujuan; lihat `docs/oauth-google-verification.md` (berisi templat kebijakan privasi / persyaratan).
+ layar persetujuan; lihat `docs/oauth-google-verification.md` (berisi templat kebijakan privasi / ketentuan).
 
 ## 18. Contoh integrasi
 

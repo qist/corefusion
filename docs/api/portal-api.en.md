@@ -105,6 +105,7 @@ On 401, call `POST /api/v1/client-auth/refresh` once and retry; if it still fail
 | Method | Path | Description |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Current client: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (`data` envelope) |
+| PUT | `/api/v1/client-auth/settings` | Update client self-service settings: Body: `{ip_whitelist, device_limit}`; an empty `ip_whitelist` means no source-IP restriction |
 | POST | `/api/v1/client-auth/change-password` | Body: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Server time (client clock sync) |
 | GET | `/api/v1/client-auth/connection-info` | Current plan connection parameters: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |

@@ -22,6 +22,7 @@ Fetches a user's subscription node list. **This is the most-used endpoint for en
 | `config` | Configuration template name (defined under “Subscription formats” in the admin UI). Must use the same format as this request's `format`, otherwise it is ignored |
 | `platform` | Match a configuration template by platform name (used when `config` is omitted); the format must also match |
 | `providers` | `mihomo_yaml` only: `1` / `true` enables **Provider mode** (emit `proxy-providers` and reference them via `use`); default or any other value keeps nodes inlined under `proxies`. See §6 |
+| `provider` | `mihomo_proxies_yaml` only: with a provider key only that source's node subset is returned (billing pseudo-nodes excluded); empty returns all nodes. Panel-generated `proxy-providers.url` includes it automatically |
 
 ### Supported `format` values
 
@@ -53,8 +54,9 @@ Fetches a user's subscription node list. **This is the most-used endpoint for en
 |---|---|---|
 | 200 | — | Normal (body is the subscription rendered in `format`) |
 | 400 | `MISSING_TOKEN` | No token in the URL |
-| 403 | (plain text) | Subscription suspended / expired / inactive. The message is localized (zh/en/ja/ko) via `Accept-Language` and is a one-line reason |
+| 403 | (plain text) | Subscription suspended / expired / inactive / IP not whitelisted. The message is localized (zh/en/ja/ko/ru) via `Accept-Language` and is a one-line reason |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Token does not exist |
+| 429 | `TOO_MANY_REQUESTS` | Subscription-endpoint rate limit (`SubscribeRateLimit`) hit; JSON error, retry later |
 
 > Revoked subscriptions are treated as non-existent (404).
 

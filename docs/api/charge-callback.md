@@ -97,8 +97,9 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. 响应
 
-- 成功：2xx（面板入账完成后应答）
-- 失败：4xx/5xx + `{ "code": "...", "message": "..." }`；典型 `INVALID_SIGNATURE`、`IP_BLOCKED`、`ORDER_NOT_FOUND`、金额不符等。
+- 成功：HTTP 200，`{"code":0,"data":{"success":true,"message":"ok"}}`（入账完成后应答）
+- 失败：HTTP 400，`{"code":"CALLBACK_FAILED","message":"..."}`；具体原因在 `message` 中（签名不匹配、IP 不在白名单、订单不存在、金额/币种不符、nonce 重放等）
+- 路径里的 `site_id` 非法时返回 `INVALID_SITE_ID`，body 不是合法 JSON 时返回 `INVALID_REQUEST`
 
 > 每次回调都带 `X-Request-ID`（无则面板生成），日志与事件全链路可追踪；排查时把这个 ID 给管理员即可。
 

@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: de | updated: 2026-10-23 -->
+<!-- source: README.md | locale: de | updated: 2026-11-16 -->
 # CoreFusion API Dokumentation
 
 > Sprachen: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · Deutsch · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@ API-Dokumentation für **externe Integratoren, Sekundärentwicklung und Drittanb
 | Dokument | Publikum | Inhalt |
 |---|---|---|
 | [subscription.md](./subscription.de.md) | Abonnenten/Client-Entwickler | Abonnementendpunkt (`/sub/:token`): Formate, Header, Statuscodes, Beispiele |
-| [portal-api.md](./portal-api.de.md) | Portal-Frontend / Drittanbieter-Clients | Kundenportal API (`/api/v1/client-auth/*`, `/api/v1/public/*`): Anmeldung, Anmeldung, Pläne, Bestellungen, Guthaben, Tickets |
+| [portal-api.md](./portal-api.md) | Portal-Frontend / Drittanbieter-Clients | Kundenportal API (`/api/v1/client-auth/*`, `/api/v1/public/*`): Anmeldung, Anmeldung, Pläne, Bestellungen, Guthaben, Tickets |
 | [charge-callback.md](./charge-callback.de.md) | Zahlungsanbieter | Signieren und Überprüfen des Zahlungsrückrufs |
-| [admin-api.de.md](./admin-api.de.md) | Panelentwicklung / Automatisierung | Vollständige Admin-API-Routentabelle (`/api/v1/*`, gruppiert nach Modul) |
+| [admin-api.en.md](./admin-api.de.md) | Panelentwicklung / Automatisierung | Vollständige Admin-API-Routentabelle (`/api/v1/*`, gruppiert nach Modul) |
 
 ---
 
@@ -35,7 +35,7 @@ Das Panel kann drei Engines gleichzeitig verfügbar machen und eine Datenbank ge
 | **Abonnement-Token** | Token im URL: `/sub/<token>` | Abonnementabruf, kein Header |
 
 - Client-Zugriffstokens halten 24 Stunden, Aktualisierungstokens 7 Tage; Der JWT enthält `tv` (token_version), sodass beim Abmelden/erzwungenen Abmelden alle alten Token ungültig werden.
-- Administratorrollen: `viewer` / `admin` / `operator` / `super_admin`; Für einige Schreibvorgänge ist `RequireRole(RoleAdmin)` oder höher erforderlich.
+- Administratorrollenebenen: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Für Lesevorgänge ist im Allgemeinen nur eine angemeldete Sitzung erforderlich. Schreibvorgänge erfordern `operator` / `admin` / `super_admin` pro Modul. Siehe Spalte „Berechtigung“ in [admin-api.md](./admin-api.de.md).
 
 ## 3. Antwortformat
 
@@ -75,4 +75,4 @@ Diese Routen geben HTML/statische Assets zurück und liegen außerhalb der API-D
 
 ## 6. Quelle der Wahrheit
 
-`internal/api/router/router.go` (Anzahl variiert je nach Version; maßgeblich ist der Code). Die Routentabelle in [admin-api.md](./admin-api.de.md) wird aus Code generiert; Wenn es mit dem Code nicht übereinstimmt, **gewinnt der Code**.
+`internal/api/router/router.go` (Anzahl variiert je nach Version; der Code ist maßgeblich). Die Routentabelle in [admin-api.md](./admin-api.md) wird aus Code generiert. Wenn es mit dem Code nicht übereinstimmt, **gewinnt der Code**.

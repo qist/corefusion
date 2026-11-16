@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: es | updated: 2026-10-23 -->
+<!-- source: README.md | locale: es | updated: 2026-11-16 -->
 # Documentación CoreFusion API
 
 > Idiomas: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · Español · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@ Documentación API para **integradores externos, desarrollo secundario y cliente
 | Documento | Audiencia | Contenido |
 |---|---|---|
 | [subscription.md](./subscription.es.md) | Suscriptores / desarrolladores de clientes | Punto final de suscripción (`/sub/:token`): formatos, encabezados, códigos de estado, ejemplos |
-| [portal-api.md](./portal-api.es.md) | Frontend del portal/clientes de terceros | Portal de clientes API (`/api/v1/client-auth/*`, `/api/v1/public/*`): registro, inicio de sesión, planes, pedidos, saldo, tickets |
+| [portal-api.md](./portal-api.md) | Frontend del portal/clientes de terceros | Portal de clientes API (`/api/v1/client-auth/*`, `/api/v1/public/*`): registro, inicio de sesión, planes, pedidos, saldo, tickets |
 | [charge-callback.md](./charge-callback.es.md) | Proveedores de pago | Firma y verificación de devolución de llamada de pago |
-| [admin-api.es.md](./admin-api.es.md) | Desarrollo de paneles / automatización | Tabla de rutas API de administración completa (`/api/v1/*`, agrupada por módulo) |
+| [admin-api.en.md](./admin-api.es.md) | Desarrollo de paneles / automatización | Tabla de rutas API de administración completa (`/api/v1/*`, agrupada por módulo) |
 
 ---
 
@@ -20,7 +20,7 @@ El panel puede exponer tres motores al mismo tiempo, compartiendo una base de da
 
 | motor | Acceso predeterminado | Propósito |
 |---|---|---|
-| panel principal | `https://<domain>/api/v1` | Backend de administración + portal + suscripciones |
+| Panel principal | `https://<domain>/api/v1` | Backend de administración + portal + suscripciones |
 | Motor de suscripción (puerto dedicado) | `https://<domain>:<port>/:token` | Recuperación de suscripción de alta concurrencia, sin prefijo `/sub` |
 | Motor de portal (puerto dedicado) | `https://<portal-domain>[:port]/api/v1` | Portal exclusivo para clientes, páginas en `/` |
 
@@ -35,7 +35,7 @@ El panel puede exponer tres motores al mismo tiempo, compartiendo una base de da
 | **Ficha de suscripción** | Ficha en el URL: `/sub/<token>` | Recuperación de suscripción, sin encabezado |
 
 - Los tokens de acceso al cliente duran 24 horas, los tokens de actualización duran 7 días; el JWT contiene `tv` (token_version), por lo que el cierre de sesión/cierre de sesión forzado invalida todos los tokens antiguos.
-- Funciones de administrador: `viewer` / `admin` / `operator` / `super_admin`; algunas operaciones de escritura requieren `RequireRole(RoleAdmin)` o superior.
+- Niveles de rol de administrador: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Las lecturas generalmente solo necesitan una sesión iniciada; las escrituras requieren `operator` / `admin` / `super_admin` por módulo. Consulte la columna "Permiso" en [admin-api.md](./admin-api.es.md).
 
 ## 3. Formato de respuesta
 
@@ -75,4 +75,4 @@ Estas rutas devuelven recursos HTML/estáticos y están fuera de los documentos 
 
 ## 6. fuente de verdad
 
-`internal/api/router/router.go` (la cantidad varía según la versión; el código es la referencia). La tabla de rutas en [admin-api.md](./admin-api.es.md) se genera a partir de código; si no está de acuerdo con el código, **el código gana**.
+`internal/api/router/router.go` (el recuento varía según la versión; el código es autorizado). La tabla de rutas en [admin-api.md](./admin-api.md) se genera a partir de código; si no está de acuerdo con el código, **el código gana**.

@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: id | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: id | updated: 2026-11-16 -->
 # Biaya Panggilan Balik API
 
 > Bahasa: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · Bahasa Indonesia · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -89,7 +89,7 @@ def sign_callback(body: dict, secret: str) -> str:
 ## 4. Rantai validasi sisi panel (menentukan kesalahan yang Anda dapatkan)
 
 1. Situs ada dan domainnya diverifikasi → 404/403
-2. Daftar IP yang diizinkan (jika `callback_whitelist` dikonfigurasi, IP yang tidak terdaftar akan **diblokir secara paksa**; jika tidak, dilewati dan hanya tanda tangan yang diperiksa)
+2. Daftar IP yang diizinkan (jika `callback_whitelist` dikonfigurasi, IP yang tidak terdaftar akan **diblokir secara permanen**; jika tidak, dilewati dan hanya tanda tangan yang diperiksa)
 3. Jendela `timestamp` + perlindungan pemutaran ulang `nonce` (INSERT atom)
 4. Verifikasi HMAC (menerima rahasia aktif dan lama)
 5. Pesanan ada dan milik situs → idempotensi (pengembalian berhasil dibayar) → **validasi kunci jumlah dan mata uang** → posting transaksional (buku besar saldo + status pesanan)
@@ -98,8 +98,9 @@ Pemrosesan bersifat **idempoten**: callback berulang dengan `trade_no` yang sama
 
 ## 5. Tanggapan
 
-- Berhasil: 2xx (setelah panel memposting pembayaran)
-- Kegagalan: 4xx/5xx + `{ "code": "...", "message": "..." }`; kode tipikal termasuk `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, ketidakcocokan jumlah, dll.
+- Berhasil: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (setelah panel memposting pembayaran)
+- Kegagalan: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; alasan konkritnya ada di `message` (tanda tangan buruk, IP tidak masuk daftar putih, pesanan tidak ditemukan, jumlah/mata uang tidak cocok, tidak diputar ulang, dll.)
+- `site_id` yang tidak valid di jalur mengembalikan `INVALID_SITE_ID`; badan non-JSON mengembalikan `INVALID_REQUEST`
 
 > Setiap panggilan balik membawa `X-Request-ID` (dihasilkan oleh panel jika tidak ada); log dan peristiwa dapat dilacak dari ujung ke ujung. Berikan ID ini kepada administrator Anda saat memecahkan masalah.
 

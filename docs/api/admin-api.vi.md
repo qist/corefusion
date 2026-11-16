@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: vi | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: vi | updated: 2026-11-16 -->
 # Quản trị viên API
 
 > Ngôn ngữ: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · Tiếng Việt · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@ Bảng lộ trình API dành cho quản trị viên hoàn chỉnh dành cho **ph
 - Đế URL: `https://<panel-domain>/api/v1`
 - Xác thực: `Authorization: Bearer <admin_token>` (từ `POST /api/v1/auth/login`)
 - Các định dạng phản hồi/lỗi phổ biến và quy ước giới hạn tỷ lệ: xem [README.md](./README.vi.md)
-- Nguồn sự thật: `internal/api/router/router.go` (số lượng thay đổi theo phiên bản; mã nguồn là chuẩn); nếu bảng này không đồng ý, **mã sẽ thắng**
+- Nguồn sự thật: `internal/api/router/router.go` (số lượng thay đổi tùy theo phiên bản; mã có thẩm quyền); nếu bảng này không đồng ý, **mã sẽ thắng**
 
 ## Đánh dấu quyền
 
@@ -17,8 +17,11 @@ Bảng lộ trình API dành cho quản trị viên hoàn chỉnh dành cho **ph
 | công khai | Không cần đăng nhập (bảo vệ bảo trì / giới hạn tốc độ vẫn có thể được áp dụng) |
 | Công cộng · tỷ lệ giới hạn | Không cần đăng nhập, với giới hạn tỷ lệ chuyên dụng |
 | Đã đăng nhập | Yêu cầu mã thông báo quản trị viên đã đăng nhập (`AuthRequired`) |
+| Toán tử | Yêu cầu vai trò ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Quản trị viên | Yêu cầu vai trò ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Siêu quản trị viên | Yêu cầu vai trò = `super_admin` |
+| Khách hàng (công khai) | Không yêu cầu mã thông báo khách hàng (đăng nhập / đăng ký, v.v.) |
+| Khách hàng (đã đăng nhập) | Yêu cầu `Authorization: Bearer <client_token>` (mã thông báo khách hàng cổng thông tin, không phải mã thông báo quản trị viên) |
 
 Cấp độ vai trò: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; không đủ vai trò trả về 403 `INSUFFICIENT_ROLE`.
 
@@ -135,21 +138,26 @@ Tất cả các điểm cuối của danh sách đều sử dụng `limit` (kíc
 - [Nạp tiền đơn hàng](#nạp-tiền-đơn-hàng)
 - [Nạp thẻ](#nạp-thẻ)
 - [Tính phí sự kiện gọi lại](#tính-phí-sự-kiện-gọi-lại)
+- Thử lại cuộc gọi lại [Charge](#charge-callback-retries)
 - [Tính phí cuộc gọi lại lần thử](#tính-phí-cuộc-gọi-lại-lần-thử)
 - [Số dư của khách hàng](#số-dư-của-khách-hàng)
 - [Quà tặng](#quà-tặng)
 - [Cấu hình giới thiệu](#cấu-hình-giới-thiệu)
+- Danh sách cho phép [IP (tóm tắt)](#ip-allow-lists-summary)
 - [Rút tiền giới thiệu](#rút-tiền-giới-thiệu)
 - [Danh sách cho phép IP (tóm tắt)](#danh-sách-cho-phép-ip-tóm-tắt)
 - [Ràng buộc OAuth của khách hàng](#ràng-buộc-oauth-của-khách-hàng)
 - [Vé (quản trị viên)](#vé-quản-trị-viên)
 - [bài viết](#bài-viết)
 - [Tài khoản được chia sẻ](#tài-khoản-được-chia-sẻ)
+- Cấu hình [EAB](#eab-configuration)
+- Tài khoản [ACME](#acme-accounts)
+- [CA](#built-in-ca) tích hợp
 - [Chứng chỉ](#chứng-chỉ)
+- Thư viện quy tắc [WAF](#waf-rule-library)
 - [Kênh chứng chỉ](#kênh-chứng-chỉ)
 - [Cấu hình EAB](#cấu-hình-eab)
 - [Tài khoản ACME](#tài-khoản-acme)
-- [CA](#built-in-ca) tích hợp
 - [CA tích hợp](#ca-tích-hợp)
 - [Quy tắc địa lý](#quy-tắc-địa-lý)
 - [Thư viện quy tắc WAF](#thư-viện-quy-tắc-waf)
@@ -165,11 +173,6 @@ Tất cả các điểm cuối của danh sách đều sử dụng `limit` (kíc
 - [Cấu hình công khai](#cấu-hình-công-khai)
 - [Xác thực khách hàng và doanh nghiệp (cùng được đặt trên công cụ quản trị)](#xác-thực-khách-hàng-và-doanh-nghiệp-cùng-được-đặt-trên-công-cụ-quản-trị)
 - [Phân phối đăng ký](#phân-phối-đăng-ký)
-- [Quy trình cấu hình thời gian chạy](#quy-trình-cấu-hình-thời-gian-chạy)
-- [Chính sách truy cập dịch vụ (đã ngừng hoạt động)](#chính-sách-truy-cập-dịch-vụ-đã-ngừng-hoạt-động)
-- [Giám sát hạn ngạch giao thông](#giám-sát-hạn-ngạch-giao-thông)
-- [Kiểm tra sức khỏe](#kiểm-tra-sức-khỏe)
-- [Trang cổng thông tin](#trang-cổng-thông-tin)
 
 ---
 
@@ -196,8 +199,8 @@ Tất cả các điểm cuối của danh sách đều sử dụng `limit` (kíc
 | POST | `/api/v1/auth/passkey/login/finish` | công khai | Đăng nhập hoàn tất |
 | POST | `/api/v1/auth/passkey/register/begin` | Đã đăng nhập | Bắt đầu đăng ký |
 | POST | `/api/v1/auth/passkey/register/finish` | Đã đăng nhập | Hoàn tất đăng ký |
-| GET | `/api/v1/auth/passkey/rpids` | Đã đăng nhập | Danh sách cho phép ID RP |
-| POST | `/api/v1/auth/passkey/rpids` | Đã đăng nhập | Cập nhật danh sách cho phép ID RP |
+| GET | `/api/v1/auth/passkey/rpids` | Quản trị viên | Danh sách cho phép ID RP |
+| POST | `/api/v1/auth/passkey/rpids` | Quản trị viên | Cập nhật danh sách cho phép ID RP |
 | GET | `/api/v1/auth/passkey/status` | công khai | Trạng thái |
 | POST | `/api/v1/auth/refresh` | công khai | Làm mới |
 | POST | `/api/v1/auth/ticket` | Đã đăng nhập | Xuất vé ngắn hạn một lần |
@@ -220,17 +223,17 @@ CRUD, tạm dừng/tiếp tục, nâng cấp/hạ cấp, gia hạn và đặt l�
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Đã đăng nhập | Liệt kê khách hàng |
-| POST | `/api/v1/clients` | Đã đăng nhập | Tạo khách hàng. Thân máy: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` là bắt buộc; `password` có thể trống (khách hàng có thể đặt sau trong cổng) |
-| DELETE | `/api/v1/clients/:id` | Đã đăng nhập | Xóa khách hàng |
+| POST | `/api/v1/clients` | Toán tử | Tạo khách hàng. Thân máy: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` là bắt buộc; `password` có thể trống (khách hàng có thể đặt sau trong cổng) |
+| DELETE | `/api/v1/clients/:id` | Toán tử | Xóa khách hàng |
 | GET | `/api/v1/clients/:id` | Đã đăng nhập | Nhận khách hàng |
-| PUT | `/api/v1/clients/:id` | Đã đăng nhập | Cập nhật khách hàng |
-| POST | `/api/v1/clients/:id/downgrade` | Đã đăng nhập | Hạ cấp khách hàng |
+| PUT | `/api/v1/clients/:id` | Toán tử | Cập nhật khách hàng |
+| POST | `/api/v1/clients/:id/downgrade` | Toán tử | Hạ cấp khách hàng |
 | GET | `/api/v1/clients/:id/orders` | Đã đăng nhập | Danh sách đơn hàng của khách hàng |
-| POST | `/api/v1/clients/:id/renew` | Đã đăng nhập | Gia hạn khách hàng |
-| POST | `/api/v1/clients/:id/reset-usage` | Đã đăng nhập | Đặt lại mức sử dụng |
-| POST | `/api/v1/clients/:id/restore` | Đã đăng nhập | Tiếp tục khách hàng |
-| POST | `/api/v1/clients/:id/suspend` | Đã đăng nhập | Đình chỉ khách hàng |
-| POST | `/api/v1/clients/:id/upgrade` | Đã đăng nhập | Nâng cấp khách hàng |
+| POST | `/api/v1/clients/:id/renew` | Toán tử | Gia hạn khách hàng |
+| POST | `/api/v1/clients/:id/reset-usage` | Toán tử | Đặt lại mức sử dụng |
+| POST | `/api/v1/clients/:id/restore` | Toán tử | Tiếp tục khách hàng |
+| POST | `/api/v1/clients/:id/suspend` | Toán tử | Đình chỉ khách hàng |
+| POST | `/api/v1/clients/:id/upgrade` | Toán tử | Nâng cấp khách hàng |
 
 ### Mẫu kế hoạch
 
@@ -239,48 +242,48 @@ Các gói (biến thể, chu kỳ thanh toán, giá, hạn ngạch lưu lượng
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Đã đăng nhập | Danh sách mẫu |
-| POST | `/api/v1/plan-templates` | Đã đăng nhập | Tạo mẫu |
-| DELETE | `/api/v1/plan-templates/:id` | Đã đăng nhập | Xóa mẫu |
+| POST | `/api/v1/plan-templates` | Quản trị viên | Tạo mẫu |
+| DELETE | `/api/v1/plan-templates/:id` | Quản trị viên | Xóa mẫu |
 | GET | `/api/v1/plan-templates/:id` | Đã đăng nhập | Chi tiết mẫu |
-| PUT | `/api/v1/plan-templates/:id` | Đã đăng nhập | Cập nhật mẫu |
+| PUT | `/api/v1/plan-templates/:id` | Quản trị viên | Cập nhật mẫu |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Đã đăng nhập | Nhận các nút có sẵn |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Đã đăng nhập | Nhận các tùy chọn nút có thể thanh toán |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Đã đăng nhập | Đặt nhóm nút mẫu |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Đã đăng nhập | Đồng bộ hóa tài khoản với mẫu |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Quản trị viên | Đặt nhóm nút mẫu |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Quản trị viên | Đồng bộ hóa tài khoản với mẫu |
 | GET | `/api/v1/plan-templates/:id/variants` | Đã đăng nhập | Danh sách biến thể |
-| POST | `/api/v1/plan-templates/:id/variants` | Đã đăng nhập | Tạo biến thể |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Đã đăng nhập | Đồng bộ hóa tất cả tài khoản |
+| POST | `/api/v1/plan-templates/:id/variants` | Quản trị viên | Tạo biến thể |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Quản trị viên | Đồng bộ hóa tất cả tài khoản |
 
 ### Các biến thể của kế hoạch
 
-Cập nhật và xóa các biến thể kế hoạch (việc tạo được lồng trong các mẫu kế hoạch).
+Cập nhật và xóa các biến thể của kế hoạch (việc tạo được lồng trong các mẫu kế hoạch).
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Đã đăng nhập | Xóa biến thể |
-| PUT | `/api/v1/plan-variants/:id` | Đã đăng nhập | Cập nhật biến thể |
+| DELETE | `/api/v1/plan-variants/:id` | Quản trị viên | Xóa biến thể |
+| PUT | `/api/v1/plan-variants/:id` | Quản trị viên | Cập nhật biến thể |
 
 ### Gói giao thông
 
-Gói giao thông có thể được mua riêng.
+Gói lưu lượng truy cập có thể được mua riêng.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Đã đăng nhập | Danh sách gói lưu lượng truy cập |
-| POST | `/api/v1/traffic-packs` | Đã đăng nhập | Tạo gói lưu lượng truy cập |
-| DELETE | `/api/v1/traffic-packs/:id` | Đã đăng nhập | Xóa gói lưu lượng truy cập |
-| PUT | `/api/v1/traffic-packs/:id` | Đã đăng nhập | Cập nhật gói lưu lượng truy cập |
+| POST | `/api/v1/traffic-packs` | Quản trị viên | Tạo gói lưu lượng truy cập |
+| DELETE | `/api/v1/traffic-packs/:id` | Quản trị viên | Xóa gói lưu lượng truy cập |
+| PUT | `/api/v1/traffic-packs/:id` | Quản trị viên | Cập nhật gói lưu lượng truy cập |
 
 ### Phiếu giảm giá
 
 Tạo, xác nhận và đổi phiếu giảm giá.
 
-| Phương pháp | Đường dẫn | Quyền | Mô tả |
+| phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Đã đăng nhập | Liệt kê phiếu giảm giá |
-| POST | `/api/v1/promotions` | Đã đăng nhập | Tạo phiếu giảm giá |
-| DELETE | `/api/v1/promotions/:id` | Đã đăng nhập | Xóa phiếu giảm giá |
-| PUT | `/api/v1/promotions/:id` | Đã đăng nhập | Cập nhật phiếu giảm giá |
+| POST | `/api/v1/promotions` | Quản trị viên | Tạo phiếu giảm giá |
+| DELETE | `/api/v1/promotions/:id` | Quản trị viên | Xóa phiếu giảm giá |
+| PUT | `/api/v1/promotions/:id` | Quản trị viên | Cập nhật phiếu giảm giá |
 | POST | `/api/v1/promotions/validate` | Đã đăng nhập | Xác thực phiếu giảm giá |
 
 ### Nhóm nút
@@ -290,12 +293,12 @@ Tổ chức các nút thành các nhóm được tham chiếu bởi các kế ho
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Đã đăng nhập | Liệt kê các nhóm nút |
-| POST | `/api/v1/node-groups` | Đã đăng nhập | Tạo nhóm nút |
-| DELETE | `/api/v1/node-groups/:id` | Đã đăng nhập | Xóa nhóm nút |
-| PUT | `/api/v1/node-groups/:id` | Đã đăng nhập | Cập nhật nhóm nút |
+| POST | `/api/v1/node-groups` | Quản trị viên | Tạo nhóm nút |
+| DELETE | `/api/v1/node-groups/:id` | Quản trị viên | Xóa nhóm nút |
+| PUT | `/api/v1/node-groups/:id` | Quản trị viên | Cập nhật nhóm nút |
 | GET | `/api/v1/node-groups/:id/members` | Đã đăng nhập | Liệt kê thành viên nhóm |
-| POST | `/api/v1/node-groups/:id/members` | Đã đăng nhập | Thêm thành viên nhóm |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Đã đăng nhập | Xóa thành viên nhóm |
+| POST | `/api/v1/node-groups/:id/members` | Quản trị viên | Thêm thành viên nhóm |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Quản trị viên | Xóa thành viên nhóm |
 
 ### Máy chủ nút
 
@@ -328,7 +331,8 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Quản trị viên | Lưu và áp dụng |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Quản trị viên | Danh sách trang web |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Quản trị viên | Tạo trang web |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Nhập trang |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Quản trị viên | Nhập trang web |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Quản trị viên | Xem trước trang Caddy được kết xuất |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Quản trị viên | Xóa trang web |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Quản trị viên | Cập nhật trang web |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Quản trị viên | Xóa tất cả quy tắc SNI |
@@ -353,6 +357,9 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Quản trị viên | Buộc kết nối lại |
 | GET | `/api/v1/node-servers/:id/free-port` | Quản trị viên | Yêu cầu một cổng miễn phí |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | Quản trị viên | Đẩy tới nút này |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Quản trị viên | Phát hiện tường lửa (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Quản trị viên | Cho phép cổng nghe vào (hỗ trợ đa phạm vi) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Quản trị viên | Thu hồi phụ cấp cổng vào (bao gồm cả bản sao) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Quản trị viên | Danh sách |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Quản trị viên | Tạo |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Quản trị viên | Xóa |
@@ -373,8 +380,9 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Quản trị viên | Lưu cài đặt |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Quản trị viên | Danh sách trang web |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Quản trị viên | Tạo trang web |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Nhập trang |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Tạo tệp chứng chỉ SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Quản trị viên | Nhập trang web |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Quản trị viên | Xem trước kết xuất trang Nginx |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Quản trị viên | Tạo tệp chứng chỉ SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Quản trị viên | Xóa trang web |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Quản trị viên | Cập nhật trang web |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Quản trị viên | Xóa tất cả quy tắc SNI |
@@ -457,6 +465,7 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Quản trị viên | Xóa tất cả |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Quản trị viên | Áp dụng quy tắc tường lửa nhảy cổng |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Quản trị viên | Loại bỏ các quy tắc tường lửa nhảy cổng |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Quản trị viên | Kết nối sing-box trực tiếp (clash_api, chỉ nút cục bộ) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Quản trị viên | Kiểm tra tốc độ nút |
 | GET | `/api/v1/node-servers/:id/status` | Quản trị viên | Trạng thái nút |
 | POST | `/api/v1/node-servers/:id/sync` | Quản trị viên | Cấu hình nút đồng bộ hóa (tạo và đẩy) |
@@ -496,6 +505,8 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | GET | `/api/v1/node-servers/:id/warp/config` | Quản trị viên | Đọc cấu hình |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Quản trị viên | Tạo cấu hình |
 | POST | `/api/v1/node-servers/:id/warp/register` | Quản trị viên | Đăng ký |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Quản trị viên | Đăng ký hồ sơ WARP MASQUE (bước 1/2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Quản trị viên | Tạo một gửi đi sing-box MASQUE từ hồ sơ WARP |
 | GET | `/api/v1/node-servers/:id/warp/status` | Quản trị viên | Trạng thái |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Quản trị viên | Nhận thông tin cân bằng |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Quản trị viên | Đặt mục tiêu cân bằng |
@@ -544,8 +555,8 @@ Kiểm tra và xuất hoạt động phía nút.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Đã đăng nhập | Nhật ký kiểm tra nút |
-| GET | `/api/v1/node-audit-logs/export` | Đã đăng nhập | Xuất nhật ký kiểm tra nút |
+| GET | `/api/v1/node-audit-logs` | Quản trị viên | Nhật ký kiểm tra nút |
+| GET | `/api/v1/node-audit-logs/export` | Quản trị viên | Xuất nhật ký kiểm tra nút |
 
 ### Nút (mô hình cũ, đã ngừng hoạt động)
 
@@ -568,16 +579,16 @@ Quản lý hồ sơ đăng ký: thu hồi, xoay mã thông báo, nhật ký truy
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/subscriptions` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/subscriptions/:id` | Đã đăng nhập | Xóa |
+| POST | `/api/v1/subscriptions` | Toán tử | Tạo |
+| DELETE | `/api/v1/subscriptions/:id` | Toán tử | Xóa |
 | GET | `/api/v1/subscriptions/:id` | Đã đăng nhập | Chi tiết |
-| PUT | `/api/v1/subscriptions/:id` | Đã đăng nhập | cập nhật |
+| PUT | `/api/v1/subscriptions/:id` | Toán tử | cập nhật |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Đã đăng nhập | Nhật ký truy cập |
-| POST | `/api/v1/subscriptions/:id/enable` | Đã đăng nhập | Kích hoạt |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Đã đăng nhập | Đặt lại mức sử dụng |
-| POST | `/api/v1/subscriptions/:id/restore` | Đã đăng nhập | Tiếp tục |
-| POST | `/api/v1/subscriptions/:id/revoke` | Đã đăng nhập | Thu hồi |
-| POST | `/api/v1/subscriptions/:id/rotate` | Đã đăng nhập | Xoay |
+| POST | `/api/v1/subscriptions/:id/enable` | Toán tử | Kích hoạt |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Toán tử | Đặt lại mức sử dụng |
+| POST | `/api/v1/subscriptions/:id/restore` | Toán tử | Tiếp tục |
+| POST | `/api/v1/subscriptions/:id/revoke` | Toán tử | Thu hồi |
+| POST | `/api/v1/subscriptions/:id/rotate` | Toán tử | Xoay |
 | GET | `/api/v1/subscriptions/:id/rotations` | Đã đăng nhập | Lịch sử xoay vòng |
 
 ### Định dạng đăng ký
@@ -593,10 +604,10 @@ Miền đăng ký chuyên dụng (được ủy quyền ngược với đường
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/subscription-endpoints` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Đã đăng nhập | Xóa |
+| POST | `/api/v1/subscription-endpoints` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Quản trị viên | Xóa |
 | GET | `/api/v1/subscription-endpoints/:id` | Đã đăng nhập | Chi tiết |
-| PUT | `/api/v1/subscription-endpoints/:id` | Đã đăng nhập | cập nhật |
+| PUT | `/api/v1/subscription-endpoints/:id` | Quản trị viên | cập nhật |
 
 ### Chia sẻ tên miền
 
@@ -605,11 +616,11 @@ Truy cập nhóm miền/IP được sử dụng trong các liên kết máy khá
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/share-domains` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/share-domains/:id` | Đã đăng nhập | Xóa |
-| PUT | `/api/v1/share-domains/:id` | Đã đăng nhập | cập nhật |
-| DELETE | `/api/v1/share-domains/all` | Đã đăng nhập | Xóa tất cả |
-| POST | `/api/v1/share-domains/seed` | Đã đăng nhập | Khởi tạo dữ liệu mặc định |
+| POST | `/api/v1/share-domains` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/share-domains/:id` | Quản trị viên | Xóa |
+| PUT | `/api/v1/share-domains/:id` | Quản trị viên | cập nhật |
+| DELETE | `/api/v1/share-domains/all` | Quản trị viên | Xóa tất cả |
+| POST | `/api/v1/share-domains/seed` | Quản trị viên | Khởi tạo dữ liệu mặc định |
 
 ### IP Cloudflare
 
@@ -617,17 +628,20 @@ Quản lý nguồn và nhóm IP Cloudflare CDN.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Đã đăng nhập | Xóa mục nhập |
+| DELETE | `/api/v1/cfip/entries` | Quản trị viên | Xóa mục nhập |
 | GET | `/api/v1/cfip/entries` | Đã đăng nhập | Danh sách dự thi |
-| POST | `/api/v1/cfip/entries` | Đã đăng nhập | Thêm mục |
-| DELETE | `/api/v1/cfip/entries/:id` | Đã đăng nhập | Xóa mục nhập |
-| POST | `/api/v1/cfip/fetch-all` | Đã đăng nhập | Tìm nạp tất cả các nguồn |
-| POST | `/api/v1/cfip/seed` | Đã đăng nhập | Khởi tạo dữ liệu mặc định |
+| POST | `/api/v1/cfip/entries` | Quản trị viên | Thêm mục |
+| DELETE | `/api/v1/cfip/entries/:id` | Quản trị viên | Xóa mục nhập |
+| POST | `/api/v1/cfip/fetch-all` | Quản trị viên | Tìm nạp tất cả các nguồn |
+| GET | `/api/v1/cfip/probe-config` | Đã đăng nhập | Cấu hình thăm dò IP ưu tiên CF (nút vào + trình quay số đã cài đặt) |
+| PUT | `/api/v1/cfip/probe-config` | Quản trị viên | Lưu khoảng thời gian thăm dò / giới hạn độ trễ / nút nhập / trình quay số |
+| POST | `/api/v1/cfip/check` | Quản trị viên | Thăm dò tất cả các miền/IP ưa thích ngay bây giờ |
+| POST | `/api/v1/cfip/seed` | Quản trị viên | Khởi tạo dữ liệu mặc định |
 | GET | `/api/v1/cfip/sources` | Đã đăng nhập | Danh sách nguồn dữ liệu |
-| POST | `/api/v1/cfip/sources` | Đã đăng nhập | Tạo nguồn dữ liệu |
-| DELETE | `/api/v1/cfip/sources/:id` | Đã đăng nhập | Xóa nguồn dữ liệu |
-| PUT | `/api/v1/cfip/sources/:id` | Đã đăng nhập | Cập nhật nguồn dữ liệu |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Đã đăng nhập | Lấy nguồn này |
+| POST | `/api/v1/cfip/sources` | Quản trị viên | Tạo nguồn dữ liệu |
+| DELETE | `/api/v1/cfip/sources/:id` | Quản trị viên | Xóa nguồn dữ liệu |
+| PUT | `/api/v1/cfip/sources/:id` | Quản trị viên | Cập nhật nguồn dữ liệu |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Quản trị viên | Lấy nguồn này |
 
 ### Cấu hình đăng ký (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Cấu hình mẫu đăng ký: nhóm, quy tắc, nhà cung cấp quy tắc, bản
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/mihomo/configs` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | Xóa |
+| POST | `/api/v1/mihomo/configs` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/mihomo/configs/:id` | Quản trị viên | Xóa |
 | GET | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | Chi tiết |
-| PUT | `/api/v1/mihomo/configs/:id` | Đã đăng nhập | cập nhật |
+| PUT | `/api/v1/mihomo/configs/:id` | Quản trị viên | cập nhật |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Đã đăng nhập | Danh sách quy tắc |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Đã đăng nhập | Tạo quy tắc |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Sắp xếp lại quy tắc |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Cập nhật quy tắc |
-| DELETE | `/api/v1/mihomo/rules/:id` | Đã đăng nhập | Xóa quy tắc |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Quản trị viên | Tạo quy tắc |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Quản trị viên | Sắp xếp lại quy tắc |
+| PUT | `/api/v1/mihomo/rules/:id` | Quản trị viên | Cập nhật quy tắc |
+| DELETE | `/api/v1/mihomo/rules/:id` | Quản trị viên | Xóa quy tắc |
 
 ### Trang web nạp tiền
 
@@ -652,20 +666,20 @@ Tích hợp trang thanh toán của bên thứ ba: khóa ký, tệp xác minh, x
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Đã đăng nhập | Danh sách trang web |
-| POST | `/api/v1/charge-sites` | Đã đăng nhập | Tạo trang web |
-| DELETE | `/api/v1/charge-sites/:id` | Đã đăng nhập | Xóa trang web |
-| GET | `/api/v1/charge-sites/:id` | Đã đăng nhập | Chi tiết trang web |
-| PUT | `/api/v1/charge-sites/:id` | Đã đăng nhập | Cập nhật trang web |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Đã đăng nhập | Xóa chìa khóa cũ |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Đã đăng nhập | Tạo tập tin xác minh |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Đã đăng nhập | Tạo tập tin xác minh |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Đã đăng nhập | Nhận tài liệu tích hợp |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Đã đăng nhập | Xoay phím ký |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Đã đăng nhập | Xác minh tên miền DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Đã đăng nhập | Xác minh thử thách tên miền HTTP |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Đã đăng nhập | Xác minh tên miền DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Đã đăng nhập | Xác minh thử thách tên miền HTTP |
+| GET | `/api/v1/charge-sites` | Quản trị viên | Danh sách trang web |
+| POST | `/api/v1/charge-sites` | Quản trị viên | Tạo trang web |
+| DELETE | `/api/v1/charge-sites/:id` | Quản trị viên | Xóa trang web |
+| GET | `/api/v1/charge-sites/:id` | Quản trị viên | Chi tiết trang web |
+| PUT | `/api/v1/charge-sites/:id` | Quản trị viên | Cập nhật trang web |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Quản trị viên | Xóa chìa khóa cũ |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Quản trị viên | Tạo tập tin xác minh |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Quản trị viên | Tạo tập tin xác minh |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Quản trị viên | Nhận tài liệu tích hợp |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Quản trị viên | Xoay phím ký |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Quản trị viên | Xác minh tên miền DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Quản trị viên | Xác minh thử thách tên miền HTTP |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Quản trị viên | Xác minh tên miền DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Quản trị viên | Xác minh thử thách tên miền HTTP |
 
 ### Nạp tiền đơn hàng
 
@@ -673,10 +687,10 @@ Truy vấn nạp tiền đơn hàng, hoàn tiền, xuất CSV.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Đã đăng nhập | Danh sách đặt hàng |
-| GET | `/api/v1/charge-orders/:id` | Đã đăng nhập | Chi tiết đặt hàng |
-| POST | `/api/v1/charge-orders/:id/refund` | Đã đăng nhập | Hoàn tiền |
-| GET | `/api/v1/charge-orders/export-csv` | Đã đăng nhập | Xuất lệnh nạp tiền CSV |
+| GET | `/api/v1/charge-orders` | Quản trị viên | Danh sách đặt hàng |
+| GET | `/api/v1/charge-orders/:id` | Quản trị viên | Chi tiết đặt hàng |
+| POST | `/api/v1/charge-orders/:id/refund` | Quản trị viên | Hoàn tiền |
+| GET | `/api/v1/charge-orders/export-csv` | Quản trị viên | Xuất lệnh nạp tiền CSV |
 
 ### Nạp thẻ
 
@@ -684,12 +698,12 @@ Tạo thẻ số lượng lớn, hồ sơ sử dụng, xuất CSV.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Đã đăng nhập | Danh sách thẻ |
-| POST | `/api/v1/charge-cards` | Đã đăng nhập | Tạo thẻ |
-| DELETE | `/api/v1/charge-cards/:id` | Đã đăng nhập | Xóa thẻ |
-| GET | `/api/v1/charge-cards/:id/usages` | Đã đăng nhập | Hồ sơ sử dụng thẻ |
-| POST | `/api/v1/charge-cards/batch` | Đã đăng nhập | Tạo thẻ hàng loạt |
-| GET | `/api/v1/charge-cards/export-csv` | Đã đăng nhập | Xuất thẻ CSV |
+| GET | `/api/v1/charge-cards` | Quản trị viên | Danh sách thẻ |
+| POST | `/api/v1/charge-cards` | Quản trị viên | Tạo thẻ |
+| DELETE | `/api/v1/charge-cards/:id` | Quản trị viên | Xóa thẻ |
+| GET | `/api/v1/charge-cards/:id/usages` | Quản trị viên | Hồ sơ sử dụng thẻ |
+| POST | `/api/v1/charge-cards/batch` | Quản trị viên | Tạo thẻ hàng loạt |
+| GET | `/api/v1/charge-cards/export-csv` | Quản trị viên | Xuất thẻ CSV |
 
 ### Tính phí sự kiện gọi lại
 
@@ -716,7 +730,7 @@ Chế độ xem của quản trị viên về số dư và giao dịch.
 |---|---|---|---|
 | GET | `/api/v1/client-balances` | Đã đăng nhập | Danh sách số dư của khách hàng |
 | GET | `/api/v1/client-balances/transactions` | Đã đăng nhập | Giao dịch số dư (quản trị viên) |
-| GET | `/api/v1/client-balances/transactions/export-csv` | Đã đăng nhập | Giao dịch số dư xuất khẩu CSV |
+| GET | `/api/v1/client-balances/transactions/export-csv` | Đã đăng nhập | Giao dịch cân đối xuất khẩu CSV |
 
 ### Quà tặng
 
@@ -725,8 +739,8 @@ Phát hành quà tặng có thể yêu cầu (ngày/lượng truy cập).
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Đã đăng nhập | Danh sách quà tặng |
-| POST | `/api/v1/client-gifts` | Đã đăng nhập | Tạo quà tặng |
-| POST | `/api/v1/client-gifts/batch` | Đã đăng nhập | Tạo quà tặng số lượng lớn |
+| POST | `/api/v1/client-gifts` | Quản trị viên | Tạo quà tặng |
+| POST | `/api/v1/client-gifts/batch` | Quản trị viên | Tạo quà tặng số lượng lớn |
 | GET | `/api/v1/client-gifts/search-clients` | Đã đăng nhập | Tìm kiếm khách hàng |
 
 ### Cấu hình giới thiệu
@@ -746,9 +760,9 @@ Xem xét các yêu cầu rút tiền.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Đã đăng nhập | Danh sách yêu cầu rút tiền |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Đã đăng nhập | Phê duyệt rút tiền |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Đã đăng nhập | Từ chối rút tiền |
+| GET | `/api/v1/referral-withdrawals` | Quản trị viên | Danh sách yêu cầu rút tiền |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Quản trị viên | Phê duyệt rút tiền |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Quản trị viên | Từ chối rút tiền |
 
 ### Danh sách cho phép IP (tóm tắt)
 
@@ -774,9 +788,9 @@ Trả lời vé, phân công và đóng cửa.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Đã đăng nhập | Danh sách vé |
 | GET | `/api/v1/tickets/:id` | Đã đăng nhập | Chi tiết vé |
-| POST | `/api/v1/tickets/:id/assign` | Đã đăng nhập | Chỉ định vé |
-| POST | `/api/v1/tickets/:id/close` | Đã đăng nhập | Đóng vé |
-| POST | `/api/v1/tickets/:id/reply` | Đã đăng nhập | Trả lời vé |
+| POST | `/api/v1/tickets/:id/assign` | Toán tử | Chỉ định vé |
+| POST | `/api/v1/tickets/:id/close` | Toán tử | Đóng vé |
+| POST | `/api/v1/tickets/:id/reply` | Toán tử | Trả lời vé |
 
 ### bài viết
 
@@ -785,10 +799,10 @@ CRUD cho các bài viết trên cổng thông tin.
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Đã đăng nhập | Danh sách bài viết |
-| POST | `/api/v1/articles` | Đã đăng nhập | Tạo bài viết |
-| DELETE | `/api/v1/articles/:id` | Đã đăng nhập | Xóa bài viết |
+| POST | `/api/v1/articles` | Quản trị viên | Tạo bài viết |
+| DELETE | `/api/v1/articles/:id` | Quản trị viên | Xóa bài viết |
 | GET | `/api/v1/articles/:id` | Đã đăng nhập | Chi tiết bài viết |
-| PUT | `/api/v1/articles/:id` | Đã đăng nhập | Cập nhật bài viết |
+| PUT | `/api/v1/articles/:id` | Quản trị viên | Cập nhật bài viết |
 
 ### Tài khoản được chia sẻ
 
@@ -797,10 +811,10 @@ Hồ sơ phát hành và sửa chữa cho các tài khoản dùng chung (phát t
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Đã đăng nhập | Danh sách tài khoản được chia sẻ |
-| POST | `/api/v1/shared-accounts` | Đã đăng nhập | Tạo tài khoản chia sẻ |
-| DELETE | `/api/v1/shared-accounts/:id` | Đã đăng nhập | Xóa tài khoản dùng chung |
+| POST | `/api/v1/shared-accounts` | Quản trị viên | Tạo tài khoản chia sẻ |
+| DELETE | `/api/v1/shared-accounts/:id` | Quản trị viên | Xóa tài khoản dùng chung |
 | GET | `/api/v1/shared-accounts/:id` | Đã đăng nhập | Chi tiết tài khoản được chia sẻ |
-| PUT | `/api/v1/shared-accounts/:id` | Đã đăng nhập | Cập nhật tài khoản chia sẻ |
+| PUT | `/api/v1/shared-accounts/:id` | Quản trị viên | Cập nhật tài khoản chia sẻ |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Đã đăng nhập | Sửa chữa hồ sơ |
 
 ### Chứng chỉ
@@ -809,20 +823,20 @@ Phát hành, tải lên, gia hạn và xuất chứng chỉ công cộng (ACME);
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/certificates` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/certificates/:id` | Đã đăng nhập | Xóa |
-| GET | `/api/v1/certificates/:id` | Đã đăng nhập | Chi tiết |
-| PUT | `/api/v1/certificates/:id` | Đã đăng nhập | cập nhật |
-| GET | `/api/v1/certificates/:id/download` | Đã đăng nhập | Tải xuống |
-| POST | `/api/v1/certificates/:id/renew` | Đã đăng nhập | Gia hạn khách hàng |
-| GET | `/api/v1/certificates/check-port` | Đã đăng nhập | Kiểm tra cổng |
-| GET | `/api/v1/certificates/detect-ip` | Đã đăng nhập | Thăm dò IP |
-| GET | `/api/v1/certificates/export` | Đã đăng nhập | Xuất khẩu |
-| POST | `/api/v1/certificates/issue` | Đã đăng nhập | Vấn đề. Thân máy: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` mặc định là http-01; `dns_channel_id` chọn kênh DNS (nhà cung cấp DNS đã định cấu hình + thông tin xác thực) |
-| POST | `/api/v1/certificates/issue-on-node` | Đã đăng nhập | Vấn đề với nút |
-| POST | `/api/v1/certificates/upload` | Đã đăng nhập | Tải lên |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Truy vấn trạng thái tác vụ nền |
+| GET | `/api/v1/certificates` | Quản trị viên | Danh sách |
+| POST | `/api/v1/certificates` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/certificates/:id` | Quản trị viên | Xóa |
+| GET | `/api/v1/certificates/:id` | Quản trị viên | Chi tiết |
+| PUT | `/api/v1/certificates/:id` | Quản trị viên | cập nhật |
+| GET | `/api/v1/certificates/:id/download` | Quản trị viên | Tải xuống |
+| POST | `/api/v1/certificates/:id/renew` | Quản trị viên | Gia hạn khách hàng |
+| GET | `/api/v1/certificates/check-port` | Quản trị viên | Kiểm tra cổng |
+| GET | `/api/v1/certificates/detect-ip` | Quản trị viên | Thăm dò IP |
+| GET | `/api/v1/certificates/export` | Quản trị viên | Xuất khẩu |
+| POST | `/api/v1/certificates/issue` | Quản trị viên | Vấn đề. Thân máy: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` mặc định là http-01; `dns_channel_id` selects a DNS channel (a configured DNS provider + credentials) |
+| POST | `/api/v1/certificates/issue-on-node` | Quản trị viên | Vấn đề với nút |
+| POST | `/api/v1/certificates/upload` | Quản trị viên | Tải lên |
+| GET | `/api/v1/certificate-tasks/:id` | Quản trị viên | Truy vấn trạng thái tác vụ nền |
 
 ### Kênh chứng chỉ
 
@@ -830,11 +844,11 @@ Cấu hình kênh (CA) ACME.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/cert-channels` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/cert-channels/:id` | Đã đăng nhập | Xóa |
-| PUT | `/api/v1/cert-channels/:id` | Đã đăng nhập | cập nhật |
-| GET | `/api/v1/cert-channels/providers` | Đã đăng nhập | nhà cung cấp |
+| GET | `/api/v1/cert-channels` | Quản trị viên | Danh sách |
+| POST | `/api/v1/cert-channels` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/cert-channels/:id` | Quản trị viên | Xóa |
+| PUT | `/api/v1/cert-channels/:id` | Quản trị viên | cập nhật |
+| GET | `/api/v1/cert-channels/providers` | Quản trị viên | nhà cung cấp |
 
 ### Cấu hình EAB
 
@@ -842,12 +856,12 @@ Thông tin xác thực ràng buộc các tài khoản bên ngoài như ZeroSSL /
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/eab-configs` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/eab-configs/:id` | Đã đăng nhập | Xóa |
-| PUT | `/api/v1/eab-configs/:id` | Đã đăng nhập | cập nhật |
-| POST | `/api/v1/eab-configs/fetch-google` | Đã đăng nhập | Tìm nạp Google EAB từ GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Đã đăng nhập | Tìm nạp ZeroSSL EAB bằng email chỉ bằng một cú nhấp chuột |
+| GET | `/api/v1/eab-configs` | Quản trị viên | Danh sách |
+| POST | `/api/v1/eab-configs` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/eab-configs/:id` | Quản trị viên | Xóa |
+| PUT | `/api/v1/eab-configs/:id` | Quản trị viên | cập nhật |
+| POST | `/api/v1/eab-configs/fetch-google` | Quản trị viên | Tìm nạp Google EAB từ GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Quản trị viên | Tìm nạp ZeroSSL EAB bằng email chỉ bằng một cú nhấp chuột |
 
 ### Tài khoản ACME
 
@@ -855,11 +869,11 @@ Quản lý tài khoản ACME (email liên hệ) phía bảng điều khiển.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/acme-accounts` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/acme-accounts/:id` | Đã đăng nhập | Xóa |
-| PUT | `/api/v1/acme-accounts/:id` | Đã đăng nhập | cập nhật |
-| GET | `/api/v1/acme-accounts/default` | Đã đăng nhập | Nhận mặc định |
+| GET | `/api/v1/acme-accounts` | Quản trị viên | Danh sách |
+| POST | `/api/v1/acme-accounts` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/acme-accounts/:id` | Quản trị viên | Xóa |
+| PUT | `/api/v1/acme-accounts/:id` | Quản trị viên | cập nhật |
+| GET | `/api/v1/acme-accounts/default` | Quản trị viên | Nhận mặc định |
 
 ### CA tích hợp
 
@@ -867,14 +881,14 @@ Bảng điều khiển CA nội bộ: Cấp/gia hạn/thu hồi chứng chỉ đ
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Đã đăng nhập | Danh sách chứng chỉ đại lý |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Đã đăng nhập | Gia hạn chứng chỉ đại lý |
-| GET | `/api/v1/ca/distribution-queue` | Đã đăng nhập | Hàng đợi phân phối chứng chỉ |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Đã đăng nhập | Xóa mục nhập hàng đợi phân phối |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Đã đăng nhập | Thử lại việc phân phối chứng chỉ |
-| GET | `/api/v1/ca/revocations` | Đã đăng nhập | Danh sách thu hồi |
-| GET | `/api/v1/ca/revocations/export` | Đã đăng nhập | Xuất CRL |
-| GET | `/api/v1/ca/status` | Đã đăng nhập | trạng thái CA |
+| GET | `/api/v1/ca/agent-certs` | Quản trị viên | Danh sách chứng chỉ đại lý |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Quản trị viên | Gia hạn chứng chỉ đại lý |
+| GET | `/api/v1/ca/distribution-queue` | Quản trị viên | Hàng đợi phân phối chứng chỉ |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Quản trị viên | Xóa mục nhập hàng đợi phân phối |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Quản trị viên | Thử lại việc phân phối chứng chỉ |
+| GET | `/api/v1/ca/revocations` | Quản trị viên | Danh sách thu hồi |
+| GET | `/api/v1/ca/revocations/export` | Quản trị viên | Xuất CRL |
+| GET | `/api/v1/ca/status` | Quản trị viên | trạng thái CA |
 
 ### Quy tắc địa lý
 
@@ -883,24 +897,24 @@ Bảng điều khiển CA nội bộ: Cấp/gia hạn/thu hồi chứng chỉ đ
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Đã đăng nhập | Danh sách tập tin |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Đã đăng nhập | Xóa tập tin |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Đã đăng nhập | Chuyển đổi tự động đồng bộ hóa |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Đã đăng nhập | Tải xuống |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Quản trị viên | Xóa tập tin |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Quản trị viên | Chuyển đổi tự động đồng bộ hóa |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Quản trị viên | Tải xuống |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Đã đăng nhập | Tải tập tin xuống |
 | GET | `/api/v1/geo-rules/github-assets` | Đã đăng nhập | Tìm nạp nội dung kho lưu trữ GitHub |
-| POST | `/api/v1/geo-rules/push-all` | Đã đăng nhập | Đẩy tới tất cả các nút |
-| POST | `/api/v1/geo-rules/seed` | Đã đăng nhập | Khởi tạo dữ liệu mặc định |
+| POST | `/api/v1/geo-rules/push-all` | Quản trị viên | Đẩy tới tất cả các nút |
+| POST | `/api/v1/geo-rules/seed` | Quản trị viên | Khởi tạo dữ liệu mặc định |
 | GET | `/api/v1/geo-rules/sources` | Đã đăng nhập | Danh sách nguồn dữ liệu |
-| POST | `/api/v1/geo-rules/sources` | Đã đăng nhập | Tạo nguồn dữ liệu |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Đã đăng nhập | Xóa nguồn dữ liệu |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Đã đăng nhập | Cập nhật nguồn dữ liệu |
+| POST | `/api/v1/geo-rules/sources` | Quản trị viên | Tạo nguồn dữ liệu |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Quản trị viên | Xóa nguồn dữ liệu |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Quản trị viên | Cập nhật nguồn dữ liệu |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Đã đăng nhập | Tìm nạp nội dung phát hành |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Đã đăng nhập | Thêm tập tin |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Đã đăng nhập | Chuyển đổi đồng bộ hóa theo lịch trình |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Đã đăng nhập | Chọn tập tin |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Đã đăng nhập | Đồng bộ hóa nguồn dữ liệu này |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Quản trị viên | Thêm tập tin |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Quản trị viên | Chuyển đổi đồng bộ hóa theo lịch trình |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Quản trị viên | Chọn tập tin |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Quản trị viên | Đồng bộ hóa nguồn dữ liệu này |
 | GET | `/api/v1/geo-rules/status` | Đã đăng nhập | Trạng thái |
-| POST | `/api/v1/geo-rules/sync-all` | Đã đăng nhập | Đồng bộ hóa tất cả |
+| POST | `/api/v1/geo-rules/sync-all` | Quản trị viên | Đồng bộ hóa tất cả |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Đã đăng nhập | Tiến trình đồng bộ hóa |
 
 ### Thư viện quy tắc WAF
@@ -910,58 +924,52 @@ Quy tắc WAF toàn cầu: Nguồn GitHub, đồng bộ hóa, phân phối đế
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Đã đăng nhập | Nguồn dữ liệu GitHub |
-| PUT | `/api/v1/waf/github-source` | Đã đăng nhập | Lưu nguồn dữ liệu GitHub |
-| POST | `/api/v1/waf/push-all` | Đã đăng nhập | Đẩy tới tất cả các nút |
+| PUT | `/api/v1/waf/github-source` | Quản trị viên | Lưu nguồn dữ liệu GitHub |
+| POST | `/api/v1/waf/push-all` | Quản trị viên | Đẩy tới tất cả các nút |
 | GET | `/api/v1/waf/rules` | Đã đăng nhập | Danh sách quy tắc |
-| DELETE | `/api/v1/waf/rules/:name` | Đã đăng nhập | Xóa quy tắc |
+| DELETE | `/api/v1/waf/rules/:name` | Quản trị viên | Xóa quy tắc |
 | GET | `/api/v1/waf/rules/:name` | Đã đăng nhập | Nhận quy tắc |
-| PUT | `/api/v1/waf/rules/:name` | Đã đăng nhập | Lưu quy tắc |
-| POST | `/api/v1/waf/sync-all` | Đã đăng nhập | Đồng bộ hóa tất cả |
-| POST | `/api/v1/waf/sync-github` | Đã đăng nhập | Đồng bộ hóa từ GitHub |
+| PUT | `/api/v1/waf/rules/:name` | Quản trị viên | Lưu quy tắc |
+| POST | `/api/v1/waf/sync-all` | Quản trị viên | Đồng bộ hóa tất cả |
+| POST | `/api/v1/waf/sync-github` | Quản trị viên | Đồng bộ hóa từ GitHub |
 
 ### Quản lý nhật ký
 
-Đọc và phát trực tiếp nhật ký nút/lõi, chính sách dọn dẹp, kiểm soát trình ghi nhật ký.
+Đọc và phát trực tuyến nhật ký nút/lõi, chính sách dọn dẹp, kiểm soát trình ghi nhật ký.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Đã đăng nhập | Dọn dẹp mọi thứ ngay bây giờ |
-| GET | `/api/v1/log-manage/cleanup-rules` | Đã đăng nhập | Danh sách quy tắc dọn dẹp |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Đã đăng nhập | Cập nhật quy tắc dọn dẹp |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Đã đăng nhập | Dọn dẹp bảng được chỉ định ngay bây giờ |
-| GET | `/api/v1/log-manage/core-log-output` | Đã đăng nhập | Cấu hình đầu ra nhật ký lõi |
-| PUT | `/api/v1/log-manage/core-log-output` | Đã đăng nhập | Lưu cấu hình đầu ra nhật ký lõi |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Đã đăng nhập | Đọc nhật ký thiết bị xuất chuẩn cốt lõi |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Đã đăng nhập | Truyền phát lõi thiết bị xuất chuẩn |
-| POST | `/api/v1/log-manage/discover` | Đã đăng nhập | Khám phá các tệp nhật ký nút |
-| GET | `/api/v1/log-manage/log-output` | Đã đăng nhập | Cấu hình đầu ra nhật ký |
-| PUT | `/api/v1/log-manage/log-output` | Đã đăng nhập | Lưu cấu hình đầu ra nhật ký |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Đã đăng nhập | Tiếp quản thiết bị xuất chuẩn nhật ký phát hành |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Đã đăng nhập | Tiếp quản thiết bị xuất chuẩn nhật ký |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Đã đăng nhập | Danh sách tệp nhật ký nút |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Đã đăng nhập | Đọc nhật ký nút |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Đã đăng nhập | Xoay nhật ký nút |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Đã đăng nhập | Nhật ký nút truyền phát |
-| GET | `/api/v1/log-manage/policies` | Đã đăng nhập | Danh sách chính sách |
-| POST | `/api/v1/log-manage/policies` | Đã đăng nhập | Tạo chính sách |
-| DELETE | `/api/v1/log-manage/policies/:id` | Đã đăng nhập | Xóa chính sách |
-| GET | `/api/v1/log-manage/policies/:id` | Đã đăng nhập | Chi tiết chính sách |
-| PUT | `/api/v1/log-manage/policies/:id` | Đã đăng nhập | Cập nhật chính sách |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Đã đăng nhập | Danh sách công việc dọn dẹp |
-| GET | `/api/v1/log-manage/policies/:id/log` | Đã đăng nhập | Đọc nhật ký |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Đã đăng nhập | Nhật ký phát trực tuyến |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Đã đăng nhập | Xoay |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Đã đăng nhập | Đọc nhật ký thiết bị xuất chuẩn cốt lõi |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Đã đăng nhập | Truyền phát lõi thiết bị xuất chuẩn |
-| GET | `/api/v1/log-manage/scheduler-config` | Đã đăng nhập | Cấu hình lịch trình |
-| PUT | `/api/v1/log-manage/scheduler-config` | Đã đăng nhập | Cập nhật cấu hình lập lịch |
-| GET | `/api/v1/log-manage/status` | Đã đăng nhập | Trạng thái |
-| POST | `/api/v1/log-manage/sync` | Đã đăng nhập | Đồng bộ hóa chính sách dọn dẹp |
-| GET | `/api/v1/log-manage/writers` | Đã đăng nhập | trạng thái nhà văn |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Đã đăng nhập | Cập nhật cấu hình người viết |
-| GET | `/api/v1/log-manage/writers/:type/files` | Đã đăng nhập | Danh sách tệp nhật ký của người viết |
-| POST | `/api/v1/log-manage/writers/:type/start` | Đã đăng nhập | Bắt đầu viết |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Đã đăng nhập | Dừng người viết |
+| POST | `/api/v1/log-manage/cleanup-all` | Quản trị viên | Dọn dẹp mọi thứ ngay bây giờ |
+| GET | `/api/v1/log-manage/cleanup-rules` | Quản trị viên | Danh sách quy tắc dọn dẹp |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Quản trị viên | Cập nhật quy tắc dọn dẹp |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Quản trị viên | Dọn dẹp bảng được chỉ định ngay bây giờ |
+| GET | `/api/v1/log-manage/core-log-output` | Quản trị viên | Cấu hình đầu ra nhật ký lõi |
+| PUT | `/api/v1/log-manage/core-log-output` | Quản trị viên | Lưu cấu hình đầu ra nhật ký lõi |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Quản trị viên | Đọc nhật ký thiết bị xuất chuẩn cốt lõi |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Quản trị viên | Truyền phát lõi thiết bị xuất chuẩn |
+| POST | `/api/v1/log-manage/discover` | Quản trị viên | Khám phá các tệp nhật ký nút |
+| GET | `/api/v1/log-manage/log-output` | Quản trị viên | Cấu hình đầu ra nhật ký |
+| PUT | `/api/v1/log-manage/log-output` | Quản trị viên | Lưu cấu hình đầu ra nhật ký |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Quản trị viên | Danh sách tệp nhật ký nút |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Quản trị viên | Đọc nhật ký nút |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Quản trị viên | Xoay nhật ký nút |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Quản trị viên | Nhật ký nút truyền phát |
+| GET | `/api/v1/log-manage/policies` | Quản trị viên | Danh sách chính sách |
+| POST | `/api/v1/log-manage/policies` | Quản trị viên | Tạo chính sách |
+| DELETE | `/api/v1/log-manage/policies/:id` | Quản trị viên | Xóa chính sách |
+| GET | `/api/v1/log-manage/policies/:id` | Quản trị viên | Chi tiết chính sách |
+| PUT | `/api/v1/log-manage/policies/:id` | Quản trị viên | Cập nhật chính sách |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Quản trị viên | Danh sách công việc dọn dẹp |
+| GET | `/api/v1/log-manage/policies/:id/log` | Quản trị viên | Đọc nhật ký |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Quản trị viên | Nhật ký phát trực tuyến |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Quản trị viên | Xoay |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Quản trị viên | Đọc nhật ký thiết bị xuất chuẩn cốt lõi |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Quản trị viên | Truyền phát lõi thiết bị xuất chuẩn |
+| GET | `/api/v1/log-manage/scheduler-config` | Quản trị viên | Cấu hình lịch trình |
+| PUT | `/api/v1/log-manage/scheduler-config` | Quản trị viên | Cập nhật cấu hình lập lịch |
+| GET | `/api/v1/log-manage/status` | Quản trị viên | Trạng thái |
+| POST | `/api/v1/log-manage/sync` | Quản trị viên | Đồng bộ hóa chính sách dọn dẹp |
+| GET | `/api/v1/log-manage/writers` | Quản trị viên | trạng thái nhà văn |
 
 ### Sao lưu
 
@@ -969,16 +977,16 @@ Cơ sở dữ liệu/sao lưu đầy đủ, khôi phục, công việc theo lị
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Quản trị viên | Xóa bản sao lưu |
+| DELETE | `/api/v1/backups/:id` | Siêu quản trị viên | Xóa bản sao lưu |
 | GET | `/api/v1/backups/:id/download` | Quản trị viên | Tải xuống bản sao lưu |
-| POST | `/api/v1/backups/:id/restore` | Quản trị viên | Khôi phục từ bản sao lưu |
-| POST | `/api/v1/backups/:id/upload-ftp` | Quản trị viên | Tải lên FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | Quản trị viên | Tải lên S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | Quản trị viên | Tải lên WebDAV |
+| POST | `/api/v1/backups/:id/restore` | Siêu quản trị viên | Khôi phục từ bản sao lưu |
+| POST | `/api/v1/backups/:id/upload-ftp` | Siêu quản trị viên | Tải lên FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | Siêu quản trị viên | Tải lên S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | Siêu quản trị viên | Tải lên WebDAV |
 | POST | `/api/v1/backups/create` | Quản trị viên | Tạo bản sao lưu đầy đủ (với kết xuất DB) |
 | GET | `/api/v1/backups/list` | Quản trị viên | Danh sách sao lưu đầy đủ |
-| POST | `/api/v1/backups/remote-restore` | Quản trị viên | Khôi phục từ xa |
-| GET | `/api/v1/backups/restore-status` | Quản trị viên | Khôi phục tiến trình |
+| POST | `/api/v1/backups/remote-restore` | Siêu quản trị viên | Khôi phục từ xa |
+| GET | `/api/v1/backups/restore-status` | Siêu quản trị viên | Khôi phục tiến trình |
 | GET | `/api/v1/backups/schedules` | Quản trị viên | Danh sách công việc theo lịch trình |
 | POST | `/api/v1/backups/schedules` | Quản trị viên | Tạo công việc theo lịch trình |
 | DELETE | `/api/v1/backups/schedules/:id` | Quản trị viên | Xóa công việc đã lên lịch |
@@ -988,7 +996,7 @@ Cơ sở dữ liệu/sao lưu đầy đủ, khôi phục, công việc theo lị
 | DELETE | `/api/v1/backups/storages/:id` | Quản trị viên | Xóa cấu hình lưu trữ |
 | PUT | `/api/v1/backups/storages/:id` | Quản trị viên | Cập nhật cấu hình lưu trữ |
 | GET | `/api/v1/backups/storages/:id/files` | Quản trị viên | Danh sách tập tin sao lưu từ xa |
-| POST | `/api/v1/backups/upload-restore` | Quản trị viên | Tải lên bản sao lưu và khôi phục |
+| POST | `/api/v1/backups/upload-restore` | Siêu quản trị viên | Tải lên bản sao lưu và khôi phục |
 
 ### Cài đặt hệ thống
 
@@ -1001,8 +1009,8 @@ Cấu hình và di chuyển cơ sở dữ liệu, cài đặt bảng điều khi
 | GET | `/api/v1/system/config-file/:coreType` | Quản trị viên | Đọc tập tin cấu hình lõi |
 | GET | `/api/v1/system/db-config` | Quản trị viên | Cấu hình cơ sở dữ liệu |
 | PUT | `/api/v1/system/db-config` | Quản trị viên | Cập nhật cấu hình cơ sở dữ liệu |
-| POST | `/api/v1/system/db-config/migrate` | Quản trị viên | Di chuyển dữ liệu cơ sở dữ liệu |
-| POST | `/api/v1/system/db-config/switch` | Quản trị viên | Chuyển đổi cơ sở dữ liệu (với di chuyển một bước) |
+| POST | `/api/v1/system/db-config/migrate` | Siêu quản trị viên | Di chuyển dữ liệu cơ sở dữ liệu |
+| POST | `/api/v1/system/db-config/switch` | Siêu quản trị viên | Chuyển đổi cơ sở dữ liệu (với di chuyển một bước) |
 | POST | `/api/v1/system/db-config/test` | Quản trị viên | Kiểm tra kết nối cơ sở dữ liệu |
 | GET | `/api/v1/system/db-pool-stats` | Quản trị viên | Thống kê nhóm kết nối |
 | GET | `/api/v1/system/db-stats` | Quản trị viên | Thống kê cơ sở dữ liệu |
@@ -1011,13 +1019,13 @@ Cấu hình và di chuyển cơ sở dữ liệu, cài đặt bảng điều khi
 | GET | `/api/v1/system/encryption-key-status` | Quản trị viên | Trạng thái khóa mã hóa |
 | GET | `/api/v1/system/env-config` | Quản trị viên | cấu hình .env |
 | PUT | `/api/v1/system/env-config` | Quản trị viên | Cập nhật cấu hình .env |
-| POST | `/api/v1/system/generate-encryption-key` | Quản trị viên | Tạo khóa mã hóa |
+| POST | `/api/v1/system/generate-encryption-key` | Siêu quản trị viên | Tạo khóa mã hóa |
 | GET | `/api/v1/system/github-config` | Quản trị viên | Cấu hình GitHub |
 | PUT | `/api/v1/system/github-config` | Quản trị viên | Cập nhật cấu hình GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | Quản trị viên | Trạng thái khóa JWT |
 | GET | `/api/v1/system/maintenance` | công khai | Trạng thái chế độ bảo trì (công khai) |
 | PUT | `/api/v1/system/maintenance` | Quản trị viên | Chuyển đổi chế độ bảo trì |
-| POST | `/api/v1/system/migrate-data` | Quản trị viên | Di chuyển dữ liệu |
+| POST | `/api/v1/system/migrate-data` | Siêu quản trị viên | Di chuyển dữ liệu |
 | GET | `/api/v1/system/notification-config` | Quản trị viên | Cấu hình thông báo |
 | PUT | `/api/v1/system/notification-config` | Quản trị viên | Cập nhật cấu hình thông báo |
 | GET | `/api/v1/system/notification-templates` | Quản trị viên | Danh sách mẫu |
@@ -1030,13 +1038,13 @@ Cấu hình và di chuyển cơ sở dữ liệu, cài đặt bảng điều khi
 | PUT | `/api/v1/system/panel-config` | Quản trị viên | Cập nhật cấu hình bảng điều khiển |
 | GET | `/api/v1/system/reality-targets` | Quản trị viên | Danh sách mục tiêu REALITY |
 | PUT | `/api/v1/system/reality-targets` | Quản trị viên | Cập nhật mục tiêu REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | Quản trị viên | Đặt lại mục tiêu REALITY về mặc định |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Đọc cấu hình SNI cục bộ Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Cập nhật cấu hình SNI cục bộ Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Quản trị viên | Tạo lại khóa JWT |
+| POST | `/api/v1/system/reality-targets/reset` | Siêu quản trị viên | Đặt lại mục tiêu REALITY về mặc định |
+| GET | `/api/v1/system/reality-local-sni` | Quản trị viên | Đọc cấu hình SNI cục bộ SNI |
+| PUT | `/api/v1/system/reality-local-sni` | Quản trị viên | Cập nhật cấu hình SNI cục bộ Reality |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Siêu quản trị viên | Tạo lại khóa JWT |
 | GET | `/api/v1/system/releases` | Quản trị viên | Phiên bản có sẵn |
-| POST | `/api/v1/system/restart` | Quản trị viên | Khởi động lại |
-| POST | `/api/v1/system/rollback` | Quản trị viên | Khôi phục hệ thống |
+| POST | `/api/v1/system/restart` | Siêu quản trị viên | Khởi động lại |
+| POST | `/api/v1/system/rollback` | Siêu quản trị viên | Khôi phục hệ thống |
 | GET | `/api/v1/system/settings` | Quản trị viên | Đọc cài đặt |
 | PUT | `/api/v1/system/settings/batch` | Quản trị viên | Cài đặt cập nhật hàng loạt |
 | GET | `/api/v1/system/stats` | Quản trị viên | Trạng thái hệ thống |
@@ -1045,7 +1053,7 @@ Cấu hình và di chuyển cơ sở dữ liệu, cài đặt bảng điều khi
 | POST | `/api/v1/system/telegram-chat-id` | Quản trị viên | Nhận ID trò chuyện Telegram |
 | POST | `/api/v1/system/test-smtp` | Quản trị viên | Kiểm tra SMTP |
 | POST | `/api/v1/system/test-telegram` | Quản trị viên | Kiểm tra Telegram |
-| POST | `/api/v1/system/update` | Quản trị viên | Nâng cấp hệ thống |
+| POST | `/api/v1/system/update` | Siêu quản trị viên | Nâng cấp hệ thống |
 | GET | `/api/v1/system/update-jobs` | Quản trị viên | Nâng cấp danh sách công việc |
 | POST | `/api/v1/system/upload-mtls-ca` | Quản trị viên | Tải lên chứng chỉ mTLS CA |
 
@@ -1055,8 +1063,9 @@ Kiểm tra truy vấn sự kiện và xuất.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Đã đăng nhập | Danh sách sự kiện kiểm tra |
-| GET | `/api/v1/security/audit-events/export` | Đã đăng nhập | Xuất sự kiện kiểm tra |
+| GET | `/api/v1/security/audit-events` | Quản trị viên | Danh sách sự kiện kiểm tra |
+| GET | `/api/v1/security/audit-events/export` | Quản trị viên | Xuất sự kiện kiểm tra |
+| GET | `/api/v1/security/subscription-access-logs` | Quản trị viên | Nhật ký tìm nạp đăng ký (lọc theo ID đăng ký / IP / email khách hàng) |
 
 ### Số liệu
 
@@ -1064,9 +1073,9 @@ Số liệu tổng hợp của bảng điều khiển (nút/chứng chỉ/dịch
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Đã đăng nhập | Số liệu chứng chỉ |
-| GET | `/api/v1/metrics/nodes` | Đã đăng nhập | Số liệu nút |
-| GET | `/api/v1/metrics/overview` | Đã đăng nhập | Tổng quan |
+| GET | `/api/v1/metrics/certificates` | Quản trị viên | Số liệu chứng chỉ |
+| GET | `/api/v1/metrics/nodes` | Quản trị viên | Số liệu nút |
+| GET | `/api/v1/metrics/overview` | Quản trị viên | Tổng quan |
 
 ### Mẫu cổng thông tin
 
@@ -1074,20 +1083,20 @@ Mẫu cổng thông tin, cấu hình kích hoạt và quản lý bộ đệm.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Đã đăng nhập | Mẫu đang hoạt động |
-| PUT | `/api/v1/portal/active` | Đã đăng nhập | Cập nhật mẫu đang hoạt động |
-| DELETE | `/api/v1/portal/cache` | Đã đăng nhập | Xóa bộ đệm cổng thông tin |
-| GET | `/api/v1/portal/cache` | Đã đăng nhập | Trạng thái bộ đệm |
-| PUT | `/api/v1/portal/cache/dev-mode` | Đã đăng nhập | Chuyển đổi chế độ phát triển bộ đệm |
-| POST | `/api/v1/portal/cache/rebuild` | Đã đăng nhập | Xây dựng lại bộ đệm cổng thông tin |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Gói ngôn ngữ tích hợp |
-| POST | `/api/v1/portal/reset` | Đã đăng nhập | Khôi phục mẫu mặc định |
-| GET | `/api/v1/portal/templates` | Đã đăng nhập | Danh sách |
-| POST | `/api/v1/portal/templates` | Đã đăng nhập | Tạo |
-| DELETE | `/api/v1/portal/templates/:id` | Đã đăng nhập | Xóa |
-| GET | `/api/v1/portal/templates/:id` | Đã đăng nhập | Chi tiết |
-| PUT | `/api/v1/portal/templates/:id` | Đã đăng nhập | cập nhật |
-| POST | `/api/v1/portal/templates/:id/activate` | Đã đăng nhập | Kích hoạt mẫu |
+| GET | `/api/v1/portal/active` | Quản trị viên | Mẫu đang hoạt động |
+| PUT | `/api/v1/portal/active` | Quản trị viên | Cập nhật mẫu đang hoạt động |
+| DELETE | `/api/v1/portal/cache` | Quản trị viên | Xóa bộ đệm cổng thông tin |
+| GET | `/api/v1/portal/cache` | Quản trị viên | Trạng thái bộ đệm |
+| PUT | `/api/v1/portal/cache/dev-mode` | Quản trị viên | Chuyển đổi chế độ phát triển bộ đệm |
+| POST | `/api/v1/portal/cache/rebuild` | Quản trị viên | Xây dựng lại bộ đệm cổng thông tin |
+| GET | `/api/v1/portal/lang/builtin` | Quản trị viên | Gói ngôn ngữ tích hợp |
+| POST | `/api/v1/portal/reset` | Quản trị viên | Khôi phục mẫu mặc định |
+| GET | `/api/v1/portal/templates` | Quản trị viên | Danh sách |
+| POST | `/api/v1/portal/templates` | Quản trị viên | Tạo |
+| DELETE | `/api/v1/portal/templates/:id` | Quản trị viên | Xóa |
+| GET | `/api/v1/portal/templates/:id` | Quản trị viên | Chi tiết |
+| PUT | `/api/v1/portal/templates/:id` | Quản trị viên | cập nhật |
+| POST | `/api/v1/portal/templates/:id/activate` | Quản trị viên | Kích hoạt mẫu |
 
 > `/portal/templates` CRUD là **API nâng cao**: giao diện người dùng cổng thông tin chủ yếu sử dụng `PUT /api/v1/portal/active`
 > (cấu hình toàn bộ trang web một lần); quản lý/chuyển đổi nhiều mẫu với nhóm này. Cả hai đều được hỗ trợ và không xung đột.
@@ -1103,7 +1112,7 @@ Tập lệnh cài đặt và tải xuống Node Agent (công khai).
 | GET | `/api/v1/agent/version` | Quản trị viên | Phiên bản Đại lý hiện tại trên bảng điều khiển |
 | GET | `/api/v1/agent/download` | công khai | Tải đại lý |
 | GET | `/api/v1/agent/install` | công khai | Nhận tập lệnh cài đặt |
-| GET | `/api/v1/agent/origin` | 公开 | Địa chỉ gốc của bảng điều khiển (công khai) |
+| GET | `/api/v1/agent/origin` | công khai | Địa chỉ nguồn của bảng điều khiển (công khai) |
 
 ### Tính phí mục gọi lại
 
@@ -1136,79 +1145,75 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 
 ### Xác thực khách hàng và doanh nghiệp (cùng được đặt trên công cụ quản trị)
 
-Điểm cuối của khách hàng giống hệt với cổng thông tin; xem `portal-api.en.md` để biết chi tiết.
+Điểm cuối của khách hàng giống hệt với cổng thông tin. Họ sử dụng **mã thông báo khách hàng** (`Authorization: Bearer <client_token>`), không phải mã thông báo quản trị viên; xem `portal-api.en.md` để biết chi tiết.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | công khai | Liệt kê các bài viết |
-| GET | `/api/v1/client-auth/articles/:slug` | công khai | Nhận bài viết |
-| GET | `/api/v1/client-auth/balance` | công khai | Nhận số dư |
-| GET | `/api/v1/client-auth/balance/transactions` | công khai | Giao dịch số dư |
-| POST | `/api/v1/client-auth/change-password` | công khai | Thay đổi mật khẩu |
-| POST | `/api/v1/client-auth/charge/create` | công khai | Tạo lệnh nạp tiền |
-| GET | `/api/v1/client-auth/charge/orders` | công khai | Liệt kê các lệnh nạp tiền |
-| GET | `/api/v1/client-auth/charge/orders/:id` | công khai | Nhận chi tiết đơn hàng nạp tiền |
-| POST | `/api/v1/client-auth/charge/redeem-card` | công khai | Đổi thẻ |
-| GET | `/api/v1/client-auth/charge/sites` | công khai | Liệt kê các trang web nạp tiền |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | công khai | Truy vấn trạng thái nạp tiền |
-| GET | `/api/v1/client-auth/checktime` | công khai | Nhận thời gian máy chủ (đồng bộ hóa đồng hồ) |
-| GET | `/api/v1/client-auth/connection-info` | công khai | Nhận thông số kết nối kế hoạch |
-| GET | `/api/v1/client-auth/gifts` | công khai | Danh sách quà tặng |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | công khai | Yêu cầu quà tặng |
-| GET | `/api/v1/client-auth/invoices` | công khai | Danh sách đặt hàng |
-| GET | `/api/v1/client-auth/invoices/:id` | công khai | Chi tiết đặt hàng |
-| GET | `/api/v1/client-auth/settings/whitelist` | công khai | Liệt kê danh sách cho phép IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | công khai | Xóa khỏi danh sách cho phép IP |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | công khai | Tự động thêm IP |
-| POST | `/api/v1/client-auth/login` | công khai | Đăng nhập |
-| POST | `/api/v1/client-auth/logout` | công khai | Đăng xuất |
-| POST | `/api/v1/client-auth/logs/package` | công khai | Tạo gói nhật ký |
-| GET | `/api/v1/client-auth/logs/packages` | công khai | Liệt kê các gói nhật ký |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | công khai | Xóa gói nhật ký |
-| GET | `/api/v1/client-auth/logs/packages/:id` | công khai | Nhận gói nhật ký |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | công khai | Tải xuống gói nhật ký |
-| GET | `/api/v1/client-auth/logs/types` | công khai | Đăng nhập kiểm tra tình trạng gói |
-| GET | `/api/v1/client-auth/me` | công khai | Nhận người dùng đã đăng nhập hiện tại |
-| GET | `/api/v1/client-auth/nodes` | công khai | Danh sách nút của tôi |
-| GET | `/api/v1/client-auth/nodes/:id/config` | công khai | Cấu hình nút |
-| GET | `/api/v1/client-auth/nodes/:id/link` | công khai | Liên kết chia sẻ nút |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | công khai | Mã QR nút |
-| GET | `/api/v1/client-auth/oauth/:provider` | công khai | Ủy quyền |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | công khai | Gọi lại |
-| GET | `/api/v1/client-auth/oauth/providers` | công khai | Trạng thái nhà cung cấp |
-| GET | `/api/v1/client-auth/orders` | công khai | Danh sách đặt hàng |
-| POST | `/api/v1/client-auth/orders` | công khai | Tạo đơn hàng |
-| GET | `/api/v1/client-auth/orders/:id` | công khai | Chi tiết đặt hàng |
-| GET | `/api/v1/client-auth/plans` | công khai | Danh sách kế hoạch |
-| GET | `/api/v1/client-auth/plans/:id` | công khai | Chi tiết kế hoạch |
-| GET | `/api/v1/client-auth/referral/code` | công khai | Nhận mã xác minh giới thiệu |
-| GET | `/api/v1/client-auth/referral/records` | công khai | Liệt kê hồ sơ giới thiệu |
-| GET | `/api/v1/client-auth/referral/stats` | công khai | Nhận số liệu thống kê giới thiệu |
-| POST | `/api/v1/client-auth/referral/withdraw` | công khai | Yêu cầu rút tiền |
-| GET | `/api/v1/client-auth/referral/withdrawals` | công khai | Liệt kê các lần rút tiền giới thiệu |
-| POST | `/api/v1/client-auth/refresh` | công khai | Làm mới |
-| POST | `/api/v1/client-auth/register` | công khai | Đăng ký |
-| POST | `/api/v1/client-auth/reset-subscription` | công khai | Đặt lại đăng ký |
-| PUT | `/api/v1/client-auth/settings` | công khai | Cập nhật hồ sơ |
-| POST | `/api/v1/client-auth/rotate-token` | công khai | Xoay mã thông báo đăng ký |
-| POST | `/api/v1/client-auth/self-unban` | công khai | Bỏ cấm tự phục vụ |
-| PUT | `/api/v1/client-auth/settings` | công khai | Cập nhật cài đặt |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | công khai | Tự động thêm IP |
-| GET | `/api/v1/client-auth/settings/whitelist` | công khai | Liệt kê danh sách cho phép IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | công khai | Xóa khỏi danh sách cho phép IP |
-| GET | `/api/v1/client-auth/shared-accounts` | công khai | Liệt kê các tài khoản được chia sẻ |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | công khai | Nhận tài khoản chia sẻ |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | công khai | Yêu cầu chia sẻ tài khoản |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | công khai | Yêu cầu sửa chữa |
-| POST | `/api/v1/client-auth/ticket` | công khai | Xuất vé ngắn hạn một lần |
-| GET | `/api/v1/client-auth/tickets` | công khai | Liệt kê vé |
-| POST | `/api/v1/client-auth/tickets` | công khai | Tạo vé |
-| GET | `/api/v1/client-auth/tickets/:id` | công khai | Nhận vé |
-| POST | `/api/v1/client-auth/tickets/:id/close` | công khai | Đóng vé |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | công khai | Trả lời vé |
-| GET | `/api/v1/client-auth/traffic-history` | công khai | lịch sử giao thông |
-| GET | `/api/v1/client-auth/traffic-packs` | công khai | Danh sách gói lưu lượng truy cập |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | công khai | Mua gói lưu lượng truy cập |
+| GET | `/api/v1/client-auth/articles` | Khách hàng (đã đăng nhập) | Liệt kê các bài viết |
+| GET | `/api/v1/client-auth/articles/:slug` | Khách hàng (đã đăng nhập) | Nhận bài viết |
+| GET | `/api/v1/client-auth/balance` | Khách hàng (đã đăng nhập) | Nhận số dư |
+| GET | `/api/v1/client-auth/balance/transactions` | Khách hàng (đã đăng nhập) | Giao dịch số dư |
+| POST | `/api/v1/client-auth/change-password` | Khách hàng (đã đăng nhập) | Thay đổi mật khẩu |
+| POST | `/api/v1/client-auth/charge/create` | Khách hàng (đã đăng nhập) | Tạo lệnh nạp tiền |
+| GET | `/api/v1/client-auth/charge/orders` | Khách hàng (đã đăng nhập) | Liệt kê các lệnh nạp tiền |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Khách hàng (đã đăng nhập) | Nhận chi tiết đơn hàng nạp tiền |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Khách hàng (đã đăng nhập) | Đổi thẻ |
+| GET | `/api/v1/client-auth/charge/sites` | Khách hàng (đã đăng nhập) | Liệt kê các trang web nạp tiền |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Khách hàng (đã đăng nhập) | Truy vấn trạng thái nạp tiền |
+| GET | `/api/v1/client-auth/checktime` | Khách hàng (đã đăng nhập) | Nhận thời gian máy chủ (đồng bộ hóa đồng hồ) |
+| GET | `/api/v1/client-auth/connection-info` | Khách hàng (đã đăng nhập) | Nhận thông số kết nối kế hoạch |
+| GET | `/api/v1/client-auth/gifts` | Khách hàng (đã đăng nhập) | Danh sách quà tặng |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Khách hàng (đã đăng nhập) | Yêu cầu quà tặng |
+| GET | `/api/v1/client-auth/invoices` | Khách hàng (đã đăng nhập) | Danh sách đặt hàng |
+| GET | `/api/v1/client-auth/invoices/:id` | Khách hàng (đã đăng nhập) | Chi tiết đặt hàng |
+| POST | `/api/v1/client-auth/login` | Khách hàng (công khai) | Đăng nhập |
+| POST | `/api/v1/client-auth/logout` | Khách hàng (đã đăng nhập) | Đăng xuất |
+| POST | `/api/v1/client-auth/logs/package` | Khách hàng (đã đăng nhập) | Tạo gói nhật ký |
+| GET | `/api/v1/client-auth/logs/packages` | Khách hàng (đã đăng nhập) | Liệt kê các gói nhật ký |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Khách hàng (đã đăng nhập) | Xóa gói nhật ký |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Khách hàng (đã đăng nhập) | Nhận gói nhật ký |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Khách hàng (đã đăng nhập) | Tải xuống gói nhật ký |
+| GET | `/api/v1/client-auth/logs/types` | Khách hàng (đã đăng nhập) | Đăng nhập kiểm tra tình trạng gói |
+| GET | `/api/v1/client-auth/me` | Khách hàng (đã đăng nhập) | Nhận người dùng đã đăng nhập hiện tại |
+| GET | `/api/v1/client-auth/nodes` | Khách hàng (đã đăng nhập) | Danh sách nút của tôi |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Khách hàng (đã đăng nhập) | Cấu hình nút |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Khách hàng (đã đăng nhập) | Liên kết chia sẻ nút |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Khách hàng (đã đăng nhập) | Mã QR nút |
+| GET | `/api/v1/client-auth/oauth/:provider` | Khách hàng (công khai) | Ủy quyền |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Khách hàng (công khai) | Gọi lại |
+| GET | `/api/v1/client-auth/oauth/providers` | Khách hàng (công khai) | Trạng thái nhà cung cấp |
+| GET | `/api/v1/client-auth/orders` | Khách hàng (đã đăng nhập) | Danh sách đặt hàng |
+| POST | `/api/v1/client-auth/orders` | Khách hàng (đã đăng nhập) | Tạo đơn hàng |
+| GET | `/api/v1/client-auth/orders/:id` | Khách hàng (đã đăng nhập) | Chi tiết đặt hàng |
+| GET | `/api/v1/client-auth/plans` | Khách hàng (đã đăng nhập) | Danh sách kế hoạch |
+| GET | `/api/v1/client-auth/plans/:id` | Khách hàng (đã đăng nhập) | Chi tiết kế hoạch |
+| GET | `/api/v1/client-auth/referral/code` | Khách hàng (đã đăng nhập) | Nhận mã xác minh giới thiệu |
+| GET | `/api/v1/client-auth/referral/records` | Khách hàng (đã đăng nhập) | Liệt kê hồ sơ giới thiệu |
+| GET | `/api/v1/client-auth/referral/stats` | Khách hàng (đã đăng nhập) | Nhận số liệu thống kê giới thiệu |
+| POST | `/api/v1/client-auth/referral/withdraw` | Khách hàng (đã đăng nhập) | Yêu cầu rút tiền |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Khách hàng (đã đăng nhập) | Liệt kê các lần rút tiền giới thiệu |
+| POST | `/api/v1/client-auth/refresh` | Khách hàng (công khai) | Làm mới |
+| POST | `/api/v1/client-auth/register` | Khách hàng (công khai) | Đăng ký |
+| POST | `/api/v1/client-auth/reset-subscription` | Khách hàng (đã đăng nhập) | Đặt lại đăng ký |
+| POST | `/api/v1/client-auth/rotate-token` | Khách hàng (đã đăng nhập) | Xoay mã thông báo đăng ký |
+| POST | `/api/v1/client-auth/self-unban` | Khách hàng (đã đăng nhập) | Bỏ cấm tự phục vụ |
+| PUT | `/api/v1/client-auth/settings` | Khách hàng (đã đăng nhập) | Cập nhật cài đặt |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Khách hàng (đã đăng nhập) | Tự động thêm IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | Khách hàng (đã đăng nhập) | Liệt kê danh sách cho phép IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Khách hàng (đã đăng nhập) | Xóa khỏi danh sách cho phép IP |
+| GET | `/api/v1/client-auth/shared-accounts` | Khách hàng (đã đăng nhập) | Liệt kê các tài khoản được chia sẻ |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Khách hàng (đã đăng nhập) | Nhận tài khoản chia sẻ |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Khách hàng (đã đăng nhập) | Yêu cầu chia sẻ tài khoản |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Khách hàng (đã đăng nhập) | Yêu cầu sửa chữa |
+| POST | `/api/v1/client-auth/ticket` | Khách hàng (đã đăng nhập) | Xuất vé ngắn hạn một lần |
+| GET | `/api/v1/client-auth/tickets` | Khách hàng (đã đăng nhập) | Liệt kê vé |
+| POST | `/api/v1/client-auth/tickets` | Khách hàng (đã đăng nhập) | Tạo vé |
+| GET | `/api/v1/client-auth/tickets/:id` | Khách hàng (đã đăng nhập) | Nhận vé |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Khách hàng (đã đăng nhập) | Đóng vé |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Khách hàng (đã đăng nhập) | Trả lời vé |
+| GET | `/api/v1/client-auth/traffic-history` | Khách hàng (đã đăng nhập) | lịch sử giao thông |
+| GET | `/api/v1/client-auth/traffic-packs` | Khách hàng (đã đăng nhập) | Danh sách gói lưu lượng truy cập |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Khách hàng (đã đăng nhập) | Mua gói lưu lượng truy cập |
 
 ### Phân phối đăng ký
 
@@ -1220,7 +1225,7 @@ Cấu hình thời gian chạy cổng thông tin mà không cần đăng nhập 
 
 ### Quy trình cấu hình thời gian chạy
 
-Cấu hình ảnh chụp nhanh / chạy khô / áp dụng / khôi phục (`apply`, `rollback` và `disable-proxy` yêu cầu quản trị viên).
+Cấu hình ảnh chụp nhanh / chạy thử / áp dụng / khôi phục (`apply`, `rollback` và `disable-proxy` yêu cầu quản trị viên).
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
@@ -1278,4 +1283,4 @@ Gọi lại thử thách HTTP-01.
 
 | phương pháp | Đường dẫn | Quyền | Mô tả |
 |---|---|---|---|
-| GET | `/.well-known/acme-challenge/:token` | công khai | Gọi lại thử thách ACME HTTP-01 (xác minh tên miền trong quá trình phát hành) |
+| GET | `/.well-known/acme-challenge/:token` | công khai | ACME HTTP-01 gọi lại thử thách (xác minh tên miền trong quá trình phát hành) |

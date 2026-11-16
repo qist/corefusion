@@ -21,6 +21,7 @@
 | `config` | 套用的配置模板名称（管理端\"订阅格式\"里定义的 config），须与本次 `format` 同格式，否则忽略 |
 | `platform` | 按平台名匹配配置模板（`config` 未指定时生效），同样要求格式一致 |
 | `providers` | 仅对 `mihomo_yaml` 生效：`1` / `true` 进入 **Provider 模式**，输出 `proxy-providers`、组内用 `use` 引用；缺省或其它值为原始模式（节点内联在 `proxies`）。详见 §6 |
+| `provider` | 仅对 `mihomo_proxies_yaml` 生效：填 provider key 时只输出该来源的节点子集（不含计费伪节点）；留空输出全部节点。面板生成的 `proxy-providers.url` 会自动带上该参数 |
 
 ### 支持的 format 值
 
@@ -54,8 +55,9 @@
 |---|---|---|
 | 200 | — | 正常下发（body 为按 format 渲染的订阅内容） |
 | 400 | `MISSING_TOKEN` | URL 缺 token |
-| 403 | （纯文本消息） | 订阅被暂停 / 已到期 / 未激活。消息按 `Accept-Language` 出 zh/en/ja/ko，body 为一行原因说明 |
+| 403 | （纯文本消息） | 订阅被暂停 / 已到期 / 未激活 / IP 不在白名单。消息按 `Accept-Language` 出 zh/en/ja/ko/ru，body 为一行原因说明 |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | token 不存在 |
+| 429 | `TOO_MANY_REQUESTS` | 触发订阅端点限流（`SubscribeRateLimit`），JSON 错误响应，稍后重试 |
 
 > 吊销（revoke）的订阅按不存在处理（404）。
 

@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: ru | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: ru | updated: 2026-11-16 -->
 # Справочник по порталу API (Клиент/портал API)
 
 > Языки: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · Русский · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | Публичные статьи (только опубликованные) |
 | GET | `/api/v1/public/articles/:slug` | Подробности статьи |
 | GET | `/api/v1/public/client-configs` | Конфигурация загрузки клиента |
-| GET | `/sub/:token` | Доставка подписки (`format` возвращает base64_uri/raw_uri/mihomo_yaml/singbox_json/xray_json и т. д.; отозвана/отсутствует → 404, приостановлена/истекла/неактивна → 403. См. [subscription.md](./subscription.ru.md)) |
+| GET | `/sub/:token` | Доставка подписки (`format` возвращает base64_uri/raw_uri/mihomo_yaml/singbox_json/xray_json и т. д.; отозвана/отсутствует → 404, приостановлена/истекла/неактивна → 403. См. [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Видимость поставщика OAuth: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}`. |
 | GET | `/api/v1/system/maintenance` | Статус обслуживания (общедоступный). Портал показывает страницу обслуживания, когда он включен. |
 
@@ -93,8 +93,8 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/refresh` | — | Обновить. Тело: `{refresh_token}`. Возвращает новые токены доступа/обновления (версия проверена; старые токены обновления исчезают сразу после выхода из системы) |
 | POST | `/api/v1/client-auth/logout` | ✓ | Выход из системы: отзыв на стороне сервера (`token_version +1`) → все старые токены клиента недействительны. |
 | POST | `/api/v1/client-auth/rotate-token` | ✓ | Поворот токена подписки |
-| POST | `/api/v1/client-auth/ticket` | ✓ | Выдать **одноразовый билет с коротким сроком действия** (для потоков `window.open`, таких как «загрузка пакета журналов», где заголовки не могут быть установлены). |
-| GET | `/api/v1/client-auth/oauth/:provider` | — | Запустить OAuth: 307 → согласие GitHub/Google (`state` anti-CSRF, 10 минут); поставщики-инвалиды возвращают 400 |
+| POST | `/api/v1/client-auth/ticket` | ✓ | Выдать **одноразовый билет с коротким сроком действия** (для потоков `window.open`, таких как «загрузка пакета журналов», где заголовки не могут быть установлены) |
+| GET | `/api/v1/client-auth/oauth/:provider` | — | Запуск OAuth: 307 → согласие GitHub/Google (`state` anti-CSRF, 10 минут); поставщики-инвалиды возвращают 400 |
 | GET | `/api/v1/client-auth/oauth/:provider/callback` | — | Обратный вызов OAuth: код обмена → создать/связать клиент → выдать версию JWT → 302 вернуться на портал (`/<portalPath>?access_token=...&refresh_token=...`) |
 
 > Обратный вызов OAuth — это **перенаправление браузера** (а не вызов API): после успешного входа в систему портал считывает токен.
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Текущий клиент: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (конверт `data`) |
+| PUT | `/api/v1/client-auth/settings` | Обновите настройки самообслуживания клиента: Тело: `{ip_whitelist, device_limit}`; Пустой `ip_whitelist` означает отсутствие ограничений по IP-адресу источника. |
 | POST | `/api/v1/client-auth/change-password` | Корпус: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Серверное время (синхронизация часов клиента) |
 | GET | `/api/v1/client-auth/connection-info` | Параметры подключения текущего плана: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -131,7 +132,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 
 | Метод | Путь | Описание |
 |---|---|---|
-| GET | `/api/v1/client-auth/plans` | Список планов (пустой массив): `{id, name, description, category, sort_order, variants:[{id, name, billing_cycle, duration_days, price(cents), original_price, currency, quota_bytes, ...}]}` |
+| GET | `/api/v1/client-auth/plans` | Список планов (голый массив): `{id, name, description, category, sort_order, variants:[{id, name, billing_cycle, duration_days, price(cents), original_price, currency, quota_bytes, ...}]}` |
 | GET | `/api/v1/client-auth/plans/:id` | Детали плана |
 | GET | `/api/v1/client-auth/traffic-packs` | Список пакетов трафика |
 | POST | `/api/v1/client-auth/traffic-packs/buy` | Купить пакет трафика |
@@ -146,12 +147,12 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | Метод | Путь | Описание |
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
-| GET | `/api/v1/client-auth/balance/transactions` | Балансовые транзакции (`type`: начисление/потребление/возврат; с разбивкой на страницы) |
+| GET | `/api/v1/client-auth/balance/transactions` | Транзакции баланса (`type`: начисление/потребление/возврат; с разбивкой на страницы) |
 | GET | `/api/v1/client-auth/charge/sites` | Доступные сайты пополнения счета (`ListChargeSites`: только включено) |
 | POST | `/api/v1/client-auth/charge/create` | Создать заказ на пополнение счета (перенаправляет на сторонний платеж) |
 | GET | `/api/v1/client-auth/charge/orders` | Список заказов на пополнение счета |
 | GET | `/api/v1/client-auth/charge/orders/:id` | Детали заказа пополнения счета |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Опросить статус оплаты по trade_no |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Опрос статуса оплаты по trade_no |
 | POST | `/api/v1/client-auth/charge/redeem-card` | Погасить карту пополнения |
 
 > Удаление клиента **каскадом** к его балансу и транзакциям (см. `DeleteClient` в `internal/service/client/service.go`).
@@ -200,7 +201,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Запросить доступ |
 | POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Ремонт в один клик |
 
-## 14. Пакеты журналов (диагностика подписчиков)
+## 14. Пакеты журналов (диагностика абонента)
 
 | Метод | Путь | Описание |
 |---|---|---|
@@ -226,7 +227,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 > список разрешений — это настройка для каждого пользователя; глобального переключателя нет.
 
 **Поток саморазблокировки**: доступен только для `auto_quota` (автоматический запрет при превышении трафика), если на стороне администратора
-`self_unban.enabled` включен. Вход (пароль или обратный вызов OAuth) возвращает `require_self_unban=true` + `self_unban_token`.
+`self_unban.enabled` включен. Вход в систему (пароль или обратный вызов OAuth) возвращает `require_self_unban=true` + `self_unban_token`.
 (тип=self_unban, действителен 15 минут, **можно использовать только на `POST /self-unban`; другие конечные точки возвращают 403/`SELF_UNBAN_TOKEN_SCOPE`).
 Затем портал показывает карту разблокировки; после успешной разбанки пользователь снова авторизуется. Обратные вызовы OAuth доставляют это через
 фрагмент URL `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
@@ -246,7 +247,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 Ссылки «Политика конфиденциальности · Условия обслуживания» находятся в нижней части карточки входа (так же, как и на обычных сайтах; нажатие открывает содержимое):
 
 - **Конфигурация**: редактор портала → Настройки → Общие → Документы о соответствии (**редактирование контента для каждого языка**);
- вы также можете использовать `PUT /api/v1/portal/active` со структурированными полями `privacy_policy_url`/`privacy_policy_content`/
+ вы также можете `PUT /api/v1/portal/active` со структурированными полями `privacy_policy_url`/`privacy_policy_content`/
  `terms_of_service_url` / `terms_of_service_content` (ноль = без изменений; содержимое представляет собой карту `{"zh-CN":"...","en":"..."}`).
 - **Отдельные доступные страницы** (отрисовываются на сервере, легко подходят для сканеров проверки Google; поддерживает `?lang=xx`):
   - Домен главной панели: `GET /p/legal/privacy`, `GET /p/legal/terms`.

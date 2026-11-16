@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: ko | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: ko | updated: 2026-11-16 -->
 # 관리자 API
 
 > 언어: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · 한국어 · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@
 - 베이스 URL: `https://<panel-domain>/api/v1`
 - 저자: `Authorization: Bearer <admin_token>`(`POST /api/v1/auth/login`에서)
 - 일반적인 응답/오류 형식 및 속도 제한 규칙: [README.md](./README.ko.md)를 참조하세요.
-- 정보 출처: `internal/api/router/router.go`(개수는 버전에 따라 달라집니다. 코드가 우선입니다); 이 테이블이 동의하지 않으면 **코드가 승리합니다**
+- 정보 출처: `internal/api/router/router.go`(개수는 버전에 따라 다르며 코드는 신뢰할 수 있음) 이 테이블이 동의하지 않으면 **코드가 승리합니다**
 
 ## 권한 표시
 
@@ -17,8 +17,11 @@
 | 공개 | 로그인 필요 없음(유지 관리 가드/속도 제한이 여전히 적용될 수 있음) |
 | 공개 · 요금 제한 | 로그인 없음, 전용 비율 제한 있음 |
 | 로그인됨 | 로그인된 관리자 토큰이 필요합니다(`AuthRequired`) |
+| 운영자 | 역할 ≥ `operator`(`RequireRole(RoleOperator)`) 필요 |
 | 관리자 | 역할 ≥ `admin`(`RequireRole(RoleAdmin)`) 필요 |
 | 최고 관리자 | 역할 필요 = `super_admin` |
+| 클라이언트(공개) | 클라이언트 토큰이 필요하지 않습니다(로그인/등록 등). |
+| 고객(로그인) | `Authorization: Bearer <client_token>` 필요(관리자 토큰이 아닌 포털 클라이언트 토큰) |
 
 역할 수준: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; 역할이 부족하면 403 `INSUFFICIENT_ROLE`가 반환됩니다.
 
@@ -196,8 +199,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | 공개 | 로그인 완료 |
 | POST | `/api/v1/auth/passkey/register/begin` | 로그인됨 | 등록 시작 |
 | POST | `/api/v1/auth/passkey/register/finish` | 로그인됨 | 등록 완료 |
-| GET | `/api/v1/auth/passkey/rpids` | 로그인됨 | RP ID 허용 목록 |
-| POST | `/api/v1/auth/passkey/rpids` | 로그인됨 | RP ID 허용 목록 업데이트 |
+| GET | `/api/v1/auth/passkey/rpids` | 관리자 | RP ID 허용 목록 |
+| POST | `/api/v1/auth/passkey/rpids` | 관리자 | RP ID 허용 목록 업데이트 |
 | GET | `/api/v1/auth/passkey/status` | 공개 | 상태 |
 | POST | `/api/v1/auth/refresh` | 공개 | 새로고침 |
 | POST | `/api/v1/auth/ticket` | 로그인됨 | 일회성 단기 티켓 발행 |
@@ -220,17 +223,17 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/clients` | 로그인됨 | 고객 나열 |
-| POST | `/api/v1/clients` | 로그인됨 | 고객을 생성합니다. 본체: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id`가 필요합니다. `password`는 비어 있을 수 있습니다(고객이 나중에 포털에서 설정할 수 있음). |
-| DELETE | `/api/v1/clients/:id` | 로그인됨 | 고객 삭제 |
+| POST | `/api/v1/clients` | 운영자 | 고객을 생성합니다. 본체: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id`가 필요합니다. `password`는 비어 있을 수 있습니다(고객이 나중에 포털에서 설정할 수 있음). |
+| DELETE | `/api/v1/clients/:id` | 운영자 | 고객 삭제 |
 | GET | `/api/v1/clients/:id` | 로그인됨 | 고객 확보 |
-| PUT | `/api/v1/clients/:id` | 로그인됨 | 고객 업데이트 |
-| POST | `/api/v1/clients/:id/downgrade` | 로그인됨 | 고객 다운그레이드 |
+| PUT | `/api/v1/clients/:id` | 운영자 | 고객 업데이트 |
+| POST | `/api/v1/clients/:id/downgrade` | 운영자 | 고객 다운그레이드 |
 | GET | `/api/v1/clients/:id/orders` | 로그인됨 | 고객 주문 목록 |
-| POST | `/api/v1/clients/:id/renew` | 로그인됨 | 고객 갱신 |
-| POST | `/api/v1/clients/:id/reset-usage` | 로그인됨 | 사용량 재설정 |
-| POST | `/api/v1/clients/:id/restore` | 로그인됨 | 고객 이력서 |
-| POST | `/api/v1/clients/:id/suspend` | 로그인됨 | 고객 정지 |
-| POST | `/api/v1/clients/:id/upgrade` | 로그인됨 | 고객 업그레이드 |
+| POST | `/api/v1/clients/:id/renew` | 운영자 | 고객 갱신 |
+| POST | `/api/v1/clients/:id/reset-usage` | 운영자 | 사용량 재설정 |
+| POST | `/api/v1/clients/:id/restore` | 운영자 | 고객 이력서 |
+| POST | `/api/v1/clients/:id/suspend` | 운영자 | 고객 정지 |
+| POST | `/api/v1/clients/:id/upgrade` | 운영자 | 고객 업그레이드 |
 
 ### 계획 템플릿
 
@@ -239,17 +242,17 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | 로그인됨 | 템플릿 목록 |
-| POST | `/api/v1/plan-templates` | 로그인됨 | 템플릿 만들기 |
-| DELETE | `/api/v1/plan-templates/:id` | 로그인됨 | 템플릿 삭제 |
+| POST | `/api/v1/plan-templates` | 관리자 | 템플릿 만들기 |
+| DELETE | `/api/v1/plan-templates/:id` | 관리자 | 템플릿 삭제 |
 | GET | `/api/v1/plan-templates/:id` | 로그인됨 | 템플릿 세부정보 |
-| PUT | `/api/v1/plan-templates/:id` | 로그인됨 | 템플릿 업데이트 |
+| PUT | `/api/v1/plan-templates/:id` | 관리자 | 템플릿 업데이트 |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | 로그인됨 | 사용 가능한 노드 가져오기 |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | 로그인됨 | 청구 가능한 노드 옵션 가져오기 |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | 로그인됨 | 템플릿 노드 그룹 설정 |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | 로그인됨 | 템플릿에 계정 동기화 |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | 관리자 | 템플릿 노드 그룹 설정 |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | 관리자 | 템플릿에 계정 동기화 |
 | GET | `/api/v1/plan-templates/:id/variants` | 로그인됨 | 변형 목록 |
-| POST | `/api/v1/plan-templates/:id/variants` | 로그인됨 | 변형 만들기 |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | 로그인됨 | 모든 계정 동기화 |
+| POST | `/api/v1/plan-templates/:id/variants` | 관리자 | 변형 만들기 |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | 관리자 | 모든 계정 동기화 |
 
 ### 계획 변형
 
@@ -257,8 +260,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | 로그인됨 | 변형 삭제 |
-| PUT | `/api/v1/plan-variants/:id` | 로그인됨 | 변형 업데이트 |
+| DELETE | `/api/v1/plan-variants/:id` | 관리자 | 변형 삭제 |
+| PUT | `/api/v1/plan-variants/:id` | 관리자 | 변형 업데이트 |
 
 ### 트래픽 팩
 
@@ -267,20 +270,20 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | 로그인됨 | 트래픽 팩 목록 |
-| POST | `/api/v1/traffic-packs` | 로그인됨 | 트래픽 팩 생성 |
-| DELETE | `/api/v1/traffic-packs/:id` | 로그인됨 | 트래픽 팩 삭제 |
-| PUT | `/api/v1/traffic-packs/:id` | 로그인됨 | 트래픽 팩 업데이트 |
+| POST | `/api/v1/traffic-packs` | 관리자 | 트래픽 팩 생성 |
+| DELETE | `/api/v1/traffic-packs/:id` | 관리자 | 트래픽 팩 삭제 |
+| PUT | `/api/v1/traffic-packs/:id` | 관리자 | 트래픽 팩 업데이트 |
 
 ### 쿠폰
 
-쿠폰을 생성, 검증 및 교환하세요.
+쿠폰을 생성하고 검증하고 사용하세요.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | 로그인됨 | 쿠폰 나열 |
-| POST | `/api/v1/promotions` | 로그인됨 | 쿠폰 생성 |
-| DELETE | `/api/v1/promotions/:id` | 로그인됨 | 쿠폰 삭제 |
-| PUT | `/api/v1/promotions/:id` | 로그인됨 | 쿠폰 업데이트 |
+| POST | `/api/v1/promotions` | 관리자 | 쿠폰 생성 |
+| DELETE | `/api/v1/promotions/:id` | 관리자 | 쿠폰 삭제 |
+| PUT | `/api/v1/promotions/:id` | 관리자 | 쿠폰 업데이트 |
 | POST | `/api/v1/promotions/validate` | 로그인됨 | 쿠폰 확인 |
 
 ### 노드 그룹
@@ -290,16 +293,16 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | 로그인됨 | 노드 그룹 나열 |
-| POST | `/api/v1/node-groups` | 로그인됨 | 노드 그룹 생성 |
-| DELETE | `/api/v1/node-groups/:id` | 로그인됨 | 노드 그룹 삭제 |
-| PUT | `/api/v1/node-groups/:id` | 로그인됨 | 노드 그룹 업데이트 |
+| POST | `/api/v1/node-groups` | 관리자 | 노드 그룹 생성 |
+| DELETE | `/api/v1/node-groups/:id` | 관리자 | 노드 그룹 삭제 |
+| PUT | `/api/v1/node-groups/:id` | 관리자 | 노드 그룹 업데이트 |
 | GET | `/api/v1/node-groups/:id/members` | 로그인됨 | 그룹 구성원 나열 |
-| POST | `/api/v1/node-groups/:id/members` | 로그인됨 | 그룹 회원 추가 |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | 로그인됨 | 그룹 회원 삭제 |
+| POST | `/api/v1/node-groups/:id/members` | 관리자 | 그룹 회원 추가 |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | 관리자 | 그룹 회원 삭제 |
 
 ### 노드 서버
 
-핵심 리소스: 노드 CRUD, 코어(xray/sing-box) 구성 전달, 인바운드/아웃바운드/엔드포인트 구성, 프로세스 제어, 인증서, WAF, 속도 제한, 포트 호핑, 연결된 프록시, 미러/기본 백업, 에이전트 설치/업그레이드, xray 런타임 제어. 기능 계열별로 그룹화된 많은 하위 경로.
+핵심 리소스: 노드 CRUD, 코어(xray/sing-box) 구성 전달, 인바운드/아웃바운드/엔드포인트 구성, 프로세스 제어, 인증서, WAF, 속도 제한, 포트 호핑, 연결된 프록시, 미러/기본 백업, 에이전트 설치/업그레이드, xray 런타임 제어. 기능군별로 그룹화된 많은 하위 경로.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
@@ -328,7 +331,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | 관리자 | 저장 및 적용 |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | 관리자 | 사이트 목록 |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | 관리자 | 사이트 만들기 |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | 사이트 가져오기 |
+| POST | `/api/v1/node-servers/:id/caddy/import` | 관리자 | 사이트 가져오기 |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | 관리자 | 렌더링된 Caddy 사이트 미리보기 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 관리자 | 사이트 삭제 |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | 관리자 | 사이트 업데이트 |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | 관리자 | 모든 SNI 규칙 삭제 |
@@ -353,6 +357,9 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/force-reconnect` | 관리자 | 강제로 다시 연결 |
 | GET | `/api/v1/node-servers/:id/free-port` | 관리자 | 무료 포트 요청 |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | 관리자 | 이 노드로 푸시 |
+| GET | `/api/v1/node-servers/:id/firewall/status` | 관리자 | 방화벽 감지(firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | 관리자 | 인바운드 수신 포트 허용(다중 범위 지원) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | 관리자 | 인바운드 포트 허용 취소(중복 포함) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | 관리자 | 목록 |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | 관리자 | 만들기 |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | 관리자 | 삭제 |
@@ -373,8 +380,9 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/nginx/settings` | 관리자 | 설정 저장 |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | 관리자 | 사이트 목록 |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | 관리자 | 사이트 만들기 |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | 사이트 가져오기 |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL 인증서 파일 생성 |
+| POST | `/api/v1/node-servers/:id/nginx/import` | 관리자 | 사이트 가져오기 |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | 관리자 | 렌더링된 Nginx 사이트 미리보기 |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 관리자 | SSL 인증서 파일 생성 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 관리자 | 사이트 삭제 |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | 관리자 | 사이트 업데이트 |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | 관리자 | 모든 SNI 규칙 삭제 |
@@ -457,6 +465,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | 관리자 | 모두 지우기 |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | 관리자 | 포트 호핑 방화벽 규칙 적용 |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | 관리자 | 포트 호핑 방화벽 규칙 제거 |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | 관리자 | 라이브 sing-box 연결(clash_api, 로컬 노드만 해당) |
 | POST | `/api/v1/node-servers/:id/speed-test` | 관리자 | 노드 속도 테스트 |
 | GET | `/api/v1/node-servers/:id/status` | 관리자 | 노드 상태 |
 | POST | `/api/v1/node-servers/:id/sync` | 관리자 | 동기화 노드 구성(생성 및 푸시) |
@@ -496,6 +505,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | GET | `/api/v1/node-servers/:id/warp/config` | 관리자 | 구성 읽기 |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | 관리자 | 구성 생성 |
 | POST | `/api/v1/node-servers/:id/warp/register` | 관리자 | 등록 |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | 관리자 | WARP MASQUE 프로필 등록(1/2단계) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | 관리자 | WARP 프로필에서 sing-box MASQUE 아웃바운드 생성 |
 | GET | `/api/v1/node-servers/:id/warp/status` | 관리자 | 상태 |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 관리자 | 밸런서 정보 얻기 |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | 관리자 | 밸런서 타겟 설정 |
@@ -544,8 +555,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | 로그인됨 | 노드 감사 로그 |
-| GET | `/api/v1/node-audit-logs/export` | 로그인됨 | 노드 감사 로그 내보내기 |
+| GET | `/api/v1/node-audit-logs` | 관리자 | 노드 감사 로그 |
+| GET | `/api/v1/node-audit-logs/export` | 관리자 | 노드 감사 로그 내보내기 |
 
 ### 노드(레거시 모델, 폐기됨)
 
@@ -568,22 +579,22 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | 로그인됨 | 목록 |
-| POST | `/api/v1/subscriptions` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/subscriptions/:id` | 로그인됨 | 삭제 |
+| POST | `/api/v1/subscriptions` | 운영자 | 만들기 |
+| DELETE | `/api/v1/subscriptions/:id` | 운영자 | 삭제 |
 | GET | `/api/v1/subscriptions/:id` | 로그인됨 | 세부정보 |
-| PUT | `/api/v1/subscriptions/:id` | 로그인됨 | 업데이트 |
+| PUT | `/api/v1/subscriptions/:id` | 운영자 | 업데이트 |
 | GET | `/api/v1/subscriptions/:id/access-logs` | 로그인됨 | 액세스 로그 |
-| POST | `/api/v1/subscriptions/:id/enable` | 로그인됨 | 활성화 |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | 로그인됨 | 사용량 재설정 |
-| POST | `/api/v1/subscriptions/:id/restore` | 로그인됨 | 이력서 |
-| POST | `/api/v1/subscriptions/:id/revoke` | 로그인됨 | 취소 |
-| POST | `/api/v1/subscriptions/:id/rotate` | 로그인됨 | 회전 |
+| POST | `/api/v1/subscriptions/:id/enable` | 운영자 | 활성화 |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | 운영자 | 사용량 재설정 |
+| POST | `/api/v1/subscriptions/:id/restore` | 운영자 | 이력서 |
+| POST | `/api/v1/subscriptions/:id/revoke` | 운영자 | 취소 |
+| POST | `/api/v1/subscriptions/:id/rotate` | 운영자 | 회전 |
 | GET | `/api/v1/subscriptions/:id/rotations` | 로그인됨 | 순환 기록 |
 
 ### 구독 형식
 
-> 관리자 측 `/api/v1/subscription-formats` CRUD는 2026년 10월 20일에 폐기되었습니다. 실제 진입점은 다음과 같습니다.
-> `/api/v1/mihomo/configs` (구독 형식 센터). `subscription_formats` 테이블은 남아 있으며,
+> 관리자 측 `/api/v1/subscription-formats` CRUD는 2026년 10월 20일에 종료되었습니다. 실제 진입점은 다음과 같습니다.
+> `/api/v1/mihomo/configs` (구독 형식 센터). `subscription_formats` 테이블은 그대로 남아 있으며,
 > 공개 `/api/v1/public/client-configs` 엔드포인트의 시드 데이터로만 사용됩니다.
 
 ### 구독 엔드포인트
@@ -593,10 +604,10 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | 로그인됨 | 목록 |
-| POST | `/api/v1/subscription-endpoints` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/subscription-endpoints/:id` | 로그인됨 | 삭제 |
+| POST | `/api/v1/subscription-endpoints` | 관리자 | 만들기 |
+| DELETE | `/api/v1/subscription-endpoints/:id` | 관리자 | 삭제 |
 | GET | `/api/v1/subscription-endpoints/:id` | 로그인됨 | 세부정보 |
-| PUT | `/api/v1/subscription-endpoints/:id` | 로그인됨 | 업데이트 |
+| PUT | `/api/v1/subscription-endpoints/:id` | 관리자 | 업데이트 |
 
 ### 도메인 공유
 
@@ -605,11 +616,11 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | 로그인됨 | 목록 |
-| POST | `/api/v1/share-domains` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/share-domains/:id` | 로그인됨 | 삭제 |
-| PUT | `/api/v1/share-domains/:id` | 로그인됨 | 업데이트 |
-| DELETE | `/api/v1/share-domains/all` | 로그인됨 | 모두 지우기 |
-| POST | `/api/v1/share-domains/seed` | 로그인됨 | 기본 데이터 초기화 |
+| POST | `/api/v1/share-domains` | 관리자 | 만들기 |
+| DELETE | `/api/v1/share-domains/:id` | 관리자 | 삭제 |
+| PUT | `/api/v1/share-domains/:id` | 관리자 | 업데이트 |
+| DELETE | `/api/v1/share-domains/all` | 관리자 | 모두 지우기 |
+| POST | `/api/v1/share-domains/seed` | 관리자 | 기본 데이터 초기화 |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | 로그인됨 | 항목 지우기 |
+| DELETE | `/api/v1/cfip/entries` | 관리자 | 항목 지우기 |
 | GET | `/api/v1/cfip/entries` | 로그인됨 | 참가목록 |
-| POST | `/api/v1/cfip/entries` | 로그인됨 | 항목 추가 |
-| DELETE | `/api/v1/cfip/entries/:id` | 로그인됨 | 항목 삭제 |
-| POST | `/api/v1/cfip/fetch-all` | 로그인됨 | 모든 소스 가져오기 |
-| POST | `/api/v1/cfip/seed` | 로그인됨 | 기본 데이터 초기화 |
+| POST | `/api/v1/cfip/entries` | 관리자 | 항목 추가 |
+| DELETE | `/api/v1/cfip/entries/:id` | 관리자 | 항목 삭제 |
+| POST | `/api/v1/cfip/fetch-all` | 관리자 | 모든 소스 가져오기 |
+| GET | `/api/v1/cfip/probe-config` | 로그인됨 | CF 선호 IP 프로브 구성(엔트리 노드 + 설치된 다이얼러) |
+| PUT | `/api/v1/cfip/probe-config` | 관리자 | 프로브 간격/지연 시간 제한/엔트리 노드/다이얼러 저장 |
+| POST | `/api/v1/cfip/check` | 관리자 | 지금 모든 기본 도메인/IP를 조사하세요. |
+| POST | `/api/v1/cfip/seed` | 관리자 | 기본 데이터 초기화 |
 | GET | `/api/v1/cfip/sources` | 로그인됨 | 데이터 소스 목록 |
-| POST | `/api/v1/cfip/sources` | 로그인됨 | 데이터 소스 만들기 |
-| DELETE | `/api/v1/cfip/sources/:id` | 로그인됨 | 데이터 소스 삭제 |
-| PUT | `/api/v1/cfip/sources/:id` | 로그인됨 | 데이터 소스 업데이트 |
-| POST | `/api/v1/cfip/sources/:id/fetch` | 로그인됨 | 이 소스 가져오기 |
+| POST | `/api/v1/cfip/sources` | 관리자 | 데이터 소스 만들기 |
+| DELETE | `/api/v1/cfip/sources/:id` | 관리자 | 데이터 소스 삭제 |
+| PUT | `/api/v1/cfip/sources/:id` | 관리자 | 데이터 소스 업데이트 |
+| POST | `/api/v1/cfip/sources/:id/fetch` | 관리자 | 이 소스 가져오기 |
 
 ### 구독 구성(Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | 로그인됨 | 목록 |
-| POST | `/api/v1/mihomo/configs` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/mihomo/configs/:id` | 로그인됨 | 삭제 |
+| POST | `/api/v1/mihomo/configs` | 관리자 | 만들기 |
+| DELETE | `/api/v1/mihomo/configs/:id` | 관리자 | 삭제 |
 | GET | `/api/v1/mihomo/configs/:id` | 로그인됨 | 세부정보 |
-| PUT | `/api/v1/mihomo/configs/:id` | 로그인됨 | 업데이트 |
+| PUT | `/api/v1/mihomo/configs/:id` | 관리자 | 업데이트 |
 | GET | `/api/v1/mihomo/configs/:id/rules` | 로그인됨 | 규칙 목록 |
-| POST | `/api/v1/mihomo/configs/:id/rules` | 로그인됨 | 규칙 만들기 |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | 규칙 순서 변경 |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | 규칙 업데이트 |
-| DELETE | `/api/v1/mihomo/rules/:id` | 로그인됨 | 규칙 삭제 |
+| POST | `/api/v1/mihomo/configs/:id/rules` | 관리자 | 규칙 만들기 |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 관리자 | 규칙 재정렬 |
+| PUT | `/api/v1/mihomo/rules/:id` | 관리자 | 업데이트 규칙 |
+| DELETE | `/api/v1/mihomo/rules/:id` | 관리자 | 규칙 삭제 |
 
 ### 충전소
 
@@ -652,20 +666,20 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | 로그인됨 | 사이트 목록 |
-| POST | `/api/v1/charge-sites` | 로그인됨 | 사이트 만들기 |
-| DELETE | `/api/v1/charge-sites/:id` | 로그인됨 | 사이트 삭제 |
-| GET | `/api/v1/charge-sites/:id` | 로그인됨 | 사이트 세부정보 |
-| PUT | `/api/v1/charge-sites/:id` | 로그인됨 | 사이트 업데이트 |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 로그인됨 | 이전 키 지우기 |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | 로그인됨 | 확인 파일 생성 |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 로그인됨 | 확인 파일 생성 |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | 로그인됨 | 통합 문서 받기 |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | 로그인됨 | 서명 키 순환 |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | 로그인됨 | 도메인 DNS 확인 |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | 로그인됨 | 도메인 HTTP 챌린지 확인 |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 로그인됨 | 도메인 DNS 확인 |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 로그인됨 | 도메인 HTTP 챌린지 확인 |
+| GET | `/api/v1/charge-sites` | 관리자 | 사이트 목록 |
+| POST | `/api/v1/charge-sites` | 관리자 | 사이트 만들기 |
+| DELETE | `/api/v1/charge-sites/:id` | 관리자 | 사이트 삭제 |
+| GET | `/api/v1/charge-sites/:id` | 관리자 | 사이트 세부정보 |
+| PUT | `/api/v1/charge-sites/:id` | 관리자 | 사이트 업데이트 |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | 관리자 | 이전 키 지우기 |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | 관리자 | 확인 파일 생성 |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | 관리자 | 확인 파일 생성 |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | 관리자 | 통합 문서 받기 |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | 관리자 | 서명 키 순환 |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | 관리자 | 도메인 DNS 확인 |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | 관리자 | 도메인 HTTP 챌린지 확인 |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | 관리자 | 도메인 DNS 확인 |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | 관리자 | 도메인 HTTP 챌린지 확인 |
 
 ### 주문 재충전
 
@@ -673,10 +687,10 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | 로그인됨 | 주문 목록 |
-| GET | `/api/v1/charge-orders/:id` | 로그인됨 | 주문 세부정보 |
-| POST | `/api/v1/charge-orders/:id/refund` | 로그인됨 | 환불 |
-| GET | `/api/v1/charge-orders/export-csv` | 로그인됨 | 재충전 주문 내보내기 CSV |
+| GET | `/api/v1/charge-orders` | 관리자 | 주문 목록 |
+| GET | `/api/v1/charge-orders/:id` | 관리자 | 주문 세부정보 |
+| POST | `/api/v1/charge-orders/:id/refund` | 관리자 | 환불 |
+| GET | `/api/v1/charge-orders/export-csv` | 관리자 | 재충전 주문 내보내기 CSV |
 
 ### 충전카드
 
@@ -684,12 +698,12 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | 로그인됨 | 카드 목록 |
-| POST | `/api/v1/charge-cards` | 로그인됨 | 카드 만들기 |
-| DELETE | `/api/v1/charge-cards/:id` | 로그인됨 | 카드 삭제 |
-| GET | `/api/v1/charge-cards/:id/usages` | 로그인됨 | 카드사용기록 |
-| POST | `/api/v1/charge-cards/batch` | 로그인됨 | 대량 생성 카드 |
-| GET | `/api/v1/charge-cards/export-csv` | 로그인됨 | 수출 카드 CSV |
+| GET | `/api/v1/charge-cards` | 관리자 | 카드 목록 |
+| POST | `/api/v1/charge-cards` | 관리자 | 카드 만들기 |
+| DELETE | `/api/v1/charge-cards/:id` | 관리자 | 카드 삭제 |
+| GET | `/api/v1/charge-cards/:id/usages` | 관리자 | 카드사용기록 |
+| POST | `/api/v1/charge-cards/batch` | 관리자 | 대량 생성 카드 |
+| GET | `/api/v1/charge-cards/export-csv` | 관리자 | 수출 카드 CSV |
 
 ### 청구 콜백 이벤트
 
@@ -725,8 +739,8 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | 로그인됨 | 선물 목록 |
-| POST | `/api/v1/client-gifts` | 로그인됨 | 선물 만들기 |
-| POST | `/api/v1/client-gifts/batch` | 로그인됨 | 선물 대량 생성 |
+| POST | `/api/v1/client-gifts` | 관리자 | 선물 만들기 |
+| POST | `/api/v1/client-gifts/batch` | 관리자 | 선물 대량 생성 |
 | GET | `/api/v1/client-gifts/search-clients` | 로그인됨 | 고객 검색 |
 
 ### 추천 구성
@@ -746,9 +760,9 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | 로그인됨 | 출금 요청 목록 |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | 로그인됨 | 출금 승인 |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | 로그인됨 | 출금 거부 |
+| GET | `/api/v1/referral-withdrawals` | 관리자 | 출금 요청 목록 |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | 관리자 | 출금 승인 |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | 관리자 | 출금 거부 |
 
 ### IP 허용 목록(요약)
 
@@ -774,9 +788,9 @@ Cloudflare CDN IP 풀 및 소스 관리.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | 로그인됨 | 티켓리스트 |
 | GET | `/api/v1/tickets/:id` | 로그인됨 | 티켓 세부정보 |
-| POST | `/api/v1/tickets/:id/assign` | 로그인됨 | 티켓 할당 |
-| POST | `/api/v1/tickets/:id/close` | 로그인됨 | 티켓 닫기 |
-| POST | `/api/v1/tickets/:id/reply` | 로그인됨 | 티켓에 답장하기 |
+| POST | `/api/v1/tickets/:id/assign` | 운영자 | 티켓 할당 |
+| POST | `/api/v1/tickets/:id/close` | 운영자 | 티켓 닫기 |
+| POST | `/api/v1/tickets/:id/reply` | 운영자 | 티켓에 답장하기 |
 
 ### 기사
 
@@ -785,10 +799,10 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/articles` | 로그인됨 | 기사 목록 |
-| POST | `/api/v1/articles` | 로그인됨 | 기사 작성 |
-| DELETE | `/api/v1/articles/:id` | 로그인됨 | 기사 삭제 |
+| POST | `/api/v1/articles` | 관리자 | 기사 작성 |
+| DELETE | `/api/v1/articles/:id` | 관리자 | 기사 삭제 |
 | GET | `/api/v1/articles/:id` | 로그인됨 | 기사 세부정보 |
-| PUT | `/api/v1/articles/:id` | 로그인됨 | 기사 업데이트 |
+| PUT | `/api/v1/articles/:id` | 관리자 | 기사 업데이트 |
 
 ### 공유 계정
 
@@ -797,10 +811,10 @@ Cloudflare CDN IP 풀 및 소스 관리.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | 로그인됨 | 공유 계정 목록 |
-| POST | `/api/v1/shared-accounts` | 로그인됨 | 공유 계정 만들기 |
-| DELETE | `/api/v1/shared-accounts/:id` | 로그인됨 | 공유 계정 삭제 |
+| POST | `/api/v1/shared-accounts` | 관리자 | 공유 계정 만들기 |
+| DELETE | `/api/v1/shared-accounts/:id` | 관리자 | 공유 계정 삭제 |
 | GET | `/api/v1/shared-accounts/:id` | 로그인됨 | 공유 계정 세부정보 |
-| PUT | `/api/v1/shared-accounts/:id` | 로그인됨 | 공유 계정 업데이트 |
+| PUT | `/api/v1/shared-accounts/:id` | 관리자 | 공유 계정 업데이트 |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | 로그인됨 | 수리 기록 |
 
 ### 인증서
@@ -809,20 +823,20 @@ Cloudflare CDN IP 풀 및 소스 관리.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | 로그인됨 | 목록 |
-| POST | `/api/v1/certificates` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/certificates/:id` | 로그인됨 | 삭제 |
-| GET | `/api/v1/certificates/:id` | 로그인됨 | 세부정보 |
-| PUT | `/api/v1/certificates/:id` | 로그인됨 | 업데이트 |
-| GET | `/api/v1/certificates/:id/download` | 로그인됨 | 다운로드 |
-| POST | `/api/v1/certificates/:id/renew` | 로그인됨 | 고객 갱신 |
-| GET | `/api/v1/certificates/check-port` | 로그인됨 | 포트 확인 |
-| GET | `/api/v1/certificates/detect-ip` | 로그인됨 | 프로브 IP |
-| GET | `/api/v1/certificates/export` | 로그인됨 | 수출 |
-| POST | `/api/v1/certificates/issue` | 로그인됨 | 이슈. 본체: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type`의 기본값은 http-01입니다. `dns_channel_id`는 DNS 채널을 선택합니다(구성된 DNS 공급자 + 자격 증명) |
-| POST | `/api/v1/certificates/issue-on-node` | 로그인됨 | 노드에 발행 |
-| POST | `/api/v1/certificates/upload` | 로그인됨 | 업로드 |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | 백그라운드 작업 상태 조회 |
+| GET | `/api/v1/certificates` | 관리자 | 목록 |
+| POST | `/api/v1/certificates` | 관리자 | 만들기 |
+| DELETE | `/api/v1/certificates/:id` | 관리자 | 삭제 |
+| GET | `/api/v1/certificates/:id` | 관리자 | 세부정보 |
+| PUT | `/api/v1/certificates/:id` | 관리자 | 업데이트 |
+| GET | `/api/v1/certificates/:id/download` | 관리자 | 다운로드 |
+| POST | `/api/v1/certificates/:id/renew` | 관리자 | 고객 갱신 |
+| GET | `/api/v1/certificates/check-port` | 관리자 | 포트 확인 |
+| GET | `/api/v1/certificates/detect-ip` | 관리자 | 프로브 IP |
+| GET | `/api/v1/certificates/export` | 관리자 | 수출 |
+| POST | `/api/v1/certificates/issue` | 관리자 | 이슈. 본체: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type`의 기본값은 http-01입니다. `dns_channel_id`는 DNS 채널을 선택합니다(구성된 DNS 공급자 + 자격 증명) |
+| POST | `/api/v1/certificates/issue-on-node` | 관리자 | 노드에 발행 |
+| POST | `/api/v1/certificates/upload` | 관리자 | 업로드 |
+| GET | `/api/v1/certificate-tasks/:id` | 관리자 | 백그라운드 작업 상태 쿼리 |
 
 ### 인증서 채널
 
@@ -830,11 +844,11 @@ ACME 채널(CA) 구성.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | 로그인됨 | 목록 |
-| POST | `/api/v1/cert-channels` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/cert-channels/:id` | 로그인됨 | 삭제 |
-| PUT | `/api/v1/cert-channels/:id` | 로그인됨 | 업데이트 |
-| GET | `/api/v1/cert-channels/providers` | 로그인됨 | 공급자 |
+| GET | `/api/v1/cert-channels` | 관리자 | 목록 |
+| POST | `/api/v1/cert-channels` | 관리자 | 만들기 |
+| DELETE | `/api/v1/cert-channels/:id` | 관리자 | 삭제 |
+| PUT | `/api/v1/cert-channels/:id` | 관리자 | 업데이트 |
+| GET | `/api/v1/cert-channels/providers` | 관리자 | 공급자 |
 
 ### EAB 구성
 
@@ -842,12 +856,12 @@ ZeroSSL / Google와 같은 외부 계정을 바인딩하는 자격 증명입니�
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | 로그인됨 | 목록 |
-| POST | `/api/v1/eab-configs` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/eab-configs/:id` | 로그인됨 | 삭제 |
-| PUT | `/api/v1/eab-configs/:id` | 로그인됨 | 업데이트 |
-| POST | `/api/v1/eab-configs/fetch-google` | 로그인됨 | GCP에서 Google EAB 가져오기 |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | 로그인됨 | 한 번의 클릭으로 이메일로 ZeroSSL EAB를 가져옵니다. |
+| GET | `/api/v1/eab-configs` | 관리자 | 목록 |
+| POST | `/api/v1/eab-configs` | 관리자 | 만들기 |
+| DELETE | `/api/v1/eab-configs/:id` | 관리자 | 삭제 |
+| PUT | `/api/v1/eab-configs/:id` | 관리자 | 업데이트 |
+| POST | `/api/v1/eab-configs/fetch-google` | 관리자 | GCP에서 Google EAB 가져오기 |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | 관리자 | 한 번의 클릭으로 이메일로 ZeroSSL EAB를 가져옵니다. |
 
 ### ACME 계정
 
@@ -855,11 +869,11 @@ ZeroSSL / Google와 같은 외부 계정을 바인딩하는 자격 증명입니�
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | 로그인됨 | 목록 |
-| POST | `/api/v1/acme-accounts` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/acme-accounts/:id` | 로그인됨 | 삭제 |
-| PUT | `/api/v1/acme-accounts/:id` | 로그인됨 | 업데이트 |
-| GET | `/api/v1/acme-accounts/default` | 로그인됨 | 기본값 가져오기 |
+| GET | `/api/v1/acme-accounts` | 관리자 | 목록 |
+| POST | `/api/v1/acme-accounts` | 관리자 | 만들기 |
+| DELETE | `/api/v1/acme-accounts/:id` | 관리자 | 삭제 |
+| PUT | `/api/v1/acme-accounts/:id` | 관리자 | 업데이트 |
+| GET | `/api/v1/acme-accounts/default` | 관리자 | 기본값 가져오기 |
 
 ### 내장 CA
 
@@ -867,14 +881,14 @@ ZeroSSL / Google와 같은 외부 계정을 바인딩하는 자격 증명입니�
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | 로그인됨 | 에이전트 인증서 목록 |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 로그인됨 | 에이전트 인증서 갱신 |
-| GET | `/api/v1/ca/distribution-queue` | 로그인됨 | 인증서 배포 대기열 |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | 로그인됨 | 분배 대기열 항목 삭제 |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | 로그인됨 | 인증서 배포 재시도 |
-| GET | `/api/v1/ca/revocations` | 로그인됨 | 철회 목록 |
-| GET | `/api/v1/ca/revocations/export` | 로그인됨 | CRL 내보내기 |
-| GET | `/api/v1/ca/status` | 로그인됨 | CA 상태 |
+| GET | `/api/v1/ca/agent-certs` | 관리자 | 에이전트 인증서 목록 |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | 관리자 | 에이전트 인증서 갱신 |
+| GET | `/api/v1/ca/distribution-queue` | 관리자 | 인증서 배포 대기열 |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | 관리자 | 분배 대기열 항목 삭제 |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | 관리자 | 인증서 배포 재시도 |
+| GET | `/api/v1/ca/revocations` | 관리자 | 철회 목록 |
+| GET | `/api/v1/ca/revocations/export` | 관리자 | CRL 내보내기 |
+| GET | `/api/v1/ca/status` | 관리자 | CA 상태 |
 
 ### 지역 규칙
 
@@ -883,24 +897,24 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | 로그인됨 | 파일 목록 |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | 로그인됨 | 파일 삭제 |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 로그인됨 | 자동 동기화 전환 |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | 로그인됨 | 다운로드 |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | 관리자 | 파일 삭제 |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | 관리자 | 자동 동기화 전환 |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | 관리자 | 다운로드 |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | 로그인됨 | 파일 다운로드 |
 | GET | `/api/v1/geo-rules/github-assets` | 로그인됨 | GitHub 저장소 자산 가져오기 |
-| POST | `/api/v1/geo-rules/push-all` | 로그인됨 | 모든 노드에 푸시 |
-| POST | `/api/v1/geo-rules/seed` | 로그인됨 | 기본 데이터 초기화 |
+| POST | `/api/v1/geo-rules/push-all` | 관리자 | 모든 노드에 푸시 |
+| POST | `/api/v1/geo-rules/seed` | 관리자 | 기본 데이터 초기화 |
 | GET | `/api/v1/geo-rules/sources` | 로그인됨 | 데이터 소스 목록 |
-| POST | `/api/v1/geo-rules/sources` | 로그인됨 | 데이터 소스 만들기 |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 로그인됨 | 데이터 소스 삭제 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | 로그인됨 | 데이터 소스 업데이트 |
+| POST | `/api/v1/geo-rules/sources` | 관리자 | 데이터 소스 만들기 |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | 관리자 | 데이터 소스 삭제 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | 관리자 | 데이터 소스 업데이트 |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | 로그인됨 | 릴리스 자산 가져오기 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 로그인됨 | 파일 추가 |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 로그인됨 | 예약된 동기화 전환 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 로그인됨 | 파일 선택 |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 로그인됨 | 이 데이터 소스 동기화 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | 관리자 | 파일 추가 |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | 관리자 | 예약된 동기화 전환 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | 관리자 | 파일 선택 |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | 관리자 | 이 데이터 소스 동기화 |
 | GET | `/api/v1/geo-rules/status` | 로그인됨 | 상태 |
-| POST | `/api/v1/geo-rules/sync-all` | 로그인됨 | 모두 동기화 |
+| POST | `/api/v1/geo-rules/sync-all` | 관리자 | 모두 동기화 |
 | GET | `/api/v1/geo-rules/sync-status/:key` | 로그인됨 | 동기화 진행 |
 
 ### WAF 규칙 라이브러리
@@ -910,14 +924,14 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | 로그인됨 | GitHub 데이터 소스 |
-| PUT | `/api/v1/waf/github-source` | 로그인됨 | GitHub 데이터 소스 저장 |
-| POST | `/api/v1/waf/push-all` | 로그인됨 | 모든 노드에 푸시 |
+| PUT | `/api/v1/waf/github-source` | 관리자 | GitHub 데이터 소스 저장 |
+| POST | `/api/v1/waf/push-all` | 관리자 | 모든 노드에 푸시 |
 | GET | `/api/v1/waf/rules` | 로그인됨 | 규칙 목록 |
-| DELETE | `/api/v1/waf/rules/:name` | 로그인됨 | 규칙 삭제 |
+| DELETE | `/api/v1/waf/rules/:name` | 관리자 | 규칙 삭제 |
 | GET | `/api/v1/waf/rules/:name` | 로그인됨 | 규칙 가져오기 |
-| PUT | `/api/v1/waf/rules/:name` | 로그인됨 | 규칙 저장 |
-| POST | `/api/v1/waf/sync-all` | 로그인됨 | 모두 동기화 |
-| POST | `/api/v1/waf/sync-github` | 로그인됨 | GitHub에서 동기화 |
+| PUT | `/api/v1/waf/rules/:name` | 관리자 | 규칙 저장 |
+| POST | `/api/v1/waf/sync-all` | 관리자 | 모두 동기화 |
+| POST | `/api/v1/waf/sync-github` | 관리자 | GitHub에서 동기화 |
 
 ### 로그 관리
 
@@ -925,43 +939,37 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | 로그인됨 | 이제 다 정리하세요 |
-| GET | `/api/v1/log-manage/cleanup-rules` | 로그인됨 | 정리 규칙 목록 |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 로그인됨 | 정리 규칙 업데이트 |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | 로그인됨 | 지금 지정된 테이블을 정리하세요. |
-| GET | `/api/v1/log-manage/core-log-output` | 로그인됨 | 코어 로그 출력 구성 |
-| PUT | `/api/v1/log-manage/core-log-output` | 로그인됨 | 코어 로그 출력 구성 저장 |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | 로그인됨 | 핵심 stdout 로그 읽기 |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 로그인됨 | 스트림 코어 표준 출력 |
-| POST | `/api/v1/log-manage/discover` | 로그인됨 | 노드 로그 파일 검색 |
-| GET | `/api/v1/log-manage/log-output` | 로그인됨 | 로그 출력 구성 |
-| PUT | `/api/v1/log-manage/log-output` | 로그인됨 | 로그 출력 구성 저장 |
-| POST | `/api/v1/log-manage/log-output/release/:type` | 로그인됨 | 릴리스 로그 stdout 인계 |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | 로그인됨 | 로그 표준 출력 인계 |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 로그인됨 | 노드 로그 파일 목록 |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 로그인됨 | 노드 로그 읽기 |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 로그인됨 | 노드 로그 순환 |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 로그인됨 | 스트림 노드 로그 |
-| GET | `/api/v1/log-manage/policies` | 로그인됨 | 정책 목록 |
-| POST | `/api/v1/log-manage/policies` | 로그인됨 | 정책 만들기 |
-| DELETE | `/api/v1/log-manage/policies/:id` | 로그인됨 | 정책 삭제 |
-| GET | `/api/v1/log-manage/policies/:id` | 로그인됨 | 정책 세부정보 |
-| PUT | `/api/v1/log-manage/policies/:id` | 로그인됨 | 정책 업데이트 |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | 로그인됨 | 정리 작업 목록 |
-| GET | `/api/v1/log-manage/policies/:id/log` | 로그인됨 | 로그 읽기 |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | 로그인됨 | 스트림 로그 |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | 로그인됨 | 회전 |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 로그인됨 | 핵심 stdout 로그 읽기 |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 로그인됨 | 스트림 코어 표준 출력 |
-| GET | `/api/v1/log-manage/scheduler-config` | 로그인됨 | 예약 구성 |
-| PUT | `/api/v1/log-manage/scheduler-config` | 로그인됨 | 일정 구성 업데이트 |
-| GET | `/api/v1/log-manage/status` | 로그인됨 | 상태 |
-| POST | `/api/v1/log-manage/sync` | 로그인됨 | 동기화 정리 정책 |
-| GET | `/api/v1/log-manage/writers` | 로그인됨 | 작가 상태 |
-| PUT | `/api/v1/log-manage/writers/:type/config` | 로그인됨 | 작성자 구성 업데이트 |
-| GET | `/api/v1/log-manage/writers/:type/files` | 로그인됨 | 작성자 로그 파일 목록 |
-| POST | `/api/v1/log-manage/writers/:type/start` | 로그인됨 | 작가 시작 |
-| POST | `/api/v1/log-manage/writers/:type/stop` | 로그인됨 | 작가 중지 |
+| POST | `/api/v1/log-manage/cleanup-all` | 관리자 | 이제 다 정리하세요 |
+| GET | `/api/v1/log-manage/cleanup-rules` | 관리자 | 정리 규칙 목록 |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | 관리자 | 정리 규칙 업데이트 |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | 관리자 | 지금 지정된 테이블을 정리하세요. |
+| GET | `/api/v1/log-manage/core-log-output` | 관리자 | 코어 로그 출력 구성 |
+| PUT | `/api/v1/log-manage/core-log-output` | 관리자 | 코어 로그 출력 구성 저장 |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | 관리자 | 핵심 stdout 로그 읽기 |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | 관리자 | 스트림 코어 표준 출력 |
+| POST | `/api/v1/log-manage/discover` | 관리자 | 노드 로그 파일 검색 |
+| GET | `/api/v1/log-manage/log-output` | 관리자 | 로그 출력 구성 |
+| PUT | `/api/v1/log-manage/log-output` | 관리자 | 로그 출력 구성 저장 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | 관리자 | 노드 로그 파일 목록 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | 관리자 | 노드 로그 읽기 |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | 관리자 | 노드 로그 순환 |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | 관리자 | 스트림 노드 로그 |
+| GET | `/api/v1/log-manage/policies` | 관리자 | 정책 목록 |
+| POST | `/api/v1/log-manage/policies` | 관리자 | 정책 만들기 |
+| DELETE | `/api/v1/log-manage/policies/:id` | 관리자 | 정책 삭제 |
+| GET | `/api/v1/log-manage/policies/:id` | 관리자 | 정책 세부정보 |
+| PUT | `/api/v1/log-manage/policies/:id` | 관리자 | 정책 업데이트 |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | 관리자 | 정리 작업 목록 |
+| GET | `/api/v1/log-manage/policies/:id/log` | 관리자 | 로그 읽기 |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | 관리자 | 스트림 로그 |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | 관리자 | 회전 |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | 관리자 | 핵심 stdout 로그 읽기 |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | 관리자 | 스트림 코어 표준 출력 |
+| GET | `/api/v1/log-manage/scheduler-config` | 관리자 | 예약 구성 |
+| PUT | `/api/v1/log-manage/scheduler-config` | 관리자 | 일정 구성 업데이트 |
+| GET | `/api/v1/log-manage/status` | 관리자 | 상태 |
+| POST | `/api/v1/log-manage/sync` | 관리자 | 동기화 정리 정책 |
+| GET | `/api/v1/log-manage/writers` | 관리자 | 작가 상태 |
 
 ### 백업
 
@@ -969,16 +977,16 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | 관리자 | 백업 삭제 |
+| DELETE | `/api/v1/backups/:id` | 최고 관리자 | 백업 삭제 |
 | GET | `/api/v1/backups/:id/download` | 관리자 | 백업 다운로드 |
-| POST | `/api/v1/backups/:id/restore` | 관리자 | 백업에서 복원 |
-| POST | `/api/v1/backups/:id/upload-ftp` | 관리자 | FTP에 업로드 |
-| POST | `/api/v1/backups/:id/upload-s3` | 관리자 | S3에 업로드 |
-| POST | `/api/v1/backups/:id/upload-webdav` | 관리자 | WebDAV에 업로드 |
+| POST | `/api/v1/backups/:id/restore` | 최고 관리자 | 백업에서 복원 |
+| POST | `/api/v1/backups/:id/upload-ftp` | 최고 관리자 | FTP에 업로드 |
+| POST | `/api/v1/backups/:id/upload-s3` | 최고 관리자 | S3에 업로드 |
+| POST | `/api/v1/backups/:id/upload-webdav` | 최고 관리자 | WebDAV에 업로드 |
 | POST | `/api/v1/backups/create` | 관리자 | 전체 백업 생성(DB 덤프 포함) |
 | GET | `/api/v1/backups/list` | 관리자 | 전체 백업 목록 |
-| POST | `/api/v1/backups/remote-restore` | 관리자 | 원격에서 복원 |
-| GET | `/api/v1/backups/restore-status` | 관리자 | 복원 진행 상황 |
+| POST | `/api/v1/backups/remote-restore` | 최고 관리자 | 원격에서 복원 |
+| GET | `/api/v1/backups/restore-status` | 최고 관리자 | 복원 진행 상황 |
 | GET | `/api/v1/backups/schedules` | 관리자 | 예정된 작업 목록 |
 | POST | `/api/v1/backups/schedules` | 관리자 | 예약된 작업 만들기 |
 | DELETE | `/api/v1/backups/schedules/:id` | 관리자 | 예약된 작업 삭제 |
@@ -988,7 +996,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | DELETE | `/api/v1/backups/storages/:id` | 관리자 | 스토리지 구성 삭제 |
 | PUT | `/api/v1/backups/storages/:id` | 관리자 | 스토리지 구성 업데이트 |
 | GET | `/api/v1/backups/storages/:id/files` | 관리자 | 원격 백업 파일 목록 |
-| POST | `/api/v1/backups/upload-restore` | 관리자 | 백업 업로드 및 복원 |
+| POST | `/api/v1/backups/upload-restore` | 최고 관리자 | 백업 업로드 및 복원 |
 
 ### 시스템 설정
 
@@ -1001,8 +1009,8 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/system/config-file/:coreType` | 관리자 | 핵심 구성 파일 읽기 |
 | GET | `/api/v1/system/db-config` | 관리자 | 데이터베이스 구성 |
 | PUT | `/api/v1/system/db-config` | 관리자 | 데이터베이스 구성 업데이트 |
-| POST | `/api/v1/system/db-config/migrate` | 관리자 | 데이터베이스 데이터 마이그레이션 |
-| POST | `/api/v1/system/db-config/switch` | 관리자 | 데이터베이스 전환(원스텝 마이그레이션 포함) |
+| POST | `/api/v1/system/db-config/migrate` | 최고 관리자 | 데이터베이스 데이터 마이그레이션 |
+| POST | `/api/v1/system/db-config/switch` | 최고 관리자 | 데이터베이스 전환(원스텝 마이그레이션 포함) |
 | POST | `/api/v1/system/db-config/test` | 관리자 | 데이터베이스 연결 테스트 |
 | GET | `/api/v1/system/db-pool-stats` | 관리자 | 연결 풀 통계 |
 | GET | `/api/v1/system/db-stats` | 관리자 | 데이터베이스 통계 |
@@ -1011,13 +1019,13 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/system/encryption-key-status` | 관리자 | 암호화 키 상태 |
 | GET | `/api/v1/system/env-config` | 관리자 | .env 구성 |
 | PUT | `/api/v1/system/env-config` | 관리자 | .env 구성 업데이트 |
-| POST | `/api/v1/system/generate-encryption-key` | 관리자 | 암호화 키 생성 |
+| POST | `/api/v1/system/generate-encryption-key` | 최고 관리자 | 암호화 키 생성 |
 | GET | `/api/v1/system/github-config` | 관리자 | GitHub 구성 |
 | PUT | `/api/v1/system/github-config` | 관리자 | GitHub 구성 업데이트 |
 | GET | `/api/v1/system/jwt-secret-status` | 관리자 | JWT 키 상태 |
 | GET | `/api/v1/system/maintenance` | 공개 | 유지 관리 모드 상태(공개) |
 | PUT | `/api/v1/system/maintenance` | 관리자 | 유지 관리 모드 전환 |
-| POST | `/api/v1/system/migrate-data` | 관리자 | 데이터 마이그레이션 |
+| POST | `/api/v1/system/migrate-data` | 최고 관리자 | 데이터 마이그레이션 |
 | GET | `/api/v1/system/notification-config` | 관리자 | 알림 구성 |
 | PUT | `/api/v1/system/notification-config` | 관리자 | 알림 구성 업데이트 |
 | GET | `/api/v1/system/notification-templates` | 관리자 | 템플릿 목록 |
@@ -1030,13 +1038,13 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | PUT | `/api/v1/system/panel-config` | 관리자 | 패널 구성 업데이트 |
 | GET | `/api/v1/system/reality-targets` | 관리자 | REALITY 대상 목록 |
 | PUT | `/api/v1/system/reality-targets` | 관리자 | REALITY 대상 업데이트 |
-| POST | `/api/v1/system/reality-targets/reset` | 관리자 | REALITY 대상을 기본값으로 재설정 |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality 로컬 SNI 설정 읽기 |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality 로컬 SNI 설정 업데이트 |
-| POST | `/api/v1/system/regenerate-jwt-secret` | 관리자 | JWT 키 재생성 |
+| POST | `/api/v1/system/reality-targets/reset` | 최고 관리자 | REALITY 대상을 기본값으로 재설정 |
+| GET | `/api/v1/system/reality-local-sni` | 관리자 | Reality 로컬 SNI 구성 읽기 |
+| PUT | `/api/v1/system/reality-local-sni` | 관리자 | Reality 로컬 SNI 구성 업데이트 |
+| POST | `/api/v1/system/regenerate-jwt-secret` | 최고 관리자 | JWT 키 재생성 |
 | GET | `/api/v1/system/releases` | 관리자 | 사용 가능한 버전 |
-| POST | `/api/v1/system/restart` | 관리자 | 다시 시작 |
-| POST | `/api/v1/system/rollback` | 관리자 | 시스템 롤백 |
+| POST | `/api/v1/system/restart` | 최고 관리자 | 다시 시작 |
+| POST | `/api/v1/system/rollback` | 최고 관리자 | 시스템 롤백 |
 | GET | `/api/v1/system/settings` | 관리자 | 설정 읽기 |
 | PUT | `/api/v1/system/settings/batch` | 관리자 | 대량 업데이트 설정 |
 | GET | `/api/v1/system/stats` | 관리자 | 시스템 상태 |
@@ -1045,7 +1053,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | POST | `/api/v1/system/telegram-chat-id` | 관리자 | Telegram 채팅 ID 받기 |
 | POST | `/api/v1/system/test-smtp` | 관리자 | SMTP 테스트 |
 | POST | `/api/v1/system/test-telegram` | 관리자 | Telegram 테스트 |
-| POST | `/api/v1/system/update` | 관리자 | 시스템 업그레이드 |
+| POST | `/api/v1/system/update` | 최고 관리자 | 시스템 업그레이드 |
 | GET | `/api/v1/system/update-jobs` | 관리자 | 업그레이드 작업 목록 |
 | POST | `/api/v1/system/upload-mtls-ca` | 관리자 | mTLS CA 인증서 업로드 |
 
@@ -1055,8 +1063,9 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | 로그인됨 | 감사 이벤트 목록 |
-| GET | `/api/v1/security/audit-events/export` | 로그인됨 | 감사 이벤트 내보내기 |
+| GET | `/api/v1/security/audit-events` | 관리자 | 감사 이벤트 목록 |
+| GET | `/api/v1/security/audit-events/export` | 관리자 | 감사 이벤트 내보내기 |
+| GET | `/api/v1/security/subscription-access-logs` | 관리자 | 구독 가져오기 로그(구독 ID/IP/클라이언트 이메일로 필터링) |
 
 ### 측정항목
 
@@ -1064,9 +1073,9 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | 로그인됨 | 인증서 지표 |
-| GET | `/api/v1/metrics/nodes` | 로그인됨 | 노드 측정항목 |
-| GET | `/api/v1/metrics/overview` | 로그인됨 | 개요 |
+| GET | `/api/v1/metrics/certificates` | 관리자 | 인증서 지표 |
+| GET | `/api/v1/metrics/nodes` | 관리자 | 노드 측정항목 |
+| GET | `/api/v1/metrics/overview` | 관리자 | 개요 |
 
 ### 포털 템플릿
 
@@ -1074,20 +1083,20 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | 로그인됨 | 활성 템플릿 |
-| PUT | `/api/v1/portal/active` | 로그인됨 | 활성 템플릿 업데이트 |
-| DELETE | `/api/v1/portal/cache` | 로그인됨 | 포털 캐시 지우기 |
-| GET | `/api/v1/portal/cache` | 로그인됨 | 캐시 상태 |
-| PUT | `/api/v1/portal/cache/dev-mode` | 로그인됨 | 캐시 개발 모드 전환 |
-| POST | `/api/v1/portal/cache/rebuild` | 로그인됨 | 포털 캐시 재구축 |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | 내장 언어 팩 |
-| POST | `/api/v1/portal/reset` | 로그인됨 | 기본 템플릿 복원 |
-| GET | `/api/v1/portal/templates` | 로그인됨 | 목록 |
-| POST | `/api/v1/portal/templates` | 로그인됨 | 만들기 |
-| DELETE | `/api/v1/portal/templates/:id` | 로그인됨 | 삭제 |
-| GET | `/api/v1/portal/templates/:id` | 로그인됨 | 세부정보 |
-| PUT | `/api/v1/portal/templates/:id` | 로그인됨 | 업데이트 |
-| POST | `/api/v1/portal/templates/:id/activate` | 로그인됨 | 템플릿 활성화 |
+| GET | `/api/v1/portal/active` | 관리자 | 활성 템플릿 |
+| PUT | `/api/v1/portal/active` | 관리자 | 활성 템플릿 업데이트 |
+| DELETE | `/api/v1/portal/cache` | 관리자 | 포털 캐시 지우기 |
+| GET | `/api/v1/portal/cache` | 관리자 | 캐시 상태 |
+| PUT | `/api/v1/portal/cache/dev-mode` | 관리자 | 캐시 개발 모드 전환 |
+| POST | `/api/v1/portal/cache/rebuild` | 관리자 | 포털 캐시 재구축 |
+| GET | `/api/v1/portal/lang/builtin` | 관리자 | 내장 언어 팩 |
+| POST | `/api/v1/portal/reset` | 관리자 | 기본 템플릿 복원 |
+| GET | `/api/v1/portal/templates` | 관리자 | 목록 |
+| POST | `/api/v1/portal/templates` | 관리자 | 만들기 |
+| DELETE | `/api/v1/portal/templates/:id` | 관리자 | 삭제 |
+| GET | `/api/v1/portal/templates/:id` | 관리자 | 세부정보 |
+| PUT | `/api/v1/portal/templates/:id` | 관리자 | 업데이트 |
+| POST | `/api/v1/portal/templates/:id/activate` | 관리자 | 템플릿 활성화 |
 
 > `/portal/templates` CRUD는 **고급 API**입니다. 포털 UI는 주로 `PUT /api/v1/portal/active`를 사용합니다.
 > (원샷 전체 사이트 구성) 이 그룹으로 여러 템플릿을 관리/전환합니다. 둘 다 지원되며 충돌하지 않습니다.
@@ -1103,7 +1112,7 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 | GET | `/api/v1/agent/version` | 관리자 | 패널의 현재 에이전트 버전 |
 | GET | `/api/v1/agent/download` | 공개 | 에이전트 다운로드 |
 | GET | `/api/v1/agent/install` | 공개 | 설치 스크립트 받기 |
-| GET | `/api/v1/agent/origin` | 公开 | 패널 원본 주소(공개) |
+| GET | `/api/v1/agent/origin` | 공개 | 패널 원산지 주소(공개) |
 
 ### 청구 콜백 항목
 
@@ -1136,79 +1145,75 @@ geoip/geosite 데이터 소스 및 파일의 동기화 및 전달.
 
 ### 클라이언트 인증 및 비즈니스(관리 엔진에서도 동일 설정)
 
-포털과 동일한 클라이언트 엔드포인트 자세한 내용은 `portal-api.en.md`를 참조하세요.
+포털과 동일한 클라이언트 엔드포인트입니다. 관리자 토큰이 아닌 **클라이언트 토큰**(`Authorization: Bearer <client_token>`)을 사용합니다. 자세한 내용은 `portal-api.en.md`를 참조하세요.
 
 | 방법 | 경로 | 허가 | 설명 |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | 공개 | 기사 나열 |
-| GET | `/api/v1/client-auth/articles/:slug` | 공개 | 기사 받기 |
-| GET | `/api/v1/client-auth/balance` | 공개 | 잔액 확보 |
-| GET | `/api/v1/client-auth/balance/transactions` | 공개 | 잔액 거래 |
-| POST | `/api/v1/client-auth/change-password` | 공개 | 비밀번호 변경 |
-| POST | `/api/v1/client-auth/charge/create` | 공개 | 재충전 주문 생성 |
-| GET | `/api/v1/client-auth/charge/orders` | 공개 | 재충전 주문 나열 |
-| GET | `/api/v1/client-auth/charge/orders/:id` | 공개 | 재충전 주문 세부정보 받기 |
-| POST | `/api/v1/client-auth/charge/redeem-card` | 공개 | 카드 사용 |
-| GET | `/api/v1/client-auth/charge/sites` | 공개 | 충전소 나열 |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | 공개 | 충전상태 조회 |
-| GET | `/api/v1/client-auth/checktime` | 공개 | 서버 시간 가져오기(시계 동기화) |
-| GET | `/api/v1/client-auth/connection-info` | 공개 | 계획 연결 매개변수 가져오기 |
-| GET | `/api/v1/client-auth/gifts` | 공개 | 선물 나열 |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | 공개 | 선물 받기 |
-| GET | `/api/v1/client-auth/invoices` | 공개 | 주문 목록 |
-| GET | `/api/v1/client-auth/invoices/:id` | 공개 | 주문 세부정보 |
-| GET | `/api/v1/client-auth/settings/whitelist` | 공개 | IP 허용 목록 나열 |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 공개 | IP 허용 목록에서 제거 |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 공개 | IP 자동 추가 |
-| POST | `/api/v1/client-auth/login` | 공개 | 로그인 |
-| POST | `/api/v1/client-auth/logout` | 공개 | 로그아웃 |
-| POST | `/api/v1/client-auth/logs/package` | 공개 | 로그 번들 생성 |
-| GET | `/api/v1/client-auth/logs/packages` | 공개 | 로그 번들 나열 |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | 공개 | 로그 번들 삭제 |
-| GET | `/api/v1/client-auth/logs/packages/:id` | 공개 | 로그 번들 가져오기 |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | 공개 | 로그 번들 다운로드 |
-| GET | `/api/v1/client-auth/logs/types` | 공개 | 로그 번들 상태 확인 |
-| GET | `/api/v1/client-auth/me` | 공개 | 현재 로그인한 사용자 가져오기 |
-| GET | `/api/v1/client-auth/nodes` | 공개 | 내 노드 목록 |
-| GET | `/api/v1/client-auth/nodes/:id/config` | 공개 | 노드 구성 |
-| GET | `/api/v1/client-auth/nodes/:id/link` | 공개 | 노드 공유 링크 |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | 공개 | 노드 QR 코드 |
-| GET | `/api/v1/client-auth/oauth/:provider` | 공개 | 승인하다 |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | 공개 | 콜백 |
-| GET | `/api/v1/client-auth/oauth/providers` | 공개 | 제공자 상태 |
-| GET | `/api/v1/client-auth/orders` | 공개 | 주문 목록 |
-| POST | `/api/v1/client-auth/orders` | 공개 | 주문 생성 |
-| GET | `/api/v1/client-auth/orders/:id` | 공개 | 주문 세부정보 |
-| GET | `/api/v1/client-auth/plans` | 공개 | 플랜 목록 |
-| GET | `/api/v1/client-auth/plans/:id` | 공개 | 요금제 세부정보 |
-| GET | `/api/v1/client-auth/referral/code` | 공개 | 추천 확인 코드 받기 |
-| GET | `/api/v1/client-auth/referral/records` | 공개 | 추천 기록 나열 |
-| GET | `/api/v1/client-auth/referral/stats` | 공개 | 추천 통계 받기 |
-| POST | `/api/v1/client-auth/referral/withdraw` | 공개 | 출금요청 |
-| GET | `/api/v1/client-auth/referral/withdrawals` | 공개 | 추천 철회 나열 |
-| POST | `/api/v1/client-auth/refresh` | 공개 | 새로고침 |
-| POST | `/api/v1/client-auth/register` | 공개 | 등록 |
-| POST | `/api/v1/client-auth/reset-subscription` | 공개 | 구독 재설정 |
-| PUT | `/api/v1/client-auth/settings` | 공개 | 프로필 업데이트 |
-| POST | `/api/v1/client-auth/rotate-token` | 공개 | 구독 토큰 순환 |
-| POST | `/api/v1/client-auth/self-unban` | 공개 | 셀프 서비스 금지 해제 |
-| PUT | `/api/v1/client-auth/settings` | 공개 | 업데이트 설정 |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | 공개 | IP 자동 추가 |
-| GET | `/api/v1/client-auth/settings/whitelist` | 공개 | IP 허용 목록 나열 |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 공개 | IP 허용 목록에서 제거 |
-| GET | `/api/v1/client-auth/shared-accounts` | 공개 | 공유 계정 나열 |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | 공개 | 공유 계정 받기 |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 공개 | 공유 계정 요청 |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 공개 | 수리요청 |
-| POST | `/api/v1/client-auth/ticket` | 공개 | 일회성 단기 티켓 발행 |
-| GET | `/api/v1/client-auth/tickets` | 공개 | 티켓 나열 |
-| POST | `/api/v1/client-auth/tickets` | 공개 | 티켓 만들기 |
-| GET | `/api/v1/client-auth/tickets/:id` | 공개 | 티켓 받기 |
-| POST | `/api/v1/client-auth/tickets/:id/close` | 공개 | 티켓 닫기 |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | 공개 | 티켓에 답장하기 |
-| GET | `/api/v1/client-auth/traffic-history` | 공개 | 교통 이력 |
-| GET | `/api/v1/client-auth/traffic-packs` | 공개 | 트래픽 팩 목록 |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | 공개 | 트래픽 팩 구매 |
+| GET | `/api/v1/client-auth/articles` | 고객(로그인) | 기사 나열 |
+| GET | `/api/v1/client-auth/articles/:slug` | 고객(로그인) | 기사 받기 |
+| GET | `/api/v1/client-auth/balance` | 고객(로그인) | 잔액 확보 |
+| GET | `/api/v1/client-auth/balance/transactions` | 고객(로그인) | 잔액 거래 |
+| POST | `/api/v1/client-auth/change-password` | 고객(로그인) | 비밀번호 변경 |
+| POST | `/api/v1/client-auth/charge/create` | 고객(로그인) | 재충전 주문 생성 |
+| GET | `/api/v1/client-auth/charge/orders` | 고객(로그인) | 재충전 주문 나열 |
+| GET | `/api/v1/client-auth/charge/orders/:id` | 고객(로그인) | 재충전 주문 세부정보 받기 |
+| POST | `/api/v1/client-auth/charge/redeem-card` | 고객(로그인) | 카드 사용 |
+| GET | `/api/v1/client-auth/charge/sites` | 고객(로그인) | 충전소 나열 |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | 고객(로그인) | 충전상태 조회 |
+| GET | `/api/v1/client-auth/checktime` | 고객(로그인) | 서버 시간 가져오기(시계 동기화) |
+| GET | `/api/v1/client-auth/connection-info` | 고객(로그인) | 계획 연결 매개변수 가져오기 |
+| GET | `/api/v1/client-auth/gifts` | 고객(로그인) | 선물 나열 |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | 고객(로그인) | 선물 받기 |
+| GET | `/api/v1/client-auth/invoices` | 고객(로그인) | 주문 목록 |
+| GET | `/api/v1/client-auth/invoices/:id` | 고객(로그인) | 주문 세부정보 |
+| POST | `/api/v1/client-auth/login` | 클라이언트(공개) | 로그인 |
+| POST | `/api/v1/client-auth/logout` | 고객(로그인) | 로그아웃 |
+| POST | `/api/v1/client-auth/logs/package` | 고객(로그인) | 로그 번들 생성 |
+| GET | `/api/v1/client-auth/logs/packages` | 고객(로그인) | 로그 번들 나열 |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | 고객(로그인) | 로그 번들 삭제 |
+| GET | `/api/v1/client-auth/logs/packages/:id` | 고객(로그인) | 로그 번들 가져오기 |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | 고객(로그인) | 로그 번들 다운로드 |
+| GET | `/api/v1/client-auth/logs/types` | 고객(로그인) | 로그 번들 상태 확인 |
+| GET | `/api/v1/client-auth/me` | 고객(로그인) | 현재 로그인한 사용자 가져오기 |
+| GET | `/api/v1/client-auth/nodes` | 고객(로그인) | 내 노드 목록 |
+| GET | `/api/v1/client-auth/nodes/:id/config` | 고객(로그인) | 노드 구성 |
+| GET | `/api/v1/client-auth/nodes/:id/link` | 고객(로그인) | 노드 공유 링크 |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | 고객(로그인) | 노드 QR 코드 |
+| GET | `/api/v1/client-auth/oauth/:provider` | 클라이언트(공개) | 승인하다 |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | 클라이언트(공개) | 콜백 |
+| GET | `/api/v1/client-auth/oauth/providers` | 클라이언트(공개) | 제공자 상태 |
+| GET | `/api/v1/client-auth/orders` | 고객(로그인) | 주문 목록 |
+| POST | `/api/v1/client-auth/orders` | 고객(로그인) | 주문 생성 |
+| GET | `/api/v1/client-auth/orders/:id` | 고객(로그인) | 주문 세부정보 |
+| GET | `/api/v1/client-auth/plans` | 고객(로그인) | 플랜 목록 |
+| GET | `/api/v1/client-auth/plans/:id` | 고객(로그인) | 요금제 세부정보 |
+| GET | `/api/v1/client-auth/referral/code` | 고객(로그인) | 추천 확인 코드 받기 |
+| GET | `/api/v1/client-auth/referral/records` | 고객(로그인) | 추천 기록 나열 |
+| GET | `/api/v1/client-auth/referral/stats` | 고객(로그인) | 추천 통계 받기 |
+| POST | `/api/v1/client-auth/referral/withdraw` | 고객(로그인) | 출금요청 |
+| GET | `/api/v1/client-auth/referral/withdrawals` | 고객(로그인) | 추천 철회 나열 |
+| POST | `/api/v1/client-auth/refresh` | 클라이언트(공개) | 새로고침 |
+| POST | `/api/v1/client-auth/register` | 클라이언트(공개) | 등록 |
+| POST | `/api/v1/client-auth/reset-subscription` | 고객(로그인) | 구독 재설정 |
+| POST | `/api/v1/client-auth/rotate-token` | 고객(로그인) | 구독 토큰 순환 |
+| POST | `/api/v1/client-auth/self-unban` | 고객(로그인) | 셀프 서비스 금지 해제 |
+| PUT | `/api/v1/client-auth/settings` | 고객(로그인) | 업데이트 설정 |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | 고객(로그인) | IP 자동 추가 |
+| GET | `/api/v1/client-auth/settings/whitelist` | 고객(로그인) | IP 허용 목록 나열 |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | 고객(로그인) | IP 허용 목록에서 제거 |
+| GET | `/api/v1/client-auth/shared-accounts` | 고객(로그인) | 공유 계정 나열 |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | 고객(로그인) | 공유 계정 받기 |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | 고객(로그인) | 공유 계정 요청 |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | 고객(로그인) | 수리요청 |
+| POST | `/api/v1/client-auth/ticket` | 고객(로그인) | 일회성 단기 티켓 발행 |
+| GET | `/api/v1/client-auth/tickets` | 고객(로그인) | 티켓 나열 |
+| POST | `/api/v1/client-auth/tickets` | 고객(로그인) | 티켓 만들기 |
+| GET | `/api/v1/client-auth/tickets/:id` | 고객(로그인) | 티켓 받기 |
+| POST | `/api/v1/client-auth/tickets/:id/close` | 고객(로그인) | 티켓 닫기 |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | 고객(로그인) | 티켓에 답장하기 |
+| GET | `/api/v1/client-auth/traffic-history` | 고객(로그인) | 교통 이력 |
+| GET | `/api/v1/client-auth/traffic-packs` | 고객(로그인) | 트래픽 팩 목록 |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | 고객(로그인) | 트래픽 팩 구매 |
 
 ### 구독 전달
 

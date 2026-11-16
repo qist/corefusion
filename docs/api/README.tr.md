@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: tr | updated: 2026-10-23 -->
+<!-- source: README.md | locale: tr | updated: 2026-11-16 -->
 # CoreFusion API Belgeleri
 
 > Diller: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · Türkçe · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@
 | Belge | Seyirci | İçerik |
 |---|---|---|
 | [subscription.md](./subscription.tr.md) | Aboneler / müşteri geliştiricileri | Abonelik uç noktası (`/sub/:token`): formatlar, başlıklar, durum kodları, örnekler |
-| [portal-api.md](./portal-api.tr.md) | Portal ön ucu / üçüncü taraf istemcileri | Müşteri portalı API (`/api/v1/client-auth/*`, `/api/v1/public/*`): kaydolma, oturum açma, planlar, siparişler, bakiye, biletler |
+| [portal-api.md](./portal-api.md) | Portal ön ucu / üçüncü taraf istemcileri | Müşteri portalı API (`/api/v1/client-auth/*`, `/api/v1/public/*`): kaydolma, oturum açma, planlar, siparişler, bakiye, biletler |
 | [şarj-geri arama.md](./charge-callback.tr.md) | Ödeme sağlayıcıları | Ödeme geri arama imzalama ve doğrulama |
-| [admin-api.tr.md](./admin-api.tr.md) | Panel geliştirme / otomasyon | Tam yönetici API rota tablosu (`/api/v1/*`, modüle göre gruplandırılmış) |
+| [admin-api.en.md](./admin-api.tr.md) | Panel geliştirme / otomasyon | Tam yönetici API rota tablosu (`/api/v1/*`, modüle göre gruplandırılmış) |
 
 ---
 
@@ -34,8 +34,8 @@ Panel, tek bir veritabanını paylaşarak aynı anda üç motoru açığa çıka
 | **İstemci kimlik doğrulaması** | `Authorization: Bearer <client_token>` (`/api/v1/client-auth/login`'den) | Portal API |
 | **Abonelik jetonu** | URL'deki jeton: `/sub/<token>` | Abonelik getirme, başlık yok |
 
-- Müşteri erişim belirteçleri 24 saat sürer, belirteçleri 7 gün yeniler; JWT, `tv` (token_version) içerir, bu nedenle oturum kapatma / zorunlu oturum kapatma tüm eski belirteçleri geçersiz kılar.
-- Yönetici rolleri: `viewer` / `admin` / `operator` / `super_admin`; bazı yazma işlemleri `RequireRole(RoleAdmin)` veya üzerini gerektirir.
+- Müşteri erişim belirteçleri 24 saat sürer; belirteçleri 7 gün yenileyin; JWT, `tv` (token_version) içerir, bu nedenle oturum kapatma / zorunlu oturum kapatma tüm eski belirteçleri geçersiz kılar.
+- Yönetici rolü düzeyleri: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. Okumalar genellikle yalnızca oturum açılmış bir oturuma ihtiyaç duyar; yazma işlemleri modül başına `operator` / `admin` / `super_admin` gerektirir. [admin-api.md](./admin-api.tr.md)'deki "İzin" sütununa bakın.
 
 ## 3. Yanıt formatı
 
@@ -69,10 +69,10 @@ Bu rotalar HTML/statik varlıkları döndürür ve API belgelerinin dışındad�
 | Yöntem | Yol | Açıklama |
 |---|---|---|
 | GET | `/` | Yönetici paneli SPA (oturum açtıktan sonra) |
-| GET | `/p` | Portal HTML'si (özel bir portal motorunda `/`) |
+| GET | `/p` | Portal HTML (özel bir portal motorunda `/`) |
 | GET | `/:token` | Abonelik özel bir bağlantı noktasından getirilir (`/sub` öneki yoktur, `/sub/:token` ile aynı anlambilime sahiptir) |
 | GET | `/static/:file` | Ön uç statik varlıkları |
 
 ## 6. Gerçeğin kaynağı
 
-`internal/api/router/router.go` (sayı sürüme göre değişir; kod esastır). [admin-api.md](./admin-api.tr.md)'deki rota tablosu koddan oluşturulmuştur; eğer kodla aynı fikirde değilse **kod kazanır**.
+`internal/api/router/router.go` (sayı sürüme göre değişir; kod yetkilidir). [admin-api.md](./admin-api.md)'deki rota tablosu koddan oluşturulmuştur; eğer kodla aynı fikirde değilse **kod kazanır**.

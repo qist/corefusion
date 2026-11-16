@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: pt | updated: 2026-10-23 -->
+<!-- source: README.md | locale: pt | updated: 2026-11-16 -->
 # Documentação CoreFusion API
 
 > Idiomas: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · Português · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -7,10 +7,10 @@ Documentação API para **integradores externos, desenvolvimento secundário e c
 
 | Documento | Público | Conteúdo |
 |---|---|---|
-| [subscrição.md](./subscription.pt.md) | Assinantes/desenvolvedores de clientes | Endpoint de assinatura (`/sub/:token`): formatos, cabeçalhos, códigos de status, exemplos |
-| [portal-api.md](./portal-api.pt.md) | Frontend do portal/clientes terceiros | Portal do cliente API (`/api/v1/client-auth/*`, `/api/v1/public/*`): inscrição, login, planos, pedidos, saldo, tickets |
+| [subscription.md](./subscription.pt.md) | Assinantes/desenvolvedores de clientes | Endpoint de assinatura (`/sub/:token`): formatos, cabeçalhos, códigos de status, exemplos |
+| [portal-api.md](./portal-api.md) | Frontend do portal/clientes terceiros | Portal do cliente API (`/api/v1/client-auth/*`, `/api/v1/public/*`): inscrição, login, planos, pedidos, saldo, tickets |
 | [ retorno de chamada de cobrança.md](./charge-callback.pt.md) | Provedores de pagamento | Assinatura e verificação de retorno de chamada de pagamento |
-| [admin-api.pt.md](./admin-api.pt.md) | Desenvolvimento/automação de painel | Tabela de rotas API de administração completa (`/api/v1/*`, agrupada por módulo) |
+| [admin-api.en.md](./admin-api.pt.md) | Desenvolvimento/automação de painel | Tabela de rotas API de administração completa (`/api/v1/*`, agrupada por módulo) |
 
 ---
 
@@ -35,7 +35,7 @@ O painel pode expor três mecanismos ao mesmo tempo, compartilhando um banco de 
 | **Token de assinatura** | Token no URL: `/sub/<token>` | Busca de assinatura, sem cabeçalho |
 
 - Os tokens de acesso do cliente duram 24h, os tokens de atualização duram 7 dias; o JWT contém `tv` (token_version), portanto, o logout/saída forçada invalida todos os tokens antigos.
-- Funções administrativas: `viewer` / `admin`/`operator`/`super_admin`; algumas operações de gravação requerem `RequireRole(RoleAdmin)` ou superior.
+- Níveis de função administrativa: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. As leituras geralmente só precisam de uma sessão conectada; as gravações requerem `operator` / `admin` / `super_admin` por módulo. Consulte a coluna “Permissão” em [admin-api.md](./admin-api.pt.md).
 
 ## 3. Formato de resposta
 
@@ -45,7 +45,7 @@ Sucesso (maioria dos endpoints):
 { "code": 0, "data": { ... }, "message": "ok" }
 ```
 
-Os pontos de extremidade da lista (alguns) retornam `{ "items": [...], "total": N }` ou uma matriz simples (indicada por ponto de extremidade abaixo).
+Os endpoints da lista (alguns) retornam `{ "items": [...], "total": N }` ou uma matriz simples (indicada por endpoint abaixo).
 
 Erros (HTTP 4xx/5xx):
 
@@ -69,10 +69,10 @@ Essas rotas retornam ativos HTML/estáticos e estão fora dos documentos API; li
 | Método | Caminho | Descrição |
 |---|---|---|
 | GET | `/` | Painel de administração SPA (após login) |
-| GET | `/p` | Portal HTML (`/` em um mecanismo de portal dedicado) |
+| GET | `/p` | HTML do portal (`/` em um mecanismo de portal dedicado) |
 | GET | `/:token` | Busca de assinatura em uma porta dedicada (sem prefixo `/sub`, mesma semântica de `/sub/:token`) |
 | GET | `/static/:file` | Ativos estáticos de front-end |
 
 ## 6. Fonte da verdade
 
-`internal/api/router/router.go` (a quantidade varia conforme a versão; o código é a referência). A tabela de rotas em [admin-api.md](./admin-api.pt.md) é gerada a partir do código; se discordar do código, **o código vence**.
+`internal/api/router/router.go` (a contagem varia de acordo com a versão; o código é oficial). A tabela de rotas em [admin-api.md](./admin-api.md) é gerada a partir do código; se discordar do código, **o código vence**.

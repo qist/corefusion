@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: vi | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: vi | updated: 2026-11-16 -->
 # Tính phí gọi lại API
 
 > Ngôn ngữ: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · Tiếng Việt · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -12,7 +12,7 @@ POST /api/v1/charge/callback/{site_id}
 Content-Type: application/json
 ```
 
-`site_id` là ID (số nguyên) “trang web được gắn” phía quản trị viên. Lệnh gọi lại được thực hiện từ máy chủ đến máy chủ và sử dụng **ký HMAC** cùng với danh sách cho phép IP tùy chọn thay vì xác thực Bearer.
+`site_id` là ID (số nguyên) “trang web được gắn” phía quản trị viên. Lệnh gọi lại được thực hiện từ máy chủ đến máy chủ và sử dụng **ký HMAC** cộng với danh sách cho phép IP tùy chọn thay vì xác thực Bearer.
 
 ## 2. Nội dung yêu cầu
 
@@ -98,10 +98,11 @@ Quá trình xử lý **không có hiệu lực**: các lệnh gọi lại lặp 
 
 ## 5. Phản hồi
 
-- Thành công: 2xx (sau khi bảng đăng thanh toán)
-- Lỗi: 4xx/5xx + `{ "code": "...", "message": "..." }`; các mã điển hình bao gồm `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, số lượng không khớp, v.v.
+- Thành công: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (sau khi bảng đăng thanh toán)
+- Lỗi: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; lý do cụ thể là ở `message` (chữ ký xấu, IP không được đưa vào danh sách trắng, không tìm thấy đơn hàng, số tiền/tiền tệ không khớp, không phát lại, v.v.)
+- `site_id` không hợp lệ trong đường dẫn trả về `INVALID_SITE_ID`; phần thân không phải JSON trả về `INVALID_REQUEST`
 
-> Mọi cuộc gọi lại đều mang theo `X-Request-ID` (do bảng điều khiển tạo ra nếu không có); nhật ký và sự kiện có thể theo dõi được từ đầu đến cuối. Cung cấp ID này cho quản trị viên của bạn khi khắc phục sự cố.
+> Mọi lệnh gọi lại đều mang `X-Request-ID` (do bảng điều khiển tạo ra nếu không có); nhật ký và sự kiện có thể theo dõi được từ đầu đến cuối. Cung cấp ID này cho quản trị viên của bạn khi khắc phục sự cố.
 
 ## 6. Kiểm tra và khắc phục sự cố
 

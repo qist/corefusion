@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: fa | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: fa | updated: 2026-11-16 -->
 # شارژ مجدد تماس API
 
 > زبان‌ها: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · فارسی
@@ -12,7 +12,7 @@ POST /api/v1/charge/callback/{site_id}
 Content-Type: application/json
 ```
 
-`site_id` شناسه «سایت نصب‌شده» (عدد صحیح) سمت مدیریت است. تماس برگشتی سرور به سرور است و از **امضای HMAC** به اضافه یک لیست مجاز IP اختیاری به جای تأیید حامل استفاده می کند.
+`site_id` شناسه (عدد صحیح) "سایت نصب شده" سمت مدیریت است. پاسخ به تماس سرور به سرور است و از **امضای HMAC** به اضافه یک لیست مجاز IP اختیاری به جای تأیید حامل استفاده می کند.
 
 ## 2. درخواست بدن
 
@@ -44,7 +44,7 @@ Content-Type: application/json
 | `timestamp` | یونیکس ثانیه؛ خارج از پنجره رد شد (امضا) |
 | `nonce` | محافظت از پخش مجدد: INSERT اتمی، هر یک یک بار پردازش شده (امضا) |
 | `paid_*` / `method` / `exchange_rate` / `paid_at` | اطلاعات پرداخت واقعی، **امضا نشده** (یکپارچگی تحت پوشش `body_hash`) |
-| `sign` | امضای HMAC-SHA256، کد شش‌گانه (محاسبه شده روی بدنه بدون `sign`) |
+| `sign` | امضای HMAC-SHA256، رمزگذاری شده هگزا (محاسبه شده روی بدنه بدون `sign`) |
 | `extra` | فیلدهای پسوند |
 
 ## 3. الگوریتم امضا (نسخه 3.2 / `version: "v1"`)
@@ -67,7 +67,7 @@ Content-Type: application/json
 ```
 
 3. `sign = hex( HMAC_SHA256( key=callback secret, msg=JSON bytes from step 2) )`.
-   > راز رمز پاسخ تماس سایت نصب شده در رابط کاربری مدیریت است (پس از چرخش، راز قبلی برای یک پنجره انتقال نگه داشته می شود).
+   > راز رمز پاسخ تماس سایت نصب شده در رابط کاربری مدیریت است (بعد از چرخش، راز قبلی برای یک پنجره انتقال نگهداری می شود).
 
 ```python
 import hashlib, hmac, json
@@ -86,7 +86,7 @@ def sign_callback(body: dict, secret: str) -> str:
     return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
 ```
 
-## 4. زنجیره اعتبارسنجی سمت پنل (خطایی که دریافت می کنید را تعیین می کند)
+## 4. زنجیره اعتبار سنجی سمت پنل (خطایی که دریافت می کنید را تعیین می کند)
 
 1. سایت وجود دارد و دامنه آن تأیید شده است → 404 / 403
 2. لیست مجاز IP (اگر `callback_whitelist` پیکربندی شده باشد، IP های غیر فهرست شده **مسدود مسدود می شوند**؛ در غیر این صورت از قلم افتاده و فقط امضا بررسی می شود)
@@ -98,10 +98,11 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. پاسخ ها
 
-- موفقیت: 2xx (بعد از اینکه پانل پرداخت را ارسال کرد)
-- خرابی: 4xx/5xx + `{ "code": "...", "message": "..." }`؛ کدهای معمولی شامل `INVALID_SIGNATURE`، `IP_BLOCKED`، `ORDER_NOT_FOUND`، عدم تطابق مقدار و غیره است.
+- موفقیت: HTTP 200، `{"code":0,"data":{"success":true,"message":"ok"}}` (پس از ارسال پرداخت توسط پانل)
+- خرابی: HTTP 400، `{"code":"CALLBACK_FAILED","message":"..."}`؛ دلیل مشخص در `message` است (امضای بد، IP در لیست سفید قرار نگرفته است، سفارش یافت نشد، عدم تطابق مقدار/ارز، پخش مجدد غیرضروری و غیره)
+- یک `site_id` نامعتبر در مسیر، `INVALID_SITE_ID` را برمی‌گرداند. یک بدنه غیر JSON `INVALID_REQUEST` را برمی گرداند
 
-> هر تماس برگشتی دارای `X-Request-ID` است (در صورت عدم وجود توسط پانل تولید می شود). گزارش‌ها و رویدادها پایان به انتها قابل ردیابی هستند. هنگام عیب یابی این شناسه را به سرپرست خود بدهید.
+> هر فراخوانی حاوی `X-Request-ID` است (در صورت عدم وجود توسط پانل تولید می شود). گزارش‌ها و رویدادها پایان به انتها قابل ردیابی هستند. هنگام عیب یابی این شناسه را به سرپرست خود بدهید.
 
 ## 6. تست و عیب یابی
 

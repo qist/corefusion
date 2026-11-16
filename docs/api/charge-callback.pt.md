@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: pt | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: pt | updated: 2026-11-16 -->
 # Retorno de chamada de cobrança API
 
 > Idiomas: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · Português · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -12,7 +12,7 @@ POST /api/v1/charge/callback/{site_id}
 Content-Type: application/json
 ```
 
-`site_id` é o ID do “site montado” do lado do administrador (inteiro). O retorno de chamada é de servidor para servidor e usa **assinatura HMAC** além de uma lista de permissões de IP opcional em vez de autenticação de portador.
+`site_id` é o ID do “site montado” do lado do administrador (número inteiro). O retorno de chamada é de servidor para servidor e usa **assinatura HMAC** além de uma lista de permissões de IP opcional em vez de autenticação de portador.
 
 ## 2. Solicitar corpo
 
@@ -43,7 +43,7 @@ Content-Type: application/json
 | `amount`/`currency` | Valor do pedido (centavos inteiros) e moeda (ambos assinados) |
 | `timestamp` | Segundos Unix; rejeitado fora da janela (assinado) |
 | `nonce` | Proteção de repetição: INSERT atômico, cada nonce processado uma vez (assinado) |
-| `paid_*`/`method`/`exchange_rate`/`paid_at` | Informações reais de pagamento, **não assinadas** (integridade coberta por `body_hash`) |
+| `paid_*`/`method`/`exchange_rate`/`paid_at` | Informações de pagamento reais, **não assinadas** (integridade coberta por `body_hash`) |
 | `sign` | Assinatura HMAC-SHA256, codificada em hexadecimal (calculada no corpo sem `sign`) |
 | `extra` | Campos de extensão |
 
@@ -98,8 +98,9 @@ O processamento é **idempotente**: retornos de chamada repetidos com o mesmo `t
 
 ## 5. Respostas
 
-- Sucesso: 2xx (após o painel postar o pagamento)
-- Falha: 4xx/5xx + `{ "code": "...", "message": "..." }`; códigos típicos incluem `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, incompatibilidade de valor, etc.
+- Sucesso: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (após o painel postar o pagamento)
+- Falha: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; o motivo concreto está em `message` (assinatura incorreta, IP não incluído na lista de permissões, pedido não encontrado, incompatibilidade de valor/moeda, repetição de nonce, etc.)
+- Um `site_id` inválido no caminho retorna `INVALID_SITE_ID`; um corpo não JSON retorna `INVALID_REQUEST`
 
 > Cada retorno de chamada carrega `X-Request-ID` (gerado pelo painel se estiver ausente); logs e eventos são rastreáveis ​​de ponta a ponta. Forneça esse ID ao seu administrador ao solucionar problemas.
 

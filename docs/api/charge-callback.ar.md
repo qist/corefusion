@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: ar | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: ar | updated: 2026-11-16 -->
 # رد الاتصال المسؤول API
 
 > اللغات: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · العربية · [فارسی](charge-callback.fa.md)
@@ -98,10 +98,11 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. الردود
 
-- النجاح: 2xx (بعد قيام اللجنة بنشر الدفعة)
-- الفشل: 4xx/5xx + `{ "code": "...", "message": "..." }`؛ تتضمن الرموز النموذجية `INVALID_SIGNATURE`، و`IP_BLOCKED`، و`ORDER_NOT_FOUND`، وعدم تطابق المبلغ، وما إلى ذلك.
+- النجاح: HTTP 200، `{"code":0,"data":{"success":true,"message":"ok"}}` (بعد قيام اللجنة بنشر الدفعة)
+- الفشل: HTTP 400، `{"code":"CALLBACK_FAILED","message":"..."}`؛ السبب الملموس موجود في `message` (توقيع سيء، IP غير مدرج في القائمة البيضاء، لم يتم العثور على الطلب، عدم تطابق المبلغ/العملة، إعادة التشغيل مرة واحدة، وما إلى ذلك)
+- يقوم `site_id` غير الصالح في المسار بإرجاع `INVALID_SITE_ID`؛ يقوم الجسم غير JSON بإرجاع `INVALID_REQUEST`
 
-> يحمل كل رد اتصال `X-Request-ID` (الذي تم إنشاؤه بواسطة اللوحة في حالة غيابه)؛ يمكن تتبع السجلات والأحداث من البداية إلى النهاية. قم بإعطاء هذا المعرف إلى المسؤول عند استكشاف الأخطاء وإصلاحها.
+> يحمل كل رد اتصال `X-Request-ID` (الذي تم إنشاؤه بواسطة اللوحة في حالة غيابه)؛ يمكن تتبع السجلات والأحداث من النهاية إلى النهاية. قم بإعطاء هذا المعرف إلى المسؤول عند استكشاف الأخطاء وإصلاحها.
 
 ## 6. الاختبار واستكشاف الأخطاء وإصلاحها
 

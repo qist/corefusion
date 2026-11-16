@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: ar | updated: 2026-10-23 -->
+<!-- source: README.md | locale: ar | updated: 2026-11-16 -->
 # وثائق CoreFusion API
 
 > اللغات: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · العربية · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@
 | وثيقة | الجمهور | المحتوى |
 |---|---|---|
 | [subscription.md](./subscription.ar.md) | المشتركون / مطورو العملاء | نقطة نهاية الاشتراك (`/sub/:token`): التنسيقات والعناوين ورموز الحالة والأمثلة |
-| [portal-api.md](./portal-api.ar.md) | الواجهة الأمامية للبوابة / عملاء الطرف الثالث | بوابة العميل API (`/api/v1/client-auth/*`، `/api/v1/public/*`): التسجيل، تسجيل الدخول، الخطط، الطلبات، الرصيد، التذاكر |
+| [portal-api.md](./portal-api.md) | الواجهة الأمامية للبوابة / عملاء الطرف الثالث | بوابة العميل API (`/api/v1/client-auth/*`، `/api/v1/public/*`): التسجيل، تسجيل الدخول، الخطط، الطلبات، الرصيد، التذاكر |
 | [charge-callback.md](./charge-callback.ar.md) | مقدمي الدفع | التوقيع والتحقق من رد الاتصال بالدفع |
-| [admin-api.ar.md](./admin-api.ar.md) | تطوير/أتمتة اللوحة | جدول توجيه API للمشرف الكامل (`/api/v1/*`، مجمعة حسب الوحدة) |
+| [admin-api.en.md](./admin-api.ar.md) | تطوير/أتمتة اللوحة | جدول توجيه API للمشرف الكامل (`/api/v1/*`، مجمعة حسب الوحدة) |
 
 ---
 
@@ -35,7 +35,7 @@
 | ** رمز الاشتراك ** | الرمز المميز في URL: `/sub/<token>` | جلب الاشتراك، بدون رأس |
 
 - رموز وصول العميل تدوم 24 ساعة، ورموز التحديث 7 أيام؛ يحتوي JWT على `tv` (token_version)، لذا فإن تسجيل الخروج/تسجيل الخروج القسري يبطل جميع الرموز المميزة القديمة.
-- أدوار المشرف: `viewer` / `admin` / `operator` / `super_admin`؛ تتطلب بعض عمليات الكتابة `RequireRole(RoleAdmin)` أو أعلى.
+- مستويات دور المسؤول: `viewer(10) < operator(20) < admin(30) < super_admin(40)`. تحتاج عمليات القراءة عمومًا إلى جلسة تسجيل دخول فقط؛ تتطلب عمليات الكتابة `operator` / `admin` / `super_admin` لكل وحدة. راجع عمود "الإذن" في [admin-api.md](./admin-api.ar.md).
 
 ## 3. تنسيق الاستجابة
 
@@ -75,4 +75,4 @@
 
 ## 6. مصدر الحقيقة
 
-`internal/api/router/router.go` (يختلف العدد حسب الإصدار؛ الكود هو المرجع). يتم إنشاء جدول التوجيه في [admin-api.md](./admin-api.ar.md) من التعليمات البرمجية؛ إذا لم يتفق مع الكود، **يفوز الكود**.
+`internal/api/router/router.go` (يختلف العدد حسب الإصدار؛ الرمز موثوق). يتم إنشاء جدول التوجيه في [admin-api.md](./admin-api.md) من التعليمات البرمجية؛ إذا لم يتفق مع الكود، **يفوز الكود**.

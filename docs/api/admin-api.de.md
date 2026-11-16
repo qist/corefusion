@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: de | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: de | updated: 2026-11-16 -->
 # Admin API
 
 > Sprachen: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · Deutsch · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@ Die vollständige Admin-API-Routentabelle für **Panel-Entwicklung/Automatisieru
 - Basis URL: `https://<panel-domain>/api/v1`
 - Authentifizierung: `Authorization: Bearer <admin_token>` (von `POST /api/v1/auth/login`)
 - Gängige Antwort-/Fehlerformate und Ratenbegrenzungskonventionen: siehe [README.md](./README.de.md)
-- Quelle der Wahrheit: `internal/api/router/router.go` (Anzahl variiert je nach Version; maßgeblich ist der Code); Wenn diese Tabelle nicht übereinstimmt, gewinnt **der Code**
+- Quelle der Wahrheit: `internal/api/router/router.go` (Anzahl variiert je nach Version; der Code ist maßgeblich); Wenn diese Tabelle nicht übereinstimmt, gewinnt **der Code**
 
 ## Berechtigungsmarkierungen
 
@@ -17,8 +17,11 @@ Die vollständige Admin-API-Routentabelle für **Panel-Entwicklung/Automatisieru
 | Öffentlich | Keine Anmeldung erforderlich (Wartungsschutz/Ratenbegrenzung kann weiterhin gelten) |
 | Öffentlich · gebührenbegrenzt | Keine Anmeldung, mit einem dedizierten Ratenlimit |
 | Angemeldet | Erfordert ein angemeldetes Administrator-Token (`AuthRequired`) |
+| Betreiber | Erfordert Rolle ≥ `operator` (`RequireRole(RoleOperator)`) |
 | Admin | Erfordert Rolle ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | Super Admin | Erfordert Rolle = `super_admin` |
+| Kunde (öffentlich) | Kein Client-Token erforderlich (Anmeldung/Registrierung usw.) |
+| Kunde (angemeldet) | Erfordert `Authorization: Bearer <client_token>` (ein Portal-Client-Token, kein Admin-Token) |
 
 Rollenebenen: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; Unzureichende Rollen geben 403 `INSUFFICIENT_ROLE` zurück.
 
@@ -151,7 +154,7 @@ Alle Listenendpunkte verwenden `limit` (Seitengröße, Standard 20) und `offset`
 - [ACME-Konten](#acme-konten)
 - [Integrierte CA](#integrierte-ca)
 - [Geo-Regeln](#geo-regeln)
-- [WAF Regelbibliothek](#waf-regelbibliothek)
+- [WAF-Regelbibliothek](#waf-regelbibliothek)
 - [Protokollverwaltung](#protokollverwaltung)
 - [Backups](#backups)
 - [Systemeinstellungen](#systemeinstellungen)
@@ -196,8 +199,8 @@ Anmeldung, Abmeldung, Passwortänderung, 2FA (TOTP), Passkey (WebAuthn) und einm
 | POST | `/api/v1/auth/passkey/login/finish` | Öffentlich | Vollständige Anmeldung |
 | POST | `/api/v1/auth/passkey/register/begin` | Angemeldet | Beginnen Sie mit der Registrierung |
 | POST | `/api/v1/auth/passkey/register/finish` | Angemeldet | Vollständige Registrierung |
-| GET | `/api/v1/auth/passkey/rpids` | Angemeldet | Zulassungsliste für RP-IDs |
-| POST | `/api/v1/auth/passkey/rpids` | Angemeldet | Aktualisieren Sie die RP-ID-Zulassungsliste |
+| GET | `/api/v1/auth/passkey/rpids` | Admin | Zulassungsliste für RP-IDs |
+| POST | `/api/v1/auth/passkey/rpids` | Admin | Aktualisieren Sie die RP-ID-Zulassungsliste |
 | GET | `/api/v1/auth/passkey/status` | Öffentlich | Status |
 | POST | `/api/v1/auth/refresh` | Öffentlich | Aktualisieren |
 | POST | `/api/v1/auth/ticket` | Angemeldet | Einmaliges, kurzlebiges Ticket ausstellen |
@@ -220,17 +223,17 @@ CRUD, Suspend/Resume, Upgrade/Downgrade, Erneuerung und Nutzungsrücksetzung fü
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Angemeldet | Kunden auflisten |
-| POST | `/api/v1/clients` | Angemeldet | Kunde anlegen. Körper: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` ist erforderlich; `password` kann leer sein (Kunden können es später im Portal festlegen) |
-| DELETE | `/api/v1/clients/:id` | Angemeldet | Kunde löschen |
+| POST | `/api/v1/clients` | Betreiber | Kunde anlegen. Körper: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` ist erforderlich; `password` kann leer sein (Kunden können es später im Portal festlegen) |
+| DELETE | `/api/v1/clients/:id` | Betreiber | Kunde löschen |
 | GET | `/api/v1/clients/:id` | Angemeldet | Kunden gewinnen |
-| PUT | `/api/v1/clients/:id` | Angemeldet | Kunde aktualisieren |
-| POST | `/api/v1/clients/:id/downgrade` | Angemeldet | Kunden herabstufen |
+| PUT | `/api/v1/clients/:id` | Betreiber | Kunde aktualisieren |
+| POST | `/api/v1/clients/:id/downgrade` | Betreiber | Kunden herabstufen |
 | GET | `/api/v1/clients/:id/orders` | Angemeldet | Bestellliste des Kunden |
-| POST | `/api/v1/clients/:id/renew` | Angemeldet | Kunde erneuern |
-| POST | `/api/v1/clients/:id/reset-usage` | Angemeldet | Nutzung zurücksetzen |
-| POST | `/api/v1/clients/:id/restore` | Angemeldet | Kunde fortsetzen |
-| POST | `/api/v1/clients/:id/suspend` | Angemeldet | Kunde sperren |
-| POST | `/api/v1/clients/:id/upgrade` | Angemeldet | Upgrade-Kunde |
+| POST | `/api/v1/clients/:id/renew` | Betreiber | Kunde erneuern |
+| POST | `/api/v1/clients/:id/reset-usage` | Betreiber | Nutzung zurücksetzen |
+| POST | `/api/v1/clients/:id/restore` | Betreiber | Kunde fortsetzen |
+| POST | `/api/v1/clients/:id/suspend` | Betreiber | Kunde sperren |
+| POST | `/api/v1/clients/:id/upgrade` | Betreiber | Upgrade-Kunde |
 
 ### Planvorlagen
 
@@ -239,17 +242,17 @@ Pläne (Varianten, Abrechnungszyklen, Preise, Verkehrskontingente) und Knotenaut
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Angemeldet | Vorlagenliste |
-| POST | `/api/v1/plan-templates` | Angemeldet | Vorlage erstellen |
-| DELETE | `/api/v1/plan-templates/:id` | Angemeldet | Vorlage löschen |
+| POST | `/api/v1/plan-templates` | Admin | Vorlage erstellen |
+| DELETE | `/api/v1/plan-templates/:id` | Admin | Vorlage löschen |
 | GET | `/api/v1/plan-templates/:id` | Angemeldet | Details zur Vorlage |
-| PUT | `/api/v1/plan-templates/:id` | Angemeldet | Vorlage aktualisieren |
+| PUT | `/api/v1/plan-templates/:id` | Admin | Vorlage aktualisieren |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Angemeldet | Erhalten Sie verfügbare Knoten |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Angemeldet | Erhalten Sie kostenpflichtige Knotenoptionen |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Angemeldet | Legen Sie Vorlagenknotengruppen fest |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Angemeldet | Konten mit Vorlage synchronisieren |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | Admin | Legen Sie Vorlagenknotengruppen fest |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | Admin | Konten mit Vorlage synchronisieren |
 | GET | `/api/v1/plan-templates/:id/variants` | Angemeldet | Variantenliste |
-| POST | `/api/v1/plan-templates/:id/variants` | Angemeldet | Variante erstellen |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Angemeldet | Alle Konten synchronisieren |
+| POST | `/api/v1/plan-templates/:id/variants` | Admin | Variante erstellen |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | Admin | Alle Konten synchronisieren |
 
 ### Planvarianten
 
@@ -257,8 +260,8 @@ Planvarianten aktualisieren und löschen (Erstellung erfolgt unter Planvorlagen)
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Angemeldet | Variante löschen |
-| PUT | `/api/v1/plan-variants/:id` | Angemeldet | Update-Variante |
+| DELETE | `/api/v1/plan-variants/:id` | Admin | Variante löschen |
+| PUT | `/api/v1/plan-variants/:id` | Admin | Update-Variante |
 
 ### Verkehrspakete
 
@@ -267,35 +270,35 @@ Traffic-Pakete, die separat erworben werden können.
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Angemeldet | Traffic-Packliste |
-| POST | `/api/v1/traffic-packs` | Angemeldet | Traffic-Paket erstellen |
-| DELETE | `/api/v1/traffic-packs/:id` | Angemeldet | Verkehrspaket löschen |
-| PUT | `/api/v1/traffic-packs/:id` | Angemeldet | Verkehrspaket aktualisieren |
+| POST | `/api/v1/traffic-packs` | Admin | Traffic-Paket erstellen |
+| DELETE | `/api/v1/traffic-packs/:id` | Admin | Verkehrspaket löschen |
+| PUT | `/api/v1/traffic-packs/:id` | Admin | Verkehrspaket aktualisieren |
 
 ### Gutscheine
 
 Gutscheine erstellen, validieren und einlösen.
 
-| Verfahren | Pfad | Erlaubnis | Beschreibung |
+| Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Angemeldet | Gutscheine auflisten |
-| POST | `/api/v1/promotions` | Angemeldet | Gutschein erstellen |
-| DELETE | `/api/v1/promotions/:id` | Angemeldet | Gutschein löschen |
-| PUT | `/api/v1/promotions/:id` | Angemeldet | Gutschein aktualisieren |
+| POST | `/api/v1/promotions` | Admin | Gutschein erstellen |
+| DELETE | `/api/v1/promotions/:id` | Admin | Gutschein löschen |
+| PUT | `/api/v1/promotions/:id` | Admin | Gutschein aktualisieren |
 | POST | `/api/v1/promotions/validate` | Angemeldet | Gutschein validieren |
 
 ### Knotengruppen
 
-Organisieren Sie Knoten in Gruppen, auf die in Plänen verwiesen wird.
+Organisieren Sie Knoten in Gruppen, auf die Pläne verweisen.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Angemeldet | Knotengruppen auflisten |
-| POST | `/api/v1/node-groups` | Angemeldet | Knotengruppe erstellen |
-| DELETE | `/api/v1/node-groups/:id` | Angemeldet | Knotengruppe löschen |
-| PUT | `/api/v1/node-groups/:id` | Angemeldet | Knotengruppe aktualisieren |
+| POST | `/api/v1/node-groups` | Admin | Knotengruppe erstellen |
+| DELETE | `/api/v1/node-groups/:id` | Admin | Knotengruppe löschen |
+| PUT | `/api/v1/node-groups/:id` | Admin | Knotengruppe aktualisieren |
 | GET | `/api/v1/node-groups/:id/members` | Angemeldet | Gruppenmitglieder auflisten |
-| POST | `/api/v1/node-groups/:id/members` | Angemeldet | Gruppenmitglied hinzufügen |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Angemeldet | Gruppenmitglied entfernen |
+| POST | `/api/v1/node-groups/:id/members` | Admin | Gruppenmitglied hinzufügen |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | Admin | Gruppenmitglied entfernen |
 
 ### Knotenserver
 
@@ -306,7 +309,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | GET | `/api/v1/node-servers` | Admin | Liste |
 | POST | `/api/v1/node-servers` | Admin | Erstellen |
 | DELETE | `/api/v1/node-servers/:id` | Admin | Löschen |
-| GET | `/api/v1/node-servers/:id` | Admin | Einzelheiten |
+| GET | `/api/v1/node-servers/:id` | Admin | Details |
 | PUT | `/api/v1/node-servers/:id` | Admin | Aktualisieren |
 | GET | `/api/v1/node-servers/:id/binaries` | Admin | Installierte Kernliste |
 | POST | `/api/v1/node-servers/:id/binaries/ech-generate` | Admin | Generieren Sie das Schlüsselpaar ECH |
@@ -317,7 +320,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/binaries/reality-public-key` | Admin | Leiten Sie den öffentlichen Schlüssel vom privaten Schlüssel REALITY ab |
 | GET | `/api/v1/node-servers/:id/binaries/releases` | Admin | Verfügbare Versionen |
 | POST | `/api/v1/node-servers/:id/binaries/vlessenc` | Admin | Generieren Sie VLESS-Verschlüsselungsparameter |
-| POST | `/api/v1/node-servers/:id/binaries/wg-key` | Admin | Generieren Sie den WireGuard-Schlüssel |
+| POST | `/api/v1/node-servers/:id/binaries/wg-key` | Admin | Generieren Sie den Schlüssel WireGuard |
 | POST | `/api/v1/node-servers/:id/binaries/x25519-key` | Admin | Generieren Sie das Schlüsselpaar X25519 |
 | GET | `/api/v1/node-servers/:id/bootstrap-cmd` | Admin | Holen Sie sich den Agent-Bootstrap-Befehl |
 | POST | `/api/v1/node-servers/:id/bootstrap-token` | Admin | Bootstrap-Token generieren |
@@ -328,7 +331,8 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | Admin | Speichern und bewerben |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | Admin | Site-Liste |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | Admin | Website erstellen |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Sites importieren |
+| POST | `/api/v1/node-servers/:id/caddy/import` | Admin | Websites importieren |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | Admin | Vorschau der gerenderten Caddy-Site |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Site löschen |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | Admin | Website aktualisieren |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | Admin | Löschen Sie alle SNI-Regeln |
@@ -346,17 +350,20 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | GET | `/api/v1/node-servers/:id/endpoint-configs` | Admin | Liste |
 | POST | `/api/v1/node-servers/:id/endpoint-configs` | Admin | Erstellen |
 | DELETE | `/api/v1/node-servers/:id/endpoint-configs/:cfgId` | Admin | Löschen |
-| GET | `/api/v1/node-servers/:id/endpoint-configs/:cfgId` | Admin | Einzelheiten |
+| GET | `/api/v1/node-servers/:id/endpoint-configs/:cfgId` | Admin | Details |
 | PUT | `/api/v1/node-servers/:id/endpoint-configs/:cfgId` | Admin | Aktualisieren |
 | POST | `/api/v1/node-servers/:id/failover` | Admin | Failover für diesen Knoten auslösen |
 | GET | `/api/v1/node-servers/:id/failover-status` | Admin | Failover-Status |
 | POST | `/api/v1/node-servers/:id/force-reconnect` | Admin | Wiederverbindung erzwingen |
 | GET | `/api/v1/node-servers/:id/free-port` | Admin | Fordern Sie einen kostenlosen Port an |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | Admin | Push zu diesem Knoten |
+| GET | `/api/v1/node-servers/:id/firewall/status` | Admin | Firewall-Erkennung (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | Admin | Eingehenden Überwachungsport zulassen (Mehrbereichsunterstützung) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | Admin | Eingehende Portzulassung widerrufen (einschließlich Duplikate) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | Admin | Liste |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | Admin | Erstellen |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Löschen |
-| GET | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Einzelheiten |
+| GET | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Details |
 | PUT | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | Admin | Aktualisieren |
 | GET | `/api/v1/node-servers/:id/inbound-configs/:cfgId/share-links` | Admin | Teilen Sie Links und Snippets |
 | POST | `/api/v1/node-servers/:id/inbound-configs/:cfgId/users/:email/pause` | Admin | Sperren Sie diesen Benutzer |
@@ -373,8 +380,9 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/nginx/settings` | Admin | Einstellungen speichern |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | Admin | Site-Liste |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | Admin | Website erstellen |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Sites importieren |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | SSL-Zertifikatsdateien erzeugen |
+| POST | `/api/v1/node-servers/:id/nginx/import` | Admin | Websites importieren |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | Admin | Vorschau der gerenderten Nginx-Site |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | Admin | Generieren Sie SSL-Zertifikatdateien |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Site löschen |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | Admin | Website aktualisieren |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | Admin | Löschen Sie alle SNI-Regeln |
@@ -384,7 +392,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | GET | `/api/v1/node-servers/:id/outbound-configs` | Admin | Liste |
 | POST | `/api/v1/node-servers/:id/outbound-configs` | Admin | Erstellen |
 | DELETE | `/api/v1/node-servers/:id/outbound-configs/:cfgId` | Admin | Löschen |
-| GET | `/api/v1/node-servers/:id/outbound-configs/:cfgId` | Admin | Einzelheiten |
+| GET | `/api/v1/node-servers/:id/outbound-configs/:cfgId` | Admin | Details |
 | PUT | `/api/v1/node-servers/:id/outbound-configs/:cfgId` | Admin | Aktualisieren |
 | PUT | `/api/v1/node-servers/:id/outbound-configs/reorder` | Admin | Sortieren |
 | GET | `/api/v1/node-servers/:id/port-hop/rules` | Admin | Vorschau der Port-Hopping-Regeln |
@@ -435,7 +443,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | GET | `/api/v1/node-servers/:id/services` | Admin | Liste |
 | POST | `/api/v1/node-servers/:id/services` | Admin | Erstellen |
 | DELETE | `/api/v1/node-servers/:id/services/:serviceId` | Admin | Löschen |
-| GET | `/api/v1/node-servers/:id/services/:serviceId` | Admin | Einzelheiten |
+| GET | `/api/v1/node-servers/:id/services/:serviceId` | Admin | Details |
 | PUT | `/api/v1/node-servers/:id/services/:serviceId` | Admin | Aktualisieren |
 | DELETE | `/api/v1/node-servers/:id/services/:serviceId/crash-logs` | Admin | Absturzprotokolle löschen |
 | GET | `/api/v1/node-servers/:id/services/:serviceId/crash-logs` | Admin | Absturzprotokollliste |
@@ -457,6 +465,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | Admin | Alles löschen |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | Admin | Wenden Sie Port-Hopping-Firewallregeln an |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | Admin | Entfernen Sie die Port-Hopping-Firewallregeln |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | Admin | Live-sing-box-Verbindungen (clash_api, nur lokaler Knoten) |
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Knotengeschwindigkeitstest |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Knotenstatus |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Knotenkonfiguration synchronisieren (generieren und pushen) |
@@ -496,6 +505,8 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | GET | `/api/v1/node-servers/:id/warp/config` | Admin | Konfiguration lesen |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | Admin | Konfiguration generieren |
 | POST | `/api/v1/node-servers/:id/warp/register` | Admin | Registrieren |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | Admin | Registrieren Sie das WARP MASQUE-Profil (Schritt 1 von 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | Admin | Erstellen Sie eine ausgehende sing-box MASQUE von einem WARP-Profil |
 | GET | `/api/v1/node-servers/:id/warp/status` | Admin | Status |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Erhalten Sie Balancer-Informationen |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | Admin | Balancer-Ziel festlegen |
@@ -544,8 +555,8 @@ Knotenseitige Betriebsprüfung und Export.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Angemeldet | Knotenüberwachungsprotokoll |
-| GET | `/api/v1/node-audit-logs/export` | Angemeldet | Exportieren Sie Knotenüberwachungsprotokolle |
+| GET | `/api/v1/node-audit-logs` | Admin | Knotenüberwachungsprotokoll |
+| GET | `/api/v1/node-audit-logs/export` | Admin | Exportieren Sie Knotenüberwachungsprotokolle |
 
 ### Knoten (Legacy-Modell, im Ruhestand)
 
@@ -568,23 +579,23 @@ Verwaltung von Abonnementdatensätzen: widerrufen, Token rotieren, Zugriffsproto
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Angemeldet | Liste |
-| POST | `/api/v1/subscriptions` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/subscriptions/:id` | Angemeldet | Löschen |
-| GET | `/api/v1/subscriptions/:id` | Angemeldet | Einzelheiten |
-| PUT | `/api/v1/subscriptions/:id` | Angemeldet | Aktualisieren |
+| POST | `/api/v1/subscriptions` | Betreiber | Erstellen |
+| DELETE | `/api/v1/subscriptions/:id` | Betreiber | Löschen |
+| GET | `/api/v1/subscriptions/:id` | Angemeldet | Details |
+| PUT | `/api/v1/subscriptions/:id` | Betreiber | Aktualisieren |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Angemeldet | Zugriffsprotokoll |
-| POST | `/api/v1/subscriptions/:id/enable` | Angemeldet | Aktivieren |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Angemeldet | Nutzung zurücksetzen |
-| POST | `/api/v1/subscriptions/:id/restore` | Angemeldet | Lebenslauf |
-| POST | `/api/v1/subscriptions/:id/revoke` | Angemeldet | Widerrufen |
-| POST | `/api/v1/subscriptions/:id/rotate` | Angemeldet | Drehen |
+| POST | `/api/v1/subscriptions/:id/enable` | Betreiber | Aktivieren |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Betreiber | Nutzung zurücksetzen |
+| POST | `/api/v1/subscriptions/:id/restore` | Betreiber | Lebenslauf |
+| POST | `/api/v1/subscriptions/:id/revoke` | Betreiber | Widerrufen |
+| POST | `/api/v1/subscriptions/:id/rotate` | Betreiber | Drehen |
 | GET | `/api/v1/subscriptions/:id/rotations` | Angemeldet | Rotationsgeschichte |
 
 ### Abonnementformate
 
-> Admin-seitiger `/api/v1/subscription-formats` CRUD wurde am 20.10.2026 eingestellt: Der eigentliche Einstiegspunkt ist
+> Admin-Seite `/api/v1/subscription-formats` CRUD wurde am 20.10.2026 eingestellt: Der eigentliche Einstiegspunkt ist
 > `/api/v1/mihomo/configs` (Abonnementformatzentrum). Die `subscription_formats`-Tabelle bleibt bestehen,
-> Wird nur als Seed-Daten für den öffentlichen `/api/v1/public/client-configs`-Endpunkt verwendet.
+> Wird nur als Startdaten für den öffentlichen `/api/v1/public/client-configs`-Endpunkt verwendet.
 
 ### Abonnementendpunkte
 
@@ -593,10 +604,10 @@ Dedizierte Abonnementdomänen (Reverse-Proxy zum `/sub`-Pfad des Panels).
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Angemeldet | Liste |
-| POST | `/api/v1/subscription-endpoints` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Angemeldet | Löschen |
-| GET | `/api/v1/subscription-endpoints/:id` | Angemeldet | Einzelheiten |
-| PUT | `/api/v1/subscription-endpoints/:id` | Angemeldet | Aktualisieren |
+| POST | `/api/v1/subscription-endpoints` | Admin | Erstellen |
+| DELETE | `/api/v1/subscription-endpoints/:id` | Admin | Löschen |
+| GET | `/api/v1/subscription-endpoints/:id` | Angemeldet | Details |
+| PUT | `/api/v1/subscription-endpoints/:id` | Admin | Aktualisieren |
 
 ### Domains teilen
 
@@ -605,11 +616,11 @@ Zugriffsdomäne/IP-Pool, der in Client-Links verwendet wird.
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Angemeldet | Liste |
-| POST | `/api/v1/share-domains` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/share-domains/:id` | Angemeldet | Löschen |
-| PUT | `/api/v1/share-domains/:id` | Angemeldet | Aktualisieren |
-| DELETE | `/api/v1/share-domains/all` | Angemeldet | Alles löschen |
-| POST | `/api/v1/share-domains/seed` | Angemeldet | Standarddaten initialisieren |
+| POST | `/api/v1/share-domains` | Admin | Erstellen |
+| DELETE | `/api/v1/share-domains/:id` | Admin | Löschen |
+| PUT | `/api/v1/share-domains/:id` | Admin | Aktualisieren |
+| DELETE | `/api/v1/share-domains/all` | Admin | Alles löschen |
+| POST | `/api/v1/share-domains/seed` | Admin | Standarddaten initialisieren |
 
 ### Cloudflare IP
 
@@ -617,17 +628,20 @@ Cloudflare CDN IP-Pool- und Quellenverwaltung.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Angemeldet | Einträge löschen |
+| DELETE | `/api/v1/cfip/entries` | Admin | Einträge löschen |
 | GET | `/api/v1/cfip/entries` | Angemeldet | Eintragsliste |
-| POST | `/api/v1/cfip/entries` | Angemeldet | Eintrag hinzufügen |
-| DELETE | `/api/v1/cfip/entries/:id` | Angemeldet | Eintrag löschen |
-| POST | `/api/v1/cfip/fetch-all` | Angemeldet | Rufen Sie alle Quellen ab |
-| POST | `/api/v1/cfip/seed` | Angemeldet | Standarddaten initialisieren |
+| POST | `/api/v1/cfip/entries` | Admin | Eintrag hinzufügen |
+| DELETE | `/api/v1/cfip/entries/:id` | Admin | Eintrag löschen |
+| POST | `/api/v1/cfip/fetch-all` | Admin | Rufen Sie alle Quellen ab |
+| GET | `/api/v1/cfip/probe-config` | Angemeldet | CF-Preferred-IP-Probe-Konfiguration (Einstiegsknoten + installierte Dialer) |
+| PUT | `/api/v1/cfip/probe-config` | Admin | Sondenintervall / Latenzlimit / Eingangsknoten / Dialer speichern |
+| POST | `/api/v1/cfip/check` | Admin | Prüfen Sie jetzt alle bevorzugten Domänen/IPs |
+| POST | `/api/v1/cfip/seed` | Admin | Standarddaten initialisieren |
 | GET | `/api/v1/cfip/sources` | Angemeldet | Liste der Datenquellen |
-| POST | `/api/v1/cfip/sources` | Angemeldet | Datenquelle erstellen |
-| DELETE | `/api/v1/cfip/sources/:id` | Angemeldet | Datenquelle löschen |
-| PUT | `/api/v1/cfip/sources/:id` | Angemeldet | Datenquelle aktualisieren |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Angemeldet | Holen Sie sich diese Quelle |
+| POST | `/api/v1/cfip/sources` | Admin | Datenquelle erstellen |
+| DELETE | `/api/v1/cfip/sources/:id` | Admin | Datenquelle löschen |
+| PUT | `/api/v1/cfip/sources/:id` | Admin | Datenquelle aktualisieren |
+| POST | `/api/v1/cfip/sources/:id/fetch` | Admin | Holen Sie sich diese Quelle |
 
 ### Abonnementkonfiguration (Mihomo/Clash)
 
@@ -636,15 +650,15 @@ Konfiguration der Abonnementvorlage: Gruppen, Regeln, Regelanbieter, YAML-Vorsch
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Angemeldet | Liste |
-| POST | `/api/v1/mihomo/configs` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/mihomo/configs/:id` | Angemeldet | Löschen |
-| GET | `/api/v1/mihomo/configs/:id` | Angemeldet | Einzelheiten |
-| PUT | `/api/v1/mihomo/configs/:id` | Angemeldet | Aktualisieren |
+| POST | `/api/v1/mihomo/configs` | Admin | Erstellen |
+| DELETE | `/api/v1/mihomo/configs/:id` | Admin | Löschen |
+| GET | `/api/v1/mihomo/configs/:id` | Angemeldet | Details |
+| PUT | `/api/v1/mihomo/configs/:id` | Admin | Aktualisieren |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Angemeldet | Regelliste |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Angemeldet | Regel erstellen |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Regeln sortieren |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Regel aktualisieren |
-| DELETE | `/api/v1/mihomo/rules/:id` | Angemeldet | Regel löschen |
+| POST | `/api/v1/mihomo/configs/:id/rules` | Admin | Regel erstellen |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | Admin | Regeln neu anordnen |
+| PUT | `/api/v1/mihomo/rules/:id` | Admin | Regel aktualisieren |
+| DELETE | `/api/v1/mihomo/rules/:id` | Admin | Regel löschen |
 
 ### Aufladeseiten
 
@@ -652,20 +666,20 @@ Integration von Zahlungsseiten von Drittanbietern: Signaturschlüssel, Verifizie
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Angemeldet | Site-Liste |
-| POST | `/api/v1/charge-sites` | Angemeldet | Website erstellen |
-| DELETE | `/api/v1/charge-sites/:id` | Angemeldet | Site löschen |
-| GET | `/api/v1/charge-sites/:id` | Angemeldet | Details zur Website |
-| PUT | `/api/v1/charge-sites/:id` | Angemeldet | Website aktualisieren |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Angemeldet | Alten Schlüssel löschen |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Angemeldet | Verifizierungsdatei erstellen |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Angemeldet | Verifizierungsdatei erstellen |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Angemeldet | Holen Sie sich das Integrationsdokument |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Angemeldet | Signierschlüssel drehen |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Angemeldet | Überprüfen Sie die Domäne DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Angemeldet | Überprüfen Sie die Domäne HTTP-Challenge |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Angemeldet | Überprüfen Sie die Domäne DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Angemeldet | Überprüfen Sie die Domäne HTTP-Challenge |
+| GET | `/api/v1/charge-sites` | Admin | Site-Liste |
+| POST | `/api/v1/charge-sites` | Admin | Website erstellen |
+| DELETE | `/api/v1/charge-sites/:id` | Admin | Site löschen |
+| GET | `/api/v1/charge-sites/:id` | Admin | Site-Details |
+| PUT | `/api/v1/charge-sites/:id` | Admin | Website aktualisieren |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Admin | Alten Schlüssel löschen |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | Admin | Verifizierungsdatei erstellen |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Admin | Verifizierungsdatei erstellen |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | Admin | Holen Sie sich das Integrationsdokument |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | Admin | Signierschlüssel drehen |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | Admin | Überprüfen Sie die Domäne DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | Admin | Überprüfen Sie die Domäne HTTP-Challenge |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Admin | Überprüfen Sie die Domäne DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Admin | Überprüfen Sie die Domäne HTTP-Challenge |
 
 ### Bestellungen aufladen
 
@@ -673,10 +687,10 @@ Abfragen zu Aufladebestellungen, Rückerstattungen, CSV-Export.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Angemeldet | Bestellliste |
-| GET | `/api/v1/charge-orders/:id` | Angemeldet | Bestelldetails |
-| POST | `/api/v1/charge-orders/:id/refund` | Angemeldet | Rückerstattung |
-| GET | `/api/v1/charge-orders/export-csv` | Angemeldet | Aufladeaufträge exportieren CSV |
+| GET | `/api/v1/charge-orders` | Admin | Bestellliste |
+| GET | `/api/v1/charge-orders/:id` | Admin | Bestelldetails |
+| POST | `/api/v1/charge-orders/:id/refund` | Admin | Rückerstattung |
+| GET | `/api/v1/charge-orders/export-csv` | Admin | Aufladeaufträge exportieren CSV |
 
 ### Karten aufladen
 
@@ -684,12 +698,12 @@ Massenkartengenerierung, Nutzungsdatensätze, CSV-Export.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Angemeldet | Kartenliste |
-| POST | `/api/v1/charge-cards` | Angemeldet | Karte erstellen |
-| DELETE | `/api/v1/charge-cards/:id` | Angemeldet | Karte löschen |
-| GET | `/api/v1/charge-cards/:id/usages` | Angemeldet | Aufzeichnungen zur Kartennutzung |
-| POST | `/api/v1/charge-cards/batch` | Angemeldet | Massengenerierung von Karten |
-| GET | `/api/v1/charge-cards/export-csv` | Angemeldet | Exportkarten CSV |
+| GET | `/api/v1/charge-cards` | Admin | Kartenliste |
+| POST | `/api/v1/charge-cards` | Admin | Karte erstellen |
+| DELETE | `/api/v1/charge-cards/:id` | Admin | Karte löschen |
+| GET | `/api/v1/charge-cards/:id/usages` | Admin | Aufzeichnungen zur Kartennutzung |
+| POST | `/api/v1/charge-cards/batch` | Admin | Massengenerierung von Karten |
+| GET | `/api/v1/charge-cards/export-csv` | Admin | Exportkarten CSV |
 
 ### Gebührenrückrufereignisse
 
@@ -716,7 +730,7 @@ Admin-Ansicht der Salden und Transaktionen.
 |---|---|---|---|
 | GET | `/api/v1/client-balances` | Angemeldet | Kundensaldoliste |
 | GET | `/api/v1/client-balances/transactions` | Angemeldet | Saldotransaktionen (Administrator) |
-| GET | `/api/v1/client-balances/transactions/export-csv` | Angemeldet | Exportsaldotransaktionen CSV |
+| GET | `/api/v1/client-balances/transactions/export-csv` | Angemeldet | Saldotransaktionen exportieren CSV |
 
 ### Geschenke
 
@@ -725,8 +739,8 @@ Geben Sie beanspruchbare Geschenke aus (Tage/Verkehr).
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Angemeldet | Geschenkliste |
-| POST | `/api/v1/client-gifts` | Angemeldet | Geschenk erstellen |
-| POST | `/api/v1/client-gifts/batch` | Angemeldet | Geschenke in großen Mengen erstellen |
+| POST | `/api/v1/client-gifts` | Admin | Geschenk erstellen |
+| POST | `/api/v1/client-gifts/batch` | Admin | Geschenke in großen Mengen erstellen |
 | GET | `/api/v1/client-gifts/search-clients` | Angemeldet | Kunden suchen |
 
 ### Empfehlungskonfiguration
@@ -746,9 +760,9 @@ Konfiguration und Statistik der Empfehlungsprovision.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Angemeldet | Liste der Auszahlungsanfragen |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Angemeldet | Entnahme genehmigen |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Angemeldet | Auszahlung ablehnen |
+| GET | `/api/v1/referral-withdrawals` | Admin | Liste der Auszahlungsanfragen |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | Admin | Entnahme genehmigen |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | Admin | Auszahlung ablehnen |
 
 ### IP-Zulassungslisten (Zusammenfassung)
 
@@ -774,9 +788,9 @@ Antwort, Zuweisung und Abschluss des Tickets.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Angemeldet | Ticketliste |
 | GET | `/api/v1/tickets/:id` | Angemeldet | Ticketdetails |
-| POST | `/api/v1/tickets/:id/assign` | Angemeldet | Ticket zuweisen |
-| POST | `/api/v1/tickets/:id/close` | Angemeldet | Ticket schließen |
-| POST | `/api/v1/tickets/:id/reply` | Angemeldet | Auf Ticket antworten |
+| POST | `/api/v1/tickets/:id/assign` | Betreiber | Ticket zuweisen |
+| POST | `/api/v1/tickets/:id/close` | Betreiber | Ticket schließen |
+| POST | `/api/v1/tickets/:id/reply` | Betreiber | Auf Ticket antworten |
 
 ### Artikel
 
@@ -785,10 +799,10 @@ CRUD für Portalartikel.
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Angemeldet | Artikelliste |
-| POST | `/api/v1/articles` | Angemeldet | Artikel erstellen |
-| DELETE | `/api/v1/articles/:id` | Angemeldet | Artikel löschen |
+| POST | `/api/v1/articles` | Admin | Artikel erstellen |
+| DELETE | `/api/v1/articles/:id` | Admin | Artikel löschen |
 | GET | `/api/v1/articles/:id` | Angemeldet | Artikeldetails |
-| PUT | `/api/v1/articles/:id` | Angemeldet | Artikel aktualisieren |
+| PUT | `/api/v1/articles/:id` | Admin | Artikel aktualisieren |
 
 ### Geteilte Konten
 
@@ -797,10 +811,10 @@ Ausstellungs- und Reparaturaufzeichnungen für gemeinsame Konten (Streaming usw.
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Angemeldet | Geteilte Kontoliste |
-| POST | `/api/v1/shared-accounts` | Angemeldet | Gemeinsames Konto erstellen |
-| DELETE | `/api/v1/shared-accounts/:id` | Angemeldet | Gemeinsames Konto löschen |
+| POST | `/api/v1/shared-accounts` | Admin | Gemeinsames Konto erstellen |
+| DELETE | `/api/v1/shared-accounts/:id` | Admin | Gemeinsames Konto löschen |
 | GET | `/api/v1/shared-accounts/:id` | Angemeldet | Geteilte Kontodaten |
-| PUT | `/api/v1/shared-accounts/:id` | Angemeldet | Gemeinsames Konto aktualisieren |
+| PUT | `/api/v1/shared-accounts/:id` | Admin | Gemeinsames Konto aktualisieren |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Angemeldet | Reparaturaufzeichnungen |
 
 ### Zertifikate
@@ -809,20 +823,20 @@ Ausstellung, Hochladen, Erneuerung und Export öffentlicher Zertifikate (ACME); 
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Angemeldet | Liste |
-| POST | `/api/v1/certificates` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/certificates/:id` | Angemeldet | Löschen |
-| GET | `/api/v1/certificates/:id` | Angemeldet | Einzelheiten |
-| PUT | `/api/v1/certificates/:id` | Angemeldet | Aktualisieren |
-| GET | `/api/v1/certificates/:id/download` | Angemeldet | Herunterladen |
-| POST | `/api/v1/certificates/:id/renew` | Angemeldet | Kunde erneuern |
-| GET | `/api/v1/certificates/check-port` | Angemeldet | Überprüfen Sie den Port |
-| GET | `/api/v1/certificates/detect-ip` | Angemeldet | Sonden-IP |
-| GET | `/api/v1/certificates/export` | Angemeldet | Exportieren |
-| POST | `/api/v1/certificates/issue` | Angemeldet | Problem. Körper: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` ist standardmäßig http-01; `dns_channel_id` wählt einen DNS-Kanal aus (einen konfigurierten DNS-Anbieter + Anmeldeinformationen). |
-| POST | `/api/v1/certificates/issue-on-node` | Angemeldet | Ausgabe an Knoten |
-| POST | `/api/v1/certificates/upload` | Angemeldet | Hochladen |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Status des Hintergrundtasks abfragen |
+| GET | `/api/v1/certificates` | Admin | Liste |
+| POST | `/api/v1/certificates` | Admin | Erstellen |
+| DELETE | `/api/v1/certificates/:id` | Admin | Löschen |
+| GET | `/api/v1/certificates/:id` | Admin | Details |
+| PUT | `/api/v1/certificates/:id` | Admin | Aktualisieren |
+| GET | `/api/v1/certificates/:id/download` | Admin | Herunterladen |
+| POST | `/api/v1/certificates/:id/renew` | Admin | Kunde erneuern |
+| GET | `/api/v1/certificates/check-port` | Admin | Überprüfen Sie den Port |
+| GET | `/api/v1/certificates/detect-ip` | Admin | Sonden-IP |
+| GET | `/api/v1/certificates/export` | Admin | Exportieren |
+| POST | `/api/v1/certificates/issue` | Admin | Problem. Körper: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` ist standardmäßig http-01; `dns_channel_id` wählt einen DNS-Kanal aus (einen konfigurierten DNS-Anbieter + Anmeldeinformationen). |
+| POST | `/api/v1/certificates/issue-on-node` | Admin | Ausgabe an Knoten |
+| POST | `/api/v1/certificates/upload` | Admin | Hochladen |
+| GET | `/api/v1/certificate-tasks/:id` | Admin | Status der Hintergrundaufgabe abfragen |
 
 ### Zertifikatskanäle
 
@@ -830,11 +844,11 @@ ACME-Kanalkonfiguration (CA).
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Angemeldet | Liste |
-| POST | `/api/v1/cert-channels` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/cert-channels/:id` | Angemeldet | Löschen |
-| PUT | `/api/v1/cert-channels/:id` | Angemeldet | Aktualisieren |
-| GET | `/api/v1/cert-channels/providers` | Angemeldet | Anbieter |
+| GET | `/api/v1/cert-channels` | Admin | Liste |
+| POST | `/api/v1/cert-channels` | Admin | Erstellen |
+| DELETE | `/api/v1/cert-channels/:id` | Admin | Löschen |
+| PUT | `/api/v1/cert-channels/:id` | Admin | Aktualisieren |
+| GET | `/api/v1/cert-channels/providers` | Admin | Anbieter |
 
 ### EAB-Konfiguration
 
@@ -842,12 +856,12 @@ Anmeldeinformationen, die externe Konten wie ZeroSSL / Google binden.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Angemeldet | Liste |
-| POST | `/api/v1/eab-configs` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/eab-configs/:id` | Angemeldet | Löschen |
-| PUT | `/api/v1/eab-configs/:id` | Angemeldet | Aktualisieren |
-| POST | `/api/v1/eab-configs/fetch-google` | Angemeldet | Rufen Sie Google EAB von GCP ab |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Angemeldet | Rufen Sie ZeroSSL EAB mit einer E-Mail mit einem Klick ab |
+| GET | `/api/v1/eab-configs` | Admin | Liste |
+| POST | `/api/v1/eab-configs` | Admin | Erstellen |
+| DELETE | `/api/v1/eab-configs/:id` | Admin | Löschen |
+| PUT | `/api/v1/eab-configs/:id` | Admin | Aktualisieren |
+| POST | `/api/v1/eab-configs/fetch-google` | Admin | Rufen Sie Google EAB von GCP ab |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | Admin | Rufen Sie ZeroSSL EAB mit einer E-Mail mit einem Klick ab |
 
 ### ACME-Konten
 
@@ -855,11 +869,11 @@ Panelseitige Verwaltung des ACME-Kontos (Kontakt-E-Mail).
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Angemeldet | Liste |
-| POST | `/api/v1/acme-accounts` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/acme-accounts/:id` | Angemeldet | Löschen |
-| PUT | `/api/v1/acme-accounts/:id` | Angemeldet | Aktualisieren |
-| GET | `/api/v1/acme-accounts/default` | Angemeldet | Standardwerte abrufen |
+| GET | `/api/v1/acme-accounts` | Admin | Liste |
+| POST | `/api/v1/acme-accounts` | Admin | Erstellen |
+| DELETE | `/api/v1/acme-accounts/:id` | Admin | Löschen |
+| PUT | `/api/v1/acme-accounts/:id` | Admin | Aktualisieren |
+| GET | `/api/v1/acme-accounts/default` | Admin | Standardwerte abrufen |
 
 ### Integrierte CA
 
@@ -867,14 +881,14 @@ Interne Panel-CA: Ausstellung/Erneuerung/Widerruf des Agentenzertifikats, CRL-Ex
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Angemeldet | Liste der Agentenzertifikate |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Angemeldet | Agentenzertifikat erneuern |
-| GET | `/api/v1/ca/distribution-queue` | Angemeldet | Zertifikatverteilungswarteschlange |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Angemeldet | Eintrag in der Verteilungswarteschlange löschen |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Angemeldet | Versuchen Sie die Zertifikatsverteilung erneut |
-| GET | `/api/v1/ca/revocations` | Angemeldet | Widerrufsliste |
-| GET | `/api/v1/ca/revocations/export` | Angemeldet | CRL exportieren |
-| GET | `/api/v1/ca/status` | Angemeldet | CA-Status |
+| GET | `/api/v1/ca/agent-certs` | Admin | Liste der Agentenzertifikate |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Admin | Agentenzertifikat erneuern |
+| GET | `/api/v1/ca/distribution-queue` | Admin | Zertifikatverteilungswarteschlange |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | Admin | Eintrag in der Verteilungswarteschlange löschen |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | Admin | Versuchen Sie die Zertifikatsverteilung erneut |
+| GET | `/api/v1/ca/revocations` | Admin | Widerrufsliste |
+| GET | `/api/v1/ca/revocations/export` | Admin | CRL exportieren |
+| GET | `/api/v1/ca/status` | Admin | CA-Status |
 
 ### Geo-Regeln
 
@@ -883,41 +897,41 @@ Synchronisierung und Bereitstellung von GeoIP-/Geosite-Datenquellen und -Dateien
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Angemeldet | Dateiliste |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Angemeldet | Datei löschen |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Angemeldet | Automatische Synchronisierung umschalten |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Angemeldet | Herunterladen |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | Admin | Datei löschen |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Admin | Automatische Synchronisierung umschalten |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | Admin | Herunterladen |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Angemeldet | Datei herunterladen |
 | GET | `/api/v1/geo-rules/github-assets` | Angemeldet | Rufen Sie GitHub-Repository-Assets ab |
-| POST | `/api/v1/geo-rules/push-all` | Angemeldet | Push an alle Knoten |
-| POST | `/api/v1/geo-rules/seed` | Angemeldet | Standarddaten initialisieren |
+| POST | `/api/v1/geo-rules/push-all` | Admin | Push an alle Knoten |
+| POST | `/api/v1/geo-rules/seed` | Admin | Standarddaten initialisieren |
 | GET | `/api/v1/geo-rules/sources` | Angemeldet | Liste der Datenquellen |
-| POST | `/api/v1/geo-rules/sources` | Angemeldet | Datenquelle erstellen |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Angemeldet | Datenquelle löschen |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Angemeldet | Datenquelle aktualisieren |
+| POST | `/api/v1/geo-rules/sources` | Admin | Datenquelle erstellen |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Admin | Datenquelle löschen |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | Admin | Datenquelle aktualisieren |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Angemeldet | Release-Assets abrufen |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Angemeldet | Datei hinzufügen |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Angemeldet | Geplante Synchronisierung umschalten |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Angemeldet | Datei auswählen |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Angemeldet | Synchronisieren Sie diese Datenquelle |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Admin | Datei hinzufügen |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Admin | Geplante Synchronisierung umschalten |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Admin | Datei auswählen |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Admin | Synchronisieren Sie diese Datenquelle |
 | GET | `/api/v1/geo-rules/status` | Angemeldet | Status |
-| POST | `/api/v1/geo-rules/sync-all` | Angemeldet | Alles synchronisieren |
+| POST | `/api/v1/geo-rules/sync-all` | Admin | Alles synchronisieren |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Angemeldet | Fortschritt synchronisieren |
 
-### WAF Regelbibliothek
+### WAF-Regelbibliothek
 
-Globale WAF-Regeln: GitHub Quelle, Synchronisierung, Lieferung an alle Knoten.
+Globale WAF-Regeln: GitHub-Quelle, Synchronisierung, Lieferung an alle Knoten.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | Angemeldet | GitHub-Datenquelle |
-| PUT | `/api/v1/waf/github-source` | Angemeldet | Speichern Sie die Datenquelle GitHub |
-| POST | `/api/v1/waf/push-all` | Angemeldet | Push an alle Knoten |
+| PUT | `/api/v1/waf/github-source` | Admin | Speichern Sie die Datenquelle GitHub |
+| POST | `/api/v1/waf/push-all` | Admin | Push an alle Knoten |
 | GET | `/api/v1/waf/rules` | Angemeldet | Regelliste |
-| DELETE | `/api/v1/waf/rules/:name` | Angemeldet | Regel löschen |
+| DELETE | `/api/v1/waf/rules/:name` | Admin | Regel löschen |
 | GET | `/api/v1/waf/rules/:name` | Angemeldet | Holen Sie sich die Herrschaft |
-| PUT | `/api/v1/waf/rules/:name` | Angemeldet | Regel speichern |
-| POST | `/api/v1/waf/sync-all` | Angemeldet | Alles synchronisieren |
-| POST | `/api/v1/waf/sync-github` | Angemeldet | Synchronisierung von GitHub |
+| PUT | `/api/v1/waf/rules/:name` | Admin | Regel speichern |
+| POST | `/api/v1/waf/sync-all` | Admin | Alles synchronisieren |
+| POST | `/api/v1/waf/sync-github` | Admin | Synchronisierung von GitHub |
 
 ### Protokollverwaltung
 
@@ -925,43 +939,37 @@ Lesen und Streamen von Knoten-/Kernprotokollen, Bereinigungsrichtlinien, Protoko
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Angemeldet | Jetzt alles aufräumen |
-| GET | `/api/v1/log-manage/cleanup-rules` | Angemeldet | Liste der Bereinigungsregeln |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Angemeldet | Bereinigungsregel aktualisieren |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Angemeldet | Bereinigen Sie jetzt die angegebene Tabelle |
-| GET | `/api/v1/log-manage/core-log-output` | Angemeldet | Konfiguration der Kernprotokollausgabe |
-| PUT | `/api/v1/log-manage/core-log-output` | Angemeldet | Speichern Sie die Konfiguration der Kernprotokollausgabe |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Angemeldet | Kern-Stdout-Protokolle lesen |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Angemeldet | Stream-Core-Standardausgabe |
-| POST | `/api/v1/log-manage/discover` | Angemeldet | Ermitteln Sie Knotenprotokolldateien |
-| GET | `/api/v1/log-manage/log-output` | Angemeldet | Protokollausgabekonfiguration |
-| PUT | `/api/v1/log-manage/log-output` | Angemeldet | Protokollausgabekonfiguration speichern |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Angemeldet | Veröffentlichungsprotokoll zur Stdout-Übernahme |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Angemeldet | Übernehmen Sie log stdout |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Angemeldet | Liste der Knotenprotokolldateien |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Angemeldet | Knotenprotokolle lesen |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Angemeldet | Knotenprotokolle rotieren |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Angemeldet | Knotenprotokolle streamen |
-| GET | `/api/v1/log-manage/policies` | Angemeldet | Richtlinienliste |
-| POST | `/api/v1/log-manage/policies` | Angemeldet | Richtlinie erstellen |
-| DELETE | `/api/v1/log-manage/policies/:id` | Angemeldet | Richtlinie löschen |
-| GET | `/api/v1/log-manage/policies/:id` | Angemeldet | Richtliniendetails |
-| PUT | `/api/v1/log-manage/policies/:id` | Angemeldet | Richtlinie aktualisieren |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Angemeldet | Liste der Aufräumarbeiten |
-| GET | `/api/v1/log-manage/policies/:id/log` | Angemeldet | Protokolle lesen |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Angemeldet | Stream-Protokolle |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Angemeldet | Drehen |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Angemeldet | Kern-Stdout-Protokolle lesen |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Angemeldet | Stream-Core-Standardausgabe |
-| GET | `/api/v1/log-manage/scheduler-config` | Angemeldet | Planungskonfiguration |
-| PUT | `/api/v1/log-manage/scheduler-config` | Angemeldet | Planungskonfiguration aktualisieren |
-| GET | `/api/v1/log-manage/status` | Angemeldet | Status |
-| POST | `/api/v1/log-manage/sync` | Angemeldet | Bereinigungsrichtlinien synchronisieren |
-| GET | `/api/v1/log-manage/writers` | Angemeldet | Autorenstatus |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Angemeldet | Writer-Konfiguration aktualisieren |
-| GET | `/api/v1/log-manage/writers/:type/files` | Angemeldet | Liste der Writer-Protokolldateien |
-| POST | `/api/v1/log-manage/writers/:type/start` | Angemeldet | Beginnen Sie mit dem Schreiben |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Angemeldet | Hör auf zu schreiben |
+| POST | `/api/v1/log-manage/cleanup-all` | Admin | Jetzt alles aufräumen |
+| GET | `/api/v1/log-manage/cleanup-rules` | Admin | Liste der Bereinigungsregeln |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Admin | Bereinigungsregel aktualisieren |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | Admin | Bereinigen Sie jetzt die angegebene Tabelle |
+| GET | `/api/v1/log-manage/core-log-output` | Admin | Konfiguration der Kernprotokollausgabe |
+| PUT | `/api/v1/log-manage/core-log-output` | Admin | Speichern Sie die Konfiguration der Kernprotokollausgabe |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | Admin | Kern-Stdout-Protokolle lesen |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Admin | Stream-Core-Standardausgabe |
+| POST | `/api/v1/log-manage/discover` | Admin | Ermitteln Sie Knotenprotokolldateien |
+| GET | `/api/v1/log-manage/log-output` | Admin | Protokollausgabekonfiguration |
+| PUT | `/api/v1/log-manage/log-output` | Admin | Protokollausgabekonfiguration speichern |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Admin | Liste der Knotenprotokolldateien |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Admin | Knotenprotokolle lesen |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Admin | Knotenprotokolle rotieren |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Admin | Knotenprotokolle streamen |
+| GET | `/api/v1/log-manage/policies` | Admin | Richtlinienliste |
+| POST | `/api/v1/log-manage/policies` | Admin | Richtlinie erstellen |
+| DELETE | `/api/v1/log-manage/policies/:id` | Admin | Richtlinie löschen |
+| GET | `/api/v1/log-manage/policies/:id` | Admin | Richtliniendetails |
+| PUT | `/api/v1/log-manage/policies/:id` | Admin | Richtlinie aktualisieren |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | Admin | Liste der Aufräumarbeiten |
+| GET | `/api/v1/log-manage/policies/:id/log` | Admin | Protokolle lesen |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | Admin | Stream-Protokolle |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | Admin | Drehen |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Admin | Kern-Stdout-Protokolle lesen |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Admin | Stream-Core-Standardausgabe |
+| GET | `/api/v1/log-manage/scheduler-config` | Admin | Planungskonfiguration |
+| PUT | `/api/v1/log-manage/scheduler-config` | Admin | Planungskonfiguration aktualisieren |
+| GET | `/api/v1/log-manage/status` | Admin | Status |
+| POST | `/api/v1/log-manage/sync` | Admin | Bereinigungsrichtlinien synchronisieren |
+| GET | `/api/v1/log-manage/writers` | Admin | Autorenstatus |
 
 ### Backups
 
@@ -969,26 +977,26 @@ Datenbank-/Vollsicherungen, Wiederherstellung, geplante Jobs, FTP/S3/WebDAV Remo
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | Admin | Sicherung löschen |
+| DELETE | `/api/v1/backups/:id` | Super Admin | Sicherung löschen |
 | GET | `/api/v1/backups/:id/download` | Admin | Backup herunterladen |
-| POST | `/api/v1/backups/:id/restore` | Admin | Aus Backup wiederherstellen |
-| POST | `/api/v1/backups/:id/upload-ftp` | Admin | Hochladen auf FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | Admin | Hochladen auf S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | Admin | Hochladen auf WebDAV |
+| POST | `/api/v1/backups/:id/restore` | Super Admin | Aus Backup wiederherstellen |
+| POST | `/api/v1/backups/:id/upload-ftp` | Super Admin | Hochladen auf FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | Super Admin | Hochladen auf S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | Super Admin | Hochladen auf WebDAV |
 | POST | `/api/v1/backups/create` | Admin | Vollständiges Backup erstellen (mit DB-Dump) |
 | GET | `/api/v1/backups/list` | Admin | Vollständige Backup-Liste |
-| POST | `/api/v1/backups/remote-restore` | Admin | Wiederherstellung per Fernzugriff |
-| GET | `/api/v1/backups/restore-status` | Admin | Fortschritt wiederherstellen |
+| POST | `/api/v1/backups/remote-restore` | Super Admin | Wiederherstellung per Fernzugriff |
+| GET | `/api/v1/backups/restore-status` | Super Admin | Fortschritt wiederherstellen |
 | GET | `/api/v1/backups/schedules` | Admin | Liste der geplanten Jobs |
 | POST | `/api/v1/backups/schedules` | Admin | Geplanten Job erstellen |
-| DELETE | `/api/v1/backups/schedules/:id` | Admin | Geplanten Job löschen |
+| DELETE | `/api/v1/backups/schedules/:id` | Admin | Geplanten Auftrag löschen |
 | PUT | `/api/v1/backups/schedules/:id` | Admin | Geplanten Auftrag aktualisieren |
 | GET | `/api/v1/backups/storages` | Admin | Speicherkonfigurationsliste |
 | POST | `/api/v1/backups/storages` | Admin | Speicherkonfiguration erstellen |
 | DELETE | `/api/v1/backups/storages/:id` | Admin | Speicherkonfiguration löschen |
 | PUT | `/api/v1/backups/storages/:id` | Admin | Speicherkonfiguration aktualisieren |
 | GET | `/api/v1/backups/storages/:id/files` | Admin | Liste der Remote-Backup-Dateien |
-| POST | `/api/v1/backups/upload-restore` | Admin | Backup hochladen und wiederherstellen |
+| POST | `/api/v1/backups/upload-restore` | Super Admin | Backup hochladen und wiederherstellen |
 
 ### Systemeinstellungen
 
@@ -1001,8 +1009,8 @@ Datenbankkonfiguration und -migration, Panel-Einstellungen, JWT-Schlüssel, SMTP
 | GET | `/api/v1/system/config-file/:coreType` | Admin | Kernkonfigurationsdatei lesen |
 | GET | `/api/v1/system/db-config` | Admin | Datenbankkonfiguration |
 | PUT | `/api/v1/system/db-config` | Admin | Datenbankkonfiguration aktualisieren |
-| POST | `/api/v1/system/db-config/migrate` | Admin | Datenbankdaten migrieren |
-| POST | `/api/v1/system/db-config/switch` | Admin | Datenbank wechseln (mit einstufiger Migration) |
+| POST | `/api/v1/system/db-config/migrate` | Super Admin | Datenbankdaten migrieren |
+| POST | `/api/v1/system/db-config/switch` | Super Admin | Datenbank wechseln (mit einstufiger Migration) |
 | POST | `/api/v1/system/db-config/test` | Admin | Testen Sie die Datenbankverbindung |
 | GET | `/api/v1/system/db-pool-stats` | Admin | Statistiken zum Verbindungspool |
 | GET | `/api/v1/system/db-stats` | Admin | Datenbankstatistiken |
@@ -1011,13 +1019,13 @@ Datenbankkonfiguration und -migration, Panel-Einstellungen, JWT-Schlüssel, SMTP
 | GET | `/api/v1/system/encryption-key-status` | Admin | Status des Verschlüsselungsschlüssels |
 | GET | `/api/v1/system/env-config` | Admin | .env-Konfiguration |
 | PUT | `/api/v1/system/env-config` | Admin | Aktualisieren Sie die .env-Konfiguration |
-| POST | `/api/v1/system/generate-encryption-key` | Admin | Verschlüsselungsschlüssel generieren |
+| POST | `/api/v1/system/generate-encryption-key` | Super Admin | Verschlüsselungsschlüssel generieren |
 | GET | `/api/v1/system/github-config` | Admin | GitHub-Konfiguration |
 | PUT | `/api/v1/system/github-config` | Admin | Aktualisieren Sie die GitHub-Konfiguration |
 | GET | `/api/v1/system/jwt-secret-status` | Admin | JWT Schlüsselstatus |
 | GET | `/api/v1/system/maintenance` | Öffentlich | Status des Wartungsmodus (öffentlich) |
 | PUT | `/api/v1/system/maintenance` | Admin | Wartungsmodus umschalten |
-| POST | `/api/v1/system/migrate-data` | Admin | Daten migrieren |
+| POST | `/api/v1/system/migrate-data` | Super Admin | Daten migrieren |
 | GET | `/api/v1/system/notification-config` | Admin | Benachrichtigungskonfiguration |
 | PUT | `/api/v1/system/notification-config` | Admin | Benachrichtigungskonfiguration aktualisieren |
 | GET | `/api/v1/system/notification-templates` | Admin | Vorlagenliste |
@@ -1030,13 +1038,13 @@ Datenbankkonfiguration und -migration, Panel-Einstellungen, JWT-Schlüssel, SMTP
 | PUT | `/api/v1/system/panel-config` | Admin | Panel-Konfiguration aktualisieren |
 | GET | `/api/v1/system/reality-targets` | Admin | REALITY Zielliste |
 | PUT | `/api/v1/system/reality-targets` | Admin | Ziel REALITY aktualisieren |
-| POST | `/api/v1/system/reality-targets/reset` | Admin | REALITY-Ziel auf Standard zurücksetzen |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Reality-Local-SNI-Konfiguration lesen |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Reality-Local-SNI-Konfiguration aktualisieren |
-| POST | `/api/v1/system/regenerate-jwt-secret` | Admin | JWT-Schlüssel neu generieren |
+| POST | `/api/v1/system/reality-targets/reset` | Super Admin | Setzen Sie das REALITY-Ziel auf die Standardeinstellung zurück |
+| GET | `/api/v1/system/reality-local-sni` | Admin | Lesen Sie die lokale Reality-Konfiguration SNI |
+| PUT | `/api/v1/system/reality-local-sni` | Admin | Aktualisieren Sie die lokale Reality-Konfiguration SNI |
+| POST | `/api/v1/system/regenerate-jwt-secret` | Super Admin | JWT-Schlüssel neu generieren |
 | GET | `/api/v1/system/releases` | Admin | Verfügbare Versionen |
-| POST | `/api/v1/system/restart` | Admin | Neustart |
-| POST | `/api/v1/system/rollback` | Admin | System-Rollback |
+| POST | `/api/v1/system/restart` | Super Admin | Neustart |
+| POST | `/api/v1/system/rollback` | Super Admin | System-Rollback |
 | GET | `/api/v1/system/settings` | Admin | Einstellungen lesen |
 | PUT | `/api/v1/system/settings/batch` | Admin | Massenaktualisierungseinstellungen |
 | GET | `/api/v1/system/stats` | Admin | Systemstatus |
@@ -1045,7 +1053,7 @@ Datenbankkonfiguration und -migration, Panel-Einstellungen, JWT-Schlüssel, SMTP
 | POST | `/api/v1/system/telegram-chat-id` | Admin | Holen Sie sich die Chat-ID Telegram |
 | POST | `/api/v1/system/test-smtp` | Admin | Testen Sie SMTP |
 | POST | `/api/v1/system/test-telegram` | Admin | Testen Sie Telegram |
-| POST | `/api/v1/system/update` | Admin | System-Upgrade |
+| POST | `/api/v1/system/update` | Super Admin | System-Upgrade |
 | GET | `/api/v1/system/update-jobs` | Admin | Jobliste aktualisieren |
 | POST | `/api/v1/system/upload-mtls-ca` | Admin | Laden Sie das mTLS-CA-Zertifikat hoch |
 
@@ -1055,8 +1063,9 @@ Audit-Ereignisabfragen und -Export.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Angemeldet | Audit-Ereignisliste |
-| GET | `/api/v1/security/audit-events/export` | Angemeldet | Prüfereignisse exportieren |
+| GET | `/api/v1/security/audit-events` | Admin | Audit-Ereignisliste |
+| GET | `/api/v1/security/audit-events/export` | Admin | Prüfereignisse exportieren |
+| GET | `/api/v1/security/subscription-access-logs` | Admin | Abonnementabrufprotokolle (Filter nach Abonnement-ID/IP/Client-E-Mail) |
 
 ### Metriken
 
@@ -1064,9 +1073,9 @@ Panel-aggregierte Metriken (Knoten/Zertifikate/Dienste).
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Angemeldet | Zertifikatsmetriken |
-| GET | `/api/v1/metrics/nodes` | Angemeldet | Knotenmetriken |
-| GET | `/api/v1/metrics/overview` | Angemeldet | Übersicht |
+| GET | `/api/v1/metrics/certificates` | Admin | Zertifikatsmetriken |
+| GET | `/api/v1/metrics/nodes` | Admin | Knotenmetriken |
+| GET | `/api/v1/metrics/overview` | Admin | Übersicht |
 
 ### Portalvorlagen
 
@@ -1074,20 +1083,20 @@ Portalvorlagen, Aktivierungskonfiguration und Cache-Verwaltung.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Angemeldet | Aktive Vorlage |
-| PUT | `/api/v1/portal/active` | Angemeldet | Aktive Vorlage aktualisieren |
-| DELETE | `/api/v1/portal/cache` | Angemeldet | Leeren Sie den Portal-Cache |
-| GET | `/api/v1/portal/cache` | Angemeldet | Cache-Status |
-| PUT | `/api/v1/portal/cache/dev-mode` | Angemeldet | Cache-Entwicklungsmodus umschalten |
-| POST | `/api/v1/portal/cache/rebuild` | Angemeldet | Portal-Cache neu erstellen |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Integrierte Sprachpakete |
-| POST | `/api/v1/portal/reset` | Angemeldet | Standardvorlage wiederherstellen |
-| GET | `/api/v1/portal/templates` | Angemeldet | Liste |
-| POST | `/api/v1/portal/templates` | Angemeldet | Erstellen |
-| DELETE | `/api/v1/portal/templates/:id` | Angemeldet | Löschen |
-| GET | `/api/v1/portal/templates/:id` | Angemeldet | Einzelheiten |
-| PUT | `/api/v1/portal/templates/:id` | Angemeldet | Aktualisieren |
-| POST | `/api/v1/portal/templates/:id/activate` | Angemeldet | Vorlage aktivieren |
+| GET | `/api/v1/portal/active` | Admin | Aktive Vorlage |
+| PUT | `/api/v1/portal/active` | Admin | Aktive Vorlage aktualisieren |
+| DELETE | `/api/v1/portal/cache` | Admin | Leeren Sie den Portal-Cache |
+| GET | `/api/v1/portal/cache` | Admin | Cache-Status |
+| PUT | `/api/v1/portal/cache/dev-mode` | Admin | Cache-Entwicklungsmodus umschalten |
+| POST | `/api/v1/portal/cache/rebuild` | Admin | Portal-Cache neu erstellen |
+| GET | `/api/v1/portal/lang/builtin` | Admin | Integrierte Sprachpakete |
+| POST | `/api/v1/portal/reset` | Admin | Standardvorlage wiederherstellen |
+| GET | `/api/v1/portal/templates` | Admin | Liste |
+| POST | `/api/v1/portal/templates` | Admin | Erstellen |
+| DELETE | `/api/v1/portal/templates/:id` | Admin | Löschen |
+| GET | `/api/v1/portal/templates/:id` | Admin | Details |
+| PUT | `/api/v1/portal/templates/:id` | Admin | Aktualisieren |
+| POST | `/api/v1/portal/templates/:id/activate` | Admin | Vorlage aktivieren |
 
 > `/portal/templates` CRUD ist ein **erweitertes API**: Die Portal-Benutzeroberfläche verwendet hauptsächlich `PUT /api/v1/portal/active`
 > (One-Shot-Konfiguration für die gesamte Site); Mit dieser Gruppe mehrere Vorlagen verwalten/wechseln. Beide werden unterstützt und stehen nicht in Konflikt.
@@ -1103,7 +1112,7 @@ Node Agent-Installationsskript und Download (öffentlich).
 | GET | `/api/v1/agent/version` | Admin | Aktuelle Agentenversion auf dem Panel |
 | GET | `/api/v1/agent/download` | Öffentlich | Laden Sie den Agenten herunter |
 | GET | `/api/v1/agent/install` | Öffentlich | Holen Sie sich das Installationsskript |
-| GET | `/api/v1/agent/origin` | 公开 | Panel-Origin-Adresse (öffentlich) |
+| GET | `/api/v1/agent/origin` | Öffentlich | Panel-Ursprungsadresse (öffentlich) |
 
 ### Kostenpflichtiger Rückrufeintrag
 
@@ -1136,79 +1145,75 @@ Portal-Laufzeitkonfiguration ohne Anmeldung (Wartungsschutz + öffentliche Raten
 
 ### Client-Authentifizierung und Geschäft (gleiches Set auf der Admin-Engine)
 
-Client-Endpunkte identisch mit dem Portal; Weitere Informationen finden Sie unter `portal-api.en.md`.
+Client-Endpunkte identisch mit dem Portal. Sie verwenden ein **Client-Token** (`Authorization: Bearer <client_token>`), kein Admin-Token; Weitere Informationen finden Sie unter `portal-api.en.md`.
 
 | Methode | Pfad | Erlaubnis | Beschreibung |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | Öffentlich | Artikel auflisten |
-| GET | `/api/v1/client-auth/articles/:slug` | Öffentlich | Artikel abrufen |
-| GET | `/api/v1/client-auth/balance` | Öffentlich | Schaffen Sie Balance |
-| GET | `/api/v1/client-auth/balance/transactions` | Öffentlich | Saldotransaktionen |
-| POST | `/api/v1/client-auth/change-password` | Öffentlich | Passwort ändern |
-| POST | `/api/v1/client-auth/charge/create` | Öffentlich | Aufladeauftrag erstellen |
-| GET | `/api/v1/client-auth/charge/orders` | Öffentlich | Aufladeaufträge auflisten |
-| GET | `/api/v1/client-auth/charge/orders/:id` | Öffentlich | Erhalten Sie Details zur Aufladebestellung |
-| POST | `/api/v1/client-auth/charge/redeem-card` | Öffentlich | Karte einlösen |
-| GET | `/api/v1/client-auth/charge/sites` | Öffentlich | Aufladestellen auflisten |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Öffentlich | Ladestatus abfragen |
-| GET | `/api/v1/client-auth/checktime` | Öffentlich | Serverzeit abrufen (Uhrsynchronisierung) |
-| GET | `/api/v1/client-auth/connection-info` | Öffentlich | Planverbindungsparameter abrufen |
-| GET | `/api/v1/client-auth/gifts` | Öffentlich | Geschenke auflisten |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | Öffentlich | Geschenk beanspruchen |
-| GET | `/api/v1/client-auth/invoices` | Öffentlich | Bestellliste |
-| GET | `/api/v1/client-auth/invoices/:id` | Öffentlich | Bestelldetails |
-| GET | `/api/v1/client-auth/settings/whitelist` | Öffentlich | IP-Zulassungsliste auflisten |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Öffentlich | Von der IP-Zulassungsliste entfernen |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Öffentlich | IP automatisch hinzufügen |
-| POST | `/api/v1/client-auth/login` | Öffentlich | Melden Sie sich an |
-| POST | `/api/v1/client-auth/logout` | Öffentlich | Abmelden |
-| POST | `/api/v1/client-auth/logs/package` | Öffentlich | Erstellen Sie ein Protokollpaket |
-| GET | `/api/v1/client-auth/logs/packages` | Öffentlich | Protokollpakete auflisten |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | Öffentlich | Protokollbündel löschen |
-| GET | `/api/v1/client-auth/logs/packages/:id` | Öffentlich | Holen Sie sich das Protokollpaket |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Öffentlich | Protokollpaket herunterladen |
-| GET | `/api/v1/client-auth/logs/types` | Öffentlich | Zustandsprüfung des Protokollpakets |
-| GET | `/api/v1/client-auth/me` | Öffentlich | Aktuellen angemeldeten Benutzer abrufen |
-| GET | `/api/v1/client-auth/nodes` | Öffentlich | Meine Knotenliste |
-| GET | `/api/v1/client-auth/nodes/:id/config` | Öffentlich | Knotenkonfiguration |
-| GET | `/api/v1/client-auth/nodes/:id/link` | Öffentlich | Link zur Knotenfreigabe |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Öffentlich | Knoten-QR-Code |
-| GET | `/api/v1/client-auth/oauth/:provider` | Öffentlich | Autorisieren |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | Öffentlich | Rückruf |
-| GET | `/api/v1/client-auth/oauth/providers` | Öffentlich | Anbieterstatus |
-| GET | `/api/v1/client-auth/orders` | Öffentlich | Bestellliste |
-| POST | `/api/v1/client-auth/orders` | Öffentlich | Ordnung schaffen |
-| GET | `/api/v1/client-auth/orders/:id` | Öffentlich | Bestelldetails |
-| GET | `/api/v1/client-auth/plans` | Öffentlich | Planliste |
-| GET | `/api/v1/client-auth/plans/:id` | Öffentlich | Plandetails |
-| GET | `/api/v1/client-auth/referral/code` | Öffentlich | Holen Sie sich den Bestätigungscode für die Empfehlung |
-| GET | `/api/v1/client-auth/referral/records` | Öffentlich | Empfehlungsdatensätze auflisten |
-| GET | `/api/v1/client-auth/referral/stats` | Öffentlich | Erhalten Sie Empfehlungsstatistiken |
-| POST | `/api/v1/client-auth/referral/withdraw` | Öffentlich | Auszahlung beantragen |
-| GET | `/api/v1/client-auth/referral/withdrawals` | Öffentlich | Empfehlungsabhebungen auflisten |
-| POST | `/api/v1/client-auth/refresh` | Öffentlich | Aktualisieren |
-| POST | `/api/v1/client-auth/register` | Öffentlich | Registrieren |
-| POST | `/api/v1/client-auth/reset-subscription` | Öffentlich | Abonnement zurücksetzen |
-| PUT | `/api/v1/client-auth/settings` | Öffentlich | Profil aktualisieren |
-| POST | `/api/v1/client-auth/rotate-token` | Öffentlich | Abonnement-Token drehen |
-| POST | `/api/v1/client-auth/self-unban` | Öffentlich | Selbstbedienungsverbot aufgehoben |
-| PUT | `/api/v1/client-auth/settings` | Öffentlich | Einstellungen aktualisieren |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Öffentlich | IP automatisch hinzufügen |
-| GET | `/api/v1/client-auth/settings/whitelist` | Öffentlich | IP-Zulassungsliste auflisten |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Öffentlich | Von der IP-Zulassungsliste entfernen |
-| GET | `/api/v1/client-auth/shared-accounts` | Öffentlich | Gemeinsame Konten auflisten |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | Öffentlich | Holen Sie sich ein gemeinsames Konto |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Öffentlich | Gemeinsames Konto anfordern |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Öffentlich | Reparaturanfrage |
-| POST | `/api/v1/client-auth/ticket` | Öffentlich | Einmaliges, kurzlebiges Ticket ausstellen |
-| GET | `/api/v1/client-auth/tickets` | Öffentlich | Tickets auflisten |
-| POST | `/api/v1/client-auth/tickets` | Öffentlich | Ticket erstellen |
-| GET | `/api/v1/client-auth/tickets/:id` | Öffentlich | Ticket besorgen |
-| POST | `/api/v1/client-auth/tickets/:id/close` | Öffentlich | Ticket schließen |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | Öffentlich | Auf Ticket antworten |
-| GET | `/api/v1/client-auth/traffic-history` | Öffentlich | Verkehrsgeschichte |
-| GET | `/api/v1/client-auth/traffic-packs` | Öffentlich | Traffic-Packliste |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | Öffentlich | Verkehrspaket kaufen |
+| GET | `/api/v1/client-auth/articles` | Kunde (angemeldet) | Artikel auflisten |
+| GET | `/api/v1/client-auth/articles/:slug` | Kunde (angemeldet) | Artikel abrufen |
+| GET | `/api/v1/client-auth/balance` | Kunde (angemeldet) | Schaffen Sie Balance |
+| GET | `/api/v1/client-auth/balance/transactions` | Kunde (angemeldet) | Saldotransaktionen |
+| POST | `/api/v1/client-auth/change-password` | Kunde (angemeldet) | Passwort ändern |
+| POST | `/api/v1/client-auth/charge/create` | Kunde (angemeldet) | Aufladeauftrag erstellen |
+| GET | `/api/v1/client-auth/charge/orders` | Kunde (angemeldet) | Aufladeaufträge auflisten |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Kunde (angemeldet) | Erhalten Sie Details zur Aufladebestellung |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Kunde (angemeldet) | Karte einlösen |
+| GET | `/api/v1/client-auth/charge/sites` | Kunde (angemeldet) | Aufladestellen auflisten |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Kunde (angemeldet) | Ladestatus abfragen |
+| GET | `/api/v1/client-auth/checktime` | Kunde (angemeldet) | Serverzeit abrufen (Uhrsynchronisierung) |
+| GET | `/api/v1/client-auth/connection-info` | Kunde (angemeldet) | Planverbindungsparameter abrufen |
+| GET | `/api/v1/client-auth/gifts` | Kunde (angemeldet) | Geschenke auflisten |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Kunde (angemeldet) | Geschenk beanspruchen |
+| GET | `/api/v1/client-auth/invoices` | Kunde (angemeldet) | Bestellliste |
+| GET | `/api/v1/client-auth/invoices/:id` | Kunde (angemeldet) | Bestelldetails |
+| POST | `/api/v1/client-auth/login` | Kunde (öffentlich) | Melden Sie sich an |
+| POST | `/api/v1/client-auth/logout` | Kunde (angemeldet) | Abmelden |
+| POST | `/api/v1/client-auth/logs/package` | Kunde (angemeldet) | Erstellen Sie ein Protokollpaket |
+| GET | `/api/v1/client-auth/logs/packages` | Kunde (angemeldet) | Protokollpakete auflisten |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Kunde (angemeldet) | Protokollbündel löschen |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Kunde (angemeldet) | Holen Sie sich das Protokollpaket |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Kunde (angemeldet) | Protokollpaket herunterladen |
+| GET | `/api/v1/client-auth/logs/types` | Kunde (angemeldet) | Zustandsprüfung des Protokollpakets |
+| GET | `/api/v1/client-auth/me` | Kunde (angemeldet) | Aktuellen angemeldeten Benutzer abrufen |
+| GET | `/api/v1/client-auth/nodes` | Kunde (angemeldet) | Meine Knotenliste |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Kunde (angemeldet) | Knotenkonfiguration |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Kunde (angemeldet) | Link zur Knotenfreigabe |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Kunde (angemeldet) | Knoten-QR-Code |
+| GET | `/api/v1/client-auth/oauth/:provider` | Kunde (öffentlich) | Autorisieren |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Kunde (öffentlich) | Rückruf |
+| GET | `/api/v1/client-auth/oauth/providers` | Kunde (öffentlich) | Anbieterstatus |
+| GET | `/api/v1/client-auth/orders` | Kunde (angemeldet) | Bestellliste |
+| POST | `/api/v1/client-auth/orders` | Kunde (angemeldet) | Ordnung schaffen |
+| GET | `/api/v1/client-auth/orders/:id` | Kunde (angemeldet) | Bestelldetails |
+| GET | `/api/v1/client-auth/plans` | Kunde (angemeldet) | Planliste |
+| GET | `/api/v1/client-auth/plans/:id` | Kunde (angemeldet) | Plandetails |
+| GET | `/api/v1/client-auth/referral/code` | Kunde (angemeldet) | Holen Sie sich den Bestätigungscode für die Empfehlung |
+| GET | `/api/v1/client-auth/referral/records` | Kunde (angemeldet) | Empfehlungsdatensätze auflisten |
+| GET | `/api/v1/client-auth/referral/stats` | Kunde (angemeldet) | Erhalten Sie Empfehlungsstatistiken |
+| POST | `/api/v1/client-auth/referral/withdraw` | Kunde (angemeldet) | Auszahlung beantragen |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Kunde (angemeldet) | Empfehlungsabhebungen auflisten |
+| POST | `/api/v1/client-auth/refresh` | Kunde (öffentlich) | Aktualisieren |
+| POST | `/api/v1/client-auth/register` | Kunde (öffentlich) | Registrieren |
+| POST | `/api/v1/client-auth/reset-subscription` | Kunde (angemeldet) | Abonnement zurücksetzen |
+| POST | `/api/v1/client-auth/rotate-token` | Kunde (angemeldet) | Abonnement-Token drehen |
+| POST | `/api/v1/client-auth/self-unban` | Kunde (angemeldet) | Selbstbedienungsverbot aufgehoben |
+| PUT | `/api/v1/client-auth/settings` | Kunde (angemeldet) | Einstellungen aktualisieren |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Kunde (angemeldet) | IP automatisch hinzufügen |
+| GET | `/api/v1/client-auth/settings/whitelist` | Kunde (angemeldet) | IP-Zulassungsliste auflisten |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Kunde (angemeldet) | Von der IP-Zulassungsliste entfernen |
+| GET | `/api/v1/client-auth/shared-accounts` | Kunde (angemeldet) | Gemeinsame Konten auflisten |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Kunde (angemeldet) | Holen Sie sich ein gemeinsames Konto |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Kunde (angemeldet) | Gemeinsames Konto anfordern |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Kunde (angemeldet) | Reparaturanfrage |
+| POST | `/api/v1/client-auth/ticket` | Kunde (angemeldet) | Einmaliges, kurzlebiges Ticket ausstellen |
+| GET | `/api/v1/client-auth/tickets` | Kunde (angemeldet) | Tickets auflisten |
+| POST | `/api/v1/client-auth/tickets` | Kunde (angemeldet) | Ticket erstellen |
+| GET | `/api/v1/client-auth/tickets/:id` | Kunde (angemeldet) | Ticket besorgen |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Kunde (angemeldet) | Ticket schließen |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Kunde (angemeldet) | Auf Ticket antworten |
+| GET | `/api/v1/client-auth/traffic-history` | Kunde (angemeldet) | Verkehrsgeschichte |
+| GET | `/api/v1/client-auth/traffic-packs` | Kunde (angemeldet) | Traffic-Packliste |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Kunde (angemeldet) | Verkehrspaket kaufen |
 
 ### Abonnementlieferung
 
@@ -1236,7 +1241,7 @@ Konfigurations-Snapshots / Probelauf / Anwenden / Rollback (`apply`, `rollback` 
 | POST | `/api/v1/runtime/rollback` | Admin | Zurückrollen |
 | GET | `/api/v1/runtime/snapshots` | Angemeldet | Schnappschüsse auflisten |
 | POST | `/api/v1/runtime/snapshots` | Angemeldet | Schnappschuss erstellen |
-| DELETE | `/api/v1/runtime/snapshots/:id` | Admin | Snapshot löschen |
+| DELETE | `/api/v1/runtime/snapshots/:id` | Admin | Schnappschuss löschen |
 | GET | `/api/v1/runtime/snapshots/:id` | Angemeldet | Holen Sie sich einen Schnappschuss |
 | POST | `/api/v1/runtime/verify` | Angemeldet | Überprüfen |
 

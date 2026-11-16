@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: th | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: th | updated: 2026-11-16 -->
 # ชาร์จโทรกลับ API
 
 > ภาษา: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · ไทย · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -50,7 +50,7 @@ Content-Type: application/json
 ## 3. อัลกอริธึมการลงนาม (v3.2 / `version: "v1"`)
 
 1. สร้าง **เนื้อความดิบที่ไม่มี `sign`** และคำนวณ `body_hash = SHA256(raw body bytes)` (เลขฐานสิบหกตัวพิมพ์เล็ก)
-   > แผงควบคุมยังยอมรับรูปแบบเดิมที่มีการแฮชแบบเต็มรวมถึง `sign`; การบูรณาการใหม่ควรเป็นไปตามแผนงานที่บันทึกไว้
+   > แผงควบคุมยังยอมรับรูปแบบเดิมที่มีการแฮชแบบเต็มรวมถึง `sign`; การบูรณาการใหม่ควรเป็นไปตามรูปแบบที่บันทึกไว้
 2. สร้างเพย์โหลดการลงนาม (**คีย์ตามลำดับพจนานุกรม**, ซีแมนทิกส์ Go `json.Marshal`):
 
 ```json
@@ -98,13 +98,14 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. คำตอบ
 
-- สำเร็จ: 2xx (หลังจากที่แผงได้โพสต์การชำระเงินแล้ว)
-- ล้มเหลว: 4xx/5xx + `{ "code": "...", "message": "..." }`; รหัสทั่วไป ได้แก่ `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, จำนวนไม่ตรงกัน ฯลฯ
+- สำเร็จ: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (หลังจากที่แผงได้ผ่านรายการชำระเงินแล้ว)
+- ความล้มเหลว: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; เหตุผลที่เป็นรูปธรรมอยู่ใน `message` (ลายเซ็นไม่ถูกต้อง, IP ไม่ได้อยู่ในรายการที่อนุญาต, ไม่พบคำสั่งซื้อ, จำนวน/สกุลเงินไม่ตรงกัน, เล่นซ้ำไม่ได้ ฯลฯ)
+- `site_id` ที่ไม่ถูกต้องในพาธส่งคืน `INVALID_SITE_ID` เนื้อความที่ไม่ใช่ JSON จะส่งคืน `INVALID_REQUEST`
 
 > การโทรกลับทุกครั้งจะมี `X-Request-ID` (สร้างโดยแผงควบคุมหากไม่มีอยู่) บันทึกและเหตุการณ์ต่างๆ สามารถตรวจสอบย้อนกลับได้ตั้งแต่ต้นจนจบ มอบ ID นี้ให้กับผู้ดูแลระบบของคุณเมื่อแก้ไขปัญหา
 
 ## 6. การทดสอบและการแก้ไขปัญหา
 
 - ผู้ดูแลระบบสามารถเรียก **เอกสารบูรณาการ** ของแต่ละไซต์: `GET /api/v1/charge-sites/{id}/integration-doc` (รวมตัวอย่างการโทรกลับจริง URL ของไซต์)
-- เหตุการณ์การติดต่อกลับ: `GET /api/v1/charge-callback-events`; ลองอีกครั้ง: `GET /api/v1/charge-callback-retries`, `POST /api/v1/charge-callback-retries/{id}/retry`
+- เหตุการณ์การติดต่อกลับ: `GET /api/v1/charge-callback-events`; ลองใหม่: `GET /api/v1/charge-callback-retries`, `POST /api/v1/charge-callback-retries/{id}/retry`
 - การหมุนเวียนข้อมูลลับ: `POST /api/v1/charge-sites/{id}/rotate-secret` (ข้อมูลลับก่อนหน้านี้ถูกเก็บไว้สำหรับหน้าต่างการเปลี่ยนแปลงเดียว)

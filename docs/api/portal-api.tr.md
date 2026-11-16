@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: tr | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: tr | updated: 2026-11-16 -->
 # Portal API Referansı (İstemci / Portal API)
 
 > Diller: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · Türkçe · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | Genel makaleler (yalnızca yayınlanan) |
 | GET | `/api/v1/public/articles/:slug` | Makale ayrıntısı |
 | GET | `/api/v1/public/client-configs` | İstemci indirme yapılandırması |
-| GET | `/sub/:token` | Abonelik teslimi (`format`, base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json vb. döndürür; iptal edildi/eksik → 404, askıya alındı/süresi doldu/etkin değil → 403. Bkz. [subscription.md](./subscription.tr.md)) |
+| GET | `/sub/:token` | Abonelik teslimi (`format`, base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json vb. döndürür; iptal edildi/eksik → 404, askıya alındı/süresi doldu/etkin değil → 403. Bkz. [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth sağlayıcı görünürlüğü: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Bakım durumu (genel). Portal etkinleştirildiğinde bir bakım sayfası gösterir |
 
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | Yöntem | Yol | Açıklama |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Geçerli istemci: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (`data` zarf) |
+| PUT | `/api/v1/client-auth/settings` | İstemci self servis ayarlarını güncelleyin: Gövde: `{ip_whitelist, device_limit}`; boş bir `ip_whitelist`, kaynak IP kısıtlaması olmadığı anlamına gelir |
 | POST | `/api/v1/client-auth/change-password` | Gövde: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Sunucu zamanı (istemci saat senkronizasyonu) |
 | GET | `/api/v1/client-auth/connection-info` | Mevcut plan bağlantı parametreleri: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -225,7 +226,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 > diğer istemci kimlik doğrulama uç noktaları. Kullanıcının izin verilenler listesi yoksa veya URL aboneliği yoksa erişime her zaman izin verilir.
 > izin verilenler listesi kullanıcı başına bir ayardır; küresel bir anahtar yoktur.
 
-**Kendi kendine yasağı kaldırma akışı**: yalnızca `auto_quota` (trafik aşımının otomatik olarak yasaklanması) için yönetici tarafı olduğunda kullanılabilir
+**Kendi kendine yasağı kaldırma akışı**: yalnızca `auto_quota` (trafik aşımının otomatik olarak yasaklanması) için yönetici tarafında kullanılabilir
 `self_unban.enabled` açık. Oturum açma (şifre veya OAuth geri araması) `require_self_unban=true` + `self_unban_token` değerini döndürür
 (typ=self_unban, 15 dakika geçerli, **yalnızca** `POST /self-unban`'de kullanılabilir; diğer uç noktalar 403/`SELF_UNBAN_TOKEN_SCOPE` değerini döndürür).
 Portal daha sonra yasağı kaldırma kartını gösterir; yasağı başarıyla kaldırdıktan sonra kullanıcı tekrar oturum açar. OAuth geri aramaları bunu şu yolla sağlar:
@@ -255,7 +256,7 @@ Oturum açma kartının alt kısmındaki “Gizlilik Politikası · Hizmet Şart
  oturum açma kartı, Markdown'ı geçerli portal dilini kullanarak bir iletişim kutusunda (`renderMd`) oluşturur.
 - `/api/v1/public/portal-config` aracılığıyla çalışma zamanında teslim edilir; oturum açma bileşeni tüketir
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
-- Google OAuth doğrulaması, bu bağlantıların herkese açık olarak erişilebilir olmasını gerektirir → yukarıdaki bağımsız bağlantıları kullanın.
+- Google OAuth doğrulaması bu bağlantıların herkese açık olmasını gerektirir → yukarıdaki bağımsız bağlantıları kullanın
  onay ekranı; bkz. `docs/oauth-google-verification.md` (gizlilik politikası/şartlar şablonlarını içerir).
 
 ## 18. Entegrasyon örneği

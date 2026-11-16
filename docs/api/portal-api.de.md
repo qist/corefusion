@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: de | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: de | updated: 2026-11-16 -->
 # Portal API Referenz (Client / Portal API)
 
 > Sprachen: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · [한국어](portal-api.ko.md) · Deutsch · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 | GET | `/api/v1/public/articles` | Öffentliche Artikel (nur veröffentlicht) |
 | GET | `/api/v1/public/articles/:slug` | Artikeldetail |
 | GET | `/api/v1/public/client-configs` | Client-Download-Konfiguration |
-| GET | `/sub/:token` | Abonnementlieferung (`format` gibt base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json usw. zurück; widerrufen/fehlend → 404, ausgesetzt/abgelaufen/inaktiv → 403. Siehe [subscription.md](./subscription.de.md)) |
+| GET | `/sub/:token` | Abonnementlieferung (`format` gibt base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json usw. zurück; widerrufen/fehlend → 404, ausgesetzt/abgelaufen/inaktiv → 403. Siehe [subscription.md](./subscription.md)) |
 | GET | `/api/v1/client-auth/oauth/providers` | Sichtbarkeit des OAuth-Anbieters: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | Wartungsstatus (öffentlich). Das Portal zeigt bei Aktivierung eine Wartungsseite an |
 
@@ -105,6 +105,7 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | Aktueller Kunde: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (`data`-Umschlag) |
+| PUT | `/api/v1/client-auth/settings` | Client-Self-Service-Einstellungen aktualisieren: Text: `{ip_whitelist, device_limit}`; Ein leeres `ip_whitelist` bedeutet keine Quell-IP-Einschränkung |
 | POST | `/api/v1/client-auth/change-password` | Körper: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | Serverzeit (Client-Uhrsynchronisierung) |
 | GET | `/api/v1/client-auth/connection-info` | Aktuelle Planverbindungsparameter: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -146,21 +147,21 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 | Methode | Pfad | Beschreibung |
 |---|---|---|
 | GET | `/api/v1/client-auth/balance` | `{data:{client_id, balance(cents), frozen}}` |
-| GET | `/api/v1/client-auth/balance/transactions` | Saldotransaktionen (`type`: Belastung/Verbrauch/Rückerstattung; paginiert) |
-| GET | `/api/v1/client-auth/charge/sites` | Verfügbare Aufladestandorte (`ListChargeSites`: nur aktiviert) |
-| POST | `/api/v1/client-auth/charge/create` | Einen Aufladeauftrag erstellen (Weiterleitung zur Drittanbieterzahlung) |
+| GET | `/api/v1/client-auth/balance/transactions` | Balance transactions (`type`: charge/consume/refund; paginated) |
+| GET | `/api/v1/client-auth/charge/sites` | Available recharge sites (`ListChargeSites`: enabled only) |
+| POST | `/api/v1/client-auth/charge/create` | Create a recharge order (redirects to third-party payment) |
 | GET | `/api/v1/client-auth/charge/orders` | Bestellliste zum Aufladen |
 | GET | `/api/v1/client-auth/charge/orders/:id` | Details zur Aufladebestellung |
 | GET | `/api/v1/client-auth/charge/status/:trade_no` | Zahlungsstatus nach Handelsnr. abfragen |
 | POST | `/api/v1/client-auth/charge/redeem-card` | Lösen Sie eine Aufladekarte ein |
 
-> Das Löschen eines Kunden führt zu **Kaskaden** auf dessen Kontostand und Transaktionen (siehe `DeleteClient` in `internal/service/client/service.go`).
+> Deleting a client **cascades** to its balance and transactions (see `DeleteClient` in `internal/service/client/service.go`).
 
 ## 9. Geschenke / Verkehrsgeschichte
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/api/v1/client-auth/gifts` | Anspruchsberechtigte Geschenke (nacktes Array; `type`: Tage/Bytes) |
+| GET | `/api/v1/client-auth/gifts` | Claimable gifts (bare array; `type`: days/bytes) |
 | POST | `/api/v1/client-auth/gifts/:id/claim` | Anspruch |
 | GET | `/api/v1/client-auth/traffic-history` | Monatlicher Verkehrsverlauf: `{data:{history:[{period_start,total_bytes,...}], months}}` |
 
@@ -208,7 +209,7 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 | GET | `/api/v1/client-auth/logs/packages` | Meine Protokollpakete |
 | POST | `/api/v1/client-auth/logs/package` | Erstellen Sie einen Protokollbündelungsauftrag (nur Eingangsknoten). |
 | GET | `/api/v1/client-auth/logs/packages/:id` | Auftragsstatus (bereit/in Bearbeitung/fehlgeschlagen) |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Herunterladen (bevorzugen Sie `POST /ticket` und fügen Sie `?ticket=` hinzu) |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Herunterladen (`POST /ticket` bevorzugen und `?ticket=` anhängen) |
 | DELETE | `/api/v1/client-auth/logs/packages/:id` | Löschen Sie ein Protokollpaket |
 
 ## 15. Sicherheitseinstellungen / IP-Zulassungsliste / Selbstentsperrung
@@ -225,7 +226,7 @@ Rufen Sie bei 401 einmal `POST /api/v1/client-auth/refresh` auf und versuchen Si
 > andere Client-Authentifizierungsendpunkte. Wenn der Benutzer keine Zulassungsliste oder kein Abonnement URL hat, ist der Zugriff immer erlaubt. Die
 > Die Zulassungsliste ist eine benutzerspezifische Einstellung. Es gibt keinen globalen Schalter.
 
-**Selbst-Unban-Fluss**: nur für `auto_quota` verfügbar (automatisches Verbot bei Verkehrsüberschreitung), wenn die Admin-Seite
+**Selbst-Unban-Fluss**: nur für `auto_quota` (automatisches Verbot bei Verkehrsüberschreitung) auf der Administratorseite verfügbar
 `self_unban.enabled` ist eingeschaltet. Die Anmeldung (Passwort oder OAuth-Rückruf) gibt `require_self_unban=true` + `self_unban_token` zurück
 (typ=self_unban, gültig 15 Minuten, **nur** verwendbar auf `POST /self-unban`; andere Endpunkte geben 403/`SELF_UNBAN_TOKEN_SCOPE` zurück).
 Das Portal zeigt dann die Entbannungskarte an; Nach einer erfolgreichen Aufhebung der Sperre meldet sich der Benutzer erneut an. OAuth-Rückrufe liefern dies über
@@ -235,7 +236,7 @@ das URL-Fragment `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 
 | Code | Szenario |
 |---|---|
-| `INVALID_TOKEN` | Aktualisierungstoken ungültig/abgelaufen/versionskonflikt |
+| `INVALID_TOKEN` | Aktualisierungstoken ungültig/abgelaufen/Versionskonflikt |
 | `INVALID_REQUEST` | Die Parametervalidierung ist fehlgeschlagen |
 | `NOT_FOUND` | Fehlende Ressource (Ticket/Bestellung/Zulassungslisteneintrag usw.) |
 | `RELOAD_FAILED` / `SYNC_FAILED` | (Administratorseite) Die Synchronisierung der Proxy-Konfiguration ist fehlgeschlagen |
@@ -246,16 +247,16 @@ das URL-Fragment `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 Die Links „Datenschutzerklärung · Nutzungsbedingungen“ unten auf der Anmeldekarte (wie bei normalen Websites; durch Klicken wird der Inhalt geöffnet):
 
 - **Konfiguration**: Portaleditor → Einstellungen → Allgemein → Compliance-Dokumente (**Inhalt pro Sprache bearbeiten**);
- Sie können `PUT /api/v1/portal/active` auch mit strukturierten Feldern `privacy_policy_url` / `privacy_policy_content` /
+ Sie können auch `PUT /api/v1/portal/active` mit strukturierten Feldern `privacy_policy_url` / `privacy_policy_content` /
  `terms_of_service_url` / `terms_of_service_content` (null = unverändert; Inhalt ist eine `{"zh-CN":"...","en":"..."}`-Karte).
 - **Eigenständig zugängliche Seiten** (vom Server gerendert, einfach für Google-Verifizierungscrawler; unterstützt `?lang=xx`):
   - Hauptpanel-Domäne: `GET /p/legal/privacy`, `GET /p/legal/terms`
   - Dedizierte Portaldomäne (Root-Bereitstellung): `GET /legal/privacy`, `GET /legal/terms`
 - **Anzeigelogik**: URL oder Inhalt, **URL gewinnt** (öffnet sich extern in einem neuen Tab); Wenn Inhalte bereitgestellt werden, klicken Sie auf
  Die Anmeldekarte rendert Markdown in einem Dialog (`renderMd`) unter Verwendung der aktuellen Portalsprache.
-- Wird zur Laufzeit über `/api/v1/public/portal-config` bereitgestellt; Die Anmeldekomponente verbraucht
+- Wird zur Laufzeit über `/api/v1/public/portal-config` geliefert; Die Anmeldekomponente verbraucht
  `ctx.privacyUrl / termsUrl / privacyContent / termsContent / openLegal / hasLegalLinks`.
-- Für die Google-OAuth-Überprüfung müssen diese Links öffentlich zugänglich sein → verwenden Sie die oben genannten eigenständigen Links im
+- Für die Google-OAuth-Verifizierung müssen diese Links öffentlich zugänglich sein → verwenden Sie die oben genannten eigenständigen Links im
  Einwilligungsbildschirm; siehe `docs/oauth-google-verification.md` (enthält Vorlagen für Datenschutzrichtlinien/Bedingungen).
 
 ## 18. Integrationsbeispiel

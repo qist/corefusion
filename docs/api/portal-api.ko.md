@@ -1,4 +1,4 @@
-<!-- source: portal-api.md | locale: ko | updated: 2026-10-23 -->
+<!-- source: portal-api.md | locale: ko | updated: 2026-11-16 -->
 # Portal API 참조(클라이언트/포털 API)
 
 > 언어: [简体中文](portal-api.md) · [English](portal-api.en.md) · [繁體中文](portal-api.zh-TW.md) · [Русский](portal-api.ru.md) · [日本語](portal-api.ja.md) · 한국어 · [Deutsch](portal-api.de.md) · [Français](portal-api.fr.md) · [Español](portal-api.es.md) · [Português](portal-api.pt.md) · [Türkçe](portal-api.tr.md) · [Bahasa Indonesia](portal-api.id.md) · [ไทย](portal-api.th.md) · [Tiếng Việt](portal-api.vi.md) · [العربية](portal-api.ar.md) · [فارسی](portal-api.fa.md)
@@ -78,7 +78,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/public/articles` | 공개 기사(게시된 경우에만) |
 | GET | `/api/v1/public/articles/:slug` | 기사 세부정보 |
 | GET | `/api/v1/public/client-configs` | 클라이언트 다운로드 구성 |
-| GET | `/sub/:token` | 구독 전달(`format`는 base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json 등을 반환합니다. 취소됨/누락 → 404, 일시 중지/만료/비활성 → 403. [subscription.md](./subscription.ko.md) 참조) |
+| GET | `/sub/:token` | 구독 전달(`format`는 base64_uri / raw_uri / mihomo_yaml / singbox_json / xray_json 등을 반환합니다. 취소됨/누락 → 404, 일시 중지/만료/비활성 → 403. [subscription.md](./subscription.md) 참조) |
 | GET | `/api/v1/client-auth/oauth/providers` | OAuth 제공자 가시성: `{"data":{"providers":[{"provider":"github","enabled":true},...]}}` |
 | GET | `/api/v1/system/maintenance` | 유지 관리 상태(공개) 활성화되면 포털에 유지 관리 페이지가 표시됩니다. |
 
@@ -105,6 +105,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | 방법 | 경로 | 설명 |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | 현재 클라이언트: `{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}` (`data` 봉투) |
+| PUT | `/api/v1/client-auth/settings` | 클라이언트 셀프 서비스 설정 업데이트: 본문: `{ip_whitelist, device_limit}`; 빈 `ip_whitelist`는 소스 IP 제한이 없음을 의미합니다. |
 | POST | `/api/v1/client-auth/change-password` | 본체: `{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | 서버 시간(클라이언트 시계 동기화) |
 | GET | `/api/v1/client-auth/connection-info` | 현재 계획 연결 매개변수: `{concurrent, device_limit, protocol, speed_limit, tls, transport}` |
@@ -154,13 +155,13 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 | GET | `/api/v1/client-auth/charge/status/:trade_no` | trade_no별 결제 현황 폴링 |
 | POST | `/api/v1/client-auth/charge/redeem-card` | 충전카드 교환하기 |
 
-> 클라이언트를 삭제하면 잔액과 거래가 **계단적으로** 진행됩니다(`internal/service/client/service.go`의 `DeleteClient` 참조).
+> 클라이언트를 삭제하면 잔액과 거래가 **계단식** 진행됩니다(`internal/service/client/service.go`의 `DeleteClient` 참조).
 
 ## 9. 선물/교통 이력
 
 | 방법 | 경로 | 설명 |
 |---|---|---|
-| GET | `/api/v1/client-auth/gifts` | 청구 가능한 선물(기본 배열; `type`: 일/바이트) |
+| GET | `/api/v1/client-auth/gifts` | 청구 가능한 선물(베어 어레이, `type`: 일/바이트) |
 | POST | `/api/v1/client-auth/gifts/:id/claim` | 청구 |
 | GET | `/api/v1/client-auth/traffic-history` | 월별 트래픽 내역: `{data:{history:[{period_start,total_bytes,...}], months}}` |
 
@@ -227,7 +228,7 @@ curl 'https://<portal-domain>/sub/<subscription_token>?format=mihomo_yaml'
 
 **자체 차단 해제 흐름**: 관리자 측에서 `auto_quota`(트래픽 초과 자동 차단)에만 사용 가능
 `self_unban.enabled`가 켜져 있습니다. 로그인(비밀번호 또는 OAuth 콜백)은 `require_self_unban=true` + `self_unban_token`를 반환합니다.
-(일반=self_unban, 유효 기간은 15분, **`POST /self-unban`에서만** 사용 가능, 다른 엔드포인트는 403/`SELF_UNBAN_TOKEN_SCOPE`를 반환)
+(일반=self_unban, 유효 시간은 15분, **`POST /self-unban`에서만** 사용 가능, 다른 엔드포인트는 403/`SELF_UNBAN_TOKEN_SCOPE`를 반환)
 그러면 포털에 금지 해제 카드가 표시됩니다. 차단 해제에 성공한 후 사용자는 다시 로그인합니다. OAuth 콜백은 이를 다음을 통해 전달합니다.
 URL 단편 `#require_self_unban=1&self_unban_token=..&self_unban_hint=..`.
 

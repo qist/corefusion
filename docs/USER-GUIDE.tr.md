@@ -1,9 +1,7 @@
-<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-10-26 -->
+<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-16 -->
 # CoreFusion Operasyon Kılavuzu
 
 > Diller: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · Türkçe · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
-
-> ⚠️ 本译文尚未同步最新源文
 
 > Bu kılavuz CoreFusion kullanıcıları içindir ve kurulumdan günlük işlemlere kadar tüm iş akışını kapsar.
 
@@ -79,7 +77,7 @@ CoreFusion, düğüm yönetimi, abonelik teslimi, müşteri yönetimi, faturalan
 |------|---------|
 | Dağılımlar | Debian / Ubuntu, RHEL / CentOS / Rocky / AlmaLinux / Fedora, Alpine, Arch, openSUSE |
 | CPU mimarileri | Resmi ikili dosyalar: `amd64`, `arm64`; kaynak yapıları aynı zamanda `armv7`, `armv6`, `386`, `ppc64le`, `s390x`, `riscv64`, `loong64`'yi de destekler |
-| Servis yöneticisi | systemd (önerilen); systemd'nin bulunmadığı kaplarda veya diğer ortamlarda `nohup`'ye geri döner |
+| Servis yöneticisi | systemd (önerilir); systemd'nin bulunmadığı kaplarda veya diğer ortamlarda `nohup`'ye geri döner |
 | Bellek / disk | ≥ 1 GB / ≥ 10 GB (veritabanı, sertifikalar, günlükler ve çekirdek ikili dosyalar veri dizininde bulunur) |
 | Panel bağlantı noktası | kurulum sihirbazında seçilmiştir (varsayılan olarak rastgele boş bağlantı noktası; `8080` ve benzerleri uygundur) |
 | Aracı gRPC'si | Varsayılan olarak `18443` |
@@ -117,7 +115,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 Senaryo şunları yapacaktır:
 
 1. Dağıtımı, CPU mimarisini ve libc'yi tespit edin, ardından temel paketleri ve çalışma zamanı bağımlılıklarını yükleyin;
-2. GitHub Sürümlerinden `corefusion-linux-<arch>`'yi indirin ve eşleşen `.sha256` ile doğrulayın;
+2. `corefusion-linux-<arch>`'yi GitHub Sürümlerinden indirin ve eşleşen `.sha256` ile doğrulayın;
 3. `/opt/corefusion`'ye yükleyin ve `data/{sqlite,certs,logs,runtime}`'yi oluşturun;
 4. `SAFE_PATHS=data` ile yalnızca bir `.env` yer tutucusu yazın — veritabanı yapılandırması yok — böylece ilk başlangıç ​​kurulum sihirbazına girer (`.env`'nin tamamı sihirbaz tarafından oluşturulur);
 5. Bir systemd hizmetini yükleyin ve başlatın (veya systemd kullanılamadığında `nohup` altında çalıştırın);
@@ -141,33 +139,33 @@ Senaryo şunları yapacaktır:
 ==================================================================
 ```
 
-Panel yalnızca `127.0.0.1`'yi dinliyorsa (örneğin ters proxy'nin arkasında), komut dosyası, erişilemeyen URL yerine bir SSH tünel komutu yazdırır.
+Panel yalnızca `127.0.0.1`'yi dinliyorsa (örneğin ters proxy'nin arkasında), komut dosyası, ulaşılamayan URL yerine bir SSH tünel komutu yazdırır.
 
 > Jetonunu mu kaybettin? Başlangıç günlüğünü tekrar okuyun: `journalctl -u corefusion -n 50 --no-pager`
 > (systemd olmadan: `tail -n 50 /opt/corefusion/data/logs/panel.log`).
 
-### 2.2.1 Çok dilli çıktı
+### 2.2.1 Çok dilli çıkış
 
-Kurulum betiği dört arayüz dili içerir: basitleştirilmiş Çince, İngilizce, Farsça (فارسی) ve Rusça (Русский). Sistem `LANG` değerinden otomatik algılar veya açıkça seçebilirsiniz:
+Yükleyici dört kullanıcı arayüzü dili içerir: Basitleştirilmiş Çince, İngilizce, Farsça (فارسی) ve Rusça (Русский). `LANG` sistemini otomatik olarak algılar veya açıkça seçebilirsiniz:
 
 ```bash
-# İngilizce
+# English
 sudo bash install.sh --lang en
 
-# Ortam değişkeniyle Farsça
+# Persian via environment variable
 sudo CF_LANG=fa bash install.sh
 
-# Boru ile kurulumda seçenek geçirme
+# Pass options through a pipe
 curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
 ```
 
-Desteklenen değerler: `zh` / `en` / `fa` / `ru`; `--lang=ru` de kabul edilir. Açıkça desteklenmeyen bir değer, kullanılabilir dillerin listesiyle birlikte hata verir.
+Desteklenen değerler: `zh` / `en` / `fa` / `ru`; `--lang=ru` de kabul edilir. Desteklenmeyen açık bir değer, kullanılabilir diller listesinde başarısız oluyor.
 
 ### 2.3 Sürüm sabitleme / aynalar / çevrimdışı kurulum
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -187,14 +185,14 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Kaynaktan inşa etmek
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source`, depoyu klonlar (veya komut dosyası içindeyken mevcut ödemeyi kullanır) ve `make panel`'yi çalıştırır. Araç zinciri versiyonları ortama göre seçilir:
 
 | Bağımlılık | Seçim |
 |------------|-----------|
-| Git | `go.mod`'deki `toolchain` / `go`'den okuyun (şu anda **Go 1.27+**); sistem sürümü çok eskiyse eşleşen takım zinciri `<install-dir>/.toolchain`'ye indirilir |
+| Git | `go.mod`'deki `toolchain` / `go`'den okuyun (şu anda **Go 1.27+**); sistem sürümü çok eskiyse eşleşen araç zinciri `<install-dir>/.toolchain`'ye indirilir |
 | Düğüm | **Düğüm 22 LTS** varsayılan olarak (Vite ≥ 18 gerektirir); gerektiğinde eşleşen bir resmi yapı indirilir |
 | Düğüm (glibc < 2,28) | `unofficial-builds` glibc-217 yapısını kullanır (örn. CentOS 7) |
 | Düğüm (Alp / müsl) | `nodejs` / `npm` dağıtımını kullanır |
@@ -231,20 +229,23 @@ make panel-linux-arm64
 | Bayrak | Açıklama |
 |------|-------------|
 | `-d, --dir <PATH>` | Kurulum dizini, varsayılan `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-beta.82`; varsayılan `latest` |
+| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-beta.90`; varsayılan `latest` |
 | `--binary` | GitHub Sürüm ikili dosyasını kullanın (varsayılan) |
 | `--source` | Kaynaktan derleyin ve eşleşen Go/Node'u hazırlayın |
 | `--local <FILE>` | Yerel bir ikili dosya kullanın (çevrimdışı kurulum) |
 | `--arch <ARCH>` | Hedef mimari: `amd64` / `arm64` / `armv7` / `armv6` / `386` / `ppc64le` / `s390x` / `riscv64` / `loong64` |
 | `--mirror <URL>` | GitHub indirme öneki, ör. `https://ghproxy.net` |
 | `--repo <URL>` | Kaynak deposu, varsayılan `https://github.com/qist/corefusion.git` |
-| `--ref <REF>` | Kaynak dalı/etiketi; varsayılan olarak `--version`'dir, aksi halde `main` |
+| `--ref <REF>` | Kaynak dalı/etiketi; varsayılan olarak `--version`'dir, aksi takdirde `main` |
 | `--no-deps` | Sistem bağımlılığı kurulumunu atla |
 | `--no-start` | Hizmet dosyasını başlatmadan yükleyin ve yazın |
 | `--cpu-info` | Yazdırma ortamı algılama ve eksik bağımlılıklar, ardından çıkın |
-| `--lang <LANG>` | Çıktı dili: `zh` / `en` / `fa` / `ru` (varsayılan: sistem `LANG`) |
+| `--lang <LANG>` | Çıkış dili: `zh` / `en` / `fa` / `ru` (varsayılan: sistem `LANG`) |
 | `--uninstall` | Hizmeti durdurun ve programı kaldırın (verileri ve `.env`'yi tutar) |
 | `--purge` | `--uninstall` ile veri dizinini ve `.env`'yi de kaldırın. |
+
+> Resmi sürümler yalnızca `amd64` / `arm64` ikili dosyalarını gönderir. Diğer mimariler `--source` gerektirir,
+> aksi halde indirme işlemi 404 değerini döndürür.
 
 İlgili ortam değişkenleri:
 
@@ -254,7 +255,7 @@ make panel-linux-arm64
 | `CF_NODE_MAJOR` | Düğümün ana sürümünü geçersiz kıl (varsayılan 22) |
 | `CF_GO_MIRROR` | Araç zinciri indirme aynasına git |
 | `CF_SKIP_DEPS` | Bağımlılık kurulumunu atlamak için Agent yükleme komut dosyasında `1` olarak ayarlayın |
-| `CF_LANG` | Kurulum betiği çıktı dilini geçersiz kıl (`--lang` ile aynı) |
+| `CF_LANG` | Yükleyici çıkış dilini geçersiz kıl (`--lang` ile aynı) |
 
 ### 2.6 Dizin düzeni
 
@@ -263,7 +264,7 @@ make panel-linux-arm64
 ├── corefusion                 # panel binary
 ├── corefusion.bak             # previous version (when upgrading)
 ├── .env                       # environment file (0600, generated by the setup wizard)
-├── .env.secret                # şifreleme anahtarı dosyası (0600, ilk başlatmada oluşturulur)
+├── .env.secret                # encryption key file (0600, generated on first start)
 ├── .toolchain/                # Go / Node downloaded for source builds
 └── data/                      # data directory (SAFE_PATHS)
     ├── sqlite/app.db          # default SQLite database
@@ -329,7 +330,7 @@ Yeni kurulumda yükleyici yalnızca bu yer tutucuyu yazar, böylece panel mevcut
 SAFE_PATHS=data
 ```
 
-> Tam bir yapılandırma (`CF_DB_DSN` ile `.env`) zaten mevcut olduğunda, yükleyici hiçbir zaman bunun üzerine yazmaz ve sihirbaz bir daha görünmez.
+> Tam bir yapılandırma (`CF_DB_DSN` ile `.env`) zaten mevcut olduğunda, yükleyici asla bunun üzerine yazmaz ve sihirbaz bir daha görünmez.
 > `.env`'de daha sonra manuel olarak yapılan düzenlemeler, yeniden başlatmanın ardından etkili olur.
 
 #### Veri dizini
@@ -352,7 +353,7 @@ SAFE_PATHS=data                       # relative to the install directory
 
 `CF_DB_TYPE` isteğe bağlıdır ve algılamayı geçersiz kılar (`sqlite` / `mysql` / `postgres`).
 
-> **Şifreli şifreler**: Panel tarafından yazılan MySQL/PostgreSQL DSN'ler (kurulum sihirbazı/veritabanı anahtarı)
+> **Şifrelenmiş şifreler**: Panel tarafından yazılan MySQL/PostgreSQL DSN'ler (kurulum sihirbazı / veritabanı anahtarı)
 > `.env`'de `enc:...` (AES-256-GCM, anahtar `CF_SECRET_ENCRYPTION_KEY`) olarak depolanır.
 > Okunduğunda şifreleri çözülür; Elle yazılan düz metin DSN'ler hâlâ çalışıyor.
 
@@ -397,12 +398,12 @@ CF_DB_MAX_IDLE_CONNS=10
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | İptables tabanlı trafik hesaplamasını devre dışı bırakmak için `0` olarak ayarlayın (varsayılan olarak etkindir) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Trafik muhasebesi için kullanılan iptables tablosu, varsayılan `corefusion` |
 
-> **Şifreleme anahtarı `.env.secret` içinde saklanır**: ilk başlatmada `CF_SECRET_ENCRYPTION_KEY`, `.env` ile aynı dizindeki `.env.secret` (0600) dosyasına yazılır, `.env` içine yazılmaz; `.env` içindeki eski anahtar otomatik olarak taşınır. Bu dosyayı ayrıca yedekleyin — kaybolursa tüm `enc:` değerleri çözülemez.
+> **Şifreleme anahtarı `.env.secret`'de bulunur**: ilk başlangıçta `CF_SECRET_ENCRYPTION_KEY`, `.env` yerine `.env.secret`'ye (0600, `.env` ile aynı dizin) yazılır; `.env`'deki eski bir anahtar otomatik olarak taşınır. Bu dosyayı ayrı olarak yedekleyin; onu kaybederseniz, tüm `enc:` değerlerinin şifresi çözülemez hale gelir.
 
 > Gerçek istemci IP'lerini çözümlemeye yönelik güvenilir ters proxy'ler artık ortam değişkenleri aracılığıyla yapılandırılmamaktadır;
 > **Ayarlar → Ağ**'da `panel.trusted_proxies` olarak depolanırlar.
 
-> Hem `.env` hem de `.env.secret` sır içerir; panel başlangıçta izinlerini `0600`'e sıkılaştırır. Bunları asla commit etmeyin.
+> Hem `.env` hem de `.env.secret` sırlar içerir; panel başlangıçta izinlerini `0600`'ye sıkılaştırıyor. Bunları asla taahhüt etmeyin.
 
 ### 2.10 Docker (isteğe bağlı, kendi görüntünüzü oluşturun)
 
@@ -463,7 +464,7 @@ CoreFusion first start - setup wizard
 3. URL'yi bir tarayıcıda açın (zaten `init_token` içeriyor, dolayısıyla manuel girişe gerek yok).
 
 > Sihirbaz oturumu varsayılan olarak **2 saat** sonra sona erer. Süresi dolarsa veya panel yeniden başlarsa yenisini alın.
-> Tokenı paylaşmayın. Kurulum tamamlandığında bu bağlantı noktası kapanır ve yalnızca normal panel bağlantı noktası kalır.
+> Tokeni paylaşmayın. Kurulum tamamlandığında bu bağlantı noktası kapanır ve yalnızca normal panel bağlantı noktası kalır.
 
 ### 3.2 Sihirbaz adımları
 
@@ -519,7 +520,7 @@ Bir proxy seçildiğinde panel genellikle yalnızca `127.0.0.1`'yi dinler ve pro
 
 | Alan | Açıklama |
 |-------|-------------|
-| Adresi dinle | Otomatik olarak türetilmiştir: proxy → `127.0.0.1`; sertifikalı vekil yok → `0.0.0.0`; aksi takdirde → `127.0.0.1` |
+| Adresi dinle | Otomatik olarak türetilmiştir: proxy → `127.0.0.1`; sertifikalı vekil yok → `0.0.0.0`; aksi halde → `127.0.0.1` |
 | Panel bağlantı noktası | Varsayılan olarak rastgele ücretsiz bağlantı noktası; isterseniz değiştirin (ör. 8080) |
 | Abonelik bağlantı noktası | İsteğe bağlı; `0` panel bağlantı noktasını paylaşıyor |
 | Portal bağlantı noktası | İsteğe bağlı; `0` panel bağlantı noktasını paylaşıyor |
@@ -723,24 +724,26 @@ Düğüm yönetimi CoreFusion'nin temelidir ve çeşitli düğüm türlerini des
 
 ### 5.3 Tek tıklamayla dağıtım
 
-1. Düğümü ekledikten sonra “Bootstrap komutu”na tıklayın;
-2. Kurulum komutunu kopyalayın;
-3. Uzak düğümde kök olarak çalıştırın:
+1. Düğümü ekledikten sonra, düğüm listesinden “Komutu dağıt”ı seçin (ayrıntı sayfasında ayrıca
+ “Önyükleme yükleme komutu”);
+2. Komutu kopyalayın — tek seferlik bir kayıt jetonu içerir (24 saat geçerlidir, yeniden kullanmayın);
+3. Uzak düğümde kök olarak çalıştırın; şuna benziyor:
 
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<panel-host>:<panel-port>/api/v1/agent/install?id=<node-id>&token=<one-time-token>&port=<panel-port>")
    ```
 
-4. Aracı otomatik olarak indirilir, kaydedilir ve başlar.
+4. Agent paketi indirir, panele kaydolur ve başlar.
 
 ### 5.4 Düğüm ayrıntıları
 
 Ayrıntı sayfasını açmak için bir düğüme tıklayın:
 
-- **Genel Bakış**: temel bilgiler, Temsilci durumu, sertifika durumu
+- **Genel Bakış**: temel bilgiler, Temsilci durumu, sertifika durumu; kaynak kartları CPU / bellek / disk kullanımını, NIC yukarı/aşağı oranını, çekirdek kullanıcı trafiği oranını, aylık kullanılan trafiği, TCP bağlantılarını, sistem yükünü ve çıkış NIC kümülatif trafiğini gösterir (her 10 saniyede bir sessiz yenileme)
 - **Protokol merkezi**: temel süreç yapılandırması
 - **Proxy**: Caddy / Nginx yapılandırması
 - **Temel işlemler**: başlat / durdur / yeniden başlat
+- **Çekirdek trafiği**: Çekirdek tarafından iletilen kullanıcı trafiği ve bunun aylık toplamı
 - **WARP**: WARP yapılandırması
 - **Doğrudan alanlar**: alan yönetimi
 - **Oran sınırı**: trafiği şekillendirme
@@ -769,21 +772,40 @@ Protokol merkezi, çekirdek işlemler için protokol parametrelerini yapılandı
 
 ### 6.2 Konfigürasyon modülleri
 
+Modüller iki çekirdek arasında farklılık gösterir; panel, seçilen çekirdekle eşleşen seti gösterir:
+
+**Xray-çekirdek**
+
 - **Günlük**: erişim günlüğü, hata günlüğü, çıkış modu
 - **API**: gRPC API dinleme adresi, hizmet listesi
 - **DNS**: DNS sunucuları, sorgu stratejisi, statik ana bilgisayarlar
 - **Yönlendirme**: yönlendirme kuralları, yük dengeleme, VLESS yönlendirme
-- **Gelenler**: gelen listesi, protokol ayarları, aktarım, TLS
-- **Gidenler**: giden listesi, protokol ayarları, aktarım
-- **Aktarım**: WebSocket, gRPC, XHTTP, TUN vb.
+- **Gelen / Giden**: protokol, aktarım, TLS
+- **Aktarım**: WebSocket, gRPC, XHTTP vb. (TUN bir aktarım değil, gelen bir protokoldür)
 - **TLS**: sertifikalar, ALPN, uTLS parmak izi, ECH
 - **Reality**: hedef yönetimi, anahtar çiftleri, kısa kimlikler
-- **Durum kontrolü**: URL probu, aralık, eşzamanlılık
-- **FakeDNS**: IP havuzu, havuz boyutu
-- **Metrics**: Prometheus metrikleri dinleyicisi
-- **Politika**: bağlantı zaman aşımları, arabellekler, istatistikler
-- **Coğrafi veriler**: otomatik güncelleme, kaynak dosyaları
-- **Sürüm sınırları**: minimum / maksimum sürüm
+- **Sağlık kontrolü / FakeDNS / Ölçümler / Politika / Coğrafi veriler / Sürüm sınırları**: problar, IP havuzu, Prometheus, zaman aşımları ve arabellekler, kaynak dosyaları, çekirdek sürüm aralığı
+
+**sing-box**
+
+- **Günlük**: düzey, zaman damgası, çıktı
+- **NTP**: zaman senkronizasyonu
+- **DNS**: DNS sunucuları ve kuralları
+- **Yönlendirme**: `final` varsayılan giden, **Kural Kümeleri**, **Kurallar**, varsayılan etki alanı çözümleyicisi, ağ stratejisi ve geri dönüş (bkz. 6.6)
+- **Gelen/Giden**: protokol, aktarım, TLS
+- **Uç noktalar**: WireGuard (WARP yapılandırmaları dahil), MASQUE istemcileri ve benzerleri; birkaçı bir arada bulunabilir ve `tag` ile ayırt edilir
+
+> "Sistem ağ entegrasyonunu kullan" etkinken, uç noktanın **adı** çekirdek arayüzü adıdır:
+> en fazla 15 karakter, yalnızca harfler/rakamlar/`._-`. Çok uzun veya geçersiz bir ad otomatik olarak geri alınır
+> `tag` uç noktasına. Yeni uç noktalara protokol başına ön ek eklenir (`wg-` / `ts-` / `oc-` / `ovpn-c-` /
+> `ovpn-s-` / `mq-c-` / `mq-s-`) ve `WireGuard-xxxxxx` gibi eski kayıtlar normalleştirilmiş olarak gösterilir
+> Editör açılır açılmaz.
+- **Hizmetler**: `hysteria-realm`, DERP veya `resolved` gibi üst düzey sing-box `services` dizisi
+- **Sertifikalar / HTTP istemcileri / Ağ ad alanları**: Yalnızca gerektiğinde genişletebileceğiniz JSON bölümleri
+- **Deneysel**: `clash_api` ve benzeri; **etkinleştirilmedikçe oluşturulan yapılandırmaya hiçbir şey yazılmaz**
+
+> sing-box 1.12, `geosite` / `geoip` yönlendirme alanlarını kaldırdı; Coğrafi tabanlı yönlendirme artık devam ediyor
+> `rule_set`. Eski alanların korunması, çekirdeğin yapılandırmanın (`unknown field`) kodunu çözememesine neden olur.
 
 ### 6.3 Gelen yapılandırma
 
@@ -796,6 +818,31 @@ Protokol merkezi, çekirdek işlemler için protokol parametrelerini yapılandı
 4. Aktarımı seçin (TCP, WebSocket, gRPC, vb.);
 5. TLS'yi (sertifika, ALPN) yapılandırın;
 6. Kaydedin ve çekirdeğe uygulayın.
+
+> Yeni gelenler varsayılan olarak `::`'yi dinler (Linux'de çift yığın, hem IPv4 hem de IPv6'yı yönetir).
+> Yalnızca arayüzü kısıtlamanız gerektiğinde bunu `0.0.0.0` olarak veya belirli bir adresle değiştirin.
+
+"Gelen bağlantı noktasını kullan" bağlantı noktası modları aynı zamanda **güvenlik duvarı izin verme kurallarını otomatik olarak oluşturma** olanağı da sunar:
+Gelen düzenleyici ilk önce düğümün güvenlik duvarını inceler ve güvenlik duvarı / ufw / nftables / iptables algılandığında
+dinleme protokolüne (TCP/UDP) göre bağlantı noktasının kaydedilmesine izin verebilirsiniz.
+
+- hy2 / hysteria bağlantı noktası atlamalı, hem dinleme bağlantı noktasına hem de her dinamik bağlantı noktası aralığına izin verir (ör. `20000-30000`); birden çok aralık virgülle ayrılmıştır;
+- İzin bağımsızdır: mevcut bir kapsama kuralı (bağlantı noktası aralığı / çoklu bağlantı noktası) yeniden oluşturulmaz;
+- Bağlantı noktasını değiştirmek, yenisine izin vermeden önce eski kuralı iptal eder; gelenleri silmek, bağlantı noktası atlamayı devre dışı bırakmak veya Unix Soket / tun'a (dinleme bağlantı noktası yok) geçiş yapmak onu temizler;
+- Etkinleştirilmiş bir güvenlik duvarı tespit edilmediğinde yalnızca bir ipucu gösterilir ve herhangi bir kural yazılmaz.
+
+### 6.3.1 Ters proxy yolu (Erişim etki alanı → Ön TLS → Ters proxy yolu)
+
+Gelenin kendi aktarım yolu `/` olduğunda ancak bir dış nginx / caddy onu bir alt yolun altına bağladığında
+(örn. `location /apps { proxy_pass http://127.0.0.1:8080/; }`), istemcilerin `/apps`'ye veya
+istek asla bu konuma ulaşmaz; abonelik hâlâ indirilir ancak düğüm bağlanmaz.
+“Etki alanına erişim → Ön TLS” altında **Tersine proxy yolunu** doldurun:
+
+- `/apps` veya `/apps?ed=2560` (erken verilerle) girin; abonelikler ve paylaşım bağlantıları gelen aktarım yolunu **değiştirir**;
+- ws, httpupgrade, xhttp ve h2/http için geçerlidir; yolu olmayan aktarımlar (raw/tcp, kcp) göz ardı edilir;
+- TLS'nin nerede sonlandırıldığından bağımsızdır: Yol, Ön TLS kapalıyken de geçerlidir (çekirdeği takip edin);
+- gRPC'de URL öneki kavramı yoktur (istemci yolu her zaman `/{serviceName}/…`'dir), dolayısıyla yol **serviceName ile birleştirilmiştir**
+(`/apps` + `svc` → `apps/svc`); ters proxy'nin `grpc_pass`'deki bu öneki çıkarması gerekir.
 
 ### 6.4 Giden yapılandırma
 
@@ -810,20 +857,126 @@ Protokol merkezi, çekirdek işlemler için protokol parametrelerini yapılandı
 1. Gelen listesinde "Bağlantıyı paylaş"ı tıklayın;
 2. Bir format seçin:
    - URI'yi paylaşın
-   - Mihomo YAML
+   - MihomoYAML
    - sing-box JSON
    - Xray JSON
 3. Bağlantıyı kopyalayın veya bir QR kodu oluşturun.
+
+### 6.6 sing-box yönlendirme ve kural kümeleri
+
+"Protokol merkezi" → sing-box → "Yönlendirme" bölümünde iki bölüm vardır: **Kural Kümeleri** yeniden kullanılabilir olduğunu beyan eder
+kural dosyaları ve **Kurallar** maç koşullarına ve gidenlere karar verir. Kurallar şu şekilde değerlendirilir:
+yukarıdan aşağıya doğru ve ilk maç kazanır.
+
+#### 6.6.1 Kural Setleri
+
+| Alan | Açıklama |
+|-------|-------------|
+| etiket | Kurallar tarafından başvurulan kural kümesi tanımlayıcısı; benzersiz olmalı |
+| Tür | `local` düğümdeki bir dosyayı okur; `remote`, çekirdeğin onu `update_interval`'ye indirmesine izin veriyor |
+| Biçim | `.srs` için `binary` (varsayılan); Kaynak formatı `.json` için `source` |
+| Yol | `local` yolları, düğüm veri dizinine göredir; `data/rules/`'deki dosyalar `rules/xxx.srs`'yi kullanır |
+| URL | `remote` için indirme adresi; `download_detour`, indirme için kullanılan giden bağlantıyı seçer (genellikle `direct`) |
+
+Yerel kural kümeleri (önerilir; dosyaları önce "Hizmet kaynakları → Kural dosyaları" bölümünden indirin):
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> Dosyayı panele indirmek yeterli değildir: önce bir `local` kural kümesinin panele gönderilmesi gerekir.
+> düğümler ("Tüm düğümlere gönder") böylece dosya düğümün `data/rules/`'sinde bulunur; aksi takdirde çekirdek
+> dosya bulunamadığı için başlatılamıyor.
+
+Uzak kural kümeleri (düğümün URL'ye ulaşabilmesi gerekir):
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+Yerel bir dosya seçtiğinizde etiket, dosya adından türetilir (`rules/geosite-cn.srs` →
+`geosite-cn`); uzak setler için URL'nin sonundan gelir. Format ayrıca şu adresten de doldurulur:
+uzantı (`.srs` → `binary`, `.json` → `source`). Türetilen değerler serbestçe düzenlenebilir ve
+Daha önce yazdığınız değerlerin üzerine hiçbir zaman yazılmaz.
+
+> `download_detour`, sing-box 1.14'ten beri kullanımdan kaldırılmıştır ve 1.16'da kaldırılacaktır; hala
+> 1.15'te çalışıyor. Yeni konfigürasyonlar üst düzey `http_clients`'yi kullanmalıdır.
+> Bunun yerine `route.default_http_client`.
+
+#### 6.6.2 Kurallar
+
+| Alan | Maçlar |
+|-------|---------|
+| `domain` | Tam alan adı |
+| `domain_suffix` | Alt alanlar dahil alan adı son eki |
+| `domain_keyword` | Alt dize eşleşmesi |
+| `domain_regex` | Düzenli ifade |
+| `ip_cidr` / `ip_is_private` | Hedef IP'si |
+| `source_ip_cidr` | Kaynak IP'si |
+| `port` / `port_range` | Hedef bağlantı noktası |
+| `network` | `tcp` / `udp` |
+| `rule_set` | Kullanılacak Kural Kümelerinin Etiketleri |
+| `outbound` | Kullanılacak giden etiketi ("Gidenler" veya "Uç Noktalar" altında bulunmalıdır) |
+| `type: "logical"` | `mode`'nin `and` / `or` olarak ayarlandığı birleşik koşullar |
+
+Bir kuraldaki birden çok alan VE ile birleştirilir (örneğin `network` + `port`), dolayısıyla hayır
+`logical` sarıcıya ihtiyaç var. `type: "logical"`'yi yalnızca VEYA / DEĞİL kombinasyonları için kullanın. `rule_set`
+`rules`'nin yanına değil, `rules` alt kurallarının içine yerleştirilmelidir:
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 xray kurallarını taşıma
+
+| xray | sing-box |
+|------|----------|
+| Çıplak dize (`domain`'deki çıplak değerler dahil; alt dize eşleşmesi) | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]`; Gerçek bir son ek eşleşmesi için `"domain_suffix": ["a.com"]`'yi veya tam bir eşleşme için `"domain": ["a.com"]`'yi kullanın |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+Notlar:
+
+- **Etiketler çekirdekler arasında paylaşılmaz**: xray giden etiketi, sing-box kuralında kullanılamaz;
+ sing-box "Gidenler" veya "Uç Noktalar" altında gerçekten mevcut olan bir etiketi kullanın.
+- Yanlış bir giden veya uç nokta etiketi `outbound not found` raporunu veriyor; yanlış bir kural kümesi etiketi raporu
+ `rule-set not found`.
+- Doğrudan / izin verilenler listesi kurallarını ilk sıraya koyun; Bir kural eşleştiğinde daha sonraki kurallar artık geçerli olmaz.
 
 ---
 
 ## 7. Proxy yönetimi
 
-Proxy yönetimi Caddy veya Nginx ters proxy'yi yapılandırır.
+Proxy yönetimi, Caddy veya Nginx ters proxy'yi yapılandırır.
 
 ### 7.1 Proxy türleri
 
-- **Caddy**: otomatik HTTPS, HTTP/2, HTTP/3
+- **Caddy**: otomatik HTTPS, HTTP/1.1 ve HTTP/2 (HTTP/3 / QUIC, katman4 yönlendirmeyle UDP 443 çakışmasını önlemek için devre dışı bırakıldı)
 - **Nginx**: yüksek performans, esnek yapılandırma
 
 ### 7.2 Saha konfigürasyonu
@@ -842,55 +995,172 @@ Proxy yönetimi Caddy veya Nginx ters proxy'yi yapılandırır.
 - **local_port**: yerel dinleme bağlantı noktası, ör. `8443`
 - **portal_forward**: portal yönlendirme kuralı
 - **subscription_forward**: abonelik yönlendirme kuralı
+- **SNI yönlendirme**: gelen bir TLS / REALITY kullandığında ve istemciler her zaman 443'e bağlandığında, panel aşağıdakileri türetir:
+ ClientHello SNI'den 443 TCP yönlendirme kuralları (hem xray `streamSettings` hem de sing-box `tls.reality`);
+ ön proxy yalnızca TCP'yi iletir ve TLS hala çekirdek içinde sonlandırılır
 
 ---
 
 ## 8. Yönlendirme kaynakları
 
-Yönlendirme kaynakları abonelik yönlendirme kurallarını yönetir.
+Yönlendirme kaynakları, abonelikler ve yönlendirme tarafından kullanılan paylaşılan varlıkları toplar. Sayfada beş sekme vardır:
 
-### 8.1 Özellikler
+| Sekme | Amaç |
+|-----|---------|
+| Doğrudan ve CF tercihli alanlar | Aboneliklerdeki ve harici düğümlerdeki erişim adreslerini yeniden yazarken kullanılan doğrudan etki alanları / IP'ler ve Cloudflare tercih edilen etki alanları |
+| CF IP havuzu | "Erişim etki alanı" tarafından tüketilen tercih edilen IP kaynakları, bağlantı noktaları ve araştırma ayarları |
+| WAF genel kurallar | Ters proxy WAF için düğümlere aktarılan kural kaynakları ve kural dosyaları |
+| Kural dosyaları | Kural dosyalarının indirilmesi, programlı senkronizasyonu ve iletilmesi (`.srs` / `.json` / `.dat`) |
+| Dış düğümler | v2ray URI / Base64 / URL aboneliğinden harici düğümleri içe aktarın (bkz. 16.3) |
 
-- Yönlendirme kurallarını yönet
-- Yönlendirme politikalarını yapılandırma
-- Çoklu yönlendirme formatlarını destekleyin
+### 8.1 Doğrudan ve CF tercihli alanlar
 
-### 8.2 Kullanım
+- **Doğrudan erişim**: giriş alanı veya IP, varsayılan olarak 443 numaralı bağlantı noktası; düğümleri bağlayın veya genel için boş bırakın;
+- **CF tercih edilen etki alanları**: Cloudflare tercih edilen etki alanı artı bağlantı noktası, bağlantı kontrolü ile;
+- Her ikisi de abonelikler ve harici düğüm yeniden yazma tarafından kullanılan "Erişim etki alanı" adaylarını besler (bkz. 16.3).
 
-1. “Yönlendirme kaynakları”nı açın;
-2. Bir yönlendirme kuralı ekleyin;
-3. Kural adını, türünü ve koşullarını ayarlayın;
-4. Kaydet ve uygula.
+### 8.2 CF IP havuzu
+
+- Tercih edilen IP kaynaklarını (`bestproxy` tarzı kaynaklar dahil), getirme aralığını ve bağlantı noktalarını koruyun;
+- “Prob ayarları” prob aralığını, gecikme eşiğini ve prob giriş düğümünü kontrol eder; yerel araştırma
+ yalnızca açıkça erişilemeyen IP'leri filtreler, bir giriş düğümü seçerken o düğümün hattını simüle eder;
+- "Çevirici" otomatik (kurulu çekirdekler), `singbox`, `xray` veya `mihomo` olabilir; olmayan çekirdekler
+ yüklü olanlar listelenmez. Araştırma, tamamlandığında çıkan ve hiçbir zaman okumayan veya okumayan geçici bir süreç olarak çalışır.
+ çekirdeğin kendi konfigürasyonunu yazar;
+- “Erişim alanı” CF IP havuzunu somut bir değer olmadan kullandığında, bir giriş (bağlantı noktasıyla birlikte)
+ rastgele seçildi.
+
+### 8.3 WAF genel kuralları
+
+- WAF kural kaynağı URL'yi ve senkronize edilecek kural dosyalarını yapılandırın;
+- Senkronizasyondan sonra bunlar düğümlere gönderilir ve düğüm proxy'si (Nginx / Caddy) tarafından yüklenir;
+- Tam URL içeren bir dosya bu URL'den indirilir; aksi takdirde “kaynak URL + /dosya adı” kullanılır;
+- "Önbelleği eşleştir" (`match_cache` / `config_match_cache`) varsayılan olarak etkindir: süreç genelinde sınırlanmış
+ Sıcak kural eşleşmesi sonuçlarının önbelleği, istek başına kural geçişini azaltır. Yalnızca küreseldir ve hiçbir
+ etki alanı başına geçersiz kılma; Yanlış pozitifleri araştırırken A/B karşılaştırması için geçici olarak devre dışı bırakın
+ (devre dışı bırakmak, her istekte tam kural değerlendirmesi ve daha yüksek CPU kullanımı anlamına gelir).
+
+### 8.4 Kural dosyaları (yönlendirme kuralı dosyaları)
+
+Bu sekme yalnızca paneldeki kural dosyalarını indirir ve bunları düğümlere aktarır; hiçbir şey etkili olmuyor
+otomatik olarak. Bunları yönlendirmede kullanmak için "Protokol merkezi → sing-box → Yönlendirme" altında bunlara başvurun.
+Kural Kümeleri ve Kurallar'da (bkz. 6.6).
+
+- **Kural depoları**: `owner/repo` (GitHub, göz atılabilir) girin veya URL'nin tamamını indirin; planlanmış
+ senkronizasyon her 6 / 12 saatte bir, her gün saat 03:00'te, her gün gece yarısı veya haftalık Pazar günü çalıştırılabilir;
+- **Dosya ekle**: depo sürümü dışındaki tek dosyalar için (örneğin SagerNet `.srs` şubesi)
+ dosyalar); URL'nin tamamını girin; otomatik olarak indirilir;
+- **Dosya listesi**: dosya başına "İndirme" ile birlikte adı, boyutu, son güncellemeyi ve "Otomatik senkronizasyon" anahtarını gösterir;
+ üstteki "Tüm düğümlere gönder" düğmesi her kural dosyasını tüm düğümlere aktarır;
+- Dosyalar panelin `data/rules/`'sine indirilir ve gönderildiğinde düğüm verileri altında yayınlanır
+ dizinin `rules/`'si; sing-box'de bunlara `rules/<file name>` olarak bakın;
+- Formatlar:
+  - `.srs`: sing-box ikili kural seti, önerilen ve en küçük;
+  - `.json`: kaynak formatı kural seti; `rule_set`, `format: "source"`'yi ayarlamalıdır;
+  - `.dat`: xray `geosite.dat` / `geoip.dat`, sing-box'nin doğrudan kullanamayacağı.
+
+> Sayfanın üst kısmındaki daraltılabilir "Kullanım" bloğu referans örneklerini, xray eşlemesini içerir
+> tablo ve yaygın hatalar.
+
+### 8.5 Dış düğümler
+
+Harici düğümlerin içe aktarılması ve yönetilmesi [16.3 Harici düğümler](#163-external-nodes) kapsamında ele alınmaktadır.
 
 ---
 
 ## 9. Abonelik merkezi
 
-Abonelik merkezi abonelik bağlantılarını ve uç noktalarını yönetir.
+Abonelik merkezi, düğümleri istemciye hazır abonelikler halinde paketler: abonelik **biçimlerini** (ne yayınlanacağını, hangi kuralları, hangi planların bunları görebileceğini) tanımlayın, ardından abonelik **uç noktaları** (genel alan / yol) ve ardından bağlantıları dağıtın.
 
 ### 9.1 Abonelik formatları
 
-1. “Abonelik merkezi” → “Abonelik formatları”nı açın;
-2. Bir biçim ekleyin:
-   - Biçim adı
-   - Çıkış formatı (Base64, YAML, JSON, vb.)
-   - Dahil edilen protokoller
-3. Kaydet.
+“Abonelik merkezi” → “Abonelik biçimleri”; istemci çıktısı başına bir satır:
+
+| Alan | Açıklama |
+|---|---|
+| İsim | Benzersiz; `?config=<name>` onunla eşleşiyor ve müşteri iletişim kutusu bunu gösteriyor |
+| Müşteri türü | clash / shadowrocket / singbox / v2ray — yalnızca ekran gruplaması |
+| Çıkış formatı | `mihomo_yaml` (Clash/Mihomo), `singbox_json`, `xray_json`, `base64_uri`, `raw_uri` |
+| İçerik Türü / uzantı | Yanıt başlığı ve dosya adı |
+| platformu | kazan / mac / android / ios / evrensel; `?platform=` ile eşleşti, boş = evrensel |
+| Bağlı planlar | Boş = her planda kullanılabilir; aksi halde yalnızca bu planlar onu kullanabilir |
+| Kurallar | Yönlendirme kurallarına uygun format (Mihomo için yapılandırılmış düzenleyici, sing-box / Xray için kural başına ham JSON). **Kurallar formatlar arasında dönüştürülmez** |
+
+Notlar:
+
+- Aynı çıktı formatı için çeşitli konfigürasyonlar mevcut olabilir (örn. `out`, `home`); bağlantıda `config=` olan birini seçin;
+- `config` olmadan, sipariş "aboneliğe bağlı yapılandırma → `platform` eşleşmesi → varsayılan" şeklindedir;
+- Bir sing-box şablonu, istemciler için kendi `route.rule_set`'sini (normalde `remote` olarak) taşıyabilir, dolayısıyla
+ istemci onu indirir; "Kural dosyaları" altında bir düğümün `rules/`'sine gönderilen yerel dosyalar yalnızca kullanılabilir
+ istemci aboneliklerine değil, o düğümdeki çekirdeğe;
+- sing-box / Xray şablonları oluştururken panel sarkan referansları kaldırır (`final`, `dns.final`,
+ `default_domain_resolver`, `download_detour`, yerel `rule_set`, geçersiz `rule_set` tanımları, boş
+ `balancer`, vb.) böylece istemci başlangıçta ÖLÜMCÜL bir hatayla başarısız olmaz;
+- Kurallardaki giden takma adlar, gerçek etiketlere göre çözümlenir (`REJECT` / `blocked` → `block`, `DIRECT` →
+ `direct`, büyük/küçük harfe duyarlı değil); çözümlenemeyen gidenler varsayılan gidenlere ve kurala geri döner
+ konumunu koruyor;
+- Her zaman `tag = proxy`'ye sahip bir grup oluşturulur: sing-box için bir `selector` ve `random` için bir `random` dengeleyici.
+ Kurallardaki Xray ve `outbound: proxy`, eşleşen `balancerTag`'ye yeniden yazılmıştır. Kural düzenleyici yüklenir
+ "Proxy gruplarından + özel gidenlerden" dinamik olarak giden adaylar ve manuel olarak girilen etiketler
+ hala doğrulandı;
+- sing-box / Xray yapılandırmaları ayrı olarak oluşturulmalıdır; mevcut değilse müşteri bağlantılarında görünmezler (bkz. 10.3).
 
 ### 9.2 Abonelik uç noktaları
 
-1. “Abonelik merkezi” → “Abonelik uç noktaları”nı açın;
-2. Bir uç nokta ekleyin:
-   - Uç nokta adı
-   - Adresi dinle
-   - Yol
-   - İlgili format
-3. Kaydet.
+“Abonelik merkezi” → “Abonelik uç noktaları”; genel adres başına bir satır:
+
+| Alan | Açıklama |
+|---|---|
+| Etki alanı | Herkese açık abonelik alanı |
+| Yol | Etki alanı altındaki önek, varsayılan `/` |
+| Etkin | Bağlantılar oluşturulurken devre dışı bırakılan uç noktalar göz ardı edilir |
+| Açıklama | Serbest metin notu |
+
+- **Birden çok satır (çoklu alan adı)** desteklenir; birkaçı etkinleştirildiğinde, sağlayıcı etki alanı mevcut istek tarafından kullanılan etki alanını takip eder (bkz. 9.4);
+- Kökte özel bir abonelik bağlantı noktası hizmet verir (`/<token>`, `/sub` yok); panel bağlantı noktasını paylaşırken `/sub/<token>`'dir;
+- Ters proxy'ler `X-Forwarded-Proto` / `X-Forwarded-Host`'yi iletmelidir, aksi takdirde ilk etkin uç nokta kullanılır. Panelin oluşturulan Caddy / Nginx site şablonları her iki başlığı da içerir; elle tutulan proxy yapılandırmalarının manuel olarak eklenmesi gerekir.
 
 ### 9.3 Abonelik bağlantıları
 
-- `http://your-domain/sub/:token` adresinden bir abonelik alın
-- Format seçmek için `?format=yaml` gibi parametreleri kullanın
+Temel form: `https://<sub-domain>/<token>` (panel bağlantı noktası: `https://<panel-domain>/sub/<token>`)
+
+| Parametre | Açıklama |
+|---|---|
+| `format` | Çıkış formatı; takma adlar: `clash` → mihomo_yaml, `singbox`/`sing-box` → singbox_json, `xray` → xray_json, `raw` → raw_uri, `base64`/`v2ray` → base64_uri |
+| `config` | Ada göre bir abonelik biçimi uygulayın; `format` ile eşleşmelidir, aksi halde dikkate alınmaz |
+| `platform` | Bir yapılandırmayı platforma göre eşleştirin (`config` atlandığında) |
+| `providers` | `1` / `true`: Clash Sağlayıcı modu (`proxy-providers` + `use`); varsayılan satır içi düğümler |
+
+Örnekler:
+
+```bash
+# Clash dynamic subscription (config template + providers)
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray (only meaningful when such a config exists)
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# generic clients / plain text
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 Çoklu etki alanı ve Sağlayıcı modu
+
+`providers=1` ile her `proxy-providers` girişi, abonelik uç noktasına geri döner. Alan adı seçimi:
+
+1. **Bu isteğin kullandığı etki alanı** (`X-Forwarded-Host` ilk değer, bağlantı noktası çıkarılmış, aksi takdirde `Host`) **etkin** bir uç noktayla eşleşiyorsa;
+2. Aksi takdirde **en düşük kimliğe** sahip etkin uç nokta;
+3. Yol şu uç noktadan geliyor: `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+Yani alan adını değiştirmek için panel değişikliği gerekmez: yeni alan adı aracılığıyla gelen istemciler yeni alan adını sağlayıcıların içinden alır ve etkin bırakılan eski alan adı artık sabit kodlanmaz. Bir istemci eski sağlayıcı URL'yi önbelleğe aldıysa aboneliği güncelleyin (veya sağlayıcı önbelleğini temizleyin/istemciyi yeniden başlatın).
+
+Ek notlar:
+
+- Paylaşılan bir formattaki (`config_json`) `proxy-providers` göz ardı edilir (planlar arası sızıntıyı önler); sağlayıcılar plan düğüm gruplarından ve dış kaynaklardan gelir;
+- Dahili ve harici sağlayıcı önbellek yolları her zaman "dahili sağlayıcı varsayılanları → önbellek yolu şablonundan" (varsayılan `./providers/{key}.yaml`) türetilir; dış kaynaklar kendilerininkini belirleyemez;
+- Eski ayrılmış sağlayıcı `subscription-nodes` artık yayınlanmamaktadır: "tüm düğümleri" kullanan gruplar, somut sağlayıcılara veya planda hiçbiri bulunmadığında satır içi düğümlere genişler.
 
 ---
 
@@ -908,7 +1178,7 @@ Müşteri yönetimi son kullanıcıları yönetir.
    - Planı
    - Trafik kotası
    - sona erme süresi
-4. Kaydet.
+4. Kaydetmek.
 
 ### 10.2 Müşteri eylemleri
 
@@ -923,12 +1193,16 @@ Müşteri yönetimi son kullanıcıları yönetir.
 
 ### 10.3 Abonelik ayrıntıları
 
-Görmek için bir müşteriyi tıklayın:
+Müşteri yönetimi → “Abonelik” sütunu → “Ayrıntılar”. İletişim kutusunda müşterinin planında mevcut olan her formatın bağlantıları listelenir:
 
-- Abonelik bağlantısı
-- Trafik kullanımı
-- Sipariş geçmişi
-- İşlem geçmişi
+- **Clash / Mihomo**: iki sıra — satır içi düğümler ve `providers=1` (proxy sağlayıcıları), her ikisi de `config=<name>` taşır;
+- **Sing-box / Xray**: yalnızca bu formatta bir yapılandırma mevcut olduğunda ve planda görülebildiğinde gösterilir; bağlantılar `config=<name>` taşır;
+- **Base64 URI / Ham URI**: her zaman gösterilir (`config` yok);
+- Her satırın kendi kopyalama düğmesi vardır; bir satıra tıklamak aşağıdaki QR kodunu bu formata dönüştürür.
+
+Dolayısıyla yalnızca Clash yapılandırmasıyla iletişim kutusunda Clash + Base64 + Raw; sing-box / Xray bağlantıları yalnızca yapılandırmaları oluşturulduktan sonra görünür.
+
+Aynı iletişim kutusu aynı zamanda trafik kullanımını, sipariş geçmişini ve işlem geçmişini de gösterir.
 
 ---
 
@@ -955,7 +1229,7 @@ Plan yönetimi sattığınız planları yapılandırır.
    - Trafik (GB, `0` = sınırsız)
    - Eşzamanlılık sınırı
    - Hız sınırı (Mbps)
-2. Kaydetmek.
+2. Kaydet.
 
 ### 11.3 Trafik eklentileri
 
@@ -985,18 +1259,18 @@ Plan yönetimi sattığınız planları yapılandırır.
 
 Şarj yönetimi, şarj sitelerini, siparişleri ve şarj kartlarını yönetir.
 
-> **Ödeme entegrasyonu notu**
+> **Ödeme entegrasyonu**
 >
-> Panel, **ödeme kuruluşlarına doğrudan bağlanmaz** (Alipay, WeChat Pay, Stripe, bankalar vb.); yalnızca bir **aracı ödeme platformuna** bağlanır. Aracı platform ilgili ödeme kuruluşunu entegre eder, sözleşme, tahsilat ve mutabakatı yürütür ve ödeme sonuçlarını [ödeme geri çağırma API'si](api/charge-callback.md) aracılığıyla panele bildirir.
+> Panel **ödeme kurumlarıyla** (Alipay, WeChat Pay, Stripe, bankalar vb.) doğrudan entegre değildir. Yalnızca **ara ödeme platformuna** bağlanır; bu platform da ilgili ödeme kurumuyla entegre olur, sözleşme, satın alma ve ödeme işlemlerini gerçekleştirir ve ödeme sonuçlarını [charge geri arama API](api/charge-callback.md) aracılığıyla geri bildirir.
 >
-> Aracı ödeme platformu **bu projenin kapsamında değildir ve işletmeci tarafından geliştirilmelidir (veya kendi sistemi kullanılmalıdır)**. Dağıtımdan sonra «Şarj siteleri» altında kaydedin ve alan adı doğrulamasını tamamlayarak şarj girişi olarak kullanın; buradaki şarj sitesi ödeme kuruluşunun kendisi değil, aracı platformdur. Ödeme yetkinlikleri, ücretler, mutabakat ve uyumluluk, işletmeci ile ödeme kuruluşu ve aracı platform arasında kararlaştırılır ve işletmeci tarafından üstlenilir.
+> Ara ödeme platformu **bu projenin bir parçası değildir; operatörler bunu kendileri geliştirmeli (veya kendi sistemlerini kullanmalıdır)**. Dağıtıldıktan sonra, onu "Yeniden yükleme siteleri" altında kaydedin ve yeniden yükleme giriş noktası olarak kullanmak için alan adı doğrulamasını tamamlayın; Buradaki şarj sitesi ödeme kuruluşunun kendisi değil, o ara platformdur. Ödeme nitelikleri, ücretler, ödemeler ve uyumluluk, operatör, ödeme kurumu ve aracı platform tarafından kararlaştırılır ve karşılanır.
 
 ### 12.1 Şarj yerleri
 
 1. “Şarj yönetimi” → “Şarj siteleri”ni açın;
 2. Bir site ekleyin:
    - Site adı
-   - Bu aracı platformun desteklediği ödeme yöntemleri (Alipay, WeChat, USDT, Stripe vb.; platformun ödeme kuruluşlarıyla entegrasyonu üzerinden sunulur)
+   - Bu ara platformun desteklediği ödeme yöntemleri (ödeme kurumlarıyla entegrasyonu sayesinde sağlanan Alipay, WeChat, USDT, Stripe vb.)
    - Para birimi
    - Döviz kuru
 3. Kaydet;
@@ -1148,9 +1422,13 @@ Zincirlenmiş proxy'ler çoklu çıkış bağlantılarını yapılandırır.
 
 - Harici düğümleri içe aktarın (v2ray URI, Base64 URI, URL aboneliği)
 - Harici girişleri kaydedin
-- Harici düğümleri yönet (tek tek düzenle / sil)
-- Erişim alan adı: düğüm başına CDN hızlandırma / tercih edilen IP yapılandır (doğrudan alan adı, tercih edilen CF alan adı, CF IP havuzu, özel). Aboneliklerde yalnızca server/port yeniden yazılır; SNI/Host içe aktarıldığı gibi kalır. Devre dışıyken içe aktarılan adres/port kullanılır
-- «Tercih edilen CF alan adı / CF IP havuzu» belirli bir değer olmadan seçilirse havuzdan rastgele bir giriş (portuyla birlikte) seçilir; «doğrudan / özel» açık bir değer gerektirir, aksi halde düğümün kendi adresine geri döner
+- Harici düğümleri yönetin (tek tek düzenleyin / silin)
+- Erişim etki alanı: düğüm başına CDN hızlandırmayı / tercih edilen IP'yi yapılandırın (doğrudan etki alanı, CF tercih edilir)
+ etki alanı, CF IP havuzu, özel). Yalnızca aboneliklerde sunulan sunucu/bağlantı noktası yeniden yazılır;
+ SNI/Ana bilgisayar içe aktarıldığı şekilde kalır. Devre dışı bırakıldığında içe aktarılan adres/bağlantı noktası kullanılır
+- Belirli bir değer olmadan "CF tercih edilen alan adı / CF IP havuzu" seçildiğinde bir giriş seçilir
+ havuzdan rastgele (limanıyla birlikte); "doğrudan / özel" açık bir değer gerektirir, aksi takdirde
+ düğümün kendi adresine geri döner
 
 ---
 
@@ -1162,9 +1440,15 @@ Zincirlenmiş proxy'ler çoklu çıkış bağlantılarını yapılandırır.
 
 - Çevrimiçi abonelikler
 - Çevrimiçi cihazlar / IP'ler
-- Çevrimiçi düğümler
-- Gerçek zamanlı oran
-- Toplam trafik
+- Her abonelik için düğüm, IP ve bağlantı süresi
+- Gerçek zamanlı yukarı bağlantı / aşağı bağlantı oranı
+- Toplam yukarı bağlantı / toplam aşağı bağlantı / toplam trafik
+
+> **Sürekli bir çevrimiçi oturum** boyunca toplam yukarı bağlantı, toplam aşağı bağlantı ve toplam trafik birikir:
+> kısa ömürlü yeniden bağlanmalar, çekirdek yeniden başlatmaları ve sayaç sıfırlamaları bunları temizlemez. Sadece 60'tan sonra
+> Yeni bir rapor olmadan saniyeler içinde yeni bir oturum sıfırdan başlar. Bu farklı bir ölçü
+> çekirdeğin kendi "bu başlangıçtan bu yana trafik" sayacından gelir ve kullanıcının gerçekte ne yaptığını daha iyi yansıtır
+> geçerli oturum sırasında kullanılır.
 
 ### 17.2 Filtreleme
 
@@ -1197,7 +1481,7 @@ Kullanıcı yönetimi panel kullanıcılarını yönetir.
    - Rol
 4. Kaydet.
 
-### 18.3 Kullanıcı işlemleri
+### 18.3 Kullanıcı eylemleri
 
 - **Düzenle**: kullanıcı ayrıntılarını değiştir
 - **Sil**: kullanıcıyı kaldırır
@@ -1395,13 +1679,21 @@ Günlük yönetimi sistem günlüklerini gösterir.
 
 ## 25. Operasyon uzantıları
 
-Operasyon uzantıları isteğe bağlı uzantıları yapılandırır.
+"Operasyon uzantıları" (`/client-ext`), yönlendirme pazarlamasını, komisyonu ve para çekme işlemlerini yapılandırır;
+"Yasal belgeler" (`/legal-documents`), portal tarafı anlaşmalarını korur.
 
-### 25.1 Özellikler
+### 25.1 Yönlendirmeler ve komisyon
 
-- Özel uzantılar
-- Uzantı yapılandırması
-- Uzantı yönetimi
+- **İndirim yapılandırması**: indirim oranı (davetlinin ilk ödemesinin yüzdesi, `0` = devre dışı), komisyon modu (yalnızca ilk satın alma / tüm satın almalar), minimum para çekme tutarı (para çekme talebinde bulunulmadan önce komisyon bakiyesinin bu seviyeye ulaşması gerekir)
+- **Davet kodları**: Etkinleştirildiğinde kayıt için bir davet kodu gerekir; kod uzunluğunu, son kullanma günlerini ve maksimum kullanımı ayarlayın (`0` = sınırsız) ve kod listesini oluşturun/görüntüleyin
+- **Para çekme incelemesi**: beklemede / onaylandı / reddedildi şeklinde filtreleyin; bir işlem notu ekleyin ve ödeme yöntemini ve cüzdan adresini kaydedin
+- **Yönlendirme kayıtları**: davetli, davetli, komisyon tutarı ve komisyon durumu
+
+### 25.2 Yasal belgeler
+
+- "Gizlilik Politikası" ve "Hizmet Şartları"nı ayrı ayrı, yerel ayar başına bir Markdown belgesini ve canlı önizlemeyi koruyun;
+- Her belgede yerleşik sayfa yerine harici bir URL kullanılabilir; boş olduğunda yerleşik URL sayfası kullanılır (sayfaya kopyalanabilir);
+- Portal, geçerli yerel ayarın sürümünü gösterir ve eksik olduğunda varsayılan yerel ayara geri döner.
 
 ---
 
@@ -1435,7 +1727,7 @@ Operasyon uzantıları isteğe bağlı uzantıları yapılandırır.
 
 ### 26.5 Yeniden doldurma geri araması başarısız oluyor
 
-- Geri aramayı kontrol edin URL
+- URL geri aramasını kontrol edin
 - Site anahtarının eşleşip eşleşmediğini kontrol edin
 - IP izin verilenler listesini kontrol edin
 - Sipariş günlüklerini kontrol edin
@@ -1483,6 +1775,10 @@ Panel ikili programı şu alt komutları destekler (sunucuyu hiçbir argüman ba
 # Run database migrations
 ./corefusion migrate
 
+# Non-interactive init / reset init state (see 3.4, 3.5)
+./corefusion init --help
+./corefusion reset-init
+
 # Offline administration (when you cannot sign in)
 ./corefusion admin reset-password -u admin -p 'new-password'
 ./corefusion admin 2fa reset -u admin
@@ -1493,10 +1789,12 @@ Panel ikili programı şu alt komutları destekler (sunucuyu hiçbir argüman ba
 ./corefusion help
 ```
 
-> systemd ünitesi olmadan eski işlemi durdurup `nohup` ile yeniden başlatarak yeniden başlatın; günlükler `<install-dir>/data/logs/panel.log`'dedir.
+> systemd ile `systemctl restart corefusion` ve `journalctl -u corefusion -f`'yi kullanın; onsuz
+> systemd (konteynerler ve benzeri), eski işlemi durdurun ve `nohup` ile yeniden başlatın, günlükler
+> `data/logs/panel.log`'de.
 
 ---
 
-> **Belge sürümü**: v1.0
-> **Son güncelleme**: 2026-10-23
-> **Şunlar için geçerlidir**: CoreFusion v1.0+
+> **Belge sürümü**: v1.1
+> **Son güncelleme**: 2026-11-16
+> **Şunlar için geçerlidir**: CoreFusion v0.13.0-beta.x

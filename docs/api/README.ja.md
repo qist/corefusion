@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: README.md | locale: ja | updated: 2026-11-16 -->
 # CoreFusion API ドキュメント
 
 > 言語： [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · 日本語 · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · [ไทย](README.th.md) · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,15 +8,15 @@
 | 文書 | 観客 | 内容 |
 |---|---|---|
 | [subscription.md](./subscription.ja.md) | 加入者 / クライアント開発者 | サブスクリプションエンドポイント (`/sub/:token`): フォーマット、ヘッダー、ステータスコード、例 |
-| [ポータル-api.md](./portal-api.ja.md) | ポータルフロントエンド/サードパーティクライアント | クライアント ポータル API (`/api/v1/client-auth/*`、`/api/v1/public/*`): サインアップ、サインイン、プラン、注文、残高、チケット |
+| [ポータル-api.md](./portal-api.md) | ポータルフロントエンド/サードパーティクライアント | クライアント ポータル API (`/api/v1/client-auth/*`、`/api/v1/public/*`): サインアップ、サインイン、プラン、注文、残高、チケット |
 | [チャージコールバック.md](./charge-callback.ja.md) | 決済プロバイダー | 支払いコールバックの署名と検証 |
-| [admin-api.ja.md](./admin-api.ja.md) | パネル開発・自動化 | 完全な管理 API ルート テーブル (`/api/v1/*`、モジュールごとにグループ化) |
+| [admin-api.en.md](./admin-api.ja.md) | パネル開発・自動化 | 完全な管理 API ルート テーブル (`/api/v1/*`、モジュールごとにグループ化) |
 
 ---
 
 ## 1. ポートとベース URL
 
-パネルは 3 つのエンジンを同時に公開し、1 つのデータベースを共有できます。
+このパネルは、1 つのデータベースを共有して 3 つのエンジンを同時に公開できます。
 
 | エンジン | デフォルトのアクセス | 目的 |
 |---|---|---|
@@ -35,7 +35,7 @@
 | **サブスクリプション トークン** | URL のトークン: `/sub/<token>` | サブスクリプションフェッチ、ヘッダーなし |
 
 - クライアント アクセス トークンは 24 時間持続し、リフレッシュ トークンは 7 日間持続します。 JWT には `tv` (token_version) が含まれているため、ログアウト/強制サインアウトすると古いトークンがすべて無効になります。
-- 管理者の役割: `viewer` / `admin` / `operator` / `super_admin`;一部の書き込み操作には、`RequireRole(RoleAdmin)` 以降が必要です。
+- 管理者の役割レベル: `viewer(10) < operator(20) < admin(30) < super_admin(40)`。通常、読み取りにはサインインしたセッションのみが必要です。書き込みにはモジュールごとに `operator` / `admin` / `super_admin` が必要です。 [admin-api.md](./admin-api.ja.md) の「権限」列を参照してください。
 
 ## 3. 応答フォーマット
 
@@ -70,9 +70,9 @@
 |---|---|---|
 | GET | `/` | 管理パネル SPA (サインイン後) |
 | GET | `/p` | ポータル HTML (専用ポータル エンジン上の `/`) |
-| GET | `/:token` | 専用ポートでのサブスクリプションフェッチ (`/sub` プレフィックスなし、`/sub/:token` と同じセマンティクス) |
+| GET | `/:token` | 専用ポートでのサブスクリプションのフェッチ (`/sub` プレフィックスなし、`/sub/:token` と同じセマンティクス) |
 | GET | `/static/:file` | フロントエンドの静的アセット |
 
 ## 6. 真実の情報源
 
-`internal/api/router/router.go` (件数はバージョンにより変動します。コードが優先されます)。 [admin-api.md](./admin-api.ja.md) のルート テーブルはコードから生成されます。コードと一致しない場合は、**コードが優先されます**。
+`internal/api/router/router.go` (カウントはバージョンによって異なります。コードは信頼できます)。 [admin-api.md](./admin-api.md) のルート テーブルはコードから生成されます。コードと一致しない場合は、**コードが優先されます**。

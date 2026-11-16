@@ -1,9 +1,9 @@
-<!-- source: charge-callback.md | locale: ja | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: ja | updated: 2026-11-16 -->
 # チャージコールバック API
 
 > 言語： [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · 日本語 · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
 
-**支払いプラットフォーム/サイト インテグレータ**の場合: ユーザーがマウントされたサイトで支払いを行った後、支払いプラットフォームのサーバーがパネルに通知します。
+**支払いプラットフォーム/サイト インテグレーター**の場合: ユーザーがマウントされたサイトで支払いを行った後、支払いプラットフォームのサーバーがパネルに通知します。
 
 ## 1. エンドポイント
 
@@ -42,7 +42,7 @@ Content-Type: application/json
 | `status` | ビジネスステータス、**未署名** |
 | `amount` / `currency` | 注文金額 (セントの整数) と通貨 (両方とも符号付き) |
 | `timestamp` | Unix 秒。窓の外で拒否されました（署名済み） |
-| `nonce` | リプレイ保護: アトミック INSERT、各 nonce が 1 回処理 (署名済み) |
+| `nonce` | リプレイ保護: アトミック INSERT、各 nonce が 1 回処理 (署名付き) |
 | `paid_*` / `method` / `exchange_rate` / `paid_at` | 実際の支払い情報、**署名なし** (`body_hash` で完全性が保証されています) |
 | `sign` | HMAC-SHA256 署名、16 進エンコード (`sign` なしで本体に対して計算) |
 | `extra` | 拡張フィールド |
@@ -98,8 +98,9 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. 応答
 
-- 成功: 2xx (パネルが支払いを転記した後)
-- 失敗: 4xx/5xx + `{ "code": "...", "message": "..." }`;典型的なコードには、`INVALID_SIGNATURE`、`IP_BLOCKED`、`ORDER_NOT_FOUND`、金額の不一致などが含まれます。
+- 成功: HTTP 200、`{"code":0,"data":{"success":true,"message":"ok"}}` (パネルが支払いを転記した後)
+- 失敗: HTTP 400、`{"code":"CALLBACK_FAILED","message":"..."}`;具体的な理由は `message` にあります (署名が間違っている、IP がホワイトリストに登録されていない、注文が見つからない、金額/通貨の不一致、ノンス リプレイなど)
+- パス内の無効な `site_id` は `INVALID_SITE_ID` を返します。非 JSON ボディは `INVALID_REQUEST` を返します
 
 > すべてのコールバックには `X-Request-ID` (存在しない場合はパネルによって生成される) が含まれます。ログとイベントはエンドツーエンドで追跡可能です。トラブルシューティングの際には、この ID を管理者に伝えてください。
 

@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: tr | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: tr | updated: 2026-11-16 -->
 # Abonelik API (genel)
 
 > Diller: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · Türkçe · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -22,6 +22,7 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 | `config` | Yapılandırma şablonu adı (yönetici arayüzünde "Abonelik biçimleri" altında tanımlanır). Bu isteğin `format`'si ile aynı format kullanılmalıdır, aksi takdirde dikkate alınmaz |
 | `platform` | Bir yapılandırma şablonunu platform adına göre eşleştirin (`config` atlandığında kullanılır); formatın da eşleşmesi gerekir |
 | `providers` | Yalnızca `mihomo_yaml`: `1` / `true`, **Sağlayıcı modunu** etkinleştirir (`proxy-providers`'yi yayınlayın ve `use` aracılığıyla bunlara referans verin); varsayılan veya başka herhangi bir değer, düğümleri `proxies` altında satır içi tutar. Bkz. §6 |
+| `provider` | Yalnızca `mihomo_proxies_yaml`: sağlayıcı anahtarıyla yalnızca o kaynağın düğüm alt kümesi döndürülür (faturalandırma sözde düğümleri hariç); empty tüm düğümleri döndürür. Panel tarafından oluşturulan `proxy-providers.url` bunu otomatik olarak içerir |
 
 ### Desteklenen `format` değerleri
 
@@ -31,7 +32,7 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 | `raw_uri` | Yeni satıra katılan paylaşım bağlantıları, düz metin | Düz bağlantılara/hata ayıklamaya ihtiyaç duyan istemciler |
 | `mihomo_yaml` | Tam Clash/Mihomo YAML yapılandırması (proxy grupları ve kurallarla) | Clash.Meta / mihomo / Clash Verge Rev |
 | `mihomo_proxies_yaml` | Yalnızca `proxies:` düğüm listesiyle YAML | mihomo proxy sağlayıcı kaynağı (planlanmış yenilemeyle) |
-| `singbox_json` | Tam sing-box JSON yapılandırması | sing-box / SFI / FLClash (sing-box çekirdeği) |
+| `singbox_json` | Tam sing-box JSON konfigürasyonu | sing-box / SFI / FLClash (sing-box çekirdeği) |
 | `xray_json` | Tam Xray JSON yapılandırması | Xray-çekirdek |
 
 > Protokol/format uyumluluğu geçerlidir: örneğin, `anytls` yalnızca sing-box/Mihomo formatlarında görünür; **xray tarafından sunulan REALITY düğümleri, sing-box aboneliklerinden hariç tutulur** (sing-box, xray'nin REALITY uygulamasını desteklemez, bkz. sing-box#4520) ancak yine de Xray aboneliklerinde görünürken **REALITY düğümleri hizmet verir sing-box tarafından hem Xray hem de sing-box aboneliklerinde çalışır**. İstemcinin tanıyamadığı düğümler, tüm aboneliğin başarısız olması yerine otomatik olarak bırakılır.
@@ -43,7 +44,7 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 | `Subscription-Userinfo` | `upload=1024; download=2048; total=1073741824; expire=1760000000` | Kullanım ve sona erme (bayt / Unix saniye). **Ayrıca 403'e de gönderilir**, böylece müşteriler kalan ödeneği gösterebilirler |
 | `Profile-Update-Interval` | `6` | Önerilen yenileme aralığı (saat) |
 | `Profile-Title` | `CoreFusion` | Profil adı (Clash Verge Rev / V2RayN vb. tarafından gösterilir) |
-| `Profile-Web-Page-Url` | `https://portal.example.com` | Portal URL (istemcilerde “web sayfasını aç”; portalın kendi bağlantı noktası olduğunda kök yol, aksi halde /p) |
+| `Profile-Web-Page-Url` | `https://portal.example.com` | Portal URL (istemcilerde “web sayfasını aç”; portalın kendi bağlantı noktası olduğunda kök yol, aksi takdirde /p) |
 | `Content-Type` | Format başına: `text/plain` / `text/yaml` / `application/json` |  |
 | `Content-Disposition` | `attachment; filename="subscription.txt"` |  |
 
@@ -53,8 +54,9 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 |---|---|---|
 | 200 | — | Normal (gövde, `format`'de oluşturulan aboneliktir) |
 | 400 | `MISSING_TOKEN` | URL'de jeton yok |
-| 403 | (düz metin) | Abonelik askıya alındı / süresi doldu / etkin değil. Mesaj `Accept-Language` aracılığıyla yerelleştirilmiştir (zh/en/ja/ko) ve tek satırlık bir nedendir |
+| 403 | (düz metin) | Abonelik askıya alındı / süresi doldu / etkin değil / IP beyaz listeye alınmadı. Mesaj `Accept-Language` aracılığıyla yerelleştirilmiştir (zh/en/ja/ko/ru) ve tek satırlık bir nedendir |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Jeton mevcut değil |
+| 429 | `TOO_MANY_REQUESTS` | Abonelik uç noktası hız sınırına (`SubscribeRateLimit`) ulaşıldı; JSON hatası, daha sonra tekrar deneyin |
 
 > İptal edilen abonelikler mevcut olmayan abonelikler olarak kabul edilir (404).
 
@@ -116,12 +118,12 @@ Sağlayıcı türleri:
 | tür | Anahtar | Notlar |
 |---|---|---|
 | Dahili | Temizlenmiş düğüm grubu adı | Plan düğüm grubu başına oluşturulur; yalnızca o grubun düğümlerini içerir |
-| Ayrılmış (kullanımdan kaldırıldı) | `subscription-nodes` | Artık `proxy-providers` içinde gönderilmez; ona başvuran grup somut provider'lara genişletilir, yoksa düğümler doğrudan satır içine alınır |
+| Ayrılmış (kullanımdan kaldırıldı) | `subscription-nodes` | Artık `proxy-providers`'de yayınlanmıyor; ona referans veren bir grup, somut sağlayıcılara veya planın hiçbir özelliği olmadığında satır içi düğümlere genişler |
 | Harici | Planda yapılandırılan ad | Harici kaynak (`http` YAML veya `file`) |
 
 Sağlayıcı başına ortak alanlar:
 
-- `url` — ana istekten `config` / `platform`'yi devralan `format=mihomo_proxies_yaml` ile bu aboneliğe işaret eder; dahili sağlayıcılar `provider=<key>`'yi ekler;
+- `url` — ana istekten `config` / `platform`'yi devralan `format=mihomo_proxies_yaml` aboneliğine işaret eder; dahili sağlayıcılar `provider=<key>`'yi ekler;
 - `path` — **her zaman “dahili sağlayıcı varsayılanlarından → önbellek yolu şablonundan” türetilmiştir** (varsayılan `./providers/{key}.yaml`, `{key}` değiştirildi). Dış sağlayıcılar da kendi yollarını belirleyemez;
 - `health-check` — `enable / url / interval`; dahili sağlayıcılar varsayılanları devralır, harici sağlayıcılar bunu planda yapılandırır;
 - `interval` — saniye cinsinden yenileme aralığı.
@@ -130,7 +132,7 @@ Sağlayıcı başına ortak alanlar:
 
 "Abonelik merkezi → Abonelik uç noktaları" **birden fazla** kayıt tutabilir (etki alanı + yol + etkin). Sağlayıcı `url` alan adını şu sırayla seçer:
 
-1. **Bu isteğin gerçekte kullandığı etki alanı**: `X-Forwarded-Host`'nin ilk değeri (bağlantı noktası ayrılmış), aksi takdirde `Host`; **etkin** bir uç noktayla eşleşmelidir;
+1. **Bu isteğin gerçekte kullandığı etki alanı**: `X-Forwarded-Host`'nin ilk değeri (bağlantı noktası ayrılmış), aksi halde `Host`; **etkin** bir uç noktayla eşleşmelidir;
 2. Hiçbir şey eşleşmezse **en düşük kimliğe** sahip etkin uç noktaya geri dönün;
 3. Yol, eşleşen uç noktadan (`path`, varsayılan `/`) gelir ve `https://<domain><path>/<token>?format=mihomo_proxies_yaml...` sonucunu verir.
 

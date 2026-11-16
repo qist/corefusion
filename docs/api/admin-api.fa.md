@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: fa | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: fa | updated: 2026-11-16 -->
 # ادمین API
 
 > زبان‌ها: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · فارسی
@@ -8,7 +8,7 @@
 - پایه URL: `https://<panel-domain>/api/v1`
 - اعتبار: `Authorization: Bearer <admin_token>` (از `POST /api/v1/auth/login`)
 - فرمت‌های رایج پاسخ/خطا و قراردادهای محدودیت نرخ: به [README.md](./README.fa.md) مراجعه کنید
-- منبع حقیقت: `internal/api/router/router.go` (تعداد بسته به نسخه تغییر می‌کند؛ کد مرجع است)؛ اگر این جدول مخالف باشد، **کد برنده می شود**
+- منبع حقیقت: `internal/api/router/router.go` (تعداد بر اساس نسخه متفاوت است؛ کد معتبر است). اگر این جدول مخالف باشد، **کد برنده می شود**
 
 ## نشانگرهای مجوز
 
@@ -17,8 +17,11 @@
 | عمومی | نیازی به ورود به سیستم نیست (ممکن است گارد تعمیر و نگهداری / محدودیت نرخ همچنان اعمال شود) |
 | عمومی · نرخ محدود | بدون ورود به سیستم، با محدودیت نرخ اختصاصی |
 | وارد شده است | به یک رمز ورود به سیستم مدیریت نیاز دارد (`AuthRequired`) |
+| اپراتور | به نقش ≥ `operator` (`RequireRole(RoleOperator)`) نیاز دارد |
 | مدیر | به نقش ≥ `admin` (`RequireRole(RoleAdmin)`) نیاز دارد |
 | فوق ادمین | نیاز به نقش = `super_admin` |
+| مشتری (عمومی) | بدون نیاز به رمز مشتری (ورود به سیستم / ثبت نام و غیره) |
+| مشتری (ورود به سیستم) | به `Authorization: Bearer <client_token>` نیاز دارد (یک توکن مشتری پورتال، نه یک توکن مدیریت) |
 
 سطوح نقش: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; نقش های ناکافی 403 `INSUFFICIENT_ROLE` را برمی گرداند.
 
@@ -116,32 +119,42 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [احراز هویت و امنیت ادمین](#احراز-هویت-و-امنیت-ادمین)
 - [حساب های مدیریت](#حساب-های-مدیریت)
 - [مدیریت مشتری](#مدیریت-مشتری)
+- الگوهای [Plan](#plan-templates)
+- انواع [Plan](#plan-variants)
 - [قالب های پلان](#قالب-های-پلان)
-- [انواع طرح](#انواع-طرح)
-- [بسته های ترافیکی](#بسته-های-ترافیکی)
 - کوپن [](#coupons)
+- [انواع طرح](#انواع-طرح)
+- سرورهای [Node](#node-servers)
+- [بسته های ترافیکی](#بسته-های-ترافیکی)
 - [کوپن](#کوپن)
 - [گروه های گره](#گروه-های-گره)
+- اشتراک [](#subscriptions)
+- فرمت های اشتراک [](#subscription-formats)
 - [سرورهای نود](#سرورهای-نود)
 - [گزارش حسابرسی گره](#گزارش-حسابرسی-گره)
 - [گره ها (مدل قدیمی، بازنشسته)](#گره-ها-مدل-قدیمی-بازنشسته)
-- اشتراک [](#subscriptions)
-- فرمت های اشتراک [](#subscription-formats)
+- پیکربندی اشتراک [ (Mihomo/Clash)](#subscription-config-mihomoclash)
 - [نمای کلی منطقه](#نمای-کلی-منطقه)
 - [اشتراک ها](#اشتراک-ها)
+- کارت شارژ [](#recharge-cards)
 - [فرمت های اشتراک](#فرمت-های-اشتراک)
 - [نقاط پایانی اشتراک](#نقاط-پایانی-اشتراک)
 - [دامنه ها را به اشتراک بگذارید](#دامنه-ها-را-به-اشتراک-بگذارید)
 - [IP Cloudflare](#ip-cloudflare)
-- کارت شارژ [](#recharge-cards)
 - [پیکربندی اشتراک (Mihomo/Clash)](#پیکربندی-اشتراک-mihomoclash)
-- [سایت های شارژ](#سایت-های-شارژ)
+- [سایت ها را شارژ کنید](#سایت-ها-را-شارژ-کنید)
+- لیست های مجاز [IP (خلاصه)](#ip-allow-lists-summary)
 - [سفارشات شارژ](#سفارشات-شارژ)
 - [کارت های شارژ](#کارت-های-شارژ)
 - [رویدادهای برگشت به تماس را شارژ کنید](#رویدادهای-برگشت-به-تماس-را-شارژ-کنید)
 - [شارژ مجدد تماس ها](#شارژ-مجدد-تماس-ها)
 - [موجودی مشتری](#موجودی-مشتری)
 - [هدایا](#هدایا)
+- پیکربندی [EAB](#eab-configuration)
+- حساب های [ACME](#acme-accounts)
+- [ CA](#built-in-ca) داخلی
+- قوانین [Geo](#geo-rules)
+- کتابخانه قوانین [WAF](#waf-rule-library)
 - [پیکربندی ارجاع](#پیکربندی-ارجاع)
 - [برداشت های ارجاعی](#برداشت-های-ارجاعی)
 - [لیست های مجاز IP (خلاصه)](#لیست-های-مجاز-ip-خلاصه)
@@ -149,7 +162,6 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [بلیط (ادمین)](#بلیط-ادمین)
 - [مقالات](#مقالات)
 - [حساب های مشترک](#حساب-های-مشترک)
-- [ CA](#built-in-ca) داخلی
 - [گواهینامه ها](#گواهینامه-ها)
 - [کانال های گواهی](#کانال-های-گواهی)
 - [پیکربندی EAB](#پیکربندی-eab)
@@ -157,19 +169,10 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 - [CA داخلی](#ca-داخلی)
 - [قوانین جغرافیایی](#قوانین-جغرافیایی)
 - [کتابخانه قوانین WAF](#کتابخانه-قوانین-waf)
-- الگوهای پورتال [](#portal-templates)
 - [مدیریت لاگ](#مدیریت-لاگ)
 - [پشتیبان گیری](#پشتیبان-گیری)
-- [تنظیمات سیستم](#تنظیمات-سیستم)
-- [ممیزی امنیتی](#ممیزی-امنیتی)
-- [معیارها](#معیارها)
-- [قالب های پورتال](#قالب-های-پورتال)
-- [نصب عامل](#نصب-عامل)
-- [شارژ ورودی برگشت به تماس](#شارژ-ورودی-برگشت-به-تماس)
-- [ورودی ها (با گره ها)](#ورودی-ها-با-گره-ها)
-- [پیکربندی عمومی](#پیکربندی-عمومی)
 - صفحه پورتال [](#portal-page)
-- [اعتبار مشتری و کسب و کار (همان مجموعه در موتور مدیریت)](#اعتبار-مشتری-و-کسب-و-کار-همان-مجموعه-در-موتور-مدیریت)
+- چالش های [ACME](#acme-challenges)
 
 ---
 
@@ -196,8 +199,8 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/auth/passkey/login/finish` | عمومی | ورود به سیستم کامل |
 | POST | `/api/v1/auth/passkey/register/begin` | وارد شده است | شروع ثبت نام |
 | POST | `/api/v1/auth/passkey/register/finish` | وارد شده است | ثبت نام کامل |
-| GET | `/api/v1/auth/passkey/rpids` | وارد شده است | لیست مجاز RP ID |
-| POST | `/api/v1/auth/passkey/rpids` | وارد شده است | لیست مجاز RP ID را به روز کنید |
+| GET | `/api/v1/auth/passkey/rpids` | مدیر | لیست مجاز RP ID |
+| POST | `/api/v1/auth/passkey/rpids` | مدیر | لیست مجاز RP ID را به روز کنید |
 | GET | `/api/v1/auth/passkey/status` | عمومی | وضعیت |
 | POST | `/api/v1/auth/refresh` | عمومی | تازه کردن |
 | POST | `/api/v1/auth/ticket` | وارد شده است | صدور بلیط یک بار کوتاه مدت |
@@ -220,17 +223,17 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/clients` | وارد شده است | مشتریان را فهرست کنید |
-| POST | `/api/v1/clients` | وارد شده است | مشتری ایجاد کنید. بدنه: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` مورد نیاز است. `password` ممکن است خالی باشد (مشتریان می توانند آن را بعداً در پورتال تنظیم کنند) |
-| DELETE | `/api/v1/clients/:id` | وارد شده است | مشتری را حذف کنید |
+| POST | `/api/v1/clients` | اپراتور | مشتری ایجاد کنید. بدنه: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. `plan_id` مورد نیاز است. `password` ممکن است خالی باشد (مشتریان می توانند آن را بعداً در پورتال تنظیم کنند) |
+| DELETE | `/api/v1/clients/:id` | اپراتور | مشتری را حذف کنید |
 | GET | `/api/v1/clients/:id` | وارد شده است | مشتری بگیر |
-| PUT | `/api/v1/clients/:id` | وارد شده است | مشتری را به روز کنید |
-| POST | `/api/v1/clients/:id/downgrade` | وارد شده است | کاهش رتبه مشتری |
+| PUT | `/api/v1/clients/:id` | اپراتور | مشتری را به روز کنید |
+| POST | `/api/v1/clients/:id/downgrade` | اپراتور | کاهش رتبه مشتری |
 | GET | `/api/v1/clients/:id/orders` | وارد شده است | لیست سفارش مشتری |
-| POST | `/api/v1/clients/:id/renew` | وارد شده است | تمدید مشتری |
-| POST | `/api/v1/clients/:id/reset-usage` | وارد شده است | بازنشانی استفاده |
-| POST | `/api/v1/clients/:id/restore` | وارد شده است | رزومه مشتری |
-| POST | `/api/v1/clients/:id/suspend` | وارد شده است | تعلیق مشتری |
-| POST | `/api/v1/clients/:id/upgrade` | وارد شده است | مشتری را ارتقا دهید |
+| POST | `/api/v1/clients/:id/renew` | اپراتور | تمدید مشتری |
+| POST | `/api/v1/clients/:id/reset-usage` | اپراتور | بازنشانی استفاده |
+| POST | `/api/v1/clients/:id/restore` | اپراتور | رزومه مشتری |
+| POST | `/api/v1/clients/:id/suspend` | اپراتور | تعلیق مشتری |
+| POST | `/api/v1/clients/:id/upgrade` | اپراتور | مشتری را ارتقا دهید |
 
 ### قالب های پلان
 
@@ -239,17 +242,17 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | وارد شده است | لیست قالب |
-| POST | `/api/v1/plan-templates` | وارد شده است | قالب ایجاد کنید |
-| DELETE | `/api/v1/plan-templates/:id` | وارد شده است | حذف قالب |
+| POST | `/api/v1/plan-templates` | مدیر | قالب ایجاد کنید |
+| DELETE | `/api/v1/plan-templates/:id` | مدیر | حذف قالب |
 | GET | `/api/v1/plan-templates/:id` | وارد شده است | جزئیات الگو |
-| PUT | `/api/v1/plan-templates/:id` | وارد شده است | به روز رسانی قالب |
+| PUT | `/api/v1/plan-templates/:id` | مدیر | به روز رسانی قالب |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | وارد شده است | گره های موجود را دریافت کنید |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | وارد شده است | گزینه های گره قابل پرداخت را دریافت کنید |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | وارد شده است | گروه های گره الگو را تنظیم کنید |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | وارد شده است | همگام سازی حساب ها با الگو |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | مدیر | گروه های گره الگو را تنظیم کنید |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | مدیر | همگام سازی حساب ها با الگو |
 | GET | `/api/v1/plan-templates/:id/variants` | وارد شده است | لیست انواع |
-| POST | `/api/v1/plan-templates/:id/variants` | وارد شده است | ایجاد نوع |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | وارد شده است | همگام سازی همه حساب ها |
+| POST | `/api/v1/plan-templates/:id/variants` | مدیر | ایجاد نوع |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | مدیر | همگام سازی همه حساب ها |
 
 ### انواع طرح
 
@@ -257,8 +260,8 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | وارد شده است | حذف نوع |
-| PUT | `/api/v1/plan-variants/:id` | وارد شده است | به روز رسانی نسخه |
+| DELETE | `/api/v1/plan-variants/:id` | مدیر | حذف نوع |
+| PUT | `/api/v1/plan-variants/:id` | مدیر | به روز رسانی نسخه |
 
 ### بسته های ترافیکی
 
@@ -267,9 +270,9 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | وارد شده است | لیست بسته ترافیک |
-| POST | `/api/v1/traffic-packs` | وارد شده است | بسته ترافیکی ایجاد کنید |
-| DELETE | `/api/v1/traffic-packs/:id` | وارد شده است | بسته ترافیک را حذف کنید |
-| PUT | `/api/v1/traffic-packs/:id` | وارد شده است | بسته ترافیک را به روز کنید |
+| POST | `/api/v1/traffic-packs` | مدیر | بسته ترافیکی ایجاد کنید |
+| DELETE | `/api/v1/traffic-packs/:id` | مدیر | بسته ترافیک را حذف کنید |
+| PUT | `/api/v1/traffic-packs/:id` | مدیر | بسته ترافیک را به روز کنید |
 
 ### کوپن
 
@@ -278,28 +281,28 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | وارد شده است | لیست کوپن ها |
-| POST | `/api/v1/promotions` | وارد شده است | ایجاد کوپن |
-| DELETE | `/api/v1/promotions/:id` | وارد شده است | حذف کوپن |
-| PUT | `/api/v1/promotions/:id` | وارد شده است | به روز رسانی کوپن |
+| POST | `/api/v1/promotions` | مدیر | ایجاد کوپن |
+| DELETE | `/api/v1/promotions/:id` | مدیر | حذف کوپن |
+| PUT | `/api/v1/promotions/:id` | مدیر | به روز رسانی کوپن |
 | POST | `/api/v1/promotions/validate` | وارد شده است | اعتبار کوپن |
 
 ### گروه های گره
 
-گره ها را در گروه هایی که توسط پلان ها ارجاع داده شده اند سازماندهی کنید.
+گره ها را به گروه هایی که توسط پلان ها ارجاع داده شده اند سازماندهی کنید.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | وارد شده است | گروه های گره را فهرست کنید |
-| POST | `/api/v1/node-groups` | وارد شده است | ایجاد گروه گره |
-| DELETE | `/api/v1/node-groups/:id` | وارد شده است | حذف گروه گره |
-| PUT | `/api/v1/node-groups/:id` | وارد شده است | به روز رسانی گروه گره |
+| POST | `/api/v1/node-groups` | مدیر | ایجاد گروه گره |
+| DELETE | `/api/v1/node-groups/:id` | مدیر | حذف گروه گره |
+| PUT | `/api/v1/node-groups/:id` | مدیر | به روز رسانی گروه گره |
 | GET | `/api/v1/node-groups/:id/members` | وارد شده است | لیست اعضای گروه |
-| POST | `/api/v1/node-groups/:id/members` | وارد شده است | عضو گروه را اضافه کنید |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | وارد شده است | حذف عضو گروه |
+| POST | `/api/v1/node-groups/:id/members` | مدیر | عضو گروه را اضافه کنید |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | مدیر | حذف عضو گروه |
 
 ### سرورهای نود
 
-منابع اصلی: گره CRUD، هسته (xray/sing-box)، تحویل پیکربندی، پیکربندی ورودی/خروجی/نقطه پایانی، کنترل فرآیند، گواهی‌ها، WAF، محدودیت‌های نرخ، پرش پورت، پراکسی‌های زنجیره‌ای، آینه‌ای/اولیه-پشتیبان، کنترل زمان نصب/راه‌اندازی عامل ZXQ0. بسیاری از مسیرهای فرعی، گروه بندی شده بر اساس خانواده ویژگی.
+منابع اصلی: نود CRUD، هسته (xray/sing-box)، تحویل پیکربندی، پیکربندی ورودی/خروجی/نقطه پایانی، کنترل فرآیند، گواهی‌ها، WAF، محدودیت‌های نرخ، پرش پورت، پراکسی‌های زنجیره‌ای، آینه‌ای/اولیه-پشتیبان، کنترل زمان اجرای xray. بسیاری از مسیرهای فرعی، گروه بندی شده بر اساس خانواده ویژگی.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
@@ -328,7 +331,8 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | مدیر | ذخیره و اعمال کنید |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | مدیر | لیست سایت |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | مدیر | سایت ایجاد کنید |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | وارد کردن سایت‌ها |
+| POST | `/api/v1/node-servers/:id/caddy/import` | مدیر | سایت های وارداتی |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | مدیر | پیش نمایش رندر شده سایت Caddy |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | مدیر | حذف سایت |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | مدیر | سایت را به روز کنید |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | مدیر | تمام قوانین SNI را حذف کنید |
@@ -353,6 +357,9 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/force-reconnect` | مدیر | اتصال مجدد اجباری |
 | GET | `/api/v1/node-servers/:id/free-port` | مدیر | درخواست پورت رایگان |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | مدیر | به این گره فشار دهید |
+| GET | `/api/v1/node-servers/:id/firewall/status` | مدیر | تشخیص فایروال (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | مدیر | اجازه دادن به پورت شنیداری ورودی (پشتیبانی از چند دامنه) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | مدیر | لغو مجوز پورت ورودی (از جمله موارد تکراری) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | مدیر | فهرست کنید |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | مدیر | ایجاد کنید |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | مدیر | حذف کنید |
@@ -373,8 +380,9 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/nginx/settings` | مدیر | تنظیمات را ذخیره کنید |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | مدیر | لیست سایت |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | مدیر | سایت ایجاد کنید |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | وارد کردن سایت‌ها |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | تولید فایل‌های گواهی SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | مدیر | سایت های وارداتی |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | مدیر | پیش نمایش رندر شده سایت Nginx |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | مدیر | فایل های گواهی SSL را تولید کنید |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | مدیر | حذف سایت |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | مدیر | سایت را به روز کنید |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | مدیر | تمام قوانین SNI را حذف کنید |
@@ -454,19 +462,20 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/share-domains` | مدیر | ایجاد کنید |
 | DELETE | `/api/v1/node-servers/:id/share-domains/:domainId` | مدیر | حذف کنید |
 | PUT | `/api/v1/node-servers/:id/share-domains/:domainId` | مدیر | به روز رسانی |
-| DELETE | `/api/v1/node-servers/:id/share-domains/all` | مدیر | همه را پاک کنید |
+| DELETE | `/api/v1/node-servers/:id/share-domains/all` | مدیر | پاک کردن همه |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | مدیر | قوانین فایروال پورت پرش را اعمال کنید |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | مدیر | قوانین فایروال port-hopping را حذف کنید |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | مدیر | اتصالات زنده sing-box (فقط clash_api، گره محلی) |
 | POST | `/api/v1/node-servers/:id/speed-test` | مدیر | تست سرعت گره |
 | GET | `/api/v1/node-servers/:id/status` | مدیر | وضعیت گره |
 | POST | `/api/v1/node-servers/:id/sync` | مدیر | همگام سازی پیکربندی گره (تولید و فشار دادن) |
-| POST | `/api/v1/node-servers/:id/sync-data` | فوق ادمین | انتقال داده های پانل به گره ها (همگام سازی کامل کاربران/اشتراک ها/طرح ها) |
+| POST | `/api/v1/node-servers/:id/sync-data` | فوق ادمین | فشار دادن داده‌های پانل به گره‌ها (همگام‌سازی کامل کاربران/اشتراک‌ها/طرح‌ها) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | مدیر | همگام سازی گره آینه ای |
 | GET | `/api/v1/node-servers/:id/tags` | مدیر | لیست برچسب |
 | POST | `/api/v1/node-servers/:id/tags` | مدیر | برچسب اضافه کنید |
 | DELETE | `/api/v1/node-servers/:id/tags/:tagKey` | مدیر | حذف برچسب |
 | GET | `/api/v1/node-servers/:id/traffic-history` | مدیر | تاریخچه ترافیک |
-| POST | `/api/v1/node-servers/:id/traffic-resume` | مدیر | بازیابی ترافیک معلق به دلیل بیش از حد |
+| POST | `/api/v1/node-servers/:id/traffic-resume` | مدیر | بازگرداندن ترافیک معلق به دلیل بیش از حد |
 | GET | `/api/v1/node-servers/:id/traffic-usage` | مدیر | استفاده از ترافیک |
 | POST | `/api/v1/node-servers/:id/update-agent` | مدیر | عامل ارتقاء |
 | GET | `/api/v1/node-servers/:id/used-server-names` | مدیر | لیست در حال استفاده REALITY SNI |
@@ -496,6 +505,8 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | GET | `/api/v1/node-servers/:id/warp/config` | مدیر | پیکربندی را بخوانید |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | مدیر | ایجاد پیکربندی |
 | POST | `/api/v1/node-servers/:id/warp/register` | مدیر | ثبت نام کنید |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | مدیر | ثبت نمایه WARP MASQUE (مرحله 1 از 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | مدیر | یک sing-box MASQUE خروجی از نمایه WARP ایجاد کنید |
 | GET | `/api/v1/node-servers/:id/warp/status` | مدیر | وضعیت |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | مدیر | اطلاعات متعادل کننده را دریافت کنید |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | مدیر | هدف متعادل کننده را تنظیم کنید |
@@ -525,7 +536,7 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/migrate-cert` | مدیر | گواهی مهاجرت |
 | GET | `/api/v1/node-servers/online-summary` | مدیر | خلاصه آنلاین |
 | GET | `/api/v1/node-servers/online-users` | مدیر | همه کاربران آنلاین |
-| GET | `/api/v1/node-servers/pending-agent-updates` | مدیر | عوامل در انتظار ارتقا |
+| GET | `/api/v1/node-servers/pending-agent-updates` | مدیر | عوامل در انتظار ارتقاء |
 | POST | `/api/v1/node-servers/recommend-region` | مدیر | مناطق توصیه شده |
 | POST | `/api/v1/node-servers/select-nodes` | مدیر | گره ها را برای اشتراک انتخاب کنید |
 | POST | `/api/v1/node-servers/speed-test-all` | مدیر | تست سرعت همه گره ها |
@@ -536,7 +547,7 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | GET | `/api/v1/node-servers/users/retry-queue` | مدیر | وضعیت صف را دوباره امتحان کنید |
 | POST | `/api/v1/node-servers/users/retry-queue/process` | مدیر | صف تلاش مجدد را پردازش کنید |
 | POST | `/api/v1/node-servers/users/sync` | مدیر | همگام سازی یک مشتری |
-| POST | `/api/v1/node-servers/validate-chain-config` | مدیر | اعتبار سنجی پیکربندی زنجیره ای |
+| POST | `/api/v1/node-servers/validate-chain-config` | مدیر | اعتبار سنجی تنظیمات زنجیره ای |
 
 ### گزارش حسابرسی گره
 
@@ -544,12 +555,12 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | وارد شده است | گزارش حسابرسی گره |
-| GET | `/api/v1/node-audit-logs/export` | وارد شده است | گزارش های حسابرسی گره را صادر کنید |
+| GET | `/api/v1/node-audit-logs` | مدیر | گزارش حسابرسی گره |
+| GET | `/api/v1/node-audit-logs/export` | مدیر | گزارش های حسابرسی گره را صادر کنید |
 
 ### گره ها (مدل قدیمی، بازنشسته)
 
-> `/api/v1/nodes` CRUD در 20/10/2026 بازنشسته شد: گره ها به طور یکسان از طریق `/api/v1/node-servers` مدیریت می شوند.
+> `/api/v1/nodes` CRUD در 20/10/2026 بازنشسته شد: گره ها به طور یکنواخت از طریق `/api/v1/node-servers` مدیریت می شوند.
 > درخواست های کاربر آنلاین در `/api/v1/node-servers/{online-users,online-summary,:id/online-users}` باقی می ماند.
 
 ### نمای کلی منطقه
@@ -568,16 +579,16 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/subscriptions` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/subscriptions/:id` | وارد شده است | حذف کنید |
+| POST | `/api/v1/subscriptions` | اپراتور | ایجاد کنید |
+| DELETE | `/api/v1/subscriptions/:id` | اپراتور | حذف کنید |
 | GET | `/api/v1/subscriptions/:id` | وارد شده است | جزئیات |
-| PUT | `/api/v1/subscriptions/:id` | وارد شده است | به روز رسانی |
+| PUT | `/api/v1/subscriptions/:id` | اپراتور | به روز رسانی |
 | GET | `/api/v1/subscriptions/:id/access-logs` | وارد شده است | گزارش دسترسی |
-| POST | `/api/v1/subscriptions/:id/enable` | وارد شده است | فعال کردن |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | وارد شده است | بازنشانی استفاده |
-| POST | `/api/v1/subscriptions/:id/restore` | وارد شده است | رزومه |
-| POST | `/api/v1/subscriptions/:id/revoke` | وارد شده است | لغو |
-| POST | `/api/v1/subscriptions/:id/rotate` | وارد شده است | چرخش |
+| POST | `/api/v1/subscriptions/:id/enable` | اپراتور | فعال کردن |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | اپراتور | بازنشانی استفاده |
+| POST | `/api/v1/subscriptions/:id/restore` | اپراتور | رزومه |
+| POST | `/api/v1/subscriptions/:id/revoke` | اپراتور | لغو |
+| POST | `/api/v1/subscriptions/:id/rotate` | اپراتور | چرخش |
 | GET | `/api/v1/subscriptions/:id/rotations` | وارد شده است | تاریخچه چرخش |
 
 ### فرمت های اشتراک
@@ -593,10 +604,10 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/subscription-endpoints` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/subscription-endpoints/:id` | وارد شده است | حذف کنید |
+| POST | `/api/v1/subscription-endpoints` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/subscription-endpoints/:id` | مدیر | حذف کنید |
 | GET | `/api/v1/subscription-endpoints/:id` | وارد شده است | جزئیات |
-| PUT | `/api/v1/subscription-endpoints/:id` | وارد شده است | به روز رسانی |
+| PUT | `/api/v1/subscription-endpoints/:id` | مدیر | به روز رسانی |
 
 ### دامنه ها را به اشتراک بگذارید
 
@@ -605,11 +616,11 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/share-domains` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/share-domains/:id` | وارد شده است | حذف کنید |
-| PUT | `/api/v1/share-domains/:id` | وارد شده است | به روز رسانی |
-| DELETE | `/api/v1/share-domains/all` | وارد شده است | همه را پاک کنید |
-| POST | `/api/v1/share-domains/seed` | وارد شده است | داده های پیش فرض را راه اندازی کنید |
+| POST | `/api/v1/share-domains` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/share-domains/:id` | مدیر | حذف کنید |
+| PUT | `/api/v1/share-domains/:id` | مدیر | به روز رسانی |
+| DELETE | `/api/v1/share-domains/all` | مدیر | پاک کردن همه |
+| POST | `/api/v1/share-domains/seed` | مدیر | داده های پیش فرض را راه اندازی کنید |
 
 ### IP Cloudflare
 
@@ -617,17 +628,20 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | وارد شده است | ورودی ها را پاک کنید |
+| DELETE | `/api/v1/cfip/entries` | مدیر | ورودی ها را پاک کنید |
 | GET | `/api/v1/cfip/entries` | وارد شده است | لیست ورودی |
-| POST | `/api/v1/cfip/entries` | وارد شده است | افزودن ورودی |
-| DELETE | `/api/v1/cfip/entries/:id` | وارد شده است | حذف ورودی |
-| POST | `/api/v1/cfip/fetch-all` | وارد شده است | همه منابع را واکشی کنید |
-| POST | `/api/v1/cfip/seed` | وارد شده است | داده های پیش فرض را راه اندازی کنید |
+| POST | `/api/v1/cfip/entries` | مدیر | افزودن ورودی |
+| DELETE | `/api/v1/cfip/entries/:id` | مدیر | حذف ورودی |
+| POST | `/api/v1/cfip/fetch-all` | مدیر | همه منابع را واکشی کنید |
+| GET | `/api/v1/cfip/probe-config` | وارد شده است | پیکربندی پروب IP ترجیحی CF (گره های ورودی + شماره گیرهای نصب شده) |
+| PUT | `/api/v1/cfip/probe-config` | مدیر | ذخیره فاصله پروب / محدودیت تاخیر / گره ورودی / شماره گیر |
+| POST | `/api/v1/cfip/check` | مدیر | اکنون همه دامنه ها/IP های ترجیحی را بررسی کنید |
+| POST | `/api/v1/cfip/seed` | مدیر | داده های پیش فرض را راه اندازی کنید |
 | GET | `/api/v1/cfip/sources` | وارد شده است | فهرست منابع داده |
-| POST | `/api/v1/cfip/sources` | وارد شده است | ایجاد منبع داده |
-| DELETE | `/api/v1/cfip/sources/:id` | وارد شده است | حذف منبع داده |
-| PUT | `/api/v1/cfip/sources/:id` | وارد شده است | منبع داده را به روز کنید |
-| POST | `/api/v1/cfip/sources/:id/fetch` | وارد شده است | این منبع را واکشی کنید |
+| POST | `/api/v1/cfip/sources` | مدیر | ایجاد منبع داده |
+| DELETE | `/api/v1/cfip/sources/:id` | مدیر | حذف منبع داده |
+| PUT | `/api/v1/cfip/sources/:id` | مدیر | منبع داده را به روز کنید |
+| POST | `/api/v1/cfip/sources/:id/fetch` | مدیر | این منبع را واکشی کنید |
 
 ### پیکربندی اشتراک (Mihomo/Clash)
 
@@ -636,36 +650,36 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/mihomo/configs` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/mihomo/configs/:id` | وارد شده است | حذف کنید |
+| POST | `/api/v1/mihomo/configs` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/mihomo/configs/:id` | مدیر | حذف کنید |
 | GET | `/api/v1/mihomo/configs/:id` | وارد شده است | جزئیات |
-| PUT | `/api/v1/mihomo/configs/:id` | وارد شده است | به روز رسانی |
+| PUT | `/api/v1/mihomo/configs/:id` | مدیر | به روز رسانی |
 | GET | `/api/v1/mihomo/configs/:id/rules` | وارد شده است | لیست قوانین |
-| POST | `/api/v1/mihomo/configs/:id/rules` | وارد شده است | قانون ایجاد کنید |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | مرتب‌سازی قواعد |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | به‌روزرسانی قاعده |
-| DELETE | `/api/v1/mihomo/rules/:id` | وارد شده است | حذف قانون |
+| POST | `/api/v1/mihomo/configs/:id/rules` | مدیر | قانون ایجاد کنید |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | مدیر | قوانین را دوباره سفارش دهید |
+| PUT | `/api/v1/mihomo/rules/:id` | مدیر | قانون به روز رسانی |
+| DELETE | `/api/v1/mihomo/rules/:id` | مدیر | حذف قانون |
 
-### سایت های شارژ
+### سایت ها را شارژ کنید
 
 ادغام سایت پرداخت شخص ثالث: کلیدهای امضا، فایل های تأیید، تأیید دامنه، اسناد یکپارچه سازی.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | وارد شده است | لیست سایت |
-| POST | `/api/v1/charge-sites` | وارد شده است | سایت ایجاد کنید |
-| DELETE | `/api/v1/charge-sites/:id` | وارد شده است | حذف سایت |
-| GET | `/api/v1/charge-sites/:id` | وارد شده است | جزئیات سایت |
-| PUT | `/api/v1/charge-sites/:id` | وارد شده است | سایت را به روز کنید |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | وارد شده است | کلید قدیمی را پاک کنید |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | وارد شده است | ایجاد فایل تایید |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | وارد شده است | ایجاد فایل تایید |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | وارد شده است | سند ادغام را دریافت کنید |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | وارد شده است | چرخاندن کلید امضا |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | وارد شده است | دامنه DNS را تأیید کنید |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | وارد شده است | چالش دامنه HTTP را تأیید کنید |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | وارد شده است | دامنه DNS را تأیید کنید |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | وارد شده است | چالش دامنه HTTP را تأیید کنید |
+| GET | `/api/v1/charge-sites` | مدیر | لیست سایت |
+| POST | `/api/v1/charge-sites` | مدیر | سایت ایجاد کنید |
+| DELETE | `/api/v1/charge-sites/:id` | مدیر | حذف سایت |
+| GET | `/api/v1/charge-sites/:id` | مدیر | جزئیات سایت |
+| PUT | `/api/v1/charge-sites/:id` | مدیر | سایت را به روز کنید |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | مدیر | کلید قدیمی را پاک کنید |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | مدیر | ایجاد فایل تایید |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | مدیر | ایجاد فایل تایید |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | مدیر | سند ادغام را دریافت کنید |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | مدیر | چرخاندن کلید امضا |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | مدیر | دامنه DNS را تأیید کنید |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | مدیر | چالش دامنه HTTP را تأیید کنید |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | مدیر | دامنه DNS را تأیید کنید |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | مدیر | چالش دامنه HTTP را تأیید کنید |
 
 ### سفارشات شارژ
 
@@ -673,10 +687,10 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | وارد شده است | لیست سفارش |
-| GET | `/api/v1/charge-orders/:id` | وارد شده است | جزئیات سفارش |
-| POST | `/api/v1/charge-orders/:id/refund` | وارد شده است | بازپرداخت |
-| GET | `/api/v1/charge-orders/export-csv` | وارد شده است | صادرات سفارشات شارژ CSV |
+| GET | `/api/v1/charge-orders` | مدیر | لیست سفارش |
+| GET | `/api/v1/charge-orders/:id` | مدیر | جزئیات سفارش |
+| POST | `/api/v1/charge-orders/:id/refund` | مدیر | بازپرداخت |
+| GET | `/api/v1/charge-orders/export-csv` | مدیر | صادرات سفارشات شارژ CSV |
 
 ### کارت های شارژ
 
@@ -684,12 +698,12 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | وارد شده است | لیست کارت |
-| POST | `/api/v1/charge-cards` | وارد شده است | کارت ایجاد کنید |
-| DELETE | `/api/v1/charge-cards/:id` | وارد شده است | حذف کارت |
-| GET | `/api/v1/charge-cards/:id/usages` | وارد شده است | سوابق استفاده از کارت |
-| POST | `/api/v1/charge-cards/batch` | وارد شده است | کارت تولید انبوه |
-| GET | `/api/v1/charge-cards/export-csv` | وارد شده است | کارت های صادراتی CSV |
+| GET | `/api/v1/charge-cards` | مدیر | لیست کارت |
+| POST | `/api/v1/charge-cards` | مدیر | کارت ایجاد کنید |
+| DELETE | `/api/v1/charge-cards/:id` | مدیر | حذف کارت |
+| GET | `/api/v1/charge-cards/:id/usages` | مدیر | سوابق استفاده از کارت |
+| POST | `/api/v1/charge-cards/batch` | مدیر | کارت تولید انبوه |
+| GET | `/api/v1/charge-cards/export-csv` | مدیر | کارت های صادراتی CSV |
 
 ### رویدادهای برگشت به تماس را شارژ کنید
 
@@ -725,8 +739,8 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | وارد شده است | لیست هدیه |
-| POST | `/api/v1/client-gifts` | وارد شده است | هدیه ایجاد کنید |
-| POST | `/api/v1/client-gifts/batch` | وارد شده است | هدایا را به صورت عمده بسازید |
+| POST | `/api/v1/client-gifts` | مدیر | هدیه ایجاد کنید |
+| POST | `/api/v1/client-gifts/batch` | مدیر | هدایا را به صورت عمده بسازید |
 | GET | `/api/v1/client-gifts/search-clients` | وارد شده است | مشتریان را جستجو کنید |
 
 ### پیکربندی ارجاع
@@ -736,7 +750,7 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/referral/config` | وارد شده است | پیکربندی ارجاع |
-| PUT | `/api/v1/referral/config` | مدیر | ذخیره پیکربندی ارجاع |
+| PUT | `/api/v1/referral/config` | مدیر | پیکربندی ارجاع را ذخیره کنید |
 | GET | `/api/v1/referral/records` | وارد شده است | لیست رکورد ارجاع |
 | GET | `/api/v1/referral/stats` | وارد شده است | آمار ارجاع |
 
@@ -746,9 +760,9 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | وارد شده است | لیست درخواست برداشت |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | وارد شده است | تصویب خروج |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | وارد شده است | رد انصراف |
+| GET | `/api/v1/referral-withdrawals` | مدیر | لیست درخواست برداشت |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | مدیر | تصویب خروج |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | مدیر | رد انصراف |
 
 ### لیست های مجاز IP (خلاصه)
 
@@ -774,9 +788,9 @@ Cloudflare CDN مدیریت استخر IP و منبع.
 |---|---|---|---|
 | GET | `/api/v1/tickets` | وارد شده است | لیست بلیط |
 | GET | `/api/v1/tickets/:id` | وارد شده است | جزئیات بلیط |
-| POST | `/api/v1/tickets/:id/assign` | وارد شده است | تخصیص بلیط |
-| POST | `/api/v1/tickets/:id/close` | وارد شده است | بستن بلیط |
-| POST | `/api/v1/tickets/:id/reply` | وارد شده است | پاسخ به بلیط |
+| POST | `/api/v1/tickets/:id/assign` | اپراتور | تخصیص بلیط |
+| POST | `/api/v1/tickets/:id/close` | اپراتور | بستن بلیط |
+| POST | `/api/v1/tickets/:id/reply` | اپراتور | پاسخ به بلیط |
 
 ### مقالات
 
@@ -784,11 +798,11 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/articles` | وارد شده است | فهرست مقالات |
-| POST | `/api/v1/articles` | وارد شده است | مقاله ایجاد کنید |
-| DELETE | `/api/v1/articles/:id` | وارد شده است | حذف مقاله |
+| GET | `/api/v1/articles` | وارد شده است | لیست مقاله |
+| POST | `/api/v1/articles` | مدیر | مقاله ایجاد کنید |
+| DELETE | `/api/v1/articles/:id` | مدیر | حذف مقاله |
 | GET | `/api/v1/articles/:id` | وارد شده است | جزئیات مقاله |
-| PUT | `/api/v1/articles/:id` | وارد شده است | به روز رسانی مقاله |
+| PUT | `/api/v1/articles/:id` | مدیر | به روز رسانی مقاله |
 
 ### حساب های مشترک
 
@@ -797,10 +811,10 @@ CRUD برای مقالات پورتال.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | وارد شده است | لیست حساب مشترک |
-| POST | `/api/v1/shared-accounts` | وارد شده است | ایجاد حساب مشترک |
-| DELETE | `/api/v1/shared-accounts/:id` | وارد شده است | حذف حساب مشترک |
+| POST | `/api/v1/shared-accounts` | مدیر | ایجاد حساب مشترک |
+| DELETE | `/api/v1/shared-accounts/:id` | مدیر | حذف حساب مشترک |
 | GET | `/api/v1/shared-accounts/:id` | وارد شده است | جزئیات حساب مشترک |
-| PUT | `/api/v1/shared-accounts/:id` | وارد شده است | به روز رسانی حساب مشترک |
+| PUT | `/api/v1/shared-accounts/:id` | مدیر | به روز رسانی حساب مشترک |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | وارد شده است | سوابق تعمیر |
 
 ### گواهینامه ها
@@ -809,20 +823,20 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/certificates` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/certificates/:id` | وارد شده است | حذف کنید |
-| GET | `/api/v1/certificates/:id` | وارد شده است | جزئیات |
-| PUT | `/api/v1/certificates/:id` | وارد شده است | به روز رسانی |
-| GET | `/api/v1/certificates/:id/download` | وارد شده است | دانلود کنید |
-| POST | `/api/v1/certificates/:id/renew` | وارد شده است | تمدید مشتری |
-| GET | `/api/v1/certificates/check-port` | وارد شده است | پورت را بررسی کنید |
-| GET | `/api/v1/certificates/detect-ip` | وارد شده است | پروب IP |
-| GET | `/api/v1/certificates/export` | وارد شده است | صادرات |
-| POST | `/api/v1/certificates/issue` | وارد شده است | موضوع. بدنه: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` پیش‌فرض http-01 است. `dns_channel_id` یک کانال DNS را انتخاب می کند (یک ارائه دهنده DNS پیکربندی شده + اطلاعات کاربری) |
-| POST | `/api/v1/certificates/issue-on-node` | وارد شده است | مشکل به گره |
-| POST | `/api/v1/certificates/upload` | وارد شده است | آپلود کنید |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | استعلام وضعیت وظیفه پس‌زمینه |
+| GET | `/api/v1/certificates` | مدیر | فهرست کنید |
+| POST | `/api/v1/certificates` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/certificates/:id` | مدیر | حذف کنید |
+| GET | `/api/v1/certificates/:id` | مدیر | جزئیات |
+| PUT | `/api/v1/certificates/:id` | مدیر | به روز رسانی |
+| GET | `/api/v1/certificates/:id/download` | مدیر | دانلود کنید |
+| POST | `/api/v1/certificates/:id/renew` | مدیر | تمدید مشتری |
+| GET | `/api/v1/certificates/check-port` | مدیر | پورت را بررسی کنید |
+| GET | `/api/v1/certificates/detect-ip` | مدیر | پروب IP |
+| GET | `/api/v1/certificates/export` | مدیر | صادرات |
+| POST | `/api/v1/certificates/issue` | مدیر | موضوع. بدنه: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` پیش‌فرض http-01 است. `dns_channel_id` یک کانال DNS را انتخاب می کند (یک ارائه دهنده DNS پیکربندی شده + اطلاعات کاربری) |
+| POST | `/api/v1/certificates/issue-on-node` | مدیر | مشکل به گره |
+| POST | `/api/v1/certificates/upload` | مدیر | آپلود کنید |
+| GET | `/api/v1/certificate-tasks/:id` | مدیر | پرس و جو از وضعیت کار پس زمینه |
 
 ### کانال های گواهی
 
@@ -830,11 +844,11 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/cert-channels` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/cert-channels/:id` | وارد شده است | حذف کنید |
-| PUT | `/api/v1/cert-channels/:id` | وارد شده است | به روز رسانی |
-| GET | `/api/v1/cert-channels/providers` | وارد شده است | ارائه دهنده |
+| GET | `/api/v1/cert-channels` | مدیر | فهرست کنید |
+| POST | `/api/v1/cert-channels` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/cert-channels/:id` | مدیر | حذف کنید |
+| PUT | `/api/v1/cert-channels/:id` | مدیر | به روز رسانی |
+| GET | `/api/v1/cert-channels/providers` | مدیر | ارائه دهنده |
 
 ### پیکربندی EAB
 
@@ -842,12 +856,12 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/eab-configs` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/eab-configs/:id` | وارد شده است | حذف کنید |
-| PUT | `/api/v1/eab-configs/:id` | وارد شده است | به روز رسانی |
-| POST | `/api/v1/eab-configs/fetch-google` | وارد شده است | Google EAB را از GCP واکشی کنید |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | وارد شده است | ZeroSSL EAB را با یک ایمیل با یک کلیک واکشی کنید |
+| GET | `/api/v1/eab-configs` | مدیر | فهرست کنید |
+| POST | `/api/v1/eab-configs` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/eab-configs/:id` | مدیر | حذف کنید |
+| PUT | `/api/v1/eab-configs/:id` | مدیر | به روز رسانی |
+| POST | `/api/v1/eab-configs/fetch-google` | مدیر | Google EAB را از GCP واکشی کنید |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | مدیر | ZeroSSL EAB را با یک ایمیل با یک کلیک واکشی کنید |
 
 ### حساب های ACME
 
@@ -855,11 +869,11 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/acme-accounts` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/acme-accounts/:id` | وارد شده است | حذف کنید |
-| PUT | `/api/v1/acme-accounts/:id` | وارد شده است | به روز رسانی |
-| GET | `/api/v1/acme-accounts/default` | وارد شده است | دریافت پیش فرض ها |
+| GET | `/api/v1/acme-accounts` | مدیر | فهرست کنید |
+| POST | `/api/v1/acme-accounts` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/acme-accounts/:id` | مدیر | حذف کنید |
+| PUT | `/api/v1/acme-accounts/:id` | مدیر | به روز رسانی |
+| GET | `/api/v1/acme-accounts/default` | مدیر | دریافت پیش فرض ها |
 
 ### CA داخلی
 
@@ -867,14 +881,14 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | وارد شده است | لیست گواهی نمایندگی |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | وارد شده است | تمدید گواهی نمایندگی |
-| GET | `/api/v1/ca/distribution-queue` | وارد شده است | صف توزیع گواهی |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | وارد شده است | حذف ورودی صف توزیع |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | وارد شده است | توزیع گواهی را دوباره امتحان کنید |
-| GET | `/api/v1/ca/revocations` | وارد شده است | لیست ابطال |
-| GET | `/api/v1/ca/revocations/export` | وارد شده است | صادرات CRL |
-| GET | `/api/v1/ca/status` | وارد شده است | وضعیت CA |
+| GET | `/api/v1/ca/agent-certs` | مدیر | لیست گواهی نمایندگی |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | مدیر | تمدید گواهی نمایندگی |
+| GET | `/api/v1/ca/distribution-queue` | مدیر | صف توزیع گواهی |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | مدیر | حذف ورودی صف توزیع |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | مدیر | توزیع گواهی را دوباره امتحان کنید |
+| GET | `/api/v1/ca/revocations` | مدیر | لیست ابطال |
+| GET | `/api/v1/ca/revocations/export` | مدیر | صادرات CRL |
+| GET | `/api/v1/ca/status` | مدیر | وضعیت CA |
 
 ### قوانین جغرافیایی
 
@@ -883,24 +897,24 @@ CRUD برای مقالات پورتال.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | وارد شده است | لیست فایل |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | وارد شده است | حذف فایل |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | وارد شده است | همگام‌سازی خودکار را تغییر دهید |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | وارد شده است | دانلود کنید |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | مدیر | حذف فایل |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | مدیر | همگام‌سازی خودکار را تغییر دهید |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | مدیر | دانلود کنید |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | وارد شده است | دانلود فایل |
 | GET | `/api/v1/geo-rules/github-assets` | وارد شده است | دارایی های مخزن GitHub را واکشی کنید |
-| POST | `/api/v1/geo-rules/push-all` | وارد شده است | فشار به تمام گره ها |
-| POST | `/api/v1/geo-rules/seed` | وارد شده است | داده های پیش فرض را راه اندازی کنید |
+| POST | `/api/v1/geo-rules/push-all` | مدیر | فشار به تمام گره ها |
+| POST | `/api/v1/geo-rules/seed` | مدیر | داده های پیش فرض را راه اندازی کنید |
 | GET | `/api/v1/geo-rules/sources` | وارد شده است | فهرست منابع داده |
-| POST | `/api/v1/geo-rules/sources` | وارد شده است | ایجاد منبع داده |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | وارد شده است | حذف منبع داده |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | وارد شده است | منبع داده را به روز کنید |
+| POST | `/api/v1/geo-rules/sources` | مدیر | ایجاد منبع داده |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | مدیر | حذف منبع داده |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | مدیر | منبع داده را به روز کنید |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | وارد شده است | واکشی دارایی‌های انتشار |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | وارد شده است | فایل اضافه کنید |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | وارد شده است | همگام سازی برنامه ریزی شده را تغییر دهید |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | وارد شده است | فایل را انتخاب کنید |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | وارد شده است | این منبع داده را همگام سازی کنید |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | مدیر | فایل اضافه کنید |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | مدیر | همگام سازی برنامه ریزی شده را تغییر دهید |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | مدیر | فایل را انتخاب کنید |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | مدیر | این منبع داده را همگام سازی کنید |
 | GET | `/api/v1/geo-rules/status` | وارد شده است | وضعیت |
-| POST | `/api/v1/geo-rules/sync-all` | وارد شده است | همگام سازی همه |
+| POST | `/api/v1/geo-rules/sync-all` | مدیر | همگام سازی همه |
 | GET | `/api/v1/geo-rules/sync-status/:key` | وارد شده است | همگام سازی پیشرفت |
 
 ### کتابخانه قوانین WAF
@@ -910,14 +924,14 @@ CRUD برای مقالات پورتال.
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
 | GET | `/api/v1/waf/github-source` | وارد شده است | منبع داده GitHub |
-| PUT | `/api/v1/waf/github-source` | وارد شده است | منبع داده GitHub را ذخیره کنید |
-| POST | `/api/v1/waf/push-all` | وارد شده است | فشار به تمام گره ها |
+| PUT | `/api/v1/waf/github-source` | مدیر | منبع داده GitHub را ذخیره کنید |
+| POST | `/api/v1/waf/push-all` | مدیر | فشار به تمام گره ها |
 | GET | `/api/v1/waf/rules` | وارد شده است | لیست قوانین |
-| DELETE | `/api/v1/waf/rules/:name` | وارد شده است | حذف قانون |
+| DELETE | `/api/v1/waf/rules/:name` | مدیر | حذف قانون |
 | GET | `/api/v1/waf/rules/:name` | وارد شده است | قاعده بگیر |
-| PUT | `/api/v1/waf/rules/:name` | وارد شده است | قانون ذخیره |
-| POST | `/api/v1/waf/sync-all` | وارد شده است | همگام سازی همه |
-| POST | `/api/v1/waf/sync-github` | وارد شده است | همگام سازی از GitHub |
+| PUT | `/api/v1/waf/rules/:name` | مدیر | قانون ذخیره |
+| POST | `/api/v1/waf/sync-all` | مدیر | همگام سازی همه |
+| POST | `/api/v1/waf/sync-github` | مدیر | همگام سازی از GitHub |
 
 ### مدیریت لاگ
 
@@ -925,43 +939,37 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | وارد شده است | حالا همه چیز را پاک کن |
-| GET | `/api/v1/log-manage/cleanup-rules` | وارد شده است | فهرست قوانین پاکسازی |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | وارد شده است | قانون پاکسازی را به روز کنید |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | وارد شده است | اکنون جدول مشخص شده را تمیز کنید |
-| GET | `/api/v1/log-manage/core-log-output` | وارد شده است | پیکربندی خروجی گزارش اصلی |
-| PUT | `/api/v1/log-manage/core-log-output` | وارد شده است | پیکربندی خروجی گزارش هسته را ذخیره کنید |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | وارد شده است | گزارش های اصلی stdout را بخوانید |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | وارد شده است | استریم core stdout |
-| POST | `/api/v1/log-manage/discover` | وارد شده است | فایل های گزارش گره را کشف کنید |
-| GET | `/api/v1/log-manage/log-output` | وارد شده است | پیکربندی خروجی ورود به سیستم |
-| PUT | `/api/v1/log-manage/log-output` | وارد شده است | پیکربندی خروجی گزارش را ذخیره کنید |
-| POST | `/api/v1/log-manage/log-output/release/:type` | وارد شده است | log stdout takeover را آزاد کنید |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | وارد شده است | Log stdout را در اختیار بگیرید |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | وارد شده است | لیست فایل گزارش گره |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | وارد شده است | گزارش‌های گره را بخوانید |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | وارد شده است | چرخش سیاهههای مربوط به گره |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | وارد شده است | گزارش‌های گره جریان |
-| GET | `/api/v1/log-manage/policies` | وارد شده است | لیست سیاست |
-| POST | `/api/v1/log-manage/policies` | وارد شده است | ایجاد خط مشی |
-| DELETE | `/api/v1/log-manage/policies/:id` | وارد شده است | حذف خط مشی |
-| GET | `/api/v1/log-manage/policies/:id` | وارد شده است | جزئیات خط مشی |
-| PUT | `/api/v1/log-manage/policies/:id` | وارد شده است | سیاست به روز رسانی |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | وارد شده است | لیست کار پاکسازی |
-| GET | `/api/v1/log-manage/policies/:id/log` | وارد شده است | لاگ ها را بخوانید |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | وارد شده است | گزارش های جریان |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | وارد شده است | چرخش |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | وارد شده است | گزارش های اصلی stdout را بخوانید |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | وارد شده است | استریم core stdout |
-| GET | `/api/v1/log-manage/scheduler-config` | وارد شده است | پیکربندی زمان بندی |
-| PUT | `/api/v1/log-manage/scheduler-config` | وارد شده است | پیکربندی زمان بندی را به روز کنید |
-| GET | `/api/v1/log-manage/status` | وارد شده است | وضعیت |
-| POST | `/api/v1/log-manage/sync` | وارد شده است | همگام سازی سیاست های پاکسازی |
-| GET | `/api/v1/log-manage/writers` | وارد شده است | وضعیت نویسنده |
-| PUT | `/api/v1/log-manage/writers/:type/config` | وارد شده است | پیکربندی رایتر را به روز کنید |
-| GET | `/api/v1/log-manage/writers/:type/files` | وارد شده است | لیست فایل لاگ Writer |
-| POST | `/api/v1/log-manage/writers/:type/start` | وارد شده است | نویسنده را شروع کنید |
-| POST | `/api/v1/log-manage/writers/:type/stop` | وارد شده است | بس کن نویسنده |
+| POST | `/api/v1/log-manage/cleanup-all` | مدیر | حالا همه چیز را پاک کن |
+| GET | `/api/v1/log-manage/cleanup-rules` | مدیر | فهرست قوانین پاکسازی |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | مدیر | قانون پاکسازی را به روز کنید |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | مدیر | اکنون جدول مشخص شده را تمیز کنید |
+| GET | `/api/v1/log-manage/core-log-output` | مدیر | پیکربندی خروجی گزارش اصلی |
+| PUT | `/api/v1/log-manage/core-log-output` | مدیر | پیکربندی خروجی گزارش هسته را ذخیره کنید |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | مدیر | گزارش‌های اصلی stdout را بخوانید |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | مدیر | استریم core stdout |
+| POST | `/api/v1/log-manage/discover` | مدیر | فایل های گزارش گره را کشف کنید |
+| GET | `/api/v1/log-manage/log-output` | مدیر | پیکربندی خروجی ورود به سیستم |
+| PUT | `/api/v1/log-manage/log-output` | مدیر | پیکربندی خروجی گزارش را ذخیره کنید |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | مدیر | لیست فایل گزارش گره |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | مدیر | گزارش‌های گره را بخوانید |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | مدیر | چرخش سیاهههای مربوط به گره |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | مدیر | گزارش‌های گره جریان |
+| GET | `/api/v1/log-manage/policies` | مدیر | لیست سیاست |
+| POST | `/api/v1/log-manage/policies` | مدیر | ایجاد خط مشی |
+| DELETE | `/api/v1/log-manage/policies/:id` | مدیر | حذف خط مشی |
+| GET | `/api/v1/log-manage/policies/:id` | مدیر | جزئیات خط مشی |
+| PUT | `/api/v1/log-manage/policies/:id` | مدیر | سیاست به روز رسانی |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | مدیر | لیست کار پاکسازی |
+| GET | `/api/v1/log-manage/policies/:id/log` | مدیر | لاگ ها را بخوانید |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | مدیر | گزارش های جریان |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | مدیر | چرخش |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | مدیر | گزارش‌های اصلی stdout را بخوانید |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | مدیر | استریم core stdout |
+| GET | `/api/v1/log-manage/scheduler-config` | مدیر | پیکربندی زمان بندی |
+| PUT | `/api/v1/log-manage/scheduler-config` | مدیر | پیکربندی زمان بندی را به روز کنید |
+| GET | `/api/v1/log-manage/status` | مدیر | وضعیت |
+| POST | `/api/v1/log-manage/sync` | مدیر | همگام سازی سیاست های پاکسازی |
+| GET | `/api/v1/log-manage/writers` | مدیر | وضعیت نویسنده |
 
 ### پشتیبان گیری
 
@@ -969,16 +977,16 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | مدیر | پشتیبان را حذف کنید |
+| DELETE | `/api/v1/backups/:id` | فوق ادمین | پشتیبان را حذف کنید |
 | GET | `/api/v1/backups/:id/download` | مدیر | دانلود نسخه پشتیبان |
-| POST | `/api/v1/backups/:id/restore` | مدیر | بازیابی از پشتیبان |
-| POST | `/api/v1/backups/:id/upload-ftp` | مدیر | در FTP آپلود کنید |
-| POST | `/api/v1/backups/:id/upload-s3` | مدیر | در S3 آپلود کنید |
-| POST | `/api/v1/backups/:id/upload-webdav` | مدیر | در WebDAV آپلود کنید |
+| POST | `/api/v1/backups/:id/restore` | فوق ادمین | بازیابی از پشتیبان |
+| POST | `/api/v1/backups/:id/upload-ftp` | فوق ادمین | در FTP آپلود کنید |
+| POST | `/api/v1/backups/:id/upload-s3` | فوق ادمین | در S3 آپلود کنید |
+| POST | `/api/v1/backups/:id/upload-webdav` | فوق ادمین | در WebDAV آپلود کنید |
 | POST | `/api/v1/backups/create` | مدیر | ایجاد پشتیبان کامل (با DB dump) |
 | GET | `/api/v1/backups/list` | مدیر | لیست کامل پشتیبان |
-| POST | `/api/v1/backups/remote-restore` | مدیر | بازیابی از راه دور |
-| GET | `/api/v1/backups/restore-status` | مدیر | بازیابی پیشرفت |
+| POST | `/api/v1/backups/remote-restore` | فوق ادمین | بازیابی از راه دور |
+| GET | `/api/v1/backups/restore-status` | فوق ادمین | بازیابی پیشرفت |
 | GET | `/api/v1/backups/schedules` | مدیر | لیست مشاغل برنامه ریزی شده |
 | POST | `/api/v1/backups/schedules` | مدیر | ایجاد کار برنامه ریزی شده |
 | DELETE | `/api/v1/backups/schedules/:id` | مدیر | کار برنامه ریزی شده را حذف کنید |
@@ -988,11 +996,11 @@ CRUD برای مقالات پورتال.
 | DELETE | `/api/v1/backups/storages/:id` | مدیر | تنظیمات ذخیره سازی را حذف کنید |
 | PUT | `/api/v1/backups/storages/:id` | مدیر | پیکربندی ذخیره سازی را به روز کنید |
 | GET | `/api/v1/backups/storages/:id/files` | مدیر | لیست فایل های پشتیبان گیری از راه دور |
-| POST | `/api/v1/backups/upload-restore` | مدیر | آپلود پشتیبان و بازیابی |
+| POST | `/api/v1/backups/upload-restore` | فوق ادمین | آپلود پشتیبان و بازیابی |
 
 ### تنظیمات سیستم
 
-پیکربندی و انتقال پایگاه داده، تنظیمات پانل، کلیدهای JWT، آزمایش‌های SMTP/Telegram، الگوهای اعلان، ارتقاء آنلاین (عمدتاً مدیر).
+پیکربندی و انتقال پایگاه داده، تنظیمات پنل، کلیدهای JWT، آزمایش‌های SMTP/Telegram، الگوهای اعلان، ارتقاء آنلاین (عمدتاً توسط مدیر).
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
@@ -1001,8 +1009,8 @@ CRUD برای مقالات پورتال.
 | GET | `/api/v1/system/config-file/:coreType` | مدیر | فایل پیکربندی هسته را بخوانید |
 | GET | `/api/v1/system/db-config` | مدیر | پیکربندی پایگاه داده |
 | PUT | `/api/v1/system/db-config` | مدیر | پیکربندی پایگاه داده را به روز کنید |
-| POST | `/api/v1/system/db-config/migrate` | مدیر | انتقال داده های پایگاه داده |
-| POST | `/api/v1/system/db-config/switch` | مدیر | تغییر پایگاه داده (با مهاجرت یک مرحله ای) |
+| POST | `/api/v1/system/db-config/migrate` | فوق ادمین | انتقال داده های پایگاه داده |
+| POST | `/api/v1/system/db-config/switch` | فوق ادمین | تغییر پایگاه داده (با مهاجرت یک مرحله ای) |
 | POST | `/api/v1/system/db-config/test` | مدیر | تست اتصال پایگاه داده |
 | GET | `/api/v1/system/db-pool-stats` | مدیر | آمار استخر اتصال |
 | GET | `/api/v1/system/db-stats` | مدیر | آمار پایگاه داده |
@@ -1011,13 +1019,13 @@ CRUD برای مقالات پورتال.
 | GET | `/api/v1/system/encryption-key-status` | مدیر | وضعیت کلید رمزگذاری |
 | GET | `/api/v1/system/env-config` | مدیر | پیکربندی env |
 | PUT | `/api/v1/system/env-config` | مدیر | پیکربندی .env را به روز کنید |
-| POST | `/api/v1/system/generate-encryption-key` | مدیر | ایجاد کلید رمزگذاری |
+| POST | `/api/v1/system/generate-encryption-key` | فوق ادمین | ایجاد کلید رمزگذاری |
 | GET | `/api/v1/system/github-config` | مدیر | پیکربندی GitHub |
 | PUT | `/api/v1/system/github-config` | مدیر | پیکربندی GitHub را به روز کنید |
 | GET | `/api/v1/system/jwt-secret-status` | مدیر | وضعیت کلید JWT |
 | GET | `/api/v1/system/maintenance` | عمومی | وضعیت حالت نگهداری (عمومی) |
 | PUT | `/api/v1/system/maintenance` | مدیر | تغییر حالت نگهداری |
-| POST | `/api/v1/system/migrate-data` | مدیر | انتقال داده ها |
+| POST | `/api/v1/system/migrate-data` | فوق ادمین | انتقال داده ها |
 | GET | `/api/v1/system/notification-config` | مدیر | پیکربندی اعلان |
 | PUT | `/api/v1/system/notification-config` | مدیر | پیکربندی اعلان را به روز کنید |
 | GET | `/api/v1/system/notification-templates` | مدیر | لیست قالب |
@@ -1030,13 +1038,13 @@ CRUD برای مقالات پورتال.
 | PUT | `/api/v1/system/panel-config` | مدیر | پیکربندی پنل را به روز کنید |
 | GET | `/api/v1/system/reality-targets` | مدیر | لیست هدف REALITY |
 | PUT | `/api/v1/system/reality-targets` | مدیر | هدف REALITY را به روز کنید |
-| POST | `/api/v1/system/reality-targets/reset` | مدیر | هدف REALITY را به حالت پیش فرض بازنشانی کنید |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | خواندن پیکربندی SNI محلی Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | به‌روزرسانی پیکربندی SNI محلی Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | مدیر | کلید JWT را بازسازی کنید |
+| POST | `/api/v1/system/reality-targets/reset` | فوق ادمین | هدف REALITY را به حالت پیش فرض بازنشانی کنید |
+| GET | `/api/v1/system/reality-local-sni` | مدیر | پیکربندی Reality محلی SNI را بخوانید |
+| PUT | `/api/v1/system/reality-local-sni` | مدیر | پیکربندی Reality محلی SNI را به روز کنید |
+| POST | `/api/v1/system/regenerate-jwt-secret` | فوق ادمین | کلید JWT را بازسازی کنید |
 | GET | `/api/v1/system/releases` | مدیر | نسخه های موجود |
-| POST | `/api/v1/system/restart` | مدیر | راه اندازی مجدد |
-| POST | `/api/v1/system/rollback` | مدیر | بازگشت سیستم |
+| POST | `/api/v1/system/restart` | فوق ادمین | راه اندازی مجدد |
+| POST | `/api/v1/system/rollback` | فوق ادمین | بازگشت سیستم |
 | GET | `/api/v1/system/settings` | مدیر | تنظیمات را بخوانید |
 | PUT | `/api/v1/system/settings/batch` | مدیر | تنظیمات به روز رسانی انبوه |
 | GET | `/api/v1/system/stats` | مدیر | وضعیت سیستم |
@@ -1045,7 +1053,7 @@ CRUD برای مقالات پورتال.
 | POST | `/api/v1/system/telegram-chat-id` | مدیر | شناسه چت Telegram را دریافت کنید |
 | POST | `/api/v1/system/test-smtp` | مدیر | تست SMTP |
 | POST | `/api/v1/system/test-telegram` | مدیر | تست Telegram |
-| POST | `/api/v1/system/update` | مدیر | ارتقاء سیستم |
+| POST | `/api/v1/system/update` | فوق ادمین | ارتقاء سیستم |
 | GET | `/api/v1/system/update-jobs` | مدیر | لیست مشاغل را ارتقا دهید |
 | POST | `/api/v1/system/upload-mtls-ca` | مدیر | گواهی mTLS CA را آپلود کنید |
 
@@ -1055,8 +1063,9 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | وارد شده است | لیست رویدادهای حسابرسی |
-| GET | `/api/v1/security/audit-events/export` | وارد شده است | رویدادهای حسابرسی صادراتی |
+| GET | `/api/v1/security/audit-events` | مدیر | لیست رویدادهای حسابرسی |
+| GET | `/api/v1/security/audit-events/export` | مدیر | رویدادهای حسابرسی صادراتی |
+| GET | `/api/v1/security/subscription-access-logs` | مدیر | گزارش‌های واکشی اشتراک (فیلتر بر اساس شناسه اشتراک / IP / ایمیل مشتری) |
 
 ### معیارها
 
@@ -1064,9 +1073,9 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | وارد شده است | معیارهای گواهی |
-| GET | `/api/v1/metrics/nodes` | وارد شده است | معیارهای گره |
-| GET | `/api/v1/metrics/overview` | وارد شده است | نمای کلی |
+| GET | `/api/v1/metrics/certificates` | مدیر | معیارهای گواهی |
+| GET | `/api/v1/metrics/nodes` | مدیر | معیارهای گره |
+| GET | `/api/v1/metrics/overview` | مدیر | نمای کلی |
 
 ### قالب های پورتال
 
@@ -1074,20 +1083,20 @@ CRUD برای مقالات پورتال.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | وارد شده است | قالب فعال |
-| PUT | `/api/v1/portal/active` | وارد شده است | به روز رسانی قالب فعال |
-| DELETE | `/api/v1/portal/cache` | وارد شده است | کش پورتال را پاک کنید |
-| GET | `/api/v1/portal/cache` | وارد شده است | وضعیت حافظه پنهان |
-| PUT | `/api/v1/portal/cache/dev-mode` | وارد شده است | حالت توسعه حافظه پنهان را تغییر دهید |
-| POST | `/api/v1/portal/cache/rebuild` | وارد شده است | کش پورتال را بازسازی کنید |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | بسته‌های زبان داخلی |
-| POST | `/api/v1/portal/reset` | وارد شده است | بازیابی قالب پیش فرض |
-| GET | `/api/v1/portal/templates` | وارد شده است | فهرست کنید |
-| POST | `/api/v1/portal/templates` | وارد شده است | ایجاد کنید |
-| DELETE | `/api/v1/portal/templates/:id` | وارد شده است | حذف کنید |
-| GET | `/api/v1/portal/templates/:id` | وارد شده است | جزئیات |
-| PUT | `/api/v1/portal/templates/:id` | وارد شده است | به روز رسانی |
-| POST | `/api/v1/portal/templates/:id/activate` | وارد شده است | قالب را فعال کنید |
+| GET | `/api/v1/portal/active` | مدیر | قالب فعال |
+| PUT | `/api/v1/portal/active` | مدیر | به روز رسانی قالب فعال |
+| DELETE | `/api/v1/portal/cache` | مدیر | کش پورتال را پاک کنید |
+| GET | `/api/v1/portal/cache` | مدیر | وضعیت حافظه پنهان |
+| PUT | `/api/v1/portal/cache/dev-mode` | مدیر | حالت توسعه حافظه پنهان را تغییر دهید |
+| POST | `/api/v1/portal/cache/rebuild` | مدیر | کش پورتال را بازسازی کنید |
+| GET | `/api/v1/portal/lang/builtin` | مدیر | بسته های زبان داخلی |
+| POST | `/api/v1/portal/reset` | مدیر | بازیابی قالب پیش فرض |
+| GET | `/api/v1/portal/templates` | مدیر | فهرست کنید |
+| POST | `/api/v1/portal/templates` | مدیر | ایجاد کنید |
+| DELETE | `/api/v1/portal/templates/:id` | مدیر | حذف کنید |
+| GET | `/api/v1/portal/templates/:id` | مدیر | جزئیات |
+| PUT | `/api/v1/portal/templates/:id` | مدیر | به روز رسانی |
+| POST | `/api/v1/portal/templates/:id/activate` | مدیر | قالب را فعال کنید |
 
 > `/portal/templates` CRUD یک **پیشرفته API** است: رابط کاربری پورتال در درجه اول از `PUT /api/v1/portal/active` استفاده می کند
 > (پیکربندی کامل سایت تک شات)؛ با این گروه چندین الگو را مدیریت/تغییر دهید. هر دو پشتیبانی می شوند و تضاد ندارند.
@@ -1098,12 +1107,12 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| POST | `/api/v1/agent/bootstrap` | عمومی | ثبت اولین راه‌اندازی نماینده (گزارش‌های نماینده با توکن بوت استرپ؛ عمومی) |
+| POST | `/api/v1/agent/bootstrap` | عمومی | ثبت اولین بوت عامل (گزارش نماینده با توکن بوت استرپ؛ عمومی) |
 | GET | `/api/v1/agent/releases` | مدیر | نسخه های موجود نماینده (برای صفحه ارتقاء) |
 | GET | `/api/v1/agent/version` | مدیر | نسخه عامل فعلی در پانل |
 | GET | `/api/v1/agent/download` | عمومی | عامل دانلود |
 | GET | `/api/v1/agent/install` | عمومی | دریافت اسکریپت نصب |
-| GET | `/api/v1/agent/origin` | 公开 | آدرس مبدأ پنل (عمومی) |
+| GET | `/api/v1/agent/origin` | عمومی | آدرس مبدا پانل (عمومی) |
 
 ### شارژ ورودی برگشت به تماس
 
@@ -1136,79 +1145,75 @@ Node Agent اسکریپت را نصب و دانلود کنید (عمومی).
 
 ### اعتبار مشتری و کسب و کار (همان مجموعه در موتور مدیریت)
 
-نقاط پایانی مشتری یکسان با پورتال. برای جزئیات بیشتر به `portal-api.en.md` مراجعه کنید.
+نقاط پایانی مشتری مشابه پورتال است. آنها از **توکن مشتری** (`Authorization: Bearer <client_token>`) استفاده می کنند، نه یک توکن مدیریت. برای جزئیات بیشتر به `portal-api.en.md` مراجعه کنید.
 
 | روش | مسیر | اجازه | توضیحات |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | عمومی | فهرست مقالات |
-| GET | `/api/v1/client-auth/articles/:slug` | عمومی | دریافت مقاله |
-| GET | `/api/v1/client-auth/balance` | عمومی | تعادل را بدست آورید |
-| GET | `/api/v1/client-auth/balance/transactions` | عمومی | تراکنش های موجود |
-| POST | `/api/v1/client-auth/change-password` | عمومی | رمز عبور را تغییر دهید |
-| POST | `/api/v1/client-auth/charge/create` | عمومی | ایجاد سفارش شارژ |
-| GET | `/api/v1/client-auth/charge/orders` | عمومی | لیست سفارشات شارژ |
-| GET | `/api/v1/client-auth/charge/orders/:id` | عمومی | جزئیات سفارش شارژ را دریافت کنید |
-| POST | `/api/v1/client-auth/charge/redeem-card` | عمومی | بازخرید کارت |
-| GET | `/api/v1/client-auth/charge/sites` | عمومی | لیست سایت های شارژ |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | عمومی | استعلام وضعیت شارژ |
-| GET | `/api/v1/client-auth/checktime` | عمومی | دریافت زمان سرور (همگام سازی ساعت) |
-| GET | `/api/v1/client-auth/connection-info` | عمومی | پارامترهای اتصال طرح را دریافت کنید |
-| GET | `/api/v1/client-auth/gifts` | عمومی | لیست هدایا |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | عمومی | ادعای هدیه |
-| GET | `/api/v1/client-auth/invoices` | عمومی | لیست سفارش |
-| GET | `/api/v1/client-auth/invoices/:id` | عمومی | جزئیات سفارش |
-| GET | `/api/v1/client-auth/settings/whitelist` | عمومی | فهرست مجاز IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عمومی | از لیست مجاز IP حذف کنید |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | عمومی | افزودن خودکار IP |
-| POST | `/api/v1/client-auth/login` | عمومی | وارد شوید |
-| POST | `/api/v1/client-auth/logout` | عمومی | از سیستم خارج شوید |
-| POST | `/api/v1/client-auth/logs/package` | عمومی | ایجاد بسته گزارش |
-| GET | `/api/v1/client-auth/logs/packages` | عمومی | فهرست بسته‌های گزارش |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | عمومی | بسته گزارش را حذف کنید |
-| GET | `/api/v1/client-auth/logs/packages/:id` | عمومی | بسته گزارش را دریافت کنید |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | عمومی | دانلود بسته گزارش |
-| GET | `/api/v1/client-auth/logs/types` | عمومی | بررسی سلامت بسته نرم افزاری گزارش |
-| GET | `/api/v1/client-auth/me` | عمومی | کاربر فعلی وارد شده را دریافت کنید |
-| GET | `/api/v1/client-auth/nodes` | عمومی | لیست گره های من |
-| GET | `/api/v1/client-auth/nodes/:id/config` | عمومی | پیکربندی گره |
-| GET | `/api/v1/client-auth/nodes/:id/link` | عمومی | پیوند اشتراک گره |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | عمومی | کد QR گره |
-| GET | `/api/v1/client-auth/oauth/:provider` | عمومی | مجاز کردن |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | عمومی | پاسخ به تماس |
-| GET | `/api/v1/client-auth/oauth/providers` | عمومی | وضعیت ارائه دهنده |
-| GET | `/api/v1/client-auth/orders` | عمومی | لیست سفارش |
-| POST | `/api/v1/client-auth/orders` | عمومی | نظم ایجاد کنید |
-| GET | `/api/v1/client-auth/orders/:id` | عمومی | جزئیات سفارش |
-| GET | `/api/v1/client-auth/plans` | عمومی | لیست طرح |
-| GET | `/api/v1/client-auth/plans/:id` | عمومی | جزئیات طرح |
-| GET | `/api/v1/client-auth/referral/code` | عمومی | کد تایید ارجاع را دریافت کنید |
-| GET | `/api/v1/client-auth/referral/records` | عمومی | فهرست سوابق ارجاع |
-| GET | `/api/v1/client-auth/referral/stats` | عمومی | آمار ارجاع را دریافت کنید |
-| POST | `/api/v1/client-auth/referral/withdraw` | عمومی | درخواست برداشت |
-| GET | `/api/v1/client-auth/referral/withdrawals` | عمومی | فهرست برداشت های ارجاعی |
-| POST | `/api/v1/client-auth/refresh` | عمومی | تازه کردن |
-| POST | `/api/v1/client-auth/register` | عمومی | ثبت نام کنید |
-| POST | `/api/v1/client-auth/reset-subscription` | عمومی | اشتراک را بازنشانی کنید |
-| PUT | `/api/v1/client-auth/settings` | عمومی | به روز رسانی نمایه |
-| POST | `/api/v1/client-auth/rotate-token` | عمومی | چرخاندن نشانه اشتراک |
-| POST | `/api/v1/client-auth/self-unban` | عمومی | سلف سرویس لغو ممنوعیت |
-| PUT | `/api/v1/client-auth/settings` | عمومی | تنظیمات را به روز کنید |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | عمومی | افزودن خودکار IP |
-| GET | `/api/v1/client-auth/settings/whitelist` | عمومی | فهرست مجاز IP |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | عمومی | از لیست مجاز IP حذف کنید |
-| GET | `/api/v1/client-auth/shared-accounts` | عمومی | فهرست حساب های مشترک |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | عمومی | حساب مشترک دریافت کنید |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | عمومی | درخواست حساب مشترک |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | عمومی | درخواست تعمیر |
-| POST | `/api/v1/client-auth/ticket` | عمومی | صدور بلیط یک بار کوتاه مدت |
-| GET | `/api/v1/client-auth/tickets` | عمومی | لیست بلیط ها |
-| POST | `/api/v1/client-auth/tickets` | عمومی | بلیط ایجاد کنید |
-| GET | `/api/v1/client-auth/tickets/:id` | عمومی | بلیط بگیر |
-| POST | `/api/v1/client-auth/tickets/:id/close` | عمومی | بستن بلیط |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | عمومی | پاسخ به بلیط |
-| GET | `/api/v1/client-auth/traffic-history` | عمومی | تاریخچه ترافیک |
-| GET | `/api/v1/client-auth/traffic-packs` | عمومی | لیست بسته ترافیک |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | عمومی | خرید پک ترافیک |
+| GET | `/api/v1/client-auth/articles` | مشتری (ورود به سیستم) | فهرست مقالات |
+| GET | `/api/v1/client-auth/articles/:slug` | مشتری (ورود به سیستم) | دریافت مقاله |
+| GET | `/api/v1/client-auth/balance` | مشتری (ورود به سیستم) | تعادل را بدست آورید |
+| GET | `/api/v1/client-auth/balance/transactions` | مشتری (ورود به سیستم) | تراکنش های موجود |
+| POST | `/api/v1/client-auth/change-password` | مشتری (ورود به سیستم) | رمز عبور را تغییر دهید |
+| POST | `/api/v1/client-auth/charge/create` | مشتری (ورود به سیستم) | ایجاد سفارش شارژ |
+| GET | `/api/v1/client-auth/charge/orders` | مشتری (ورود به سیستم) | لیست سفارشات شارژ |
+| GET | `/api/v1/client-auth/charge/orders/:id` | مشتری (ورود به سیستم) | جزئیات سفارش شارژ را دریافت کنید |
+| POST | `/api/v1/client-auth/charge/redeem-card` | مشتری (ورود به سیستم) | بازخرید کارت |
+| GET | `/api/v1/client-auth/charge/sites` | مشتری (ورود به سیستم) | لیست سایت های شارژ |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | مشتری (ورود به سیستم) | استعلام وضعیت شارژ |
+| GET | `/api/v1/client-auth/checktime` | مشتری (ورود به سیستم) | دریافت زمان سرور (همگام سازی ساعت) |
+| GET | `/api/v1/client-auth/connection-info` | مشتری (ورود به سیستم) | پارامترهای اتصال طرح را دریافت کنید |
+| GET | `/api/v1/client-auth/gifts` | مشتری (ورود به سیستم) | لیست هدایا |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | مشتری (ورود به سیستم) | ادعای هدیه |
+| GET | `/api/v1/client-auth/invoices` | مشتری (ورود به سیستم) | لیست سفارش |
+| GET | `/api/v1/client-auth/invoices/:id` | مشتری (ورود به سیستم) | جزئیات سفارش |
+| POST | `/api/v1/client-auth/login` | مشتری (عمومی) | وارد شوید |
+| POST | `/api/v1/client-auth/logout` | مشتری (ورود به سیستم) | از سیستم خارج شوید |
+| POST | `/api/v1/client-auth/logs/package` | مشتری (ورود به سیستم) | ایجاد بسته گزارش |
+| GET | `/api/v1/client-auth/logs/packages` | مشتری (ورود به سیستم) | فهرست بسته‌های گزارش |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | مشتری (ورود به سیستم) | بسته گزارش را حذف کنید |
+| GET | `/api/v1/client-auth/logs/packages/:id` | مشتری (ورود به سیستم) | بسته گزارش را دریافت کنید |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | مشتری (ورود به سیستم) | دانلود بسته گزارش |
+| GET | `/api/v1/client-auth/logs/types` | مشتری (ورود به سیستم) | بررسی سلامت بسته نرم افزاری گزارش |
+| GET | `/api/v1/client-auth/me` | مشتری (ورود به سیستم) | کاربر فعلی وارد شده را دریافت کنید |
+| GET | `/api/v1/client-auth/nodes` | مشتری (ورود به سیستم) | لیست گره های من |
+| GET | `/api/v1/client-auth/nodes/:id/config` | مشتری (ورود به سیستم) | پیکربندی گره |
+| GET | `/api/v1/client-auth/nodes/:id/link` | مشتری (ورود به سیستم) | پیوند اشتراک گره |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | مشتری (ورود به سیستم) | کد QR گره |
+| GET | `/api/v1/client-auth/oauth/:provider` | مشتری (عمومی) | مجاز کردن |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | مشتری (عمومی) | پاسخ به تماس |
+| GET | `/api/v1/client-auth/oauth/providers` | مشتری (عمومی) | وضعیت ارائه دهنده |
+| GET | `/api/v1/client-auth/orders` | مشتری (ورود به سیستم) | لیست سفارش |
+| POST | `/api/v1/client-auth/orders` | مشتری (ورود به سیستم) | نظم ایجاد کنید |
+| GET | `/api/v1/client-auth/orders/:id` | مشتری (ورود به سیستم) | جزئیات سفارش |
+| GET | `/api/v1/client-auth/plans` | مشتری (ورود به سیستم) | لیست طرح |
+| GET | `/api/v1/client-auth/plans/:id` | مشتری (ورود به سیستم) | جزئیات طرح |
+| GET | `/api/v1/client-auth/referral/code` | مشتری (ورود به سیستم) | کد تایید ارجاع را دریافت کنید |
+| GET | `/api/v1/client-auth/referral/records` | مشتری (ورود به سیستم) | فهرست سوابق ارجاع |
+| GET | `/api/v1/client-auth/referral/stats` | مشتری (ورود به سیستم) | آمار ارجاع را دریافت کنید |
+| POST | `/api/v1/client-auth/referral/withdraw` | مشتری (ورود به سیستم) | درخواست برداشت |
+| GET | `/api/v1/client-auth/referral/withdrawals` | مشتری (ورود به سیستم) | فهرست برداشت های ارجاعی |
+| POST | `/api/v1/client-auth/refresh` | مشتری (عمومی) | تازه کردن |
+| POST | `/api/v1/client-auth/register` | مشتری (عمومی) | ثبت نام کنید |
+| POST | `/api/v1/client-auth/reset-subscription` | مشتری (ورود به سیستم) | اشتراک را بازنشانی کنید |
+| POST | `/api/v1/client-auth/rotate-token` | مشتری (ورود به سیستم) | چرخاندن نشانه اشتراک |
+| POST | `/api/v1/client-auth/self-unban` | مشتری (ورود به سیستم) | سلف سرویس لغو ممنوعیت |
+| PUT | `/api/v1/client-auth/settings` | مشتری (ورود به سیستم) | تنظیمات را به روز کنید |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | مشتری (ورود به سیستم) | افزودن خودکار IP |
+| GET | `/api/v1/client-auth/settings/whitelist` | مشتری (ورود به سیستم) | فهرست مجاز IP |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | مشتری (ورود به سیستم) | از لیست مجاز IP حذف کنید |
+| GET | `/api/v1/client-auth/shared-accounts` | مشتری (ورود به سیستم) | فهرست حساب های مشترک |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | مشتری (ورود به سیستم) | حساب مشترک دریافت کنید |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | مشتری (ورود به سیستم) | درخواست حساب مشترک |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | مشتری (ورود به سیستم) | درخواست تعمیر |
+| POST | `/api/v1/client-auth/ticket` | مشتری (ورود به سیستم) | صدور بلیط یک بار کوتاه مدت |
+| GET | `/api/v1/client-auth/tickets` | مشتری (ورود به سیستم) | لیست بلیط ها |
+| POST | `/api/v1/client-auth/tickets` | مشتری (ورود به سیستم) | بلیط ایجاد کنید |
+| GET | `/api/v1/client-auth/tickets/:id` | مشتری (ورود به سیستم) | بلیط بگیر |
+| POST | `/api/v1/client-auth/tickets/:id/close` | مشتری (ورود به سیستم) | بستن بلیط |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | مشتری (ورود به سیستم) | پاسخ به بلیط |
+| GET | `/api/v1/client-auth/traffic-history` | مشتری (ورود به سیستم) | تاریخچه ترافیک |
+| GET | `/api/v1/client-auth/traffic-packs` | مشتری (ورود به سیستم) | لیست بسته ترافیک |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | مشتری (ورود به سیستم) | خرید پک ترافیک |
 
 ### تحویل اشتراک
 

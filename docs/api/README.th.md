@@ -1,4 +1,4 @@
-<!-- source: README.md | locale: th | updated: 2026-10-23 -->
+<!-- source: README.md | locale: th | updated: 2026-11-16 -->
 # เอกสารประกอบ CoreFusion API
 
 > ภาษา: [简体中文](README.md) · [English](README.en.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Türkçe](README.tr.md) · [Bahasa Indonesia](README.id.md) · ไทย · [Tiếng Việt](README.vi.md) · [العربية](README.ar.md) · [فارسی](README.fa.md)
@@ -8,9 +8,9 @@
 | เอกสาร | ผู้ชม | เนื้อหา |
 |---|---|---|
 | [subscription.md](./subscription.th.md) | สมาชิก / นักพัฒนาลูกค้า | จุดสิ้นสุดการสมัครสมาชิก (`/sub/:token`): รูปแบบ ส่วนหัว รหัสสถานะ ตัวอย่าง |
-| [portal-api.md](./portal-api.th.md) | พอร์ทัลส่วนหน้า / ไคลเอนต์บุคคลที่สาม | พอร์ทัลลูกค้า API (`/api/v1/client-auth/*`, `/api/v1/public/*`): ลงทะเบียน, ลงชื่อเข้าใช้, แผน, คำสั่งซื้อ, ยอดคงเหลือ, ตั๋ว |
+| [portal-api.md](./portal-api.md) | พอร์ทัลส่วนหน้า / ไคลเอนต์บุคคลที่สาม | พอร์ทัลลูกค้า API (`/api/v1/client-auth/*`, `/api/v1/public/*`): ลงทะเบียน, ลงชื่อเข้าใช้, แผน, คำสั่งซื้อ, ยอดคงเหลือ, ตั๋ว |
 | [ชาร์จ-โทรกลับmd](./charge-callback.th.md) | ผู้ให้บริการชำระเงิน | การลงนามและการยืนยันการโทรกลับการชำระเงิน |
-| [admin-api.th.md](./admin-api.th.md) | การพัฒนาแผง / ระบบอัตโนมัติ | ตารางเส้นทางผู้ดูแลระบบ API แบบเต็ม (`/api/v1/*` จัดกลุ่มตามโมดูล) |
+| [admin-api.en.md](./admin-api.th.md) | การพัฒนาแผง / ระบบอัตโนมัติ | ตารางเส้นทางผู้ดูแลระบบ API แบบเต็ม (`/api/v1/*` จัดกลุ่มตามโมดูล) |
 
 ---
 
@@ -35,7 +35,7 @@
 | **โทเค็นการสมัครสมาชิก** | โทเค็นใน URL: `/sub/<token>` | ดึงข้อมูลการสมัครสมาชิก ไม่มีส่วนหัว |
 
 - โทเค็นการเข้าถึงไคลเอ็นต์มีอายุ 24 ชั่วโมง รีเฟรชโทเค็น 7 วัน JWT มี `tv` (token_version) ดังนั้นการออกจากระบบ / บังคับให้ออกจากระบบจะทำให้โทเค็นเก่าทั้งหมดเป็นโมฆะ
-- บทบาทผู้ดูแลระบบ: `viewer` / `admin` / `operator` / `super_admin`; การดำเนินการเขียนบางอย่างต้องใช้ `RequireRole(RoleAdmin)` หรือสูงกว่า
+- ระดับบทบาทของผู้ดูแลระบบ: `viewer(10) < operator(20) < admin(30) < super_admin(40)` โดยทั่วไปการอ่านต้องใช้เซสชันที่ลงชื่อเข้าใช้เท่านั้น การเขียนต้องใช้ `operator` / `admin` / `super_admin` ต่อโมดูล ดูคอลัมน์ “สิทธิ์” ใน [admin-api.md](./admin-api.th.md)
 
 ## 3. รูปแบบการตอบกลับ
 
@@ -75,4 +75,4 @@
 
 ## 6. ที่มาของความจริง
 
-`internal/api/router/router.go` (จำนวนขึ้นอยู่กับเวอร์ชัน โค้ดเป็นหลัก) ตารางเส้นทางใน [admin-api.md](./admin-api.th.md) ถูกสร้างขึ้นจากโค้ด หากไม่เห็นด้วยกับโค้ด **โค้ดจะชนะ**
+`internal/api/router/router.go` (จำนวนจะแตกต่างกันไปตามเวอร์ชัน รหัสนี้เชื่อถือได้) ตารางเส้นทางใน [admin-api.md](./admin-api.md) ถูกสร้างขึ้นจากโค้ด หากไม่เห็นด้วยกับโค้ด **โค้ดจะชนะ**

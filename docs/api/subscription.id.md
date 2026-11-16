@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: id | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: id | updated: 2026-11-16 -->
 # Berlangganan API (publik)
 
 > Bahasa: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · Bahasa Indonesia · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -20,8 +20,9 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 |---|---|
 | `format` | Format keluaran; mengesampingkan default langganan. Lihat di bawah |
 | `config` | Nama template konfigurasi (ditentukan pada “Format langganan” di UI admin). Harus menggunakan format yang sama dengan `format` permintaan ini, jika tidak maka akan diabaikan |
-| `platform` | Cocokkan template konfigurasi berdasarkan nama platform (digunakan ketika `config` dihilangkan); formatnya juga harus cocok |
+| `platform` | Cocokkan templat konfigurasi berdasarkan nama platform (digunakan ketika `config` dihilangkan); formatnya juga harus cocok |
 | `providers` | Hanya `mihomo_yaml`: `1` / `true` mengaktifkan **Mode Penyedia** (memancarkan `proxy-providers` dan mereferensikannya melalui `use`); default atau nilai lainnya membuat node tetap berada di bawah `proxies`. Lihat §6 |
+| `provider` | Hanya `mihomo_proxies_yaml`: dengan kunci penyedia, hanya subset node sumber yang dikembalikan (tidak termasuk pseudo-node penagihan); kosong mengembalikan semua node. `proxy-providers.url` yang dihasilkan panel menyertakannya secara otomatis |
 
 ### Nilai `format` yang didukung
 
@@ -53,8 +54,9 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 |---|---|---|
 | 200 | — | Normal (isinya adalah langganan yang dirender dalam `format`) |
 | 400 | `MISSING_TOKEN` | Tidak ada token di URL |
-| 403 | (teks biasa) | Langganan ditangguhkan/kedaluwarsa/tidak aktif. Pesan dilokalkan (zh/en/ja/ko) melalui `Accept-Language` dan merupakan alasan satu baris |
+| 403 | (teks biasa) | Langganan ditangguhkan / kedaluwarsa / tidak aktif / IP tidak masuk daftar putih. Pesan dilokalkan (zh/en/ja/ko/ru) melalui `Accept-Language` dan merupakan alasan satu baris |
 | 404 | `SUBSCRIPTION_NOT_FOUND` | Tokennya tidak ada |
+| 429 | `TOO_MANY_REQUESTS` | Batas tarif titik akhir langganan (`SubscribeRateLimit`) tercapai; Kesalahan JSON, coba lagi nanti |
 
 > Langganan yang dicabut dianggap tidak ada (404).
 
@@ -116,7 +118,7 @@ Jenis penyedia:
 | Baik hati | Kunci | Catatan |
 |---|---|---|
 | Dalaman | Nama grup node yang disanitasi | Dihasilkan per grup simpul rencana; hanya berisi node grup itu |
-| Dicadangkan (usang) | `subscription-nodes` | Tidak lagi dikirim dalam `proxy-providers`; grup yang merujuknya diperluas ke provider konkret, atau node disisipkan langsung bila tidak ada |
+| Dicadangkan (tidak digunakan lagi) | `subscription-nodes` | Tidak lagi dipancarkan di `proxy-providers`; kelompok yang merujuknya memperluas ke penyedia konkret, atau menyejajarkan node ketika rencana tidak memilikinya |
 | Eksternal | Nama dikonfigurasikan pada paket | Sumber eksternal (`http` YAML atau `file`) |
 
 Bidang umum per penyedia:

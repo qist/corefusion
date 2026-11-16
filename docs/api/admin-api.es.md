@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: es | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: es | updated: 2026-11-16 -->
 # Administrador API
 
 > Idiomas: [简体中文](admin-api.md) · [English](admin-api.en.md) · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · Español · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -8,7 +8,7 @@ La tabla de rutas de administración completa API para **desarrollo de paneles/a
 - Base URL: `https://<panel-domain>/api/v1`
 - Autenticación: `Authorization: Bearer <admin_token>` (de `POST /api/v1/auth/login`)
 - Formatos de respuesta/error comunes y convenciones de límite de velocidad: consulte [README.md](./README.es.md)
-- Fuente de la verdad: `internal/api/router/router.go` (la cantidad varía según la versión; el código es la referencia); si esta tabla no está de acuerdo, **el código gana**
+- Fuente de la verdad: `internal/api/router/router.go` (el recuento varía según la versión; el código tiene autoridad); si esta tabla no está de acuerdo, **el código gana**
 
 ## Marcadores de permiso
 
@@ -17,8 +17,11 @@ La tabla de rutas de administración completa API para **desarrollo de paneles/a
 | Público | No es necesario iniciar sesión (es posible que aún se apliquen guardias de mantenimiento o limitaciones de tarifas) |
 | Público · tarifa limitada | Sin inicio de sesión, con un límite de tarifa dedicado |
 | Iniciado sesión | Requiere un token de administrador registrado (`AuthRequired`) |
+| Operador | Requiere rol ≥ `operator` (`RequireRole(RoleOperator)`) |
 | administrador | Requiere rol ≥ `admin` (`RequireRole(RoleAdmin)`) |
 | superadministrador | Requiere rol = `super_admin` |
+| Cliente (público) | No se requiere token de cliente (iniciar sesión/registrarse, etc.) |
+| Cliente (registrado) | Requiere `Authorization: Bearer <client_token>` (un token de cliente del portal, no un token de administrador) |
 
 Niveles de rol: `viewer(10) < operator(20) < admin(30) < super_admin(40)`; Los roles insuficientes devuelven 403 `INSUFFICIENT_ROLE`.
 
@@ -116,7 +119,7 @@ Todos los puntos finales de la lista usan `limit` (tamaño de página, predeterm
 - [Autenticación y seguridad del administrador](#autenticación-y-seguridad-del-administrador)
 - [cuentas de administrador](#cuentas-de-administrador)
 - [Gestión de clientes](#gestión-de-clientes)
-- [Plantillas de planos](#plantillas-de-planos)
+- [Plantillas de planes](#plantillas-de-planes)
 - [Variantes de planes](#variantes-de-planes)
 - [Paquetes de tráfico](#paquetes-de-tráfico)
 - [Cupones](#cupones)
@@ -147,9 +150,12 @@ Todos los puntos finales de la lista usan `limit` (tamaño de página, predeterm
 - [Cuentas compartidas](#cuentas-compartidas)
 - [Certificados](#certificados)
 - [Canales de certificación](#canales-de-certificación)
-- [Configuración EAB](#configuración-eab)
-- [Cuentas ACME](#cuentas-acme)
+- Configuración [EAB](#eab-configuration)
+- Cuentas [ACME](#acme-accounts)
 - [CA](#built-in-ca) incorporado
+- [Configuración EAB](#configuración-eab)
+- Biblioteca de reglas [WAF](#waf-rule-library)
+- [Cuentas ACME](#cuentas-acme)
 - [CA incorporada](#ca-incorporada)
 - [Reglas geográficas](#reglas-geográficas)
 - [Biblioteca de reglas WAF](#biblioteca-de-reglas-waf)
@@ -167,9 +173,6 @@ Todos los puntos finales de la lista usan `limit` (tamaño de página, predeterm
 - [Entrega de suscripción](#entrega-de-suscripción)
 - [Flujo de trabajo de configuración en tiempo de ejecución](#flujo-de-trabajo-de-configuración-en-tiempo-de-ejecución)
 - [Políticas de acceso al servicio (retiradas)](#políticas-de-acceso-al-servicio-retiradas)
-- [Monitoreo de cuota de tráfico](#monitoreo-de-cuota-de-tráfico)
-- [Controles de salud](#controles-de-salud)
-- [página del portal](#página-del-portal)
 
 ---
 
@@ -177,7 +180,7 @@ Todos los puntos finales de la lista usan `limit` (tamaño de página, predeterm
 
 Inicio de sesión, cierre de sesión, cambio de contraseña, 2FA (TOTP), Passkey (WebAuthn) y tickets únicos para el panel de administración.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | POST | `/api/v1/auth/2fa/disable` | Iniciado sesión | Desactivar |
 | POST | `/api/v1/auth/2fa/enable` | Iniciado sesión | Habilitar |
@@ -196,8 +199,8 @@ Inicio de sesión, cierre de sesión, cambio de contraseña, 2FA (TOTP), Passkey
 | POST | `/api/v1/auth/passkey/login/finish` | Público | Iniciar sesión completo |
 | POST | `/api/v1/auth/passkey/register/begin` | Iniciado sesión | Iniciar registro |
 | POST | `/api/v1/auth/passkey/register/finish` | Iniciado sesión | Registro completo |
-| GET | `/api/v1/auth/passkey/rpids` | Iniciado sesión | Lista de permitidos de ID de RP |
-| POST | `/api/v1/auth/passkey/rpids` | Iniciado sesión | Actualizar la lista de permitidos de ID de RP |
+| GET | `/api/v1/auth/passkey/rpids` | administrador | Lista de permitidos de ID de RP |
+| POST | `/api/v1/auth/passkey/rpids` | administrador | Actualizar la lista de permitidos de ID de RP |
 | GET | `/api/v1/auth/passkey/status` | Público | Estado |
 | POST | `/api/v1/auth/refresh` | Público | Actualizar |
 | POST | `/api/v1/auth/ticket` | Iniciado sesión | Emitir un billete único de corta duración |
@@ -206,7 +209,7 @@ Inicio de sesión, cierre de sesión, cambio de contraseña, 2FA (TOTP), Passkey
 
 Cuentas de usuario del panel de administración. El listado requiere administrador; crear/actualizar/eliminar requiere superadministrador (evita la escalada de privilegios).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/users` | administrador | Lista |
 | POST | `/api/v1/users` | superadministrador | crear |
@@ -217,91 +220,91 @@ Cuentas de usuario del panel de administración. El listado requiere administrad
 
 CRUD, suspender/reanudar, actualizar/bajar de categoría, renovación y restablecimiento de uso para suscriptores (cuentas del portal).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/clients` | Iniciado sesión | Listar clientes |
-| POST | `/api/v1/clients` | Iniciado sesión | Crear cliente. cuerpo: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. Se requiere `plan_id`; `password` puede estar vacío (los clientes pueden configurarlo más adelante en el portal) |
-| DELETE | `/api/v1/clients/:id` | Iniciado sesión | Eliminar cliente |
+| POST | `/api/v1/clients` | Operador | Crear cliente. cuerpo: `{"email":"user@example.com","password":"plaintext-password","plan_id":1,"quota_bytes":10737418240,"expires_at":"2026-12-31T00:00:00Z","remark":""}`. Se requiere `plan_id`; `password` puede estar vacío (los clientes pueden configurarlo más adelante en el portal) |
+| DELETE | `/api/v1/clients/:id` | Operador | Eliminar cliente |
 | GET | `/api/v1/clients/:id` | Iniciado sesión | conseguir cliente |
-| PUT | `/api/v1/clients/:id` | Iniciado sesión | Actualizar cliente |
-| POST | `/api/v1/clients/:id/downgrade` | Iniciado sesión | Bajar de categoría al cliente |
+| PUT | `/api/v1/clients/:id` | Operador | Actualizar cliente |
+| POST | `/api/v1/clients/:id/downgrade` | Operador | Bajar de categoría al cliente |
 | GET | `/api/v1/clients/:id/orders` | Iniciado sesión | Lista de pedidos de clientes |
-| POST | `/api/v1/clients/:id/renew` | Iniciado sesión | Renovar cliente |
-| POST | `/api/v1/clients/:id/reset-usage` | Iniciado sesión | Restablecer uso |
-| POST | `/api/v1/clients/:id/restore` | Iniciado sesión | Reanudar cliente |
-| POST | `/api/v1/clients/:id/suspend` | Iniciado sesión | Suspender cliente |
-| POST | `/api/v1/clients/:id/upgrade` | Iniciado sesión | Actualizar cliente |
+| POST | `/api/v1/clients/:id/renew` | Operador | Renovar cliente |
+| POST | `/api/v1/clients/:id/reset-usage` | Operador | Restablecer uso |
+| POST | `/api/v1/clients/:id/restore` | Operador | Reanudar cliente |
+| POST | `/api/v1/clients/:id/suspend` | Operador | Suspender cliente |
+| POST | `/api/v1/clients/:id/upgrade` | Operador | Actualizar cliente |
 
-### Plantillas de planos
+### Plantillas de planes
 
 Planes (variantes, ciclos de facturación, precios, cuotas de tráfico) y autorización de nodos a nivel de plantilla.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/plan-templates` | Iniciado sesión | Lista de plantillas |
-| POST | `/api/v1/plan-templates` | Iniciado sesión | Crear plantilla |
-| DELETE | `/api/v1/plan-templates/:id` | Iniciado sesión | Eliminar plantilla |
+| POST | `/api/v1/plan-templates` | administrador | Crear plantilla |
+| DELETE | `/api/v1/plan-templates/:id` | administrador | Eliminar plantilla |
 | GET | `/api/v1/plan-templates/:id` | Iniciado sesión | Detalles de la plantilla |
-| PUT | `/api/v1/plan-templates/:id` | Iniciado sesión | Actualizar plantilla |
+| PUT | `/api/v1/plan-templates/:id` | administrador | Actualizar plantilla |
 | GET | `/api/v1/plan-templates/:id/accessible-nodes` | Iniciado sesión | Obtener nodos disponibles |
 | GET | `/api/v1/plan-templates/:id/billing-node-options` | Iniciado sesión | Obtenga opciones de nodos facturables |
-| PUT | `/api/v1/plan-templates/:id/node-groups` | Iniciado sesión | Establecer grupos de nodos de plantilla |
-| POST | `/api/v1/plan-templates/:id/sync-accounts` | Iniciado sesión | Sincronizar cuentas con la plantilla |
+| PUT | `/api/v1/plan-templates/:id/node-groups` | administrador | Establecer grupos de nodos de plantilla |
+| POST | `/api/v1/plan-templates/:id/sync-accounts` | administrador | Sincronizar cuentas con la plantilla |
 | GET | `/api/v1/plan-templates/:id/variants` | Iniciado sesión | Lista de variantes |
-| POST | `/api/v1/plan-templates/:id/variants` | Iniciado sesión | Crear variante |
-| POST | `/api/v1/plan-templates/sync-all-accounts` | Iniciado sesión | Sincronizar todas las cuentas |
+| POST | `/api/v1/plan-templates/:id/variants` | administrador | Crear variante |
+| POST | `/api/v1/plan-templates/sync-all-accounts` | administrador | Sincronizar todas las cuentas |
 
 ### Variantes de planes
 
 Actualice y elimine variantes del plan (la creación está anidada en plantillas de plan).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| DELETE | `/api/v1/plan-variants/:id` | Iniciado sesión | Eliminar variante |
-| PUT | `/api/v1/plan-variants/:id` | Iniciado sesión | Variante de actualización |
+| DELETE | `/api/v1/plan-variants/:id` | administrador | Eliminar variante |
+| PUT | `/api/v1/plan-variants/:id` | administrador | Variante de actualización |
 
 ### Paquetes de tráfico
 
 Packs de tráfico que se pueden adquirir por separado.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/traffic-packs` | Iniciado sesión | Lista de paquetes de tráfico |
-| POST | `/api/v1/traffic-packs` | Iniciado sesión | Crear paquete de tráfico |
-| DELETE | `/api/v1/traffic-packs/:id` | Iniciado sesión | Eliminar paquete de tráfico |
-| PUT | `/api/v1/traffic-packs/:id` | Iniciado sesión | Actualizar paquete de tráfico |
+| POST | `/api/v1/traffic-packs` | administrador | Crear paquete de tráfico |
+| DELETE | `/api/v1/traffic-packs/:id` | administrador | Eliminar paquete de tráfico |
+| PUT | `/api/v1/traffic-packs/:id` | administrador | Actualizar paquete de tráfico |
 
 ### Cupones
 
 Crea, valida y canjea cupones.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/promotions` | Iniciado sesión | Listar cupones |
-| POST | `/api/v1/promotions` | Iniciado sesión | Crear cupón |
-| DELETE | `/api/v1/promotions/:id` | Iniciado sesión | Eliminar cupón |
-| PUT | `/api/v1/promotions/:id` | Iniciado sesión | Actualizar cupón |
+| POST | `/api/v1/promotions` | administrador | Crear cupón |
+| DELETE | `/api/v1/promotions/:id` | administrador | Eliminar cupón |
+| PUT | `/api/v1/promotions/:id` | administrador | Actualizar cupón |
 | POST | `/api/v1/promotions/validate` | Iniciado sesión | Validar cupón |
 
 ### Grupos de nodos
 
 Organice los nodos en grupos a los que hacen referencia los planes.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/node-groups` | Iniciado sesión | Listar grupos de nodos |
-| POST | `/api/v1/node-groups` | Iniciado sesión | Crear grupo de nodos |
-| DELETE | `/api/v1/node-groups/:id` | Iniciado sesión | Eliminar grupo de nodos |
-| PUT | `/api/v1/node-groups/:id` | Iniciado sesión | Actualizar grupo de nodos |
+| POST | `/api/v1/node-groups` | administrador | Crear grupo de nodos |
+| DELETE | `/api/v1/node-groups/:id` | administrador | Eliminar grupo de nodos |
+| PUT | `/api/v1/node-groups/:id` | administrador | Actualizar grupo de nodos |
 | GET | `/api/v1/node-groups/:id/members` | Iniciado sesión | Listar miembros del grupo |
-| POST | `/api/v1/node-groups/:id/members` | Iniciado sesión | Agregar miembro del grupo |
-| DELETE | `/api/v1/node-groups/:id/members/:mid` | Iniciado sesión | Eliminar miembro del grupo |
+| POST | `/api/v1/node-groups/:id/members` | administrador | Agregar miembro del grupo |
+| DELETE | `/api/v1/node-groups/:id/members/:mid` | administrador | Eliminar miembro del grupo |
 
 ### Servidores de nodo
 
 Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-box), configuración de entrada/salida/punto final, control de procesos, certificados, WAF, límites de velocidad, salto de puerto, proxies encadenados, espejo/copia de seguridad primaria, instalación/actualización del agente, control de tiempo de ejecución de xray. Muchas subrutas, agrupadas por familia de características.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/node-servers` | administrador | Lista |
 | POST | `/api/v1/node-servers` | administrador | crear |
@@ -328,7 +331,8 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/caddy/save-and-apply` | administrador | Guardar y aplicar |
 | GET | `/api/v1/node-servers/:id/caddy/sites` | administrador | Lista de sitios |
 | POST | `/api/v1/node-servers/:id/caddy/sites` | administrador | Crear sitio |
-| POST | `/api/v1/node-servers/:id/caddy/import` | 管理员 | Importar sitios |
+| POST | `/api/v1/node-servers/:id/caddy/import` | administrador | Importar sitios |
+| POST | `/api/v1/node-servers/:id/caddy/preview-site` | administrador | Vista previa del sitio Caddy renderizado |
 | DELETE | `/api/v1/node-servers/:id/caddy/sites/:siteId` | administrador | Eliminar sitio |
 | PUT | `/api/v1/node-servers/:id/caddy/sites/:siteId` | administrador | Sitio de actualización |
 | DELETE | `/api/v1/node-servers/:id/caddy/sni-rules` | administrador | Eliminar todas las reglas SNI |
@@ -353,6 +357,9 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/force-reconnect` | administrador | Forzar reconexión |
 | GET | `/api/v1/node-servers/:id/free-port` | administrador | Solicitar un puerto libre |
 | POST | `/api/v1/node-servers/:id/geo-rules/push` | administrador | Empujar a este nodo |
+| GET | `/api/v1/node-servers/:id/firewall/status` | administrador | Detección de firewall (firewalld/ufw/nft/iptables) |
+| POST | `/api/v1/node-servers/:id/firewall/allow-port` | administrador | Permitir puerto de escucha entrante (compatible con múltiples rangos) |
+| POST | `/api/v1/node-servers/:id/firewall/remove-port` | administrador | Revocar la asignación portuaria de entrada (incluidos los duplicados) |
 | GET | `/api/v1/node-servers/:id/inbound-configs` | administrador | Lista |
 | POST | `/api/v1/node-servers/:id/inbound-configs` | administrador | crear |
 | DELETE | `/api/v1/node-servers/:id/inbound-configs/:cfgId` | administrador | Eliminar |
@@ -373,8 +380,9 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/nginx/settings` | administrador | Guardar configuración |
 | GET | `/api/v1/node-servers/:id/nginx/sites` | administrador | Lista de sitios |
 | POST | `/api/v1/node-servers/:id/nginx/sites` | administrador | Crear sitio |
-| POST | `/api/v1/node-servers/:id/nginx/import` | 管理员 | Importar sitios |
-| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | 管理员 | Generar archivos de certificado SSL |
+| POST | `/api/v1/node-servers/:id/nginx/import` | administrador | Importar sitios |
+| POST | `/api/v1/node-servers/:id/nginx/preview-site` | administrador | Vista previa renderizada del sitio Nginx |
+| POST | `/api/v1/node-servers/:id/nginx/ssl/generate` | administrador | Generar archivos de certificado SSL |
 | DELETE | `/api/v1/node-servers/:id/nginx/sites/:siteId` | administrador | Eliminar sitio |
 | PUT | `/api/v1/node-servers/:id/nginx/sites/:siteId` | administrador | Sitio de actualización |
 | DELETE | `/api/v1/node-servers/:id/nginx/sni-rules` | administrador | Eliminar todas las reglas SNI |
@@ -457,6 +465,7 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | DELETE | `/api/v1/node-servers/:id/share-domains/all` | administrador | Borrar todo |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/apply` | administrador | Aplicar reglas de firewall de salto de puerto |
 | POST | `/api/v1/node-servers/:id/singbox/control/firewall/remove` | administrador | Eliminar reglas de firewall de salto de puerto |
+| GET | `/api/v1/node-servers/:id/singbox/connections` | administrador | Conexiones sing-box en vivo (clash_api, solo nodo local) |
 | POST | `/api/v1/node-servers/:id/speed-test` | administrador | Prueba de velocidad del nodo |
 | GET | `/api/v1/node-servers/:id/status` | administrador | Estado del nodo |
 | POST | `/api/v1/node-servers/:id/sync` | administrador | Configuración del nodo de sincronización (generar y enviar) |
@@ -496,6 +505,8 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | GET | `/api/v1/node-servers/:id/warp/config` | administrador | Leer configuración |
 | POST | `/api/v1/node-servers/:id/warp/generate-config` | administrador | Generar configuración |
 | POST | `/api/v1/node-servers/:id/warp/register` | administrador | Registrarse |
+| POST | `/api/v1/node-servers/:id/warp/masque/register` | administrador | Registrar perfil WARP MASQUE (paso 1 de 2) |
+| POST | `/api/v1/node-servers/:id/warp/:warpId/masque-outbound` | administrador | Crear una MASQUE sing-box saliente desde un perfil WARP |
 | GET | `/api/v1/node-servers/:id/warp/status` | administrador | Estado |
 | GET | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | administrador | Obtener información del balanceador |
 | POST | `/api/v1/node-servers/:id/xray/control/balancer/:tag` | administrador | Establecer objetivo de equilibrio |
@@ -542,10 +553,10 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 
 Auditoría y exportación de operaciones del lado del nodo.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/node-audit-logs` | Iniciado sesión | Registro de auditoría de nodo |
-| GET | `/api/v1/node-audit-logs/export` | Iniciado sesión | Exportar registros de auditoría de nodos |
+| GET | `/api/v1/node-audit-logs` | administrador | Registro de auditoría de nodo |
+| GET | `/api/v1/node-audit-logs/export` | administrador | Exportar registros de auditoría de nodos |
 
 ### Nodos (modelo heredado, retirado)
 
@@ -556,7 +567,7 @@ Auditoría y exportación de operaciones del lado del nodo.
 
 Vista de nodo agregada por región.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/regions/:region/servers` | Iniciado sesión | Lista de nodos para esta región |
 | GET | `/api/v1/regions/overview` | Iniciado sesión | Descripción general de la región |
@@ -565,19 +576,19 @@ Vista de nodo agregada por región.
 
 Gestión de registros de suscripción: revocar, rotar token, registros de acceso, restablecer uso.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/subscriptions` | Iniciado sesión | Lista |
-| POST | `/api/v1/subscriptions` | Iniciado sesión | crear |
-| DELETE | `/api/v1/subscriptions/:id` | Iniciado sesión | Eliminar |
+| POST | `/api/v1/subscriptions` | Operador | crear |
+| DELETE | `/api/v1/subscriptions/:id` | Operador | Eliminar |
 | GET | `/api/v1/subscriptions/:id` | Iniciado sesión | Detalles |
-| PUT | `/api/v1/subscriptions/:id` | Iniciado sesión | Actualizar |
+| PUT | `/api/v1/subscriptions/:id` | Operador | Actualizar |
 | GET | `/api/v1/subscriptions/:id/access-logs` | Iniciado sesión | Registro de acceso |
-| POST | `/api/v1/subscriptions/:id/enable` | Iniciado sesión | Habilitar |
-| POST | `/api/v1/subscriptions/:id/reset-usage` | Iniciado sesión | Restablecer uso |
-| POST | `/api/v1/subscriptions/:id/restore` | Iniciado sesión | Currículum |
-| POST | `/api/v1/subscriptions/:id/revoke` | Iniciado sesión | Revocar |
-| POST | `/api/v1/subscriptions/:id/rotate` | Iniciado sesión | rotar |
+| POST | `/api/v1/subscriptions/:id/enable` | Operador | Habilitar |
+| POST | `/api/v1/subscriptions/:id/reset-usage` | Operador | Restablecer uso |
+| POST | `/api/v1/subscriptions/:id/restore` | Operador | Currículum |
+| POST | `/api/v1/subscriptions/:id/revoke` | Operador | Revocar |
+| POST | `/api/v1/subscriptions/:id/rotate` | Operador | rotar |
 | GET | `/api/v1/subscriptions/:id/rotations` | Iniciado sesión | Historial de rotación |
 
 ### Formatos de suscripción
@@ -590,112 +601,115 @@ Gestión de registros de suscripción: revocar, rotar token, registros de acceso
 
 Dominios de suscripción dedicados (proxy inverso a la ruta `/sub` del panel).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/subscription-endpoints` | Iniciado sesión | Lista |
-| POST | `/api/v1/subscription-endpoints` | Iniciado sesión | crear |
-| DELETE | `/api/v1/subscription-endpoints/:id` | Iniciado sesión | Eliminar |
+| POST | `/api/v1/subscription-endpoints` | administrador | crear |
+| DELETE | `/api/v1/subscription-endpoints/:id` | administrador | Eliminar |
 | GET | `/api/v1/subscription-endpoints/:id` | Iniciado sesión | Detalles |
-| PUT | `/api/v1/subscription-endpoints/:id` | Iniciado sesión | Actualizar |
+| PUT | `/api/v1/subscription-endpoints/:id` | administrador | Actualizar |
 
 ### Compartir dominios
 
 Acceda al dominio/grupo de IP utilizado en los enlaces del cliente.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/share-domains` | Iniciado sesión | Lista |
-| POST | `/api/v1/share-domains` | Iniciado sesión | crear |
-| DELETE | `/api/v1/share-domains/:id` | Iniciado sesión | Eliminar |
-| PUT | `/api/v1/share-domains/:id` | Iniciado sesión | Actualizar |
-| DELETE | `/api/v1/share-domains/all` | Iniciado sesión | Borrar todo |
-| POST | `/api/v1/share-domains/seed` | Iniciado sesión | Inicializar datos predeterminados |
+| POST | `/api/v1/share-domains` | administrador | crear |
+| DELETE | `/api/v1/share-domains/:id` | administrador | Eliminar |
+| PUT | `/api/v1/share-domains/:id` | administrador | Actualizar |
+| DELETE | `/api/v1/share-domains/all` | administrador | Borrar todo |
+| POST | `/api/v1/share-domains/seed` | administrador | Inicializar datos predeterminados |
 
 ### Cloudflare IP
 
 Cloudflare CDN Gestión de fuentes y grupos de IP.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| DELETE | `/api/v1/cfip/entries` | Iniciado sesión | Borrar entradas |
+| DELETE | `/api/v1/cfip/entries` | administrador | Borrar entradas |
 | GET | `/api/v1/cfip/entries` | Iniciado sesión | Lista de entrada |
-| POST | `/api/v1/cfip/entries` | Iniciado sesión | Agregar entrada |
-| DELETE | `/api/v1/cfip/entries/:id` | Iniciado sesión | Eliminar entrada |
-| POST | `/api/v1/cfip/fetch-all` | Iniciado sesión | Obtener todas las fuentes |
-| POST | `/api/v1/cfip/seed` | Iniciado sesión | Inicializar datos predeterminados |
+| POST | `/api/v1/cfip/entries` | administrador | Agregar entrada |
+| DELETE | `/api/v1/cfip/entries/:id` | administrador | Eliminar entrada |
+| POST | `/api/v1/cfip/fetch-all` | administrador | Obtener todas las fuentes |
+| GET | `/api/v1/cfip/probe-config` | Iniciado sesión | Configuración de sonda IP preferida de CF (nodos de entrada + marcadores instalados) |
+| PUT | `/api/v1/cfip/probe-config` | administrador | Guardar intervalo de sonda/límite de latencia/nodo de entrada/marcador |
+| POST | `/api/v1/cfip/check` | administrador | Pruebe todos los dominios/IP preferidos ahora |
+| POST | `/api/v1/cfip/seed` | administrador | Inicializar datos predeterminados |
 | GET | `/api/v1/cfip/sources` | Iniciado sesión | Lista de fuentes de datos |
-| POST | `/api/v1/cfip/sources` | Iniciado sesión | Crear fuente de datos |
-| DELETE | `/api/v1/cfip/sources/:id` | Iniciado sesión | Eliminar fuente de datos |
-| PUT | `/api/v1/cfip/sources/:id` | Iniciado sesión | Actualizar fuente de datos |
-| POST | `/api/v1/cfip/sources/:id/fetch` | Iniciado sesión | Obtener esta fuente |
+| POST | `/api/v1/cfip/sources` | administrador | Crear fuente de datos |
+| DELETE | `/api/v1/cfip/sources/:id` | administrador | Eliminar fuente de datos |
+| PUT | `/api/v1/cfip/sources/:id` | administrador | Actualizar fuente de datos |
+| POST | `/api/v1/cfip/sources/:id/fetch` | administrador | Obtener esta fuente |
 
 ### Configuración de suscripción (Mihomo/Clash)
 
 Configuración de plantilla de suscripción: grupos, reglas, proveedores de reglas, vista previa de YAML.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/mihomo/configs` | Iniciado sesión | Lista |
-| POST | `/api/v1/mihomo/configs` | Iniciado sesión | crear |
-| DELETE | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Eliminar |
+| POST | `/api/v1/mihomo/configs` | administrador | crear |
+| DELETE | `/api/v1/mihomo/configs/:id` | administrador | Eliminar |
 | GET | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Detalles |
-| PUT | `/api/v1/mihomo/configs/:id` | Iniciado sesión | Actualizar |
+| PUT | `/api/v1/mihomo/configs/:id` | administrador | Actualizar |
 | GET | `/api/v1/mihomo/configs/:id/rules` | Iniciado sesión | Lista de reglas |
-| POST | `/api/v1/mihomo/configs/:id/rules` | Iniciado sesión | Crear regla |
-| PUT | `/api/v1/mihomo/configs/:id/rules/order` | 登录 | Reordenar reglas |
-| PUT | `/api/v1/mihomo/rules/:id` | 登录 | Actualizar regla |
-| DELETE | `/api/v1/mihomo/rules/:id` | Iniciado sesión | Eliminar regla |
+| POST | `/api/v1/mihomo/configs/:id/rules` | administrador | Crear regla |
+| PUT | `/api/v1/mihomo/configs/:id/rules/order` | administrador | Reordenar reglas |
+| PUT | `/api/v1/mihomo/rules/:id` | administrador | Actualizar regla |
+| DELETE | `/api/v1/mihomo/rules/:id` | administrador | Eliminar regla |
 
 ### Sitios de recarga
 
 Integración de sitios de pago de terceros: claves de firma, archivos de verificación, verificación de dominio, documentos de integración.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/charge-sites` | Iniciado sesión | Lista de sitios |
-| POST | `/api/v1/charge-sites` | Iniciado sesión | Crear sitio |
-| DELETE | `/api/v1/charge-sites/:id` | Iniciado sesión | Eliminar sitio |
-| GET | `/api/v1/charge-sites/:id` | Iniciado sesión | Detalles del sitio |
-| PUT | `/api/v1/charge-sites/:id` | Iniciado sesión | Sitio de actualización |
-| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | Iniciado sesión | Borrar llave antigua |
-| POST | `/api/v1/charge-sites/:id/generate-verify` | Iniciado sesión | Generar archivo de verificación |
-| POST | `/api/v1/charge-sites/:id/generate-verify-file` | Iniciado sesión | Generar archivo de verificación |
-| GET | `/api/v1/charge-sites/:id/integration-doc` | Iniciado sesión | Obtener documento de integración |
-| POST | `/api/v1/charge-sites/:id/rotate-secret` | Iniciado sesión | Girar clave de firma |
-| POST | `/api/v1/charge-sites/:id/verify-dns` | Iniciado sesión | Verificar dominio DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain` | Iniciado sesión | Verificar desafío de dominio HTTP |
-| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | Iniciado sesión | Verificar dominio DNS |
-| POST | `/api/v1/charge-sites/:id/verify-domain-http` | Iniciado sesión | Verificar desafío de dominio HTTP |
+| GET | `/api/v1/charge-sites` | administrador | Lista de sitios |
+| POST | `/api/v1/charge-sites` | administrador | Crear sitio |
+| DELETE | `/api/v1/charge-sites/:id` | administrador | Eliminar sitio |
+| GET | `/api/v1/charge-sites/:id` | administrador | Detalles del sitio |
+| PUT | `/api/v1/charge-sites/:id` | administrador | Sitio de actualización |
+| POST | `/api/v1/charge-sites/:id/clear-prev-secret` | administrador | Borrar llave antigua |
+| POST | `/api/v1/charge-sites/:id/generate-verify` | administrador | Generar archivo de verificación |
+| POST | `/api/v1/charge-sites/:id/generate-verify-file` | administrador | Generar archivo de verificación |
+| GET | `/api/v1/charge-sites/:id/integration-doc` | administrador | Obtener documento de integración |
+| POST | `/api/v1/charge-sites/:id/rotate-secret` | administrador | Girar clave de firma |
+| POST | `/api/v1/charge-sites/:id/verify-dns` | administrador | Verificar dominio DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain` | administrador | Verificar desafío de dominio HTTP |
+| POST | `/api/v1/charge-sites/:id/verify-domain-dns` | administrador | Verificar dominio DNS |
+| POST | `/api/v1/charge-sites/:id/verify-domain-http` | administrador | Verificar desafío de dominio HTTP |
 
 ### Órdenes de recarga
 
 Consultas de pedidos de recarga, devoluciones, exportación CSV.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/charge-orders` | Iniciado sesión | lista de pedidos |
-| GET | `/api/v1/charge-orders/:id` | Iniciado sesión | Detalles del pedido |
-| POST | `/api/v1/charge-orders/:id/refund` | Iniciado sesión | Reembolso |
-| GET | `/api/v1/charge-orders/export-csv` | Iniciado sesión | Órdenes de recarga de exportación CSV |
+| GET | `/api/v1/charge-orders` | administrador | lista de pedidos |
+| GET | `/api/v1/charge-orders/:id` | administrador | Detalles del pedido |
+| POST | `/api/v1/charge-orders/:id/refund` | administrador | Reembolso |
+| GET | `/api/v1/charge-orders/export-csv` | administrador | Órdenes de recarga de exportación CSV |
 
 ### Tarjetas de recarga
 
 Generación masiva de tarjetas, registros de uso, exportación CSV.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/charge-cards` | Iniciado sesión | Lista de tarjetas |
-| POST | `/api/v1/charge-cards` | Iniciado sesión | Crear tarjeta |
-| DELETE | `/api/v1/charge-cards/:id` | Iniciado sesión | Eliminar tarjeta |
-| GET | `/api/v1/charge-cards/:id/usages` | Iniciado sesión | Registros de uso de tarjetas |
-| POST | `/api/v1/charge-cards/batch` | Iniciado sesión | Generar tarjetas de forma masiva |
-| GET | `/api/v1/charge-cards/export-csv` | Iniciado sesión | Tarjetas de exportación CSV |
+| GET | `/api/v1/charge-cards` | administrador | Lista de tarjetas |
+| POST | `/api/v1/charge-cards` | administrador | Crear tarjeta |
+| DELETE | `/api/v1/charge-cards/:id` | administrador | Eliminar tarjeta |
+| GET | `/api/v1/charge-cards/:id/usages` | administrador | Registros de uso de tarjetas |
+| POST | `/api/v1/charge-cards/batch` | administrador | Generar tarjetas de forma masiva |
+| GET | `/api/v1/charge-cards/export-csv` | administrador | Tarjetas de exportación CSV |
 
 ### Cobrar eventos de devolución de llamada
 
 Auditoría de eventos de devolución de llamada.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/charge-callback-events` | Iniciado sesión | Lista de eventos de devolución de llamada |
 
@@ -703,7 +717,7 @@ Auditoría de eventos de devolución de llamada.
 
 Reintento manual de devoluciones de llamada fallidas.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/charge-callback-retries` | Iniciado sesión | Lista de devolución de llamadas fallidas |
 | POST | `/api/v1/charge-callback-retries/:id/retry` | administrador | Reintentar devolución de llamada |
@@ -712,7 +726,7 @@ Reintento manual de devoluciones de llamada fallidas.
 
 Vista de administrador de saldos y transacciones.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/client-balances` | Iniciado sesión | Lista de saldos de clientes |
 | GET | `/api/v1/client-balances/transactions` | Iniciado sesión | Transacciones de saldo (admin) |
@@ -722,18 +736,18 @@ Vista de administrador de saldos y transacciones.
 
 Emitir obsequios reclamables (días/tráfico).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/client-gifts` | Iniciado sesión | Lista de regalos |
-| POST | `/api/v1/client-gifts` | Iniciado sesión | crear regalo |
-| POST | `/api/v1/client-gifts/batch` | Iniciado sesión | Crear regalos a granel |
+| POST | `/api/v1/client-gifts` | administrador | crear regalo |
+| POST | `/api/v1/client-gifts/batch` | administrador | Crear regalos a granel |
 | GET | `/api/v1/client-gifts/search-clients` | Iniciado sesión | Buscar clientes |
 
 ### Configuración de referencia
 
 Configuración y estadísticas de comisiones de referidos.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/referral/config` | Iniciado sesión | Configuración de referencia |
 | PUT | `/api/v1/referral/config` | administrador | Guardar configuración de referencia |
@@ -744,17 +758,17 @@ Configuración y estadísticas de comisiones de referidos.
 
 Revisar las solicitudes de retiro.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/referral-withdrawals` | Iniciado sesión | Lista de solicitudes de retiro |
-| POST | `/api/v1/referral-withdrawals/:id/approve` | Iniciado sesión | Aprobar retiro |
-| POST | `/api/v1/referral-withdrawals/:id/reject` | Iniciado sesión | Rechazar retiro |
+| GET | `/api/v1/referral-withdrawals` | administrador | Lista de solicitudes de retiro |
+| POST | `/api/v1/referral-withdrawals/:id/approve` | administrador | Aprobar retiro |
+| POST | `/api/v1/referral-withdrawals/:id/reject` | administrador | Rechazar retiro |
 
 ### Listas de IP permitidas (resumen)
 
 Vista de lista de IP permitidas en todos los clientes.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/ip-whitelists` | Iniciado sesión | Todas las listas de IP permitidas de clientes |
 
@@ -762,7 +776,7 @@ Vista de lista de IP permitidas en todos los clientes.
 
 Consultar vinculaciones de cuentas de terceros del cliente.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/client-oauth-bindings` | Iniciado sesión | Lista vinculante de OAuth del cliente |
 
@@ -770,215 +784,209 @@ Consultar vinculaciones de cuentas de terceros del cliente.
 
 Contestación, asignación y cierre de tickets.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/tickets` | Iniciado sesión | Lista de entradas |
 | GET | `/api/v1/tickets/:id` | Iniciado sesión | Detalles del billete |
-| POST | `/api/v1/tickets/:id/assign` | Iniciado sesión | Asignar ticket |
-| POST | `/api/v1/tickets/:id/close` | Iniciado sesión | Cerrar ticket |
-| POST | `/api/v1/tickets/:id/reply` | Iniciado sesión | Responder al ticket |
+| POST | `/api/v1/tickets/:id/assign` | Operador | Asignar ticket |
+| POST | `/api/v1/tickets/:id/close` | Operador | Cerrar ticket |
+| POST | `/api/v1/tickets/:id/reply` | Operador | Responder al ticket |
 
 ### Artículos
 
 CRUD para artículos del portal.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/articles` | Iniciado sesión | Lista de artículos |
-| POST | `/api/v1/articles` | Iniciado sesión | Crear artículo |
-| DELETE | `/api/v1/articles/:id` | Iniciado sesión | Eliminar artículo |
+| POST | `/api/v1/articles` | administrador | Crear artículo |
+| DELETE | `/api/v1/articles/:id` | administrador | Eliminar artículo |
 | GET | `/api/v1/articles/:id` | Iniciado sesión | Detalles del artículo |
-| PUT | `/api/v1/articles/:id` | Iniciado sesión | Actualizar artículo |
+| PUT | `/api/v1/articles/:id` | administrador | Actualizar artículo |
 
 ### Cuentas compartidas
 
 Registros de emisión y reparación de cuentas compartidas (streaming, etc.).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/shared-accounts` | Iniciado sesión | Lista de cuentas compartidas |
-| POST | `/api/v1/shared-accounts` | Iniciado sesión | Crear cuenta compartida |
-| DELETE | `/api/v1/shared-accounts/:id` | Iniciado sesión | Eliminar cuenta compartida |
+| POST | `/api/v1/shared-accounts` | administrador | Crear cuenta compartida |
+| DELETE | `/api/v1/shared-accounts/:id` | administrador | Eliminar cuenta compartida |
 | GET | `/api/v1/shared-accounts/:id` | Iniciado sesión | Detalles de la cuenta compartida |
-| PUT | `/api/v1/shared-accounts/:id` | Iniciado sesión | Actualizar cuenta compartida |
+| PUT | `/api/v1/shared-accounts/:id` | administrador | Actualizar cuenta compartida |
 | GET | `/api/v1/shared-accounts/:id/repair-logs` | Iniciado sesión | Registros de reparación |
 
 ### Certificados
 
 Emisión, carga, renovación y exportación de certificado público (ACME); Se admite la emisión en un nodo específico.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/certificates` | Iniciado sesión | Lista |
-| POST | `/api/v1/certificates` | Iniciado sesión | crear |
-| DELETE | `/api/v1/certificates/:id` | Iniciado sesión | Eliminar |
-| GET | `/api/v1/certificates/:id` | Iniciado sesión | Detalles |
-| PUT | `/api/v1/certificates/:id` | Iniciado sesión | Actualizar |
-| GET | `/api/v1/certificates/:id/download` | Iniciado sesión | Descargar |
-| POST | `/api/v1/certificates/:id/renew` | Iniciado sesión | Renovar cliente |
-| GET | `/api/v1/certificates/check-port` | Iniciado sesión | comprobar puerto |
-| GET | `/api/v1/certificates/detect-ip` | Iniciado sesión | IP de la sonda |
-| GET | `/api/v1/certificates/export` | Iniciado sesión | Exportar |
-| POST | `/api/v1/certificates/issue` | Iniciado sesión | Problema. cuerpo: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` por defecto es http-01; `dns_channel_id` selecciona un canal DNS (un proveedor DNS configurado + credenciales) |
-| POST | `/api/v1/certificates/issue-on-node` | Iniciado sesión | Emitir al nodo |
-| POST | `/api/v1/certificates/upload` | Iniciado sesión | Subir |
-| GET | `/api/v1/certificate-tasks/:id` | 管理员 | Consultar estado de tarea en segundo plano |
+| GET | `/api/v1/certificates` | administrador | Lista |
+| POST | `/api/v1/certificates` | administrador | crear |
+| DELETE | `/api/v1/certificates/:id` | administrador | Eliminar |
+| GET | `/api/v1/certificates/:id` | administrador | Detalles |
+| PUT | `/api/v1/certificates/:id` | administrador | Actualizar |
+| GET | `/api/v1/certificates/:id/download` | administrador | Descargar |
+| POST | `/api/v1/certificates/:id/renew` | administrador | Renovar cliente |
+| GET | `/api/v1/certificates/check-port` | administrador | comprobar puerto |
+| GET | `/api/v1/certificates/detect-ip` | administrador | IP de la sonda |
+| GET | `/api/v1/certificates/export` | administrador | Exportar |
+| POST | `/api/v1/certificates/issue` | administrador | Problema. cuerpo: `{"domains":["example.com","*.example.com"],"challenge_type":"dns-01","dns_channel_id":2,"key_type":"rsa","key_bits":4096}`. `challenge_type` por defecto es http-01; `dns_channel_id` selecciona un canal DNS (un proveedor DNS configurado + credenciales) |
+| POST | `/api/v1/certificates/issue-on-node` | administrador | Emitir al nodo |
+| POST | `/api/v1/certificates/upload` | administrador | Subir |
+| GET | `/api/v1/certificate-tasks/:id` | administrador | Consultar el estado de la tarea en segundo plano |
 
 ### Canales de certificación
 
 Configuración del canal (CA) ACME.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/cert-channels` | Iniciado sesión | Lista |
-| POST | `/api/v1/cert-channels` | Iniciado sesión | crear |
-| DELETE | `/api/v1/cert-channels/:id` | Iniciado sesión | Eliminar |
-| PUT | `/api/v1/cert-channels/:id` | Iniciado sesión | Actualizar |
-| GET | `/api/v1/cert-channels/providers` | Iniciado sesión | Proveedor |
+| GET | `/api/v1/cert-channels` | administrador | Lista |
+| POST | `/api/v1/cert-channels` | administrador | crear |
+| DELETE | `/api/v1/cert-channels/:id` | administrador | Eliminar |
+| PUT | `/api/v1/cert-channels/:id` | administrador | Actualizar |
+| GET | `/api/v1/cert-channels/providers` | administrador | Proveedor |
 
 ### Configuración EAB
 
 Credenciales que vinculan cuentas externas como ZeroSSL / Google.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/eab-configs` | Iniciado sesión | Lista |
-| POST | `/api/v1/eab-configs` | Iniciado sesión | crear |
-| DELETE | `/api/v1/eab-configs/:id` | Iniciado sesión | Eliminar |
-| PUT | `/api/v1/eab-configs/:id` | Iniciado sesión | Actualizar |
-| POST | `/api/v1/eab-configs/fetch-google` | Iniciado sesión | Obtener Google EAB de GCP |
-| POST | `/api/v1/eab-configs/fetch-zerossl` | Iniciado sesión | Obtenga ZeroSSL EAB con un correo electrónico en un clic |
+| GET | `/api/v1/eab-configs` | administrador | Lista |
+| POST | `/api/v1/eab-configs` | administrador | crear |
+| DELETE | `/api/v1/eab-configs/:id` | administrador | Eliminar |
+| PUT | `/api/v1/eab-configs/:id` | administrador | Actualizar |
+| POST | `/api/v1/eab-configs/fetch-google` | administrador | Obtener Google EAB de GCP |
+| POST | `/api/v1/eab-configs/fetch-zerossl` | administrador | Obtenga ZeroSSL EAB con un correo electrónico en un clic |
 
 ### Cuentas ACME
 
 Gestión de cuenta ACME (correo electrónico de contacto) desde el panel.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/acme-accounts` | Iniciado sesión | Lista |
-| POST | `/api/v1/acme-accounts` | Iniciado sesión | crear |
-| DELETE | `/api/v1/acme-accounts/:id` | Iniciado sesión | Eliminar |
-| PUT | `/api/v1/acme-accounts/:id` | Iniciado sesión | Actualizar |
-| GET | `/api/v1/acme-accounts/default` | Iniciado sesión | Obtener valores predeterminados |
+| GET | `/api/v1/acme-accounts` | administrador | Lista |
+| POST | `/api/v1/acme-accounts` | administrador | crear |
+| DELETE | `/api/v1/acme-accounts/:id` | administrador | Eliminar |
+| PUT | `/api/v1/acme-accounts/:id` | administrador | Actualizar |
+| GET | `/api/v1/acme-accounts/default` | administrador | Obtener valores predeterminados |
 
 ### CA incorporada
 
 Panel interno CA: Emisión/renovación/revocación de certificados de agente, exportación de CRL, cola de distribución.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/ca/agent-certs` | Iniciado sesión | Lista de certificados de agente |
-| POST | `/api/v1/ca/agent-certs/:server_id/renew` | Iniciado sesión | Renovar certificado de agente |
-| GET | `/api/v1/ca/distribution-queue` | Iniciado sesión | Cola de distribución de certificados |
-| DELETE | `/api/v1/ca/distribution-queue/:id` | Iniciado sesión | Eliminar entrada de la cola de distribución |
-| POST | `/api/v1/ca/distribution-queue/:id/retry` | Iniciado sesión | Reintentar la distribución del certificado |
-| GET | `/api/v1/ca/revocations` | Iniciado sesión | Lista de revocación |
-| GET | `/api/v1/ca/revocations/export` | Iniciado sesión | Exportar CRL |
-| GET | `/api/v1/ca/status` | Iniciado sesión | Estado de CA |
+| GET | `/api/v1/ca/agent-certs` | administrador | Lista de certificados de agente |
+| POST | `/api/v1/ca/agent-certs/:server_id/renew` | administrador | Renovar certificado de agente |
+| GET | `/api/v1/ca/distribution-queue` | administrador | Cola de distribución de certificados |
+| DELETE | `/api/v1/ca/distribution-queue/:id` | administrador | Eliminar entrada de la cola de distribución |
+| POST | `/api/v1/ca/distribution-queue/:id/retry` | administrador | Reintentar la distribución del certificado |
+| GET | `/api/v1/ca/revocations` | administrador | Lista de revocación |
+| GET | `/api/v1/ca/revocations/export` | administrador | Exportar CRL |
+| GET | `/api/v1/ca/status` | administrador | Estado de CA |
 
 ### Reglas geográficas
 
 Sincronización y entrega de fuentes y archivos de datos geoip/geosite.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/geo-rules/files` | Iniciado sesión | Lista de archivos |
-| DELETE | `/api/v1/geo-rules/files/:fileId` | Iniciado sesión | Eliminar archivo |
-| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | Iniciado sesión | Alternar sincronización automática |
-| POST | `/api/v1/geo-rules/files/:fileId/download` | Iniciado sesión | Descargar |
+| DELETE | `/api/v1/geo-rules/files/:fileId` | administrador | Eliminar archivo |
+| PUT | `/api/v1/geo-rules/files/:fileId/auto-sync` | administrador | Alternar sincronización automática |
+| POST | `/api/v1/geo-rules/files/:fileId/download` | administrador | Descargar |
 | GET | `/api/v1/geo-rules/files/:fileId/download-file` | Iniciado sesión | Descargar archivo |
 | GET | `/api/v1/geo-rules/github-assets` | Iniciado sesión | Obtener activos del repositorio GitHub |
-| POST | `/api/v1/geo-rules/push-all` | Iniciado sesión | Empujar a todos los nodos |
-| POST | `/api/v1/geo-rules/seed` | Iniciado sesión | Inicializar datos predeterminados |
+| POST | `/api/v1/geo-rules/push-all` | administrador | Empujar a todos los nodos |
+| POST | `/api/v1/geo-rules/seed` | administrador | Inicializar datos predeterminados |
 | GET | `/api/v1/geo-rules/sources` | Iniciado sesión | Lista de fuentes de datos |
-| POST | `/api/v1/geo-rules/sources` | Iniciado sesión | Crear fuente de datos |
-| DELETE | `/api/v1/geo-rules/sources/:sourceId` | Iniciado sesión | Eliminar fuente de datos |
-| PUT | `/api/v1/geo-rules/sources/:sourceId` | Iniciado sesión | Actualizar fuente de datos |
+| POST | `/api/v1/geo-rules/sources` | administrador | Crear fuente de datos |
+| DELETE | `/api/v1/geo-rules/sources/:sourceId` | administrador | Eliminar fuente de datos |
+| PUT | `/api/v1/geo-rules/sources/:sourceId` | administrador | Actualizar fuente de datos |
 | GET | `/api/v1/geo-rules/sources/:sourceId/assets` | Iniciado sesión | Obtener activos de lanzamiento |
-| POST | `/api/v1/geo-rules/sources/:sourceId/files` | Iniciado sesión | Agregar archivo |
-| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | Iniciado sesión | Alternar sincronización programada |
-| POST | `/api/v1/geo-rules/sources/:sourceId/select` | Iniciado sesión | Seleccionar archivo |
-| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | Iniciado sesión | Sincronizar esta fuente de datos |
+| POST | `/api/v1/geo-rules/sources/:sourceId/files` | administrador | Agregar archivo |
+| PUT | `/api/v1/geo-rules/sources/:sourceId/schedule` | administrador | Alternar sincronización programada |
+| POST | `/api/v1/geo-rules/sources/:sourceId/select` | administrador | Seleccionar archivo |
+| POST | `/api/v1/geo-rules/sources/:sourceId/sync` | administrador | Sincronizar esta fuente de datos |
 | GET | `/api/v1/geo-rules/status` | Iniciado sesión | Estado |
-| POST | `/api/v1/geo-rules/sync-all` | Iniciado sesión | Sincronizar todo |
+| POST | `/api/v1/geo-rules/sync-all` | administrador | Sincronizar todo |
 | GET | `/api/v1/geo-rules/sync-status/:key` | Iniciado sesión | Progreso de sincronización |
 
 ### Biblioteca de reglas WAF
 
 Reglas globales de WAF: origen, sincronización y entrega de GitHub a todos los nodos.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/waf/github-source` | Iniciado sesión | fuente de datos GitHub |
-| PUT | `/api/v1/waf/github-source` | Iniciado sesión | Guarde la fuente de datos GitHub |
-| POST | `/api/v1/waf/push-all` | Iniciado sesión | Empujar a todos los nodos |
+| GET | `/api/v1/waf/github-source` | Iniciado sesión | Fuente de datos GitHub |
+| PUT | `/api/v1/waf/github-source` | administrador | Guarde la fuente de datos GitHub |
+| POST | `/api/v1/waf/push-all` | administrador | Empujar a todos los nodos |
 | GET | `/api/v1/waf/rules` | Iniciado sesión | Lista de reglas |
-| DELETE | `/api/v1/waf/rules/:name` | Iniciado sesión | Eliminar regla |
+| DELETE | `/api/v1/waf/rules/:name` | administrador | Eliminar regla |
 | GET | `/api/v1/waf/rules/:name` | Iniciado sesión | obtener regla |
-| PUT | `/api/v1/waf/rules/:name` | Iniciado sesión | Guardar regla |
-| POST | `/api/v1/waf/sync-all` | Iniciado sesión | Sincronizar todo |
-| POST | `/api/v1/waf/sync-github` | Iniciado sesión | Sincronización desde GitHub |
+| PUT | `/api/v1/waf/rules/:name` | administrador | Guardar regla |
+| POST | `/api/v1/waf/sync-all` | administrador | Sincronizar todo |
+| POST | `/api/v1/waf/sync-github` | administrador | Sincronización desde GitHub |
 
 ### Gestión de registros
 
 Lectura y transmisión de registros de nodo/núcleo, políticas de limpieza, control de escritura de registros.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| POST | `/api/v1/log-manage/cleanup-all` | Iniciado sesión | Limpia todo ahora |
-| GET | `/api/v1/log-manage/cleanup-rules` | Iniciado sesión | Lista de reglas de limpieza |
-| PUT | `/api/v1/log-manage/cleanup-rules/:id` | Iniciado sesión | Actualizar regla de limpieza |
-| POST | `/api/v1/log-manage/cleanup-table/:table` | Iniciado sesión | Limpiar la tabla especificada ahora |
-| GET | `/api/v1/log-manage/core-log-output` | Iniciado sesión | Configuración de salida del registro principal |
-| PUT | `/api/v1/log-manage/core-log-output` | Iniciado sesión | Guardar la configuración de salida del registro principal |
-| GET | `/api/v1/log-manage/core/:type/stdout-log` | Iniciado sesión | Leer los registros de salida estándar principales |
-| GET | `/api/v1/log-manage/core/:type/stdout-stream` | Iniciado sesión | Salida estándar del núcleo de transmisión |
-| POST | `/api/v1/log-manage/discover` | Iniciado sesión | Descubrir archivos de registro de nodos |
-| GET | `/api/v1/log-manage/log-output` | Iniciado sesión | Configuración de salida de registro |
-| PUT | `/api/v1/log-manage/log-output` | Iniciado sesión | Guardar configuración de salida del registro |
-| POST | `/api/v1/log-manage/log-output/release/:type` | Iniciado sesión | Lanzamiento de adquisición de salida estándar del registro |
-| POST | `/api/v1/log-manage/log-output/takeover/:type` | Iniciado sesión | Tomar el control de la salida estándar del registro |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs` | Iniciado sesión | Lista de archivos de registro de nodos |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | Iniciado sesión | Leer registros de nodos |
-| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | Iniciado sesión | Rotar registros de nodos |
-| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | Iniciado sesión | Registros de nodos de transmisión |
-| GET | `/api/v1/log-manage/policies` | Iniciado sesión | Lista de políticas |
-| POST | `/api/v1/log-manage/policies` | Iniciado sesión | Crear política |
-| DELETE | `/api/v1/log-manage/policies/:id` | Iniciado sesión | Eliminar política |
-| GET | `/api/v1/log-manage/policies/:id` | Iniciado sesión | Detalles de la póliza |
-| PUT | `/api/v1/log-manage/policies/:id` | Iniciado sesión | Actualizar política |
-| GET | `/api/v1/log-manage/policies/:id/jobs` | Iniciado sesión | lista de trabajos de limpieza |
-| GET | `/api/v1/log-manage/policies/:id/log` | Iniciado sesión | Leer registros |
-| GET | `/api/v1/log-manage/policies/:id/log-stream` | Iniciado sesión | Registros de transmisión |
-| POST | `/api/v1/log-manage/policies/:id/rotate` | Iniciado sesión | rotar |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | Iniciado sesión | Leer los registros de salida estándar principales |
-| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | Iniciado sesión | Salida estándar del núcleo de transmisión |
-| GET | `/api/v1/log-manage/scheduler-config` | Iniciado sesión | Configuración de programación |
-| PUT | `/api/v1/log-manage/scheduler-config` | Iniciado sesión | Actualizar configuración de programación |
-| GET | `/api/v1/log-manage/status` | Iniciado sesión | Estado |
-| POST | `/api/v1/log-manage/sync` | Iniciado sesión | Sincronizar políticas de limpieza |
-| GET | `/api/v1/log-manage/writers` | Iniciado sesión | Estado del escritor |
-| PUT | `/api/v1/log-manage/writers/:type/config` | Iniciado sesión | Actualizar configuración del escritor |
-| GET | `/api/v1/log-manage/writers/:type/files` | Iniciado sesión | Lista de archivos de registro del escritor |
-| POST | `/api/v1/log-manage/writers/:type/start` | Iniciado sesión | Empezar escritor |
-| POST | `/api/v1/log-manage/writers/:type/stop` | Iniciado sesión | dejar de escribir |
+| POST | `/api/v1/log-manage/cleanup-all` | administrador | Limpia todo ahora |
+| GET | `/api/v1/log-manage/cleanup-rules` | administrador | Lista de reglas de limpieza |
+| PUT | `/api/v1/log-manage/cleanup-rules/:id` | administrador | Actualizar regla de limpieza |
+| POST | `/api/v1/log-manage/cleanup-table/:table` | administrador | Limpiar la tabla especificada ahora |
+| GET | `/api/v1/log-manage/core-log-output` | administrador | Configuración de salida del registro principal |
+| PUT | `/api/v1/log-manage/core-log-output` | administrador | Guardar la configuración de salida del registro principal |
+| GET | `/api/v1/log-manage/core/:type/stdout-log` | administrador | Leer los registros de salida estándar principales |
+| GET | `/api/v1/log-manage/core/:type/stdout-stream` | administrador | Salida estándar del núcleo de transmisión |
+| POST | `/api/v1/log-manage/discover` | administrador | Descubrir archivos de registro de nodos |
+| GET | `/api/v1/log-manage/log-output` | administrador | Configuración de salida de registro |
+| PUT | `/api/v1/log-manage/log-output` | administrador | Guardar configuración de salida del registro |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs` | administrador | Lista de archivos de registro de nodos |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type` | administrador | Leer registros de nodos |
+| POST | `/api/v1/log-manage/nodes/:serverId/logs/:type/rotate` | administrador | Rotar registros de nodos |
+| GET | `/api/v1/log-manage/nodes/:serverId/logs/:type/stream` | administrador | Registros de nodos de transmisión |
+| GET | `/api/v1/log-manage/policies` | administrador | Lista de políticas |
+| POST | `/api/v1/log-manage/policies` | administrador | Crear política |
+| DELETE | `/api/v1/log-manage/policies/:id` | administrador | Eliminar política |
+| GET | `/api/v1/log-manage/policies/:id` | administrador | Detalles de la póliza |
+| PUT | `/api/v1/log-manage/policies/:id` | administrador | Política de actualización |
+| GET | `/api/v1/log-manage/policies/:id/jobs` | administrador | lista de trabajos de limpieza |
+| GET | `/api/v1/log-manage/policies/:id/log` | administrador | Leer registros |
+| GET | `/api/v1/log-manage/policies/:id/log-stream` | administrador | Registros de transmisión |
+| POST | `/api/v1/log-manage/policies/:id/rotate` | administrador | rotar |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-log` | administrador | Leer los registros de salida estándar principales |
+| GET | `/api/v1/log-manage/proxy/:type/stdout-stream` | administrador | Salida estándar del núcleo de transmisión |
+| GET | `/api/v1/log-manage/scheduler-config` | administrador | Configuración de programación |
+| PUT | `/api/v1/log-manage/scheduler-config` | administrador | Actualizar configuración de programación |
+| GET | `/api/v1/log-manage/status` | administrador | Estado |
+| POST | `/api/v1/log-manage/sync` | administrador | Sincronizar políticas de limpieza |
+| GET | `/api/v1/log-manage/writers` | administrador | Estado del escritor |
 
 ### Copias de seguridad
 
 Base de datos/copias de seguridad completas, restauración, trabajos programados, almacenamiento remoto FTP/S3/WebDAV.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| DELETE | `/api/v1/backups/:id` | administrador | Eliminar copia de seguridad |
+| DELETE | `/api/v1/backups/:id` | superadministrador | Eliminar copia de seguridad |
 | GET | `/api/v1/backups/:id/download` | administrador | Descargar copia de seguridad |
-| POST | `/api/v1/backups/:id/restore` | administrador | Restaurar desde copia de seguridad |
-| POST | `/api/v1/backups/:id/upload-ftp` | administrador | Subir a FTP |
-| POST | `/api/v1/backups/:id/upload-s3` | administrador | Subir a S3 |
-| POST | `/api/v1/backups/:id/upload-webdav` | administrador | Subir a WebDAV |
+| POST | `/api/v1/backups/:id/restore` | superadministrador | Restaurar desde copia de seguridad |
+| POST | `/api/v1/backups/:id/upload-ftp` | superadministrador | Subir a FTP |
+| POST | `/api/v1/backups/:id/upload-s3` | superadministrador | Subir a S3 |
+| POST | `/api/v1/backups/:id/upload-webdav` | superadministrador | Subir a WebDAV |
 | POST | `/api/v1/backups/create` | administrador | Crear copia de seguridad completa (con volcado de base de datos) |
 | GET | `/api/v1/backups/list` | administrador | Lista completa de copias de seguridad |
-| POST | `/api/v1/backups/remote-restore` | administrador | Restaurar desde remoto |
-| GET | `/api/v1/backups/restore-status` | administrador | Restaurar el progreso |
+| POST | `/api/v1/backups/remote-restore` | superadministrador | Restaurar desde remoto |
+| GET | `/api/v1/backups/restore-status` | superadministrador | Restaurar el progreso |
 | GET | `/api/v1/backups/schedules` | administrador | Lista de trabajos programados |
 | POST | `/api/v1/backups/schedules` | administrador | Crear trabajo programado |
 | DELETE | `/api/v1/backups/schedules/:id` | administrador | Eliminar trabajo programado |
@@ -988,21 +996,21 @@ Base de datos/copias de seguridad completas, restauración, trabajos programados
 | DELETE | `/api/v1/backups/storages/:id` | administrador | Eliminar configuración de almacenamiento |
 | PUT | `/api/v1/backups/storages/:id` | administrador | Actualizar configuración de almacenamiento |
 | GET | `/api/v1/backups/storages/:id/files` | administrador | Lista de archivos de copia de seguridad remota |
-| POST | `/api/v1/backups/upload-restore` | administrador | Cargar copia de seguridad y restaurar |
+| POST | `/api/v1/backups/upload-restore` | superadministrador | Cargar copia de seguridad y restaurar |
 
 ### Configuración del sistema
 
 Configuración y migración de bases de datos, configuraciones del panel, claves JWT, pruebas SMTP/Telegram, plantillas de notificación, actualizaciones en línea (principalmente administrativas).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | PUT | `/api/v1/system/bootstrap-finish` | administrador | Complete la configuración del primer arranque |
 | GET | `/api/v1/system/bootstrap-state` | administrador | Estado del primer arranque |
 | GET | `/api/v1/system/config-file/:coreType` | administrador | Leer el archivo de configuración principal |
 | GET | `/api/v1/system/db-config` | administrador | Configuración de base de datos |
 | PUT | `/api/v1/system/db-config` | administrador | Actualizar la configuración de la base de datos |
-| POST | `/api/v1/system/db-config/migrate` | administrador | Migrar datos de base de datos |
-| POST | `/api/v1/system/db-config/switch` | administrador | Cambiar de base de datos (con migración en un solo paso) |
+| POST | `/api/v1/system/db-config/migrate` | superadministrador | Migrar datos de base de datos |
+| POST | `/api/v1/system/db-config/switch` | superadministrador | Cambiar de base de datos (con migración en un solo paso) |
 | POST | `/api/v1/system/db-config/test` | administrador | Probar la conexión de la base de datos |
 | GET | `/api/v1/system/db-pool-stats` | administrador | Estadísticas del grupo de conexiones |
 | GET | `/api/v1/system/db-stats` | administrador | Estadísticas de la base de datos |
@@ -1011,13 +1019,13 @@ Configuración y migración de bases de datos, configuraciones del panel, claves
 | GET | `/api/v1/system/encryption-key-status` | administrador | Estado de la clave de cifrado |
 | GET | `/api/v1/system/env-config` | administrador | configuración .env |
 | PUT | `/api/v1/system/env-config` | administrador | Actualizar la configuración .env |
-| POST | `/api/v1/system/generate-encryption-key` | administrador | Generar clave de cifrado |
+| POST | `/api/v1/system/generate-encryption-key` | superadministrador | Generar clave de cifrado |
 | GET | `/api/v1/system/github-config` | administrador | Configuración GitHub |
 | PUT | `/api/v1/system/github-config` | administrador | Actualizar la configuración de GitHub |
 | GET | `/api/v1/system/jwt-secret-status` | administrador | Estado de la clave JWT |
 | GET | `/api/v1/system/maintenance` | Público | Estado del modo de mantenimiento (público) |
 | PUT | `/api/v1/system/maintenance` | administrador | Alternar modo de mantenimiento |
-| POST | `/api/v1/system/migrate-data` | administrador | Migrar datos |
+| POST | `/api/v1/system/migrate-data` | superadministrador | Migrar datos |
 | GET | `/api/v1/system/notification-config` | administrador | Configuración de notificación |
 | PUT | `/api/v1/system/notification-config` | administrador | Actualizar configuración de notificación |
 | GET | `/api/v1/system/notification-templates` | administrador | Lista de plantillas |
@@ -1030,13 +1038,13 @@ Configuración y migración de bases de datos, configuraciones del panel, claves
 | PUT | `/api/v1/system/panel-config` | administrador | Actualizar configuración del panel |
 | GET | `/api/v1/system/reality-targets` | administrador | Lista de objetivos REALITY |
 | PUT | `/api/v1/system/reality-targets` | administrador | Actualizar objetivo REALITY |
-| POST | `/api/v1/system/reality-targets/reset` | administrador | Restablecer el objetivo REALITY a sus valores predeterminados |
-| GET | `/api/v1/system/reality-local-sni` | 管理员 | Leer configuración SNI local de Reality |
-| PUT | `/api/v1/system/reality-local-sni` | 管理员 | Actualizar configuración SNI local de Reality |
-| POST | `/api/v1/system/regenerate-jwt-secret` | administrador | Regenerar clave JWT |
+| POST | `/api/v1/system/reality-targets/reset` | superadministrador | Restablecer el objetivo REALITY a sus valores predeterminados |
+| GET | `/api/v1/system/reality-local-sni` | administrador | Leer la configuración local de Reality SNI |
+| PUT | `/api/v1/system/reality-local-sni` | administrador | Actualizar la configuración local de Reality SNI |
+| POST | `/api/v1/system/regenerate-jwt-secret` | superadministrador | Regenerar clave JWT |
 | GET | `/api/v1/system/releases` | administrador | Versiones disponibles |
-| POST | `/api/v1/system/restart` | administrador | Reiniciar |
-| POST | `/api/v1/system/rollback` | administrador | Reversión del sistema |
+| POST | `/api/v1/system/restart` | superadministrador | Reiniciar |
+| POST | `/api/v1/system/rollback` | superadministrador | Reversión del sistema |
 | GET | `/api/v1/system/settings` | administrador | Leer configuración |
 | PUT | `/api/v1/system/settings/batch` | administrador | Configuración de actualización masiva |
 | GET | `/api/v1/system/stats` | administrador | Estado del sistema |
@@ -1045,7 +1053,7 @@ Configuración y migración de bases de datos, configuraciones del panel, claves
 | POST | `/api/v1/system/telegram-chat-id` | administrador | Obtener ID de chat Telegram |
 | POST | `/api/v1/system/test-smtp` | administrador | Prueba SMTP |
 | POST | `/api/v1/system/test-telegram` | administrador | Prueba Telegram |
-| POST | `/api/v1/system/update` | administrador | Actualización del sistema |
+| POST | `/api/v1/system/update` | superadministrador | Actualización del sistema |
 | GET | `/api/v1/system/update-jobs` | administrador | Actualizar lista de trabajos |
 | POST | `/api/v1/system/upload-mtls-ca` | administrador | Cargar certificado mTLS CA |
 
@@ -1053,41 +1061,42 @@ Configuración y migración de bases de datos, configuraciones del panel, claves
 
 Auditar consultas de eventos y exportar.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/security/audit-events` | Iniciado sesión | Lista de eventos de auditoría |
-| GET | `/api/v1/security/audit-events/export` | Iniciado sesión | Exportar eventos de auditoría |
+| GET | `/api/v1/security/audit-events` | administrador | Lista de eventos de auditoría |
+| GET | `/api/v1/security/audit-events/export` | administrador | Exportar eventos de auditoría |
+| GET | `/api/v1/security/subscription-access-logs` | administrador | Registros de recuperación de suscripciones (filtrar por ID de suscripción/IP/correo electrónico del cliente) |
 
 ### Métricas
 
 Métricas agregadas del panel (nodos/certificados/servicios).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/metrics/certificates` | Iniciado sesión | Métricas de certificado |
-| GET | `/api/v1/metrics/nodes` | Iniciado sesión | Métricas de nodo |
-| GET | `/api/v1/metrics/overview` | Iniciado sesión | Descripción general |
+| GET | `/api/v1/metrics/certificates` | administrador | Métricas de certificado |
+| GET | `/api/v1/metrics/nodes` | administrador | Métricas de nodo |
+| GET | `/api/v1/metrics/overview` | administrador | Descripción general |
 
 ### Plantillas de portales
 
 Plantillas de portal, configuración de activación y gestión de caché.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/portal/active` | Iniciado sesión | Plantilla activa |
-| PUT | `/api/v1/portal/active` | Iniciado sesión | Actualizar plantilla activa |
-| DELETE | `/api/v1/portal/cache` | Iniciado sesión | Borrar caché del portal |
-| GET | `/api/v1/portal/cache` | Iniciado sesión | Estado de caché |
-| PUT | `/api/v1/portal/cache/dev-mode` | Iniciado sesión | Alternar modo de desarrollo de caché |
-| POST | `/api/v1/portal/cache/rebuild` | Iniciado sesión | Reconstruir la caché del portal |
-| GET | `/api/v1/portal/lang/builtin` | 登录 | Paquetes de idioma integrados |
-| POST | `/api/v1/portal/reset` | Iniciado sesión | Restaurar plantilla predeterminada |
-| GET | `/api/v1/portal/templates` | Iniciado sesión | Lista |
-| POST | `/api/v1/portal/templates` | Iniciado sesión | crear |
-| DELETE | `/api/v1/portal/templates/:id` | Iniciado sesión | Eliminar |
-| GET | `/api/v1/portal/templates/:id` | Iniciado sesión | Detalles |
-| PUT | `/api/v1/portal/templates/:id` | Iniciado sesión | Actualizar |
-| POST | `/api/v1/portal/templates/:id/activate` | Iniciado sesión | Activar plantilla |
+| GET | `/api/v1/portal/active` | administrador | Plantilla activa |
+| PUT | `/api/v1/portal/active` | administrador | Actualizar plantilla activa |
+| DELETE | `/api/v1/portal/cache` | administrador | Borrar caché del portal |
+| GET | `/api/v1/portal/cache` | administrador | Estado de caché |
+| PUT | `/api/v1/portal/cache/dev-mode` | administrador | Alternar modo de desarrollo de caché |
+| POST | `/api/v1/portal/cache/rebuild` | administrador | Reconstruir la caché del portal |
+| GET | `/api/v1/portal/lang/builtin` | administrador | Paquetes de idiomas integrados |
+| POST | `/api/v1/portal/reset` | administrador | Restaurar plantilla predeterminada |
+| GET | `/api/v1/portal/templates` | administrador | Lista |
+| POST | `/api/v1/portal/templates` | administrador | crear |
+| DELETE | `/api/v1/portal/templates/:id` | administrador | Eliminar |
+| GET | `/api/v1/portal/templates/:id` | administrador | Detalles |
+| PUT | `/api/v1/portal/templates/:id` | administrador | Actualizar |
+| POST | `/api/v1/portal/templates/:id/activate` | administrador | Activar plantilla |
 
 > `/portal/templates` CRUD es un **API avanzado**: la interfaz de usuario del portal utiliza principalmente `PUT /api/v1/portal/active`
 > (configuración de sitio completo de una sola vez); administrar/cambiar múltiples plantillas con este grupo. Ambos son compatibles y no entran en conflicto.
@@ -1096,20 +1105,20 @@ Plantillas de portal, configuración de activación y gestión de caché.
 
 Script de instalación y descarga del Agente de Nodo (público).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | POST | `/api/v1/agent/bootstrap` | Público | Registro del primer inicio del agente (el agente informa con un token de inicio; público) |
 | GET | `/api/v1/agent/releases` | administrador | Versiones de agente disponibles (para la página de actualización) |
 | GET | `/api/v1/agent/version` | administrador | Versión actual del Agente en el panel |
 | GET | `/api/v1/agent/download` | Público | Descargar Agente |
 | GET | `/api/v1/agent/install` | Público | Obtener script de instalación |
-| GET | `/api/v1/agent/origin` | 公开 | Dirección de origen del panel (pública) |
+| GET | `/api/v1/agent/origin` | Público | Dirección de origen del panel (pública) |
 
 ### Entrada de devolución de llamada de cargo
 
 Devolución de llamada de plataforma de pago de terceros (pública, firma verificada).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | POST | `/api/v1/charge/callback/:site_id` | Público | Manejar devolución de llamada de cargo |
 
@@ -1117,7 +1126,7 @@ Devolución de llamada de plataforma de pago de terceros (pública, firma verifi
 
 Lista entrante utilizada para la selección de nodos del plan.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/inbounds-with-server` | Iniciado sesión | Todos los entrantes (incluidos sus nodos) |
 
@@ -1125,7 +1134,7 @@ Lista entrante utilizada para la selección de nodos del plan.
 
 Configuración del tiempo de ejecución del portal sin inicio de sesión (guardia de mantenimiento + límite de tarifa pública).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/public/articles` | Público | Lista de artículos públicos |
 | GET | `/api/v1/public/articles/:slug` | Público | Detalles del artículo público |
@@ -1136,85 +1145,81 @@ Configuración del tiempo de ejecución del portal sin inicio de sesión (guardi
 
 ### Autenticación de cliente y negocio (la misma configuración en el motor de administración)
 
-Puntos finales del cliente idénticos al portal; consulte `portal-api.en.md` para obtener más detalles.
+Puntos finales del cliente idénticos al portal. Usan un **token de cliente** (`Authorization: Bearer <client_token>`), no un token de administrador; consulte `portal-api.en.md` para obtener más detalles.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
-| GET | `/api/v1/client-auth/articles` | Público | Lista de artículos |
-| GET | `/api/v1/client-auth/articles/:slug` | Público | Obtener artículo |
-| GET | `/api/v1/client-auth/balance` | Público | obtener saldo |
-| GET | `/api/v1/client-auth/balance/transactions` | Público | Transacciones de saldo |
-| POST | `/api/v1/client-auth/change-password` | Público | Cambiar contraseña |
-| POST | `/api/v1/client-auth/charge/create` | Público | Crear orden de recarga |
-| GET | `/api/v1/client-auth/charge/orders` | Público | Listar pedidos de recarga |
-| GET | `/api/v1/client-auth/charge/orders/:id` | Público | Obtener detalles del pedido de recarga |
-| POST | `/api/v1/client-auth/charge/redeem-card` | Público | Canjear tarjeta |
-| GET | `/api/v1/client-auth/charge/sites` | Público | Listar sitios de recarga |
-| GET | `/api/v1/client-auth/charge/status/:trade_no` | Público | Consultar estado de recarga |
-| GET | `/api/v1/client-auth/checktime` | Público | Obtener la hora del servidor (sincronización del reloj) |
-| GET | `/api/v1/client-auth/connection-info` | Público | Obtener parámetros de conexión del plan |
-| GET | `/api/v1/client-auth/gifts` | Público | Lista de regalos |
-| POST | `/api/v1/client-auth/gifts/:id/claim` | Público | Reclamar regalo |
-| GET | `/api/v1/client-auth/invoices` | Público | lista de pedidos |
-| GET | `/api/v1/client-auth/invoices/:id` | Público | Detalles del pedido |
-| GET | `/api/v1/client-auth/settings/whitelist` | Público | Lista de IP permitidas |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Público | Eliminar de la lista de IP permitidas |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Público | Agregar IP automáticamente |
-| POST | `/api/v1/client-auth/login` | Público | Iniciar sesión |
-| POST | `/api/v1/client-auth/logout` | Público | Cerrar sesión |
-| POST | `/api/v1/client-auth/logs/package` | Público | Crear paquete de registros |
-| GET | `/api/v1/client-auth/logs/packages` | Público | Listar paquetes de registros |
-| DELETE | `/api/v1/client-auth/logs/packages/:id` | Público | Eliminar paquete de registros |
-| GET | `/api/v1/client-auth/logs/packages/:id` | Público | Obtener paquete de registros |
-| GET | `/api/v1/client-auth/logs/packages/:id/download` | Público | Descargar paquete de registros |
-| GET | `/api/v1/client-auth/logs/types` | Público | Comprobación del estado del paquete de registros |
-| GET | `/api/v1/client-auth/me` | Público | Obtener el usuario registrado actualmente |
-| GET | `/api/v1/client-auth/nodes` | Público | Mi lista de nodos |
-| GET | `/api/v1/client-auth/nodes/:id/config` | Público | Configuración de nodo |
-| GET | `/api/v1/client-auth/nodes/:id/link` | Público | Enlace para compartir nodo |
-| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Público | Código QR del nodo |
-| GET | `/api/v1/client-auth/oauth/:provider` | Público | Autorizar |
-| GET | `/api/v1/client-auth/oauth/:provider/callback` | Público | Devolución de llamada |
-| GET | `/api/v1/client-auth/oauth/providers` | Público | Estado del proveedor |
-| GET | `/api/v1/client-auth/orders` | Público | lista de pedidos |
-| POST | `/api/v1/client-auth/orders` | Público | Crear pedido |
-| GET | `/api/v1/client-auth/orders/:id` | Público | Detalles del pedido |
-| GET | `/api/v1/client-auth/plans` | Público | Lista de planes |
-| GET | `/api/v1/client-auth/plans/:id` | Público | Detalles del plano |
-| GET | `/api/v1/client-auth/referral/code` | Público | Obtener código de verificación de referencia |
-| GET | `/api/v1/client-auth/referral/records` | Público | Listar registros de referencia |
-| GET | `/api/v1/client-auth/referral/stats` | Público | Obtener estadísticas de referencias |
-| POST | `/api/v1/client-auth/referral/withdraw` | Público | Solicitar retiro |
-| GET | `/api/v1/client-auth/referral/withdrawals` | Público | Listar retiros de referencias |
-| POST | `/api/v1/client-auth/refresh` | Público | Actualizar |
-| POST | `/api/v1/client-auth/register` | Público | Registrarse |
-| POST | `/api/v1/client-auth/reset-subscription` | Público | Restablecer suscripción |
-| PUT | `/api/v1/client-auth/settings` | Público | Actualizar perfil |
-| POST | `/api/v1/client-auth/rotate-token` | Público | Rotar token de suscripción |
-| POST | `/api/v1/client-auth/self-unban` | Público | Desbanificación de autoservicio |
-| PUT | `/api/v1/client-auth/settings` | Público | Actualizar configuración |
-| POST | `/api/v1/client-auth/settings/auto-add-ip` | Público | Agregar IP automáticamente |
-| GET | `/api/v1/client-auth/settings/whitelist` | Público | Lista de IP permitidas |
-| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Público | Eliminar de la lista de IP permitidas |
-| GET | `/api/v1/client-auth/shared-accounts` | Público | Listar cuentas compartidas |
-| GET | `/api/v1/client-auth/shared-accounts/:id` | Público | Obtener cuenta compartida |
-| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Público | Solicitar cuenta compartida |
-| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Público | Solicitud de reparación |
-| POST | `/api/v1/client-auth/ticket` | Público | Emitir un billete único de corta duración |
-| GET | `/api/v1/client-auth/tickets` | Público | Listar entradas |
-| POST | `/api/v1/client-auth/tickets` | Público | Crear ticket |
-| GET | `/api/v1/client-auth/tickets/:id` | Público | Obtener boleto |
-| POST | `/api/v1/client-auth/tickets/:id/close` | Público | Cerrar ticket |
-| POST | `/api/v1/client-auth/tickets/:id/reply` | Público | Responder al ticket |
-| GET | `/api/v1/client-auth/traffic-history` | Público | Historial de tráfico |
-| GET | `/api/v1/client-auth/traffic-packs` | Público | Lista de paquetes de tráfico |
-| POST | `/api/v1/client-auth/traffic-packs/buy` | Público | Comprar paquete de tráfico |
+| GET | `/api/v1/client-auth/articles` | Cliente (registrado) | Lista de artículos |
+| GET | `/api/v1/client-auth/articles/:slug` | Cliente (registrado) | Obtener artículo |
+| GET | `/api/v1/client-auth/balance` | Cliente (registrado) | obtener saldo |
+| GET | `/api/v1/client-auth/balance/transactions` | Cliente (registrado) | Transacciones de saldo |
+| POST | `/api/v1/client-auth/change-password` | Cliente (registrado) | Cambiar contraseña |
+| POST | `/api/v1/client-auth/charge/create` | Cliente (registrado) | Crear orden de recarga |
+| GET | `/api/v1/client-auth/charge/orders` | Cliente (registrado) | Listar pedidos de recarga |
+| GET | `/api/v1/client-auth/charge/orders/:id` | Cliente (registrado) | Obtener detalles del pedido de recarga |
+| POST | `/api/v1/client-auth/charge/redeem-card` | Cliente (registrado) | Canjear tarjeta |
+| GET | `/api/v1/client-auth/charge/sites` | Cliente (registrado) | Listar sitios de recarga |
+| GET | `/api/v1/client-auth/charge/status/:trade_no` | Cliente (registrado) | Consultar estado de recarga |
+| GET | `/api/v1/client-auth/checktime` | Cliente (registrado) | Obtener la hora del servidor (sincronización del reloj) |
+| GET | `/api/v1/client-auth/connection-info` | Cliente (registrado) | Obtener parámetros de conexión del plan |
+| GET | `/api/v1/client-auth/gifts` | Cliente (registrado) | Lista de regalos |
+| POST | `/api/v1/client-auth/gifts/:id/claim` | Cliente (registrado) | Reclamar regalo |
+| GET | `/api/v1/client-auth/invoices` | Cliente (registrado) | lista de pedidos |
+| GET | `/api/v1/client-auth/invoices/:id` | Cliente (registrado) | Detalles del pedido |
+| POST | `/api/v1/client-auth/login` | Cliente (público) | Iniciar sesión |
+| POST | `/api/v1/client-auth/logout` | Cliente (registrado) | Cerrar sesión |
+| POST | `/api/v1/client-auth/logs/package` | Cliente (registrado) | Crear paquete de registros |
+| GET | `/api/v1/client-auth/logs/packages` | Cliente (registrado) | Listar paquetes de registros |
+| DELETE | `/api/v1/client-auth/logs/packages/:id` | Cliente (registrado) | Eliminar paquete de registros |
+| GET | `/api/v1/client-auth/logs/packages/:id` | Cliente (registrado) | Obtener paquete de registros |
+| GET | `/api/v1/client-auth/logs/packages/:id/download` | Cliente (registrado) | Descargar paquete de registros |
+| GET | `/api/v1/client-auth/logs/types` | Cliente (registrado) | Comprobación del estado del paquete de registros |
+| GET | `/api/v1/client-auth/me` | Cliente (registrado) | Obtener el usuario registrado actual |
+| GET | `/api/v1/client-auth/nodes` | Cliente (registrado) | Mi lista de nodos |
+| GET | `/api/v1/client-auth/nodes/:id/config` | Cliente (registrado) | Configuración de nodo |
+| GET | `/api/v1/client-auth/nodes/:id/link` | Cliente (registrado) | Enlace para compartir nodo |
+| GET | `/api/v1/client-auth/nodes/:id/qrcode` | Cliente (registrado) | Código QR del nodo |
+| GET | `/api/v1/client-auth/oauth/:provider` | Cliente (público) | Autorizar |
+| GET | `/api/v1/client-auth/oauth/:provider/callback` | Cliente (público) | Devolución de llamada |
+| GET | `/api/v1/client-auth/oauth/providers` | Cliente (público) | Estado del proveedor |
+| GET | `/api/v1/client-auth/orders` | Cliente (registrado) | lista de pedidos |
+| POST | `/api/v1/client-auth/orders` | Cliente (registrado) | Crear pedido |
+| GET | `/api/v1/client-auth/orders/:id` | Cliente (registrado) | Detalles del pedido |
+| GET | `/api/v1/client-auth/plans` | Cliente (registrado) | Lista de planes |
+| GET | `/api/v1/client-auth/plans/:id` | Cliente (registrado) | Detalles del plano |
+| GET | `/api/v1/client-auth/referral/code` | Cliente (registrado) | Obtener código de verificación de referencia |
+| GET | `/api/v1/client-auth/referral/records` | Cliente (registrado) | Listar registros de referencia |
+| GET | `/api/v1/client-auth/referral/stats` | Cliente (registrado) | Obtener estadísticas de referencias |
+| POST | `/api/v1/client-auth/referral/withdraw` | Cliente (registrado) | Solicitar retiro |
+| GET | `/api/v1/client-auth/referral/withdrawals` | Cliente (registrado) | Listar retiros de referencias |
+| POST | `/api/v1/client-auth/refresh` | Cliente (público) | Actualizar |
+| POST | `/api/v1/client-auth/register` | Cliente (público) | Registrarse |
+| POST | `/api/v1/client-auth/reset-subscription` | Cliente (registrado) | Restablecer suscripción |
+| POST | `/api/v1/client-auth/rotate-token` | Cliente (registrado) | Rotar token de suscripción |
+| POST | `/api/v1/client-auth/self-unban` | Cliente (registrado) | Desbanificación de autoservicio |
+| PUT | `/api/v1/client-auth/settings` | Cliente (registrado) | Actualizar configuración |
+| POST | `/api/v1/client-auth/settings/auto-add-ip` | Cliente (registrado) | Agregar IP automáticamente |
+| GET | `/api/v1/client-auth/settings/whitelist` | Cliente (registrado) | Lista de IP permitidas |
+| DELETE | `/api/v1/client-auth/settings/whitelist/:id` | Cliente (registrado) | Eliminar de la lista de IP permitidas |
+| GET | `/api/v1/client-auth/shared-accounts` | Cliente (registrado) | Listar cuentas compartidas |
+| GET | `/api/v1/client-auth/shared-accounts/:id` | Cliente (registrado) | Obtener cuenta compartida |
+| POST | `/api/v1/client-auth/shared-accounts/:id/apply` | Cliente (registrado) | Solicitar cuenta compartida |
+| POST | `/api/v1/client-auth/shared-accounts/:id/repair` | Cliente (registrado) | Solicitud de reparación |
+| POST | `/api/v1/client-auth/ticket` | Cliente (registrado) | Emitir un billete único de corta duración |
+| GET | `/api/v1/client-auth/tickets` | Cliente (registrado) | Listar entradas |
+| POST | `/api/v1/client-auth/tickets` | Cliente (registrado) | Crear ticket |
+| GET | `/api/v1/client-auth/tickets/:id` | Cliente (registrado) | Obtener boleto |
+| POST | `/api/v1/client-auth/tickets/:id/close` | Cliente (registrado) | Cerrar ticket |
+| POST | `/api/v1/client-auth/tickets/:id/reply` | Cliente (registrado) | Responder al ticket |
+| GET | `/api/v1/client-auth/traffic-history` | Cliente (registrado) | Historial de tráfico |
+| GET | `/api/v1/client-auth/traffic-packs` | Cliente (registrado) | Lista de paquetes de tráfico |
+| POST | `/api/v1/client-auth/traffic-packs/buy` | Cliente (registrado) | Comprar paquete de tráfico |
 
 ### Entrega de suscripción
 
 Punto de entrada público para que los clientes obtengan suscripciones; ver `subscription.en.md`.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/sub/:token` | Público | Servir suscripción |
 
@@ -1222,7 +1227,7 @@ Punto de entrada público para que los clientes obtengan suscripciones; ver `sub
 
 Instantáneas de configuración/ejecución en seco/aplicar/revertir (`apply`, `rollback` y `disable-proxy` requieren administrador).
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | POST | `/api/v1/runtime/apply` | administrador | Aplicar |
 | GET | `/api/v1/runtime/apply-jobs` | Iniciado sesión | Listar trabajos |
@@ -1249,7 +1254,7 @@ Instantáneas de configuración/ejecución en seco/aplicar/revertir (`apply`, `r
 
 Vista de monitoreo de solo lectura de cuotas y uso.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/api/v1/traffic/quotas` | Iniciado sesión | lista de cuotas |
 | GET | `/api/v1/traffic/quotas/:id/usage` | Iniciado sesión | Uso de cuota |
@@ -1260,7 +1265,7 @@ Vista de monitoreo de solo lectura de cuotas y uso.
 
 Sonda de vida.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/health` | Público | Sonda de vida; 200 significa saludable |
 
@@ -1268,7 +1273,7 @@ Sonda de vida.
 
 Página del Portal SPA.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/p` | Público | Portal HTML (renderizado por servidor + tiempo de ejecución de Vue) |
 
@@ -1276,6 +1281,6 @@ Página del Portal SPA.
 
 Devolución de llamada de desafío HTTP-01.
 
-| Método | Camino | Permiso | Descripción |
+| Método | Camino | permiso | Descripción |
 |---|---|---|---|
 | GET | `/.well-known/acme-challenge/:token` | Público | ACME HTTP-01 devolución de llamada de desafío (verifica el dominio durante la emisión) |

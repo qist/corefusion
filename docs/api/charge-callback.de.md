@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: de | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: de | updated: 2026-11-16 -->
 # Kostenpflichtiger Rückruf API
 
 > Sprachen: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · [Русский](charge-callback.ru.md) · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · Deutsch · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -98,8 +98,9 @@ Die Verarbeitung ist **idempotent**: Wiederholte Rückrufe mit demselben `trade_
 
 ## 5. Antworten
 
-- Erfolg: 2xx (nachdem das Panel die Zahlung gebucht hat)
-- Fehler: 4xx/5xx + `{ "code": "...", "message": "..." }`; Zu den typischen Codes gehören `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, Mengeninkongruenz usw.
+- Erfolg: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (nachdem das Panel die Zahlung gebucht hat)
+- Fehler: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; Der konkrete Grund liegt in `message` (schlechte Signatur, IP nicht auf der Whitelist, Bestellung nicht gefunden, Nichtübereinstimmung zwischen Betrag und Währung, Nonce-Wiedergabe usw.)
+- Ein ungültiger `site_id` im Pfad gibt `INVALID_SITE_ID` zurück; ein Nicht-JSON-Körper gibt `INVALID_REQUEST` zurück
 
 > Jeder Rückruf trägt `X-Request-ID` (wird vom Panel generiert, falls nicht vorhanden); Protokolle und Ereignisse sind durchgängig nachvollziehbar. Geben Sie diese ID bei der Fehlerbehebung an Ihren Administrator weiter.
 

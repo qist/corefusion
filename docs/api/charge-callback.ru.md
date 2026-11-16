@@ -1,4 +1,4 @@
-<!-- source: charge-callback.md | locale: ru | updated: 2026-10-23 -->
+<!-- source: charge-callback.md | locale: ru | updated: 2026-11-16 -->
 # Обратный вызов по оплате API
 
 > Языки: [简体中文](charge-callback.md) · [English](charge-callback.en.md) · [繁體中文](charge-callback.zh-TW.md) · Русский · [日本語](charge-callback.ja.md) · [한국어](charge-callback.ko.md) · [Deutsch](charge-callback.de.md) · [Français](charge-callback.fr.md) · [Español](charge-callback.es.md) · [Português](charge-callback.pt.md) · [Türkçe](charge-callback.tr.md) · [Bahasa Indonesia](charge-callback.id.md) · [ไทย](charge-callback.th.md) · [Tiếng Việt](charge-callback.vi.md) · [العربية](charge-callback.ar.md) · [فارسی](charge-callback.fa.md)
@@ -98,8 +98,9 @@ def sign_callback(body: dict, secret: str) -> str:
 
 ## 5. Ответы
 
-- Успех: 2xx (после того, как панель разместила платеж)
-- Сбой: 4xx/5xx + `{ "code": "...", "message": "..." }`; типичные коды включают `INVALID_SIGNATURE`, `IP_BLOCKED`, `ORDER_NOT_FOUND`, несоответствие суммы и т. д.
+- Успех: HTTP 200, `{"code":0,"data":{"success":true,"message":"ok"}}` (после того, как панель разместила платеж)
+- Сбой: HTTP 400, `{"code":"CALLBACK_FAILED","message":"..."}`; конкретная причина находится в `message` (плохая подпись, IP-адрес не внесен в белый список, заказ не найден, несоответствие суммы/валюты, повтор nonce и т. д.)
+- Недопустимый `site_id` в пути возвращает `INVALID_SITE_ID`; тело, отличное от JSON, возвращает `INVALID_REQUEST`
 
 > Каждый обратный вызов содержит `X-Request-ID` (генерируется панелью, если он отсутствует); журналы и события отслеживаются от начала до конца. Сообщите этот идентификатор своему администратору при устранении неполадок.
 

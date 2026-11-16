@@ -104,6 +104,7 @@ curl 'https://<门户域名>/sub/<subscription_token>?format=mihomo_yaml'
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/client-auth/me` | 当前客户：`{id, email, plan_id, plan_name, status, quota_bytes, used_bytes, upload_bytes, download_bytes, expires_at, ip_whitelist, device_limit, sub_token, sub_status, created_at, ...}`（`data` 包装） |
+| PUT | `/api/v1/client-auth/settings` | 更新客户自助设置：body：`{ip_whitelist, device_limit}`；`ip_whitelist` 为空表示不限制来源 IP |
 | POST | `/api/v1/client-auth/change-password` | body：`{old_password, new_password}` |
 | GET | `/api/v1/client-auth/checktime` | 服务器时间（客户端校时） |
 | GET | `/api/v1/client-auth/connection-info` | 当前套餐连接参数：`{concurrent, device_limit, protocol, speed_limit, tls, transport}` |

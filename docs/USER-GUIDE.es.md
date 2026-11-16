@@ -1,9 +1,7 @@
-<!-- source: USER-GUIDE.md | locale: es | updated: 2026-10-26 -->
+<!-- source: USER-GUIDE.md | locale: es | updated: 2026-11-16 -->
 # Guía de operaciones CoreFusion
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · Español · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
-
-> ⚠️ 本译文尚未同步最新源文
 
 > Esta guía es para usuarios de CoreFusion y cubre el flujo de trabajo completo desde la instalación hasta las operaciones diarias.
 
@@ -43,7 +41,7 @@
 
 ## 1. Descripción general del sistema
 
-CoreFusion es un panel de administración de proxy multiprotocolo que admite VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC y más, con administración de nodos, entrega de suscripciones, administración de clientes, facturación, certificados y proxies encadenados.
+CoreFusion es un panel de gestión de proxy multiprotocolo que admite VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC y más, con gestión de nodos, entrega de suscripciones, gestión de clientes, facturación, certificados y proxies encadenados.
 
 ### 1.1 Funciones principales
 
@@ -65,7 +63,7 @@ CoreFusion es un panel de administración de proxy multiprotocolo que admite VLE
 - **Backend**: Ir, gRPC
 - **Interfaz**: Vue 3 + Element Plus
 - **Base de datos**: SQLite (predeterminado) / MySQL / PostgreSQL
-- **Proxy**: Proxy inverso Caddy / Nginx
+- **Proxy**: proxy inverso Caddy / Nginx
 - **Puerto del panel**: asignado por el asistente de configuración (puerto libre aleatorio de forma predeterminada; 8080 es una opción común)
 - **Puerto gRPC del agente**: 18443 de forma predeterminada
 
@@ -148,26 +146,26 @@ Si el panel solo escucha en `127.0.0.1` (por ejemplo, detrás de un proxy invers
 
 ### 2.2.1 Salida multilingüe
 
-El instalador incluye cuatro idiomas de interfaz: chino simplificado, inglés, persa (فارسی) y ruso (Русский). Detecta automáticamente `LANG` del sistema o puedes elegir explícitamente:
+El instalador incluye cuatro idiomas de interfaz de usuario: chino simplificado, inglés, persa (فارسی) y ruso (Русский). Detecta automáticamente el sistema `LANG`, o puedes elegir explícitamente:
 
 ```bash
-# Inglés
+# English
 sudo bash install.sh --lang en
 
-# Persa mediante variable de entorno
+# Persian via environment variable
 sudo CF_LANG=fa bash install.sh
 
-# Pasar opciones en una instalación por tubería
+# Pass options through a pipe
 curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/install.sh | sudo bash -s -- --lang ru
 ```
 
-Valores admitidos: `zh` / `en` / `fa` / `ru`; también se acepta `--lang=ru`. Un valor explícito no admitido falla mostrando la lista de idiomas disponibles.
+Valores admitidos: `zh` / `en` / `fa` / `ru`; También se acepta `--lang=ru`. Un valor explícito no admitido falla con la lista de idiomas disponibles.
 
 ### 2.3 Fijación de versiones/espejos/instalación sin conexión
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.82
+sudo bash install.sh --version v0.13.0-beta.90
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -187,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construyendo desde la fuente
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.82
+sudo bash install.sh --source --version v0.13.0-beta.90
 ```
 
 `--source` clona el repositorio (o usa el checkout existente cuando el script está dentro de él) y ejecuta `make panel`. Las versiones de la cadena de herramientas se eligen por entorno:
@@ -231,20 +229,23 @@ make panel-linux-arm64
 | Bandera | Descripción |
 |------|-------------|
 | `-d, --dir <PATH>` | Directorio de instalación, predeterminado `/opt/corefusion` |
-| `-v, --version <TAG>` | Versión de panel, p. `v0.13.0-beta.82`; predeterminado `latest` |
+| `-v, --version <TAG>` | Versión de panel, p. `v0.13.0-beta.90`; predeterminado `latest` |
 | `--binary` | Utilice el binario de versión GitHub (predeterminado) |
 | `--source` | Compile desde el código fuente y prepare la coincidencia Go/Node |
 | `--local <FILE>` | Utilice un binario local (instalación sin conexión) |
 | `--arch <ARCH>` | Arquitectura de destino: `amd64` / `arm64` / `armv7` / `armv6` / `386` / `ppc64le` / `s390x` / `riscv64` / `loong64` |
-| `--mirror <URL>` | Prefijo de descarga GitHub, p.e. `https://ghproxy.net` |
+| `--mirror <URL>` | Prefijo de descarga GitHub, p. `https://ghproxy.net` |
 | `--repo <URL>` | Repositorio de origen, predeterminado `https://github.com/qist/corefusion.git` |
 | `--ref <REF>` | Rama/etiqueta de origen; El valor predeterminado es `--version`; de lo contrario, `main`. |
 | `--no-deps` | Omitir instalación de dependencia del sistema |
 | `--no-start` | Instale y escriba el archivo de servicio sin iniciar |
 | `--cpu-info` | Detección del entorno de impresión y dependencias faltantes, luego salga |
-| `--lang <LANG>` | Idioma de salida: `zh` / `en` / `fa` / `ru` (por defecto: `LANG` del sistema) |
+| `--lang <LANG>` | Idioma de salida: `zh` / `en` / `fa` / `ru` (predeterminado: sistema `LANG`) |
 | `--uninstall` | Detenga el servicio y elimine el programa (conserva los datos y `.env`) |
 | `--purge` | Con `--uninstall`, elimine también el directorio de datos y `.env` |
+
+> Los lanzamientos oficiales solo incluyen archivos binarios `amd64` / `arm64`. Otras arquitecturas requieren `--source`,
+> de lo contrario, la descarga devuelve 404.
 
 Variables de entorno relacionadas:
 
@@ -254,7 +255,7 @@ Variables de entorno relacionadas:
 | `CF_NODE_MAJOR` | Anular la versión principal del nodo (predeterminada 22) |
 | `CF_GO_MIRROR` | Ir al espejo de descarga de la cadena de herramientas |
 | `CF_SKIP_DEPS` | Establezca en `1` en el script de instalación del agente para omitir la instalación de dependencia. |
-| `CF_LANG` | Sobrescribir el idioma de salida del instalador (igual que `--lang`) |
+| `CF_LANG` | Anular el idioma de salida del instalador (igual que `--lang`) |
 
 ### 2.6 Diseño del directorio
 
@@ -263,7 +264,7 @@ Variables de entorno relacionadas:
 ├── corefusion                 # panel binary
 ├── corefusion.bak             # previous version (when upgrading)
 ├── .env                       # environment file (0600, generated by the setup wizard)
-├── .env.secret                # archivo de clave de cifrado (0600, generado en el primer inicio)
+├── .env.secret                # encryption key file (0600, generated on first start)
 ├── .toolchain/                # Go / Node downloaded for source builds
 └── data/                      # data directory (SAFE_PATHS)
     ├── sqlite/app.db          # default SQLite database
@@ -323,7 +324,7 @@ sudo bash install.sh --uninstall --purge
 
 El `.env` completo es **generado por el asistente de configuración** cuando se guarda la configuración (DSN de base de datos, directorio de datos, secretos, puertos, dominios).
 
-En una instalación nueva, el instalador escribe solo este marcador de posición, para que el panel no confunda el `data/` existente con una instalación inicializada y omita el asistente:
+En una instalación nueva, el instalador escribe solo este marcador de posición, de modo que el panel no confunda el `data/` existente con una instalación inicializada y omita el asistente:
 
 ```env
 SAFE_PATHS=data
@@ -397,12 +398,12 @@ CF_DB_MAX_IDLE_CONNS=10
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Establezca en `0` para deshabilitar la contabilidad de tráfico basada en iptables (habilitada de forma predeterminada) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Tabla de iptables utilizada para la contabilidad del tráfico, predeterminada `corefusion` |
 
-> **La clave de cifrado reside en `.env.secret`**: en el primer inicio `CF_SECRET_ENCRYPTION_KEY` se escribe en `.env.secret` (0600, mismo directorio que `.env`) y ya no en `.env`; una clave antigua en `.env` se migra automáticamente. Haz una copia de seguridad aparte de este archivo: sin él, todos los valores `enc:` quedan indescifrables.
+> **La clave de cifrado reside en `.env.secret`**: en el primer inicio, `CF_SECRET_ENCRYPTION_KEY` se escribe en `.env.secret` (0600, el mismo directorio que `.env`) en lugar de `.env`; una clave heredada en `.env` se migra automáticamente. Haga una copia de seguridad de este archivo por separado; perderlo hace que todos los valores de `enc:` no se puedan descifrar.
 
 > Los servidores proxy inversos confiables para resolver IP de clientes reales ya no se configuran mediante variables de entorno;
 > se almacenan como `panel.trusted_proxies` en **Configuración → Red**.
 
-> Tanto `.env` como `.env.secret` contienen secretos; el panel ajusta sus permisos a `0600` al inicio. Nunca los confirmes en el repositorio.
+> Tanto `.env` como `.env.secret` contienen secretos; el panel refuerza sus permisos a `0600` al inicio. Nunca los cometas.
 
 ### 2.10 Docker (opcional, crea tu propia imagen)
 
@@ -523,7 +524,7 @@ Con un proxy seleccionado, el panel generalmente escucha solo en `127.0.0.1` y e
 | Puerto del panel | Puerto libre aleatorio por defecto; cámbielo si lo desea (por ejemplo, 8080) |
 | Puerto de suscripción | Opcional; `0` comparte el puerto del panel |
 | Puerto del portal | Opcional; `0` comparte el puerto del panel |
-| Ruta web | Ruta de la interfaz de usuario del administrador, predeterminada `/`; el API es siempre `/api/v1` |
+| Ruta web | Ruta de la interfaz de usuario del administrador, predeterminada `/`; el API siempre es `/api/v1` |
 | Nombre de usuario/contraseña de administrador | Aleatorio por defecto; **la contraseña se muestra solo una vez en el resumen** — guárdela |
 | Modo de acceso | “Dominio” o “IP” |
 | Moneda predeterminada/zona horaria | Moneda predeterminada para tarjetas de recarga y saldos; zona horaria del registro de proxy y del panel (por ejemplo, `Asia/Shanghai`) |
@@ -543,7 +544,7 @@ Opciones de ACME:
 
 - **CA**: Ciframos, Ciframos (ensayo), ZeroSSL, CA pública Google;
 - **Destino**: el dominio configurado o la IP pública (los certificados de IP solo son compatibles con Let's Encrypt);
-- **Desafío**: `HTTP-01` (requiere puerto 80) o `DNS-01` (comodines, sin puerto 80; elija un proveedor de DNS e ingrese las credenciales);
+- **Desafío**: `HTTP-01` (requiere puerto 80) o `DNS-01` (comodines, sin puerto 80; elija un proveedor DNS e ingrese las credenciales);
 - **Tipo/tamaño de clave**: ECC 256/384 o RSA 2048/3072/4096;
 - **Google CA pública**: requiere EAB; ingrese la ID de clave / HMAC manualmente o use una cuenta de servicio de GCP.
 
@@ -562,7 +563,7 @@ Haga clic en "Guardar y reiniciar" para escribir la base de datos y `.env`; el p
 ### 3.3 Después de la configuración
 
 - El servicio se reinicia y el registro de inicio imprime la dirección de escucha final;
-- Inicie sesión con la cuenta de administrador, acceda a URL y la ruta web desde el resumen;
+- Inicie sesión con la cuenta de administrador, acceda a URL y a la ruta web desde el resumen;
 - Si pierde la contraseña, restablezcala sin conexión con `./corefusion admin reset-password`.
 
 ### 3.4 Configuración del CLI no interactivo
@@ -723,24 +724,26 @@ La gestión de nodos es el núcleo de CoreFusion y admite varios tipos de nodos.
 
 ### 5.3 Implementación con un clic
 
-1. Después de agregar el nodo, haga clic en "Comando Bootstrap";
-2. Copie el comando de instalación;
-3. Ejecútelo como root en el nodo remoto:
+1. Después de agregar el nodo, elija "Implementar comando" en la lista de nodos (la página de detalles también ofrece
+ “Comando de instalación de Bootstrap”);
+2. Copie el comando: contiene un token de registro único (válido por 24 horas, no lo reutilice);
+3. Ejecútelo como root en el nodo remoto; parece:
 
    ```bash
-   curl -fsSL https://your-panel/install.sh | bash
+   bash <(curl -fsSL "http://<panel-host>:<panel-port>/api/v1/agent/install?id=<node-id>&token=<one-time-token>&port=<panel-port>")
    ```
 
-4. El Agente descarga, se registra y se inicia automáticamente.
+4. El Agente descarga el paquete, se registra en el panel y comienza.
 
 ### 5.4 Detalles del nodo
 
 Haga clic en un nodo para abrir su página de detalles:
 
-- **Descripción general**: información básica, estado del agente, estado del certificado
+- **Descripción general**: información básica, estado del agente, estado del certificado; Las tarjetas de recursos muestran el uso de CPU/memoria/disco, tasa de subida/bajada de NIC, tasa de tráfico de usuario central, tráfico usado mensual, conexiones TCP, carga del sistema y tráfico acumulativo de salida de NIC (actualización silenciosa cada 10 segundos)
 - **Centro de protocolo**: configuración del proceso central
-- **Proxy**: configuración Caddy/Nginx
+- **Proxy**: configuración Caddy / Nginx
 - **Procesos principales**: iniciar/detener/reiniciar
+- **Tráfico principal**: tráfico de usuarios reenviado por el núcleo y su total mensual
 - **WARP**: configuración WARP
 - **Dominios directos**: gestión de dominios
 - **Límite de tarifa**: modelado del tráfico
@@ -764,26 +767,45 @@ El centro de protocolo configura los parámetros de protocolo para los procesos 
 
 | Núcleo | Descripción |
 |------|-------------|
-| Xray-núcleo | VLESS / VMess / Trojan / Shadowsocks y más |
+| Núcleo Xray | VLESS / VMess / Trojan / Shadowsocks y más |
 | sing-box | Plataforma proxy universal modular con soporte TUN; lleva Hysteria2 / TUIC y otros protocolos QUIC |
 
 ### 6.2 Módulos de configuración
 
+Los módulos difieren entre los dos núcleos; el panel muestra el conjunto que coincide con el núcleo seleccionado:
+
+**Núcleo Xray**
+
 - **Registro**: registro de acceso, registro de errores, modo de salida
-- **API**: dirección de escucha de gRPC API, lista de servicios
+- **API**: gRPC API dirección de escucha, lista de servicios
 - **DNS**: servidores DNS, estrategia de consulta, hosts estáticos
 - **Enrutamiento**: reglas de enrutamiento, equilibrio de carga, enrutamiento VLESS
-- **Entrante**: lista de entrada, configuración de protocolo, transporte, TLS
-- **Salidas**: lista de salida, configuración de protocolo, transporte
-- **Transporte**: WebSocket, gRPC, XHTTP, TUN, etc.
+- **Entradas/Salidas**: protocolo, transporte, TLS
+- **Transporte**: WebSocket, gRPC, XHTTP, etc. (TUN es un protocolo de entrada, no un transporte)
 - **TLS**: certificados, ALPN, huella digital uTLS, ECH
 - **Reality**: gestión de objetivos, pares de claves, ID cortos
-- **Comprobación de estado**: sonda URL, intervalo, simultaneidad
-- **FakeDNS**: grupo de IP, tamaño del grupo
-- **Métricas**: oyente de métricas de Prometheus
-- **Política**: tiempos de espera de conexión, buffers, estadísticas
-- **Datos geográficos**: actualización automática, archivos de recursos
-- **Límites de versión**: versión mínima/máxima
+- **Comprobación de estado / FakeDNS / Métricas / Política / Datos geográficos / Límites de versión**: sondas, grupo de IP, Prometheus, tiempos de espera y buffers, archivos de recursos, rango de versiones principales
+
+**sing-box**
+
+- **Registro**: nivel, marca de tiempo, salida
+- **NTP**: sincronización horaria
+- **DNS**: servidores y reglas DNS
+- **Enrutamiento**: salida predeterminada `final`, **conjuntos de reglas**, **reglas**, resolución de dominio predeterminada, estrategia de red y respaldo (consulte 6.6)
+- **Entradas/Salidas**: protocolo, transporte, TLS
+- **Puntos finales**: WireGuard (incluidas configuraciones WARP), clientes MASQUE y similares; varios pueden coexistir y se distinguen por `tag`
+
+> Con "usar integración de red del sistema" habilitado, el **nombre** del punto final es el nombre de la interfaz del kernel:
+> como máximo 15 caracteres, letras/dígitos/`._-` únicamente. Un nombre demasiado largo o no válido automáticamente retrocede
+> al punto final `tag`. Los nuevos puntos finales tienen el prefijo por protocolo (`wg-` / `ts-` / `oc-` / `ovpn-c-` /
+> `ovpn-s-` / `mq-c-` / `mq-s-`) y registros heredados como `WireGuard-xxxxxx` se muestran normalizados
+> tan pronto como se abre el editor.
+- **Servicios**: el array sing-box `services` de nivel superior, como `hysteria-realm`, DERP o `resolved`
+- **Certificados / Clientes HTTP / Espacios de nombres de red**: secciones JSON que se expanden solo cuando es necesario
+- **Experimental**: `clash_api` y similares; **no se escribe nada en la configuración generada a menos que esté habilitado**
+
+> sing-box 1.12 eliminó los campos de enrutamiento `geosite` / `geoip`; El enrutamiento basado en geografía ahora pasa
+> `rule_set`. Mantener los campos antiguos hace que el núcleo no pueda decodificar la configuración (`unknown field`).
 
 ### 6.3 Configuración entrante
 
@@ -796,6 +818,31 @@ El centro de protocolo configura los parámetros de protocolo para los procesos 
 4. Elija el transporte (TCP, WebSocket, gRPC, etc.);
 5. Configurar TLS (certificado, ALPN);
 6. Guardar y aplicar al núcleo.
+
+> Las nuevas entradas escuchan en `::` de forma predeterminada (pila dual en Linux, manejando IPv4 e IPv6).
+> Cámbielo a `0.0.0.0` o una dirección específica solo cuando necesite restringir la interfaz.
+
+Los modos de puerto "Usar puerto de entrada" también ofrecen **crear reglas de permiso de firewall automáticamente**: abrir el
+El editor entrante prueba primero el firewall del nodo y cuando detecta firewalld / ufw / nftables / iptables.
+puede permitir que el puerto se guarde de acuerdo con el protocolo de escucha (TCP/UDP).
+
+- El salto de puerto hy2/histeria permite tanto el puerto de escucha como cada rango de puerto dinámico (por ejemplo, `20000-30000`); varios rangos están separados por comas;
+- La asignación es idempotente: una regla de cobertura existente (rango de puertos/multipuerto) no se vuelve a crear;
+- Cambiar el puerto revoca la regla anterior antes de permitir la nueva; eliminar el entrante, deshabilitar el salto de puerto o cambiar a Unix Socket / tun (sin puerto de escucha) lo limpia;
+- Cuando no se detecta ningún firewall habilitado, solo se muestra una sugerencia y no se escribe ninguna regla.
+
+### 6.3.1 Ruta del proxy inverso (Dominio de acceso → Frontal TLS → Ruta del proxy inverso)
+
+Cuando la ruta de transporte propia del entrante es `/` pero una nginx / caddy externa la monta debajo de una subruta
+(por ejemplo, `location /apps { proxy_pass http://127.0.0.1:8080/; }`), los clientes deben conectarse a `/apps` o al
+la solicitud nunca llega a esa ubicación: la suscripción aún se descarga, pero el nodo no se conecta.
+Complete **Ruta de proxy inverso** en “Dominio de acceso → Frontal TLS”:
+
+- Ingrese `/apps` o `/apps?ed=2560` (con datos anteriores); las suscripciones y los enlaces compartidos **reemplazan** la ruta de transporte entrante con ellos;
+- Se aplica a ws, httpupgrade, xhttp y h2/http; los transportes sin ruta (raw/tcp, kcp) se ignoran;
+- Es independiente de dónde termina TLS: la ruta aún se aplica cuando Front TLS está apagado (siga el núcleo);
+- gRPC no tiene el concepto de prefijo URL (la ruta del cliente siempre es `/{serviceName}/…`), por lo que la ruta se **fusiona en serviceName**
+(`/apps` + `svc` → `apps/svc`); el proxy inverso debe eliminar ese prefijo en `grpc_pass`.
 
 ### 6.4 Configuración saliente
 
@@ -815,15 +862,121 @@ El centro de protocolo configura los parámetros de protocolo para los procesos 
    - Xray JSON
 3. Copie el enlace o genere un código QR.
 
+### 6.6 Conjuntos de reglas y enrutamiento sing-box
+
+En “Centro de protocolos” → sing-box → “Enrutamiento” hay dos partes: **Conjuntos de reglas** declarar reutilizable
+archivos de reglas y **Reglas** deciden las condiciones de coincidencia y la salida. Las reglas se evalúan desde
+de arriba a abajo y el primer partido gana.
+
+#### 6.6.1 Conjuntos de reglas
+
+| campo | Descripción |
+|-------|-------------|
+| etiqueta | Identificador de conjunto de reglas al que hacen referencia las reglas; debe ser único |
+| Tipo | `local` lee un archivo en el nodo; `remote` permite que el núcleo lo descargue en `update_interval` |
+| Formato | `binary` para `.srs` (predeterminado); `source` para formato fuente `.json` |
+| Camino | Las rutas `local` son relativas al directorio de datos del nodo; Los archivos en `data/rules/` usan `rules/xxx.srs`. |
+| URL | Dirección de descarga para `remote`; `download_detour` selecciona la salida utilizada para la descarga (normalmente `direct`) |
+
+Conjuntos de reglas locales (recomendado; descargue los archivos primero en “Recursos de servicio → Archivos de reglas”):
+
+```jsonc
+"route": {
+  "rule_set": [
+    { "type": "local", "tag": "geosite-cn", "format": "binary", "path": "rules/geosite-cn.srs" },
+    { "type": "local", "tag": "geoip-cn", "format": "binary", "path": "rules/geoip-cn.srs" }
+  ]
+}
+```
+
+> Descargar el archivo en el panel no es suficiente: primero se debe enviar un conjunto de reglas `local` al
+> nodes (“Enviar a todos los nodos”) para que el archivo exista en el `data/rules/` del nodo; de lo contrario el núcleo
+> no se inicia porque no se puede encontrar el archivo.
+
+Conjuntos de reglas remotas (el nodo debe poder llegar al URL):
+
+```jsonc
+{ "type": "remote", "tag": "geosite-openai", "format": "binary",
+  "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs",
+  "download_detour": "direct", "update_interval": "1d" }
+```
+
+Cuando elige un archivo local, la etiqueta se deriva del nombre del archivo (`rules/geosite-cn.srs` →
+`geosite-cn`); para aparatos remotos proviene del final del URL. El formato también se completa desde
+la extensión (`.srs` → `binary`, `.json` → `source`). Los valores derivados se pueden editar libremente y
+Los valores que ya escribió nunca se sobrescriben.
+
+> `download_detour` ha quedado obsoleto desde sing-box 1.14 y se eliminará en 1.16; todavía
+> Funciona en 1.15. Las nuevas configuraciones deben utilizar `http_clients` de nivel superior con
+> `route.default_http_client` en su lugar.
+
+#### 6.6.2 Reglas
+
+| campo | Partidos |
+|-------|---------|
+| `domain` | Dominio exacto |
+| `domain_suffix` | Sufijo de dominio, incluidos los subdominios |
+| `domain_keyword` | Coincidencia de subcadenas |
+| `domain_regex` | expresión regular |
+| `ip_cidr` / `ip_is_private` | IP de destino |
+| `source_ip_cidr` | IP de origen |
+| `port` / `port_range` | Puerto de destino |
+| `network` | `tcp` / `udp` |
+| `rule_set` | Etiquetas de los conjuntos de reglas a utilizar |
+| `outbound` | Etiqueta de salida a utilizar (debe existir en "Salidas" o "Puntos finales") |
+| `type: "logical"` | Condiciones combinadas con `mode` configurado en `and` / `or` |
+
+Varios campos en una regla se combinan con AND (por ejemplo, `network` + `port`), por lo que no
+Se necesita envoltorio `logical`. Utilice `type: "logical"` sólo para combinaciones O/NO. `rule_set`
+debe colocarse dentro de las subreglas `rules`, no al lado de `rules`:
+
+```jsonc
+"rules": [
+  { "domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct" },
+  { "domain_keyword": ["ip.sb", "yandex.com"], "outbound": "warp" },
+  { "rule_set": ["geosite-openai", "geosite-google"], "outbound": "warp" },
+  { "rule_set": ["geoip-cn"], "outbound": "warp" },
+  { "network": "tcp", "port": 443,
+    "rule_set": ["geosite-google"], "outbound": "warp" },
+  { "type": "logical", "mode": "or",
+    "rules": [
+      { "rule_set": ["geosite-google"] },
+      { "rule_set": ["geosite-openai"] }
+    ],
+    "outbound": "warp" }
+]
+```
+
+#### 6.6.3 Migración de reglas xray
+
+| xray | sing-box |
+|------|----------|
+| Cadena desnuda (incluidos los valores desnudos en `domain`; coincidencia de subcadena) | `"domain_keyword": ["ip.sb"]` |
+| `"domain": ["a.com"]` | `"domain_keyword": ["a.com"]`; use `"domain_suffix": ["a.com"]` para una coincidencia de sufijo real o `"domain": ["a.com"]` para una coincidencia exacta |
+| `"domain:clstorage.net"` | `"domain_suffix": ["clstorage.net"]` |
+| `"full:a.com"` | `"domain": ["a.com"]` |
+| `"regexp:..."` | `"domain_regex": ["..."]` |
+| `"ip": ["geoip:cn"]` | `"rule_set": ["geoip-cn"]` |
+| `"domain": ["geosite:cn"]` | `"rule_set": ["geosite-cn"]` |
+| `"outboundTag": "direct"` | `"outbound": "direct"` |
+
+Notas:
+
+- **Las etiquetas no se comparten entre núcleos**: una etiqueta saliente xray no se puede utilizar en una regla sing-box;
+ utilice una etiqueta que realmente exista en sing-box "Salidas" o "Puntos finales".
+- Una etiqueta de salida o de punto final incorrecta informa `outbound not found`; una etiqueta de conjunto de reglas incorrecta informa
+ `rule-set not found`.
+- Ponga primero las reglas directas/de lista permitida; una vez que una regla coincide, las reglas posteriores ya no se aplican.
+
 ---
 
 ## 7. Gestión de proxy
 
-La gestión de proxy configura el proxy inverso Caddy o Nginx.
+La administración de proxy configura el proxy inverso Caddy o Nginx.
 
 ### 7.1 Tipos de proxy
 
-- **Caddy**: automático HTTPS, HTTP/2, HTTP/3
+- **Caddy**: HTTPS, HTTP/1.1 y HTTP/2 automáticos (HTTP/3 / QUIC está deshabilitado para evitar un conflicto de UDP 443 con el enrutamiento de capa 4)
 - **Nginx**: alto rendimiento, configuración flexible
 
 ### 7.2 Configuración del sitio
@@ -842,55 +995,172 @@ La gestión de proxy configura el proxy inverso Caddy o Nginx.
 - **local_port**: puerto de escucha local, p.e. `8443`
 - **portal_forward**: regla de reenvío del portal
 - **subscription_forward**: regla de reenvío de suscripción
+- **Enrutamiento SNI**: cuando un entrante usa TLS / REALITY y los clientes siempre se conectan en 443, el panel deriva
+ 443 reglas de enrutamiento TCP de ClientHello SNI (tanto xray `streamSettings` como sing-box `tls.reality`);
+ el proxy frontal solo reenvía TCP y TLS todavía termina dentro del núcleo
 
 ---
 
 ## 8. Recursos de enrutamiento
 
-Los recursos de enrutamiento administran las reglas de enrutamiento de suscripción.
+Los recursos de enrutamiento recopilan los activos compartidos utilizados por las suscripciones y el enrutamiento. La página tiene cinco pestañas:
 
-### 8.1 Características
+| Pestaña | Propósito |
+|-----|---------|
+| Dominios preferidos directos y CF | Dominios directos de ingreso/IP y dominios preferidos Cloudflare, utilizados al reescribir direcciones de acceso en suscripciones y nodos externos |
+| Grupo de IP de CF | Fuentes de IP, puertos y configuraciones de sonda preferidas, consumidas por el “dominio de acceso” |
+| Reglas globales WAF | Fuentes de reglas y archivos de reglas para el proxy inverso WAF, enviados a los nodos |
+| Archivos de reglas | Descarga, sincronización programada y envío de archivos de reglas (`.srs` / `.json` / `.dat`) |
+| Nodos externos | Importar nodos externos desde v2ray URI / Base64 / suscripción URL (ver 16.3) |
 
-- Administrar reglas de enrutamiento
-- Configurar políticas de enrutamiento
-- Admite múltiples formatos de enrutamiento
+### 8.1 Dominios preferidos directos y CF
 
-### 8.2 Uso
+- **Acceso directo**: dominio de entrada o IP, puerto 443 por defecto; vincular nodos o dejarlos vacíos para global;
+- **Dominios preferidos CF**: dominio preferido Cloudflare más puerto, con verificación de conectividad;
+- Ambos alimentan a los candidatos de “dominio de acceso” utilizados por las suscripciones y la reescritura de nodos externos (ver 16.3).
 
-1. Abra "Recursos de enrutamiento";
-2. Agregue una regla de enrutamiento;
-3. Establezca el nombre, el tipo y las condiciones de la regla;
-4. Guardar y aplicar.
+### 8.2 Grupo de IP de CF
+
+- Mantenga las fuentes de IP preferidas (incluidas las fuentes de estilo `bestproxy`), el intervalo de recuperación y los puertos;
+- La “configuración de la sonda” controla el intervalo de la sonda, el umbral de latencia y el nodo de entrada de la sonda; sondeo local
+ solo filtra IP claramente inalcanzables, mientras que seleccionar un nodo de entrada simula la línea de ese nodo;
+- El “marcador” podrá ser automático (núcleos instalados), `singbox`, `xray` o `mihomo`; núcleos que no son
+ instalados no aparecen en la lista. El sondeo se ejecuta como un proceso temporal que finaliza cuando finaliza y nunca lee ni
+ escribe la propia configuración del núcleo;
+- Cuando el “dominio de acceso” utiliza el grupo de IP de CF sin un valor concreto, se elimina una entrada (con su puerto).
+ elegido al azar.
+
+### 8.3 Reglas globales WAF
+
+- Configure la fuente de reglas WAF URL y los archivos de reglas para sincronizar;
+- Después de la sincronización, se envían a los nodos y el proxy del nodo los carga (Nginx / Caddy);
+- Desde ese URL se descarga un archivo con un URL completo; de lo contrario se utiliza “fuente URL + /nombre de archivo”;
+- "Caché de coincidencias" (`match_cache` / `config_match_cache`) está habilitado de forma predeterminada: un proceso limitado
+ el caché de resultados de coincidencias de reglas activas reduce el recorrido de reglas por solicitud. Es sólo global sin
+ anulación por dominio; deshabilítelo temporalmente para la comparación A/B al investigar falsos positivos
+ (Deshabilitarlo significa una evaluación completa de las reglas en cada solicitud y un mayor uso de la CPU).
+
+### 8.4 Archivos de reglas (archivos de reglas de enrutamiento)
+
+Esta pestaña solo descarga archivos de reglas en el panel y los envía a los nodos; nada surte efecto
+automáticamente. Para usarlos en enrutamiento, consúltelos en “Centro de protocolos → sing-box → Enrutamiento”
+en Conjuntos de reglas y Reglas (ver 6.6).
+
+- **Repositorios de reglas**: ingrese `owner/repo` (GitHub, navegable) o una descarga completa de URL; programado
+ la sincronización puede ejecutarse cada 6/12 horas, diariamente a las 03:00, diariamente a medianoche o semanalmente los domingos;
+- **Agregar archivo**: para archivos individuales fuera de una versión del repositorio (por ejemplo, rama SagerNet `.srs`
+ archivos); ingresa el URL completo y se descarga automáticamente;
+- **Lista de archivos**: muestra el nombre, el tamaño, la última actualización y el interruptor de “Sincronización automática”, con “Descarga” por archivo;
+ el botón "Enviar a todos los nodos" en la parte superior envía cada archivo de reglas a todos los nodos;
+- Los archivos se descargan en el `data/rules/` del panel y, una vez presionados, se encuentran debajo de los datos del nodo.
+ `rules/` del directorio; haga referencia a ellos en sing-box como `rules/<file name>`;
+- Formatos:
+  - `.srs`: conjunto de reglas binarias sing-box, recomendado y más pequeño;
+  - `.json`: conjunto de reglas de formato fuente; `rule_set` debe configurar `format: "source"`;
+  - `.dat`: xray `geosite.dat` / `geoip.dat`, que sing-box no puede utilizar directamente.
+
+> El bloque plegable "Uso" en la parte superior de la página contiene ejemplos de referencia, el mapeo xray
+> Tabla y errores comunes.
+
+### 8.5 Nodos externos
+
+La importación y gestión de nodos externos se trata en [16.3 Nodos externos](#163-external-nodes).
 
 ---
 
 ## 9. Centro de suscripción
 
-El centro de suscripciones gestiona enlaces de suscripción y puntos finales.
+El centro de suscripciones empaqueta nodos en suscripciones listas para el cliente: define **formatos** de suscripción (qué emitir, qué reglas, qué planes pueden verlos), luego **puntos finales** de suscripción (dominio público/ruta), luego entrega los enlaces.
 
 ### 9.1 Formatos de suscripción
 
-1. Abra “Centro de suscripciones” → “Formatos de suscripción”;
-2. Añade un formato:
-   - Nombre del formato
-   - Formato de salida (Base64, YAML, JSON, etc.)
-   - Protocolos incluidos
-3. Guardar.
+“Centro de suscripción” → “Formatos de suscripción”; una fila por salida del cliente:
+
+| campo | Descripción |
+|---|---|
+| Nombre | Único; `?config=<name>` coincide y el cuadro de diálogo del cliente lo muestra |
+| Tipo de cliente | clash / shadowrocket / singbox / v2ray: solo visualización de agrupación |
+| Formato de salida | `mihomo_yaml` (Clash/Mihomo), `singbox_json`, `xray_json`, `base64_uri`, `raw_uri` |
+| Tipo de contenido/extensión | Encabezado de respuesta y nombre de archivo |
+| Plataforma | ganar/mac/android/ios/universal; emparejado con `?platform=`, vacío = universal |
+| Planes vinculados | Vacío = disponible para todos los planes; de lo contrario, solo esos planes pueden usarlo |
+| Reglas | Reglas de enrutamiento por formato (editor estructurado para Mihomo, JSON sin formato por regla para sing-box / Xray). **Las reglas no se convierten entre formatos** |
+
+Notas:
+
+- Pueden existir varias configuraciones para el mismo formato de salida (por ejemplo, `out`, `home`); elija uno con `config=` en el enlace;
+- Sin `config`, el orden es “configuración vinculada a la suscripción → coincidencia de `platform` → predeterminada”;
+- Una plantilla sing-box puede llevar su propio `route.rule_set` para los clientes, normalmente como `remote` por lo que
+ el cliente lo descarga; Los archivos locales enviados al `rules/` de un nodo en "Archivos de reglas" solo están disponibles
+ al núcleo de ese nodo, no a las suscripciones de clientes;
+- Al generar plantillas sing-box / Xray, el panel elimina las referencias colgantes (`final`, `dns.final`,
+ `default_domain_resolver`, `download_detour`, `rule_set` local, definiciones de `rule_set` no válidas, vacías
+ `balancer`, etc.) para que el cliente no falle al iniciar con un error GRAVE;
+- Los alias salientes en las reglas se resuelven con etiquetas reales (`REJECT` / `blocked` → `block`, `DIRECT` →
+ `direct`, no distingue entre mayúsculas y minúsculas); las salidas irresolubles recurren a la salida predeterminada y a la regla
+ mantiene su posición;
+- Siempre se genera un grupo con `tag = proxy`: un `selector` para sing-box y un equilibrador `random` para
+ Xray y `outbound: proxy` en las reglas se reescriben en el `balancerTag` correspondiente. Se carga el editor de reglas
+ candidatos salientes dinámicamente desde “grupos proxy + salidas personalizadas”, y las etiquetas ingresadas manualmente se
+ todavía validado;
+- Las configuraciones sing-box / Xray deben crearse por separado; si no existen, no aparecen en los enlaces de los clientes (ver 10.3).
 
 ### 9.2 Puntos finales de suscripción
 
-1. Abra “Centro de suscripciones” → “Puntos finales de suscripción”;
-2. Agregue un punto final:
-   - Nombre del punto final
-   - Escuchar dirección
-   - Camino
-   - Formato asociado
-3. Guardar.
+“Centro de suscripción” → “Puntos finales de suscripción”; una fila por dirección pública:
+
+| campo | Descripción |
+|---|---|
+| Dominio | Dominio de suscripción pública |
+| Camino | Prefijo bajo el dominio, predeterminado `/` |
+| Habilitado | Los puntos finales deshabilitados se ignoran al crear enlaces |
+| Descripción | Nota de texto libre |
+
+- **Se admiten varias filas (multidominio)**; cuando se habilitan varios, el dominio del proveedor sigue al dominio utilizado por la solicitud actual (ver 9.4);
+- Un puerto de suscripción dedicado sirve en la raíz (`/<token>`, no `/sub`); al compartir el puerto del panel es `/sub/<token>`;
+- Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` / `X-Forwarded-Host`; de lo contrario, se utiliza el primer punto final habilitado. Las plantillas de sitio Caddy / Nginx generadas por el panel incluyen ambos encabezados; las configuraciones de proxy mantenidas manualmente necesitan agregarse manualmente.
 
 ### 9.3 Enlaces de suscripción
 
-- Obtenga una suscripción en `http://your-domain/sub/:token`
-- Utilice parámetros como `?format=yaml` para seleccionar un formato
+Forma base: `https://<sub-domain>/<token>` (puerto de panel: `https://<panel-domain>/sub/<token>`)
+
+| Parámetro | Descripción |
+|---|---|
+| `format` | Formato de salida; alias: `clash` → mihomo_yaml, `singbox`/`sing-box` → singbox_json, `xray` → xray_json, `raw` → raw_uri, `base64`/`v2ray` → base64_uri |
+| `config` | Aplicar un formato de suscripción por nombre; debe coincidir con `format`; de lo contrario, se ignora |
+| `platform` | Haga coincidir una configuración por plataforma (cuando se omite `config`) |
+| `providers` | `1` / `true`: Clash Modo proveedor (`proxy-providers` + `use`); nodos en línea predeterminados |
+
+Ejemplos:
+
+```bash
+# Clash dynamic subscription (config template + providers)
+https://sub.example.com/<token>?format=clash&config=out&providers=1
+
+# sing-box / Xray (only meaningful when such a config exists)
+https://sub.example.com/<token>?format=singbox_json&config=sing-box-home
+https://sub.example.com/<token>?format=xray_json&config=xray-home
+
+# generic clients / plain text
+https://sub.example.com/<token>?format=base64_uri
+https://sub.example.com/<token>?format=raw_uri
+```
+
+### 9.4 Modo multidominio y proveedor
+
+Con `providers=1`, cada entrada de `proxy-providers` apunta al punto final de la suscripción. Selección de dominio:
+
+1. **El dominio que utilizó esta solicitud** (primer valor `X-Forwarded-Host`, puerto eliminado; de lo contrario, `Host`) si coincide con un punto final **habilitado**;
+2. De lo contrario, el punto final habilitado con el **ID más bajo**;
+3. El camino proviene de ese punto final: `https://<domain><path>/<token>?format=mihomo_proxies_yaml...`.
+
+Por lo tanto, cambiar el dominio no requiere ningún cambio de panel: los clientes que obtienen a través del nuevo dominio obtienen el nuevo dominio dentro de los proveedores, y un dominio antiguo que se deja habilitado ya no está codificado. Si un cliente almacenó en caché el antiguo proveedor URL, actualice la suscripción (o borre la caché del proveedor/reinicie el cliente).
+
+Notas adicionales:
+
+- Se ignora `proxy-providers` dentro de un formato compartido (`config_json`) (evita fugas entre planes); los proveedores provienen de grupos de nodos del plan y fuentes externas;
+- Las rutas de caché del proveedor interno y externo siempre se derivan de “valores predeterminados del proveedor interno → plantilla de ruta de caché” (predeterminado `./providers/{key}.yaml`); las fuentes externas no pueden fijar las suyas propias;
+- El proveedor reservado heredado `subscription-nodes` ya no se emite: los grupos que utilizan "todos los nodos" se expanden a proveedores concretos o nodos en línea cuando el plan no tiene ninguno.
 
 ---
 
@@ -908,7 +1178,7 @@ La gestión de clientes se ocupa de los usuarios finales.
    - Planificar
    - Cuota de tráfico
    - tiempo de caducidad
-4. Guardar.
+4. Ahorrar.
 
 ### 10.2 Acciones del cliente
 
@@ -923,12 +1193,16 @@ La gestión de clientes se ocupa de los usuarios finales.
 
 ### 10.3 Detalles de la suscripción
 
-Haga clic en un cliente para ver:
+Gestión de clientes → columna “Suscripción” → “Detalles”. El cuadro de diálogo enumera enlaces para cada formato disponible para el plan del cliente:
 
-- Enlace de suscripción
-- Uso del tráfico
-- Historial de pedidos
-- Historial de transacciones
+- **Clash / Mihomo**: dos filas: nodos en línea y `providers=1` (proveedores de proxy), ambos con `config=<name>`;
+- **Sing-box / Xray**: se muestra solo cuando existe una configuración de ese formato y es visible para el plan; los enlaces llevan `config=<name>`;
+- **Base64 URI / Raw URI**: siempre se muestra (no `config`);
+- Cada fila tiene su propio botón de copiar; Al hacer clic en una fila, el código QR siguiente cambia a ese formato.
+
+Entonces, con solo una configuración Clash, el cuadro de diálogo muestra Clash + Base64 + Raw; Los enlaces sing-box / Xray aparecen solo después de crear sus configuraciones.
+
+El mismo cuadro de diálogo también muestra el uso del tráfico, el historial de pedidos y el historial de transacciones.
 
 ---
 
@@ -955,16 +1229,16 @@ La gestión de planes configura los planes que vende.
    - Tráfico (GB, `0` = ilimitado)
    - Límite de concurrencia
    - Límite de velocidad (Mbps)
-2. Ahorrar.
+2. Guardar.
 
 ### 11.3 Complementos de tráfico
 
-1. Open “Traffic add-ons”;
+1. Abra "Complementos de tráfico";
 2. Agregar un complemento:
    - Nombre
    - Precio
    - Tráfico
-   - Expiry mode (extend days / same as plan)
+   - Modo de vencimiento (extender días/igual que el plan)
 3. Guardar.
 
 ### 11.4 Cupones
@@ -972,7 +1246,7 @@ La gestión de planes configura los planes que vende.
 1. Abra "Cupones";
 2. Añadir un cupón:
    - Código
-   - Type (percentage / fixed amount)
+   - Tipo (porcentaje / monto fijo)
    - Valor de descuento
    - Límite de uso
    - Periodo de validez
@@ -985,18 +1259,18 @@ La gestión de planes configura los planes que vende.
 
 La gestión de recargas maneja sitios de recarga, pedidos y tarjetas de recarga.
 
-> **Nota sobre la integración de pagos**
+> **Integración de pagos**
 >
-> El panel **no se integra directamente con entidades de pago** (Alipay, WeChat Pay, Stripe, bancos, etc.); solo se conecta a una **plataforma de pago intermediaria**, que integra la entidad de pago correspondiente, realiza la contratación, la adquisición y la liquidación, y devuelve los resultados del pago al panel mediante la [API de callback de pago](api/charge-callback.md).
+> El panel **no se integra directamente con instituciones de pago** (Alipay, WeChat Pay, Stripe, bancos, etc.). Solo se conecta a una **plataforma de pago intermedia**, que a su vez se integra con la institución de pago correspondiente, maneja la contratación, adquisición y liquidación, e informa los resultados del pago a través de la devolución de llamada de cargo [ API](api/charge-callback.md).
 >
-> La plataforma de pago intermediaria **no forma parte de este proyecto y debe ser desarrollada por el operador (o usar su propio sistema)**. Una vez desplegada, regístrela en «Sitios de recarga» y complete la verificación del dominio para usarla como punto de entrada de recargas; el sitio de recarga es esa plataforma intermediaria, no la entidad de pago. Las cualificaciones de pago, tarifas, liquidación y cumplimiento se acuerdan y son responsabilidad del operador, la entidad de pago y la plataforma intermediaria.
+> La plataforma de pago intermedio **no forma parte de este proyecto; los operadores deben desarrollarlo ellos mismos (o utilizar su propio sistema)**. Una vez implementado, regístrelo en "Sitios de recarga" y complete la verificación del dominio para usarlo como punto de entrada de recarga; El sitio de recarga aquí es esa plataforma intermedia, no la institución de pago en sí. Las calificaciones de pago, las tarifas, la liquidación y el cumplimiento son acordados y a cargo del operador, la institución de pago y la plataforma intermedia.
 
 ### 12.1 Sitios de recarga
 
 1. Abra “Gestión de recargas” → “Sitios de recarga”;
 2. Agregar un sitio:
    - Nombre del sitio
-   - Métodos de pago admitidos por esa plataforma intermediaria (Alipay, WeChat, USDT, Stripe, etc., ofrecidos por su integración con las entidades de pago)
+   - Métodos de pago soportados por esa plataforma intermedia (Alipay, WeChat, USDT, Stripe, etc., proporcionados a través de su integración con instituciones de pago)
    - Moneda
    - tipo de cambio
 3. Guardar;
@@ -1094,7 +1368,7 @@ La gestión de certificados maneja los certificados TLS.
 ### 14.4 Configuración EAB
 
 - Administre las credenciales de EAB para la CA pública Google/ZeroSSL
-- Obtener EAB automáticamente
+- Obtenga EAB automáticamente
 - Adjuntarlo automáticamente al emitir
 
 ---
@@ -1148,9 +1422,13 @@ Los proxies encadenados configuran enlaces de múltiples salidas.
 
 - Importar nodos externos (v2ray URI, Base64 URI, suscripción URL)
 - Registrar entradas externas
-- Administrar nodos externos (editar / eliminar individualmente)
-- Dominio de acceso: configurar aceleración CDN / IP preferida por nodo (dominio directo, dominio preferido de CF, grupo de IP de CF, personalizado). Solo se reescribe server/port en las suscripciones; SNI/Host se mantienen como se importaron. Si está desactivado, se usa la dirección/puerto importados
-- Al seleccionar «dominio preferido de CF / grupo de IP de CF» sin un valor concreto, se elige aleatoriamente una entrada del grupo (con su puerto); «directo / personalizado» requiere un valor explícito, de lo contrario se recurre a la dirección del propio nodo
+- Administrar nodos externos (editar/eliminar individualmente)
+- Dominio de acceso: configurar aceleración CDN/IP preferida por nodo (dominio directo, preferido CF)
+ dominio, grupo de IP de CF, personalizado). Sólo se reescribe el servidor/puerto entregado en las suscripciones;
+ SNI/Estancia del anfitrión importada. Cuando está deshabilitado, se utiliza la dirección/puerto importados.
+- Cuando se selecciona "Dominio preferido de CF/grupo de IP de CF" sin un valor específico, se elige una entrada
+ aleatoriamente del pool (con su puerto); "directo/personalizado" requiere un valor explícito; de lo contrario
+ vuelve a caer a la propia dirección del nodo
 
 ---
 
@@ -1162,9 +1440,15 @@ Los usuarios en línea muestran el estado en línea en tiempo real.
 
 - Suscripciones en línea
 - Dispositivos en línea/IP
-- Nodos en línea
-- Tarifa en tiempo real
-- Tráfico total
+- Nodo, IP y tiempo de conexión para cada suscripción
+- Tasa de enlace ascendente/descendente en tiempo real
+- Enlace ascendente total / enlace descendente total / tráfico total
+
+> El enlace ascendente total, el enlace descendente total y el tráfico total se acumulan durante una **sesión en línea continua**:
+> Las reconexiones de corta duración, los reinicios del núcleo y los reinicios de contadores no los borran. Sólo después de los 60
+> segundos sin un nuevo informe, una nueva sesión comienza desde cero. Esta es una medida diferente.
+> del propio contador de "tráfico desde este inicio" del núcleo y refleja mejor lo que un usuario realmente
+> utilizado durante la sesión actual.
 
 ### 17.2 Filtrado
 
@@ -1232,7 +1516,7 @@ El sitio del portal configura el portal del cliente.
 ### 19.4 Módulos
 
 - Agregar/editar módulos
-- Configurar el título, la descripción y el ícono del módulo
+- Configurar el título, la descripción y el icono del módulo
 - Admite Markdown, texto enriquecido y HTML personalizado
 
 ### 19.5 idiomas
@@ -1395,13 +1679,21 @@ La gestión de registros muestra los registros del sistema.
 
 ## 25. Extensiones de operaciones
 
-Las extensiones de operaciones configuran extensiones opcionales.
+“Extensiones de operaciones” (`/client-ext`) configura marketing de referencia, comisiones y retiros;
+“Documentos legales” (`/legal-documents`) mantiene los acuerdos del lado del portal.
 
-### 25.1 Características
+### 25.1 Referencias y comisión
 
-- Extensiones personalizadas
-- Configuración de extensión
-- Gestión de extensiones
+- **Configuración de reembolso**: tasa de reembolso (porcentaje del primer pago del invitado, `0` = deshabilitado), modo de comisión (solo la primera compra/todas las compras), monto mínimo de retiro (el saldo de comisión debe alcanzarlo antes de que se pueda solicitar un retiro)
+- **Códigos de invitación**: cuando está habilitado, el registro requiere un código de invitación; establezca la longitud del código, los días de vencimiento y los usos máximos (`0` = ilimitado) y genere/vea la lista de códigos
+- **Revisión de retiro**: filtrar por pendiente/aprobado/rechazado; agregue una nota de procesamiento y registre el método de pago y la dirección de la billetera
+- **Registros de referencia**: invitante, invitado, monto de la comisión y estado de la comisión
+
+### 25.2 Documentos legales
+
+- Mantenga la “Política de privacidad” y los “Términos de servicio” por separado, un documento de Markdown por ubicación, con vista previa en vivo;
+- Cada documento puede utilizar un URL externo en lugar de la página incorporada; cuando está vacía, se utiliza la página incorporada URL (que se puede copiar en la página);
+- El portal muestra la versión de la configuración regional actual y recurre a la configuración regional predeterminada cuando falta.
 
 ---
 
@@ -1483,6 +1775,10 @@ El binario del panel admite estos subcomandos (sin argumentos se inicia el servi
 # Run database migrations
 ./corefusion migrate
 
+# Non-interactive init / reset init state (see 3.4, 3.5)
+./corefusion init --help
+./corefusion reset-init
+
 # Offline administration (when you cannot sign in)
 ./corefusion admin reset-password -u admin -p 'new-password'
 ./corefusion admin 2fa reset -u admin
@@ -1493,10 +1789,12 @@ El binario del panel admite estos subcomandos (sin argumentos se inicia el servi
 ./corefusion help
 ```
 
-> Sin una unidad systemd, reinicie deteniendo el proceso anterior e iniciándolo nuevamente con `nohup`; Los registros están en `<install-dir>/data/logs/panel.log`.
+> Con systemd, utilice `systemctl restart corefusion` y `journalctl -u corefusion -f`; sin
+> systemd (contenedores y similares), detenga el proceso anterior y reinícielo con `nohup`, los registros son
+> en `data/logs/panel.log`.
 
 ---
 
-> **Versión del documento**: v1.0
-> **Última actualización**: 2026-10-23
-> **Se aplica a**: CoreFusion v1.0+
+> **Versión del documento**: v1.1
+> **Última actualización**: 2026-11-16
+> **Se aplica a**: CoreFusion v0.13.0-beta.x

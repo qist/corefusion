@@ -8,6 +8,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/subscription/formatter"
 	"corefusion/internal/subscription/mihomoconv"
+	"corefusion/internal/subscription/sharelink"
 )
 
 func plainWSConfig() map[string]interface{} {
@@ -94,6 +95,169 @@ func TestApplyFrontTLSModes(t *testing.T) {
 	applyFrontTLS(cfg, "cdn.example.com", "cf_domain", off)
 	if got := getString(getMap(cfg, "streamSettings"), "security", ""); got != "none" {
 		t.Errorf("off 不应改 security，实际 %q", got)
+	}
+}
+
+// 入站自身路径是 /、外层 nginx/caddy 挂在 /apps（带 ?ed=2560 早数据）时，
+// 订阅里的链接必须带 /apps?ed=2560，否则请求打不中反代的 location。
+func TestApplyFrontTLSPathOverridesWS(t *testing.T) {
+	cfg := map[string]interface{}{"streamSettings": map[string]interface{}{
+		"network": "ws", "security": "none",
+		"wsSettings": map[string]interface{}{"path": "/"},
+	}}
+	cfg["_accessDomain"] = map[string]interface{}{
+		"enabled": true, "type": "custom", "customDomain": "cdn.example.com",
+		"tls": map[string]interface{}{
+			"enabled": true, "sni": "cdn.example.com",
+			"path": "/apps?ed=2560",
+		},
+	}
+	applyFrontTLS(cfg, "cdn.example.com", "custom", nil)
+
+	ss := getMap(cfg, "streamSettings")
+	if got := getString(ss, "security", ""); got != "tls" {
+		t.Fatalf("security = %q, want tls", got)
+	}
+	if got := getString(getMap(ss, "wsSettings"), "path", ""); got != "/apps?ed=2560" {
+		t.Fatalf("ws path = %q, want /apps?ed=2560", got)
+	}
+	// Extra 侧同样要是覆盖后的路径（mihomo / sing-box / xray 产物都从这里取）
+	extra := buildExtra(cfg, ss, "vless")
+	wsOpts, _ := extra["ws-opts"].(map[string]interface{})
+	if got, _ := wsOpts["path"].(string); got != "/apps?ed=2560" {
+		t.Fatalf("ws-opts.path = %q", got)
+	}
+	if _, ok := wsOpts["max-early-data"]; !ok {
+		t.Error("path 带 ?ed=2560 时应补 max-early-data（否则部分客户端不做早数据）")
+	}
+}
+
+// 覆盖后的路径必须真的进到分享链接里（否则只是改了个没人读的字段）。
+func TestApplyFrontTLSPathReachesShareLink(t *testing.T) {
+	cfg := map[string]interface{}{
+		"protocol": "vless",
+		"settings": map[string]interface{}{"clients": []interface{}{
+			map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111", "email": "a@example.com"},
+		}},
+		"streamSettings": map[string]interface{}{
+			"network": "ws", "security": "none",
+			"wsSettings": map[string]interface{}{"path": "/"},
+		},
+		"_accessDomain": map[string]interface{}{
+			"enabled": true, "type": "custom", "customDomain": "cdn.example.com",
+			"tls": map[string]interface{}{"enabled": true, "path": "/apps?ed=2560"},
+		},
+	}
+	applyFrontTLS(cfg, "cdn.example.com", "custom", nil)
+	link := sharelink.Generate(sharelink.Node{
+		Tag: "n1", Protocol: "vless", Host: "cdn.example.com", Port: 443,
+		Settings:       getMap(cfg, "settings"),
+		StreamSettings: getMap(cfg, "streamSettings"),
+	})
+	if !strings.Contains(link, "path=%2Fapps%3Fed%3D2560") && !strings.Contains(link, "path=/apps?ed=2560") {
+		t.Fatalf("分享链接里的路径未生效: %s", link)
+	}
+	if !strings.Contains(link, "security=tls") {
+		t.Fatalf("分享链接安全类型应为 tls: %s", link)
+	}
+}
+
+// 三种订阅格式都从 Extra 取传输参数：覆盖后的路径必须同时出现在 mihomo / sing-box 产物里。
+func TestApplyFrontTLSPathReachesSubscriptionFormats(t *testing.T) {
+	cfg := map[string]interface{}{
+		"protocol": "vless",
+		"settings": map[string]interface{}{"clients": []interface{}{
+			map[string]interface{}{"id": "11111111-1111-1111-1111-111111111111"},
+		}},
+		"streamSettings": map[string]interface{}{
+			"network": "ws", "security": "none",
+			"wsSettings": map[string]interface{}{"path": "/"},
+		},
+		"_accessDomain": map[string]interface{}{
+			"enabled": true, "type": "custom",
+			"tls": map[string]interface{}{"enabled": true, "path": "/apps?ed=2560"},
+		},
+	}
+	applyFrontTLS(cfg, "cdn.example.com", "custom", nil)
+	ss := getMap(cfg, "streamSettings")
+	node := formatter.Node{
+		Name: "n1", CoreType: "xray", Protocol: "vless", Host: "cdn.example.com", Port: 443,
+		Transport: "ws", TLS: true, ServerName: "cdn.example.com",
+		UUID:  "11111111-1111-1111-1111-111111111111",
+		Extra: buildExtra(cfg, ss, "vless"),
+	}
+
+	for _, tc := range []struct {
+		format formatter.Format
+		want   []string
+	}{
+		{formatter.FormatMihomoYAML, []string{"path:", "/apps?ed=2560"}},
+		{formatter.FormatSingBoxJSON, []string{`"path"`, "/apps?ed=2560"}},
+	} {
+		data, err := formatter.GetFormatter(tc.format).Format([]formatter.Node{node})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.format, err)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(string(data), w) {
+				t.Fatalf("%s 产物缺少 %q:\n%s", tc.format, w, data)
+			}
+		}
+	}
+}
+
+// 路径与「TLS 在哪终结」无关：显式关闭前置 TLS（跟随核心）时，路径仍要覆盖。
+func TestApplyFrontTLSPathAppliesWhenTLSDisabled(t *testing.T) {
+	cfg := plainWSConfig() // ws path = /ws
+	cfg["_accessDomain"] = map[string]interface{}{
+		"enabled": true, "type": "direct",
+		"tls": map[string]interface{}{"enabled": false, "path": "/apps"},
+	}
+	applyFrontTLS(cfg, "direct.example.com", "direct", nil)
+	ss := getMap(cfg, "streamSettings")
+	if got := getString(ss, "security", ""); got != "none" {
+		t.Fatalf("跟随核心时不应改 security，实际 %q", got)
+	}
+	if got := getString(getMap(ss, "wsSettings"), "path", ""); got != "/apps" {
+		t.Fatalf("ws path = %q, want /apps", got)
+	}
+}
+
+// 其它带路径的传输同样生效；gRPC 没有 URL 前缀概念 → 并入 serviceName。
+func TestApplyFrontTLSPathOtherTransports(t *testing.T) {
+	cases := []struct {
+		name    string
+		ss      map[string]interface{}
+		wantKey string
+		want    string
+	}{
+		{"httpupgrade", map[string]interface{}{"network": "httpupgrade",
+			"httpupgradeSettings": map[string]interface{}{"path": "/"}}, "httpupgradeSettings", "/apps"},
+		{"xhttp", map[string]interface{}{"network": "xhttp",
+			"xhttpSettings": map[string]interface{}{"path": "/"}}, "xhttpSettings", "/apps"},
+	}
+	for _, tc := range cases {
+		cfg := map[string]interface{}{"streamSettings": tc.ss}
+		applyFrontTLSFrontPath(cfg, "/apps")
+		got := getString(getMap(tc.ss, tc.wantKey), "path", "")
+		if got != tc.want {
+			t.Errorf("%s path = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// gRPC：/apps + svc → serviceName = apps/svc；查询串被丢掉
+	grpcSS := map[string]interface{}{"network": "grpc",
+		"grpcSettings": map[string]interface{}{"serviceName": "svc"}}
+	applyFrontTLSFrontPath(map[string]interface{}{"streamSettings": grpcSS}, "/apps?ed=2560")
+	if got := getString(getMap(grpcSS, "grpcSettings"), "serviceName", ""); got != "apps/svc" {
+		t.Errorf("grpc serviceName = %q, want apps/svc", got)
+	}
+
+	// raw/tcp 没有路径：不能凭空写字段
+	rawSS := map[string]interface{}{"network": "raw"}
+	applyFrontTLSFrontPath(map[string]interface{}{"streamSettings": rawSS}, "/apps")
+	if len(rawSS) != 1 {
+		t.Errorf("raw 传输不应被写入任何字段: %#v", rawSS)
 	}
 }
 

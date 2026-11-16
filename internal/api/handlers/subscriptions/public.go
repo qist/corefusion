@@ -3211,6 +3211,11 @@ type frontTLSConfig struct {
 	SNI         string
 	ALPN        string
 	Fingerprint string
+	// Path 是外层反向代理给该入站挂的 URL 路径（如 `/apps`、`/apps?ed=2560`）。
+	// 入站自己的传输路径是 `/` 时，客户端必须连 `/apps`，否则反代按 location 匹配不上。
+	// 只有带 HTTP 路径的传输（ws / httpupgrade / xhttp / h2）与 gRPC 有意义；
+	// 空串表示「不改，沿用入站自己的路径」。
+	Path string
 }
 
 // accessDomainFrontTLS 读取 _accessDomain.tls。第二个返回值为 true 表示用户
@@ -3236,6 +3241,7 @@ func accessDomainFrontTLS(config map[string]interface{}) (frontTLSConfig, bool) 
 	cfg.SNI, _ = tlsMap["sni"].(string)
 	cfg.ALPN, _ = tlsMap["alpn"].(string)
 	cfg.Fingerprint, _ = tlsMap["fingerprint"].(string)
+	cfg.Path, _ = tlsMap["path"].(string)
 	return cfg, true
 }
 
@@ -3253,6 +3259,9 @@ func applyFrontTLS(config map[string]interface{}, host, adType string, shareDoma
 		return
 	}
 	if tlsCfg, explicit := accessDomainFrontTLS(config); explicit {
+		// 反代挂载路径与「TLS 在哪终结」是两件事：填了就覆盖传输路径，
+		// 即使 enabled=false（跟随核心 TLS）也生效。
+		applyFrontTLSFrontPath(config, tlsCfg.Path)
 		if !tlsCfg.Enabled {
 			return // 跟随核心
 		}
@@ -3308,6 +3317,86 @@ func applyFrontTLSSettings(config map[string]interface{}, host, sni, alpn, finge
 	}
 	if fingerprint != "" {
 		tls["settings"] = []interface{}{map[string]interface{}{"fingerprint": fingerprint}}
+	}
+}
+
+// applyFrontTLSFrontPath 用「外层反代的挂载路径」覆盖客户端传输路径。
+//
+// 场景：核心入站的路径是 `/`，外面 nginx/caddy 用 `location /apps`（甚至带
+// `?ed=2560` 早数据）反代到该入站。客户端如果仍按 `/` 连，请求打不到那个 location，
+// 表现就是「订阅能拉、节点连不上」。这里把路径写进 streamSettings，分享链接与
+// 三种订阅格式（mihomo / sing-box / xray）都从同一份 streamSettings 取，口径一致。
+//
+// 只处理带 URL 路径的传输：
+//   - ws / httpupgrade / xhttp / h2：直接替换 path；
+//   - gRPC：协议没有 URL 前缀概念，客户端路径恒为 `/{serviceName}/…`。
+//     这里把前缀并进 serviceName（`apps` + `svc` → `apps/svc`），反代需在
+//     `grpc_pass` 上把该前缀去掉（例如 `grpc_pass grpc://127.0.0.1:PORT/;`）；
+//   - raw / mkcp / quic 等没有路径：忽略（填了也不会瞎写字段）。
+func applyFrontTLSFrontPath(config map[string]interface{}, frontPath string) {
+	p := strings.TrimSpace(frontPath)
+	if p == "" || config == nil {
+		return
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	ss := getMap(config, "streamSettings")
+	if ss == nil {
+		return
+	}
+	network := domain.StreamTransport(ss)
+	switch network {
+	case "ws":
+		setTransportPath(ss, "wsSettings", p)
+	case "httpupgrade":
+		setTransportPath(ss, "httpupgradeSettings", p)
+	case "xhttp":
+		setTransportPath(ss, "xhttpSettings", p)
+	case "h2":
+		setTransportPath(ss, "h2Settings", p)
+	case "http":
+		setTransportPath(ss, "httpSettings", p)
+	case "grpc":
+		// 查询串（?ed=2560）对 gRPC 没有意义：serviceName 里不能带 `?`。
+		prefix := strings.TrimPrefix(p, "/")
+		if i := strings.IndexAny(prefix, "?#"); i >= 0 {
+			prefix = prefix[:i]
+		}
+		prefix = strings.Trim(prefix, "/")
+		if prefix == "" {
+			return
+		}
+		grpc := getMap(ss, "grpcSettings")
+		if grpc == nil {
+			grpc = map[string]interface{}{}
+			ss["grpcSettings"] = grpc
+		}
+		cur, _ := grpc["serviceName"].(string)
+		cur = strings.Trim(cur, "/")
+		if cur == "" {
+			grpc["serviceName"] = prefix
+		} else if !strings.HasPrefix(cur, prefix+"/") && cur != prefix {
+			grpc["serviceName"] = prefix + "/" + cur
+		}
+		if v, ok := ss["serviceName"].(string); ok && v != "" {
+			ss["serviceName"] = grpc["serviceName"]
+		}
+	}
+}
+
+// setTransportPath 写入传输设置里的 path，并同步 sing-box 归一看法的顶层 path
+// （singboxToXrayStreamSettings 会同时写 `ss.path` 与 `ss.wsSettings.path`，
+// 只改一处会让两条读取路径不一致）。
+func setTransportPath(ss map[string]interface{}, key, path string) {
+	settings := getMap(ss, key)
+	if settings == nil {
+		settings = map[string]interface{}{}
+		ss[key] = settings
+	}
+	settings["path"] = path
+	if _, ok := ss["path"]; ok {
+		ss["path"] = path
 	}
 }
 

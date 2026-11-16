@@ -444,6 +444,13 @@
                 <el-switch v-model="rf._accessTlsEnabled" />
                 <div class="hint">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</div>
               </el-form-item>
+              <!-- 反代挂载路径：入站路径是 /，外面 nginx/caddy 挂在 /apps 时，客户端必须用 /apps 才打得中 location -->
+              <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsPath')">
+                <div style="width:100%">
+                  <el-input v-model="rf._accessTlsPath" placeholder="/apps 或 /apps?ed=2560" clearable />
+                  <div class="hint">{{ t('protoCenter.inbounds.accessFrontTlsPathHint') }}</div>
+                </div>
+              </el-form-item>
               <template v-if="rf._accessTlsEnabled">
                 <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsSni')">
                   <el-input v-model="rf._accessTlsSni" :placeholder="t('protoCenter.inbounds.accessFrontTlsSniHint')" />
@@ -3046,6 +3053,8 @@ function getDefaultInbound() {
     _customPortMode: 'custom',
     _accessCustomPort: 443,
     _accessTlsEnabled: false, _accessTlsSni: '', _accessTlsAlpn: '', _accessTlsFingerprint: '',
+    // 外层反代挂载路径（如 /apps?ed=2560）：留空沿用入站自身路径
+    _accessTlsPath: '',
     // Port Hop
     _portHopEnabled: false, _portHopMode: 'preset', _portHopRange: '10000-19999',
     _portHopStart: 20000, _portHopEnd: 50000, _portHopInterface: '',
@@ -4274,6 +4283,7 @@ function parseInbound(ib) {
     _accessTlsSni: ib._accessDomain?.tls?.sni || '',
     _accessTlsAlpn: ib._accessDomain?.tls?.alpn || '',
     _accessTlsFingerprint: ib._accessDomain?.tls?.fingerprint || '',
+    _accessTlsPath: ib._accessDomain?.tls?.path || '',
     // 使用入站端口时是否自动创建防火墙放行规则（随 config_json 落库）
     _fwAllow: !!ib._fwAllow,
   }
@@ -4341,6 +4351,8 @@ function buildInbound(ib, isApiCall = false) {
         sni: ib._accessTlsSni || '',
         alpn: ib._accessTlsAlpn || '',
         fingerprint: ib._accessTlsFingerprint || '',
+        // 外层反代挂载路径（如 /apps?ed=2560）：订阅/分享链接会用它覆盖传输路径
+        path: ib._accessTlsPath || '',
       },
     },
     // Port Hop config
@@ -5008,6 +5020,7 @@ function showEdit(i) {
   rf._accessTlsSni = ib._accessTlsSni || ''
   rf._accessTlsAlpn = ib._accessTlsAlpn || ''
   rf._accessTlsFingerprint = ib._accessTlsFingerprint || ''
+  rf._accessTlsPath = ib._accessTlsPath || ''
   // Port Hop config
   rf._portHopEnabled = ib._portHopEnabled || false
   rf._portHopMode = ib._portHopMode || 'preset'

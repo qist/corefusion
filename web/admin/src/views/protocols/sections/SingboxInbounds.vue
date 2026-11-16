@@ -367,6 +367,13 @@
                 <el-switch v-model="rf._accessTlsEnabled" />
                 <div class="hint">{{ t('protoCenter.inbounds.accessFrontTlsHint') }}</div>
               </el-form-item>
+              <!-- 反代挂载路径：入站路径是 /，外面 nginx/caddy 挂在 /apps 时，客户端必须用 /apps 才打得中 location -->
+              <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsPath')">
+                <div style="width:100%">
+                  <el-input v-model="rf._accessTlsPath" placeholder="/apps 或 /apps?ed=2560" clearable />
+                  <div class="hint">{{ t('protoCenter.inbounds.accessFrontTlsPathHint') }}</div>
+                </div>
+              </el-form-item>
               <template v-if="rf._accessTlsEnabled">
                 <el-form-item :label="t('protoCenter.inbounds.accessFrontTlsSni')">
                   <el-input v-model="rf._accessTlsSni" :placeholder="t('protoCenter.inbounds.accessFrontTlsSniHint')" />

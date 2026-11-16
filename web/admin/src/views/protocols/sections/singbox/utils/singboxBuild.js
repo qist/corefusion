@@ -586,6 +586,8 @@ export function buildInbound(ib) {
       sni: ib._accessTlsSni || '',
       alpn: ib._accessTlsAlpn || '',
       fingerprint: ib._accessTlsFingerprint || '',
+      // 外层反代挂载路径（如 /apps?ed=2560）：订阅/分享链接会用它覆盖传输路径
+      path: ib._accessTlsPath || '',
     },
   }
   // 面板内部字段（顶层 `_`，生成核心配置时由 CleanInboundFields 剥离）：**必须落库**，
@@ -965,6 +967,7 @@ export function parseInbound(ib) {
     o._accessTlsSni = ad.tls?.sni || ''
     o._accessTlsAlpn = ad.tls?.alpn || ''
     o._accessTlsFingerprint = ad.tls?.fingerprint || ''
+    o._accessTlsPath = ad.tls?.path || ''
   }
   // 端口跳跃：同样是对象形态（旧数据可能只有扁平字段）
   {

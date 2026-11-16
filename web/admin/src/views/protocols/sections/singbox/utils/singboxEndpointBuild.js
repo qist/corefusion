@@ -68,7 +68,7 @@ function applyHTTPVersionOptions(out, ep, versions) {
 // MASQUE 端点共用的 UDP NAT 字段（MASQUEEndpointOptions）
 function applyMasqueEndpointOptions(out, ep) {
   if (ep.system) out.system = true
-  if (ep.name) out.name = ep.name
+  if (ep.name) out.name = normalizeIfaceName(ep.name, ep.tag)
   if (ep.mtu > 0) out.mtu = ep.mtu
   if (ep.udp_mapping) out.udp_mapping = ep.udp_mapping
   if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
@@ -164,6 +164,49 @@ function buildOutboundTLS(ep) {
 // 节点「名称 / 标签」生成器与 xray 共用（见 sections/utils/nodeNaming.js），不另起一套。
 import { genRemark, randSuffix } from '../../utils/nodeNaming'
 
+// 网卡名合法化：Linux 接口名上限 15 字节（IFNAMSIZ 16 含结尾 NUL），
+// 只能包含字母、数字与 `._-`。超长/非法时核心直接起不来：
+//   FATAL start service: start outbound/wireguard[..]: open tun: create ifreq: invalid argument
+// 历史默认值 `WireGuard-<6位>` 正好 16 字符，与「使用系统网络集成」一起用必然触发。
+// 这里与后端 coreconfig.NormalizeIfaceName 保持同一套规则（后端渲染时还会再兜底一次）。
+export const IFACE_NAME_MAX_LEN = 15
+
+export function normalizeIfaceName(raw, fallback) {
+  const clean = (s) => String(s == null ? '' : s)
+    .trim()
+    .replace(/[^0-9A-Za-z._-]+/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '')
+  const reserved = (v) => !v || v === 'lo' || v === '.' || v === '..'
+  const v = clean(raw)
+  if (!reserved(v) && v.length <= IFACE_NAME_MAX_LEN) return v
+  const f = clean(fallback)
+  if (!reserved(f)) return f.slice(0, IFACE_NAME_MAX_LEN).replace(/[.-]+$/g, '') || 'wg0'
+  // 兜底：名字与 tag 都不可用时用确定性哈希，保证同一端点每次渲染一致
+  let h = 0
+  const seed = `${raw}|${fallback}`
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return 'wg' + (h % 0xffffff).toString(16).padStart(6, '0')
+}
+
+// 各端点类型的默认网卡名前缀：与 tag 前缀同族（见 onRemarkChange），一眼能看出
+// 这个接口是 WireGuard 还是 MASQUE/Tailscale。全部 ≤15 字节（含 6 位随机后缀），
+// 开启「使用系统网络集成」时可直接当内核接口名用。
+export const IFACE_PREFIX_BY_TYPE = {
+  wireguard: 'wg-',
+  tailscale: 'ts-',
+  openconnect: 'oc-',
+  'openvpn-client': 'ovpn-c-',
+  'openvpn-server': 'ovpn-s-',
+  'masque-client': 'mq-c-',
+  'masque-server': 'mq-s-',
+}
+
+// defaultIfaceName 生成「带协议语义 + 长度合法」的默认网卡名。
+export function defaultIfaceName(type) {
+  return (IFACE_PREFIX_BY_TYPE[type] || 'wg-') + randSuffix()
+}
+
 // 端点表单默认值
 export function endpointDefaultsForType(type, customPort) {
   // customPort：由调用方传入（后端 free-port 接口返回的空闲端口），
@@ -187,7 +230,9 @@ export function endpointDefaultsForType(type, customPort) {
       return {
         ...base,
         tag: 'wg-ep-' + randSuffix(),
-        name: 'WireGuard-' + randSuffix(),
+        // 网卡名：`WireGuard-<6位>` 是 16 字符，超过 IFNAMSIZ → 开系统集成后启动 FATAL。
+        // `wg-<6位>`（9 字符）既合法又一眼看出是 WireGuard。
+        name: defaultIfaceName('wireguard'),
         // WireGuard endpoint fields
         system: false,
         mtu: 1408,
@@ -213,11 +258,14 @@ export function endpointDefaultsForType(type, customPort) {
       }
     }
 
-    case 'tailscale':
+    case 'tailscale': {
+      // Tailscale 的接口名是 `system_interface_name`（没有顶层 name）：
+      // 开系统接口时用它，未开时核心不使用该字段。
+      const tsIface = defaultIfaceName('tailscale')
       return {
         ...base,
         tag: 'ts-ep-' + randSuffix(),
-        name: 'Tailscale-' + randSuffix(),
+        name: tsIface,
         state_directory: '',
         auth_key: '',
         control_url: '',
@@ -236,7 +284,7 @@ export function endpointDefaultsForType(type, customPort) {
         relay_server_static_endpoints: [],
         _relayServerStaticEndpointsStr: '',
         system_interface: false,
-        system_interface_name: '',
+        system_interface_name: tsIface,
         system_interface_mtu: 0,
         udp_timeout: '5m',
         ssh_server: false,
@@ -254,12 +302,13 @@ export function endpointDefaultsForType(type, customPort) {
         udp_fragment: false, domain_resolver: '', network_strategy: '',
         _networkType: '', _fallbackNetworkType: '', fallback_delay: '',
       }
+    }
 
     case 'openconnect':
       return {
         ...base,
         tag: 'oc-ep-' + randSuffix(),
-        name: 'OpenConnect-' + randSuffix(),
+        name: defaultIfaceName('openconnect'),
         system: false,
         server: '',
         flavor: 'anyconnect',
@@ -347,7 +396,7 @@ export function endpointDefaultsForType(type, customPort) {
       return {
         ...base,
         tag: 'ovpn-c-' + randSuffix(),
-        name: 'OVPN-Client-' + randSuffix(),
+        name: defaultIfaceName('openvpn-client'),
         mode: 'tls',
         server: '127.0.0.1',
         server_port: 1194,
@@ -449,7 +498,7 @@ export function endpointDefaultsForType(type, customPort) {
       return {
         ...base,
         tag: 'ovpn-s-' + randSuffix(),
-        name: 'OVPN-Server-' + randSuffix(),
+        name: defaultIfaceName('openvpn-server'),
         system: false,
         mtu: 1500,
         mode: 'tls',
@@ -546,7 +595,7 @@ export function endpointDefaultsForType(type, customPort) {
       return {
         ...base,
         tag: 'mq-c-' + randSuffix(),
-        name: 'MASQUE-Client-' + randSuffix(),
+        name: defaultIfaceName('masque-client'),
         system: false,
         mtu: 0,
         server: '',
@@ -593,7 +642,7 @@ export function endpointDefaultsForType(type, customPort) {
       return {
         ...base,
         tag: 'mq-s-' + randSuffix(),
-        name: 'MASQUE-Server-' + randSuffix(),
+        name: defaultIfaceName('masque-server'),
         system: false,
         mtu: 0,
         listen: '::',
@@ -671,7 +720,7 @@ function buildEndpointTyped(ep) {
       const out = { type: 'wireguard' }
       if (ep.tag) out.tag = ep.tag
       if (ep.system) out.system = true
-      if (ep.name) out.name = ep.name
+      if (ep.name) out.name = normalizeIfaceName(ep.name, ep.tag)
       if (ep.mtu > 0) out.mtu = ep.mtu
       if (ep.address?.length) out.address = ep.address
       if (ep.private_key) out.private_key = ep.private_key
@@ -729,8 +778,11 @@ function buildEndpointTyped(ep) {
       if (ep.listen_port > 0) out.listen_port = ep.listen_port
       if (ep.relay_server_port > 0) out.relay_server_port = ep.relay_server_port
       if (ep.relay_server_static_endpoints?.length) out.relay_server_static_endpoints = ep.relay_server_static_endpoints
-      if (ep.system_interface) out.system_interface = true
-      if (ep.system_interface_name) out.system_interface_name = ep.system_interface_name
+      // 系统接口名只在开启系统接口时有意义：关着就不写进配置（避免无意义字段）
+      if (ep.system_interface) {
+        out.system_interface = true
+        if (ep.system_interface_name) out.system_interface_name = normalizeIfaceName(ep.system_interface_name, ep.tag)
+      }
       if (ep.system_interface_mtu > 0) out.system_interface_mtu = ep.system_interface_mtu
       if (ep.udp_timeout) out.udp_timeout = ep.udp_timeout
       // ssh_server 既接受布尔也接受对象；有 disable_* 时必须写对象，
@@ -756,7 +808,7 @@ function buildEndpointTyped(ep) {
       const out = { type: 'openconnect' }
       if (ep.tag) out.tag = ep.tag
       if (ep.system) out.system = true
-      if (ep.name) out.name = ep.name
+      if (ep.name) out.name = normalizeIfaceName(ep.name, ep.tag)
       if (ep.server) out.server = ep.server
       if (ep.flavor) out.flavor = ep.flavor
       if (ep.username) out.username = ep.username
@@ -960,7 +1012,7 @@ function buildEndpointTyped(ep) {
       if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
       if (ep.on_demand) out.on_demand = true
       if (ep.system) out.system = true
-      if (ep.name) out.name = ep.name
+      if (ep.name) out.name = normalizeIfaceName(ep.name, ep.tag)
       applyDialOptions(out, ep)
       return out
     }
@@ -973,7 +1025,7 @@ function buildEndpointTyped(ep) {
       if (ep.udp_filtering) out.udp_filtering = ep.udp_filtering
       if (ep.udp_nat_max > 0) out.udp_nat_max = ep.udp_nat_max
       if (ep.system) out.system = true
-      if (ep.name) out.name = ep.name
+      if (ep.name) out.name = normalizeIfaceName(ep.name, ep.tag)
       if (ep.mtu > 0) out.mtu = ep.mtu
       if (ep.mode) out.mode = ep.mode
       if (ep.network) out.network = ep.network
@@ -1153,7 +1205,10 @@ export function parseEndpoint(ep) {
       return {
         ...base,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         mtu: ep.mtu || 1408,
         address: Array.isArray(ep.address) ? ep.address : [],
         _addressStr: Array.isArray(ep.address) ? ep.address.join(', ') : '',
@@ -1197,7 +1252,7 @@ export function parseEndpoint(ep) {
         relay_server_static_endpoints: ep.relay_server_static_endpoints || [],
         _relayServerStaticEndpointsStr: (ep.relay_server_static_endpoints || []).join(', '),
         system_interface: ep.system_interface || false,
-        system_interface_name: ep.system_interface_name || '',
+        system_interface_name: ep.system_interface_name ? normalizeIfaceName(ep.system_interface_name, ep.tag) : '',
         system_interface_mtu: ep.system_interface_mtu || 0,
         udp_timeout: ep.udp_timeout || '5m',
         ssh_server: ep.ssh_server === true || (!!ep.ssh_server && ep.ssh_server.enabled !== false),
@@ -1213,7 +1268,10 @@ export function parseEndpoint(ep) {
       return {
         ...base,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         server: ep.server || '',
         flavor: ep.flavor || 'anyconnect',
         username: ep.username || '',
@@ -1375,7 +1433,10 @@ export function parseEndpoint(ep) {
         udp_nat_max: ep.udp_nat_max || 0,
         on_demand: ep.on_demand || false,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         ...parseDialOptions(ep),
       }
 
@@ -1383,7 +1444,10 @@ export function parseEndpoint(ep) {
       return {
         ...base,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         mtu: ep.mtu || 1500,
         mode: ep.mode || 'tls',
         network: ep.network || 'udp',
@@ -1472,7 +1536,10 @@ export function parseEndpoint(ep) {
       return {
         ...base,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         mtu: ep.mtu || 0,
         server: ep.server || '',
         server_port: ep.server_port || 443,
@@ -1541,7 +1608,10 @@ export function parseEndpoint(ep) {
       return {
         ...base,
         system: ep.system || false,
-        name: ep.name || '',
+        // 读出时即规范化：历史默认值（WireGuard-xxxxxx / MASQUE-Server-xxxxxx 等）
+        // 超过 IFNAMSIZ，开系统集成后会启动失败；这里保持与保存时同一套规则，
+        // 让存量记录在编辑器里显示的就是真正会落地的网卡名。
+        name: ep.name ? normalizeIfaceName(ep.name, ep.tag) : '',
         mtu: ep.mtu || 0,
         listen: ep.listen || '::',
         listen_port: ep.listen_port || 0,

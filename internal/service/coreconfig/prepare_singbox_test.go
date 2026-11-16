@@ -314,6 +314,54 @@ func TestPrepareFullConfigSingboxMergesEndpoints(t *testing.T) {
 	}
 }
 
+// 「使用系统网络集成」时 name 就是内核网卡名：>15 字节会被核心拒绝
+// （open tun: create ifreq: invalid argument）。存量数据里的 `WireGuard-<6位>`
+// 正好 16 字符，渲染时必须在这里收敛成合法名字，否则改完 UI 仍然起不来。
+func TestPrepareFullConfigNormalizesSystemIfaceName(t *testing.T) {
+	full := map[string]interface{}{}
+	ep := &stubEndpointProvider{raw: []json.RawMessage{
+		json.RawMessage(`{"type":"wireguard","tag":"wg-ep-ul7am9","system":true,"name":"WireGuard-ul7am9","private_key":"k"}`),
+		json.RawMessage(`{"type":"tailscale","tag":"ts-ep-1","system_interface":true,"system_interface_name":"Tailscale-abcdef"}`),
+	}}
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full, EndpointProvider: ep,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+	endpoints, _ := full["endpoints"].([]interface{})
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoints 数量应为 2，实际 %d", len(endpoints))
+	}
+	wg, _ := endpoints[0].(map[string]interface{})
+	if name, _ := wg["name"].(string); name != "wg-ep-ul7am9" {
+		t.Fatalf("wireguard 网卡名应回退到 tag，实际 %q", name)
+	}
+	ts, _ := endpoints[1].(map[string]interface{})
+	if name, _ := ts["system_interface_name"].(string); name != "ts-ep-1" {
+		t.Fatalf("tailscale 网卡名应回退到 tag，实际 %q", name)
+	}
+}
+
+// 合法的网卡名不能被改写（否则用户手填的名字会莫名其妙变化）。
+func TestPrepareFullConfigKeepsValidIfaceName(t *testing.T) {
+	full := map[string]interface{}{}
+	ep := &stubEndpointProvider{raw: []json.RawMessage{
+		json.RawMessage(`{"type":"wireguard","tag":"wg-ep-ul7am9","system":true,"name":"wg-home","private_key":"k"}`),
+	}}
+	if _, err := PrepareFullConfig(PrepareFullConfigOptions{
+		Ctx: context.Background(), ServerID: 1, CoreType: "singbox",
+		FullConfig: full, EndpointProvider: ep,
+	}); err != nil {
+		t.Fatalf("PrepareFullConfig: %v", err)
+	}
+	endpoints, _ := full["endpoints"].([]interface{})
+	wg, _ := endpoints[0].(map[string]interface{})
+	if name, _ := wg["name"].(string); name != "wg-home" {
+		t.Fatalf("合法名字不应被改写，实际 %q", name)
+	}
+}
+
 // xray 不应合并 endpoints（无此概念）
 func TestPrepareFullConfigXrayIgnoresEndpoints(t *testing.T) {
 	full := map[string]interface{}{"inbounds": []interface{}{}}

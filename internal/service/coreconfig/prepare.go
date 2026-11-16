@@ -240,6 +240,17 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				if m["type"] == "wireguard" {
 					delete(m, "public_key")
 				}
+				// 网卡名合法化：`system` / `system_interface` 开启时，name 就是内核
+				// 接口名，必须 ≤15 字节且只含字母数字 ._-，否则核心 FATAL
+				// （`open tun: create ifreq: invalid argument`）。历史默认值
+				// `WireGuard-<6位>` 正好 16 字符，存量数据在这里兜底修正。
+				tag, _ := m["tag"].(string)
+				if name, ok := m["name"].(string); ok && strings.TrimSpace(name) != "" {
+					m["name"] = NormalizeIfaceName(name, tag)
+				}
+				if name, ok := m["system_interface_name"].(string); ok && strings.TrimSpace(name) != "" {
+					m["system_interface_name"] = NormalizeIfaceName(name, tag)
+				}
 			}
 		}
 	}

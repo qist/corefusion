@@ -139,7 +139,10 @@
                 <el-switch v-model="rf.system" />
               </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.name')">
-                <el-input v-model="rf.name" />
+                <div style="width:100%">
+                  <el-input v-model="rf.name" :maxlength="IFACE_NAME_MAX_LEN" />
+                  <div class="hint">{{ t('singbox.protocol.endpoint.nameHint') }}</div>
+                </div>
               </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.ts.onDemand')">
                 <el-switch v-model="rf.on_demand" />
@@ -191,7 +194,10 @@
                 <el-switch v-model="rf.system_interface" />
               </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.ts.systemInterfaceName')">
-                <el-input v-model="rf.system_interface_name" />
+                <div style="width:100%">
+                  <el-input v-model="rf.system_interface_name" :maxlength="IFACE_NAME_MAX_LEN" />
+                  <div class="hint">{{ t('singbox.protocol.endpoint.nameHint') }}</div>
+                </div>
               </el-form-item>
               <el-form-item :label="t('singbox.protocol.endpoint.ts.systemInterfaceMtu')">
                 <el-input-number v-model="rf.system_interface_mtu" :min="0" style="width:100%" />
@@ -1655,7 +1661,7 @@ import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
 import MobileCards from '../../../components/MobileCards.vue'
 import { useIsMobile } from '../../../composables/useIsMobile'
-import { buildEndpoint, parseEndpoint, endpointDefaultsForType, ENDPOINT_TYPES, ENDPOINT_TYPE_LABELS } from './singbox/utils/singboxEndpointBuild'
+import { buildEndpoint, parseEndpoint, endpointDefaultsForType, ENDPOINT_TYPES, ENDPOINT_TYPE_LABELS, IFACE_NAME_MAX_LEN } from './singbox/utils/singboxEndpointBuild'
 import EndpointDialFields from './singbox/endpoints/EndpointDialFields.vue'
 import EndpointListenFields from './singbox/endpoints/EndpointListenFields.vue'
 import { prefetchFreePort, takeFreePort } from './utils/freePort'

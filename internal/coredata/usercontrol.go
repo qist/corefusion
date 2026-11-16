@@ -96,6 +96,10 @@ func InferProtocolFromTag(tag string) string {
 //   - 本地节点：面板进程内直连 xray gRPC（不再走面板自身的 HTTP 回环，
 //     否则面板开启 TLS 时回环请求会被 HTTPS 监听器拒绝）；
 //   - 远程节点：经 Agent gRPC 转发，由 Agent 调本机 xray gRPC。
+//
+// 幂等：面板热加用户时，Agent 的热重载也可能已经把整条入站（含该用户）替换过，
+// 此时 AddUserOperation 会报「用户已存在」。遇到这种错误先删该 email 再加一次，
+// 避免把假告警抛给用户。
 func (p *ControlProvider) AddUser(ctx context.Context, serverID int64, tag, protocolName, email, id, password, flow, method string) error {
 	protocolName = NormalizeProtocol(protocolName)
 	if protocolName == "" {
@@ -108,6 +112,16 @@ func (p *ControlProvider) AddUser(ctx context.Context, serverID int64, tag, prot
 		return fmt.Errorf("protocol %q does not support users", protocolName)
 	}
 
+	err := p.addUserOnce(ctx, serverID, tag, protocolName, email, id, password, flow, method)
+	if err != nil && isExistingUserErr(err) {
+		_ = p.RemoveUser(ctx, serverID, tag, email)
+		err = p.addUserOnce(ctx, serverID, tag, protocolName, email, id, password, flow, method)
+	}
+	return err
+}
+
+// addUserOnce 执行一次用户热加。
+func (p *ControlProvider) addUserOnce(ctx context.Context, serverID int64, tag, protocolName, email, id, password, flow, method string) error {
 	if p.isLocal != nil && p.isLocal(serverID) {
 		account := BuildXrayUserAccount(protocolName, id, password, flow, method)
 		if account == nil {
@@ -145,7 +159,17 @@ func (p *ControlProvider) AddUser(ctx context.Context, serverID int64, tag, prot
 	return nil
 }
 
+// isExistingUserErr 判断错误是否为「该用户已存在」（重复热加同一 email）。
+func isExistingUserErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already exists") || strings.Contains(msg, "duplicate") || strings.Contains(msg, "existing user")
+}
+
 // RemoveUser 在指定节点的运行中 xray 上热移除用户（本地直连 / 远程经 Agent）。
+// 用户已不存在视为成功（面板与 Agent 热重载可能都在删同一个 email）。
 func (p *ControlProvider) RemoveUser(ctx context.Context, serverID int64, tag, email string) error {
 	if p.isLocal != nil && p.isLocal(serverID) {
 		conn, err := p.LocalConn(ctx, serverID)
@@ -159,7 +183,7 @@ func (p *ControlProvider) RemoveUser(ctx context.Context, serverID int64, tag, e
 				Email: email,
 			}),
 		})
-		if err != nil {
+		if err != nil && !IsMissingHandlerErr(err) {
 			return fmt.Errorf("remove user %s from %s: %w", email, tag, err)
 		}
 		return nil
@@ -169,7 +193,7 @@ func (p *ControlProvider) RemoveUser(ctx context.Context, serverID int64, tag, e
 		"tag":   tag,
 		"email": email,
 	})
-	if err != nil {
+	if err != nil && !IsMissingHandlerErr(err) {
 		return fmt.Errorf("remove user %s from %s (server %d): %w", email, tag, serverID, err)
 	}
 	return nil

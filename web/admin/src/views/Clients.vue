@@ -245,18 +245,20 @@
     <el-dialog v-model="subDetailDialog" :title="t('client.subDetail')" width="560">
       <div style="margin-bottom:6px;font-weight:500">{{ subDetailEmail }}</div>
       <div style="font-size:12px;color:#909399;margin-bottom:10px">{{ t('client.subFormatHint') }}</div>
-      <div
-        v-for="(item, idx) in subDetailLinks"
-        :key="item.format"
-        style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #ebeef5;border-radius:6px;margin-bottom:8px;cursor:pointer"
-        :style="{ borderColor: idx === subDetailSelected ? '#409eff' : '#ebeef5', background: idx === subDetailSelected ? '#ecf5ff' : '#f5f7fa' }"
-        @click="selectSubLink(idx)"
-      >
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:500">{{ item.label }}</div>
-          <div style="word-break:break-all;font-family:monospace;font-size:12px;color:#606266">{{ item.url }}</div>
+      <div style="max-height:56vh;overflow:auto;margin-bottom:10px">
+        <div
+          v-for="(item, idx) in subDetailLinks"
+          :key="item.format + '|' + item.label"
+          style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #ebeef5;border-radius:6px;margin-bottom:8px;cursor:pointer"
+          :style="{ borderColor: idx === subDetailSelected ? '#409eff' : '#ebeef5', background: idx === subDetailSelected ? '#ecf5ff' : '#f5f7fa' }"
+          @click="selectSubLink(idx)"
+        >
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">{{ item.label }}</div>
+            <div style="word-break:break-all;font-family:monospace;font-size:12px;color:#606266">{{ item.url }}</div>
+          </div>
+          <el-button size="small" text @click.stop="copyText(item.url)">{{ t('common.copy') }}</el-button>
         </div>
-        <el-button size="small" text @click.stop="copyText(item.url)">{{ t('common.copy') }}</el-button>
       </div>
       <div style="text-align:center">
         <div v-if="subDetailQr" style="margin:8px 0">
@@ -398,20 +400,28 @@ const configFitsPlan = (cfg, planID) => {
   return ids.length === 0 || (!!planID && ids.includes(planID))
 }
 
-// 某格式下可用的配置：优先客户订阅绑定的那份，其次通用（platform 为空），最后第一份。
-const pickConfigForFormat = (format, row) => {
-  const list = mihomoConfigs.value
-    .filter(c => (c.format || 'mihomo_yaml') === format && configFitsPlan(c, row.plan_id))
-    .slice()
-    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || String(a.name).localeCompare(String(b.name)))
-  if (!list.length) return null
+// 某格式下可用的配置（全部）：绑定到本客户套餐的都列出来，一个配置一条链接。
+// 以前只取一份（绑定的 / 通用的 / 第一份），导致同一套餐关联了多个 Mihomo 配置时
+// 订阅详情只显示其中一个（真机报过：套餐 2 关联 office/luyou/mobile，只显示一个）。
+const listConfigsForFormat = (format, row) => {
   const sub = subscriptions.value.find(s => s.id === row.subscription_id)
   const boundID = sub?.mihomo_config_id
-  return list.find(c => c.id === boundID) || list.find(c => !c.platform) || list[0]
+  return mihomoConfigs.value
+    .filter(c => (c.format || 'mihomo_yaml') === format && configFitsPlan(c, row.plan_id))
+    .slice()
+    .sort((a, b) => {
+      if (boundID) {
+        if (a.id === boundID) return -1
+        if (b.id === boundID) return 1
+      }
+      // 配置列表按「排序值 → 记录顺序」排列，与「订阅格式」页面的顺序一致，
+      // 不用 localeCompare（结果依赖浏览器语言，跨环境会跳来跳去）。
+      return (a.sort_order || 0) - (b.sort_order || 0) || (a.id || 0) - (b.id || 0)
+    })
 }
 
-// 详情里的链接：base64/raw 始终有；Clash 有配置时给「内联 + providers」两条；
-// sing-box / xray 只有创建并绑定了对应配置才出现（没配置就不显示该行）。
+// 详情里的链接：base64/raw 始终有；Clash 每个可用配置给「内联 + providers」两条；
+// sing-box / xray 每个可用配置一条（没配置就不显示该行）。
 function buildSubLinks(row) {
   const base = subUrl(row)
   if (!base) return []
@@ -420,21 +430,18 @@ function buildSubLinks(row) {
   const withConfig = (cfg) => '&config=' + encodeURIComponent(cfg.name)
   const links = []
 
-  const clash = pickConfigForFormat('mihomo_yaml', row)
-  if (clash) {
-    const label = 'Clash / Mihomo · ' + clash.name
-    links.push({ format: 'mihomo_yaml', label, url: withQuery('mihomo_yaml', withConfig(clash)) })
-    links.push({ format: 'mihomo_yaml_providers', label: label + ' · providers', url: withQuery('mihomo_yaml', withConfig(clash) + '&providers=1') })
+  for (const cfg of listConfigsForFormat('mihomo_yaml', row)) {
+    const label = 'Clash / Mihomo · ' + cfg.name
+    links.push({ format: 'mihomo_yaml', label, url: withQuery('mihomo_yaml', withConfig(cfg)) })
+    links.push({ format: 'mihomo_yaml_providers', label: label + ' · providers', url: withQuery('mihomo_yaml', withConfig(cfg) + '&providers=1') })
   }
 
-  const singbox = pickConfigForFormat('singbox_json', row)
-  if (singbox) {
-    links.push({ format: 'singbox_json', label: 'Sing-box · ' + singbox.name, url: withQuery('singbox_json', withConfig(singbox)) })
+  for (const cfg of listConfigsForFormat('singbox_json', row)) {
+    links.push({ format: 'singbox_json', label: 'Sing-box · ' + cfg.name, url: withQuery('singbox_json', withConfig(cfg)) })
   }
 
-  const xray = pickConfigForFormat('xray_json', row)
-  if (xray) {
-    links.push({ format: 'xray_json', label: 'Xray / V2Ray · ' + xray.name, url: withQuery('xray_json', withConfig(xray)) })
+  for (const cfg of listConfigsForFormat('xray_json', row)) {
+    links.push({ format: 'xray_json', label: 'Xray / V2Ray · ' + cfg.name, url: withQuery('xray_json', withConfig(cfg)) })
   }
 
   links.push({ format: 'base64_uri', label: 'Base64 URI', url: withQuery('base64_uri') })

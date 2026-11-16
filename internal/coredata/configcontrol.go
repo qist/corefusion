@@ -73,6 +73,76 @@ func EnsureImplicitAPIRule(routerConf *conf.RouterConfig) {
 	routerConf.RuleList = append([]json.RawMessage{apiRule}, routerConf.RuleList...)
 }
 
+// BuildInboundConfig 把入站 JSON 解析成 xray 的入站配置，并返回其 tag。
+// xray 的 AddInbound 对重复 tag 会报 "existing tag found"，调用方需先按 tag 移除。
+func BuildInboundConfig(configJSON []byte) (*xraycore.InboundHandlerConfig, string, error) {
+	cfg := new(conf.InboundDetourConfig)
+	if err := json.Unmarshal(configJSON, cfg); err != nil {
+		return nil, "", fmt.Errorf("parse inbound config: %w", err)
+	}
+	tag := cfg.Tag
+	inbound, err := cfg.Build()
+	if err != nil {
+		return nil, tag, fmt.Errorf("build inbound config: %w", err)
+	}
+	return inbound, tag, nil
+}
+
+// AddInbound 把一条入站热下发到运行中的 xray（本地直连 gRPC / 远端经 Agent）。
+// 幂等语义：同 tag 已存在时先移除再添加（入站配置里已包含该入站的全部用户）。
+func (p *ControlProvider) AddInbound(ctx context.Context, serverID int64, configJSON []byte) error {
+	if p.isLocal != nil && p.isLocal(serverID) {
+		inbound, tag, err := BuildInboundConfig(configJSON)
+		if err != nil {
+			return err
+		}
+		conn, err := p.LocalConn(ctx, serverID)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+
+		client := proxymanCommand.NewHandlerServiceClient(conn)
+		if tag != "" {
+			_, _ = client.RemoveInbound(ctx, &proxymanCommand.RemoveInboundRequest{Tag: tag})
+		}
+		if _, err := client.AddInbound(ctx, &proxymanCommand.AddInboundRequest{Inbound: inbound}); err != nil {
+			return fmt.Errorf("add inbound %s: %w", tag, err)
+		}
+		return nil
+	}
+
+	if _, tag, err := BuildInboundConfig(configJSON); err == nil && tag != "" {
+		_, _ = p.RemoteCall(ctx, serverID, "proxyman", "removeInbound", map[string]interface{}{"tag": tag})
+	}
+	if _, err := p.RemoteCall(ctx, serverID, "proxyman", "addInbound", map[string]interface{}{
+		"config": json.RawMessage(configJSON),
+	}); err != nil {
+		return fmt.Errorf("add inbound on server %d: %w", serverID, err)
+	}
+	return nil
+}
+
+// RemoveInbound 从运行中的 xray 热移除一条入站（不存在视为成功）。
+func (p *ControlProvider) RemoveInbound(ctx context.Context, serverID int64, tag string) error {
+	if tag == "" {
+		return nil
+	}
+	if p.isLocal != nil && p.isLocal(serverID) {
+		conn, err := p.LocalConn(ctx, serverID)
+		if err != nil {
+			return err
+		}
+		defer conn.Close()
+		_, _ = proxymanCommand.NewHandlerServiceClient(conn).RemoveInbound(ctx,
+			&proxymanCommand.RemoveInboundRequest{Tag: tag})
+		return nil
+	}
+
+	_, _ = p.RemoteCall(ctx, serverID, "proxyman", "removeInbound", map[string]interface{}{"tag": tag})
+	return nil
+}
+
 // AddOutbound 把一条出站热下发到运行中的 xray（本地直连 gRPC / 远端经 Agent）。
 //
 // 幂等语义：同 tag 已存在时先移除再添加（xray 的 AddHandler 拒绝重复 tag，

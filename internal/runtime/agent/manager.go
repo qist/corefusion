@@ -114,6 +114,11 @@ type NodeServerManager struct {
 	// IP 黑名单提供者：返回当前面板级黑名单条目（panel.ip_blacklist 解析后）。
 	// Agent 重连时经 SetIPBlacklist 重新下发（节点重装/重启后内核规则丢失 → 补推）。
 	ipBlacklistProvider func() []string
+
+	// xrayPending 记录「控制面不可达导致没热更成功」的 xray 改动，
+	// Agent 重连后由 xrayPendingReplayer 按数据库期望状态补下发。
+	xrayPending         xrayPendingQueue
+	xrayPendingReplayer XrayPendingReplayer
 }
 
 // SetIPBlacklistProvider 注入黑名单条目提供者（router 接线：读 panel.ip_blacklist 并解析）。
@@ -1428,7 +1433,7 @@ func (m *NodeServerManager) handlePublicCertIssued(serverID int64, report *agent
 func (m *NodeServerManager) SendCommand(ctx context.Context, serverID int64, cmd *agentpb.PanelCommand) error {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
-		return fmt.Errorf("server %d not connected", serverID)
+		return &NotConnectedError{ServerID: serverID}
 	}
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
@@ -1679,7 +1684,7 @@ func (m *NodeServerManager) ControlCoreOnServer(ctx context.Context, serverID in
 func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, error) {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
-		return nil, fmt.Errorf("server %d not connected", serverID)
+		return nil, &NotConnectedError{ServerID: serverID}
 	}
 
 	// Fallback: return cached core states from last heartbeat status report
@@ -1705,7 +1710,7 @@ func (m *NodeServerManager) GetServerStatus(ctx context.Context, serverID int64)
 func (m *NodeServerManager) GetRemoteState(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, []*agentpb.BinaryInfo, error) {
 	ac := m.GetConnection(serverID)
 	if ac == nil {
-		return nil, nil, fmt.Errorf("server %d not connected", serverID)
+		return nil, nil, &NotConnectedError{ServerID: serverID}
 	}
 
 	// Read cached state under lock
@@ -1870,6 +1875,11 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 				log.Printf("[NodeServerManager] IP blacklist push to server %d on connect: %d entries", serverID, len(entries))
 			}
 		}
+
+		// 8. 补下发断连期间没热更成功的 xray 改动。
+		//    控制面不可达时改动只在磁盘上（SyncData 刚把文件写好），运行中的 xray
+		//    仍是旧配置；这里按数据库期望状态把运行态补回来。
+		m.replayPendingXray(serverID)
 	}()
 
 	log.Printf("[NodeServerManager] server %d (%s) connected", serverID, hostname)

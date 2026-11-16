@@ -3264,9 +3264,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			})
 			xrayControlH := xrayControlHandler.NewHandler(systemSettingSvc)
 			xrayControlH.SetCoreConfigService(coreConfigSvc)
-			xrayControlH.SetNodeOperator(nodeServerSvcInst)
+			// 远端控制调用套一层标记：控制面不可达导致的失败记成「待补下发」，
+			// Agent 重连后按数据库期望状态补回来（详见 xray_pending.go）。
+			xrayControlH.SetNodeOperator(&xrayPendingRemote{inner: nodeServerSvcInst, mgr: sharedNodeMgr})
 			// 进程内热下发入口（出站/路由）在此注入：handler 创建顺序早于 xrayControlH。
 			xrayApply.control = xrayControlH.Control()
+			if sharedNodeMgr != nil {
+				sharedNodeMgr.SetXrayPendingReplayer(&xrayPendingReplayer{
+					coreConfigSvc: coreConfigSvc,
+					inboundSvc:    inboundConfigSvc,
+					outboundSvc:   outboundConfigSvc,
+					endpointSvc:   endpointConfigSvc,
+					chainLinkSvc:  chainLinkGen,
+					control:       xrayControlH.Control(),
+				})
+			}
 			// 入站 tag 常只有端口（inbound-59026）：调用方没传 protocol 时按库里的
 			// inbound_configs.protocol 补全，避免把 vless 当 trojan 构造错账号。
 			xrayControlH.SetProtocolResolver(func(ctx context.Context, serverID int64, tag string) string {

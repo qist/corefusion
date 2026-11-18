@@ -27,6 +27,7 @@ import (
 
 	"corefusion/internal/constants"
 	agent "corefusion/internal/runtime/agent"
+	"corefusion/internal/runtime/process"
 	secretcrypto "corefusion/internal/security/crypto"
 )
 
@@ -84,6 +85,13 @@ func main() {
 	// Ensure data directory structure
 	dataDir := cfg.Agent.DataDir
 	initDataDir(dataDir)
+	// Agent 也会在进程内构建 xray 路由（gRPC 热下发的 applyRouting 需要
+	// routerConf.Build()），必须让它能找到 ext:xxx.dat；否则节点侧保存路由
+	// 会报 `failed to open geosite_IR.dat`。统一用 XRAY_LOCATION_ASSET 解决，
+	// 不再建软链（并清掉旧版本留下的）。
+	agentRulesDir := filepath.Join(dataDir, "rules")
+	process.EnsureXrayAssetEnv(agentRulesDir)
+	process.RemoveRuleAssetLinks(agentRulesDir)
 	// 节点自己的随机加密密钥（data 目录之外，0600）——必须在任何
 	// EncryptSecret/DecryptSecret 之前就绪（ACME meta 加密依赖它）。
 	initAgentEncryptionKey(dataDir)

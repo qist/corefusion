@@ -147,10 +147,15 @@ func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 }
 
 // SelectFiles handles POST /api/v1/geo-rules/sources/:sourceId/select.
+// body: {"files": ["geoip.dat"]} 或
+//
+//	{"files": [{"name":"geoip.dat","rename":"geoip_IR.dat"}]}
+//
+// rename 用于不同仓库发布同名资产时改名落盘（避免覆盖主规则文件）。
 func (h *Handler) SelectFiles(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	var req struct {
-		Files []string `json:"files" binding:"required"`
+		Files []georule.SelectFileInput `json:"files" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())

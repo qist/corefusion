@@ -38,7 +38,26 @@ var DefaultSectionJSON = map[string]map[string]string{
 		"routing": `{
   "domainStrategy": "IPIfNonMatch",
   "domainMatcher": "",
-  "rules": [],
+  "rules": [
+    {
+      "type": "field",
+      "ruleTag": "preset-private-direct",
+      "ip": ["geoip:private"],
+      "outboundTag": "direct"
+    },
+    {
+      "type": "field",
+      "ruleTag": "preset-google-direct",
+      "domain": ["domain:gstatic.com", "domain:googleapis.com"],
+      "outboundTag": "direct"
+    },
+    {
+      "type": "field",
+      "ruleTag": "preset-ads-block",
+      "domain": ["geosite:category-ads-all"],
+      "outboundTag": "blocked"
+    }
+  ],
   "balancers": []
 }`,
 		"policy": `{
@@ -80,9 +99,22 @@ var DefaultSectionJSON = map[string]map[string]string{
 		// 需要自定义解析（DoH/分流/fakeip）时再在「DNS」段显式开启。
 		// 注意：DNS 关闭时必须同时清掉 route.default_domain_resolver 等引用，
 		// 否则核心启动 FATAL（见 coreconfig.stripSingboxDNSReferences）。
-		"dns":      `{}`,
-		"ntp":      `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`,
-		"route":    `{"rules":[{"ip_is_private":true,"outbound":"direct"}],"auto_detect_interface":true,"final":"direct"}`,
+		"dns": `{}`,
+		"ntp": `{"enabled":true,"server":"time.cloudflare.com","server_port":123,"interval":"30m"}`,
+		// 默认路由：内网/Google 连通性探测直连；广告域名拦截。
+		// 广告规则用本地 srs（面板启动时由 georule 播种并推送到节点）。
+		"route": `{
+  "rules": [
+    {"ip_is_private": true, "outbound": "direct"},
+    {"domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct"},
+    {"rule_set": ["geosite-category-ads-all"], "outbound": "block"}
+  ],
+  "rule_set": [
+    {"tag": "geosite-category-ads-all", "type": "local", "format": "binary", "path": "rules/geosite-category-ads-all.srs"}
+  ],
+  "auto_detect_interface": true,
+  "final": "direct"
+}`,
 		"inbounds": `[]`,
 		// endpoints（wireguard/tun/tailscale 出口端点）：前端 section 清单里一直有，
 		// 后端却缺了这个 key → 打开是空、保存还会丢数据（2026-10-08 补）。

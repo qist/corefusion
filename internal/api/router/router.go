@@ -49,6 +49,7 @@ import (
 	planHandler "corefusion/internal/api/handlers/plan"
 	portalHandler "corefusion/internal/api/handlers/portal"
 	rateLimitHandler "corefusion/internal/api/handlers/ratelimit"
+	routingpresetHandler "corefusion/internal/api/handlers/routingpreset"
 	runtimecfgHandler "corefusion/internal/api/handlers/runtimecfg"
 	securityHandler "corefusion/internal/api/handlers/security"
 	servicesHandler "corefusion/internal/api/handlers/services"
@@ -665,6 +666,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	if err := coreConfigSvc.SeedDefaults(context.Background(), 1); err != nil {
 		log.Printf("WARNING: seed core configs failed: %v", err)
 	}
+	// 给存量节点一次性补默认路由基线（写 core_configs，用户可编辑/删除）。
+	// 只在首次启动执行：之后用户删掉的规则不会被重新加回。
+	seedBaselineRoutingOnce(context.Background(), coreConfigSvc, database, systemSettingRepo)
+	// 给存量 xray 路由里缺 ruleTag 的规则补名字（地区一键导入的历史数据没有名字）。
+	backfillXrayRuleTagsOnce(context.Background(), coreConfigSvc, database, systemSettingRepo)
 
 	// Inbound config service (separate table for inbound configurations)
 	inboundConfigRepo := repository.NewInboundConfigRepository(database)
@@ -829,6 +835,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	warpSvcInst := warpSvc.NewService(warpRepo)
 	// MASQUE 设备注册后可直接生成 xray 出站（旧 WireGuard 路径不受影响）。
 	warpSvcInst.SetOutboundRepository(outboundConfigRepo)
+	// sing-box 的 WARP 是 wireguard endpoint（路由规则按 endpoint tag 引用）。
+	warpSvcInst.SetEndpointRepository(repository.NewEndpointConfigRepository(database))
 	rateLimitConfigRepo := repository.NewRateLimitConfigRepository(database)
 	rateLimitSvcInst := rateLimitSvc.NewService(rateLimitConfigRepo)
 	// 核心观测 IP 归户：邮箱/订阅 → 客户 → 限速参数（按节点下发，不再用订阅 HTTP IP）
@@ -1926,6 +1934,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			warpH.SetSyncHook(outboundSyncHook)
 			warpH.SetOutboundApplier(xrayApply)
 
+			// 路由地区预设导入（CN/RU/IR）：确保规则文件、按需创建 WARP/MASQUE 出站、
+			// 再写入核心路由段并同步配置。
+			routingPresetH := routingpresetHandler.NewHandler(coreConfigSvc, geoRuleSvcInst, warpSvcInst)
+			routingPresetH.SetSyncHook(outboundSyncHook)
+
 			// NOTE: SyncData and traffic reset hooks are injected after
 			// nodeServerSvcInst is created (see below).
 
@@ -2648,7 +2661,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					// **远程节点（含镜像）的链式出站整段丢失**；入口核心探测也退化成 xray，
 					// sing-box 入口被误判成 xray → xray/sing-box 混合链式静默失效。
 					chainLinkGen,
-				).WithEndpointProvider(endpointConfigSvc)
+				).WithEndpointProvider(endpointConfigSvc).WithRulesDir(filepath.Join(dataDir, "rules"))
 				nodeMgrForPhase3.SetDataSyncProvider(dataSyncProvider)
 				nodeMgrForPhase3.SetProxyCertCollector(dataSyncProvider)
 
@@ -3106,6 +3119,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.PUT("/:id/outbound-configs/:cfgId", outboundCfgH.Update)
 				nodeServersGroup.DELETE("/:id/outbound-configs/:cfgId", outboundCfgH.Delete)
 				nodeServersGroup.PUT("/:id/outbound-configs/reorder", outboundCfgH.Reorder)
+
+				// 路由地区预设导入（CN/RU/IR → 直连/WARP/MASQUE）
+				nodeServersGroup.POST("/:id/routing-presets/import", routingPresetH.Import)
 
 				// Endpoint Configs (per node — WireGuard/Tailscale/OpenConnect/OpenVPN)
 				nodeServersGroup.GET("/:id/endpoint-configs", endpointCfgH.List)
@@ -5341,4 +5357,69 @@ func singboxExperimentalAddr(dataDir, section, field string) string {
 	}
 	v, _ := sec[field].(string)
 	return strings.TrimSpace(v)
+}
+
+// seedBaselineRoutingOnce 给存量节点补一次默认路由基线（内网/Google 直连 + 广告拦截）。
+//
+// 设计约束（2026-11-18 与用户确认）：
+//   - 规则写进 core_configs 的路由段（数据库），用户之后能在路由页自由修改/删除；
+//   - 不写死在最终生成的配置文件里，同步时也不再注入；
+//   - 用 system_settings 标记只跑一次，删掉的规则不会在下次启动时复活。
+func seedBaselineRoutingOnce(ctx context.Context, svc *coreconfigSvc.Service, database *gorm.DB, settings *repository.SystemSettingRepository) {
+	const markerKey = "migration.baseline_routing.v1"
+	if v, err := settings.GetByKey(ctx, markerKey); err == nil && strings.TrimSpace(v) != "" {
+		return
+	}
+	ids, err := repository.NewNodeServerRepository(database).ListAllServerIDs(ctx)
+	if err != nil {
+		log.Printf("WARNING: baseline routing: list servers failed: %v", err)
+		return
+	}
+	total := 0
+	for _, id := range ids {
+		for _, coreType := range []string{"xray", "singbox"} {
+			n, err := svc.EnsureBaselineRouting(ctx, id, coreType)
+			if err != nil {
+				log.Printf("WARNING: baseline routing: server %d %s: %v", id, coreType, err)
+				continue
+			}
+			total += n
+		}
+	}
+	if err := settings.Set(ctx, markerKey, "done"); err != nil {
+		log.Printf("WARNING: baseline routing: mark done failed: %v", err)
+		return
+	}
+	log.Printf("baseline routing: seeded %d rules across %d servers", total, len(ids))
+}
+
+// backfillXrayRuleTagsOnce 给存量 xray 路由规则补 ruleTag（规则名称）。
+//
+// 「地区一键导入」早期版本写入的规则没有 ruleTag，路由页的「规则名称」列是空的。
+// 这里一次性补齐（system_settings 标记，只跑一次），之后新写入的规则由
+// coreconfig.NewRuleTag() 直接带名字，用户改名也不会被覆盖。
+func backfillXrayRuleTagsOnce(ctx context.Context, svc *coreconfigSvc.Service, database *gorm.DB, settings *repository.SystemSettingRepository) {
+	const markerKey = "migration.xray_rule_tags.v1"
+	if v, err := settings.GetByKey(ctx, markerKey); err == nil && strings.TrimSpace(v) != "" {
+		return
+	}
+	ids, err := repository.NewNodeServerRepository(database).ListAllServerIDs(ctx)
+	if err != nil {
+		log.Printf("WARNING: rule tag backfill: list servers failed: %v", err)
+		return
+	}
+	total := 0
+	for _, id := range ids {
+		n, err := svc.BackfillXrayRuleTags(ctx, id)
+		if err != nil {
+			log.Printf("WARNING: rule tag backfill: server %d: %v", id, err)
+			continue
+		}
+		total += n
+	}
+	if err := settings.Set(ctx, markerKey, "done"); err != nil {
+		log.Printf("WARNING: rule tag backfill: mark done failed: %v", err)
+		return
+	}
+	log.Printf("rule tag backfill: added %d tags across %d servers", total, len(ids))
 }

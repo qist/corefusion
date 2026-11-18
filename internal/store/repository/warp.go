@@ -52,12 +52,17 @@ func (r *WarpRepository) GetByID(ctx context.Context, id int64) (*entity.WarpCon
 	return &cfg, nil
 }
 
-// GetActiveByServer retrieves the latest active WARP config for a specific server.
-// If coreType is non-empty, it filters by core_type as well; otherwise it returns
-// the latest active config for the server regardless of core type.
-func (r *WarpRepository) GetActiveByServer(ctx context.Context, serverID int64, coreType string) (*entity.WarpConfig, error) {
+// GetActiveWireGuard 只返回 WireGuard 类型的有效记录。
+//
+// WARP 表里同时存 MASQUE（EC 私钥）与 WireGuard（Curve25519 私钥）两种记录，
+// 按 id DESC 取“最新一条”很容易拿到 MASQUE 记录，把 EC 私钥当成 WG 私钥
+// 写进 [Interface] PrivateKey（见「生成配置」页的错乱输出）。这里显式排除
+// masque；coreType 非空时还要求类型一致，避免 xray/sing-box 混用同一设备。
+func (r *WarpRepository) GetActiveWireGuard(ctx context.Context, serverID int64, coreType string) (*entity.WarpConfig, error) {
 	var cfg entity.WarpConfig
-	q := r.db.WithContext(ctx).Where("server_id = ? AND status != ?", serverID, "not_registered")
+	q := r.db.WithContext(ctx).
+		Where("server_id = ? AND status != ?", serverID, "not_registered").
+		Where("(tunnel_type IS NULL OR tunnel_type = '' OR LOWER(tunnel_type) = ?)", "wireguard")
 	if coreType != "" {
 		q = q.Where("core_type = ?", coreType)
 	}

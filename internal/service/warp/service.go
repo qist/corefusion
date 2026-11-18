@@ -2,6 +2,7 @@ package warp
 
 import (
 	"bytes"
+	"context"
 	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -96,6 +97,8 @@ type Service struct {
 	repo *repository.WarpRepository
 	// outboundRepo 用于「用已注册的 MASQUE 设备一键创建出站」，可选注入。
 	outboundRepo *repository.OutboundConfigRepository
+	// endpointRepo 用于「给 sing-box 创建 WARP wireguard 端点」，可选注入。
+	endpointRepo *repository.EndpointConfigRepository
 }
 
 // NewService creates a new WARP service.
@@ -108,10 +111,19 @@ func (s *Service) SetOutboundRepository(repo *repository.OutboundConfigRepositor
 	s.outboundRepo = repo
 }
 
+// SetEndpointRepository 注入端点仓储（用于给 sing-box 创建 WARP wireguard 端点）。
+func (s *Service) SetEndpointRepository(repo *repository.EndpointConfigRepository) {
+	s.endpointRepo = repo
+}
+
 // GetStatus returns the WARP registration status for a specific server and core type.
 // If coreType is empty, it returns the latest active config for the server.
+//
+// 只返回 WireGuard 记录：/warp/status 被「出站/端点一键导入 WARP」使用，
+// 同节点可能同时有 MASQUE（EC 私钥）记录，若按 id 取最新会把它当 WG 填进
+// 出站（私钥不可用）。没有 WG 记录时返回 not_registered，前端会按类型新注册。
 func (s *Service) GetStatus(serverID int64, coreType string) (*WarpStatus, error) {
-	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
+	cfg, err := s.repo.GetActiveWireGuard(context.Background(), serverID, coreType)
 	if err != nil {
 		return &WarpStatus{Status: "not_registered", Registered: false}, nil
 	}
@@ -120,7 +132,7 @@ func (s *Service) GetStatus(serverID int64, coreType string) (*WarpStatus, error
 
 // ListByServer returns all WARP configs for a specific server.
 func (s *Service) ListByServer(serverID int64) ([]*WarpConfigItem, error) {
-	cfgs, err := s.repo.ListByServer(nil, serverID)
+	cfgs, err := s.repo.ListByServer(context.Background(), serverID)
 	if err != nil {
 		return []*WarpConfigItem{}, nil
 	}
@@ -244,14 +256,14 @@ func (s *Service) Register(serverID int64, coreType string) (*WarpStatus, error)
 		Status:         "registered",
 	}
 
-	if err := s.repo.Create(nil, cfg); err != nil {
+	if err := s.repo.Create(context.Background(), cfg); err != nil {
 		return nil, fmt.Errorf("save config: %w", err)
 	}
 
 	// ⚠ Create 会把 token/private_key 等敏感列**就地加密**（warpSecret），
 	// 直接用 cfg 返回会给前端一串 `enc:...`，拿去做出站必然认证失败。
 	// 必须重新读取（GetByID 会解密）再构造响应。
-	if saved, err := s.repo.GetByID(nil, cfg.ID); err == nil && saved != nil {
+	if saved, err := s.repo.GetByID(context.Background(), cfg.ID); err == nil && saved != nil {
 		return s.configToStatus(saved), nil
 	}
 	return s.configToStatus(cfg), nil
@@ -261,10 +273,34 @@ func (s *Service) Register(serverID int64, coreType string) (*WarpStatus, error)
 // The config is stored in the database (ConfigJSON field) and synced to remote
 // Agents via SyncData. No local file is written — the actual WARP credentials
 // are used by xray/singbox WireGuard outbounds directly from the DB.
-func (s *Service) GenerateConfig(serverID int64, coreType string) (string, error) {
-	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
-	if err != nil {
-		return "", fmt.Errorf("no WARP registration found")
+//
+// warpID > 0 时按记录 ID 生成（前端表格每行的「生成配置」按钮），否则退回
+// 「该节点该核心最新一条 WireGuard 记录」。MASQUE 记录只有 EC 私钥，不能当
+// WG 私钥用，必须显式拒绝。
+func (s *Service) GenerateConfig(serverID int64, warpID int64, coreType string) (string, error) {
+	ctx := context.Background()
+	var cfg *entity.WarpConfig
+	if warpID > 0 {
+		found, err := s.repo.GetByID(ctx, warpID)
+		if err != nil {
+			return "", fmt.Errorf("warp config %d not found", warpID)
+		}
+		if found.ServerID != 0 && found.ServerID != serverID {
+			return "", fmt.Errorf("warp config %d does not belong to server %d", warpID, serverID)
+		}
+		if strings.EqualFold(found.TunnelType, masqueTunnel) {
+			return "", fmt.Errorf("该记录是 MASQUE（EC 密钥），不能生成 WireGuard 配置")
+		}
+		cfg = found
+	} else {
+		found, err := s.repo.GetActiveWireGuard(ctx, serverID, coreType)
+		if err != nil {
+			return "", fmt.Errorf("no WireGuard WARP registration found")
+		}
+		cfg = found
+	}
+	if cfg.PrivateKey == "" || cfg.PublicKey == "" {
+		return "", fmt.Errorf("WARP 记录缺少 WireGuard 凭据")
 	}
 
 	wgConfig := fmt.Sprintf(`[Interface]
@@ -280,7 +316,7 @@ Endpoint = %s
 
 	cfg.ConfigJSON = wgConfig
 	cfg.Status = "active"
-	if err := s.repo.Update(nil, cfg); err != nil {
+	if err := s.repo.Update(ctx, cfg); err != nil {
 		return "", fmt.Errorf("update config record: %w", err)
 	}
 
@@ -289,7 +325,7 @@ Endpoint = %s
 
 // GetConfig returns the WARP WireGuard config for a specific server and core type.
 func (s *Service) GetConfig(serverID int64, coreType string) (string, error) {
-	cfg, err := s.repo.GetActiveByServer(nil, serverID, coreType)
+	cfg, err := s.repo.GetActiveWireGuard(context.Background(), serverID, coreType)
 	if err != nil {
 		return "", nil
 	}
@@ -298,7 +334,7 @@ func (s *Service) GetConfig(serverID int64, coreType string) (string, error) {
 
 // Reset deletes a specific WARP config by ID.
 func (s *Service) Reset(warpID int64) error {
-	if err := s.repo.Delete(nil, warpID); err != nil {
+	if err := s.repo.Delete(context.Background(), warpID); err != nil {
 		return fmt.Errorf("delete warp config: %w", err)
 	}
 	return nil

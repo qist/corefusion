@@ -85,6 +85,29 @@ func (r *GeoRuleRepository) GetBySourceAndName(ctx context.Context, sourceID int
 	return &rule, nil
 }
 
+// GetBySourceAndAsset 按「仓库原始资产名」查询源内文件。
+// 重命名后 Name 可能还是历史值，必须能按 source_asset 找到同一条记录，
+// 否则重复选择会被当成新文件而触发重名保护。
+func (r *GeoRuleRepository) GetBySourceAndAsset(ctx context.Context, sourceID int64, asset string) (*entity.GeoRuleFile, error) {
+	var rule entity.GeoRuleFile
+	err := r.db.WithContext(ctx).Where("source_id = ? AND source_asset = ?", sourceID, asset).First(&rule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+// GetByFileName 按落盘文件名查询（全局 scope）：文件最终写到
+// <dataDir>/rules/<FileName>，重命名时必须保证全世界唯一，否则会互相覆盖。
+func (r *GeoRuleRepository) GetByFileName(ctx context.Context, fileName string) (*entity.GeoRuleFile, error) {
+	var rule entity.GeoRuleFile
+	err := r.db.WithContext(ctx).Where("server_id = ? AND file_name = ?", 0, fileName).First(&rule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
 func (r *GeoRuleRepository) List(ctx context.Context) ([]entity.GeoRuleFile, error) {
 	var rules []entity.GeoRuleFile
 	err := r.db.WithContext(ctx).Order("source_id ASC, id ASC").Find(&rules).Error

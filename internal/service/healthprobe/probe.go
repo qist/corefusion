@@ -45,11 +45,17 @@ const (
 	concurrency   = 8
 
 	// 设置键（管理端可改）
+	SettingEnabled    = "cfip.probe.enabled"
 	SettingInterval   = "cfip.probe.interval_minutes"
 	SettingMaxLatency = "cfip.probe.max_latency_ms"
 	SettingEntryNode  = "cfip.probe.entry_node_id"
 	SettingDialer     = "cfip.probe.dialer"
 
+	// 默认关闭：不是所有部署都用 Cloudflare 优选（CF IP 池 / 优选域名），
+	// 无人使用还每 5 分钟跑一轮探测纯属浪费（尤其选了入口节点时还要起临时
+	// 核心进程）。管理员在「分流资源 → CF IP 池 / 直连 & CF 优选域名」里
+	// 打开探测后才开始定时执行；手动「检测连通性」不受影响。
+	DefaultEnabled         = false
 	DefaultIntervalMinutes = 5
 	DefaultMaxLatencyMs    = 0  // 0 = 不限
 	DefaultDialer          = "" // 空 = 自动选择已安装的核心（sing-box → xray → mihomo）
@@ -57,6 +63,8 @@ const (
 
 // Config 是一次探测的运行时配置（每次探测前从设置里读，改完立即生效）。
 type Config struct {
+	// Enabled 控制定时探测是否运行。默认关闭；关闭时只保留手动「检测连通性」。
+	Enabled         bool   `json:"enabled"`
 	IntervalMinutes int    `json:"interval_minutes"`
 	MaxLatencyMs    int    `json:"max_latency_ms"`
 	EntryNodeID     int64  `json:"entry_node_id"`
@@ -84,6 +92,8 @@ type Prober struct {
 
 	// mu 防止手动检测与定时检测同时跑（会互相覆盖 fail_count）。
 	mu sync.Mutex
+	// wake 唤醒调度器重新读配置（开关/间隔改动后立即生效）。
+	wake chan struct{}
 }
 
 // New 创建探测器。
@@ -102,18 +112,23 @@ func New(
 		nodeRepo:  nodeRepo,
 		resolver:  resolver,
 		dataDir:   dataDir,
+		wake:      make(chan struct{}, 1),
 	}
 }
 
 // ReadConfig 读取当前探测配置（缺失项回落默认值）。
 func (p *Prober) ReadConfig(ctx context.Context) Config {
 	cfg := Config{
+		Enabled:         DefaultEnabled,
 		IntervalMinutes: DefaultIntervalMinutes,
 		MaxLatencyMs:    DefaultMaxLatencyMs,
 		Dialer:          DefaultDialer,
 	}
 	if p.setting == nil {
 		return cfg
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingEnabled); err == nil {
+		cfg.Enabled = parseBoolSetting(v, DefaultEnabled)
 	}
 	if v, err := p.setting.GetByKey(ctx, SettingInterval); err == nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
@@ -176,10 +191,30 @@ func dialerDisplayName(name string) string {
 	return name
 }
 
+// parseBoolSetting 解析设置里的布尔值；无法识别时用默认值（不误开）。
+func parseBoolSetting(v string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return def
+}
+
 // SaveConfig 保存探测配置（nil 表示不改该项）。
-func (p *Prober) SaveConfig(ctx context.Context, intervalMinutes, maxLatencyMs *int, entryNodeID *int64, dialer *string) error {
+func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes, maxLatencyMs *int, entryNodeID *int64, dialer *string) error {
 	if p.setting == nil {
 		return fmt.Errorf("settings repository not available")
+	}
+	if enabled != nil {
+		val := "false"
+		if *enabled {
+			val = "true"
+		}
+		if err := p.setting.Set(ctx, SettingEnabled, val); err != nil {
+			return err
+		}
 	}
 	if intervalMinutes != nil {
 		if err := p.setting.Set(ctx, SettingInterval, strconv.Itoa(*intervalMinutes)); err != nil {
@@ -201,14 +236,38 @@ func (p *Prober) SaveConfig(ctx context.Context, intervalMinutes, maxLatencyMs *
 			return err
 		}
 	}
+	// 开关/间隔可能是从「关闭」切到「开启」：立刻唤醒调度器，不用等旧间隔。
+	p.Wake()
 	return nil
 }
 
+// Wake 唤醒调度器按新配置重新判断（非阻塞）。
+func (p *Prober) Wake() {
+	if p.wake == nil {
+		return
+	}
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+}
+
 // StartScheduler 周期性探测：每轮先读配置，间隔改完下一轮就生效。
+//
+// Enabled=false（默认）时完全不探测，只等配置变化或进程退出 —— 避免没在用
+// CF 优选的部署每 5 分钟白跑一轮（选入口节点时还会起临时核心进程）。
 func (p *Prober) StartScheduler(ctx context.Context) {
 	go func() {
 		for {
 			cfg := p.ReadConfig(ctx)
+			if !cfg.Enabled {
+				select {
+				case <-ctx.Done():
+					return
+				case <-p.wake:
+				}
+				continue
+			}
 			res, err := p.CheckAll(ctx)
 			if err != nil {
 				log.Printf("[healthprobe] check failed: %v", err)
@@ -223,6 +282,7 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
+			case <-p.wake:
 			case <-time.After(interval):
 			}
 		}

@@ -23,6 +23,15 @@
       </el-form-item>
     </el-form>
 
+    <!-- 地区路由导入 -->
+    <el-divider content-position="left">{{ t('protoCenter.routing.regionImport') }}</el-divider>
+    <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.routing.regionImportHint') }}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <el-button size="small" @click="openRegionImport('cn')">🇨🇳 {{ t('protoCenter.routing.regionCN') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ru')">🇷🇺 {{ t('protoCenter.routing.regionRU') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ir')">🇮🇷 {{ t('protoCenter.routing.regionIR') }}</el-button>
+    </div>
+
     <!-- Routing Rules -->
     <el-divider content-position="left">
       {{ t('protoCenter.routing.rules') }}
@@ -264,6 +273,24 @@
         </div>
       </template>
     </template>
+
+    <!-- 地区路由导入对话框：选择从哪个出口走 -->
+    <el-dialog v-model="regionDlg" :title="t('protoCenter.routing.regionImportTitle', { region: regionLabel })" width="460">
+      <el-form label-width="120px" label-position="left">
+        <el-form-item :label="t('protoCenter.routing.outbound')">
+          <el-select v-model="regionOutbound" style="width:100%">
+            <el-option :label="t('protoCenter.routing.regionOutboundDirect')" value="direct" />
+            <el-option label="WARP (WireGuard)" value="warp" />
+            <el-option label="WARP MASQUE" value="masque" />
+          </el-select>
+          <div class="hint">{{ t('protoCenter.routing.regionOutboundHint') }}</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="regionDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="regionImporting" @click="confirmRegionImport">{{ t('protoCenter.routing.regionImportAction') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -456,6 +483,60 @@ async function emit() {
   await saveAndApply(data)
 }
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
+
+// ── 地区路由导入（CN / 俄罗斯 / 伊朗）────────────────────────────────
+// 默认不创建这三组规则；用户点地区按钮 → 选择出口（直连/WARP/MASQUE）→
+// 后端确保规则文件与出站存在后写入路由段，再重新读取本段展示。
+const regionDlg = ref(false)
+const regionTarget = ref('cn')
+const regionOutbound = ref('direct')
+const regionImporting = ref(false)
+const regionLabel = computed(() => t('protoCenter.routing.region' + regionTarget.value.toUpperCase()))
+
+function openRegionImport(region) {
+  regionTarget.value = region
+  regionOutbound.value = 'direct'
+  regionDlg.value = true
+}
+
+async function confirmRegionImport() {
+  if (!props.serverId) {
+    ElMessage.warning(t('protoCenter.routing.regionImportNodeOnly'))
+    return
+  }
+  regionImporting.value = true
+  try {
+    const res = await client.post(`${nodeBase.value}/routing-presets/import`, {
+      core_type: props.coreType || 'xray',
+      region: regionTarget.value,
+      outbound: regionOutbound.value,
+    })
+    ElMessage.success(t('protoCenter.routing.regionImportSuccess', { count: res?.rules_added ?? 0 }))
+    regionDlg.value = false
+    await reloadRoutingSection()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || String(e))
+  } finally {
+    regionImporting.value = false
+  }
+}
+
+async function reloadRoutingSection() {
+  try {
+    const full = await client.get(`${nodeBase.value}/protocols/${props.coreType || 'xray'}`)
+    const routing = full?.routing || {}
+    form.domainStrategy = routing.domainStrategy || 'IPIfNonMatch'
+    form.rules = (routing.rules || []).map(r => ({ ...r, enabled: r.enabled !== false }))
+    form.balancers = (routing.balancers || []).map(b => ({
+      tag: b.tag || '', selectorArr: b.selector || [], fallbackTag: b.fallbackTag || '',
+      strategyType: b.strategy?.type || 'random', settings: b.strategy?.settings || null,
+      enabled: b.enabled !== false,
+    }))
+    await loadTags()
+  } catch (e) {
+    console.warn('reload routing section failed:', e)
+  }
+}
 
 async function saveAndApply(routing) {
   const invalidBalancer = getInvalidBalancer(routing)

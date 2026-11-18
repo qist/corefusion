@@ -573,12 +573,6 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		log.Printf("process: cleaned %d stale unix socket(s) before starting %s", n, coreType)
 	}
 
-	// Ensure geo files are accessible from the panel's lookup paths.
-	rulesDir := filepath.Join(m.dataDir, "rules")
-	if _, err := os.Stat(rulesDir); err == nil {
-		symlinkGeoFiles(rulesDir)
-	}
-
 	// sing-box needs "run" subcommand: "sing-box run -c config.json"
 	// xray uses: "xray -c config.json"
 	var cmd *exec.Cmd
@@ -628,10 +622,15 @@ func (m *Manager) Start(ctx context.Context, serviceID int64, coreType string) e
 		broker.TailFile(logPath)
 		log.Printf("process: started %s in file mode (log: %s)", coreType, logPath)
 	}
-	// Set resource path for geoip/geosite files
+	// Set resource path for geoip/geosite files.
+	// 正常启动时 EnsureXrayAssetEnv 已设好；这里的兜底同样给绝对路径，
+	// 避免核心 cwd（m.dataDir）与相对路径叠加解析错。
 	xrayAssetPath := os.Getenv("XRAY_LOCATION_ASSET")
 	if xrayAssetPath == "" {
-		xrayAssetPath = rulesDir
+		xrayAssetPath = filepath.Join(m.dataDir, "rules")
+		if abs, err := filepath.Abs(xrayAssetPath); err == nil {
+			xrayAssetPath = abs
+		}
 	}
 	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+xrayAssetPath)
 	setProcessGroup(cmd)
@@ -1357,44 +1356,81 @@ func (m *Manager) ResolveBinary(coreType string) (binaryPath, version string, er
 	return m.resolver.Resolve(coreType)
 }
 
-// symlinkGeoFiles creates symlinks for geoip/geosite files in the panel's
-// lookup directories so xray config parsing can resolve geodata consistently.
-func symlinkGeoFiles(rulesDir string) {
-	geoFiles := []string{"geoip.dat", "geosite.dat", "geoip.metadb", "country.mmdb", "GeoLite2-ASN.mmdb"}
-	targetDirs := geoLookupDirs()
-	for _, name := range geoFiles {
-		src := filepath.Join(rulesDir, name)
-		if _, err := os.Stat(src); err != nil {
+// EnsureXrayAssetEnv 让进程内构建 xray 路由时也能解析 ext:xxx.dat。
+//
+// xray 的 GetAssetLocation 只查 XRAY_LOCATION_ASSET 指定的资产目录（其次是
+// 可执行目录与 /usr/share/xray 等固定位置），不会去 <dataDir>/rules 找；
+// 而面板/Agent 自己会调用 routerConf.Build()（路由热下发），必须让它看到
+// 规则库目录。统一用环境变量解决，不再往可执行目录/cwd 里建一堆软链。
+//
+// 只设**绝对路径**：子进程（xray 核心）的 cwd 可能不同，相对路径会解析错。
+// 环境里已显式配置时不覆盖（尊重运维手工指定的资产目录）。
+func EnsureXrayAssetEnv(rulesDir string) {
+	if strings.TrimSpace(rulesDir) == "" {
+		return
+	}
+	abs, err := filepath.Abs(rulesDir)
+	if err == nil {
+		rulesDir = abs
+	}
+	if err := os.MkdirAll(rulesDir, 0o750); err != nil {
+		log.Printf("EnsureXrayAssetEnv: mkdir %s failed: %v", rulesDir, err)
+		return
+	}
+	if os.Getenv("XRAY_LOCATION_ASSET") != "" {
+		return
+	}
+	if err := os.Setenv("XRAY_LOCATION_ASSET", rulesDir); err != nil {
+		log.Printf("EnsureXrayAssetEnv: set XRAY_LOCATION_ASSET failed: %v", err)
+		return
+	}
+	log.Printf("xray asset dir = %s (XRAY_LOCATION_ASSET)", rulesDir)
+}
+
+// RemoveRuleAssetLinks 清理旧版本为「让 xray 找到规则文件」而在可执行目录 /
+// cwd 里建的软链（现在统一由 XRAY_LOCATION_ASSET 解决，不再需要软链）。
+//
+// 只删指向 rulesDir 的软链：真实文件与其它软链保持不动。幂等，启动时调用一次，
+// 升级后就把历史残留（geoip.dat、geosite_IR.dat 等）全部清掉。
+func RemoveRuleAssetLinks(rulesDir string) {
+	if strings.TrimSpace(rulesDir) == "" {
+		return
+	}
+	abs, err := filepath.Abs(rulesDir)
+	if err == nil {
+		rulesDir = abs
+	}
+	cleanRulesDir := filepath.Clean(rulesDir)
+	prefix := cleanRulesDir + string(filepath.Separator)
+	for _, dir := range geoLookupDirs() {
+		if filepath.Clean(dir) == cleanRulesDir {
 			continue
 		}
-		for _, dir := range targetDirs {
-			dst := filepath.Join(dir, name)
-			if info, err := os.Lstat(dst); err == nil {
-				if info.Mode()&os.ModeSymlink == 0 {
-					log.Printf("symlinkGeoFiles: skip existing non-symlink %s", dst)
-					continue
-				}
-				linkTarget, err := os.Readlink(dst)
-				if err == nil {
-					resolvedTarget := linkTarget
-					if !filepath.IsAbs(resolvedTarget) {
-						resolvedTarget = filepath.Join(dir, resolvedTarget)
-					}
-					if filepath.Clean(resolvedTarget) == filepath.Clean(src) {
-						continue
-					}
-				}
-				if err := os.Remove(dst); err != nil {
-					log.Printf("symlinkGeoFiles: remove stale symlink %s failed: %v", dst, err)
-					continue
-				}
-			} else if !os.IsNotExist(err) {
-				log.Printf("symlinkGeoFiles: stat %s failed: %v", dst, err)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.Type()&os.ModeSymlink == 0 {
 				continue
 			}
-			if err := os.Symlink(src, dst); err != nil {
-				log.Printf("symlinkGeoFiles: create %s -> %s failed: %v", dst, src, err)
+			dst := filepath.Join(dir, e.Name())
+			target, err := os.Readlink(dst)
+			if err != nil {
+				continue
 			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(dir, target)
+			}
+			target = filepath.Clean(target)
+			if target != cleanRulesDir && !strings.HasPrefix(target, prefix) {
+				continue
+			}
+			if err := os.Remove(dst); err != nil {
+				log.Printf("RemoveRuleAssetLinks: remove %s failed: %v", dst, err)
+				continue
+			}
+			log.Printf("RemoveRuleAssetLinks: removed legacy symlink %s", dst)
 		}
 	}
 }

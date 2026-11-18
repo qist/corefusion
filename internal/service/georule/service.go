@@ -19,6 +19,7 @@ import (
 	"corefusion/internal/model/entity"
 	authsvc "corefusion/internal/service/auth"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
 )
 
@@ -175,13 +176,23 @@ func (s *Service) httpClientWithAccel(ctx context.Context) *http.Client {
 // Default files geoip.dat and geosite.dat are pre-selected with direct download
 // URLs so they are available immediately without depending on the GitHub API.
 func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// 内置地区规则（IR/RU 的 dat、sing-box 的 srs）幂等补齐：老库也要能拿到。
+	s.EnsureBuiltinFiles(ctx)
+
 	// serverID is ignored — geo rules are always global (server_id=0)
 	sources, err := s.sourceRepo.ListByServer(ctx, 0)
 	if err != nil {
 		return err
 	}
-	if len(sources) > 0 {
-		return nil // already seeded
+	// 只按「主规则源是否已存在」判断：内置地区源也是 source，不能再用
+	// len(sources) > 0 提前返回，否则全新安装时 geoip.dat/geosite.dat 永远不会播种。
+	for _, src := range sources {
+		if normalizeRepoKey(src.RepoURL) == normalizeRepoKey("Loyalsoldier/v2ray-rules-dat") {
+			return nil // already seeded
+		}
 	}
 
 	os.MkdirAll(filepath.Join(s.dataDir, "rules"), 0750)
@@ -190,7 +201,8 @@ func (s *Service) SeedDefaults(ctx context.Context, serverID int64) error {
 		ServerID: 0, // global
 		Name:     "Loyalsoldier v2ray-rules-dat",
 		RepoURL:  "Loyalsoldier/v2ray-rules-dat",
-		Enabled:  false,
+		// 默认启用 + 每天一次：规则文件不能全靠手动点「下载/更新」。
+		Enabled:  true,
 		SyncCron: "0 3 * * *",
 		Status:   "idle",
 	}
@@ -485,6 +497,10 @@ func (s *Service) AddFile(ctx context.Context, sourceID int64, name, url string)
 	if existing, _ := s.fileRepo.GetBySourceAndName(ctx, sourceID, name); existing != nil {
 		return nil, fmt.Errorf("文件 %s 已存在于该源中", name)
 	}
+	// 落盘名全局唯一（所有规则文件都写在 data/rules 下），否则会覆盖别的规则。
+	if taken, _ := s.fileRepo.GetByFileName(ctx, name); taken != nil {
+		return nil, fmt.Errorf("文件名 %s 已被其它规则文件占用，请换一个名字", name)
+	}
 
 	rule := &entity.GeoRuleFile{
 		ServerID:    0, // global
@@ -514,7 +530,40 @@ func (s *Service) AddFile(ctx context.Context, sourceID int64, name, url string)
 	return rule, nil
 }
 
-func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []string) error {
+// SelectFileInput 是「勾选仓库文件」的一项：Name 是仓库里的原始文件名
+// （release 资产名），Rename 可选，表示落盘重命名。
+type SelectFileInput struct {
+	Name   string `json:"name"`
+	Rename string `json:"rename"`
+}
+
+// UnmarshalJSON 兼容两种写法：`"geoip.dat"` 与 `{"name":"geoip.dat","rename":"geoip_IR.dat"}`。
+// 老前端/脚本只传字符串数组时仍能工作。
+func (f *SelectFileInput) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		f.Name = s
+		f.Rename = ""
+		return nil
+	}
+	type alias SelectFileInput
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*f = SelectFileInput(a)
+	return nil
+}
+
+// SelectFiles 勾选仓库 release 里的文件并下载。
+//
+// 支持重命名（Rename）：不同仓库经常发布同名资产（geoip.dat / geosite.dat），
+// 落盘名必须全局唯一，否则后选的会覆盖先选的。重命名后：
+//   - FileName = Rename（磁盘与路由引用用它）；
+//   - Name / SourceAsset = 仓库原始资产名（定时同步按它匹配最新 release）。
+//
+// 返回错误表示某一项校验失败（非法文件名 / 与已有文件重名），此时不做任何写入。
+func (s *Service) SelectFiles(ctx context.Context, sourceID int64, files []SelectFileInput) error {
 	src, err := s.sourceRepo.GetByID(ctx, sourceID)
 	if err != nil {
 		return err
@@ -531,15 +580,51 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 		assetMap[a.Name] = a
 	}
 
-	for _, name := range fileNames {
-		asset, ok := assetMap[name]
+	// 先整体校验，避免写一半失败
+	planned := make([]struct {
+		asset  ReleaseAsset
+		rename string
+	}, 0, len(files))
+	for _, f := range files {
+		asset, ok := assetMap[f.Name]
 		if !ok {
 			continue
 		}
+		rename := strings.TrimSpace(f.Rename)
+		fileName := asset.Name
+		if rename != "" && rename != asset.Name {
+			if err := ValidateRuleFileName(rename); err != nil {
+				return err
+			}
+			fileName = rename
+		}
+		// 落盘名必须全局唯一：不重名也校验，否则「直接勾 geoip.dat 不重命名」
+		// 会静默覆盖主规则文件（Loyalsoldier 的 geoip.dat）。
+		// 同一个文件重复选择（已经用这个名字）要放行。
+		same := s.findSourceFile(ctx, sourceID, asset.Name)
+		if same == nil || same.FileName != fileName {
+			if err := s.ensureFileNameFree(ctx, sourceID, fileName); err != nil {
+				return err
+			}
+		}
+		planned = append(planned, struct {
+			asset  ReleaseAsset
+			rename string
+		}{asset, rename})
+	}
 
-		// Check if already exists
-		existing, _ := s.fileRepo.GetBySourceAndName(ctx, sourceID, name)
+	for _, p := range planned {
+		asset := p.asset
+		fileName := asset.Name
+		if p.rename != "" {
+			fileName = p.rename
+		}
+
+		// Check if already exists（按仓库原始名判重，改过名的也算同一个文件）
+		existing := s.findSourceFile(ctx, sourceID, asset.Name)
 		if existing != nil {
+			existing.FileName = fileName
+			existing.SourceAsset = asset.Name
 			existing.DownloadURL = asset.DownloadURL
 			existing.FileSize = asset.Size
 			existing.Version = tag
@@ -551,8 +636,9 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 		rule := &entity.GeoRuleFile{
 			ServerID:    src.ServerID,
 			SourceID:    sourceID,
-			Name:        name,
-			FileName:    name,
+			Name:        asset.Name,
+			FileName:    fileName,
+			SourceAsset: asset.Name,
 			DownloadURL: asset.DownloadURL,
 			FileSize:    asset.Size,
 			Version:     tag,
@@ -580,6 +666,48 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, fileNames []s
 	s.sourceRepo.Update(ctx, src)
 
 	return nil
+}
+
+// findSourceFile 在源内按「仓库原始资产名」找文件：
+// 先按 name（新记录），再按 source_asset（历史记录 name 还是落盘名的）。
+func (s *Service) findSourceFile(ctx context.Context, sourceID int64, asset string) *entity.GeoRuleFile {
+	if row, err := s.fileRepo.GetBySourceAndName(ctx, sourceID, asset); err == nil && row != nil {
+		return row
+	}
+	row, err := s.fileRepo.GetBySourceAndAsset(ctx, sourceID, asset)
+	if err != nil {
+		return nil
+	}
+	return row
+}
+
+// ValidateRuleFileName 校验落盘文件名：只允许纯文件名（禁止路径穿越）。
+func ValidateRuleFileName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("文件名不能为空")
+	}
+	if name != filepath.Base(name) || name == "." || name == ".." ||
+		strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return fmt.Errorf("非法文件名 %q：只能是纯文件名（如 geoip_IR.dat）", name)
+	}
+	if sanitizeFileNameErr := safepath.CheckName("rule file name", name); sanitizeFileNameErr != nil {
+		return sanitizeFileNameErr
+	}
+	return nil
+}
+
+// ensureFileNameFree 保证落盘名全局唯一（文件都写在同一个 data/rules 目录）。
+// 同源同名的老记录（改名前的自己）允许复用。
+func (s *Service) ensureFileNameFree(ctx context.Context, sourceID int64, fileName string) error {
+	existing, err := s.fileRepo.GetByFileName(ctx, fileName)
+	if err != nil || existing == nil {
+		return nil
+	}
+	if existing.SourceID == sourceID {
+		return fmt.Errorf("源内已有同名文件 %s，请换一个名字", fileName)
+	}
+	return fmt.Errorf("文件名 %s 已被其它规则文件占用，请换一个名字（如 geoip_IR.dat）", fileName)
 }
 
 // --- Download ---
@@ -758,6 +886,50 @@ func isDirectURL(repoURL string) bool {
 	return strings.HasPrefix(repoURL, "http://") || strings.HasPrefix(repoURL, "https://")
 }
 
+// ensureDirectSourceFile 让「直连源」在文件记录被删除后仍能通过同步恢复。
+//
+// 直连源 = 一个 URL 对应一个规则文件（如 sing-geosite 的 geosite-ir.srs）。
+// 旧实现同步时只遍历库里已有的 file 记录：用户把文件从「已选规则文件」删掉后，
+// 记录没了 → 同步永远返回 0，看起来像同步坏了。这里按源 URL 的文件名补回记录，
+// 语义与「新建直连源时自动建文件」一致（不覆盖别的源占用的同名文件）。
+func (s *Service) ensureDirectSourceFile(ctx context.Context, src *entity.RuleSource, files []entity.GeoRuleFile) ([]entity.GeoRuleFile, *entity.GeoRuleFile) {
+	if src == nil || !isDirectURL(src.RepoURL) {
+		return files, nil
+	}
+	downloadURL := strings.TrimSpace(src.RepoURL)
+	name := filepath.Base(downloadURL)
+	for _, f := range files {
+		if f.FileName == name {
+			return files, nil
+		}
+	}
+	if err := ValidateRuleFileName(name); err != nil {
+		log.Printf("[georule] direct source %d: invalid url basename %q: %v", src.ID, name, err)
+		return files, nil
+	}
+	// 落盘名全局唯一：被别的源占用时不能抢，否则会覆盖别人的规则文件。
+	if taken, _ := s.fileRepo.GetByFileName(ctx, name); taken != nil && taken.SourceID != src.ID {
+		log.Printf("[georule] direct source %d: file %s already used by source %d, skip recreate", src.ID, name, taken.SourceID)
+		return files, nil
+	}
+	row := &entity.GeoRuleFile{
+		ServerID:    0,
+		SourceID:    src.ID,
+		Name:        name,
+		FileName:    name,
+		SourceAsset: name,
+		DownloadURL: downloadURL,
+		AutoSync:    true,
+		Status:      "pending",
+	}
+	if err := s.fileRepo.Create(ctx, row); err != nil {
+		log.Printf("[georule] direct source %d: recreate file %s failed: %v", src.ID, name, err)
+		return files, nil
+	}
+	log.Printf("[georule] direct source %d: recreated deleted file record %s (%s)", src.ID, name, downloadURL)
+	return append(files, *row), row
+}
+
 // SyncSource syncs a single source: fetches latest release and downloads auto-sync files.
 func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, error) {
 	src, err := s.sourceRepo.GetByID(ctx, sourceID)
@@ -769,6 +941,10 @@ func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, 
 	s.sourceRepo.Update(ctx, src)
 
 	files, _ := s.fileRepo.ListBySource(ctx, sourceID)
+	// 直连源（一个 URL = 一个规则文件）在用户删掉「已选规则文件」后，
+	// 库里就没有记录可遍历了，同步会恒返回 0。这里按源 URL 补回记录：
+	// 直连源的同步语义本来就是「重新下载这个 URL」。
+	files, _ = s.ensureDirectSourceFile(ctx, src, files)
 	downloaded := 0
 	tag := ""
 
@@ -800,7 +976,13 @@ func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, 
 			assetMap[a.Name] = a
 		}
 		for _, f := range files {
-			if asset, ok := assetMap[f.FileName]; ok {
+			// 重命名过的文件（geoip.dat → geoip_IR.dat）要按仓库原始资产名匹配，
+			// 否则每次同步都拿不到最新的下载地址与版本。
+			key := f.SourceAsset
+			if strings.TrimSpace(key) == "" {
+				key = f.FileName
+			}
+			if asset, ok := assetMap[key]; ok {
 				f.DownloadURL = asset.DownloadURL
 				f.Version = tag
 				s.fileRepo.Update(ctx, &f)
@@ -901,9 +1083,9 @@ func (s *Service) StartSyncSource(sourceID int64) string {
 	syncMu.Unlock()
 
 	go func() {
-		result, err := s.SyncSource(context.Background(), sourceID)
+		bg := context.Background()
+		result, err := s.SyncSource(bg, sourceID)
 		syncMu.Lock()
-		defer syncMu.Unlock()
 		job := syncJobs[key]
 		if err != nil {
 			job.Status = "error"
@@ -913,6 +1095,22 @@ func (s *Service) StartSyncSource(sourceID int64) string {
 			job.Results = []SyncResult{*result}
 		}
 		job.FinishedAt = time.Now()
+		syncMu.Unlock()
+
+		if err != nil || result == nil {
+			return
+		}
+		// 全局源：下载完立刻推节点。旧实现只更新面板，节点要等下一次 cron
+		// 或手动「推送全部」才拿到文件，用户会以为「点了同步没生效」。
+		src, serr := s.sourceRepo.GetByID(bg, sourceID)
+		if serr != nil || src.ServerID != 0 {
+			return
+		}
+		if perr := s.SyncToAllNodes(bg); perr != nil {
+			log.Printf("[georule] auto-push after sync source %d failed: %v", sourceID, perr)
+		} else {
+			log.Printf("[georule] auto-push after sync source %d: done", sourceID)
+		}
 	}()
 
 	return key
@@ -1023,40 +1221,91 @@ func (s *Service) SyncToNode(ctx context.Context, serverID int64) error {
 		return err
 	}
 
-	for _, f := range files {
-		// Skip files that are not yet downloaded or in error state
-		if f.Status != "available" {
-			continue
-		}
-		// Compute file hash so Agent can skip download if file is unchanged.
-		fileHash, fileSize := s.computeFileHash(f.FileName)
-		// Skip if file doesn't exist on disk (shouldn't happen if status=available,
-		// but guard against corruption / manual deletion)
-		if fileHash == "" {
-			log.Printf("[georule] skip file %s: not found on disk", f.FileName)
-			continue
-		}
-		// Build a **relative** download URL — the Agent resolves it using
-		// the panel host/port from its config (same as UpdateAgent).
-		// 安全审计 H-1：附带一次性下载票据（60s、单次有效、仅限 download-file），
-		// 端点不再接受匿名请求。
-		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
-		if tok := s.issueDownloadTicket(); tok != "" {
-			downloadURL += "?ticket=" + tok
-		}
-
-		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
-		if err != nil {
-			log.Printf("[georule] push file %s to server %d failed: %v", f.FileName, serverID, err)
-			continue
-		}
-		if !success {
-			log.Printf("[georule] push file %s to server %d failed: %s", f.FileName, serverID, errMsg)
-			continue
-		}
-		log.Printf("[georule] pushed file %s to server %d", f.FileName, serverID)
+	for i := range files {
+		s.pushFileToNode(ctx, serverID, &files[i])
 	}
 	return nil
+}
+
+// pushFileToNode 把单个规则文件推送到指定节点（hash 相同则 Agent 侧跳过下载）。
+func (s *Service) pushFileToNode(ctx context.Context, serverID int64, f *entity.GeoRuleFile) bool {
+	if f == nil || s.nodeOp == nil {
+		return false
+	}
+	// Skip files that are not yet downloaded or in error state
+	if f.Status != "available" {
+		return false
+	}
+	// Compute file hash so Agent can skip download if file is unchanged.
+	fileHash, fileSize := s.computeFileHash(f.FileName)
+	// Skip if file doesn't exist on disk (shouldn't happen if status=available,
+	// but guard against corruption / manual deletion)
+	if fileHash == "" {
+		log.Printf("[georule] skip file %s: not found on disk", f.FileName)
+		return false
+	}
+	// Build a **relative** download URL — the Agent resolves it using
+	// the panel host/port from its config (same as UpdateAgent).
+	// 安全审计 H-1：附带一次性下载票据（60s、单次有效、仅限 download-file），
+	// 端点不再接受匿名请求。
+	downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
+	if tok := s.issueDownloadTicket(); tok != "" {
+		downloadURL += "?ticket=" + tok
+	}
+
+	success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
+	if err != nil {
+		log.Printf("[georule] push file %s to server %d failed: %v", f.FileName, serverID, err)
+		return false
+	}
+	if !success {
+		log.Printf("[georule] push file %s to server %d failed: %s", f.FileName, serverID, errMsg)
+		return false
+	}
+	log.Printf("[georule] pushed file %s to server %d", f.FileName, serverID)
+	return true
+}
+
+// SyncFilesToAllNodes 只把指定名字的规则文件推送到所有节点。
+// 用于内置规则播种后只分发「默认路由会引用」的文件，避免把几十 MB 的地区
+// dat/srs 在面板启动时全量推给每个节点（地区文件由导入时按需推送）。
+func (s *Service) SyncFilesToAllNodes(ctx context.Context, names []string) error {
+	if s.nodeLister == nil || s.nodeOp == nil || len(names) == 0 {
+		return nil
+	}
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	files, err := s.fileRepo.ListByServer(ctx, 0)
+	if err != nil {
+		return err
+	}
+	targets := make([]*entity.GeoRuleFile, 0, len(names))
+	for i := range files {
+		if want[files[i].FileName] {
+			targets = append(targets, &files[i])
+		}
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	nodeIDs, err := s.nodeLister.ListAllServerIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list server IDs: %w", err)
+	}
+	var lastErr error
+	for _, id := range nodeIDs {
+		if s.nodeOp.IsLocalServer(id) {
+			continue
+		}
+		for _, f := range targets {
+			if !s.pushFileToNode(ctx, id, f) {
+				lastErr = fmt.Errorf("push %s to server %d failed", f.FileName, id)
+			}
+		}
+	}
+	return lastErr
 }
 
 // SyncToAllNodes pushes all geo rule files to all known nodes.

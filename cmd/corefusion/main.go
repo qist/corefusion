@@ -331,6 +331,12 @@ func runServer(args []string) {
 
 	// Ensure data directory structure
 	initDataDir(dataDir)
+	// 让面板**进程内**构建 xray 路由（热下发 applyRouting）也能解析 ext:xxx.dat：
+	// 统一设进程级 XRAY_LOCATION_ASSET（绝对路径），不再往可执行目录/cwd 建软链。
+	// 顺带清掉旧版本留下的软链（只删指向 rules 目录的）。
+	rulesDir := filepath.Join(dataDir, "rules")
+	process.EnsureXrayAssetEnv(rulesDir)
+	process.RemoveRuleAssetLinks(rulesDir)
 	// 代理（nginx/caddy）以非 root 用户运行：自动补齐 WAF lua/规则/日志目录的
 	// 读取与写入权限，避免新装/升级后被 0750 数据目录挡住导致 WAF 静默失效。
 	if err := proxySvc.EnsureRuntimePermissions(dataDir); err != nil {

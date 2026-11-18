@@ -92,6 +92,9 @@ type PrepareFullConfigOptions struct {
 	// 用于决定生成 `network` 还是 `method` 传输字段。为空时由
 	// CoreVersionProvider 按 ServerID 查询；仍查不到则按旧版本处理。
 	CoreVersion string
+	// RulesDir 是面板本地规则文件目录（<dataDir>/rules）。仅 sing-box 用：
+	// local rule_set 指向的文件不存在时会被摘掉，避免核心启动 FATAL。
+	RulesDir string
 }
 
 // PrepareFullConfig applies all standard config preparation steps to produce
@@ -350,6 +353,16 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		// clash_api 是**可选**的：只有用户在「实验性配置」里显式开启才会写入。
 		// 面板「实时连接」依赖它，但默认关闭时不生成，避免用户关掉后配置里
 		// 仍被强行补回 127.0.0.1:9090（此处不再自动注入）。
+	}
+
+	// 9d. sing-box：local rule_set 指向的规则文件必须真实存在，否则核心启动
+	// 直接 FATAL（`open rules/xxx.srs: no such file`）。规则库文件由面板推送，
+	// 首次连接/下载失败时可能还没到 → 这里先摘掉引用它的规则，文件就绪后的
+	// 下一次同步会自动恢复。
+	if opts.CoreType == "singbox" && opts.RulesDir != "" {
+		if n := DropMissingSingboxLocalRuleSets(fullConfig, opts.RulesDir); n > 0 {
+			log.Printf("[PrepareFullConfig] server %d: dropped %d sing-box rule_set(s) with missing local files", opts.ServerID, n)
+		}
 	}
 
 	// 10. Apply log mode to the config's log section

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -213,5 +214,27 @@ func parseCronInterval(cron string) time.Duration {
 		}
 	}
 
+	// 任意「每天一次」的标准 5 段 cron（`M H * * *`）都按 24h 处理：
+	// 例如内置规则源用的 "0 4 * * *"。旧实现只认写死的几个预设，
+	// 其余合法的每日 cron 会被判成 invalid 而不建任务。
+	fields := strings.Fields(cron)
+	if len(fields) == 5 && fields[2] == "*" && fields[3] == "*" && fields[4] == "*" &&
+		isCronNumber(fields[0]) && isCronNumber(fields[1]) {
+		return 24 * time.Hour
+	}
+
 	return 0
+}
+
+// isCronNumber 判断 cron 字段是否为纯数字（分钟/小时位）。
+func isCronNumber(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

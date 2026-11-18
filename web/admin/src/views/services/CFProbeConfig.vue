@@ -11,8 +11,12 @@
     </template>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
       <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeEnabled') }}</div>
+        <el-switch v-model="probeCfg.enabled" />
+      </div>
+      <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeInterval') }}</div>
-        <el-input-number v-model="probeCfg.interval_minutes" :min="1" :max="1440" size="small" style="width:130px" />
+        <el-input-number v-model="probeCfg.interval_minutes" :min="1" :max="1440" size="small" style="width:130px" :disabled="!probeCfg.enabled" />
       </div>
       <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeMaxLatency') }}</div>
@@ -36,6 +40,7 @@
       </div>
     </div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
+    <div v-if="!probeCfg.enabled" style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.probeEnabledHint') }}</div>
   </el-card>
 </template>
 
@@ -47,20 +52,21 @@ import client from '../../api/client'
 
 const { t } = useI18n()
 
-const probeCfg = ref({ interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [] })
+const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [] })
 const extNodes = ref([])
 
 async function fetchProbeConfig() {
   try {
     const d = await client.get('/cfip/probe-config') || {}
     probeCfg.value = {
+      enabled: !!d.enabled,
       interval_minutes: d.interval_minutes ?? 5,
       max_latency_ms: d.max_latency_ms ?? 0,
       entry_node_id: d.entry_node_id ?? 0,
       dialer: d.dialer || '',
       available_dialers: d.dialers || [],
     }
-  } catch { /* 未配置时用默认值 */ }
+  } catch { /* 未配置时用默认值（默认关闭探测） */ }
 }
 
 async function fetchExtNodes() {

@@ -2350,6 +2350,12 @@ async function importWarp() {
         return
       }
     }
+    // 后端 /warp/status 已只返回 WireGuard；这里再兜一层，防止旧数据/旧面板
+    // 把 MASQUE（EC 私钥）填进 wireguard 出站。
+    if (String(status.tunnel_type || '').toLowerCase() === 'masque' || !isWireGuardKey(status.private_key)) {
+      ElMessage.error(t('protoCenter.outbounds.warpImportNotWireGuard'))
+      return
+    }
     // Fill form from status data
     rf.tag = 'warp-' + Math.random().toString(36).substring(2, 6)
     rf._wgSecretKey = status.private_key || ''
@@ -2373,6 +2379,12 @@ async function importWarp() {
     }]
     ElMessage.success(t('protoCenter.outbounds.warpImportSuccess'))
   } catch (e) { ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e)) }
+}
+
+// WireGuard 私钥是 32 字节的 base64（固定 44 字符，含结尾 '='）。
+// MASQUE 的 EC 私钥是 SEC1/PKCS8 DER 的 base64，长度明显不同。
+function isWireGuardKey(key) {
+  return typeof key === 'string' && key.length === 44 && /^[A-Za-z0-9+/]{43}=$/.test(key)
 }
 
 

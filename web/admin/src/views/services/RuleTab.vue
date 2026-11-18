@@ -121,7 +121,17 @@
     </div>
     <el-card>
       <el-table v-if="!isMobile" :data="files" v-loading="filesLoading" stripe>
-        <el-table-column prop="name" label="File" min-width="250" />
+        <el-table-column :label="t('service.rules.fileName')" min-width="260">
+          <template #default="{row}">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-family:monospace">{{ row.file_name || row.name }}</span>
+              <el-tag v-if="isRenamed(row)" size="small" type="warning">{{ t('service.rules.renamed') }}</el-tag>
+            </div>
+            <div v-if="isRenamed(row)" style="font-size:11px;color:#909399;margin-top:2px">
+              {{ t('service.rules.renamedFrom', { asset: row.source_asset }) }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('service.rules.fileSize')" width="120">
           <template #default="{row}">{{ row.file_size ? formatSize(row.file_size) : '-' }}</template>
         </el-table-column>
@@ -145,7 +155,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <MobileCards v-else :rows="files" title-field="name" :fields="ruleFileCardFields">
+      <MobileCards v-else :rows="files" title-field="file_name" :fields="ruleFileCardFields">
         <template #actions="{ row }">
           <el-button size="small" type="primary" @click="handleDownload(row)" :loading="row._loading">{{ t('service.rules.download') }}</el-button>
           <el-button size="small" type="danger" @click="handleDeleteFile(row)">{{ t('common.delete') }}</el-button>
@@ -185,6 +195,7 @@
               </el-checkbox>
             </div>
           </el-checkbox-group>
+          <div class="hint" style="color:#909399;font-size:12px;margin-top:6px">{{ t('service.rules.saveAsHint') }}</div>
         </el-form-item>
         <el-form-item v-if="!editingSource && isDirectUrl" :label="t('service.rules.directUrlInfo')">
           <span style="font-size:12px;color:#67c23a">{{ t('service.rules.directUrlAutoFile') }}</span>
@@ -203,8 +214,17 @@
       </div>
       <el-table v-if="!isMobile" ref="assetsTableRef" :data="assets" v-loading="assetsLoading" stripe @selection-change="handleAssetSelect" max-height="400">
         <el-table-column type="selection" width="50" />
-        <el-table-column prop="name" label="File" />
-        <el-table-column :label="t('service.rules.fileSize')" width="100">
+        <el-table-column prop="name" label="File" min-width="160" />
+        <el-table-column :label="t('service.rules.saveAs')" min-width="200">
+          <template #default="{row}">
+            <el-input
+              v-model="assetRenames[row.name]"
+              size="small"
+              :disabled="!selectedAssets.includes(row.name)"
+              :placeholder="row.name" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('service.rules.fileSize')" width="90">
           <template #default="{row}">{{ formatSize(row.size) }}</template>
         </el-table-column>
       </el-table>
@@ -214,6 +234,9 @@
           <el-checkbox :model-value="selectedAssets.includes(row.name)" @change="(v) => toggleAsset(row.name, v)" />
         </template>
       </MobileCards>
+      <div class="hint" style="color:#909399;font-size:12px;margin-top:8px">
+        {{ t('service.rules.saveAsHint') }}
+      </div>
       <template #footer>
         <el-button @click="assetsDialogVisible=false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="selectSaving" @click="handleConfirmSelect">{{ t('service.rules.addSelected') }}</el-button>
@@ -245,7 +268,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
@@ -288,8 +311,16 @@ const assets = ref([])
 const assetsTag = ref('')
 const selectedSourceId = ref(null)
 const selectedAssets = ref([])
+// 勾选文件后可改「保存为」（重命名）：不同仓库都发 geoip.dat/geosite.dat，
+// 不改名会互相覆盖（主规则是 Loyalsoldier 的 geoip.dat）。
+const assetRenames = reactive({})
 const assetsTableRef = ref(null)
 const selectSaving = ref(false)
+
+// 重命名判定：仓库原始资产名与落盘文件名不同（如 geoip.dat → geoip_IR.dat）。
+function isRenamed(row) {
+  return !!(row && row.source_asset && row.file_name && row.source_asset !== row.file_name)
+}
 
 function formatSize(bytes) {
   if (!bytes) return '-'
@@ -306,6 +337,7 @@ const ruleSourceCardFields = computed(() => [
   { label: t('common.status'), text: (row) => row.status || '-' },
 ])
 const ruleFileCardFields = computed(() => [
+  { label: t('service.rules.originalFile'), text: (row) => isRenamed(row) ? `${row.source_asset} → ${row.file_name}` : (row.source_asset || row.file_name || '-') },
   { label: t('service.rules.fileSize'), text: (row) => row.file_size ? formatSize(row.file_size) : '-' },
   { label: 'Version', text: (row) => row.version || '-' },
   { label: t('service.rules.lastUpdated'), text: (row) => row.last_updated && row.last_updated !== '0001-01-01T00:00:00Z' ? new Date(row.last_updated).toLocaleString() : '-' },
@@ -347,7 +379,8 @@ async function fetchSources() {
 
 function showAddSource() {
   editingSource.value = null
-  sourceForm.value = { name: '', repo_url: '', sync_cron: '' }
+  // 默认 24 小时同步一次（每天 03:00）；用户仍可改成更短周期或留空手动同步。
+  sourceForm.value = { name: '', repo_url: '', sync_cron: '0 3 * * *' }
   sourceAssets.value = []
   sourceSelectedFiles.value = []
   lastFetchedRepo = ''
@@ -477,12 +510,18 @@ async function showFetchAssets(row) {
   assetsDialogVisible.value = true
   assetsLoading.value = true
   selectedAssets.value = []
+  Object.keys(assetRenames).forEach(k => delete assetRenames[k])
   try {
     const data = await client.get(`/geo-rules/sources/${row.id}/assets`)
     assets.value = data.assets || []
     assetsTag.value = data.tag || ''
     // Pre-select files already added
-    const existingNames = new Set((files.value || []).filter(f => f.source_id === row.id).map(f => f.name))
+    const sourceFiles = (files.value || []).filter(f => f.source_id === row.id)
+    const existingNames = new Set(sourceFiles.map(f => f.name))
+    // 已选文件沿用当前的落盘名（重命名过的回填到输入框）
+    sourceFiles.forEach(f => {
+      if (f.source_asset && f.source_asset !== f.file_name) assetRenames[f.source_asset] = f.file_name
+    })
     selectedAssets.value = [...existingNames]
     // Toggle table row selection after DOM update
     setTimeout(() => {
@@ -505,11 +544,14 @@ function handleAssetSelect(selection) {
 
 async function handleConfirmSelect() {
   if (selectedAssets.value.length === 0) return
-  const fileNames = selectedAssets.value
+  const payload = selectedAssets.value.map(name => {
+    const rename = String(assetRenames[name] || '').trim()
+    return rename && rename !== name ? { name, rename } : { name }
+  })
   selectSaving.value = true
   try {
     await client.post(`/geo-rules/sources/${selectedSourceId.value}/select`, {
-      files: fileNames
+      files: payload
     })
     ElMessage.success(t('common.success'))
     assetsDialogVisible.value = false
@@ -560,7 +602,15 @@ async function handleDownload(row) {
 }
 
 async function handleDeleteFile(row) {
-  await ElMessageBox.confirm(t('service.rules.deleteConfirm', { name: row.name }), t('common.confirm'))
+  // 直连源（一个 URL = 一个文件）删掉后仍可通过「同步」恢复（后端会按源 URL
+  // 重建文件记录）；仓库模式删除等于取消勾选，同步不会恢复，提示要说清楚。
+  const src = sources.value.find(s => s.id === row.source_id)
+  const direct = !!(src && String(src.repo_url || '').startsWith('http'))
+  const displayName = row.file_name || row.name
+  await ElMessageBox.confirm(
+    t(direct ? 'service.rules.deleteConfirmDirect' : 'service.rules.deleteConfirm', { name: displayName }),
+    t('common.confirm')
+  )
   await client.delete(`/geo-rules/files/${row.id}`)
   ElMessage.success(t('common.success'))
   fetchFiles()

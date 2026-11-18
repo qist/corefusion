@@ -40,7 +40,10 @@
         <el-table-column :label="t('common.actions')" width="240" fixed="right">
           <template #default="{ row }">
             <div style="display:flex;gap:2px;align-items:center;white-space:nowrap">
-              <el-button v-if="isMasque(row)" size="small" type="success" @click="openOutboundDialog(row)">
+              <el-button v-if="isMasque(row)" size="small" type="success"
+                :disabled="!canCreateMasqueOutbound(row)"
+                :title="canCreateMasqueOutbound(row) ? '' : t('service.warp.masqueXrayOnly')"
+                @click="openOutboundDialog(row)">
                 {{ t('service.warp.createOutbound') }}
               </el-button>
               <el-button v-else size="small" type="primary" @click="handleGenerateConfig(row)">
@@ -55,7 +58,10 @@
       </el-table>
       <MobileCards v-else-if="warpConfigs.length > 0" :rows="warpConfigs" title-field="remark" :fields="warpCardFields">
         <template #actions="{ row }">
-          <el-button v-if="isMasque(row)" size="small" type="success" @click="openOutboundDialog(row)">
+          <el-button v-if="isMasque(row)" size="small" type="success"
+            :disabled="!canCreateMasqueOutbound(row)"
+            :title="canCreateMasqueOutbound(row) ? '' : t('service.warp.masqueXrayOnly')"
+            @click="openOutboundDialog(row)">
             {{ t('service.warp.createOutbound') }}
           </el-button>
           <el-button v-else size="small" type="primary" @click="handleGenerateConfig(row)">
@@ -88,9 +94,10 @@
         <el-form-item :label="t('service.warp.coreType')">
           <el-select v-model="registerForm.core_type" style="width:100%" clearable>
             <el-option label="xray" value="xray" />
-            <el-option label="singbox" value="singbox" />
-            <el-option :label="t('service.warp.allCores')" value="" />
+            <el-option label="singbox" value="singbox" :disabled="registerForm.type === 'masque'" />
+            <el-option :label="t('service.warp.allCores')" value="" :disabled="registerForm.type === 'masque'" />
           </el-select>
+          <div v-if="registerForm.type === 'masque'" class="hint">{{ t('service.warp.masqueXrayOnly') }}</div>
         </el-form-item>
         <el-form-item :label="t('service.warp.remark')">
           <el-input v-model="registerForm.remark" :placeholder="t('service.warp.remarkPlaceholder')" />
@@ -179,6 +186,13 @@ function isMasque(row) {
   return String(row?.tunnel_type || '').toLowerCase() === 'masque'
 }
 
+// MASQUE 出站目前只有 xray 实现；sing-box 的记录不允许在此创建（避免写进 xray 出站表）。
+// 历史记录 core_type 为空时按 xray 处理，保持兼容。
+function canCreateMasqueOutbound(row) {
+  const core = String(row?.core_type || '').toLowerCase()
+  return core === '' || core === 'xray'
+}
+
 const defaultOutboundTag = computed(() =>
   outboundForm.value.warpId ? `warp-masque-${outboundForm.value.warpId}` : 'warp-masque'
 )
@@ -215,6 +229,14 @@ function openRegisterDialog() {
 }
 
 async function handleRegister() {
+  // MASQUE 记录必须绑定 xray：后端也拒绝其它核心（sing-box 暂不支持 MASQUE）。
+  if (registerForm.value.type === 'masque') {
+    if (registerForm.value.core_type && registerForm.value.core_type !== 'xray') {
+      ElMessage.warning(t('service.warp.masqueXrayOnly'))
+      return
+    }
+    registerForm.value.core_type = 'xray'
+  }
   registerLoading.value = true
   try {
     const payload = {
@@ -239,7 +261,10 @@ async function handleRegister() {
 
 async function handleGenerateConfig(row) {
   try {
+    // 必须按记录 ID 生成：同一节点可能同时有 WireGuard 与 MASQUE 记录，
+    // 只传 core_type 会取到「最新一条」MASQUE（EC 私钥），生成的 WG 配置不可用。
     const data = await client.post(`${warpBase.value}/generate-config`, {
+      warp_id: row.id,
       core_type: row.core_type || '',
     })
     currentConfig.value = data?.config || ''

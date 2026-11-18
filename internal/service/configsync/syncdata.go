@@ -258,11 +258,20 @@ type DataSyncBuilder struct {
 	logModeProvider   LogModeProvider
 	serverRepo        *repository.NodeServerRepository
 	chainLinkProvider coreconfigSvc.ChainLinkProvider
+	rulesDir          string
 }
 
 // NewDataSyncBuilder creates a new DataSyncBuilder.
 func NewDataSyncBuilder(rawProvider RawDataProvider) *DataSyncBuilder {
 	return &DataSyncBuilder{rawProvider: rawProvider}
+}
+
+// WithRulesDir 设置面板本地规则文件目录（<dataDir>/rules）。
+// sing-box 生成最终配置时会用它检查 local rule_set 文件是否存在，
+// 缺失则摘掉对应规则，避免节点核心启动 FATAL。
+func (b *DataSyncBuilder) WithRulesDir(dir string) *DataSyncBuilder {
+	b.rulesDir = dir
+	return b
 }
 
 // WithConfigProviders sets the config service providers for generating
@@ -584,6 +593,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				EndpointProvider:  b.endpointProvider,
 				LogMode:           b.resolveLogMode(ctx, serverID, coreType),
 				ChainLinkProvider: b.chainLinkProvider,
+				RulesDir:          b.rulesDir,
 			})
 			if err != nil {
 				log.Printf("[DataSyncBuilder] PrepareFullConfig failed for server %d: %v", serverID, err)

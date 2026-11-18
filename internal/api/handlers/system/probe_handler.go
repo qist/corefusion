@@ -72,9 +72,10 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 	}{Config: cfg, Nodes: nodes, Dialers: dialers})
 }
 
-// SaveConfig 更新探活配置（间隔 / 延迟上限 / 入口节点 / 拨号核心）。
+// SaveConfig 更新探活配置（启用开关 / 间隔 / 延迟上限 / 入口节点 / 拨号核心）。
 func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 	var req struct {
+		Enabled         *bool   `json:"enabled"`
 		IntervalMinutes *int    `json:"interval_minutes"`
 		MaxLatencyMs    *int    `json:"max_latency_ms"`
 		EntryNodeID     *int64  `json:"entry_node_id"`
@@ -98,7 +99,7 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.prober.SaveConfig(c.Request.Context(), req.IntervalMinutes, req.MaxLatencyMs, req.EntryNodeID, req.Dialer); err != nil {
+	if err := h.prober.SaveConfig(c.Request.Context(), req.Enabled, req.IntervalMinutes, req.MaxLatencyMs, req.EntryNodeID, req.Dialer); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}

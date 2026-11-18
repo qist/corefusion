@@ -1745,6 +1745,11 @@ async function importWarp() {
         return
       }
     }
+    // 同 xray 出站页：兜底拒绝 MASQUE/非 Curve25519 私钥。
+    if (String(status.tunnel_type || '').toLowerCase() === 'masque' || !isWireGuardKey(status.private_key)) {
+      ElMessage.error(t('protoCenter.outbounds.warpImportNotWireGuard'))
+      return
+    }
     rf.tag = 'warp-' + Math.random().toString(36).substring(2, 6)
     rf.mtu = 1280
     rf.private_key = status.private_key || ''
@@ -1773,6 +1778,11 @@ async function importWarp() {
   } catch (e) {
     ElMessage.error(t('protoCenter.outbounds.warpImportFailed') + ': ' + (e.message || e))
   }
+}
+
+// WireGuard 私钥是 32 字节 base64（固定 44 字符）；MASQUE 的 EC 私钥更长。
+function isWireGuardKey(key) {
+  return typeof key === 'string' && key.length === 44 && /^[A-Za-z0-9+/]{43}=$/.test(key)
 }
 
 function showEdit(row) {

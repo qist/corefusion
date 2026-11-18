@@ -129,7 +129,9 @@ func (h *Handler) Register(c *gin.Context) {
 
 // GenerateConfig handles POST /api/v1/node-servers/:id/warp/generate-config
 // Generates a WireGuard config file from the stored WARP credentials.
-// Body: { "core_type": "xray" }
+// Body: { "warp_id": 12, "core_type": "xray" }
+// warp_id 优先：表格每行按钮必须按记录 ID 生成，否则「最新一条」可能是
+// MASQUE 记录（EC 私钥），生成出来的 PrivateKey 完全不可用。
 func (h *Handler) GenerateConfig(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -138,9 +140,10 @@ func (h *Handler) GenerateConfig(c *gin.Context) {
 	}
 	var req struct {
 		CoreType string `json:"core_type"`
+		WarpID   int64  `json:"warp_id"`
 	}
 	c.ShouldBindJSON(&req)
-	config, err := h.svc.GenerateConfig(serverID, req.CoreType)
+	config, err := h.svc.GenerateConfig(serverID, req.WarpID, req.CoreType)
 	if err != nil {
 		response.InternalError(c, "GENERATE_FAILED", err.Error())
 		return

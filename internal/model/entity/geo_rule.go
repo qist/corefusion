@@ -24,11 +24,16 @@ func (RuleSource) TableName() string { return "rule_sources" }
 
 // GeoRuleFile is the GORM model for the geo_rule_files table.
 type GeoRuleFile struct {
-	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	ServerID    int64  `json:"server_id" gorm:"not null;default:0;index"` // 0=global, shared by all nodes
-	SourceID    int64  `json:"source_id" gorm:"index;not null;default:0"`
-	Name        string `json:"name" gorm:"size:255;not null"`
-	FileName    string `json:"file_name" gorm:"size:255;not null"`
+	ID       int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	ServerID int64  `json:"server_id" gorm:"not null;default:0;index"` // 0=global, shared by all nodes
+	SourceID int64  `json:"source_id" gorm:"index;not null;default:0"`
+	Name     string `json:"name" gorm:"size:255;not null"`
+	FileName string `json:"file_name" gorm:"size:255;not null"`
+	// SourceAsset 是仓库里的原始文件名（release 资产名）。
+	// FileName 可以由用户在「选择文件」时重命名（例如伊朗仓库的 geoip.dat
+	// 落盘成 geoip_IR.dat，避免和主规则重名）；两者不同时前端会标注「重命名」。
+	// 为空表示与 FileName 相同（历史数据）。
+	SourceAsset string `json:"source_asset" gorm:"size:255"`
 	DownloadURL string `json:"download_url" gorm:"size:1024;not null"`
 	FileSize    int64  `json:"file_size" gorm:"not null;default:0"`
 	Version     string `json:"version" gorm:"size:128"` // release tag

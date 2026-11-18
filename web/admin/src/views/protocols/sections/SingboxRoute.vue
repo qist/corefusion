@@ -56,6 +56,15 @@
       </el-form-item>
     </el-form>
 
+    <!-- 地区路由导入：CN / 俄罗斯 / 伊朗（sing-box 只支持直连或 WARP） -->
+    <el-divider content-position="left">{{ t('protoCenter.routing.regionImport') }}</el-divider>
+    <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.routing.regionImportHint') }}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <el-button size="small" @click="openRegionImport('cn')">🇨🇳 {{ t('protoCenter.routing.regionCN') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ru')">🇷🇺 {{ t('protoCenter.routing.regionRU') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ir')">🇮🇷 {{ t('protoCenter.routing.regionIR') }}</el-button>
+    </div>
+
     <!-- Rule Sets（route.rule_set 定义；此前面板只能靠 API 手写） -->
     <el-divider content-position="left">
       Rule Sets
@@ -483,6 +492,23 @@
         </div>
       </template>
     </template>
+
+    <!-- 地区路由导入对话框 -->
+    <el-dialog v-model="regionDlg" :title="t('protoCenter.routing.regionImportTitle', { region: regionLabel })" width="460">
+      <el-form label-width="120px" label-position="left">
+        <el-form-item :label="t('protoCenter.routing.outbound')">
+          <el-select v-model="regionOutbound" style="width:100%">
+            <el-option :label="t('protoCenter.routing.regionOutboundDirect')" value="direct" />
+            <el-option label="WARP (WireGuard)" value="warp" />
+          </el-select>
+          <div class="hint">{{ t('protoCenter.routing.regionOutboundHint') }}</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="regionDlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="regionImporting" @click="confirmRegionImport">{{ t('protoCenter.routing.regionImportAction') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
@@ -989,33 +1015,24 @@ async function loadTags() {
   inboundTags.value = [...new Set(ibTags)]
 }
 
-  // rule_set 定义（本编辑器可编辑）
-  form.ruleSets = (Array.isArray(props.data?.rule_set) ? props.data.rule_set : []).map(x => {
-    const tags = Array.isArray(x.tag) ? x.tag : (x.tag ? [x.tag] : [])
-    return {
-      type: x.type || 'remote',
-      tag: tags.join(', '),
-      format: x.format || '',
-      url: x.url || '', path: x.path || '',
-      update_interval: x.update_interval || '',
-      download_detour: x.download_detour || '', http_client: x.http_client || '',
-      initial_path: x.initial_path || '',
-      _rulesJson: Array.isArray(x.rules) ? JSON.stringify(x.rules, null, 1) : '',
-    }
-  })
-
 function sync() {
   if (!props.data) return
-  form.final = props.data.final === '' ? '' : (props.data.final || 'direct')
-  form.auto_detect_interface = props.data.auto_detect_interface !== false
-  form.default_domain_resolver = props.data.default_domain_resolver || ''
-  form.default_domain_strategy = props.data.default_domain_strategy || ''
-  form.default_network_strategy = props.data.default_network_strategy || ''
-  form.default_network_type = props.data.default_network_type || []
-  form.default_fallback_network_type = props.data.default_fallback_network_type || []
-  form.default_fallback_delay = props.data.default_fallback_delay || ''
-  form.default_http_client = props.data.default_http_client || ''
-  form.rules = (props.data.rules || []).map(r => ({
+  applyRouteData(props.data)
+}
+
+// 把一段 route 配置应用到表单（props.data 与「地区导入后重新拉取」共用）。
+function applyRouteData(data) {
+  if (!data) return
+  form.final = data.final === '' ? '' : (data.final || 'direct')
+  form.auto_detect_interface = data.auto_detect_interface !== false
+  form.default_domain_resolver = data.default_domain_resolver || ''
+  form.default_domain_strategy = data.default_domain_strategy || ''
+  form.default_network_strategy = data.default_network_strategy || ''
+  form.default_network_type = data.default_network_type || []
+  form.default_fallback_network_type = data.default_fallback_network_type || []
+  form.default_fallback_delay = data.default_fallback_delay || ''
+  form.default_http_client = data.default_http_client || ''
+  form.rules = (data.rules || []).map(r => ({
     ...r,
     _domain: (r.domain || []).join('\n'),
     _domainSuffix: (r.domain_suffix || []).join('\n'),
@@ -1033,6 +1050,19 @@ function sync() {
     _sourcePortRange: (r.source_port_range || []).join(','),
     _subRules: r.type === 'logical' && r.rules ? JSON.stringify(r.rules, null, 2) : '',
   }))
+  form.ruleSets = (Array.isArray(data.rule_set) ? data.rule_set : []).map(x => {
+    const tags = Array.isArray(x.tag) ? x.tag : (x.tag ? [x.tag] : [])
+    return {
+      type: x.type || 'remote',
+      tag: tags.join(', '),
+      format: x.format || '',
+      url: x.url || '', path: x.path || '',
+      update_interval: x.update_interval || '',
+      download_detour: x.download_detour || '', http_client: x.http_client || '',
+      initial_path: x.initial_path || '',
+      _rulesJson: Array.isArray(x.rules) ? JSON.stringify(x.rules, null, 1) : '',
+    }
+  })
 }
 
 function build() {
@@ -1162,6 +1192,54 @@ async function loadChainProxy() {
     chainRules.value = []
     chainBalancers.value = []
     chainOutbounds.value = []
+  }
+}
+
+// 地区路由导入：默认不创建 CN / RU / IR 规则；点按钮选择出口后由后端
+// 确保规则文件与出站存在，再写入 route 段并下发配置。
+const regionDlg = ref(false)
+const regionTarget = ref('cn')
+const regionOutbound = ref('direct')
+const regionImporting = ref(false)
+const regionLabel = computed(() => t('protoCenter.routing.region' + regionTarget.value.toUpperCase()))
+
+function openRegionImport(region) {
+  regionTarget.value = region
+  regionOutbound.value = 'direct'
+  regionDlg.value = true
+}
+
+async function confirmRegionImport() {
+  if (!props.serverId) {
+    ElMessage.warning(t('protoCenter.routing.regionImportNodeOnly'))
+    return
+  }
+  regionImporting.value = true
+  try {
+    const res = await client.post(`/node-servers/${props.serverId}/routing-presets/import`, {
+      core_type: props.coreType || 'singbox',
+      region: regionTarget.value,
+      outbound: regionOutbound.value,
+    })
+    ElMessage.success(t('protoCenter.routing.regionImportSuccess', { count: res?.rules_added ?? 0 }))
+    regionDlg.value = false
+    await reloadRouteSection()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || String(e))
+  } finally {
+    regionImporting.value = false
+  }
+}
+
+// 导入后重新读取整段 route（含新增的 rule_set 定义），并通知父组件同步。
+async function reloadRouteSection() {
+  try {
+    const full = await client.get(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}`)
+    applyRouteData(full?.route || {})
+    await loadTags()
+    emit()
+  } catch (e) {
+    console.warn('reload route section failed:', e)
   }
 }
 </script>

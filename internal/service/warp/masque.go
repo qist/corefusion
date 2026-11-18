@@ -99,6 +99,15 @@ type masqueRegisterResponse struct {
 //
 // 旧数据不迁移：KeyType/TunnelType 为空的历史记录继续按 WireGuard 使用。
 func (s *Service) RegisterMasque(serverID int64, coreType, remark string) (*WarpStatus, error) {
+	// MASQUE 记录必须带核心类型：目前只有 xray 有 masque 出站实现，
+	// sing-box 的 masque-client 还不能用于 WARP（边缘不下发 ADDRESS_ASSIGN），
+	// 注册成 sing-box 只会得到一条永远用不上的记录。等 sing-box 支持后，
+	// 放开这里的 singbox 分支并补 ensureSingboxMasque 即可。
+	coreType = strings.ToLower(strings.TrimSpace(coreType))
+	if coreType != "xray" {
+		return nil, fmt.Errorf("MASQUE 目前仅支持 xray（core_type=%q）；sing-box 请使用 WARP（WireGuard）", coreType)
+	}
+
 	reg, err := registerMasqueDevice()
 	if err != nil {
 		return nil, err
@@ -590,8 +599,16 @@ func (s *Service) CreateMasqueOutbound(serverID, warpID int64, in MasqueOutbound
 	if cfg.ServerID != serverID {
 		return nil, fmt.Errorf("warp config %d belongs to server %d", warpID, cfg.ServerID)
 	}
-	if cfg.CoreType != "" && !strings.EqualFold(cfg.CoreType, "xray") {
-		return nil, fmt.Errorf("masque 出站只能用于 xray（该记录 core_type=%s）", cfg.CoreType)
+	// 按记录的核心类型分发：MASQUE 出站目前只实现了 xray。
+	// sing-box 未来支持时在这里加 `case "singbox"`，写入 endpoint_configs
+	// （masque-client endpoint），不要复用 xray 的 outbound_configs。
+	switch strings.ToLower(strings.TrimSpace(cfg.CoreType)) {
+	case "", "xray":
+		// 历史记录（core_type 为空）按 xray 处理。
+	case "singbox":
+		return nil, fmt.Errorf("sing-box 暂不支持 MASQUE 出站（请使用 WARP WireGuard 端点）")
+	default:
+		return nil, fmt.Errorf("unsupported core type for masque: %s", cfg.CoreType)
 	}
 
 	configJSON, tag, err := BuildMasqueOutboundConfig(cfg, in)

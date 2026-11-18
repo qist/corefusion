@@ -1201,7 +1201,15 @@ const regionDlg = ref(false)
 const regionTarget = ref('cn')
 const regionOutbound = ref('direct')
 const regionImporting = ref(false)
-const regionLabel = computed(() => t('protoCenter.routing.region' + regionTarget.value.toUpperCase()))
+// 显式列出三个 key（不要 'region' + 大写拼接：i18n 审计无法识别动态键）。
+const regionLabel = computed(() => {
+  switch (regionTarget.value) {
+    case 'cn': return t('protoCenter.routing.regionCN')
+    case 'ru': return t('protoCenter.routing.regionRU')
+    case 'ir': return t('protoCenter.routing.regionIR')
+    default: return ''
+  }
+})
 
 function openRegionImport(region) {
   regionTarget.value = region

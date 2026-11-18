@@ -240,11 +240,8 @@
               </el-table-column>
               <el-table-column :label="t('common.actions')" width="160" align="center">
                 <template #default="{row}">
-                  <el-tag v-if="row.source_type === 'waf'" type="info" size="small">
-                    {{ t('logManage.wafAutoSplit') }}
-                  </el-tag>
                   <el-button
-                    v-else-if="!row.has_policy"
+                    v-if="!row.has_policy"
                     type="primary"
                     size="small"
                     :loading="addingPath === row.log_path"
@@ -260,11 +257,8 @@
             </el-table>
             <MobileCards v-else :rows="discPagedList" title-field="log_path" :fields="discCardFields">
               <template #actions="{ row }">
-                <el-tag v-if="row.source_type === 'waf'" type="info" size="small">
-                  {{ t('logManage.wafAutoSplit') }}
-                </el-tag>
                 <el-button
-                  v-else-if="!row.has_policy"
+                  v-if="!row.has_policy"
                   type="primary"
                   size="small"
                   :loading="addingPath === row.log_path"
@@ -1146,10 +1140,17 @@ function showEdit(row) {
   loadDiscoveredOptions()
 }
 
+// WAF 日志由引擎按天自动切分且从不创建轮转策略（后端同步时也会跳过），
+// 因此"发现日志 / 同步策略"里不展示 WAF 条目；查看器的文件列表另走 discoverLogs，
+// 不过滤，否则选不到 WAF 按日文件。
+function withoutWaf(logs) {
+  return logs.filter(d => d.source_type !== 'waf')
+}
+
 async function loadDiscoveredOptions() {
   try {
     const r = await logApi.discoverLogs(selectedServerId.value)
-    discoveredOptions.value = Array.isArray(r) ? r : []
+    discoveredOptions.value = withoutWaf(Array.isArray(r) ? r : [])
   } catch {
     discoveredOptions.value = []
   }
@@ -1213,7 +1214,7 @@ async function handleDiscover() {
   discovering.value = true
   try {
     const r = await logApi.discoverLogs(selectedServerId.value)
-    const logs = Array.isArray(r) ? r : []
+    const logs = withoutWaf(Array.isArray(r) ? r : [])
     const policyPaths = new Set(policies.value.map(p => p.log_path))
     for (const log of logs) {
       if (policyPaths.has(log.log_path)) log.has_policy = true

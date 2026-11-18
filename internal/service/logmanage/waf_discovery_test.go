@@ -48,6 +48,32 @@ func TestDiscoverWAFLogsEnumeratesExistingDayFiles(t *testing.T) {
 	}
 }
 
+// 发现日志只展示磁盘上真实存在的文件：配置里的默认路径在从未写出时
+// （远程节点尤其常见）不应出现在列表里。
+func TestFilterExistingLogsDropsMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	logsDir := filepath.Join(dir, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(logsDir, "access.log")
+	if err := os.WriteFile(existing, []byte("line\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := filterExistingLogs([]DiscoveredLog{
+		{SourceType: "nginx", LogPath: existing},
+		{SourceType: "nginx", LogPath: filepath.Join(logsDir, "missing.log")},
+		{SourceType: "nginx", LogPath: ""},
+	})
+	if len(got) != 1 {
+		t.Fatalf("expected only the existing file, got %+v", got)
+	}
+	if got[0].LogPath != existing {
+		t.Fatalf("expected %q, got %q", existing, got[0].LogPath)
+	}
+}
+
 type fakeAvailability map[string]bool
 
 func (f fakeAvailability) Available(sourceType string) bool { return f[sourceType] }

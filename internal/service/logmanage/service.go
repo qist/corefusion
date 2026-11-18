@@ -364,6 +364,10 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 		logs = append(logs, wafLogs...)
 	}
 
+	// 只展示磁盘上真实存在的日志文件：配置里的默认路径（如 nginx 的
+	// logs/access.log）在进程从未写出、或文件已被清理时不该出现在发现列表里。
+	logs = filterExistingLogs(logs)
+
 	// Cross-check with existing local policies
 	existingPolicies, err := s.policyRepo.ListByServerID(ctx, 1)
 	if err == nil {
@@ -379,6 +383,26 @@ func (s *Service) discoverLocalLogs(ctx context.Context) ([]DiscoveredLog, error
 	}
 
 	return logs, nil
+}
+
+// filterExistingLogs drops discovered entries whose file does not exist on disk.
+// 「发现日志」的意义是发现"已经产生"的日志；只按配置推导会让未启动/未创建过
+// 日志的节点把一堆不存在的默认路径显示出来（远程节点尤其明显）。
+func filterExistingLogs(logs []DiscoveredLog) []DiscoveredLog {
+	if len(logs) == 0 {
+		return logs
+	}
+	out := make([]DiscoveredLog, 0, len(logs))
+	for _, d := range logs {
+		if d.LogPath == "" {
+			continue
+		}
+		if fi, err := os.Stat(d.LogPath); err != nil || fi.IsDir() {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // discoverCoreLogs discovers log files for core processes (xray, singbox).

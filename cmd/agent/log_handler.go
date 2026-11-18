@@ -522,149 +522,6 @@ func (a *AgentApp) resolveLogFilePath(logType string) string {
 	}
 }
 
-// getLogMode reads the log output mode for a given log type from local settings.
-// Core types (xray/singbox) use "core.log_output_config".
-// Proxy types (nginx/caddy) use "proxy.log_output_config".
-// Returns "file" as default if not configured.
-func (a *AgentApp) getLogMode(logType string) string {
-	if a.settingRepo == nil {
-		return "file"
-	}
-
-	ctx := context.Background()
-	isCore := false
-	for _, ct := range []string{"xray", "singbox"} {
-		if logType == ct {
-			isCore = true
-			break
-		}
-	}
-
-	if isCore {
-		v, err := a.settingRepo.GetByKey(ctx, "core.log_output_config")
-		if err != nil || v == "" {
-			// No saved config — derive from actual runtime config
-			return a.deriveCoreLogMode(logType)
-		}
-		var cfg struct {
-			Xray struct {
-				Mode string `json:"mode"`
-			} `json:"xray"`
-			Singbox struct {
-				Mode string `json:"mode"`
-			} `json:"singbox"`
-		}
-		if json.Unmarshal([]byte(v), &cfg) != nil {
-			return "file"
-		}
-		// For xray and singbox, override with mode derived from actual runtime config
-		switch logType {
-		case "xray":
-			derived := a.deriveCoreLogMode("xray")
-			if derived != "" {
-				return derived
-			}
-			return cfg.Xray.Mode
-		case "singbox":
-			derived := a.deriveCoreLogMode("singbox")
-			if derived != "" {
-				return derived
-			}
-			return cfg.Singbox.Mode
-		}
-		return "file"
-	}
-
-	// Proxy types
-	v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config")
-	if err != nil || v == "" {
-		return "file"
-	}
-	var cfg struct {
-		Nginx struct {
-			Mode string `json:"mode"`
-		} `json:"nginx"`
-		Caddy struct {
-			Mode string `json:"mode"`
-		} `json:"caddy"`
-	}
-	if json.Unmarshal([]byte(v), &cfg) != nil {
-		return "file"
-	}
-	switch logType {
-	case "nginx":
-		return cfg.Nginx.Mode
-	case "caddy":
-		return cfg.Caddy.Mode
-	}
-	return "file"
-}
-
-// deriveCoreLogMode infers the log output mode for xray/singbox by reading the
-// actual runtime config file. This keeps the Agent's mode in sync with changes
-// made in the protocol center without needing to save the log output config.
-// Returns "" if the mode cannot be determined (caller should fall back to saved config).
-func (a *AgentApp) deriveCoreLogMode(coreType string) string {
-	switch coreType {
-	case "xray":
-		// Read xray.jsonc and infer mode from log section
-		configPath := filepath.Join(a.dataDir, "runtime", "xray.jsonc")
-		data, err := os.ReadFile(configPath)
-		if err != nil {
-			return ""
-		}
-		cleaned := stripJSONCComments(string(data))
-		var cfg struct {
-			Log struct {
-				Access   string `json:"access"`
-				Error    string `json:"error"`
-				LogLevel string `json:"loglevel"`
-			} `json:"log"`
-		}
-		if json.Unmarshal([]byte(cleaned), &cfg) != nil {
-			return ""
-		}
-		// off mode
-		if cfg.Log.LogLevel == "none" {
-			return "off"
-		}
-		if cfg.Log.Access == "none" && cfg.Log.Error == "none" {
-			return "off"
-		}
-		// 标准输出模式已下线：access/error 为空或 /dev/stderr 一律按文件处理。
-		return "file"
-
-	case "singbox":
-		// Read singbox config and infer mode from log section
-		configPath := filepath.Join(a.dataDir, "runtime", "singbox.json")
-		data, err := os.ReadFile(configPath)
-		if err != nil {
-			// Try .jsonc extension
-			configPath = filepath.Join(a.dataDir, "runtime", "singbox.jsonc")
-			data, err = os.ReadFile(configPath)
-			if err != nil {
-				return ""
-			}
-		}
-		cleaned := stripJSONCComments(string(data))
-		var cfg struct {
-			Log struct {
-				Level  string `json:"level"`
-				Output string `json:"output"`
-			} `json:"log"`
-		}
-		if json.Unmarshal([]byte(cleaned), &cfg) != nil {
-			return ""
-		}
-		if cfg.Log.Level == "silent" {
-			return "off"
-		}
-		// 标准输出（stderr）模式已下线，一律按文件处理。
-		return "file"
-	}
-	return ""
-}
-
 // readLastLinesFromFile reads the last N lines from an open file.
 // 反向分块读取，收集时用 append（最后 reverse）——禁止逐行 prepend（O(n²)，
 // 5 万行 = 上十亿次元素拷贝，会把请求卡到超时）。
@@ -866,177 +723,28 @@ func desensitizeLine(line string) string {
 }
 
 // handleDiscoverLogs discovers all log files on the agent node.
-// It returns a list of discovered log files similar to the panel's DiscoverLogs.
+// 直接复用 logmanage.Service.DiscoverLogs —— 它就是面板本地节点用的同一套逻辑：
+// 未安装/未运行的核心与代理不参与发现，WAF 只枚举磁盘上按日真实存在的文件，
+// 并统一过滤掉尚未生成的日志文件。以前这里有一份独立实现，缺少上述过滤，
+// 远程节点会把没启动/没创建过的默认路径全列出来（与面板不一致）。
 func (a *AgentApp) handleDiscoverLogs(ctx context.Context) *agentpb.DiscoverLogsResponse {
-	logDir := filepath.Join(a.dataDir, "logs")
-	var logs []*agentpb.DiscoveredLogInfo
-
-	// Discover core process logs
-	for _, coreType := range []string{"xray", "singbox"} {
-		mode := a.getLogMode(coreType)
-		switch mode {
-		case "off":
-			continue
-		default: // "file"
-			if coreType == "xray" {
-				// Read actual access/error paths from the runtime config file
-				accessPath, errorPath := a.readXrayLogPaths()
-				if errorPath != "" {
-					logs = append(logs, &agentpb.DiscoveredLogInfo{
-						SourceType: coreType,
-						Domain:     "error",
-						LogPath:    errorPath,
-					})
-				}
-				if accessPath != "" {
-					logs = append(logs, &agentpb.DiscoveredLogInfo{
-						SourceType: coreType,
-						Domain:     "access",
-						LogPath:    accessPath,
-					})
-				}
-				// 进程自身 stdout/stderr（logs/xray.log）：启动横幅/配置解析失败/端口占用
-				// 只写这里，xray 的 error 日志要先跑起来才有 ✓ —— 必须能被前端发现并查看 ✓。
-				if p := filepath.Join(logDir, coreType+".log"); p != accessPath && p != errorPath {
-					logs = append(logs, &agentpb.DiscoveredLogInfo{
-						SourceType: coreType,
-						Domain:     "startup",
-						LogPath:    p,
-					})
-				}
-			} else {
-				// sing-box 的进程输出同样是 logs/singbox.log ✓
-				logs = append(logs, &agentpb.DiscoveredLogInfo{
-					SourceType: coreType,
-					Domain:     "startup",
-					LogPath:    filepath.Join(logDir, coreType+".log"),
-				})
-			}
-		}
+	if a.logMgr == nil {
+		return &agentpb.DiscoverLogsResponse{Success: false, Error: "log manager not initialized"}
 	}
-
-	// Discover nginx logs — read actual log paths from proxy.nginx_settings
-	nginxMode := "file"
-	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
-		var cfg struct {
-			Nginx struct {
-				Mode string `json:"mode"`
-			} `json:"nginx"`
-		}
-		if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Nginx.Mode != "" {
-			nginxMode = cfg.Nginx.Mode
-		}
+	discovered, err := a.logMgr.DiscoverLogs(ctx)
+	if err != nil {
+		return &agentpb.DiscoverLogsResponse{Success: false, Error: err.Error()}
 	}
-	if nginxMode != "off" {
-		// Read nginx settings to get actual log paths
-		type nginxLogSettings struct {
-			ErrorLog      bool   `json:"error_log"`
-			ErrorLogPath  string `json:"error_log_path"`
-			AccessLog     bool   `json:"access_log"`
-			AccessLogPath string `json:"access_log_path"`
-			StreamLog     bool   `json:"stream_log"`
-			StreamLogPath string `json:"stream_log_path"`
-		}
-		var ns nginxLogSettings
-		if v, err := a.settingRepo.GetByKey(ctx, "proxy.nginx_settings"); err == nil && v != "" {
-			json.Unmarshal([]byte(v), &ns)
-		}
-		// Use defaults if settings are empty
-		if ns.ErrorLogPath == "" {
-			ns.ErrorLogPath = "logs/error.log"
-			ns.ErrorLog = true
-		}
-		if ns.AccessLogPath == "" {
-			ns.AccessLogPath = "logs/access.log"
-			ns.AccessLog = true
-		}
-
-		if ns.ErrorLog && ns.ErrorLogPath != "" {
-			logs = append(logs, &agentpb.DiscoveredLogInfo{
-				SourceType: "nginx",
-				Domain:     "error",
-				LogPath:    a.resolveRelPath(ns.ErrorLogPath),
-			})
-		}
-		if ns.AccessLog && ns.AccessLogPath != "" {
-			logs = append(logs, &agentpb.DiscoveredLogInfo{
-				SourceType: "nginx",
-				Domain:     "access",
-				LogPath:    a.resolveRelPath(ns.AccessLogPath),
-			})
-		}
-		if ns.StreamLog && ns.StreamLogPath != "" {
-			logs = append(logs, &agentpb.DiscoveredLogInfo{
-				SourceType: "nginx",
-				Domain:     "stream",
-				LogPath:    a.resolveRelPath(ns.StreamLogPath),
-			})
-		}
-	}
-
-	// Discover caddy logs — read actual log paths from caddy_sites table
-	caddyMode := "file"
-	if v, err := a.settingRepo.GetByKey(ctx, "proxy.log_output_config"); err == nil && v != "" {
-		var cfg struct {
-			Caddy struct {
-				Mode string `json:"mode"`
-			} `json:"caddy"`
-		}
-		if json.Unmarshal([]byte(v), &cfg) == nil && cfg.Caddy.Mode != "" {
-			caddyMode = cfg.Caddy.Mode
-		}
-	}
-	if caddyMode != "off" {
-		// 全局统一 access 日志（与 Caddyfile 生成的 "output file logs/caddy_access.log"
-		// 同名，面板本地的 discoverCaddyLogs 也始终包含它）——站点表为空时兜底。
+	logs := make([]*agentpb.DiscoveredLogInfo, 0, len(discovered))
+	for _, d := range discovered {
 		logs = append(logs, &agentpb.DiscoveredLogInfo{
-			SourceType: "caddy",
-			Domain:     "access",
-			LogPath:    a.resolveRelPath("logs/caddy_access.log"),
-			LogFormat:  "json",
+			SourceType: d.SourceType,
+			Domain:     d.Domain,
+			LogPath:    d.LogPath,
+			LogFormat:  d.LogFormat,
+			HasPolicy:  d.HasPolicy,
 		})
-		// Per-site custom log paths (sites that override the global logger)
-		if a.caddySiteRepo != nil {
-			sites, err := a.caddySiteRepo.List(ctx, 1)
-			if err == nil {
-				globalPath := a.resolveRelPath("logs/caddy_access.log")
-				for _, site := range sites {
-					// Skip L4 and SNI sites — they don't have HTTP-level logs
-					if site.Template == "l4" || site.Template == "sni" {
-						continue
-					}
-					if !site.LogEnabled || site.LogPath == "" {
-						continue
-					}
-					logPath := a.resolveRelPath(site.LogPath)
-					if logPath == globalPath {
-						continue // 已在全局条目里
-					}
-					logs = append(logs, &agentpb.DiscoveredLogInfo{
-						SourceType: "caddy",
-						Domain:     site.Domain,
-						LogPath:    logPath,
-						LogFormat:  site.LogFormat,
-					})
-				}
-			}
-		}
 	}
-
-	// Cross-check with local policies
-	if a.logMgr != nil {
-		policies, _ := a.logMgr.ListPolicies(ctx)
-		policyPaths := make(map[string]bool)
-		for _, p := range policies {
-			policyPaths[p.LogPath] = true
-		}
-		for _, l := range logs {
-			if policyPaths[l.LogPath] {
-				l.HasPolicy = true
-			}
-		}
-	}
-
 	return &agentpb.DiscoverLogsResponse{
 		Success: true,
 		Logs:    logs,

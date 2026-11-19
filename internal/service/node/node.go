@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,6 +44,9 @@ type nodeOnlineProvider interface {
 	GetOnlineTotals() (subscriptions, devices int64)
 	// FetchSingboxConnectionsOnServer 读取远端节点 clash_api /connections 原始 JSON。
 	FetchSingboxConnectionsOnServer(ctx context.Context, serverID int64) ([]byte, string, error)
+	// GetStatusForServer 返回节点上各核心的实时状态：本地走进程表，
+	// 远端走 Agent 心跳里缓存的状态上报（非阻塞）。
+	GetStatusForServer(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, error)
 }
 
 // NodeOnlineResult 是返回给前端的节点在线订阅人聚合视图。
@@ -475,6 +479,30 @@ func (s *Service) GetAllOnlineSummary() *OnlineSummaryResponse {
 	res.TotalSubscriptions = int64(len(subs))
 	res.TotalDevices = int64(len(devs))
 	return res
+}
+
+// CoreStates 返回某节点上各核心的实时状态（core_type → state）。
+//
+// 数据来源与「节点详情 → 核心进程」页完全一致：本机节点读进程表，
+// 远端节点读 Agent 心跳里缓存的状态上报（不发起阻塞 RPC）。
+// 注意：不能读 inbound_services.process_status —— 那一列只有本机核心
+// 进程管理器会写，远端节点恒为空，按库统计会把整台远端节点误报成「未上报」。
+func (s *Service) CoreStates(ctx context.Context, serverID int64) (map[string]string, error) {
+	if s.nodeOnline == nil {
+		return nil, errors.New("节点状态提供者未初始化")
+	}
+	resp, err := s.nodeOnline.GetStatusForServer(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(resp.GetCores()))
+	for _, cs := range resp.GetCores() {
+		if cs == nil || cs.GetCoreType() == "" {
+			continue
+		}
+		out[cs.GetCoreType()] = cs.GetState()
+	}
+	return out, nil
 }
 
 // GlobalOnlineUser 是全局在线用户视图中的一行（一个订阅在某节点上的在线聚合）。

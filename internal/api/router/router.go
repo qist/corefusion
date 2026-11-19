@@ -1444,6 +1444,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 	processH := servicesHandler.NewProcessHandler(processMgr, svcRepo, crashLogRepo, dataDir)
 	metricsH := metricsHandler.NewHandler(database)
+	// 核心服务状态用实时状态（本机进程表 + 远端 Agent 心跳缓存），
+	// 不再按库里 process_status 统计（该列远端节点恒为空 → 误报「未上报」）。
+	metricsH.SetCoreStateProvider(nodeSvc)
 	securityH := securityHandler.NewHandler(database)
 	backupsH := backupsHandler.NewHandler(database, dataDir, backupSvcInst)
 	systemH := systemHandler.NewHandler(database, systemSettingSvc, dataDir, version)

@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -8,14 +10,27 @@ import (
 	"corefusion/internal/model/entity"
 )
 
+// CoreStateProvider 提供节点上各核心的实时运行状态（core_type → state）。
+// 由 service/node.Service 实现：本机读进程表，远端读 Agent 心跳缓存。
+// 用于替代 inbound_services.process_status —— 那一列只有本机核心进程管理器会写。
+type CoreStateProvider interface {
+	CoreStates(ctx context.Context, serverID int64) (map[string]string, error)
+}
+
 // Handler handles metrics HTTP requests.
 type Handler struct {
-	db *gorm.DB
+	db         *gorm.DB
+	coreStates CoreStateProvider
 }
 
 // NewHandler creates a new metrics handler.
 func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{db: db}
+}
+
+// SetCoreStateProvider 注入核心实时状态提供者（本机进程表 + 远端 Agent 上报缓存）。
+func (h *Handler) SetCoreStateProvider(p CoreStateProvider) {
+	h.coreStates = p
 }
 
 // Overview handles GET /api/v1/metrics/overview.
@@ -33,12 +48,44 @@ func (h *Handler) Overview(c *gin.Context) {
 			Joins("INNER JOIN node_servers ON node_servers.id = inbound_services.server_id")
 	}
 	svcQuery().Count(&serviceCount)
-	// 三种状态分开统计：running / stopped / 未上报。
-	// 远端节点的进程状态由 Agent 上报，尚未上报时 process_status 为空 ——
-	// 不能当成「已停止」，否则远端节点看起来像全挂了。
-	svcQuery().Where("inbound_services.process_status = ?", "running").Count(&serviceRunningCount)
-	svcQuery().Where("inbound_services.process_status = ?", "stopped").Count(&serviceStoppedCount)
-	svcQuery().Where("inbound_services.process_status IS NULL OR inbound_services.process_status = ''").Count(&serviceUnknownCount)
+	// 状态统计优先用**实时状态**（与「节点详情 → 核心进程」同源：本机进程表 +
+	// 远端 Agent 心跳缓存），不再依赖 inbound_services.process_status ——
+	// 那一列只有本机核心进程管理器会写，远端节点恒为空，按库统计会把整台
+	// 远端节点误报成「未上报」。
+	type svcRow struct {
+		ServerID int64
+		CoreType string
+	}
+	var svcRows []svcRow
+	svcQuery().Select("inbound_services.server_id, inbound_services.core_type").Scan(&svcRows)
+	serviceCount = int64(len(svcRows))
+	if h.coreStates != nil {
+		byServer := make(map[int64][]string, len(svcRows))
+		for _, r := range svcRows {
+			byServer[r.ServerID] = append(byServer[r.ServerID], r.CoreType)
+		}
+		ctx := c.Request.Context()
+		for serverID, cores := range byServer {
+			states, err := h.coreStates.CoreStates(ctx, serverID)
+			for _, core := range cores {
+				// 取不到节点状态（Agent 未连接 / 尚未上报）→ 计为「未上报」；
+				// 已上报但没有该核心记录 → 与核心进程页口径一致，按「已停止」。
+				if err != nil {
+					serviceUnknownCount++
+					continue
+				}
+				if states[core] == "running" {
+					serviceRunningCount++
+				} else {
+					serviceStoppedCount++
+				}
+			}
+		}
+	} else {
+		svcQuery().Where("inbound_services.process_status = ?", "running").Count(&serviceRunningCount)
+		svcQuery().Where("inbound_services.process_status = ?", "stopped").Count(&serviceStoppedCount)
+		svcQuery().Where("inbound_services.process_status IS NULL OR inbound_services.process_status = ''").Count(&serviceUnknownCount)
+	}
 
 	// 订阅按状态拆分：「活跃订阅」只算 active，暂停/过期的单独给出，
 	// 避免用户误以为暂停的订阅凭空消失。

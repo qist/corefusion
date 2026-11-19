@@ -2,6 +2,8 @@ package metrics
 
 import (
 	"context"
+	"sort"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -71,21 +73,33 @@ func (h *Handler) Overview(c *gin.Context) {
 	h.db.Model(&entity.Client{}).Where("status = ?", "active").Count(&clientCount)
 	h.db.Model(&entity.Certificate{}).Where("status = ?", "active").Count(&certCount)
 
-	// Count expiring certs (within 30 days)
-	var expiringCertCount int64
-	h.db.Model(&entity.Certificate{}).Where("status = ? AND expires_at < datetime('now', '+30 days')", "active").Count(&expiringCertCount)
+	// 即将过期证书：告警窗口按**有效期比例**计算，不能一刀切 30 天。
+	// LE 的 IP 证书必须用 shortlived profile（约 6 天有效），固定 30 天阈值会
+	// 让证书**刚签发就进异常告警**，每天都在报「即将过期」。
+	var certRows []entity.Certificate
+	h.db.Select("id, name, domain, expires_at, created_at, last_renewed_at").
+		Where("status = ? AND expires_at IS NOT NULL", "active").
+		Find(&certRows)
+	now := time.Now()
+	expiringCerts := make([]entity.Certificate, 0)
+	for _, c := range certRows {
+		if c.ExpiresAt.Sub(now) <= certExpiryWarnWindow(c) {
+			expiringCerts = append(expiringCerts, c)
+		}
+	}
+	expiringCertCount := int64(len(expiringCerts))
+	sort.Slice(expiringCerts, func(i, j int) bool {
+		return expiringCerts[i].ExpiresAt.Before(expiringCerts[j].ExpiresAt)
+	})
+	if len(expiringCerts) > 10 {
+		expiringCerts = expiringCerts[:10]
+	}
 
 	// Count active subscriptions with quota issues
 	var quotaWarningCount int64
 	h.db.Model(&entity.Subscription{}).Where("quota_state IN ?", []string{"near_limit", "over_limit_soft", "over_limit_hard"}).Count(&quotaWarningCount)
 
-	// 即将过期证书明细（30 天内，最多 10 条），供前端「异常告警」列出
-	var expiringCerts []entity.Certificate
-	h.db.Model(&entity.Certificate{}).
-		Where("status = ? AND expires_at IS NOT NULL AND expires_at < datetime('now', '+30 days')", "active").
-		Order("expires_at ASC").
-		Limit(10).
-		Find(&expiringCerts)
+	// 即将过期证书明细（窗口见 certExpiryWarnWindow，最多 10 条），供前端「异常告警」列出
 	expiringCertList := make([]gin.H, 0, len(expiringCerts))
 	for _, c := range expiringCerts {
 		label := c.Domain
@@ -152,4 +166,32 @@ func (h *Handler) CertMetrics(c *gin.Context) {
 		"active":   active,
 		"expiring": expiring,
 	})
+}
+
+// certExpiryWarnWindow 返回某张证书的「即将过期」告警窗口。
+//
+// 不能固定 30 天：Let's Encrypt 的 IP 证书必须走 shortlived profile
+// （约 6 天有效），固定阈值会让证书**刚签发就进异常告警**，天天提示。
+// 规则：取有效期的 1/3，上限 30 天、下限 1 天；续期后窗口随有效期重置。
+// 生命周期起点优先用 LastRenewedAt（续期会更新），否则用 CreatedAt。
+func certExpiryWarnWindow(c entity.Certificate) time.Duration {
+	const (
+		maxWindow = 30 * 24 * time.Hour
+		minWindow = 24 * time.Hour
+	)
+	base := c.CreatedAt
+	if c.LastRenewedAt != nil && !c.LastRenewedAt.IsZero() {
+		base = *c.LastRenewedAt
+	}
+	if base.IsZero() || !c.ExpiresAt.After(base) {
+		return maxWindow
+	}
+	window := c.ExpiresAt.Sub(base) / 3
+	if window > maxWindow {
+		window = maxWindow
+	}
+	if window < minWindow {
+		window = minWindow
+	}
+	return window
 }

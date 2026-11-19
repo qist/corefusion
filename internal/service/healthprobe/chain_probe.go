@@ -518,9 +518,14 @@ func (c *countingConn) Read(b []byte) (int, error) {
 }
 
 func (c *countingConn) Write(b []byte) (int, error) {
+	// 必须**先计数再写 syscall**：TCP 是流式的，字节一进内核缓冲区对端就可能
+	// 立刻回包；而汇总侧是在拿到响应后读计数。若先 write 后累加，快机器上
+	// （CI runner 实测必现）会出现「请求已发出、响应已收到，但 up 仍为 0」，
+	// 从而把健康的节点误判成不通。失败/短写再把多算的部分扣回去。
+	atomic.AddInt64(c.up, int64(len(b)))
 	n, err := c.Conn.Write(b)
-	if n > 0 {
-		atomic.AddInt64(c.up, int64(n))
+	if n < len(b) {
+		atomic.AddInt64(c.up, -int64(len(b)-n))
 	}
 	return n, err
 }

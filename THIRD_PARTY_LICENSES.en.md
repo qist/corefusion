@@ -1,9 +1,9 @@
-<!-- source: THIRD_PARTY_LICENSES.md | locale: en | updated: 2026-10-23 -->
+<!-- source: THIRD_PARTY_LICENSES.md | locale: en | updated: 2026-11-19 -->
 # Third-Party Components and Licenses
 
 > Languages: [简体中文](THIRD_PARTY_LICENSES.md) · English · [繁體中文](THIRD_PARTY_LICENSES.zh-TW.md) · [Русский](THIRD_PARTY_LICENSES.ru.md) · [日本語](THIRD_PARTY_LICENSES.ja.md) · [한국어](THIRD_PARTY_LICENSES.ko.md) · [Deutsch](THIRD_PARTY_LICENSES.de.md) · [Français](THIRD_PARTY_LICENSES.fr.md) · [Español](THIRD_PARTY_LICENSES.es.md) · [Português](THIRD_PARTY_LICENSES.pt.md) · [Türkçe](THIRD_PARTY_LICENSES.tr.md) · [Bahasa Indonesia](THIRD_PARTY_LICENSES.id.md) · [ไทย](THIRD_PARTY_LICENSES.th.md) · [Tiếng Việt](THIRD_PARTY_LICENSES.vi.md) · [العربية](THIRD_PARTY_LICENSES.ar.md) · [فارسی](THIRD_PARTY_LICENSES.fa.md)
 
-CoreFusion uses the following open-source components. This file lists the main components and licenses; **the complete list is defined by `go.mod` / `go.sum` and each module's own LICENSE file**.
+CoreFusion uses the following open-source components. This file lists the main components and licenses; **the complete list is defined by `go.mod` / `go.sum`, `web/admin/package.json` and each module's own LICENSE file**.
 
 When distributing binaries of this project, keep this file, the project `LICENSE`, and the copyright/license notices of all third-party components.
 
@@ -20,17 +20,35 @@ When distributing binaries of this project, keep this file, the project `LICENSE
 | `github.com/go-acme/lego/v5` | MIT | ACME certificate issuance |
 | `github.com/gin-gonic/gin` | MIT | HTTP framework |
 | `gorm.io/gorm` | MIT | ORM |
+| `gorm.io/driver/mysql` | MIT | MySQL driver for GORM |
+| `gorm.io/driver/postgres` | MIT | PostgreSQL driver for GORM |
+| `github.com/jackc/pgx/v5` | MIT | PostgreSQL driver |
+| `github.com/qist/sqlite` | MIT | SQLite driver (default database for panel / Agent) |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | S3 backups, Route53 DNS-01 |
 | `google.golang.org/grpc` | Apache-2.0 | Agent gRPC communication |
 | `google.golang.org/protobuf` | BSD-3-Clause | Protobuf runtime |
 | `golang.org/x/crypto` | BSD-3-Clause | Cryptographic primitives |
 | `golang.org/x/oauth2` | BSD-3-Clause | OAuth2 / Google EAB |
+| `golang.org/x/sys` | BSD-3-Clause | System calls (nft/tc rate limiting, process management) |
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | BSD-3-Clause | UUID |
+| `github.com/go-webauthn/webauthn` | BSD-3-Clause | Passkey / WebAuthn sign-in |
+| `github.com/pquerna/otp` | Apache-2.0 | TOTP two-factor authentication |
+| `github.com/jlaffaye/ftp` | ISC | FTP backup upload |
+| `gopkg.in/yaml.v3` | MIT / Apache-2.0 | YAML config parsing |
 
 > ⚠ **GPL-3.0 components**: `sing` and `sing-shadowsocks` are GPL-3.0-or-later. They are statically linked into the panel and Agent binaries, so **distributing binaries requires providing the Corresponding Source** (see section 3 of [LEGAL.md](./LEGAL.md)).
 
-## 2. Standalone programs invoked at runtime (not distributed in this repository)
+## 2. Frontend dependencies (compiled into the panel binary)
+
+The admin UI is built with Vite and embedded into the panel binary via `go:embed`, so the following components are distributed with the binary as well:
+
+| Component | License | Purpose |
+|---|---|---|
+| Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Admin UI, routing and state, i18n, Markdown rendering, QR codes and code editor |
+| DOMPurify | Apache-2.0 / MPL-2.0 | XSS sanitization before rendering Markdown / HTML |
+
+## 3. Standalone programs invoked at runtime (not distributed in this repository)
 
 The panel / Agent may download, install or invoke the following standalone programs at runtime. They interact with this project through processes/interfaces, but if you ship them with your deliverables you must still comply with their licenses:
 
@@ -43,7 +61,7 @@ The panel / Agent may download, install or invoke the following standalone progr
 
 > Hysteria2 and TUIC are **protocols carried by sing-box**, not standalone cores or binaries, so they are not listed separately.
 
-## 3. Data files
+## 4. Data files
 
 | Data | Source / license |
 |---|---|
@@ -51,7 +69,7 @@ The panel / Agent may download, install or invoke the following standalone progr
 | GeoLite2 (`GeoLite2-ASN.mmdb`, etc.) | MaxMind GeoLite2 EULA / CC BY-SA 4.0; verify licensing before commercial use |
 | `country.mmdb` | As declared by its data source |
 
-## 4. Compliance recommendations
+## 5. Compliance recommendations
 
 - When delivering binaries, include: `LICENSE`, this file, and the license text or acquisition URL of each GPL/MPL component.
 - If you modify source files of MPL-2.0 components such as `xray-core`, publish the modified files' source.

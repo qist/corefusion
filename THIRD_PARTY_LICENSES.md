@@ -2,7 +2,7 @@
 
 > 语言： 简体中文 · [English](THIRD_PARTY_LICENSES.en.md) · [繁體中文](THIRD_PARTY_LICENSES.zh-TW.md) · [Русский](THIRD_PARTY_LICENSES.ru.md) · [日本語](THIRD_PARTY_LICENSES.ja.md) · [한국어](THIRD_PARTY_LICENSES.ko.md) · [Deutsch](THIRD_PARTY_LICENSES.de.md) · [Français](THIRD_PARTY_LICENSES.fr.md) · [Español](THIRD_PARTY_LICENSES.es.md) · [Português](THIRD_PARTY_LICENSES.pt.md) · [Türkçe](THIRD_PARTY_LICENSES.tr.md) · [Bahasa Indonesia](THIRD_PARTY_LICENSES.id.md) · [ไทย](THIRD_PARTY_LICENSES.th.md) · [Tiếng Việt](THIRD_PARTY_LICENSES.vi.md) · [العربية](THIRD_PARTY_LICENSES.ar.md) · [فارسی](THIRD_PARTY_LICENSES.fa.md)
 
-CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证，**完整清单以 `go.mod` / `go.sum` 及各模块自带的 LICENSE 文件为准**。
+CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证，**完整清单以 `go.mod` / `go.sum`、`web/admin/package.json` 及各模块自带的 LICENSE 文件为准**。
 
 分发本项目的二进制时，请同时保留本文件、项目 `LICENSE` 以及各第三方组件的版权与许可声明。
 
@@ -19,17 +19,35 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 | `github.com/go-acme/lego/v5` | MIT | ACME 证书签发 |
 | `github.com/gin-gonic/gin` | MIT | HTTP 框架 |
 | `gorm.io/gorm` | MIT | ORM |
+| `gorm.io/driver/mysql` | MIT | GORM 的 MySQL 驱动 |
+| `gorm.io/driver/postgres` | MIT | GORM 的 PostgreSQL 驱动 |
+| `github.com/jackc/pgx/v5` | MIT | PostgreSQL 驱动 |
+| `github.com/qist/sqlite` | MIT | SQLite 驱动（面板 / Agent 默认数据库） |
 | `github.com/aws/aws-sdk-go-v2` | Apache-2.0 | S3 备份、Route53 DNS-01 |
 | `google.golang.org/grpc` | Apache-2.0 | Agent gRPC 通信 |
 | `google.golang.org/protobuf` | BSD-3-Clause | Protobuf 运行时 |
 | `golang.org/x/crypto` | BSD-3-Clause | 加密原语 |
 | `golang.org/x/oauth2` | BSD-3-Clause | OAuth2 / Google EAB |
+| `golang.org/x/sys` | BSD-3-Clause | 系统调用（nft/tc 限速、进程管理） |
 | `github.com/golang-jwt/jwt/v5` | MIT | JWT |
 | `github.com/google/uuid` | BSD-3-Clause | UUID |
+| `github.com/go-webauthn/webauthn` | BSD-3-Clause | Passkey / WebAuthn 登录 |
+| `github.com/pquerna/otp` | Apache-2.0 | TOTP 两步验证 |
+| `github.com/jlaffaye/ftp` | ISC | FTP 备份上传 |
+| `gopkg.in/yaml.v3` | MIT / Apache-2.0 | YAML 配置解析 |
 
 > ⚠ **GPL-3.0 组件提示**：`sing` 与 `sing-shadowsocks` 采用 GPL-3.0-or-later。它们被静态链接进面板与 Agent 二进制，因此**分发二进制时必须提供 Corresponding Source**（见 [LEGAL.md](./LEGAL.md) 第 3 节）。
 
-## 2. 运行时调用的独立程序（不在本仓库内分发）
+## 2. 前端依赖（编译进面板二进制）
+
+管理端由 Vite 构建后通过 `go:embed` 打进面板二进制，因此下列组件同样随二进制分发：
+
+| 组件 | 许可证 | 用途 |
+|---|---|---|
+| Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | 管理端界面、路由与状态、i18n、Markdown 渲染、二维码与代码编辑器 |
+| DOMPurify | Apache-2.0 / MPL-2.0 | 渲染 Markdown / HTML 前做 XSS 消毒 |
+
+## 3. 运行时调用的独立程序（不在本仓库内分发）
 
 面板 / Agent 运行时可下载、安装或调用以下独立程序。它们与本项目通过进程/接口交互，但如果你在交付物中一并分发，仍需遵守各自的许可证：
 
@@ -42,7 +60,7 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 
 > Hysteria2、TUIC 是**由 sing-box 承载的协议**，不是独立核心，也没有独立二进制，因此不作为单独的第三方程序列出。
 
-## 3. 数据文件
+## 4. 数据文件
 
 | 数据 | 来源/许可证 |
 |---|---|
@@ -50,7 +68,7 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 | GeoLite2 (`GeoLite2-ASN.mmdb` 等) | MaxMind GeoLite2 EULA / CC BY-SA 4.0，商用前请确认授权 |
 | `country.mmdb` | 以其数据源声明为准 |
 
-## 4. 合规建议
+## 5. 合规建议
 
 - 交付二进制时附带：`LICENSE`、本文件、各 GPL/MPL 组件的许可证文本或获取地址。
 - 若修改了 `xray-core` 等 MPL-2.0 组件的源文件，需公开被修改文件的源码。

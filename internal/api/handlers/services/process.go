@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	"corefusion/internal/api/response"
@@ -46,6 +47,8 @@ type ProcessHandler struct {
 	dataDir      string
 	nodeOperator NodeOperator
 	panelMode    func() string // 返回 "full" / "management_only"（实时读，nil 视为 full）
+	// nodeServerRepo 供看板统计「核心服务」状态时枚举所有节点。
+	nodeServerRepo *repository.NodeServerRepository
 }
 
 // NewProcessHandler creates a new process handler.
@@ -61,6 +64,126 @@ func NewProcessHandler(processMgr *process.Manager, svcRepo *repository.ServiceR
 // SetNodeOperator sets the node operator for remote core control.
 func (h *ProcessHandler) SetNodeOperator(op NodeOperator) {
 	h.nodeOperator = op
+}
+
+// SetNodeServerRepo 注入节点服务器仓储（看板统计核心服务状态时枚举节点用）。
+func (h *ProcessHandler) SetNodeServerRepo(repo *repository.NodeServerRepository) {
+	h.nodeServerRepo = repo
+}
+
+// serverCoreCounts 是单台节点的核心服务统计结果。
+type serverCoreCounts struct {
+	total   int64
+	running int64
+	stopped int64
+	crashed int64
+	unknown int64
+}
+
+// CoreServiceStatusCounts 统计所有节点上「已安装核心」的实时状态。
+//
+// 口径：
+//   - 未安装的核心不计入总数 —— 只跑一个核心的节点，另一个不该显示成「停止」；
+//   - 本机节点读进程表 + 二进制解析器，远端节点读 Agent 心跳缓存里的核心状态
+//     与已安装二进制列表（与「节点详情 → 核心进程」页同源）；
+//   - 取不到节点状态（Agent 未连接 / 尚未上报）→ 计为「未上报」；
+//   - state=crashed → 计为「异常」，其余非 running → 「已停止」。
+func (h *ProcessHandler) CoreServiceStatusCounts(ctx context.Context) (total, running, stopped, crashed, unknown int64) {
+	if h.nodeServerRepo == nil || h.svcRepo == nil || h.processMgr == nil {
+		return
+	}
+	servers, err := h.nodeServerRepo.ListAll(ctx)
+	if err != nil {
+		return
+	}
+
+	// 并发取每台节点的状态：远端读 Agent 缓存（冷启动可能要等一次 stream），
+	// 串行会让看板接口在节点多时等上几十秒。
+	results := make([]serverCoreCounts, len(servers))
+	var wg sync.WaitGroup
+	for i, srv := range servers {
+		svcs, _, lerr := h.svcRepo.List(ctx, srv.ID, "", 1000, 0)
+		if lerr != nil || len(svcs) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, srv entity.NodeServer, svcs []entity.InboundService) {
+			defer wg.Done()
+			results[idx] = h.countServerCores(ctx, srv, svcs)
+		}(i, srv, svcs)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		total += r.total
+		running += r.running
+		stopped += r.stopped
+		crashed += r.crashed
+		unknown += r.unknown
+	}
+	return
+}
+
+// countServerCores 统计单台节点上的核心状态（调用方负责并发）。
+func (h *ProcessHandler) countServerCores(ctx context.Context, srv entity.NodeServer, svcs []entity.InboundService) (out serverCoreCounts) {
+	count := func(state string) {
+		switch state {
+		case "running":
+			out.running++
+		case "crashed":
+			out.crashed++
+		default:
+			out.stopped++
+		}
+	}
+
+	if h.nodeOperator != nil && !h.nodeOperator.IsLocalServer(ctx, srv.ID) {
+		states, bins, rerr := h.nodeOperator.GetRemoteState(ctx, srv.ID)
+		// Agent 未连接 / 尚未上报核心状态：无法判断，统一计为「未上报」。
+		if rerr != nil || len(states) == 0 {
+			out.total = int64(len(svcs))
+			out.unknown = int64(len(svcs))
+			return
+		}
+		// 二进制清单可能还没拉到（冷启动）：先按「已安装」计，避免把真实运行的
+		// 核心误报成未上报；拿到清单后未安装的核心会自动从总数里消失。
+		installed := make(map[string]bool, len(bins))
+		for _, b := range bins {
+			if b != nil {
+				installed[b.CoreType] = b.Installed
+			}
+		}
+		for _, svc := range svcs {
+			if bins != nil && !installed[svc.CoreType] {
+				continue // 明确未安装：不显示、不计入总数
+			}
+			out.total++
+			state := ""
+			if cs, ok := states[svc.CoreType]; ok && cs != nil {
+				state = cs.State
+			}
+			count(state)
+		}
+		return
+	}
+
+	// 本机节点：进程表 + 本地二进制解析器
+	localBySvc := make(map[int64]process.ProcessInfo)
+	for _, p := range h.processMgr.ListAll() {
+		localBySvc[p.ServiceID] = p
+	}
+	for _, svc := range svcs {
+		if _, _, berr := h.processMgr.ResolveBinary(svc.CoreType); berr != nil {
+			continue // 未安装：不显示、不计入总数
+		}
+		out.total++
+		state := ""
+		if p, ok := localBySvc[svc.ID]; ok {
+			state = p.State
+		}
+		count(state)
+	}
+	return
 }
 
 // SetPanelModeFunc 注入面板模式读取函数（"full" / "management_only"）。

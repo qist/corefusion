@@ -1443,10 +1443,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		return os.WriteFile(configPath, data, 0640)
 	})
 	processH := servicesHandler.NewProcessHandler(processMgr, svcRepo, crashLogRepo, dataDir)
+	processH.SetNodeServerRepo(repository.NewNodeServerRepository(database))
 	metricsH := metricsHandler.NewHandler(database)
-	// 核心服务状态用实时状态（本机进程表 + 远端 Agent 心跳缓存），
-	// 不再按库里 process_status 统计（该列远端节点恒为空 → 误报「未上报」）。
-	metricsH.SetCoreStateProvider(nodeSvc)
+	// 核心服务状态用实时状态（本机进程表 + 远端 Agent 心跳缓存），并且只统计
+	// 已安装的核心；不再按库里 process_status 统计（该列远端节点恒为空）。
+	metricsH.SetCoreServiceCounter(processH)
 	securityH := securityHandler.NewHandler(database)
 	backupsH := backupsHandler.NewHandler(database, dataDir, backupSvcInst)
 	systemH := systemHandler.NewHandler(database, systemSettingSvc, dataDir, version)

@@ -10,17 +10,18 @@ import (
 	"corefusion/internal/model/entity"
 )
 
-// CoreStateProvider 提供节点上各核心的实时运行状态（core_type → state）。
-// 由 service/node.Service 实现：本机读进程表，远端读 Agent 心跳缓存。
-// 用于替代 inbound_services.process_status —— 那一列只有本机核心进程管理器会写。
-type CoreStateProvider interface {
-	CoreStates(ctx context.Context, serverID int64) (map[string]string, error)
+// CoreServiceCounter 统计所有节点上「已安装核心」的实时运行状态。
+// 由 services.ProcessHandler 实现：本机读进程表 + 二进制解析器，
+// 远端读 Agent 心跳缓存（核心状态）与已安装二进制列表。
+// 未安装的核心不计入总数 —— 只跑一个核心的节点，另一个不该显示成「停止」。
+type CoreServiceCounter interface {
+	CoreServiceStatusCounts(ctx context.Context) (total, running, stopped, crashed, unknown int64)
 }
 
 // Handler handles metrics HTTP requests.
 type Handler struct {
-	db         *gorm.DB
-	coreStates CoreStateProvider
+	db        *gorm.DB
+	coreStats CoreServiceCounter
 }
 
 // NewHandler creates a new metrics handler.
@@ -28,14 +29,14 @@ func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{db: db}
 }
 
-// SetCoreStateProvider 注入核心实时状态提供者（本机进程表 + 远端 Agent 上报缓存）。
-func (h *Handler) SetCoreStateProvider(p CoreStateProvider) {
-	h.coreStates = p
+// SetCoreServiceCounter 注入核心服务实时状态统计器。
+func (h *Handler) SetCoreServiceCounter(p CoreServiceCounter) {
+	h.coreStats = p
 }
 
 // Overview handles GET /api/v1/metrics/overview.
 func (h *Handler) Overview(c *gin.Context) {
-	var nodeCount, serviceCount, serviceRunningCount, serviceStoppedCount, serviceUnknownCount int64
+	var nodeCount, serviceCount, serviceRunningCount, serviceStoppedCount, serviceCrashedCount, serviceUnknownCount int64
 	var subCount, subSuspendedCount, subExpiredCount, clientCount, certCount int64
 
 	// 节点数 = 节点服务器（与 Dashboard 节点卡、node_servers 列表同一口径）。
@@ -47,41 +48,15 @@ func (h *Handler) Overview(c *gin.Context) {
 		return h.db.Table("inbound_services").
 			Joins("INNER JOIN node_servers ON node_servers.id = inbound_services.server_id")
 	}
-	svcQuery().Count(&serviceCount)
-	// 状态统计优先用**实时状态**（与「节点详情 → 核心进程」同源：本机进程表 +
-	// 远端 Agent 心跳缓存），不再依赖 inbound_services.process_status ——
-	// 那一列只有本机核心进程管理器会写，远端节点恒为空，按库统计会把整台
-	// 远端节点误报成「未上报」。
-	type svcRow struct {
-		ServerID int64
-		CoreType string
-	}
-	var svcRows []svcRow
-	svcQuery().Select("inbound_services.server_id, inbound_services.core_type").Scan(&svcRows)
-	serviceCount = int64(len(svcRows))
-	if h.coreStates != nil {
-		byServer := make(map[int64][]string, len(svcRows))
-		for _, r := range svcRows {
-			byServer[r.ServerID] = append(byServer[r.ServerID], r.CoreType)
-		}
-		ctx := c.Request.Context()
-		for serverID, cores := range byServer {
-			states, err := h.coreStates.CoreStates(ctx, serverID)
-			for _, core := range cores {
-				// 取不到节点状态（Agent 未连接 / 尚未上报）→ 计为「未上报」；
-				// 已上报但没有该核心记录 → 与核心进程页口径一致，按「已停止」。
-				if err != nil {
-					serviceUnknownCount++
-					continue
-				}
-				if states[core] == "running" {
-					serviceRunningCount++
-				} else {
-					serviceStoppedCount++
-				}
-			}
-		}
+	// 状态统计优先用**实时状态**（与「节点详情 → 核心进程」同源），并且只统计
+	// 已安装的核心：只跑一个核心的节点，另一个核心不该显示成「停止」。
+	// 不再依赖 inbound_services.process_status —— 那一列只有本机核心进程管理器
+	// 会写，远端节点恒为空。
+	if h.coreStats != nil {
+		serviceCount, serviceRunningCount, serviceStoppedCount, serviceCrashedCount, serviceUnknownCount =
+			h.coreStats.CoreServiceStatusCounts(c.Request.Context())
 	} else {
+		svcQuery().Count(&serviceCount)
 		svcQuery().Where("inbound_services.process_status = ?", "running").Count(&serviceRunningCount)
 		svcQuery().Where("inbound_services.process_status = ?", "stopped").Count(&serviceStoppedCount)
 		svcQuery().Where("inbound_services.process_status IS NULL OR inbound_services.process_status = ''").Count(&serviceUnknownCount)
@@ -131,6 +106,7 @@ func (h *Handler) Overview(c *gin.Context) {
 		"service_count":                serviceCount,
 		"service_running_count":        serviceRunningCount,
 		"service_stopped_count":        serviceStoppedCount,
+		"service_crashed_count":        serviceCrashedCount,
 		"service_unknown_count":        serviceUnknownCount,
 		"active_subscription_count":    subCount,
 		"suspended_subscription_count": subSuspendedCount,

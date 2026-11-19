@@ -31,6 +31,7 @@
             <div class="sum-value">{{ serviceCount }}</div>
             <div class="sum-foot">
               <span class="foot-on">{{ t('dashboard.fleetServicesRunning') }} {{ serviceRunning }}</span>
+              <span class="foot-off" v-if="serviceCrashed"> · {{ t('dashboard.fleetServicesCrashed') }} {{ serviceCrashed }}</span>
               <span class="foot-off" v-if="serviceStopped"> · {{ t('dashboard.fleetServicesStopped') }} {{ serviceStopped }}</span>
               <span class="foot-deg" v-if="serviceUnknown"> · {{ t('dashboard.fleetServicesUnknown') }} {{ serviceUnknown }}</span>
             </div>
@@ -375,11 +376,12 @@ export default {
     const expiringCertList = computed(() => (overview.value && overview.value.expiring_certs) || [])
     const expiringCerts = computed(() => expiringCertList.value.length)
     const quotaWarn = computed(() => (overview.value && overview.value.quota_warning_count) || 0)
-    // 核心服务（每台节点 xray / sing-box 各一个实例）：
-    // 运行中 / 已停止 / 未上报 三种状态分开显示。远端节点进程状态由 Agent 上报，
-    // 未上报不能算成「已停止」（否则远端节点看着像全挂了）。
+    // 核心服务（只统计**已安装**的核心：只跑一个核心的节点，另一个不显示）：
+    // 运行中 / 异常（崩溃、启动失败） / 已停止 / 未上报 四种状态分开显示。
+    // 远端节点状态来自 Agent 心跳上报，未上报不能算成「已停止」。
     const serviceCount = computed(() => (overview.value && overview.value.service_count) || 0)
     const serviceRunning = computed(() => (overview.value && overview.value.service_running_count) || 0)
+    const serviceCrashed = computed(() => (overview.value && overview.value.service_crashed_count) || 0)
     const serviceStopped = computed(() => (overview.value && overview.value.service_stopped_count) || 0)
     const serviceUnknown = computed(() => (overview.value && overview.value.service_unknown_count) || 0)
 
@@ -463,7 +465,7 @@ export default {
       filteredNodes, regionOptions, onlineWithMetric,
       avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
       offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
-      serviceCount, serviceRunning, serviceStopped, serviceUnknown,
+      serviceCount, serviceRunning, serviceCrashed, serviceStopped, serviceUnknown,
       activeSubs, subscriberCount, suspendedSubs, expiredSubs,
       typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays, goOnlineUsers,
     }

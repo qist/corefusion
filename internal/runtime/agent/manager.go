@@ -1736,7 +1736,9 @@ func (m *NodeServerManager) GetRemoteState(ctx context.Context, serverID int64) 
 		}
 	}
 	binaries := ac.cachedBinaries
-	cacheExpired := time.Since(ac.cachedBinariesAt) > 30*time.Second
+	// 已安装二进制清单变化很慢（装/升级核心时会显式 InvalidateBinaryCache），
+	// 缓存 5 分钟即可；30s 会让看板这类高频读取每 30 秒就打一次 stream。
+	cacheExpired := time.Since(ac.cachedBinariesAt) > 5*time.Minute
 	needFetch := binaries == nil || cacheExpired
 	ac.mu.Unlock()
 

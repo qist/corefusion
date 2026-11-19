@@ -103,13 +103,14 @@ func (s *Scheduler) addJob(sourceID int64, syncCron string) {
 	}
 
 	done := make(chan struct{})
-	job := &cronJob{done: done}
+	// ticker 必须在起 goroutine 之前创建：否则用户刚打开就关闭开关时，
+	// removeJob 可能先执行，此时 job.ticker 还是 nil → Stop() 直接 panic。
+	ticker := time.NewTicker(interval)
+	job := &cronJob{ticker: ticker, done: done}
 	s.jobs[sourceID] = job
 
 	go func() {
 		log.Printf("scheduler: source %d sync every %v", sourceID, interval)
-		ticker := time.NewTicker(interval)
-		job.ticker = ticker
 		defer ticker.Stop()
 
 		for {
@@ -153,6 +154,12 @@ func (s *Scheduler) syncSource(sourceID int64) (global, ok bool) {
 	src, err := s.sourceRepo.GetByID(s.ctx, sourceID)
 	if err != nil {
 		log.Printf("scheduler: load source %d failed: %v", sourceID, err)
+		return false, false
+	}
+	// 兜底：拿配置时再确认一次开关。ticker 触发与用户关闭开关可能同时发生，
+	// 只看任务是否存在会让「已关闭」的源再多跑一轮。
+	if !src.Enabled {
+		log.Printf("scheduler: source %d disabled, skip sync", sourceID)
 		return false, false
 	}
 	if _, err := s.svc.SyncSource(s.ctx, sourceID); err != nil {

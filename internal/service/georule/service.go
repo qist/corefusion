@@ -33,6 +33,8 @@ type NodeOperator interface {
 // SettingStore provides access to system settings.
 type SettingStore interface {
 	GetByKey(ctx context.Context, key string) (string, error)
+	// Set 用于写一次性迁移标记（内置源只播种一次，之后用户删除的文件不再复活）。
+	Set(ctx context.Context, key, value string) error
 }
 
 // TicketIssuer 签发一次性短时下载票据（安全审计 H-1：download-file 端点鉴权）。
@@ -734,7 +736,22 @@ func (s *Service) Download(ctx context.Context, fileID int64) (*entity.GeoRuleFi
 	return s.downloadLocal(ctx, rule)
 }
 
+const (
+	// geoRuleDownloadTimeout 是单个规则文件下载的**总**超时。
+	// ⚠ 不能用 120s：伊朗/俄罗斯的 geosite_*.dat 有 80–90MB，GitHub 在国内
+	// 常见 1–3 MB/s，120s 必然中断（日志里表现为 context deadline exceeded），
+	// 大文件因此长期停在 error / 半截状态。
+	geoRuleDownloadTimeout = 20 * time.Minute
+	// geoRuleDownloadAttempts 是单次下载的重试次数（含首次）。
+	// 大文件偶发超时/连接重置很常见，只试一次会让规则永远更新不上。
+	geoRuleDownloadAttempts = 3
+)
+
 // downloadLocal downloads the file to the panel's local data/rules/ directory.
+//
+// 失败重试：大文件（80MB+）在网络抖动、CDN 断流时经常失败一次就永久 error；
+// 这里对每个文件最多尝试 geoRuleDownloadAttempts 次，退避 2s/5s。
+// 下载始终先写 rules_tmp/ 再原子 rename，失败不会破坏已有可用文件。
 func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (*entity.GeoRuleFile, error) {
 	rulesDir := filepath.Join(s.dataDir, "rules")
 	tmpDir := filepath.Join(s.dataDir, "rules_tmp")
@@ -744,67 +761,89 @@ func (s *Service) downloadLocal(ctx context.Context, rule *entity.GeoRuleFile) (
 	filePath := filepath.Join(rulesDir, rule.FileName)
 	tmpPath := filepath.Join(tmpDir, rule.FileName)
 
-	rule.Status = "downloading"
-	s.fileRepo.Update(ctx, rule)
+	// 状态写库不能被调用方的取消信号带走：否则请求一断，文件就永远停在
+	// "downloading"，前端一直转圈且再也不会自己去修正。
+	dbCtx := context.WithoutCancel(ctx)
 
+	rule.Status = "downloading"
+	s.fileRepo.Update(dbCtx, rule)
+
+	var lastErr error
+	for attempt := 1; attempt <= geoRuleDownloadAttempts; attempt++ {
+		size, err := s.downloadToFile(ctx, rule, tmpPath)
+		if err == nil {
+			// Atomic move from temp to final location
+			if rerr := os.Rename(tmpPath, filePath); rerr != nil {
+				os.Remove(tmpPath)
+				lastErr = rerr
+				break
+			}
+			rule.FileSize = size
+			updatedAt := time.Now()
+			rule.LastUpdated = &updatedAt
+			rule.Status = "available"
+			s.fileRepo.Update(dbCtx, rule)
+			return rule, nil
+		}
+		lastErr = err
+		os.Remove(tmpPath)
+		if attempt >= geoRuleDownloadAttempts {
+			break
+		}
+		if ctx.Err() != nil {
+			// 调用方已取消（服务停机等）：重试没有意义，也不再打误导性的 retrying 日志。
+			break
+		}
+		log.Printf("[georule] download %s attempt %d/%d failed: %v (retrying)", rule.FileName, attempt, geoRuleDownloadAttempts, err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(attempt*2) * time.Second):
+		}
+	}
+
+	rule.Status = "error"
+	s.fileRepo.Update(dbCtx, rule)
+	return nil, lastErr
+}
+
+// downloadToFile 执行一次下载并把响应写入 tmpPath，返回字节数。
+func (s *Service) downloadToFile(ctx context.Context, rule *entity.GeoRuleFile, tmpPath string) (int64, error) {
 	downloadURL := netutil.AccelerateGitHubURL(rule.DownloadURL, s.githubAccelDomain(ctx))
 	// 安全审计 H-1：DownloadURL 是用户可控输入（AddFile/直连源），必须走带 SSRF
 	// 防护的客户端 —— 拨号层拒绝内网/环回/保留地址（重定向每一跳都会再校验），
 	// 管理员配置的 GitHub 代理作为受信出口放行；大小仍由 CopyLimited 流式限制。
-	req, err := http.NewRequestWithContext(ctx, "GET", downloadURL, nil)
+	reqCtx, cancel := context.WithTimeout(ctx, geoRuleDownloadTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, "GET", downloadURL, nil)
 	if err != nil {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, err
+		return 0, err
 	}
 
-	resp, err := netutil.NewSafeDownloadClient(120*time.Second, s.githubProxyURL(ctx)).Do(req)
+	resp, err := netutil.NewSafeDownloadClient(geoRuleDownloadTimeout, s.githubProxyURL(ctx)).Do(req)
 	if err != nil {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
+		return 0, fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	// Download to temp directory first
 	f, err := os.Create(tmpPath)
 	if err != nil {
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, err
+		return 0, err
 	}
 
 	// 规则文件（geosite/geoip）本身较大，但仍设上限：防异常响应把磁盘写满 ✗
 	size, err := netutil.CopyLimited(f, resp.Body, netutil.MaxGeoRuleBytes)
-	f.Close()
+	closeErr := f.Close()
 	if err != nil {
-		os.Remove(tmpPath)
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, err
+		return 0, err
 	}
-
-	// Atomic move from temp to final location
-	if err := os.Rename(tmpPath, filePath); err != nil {
-		os.Remove(tmpPath)
-		rule.Status = "error"
-		s.fileRepo.Update(ctx, rule)
-		return nil, err
+	if closeErr != nil {
+		return 0, closeErr
 	}
-
-	rule.FileSize = size
-	updatedAt := time.Now()
-	rule.LastUpdated = &updatedAt
-	rule.Status = "available"
-	s.fileRepo.Update(ctx, rule)
-
-	return rule, nil
+	return size, nil
 }
 
 // DeleteFile deletes a geo rule file from the panel's local disk and database,
@@ -896,6 +935,11 @@ func (s *Service) ensureDirectSourceFile(ctx context.Context, src *entity.RuleSo
 	if src == nil || !isDirectURL(src.RepoURL) {
 		return files, nil
 	}
+	// 定时开关关掉的源不补建文件：用户已经明确表示不再自动维护它，
+	// 同步（含启动修复）不应把删掉的文件复活。
+	if !src.Enabled {
+		return files, nil
+	}
 	downloadURL := strings.TrimSpace(src.RepoURL)
 	name := filepath.Base(downloadURL)
 	for _, f := range files {
@@ -947,19 +991,26 @@ func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, 
 	files, _ = s.ensureDirectSourceFile(ctx, src, files)
 	downloaded := 0
 	tag := ""
-
-	if isDirectURL(src.RepoURL) {
-		// Direct URL mode: just download files directly
-		for _, f := range files {
+	// failed 记录本轮失败的文件（下载已内部重试 3 次）：把原因带回结果，
+	// 前端/日志能看到「哪个文件没更新成功」，而不是静默 0 条。
+	var failed []string
+	downloadAll := func(list []entity.GeoRuleFile) {
+		for _, f := range list {
 			if !f.AutoSync {
 				continue
 			}
 			if _, err := s.Download(ctx, f.ID); err != nil {
 				log.Printf("sync: download %s failed: %v", f.Name, err)
+				failed = append(failed, fmt.Sprintf("%s: %v", f.FileName, err))
 				continue
 			}
 			downloaded++
 		}
+	}
+
+	if isDirectURL(src.RepoURL) {
+		// Direct URL mode: just download files directly
+		downloadAll(files)
 		tag = time.Now().Format("200601021504")
 	} else {
 		// GitHub repo mode: fetch releases and update URLs
@@ -988,65 +1039,118 @@ func (s *Service) SyncSource(ctx context.Context, sourceID int64) (*SyncResult, 
 				s.fileRepo.Update(ctx, &f)
 			}
 		}
-		for _, f := range files {
-			if !f.AutoSync {
-				continue
-			}
-			if _, err := s.Download(ctx, f.ID); err != nil {
-				log.Printf("sync: download %s failed: %v", f.Name, err)
-				continue
-			}
-			downloaded++
-		}
+		downloadAll(files)
 	}
 
 	now := time.Now()
 	src.LastSyncAt = &now
 	src.LastSyncTag = tag
-	src.Status = "idle"
+	status := "idle"
+	if len(failed) > 0 {
+		// 部分文件失败时源状态标 error，但**不返回 error**：
+		// 成功的文件仍要推给节点（sync-all 只有 err==nil 才推送）。
+		status = "error"
+	}
+	src.Status = status
 	s.sourceRepo.Update(ctx, src)
 
-	return &SyncResult{
+	res := &SyncResult{
 		SourceID:   sourceID,
 		Status:     "done",
 		Tag:        tag,
 		Downloaded: downloaded,
 		Total:      len(files),
-	}, nil
+	}
+	if len(failed) > 0 {
+		res.Error = strings.Join(failed, "; ")
+	}
+	return res, nil
 }
 
-// SyncAll syncs all sources (manual sync ignores enabled flag).
-func (s *Service) SyncAll(ctx context.Context) ([]SyncResult, error) {
-	sources, err := s.sourceRepo.List(ctx)
+// RepairMissingFiles 只补「库里仍有记录、但磁盘缺失」的规则文件，返回补下来的数量。
+//
+// 用于启动时数据恢复：旧实现发现任意文件缺失就调 StartSyncAllByServer，
+// 等于把**所有源**（包括用户已关闭开关的）重下一遍，还会把用户删掉的
+// 地区规则复活。这里改成逐个补缺，不触碰其它源。
+func (s *Service) RepairMissingFiles(ctx context.Context, serverID int64) int {
+	files, err := s.fileRepo.ListByServer(ctx, serverID)
 	if err != nil {
-		return nil, err
+		return 0
 	}
-
-	var results []SyncResult
-	for _, src := range sources {
-		result, err := s.SyncSource(ctx, src.ID)
-		if err != nil {
-			results = append(results, SyncResult{
-				SourceID: src.ID,
-				Status:   "error",
-				Error:    err.Error(),
-			})
+	rulesDir := filepath.Join(s.dataDir, "rules")
+	repaired := 0
+	for i := range files {
+		f := &files[i]
+		diskPath := filepath.Join(rulesDir, f.FileName)
+		if fi, statErr := os.Stat(diskPath); statErr == nil && fi.Size() > 0 {
 			continue
 		}
-		results = append(results, *result)
+		log.Printf("[georule] repair: %s missing on disk, re-downloading", f.FileName)
+		if _, derr := s.downloadLocal(ctx, f); derr != nil {
+			log.Printf("[georule] repair: download %s failed: %v", f.FileName, derr)
+			continue
+		}
+		repaired++
 	}
-	return results, nil
+	return repaired
 }
 
-// SyncAllByServer syncs all sources for a specific node server.
+// SyncAll 是「手动同步全部」：包含已关闭定时开关的源（用户显式点了一次）。
+func (s *Service) SyncAll(ctx context.Context) ([]SyncResult, error) {
+	return s.syncAll(ctx, nil, true)
+}
+
+// SyncAllEnabled 只同步启用了定时开关的源。
+//
+// ⚠ 启动修复 / 安装核心后的自动同步必须用它：旧实现走 SyncAll，会把用户
+// 已经关闭开关的源也重下一遍（生产实测 10:48 重启后 13 个源全被同步），
+// 用户会以为开关没生效。
+func (s *Service) SyncAllEnabled(ctx context.Context) ([]SyncResult, error) {
+	return s.syncAll(ctx, nil, false)
+}
+
+// SyncAllByServer 同步指定节点的源（含已关闭开关的源，手动/推送语义）。
 func (s *Service) SyncAllByServer(ctx context.Context, serverID int64) ([]SyncResult, error) {
-	sources, err := s.sourceRepo.ListByServer(ctx, serverID)
+	return s.syncAll(ctx, &serverID, true)
+}
+
+// SyncAllEnabledByServer 只同步指定节点上启用了定时开关的源。
+func (s *Service) SyncAllEnabledByServer(ctx context.Context, serverID int64) ([]SyncResult, error) {
+	return s.syncAll(ctx, &serverID, false)
+}
+
+// selectSourcesForSync 过滤出本轮要同步的源：
+//   - includeDisabled=true（手动「同步全部」）：全部源；
+//   - false（定时调度 / 启动修复）：只保留启用了定时开关的源。
+func selectSourcesForSync(sources []entity.RuleSource, includeDisabled bool) []entity.RuleSource {
+	if includeDisabled {
+		return sources
+	}
+	out := make([]entity.RuleSource, 0, len(sources))
+	for _, src := range sources {
+		if src.Enabled {
+			out = append(out, src)
+		}
+	}
+	return out
+}
+
+func (s *Service) syncAll(ctx context.Context, serverID *int64, includeDisabled bool) ([]SyncResult, error) {
+	var (
+		sources []entity.RuleSource
+		err     error
+	)
+	if serverID != nil {
+		sources, err = s.sourceRepo.ListByServer(ctx, *serverID)
+	} else {
+		sources, err = s.sourceRepo.List(ctx)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	var results []SyncResult
-	for _, src := range sources {
+	for _, src := range selectSourcesForSync(sources, includeDisabled) {
 		result, err := s.SyncSource(ctx, src.ID)
 		if err != nil {
 			results = append(results, SyncResult{
@@ -1116,15 +1220,34 @@ func (s *Service) StartSyncSource(sourceID int64) string {
 	return key
 }
 
-// StartSyncAll starts an async sync for all enabled sources.
+// StartSyncAll 是**自动**同步：只同步启用了定时开关的源。
+// 启动修复、安装核心后的自动同步都走这里，关闭了开关的源不会被顺带更新。
 func (s *Service) StartSyncAll() string {
-	key := "sync-all"
+	return s.startSyncAll("sync-all", false)
+}
+
+// StartSyncAllForce 是**手动**「同步全部」：包含已关闭定时开关的源
+// （用户显式点了一次，属于明确意图）。
+func (s *Service) StartSyncAllForce() string {
+	return s.startSyncAll("sync-all", true)
+}
+
+func (s *Service) startSyncAll(key string, includeDisabled bool) string {
 	syncMu.Lock()
 	syncJobs[key] = &SyncJobStatus{Status: "running", StartedAt: time.Now()}
 	syncMu.Unlock()
 
 	go func() {
-		results, err := s.SyncAll(context.Background())
+		bg := context.Background()
+		var (
+			results []SyncResult
+			err     error
+		)
+		if includeDisabled {
+			results, err = s.SyncAll(bg)
+		} else {
+			results, err = s.SyncAllEnabled(bg)
+		}
 		syncMu.Lock()
 		job := syncJobs[key]
 		if err != nil {
@@ -1146,7 +1269,7 @@ func (s *Service) StartSyncAll() string {
 		// SyncToNode further filters by status=available, so only
 		// fully downloaded files are actually pushed.
 		log.Printf("[georule] sync-all finished, pushing files to all nodes")
-		if err := s.SyncToAllNodes(context.Background()); err != nil {
+		if err := s.SyncToAllNodes(bg); err != nil {
 			log.Printf("[georule] auto-push to all nodes after sync failed: %v", err)
 		} else {
 			log.Printf("[georule] auto-push to all nodes after sync: done")
@@ -1156,7 +1279,8 @@ func (s *Service) StartSyncAll() string {
 	return key
 }
 
-// StartSyncAllByServer starts an async sync for all sources of a specific node server.
+// StartSyncAllByServer 是**自动**同步（启动修复用）：只同步启用了定时开关的源。
+// 旧实现同步该节点下所有源，会把用户关掉开关的源重新下载一遍。
 func (s *Service) StartSyncAllByServer(serverID int64) string {
 	key := fmt.Sprintf("sync-all-%d", serverID)
 	syncMu.Lock()
@@ -1164,7 +1288,7 @@ func (s *Service) StartSyncAllByServer(serverID int64) string {
 	syncMu.Unlock()
 
 	go func() {
-		results, err := s.SyncAllByServer(context.Background(), serverID)
+		results, err := s.SyncAllEnabledByServer(context.Background(), serverID)
 		syncMu.Lock()
 		defer syncMu.Unlock()
 		job := syncJobs[key]
@@ -1244,26 +1368,43 @@ func (s *Service) pushFileToNode(ctx context.Context, serverID int64, f *entity.
 		log.Printf("[georule] skip file %s: not found on disk", f.FileName)
 		return false
 	}
-	// Build a **relative** download URL — the Agent resolves it using
-	// the panel host/port from its config (same as UpdateAgent).
-	// 安全审计 H-1：附带一次性下载票据（60s、单次有效、仅限 download-file），
-	// 端点不再接受匿名请求。
-	downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
-	if tok := s.issueDownloadTicket(); tok != "" {
-		downloadURL += "?ticket=" + tok
-	}
+	// 推送到节点也要重试：80MB+ 的文件在跨机房链路上传中断很常见，
+	// 只推一次会让节点长期停在旧版本规则上。票据是一次性的，每次重试
+	// 都要重新签发（DownloadGeoRule 内部走 Agent → 面板 HTTP）。
+	const pushAttempts = 2
+	var lastErrText string
+	for attempt := 1; attempt <= pushAttempts; attempt++ {
+		// Build a **relative** download URL — the Agent resolves it using
+		// the panel host/port from its config (same as UpdateAgent).
+		// 安全审计 H-1：附带一次性下载票据（60s、单次有效、仅限 download-file），
+		// 端点不再接受匿名请求。
+		downloadURL := fmt.Sprintf("/api/v1/geo-rules/files/%d/download-file", f.ID)
+		if tok := s.issueDownloadTicket(); tok != "" {
+			downloadURL += "?ticket=" + tok
+		}
 
-	success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
-	if err != nil {
-		log.Printf("[georule] push file %s to server %d failed: %v", f.FileName, serverID, err)
-		return false
+		success, _, errMsg, err := s.nodeOp.DownloadGeoRule(ctx, serverID, f.FileName, downloadURL, fileHash, fileSize, "", "")
+		if err == nil && success {
+			log.Printf("[georule] pushed file %s to server %d", f.FileName, serverID)
+			return true
+		}
+		if err != nil {
+			lastErrText = err.Error()
+		} else {
+			lastErrText = errMsg
+		}
+		if attempt < pushAttempts {
+			log.Printf("[georule] push file %s to server %d attempt %d/%d failed: %s (retrying)",
+				f.FileName, serverID, attempt, pushAttempts, lastErrText)
+			select {
+			case <-ctx.Done():
+				attempt = pushAttempts
+			case <-time.After(2 * time.Second):
+			}
+		}
 	}
-	if !success {
-		log.Printf("[georule] push file %s to server %d failed: %s", f.FileName, serverID, errMsg)
-		return false
-	}
-	log.Printf("[georule] pushed file %s to server %d", f.FileName, serverID)
-	return true
+	log.Printf("[georule] push file %s to server %d failed after %d attempts: %s", f.FileName, serverID, pushAttempts, lastErrText)
+	return false
 }
 
 // SyncFilesToAllNodes 只把指定名字的规则文件推送到所有节点。

@@ -1144,22 +1144,11 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		}
 
 		// --- 3. Auto-download missing geo rule files ---
-		// Check if any rule files referenced in the DB are missing from disk.
-		// If so, trigger an async sync to download them.
-		rulesDir := filepath.Join(dataDir, "rules")
-		ruleFiles, err := geoRuleRepo.ListByServer(ctx, 1)
-		if err == nil {
-			needSync := false
-			for _, f := range ruleFiles {
-				if _, err := os.Stat(filepath.Join(rulesDir, f.FileName)); err != nil {
-					needSync = true
-					break
-				}
-			}
-			if needSync {
-				log.Println("[startup] downloading missing geo rule files")
-				geoRuleSvcInst.StartSyncAllByServer(1)
-			}
+		// 只补「库里仍有记录、磁盘缺失」的文件，**不触发整源同步**：
+		// 旧实现发现任意文件缺失就 StartSyncAllByServer(1)，会把用户关掉
+		// 定时开关的源也重下一遍，还会把已删除的地区规则复活。
+		if n := geoRuleSvcInst.RepairMissingFiles(ctx, 1); n > 0 {
+			log.Printf("[startup] repaired %d missing geo rule files", n)
 		}
 	}()
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"corefusion/internal/model/entity"
 )
@@ -105,14 +106,33 @@ var builtinSources = []builtinSourceSpec{
 	directBuiltinSource("https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs", "ru", "singbox"),
 }
 
+// builtinSeedMarker 记录「内置规则源已经播种过」。
+//
+// 为什么要一次性标记：旧实现每次启动都会重新补建内置文件（生产实测重启后
+// 「added 8 rule files」），用户删掉的 geosite_IR.dat / 地区 srs 会被复活并
+// 重新下载 —— 看起来像「定时开关没关掉」。播种只需要一次，之后以内置文件
+// 为准的删除是用户明确的意图，不再复活；需要时可在规则页点「恢复默认」。
+const builtinSeedMarker = "migration.georule.builtin.seeded"
+
 // EnsureBuiltinFiles 确保内置规则源与文件在库里按标准写法存在，并异步下载。
 //
 // 幂等：
 //   - 源按 RepoURL 判重（已有同 URL 的源就复用，不会重复建）；
 //   - 文件按 FileName 判重（旧内置源 / 用户自建的同名文件会被迁到标准源下）；
-//   - 旧版聚合源清空后删除，磁盘文件保留。
+//   - 旧版聚合源清空后删除，磁盘文件保留；
+//   - **只播种一次**（见 builtinSeedMarker）：之后用户删除的文件不再复活。
 func (s *Service) EnsureBuiltinFiles(ctx context.Context) {
+	if s.settingSvc != nil {
+		if v, err := s.settingSvc.GetByKey(ctx, builtinSeedMarker); err == nil && strings.TrimSpace(v) != "" {
+			return // 已播种过：尊重用户删除，避免每次启动重新下载
+		}
+	}
 	created, retry := s.ensureBuiltinSourcesInDB(ctx)
+	if s.settingSvc != nil {
+		if err := s.settingSvc.Set(ctx, builtinSeedMarker, time.Now().Format(time.RFC3339)); err != nil {
+			log.Printf("[georule] ensure builtin: write seed marker failed: %v", err)
+		}
+	}
 	if len(created) == 0 && len(retry) == 0 {
 		return
 	}
@@ -198,10 +218,8 @@ func (s *Service) ensureBuiltinSourcesInDB(ctx context.Context) (created, retry 
 					row.DownloadURL = url
 					changed = true
 				}
-				if !row.AutoSync {
-					row.AutoSync = true
-					changed = true
-				}
+				// 注意：不再强制把 AutoSync 改回 true。
+				// 用户关掉单个文件的「自动同步」是明确意图，启动播种不能覆盖。
 				if changed {
 					if err := s.fileRepo.Update(ctx, row); err != nil {
 						log.Printf("[georule] ensure builtin: migrate file %s failed: %v", row.FileName, err)

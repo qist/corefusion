@@ -1,6 +1,7 @@
 package georule
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -197,9 +198,9 @@ func (h *Handler) SyncSource(c *gin.Context) {
 }
 
 // SyncAll handles POST /api/v1/geo-rules/sync-all.
-// Syncs all sources globally, then auto-pushes to all nodes.
+// 手动「同步全部」：包含已关闭定时开关的源（用户显式操作），完成后自动推送节点。
 func (h *Handler) SyncAll(c *gin.Context) {
-	key := h.svc.StartSyncAll()
+	key := h.svc.StartSyncAllForce()
 	response.OK(c, gin.H{"job_key": key, "status": "running"})
 }
 
@@ -230,13 +231,19 @@ func (h *Handler) ListFiles(c *gin.Context) {
 // Triggers a download from GitHub to the panel's local data/rules/ directory.
 func (h *Handler) Download(c *gin.Context) {
 	id := parseIntParam(c, "fileId")
-	rule, err := h.svc.Download(c.Request.Context(), id)
+	// 下载动辄几十秒到几分钟。用 WithoutCancel 让下载不再跟随浏览器/HTTP 请求
+	// 的取消信号：前端切页、网关超时、curl --max-time 都不该把已经传了一半的
+	// 80MB+ 文件打断（表现为日志里的 context canceled / 文件停在 error）。
+	// 超时上限仍在 downloadLocal 内部（20min）控制。
+	ctx := context.WithoutCancel(c.Request.Context())
+	rule, err := h.svc.Download(ctx, id)
 	if err != nil {
 		response.InternalError(c, "DOWNLOAD_FAILED", err.Error())
 		return
 	}
-	// After download, auto-push this file to all nodes
-	go h.svc.SyncToAllNodes(c.Request.Context())
+	// After download, auto-push this file to all nodes.
+	// 同样不能用请求 ctx —— handler 返回后它立即被取消，推送会全部失败。
+	go h.svc.SyncToAllNodes(ctx)
 	response.OK(c, rule)
 }
 

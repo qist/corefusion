@@ -48,16 +48,16 @@ Yönetici kullanıcı arayüzü Vite ile oluşturulmuştur ve `go:embed` aracıl
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Yönetici arayüzü, yönlendirme ve durum, i18n, Markdown oluşturma, QR kodları ve kod düzenleyici |
 | DOMPurify | Apache-2.0 / MPL-2.0 | Markdown / HTML'yi oluşturmadan önce XSS temizliği |
 
-## 3. Çalışma zamanında çağrılan bağımsız programlar (bu depoda dağıtılmaz)
+## 3. Çalışma zamanında panel tarafından indirilen/çağrılan bağımsız programlar
 
-Panel / Temsilci aşağıdaki bağımsız programları çalışma zamanında indirebilir, kurabilir veya çalıştırabilir. Bu projeyle süreçler/arayüzler aracılığıyla etkileşime girerler, ancak bunları teslimatlarınızla birlikte gönderirseniz yine de lisanslarına uymanız gerekir:
+Çekirdekleri kurarken veya yükseltirken, panel / Aracı aşağıdaki ikili dosyaları GitHub'den indirir ve bunları ayrı işlemler olarak çalıştırır. **"Bu proje tarafından oluşturuldu" olarak işaretlenen yapılar bu kuruluş tarafından yukarı akış kaynağından (`qist/*-binaries`) derlenip yayınlanır ve ürünle birlikte dağıtılır, dolayısıyla ilgili lisans yükümlülükleri (GPL için kaynak kullanılabilirliği dahil) bu projeye aittir; diğerleri resmi yukarı akış sürümlerinin indirme URL'leridir.
 
 | programı | Lisans | Notlar |
 |---|---|---|
-| Xray-core | MPL-2.0 | Proxy çekirdeği, ayrı süreç |
-| sing-box | **GPL-3.0-or-later** | Proxy çekirdeği, ayrı süreç; dağıtım sırasında ilgili kaynağı sağlayın |
-| Caddy | Apache-2.0 | Ters proxy / TLS |
-| Nginx | BSD-2-Clause | Ters proxy (kullanılıyorsa sistem yüklü) |
+| Xray-core | MPL-2.0 | Proxy çekirdeği, ayrı süreç; resmi yukarı akış sürümü (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Proxy çekirdeği, ayrı süreç; **bu proje tarafından oluşturulmuştur** (`qist/singbox-binaries`; resmi sürümlerde kullanıcı başına trafik muhasebesi için gerekli olan `with_v2ray_api` bulunmamaktadır); dağıtım sırasında ilgili kaynağı sağlayın |
+| Caddy | Apache-2.0 | Ters proxy / TLS; **bu proje tarafından inşa edilmiştir** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Ters proxy; **bu proje tarafından inşa edilmiştir** (`qist/nginx-binaries`, glibc / musl'a bölünmüş) |
 
 > Hysteria2 ve TUIC, bağımsız çekirdekler veya ikili dosyalar değil, **sing-box** tarafından taşınan protokollerdir, dolayısıyla ayrı olarak listelenmezler.
 
@@ -72,6 +72,7 @@ Panel / Temsilci aşağıdaki bağımsız programları çalışma zamanında ind
 ## 5. Uyumluluk önerileri
 
 - İkili dosyaları teslim ederken şunları ekleyin: `LICENSE`, bu dosya ve her GPL/MPL bileşeninin lisans metni veya satın alma URL.
+- Bu proje tarafından oluşturulan ikili dosyalar (sing-box / Caddy / Nginx) panelle birlikte gönderilir: yukarı akış kaynağından derlendiklerinden, nasıl oluşturulduklarını yayınlayın (sürüm, oluşturma etiketleri, yapılandırma işaretleri); GPL bileşenleri (sing-box) ayrıca söz konusu sürümün karşılık gelen kaynağının tamamını veya etkili bir edinme yolunu gerektirir.
 - `xray-core` gibi MPL-2.0 bileşenlerinin kaynak dosyalarını değiştirirseniz, değiştirilen dosyaların kaynağını yayınlayın.
 - sing-box gibi GPL programlarını ürününüzle birlikte dağıtıyorsanız, alıcılara o sürümün ilgili kaynağının tamamını (veya etkili bir yazılı teklif) sağlayın.
 - Ticari markalar ve adlar: Yukarı yöndeki proje adlarını veya logolarını, resmi onayı ima edecek şekilde kullanmayın.

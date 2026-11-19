@@ -48,16 +48,16 @@ La interfaz de usuario de administración está construida con Vite y está inte
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Interfaz de usuario de administración, enrutamiento y estado, i18n, renderizado Markdown, códigos QR y editor de códigos |
 | DOMPurify | Apache-2.0 / MPL-2.0 | Desinfección XSS antes de renderizar Markdown/HTML |
 
-## 3. Programas independientes invocados en tiempo de ejecución (no distribuidos en este repositorio)
+## 3. Programas independientes descargados/invocados por el panel en tiempo de ejecución
 
-El panel/Agente puede descargar, instalar o invocar los siguientes programas independientes en tiempo de ejecución. Interactúan con este proyecto a través de procesos/interfaces, pero si los envías con tus entregables aún debes cumplir con sus licencias:
+Al instalar o actualizar núcleos, el panel/Agente descarga los siguientes archivos binarios de GitHub y los ejecuta como procesos separados. **Los artefactos marcados como "creados por este proyecto" son compilados y publicados por esta organización desde una fuente ascendente** (`qist/*-binaries`) y se distribuyen junto con el producto, por lo que las obligaciones de licencia correspondientes (incluida la disponibilidad de la fuente para GPL) recaen en este proyecto; las otras son URL de descarga de versiones oficiales.
 
 | Programa | Licencia | Notas |
 |---|---|---|
-| Xray-core | MPL-2.0 | Núcleo de proxy, proceso separado |
-| sing-box | **GPL-3.0-or-later** | Núcleo de proxy, proceso separado; proporcionar la fuente correspondiente al distribuir |
-| Caddy | Apache-2.0 | Proxy inverso / TLS |
-| Nginx | BSD-2-Clause | Proxy inverso (instalado en el sistema, si se usa) |
+| Xray-core | MPL-2.0 | Núcleo de proxy, proceso separado; lanzamiento oficial ascendente (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Núcleo de proxy, proceso separado; **creado por este proyecto** (`qist/singbox-binaries`; las versiones oficiales carecen de `with_v2ray_api`, que es necesario para la contabilidad del tráfico por usuario); proporcionar la fuente correspondiente al distribuir |
+| Caddy | Apache-2.0 | Proxy inverso / TLS; **construido por este proyecto** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Proxy inverso; **construido por este proyecto** (`qist/nginx-binaries`, dividido por glibc/musl) |
 
 > Hysteria2 y TUIC son **protocolos incluidos en sing-box**, no núcleos independientes ni binarios, por lo que no se enumeran por separado.
 
@@ -72,6 +72,7 @@ El panel/Agente puede descargar, instalar o invocar los siguientes programas ind
 ## 5. Recomendaciones de cumplimiento
 
 - Al entregar archivos binarios, incluya: `LICENSE`, este archivo y el texto de licencia o adquisición URL de cada componente GPL/MPL.
+- Los binarios creados por este proyecto (sing-box / Caddy / Nginx) se envían con el panel: dado que se compilan desde una fuente ascendente, publica cómo se compilaron (versión, etiquetas de compilación, indicadores de configuración); Los componentes GPL (sing-box) requieren adicionalmente la fuente correspondiente completa de esa versión o una ruta de adquisición efectiva.
 - Si modifica archivos fuente de componentes MPL-2.0 como `xray-core`, publique el código fuente de los archivos modificados.
 - Si distribuye programas GPL como sing-box con su producto, proporcione a los destinatarios la fuente correspondiente completa de esa versión (o una oferta escrita efectiva).
 - Marcas comerciales y nombres: no utilice nombres o logotipos de proyectos anteriores de manera que implique un respaldo oficial.

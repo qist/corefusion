@@ -47,16 +47,16 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | 管理端界面、路由与状态、i18n、Markdown 渲染、二维码与代码编辑器 |
 | DOMPurify | Apache-2.0 / MPL-2.0 | 渲染 Markdown / HTML 前做 XSS 消毒 |
 
-## 3. 运行时调用的独立程序（不在本仓库内分发）
+## 3. 运行时由面板下载 / 调用的独立程序
 
-面板 / Agent 运行时可下载、安装或调用以下独立程序。它们与本项目通过进程/接口交互，但如果你在交付物中一并分发，仍需遵守各自的许可证：
+面板 / Agent 在安装、升级核心时会从 GitHub 下载下列二进制并以独立进程运行。**标「本项目自建」的产物由本组织从上游源码编译后发布**（`qist/*-binaries`），会随产品一起分发，因此对应的许可证义务（含 GPL 的源码提供）由本项目承担；其余为上游官方 release 的下载地址。
 
 | 程序 | 许可证 | 说明 |
 |---|---|---|
-| Xray-core | MPL-2.0 | 代理核心，独立进程 |
-| sing-box | **GPL-3.0-or-later** | 代理核心，独立进程；分发时需提供对应源码 |
-| Caddy | Apache-2.0 | 反向代理 / TLS |
-| Nginx | BSD-2-Clause | 反向代理（系统安装，如使用） |
+| Xray-core | MPL-2.0 | 代理核心，独立进程；上游官方 release（`XTLS/Xray-core`） |
+| sing-box | **GPL-3.0-or-later** | 代理核心，独立进程；**本项目自建**（`qist/singbox-binaries`，官方 release 不含 `with_v2ray_api`，无法按用户统计流量），分发需提供对应源码 |
+| Caddy | Apache-2.0 | 反向代理 / TLS；**本项目自建**（`qist/caddy-binaries`） |
+| Nginx | BSD-2-Clause | 反向代理；**本项目自建**（`qist/nginx-binaries`，按 glibc / musl 分发行版） |
 
 > Hysteria2、TUIC 是**由 sing-box 承载的协议**，不是独立核心，也没有独立二进制，因此不作为单独的第三方程序列出。
 
@@ -71,6 +71,7 @@ CoreFusion 使用了以下开源组件。本文件列出主要组件及许可证
 ## 5. 合规建议
 
 - 交付二进制时附带：`LICENSE`、本文件、各 GPL/MPL 组件的许可证文本或获取地址。
+- 本项目自建的二进制（sing-box / Caddy / Nginx）随面板一起发布：它们由上游源码编译而来，需同步公开构建方式（版本、build tag、配置参数）；GPL 组件（sing-box）还需提供对应版本的完整源码或有效获取途径。
 - 若修改了 `xray-core` 等 MPL-2.0 组件的源文件，需公开被修改文件的源码。
 - 若随产品分发 sing-box 等 GPL 程序，需向接收者提供对应版本的完整源码（或有效的书面获取途径）。
 - 商标与名称：不得使用各上游项目的名称、Logo 暗示官方背书。

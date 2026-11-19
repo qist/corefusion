@@ -48,16 +48,16 @@ CoreFusion 使用下列開源元件。該文件列出了主要組件和許可證
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | 管理 UI、路由和狀態、i18n、Markdown 渲染、QR 程式碼和程式碼編輯器 |
 | DOMPurify | Apache-2.0 / MPL-2.0 | 渲染 Markdown / HTML 之前的 XSS 清理 |
 
-## 3. 在運行時調用的獨立程序（未在此存儲庫中分發）
+## 3. 運行時由面板下載/調用的獨立程序
 
-面板/代理可以在運行時下載、安裝或呼叫以下獨立程式。他們透過流程/介面與該專案交互，但如果您將它們與可交付成果一起交付，您仍然必須遵守他們的許可證：
+安裝或升級核心時，面板/代理從 GitHub 下載以下二進位檔案並將它們作為單獨的進程運行。 **標記為「由該專案建置」的工件由該組織從上游原始程式碼編譯和發布**（`qist/*-binaries`）並與產品一起分發，因此相應的授權義務（包括 GPL 的來源可用性）由該專案承擔；其他的是官方上游版本的下載 URL。
 
 | 節目 | 許可證 | 註解 |
 |---|---|---|
-| Xray-core | MPL-2.0 | Proxy核心，獨立進程 |
-| sing-box | **GPL-3.0-or-later** | Proxy核心，獨立進程；分發時提供對應來源 |
-| Caddy | Apache-2.0 | 反向代理/TLS |
-| Nginx | BSD-2-Clause | 反向代理（系統安裝，如果使用） |
+| Xray-core | MPL-2.0 | Proxy核心，獨立進程；官方上游發布（`XTLS/Xray-core`） |
+| sing-box | **GPL-3.0-or-later** | Proxy核心，獨立進程； **由該專案構建**（`qist/singbox-binaries`；官方版本缺少`with_v2ray_api`，這是按用戶流量統計所需的）；分發時提供相應來源 |
+| Caddy | Apache-2.0 | 反向代理/TLS; **由該專案建造** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | 反向代理； **由該專案建構**（`qist/nginx-binaries`，由 glibc / musl 分割） |
 
 > Hysteria2和TUIC是**sing-box攜帶的協定**，不是獨立的核心或二進位文件，因此沒有單獨列出。
 
@@ -72,6 +72,7 @@ CoreFusion 使用下列開源元件。該文件列出了主要組件和許可證
 ## 5. 合規建議
 
 - 交付二進位檔案時，請包含：`LICENSE`、此檔案以及每個 GPL/MPL 元件的授權文字或取得 URL。
+- 該專案（sing-box / Caddy / Nginx）構建的二進位檔案隨面板一起提供：由於它們是從上游原始程式碼編譯的，因此發布它們的構建方式（版本、構建標籤、配置標誌）； GPL 組件（sing-box）也需要該版本的完整路徑的完整路徑。
 - 如果您修改了MPL-2.0元件（例如`xray-core`）的原始文件，請發布修改後的文件的源代碼。
-- 如果您隨產品分發 GPL 程式（例如 sing-box），請向接收者提供該版本的完整相應來源（或有效的書面報價）。
+- 如果您隨產品一起分發 GPL 程式（例如 sing-box），請向接收者提供該版本的完整相應來源（或有效的書面報價）。
 - 商標和名稱：請勿以暗示官方認可的方式使用上游項目名稱或標誌。

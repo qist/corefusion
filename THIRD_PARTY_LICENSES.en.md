@@ -48,16 +48,16 @@ The admin UI is built with Vite and embedded into the panel binary via `go:embed
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Admin UI, routing and state, i18n, Markdown rendering, QR codes and code editor |
 | DOMPurify | Apache-2.0 / MPL-2.0 | XSS sanitization before rendering Markdown / HTML |
 
-## 3. Standalone programs invoked at runtime (not distributed in this repository)
+## 3. Standalone programs downloaded / invoked by the panel at runtime
 
-The panel / Agent may download, install or invoke the following standalone programs at runtime. They interact with this project through processes/interfaces, but if you ship them with your deliverables you must still comply with their licenses:
+When installing or upgrading cores, the panel / Agent downloads the following binaries from GitHub and runs them as separate processes. **Artifacts marked "built by this project" are compiled and published by this organization from upstream source** (`qist/*-binaries`) and are distributed together with the product, so the corresponding license obligations (including source availability for GPL) rest with this project; the others are download URLs of official upstream releases.
 
 | Program | License | Notes |
 |---|---|---|
-| Xray-core | MPL-2.0 | Proxy core, separate process |
-| sing-box | **GPL-3.0-or-later** | Proxy core, separate process; provide corresponding source when distributing |
-| Caddy | Apache-2.0 | Reverse proxy / TLS |
-| Nginx | BSD-2-Clause | Reverse proxy (system-installed, if used) |
+| Xray-core | MPL-2.0 | Proxy core, separate process; official upstream release (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Proxy core, separate process; **built by this project** (`qist/singbox-binaries`; official releases lack `with_v2ray_api`, which is required for per-user traffic accounting); provide corresponding source when distributing |
+| Caddy | Apache-2.0 | Reverse proxy / TLS; **built by this project** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Reverse proxy; **built by this project** (`qist/nginx-binaries`, split by glibc / musl) |
 
 > Hysteria2 and TUIC are **protocols carried by sing-box**, not standalone cores or binaries, so they are not listed separately.
 
@@ -72,6 +72,7 @@ The panel / Agent may download, install or invoke the following standalone progr
 ## 5. Compliance recommendations
 
 - When delivering binaries, include: `LICENSE`, this file, and the license text or acquisition URL of each GPL/MPL component.
+- Binaries built by this project (sing-box / Caddy / Nginx) ship with the panel: since they are compiled from upstream source, publish how they were built (version, build tags, configure flags); GPL components (sing-box) additionally require the complete corresponding source of that version or an effective acquisition route.
 - If you modify source files of MPL-2.0 components such as `xray-core`, publish the modified files' source.
 - If you distribute GPL programs such as sing-box with your product, provide recipients with the complete corresponding source of that version (or an effective written offer).
 - Trademarks and names: do not use upstream project names or logos in a way that implies official endorsement.

@@ -48,16 +48,16 @@ UI admin dibangun dengan Vite dan tertanam ke dalam biner panel melalui `go:embe
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | UI Admin, perutean dan status, i18n, rendering penurunan harga, kode QR, dan editor kode |
 | DOMPurify | Apache-2.0 / MPL-2.0 | Sanitasi XSS sebelum merender Markdown / HTML |
 
-## 3. Program mandiri yang dipanggil saat runtime (tidak didistribusikan dalam repositori ini)
+## 3. Program mandiri diunduh/dipanggil oleh panel saat runtime
 
-Panel/Agen dapat mengunduh, menginstal, atau menjalankan program mandiri berikut saat runtime. Mereka berinteraksi dengan proyek ini melalui proses/antarmuka, namun jika Anda mengirimkannya bersama kiriman Anda, Anda tetap harus mematuhi lisensi mereka:
+Saat memasang atau meningkatkan inti, panel/Agen mengunduh binari berikut dari GitHub dan menjalankannya sebagai proses terpisah. **Artefak bertanda "dibangun oleh proyek ini" dikompilasi dan diterbitkan oleh organisasi ini dari sumber hulu** (`qist/*-binaries`) dan didistribusikan bersama dengan produk, sehingga kewajiban lisensi terkait (termasuk ketersediaan sumber untuk GPL) berada pada proyek ini; yang lainnya adalah URL unduhan rilis upstream resmi.
 
 | Program | Lisensi | Catatan |
 |---|---|---|
-| Xray-core | MPL-2.0 | Inti proxy, proses terpisah |
-| sing-box | **GPL-3.0-or-later** | Inti proxy, proses terpisah; menyediakan sumber yang sesuai saat mendistribusikan |
-| Caddy | Apache-2.0 | Proksi terbalik / TLS |
-| Nginx | BSD-2-Clause | Proksi terbalik (diinstal sistem, jika digunakan) |
+| Xray-core | MPL-2.0 | Inti proxy, proses terpisah; rilis upstream resmi (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Inti proxy, proses terpisah; **dibangun oleh proyek ini** (`qist/singbox-binaries`; rilis resmi tidak memiliki `with_v2ray_api`, yang diperlukan untuk penghitungan lalu lintas per pengguna); menyediakan sumber yang sesuai saat mendistribusikan |
+| Caddy | Apache-2.0 | Proksi terbalik / TLS; **dibangun oleh proyek ini** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Proksi terbalik; **dibangun oleh proyek ini** (`qist/nginx-binaries`, dipisahkan oleh glibc / musl) |
 
 > Hysteria2 dan TUIC adalah **protokol yang dibawa oleh sing-box**, bukan inti atau biner yang berdiri sendiri, sehingga tidak dicantumkan secara terpisah.
 
@@ -72,6 +72,7 @@ Panel/Agen dapat mengunduh, menginstal, atau menjalankan program mandiri berikut
 ## 5. Rekomendasi kepatuhan
 
 - Saat mengirimkan biner, sertakan: `LICENSE`, file ini, dan teks lisensi atau akuisisi URL dari setiap komponen GPL/MPL.
+- Biner yang dibuat oleh proyek ini (sing-box / Caddy / Nginx) dikirimkan bersama panel: karena dikompilasi dari sumber upstream, publikasikan cara pembuatannya (versi, tag build, tanda konfigurasi); Komponen GPL (sing-box) juga memerlukan sumber lengkap yang sesuai dari versi tersebut atau rute akuisisi yang efektif.
 - Jika Anda memodifikasi file sumber komponen MPL-2.0 seperti `xray-core`, publikasikan sumber file yang dimodifikasi.
 - Jika Anda mendistribusikan program GPL seperti sing-box bersama produk Anda, berikan kepada penerima sumber lengkap yang sesuai dengan versi tersebut (atau penawaran tertulis yang efektif).
 - Merek dagang dan nama: jangan menggunakan nama atau logo proyek hulu dengan cara yang menyiratkan dukungan resmi.

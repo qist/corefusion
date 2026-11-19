@@ -48,18 +48,18 @@ Giao diện người dùng quản trị được xây dựng bằng Vite và đ�
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Giao diện người dùng quản trị, định tuyến và trạng thái, i18n, hiển thị Markdown, mã QR và trình chỉnh sửa mã |
 | DOMPurify | Apache-2.0 / MPL-2.0 | Khử trùng XSS trước khi hiển thị Markdown/HTML |
 
-## 3. Các chương trình độc lập được gọi trong thời gian chạy (không được phân phối trong kho lưu trữ này)
+## 3. Các chương trình độc lập được bảng điều khiển tải xuống/gọi khi chạy
 
-Bảng điều khiển / Tác nhân có thể tải xuống, cài đặt hoặc gọi các chương trình độc lập sau khi chạy. Họ tương tác với dự án này thông qua các quy trình/giao diện, nhưng nếu bạn gửi chúng cùng với sản phẩm bàn giao của mình thì bạn vẫn phải tuân thủ giấy phép của họ:
+Khi cài đặt hoặc nâng cấp lõi, bảng điều khiển/Tác nhân tải xuống các tệp nhị phân sau từ GitHub và chạy chúng dưới dạng các quy trình riêng biệt. **Các sản phẩm được đánh dấu là "do dự án này xây dựng" được tổ chức này biên soạn và xuất bản từ nguồn thượng nguồn** (`qist/*-binaries`) và được phân phối cùng với sản phẩm, do đó, nghĩa vụ cấp phép tương ứng (bao gồm cả nguồn sẵn có cho GPL) thuộc về dự án này; những cái khác là URL tải xuống của các bản phát hành ngược dòng chính thức.
 
 | chương trình | Giấy phép | Ghi chú |
 |---|---|---|
-| Xray-core | MPL-2.0 | Lõi proxy, quy trình riêng biệt |
-| sing-box | **GPL-3.0-or-later** | Lõi proxy, quy trình riêng biệt; cung cấp nguồn tương ứng khi phân phối |
-| Caddy | Apache-2.0 | Proxy ngược / TLS |
-| Nginx | BSD-2-Clause | Proxy ngược (được cài đặt trong hệ thống, nếu được sử dụng) |
+| Xray-core | MPL-2.0 | Lõi proxy, quy trình riêng biệt; bản phát hành ngược dòng chính thức (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Lõi proxy, quy trình riêng biệt; **được xây dựng bởi dự án này** (`qist/singbox-binaries`; bản phát hành chính thức thiếu `with_v2ray_api`, cần thiết cho việc tính toán lưu lượng truy cập cho mỗi người dùng); cung cấp nguồn tương ứng khi phân phối |
+| Caddy | Apache-2.0 | Proxy ngược / TLS; **được xây dựng bởi dự án này** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Proxy ngược; **được xây dựng bởi dự án này** (`qist/nginx-binaries`, được chia cho glibc / musl) |
 
-> Hysteria2 và TUIC là **các giao thức được sing-box cung cấp**, không phải lõi hoặc nhị phân độc lập nên chúng không được liệt kê riêng.
+> Hysteria2 và TUIC là **các giao thức do sing-box cung cấp**, không phải lõi hoặc nhị phân độc lập nên chúng không được liệt kê riêng.
 
 ## 4. Tệp dữ liệu
 
@@ -72,6 +72,7 @@ Bảng điều khiển / Tác nhân có thể tải xuống, cài đặt hoặc 
 ## 5. Khuyến nghị tuân thủ
 
 - Khi phân phối các tệp nhị phân, hãy bao gồm: `LICENSE`, tệp này và văn bản giấy phép hoặc việc mua lại URL của từng thành phần GPL/MPL.
+- Các tệp nhị phân do dự án này xây dựng (sing-box / Caddy / Nginx) đi kèm với bảng điều khiển: vì chúng được biên dịch từ nguồn ngược dòng, hãy xuất bản cách chúng được tạo (phiên bản, thẻ xây dựng, cờ định cấu hình); Các thành phần GPL (sing-box) cũng yêu cầu nguồn tương ứng hoàn chỉnh của phiên bản đó hoặc lộ trình thu nhận hiệu quả.
 - Nếu bạn sửa đổi tệp nguồn của các thành phần MPL-2.0 như `xray-core`, hãy xuất bản nguồn của tệp đã sửa đổi.
 - Nếu bạn phân phối các chương trình GPL như sing-box cùng với sản phẩm của mình, hãy cung cấp cho người nhận nguồn tương ứng đầy đủ của phiên bản đó (hoặc một đề nghị bằng văn bản có hiệu lực).
 - Thương hiệu và tên: không sử dụng tên hoặc logo của dự án ngược dòng theo cách ngụ ý sự chứng thực chính thức.

@@ -48,16 +48,16 @@ Die Admin-Benutzeroberfläche wird mit Vite erstellt und über `go:embed` in die
 | Vue 3 / Vue Router / Pinia / Element Plus / axios / vue-i18n / marked / js-yaml / qrcode / Monaco Editor | MIT | Admin-Benutzeroberfläche, Routing und Status, i18n, Markdown-Rendering, QR-Codes und Code-Editor |
 | DOMPurify | Apache-2.0 / MPL-2.0 | XSS-Bereinigung vor dem Rendern von Markdown/HTML |
 
-## 3. Eigenständige Programme, die zur Laufzeit aufgerufen werden (nicht in diesem Repository verteilt)
+## 3. Eigenständige Programme, die zur Laufzeit vom Panel heruntergeladen/aufgerufen werden
 
-Das Panel/der Agent kann zur Laufzeit die folgenden eigenständigen Programme herunterladen, installieren oder aufrufen. Sie interagieren über Prozesse/Schnittstellen mit diesem Projekt, aber wenn Sie sie mit Ihren Liefergegenständen versenden, müssen Sie dennoch ihre Lizenzen einhalten:
+Beim Installieren oder Aktualisieren von Kernen lädt das Panel/der Agent die folgenden Binärdateien von GitHub herunter und führt sie als separate Prozesse aus. **Artefakte, die mit „von diesem Projekt erstellt“ gekennzeichnet sind, werden von dieser Organisation aus Upstream-Quellen zusammengestellt und veröffentlicht** (`qist/*-binaries`) und werden zusammen mit dem Produkt vertrieben, sodass die entsprechenden Lizenzverpflichtungen (einschließlich Quellverfügbarkeit für GPL) bei diesem Projekt liegen; Bei den anderen handelt es sich um Download-URLs offizieller Upstream-Veröffentlichungen.
 
 | Programm | Lizenz | Notizen |
 |---|---|---|
-| Xray-core | MPL-2.0 | Proxy-Kern, separater Prozess |
-| sing-box | **GPL-3.0-or-later** | Proxy-Kern, separater Prozess; Geben Sie bei der Weitergabe die entsprechende Quelle an |
-| Caddy | Apache-2.0 | Reverse-Proxy / TLS |
-| Nginx | BSD-2-Clause | Reverse-Proxy (vom System installiert, falls verwendet) |
+| Xray-core | MPL-2.0 | Proxy-Kern, separater Prozess; offizielle Upstream-Version (`XTLS/Xray-core`) |
+| sing-box | **GPL-3.0-or-later** | Proxy-Kern, separater Prozess; **von diesem Projekt erstellt** (`qist/singbox-binaries`; in offiziellen Versionen fehlt `with_v2ray_api`, das für die Datenverkehrsabrechnung pro Benutzer erforderlich ist); Geben Sie bei der Weitergabe die entsprechende Quelle an |
+| Caddy | Apache-2.0 | Reverse-Proxy / TLS; **von diesem Projekt erstellt** (`qist/caddy-binaries`) |
+| Nginx | BSD-2-Clause | Reverse-Proxy; **von diesem Projekt erstellt** (`qist/nginx-binaries`, geteilt durch glibc / musl) |
 
 > Hysteria2 und TUIC sind **von sing-box getragene Protokolle**, keine eigenständigen Kerne oder Binärdateien, daher werden sie nicht separat aufgeführt.
 
@@ -72,6 +72,7 @@ Das Panel/der Agent kann zur Laufzeit die folgenden eigenständigen Programme he
 ## 5. Compliance-Empfehlungen
 
 - Wenn Sie Binärdateien bereitstellen, schließen Sie Folgendes ein: `LICENSE`, diese Datei und den Lizenztext oder Erwerb URL jeder GPL/MPL-Komponente.
+- Von diesem Projekt erstellte Binärdateien (sing-box / Caddy / Nginx) werden mit dem Panel geliefert: Da sie aus der Upstream-Quelle kompiliert werden, veröffentlichen Sie, wie sie erstellt wurden (Version, Build-Tags, Konfigurationsflags). GPL-Komponenten (sing-box) erfordern zusätzlich die vollständige entsprechende Quelle dieser Version oder einen gültigen Erwerbsweg.
 - Wenn Sie Quelldateien von MPL-2.0-Komponenten wie `xray-core` ändern, veröffentlichen Sie die Quelle der geänderten Dateien.
 - Wenn Sie GPL-Programme wie sing-box mit Ihrem Produkt vertreiben, stellen Sie den Empfängern die vollständige entsprechende Quelle dieser Version (oder ein wirksames schriftliches Angebot) zur Verfügung.
 - Marken und Namen: Verwenden Sie Namen oder Logos von Upstream-Projekten nicht in einer Weise, die den Eindruck einer offiziellen Billigung erweckt.

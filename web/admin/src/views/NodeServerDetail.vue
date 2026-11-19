@@ -1071,9 +1071,15 @@ const connPageSize = ref(50)
 let connSearchDebounce = null
 const connReasonText = computed(() => {
   const r = String(connData.value?.reason || '')
+  if (!r) return t('onlineUsers.connUnavailable')
+  // 远端节点现在由 Agent 读取 clash_api；失败原因（未启用 / 超时 / 鉴权）
+  // 由后端给出具体文本，这里去掉前缀直接展示，方便排障。
+  for (const p of ['clash_api_unavailable: ', 'clash_api_decode: ']) {
+    if (r.startsWith(p)) return r.slice(p.length)
+  }
   if (r === 'remote_node') return t('onlineUsers.connRemote')
-  if (r.startsWith('clash_api_unavailable')) return t('onlineUsers.connUnavailable')
-  return r || t('onlineUsers.connRemote')
+  if (r === 'remote_node_unavailable') return t('onlineUsers.connUnavailable')
+  return r
 })
 
 function onConnKeywordInput() {

@@ -779,7 +779,7 @@ export default {
     fleetOnline: 'Online',
     fleetOffline: 'Offline',
     fleetDegraded: 'Degraded',
-    fleetServices: 'Services',
+    fleetServices: 'Core services',
     fleetServicesRunning: 'Running',
     fleetServicesStopped: 'Stopped',
     fleetSubscriptions: 'Subscriptions',
@@ -826,6 +826,14 @@ export default {
     lastUpdated: 'Last updated',
     cpu: 'CPU',
     mem: 'Memory',
+    fleetServicesUnknown: 'no report',
+    fleetSubscribers: 'Subscribers',
+    fleetSubsSuspended: 'suspended',
+    fleetSubsExpired: 'expired',
+    onlineDevicesIP: 'Online devices/IP',
+    fleetServicesHint: 'Per-node Xray / sing-box core instances; no report = remote node has not synced process status',
+    fleetSubsHint: 'Active = subscriptions with status active; subscribers = client accounts; suspended/expired counted separately',
+    liveOnlineHint: 'Online subscribers and devices, deduplicated across nodes — same scope as the Online Users page',
   },
   protoCenter: {
     masque: {

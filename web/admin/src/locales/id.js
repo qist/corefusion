@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "On line",
     "fleetOffline": "Luring",
     "fleetDegraded": "Terdegradasi",
-    "fleetServices": "Layanan masuk",
+    "fleetServices": "Inti",
     "fleetServicesRunning": "Berjalan",
     "fleetServicesStopped": "Berhenti",
     "fleetSubscriptions": "Langganan aktif",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "Berdasarkan",
     "lastUpdated": "Terakhir Diperbarui",
     "cpu": "CPU",
-    "mem": "Memori"
+    "mem": "Memori",
+    "fleetServicesUnknown": "belum lapor",
+    "fleetSubscribers": "Pelanggan",
+    "fleetSubsSuspended": "ditangguhkan",
+    "fleetSubsExpired": "kedaluwarsa",
+    "onlineDevicesIP": "Perangkat/IP",
+    "fleetServicesHint": "Instans inti Xray / sing-box per node; belum lapor = node jarak jauh belum menyinkronkan status proses",
+    "fleetSubsHint": "Aktif = langganan berstatus active; pelanggan = akun klien; ditangguhkan/kedaluwarsa dihitung terpisah",
+    "liveOnlineHint": "Pelanggan dan perangkat online, dideduplikasi antar node — cakupan sama dengan halaman Pengguna Online",
   },
   "protoCenter": {
     "masque": {

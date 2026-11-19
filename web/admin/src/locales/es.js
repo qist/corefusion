@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "En línea",
     "fleetOffline": "Desconectado",
     "fleetDegraded": "Degradado",
-    "fleetServices": "Servicios de entrada",
+    "fleetServices": "Núcleos",
     "fleetServicesRunning": "En ejecución",
     "fleetServicesStopped": "Detenidos",
     "fleetSubscriptions": "Suscripciones activas",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "Basado en",
     "lastUpdated": "Última actualización",
     "cpu": "CPU",
-    "mem": "Memoria"
+    "mem": "Memoria",
+    "fleetServicesUnknown": "sin reporte",
+    "fleetSubscribers": "Suscriptores",
+    "fleetSubsSuspended": "suspendido",
+    "fleetSubsExpired": "caducado",
+    "onlineDevicesIP": "Dispositivos/IP",
+    "fleetServicesHint": "Instancias de núcleo Xray / sing-box por nodo; sin reporte = el nodo remoto no ha sincronizado el estado del proceso",
+    "fleetSubsHint": "Activas = suscripciones con estado active; suscriptores = cuentas de cliente; suspendidas/caducadas se cuentan aparte",
+    "liveOnlineHint": "Suscriptores y dispositivos en línea, deduplicados entre nodos — mismo alcance que la página de Usuarios en línea",
   },
   "protoCenter": {
     "masque": {

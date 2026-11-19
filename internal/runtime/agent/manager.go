@@ -1648,6 +1648,11 @@ func (m *NodeServerManager) GetAllOnlineUsers() map[int64]*NodeOnlineSnapshot {
 	return m.onlineStore.GetAllDetail()
 }
 
+// GetOnlineTotals 返回跨节点去重后的在线订阅人 / 设备总数（Dashboard 总卡用）。
+func (m *NodeServerManager) GetOnlineTotals() (subscriptions, devices int64) {
+	return m.onlineStore.GetOnlineTotals()
+}
+
 // SyncConfigToServer syncs core configuration to a specific server.
 // It sends the config via the heartbeat stream (PanelCommand_SyncConfig),
 // which is more reliable than the reverse gRPC connection.
@@ -2379,6 +2384,35 @@ func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID
 		return nil, "", fmt.Errorf("%s", resp.Error)
 	}
 	return resp.Content, resp.FilePath, nil
+}
+
+// FetchSingboxConnectionsOnServer 读取远端节点 sing-box clash_api 的
+// /connections 原始 JSON。clash_api 只监听节点回环，面板直连不到，
+// 必须由 Agent 在本机读取后回传（可用性判断由调用方负责）。
+func (m *NodeServerManager) FetchSingboxConnectionsOnServer(ctx context.Context, serverID int64) ([]byte, string, error) {
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_FetchSingboxConnections{
+			FetchSingboxConnections: &agentpb.FetchSingboxConnectionsRequest{},
+		},
+	}
+	// Agent 内部 HTTP 超时 8s；12s 足够覆盖传输，同时避免旧版 Agent
+	// （不认识该命令、不回结果）让页面干等 20s。
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 12*time.Second)
+	if err != nil {
+		return nil, "", err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, "", fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.FetchSingboxConnectionsResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, "", fmt.Errorf("unmarshal singbox connections response: %w", err)
+	}
+	if !resp.Success {
+		return nil, resp.Listen, fmt.Errorf("%s", resp.Error)
+	}
+	return []byte(resp.Body), resp.Listen, nil
 }
 
 // ReadLogFileOnServer reads the last N lines of a log file from a node (local or remote).

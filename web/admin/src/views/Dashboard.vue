@@ -27,29 +27,32 @@
         </el-col>
         <el-col :span="4">
           <el-card shadow="hover" class="summary-card sc-services">
-            <div class="sum-label"><el-icon class="sum-ico"><Monitor /></el-icon>{{ t('dashboard.fleetServices') }}</div>
-            <div class="sum-value">{{ (overview && overview.service_count) || 0 }}</div>
+            <div class="sum-label" :title="t('dashboard.fleetServicesHint')"><el-icon class="sum-ico"><Monitor /></el-icon>{{ t('dashboard.fleetServices') }}</div>
+            <div class="sum-value">{{ serviceCount }}</div>
             <div class="sum-foot">
-              <span class="foot-on" v-if="serviceStopped === 0">{{ t('dashboard.fleetServicesRunning') }} {{ (overview && overview.service_running_count) || 0 }}</span>
-              <span class="foot-warn" v-else>{{ t('dashboard.fleetServicesRunning') }} {{ (overview && overview.service_running_count) || 0 }} · {{ t('dashboard.fleetServicesStopped') }} {{ serviceStopped }}</span>
+              <span class="foot-on">{{ t('dashboard.fleetServicesRunning') }} {{ serviceRunning }}</span>
+              <span class="foot-off" v-if="serviceStopped"> · {{ t('dashboard.fleetServicesStopped') }} {{ serviceStopped }}</span>
+              <span class="foot-deg" v-if="serviceUnknown"> · {{ t('dashboard.fleetServicesUnknown') }} {{ serviceUnknown }}</span>
             </div>
           </el-card>
         </el-col>
         <el-col :span="4">
           <el-card shadow="hover" class="summary-card sc-subs">
-            <div class="sum-label"><el-icon class="sum-ico"><Link /></el-icon>{{ t('dashboard.fleetSubscriptions') }}</div>
-            <div class="sum-value">{{ (overview && overview.active_subscription_count) || 0 }}</div>
+            <div class="sum-label" :title="t('dashboard.fleetSubsHint')"><el-icon class="sum-ico"><Link /></el-icon>{{ t('dashboard.fleetSubscriptions') }}</div>
+            <div class="sum-value">{{ activeSubs }}</div>
             <div class="sum-foot">
-              <span class="foot-warn" v-if="(overview && overview.quota_warning_count)">{{ t('dashboard.fleetQuotaWarn') }} {{ overview.quota_warning_count }}</span>
-              <span class="foot-muted" v-else>{{ t('dashboard.fleetQuotaWarn') }} 0</span>
+              <span class="foot-muted">{{ t('dashboard.fleetSubscribers') }} {{ subscriberCount }}</span>
+              <span class="foot-off" v-if="suspendedSubs"> · {{ t('dashboard.fleetSubsSuspended') }} {{ suspendedSubs }}</span>
+              <span class="foot-off" v-if="expiredSubs"> · {{ t('dashboard.fleetSubsExpired') }} {{ expiredSubs }}</span>
+              <span class="foot-warn" v-if="quotaWarn"> · {{ t('dashboard.fleetQuotaWarn') }} {{ quotaWarn }}</span>
             </div>
           </el-card>
         </el-col>
         <el-col :span="4">
           <el-card shadow="hover" class="summary-card sc-online online-summary-card clickable" @click="goOnlineUsers">
-            <div class="sum-label"><el-icon class="sum-ico"><Connection /></el-icon>{{ t('dashboard.liveOnlineSubs') }}</div>
+            <div class="sum-label" :title="t('dashboard.liveOnlineHint')"><el-icon class="sum-ico"><Connection /></el-icon>{{ t('dashboard.liveOnlineSubs') }}</div>
             <div class="sum-value">{{ (onlineSummary && onlineSummary.total_subscriptions) || 0 }}</div>
-            <div class="sum-foot"><span class="foot-on">{{ t('dashboard.onlineDevices') }} {{ (onlineSummary && onlineSummary.total_devices) || 0 }}</span></div>
+            <div class="sum-foot"><span class="foot-on">{{ t('dashboard.onlineDevicesIP') }} {{ (onlineSummary && onlineSummary.total_devices) || 0 }}</span></div>
           </el-card>
         </el-col>
         <el-col :span="4">
@@ -372,12 +375,20 @@ export default {
     const expiringCertList = computed(() => (overview.value && overview.value.expiring_certs) || [])
     const expiringCerts = computed(() => expiringCertList.value.length)
     const quotaWarn = computed(() => (overview.value && overview.value.quota_warning_count) || 0)
-    // 入站服务卡片副标题：未运行的数量（总数 - 运行中），失败/停止都算进去。
-    const serviceStopped = computed(() => {
-      const total = (overview.value && overview.value.service_count) || 0
-      const running = (overview.value && overview.value.service_running_count) || 0
-      return Math.max(0, total - running)
-    })
+    // 核心服务（每台节点 xray / sing-box 各一个实例）：
+    // 运行中 / 已停止 / 未上报 三种状态分开显示。远端节点进程状态由 Agent 上报，
+    // 未上报不能算成「已停止」（否则远端节点看着像全挂了）。
+    const serviceCount = computed(() => (overview.value && overview.value.service_count) || 0)
+    const serviceRunning = computed(() => (overview.value && overview.value.service_running_count) || 0)
+    const serviceStopped = computed(() => (overview.value && overview.value.service_stopped_count) || 0)
+    const serviceUnknown = computed(() => (overview.value && overview.value.service_unknown_count) || 0)
+
+    // 订阅卡：主值 active，副标题给出订阅人数与暂停/过期数量，
+    // 避免「活跃订阅 4」被误读成在线人数、也避免暂停的订阅凭空消失。
+    const activeSubs = computed(() => (overview.value && overview.value.active_subscription_count) || 0)
+    const subscriberCount = computed(() => (overview.value && overview.value.active_client_count) || 0)
+    const suspendedSubs = computed(() => (overview.value && overview.value.suspended_subscription_count) || 0)
+    const expiredSubs = computed(() => (overview.value && overview.value.expired_subscription_count) || 0)
     const hasAlerts = computed(
       () => offlineNodes.value.length || degradedNodes.value.length || highResource.value.length || expiringCerts.value || quotaWarn.value
     )
@@ -452,7 +463,8 @@ export default {
       filteredNodes, regionOptions, onlineWithMetric,
       avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
       offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
-      serviceStopped,
+      serviceCount, serviceRunning, serviceStopped, serviceUnknown,
+      activeSubs, subscriberCount, suspendedSubs, expiredSubs,
       typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays, goOnlineUsers,
     }
   },

@@ -64,11 +64,15 @@
 
       <div style="text-align:center;margin-top:12px">
         <el-dropdown @command="setLocale">
-          <span style="cursor:pointer;color:#409eff">{{ currentLocaleName }}</span>
+          <span style="cursor:pointer;color:#409eff;display:inline-flex;align-items:center;gap:6px">
+            <LangFlag v-if="currentLocale" :code="currentLocale.flag" :alt="currentLocale.name" />
+            {{ currentLocaleName }}
+          </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item v-for="loc in availableLocales" :key="loc.code" :command="loc.code">
-                {{ loc.flag }} {{ loc.name }}
+                <LangFlag :code="loc.flag" :alt="loc.name" />
+                <span style="margin-left:6px">{{ loc.name }}</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -84,6 +88,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
+import LangFlag from '../components/LangFlag.vue'
 import { setLocale, availableLocales } from '../locales'
 import { getPasskeyStatus, passkeyLoginBegin, passkeyLoginFinish } from '../api/passkey'
 import { twofaStatusByUsername } from '../api/twofa'
@@ -150,9 +155,10 @@ function onOtpInput() {
   otpKeyed = false
 }
 
+const currentLocale = computed(() => availableLocales.find(l => l.code === locale.value) || null)
 const currentLocaleName = computed(() => {
-  const found = availableLocales.find(l => l.code === locale.value)
-  return found ? `${found.flag} ${found.name}` : locale.value
+  const found = currentLocale.value
+  return found ? found.name : locale.value
 })
 
 onMounted(async () => {

@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "Çevrimiçi",
     "fleetOffline": "Çevrimdışı",
     "fleetDegraded": "Bozulmuş",
-    "fleetServices": "Gelen hizmetler",
+    "fleetServices": "Çekirdek",
     "fleetServicesRunning": "Çalışıyor",
     "fleetServicesStopped": "Durduruldu",
     "fleetSubscriptions": "Aktif abonelikler",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "Temel alınarak",
     "lastUpdated": "Son güncelleme",
     "cpu": "CPU",
-    "mem": "Bellek"
+    "mem": "Bellek",
+    "fleetServicesUnknown": "rapor yok",
+    "fleetSubscribers": "Aboneler",
+    "fleetSubsSuspended": "askıda",
+    "fleetSubsExpired": "süresi dolmuş",
+    "onlineDevicesIP": "Cihazlar/IP",
+    "fleetServicesHint": "Düğüm başına Xray / sing-box çekirdek örnekleri; rapor yok = uzak düğüm süreç durumunu eşitlemedi",
+    "fleetSubsHint": "Aktif = durumu active olan abonelikler; aboneler = istemci hesapları; askıda/süresi dolmuş ayrı sayılır",
+    "liveOnlineHint": "Düğümler arası tekilleştirilmiş çevrimiçi abone ve cihaz sayısı — \"Çevrimiçi Kullanıcılar\" sayfasıyla aynı",
   },
   "protoCenter": {
     "masque": {

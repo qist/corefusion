@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "線上",
     "fleetOffline": "離線",
     "fleetDegraded": "降級",
-    "fleetServices": "入站服務",
+    "fleetServices": "核心服務",
     "fleetServicesRunning": "執行中",
     "fleetServicesStopped": "已停止",
     "fleetSubscriptions": "作用中訂閱",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "基於",
     "lastUpdated": "最後更新",
     "cpu": "CPU",
-    "mem": "記憶體"
+    "mem": "記憶體",
+    "fleetServicesUnknown": "未回報",
+    "fleetSubscribers": "訂閱人",
+    "fleetSubsSuspended": "暫停",
+    "fleetSubsExpired": "過期",
+    "onlineDevicesIP": "線上裝置/IP",
+    "fleetServicesHint": "每台節點上的 Xray / sing-box 核心實例；未回報 = 遠端節點尚未同步程序狀態",
+    "fleetSubsHint": "活躍訂閱 = 狀態為 active 的訂閱數；訂閱人 = 客戶端帳號數，暫停/過期單獨統計",
+    "liveOnlineHint": "跨節點去重後的線上訂閱人與裝置數，與「線上使用者」頁口徑一致",
   },
   "protoCenter": {
     "masque": {

@@ -518,6 +518,16 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 			Success: true, Content: data, FilePath: filePath,
 		}, err)
 
+	// sing-box 实时连接：clash_api 只监听节点回环，面板直连不到，
+	// 由 Agent 在本机读取后把原始 JSON 回传。
+	case *agentpb.PanelCommand_FetchSingboxConnections:
+		body, listen, err := a.fetchSingboxConnections(ctx)
+		sendSyncResult("fetch_singbox_connections", &agentpb.FetchSingboxConnectionsResponse{
+			Success: err == nil,
+			Body:    body,
+			Listen:  listen,
+		}, err)
+
 	case *agentpb.PanelCommand_ReadLogFile:
 		req := c.ReadLogFile
 		resp := a.handleReadLogFile(req)

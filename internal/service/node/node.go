@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -38,6 +39,10 @@ type nodeOnlineProvider interface {
 	GetNodeOnlineUsers(serverID int64) ([]*agentpb.OnlineUserEntry, int64, bool)
 	GetAllOnlineSummary() map[int64]*agentsvc.NodeOnlineSummary
 	GetAllOnlineUsers() map[int64]*agentsvc.NodeOnlineSnapshot
+	// GetOnlineTotals 返回跨节点去重后的在线订阅人 / 设备总数。
+	GetOnlineTotals() (subscriptions, devices int64)
+	// FetchSingboxConnectionsOnServer 读取远端节点 clash_api /connections 原始 JSON。
+	FetchSingboxConnectionsOnServer(ctx context.Context, serverID int64) ([]byte, string, error)
 }
 
 // NodeOnlineResult 是返回给前端的节点在线订阅人聚合视图。
@@ -427,21 +432,48 @@ func (s *Service) GetAllOnlineSummary() *OnlineSummaryResponse {
 		return res
 	}
 	raw := s.nodeOnline.GetAllOnlineSummary()
-	var totalSubs, totalDevs int64
 	for sid, v := range raw {
 		if v == nil {
 			continue
 		}
-		key := strconv.FormatInt(sid, 10)
-		res.Nodes[key] = &OnlineSummaryItem{
+		res.Nodes[strconv.FormatInt(sid, 10)] = &OnlineSummaryItem{
 			OnlineSubscriptions: v.OnlineSubscriptions,
 			OnlineDevices:       v.OnlineDevices,
 		}
-		totalSubs += v.OnlineSubscriptions
-		totalDevs += v.OnlineDevices
 	}
-	res.TotalSubscriptions = totalSubs
-	res.TotalDevices = totalDevs
+
+	// 总数与「在线用户」页完全同口径：先富化（Agent 上报的 subscription_id
+	// 可能为 0 —— 旧版 Agent / 解析失败），再跨节点按订阅 ID 去重。
+	// 直接用原始数据计数会把同一订阅在不同节点算成多个人，表现为卡片数字
+	// 在 2 / 3 之间跳。
+	snaps := s.nodeOnline.GetAllOnlineUsers()
+	all := make([]*agentpb.OnlineUserEntry, 0)
+	for _, snap := range snaps {
+		if snap != nil {
+			all = append(all, snap.Users...)
+		}
+	}
+	s.enrichOnlineUsers(all)
+
+	subs := make(map[string]struct{}, len(all))
+	devs := make(map[string]struct{})
+	for _, u := range all {
+		if u == nil {
+			continue
+		}
+		if u.GetSubscriptionId() > 0 {
+			subs[strconv.FormatInt(u.GetSubscriptionId(), 10)] = struct{}{}
+		} else if u.GetEmail() != "" {
+			subs["e:"+u.GetEmail()] = struct{}{}
+		}
+		for _, sess := range u.GetSessions() {
+			if sess != nil && sess.GetIp() != "" {
+				devs[sess.GetIp()] = struct{}{}
+			}
+		}
+	}
+	res.TotalSubscriptions = int64(len(subs))
+	res.TotalDevices = int64(len(devs))
 	return res
 }
 
@@ -718,8 +750,9 @@ type SingboxConnectionsResult struct {
 
 // GetSingboxConnections 读取某节点 sing-box 的实时连接。
 //
-// 目前只支持**面板本机节点**：sing-box 的 clash_api 只监听回环，远端节点需要
-// Agent 转发该 HTTP 请求（尚未实现），因此远端返回 Unsupported 并给出原因。
+// 本机节点直接请求 127.0.0.1 的 clash_api；远端节点的 clash_api 同样只监听
+// 节点回环，由 Agent 在本机读取 /connections 后通过 gRPC 回传原始 JSON。
+// 节点未启用 clash_api 时返回 Unsupported + 原因（前端展示提示）。
 func (s *Service) GetSingboxConnections(ctx context.Context, serverID int64, f SingboxConnectionFilter) *SingboxConnectionsResult {
 	if f.Limit <= 0 {
 		f.Limit = 50
@@ -740,24 +773,43 @@ func (s *Service) GetSingboxConnections(ctx context.Context, serverID int64, f S
 		res.Unsupported, res.Reason = true, "node repository not configured"
 		return res
 	}
+	isLocal := true
 	if s.nodeServerRepo != nil {
 		srv, err := s.nodeServerRepo.GetByID(ctx, serverID)
 		if err != nil || srv == nil {
 			res.Unsupported, res.Reason = true, "node not found"
 			return res
 		}
-		if !srv.IsLocal {
-			res.Unsupported, res.Reason = true, "remote_node"
+		isLocal = srv.IsLocal
+	} else if serverID != 1 {
+		isLocal = false
+	}
+
+	var resp *coredata.ClashConnectionsResponse
+	if isLocal {
+		var err error
+		resp, err = coredata.FetchClashConnectionsWithSecret(ctx, s.clashAPIAddr(), s.clashAPISecret())
+		if err != nil {
+			res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
 			return res
 		}
-	} else if serverID != 1 {
-		res.Unsupported, res.Reason = true, "remote_node"
-		return res
-	}
-	resp, err := coredata.FetchClashConnectionsWithSecret(ctx, s.clashAPIAddr(), s.clashAPISecret())
-	if err != nil {
-		res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
-		return res
+	} else {
+		// 远端节点：clash_api 只监听节点回环，由 Agent 读取后回传原始 JSON。
+		if s.nodeOnline == nil {
+			res.Unsupported, res.Reason = true, "remote_node_unavailable"
+			return res
+		}
+		raw, _, err := s.nodeOnline.FetchSingboxConnectionsOnServer(ctx, serverID)
+		if err != nil {
+			res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
+			return res
+		}
+		var remote coredata.ClashConnectionsResponse
+		if err := json.Unmarshal(raw, &remote); err != nil {
+			res.Unsupported, res.Reason = true, "clash_api_decode: "+err.Error()
+			return res
+		}
+		resp = &remote
 	}
 	res.UploadTotal = resp.UploadTotal
 	res.DownloadTotal = resp.DownloadTotal

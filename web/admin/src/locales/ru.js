@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "В сети",
     "fleetOffline": "Не в сети",
     "fleetDegraded": "Деградация",
-    "fleetServices": "Входящие сервисы",
+    "fleetServices": "Ядра",
     "fleetServicesRunning": "Работают",
     "fleetServicesStopped": "Остановлены",
     "fleetSubscriptions": "Активные подписки",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "На основе",
     "lastUpdated": "Последнее обновление",
     "cpu": "CPU",
-    "mem": "Память"
+    "mem": "Память",
+    "fleetServicesUnknown": "нет данных",
+    "fleetSubscribers": "Подписчики",
+    "fleetSubsSuspended": "приостановлено",
+    "fleetSubsExpired": "истекло",
+    "onlineDevicesIP": "Устройства/IP",
+    "fleetServicesHint": "Экземпляры ядер Xray / sing-box на каждом узле; «нет данных» = узел ещё не передал статус процесса",
+    "fleetSubsHint": "Активные = подписки со статусом active; подписчики = учётные записи клиентов; приостановленные/истёкшие считаются отдельно",
+    "liveOnlineHint": "Онлайн-подписчики и устройства с дедупликацией по узлам — как на странице «Онлайн-пользователи»",
   },
   "protoCenter": {
     "masque": {

@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "متصل",
     "fleetOffline": "غير متصل",
     "fleetDegraded": "تخفيض",
-    "fleetServices": "خدمة الوارد",
+    "fleetServices": "النوى",
     "fleetServicesRunning": "قيد التشغيل",
     "fleetServicesStopped": "متوقف",
     "fleetSubscriptions": "الاشتراكات النشطة",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "استنادًا إلى",
     "lastUpdated": "آخر تحديث",
     "cpu": "CPU",
-    "mem": "الذاكرة"
+    "mem": "الذاكرة",
+    "fleetServicesUnknown": "غير مُبلغ",
+    "fleetSubscribers": "المشتركون",
+    "fleetSubsSuspended": "موقوف",
+    "fleetSubsExpired": "منتهي",
+    "onlineDevicesIP": "الأجهزة/IP",
+    "fleetServicesHint": "نسخ نواة Xray / sing-box على كل عقدة؛ غير مُبلغ = العقدة البعيدة لم تزامن حالة العملية",
+    "fleetSubsHint": "النشطة = الاشتراكات بحالة active؛ المشتركون = حسابات العملاء؛ الموقوفة/المنتهية تُحسب منفصلة",
+    "liveOnlineHint": "المشتركون والأجهزة المتصلة بعد إزالة التكرار عبر العقد — بنفس نطاق صفحة المستخدمين المتصلين",
   },
   "protoCenter": {
     "masque": {

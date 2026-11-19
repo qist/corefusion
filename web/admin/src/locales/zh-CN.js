@@ -779,7 +779,7 @@ export default {
     fleetOnline: '在线',
     fleetOffline: '离线',
     fleetDegraded: '降级',
-    fleetServices: '入站服务',
+    fleetServices: '核心服务',
     fleetServicesRunning: '运行中',
     fleetServicesStopped: '停止',
     fleetSubscriptions: '活跃订阅',
@@ -826,6 +826,14 @@ export default {
     lastUpdated: '最后更新',
     cpu: 'CPU',
     mem: '内存',
+    fleetServicesUnknown: '未上报',
+    fleetSubscribers: '订阅人',
+    fleetSubsSuspended: '暂停',
+    fleetSubsExpired: '过期',
+    onlineDevicesIP: '在线设备/IP',
+    fleetServicesHint: '每台节点上的 Xray / sing-box 核心实例；未上报 = 远端节点尚未同步进程状态',
+    fleetSubsHint: '活跃订阅 = 状态为 active 的订阅数；订阅人 = 客户端账号数，暂停/过期单独统计',
+    liveOnlineHint: '跨节点去重后的在线订阅人与设备数，与「在线用户」页口径一致',
   },
   protoCenter: {
     masque: {

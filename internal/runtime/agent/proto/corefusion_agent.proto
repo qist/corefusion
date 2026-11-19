@@ -650,6 +650,10 @@ message PanelCommand {
     // --- 节点本机公网 IP 探测（选节点签发 IP 证书时用 ✓）---
     // 同上：面板自己出网看到的是面板/代理的出口 IP ✗，签发 IP 证书必须用**节点自己的**公网 IP ✓。
     DetectPublicIPRequest detect_public_ip = 41;
+
+    // --- sing-box 实时连接（clash_api /connections）---
+    // clash_api 只监听节点回环，面板够不到；由 Agent 在本机读取后回传原始 JSON。
+    FetchSingboxConnectionsRequest fetch_singbox_connections = 42;
   }
 }
 
@@ -736,6 +740,21 @@ message XrayAPIResponse {
   bool   success = 1;
   string error = 2;
   bytes  response = 3;   // JSON-encoded 响应数据（方法相关）
+}
+
+// ============================================================
+// sing-box 实时连接（面板 → Agent）
+// ============================================================
+
+// FetchSingboxConnectionsRequest 无参数：Agent 自己从 runtime/singbox.jsonc
+// 解析 experimental.clash_api.listen / secret，再请求本机 /connections。
+message FetchSingboxConnectionsRequest {}
+
+message FetchSingboxConnectionsResponse {
+  bool   success = 1;
+  string error = 2;
+  string body = 3;    // 原始 /connections JSON（面板解析）
+  string listen = 4;  // 实际读取的地址（排障用）
 }
 
 // ============================================================

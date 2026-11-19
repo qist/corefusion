@@ -66,22 +66,22 @@ export function setLocale(locale) {
 
 // Available locales
 export const availableLocales = [
-  { code: 'zh-CN', name: '中文（简体）', flag: '🇨🇳' },
-  { code: 'zh-TW', name: '中文（繁體）', flag: '🇨🇳' },
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
-  { code: 'fa', name: 'فارسی', flag: '🇮🇷' },
-  { code: 'ar', name: 'العربية', flag: '🇸🇦' },
-  { code: 'fr', name: 'Français', flag: '🇫🇷' },
-  { code: 'es', name: 'Español', flag: '🇪🇸' },
-  { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
-  { code: 'pt', name: 'Português', flag: '🇵🇹' },
-  { code: 'ja', name: '日本語', flag: '🇯🇵' },
-  { code: 'ko', name: '한국어', flag: '🇰🇷' },
-  { code: 'tr', name: 'Türkçe', flag: '🇹🇷' },
-  { code: 'th', name: 'ไทย', flag: '🇹🇭' },
-  { code: 'vi', name: 'Tiếng Việt', flag: '🇻🇳' },
-  { code: 'id', name: 'Bahasa Indonesia', flag: '🇮🇩' },
+  { code: 'zh-CN', name: '中文（简体）', flag: 'cn' },
+  { code: 'zh-TW', name: '中文（繁體）', flag: 'cn' },
+  { code: 'en', name: 'English', flag: 'us' },
+  { code: 'ru', name: 'Русский', flag: 'ru' },
+  { code: 'fa', name: 'فارسی', flag: 'ir' },
+  { code: 'ar', name: 'العربية', flag: 'sa' },
+  { code: 'fr', name: 'Français', flag: 'fr' },
+  { code: 'es', name: 'Español', flag: 'es' },
+  { code: 'de', name: 'Deutsch', flag: 'de' },
+  { code: 'pt', name: 'Português', flag: 'pt' },
+  { code: 'ja', name: '日本語', flag: 'jp' },
+  { code: 'ko', name: '한국어', flag: 'kr' },
+  { code: 'tr', name: 'Türkçe', flag: 'tr' },
+  { code: 'th', name: 'ไทย', flag: 'th' },
+  { code: 'vi', name: 'Tiếng Việt', flag: 'vn' },
+  { code: 'id', name: 'Bahasa Indonesia', flag: 'id' },
 ]
 
 // Languages written right-to-left（仅用于文案层面的标记，后台布局不做镜像）

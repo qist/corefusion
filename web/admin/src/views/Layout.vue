@@ -23,11 +23,15 @@
       <el-header style="background:#fff;border-bottom:1px solid #e6e6e6;display:flex;align-items:center;justify-content:flex-end;gap:16px">
         <el-icon v-if="isMobile" size="22" style="cursor:pointer;margin-right:auto" @click="drawerOpen=true"><Fold /></el-icon>
         <el-dropdown @command="changeLocale">
-          <span style="cursor:pointer;color:#409eff">{{ currentLocaleName }}</span>
+          <span style="cursor:pointer;color:#409eff;display:inline-flex;align-items:center;gap:6px">
+            <LangFlag v-if="currentLocale" :code="currentLocale.flag" :alt="currentLocale.name" />
+            {{ currentLocaleName }}
+          </span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item v-for="loc in availableLocales" :key="loc.code" :command="loc.code">
-                {{ loc.flag }} {{ loc.name }}
+                <LangFlag :code="loc.flag" :alt="loc.name" />
+                <span style="margin-left:6px">{{ loc.name }}</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -168,6 +172,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '../store/auth'
+import LangFlag from '../components/LangFlag.vue'
 import { setLocale, availableLocales } from '../locales'
 import { hasRole } from '../utils/permission'
 import QRCode from 'qrcode'
@@ -195,9 +200,10 @@ const viewKey = computed(() => {
   return String(route.name || route.path)
 })
 
+const currentLocale = computed(() => availableLocales.find(l => l.code === locale.value) || null)
 const currentLocaleName = computed(() => {
-  const found = availableLocales.find(l => l.code === locale.value)
-  return found ? `${found.flag} ${found.name}` : locale.value
+  const found = currentLocale.value
+  return found ? found.name : locale.value
 })
 
 // 挂载时预取 2FA 状态，供下拉菜单动态显示「开启/关闭 2FA」。

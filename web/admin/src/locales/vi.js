@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "Trực tuyến",
     "fleetOffline": "Ngoại tuyến",
     "fleetDegraded": "Suy giảm",
-    "fleetServices": "Dịch vụ đầu vào",
+    "fleetServices": "Nhân",
     "fleetServicesRunning": "Đang chạy",
     "fleetServicesStopped": "Đã dừng",
     "fleetSubscriptions": "Đăng ký hoạt động",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "Dựa trên",
     "lastUpdated": "Cập nhật lần cuối",
     "cpu": "CPU",
-    "mem": "Bộ nhớ"
+    "mem": "Bộ nhớ",
+    "fleetServicesUnknown": "chưa báo cáo",
+    "fleetSubscribers": "Người đăng ký",
+    "fleetSubsSuspended": "tạm dừng",
+    "fleetSubsExpired": "hết hạn",
+    "onlineDevicesIP": "Thiết bị/IP",
+    "fleetServicesHint": "Mỗi nút có một phiên bản nhân Xray / sing-box; chưa báo cáo = nút từ xa chưa đồng bộ trạng thái tiến trình",
+    "fleetSubsHint": "Đang hoạt động = đăng ký có trạng thái active; người đăng ký = tài khoản khách; tạm dừng/hết hạn tính riêng",
+    "liveOnlineHint": "Người đăng ký và thiết bị trực tuyến đã khử trùng lặp giữa các nút — cùng phạm vi với trang Người dùng trực tuyến",
   },
   "protoCenter": {
     "masque": {

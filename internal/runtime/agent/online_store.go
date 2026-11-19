@@ -389,6 +389,38 @@ func (s *NodeOnlineStore) GetAllSummary() map[int64]*NodeOnlineSummary {
 	return result
 }
 
+// GetOnlineTotals 返回所有未过期节点的「跨节点去重」在线总数。
+// Dashboard 的总卡不能用各节点汇总相加：同一订阅/设备可能同时在线于多台节点，
+// 相加会把它重复计数，导致总卡比「在线用户」页（全局去重）多。
+func (s *NodeOnlineStore) GetOnlineTotals() (subscriptions, devices int64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	now := time.Now().Unix()
+	subs := make(map[string]struct{})
+	devs := make(map[string]struct{})
+	for _, snap := range s.data {
+		if snap == nil || now-snap.UpdatedAt > s.ttlSec {
+			continue
+		}
+		for _, u := range snap.Users {
+			if u == nil {
+				continue
+			}
+			if u.GetSubscriptionId() > 0 {
+				subs[strconv.FormatInt(u.GetSubscriptionId(), 10)] = struct{}{}
+			} else if u.GetEmail() != "" {
+				subs["e:"+u.GetEmail()] = struct{}{}
+			}
+			for _, sess := range u.GetSessions() {
+				if sess != nil && sess.GetIp() != "" {
+					devs[sess.GetIp()] = struct{}{}
+				}
+			}
+		}
+	}
+	return int64(len(subs)), int64(len(devs))
+}
+
 // GetAllDetail 返回所有未过期节点的完整在线快照（serverID → 快照）。
 // 用于全局在线用户页，把所有节点的在线订阅人合并成一张表。
 func (s *NodeOnlineStore) GetAllDetail() map[int64]*NodeOnlineSnapshot {

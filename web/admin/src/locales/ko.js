@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "온라인",
     "fleetOffline": "오프라인",
     "fleetDegraded": "다운그레이드",
-    "fleetServices": "인바운드 서비스",
+    "fleetServices": "코어",
     "fleetServicesRunning": "실행 중",
     "fleetServicesStopped": "중지됨",
     "fleetSubscriptions": "활성 구독",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "기준",
     "lastUpdated": "마지막 업데이트",
     "cpu": "CPU",
-    "mem": "메모리"
+    "mem": "메모리",
+    "fleetServicesUnknown": "미보고",
+    "fleetSubscribers": "구독자",
+    "fleetSubsSuspended": "일시정지",
+    "fleetSubsExpired": "만료",
+    "onlineDevicesIP": "기기/IP",
+    "fleetServicesHint": "노드별 Xray / sing-box 코어 인스턴스. 미보고 = 원격 노드가 프로세스 상태를 동기화하지 않음",
+    "fleetSubsHint": "활성 = status가 active인 구독 수, 구독자 = 클라이언트 계정 수. 일시정지/만료는 별도 집계",
+    "liveOnlineHint": "노드 간 중복 제거된 온라인 구독자와 기기 수. \"온라인 사용자\" 페이지와 동일 기준",
   },
   "protoCenter": {
     "masque": {

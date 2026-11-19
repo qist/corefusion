@@ -60,9 +60,9 @@
     <el-divider content-position="left">{{ t('protoCenter.routing.regionImport') }}</el-divider>
     <div class="hint" style="margin-bottom:8px">{{ t('protoCenter.routing.regionImportHint') }}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
-      <el-button size="small" @click="openRegionImport('cn')">🇨🇳 {{ t('protoCenter.routing.regionCN') }}</el-button>
-      <el-button size="small" @click="openRegionImport('ru')">🇷🇺 {{ t('protoCenter.routing.regionRU') }}</el-button>
-      <el-button size="small" @click="openRegionImport('ir')">🇮🇷 {{ t('protoCenter.routing.regionIR') }}</el-button>
+      <el-button size="small" @click="openRegionImport('cn')"><LangFlag code="cn" style="margin-right:4px" />{{ t('protoCenter.routing.regionCN') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ru')"><LangFlag code="ru" style="margin-right:4px" />{{ t('protoCenter.routing.regionRU') }}</el-button>
+      <el-button size="small" @click="openRegionImport('ir')"><LangFlag code="ir" style="margin-right:4px" />{{ t('protoCenter.routing.regionIR') }}</el-button>
     </div>
 
     <!-- Rule Sets（route.rule_set 定义；此前面板只能靠 API 手写） -->
@@ -518,6 +518,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import PaginationBar from '../../../components/PaginationBar.vue'
+import LangFlag from '../../../components/LangFlag.vue'
 const { t } = useI18n()
 const props = defineProps({ data: Object, coreType: String, serverId: Number, fullConfig: Object })
 const emitFn = defineEmits(['update'])

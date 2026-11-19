@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "ออนไลน์",
     "fleetOffline": "ออฟไลน์",
     "fleetDegraded": "ลดประสิทธิภาพ",
-    "fleetServices": "บริการขาเข้า",
+    "fleetServices": "คอร์",
     "fleetServicesRunning": "กำลังทำงาน",
     "fleetServicesStopped": "หยุด",
     "fleetSubscriptions": "การสมัครใช้งานที่ใช้งานอยู่",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "อิงตาม",
     "lastUpdated": "อัปเดตล่าสุด",
     "cpu": "CPU",
-    "mem": "หน่วยความจำ"
+    "mem": "หน่วยความจำ",
+    "fleetServicesUnknown": "ไม่รายงาน",
+    "fleetSubscribers": "ผู้สมัคร",
+    "fleetSubsSuspended": "ระงับ",
+    "fleetSubsExpired": "หมดอายุ",
+    "onlineDevicesIP": "อุปกรณ์/IP",
+    "fleetServicesHint": "อินสแตนซ์คอร์ Xray / sing-box ต่อโหนด; ไม่รายงาน = โหนดระยะไกลยังไม่ซิงก์สถานะโปรเซส",
+    "fleetSubsHint": "ใช้งานอยู่ = การสมัครที่สถานะ active; ผู้สมัคร = บัญชีไคลเอนต์; ระงับ/หมดอายุ นับแยก",
+    "liveOnlineHint": "ผู้สมัครและอุปกรณ์ออนไลน์ที่ตัดข้อมูลซ้ำข้ามโหนด — เกณฑ์เดียวกับหน้า \"ผู้ใช้ออนไลน์\"",
   },
   "protoCenter": {
     "masque": {

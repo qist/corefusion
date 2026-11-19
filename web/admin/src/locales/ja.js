@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "オンライン",
     "fleetOffline": "オフライン",
     "fleetDegraded": "劣化",
-    "fleetServices": "インバウンドサービス",
+    "fleetServices": "コア",
     "fleetServicesRunning": "稼働中",
     "fleetServicesStopped": "停止",
     "fleetSubscriptions": "有効なサブスクリプション",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "基準",
     "lastUpdated": "最終更新",
     "cpu": "CPU",
-    "mem": "メモリ"
+    "mem": "メモリ",
+    "fleetServicesUnknown": "未報告",
+    "fleetSubscribers": "購読者",
+    "fleetSubsSuspended": "停止中",
+    "fleetSubsExpired": "期限切れ",
+    "onlineDevicesIP": "デバイス/IP",
+    "fleetServicesHint": "ノードごとの Xray / sing-box コアインスタンス。未報告 = リモートノードがプロセス状態を同期していない",
+    "fleetSubsHint": "アクティブ = status が active の購読数、購読者 = クライアントアカウント数。停止中/期限切れは別集計",
+    "liveOnlineHint": "ノード間で重複除去したオンライン購読者とデバイス数。「オンラインユーザー」ページと同じ集計",
   },
   "protoCenter": {
     "masque": {

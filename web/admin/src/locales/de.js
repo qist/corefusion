@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "Online",
     "fleetOffline": "Offline",
     "fleetDegraded": "Herabstufen",
-    "fleetServices": "Eingehende Dienste",
+    "fleetServices": "Kerne",
     "fleetServicesRunning": "Aktiv",
     "fleetServicesStopped": "Gestoppt",
     "fleetSubscriptions": "Aktive Abonnements",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "Basierend auf",
     "lastUpdated": "Zuletzt aktualisiert",
     "cpu": "CPU",
-    "mem": "Arbeitsspeicher"
+    "mem": "Arbeitsspeicher",
+    "fleetServicesUnknown": "nicht gemeldet",
+    "fleetSubscribers": "Abonnenten",
+    "fleetSubsSuspended": "pausiert",
+    "fleetSubsExpired": "abgelaufen",
+    "onlineDevicesIP": "Geräte/IP",
+    "fleetServicesHint": "Xray-/sing-box-Kerninstanzen pro Knoten; nicht gemeldet = entfernter Knoten hat den Prozessstatus nicht synchronisiert",
+    "fleetSubsHint": "Aktiv = Abonnements mit Status active; Abonnenten = Client-Konten; pausierte/abgelaufene werden separat gezählt",
+    "liveOnlineHint": "Online-Abonnenten und -Geräte, knotenübergreifend dedupliziert — gleicher Umfang wie die Seite „Online-Benutzer“",
   },
   "protoCenter": {
     "masque": {

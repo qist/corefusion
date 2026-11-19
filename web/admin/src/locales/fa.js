@@ -781,7 +781,7 @@ export default {
     "fleetOnline": "آنلاین",
     "fleetOffline": "آفلاین",
     "fleetDegraded": "تنزل‌یافته",
-    "fleetServices": "سرویس ورودی",
+    "fleetServices": "هسته‌ها",
     "fleetServicesRunning": "در حال اجرا",
     "fleetServicesStopped": "متوقف",
     "fleetSubscriptions": "اشتراک‌های فعال",
@@ -827,7 +827,15 @@ export default {
     "basedOn": "بر پایه",
     "lastUpdated": "آخرین به‌روزرسانی",
     "cpu": "CPU",
-    "mem": "حافظه"
+    "mem": "حافظه",
+    "fleetServicesUnknown": "بدون گزارش",
+    "fleetSubscribers": "مشترکان",
+    "fleetSubsSuspended": "تعلیق",
+    "fleetSubsExpired": "منقضی",
+    "onlineDevicesIP": "دستگاه‌ها/IP",
+    "fleetServicesHint": "نمونه‌های هسته Xray / sing-box روی هر گره؛ بدون گزارش = گره راه‌دور وضعیت فرآیند را همگام نکرده است",
+    "fleetSubsHint": "فعال = اشتراک‌های با وضعیت active؛ مشترکان = حساب‌های کلاینت؛ تعلیق/منقضی جداگانه شمرده می‌شوند",
+    "liveOnlineHint": "مشترکان و دستگاه‌های آنلاین بدون تکرار در گره‌ها — مطابق صفحه «کاربران آنلاین»",
   },
   "protoCenter": {
     "masque": {

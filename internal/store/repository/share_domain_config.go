@@ -155,3 +155,24 @@ func (r *ShareDomainConfigRepository) UpdateHealth(ctx context.Context, id int64
 		"last_check": checkedAt,
 	}).Error
 }
+
+// UpdateLatency 只更新延迟与检查时间，不碰 healthy / fail_count。
+// 链路探测启用时，健康状态由链路探测独占判定；TCP/TLS 探测仍负责测量
+// 握手延迟（订阅的「延迟阈值」按这个量级筛选），两边各写各的字段。
+func (r *ShareDomainConfigRepository) UpdateLatency(ctx context.Context, id int64, latencyMs int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.ShareDomainConfig{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"latency_ms": latencyMs,
+		"last_check": checkedAt,
+	}).Error
+}
+
+// UpdateHealthKeepLatency 写入健康状态但保留原 latency_ms。
+// 链路探测的延迟是端到端 HTTP 往返（含协议握手 + TLS + 请求），与 TCP 探测
+// 的延迟量级不同，混写会让订阅的「延迟阈值」筛选失真，因此不覆盖。
+func (r *ShareDomainConfigRepository) UpdateHealthKeepLatency(ctx context.Context, id int64, healthy bool, failCount int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.ShareDomainConfig{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"healthy":    healthy,
+		"fail_count": failCount,
+		"last_check": checkedAt,
+	}).Error
+}

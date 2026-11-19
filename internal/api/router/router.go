@@ -1966,14 +1966,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 连续失败才标记不健康（不改 Enabled），订阅渲染自动跳过不健康/超时延阈值条目。
 			// 探测配置（间隔/延迟阈值/入口节点/拨号工具）从 system_settings 读，改完下一轮生效。
 			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo, systemSettingRepo, extNodeRepo, binaryResolver, dataDir)
+			// 链路探测：复用订阅渲染把入站渲染成客户端出站（含 CDN 地址）。
+			prober.SetChainTargetProvider(publicSubH)
 			prober.StartScheduler(context.Background())
-			probeH := systemHandler.NewProbeHandler(prober, extNodeRepo, binaryResolver)
+			probeH := systemHandler.NewProbeHandler(prober, extNodeRepo, nodeServerRepoForSync, inboundConfigRepo, binaryResolver)
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{
 				cfipGroup.GET("/sources", cfipH.ListSources)
 				cfipGroup.GET("/entries", cfipH.ListEntries)
 				cfipGroup.GET("/probe-config", probeH.GetConfig)
+				cfipGroup.GET("/chain-probe-config", probeH.GetChainConfig)
 				// CF IP 池是全局出站资源，且 fetch 会发起服务端请求：
 				// 写操作仅 Admin（安全审计 v6 H-1/H-2）。
 				cfipWrite := protected.Group("/cfip").Use(middleware.RequireRole(domainuser.RoleAdmin))
@@ -1988,6 +1991,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipWrite.POST("/seed", cfipH.SeedDefaults)
 				cfipWrite.POST("/check", probeH.Check)
 				cfipWrite.PUT("/probe-config", probeH.SaveConfig)
+				cfipWrite.PUT("/chain-probe-config", probeH.SaveChainConfig)
+				cfipWrite.POST("/chain-probe/check", probeH.CheckChain)
 			}
 
 			// Services (moved under /node-servers/:id/services)

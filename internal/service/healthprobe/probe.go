@@ -18,6 +18,7 @@
 package healthprobe
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -58,7 +59,7 @@ const (
 	DefaultEnabled         = false
 	DefaultIntervalMinutes = 5
 	DefaultMaxLatencyMs    = 0  // 0 = 不限
-	DefaultDialer          = "" // 空 = 自动选择已安装的核心（sing-box → xray → mihomo）
+	DefaultDialer          = "" // 空 = 自动选择已安装的核心（xray → sing-box → mihomo）
 )
 
 // Config 是一次探测的运行时配置（每次探测前从设置里读，改完立即生效）。
@@ -73,12 +74,15 @@ type Config struct {
 
 // Result 是一次全量探测的汇总（供接口返回/日志）。
 type Result struct {
-	Checked   int    `json:"checked"`
-	Healthy   int    `json:"healthy"`
-	Unhealthy int    `json:"unhealthy"`
-	Skipped   int    `json:"skipped"`
-	Entry     string `json:"entry"`
-	Interval  int    `json:"interval_minutes"`
+	Checked   int `json:"checked"`
+	Healthy   int `json:"healthy"`
+	Unhealthy int `json:"unhealthy"`
+	Skipped   int `json:"skipped"`
+	// LatencyOnly 是「只刷新延迟、不判定健康」的条目数：链路探测启用时，
+	// CF 条目的健康状态由链路探测独占判定，TCP/TLS 探测只负责测延迟。
+	LatencyOnly int    `json:"latency_only"`
+	Entry       string `json:"entry"`
+	Interval    int    `json:"interval_minutes"`
 }
 
 // Prober 负责优选域名/IP 的探活。
@@ -92,6 +96,11 @@ type Prober struct {
 
 	// mu 防止手动检测与定时检测同时跑（会互相覆盖 fail_count）。
 	mu sync.Mutex
+	// chainMu 保护链路探测自身（与优选 IP 探测分开加锁，避免 CheckAll
+	// 持锁期间调用链路探测造成嵌套死锁）。
+	chainMu sync.Mutex
+	// chainProv 由订阅 handler 注入，把入站渲染成客户端出站参数。
+	chainProv ChainTargetProvider
 	// wake 唤醒调度器重新读配置（开关/间隔改动后立即生效）。
 	wake chan struct{}
 }
@@ -152,7 +161,11 @@ func (p *Prober) ReadConfig(ctx context.Context) Config {
 }
 
 // dialerCandidates 是自动模式下的优先顺序。
-var dialerCandidates = []string{"singbox", "xray", "mihomo"}
+//
+// xray 优先：链路探测会把入站渲染成客户端出站（vmess/vless + ws/grpc/reality
+// 等组合），sing-box 在部分组合上会直接 reject，表现为「全部条目失败」的假结论。
+// 优选探测与链路探测共用这个顺序，保证「探测设置里不选核心」时两者口径一致。
+var dialerCandidates = []string{"xray", "singbox", "mihomo"}
 
 // installedDialers 返回当前节点已安装的拨号核心。
 func (p *Prober) installedDialers() []string {
@@ -254,13 +267,19 @@ func (p *Prober) Wake() {
 
 // StartScheduler 周期性探测：每轮先读配置，间隔改完下一轮就生效。
 //
-// Enabled=false（默认）时完全不探测，只等配置变化或进程退出 —— 避免没在用
-// CF 优选的部署每 5 分钟白跑一轮（选入口节点时还会起临时核心进程）。
+// 时间间隔与拨号核心都来自「探测设置」（Config）：
+//   - 间隔 = cfg.IntervalMinutes；
+//   - 核心 = cfg.Dialer（空 = 自动，xray → sing-box → mihomo）。
+//
+// 两个开关各自独立：优选探测看 cfg.Enabled，链路探测看 ChainConfig.Enabled。
+// 只开链路探测时也会按探测设置的间隔跑（不会因为优选探测关着就不跑）；
+// 两者都关时才完全不探测，只等配置变化或进程退出。
 func (p *Prober) StartScheduler(ctx context.Context) {
 	go func() {
 		for {
 			cfg := p.ReadConfig(ctx)
-			if !cfg.Enabled {
+			chainCfg := p.ReadChainConfig(ctx)
+			if !cfg.Enabled && !chainCfg.Enabled {
 				select {
 				case <-ctx.Done():
 					return
@@ -268,12 +287,27 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 				}
 				continue
 			}
-			res, err := p.CheckAll(ctx)
-			if err != nil {
-				log.Printf("[healthprobe] check failed: %v", err)
-			} else {
-				log.Printf("[healthprobe] checked=%d healthy=%d unhealthy=%d skipped=%d entry=%s interval=%dm",
-					res.Checked, res.Healthy, res.Unhealthy, res.Skipped, res.Entry, res.Interval)
+			// 接口延迟由 TCP/TLS 探测测量，订阅的「延迟阈值」按这个量级筛选。
+			// 链路探测启用时 CheckAll 只刷新延迟、不写健康（健康由链路探测独占），
+			// 但延迟仍必须测 —— 否则只开链路探测的部署会永远没有延迟数据。
+			if cfg.Enabled || chainCfg.Enabled {
+				res, err := p.CheckAll(ctx)
+				if err != nil {
+					log.Printf("[healthprobe] check failed: %v", err)
+				} else {
+					log.Printf("[healthprobe] checked=%d healthy=%d unhealthy=%d skipped=%d latency_only=%d entry=%s interval=%dm",
+						res.Checked, res.Healthy, res.Unhealthy, res.Skipped, res.LatencyOnly, res.Entry, res.Interval)
+				}
+			}
+			// 链路探测串行在优选 IP 之后：两者都要起临时核心，同时跑会互相抢 CPU。
+			// 未开启时 CheckChain 立即返回，不产生任何开销。
+			if chainCfg.Enabled {
+				if chainRes, cerr := p.CheckChain(ctx, false); cerr != nil {
+					log.Printf("[healthprobe] chain check failed: %v", cerr)
+				} else if chainRes.Checked > 0 {
+					log.Printf("[healthprobe] chain checked=%d healthy=%d unhealthy=%d skipped=%d entry=%s duration=%dms",
+						chainRes.Checked, chainRes.Healthy, chainRes.Unhealthy, chainRes.Skipped, chainRes.Entry, chainRes.DurationMs)
+				}
 			}
 			interval := time.Duration(cfg.IntervalMinutes) * time.Minute
 			if interval < time.Minute {
@@ -299,6 +333,11 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 
 	cfg := p.ReadConfig(ctx)
 	res := Result{Entry: "local", Interval: cfg.IntervalMinutes}
+
+	// 链路探测开启时，CF 条目（域名/IP）的健康状态由链路探测独占判定：
+	// 这里的 TCP/TLS 探测只说明"端口能连"，会把链路探测判死的条目复活，
+	// 导致订阅又把坏节点分发出去。因此这些条目交给 CheckChain 处理。
+	chainAuthority := p.ReadChainConfig(ctx).Enabled
 
 	// 入口节点：起临时核心做拨号。
 	// ⚠ 明确选了入口节点就必须用它：核心未安装/节点无效时直接报错提示，
@@ -334,6 +373,11 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 		res.Skipped++
 		resMu.Unlock()
 	}
+	latencyOnly := func() {
+		resMu.Lock()
+		res.LatencyOnly++
+		resMu.Unlock()
+	}
 
 	var firstErr error
 	setErr := func(err error) {
@@ -363,6 +407,15 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 					defer wg.Done()
 					defer func() { <-sem }()
 					ok, latency := probeTCP(ctx, e.IP, port, dial)
+					if chainAuthority {
+						// 链路探测独占健康判定：这里只刷新延迟（订阅的延迟阈值
+						// 按 TCP 握手延迟筛），不写 healthy，避免把判死的条目复活。
+						if err := p.cfRepo.UpdateLatency(ctx, e.ID, latency, time.Now()); err != nil {
+							log.Printf("[healthprobe] update cf ip latency %s failed: %v", e.IP, err)
+						}
+						latencyOnly()
+						return
+					}
 					healthy, fail := nextState(ok, e.FailCount)
 					if err := p.cfRepo.UpdateHealth(ctx, e.ID, healthy, latency, fail, time.Now()); err != nil {
 						log.Printf("[healthprobe] update cf ip %s failed: %v", e.IP, err)
@@ -392,6 +445,14 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 					defer wg.Done()
 					defer func() { <-sem }()
 					ok, latency := probeTLS(ctx, d.Value, port, dial)
+					if chainAuthority {
+						// 同上：只刷新延迟，健康状态留给链路探测。
+						if err := p.shareRepo.UpdateLatency(ctx, d.ID, latency, time.Now()); err != nil {
+							log.Printf("[healthprobe] update share domain latency %s failed: %v", d.Value, err)
+						}
+						latencyOnly()
+						return
+					}
 					healthy, fail := nextState(ok, d.FailCount)
 					if err := p.shareRepo.UpdateHealth(ctx, d.ID, healthy, latency, fail, time.Now()); err != nil {
 						log.Printf("[healthprobe] update share domain %s failed: %v", d.Value, err)
@@ -491,26 +552,13 @@ func dialConn(ctx context.Context, dial dialFunc, network, addr string) (net.Con
 // 返回 dial、清理函数与实际使用的核心名。
 //
 // 口径：**选了哪个核心就必须用哪个**，未安装直接报错提示安装，不静默退回本机；
-// 未选择（dialer 为空）时按 sing-box → xray → mihomo 顺序取第一个已安装的。
+// 未选择（dialer 为空）时按 xray → sing-box → mihomo 顺序取第一个已安装的。
+// 链路探测（CheckChain）也走 pickDialer，因此两者始终使用探测设置里的同一个核心。
 func (p *Prober) startDialer(ctx context.Context, cfg Config) (dialFunc, func(), string, error) {
 	noop := func() {}
-	dialer := strings.ToLower(strings.TrimSpace(cfg.Dialer))
-	if dialer == "clash" {
-		dialer = "mihomo"
-	}
-	if dialer == "v2ray" {
-		dialer = "xray"
-	}
-	if dialer == "" {
-		dialer = firstAvailableDialer(p.installedDialers())
-		if dialer == "" {
-			return nil, noop, "", fmt.Errorf("未安装任何可用拨号核心（sing-box / xray / mihomo），请先在「二进制管理」中安装后再探测")
-		}
-	}
-	switch dialer {
-	case "singbox", "mihomo", "xray":
-	default:
-		return nil, noop, "", fmt.Errorf("不支持的拨号核心 %q（可选 sing-box / mihomo / xray）", cfg.Dialer)
+	dialer, err := p.pickDialer(cfg.Dialer)
+	if err != nil {
+		return nil, noop, "", err
 	}
 
 	node, err := p.nodeRepo.GetByID(ctx, cfg.EntryNodeID)
@@ -520,6 +568,54 @@ func (p *Prober) startDialer(ctx context.Context, cfg Config) (dialFunc, func(),
 	var proxy map[string]interface{}
 	if err := json.Unmarshal([]byte(node.ProxyJSON), &proxy); err != nil || len(proxy) == 0 {
 		return nil, noop, "", fmt.Errorf("外部节点 %d 的 proxy_json 无效", cfg.EntryNodeID)
+	}
+	return p.startDialerWithProxy(ctx, dialer, proxy)
+}
+
+// pickDialer 归一拨号核心名；空值按 xray → sing-box → mihomo 取第一个已安装的。
+func (p *Prober) pickDialer(configured string) (string, error) {
+	dialer := strings.ToLower(strings.TrimSpace(configured))
+	if dialer == "clash" {
+		dialer = "mihomo"
+	}
+	if dialer == "v2ray" {
+		dialer = "xray"
+	}
+	if dialer == "" {
+		dialer = firstAvailableDialer(p.installedDialers())
+		if dialer == "" {
+			return "", fmt.Errorf("未安装任何可用拨号核心（sing-box / xray / mihomo），请先在「二进制管理」中安装后再探测")
+		}
+	}
+	switch dialer {
+	case "singbox", "mihomo", "xray":
+		return dialer, nil
+	default:
+		return "", fmt.Errorf("不支持的拨号核心 %q（可选 sing-box / mihomo / xray）", configured)
+	}
+}
+
+// EffectiveDialer 返回实际会用的拨号核心（配置为空时按自动顺序解析）。
+// 管理端用它展示「探测设置」当前生效的拨号工具，避免页面只显示空值——
+// 链路探测的拨号核心就是从探测设置读的，两处必须一致。
+func (p *Prober) EffectiveDialer(configured string) string {
+	if d, err := p.pickDialer(configured); err == nil {
+		return d
+	}
+	return ""
+}
+
+// startDialerWithProxy 用给定的 mihomo 出站 map 起一个临时核心做 SOCKS 拨号。
+// 供「优选探测」（外部节点）与「链路探测」（外部节点或自建节点入站）共用。
+func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy map[string]interface{}) (dialFunc, func(), string, error) {
+	noop := func() {}
+	if len(proxy) == 0 {
+		return nil, noop, "", fmt.Errorf("出口节点配置为空，无法建立拨号")
+	}
+	switch dialer {
+	case "singbox", "mihomo", "xray":
+	default:
+		return nil, noop, "", fmt.Errorf("不支持的拨号核心 %q（可选 sing-box / mihomo / xray）", dialer)
 	}
 	port, err := freePort()
 	if err != nil {
@@ -616,6 +712,9 @@ func (p *Prober) startDialer(ctx context.Context, cfg Config) (dialFunc, func(),
 
 	cmd := exec.Command(binPath, args...)
 	cmd.Dir = dir
+	var coreOut bytes.Buffer
+	cmd.Stdout = &coreOut
+	cmd.Stderr = &coreOut
 	if err := cmd.Start(); err != nil {
 		cleanupDir()
 		return nil, noop, "", fmt.Errorf("启动 %s 失败：%w", dialerDisplayName(dialer), err)
@@ -624,8 +723,12 @@ func (p *Prober) startDialer(ctx context.Context, cfg Config) (dialFunc, func(),
 	if !waitPort(proxyAddr, 6*time.Second) {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
+		msg := strings.TrimSpace(coreOut.String())
 		cleanupDir()
-		return nil, noop, "", fmt.Errorf("%s 未能在 6 秒内打开本地 SOCKS 端口（节点配置可能无效）", dialerDisplayName(dialer))
+		if msg == "" {
+			msg = "无输出"
+		}
+		return nil, noop, "", fmt.Errorf("%s 未能在 6 秒内打开本地 SOCKS 端口：%s", dialerDisplayName(dialer), truncateErr(msg))
 	}
 	cleanup := func() {
 		_ = cmd.Process.Kill()

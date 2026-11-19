@@ -1,7 +1,12 @@
 package system
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"corefusion/internal/api/response"
+	"corefusion/internal/model/entity"
 	"corefusion/internal/service/binaries"
 	"corefusion/internal/service/healthprobe"
 	"corefusion/internal/store/repository"
@@ -11,14 +16,28 @@ import (
 
 // ProbeHandler 暴露「优选域名 / 优选 IP」的探活入口与探活配置。
 type ProbeHandler struct {
-	prober   *healthprobe.Prober
-	nodeRepo *repository.ExternalNodeRepository
-	resolver *binaries.Resolver
+	prober      *healthprobe.Prober
+	nodeRepo    *repository.ExternalNodeRepository
+	nodeSrvRepo *repository.NodeServerRepository
+	inboundRepo *repository.InboundConfigRepository
+	resolver    *binaries.Resolver
 }
 
 // NewProbeHandler 创建探活处理器。
-func NewProbeHandler(prober *healthprobe.Prober, nodeRepo *repository.ExternalNodeRepository, resolver *binaries.Resolver) *ProbeHandler {
-	return &ProbeHandler{prober: prober, nodeRepo: nodeRepo, resolver: resolver}
+func NewProbeHandler(
+	prober *healthprobe.Prober,
+	nodeRepo *repository.ExternalNodeRepository,
+	nodeSrvRepo *repository.NodeServerRepository,
+	inboundRepo *repository.InboundConfigRepository,
+	resolver *binaries.Resolver,
+) *ProbeHandler {
+	return &ProbeHandler{
+		prober:      prober,
+		nodeRepo:    nodeRepo,
+		nodeSrvRepo: nodeSrvRepo,
+		inboundRepo: inboundRepo,
+		resolver:    resolver,
+	}
 }
 
 // Check 立即探测全部优选域名/IP，返回本次探测汇总。
@@ -54,10 +73,11 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 		}
 	}
 
-	// 拨号核心：只列出真正装了的（mihomo 需要用户自行安装到 binaries/active/mihomo）
+	// 拨号核心：只列出真正装了的（mihomo 需要用户自行安装到 binaries/active/mihomo）。
+	// 顺序与自动选择一致（xray → sing-box → mihomo），避免下拉顺序和实际生效值对不上。
 	dialers := make([]string, 0, 3)
 	if h.resolver != nil {
-		for _, ct := range []string{"singbox", "xray", "mihomo"} {
+		for _, ct := range []string{"xray", "singbox", "mihomo"} {
 			if _, _, err := h.resolver.Resolve(ct); err == nil {
 				dialers = append(dialers, ct)
 			}
@@ -104,4 +124,164 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 		return
 	}
 	response.OK(c, h.prober.ReadConfig(c.Request.Context()))
+}
+
+// chainExitOption 是链路探测可选的出口（外部节点 / 自建节点入站）。
+type chainExitOption struct {
+	Value    string `json:"value"`
+	Label    string `json:"label"`
+	Kind     string `json:"kind"` // external / inbound
+	Protocol string `json:"protocol"`
+	Host     string `json:"host"`
+	Region   string `json:"region"`
+}
+
+// chainExitOptions 列出可作为「链路出口」的候选：
+//   - 导入的外部节点（常是机场/回国线路）；
+//   - 自建节点上的入站（国内 VPS 的入口配置，参数可直接复用）。
+func (h *ProbeHandler) chainExitOptions(ctx context.Context) []chainExitOption {
+	out := make([]chainExitOption, 0, 32)
+	if h.nodeRepo != nil {
+		if list, err := h.nodeRepo.ListAll(ctx); err == nil {
+			for _, n := range list {
+				if !n.Enabled || n.ProxyJSON == "" {
+					continue
+				}
+				out = append(out, chainExitOption{
+					Value:    fmt.Sprintf("ext:%d", n.ID),
+					Label:    fmt.Sprintf("%s (%s)", n.Name, n.Protocol),
+					Kind:     "external",
+					Protocol: n.Protocol,
+					Host:     n.Host,
+				})
+			}
+		}
+	}
+	if h.inboundRepo != nil {
+		servers := map[int64]*entity.NodeServer{}
+		if h.nodeSrvRepo != nil {
+			if list, err := h.nodeSrvRepo.ListAll(ctx); err == nil {
+				for i := range list {
+					n := list[i]
+					servers[n.ID] = &n
+				}
+			}
+		}
+		for _, core := range []string{"xray", "singbox"} {
+			cfgs, err := h.inboundRepo.ListAll(ctx, core)
+			if err != nil {
+				continue
+			}
+			for i := range cfgs {
+				cfg := &cfgs[i]
+				if !cfg.Enabled {
+					continue
+				}
+				// socks/http 入站没有客户端出站可用的凭据结构，选它必然探测失败，
+				// 直接不列出来（这类入站也不是"国内线路出口"的典型用法）。
+				if cfg.Protocol == "socks" || cfg.Protocol == "http" || cfg.Protocol == "mixed" {
+					continue
+				}
+				// unix / 抽象 socket 入站只能经 SNI 前置代理访问，客户端直连不到，
+				// 当出口必然失败（生产 nginx 前置架构下的入站几乎都是这种）。
+				listen := strings.TrimSpace(cfg.Listen)
+				if strings.HasPrefix(listen, "/") || strings.HasPrefix(listen, "@") {
+					continue
+				}
+				nodeName := fmt.Sprintf("节点 %d", cfg.ServerID)
+				region := ""
+				if node := servers[cfg.ServerID]; node != nil {
+					if node.Name != "" {
+						nodeName = node.Name
+					}
+					region = node.Region
+				}
+				label := fmt.Sprintf("%s / %s:%d (%s)", nodeName, cfg.Protocol, cfg.Port, core)
+				out = append(out, chainExitOption{
+					Value:    fmt.Sprintf("inb:%d", cfg.ID),
+					Label:    label,
+					Kind:     "inbound",
+					Protocol: cfg.Protocol,
+					Host:     nodeName,
+					Region:   region,
+				})
+			}
+		}
+	}
+	return out
+}
+
+// GetChainConfig 返回链路探测配置、上次结果、待探测目标与出口候选。
+func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	cfg := h.prober.ReadChainConfig(ctx)
+	results, updatedAt := h.prober.ChainResults(ctx)
+	targets, err := h.prober.ChainTargets(ctx)
+	if err != nil {
+		// 目标解析失败不应让整个配置页打不开：返回空列表，错误在探测时暴露。
+		targets = nil
+	}
+	inbounds, err := h.prober.ChainProbeInboundOptions(ctx)
+	if err != nil {
+		inbounds = nil
+	}
+	// 链路探测不单独配间隔/拨号核心：两者都跟随「探测设置」。
+	// 这里把当前生效值一起返回，页面直接把依赖关系显示出来。
+	probeCfg := h.prober.ReadConfig(ctx)
+	response.OK(c, gin.H{
+		"config":             cfg,
+		"results":            results,
+		"results_updated_at": updatedAt,
+		"probe":              h.prober.ChainLastProbe(ctx),
+		"targets":            targets,
+		"target_count":       len(targets),
+		"exits":              h.chainExitOptions(ctx),
+		"inbounds":           inbounds,
+		"interval_minutes":   probeCfg.IntervalMinutes,
+		"dialer":             probeCfg.Dialer,
+		"effective_dialer":   h.prober.EffectiveDialer(probeCfg.Dialer),
+	})
+}
+
+// SaveChainConfig 保存链路探测配置。
+func (h *ProbeHandler) SaveChainConfig(c *gin.Context) {
+	var req healthprobe.ChainConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	// 探针入站：允许留空（= 未选择），但一旦填了就必须是当前可用的 CDN 入站。
+	if req.Inbound != "" {
+		options, err := h.prober.ChainProbeInboundOptions(c.Request.Context())
+		if err != nil {
+			response.InternalError(c, "INVALID_REQUEST", err.Error())
+			return
+		}
+		ok := false
+		for _, o := range options {
+			if o.Value == req.Inbound {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			response.BadRequest(c, "INVALID_REQUEST", "探针入站不存在或未启用 CDN 接入域名")
+			return
+		}
+	}
+	if err := h.prober.SaveChainConfig(c.Request.Context(), req); err != nil {
+		response.InternalError(c, "SAVE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, h.prober.ReadChainConfig(c.Request.Context()))
+}
+
+// CheckChain 立即执行一轮链路探测（忽略定时开关）。
+func (h *ProbeHandler) CheckChain(c *gin.Context) {
+	res, err := h.prober.CheckChain(c.Request.Context(), true)
+	if err != nil {
+		response.InternalError(c, "CHAIN_PROBE_FAILED", err.Error())
+		return
+	}
+	response.OK(c, res)
 }

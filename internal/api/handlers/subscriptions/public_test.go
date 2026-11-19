@@ -1286,30 +1286,28 @@ func TestResolvePortalWebPageURLFallbackHonoursIndependentPort(t *testing.T) {
 	}
 }
 
-// 优选地址池三级回退：延迟达标 → 健康 → 全部；阈值 0 表示不限制。
-func TestPreferFastTiers(t *testing.T) {
-	fast := []shareDomainEntry{{Host: "fast.example.com", LatencyMs: 80}}
-	healthy := []shareDomainEntry{{Host: "fast.example.com", LatencyMs: 80}, {Host: "slow.example.com", LatencyMs: 900}}
-	all := append(append([]shareDomainEntry{}, healthy...), shareDomainEntry{Host: "dead.example.com", LatencyMs: 0})
-
-	if got := preferFast(all, healthy, fast); len(got) != 1 || got[0].Host != "fast.example.com" {
-		t.Fatalf("应优先返回延迟达标池，got %+v", got)
+// 订阅只下发「健康 + 延迟达标」的条目：判失败的一律不发，未测过的不算达标。
+func TestUsableForShare(t *testing.T) {
+	// 阈值 0 = 不限延迟：健康的都发，判失败的不发
+	if !usableForShare(true, 0, 0) || !usableForShare(true, 5000, 0) {
+		t.Fatal("阈值 0 时健康的条目都应可下发（含未测过的 0ms）")
 	}
-	if got := preferFast(all, healthy, nil); len(got) != 2 || got[1].Host != "slow.example.com" {
-		t.Fatalf("没有达标条目时应回退健康池，got %+v", got)
-	}
-	if got := preferFast(all, nil, nil); len(got) != 3 {
-		t.Fatalf("全部不健康时应回退全量，got %+v", got)
+	if usableForShare(false, 80, 0) {
+		t.Fatal("判失败的条目不应下发")
 	}
 
-	if !withinLatency(0, 0) || !withinLatency(5000, 0) {
-		t.Fatal("阈值 0 应表示不限制")
+	// 设了阈值：必须测过且不超阈值
+	if !usableForShare(true, 80, 200) || !usableForShare(true, 200, 200) {
+		t.Fatal("达标条目应可下发")
 	}
-	if !withinLatency(0, 200) || !withinLatency(200, 200) {
-		t.Fatal("未探测(0)与等于阈值都应通过")
+	if usableForShare(true, 0, 200) {
+		t.Fatal("未探测(0ms)在设了阈值时不算达标")
 	}
-	if withinLatency(201, 200) {
+	if usableForShare(true, 201, 200) {
 		t.Fatal("超过阈值应被过滤")
+	}
+	if usableForShare(false, 50, 200) {
+		t.Fatal("健康状态优先：判失败即使延迟低也不下发")
 	}
 }
 

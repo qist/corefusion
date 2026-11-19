@@ -2822,11 +2822,12 @@ func cleanDNSConfig(dns interface{}) interface{} {
 // --- helpers ---
 
 func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry {
-	// 分三档：全部可用 / 探活健康 / 健康且延迟达标。
-	// 优先用延迟达标池（用户口径：太慢的不要进池），但某一档为空时逐级回退，
-	// 否则一次网络抖动会让订阅里一个地址都不剩。
-	var domainAll, domainHealthy, domainFast []shareDomainEntry
-	var ipAll, ipHealthy, ipFast []shareDomainEntry
+	// 只下发「探活健康 + 延迟达标」的条目：
+	//   - 判失败的条目一律不进订阅（不再整池失败时回退全量 —— 那等于把坏地址
+	//     分发出去，用户口径是「只拿成功的」）；
+	//   - 设了延迟阈值时，未测过（latency=0）与超阈值的条目也不进（否则未测过的
+	//     会因为延迟 0 被当成"最快"优先分发）。
+	entries := make([]shareDomainEntry, 0, 32)
 	maxLatency := h.probeMaxLatencyMs(ctx)
 
 	// Load direct and cf_domain from share_domain_configs (NOT cf_ip, that comes from cf_ip_entries)
@@ -2851,12 +2852,16 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if len(entry.Ports) == 0 {
 					entry.Ports = []int{entry.Port}
 				}
-				domainAll = append(domainAll, entry)
-				if d.Healthy {
-					domainHealthy = append(domainHealthy, entry)
-					if withinLatency(entry.LatencyMs, maxLatency) {
-						domainFast = append(domainFast, entry)
+				// direct 是直连域名，不参与优选探测（延迟永远是 0），
+				// 不能套用「延迟达标」的筛选，否则设了阈值后会被全部误杀。
+				if d.Type == "direct" {
+					if d.Healthy {
+						entries = append(entries, entry)
 					}
+					continue
+				}
+				if usableForShare(d.Healthy, entry.LatencyMs, maxLatency) {
+					entries = append(entries, entry)
 				}
 			}
 		}
@@ -2878,38 +2883,27 @@ func (h *PublicHandler) loadShareDomains(ctx context.Context) []shareDomainEntry
 				if len(entry.Ports) == 0 {
 					entry.Ports = []int{443}
 				}
-				ipAll = append(ipAll, entry)
-				if ip.Healthy {
-					ipHealthy = append(ipHealthy, entry)
-					if withinLatency(entry.LatencyMs, maxLatency) {
-						ipFast = append(ipFast, entry)
-					}
+				if usableForShare(ip.Healthy, entry.LatencyMs, maxLatency) {
+					entries = append(entries, entry)
 				}
 			}
 		}
 	}
-
-	entries := make([]shareDomainEntry, 0, len(domainAll)+len(ipAll))
-	entries = append(entries, preferFast(domainAll, domainHealthy, domainFast)...)
-	entries = append(entries, preferFast(ipAll, ipHealthy, ipFast)...)
 	return entries
 }
 
-// preferFast 三级回退：健康且延迟达标 → 健康 → 全部。
-// 保证「太慢的不进池」，同时不会因为整池都慢就把订阅地址清空。
-func preferFast(all, healthy, fast []shareDomainEntry) []shareDomainEntry {
-	if len(fast) > 0 {
-		return fast
+// usableForShare 判断一个优选条目能否下发给客户端：
+//   - 必须探活健康（判失败的条目一律不发；不再"整池坏了回退全量"）；
+//   - 设了延迟阈值（>0）时必须测过且不超阈值，未测过（0ms）不算达标；
+//   - 阈值 0 = 不限制延迟（健康的都发）。
+func usableForShare(healthy bool, latencyMs, maxMs int) bool {
+	if !healthy {
+		return false
 	}
-	if len(healthy) > 0 {
-		return healthy
+	if maxMs <= 0 {
+		return true
 	}
-	return all
-}
-
-// withinLatency 判断延迟是否满足阈值；max <= 0 表示不限制（未探测的 0 也视为通过）。
-func withinLatency(latencyMs, maxMs int) bool {
-	return maxMs <= 0 || latencyMs <= maxMs
+	return latencyMs > 0 && latencyMs <= maxMs
 }
 
 // probeMaxLatencyMs 读取探活延迟阈值（毫秒）；读不到或非法时返回 0（不限制）。

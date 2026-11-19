@@ -140,3 +140,23 @@ func (r *CFIPEntryRepository) UpdateHealth(ctx context.Context, id int64, health
 		"last_check": checkedAt,
 	}).Error
 }
+
+// UpdateLatency 只更新延迟与检查时间，不碰 healthy / fail_count。
+// 链路探测启用时，健康状态由链路探测独占判定；TCP 探测仍负责测量握手延迟
+// （订阅的「延迟阈值」按这个量级筛选），两边各写各的字段。
+func (r *CFIPEntryRepository) UpdateLatency(ctx context.Context, id int64, latencyMs int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.CFIPEntry{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"latency_ms": latencyMs,
+		"last_check": checkedAt,
+	}).Error
+}
+
+// UpdateHealthKeepLatency 写入健康状态但保留原 latency_ms。
+// 链路探测的延迟是端到端 HTTP 往返，与 TCP 探测量级不同，不能覆盖。
+func (r *CFIPEntryRepository) UpdateHealthKeepLatency(ctx context.Context, id int64, healthy bool, failCount int, checkedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&entity.CFIPEntry{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"healthy":    healthy,
+		"fail_count": failCount,
+		"last_check": checkedAt,
+	}).Error
+}

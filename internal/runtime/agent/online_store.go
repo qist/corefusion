@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -28,20 +31,25 @@ type NodeOnlineStore struct {
 	// sessions: serverID -> 会话键 -> 连续在线状态。
 	// 会话键分两级：订阅级（core|s:<subID>）与会话级（订阅键|ip:<ip>）。
 	sessions map[int64]map[string]*onlineSession
+	// 持久化：面板重启后「在线时长 / 累计流量」不应从 0 重新计时，
+	// 否则页面上一整列会同时变成「重启至今」的同一个数字。
+	persistPath string
+	lastPersist int64
 }
 
 // onlineSession 记录面板侧观测到的一次「连续在线」。
+// 字段导出是为了 JSON 持久化（重启后恢复起点）。
 type onlineSession struct {
-	since    int64 // 本次连续在线的起点（面板时钟，unix 秒）
-	lastSeen int64 // 面板最后一次看到该会话的时间
+	Since    int64 `json:"since"`     // 本次连续在线的起点（面板时钟，unix 秒）
+	LastSeen int64 `json:"last_seen"` // 面板最后一次看到该会话的时间
 	// 流量累加：核心只提供「用户级累计计数器」，而且核心重启/流量复位会归零，
 	// 直接展示计数器就等于展示「这次核心跑起来之后的流量」（和在线时长对不上）。
 	// 这里按连续在线区间做增量累加：up/down 是上一次采样到的计数器值，
 	// cumUp/cumDown 是本次连续在线区间内的累计流量。
-	up      int64
-	down    int64
-	cumUp   int64
-	cumDown int64
+	Up      int64 `json:"up"`
+	Down    int64 `json:"down"`
+	CumUp   int64 `json:"cum_up"`
+	CumDown int64 `json:"cum_down"`
 }
 
 // NewNodeOnlineStore 创建在线存储；ttlSec 为快照过期秒数（默认 60s）。
@@ -55,6 +63,94 @@ func NewNodeOnlineStore(ttlSec int64) *NodeOnlineStore {
 		graceSec: ttlSec,
 		sessions: make(map[int64]map[string]*onlineSession),
 	}
+}
+
+// SetPersistPath 设置「连续在线状态」的持久化文件路径，并立即尝试恢复。
+// 目的：面板重启 / 升级后，页面上已有的在线时长不要集体归零重算
+// （否则整列会显示成同一个「重启至今」的数字，看起来像是时长没分开算）。
+func (s *NodeOnlineStore) SetPersistPath(path string) {
+	s.mu.Lock()
+	s.persistPath = path
+	s.mu.Unlock()
+	s.load()
+}
+
+// load 从持久化文件恢复会话状态。
+// 超过 graceSec 未更新的条目（面板停机太久）直接丢弃，避免把历史在线算进来。
+func (s *NodeOnlineStore) load() {
+	s.mu.RLock()
+	path := s.persistPath
+	s.mu.RUnlock()
+	if path == "" {
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var saved map[string]map[string]*onlineSession
+	if err := json.Unmarshal(raw, &saved); err != nil {
+		return
+	}
+	now := time.Now().Unix()
+	restored := make(map[int64]map[string]*onlineSession, len(saved))
+	for sid, states := range saved {
+		id, err := strconv.ParseInt(sid, 10, 64)
+		if err != nil {
+			continue
+		}
+		out := make(map[string]*onlineSession, len(states))
+		for key, st := range states {
+			if st == nil || st.Since <= 0 {
+				continue
+			}
+			if st.LastSeen <= 0 || now-st.LastSeen > s.graceSec {
+				continue
+			}
+			if st.LastSeen > now+60 {
+				st.LastSeen = now
+			}
+			out[key] = st
+		}
+		if len(out) > 0 {
+			restored[id] = out
+		}
+	}
+	s.mu.Lock()
+	for id, states := range restored {
+		if s.sessions[id] == nil {
+			s.sessions[id] = states
+		}
+	}
+	s.mu.Unlock()
+}
+
+// persistLocked 周期落盘（调用方需持有写锁）。节流到 15s，避免每轮上报都写盘。
+func (s *NodeOnlineStore) persistLocked(now int64) {
+	path := s.persistPath
+	if path == "" || now-s.lastPersist < 15 {
+		return
+	}
+	s.lastPersist = now
+	raw := make(map[string]map[string]*onlineSession, len(s.sessions))
+	for sid, states := range s.sessions {
+		if len(states) == 0 {
+			continue
+		}
+		raw[strconv.FormatInt(sid, 10)] = states
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, path)
 }
 
 // Update 刷新某节点的在线快照（同时重置刷新时间）。
@@ -131,7 +227,7 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 
 	// 清理超时未再出现的会话状态，避免长期运行时无限增长。
 	for key, st := range states {
-		if _, ok := seen[key]; !ok && now-st.lastSeen > s.graceSec {
+		if _, ok := seen[key]; !ok && now-st.LastSeen > s.graceSec {
 			delete(states, key)
 		}
 	}
@@ -140,24 +236,31 @@ func (s *NodeOnlineStore) Update(serverID int64, users []*agentpb.OnlineUserEntr
 		Users:     users,
 		UpdatedAt: now,
 	}
+	s.persistLocked(now)
 }
 
 // touchOnlineSession 返回该会话本次「连续在线」的起点（面板时钟）。
 // 在 graceSec 内出现过就沿用旧起点，否则以 now 重新开始。
 func touchOnlineSession(states map[string]*onlineSession, key string, now, graceSec int64) int64 {
 	st := states[key]
-	if st == nil || now-st.lastSeen > graceSec {
-		states[key] = &onlineSession{since: now, lastSeen: now}
+	if st == nil || now-st.LastSeen > graceSec {
+		states[key] = &onlineSession{Since: now, LastSeen: now}
 		return now
 	}
-	st.lastSeen = now
-	return st.since
+	st.LastSeen = now
+	return st.Since
 }
 
-// onlineUserKey 生成订阅级的会话键：同一订阅在多个入站各有账号时共用一条，
-// xray / sing-box 分开计数。无法归户时返回空串（不参与跟踪）。
+// onlineUserKey 生成「在线时长」跟踪键。
+// 优先用账号全名（AccountEmail，带 _shortTag）：页面一行就是「订阅 × 入口」，
+// 同一订阅在多个入站各有一个账号时，各行必须各自计时 —— 用订阅 ID 会让
+// 三行的时长完全相同（用户看到的就是「为啥时长都一样」）。
+// 拿不到账号名时退回订阅 ID / 邮箱。
 func onlineUserKey(u *agentpb.OnlineUserEntry) string {
 	core := u.GetCoreType()
+	if account := u.GetAccountEmail(); account != "" {
+		return core + "|a:" + account
+	}
 	if u.GetSubscriptionId() > 0 {
 		return core + "|s:" + strconv.FormatInt(u.GetSubscriptionId(), 10)
 	}
@@ -200,15 +303,15 @@ func accumulateOnlineTraffic(states map[string]*onlineSession, key string, now, 
 	down = max(down, 0)
 
 	st := states[key]
-	if st == nil || now-st.lastSeen > graceSec {
-		states[key] = &onlineSession{since: now, lastSeen: now, up: up, down: down}
+	if st == nil || now-st.LastSeen > graceSec {
+		states[key] = &onlineSession{Since: now, LastSeen: now, Up: up, Down: down}
 		return 0, 0
 	}
-	st.lastSeen = now
-	st.cumUp += counterDelta(up, st.up)
-	st.cumDown += counterDelta(down, st.down)
-	st.up, st.down = up, down
-	return st.cumUp, st.cumDown
+	st.LastSeen = now
+	st.CumUp += counterDelta(up, st.Up)
+	st.CumDown += counterDelta(down, st.Down)
+	st.Up, st.Down = up, down
+	return st.CumUp, st.CumDown
 }
 
 // counterDelta 计算单调计数器的增量；回退说明计数器被复位，从 0 重新算。

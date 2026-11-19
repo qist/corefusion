@@ -20,13 +20,19 @@ func NewHandler(db *gorm.DB) *Handler {
 
 // Overview handles GET /api/v1/metrics/overview.
 func (h *Handler) Overview(c *gin.Context) {
-	var nodeCount, serviceCount, subCount, certCount int64
+	var nodeCount, serviceCount, serviceRunningCount, subCount, certCount int64
 
 	h.db.Model(&entity.Node{}).Count(&nodeCount)
 	// 只统计挂在真实存在的节点服务器上的入站服务，排除指向已删除服务器的孤儿记录
 	h.db.Table("inbound_services").
 		Joins("INNER JOIN node_servers ON node_servers.id = inbound_services.server_id").
 		Count(&serviceCount)
+	// 「运行中」用于 Dashboard 卡片副标题：服务总数本身没有信息量，
+	// 用户真正关心的是有没有服务掉线。口径与总数一致（排除孤儿记录）。
+	h.db.Table("inbound_services").
+		Joins("INNER JOIN node_servers ON node_servers.id = inbound_services.server_id").
+		Where("inbound_services.process_status = ?", "running").
+		Count(&serviceRunningCount)
 	h.db.Model(&entity.Subscription{}).Where("status = ?", "active").Count(&subCount)
 	h.db.Model(&entity.Certificate{}).Where("status = ?", "active").Count(&certCount)
 
@@ -63,6 +69,7 @@ func (h *Handler) Overview(c *gin.Context) {
 	response.OK(c, gin.H{
 		"node_count":                nodeCount,
 		"service_count":             serviceCount,
+		"service_running_count":     serviceRunningCount,
 		"active_subscription_count": subCount,
 		"active_cert_count":         certCount,
 		"expiring_cert_count":       expiringCertCount,

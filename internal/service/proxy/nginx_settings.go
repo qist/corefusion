@@ -174,9 +174,8 @@ type NginxSettings struct {
 	StreamSNIEnabled bool `json:"stream_sni_enabled"`
 	// SNIListenAddr 是 SNI 流监听的默认地址，支持纯端口 / IP:端口 / [::]:端口。
 	// 单个 SNI 规则可在站点 Path 里覆盖；为空时回退 443。
-	SNIListenAddr      string `json:"sni_listen_addr"`
-	StreamSNICacheSize string `json:"stream_sni_cache_size"`
-	StreamIPv6         bool   `json:"stream_ipv6"`
+	SNIListenAddr string `json:"sni_listen_addr"`
+	StreamIPv6    bool   `json:"stream_ipv6"`
 	// StreamIPv6ListenAddr 是 stream（SNI/L4）的 IPv6 监听地址（只填主机部分，默认 "::"）。
 	StreamIPv6ListenAddr string `json:"stream_ipv6_listen_addr"`
 	StreamProxyProtocol  bool   `json:"stream_proxy_protocol"`
@@ -248,7 +247,8 @@ func DefaultNginxSettings() *NginxSettings {
 		Http2MaxConcurrentStreams:   "512",
 		Http2RecvBufferSize:         "512k",
 		Http3:                       !isWindows,
-		Http3Hq:                     !isWindows,
+		// http3_hq 是 Google HQ 草案互操作调试模式，生产默认关闭（前端可开）。
+		Http3Hq:                     false,
 		Http3MaxConcurrentStreams:   "256",
 		Http3StreamBufferSize:       "256k",
 		QuicRetry:                   !isWindows,
@@ -310,7 +310,6 @@ func DefaultNginxSettings() *NginxSettings {
 		// Stream defaults
 		StreamSNIEnabled:     false,
 		SNIListenAddr:        "443",
-		StreamSNICacheSize:   "64",
 		StreamIPv6:           false,
 		StreamIPv6ListenAddr: "::",
 		StreamProxyProtocol:  false,
@@ -619,9 +618,6 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	}
 	if src.CustomConfig != "" {
 		dst.CustomConfig = src.CustomConfig
-	}
-	if src.StreamSNICacheSize != "" {
-		dst.StreamSNICacheSize = src.StreamSNICacheSize
 	}
 	if src.StreamConnectTimeout != "" {
 		dst.StreamConnectTimeout = src.StreamConnectTimeout

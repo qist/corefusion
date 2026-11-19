@@ -479,14 +479,23 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	sb.WriteString("\n")
 
 	// HTTP/3 (not on Windows)
+	// 三个 QUIC 子开关（quic_retry / http3_hq / quic_gso）必须跟随设置项，
+	// 否则前端开关只是装饰、用户改了也不生效。
 	if s.Http3 {
-		sb.WriteString("    quic_retry on;\n")
+		if s.QuicRetry {
+			sb.WriteString("    quic_retry on;\n")
+		}
 		sb.WriteString("    http3 on;\n")
-		sb.WriteString("    http3_hq on;\n")
+		// http3_hq 是 Google 互操作调试模式（HQ 草案），生产环境不写。
+		if s.Http3Hq {
+			sb.WriteString("    http3_hq on;\n")
+		}
 		sb.WriteString(fmt.Sprintf("    http3_max_concurrent_streams %s;\n", s.Http3MaxConcurrentStreams))
 		sb.WriteString(fmt.Sprintf("    http3_stream_buffer_size %s;\n", s.Http3StreamBufferSize))
 		sb.WriteString(fmt.Sprintf("    quic_active_connection_id_limit %s;\n", s.QuicActiveConnectionIdLimit))
-		sb.WriteString("    quic_gso on;\n")
+		if s.QuicGso {
+			sb.WriteString("    quic_gso on;\n")
+		}
 	}
 	sb.WriteString("\n")
 

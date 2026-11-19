@@ -98,6 +98,9 @@
             <el-form-item label="worker_priority">
               <el-input v-model="settings.worker_priority" style="width:200px" />
             </el-form-item>
+            <el-form-item label="worker_shutdown_timeout">
+              <el-input v-model="settings.worker_shutdown_timeout" style="width:200px" placeholder="10s" />
+            </el-form-item>
             <el-form-item label="daemon">
               <el-switch v-model="settings.daemon" />
             </el-form-item>
@@ -150,6 +153,28 @@
               <el-input v-model="settings.ssl_resolver" style="width:320px" clearable placeholder="8.8.8.8 1.1.1.1" />
               <div style="font-size:12px;color:#909399">{{ t('proxy.sslResolverHint') }}</div>
             </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.nginxHashTables') }}</el-divider>
+            <el-form-item label="types_hash_max_size" label-width="260px">
+              <el-input v-model="settings.types_hash_max_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="server_names_hash_max_size" label-width="260px">
+              <el-input v-model="settings.server_names_hash_max_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="server_names_hash_bucket_size" label-width="260px">
+              <el-input v-model="settings.server_names_hash_bucket_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_headers_hash_max_size" label-width="260px">
+              <el-input v-model="settings.proxy_headers_hash_max_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="proxy_headers_hash_bucket_size" label-width="260px">
+              <el-input v-model="settings.proxy_headers_hash_bucket_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="variables_hash_max_size" label-width="260px">
+              <el-input v-model="settings.variables_hash_max_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="variables_hash_bucket_size" label-width="260px">
+              <el-input v-model="settings.variables_hash_bucket_size" style="width:200px" />
+            </el-form-item>
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxLog')" name="log">
@@ -190,7 +215,7 @@
             <el-form-item v-if="settings.access_log" :label="t('proxy.accessLogPath')">
               <el-input v-model="settings.access_log_path" style="width:300px" placeholder="logs/access.log" />
             </el-form-item>
-            <el-divider content-position="left">Stream {{ t('proxy.accessLog') }}</el-divider>
+            <el-divider content-position="left">{{ t('proxy.streamAccessLog') }}</el-divider>
             <el-form-item label="stream access_log">
               <el-switch v-model="settings.stream_log" />
             </el-form-item>
@@ -207,9 +232,27 @@
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxHttp')" name="http">
-          <el-form :model="settings" label-width="200px" size="small">
+          <el-form :model="settings" label-width="240px" size="small">
+            <el-form-item label="client_header_buffer_size">
+              <el-input v-model="settings.client_header_buffer_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="large_client_header_buffers">
+              <el-input v-model="settings.large_client_header_buffers" style="width:200px" placeholder="4 128k" />
+            </el-form-item>
+            <el-form-item label="client_header_timeout">
+              <el-input v-model="settings.client_header_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="client_body_timeout">
+              <el-input v-model="settings.client_body_timeout" style="width:200px" />
+            </el-form-item>
             <el-form-item label="client_max_body_size">
               <el-input v-model="settings.client_max_body_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="client_body_buffer_size">
+              <el-input v-model="settings.client_body_buffer_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="send_timeout">
+              <el-input v-model="settings.send_timeout" style="width:200px" />
             </el-form-item>
             <el-form-item label="keepalive_timeout">
               <el-input v-model="settings.keepalive_timeout" style="width:200px" />
@@ -217,11 +260,12 @@
             <el-form-item label="keepalive_requests">
               <el-input v-model="settings.keepalive_requests" style="width:200px" />
             </el-form-item>
-            <el-form-item label="server_tokens">
-              <el-switch v-model="settings.server_tokens" />
-            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.nginxFileIo') }}</el-divider>
             <el-form-item label="sendfile">
               <el-switch v-model="settings.sendfile" />
+            </el-form-item>
+            <el-form-item v-if="settings.sendfile" label="sendfile_max_chunk">
+              <el-input v-model="settings.sendfile_max_chunk" style="width:200px" />
             </el-form-item>
             <el-form-item label="tcp_nopush">
               <el-switch v-model="settings.tcp_nopush" />
@@ -229,8 +273,36 @@
             <el-form-item label="tcp_nodelay">
               <el-switch v-model="settings.tcp_nodelay" />
             </el-form-item>
+            <el-form-item label="aio">
+              <el-switch v-model="settings.aio" />
+            </el-form-item>
+            <el-form-item v-if="settings.aio" label="aio_write">
+              <el-switch v-model="settings.aio_write" />
+            </el-form-item>
+            <el-form-item label="disable_symlinks">
+              <el-switch v-model="settings.disable_symlinks" />
+            </el-form-item>
+            <el-form-item label="proxy_store">
+              <el-switch v-model="settings.proxy_store" />
+            </el-form-item>
+            <el-form-item label="log_not_found">
+              <el-switch v-model="settings.log_not_found" />
+            </el-form-item>
+            <el-form-item label="vhost_traffic_status">
+              <el-switch v-model="settings.vhost_traffic_status" />
+            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.nginxHeadersConn') }}</el-divider>
+            <el-form-item label="server_tokens">
+              <el-switch v-model="settings.server_tokens" />
+            </el-form-item>
             <el-form-item label="underscores_in_headers">
               <el-switch v-model="settings.underscores_in_headers" />
+            </el-form-item>
+            <el-form-item label="ignore_invalid_headers">
+              <el-switch v-model="settings.ignore_invalid_headers" />
+            </el-form-item>
+            <el-form-item label="reset_timedout_connection">
+              <el-switch v-model="settings.reset_timedout_connection" />
             </el-form-item>
             <el-form-item label="charset">
               <el-input v-model="settings.charset" style="width:200px" />
@@ -262,6 +334,37 @@
             </el-form-item>
           </el-form>
         </el-tab-pane>
+        <el-tab-pane :label="t('proxy.nginxFastcgi')" name="fastcgi">
+          <el-form :model="settings" label-width="260px" size="small">
+            <el-form-item label="fastcgi_connect_timeout">
+              <el-input v-model="settings.fastcgi_connect_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_send_timeout">
+              <el-input v-model="settings.fastcgi_send_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_read_timeout">
+              <el-input v-model="settings.fastcgi_read_timeout" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_buffer_size">
+              <el-input v-model="settings.fastcgi_buffer_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_buffers">
+              <el-input v-model="settings.fastcgi_buffers" style="width:200px" placeholder="4 32k" />
+            </el-form-item>
+            <el-form-item label="fastcgi_busy_buffers_size">
+              <el-input v-model="settings.fastcgi_busy_buffers_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_temp_file_write_size">
+              <el-input v-model="settings.fastcgi_temp_file_write_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="fastcgi_intercept_errors">
+              <el-switch v-model="settings.fastcgi_intercept_errors" />
+            </el-form-item>
+            <el-form-item label="fastcgi_ignore_client_abort">
+              <el-switch v-model="settings.fastcgi_ignore_client_abort" />
+            </el-form-item>
+          </el-form>
+        </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxGzip')" name="gzip">
           <el-form :model="settings" label-width="200px" size="small">
             <el-form-item label="gzip">
@@ -272,6 +375,21 @@
             </el-form-item>
             <el-form-item label="gzip_min_length">
               <el-input v-model="settings.gzip_min_length" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="gzip_http_version">
+              <el-input v-model="settings.gzip_http_version" style="width:200px" placeholder="1.0" />
+            </el-form-item>
+            <el-form-item label="gzip_buffers">
+              <el-input v-model="settings.gzip_buffers" style="width:200px" placeholder="4 16k" />
+            </el-form-item>
+            <el-form-item label="gzip_disable">
+              <el-input v-model="settings.gzip_disable" style="width:200px" placeholder="msie6" />
+            </el-form-item>
+            <el-form-item label="gzip_proxied">
+              <el-input v-model="settings.gzip_proxied" style="width:200px" placeholder="any" />
+            </el-form-item>
+            <el-form-item label="gzip_vary">
+              <el-switch v-model="settings.gzip_vary" />
             </el-form-item>
             <el-form-item label="gzip_types">
               <el-input v-model="settings.gzip_types" type="textarea" :rows="3" style="width:100%" />
@@ -289,25 +407,59 @@
             <el-form-item label="brotli_min_length">
               <el-input v-model="settings.brotli_min_length" style="width:200px" />
             </el-form-item>
+            <el-form-item label="brotli_buffers">
+              <el-input v-model="settings.brotli_buffers" style="width:200px" placeholder="16 8k" />
+            </el-form-item>
+            <el-form-item label="brotli_window">
+              <el-input v-model="settings.brotli_window" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="brotli_static">
+              <el-switch v-model="settings.brotli_static" />
+            </el-form-item>
             <el-form-item label="brotli_types">
               <el-input v-model="settings.brotli_types" type="textarea" :rows="3" style="width:100%" />
             </el-form-item>
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxHttp23')" name="http23">
-          <el-form :model="settings" label-width="250px" size="small">
+          <el-form :model="settings" label-width="280px" size="small">
+            <el-form-item label="http2_chunk_size">
+              <el-input v-model="settings.http2_chunk_size" style="width:200px" />
+            </el-form-item>
+            <el-form-item label="http2_body_preread_size">
+              <el-input v-model="settings.http2_body_preread_size" style="width:200px" />
+            </el-form-item>
             <el-form-item label="http2_max_concurrent_streams">
               <el-input v-model="settings.http2_max_concurrent_streams" style="width:200px" />
             </el-form-item>
+            <el-form-item label="http2_recv_buffer_size">
+              <el-input v-model="settings.http2_recv_buffer_size" style="width:200px" />
+            </el-form-item>
+            <el-divider content-position="left">{{ t('proxy.nginxHttp3Quic') }}</el-divider>
             <el-form-item label="http3">
               <el-switch v-model="settings.http3" />
             </el-form-item>
-            <el-form-item label="http3_max_concurrent_streams">
-              <el-input v-model="settings.http3_max_concurrent_streams" style="width:200px" />
-            </el-form-item>
-            <el-form-item label="quic_retry">
-              <el-switch v-model="settings.quic_retry" />
-            </el-form-item>
+            <template v-if="settings.http3">
+              <el-form-item label="http3_max_concurrent_streams">
+                <el-input v-model="settings.http3_max_concurrent_streams" style="width:200px" />
+              </el-form-item>
+              <el-form-item label="http3_stream_buffer_size">
+                <el-input v-model="settings.http3_stream_buffer_size" style="width:200px" />
+              </el-form-item>
+              <el-form-item label="http3_hq">
+                <el-switch v-model="settings.http3_hq" />
+                <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.http3HqHint') }}</span>
+              </el-form-item>
+              <el-form-item label="quic_retry">
+                <el-switch v-model="settings.quic_retry" />
+              </el-form-item>
+              <el-form-item label="quic_gso">
+                <el-switch v-model="settings.quic_gso" />
+              </el-form-item>
+              <el-form-item label="quic_active_connection_id_limit">
+                <el-input v-model="settings.quic_active_connection_id_limit" style="width:200px" />
+              </el-form-item>
+            </template>
           </el-form>
         </el-tab-pane>
         <el-tab-pane :label="t('proxy.nginxLimit')" name="limit">
@@ -673,15 +825,11 @@
         <!-- Stream settings inline -->
         <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:#f5f7fa;border-radius:4px">
           <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">SNI ssl_preread cache</div>
-            <el-input v-model="settings.stream_sni_cache_size" size="small" style="width:100px" placeholder="64" />
-          </div>
-          <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">Proxy Protocol</div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.proxyProtocol') }}</div>
             <el-switch v-model="settings.stream_proxy_protocol" />
           </div>
           <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">preread_timeout</div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.streamPrereadTimeout') }}</div>
             <el-input v-model="settings.stream_preread_timeout" size="small" style="width:100px" placeholder="3s" />
           </div>
           <div>
@@ -689,8 +837,13 @@
             <el-input v-model="settings.stream_connect_timeout" size="small" style="width:100px" placeholder="1s" />
           </div>
           <div>
-            <div style="font-size:12px;color:#909399;margin-bottom:4px">proxy_timeout</div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.streamProxyTimeout') }}</div>
             <el-input v-model="settings.stream_timeout" size="small" style="width:100px" placeholder="1h" />
+          </div>
+          <div>
+            <div style="font-size:12px;color:#909399;margin-bottom:4px">stream_nontls_target</div>
+            <el-input v-model="settings.stream_nontls_target" size="small" style="width:170px" placeholder="127.0.0.1:8444" />
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.streamNontlsHint') }}</div>
           </div>
         </div>
         <el-table v-if="!isMobile" :data="sniPagedList" stripe size="small">
@@ -854,7 +1007,7 @@
           <span style="font-size:12px;color:#909399">{{ t('common.enabled') }}</span>
           <el-switch v-model="row.enabled" size="small" @change="toggleSite(row)" />
           <template v-if="wafMasterEnabled">
-            <span style="font-size:12px;color:#909399">WAF</span>
+            <span style="font-size:12px;color:#909399">{{ t('site.waf') }}</span>
             <el-switch v-model="row._waf_enabled" size="small" @change="(val) => toggleSiteWAF(row, val)" />
             <el-dropdown trigger="click" @command="(cmd) => setWafDomainMode(row, cmd)">
               <el-tag :type="wafDomainModeType(row)" size="small" :title="wafDomainModeHint(row)" style="cursor:pointer" :style="row._waf_enabled ? '' : 'opacity:.5'">{{ wafDomainModeLabel(row) }}</el-tag>
@@ -1123,7 +1276,7 @@
           <el-input v-model="siteForm.key_path" placeholder="/path/to/key.pem" />
         </el-form-item>
         <template v-if="siteForm.use_cert">
-          <el-divider content-position="left">TLS {{ t('proxy.settings') }}</el-divider>
+          <el-divider content-position="left">{{ t('proxy.tlsSettings') }}</el-divider>
           <el-form-item label="HTTP/2">
             <el-switch v-model="siteForm.enable_http2" />
           </el-form-item>
@@ -1167,7 +1320,7 @@
           <el-switch v-model="siteForm.redirect_keep_port" />
           <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('proxy.redirectKeepPortHint') }}</div>
         </el-form-item>
-        <el-divider content-position="left">WAF</el-divider>
+        <el-divider content-position="left">{{ t('site.waf') }}</el-divider>
         <el-form-item :label="t('proxy.wafLocationEnabled')">
           <el-switch v-model="siteForm.waf_enabled" :active-value="true" :inactive-value="false" />
           <span style="margin-left:8px;font-size:12px;color:#909399">{{ t('proxy.wafLocationEnabledHint') }}</span>

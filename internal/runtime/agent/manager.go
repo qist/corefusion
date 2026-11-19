@@ -395,6 +395,15 @@ func (m *NodeServerManager) WithCRL(crl *CertRevocationList) *NodeServerManager 
 	return m
 }
 
+// SetOnlineStorePath 设置「在线时长 / 累计流量」的持久化文件路径。
+// 面板重启或升级后从这里恢复连续在线起点，避免整列时长同时归零重算。
+func (m *NodeServerManager) SetOnlineStorePath(path string) {
+	if m == nil || m.onlineStore == nil {
+		return
+	}
+	m.onlineStore.SetPersistPath(path)
+}
+
 // WithPublicCertRenewer 注入公网证书续期器 ✓（用于 Agent 重连时补做续期检查 ✓）。
 // SetPanelCertRenewer 把"面板本机续期"能力挂到公网证书续期器上 ✓。
 //

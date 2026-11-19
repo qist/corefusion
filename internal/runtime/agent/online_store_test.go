@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -99,8 +100,8 @@ func TestUpdateResetsOnlineSinceAfterLongGap(t *testing.T) {
 	// 模拟 10 分钟没收到该节点的上报。
 	s.mu.Lock()
 	for _, st := range s.sessions[1] {
-		st.since = time.Now().Unix() - 600
-		st.lastSeen = time.Now().Unix() - 600
+		st.Since = time.Now().Unix() - 600
+		st.LastSeen = time.Now().Unix() - 600
 	}
 	s.mu.Unlock()
 
@@ -144,6 +145,60 @@ func (s *NodeOnlineStore) mustGet(serverID int64) *NodeOnlineSnapshot {
 		panic("missing snapshot")
 	}
 	return snap
+}
+
+// 在线时长必须按「账号（订阅 × 入口）」各自计时：
+// 用订阅 ID 当键会让同一订阅的几行时长完全相同（页面上看就是"为啥时长都一样"）。
+func TestUpdateTracksDurationPerAccount(t *testing.T) {
+	s := NewNodeOnlineStore(60)
+	now := time.Now().Unix()
+	mk := func(account, ip string) []*agentpb.OnlineUserEntry {
+		return []*agentpb.OnlineUserEntry{{
+			SubscriptionId: 5, Email: "a@example.com", AccountEmail: account, CoreType: "xray",
+			LastSeen: now, Sessions: []*agentpb.OnlineSession{{Ip: ip}},
+		}}
+	}
+	s.Update(1, mk("a@example.com_vless1", "1.2.3.4"))
+	// 把第一个账号的起点挪早 100s，模拟它先上线。
+	s.mu.Lock()
+	s.sessions[1]["xray|a:a@example.com_vless1"].Since -= 100
+	s.mu.Unlock()
+
+	s.Update(1, append(mk("a@example.com_vless1", "1.2.3.4"), mk("a@example.com_trojan2", "5.6.7.8")...))
+
+	got := map[string]int64{}
+	for _, u := range s.mustGet(1).Users {
+		got[u.GetAccountEmail()] = u.FirstSeen
+	}
+	if got["a@example.com_vless1"] >= got["a@example.com_trojan2"] {
+		t.Fatalf("不同入口的账号应各自计时: vless1=%d trojan2=%d",
+			got["a@example.com_vless1"], got["a@example.com_trojan2"])
+	}
+}
+
+// 面板重启/升级后，在线起点应从持久化文件恢复，整列时长不能同时归零重算。
+func TestOnlineStoreRestoresStateAfterRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "online_sessions.json")
+	entry := func(now int64) []*agentpb.OnlineUserEntry {
+		return []*agentpb.OnlineUserEntry{{
+			SubscriptionId: 5, Email: "a@example.com", AccountEmail: "a@example.com_vless1",
+			CoreType: "xray", LastSeen: now, UplinkBytes: 500, DownlinkBytes: 5000,
+			Sessions: []*agentpb.OnlineSession{{Ip: "1.2.3.4"}},
+		}}
+	}
+	s := NewNodeOnlineStore(60)
+	s.SetPersistPath(path)
+	s.Update(1, entry(time.Now().Unix()))
+	before := s.mustGet(1).Users[0].FirstSeen
+
+	// 模拟进程重启：新实例从同一文件恢复。
+	s2 := NewNodeOnlineStore(60)
+	s2.SetPersistPath(path)
+	s2.Update(1, entry(time.Now().Unix()))
+	after := s2.mustGet(1).Users[0].FirstSeen
+	if after != before {
+		t.Fatalf("重启后在线起点应延续: before=%d after=%d", before, after)
+	}
 }
 
 // trafficEntry 构造一条带流量计数器的上报（核心给的是「用户级累计计数器」）。
@@ -196,7 +251,7 @@ func TestUpdateResetsTrafficAfterLongGap(t *testing.T) {
 	s.mu.Lock()
 	old := time.Now().Unix() - 600
 	for _, st := range s.sessions[1] {
-		st.lastSeen = old
+		st.LastSeen = old
 	}
 	s.mu.Unlock()
 	s.Update(1, trafficEntry("a@example.com_vless1", 5, 5000, 50000))

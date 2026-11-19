@@ -394,6 +394,9 @@ func runServer(args []string) {
 	// Initialize NodeServerManager (gRPC server for Agent connections)
 	nodeMgr := agent.NewNodeServerManager(nodeServerRepo, caService)
 	nodeMgr.SetNodeCertificates(nodeCertRepo)
+	// 在线时长 / 累计流量落盘：面板重启、升级后接着计时，
+	// 否则重启后整列时长会同时变成「重启至今」的同一个数字。
+	nodeMgr.SetOnlineStorePath(filepath.Join(dataDir, "runtime", "online_sessions.json"))
 
 	// Cache the local server ID to avoid DB queries on every NodeOperator method call.
 	nodeMgr.InitLocalServerID(context.Background())

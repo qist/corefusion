@@ -29,7 +29,10 @@
           <el-card shadow="hover" class="summary-card sc-services">
             <div class="sum-label"><el-icon class="sum-ico"><Monitor /></el-icon>{{ t('dashboard.fleetServices') }}</div>
             <div class="sum-value">{{ (overview && overview.service_count) || 0 }}</div>
-            <div class="sum-foot"><span class="foot-muted">{{ t('dashboard.fleetServices') }}</span></div>
+            <div class="sum-foot">
+              <span class="foot-on" v-if="serviceStopped === 0">{{ t('dashboard.fleetServicesRunning') }} {{ (overview && overview.service_running_count) || 0 }}</span>
+              <span class="foot-warn" v-else>{{ t('dashboard.fleetServicesRunning') }} {{ (overview && overview.service_running_count) || 0 }} · {{ t('dashboard.fleetServicesStopped') }} {{ serviceStopped }}</span>
+            </div>
           </el-card>
         </el-col>
         <el-col :span="4">
@@ -63,7 +66,7 @@
           <el-card shadow="hover" class="summary-card sc-regions">
             <div class="sum-label"><el-icon class="sum-ico"><Location /></el-icon>{{ t('dashboard.fleetRegions') }}</div>
             <div class="sum-value">{{ regionOptions.length }}</div>
-            <div class="sum-foot"><span class="foot-muted">{{ regionOptions.length }} {{ t('dashboard.filterRegion') }}</span></div>
+            <div class="sum-foot"><span class="foot-muted">{{ (fleet && fleet.total) || 0 }} {{ t('dashboard.fleetNodes') }}</span></div>
           </el-card>
         </el-col>
         <el-col :span="4">
@@ -369,6 +372,12 @@ export default {
     const expiringCertList = computed(() => (overview.value && overview.value.expiring_certs) || [])
     const expiringCerts = computed(() => expiringCertList.value.length)
     const quotaWarn = computed(() => (overview.value && overview.value.quota_warning_count) || 0)
+    // 入站服务卡片副标题：未运行的数量（总数 - 运行中），失败/停止都算进去。
+    const serviceStopped = computed(() => {
+      const total = (overview.value && overview.value.service_count) || 0
+      const running = (overview.value && overview.value.service_running_count) || 0
+      return Math.max(0, total - running)
+    })
     const hasAlerts = computed(
       () => offlineNodes.value.length || degradedNodes.value.length || highResource.value.length || expiringCerts.value || quotaWarn.value
     )
@@ -443,6 +452,7 @@ export default {
       filteredNodes, regionOptions, onlineWithMetric,
       avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
       offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
+      serviceStopped,
       typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays, goOnlineUsers,
     }
   },

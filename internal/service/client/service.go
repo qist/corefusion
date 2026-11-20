@@ -390,6 +390,13 @@ func (s *Service) DeleteClient(ctx context.Context, id int64) error {
 		}
 	}
 
+	// 删除客户 = 带走全部从属数据（订阅 / 订单 / 流水 / 工单 / 推荐 / 白名单…）：
+	// 只吊销不删除会让这些行变成孤儿，SQLite 复用 ID 后会串到新客户身上
+	// （真机出现过新账号看到别人 83 条订单）。清理失败就不删客户，避免留下半状态。
+	if err := s.clientRepo.PurgeClientScopedData(ctx, id); err != nil {
+		return fmt.Errorf("purge client scoped data: %w", err)
+	}
+
 	// ⚠ 余额与流水必须**级联删除** ✗：否则删号后余额行变孤儿 ✗，
 	// 新注册客户撞上同一个 ID 时会把旧余额"继承"过去 ✗
 	// （真机现象：新 OAuth 账号自带 74.50 测试余额 ✓ —— 真金白银的串号风险 ✓）。

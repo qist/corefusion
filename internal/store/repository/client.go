@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -121,6 +122,61 @@ func (r *ClientRepository) Update(ctx context.Context, client *entity.Client) er
 
 func (r *ClientRepository) Delete(ctx context.Context, id int64) error {
 	return r.db.WithContext(ctx).Delete(&entity.Client{}, id).Error
+}
+
+// PurgeClientScopedData 删除该客户名下的所有从属数据（订阅、订单、流水、工单、推荐记录等）。
+//
+// 为什么要物理删除而不是只吊销：SQLite 的 AUTOINCREMENT 在表重建/清空后会复用 ID，
+// 新客户拿到旧 ID 时，遗留的订单/订阅会串到新账号上（真机出现过 25 号客户看到 83 条
+// 别人的订单、余额显示旧值）。删除客户必须是「带走全部从属数据」的语义。
+//
+// 全部在一个事务里执行：任一步失败整体回滚，不会留下半清理状态。
+func (r *ClientRepository) PurgeClientScopedData(ctx context.Context, clientID int64) error {
+	if clientID <= 0 {
+		return nil
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stmts := []string{
+			// 工单（先子表）
+			`DELETE FROM ticket_messages WHERE ticket_id IN (SELECT id FROM tickets WHERE client_id = ?)`,
+			`DELETE FROM tickets WHERE client_id = ?`,
+			// 订阅的从属记录（先按订阅 ID 删）
+			`DELETE FROM subscription_access_logs WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			`DELETE FROM subscription_rotations WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			`DELETE FROM traffic_sessions WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			`DELETE FROM traffic_usage_ledger WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			`DELETE FROM rate_limit_ip_entries WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			`DELETE FROM service_access_policies WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			// 订阅本体
+			`DELETE FROM subscriptions WHERE client_id = ?`,
+			// 订单与账务
+			`DELETE FROM charge_orders WHERE client_id = ?`,
+			`DELETE FROM plan_orders WHERE client_id = ?`,
+			`DELETE FROM balance_transactions WHERE client_id = ?`,
+			`DELETE FROM client_balances WHERE client_id = ?`,
+			// 其他客户级数据
+			`DELETE FROM client_gifts WHERE client_id = ?`,
+			`DELETE FROM client_log_packages WHERE client_id = ?`,
+			`DELETE FROM client_oauth_bindings WHERE client_id = ?`,
+			`DELETE FROM client_self_unban_logs WHERE client_id = ?`,
+			`DELETE FROM ip_whitelist_entries WHERE client_id = ?`,
+			`DELETE FROM shared_account_repair_logs WHERE client_id = ?`,
+			`DELETE FROM warp_configs WHERE client_id = ?`,
+			`DELETE FROM referral_records WHERE referrer_id = ? OR referee_id = ?`,
+			`DELETE FROM referral_withdrawals WHERE client_id = ?`,
+			`DELETE FROM referral_codes WHERE client_id = ?`,
+		}
+		for _, q := range stmts {
+			args := []interface{}{clientID}
+			if strings.Count(q, "?") == 2 {
+				args = append(args, clientID)
+			}
+			if err := tx.Exec(q, args...).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *ClientRepository) UpdateStatus(ctx context.Context, id int64, status string) error {

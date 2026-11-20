@@ -174,6 +174,7 @@ type CreateTemplateInput struct {
 	SubscriptionProviderConfig string  `json:"subscription_provider_config"`
 	SortOrder                  int     `json:"sort_order"`
 	Enabled                    *bool   `json:"enabled"`
+	HiddenFromPortal           *bool   `json:"hidden_from_portal"`
 	Metadata                   string  `json:"metadata"`
 }
 
@@ -193,6 +194,12 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 	enabled := true
 	if input.Enabled != nil {
 		enabled = *input.Enabled
+	}
+
+	// 默认在门户展示；自用套餐显式传 hidden_from_portal=true 才隐藏。
+	hiddenFromPortal := false
+	if input.HiddenFromPortal != nil {
+		hiddenFromPortal = *input.HiddenFromPortal
 	}
 
 	suspendVal := 1
@@ -226,6 +233,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		SubscriptionProviderConfig: input.SubscriptionProviderConfig,
 		SortOrder:                  input.SortOrder,
 		Enabled:                    enabled,
+		HiddenFromPortal:           hiddenFromPortal,
 		Metadata:                   input.Metadata,
 		CreatedAt:                  now,
 		UpdatedAt:                  now,
@@ -262,6 +270,7 @@ type UpdateTemplateInput struct {
 	SubscriptionProviderConfig *string  `json:"subscription_provider_config"`
 	SortOrder                  *int     `json:"sort_order"`
 	Enabled                    *bool    `json:"enabled"`
+	HiddenFromPortal           *bool    `json:"hidden_from_portal"`
 	Metadata                   *string  `json:"metadata"`
 }
 
@@ -347,6 +356,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.Enabled != nil {
 		tmpl.Enabled = *input.Enabled
+	}
+	if input.HiddenFromPortal != nil {
+		tmpl.HiddenFromPortal = *input.HiddenFromPortal
 	}
 	if input.Metadata != nil {
 		tmpl.Metadata = *input.Metadata

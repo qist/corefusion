@@ -73,7 +73,10 @@
               <template #header>
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <span style="font-weight:600">{{ tpl.name }}</span>
-                  <el-tag :type="tpl.enabled?'success':'danger'" size="small">{{ tpl.enabled?t('common.enabled'):t('common.disabled') }}</el-tag>
+                  <div style="display:flex;gap:4px;align-items:center">
+                    <el-tag v-if="tpl.hidden_from_portal" type="info" size="small">{{ t('plan.hiddenFromPortal') }}</el-tag>
+                    <el-tag :type="tpl.enabled?'success':'danger'" size="small">{{ tpl.enabled?t('common.enabled'):t('common.disabled') }}</el-tag>
+                  </div>
                 </div>
               </template>
               <div style="font-size:13px;line-height:2;color:#606266">
@@ -312,6 +315,13 @@
           </el-form-item>
         </template>
         <el-divider content-position="left">{{ t('plan.displaySettings') }}</el-divider>
+        <el-form-item :label="t('plan.showInPortal')">
+          <el-switch
+            :model-value="!templateForm.hidden_from_portal"
+            @update:model-value="v => templateForm.hidden_from_portal = !v"
+          />
+          <div class="form-hint">{{ t('plan.showInPortalHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('plan.sortOrder')"><el-input-number v-model="templateForm.sort_order" :min="0" /></el-form-item>
         <el-form-item :label="t('common.enabled')"><el-switch v-model="templateForm.enabled" /></el-form-item>
       </el-form>
@@ -748,7 +758,7 @@ function emptyTemplateForm() {
     sub_node_limit: 0, sub_rotate_hours: 0,
     default_quota_gb: 0, default_quota_reset_cycle: 'none',
     suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0,
-    sort_order: 0, enabled: true,
+    sort_order: 0, enabled: true, hidden_from_portal: false,
   }
 }
 async function fetchTemplates() {
@@ -767,6 +777,7 @@ function showEditTemplate(row) {
     default_quota_gb: row.default_quota_bytes / 1073741824,
     is_trial: !!row.is_trial,
     enabled: !!row.enabled,
+    hidden_from_portal: !!row.hidden_from_portal,
     suspend_on_quota_exhausted: row.suspend_on_quota_exhausted,
   }
   templateDialog.value = true

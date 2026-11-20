@@ -199,6 +199,10 @@ func (s *CommerceService) ListPlans(ctx context.Context) ([]PlanListItem, error)
 
 	var items []PlanListItem
 	for _, tmpl := range templates {
+		// 自用/内部套餐可以标记「不在门户展示」：客户列表里看不到，也无法下单（见 CreateOrder）。
+		if tmpl.HiddenFromPortal {
+			continue
+		}
 		variants, err := s.variantRepo.ListByTemplateID(ctx, tmpl.ID)
 		if err != nil {
 			continue
@@ -595,6 +599,12 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 	client, err := s.clientRepo.GetByID(ctx, clientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found")
+	}
+
+	// 隐藏套餐（hidden_from_portal=true）只允许后台分配；客户不能新购或升级到它，
+	// 但已经在该套餐上的客户续费不受影响（否则后台分配的套餐无法续）。
+	if tmpl.HiddenFromPortal && client.PlanID != tmpl.ID {
+		return nil, fmt.Errorf("plan is not available for purchase")
 	}
 
 	switch input.OrderType {
@@ -1054,6 +1064,10 @@ func (s *CommerceService) CreateChargeOrder(ctx context.Context, clientID int64,
 		}
 		if variant.Price <= 0 {
 			return nil, fmt.Errorf("plan variant price not configured")
+		}
+		// 隐藏套餐（hidden_from_portal=true）不对门户客户开放购买。
+		if pvTmpl, terr := s.tmplRepo.GetByID(ctx, variant.TemplateID); terr != nil || pvTmpl == nil || pvTmpl.HiddenFromPortal {
+			return nil, fmt.Errorf("plan is not available for purchase")
 		}
 		// 套餐/流量包一律以库里的价格建单，忽略客户端传来的 amount。
 		amount = variant.Price

@@ -43,12 +43,19 @@ type PlanTemplate struct {
 	// SubscriptionProviderConfig：本套餐的订阅来源配置（proxy-providers / group_use），
 	// 只在该套餐生成订阅时注入，绝不写入共享 mihomo_configs.config_json。
 	// 结构见 design/SUBSCRIPTION_PROVIDERS_DESIGN.md §5.1。
-	SubscriptionProviderConfig string    `gorm:"type:longtext" json:"subscription_provider_config"`
-	SortOrder                  int       `gorm:"not null;default:0" json:"sort_order"`
-	Enabled                    bool      `gorm:"not null;default:true" json:"enabled"`
-	Metadata                   string    `gorm:"type:longtext" json:"metadata"`
-	CreatedAt                  time.Time `json:"created_at"`
-	UpdatedAt                  time.Time `json:"updated_at"`
+	SubscriptionProviderConfig string `gorm:"type:longtext" json:"subscription_provider_config"`
+	SortOrder                  int    `gorm:"not null;default:0" json:"sort_order"`
+	Enabled                    bool   `gorm:"not null;default:true" json:"enabled"`
+	// HiddenFromPortal 为 true 时该套餐不在门户/客户端套餐列表展示，
+	// 客户也买不到（后台仍可手动分配给客户）。
+	//
+	// 为什么用「隐藏」而不是「展示」（默认 false）：GORM 对带 default 标签的
+	// 零值字段会走数据库默认值，`show_in_portal: false` 会被默认 true 覆盖，
+	// 开关就永远关不掉。用 hidden（默认 false）零值即正确语义。
+	HiddenFromPortal bool      `gorm:"not null;default:false" json:"hidden_from_portal"`
+	Metadata         string    `gorm:"type:longtext" json:"metadata"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 func (PlanTemplate) TableName() string { return "plan_templates" }

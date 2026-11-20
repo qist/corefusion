@@ -23,7 +23,7 @@ func TestCreateChargeOrderUsesServerSideVariantPrice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.ChargeSite{}, &entity.Client{}, &entity.ChargeOrder{}, &entity.PlanVariant{}); err != nil {
+	if err := db.AutoMigrate(&entity.ChargeSite{}, &entity.Client{}, &entity.ChargeOrder{}, &entity.PlanTemplate{}, &entity.PlanVariant{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 
@@ -37,6 +37,11 @@ func TestCreateChargeOrderUsesServerSideVariantPrice(t *testing.T) {
 	orderRepo := repository.NewChargeOrderRepository(db)
 	clientRepo := repository.NewClientRepository(db)
 	variantRepo := repository.NewPlanVariantRepository(db)
+	tmplRepo := repository.NewPlanTemplateRepository(db)
+	tmpl := &entity.PlanTemplate{Name: "Pro", Enabled: true}
+	if err := tmplRepo.Create(ctx, tmpl); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
 
 	site := &entity.ChargeSite{Name: "test", SiteURL: paySrv.URL, Currency: "CNY", Enabled: true, Verified: true}
 	if err := siteRepo.Create(ctx, site); err != nil {
@@ -46,13 +51,13 @@ func TestCreateChargeOrderUsesServerSideVariantPrice(t *testing.T) {
 	if err := clientRepo.Create(ctx, client); err != nil {
 		t.Fatalf("create client: %v", err)
 	}
-	variant := &entity.PlanVariant{TemplateID: 1, VariantType: entity.VariantTypePlan, Name: "Pro", Price: 9900, Currency: "CNY", Enabled: true}
+	variant := &entity.PlanVariant{TemplateID: tmpl.ID, VariantType: entity.VariantTypePlan, Name: "Pro", Price: 9900, Currency: "CNY", Enabled: true}
 	if err := variantRepo.Create(ctx, variant); err != nil {
 		t.Fatalf("create variant: %v", err)
 	}
 
 	svc := NewCommerceService(
-		db, nil, variantRepo, nil, nil, clientRepo, nil,
+		db, tmplRepo, variantRepo, nil, nil, clientRepo, nil,
 		siteRepo, orderRepo, nil, nil, nil,
 		fakeSettingStore{m: map[string]string{"panel.external_url": "https://panel.example.com"}},
 		"test-secret",

@@ -31,7 +31,27 @@
             <div class="sum-value">{{ serviceCount }}</div>
             <div class="sum-foot">
               <span class="foot-on">{{ t('dashboard.fleetServicesRunning') }} {{ serviceRunning }}</span>
-              <span class="foot-off" v-if="serviceCrashed"> · {{ t('dashboard.fleetServicesCrashed') }} {{ serviceCrashed }}</span>
+              <!-- 异常核心：悬浮列出具体节点与核心，避免只看到数字 -->
+              <el-tooltip
+                v-if="serviceCrashed && crashedServiceList.length"
+                placement="top"
+                effect="dark"
+                :show-after="120"
+              >
+                <template #content>
+                  <div class="svc-abnormal-tip">
+                    <div
+                      v-for="s in crashedServiceList"
+                      :key="s.server_id + '-' + s.core_type"
+                      class="svc-abnormal-item"
+                    >
+                      {{ s.server_name || ('#' + s.server_id) }} · {{ s.core_type }}
+                    </div>
+                  </div>
+                </template>
+                <span class="foot-off"> · {{ t('dashboard.fleetServicesCrashed') }} {{ serviceCrashed }}</span>
+              </el-tooltip>
+              <span class="foot-off" v-else-if="serviceCrashed"> · {{ t('dashboard.fleetServicesCrashed') }} {{ serviceCrashed }}</span>
               <span class="foot-off" v-if="serviceStopped"> · {{ t('dashboard.fleetServicesStopped') }} {{ serviceStopped }}</span>
               <span class="foot-deg" v-if="serviceUnknown"> · {{ t('dashboard.fleetServicesUnknown') }} {{ serviceUnknown }}</span>
             </div>
@@ -384,6 +404,11 @@ export default {
     const serviceCrashed = computed(() => (overview.value && overview.value.service_crashed_count) || 0)
     const serviceStopped = computed(() => (overview.value && overview.value.service_stopped_count) || 0)
     const serviceUnknown = computed(() => (overview.value && overview.value.service_unknown_count) || 0)
+    // 异常核心明细（后端 service_abnormal_services）：只取 crashed，用于「异常 N」的悬浮提示。
+    const crashedServiceList = computed(() => {
+      const list = (overview.value && overview.value.service_abnormal_services) || []
+      return list.filter(s => s && s.state === 'crashed')
+    })
 
     // 订阅卡：主值 active，副标题给出订阅人数与暂停/过期数量，
     // 避免「活跃订阅 4」被误读成在线人数、也避免暂停的订阅凭空消失。
@@ -466,6 +491,7 @@ export default {
       avgCpu, avgMem, avgDisk, totalNet, totalTraffic, topLoad,
       offlineNodes, degradedNodes, highResource, expiringCerts, expiringCertList, quotaWarn, hasAlerts,
       serviceCount, serviceRunning, serviceCrashed, serviceStopped, serviceUnknown,
+      crashedServiceList,
       activeSubs, subscriberCount, suspendedSubs, expiredSubs,
       typeLabel, statusLabel, clampPct, pctColor, formatBytes, formatUptime, goDetail, goCerts, certDays, goOnlineUsers,
     }
@@ -482,6 +508,10 @@ export default {
 .dash-sub { color: var(--el-text-color-secondary); font-size: 13px; }
 .dash-actions { display: flex; align-items: center; gap: 12px; }
 .dash-updated { color: var(--el-text-color-secondary); font-size: 12px; }
+
+/* 异常核心 tooltip：多行紧凑显示 */
+.svc-abnormal-tip { max-width: 320px; }
+.svc-abnormal-item { font-size: 12px; line-height: 1.6; white-space: nowrap; }
 
 /* Fleet summary cards */
 .summary-row { margin-bottom: 16px; }

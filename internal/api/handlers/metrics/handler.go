@@ -18,6 +18,9 @@ import (
 // 未安装的核心不计入总数 —— 只跑一个核心的节点，另一个不该显示成「停止」。
 type CoreServiceCounter interface {
 	CoreServiceStatusCounts(ctx context.Context) (total, running, stopped, crashed, unknown int64)
+	// CoreServiceAbnormalServices 返回「已安装但未运行」的核心明细（节点名 + 核心 + 状态），
+	// 供看板「异常 N」悬浮时列出具体节点。
+	CoreServiceAbnormalServices(ctx context.Context) []gin.H
 }
 
 // Handler handles metrics HTTP requests.
@@ -54,9 +57,11 @@ func (h *Handler) Overview(c *gin.Context) {
 	// 已安装的核心：只跑一个核心的节点，另一个核心不该显示成「停止」。
 	// 不再依赖 inbound_services.process_status —— 那一列只有本机核心进程管理器
 	// 会写，远端节点恒为空。
+	var abnormalServices []gin.H
 	if h.coreStats != nil {
 		serviceCount, serviceRunningCount, serviceStoppedCount, serviceCrashedCount, serviceUnknownCount =
 			h.coreStats.CoreServiceStatusCounts(c.Request.Context())
+		abnormalServices = h.coreStats.CoreServiceAbnormalServices(c.Request.Context())
 	} else {
 		svcQuery().Count(&serviceCount)
 		svcQuery().Where("inbound_services.process_status = ?", "running").Count(&serviceRunningCount)
@@ -122,6 +127,7 @@ func (h *Handler) Overview(c *gin.Context) {
 		"service_stopped_count":        serviceStoppedCount,
 		"service_crashed_count":        serviceCrashedCount,
 		"service_unknown_count":        serviceUnknownCount,
+		"service_abnormal_services":    abnormalServices,
 		"active_subscription_count":    subCount,
 		"suspended_subscription_count": subSuspendedCount,
 		"expired_subscription_count":   subExpiredCount,

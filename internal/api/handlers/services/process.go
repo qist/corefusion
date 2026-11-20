@@ -80,6 +80,19 @@ type serverCoreCounts struct {
 	unknown int64
 }
 
+// CoreAbnormalService 是一条「非运行中」核心的明细，供看板 tooltip / 告警使用。
+type CoreAbnormalService struct {
+	ServerID   int64  `json:"server_id"`
+	ServerName string `json:"server_name"`
+	CoreType   string `json:"core_type"`
+	State      string `json:"state"` // crashed / stopped / unknown
+}
+
+type serverCoreResult struct {
+	counts   serverCoreCounts
+	abnormal []CoreAbnormalService
+}
+
 // CoreServiceStatusCounts 统计所有节点上「已安装核心」的实时状态。
 //
 // 口径：
@@ -99,7 +112,7 @@ func (h *ProcessHandler) CoreServiceStatusCounts(ctx context.Context) (total, ru
 
 	// 并发取每台节点的状态：远端读 Agent 缓存（冷启动可能要等一次 stream），
 	// 串行会让看板接口在节点多时等上几十秒。
-	results := make([]serverCoreCounts, len(servers))
+	results := make([]serverCoreResult, len(servers))
 	var wg sync.WaitGroup
 	for i, srv := range servers {
 		svcs, _, lerr := h.svcRepo.List(ctx, srv.ID, "", 1000, 0)
@@ -109,31 +122,87 @@ func (h *ProcessHandler) CoreServiceStatusCounts(ctx context.Context) (total, ru
 		wg.Add(1)
 		go func(idx int, srv entity.NodeServer, svcs []entity.InboundService) {
 			defer wg.Done()
-			results[idx] = h.countServerCores(ctx, srv, svcs)
+			counts, abnormal := h.collectServerCores(ctx, srv, svcs)
+			results[idx] = serverCoreResult{counts: counts, abnormal: abnormal}
 		}(i, srv, svcs)
 	}
 	wg.Wait()
 
 	for _, r := range results {
-		total += r.total
-		running += r.running
-		stopped += r.stopped
-		crashed += r.crashed
-		unknown += r.unknown
+		total += r.counts.total
+		running += r.counts.running
+		stopped += r.counts.stopped
+		crashed += r.counts.crashed
+		unknown += r.counts.unknown
 	}
 	return
 }
 
-// countServerCores 统计单台节点上的核心状态（调用方负责并发）。
-func (h *ProcessHandler) countServerCores(ctx context.Context, srv entity.NodeServer, svcs []entity.InboundService) (out serverCoreCounts) {
-	count := func(state string) {
+// CoreServiceAbnormalServices 返回所有「已安装但未运行」的核心明细（节点名 + 核心 + 状态）。
+// 看板「异常 N」悬浮时据此列出具体节点，避免只给一个数字。
+func (h *ProcessHandler) CoreServiceAbnormalServices(ctx context.Context) []gin.H {
+	// 不依赖 processMgr：远端节点走 Agent 缓存即可（单元测试也用它验证明细）。
+	if h.nodeServerRepo == nil || h.svcRepo == nil {
+		return nil
+	}
+	servers, err := h.nodeServerRepo.ListAll(ctx)
+	if err != nil {
+		return nil
+	}
+	results := make([]serverCoreResult, len(servers))
+	var wg sync.WaitGroup
+	for i, srv := range servers {
+		svcs, _, lerr := h.svcRepo.List(ctx, srv.ID, "", 1000, 0)
+		if lerr != nil || len(svcs) == 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, srv entity.NodeServer, svcs []entity.InboundService) {
+			defer wg.Done()
+			counts, abnormal := h.collectServerCores(ctx, srv, svcs)
+			results[idx] = serverCoreResult{counts: counts, abnormal: abnormal}
+		}(i, srv, svcs)
+	}
+	wg.Wait()
+
+	out := make([]gin.H, 0)
+	for _, r := range results {
+		for _, a := range r.abnormal {
+			out = append(out, gin.H{
+				"server_id":   a.ServerID,
+				"server_name": a.ServerName,
+				"core_type":   a.CoreType,
+				"state":       a.State,
+			})
+		}
+	}
+	return out
+}
+
+// collectServerCores 统计单台节点上的核心状态，并收集「非运行中」的明细（调用方负责并发）。
+func (h *ProcessHandler) collectServerCores(ctx context.Context, srv entity.NodeServer, svcs []entity.InboundService) (out serverCoreCounts, abnormal []CoreAbnormalService) {
+	name := srv.Name
+	if name == "" {
+		name = srv.Hostname
+	}
+	addAbnormal := func(coreType, state string) {
+		if state == "" {
+			state = "stopped"
+		}
+		abnormal = append(abnormal, CoreAbnormalService{
+			ServerID: srv.ID, ServerName: name, CoreType: coreType, State: state,
+		})
+	}
+	count := func(coreType, state string) {
 		switch state {
 		case "running":
 			out.running++
 		case "crashed":
 			out.crashed++
+			addAbnormal(coreType, state)
 		default:
 			out.stopped++
+			addAbnormal(coreType, state)
 		}
 	}
 
@@ -143,6 +212,9 @@ func (h *ProcessHandler) countServerCores(ctx context.Context, srv entity.NodeSe
 		if rerr != nil || len(states) == 0 {
 			out.total = int64(len(svcs))
 			out.unknown = int64(len(svcs))
+			for _, svc := range svcs {
+				addAbnormal(svc.CoreType, "unknown")
+			}
 			return
 		}
 		// 二进制清单可能还没拉到（冷启动）：先按「已安装」计，避免把真实运行的
@@ -162,7 +234,7 @@ func (h *ProcessHandler) countServerCores(ctx context.Context, srv entity.NodeSe
 			if cs, ok := states[svc.CoreType]; ok && cs != nil {
 				state = cs.State
 			}
-			count(state)
+			count(svc.CoreType, state)
 		}
 		return
 	}
@@ -181,7 +253,7 @@ func (h *ProcessHandler) countServerCores(ctx context.Context, srv entity.NodeSe
 		if p, ok := localBySvc[svc.ID]; ok {
 			state = p.State
 		}
-		count(state)
+		count(svc.CoreType, state)
 	}
 	return
 }

@@ -301,6 +301,14 @@
             <el-option :label="t('plan.cycleMonthly')" value="monthly" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('plan.quotaPolicy')">
+          <el-select v-model="templateForm.default_quota_policy" style="width:100%">
+            <el-option :label="t('plan.quotaPolicyAccumulate')" value="accumulate" />
+            <el-option :label="t('plan.quotaPolicyResetOnExpire')" value="reset_on_expire" />
+            <el-option :label="t('plan.quotaPolicyResetOnRenew')" value="reset_on_renew" />
+          </el-select>
+          <div style="font-size:12px;color:#909399;margin-top:4px">{{ t('plan.quotaPolicyHint') }}</div>
+        </el-form-item>
         <el-form-item :label="t('plan.suspendOnExhausted')">
           <el-switch v-model="templateForm.suspend_on_quota_exhausted" :active-value="1" :inactive-value="0" />
         </el-form-item>
@@ -411,6 +419,19 @@
         <el-form-item :label="t('plan.priceYuan')"><el-input-number v-model="variantForm.price_yuan" :min="0" :step="0.01" /></el-form-item>
         <el-form-item :label="t('plan.originalPriceYuan')"><el-input-number v-model="variantForm.original_price_yuan" :min="0" :step="0.01" /></el-form-item>
         <el-form-item :label="t('plan.trafficGB')"><el-input-number v-model="variantForm.quota_gb" :min="0" :step="0.1" /> <span style="font-size:12px;color:#909399">{{ t('plan.inheritTemplate') }}</span></el-form-item>
+        <el-form-item :label="t('plan.quotaResetCycle')">
+          <el-select v-model="variantForm.quota_reset_cycle" clearable :placeholder="t('plan.inheritTemplate')" style="width:100%">
+            <el-option :label="t('plan.noReset')" value="none" />
+            <el-option :label="t('plan.cycleMonthly')" value="monthly" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('plan.quotaPolicy')">
+          <el-select v-model="variantForm.quota_policy" clearable :placeholder="t('plan.inheritTemplate')" style="width:100%">
+            <el-option :label="t('plan.quotaPolicyAccumulate')" value="accumulate" />
+            <el-option :label="t('plan.quotaPolicyResetOnExpire')" value="reset_on_expire" />
+            <el-option :label="t('plan.quotaPolicyResetOnRenew')" value="reset_on_renew" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('plan.defaultVariant')"><el-switch v-model="variantForm.is_default" /></el-form-item>
         <el-form-item :label="t('plan.recommended')"><el-switch v-model="variantForm.is_recommended" /></el-form-item>
         <el-form-item :label="t('common.enabled')"><el-switch v-model="variantForm.enabled" /></el-form-item>
@@ -756,7 +777,7 @@ function emptyTemplateForm() {
     name: '', description: '', category: 'standard',
     device_limit: 0, speed_limit_mbps: 0, speed_limit_up_mbps: 0, concurrent_limit: 0,
     sub_node_limit: 0, sub_rotate_hours: 0,
-    default_quota_gb: 0, default_quota_reset_cycle: 'none',
+    default_quota_gb: 0, default_quota_reset_cycle: 'none', default_quota_policy: 'accumulate',
     suspend_on_quota_exhausted: 1, is_trial: false, trial_duration_hours: 0,
     sort_order: 0, enabled: true, hidden_from_portal: false,
   }
@@ -873,6 +894,7 @@ function emptyVariantForm() {
   return {
     variant_type: 'plan', name: '', billing_cycle: 'monthly', duration_days: 30, is_permanent: false,
     price_yuan: 0, original_price_yuan: 0, quota_gb: 0,
+    quota_reset_cycle: '', quota_policy: '',
     is_default: false, is_recommended: false, enabled: true, sort_order: 0,
   }
 }
@@ -895,6 +917,8 @@ function showEditVariant(row) {
     price_yuan: row.price / 100,
     original_price_yuan: row.original_price / 100,
     quota_gb: row.quota_bytes / 1073741824,
+    quota_reset_cycle: row.quota_reset_cycle || '',
+    quota_policy: row.quota_policy || '',
     is_default: !!row.is_default,
     is_recommended: !!row.is_recommended,
     enabled: !!row.enabled,

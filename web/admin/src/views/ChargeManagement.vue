@@ -1339,10 +1339,15 @@ async function fetchPlanData() {
         }
       } catch {}
     }
-    // 获取独立的流量叠加包
+    // 获取独立的流量叠加包（列表默认分页 20，建卡下拉需要全量）
     try {
-      const trafficPacks = (await planApi.listTrafficPacks()) || []
-      for (const v of trafficPacks) {
+      // /traffic-packs 是分页响应 { items, total }，不是数组 —— 直接 for..of 会抛
+      // "not iterable"，被 catch 吞掉后下拉静默为空。
+      const res = await planApi.listTrafficPacks({ limit: 100 })
+      const packs = Array.isArray(res?.items) ? res.items : (Array.isArray(res) ? res : [])
+      for (const v of packs) {
+        // 防御：后端旧版本曾把套餐规格混在 /traffic-packs 返回里，过滤掉避免误选
+        if (v.variant_type && v.variant_type !== 'traffic_pack') continue
         allVariants.push({ ...v, template_name: t('charge.trafficPackLabel'), template_id: 0 })
       }
     } catch {}

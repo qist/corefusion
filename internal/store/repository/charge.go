@@ -124,10 +124,11 @@ func (r *ChargeCardRepository) GetByCardCode(ctx context.Context, cardCode strin
 	if err != nil {
 		return &item, err
 	}
-	// 解密填充明文
+	// 解密填充明文 + 脱敏（核销时备注要写脱敏卡号，缺了会落成 "套餐卡支付: " 空尾巴）
 	if item.CardCodeEncrypted != "" {
 		if plain, err := crypto.DecryptSecret(item.CardCodeEncrypted); err == nil {
 			item.CardCode = plain
+			item.CardCodeMasked = crypto.MaskCardCode(plain)
 		}
 	}
 	return &item, err
@@ -142,6 +143,7 @@ func (r *ChargeCardRepository) Create(ctx context.Context, item *entity.ChargeCa
 			return err
 		}
 		item.CardCodeEncrypted = enc
+		item.CardCodeMasked = crypto.MaskCardCode(item.CardCode)
 	}
 	return r.db.WithContext(ctx).Create(item).Error
 }
@@ -156,6 +158,7 @@ func (r *ChargeCardRepository) CreateBatch(ctx context.Context, items []entity.C
 				return err
 			}
 			items[i].CardCodeEncrypted = enc
+			items[i].CardCodeMasked = crypto.MaskCardCode(items[i].CardCode)
 		}
 	}
 	return r.db.WithContext(ctx).Create(&items).Error

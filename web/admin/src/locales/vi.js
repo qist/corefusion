@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Mã thẻ",
     "sourceBalance": "Số dư",
     "sourceAdmin": "Quản trị",
+    "typeFilter": 'Lọc theo loại',
     "typeCharge": "Nạp tiền",
     "typeBalance": "Số dư",
     "typePlan": "Gói",

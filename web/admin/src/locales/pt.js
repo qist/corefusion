@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Código do cartão",
     "sourceBalance": "Saldo",
     "sourceAdmin": "Painel administrativo",
+    "typeFilter": 'Filtro por tipo',
     "typeCharge": "Recarregar",
     "typeBalance": "Saldo",
     "typePlan": "Plano",

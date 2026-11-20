@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "รหัสการ์ด",
     "sourceBalance": "ยอดคงเหลือ",
     "sourceAdmin": "หลังบ้าน",
+    "typeFilter": 'ตัวกรองประเภท',
     "typeCharge": "เติมเงิน",
     "typeBalance": "ยอดคงเหลือ",
     "typePlan": "แพ็กเกจ",

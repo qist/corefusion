@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Clave de tarjeta",
     "sourceBalance": "Saldo",
     "sourceAdmin": "Administración",
+    "typeFilter": 'Filtrar por tipo',
     "typeCharge": "Recargar",
     "typeBalance": "Saldo",
     "typePlan": "Plan",

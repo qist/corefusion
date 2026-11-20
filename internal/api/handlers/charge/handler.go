@@ -206,8 +206,10 @@ func (h *Handler) UpdateSite(c *gin.Context) {
 	site.ConfigJSON = incoming.ConfigJSON
 	site.Domain = extractDomain(site.SiteURL)
 
-	// Handle callback_secret: only update if a new plaintext value is provided
-	if incoming.CallbackSecret != "" {
+	// Handle callback_secret: only update if a new plaintext value is provided.
+	// 列表接口返回的是掩码（mock****），编辑弹窗原样回传时必须**忽略**，
+	// 否则会把掩码当成新密钥加密写回 → 真实密钥丢失、回调恒 invalid signature。
+	if incoming.CallbackSecret != "" && !strings.Contains(incoming.CallbackSecret, "****") {
 		encrypted, err := crypto.EncryptSecret(incoming.CallbackSecret)
 		if err != nil {
 			response.InternalError(c, "ENCRYPT_FAILED", err.Error())
@@ -217,6 +219,45 @@ func (h *Handler) UpdateSite(c *gin.Context) {
 		site.CallbackSecret = "" // 不存明文
 	}
 
+	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
+		response.InternalError(c, "UPDATE_FAILED", err.Error())
+		return
+	}
+	h.maskSiteSecret(site)
+	response.OK(c, site)
+}
+
+// SetSiteEnabled 只改「启用/禁用」一个字段。
+//
+// 为什么单独做一个端点：列表里的开关原来走 PUT /:id 全量更新，
+//  1. 前端把列表行原样回传，其中 callback_secret 是掩码（mock****）→
+//     后端会把它当成新密钥加密写回，**真实密钥被覆盖**，之后回调全部验签失败；
+//  2. 只要请求体少带字段（例如经过某些代理/脚本），api_key/methods 会被清空。
+//
+// 开关是高频、低风险操作，单独端点既不会误伤配置，也不依赖全量字段。
+func (h *Handler) SetSiteEnabled(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid id")
+		return
+	}
+	var input struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if input.Enabled == nil {
+		response.BadRequest(c, "INVALID_REQUEST", "enabled is required")
+		return
+	}
+	site, err := h.chargeSiteRepo.GetByID(c.Request.Context(), id)
+	if err != nil {
+		response.NotFound(c, "NOT_FOUND", "charge site not found")
+		return
+	}
+	site.Enabled = *input.Enabled
 	if err := h.chargeSiteRepo.Update(c.Request.Context(), site); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
@@ -491,12 +532,18 @@ func (h *Handler) GetSiteIntegrationDoc(c *gin.Context) {
 // ListOrders handles GET /api/v1/charge-orders.
 func (h *Handler) ListOrders(c *gin.Context) {
 	status := c.Query("status")
+	// order_type：充值(charge) 与套餐/流量包购买(purchase) 混在同一张表里，
+	// 后台需要按类型分开核对（财务对账时尤其明显）。
+	orderType := strings.TrimSpace(c.Query("order_type"))
 	limit, offset := getPagination(c)
 	var items []entity.ChargeOrder
 	var total int64
 	q := h.db.WithContext(c.Request.Context()).Model(&entity.ChargeOrder{})
 	if status != "" {
 		q = q.Where("status = ?", status)
+	}
+	if orderType != "" {
+		q = q.Where("order_type = ?", orderType)
 	}
 	q.Count(&total)
 	if err := q.Order("created_at DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
@@ -1387,6 +1434,10 @@ func (h *Handler) ExportOrdersCSV(c *gin.Context) {
 	q := h.db.WithContext(ctx).Model(&entity.ChargeOrder{})
 	if status := c.Query("status"); status != "" {
 		q = q.Where("status = ?", status)
+	}
+	// 导出与列表同一口径：支持按类型（充值/套餐购买）导出，便于分账。
+	if orderType := strings.TrimSpace(c.Query("order_type")); orderType != "" {
+		q = q.Where("order_type = ?", orderType)
 	}
 	// 导出按**时间正序**：财务对着表格从上往下核对，倒序会很难读 ✓
 	if err := q.Order("created_at ASC").Limit(limit).Find(&orders).Error; err != nil {

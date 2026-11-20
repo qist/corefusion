@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "卡密",
     "sourceBalance": "餘額",
     "sourceAdmin": "後台",
+    "typeFilter": '類型篩選',
     "typeCharge": "儲值",
     "typeBalance": "餘額",
     "typePlan": "套餐",

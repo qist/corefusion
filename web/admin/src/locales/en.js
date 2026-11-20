@@ -4748,6 +4748,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     sourceCard: 'Card',
     sourceBalance: 'Balance',
     sourceAdmin: 'Admin',
+    typeFilter: 'Type Filter',
     typeCharge: 'Charge',
     typeBalance: 'Balance',
     typePlan: 'Plan',

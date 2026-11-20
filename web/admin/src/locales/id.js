@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Kode kartu",
     "sourceBalance": "Saldo",
     "sourceAdmin": "Panel admin",
+    "typeFilter": 'Filter tipe',
     "typeCharge": "Isi ulang",
     "typeBalance": "Saldo",
     "typePlan": "Paket",

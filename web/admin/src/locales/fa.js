@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "کد کارت",
     "sourceBalance": "موجودی",
     "sourceAdmin": "پنل مدیریت",
+    "typeFilter": 'فیلتر نوع',
     "typeCharge": "شارژ",
     "typeBalance": "موجودی",
     "typePlan": "بسته",

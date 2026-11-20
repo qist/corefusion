@@ -4677,6 +4677,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     sourceCard: '卡密',
     sourceBalance: '余额',
     sourceAdmin: '后台',
+    typeFilter: '类型筛选',
     typeCharge: '充值',
     typeBalance: '余额',
     typePlan: '套餐',

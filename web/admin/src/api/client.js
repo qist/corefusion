@@ -90,7 +90,9 @@ client.interceptors.response.use(
           window.location.href = basePath + '/maintenance'
         }
       } else if (!suppressErrorMessage && status === 403) {
-        ElMessage.error(t('error.forbidden'))
+        // 403 可能来自后端角色校验，也可能来自反代/WAF：把后端原因带出来，
+        // 只显示「权限不足」无法区分这两种情况。
+        ElMessage.error(data?.message ? `${t('error.forbidden')}：${data.message}` : t('error.forbidden'))
       } else if (!suppressErrorMessage && status === 404) {
         ElMessage.error(t('error.notFound'))
       } else if (!suppressErrorMessage && status >= 500) {

@@ -18,6 +18,12 @@ export function updateChargeSite(id, data) {
   return client.put(`/charge-sites/${id}`, data)
 }
 
+// 只切换启用状态：不复用 PUT 全量更新（会把 callback_secret 掩码当新密钥写回，
+// 也会因缺少字段清空 api_key/methods）。列表开关必须走这个端点。
+export function setChargeSiteEnabled(id, enabled) {
+  return client.post(`/charge-sites/${id}/enable`, { enabled })
+}
+
 export function deleteChargeSite(id) {
   return client.delete(`/charge-sites/${id}`)
 }

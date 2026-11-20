@@ -62,6 +62,10 @@
         <div style="display:flex;justify-content:space-between;margin-bottom:16px">
           <h3 style="margin:0">{{ t('charge.ordersTab') }}</h3>
           <div style="display:flex;gap:8px;align-items:center">
+            <el-select v-model="orderTypeFilter" size="small" :placeholder="t('charge.typeFilter')" clearable style="width:120px">
+              <el-option :label="t('charge.typeCharge')" value="charge" />
+              <el-option :label="t('charge.typePlan')" value="purchase" />
+            </el-select>
             <el-select v-model="orderStatusFilter" size="small" :placeholder="t('charge.statusFilter')" clearable style="width:120px">
               <el-option :label="t('charge.statusPending')" value="pending" />
               <el-option :label="t('charge.statusPaid')" value="paid" />
@@ -953,11 +957,17 @@ async function saveSite() {
   } catch {}
 }
 async function toggleSite(row) {
+  const next = !row.enabled
   try {
-    await chargeApi.updateChargeSite(row.id, { ...row, enabled: !row.enabled })
-    ElMessage.success(row.enabled ? t('common.disabled') : t('common.enabled'))
+    await chargeApi.setChargeSiteEnabled(row.id, next)
+    // 以服务端返回为准，避免列表与库不一致
+    row.enabled = next
+    ElMessage.success(next ? t('common.enabled') : t('common.disabled'))
     fetchSites()
-  } catch {}
+  } catch (e) {
+    // 403 时把后端原因带出来，便于判断是「角色不足」还是「反代/WAF 拦截」
+    ElMessage.error((e && e.message) ? e.message : t('error.forbidden'))
+  }
 }
 async function deleteSite(row) {
   await ElMessageBox.confirm(t('charge.confirmDeleteSite', { name: row.name }), t('common.confirm'))
@@ -971,6 +981,8 @@ function parseMethods(str) {
 const orders = ref([])
 const ordersLoading = ref(false)
 const orderStatusFilter = useQueryState('ostatus', '', { omit: (v) => v === '' })
+// 类型筛选：charge=充值 / purchase=套餐（含流量包）购买，空=全部
+const orderTypeFilter = useQueryState('otype', '', { omit: (v) => v === '' })
 const orderPage = useQueryState('opage', 1, { type: 'number' })
 const orderPageSize = useQueryState('opageSize', 20, { type: 'number' })
 const orderTotal = ref(0)
@@ -982,6 +994,7 @@ async function fetchOrders() {
   try {
     const params = { limit: orderPageSize.value, offset: (orderPage.value - 1) * orderPageSize.value }
     if (orderStatusFilter.value) params.status = orderStatusFilter.value
+    if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     const r = await chargeApi.listChargeOrders(params)
     orders.value = r.items || []
     orderTotal.value = r.total || 0
@@ -1178,6 +1191,7 @@ async function doExportOrdersCSV() {
   try {
     const params = { lang: locale.value }
     if (orderStatusFilter.value) params.status = orderStatusFilter.value
+    if (orderTypeFilter.value) params.order_type = orderTypeFilter.value
     const blob = await chargeApi.exportOrdersCSV(params)
     downloadBlob(blob, `charge-orders-${new Date().toISOString().substring(0, 10)}.csv`)
     ElMessage.success(t('charge.csvExportSuccess'))

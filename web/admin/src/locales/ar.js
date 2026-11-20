@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "رمز البطاقة",
     "sourceBalance": "الرصيد",
     "sourceAdmin": "لوحة التحكم",
+    "typeFilter": 'تصفية النوع',
     "typeCharge": "شحن",
     "typeBalance": "الرصيد",
     "typePlan": "الباقة",

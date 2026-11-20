@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Код карты",
     "sourceBalance": "Баланс",
     "sourceAdmin": "Админ-панель",
+    "typeFilter": 'Фильтр по типу',
     "typeCharge": "Пополнение",
     "typeBalance": "Баланс",
     "typePlan": "План",

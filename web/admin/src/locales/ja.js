@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "カードコード",
     "sourceBalance": "残高",
     "sourceAdmin": "管理画面",
+    "typeFilter": '種別フィルター',
     "typeCharge": "チャージ",
     "typeBalance": "残高",
     "typePlan": "プラン",

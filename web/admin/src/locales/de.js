@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Kartencode",
     "sourceBalance": "Guthaben",
     "sourceAdmin": "Adminbereich",
+    "typeFilter": 'Typfilter',
     "typeCharge": "Aufladen",
     "typeBalance": "Guthaben",
     "typePlan": "Tarif",

@@ -2113,6 +2113,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				chargeSiteGroup.GET("/:id", chargeAdminH.GetSite)
 				chargeSiteGroup.POST("", chargeAdminH.CreateSite)
 				chargeSiteGroup.PUT("/:id", chargeAdminH.UpdateSite)
+				// 只切换启用状态（POST 而非 PUT：部分反代/WAF 会拦 PUT，
+				// 且开关不该回传整行配置 —— 会误伤 callback_secret）。
+				chargeSiteGroup.POST("/:id/enable", chargeAdminH.SetSiteEnabled)
 				chargeSiteGroup.DELETE("/:id", chargeAdminH.DeleteSite)
 				chargeSiteGroup.POST("/:id/generate-verify-file", chargeAdminH.GenerateVerifyFile)
 				chargeSiteGroup.POST("/:id/generate-verify", chargeAdminH.GenerateVerifyFile) // 文档路径别名

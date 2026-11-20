@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "카드 키",
     "sourceBalance": "잔액",
     "sourceAdmin": "관리자",
+    "typeFilter": '유형 필터',
     "typeCharge": "충전",
     "typeBalance": "잔액",
     "typePlan": "플랜",

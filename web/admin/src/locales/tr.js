@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Kart Kodu",
     "sourceBalance": "Bakiye",
     "sourceAdmin": "Yönetim Paneli",
+    "typeFilter": 'Tür filtresi',
     "typeCharge": "Bakiye Yükle",
     "typeBalance": "Bakiye",
     "typePlan": "Paket",

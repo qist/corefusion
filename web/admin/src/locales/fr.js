@@ -4493,6 +4493,7 @@ export default {
     "sourceCard": "Code de carte",
     "sourceBalance": "Solde",
     "sourceAdmin": "Back-office",
+    "typeFilter": 'Filtre par type',
     "typeCharge": "Recharger",
     "typeBalance": "Solde",
     "typePlan": "Forfait",

@@ -781,7 +781,7 @@ func (s *PanelUpdateService) replaceWith(src string) error {
 	dir := filepath.Dir(exe)
 	tmp, err := os.CreateTemp(dir, ".panel-update-*")
 	if err != nil {
-		return fmt.Errorf("在 %s 创建临时文件失败（面板进程需要对该目录有写权限）: %w", dir, err)
+		return fmt.Errorf("failed to create a temporary file in %s (the panel process needs write permission on that directory): %w", dir, err)
 	}
 	tmpPath := tmp.Name()
 	removeTmp := true

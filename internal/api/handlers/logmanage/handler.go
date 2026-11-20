@@ -700,8 +700,8 @@ func (h *Handler) GetLog(c *gin.Context) {
 			}
 			response.OK(c, gin.H{
 				"lines": []string{
-					fmt.Sprintf("[日志文件不存在] %s", resolvedPath),
-					fmt.Sprintf("[提示] %s", err.Error()),
+					fmt.Sprintf("[log file not found] %s", resolvedPath),
+					fmt.Sprintf("[hint] %s", err.Error()),
 				},
 				"path":   resolvedPath,
 				"exists": false,
@@ -772,8 +772,8 @@ func (h *Handler) StreamLog(c *gin.Context) {
 				if resolvedPath == "" {
 					resolvedPath = policy.SourceType
 				}
-				c.SSEvent("log", fmt.Sprintf("[日志文件不存在] %s", resolvedPath))
-				c.SSEvent("log", fmt.Sprintf("[提示] %s", err.Error()))
+				c.SSEvent("log", fmt.Sprintf("[log file not found] %s", resolvedPath))
+				c.SSEvent("log", fmt.Sprintf("[hint] %s", err.Error()))
 				c.Writer.Flush()
 				return
 			}
@@ -972,8 +972,8 @@ func (h *Handler) GetNodeLog(c *gin.Context) {
 		}
 		response.OK(c, gin.H{
 			"lines": []string{
-				fmt.Sprintf("[日志文件不存在] %s", resolvedPath),
-				fmt.Sprintf("[提示] %s", err.Error()),
+				fmt.Sprintf("[log file not found] %s", resolvedPath),
+				fmt.Sprintf("[hint] %s", err.Error()),
 			},
 			"type": logType, "server_id": serverID, "log_path": resolvedPath, "exists": false,
 		})

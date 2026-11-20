@@ -51,13 +51,13 @@ func (s *SettingService) SendSubscriberTemplate(ctx context.Context, tmpl *entit
 		return fmt.Errorf("template %q is not a subscriber template", tmpl.Name)
 	}
 	if tmpl.Type != "email" {
-		return fmt.Errorf("订阅者模板仅支持 email 渠道（订阅者没有 Telegram 会话）")
+		return fmt.Errorf("subscriber templates only support the email channel (subscribers have no Telegram session)")
 	}
 	if clientEmail == "" {
-		return fmt.Errorf("客户邮箱为空")
+		return fmt.Errorf("client email is empty")
 	}
 	if defaultNotifier == nil {
-		return fmt.Errorf("SMTP 未配置，无法发送订阅者通知")
+		return fmt.Errorf("SMTP is not configured; cannot send subscriber notifications")
 	}
 	subject := renderVars(tmpl.Subject, vars)
 	if subject == "" {
@@ -73,7 +73,7 @@ func (s *SettingService) SendSubscriberTemplateTest(ctx context.Context, tmpl *e
 		return err
 	}
 	if config.SMTPFrom == "" {
-		return fmt.Errorf("请先配置 SMTP 与发件人邮箱，演示邮件将发送到发件人邮箱")
+		return fmt.Errorf("configure SMTP and the sender address first; the test email will be sent to the sender address")
 	}
 	return s.SendSubscriberTemplate(ctx, tmpl, config.SMTPFrom, sampleTemplateVars)
 }
@@ -241,7 +241,7 @@ func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *go
 		return 0, fmt.Errorf("template %d not found", id)
 	}
 	if tmpl.Audience != entity.TemplateAudienceSubscriber || tmpl.Type != "email" {
-		return 0, fmt.Errorf("仅订阅者邮件模板支持群发")
+		return 0, fmt.Errorf("only subscriber email templates support bulk sending")
 	}
 
 	var targets []entity.Client
@@ -271,7 +271,7 @@ func (s *SettingService) BroadcastSubscriberTemplate(ctx context.Context, db *go
 		return 0, nil
 	}
 	if defaultNotifier == nil {
-		return 0, fmt.Errorf("SMTP 未配置，无法群发")
+		return 0, fmt.Errorf("SMTP is not configured; cannot send in bulk")
 	}
 
 	go func() {

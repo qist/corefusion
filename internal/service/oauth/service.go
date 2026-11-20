@@ -347,7 +347,7 @@ func (s *Service) nonActiveResult(ctx context.Context, client *entity.Client) (*
 		}
 	}
 	// 到期账号（expired / auto_expired）已在调用方放行，这里只剩真正的封禁/异常状态。
-	return nil, fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
+	return nil, fmt.Errorf("account status is %q; login is not allowed, please contact support", client.Status)
 }
 
 // fetchGitHubUserInfo fetches user info from GitHub REST API.

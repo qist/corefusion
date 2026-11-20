@@ -106,16 +106,16 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 		return
 	}
 	if req.IntervalMinutes != nil && (*req.IntervalMinutes < 1 || *req.IntervalMinutes > 1440) {
-		response.BadRequest(c, "INVALID_REQUEST", "interval_minutes 需在 1-1440 之间")
+		response.BadRequest(c, "INVALID_REQUEST", "interval_minutes must be between 1 and 1440")
 		return
 	}
 	if req.MaxLatencyMs != nil && *req.MaxLatencyMs < 0 {
-		response.BadRequest(c, "INVALID_REQUEST", "max_latency_ms 不能为负")
+		response.BadRequest(c, "INVALID_REQUEST", "max_latency_ms must not be negative")
 		return
 	}
 	if req.EntryNodeID != nil && *req.EntryNodeID > 0 && h.nodeRepo != nil {
 		if _, err := h.nodeRepo.GetByID(c.Request.Context(), *req.EntryNodeID); err != nil {
-			response.BadRequest(c, "INVALID_REQUEST", "入口节点不存在")
+			response.BadRequest(c, "INVALID_REQUEST", "entry node not found")
 			return
 		}
 	}
@@ -265,7 +265,7 @@ func (h *ProbeHandler) SaveChainConfig(c *gin.Context) {
 			}
 		}
 		if !ok {
-			response.BadRequest(c, "INVALID_REQUEST", "探针入站不存在或未启用 CDN 接入域名")
+			response.BadRequest(c, "INVALID_REQUEST", "probe inbound not found or no CDN domain is enabled")
 			return
 		}
 	}

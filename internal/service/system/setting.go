@@ -666,9 +666,9 @@ func (s *SettingService) TestTelegram(ctx context.Context, config *NotificationC
 		_ = json.NewDecoder(resp.Body).Decode(&tgErr)
 		switch {
 		case resp.StatusCode == 401 || resp.StatusCode == 404:
-			return fmt.Errorf("telegram API returned %d: bot token 无效或不完整（正确格式：123456789:AAHxxx...，需包含冒号前的数字 ID）", resp.StatusCode)
+			return fmt.Errorf("telegram API returned %d: bot token is invalid or incomplete (expected format: 123456789:AAHxxx..., including the numeric ID before the colon)", resp.StatusCode)
 		case resp.StatusCode == 400 && strings.Contains(tgErr.Description, "chat not found"):
-			return fmt.Errorf("telegram API 400: chat not found —— Chat ID 无效或 bot 还没和这个会话对话过；请给 bot 发一条消息后点「自动获取」")
+			return fmt.Errorf("telegram API 400: chat not found - the chat ID is invalid or the bot has never talked to this chat; send a message to the bot and click Auto-detect")
 		case tgErr.Description != "":
 			return fmt.Errorf("telegram API %d: %s", resp.StatusCode, tgErr.Description)
 		default:
@@ -706,11 +706,11 @@ func (s *SettingService) GetTelegramChatID(ctx context.Context, botToken string)
 		Description string `json:"description"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", fmt.Errorf("解析响应失败: %w", err)
+		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 	if !body.OK {
 		if resp.StatusCode == 401 || resp.StatusCode == 404 {
-			return "", fmt.Errorf("bot token 无效或不完整（正确格式：123456789:AAHxxx...）")
+			return "", fmt.Errorf("bot token is invalid or incomplete (expected format: 123456789:AAHxxx...)")
 		}
 		return "", fmt.Errorf("telegram API: %s", body.Description)
 	}
@@ -719,7 +719,7 @@ func (s *SettingService) GetTelegramChatID(ctx context.Context, botToken string)
 			return fmt.Sprintf("%d", id), nil
 		}
 	}
-	return "", fmt.Errorf("未发现消息，请先在 Telegram 里给你的 bot 发送一条消息（如 /start）后再点获取")
+	return "", fmt.Errorf("no message found; send a message (e.g. /start) to your bot in Telegram, then click Detect")
 }
 
 // --- Notification Templates ---
@@ -755,7 +755,7 @@ func (s *SettingService) SendTemplateTest(ctx context.Context, id int64) error {
 		return fmt.Errorf("template %d not found", id)
 	}
 	if defaultNotifier == nil {
-		return fmt.Errorf("通知渠道未配置（请先启用并保存 Telegram 或 SMTP）")
+		return fmt.Errorf("notification channel is not configured (enable and save Telegram or SMTP first)")
 	}
 	if tmpl.Audience == entity.TemplateAudienceSubscriber {
 		return s.SendSubscriberTemplateTest(ctx, tmpl)

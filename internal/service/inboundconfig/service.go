@@ -58,10 +58,10 @@ func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, 
 	case "vless":
 		// shadowsocks 结构出现在 vless 里 → 100% 是改协议/导入残留，不能落库。
 		if _, hasMethod := settings["method"]; hasMethod {
-			return "", fmt.Errorf("%w: protocol=vless 但 settings 含 shadowsocks 的 method，请把协议改成 shadowsocks（或清空 settings 后重新添加客户端）", ErrProtocolSettingsMismatch)
+			return "", fmt.Errorf("%w: protocol=vless but settings contains a shadowsocks method; switch the protocol to shadowsocks (or clear settings and re-add the client)", ErrProtocolSettingsMismatch)
 		}
 		if _, hasPwd := settings["password"]; hasPwd && len(clients) == 0 {
-			return "", fmt.Errorf("%w: protocol=vless 但 settings 只有 password（shadowsocks 结构），请检查协议选择", ErrProtocolSettingsMismatch)
+			return "", fmt.Errorf("%w: protocol=vless but settings only has password (shadowsocks shape); please check the selected protocol", ErrProtocolSettingsMismatch)
 		}
 		if _, ok := settings["decryption"]; !ok {
 			settings["decryption"] = "none"
@@ -73,11 +73,11 @@ func normalizeXrayInboundConfig(coreType, protocol, configJSON string) (string, 
 	case "shadowsocks":
 		if _, ok := settings["method"]; !ok {
 			if len(clients) == 0 {
-				return "", fmt.Errorf("%w: shadowsocks 入站缺少 settings.method", ErrProtocolSettingsMismatch)
+				return "", fmt.Errorf("%w: shadowsocks inbound is missing settings.method", ErrProtocolSettingsMismatch)
 			}
 		}
 		if _, ok := settings["password"]; !ok && len(clients) == 0 {
-			return "", fmt.Errorf("%w: shadowsocks 入站缺少 settings.password（单用户）或 settings.clients（多用户）", ErrProtocolSettingsMismatch)
+			return "", fmt.Errorf("%w: shadowsocks inbound is missing settings.password (single user) or settings.clients (multi user)", ErrProtocolSettingsMismatch)
 		}
 	case "vmess":
 		if err := requireClientField(clients, "id", "vmess 客户端"); err != nil {
@@ -235,10 +235,10 @@ func requireClientField(clients []interface{}, field, what string) error {
 		}
 		if field == "id" {
 			if pwd, _ := m["password"].(string); strings.TrimSpace(pwd) != "" {
-				return fmt.Errorf("%w: %s[%d] 只有 password（trojan 结构）没有 id，请检查协议选择", ErrProtocolSettingsMismatch, what, i)
+				return fmt.Errorf("%w: %s[%d] has password (trojan shape) but no id; please check the selected protocol", ErrProtocolSettingsMismatch, what, i)
 			}
 		}
-		return fmt.Errorf("%w: %s[%d] 缺少 %s", ErrProtocolSettingsMismatch, what, i, field)
+		return fmt.Errorf("%w: %s[%d] is missing %s", ErrProtocolSettingsMismatch, what, i, field)
 	}
 	return nil
 }
@@ -691,7 +691,7 @@ func (s *Service) checkServerNamesConflict(ctx context.Context, serverID, exclud
 		}
 		for _, sn := range extractServerNames(cfg.ConfigJSON) {
 			if _, ok := newSet[sn]; ok {
-				return fmt.Errorf("%w: 域名 %q 已被本节点的入站 %q 使用", ErrServerNamesConflict, sn, cfg.Remark)
+				return fmt.Errorf("%w: domain %q is already used by inbound %q on this node", ErrServerNamesConflict, sn, cfg.Remark)
 			}
 		}
 	}
@@ -1184,22 +1184,22 @@ func validateMasqueInbound(root, settings map[string]interface{}, clients []inte
 		email, _ := m["email"].(string)
 		pass, _ := m["pass"].(string)
 		if strings.TrimSpace(email) == "" || strings.TrimSpace(pass) == "" {
-			return fmt.Errorf("%w: masque 用户[%d] 需要 email 与 pass（HTTP Basic 认证）", ErrProtocolSettingsMismatch, i)
+			return fmt.Errorf("%w: masque user[%d] requires email and pass (HTTP Basic auth)", ErrProtocolSettingsMismatch, i)
 		}
 		if strings.Contains(email, ":") {
-			return fmt.Errorf("%w: masque 用户[%d] 的 email 不能包含 ':'", ErrProtocolSettingsMismatch, i)
+			return fmt.Errorf("%w: masque user[%d] email must not contain ':'", ErrProtocolSettingsMismatch, i)
 		}
 	}
 	if !hasNonEmptyStringArray(settings["address"]) {
-		return fmt.Errorf("%w: masque 入站缺少 settings.address（至少填一个 CIDR，如 10.0.0.1/24）", ErrProtocolSettingsMismatch)
+		return fmt.Errorf("%w: masque inbound is missing settings.address (provide at least one CIDR, e.g. 10.0.0.1/24)", ErrProtocolSettingsMismatch)
 	}
 	ss, _ := root["streamSettings"].(map[string]interface{})
 	if !strings.EqualFold(domain.StreamTransport(ss), "masque") {
-		return fmt.Errorf("%w: masque 入站必须使用 masque 传输（streamSettings.network/method = masque）", ErrProtocolSettingsMismatch)
+		return fmt.Errorf("%w: masque inbound must use the masque transport (streamSettings.network/method = masque)", ErrProtocolSettingsMismatch)
 	}
 	security, _ := ss["security"].(string)
 	if !strings.EqualFold(security, "tls") {
-		return fmt.Errorf("%w: masque 入站必须使用 tls（不支持 reality 或 plaintext）", ErrProtocolSettingsMismatch)
+		return fmt.Errorf("%w: masque inbound must use tls (reality or plaintext is not supported)", ErrProtocolSettingsMismatch)
 	}
 	return nil
 }

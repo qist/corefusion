@@ -582,7 +582,7 @@ func (h *Handler) IssueOnNode(c *gin.Context) {
 
 	audit.RecordNodeFromCtx(c, req.NodeID, "cert_issue_on_node", strings.Join(identifiers, ","), true, "")
 	response.OK(c, gin.H{
-		"message":     "证书签发指令已下发到节点，签完后会自动入库并绑定该节点",
+		"message":     "certificate issuance command sent to the node; it will be imported and bound to this node after signing",
 		"node_id":     req.NodeID,
 		"identifiers": identifiers,
 	})

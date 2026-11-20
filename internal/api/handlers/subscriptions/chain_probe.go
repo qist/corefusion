@@ -148,18 +148,18 @@ func (h *PublicHandler) ChainProbeTargets(ctx context.Context, probeSpec string)
 // pickChainProbeInbound 按 "inb:<id>" 选中探针入站。
 func pickChainProbeInbound(probes []chainProbeInbound, spec string) (*chainProbeInbound, error) {
 	if !strings.HasPrefix(spec, "inb:") {
-		return nil, fmt.Errorf("探针入站标识无效：%s", spec)
+		return nil, fmt.Errorf("invalid probe inbound spec: %s", spec)
 	}
 	id, err := strconv.ParseInt(strings.TrimPrefix(spec, "inb:"), 10, 64)
 	if err != nil || id <= 0 {
-		return nil, fmt.Errorf("探针入站标识无效：%s", spec)
+		return nil, fmt.Errorf("invalid probe inbound spec: %s", spec)
 	}
 	for i := range probes {
 		if probes[i].cfg.ID == id {
 			return &probes[i], nil
 		}
 	}
-	return nil, fmt.Errorf("探针入站 %s 不存在或未启用 CDN 接入域名", spec)
+	return nil, fmt.Errorf("probe inbound %s not found or has no CDN domain enabled", spec)
 }
 
 // chainProbeInbounds 收集所有「启用 + 接入域名开启且走 CDN」的入站。
@@ -356,36 +356,36 @@ func (h *PublicHandler) ChainProbeExitProxy(ctx context.Context, spec string) (m
 	case strings.HasPrefix(spec, "ext:"):
 		id, err := strconv.ParseInt(strings.TrimPrefix(spec, "ext:"), 10, 64)
 		if err != nil || id <= 0 {
-			return nil, "", fmt.Errorf("出口节点标识无效：%s", spec)
+			return nil, "", fmt.Errorf("invalid egress node spec: %s", spec)
 		}
 		if h.extNodeRepo == nil {
-			return nil, "", fmt.Errorf("外部节点仓储不可用")
+			return nil, "", fmt.Errorf("external node repository unavailable")
 		}
 		node, err := h.extNodeRepo.GetByID(ctx, id)
 		if err != nil || node == nil {
-			return nil, "", fmt.Errorf("外部节点 %d 不存在", id)
+			return nil, "", fmt.Errorf("external node %d not found", id)
 		}
 		var pm map[string]interface{}
 		if err := json.Unmarshal([]byte(node.ProxyJSON), &pm); err != nil || len(pm) == 0 {
-			return nil, "", fmt.Errorf("外部节点 %d 的配置无效", id)
+			return nil, "", fmt.Errorf("external node %d has invalid configuration", id)
 		}
 		return pm, "外部节点 " + node.Name, nil
 
 	case strings.HasPrefix(spec, "inb:"):
 		id, err := strconv.ParseInt(strings.TrimPrefix(spec, "inb:"), 10, 64)
 		if err != nil || id <= 0 {
-			return nil, "", fmt.Errorf("出口节点标识无效：%s", spec)
+			return nil, "", fmt.Errorf("invalid egress node spec: %s", spec)
 		}
 		if h.inboundRepo == nil {
-			return nil, "", fmt.Errorf("入站仓储不可用")
+			return nil, "", fmt.Errorf("inbound repository unavailable")
 		}
 		cfg, err := h.inboundRepo.GetByID(ctx, id)
 		if err != nil || cfg == nil {
-			return nil, "", fmt.Errorf("入站 %d 不存在", id)
+			return nil, "", fmt.Errorf("inbound %d not found", id)
 		}
 		view, err := chainProbeView(cfg)
 		if err != nil || view == nil {
-			return nil, "", fmt.Errorf("入站 %d 的配置无法解析", id)
+			return nil, "", fmt.Errorf("inbound %d configuration cannot be parsed", id)
 		}
 		shareDomains := h.loadShareDomains(ctx)
 
@@ -417,11 +417,11 @@ func (h *PublicHandler) ChainProbeExitProxy(ctx context.Context, spec string) (m
 			}
 		}
 		if host == "" {
-			return nil, "", fmt.Errorf("入站 %d 所在节点没有可用地址（公网 IP / 主机名 / 内网 IP 都为空）", id)
+			return nil, "", fmt.Errorf("inbound %d: its node has no usable address (public IP, hostname and private IP are all empty)", id)
 		}
 		pm, err := chainProbeProxyMap(view, cfg, host, port)
 		if err != nil || pm == nil {
-			return nil, "", fmt.Errorf("入站 %d 无法生成客户端出站：%v", id, err)
+			return nil, "", fmt.Errorf("inbound %d: failed to build client outbound: %v", id, err)
 		}
 		// 直连节点地址时，入站证书通常签给域名（或面板自签），TLS 校验必然失败；
 		// 这里只是拿它当跳板，跳过校验不影响安全性（探测流量不敏感）。
@@ -436,7 +436,7 @@ func (h *PublicHandler) ChainProbeExitProxy(ctx context.Context, spec string) (m
 		}
 		return pm, name + "/" + nodeDisplayName(cfg.Remark, cfg.Tag), nil
 	}
-	return nil, "", fmt.Errorf("不支持的出口标识：%s", spec)
+	return nil, "", fmt.Errorf("unsupported egress spec: %s", spec)
 }
 
 // chainProbeView 把入站配置解析成 xray 形态（sing-box 入站归一），并确保
@@ -452,7 +452,7 @@ func chainProbeView(cfg *entity.InboundConfig) (map[string]interface{}, error) {
 	if isSingboxInboundConfig(config) {
 		user := firstSingboxUser(config)
 		if user == nil {
-			return nil, fmt.Errorf("sing-box 入站没有用户")
+			return nil, fmt.Errorf("sing-box inbound has no users")
 		}
 		config = singboxViewForUser(config, user, getString(user, "name", ""))
 	}
@@ -531,7 +531,7 @@ func chainProbeProxyMap(config map[string]interface{}, cfg *entity.InboundConfig
 		}
 	}
 	if client == nil {
-		return nil, fmt.Errorf("入站没有可用账号")
+		return nil, fmt.Errorf("inbound has no usable account")
 	}
 
 	var password, flow string
@@ -564,11 +564,11 @@ func chainProbeProxyMap(config map[string]interface{}, cfg *entity.InboundConfig
 	}
 	link := sharelink.Generate(shareNode)
 	if link == "" {
-		return nil, fmt.Errorf("协议 %s 无法生成分享链接", cfg.Protocol)
+		return nil, fmt.Errorf("protocol %s cannot generate a share link", cfg.Protocol)
 	}
 	pms := convertLinksToMihomoProxyMaps([]string{link})
 	if len(pms) == 0 || pms[0] == nil {
-		return nil, fmt.Errorf("协议 %s 无法转换为客户端出站", cfg.Protocol)
+		return nil, fmt.Errorf("protocol %s cannot be converted to a client outbound", cfg.Protocol)
 	}
 	pm := pms[0]
 	// 链路上必须指向我们解析出来的 CDN/节点地址：链接转换在个别协议

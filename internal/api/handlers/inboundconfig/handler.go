@@ -243,7 +243,7 @@ func (h *Handler) Create(c *gin.Context) {
 	// 订阅收集会跳过 port==0 的节点、分享链接会生成 ":0"、端口跳跃/防火墙规则也拿它当目标。
 	// 以前前端在 sock 模式下不传 port → 行建出来了但"保存没用"（订阅里消失、二维码端口 0）。
 	if req.Port <= 0 {
-		response.BadRequest(c, "INVALID_PORT", "端口必须 >= 1（Unix Socket / @抽象 socket 也需要：用于分享、订阅与规则标识）")
+		response.BadRequest(c, "INVALID_PORT", "port must be >= 1 (required even for Unix sockets / @abstract sockets: used in share links, subscriptions and rule IDs)")
 		return
 	}
 	listen := strings.TrimSpace(req.Listen)

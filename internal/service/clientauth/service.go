@@ -259,7 +259,7 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*TokenResponse, 
 			if ok, hint := s.selfUnbanCheck(ctx, client); ok {
 				suToken, terr := s.jwt.GenerateSelfUnbanToken(client.ID, client.Email, "client", client.TokenVersion)
 				if terr != nil {
-					return nil, fmt.Errorf("生成解封凭证失败")
+					return nil, fmt.Errorf("failed to generate self-unban token")
 				}
 				// Client 带最小信息：handler 审计日志读 result.Client.ID；
 				// 门户解封卡也可显示邮箱。只给受限字段，不带任何订阅信息。
@@ -295,7 +295,7 @@ func ensureClientActive(client *entity.Client) error {
 	if client.Status == "active" || client.IsExpiredAccount() {
 		return nil
 	}
-	return fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
+	return fmt.Errorf("account status is %q; login is not allowed, please contact support", client.Status)
 }
 
 // portalClientStatus 把「到期」统一呈现为 expired：
@@ -443,7 +443,7 @@ func (s *Service) UpdateSettings(ctx context.Context, clientID int64, ipWhitelis
 	if deviceLimit > 0 && client.PlanID > 0 && s.tmplRepo != nil {
 		if tmpl, terr := s.tmplRepo.GetByID(ctx, client.PlanID); terr == nil && tmpl != nil && tmpl.DeviceLimit > 0 {
 			if deviceLimit > tmpl.DeviceLimit {
-				return fmt.Errorf("设备数不能超过套餐上限（%d 台）", tmpl.DeviceLimit)
+				return fmt.Errorf("device limit exceeded: this plan allows at most %d device(s)", tmpl.DeviceLimit)
 			}
 		}
 	}

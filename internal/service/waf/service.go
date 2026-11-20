@@ -1806,6 +1806,13 @@ func (s *Service) InitDomainRules(ctx context.Context, domain string) error {
 // url_attack / url_args / post 检查导致误拦；这里**按具体接口前缀**只放行这些
 // 「内容型」检查（IP/UA/Cookie/CC/文件上传等仍生效），避免整段 /api/ 放行。
 // 非管理接口（auth / client-auth / public / 回调等）不在此列，仍走全局规则。
+//
+// 2026-11-20 补充：渠道站点/客户/订单/套餐等接口虽然不在「配置文本」类白名单里，
+// 但它们的字段同样会携带 URL、备注、卡号、邮箱等自由文本 —— 例如站点地址
+// `http://127.0.0.1:18081` 会命中 SSRF 规则 `http://127\.0\.0\.1`，导致
+// 「保存/禁用支付站点」被 WAF 拦成 403（日志 rule_tag=http://127\.0\.0\.1）。
+// 这些都是**已登录管理员**才能调用的接口，放行内容型检查不会扩大攻击面。
+//
 // 语法：<前缀或正则> <要跳过的检查，逗号分隔>。
 const panelForwardWhitelist = `# 面板管理接口：放行会被 WAF 误判的内容型检查（仅管理端可访问的接口）
 ^/api/v1/log-manage/ url_attack,url_args
@@ -1827,7 +1834,36 @@ const panelForwardWhitelist = `# 面板管理接口：放行会被 WAF 误判的
 ^/api/v1/portal/ url_attack,url_args,post
 ^/api/v1/system/ url_attack,url_args,post
 ^/api/v1/share-domains/ url_attack,url_args,post
-^/api/v1/cfip/ url_attack,url_args,post`
+^/api/v1/cfip/ url_attack,url_args,post
+^/api/v1/users/ url_attack,url_args,post
+^/api/v1/clients/ url_attack,url_args,post
+^/api/v1/plan-templates/ url_attack,url_args,post
+^/api/v1/plan-variants/ url_attack,url_args,post
+^/api/v1/traffic-packs/ url_attack,url_args,post
+^/api/v1/promotions/ url_attack,url_args,post
+^/api/v1/charge-sites/ url_attack,url_args,post
+^/api/v1/charge-orders/ url_attack,url_args,post
+^/api/v1/charge-cards/ url_attack,url_args,post
+^/api/v1/client-balances/ url_attack,url_args,post
+^/api/v1/charge-callback-(events|retries)/ url_attack,url_args,post
+^/api/v1/tickets/ url_attack,url_args,post
+^/api/v1/articles/ url_attack,url_args,post
+^/api/v1/client-gifts/ url_attack,url_args,post
+^/api/v1/shared-accounts/ url_attack,url_args,post
+^/api/v1/ip-whitelists/ url_attack,url_args,post
+^/api/v1/client-oauth-bindings/ url_attack,url_args,post
+^/api/v1/referral/ url_attack,url_args,post
+^/api/v1/referral-withdrawals/ url_attack,url_args,post
+^/api/v1/node-groups/ url_attack,url_args,post
+^/api/v1/subscription-endpoints/ url_attack,url_args,post
+^/api/v1/ca/ url_attack,url_args,file_upload
+^/api/v1/certificate-tasks/ url_attack,url_args,post
+^/api/v1/cert-channels/ url_attack,url_args,post
+^/api/v1/eab-configs/ url_attack,url_args,post
+^/api/v1/acme-accounts/ url_attack,url_args,post
+^/api/v1/node-audit-logs/ url_attack,url_args
+^/api/v1/security/ url_attack,url_args,post
+^/api/v1/metrics/ url_attack,url_args`
 
 // panelForwardWhitelistMarker 标记面板白名单块，用于幂等刷新（识别并覆盖旧版本）。
 const panelForwardWhitelistMarker = "# 面板管理接口"

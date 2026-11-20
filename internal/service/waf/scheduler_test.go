@@ -154,3 +154,20 @@ func TestSchedulerPersistsLastRun(t *testing.T) {
 		t.Fatalf("loaded = %v, want %v", s2.lastRunAt, at)
 	}
 }
+
+// 调度时区必须跟随面板设置 panel.timezone（初始化向导里选的），
+// 而不是默默用服务器时区 —— 否则「每天 03:00」会在错误的时刻执行。
+func TestSchedulerLocationFollowsPanelTimezone(t *testing.T) {
+	store := &fakeSettingStore{vals: map[string]string{"panel.timezone": "Asia/Tokyo"}}
+	s := NewScheduler(&Service{settingSvc: store})
+	if loc := s.resolveLocation(); loc == nil || loc.String() != "Asia/Tokyo" {
+		t.Fatalf("got %v, want Asia/Tokyo", loc)
+	}
+
+	// 非法时区名回落，不能让调度器停摆
+	store.vals["panel.timezone"] = "Mars/Olympus"
+	s2 := NewScheduler(&Service{settingSvc: store})
+	if loc := s2.resolveLocation(); loc == nil {
+		t.Fatal("invalid timezone should fall back to server local time")
+	}
+}

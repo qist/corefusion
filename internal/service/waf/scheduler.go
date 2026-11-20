@@ -39,6 +39,9 @@ type Scheduler struct {
 	// now / catchUpDelay 可在测试中替换，避免真的等 15 秒或依赖真实时钟。
 	now          func() time.Time
 	catchUpDelay time.Duration
+	// loc 是调度使用的时区：优先面板设置 panel.timezone（初始化向导里选的那个，
+	// 同时会注入代理进程 TZ），未设置或非法时回落到服务器本地时区。
+	loc *time.Location
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -72,6 +75,7 @@ func NewScheduler(svc *Service) *Scheduler {
 		svc:          svc,
 		now:          time.Now,
 		catchUpDelay: 15 * time.Second,
+		loc:          time.Local,
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -79,6 +83,7 @@ func NewScheduler(svc *Service) *Scheduler {
 
 // Start 读取已保存的配置与上次同步时间并注册定时任务（面板启动时调用一次）。
 func (s *Scheduler) Start() {
+	s.loc = s.resolveLocation()
 	s.loadLastRun()
 	cfg, err := s.svc.GetGitHubSource(context.Background())
 	if err != nil || cfg == nil {
@@ -104,7 +109,7 @@ func (s *Scheduler) Apply(cfg *GitHubSourceConfig) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.current == cron && s.timer != nil {
+	if s.spec == spec && s.current == cron && s.timer != nil {
 		return // 配置未变化，不重排
 	}
 	if s.timer != nil {
@@ -118,7 +123,11 @@ func (s *Scheduler) Apply(cfg *GitHubSourceConfig) {
 
 // scheduleLocked 排下一次执行；每轮 fire 结束后再排下一轮（调用方必须持有 s.mu）。
 func (s *Scheduler) scheduleLocked(cron string, spec scheduleSpec) {
-	now := s.now()
+	loc := s.loc
+	if loc == nil {
+		loc = time.Local
+	}
+	now := s.now().In(loc)
 	last := s.lastRunAt
 	due := nextRun(spec, now, last, s.catchUpDelay)
 	delay := due.Sub(now)
@@ -140,11 +149,14 @@ func (s *Scheduler) scheduleLocked(cron string, spec scheduleSpec) {
 		reason = "（错过同步窗口，先补一次）"
 	}
 	// 时区直接打出来：运维需要确认「0 3 * * *」到底按哪个时区算。
-	// Go 的 time.Local.String() 在 systemd 下常常只返回 "Local"，所以用
-	// 实际格式化出的缩写 + 偏移（如 CST+0800）更可靠。
+	// 面板设置里有 panel.timezone（如 Asia/Shanghai），未设置时用服务器时区；
+	// Go 的 time.Local.String() 在 systemd 下常常只返回 "Local"，所以补上偏移。
+	tz := loc.String()
+	if tz == "Local" || tz == "" {
+		tz = due.Format("MST-0700")
+	}
 	log.Printf("[WAFScheduler] next sync at %s (in %s, cron=%q, tz=%s)%s",
-		due.Format("2006-01-02 15:04:05 MST-0700"), delay.Round(time.Second), cron,
-		due.Format("MST-0700"), reason)
+		due.Format("2006-01-02 15:04:05 MST-0700"), delay.Round(time.Second), cron, tz, reason)
 }
 
 // nextRun 计算下一次执行时间。
@@ -264,6 +276,27 @@ func (s *Scheduler) fire(cron string, spec scheduleSpec) {
 	}
 	s.recordRun(started, true, "synced + pushed")
 	log.Printf("[WAFScheduler] scheduled sync done: rules synced and pushed to nodes")
+}
+
+// resolveLocation 解析调度时区：面板设置 panel.timezone > 服务器本地时区。
+// 非法时区名（tzdata 里没有）直接回落，避免调度器因为一个配置笔误停摆。
+func (s *Scheduler) resolveLocation() *time.Location {
+	if s.svc == nil || s.svc.settingSvc == nil {
+		return time.Local
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	name, err := s.svc.settingSvc.GetByKey(ctx, "panel.timezone")
+	name = strings.TrimSpace(name)
+	if err != nil || name == "" {
+		return time.Local
+	}
+	loc, lerr := time.LoadLocation(name)
+	if lerr != nil {
+		log.Printf("[WAFScheduler] invalid panel.timezone %q, fallback to server timezone: %v", name, lerr)
+		return time.Local
+	}
+	return loc
 }
 
 // recordRun 记录本次尝试（内存 + 持久化），失败也记：避免 GitHub 不可达时

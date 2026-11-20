@@ -102,19 +102,61 @@ func (h *Handler) DownloadAgent(c *gin.Context) {
 	}
 
 	agentDir := filepath.Join(h.dataDir, "binaries", "active", "corefusion-agent")
+
+	// 版本匹配：安装脚本会带 ?version=面板版本。本地分发目录若还是旧版本，
+	// 绝不能返回给节点（新旧协议不兼容）—— 直接 404，让脚本回退 GitHub。
+	// "latest"/空 = 不校验版本，本地有就用（面板优先）。
+	requested := strings.TrimSpace(c.Query("version"))
+	if requested != "" && requested != "latest" {
+		versionFile := filepath.Join(agentDir, "VERSION")
+		if raw, err := os.ReadFile(versionFile); err == nil {
+			local := strings.TrimSpace(string(raw))
+			if local != "" && local != requested {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error":     "agent binary version mismatch on panel",
+					"local":     local,
+					"requested": requested,
+				})
+				return
+			}
+		}
+	}
+
 	candidates := []string{
 		filepath.Join(agentDir, fmt.Sprintf("corefusion-agent-%s-%s", osName, arch)),
 		filepath.Join(agentDir, "corefusion-agent"),
 	}
 
 	for _, p := range candidates {
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-			c.File(p)
-			return
+		fi, err := os.Stat(p)
+		if err != nil || fi.IsDir() || fi.Size() < 1<<20 {
+			continue
 		}
+		// 面板端点可能被 CDN/反代拦成 HTML/JSON（200 但不是二进制）：
+		// 交给节点执行会报 Exec format error。这里先校验 ELF 魔数。
+		if !isELFBinary(p) {
+			log.Printf("[AgentDownload] %s is not a valid ELF binary, skip", p)
+			continue
+		}
+		c.File(p)
+		return
 	}
 
 	c.JSON(http.StatusNotFound, gin.H{"error": "agent binary not found on panel"})
+}
+
+// isELFBinary 校验文件头是 ELF（0x7F 'E' 'L' 'F'）。
+func isELFBinary(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var magic [4]byte
+	if _, err := io.ReadFull(f, magic[:]); err != nil {
+		return false
+	}
+	return magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F'
 }
 
 // GetInstallScript generates and returns the Agent install script.

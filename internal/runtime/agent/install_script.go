@@ -386,9 +386,12 @@ mkdir -p "$INSTALL_DIR/data/sqlite" \
 # Strategy: **panel first** —— 面板分发目录里的二进制才是这台面板实际管理、会通过
 # 「更新 Agent」下发的版本（可能带尚未发版的修复）。GitHub Release 只作兜底
 # （面板下载端点异常时）。
-PANEL_DOWNLOAD_URL="${PANEL_SCHEME}://${PANEL_HOST}:${PANEL_PORT}/api/v1/agent/download?os=${OS}&arch=${AGENT_ARCH}"
+# 面板优先：本地分发目录有**同版本**二进制时走面板（内网快，且能分发未发版的修复）；
+# 面板没有该版本 / 端点异常时回退 GitHub。版本由文件 services/agent 的 VERSION 决定。
+PANEL_DOWNLOAD_URL="${PANEL_SCHEME}://${PANEL_HOST}:${PANEL_PORT}/api/v1/agent/download?os=${OS}&arch=${AGENT_ARCH}&version=${AGENT_VERSION:-latest}"
+GITHUB_LATEST_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"
 if [ "$AGENT_VERSION" = "latest" ] || [ -z "$AGENT_VERSION" ]; then
-  GITHUB_DOWNLOAD_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"
+  GITHUB_DOWNLOAD_URL="$GITHUB_LATEST_URL"
 else
   GITHUB_DOWNLOAD_URL="${GITHUB_URL}/download/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"
 fi
@@ -396,11 +399,32 @@ fi
 # 先下到临时文件再 mv 覆盖：重装/升级时目标二进制正在运行，直接 curl -o
 # 会命中 ETXTBSY（Text file busy）→ 下载失败。mv 换 inode 不受影响。
 AGENT_TMP="$INSTALL_DIR/corefusion-agent.new"
-echo -e "${YELLOW}Downloading Agent...${NC}"
-if curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$PANEL_DOWNLOAD_URL"; then
+
+# 只接受真正的 ELF 文件：面板挂在 CDN/反代后面时，/api/v1/agent/download
+# 可能被拦成 200 的 HTML/JSON —— curl -f 判定为成功，节点执行时才会报
+# Exec format error。这里当场识别并换下一个源。
+agent_download_ok() {
+  url="$1"
+  [ -n "$url" ] || return 1
+  rm -f "$AGENT_TMP"
+  curl -fsSL --connect-timeout 10 --max-time 300 -o "$AGENT_TMP" "$url" 2>/dev/null || return 1
+  [ -s "$AGENT_TMP" ] || { rm -f "$AGENT_TMP"; return 1; }
+  magic="$(head -c 4 "$AGENT_TMP" 2>/dev/null | od -An -tx1 | tr -d ' \n')"
+  if [ "$magic" != "7f454c46" ]; then
+    echo "  ignored non-ELF response from $url"
+    rm -f "$AGENT_TMP"
+    return 1
+  fi
+  return 0
+}
+
+echo -e "${YELLOW}Downloading Agent (version=${AGENT_VERSION:-latest})...${NC}"
+if agent_download_ok "$PANEL_DOWNLOAD_URL"; then
   echo "Downloaded from panel ($PANEL_DOWNLOAD_URL)"
-elif curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$GITHUB_DOWNLOAD_URL"; then
+elif agent_download_ok "$GITHUB_DOWNLOAD_URL"; then
   echo "Downloaded from GitHub ($GITHUB_DOWNLOAD_URL)"
+elif [ "$GITHUB_DOWNLOAD_URL" != "$GITHUB_LATEST_URL" ] && agent_download_ok "$GITHUB_LATEST_URL"; then
+  echo "Downloaded from GitHub latest ($GITHUB_LATEST_URL)"
 else
   rm -f "$AGENT_TMP"
   echo -e "${RED}Failed to download Agent from panel or GitHub${NC}"

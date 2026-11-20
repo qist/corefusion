@@ -66,8 +66,11 @@ func TestInstallScriptDownloadsFromPanelFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("生成安装脚本失败：%v", err)
 	}
-	if !strings.Contains(latest, `GITHUB_DOWNLOAD_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"`) {
+	if !strings.Contains(latest, `GITHUB_LATEST_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"`) {
 		t.Error("未指定版本时应走 /releases/latest/download/<asset>")
+	}
+	if !strings.Contains(latest, `GITHUB_DOWNLOAD_URL="$GITHUB_LATEST_URL"`) {
+		t.Error("未指定版本时 GITHUB_DOWNLOAD_URL 应指向 latest")
 	}
 }
 
@@ -233,5 +236,31 @@ func TestInstallScriptConfigYAMLIndent(t *testing.T) {
 	}
 	if !strings.Contains(body, "\n  data_dir: ") {
 		t.Fatalf("config.yaml 缺少正确缩进的 data_dir：\n%s", body)
+	}
+}
+
+// 面板端点可能被 CDN/反代拦成 200 的 HTML；必须校验 ELF 魔数，非 ELF 换 GitHub。
+// 面板没有对应版本时后端会 404，脚本应回退 GitHub，且指定版本失败后再试 latest。
+func TestInstallScriptValidatesELFAndFallsBackToLatest(t *testing.T) {
+	script, err := NewAgentInstallScript("panel.example.com", 443).
+		WithScheme("https").
+		WithTLS(true).
+		WithAgentVersion("v1.2.3").
+		WithBootstrapToken("tok").
+		WithServerID(9).
+		Generate()
+	if err != nil {
+		t.Fatalf("生成安装脚本失败：%v", err)
+	}
+
+	if !strings.Contains(script, `&version=${AGENT_VERSION:-latest}`) {
+		t.Error("面板下载应带上版本参数，避免下发旧版本 Agent")
+	}
+	if !strings.Contains(script, `[ "$magic" != "7f454c46" ]`) {
+		t.Error("缺少 ELF 魔数校验：面板被 CDN 拦成 HTML 时会被当成二进制")
+	}
+	if !strings.Contains(script, `GITHUB_LATEST_URL=`) ||
+		!strings.Contains(script, `agent_download_ok "$GITHUB_LATEST_URL"`) {
+		t.Error("指定版本的 GitHub 资产缺失时应回退 latest")
 	}
 }

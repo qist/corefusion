@@ -76,6 +76,8 @@ type Service struct {
 	nodeOp     NodeOperator
 	nodeLister NodeLister
 	tickets    TicketIssuer
+	// renameMu 保护 system_settings 里的重命名记忆（读-改-写，避免并发丢写）。
+	renameMu sync.Mutex
 }
 
 // NewService creates a new geo rule service.
@@ -583,10 +585,7 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, files []Selec
 	}
 
 	// 先整体校验，避免写一半失败
-	planned := make([]struct {
-		asset  ReleaseAsset
-		rename string
-	}, 0, len(files))
+	planned := make([]selectPlan, 0, len(files))
 	for _, f := range files {
 		asset, ok := assetMap[f.Name]
 		if !ok {
@@ -609,10 +608,7 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, files []Selec
 				return err
 			}
 		}
-		planned = append(planned, struct {
-			asset  ReleaseAsset
-			rename string
-		}{asset, rename})
+		planned = append(planned, selectPlan{asset: asset, rename: rename})
 	}
 
 	for _, p := range planned {
@@ -663,11 +659,115 @@ func (s *Service) SelectFiles(ctx context.Context, sourceID int64, files []Selec
 		}(rule)
 	}
 
+	// 记住本次的「仓库资产名 → 落盘名」：用户在「已选规则文件」里删掉该文件后
+	// 记录就没了，重新勾选时仍能带出上次的重命名（不会退回原始资产名）。
+	s.rememberRenames(ctx, src.RepoURL, planned)
+
 	// Update source last sync tag
 	src.LastSyncTag = tag
 	s.sourceRepo.Update(ctx, src)
 
 	return nil
+}
+
+// selectPlan 是 SelectFiles 单项校验通过后的待写入计划。
+type selectPlan struct {
+	asset  ReleaseAsset
+	rename string
+}
+
+// --- 重命名记忆 ---
+
+// renameHintsSettingKey 保存「仓库资产名 → 上次使用的落盘名」的记忆。
+//
+// 为什么需要：用户在「已选规则文件」里删掉一个重命名过的文件（例如伊朗仓库的
+// geoip.dat → geoip_IR.dat）后，DB 记录消失，再在「浏览文件」里勾选时原名又
+// 变回 geoip.dat —— 落盘名和主规则冲突，想恢复只能手输。这里按「仓库 + 资产名」
+// 把重命名记到 system_settings，删除文件不清除，重新勾选时由接口带回前端预填。
+const renameHintsSettingKey = "georule.rename_hints"
+
+// renameHintKey 以「归一化仓库 + 资产名」为键：同一仓库的多个源共享记忆，
+// 删源后重建也还能取回。
+func renameHintKey(repoURL, asset string) string {
+	return normalizeRepoKey(repoURL) + "|" + asset
+}
+
+func (s *Service) loadRenameHints(ctx context.Context) map[string]string {
+	hints := map[string]string{}
+	if s.settingSvc == nil {
+		return hints
+	}
+	raw, err := s.settingSvc.GetByKey(ctx, renameHintsSettingKey)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return hints
+	}
+	if err := json.Unmarshal([]byte(raw), &hints); err != nil {
+		log.Printf("[georule] parse rename hints failed: %v", err)
+		return map[string]string{}
+	}
+	if hints == nil {
+		hints = map[string]string{}
+	}
+	return hints
+}
+
+// rememberRenames 记录本次勾选的重命名；落盘名等于资产名表示用户改回了原名，删掉记忆。
+func (s *Service) rememberRenames(ctx context.Context, repoURL string, planned []selectPlan) {
+	if s.settingSvc == nil || len(planned) == 0 {
+		return
+	}
+	s.renameMu.Lock()
+	defer s.renameMu.Unlock()
+	hints := s.loadRenameHints(ctx)
+	changed := false
+	for _, p := range planned {
+		fileName := p.asset.Name
+		if p.rename != "" {
+			fileName = p.rename
+		}
+		key := renameHintKey(repoURL, p.asset.Name)
+		if fileName == p.asset.Name {
+			if _, ok := hints[key]; ok {
+				delete(hints, key)
+				changed = true
+			}
+			continue
+		}
+		if hints[key] != fileName {
+			hints[key] = fileName
+			changed = true
+		}
+	}
+	if !changed {
+		return
+	}
+	b, err := json.Marshal(hints)
+	if err != nil {
+		return
+	}
+	if err := s.settingSvc.Set(ctx, renameHintsSettingKey, string(b)); err != nil {
+		log.Printf("[georule] save rename hints failed: %v", err)
+	}
+}
+
+// SourceRenameHints 返回某源对应的「仓库资产名 → 上次落盘名」，供「浏览文件」
+// 预填重命名输入框（文件被删除后仍能恢复上一次的落盘名）。
+func (s *Service) SourceRenameHints(ctx context.Context, sourceID int64) map[string]string {
+	src, err := s.sourceRepo.GetByID(ctx, sourceID)
+	if err != nil || src == nil {
+		return map[string]string{}
+	}
+	prefix := normalizeRepoKey(src.RepoURL) + "|"
+	s.renameMu.Lock()
+	defer s.renameMu.Unlock()
+	hints := s.loadRenameHints(ctx)
+	out := make(map[string]string, len(hints))
+	for k, v := range hints {
+		if strings.HasPrefix(k, prefix) {
+			out[strings.TrimPrefix(k, prefix)] = v
+		}
+	}
+	return out
 }
 
 // findSourceFile 在源内按「仓库原始资产名」找文件：
@@ -854,6 +954,16 @@ func (s *Service) DeleteFile(ctx context.Context, fileID int64) error {
 		return err
 	}
 	fileName := rule.FileName
+	// 删记录前先记住「仓库资产名 → 落盘名」：重命名过的文件删除后重新勾选
+	// 时还能带出上次的名字（见 renameHintsSettingKey）。
+	if rule.SourceAsset != "" && rule.SourceAsset != rule.FileName {
+		if src, serr := s.sourceRepo.GetByID(ctx, rule.SourceID); serr == nil && src != nil {
+			s.rememberRenames(ctx, src.RepoURL, []selectPlan{{
+				asset:  ReleaseAsset{Name: rule.SourceAsset},
+				rename: rule.FileName,
+			}})
+		}
+	}
 	os.Remove(filepath.Join(s.dataDir, "rules", fileName))
 	if err := s.fileRepo.Delete(ctx, fileID); err != nil {
 		return err

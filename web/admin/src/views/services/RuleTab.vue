@@ -515,12 +515,24 @@ async function showFetchAssets(row) {
     const data = await client.get(`/geo-rules/sources/${row.id}/assets`)
     assets.value = data.assets || []
     assetsTag.value = data.tag || ''
+    // 上次用过的重命名（后端按仓库记住，删掉文件后也还在）：先预填，
+    // 下面的现有记录再覆盖，保证「删了重新勾选」不用手输落盘名。
+    const hintRenames = data.renames || {}
+    Object.keys(hintRenames).forEach(asset => {
+      const fileName = hintRenames[asset]
+      if (fileName && fileName !== asset) assetRenames[asset] = fileName
+    })
     // Pre-select files already added
     const sourceFiles = (files.value || []).filter(f => f.source_id === row.id)
     const existingNames = new Set(sourceFiles.map(f => f.name))
     // 已选文件沿用当前的落盘名（重命名过的回填到输入框）
     sourceFiles.forEach(f => {
-      if (f.source_asset && f.source_asset !== f.file_name) assetRenames[f.source_asset] = f.file_name
+      if (f.source_asset && f.source_asset !== f.file_name) {
+        assetRenames[f.source_asset] = f.file_name
+      } else if (f.source_asset) {
+        // 现有记录已经改回原名：清掉过期的记忆，别让输入框还显示旧名字
+        delete assetRenames[f.source_asset]
+      }
     })
     selectedAssets.value = [...existingNames]
     // Toggle table row selection after DOM update

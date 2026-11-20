@@ -137,6 +137,8 @@ func (h *Handler) FetchGitHubAssets(c *gin.Context) {
 }
 
 // FetchReleaseAssets handles GET /api/v1/geo-rules/sources/:sourceId/assets.
+// renames 返回该仓库「资产名 → 上次落盘名」的记忆：文件被从「已选规则文件」
+// 删除后重新勾选时，前端据此预填重命名，不必手输。
 func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 	id := parseIntParam(c, "sourceId")
 	assets, tag, err := h.svc.FetchReleaseAssets(c.Request.Context(), id)
@@ -144,7 +146,11 @@ func (h *Handler) FetchReleaseAssets(c *gin.Context) {
 		response.InternalError(c, "FETCH_FAILED", err.Error())
 		return
 	}
-	response.OK(c, gin.H{"assets": assets, "tag": tag})
+	response.OK(c, gin.H{
+		"assets":  assets,
+		"tag":     tag,
+		"renames": h.svc.SourceRenameHints(c.Request.Context(), id),
+	})
 }
 
 // SelectFiles handles POST /api/v1/geo-rules/sources/:sourceId/select.

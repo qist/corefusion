@@ -4791,6 +4791,7 @@ recoverModeHint: 'Auto Switch Back: switch back when original primary recovers; 
     selectTrafficPack: 'Select traffic pack',
     trafficPackLabel: 'Traffic Pack',
     planVariantRequired: 'Please select a plan variant',
+    trafficPackRequired: 'Please select a traffic pack variant',
     balanceValueRequired: 'Please enter the balance face value',
     cycleMonthly: 'Monthly',
     cycleQuarterly: 'Quarterly',

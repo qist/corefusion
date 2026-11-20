@@ -4720,6 +4720,7 @@ recoverModeHint: '自动回切：原主节点恢复后自动切回；保持提�
     selectTrafficPack: '选择流量包',
     trafficPackLabel: '流量包',
     planVariantRequired: '请选择套餐规格',
+    trafficPackRequired: '请选择流量包规格',
     balanceValueRequired: '请输入余额面值',
     cycleMonthly: '月付',
     cycleQuarterly: '季付',

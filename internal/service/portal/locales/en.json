@@ -497,5 +497,9 @@
   "tutorial.related": "Related Tutorials",
   "tutorial.select_platform": "Click a tab above to select your OS",
   "tutorial.title": "Downloads & Tutorials",
-  "tutorial.view_all": "View All Tutorials"
+  "tutorial.view_all": "View All Tutorials",
+  "plan.card_matched": "Selected the plan for this card",
+  "plan.card_is_traffic_pack": "This is a traffic pack card; please use it in the traffic pack section",
+  "plan.card_is_plan": "This is a plan card; please use it in the plan section",
+  "plan.card_invalid": "Invalid, used or expired card code"
 }

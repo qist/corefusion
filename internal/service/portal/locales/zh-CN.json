@@ -497,5 +497,9 @@
   "tutorial.related": "相关教程",
   "tutorial.select_platform": "请点击上方标签选择你的操作系统",
   "tutorial.title": "下载与教程",
-  "tutorial.view_all": "查看全部教程"
+  "tutorial.view_all": "查看全部教程",
+  "plan.card_matched": "已自动选择该卡对应的套餐",
+  "plan.card_is_traffic_pack": "这是流量包卡，请到「流量包」处购买使用",
+  "plan.card_is_plan": "这是套餐卡，请到「套餐」处购买使用",
+  "plan.card_invalid": "卡号无效、已使用或已过期"
 }

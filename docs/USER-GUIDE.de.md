@@ -1795,7 +1795,7 @@ Die Panel-Binärdatei unterstützt diese Unterbefehle (keine Argumente starten d
 
 ---
 
-## Anhang. Änderungen in v0.13.0-rc.1
+## Änderungen in v0.13.0-rc.1
 
 - **Online-Update des Panels**: „Systemeinstellungen → Panel-Update“ — Versionsauswahl
   (`pre` = Vorabversion), Update, Aufgabenhistorie und Rollback auf das vorherige Binary.

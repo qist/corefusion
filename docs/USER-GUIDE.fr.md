@@ -1795,7 +1795,7 @@ Le binaire du panneau prend en charge ces sous-commandes (aucun argument ne dém
 
 ---
 
-## Annexe. Nouveautés de v0.13.0-rc.1
+## Nouveautés de v0.13.0-rc.1
 
 - **Mise à jour en ligne du panneau** : « Paramètres système → Mise à jour du panneau » —
   choix de la version (`pre` = préversion), mise à jour, historique des tâches et retour au

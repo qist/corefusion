@@ -1795,7 +1795,7 @@ O binário do painel suporta estes subcomandos (nenhum argumento inicia o servid
 
 ---
 
-## Apêndice. Novidades da v0.13.0-rc.1
+## Novidades da v0.13.0-rc.1
 
 - **Atualização online do painel**: «Configurações do sistema → Atualização do painel» —
   escolha da versão (`pre` = pré-lançamento), atualização, histórico de tarefas e rollback para

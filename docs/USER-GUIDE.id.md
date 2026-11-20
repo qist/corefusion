@@ -1795,7 +1795,7 @@ Biner panel mendukung subperintah ini (tidak ada argumen yang memulai server):
 
 ---
 
-## Lampiran. Perubahan v0.13.0-rc.1
+## Perubahan v0.13.0-rc.1
 
 - **Pembaruan panel daring**: «Pengaturan sistem → Pembaruan panel» — pilih versi (`pre` =
   pra-rilis), perbarui, riwayat tugas, dan rollback ke biner sebelumnya.

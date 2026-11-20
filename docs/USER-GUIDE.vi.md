@@ -1795,7 +1795,7 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 
 ---
 
-## Phụ lục. Thay đổi v0.13.0-rc.1
+## Thay đổi v0.13.0-rc.1
 
 - **Nâng cấp bảng điều khiển trực tuyến**: «Cài đặt hệ thống → Cập nhật bảng điều khiển» —
   chọn phiên bản (`pre` = bản phát hành trước), cập nhật, xem lịch sử và quay lại tệp nhị phân

@@ -1795,7 +1795,7 @@ Panel ikili programı şu alt komutları destekler (sunucuyu hiçbir argüman ba
 
 ---
 
-## Ek. v0.13.0-rc.1 değişiklikleri
+## v0.13.0-rc.1 değişiklikleri
 
 - **Panel çevrimiçi güncelleme**: «Sistem ayarları → Panel güncellemesi» — sürüm seçimi
   (`pre` = ön sürüm), güncelleme, görev geçmişi ve önceki ikiliye geri dönme.

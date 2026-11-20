@@ -1795,7 +1795,7 @@ El binario del panel admite estos subcomandos (sin argumentos se inicia el servi
 
 ---
 
-## Apéndice. Cambios en v0.13.0-rc.1
+## Cambios en v0.13.0-rc.1
 
 - **Actualización en línea del panel**: «Configuración del sistema → Actualización del panel»:
   selección de versión (`pre` = preliminar), actualización, historial de tareas y reversión al

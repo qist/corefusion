@@ -32,11 +32,14 @@ import (
 // It reuses the Panel's process.Manager, proxy.Manager, and LocalAgent
 // to avoid re-implementing process management.
 type AgentApp struct {
-	cfg      *AgentConfig
-	dataDir  string
-	certPath string
-	keyPath  string
-	caPath   string
+	cfg     *AgentConfig
+	dataDir string
+	// configPath 是启动时 -config 指定的配置文件路径：连上面板后要用它把
+	// update.public_key 回写到磁盘（老节点升级后缺这一段）。
+	configPath string
+	certPath   string
+	keyPath    string
+	caPath     string
 
 	// Reused infrastructure (same as Panel)
 	procMgr     *process.Manager

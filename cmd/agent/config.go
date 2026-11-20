@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"corefusion/internal/constants"
@@ -108,4 +109,71 @@ func normalizeCertFingerprint(fp string) string {
 	fp = strings.ReplaceAll(fp, ":", "")
 	fp = strings.ReplaceAll(fp, " ", "")
 	return fp
+}
+
+// WriteUpdatePublicKey 把面板更新签名公钥写进 config.yaml 的 update.public_key。
+//
+// 为什么需要：安装脚本只在**首次安装/重装**时写这一段；老节点用自更新升级后
+// 配置文件原样保留（没有 update 段）→ Agent 只校验 SHA-256、不校验 ed25519，
+// 安全审计 v7 L-6 的保护形同虚设。新版 Agent 连上面板后调用 WriteUpdatePublicKey
+// 补齐，之后强制校验签名。
+//
+// 用文本方式改写而不是 yaml.Marshal：config.yaml 里有注释与字段顺序，重新序列化
+// 会把它们全部丢掉。写入走临时文件 + rename，避免写一半断电留下坏配置。
+func WriteUpdatePublicKey(configPath, pem string) error {
+	pem = strings.TrimSpace(pem)
+	if pem == "" {
+		return fmt.Errorf("empty update public key")
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+
+	block := []string{"update:", "  public_key: |"}
+	for _, ln := range strings.Split(pem, "\n") {
+		block = append(block, "    "+strings.TrimRight(ln, "\r"))
+	}
+
+	out := make([]string, 0, len(lines)+len(block)+2)
+	start := -1
+	for i, ln := range lines {
+		if strings.TrimRight(ln, " \t\r") == "update:" {
+			start = i
+			break
+		}
+	}
+	if start >= 0 {
+		end := len(lines)
+		for j := start + 1; j < len(lines); j++ {
+			t := lines[j]
+			if strings.TrimSpace(t) == "" || strings.HasPrefix(strings.TrimSpace(t), "#") {
+				continue
+			}
+			if !strings.HasPrefix(t, " ") && !strings.HasPrefix(t, "\t") {
+				end = j
+				break
+			}
+		}
+		out = append(out, lines[:start]...)
+		out = append(out, block...)
+		if end < len(lines) {
+			out = append(out, "")
+			out = append(out, lines[end:]...)
+		}
+	} else {
+		out = append(out, lines...)
+		if len(out) > 0 && strings.TrimSpace(out[len(out)-1]) != "" {
+			out = append(out, "")
+		}
+		out = append(out, block...)
+		out = append(out, "")
+	}
+
+	tmp := filepath.Join(filepath.Dir(configPath), "."+filepath.Base(configPath)+".tmp")
+	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, configPath)
 }

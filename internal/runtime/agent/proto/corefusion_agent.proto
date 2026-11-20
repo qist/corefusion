@@ -86,6 +86,14 @@ service AgentService {
 service HeartbeatService {
   // 双向流：Agent 持续上报心跳和指标，面板可随时下发指令
   rpc Stream(stream AgentReport) returns (stream PanelCommand);
+
+  // 拉取面板侧运行期配置（当前只有更新签名公钥）。
+  //
+  // 为什么需要 ✗：`update.public_key` 是安装脚本写进 config.yaml 的，只在**重新安装**
+  // 时才会写入；老版本节点用自更新升到新版后配置文件里没有这一段 ✓ → Agent 只校验
+  // SHA-256、不校验 ed25519 签名 ✓（安全审计 v7 L-6 的保护实际没生效 ✗）。
+  // 新版本 Agent 启动时调用本 RPC 取回公钥并**回写 config.yaml** ✓，一次升级即可补齐。
+  rpc GetRuntimeConfig(GetRuntimeConfigRequest) returns (GetRuntimeConfigResponse);
 }
 
 // ============================================================
@@ -1291,4 +1299,16 @@ message DetectPublicIPResponse {
   string ipv4 = 1;   // 公网 IPv4（探测失败为空 ✓）
   string ipv6 = 2;   // 公网 IPv6（探测失败为空 ✓）
   string error = 3;  // IPv4/IPv6 都失败时的原因 ✓
+}
+
+// ============================================================
+// 运行期配置（Agent→Panel）
+// ============================================================
+
+message GetRuntimeConfigRequest {}
+
+message GetRuntimeConfigResponse {
+  // update_public_key 是面板更新签名公钥（PEM，ed25519）。
+  // Agent 收到后写入 config.yaml 的 update.public_key，之后强制校验更新包签名。
+  string update_public_key = 1;
 }

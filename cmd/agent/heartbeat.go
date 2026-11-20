@@ -344,6 +344,9 @@ func (a *AgentApp) connectAndStream(ctx context.Context) error {
 	if err := a.sendHeartbeat(stream); err != nil {
 		return fmt.Errorf("first heartbeat: %w", err)
 	}
+	// 老节点升级到新版后 config.yaml 里没有 update.public_key（安装脚本只在
+	// 重装时写）→ 自更新签名校验实际没开启。这里连上面板后一次性补齐。
+	a.ensureUpdatePublicKey(ctx, hbClient)
 	log.Printf("[Agent] connected to panel, heartbeat stream active")
 
 	heartbeatTicker := time.NewTicker(15 * time.Second)
@@ -546,4 +549,34 @@ func (a *AgentApp) sendStatusReport(stream agentpb.HeartbeatService_StreamClient
 		Timestamp: time.Now().Unix(),
 		Cores:     resp.Cores,
 	})
+}
+
+// ensureUpdatePublicKey 从面板拉取更新签名公钥并回写 config.yaml。
+//
+// 只在本地为空时执行（已配置的不覆盖，避免每次重连都写盘）；成功后同步内存里的
+// a.cfg，后续 UpdateAgent 命令即按 ed25519 强制校验签名。
+func (a *AgentApp) ensureUpdatePublicKey(ctx context.Context, client agentpb.HeartbeatServiceClient) {
+	if strings.TrimSpace(a.cfg.Update.PublicKey) != "" {
+		return
+	}
+	if strings.TrimSpace(a.configPath) == "" {
+		return
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, err := client.GetRuntimeConfig(callCtx, &agentpb.GetRuntimeConfigRequest{})
+	if err != nil {
+		log.Printf("[Agent] fetch runtime config failed (will retry on reconnect): %v", err)
+		return
+	}
+	pem := strings.TrimSpace(resp.GetUpdatePublicKey())
+	if pem == "" {
+		return
+	}
+	if err := WriteUpdatePublicKey(a.configPath, pem); err != nil {
+		log.Printf("[Agent] write update.public_key to %s failed: %v", a.configPath, err)
+		return
+	}
+	a.cfg.Update.PublicKey = pem
+	log.Printf("[Agent] update signing public key synced to %s; self-updates now require a valid signature", a.configPath)
 }

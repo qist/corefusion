@@ -106,6 +106,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("init failed: %v", err)
 	}
+	app.configPath = configPath
 
 	// Check for crash recovery before starting (rolls back if new binary crashed)
 	selfUpdater := agent.NewSelfUpdater(dataDir, app.settingRepo)

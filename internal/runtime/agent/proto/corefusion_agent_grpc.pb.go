@@ -983,7 +983,8 @@ var AgentService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	HeartbeatService_Stream_FullMethodName = "/corefusion.agent.v1.HeartbeatService/Stream"
+	HeartbeatService_Stream_FullMethodName           = "/corefusion.agent.v1.HeartbeatService/Stream"
+	HeartbeatService_GetRuntimeConfig_FullMethodName = "/corefusion.agent.v1.HeartbeatService/GetRuntimeConfig"
 )
 
 // HeartbeatServiceClient is the client API for HeartbeatService service.
@@ -996,6 +997,13 @@ const (
 type HeartbeatServiceClient interface {
 	// 双向流：Agent 持续上报心跳和指标，面板可随时下发指令
 	Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentReport, PanelCommand], error)
+	// 拉取面板侧运行期配置（当前只有更新签名公钥）。
+	//
+	// 为什么需要 ✗：`update.public_key` 是安装脚本写进 config.yaml 的，只在**重新安装**
+	// 时才会写入；老版本节点用自更新升到新版后配置文件里没有这一段 ✓ → Agent 只校验
+	// SHA-256、不校验 ed25519 签名 ✓（安全审计 v7 L-6 的保护实际没生效 ✗）。
+	// 新版本 Agent 启动时调用本 RPC 取回公钥并**回写 config.yaml** ✓，一次升级即可补齐。
+	GetRuntimeConfig(ctx context.Context, in *GetRuntimeConfigRequest, opts ...grpc.CallOption) (*GetRuntimeConfigResponse, error)
 }
 
 type heartbeatServiceClient struct {
@@ -1019,6 +1027,16 @@ func (c *heartbeatServiceClient) Stream(ctx context.Context, opts ...grpc.CallOp
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type HeartbeatService_StreamClient = grpc.BidiStreamingClient[AgentReport, PanelCommand]
 
+func (c *heartbeatServiceClient) GetRuntimeConfig(ctx context.Context, in *GetRuntimeConfigRequest, opts ...grpc.CallOption) (*GetRuntimeConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRuntimeConfigResponse)
+	err := c.cc.Invoke(ctx, HeartbeatService_GetRuntimeConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // HeartbeatServiceServer is the server API for HeartbeatService service.
 // All implementations must embed UnimplementedHeartbeatServiceServer
 // for forward compatibility.
@@ -1029,6 +1047,13 @@ type HeartbeatService_StreamClient = grpc.BidiStreamingClient[AgentReport, Panel
 type HeartbeatServiceServer interface {
 	// 双向流：Agent 持续上报心跳和指标，面板可随时下发指令
 	Stream(grpc.BidiStreamingServer[AgentReport, PanelCommand]) error
+	// 拉取面板侧运行期配置（当前只有更新签名公钥）。
+	//
+	// 为什么需要 ✗：`update.public_key` 是安装脚本写进 config.yaml 的，只在**重新安装**
+	// 时才会写入；老版本节点用自更新升到新版后配置文件里没有这一段 ✓ → Agent 只校验
+	// SHA-256、不校验 ed25519 签名 ✓（安全审计 v7 L-6 的保护实际没生效 ✗）。
+	// 新版本 Agent 启动时调用本 RPC 取回公钥并**回写 config.yaml** ✓，一次升级即可补齐。
+	GetRuntimeConfig(context.Context, *GetRuntimeConfigRequest) (*GetRuntimeConfigResponse, error)
 	mustEmbedUnimplementedHeartbeatServiceServer()
 }
 
@@ -1041,6 +1066,9 @@ type UnimplementedHeartbeatServiceServer struct{}
 
 func (UnimplementedHeartbeatServiceServer) Stream(grpc.BidiStreamingServer[AgentReport, PanelCommand]) error {
 	return status.Error(codes.Unimplemented, "method Stream not implemented")
+}
+func (UnimplementedHeartbeatServiceServer) GetRuntimeConfig(context.Context, *GetRuntimeConfigRequest) (*GetRuntimeConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRuntimeConfig not implemented")
 }
 func (UnimplementedHeartbeatServiceServer) mustEmbedUnimplementedHeartbeatServiceServer() {}
 func (UnimplementedHeartbeatServiceServer) testEmbeddedByValue()                          {}
@@ -1070,13 +1098,36 @@ func _HeartbeatService_Stream_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type HeartbeatService_StreamServer = grpc.BidiStreamingServer[AgentReport, PanelCommand]
 
+func _HeartbeatService_GetRuntimeConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRuntimeConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HeartbeatServiceServer).GetRuntimeConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HeartbeatService_GetRuntimeConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HeartbeatServiceServer).GetRuntimeConfig(ctx, req.(*GetRuntimeConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // HeartbeatService_ServiceDesc is the grpc.ServiceDesc for HeartbeatService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var HeartbeatService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "corefusion.agent.v1.HeartbeatService",
 	HandlerType: (*HeartbeatServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetRuntimeConfig",
+			Handler:    _HeartbeatService_GetRuntimeConfig_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Stream",

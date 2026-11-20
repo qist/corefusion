@@ -1950,6 +1950,20 @@ type heartbeatServiceImpl struct {
 	mgr *NodeServerManager
 }
 
+// GetRuntimeConfig 下发面板运行期配置（当前只有更新签名公钥）。
+//
+// 用途：老版本节点是安装脚本写的 config.yaml，里面没有 update.public_key；
+// 自更新升到新版后配置文件不会自动补 → 更新签名校验实际没开。新版 Agent
+// 启动时调用本接口取回公钥并回写 config.yaml，一次升级即可补齐。
+func (h *heartbeatServiceImpl) GetRuntimeConfig(ctx context.Context, _ *agentpb.GetRuntimeConfigRequest) (*agentpb.GetRuntimeConfigResponse, error) {
+	if h.mgr == nil || h.mgr.updateSigner == nil {
+		return &agentpb.GetRuntimeConfigResponse{}, nil
+	}
+	return &agentpb.GetRuntimeConfigResponse{
+		UpdatePublicKey: string(h.mgr.updateSigner.PublicKeyPEM()),
+	}, nil
+}
+
 func (h *heartbeatServiceImpl) Stream(stream agentpb.HeartbeatService_StreamServer) error {
 	// First message must be a HEARTBEAT with server_id
 	firstReport, err := stream.Recv()

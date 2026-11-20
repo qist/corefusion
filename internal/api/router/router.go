@@ -3819,6 +3819,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		// Traffic packs (流量叠加包)
 		clientAuthProtected.GET("/traffic-packs", commerceH.ListTrafficPacks)
 		clientAuthProtected.POST("/traffic-packs/buy", commerceH.BuyTrafficPack)
+		// 礼品卡预览：输入卡号后自动带出对应套餐（限流防爆破卡号）
+		clientAuthProtected.POST("/gift-cards/preview", middleware.PublicAPIRateLimit(), commerceH.PreviewGiftCard)
 
 		// P0-2: Order management
 		clientAuthProtected.POST("/orders", commerceH.CreateOrder)
@@ -4762,6 +4764,8 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		// Traffic packs (流量叠加包)
 		clientAuthProtected.GET("/traffic-packs", commerceH.ListTrafficPacks)
 		clientAuthProtected.POST("/traffic-packs/buy", commerceH.BuyTrafficPack)
+		// 礼品卡预览：输入卡号后自动带出对应套餐（限流防爆破卡号）
+		clientAuthProtected.POST("/gift-cards/preview", middleware.PublicAPIRateLimit(), commerceH.PreviewGiftCard)
 
 		// P0-2: Order management
 		clientAuthProtected.POST("/orders", commerceH.CreateOrder)

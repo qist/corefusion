@@ -174,14 +174,19 @@ const (
 )
 
 type ChargeCard struct {
-	ID                 int64      `gorm:"primaryKey;autoIncrement" json:"id"`
-	CardCode           string     `gorm:"-" json:"card_code"`                         // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
-	CardCodeHash       string     `gorm:"size:64;index;not null;default:''" json:"-"` // SHA-256 hash，用于快速查找（不返回前端）
-	CardCodeEncrypted  string     `gorm:"type:longtext" json:"-"`                     // AES-256-GCM 加密存储（不返回前端）
-	CardCodeMasked     string     `gorm:"-" json:"card_code_masked"`                  // 脱敏卡号（列表展示用）
-	CardType           string     `gorm:"size:32;not null" json:"card_type"`
-	Value              int64      `gorm:"not null;default:0" json:"value"`
-	Currency           string     `gorm:"size:16;not null;default:CNY" json:"currency"`
+	ID                int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	CardCode          string `gorm:"-" json:"card_code"`                         // 明文，仅内存中使用（从 CardCodeEncrypted 解密填充）
+	CardCodeHash      string `gorm:"size:64;index;not null;default:''" json:"-"` // SHA-256 hash，用于快速查找（不返回前端）
+	CardCodeEncrypted string `gorm:"type:longtext" json:"-"`                     // AES-256-GCM 加密存储（不返回前端）
+	CardCodeMasked    string `gorm:"-" json:"card_code_masked"`                  // 脱敏卡号（列表展示用）
+	CardType          string `gorm:"size:32;not null" json:"card_type"`
+	Value             int64  `gorm:"not null;default:0" json:"value"`
+	Currency          string `gorm:"size:16;not null;default:CNY" json:"currency"`
+	// PlanVariantID 是套餐卡/流量包卡绑定的规格；Value 存创建时的价格快照（最小单位）。
+	//
+	// 为什么两者都存：Value 的语义在早期版本是「规格 ID」，直接改语义会让存量卡失配，
+	// 所以新卡写 plan_variant_id + 价格快照，旧卡（该列为 NULL）仍按 value=规格ID 解析。
+	PlanVariantID      *int64     `gorm:"index" json:"plan_variant_id"`
 	MaxUses            int        `gorm:"not null;default:1" json:"-"`          // v3.3: 废弃，固定为1（保留字段兼容旧DB）
 	UsedCount          int        `gorm:"not null;default:0" json:"used_count"` // v3.3: 0=未使用，1=已使用
 	ExpiresAt          *time.Time `json:"expires_at"`

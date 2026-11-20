@@ -402,8 +402,173 @@ func (s *CommerceService) ListTrafficPacks(ctx context.Context) ([]PlanVariantIt
 // BuyTrafficPackInput is the input for buying a traffic pack.
 type BuyTrafficPackInput struct {
 	VariantID    int64  `json:"variant_id" binding:"required"`
-	PayMethod    string `json:"pay_method"` // balance/charge_site
+	PayMethod    string `json:"pay_method"` // balance/charge_site/gift_card
 	ChargeSiteID *int64 `json:"charge_site_id"`
+	GiftCardCode string `json:"gift_card_code"`
+}
+
+// ============================================================
+// 套餐卡（gift card）
+// ============================================================
+
+// chargeCardVariantID 返回套餐卡/流量包卡绑定的规格 ID。
+//
+// 新卡写在 plan_variant_id，value 存价格快照；旧卡（plan_variant_id 列为空）
+// 沿用历史语义：value 就是规格 ID。
+func chargeCardVariantID(card *entity.ChargeCard) int64 {
+	if card == nil {
+		return 0
+	}
+	if card.PlanVariantID != nil && *card.PlanVariantID > 0 {
+		return *card.PlanVariantID
+	}
+	if card.CardType == entity.ChargeCardTypePlan || card.CardType == entity.ChargeCardTypeTrafficPack {
+		return card.Value
+	}
+	return 0
+}
+
+// loadGiftCardForRedeem 校验卡号可用性（存在、未使用、未过期、类型正确）。
+func (s *CommerceService) loadGiftCardForRedeem(ctx context.Context, code string) (*entity.ChargeCard, error) {
+	if strings.TrimSpace(code) == "" {
+		return nil, fmt.Errorf("gift_card_code is required for gift_card payment")
+	}
+	card, err := s.chargeCardRepo.GetByCardCode(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("invalid gift card code")
+	}
+	if card.Status != entity.ChargeCardStatusActive {
+		return nil, fmt.Errorf("gift card is not active")
+	}
+	if card.UsedCount > 0 {
+		return nil, fmt.Errorf("gift card has already been used")
+	}
+	if card.ExpiresAt != nil && card.ExpiresAt.Before(time.Now()) {
+		return nil, fmt.Errorf("gift card has expired")
+	}
+	if card.CardType != entity.ChargeCardTypePlan && card.CardType != entity.ChargeCardTypeTrafficPack {
+		return nil, fmt.Errorf("gift card is not a plan/traffic_pack card")
+	}
+	return card, nil
+}
+
+// giftCardVariantLabel 返回卡绑定规格的可读名称（套餐名 / 规格名），用于错误提示。
+func (s *CommerceService) giftCardVariantLabel(ctx context.Context, variantID int64) string {
+	variant, err := s.variantRepo.GetByID(ctx, variantID)
+	if err != nil || variant == nil {
+		return fmt.Sprintf("#%d", variantID)
+	}
+	if variant.TemplateID > 0 {
+		if tmpl, terr := s.tmplRepo.GetByID(ctx, variant.TemplateID); terr == nil && tmpl != nil {
+			return tmpl.Name + " / " + variant.Name
+		}
+	}
+	return variant.Name
+}
+
+// GiftCardPreview 是礼品卡预览结果，供门户在下单前展示「这张卡能买什么」。
+type GiftCardPreview struct {
+	CardType      string     `json:"card_type"`
+	PlanID        int64      `json:"plan_id"`
+	PlanName      string     `json:"plan_name"`
+	VariantID     int64      `json:"variant_id"`
+	VariantName   string     `json:"variant_name"`
+	Price         int64      `json:"price"`
+	Currency      string     `json:"currency"`
+	FaceValue     int64      `json:"face_value"`
+	DurationDays  int        `json:"duration_days"`
+	QuotaBytes    int64      `json:"quota_bytes"`
+	IsTrafficPack bool       `json:"is_traffic_pack"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+}
+
+// PreviewGiftCard 查询卡号对应的套餐，让门户自动切到该套餐（避免客户选错版本后报「不匹配」）。
+func (s *CommerceService) PreviewGiftCard(ctx context.Context, code string) (*GiftCardPreview, error) {
+	card, err := s.loadGiftCardForRedeem(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	variantID := chargeCardVariantID(card)
+	variant, err := s.variantRepo.GetByID(ctx, variantID)
+	if err != nil || variant == nil {
+		return nil, fmt.Errorf("gift card plan no longer exists")
+	}
+	out := &GiftCardPreview{
+		CardType:      card.CardType,
+		VariantID:     variant.ID,
+		VariantName:   variant.Name,
+		Price:         variant.Price,
+		Currency:      variant.Currency,
+		FaceValue:     card.Value,
+		DurationDays:  variant.DurationDays,
+		QuotaBytes:    variant.QuotaBytes,
+		IsTrafficPack: card.CardType == entity.ChargeCardTypeTrafficPack,
+		ExpiresAt:     card.ExpiresAt,
+	}
+	if variant.TemplateID > 0 {
+		if tmpl, terr := s.tmplRepo.GetByID(ctx, variant.TemplateID); terr == nil && tmpl != nil {
+			out.PlanID = tmpl.ID
+			out.PlanName = tmpl.Name
+		}
+	}
+	return out, nil
+}
+
+// redeemTrafficPackCard 核销流量包卡：标记卡已用 + 记一笔已完成订单 + 叠加流量。
+// 事务内用行锁 + 条件更新，防止并发重复核销。
+func (s *CommerceService) redeemTrafficPackCard(ctx context.Context, client *entity.Client, variant *entity.PlanVariant, card *entity.ChargeCard, orderAmount int64) (*CreateOrderResult, error) {
+	now := time.Now()
+	var chargeOrderID int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockedCard entity.ChargeCard
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", card.ID).First(&lockedCard).Error; err != nil {
+			return err
+		}
+		if lockedCard.Status != entity.ChargeCardStatusActive {
+			return fmt.Errorf("gift card is not active")
+		}
+		result := tx.Model(&entity.ChargeCard{}).
+			Where("id = ? AND status = ?", lockedCard.ID, entity.ChargeCardStatusActive).
+			Updates(map[string]interface{}{
+				"status":     entity.ChargeCardStatusUsed,
+				"used_count": 1,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("gift card has already been used")
+		}
+		order := &entity.ChargeOrder{
+			ClientID:      client.ID,
+			TradeNo:       generateTradeNo(),
+			Source:        entity.ChargeSourceCard,
+			Amount:        0,
+			Currency:      card.Currency,
+			PlanVariantID: &variant.ID,
+			OrderType:     entity.ChargeOrderTypePurchase,
+			Status:        entity.ChargeStatusPaid,
+			ChargeCardID:  &card.ID,
+			PaidAt:        &now,
+		}
+		if err := tx.Create(order).Error; err != nil {
+			return err
+		}
+		chargeOrderID = order.ID
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to redeem gift card: %v", err)
+	}
+	_ = chargeOrderID
+
+	if err := s.applyTrafficPack(ctx, client, variant); err != nil {
+		return nil, fmt.Errorf("failed to apply traffic pack: %v", err)
+	}
+	// 卡支付等价于预付原价 → 也计入首次付费返利。
+	s.triggerFirstPaid(ctx, client.ID, orderAmount)
+	return &CreateOrderResult{OrderID: 0, Status: entity.OrderStatusCompleted}, nil
 }
 
 // BuyTrafficPack buys a traffic pack for the client.
@@ -474,6 +639,20 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 		chargeOrder.PaymentURL = paymentURL
 		s.chargeOrderRepo.Update(ctx, chargeOrder)
 		return &CreateOrderResult{OrderID: chargeOrder.ID, Status: entity.ChargeStatusPending, PaymentURL: paymentURL, TradeNo: tradeNo}, nil
+
+	} else if input.PayMethod == "gift_card" {
+		card, err := s.loadGiftCardForRedeem(ctx, input.GiftCardCode)
+		if err != nil {
+			return nil, err
+		}
+		if card.CardType != entity.ChargeCardTypeTrafficPack {
+			return nil, fmt.Errorf("this gift card is not a traffic pack card")
+		}
+		if cv := chargeCardVariantID(card); cv != input.VariantID {
+			return nil, fmt.Errorf("该流量包卡仅可用于「%s」，请选择该流量包后再支付",
+				s.giftCardVariantLabel(ctx, cv))
+		}
+		return s.redeemTrafficPackCard(ctx, client, variant, card, paidAmount)
 	}
 
 	return nil, fmt.Errorf("pay_method is required")
@@ -808,94 +987,21 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 
 	} else if input.PayMethod == "gift_card" {
 		// v3.3: 套餐卡支付
-		if input.GiftCardCode == "" {
-			return nil, fmt.Errorf("gift_card_code is required for gift_card payment")
-		}
-		// 查找并验证套餐卡
-		card, err := s.chargeCardRepo.GetByCardCode(ctx, input.GiftCardCode)
+		// 查找并验证套餐卡（存在/未用/未过期/类型正确）
+		card, err := s.loadGiftCardForRedeem(ctx, input.GiftCardCode)
 		if err != nil {
-			return nil, fmt.Errorf("invalid gift card code")
+			return nil, err
 		}
-		// 验证套餐卡状态
-		if card.Status != entity.ChargeCardStatusActive {
-			return nil, fmt.Errorf("gift card is not active")
-		}
-		if card.UsedCount > 0 {
-			return nil, fmt.Errorf("gift card has already been used")
-		}
-		if card.ExpiresAt != nil && card.ExpiresAt.Before(time.Now()) {
-			return nil, fmt.Errorf("gift card has expired")
-		}
-		// 验证套餐卡类型 - 必须是套餐型或流量叠加包型
-		if card.CardType != entity.ChargeCardTypePlan && card.CardType != entity.ChargeCardTypeTrafficPack {
-			return nil, fmt.Errorf("gift card is not a plan/traffic_pack card")
-		}
-		// 验证套餐卡价值是否匹配订单
-		if card.Value != input.VariantID {
-			return nil, fmt.Errorf("gift card does not match the selected plan variant")
+		// 卡绑定的是**具体规格**：客户选的套餐/版本必须与卡一致，否则无法判断该开通什么。
+		// 门户会在输入卡号时调 /gift-cards/preview 自动切到对应套餐，正常不会走到这里。
+		if cv := chargeCardVariantID(card); cv != input.VariantID {
+			return nil, fmt.Errorf("该套餐卡仅可用于「%s」，请选择该套餐后再支付",
+				s.giftCardVariantLabel(ctx, cv))
 		}
 
 		// 流量叠加包类型处理
 		if card.CardType == entity.ChargeCardTypeTrafficPack {
-			// S-2 fix: wrap card status update + order creation in a transaction with
-			// row lock and conditional WHERE to prevent concurrent double-use.
-			var trafficPackOrderID int64
-			err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-				// Lock card row
-				var lockedCard entity.ChargeCard
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-					Where("id = ?", card.ID).First(&lockedCard).Error; err != nil {
-					return err
-				}
-				if lockedCard.Status != entity.ChargeCardStatusActive {
-					return fmt.Errorf("gift card is not active")
-				}
-				// Atomic conditional update: only succeeds if card is still active
-				result := tx.Model(&entity.ChargeCard{}).
-					Where("id = ? AND status = ?", lockedCard.ID, entity.ChargeCardStatusActive).
-					Updates(map[string]interface{}{
-						"status":     entity.ChargeCardStatusUsed,
-						"used_count": 1,
-					})
-				if result.Error != nil {
-					return result.Error
-				}
-				if result.RowsAffected == 0 {
-					return fmt.Errorf("gift card has already been used")
-				}
-				// Create ChargeOrder — inherit currency from the card
-				chargeOrder := &entity.ChargeOrder{
-					ClientID:      clientID,
-					TradeNo:       generateTradeNo(),
-					Source:        entity.ChargeSourceCard,
-					Amount:        0,
-					Currency:      card.Currency,
-					PlanVariantID: &input.VariantID,
-					OrderType:     entity.ChargeOrderTypePurchase,
-					Status:        entity.ChargeStatusPaid,
-					ChargeCardID:  &card.ID,
-					PaidAt:        &now,
-				}
-				if err := tx.Create(chargeOrder).Error; err != nil {
-					return err
-				}
-				trafficPackOrderID = chargeOrder.ID
-				return nil
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to redeem gift card: %v", err)
-			}
-			_ = trafficPackOrderID
-
-			// Apply traffic pack outside transaction (uses s.clientRepo)
-			if err := s.applyTrafficPack(ctx, client, variant); err != nil {
-				return nil, fmt.Errorf("failed to apply traffic pack: %v", err)
-			}
-
-			// P1: 首次付费返利触发（流量包卡支付）
-			s.triggerFirstPaid(ctx, clientID, originalAmount)
-
-			return &CreateOrderResult{OrderID: 0, Status: entity.OrderStatusCompleted}, nil
+			return s.redeemTrafficPackCard(ctx, client, variant, card, originalAmount)
 		}
 
 		// 套餐型处理

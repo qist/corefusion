@@ -617,6 +617,29 @@ func (h *Handler) ListCards(c *gin.Context) {
 	response.Paginated(c, cards, total, limit, offset)
 }
 
+// resolveCardVariant 校验套餐卡/流量包卡绑定的规格，并返回该规格（用于写价格快照）。
+// 卡的面额 = 规格当前价格；绑定关系单独存 plan_variant_id，避免「value 既当 ID 又当金额」。
+func (h *Handler) resolveCardVariant(ctx context.Context, cardType string, variantID *int64) (*entity.PlanVariant, error) {
+	if cardType != entity.ChargeCardTypePlan && cardType != entity.ChargeCardTypeTrafficPack {
+		return nil, nil
+	}
+	if variantID == nil || *variantID <= 0 {
+		return nil, fmt.Errorf("plan/traffic_pack card requires a valid plan_variant_id")
+	}
+	var variant entity.PlanVariant
+	if err := h.db.WithContext(ctx).First(&variant, *variantID).Error; err != nil {
+		return nil, fmt.Errorf("plan variant %d not found", *variantID)
+	}
+	wantType := entity.VariantTypePlan
+	if cardType == entity.ChargeCardTypeTrafficPack {
+		wantType = entity.VariantTypeTrafficPack
+	}
+	if variant.VariantType != wantType {
+		return nil, fmt.Errorf("plan variant %d is %s, not %s", variant.ID, variant.VariantType, wantType)
+	}
+	return &variant, nil
+}
+
 // CreateCardInput is the input for creating a single charge card.
 // v3.3: 移除 max_uses — 充值卡一次性使用
 type CreateCardInput struct {
@@ -638,14 +661,34 @@ func (h *Handler) CreateCard(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// 套餐型/流量包型必须有有效的 plan_variant_id
-	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID == nil {
-		response.BadRequest(c, "INVALID_VALUE", "plan/traffic_pack card requires a valid plan_variant_id")
+	// 套餐型/流量包型必须绑定有效的规格；普通金额卡校验正数金额。
+	variant, err := h.resolveCardVariant(c.Request.Context(), input.CardType, input.PlanVariantID)
+	if err != nil {
+		response.BadRequest(c, "INVALID_VALUE", err.Error())
 		return
 	}
 	cardValue := input.Value
-	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID != nil {
-		cardValue = *input.PlanVariantID
+	cardCurrency := input.Currency
+	var planVariantID *int64
+	if variant != nil {
+		// 卡面额 = 规格当前价格（等值金额快照），绑定关系另存 plan_variant_id。
+		cardValue = variant.Price
+		if cardCurrency == "" {
+			cardCurrency = variant.Currency
+		}
+		planVariantID = &variant.ID
+	}
+	if cardCurrency == "" {
+		cardCurrency = "CNY"
+	}
+	if input.CardType == entity.ChargeCardTypeBalance && cardValue <= 0 {
+		response.BadRequest(c, "INVALID_VALUE", "balance card requires a positive value")
+		return
+	}
+	// 单张创建也自动分配批次号：前端不会传 batch_id，若留空列表里「批次」列
+	// 永远为空，无法按批次追溯/导出。与批量创建保持同一格式。
+	if strings.TrimSpace(input.BatchID) == "" {
+		input.BatchID = generateBatchID()
 	}
 	// v3.3: 关联创建者管理员
 	adminID := c.GetInt64("user_id")
@@ -661,7 +704,8 @@ func (h *Handler) CreateCard(c *gin.Context) {
 		CardCode:           GenerateCardCode(input.CardCodeFormat),
 		CardType:           input.CardType,
 		Value:              cardValue,
-		Currency:           input.Currency,
+		Currency:           cardCurrency,
+		PlanVariantID:      planVariantID,
 		Status:             entity.ChargeCardStatusActive,
 		BatchID:            input.BatchID,
 		Remark:             input.Remark,
@@ -705,12 +749,12 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
 	}
-	// 套餐型/流量包型必须提供 plan_variant_id
-	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID == nil {
-		response.BadRequest(c, "MISSING_VARIANT", "plan/traffic_pack card requires plan_variant_id")
+	// 套餐型/流量包型必须绑定有效的规格；金额型必须提供 value。
+	variant, err := h.resolveCardVariant(c.Request.Context(), input.CardType, input.PlanVariantID)
+	if err != nil {
+		response.BadRequest(c, "MISSING_VARIANT", err.Error())
 		return
 	}
-	// 金额型必须提供 value
 	if input.CardType == entity.ChargeCardTypeBalance && input.Value <= 0 {
 		response.BadRequest(c, "INVALID_VALUE", "balance card requires a positive value")
 		return
@@ -718,10 +762,19 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 	if input.BatchID == "" {
 		input.BatchID = generateBatchID()
 	}
-	// 确定实际 value：套餐型/流量包型用 plan_variant_id
+	// 套餐型/流量包型写「规格 ID + 价格快照」；金额型用输入金额。
 	cardValue := input.Value
-	if (input.CardType == entity.ChargeCardTypePlan || input.CardType == entity.ChargeCardTypeTrafficPack) && input.PlanVariantID != nil {
-		cardValue = *input.PlanVariantID
+	cardCurrency := input.Currency
+	var planVariantID *int64
+	if variant != nil {
+		cardValue = variant.Price
+		if cardCurrency == "" {
+			cardCurrency = variant.Currency
+		}
+		planVariantID = &variant.ID
+	}
+	if cardCurrency == "" {
+		cardCurrency = "CNY"
 	}
 
 	// v3.3: 关联创建者管理员
@@ -741,7 +794,8 @@ func (h *Handler) BatchCreateCards(c *gin.Context) {
 			CardCode:           GenerateCardCode(input.CardCodeFormat),
 			CardType:           input.CardType,
 			Value:              cardValue,
-			Currency:           input.Currency,
+			Currency:           cardCurrency,
+			PlanVariantID:      planVariantID,
 			Status:             entity.ChargeCardStatusActive,
 			BatchID:            input.BatchID,
 			Remark:             input.Remark,

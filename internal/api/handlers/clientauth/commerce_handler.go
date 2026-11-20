@@ -88,6 +88,29 @@ func (h *CommerceHandler) BuyTrafficPack(c *gin.Context) {
 	response.Created(c, result)
 }
 
+// PreviewGiftCard handles POST /api/v1/client-auth/gift-cards/preview.
+// 门户输入卡号后调用：返回这张卡对应的套餐/流量包，前端据此自动选中，
+// 避免客户选错版本再被「卡与套餐不匹配」拦住。
+func (h *CommerceHandler) PreviewGiftCard(c *gin.Context) {
+	if getClientID(c) == 0 {
+		response.Unauthorized(c, "UNAUTHORIZED", "client not authenticated")
+		return
+	}
+	var input struct {
+		Code string `json:"code" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	preview, err := h.svc.PreviewGiftCard(c.Request.Context(), input.Code)
+	if err != nil {
+		response.BadRequest(c, "INVALID_GIFT_CARD", err.Error())
+		return
+	}
+	response.OK(c, preview)
+}
+
 // ============================================================
 // P0-2: Order Management
 // ============================================================

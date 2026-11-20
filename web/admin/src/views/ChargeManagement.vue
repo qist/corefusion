@@ -167,7 +167,11 @@
           <el-table-column :label="t('charge.faceValue')" width="200" show-overflow-tooltip>
             <template #default="{row}">
               <span v-if="row.card_type==='balance'">{{ formatAmount(row.value, row.currency || 'CNY') }}</span>
-              <el-tag v-else type="warning" size="small">{{ findVariantName(row.value) }}</el-tag>
+              <template v-else>
+                <el-tag type="warning" size="small">{{ findVariantName(row.plan_variant_id || row.value) }}</el-tag>
+                <!-- 新卡的 value 是价格快照；旧卡（无 plan_variant_id）的 value 是规格 ID，不显示价格 -->
+                <el-tag v-if="row.plan_variant_id" type="info" size="small" style="margin-left:4px">{{ formatAmount(row.value, row.currency || 'CNY') }}</el-tag>
+              </template>
             </template>
           </el-table-column>
           <el-table-column :label="t('charge.usage')" width="70">
@@ -1047,17 +1051,23 @@ function onCardCurrencyChange(code) {
   cardForm.value.value_yuan = cardForm.value.value_yuan ? parseFloat(cardForm.value.value_yuan.toFixed(info.decimals)) : 0
 }
 async function saveCard() {
+  // 套餐卡/流量包卡必须先选绑定规格：卡面额与可用范围都由规格决定。
+  if ((cardForm.value.card_type === 'plan' || cardForm.value.card_type === 'traffic_pack') && !cardForm.value.plan_variant_id) {
+    ElMessage.warning(cardForm.value.card_type === 'plan' ? t('charge.planVariantRequired') : t('charge.trafficPackRequired'))
+    return
+  }
+  if (cardForm.value.card_type === 'balance' && (!cardForm.value.value_yuan || cardForm.value.value_yuan <= 0)) {
+    ElMessage.warning(t('charge.balanceValueRequired'))
+    return
+  }
   try {
     const payload = { ...cardForm.value }
     if (payload.card_type === 'balance') {
       payload.value = yuanToMinor(payload.value_yuan, payload.currency)
     }
-    if (payload.card_type === 'plan' && payload.plan_variant_id) {
-      payload.value = payload.plan_variant_id
-    }
+    // 套餐/流量包卡：把绑定规格传给后端，由后端按 variant 价格写面额快照
     // 组合前缀+格式
     payload.card_code_format = buildCardCodeFormat(payload.card_code_format, payload.card_prefix)
-    delete payload.plan_variant_id
     delete payload.card_prefix
     delete payload.value_yuan
     const r = await chargeApi.createChargeCard(payload)
@@ -1087,8 +1097,8 @@ function onBatchCurrencyChange(code) {
 }
 async function saveBatch() {
   // 校验
-  if (batchForm.value.card_type === 'plan' && !batchForm.value.plan_variant_id) {
-    ElMessage.warning(t('charge.planVariantRequired'))
+  if ((batchForm.value.card_type === 'plan' || batchForm.value.card_type === 'traffic_pack') && !batchForm.value.plan_variant_id) {
+    ElMessage.warning(batchForm.value.card_type === 'plan' ? t('charge.planVariantRequired') : t('charge.trafficPackRequired'))
     return
   }
   if (batchForm.value.card_type === 'balance' && (!batchForm.value.value_yuan || batchForm.value.value_yuan <= 0)) {
@@ -1100,9 +1110,6 @@ async function saveBatch() {
     const payload = { ...batchForm.value }
     if (payload.card_type === 'balance') {
       payload.value = yuanToMinor(payload.value_yuan, payload.currency)
-    }
-    if (payload.card_type === 'plan' && payload.plan_variant_id) {
-      payload.plan_variant_id = payload.plan_variant_id
     }
     // 组合前缀+格式
     payload.card_code_format = buildCardCodeFormat(payload.card_code_format, payload.card_prefix)

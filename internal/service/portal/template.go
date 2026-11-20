@@ -553,7 +553,7 @@ const defaultPortalHTML = `<!DOCTYPE html>
         <transition name="pay-fade">
           <div v-if="orderForm.pay_method === 'gift_card'" class="pay-extra-form">
             <div class="pay-extra-label">{{ t('plan.card_code') }}</div>
-            <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" prefix-icon="Ticket" clearable />
+            <el-input v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" prefix-icon="Ticket" clearable @change="applyGiftCardPreview" />
           </div>
         </transition>
 
@@ -4571,6 +4571,41 @@ var showStreamingAccount = function(service) {
       showPaymentDialog.value = true
     }
 
+    // --- 礼品卡：输入卡号后自动带出对应套餐/流量包 ---
+    // 卡绑定的是具体规格，客户手工选错版本会被后端拒绝（卡与套餐不匹配）。
+    // 这里在输入框失焦时先预览，直接把订单切到卡对应的规格，并提示用户。
+    var applyGiftCardPreview = function() {
+      var code = (orderForm.value.gift_card_code || '').trim()
+      if (!code) return
+      api('POST', '/gift-cards/preview', { code: code }).then(function(res) {
+        if (!res) return
+        var isTP = !!res.is_traffic_pack
+        if (isTP !== !!orderForm.value.is_traffic_pack) {
+          ElMessage.warning(isTP ? t('plan.card_is_traffic_pack') : t('plan.card_is_plan'))
+          return
+        }
+        orderForm.value.variant_id = res.variant_id
+        orderForm.value.plan_name = res.plan_name || ''
+        orderForm.value.variant_name = res.variant_name || ''
+        orderForm.value.price = res.price || 0
+        orderForm.value.currency = res.currency || 'CNY'
+        orderForm.value.duration_days = res.duration_days || 0
+        orderForm.value.quota_bytes = res.quota_bytes || 0
+        if (!isTP) {
+          // 同套餐=续费，跨套餐=升级预约（与 purchaseVariant 的口径一致）
+          if (client.value.plan_id > 0) {
+            orderForm.value.order_type = (res.plan_id && client.value.plan_id === res.plan_id) ? 'renew' : 'upgrade'
+          } else {
+            orderForm.value.order_type = 'new'
+          }
+        }
+        var label = res.plan_name ? (res.plan_name + ' / ' + res.variant_name) : res.variant_name
+        ElMessage.success(t('plan.card_matched') + (label ? ': ' + label : ''))
+      }).catch(function(e) {
+        ElMessage.error((e && e.message) ? e.message : t('plan.card_invalid'))
+      })
+    }
+
     // get plan name
     var getPlanName = function(planId) {
       if (!planId) return t('plan.not_selected')
@@ -4627,7 +4662,8 @@ var showStreamingAccount = function(service) {
       var apiPayload = isTrafficPack ? {
         variant_id: orderForm.value.variant_id,
         pay_method: orderForm.value.pay_method,
-        charge_site_id: orderForm.value.pay_method === 'charge_site' ? orderForm.value.charge_site_id : null
+        charge_site_id: orderForm.value.pay_method === 'charge_site' ? orderForm.value.charge_site_id : null,
+        gift_card_code: orderForm.value.pay_method === 'gift_card' ? orderForm.value.gift_card_code : null
       } : payload
 
       api('POST', apiPath, apiPayload).then(function(res) {
@@ -5424,7 +5460,7 @@ if (initHasNodeList) fetchNodes()
                 articleCategory: articleCategory, showArticleDetail: showArticleDetail, articleDetail: articleDetail,
                 fetchArticles: fetchArticles, openArticle: openArticle, articleCatText: articleCatText,
                 plansLoading: plansLoading, myOrdersLoading: myOrdersLoading,
-                purchaseVariant: purchaseVariant, submitOrder: submitOrder,
+                purchaseVariant: purchaseVariant, submitOrder: submitOrder, applyGiftCardPreview: applyGiftCardPreview,
                 buyTrafficPack: buyTrafficPack, trafficPacks: trafficPacks, trafficPacksLoading: trafficPacksLoading,
                 orderForm: orderForm, orderBusy: orderBusy,
                 showChargeDialog: showChargeDialog, submitCharge: submitCharge,
@@ -5514,7 +5550,7 @@ return {
       announcementPopupVisible: announcementPopupVisible, activeAnnouncement: activeAnnouncement,
       openAnnouncementPopup: openAnnouncementPopup, announcements: announcements,
       // Payment dialogs
-      orderForm: orderForm, orderBusy: orderBusy,
+      orderForm: orderForm, orderBusy: orderBusy, applyGiftCardPreview: applyGiftCardPreview,
       trafficPacks: trafficPacks, trafficPacksLoading: trafficPacksLoading, buyTrafficPack: buyTrafficPack,
       chargeSites: chargeSites, chargeForm: chargeForm, chargeBusy: chargeBusy,
       cardCode: cardCode, redeemBusy: redeemBusy, balance: balance,

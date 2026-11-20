@@ -22,7 +22,7 @@ export function createDefaultModules(t) {
     },
     {
       id: 'mod-account', type: 'account_info', title: t('portal.seed.mod.account.title'), page: 'overview', visible: true,
-      data: { show_charge_btn: false }, style: {},
+      data: { show_balance: false, show_charge_btn: false }, style: {},
     },
     {
       id: 'mod-traffic', type: 'traffic_ring', title: t('portal.seed.mod.traffic.title'), page: 'overview', visible: true,

@@ -267,11 +267,17 @@ func PatchRegionsSecurity(configStr string) (string, bool) {
 const (
 	oldChargeBtnCond = `v-if="!mod.data || mod.data.show_charge_btn !== false"`
 	newChargeBtnCond = `v-if="mod.data && mod.data.show_charge_btn === true"`
+
+	// 「显示余额行」同样是「未显式关闭就显示」的旧写法 → 与充值按钮一致改为显式开启。
+	oldBalanceCond     = `v-if="mod.data && mod.data.show_balance !== false"`
+	oldBalanceCondLite = `v-if="mod.data.show_balance !== false"`
+	newBalanceCond     = `v-if="mod.data && mod.data.show_balance === true"`
 )
 
-// PatchChargeButtonConfig 对模板 config JSON 里的 account_info 模块打「充值按钮默认关闭」
-// 补丁：把旧的「未显式关闭就显示」条件替换为「显式开启才显示」，并在 data 未设置
-// show_charge_btn 时补 false（默认关闭 ✓）。幂等：命中过 / 无 account_info 时原样返回 ✓。
+// PatchChargeButtonConfig 对模板 config JSON 里的 account_info 模块打「余额行/充值按钮
+// 默认关闭」补丁：把旧的「未显式关闭就显示」条件替换为「显式开启才显示」，并在 data
+// 未设置 show_balance / show_charge_btn 时补 false（默认关闭 ✓，与 nav.store/nav.billing
+// 一致）。幂等：命中过 / 无 account_info 时原样返回 ✓。
 func PatchChargeButtonConfig(configStr string) (string, bool) {
 	if strings.TrimSpace(configStr) == "" {
 		return configStr, false
@@ -295,8 +301,18 @@ func PatchChargeButtonConfig(configStr string) (string, bool) {
 			data = map[string]interface{}{}
 			mod["data"] = data
 		}
-		if html, ok := data["html"].(string); ok && strings.Contains(html, oldChargeBtnCond) {
-			data["html"] = strings.Replace(html, oldChargeBtnCond, newChargeBtnCond, 1)
+		if html, ok := data["html"].(string); ok {
+			// strings.Replace 在不匹配时原样返回，无需先 Contains 判断。
+			newHTML := strings.Replace(html, oldBalanceCond, newBalanceCond, 1)
+			newHTML = strings.Replace(newHTML, oldBalanceCondLite, newBalanceCond, 1)
+			newHTML = strings.Replace(newHTML, oldChargeBtnCond, newChargeBtnCond, 1)
+			if data["html"] != newHTML {
+				data["html"] = newHTML
+				changed = true
+			}
+		}
+		if _, ok := data["show_balance"]; !ok {
+			data["show_balance"] = false
 			changed = true
 		}
 		if _, ok := data["show_charge_btn"]; !ok {
@@ -532,10 +548,34 @@ func PatchPlanUpgradeScheduledConfig(configStr string) (string, bool) {
 
 // 存量门户导航「购买服务(nav.store) / 我的账单(nav.billing)」默认关闭（与 nav.logs 一致）：
 // 门户导航存在模板 config 里（数据库）→ 只改默认模板到不了已部署门户 ✗。这里把这两项
-// enabled 置为 false（管理员仍可在编辑器里手动打开 ✓）。幂等：已是 false / 不存在时原样返回 ✓。
+// enabled 置为 false（管理员仍可在编辑器里手动打开 ✓）。
+//
+// ⚠ 这是一次性迁移：早期实现把它挂在 EnsureSecurityPatches 里每次启动都跑，导致管理员
+// 打开后一重启又被关回去（bug）。现在由 applyNavDefaultsOffOnce 用 system_settings 标记
+// 只执行一次，之后完全尊重数据库里的值。
 var defaultOffNavIDs = map[string]bool{
 	"nav-services": true,
 	"nav-billing":  true,
+}
+
+// navDefaultsOffDoneKey 记录「导航默认关闭迁移」是否已执行过。
+const navDefaultsOffDoneKey = "portal.nav_defaults_off_v1"
+
+// applyNavDefaultsOffOnce 只在首次执行导航默认关闭迁移，之后原样返回（尊重管理员设置）。
+// settingSvc 不可用时（测试/嵌入）退化为本次进程内仍打一次补丁，不影响生产（router 已注入）。
+func (s *Service) applyNavDefaultsOffOnce(ctx context.Context, configStr string) (string, bool) {
+	if s.settingSvc != nil {
+		if v, err := s.settingSvc.GetByKey(ctx, navDefaultsOffDoneKey); err == nil && v == "1" {
+			return configStr, false
+		}
+	}
+	out, changed := PatchNavDefaultsOff(configStr)
+	if s.settingSvc != nil {
+		if err := s.settingSvc.SetByKey(ctx, navDefaultsOffDoneKey, "1"); err != nil {
+			log.Printf("[portal] mark nav defaults migration done failed: %v", err)
+		}
+	}
+	return out, changed
 }
 
 // PatchNavDefaultsOff 对模板 config JSON 里的导航打「购买服务 / 我的账单默认关闭」补丁。
@@ -641,6 +681,90 @@ func PatchSubStoreActionConfig(configStr string) (string, bool) {
 		return configStr, false
 	}
 	return string(out), true
+}
+
+// 存量门户 shell 的礼品卡支付能力（线上跑的是数据库里的旧模板，只改内置默认模板
+// 到不了已部署门户 ✗，与 M7/自助解封是同一个坑）：
+//  1. 流量包支付 payload 漏传 gift_card_code → 后端报
+//     "gift_card_code is required for gift_card payment"（流量包卡完全没法用）；
+//  2. 没有卡号预览 → 客户手选错版本必报「卡与套餐不匹配」。
+//
+// 幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
+const (
+	giftInputOld = `v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" prefix-icon="Ticket" clearable />`
+	giftInputNew = `v-model="orderForm.gift_card_code" :placeholder="t('plan.card_code_placeholder')" prefix-icon="Ticket" clearable @change="applyGiftCardPreview" />`
+
+	trafficPackPayloadOld = `charge_site_id: orderForm.value.pay_method === 'charge_site' ? orderForm.value.charge_site_id : null
+      } : payload`
+	trafficPackPayloadNew = `charge_site_id: orderForm.value.pay_method === 'charge_site' ? orderForm.value.charge_site_id : null,
+        gift_card_code: orderForm.value.pay_method === 'gift_card' ? orderForm.value.gift_card_code : null
+      } : payload`
+
+	giftPreviewJSPresence = `var applyGiftCardPreview = function`
+	giftPreviewJSAnchor   = `    // get plan name`
+	giftPreviewJSSnippet  = `    // --- 礼品卡：输入卡号后自动带出对应套餐/流量包 ---
+    var applyGiftCardPreview = function() {
+      var code = (orderForm.value.gift_card_code || '').trim()
+      if (!code) return
+      api('POST', '/gift-cards/preview', { code: code }).then(function(res) {
+        if (!res) return
+        var isTP = !!res.is_traffic_pack
+        if (isTP !== !!orderForm.value.is_traffic_pack) {
+          ElMessage.warning(isTP ? t('plan.card_is_traffic_pack') : t('plan.card_is_plan'))
+          return
+        }
+        orderForm.value.variant_id = res.variant_id
+        orderForm.value.plan_name = res.plan_name || ''
+        orderForm.value.variant_name = res.variant_name || ''
+        orderForm.value.price = res.price || 0
+        orderForm.value.currency = res.currency || 'CNY'
+        orderForm.value.duration_days = res.duration_days || 0
+        orderForm.value.quota_bytes = res.quota_bytes || 0
+        if (!isTP) {
+          if (client.value.plan_id > 0) {
+            orderForm.value.order_type = (res.plan_id && client.value.plan_id === res.plan_id) ? 'renew' : 'upgrade'
+          } else {
+            orderForm.value.order_type = 'new'
+          }
+        }
+        var label = res.plan_name ? (res.plan_name + ' / ' + res.variant_name) : res.variant_name
+        ElMessage.success(t('plan.card_matched') + (label ? ': ' + label : ''))
+      }).catch(function(e) {
+        ElMessage.error((e && e.message) ? e.message : t('plan.card_invalid'))
+      })
+    }
+
+    // get plan name`
+
+	giftPreviewExtAnchor  = `purchaseVariant: purchaseVariant, submitOrder: submitOrder,`
+	giftPreviewExtExposed = `purchaseVariant: purchaseVariant, submitOrder: submitOrder, applyGiftCardPreview: applyGiftCardPreview,`
+)
+
+// PatchGiftCardPreview 给存量门户模板补「流量包卡支付传卡号 + 卡号预览」两处。
+func PatchGiftCardPreview(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
+	newHTML, newJS = htmlContent, jsContent
+	if strings.Contains(newHTML, giftInputOld) {
+		newHTML = strings.Replace(newHTML, giftInputOld, giftInputNew, 1)
+		changed = true
+	}
+	// 只有能同时透传到模板作用域时才注入函数：否则 @change 指向未定义函数，
+	// 控制台会抛 ReferenceError（宁可不做预览，也不能把旧模板弄坏）。
+	canExpose := strings.Contains(newJS, giftPreviewExtAnchor) || strings.Contains(newJS, `applyGiftCardPreview: applyGiftCardPreview`)
+	if !strings.Contains(newJS, giftPreviewJSPresence) && canExpose && strings.Contains(newJS, giftPreviewJSAnchor) {
+		newJS = strings.Replace(newJS, giftPreviewJSAnchor, giftPreviewJSSnippet, 1)
+		changed = true
+	}
+	// 流量包分支必须带卡号：旧模板只传 variant_id/pay_method/charge_site_id。
+	if strings.Contains(newJS, trafficPackPayloadOld) &&
+		!strings.Contains(newJS, `gift_card_code: orderForm.value.pay_method === 'gift_card' ? orderForm.value.gift_card_code : null`) {
+		newJS = strings.Replace(newJS, trafficPackPayloadOld, trafficPackPayloadNew, 1)
+		changed = true
+	}
+	if strings.Contains(newJS, giftPreviewExtAnchor) && !strings.Contains(newJS, `applyGiftCardPreview: applyGiftCardPreview`) {
+		newJS = strings.Replace(newJS, giftPreviewExtAnchor, giftPreviewExtExposed, 1)
+		changed = true
+	}
+	return newHTML, newJS, changed
 }
 
 // PatchSubStoreActionJS 给存量门户 shell 补 storeEnabled computed + visibleSubActions 函数，
@@ -1248,6 +1372,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		newHTML, newJS = h6, j6
 		changed = true
 	}
+	// 礼品卡：流量包卡支付传卡号 + 输入卡号自动选中套餐（线上模板在数据库里）✓
+	if h6b, j6b, c6b := PatchGiftCardPreview(newHTML, newJS); c6b {
+		newHTML, newJS = h6b, j6b
+		changed = true
+	}
 	// 推荐邀请链接不能写死 /p（独立门户端口在根路径）✓
 	if h7, j7, c7 := PatchReferralInviteURL(newHTML, newJS); c7 {
 		newHTML, newJS = h7, j7
@@ -1265,8 +1394,9 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 		newConfig = c
 		cfgChanged = true
 	}
-	// 存量模板导航「购买服务 / 我的账单」默认关闭（与 nav.logs 一致）✓
-	if c, cc := PatchNavDefaultsOff(newConfig); cc {
+	// 存量模板导航「购买服务 / 我的账单」默认关闭 —— **只迁移一次**，
+	// 之后管理员在编辑器里打开不会再被启动流程覆盖（见 applyNavDefaultsOffOnce）。
+	if c, cc := s.applyNavDefaultsOffOnce(ctx, newConfig); cc {
 		newConfig = c
 		cfgChanged = true
 	}

@@ -649,7 +649,7 @@ func (s *CommerceService) BuyTrafficPack(ctx context.Context, clientID int64, in
 			return nil, fmt.Errorf("this gift card is not a traffic pack card")
 		}
 		if cv := chargeCardVariantID(card); cv != input.VariantID {
-			return nil, fmt.Errorf("该流量包卡仅可用于「%s」，请选择该流量包后再支付",
+			return nil, fmt.Errorf("this traffic pack card can only be used for %q; please select that traffic pack and retry",
 				s.giftCardVariantLabel(ctx, cv))
 		}
 		return s.redeemTrafficPackCard(ctx, client, variant, card, paidAmount)
@@ -995,7 +995,7 @@ func (s *CommerceService) CreateOrder(ctx context.Context, clientID int64, input
 		// 卡绑定的是**具体规格**：客户选的套餐/版本必须与卡一致，否则无法判断该开通什么。
 		// 门户会在输入卡号时调 /gift-cards/preview 自动切到对应套餐，正常不会走到这里。
 		if cv := chargeCardVariantID(card); cv != input.VariantID {
-			return nil, fmt.Errorf("该套餐卡仅可用于「%s」，请选择该套餐后再支付",
+			return nil, fmt.Errorf("this plan card can only be used for %q; please select that plan and retry",
 				s.giftCardVariantLabel(ctx, cv))
 		}
 
@@ -2441,67 +2441,34 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 				}
 			}
 
+			// 订单记账：卡密兑换入口没有外层订单，补一条 0 元记录；
+			// 站点支付在下单时已创建 pending 计划订单，这里只把它收尾 —— 不能再建一条，
+			// 否则同一笔购买会出现两条计划订单（真机：53 号 renew + 54 号 new 重复）。
 			if scheduledOrder == nil {
-				// Create plan order for record-keeping
-				now := time.Now()
-				planOrder := &entity.PlanOrder{
-					ClientID: order.ClientID, OrderType: entity.OrderTypeNew,
-					ToVariantID: *order.PlanVariantID, OriginalAmount: order.Amount,
-					PaidAmount: order.Amount, EffectiveFrom: now,
-					Status: entity.OrderStatusCompleted, Remark: "充值订单自动开通",
-				}
 				if order.Source == entity.ChargeSourceCard {
-					planOrder.PaidAmount = 0
-					planOrder.Remark = "充值卡兑换自动开通"
-				}
-				if err := tx.Create(planOrder).Error; err != nil {
-					return err
-				}
-				// 把"下单时创建的那条 pending 套餐订单"一起收尾。
-				// 否则用户在「我的订单」里会一直看到"待支付"，而钱其实早就付了。
-				// 作用域限定 同一客户 + 同一目标变体，避免误伤其它未支付的订单。
-				finish := tx.Model(&entity.PlanOrder{}).
-					Where("client_id = ? AND status = ?", order.ClientID, entity.OrderStatusPending)
-				if order.PlanVariantID != nil {
-					finish = finish.Where("to_variant_id = ?", *order.PlanVariantID)
-				}
-				if err := finish.Updates(map[string]interface{}{
-					"status":      entity.OrderStatusCompleted,
-					"paid_amount": order.Amount,
-				}).Error; err != nil {
-					return err
-				}
-				// 记录余额消费流水（三方充值/充值卡购买套餐）
-				if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
-					remark := "在线支付购买套餐"
-					if order.Source == entity.ChargeSourceSite {
-						remark = "充值站点支付购买套餐"
+					now := time.Now()
+					planOrder := &entity.PlanOrder{
+						ClientID: order.ClientID, OrderType: entity.OrderTypeNew,
+						ToVariantID: *order.PlanVariantID, OriginalAmount: order.Amount,
+						PaidAmount: 0, EffectiveFrom: now,
+						Status: entity.OrderStatusCompleted, Remark: "充值卡兑换自动开通",
 					}
-					// S-10 fix: record actual balance before/after for audit trail
-					var balAfter entity.ClientBalance
-					tx.Where("client_id = ?", order.ClientID).First(&balAfter)
-					txRecord := &entity.BalanceTransaction{
-						ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
-						Amount: -order.Amount, BalanceBefore: balAfter.Balance + order.Amount, BalanceAfter: balAfter.Balance,
-						RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &planOrder.ID,
-						Remark: remark,
+					if err := tx.Create(planOrder).Error; err != nil {
+						return err
 					}
-					tx.Create(txRecord)
+				} else {
+					finish := tx.Model(&entity.PlanOrder{}).
+						Where("client_id = ? AND status = ?", order.ClientID, entity.OrderStatusPending)
+					if order.PlanVariantID != nil {
+						finish = finish.Where("to_variant_id = ?", *order.PlanVariantID)
+					}
+					if err := finish.Updates(map[string]interface{}{
+						"status":      entity.OrderStatusCompleted,
+						"paid_amount": order.Amount,
+					}).Error; err != nil {
+						return err
+					}
 				}
-			} else if order.Amount > 0 && order.Source != entity.ChargeSourceCard {
-				// 预约单同样要记余额消费流水（金额在付款时已扣）
-				remark := "在线支付购买套餐（预约升级）"
-				if order.Source == entity.ChargeSourceSite {
-					remark = "充值站点支付购买套餐（预约升级）"
-				}
-				var balAfter entity.ClientBalance
-				tx.Where("client_id = ?", order.ClientID).First(&balAfter)
-				tx.Create(&entity.BalanceTransaction{
-					ClientID: order.ClientID, Type: entity.BalanceTxTypeConsume,
-					Amount: -order.Amount, BalanceBefore: balAfter.Balance + order.Amount, BalanceAfter: balAfter.Balance,
-					RelatedChargeOrderID: &order.ID, RelatedPlanOrderID: &scheduledOrder.ID,
-					Remark: remark,
-				})
 			}
 			return nil
 		}

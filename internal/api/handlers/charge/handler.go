@@ -140,7 +140,14 @@ func (h *Handler) CreateSite(c *gin.Context) {
 		return
 	}
 
-	// v3.2: 同步写入 charge_site_secrets 表
+	// v3.2: 同步写入 charge_site_secrets 表。
+	// ⚠ ID 会被 SQLite 复用：先清掉同 site_id 的残留密钥，否则 version=1
+	// 插入会撞唯一约束（错误被忽略），回调继续用旧密钥验签 → 恒 invalid signature。
+	if err := h.db.WithContext(c.Request.Context()).
+		Where("site_id = ?", site.ID).Delete(&entity.ChargeSiteSecret{}).Error; err != nil {
+		response.InternalError(c, "CREATE_FAILED", err.Error())
+		return
+	}
 	secretRecord := &entity.ChargeSiteSecret{
 		SiteID:          site.ID,
 		Version:         1,
@@ -148,7 +155,10 @@ func (h *Handler) CreateSite(c *gin.Context) {
 		Status:          entity.SecretStatusActive,
 		CreatedAt:       time.Now(),
 	}
-	h.db.WithContext(c.Request.Context()).Create(secretRecord)
+	if err := h.db.WithContext(c.Request.Context()).Create(secretRecord).Error; err != nil {
+		response.InternalError(c, "CREATE_FAILED", err.Error())
+		return
+	}
 
 	h.maskSiteSecret(&site)
 	// v3.3: 创建时返回明文密钥（仅此一次），供管理员复制给支付平台
@@ -222,6 +232,10 @@ func (h *Handler) DeleteSite(c *gin.Context) {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
 		return
 	}
+	if err := h.chargeSiteRepo.PurgeSiteScopedData(c.Request.Context(), id); err != nil {
+		response.InternalError(c, "DELETE_FAILED", err.Error())
+		return
+	}
 	if err := h.chargeSiteRepo.Delete(c.Request.Context(), id); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
@@ -290,7 +304,7 @@ func (h *Handler) VerifyDomainHTTP(c *gin.Context) {
 		return
 	}
 	if site.VerifyToken == "" || site.VerifyContent == "" {
-		response.BadRequest(c, "NOT_GENERATED", "请先生成验证文件")
+		response.BadRequest(c, "NOT_GENERATED", "generate the verification file first")
 		return
 	}
 
@@ -332,7 +346,7 @@ func (h *Handler) VerifyDomainHTTP(c *gin.Context) {
 	body, _ := io.ReadAll(resp.Body)
 	bodyStr := strings.TrimSpace(string(body))
 	if bodyStr != site.VerifyContent {
-		response.BadRequest(c, "CONTENT_MISMATCH", "验证文件内容不匹配")
+		response.BadRequest(c, "CONTENT_MISMATCH", "verification file content does not match")
 		return
 	}
 
@@ -361,7 +375,7 @@ func (h *Handler) VerifyDomainDNS(c *gin.Context) {
 		return
 	}
 	if site.VerifyToken == "" || site.VerifyContent == "" {
-		response.BadRequest(c, "NOT_GENERATED", "请先生成验证文件")
+		response.BadRequest(c, "NOT_GENERATED", "generate the verification file first")
 		return
 	}
 
@@ -388,7 +402,7 @@ func (h *Handler) VerifyDomainDNS(c *gin.Context) {
 			return
 		}
 	}
-	response.BadRequest(c, "CONTENT_MISMATCH", "DNS TXT 记录内容不匹配")
+	response.BadRequest(c, "CONTENT_MISMATCH", "DNS TXT record content does not match")
 }
 
 // portalCallbackBase 返回门户回调基址（域名 + scheme，不含路径）。
@@ -907,21 +921,22 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename=charge-cards.csv")
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 
+	labels := csvLabelsFor(csvLang(c))
 	// BOM for Excel UTF-8 compatibility
 	var sb strings.Builder
 	sb.WriteString("\xEF\xBB\xBF")
-	sb.WriteString("ID,卡号,类型,面值/套餐ID,货币,是否已用,状态,批次号,创建者,创建时间,过期时间,备注\n")
+	sb.WriteString(strings.Join(labels.CardHeader, ",") + "\n")
 
 	for _, card := range cards {
 		cardCode := card.CardCode // ListAll 已解密填充
 		if cardCode == "" {
 			cardCode = card.CardCodeMasked
 		}
-		typeLabel := "金额"
+		typeLabel := labels.CardTypeBalance
 		if card.CardType == entity.ChargeCardTypePlan {
-			typeLabel = "套餐"
+			typeLabel = labels.CardTypePlan
 		} else if card.CardType == entity.ChargeCardTypeTrafficPack {
-			typeLabel = "流量包"
+			typeLabel = labels.CardTypeTrafficPack
 		}
 		expiresAt := ""
 		if card.ExpiresAt != nil {
@@ -935,7 +950,7 @@ func (h *Handler) ExportCardsCSV(c *gin.Context) {
 			typeLabel,
 			card.Value,
 			card.Currency,
-			boolStr(card.UsedCount > 0),
+			boolStr(card.UsedCount > 0, labels),
 			card.Status,
 			csvEscape(card.BatchID),
 			csvEscape(card.CreatedByAdminName),
@@ -954,12 +969,12 @@ func csvEscape(s string) string {
 	return exportutil.Escape(s)
 }
 
-// boolStr returns "是" or "否" for CSV export.
-func boolStr(b bool) string {
+// boolStr returns the localized "yes/no" for CSV export.
+func boolStr(b bool, labels csvLabels) string {
 	if b {
-		return "是"
+		return labels.Yes
 	}
-	return "否"
+	return labels.No
 }
 
 // ============================================================
@@ -1383,9 +1398,10 @@ func (h *Handler) ExportOrdersCSV(c *gin.Context) {
 		`attachment; filename="charge-orders-`+exportutil.Timestamp()+`.csv"`)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 
+	labels := csvLabelsFor(csvLang(c))
 	var sb strings.Builder
 	sb.WriteString(exportutil.BOM)
-	sb.WriteString("ID,交易号,站点ID,站点交易号,客户端ID,客户端邮箱,订单类型,金额(最小单位),币种,实付金额(最小单位),实付币种,汇率,支付方式,状态,创建时间,支付时间,备注\n")
+	sb.WriteString(strings.Join(labels.OrderHeader, ",") + "\n")
 	for i := range orders {
 		o := &orders[i]
 		email := ""
@@ -1454,9 +1470,10 @@ func (h *Handler) ExportBalanceTransactionsCSV(c *gin.Context) {
 		`attachment; filename="balance-transactions-`+exportutil.Timestamp()+`.csv"`)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 
+	labels := csvLabelsFor(csvLang(c))
 	var sb strings.Builder
 	sb.WriteString(exportutil.BOM)
-	sb.WriteString("ID,客户端ID,客户端邮箱,类型,金额(最小单位),变动前(最小单位),变动后(最小单位),币种,关联充值订单ID,关联套餐订单ID,备注,时间\n")
+	sb.WriteString(strings.Join(labels.BalanceTransactionHeader, ",") + "\n")
 	for i := range txs {
 		tx := &txs[i]
 		email := ""

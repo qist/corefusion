@@ -1153,7 +1153,8 @@ async function showCardUsages(row) {
 // ──────── CSV Export (v3.3) ────────
 async function doExportCSV() {
   try {
-    const params = {}
+    // lang：让后端用当前界面语言输出表头（否则英文后台导出仍是中文 CSV）
+    const params = { lang: locale.value }
     if (cardStatusFilter.value) params.status = cardStatusFilter.value
     if (cardTypeFilter.value) params.card_type = cardTypeFilter.value
     if (cardAgentFilter.value !== null && cardAgentFilter.value !== undefined) params.agent_id = cardAgentFilter.value
@@ -1175,7 +1176,7 @@ async function doExportCSV() {
 // ── 2026-09-23：订单 / 余额流水导出（原来只有列表，无法整体导出对账 ✗）──
 async function doExportOrdersCSV() {
   try {
-    const params = {}
+    const params = { lang: locale.value }
     if (orderStatusFilter.value) params.status = orderStatusFilter.value
     const blob = await chargeApi.exportOrdersCSV(params)
     downloadBlob(blob, `charge-orders-${new Date().toISOString().substring(0, 10)}.csv`)
@@ -1187,7 +1188,7 @@ async function doExportOrdersCSV() {
 
 async function doExportBalanceTxCSV() {
   try {
-    const blob = await chargeApi.exportBalanceTransactionsCSV({})
+    const blob = await chargeApi.exportBalanceTransactionsCSV({ lang: locale.value })
     downloadBlob(blob, `balance-transactions-${new Date().toISOString().substring(0, 10)}.csv`)
     ElMessage.success(t('charge.csvExportSuccess'))
   } catch (e) {

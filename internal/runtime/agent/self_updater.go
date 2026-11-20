@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,6 +38,12 @@ import (
 type SelfUpdater struct {
 	dataDir     string
 	settingRepo *repository.SystemSettingRepository
+	// allowedHosts 是面板自身的主机名（panel.host / public_host / grpc_host）。
+	// 更新包只允许从这些主机或 GitHub Release 域名下载（安全审计 v7 L-6 纵深防御）。
+	allowedHosts []string
+	// updatePubKeyPEM 是面板更新签名公钥（安装脚本写入 config.yaml）。
+	// 非空时强制校验 PanelCommand 下发的 ed25519 签名。
+	updatePubKeyPEM []byte
 }
 
 // NewSelfUpdater creates a new SelfUpdater.
@@ -46,14 +54,79 @@ func NewSelfUpdater(dataDir string, settingRepo *repository.SystemSettingReposit
 	}
 }
 
+// SetAllowedHosts 注入面板自身的主机名（不含端口）。
+//
+// 校验和与二进制同源，无法抵御「DNS/CDN 被控」—— 完整修复需要发布侧签名；
+// 这里先把下载来源限制在面板与 GitHub Release 域名，避免被指向任意第三方主机。
+func (u *SelfUpdater) SetAllowedHosts(hosts ...string) {
+	for _, h := range hosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h == "" {
+			continue
+		}
+		u.allowedHosts = append(u.allowedHosts, h)
+	}
+}
+
+// SetUpdatePublicKey 注入面板更新签名公钥（PEM）。为空表示沿用旧行为（仅校验 SHA-256）。
+func (u *SelfUpdater) SetUpdatePublicKey(pemBytes []byte) {
+	u.updatePubKeyPEM = pemBytes
+}
+
+// trustedAgentUpdateHost 是 Agent 更新包允许来自的 GitHub 域名。
+func trustedAgentUpdateHost(host string) bool {
+	switch host {
+	case "github.com", "api.github.com", "objects.githubusercontent.com",
+		"raw.githubusercontent.com", "codeload.github.com", "release-assets.githubusercontent.com":
+		return true
+	}
+	return false
+}
+
+// validateUpdateURL 校验自更新下载地址：只允许 http/https，且主机必须是面板自身或
+// GitHub Release 域名（回环地址放行给本地测试）。
+func (u *SelfUpdater) validateUpdateURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" {
+		return fmt.Errorf("invalid agent update URL %q", raw)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("refuse agent update URL with scheme %q", parsed.Scheme)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "" {
+		return fmt.Errorf("invalid agent update URL %q", raw)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	for _, allowed := range u.allowedHosts {
+		if allowed == host {
+			return nil
+		}
+	}
+	if trustedAgentUpdateHost(host) {
+		if scheme != "https" {
+			return fmt.Errorf("refuse agent update from %q over http (https required)", host)
+		}
+		return nil
+	}
+	return fmt.Errorf("refuse agent update from untrusted host %q (allowed: panel hosts and GitHub release hosts)", host)
+}
+
 // PerformUpdate executes the full update flow:
 // download → verify → backup → replace → restart
 //
 // On success, the Agent process is restarted and this function does not return
 // (the process exits). On failure, the old binary remains in place and the
 // error is returned.
-func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error {
+func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum, signature string) error {
 	log.Printf("[SelfUpdater] starting update: version=%s, url=%s", version, downloadURL)
+
+	if err := u.validateUpdateURL(downloadURL); err != nil {
+		return err
+	}
 
 	// Step 0: 解析期望校验和 —— **全自动**，不需要任何人手工填写 ✗
 	//   ① 面板下发的 checksum 优先（面板扫描二进制时已自动算出 SHA-256）；
@@ -62,6 +135,18 @@ func (u *SelfUpdater) PerformUpdate(version, downloadURL, checksum string) error
 	expected, err := u.resolveChecksum(downloadURL, checksum)
 	if err != nil {
 		return fmt.Errorf("checksum unavailable, refusing update: %w", err)
+	}
+
+	// 安全审计 v7 L-6：配置了更新公钥时，必须验证 mTLS 控制面下发的签名。
+	// 校验和与二进制同源，只有签名能把「可信的哈希」与「可信的下载地址」解耦。
+	if len(u.updatePubKeyPEM) > 0 {
+		if err := VerifyAgentUpdateSignature(u.updatePubKeyPEM, expected, signature); err != nil {
+			return fmt.Errorf("update signature rejected: %w", err)
+		}
+		log.Printf("[SelfUpdater] update signature verified")
+	} else {
+		log.Printf("[SelfUpdater] WARNING: %s 未配置，仅校验 SHA-256；"+
+			"如更新地址与 .sha256 同源被替换仍无法发现，建议用面板生成的安装脚本重装以写入公钥", UpdatePublicKeyConfigKey)
 	}
 
 	// Step 1: Download

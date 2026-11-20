@@ -341,6 +341,12 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		log.Printf("[Agent] UpdateAgent command received: version=%s", c.UpdateAgent.Version)
 		go func() {
 			updater := agent.NewSelfUpdater(a.dataDir, a.settingRepo)
+			// 安全审计 v7 L-6：只允许从面板自身或 GitHub Release 域名下载更新包。
+			updater.SetAllowedHosts(a.cfg.Panel.Host, a.cfg.Panel.PublicHost, a.cfg.Panel.GRPCHost)
+			// 安装脚本写入的更新签名公钥：配置后强制校验控制面下发的 ed25519 签名。
+			if pk := strings.TrimSpace(a.cfg.Update.PublicKey); pk != "" {
+				updater.SetUpdatePublicKey([]byte(a.cfg.Update.PublicKey))
+			}
 			// Resolve relative download URL using the public HTTP endpoint
 			// (CDN when configured) from config.
 			downloadURL := c.UpdateAgent.DownloadUrl
@@ -352,6 +358,7 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 				c.UpdateAgent.Version,
 				downloadURL,
 				c.UpdateAgent.Checksum,
+				c.UpdateAgent.Signature,
 			)
 			if err != nil {
 				log.Printf("[Agent] update failed: %v", err)

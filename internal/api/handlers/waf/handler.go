@@ -145,6 +145,10 @@ func (h *Handler) GetRule(c *gin.Context) {
 // Body: { "content": "...", "merge_mode": "append|replace" }
 func (h *Handler) SaveRule(c *gin.Context) {
 	name := c.Param("name")
+	if err := waf.ValidateRuleName(name); err != nil {
+		response.BadRequest(c, "INVALID_RULE_NAME", err.Error())
+		return
+	}
 	var req struct {
 		Content   string `json:"content"`
 		MergeMode string `json:"merge_mode"` // append | replace, default: replace
@@ -340,6 +344,10 @@ func (h *Handler) SaveNodeRule(c *gin.Context) {
 		serverID = localServerID
 	}
 	name := c.Param("name")
+	if err := waf.ValidateRuleName(name); err != nil {
+		response.BadRequest(c, "INVALID_RULE_NAME", err.Error())
+		return
+	}
 	var req struct {
 		Content   string `json:"content"`
 		MergeMode string `json:"merge_mode"`
@@ -916,6 +924,10 @@ func (h *Handler) pushToRemote(ctx context.Context, serverID int64) error {
 func (h *Handler) SaveDomainRuleFile(c *gin.Context) {
 	domain := waf.StripPort(c.Param("domain"))
 	name := c.Param("name")
+	if err := waf.ValidateRuleName(name); err != nil {
+		response.BadRequest(c, "INVALID_RULE_NAME", err.Error())
+		return
+	}
 	serverID := parseServerID(c)
 	if serverID == 0 {
 		serverID = localServerID

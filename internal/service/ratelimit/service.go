@@ -282,9 +282,15 @@ func (s *Service) UpdateConfig(ctx context.Context, serverID int64, req *dto.Rat
 		config.Enabled = *req.Enabled
 	}
 	if req.Iface != nil {
+		if err := ratelimit.ValidateIfaceName(*req.Iface); err != nil {
+			return nil, err
+		}
 		config.Iface = *req.Iface
 	}
 	if req.IfbDevice != nil {
+		if err := ratelimit.ValidateIfaceName(*req.IfbDevice); err != nil {
+			return nil, fmt.Errorf("ifb_device: %w", err)
+		}
 		config.IfbDevice = *req.IfbDevice
 	}
 	if req.DefaultMaxDownMbps != nil {

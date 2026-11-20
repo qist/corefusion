@@ -417,6 +417,15 @@ func (s *Service) UpdateSettings(ctx context.Context, clientID int64, ipWhitelis
 	if deviceLimit < 0 {
 		deviceLimit = 0
 	}
+	// 安全审计 v7 L-10：套餐里的 device_limit 是策略上限，客户自助设置不能把它抬高
+	// （否则门户里把设备数改成 100 就绕过了套餐限制）。0 = 交由套餐默认值决定。
+	if deviceLimit > 0 && client.PlanID > 0 && s.tmplRepo != nil {
+		if tmpl, terr := s.tmplRepo.GetByID(ctx, client.PlanID); terr == nil && tmpl != nil && tmpl.DeviceLimit > 0 {
+			if deviceLimit > tmpl.DeviceLimit {
+				return fmt.Errorf("设备数不能超过套餐上限（%d 台）", tmpl.DeviceLimit)
+			}
+		}
+	}
 
 	client.IPWhitelist = normalized
 	client.DeviceLimit = deviceLimit

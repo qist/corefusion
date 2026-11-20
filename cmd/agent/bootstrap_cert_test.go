@@ -22,6 +22,8 @@ func TestBootstrapEndpointsPrefersPublic(t *testing.T) {
 	a.cfg.Panel.PublicHost = "panel.example.com"
 	a.cfg.Panel.PublicPort = 443
 	a.cfg.Panel.PublicTLS = true
+	// 安全审计 v7 L-5：直连 TLS 需要带外信任锚点；本测试只验证端点排序，显式开 TOFU 即可。
+	a.cfg.Bootstrap.AllowTOFU = true
 
 	// Direct is HTTP, public is HTTPS: only the public endpoint is used —
 	// falling back to cleartext would leak the one-time bootstrap token.

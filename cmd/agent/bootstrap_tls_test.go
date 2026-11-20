@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,7 +32,7 @@ func newBootstrapApp(t *testing.T, panelTLS bool) *AgentApp {
 // 把 Agent 引导到假面板上并拿到它的私钥。修复后必须：
 //   - 面板走 http → 不需要 TLS 配置；
 //   - 有面板 CA（安装脚本自动下发）→ 用它做正常链校验（不再跳过校验）；
-//   - 没 CA → TOFU：首次自动固定指纹，之后不一致就拒绝（同样无需人工填写）。
+//   - 没 CA → 安全审计 v7 L-5：不再自动信任首连证书，必须由配置/历史 pin 提供指纹（否则失败关闭）。
 func TestBootstrapTLSConfigPrefersPanelCA(t *testing.T) {
 	a := newBootstrapApp(t, false)
 	if cfg, err := a.bootstrapTLSConfig(); err != nil || cfg != nil {
@@ -39,16 +40,9 @@ func TestBootstrapTLSConfigPrefersPanelCA(t *testing.T) {
 	}
 
 	a = newBootstrapApp(t, true)
-	// 没有 CA 文件 → TOFU 路径
-	cfg, err := a.bootstrapTLSConfig()
-	if err != nil {
-		t.Fatalf("TOFU 路径不应报错：%v", err)
-	}
-	if cfg.VerifyPeerCertificate == nil {
-		t.Fatal("没有 CA 时必须自己做证书校验（TOFU），不能什么都不校验")
-	}
-	if cfg.ServerName != panelCertServerName {
-		t.Errorf("ServerName 应为面板证书名 %q，得到 %q", panelCertServerName, cfg.ServerName)
+	// 没有 CA、没有指纹、没开 allow_tofu → 必须失败关闭（不能静默 TOFU）
+	if _, err := a.bootstrapTLSConfig(); err == nil {
+		t.Fatal("没有 CA 且没有固定指纹时必须拒绝引导（避免首连 MITM）")
 	}
 
 	// 写入 CA 文件 → 必须走正常链校验（不再 InsecureSkipVerify）
@@ -59,7 +53,7 @@ func TestBootstrapTLSConfigPrefersPanelCA(t *testing.T) {
 	if err := os.WriteFile(a.caPath, caPEM, 0640); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err = a.bootstrapTLSConfig()
+	cfg, err := a.bootstrapTLSConfig()
 	if err != nil {
 		t.Fatalf("有 CA 时不应报错：%v", err)
 	}
@@ -74,8 +68,57 @@ func TestBootstrapTLSConfigPrefersPanelCA(t *testing.T) {
 	}
 }
 
+// 安全审计 v7 L-5：没有 CA 时，配置里的指纹就是唯一信任锚点。
+func TestBootstrapTLSConfigUsesConfiguredFingerprint(t *testing.T) {
+	a := newBootstrapApp(t, true)
+	certA := []byte("panel-cert-A")
+	sum := sha256.Sum256(certA)
+	// 带冒号/大写也应接受（fingerprint 与 sha256sum 两种写法）
+	fp := strings.ToUpper(hex.EncodeToString(sum[:]))
+	withColons := fp[:2] + ":" + fp[2:]
+	a.cfg.Bootstrap.PanelCertFingerprint = withColons
+
+	cfg, err := a.bootstrapTLSConfig()
+	if err != nil {
+		t.Fatalf("配置了指纹应可使用：%v", err)
+	}
+	if err := cfg.VerifyPeerCertificate([][]byte{certA}, nil); err != nil {
+		t.Errorf("匹配指纹应接受：%v", err)
+	}
+	// 指纹不匹配（中间人换证书）必须拒绝
+	if err := cfg.VerifyPeerCertificate([][]byte{[]byte("panel-cert-B")}, nil); err == nil {
+		t.Error("指纹不匹配必须拒绝")
+	}
+	// 配置指纹时不应写 pin 文件
+	if _, err := os.Stat(a.panelTLSPinPath()); err == nil {
+		t.Error("显式配置指纹时不应再落盘 TOFU pin")
+	}
+}
+
+// 老版本已经 TOFU 固定过的节点：升级后仍用本地 pin 校验（不再自动固定新的）。
+func TestBootstrapTLSConfigHonorsLegacyPinFile(t *testing.T) {
+	a := newBootstrapApp(t, true)
+	certA := []byte("legacy-panel-cert")
+	sum := sha256.Sum256(certA)
+	if err := writePinnedFingerprint(a.panelTLSPinPath(), hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := a.bootstrapTLSConfig()
+	if err != nil {
+		t.Fatalf("已有 pin 文件时不应报错：%v", err)
+	}
+	if err := cfg.VerifyPeerCertificate([][]byte{certA}, nil); err != nil {
+		t.Errorf("pin 匹配应接受：%v", err)
+	}
+	if err := cfg.VerifyPeerCertificate([][]byte{[]byte("other")}, nil); err == nil {
+		t.Error("pin 不匹配必须拒绝")
+	}
+}
+
 func TestTOFUPinAcceptsOnceThenRequiresSameCert(t *testing.T) {
 	a := newBootstrapApp(t, true)
+	// 显式开启 TOFU 才允许首连自动固定（默认关闭）
+	a.cfg.Bootstrap.AllowTOFU = true
 	cfg, err := a.bootstrapTLSConfig()
 	if err != nil {
 		t.Fatal(err)

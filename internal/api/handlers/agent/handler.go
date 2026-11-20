@@ -34,6 +34,8 @@ type Handler struct {
 	dataDir    string
 	tokenMgr   *agent.BootstrapTokenManager
 	settingSvc binaries.SettingStore // for GitHub acceleration and panel settings
+	// updateSigner 用于把面板更新签名公钥写进安装脚本（v7 L-6）。
+	updateSigner *agent.AgentUpdateSigner
 
 	// detectPublicIP / probeGRPC 可在测试里替换；生产环境分别走本机公网 IP
 	// 探测与真实 TCP 探测。
@@ -78,6 +80,13 @@ func (h *Handler) WithSettingStore(s binaries.SettingStore) *Handler {
 	return h
 }
 
+// WithUpdateSigner 注入更新签名器：安装脚本会把对应公钥写进节点 config.yaml，
+// Agent 自更新时据此校验控制面下发的签名（v7 L-6）。
+func (h *Handler) WithUpdateSigner(s *agent.AgentUpdateSigner) *Handler {
+	h.updateSigner = s
+	return h
+}
+
 // DownloadAgent serves the Agent binary from the panel's local directory.
 // This is primarily for development/testing. In production, the install
 // script falls back to GitHub Releases when this endpoint returns 404.
@@ -113,7 +122,12 @@ func (h *Handler) DownloadAgent(c *gin.Context) {
 // request is legitimate. The token is consumed later when the Agent
 // actually boots and calls POST /api/v1/agent/bootstrap.
 //
-// GET /api/v1/agent/install?id=<server_id>&token=<bootstrap_token>
+// GET /api/v1/agent/install?id=<server_id>&port=<port>
+//
+// 引导令牌通过 `X-Bootstrap-Token` 请求头（或 `Authorization: Bearer`）传递。
+// 安全审计 v7 L-5：不再把令牌放进 URL —— URL 会进 CDN/反代/网关访问日志与 Referer，
+// 而令牌可以换到该节点的 mTLS 证书。旧安装命令里的 `?token=` 仍然兼容一个版本，
+// 但会在服务端记一条告警，生成端（前端/后端脚本）已全部改用请求头。
 func (h *Handler) GetInstallScript(c *gin.Context) {
 	serverID, err := strconv.ParseInt(c.Query("id"), 10, 64)
 	if err != nil {
@@ -121,10 +135,13 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 		return
 	}
 
-	token := c.Query("token")
+	token, tokenInURL := bootstrapTokenFromRequest(c.Request)
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "token required (X-Bootstrap-Token header)"})
 		return
+	}
+	if tokenInURL {
+		log.Printf("[AgentInstall] server %d: bootstrap token 通过 URL query 传递；该方式已废弃，请重新生成安装命令", serverID)
 	}
 
 	if h.tokenMgr == nil {
@@ -275,6 +292,8 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 		WithBootstrapToken(token).
 		// 面板 CA 自动随脚本下发 → Agent 引导阶段即可校验面板身份（无需任何人工填写）
 		WithCACertPEM(h.tokenMgr.CACertPEM()).
+		// 更新签名公钥（v7 L-6）：写入节点 config.yaml，自更新时强制验签。
+		WithUpdatePublicKey(h.updateSigner.PublicKeyPEM()).
 		WithServerID(serverID).
 		WithAgentVersion(agentVersion).
 		WithGitHubURL("https://github.com/qist/corefusion/releases")
@@ -286,6 +305,24 @@ func (h *Handler) GetInstallScript(c *gin.Context) {
 	}
 
 	c.Data(http.StatusOK, "text/x-shellscript", []byte(content))
+}
+
+// bootstrapTokenFromRequest 提取安装脚本请求里的引导令牌。
+// 返回 (token, tokenInURL)：优先请求头，其次 Authorization: Bearer；
+// `?token=` 仅为兼容旧安装命令保留（已废弃，调用方会记告警）。
+func bootstrapTokenFromRequest(r *http.Request) (string, bool) {
+	if v := strings.TrimSpace(r.Header.Get("X-Bootstrap-Token")); v != "" {
+		return v, false
+	}
+	if auth := strings.TrimSpace(r.Header.Get("Authorization")); len(auth) > 7 && strings.EqualFold(auth[:7], "bearer ") {
+		if v := strings.TrimSpace(auth[7:]); v != "" {
+			return v, false
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("token")); v != "" {
+		return v, true
+	}
+	return "", false
 }
 
 // GetAgentOrigin lets an already-installed Agent discover the panel's gRPC

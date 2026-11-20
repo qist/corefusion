@@ -4762,10 +4762,14 @@ func (x *TaskResult) GetDetailJson() string {
 
 // Agent 自动更新指令（通过流推送，Agent 自行下载更新）
 type UpdateAgentCommand struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                            // 目标版本号
-	DownloadUrl   string                 `protobuf:"bytes,2,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL
-	Checksum      string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`                          // SHA-256 校验和
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Version     string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`                            // 目标版本号
+	DownloadUrl string                 `protobuf:"bytes,2,opt,name=download_url,json=downloadUrl,proto3" json:"download_url,omitempty"` // 下载 URL
+	Checksum    string                 `protobuf:"bytes,3,opt,name=checksum,proto3" json:"checksum,omitempty"`                          // SHA-256 校验和
+	// signature 是面板对 checksum（规范化后的 hex）的 ed25519 签名（base64）。
+	// 安全审计 v7 L-6：校验和与二进制同源，必须由 mTLS 控制面下发签名才能防替换；
+	// Agent 配置了 update.public_key 时强制校验，未签名/签名不符一律拒绝。
+	Signature     string `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4817,6 +4821,13 @@ func (x *UpdateAgentCommand) GetDownloadUrl() string {
 func (x *UpdateAgentCommand) GetChecksum() string {
 	if x != nil {
 		return x.Checksum
+	}
+	return ""
+}
+
+func (x *UpdateAgentCommand) GetSignature() string {
+	if x != nil {
+		return x.Signature
 	}
 	return ""
 }
@@ -9498,11 +9509,12 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"finishedAt\x12\x1b\n" +
 	"\ttask_type\x18\a \x01(\tR\btaskType\x12\x1f\n" +
 	"\vdetail_json\x18\b \x01(\tR\n" +
-	"detailJson\"m\n" +
+	"detailJson\"\x8b\x01\n" +
 	"\x12UpdateAgentCommand\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12!\n" +
 	"\fdownload_url\x18\x02 \x01(\tR\vdownloadUrl\x12\x1a\n" +
-	"\bchecksum\x18\x03 \x01(\tR\bchecksum\"s\n" +
+	"\bchecksum\x18\x03 \x01(\tR\bchecksum\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\tR\tsignature\"s\n" +
 	"\x10RenewCertCommand\x12 \n" +
 	"\fnew_cert_pem\x18\x01 \x01(\fR\n" +
 	"newCertPem\x12\x1e\n" +

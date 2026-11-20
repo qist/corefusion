@@ -36,11 +36,24 @@ type AgentConfig struct {
 	} `yaml:"panel"`
 	Bootstrap struct {
 		Token string `yaml:"token"`
+		// PanelCertFingerprint 是面板 TLS 证书链**根（最后一环）**的 SHA-256（hex，可带冒号）。
+		// 设置后引导阶段严格比对：即使没有面板 CA，也不会信任首次连接的证书。
+		// 安全审计 v7 L-5：原来没有 CA 时会自动 pin 首连证书 → 首装时处于网络中间位置
+		// 的人可以固定自己的证书并截获 bootstrap token。
+		PanelCertFingerprint string `yaml:"panel_cert_fingerprint"`
+		// AllowTOFU 显式允许「首连同证书自动固定」（trust-on-first-use）。
+		// 默认关闭：安装脚本会随带面板 CA，正常安装无需开启；仅为无 CA 的历史手工安装保留。
+		AllowTOFU bool `yaml:"allow_tofu"`
 	} `yaml:"bootstrap"`
 	Agent struct {
 		LogLevel string `yaml:"log_level"`
 		DataDir  string `yaml:"data_dir"`
 	} `yaml:"agent"`
+	// Update 段：Agent 自更新签名校验（安全审计 v7 L-6）。
+	// public_key 是面板更新签名公钥（PEM），由安装脚本写入；设置后拒绝未签名/签名不符的更新。
+	Update struct {
+		PublicKey string `yaml:"public_key"`
+	} `yaml:"update"`
 }
 
 // 说明 ✓：Agent **没有** acme 配置段。
@@ -78,5 +91,21 @@ func loadConfig(path string) (*AgentConfig, error) {
 	} else {
 		cfg.Panel.GRPCHost = strings.TrimSpace(cfg.Panel.GRPCHost)
 	}
+	if fp := normalizeCertFingerprint(cfg.Bootstrap.PanelCertFingerprint); fp != "" {
+		if len(fp) != 64 {
+			return nil, fmt.Errorf("bootstrap.panel_cert_fingerprint 必须是 64 位 hex（SHA-256），当前为 %q", cfg.Bootstrap.PanelCertFingerprint)
+		}
+		cfg.Bootstrap.PanelCertFingerprint = fp
+	} else {
+		cfg.Bootstrap.PanelCertFingerprint = ""
+	}
 	return &cfg, nil
+}
+
+// normalizeCertFingerprint 去掉指纹里的空格、冒号与大小写差异（sha256sum/fingerprint 两种写法都收）。
+func normalizeCertFingerprint(fp string) string {
+	fp = strings.ToLower(strings.TrimSpace(fp))
+	fp = strings.ReplaceAll(fp, ":", "")
+	fp = strings.ReplaceAll(fp, " ", "")
+	return fp
 }

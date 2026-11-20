@@ -761,10 +761,49 @@ func (a *AgentApp) resolveRelPath(p string) string {
 		log.Printf("[Agent] resolveRelPath: %v", err)
 		return ""
 	}
-	if filepath.IsAbs(p) {
-		return p
+	// 安全审计 v7 M-7：绝对路径放行是为了 nginx 的 /var/log，但没限制「读什么文件」→
+	// 面板可读 /etc/shadow、截断任意 root 文件。这里只允许日志形态的文件名，
+	// 且必须落在白名单目录（数据目录 logs/、/var/log、/www/wwwlogs）。
+	if !isLogFileName(p) {
+		log.Printf("[Agent] resolveRelPath: refuse non-log path %q", p)
+		return ""
 	}
-	return filepath.Join(a.dataDir, p)
+	resolved := p
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(a.dataDir, resolved)
+	}
+	if !a.isAllowedLogPath(resolved) {
+		log.Printf("[Agent] resolveRelPath: refuse log path outside whitelist %q", p)
+		return ""
+	}
+	return resolved
+}
+
+// isAllowedLogPath 判断日志文件是否落在允许的根目录下。
+// 相对路径已解析到 dataDir 下，因此这里只做绝对路径前缀判断。
+func (a *AgentApp) isAllowedLogPath(p string) bool {
+	clean := filepath.Clean(p)
+	roots := []string{
+		filepath.Join(a.dataDir, "logs"),
+		"/var/log",
+		"/www/wwwlogs",
+	}
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		if clean == root || strings.HasPrefix(clean, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isLogFileName 判断路径是否像日志文件（access.log / error.log.1 / xray-access.log ...）。
+func isLogFileName(p string) bool {
+	base := strings.ToLower(filepath.Base(p))
+	if base == "" || base == "." || base == ".." {
+		return false
+	}
+	return strings.Contains(base, ".log") || strings.HasSuffix(base, ".out") || strings.HasSuffix(base, ".err")
 }
 
 // readXrayLogPaths reads the access and error log paths from the xray runtime

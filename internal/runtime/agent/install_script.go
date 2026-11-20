@@ -2,11 +2,26 @@ package agent
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
 	"corefusion/internal/constants"
 )
+
+// installHostPattern 限制安装脚本里出现的 host：脚本用双引号包住变量，
+// host 里出现 `"`/`$(`/空白会变成命令注入（安全审计 v7 L-9）。
+var installHostPattern = regexp.MustCompile(`^[A-Za-z0-9._:\[\]-]+$`)
+
+func validateInstallHost(what, host string) error {
+	if host == "" {
+		return fmt.Errorf("安装脚本缺少 %s", what)
+	}
+	if len(host) > 255 || !installHostPattern.MatchString(host) {
+		return fmt.Errorf("非法 %s %q：只允许主机名/IP（字母、数字、. _ : [ ] -）", what, host)
+	}
+	return nil
+}
 
 // AgentInstallScript generates a bash install script for the Agent binary.
 // The script downloads the Agent (GitHub Releases first, panel fallback),
@@ -32,9 +47,12 @@ type AgentInstallScript struct {
 	panelTLS       bool // 兼容旧调用：未单独设置 bootstrapTLS 时作为引导 TLS
 	bootstrapToken string
 	caCertPEM      []byte // 面板 CA 证书（公开信息）—— 让 Agent 引导阶段就能校验面板身份
-	serverID       int64
-	agentVersion   string
-	githubURL      string // GitHub Releases base URL (fallback)
+	// updatePublicKeyPEM 是面板更新签名公钥（公开信息）—— 写入 config.yaml 的
+	// update.public_key，Agent 自更新时用它校验控制面下发的 ed25519 签名（v7 L-6）。
+	updatePublicKeyPEM []byte
+	serverID           int64
+	agentVersion       string
+	githubURL          string // GitHub Releases base URL (fallback)
 }
 
 // NewAgentInstallScript creates a new AgentInstallScript generator.
@@ -61,6 +79,12 @@ func (s *AgentInstallScript) WithBootstrapToken(token string) *AgentInstallScrip
 // 而不是像以前那样 `InsecureSkipVerify: true` ✗（见安全审计 v5 M6）。
 func (s *AgentInstallScript) WithCACertPEM(pemBytes []byte) *AgentInstallScript {
 	s.caCertPEM = pemBytes
+	return s
+}
+
+// WithUpdatePublicKey 设置随脚本写入节点 config.yaml 的面板更新签名公钥（PEM）。
+func (s *AgentInstallScript) WithUpdatePublicKey(pemBytes []byte) *AgentInstallScript {
+	s.updatePublicKeyPEM = pemBytes
 	return s
 }
 
@@ -152,23 +176,34 @@ func (s *AgentInstallScript) Generate() (string, error) {
 	if bootstrapTLS {
 		bootstrapScheme = "https"
 	}
+	// 安全检查（安全审计 v7 L-9）：host 会原样拼进 bash 脚本的双引号变量。
+	for what, host := range map[string]string{
+		"面板地址":    s.panelHost,
+		"gRPC 地址": grpcHost,
+		"引导地址":    bootstrapHost,
+	} {
+		if err := validateInstallHost(what, host); err != nil {
+			return "", err
+		}
+	}
 	var sb strings.Builder
 	err := installScriptTmpl.Execute(&sb, map[string]interface{}{
-		"PanelHost":       s.panelHost,
-		"PanelPort":       s.panelPort,
-		"PanelScheme":     s.panelScheme,
-		"PanelTLS":        s.panelTLS,
-		"BootstrapHost":   bootstrapHost,
-		"BootstrapPort":   bootstrapPort,
-		"BootstrapScheme": bootstrapScheme,
-		"BootstrapTLS":    bootstrapTLS,
-		"PanelGRPCHost":   grpcHost,
-		"PanelGRPCPort":   s.panelGRPCPort,
-		"BootstrapToken":  s.bootstrapToken,
-		"CACertPEM":       string(s.caCertPEM),
-		"ServerID":        s.serverID,
-		"AgentVersion":    s.agentVersion,
-		"GitHubURL":       s.githubURL,
+		"PanelHost":          s.panelHost,
+		"PanelPort":          s.panelPort,
+		"PanelScheme":        s.panelScheme,
+		"PanelTLS":           s.panelTLS,
+		"BootstrapHost":      bootstrapHost,
+		"BootstrapPort":      bootstrapPort,
+		"BootstrapScheme":    bootstrapScheme,
+		"BootstrapTLS":       bootstrapTLS,
+		"PanelGRPCHost":      grpcHost,
+		"PanelGRPCPort":      s.panelGRPCPort,
+		"BootstrapToken":     s.bootstrapToken,
+		"CACertPEM":          string(s.caCertPEM),
+		"UpdatePublicKeyPEM": string(s.updatePublicKeyPEM),
+		"ServerID":           s.serverID,
+		"AgentVersion":       s.agentVersion,
+		"GitHubURL":          s.githubURL,
 	})
 	if err != nil {
 		return "", fmt.Errorf("generate install script: %w", err)
@@ -348,8 +383,9 @@ mkdir -p "$INSTALL_DIR/data/sqlite" \
          "$INSTALL_DIR/data/rules_tmp"
 
 # Download Agent binary
-# Strategy: GitHub Releases first (production), fall back to the panel
-# (dev/test, or nodes that cannot reach GitHub).
+# Strategy: **panel first** —— 面板分发目录里的二进制才是这台面板实际管理、会通过
+# 「更新 Agent」下发的版本（可能带尚未发版的修复）。GitHub Release 只作兜底
+# （面板下载端点异常时）。
 PANEL_DOWNLOAD_URL="${PANEL_SCHEME}://${PANEL_HOST}:${PANEL_PORT}/api/v1/agent/download?os=${OS}&arch=${AGENT_ARCH}"
 if [ "$AGENT_VERSION" = "latest" ] || [ -z "$AGENT_VERSION" ]; then
   GITHUB_DOWNLOAD_URL="${GITHUB_URL}/latest/download/corefusion-agent-${OS}-${AGENT_ARCH}"
@@ -361,15 +397,15 @@ fi
 # 会命中 ETXTBSY（Text file busy）→ 下载失败。mv 换 inode 不受影响。
 AGENT_TMP="$INSTALL_DIR/corefusion-agent.new"
 echo -e "${YELLOW}Downloading Agent...${NC}"
-if curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$GITHUB_DOWNLOAD_URL"; then
-  echo "Downloaded from GitHub ($GITHUB_DOWNLOAD_URL)"
-elif curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$PANEL_DOWNLOAD_URL"; then
+if curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$PANEL_DOWNLOAD_URL"; then
   echo "Downloaded from panel ($PANEL_DOWNLOAD_URL)"
+elif curl -fsSL --connect-timeout 10 -o "$AGENT_TMP" "$GITHUB_DOWNLOAD_URL"; then
+  echo "Downloaded from GitHub ($GITHUB_DOWNLOAD_URL)"
 else
   rm -f "$AGENT_TMP"
-  echo -e "${RED}Failed to download Agent from GitHub or panel${NC}"
-  echo "  GitHub: $GITHUB_DOWNLOAD_URL"
+  echo -e "${RED}Failed to download Agent from panel or GitHub${NC}"
   echo "  Panel: $PANEL_DOWNLOAD_URL"
+  echo "  GitHub: $GITHUB_DOWNLOAD_URL"
   exit 1
 fi
 chmod +x "$AGENT_TMP"
@@ -408,6 +444,12 @@ agent:
   log_level: info
   data_dir: "$INSTALL_DIR/data"
 EOF
+# 更新签名公钥（v7 L-6）：写入 config.yaml 后，Agent 拒绝未签名/签名不符的自更新。
+UPDATE_PUBKEY_PEM='{{.UpdatePublicKeyPEM}}'
+if [ -n "$UPDATE_PUBKEY_PEM" ]; then
+  printf '\nupdate:\n  public_key: |\n' >> "$CONFIG_FILE"
+  printf '%s\n' "$UPDATE_PUBKEY_PEM" | sed 's/^/    /' >> "$CONFIG_FILE"
+fi
 # config.yaml 里有 bootstrap token → 收紧到 0600（默认 umask 会给出 0644，其他本地用户可读 ✗）
 chmod 600 "$CONFIG_FILE"
 

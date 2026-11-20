@@ -245,6 +245,11 @@ func (h *Handler) GetArticle(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "article not found"})
 		return
 	}
+	// 安全审计 v7 L-3：客户端接口同样不能读到未发布草稿（管理员预览走管理端接口）。
+	if !article.IsPublished {
+		c.JSON(http.StatusNotFound, gin.H{"error": "article not found"})
+		return
+	}
 	c.JSON(http.StatusOK, article)
 }
 
@@ -990,6 +995,11 @@ func (h *Handler) PublicListArticles(c *gin.Context) {
 func (h *Handler) PublicGetArticle(c *gin.Context) {
 	article, err := h.articleSvc.GetBySlug(c.Request.Context(), c.Param("slug"))
 	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "article not found"})
+		return
+	}
+	// 安全审计 v7 L-3：公开接口不能返回未发布草稿（GetBySlug 不带发布条件）。
+	if !article.IsPublished {
 		c.JSON(http.StatusNotFound, gin.H{"error": "article not found"})
 		return
 	}

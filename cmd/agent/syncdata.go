@@ -14,6 +14,7 @@ import (
 	coreconfigSvc "corefusion/internal/service/coreconfig"
 	"corefusion/internal/store/db"
 	"corefusion/internal/store/repository"
+	"corefusion/internal/util/safepath"
 
 	agent "corefusion/internal/runtime/agent"
 	agentpb "corefusion/internal/runtime/agent/proto"
@@ -302,6 +303,25 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 	for _, certEntry := range req.Certificates {
 		if certEntry.CertContent == "" || certEntry.KeyContent == "" {
 			continue
+		}
+		// 安全审计 v7 M-1：证书路径来自面板，而 Agent 以 root 运行，必须拒绝上跳
+		// （与 SyncProxyConfig / DistributeCert 同口径；绝对路径仍允许，管理员会写到
+		// nginx 自己的目录）。
+		if err := safepath.RejectTraversal("cert path", certEntry.CertPath); err != nil {
+			log.Printf("[Agent] SyncData: %v", err)
+			continue
+		}
+		if certEntry.KeyPath != "" {
+			if err := safepath.RejectTraversal("key path", certEntry.KeyPath); err != nil {
+				log.Printf("[Agent] SyncData: %v", err)
+				continue
+			}
+		}
+		if certEntry.FullchainPath != "" {
+			if err := safepath.RejectTraversal("fullchain path", certEntry.FullchainPath); err != nil {
+				log.Printf("[Agent] SyncData: %v", err)
+				continue
+			}
 		}
 		// Write certificate file
 		certPath := certEntry.CertPath

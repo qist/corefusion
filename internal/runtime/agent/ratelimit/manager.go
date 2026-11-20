@@ -4,10 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
+
+// normalizeIP 校验并规范化面板下发的 IP。IP 会作为 nft argv 落进规则文本，
+// 含空格/分号的值可以被解析成额外 nft 语句（安全审计 v7 L-1）。
+func normalizeIP(ip string) (string, error) {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return "", fmt.Errorf("invalid ip address %q", ip)
+	}
+	return parsed.String(), nil
+}
 
 // Manager 是限速子系统的统一入口，组合 MarkRegistry 和 RateLimitBackend。
 // 它提供高层 API，由 LocalAgent 调用。
@@ -77,6 +89,11 @@ func (m *Manager) Init(ctx context.Context) error {
 		return nil
 	}
 
+	// 安全审计 v7 L-1：iface 来自面板配置，进 tc argv 前先做格式白名单。
+	if err := ValidateIfaceName(m.iface); err != nil {
+		return err
+	}
+
 	if err := m.backend.Init(ctx, m.iface); err != nil {
 		return fmt.Errorf("init rate limit backend: %w", err)
 	}
@@ -90,6 +107,11 @@ func (m *Manager) Init(ctx context.Context) error {
 // 这是 P0 触发源（Panel 推送）的 Agent 侧入口。
 // 如果订阅配置了 device_limit，会检查是否超限，超限则阻断该 IP。
 func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate *RateConfig) error {
+	normalized, err := normalizeIP(ip)
+	if err != nil {
+		return err
+	}
+	ip = normalized
 	if !m.initialized {
 		return fmt.Errorf("rate limit manager not initialized")
 	}
@@ -163,6 +185,11 @@ func (m *Manager) AssociateIP(ctx context.Context, ip string, subID int64, rate 
 
 // RemoveIP 移除一个 IP 的限速规则。
 func (m *Manager) RemoveIP(ctx context.Context, ip string) error {
+	normalized, err := normalizeIP(ip)
+	if err != nil {
+		return err
+	}
+	ip = normalized
 	if !m.initialized {
 		return nil
 	}

@@ -36,7 +36,7 @@ func TestInstallScriptShipsPanelCAAndProtectsConfig(t *testing.T) {
 
 // 设计口径：默认从 GitHub Releases 下载 Agent，面板只做回退
 // （面板侧二进制是开发/内网场景的兜底，不应成为常态下载源）。
-func TestInstallScriptDownloadsFromGitHubFirst(t *testing.T) {
+func TestInstallScriptDownloadsFromPanelFirst(t *testing.T) {
 	script, err := NewAgentInstallScript("panel.example.com", 443).
 		WithScheme("https").
 		WithTLS(true).
@@ -48,10 +48,12 @@ func TestInstallScriptDownloadsFromGitHubFirst(t *testing.T) {
 		t.Fatalf("生成安装脚本失败：%v", err)
 	}
 
-	githubAt := strings.Index(script, `"$GITHUB_DOWNLOAD_URL"`)
+	// 面板分发目录里的二进制才是这台面板实际管理/会推送的版本（可能含未发版修复），
+	// GitHub 只作兜底 → 必须先出现 PANEL_DOWNLOAD_URL。
 	panelAt := strings.Index(script, `"$PANEL_DOWNLOAD_URL"`)
-	if githubAt < 0 || panelAt < 0 || githubAt > panelAt {
-		t.Errorf("应先尝试 GitHub 再回退面板：github=%d panel=%d", githubAt, panelAt)
+	githubAt := strings.Index(script, `"$GITHUB_DOWNLOAD_URL"`)
+	if panelAt < 0 || githubAt < 0 || panelAt > githubAt {
+		t.Errorf("应先尝试面板再回退 GitHub：panel=%d github=%d", panelAt, githubAt)
 	}
 	if !strings.Contains(script, `GITHUB_DOWNLOAD_URL="${GITHUB_URL}/download/${AGENT_VERSION}/corefusion-agent-${OS}-${AGENT_ARCH}"`) {
 		t.Error("指定版本时应拼 /releases/download/<tag>/<asset>")

@@ -1319,7 +1319,7 @@ async function quickAddSave() {
       // the panel-wide gRPC port setting.
       const grpcPortParam = res.agent_port ? `&grpc_port=${res.agent_port}` : ''
       installCommand.value =
-        `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}${grpcPortParam}&port=${port}${tlsParam}")`
+        `bash <(curl -fsSL -H "X-Bootstrap-Token: ${res.bootstrap_token}" "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}${grpcPortParam}&port=${port}${tlsParam}")`
       installCmdVisible.value = true
     }
     loadServers()
@@ -1405,7 +1405,7 @@ async function saveForm() {
         const tlsParam = proto === 'https' ? '&tls=true' : ''
         const grpcPortParam = res.agent_port ? `&grpc_port=${res.agent_port}` : ''
         installCommand.value =
-          `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}&token=${res.bootstrap_token}${grpcPortParam}&port=${port}${tlsParam}")`
+          `bash <(curl -fsSL -H "X-Bootstrap-Token: ${res.bootstrap_token}" "${proto}://${host}:${port}/api/v1/agent/install?id=${res.id}${grpcPortParam}&port=${port}${tlsParam}")`
         installCmdVisible.value = true
       }
     } else {
@@ -1527,7 +1527,7 @@ async function showDeployCmd(row) {
       return
     }
     installCommand.value =
-      `bash <(curl -fsSL "${proto}://${host}:${port}/api/v1/agent/install?id=${row.id}&token=${token}${grpcPortParam}&port=${port}${tlsParam}")`
+      `bash <(curl -fsSL -H "X-Bootstrap-Token: ${token}" "${proto}://${host}:${port}/api/v1/agent/install?id=${row.id}${grpcPortParam}&port=${port}${tlsParam}")`
     installCmdVisible.value = true
   } catch (e) {
     ElMessage.error(t('nodeServer.generateDeployFailed'))

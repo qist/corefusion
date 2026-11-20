@@ -383,11 +383,11 @@ func (s *Service) fetchGitHubUserInfo(ctx context.Context, config *oauth2.Config
 		name = ghUser.Login
 	}
 
-	email := ghUser.Email
-	// If email is not public, fetch from /user/emails endpoint.
-	// The user:email scope is required for this.
-	if email == "" {
-		email, _ = s.fetchGitHubPrimaryEmail(ctx, client)
+	// 安全审计 v7 M-8：公开资料里的 email（ghUser.Email）无法确认验证状态，
+	// 统一从 /user/emails 取「已验证」邮箱；取不到就失败，绝不回退未验证邮箱。
+	email, err := s.fetchGitHubPrimaryEmail(ctx, client)
+	if err != nil {
+		return nil, err
 	}
 
 	// Use the string representation of the ID for portability
@@ -449,19 +449,9 @@ func (s *Service) fetchGitHubPrimaryEmail(ctx context.Context, client *http.Clie
 		}
 	}
 
-	// Fallback: primary email even if unverified
-	for _, e := range emails {
-		if e.Primary {
-			return e.Email, nil
-		}
-	}
-
-	// Last resort: first email
-	if len(emails) > 0 {
-		return emails[0].Email, nil
-	}
-
-	return "", nil
+	// 安全审计 v7 M-8：未验证邮箱不能参与注册/绑定 —— 否则可以把 OAuth 账号
+	// 绑定到别人的邮箱（账号接管）。没有已验证邮箱就直接失败。
+	return "", fmt.Errorf("github account has no verified email")
 }
 
 // fetchGoogleUserInfo fetches user info from Google OpenID Connect userinfo endpoint.
@@ -501,6 +491,11 @@ func (s *Service) fetchGoogleUserInfo(ctx context.Context, config *oauth2.Config
 	}
 	if err := json.Unmarshal(body, &gUser); err != nil {
 		return nil, err
+	}
+
+	// 安全审计 v7 M-8：未验证邮箱不能参与注册/绑定（邮箱是账号合并的唯一键）。
+	if gUser.Email == "" || !gUser.EmailVerified {
+		return nil, fmt.Errorf("google account has no verified email")
 	}
 
 	// Use 'sub' as the unique provider user ID (OIDC standard)

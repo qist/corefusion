@@ -154,9 +154,11 @@ type bootstrapResult struct {
 // with the system roots, the direct endpoint uses the panel CA. The issued
 // Agent certificate is verified against the panel CA in both cases.
 func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
-	tlsCfg, err := a.bootstrapTLSConfig()
-	if err != nil {
-		return nil, err
+	tlsCfg, directErr := a.bootstrapTLSConfig()
+	if a.cfg.Panel.TLS && directErr != nil {
+		// 安全审计 v7 L-5：直连 TLS 没有信任锚点（无 CA、无指纹、未开 TOFU）→ 直连不可用。
+		// 如果还有公共 HTTPS 入口，仍可只走公共入口；否则 fail closed。
+		log.Printf("[Agent] bootstrap: direct TLS endpoint unavailable: %v", directErr)
 	}
 	direct := bootstrapEndpoint{
 		url:     bootstrapURL(a.cfg.Panel.Host, a.cfg.Panel.Port, a.cfg.Panel.TLS),
@@ -167,6 +169,9 @@ func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 
 	publicHost := strings.TrimSpace(a.cfg.Panel.PublicHost)
 	if publicHost == "" {
+		if directErr != nil {
+			return nil, directErr
+		}
 		return []bootstrapEndpoint{direct}, nil
 	}
 	publicPort := a.cfg.Panel.PublicPort
@@ -176,6 +181,9 @@ func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 	if publicHost == a.cfg.Panel.Host &&
 		publicPort == a.cfg.Panel.Port &&
 		a.cfg.Panel.PublicTLS == a.cfg.Panel.TLS {
+		if directErr != nil {
+			return nil, directErr
+		}
 		return []bootstrapEndpoint{direct}, nil
 	}
 
@@ -194,6 +202,14 @@ func (a *AgentApp) bootstrapEndpoints() ([]bootstrapEndpoint, error) {
 		tlsCfg:  publicTLS,
 		label:   "public",
 		timeout: 30 * time.Second,
+	}
+
+	// 直连 TLS 不可用（缺信任锚点）：只能走公共 HTTPS；公共入口若不加密则 fail closed。
+	if directErr != nil {
+		if publicEndpoint.tlsCfg == nil {
+			return nil, directErr
+		}
+		return []bootstrapEndpoint{publicEndpoint}, nil
 	}
 
 	switch {
@@ -383,9 +399,27 @@ func (a *AgentApp) bootstrapTLSConfig() (*tls.Config, error) {
 		return cfg, nil
 	}
 
-	// TOFU 路径：没有 CA 可依赖，就把首次看到的证书指纹固定下来。
+	// 没有面板 CA：**不再自动信任首连证书**（安全审计 v7 L-5）。
+	// 首装时处于网络中间位置的人原本可以固定自己的证书并截获 bootstrap token，
+	// 进而冒用节点身份。现在信任锚点只能来自：
+	//   ① 配置里显式填写的 bootstrap.panel_cert_fingerprint（带外核对）；
+	//   ② 历史版本已经固定过的 pin 文件（本地信任锚点，不会被远端改写）；
+	//   ③ 显式打开 bootstrap.allow_tofu（首连自动固定，仍有 MITM 风险）。
 	pinPath := a.panelTLSPinPath()
-	log.Printf("[Agent] bootstrap: no CA available, using trust-on-first-use pin %s", pinPath)
+	trustAnchor := normalizeCertFingerprint(a.cfg.Bootstrap.PanelCertFingerprint)
+	if trustAnchor == "" {
+		trustAnchor = readPinnedFingerprint(pinPath)
+	}
+	if trustAnchor == "" && !a.cfg.Bootstrap.AllowTOFU {
+		return nil, fmt.Errorf("bootstrap: 面板未提供 CA，也没有已固定的证书指纹 —— "+
+			"请使用面板生成的安装脚本（脚本会随带面板 CA）；或在本机核对面板证书后把 SHA-256 "+
+			"写入 bootstrap.panel_cert_fingerprint（openssl s_client -connect %s:%d -showcerts | "+
+			"openssl x509 -fingerprint -sha256 -noout）；或显式设置 bootstrap.allow_tofu: true（不安全）",
+			a.cfg.Panel.Host, a.cfg.Panel.Port)
+	}
+	if trustAnchor == "" {
+		log.Printf("[Agent] bootstrap: WARNING bootstrap.allow_tofu=true 且没有已固定的指纹，首次连接的面板证书将被信任")
+	}
 	cfg.InsecureSkipVerify = true // 仅关闭"内置根证书校验"，下面自己做严格校验
 	cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		fp := certChainFingerprint(rawCerts)
@@ -394,17 +428,32 @@ func (a *AgentApp) bootstrapTLSConfig() (*tls.Config, error) {
 		}
 		// ⚠ 每次校验都**重新读**固定值 ✗：不能在构建配置时读一次就捕获 ——
 		// 那样首次固定后，本次进程内的后续校验仍拿旧值（空），等于没固定（单元测试抓到过 ✓）。
-		pinned := readPinnedFingerprint(pinPath)
-		if pinned == "" {
+		want := normalizeCertFingerprint(a.cfg.Bootstrap.PanelCertFingerprint)
+		if want == "" {
+			want = readPinnedFingerprint(pinPath)
+		}
+		if want == "" {
+			if !a.cfg.Bootstrap.AllowTOFU {
+				return fmt.Errorf("panel certificate is not pinned (fingerprint %s); "+
+					"set bootstrap.panel_cert_fingerprint to trust it", fp)
+			}
 			if err := writePinnedFingerprint(pinPath, fp); err != nil {
 				return fmt.Errorf("record panel certificate pin: %w", err)
 			}
 			log.Printf("[Agent] bootstrap: pinned panel certificate %s… (%s)", fp[:16], pinPath)
 			return nil
 		}
-		if !strings.EqualFold(fp, pinned) {
+		if !strings.EqualFold(fp, want) {
+			got, pinned := fp, want
+			if len(got) > 16 {
+				got = got[:16]
+			}
+			if len(pinned) > 16 {
+				pinned = pinned[:16]
+			}
 			return fmt.Errorf("panel certificate changed (pinned %s…, got %s…); refusing — "+
-				"remove %s to re-pin deliberately", pinned[:16], fp[:16], pinPath)
+				"if the panel was legitimately re-keyed, update bootstrap.panel_cert_fingerprint "+
+				"or remove %s to re-pin deliberately", pinned, got, pinPath)
 		}
 		return nil
 	}
@@ -431,7 +480,7 @@ func readPinnedFingerprint(path string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(b))
+	return normalizeCertFingerprint(string(b))
 }
 
 func writePinnedFingerprint(path, fp string) error {

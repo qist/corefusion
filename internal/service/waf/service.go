@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,25 @@ import (
 	"corefusion/internal/util/safepath"
 	"corefusion/pkg/netutil"
 )
+
+// wafRuleNamePattern 限制 WAF 规则名：规则名最终会作为文件名写进 waf-rules/，
+// 允许 `..`/分隔符等于面板 root 任意文件写（安全审计 v7 H-2）。
+var wafRuleNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// ValidateRuleName 校验规则名（纯文件名、长度受限、无路径分隔符）。
+func ValidateRuleName(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 128 {
+		return fmt.Errorf("非法规则名 %q：长度必须在 1-128 之间", name)
+	}
+	if err := safepath.CheckName("waf rule name", name); err != nil {
+		return err
+	}
+	if !wafRuleNamePattern.MatchString(name) {
+		return fmt.Errorf("非法规则名 %q：只允许字母、数字、点、下划线、连字符", name)
+	}
+	return nil
+}
 
 // WAFFile is a single file to sync to a remote node.
 type WAFFile struct {
@@ -207,6 +227,9 @@ func (s *Service) GetRule(ctx context.Context, name string) (*entity.WafRule, er
 // SaveRule saves a global WAF rule to the database and computes its hash.
 // mergeMode: "append" or "replace" (default: "replace")
 func (s *Service) SaveRule(ctx context.Context, name, content, mergeMode string) error {
+	if err := ValidateRuleName(name); err != nil {
+		return err
+	}
 	if mergeMode == "" {
 		mergeMode = "replace"
 	}
@@ -337,6 +360,9 @@ func (s *Service) GetNodeRule(ctx context.Context, name string, serverID int64) 
 // supplements (rather than silently replaces) the global rule — a node editing
 // a rule inherits the global content plus its own additions.
 func (s *Service) SaveNodeRule(ctx context.Context, name string, serverID int64, content, mergeMode string) error {
+	if err := ValidateRuleName(name); err != nil {
+		return err
+	}
 	if mergeMode == "" {
 		mergeMode = "append"
 	}
@@ -866,6 +892,11 @@ func (s *Service) LandRulesForServer(ctx context.Context, serverID int64) error 
 	os.MkdirAll(ruleDir, 0755)
 
 	for name, content := range merged {
+		// 纵深防御（安全审计 v7 H-2）：历史库里可能已有非法规则名，落盘前再拦一次。
+		if err := safepath.CheckName("waf rule name", name); err != nil {
+			log.Printf("[WAF] skip unsafe rule name %q: %v", name, err)
+			continue
+		}
 		path := filepath.Join(ruleDir, name)
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			log.Printf("[WAF] failed to write rule %s: %v", name, err)
@@ -1739,6 +1770,9 @@ func (s *Service) GetDomainRuleWithGlobal(ctx context.Context, domain, name stri
 //   - "append":  domain content appended to global+node (supplements existing rules)
 //   - "replace": domain content replaces global+node entirely (independent rule set)
 func (s *Service) SaveDomainRuleFileWithMode(ctx context.Context, domain, name, content, mergeMode string, serverID int64) error {
+	if err := ValidateRuleName(name); err != nil {
+		return err
+	}
 	if mergeMode == "" {
 		mergeMode = "append"
 	}

@@ -2279,9 +2279,16 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			nodeServerRepo := repository.NewNodeServerRepository(database)
 			revocationRepo := repository.NewCertRevocationRepository(database)
 			bootstrapTokenMgr := agent.NewBootstrapTokenManager(nodeServerRepo, caService)
+			// 安全审计 v7 L-6：Agent 自更新签名器。私钥加密存 system_settings
+			// (agent.update_signing_key)，随数据库备份迁移；文件仅作运维物化副本。
+			updateSigner, signerErr := agent.LoadOrCreateAgentUpdateSigner(context.Background(), dataDir, systemSettingRepo)
+			if signerErr != nil {
+				log.Printf("[router] load agent update signing key failed: %v (update signatures disabled)", signerErr)
+			}
 			// 节点↔证书 多对多 ✓（与 main.go 同一个 DB ✓，多实例无妨 ✓）
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService).
-				WithNodeCertificates(repository.NewNodeCertificateRepository(database))
+				WithNodeCertificates(repository.NewNodeCertificateRepository(database)).
+				WithUpdatePublicKey(updateSigner.PublicKeyPEM())
 			// 延迟注入：SNI 重载钩子用 nodeSvc 判断本机/远程节点。
 			sniReloadAdapter.nodeSvc = nodeServerSvcInst
 
@@ -2618,13 +2625,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				}
 				go speedTestMgr.RunLoop(context.Background())
 				loadBalancer := agent.NewLoadBalancer(nodeServerRepo, nodeMgrForPhase3).WithSpeedTest(speedTestMgr)
-				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir).WithSettingRepo(systemSettingRepo)
+				agentUpdater := agent.NewAgentUpdater(nodeServerRepo, nodeMgrForPhase3).WithDataDir(dataDir).WithSettingRepo(systemSettingRepo).WithUpdateSigner(updateSigner)
 				// 更新任务看护：卡死任务收割 + 失败自动重试（此前 RunLoop 从未启动，
 				// 一旦推送失败任务就永久停在 downloading，且阻塞后续推送）。
 				go agentUpdater.RunLoop(context.Background())
 
 				nodeMgrForPhase3.SetMetricsCollector(metricsCollector)
 				nodeMgrForPhase3.SetAgentUpdater(agentUpdater)
+				nodeMgrForPhase3.SetUpdateSigner(updateSigner)
 				nodeMgrForPhase3.SetRateLimitSyncer(rateLimitSvcInst)
 				// Wire WAF syncer so remote nodes get WAF rules on reconnect
 				nodeMgrForPhase3.SetWAFSyncer(wafSvcInst)
@@ -3595,7 +3603,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			})
 
 			// Agent download + install script (public — no auth, bootstrap token verifies identity)
-			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo)
+			agentH := agentHandler.NewHandler(dataDir, bootstrapTokenMgr).WithSettingStore(systemSettingRepo).WithUpdateSigner(updateSigner)
 			// 安全审计 v6 L-3：这三个公开端点会读盘/发外网探测，统一加公共限流，
 			// 避免被当成免费 CDN 或探针放大面（正常 Agent 装机/升级频率远低于限制）。
 			v1.GET("/agent/download", middleware.PublicAPIRateLimit(), agentH.DownloadAgent)
@@ -3614,7 +3622,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 			// Geo Rules — global rule source and file management (no node-servers prefix)
 			// These routes are public-except-auth (any authenticated user can read, admin can write).
-			geoRuleGlobalGroup := protected.Group("/geo-rules")
+			// 安全审计 v7 L-8：规则库读接口（含 download-file）也只给 Admin，
+			// 与写/同步/下发保持同一权限级别。
+			geoRuleGlobalGroup := protected.Group("/geo-rules").Use(middleware.RequireRole(domainuser.RoleAdmin))
 			{
 				geoRuleGlobalGroup.GET("/github-assets", geoRuleH.FetchGitHubAssets)
 				geoRuleGlobalGroup.GET("/sources", geoRuleH.ListSources)
@@ -3718,12 +3728,12 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Direct DB read returning a plain array so the portal frontend can consume d.data directly (no pagination wrapper).
 	subendRepoPortal := repository.NewSubscriptionEndpointRepository(database)
 	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
-		endpoints, err := subendRepoPortal.List(c.Request.Context())
+		endpoints, err := subendRepoPortal.ListEnabled(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
 			return
 		}
-		response.OK(c, endpoints)
+		response.OK(c, publicSubscriptionEndpointItems(endpoints))
 	})
 
 	// Public settings (for portal)
@@ -3778,7 +3788,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	})
 
 	// Charge callback (public, called by charge sites)
-	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
+	r.POST("/api/v1/charge/callback/:site_id", middleware.PublicAPIRateLimit(), commerceH.HandleChargeCallback)
 
 	// Client auth (protected) — guarded by maintenance mode
 	clientAuthProtected := r.Group("/api/v1/client-auth")
@@ -4573,12 +4583,12 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// 前端直接消费 d.data（无分页包装 ✓，与主引擎同语义 ✓）。
 	subendRepoPortalEngine := repository.NewSubscriptionEndpointRepository(database)
 	r.GET("/api/v1/public/subscription-endpoints", middleware.MaintenanceGuard(), middleware.PublicAPIRateLimit(), func(c *gin.Context) {
-		endpoints, err := subendRepoPortalEngine.List(c.Request.Context())
+		endpoints, err := subendRepoPortalEngine.ListEnabled(c.Request.Context())
 		if err != nil {
 			response.InternalError(c, "LIST_FAILED", err.Error())
 			return
 		}
-		response.OK(c, endpoints)
+		response.OK(c, publicSubscriptionEndpointItems(endpoints))
 	})
 
 	// Root path serves the portal page (cached)
@@ -4641,7 +4651,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	// Charge callback (public, called by charge sites)
 	// ⚠ 充值回调属于**门户**侧：notify_url 指向门户域名 → 本引擎也必须注册 ✓，
 	//   否则门户域名下 /api/v1/charge/callback/:site_id 404 ✗（支付站点上送失败 → 充值不到账 ✗）。
-	r.POST("/api/v1/charge/callback/:site_id", commerceH.HandleChargeCallback)
+	r.POST("/api/v1/charge/callback/:site_id", middleware.PublicAPIRateLimit(), commerceH.HandleChargeCallback)
 
 	// Log manage deps (for client log packaging)
 	logPolicyRepo := repository.NewLogRotationPolicyRepository(database)
@@ -5420,4 +5430,27 @@ func backfillXrayRuleTagsOnce(ctx context.Context, svc *coreconfigSvc.Service, d
 		return
 	}
 	log.Printf("rule tag backfill: added %d tags across %d servers", total, len(ids))
+}
+
+// publicSubscriptionEndpointItem 是公开订阅端点列表的脱敏字段集。
+// 安全审计 v7 L-2：匿名访问者只需要域名/路径来拼接订阅地址；内部备注（description）
+// 与时间戳不下发，避免泄露内部命名/用途。
+type publicSubscriptionEndpointItem struct {
+	ID      int64  `json:"id"`
+	Domain  string `json:"domain"`
+	Path    string `json:"path"`
+	Enabled bool   `json:"enabled"`
+}
+
+func publicSubscriptionEndpointItems(endpoints []entity.SubscriptionEndpoint) []publicSubscriptionEndpointItem {
+	out := make([]publicSubscriptionEndpointItem, 0, len(endpoints))
+	for _, e := range endpoints {
+		out = append(out, publicSubscriptionEndpointItem{
+			ID:      e.ID,
+			Domain:  e.Domain,
+			Path:    e.Path,
+			Enabled: e.Enabled,
+		})
+	}
+	return out
 }

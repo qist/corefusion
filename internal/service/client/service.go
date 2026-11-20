@@ -263,6 +263,11 @@ func (s *Service) SuspendClient(ctx context.Context, id int64) error {
 	if err := s.clientRepo.Update(ctx, client); err != nil {
 		return err
 	}
+	// 安全审计 v7 M-2：只改状态不会让已签发的 access token 失效（最长 24h）。
+	// 封禁必须同时把令牌版本 +1，和登出/踢下线同口径。
+	if err := s.clientRepo.BumpTokenVersion(ctx, id); err != nil {
+		return err
+	}
 
 	// Pause users in all accessible inbounds
 	s.pauseResumeAll(ctx, client.Email, client.PlanID, true)

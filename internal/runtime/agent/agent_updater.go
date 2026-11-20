@@ -64,6 +64,9 @@ type AgentUpdater struct {
 	// settingRepo 用于读取 GitHub 加速域名/代理（与面板自更新同一套设置）。
 	settingRepo *repository.SystemSettingRepository
 
+	// updateSigner 给 UpdateAgent 指令里的校验和签名（v7 L-6）。
+	updateSigner *AgentUpdateSigner
+
 	// GitHub Release 元数据缓存：同一版本只查一次 API，多节点/多平台复用，
 	// 避免每个节点各查一次导致推送变慢、以及网络抖动时逐个失败。
 	releaseMu    sync.Mutex
@@ -216,6 +219,12 @@ func (u *AgentUpdater) WithMaxConcurrency(n int) *AgentUpdater {
 // WithDataDir sets the panel data directory for local binary scanning.
 func (u *AgentUpdater) WithDataDir(dir string) *AgentUpdater {
 	u.dataDir = dir
+	return u
+}
+
+// WithUpdateSigner 注入更新签名器：下发 UpdateAgent 指令时对校验和签名（v7 L-6）。
+func (u *AgentUpdater) WithUpdateSigner(s *AgentUpdateSigner) *AgentUpdater {
+	u.updateSigner = s
 	return u
 }
 
@@ -579,6 +588,7 @@ func (u *AgentUpdater) push(ctx context.Context, serverID int64, attempt int) er
 				Version:     version,
 				DownloadUrl: downloadURL,
 				Checksum:    checksum,
+				Signature:   u.updateSigner.SignChecksum(checksum),
 			},
 		},
 	}

@@ -677,6 +677,10 @@ message UpdateAgentCommand {
   string version = 1;              // 目标版本号
   string download_url = 2;         // 下载 URL
   string checksum = 3;             // SHA-256 校验和
+  // signature 是面板对 checksum（规范化后的 hex）的 ed25519 签名（base64）。
+  // 安全审计 v7 L-6：校验和与二进制同源，必须由 mTLS 控制面下发签名才能防替换；
+  // Agent 配置了 update.public_key 时强制校验，未签名/签名不符一律拒绝。
+  string signature = 4;
 }
 
 // 证书续签指令（面板→Agent，通过流推送）

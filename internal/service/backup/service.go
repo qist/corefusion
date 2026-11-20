@@ -1291,6 +1291,20 @@ func (s *Service) addFileToTar(tw *tar.Writer, path, rel string) error {
 	return err
 }
 
+// isRestorableBackupPath 判断归档内的相对路径是否允许在恢复时落盘。
+// 当前备份只包含数据库：SQLite 为 sqlite/app.db，MySQL/PG 为 db_dump/*.sql。
+func isRestorableBackupPath(rel string) bool {
+	rel = filepath.ToSlash(strings.TrimPrefix(rel, "./"))
+	if rel == "sqlite/app.db" {
+		return true
+	}
+	if strings.HasPrefix(rel, "db_dump/") && strings.HasSuffix(strings.ToLower(rel), ".sql") {
+		// 只允许 db_dump 下一层，避免 db_dump/a/b.sql 这类异常结构。
+		return !strings.Contains(strings.TrimPrefix(rel, "db_dump/"), "/")
+	}
+	return false
+}
+
 // extractTarGz extracts a tar.gz archive to the destination directory.
 func (s *Service) extractTarGz(archive, dest string) error {
 	f, err := os.Open(archive)
@@ -1325,6 +1339,11 @@ func (s *Service) extractTarGz(archive, dest string) error {
 		rel, err := filepath.Rel(cleanDest, cleanTarget)
 		if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
 			continue // skip path traversal
+		}
+		// 安全审计 v7 M-5：备份包里只接受数据库文件。否则恶意/被篡改的备份可以
+		// 覆盖 proxy/nginx.conf、WAF lua、证书、核心二进制 → 恢复后持久化 root。
+		if !isRestorableBackupPath(rel) {
+			continue
 		}
 
 		switch header.Typeflag {

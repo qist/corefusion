@@ -5157,6 +5157,17 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	if client.Status != "active" || client.PlanID == 0 {
 		return []ClientVisibleNode{}, nil
 	}
+	// 安全审计 v7 M-3：订阅被吊销/停用后客户 PlanID 可能仍然保留 → 必须要求
+	// 存在生效订阅，否则门户仍会下发真实节点链接（与 /sub 已返回 403 的语义不一致）。
+	var activeSub *entity.Subscription
+	if h.subRepo != nil {
+		if sub, err := h.subRepo.GetActiveByClientID(ctx, clientID); err == nil {
+			activeSub = sub
+		}
+		if activeSub == nil {
+			return []ClientVisibleNode{}, nil
+		}
+	}
 
 	clientEmail := client.Email
 
@@ -5179,18 +5190,17 @@ func (h *PublicHandler) ListClientVisibleNodes(ctx context.Context, clientID int
 	}
 	// 与订阅接口保持一致：套餐限量 N 个节点时，门户也只展示同一批节点。
 	// 用该客户的生效订阅做选择（同一 subID → 与订阅接口结果完全一致）。
-	if h.subRepo != nil {
-		if sub, err := h.subRepo.GetActiveByClientID(ctx, clientID); err == nil && sub != nil {
-			nowSel := time.Now()
-			excluded := h.subscriptionCapacityExclusions(ctx, members, nowSel)
-			picked, selIDs := selectMembersForSubscription(sub, tmpl, members, excluded, nowSel)
-			members = picked
-			if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
-				sub.NodeSelectionIDs = entity.Int64List(selIDs)
-				sub.NodeSelectionAt = &nowSel
-				if err := h.subRepo.UpdateNodeSelection(ctx, sub.ID, entity.Int64List(selIDs), nowSel); err != nil {
-					log.Printf("[subscription] persist node selection (portal) failed: sub=%d err=%v", sub.ID, err)
-				}
+	if activeSub != nil {
+		sub := activeSub
+		nowSel := time.Now()
+		excluded := h.subscriptionCapacityExclusions(ctx, members, nowSel)
+		picked, selIDs := selectMembersForSubscription(sub, tmpl, members, excluded, nowSel)
+		members = picked
+		if selIDs != nil && !sameInt64List(sub.NodeSelectionIDs, selIDs) {
+			sub.NodeSelectionIDs = entity.Int64List(selIDs)
+			sub.NodeSelectionAt = &nowSel
+			if err := h.subRepo.UpdateNodeSelection(ctx, sub.ID, entity.Int64List(selIDs), nowSel); err != nil {
+				log.Printf("[subscription] persist node selection (portal) failed: sub=%d err=%v", sub.ID, err)
 			}
 		}
 	}

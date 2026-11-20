@@ -117,6 +117,19 @@ func (s *ReferralService) RequestWithdrawal(ctx context.Context, clientID int64,
 	if input.Amount > stats.AvailableCommission {
 		return nil, fmt.Errorf("insufficient available commission")
 	}
+	// 安全审计 v7 M-4：可用佣金必须扣掉「待审批」的提现，否则同一笔佣金
+	// 可以连续提交多张提现单，管理员逐笔通过后被重复入账。
+	pendingWithdrawn := int64(0)
+	if list, _, lerr := s.withdrawalRepo.ListByClientID(ctx, clientID, 1000, 0); lerr == nil {
+		for _, w := range list {
+			if w.Status == entity.WithdrawalPending {
+				pendingWithdrawn += w.Amount
+			}
+		}
+	}
+	if input.Amount > stats.AvailableCommission-pendingWithdrawn {
+		return nil, fmt.Errorf("insufficient available commission (pending withdrawals: %d)", pendingWithdrawn)
+	}
 	wd := &entity.ReferralWithdrawal{
 		ClientID: clientID, Amount: input.Amount,
 		WithdrawType: input.WithdrawType, WalletAddress: input.WalletAddress,
@@ -173,6 +186,18 @@ func (s *ReferralService) AdminApproveWithdrawal(ctx context.Context, id int64, 
 	wd.Status = entity.WithdrawalApproved
 	wd.ProcessedAt = &now
 	wd.ProcessRemark = remark
+	// 安全审计 v7 M-4：审批前先确认剩余「可用佣金」足够覆盖这笔提现。
+	// 旧实现先 AddBalance 再扣记录，记录不足时静默跳过 → 重复提现会超额入账。
+	records, _, _ := s.recordRepo.ListByReferrerID(ctx, wd.ClientID, 1000, 0)
+	available := int64(0)
+	for _, r := range records {
+		if r.CommissionStatus == entity.CommissionAvailable {
+			available += r.CommissionAmount
+		}
+	}
+	if available < wd.Amount {
+		return fmt.Errorf("available commission %d is less than withdrawal %d", available, wd.Amount)
+	}
 	if wd.WithdrawType == entity.WithdrawTypeBalance {
 		if _, err := s.balanceRepo.AddBalance(ctx, wd.ClientID, wd.Amount); err != nil {
 			return err
@@ -183,7 +208,6 @@ func (s *ReferralService) AdminApproveWithdrawal(ctx context.Context, id int64, 
 		}
 		s.balanceTxRepo.Create(ctx, txRecord)
 	}
-	records, _, _ := s.recordRepo.ListByReferrerID(ctx, wd.ClientID, 1000, 0)
 	remaining := wd.Amount
 	for _, r := range records {
 		if r.CommissionStatus == entity.CommissionAvailable && remaining > 0 {

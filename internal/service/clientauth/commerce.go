@@ -1042,7 +1042,23 @@ func (s *CommerceService) CreateChargeOrder(ctx context.Context, clientID int64,
 	if err != nil || !site.Enabled {
 		return nil, fmt.Errorf("charge site not available")
 	}
-	if input.Amount <= 0 {
+	// 安全审计 v7 H-1：金额与套餐必须由服务端定价。
+	// 原来直接使用请求里的 Amount + PlanVariantID → 客户可以「1 分钱买任意套餐」，
+	// 回调只比对「回调金额 == 订单金额」，无法发现价格被改。
+	amount := input.Amount
+	orderType := entity.ChargeOrderTypeCharge
+	if input.PlanVariantID != nil {
+		variant, verr := s.variantRepo.GetByID(ctx, *input.PlanVariantID)
+		if verr != nil || variant == nil || !variant.Enabled {
+			return nil, fmt.Errorf("plan variant not available")
+		}
+		if variant.Price <= 0 {
+			return nil, fmt.Errorf("plan variant price not configured")
+		}
+		// 套餐/流量包一律以库里的价格建单，忽略客户端传来的 amount。
+		amount = variant.Price
+		orderType = entity.ChargeOrderTypePurchase
+	} else if amount <= 0 {
 		return nil, fmt.Errorf("amount must be positive")
 	}
 	client, err := s.clientRepo.GetByID(ctx, clientID)
@@ -1053,13 +1069,9 @@ func (s *CommerceService) CreateChargeOrder(ctx context.Context, clientID int64,
 	tradeNo := generateTradeNo()
 	now := time.Now()
 	expiresAt := now.Add(15 * time.Minute)
-	orderType := entity.ChargeOrderTypeCharge
-	if input.PlanVariantID != nil {
-		orderType = entity.ChargeOrderTypePurchase
-	}
 	chargeOrder := &entity.ChargeOrder{
 		ClientID: clientID, TradeNo: tradeNo, Source: entity.ChargeSourceSite,
-		SiteID: &input.SiteID, Amount: input.Amount, Currency: site.Currency, PlanVariantID: input.PlanVariantID,
+		SiteID: &input.SiteID, Amount: amount, Currency: site.Currency, PlanVariantID: input.PlanVariantID,
 		OrderType: orderType, Status: entity.ChargeStatusPending, ExpiresAt: &expiresAt,
 	}
 	if err := s.chargeOrderRepo.Create(ctx, chargeOrder); err != nil {

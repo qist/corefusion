@@ -23,6 +23,14 @@ func (r *SubscriptionEndpointRepository) List(ctx context.Context) ([]entity.Sub
 	return r.ListPaged(ctx, 0, 0)
 }
 
+// ListEnabled 只返回启用的订阅端点（公开接口用，安全审计 v7 L-2：
+// 原实现把已禁用端点及其内部描述也下发给了匿名访问者）。
+func (r *SubscriptionEndpointRepository) ListEnabled(ctx context.Context) ([]entity.SubscriptionEndpoint, error) {
+	var endpoints []entity.SubscriptionEndpoint
+	err := r.db.WithContext(ctx).Where("enabled = ?", true).Order("id ASC").Find(&endpoints).Error
+	return endpoints, err
+}
+
 // ListPaged returns subscription endpoints with pagination (limit<=0 means no limit).
 func (r *SubscriptionEndpointRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.SubscriptionEndpoint, error) {
 	var endpoints []entity.SubscriptionEndpoint

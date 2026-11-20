@@ -43,6 +43,8 @@ type NodeServerManager struct {
 	crl          *CertRevocationList // optional CRL for cert revocation checks
 	localAgent   *LocalAgent         // local node adapter (wraps process.Manager)
 	settingStore NodeSettingStore    // optional, for GitHub accel/proxy settings
+	// updateSigner 给 UpdateAgent 指令签名（v7 L-6）。
+	updateSigner *AgentUpdateSigner
 
 	// Cached local server ID — loaded once at startup to avoid DB queries
 	// on every NodeOperator method call. 0 means not yet initialized.
@@ -254,6 +256,13 @@ func (m *NodeServerManager) SetTrafficQuotaProcessor(p TrafficQuotaProcessor) {
 // update task as done (or failed on version mismatch).
 func (m *NodeServerManager) SetAgentUpdater(u *AgentUpdater) {
 	m.agentUpdater = u
+}
+
+// updateSigner 用于给 UpdateAgent 指令签名（v7 L-6），可由 router 注入。
+func (m *NodeServerManager) SetUpdateSigner(s *AgentUpdateSigner) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateSigner = s
 }
 
 // RateLimitSyncer syncs rate limit config to Agent on reconnect.
@@ -1135,12 +1144,16 @@ func detectLocalDistro() string {
 // UpdateAgentOnServer sends an update command to a remote Agent via stream.
 // The Agent downloads the new binary, verifies checksum, replaces, and restarts.
 func (m *NodeServerManager) UpdateAgentOnServer(ctx context.Context, serverID int64, version, downloadURL, checksum string) (*agentpb.TaskAccept, error) {
+	m.mu.RLock()
+	signer := m.updateSigner
+	m.mu.RUnlock()
 	cmd := &agentpb.PanelCommand{
 		Command: &agentpb.PanelCommand_UpdateAgent{
 			UpdateAgent: &agentpb.UpdateAgentCommand{
 				Version:     version,
 				DownloadUrl: downloadURL,
 				Checksum:    checksum,
+				Signature:   signer.SignChecksum(checksum),
 			},
 		},
 	}

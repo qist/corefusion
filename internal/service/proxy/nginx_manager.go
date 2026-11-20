@@ -74,6 +74,9 @@ func (m *NginxManager) ListSites(ctx context.Context, serverID int64) ([]entity.
 }
 
 func (m *NginxManager) CreateSite(ctx context.Context, serverID int64, site *entity.NginxSite) error {
+	if err := ValidateNginxSite(site); err != nil {
+		return err
+	}
 	// ⚠ 用按参数判断的 isLocalTarget ✓，**不是**共享的 m.isLocal ✗（见其注释 ✓）。
 	if (site.Template == "portal_forward" || site.Template == "subscription_forward" || site.Template == "panel_forward") && !m.isLocalTarget(ctx, serverID) {
 		return fmt.Errorf("%s sites can only be created on the panel node", site.Template)
@@ -93,6 +96,9 @@ func (m *NginxManager) GetSite(ctx context.Context, id int64) (*entity.NginxSite
 }
 
 func (m *NginxManager) UpdateSite(ctx context.Context, site *entity.NginxSite) error {
+	if err := ValidateNginxSite(site); err != nil {
+		return err
+	}
 	// 派生字段落地 DB ✓（同 CreateSite）。
 	m.fillForwardDerivedFields(ctx, site)
 	normalizeSiteDomain(site)
@@ -253,6 +259,9 @@ func (m *NginxManager) GetNginxSettingsForServer(ctx context.Context, serverID i
 
 // SaveNginxSettings saves Nginx settings to database for a specific server.
 func (m *NginxManager) SaveNginxSettings(ctx context.Context, serverID int64, settings *NginxSettings) error {
+	if err := ValidateNginxSettings(settings); err != nil {
+		return err
+	}
 	if m.settingStore == nil {
 		return nil
 	}

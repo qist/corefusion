@@ -21,6 +21,9 @@ type stateEntry struct {
 	CreatedAt time.Time
 }
 
+// oauthStateCookie 是登录 CSRF 防护用的浏览器绑定 cookie（值：provider|state）。
+const oauthStateCookie = "cf_oauth_state"
+
 // oauthStateStore 是**进程内共享**的 state 存储。
 // ⚠ 主面板引擎（:8080）与独立门户引擎（:8082）各自 new 了一个 Handler（同一进程），
 // OAuth 回调域名（GitHub/Google 应用里注册的）与发起登录的域名端口可能不同 →
@@ -129,6 +132,17 @@ func (h *Handler) Authorize(c *gin.Context) {
 	if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
+	// 安全审计 v7 M-8：state 必须绑定到发起登录的浏览器（HttpOnly cookie），
+	// 否则攻击者可把自己的 code+state 诱导受害者回调 → 受害者登录到攻击者账号。
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthStateCookie,
+		Value:    provider + "|" + state,
+		Path:     "/",
+		MaxAge:   600,
+		HttpOnly: true,
+		Secure:   scheme == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
 	host := c.GetHeader("X-Forwarded-Host")
 	if host == "" {
 		host = c.Request.Host
@@ -159,6 +173,22 @@ func (h *Handler) Callback(c *gin.Context) {
 
 	code := c.Query("code")
 	state := c.Query("state")
+
+	// 安全审计 v7 M-8：校验 state 与发起登录时写入的 HttpOnly cookie 一致
+	// （同时绑定 provider），防止登录 CSRF。
+	cookie, cErr := c.Cookie(oauthStateCookie)
+	if cErr != nil || cookie == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "oauth state cookie missing; please retry login"})
+		return
+	}
+	wantProvider, wantState, ok := strings.Cut(cookie, "|")
+	if !ok || wantProvider != provider || wantState == "" || wantState != state {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "oauth state mismatch; please retry login"})
+		return
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: oauthStateCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+	})
 
 	// Validate state
 	if !h.validateState(state) {

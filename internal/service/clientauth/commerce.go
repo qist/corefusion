@@ -2192,9 +2192,16 @@ func (s *CommerceService) RedeemCard(ctx context.Context, clientID int64, input 
 		Amount: card.Value, Currency: card.Currency, ChargeCardID: &cardID,
 		OrderType: entity.ChargeOrderTypeCharge, Status: entity.ChargeStatusPaid, PaidAt: &now,
 	}
-	if card.CardType == entity.ChargeCardTypePlan {
+	// 套餐卡 / 流量包卡：绑定关系在 plan_variant_id（旧卡回退 value=规格ID）。
+	// value 现在是价格快照，不能再当规格 ID 用，否则会去查一个不存在的规格 ✗。
+	switch card.CardType {
+	case entity.ChargeCardTypePlan, entity.ChargeCardTypeTrafficPack:
+		variantID := chargeCardVariantID(card)
+		if variantID <= 0 {
+			return nil, fmt.Errorf("card is not bound to a plan variant")
+		}
 		chargeOrder.OrderType = entity.ChargeOrderTypePurchase
-		chargeOrder.PlanVariantID = &card.Value
+		chargeOrder.PlanVariantID = &variantID
 		chargeOrder.Amount = 0
 	}
 
@@ -2379,9 +2386,14 @@ func (s *CommerceService) processChargePayment(ctx context.Context, exec *gorm.D
 			if err != nil {
 				return fmt.Errorf("variant not found")
 			}
-			tmpl, err := s.tmplRepo.GetByID(ctx, variant.TemplateID)
-			if err != nil {
-				return fmt.Errorf("template not found")
+			// 流量包不绑定套餐模板（template_id=0），不能按模板查 —— 否则卡密兑换
+			// 流量包卡会以 "template not found" 失败 ✗。只有 plan 才需要模板。
+			var tmpl *entity.PlanTemplate
+			if variant.VariantType != entity.VariantTypeTrafficPack {
+				tmpl, err = s.tmplRepo.GetByID(ctx, variant.TemplateID)
+				if err != nil {
+					return fmt.Errorf("template not found")
+				}
 			}
 			// S-4 fix: load client using tx so subsequent writes are in the transaction
 			var client entity.Client
@@ -2564,14 +2576,19 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		}
 		client.ExpiresAt = expiresAt
 	case entity.OrderTypeRenew:
-		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
-		// 已用流量不清零（用户买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
+		// 有效期继续在剩余时间上累加（与配额策略无关）。
 		baseTime := now
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
 		client.ExpiresAt = variant.ExpiresFrom(baseTime)
-		client.QuotaBytes += quotaBytes
+		// 配额按策略流转：accumulate 保留剩余额度并叠加；其余两种按本次套餐配额重置。
+		if entity.ResolveQuotaPolicy(variant, tmpl) == entity.QuotaPolicyAccumulate {
+			client.QuotaBytes += quotaBytes
+		} else {
+			client.QuotaBytes = quotaBytes
+			client.UsedBytes = 0
+		}
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
 		// 升级不在这里生效：它要等当前计费周期结束后才切换（见 schedulePlanChange）。
@@ -2609,6 +2626,7 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		if sub.QuotaResetDay == nil {
 			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
 		}
+		sub.NextResetAt = entity.NextQuotaResetAt(sub.QuotaResetCycle, sub.QuotaResetDay, now)
 		if err := s.subRepo.Create(ctx, sub); err != nil {
 			return err
 		}
@@ -2619,12 +2637,7 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		if err != nil {
 			return err
 		}
-		if orderType == entity.OrderTypeRenew {
-			// 续费累加（client.QuotaBytes 已经加过本次配额，这里保持两边一致）
-			sub.QuotaBytes = client.QuotaBytes
-		} else {
-			sub.QuotaBytes = quotaBytes
-		}
+		sub.QuotaBytes = client.QuotaBytes
 		sub.QuotaResetCycle = variant.QuotaResetCycle
 		sub.QuotaResetDay = variant.QuotaResetDay
 		sub.ExpiresAt = client.ExpiresAt
@@ -2635,6 +2648,15 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		if sub.QuotaResetDay == nil {
 			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
 		}
+		if orderType == entity.OrderTypeRenew && entity.ResolveQuotaPolicy(variant, tmpl) != entity.QuotaPolicyAccumulate {
+			// 续费重置：缓存用量同步清零，否则订阅页仍显示上一周期的已用量。
+			sub.UsedBytesCache = 0
+			sub.UploadBytesCache = 0
+			sub.DownloadBytesCache = 0
+			sub.QuotaState = "normal"
+			sub.LastResetAt = &now
+		}
+		sub.NextResetAt = entity.NextQuotaResetAt(sub.QuotaResetCycle, sub.QuotaResetDay, now)
 		s.subRepo.Update(ctx, sub)
 	}
 
@@ -2680,14 +2702,19 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		}
 		client.ExpiresAt = expiresAt
 	case entity.OrderTypeRenew:
-		// 续费 = 累加：有效期在剩余时间上继续加，配额在原配额上继续加，
-		// 已用流量不清零（买 3 次月付就是 3 个月 + 3 份流量，中途不重置计量）。
+		// 有效期继续在剩余时间上累加（与配额策略无关）。
 		baseTime := now
 		if client.ExpiresAt != nil && client.ExpiresAt.After(now) {
 			baseTime = *client.ExpiresAt
 		}
 		client.ExpiresAt = variant.ExpiresFrom(baseTime)
-		client.QuotaBytes += quotaBytes
+		// 配额按策略流转：accumulate 保留剩余额度并叠加；其余两种按本次套餐配额重置。
+		if entity.ResolveQuotaPolicy(variant, tmpl) == entity.QuotaPolicyAccumulate {
+			client.QuotaBytes += quotaBytes
+		} else {
+			client.QuotaBytes = quotaBytes
+			client.UsedBytes = 0
+		}
 		client.Status = "active"
 	case entity.OrderTypeUpgrade:
 		// 升级不在这里生效：等当前计费周期结束后由调度器切换（见 schedulePlanChange）。
@@ -2717,6 +2744,7 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		if sub.QuotaResetDay == nil {
 			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
 		}
+		sub.NextResetAt = entity.NextQuotaResetAt(sub.QuotaResetCycle, sub.QuotaResetDay, now)
 		if err := tx.Create(sub).Error; err != nil {
 			return err
 		}
@@ -2727,11 +2755,7 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		if err := tx.Where("id = ?", *client.SubscriptionID).First(&sub).Error; err != nil {
 			return err
 		}
-		if orderType == entity.OrderTypeRenew {
-			sub.QuotaBytes = client.QuotaBytes
-		} else {
-			sub.QuotaBytes = quotaBytes
-		}
+		sub.QuotaBytes = client.QuotaBytes
 		sub.QuotaResetCycle = variant.QuotaResetCycle
 		sub.QuotaResetDay = variant.QuotaResetDay
 		sub.ExpiresAt = client.ExpiresAt
@@ -2742,6 +2766,15 @@ func (s *CommerceService) activatePlanTx(ctx context.Context, tx *gorm.DB, clien
 		if sub.QuotaResetDay == nil {
 			sub.QuotaResetDay = tmpl.DefaultQuotaResetDay
 		}
+		if orderType == entity.OrderTypeRenew && entity.ResolveQuotaPolicy(variant, tmpl) != entity.QuotaPolicyAccumulate {
+			// 续费重置：缓存用量同步清零，否则订阅页仍显示上一周期的已用量。
+			sub.UsedBytesCache = 0
+			sub.UploadBytesCache = 0
+			sub.DownloadBytesCache = 0
+			sub.QuotaState = "normal"
+			sub.LastResetAt = &now
+		}
+		sub.NextResetAt = entity.NextQuotaResetAt(sub.QuotaResetCycle, sub.QuotaResetDay, now)
 		tx.Save(&sub)
 	}
 

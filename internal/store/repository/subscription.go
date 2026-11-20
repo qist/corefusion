@@ -224,6 +224,23 @@ func (r *SubscriptionRepository) ListExpired(ctx context.Context, now time.Time,
 	return subs, err
 }
 
+// ListDueQuotaResets returns active subscriptions whose periodic quota reset is due.
+// 只取有重置周期（monthly 等，none/空跳过）且 next_reset_at 已到的订阅。
+func (r *SubscriptionRepository) ListDueQuotaResets(ctx context.Context, now time.Time, limit int) ([]entity.Subscription, error) {
+	if limit <= 0 || limit > 10000 {
+		limit = 1000
+	}
+	var subs []entity.Subscription
+	err := r.db.WithContext(ctx).
+		Where("status = ?", "active").
+		Where("quota_reset_cycle IS NOT NULL AND quota_reset_cycle <> '' AND quota_reset_cycle <> ?", entity.QuotaResetCycleNone).
+		Where("next_reset_at IS NOT NULL AND next_reset_at <= ?", now).
+		Order("next_reset_at ASC").
+		Limit(limit).
+		Find(&subs).Error
+	return subs, err
+}
+
 // AddUsedBytes atomically increments the subscription traffic cache. Used by the
 // network-layer (nftables) accounting bridge for subscriptions whose traffic is NOT
 // already counted by xray itself. nftables reports total (up+down) bytes, so only the

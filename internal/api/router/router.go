@@ -1289,6 +1289,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// Start expired order cleanup scheduler
 	commerceSvcInst.StartCleanupScheduler(time.Duration(schedCfg.OrderCleanupInterval) * time.Minute)
 
+	// 周期性配额重置（订阅 quota_reset_cycle=monthly 且 next_reset_at 到期）：
+	// 每小时巡检一次，复用 ResetUsage 同时清零节点侧计数。
+	subSvc.StartQuotaResetScheduler(time.Hour)
+
 	// P1-P3 extended services
 	referralSvcInst := clientauthSvc.NewReferralService(
 		database, repository.NewReferralCodeRepository(database),
@@ -4449,14 +4453,17 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	systemSettingRepo := repository.NewSystemSettingRepository(database)
 	portalTmplRepo := repository.NewPortalTemplateRepository(database)
 	portalTmplSvc := portalSvc.NewService(portalTmplRepo)
+	// setting store 必须在 EnsureSecurityPatches 之前注入：其中「导航默认关闭」是一次性
+	// 迁移（用 system_settings 标记），没有 settingSvc 就无法记录已迁移 → 每次启动都会
+	// 覆盖管理员打开的 nav.store / nav.billing（bug）。
+	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
+	portalTmplSvc.WithSettingStore(systemSettingSvc)
 	portalTmplSvc.SeedBuiltInTemplate(context.Background())
 	// 给库里已有的门户模板打 M7 安全补丁（用户内容不再执行 HTML）——全自动、幂等
 	if perr := portalTmplSvc.EnsureSecurityPatches(context.Background()); perr != nil {
 		log.Printf("[router] portal security patch skipped: %v", perr)
 	}
 
-	systemSettingSvc := systemSvc.NewSettingService(systemSettingRepo, nil)
-	portalTmplSvc.WithSettingStore(systemSettingSvc)
 	// 门户总开关关闭时，独立端口上的一切路径（页面/合规页/登录接口）都按不存在处理。
 	r.Use(portalGate(systemSettingSvc))
 	// 存量明文敏感配置统一加密落库（幂等，主面板引擎已执行过则这里直接跳过）

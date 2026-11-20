@@ -116,6 +116,15 @@ func (s *Service) EnforceQuotaAndExpiry(ctx context.Context) error {
 		}
 		sub.Status = "expired"
 		sub.QuotaState = "expired_days"
+		// 配额策略 reset_on_expire：到期即把未用完的额度清零（作废），
+		// 续费时按新套餐配额重新发放；accumulate / reset_on_renew 保留原额度。
+		if s.resolveQuotaPolicy(ctx, sub.ClientID) == entity.QuotaPolicyResetOnExpire {
+			sub.QuotaBytes = 0
+			sub.UsedBytesCache = 0
+			sub.UploadBytesCache = 0
+			sub.DownloadBytesCache = 0
+			s.zeroClientQuota(ctx, sub.ClientID)
+		}
 		if err := s.repo.Update(ctx, sub); err != nil {
 			log.Printf("[quota-enforce] expire subscription %d failed: %v", sub.ID, err)
 			continue
@@ -143,6 +152,106 @@ func (s *Service) isPermanentClient(ctx context.Context, clientID int64) bool {
 		return false
 	}
 	return variant.IsPermanent()
+}
+
+// resolveQuotaPolicy 解析客户当前套餐的配额策略（规格 > 套餐 > 累加）。
+// 查不到任何配置时按 accumulate 处理，保证存量账号行为不变。
+func (s *Service) resolveQuotaPolicy(ctx context.Context, clientID int64) string {
+	if clientID <= 0 || s.clientRepo == nil || s.planSvc == nil {
+		return entity.QuotaPolicyAccumulate
+	}
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil || client == nil || client.PlanVariantID <= 0 {
+		return entity.QuotaPolicyAccumulate
+	}
+	variant, err := s.planSvc.GetVariantByID(ctx, client.PlanVariantID)
+	if err != nil || variant == nil {
+		return entity.QuotaPolicyAccumulate
+	}
+	var tmpl *entity.PlanTemplate
+	if variant.TemplateID > 0 {
+		if t, terr := s.planSvc.GetTemplateByID(ctx, variant.TemplateID); terr == nil {
+			tmpl = t
+		}
+	}
+	return entity.ResolveQuotaPolicy(variant, tmpl)
+}
+
+// zeroClientQuota 把客户的配额与已用量归零（到期清零策略）。
+func (s *Service) zeroClientQuota(ctx context.Context, clientID int64) {
+	if clientID <= 0 || s.clientRepo == nil {
+		return
+	}
+	client, err := s.clientRepo.GetByID(ctx, clientID)
+	if err != nil || client == nil {
+		return
+	}
+	if client.QuotaBytes == 0 && client.UsedBytes == 0 {
+		return
+	}
+	client.QuotaBytes = 0
+	client.UsedBytes = 0
+	if err := s.clientRepo.Update(ctx, client); err != nil {
+		log.Printf("[quota-enforce] zero quota for client %d failed: %v", clientID, err)
+	}
+}
+
+// EnforceQuotaResets 执行到期的周期性配额重置（quota_reset_cycle=monthly 且 next_reset_at 已到）。
+// 复用 ResetUsage：同时清零订阅/客户缓存与节点侧计数，然后推进下一次重置时间。
+func (s *Service) EnforceQuotaResets(ctx context.Context) error {
+	now := time.Now()
+	due, err := s.repo.ListDueQuotaResets(ctx, now, 1000)
+	if err != nil {
+		return err
+	}
+	for i := range due {
+		sub := &due[i]
+		if _, err := s.ResetUsage(ctx, sub.ID); err != nil {
+			log.Printf("[quota-reset] reset subscription %d failed: %v", sub.ID, err)
+			continue
+		}
+		next := entity.NextQuotaResetAt(sub.QuotaResetCycle, sub.QuotaResetDay, now)
+		if next == nil {
+			continue
+		}
+		// 重新读取：ResetUsage 已经把用量清零，用巡检时拿到的旧副本 Save 会把它写回去。
+		fresh, gerr := s.repo.GetByID(ctx, sub.ID)
+		if gerr != nil {
+			log.Printf("[quota-reset] reload subscription %d failed: %v", sub.ID, gerr)
+			continue
+		}
+		fresh.NextResetAt = next
+		if err := s.repo.Update(ctx, fresh); err != nil {
+			log.Printf("[quota-reset] advance next_reset_at for subscription %d failed: %v", sub.ID, err)
+		}
+	}
+	return nil
+}
+
+// StartQuotaResetScheduler 启动周期性的配额重置巡检（每月/自定义周期）。
+// 返回的 channel 关闭即停止；调用方负责在进程退出时关闭。
+func (s *Service) StartQuotaResetScheduler(interval time.Duration) chan struct{} {
+	stopCh := make(chan struct{})
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+				if err := s.EnforceQuotaResets(ctx); err != nil {
+					log.Printf("[quota-reset] enforce failed: %v", err)
+				}
+				cancel()
+			}
+		}
+	}()
+	return stopCh
 }
 
 // blockClient suspends the client (if still active) and removes its credentials from all

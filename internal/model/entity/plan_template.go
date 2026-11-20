@@ -24,14 +24,17 @@ type PlanTemplate struct {
 	// 套餐可挂 N 个节点，但每人只返回其中 SubNodeLimit 个（按订阅稳定选择）。
 	SubNodeLimit int `gorm:"not null;default:0" json:"sub_node_limit"`
 	// SubRotateHours：订阅节点轮换周期（小时，0=不主动轮换）。
-	SubRotateHours           int       `gorm:"not null;default:0" json:"sub_rotate_hours"`
-	DeviceLimit              int       `gorm:"not null;default:0" json:"device_limit"`
-	SpeedLimitMbps           int       `gorm:"not null;default:0" json:"speed_limit_mbps"`    // 下载限速 Mbps（0=不限）
-	SpeedLimitUpMbps         int       `gorm:"not null;default:0" json:"speed_limit_up_mbps"` // 上传限速 Mbps（0=不限）
-	ConcurrentLimit          int       `gorm:"not null;default:0" json:"concurrent_limit"`
-	DefaultQuotaBytes        int64     `gorm:"not null;default:0" json:"default_quota_bytes"`
-	DefaultQuotaResetCycle   string    `gorm:"size:32;not null;default:none" json:"default_quota_reset_cycle"`
-	DefaultQuotaResetDay     *int      `json:"default_quota_reset_day"`
+	SubRotateHours         int    `gorm:"not null;default:0" json:"sub_rotate_hours"`
+	DeviceLimit            int    `gorm:"not null;default:0" json:"device_limit"`
+	SpeedLimitMbps         int    `gorm:"not null;default:0" json:"speed_limit_mbps"`    // 下载限速 Mbps（0=不限）
+	SpeedLimitUpMbps       int    `gorm:"not null;default:0" json:"speed_limit_up_mbps"` // 上传限速 Mbps（0=不限）
+	ConcurrentLimit        int    `gorm:"not null;default:0" json:"concurrent_limit"`
+	DefaultQuotaBytes      int64  `gorm:"not null;default:0" json:"default_quota_bytes"`
+	DefaultQuotaResetCycle string `gorm:"size:32;not null;default:none" json:"default_quota_reset_cycle"`
+	DefaultQuotaResetDay   *int   `json:"default_quota_reset_day"`
+	// DefaultQuotaPolicy 是套餐层默认的配额策略（到期/续费），规格可覆盖（见 PlanVariant.QuotaPolicy）。
+	// 默认 accumulate 保持存量行为不变。
+	DefaultQuotaPolicy       string    `gorm:"size:32;not null;default:accumulate" json:"default_quota_policy"`
 	SuspendOnQuotaExhausted  int       `gorm:"not null;default:1" json:"suspend_on_quota_exhausted"`
 	IsTrial                  bool      `gorm:"not null;default:false" json:"is_trial"`
 	TrialDurationHours       int       `gorm:"not null;default:0" json:"trial_duration_hours"`

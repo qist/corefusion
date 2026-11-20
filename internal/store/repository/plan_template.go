@@ -120,7 +120,7 @@ func (r *PlanVariantRepository) CountByTemplateID(ctx context.Context, templateI
 	return count, err
 }
 
-// ListPaged returns all plan variants (traffic packs) with pagination.
+// ListPaged returns all plan variants with pagination.
 func (r *PlanVariantRepository) ListPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, error) {
 	var items []entity.PlanVariant
 	err := r.db.WithContext(ctx).
@@ -130,10 +130,32 @@ func (r *PlanVariantRepository) ListPaged(ctx context.Context, limit, offset int
 	return items, err
 }
 
-// CountAll returns the total number of plan variants (traffic packs).
+// CountAll returns the total number of plan variants.
 func (r *PlanVariantRepository) CountAll(ctx context.Context) (int64, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&entity.PlanVariant{}).Count(&count).Error
+	return count, err
+}
+
+// ListPagedByVariantType returns variants of the given type with pagination.
+// 「流量叠加包」列表必须只列 traffic_pack —— 混入 plan 变体会让「推荐/编辑」
+// 调到 UpdateTrafficPack 后报 "variant is not a traffic pack"。
+func (r *PlanVariantRepository) ListPagedByVariantType(ctx context.Context, variantType string, limit, offset int) ([]entity.PlanVariant, error) {
+	var items []entity.PlanVariant
+	err := r.db.WithContext(ctx).
+		Where("variant_type = ?", variantType).
+		Order("sort_order ASC, id ASC").
+		Limit(limit).Offset(offset).
+		Find(&items).Error
+	return items, err
+}
+
+// CountByVariantType counts variants of the given type.
+func (r *PlanVariantRepository) CountByVariantType(ctx context.Context, variantType string) (int64, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&entity.PlanVariant{}).
+		Where("variant_type = ?", variantType).
+		Count(&count).Error
 	return count, err
 }
 

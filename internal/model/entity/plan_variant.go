@@ -31,26 +31,31 @@ const (
 // PlanVariant is a pricing variant of a PlanTemplate.
 // E.g. a template "Standard" may have monthly, quarterly, and annual variants.
 type PlanVariant struct {
-	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
-	TemplateID      int64     `gorm:"not null;index" json:"template_id"`
-	VariantType     string    `gorm:"size:32;not null;default:plan" json:"variant_type"` // plan/traffic_pack
-	Name            string    `gorm:"size:100;not null" json:"name"`
-	Description     string    `gorm:"size:500" json:"description"`
-	BillingCycle    string    `gorm:"size:32;not null;default:monthly" json:"billing_cycle"`
-	DurationDays    int       `gorm:"not null;default:30" json:"duration_days"`
-	Price           int64     `gorm:"not null;default:0" json:"price"`          // in cents
-	OriginalPrice   int64     `gorm:"not null;default:0" json:"original_price"` // in cents
-	Currency        string    `gorm:"size:8;not null;default:CNY" json:"currency"`
-	QuotaBytes      int64     `gorm:"not null;default:0" json:"quota_bytes"` // 0 = inherit template
-	QuotaResetCycle string    `gorm:"size:32;not null;default:''" json:"quota_reset_cycle"`
-	QuotaResetDay   *int      `json:"quota_reset_day"`
-	ExpiryMode      string    `gorm:"size:32;not null;default:align_with_plan" json:"expiry_mode"` // traffic pack: align_with_plan/extend_plan
-	IsRecommended   bool      `gorm:"not null;default:false" json:"is_recommended"`
-	IsDefault       bool      `gorm:"not null;default:false" json:"is_default"`
-	Enabled         bool      `gorm:"not null;default:true" json:"enabled"`
-	SortOrder       int       `gorm:"not null;default:0" json:"sort_order"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              int64  `gorm:"primaryKey;autoIncrement" json:"id"`
+	TemplateID      int64  `gorm:"not null;index" json:"template_id"`
+	VariantType     string `gorm:"size:32;not null;default:plan" json:"variant_type"` // plan/traffic_pack
+	Name            string `gorm:"size:100;not null" json:"name"`
+	Description     string `gorm:"size:500" json:"description"`
+	BillingCycle    string `gorm:"size:32;not null;default:monthly" json:"billing_cycle"`
+	DurationDays    int    `gorm:"not null;default:30" json:"duration_days"`
+	Price           int64  `gorm:"not null;default:0" json:"price"`          // in cents
+	OriginalPrice   int64  `gorm:"not null;default:0" json:"original_price"` // in cents
+	Currency        string `gorm:"size:8;not null;default:CNY" json:"currency"`
+	QuotaBytes      int64  `gorm:"not null;default:0" json:"quota_bytes"` // 0 = inherit template
+	QuotaResetCycle string `gorm:"size:32;not null;default:''" json:"quota_reset_cycle"`
+	QuotaResetDay   *int   `json:"quota_reset_day"`
+	// QuotaPolicy 决定「到期/续费时配额怎么处理」，留空=继承套餐默认（见 PlanTemplate.DefaultQuotaPolicy）：
+	//   accumulate      到期保留、续费累加（历史行为）
+	//   reset_on_expire 到期即清零未用完的配额，续费按新套餐配额
+	//   reset_on_renew  到期保留，续费时按新套餐配额重置（已用清零）
+	QuotaPolicy string `gorm:"size:32;not null;default:''" json:"quota_policy"`
+	ExpiryMode     string    `gorm:"size:32;not null;default:align_with_plan" json:"expiry_mode"` // traffic pack: align_with_plan/extend_plan
+	IsRecommended  bool      `gorm:"not null;default:false" json:"is_recommended"`
+	IsDefault      bool      `gorm:"not null;default:false" json:"is_default"`
+	Enabled        bool      `gorm:"not null;default:true" json:"enabled"`
+	SortOrder      int       `gorm:"not null;default:0" json:"sort_order"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (PlanVariant) TableName() string { return "plan_variants" }
@@ -68,4 +73,39 @@ func (v *PlanVariant) ExpiresFrom(base time.Time) *time.Time {
 	}
 	t := base.AddDate(0, 0, v.DurationDays)
 	return &t
+}
+
+// 配额策略取值：决定到期与续费时配额如何流转。
+const (
+	// QuotaPolicyAccumulate 到期保留、续费累加（历史行为）。
+	QuotaPolicyAccumulate = "accumulate"
+	// QuotaPolicyResetOnExpire 到期即清零未用完的配额（未用完作废），续费按新套餐配额。
+	QuotaPolicyResetOnExpire = "reset_on_expire"
+	// QuotaPolicyResetOnRenew 到期保留，续费时按新套餐配额重置，已用流量清零。
+	QuotaPolicyResetOnRenew = "reset_on_renew"
+)
+
+// NormalizeQuotaPolicy 把任意输入归一为合法值；无法识别返回空（表示继承）。
+func NormalizeQuotaPolicy(policy string) string {
+	switch policy {
+	case QuotaPolicyAccumulate, QuotaPolicyResetOnExpire, QuotaPolicyResetOnRenew:
+		return policy
+	default:
+		return ""
+	}
+}
+
+// ResolveQuotaPolicy 解析配额策略，优先级：规格 > 套餐 > 累加（存量行为不变）。
+func ResolveQuotaPolicy(variant *PlanVariant, tmpl *PlanTemplate) string {
+	if variant != nil {
+		if p := NormalizeQuotaPolicy(variant.QuotaPolicy); p != "" {
+			return p
+		}
+	}
+	if tmpl != nil {
+		if p := NormalizeQuotaPolicy(tmpl.DefaultQuotaPolicy); p != "" {
+			return p
+		}
+	}
+	return QuotaPolicyAccumulate
 }

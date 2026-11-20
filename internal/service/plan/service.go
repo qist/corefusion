@@ -163,6 +163,7 @@ type CreateTemplateInput struct {
 	DefaultQuotaBytes          int64   `json:"default_quota_bytes"`
 	DefaultQuotaResetCycle     string  `json:"default_quota_reset_cycle"`
 	DefaultQuotaResetDay       *int    `json:"default_quota_reset_day"`
+	DefaultQuotaPolicy         string  `json:"default_quota_policy"`
 	SuspendOnQuotaExhausted    *int    `json:"suspend_on_quota_exhausted"`
 	IsTrial                    bool    `json:"is_trial"`
 	TrialDurationHours         int     `json:"trial_duration_hours"`
@@ -222,6 +223,7 @@ func (s *Service) CreateTemplate(ctx context.Context, input CreateTemplateInput)
 		DefaultQuotaBytes:          input.DefaultQuotaBytes,
 		DefaultQuotaResetCycle:     input.DefaultQuotaResetCycle,
 		DefaultQuotaResetDay:       input.DefaultQuotaResetDay,
+		DefaultQuotaPolicy:         normalizeQuotaPolicyOrDefault(input.DefaultQuotaPolicy),
 		SuspendOnQuotaExhausted:    suspendVal,
 		IsTrial:                    input.IsTrial,
 		TrialDurationHours:         input.TrialDurationHours,
@@ -259,6 +261,7 @@ type UpdateTemplateInput struct {
 	DefaultQuotaBytes          *int64   `json:"default_quota_bytes"`
 	DefaultQuotaResetCycle     *string  `json:"default_quota_reset_cycle"`
 	DefaultQuotaResetDay       *int     `json:"default_quota_reset_day"`
+	DefaultQuotaPolicy         *string  `json:"default_quota_policy"`
 	SuspendOnQuotaExhausted    *int     `json:"suspend_on_quota_exhausted"`
 	IsTrial                    *bool    `json:"is_trial"`
 	TrialDurationHours         *int     `json:"trial_duration_hours"`
@@ -323,6 +326,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, input UpdateTemp
 	}
 	if input.DefaultQuotaResetDay != nil {
 		tmpl.DefaultQuotaResetDay = input.DefaultQuotaResetDay
+	}
+	if input.DefaultQuotaPolicy != nil {
+		tmpl.DefaultQuotaPolicy = normalizeQuotaPolicyOrDefault(*input.DefaultQuotaPolicy)
 	}
 	if input.SuspendOnQuotaExhausted != nil {
 		tmpl.SuspendOnQuotaExhausted = *input.SuspendOnQuotaExhausted
@@ -477,6 +483,15 @@ func normalizeVariantType(v string) string {
 	return entity.VariantTypePlan
 }
 
+// normalizeQuotaPolicyOrDefault 校验配额策略；空/非法一律回落 accumulate，
+// 保证存量套餐行为不变（到期保留、续费累加）。
+func normalizeQuotaPolicyOrDefault(policy string) string {
+	if p := entity.NormalizeQuotaPolicy(policy); p != "" {
+		return p
+	}
+	return entity.QuotaPolicyAccumulate
+}
+
 // normalizeExpiryMode 归一流量包的过期模式：只接受 extend_plan，其余按
 // align_with_plan（与套餐同期过期）处理。
 func normalizeExpiryMode(v string) string {
@@ -498,6 +513,7 @@ type CreateVariantInput struct {
 	QuotaBytes      int64  `json:"quota_bytes"`
 	QuotaResetCycle string `json:"quota_reset_cycle"`
 	QuotaResetDay   *int   `json:"quota_reset_day"`
+	QuotaPolicy     string `json:"quota_policy"`
 	ExpiryMode      string `json:"expiry_mode"`
 	IsRecommended   bool   `json:"is_recommended"`
 	IsDefault       bool   `json:"is_default"`
@@ -541,6 +557,7 @@ func (s *Service) CreateVariant(ctx context.Context, templateID int64, input Cre
 		QuotaBytes:      input.QuotaBytes,
 		QuotaResetCycle: input.QuotaResetCycle,
 		QuotaResetDay:   input.QuotaResetDay,
+		QuotaPolicy:     entity.NormalizeQuotaPolicy(input.QuotaPolicy),
 		ExpiryMode:      expiryMode,
 		IsRecommended:   input.IsRecommended,
 		IsDefault:       input.IsDefault,
@@ -568,6 +585,7 @@ type UpdateVariantInput struct {
 	QuotaBytes      *int64  `json:"quota_bytes"`
 	QuotaResetCycle *string `json:"quota_reset_cycle"`
 	QuotaResetDay   *int    `json:"quota_reset_day"`
+	QuotaPolicy     *string `json:"quota_policy"`
 	ExpiryMode      *string `json:"expiry_mode"`
 	IsRecommended   *bool   `json:"is_recommended"`
 	IsDefault       *bool   `json:"is_default"`
@@ -617,6 +635,9 @@ func (s *Service) UpdateVariant(ctx context.Context, id int64, input UpdateVaria
 	}
 	if input.QuotaResetDay != nil {
 		variant.QuotaResetDay = input.QuotaResetDay
+	}
+	if input.QuotaPolicy != nil {
+		variant.QuotaPolicy = entity.NormalizeQuotaPolicy(*input.QuotaPolicy)
 	}
 	if input.ExpiryMode != nil {
 		variant.ExpiryMode = normalizeExpiryMode(*input.ExpiryMode)
@@ -745,6 +766,21 @@ func (s *Service) ListTrafficPacks(ctx context.Context) ([]entity.PlanVariant, e
 
 // ListTrafficPacksPaged returns all traffic packs with pagination and total count.
 func (s *Service) ListTrafficPacksPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, int64, error) {
+	// 只列 traffic_pack：旧实现直接 ListPaged 全部变体，导致套餐规格（plan）也出现在
+	// 「流量叠加包」列表里，点「推荐」会走 UpdateTrafficPack 并被类型校验拒绝。
+	items, err := s.variantRepo.ListPagedByVariantType(ctx, entity.VariantTypeTrafficPack, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.variantRepo.CountByVariantType(ctx, entity.VariantTypeTrafficPack)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// ListAllVariantsPaged returns all plan variants with pagination and total count.
+func (s *Service) ListAllVariantsPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, int64, error) {
 	items, err := s.variantRepo.ListPaged(ctx, limit, offset)
 	if err != nil {
 		return nil, 0, err
@@ -754,11 +790,6 @@ func (s *Service) ListTrafficPacksPaged(ctx context.Context, limit, offset int) 
 		return nil, 0, err
 	}
 	return items, total, nil
-}
-
-// ListAllVariantsPaged returns all plan variants with pagination and total count.
-func (s *Service) ListAllVariantsPaged(ctx context.Context, limit, offset int) ([]entity.PlanVariant, int64, error) {
-	return s.ListTrafficPacksPaged(ctx, limit, offset)
 }
 
 // CreateTrafficPackInput is the input for creating a standalone traffic pack.

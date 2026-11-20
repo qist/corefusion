@@ -4722,11 +4722,26 @@ var showStreamingAccount = function(service) {
     }
 
     // --- Charge sites ---
+    // 返回 promise：调用方需要在拿到站点后决定默认支付方式（充值弹窗）。
     var fetchChargeSites = function() {
-      api('GET', '/charge/sites').then(function(res) {
+      return api('GET', '/charge/sites').then(function(res) {
         chargeSites.value = Array.isArray(res) ? res : []
-      }).catch(function() {})
+        return chargeSites.value
+      }).catch(function() { return chargeSites.value })
     }
+
+    // 打开「充值」弹窗时加载支付站点：原来只有购买套餐会加载，直接点「去充值」
+    // 时 chargeSites 为空 → 弹窗只剩卡密兑换，在线支付入口等于不存在。
+    watch(showChargeDialog, function(open) {
+      if (!open) return
+      fetchChargeSites().then(function(sites) {
+        if (!sites || !sites.length) return
+        if (!chargeForm.value.site_id) {
+          chargeForm.value.site_id = sites[0].id
+          chargeForm.value.method = 'online'
+        }
+      })
+    })
 
     // --- Submit charge (online payment) ---
     var submitCharge = function() {

@@ -767,6 +767,58 @@ func PatchGiftCardPreview(htmlContent, jsContent string) (newHTML, newJS string,
 	return newHTML, newJS, changed
 }
 
+// 存量门户「充值」弹窗：原来只有购买套餐时才加载支付站点，首页直接点「去充值」时
+// chargeSites 为空 → 弹窗被降级成「只有卡密」，在线支付入口等于不存在。
+// 补丁：打开弹窗就拉站点，并默认选中第一个站点（支付方式切到 online）。
+const chargeDialogSitesPresence = `watch(showChargeDialog`
+
+// 旧模板里的站点加载函数（跨行片段；匹配前统一换行，避免 CRLF/LF 混用）。
+const chargeDialogSitesOld = `    var fetchChargeSites = function() {
+      api('GET', '/charge/sites').then(function(res) {
+        chargeSites.value = Array.isArray(res) ? res : []
+      }).catch(function() {})
+    }`
+
+const chargeDialogSitesNew = `    // --- Charge sites ---
+    // 返回 promise：调用方需要在拿到站点后决定默认支付方式（充值弹窗）。
+    var fetchChargeSites = function() {
+      return api('GET', '/charge/sites').then(function(res) {
+        chargeSites.value = Array.isArray(res) ? res : []
+        return chargeSites.value
+      }).catch(function() { return chargeSites.value })
+    }
+
+    // 打开「充值」弹窗时加载支付站点（原来只有购买套餐会加载）：
+    // 否则首页直接点「去充值」时 chargeSites 为空 → 只剩卡密兑换。
+    watch(showChargeDialog, function(open) {
+      if (!open) return
+      fetchChargeSites().then(function(sites) {
+        if (!sites || !sites.length) return
+        if (!chargeForm.value.site_id) {
+          chargeForm.value.site_id = sites[0].id
+          chargeForm.value.method = 'online'
+        }
+      })
+    })`
+
+// PatchChargeDialogSites 给存量门户补「充值弹窗加载支付站点 + 默认在线支付」。
+// 幂等：已含 watch(showChargeDialog) / 找不到旧片段时原样返回。
+func PatchChargeDialogSites(jsContent string) (string, bool) {
+	if strings.Contains(jsContent, chargeDialogSitesPresence) {
+		return jsContent, false
+	}
+	crlf := strings.Contains(jsContent, "\r\n")
+	lf := strings.ReplaceAll(jsContent, "\r\n", "\n")
+	if !strings.Contains(lf, chargeDialogSitesOld) {
+		return jsContent, false
+	}
+	out := strings.Replace(lf, chargeDialogSitesOld, chargeDialogSitesNew, 1)
+	if crlf {
+		out = strings.ReplaceAll(out, "\n", "\r\n")
+	}
+	return out, true
+}
+
 // PatchSubStoreActionJS 给存量门户 shell 补 storeEnabled computed + visibleSubActions 函数，
 // 并透传到模块作用域（ext）。幂等：命中过 / 已是新版时原样返回 ✓（片段里**不能出现反引号**）。
 func PatchSubStoreActionJS(htmlContent, jsContent string) (newHTML, newJS string, changed bool) {
@@ -1375,6 +1427,11 @@ func (s *Service) EnsureSecurityPatches(ctx context.Context) error {
 	// 礼品卡：流量包卡支付传卡号 + 输入卡号自动选中套餐（线上模板在数据库里）✓
 	if h6b, j6b, c6b := PatchGiftCardPreview(newHTML, newJS); c6b {
 		newHTML, newJS = h6b, j6b
+		changed = true
+	}
+	// 充值弹窗：打开即加载支付站点并默认在线支付（否则只剩卡密）✓
+	if j6c, c6c := PatchChargeDialogSites(newJS); c6c {
+		newJS = j6c
 		changed = true
 	}
 	// 推荐邀请链接不能写死 /p（独立门户端口在根路径）✓

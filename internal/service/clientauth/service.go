@@ -247,6 +247,10 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*TokenResponse, 
 
 	// ⚠ 账号被管理员停用后不允许再登录 ✗：旧实现只比密码，被停用的客户端照样能拿到 token
 	// 并访问 /api/v1/client-auth/*（自助解封、工单、资料…）→ 封禁策略形同虚设（安全审计 v5 M2）。
+	//
+	// ⚠ 但「套餐到期」不是封禁：到期客户必须能登录去续费 ✗→✓。
+	// 订阅数据本身由 /sub 与 /client-auth/nodes 单独拒绝（见 public.go），
+	// 登录只负责身份认证，不能因为到期就把人挡在门外。
 	if client.Status != "active" {
 		// 自助解封分支：仅"流量超额自动封禁（auto_quota）"+功能开启时，签发**受限**
 		// 解封专用 token（typ=self_unban，中间件只放行 POST /self-unban），
@@ -271,25 +275,42 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (*TokenResponse, 
 				}, nil
 			}
 		}
-		return nil, ensureClientActive(client)
+		if err := ensureClientActive(client); err != nil {
+			return nil, err
+		}
 	}
 
 	return s.generateTokens(client)
 }
 
-// ensureClientActive 拒绝非 active 状态的客户端（停用或其它未知状态一律拒绝，失败关闭）。
-// 提示按封禁原因区分：到期封禁引导续费；其余引导联系客服。
+// ensureClientActive 判断账号能否登录/续签 token：
+//   - active：放行；
+//   - 到期账号（status=expired，或 suspended + suspend_reason=auto_expired）：**放行**，
+//     客户需要登录后去续费；订阅数据/节点由其它入口单独拒绝；
+//   - 其余（管理员封禁、未知状态）：拒绝，失败关闭。
 func ensureClientActive(client *entity.Client) error {
 	if client == nil {
 		return fmt.Errorf("client not found")
 	}
-	if client.Status != "active" {
-		if client.SuspendReason == "auto_expired" {
-			return fmt.Errorf("订阅已到期，请续费后重新登录")
-		}
-		return fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
+	if client.Status == "active" || client.IsExpiredAccount() {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
+}
+
+// portalClientStatus 把「到期」统一呈现为 expired：
+// auto_expired 落库是 suspended，若原样返回，门户会显示「已封禁」而不是「已到期，去续费」。
+func portalClientStatus(c *entity.Client) string {
+	if c == nil {
+		return ""
+	}
+	if c.Status == "active" {
+		return "active"
+	}
+	if c.IsExpiredAccount() {
+		return "expired"
+	}
+	return c.Status
 }
 
 // GetMe returns the client's account info.
@@ -303,7 +324,7 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		ID:              client.ID,
 		Email:           client.Email,
 		PlanID:          client.PlanID,
-		Status:          client.Status,
+		Status:          portalClientStatus(client),
 		QuotaBytes:      client.QuotaBytes,
 		UsedBytes:       client.UsedBytes,
 		ExpiresAt:       client.ExpiresAt,

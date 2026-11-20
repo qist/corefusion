@@ -230,8 +230,9 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 		if err != nil {
 			return nil, fmt.Errorf("bound client not found: %w", err)
 		}
-		// ⚠ 与密码登录同口径：非 active 账号不得经 OAuth 拿到常规 token（M2 语义）。
-		if client.Status != "active" {
+		// ⚠ 与密码登录同口径：删除/封禁账号不得经 OAuth 拿到常规 token（M2 语义）；
+		// 但「套餐到期」不算封禁 —— 到期客户必须能登录去续费（订阅数据另行拒绝）。
+		if !canLoginWithOAuth(client) {
 			return s.nonActiveResult(ctx, client)
 		}
 		// Update name if changed
@@ -261,8 +262,9 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 	// 给 client 0 签 JWT ✗（真机现象：回调 200 但登录是坏的，绑定表 client_id 全是 0 ✓）。
 	existingClient, err := s.clientRepo.GetByEmail(ctx, email)
 	if err == nil && existingClient != nil && existingClient.ID > 0 {
-		// ⚠ 与密码登录同口径：非 active 账号不得经 OAuth 绑定+登录拿到常规 token（M2 语义）。
-		if existingClient.Status != "active" {
+		// ⚠ 与密码登录同口径：封禁账号不得经 OAuth 绑定+登录拿到常规 token（M2 语义）；
+		// 到期账号放行（登录后续费），订阅数据另行拒绝。
+		if !canLoginWithOAuth(existingClient) {
 			return s.nonActiveResult(ctx, existingClient)
 		}
 		// Email exists — bind OAuth to existing account
@@ -322,6 +324,14 @@ func (s *Service) HandleCallback(ctx context.Context, provider, code, redirectUR
 	}, nil
 }
 
+// canLoginWithOAuth 与密码登录同一口径：
+//   - active：放行；
+//   - 套餐到期（status=expired 或 suspended+auto_expired）：放行 —— 客户必须能登录去续费；
+//   - 其它（管理员封禁/未知状态）：拒绝。
+func canLoginWithOAuth(c *entity.Client) bool {
+	return c != nil && (c.Status == "active" || c.IsExpiredAccount())
+}
+
 // nonActiveResult 处理非 active 账号的 OAuth 登录：符合自解封条件（suspended+auto_quota+
 // 功能开启，与密码登录同一套 CanSelfUnban 判定）→ 返回解封分支结果；否则返回与
 // clientauth.ensureClientActive 同语义的失败关闭错误（到期引导续费，其余引导联系客服）。
@@ -336,9 +346,7 @@ func (s *Service) nonActiveResult(ctx context.Context, client *entity.Client) (*
 			}, nil
 		}
 	}
-	if client.SuspendReason == "auto_expired" {
-		return nil, fmt.Errorf("订阅已到期，请续费后重新登录")
-	}
+	// 到期账号（expired / auto_expired）已在调用方放行，这里只剩真正的封禁/异常状态。
 	return nil, fmt.Errorf("账号当前状态为 %q，已无法登录；请联系客服", client.Status)
 }
 

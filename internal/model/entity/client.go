@@ -75,3 +75,33 @@ type Client struct {
 }
 
 func (Client) TableName() string { return "clients" }
+
+// IsExpiredAccount 报告账号是否只是「套餐到期」，而非管理员封禁。
+//
+// 到期客户必须还能登录门户去续费，只是拿不到订阅数据/节点；把到期当封禁会把
+// 续费路径一起锁死（到期 → 登录被拒 → 永远无法续费）。
+//
+// 判定顺序：
+//  1. 明确封禁原因（admin 手动封禁 / auto_quota 超额）优先 → 不是到期；
+//  2. status=expired（退款回退/试用到期）→ 到期；
+//  3. suspend_reason=auto_expired（配额巡检到期）→ 到期；
+//  4. 历史遗留：status=suspended 但 suspend_reason 为空（该字段是后加的），
+//     若 expires_at 已过去则按到期处理 —— 否则这批老账号永远无法登录续费。
+func (c *Client) IsExpiredAccount() bool {
+	if c == nil {
+		return false
+	}
+	if c.SuspendReason == "admin" || c.SuspendReason == "auto_quota" {
+		return false
+	}
+	if c.Status == "expired" {
+		return true
+	}
+	if c.Status != "suspended" {
+		return false
+	}
+	if c.SuspendReason == "auto_expired" {
+		return true
+	}
+	return c.SuspendReason == "" && c.ExpiresAt != nil && !c.ExpiresAt.After(time.Now())
+}

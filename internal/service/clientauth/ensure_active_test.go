@@ -13,10 +13,26 @@ func TestEnsureClientActive(t *testing.T) {
 		t.Errorf("active 客户端应放行，得到 %v", err)
 	}
 
-	for _, st := range []string{"suspended", "expired", "", "pending", "unknown"} {
-		err := ensureClientActive(&entity.Client{Status: st})
-		if err == nil {
-			t.Errorf("状态 %q 必须被拒（失败关闭）", st)
+	// 到期不是封禁：允许登录去续费（订阅数据由 /sub 与 /client-auth/nodes 单独拒绝）。
+	for _, c := range []*entity.Client{
+		{Status: "expired"},
+		{Status: "suspended", SuspendReason: "auto_expired"},
+	} {
+		if err := ensureClientActive(c); err != nil {
+			t.Errorf("到期账号应放行（status=%q reason=%q），得到 %v", c.Status, c.SuspendReason, err)
+		}
+	}
+
+	for _, c := range []*entity.Client{
+		{Status: "suspended"},
+		{Status: "suspended", SuspendReason: "admin"},
+		{Status: "suspended", SuspendReason: "auto_quota"},
+		{Status: ""},
+		{Status: "pending"},
+		{Status: "unknown"},
+	} {
+		if err := ensureClientActive(c); err == nil {
+			t.Errorf("状态 %q（reason=%q）必须被拒（失败关闭）", c.Status, c.SuspendReason)
 		}
 	}
 

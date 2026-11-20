@@ -2476,6 +2476,13 @@ func (s *CommerceService) activatePlan(ctx context.Context, client *entity.Clien
 		client.Status = "active"
 	}
 
+	// 续费/新购后账号已回到 active：清掉到期封禁的残留字段，
+	// 否则后台详情仍显示「封禁原因=auto_expired」，看起来像还在封禁。
+	if client.Status == "active" {
+		client.SuspendedAt = nil
+		client.SuspendReason = ""
+	}
+
 	// 限速三字段与设备数不物化模板值（含换到"不限速"模板的情况）：
 	// 0=订阅拉取时实时继承模板，非 0=个人覆盖（push 回退见 clientauth/handler.go）。
 

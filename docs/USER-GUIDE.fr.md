@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-20 -->
 # Guide d'utilisation CoreFusion
 
 > Langues : [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · Français · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Valeurs prises en charge : `zh` / `en` / `fa` / `ru` ; `--lang=ru` est égalem
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construire à partir des sources
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` clone le référentiel (ou utilise l'extraction existante lorsque le script s'y trouve) et exécute `make panel`. Les versions de la chaîne d'outils sont choisies par environnement :
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Drapeau | Descriptif |
 |------|-------------|
 | `-d, --dir <PATH>` | Répertoire d'installation, par défaut `/opt/corefusion` |
-| `-v, --version <TAG>` | Version panneau, par ex. `v0.13.0-beta.91` ; par défaut `latest` |
+| `-v, --version <TAG>` | Version panneau, par ex. `v0.13.0-rc.1` ; par défaut `latest` |
 | `--binary` | Utiliser le binaire GitHub Release (par défaut) |
 | `--source` | Construire à partir des sources et préparer la correspondance Go/Node |
 | `--local <FILE>` | Utiliser un binaire local (installation hors ligne) |
@@ -1795,6 +1795,32 @@ Le binaire du panneau prend en charge ces sous-commandes (aucun argument ne dém
 
 ---
 
-> **Version du document** : v1.1
-> **Dernière mise à jour** : 2026-11-16
-> **S'applique à** : CoreFusion v0.13.0-beta.x
+## Annexe. Nouveautés de v0.13.0-rc.1
+
+- **Mise à jour en ligne du panneau** : « Paramètres système → Mise à jour du panneau » —
+  choix de la version (`pre` = préversion), mise à jour, historique des tâches et retour au
+  binaire précédent.
+- **Mise à jour en ligne de l'Agent** : dans la fiche du nœud, « Mettre à jour l'Agent » depuis
+  le binaire local du panneau ou depuis GitHub Releases ; les nœuds mis à jour depuis d'anciennes
+  versions reçoivent automatiquement `update.public_key` (0600) et vérifient ensuite les
+  signatures ed25519.
+- **Synchronisation WAF** : la dernière synchronisation est stockée dans
+  `waf.github_source.last_sync` ; un redémarrage ne réinitialise plus le minuteur ; `0 3 * * *`
+  s'exécute à 03:00 dans le fuseau `panel.timezone` (Asia/Shanghai par défaut) ; les fenêtres
+  manquées sont rattrapées environ 15 s après le démarrage.
+- **Liste blanche WAF** : le domaine du panneau maintient automatiquement `whiteurl.rule` ; les
+  contrôles URL/paramètres/POST ne sont ignorés que pour l'API d'administration, donc
+  l'enregistrement d'un site de paiement avec `http://127.0.0.1:18081` n'est plus bloqué (SSRF).
+- **Politique de quota** : cumul au renouvellement / effacement à l'expiration / réinitialisation
+  au renouvellement (la variante peut hériter du forfait) ; en « mensuel », le panneau vérifie
+  chaque heure et remet l'usage à zéro.
+- **Sites de paiement** : activer/désactiver ne modifie plus les clés ni les moyens de paiement ;
+  les commandes de recharge se filtrent par type et s'exportent en CSV.
+- **Portail** : « Recharger » accepte le paiement en ligne via un site actif et les cartes
+  cadeaux ; sans site actif, seul l'échange de carte est proposé.
+
+---
+
+> **Version du document** : v1.2
+> **Dernière mise à jour** : 2026-11-20
+> **S'applique à** : CoreFusion v0.13.0-rc.1

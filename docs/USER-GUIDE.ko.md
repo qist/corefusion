@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-11-20 -->
 # CoreFusion 운영 가이드
 
 > 언어: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · 한국어 · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 소스에서 빌드하기
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source`는 저장소를 복제하고(또는 스크립트가 내부에 있을 때 기존 체크아웃을 사용) `make panel`를 실행합니다. 툴체인 버전은 환경에 따라 선택됩니다.
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 깃발 | 설명 |
 |------|-------------|
 | `-d, --dir <PATH>` | 설치 디렉토리, 기본값 `/opt/corefusion` |
-| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-beta.91`; 기본 `latest` |
+| `-v, --version <TAG>` | 패널 버전(예: `v0.13.0-rc.1`; 기본 `latest` |
 | `--binary` | GitHub 릴리스 바이너리 사용(기본값) |
 | `--source` | 소스에서 빌드하고 일치하는 Go/Node 준비 |
 | `--local <FILE>` | 로컬 바이너리 사용(오프라인 설치) |
@@ -1795,6 +1795,28 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **문서 버전**: v1.1
-> **최종 업데이트**: 2026-11-16
-> **적용 대상**: CoreFusion v0.13.0-beta.x
+## 부록. v0.13.0-rc.1 변경 사항
+
+- **패널 온라인 업그레이드**: 「시스템 설정 → 패널 업데이트」에서 버전 선택(`pre`는
+  사전 릴리스), 업데이트, 작업 기록, 이전 바이너리로 롤백을 지원.
+- **Agent 온라인 업그레이드**: 노드 상세의 「Agent 업데이트」에서 패널 로컬 바이너리 또는
+  GitHub Releases 사용. 구버전에서 업그레이드한 노드는 첫 연결 시
+  `update.public_key`(0600)를 자동으로 받고 이후 ed25519 서명을 검증.
+- **WAF 동기화**: 마지막 동기화 시각을 `waf.github_source.last_sync`에 저장하며 재시작해도
+  타이머가 초기화되지 않음. `0 3 * * *`은 `panel.timezone`(기본 Asia/Shanghai) 기준 03:00에
+  실행되고, 놓친 실행은 시작 약 15초 후 보충.
+- **WAF 화이트리스트**: 패널 포워드 도메인은 `whiteurl.rule`을 자동 유지. URL/인자/POST
+  검사는 관리 API에만 건너뛰므로 `http://127.0.0.1:18081` 같은 결제 사이트 저장이 SSRF
+  규칙에 막히지 않음.
+- **할당량 정책**: 갱신 시 누적 / 만료 시 초기화 / 갱신 시 재설정(변형은 플랜 상속 가능).
+  「월간」은 매시간 확인 후 사용량을 0으로.
+- **결제 사이트**: 활성/비활성 전환이 키나 결제 수단을 바꾸지 않음. 충전 주문은 유형별
+  필터와 CSV 내보내기 지원.
+- **포털**: 「충전」은 활성 결제 사이트를 통한 온라인 결제와 카드 사용을 지원하며, 사이트가
+  없으면 카드만 표시.
+
+---
+
+> **문서 버전**: v1.2
+> **최종 업데이트**: 2026-11-20
+> **적용 대상**: CoreFusion v0.13.0-rc.1

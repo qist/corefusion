@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ja | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: ja | updated: 2026-11-20 -->
 # CoreFusion 操作ガイド
 
 > 言語： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · 日本語 · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 ソースからのビルド
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` はリポジトリのクローンを作成し (スクリプトがリポジトリ内にある場合は既存のチェックアウトを使用し)、`make panel` を実行します。ツールチェーンのバージョンは環境ごとに選択されます。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 旗 | 説明 |
 |------|-------------|
 | `-d, --dir <PATH>` | インストールディレクトリ、デフォルト `/opt/corefusion` |
-| `-v, --version <TAG>` | パネルのバージョン、例: `v0.13.0-beta.91`;デフォルト `latest` |
+| `-v, --version <TAG>` | パネルのバージョン、例: `v0.13.0-rc.1`;デフォルト `latest` |
 | `--binary` | GitHub リリース バイナリを使用します (デフォルト) |
 | `--source` | ソースからビルドし、一致する Go / Node を準備する |
 | `--local <FILE>` | ローカルバイナリを使用する(オフラインインストール) |
@@ -1795,6 +1795,28 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **ドキュメントのバージョン**: v1.1
-> **最終更新**: 2026-11-16
-> **適用対象**: CoreFusion v0.13.0-beta.x
+## 付録. v0.13.0-rc.1 の変更点
+
+- **パネルのオンライン更新**: 「システム設定 → パネル更新」でバージョン選択（`pre` は
+  プレリリース）、更新、タスク履歴、直前のバイナリへのロールバックが可能。
+- **Agent のオンライン更新**: ノード詳細の「Agent 更新」から、パネル内のバイナリまたは
+  GitHub Releases を使用。旧バージョンから更新したノードは初回接続時に
+  `update.public_key`（0600）を自動で受け取り、以降 ed25519 署名を検証。
+- **WAF 同期**: 最終同期時刻を `waf.github_source.last_sync` に保存し、再起動しても
+  タイマーを初期化しない。`0 3 * * *` は `panel.timezone`（既定 Asia/Shanghai）の 03:00 に
+  実行。逃した実行は起動約 15 秒後に補完。
+- **WAF ホワイトリスト**: パネル転送ドメインは `whiteurl.rule` を自動維持。URL/引数/POST
+  検査は管理 API のみスキップするため、`http://127.0.0.1:18081` のような決済サイトも
+  SSRF ルールで遮断されない。
+- **クォータポリシー**: 更新時に加算 / 期限切れで消去 / 更新時にリセット（バリアントは
+  プランを継承可）。「毎月」では毎時チェックして使用量を 0 に。
+- **決済サイト**: 有効/無効の切り替えでキーや決済方法は変わらない。チャージ注文は
+  種別で絞り込み、CSV 出力が可能。
+- **ポータル**: 「チャージ」は有効な決済サイトによるオンライン決済とカード利用に対応。
+  サイト未設定時はカードのみ表示。
+
+---
+
+> **ドキュメントのバージョン**: v1.2
+> **最終更新**: 2026-11-20
+> **適用対象**: CoreFusion v0.13.0-rc.1

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-11-20 -->
 # راهنمای عملیات CoreFusion
 
 > زبان‌ها: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · فارسی
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 ساختن از مبدا
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` مخزن را شبیه سازی می کند (یا وقتی اسکریپت داخل آن است از پرداخت موجود استفاده می کند) و `make panel` را اجرا می کند. نسخه های زنجیره ابزار در هر محیط انتخاب می شوند:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | پرچم | توضیحات |
 |------|-------------|
 | `-d, --dir <PATH>` | دایرکتوری، پیش فرض `/opt/corefusion` را نصب کنید |
-| `-v, --version <TAG>` | نسخه پنل، به عنوان مثال `v0.13.0-beta.91`; پیش فرض `latest` |
+| `-v, --version <TAG>` | نسخه پنل، به عنوان مثال `v0.13.0-rc.1`; پیش فرض `latest` |
 | `--binary` | استفاده از باینری GitHub Release (پیش‌فرض) |
 | `--source` | از منبع بسازید و Go/Node مطابق را آماده کنید |
 | `--local <FILE>` | استفاده از باینری محلی (نصب آفلاین) |
@@ -1795,6 +1795,29 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **نسخه سند**: v1.1
-> **آخرین به روز رسانی **: 2026-11-16
-> **قابل استفاده برای**: CoreFusion نسخه 0.13.0-beta.x
+## پیوست. تغییرات v0.13.0-rc.1
+
+- **به‌روزرسانی آنلاین پنل**: «تنظیمات سیستم → به‌روزرسانی پنل» — انتخاب نسخه
+  (`pre` = پیش‌انتشار)، به‌روزرسانی، تاریخچه وظایف و بازگشت به باینری قبلی.
+- **به‌روزرسانی آنلاین Agent**: در جزئیات نود، «به‌روزرسانی Agent» از باینری محلی پنل یا
+  GitHub Releases؛ نودهایی که از نسخه‌های قدیمی ارتقا یافته‌اند در نخستین اتصال
+  `update.public_key` (0600) را می‌گیرند و سپس امضای ed25519 را بررسی می‌کنند.
+- **همگام‌سازی WAF**: زمان آخرین همگام‌سازی در `waf.github_source.last_sync` ذخیره می‌شود و
+  راه‌اندازی مجدد تایمر را بازنشانی نمی‌کند؛ `0 3 * * *` ساعت 03:00 به وقت `panel.timezone`
+  (پیش‌فرض Asia/Shanghai) اجرا می‌شود؛ پنجره‌های ازدست‌رفته حدود ۱۵ ثانیه پس از شروع جبران
+  می‌شوند.
+- **فهرست سفید WAF**: دامنه پنل به‌طور خودکار `whiteurl.rule` را نگه می‌دارد؛ بررسی
+  URL/پارامتر/POST فقط برای API مدیریت نادیده گرفته می‌شود، بنابراین ذخیره سایت پرداخت با
+  `http://127.0.0.1:18081` دیگر با قاعده SSRF مسدود نمی‌شود.
+- **سیاست سهمیه**: افزایش در تمدید / پاک‌سازی در انقضا / بازنشانی در تمدید (مشخصه می‌تواند
+  از طرح ارث‌بری کند)؛ در حالت «ماهانه» پنل هر ساعت بررسی و مصرف را صفر می‌کند.
+- **سایت‌های پرداخت**: فعال/غیرفعال کردن کلیدها یا روش‌های پرداخت را تغییر نمی‌دهد؛ سفارش
+  شارژ بر اساس نوع فیلتر و به CSV صادر می‌شود.
+- **پورتال**: دکمه «شارژ» پرداخت آنلاین از سایت فعال و کارت هدیه را پشتیبانی می‌کند؛ اگر
+  سایتی فعال نباشد فقط استفاده از کارت نمایش داده می‌شود.
+
+---
+
+> **نسخه سند**: v1.2
+> **آخرین به روز رسانی **: 2026-11-20
+> **قابل استفاده برای**: CoreFusion نسخه 0.13.0-rc.1

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-20 -->
 # Panduan Pengoperasian CoreFusion
 
 > Bahasa: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · Bahasa Indonesia · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Nilai yang didukung: `zh` / `en` / `fa` / `ru`; `--lang=ru` juga diterima. Nilai
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Membangun dari sumbernya
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` mengkloning repositori (atau menggunakan checkout yang ada saat skrip ada di dalamnya) dan menjalankan `make panel`. Versi Toolchain dipilih per lingkungan:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bendera | Deskripsi |
 |------|-------------|
 | `-d, --dir <PATH>` | Instal direktori, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-beta.91`; bawaan `latest` |
+| `-v, --version <TAG>` | Versi panel, mis. `v0.13.0-rc.1`; bawaan `latest` |
 | `--binary` | Gunakan biner Rilis GitHub (default) |
 | `--source` | Bangun dari sumber dan siapkan Go/Node.js yang cocok |
 | `--local <FILE>` | Gunakan biner lokal (instal offline) |
@@ -1795,6 +1795,30 @@ Biner panel mendukung subperintah ini (tidak ada argumen yang memulai server):
 
 ---
 
-> **Versi dokumen**: v1.1
-> **Terakhir diperbarui**: 16-11-2026
-> **Berlaku untuk**: CoreFusion v0.13.0-beta.x
+## Lampiran. Perubahan v0.13.0-rc.1
+
+- **Pembaruan panel daring**: «Pengaturan sistem → Pembaruan panel» — pilih versi (`pre` =
+  pra-rilis), perbarui, riwayat tugas, dan rollback ke biner sebelumnya.
+- **Pembaruan Agent daring**: di detail node «Perbarui Agent» dari biner lokal panel atau
+  GitHub Releases; node yang diperbarui dari versi lama otomatis menerima `update.public_key`
+  (0600) saat terhubung dan kemudian memverifikasi tanda tangan ed25519.
+- **Sinkronisasi WAF**: waktu sinkronisasi terakhir disimpan di
+  `waf.github_source.last_sync`; restart tidak mengulang timer; `0 3 * * *` berjalan pukul 03:00
+  pada zona `panel.timezone` (default Asia/Shanghai); jendela yang terlewat dikejar ~15 detik
+  setelah mulai.
+- **Daftar putih WAF**: domain panel memelihara `whiteurl.rule` otomatis; pemeriksaan
+  URL/argumen/POST dilewati hanya untuk API admin, sehingga menyimpan situs pembayaran dengan
+  `http://127.0.0.1:18081` tidak lagi diblokir aturan SSRF.
+- **Kebijakan kuota**: akumulasi saat perpanjangan / kosongkan saat kedaluwarsa / reset saat
+  perpanjangan (varian dapat mewarisi paket); pada «bulanan» panel memeriksa tiap jam dan
+  mengosongkan pemakaian.
+- **Situs pembayaran**: aktif/nonaktif tidak lagi mengubah kunci atau metode pembayaran;
+  pesanan isi ulang dapat difilter per tipe dan diekspor CSV.
+- **Portal**: «Isi ulang» mendukung pembayaran daring lewat situs aktif dan kartu; tanpa situs
+  aktif hanya penukaran kartu yang ditampilkan.
+
+---
+
+> **Versi dokumen**: v1.2
+> **Terakhir diperbarui**: 20-11-2026
+> **Berlaku untuk**: CoreFusion v0.13.0-rc.1

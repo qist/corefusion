@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-11-20 -->
 # دليل عمليات CoreFusion
 
 > اللغات: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · العربية · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 البناء من المصدر
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 يقوم `--source` باستنساخ المستودع (أو يستخدم عملية السحب الموجودة عندما يكون البرنامج النصي بداخله) ويقوم بتشغيل `make panel`. يتم اختيار إصدارات Toolchain لكل بيئة:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | العلم | الوصف |
 |------|-------------|
 | `-d, --dir <PATH>` | دليل التثبيت، الافتراضي `/opt/corefusion` |
-| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-beta.91`; الافتراضي `latest` |
+| `-v, --version <TAG>` | نسخة اللوحة، على سبيل المثال. `v0.13.0-rc.1`; الافتراضي `latest` |
 | `--binary` | استخدم الإصدار الثنائي GitHub (افتراضي) |
 | `--source` | البناء من المصدر وإعداد مطابقة Go / Node |
 | `--local <FILE>` | استخدام ثنائي محلي (تثبيت دون اتصال) |
@@ -1795,6 +1795,28 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **نسخة الوثيقة**: v1.1
-> **آخر تحديث**: 16-11-2026
-> **ينطبق على**: CoreFusion v0.13.0-beta.x
+## ملحق. تغييرات v0.13.0-rc.1
+
+- **ترقية لوحة التحكم عبر الإنترنت**: «إعدادات النظام → تحديث اللوحة» — اختيار الإصدار
+  (علامة `pre` تعني إصدارًا تجريبيًا)، التحديث، سجل المهام، والرجوع إلى الملف التنفيذي السابق.
+- **ترقية Agent عبر الإنترنت**: في تفاصيل العقدة «تحديث Agent» من الملف المحلي في اللوحة أو
+  من GitHub Releases؛ العقد المحدّثة من إصدارات قديمة تحصل تلقائيًا على
+  `update.public_key` (0600) عند أول اتصال ثم تتحقق من توقيع ed25519.
+- **مزامنة WAF**: يُحفظ وقت آخر مزامنة في `waf.github_source.last_sync`، وإعادة التشغيل لا
+  تعيد ضبط المؤقت؛ يعمل `0 3 * * *` الساعة 03:00 حسب `panel.timezone` (الافتراضي
+  Asia/Shanghai)؛ وتُعوَّض النوافذ الفائتة بعد نحو 15 ثانية من البدء.
+- **قائمة WAF البيضاء**: نطاق اللوحة يحتفظ تلقائيًا بملف `whiteurl.rule`؛ تُتجاوز فحوص
+  URL/المعاملات/POST لواجهات الإدارة فقط، لذا لم يعد حفظ موقع دفع بعنوان
+  `http://127.0.0.1:18081` يُحجب بقاعدة SSRF.
+- **سياسة الحصة**: التجميع عند التجديد / المسح عند الانتهاء / إعادة الضبط عند التجديد (يمكن
+  للمتغير وراثة الخطة)؛ في الوضع «الشهري» تفحص اللوحة كل ساعة وتصفّر الاستخدام.
+- **مواقع الدفع**: التفعيل/التعطيل لا يغيّر المفاتيح أو طرق الدفع؛ ويمكن تصفية طلبات الشحن
+  حسب النوع وتصديرها CSV.
+- **البوابة**: زر «شحن» يدعم الدفع عبر الإنترنت من موقع مفعّل واستبدال البطاقات؛ وعند عدم
+  وجود موقع يظهر استبدال البطاقة فقط.
+
+---
+
+> **نسخة الوثيقة**: v1.2
+> **آخر تحديث**: 20-11-2026
+> **ينطبق على**: CoreFusion v0.13.0-rc.1

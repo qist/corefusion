@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-20 -->
 # Guia de operações CoreFusion
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · Português · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Valores suportados: `zh`/`en`/`fa`/`ru`; `--lang=ru` também é aceito. Um valor
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construindo a partir da fonte
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` clona o repositório (ou usa o checkout existente quando o script está dentro dele) e executa `make panel`. As versões do conjunto de ferramentas são escolhidas por ambiente:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bandeira | Descrição |
 |------|-------------|
 | `-d, --dir <PATH>` | Diretório de instalação, padrão `/opt/corefusion` |
-| `-v, --version <TAG>` | Versão do painel, por ex. `v0.13.0-beta.91`; padrão `latest` |
+| `-v, --version <TAG>` | Versão do painel, por ex. `v0.13.0-rc.1`; padrão `latest` |
 | `--binary` | Use o binário da versão GitHub (padrão) |
 | `--source` | Construa a partir do código-fonte e prepare Go/Node correspondente |
 | `--local <FILE>` | Use um binário local (instalação offline) |
@@ -1795,6 +1795,29 @@ O binário do painel suporta estes subcomandos (nenhum argumento inicia o servid
 
 ---
 
-> **Versão do documento**: v1.1
-> **Última atualização**: 16/11/2026
-> **Aplica-se a**: CoreFusion v0.13.0-beta.x
+## Apêndice. Novidades da v0.13.0-rc.1
+
+- **Atualização online do painel**: «Configurações do sistema → Atualização do painel» —
+  escolha da versão (`pre` = pré-lançamento), atualização, histórico de tarefas e rollback para
+  o binário anterior.
+- **Atualização online do Agent**: nos detalhes do nó, «Atualizar Agent» a partir do binário
+  local do painel ou do GitHub Releases; nós atualizados de versões antigas recebem
+  automaticamente `update.public_key` (0600) e passam a validar assinaturas ed25519.
+- **Sincronização WAF**: a última sincronização fica em `waf.github_source.last_sync`;
+  reiniciar não zera o temporizador; `0 3 * * *` roda às 03:00 no fuso `panel.timezone`
+  (Asia/Shanghai por padrão); janelas perdidas são recuperadas ~15 s após a inicialização.
+- **Lista de permissões WAF**: o domínio do painel mantém `whiteurl.rule` automaticamente;
+  verificações de URL/parâmetros/POST são ignoradas apenas para a API administrativa, então
+  salvar um site de pagamento com `http://127.0.0.1:18081` não é mais bloqueado por SSRF.
+- **Política de cota**: acumular na renovação / limpar no vencimento / redefinir na renovação
+  (a variante pode herdar o plano); em «mensal» o painel verifica a cada hora e zera o uso.
+- **Sites de pagamento**: ativar/desativar não altera chaves nem métodos de pagamento; pedidos
+  de recarga podem ser filtrados por tipo e exportados em CSV.
+- **Portal**: «Recarregar» aceita pagamento online via site ativo e cartões; sem site ativo,
+  apenas o resgate de cartão é exibido.
+
+---
+
+> **Versão do documento**: v1.2
+> **Última atualização**: 20/11/2026
+> **Aplica-se a**: CoreFusion v0.13.0-rc.1

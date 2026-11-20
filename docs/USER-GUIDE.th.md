@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: th | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: th | updated: 2026-11-20 -->
 # คู่มือการใช้งาน CoreFusion
 
 > ภาษา: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · ไทย · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 การสร้างจากแหล่งที่มา
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` โคลนที่เก็บ (หรือใช้การชำระเงินที่มีอยู่เมื่อมีสคริปต์อยู่ข้างใน) และรัน `make panel` เวอร์ชันของ Toolchain จะถูกเลือกตามสภาพแวดล้อม:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | ธง | คำอธิบาย |
 |------|-------------|
 | `-d, --dir <PATH>` | ติดตั้งไดเร็กทอรี ค่าเริ่มต้น `/opt/corefusion` |
-| `-v, --version <TAG>` | เวอร์ชันแผง เช่น `v0.13.0-beta.91`; ค่าเริ่มต้น `latest` |
+| `-v, --version <TAG>` | เวอร์ชันแผง เช่น `v0.13.0-rc.1`; ค่าเริ่มต้น `latest` |
 | `--binary` | ใช้ไบนารี่ Release GitHub (ค่าเริ่มต้น) |
 | `--source` | สร้างจากแหล่งที่มาและเตรียมการจับคู่ Go / Node |
 | `--local <FILE>` | ใช้ไบนารีท้องถิ่น (ติดตั้งออฟไลน์) |
@@ -1795,6 +1795,28 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **เวอร์ชันเอกสาร**: v1.1.1
-> **อัปเดตล่าสุด**: 16-11-2026
-> **ใช้กับ**: CoreFusion v0.13.0-beta.x
+## ภาคผนวก การเปลี่ยนแปลงใน v0.13.0-rc.1
+
+- **อัปเกรดแผงควบคุมแบบออนไลน์**: «การตั้งค่าระบบ → อัปเดตแผงควบคุม» เลือกเวอร์ชัน
+  (`pre` = pre-release) อัปเดต ดูประวัติงาน และย้อนกลับไปไบนารีก่อนหน้าได้
+- **อัปเกรด Agent แบบออนไลน์**: ในหน้ารายละเอียดโหนด «อัปเดต Agent» จากไบนารีในแผงหรือ
+  GitHub Releases; โหนดที่อัปเกรดจากเวอร์ชันเก่าจะได้รับ `update.public_key` (0600)
+  อัตโนมัติเมื่อเชื่อมต่อครั้งแรก และตรวจสอบลายเซ็น ed25519 ต่อไป
+- **การซิงก์ WAF**: เก็บเวลาซิงก์ล่าสุดใน `waf.github_source.last_sync`; การรีสตาร์ตไม่รีเซ็ต
+  ตัวจับเวลา; `0 3 * * *` ทำงานเวลา 03:00 ตาม `panel.timezone` (ค่าเริ่มต้น Asia/Shanghai);
+  รอบที่พลาดจะถูกชดเชยประมาณ 15 วินาทีหลังเริ่มทำงาน
+- **ไวต์ลิสต์ WAF**: โดเมนแผงจะดูแล `whiteurl.rule` อัตโนมัติ; การตรวจ URL/พารามิเตอร์/POST
+  จะข้ามเฉพาะ API ผู้ดูแลระบบ จึงบันทึกเว็บไซต์ชำระเงินที่มี `http://127.0.0.1:18081`
+  ได้โดยไม่ถูกกฎ SSRF บล็อก
+- **นโยบายโควตา**: สะสมเมื่อต่ออายุ / ล้างเมื่อหมดอายุ / รีเซ็ตเมื่อต่ออายุ (variant สืบทอด
+  แพ็กเกจได้); โหมด «รายเดือน» ตรวจทุกชั่วโมงและล้างการใช้งานเป็นศูนย์
+- **เว็บไซต์ชำระเงิน**: เปิด/ปิดไม่เปลี่ยนคีย์หรือวิธีชำระเงิน; คำสั่งเติมเงินกรองตามประเภท
+  และส่งออก CSV ได้
+- **พอร์ทัล**: ปุ่ม «เติมเงิน» รองรับชำระออนไลน์ผ่านเว็บไซต์ที่เปิดใช้งานและการใช้บัตร;
+  หากไม่มีเว็บไซต์จะแสดงเฉพาะการใช้บัตร
+
+---
+
+> **เวอร์ชันเอกสาร**: v1.2
+> **อัปเดตล่าสุด**: 20-11-2026
+> **ใช้กับ**: CoreFusion v0.13.0-rc.1

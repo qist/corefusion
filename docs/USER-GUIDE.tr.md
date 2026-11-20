@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-20 -->
 # CoreFusion Operasyon Kılavuzu
 
 > Diller: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · Türkçe · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Desteklenen değerler: `zh` / `en` / `fa` / `ru`; `--lang=ru` de kabul edilir. D
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Kaynaktan inşa etmek
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source`, depoyu klonlar (veya komut dosyası içindeyken mevcut ödemeyi kullanır) ve `make panel`'yi çalıştırır. Araç zinciri versiyonları ortama göre seçilir:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bayrak | Açıklama |
 |------|-------------|
 | `-d, --dir <PATH>` | Kurulum dizini, varsayılan `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-beta.91`; varsayılan `latest` |
+| `-v, --version <TAG>` | Panel versiyonu, ör. `v0.13.0-rc.1`; varsayılan `latest` |
 | `--binary` | GitHub Sürüm ikili dosyasını kullanın (varsayılan) |
 | `--source` | Kaynaktan derleyin ve eşleşen Go/Node'u hazırlayın |
 | `--local <FILE>` | Yerel bir ikili dosya kullanın (çevrimdışı kurulum) |
@@ -1795,6 +1795,28 @@ Panel ikili programı şu alt komutları destekler (sunucuyu hiçbir argüman ba
 
 ---
 
-> **Belge sürümü**: v1.1
-> **Son güncelleme**: 2026-11-16
-> **Şunlar için geçerlidir**: CoreFusion v0.13.0-beta.x
+## Ek. v0.13.0-rc.1 değişiklikleri
+
+- **Panel çevrimiçi güncelleme**: «Sistem ayarları → Panel güncellemesi» — sürüm seçimi
+  (`pre` = ön sürüm), güncelleme, görev geçmişi ve önceki ikiliye geri dönme.
+- **Agent çevrimiçi güncelleme**: düğüm ayrıntılarında «Agent güncelle» ile paneldeki yerel
+  ikili veya GitHub Releases kullanılır; eski sürümlerden güncellenen düğümler ilk bağlantıda
+  `update.public_key` (0600) alır ve sonrasında ed25519 imzalarını doğrular.
+- **WAF eşitleme**: son eşitleme zamanı `waf.github_source.last_sync` içinde tutulur; yeniden
+  başlatma zamanlayıcıyı sıfırlamaz; `0 3 * * *` `panel.timezone` (varsayılan Asia/Shanghai)
+  saat 03:00'te çalışır; kaçırılan pencereler başlangıçtan ~15 saniye sonra telafi edilir.
+- **WAF beyaz listesi**: panel yönlendirme alan adı `whiteurl.rule` dosyasını otomatik tutar;
+  URL/argüman/POST kontrolleri yalnızca yönetim API'si için atlanır, bu yüzden
+  `http://127.0.0.1:18081` gibi ödeme siteleri SSRF kuralına takılmaz.
+- **Kota politikası**: yenilemede ekle / süre bitiminde temizle / yenilemede sıfırla (varyant
+  planı devralabilir); «aylık» seçiliyse panel saatte bir kontrol edip kullanımı sıfırlar.
+- **Ödeme siteleri**: etkinleştirme/devre dışı bırakma anahtarları veya ödeme yöntemlerini
+  değiştirmez; yükleme siparişleri türe göre filtrelenip CSV olarak dışa aktarılabilir.
+- **Portal**: «Yükle» etkin bir ödeme sitesiyle çevrimiçi ödemeyi ve kart kullanımını destekler;
+  site yoksa yalnızca kart gösterilir.
+
+---
+
+> **Belge sürümü**: v1.2
+> **Son güncelleme**: 2026-11-20
+> **Şunlar için geçerlidir**: CoreFusion v0.13.0-rc.1

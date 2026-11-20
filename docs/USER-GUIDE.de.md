@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: de | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: de | updated: 2026-11-20 -->
 # CoreFusion Betriebshandbuch
 
 > Sprachen: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · Deutsch · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Unterstützte Werte: `zh` / `en` / `fa` / `ru`; `--lang=ru` wird ebenfalls akzep
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Aufbau aus der Quelle
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` klont das Repository (oder verwendet den vorhandenen Checkout, wenn sich das Skript darin befindet) und führt `make panel` aus. Toolchain-Versionen werden pro Umgebung ausgewählt:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flagge | Beschreibung |
 |------|-------------|
 | `-d, --dir <PATH>` | Installationsverzeichnis, Standard `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel-Version, z.B. `v0.13.0-beta.91`; Standard `latest` |
+| `-v, --version <TAG>` | Panel-Version, z.B. `v0.13.0-rc.1`; Standard `latest` |
 | `--binary` | Verwenden Sie die Release-Binärdatei GitHub (Standard). |
 | `--source` | Erstellen Sie aus dem Quellcode und bereiten Sie den passenden Go/Node vor |
 | `--local <FILE>` | Verwenden Sie eine lokale Binärdatei (Offline-Installation) |
@@ -1795,6 +1795,30 @@ Die Panel-Binärdatei unterstützt diese Unterbefehle (keine Argumente starten d
 
 ---
 
-> **Dokumentversion**: v1.1
-> **Letzte Aktualisierung**: 16.11.2026
-> **Gilt für**: CoreFusion v0.13.0-beta.x
+## Anhang. Änderungen in v0.13.0-rc.1
+
+- **Online-Update des Panels**: „Systemeinstellungen → Panel-Update“ — Versionsauswahl
+  (`pre` = Vorabversion), Update, Aufgabenhistorie und Rollback auf das vorherige Binary.
+- **Online-Update des Agent**: Node-Details → „Agent-Update“ — aus dem lokalen Binary des
+  Panels oder aus GitHub Releases; von älteren Versionen aktualisierte Nodes erhalten beim
+  ersten Verbinden automatisch `update.public_key` (0600) und prüfen danach ed25519-Signaturen.
+- **WAF-Synchronisation**: Die letzte Synchronisation steht in
+  `waf.github_source.last_sync`; Neustarts setzen den Timer nicht zurück; `0 3 * * *` läuft um
+  03:00 in der Zeitzone `panel.timezone` (Standard Asia/Shanghai); verpasste Fenster werden ca.
+  15 Sekunden nach dem Start nachgeholt.
+- **WAF-Whitelist**: Für die Panel-Domain wird `whiteurl.rule` automatisch gepflegt;
+  URL-/Argument-/POST-Prüfungen werden nur für Admin-APIs übersprungen, daher lässt sich eine
+  Zahlungsseite mit `http://127.0.0.1:18081` wieder speichern (kein SSRF-Fehler mehr).
+- **Kontingentrichtlinie**: Addieren bei Verlängerung / Löschen bei Ablauf / Zurücksetzen bei
+  Verlängerung (Variante kann den Tarif erben); bei „monatlich“ prüft das Panel stündlich und
+  nullt den Verbrauch.
+- **Zahlungsseiten**: Ein-/Ausschalten ändert keine Schlüssel oder Zahlungsmethoden;
+  Aufladebestellungen lassen sich nach Typ filtern und als CSV exportieren.
+- **Portal**: „Aufladen“ unterstützt Online-Zahlung über eine aktive Zahlungsseite und
+  Gutscheinkarten; ohne aktive Seite wird nur die Karteneinlösung angezeigt.
+
+---
+
+> **Dokumentversion**: v1.2
+> **Letzte Aktualisierung**: 20.11.2026
+> **Gilt für**: CoreFusion v0.13.0-rc.1

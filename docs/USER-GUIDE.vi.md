@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-16 -->
+<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-20 -->
 # Hướng dẫn vận hành CoreFusion
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -165,7 +165,7 @@ Các giá trị được hỗ trợ: `zh` / `en` / `fa` / `ru`; `--lang=ru` cũn
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-beta.91
+sudo bash install.sh --version v0.13.0-rc.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Xây dựng từ nguồn
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-beta.91
+sudo bash install.sh --source --version v0.13.0-rc.1
 ```
 
 `--source` sao chép kho lưu trữ (hoặc sử dụng thanh toán hiện có khi tập lệnh nằm trong đó) và chạy `make panel`. Các phiên bản chuỗi công cụ được chọn cho mỗi môi trường:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Cờ | Mô tả |
 |------|-------------|
 | `-d, --dir <PATH>` | Thư mục cài đặt, mặc định `/opt/corefusion` |
-| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-beta.91`; mặc định `latest` |
+| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0-rc.1`; mặc định `latest` |
 | `--binary` | Sử dụng mã nhị phân phát hành GitHub (mặc định) |
 | `--source` | Xây dựng từ nguồn và chuẩn bị Go/Node phù hợp |
 | `--local <FILE>` | Sử dụng tệp nhị phân cục bộ (cài đặt ngoại tuyến) |
@@ -1795,6 +1795,29 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 
 ---
 
-> **Phiên bản tài liệu**: v1.1
-> **Cập nhật lần cuối**: 2026-11-16
-> **Áp dụng cho**: CoreFusion v0.13.0-beta.x
+## Phụ lục. Thay đổi v0.13.0-rc.1
+
+- **Nâng cấp bảng điều khiển trực tuyến**: «Cài đặt hệ thống → Cập nhật bảng điều khiển» —
+  chọn phiên bản (`pre` = bản phát hành trước), cập nhật, xem lịch sử và quay lại tệp nhị phân
+  trước đó.
+- **Nâng cấp Agent trực tuyến**: trong chi tiết nút, «Cập nhật Agent» từ tệp nhị phân cục bộ
+  của bảng điều khiển hoặc GitHub Releases; nút được nâng cấp từ phiên bản cũ sẽ tự nhận
+  `update.public_key` (0600) khi kết nối lần đầu và kiểm tra chữ ký ed25519.
+- **Đồng bộ WAF**: thời điểm đồng bộ cuối được lưu trong `waf.github_source.last_sync`; khởi
+  động lại không đặt lại bộ đếm; `0 3 * * *` chạy lúc 03:00 theo `panel.timezone` (mặc định
+  Asia/Shanghai); các lần bị lỡ được bù khoảng 15 giây sau khi khởi động.
+- **Danh sách trắng WAF**: tên miền chuyển tiếp của bảng điều khiển tự duy trì
+  `whiteurl.rule`; kiểm tra URL/tham số/POST chỉ được bỏ qua cho API quản trị, nên lưu trang
+  thanh toán với `http://127.0.0.1:18081` không còn bị chặn bởi quy tắc SSRF.
+- **Chính sách hạn mức**: cộng dồn khi gia hạn / xóa khi hết hạn / đặt lại khi gia hạn (biến
+  thể có thể kế thừa gói); chế độ «hàng tháng» kiểm tra mỗi giờ và đưa mức dùng về 0.
+- **Trang thanh toán**: bật/tắt không thay đổi khóa hay phương thức thanh toán; đơn nạp tiền
+  lọc theo loại và xuất CSV.
+- **Cổng thông tin**: «Nạp tiền» hỗ trợ thanh toán trực tuyến qua trang đang bật và thẻ cào;
+  nếu không có trang nào thì chỉ hiện đổi thẻ.
+
+---
+
+> **Phiên bản tài liệu**: v1.2
+> **Cập nhật lần cuối**: 2026-11-20
+> **Áp dụng cho**: CoreFusion v0.13.0-rc.1

@@ -37,19 +37,21 @@ type BinaryLister interface {
 
 // Service provides business logic for managing node servers.
 type Service struct {
-	repo          *repository.NodeServerRepository
-	inboundRepo   *repository.InboundConfigRepository
-	tokenMgr      *agent.BootstrapTokenManager
-	caService     *agent.CertificateAuthority
-	crl           *agent.CertRevocationList
-	certDistrib   *agent.CertDistributor
-	nodeMgr       *agent.NodeServerManager
-	nodeCerts     *repository.NodeCertificateRepository // 节点↔证书 多对多 ✓
-	failoverMgr   *agent.FailoverManager
-	mirrorSync    *agent.MirrorSyncManager
-	chainGen      *agent.ChainConfigGenerator
-	chainHealth   *agent.ChainHealthMonitorRegistry
-	billingFilter *agent.BillingFilter
+	repo        *repository.NodeServerRepository
+	inboundRepo *repository.InboundConfigRepository
+	tokenMgr    *agent.BootstrapTokenManager
+	caService   *agent.CertificateAuthority
+	crl         *agent.CertRevocationList
+	certDistrib *agent.CertDistributor
+	nodeMgr     *agent.NodeServerManager
+	nodeCerts   *repository.NodeCertificateRepository // 节点↔证书 多对多 ✓
+	failoverMgr *agent.FailoverManager
+	mirrorSync  *agent.MirrorSyncManager
+	chainGen    *agent.ChainConfigGenerator
+	// updatePublicKeyPEM 是面板更新签名公钥，随安装脚本写入节点 config.yaml（v7 L-6）。
+	updatePublicKeyPEM []byte
+	chainHealth        *agent.ChainHealthMonitorRegistry
+	billingFilter      *agent.BillingFilter
 
 	// Phase 4: User sync and traffic collection
 	userSyncSvc  UserSyncServiceInterface
@@ -101,6 +103,12 @@ func (s *Service) WithCRL(crl *agent.CertRevocationList) *Service {
 // WithCertDistributor sets the cert distributor.
 func (s *Service) WithCertDistributor(cd *agent.CertDistributor) *Service {
 	s.certDistrib = cd
+	return s
+}
+
+// WithUpdatePublicKey 设置随安装脚本下发的面板更新签名公钥（PEM）。
+func (s *Service) WithUpdatePublicKey(pemBytes []byte) *Service {
+	s.updatePublicKeyPEM = pemBytes
 	return s
 }
 
@@ -350,6 +358,15 @@ func (s *Service) Create(ctx context.Context, req *dto.NodeServerCreate) (*vo.Cr
 		NodeServerResponse: s.ToResponse(server),
 	}
 
+	// 新 ID 在插入前不存在活节点，此时同 server_id 的子表行一定是已删节点的残留。
+	// 不先清掉的话，SeedDefaults 看到「配置段已存在」会跳过 → 新节点继承旧节点的
+	// 空路由/旧入站（实测 server_id=20 复用了 2026-09 留下的残行）。
+	if !server.IsLocal {
+		if n := s.purgeNodeScopedData(ctx, server.ID); n > 0 {
+			log.Printf("[nodeserver] server %d: cleaned %d orphan rows inherited from a deleted node", server.ID, n)
+		}
+	}
+
 	// Seed default outbounds (direct + blocked) for the new server.
 	// This ensures every node starts with the essential freedom/blackhole outbounds,
 	// matching the local node's defaults. If they already exist (e.g. from a
@@ -513,6 +530,11 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	}
 	if server.IsLocal {
 		return fmt.Errorf("cannot delete local server")
+	}
+	// 先清节点级数据再删节点本身：否则 core_configs / inbound_configs / metrics
+	// 等全部变成孤儿行，ID 复用时会「继承」上一个节点的配置（见 purgeNodeScopedData）。
+	if n := s.purgeNodeScopedData(ctx, id); n > 0 {
+		log.Printf("[nodeserver] deleted server %d: purged %d node-scoped rows", id, n)
 	}
 	return s.repo.Delete(ctx, id)
 }
@@ -1105,6 +1127,8 @@ func (s *Service) GenerateAgentInstallScript(ctx context.Context, serverID int64
 	}
 
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
+		WithCACertPEM(s.tokenMgr.CACertPEM()).
+		WithUpdatePublicKey(s.updatePublicKeyPEM).
 		WithBootstrapToken(token).
 		WithServerID(serverID)
 
@@ -1234,7 +1258,30 @@ func (s *Service) GetServerStatus(ctx context.Context, serverID int64) (interfac
 	if s.nodeMgr == nil {
 		return nil, fmt.Errorf("node manager not initialized")
 	}
-	return s.nodeMgr.GetStatusForServer(ctx, serverID)
+	res, err := s.nodeMgr.GetStatusForServer(ctx, serverID)
+	if err != nil {
+		// Agent 重启/短暂断线时前端每 5s 轮询一次状态，不能把「还没连上」当成 500：
+		// 那是正常过渡态，回空状态（前端已有 `cores` 为空的渲染分支）即可。
+		if isTransientServerStatusError(err) {
+			log.Printf("[nodeserver] server %d status temporarily unavailable: %v", serverID, err)
+			return &agentpb.GetStatusResponse{}, nil
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
+// isTransientServerStatusError 判断状态查询失败是否属于「Agent 未连接/尚未上报」这类过渡态。
+// 这类错误应降级为空状态，而不是让前端轮询一直报 500。
+func isTransientServerStatusError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var notConnected *agent.NotConnectedError
+	if errors.As(err, &notConnected) {
+		return true
+	}
+	return strings.Contains(err.Error(), "status not yet reported")
 }
 
 // ControlCore sends a control command (start/stop/restart) to a server's core.
@@ -1704,6 +1751,8 @@ func (s *Service) GetBootstrapCommand(ctx context.Context, serverID int64, panel
 	}
 
 	script := agent.NewAgentInstallScript(panelHost, panelPort).
+		WithCACertPEM(s.tokenMgr.CACertPEM()).
+		WithUpdatePublicKey(s.updatePublicKeyPEM).
 		WithBootstrapToken(token).
 		WithServerID(serverID)
 	return script.Generate()

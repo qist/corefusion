@@ -241,6 +241,14 @@ func (h *Handler) Create(c *gin.Context) {
 		if err := h.coreConfigSvc.SeedDefaults(c.Request.Context(), result.ID); err != nil {
 			log.Printf("[nodeserver] SeedDefaults for server %d failed: %v", result.ID, err)
 		}
+		// SeedDefaults 只补「整段缺失」，不会补段内缺失的基线规则；这里再兜一次，
+		// 保证新节点的路由一定带内网/Google 直连 + 广告拦截（幂等，用户删掉后不会被复活
+		// 仅限本次创建时执行一次）。
+		for _, coreType := range coreconfigSvc.SupportedCoreTypes {
+			if _, err := h.coreConfigSvc.EnsureBaselineRouting(c.Request.Context(), result.ID, coreType); err != nil {
+				log.Printf("[nodeserver] baseline routing for server %d %s failed: %v", result.ID, coreType, err)
+			}
+		}
 	}
 
 	// bootstrap_token is returned so the frontend can build the curl command.

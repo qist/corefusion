@@ -272,6 +272,11 @@ func (s *Service) GetWriterStatus() []LogWriterStatus {
 	logDir := filepath.Join(s.dataDir, "logs")
 	statuses := make([]LogWriterStatus, 0, len(allLogTypes))
 	for _, pType := range allLogTypes {
+		// 未安装/未运行的进程不会产生日志：与「发现日志」同口径直接不返回，
+		// 否则页面上会给出点开必然为空的入口（远程节点尤其明显）。
+		if s.availability != nil && !s.availability.Available(pType) {
+			continue
+		}
 		mode := modes[pType]
 		if mode == "" {
 			mode = "file"

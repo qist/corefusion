@@ -31,6 +31,10 @@ type Service struct {
 	// 未注入或解析为空时回退 coredata.ResolveClashAPIAddr）。
 	clashAPIAddrFn   func() string
 	clashAPISecretFn func() string
+	// clashAPIEnabledFn 判断运行中的 sing-box 是否显式开启了 clash_api。
+	// 未开启时「实时连接」直接返回关闭状态，绝不能回退默认 9090 盲连
+	// （那样只会拿到 connection refused，把「已关闭」显示成故障）。
+	clashAPIEnabledFn func() bool
 }
 
 // nodeOnlineProvider 提供节点实时在线订阅人数据，由 runtime/agent.NodeServerManager 实现。
@@ -85,6 +89,20 @@ func (s *Service) SetClashAPIAddr(fn func() string) {
 // SetClashAPISecret 注入 clash_api 的 secret 解析器（用户可能给第三方面板配了鉴权）。
 func (s *Service) SetClashAPISecret(fn func() string) {
 	s.clashAPISecretFn = fn
+}
+
+// SetClashAPIEnabled 注入 clash_api 是否开启的判断器（读运行中的实验性配置）。
+// 未注入时按「未开启」处理：宁可显示关闭，也不盲连默认 9090。
+func (s *Service) SetClashAPIEnabled(fn func() bool) {
+	s.clashAPIEnabledFn = fn
+}
+
+// clashAPIEnabled 报告运行中的 sing-box 是否开启了 clash_api。
+func (s *Service) clashAPIEnabled() bool {
+	if s.clashAPIEnabledFn != nil {
+		return s.clashAPIEnabledFn()
+	}
+	return false
 }
 
 // clashAPISecret 返回读取 clash_api 需要的 secret（空 = 不鉴权）。
@@ -787,6 +805,13 @@ func (s *Service) GetSingboxConnections(ctx context.Context, serverID int64, f S
 
 	var resp *coredata.ClashConnectionsResponse
 	if isLocal {
+		// 先判断是否开启，未开启直接返回关闭状态：此前无条件回退默认
+		// 127.0.0.1:9090 去读，用户关掉 clash_api 后页面就一直报
+		// "connection refused"，把「关闭」误导成「故障」。
+		if !s.clashAPIEnabled() {
+			res.Unsupported, res.Reason = true, "clash_api_disabled"
+			return res
+		}
 		var err error
 		resp, err = coredata.FetchClashConnectionsWithSecret(ctx, s.clashAPIAddr(), s.clashAPISecret())
 		if err != nil {
@@ -801,7 +826,13 @@ func (s *Service) GetSingboxConnections(ctx context.Context, serverID int64, f S
 		}
 		raw, _, err := s.nodeOnline.FetchSingboxConnectionsOnServer(ctx, serverID)
 		if err != nil {
-			res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
+			// Agent 明确报告「未开启」时保持关闭语义；其它（超时/鉴权/未运行）
+			// 才按不可用展示具体原因。
+			if strings.HasPrefix(err.Error(), "clash_api_disabled") {
+				res.Unsupported, res.Reason = true, "clash_api_disabled"
+			} else {
+				res.Unsupported, res.Reason = true, "clash_api_unavailable: "+err.Error()
+			}
 			return res
 		}
 		var remote coredata.ClashConnectionsResponse

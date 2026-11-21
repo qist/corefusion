@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Envio / Recebimento",
     "connEmpty": "Sem conexoes ao vivo",
     "connRemote": "Nos remotos ainda nao suportados: o Agent precisa encaminhar o clash_api",
+    "connDisabled": "Clash API desativado: o experimental clash_api do sing-box nao esta ativado, portanto nao ha dados de conexoes ao vivo",
     "connUnavailable": "clash_api indisponivel: ative o Clash API em Protocolos -> Experimental e reinicie o sing-box"
   },
   "dashboard": {

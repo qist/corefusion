@@ -732,6 +732,7 @@ export default {
     "connTraffic": "업로드 / 다운로드",
     "connEmpty": "실시간 연결이 없습니다",
     "connRemote": "원격 노드는 아직 지원되지 않습니다. Agent가 clash_api를 중계해야 합니다",
+    "connDisabled": "Clash API가 꺼져 있습니다: sing-box의 실험적 설정 clash_api가 활성화되지 않아 실시간 연결 데이터가 없습니다",
     "connUnavailable": "clash_api를 사용할 수 없습니다: 프로토콜 -> 실험적 설정에서 Clash API를 켠 뒤 sing-box를 재시작하세요"
   },
   "dashboard": {

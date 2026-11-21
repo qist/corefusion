@@ -732,6 +732,7 @@ export default {
     "connTraffic": "上傳 / 下載",
     "connEmpty": "暫無即時連線",
     "connRemote": "遠端節點暫不支援：需要 Agent 轉發 clash_api",
+    "connDisabled": "Clash API 已關閉：sing-box 未開啟實驗性設定 clash_api，沒有即時連線資料",
     "connUnavailable": "clash_api 無法使用：請在協議中心 → 實驗性設定中開啟 Clash API，然後重新啟動 sing-box"
   },
   "dashboard": {

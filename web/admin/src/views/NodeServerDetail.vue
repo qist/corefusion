@@ -1079,6 +1079,8 @@ const connReasonText = computed(() => {
   }
   if (r === 'remote_node') return t('onlineUsers.connRemote')
   if (r === 'remote_node_unavailable') return t('onlineUsers.connUnavailable')
+  // 未开启 clash_api 属正常关闭态，不按故障文案展示。
+  if (r === 'clash_api_disabled') return t('onlineUsers.connDisabled')
   return r
 })
 

@@ -44,3 +44,26 @@ func TestResolveAgentCAPath(t *testing.T) {
 		}
 	})
 }
+
+func TestExtractSubIDFromEmail(t *testing.T) {
+	cases := []struct {
+		email string
+		want  int64
+	}{
+		{"sub_12@example.com", 12},
+		{"12@example.com", 12},
+		{"12@example.com_vless12345", 12},
+		// 回归：数字前缀不是订阅 ID，否则直连账号会被错误归户到别人的订阅。
+		{"4wei@163.com", 0},
+		{"4wei@163.com_vless12345", 0},
+		{"sub_4wei@163.com", 0},
+		{"user@example.com", 0},
+		{"sub_abc@example.com", 0},
+		{"", 0},
+	}
+	for _, tc := range cases {
+		if got := extractSubIDFromEmail(tc.email); got != tc.want {
+			t.Errorf("extractSubIDFromEmail(%q) = %d, want %d", tc.email, got, tc.want)
+		}
+	}
+}

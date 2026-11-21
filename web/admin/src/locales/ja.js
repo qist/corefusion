@@ -732,6 +732,7 @@ export default {
     "connTraffic": "上り / 下り",
     "connEmpty": "接続はありません",
     "connRemote": "リモートノードは未対応：Agent が clash_api を中継する必要があります",
+    "connDisabled": "Clash API は無効です：sing-box の実験的設定 clash_api が有効になっていないため、リアルタイム接続データはありません",
     "connUnavailable": "clash_api を利用できません：プロトコル → 実験的設定で Clash API を有効にして sing-box を再起動してください"
   },
   "dashboard": {

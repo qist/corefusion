@@ -747,6 +747,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 「实时连接」按运行中配置里的 clash_api 地址读取（用户可能改过端口）。
 	nodeSvc.SetClashAPIAddr(func() string { return singboxClashAPIListen(dataDir) })
 	nodeSvc.SetClashAPISecret(func() string { return singboxClashAPISecret(dataDir) })
+	// 未开启 clash_api 时直接显示「关闭」，不再盲连默认 9090。
+	nodeSvc.SetClashAPIEnabled(func() bool { return singboxClashAPIEnabled(dataDir) })
 	svcSvc := svcService.NewService(svcRepo, endpointRepo)
 	subSvc := subService.NewService(subRepo, accessLogRepo, rotationRepo, clientRepo, planSvcInst)
 	certSvc := certService.NewService(certRepo, dataDir, "", "lets_encrypt")
@@ -5354,6 +5356,20 @@ func singboxClashAPIListen(dataDir string) string {
 // singboxClashAPISecret 从运行中的配置解析 clash_api.secret（用于面板读取鉴权）。
 func singboxClashAPISecret(dataDir string) string {
 	return singboxExperimentalAddr(dataDir, "clash_api", "secret")
+}
+
+// singboxClashAPIEnabled 判断运行中的 sing-box 是否显式开启了 clash_api。
+//
+// 「实时连接」必须按这个开关决定是否去读：关闭时直接展示「已关闭」。
+// 以前地址解析为空会回退默认 127.0.0.1:9090 去连，用户关掉 clash_api 后
+// 页面永远显示 connection refused，看起来像功能坏了。
+// 环境变量 CF_SINGBOX_CLASH_API 显式指定地址时视为开启（面板可能读不到
+// 节点运行盘上的配置）。
+func singboxClashAPIEnabled(dataDir string) bool {
+	if strings.TrimSpace(os.Getenv("CF_SINGBOX_CLASH_API")) != "" {
+		return true
+	}
+	return singboxClashAPIListen(dataDir) != ""
 }
 
 // singboxExperimentalAddr 读取 runtime/singbox.jsonc 里 experimental.<section>.<field>。

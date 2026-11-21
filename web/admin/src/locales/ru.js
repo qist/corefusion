@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Отдача / Приём",
     "connEmpty": "Активных соединений нет",
     "connRemote": "Удалённые узлы пока не поддерживаются: Agent должен проксировать clash_api",
+    "connDisabled": "Clash API отключён: экспериментальный clash_api в sing-box не включён, поэтому данных об активных соединениях нет",
     "connUnavailable": "clash_api недоступен: включите Clash API в разделе «Протоколы → Экспериментальные» и перезапустите sing-box"
   },
   "dashboard": {

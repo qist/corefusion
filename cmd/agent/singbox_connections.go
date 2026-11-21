@@ -42,7 +42,13 @@ func singboxClashAPI(dataDir string) (listen, secret string) {
 	if clash == nil {
 		return "", ""
 	}
-	listen, _ = clash["listen"].(string)
+	// sing-box 的字段名是 external_controller；早期这里误读了 listen，
+	// 导致节点明明开着 clash_api 也一直被判成「未开启」。
+	listen, _ = clash["external_controller"].(string)
+	if strings.TrimSpace(listen) == "" {
+		// 兼容历史配置里写入的 listen（部分面板模板用过）。
+		listen, _ = clash["listen"].(string)
+	}
 	secret, _ = clash["secret"].(string)
 	return strings.TrimSpace(listen), strings.TrimSpace(secret)
 }
@@ -55,7 +61,8 @@ func (a *AgentApp) fetchSingboxConnections(ctx context.Context) (string, string,
 	}
 	listen, secret := singboxClashAPI(a.localAgent.GetDataDir())
 	if listen == "" {
-		return "", "", fmt.Errorf("该节点未启用 sing-box clash_api（experimental.clash_api.listen 为空），无法读取实时连接")
+		// 前缀是稳定语义标记：面板据此显示「已关闭」而不是「不可用」。
+		return "", "", fmt.Errorf("clash_api_disabled: 该节点未启用 sing-box clash_api（experimental.clash_api.external_controller 为空），无法读取实时连接")
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 8*time.Second)

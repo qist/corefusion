@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Yukari / Asagi",
     "connEmpty": "Canli baglanti yok",
     "connRemote": "Uzak dugumler henuz desteklenmiyor: Agent clash_api yi iletmeli",
+    "connDisabled": "Clash API kapali: sing-box deneysel clash_api etkin degil, bu yuzden canli baglanti verisi yok",
     "connUnavailable": "clash_api kullanilamiyor: Protokoller -> Deneysel bolumunde Clash API yi etkinlestirip sing-box i yeniden baslatin"
   },
   "dashboard": {

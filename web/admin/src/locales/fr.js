@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Montant / Descendant",
     "connEmpty": "Aucune connexion en direct",
     "connRemote": "Noeuds distants non pris en charge : l Agent doit relayer clash_api",
+    "connDisabled": "API Clash desactivee : l'option experimentale clash_api de sing-box n'est pas activee, donc aucune donnee de connexion en direct",
     "connUnavailable": "clash_api indisponible : activez l'API Clash dans Protocoles -> Experimentation, puis redemarrez sing-box"
   },
   "dashboard": {

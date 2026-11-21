@@ -730,6 +730,7 @@ export default {
     connTraffic: 'Up / Down',
     connEmpty: 'No live connections',
     connRemote: 'Remote nodes not supported yet: the Agent must proxy clash_api',
+    connDisabled: 'Clash API is disabled: sing-box experimental clash_api is not enabled, so there is no live connection data',
     connUnavailable: "clash_api unavailable: enable Clash API under Protocols -> Experimental, then restart sing-box",
   },
   dashboard: {

@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Unggah / Unduh",
     "connEmpty": "Tidak ada koneksi langsung",
     "connRemote": "Node remote belum didukung: Agent harus meneruskan clash_api",
+    "connDisabled": "Clash API nonaktif: konfigurasi eksperimental clash_api pada sing-box tidak diaktifkan, jadi tidak ada data koneksi langsung",
     "connUnavailable": "clash_api tidak tersedia: aktifkan Clash API di Protokol -> Eksperimental, lalu mulai ulang sing-box"
   },
   "dashboard": {

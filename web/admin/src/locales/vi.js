@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Tai len / Xuong",
     "connEmpty": "Khong co ket noi truc tiep",
     "connRemote": "Chua ho tro nut tu xa: Agent phai chuyen tiep clash_api",
+    "connDisabled": "Clash API da tat: cau hinh thu nghiem clash_api cua sing-box chua duoc bat nen khong co du lieu ket noi truc tiep",
     "connUnavailable": "clash_api khong kha dung: hay bat Clash API trong Giao thuc -> Thuc nghiem roi khoi dong lai sing-box"
   },
   "dashboard": {

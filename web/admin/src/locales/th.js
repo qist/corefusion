@@ -732,6 +732,7 @@ export default {
     "connTraffic": "อัป / ดาวน์",
     "connEmpty": "ไม่มีการเชื่อมต่อสด",
     "connRemote": "ยังไม่รองรับโหนดระยะไกล ต้องให้ Agent ส่งต่อ clash_api",
+    "connDisabled": "Clash API ปิดอยู่: ยังไม่ได้เปิด clash_api ในการตั้งค่าทดลองของ sing-box จึงไม่มีข้อมูลการเชื่อมต่อสด",
     "connUnavailable": "clash_api ใช้งานไม่ได้: เปิด Clash API ในโปรโตคอล -> การตั้งค่าทดลอง แล้วรีสตาร์ท sing-box"
   },
   "dashboard": {

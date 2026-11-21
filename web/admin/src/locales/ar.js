@@ -732,6 +732,7 @@ export default {
     "connTraffic": "رفع / تنزيل",
     "connEmpty": "لا توجد اتصالات مباشرة",
     "connRemote": "العقد البعيدة غير مدعومة بعد: يجب أن يمرر الـ Agent طلبات clash_api",
+    "connDisabled": "Clash API مغلق: لم يتم تفعيل clash_api في الإعدادات التجريبية لـ sing-box، لذلك لا توجد بيانات اتصالات مباشرة",
     "connUnavailable": "clash_api غير متاح: فعّل Clash API من البروتوكولات ← الإعدادات التجريبية ثم أعد تشغيل sing-box"
   },
   "dashboard": {

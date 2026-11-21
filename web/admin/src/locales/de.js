@@ -732,6 +732,7 @@ export default {
     "connTraffic": "Auf/Ab",
     "connEmpty": "Keine Live-Verbindungen",
     "connRemote": "Remote-Knoten noch nicht unterstuetzt: der Agent muss clash_api weiterleiten",
+    "connDisabled": "Clash API ist deaktiviert: experimental.clash_api in sing-box ist nicht aktiviert, daher keine Live-Verbindungsdaten",
     "connUnavailable": "clash_api nicht verfuegbar: Clash API unter Protokolle -> Experimentell aktivieren und sing-box neu starten"
   },
   "dashboard": {

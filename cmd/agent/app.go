@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -774,21 +775,37 @@ func (a *AgentApp) buildEmailToSubIDMapping(ctx context.Context) map[string]int6
 
 // extractSubIDFromEmail tries to extract a subscription ID from an xray user email.
 // Email formats in CoreFusion: "sub_<subID>@<tag>" or "<subID>@<domain>".
+//
+// 只接受「纯数字」的 ID 段：早期用 fmt.Sscanf("%d") 会把任意数字前缀当成 ID
+// （"4wei@163.com" → 4），导致直连账号被错误归户到别人的订阅，在线订阅人里
+// 显示成错误的客户/套餐。
 func extractSubIDFromEmail(email string) int64 {
+	parseID := func(s string) int64 {
+		if s == "" {
+			return 0
+		}
+		for _, r := range s {
+			if r < '0' || r > '9' {
+				return 0
+			}
+		}
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || id <= 0 {
+			return 0
+		}
+		return id
+	}
 	// Try "sub_<id>" prefix format
-	if strings.HasPrefix(email, "sub_") {
-		rest := email[4:]
+	if rest, ok := strings.CutPrefix(email, "sub_"); ok {
 		if idx := strings.Index(rest, "@"); idx > 0 {
-			var id int64
-			if _, err := fmt.Sscanf(rest[:idx], "%d", &id); err == nil && id > 0 {
+			if id := parseID(rest[:idx]); id > 0 {
 				return id
 			}
 		}
 	}
 	// Try "<id>@" format
 	if idx := strings.Index(email, "@"); idx > 0 {
-		var id int64
-		if _, err := fmt.Sscanf(email[:idx], "%d", &id); err == nil && id > 0 {
+		if id := parseID(email[:idx]); id > 0 {
 			return id
 		}
 	}

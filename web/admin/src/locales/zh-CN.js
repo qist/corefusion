@@ -730,6 +730,7 @@ export default {
     connTraffic: '上传 / 下载',
     connEmpty: '暂无实时连接',
     connRemote: '远端节点暂不支持：需要 Agent 转发 clash_api',
+    connDisabled: 'Clash API 已关闭：sing-box 未开启实验性配置 clash_api，无实时连接数据',
     connUnavailable: "clash_api 不可用：请在协议中心 → 实验性配置中开启 Clash API，然后重启 sing-box",
   },
   dashboard: {

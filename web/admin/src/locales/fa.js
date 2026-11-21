@@ -732,6 +732,7 @@ export default {
     "connTraffic": "ارسال / دریافت",
     "connEmpty": "اتصال زنده‌ای نیست",
     "connRemote": "نودهای راه دور هنوز پشتیبانی نمی‌شوند: Agent باید clash_api را عبور دهد",
+    "connDisabled": "Clash API غیرفعال است: پیکربندی آزمایشی clash_api در sing-box فعال نیست، بنابراین داده‌ای از اتصالات زنده وجود ندارد",
     "connUnavailable": "clash_api در دسترس نیست: Clash API را در پروتکل‌ها ← تنظیمات آزمایشی فعال کرده و sing-box را دوباره راه‌اندازی کنید"
   },
   "dashboard": {

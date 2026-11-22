@@ -103,22 +103,36 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 	// 而面板生成的运行配置是 Xray 25+ 口径（finalmask.udp / mkcp-legacy），
 	// 旧版一起来就 unknown config id: mkcp-legacy 崩溃循环 —— 线上踩过 ✗。
 	// 风险排序：装预发布最多不稳，装旧正式版是直接起不来。
+	//
+	// downloadURL 为空时也必须有资产列表：滚动 tag（如 mihomo 的 Prerelease-Alpha）
+	// 的资产名带 commit 后缀（mihomo-linux-amd64-compatible-alpha-100ff73.gz），
+	// 按版本号拼 URL 必然 404，校验和也取不到。这里统一以 release 里的**真实资产**
+	// 为准，拼 URL 只作为列表拿不到时的兜底。
 	var releases []GitHubRelease
-	if version == "" {
-		var err error
-		releases, err = i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
+	if downloadURL == "" {
+		rel, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName)
 		if err != nil {
 			return nil, fmt.Errorf("list releases: %w", err)
 		}
+		releases = rel
 		if len(releases) == 0 {
 			return nil, fmt.Errorf("no releases found for %s", coreType)
 		}
+	}
+	if version == "" {
 		version = releases[0].TagName
 	}
 
-	// Build download URL if not provided
+	var resolvedDigest string
 	if downloadURL == "" {
-		downloadURL = buildDownloadURL(coreType, repoURL, version, osName, archName)
+		if asset, ok := pickReleaseAsset(releases, coreType, version, osName, archName); ok {
+			downloadURL = asset.BrowserDownloadURL
+			assetName = asset.Name
+			resolvedDigest = normalizeDigest(asset.Digest)
+		}
+		if downloadURL == "" {
+			downloadURL = buildDownloadURL(coreType, repoURL, version, osName, archName)
+		}
 		if downloadURL == "" && assetName != "" {
 			downloadURL = fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, assetName)
 		}
@@ -132,7 +146,10 @@ func (i *Installer) InstallForPlatform(ctx context.Context, coreType, version, d
 	//   - 校验和优先取 GitHub API 的 asset digest（Xray / sing-box 自建仓库均提供）；
 	//   - GitHub 下载地址拿不到校验和时**拒绝安装**（与 Agent 自更新同策略）；
 	//   - 非 GitHub 的自建镜像拿不到校验和时仅告警（避免直接锁死私有源）。
-	digest := findReleaseDigest(releases, version, downloadURL, assetName)
+	digest := resolvedDigest
+	if digest == "" {
+		digest = findReleaseDigest(releases, version, downloadURL, assetName)
+	}
 	if digest == "" {
 		if rel, err := i.ListReleasesGitHubForPlatform(ctx, coreType, osName, archName); err == nil {
 			digest = findReleaseDigest(rel, version, downloadURL, assetName)
@@ -709,6 +726,55 @@ func validateBinary(path, coreType string) error {
 	// Not a known binary format
 	return fmt.Errorf("file does not have a valid executable magic number (got: %x %x %x %x)",
 		magic[0], magic[1], magic[2], magic[3])
+}
+
+// pickReleaseAsset 在指定 tag 的 release 里挑出目标平台真正可用的资产。
+//
+// 不能按版本号拼文件名：滚动 tag（mihomo 的 Prerelease-Alpha）资产带 commit 后缀，
+// 例如 mihomo-linux-amd64-compatible-alpha-100ff73.gz；按版本拼出来的
+// ...-Prerelease-Alpha.gz 是 404，GitHub API 的 digest 同样对不上 →
+// 安装会以「no SHA-256 checksum available」失败（实测）。
+//
+// 同一 release 里可能有多个匹配资产（mihomo 的 -compatible / -v1/-v2/-v3 /
+// -go120/-go123 变体），按兼容性优先选：
+//  1. -compatible（GOAMD64 v1，兼容性最好，官方推荐给普通机器）
+//  2. 普通构建（无微架构 / Go 版本后缀）
+//  3. -v1/-v2/-v3 微架构变体
+//  4. -go1xx 构建变体
+func pickReleaseAsset(releases []GitHubRelease, coreType, version, osName, archName string) (GitHubAsset, bool) {
+	var best GitHubAsset
+	bestRank, bestLen := 0, 0
+	found := false
+	for _, r := range releases {
+		if r.TagName != version {
+			continue
+		}
+		for _, a := range r.Assets {
+			if !filterAsset(coreType, a.Name, osName, archName) {
+				continue
+			}
+			rank := assetPreference(a.Name)
+			if !found || rank < bestRank || (rank == bestRank && len(a.Name) < bestLen) {
+				best, bestRank, bestLen, found = a, rank, len(a.Name), true
+			}
+		}
+	}
+	return best, found
+}
+
+// assetPreference 返回资产名对应的兼容性优先级（越小越好）。
+func assetPreference(name string) int {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, "-compatible"):
+		return 0
+	case strings.Contains(lower, "-go1"):
+		return 3
+	case strings.Contains(lower, "-v1-"), strings.Contains(lower, "-v2-"), strings.Contains(lower, "-v3-"):
+		return 2
+	default:
+		return 1
+	}
 }
 
 // filterAsset returns true if the asset name is relevant for the core type

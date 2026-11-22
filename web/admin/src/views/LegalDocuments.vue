@@ -103,7 +103,8 @@ const locales = ref(['zh-CN'])
 // 门户对外地址（只读，来自后端）：门户配置了域名用门户域名，否则回退当前 origin
 const portalExternalUrl = ref('')
 const portalPagePath = ref('/p')
-const portalPort = ref('')
+// 门户总开关：关闭时合规页仍由面板 /p 提供（不能再用独立门户端口/根路径）
+const portalEnabled = ref(true)
 
 const docs = reactive({
   privacy_policy_url: '',
@@ -131,15 +132,15 @@ const previewHtml = computed(() => {
 })
 
 // 门户对外基址（含挂载路径）：门户配置了域名 → 用门户域名；否则回退当前面板 origin。
-// portal_page_path：独立门户端口为 ""（根路径，不回退 /p），否则 "/p"。
+// ⚠ 不能再用「当前主机 + panel.portal_port」拼地址：独立门户端口只在内网监听，
+// 对外由反代转发，直接把端口写进链接用户根本打不开（实测 :1851 → 不可达）。
+// 门户关闭时独立门户服务不会启动，合规页只有面板的 /p/legal/* 可用。
 const portalPublicBase = computed(() => {
-  const path = portalPagePath.value === undefined || portalPagePath.value === null ? '/p' : portalPagePath.value
   const ext = (portalExternalUrl.value || '').replace(/\/$/, '')
-  if (ext) return ext + path
-  // 未配置门户域名：独立门户端口 → 当前主机 + 门户端口（根路径）；否则回退当前 origin + 路径
-  const pp = String(portalPort.value || '').trim()
-  if (pp && pp !== '0') return window.location.protocol + '//' + window.location.hostname + ':' + pp
-  return window.location.origin + path
+  const base = ext || window.location.origin
+  if (!portalEnabled.value) return base + '/p'
+  const path = portalPagePath.value === undefined || portalPagePath.value === null ? '/p' : portalPagePath.value
+  return base + path
 })
 const builtinPrivacyUrl = computed(() => portalPublicBase.value + '/legal/privacy')
 const builtinTermsUrl = computed(() => portalPublicBase.value + '/legal/terms')
@@ -190,7 +191,7 @@ async function load() {
     docs.privacy_policy_content = d.privacy_policy_content || {}
     docs.terms_of_service_content = d.terms_of_service_content || {}
     portalExternalUrl.value = d.portal_external_url || ''
-    portalPort.value = d.portal_port || ''
+    portalEnabled.value = d.portal_enabled !== false
     portalPagePath.value = d.portal_page_path === undefined || d.portal_page_path === null ? '/p' : d.portal_page_path
     recomputeLocales()
     editLocale.value = locales.value[0]

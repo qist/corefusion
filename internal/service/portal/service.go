@@ -140,6 +140,10 @@ type PortalSiteConfig struct {
 	*entity.PortalTemplate
 	RegistrationEnabled bool   `json:"registration_enabled"`
 	PortalPort          string `json:"portal_port"`
+	// PortalEnabled 是门户总开关（panel.portal_enabled，缺省 true）。
+	// 后台用它决定「合规文档内置页」的链接形态：门户关闭时页面仍由面板 /p 提供，
+	// 不能继续生成独立门户端口/根路径的链接（那个端口/路径此时不可用）。
+	PortalEnabled bool `json:"portal_enabled"`
 	// 门户对外地址 ✓（后台生成「合规文档独立页」/ 预览链接用：门户配置了域名用门户域名，
 	// 否则回退面板地址）：
 	//   PortalExternalURL = oauth.callback_domain（门户回调域名）> panel.external_url；均未配置为 ""（前端回退当前 origin）
@@ -433,12 +437,16 @@ func (s *Service) GetActiveConfig(ctx context.Context) (*PortalSiteConfig, error
 	cfg := &PortalSiteConfig{PortalTemplate: tmpl}
 
 	// Read system-level settings
+	cfg.PortalEnabled = true
 	if s.settingSvc != nil {
 		if v, err := s.settingSvc.GetByKey(ctx, "panel.registration_enabled"); err == nil {
 			cfg.RegistrationEnabled = v == "true"
 		}
 		if v, err := s.settingSvc.GetByKey(ctx, "panel.portal_port"); err == nil {
 			cfg.PortalPort = v
+		}
+		if v, err := s.settingSvc.GetByKey(ctx, "panel.portal_enabled"); err == nil {
+			cfg.PortalEnabled = v != "false"
 		}
 	}
 

@@ -2,6 +2,7 @@ package healthprobe
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,6 +29,48 @@ func TestProbeChainHTTPCountsTraffic(t *testing.T) {
 	}
 	if latency <= 0 {
 		t.Fatalf("latency = %d, want > 0", latency)
+	}
+}
+
+// 目标按 Kind 排序后，IP 多时轮转窗口全被 IP 占满，域名永远测不到。
+// 交替排列后，任意长度 ≥2 的窗口都应同时覆盖两类。
+func TestInterleaveByKindCoversBothKinds(t *testing.T) {
+	targets := make([]ChainTarget, 0, 30)
+	for i := 0; i < 25; i++ {
+		targets = append(targets, ChainTarget{Kind: "cf_ip", Host: fmt.Sprintf("1.1.1.%d", i)})
+	}
+	for i := 0; i < 5; i++ {
+		targets = append(targets, ChainTarget{Kind: "cf_domain", Host: fmt.Sprintf("d%d.example.com", i)})
+	}
+	out := interleaveByKind(targets)
+	if len(out) != len(targets) {
+		t.Fatalf("长度变了：%d → %d", len(targets), len(out))
+	}
+	// 模拟 max_targets=20 的轮转窗口
+	picked := out[:20]
+	ips, domains := 0, 0
+	for _, tg := range picked {
+		switch tg.Kind {
+		case "cf_ip":
+			ips++
+		case "cf_domain":
+			domains++
+		}
+	}
+	if ips == 0 || domains == 0 {
+		t.Fatalf("20 个窗口内应同时包含 IP 和域名：ips=%d domains=%d", ips, domains)
+	}
+	if domains != 5 {
+		t.Fatalf("域名应有 5 个进入窗口，得到 %d", domains)
+	}
+}
+
+// 只有一种 Kind 时保持原顺序。
+func TestInterleaveByKindSingleKindUnchanged(t *testing.T) {
+	targets := []ChainTarget{{Kind: "cf_ip", Host: "a"}, {Kind: "cf_ip", Host: "b"}}
+	out := interleaveByKind(targets)
+	if len(out) != 2 || out[0].Host != "a" || out[1].Host != "b" {
+		t.Fatalf("单类不应改变顺序：%#v", out)
 	}
 }
 

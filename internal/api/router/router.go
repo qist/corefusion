@@ -3719,8 +3719,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 
 	// 合规文档独立页面（隐私政策 / 服务条款）：Google OAuth 验证 / 用户直接访问
 	// 支持 ?lang=xx；主面板域名下走 /p/legal/*（门户在 /p）。
-	r.GET("/p/legal/privacy", middleware.MaintenanceGuard(), portalGate(systemSettingSvc), legalPageHandler(portalTmplSvc, "privacy", "/p"))
-	r.GET("/p/legal/terms", middleware.MaintenanceGuard(), portalGate(systemSettingSvc), legalPageHandler(portalTmplSvc, "terms", "/p"))
+	//
+	// ⚠ 不受门户总开关限制：门户关闭后这两个页面仍必须能打开（应用商店 / OAuth
+	// 审核会直接抓取），否则会返回 PORTAL_DISABLED，等于合规文档失效（用户实测）。
+	// 同时补一份根路径 /legal/*：反代只把域名根路径转发到面板时也能访问。
+	r.GET("/p/legal/privacy", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "privacy", "/p"))
+	r.GET("/p/legal/terms", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "terms", "/p"))
+	r.GET("/legal/privacy", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "privacy", "/p"))
+	r.GET("/legal/terms", middleware.MaintenanceGuard(), legalPageHandler(portalTmplSvc, "terms", "/p"))
 
 	// Client auth (public)
 	clientAuthGroup := r.Group("/api/v1/client-auth")

@@ -297,6 +297,11 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 		return sum, nil
 	}
 
+	// 目标列表按 Kind 排序（cf_ip 全在前、cf_domain 全在后）。若直接按窗口轮转，
+	// 当 IP 数量 ≥ max_targets 时域名永远轮不到（用户实测：20 个名额全被 IP 占满）。
+	// 先按 Kind 交替排列，再轮转，保证每轮都覆盖到两类。
+	targets = interleaveByKind(targets)
+
 	// 轮转：目标多时每次只测一段，下一次从游标继续。
 	cursor := p.readIntSetting(ctx, SettingChainCursor, 0)
 	if cursor < 0 || cursor >= len(targets) {
@@ -421,6 +426,48 @@ func (p *Prober) ChainLastProbe(ctx context.Context) string {
 		return ""
 	}
 	return payload.Probe
+}
+
+// interleaveByKind 把不同 Kind 的目标交替排列（各自保持原有顺序）。
+//
+// 目标由 ChainProbeTargets 按 Kind 排序后返回（cf_ip 在前、cf_domain 在后），
+// 轮转窗口只取一段时，靠前的 Kind 会占满全部名额（IP 多时域名永远测不到）。
+// 交替后只要窗口长度 ≥2 且两类都非空，每轮都会同时覆盖到 IP 和域名。
+func interleaveByKind(targets []ChainTarget) []ChainTarget {
+	if len(targets) < 2 {
+		return targets
+	}
+	// 按首次出现顺序分组，不依赖 Kind 的具体取值。
+	groups := make([][]ChainTarget, 0, 3)
+	pos := make(map[string]int, 3)
+	for _, t := range targets {
+		if i, ok := pos[t.Kind]; ok {
+			groups[i] = append(groups[i], t)
+			continue
+		}
+		pos[t.Kind] = len(groups)
+		groups = append(groups, []ChainTarget{t})
+	}
+	if len(groups) < 2 {
+		return targets
+	}
+	out := make([]ChainTarget, 0, len(targets))
+	idx := make([]int, len(groups))
+	for {
+		moved := false
+		for gi := range groups {
+			if idx[gi] >= len(groups[gi]) {
+				continue
+			}
+			out = append(out, groups[gi][idx[gi]])
+			idx[gi]++
+			moved = true
+		}
+		if !moved {
+			break
+		}
+	}
+	return out
 }
 
 // saveChainResults 用本轮结果**整体覆盖**上一轮结果。

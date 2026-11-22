@@ -101,6 +101,28 @@ func (r *ChainLinkRepository) DeleteByEntryInbound(ctx context.Context, serverID
 		Delete(&entity.ChainLink{}).Error
 }
 
+// ReplaceByEntryInbound 在一个事务里“先清后建”某个入口入站的全部链路。
+// 旧实现是 handler 里先 Delete 再逐条 Create：中途失败会留下“已删但没建”的状态，
+// 该入口所有链路直接消失（流量直连）。
+func (r *ChainLinkRepository) ReplaceByEntryInbound(ctx context.Context, serverID, inboundID int64, links []entity.ChainLink) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("entry_server_id = ?", serverID).
+			Where("entry_inbound_id = 0 OR entry_inbound_id = ?", inboundID).
+			Delete(&entity.ChainLink{}).Error; err != nil {
+			return err
+		}
+		now := time.Now()
+		for i := range links {
+			links[i].CreatedAt = now
+			links[i].UpdatedAt = now
+			if err := tx.Create(&links[i]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // DeleteByExit deletes all chain links pointing to an exit server.
 func (r *ChainLinkRepository) DeleteByExit(ctx context.Context, serverID int64) error {
 	return r.db.WithContext(ctx).

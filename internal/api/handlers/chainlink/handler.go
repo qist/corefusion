@@ -711,13 +711,9 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 		}
 	}
 
-	// 3. clear-then-insert (SyncFromEntry, §5.4/§5.5)
-	// ⚠ 清除粒度是"入口 server + 入口 inbound"，**不是**整台 server ✗ ——
-	// 同机多入口各自一组出口（按入口隔离），只按 server 清会把别的入口的链一起清掉 ✗。
-	if err := h.linkRepo.DeleteByEntryInbound(ctx, req.EntryServerID, req.EntryInboundID); err != nil {
-		response.InternalError(c, "SYNC_FAILED", err.Error())
-		return
-	}
+	// 3. clear-then-insert (SyncFromEntry, §5.4/§5.5) —— 在同一事务里完成，
+	// 避免删完后某条 Create 失败导致该入口的链路全部消失。
+	links := make([]entity.ChainLink, 0, len(req.Exits))
 	for i, ex := range req.Exits {
 		priority := ex.Priority
 		if priority == 0 {
@@ -727,7 +723,7 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 		if weight == 0 {
 			weight = 100
 		}
-		link := &entity.ChainLink{
+		link := entity.ChainLink{
 			EntryServerID:  req.EntryServerID,
 			EntryInboundID: req.EntryInboundID,
 			Priority:       priority,
@@ -742,10 +738,11 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 			link.ExitServerID = ex.ID
 			link.ExitInboundID = ex.ExitInboundID
 		}
-		if err := h.linkRepo.Create(ctx, link); err != nil {
-			response.InternalError(c, "CREATE_LINK_FAILED", err.Error())
-			return
-		}
+		links = append(links, link)
+	}
+	if err := h.linkRepo.ReplaceByEntryInbound(ctx, req.EntryServerID, req.EntryInboundID, links); err != nil {
+		response.InternalError(c, "CREATE_LINK_FAILED", err.Error())
+		return
 	}
 
 	// 4. strategy auto-selection: ≥2 exits ⇒ load balancing (§6.6); single ⇒ direct

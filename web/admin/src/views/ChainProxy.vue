@@ -47,7 +47,7 @@
               text-anchor="middle" :fill="edge.color" font-size="11"
             >{{ edge.label }}</text>
             <!-- Draw nodes -->
-            <g v-for="node in topoLayout" :key="node.id" @click="nodeClick(node)" style="cursor:pointer">
+            <g v-for="node in topoLayout" :key="node.key" @click="nodeClick(node)" style="cursor:pointer">
               <rect :x="node.x" :y="node.y" width="140" height="44" rx="8"
                 :fill="nodeFill(node)" :stroke="nodeStroke(node)" stroke-width="2"
               />
@@ -486,21 +486,24 @@ const topoLayout = computed(() => {
   const padY = 20
 
   const layout = []
+  // 集群节点和外部节点的 ID 是两套独立空间，可能撞号 → 用前缀 key 区分（否则
+  // 拓扑图会把两条边合并成一条，或把边画到错误的节点上）。
+  const withKey = (n, prefix) => ({ ...n, key: `${prefix}-${n.id}` })
   // Place pure entries in left column
   pureEntries.forEach((n, i) => {
-    layout.push({ ...n, x: padX, y: padY + i * nodeH, col: 0 })
+    layout.push({ ...withKey(n, 's'), x: padX, y: padY + i * nodeH, col: 0 })
   })
   // Place dual-role nodes in middle column
   dualRoles.forEach((n, i) => {
-    layout.push({ ...n, x: padX + colW, y: padY + i * nodeH, col: 1 })
+    layout.push({ ...withKey(n, 's'), x: padX + colW, y: padY + i * nodeH, col: 1 })
   })
   // Place pure exits in right column
   pureExits.forEach((n, i) => {
-    layout.push({ ...n, x: padX + colW * 2, y: padY + i * nodeH, col: 2 })
+    layout.push({ ...withKey(n, 's'), x: padX + colW * 2, y: padY + i * nodeH, col: 2 })
   })
   // Place externals in far-right column
   externals.forEach((n, i) => {
-    layout.push({ ...n, x: padX + colW * 3, y: padY + i * nodeH, col: 3 })
+    layout.push({ ...withKey(n, 'e'), x: padX + colW * 3, y: padY + i * nodeH, col: 3 })
   })
   return layout
 })
@@ -512,19 +515,18 @@ const svgHeight = computed(() => Math.max(200, topoLayout.value.length * 54 + 40
 const topoEdges = computed(() => {
   if (!topoLinks.value.length || !topoLayout.value.length) return []
   const nodeMap = new Map()
-  topoLayout.value.forEach(n => nodeMap.set(n.id, n))
+  topoLayout.value.forEach(n => nodeMap.set(n.key, n))
 
-  // Also map external node IDs (they use a different ID space in links)
   const edges = []
   const seen = new Set()
 
   topoLinks.value.forEach(link => {
     // Entry → Exit edge
     if (link.entry_server_id && link.exit_server_id) {
-      const src = nodeMap.get(link.entry_server_id)
-      const dst = nodeMap.get(link.exit_server_id)
+      const src = nodeMap.get(`s-${link.entry_server_id}`)
+      const dst = nodeMap.get(`s-${link.exit_server_id}`)
       if (src && dst) {
-        const key = `${src.id}-${dst.id}`
+        const key = `s-${src.id}-s-${dst.id}`
         if (!seen.has(key)) {
           seen.add(key)
           edges.push(buildEdge(src, dst, link, 'server'))
@@ -533,10 +535,10 @@ const topoEdges = computed(() => {
     }
     // Entry → External exit edge
     if (link.entry_server_id && link.exit_external_id) {
-      const src = nodeMap.get(link.entry_server_id)
-      const dst = nodeMap.get(link.exit_external_id)
+      const src = nodeMap.get(`s-${link.entry_server_id}`)
+      const dst = nodeMap.get(`e-${link.exit_external_id}`)
       if (src && dst) {
-        const key = `${src.id}-ext${dst.id}`
+        const key = `s-${src.id}-e-${dst.id}`
         if (!seen.has(key)) {
           seen.add(key)
           edges.push(buildEdge(src, dst, link, 'external'))

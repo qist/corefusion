@@ -74,7 +74,12 @@ func (s *Service) RenderLegalPage(ctx context.Context, doc, lang, acceptLanguage
 	b.WriteString("<style>" + legalPageCSS + "</style>\n</head>\n<body>\n")
 	b.WriteString("<main class=\"legal-wrap\">\n")
 	b.WriteString("<header class=\"legal-head\">\n")
-	b.WriteString("<a class=\"legal-back\" href=\"" + html.EscapeString(backURL) + "\">← " + html.EscapeString(cfg.SiteName) + "</a>\n")
+	// 门户关闭时 handler 会传空串：不渲染死链（/p 在门户关闭后是 404）。
+	if strings.TrimSpace(backURL) != "" {
+		b.WriteString("<a class=\"legal-back\" href=\"" + html.EscapeString(backURL) + "\">← " + html.EscapeString(cfg.SiteName) + "</a>\n")
+	} else {
+		b.WriteString("<span class=\"legal-back\">" + html.EscapeString(cfg.SiteName) + "</span>\n")
+	}
 	if len(available) > 1 {
 		b.WriteString("<nav class=\"legal-langs\">")
 		for _, code := range available {

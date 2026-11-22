@@ -493,6 +493,19 @@ func portalHostBase(base string) string {
 	return u.Scheme + "://" + u.Host
 }
 
+// PortalEnabled 返回客户门户总开关（缺省 true）。合规文档页用它决定
+// 「返回门户」链接是否还有意义：门户关闭时 /p 是 404，不能继续给出死链。
+func (s *Service) PortalEnabled(ctx context.Context) bool {
+	if s.settingSvc == nil {
+		return true
+	}
+	v, err := s.settingSvc.GetByKey(ctx, "panel.portal_enabled")
+	if err != nil {
+		return true
+	}
+	return v != "false"
+}
+
 // portalPagePath 返回门户页面在本域名下的挂载路径（"" 或 "/p"）。
 // 与 proxy portal_forward / 充值 return_url 的生成规则一致：
 // panel.portal_port 配置为独立端口（非空、非 0、且不等于面板监听端口）→

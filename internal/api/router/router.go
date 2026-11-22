@@ -599,7 +599,13 @@ func legalPageHandler(svc *portalSvc.Service, doc, backURL string) gin.HandlerFu
 		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 		c.Header("Pragma", "no-cache")
 		c.Header("Expires", "0")
-		body, status := svc.RenderLegalPage(c.Request.Context(), doc, c.Query("lang"), c.GetHeader("Accept-Language"), backURL)
+		// 主面板的「返回门户」指向 /p；门户总开关关闭时 /p 返回 404，
+		// 这里直接不渲染返回链接，避免合规页上出现一个点进去就报错的死链。
+		back := backURL
+		if back == "/p" && !svc.PortalEnabled(c.Request.Context()) {
+			back = ""
+		}
+		body, status := svc.RenderLegalPage(c.Request.Context(), doc, c.Query("lang"), c.GetHeader("Accept-Language"), back)
 		if status != http.StatusOK {
 			c.Status(status)
 			return

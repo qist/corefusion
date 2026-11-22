@@ -397,6 +397,31 @@ func (i *Installer) downloadAndExtract(ctx context.Context, rawURL, destDir, cor
 		return nil
 	}
 
+	// mihomo 的 .gz 是**单个二进制**的 gzip 压缩（不是 tar.gz）：
+	// 交给 tar.Reader 会报 "invalid tar header"。解压后直接落盘。
+	if coreType == "mihomo" {
+		data, err := io.ReadAll(io.LimitReader(gz, netutil.MaxBinaryBytes+1))
+		if err != nil {
+			return fmt.Errorf("read mihomo gzip: %w", err)
+		}
+		if int64(len(data)) > netutil.MaxBinaryBytes {
+			return fmt.Errorf("mihomo binary exceeds size limit")
+		}
+		binaryName := coreType + "-" + runtime.GOOS + "-" + runtime.GOARCH
+		if runtime.GOOS == "windows" {
+			binaryName += ".exe"
+		}
+		destPath := filepath.Join(destDir, binaryName)
+		if err := os.WriteFile(destPath, data, 0755); err != nil {
+			return err
+		}
+		if err := validateBinary(destPath, coreType); err != nil {
+			os.Remove(destPath)
+			return fmt.Errorf("downloaded file is not a valid binary: %w", err)
+		}
+		return nil
+	}
+
 	tr := tar.NewReader(gz)
 	for {
 		header, err := tr.Next()
@@ -496,6 +521,7 @@ func githubRepo(coreType string) string {
 	repos := map[string]string{
 		"xray":      "XTLS/Xray-core",
 		"singbox":   "qist/singbox-binaries",
+		"mihomo":    "MetaCubeX/mihomo",
 		"hysteria2": "apernet/hysteria",
 		"tuic":      "Itsusinn/tuic",
 	}
@@ -566,6 +592,24 @@ func buildDownloadURL(coreType, repoURL, version, osName, archName string) strin
 			archPart = "i686"
 		}
 		asset := fmt.Sprintf("tuic-server-%s-%s%s", archPart, osName, windowsExe)
+		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
+
+	case "mihomo":
+		// 资产命名：mihomo-<os>-<arch>[-compatible]-<version>.(gz|zip)
+		// amd64 优先 compatible（GOAMD64 v1，兼容性最好）；其它架构没有 compatible 资产。
+		arch := archName
+		if arch == "arm" {
+			arch = "armv7"
+		}
+		compat := ""
+		if archName == "amd64" {
+			compat = "-compatible"
+		}
+		ext := "gz"
+		if osName == "windows" {
+			ext = "zip"
+		}
+		asset := fmt.Sprintf("mihomo-%s-%s%s-%s.%s", osName, arch, compat, version, ext)
 		return fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", repoURL, version, asset)
 	}
 	return ""

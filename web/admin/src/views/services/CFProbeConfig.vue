@@ -32,7 +32,7 @@
       </div>
       <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeDialer') }}</div>
-        <el-select v-model="probeCfg.dialer" size="small" style="width:190px">
+        <el-select v-model="probeCfg.dialer" size="small" style="width:210px" @change="onDialerChange">
           <el-option :label="t('service.cfip.probeAuto')" value="" />
           <el-option :label="dialerLabel('xray')" value="xray" />
           <el-option :label="dialerLabel('singbox')" value="singbox" />
@@ -152,12 +152,46 @@
     </el-table>
     <el-empty v-else :description="t('service.cfip.chainNoResult')" :image-size="60" />
   </el-card>
+
+  <!-- 拨号核心未安装：选版本直接安装（面板本机，不需要 SSH 手动放二进制） -->
+  <el-dialog
+    v-model="dialerInstallVisible"
+    :title="t('service.cfip.installCoreTitle', { core: dialerInstallCore })"
+    width="620"
+    :close-on-click-modal="false"
+  >
+    <div v-loading="dialerReleasesLoading || dialerInstalling" style="min-height:120px">
+      <div v-if="dialerReleases.length === 0 && !dialerReleasesLoading" style="text-align:center;color:#999;padding:20px">
+        {{ t('common.noData') }}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <div
+          v-for="r in dialerReleases"
+          :key="r.version"
+          style="width:calc(16.66% - 8px);min-width:96px;padding:8px;border:1px solid #dcdfe6;border-radius:6px;cursor:pointer;text-align:center;transition:all .2s"
+          :style="{ borderColor: r.prerelease ? '#67c23a' : '#409eff', background: r.prerelease ? '#f0f9eb' : '#ecf5ff' }"
+          @click="installDialerVersion(r)"
+        >
+          <div style="font-size:11px;margin-bottom:2px" :style="{ color: r.prerelease ? '#67c23a' : '#409eff' }">
+            {{ r.prerelease ? 'Pre' : 'Rel' }}
+          </div>
+          <div style="font-size:12px;font-weight:500;color:#303133">{{ r.version }}</div>
+        </div>
+      </div>
+      <div v-if="dialerInstalling" style="margin-top:12px;text-align:center;font-size:12px;color:#909399">
+        {{ t('service.cfip.installCoreInstalling', { core: dialerInstallCore }) }}
+      </div>
+    </div>
+    <template #footer>
+      <el-button :disabled="dialerInstalling" @click="dialerInstallVisible = false">{{ t('common.cancel') }}</el-button>
+    </template>
+  </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 
@@ -185,6 +219,15 @@ const chainProbe = ref('')
 // 链路探测依赖「探测设置」的间隔与拨号核心，这两项只读展示。
 const chainDeps = ref({ interval_minutes: 0, dialer: '', effective_dialer: '' })
 
+// 拨号核心未安装 → 选版本安装
+const dialerInstallVisible = ref(false)
+const dialerInstallCore = ref('')
+const dialerReleases = ref([])
+const dialerReleasesLoading = ref(false)
+const dialerInstalling = ref(false)
+// 记住已安装/上次选择，取消安装时回退，避免把"未安装核心"保存进配置。
+let previousDialer = ''
+
 const chainTargetCount = computed(() => chainTargets.value.length)
 const externalExits = computed(() => chainExits.value.filter((o) => o.kind === 'external'))
 const inboundExits = computed(() => chainExits.value.filter((o) => o.kind === 'inbound'))
@@ -206,6 +249,10 @@ async function fetchProbeConfig() {
       dialer: d.dialer || '',
       available_dialers: d.dialers || [],
     }
+    // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
+    // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
+    const installed = probeCfg.value.available_dialers || []
+    previousDialer = installed.includes(probeCfg.value.dialer) ? probeCfg.value.dialer : ''
   } catch { /* 未配置时用默认值（默认关闭探测） */ }
 }
 
@@ -250,13 +297,104 @@ function sortResults(list) {
   })
 }
 
-// 未安装的核心在下拉里直接标注，选中后检测会提示去安装。
+// 未安装的核心在下拉里直接标注，选中后弹出「选版本安装」。
 function dialerLabel(name) {
   const installed = probeCfg.value.available_dialers || []
   return installed.includes(name) ? name : `${name} ${t('service.cfip.probeMissing')}`
 }
 
+function isOddVersion(v) {
+  const parts = (v || '').replace(/^v/, '').split('.')
+  const last = parseInt(parts[parts.length - 1])
+  return !isNaN(last) && last % 2 !== 0
+}
+
+async function onDialerChange(name) {
+  if (!name) {
+    previousDialer = ''
+    return
+  }
+  const installed = probeCfg.value.available_dialers || []
+  if (installed.includes(name)) {
+    previousDialer = name
+    return
+  }
+  // 先回退选择：只有安装成功后才真正切过去，避免把不可用核心保存进探测配置。
+  probeCfg.value.dialer = previousDialer
+  try {
+    await ElMessageBox.confirm(
+      t('service.cfip.installCorePrompt', { core: name }),
+      t('common.confirm'),
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  await openDialerInstall(name)
+}
+
+async function openDialerInstall(core) {
+  dialerInstallCore.value = core
+  dialerInstallVisible.value = true
+  dialerReleasesLoading.value = true
+  dialerReleases.value = []
+  try {
+    const data = await client.get('/cfip/dialers/releases', { params: { core_type: core } })
+    const items = Array.isArray(data) ? data : (data?.items || [])
+    dialerReleases.value = items.map((r) => ({
+      ...r,
+      prerelease: r.prerelease !== undefined ? r.prerelease : isOddVersion(r.version),
+    }))
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('service.cfip.installCoreFailed'))
+  } finally {
+    dialerReleasesLoading.value = false
+  }
+}
+
+async function installDialerVersion(release) {
+  if (!release?.version || dialerInstalling.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('service.cfip.installCoreConfirm', { core: dialerInstallCore.value, version: release.version }),
+      t('common.confirm'),
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  dialerInstalling.value = true
+  try {
+    await client.post(
+      '/cfip/dialers/install',
+      { core_type: dialerInstallCore.value, version: release.version },
+      { timeout: 600000 },
+    )
+    ElMessage.success(t('service.cfip.installCoreSuccess', { core: dialerInstallCore.value }))
+    dialerInstallVisible.value = false
+    await fetchProbeConfig()
+    // 安装完成后自动选中并保存，用户不用再点一次。
+    probeCfg.value.dialer = dialerInstallCore.value
+    await saveProbeConfig()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('service.cfip.installCoreFailed'))
+  } finally {
+    dialerInstalling.value = false
+  }
+}
+
+// 当前选择的拨号核心没装 → 先弹安装，不保存/不检测。
+function dialerNeedsInstall() {
+  const name = probeCfg.value.dialer
+  if (!name) return false
+  return !(probeCfg.value.available_dialers || []).includes(name)
+}
+
 async function saveProbeConfig() {
+  if (dialerNeedsInstall()) {
+    await onDialerChange(probeCfg.value.dialer)
+    return
+  }
   try {
     await client.put('/cfip/probe-config', probeCfg.value)
     ElMessage.success(t('common.success'))
@@ -277,6 +415,10 @@ async function saveChainConfig() {
 }
 
 async function checkChain() {
+  if (dialerNeedsInstall()) {
+    await onDialerChange(probeCfg.value.dialer)
+    return
+  }
   if (!chainCfg.value.exit) {
     ElMessage.warning(t('service.cfip.chainNeedExit'))
     return

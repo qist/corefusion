@@ -1968,7 +1968,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 链路探测：复用订阅渲染把入站渲染成客户端出站（含 CDN 地址）。
 			prober.SetChainTargetProvider(publicSubH)
 			prober.StartScheduler(context.Background())
-			probeH := systemHandler.NewProbeHandler(prober, extNodeRepo, nodeServerRepoForSync, inboundConfigRepo, binaryResolver)
+			// 探活页面的「拨号核心未安装」安装入口：面板本机从 GitHub 选版本安装，
+			// 与「二进制管理」共用同一个 Installer（mihomo 也走这里，不用手放文件）。
+			probeInstaller := binariesSvc.NewInstaller(dataDir, binaryResolver, systemSettingSvc)
+			probeH := systemHandler.NewProbeHandler(prober, extNodeRepo, nodeServerRepoForSync, inboundConfigRepo, binaryResolver, probeInstaller)
 			cfipH := cfipHandler.NewHandler(cfipSvcInst)
 			cfipGroup := protected.Group("/cfip")
 			{
@@ -1992,6 +1995,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipWrite.PUT("/probe-config", probeH.SaveConfig)
 				cfipWrite.PUT("/chain-probe-config", probeH.SaveChainConfig)
 				cfipWrite.POST("/chain-probe/check", probeH.CheckChain)
+				// 拨号核心缺失时从页面直接选版本安装（面板本机，不需要 SSH）。
+				cfipWrite.GET("/dialers/releases", probeH.ListDialerReleases)
+				cfipWrite.POST("/dialers/install", probeH.InstallDialer)
 			}
 
 			// Services (moved under /node-servers/:id/services)

@@ -180,8 +180,16 @@ func TestConvertChainOutboundsToSingbox_ExternalWSPathAndHost(t *testing.T) {
 	if tr == nil || tr["type"] != "ws" {
 		t.Fatalf("transport 不对：%v", ob["transport"])
 	}
-	if tr["path"] != "/?ed=2560" {
-		t.Errorf("ws path 丢了：%v", tr)
+	// sing-box 不认 Xray 的 `?ed=NNNN` 路径写法（会 404），必须拆成
+	// path + max_early_data + early_data_header_name。
+	if tr["path"] != "/" {
+		t.Errorf("ws path 应去掉 ?ed=：%v", tr)
+	}
+	if tr["max_early_data"] != 2560 {
+		t.Errorf("ws 早数据大小丢了：%v", tr)
+	}
+	if tr["early_data_header_name"] != "Sec-WebSocket-Protocol" {
+		t.Errorf("ws 早数据头丢了：%v", tr)
 	}
 	// ⚠ sing-box 的 ws transport 没有 `host` 字段（写了核心直接 FATAL）→ 必须进 headers.Host
 	if hdrs, _ := tr["headers"].(map[string]interface{}); hdrs == nil || hdrs["Host"] != "maimai.example.com" {
@@ -189,6 +197,34 @@ func TestConvertChainOutboundsToSingbox_ExternalWSPathAndHost(t *testing.T) {
 	}
 	if _, bad := tr["host"]; bad {
 		t.Errorf("不能写 transport.host —— sing-box 会报 unknown field 并拒绝启动：%v", tr)
+	}
+}
+
+// VMess：xray 的 `security: auto` 不能原样丢给 sing-box —— sing-box 的 auto
+// 选到的加密方式服务端不接受，握手完成后请求一发出就断（实测 curl 35）。
+// 必须落成 xray 在 amd64 上实际使用的 aes-128-gcm。
+func TestConvertChainOutboundsToSingbox_VMessAutoSecurity(t *testing.T) {
+	in := []interface{}{
+		map[string]interface{}{
+			"tag":      "chain-118-ext4",
+			"protocol": "vmess",
+			"settings": map[string]interface{}{
+				"vnext": []interface{}{map[string]interface{}{
+					"address": "exit.example.com", "port": 443,
+					"users": []interface{}{map[string]interface{}{
+						"id": "uuid-4", "security": "auto", "alterId": 0,
+					}},
+				}},
+			},
+			"streamSettings": map[string]interface{}{"network": "ws", "security": "tls"},
+		},
+	}
+	ob, _ := convertChainOutboundsToSingbox(in)[0].(map[string]interface{})
+	if ob["security"] != "aes-128-gcm" {
+		t.Fatalf("vmess security = %v, want aes-128-gcm", ob["security"])
+	}
+	if ob["alter_id"] != 0 {
+		t.Fatalf("vmess alter_id = %v, want 0", ob["alter_id"])
 	}
 }
 

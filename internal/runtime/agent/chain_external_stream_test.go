@@ -39,14 +39,18 @@ func TestBuildStreamFromProxyMapHysteria2WithoutTLSKey(t *testing.T) {
 	if ss["security"] != "tls" {
 		t.Fatalf("hy2 必须判为 TLS（否则 sing-box FATAL TLS required），得到 security=%v", ss["security"])
 	}
-	if ss["serverName"] != "node1.example.com" {
-		t.Errorf("SNI 应取自 sni 键，得到 %v", ss["serverName"])
+	ts, _ := ss["tlsSettings"].(map[string]interface{})
+	if ts == nil {
+		t.Fatal("TLS 参数必须写进 tlsSettings（xray 不认顶层 serverName/alpn）")
 	}
-	if alpn, _ := ss["alpn"].([]interface{}); len(alpn) != 1 || alpn[0] != "h3" {
-		t.Errorf("alpn 应原样带过，得到 %v", ss["alpn"])
+	if ts["serverName"] != "node1.example.com" {
+		t.Errorf("SNI 应取自 sni 键，得到 %v", ts["serverName"])
 	}
-	if ss["fingerprint"] != "chrome" {
-		t.Errorf("fingerprint 应取自 client-fingerprint，得到 %v", ss["fingerprint"])
+	if alpn, _ := ts["alpn"].([]interface{}); len(alpn) != 1 || alpn[0] != "h3" {
+		t.Errorf("alpn 应原样带过，得到 %v", ts["alpn"])
+	}
+	if ts["fingerprint"] != "chrome" {
+		t.Errorf("fingerprint 应取自 client-fingerprint，得到 %v", ts["fingerprint"])
 	}
 }
 
@@ -155,7 +159,8 @@ func TestBuildStreamFromProxyMapTrojanWS(t *testing.T) {
 		"password": "p",
 	}
 	ss := buildStreamFromProxyMap(pm, "trojan")
-	if ss["security"] != "tls" || ss["serverName"] != "sweet-bonus-aeb7.boown.com" {
+	ts, _ := ss["tlsSettings"].(map[string]interface{})
+	if ss["security"] != "tls" || ts == nil || ts["serverName"] != "sweet-bonus-aeb7.boown.com" {
 		t.Errorf("trojan tls 解析错：%v", ss)
 	}
 	ws, _ := ss["wsSettings"].(map[string]interface{})

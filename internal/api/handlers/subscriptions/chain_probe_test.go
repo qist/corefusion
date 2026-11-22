@@ -1,10 +1,53 @@
 package subscriptions
 
 import (
+	"encoding/json"
 	"testing"
 
 	"corefusion/internal/model/entity"
 )
+
+// 链路探测的目标视图必须保留探针入站自己的 TLS SNI/ALPN：
+// 优选域名/IP 只是"连到哪个 CDN 地址"，真正的接入域名是入站配置里的 SNI。
+// 删掉它会连到别人的站点（或没有 SNI 直接被重置），入站永远收不到连接。
+func TestChainProbeTargetViewKeepsInboundSNI(t *testing.T) {
+	raw := `{
+		"protocol":"vless",
+		"port":22090,
+		"settings":{"clients":[{"id":"11111111-2222-3333-4444-555555555555","email":"probe"}],"decryption":"none"},
+		"streamSettings":{"network":"grpc","security":"none","grpcSettings":{"serviceName":"svc"}},
+		"_accessDomain":{"enabled":true,"type":"cf_domain","cfDomain":"","tls":{"enabled":true,"sni":"inbound.example.com","alpn":"h2,http/1.1","fingerprint":"chrome"}}
+	}`
+	var view map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &view); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &entity.InboundConfig{ID: 10, Protocol: "vless", Port: 22090, Tag: "inbound-22090"}
+	entry := chainProbeEntry{Kind: "cf_domain", EntryID: 1, Host: "www.visa.cn", Port: 443}
+	tlsEntries := []shareDomainEntry{{Type: "cf_domain", Host: "www.visa.cn", Port: 443, TLSMode: "auto"}}
+
+	got := chainProbeTargetView(view, entry, tlsEntries)
+	pm, err := chainProbeProxyMap(got, cfg, entry.Host, entry.Port)
+	if err != nil || pm == nil {
+		t.Fatalf("proxy map: %v", err)
+	}
+	if pm["server"] != "www.visa.cn" {
+		t.Fatalf("server = %v", pm["server"])
+	}
+	if pm["servername"] != "inbound.example.com" {
+		t.Fatalf("SNI 被改写：%v", pm["servername"])
+	}
+	if tls, _ := pm["tls"].(bool); !tls {
+		t.Fatalf("目标应启用 TLS：%#v", pm)
+	}
+	if pm["network"] != "grpc" {
+		t.Fatalf("network = %v", pm["network"])
+	}
+	grpcOpts, _ := pm["grpc-opts"].(map[string]interface{})
+	if grpcOpts["grpc-service-name"] != "svc" {
+		t.Fatalf("gRPC serviceName 丢失：%#v", pm["grpc-opts"])
+	}
+}
 
 // CDN 条目端口固定取第一个：每次随机换端口会让探测结果无法横向比较。
 func TestChainProbePickPort(t *testing.T) {

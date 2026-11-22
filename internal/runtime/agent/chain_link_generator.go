@@ -1163,19 +1163,28 @@ func buildStreamFromProxyMap(pm map[string]interface{}, protocol string) map[str
 	forceTLS := protocol == "hysteria2" || protocol == "hysteria" || protocol == "tuic"
 	if tls || forceTLS {
 		ss["security"] = "tls"
+		// ⚠ xray 的客户端 TLS 参数必须写在**嵌套的 `tlsSettings`** 里 ✗：
+		// 顶层 `serverName/alpn/fingerprint` 是 sing-box 转换器才会兼容读取的形状，
+		// xray 本体直接忽略它们 → 客户端用"服务器地址"当 SNI、按默认 ALPN 握手。
+		// 对 server 与 SNI 相同的节点（多数外部节点）看不出问题；一旦 server 是
+		// 优选域名/IP（链路探测的目标），SNI 就变成别人的站点或空值 → 握手被重置。
+		tlsSettings := map[string]interface{}{}
 		if sni, ok := pm["servername"].(string); ok && sni != "" {
-			ss["serverName"] = sni
+			tlsSettings["serverName"] = sni
 		} else if sni, ok := pm["sni"].(string); ok && sni != "" {
-			ss["serverName"] = sni
+			tlsSettings["serverName"] = sni
 		}
 		if alpn, ok := pm["alpn"].([]interface{}); ok && len(alpn) > 0 {
-			ss["alpn"] = alpn
+			tlsSettings["alpn"] = alpn
 		}
 		if fp, ok := pm["client-fingerprint"].(string); ok && fp != "" {
-			ss["fingerprint"] = fp
+			tlsSettings["fingerprint"] = fp
 		}
 		if skip, ok := pm["skip-cert-verify"].(bool); ok && skip {
-			ss["allowInsecure"] = true
+			tlsSettings["allowInsecure"] = true
+		}
+		if len(tlsSettings) > 0 {
+			ss["tlsSettings"] = tlsSettings
 		}
 	}
 
@@ -1209,6 +1218,15 @@ func buildStreamFromProxyMap(pm map[string]interface{}, protocol string) map[str
 			}
 			if h, ok := path["headers"].(map[string]interface{}); ok {
 				wsOpts["headers"] = h
+			}
+			// WebSocket 0-RTT：mihomo 的 `max-early-data` / `early-data-header-name`
+			// 必须带过去。漏了在 xray 上通常还能靠 path 里的 `?ed=` 侥幸工作，
+			// 但 sing-box 会把 `?ed=` 当成真实路径 → 服务端返回 404（实测）。
+			if n := int(firstNumber(path, "max-early-data")); n > 0 {
+				wsOpts["maxEarlyData"] = n
+			}
+			if v := firstString(path, "early-data-header-name"); v != "" {
+				wsOpts["earlyDataHeaderName"] = v
 			}
 		}
 		ss["wsSettings"] = wsOpts

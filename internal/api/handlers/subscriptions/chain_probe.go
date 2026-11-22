@@ -106,13 +106,7 @@ func (h *PublicHandler) ChainProbeTargets(ctx context.Context, probeSpec string)
 
 	out := make([]healthprobe.ChainTarget, 0, len(entries))
 	for _, e := range entries {
-		view := deepCopyMap(probe.view)
-		// 清掉探针入站自身的 tls 显式配置：每个目标的前置 TLS 必须由它自己的
-		// 池条目（tls_mode / sni / alpn / 指纹）决定，不能被探针入站串味。
-		if ad := getMap(view, "_accessDomain"); ad != nil {
-			delete(ad, "tls")
-		}
-		applyFrontTLS(view, e.Host, e.Kind, tlsEntries)
+		view := chainProbeTargetView(probe.view, e, tlsEntries)
 		pm, err := chainProbeProxyMap(view, probe.cfg, e.Host, e.Port)
 		if err != nil || pm == nil {
 			continue
@@ -143,6 +137,37 @@ func (h *PublicHandler) ChainProbeTargets(ctx context.Context, probeSpec string)
 		return out[i].Port < out[j].Port
 	})
 	return out, nil
+}
+
+// chainProbeTargetView 用探针入站生成某个 CDN 目标的客户端视图。
+//
+// ⚠ 必须保留入站自己的 `_accessDomain.tls`（SNI/ALPN/指纹）—— 它才是该入站
+// 真实的接入域名。之前把整段 tls 删掉，SNI 就变成优选域名/IP：
+//   - 优选域名：CF 边缘按 SNI 路由到那个域名所属的站点，回源不会到本入站；
+//   - 优选 IP：没有可用 SNI，TLS 握手直接被重置（实测 curl 35）。
+//
+// 两种情况下入站都收不到连接，探测却可能因为"出口能上网"而显示成功。
+//
+// 只有池条目**显式**配置了 SNI/ALPN/指纹时才覆盖：那是针对该 CDN 条目的特例。
+func chainProbeTargetView(probeView map[string]interface{}, e chainProbeEntry, tlsEntries []shareDomainEntry) map[string]interface{} {
+	view := deepCopyMap(probeView)
+	if ad := getMap(view, "_accessDomain"); ad != nil {
+		if tlsCfg := getMap(ad, "tls"); tlsCfg != nil {
+			if entry := frontTLSEntry(e.Host, e.Kind, tlsEntries); entry != nil {
+				if v := strings.TrimSpace(entry.SNI); v != "" {
+					tlsCfg["sni"] = v
+				}
+				if v := strings.TrimSpace(entry.ALPN); v != "" {
+					tlsCfg["alpn"] = v
+				}
+				if v := strings.TrimSpace(entry.Fingerprint); v != "" {
+					tlsCfg["fingerprint"] = v
+				}
+			}
+		}
+	}
+	applyFrontTLS(view, e.Host, e.Kind, tlsEntries)
+	return view
 }
 
 // pickChainProbeInbound 按 "inb:<id>" 选中探针入站。

@@ -1,11 +1,13 @@
 package binaries
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -116,10 +118,21 @@ func (r *Resolver) binaryPath(coreType string) string {
 
 // detectVersion tries to get the version from a binary by running it with version flags.
 func (r *Resolver) detectVersion(binaryPath string) string {
-	// Try common version flags
-	for _, flag := range []string{"version", "-v", "--version", "-version"} {
-		cmd := exec.Command(binaryPath, flag)
-		out, err := cmd.Output()
+	flags := []string{"version", "-v", "--version", "-version"}
+	// mihomo 不认识 `version` 子命令：它会把参数当成配置来源直接**启动代理**，
+	// cmd.Output() 就会一直等进程退出（实测卡死 10 分钟）。mihomo 只认 `-v`。
+	if strings.HasPrefix(strings.ToLower(filepath.Base(binaryPath)), "mihomo") {
+		flags = []string{"-v"}
+	}
+	for _, flag := range flags {
+		// 通用兜底：任何核心都可能把未知参数当成"启动"，必须限时，不能阻塞调用方。
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		out, err := exec.CommandContext(ctx, binaryPath, flag).Output()
+		timedOut := ctx.Err() == context.DeadlineExceeded
+		cancel()
+		if timedOut {
+			continue
+		}
 		if err == nil && len(out) > 0 {
 			// Return first line only
 			version := string(out)

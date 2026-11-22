@@ -413,8 +413,20 @@
                 style="width:140px;margin-left:12px"
               />
 
-              <el-button type="primary" style="margin-left:12px" :loading="viewerLoading" @click="loadViewerLog">
+              <!-- 日志内容搜索：只过滤已加载/正在流式追加的行，不改动服务端读取范围 -->
+              <el-input
+                v-model="logSearchInput"
+                :placeholder="t('logManage.searchPlaceholder')"
+                clearable
+                style="width:220px;margin-left:12px"
+                @keyup.enter="applyLogSearch"
+                @clear="applyLogSearch"
+              />
+              <el-button type="primary" style="margin-left:8px" @click="applyLogSearch">
                 <el-icon><Search /></el-icon>{{ t('common.search') }}
+              </el-button>
+              <el-button style="margin-left:8px" :loading="viewerLoading" @click="loadViewerLog">
+                <el-icon><Refresh /></el-icon>{{ t('common.refresh') }}
               </el-button>
 
               <el-button
@@ -433,7 +445,10 @@
               <el-tag :type="logStreamConnected ? 'success' : 'info'" size="small">
                 {{ logStreamConnected ? t('logManage.liveStreaming') : t('logManage.disconnected') }}
               </el-tag>
-              <el-tag size="small" type="warning">{{ t('logManage.lineCount', { count: logLines.length }) }}</el-tag>
+              <el-tag size="small" type="warning">{{ t('logManage.lineCount', { count: viewerDisplayLines.length }) }}</el-tag>
+              <el-tag v-if="viewerSearchActive" type="success" size="small">
+                {{ t('logManage.searchSummary', { matched: viewerDisplayLines.length, total: logLines.length }) }}
+              </el-tag>
               <el-button size="small" :type="logAutoScroll ? 'primary' : 'default'" @click="logAutoScroll = !logAutoScroll">
                 {{ logAutoScroll ? t('logManage.autoScrollOn') : t('logManage.autoScrollOff') }}
               </el-button>
@@ -443,8 +458,9 @@
 
           <!-- Log Display -->
           <div ref="logContainerRef" class="log-container" @scroll="onLogScroll">
-            <div v-for="(line, i) in logLines" :key="i" class="log-line" :class="logLineClass(line)">{{ line }}</div>
+            <div v-for="(line, i) in viewerDisplayLines" :key="i" class="log-line" :class="logLineClass(line)">{{ line }}</div>
             <div v-if="logLines.length === 0 && !viewerLoading" class="log-empty">{{ t('logManage.noLogContent') }}</div>
+            <div v-else-if="viewerDisplayLines.length === 0 && !viewerLoading" class="log-empty">{{ t('logManage.noSearchMatch') }}</div>
             <div v-if="viewerLoading" class="log-empty">{{ t('common.loading') }}</div>
           </div>
         </el-card>
@@ -929,6 +945,10 @@ const viewerRotating = ref(false)
 
 // ──────────── Log Display (shared) ────────────
 const logLines = ref([])
+// 日志查看（Tab 4）的客户端搜索：输入框内容 + 已应用的搜索词。
+// 只过滤已加载/实时追加的行，不改服务端读取范围；换节点/日志类型时清空。
+const logSearchInput = ref('')
+const logSearchKeyword = ref('')
 const logAutoScroll = ref(true)
 const logStreamConnected = ref(false)
 const logContainerRef = ref(null)
@@ -941,6 +961,16 @@ const stdoutViewerVisible = ref(false)
 const stdoutViewerType = ref('')
 
 // ═══════════════ Computed ═══════════════
+
+// 搜索只作用于「日志查看」标签页，避免影响策略/实时日志弹窗里的同一份 logLines。
+const viewerSearchActive = computed(
+  () => activeTab.value === 'viewer' && !!logSearchKeyword.value.trim(),
+)
+const viewerDisplayLines = computed(() => {
+  if (!viewerSearchActive.value) return logLines.value
+  const kw = logSearchKeyword.value.trim().toLowerCase()
+  return logLines.value.filter((line) => String(line).toLowerCase().includes(kw))
+})
 
 const groupedDiscoveredOptions = computed(() => {
   const groups = {}
@@ -1279,6 +1309,8 @@ async function onViewerNodeChange() {
   viewerLogPath.value = ''
   viewerLogFiles.value = []
   logLines.value = []
+  logSearchInput.value = ''
+  logSearchKeyword.value = ''
   closeLogStream()
   if (viewerNodeId.value === 0) {
     // Local node: show all known types（WAF 不是进程，但按天落盘，查看器可直接读文件）
@@ -1307,9 +1339,18 @@ async function onViewerLogTypeChange() {
   viewerLogPath.value = ''
   viewerLogFiles.value = []
   logLines.value = []
+  logSearchInput.value = ''
+  logSearchKeyword.value = ''
   closeLogStream()
   await loadViewerLogFiles()
   loadViewerLog()
+}
+
+// 应用日志内容搜索。只过滤已加载的行；清空输入后恢复全部日志。
+function applyLogSearch() {
+  logSearchKeyword.value = logSearchInput.value.trim()
+  logAutoScroll.value = true
+  nextTick(scrollToBottom)
 }
 
 async function loadViewerLogFiles() {

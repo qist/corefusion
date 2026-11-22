@@ -21,6 +21,8 @@ type ProbeHandler struct {
 	nodeSrvRepo *repository.NodeServerRepository
 	inboundRepo *repository.InboundConfigRepository
 	resolver    *binaries.Resolver
+	// installer 用于面板本机缺失拨号核心时，直接从页面上选版本安装（不用 SSH 登录手动放二进制）。
+	installer *binaries.Installer
 }
 
 // NewProbeHandler 创建探活处理器。
@@ -30,6 +32,7 @@ func NewProbeHandler(
 	nodeSrvRepo *repository.NodeServerRepository,
 	inboundRepo *repository.InboundConfigRepository,
 	resolver *binaries.Resolver,
+	installer *binaries.Installer,
 ) *ProbeHandler {
 	return &ProbeHandler{
 		prober:      prober,
@@ -37,6 +40,7 @@ func NewProbeHandler(
 		nodeSrvRepo: nodeSrvRepo,
 		inboundRepo: inboundRepo,
 		resolver:    resolver,
+		installer:   installer,
 	}
 }
 
@@ -124,6 +128,64 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 		return
 	}
 	response.OK(c, h.prober.ReadConfig(c.Request.Context()))
+}
+
+// probeDialerCores 是探活/链路探测可用的拨号核心。
+var probeDialerCores = map[string]bool{
+	"xray":    true,
+	"singbox": true,
+	"mihomo":  true,
+}
+
+// ListDialerReleases 返回面板本机可安装的拨号核心版本。
+// 前端在「拨号工具」里选中未安装的核心时弹出该列表，选版本后直接安装。
+func (h *ProbeHandler) ListDialerReleases(c *gin.Context) {
+	coreType := strings.ToLower(strings.TrimSpace(c.Query("core_type")))
+	if !probeDialerCores[coreType] {
+		response.BadRequest(c, "INVALID_REQUEST", "unsupported core_type")
+		return
+	}
+	if h.installer == nil {
+		response.InternalError(c, "INSTALLER_UNAVAILABLE", "binary installer not configured")
+		return
+	}
+	releases, err := h.installer.ListReleases(c.Request.Context(), coreType)
+	if err != nil {
+		response.InternalError(c, "FETCH_FAILED", err.Error())
+		return
+	}
+	if releases == nil {
+		releases = []binaries.ReleaseInfo{}
+	}
+	response.OK(c, releases)
+}
+
+// InstallDialer 在面板本机安装拨号核心（xray / sing-box / mihomo）。
+// 安装完成后 Resolve 立即能找到二进制，页面刷新即可选中。
+func (h *ProbeHandler) InstallDialer(c *gin.Context) {
+	var req struct {
+		CoreType string `json:"core_type" binding:"required"`
+		Version  string `json:"version" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	coreType := strings.ToLower(strings.TrimSpace(req.CoreType))
+	if !probeDialerCores[coreType] {
+		response.BadRequest(c, "INVALID_REQUEST", "unsupported core_type")
+		return
+	}
+	if h.installer == nil {
+		response.InternalError(c, "INSTALLER_UNAVAILABLE", "binary installer not configured")
+		return
+	}
+	info, err := h.installer.Install(c.Request.Context(), coreType, strings.TrimSpace(req.Version), "", "")
+	if err != nil {
+		response.InternalError(c, "INSTALL_FAILED", err.Error())
+		return
+	}
+	response.OK(c, info)
 }
 
 // chainExitOption 是链路探测可选的出口（外部节点 / 自建节点入站）。

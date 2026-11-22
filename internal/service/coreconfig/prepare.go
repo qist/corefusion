@@ -1873,6 +1873,23 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 							if v, ok := user["flow"].(string); ok && v != "" {
 								sb["flow"] = v
 							}
+							if protocol == "vmess" {
+								// ⚠ VMess 的 `security: auto` 在 sing-box 上会选到服务端不接受的
+								// 加密方式：握手能完成，但请求一发出对端就断开（实测 curl 35）。
+								// Xray 在 amd64 上 auto = aes-128-gcm，服务端按这个工作 →
+								// 转换时显式落成 aes-128-gcm；用户显式配置的值原样保留。
+								sec, _ := user["security"].(string)
+								if sec == "" || strings.EqualFold(sec, "auto") {
+									sec = "aes-128-gcm"
+								}
+								sb["security"] = sec
+								switch v := user["alterId"].(type) {
+								case float64:
+									sb["alter_id"] = int(v)
+								case int:
+									sb["alter_id"] = v
+								}
+							}
 						}
 					}
 				}
@@ -1977,6 +1994,37 @@ func convertChainOutboundsToSingbox(outbounds []interface{}) []interface{} {
 				if path == "" {
 					if v, ok := ss["path"].(string); ok {
 						path = v
+					}
+				}
+				// sing-box 的 ws 不支持 Xray 的 `?ed=NNNN` 路径写法：它会把整段
+				// `/apps?ed=2560` 当成真实路径 → 服务端返回 404（实测）。
+				// 必须拆成 `path=/apps` + `max_early_data` / `early_data_header_name`。
+				if network == "ws" {
+					if idx := strings.Index(path, "?ed="); idx >= 0 {
+						ed := path[idx+4:]
+						if amp := strings.Index(ed, "&"); amp >= 0 {
+							ed = ed[:amp]
+						}
+						if n, err := strconv.Atoi(strings.TrimSpace(ed)); err == nil && n > 0 {
+							transport["max_early_data"] = n
+							transport["early_data_header_name"] = "Sec-WebSocket-Protocol"
+						}
+						path = path[:idx]
+					}
+					if ws, ok := ss["wsSettings"].(map[string]interface{}); ok {
+						switch v := ws["maxEarlyData"].(type) {
+						case int:
+							if v > 0 {
+								transport["max_early_data"] = v
+							}
+						case float64:
+							if v > 0 {
+								transport["max_early_data"] = int(v)
+							}
+						}
+						if v, ok := ws["earlyDataHeaderName"].(string); ok && v != "" {
+							transport["early_data_header_name"] = v
+						}
 					}
 				}
 				if path != "" {

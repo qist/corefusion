@@ -23,10 +23,13 @@ import (
 // 与 CheckAll 的区别：
 //   - CheckAll 只测「本机/入口节点到 CF 优选 IP/域名」的 TCP/TLS 可达性；
 //   - 链路探测会把入站渲染成真实的客户端出站（含协议凭证、传输层、TLS/REALITY），
-//     从指定出口拨号访问一个外部 URL，要求 HTTP 200 且上下行都有字节。
+//     再把它挂在出口节点后面（xray dialerProxy / sing-box detour），从出口拨号：
+//     出口 → CDN 域名/IP → 入站 → 外部 URL，要求 HTTP 200 且上下行都有字节。
 //
 // 为什么必须这样：CDN 节点在国内经常被封锁/限速，仅测 TCP 443 通不代表
 // 能用（TLS 握手被 RST、回源域名不通、CDN 端口回源失败都会表现为"能连不能上网"）。
+// 更关键的是：只有真正连到探针入站，才算验证了「CDN → 入站」这一段 ——
+// 只从出口直连外部 URL 的话，出口有日志、入站没日志，结论完全是假的。
 const (
 	SettingChainEnabled     = "cfip.chain_probe.enabled"
 	SettingChainExit        = "cfip.chain_probe.exit"
@@ -321,7 +324,9 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 	if err != nil {
 		return sum, err
 	}
-	dial, cleanup, usedDialer, err := p.startDialerWithProxy(ctx, dialer, proxy)
+	// 临时核心里每个目标一条链：出口 → 目标 CDN 域名/IP → 探针入站 → probe_url。
+	// 不能只从出口直连 probe_url —— 那样探针入站根本不会收到连接。
+	dials, cleanup, usedDialer, err := p.startChainDialer(ctx, dialer, proxy, picked)
 	if err != nil {
 		return sum, err
 	}
@@ -358,7 +363,7 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 				results[idx] = res
 				return
 			}
-			status, up, down, latency, perr := probeChainHTTP(ctx, dial, cfg.ProbeURL)
+			status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], cfg.ProbeURL)
 			res.HTTPStatus = status
 			res.LatencyMs = latency
 			res.UpBytes = up
@@ -418,33 +423,20 @@ func (p *Prober) ChainLastProbe(ctx context.Context) string {
 	return payload.Probe
 }
 
-// saveChainResults 把本轮结果与历史结果合并（按入站 ID 覆盖），避免
-// 轮转探测时没测到的目标从页面上消失。
+// saveChainResults 用本轮结果**整体覆盖**上一轮结果。
+//
+// 不能跟历史结果合并：条目被删除/换池、探针入站或出口被改掉之后，旧结果会
+// 永远留在页面上（用户看到的是几个月前的 104.x IP 和早已不存在的条目），
+// 也无法判断"这张表到底是不是这次测试的结果"。轮转探测（max_targets 小于
+// 条目总数）时，这里记录的就是"本轮测过的这一段"。
 func (p *Prober) saveChainResults(ctx context.Context, fresh []ChainResult, probe string) {
 	if p.setting == nil || len(fresh) == 0 {
 		return
 	}
-	old, _ := p.ChainResults(ctx)
-	merged := make(map[string]ChainResult, len(old)+len(fresh))
-	// 合并键必须按「条目」而不是入站：同一轮所有目标共用一条探针入站，
-	// 用 InboundID 当键会把所有结果合并成一行。
-	key := func(r ChainResult) string {
-		return fmt.Sprintf("%s|%d|%s|%d", r.Kind, r.EntryID, r.Host, r.Port)
-	}
-	for _, r := range old {
-		merged[key(r)] = r
-	}
-	for _, r := range fresh {
-		merged[key(r)] = r
-	}
-	out := make([]ChainResult, 0, len(merged))
-	for _, r := range merged {
-		out = append(out, r)
-	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"updated_at": time.Now().Unix(),
 		"probe":      probe,
-		"results":    out,
+		"results":    fresh,
 	})
 	if err != nil {
 		return

@@ -122,6 +122,125 @@ func TestSelectChainTargetsSingleKindUnchanged(t *testing.T) {
 	}
 }
 
+// 域名 / IP 分开控制：各自开关、各自名额；新字段缺失时回落到旧总名额。
+func TestChainConfigSeparateKinds(t *testing.T) {
+	cfg := ChainConfig{
+		Enabled:          true,
+		MaxTargets:       30,
+		DomainEnabled:    true,
+		IPEnabled:        false,
+		DomainMaxTargets: 8,
+		IPMaxTargets:     12,
+	}
+	if got := cfg.enabledChainKinds(); len(got) != 1 || got[0] != "domain" {
+		t.Fatalf("只开域名时应只跑域名，得到 %v", got)
+	}
+	if got := cfg.maxTargetsForKind("domain"); got != 8 {
+		t.Fatalf("域名名额 = %d, want 8", got)
+	}
+	if got := cfg.maxTargetsForKind("ip"); got != 12 {
+		t.Fatalf("IP 名额 = %d, want 12", got)
+	}
+
+	// 旧配置只有 MaxTargets：两类都继承它，升级后行为不变。
+	legacy := ChainConfig{Enabled: true, MaxTargets: 30, DomainEnabled: true, IPEnabled: true}
+	if got := legacy.maxTargetsForKind("domain"); got != 30 {
+		t.Fatalf("旧配置域名名额 = %d, want 30", got)
+	}
+	if got := legacy.maxTargetsForKind("ip"); got != 30 {
+		t.Fatalf("旧配置 IP 名额 = %d, want 30", got)
+	}
+
+	// 两个开关都关 → 自动巡检不跑任何类型。
+	off := ChainConfig{}
+	if got := off.enabledChainKinds(); len(got) != 0 {
+		t.Fatalf("开关全关时不应跑任何类型，得到 %v", got)
+	}
+}
+
+// 分类型开关 / 名额必须能各自保存、各自读回，读回后自动巡检只跑启用的类型。
+func TestChainConfigSeparateKindsRoundTrip(t *testing.T) {
+	p := newProbeTestService(t)
+	ctx := context.Background()
+	err := p.SaveChainConfig(ctx, ChainConfig{
+		Enabled:          true,
+		Exit:             "ext:4",
+		Inbound:          "inb:10",
+		Concurrency:      2,
+		ProbeURL:         "https://www.cloudflare.com/cdn-cgi/trace",
+		KindsConfigured:  true,
+		DomainEnabled:    true,
+		IPEnabled:        false,
+		DomainMaxTargets: 7,
+		IPMaxTargets:     9,
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got := p.ReadChainConfig(ctx)
+	if !got.DomainEnabled || got.IPEnabled {
+		t.Fatalf("开关读回错：domain=%v ip=%v", got.DomainEnabled, got.IPEnabled)
+	}
+	if got.DomainMaxTargets != 7 || got.IPMaxTargets != 9 {
+		t.Fatalf("名额读回错：domain=%d ip=%d", got.DomainMaxTargets, got.IPMaxTargets)
+	}
+	if kinds := got.enabledChainKinds(); len(kinds) != 1 || kinds[0] != "domain" {
+		t.Fatalf("自动巡检应只跑域名，得到 %v", kinds)
+	}
+}
+
+// 旧前端只传 enabled + max_targets：不能把两类开关写成 false、名额写成 1。
+func TestChainConfigLegacySaveFollowsMaster(t *testing.T) {
+	p := newProbeTestService(t)
+	ctx := context.Background()
+	err := p.SaveChainConfig(ctx, ChainConfig{
+		Enabled:     true,
+		Exit:        "ext:4",
+		Inbound:     "inb:10",
+		Concurrency: 2,
+		MaxTargets:  30,
+		ProbeURL:    "https://www.cloudflare.com/cdn-cgi/trace",
+	})
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got := p.ReadChainConfig(ctx)
+	if !got.DomainEnabled || !got.IPEnabled {
+		t.Fatalf("旧前端保存后两类都应跟随总开关，实际 domain=%v ip=%v", got.DomainEnabled, got.IPEnabled)
+	}
+	if got.DomainMaxTargets != 30 || got.IPMaxTargets != 30 {
+		t.Fatalf("旧前端名额应沿用 max_targets=30，实际 domain=%d ip=%d", got.DomainMaxTargets, got.IPMaxTargets)
+	}
+}
+
+// 分类型探测只取本类目标，另一类一条都不能混进来。
+func TestFilterChainTargetsByKind(t *testing.T) {
+	targets := chainTestPool(140, 12)
+	domains := filterChainTargetsByKind(targets, "domain")
+	if len(domains) != 12 {
+		t.Fatalf("域名目标 = %d, want 12", len(domains))
+	}
+	for _, tg := range domains {
+		if tg.Kind != "cf_domain" {
+			t.Fatalf("域名结果混入了 %s", tg.Kind)
+		}
+	}
+	ips := filterChainTargetsByKind(targets, "ip")
+	if len(ips) != 140 {
+		t.Fatalf("IP 目标 = %d, want 140", len(ips))
+	}
+	for _, tg := range ips {
+		if tg.Kind != "cf_ip" {
+			t.Fatalf("IP 结果混入了 %s", tg.Kind)
+		}
+	}
+
+	// 单类结果写入/读取使用不同的键，互不覆盖。
+	if chainResultsSettingKey("ip") == chainResultsSettingKey("domain") {
+		t.Fatal("IP 与域名必须使用不同的结果存储键")
+	}
+}
+
 // 目标不可达时必须返回错误（不能因为"连上了但没数据"就判正常）。
 func TestProbeChainHTTPFailsOnClosedPort(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))

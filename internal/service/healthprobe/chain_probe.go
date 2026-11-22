@@ -40,6 +40,16 @@ const (
 	SettingChainResults     = "cfip.chain_probe.results"
 	SettingChainCursor      = "cfip.chain_probe.cursor"
 
+	// 域名 / IP 分开控制：各有独立开关、单轮名额、结果与游标。
+	// 两者共用出口 / 探针入站 / 并发 / 探测 URL，但不共用名额和结果，
+	// 这样 IP 再多也不会挤掉域名，页面数据也不会相互覆盖。
+	SettingChainIPEnabled        = "cfip.chain_probe.ip_enabled"
+	SettingChainDomainEnabled    = "cfip.chain_probe.domain_enabled"
+	SettingChainIPMaxTargets     = "cfip.chain_probe.ip_max_targets"
+	SettingChainDomainMaxTargets = "cfip.chain_probe.domain_max_targets"
+	SettingChainIPResults        = "cfip.chain_probe.ip_results"
+	SettingChainDomainResults    = "cfip.chain_probe.domain_results"
+
 	DefaultChainConcurrency = 2
 	DefaultChainMaxTargets  = 20
 	DefaultChainProbeURL    = "https://www.cloudflare.com/cdn-cgi/trace"
@@ -63,11 +73,22 @@ type ChainConfig struct {
 	// Concurrency 是同时探测的目标数（1-8）。临时核心只起一个，
 	// 并发太高只会让加密/握手抢占 CPU，默认 2。
 	Concurrency int `json:"concurrency"`
-	// MaxTargets 是单轮最多探测的目标数（1-500）。目标多时按游标轮转，
-	// 避免一次把整个 CDN 集群全测一遍（CPU/带宽抖动）。
+	// MaxTargets 是旧版的单轮名额（1-500）。新版本拆成 IPMaxTargets /
+	// DomainMaxTargets，这里只作为老库升级时的默认值保留。
 	MaxTargets int `json:"max_targets"`
+	// DomainEnabled / IPEnabled 分别控制两类目标是否参与自动巡检。
+	// 手动检测不受开关限制（可以单独点某一类的「检测」）。
+	DomainEnabled bool `json:"domain_enabled"`
+	IPEnabled     bool `json:"ip_enabled"`
+	// DomainMaxTargets / IPMaxTargets 是两类各自的单轮名额（1-500）。
+	// 分开后 IP 再多也不会挤掉域名，两类结果也不会互相覆盖。
+	DomainMaxTargets int `json:"domain_max_targets"`
+	IPMaxTargets     int `json:"ip_max_targets"`
 	// ProbeURL 是穿透代理访问的 URL，默认 CF trace 页（返回纯文本且无缓存）。
 	ProbeURL string `json:"probe_url"`
+	// KindsConfigured 只用于保存请求：true 表示前端已显式提供分类型开关/名额。
+	// 旧前端/直接调用不传时，按总开关与旧总名额回退，避免把两类名额误写成 1。
+	KindsConfigured bool `json:"kinds_configured"`
 }
 
 // ChainTarget 是一个待探测的 CDN 条目（域名或 IP）。
@@ -212,7 +233,98 @@ func (p *Prober) ReadChainConfig(ctx context.Context) ChainConfig {
 			cfg.ProbeURL = u
 		}
 	}
+	// 域名 / IP 分开控制。老库没有这两个键时沿用原总开关与总名额，
+	// 升级后行为不变；一旦保存过新配置就以各自的值为准。
+	cfg.DomainEnabled = cfg.Enabled
+	cfg.IPEnabled = cfg.Enabled
+	if v, err := p.setting.GetByKey(ctx, SettingChainDomainEnabled); err == nil {
+		cfg.DomainEnabled = parseBoolSetting(v, cfg.Enabled)
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainIPEnabled); err == nil {
+		cfg.IPEnabled = parseBoolSetting(v, cfg.Enabled)
+	}
+	cfg.DomainMaxTargets = cfg.MaxTargets
+	cfg.IPMaxTargets = cfg.MaxTargets
+	if v, err := p.setting.GetByKey(ctx, SettingChainDomainMaxTargets); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.DomainMaxTargets = clampInt(n, 1, 500)
+		}
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainIPMaxTargets); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cfg.IPMaxTargets = clampInt(n, 1, 500)
+		}
+	}
 	return cfg
+}
+
+// enabledChainKinds 返回自动巡检要跑的类型（域名 / IP 各自独立开关）。
+func (c ChainConfig) enabledChainKinds() []string {
+	out := make([]string, 0, 2)
+	if c.DomainEnabled {
+		out = append(out, "domain")
+	}
+	if c.IPEnabled {
+		out = append(out, "ip")
+	}
+	return out
+}
+
+// maxTargetsForKind 返回某一类的单轮名额；新字段缺失时回落到旧总名额。
+func (c ChainConfig) maxTargetsForKind(kind string) int {
+	switch kind {
+	case "domain":
+		if c.DomainMaxTargets > 0 {
+			return c.DomainMaxTargets
+		}
+	case "ip":
+		if c.IPMaxTargets > 0 {
+			return c.IPMaxTargets
+		}
+	}
+	if c.MaxTargets > 0 {
+		return c.MaxTargets
+	}
+	return DefaultChainMaxTargets
+}
+
+// normalizeChainKind 归一化前端传入的类型（domain / ip）。
+func normalizeChainKind(kind string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "domain", "cf_domain":
+		return "domain", true
+	case "ip", "cf_ip":
+		return "ip", true
+	}
+	return "", false
+}
+
+// chainTargetKind 把探测类型映射为目标 / 结果里的 Kind。
+func chainTargetKind(kind string) string {
+	if kind == "ip" {
+		return "cf_ip"
+	}
+	return "cf_domain"
+}
+
+// chainResultsSettingKey 返回某一类结果的存储键。
+func chainResultsSettingKey(kind string) string {
+	if kind == "ip" {
+		return SettingChainIPResults
+	}
+	return SettingChainDomainResults
+}
+
+// filterChainTargetsByKind 只保留某一类目标。
+func filterChainTargetsByKind(targets []ChainTarget, kind string) []ChainTarget {
+	want := chainTargetKind(kind)
+	out := make([]ChainTarget, 0, len(targets))
+	for _, t := range targets {
+		if t.Kind == want {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // SaveChainConfig 保存链路探测配置（nil 表示不改该项）。
@@ -233,7 +345,46 @@ func (p *Prober) SaveChainConfig(ctx context.Context, cfg ChainConfig) error {
 	if err := set(SettingChainConcurrency, strconv.Itoa(clampInt(cfg.Concurrency, 1, 8))); err != nil {
 		return err
 	}
-	if err := set(SettingChainMaxTargets, strconv.Itoa(clampInt(cfg.MaxTargets, 1, 500))); err != nil {
+	// 旧前端 / 直接调用不带分类型字段：跟随总开关与旧总名额，
+	// 不能因为 bool 零值把两类都关掉、把名额写成 1。
+	if !cfg.KindsConfigured {
+		cfg.DomainEnabled = cfg.Enabled
+		cfg.IPEnabled = cfg.Enabled
+		if cfg.DomainMaxTargets <= 0 {
+			cfg.DomainMaxTargets = cfg.MaxTargets
+		}
+		if cfg.IPMaxTargets <= 0 {
+			cfg.IPMaxTargets = cfg.MaxTargets
+		}
+	}
+	if cfg.DomainMaxTargets <= 0 {
+		cfg.DomainMaxTargets = DefaultChainMaxTargets
+	}
+	if cfg.IPMaxTargets <= 0 {
+		cfg.IPMaxTargets = DefaultChainMaxTargets
+	}
+	// 域名 / IP 各自的名额与开关（分开存储，互不影响）。
+	if err := set(SettingChainDomainEnabled, strconv.FormatBool(cfg.DomainEnabled)); err != nil {
+		return err
+	}
+	if err := set(SettingChainIPEnabled, strconv.FormatBool(cfg.IPEnabled)); err != nil {
+		return err
+	}
+	if err := set(SettingChainDomainMaxTargets, strconv.Itoa(clampInt(cfg.DomainMaxTargets, 1, 500))); err != nil {
+		return err
+	}
+	if err := set(SettingChainIPMaxTargets, strconv.Itoa(clampInt(cfg.IPMaxTargets, 1, 500))); err != nil {
+		return err
+	}
+	// 旧总名额仍写一份（取两类较大值），回滚到旧版本时不会突然变成默认值。
+	legacyMax := cfg.MaxTargets
+	if legacyMax <= 0 {
+		legacyMax = cfg.IPMaxTargets
+		if cfg.DomainMaxTargets > legacyMax {
+			legacyMax = cfg.DomainMaxTargets
+		}
+	}
+	if err := set(SettingChainMaxTargets, strconv.Itoa(clampInt(legacyMax, 1, 500))); err != nil {
 		return err
 	}
 	url := strings.TrimSpace(cfg.ProbeURL)
@@ -247,40 +398,58 @@ func (p *Prober) SaveChainConfig(ctx context.Context, cfg ChainConfig) error {
 	return nil
 }
 
-// ChainResults 返回上次链路探测的结果（按检查时间倒序）。
-func (p *Prober) ChainResults(ctx context.Context) ([]ChainResult, int64) {
-	if p.setting == nil {
+// ChainResultsForKind 返回某一类（ip / domain）上次的探测结果。
+func (p *Prober) ChainResultsForKind(ctx context.Context, kind string) ([]ChainResult, int64) {
+	kind, ok := normalizeChainKind(kind)
+	if !ok || p.setting == nil {
 		return nil, 0
 	}
+	if raw, err := p.setting.GetByKey(ctx, chainResultsSettingKey(kind)); err == nil && strings.TrimSpace(raw) != "" {
+		if results, updatedAt, ok := parseChainResultsPayload(raw); ok {
+			return results, updatedAt
+		}
+	}
+	// 兼容旧版本：以前只有一份 results，按结果里的 Kind 拆出本类。
 	raw, err := p.setting.GetByKey(ctx, SettingChainResults)
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return nil, 0
 	}
+	results, updatedAt, ok := parseChainResultsPayload(raw)
+	if !ok {
+		return nil, 0
+	}
+	want := chainTargetKind(kind)
+	out := make([]ChainResult, 0, len(results))
+	for _, r := range results {
+		if r.Kind == want {
+			out = append(out, r)
+		}
+	}
+	return out, updatedAt
+}
+
+func parseChainResultsPayload(raw string) ([]ChainResult, int64, bool) {
 	var payload struct {
 		UpdatedAt int64         `json:"updated_at"`
 		Results   []ChainResult `json:"results"`
 	}
 	if json.Unmarshal([]byte(raw), &payload) != nil {
-		return nil, 0
+		return nil, 0, false
 	}
-	return payload.Results, payload.UpdatedAt
+	return payload.Results, payload.UpdatedAt, true
 }
 
-// CheckChain 执行一轮链路探测。force=true 时忽略 Enabled 开关（手动检测）。
+// CheckChain 执行一轮链路探测（定时任务入口）：只跑已启用的类型。
+// 域名与 IP 各自用自己的名额、游标和结果，互不影响。
 func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, error) {
 	cfg := p.ReadChainConfig(ctx)
 	sum := ChainSummary{}
 	if !cfg.Enabled && !force {
 		return sum, nil
 	}
-	if p.chainProv == nil {
-		return sum, errors.New("链路探测目标解析器未初始化")
-	}
-	if cfg.Exit == "" {
-		return sum, errors.New("未选择出口节点：链路探测必须从一个真实出口发起，本机直连的结论没有参考意义")
-	}
-	if cfg.Inbound == "" {
-		return sum, errors.New("未选择探针入站：链路探测固定用这一个入站完成协议握手，请先选择")
+	kinds := cfg.enabledChainKinds()
+	if len(kinds) == 0 {
+		return sum, nil
 	}
 
 	// chainMu 只保护链路探测自身：优选 IP 探测用 p.mu，两者分开加锁，
@@ -288,21 +457,71 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 	p.chainMu.Lock()
 	defer p.chainMu.Unlock()
 
+	if err := p.validateChainRuntime(cfg); err != nil {
+		return sum, err
+	}
+	var firstErr error
+	for _, kind := range kinds {
+		one, err := p.checkChainKind(ctx, cfg, kind)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		sum = mergeChainSummary(sum, one)
+	}
+	return sum, firstErr
+}
+
+// CheckChainKind 手动检测单一类型（kind = ip / domain）。
+// force=true 表示忽略总开关（页面上的「检测」按钮即手动检测）。
+func (p *Prober) CheckChainKind(ctx context.Context, kind string, force bool) (ChainSummary, error) {
+	norm, ok := normalizeChainKind(kind)
+	if !ok {
+		return ChainSummary{}, fmt.Errorf("未知的链路探测类型 %q（可选 ip / domain）", kind)
+	}
+	cfg := p.ReadChainConfig(ctx)
+	if !cfg.Enabled && !force {
+		return ChainSummary{}, nil
+	}
+	p.chainMu.Lock()
+	defer p.chainMu.Unlock()
+	if err := p.validateChainRuntime(cfg); err != nil {
+		return ChainSummary{}, err
+	}
+	return p.checkChainKind(ctx, cfg, norm)
+}
+
+func (p *Prober) validateChainRuntime(cfg ChainConfig) error {
+	if p.chainProv == nil {
+		return errors.New("链路探测目标解析器未初始化")
+	}
+	if cfg.Exit == "" {
+		return errors.New("未选择出口节点：链路探测必须从一个真实出口发起，本机直连的结论没有参考意义")
+	}
+	if cfg.Inbound == "" {
+		return errors.New("未选择探针入站：链路探测固定用这一个入站完成协议握手，请先选择")
+	}
+	return nil
+}
+
+// checkChainKind 只探测一类目标（调用方必须已持有 chainMu）。
+func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind string) (ChainSummary, error) {
+	sum := ChainSummary{}
 	targets, err := p.chainProv.ChainProbeTargets(ctx, cfg.Inbound)
 	if err != nil {
 		return sum, err
 	}
+	targets = filterChainTargetsByKind(targets, kind)
 	sum.Total = len(targets)
 	if len(targets) == 0 {
 		return sum, nil
 	}
 
-	// 按 Kind 分配名额 + 每类独立游标。
-	//
-	// 不能再用「全局游标 + 一段窗口」：目标按 Kind 排序（cf_ip 在前、cf_domain 在后），
-	// IP 数量远大于域名时整个窗口会落在 IP 段里 —— 实测 140 个 IP + 12 个域名、
-	// max_targets=30，连续多轮 30 个结果全是 cf_ip，域名永远轮不到。
-	picked, cursors := selectChainTargets(targets, p.readChainCursors(ctx), cfg.MaxTargets)
+	// 一类一个名额上限 + 每类独立游标：IP 再多也不会占用域名的名额，
+	// 两类结果分别落库，页面互不覆盖。
+	picked, cursors := selectChainTargets(targets, p.readChainCursors(ctx), cfg.maxTargetsForKind(kind))
 	sum.Skipped = len(targets) - len(picked)
 	// 本轮探针入站（所有目标共用同一条入站做握手）。
 	sum.Probe = fmt.Sprintf("%s (%s)", picked[0].Name, picked[0].Protocol)
@@ -392,17 +611,39 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 		}
 	}
 	sum.Results = results
-	p.saveChainResults(ctx, results, sum.Probe)
+	// 结果按类型分开存：域名和 IP 的数据不会相互覆盖。
+	p.saveChainResults(ctx, kind, results, sum.Probe)
 	return sum, nil
 }
 
-// ChainLastProbe 返回最近一轮实际使用的探针入站（页面展示用）。
-// 目标列表按当前选择的探针入站生成，这里记录的是最近一次真正跑过的那一条。
-func (p *Prober) ChainLastProbe(ctx context.Context) string {
-	if p.setting == nil {
+func mergeChainSummary(dst, src ChainSummary) ChainSummary {
+	dst.Checked += src.Checked
+	dst.Healthy += src.Healthy
+	dst.Unhealthy += src.Unhealthy
+	dst.Skipped += src.Skipped
+	dst.Total += src.Total
+	dst.DurationMs += src.DurationMs
+	if src.Entry != "" {
+		dst.Entry = src.Entry
+	}
+	if src.Probe != "" {
+		dst.Probe = src.Probe
+	}
+	dst.Results = append(dst.Results, src.Results...)
+	return dst
+}
+
+// ChainLastProbeForKind 返回某一类最近一轮实际使用的探针入站（页面展示用）。
+func (p *Prober) ChainLastProbeForKind(ctx context.Context, kind string) string {
+	kind, ok := normalizeChainKind(kind)
+	if !ok || p.setting == nil {
 		return ""
 	}
-	raw, err := p.setting.GetByKey(ctx, SettingChainResults)
+	raw, err := p.setting.GetByKey(ctx, chainResultsSettingKey(kind))
+	if err != nil || strings.TrimSpace(raw) == "" {
+		// 兼容旧版合并结果：探针入站在两类里是同一个。
+		raw, err = p.setting.GetByKey(ctx, SettingChainResults)
+	}
 	if err != nil || strings.TrimSpace(raw) == "" {
 		return ""
 	}
@@ -582,10 +823,20 @@ func (p *Prober) saveChainCursors(ctx context.Context, cursors map[string]int) {
 //
 // 不能跟历史结果合并：条目被删除/换池、探针入站或出口被改掉之后，旧结果会
 // 永远留在页面上（用户看到的是几个月前的 104.x IP 和早已不存在的条目），
-// 也无法判断"这张表到底是不是这次测试的结果"。轮转探测（max_targets 小于
+// 也无法判断"这张表到底是不是这次测试的结果"。轮转探测（单轮名额小于
 // 条目总数）时，这里记录的就是"本轮测过的这一段"。
-func (p *Prober) saveChainResults(ctx context.Context, fresh []ChainResult, probe string) {
-	if p.setting == nil || len(fresh) == 0 {
+//
+// 结果按类型（ip / domain）分开存：两类各自有独立的单轮名额和游标，
+// 写回时不能共用一份，否则后跑的一类会把另一类的结果覆盖掉。
+func (p *Prober) saveChainResults(ctx context.Context, kind string, fresh []ChainResult, probe string) {
+	if p.setting == nil {
+		return
+	}
+	if fresh == nil {
+		fresh = []ChainResult{}
+	}
+	kind, ok := normalizeChainKind(kind)
+	if !ok {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
@@ -596,7 +847,7 @@ func (p *Prober) saveChainResults(ctx context.Context, fresh []ChainResult, prob
 	if err != nil {
 		return
 	}
-	_ = p.setting.Set(ctx, SettingChainResults, string(payload))
+	_ = p.setting.Set(ctx, chainResultsSettingKey(kind), string(payload))
 }
 
 // writeBackChainHealth 把链路探测结果写回条目健康状态。

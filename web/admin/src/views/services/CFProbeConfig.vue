@@ -59,10 +59,7 @@
     <template #header>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-weight:600">{{ t('service.cfip.chainTitle') }}</span>
-        <div style="display:flex;gap:8px">
-          <el-button size="small" :loading="chainChecking" @click="checkChain">{{ t('service.cfip.chainCheck') }}</el-button>
-          <el-button size="small" type="primary" @click="saveChainConfig">{{ t('common.save') }}</el-button>
-        </div>
+        <el-button size="small" type="primary" @click="saveChainConfig">{{ t('common.save') }}</el-button>
       </div>
     </template>
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
@@ -94,10 +91,6 @@
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainConcurrency') }}</div>
         <el-input-number v-model="chainCfg.concurrency" :min="1" :max="8" size="small" style="width:120px" />
       </div>
-      <div>
-        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainMaxTargets') }}</div>
-        <el-input-number v-model="chainCfg.max_targets" :min="1" :max="500" size="small" style="width:130px" />
-      </div>
       <div style="min-width:320px;flex:1">
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainProbeURL') }}</div>
         <el-input v-model="chainCfg.probe_url" size="small" placeholder="https://www.cloudflare.com/cdn-cgi/trace" />
@@ -111,55 +104,67 @@
       <span v-if="!chainDeps.dialer">（{{ t('service.cfip.chainDialerAuto') }}）</span>
     </div>
     <div style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.chainAccountHint') }}</div>
-    <div style="font-size:11px;color:#909399;margin-top:4px">
-      {{ t('service.cfip.chainProbeLabel') }}：{{ chainProbeLabel }}
-      · {{ t('service.cfip.chainTargetCount') }}：{{ chainTargetCount }}
-      <span v-if="chainUpdatedAt"> · {{ t('onlineUsers.updatedAt') }} {{ formatTime(chainUpdatedAt) }}</span>
-    </div>
+    <div style="font-size:11px;color:#606266;margin-top:6px">{{ t('service.cfip.chainSplitHint') }}</div>
 
-    <el-table v-if="chainResults.length" :data="chainResults" size="small" border stripe style="margin-top:12px" max-height="420">
-      <el-table-column :label="t('service.cfip.chainResultStatus')" width="90">
-        <template #default="{ row }">
-          <el-tag :type="row.healthy ? 'success' : 'danger'" size="small">
-            {{ row.healthy ? t('service.cfip.chainHealthy') : t('service.cfip.chainUnhealthy') }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultCDN')" min-width="220" show-overflow-tooltip>
-        <template #default="{ row }">
-          <el-tag size="small" :type="row.kind === 'cf_ip' ? 'warning' : 'info'" effect="plain" style="margin-right:6px">
-            {{ row.kind === 'cf_ip' ? t('service.cfip.chainKindIP') : t('service.cfip.chainKindDomain') }}
-          </el-tag>
-          <span style="font-family:monospace">{{ row.host }}:{{ row.port }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultProbe')" min-width="200" show-overflow-tooltip>
-        <template #default="{ row }">
-          <span>{{ row.name || ('#' + row.probe_inbound_id) }}</span>
-          <span style="color:#909399;font-size:12px"> · {{ row.protocol }}</span>
-          <span v-if="row.node_name" style="color:#c0c4cc;font-size:12px"> @{{ row.node_name }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultHTTP')" width="80" align="center">
-        <template #default="{ row }">{{ row.http_status || '-' }}</template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultLatency')" width="90" align="right">
-        <template #default="{ row }">{{ row.latency_ms ? row.latency_ms + ' ms' : '-' }}</template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultUp')" width="90" align="right">
-        <template #default="{ row }">{{ formatBytes(row.up_bytes) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultDown')" width="90" align="right">
-        <template #default="{ row }">{{ formatBytes(row.down_bytes) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultError')" min-width="160" show-overflow-tooltip>
-        <template #default="{ row }"><span style="color:#f56c6c">{{ row.error || '' }}</span></template>
-      </el-table-column>
-      <el-table-column :label="t('service.cfip.chainResultCheckedAt')" width="160">
-        <template #default="{ row }">{{ formatTime(row.checked_at) }}</template>
-      </el-table-column>
-    </el-table>
-    <el-empty v-else :description="t('service.cfip.chainNoResult')" :image-size="60" />
+    <!-- 域名 / IP 各自独立：开关、单轮名额、检测按钮、结果表全部分开，数据不会互相串 -->
+    <div v-for="sec in chainSections" :key="sec.key" class="chain-kind-block">
+      <div class="chain-kind-head">
+        <span class="chain-kind-title">{{ sec.title }}</span>
+        <el-switch v-model="chainCfg[sec.enabledKey]" />
+        <span class="chain-kind-label">{{ t('service.cfip.chainMaxTargets') }}</span>
+        <el-input-number v-model="chainCfg[sec.maxKey]" :min="1" :max="500" size="small" style="width:120px" />
+        <el-button size="small" :loading="chainChecking[sec.key]" @click="checkChain(sec.key)">
+          {{ sec.checkLabel }}
+        </el-button>
+        <span class="chain-kind-meta">
+          {{ t('service.cfip.chainTargetCount') }}：{{ sec.total }}
+          <template v-if="sec.updatedAt"> · {{ t('onlineUsers.updatedAt') }} {{ formatTime(sec.updatedAt) }}</template>
+        </span>
+      </div>
+      <div class="chain-kind-meta" style="margin:6px 0 8px">
+        {{ t('service.cfip.chainProbeLabel') }}：{{ sec.probe || chainProbeLabel }}
+      </div>
+      <el-table v-if="sec.results.length" :data="sec.results" size="small" border stripe max-height="360">
+        <el-table-column :label="t('service.cfip.chainResultStatus')" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.healthy ? 'success' : 'danger'" size="small">
+              {{ row.healthy ? t('service.cfip.chainHealthy') : t('service.cfip.chainUnhealthy') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultCDN')" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span style="font-family:monospace">{{ row.host }}:{{ row.port }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultProbe')" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.name || ('#' + row.probe_inbound_id) }}</span>
+            <span style="color:#909399;font-size:12px"> · {{ row.protocol }}</span>
+            <span v-if="row.node_name" style="color:#c0c4cc;font-size:12px"> @{{ row.node_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultHTTP')" width="80" align="center">
+          <template #default="{ row }">{{ row.http_status || '-' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultLatency')" width="90" align="right">
+          <template #default="{ row }">{{ row.latency_ms ? row.latency_ms + ' ms' : '-' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultUp')" width="90" align="right">
+          <template #default="{ row }">{{ formatBytes(row.up_bytes) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultDown')" width="90" align="right">
+          <template #default="{ row }">{{ formatBytes(row.down_bytes) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultError')" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }"><span style="color:#f56c6c">{{ row.error || '' }}</span></template>
+        </el-table-column>
+        <el-table-column :label="t('service.cfip.chainResultCheckedAt')" width="160">
+          <template #default="{ row }">{{ formatTime(row.checked_at) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else :description="t('service.cfip.chainNoResult')" :image-size="60" />
+    </div>
   </el-card>
 
   <!-- 拨号核心未安装：选版本直接安装（面板本机，不需要 SSH 手动放二进制） -->
@@ -219,17 +224,23 @@ const chainCfg = ref({
   exit: '',
   inbound: '',
   concurrency: 2,
-  max_targets: 20,
+  domain_enabled: true,
+  ip_enabled: true,
+  domain_max_targets: 20,
+  ip_max_targets: 20,
   probe_url: 'https://www.cloudflare.com/cdn-cgi/trace',
+  // 告诉后端本次请求显式带了分类型开关/名额（旧前端不会带）
+  kinds_configured: true,
 })
-const chainResults = ref([])
-const chainUpdatedAt = ref(0)
+// 域名 / IP 分开保存结果与状态：两类互不影响，页面不会相互串数据。
+const chainResults = ref({ domain: [], ip: [] })
+const chainUpdatedAt = ref({ domain: 0, ip: 0 })
 const chainExits = ref([])
 const chainInbounds = ref([])
 const chainTargets = ref([])
-const chainChecking = ref(false)
+const chainChecking = ref({ domain: false, ip: false })
 // 最近一轮实际使用的探针入站（目标列表按当前选择生成，这里记录真正跑过的那条）。
-const chainProbe = ref('')
+const chainProbe = ref({ domain: '', ip: '' })
 // 链路探测依赖「探测设置」的间隔与拨号核心，这两项只读展示。
 const chainDeps = ref({ interval_minutes: 0, dialer: '', effective_dialer: '' })
 
@@ -242,12 +253,45 @@ const dialerInstalling = ref(false)
 // 记住已安装/上次选择，取消安装时回退，避免把"未安装核心"保存进配置。
 let previousDialer = ''
 
-const chainTargetCount = computed(() => chainTargets.value.length)
+const chainTargetCounts = computed(() => {
+  const counts = { domain: 0, ip: 0 }
+  for (const tg of chainTargets.value) {
+    if (tg.kind === 'cf_domain') counts.domain++
+    else if (tg.kind === 'cf_ip') counts.ip++
+  }
+  return counts
+})
+// 两个独立区块：域名 / IP 各自开关、名额、检测按钮、结果表。
+const chainSections = computed(() => [
+  {
+    key: 'domain',
+    title: t('service.cfip.chainDomainTitle'),
+    checkLabel: t('service.cfip.chainDomainCheck'),
+    enabledKey: 'domain_enabled',
+    maxKey: 'domain_max_targets',
+    results: chainResults.value.domain,
+    updatedAt: chainUpdatedAt.value.domain,
+    probe: chainProbe.value.domain,
+    total: chainTargetCounts.value.domain,
+  },
+  {
+    key: 'ip',
+    title: t('service.cfip.chainIPTitle'),
+    checkLabel: t('service.cfip.chainIPCheck'),
+    enabledKey: 'ip_enabled',
+    maxKey: 'ip_max_targets',
+    results: chainResults.value.ip,
+    updatedAt: chainUpdatedAt.value.ip,
+    probe: chainProbe.value.ip,
+    total: chainTargetCounts.value.ip,
+  },
+])
 const externalExits = computed(() => chainExits.value.filter((o) => o.kind === 'external'))
 const inboundExits = computed(() => chainExits.value.filter((o) => o.kind === 'inbound'))
 // 最近一轮实际使用的探针入站（没跑过时退回当前选择）。
 const chainProbeLabel = computed(() => {
-  if (chainProbe.value) return chainProbe.value
+  const probe = chainProbe.value.domain || chainProbe.value.ip
+  if (probe) return probe
   const picked = chainInbounds.value.find((o) => o.value === chainCfg.value.inbound)
   return picked ? picked.label : '-'
 })
@@ -282,21 +326,38 @@ async function fetchChainConfig() {
   try {
     const d = await client.get('/cfip/chain-probe-config') || {}
     if (d.config) {
+      const fallbackMax = d.config.max_targets ?? 20
       chainCfg.value = {
         enabled: !!d.config.enabled,
         exit: d.config.exit || '',
         inbound: d.config.inbound || '',
         concurrency: d.config.concurrency ?? 2,
-        max_targets: d.config.max_targets ?? 20,
+        domain_enabled: d.config.domain_enabled !== false,
+        ip_enabled: d.config.ip_enabled !== false,
+        domain_max_targets: d.config.domain_max_targets ?? fallbackMax,
+        ip_max_targets: d.config.ip_max_targets ?? fallbackMax,
         probe_url: d.config.probe_url || 'https://www.cloudflare.com/cdn-cgi/trace',
+        kinds_configured: true,
       }
     }
     chainExits.value = d.exits || []
     chainInbounds.value = d.inbounds || []
     chainTargets.value = d.targets || []
-    chainResults.value = sortResults(d.results || [])
-    chainUpdatedAt.value = d.results_updated_at || 0
-    chainProbe.value = d.probe || ''
+    // 旧后端只有一份合并结果：按 kind 拆开，升级瞬间也不会把两类混在一起。
+    const legacy = Array.isArray(d.results) ? d.results : []
+    const pickKind = (list, kind) => list.filter((r) => r.kind === kind)
+    chainResults.value = {
+      domain: sortResults(d.domain_results || pickKind(legacy, 'cf_domain')),
+      ip: sortResults(d.ip_results || pickKind(legacy, 'cf_ip')),
+    }
+    chainUpdatedAt.value = {
+      domain: d.domain_results_updated_at || d.results_updated_at || 0,
+      ip: d.ip_results_updated_at || d.results_updated_at || 0,
+    }
+    chainProbe.value = {
+      domain: d.domain_probe || d.probe || '',
+      ip: d.ip_probe || d.probe || '',
+    }
     chainDeps.value = {
       interval_minutes: d.interval_minutes ?? 0,
       dialer: d.dialer || '',
@@ -443,7 +504,7 @@ async function saveChainConfig() {
   }
 }
 
-async function checkChain() {
+async function checkChain(kind) {
   if (dialerNeedsInstall()) {
     await onDialerChange(probeCfg.value.dialer)
     return
@@ -463,9 +524,10 @@ async function checkChain() {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
     return
   }
-  chainChecking.value = true
+  chainChecking.value[kind] = true
   try {
-    const res = await client.post('/cfip/chain-probe/check', {}, { timeout: 180000 })
+    // kind 明确指定：只测域名或只测 IP，结果分别保存，互不覆盖。
+    const res = await client.post('/cfip/chain-probe/check', { kind }, { timeout: 180000 })
     const summary = res || {}
     if (summary.unhealthy) {
       ElMessage.warning(`${t('service.cfip.chainHealthy')} ${summary.healthy || 0} / ${t('service.cfip.chainUnhealthy')} ${summary.unhealthy}`)
@@ -476,7 +538,7 @@ async function checkChain() {
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
   } finally {
-    chainChecking.value = false
+    chainChecking.value[kind] = false
   }
 }
 
@@ -504,3 +566,31 @@ onMounted(() => {
   fetchChainConfig()
 })
 </script>
+
+<style scoped>
+/* 域名 / IP 两个独立区块：视觉上分开，避免误以为是一份共用配置 */
+.chain-kind-block {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed #e4e7ed;
+}
+.chain-kind-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chain-kind-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #303133;
+}
+.chain-kind-label {
+  font-size: 12px;
+  color: #909399;
+}
+.chain-kind-meta {
+  font-size: 11px;
+  color: #909399;
+}
+</style>

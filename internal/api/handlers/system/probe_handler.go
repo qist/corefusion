@@ -283,11 +283,22 @@ func (h *ProbeHandler) chainExitOptions(ctx context.Context) []chainExitOption {
 func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	cfg := h.prober.ReadChainConfig(ctx)
-	results, updatedAt := h.prober.ChainResults(ctx)
+	// 域名 / IP 分开返回结果：页面各自展示，数据不会相互串。
+	ipResults, ipUpdatedAt := h.prober.ChainResultsForKind(ctx, "ip")
+	domainResults, domainUpdatedAt := h.prober.ChainResultsForKind(ctx, "domain")
 	targets, err := h.prober.ChainTargets(ctx)
 	if err != nil {
 		// 目标解析失败不应让整个配置页打不开：返回空列表，错误在探测时暴露。
 		targets = nil
+	}
+	ipTargetCount, domainTargetCount := 0, 0
+	for _, t := range targets {
+		switch t.Kind {
+		case "cf_ip":
+			ipTargetCount++
+		case "cf_domain":
+			domainTargetCount++
+		}
 	}
 	inbounds, err := h.prober.ChainProbeInboundOptions(ctx)
 	if err != nil {
@@ -297,17 +308,22 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 	// 这里把当前生效值一起返回，页面直接把依赖关系显示出来。
 	probeCfg := h.prober.ReadConfig(ctx)
 	response.OK(c, gin.H{
-		"config":             cfg,
-		"results":            results,
-		"results_updated_at": updatedAt,
-		"probe":              h.prober.ChainLastProbe(ctx),
-		"targets":            targets,
-		"target_count":       len(targets),
-		"exits":              h.chainExitOptions(ctx),
-		"inbounds":           inbounds,
-		"interval_minutes":   probeCfg.IntervalMinutes,
-		"dialer":             probeCfg.Dialer,
-		"effective_dialer":   h.prober.EffectiveDialer(probeCfg.Dialer),
+		"config":                    cfg,
+		"ip_results":                ipResults,
+		"ip_results_updated_at":     ipUpdatedAt,
+		"ip_probe":                  h.prober.ChainLastProbeForKind(ctx, "ip"),
+		"domain_results":            domainResults,
+		"domain_results_updated_at": domainUpdatedAt,
+		"domain_probe":              h.prober.ChainLastProbeForKind(ctx, "domain"),
+		"targets":                   targets,
+		"target_count":              len(targets),
+		"ip_target_count":           ipTargetCount,
+		"domain_target_count":       domainTargetCount,
+		"exits":                     h.chainExitOptions(ctx),
+		"inbounds":                  inbounds,
+		"interval_minutes":          probeCfg.IntervalMinutes,
+		"dialer":                    probeCfg.Dialer,
+		"effective_dialer":          h.prober.EffectiveDialer(probeCfg.Dialer),
 	})
 }
 
@@ -345,8 +361,27 @@ func (h *ProbeHandler) SaveChainConfig(c *gin.Context) {
 }
 
 // CheckChain 立即执行一轮链路探测（忽略定时开关）。
+// kind=ip / domain 时只测该类；不传则两类都测（兼容旧前端）。
 func (h *ProbeHandler) CheckChain(c *gin.Context) {
-	res, err := h.prober.CheckChain(c.Request.Context(), true)
+	kind := strings.ToLower(strings.TrimSpace(c.Query("kind")))
+	if kind == "" {
+		var req struct {
+			Kind string `json:"kind"`
+		}
+		// 允许空 body：旧前端 POST {} 时不报错。
+		if err := c.ShouldBindJSON(&req); err == nil {
+			kind = strings.ToLower(strings.TrimSpace(req.Kind))
+		}
+	}
+	var (
+		res healthprobe.ChainSummary
+		err error
+	)
+	if kind == "" {
+		res, err = h.prober.CheckChain(c.Request.Context(), true)
+	} else {
+		res, err = h.prober.CheckChainKind(c.Request.Context(), kind, true)
+	}
 	if err != nil {
 		response.InternalError(c, "CHAIN_PROBE_FAILED", err.Error())
 		return

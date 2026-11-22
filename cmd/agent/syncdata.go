@@ -210,6 +210,7 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			EntryInboundID: entry.EntryInboundId,
 			ExitServerID:   entry.ExitServerId,
 			ExitExternalID: entry.ExitExternalId,
+			ExitInboundID:  entry.ExitInboundId,
 			ExitTag:        entry.ExitTag,
 			Weight:         int(entry.Weight),
 			Priority:       int(entry.Priority),
@@ -224,8 +225,8 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 		}
 		result := database.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "updated_at"}),
-		}).Select("id", "entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
+			DoUpdates: clause.AssignmentColumns([]string{"entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_inbound_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "updated_at"}),
+		}).Select("id", "entry_server_id", "entry_inbound_id", "exit_server_id", "exit_external_id", "exit_inbound_id", "exit_tag", "weight", "priority", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
 		if result.Error == nil {
 			resp.ChainLinksApplied++
 		} else {
@@ -293,6 +294,35 @@ func (a *AgentApp) handleSyncData(ctx context.Context, req *agentpb.SyncDataRequ
 			resp.ExternalNodesApplied++
 		} else {
 			log.Printf("[Agent] upsert external_node id=%d: %v", entry.Id, result.Error)
+		}
+	}
+
+	// 9b. Upsert external_node_servers（链式外部出口注册表）
+	for _, entry := range req.ExternalNodeServers {
+		record := entity.ExternalNodeServer{
+			ExternalNodeID: entry.ExternalNodeId,
+			Name:           entry.Name,
+			Hostname:       entry.Hostname,
+			Region:         entry.Region,
+			RegionLabel:    entry.RegionLabel,
+			Enabled:        entry.Enabled,
+			SortOrder:      int(entry.SortOrder),
+		}
+		record.ID = entry.Id
+		if entry.CreatedAt > 0 {
+			record.CreatedAt = time.Unix(entry.CreatedAt, 0)
+		}
+		if entry.UpdatedAt > 0 {
+			record.UpdatedAt = time.Unix(entry.UpdatedAt, 0)
+		}
+		result := database.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"external_node_id", "name", "hostname", "region", "region_label", "enabled", "sort_order", "updated_at"}),
+		}).Select("id", "external_node_id", "name", "hostname", "region", "region_label", "enabled", "sort_order", "created_at", "updated_at").Create(&record)
+		if result.Error == nil {
+			resp.ExternalNodeServersApplied++
+		} else {
+			log.Printf("[Agent] upsert external_node_server id=%d: %v", entry.Id, result.Error)
 		}
 	}
 
@@ -765,15 +795,23 @@ func pruneStaleRecords(database *gorm.DB, req *agentpb.SyncDataRequest) {
 	}
 
 	// --- Prune chain_links by id (panel sends the full set) ---
-	if len(req.ChainLinks) > 0 {
-		keepIDs := make([]int64, 0, len(req.ChainLinks))
-		for _, e := range req.ChainLinks {
-			keepIDs = append(keepIDs, e.Id)
-		}
-		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ChainLink{})
-		if result.RowsAffected > 0 {
-			log.Printf("[Agent] SyncData: pruned %d stale chain_links", result.RowsAffected)
-		}
+	// ⚠ 空集合也必须清空：面板把链路全删掉时 req.ChainLinks 为空，旧实现用 len>0 守卫
+	// 跳过 prune → Agent 本地保留旧链路，离线重建时会把已删除的链“复活”。
+	keepIDs := make([]int64, 0, len(req.ChainLinks))
+	for _, e := range req.ChainLinks {
+		keepIDs = append(keepIDs, e.Id)
+	}
+	q := database
+	if len(keepIDs) > 0 {
+		q = q.Where("id NOT IN ?", keepIDs)
+	} else {
+		q = q.Session(&gorm.Session{AllowGlobalUpdate: true})
+	}
+	result := q.Delete(&entity.ChainLink{})
+	if result.Error != nil {
+		log.Printf("[Agent] SyncData: prune chain_links failed: %v", result.Error)
+	} else if result.RowsAffected > 0 {
+		log.Printf("[Agent] SyncData: pruned %d stale chain_links", result.RowsAffected)
 	}
 	// --- Prune node_servers by id (panel sends the full enabled set) ---
 	if len(req.NodeServers) > 0 {
@@ -788,16 +826,31 @@ func pruneStaleRecords(database *gorm.DB, req *agentpb.SyncDataRequest) {
 	}
 
 	// --- Prune external_nodes by id (panel sends the full enabled set) ---
-	if len(req.ExternalNodes) > 0 {
-		keepIDs := make([]int64, 0, len(req.ExternalNodes))
-		for _, e := range req.ExternalNodes {
-			keepIDs = append(keepIDs, e.Id)
+	pruneAll := func(model interface{}, keepIDs []int64, label string) {
+		q := database
+		if len(keepIDs) > 0 {
+			q = q.Where("id NOT IN ?", keepIDs)
+		} else {
+			q = q.Session(&gorm.Session{AllowGlobalUpdate: true})
 		}
-		result := database.Where("id NOT IN ?", keepIDs).Delete(&entity.ExternalNode{})
-		if result.RowsAffected > 0 {
-			log.Printf("[Agent] SyncData: pruned %d stale external_nodes", result.RowsAffected)
+		result := q.Delete(model)
+		if result.Error != nil {
+			log.Printf("[Agent] SyncData: prune %s failed: %v", label, result.Error)
+		} else if result.RowsAffected > 0 {
+			log.Printf("[Agent] SyncData: pruned %d stale %s", result.RowsAffected, label)
 		}
 	}
+	extNodeIDs := make([]int64, 0, len(req.ExternalNodes))
+	for _, e := range req.ExternalNodes {
+		extNodeIDs = append(extNodeIDs, e.Id)
+	}
+	pruneAll(&entity.ExternalNode{}, extNodeIDs, "external_nodes")
+
+	extServerIDs := make([]int64, 0, len(req.ExternalNodeServers))
+	for _, e := range req.ExternalNodeServers {
+		extServerIDs = append(extServerIDs, e.Id)
+	}
+	pruneAll(&entity.ExternalNodeServer{}, extServerIDs, "external_node_servers")
 }
 
 // generateConfigFromLocalDB generates a complete runtime config from the local

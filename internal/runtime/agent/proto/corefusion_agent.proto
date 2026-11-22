@@ -868,6 +868,9 @@ message SyncDataRequest {
   repeated ChainLinkEntry chain_links = 25;
   repeated NodeServerEntry node_servers = 27;
   repeated ExternalNodeEntry external_nodes = 28;
+  // 外部节点注册表：链式出口的 ExitExternalID 指向 external_node_servers.id。
+  // 不同步的话 Agent 离线重建时查不到外部出口（或误用同号 external_nodes）。
+  repeated ExternalNodeServerEntry external_node_servers = 30;
 
   // --- Core Guardian 设置（面板→Agent 同步） ---
   // core（xray/singbox）的"开机启动/崩溃重启"开关存放在面板 DB 的
@@ -899,6 +902,9 @@ message ChainLinkEntry {
   int32  sort_order = 10;
   int64  created_at = 11;
   int64  updated_at = 12;
+  // exit_inbound_id：出口节点上被复用的已有入站。缺了它 Agent 离线重建链式配置时
+  // 会报 "exit_inbound_id is required"，导致入口静默直连。
+  int64  exit_inbound_id = 13;
 }
 
 // NodeServerEntry 表示一条 node_servers 记录的（非敏感）字段。
@@ -934,6 +940,20 @@ message ExternalNodeEntry {
   int32  sort_order = 12;
   int64  created_at = 13;
   int64  updated_at = 14;
+}
+
+// ExternalNodeServerEntry 表示一条 external_node_servers 记录。
+message ExternalNodeServerEntry {
+  int64  id = 1;
+  int64  external_node_id = 2;
+  string name = 3;
+  string hostname = 4;
+  string region = 5;
+  string region_label = 6;
+  bool   enabled = 7;
+  int32  sort_order = 8;
+  int64  created_at = 9;
+  int64  updated_at = 10;
 }
 
 // CertificateEntry — 证书条目，面板→Agent 同步证书 PEM 内容。
@@ -1043,6 +1063,7 @@ message SyncDataResponse {
   reserved "chain_exit_configs_applied";
   int32  node_servers_applied = 13;
   int32  external_nodes_applied = 14;
+  int32  external_node_servers_applied = 15;
   bool   config_generated = 8;
   bool   core_started = 9;
   bool   core_restarted = 10;  // 核心是否被重启（reload_strategy=restart 时）

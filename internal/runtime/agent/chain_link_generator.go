@@ -109,8 +109,10 @@ func NewChainLinkGenerator(
 // Multi-exit support (see design doc §6.5 / §6.6): links are grouped by
 // EntryInboundID. Within a group:
 //   - a single exit  → one field rule (inboundTag → chain-* outboundTag)
-//   - multiple exits with same priority → loadbalance (balancer + observatory)
-//   - multiple exits with different priorities → failover (多条独立 field 规则, 按 priority 排序)
+//   - multiple exits → one balancer + observatory (leastPing; 真正的自动故障转移)
+//
+// 不再按 priority 生成多条同 inboundTag 的规则：xray/sing-box 都是首条命中即终止，
+// 那样只有第一条生效，主出口挂掉也永远不会切到备用。
 func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, serverID int64, coreType string) ([]ChainEntryOutbound, []ChainRoutingRule, []ChainBalancer, *ChainObservatory, error) {
 	links, err := g.linkRepo.ListByEntry(ctx, serverID, 0)
 	if err != nil {
@@ -157,7 +159,14 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 			inboundTag = fmt.Sprintf("in-%d", inID)
 		}
 
-		// 先为每个出口生成 outbound（无论单/多出口，全部产出，balancer 靠 selector 前缀圈定）
+		// 先为每个出口生成 outbound。只有**成功生成**的出口才允许进入路由/负载均衡：
+		// 之前构建失败只 `continue`，但后面仍按 groupLinks 生成规则 → 规则指向不存在的
+		// outbound tag，xray/sing-box 会在启动校验时报错（节点起不来）。
+		type builtExit struct {
+			link entity.ChainLink
+			tag  string
+		}
+		built := make([]builtExit, 0, len(groupLinks))
 		for _, link := range groupLinks {
 			var outbound ChainEntryOutbound
 			var berr error
@@ -173,71 +182,69 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 				log.Printf("[ChainLink] link %d: %v", link.ID, berr)
 				continue
 			}
-			outbounds = append(outbounds, outbound)
-		}
-
-		if len(groupLinks) == 1 {
-			// 单出口：直接 field 规则 inboundTag → chain-* outboundTag（见 §6.4）
-			link := groupLinks[0]
 			tag := link.ExitTag
 			if tag == "" {
 				tag = g.exitTagFor(link)
 			}
+			// 以这里算出的 tag 为准，避免 build* 内部回退值与路由/balancer 不一致。
+			outbound.Tag = tag
+			outbounds = append(outbounds, outbound)
+			built = append(built, builtExit{link: link, tag: tag})
+		}
+		if len(built) == 0 {
+			// 这条入站配了链路却一个出口都生成不出来：必须**阻断**，不能没有规则。
+			// 没有规则时入口流量会落到 route.final / 首个出站（通常是 direct）→
+			// 用户以为在走链路，实际直连泄漏。
+			blockTag := "blocked"
+			if coreType == "singbox" {
+				blockTag = "block"
+			}
+			log.Printf("[ChainLink] inbound %d: no usable exit outbound, route to %s", inID, blockTag)
 			routingRules = append(routingRules, ChainRoutingRule{
 				Type:        "field",
 				InboundTag:  []string{inboundTag},
-				OutboundTag: tag,
+				OutboundTag: blockTag,
+				RuleTag:     fmt.Sprintf("exit-%d-no-exit", inID),
+			})
+			continue
+		}
+
+		// 出口顺序只用于稳定选 fallback；真正的主备切换由 observatory + leastPing 完成。
+		sort.SliceStable(built, func(i, j int) bool {
+			if built[i].link.Priority != built[j].link.Priority {
+				return built[i].link.Priority < built[j].link.Priority
+			}
+			return built[i].link.SortOrder < built[j].link.SortOrder
+		})
+
+		if len(built) == 1 {
+			// 单出口：直接 field 规则 inboundTag → chain-* outboundTag（见 §6.4）
+			routingRules = append(routingRules, ChainRoutingRule{
+				Type:        "field",
+				InboundTag:  []string{inboundTag},
+				OutboundTag: built[0].tag,
 				RuleTag:     fmt.Sprintf("exit-%d-single", inID),
 			})
 			continue
 		}
 
-		// 判定多出口策略：failover vs loadbalance（见 §6.5）
-		// 启发式：如果所有 link 的 Priority 相同 → loadbalance；否则 → failover
-		strategy := "loadbalance"
-		firstPriority := groupLinks[0].Priority
-		for _, l := range groupLinks[1:] {
-			if l.Priority != firstPriority {
-				strategy = "failover"
-				break
-			}
-		}
-
-		if strategy == "failover" {
-			// failover 模式（§6.5.3）：按 Priority 升序生成多条独立 field 规则
-			// xray 首规则命中即转发，主出口排最前；主 down 时规则不生效，自动落下一优先级
-			sortedLinks := make([]entity.ChainLink, len(groupLinks))
-			copy(sortedLinks, groupLinks)
-			sort.SliceStable(sortedLinks, func(i, j int) bool {
-				if sortedLinks[i].Priority != sortedLinks[j].Priority {
-					return sortedLinks[i].Priority < sortedLinks[j].Priority
-				}
-				return sortedLinks[i].SortOrder < sortedLinks[j].SortOrder
-			})
-			for _, link := range sortedLinks {
-				tag := link.ExitTag
-				if tag == "" {
-					tag = g.exitTagFor(link)
-				}
-				routingRules = append(routingRules, ChainRoutingRule{
-					Type:        "field",
-					InboundTag:  []string{inboundTag},
-					OutboundTag: tag,
-					RuleTag:     fmt.Sprintf("exit-%d-pri%d", inID, link.Priority),
-				})
-			}
-			continue
-		}
-
-		// loadbalance 模式（§6.6）—— 等权多出口，balancer + observatory
+		// 多出口：统一走 balancer + observatory 的 leastPing 自动选路。
+		//
+		// ⚠ 不能按 priority 生成多条同 inboundTag 的 field 规则：xray / sing-box 都是
+		// “首条命中即终止”，后面几条永远不可达，主出口一挂流量直接断，根本不会切备。
+		// xray 的 balancer / sing-box 的 urltest 本身会按健康度和延迟自动切换，
+		// 这才是真正可用的“多出口故障转移”；priority 只用于 fallback 顺序与展示。
 		balTag := fmt.Sprintf("bal-chain-%d", inID)
-		// selector 用**实际出站 tag**（自定义 exit_tag 优先）—— 见 chainGroupSelectors 的说明：
-		// 用自动前缀会在自定义 tag 场景下圈不到出口，导致流量静默直连 ✗。
-		selectors := chainGroupSelectors(groupLinks, g.exitTagFor)
+		selectors := make([]string, 0, len(built))
+		for _, b := range built {
+			selectors = append(selectors, b.tag)
+		}
 		balancers = append(balancers, ChainBalancer{
-			Tag:         balTag,
-			Selector:    selectors,
-			FallbackTag: "direct",
+			Tag:      balTag,
+			Selector: selectors,
+			// 所有成员都不可用时至少回落到第一个链路出口，绝不能回落到 direct
+			// （Direct 是直连出口，流量会绕过链路泄漏出去）。
+			FallbackTag: built[0].tag,
 			Strategy:    map[string]interface{}{"type": "leastPing"},
 		})
 		routingRules = append(routingRules, ChainRoutingRule{
@@ -275,6 +282,11 @@ func (g *ChainLinkGenerator) generateEntryOutboundsTyped(ctx context.Context, se
 func (g *ChainLinkGenerator) exitTagFor(link entity.ChainLink) string {
 	if link.IsExitExternal() {
 		return fmt.Sprintf("chain-%d-ext%d", link.EntryInboundID, link.ExitExternalID)
+	}
+	// 必须带 exit_inbound_id：同一入口 → 同一出口机的两个不同入站是两条合法链路，
+	// 只用 `<入口>-<出口机>` 会生成重复 tag（Xray 拒绝启动 / 后一条被静默丢弃）。
+	if link.ExitInboundID > 0 {
+		return fmt.Sprintf("chain-%d-%d-%d", link.EntryInboundID, link.ExitServerID, link.ExitInboundID)
 	}
 	return fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
 }
@@ -462,7 +474,7 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 		}
 		hy2Tag := link.ExitTag
 		if hy2Tag == "" {
-			hy2Tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
+			hy2Tag = g.exitTagFor(link)
 		}
 		return ChainEntryOutbound{
 			Tag:            hy2Tag,
@@ -474,7 +486,7 @@ func (g *ChainLinkGenerator) buildOutboundFromExitInbound(ctx context.Context, l
 
 	tag := link.ExitTag
 	if tag == "" {
-		tag = fmt.Sprintf("chain-%d-%d", link.EntryInboundID, link.ExitServerID)
+		tag = g.exitTagFor(link)
 	}
 
 	return ChainEntryOutbound{
@@ -767,8 +779,11 @@ func filterLinksByEntryCore(links []entity.ChainLink, coreType string, coreOf fu
 		return links
 	}
 	out := make([]entity.ChainLink, 0, len(links))
+	want := normalizeChainCore(coreType)
 	for _, l := range links {
-		if coreOf(l.EntryInboundID) == coreType {
+		// core_type 历史数据里存在 "sing-box" / "sing_box" / "singbox" 多种写法，
+		// 原样比较会把入口核心误判成另一个 → 该核心的链式出站整段丢失。
+		if normalizeChainCore(coreOf(l.EntryInboundID)) == want {
 			out = append(out, l)
 		}
 	}
@@ -809,14 +824,20 @@ func (g *ChainLinkGenerator) buildExternalOutbound(ctx context.Context, link ent
 	//   要么查不到，要么按**另一个节点**生成出站（流量发到错误的服务器 ✗）。真机踩到 ✓。
 	extNodeID := link.ExitExternalID
 	if g.extServerRepo != nil {
-		if srv, serr := g.extServerRepo.GetByID(ctx, link.ExitExternalID); serr == nil && srv != nil {
-			if !srv.Enabled {
-				return ChainEntryOutbound{}, fmt.Errorf("external server %d is disabled", link.ExitExternalID)
-			}
-			if srv.ExternalNodeID > 0 {
-				extNodeID = srv.ExternalNodeID
-			}
+		srv, serr := g.extServerRepo.GetByID(ctx, link.ExitExternalID)
+		if serr != nil || srv == nil {
+			// ⚠ 不能退回“把 ExitExternalID 当 external_nodes.id”：
+			// 两张表的 ID 空间独立，external_nodes 里可能恰好有同号记录，
+			// 那样会把流量发到**另一个节点**（真机踩过）。宁可显式报错。
+			return ChainEntryOutbound{}, fmt.Errorf("external server %d not found: %v", link.ExitExternalID, serr)
 		}
+		if !srv.Enabled {
+			return ChainEntryOutbound{}, fmt.Errorf("external server %d is disabled", link.ExitExternalID)
+		}
+		if srv.ExternalNodeID <= 0 {
+			return ChainEntryOutbound{}, fmt.Errorf("external server %d is not linked to an external node", link.ExitExternalID)
+		}
+		extNodeID = srv.ExternalNodeID
 	}
 	extNode, err := g.extNodeRepo.GetByID(ctx, extNodeID)
 	if err != nil {

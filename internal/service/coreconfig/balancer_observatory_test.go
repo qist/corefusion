@@ -3,6 +3,7 @@ package coreconfig
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -61,8 +62,19 @@ func TestEnsureBalancerObservatory(t *testing.T) {
 	if EnsureBalancerObservatory(cfg2) {
 		t.Errorf("已有 observatory 时不应重复注入")
 	}
-	if got := cfg2["observatory"].(map[string]interface{})["probeUrl"]; got != "https://example.com" {
+	obs2 := cfg2["observatory"].(map[string]interface{})
+	if got := obs2["probeUrl"]; got != "https://example.com" {
 		t.Errorf("用户配置被覆盖了: %v", got)
+	}
+	// 已存在 observatory 时必须把 balancer 的 tag 合并进去，否则 leastPing 探不到
+	// 链式出口，多出口会退化成 fallback/direct。
+	sel2, _ := obs2["subjectSelector"].([]interface{})
+	joined := ""
+	for _, s := range sel2 {
+		joined += s.(string) + ","
+	}
+	if !strings.Contains(joined, "custom,") || !strings.Contains(joined, "chain-1-,") {
+		t.Errorf("已有 observatory 未合并 balancer selector: %v", sel2)
 	}
 
 	// ③ 策略是 roundRobin → 不需要 observatory

@@ -31,6 +31,7 @@ func migrateAgentTables(database *gorm.DB) error {
 		&entity.ChainLink{},
 		&entity.NodeServer{},
 		&entity.ExternalNode{},
+		&entity.ExternalNodeServer{},
 		// Rate limit config table (populated by SyncData, used for nft+tc rate limiting)
 		&entity.RateLimitConfig{},
 		&entity.RateLimitIPEntry{},

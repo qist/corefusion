@@ -260,7 +260,13 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 
 	// 8b. If ChainLinkProvider is set, merge chain link outbounds and routing rules.
 	if opts.ChainLinkProvider != nil {
-		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, opts.ServerID, opts.CoreType)
+		// mirror 节点：inbounds 来自 primary（ServerID），但链式代理属于该镜像节点自己
+		// （OutboundServerID）—— 用 primary 会拿到 primary 的 chain_links，镜像自己的链路永远不生效。
+		chainServerID := opts.ServerID
+		if opts.OutboundServerID > 0 {
+			chainServerID = opts.OutboundServerID
+		}
+		chainOutbounds, chainRules, err := opts.ChainLinkProvider.GenerateEntryOutbounds(opts.Ctx, chainServerID, opts.CoreType)
 		if err != nil {
 			log.Printf("[PrepareFullConfig] chain link outbounds failed for server %d: %v", opts.ServerID, err)
 		} else {
@@ -275,7 +281,7 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				// outbound，结果是入口入站没有任何规则命中 → 流量落到 route.final(direct)
 				// 直连，多出口链路静默失效（等于流量泄漏）。
 				balancerTagMap := map[string]string{}
-				if chainBalancers, _ := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID, opts.CoreType); len(chainBalancers) > 0 {
+				if chainBalancers, _ := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, chainServerID, opts.CoreType); len(chainBalancers) > 0 {
 					sbBalancerOutbounds, balancerTagMap = convertChainBalancersToSingbox(chainBalancers, chainOutbounds)
 				}
 				chainRules = convertChainRulesToSingbox(chainRules, balancerTagMap)
@@ -304,23 +310,31 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 				// 多出口负载均衡（设计文档 §6.6）：合并 balancers 与根 observatory
 				// sing-box 不使用 balancers/observatory（用 selector/urltest outbound 代替）
 				if opts.CoreType != "singbox" {
-					chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, opts.ServerID, opts.CoreType)
+					chainBalancers, chainObservatory := opts.ChainLinkProvider.GenerateEntryBalancers(opts.Ctx, chainServerID, opts.CoreType)
 					if len(chainBalancers) > 0 {
 						existingBal, _ := routing["balancers"].([]interface{})
 						routing["balancers"] = append(existingBal, chainBalancers...)
 					}
 					if chainObservatory != nil {
 						// §6.6.5: 当存在 pingConfig 时使用 burstObservatory（特征弱，适合入口节点）
-						// 否则使用标准 observatory
-						// 依据 xray 官方文档：burstObservatory 结构为 {subjectSelector, pingConfig:{...}}
+						// 否则使用标准 observatory。
+						//
+						// ⚠ 用户可能已经配置了 observatory / burstObservatory：此时不能因为
+						// “已存在”就整段跳过 —— 链式出口的 tag 没进 subjectSelector 的话，
+						// leastPing 拿不到它们的健康度，balancer 可能回落到 fallback，多出口失效。
+						// 必须把链式 selectors 合并进**现有**的探测段。
+						selAny, _ := chainObservatory["subjectSelector"].([]interface{})
+						for _, key := range []string{"observatory", "burstObservatory"} {
+							if existing, ok := fullConfig[key].(map[string]interface{}); ok {
+								existing["subjectSelector"] = mergeSubjectSelectorList(existing["subjectSelector"], selAny)
+							}
+						}
+						targetKey := "observatory"
 						if _, hasPingConfig := chainObservatory["pingConfig"]; hasPingConfig {
-							if _, ok := fullConfig["burstObservatory"]; !ok {
-								fullConfig["burstObservatory"] = chainObservatory
-							}
-						} else {
-							if _, ok := fullConfig["observatory"]; !ok {
-								fullConfig["observatory"] = chainObservatory
-							}
+							targetKey = "burstObservatory"
+						}
+						if _, ok := fullConfig[targetKey]; !ok {
+							fullConfig[targetKey] = chainObservatory
 						}
 					}
 				}
@@ -390,6 +404,36 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	return data, nil
 }
 
+// mergeSubjectSelectorList 把 add 合并进现有的 subjectSelector（去重）。
+// 现有值可能是 []interface{} / []string / 单个 string（历史配置形状不统一）。
+func mergeSubjectSelectorList(existing interface{}, add []interface{}) []interface{} {
+	out := make([]interface{}, 0, len(add)+4)
+	seen := make(map[string]bool, len(add)+4)
+	var appendOne func(v interface{})
+	appendOne = func(v interface{}) {
+		switch x := v.(type) {
+		case string:
+			if x != "" && !seen[x] {
+				seen[x] = true
+				out = append(out, x)
+			}
+		case []interface{}:
+			for _, item := range x {
+				appendOne(item)
+			}
+		case []string:
+			for _, item := range x {
+				appendOne(item)
+			}
+		}
+	}
+	appendOne(existing)
+	for _, v := range add {
+		appendOne(v)
+	}
+	return out
+}
+
 // EnsureBalancerObservatory 兜底：xray 里凡是用 leastPing / leastLoad 策略的 balancer，
 // **必须**存在 observatory（标准或 burst），否则核心启动直接失败：
 //
@@ -443,10 +487,14 @@ func EnsureBalancerObservatory(fullConfig map[string]interface{}) bool {
 	if !needObservatory {
 		return false
 	}
-	if _, ok := fullConfig["observatory"]; ok {
+	// 已存在 observatory / burstObservatory：把 balancer 的 selectors 合并进去，
+	// 不能直接 return —— 否则用户自己的探测段里没有链式出口 tag，leastPing 无数据。
+	if existing, ok := fullConfig["observatory"].(map[string]interface{}); ok {
+		existing["subjectSelector"] = mergeSubjectSelectorList(existing["subjectSelector"], selectors)
 		return false
 	}
-	if _, ok := fullConfig["burstObservatory"]; ok {
+	if existing, ok := fullConfig["burstObservatory"].(map[string]interface{}); ok {
+		existing["subjectSelector"] = mergeSubjectSelectorList(existing["subjectSelector"], selectors)
 		return false
 	}
 	observatory := map[string]interface{}{

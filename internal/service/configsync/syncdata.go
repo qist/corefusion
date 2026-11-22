@@ -38,6 +38,8 @@ type RawDataProvider interface {
 	ListNodeServers(ctx context.Context) ([]entity.NodeServer, error)
 	// ListExternalNodes returns all enabled external_nodes (外部出口).
 	ListExternalNodes(ctx context.Context) ([]entity.ExternalNode, error)
+	// ListExternalNodeServers returns all external_node_servers (外部出口注册表).
+	ListExternalNodeServers(ctx context.Context) ([]entity.ExternalNodeServer, error)
 	// ListCoreGuardians returns core guardian settings (auto_start/auto_restart)
 	// for all services of a server, keyed by core_type. Synced so the Agent's
 	// local Reconcile (boot auto-start) and Guardian (crash restart) honor the
@@ -96,6 +98,7 @@ type RepositoryDataProvider struct {
 	systemSettingRepo  *repository.SystemSettingRepository
 	chainLinkRepo      *repository.ChainLinkRepository
 	extNodeRepo        *repository.ExternalNodeRepository
+	extServerRepo      *repository.ExternalNodeServerRepository
 	svcRepo            *repository.ServiceRepository
 	guardRepo          *repository.ProcessGuardianRepository
 }
@@ -148,6 +151,13 @@ func (p *RepositoryDataProvider) WithSystemSettingProvider(systemSettingRepo *re
 func (p *RepositoryDataProvider) WithChainRepos(chainLinkRepo *repository.ChainLinkRepository, extNodeRepo *repository.ExternalNodeRepository) *RepositoryDataProvider {
 	p.chainLinkRepo = chainLinkRepo
 	p.extNodeRepo = extNodeRepo
+	return p
+}
+
+// WithExternalNodeServerRepo injects the external_node_servers repository so the
+// Agent can resolve ExitExternalID offline (it points to external_node_servers.id).
+func (p *RepositoryDataProvider) WithExternalNodeServerRepo(repo *repository.ExternalNodeServerRepository) *RepositoryDataProvider {
+	p.extServerRepo = repo
 	return p
 }
 
@@ -239,6 +249,13 @@ func (p *RepositoryDataProvider) ListExternalNodes(ctx context.Context) ([]entit
 		}
 	}
 	return enabled, nil
+}
+
+func (p *RepositoryDataProvider) ListExternalNodeServers(ctx context.Context) ([]entity.ExternalNodeServer, error) {
+	if p.extServerRepo == nil {
+		return nil, nil
+	}
+	return p.extServerRepo.ListAll(ctx)
 }
 
 // DataSyncBuilder implements agent.DataSyncProvider using configsync.Service.
@@ -516,6 +533,7 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 				EntryInboundId: c.EntryInboundID,
 				ExitServerId:   c.ExitServerID,
 				ExitExternalId: c.ExitExternalID,
+				ExitInboundId:  c.ExitInboundID,
 				ExitTag:        c.ExitTag,
 				Weight:         int32(c.Weight),
 				Priority:       int32(c.Priority),
@@ -568,6 +586,24 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 			}
 		}
 		log.Printf("[DataSyncBuilder] server %d: %d external node entries", serverID, len(externalNodes))
+	}
+	if extServers, err := b.rawProvider.ListExternalNodeServers(ctx); err == nil {
+		req.ExternalNodeServers = make([]*agentpb.ExternalNodeServerEntry, len(extServers))
+		for i, s := range extServers {
+			req.ExternalNodeServers[i] = &agentpb.ExternalNodeServerEntry{
+				Id:             s.ID,
+				ExternalNodeId: s.ExternalNodeID,
+				Name:           s.Name,
+				Hostname:       s.Hostname,
+				Region:         s.Region,
+				RegionLabel:    s.RegionLabel,
+				Enabled:        s.Enabled,
+				SortOrder:      int32(s.SortOrder),
+				CreatedAt:      s.CreatedAt.Unix(),
+				UpdatedAt:      s.UpdatedAt.Unix(),
+			}
+		}
+		log.Printf("[DataSyncBuilder] server %d: %d external node server entries", serverID, len(extServers))
 	}
 
 	// === Part 2: Generate final runtime config via PrepareFullConfig ===

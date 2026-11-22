@@ -2673,6 +2673,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					).WithCertificateProvider(certRepoForNodeServer, nodeServerRepo).WithProxySiteProvider(proxySiteRepo, caddySiteRepo, nginxSiteRepo).WithSystemSettingProvider(systemSettingRepo).WithChainRepos(
 						repository.NewChainLinkRepository(database),
 						repository.NewExternalNodeRepository(database),
+					).WithExternalNodeServerRepo(
+						repository.NewExternalNodeServerRepository(database),
 					).WithCoreGuardianRepos(svcRepo, guardianRepo),
 				).WithConfigProviders(coreConfigSvc, inboundConfigSvc, outboundConfigSvc).WithLogModeProvider(logManageSvc).WithServerRepo(nodeServerRepo).WithChainLinkProvider(
 					// 必须复用上面（758 行）已注入 inboundRepo / extServerRepo 的那个生成器。

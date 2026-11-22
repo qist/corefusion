@@ -90,6 +90,92 @@ func (h *Handler) triggerSync(links ...entity.ChainLink) {
 	}
 }
 
+// validateChainTargets 校验一条链路的目标是否真正可生成配置。
+// 返回 (entryCore, errorCode, errorMessage)；errorMessage 为空表示通过。
+func (h *Handler) validateChainTargets(ctx context.Context, entryServerID, entryInboundID, exitServerID, exitExternalID, exitInboundID int64) (string, string, string) {
+	if entryServerID <= 0 {
+		return "", "ENTRY_NOT_FOUND", "entry_server_id is required"
+	}
+	if h.serverRepo != nil {
+		if srv, err := h.serverRepo.GetByID(ctx, entryServerID); err != nil || srv == nil {
+			return "", "ENTRY_NOT_FOUND", "entry server not found"
+		}
+	}
+	if entryInboundID <= 0 {
+		return "", "INBOUND_NOT_FOUND", "entry_inbound_id is required"
+	}
+	entryIb, err := h.inboundRepo.GetByID(ctx, entryInboundID)
+	if err != nil || entryIb == nil || entryIb.ServerID != entryServerID {
+		return "", "INBOUND_NOT_FOUND", "entry inbound not found on this server"
+	}
+	if strings.TrimSpace(entryIb.Tag) == "" {
+		return entryIb.CoreType, "INBOUND_TAG_MISSING", "entry inbound has an empty tag; chain routing can never match it"
+	}
+	if exitServerID > 0 && exitExternalID > 0 {
+		return entryIb.CoreType, "INVALID_EXIT", "choose either exit_server_id or exit_external_id, not both"
+	}
+	if exitServerID > 0 {
+		if exitInboundID <= 0 {
+			return entryIb.CoreType, "EXIT_INBOUND_REQUIRED",
+				"exit_inbound_id is required (legacy chain_exit_configs mode has been removed)"
+		}
+		exitIb, eerr := h.inboundRepo.GetByID(ctx, exitInboundID)
+		if eerr != nil || exitIb == nil || exitIb.ServerID != exitServerID {
+			return entryIb.CoreType, "EXIT_INBOUND_NOT_FOUND", "exit inbound not found on this exit server"
+		}
+		if !agent.ChainSupportedProtocol(entryIb.CoreType, exitIb.Protocol) {
+			return entryIb.CoreType, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+				"exit inbound protocol %q is not chain-capable for entry core %q (supported: %s)",
+				exitIb.Protocol, entryIb.CoreType, strings.Join(agent.ChainSupportedProtocols(entryIb.CoreType), "/"))
+		}
+		return entryIb.CoreType, "", ""
+	}
+	if exitExternalID > 0 {
+		if h.extServerRepo == nil {
+			return entryIb.CoreType, "EXIT_EXT_NOT_FOUND", "external node repository unavailable"
+		}
+		srv, serr := h.extServerRepo.GetByID(ctx, exitExternalID)
+		if serr != nil || srv == nil || !srv.Enabled {
+			return entryIb.CoreType, "EXIT_EXT_NOT_FOUND", "external exit not found or disabled"
+		}
+		if h.extNodeRepo != nil && srv.ExternalNodeID > 0 {
+			extNode, nerr := h.extNodeRepo.GetByID(ctx, srv.ExternalNodeID)
+			if nerr != nil || extNode == nil || !extNode.Enabled {
+				return entryIb.CoreType, "EXIT_EXT_NOT_FOUND", "external node not found or disabled"
+			}
+			if extNode.Protocol != "" && !agent.ChainSupportedProtocol(entryIb.CoreType, extNode.Protocol) {
+				return entryIb.CoreType, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+					"external exit protocol %q is not chain-capable for entry core %q (supported: %s)",
+					extNode.Protocol, entryIb.CoreType, strings.Join(agent.ChainSupportedProtocols(entryIb.CoreType), "/"))
+			}
+		}
+		return entryIb.CoreType, "", ""
+	}
+	return entryIb.CoreType, "INVALID_EXIT", "either exit_server_id or exit_external_id must be set"
+}
+
+// exitTagConflicts 检查自定义 exit_tag 是否和同入口服务器上其它启用链路冲突。
+// 自动 tag 已带 exit_inbound_id，不会冲突；自定义 tag 重复会让核心出现 duplicate tag。
+func (h *Handler) exitTagConflicts(ctx context.Context, entryServerID int64, tag string, skipInboundID int64) bool {
+	tag = strings.TrimSpace(tag)
+	if tag == "" || h.linkRepo == nil {
+		return false
+	}
+	links, err := h.linkRepo.ListAllByEntry(ctx, entryServerID)
+	if err != nil {
+		return false
+	}
+	for _, l := range links {
+		if !l.Enabled || l.EntryInboundID == skipInboundID {
+			continue
+		}
+		if strings.TrimSpace(l.ExitTag) == tag {
+			return true
+		}
+	}
+	return false
+}
+
 // RegisterRoutes registers all chain proxy routes under the given group.
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/chain")
@@ -203,25 +289,16 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		priority = 1
 	}
 
-	// 选了"出口已有的入站"就校验一下：入站存在、属于该出口机、协议在本入口核心的支持名单里
-	// （实测 xray 没有 hysteria2 出站，所以 hy2 出口只能配给 sing-box 入口）。
-	if req.ExitInboundID > 0 && req.ExitServerID > 0 {
-		exitIb, ierr := h.inboundRepo.GetByID(ctx, req.ExitInboundID)
-		if ierr != nil || exitIb == nil || exitIb.ServerID != req.ExitServerID {
-			response.BadRequest(c, "EXIT_INBOUND_NOT_FOUND", "exit inbound not found on this exit server")
-			return
-		}
-		entryIb, _ := h.inboundRepo.GetByID(ctx, req.EntryInboundID)
-		entryCore := ""
-		if entryIb != nil {
-			entryCore = entryIb.CoreType
-		}
-		if !agent.ChainSupportedProtocol(entryCore, exitIb.Protocol) {
-			response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
-				"exit inbound protocol %q is not chain-capable for entry core %q (supported: %s)",
-				exitIb.Protocol, entryCore, strings.Join(agent.ChainSupportedProtocols(entryCore), "/")))
-			return
-		}
+	// 统一校验入口/出口目标：防止 API 接受“DB 里存在但运行期永远无效”的链路。
+	if _, code, msg := h.validateChainTargets(ctx,
+		req.EntryServerID, req.EntryInboundID,
+		req.ExitServerID, req.ExitExternalID, req.ExitInboundID); msg != "" {
+		response.BadRequest(c, code, msg)
+		return
+	}
+	if req.ExitTag != "" && h.exitTagConflicts(ctx, req.EntryServerID, req.ExitTag, req.EntryInboundID) {
+		response.BadRequest(c, "EXIT_TAG_DUPLICATE", "exit_tag already used by another chain on this entry server")
+		return
 	}
 
 	link := &entity.ChainLink{
@@ -557,6 +634,10 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 		response.BadRequest(c, "INBOUND_NOT_FOUND", "entry inbound not found on this server")
 		return
 	}
+	if strings.TrimSpace(inbound.Tag) == "" {
+		response.BadRequest(c, "INBOUND_TAG_MISSING", "entry inbound has an empty tag; chain routing can never match it")
+		return
+	}
 
 	// 2. validate every exit target
 	for _, ex := range req.Exits {
@@ -570,14 +651,17 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 			// 协议在它关联的 external_node 上 → 需要再跳一跳。
 			// ⚠ 这里此前**没有**协议校验 ✗：入口 xray + 外部 hy2 会被 API 接受并落库，只有生成器
 			//   才报错 → 用户看到"创建成功"，DB 里却留下一条永远生成不出配置的链接 ✗。
-			if extNode, nerr := h.extNodeRepo.GetByID(ctx, extSrv.ExternalNodeID); nerr == nil && extNode != nil {
-				if !agent.ChainSupportedProtocol(inbound.CoreType, extNode.Protocol) {
-					response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
-						"external exit %d protocol %q is not chain-capable for entry core %q (supported: %s)",
-						ex.ID, extNode.Protocol, inbound.CoreType,
-						strings.Join(agent.ChainSupportedProtocols(inbound.CoreType), "/")))
-					return
-				}
+			extNode, nerr := h.extNodeRepo.GetByID(ctx, extSrv.ExternalNodeID)
+			if nerr != nil || extNode == nil || !extNode.Enabled {
+				response.BadRequest(c, "EXIT_EXT_NOT_FOUND", fmt.Sprintf("external node for exit %d not found or disabled", ex.ID))
+				return
+			}
+			if extNode.Protocol != "" && !agent.ChainSupportedProtocol(inbound.CoreType, extNode.Protocol) {
+				response.BadRequest(c, "EXIT_PROTOCOL_UNSUPPORTED", fmt.Sprintf(
+					"external exit %d protocol %q is not chain-capable for entry core %q (supported: %s)",
+					ex.ID, extNode.Protocol, inbound.CoreType,
+					strings.Join(agent.ChainSupportedProtocols(inbound.CoreType), "/")))
+				return
 			}
 		} else if ex.ExitInboundID > 0 {
 			// 出口用**该节点上已有的入站** —— 链式不创建任何入站。
@@ -605,6 +689,24 @@ func (h *Handler) CreateChainProxy(c *gin.Context) {
 			// （旧的 chain_exit_configs / 自动建 relay-in 入站模式已移除）
 			response.BadRequest(c, "EXIT_INBOUND_REQUIRED", fmt.Sprintf(
 				"exit server %d: exit_inbound_id is required (legacy chain_exit_configs mode has been removed)", ex.ID))
+			return
+		}
+	}
+
+	// 2b. 自定义 exit_tag 不能重复（同一入口服务器上，同 tag 会让核心拒绝启动）。
+	seenTags := make(map[string]bool, len(req.Exits))
+	for _, ex := range req.Exits {
+		tag := strings.TrimSpace(ex.ExitTag)
+		if tag == "" {
+			continue
+		}
+		if seenTags[tag] {
+			response.BadRequest(c, "EXIT_TAG_DUPLICATE", fmt.Sprintf("exit_tag %q is duplicated in this request", tag))
+			return
+		}
+		seenTags[tag] = true
+		if h.exitTagConflicts(ctx, req.EntryServerID, tag, req.EntryInboundID) {
+			response.BadRequest(c, "EXIT_TAG_DUPLICATE", fmt.Sprintf("exit_tag %q already used by another chain on this entry server", tag))
 			return
 		}
 	}

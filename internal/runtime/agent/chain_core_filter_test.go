@@ -13,7 +13,8 @@ func coreOfFixture(id int64) string {
 	case 4:
 		return "xray"
 	case 118:
-		return "singbox"
+		// 历史数据可能写成 "sing-box"；过滤必须归一化，不能按原样比较。
+		return "sing-box"
 	}
 	return "xray" // entryCoreType 的默认值
 }

@@ -99,7 +99,6 @@
         </el-table-column>
         <el-table-column prop="exit_tag" :label="t('chainProxy.exitTag')" width="120" />
         <el-table-column prop="priority" :label="t('chainProxy.priority')" width="80" />
-        <el-table-column prop="weight" :label="t('chainProxy.weight')" width="80" />
         <el-table-column prop="sort_order" :label="t('chainProxy.sortOrder')" width="80" />
         <el-table-column :label="t('common.status')" width="70">
           <template #default="{row}">
@@ -253,10 +252,6 @@
               <span style="font-size:12px;color:#909399">
                 {{ t('chainProxy.priority') }}
                 <el-input-number v-model="paramOf(row).priority" :min="1" :max="99" size="small" controls-position="right" style="width:80px" />
-              </span>
-              <span style="font-size:12px;color:#909399">
-                {{ t('chainProxy.weight') }}
-                <el-input-number v-model="paramOf(row).weight" :min="1" :max="1000" size="small" controls-position="right" style="width:90px" />
               </span>
               <span style="font-size:12px;color:#909399">
                 {{ t('chainProxy.sortOrder') }}
@@ -651,7 +646,6 @@ const chainLinkCardFields = computed(() => [
   { label: t('chainProxy.exitInboundCol'), text: (row) => row.exit_external_id ? '—' : linkExitInboundLabel(row) },
   { label: t('chainProxy.exitTag'), text: (row) => row.exit_tag || '-' },
   { label: t('chainProxy.priority'), text: (row) => String(row.priority ?? '-') },
-  { label: t('chainProxy.weight'), text: (row) => String(row.weight ?? '-') },
   { label: t('chainProxy.sortOrder'), text: (row) => String(row.sort_order ?? '-') },
   { label: t('common.status'), text: (row) => row.enabled ? '✓' : '✗' },
 ])

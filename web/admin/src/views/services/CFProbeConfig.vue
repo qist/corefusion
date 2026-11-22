@@ -38,6 +38,15 @@
           <el-option :label="dialerLabel('singbox')" value="singbox" />
           <el-option :label="dialerLabel('mihomo')" value="mihomo" />
         </el-select>
+        <!-- 已安装的核心也要能换版本/重装：不能只在「未安装」时才给入口 -->
+        <el-button
+          v-if="probeCfg.dialer"
+          size="small"
+          style="margin-left:8px"
+          @click="openDialerInstall(probeCfg.dialer)"
+        >
+          {{ isDialerInstalled(probeCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
+        </el-button>
       </div>
     </div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
@@ -160,6 +169,11 @@
     width="620"
     :close-on-click-modal="false"
   >
+    <div style="margin-bottom:10px;font-size:12px;color:#606266">
+      {{ t('service.cfip.dialerCurrentVersion') }}：
+      <span v-if="dialerVersionText(dialerInstallCore)" style="font-family:monospace">{{ dialerVersionText(dialerInstallCore) }}</span>
+      <span v-else style="color:#e6a23c">{{ t('service.cfip.dialerNotInstalled') }}</span>
+    </div>
     <div v-loading="dialerReleasesLoading || dialerInstalling" style="min-height:120px">
       <div v-if="dialerReleases.length === 0 && !dialerReleasesLoading" style="text-align:center;color:#999;padding:20px">
         {{ t('common.noData') }}
@@ -197,7 +211,7 @@ import client from '../../api/client'
 
 const { t } = useI18n()
 
-const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [] })
+const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [], dialer_versions: {} })
 const extNodes = ref([])
 
 const chainCfg = ref({
@@ -248,6 +262,7 @@ async function fetchProbeConfig() {
       entry_node_id: d.entry_node_id ?? 0,
       dialer: d.dialer || '',
       available_dialers: d.dialers || [],
+      dialer_versions: d.dialer_versions || {},
     }
     // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
     // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
@@ -297,10 +312,24 @@ function sortResults(list) {
   })
 }
 
-// 未安装的核心在下拉里直接标注，选中后弹出「选版本安装」。
+function isDialerInstalled(name) {
+  return (probeCfg.value.available_dialers || []).includes(name)
+}
+
+// 版本探测返回的是整行输出（如 "Mihomo Meta v1.19.34 linux amd64 ..."），
+// 下拉和弹窗里只显示版本号本身，避免撑爆宽度。
+function dialerVersionText(name) {
+  const raw = ((probeCfg.value.dialer_versions || {})[name] || '').trim()
+  if (!raw) return ''
+  const m = raw.match(/(?:v\d+\.\d+\.\d+[\w.-]*|alpha-[0-9a-f]+)/i)
+  return m ? m[0] : raw
+}
+
+// 已安装显示版本，未安装标注；选中未安装核心会自动弹安装框。
 function dialerLabel(name) {
-  const installed = probeCfg.value.available_dialers || []
-  return installed.includes(name) ? name : `${name} ${t('service.cfip.probeMissing')}`
+  if (!isDialerInstalled(name)) return `${name} ${t('service.cfip.probeMissing')}`
+  const v = dialerVersionText(name)
+  return v ? `${name} (${v})` : name
 }
 
 function isOddVersion(v) {

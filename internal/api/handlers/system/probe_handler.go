@@ -80,20 +80,26 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 	// 拨号核心：只列出真正装了的（mihomo 需要用户自行安装到 binaries/active/mihomo）。
 	// 顺序与自动选择一致（xray → sing-box → mihomo），避免下拉顺序和实际生效值对不上。
 	dialers := make([]string, 0, 3)
+	versions := make(map[string]string, 3)
 	if h.resolver != nil {
 		for _, ct := range []string{"xray", "singbox", "mihomo"} {
 			if _, _, err := h.resolver.Resolve(ct); err == nil {
 				dialers = append(dialers, ct)
+				if v := h.resolver.Version(ct); v != "" {
+					versions[ct] = v
+				}
 			}
 		}
 	}
 
 	// 配置字段平铺，附带入可选入口节点与已安装核心；前端不再单独拼。
+	// dialer_versions 用来在页面上显示当前版本，并提供「重装 / 换版本」入口。
 	response.OK(c, struct {
 		healthprobe.Config
-		Nodes   []nodeItem `json:"nodes"`
-		Dialers []string   `json:"dialers"`
-	}{Config: cfg, Nodes: nodes, Dialers: dialers})
+		Nodes          []nodeItem        `json:"nodes"`
+		Dialers        []string          `json:"dialers"`
+		DialerVersions map[string]string `json:"dialer_versions"`
+	}{Config: cfg, Nodes: nodes, Dialers: dialers, DialerVersions: versions})
 }
 
 // SaveConfig 更新探活配置（启用开关 / 间隔 / 延迟上限 / 入口节点 / 拨号核心）。

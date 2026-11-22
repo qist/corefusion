@@ -297,27 +297,15 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 		return sum, nil
 	}
 
-	// 目标列表按 Kind 排序（cf_ip 全在前、cf_domain 全在后）。若直接按窗口轮转，
-	// 当 IP 数量 ≥ max_targets 时域名永远轮不到（用户实测：20 个名额全被 IP 占满）。
-	// 先按 Kind 交替排列，再轮转，保证每轮都覆盖到两类。
-	targets = interleaveByKind(targets)
-
-	// 轮转：目标多时每次只测一段，下一次从游标继续。
-	cursor := p.readIntSetting(ctx, SettingChainCursor, 0)
-	if cursor < 0 || cursor >= len(targets) {
-		cursor = 0
-	}
-	limit := cfg.MaxTargets
-	if limit <= 0 || limit > len(targets) {
-		limit = len(targets)
-	}
-	picked := make([]ChainTarget, 0, limit)
-	for i := 0; i < limit; i++ {
-		picked = append(picked, targets[(cursor+i)%len(targets)])
-	}
+	// 按 Kind 分配名额 + 每类独立游标。
+	//
+	// 不能再用「全局游标 + 一段窗口」：目标按 Kind 排序（cf_ip 在前、cf_domain 在后），
+	// IP 数量远大于域名时整个窗口会落在 IP 段里 —— 实测 140 个 IP + 12 个域名、
+	// max_targets=30，连续多轮 30 个结果全是 cf_ip，域名永远轮不到。
+	picked, cursors := selectChainTargets(targets, p.readChainCursors(ctx), cfg.MaxTargets)
 	sum.Skipped = len(targets) - len(picked)
 	// 本轮探针入站（所有目标共用同一条入站做握手）。
-	sum.Probe = fmt.Sprintf("%s (%s)", targets[0].Name, targets[0].Protocol)
+	sum.Probe = fmt.Sprintf("%s (%s)", picked[0].Name, picked[0].Protocol)
 
 	proxy, label, err := p.chainProv.ChainProbeExitProxy(ctx, cfg.Exit)
 	if err != nil {
@@ -392,9 +380,8 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 	// 不通的条目因此不会再被分发给客户端。
 	p.writeBackChainHealth(ctx, picked, results)
 
-	// 游标推进（本轮测过的下一个位置）。
-	next := (cursor + limit) % len(targets)
-	_ = p.setting.Set(ctx, SettingChainCursor, strconv.Itoa(next))
+	// 游标推进：每类各自前进本轮取走的数量，下一轮从各类的下一个条目继续。
+	p.saveChainCursors(ctx, cursors)
 
 	for _, r := range results {
 		sum.Checked++
@@ -428,46 +415,167 @@ func (p *Prober) ChainLastProbe(ctx context.Context) string {
 	return payload.Probe
 }
 
-// interleaveByKind 把不同 Kind 的目标交替排列（各自保持原有顺序）。
-//
-// 目标由 ChainProbeTargets 按 Kind 排序后返回（cf_ip 在前、cf_domain 在后），
-// 轮转窗口只取一段时，靠前的 Kind 会占满全部名额（IP 多时域名永远测不到）。
-// 交替后只要窗口长度 ≥2 且两类都非空，每轮都会同时覆盖到 IP 和域名。
-func interleaveByKind(targets []ChainTarget) []ChainTarget {
-	if len(targets) < 2 {
-		return targets
-	}
-	// 按首次出现顺序分组，不依赖 Kind 的具体取值。
-	groups := make([][]ChainTarget, 0, 3)
-	pos := make(map[string]int, 3)
+// chainCursorPhaseKey 是「名额少于类型数」时用来轮换类型的游标键。
+const chainCursorPhaseKey = "*phase"
+
+// groupChainTargetsByKind 按 Kind 分组，并保留首次出现的顺序。
+func groupChainTargetsByKind(targets []ChainTarget) ([]string, map[string][]ChainTarget) {
+	order := make([]string, 0, 3)
+	groups := make(map[string][]ChainTarget, 3)
 	for _, t := range targets {
-		if i, ok := pos[t.Kind]; ok {
-			groups[i] = append(groups[i], t)
-			continue
+		if _, ok := groups[t.Kind]; !ok {
+			order = append(order, t.Kind)
 		}
-		pos[t.Kind] = len(groups)
-		groups = append(groups, []ChainTarget{t})
+		groups[t.Kind] = append(groups[t.Kind], t)
 	}
-	if len(groups) < 2 {
-		return targets
+	return order, groups
+}
+
+// chainTargetQuotas 按各类型的条目数比例分配本轮名额，并保证每类至少 1 个。
+// 例如 140 个 IP + 12 个域名、名额 30 → 域名 2 个、IP 28 个。
+func chainTargetQuotas(order []string, groups map[string][]ChainTarget, limit int) map[string]int {
+	total := 0
+	for _, k := range order {
+		total += len(groups[k])
 	}
-	out := make([]ChainTarget, 0, len(targets))
-	idx := make([]int, len(groups))
+	quotas := make(map[string]int, len(order))
+	assigned := 0
+	for _, k := range order {
+		n := len(groups[k])
+		q := 0
+		if total > 0 {
+			q = limit * n / total
+		}
+		if q < 1 {
+			q = 1
+		}
+		if q > n {
+			q = n
+		}
+		quotas[k] = q
+		assigned += q
+	}
+	// 取整后总配额可能偏离 limit：多了从最大的类减，少了补给剩余最多的类。
+	for assigned > limit {
+		best, bestQ := "", 0
+		for _, k := range order {
+			if quotas[k] > 1 && quotas[k] > bestQ {
+				best, bestQ = k, quotas[k]
+			}
+		}
+		if best == "" {
+			break
+		}
+		quotas[best]--
+		assigned--
+	}
+	for assigned < limit {
+		best, bestRoom := "", 0
+		for _, k := range order {
+			if room := len(groups[k]) - quotas[k]; room > bestRoom {
+				best, bestRoom = k, room
+			}
+		}
+		if best == "" {
+			break
+		}
+		quotas[best]++
+		assigned++
+	}
+	return quotas
+}
+
+// selectChainTargets 按类型配额从各自的游标取目标，返回本轮目标与推进后的游标。
+//
+// 每个类型独立游标是核心：全局限位会让 IP 把名额吃光；按类型配额后，只要
+// max_targets ≥ 类型数，每轮都会同时覆盖 IP 和域名，且同一轮内不重复。
+func selectChainTargets(targets []ChainTarget, cursors map[string]int, limit int) ([]ChainTarget, map[string]int) {
+	if len(targets) == 0 {
+		return nil, cursors
+	}
+	if limit <= 0 || limit > len(targets) {
+		limit = len(targets)
+	}
+	if cursors == nil {
+		cursors = map[string]int{}
+	}
+	order, groups := groupChainTargetsByKind(targets)
+
+	// 名额少于类型数（例如 max_targets=1）：按相位在类型间轮转，
+	// 否则小名额永远只落在大类（IP）上，域名仍然测不到。
+	if limit < len(order) {
+		phase := cursors[chainCursorPhaseKey] % len(order)
+		picked := make([]ChainTarget, 0, limit)
+		for i := 0; i < limit; i++ {
+			k := order[(phase+i)%len(order)]
+			items := groups[k]
+			idx := cursors[k] % len(items)
+			picked = append(picked, items[idx])
+			cursors[k] = (idx + 1) % len(items)
+		}
+		cursors[chainCursorPhaseKey] = (phase + limit) % len(order)
+		return picked, cursors
+	}
+
+	quotas := chainTargetQuotas(order, groups, limit)
+	taken := make(map[string][]ChainTarget, len(order))
+	for _, k := range order {
+		items := groups[k]
+		idx := cursors[k] % len(items)
+		for i := 0; i < quotas[k]; i++ {
+			taken[k] = append(taken[k], items[(idx+i)%len(items)])
+		}
+		cursors[k] = (idx + quotas[k]) % len(items)
+	}
+
+	// 输出顺序按类型交替，便于页面阅读/排障（不影响探测结果）。
+	picked := make([]ChainTarget, 0, limit)
 	for {
 		moved := false
-		for gi := range groups {
-			if idx[gi] >= len(groups[gi]) {
+		for _, k := range order {
+			if len(taken[k]) == 0 {
 				continue
 			}
-			out = append(out, groups[gi][idx[gi]])
-			idx[gi]++
+			picked = append(picked, taken[k][0])
+			taken[k] = taken[k][1:]
 			moved = true
 		}
 		if !moved {
 			break
 		}
 	}
-	return out
+	return picked, cursors
+}
+
+// readChainCursors 读取每类游标（JSON）。旧版本存的是单个整数，
+// 语义已不相容，直接忽略、从 0 开始（最多多测一轮，不会丢目标）。
+func (p *Prober) readChainCursors(ctx context.Context) map[string]int {
+	cursors := map[string]int{}
+	if p.setting == nil {
+		return cursors
+	}
+	v, err := p.setting.GetByKey(ctx, SettingChainCursor)
+	if err != nil {
+		return cursors
+	}
+	v = strings.TrimSpace(v)
+	if !strings.HasPrefix(v, "{") {
+		return cursors
+	}
+	_ = json.Unmarshal([]byte(v), &cursors)
+	return cursors
+}
+
+// saveChainCursors 持久化每类游标，下一轮从各类的下一个条目继续。
+func (p *Prober) saveChainCursors(ctx context.Context, cursors map[string]int) {
+	if p.setting == nil {
+		return
+	}
+	b, err := json.Marshal(cursors)
+	if err != nil {
+		return
+	}
+	_ = p.setting.Set(ctx, SettingChainCursor, string(b))
 }
 
 // saveChainResults 用本轮结果**整体覆盖**上一轮结果。

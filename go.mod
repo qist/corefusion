@@ -15,7 +15,7 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/pquerna/otp v1.5.0
-	github.com/qist/sqlite v1.16.5
+	github.com/qist/sqlite v1.16.6
 	github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/oauth2 v0.38.0
@@ -155,9 +155,9 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	layeh.com/gopher-luar v1.0.11 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-	modernc.org/sqlite v1.61.1 // indirect
+	modernc.org/sqlite v1.62.0 // indirect
 	software.sslmate.com/src/go-pkcs12 v0.7.4 // indirect
 )

@@ -803,13 +803,21 @@ func mergeDomainConfigDefaults(baseText, config string) string {
 	}
 	changed := false
 	for k, v := range base {
-		if k == "rule_dir" || k == "log_dir" {
+		// 路径类：缺省时本来就沿用全局。
+		// match_cache：上游明确「进程级共享缓存，key 不含域名，domain.json 不能覆盖」，
+		// 写进域名条目只会让 nginx(lua 通用 get_effective_config) 生效、caddy 忽略，
+		// 两边行为分叉，因此站点级既不补也不保留（历史误加的顺手清掉）。
+		if k == "rule_dir" || k == "log_dir" || k == "match_cache" {
 			continue
 		}
 		if _, ok := stored[k]; !ok {
 			stored[k] = v
 			changed = true
 		}
+	}
+	if _, ok := stored["match_cache"]; ok {
+		delete(stored, "match_cache")
+		changed = true
 	}
 	if !changed {
 		return config
@@ -1663,6 +1671,7 @@ const DefaultCaddyWAFConfig = `{
     "multipart_streaming_check": "off",
     "upload_filename_scan_limit": 0,
     "post_body_scan_limit": 2097152,
+    "score_block_threshold": 0,
     "waf_output": "html",
     "waf_redirect_url": "https://www.caddyguard.com"
 }`
@@ -1727,6 +1736,9 @@ config_multipart_streaming_check = "off"
 config_upload_filename_scan_limit = 0
 --inspection limit in bytes for large temp-file bodies (JSON/XML/plain text, etc.)
 config_post_body_scan_limit = 2097152
+--组合规则 SCORE 累计拦截阈值: 0=只记分不拦截, 1=任意 SCORE 命中即拦截, >1=累计分值达到才拦截
+--域名级可通过 domain.json 的 score_block_threshold 覆盖
+config_score_block_threshold = 0
 --config waf output redirect/html
 config_waf_output = "html"
 --if config_waf_output ,setting url

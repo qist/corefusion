@@ -551,6 +551,10 @@
               <el-switch v-model="wafConfigForm.match_cache" active-value="on" inactive-value="off" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMatchCacheHint') }}</span>
             </el-form-item>
+            <el-form-item :label="t('proxy.wafScoreThreshold')">
+              <el-input v-model="wafConfigForm.score_block_threshold" placeholder="0" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafScoreThresholdHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafUploadFilenameScan')">
               <el-input v-model="wafConfigForm.upload_filename_scan_limit" placeholder="0" style="width:120px" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafUploadFilenameScanHint') }}</span>
@@ -1800,6 +1804,7 @@ const wafConfigForm = ref({
   cookie_check: 'on', post_check: 'on', referer_check: 'on', file_upload_check: 'on',
   cc_check: 'on', cc_rate: '', cc_mode: 'ip', cc_block_ttl: '',
   bodyless: 'on', multipart_streaming_check: 'off', match_cache: 'on',
+  score_block_threshold: '0',
   upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
@@ -1852,6 +1857,7 @@ function parseWAFConfigForm() {
     bodyless: get('bodyless') || 'on',
     multipart_streaming_check: get('multipart_streaming_check') || 'off',
     match_cache: get('match_cache') || 'on',
+    score_block_threshold: get('score_block_threshold') || '0',
     upload_filename_scan_limit: get('upload_filename_scan_limit') || '0',
     post_body_scan_limit: get('post_body_scan_limit') || '2097152',
     cc_check: get('cc_check') || 'on',
@@ -1896,6 +1902,20 @@ async function saveWAFConfigForm() {
       text = text.replace(/(config_bodyless\s*=\s*"[^"]*")/, `$1\n${matchCacheLine}`)
     } else {
       text = `${text.replace(/\s*$/, '')}\n${matchCacheLine}\n`
+    }
+  }
+  // score_block_threshold 是 Lua 数字（无引号）：旧 config.lua 没有这行时要补插
+  const scoreThreshold = String(wafConfigForm.value.score_block_threshold ?? '').trim()
+  if (scoreThreshold !== '') {
+    if (/config_score_block_threshold\s*=\s*[^\n]+/.test(text)) {
+      text = text.replace(/(config_score_block_threshold\s*=\s*)[^\n]+/, `$1${scoreThreshold}`)
+    } else {
+      const scoreLine = `config_score_block_threshold = ${scoreThreshold}`
+      if (/config_post_body_scan_limit\s*=\s*[^\n]+/.test(text)) {
+        text = text.replace(/(config_post_body_scan_limit\s*=\s*[^\n]+)/, `$1\n${scoreLine}`)
+      } else {
+        text = `${text.replace(/\s*$/, '')}\n${scoreLine}\n`
+      }
     }
   }
   // upload_filename_scan_limit and post_body_scan_limit are Lua numbers (no quotes)

@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Multipart geçici dosyasında body akış taramasını aç (post.rule)",
     "wafMatchCache": "Eşleşme Önbelleği",
     "wafMatchCacheHint": "Sınırlı segmentli eşleşme önbelleği (sıcak 3072 + geçici 1024); yalnızca genel, alan adı düzeyinde geçersiz kılma yok; off = her seferinde tam kural algılama (A/B karşılaştırması)",
+    "wafScoreThreshold": "SCORE engelleme eşiği",
+    "wafScoreThresholdHint": "Birleşik kural puanı: 0 = yalnızca puanla, 1 = her SCORE isabetinde engelle, >1 = toplam bu değere ulaşınca engelle; alan adı bazında score_block_threshold ile geçersiz kılınabilir",
     "wafUploadFilenameScan": "Yüklenen dosya adı tarama sınırı (bayt)",
     "wafUploadFilenameScanHint": "0 = multipart geçici dosyasının tamamını tara; N = yalnızca ilk N baytı tara",
     "wafPostBodyScan": "Post Body tarama sınırı (bayt)",

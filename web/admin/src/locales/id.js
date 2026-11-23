@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Aktifkan pemindaian streaming body file sementara multipart (post.rule)",
     "wafMatchCache": "Cache Kecocokan",
     "wafMatchCacheHint": "Cache segmen terbatas (hot 3072 + probation 1024); hanya global, tidak dapat ditimpa per domain; off = deteksi aturan penuh setiap kali (perbandingan A/B)",
+    "wafScoreThreshold": "Ambang blokir SCORE",
+    "wafScoreThresholdHint": "Skor aturan gabungan: 0 = hanya menilai, 1 = blokir saat ada SCORE, >1 = blokir saat akumulasi mencapai nilai; bisa dioverride per domain lewat score_block_threshold",
     "wafUploadFilenameScan": "Batas pemindaian nama file unggahan (byte)",
     "wafUploadFilenameScanHint": "0 = pindai seluruh file sementara multipart; N = pindai hanya N byte pertama",
     "wafPostBodyScan": "Batas pemindaian body POST (byte)",

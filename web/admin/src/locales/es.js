@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Activar el escaneo en streaming del cuerpo de los archivos temporales multipart (post.rule)",
     "wafMatchCache": "Caché de coincidencias",
     "wafMatchCacheHint": "Caché segmentada acotada (zona activa 3072 + zona temporal 1024); solo global, sin anulación por dominio; off = detección completa de reglas cada vez (comparación A/B)",
+    "wafScoreThreshold": "Umbral de bloqueo SCORE",
+    "wafScoreThresholdHint": "Puntuación de reglas combinadas: 0 = solo puntuar, 1 = bloquear con cualquier SCORE, >1 = bloquear al alcanzar la suma; anulable por dominio con score_block_threshold",
     "wafUploadFilenameScan": "Límite de escaneo del nombre de archivo subido (bytes)",
     "wafUploadFilenameScanHint": "0 = escanear todo el archivo temporal multipart; N = escanear solo los primeros N bytes",
     "wafPostBodyScan": "Límite de escaneo del cuerpo POST (bytes)",

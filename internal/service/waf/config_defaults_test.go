@@ -22,7 +22,7 @@ func TestMergeCaddyWAFConfigDefaults(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &m); err != nil {
 		t.Fatalf("输出不是合法 JSON: %v\n%s", err, out)
 	}
-	for _, k := range []string{"cc_mode", "match_cache", "url_check", "waf_output"} {
+	for _, k := range []string{"cc_mode", "match_cache", "score_block_threshold", "url_check", "waf_output"} {
 		if _, ok := m[k]; !ok {
 			t.Fatalf("缺少 %s: %v", k, m)
 		}
@@ -60,7 +60,7 @@ config_output_html=[[
 	if !changed {
 		t.Fatal("应识别出缺失键")
 	}
-	for _, key := range []string{"config_match_cache", "config_cc_mode", "config_bodyless"} {
+	for _, key := range []string{"config_match_cache", "config_cc_mode", "config_score_block_threshold", "config_bodyless"} {
 		if !strings.Contains(out, key) {
 			t.Fatalf("缺少 %s:\n%s", key, out)
 		}
@@ -93,13 +93,26 @@ func TestMergeDomainConfigDefaults(t *testing.T) {
 	if m["rule_dir"] != "domains/p.tycng.com" || m["waf_enable"] != "on" {
 		t.Fatalf("关键字段被改: %v", m)
 	}
-	for _, k := range []string{"cc_mode", "match_cache", "post_check"} {
+	for _, k := range []string{"cc_mode", "score_block_threshold", "post_check"} {
 		if _, ok := m[k]; !ok {
 			t.Fatalf("缺少 %s: %v", k, m)
 		}
 	}
-	if _, ok := m["log_dir"]; ok {
-		t.Fatalf("log_dir 属路径类，不应补: %v", m)
+	// 即便历史条目里已经写了 match_cache，也要在输出时清掉（上游仅全局）
+	withMatch := `{"rule_dir":"domains/a.com","waf_enable":"on","match_cache":"off"}`
+	out2 := mergeDomainConfigDefaults(DefaultCaddyWAFConfig, withMatch)
+	var m2 map[string]interface{}
+	if err := json.Unmarshal([]byte(out2), &m2); err != nil {
+		t.Fatalf("输出不是合法 JSON: %v", err)
+	}
+	if _, ok := m2["match_cache"]; ok {
+		t.Fatalf("match_cache 应从站点级清掉: %v", m2)
+	}
+	// 路径类与 match_cache（上游仅全局）不补到站点级
+	for _, k := range []string{"log_dir", "match_cache"} {
+		if _, ok := m[k]; ok {
+			t.Fatalf("%s 不应补到站点级: %v", k, m)
+		}
 	}
 	// 幂等
 	if again := mergeDomainConfigDefaults(DefaultCaddyWAFConfig, out); again != out {

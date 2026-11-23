@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "multipart 一時ファイルの body ストリーミングスキャンを有効化（post.rule）",
     "wafMatchCache": "マッチキャッシュ",
     "wafMatchCacheHint": "有界セグメント型マッチキャッシュ（ホット 3072 + プロベーション 1024）。グローバルのみ有効で、ドメイン単位の上書きは非対応。off = 毎回フルにルール検出（A/B 比較）",
+    "wafScoreThreshold": "SCORE ブロック閾値",
+    "wafScoreThresholdHint": "複合ルールのスコア：0=記録のみ、1=SCORE ヒットで即ブロック、>1=累計がこの値でブロック。ドメイン単位は score_block_threshold で上書き可",
     "wafUploadFilenameScan": "アップロードファイル名のスキャン上限（バイト）",
     "wafUploadFilenameScanHint": "0 = multipart 一時ファイル全体をスキャン、N = 先頭 N バイトのみスキャン",
     "wafPostBodyScan": "Post Body のスキャン上限（バイト）",

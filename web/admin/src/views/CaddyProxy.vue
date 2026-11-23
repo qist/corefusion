@@ -385,6 +385,10 @@
               <el-switch v-model="wafConfigForm.match_cache" active-value="on" inactive-value="off" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafMatchCacheHint') }}</span>
             </el-form-item>
+            <el-form-item :label="t('proxy.wafScoreThreshold')">
+              <el-input v-model="wafConfigForm.score_block_threshold" placeholder="0" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafScoreThresholdHint') }}</span>
+            </el-form-item>
             <el-form-item :label="t('proxy.wafUploadFilenameScan')">
               <el-input v-model="wafConfigForm.upload_filename_scan_limit" placeholder="0" style="width:120px" />
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafUploadFilenameScanHint') }}</span>
@@ -1997,7 +2001,7 @@ const wafConfigForm = ref({
   url_check: 'on', url_args_check: 'on', user_agent_check: 'on', header_check: 'on',
   cookie_check: 'on', post_check: 'on', referer_check: 'off', file_upload_check: 'on',
   cc_check: 'on', cc_rate: '', cc_mode: 'ip', cc_block_ttl: '',
-  bodyless: 'on', multipart_streaming_check: 'off', match_cache: 'on',
+  bodyless: 'on', multipart_streaming_check: 'off', match_cache: 'on', score_block_threshold: '0',
   upload_filename_scan_limit: '0', post_body_scan_limit: '2097152',
   waf_output: 'html', waf_redirect_url: '', log_dir: '', rule_dir: ''
 })
@@ -2061,6 +2065,7 @@ function parseWAFConfigForm() {
       bodyless: obj.bodyless || 'on',
       multipart_streaming_check: obj.multipart_streaming_check || 'off',
       match_cache: obj.match_cache || 'on',
+      score_block_threshold: String(obj.score_block_threshold ?? '0'),
       upload_filename_scan_limit: String(obj.upload_filename_scan_limit ?? '0'),
       post_body_scan_limit: String(obj.post_body_scan_limit ?? '2097152'),
       cc_check: obj.cc_check || 'on',
@@ -2094,6 +2099,7 @@ async function saveWAFConfigForm() {
   obj.bodyless = wafConfigForm.value.bodyless
   obj.multipart_streaming_check = wafConfigForm.value.multipart_streaming_check
   obj.match_cache = wafConfigForm.value.match_cache
+  obj.score_block_threshold = parseInt(wafConfigForm.value.score_block_threshold) || 0
   obj.upload_filename_scan_limit = parseInt(wafConfigForm.value.upload_filename_scan_limit) || 0
   obj.post_body_scan_limit = parseInt(wafConfigForm.value.post_body_scan_limit) || 2097152
   obj.cc_check = wafConfigForm.value.cc_check

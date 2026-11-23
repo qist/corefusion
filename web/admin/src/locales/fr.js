@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Activer l'analyse en flux du body des fichiers temporaires multipart (post.rule)",
     "wafMatchCache": "Cache de correspondances",
     "wafMatchCacheHint": "Cache segmenté borné (zone chaude 3072 + zone temporaire 1024) ; global uniquement, pas de surcharge par domaine ; off = détection complète des règles à chaque requête (comparaison A/B)",
+    "wafScoreThreshold": "Seuil de blocage SCORE",
+    "wafScoreThresholdHint": "Score des règles combinées : 0 = compter seulement, 1 = bloquer dès un SCORE, >1 = bloquer au cumul atteint ; surcharge par domaine via score_block_threshold",
     "wafUploadFilenameScan": "Limite d'analyse du nom de fichier téléversé (octets)",
     "wafUploadFilenameScanHint": "0 = analyser tout le fichier temporaire multipart ; N = analyser uniquement les N premiers octets",
     "wafPostBodyScan": "Limite d'analyse du Post Body (octets)",

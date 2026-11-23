@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "فعال‌سازی اسکن جریانی body فایل موقت multipart (post.rule)",
     "wafMatchCache": "کش تطابق",
     "wafMatchCacheHint": "کش تطابق قطعه‌بندی‌شده محدود (۳۰۷۲ فعال + ۱۰۲۴ موقت)؛ فقط سراسری و بدون بازنویسی در سطح دامنه؛ off = تشخیص کامل قواعد در هر بار (مقایسه A/B)",
+    "wafScoreThreshold": "آستانه مسدودسازی SCORE",
+    "wafScoreThresholdHint": "امتیاز قواعد ترکیبی: ۰ = فقط ثبت، ۱ = مسدودسازی با هر برخورد SCORE، >۱ = مسدودسازی هنگام رسیدن مجموع؛ قابل بازنویسی برای هر دامنه با score_block_threshold",
     "wafUploadFilenameScan": "محدودیت اسکن نام فایل آپلود (بایت)",
     "wafUploadFilenameScanHint": "0 = اسکن کل فایل موقت multipart؛ N = فقط N بایت اول اسکن شود",
     "wafPostBodyScan": "محدودیت اسکن Post Body (بایت)",

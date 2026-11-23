@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Streaming-Scan der temporären Multipart-Body-Datei aktivieren (post.rule)",
     "wafMatchCache": "Match-Cache",
     "wafMatchCacheHint": "Begrenzter segmentierter Match-Cache (Hot 3072 + Probation 1024); nur global, keine domainbezogene Überschreibung; off = jedes Mal vollständige Regelerkennung (A/B-Vergleich)",
+    "wafScoreThreshold": "SCORE-Sperrschwelle",
+    "wafScoreThresholdHint": "Kombiregeln-Punktzahl: 0 = nur zählen, 1 = bei jedem SCORE-Treffer sperren, >1 = erst ab dieser Summe sperren; pro Domain über score_block_threshold überschreibbar",
     "wafUploadFilenameScan": "Scan-Limit für Upload-Dateinamen (Bytes)",
     "wafUploadFilenameScanHint": "0 = gesamte temporäre Multipart-Datei scannen; N = nur die ersten N Bytes scannen",
     "wafPostBodyScan": "Scan-Limit für Post-Body (Bytes)",

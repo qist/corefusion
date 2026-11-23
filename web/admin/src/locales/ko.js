@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "multipart 임시 파일 body 스트리밍 검사 활성화 (post.rule)",
     "wafMatchCache": "매치 캐시",
     "wafMatchCacheHint": "유계 세그먼트 매치 캐시(핫 3072 + 예비 1024). 전역 전용이며 도메인별 재정의를 지원하지 않습니다. off = 매번 전체 규칙 검사 (A/B 비교)",
+    "wafScoreThreshold": "SCORE 차단 임계값",
+    "wafScoreThresholdHint": "복합 규칙 점수: 0=점수만 기록, 1=SCORE 적중 시 즉시 차단, >1=누적 점수가 임계값 도달 시 차단; 도메인별 score_block_threshold 로 재정의",
     "wafUploadFilenameScan": "업로드 파일명 검사 제한 (바이트)",
     "wafUploadFilenameScanHint": "0 = multipart 임시 파일 전체 검사; N = 처음 N바이트만 검사",
     "wafPostBodyScan": "Post Body 검사 제한 (바이트)",

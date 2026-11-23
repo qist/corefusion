@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Ativar verificação contínua do body em arquivos temporários multipart (post.rule)",
     "wafMatchCache": "Cache de correspondências",
     "wafMatchCacheHint": "Cache segmentado limitado (zona quente 3072 + zona temporária 1024); somente global, sem substituição por domínio; off = detecção completa das regras a cada vez (comparação A/B)",
+    "wafScoreThreshold": "Limite de bloqueio SCORE",
+    "wafScoreThresholdHint": "Pontuação de regras combinadas: 0 = apenas pontuar, 1 = bloquear a qualquer SCORE, >1 = bloquear ao atingir a soma; substituível por domínio via score_block_threshold",
     "wafUploadFilenameScan": "Limite de verificação do nome do arquivo enviado (bytes)",
     "wafUploadFilenameScanHint": "0 = verifica todo o arquivo temporário multipart; N = verifica apenas os primeiros N bytes",
     "wafPostBodyScan": "Limite de verificação do Post Body (bytes)",

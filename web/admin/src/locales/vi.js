@@ -2921,6 +2921,8 @@ export default {
     "wafMultipartStreamingHint": "Bật quét luồng body của tệp tạm multipart (post.rule)",
     "wafMatchCache": "Bộ đệm khớp",
     "wafMatchCacheHint": "Bộ đệm phân đoạn có giới hạn (hot 3072 + tạm 1024); chỉ áp dụng toàn cục, không hỗ trợ ghi đè theo tên miền; off = luôn chạy phát hiện đầy đủ quy tắc (đối chiếu A/B)",
+    "wafScoreThreshold": "Ngưỡng chặn SCORE",
+    "wafScoreThresholdHint": "Điểm quy tắc kết hợp: 0 = chỉ ghi điểm, 1 = chặn khi có SCORE, >1 = chặn khi tổng điểm đạt ngưỡng; có thể ghi đè theo tên miền bằng score_block_threshold",
     "wafUploadFilenameScan": "Giới hạn quét tên tệp tải lên (byte)",
     "wafUploadFilenameScanHint": "0 = quét toàn bộ tệp tạm multipart; N = chỉ quét N byte đầu tiên",
     "wafPostBodyScan": "Giới hạn quét Post Body (byte)",

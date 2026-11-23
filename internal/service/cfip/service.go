@@ -196,7 +196,8 @@ func (s *Service) FetchFromSource(ctx context.Context, sourceID int64) error {
 	}
 
 	// Update last run time
-	source.LastRun = time.Now()
+	nowRun := time.Now()
+	source.LastRun = &nowRun
 	s.sourceRepo.Update(ctx, source)
 
 	log.Printf("cfip: fetched %d IPs from %s", len(ips), source.Name)
@@ -312,7 +313,8 @@ func (s *Service) checkAndFetch(ctx context.Context) {
 
 	now := time.Now()
 	for _, source := range sources {
-		if now.Sub(source.LastRun) >= time.Duration(source.Interval)*time.Second {
+		// 从未拉取过的源（LastRun=nil）应立即执行一次。
+		if source.LastRun == nil || now.Sub(*source.LastRun) >= time.Duration(source.Interval)*time.Second {
 			if err := s.FetchFromSource(ctx, source.ID); err != nil {
 				log.Printf("cfip: scheduled fetch from %s failed: %v", source.Name, err)
 			}

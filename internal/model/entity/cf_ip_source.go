@@ -4,16 +4,17 @@ import "time"
 
 // CFIPSource stores CF IP API source configuration.
 type CFIPSource struct {
-	ID        int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name      string    `json:"name" gorm:"size:128;not null"`
-	URL       string    `json:"url" gorm:"size:512;not null"`
-	Type      string    `json:"type" gorm:"size:32;not null"`          // bestcf, bestproxy, custom
-	Ports     string    `json:"ports" gorm:"type:longtext"`            // JSON array
-	Interval  int       `json:"interval" gorm:"not null;default:3600"` // seconds
-	Enabled   bool      `json:"enabled" gorm:"not null;default:true"`
-	LastRun   time.Time `json:"last_run"`
-	CreatedAt time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
+	ID       int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name     string `json:"name" gorm:"size:128;not null"`
+	URL      string `json:"url" gorm:"size:512;not null"`
+	Type     string `json:"type" gorm:"size:32;not null"`          // bestcf, bestproxy, custom
+	Ports    string `json:"ports" gorm:"type:longtext"`            // JSON array
+	Interval int    `json:"interval" gorm:"not null;default:3600"` // seconds
+	Enabled  bool   `json:"enabled" gorm:"not null;default:true"`
+	// LastRun 可空：新建源还没拉取过，零值时间在 MySQL 严格模式下非法。
+	LastRun   *time.Time `json:"last_run"`
+	CreatedAt time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (CFIPSource) TableName() string { return "cf_ip_sources" }

@@ -60,7 +60,63 @@ type Service struct {
 
 // NewService creates a new backup service.
 func NewService(repo *repository.BackupRepository, dataDir string, database *gorm.DB) *Service {
-	return &Service{repo: repo, dataDir: dataDir, db: database}
+	s := &Service{repo: repo, dataDir: dataDir, db: database}
+	// 还原成功后进程会 syscall.Exec 原地重启，内存里的状态会丢失。
+	// 启动时从文件恢复上一次结果，客户端（含 API 轮询）才能看到 done/error，
+	// 而不是永远停在 idle。
+	if st := s.loadRestoreStatusFile(); st != nil {
+		s.restoreStatus = st
+		s.nextRestoreID = st.ID
+	}
+	return s
+}
+
+const restoreStatusFileName = "restore-status.json"
+
+func (s *Service) restoreStatusPath() string {
+	return filepath.Join(s.dataDir, "backup", restoreStatusFileName)
+}
+
+// persistRestoreStatusLocked 落盘当前状态；调用方必须持有 restoreMu。
+func (s *Service) persistRestoreStatusLocked() {
+	if s.restoreStatus == nil {
+		return
+	}
+	b, err := json.Marshal(s.restoreStatus)
+	if err != nil {
+		return
+	}
+	path := s.restoreStatusPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0600); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, path)
+}
+
+// loadRestoreStatusFile 读取上一次还原结果。
+// pending/downloading/restoring 说明进程在还原中途重启，按中断处理并标记 error。
+func (s *Service) loadRestoreStatusFile() *RestoreStatus {
+	b, err := os.ReadFile(s.restoreStatusPath())
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	var st RestoreStatus
+	if json.Unmarshal(b, &st) != nil || st.ID <= 0 {
+		return nil
+	}
+	switch st.Status {
+	case "pending", "downloading", "restoring":
+		st.Status = "error"
+		st.Message = "restore interrupted by process restart"
+		if st.DoneAt.IsZero() {
+			st.DoneAt = time.Now()
+		}
+	}
+	return &st
 }
 
 // CreateBackup creates a database-only backup.
@@ -479,6 +535,7 @@ func (s *Service) startAsyncRestore(downloadFn func() (string, error), restoreFn
 		StartedAt: time.Now(),
 	}
 	s.restoreStatus = st
+	s.persistRestoreStatusLocked()
 	s.restoreMu.Unlock()
 
 	// Enable maintenance mode for the entire process
@@ -524,6 +581,7 @@ func (s *Service) setRestoreStatus(id int64, status, msg string) {
 		if status == "done" || status == "error" {
 			s.restoreStatus.DoneAt = time.Now()
 		}
+		s.persistRestoreStatusLocked()
 	}
 }
 
@@ -671,29 +729,13 @@ type RemoteFile struct {
 // --- S3 download/list ---
 
 func (s *Service) downloadFromS3(ctx context.Context, cfg S3Config, key string, dest *os.File) error {
-	var opts []func(*config.LoadOptions) error
-	if cfg.AccessKey != "" && cfg.SecretKey != "" {
-		opts = append(opts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		))
-	}
-	if cfg.Region != "" {
-		opts = append(opts, config.WithRegion(cfg.Region))
-	}
-	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
+	awsCfg, err := s3AWSConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
 	}
-	s3Opts := []func(*s3.Options){}
-	if cfg.Endpoint != "" {
-		s3Opts = append(s3Opts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+	s3c := s3Client(awsCfg, cfg)
 
-	result, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
+	result, err := s3c.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(cfg.Bucket),
 		Key:    aws.String(key),
 	})
@@ -708,29 +750,13 @@ func (s *Service) downloadFromS3(ctx context.Context, cfg S3Config, key string, 
 }
 
 func (s *Service) listS3Files(ctx context.Context, cfg S3Config) ([]RemoteFile, error) {
-	var opts []func(*config.LoadOptions) error
-	if cfg.AccessKey != "" && cfg.SecretKey != "" {
-		opts = append(opts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		))
-	}
-	if cfg.Region != "" {
-		opts = append(opts, config.WithRegion(cfg.Region))
-	}
-	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
+	awsCfg, err := s3AWSConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config: %w", err)
 	}
-	s3Opts := []func(*s3.Options){}
-	if cfg.Endpoint != "" {
-		s3Opts = append(s3Opts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+	s3c := s3Client(awsCfg, cfg)
 
-	result, err := s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+	result, err := s3c.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
 		Bucket: aws.String(cfg.Bucket),
 	})
 	if err != nil {
@@ -1076,6 +1102,41 @@ func (s *Service) DeleteStorage(ctx context.Context, id int64) error {
 	return s.repo.DeleteStorage(ctx, id)
 }
 
+// defaultS3Region 是未显式配置 region 时的兜底。
+//
+// AWS SDK v2 在自定义 Endpoint（MinIO 等）下仍然强制要求 region，否则
+// PutObject/GetObject/ListObjects 直接报 "A region must be set"。
+// 自建 S3 一般不看 region 值，给 us-east-1 即可（客户端与 MinIO 都不校验）。
+const defaultS3Region = "us-east-1"
+
+// s3AWSConfig 统一构建 S3 客户端配置：凭证可选，region 缺省按 us-east-1。
+func s3AWSConfig(ctx context.Context, cfg S3Config) (aws.Config, error) {
+	var opts []func(*config.LoadOptions) error
+	if cfg.AccessKey != "" && cfg.SecretKey != "" {
+		opts = append(opts, config.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		))
+	}
+	region := strings.TrimSpace(cfg.Region)
+	if region == "" {
+		region = defaultS3Region
+	}
+	opts = append(opts, config.WithRegion(region))
+	return config.LoadDefaultConfig(ctx, opts...)
+}
+
+// s3Client 统一构建客户端：自定义 Endpoint 时强制 path-style（MinIO 默认）。
+func s3Client(awsCfg aws.Config, cfg S3Config) *s3.Client {
+	var s3Opts []func(*s3.Options)
+	if cfg.Endpoint != "" {
+		s3Opts = append(s3Opts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.Endpoint)
+			o.UsePathStyle = true
+		})
+	}
+	return s3.NewFromConfig(awsCfg, s3Opts...)
+}
+
 // UploadToS3 uploads a backup to S3-compatible storage.
 func (s *Service) UploadToS3(ctx context.Context, backupID int64, cfg S3Config) error {
 	rec, err := s.repo.GetRecordByID(ctx, backupID)
@@ -1096,46 +1157,17 @@ func (s *Service) UploadToS3(ctx context.Context, backupID int64, cfg S3Config) 
 		return fmt.Errorf("stat backup file: %w", err)
 	}
 
-	// Build S3 client options
-	var opts []func(*config.LoadOptions) error
-
-	// Set credentials if provided
-	if cfg.AccessKey != "" && cfg.SecretKey != "" {
-		opts = append(opts, config.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		))
-	}
-
-	// Set region if provided
-	if cfg.Region != "" {
-		opts = append(opts, config.WithRegion(cfg.Region))
-	}
-
-	// Load AWS config
-	awsCfg, err := config.LoadDefaultConfig(ctx, opts...)
+	awsCfg, err := s3AWSConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("load AWS config: %w", err)
 	}
-
-	// Create S3 client options
-	s3Opts := []func(*s3.Options){}
-
-	// Set custom endpoint if provided (for S3-compatible services like MinIO)
-	if cfg.Endpoint != "" {
-		s3Opts = append(s3Opts, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(cfg.Endpoint)
-			o.UsePathStyle = true
-		})
-	}
-
-	// Create S3 client
-	s3Client := s3.NewFromConfig(awsCfg, s3Opts...)
+	s3c := s3Client(awsCfg, cfg)
 
 	// Build the object key
 	key := filepath.Base(rec.FilePath)
 
 	// Upload the file
-	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+	_, err = s3c.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(cfg.Bucket),
 		Key:           aws.String(key),
 		Body:          f,

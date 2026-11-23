@@ -64,3 +64,38 @@ func TestCryptoRoundTripBasic(t *testing.T) {
 		t.Fatalf("往返失败: %q, %v", plain, err)
 	}
 }
+
+// 还原成功后进程会 exec 重启：状态必须落盘，重启后仍能读到 done，
+// 否则客户端轮询只会看到 idle，误以为还原超时/没执行。
+func TestRestoreStatusPersistedAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	s := &Service{dataDir: dir}
+	s.restoreMu.Lock()
+	s.nextRestoreID = 3
+	s.restoreStatus = &RestoreStatus{ID: 3, Status: "done", Message: "restore completed successfully"}
+	s.persistRestoreStatusLocked()
+	s.restoreMu.Unlock()
+
+	loaded := (&Service{dataDir: dir}).loadRestoreStatusFile()
+	if loaded == nil {
+		t.Fatal("重启后未读到还原状态")
+	}
+	if loaded.ID != 3 || loaded.Status != "done" {
+		t.Fatalf("loaded = %+v, want id=3 done", loaded)
+	}
+}
+
+// 还原进行中被重启：不能永远停在 restoring，应按中断标记 error。
+func TestRestoreStatusInterruptedMarkedError(t *testing.T) {
+	dir := t.TempDir()
+	s := &Service{dataDir: dir}
+	s.restoreMu.Lock()
+	s.restoreStatus = &RestoreStatus{ID: 4, Status: "restoring", Message: "restoring"}
+	s.persistRestoreStatusLocked()
+	s.restoreMu.Unlock()
+
+	loaded := (&Service{dataDir: dir}).loadRestoreStatusFile()
+	if loaded == nil || loaded.Status != "error" {
+		t.Fatalf("中断状态应为 error，实际 %+v", loaded)
+	}
+}

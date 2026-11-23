@@ -1678,9 +1678,11 @@ async function handleDownload(row) {
   // 票据 60 秒过期、只能用一次、且只能用在下载路径上。
   try {
     const res = await client.post('/auth/ticket', null, { params: { scope: 'backup_download' } })
-    const data = res?.data?.data || res?.data || {}
-    if (!data.ticket) throw new Error('no ticket')
-    window.open(`/api/v1/backups/${row.id}/download?ticket=${encodeURIComponent(data.ticket)}`, '_blank')
+    // 响应拦截器已经 `response.data?.data ?? response.data` 剥过一层，
+    // res 本身就是 { ticket, expires_in, scope }；再取 res.data 会永远为空。
+    const ticket = res?.ticket || res?.data?.ticket
+    if (!ticket) throw new Error('no ticket')
+    window.open(`/api/v1/backups/${row.id}/download?ticket=${encodeURIComponent(ticket)}`, '_blank')
   } catch (e) {
     ElMessage.error(t('common.failed'))
   }

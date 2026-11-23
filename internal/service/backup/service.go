@@ -290,11 +290,22 @@ func (s *Service) importDumpsFromArchive(ctx context.Context, dbType, dsn string
 // shared logic used by RestoreBackup (local), RestoreFromFile (upload), and
 // RemoteRestore (FTP/S3/WebDAV pull).
 func (s *Service) restoreFromArchive(ctx context.Context, archivePath string) error {
+	dbType, dsn := db.StartupConfig()
+
+	// SQLite 还原必须在**解包覆盖之前**关闭现有连接。
+	// 否则旧进程仍持有 app.db 的连接：覆盖完成后它会把内存里的旧数据
+	// 重新写进 app.db-wal，restart 后新进程读到 WAL，表现就是
+	// 「还原成功但备份之后新增的数据还在」。
+	if dbType == db.DBTypeSQLite && db.DB != nil {
+		if sqlDB, err := db.DB.DB(); err == nil && sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	}
+
 	if err := s.extractTarGz(archivePath, s.dataDir); err != nil {
 		return err
 	}
 
-	dbType, dsn := db.StartupConfig()
 	switch dbType {
 	case db.DBTypeMySQL, db.DBTypePostgres:
 		if dsn == "" {

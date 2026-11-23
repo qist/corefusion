@@ -66,15 +66,14 @@ func buildChainProbeConfig(
 	valid []int,
 	ports []int,
 ) (map[string]interface{}, error) {
-	if len(exitProxy) == 0 {
-		return nil, fmt.Errorf("出口节点配置为空，无法建立链式拨号")
-	}
 	if len(valid) == 0 {
 		return nil, fmt.Errorf("没有任何目标具备可用的入站出站参数")
 	}
 	if len(valid) != len(ports) {
 		return nil, fmt.Errorf("内部错误：目标数与本地端口数不一致")
 	}
+	// exitProxy 为空 = 模板模式：目标本身就是客户端出站（优选探测替换 server 后），
+	// 不需要再挂一层 dialerProxy/detour。
 	// 整轮共用同一条探针入站，协议必然一致；逐个校验便于报出具体协议。
 	// mihomo 直接吃自己的 proxy map（不做 xray 转换），协议能力由 mihomo 自己保证，
 	// 因此不需要这里的白名单；xray/sing-box 必须校验，否则会生成核心不认的出站。
@@ -145,12 +144,6 @@ func buildChainProbeXrayConfig(exitProxy map[string]interface{}, targets []Chain
 // buildChainProbeXrayOutbounds 生成「目标出站（dialerProxy=出口）+ 出口出站」。
 // 目标出站排在前面：即使路由规则没命中，也不会把探测流量直接落到出口上。
 func buildChainProbeXrayOutbounds(exitProxy map[string]interface{}, targets []ChainTarget, valid []int) ([]interface{}, error) {
-	exitOB, err := agent.BuildXrayOutboundFromMihomoProxy(normalizeProxyMap(exitProxy))
-	if err != nil {
-		return nil, fmt.Errorf("出口节点无法转换为客户端出站: %w", err)
-	}
-	exitOB["tag"] = chainProbeExitTag
-
 	outbounds := make([]interface{}, 0, len(valid)+1)
 	for j, idx := range valid {
 		target := targets[idx]
@@ -159,10 +152,20 @@ func buildChainProbeXrayOutbounds(exitProxy map[string]interface{}, targets []Ch
 			return nil, fmt.Errorf("目标 %s:%d 无法转换为客户端出站: %w", target.Host, target.Port, err)
 		}
 		ob["tag"] = fmt.Sprintf(chainProbeTargetFmt, j)
-		attachXrayDialerProxy(ob, chainProbeExitTag)
+		if len(exitProxy) > 0 {
+			attachXrayDialerProxy(ob, chainProbeExitTag)
+		}
 		outbounds = append(outbounds, ob)
 	}
-	outbounds = append(outbounds, exitOB)
+	// 没有出口 = 模板模式，目标出站自己就是最终出口。
+	if len(exitProxy) > 0 {
+		exitOB, err := agent.BuildXrayOutboundFromMihomoProxy(normalizeProxyMap(exitProxy))
+		if err != nil {
+			return nil, fmt.Errorf("出口节点无法转换为客户端出站: %w", err)
+		}
+		exitOB["tag"] = chainProbeExitTag
+		outbounds = append(outbounds, exitOB)
+	}
 	return outbounds, nil
 }
 
@@ -198,15 +201,20 @@ func buildChainProbeSingboxConfig(exitProxy map[string]interface{}, targets []Ch
 		return nil, fmt.Errorf("归一化出站配置失败: %w", err)
 	}
 	outs := coreconfig.ConvertXrayOutboundsToSingbox(normalized)
-	if len(outs) != len(valid)+1 {
-		return nil, fmt.Errorf("转换 sing-box 出站失败（期望 %d 条，实际 %d 条）", len(valid)+1, len(outs))
+	hasExit := len(exitProxy) > 0
+	want := len(valid)
+	if hasExit {
+		want++
+	}
+	if len(outs) != want {
+		return nil, fmt.Errorf("转换 sing-box 出站失败（期望 %d 条，实际 %d 条）", want, len(outs))
 	}
 	for _, item := range outs {
 		m, _ := item.(map[string]interface{})
 		if m == nil {
 			continue
 		}
-		if tag, _ := m["tag"].(string); tag != "" && tag != chainProbeExitTag {
+		if tag, _ := m["tag"].(string); hasExit && tag != "" && tag != chainProbeExitTag {
 			// sing-box 的链式写法：目标出站的连接经 detour 指定的出口拨号。
 			m["detour"] = chainProbeExitTag
 		}
@@ -229,13 +237,18 @@ func buildChainProbeSingboxConfig(exitProxy map[string]interface{}, targets []Ch
 		})
 	}
 
+	final := chainProbeExitTag
+	if !hasExit {
+		// 模板模式没有出口出站，兜底规则指向第一条目标，避免 final 指向不存在的 tag。
+		final = fmt.Sprintf(chainProbeTargetFmt, 0)
+	}
 	return map[string]interface{}{
 		"log":       map[string]interface{}{"level": "error"},
 		"inbounds":  inbounds,
 		"outbounds": outs,
 		"route": map[string]interface{}{
 			"rules": rules,
-			"final": chainProbeExitTag,
+			"final": final,
 		},
 	}, nil
 }
@@ -246,10 +259,10 @@ func buildChainProbeSingboxConfig(exitProxy map[string]interface{}, targets []Ch
 // proxy 的 `dialer-proxy` 上 —— 不需要像 xray 那样额外做路由规则/出站转换。
 func buildChainProbeMihomoConfig(exitProxy map[string]interface{}, targets []ChainTarget, valid []int, ports []int) (map[string]interface{}, error) {
 	exit := normalizeProxyMap(exitProxy)
-	if exit == nil {
-		return nil, fmt.Errorf("出口节点配置为空，无法建立链式拨号")
+	hasExit := exit != nil
+	if hasExit {
+		exit["name"] = chainProbeExitTag
 	}
-	exit["name"] = chainProbeExitTag
 
 	proxies := make([]interface{}, 0, len(valid)+1)
 	listeners := make([]interface{}, 0, len(valid))
@@ -260,8 +273,10 @@ func buildChainProbeMihomoConfig(exitProxy map[string]interface{}, targets []Cha
 		}
 		tag := fmt.Sprintf(chainProbeTargetFmt, j)
 		pm["name"] = tag
-		// mihomo 的链式写法：目标节点的连接经 dialer-proxy 指定的出口拨号。
-		pm["dialer-proxy"] = chainProbeExitTag
+		if hasExit {
+			// mihomo 的链式写法：目标节点的连接经 dialer-proxy 指定的出口拨号。
+			pm["dialer-proxy"] = chainProbeExitTag
+		}
 		proxies = append(proxies, pm)
 		listeners = append(listeners, map[string]interface{}{
 			"name":   fmt.Sprintf(chainProbeInboundFmt, j),
@@ -271,7 +286,9 @@ func buildChainProbeMihomoConfig(exitProxy map[string]interface{}, targets []Cha
 			"proxy":  tag,
 		})
 	}
-	proxies = append(proxies, exit)
+	if hasExit {
+		proxies = append(proxies, exit)
+	}
 
 	return map[string]interface{}{
 		"log-level": "error",
@@ -323,9 +340,7 @@ func (p *Prober) startChainDialer(
 	targets []ChainTarget,
 ) ([]dialFunc, func(), string, error) {
 	noop := func() {}
-	if len(exitProxy) == 0 {
-		return nil, noop, "", fmt.Errorf("出口节点配置为空，无法建立链式拨号")
-	}
+	// exitProxy 为空 = 模板模式：目标出站本身就是客户端配置，不需要跳板。
 
 	valid := make([]int, 0, len(targets))
 	for i := range targets {

@@ -33,6 +33,8 @@ type chainProbeEntry struct {
 	Host     string
 	Port     int
 	PrevFail int
+	// Healthy 是上次探测结论：名额分配时优先测健康条目，坏条目保留恢复名额。
+	Healthy bool
 }
 
 // chainProbeInbound 是「探针入站」：一轮只用它完成协议握手。
@@ -115,6 +117,7 @@ func (h *PublicHandler) ChainProbeTargets(ctx context.Context, probeSpec string)
 			Kind:           e.Kind,
 			EntryID:        e.EntryID,
 			PrevFail:       e.PrevFail,
+			Healthy:        e.Healthy,
 			ProbeInboundID: probe.cfg.ID,
 			InboundID:      probe.cfg.ID,
 			ServerID:       probe.cfg.ServerID,
@@ -167,7 +170,41 @@ func chainProbeTargetView(probeView map[string]interface{}, e chainProbeEntry, t
 		}
 	}
 	applyFrontTLS(view, e.Host, e.Kind, tlsEntries)
+	ensureTargetSNI(view)
 	return view
+}
+
+// ensureTargetSNI 给「TLS 但 serverName 为空」的目标补上入站自己的接入 SNI。
+//
+// cf_ip 条目的 host 是 IP，入站又常是 nginx 前置的明文（security=none）：
+// applyFrontTLS 会把 security 改成 tls，但 isIPHost 让 serverName 不会写成 IP。
+// 不补的话客户端会拿 IP 当 SNI，TLS 握手必失败 —— 会把可用 IP 误判成坏。
+func ensureTargetSNI(view map[string]interface{}) {
+	ss := getMap(view, "streamSettings")
+	if ss == nil {
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(getString(ss, "security", ""))) != "tls" {
+		return
+	}
+	tlsCfg := getMap(ss, "tlsSettings")
+	if tlsCfg == nil {
+		tlsCfg = map[string]interface{}{}
+		ss["tlsSettings"] = tlsCfg
+	}
+	if strings.TrimSpace(getString(tlsCfg, "serverName", "")) != "" {
+		return
+	}
+	adTLS := getMap(getMap(view, "_accessDomain"), "tls")
+	if adTLS == nil {
+		return
+	}
+	if enabled, _ := adTLS["enabled"].(bool); !enabled {
+		return
+	}
+	if sni := strings.TrimSpace(getString(adTLS, "sni", "")); sni != "" {
+		tlsCfg["serverName"] = sni
+	}
 }
 
 // pickChainProbeInbound 按 "inb:<id>" 选中探针入站。
@@ -277,7 +314,8 @@ func (h *PublicHandler) chainProbeEntries(ctx context.Context) ([]chainProbeEntr
 					continue
 				}
 				seen[key] = struct{}{}
-				out = append(out, chainProbeEntry{Kind: d.Type, EntryID: d.ID, Host: d.Value, Port: port, PrevFail: d.FailCount})
+				out = append(out, chainProbeEntry{Kind: d.Type, EntryID: d.ID, Host: d.Value, Port: port,
+					PrevFail: d.FailCount, Healthy: d.Healthy})
 				tlsEntries = append(tlsEntries, shareDomainEntry{
 					Type: d.Type, Host: d.Value, Port: port, Ports: ports,
 					TLSMode: d.TLSMode, SNI: d.SNI, ALPN: d.ALPN, Fingerprint: d.Fingerprint,
@@ -300,7 +338,8 @@ func (h *PublicHandler) chainProbeEntries(ctx context.Context) ([]chainProbeEntr
 					continue
 				}
 				seen[key] = struct{}{}
-				out = append(out, chainProbeEntry{Kind: "cf_ip", EntryID: ip.ID, Host: ip.IP, Port: port, PrevFail: ip.FailCount})
+				out = append(out, chainProbeEntry{Kind: "cf_ip", EntryID: ip.ID, Host: ip.IP, Port: port,
+					PrevFail: ip.FailCount, Healthy: ip.Healthy})
 				// CF IP 没有独立的前置 TLS 条目：frontTLSEntry 对 cf_* 默认按 auto 处理。
 				tlsEntries = append(tlsEntries, shareDomainEntry{Type: "cf_ip", Host: ip.IP, Port: port, Ports: ports, TLSMode: "auto"})
 			}
@@ -462,6 +501,80 @@ func (h *PublicHandler) ChainProbeExitProxy(ctx context.Context, spec string) (m
 		return pm, name + "/" + nodeDisplayName(cfg.Remark, cfg.Tag), nil
 	}
 	return nil, "", fmt.Errorf("unsupported egress spec: %s", spec)
+}
+
+// ChainProbeEntryTemplate 把入口渲染成「客户端配置模板」。
+//
+// 与 ChainProbeExitProxy 的关键差别：CDN 入站的 TLS 往往在 nginx 前置终止，
+// 入站自身是明文（尤其 unix socket 架构），直接渲染出的出站没有 SNI。
+// 这里按订阅同款逻辑把接入域名（cf_domain / cf_ip）的 TLS/SNI 应用进去，
+// 之后由调用方只替换 server/port —— 这才是客户端真实组合。
+func (h *PublicHandler) ChainProbeEntryTemplate(ctx context.Context, spec string) (map[string]interface{}, string, error) {
+	spec = strings.TrimSpace(spec)
+	if strings.HasPrefix(spec, "ext:") {
+		return h.ChainProbeExitProxy(ctx, spec)
+	}
+	if !strings.HasPrefix(spec, "inb:") {
+		return nil, "", fmt.Errorf("unsupported entry spec: %s", spec)
+	}
+	id, err := strconv.ParseInt(strings.TrimPrefix(spec, "inb:"), 10, 64)
+	if err != nil || id <= 0 {
+		return nil, "", fmt.Errorf("invalid entry spec: %s", spec)
+	}
+	if h.inboundRepo == nil {
+		return nil, "", fmt.Errorf("inbound repository unavailable")
+	}
+	cfg, err := h.inboundRepo.GetByID(ctx, id)
+	if err != nil || cfg == nil {
+		return nil, "", fmt.Errorf("inbound %d not found", id)
+	}
+	view, err := chainProbeView(cfg)
+	if err != nil || view == nil {
+		return nil, "", fmt.Errorf("inbound %d configuration cannot be parsed", id)
+	}
+
+	nodeName := fmt.Sprintf("节点 %d", cfg.ServerID)
+	nodeAddr := ""
+	if h.nodeServerRepo != nil {
+		if node, err := h.nodeServerRepo.GetByID(ctx, cfg.ServerID); err == nil && node != nil {
+			if node.Name != "" {
+				nodeName = node.Name
+			}
+			if node.IsLocal {
+				nodeAddr = "127.0.0.1"
+			} else {
+				nodeAddr = preferNodeAddress(*node)
+			}
+		}
+	}
+
+	shareDomains := h.loadShareDomains(ctx)
+	host, port := nodeAddr, cfg.Port
+	ad := getMap(view, "_accessDomain")
+	if adType := accessDomainType(view); adType == "cf_domain" || adType == "cf_ip" {
+		if h2, p2, ok := resolveAccessDomain(view, port, shareDomains); ok && h2 != "" {
+			host, port = h2, p2
+		}
+	}
+	// 入站自己的接入 TLS 才是真实 SNI（nginx 前置时入站 security=none，
+	// 池条目的 SNI 只是兜底）。主机名仅作占位，server 随后会被替换成优选条目。
+	if tls := getMap(ad, "tls"); tls != nil {
+		if enabled, _ := tls["enabled"].(bool); enabled {
+			sni := getString(tls, "sni", "")
+			if host == "" {
+				host = sni
+			}
+			applyFrontTLSSettings(view, host, sni, getString(tls, "alpn", ""), getString(tls, "fingerprint", ""))
+		}
+	}
+	if host == "" {
+		return nil, "", fmt.Errorf("inbound %d: no usable address", id)
+	}
+	pm, err := chainProbeProxyMap(view, cfg, host, port)
+	if err != nil || pm == nil {
+		return nil, "", fmt.Errorf("inbound %d: failed to build client outbound: %v", id, err)
+	}
+	return pm, nodeName + "/" + nodeDisplayName(cfg.Remark, cfg.Tag), nil
 }
 
 // chainProbeView 把入站配置解析成 xray 形态（sing-box 入站归一），并确保

@@ -25,9 +25,23 @@
       </div>
       <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeEntryNode') }}</div>
-        <el-select v-model="probeCfg.entry_node_id" size="small" style="width:220px" filterable>
-          <el-option :label="t('service.cfip.probeLocal')" :value="0" />
-          <el-option v-for="n in extNodes" :key="n.id" :label="`${n.name || n.host} (${n.protocol || ''})`" :value="n.id" />
+        <el-select v-model="probeCfg.entry" size="small" style="width:240px" filterable :placeholder="t('service.cfip.probeEntryRequired')">
+          <el-option-group v-if="extNodes.length" :label="t('service.cfip.probeEntryExternal')">
+            <el-option
+              v-for="n in extNodes"
+              :key="n.value"
+              :label="`${n.name || n.host} (${n.protocol || ''})`"
+              :value="n.value"
+            />
+          </el-option-group>
+          <el-option-group v-if="inbNodes.length" :label="t('service.cfip.probeEntryInbound')">
+            <el-option
+              v-for="n in inbNodes"
+              :key="n.value"
+              :label="`${n.host ? n.host + ' / ' : ''}${n.name} (${n.protocol || ''})`"
+              :value="n.value"
+            />
+          </el-option-group>
         </el-select>
       </div>
       <div>
@@ -117,7 +131,7 @@
           {{ sec.checkLabel }}
         </el-button>
         <span class="chain-kind-meta">
-          {{ t('service.cfip.chainTargetCount') }}：{{ sec.total }}
+          {{ t('service.cfip.chainTargetCount') }}：{{ sec.total }}<template v-if="sec.healthy != null"> · {{ t('service.cfip.chainHealthy') }} {{ sec.healthy }}</template>
           <template v-if="sec.updatedAt"> · {{ t('onlineUsers.updatedAt') }} {{ formatTime(sec.updatedAt) }}</template>
         </span>
       </div>
@@ -216,8 +230,10 @@ import client from '../../api/client'
 
 const { t } = useI18n()
 
-const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry_node_id: 0, dialer: '', available_dialers: [], dialer_versions: {} })
-const extNodes = ref([])
+const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry: '', entry_node_id: 0, dialer: '', available_dialers: [], dialer_versions: {} })
+const probeNodes = ref([])
+const extNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'external'))
+const inbNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'inbound'))
 
 const chainCfg = ref({
   enabled: false,
@@ -254,10 +270,17 @@ const dialerInstalling = ref(false)
 let previousDialer = ''
 
 const chainTargetCounts = computed(() => {
-  const counts = { domain: 0, ip: 0 }
+  const counts = { domain: 0, ip: 0, domainHealthy: 0, ipHealthy: 0 }
   for (const tg of chainTargets.value) {
-    if (tg.kind === 'cf_domain') counts.domain++
-    else if (tg.kind === 'cf_ip') counts.ip++
+    // 旧后端没有 healthy 字段时按健康算，避免页面显示成 0。
+    const ok = tg.healthy !== false
+    if (tg.kind === 'cf_domain') {
+      counts.domain++
+      if (ok) counts.domainHealthy++
+    } else if (tg.kind === 'cf_ip') {
+      counts.ip++
+      if (ok) counts.ipHealthy++
+    }
   }
   return counts
 })
@@ -273,6 +296,7 @@ const chainSections = computed(() => [
     updatedAt: chainUpdatedAt.value.domain,
     probe: chainProbe.value.domain,
     total: chainTargetCounts.value.domain,
+    healthy: chainTargetCounts.value.domainHealthy,
   },
   {
     key: 'ip',
@@ -284,6 +308,7 @@ const chainSections = computed(() => [
     updatedAt: chainUpdatedAt.value.ip,
     probe: chainProbe.value.ip,
     total: chainTargetCounts.value.ip,
+    healthy: chainTargetCounts.value.ipHealthy,
   },
 ])
 const externalExits = computed(() => chainExits.value.filter((o) => o.kind === 'external'))
@@ -303,23 +328,19 @@ async function fetchProbeConfig() {
       enabled: !!d.enabled,
       interval_minutes: d.interval_minutes ?? 5,
       max_latency_ms: d.max_latency_ms ?? 0,
+      entry: d.entry || (d.entry_node_id ? `ext:${d.entry_node_id}` : ''),
       entry_node_id: d.entry_node_id ?? 0,
       dialer: d.dialer || '',
       available_dialers: d.dialers || [],
       dialer_versions: d.dialer_versions || {},
     }
+    // 候选来自后端：外部节点 + 节点侧入站（如 VLESSGRPC），前端不再单独拼。
+    probeNodes.value = Array.isArray(d.nodes) ? d.nodes : []
     // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
     // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
     const installed = probeCfg.value.available_dialers || []
     previousDialer = installed.includes(probeCfg.value.dialer) ? probeCfg.value.dialer : ''
   } catch { /* 未配置时用默认值（默认关闭探测） */ }
-}
-
-async function fetchExtNodes() {
-  try {
-    const d = await client.get('/external-nodes')
-    extNodes.value = Array.isArray(d) ? d : (d?.items || [])
-  } catch { extNodes.value = [] }
 }
 
 async function fetchChainConfig() {
@@ -481,6 +502,10 @@ function dialerNeedsInstall() {
 }
 
 async function saveProbeConfig() {
+  if (probeCfg.value.enabled && !probeCfg.value.entry) {
+    ElMessage.warning(t('service.cfip.probeEntryRequired'))
+    return
+  }
   if (dialerNeedsInstall()) {
     await onDialerChange(probeCfg.value.dialer)
     return
@@ -562,7 +587,7 @@ function formatBytes(n) {
 
 onMounted(() => {
   fetchProbeConfig()
-  fetchExtNodes()
+  fetchProbeConfig()
   fetchChainConfig()
 })
 </script>

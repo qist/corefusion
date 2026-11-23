@@ -42,7 +42,7 @@ func TestSaveConfigTogglesProbe(t *testing.T) {
 	ctx := context.Background()
 
 	on := true
-	if err := p.SaveConfig(ctx, &on, nil, nil, nil, nil); err != nil {
+	if err := p.SaveConfig(ctx, &on, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	if cfg := p.ReadConfig(ctx); !cfg.Enabled {
@@ -50,7 +50,7 @@ func TestSaveConfigTogglesProbe(t *testing.T) {
 	}
 
 	off := false
-	if err := p.SaveConfig(ctx, &off, nil, nil, nil, nil); err != nil {
+	if err := p.SaveConfig(ctx, &off, nil, nil, nil, nil, nil); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	if cfg := p.ReadConfig(ctx); cfg.Enabled {
@@ -68,12 +68,16 @@ func TestSaveConfigKeepsOtherFields(t *testing.T) {
 	maxLatency := 800
 	entryNode := int64(7)
 	dialer := "xray"
-	if err := p.SaveConfig(ctx, &on, &interval, &maxLatency, &entryNode, &dialer); err != nil {
+	if err := p.SaveConfig(ctx, &on, &interval, &maxLatency, nil, &entryNode, &dialer); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	cfg := p.ReadConfig(ctx)
 	if !cfg.Enabled || cfg.IntervalMinutes != 30 || cfg.MaxLatencyMs != 800 || cfg.EntryNodeID != 7 || cfg.Dialer != "xray" {
 		t.Fatalf("配置读回不一致: %+v", cfg)
+	}
+	// 旧字段必须能推导成统一 spec，否则前端切到 entry 后会丢入口。
+	if cfg.Entry != "ext:7" {
+		t.Fatalf("entry = %q, want ext:7", cfg.Entry)
 	}
 }
 
@@ -96,5 +100,13 @@ func TestParseBoolSetting(t *testing.T) {
 		if got := parseBoolSetting(c.in, c.def); got != c.want {
 			t.Errorf("parseBoolSetting(%q, %v) = %v, want %v", c.in, c.def, got, c.want)
 		}
+	}
+}
+
+// 未选择入口时禁止探测：本机直连只会做 TCP 判活，会把坏条目判成可用。
+func TestCheckAllRequiresEntry(t *testing.T) {
+	p := newProbeTestService(t)
+	if _, err := p.CheckAll(context.Background()); err == nil {
+		t.Fatal("未选择入口时 CheckAll 必须返回错误")
 	}
 }

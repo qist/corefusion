@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -49,8 +50,11 @@ const (
 	SettingEnabled    = "cfip.probe.enabled"
 	SettingInterval   = "cfip.probe.interval_minutes"
 	SettingMaxLatency = "cfip.probe.max_latency_ms"
-	SettingEntryNode  = "cfip.probe.entry_node_id"
-	SettingDialer     = "cfip.probe.dialer"
+	// SettingEntry 是统一的入口标识："ext:<id>" 外部导入节点 / "inb:<id>" 自建入站。
+	// 空 = 本机直连。旧键 SettingEntryNode 仅用于兼容老库/老前端。
+	SettingEntry     = "cfip.probe.entry"
+	SettingEntryNode = "cfip.probe.entry_node_id"
+	SettingDialer    = "cfip.probe.dialer"
 
 	// 默认关闭：不是所有部署都用 Cloudflare 优选（CF IP 池 / 优选域名），
 	// 无人使用还每 5 分钟跑一轮探测纯属浪费（尤其选了入口节点时还要起临时
@@ -65,11 +69,16 @@ const (
 // Config 是一次探测的运行时配置（每次探测前从设置里读，改完立即生效）。
 type Config struct {
 	// Enabled 控制定时探测是否运行。默认关闭；关闭时只保留手动「检测连通性」。
-	Enabled         bool   `json:"enabled"`
-	IntervalMinutes int    `json:"interval_minutes"`
-	MaxLatencyMs    int    `json:"max_latency_ms"`
-	EntryNodeID     int64  `json:"entry_node_id"`
-	Dialer          string `json:"dialer"`
+	Enabled         bool `json:"enabled"`
+	IntervalMinutes int  `json:"interval_minutes"`
+	MaxLatencyMs    int  `json:"max_latency_ms"`
+	// Entry 统一入口标识："ext:<id>" 外部导入节点 / "inb:<id>" 自建入站；空 = 本机直连。
+	// 选了走 CDN 的入口（带 SNI 的 TLS 配置）时，探测会把它当客户端配置模板，
+	// 只替换 server/port 去真实拨号；否则仍按「从该节点出去」的出口语义使用。
+	Entry string `json:"entry"`
+	// EntryNodeID 是旧字段（只支持外部节点），保留用于兼容老前端与老库。
+	EntryNodeID int64  `json:"entry_node_id"`
+	Dialer      string `json:"dialer"`
 }
 
 // Result 是一次全量探测的汇总（供接口返回/日志）。
@@ -149,10 +158,17 @@ func (p *Prober) ReadConfig(ctx context.Context) Config {
 			cfg.MaxLatencyMs = n
 		}
 	}
+	if v, err := p.setting.GetByKey(ctx, SettingEntry); err == nil {
+		cfg.Entry = strings.TrimSpace(v)
+	}
 	if v, err := p.setting.GetByKey(ctx, SettingEntryNode); err == nil {
 		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
 			cfg.EntryNodeID = n
 		}
+	}
+	// 老库只写了 entry_node_id：推导成统一的 ext: 形式。
+	if cfg.Entry == "" && cfg.EntryNodeID > 0 {
+		cfg.Entry = fmt.Sprintf("ext:%d", cfg.EntryNodeID)
 	}
 	if v, err := p.setting.GetByKey(ctx, SettingDialer); err == nil {
 		cfg.Dialer = strings.TrimSpace(v)
@@ -216,7 +232,7 @@ func parseBoolSetting(v string, def bool) bool {
 }
 
 // SaveConfig 保存探测配置（nil 表示不改该项）。
-func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes, maxLatencyMs *int, entryNodeID *int64, dialer *string) error {
+func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes, maxLatencyMs *int, entry *string, entryNodeID *int64, dialer *string) error {
 	if p.setting == nil {
 		return fmt.Errorf("settings repository not available")
 	}
@@ -239,8 +255,31 @@ func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes,
 			return err
 		}
 	}
-	if entryNodeID != nil {
+	if entry != nil {
+		spec := strings.TrimSpace(*entry)
+		if err := p.setting.Set(ctx, SettingEntry, spec); err != nil {
+			return err
+		}
+		// 同步旧字段：ext:<id> 时写回 entry_node_id，保证回滚到旧版本仍可用。
+		legacy := int64(0)
+		if strings.HasPrefix(spec, "ext:") {
+			if n, err := strconv.ParseInt(strings.TrimPrefix(spec, "ext:"), 10, 64); err == nil && n > 0 {
+				legacy = n
+			}
+		}
+		if err := p.setting.Set(ctx, SettingEntryNode, strconv.FormatInt(legacy, 10)); err != nil {
+			return err
+		}
+	} else if entryNodeID != nil {
+		// 旧前端只传 entry_node_id。
 		if err := p.setting.Set(ctx, SettingEntryNode, strconv.FormatInt(*entryNodeID, 10)); err != nil {
+			return err
+		}
+		spec := ""
+		if *entryNodeID > 0 {
+			spec = fmt.Sprintf("ext:%d", *entryNodeID)
+		}
+		if err := p.setting.Set(ctx, SettingEntry, spec); err != nil {
 			return err
 		}
 	}
@@ -339,20 +378,48 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 	// 导致订阅又把坏节点分发出去。因此这些条目交给 CheckChain 处理。
 	chainAuthority := p.ReadChainConfig(ctx).Enabled
 
-	// 入口节点：起临时核心做拨号。
-	// ⚠ 明确选了入口节点就必须用它：核心未安装/节点无效时直接报错提示，
-	//   不能静默退回本机 —— 否则用户以为在按节点线路探测，实际还是服务器直连，结论失真 ✗。
+	// 入口必须显式选择（ext:<id> / inb:<id>），不再支持本机直连：
+	// 裸 TCP 探测只能证明「端口有人监听」，会把别人的源站、已失效的优选 IP
+	// 全判成健康；只有带接入域名（SNI）的真实拨号才有意义。
+	if cfg.Entry == "" {
+		if chainAuthority {
+			// 健康由链路探测独占；没入口时不产生任何结论（连延迟也不写，
+			// 避免给订阅的延迟阈值喂假数据）。
+			return res, nil
+		}
+		return res, errors.New("未选择探测入口：已禁用本机直连探测（只测 TCP 会把坏 IP 判成可用），请在「探测入口节点」里选择一个配了 CDN 接入的节点/入站")
+	}
+
+	// 入口：统一按 "ext:<id>" / "inb:<id>" 解析成客户端出站。
+	//   - 走 CDN 的入口（TLS + SNI）：当**客户端配置模板**，逐条替换 server/port 真拨号；
+	//   - 其它入口：保持「从该节点出去」的出口语义（临时核心做 SOCKS 跳板）。
+	// 明确选了入口就必须用它：核心未安装/入口无效时直接报错，不能静默退回本机。
 	var dial dialFunc
 	cleanup := func() {}
-	if cfg.EntryNodeID > 0 && p.nodeRepo != nil {
-		d, fn, usedDialer, err := p.startDialer(ctx, cfg)
+	var tpl map[string]interface{}
+	if cfg.Entry != "" {
+		pm, label, err := p.ResolveEntryTemplate(ctx, cfg.Entry)
 		if err != nil {
 			return res, err
 		}
-		dial, cleanup = d, fn
-		res.Entry = fmt.Sprintf("node:%d/%s", cfg.EntryNodeID, usedDialer)
+		if isCDNTemplate(pm) {
+			tpl = pm
+			res.Entry = "tpl:" + label
+		} else {
+			d, fn, usedDialer, err := p.startEntryDialer(ctx, cfg, pm)
+			if err != nil {
+				return res, err
+			}
+			dial, cleanup = d, fn
+			res.Entry = label + "/" + usedDialer
+		}
 	}
 	defer cleanup()
+
+	// 模板模式：真实拨号 + 双向流量判定，不再走 probeTCP/probeTLS。
+	if tpl != nil {
+		return p.checkAllWithTemplate(ctx, cfg, res, tpl, chainAuthority)
+	}
 
 	var wg sync.WaitGroup
 	var resMu sync.Mutex
@@ -546,30 +613,6 @@ func dialConn(ctx context.Context, dial dialFunc, network, addr string) (net.Con
 	}
 	d := &net.Dialer{Timeout: probeTimeout}
 	return d.DialContext(ctx, network, addr)
-}
-
-// startDialer 起一个临时的 sing-box / mihomo / xray，用外部导入节点做 SOCKS 拨号。
-// 返回 dial、清理函数与实际使用的核心名。
-//
-// 口径：**选了哪个核心就必须用哪个**，未安装直接报错提示安装，不静默退回本机；
-// 未选择（dialer 为空）时按 xray → sing-box → mihomo 顺序取第一个已安装的。
-// 链路探测（CheckChain）也走 pickDialer，因此两者始终使用探测设置里的同一个核心。
-func (p *Prober) startDialer(ctx context.Context, cfg Config) (dialFunc, func(), string, error) {
-	noop := func() {}
-	dialer, err := p.pickDialer(cfg.Dialer)
-	if err != nil {
-		return nil, noop, "", err
-	}
-
-	node, err := p.nodeRepo.GetByID(ctx, cfg.EntryNodeID)
-	if err != nil || node == nil {
-		return nil, noop, "", fmt.Errorf("外部节点 %d 不存在或不可用：%v", cfg.EntryNodeID, err)
-	}
-	var proxy map[string]interface{}
-	if err := json.Unmarshal([]byte(node.ProxyJSON), &proxy); err != nil || len(proxy) == 0 {
-		return nil, noop, "", fmt.Errorf("外部节点 %d 的 proxy_json 无效", cfg.EntryNodeID)
-	}
-	return p.startDialerWithProxy(ctx, dialer, proxy)
 }
 
 // pickDialer 归一拨号核心名；空值按 xray → sing-box → mihomo 取第一个已安装的。
@@ -780,6 +823,198 @@ func waitPort(addr string, timeout time.Duration) bool {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return false
+}
+
+// startEntryDialer 把一个入口出站参数起成临时 SOCKS 拨号器（出口语义）。
+func (p *Prober) startEntryDialer(ctx context.Context, cfg Config, pm map[string]interface{}) (dialFunc, func(), string, error) {
+	dialer, err := p.pickDialer(cfg.Dialer)
+	if err != nil {
+		return nil, func() {}, "", err
+	}
+	return p.startDialerWithProxy(ctx, dialer, pm)
+}
+
+// isCDNTemplate 判断入口配置能否当「客户端配置模板」用：
+// 有 TLS 且带 SNI/servername。这类配置（如 VLESSGRPC、trojan-worker）本身就是
+// 客户端连 CDN 的真实形态，替换 server 后可直接验证优选 IP/域名。
+func isCDNTemplate(pm map[string]interface{}) bool {
+	if len(pm) == 0 {
+		return false
+	}
+	tls, _ := pm["tls"].(bool)
+	if !tls {
+		return false
+	}
+	return proxyString(pm, "sni", "servername", "server-name") != ""
+}
+
+func proxyString(pm map[string]interface{}, keys ...string) string {
+	for _, k := range keys {
+		if v, ok := pm[k].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// templateProxy 复制入口配置，只替换 server/port。
+// SNI/Host/ALPN/ws/grpc 参数与凭据必须保持原样 —— 这就是客户端真实组合。
+// skip-cert-verify 强制关闭：入口配置当跳板时会被置 true，沿用会掩盖证书不匹配，
+// 把「别人的源站」误判成可用。
+func templateProxy(tpl map[string]interface{}, host string, port int) map[string]interface{} {
+	raw, err := json.Marshal(tpl)
+	if err != nil {
+		return nil
+	}
+	var cp map[string]interface{}
+	if json.Unmarshal(raw, &cp) != nil || cp == nil {
+		return nil
+	}
+	cp["server"] = host
+	cp["port"] = port
+	cp["skip-cert-verify"] = false
+	delete(cp, "dialer-proxy")
+	return cp
+}
+
+const chainTemplateBatchSize = 40
+
+// checkAllWithTemplate 用入口配置当模板，逐条替换 server 后真实拨号。
+// 判定口径与链路探测一致：HTTP 2xx/3xx 且上下行都有字节才算健康。
+func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}, chainAuthority bool) (Result, error) {
+	dialer, err := p.pickDialer(cfg.Dialer)
+	if err != nil {
+		return res, err
+	}
+	probeURL := strings.TrimSpace(p.ReadChainConfig(ctx).ProbeURL)
+	if probeURL == "" {
+		probeURL = DefaultChainProbeURL
+	}
+
+	type tplItem struct {
+		kind string
+		id   int64
+		prev int
+		host string
+		port int
+	}
+	items := make([]tplItem, 0, 256)
+
+	if p.cfRepo != nil {
+		entries, err := p.cfRepo.List(ctx, 0)
+		if err != nil {
+			return res, err
+		}
+		for _, e := range entries {
+			if !e.Enabled || strings.TrimSpace(e.IP) == "" {
+				res.Skipped++
+				continue
+			}
+			items = append(items, tplItem{kind: "cf_ip", id: e.ID, prev: e.FailCount,
+				host: strings.TrimSpace(e.IP), port: firstPort(e.Ports, 443)})
+		}
+	}
+	if p.shareRepo != nil {
+		domains, err := p.shareRepo.List(ctx, "cf_domain")
+		if err != nil {
+			return res, err
+		}
+		for _, d := range domains {
+			if !d.Enabled || strings.TrimSpace(d.Value) == "" {
+				res.Skipped++
+				continue
+			}
+			items = append(items, tplItem{kind: "cf_domain", id: d.ID, prev: d.FailCount,
+				host: strings.TrimSpace(d.Value), port: firstPort(d.Ports, d.Port)})
+		}
+	}
+
+	for start := 0; start < len(items); start += chainTemplateBatchSize {
+		end := start + chainTemplateBatchSize
+		if end > len(items) {
+			end = len(items)
+		}
+		chunk := items[start:end]
+		targets := make([]ChainTarget, len(chunk))
+		tplProto := strings.ToLower(proxyString(tpl, "type"))
+		for i, it := range chunk {
+			targets[i] = ChainTarget{
+				Kind: it.kind, EntryID: it.id, PrevFail: it.prev,
+				Host: it.host, Port: it.port, Protocol: tplProto,
+				Proxy: templateProxy(tpl, it.host, it.port),
+			}
+		}
+		dials, cleanup, _, err := p.startChainDialer(ctx, dialer, nil, targets)
+		if err != nil {
+			return res, err
+		}
+
+		sem := make(chan struct{}, 8)
+		var wg sync.WaitGroup
+		outs := make([]ChainResult, len(targets))
+		for i := range targets {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(idx int, t ChainTarget) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				cr := ChainResult{Kind: t.Kind, EntryID: t.EntryID, Host: t.Host, Port: t.Port,
+					Exit: res.Entry, CheckedAt: time.Now().Unix()}
+				if t.Proxy == nil {
+					cr.Error = "入口配置无法复制为客户端出站"
+					outs[idx] = cr
+					return
+				}
+				status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], probeURL)
+				cr.HTTPStatus, cr.UpBytes, cr.DownBytes, cr.LatencyMs = status, up, down, latency
+				switch {
+				case perr != nil:
+					cr.Error = truncateErr(perr.Error())
+				case status < 200 || status >= 400:
+					cr.Error = fmt.Sprintf("HTTP %d", status)
+				case up <= 0 || down <= 0:
+					cr.Error = "链路无实际流量"
+				default:
+					cr.Healthy = true
+				}
+				outs[idx] = cr
+			}(i, targets[i])
+		}
+		wg.Wait()
+		cleanup()
+
+		now := time.Now()
+		for i, t := range targets {
+			r := outs[i]
+			if chainAuthority {
+				// 链路探测开启时健康由链路探测独占，这里只刷新延迟。
+				if t.Kind == "cf_ip" && p.cfRepo != nil {
+					_ = p.cfRepo.UpdateLatency(ctx, t.EntryID, r.LatencyMs, now)
+				} else if t.Kind == "cf_domain" && p.shareRepo != nil {
+					_ = p.shareRepo.UpdateLatency(ctx, t.EntryID, r.LatencyMs, now)
+				}
+				res.LatencyOnly++
+				continue
+			}
+			healthy, fail := nextState(r.Healthy, t.PrevFail)
+			if t.Kind == "cf_ip" && p.cfRepo != nil {
+				if err := p.cfRepo.UpdateHealth(ctx, t.EntryID, healthy, r.LatencyMs, fail, now); err != nil {
+					log.Printf("[healthprobe] update cf ip %s failed: %v", t.Host, err)
+				}
+			} else if t.Kind == "cf_domain" && p.shareRepo != nil {
+				if err := p.shareRepo.UpdateHealth(ctx, t.EntryID, healthy, r.LatencyMs, fail, now); err != nil {
+					log.Printf("[healthprobe] update share domain %s failed: %v", t.Host, err)
+				}
+			}
+			res.Checked++
+			if healthy {
+				res.Healthy++
+			} else {
+				res.Unhealthy++
+			}
+		}
+	}
+	return res, nil
 }
 
 // socks5Dial 走 SOCKS5（无认证）连到目标，返回已建立的连接。

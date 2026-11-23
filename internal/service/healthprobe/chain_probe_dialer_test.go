@@ -1,7 +1,9 @@
 package healthprobe
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -191,5 +193,41 @@ func TestBuildChainProbeMihomoConfigUsesDialerProxy(t *testing.T) {
 	exit := proxies[2].(map[string]interface{})
 	if exit["name"] != chainProbeExitTag {
 		t.Fatalf("exit proxy name = %v", exit["name"])
+	}
+}
+
+// 模板模式（exitProxy 为空）：目标出站自己就是客户端配置，不能再挂
+// dialerProxy/detour/dialer-proxy，否则等于又绕一跳。
+func TestBuildChainProbeConfigTemplateMode(t *testing.T) {
+	targets := chainTestTargets()
+	valid := []int{0, 1}
+	ports := []int{19001, 19002}
+	for _, dialer := range []string{"xray", "singbox", "mihomo"} {
+		cfg, err := buildChainProbeConfig(dialer, nil, targets, valid, ports)
+		if err != nil {
+			t.Fatalf("%s build: %v", dialer, err)
+		}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("%s marshal: %v", dialer, err)
+		}
+		s := string(raw)
+		for _, bad := range []string{"dialerProxy", `"detour"`, "dialer-proxy"} {
+			if strings.Contains(s, bad) {
+				t.Fatalf("%s 模板模式不应挂出口（发现 %s）: %s", dialer, bad, s)
+			}
+		}
+		if dialer == "xray" {
+			obs, _ := cfg["outbounds"].([]interface{})
+			if len(obs) != 2 {
+				t.Fatalf("xray 模板模式 want 2 outbounds, got %d", len(obs))
+			}
+		}
+		if dialer == "mihomo" {
+			proxies, _ := cfg["proxies"].([]interface{})
+			if len(proxies) != 2 {
+				t.Fatalf("mihomo 模板模式 want 2 proxies, got %d", len(proxies))
+			}
+		}
 	}
 }

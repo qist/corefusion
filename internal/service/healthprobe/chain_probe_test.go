@@ -251,3 +251,75 @@ func TestProbeChainHTTPFailsOnClosedPort(t *testing.T) {
 		t.Fatal("closed port must return error")
 	}
 }
+
+func chainTargetsForHealth(kind string, healthy, unhealthy int) []ChainTarget {
+	out := make([]ChainTarget, 0, healthy+unhealthy)
+	for i := 0; i < healthy; i++ {
+		out = append(out, ChainTarget{Kind: kind, Host: fmt.Sprintf("ok-%s-%d", kind, i), Healthy: true})
+	}
+	for i := 0; i < unhealthy; i++ {
+		out = append(out, ChainTarget{Kind: kind, Host: fmt.Sprintf("bad-%s-%d", kind, i), Healthy: false})
+	}
+	return out
+}
+
+func countHealth(picked []ChainTarget) (ok, bad int) {
+	for _, t := range picked {
+		if t.Healthy {
+			ok++
+		} else {
+			bad++
+		}
+	}
+	return
+}
+
+// 每类名额约 80% 给健康条目，至少 1 个给不健康条目做恢复探测。
+func TestSelectChainTargetsPrefersHealthy(t *testing.T) {
+	picked, _ := selectChainTargets(chainTargetsForHealth("cf_ip", 10, 10), nil, 10)
+	ok, bad := countHealth(picked)
+	if ok != 8 || bad != 2 {
+		t.Fatalf("healthy/unhealthy = %d/%d, want 8/2", ok, bad)
+	}
+}
+
+// 不健康条目不足时，用健康条目补满名额，不能少测。
+func TestSelectChainTargetsFillsQuotaWhenFewUnhealthy(t *testing.T) {
+	picked, _ := selectChainTargets(chainTargetsForHealth("cf_ip", 20, 1), nil, 10)
+	ok, bad := countHealth(picked)
+	if len(picked) != 10 || ok != 9 || bad != 1 {
+		t.Fatalf("len=%d healthy=%d unhealthy=%d, want 10/9/1", len(picked), ok, bad)
+	}
+}
+
+// 全部不健康时仍然要测（恢复探测），不能因为健康组为空就返回空。
+func TestSelectChainTargetsAllUnhealthy(t *testing.T) {
+	picked, _ := selectChainTargets(chainTargetsForHealth("cf_ip", 0, 10), nil, 5)
+	if len(picked) != 5 {
+		t.Fatalf("len=%d, want 5", len(picked))
+	}
+	if ok, bad := countHealth(picked); ok != 0 || bad != 5 {
+		t.Fatalf("healthy/unhealthy = %d/%d, want 0/5", ok, bad)
+	}
+}
+
+// 游标必须推进：同一轮内不重复，下一轮从新的位置继续。
+func TestSelectChainTargetsAdvancesHealthyCursors(t *testing.T) {
+	targets := chainTargetsForHealth("cf_ip", 10, 10)
+	cursors := map[string]int{}
+	first, cursors := selectChainTargets(targets, cursors, 10)
+	seen := map[string]bool{}
+	for _, item := range first {
+		if seen[item.Host] {
+			t.Fatalf("同一轮出现重复目标: %s", item.Host)
+		}
+		seen[item.Host] = true
+	}
+	second, _ := selectChainTargets(targets, cursors, 10)
+	if len(second) == 0 {
+		t.Fatal("第二轮为空")
+	}
+	if first[0].Host == second[0].Host {
+		t.Fatalf("第二轮起点没有推进，仍为 %s", first[0].Host)
+	}
+}

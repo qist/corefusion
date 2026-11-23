@@ -104,6 +104,9 @@ type ChainTarget struct {
 	EntryID int64 `json:"entry_id"`
 	// PrevFail 是该条目当前连续失败次数（回写时按阈值累计，避免一次抖动下线）。
 	PrevFail int `json:"-"`
+	// Healthy 是该条目上次优选/链路探测的结论：名额分配时优先测健康条目，
+	// 但每类仍保留少量名额给不健康条目做恢复探测。
+	Healthy bool `json:"healthy"`
 	// ProbeInboundID 是本轮用来完成握手的入站（只用于展示/排障）。
 	ProbeInboundID int64 `json:"probe_inbound_id"`
 	// InboundID 与 ProbeInboundID 同值，保留给旧前端字段。
@@ -174,6 +177,10 @@ type ChainTargetProvider interface {
 	ChainProbeInbounds(ctx context.Context) ([]ChainProbeInbound, error)
 	// ChainProbeExitProxy 按 "ext:<id>" / "inb:<id>" 解析出口节点的出站参数。
 	ChainProbeExitProxy(ctx context.Context, spec string) (map[string]interface{}, string, error)
+	// ChainProbeEntryTemplate 把入口渲染成「客户端配置模板」：
+	// 对 CDN 入站会应用接入域名的 TLS/SNI（即使入站本身是 nginx 前置的明文），
+	// 便于优选探测只替换 server/port 去真实拨号。非 CDN 入口退回普通出站参数。
+	ChainProbeEntryTemplate(ctx context.Context, spec string) (map[string]interface{}, string, error)
 }
 
 // SetChainTargetProvider 注入链路探测的目标/出口解析器。
@@ -196,6 +203,14 @@ func (p *Prober) ChainProbeInboundOptions(ctx context.Context) ([]ChainProbeInbo
 		return nil, nil
 	}
 	return p.chainProv.ChainProbeInbounds(ctx)
+}
+
+// ResolveEntryTemplate 把探测入口渲染成客户端配置模板（优选探测用）。
+func (p *Prober) ResolveEntryTemplate(ctx context.Context, spec string) (map[string]interface{}, string, error) {
+	if p.chainProv == nil {
+		return nil, "", fmt.Errorf("入口 %s 无法解析：探测目标解析器未初始化", spec)
+	}
+	return p.chainProv.ChainProbeEntryTemplate(ctx, spec)
 }
 
 // ReadChainConfig 读取链路探测配置（缺失项回落默认值）。
@@ -726,10 +741,31 @@ func chainTargetQuotas(order []string, groups map[string][]ChainTarget, limit in
 	return quotas
 }
 
+// takeChainGroup 从一组条目里按游标连续取 n 个（循环覆盖），并推进该组游标。
+// 健康/不健康两组各有独立游标，互不干扰。
+func takeChainGroup(items []ChainTarget, cursorKey string, n int, cursors map[string]int) []ChainTarget {
+	if n <= 0 || len(items) == 0 {
+		return nil
+	}
+	if n > len(items) {
+		n = len(items)
+	}
+	idx := cursors[cursorKey] % len(items)
+	out := make([]ChainTarget, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, items[(idx+i)%len(items)])
+	}
+	cursors[cursorKey] = (idx + n) % len(items)
+	return out
+}
+
 // selectChainTargets 按类型配额从各自的游标取目标，返回本轮目标与推进后的游标。
 //
 // 每个类型独立游标是核心：全局限位会让 IP 把名额吃光；按类型配额后，只要
 // max_targets ≥ 类型数，每轮都会同时覆盖 IP 和域名，且同一轮内不重复。
+//
+// 健康优先：每类配额里约 80% 给上次探测健康的条目（这些才是真正会被分发的），
+// 至少留 1 个名额给不健康条目做恢复探测；某一组不够时由另一组补满。
 func selectChainTargets(targets []ChainTarget, cursors map[string]int, limit int) ([]ChainTarget, map[string]int) {
 	if len(targets) == 0 {
 		return nil, cursors
@@ -742,6 +778,19 @@ func selectChainTargets(targets []ChainTarget, cursors map[string]int, limit int
 	}
 	order, groups := groupChainTargetsByKind(targets)
 
+	// 每类内部再按健康状态拆组，各自独立游标。
+	okGroups := make(map[string][]ChainTarget, len(order))
+	badGroups := make(map[string][]ChainTarget, len(order))
+	for _, k := range order {
+		for _, t := range groups[k] {
+			if t.Healthy {
+				okGroups[k] = append(okGroups[k], t)
+			} else {
+				badGroups[k] = append(badGroups[k], t)
+			}
+		}
+	}
+
 	// 名额少于类型数（例如 max_targets=1）：按相位在类型间轮转，
 	// 否则小名额永远只落在大类（IP）上，域名仍然测不到。
 	if limit < len(order) {
@@ -749,10 +798,11 @@ func selectChainTargets(targets []ChainTarget, cursors map[string]int, limit int
 		picked := make([]ChainTarget, 0, limit)
 		for i := 0; i < limit; i++ {
 			k := order[(phase+i)%len(order)]
-			items := groups[k]
-			idx := cursors[k] % len(items)
-			picked = append(picked, items[idx])
-			cursors[k] = (idx + 1) % len(items)
+			got := takeChainGroup(okGroups[k], k+"|ok", 1, cursors)
+			if len(got) == 0 {
+				got = takeChainGroup(badGroups[k], k+"|bad", 1, cursors)
+			}
+			picked = append(picked, got...)
 		}
 		cursors[chainCursorPhaseKey] = (phase + limit) % len(order)
 		return picked, cursors
@@ -761,12 +811,32 @@ func selectChainTargets(targets []ChainTarget, cursors map[string]int, limit int
 	quotas := chainTargetQuotas(order, groups, limit)
 	taken := make(map[string][]ChainTarget, len(order))
 	for _, k := range order {
-		items := groups[k]
-		idx := cursors[k] % len(items)
-		for i := 0; i < quotas[k]; i++ {
-			taken[k] = append(taken[k], items[(idx+i)%len(items)])
+		q := quotas[k]
+		ok := okGroups[k]
+		bad := badGroups[k]
+		okQuota := 0
+		if len(ok) > 0 {
+			okQuota = q * 8 / 10
+			if okQuota < 1 {
+				okQuota = 1
+			}
+			// 不健康条目存在时，至少保留 1 个恢复名额。
+			if len(bad) > 0 && okQuota >= q && q > 1 {
+				okQuota = q - 1
+			}
+			if okQuota > len(ok) {
+				okQuota = len(ok)
+			}
 		}
-		cursors[k] = (idx + quotas[k]) % len(items)
+		got := takeChainGroup(ok, k+"|ok", okQuota, cursors)
+		if rem := q - len(got); rem > 0 {
+			got = append(got, takeChainGroup(bad, k+"|bad", rem, cursors)...)
+		}
+		// 不健康条目不够（或全健康）：用健康条目补满名额。
+		if rem := q - len(got); rem > 0 {
+			got = append(got, takeChainGroup(ok, k+"|ok", rem, cursors)...)
+		}
+		taken[k] = got
 	}
 
 	// 输出顺序按类型交替，便于页面阅读/排障（不影响探测结果）。

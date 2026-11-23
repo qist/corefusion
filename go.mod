@@ -16,6 +16,7 @@ require (
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/pquerna/otp v1.5.0
 	github.com/qist/sqlite v1.16.6
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/xtls/xray-core v1.260327.1-0.20261109052709-676eaf66f8f0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/oauth2 v0.38.0
@@ -121,7 +122,6 @@ require (
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/refraction-networking/utls v1.8.3-0.20261108164504-a13c59ffe98b // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.202 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect

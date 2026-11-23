@@ -3,6 +3,7 @@ package backup
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"corefusion/internal/security/crypto"
 )
@@ -97,5 +98,33 @@ func TestRestoreStatusInterruptedMarkedError(t *testing.T) {
 	loaded := (&Service{dataDir: dir}).loadRestoreStatusFile()
 	if loaded == nil || loaded.Status != "error" {
 		t.Fatalf("中断状态应为 error，实际 %+v", loaded)
+	}
+}
+
+// 定时任务必须按 cron 表达式判定，而不是旧的 24h 固定间隔。
+func TestScheduleDueCron(t *testing.T) {
+	loc := time.Local
+	last3am := time.Date(2026, 11, 23, 3, 0, 0, 0, loc)
+	cases := []struct {
+		name    string
+		cron    string
+		last    time.Time
+		created time.Time
+		now     time.Time
+		want    bool
+	}{
+		{"daily 未到点", "0 3 * * *", last3am, time.Time{}, last3am.Add(7 * time.Hour), false},
+		{"daily 到点", "0 3 * * *", last3am, time.Time{}, last3am.Add(24 * time.Hour), true},
+		{"daily 新建不立即跑", "0 3 * * *", time.Time{}, last3am.Add(10 * time.Hour), last3am.Add(10 * time.Hour), false},
+		{"每分钟到点", "* * * * *", last3am, time.Time{}, last3am.Add(61 * time.Second), true},
+		{"每分钟未到点", "* * * * *", last3am, time.Time{}, last3am.Add(30 * time.Second), false},
+		{"非法cron首次执行", "bad cron", time.Time{}, time.Time{}, last3am, true},
+		{"非法cron 24h内不重复", "bad cron", last3am, time.Time{}, last3am.Add(time.Hour), false},
+		{"非法cron 超24h", "bad cron", last3am, time.Time{}, last3am.Add(25 * time.Hour), true},
+	}
+	for _, c := range cases {
+		if got := scheduleDue(c.cron, c.last, c.created, c.now); got != c.want {
+			t.Errorf("%s: scheduleDue(%q,%v,%v,%v)=%v want %v", c.name, c.cron, c.last, c.created, c.now, got, c.want)
+		}
 	}
 }

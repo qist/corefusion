@@ -18,16 +18,18 @@ func (BackupRecord) TableName() string { return "backup_records" }
 
 // BackupSchedule is the GORM model for the backup_schedules table.
 type BackupSchedule struct {
-	ID                     int64     `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name                   string    `json:"name" gorm:"size:128;not null"`
-	Cron                   string    `json:"cron" gorm:"size:64;not null"`
-	StorageID              *int64    `json:"storage_id"` // Optional: remote storage ID
-	RetainDays             int       `json:"retain_days" gorm:"not null;default:30"`
-	DeleteLocalAfterUpload bool      `json:"delete_local_after_upload" gorm:"not null;default:false"` // Delete local backup after successful remote upload
-	Enabled                bool      `json:"enabled" gorm:"not null;default:true"`
-	LastRunAt              time.Time `json:"last_run_at"`
-	CreatedAt              time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt              time.Time `json:"updated_at" gorm:"not null"`
+	ID                     int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name                   string `json:"name" gorm:"size:128;not null"`
+	Cron                   string `json:"cron" gorm:"size:64;not null"`
+	StorageID              *int64 `json:"storage_id"` // Optional: remote storage ID
+	RetainDays             int    `json:"retain_days" gorm:"not null;default:30"`
+	DeleteLocalAfterUpload bool   `json:"delete_local_after_upload" gorm:"not null;default:false"` // Delete local backup after successful remote upload
+	Enabled                bool   `json:"enabled" gorm:"not null;default:true"`
+	// LastRunAt 可空：新建任务还没跑过。零值 time.Time 会被 MySQL 严格模式
+	// 拒绝（Error 1292），创建定时任务直接失败。
+	LastRunAt *time.Time `json:"last_run_at"`
+	CreatedAt time.Time  `json:"created_at" gorm:"not null"`
+	UpdatedAt time.Time  `json:"updated_at" gorm:"not null"`
 }
 
 func (BackupSchedule) TableName() string { return "backup_schedules" }

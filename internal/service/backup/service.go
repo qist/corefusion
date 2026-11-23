@@ -28,6 +28,8 @@ import (
 	"corefusion/internal/store/repository"
 	"corefusion/internal/util/safepath"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -2374,16 +2376,60 @@ func (s *BackupScheduler) checkAndRun() {
 			continue
 		}
 
-		// Simple cron check: run if last run was more than 24 hours ago
-		// In production, use a proper cron library
-		if !sched.LastRunAt.IsZero() && now.Sub(sched.LastRunAt) < 24*time.Hour {
+		// 按 cron 表达式判定是否到期（5 段标准 cron，如 "0 3 * * *"）。
+		// 原实现只判断「距上次运行 ≥24h」，cron 字段完全不生效：用户配
+		// 每天 3 点会变成"创建后立刻跑一次、之后每 24h 跑一次"，时间点漂移。
+		lastRun := time.Time{}
+		if sched.LastRunAt != nil {
+			lastRun = *sched.LastRunAt
+		}
+		if !scheduleDue(sched.Cron, lastRun, sched.CreatedAt, now) {
 			continue
 		}
 
 		// Run the backup
-		log.Printf("[BackupScheduler] Running scheduled backup: %s", sched.Name)
+		log.Printf("[BackupScheduler] Running scheduled backup: %s (cron=%s)", sched.Name, sched.Cron)
 		s.runScheduledBackup(ctx, &sched)
 	}
+}
+
+// parseScheduleCron 解析标准 5 段 cron；兼容少量用户写成 6 段（含秒）。
+// 解析失败返回 error，由调用方按旧的 24h 兜底（避免错配置导致永不执行）。
+func parseScheduleCron(expr string) (cron.Schedule, error) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil, fmt.Errorf("empty cron expression")
+	}
+	if s, err := cron.ParseStandard(expr); err == nil {
+		return s, nil
+	}
+	// 6 段：秒 分 时 日 月 周
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+	return parser.Parse(expr)
+}
+
+// scheduleDue 判断定时任务在 now 时刻是否到期。
+//
+// 参考时间是「上次运行」；从未运行过用「创建时间」，这样新建的
+// "0 3 * * *" 不会在创建瞬间就跑一次，而是等到下一个 3 点。
+// 表达式非法时退回旧口径：从未运行立即执行，之后每 24h 一次。
+func scheduleDue(cronExpr string, lastRun, createdAt, now time.Time) bool {
+	sched, err := parseScheduleCron(cronExpr)
+	if err != nil {
+		if lastRun.IsZero() {
+			return true
+		}
+		return now.Sub(lastRun) >= 24*time.Hour
+	}
+	ref := lastRun
+	if ref.IsZero() {
+		ref = createdAt
+	}
+	if ref.IsZero() {
+		// 极老数据两条时间都为空：用 24h 前作为参考，避免永远不执行。
+		ref = now.Add(-24 * time.Hour)
+	}
+	return !now.Before(sched.Next(ref))
 }
 
 // notifyBackupResult 把定时备份结果接到通知模板：失败发「备份失败告警」，成功发「每日备份报告」。
@@ -2457,7 +2503,8 @@ func (s *BackupScheduler) runScheduledBackup(ctx context.Context, sched *entity.
 	notifyBackupResult(name, rec.FilePath, nil)
 
 	// Update last run time
-	sched.LastRunAt = time.Now()
+	nowRun := time.Now()
+	sched.LastRunAt = &nowRun
 	if err := s.svc.UpdateSchedule(ctx, sched); err != nil {
 		log.Printf("[BackupScheduler] Update schedule error: %v", err)
 	}

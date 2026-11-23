@@ -593,7 +593,94 @@ func (s *Service) GetConfig(ctx context.Context, serverID int64, proxyType strin
 			return DefaultCaddyWAFConfig, nil
 		}
 	}
-	return cfg.Content, nil
+	content := cfg.Content
+	// 存量配置可能是在新增开关（cc_mode / match_cache 等）之前保存的：默认模板里有、
+	// 库里没有。不补齐的话 nginx config.lua 与 caddy config.json 会各自走引擎的
+	// 隐式默认值，两套行为不一致，页面也显示成关闭。
+	if merged, changed := mergeWAFConfigDefaults(proxyType, content); changed {
+		log.Printf("[WAF] backfilled missing default keys into %s config (server %d)", proxyType, cfg.ServerID)
+		content = merged
+		// 写回库，保证页面读到的、落盘的、下发远程节点的是同一份。
+		if err := s.SaveConfig(ctx, cfg.ServerID, proxyType, merged); err != nil {
+			log.Printf("[WAF] persist backfilled %s config failed: %v", proxyType, err)
+		}
+	}
+	return content, nil
+}
+
+// mergeWAFConfigDefaults 把默认模板里新增、存量配置缺失的键补进 content。
+//
+// 只补缺、不覆盖已有值；内容无法解析时原样返回（不能因为补齐把用户配置弄坏）。
+// proxyType: "caddy" → config.json（JSON 对象）；"nginx" → config.lua（赋值行）。
+func mergeWAFConfigDefaults(proxyType, content string) (string, bool) {
+	if strings.TrimSpace(content) == "" {
+		return content, false
+	}
+	if proxyType == "nginx" {
+		return mergeNginxWAFConfigDefaults(content)
+	}
+	return mergeCaddyWAFConfigDefaults(content)
+}
+
+// mergeCaddyWAFConfigDefaults 给 config.json 补缺失键。
+func mergeCaddyWAFConfigDefaults(content string) (string, bool) {
+	var defaults, stored map[string]interface{}
+	if err := json.Unmarshal([]byte(DefaultCaddyWAFConfig), &defaults); err != nil {
+		return content, false
+	}
+	if err := json.Unmarshal([]byte(content), &stored); err != nil || stored == nil {
+		return content, false
+	}
+	changed := false
+	for k, v := range defaults {
+		if _, ok := stored[k]; !ok {
+			stored[k] = v
+			changed = true
+		}
+	}
+	if !changed {
+		return content, false
+	}
+	out, err := json.MarshalIndent(stored, "", "    ")
+	if err != nil {
+		return content, false
+	}
+	return string(out), true
+}
+
+// nginxConfigAssignRe 匹配 config.lua 里的单行赋值：config_xxx = "v" 或 config_xxx = 123。
+// 多行块（config_output_html = [[ ... ]]）不会命中。
+var nginxConfigAssignRe = regexp.MustCompile(`(?m)^\s*(config_[a-z_]+)\s*=\s*("[^"]*"|[0-9]+)\s*$`)
+
+// mergeNginxWAFConfigDefaults 给 config.lua 补缺失的 config_ 赋值行。
+func mergeNginxWAFConfigDefaults(content string) (string, bool) {
+	present := map[string]bool{}
+	for _, m := range nginxConfigAssignRe.FindAllStringSubmatch(content, -1) {
+		present[m[1]] = true
+	}
+	var missing []string
+	for _, m := range nginxConfigAssignRe.FindAllStringSubmatch(DefaultNginxWAFConfig, -1) {
+		key := m[1]
+		if present[key] {
+			continue
+		}
+		// 路径类键不补：留空/缺省时引擎按全局生效，补上默认值反而可能顶掉用户的相对路径。
+		if key == "config_rule_dir" || key == "config_log_dir" {
+			continue
+		}
+		missing = append(missing, key+" = "+m[2])
+	}
+	if len(missing) == 0 {
+		return content, false
+	}
+	block := strings.Join(missing, "\n")
+	// 插到 config_output_html 之前（那是个多行块，必须留在最后），否则追加到末尾。
+	if idx := strings.Index(content, "config_output_html"); idx >= 0 {
+		lineStart := strings.LastIndex(content[:idx], "\n") + 1
+		return content[:lineStart] + block + "\n" + content[lineStart:], true
+	}
+	trimmed := strings.TrimRight(content, "\n")
+	return trimmed + "\n" + block + "\n", true
 }
 
 // SaveConfig saves the WAF config for a server and proxy type.
@@ -620,7 +707,9 @@ func (s *Service) GetDomainConfig(ctx context.Context, serverID int64, domain st
 	if err != nil {
 		return "", err
 	}
-	return cfg.Config, nil
+	// 存量域名配置可能只存了 rule_dir/waf_enable：读时按全局补全，页面就能看到
+	// 两个引擎实际生效的完整开关（不写库，避免 GET 改数据；保存时再落库）。
+	return s.fillDomainConfigDefaults(ctx, serverID, cfg.Config), nil
 }
 
 // SaveDomainConfig saves the WAF config for a specific domain on a server.
@@ -666,6 +755,7 @@ func normalizeDomainConfigRuleDir(domain, config string) string {
 
 func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, config string) error {
 	config = normalizeDomainConfigRuleDir(domain, config)
+	config = s.fillDomainConfigDefaults(ctx, serverID, config)
 	if err := validateWAFDomainRuleDir(domain, config); err != nil {
 		return err
 	}
@@ -675,6 +765,60 @@ func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, 
 		Config:   config,
 	}
 	return s.domainRepo.Upsert(ctx, cfg)
+}
+
+// fillDomainConfigDefaults 给域名级配置补上全局开关里缺失的键。
+//
+// domain.json 是 nginx（lua）与 caddy（caddyguard）共用的按域名覆盖表。
+// 页面上只勾了 rule_dir / waf_enable 的域名条目会缺其它开关，两个引擎就会各自
+// 走自己的隐式默认值（例如 cc_mode、match_cache 行为不一致）。这里以该节点的
+// caddy 全局配置为基准补缺（domain.json 的键名与 caddy config.json 完全一致），
+// 只补缺、不覆盖；rule_dir / log_dir 属路径类，缺省时本来就用全局，不补。
+func (s *Service) fillDomainConfigDefaults(ctx context.Context, serverID int64, config string) string {
+	if strings.TrimSpace(config) == "" {
+		return config
+	}
+	var probe map[string]interface{}
+	if err := json.Unmarshal([]byte(config), &probe); err != nil || probe == nil {
+		return config
+	}
+	baseText := DefaultCaddyWAFConfig
+	if text, err := s.GetConfig(ctx, serverID, "caddy"); err == nil && strings.TrimSpace(text) != "" {
+		baseText = text
+	}
+	return mergeDomainConfigDefaults(baseText, config)
+}
+
+// mergeDomainConfigDefaults 是 fillDomainConfigDefaults 的纯函数部分：
+// 以 baseText（caddy 风格的全局配置 JSON）为基准，给 config 补缺失键。
+// 只补缺、不覆盖；路径类键（rule_dir / log_dir）不补；无法解析时原样返回。
+func mergeDomainConfigDefaults(baseText, config string) string {
+	var stored map[string]interface{}
+	if err := json.Unmarshal([]byte(config), &stored); err != nil || stored == nil {
+		return config
+	}
+	var base map[string]interface{}
+	if err := json.Unmarshal([]byte(baseText), &base); err != nil || base == nil {
+		return config
+	}
+	changed := false
+	for k, v := range base {
+		if k == "rule_dir" || k == "log_dir" {
+			continue
+		}
+		if _, ok := stored[k]; !ok {
+			stored[k] = v
+			changed = true
+		}
+	}
+	if !changed {
+		return config
+	}
+	out, err := json.Marshal(stored)
+	if err != nil {
+		return config
+	}
+	return string(out)
 }
 
 // GetDomainJSONContent returns the domain.json content for a server.
@@ -709,7 +853,7 @@ func (s *Service) SaveDomainConfigsBulk(ctx context.Context, serverID int64, con
 		cfg := &entity.WafDomainConfig{
 			ServerID: serverID,
 			Domain:   domain,
-			Config:   string(cfgRaw),
+			Config:   s.fillDomainConfigDefaults(ctx, serverID, string(cfgRaw)),
 		}
 		if err := s.domainRepo.Upsert(ctx, cfg); err != nil {
 			log.Printf("[WAF] failed to upsert domain config for %s: %v", domain, err)
@@ -1147,6 +1291,7 @@ func (s *Service) buildDomainJSON(ctx context.Context, serverID int64) (string, 
 		// rule_dir 是文件路径：历史数据可能还留着 "domains/a.com, b.com" 这类非法值，
 		// 输出前统一归一（与写入侧同口径），否则 WAF 引擎读不到规则目录。
 		cfgText := normalizeDomainConfigRuleDir(c.Domain, c.Config)
+		cfgText = s.fillDomainConfigDefaults(ctx, serverID, cfgText)
 		result[c.Domain] = json.RawMessage(cfgText)
 	}
 

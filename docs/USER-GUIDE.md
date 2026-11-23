@@ -1048,6 +1048,10 @@ cd /opt/corefusion
 - 「匹配缓存」（`match_cache` / `config_match_cache`）默认开启：进程级有界缓存热点规则的匹配结果，
   降低每次请求的规则遍历开销。缓存仅在全局配置生效，不支持域名级覆盖；排查误报时可临时关闭做 A/B 对比
   （关闭后每次请求都做完整规则检测，CPU 开销更高）。
+- 「SCORE 拦截阈值」（`score_block_threshold` / `config_score_block_threshold`）控制组合规则
+  （`combo.jsonl`，随规则同步下发）中 `action: SCORE` 的命中如何处置：
+  `0` 只记分不拦截；`1` 任意 SCORE 命中即拦截（等价开关）；`>1` 累计分值达到阈值才拦截。
+  站点级可单独覆盖该值；`match_cache` 仍只支持全局。
 
 #### 同步周期与时区
 
@@ -1843,6 +1847,6 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **文档版本**：v1.2  
+> **文档版本**：v1.3  
 > **最后更新**：2026-11-20  
 > **适用版本**：CoreFusion v0.13.1

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ru | updated: 2026-11-20 -->
+<!-- source: USER-GUIDE.md | locale: ru | updated: 2026-11-23 -->
 # CoreFusion Руководство по эксплуатации
 
 > Языки: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · Русский · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1819,6 +1819,6 @@ https://sub.example.com/<token>?format=raw_uri
 
 ---
 
-> **Версия документа**: v1.2.
+> **Версия документа**: v1.3.
 > **Последнее обновление**: 20 ноября 2026 г.
 > **Применимо к**: CoreFusion v0.13.0-rc.1

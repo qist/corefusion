@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-20 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-23 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1066,6 +1066,11 @@ Routing resources collect the shared assets used by subscriptions and routing. T
   cache of hot rule-match results reduces per-request rule traversal. It is global-only with no
   per-domain override; temporarily disable it for A/B comparison when investigating false positives
   (disabling means a full rule evaluation on every request and higher CPU usage).
+- “SCORE block threshold” (`score_block_threshold` / `config_score_block_threshold`) controls how
+  `action: SCORE` hits in the combo rules (`combo.jsonl`, shipped with rule sync) are handled:
+  `0` scores only; `1` blocks on any SCORE hit (equivalent to a switch); `>1` blocks once the
+  accumulated score reaches the threshold. A per-domain value can override it; `match_cache`
+  remains global-only.
 
 #### Sync interval and timezone
 

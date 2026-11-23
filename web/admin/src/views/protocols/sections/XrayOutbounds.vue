@@ -18,7 +18,9 @@
         <div>
           <el-button size="small" text :disabled="obStart + i === 0" @click="moveOutbound(ob, -1)">↑</el-button>
           <el-button size="small" text :disabled="obStart + i === form.length - 1" @click="moveOutbound(ob, 1)">↓</el-button>
-          <el-button size="small" text @click="showEdit(ob)">{{ t('common.edit') }}</el-button>
+          <!-- 保底出站（direct/blocked）只读：改 tag/协议会让生成器再补一份，
+               路由引用也会失效，所以不给编辑入口 -->
+          <el-button v-if="!ob._isDefault" size="small" text @click="showEdit(ob)">{{ t('common.edit') }}</el-button>
           <el-button v-if="!ob._isDefault" size="small" type="danger" text @click="removeOutbound(ob)">{{ t('common.delete') }}</el-button>
         </div>
       </div>

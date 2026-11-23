@@ -813,6 +813,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	wafCfgRepo := repository.NewWafConfigRepository(database)
 	wafDomainCfgRepo := repository.NewWafDomainConfigRepository(database)
 	wafSvcInst := wafSvc.NewService(wafRuleRepo, wafCfgRepo, wafDomainCfgRepo, dataDir, systemSettingSvc)
+	// 站点级 domain.json 补缺时按本机实际运行的代理取全局基线（键名以 NginxGuard 为准，
+	// 值不能拿另一套引擎的全局配置顶，否则会静默改变站点限速/跳转行为）。
+	wafSvcInst.SetProxyDetector(func(ctx context.Context, proxyType string) bool {
+		mgr := proxyMgr
+		if mgr == nil {
+			return false
+		}
+		return mgr.DetectProxy(proxySvc.ProxyType(proxyType)).Status == "running"
+	})
 	// WAF GitHub 规则源定时同步调度器（sync_cron 此前只有 UI 落库没有执行器 ✗ → 已补）
 	wafScheduler := wafSvc.NewScheduler(wafSvcInst)
 	wafScheduler.Start()

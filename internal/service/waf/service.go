@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +97,11 @@ type Service struct {
 	// server ID for WAF rule collection. When set, CollectAllFiles checks
 	// if the target is a mirror and uses the primary's server_id for queries.
 	nodeServerRepo *repository.NodeServerRepository
+	// proxyDetector 检测**本机**某个代理是否在运行（router 注入）。
+	// 只用于 domain.json 站点级补缺时挑选基线：键名以 NginxGuard 为准，
+	// 但值必须取该节点实际生效的那套全局配置，否则补出来的键会变成
+	// 显式覆盖、把另一套引擎自己的全局值盖掉。
+	proxyDetector func(ctx context.Context, proxyType string) bool
 }
 
 // NewService creates a new WAF service.
@@ -130,6 +136,12 @@ func (s *Service) SetNodeLister(lister NodeLister) {
 // node and use its primary's server_id to collect WAF rules.
 func (s *Service) SetNodeServerRepo(repo *repository.NodeServerRepository) {
 	s.nodeServerRepo = repo
+}
+
+// SetProxyDetector 注入本机代理运行检测（router 用 proxy.Manager.DetectProxy 实现）。
+// 仅用于判断本机（server 1）当前生效的是 nginx 还是 caddy，远程节点不调用。
+func (s *Service) SetProxyDetector(detect func(ctx context.Context, proxyType string) bool) {
+	s.proxyDetector = detect
 }
 
 // ListMirrorServerIDs 返回**所有镜像节点**的 ID，供周期性 WAF 对账使用 ✓。
@@ -767,12 +779,20 @@ func (s *Service) SaveDomainConfig(ctx context.Context, serverID int64, domain, 
 	return s.domainRepo.Upsert(ctx, cfg)
 }
 
+// localServerIDForWAF 是本机节点 ID（与 handlers/waf 的 localServerID 一致）。
+const localServerIDForWAF = int64(1)
+
 // fillDomainConfigDefaults 给域名级配置补上全局开关里缺失的键。
 //
-// domain.json 是 nginx（lua）与 caddy（caddyguard）共用的按域名覆盖表。
-// 页面上只勾了 rule_dir / waf_enable 的域名条目会缺其它开关，两个引擎就会各自
-// 走自己的隐式默认值（例如 cc_mode、match_cache 行为不一致）。这里以该节点的
-// caddy 全局配置为基准补缺（domain.json 的键名与 caddy config.json 完全一致），
+// domain.json 是 nginx（lua）与 caddy（caddyguard）共用的按域名覆盖表，
+// 站点级键名以 NginxGuard 的 config_* 去掉前缀为准（CaddyGuard 已对齐同一套，
+// 见 caddyguard 7da2ed2 / nginxguard dad6303）。键名统一，但**值必须取该节点
+// 实际生效的代理的全局配置**：补进去的键会成为显式覆盖，若拿另一套引擎的
+// 全局值来补（例如本机跑 caddy，却用 nginx 全局的 cc_rate），站点行为会被
+// 静默改掉。选择顺序：
+//   - 本机（server 1）：按正在运行的代理；
+//   - 远程节点：只有一套全局配置就用那套；两套都有或都没有时以 Nginx 为准。
+//
 // 只补缺、不覆盖；rule_dir / log_dir 属路径类，缺省时本来就用全局，不补。
 func (s *Service) fillDomainConfigDefaults(ctx context.Context, serverID int64, config string) string {
 	if strings.TrimSpace(config) == "" {
@@ -782,23 +802,111 @@ func (s *Service) fillDomainConfigDefaults(ctx context.Context, serverID int64, 
 	if err := json.Unmarshal([]byte(config), &probe); err != nil || probe == nil {
 		return config
 	}
-	baseText := DefaultCaddyWAFConfig
-	if text, err := s.GetConfig(ctx, serverID, "caddy"); err == nil && strings.TrimSpace(text) != "" {
-		baseText = text
+	nginxText, _ := s.GetConfig(ctx, serverID, "nginx")
+	caddyText, _ := s.GetConfig(ctx, serverID, "caddy")
+
+	localProxy := ""
+	if serverID == localServerIDForWAF && s.proxyDetector != nil {
+		switch {
+		case s.proxyDetector(ctx, "nginx"):
+			localProxy = "nginx"
+		case s.proxyDetector(ctx, "caddy"):
+			localProxy = "caddy"
+		}
 	}
-	return mergeDomainConfigDefaults(baseText, config)
+	baseText, baseType := pickDomainDefaultsBase(nginxText, caddyText, localProxy)
+	var base map[string]interface{}
+	if baseType == "nginx" {
+		base = nginxConfigMap(baseText)
+	} else if err := json.Unmarshal([]byte(baseText), &base); err != nil {
+		base = nil
+	}
+	if base == nil {
+		return config
+	}
+	return mergeDomainConfigDefaultsFromMap(base, config)
+}
+
+// pickDomainDefaultsBase 选择站点级补缺的全局基线，返回 (baseText, baseType)。
+// 纯函数，便于单测；baseType 只用于日志/排障。
+func pickDomainDefaultsBase(nginxText, caddyText, localProxy string) (string, string) {
+	hasNginx := strings.TrimSpace(nginxText) != ""
+	hasCaddy := strings.TrimSpace(caddyText) != ""
+
+	switch localProxy {
+	case "nginx":
+		if hasNginx {
+			return nginxText, "nginx"
+		}
+		if hasCaddy {
+			return caddyText, "caddy"
+		}
+		return DefaultNginxWAFConfig, "nginx"
+	case "caddy":
+		if hasCaddy {
+			return caddyText, "caddy"
+		}
+		if hasNginx {
+			return nginxText, "nginx"
+		}
+		return DefaultCaddyWAFConfig, "caddy"
+	}
+
+	switch {
+	case hasNginx && !hasCaddy:
+		return nginxText, "nginx"
+	case hasCaddy && !hasNginx:
+		return caddyText, "caddy"
+	case hasNginx && hasCaddy:
+		// 远程节点无法可靠判定运行中的代理：键名/语义以 NginxGuard 为准。
+		return nginxText, "nginx"
+	default:
+		// 两套都还没配置：以 NginxGuard 默认模板为准（与上游文档一致）。
+		return DefaultNginxWAFConfig, "nginx"
+	}
 }
 
 // mergeDomainConfigDefaults 是 fillDomainConfigDefaults 的纯函数部分：
-// 以 baseText（caddy 风格的全局配置 JSON）为基准，给 config 补缺失键。
-// 只补缺、不覆盖；路径类键（rule_dir / log_dir）不补；无法解析时原样返回。
+// 以 baseText（NginxGuard config.lua 或 CaddyGuard config.json）为基准，
+// 给 config 补缺失键。只补缺、不覆盖；路径类键（rule_dir / log_dir）不补；
+// 无法解析时原样返回。
 func mergeDomainConfigDefaults(baseText, config string) string {
-	var stored map[string]interface{}
-	if err := json.Unmarshal([]byte(config), &stored); err != nil || stored == nil {
-		return config
-	}
 	var base map[string]interface{}
 	if err := json.Unmarshal([]byte(baseText), &base); err != nil || base == nil {
+		return config
+	}
+	return mergeDomainConfigDefaultsFromMap(base, config)
+}
+
+// nginxConfigMap 把 config.lua 的单行赋值解析成 domain.json 风格 map
+// （config_ 前缀去掉，数字转 float64，与 JSON 解码结果一致）。
+// 多行块 config_output_html 不参与解析（它不是站点级键）。
+func nginxConfigMap(text string) map[string]interface{} {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	out := map[string]interface{}{}
+	for _, m := range nginxConfigAssignRe.FindAllStringSubmatch(text, -1) {
+		key := strings.TrimPrefix(m[1], "config_")
+		val := strings.TrimSpace(m[2])
+		if strings.HasPrefix(val, "\"") && strings.HasSuffix(val, "\"") {
+			out[key] = strings.TrimSuffix(strings.TrimPrefix(val, "\""), "\"")
+			continue
+		}
+		if n, err := strconv.ParseFloat(val, 64); err == nil {
+			out[key] = n
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// mergeDomainConfigDefaultsFromMap 以已解析的全局配置 map 为基准补缺。
+func mergeDomainConfigDefaultsFromMap(base map[string]interface{}, config string) string {
+	var stored map[string]interface{}
+	if err := json.Unmarshal([]byte(config), &stored); err != nil || stored == nil {
 		return config
 	}
 	changed := false

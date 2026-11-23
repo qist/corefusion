@@ -1,6 +1,9 @@
 package coreconfig
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // Unix socket 入站不需要 port：xray 会把 PortList 置 nil（见 infra/conf/xray.go），
 // 运行配置里带 port 只是噪音，容易让人误以为在监听 TCP 端口。
@@ -51,33 +54,30 @@ func TestCleanInboundFieldsStripsListenType(t *testing.T) {
 	}
 }
 
-// 面板把「前置代理承载」记成 sing-box 的 sockopt.acceptProxyProtocol；
-// xray 不认这个字段，必须在入站根部生成 proxySettings.acceptProxyProtocol，
-// 否则 nginx 发的 PROXY 头会被当成协议数据，节点全部连不上。
-func TestApplyXrayProxyProtocol(t *testing.T) {
+// 面板把「前置代理承载」记在 streamSettings.sockopt.acceptProxyProtocol。
+// xray 26.x 直接认这个字段（实测：带上它 xray 会 "accepting PROXY protocol"，
+// 不带则忽略），因此运行配置保持原样透传即可，不要再派生 proxySettings
+// （该字段在新版 xray 里已不生效，凭空多出来只会误导排障）。
+func TestInboundSockoptProxyProtocolPassThrough(t *testing.T) {
 	inbound := map[string]interface{}{
 		"tag": "inbound-36712",
 		"streamSettings": map[string]interface{}{
 			"sockopt": map[string]interface{}{"acceptProxyProtocol": true, "tcpFastOpen": true},
 		},
 	}
-	applyXrayProxyProtocol(inbound)
-	ps, _ := inbound["proxySettings"].(map[string]interface{})
-	if ps == nil || ps["acceptProxyProtocol"] != true {
-		t.Fatalf("缺少 proxySettings.acceptProxyProtocol: %v", inbound)
+	raw, err := json.Marshal(inbound)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// 已存在时不重复覆盖
-	inbound["proxySettings"] = map[string]interface{}{"acceptProxyProtocol": false}
-	applyXrayProxyProtocol(inbound)
-	if inbound["proxySettings"].(map[string]interface{})["acceptProxyProtocol"] != false {
-		t.Fatal("已有 proxySettings 不应被覆盖")
+	var back map[string]interface{}
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
 	}
-	// 未开启时不能凭空加字段
-	plain := map[string]interface{}{
-		"streamSettings": map[string]interface{}{"sockopt": map[string]interface{}{"tcpFastOpen": true}},
+	if _, ok := back["proxySettings"]; ok {
+		t.Fatalf("不应派生 proxySettings: %v", back)
 	}
-	applyXrayProxyProtocol(plain)
-	if _, ok := plain["proxySettings"]; ok {
-		t.Fatalf("未开启时不应生成 proxySettings: %v", plain)
+	so := back["streamSettings"].(map[string]interface{})["sockopt"].(map[string]interface{})
+	if so["acceptProxyProtocol"] != true {
+		t.Fatalf("sockopt.acceptProxyProtocol 应原样保留: %v", so)
 	}
 }

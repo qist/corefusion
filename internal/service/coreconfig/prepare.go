@@ -111,39 +111,6 @@ type PrepareFullConfigOptions struct {
 //  7. Merge enabled inbounds from inbound_configs table
 //  8. Merge enabled outbounds from outbound_configs table
 //  9. Marshal to JSON bytes
-//
-// applyXrayProxyProtocol 把面板存储的「前置代理承载」标记翻译成 xray 认识的字段。
-//
-// 面板沿用 sing-box 命名，把 acceptProxyProtocol 放在
-// streamSettings.sockopt 里；xray 的 sockopt 没有这个字段（只认 tcpFastOpen /
-// mark / dialerProxy 等），它在入站根部的 proxySettings.acceptProxyProtocol。
-//
-// 不转换的后果：nginx/caddy 在 443 按 SNI 分流并补发 PROXY 协议头，xray 却把
-// 那行 "PROXY TCP4 ..." 当成协议数据 → 握手失败、连接被重置。表现就是订阅里
-// 所有「前置代理承载」的节点全部连不上，而直连端口 / HTTP 反代的节点正常。
-func applyXrayProxyProtocol(inbound map[string]interface{}) {
-	ss, _ := inbound["streamSettings"].(map[string]interface{})
-	if ss == nil {
-		return
-	}
-	so, _ := ss["sockopt"].(map[string]interface{})
-	if so == nil {
-		return
-	}
-	enabled, _ := so["acceptProxyProtocol"].(bool)
-	if !enabled {
-		return
-	}
-	ps, _ := inbound["proxySettings"].(map[string]interface{})
-	if ps == nil {
-		ps = map[string]interface{}{}
-		inbound["proxySettings"] = ps
-	}
-	if _, exists := ps["acceptProxyProtocol"]; !exists {
-		ps["acceptProxyProtocol"] = true
-	}
-}
-
 func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	fullConfig := opts.FullConfig
 
@@ -185,9 +152,6 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 			for _, ib := range enabledInbounds {
 				var inbound map[string]interface{}
 				if json.Unmarshal(ib, &inbound) == nil {
-					if opts.CoreType == "xray" {
-						applyXrayProxyProtocol(inbound)
-					}
 					existingInbounds = append(existingInbounds, inbound)
 				}
 			}

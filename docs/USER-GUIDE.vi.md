@@ -165,7 +165,7 @@ Các giá trị được hỗ trợ: `zh` / `en` / `fa` / `ru`; `--lang=ru` cũn
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0
+sudo bash install.sh --version v0.13.1
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Xây dựng từ nguồn
 
 ```bash
-sudo bash install.sh --source --version v0.13.0
+sudo bash install.sh --source --version v0.13.1
 ```
 
 `--source` sao chép kho lưu trữ (hoặc sử dụng thanh toán hiện có khi tập lệnh nằm trong đó) và chạy `make panel`. Các phiên bản chuỗi công cụ được chọn cho mỗi môi trường:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Cờ | Mô tả |
 |------|-------------|
 | `-d, --dir <PATH>` | Thư mục cài đặt, mặc định `/opt/corefusion` |
-| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.0`; mặc định `latest` |
+| `-v, --version <TAG>` | Phiên bản bảng điều khiển, ví dụ: `v0.13.1`; mặc định `latest` |
 | `--binary` | Sử dụng mã nhị phân phát hành GitHub (mặc định) |
 | `--source` | Xây dựng từ nguồn và chuẩn bị Go/Node phù hợp |
 | `--local <FILE>` | Sử dụng tệp nhị phân cục bộ (cài đặt ngoại tuyến) |
@@ -1820,4 +1820,4 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 
 > **Phiên bản tài liệu**: v1.2
 > **Cập nhật lần cuối**: 2026-11-20
-> **Áp dụng cho**: CoreFusion v0.13.0
+> **Áp dụng cho**: CoreFusion v0.13.1

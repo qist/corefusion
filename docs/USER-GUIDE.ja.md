@@ -165,7 +165,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-rc.1
+sudo bash install.sh --version v0.13.0
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 ソースからのビルド
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-rc.1
+sudo bash install.sh --source --version v0.13.0
 ```
 
 `--source` はリポジトリのクローンを作成し (スクリプトがリポジトリ内にある場合は既存のチェックアウトを使用し)、`make panel` を実行します。ツールチェーンのバージョンは環境ごとに選択されます。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 旗 | 説明 |
 |------|-------------|
 | `-d, --dir <PATH>` | インストールディレクトリ、デフォルト `/opt/corefusion` |
-| `-v, --version <TAG>` | パネルのバージョン、例: `v0.13.0-rc.1`;デフォルト `latest` |
+| `-v, --version <TAG>` | パネルのバージョン、例: `v0.13.0`;デフォルト `latest` |
 | `--binary` | GitHub リリース バイナリを使用します (デフォルト) |
 | `--source` | ソースからビルドし、一致する Go / Node を準備する |
 | `--local <FILE>` | ローカルバイナリを使用する(オフラインインストール) |

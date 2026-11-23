@@ -164,7 +164,7 @@ curl -fsSL https://raw.githubusercontent.com/qist/corefusion/main/scripts/instal
 
 ```bash
 # 指定版本
-sudo bash install.sh --version v0.13.0-rc.1
+sudo bash install.sh --version v0.13.0
 
 # GitHub 下载加速（作为 URL 前缀）
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -184,7 +184,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 源码编译安装
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-rc.1
+sudo bash install.sh --source --version v0.13.0
 ```
 
 `--source` 会克隆源码（脚本位于源码目录内时直接使用现有源码）并执行 `make panel`。
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | 参数 | 说明 |
 |------|------|
 | `-d, --dir <PATH>` | 安装目录，默认 `/opt/corefusion` |
-| `-v, --version <TAG>` | 面板版本，如 `v0.13.0-rc.1`，默认 `latest` |
+| `-v, --version <TAG>` | 面板版本，如 `v0.13.0`，默认 `latest` |
 | `--binary` | 使用 GitHub Release 二进制（默认） |
 | `--source` | 源码编译安装，自动准备匹配的 Go / Node |
 | `--local <FILE>` | 使用本地二进制文件（离线安装） |
@@ -1063,7 +1063,7 @@ cd /opt/corefusion
 - 手动「立即同步」不受周期限制，可随时拉取。
 
 > 旧版本（≤ `v0.13.0-beta.100`）的定时器是「进程启动 + 间隔」，面板频繁重启会导致
-> 24 小时同步永远不执行；升级到 `v0.13.0-rc.1` 及以上即修复。
+> 24 小时同步永远不执行；升级到 `v0.13.0` 及以上即修复。
 
 #### 面板管理接口白名单
 
@@ -1845,4 +1845,4 @@ https://sub.example.com/<token>?format=raw_uri
 
 > **文档版本**：v1.2  
 > **最后更新**：2026-11-20  
-> **适用版本**：CoreFusion v0.13.0-rc.1
+> **适用版本**：CoreFusion v0.13.0

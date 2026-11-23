@@ -165,7 +165,7 @@ Supported values: `zh` / `en` / `fa` / `ru`; `--lang=ru` is also accepted. An un
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.13.0-rc.1
+sudo bash install.sh --version v0.13.0
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Building from source
 
 ```bash
-sudo bash install.sh --source --version v0.13.0-rc.1
+sudo bash install.sh --source --version v0.13.0
 ```
 
 `--source` clones the repository (or uses the existing checkout when the script is inside it) and runs `make panel`. Toolchain versions are chosen per environment:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flag | Description |
 |------|-------------|
 | `-d, --dir <PATH>` | Install directory, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0-rc.1`; default `latest` |
+| `-v, --version <TAG>` | Panel version, e.g. `v0.13.0`; default `latest` |
 | `--binary` | Use the GitHub Release binary (default) |
 | `--source` | Build from source and prepare matching Go / Node |
 | `--local <FILE>` | Use a local binary (offline install) |
@@ -1083,7 +1083,7 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 - Manual “Sync now” is not limited by the schedule.
 
 > Older builds (≤ `v0.13.0-beta.100`) used “process start + interval”; frequent restarts meant a
-> 24-hour sync never ran. Upgrade to `v0.13.0-rc.1` or later for the fix.
+> 24-hour sync never ran. Upgrade to `v0.13.0` or later for the fix.
 
 #### Panel admin API whitelist
 
@@ -1881,6 +1881,6 @@ The panel binary supports these subcommands (no arguments starts the server):
 
 ---
 
-> **Document version**: v1.2
-> **Last updated**: 2026-11-20
-> **Applies to**: CoreFusion v0.13.0-rc.1
+> **Document version**: v1.3
+> **Last updated**: 2026-11-23
+> **Applies to**: CoreFusion v0.13.0

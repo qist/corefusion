@@ -475,6 +475,12 @@ func runServer(args []string) {
 	} else if n > 0 {
 		log.Printf("[Panel] migrated %d legacy node↔certificate bindings into node_certificates", n)
 	}
+	// 历史数据里删节点可能留下孤儿关联（修删除逻辑前产生）：启动时幂等清理。
+	if n, rerr := nodeCertRepo.RepairOrphanNodeCertificates(context.Background()); rerr != nil {
+		log.Printf("[Panel] repair orphan node certificates failed: %v", rerr)
+	} else if n > 0 {
+		log.Printf("[Panel] repaired %d orphan node↔certificate rows", n)
+	}
 	publicCertRenewer := agent.NewPublicCertRenewer(certRepo, nodeServerRepo, nodeMgr).
 		WithNodeCertificates(nodeCertRepo).
 		// ⚠ 必须把 DNS 通道解析器交给**自动续期** ✗：不开这个口子，

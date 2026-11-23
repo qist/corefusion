@@ -15,6 +15,7 @@ import (
 
 	"github.com/qist/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -484,6 +485,33 @@ func isZeroTimeText(s string) bool {
 		s == "0001-01-01T00:00:00Z"
 }
 
+// insertRowsUpsert 批量写入 map 行，遇到主键冲突时用本次数据覆盖。
+//
+// 不能直接用 clause.OnConflict{UpdateAll:true}：map 行没有模型 schema，
+// GORM 生成不出更新列，MySQL 会报 1064。这里显式取主键列 + 全部插入列。
+func insertRowsUpsert(db *gorm.DB, table string, rows []map[string]interface{}) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	cols := make([]string, 0, len(rows[0]))
+	for k := range rows[0] {
+		cols = append(cols, k)
+	}
+	var pkCols []clause.Column
+	if cts, err := db.Migrator().ColumnTypes(table); err == nil {
+		for _, ct := range cts {
+			if pk, _ := ct.PrimaryKey(); pk {
+				pkCols = append(pkCols, clause.Column{Name: ct.Name()})
+			}
+		}
+	}
+	onConflict := clause.OnConflict{DoUpdates: clause.AssignmentColumns(cols)}
+	if len(pkCols) > 0 {
+		onConflict.Columns = pkCols
+	}
+	return db.Table(table).Clauses(onConflict).Create(rows).Error
+}
+
 func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 	if DB == nil {
 		return 0, 0, fmt.Errorf("source database not initialized")
@@ -630,7 +658,10 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 			if end > len(rows) {
 				end = len(rows)
 			}
-			if err := dstDB.Table(table).Create(rows[i:end]).Error; err != nil {
+			// 并发写入兜底：还原迁移期间面板的后台调度器（WAF/规则等）可能往已清空的表
+			// 再插入默认行，普通 INSERT 会因主键冲突整表失败。用 upsert 覆盖，保证以
+			// 备份数据为准（MySQL: ON DUPLICATE KEY UPDATE / PG: ON CONFLICT DO UPDATE）。
+			if err := insertRowsUpsert(dstDB, table, rows[i:end]); err != nil {
 				log.Printf("migrate: batch insert into %s failed (%v), retrying row by row...", table, err)
 				for idx, row := range rows[i:end] {
 					if rerr := dstDB.Table(table).Create(row).Error; rerr != nil {
@@ -865,7 +896,10 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 			if end > len(rows) {
 				end = len(rows)
 			}
-			if err := dstDB.Table(table).Create(rows[i:end]).Error; err != nil {
+			// 并发写入兜底：还原迁移期间面板的后台调度器（WAF/规则等）可能往已清空的表
+			// 再插入默认行，普通 INSERT 会因主键冲突整表失败。用 upsert 覆盖，保证以
+			// 备份数据为准（MySQL: ON DUPLICATE KEY UPDATE / PG: ON CONFLICT DO UPDATE）。
+			if err := insertRowsUpsert(dstDB, table, rows[i:end]); err != nil {
 				return 0, 0, fmt.Errorf("insert into %s failed at offset %d: %w", table, i, err)
 			}
 		}

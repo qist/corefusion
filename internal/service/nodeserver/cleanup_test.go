@@ -21,6 +21,8 @@ func TestPurgeNodeScopedDataOnlyTouchesTargetServer(t *testing.T) {
 		`CREATE TABLE inbound_configs (id integer primary key autoincrement, server_id integer, tag text)`,
 		`CREATE TABLE plan_nodes (id integer primary key autoincrement, plan_id integer, inbound_config_id integer, enabled numeric)`,
 		`CREATE TABLE server_metrics (id integer primary key autoincrement, server_id integer)`,
+		`CREATE TABLE node_certificates (id integer primary key autoincrement, node_server_id integer, certificate_id integer, created_at datetime)`,
+		`CREATE TABLE certificates (id integer primary key autoincrement, name text, issuer_node_id integer)`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {
@@ -38,6 +40,8 @@ func TestPurgeNodeScopedDataOnlyTouchesTargetServer(t *testing.T) {
 		{`INSERT INTO inbound_configs (server_id, tag) VALUES (?, 'stale-in')`, []interface{}{20}},
 		{`INSERT INTO inbound_configs (server_id, tag) VALUES (?, 'keep-in')`, []interface{}{19}},
 		{`INSERT INTO server_metrics (server_id) VALUES (?), (?), (?)`, []interface{}{20, 19, 20}},
+		{`INSERT INTO node_certificates (node_server_id, certificate_id) VALUES (20, 2), (20, 3), (19, 2)`, nil},
+		{`INSERT INTO certificates (name, issuer_node_id) VALUES ('from-20', 20), ('shared', 19)`, nil},
 	} {
 		if err := db.Exec(q.sql, q.args...).Error; err != nil {
 			t.Fatalf("seed: %v", err)
@@ -68,6 +72,18 @@ func TestPurgeNodeScopedDataOnlyTouchesTargetServer(t *testing.T) {
 	}
 	if c := count("server_metrics", "server_id = ?", 20); c != 0 {
 		t.Errorf("server 20 server_metrics 残留 %d 行", c)
+	}
+	if c := count("node_certificates", "node_server_id = ?", 20); c != 0 {
+		t.Errorf("server 20 证书绑定残留 %d 行", c)
+	}
+	if c := count("node_certificates", "node_server_id = ?", 19); c != 1 {
+		t.Errorf("server 19 证书绑定被误删，剩 %d 行", c)
+	}
+	if c := count("certificates", "issuer_node_id = ?", 20); c != 0 {
+		t.Errorf("server 20 签发的证书仍挂着 issuer，剩 %d 行", c)
+	}
+	if c := count("certificates", "issuer_node_id = ?", 19); c != 1 {
+		t.Errorf("server 19 的 issuer 被误清，剩 %d 行", c)
 	}
 	// 节点 19 的数据不能被动到
 	if c := count("core_configs", "server_id = ?", 19); c != 1 {

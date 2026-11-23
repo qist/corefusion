@@ -88,6 +88,32 @@ func (r *NodeCertificateRepository) ListNodeIDsByCertificate(ctx context.Context
 	return out, nil
 }
 
+// RepairOrphanNodeCertificates 清理指向已删除节点的证书关联：
+//   - node_certificates 里 node_server_id 已不存在 → 删除绑定；
+//   - certificates.issuer_node_id 已不存在 → 置 0（证书本身可能仍被其它节点使用，
+//     不能删，只清签发节点指针）。
+//
+// 幂等，可在每次启动时安全执行（修复历史数据里已经存在的孤儿关联）。
+func (r *NodeCertificateRepository) RepairOrphanNodeCertificates(ctx context.Context) (int, error) {
+	if !r.db.Migrator().HasTable(&entity.NodeCertificate{}) ||
+		!r.db.Migrator().HasTable(&entity.Certificate{}) {
+		return 0, nil
+	}
+	db := r.db.WithContext(ctx)
+	total := 0
+	res := db.Exec("DELETE FROM node_certificates WHERE node_server_id NOT IN (SELECT id FROM node_servers)")
+	if res.Error != nil {
+		return total, res.Error
+	}
+	total += int(res.RowsAffected)
+	res = db.Exec("UPDATE certificates SET issuer_node_id = 0 WHERE issuer_node_id > 0 AND issuer_node_id NOT IN (SELECT id FROM node_servers)")
+	if res.Error != nil {
+		return total, res.Error
+	}
+	total += int(res.RowsAffected)
+	return total, nil
+}
+
 // MigrateLegacyCertificateID 把历史上的**单个** `node_servers.certificate_id` 搬进多对多表 ✓。
 //
 // 幂等 ✓：已存在的绑定会被 Associate 跳过 ✓，所以每次启动都可以安全跑 ✓。

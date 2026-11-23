@@ -536,18 +536,16 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	infoHeader := buildSubscriptionInfoHeader(sub, billingTemplates)
 
 	// Build the Subscription-Userinfo body comment line.
-	// This is prepended to raw_uri and base64_uri responses so that tools
-	// which only parse the response body (not HTTP headers) can still
-	// display traffic usage info.
+	// 只用于 raw_uri（以 `#` 注释形式，客户端会忽略）；base64_uri 必须保持
+	// **纯 base64**：在正文前面塞 "Subscription-Userinfo: ..." 会让标准客户端
+	// 的 base64 解码失败（实测 v2rayN/Clash 直接得到 0 个节点）。
 	userinfoLine := "Subscription-Userinfo: " + formatSubscriptionInfo(sub)
 
 	switch formatter.Format(formatStr) {
 	case formatter.FormatBase64Aggregate:
 		joined := strings.Join(append(billingLinks, links...), "\n")
-		// Prepend Subscription-Userinfo as plain-text line before base64 content.
-		// Pattern: "Subscription-Userinfo: ...\n\n<base64>"
-		// Supported by v2rayN and tools following the V2board convention.
-		data = []byte(userinfoLine + "\n\n" + base64.StdEncoding.EncodeToString([]byte(joined)))
+		// 流量信息只走 HTTP 头（Subscription-Userinfo），正文保持纯 base64。
+		data = []byte(base64.StdEncoding.EncodeToString([]byte(joined)))
 	case formatter.FormatRawURI:
 		allLinks := append(billingLinks, links...)
 		var headerLines []string

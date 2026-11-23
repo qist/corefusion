@@ -65,6 +65,28 @@ func (s *Service) purgeNodeScopedData(ctx context.Context, serverID int64) int {
 	}
 
 	total := 0
+
+	// 节点↔证书绑定是多对多，列名是 node_server_id（不在 nodeScopedTables 的
+	// server_id 约定里），必须单独清：否则节点 ID 被复用时，新节点会直接
+	// "继承"上一节点的证书绑定（页面显示它持有别人的证书）。
+	if res := db.Exec("DELETE FROM node_certificates WHERE node_server_id = ?", serverID); res.Error != nil {
+		if !isMissingTableErr(res.Error) {
+			log.Printf("[nodeserver] purge node_certificates for server %d: %v", serverID, res.Error)
+		}
+	} else {
+		total += int(res.RowsAffected)
+	}
+
+	// 该节点签发过的证书本身可能仍被其它节点使用，不能删；只清签发节点指针，
+	// 避免留下指向已删节点的悬挂引用（孤儿证书关联）。
+	if res := db.Exec("UPDATE certificates SET issuer_node_id = 0 WHERE issuer_node_id = ?", serverID); res.Error != nil {
+		if !isMissingTableErr(res.Error) {
+			log.Printf("[nodeserver] clear certificate issuer for server %d: %v", serverID, res.Error)
+		}
+	} else {
+		total += int(res.RowsAffected)
+	}
+
 	for _, table := range nodeScopedTables {
 		res := db.Exec(fmt.Sprintf("DELETE FROM %s WHERE server_id = ?", table), serverID)
 		if res.Error != nil {

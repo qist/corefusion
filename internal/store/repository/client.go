@@ -161,7 +161,9 @@ func (r *ClientRepository) PurgeClientScopedData(ctx context.Context, clientID i
 			`DELETE FROM client_self_unban_logs WHERE client_id = ?`,
 			`DELETE FROM ip_whitelist_entries WHERE client_id = ?`,
 			`DELETE FROM shared_account_repair_logs WHERE client_id = ?`,
-			`DELETE FROM warp_configs WHERE client_id = ?`,
+			// ⚠ 不要删 warp_configs：它的 client_id 是 WARP 注册返回的字符串 ID，
+			// 不是本地 clients.id。按本地数字 ID 匹配要么删不到（SQLite/MySQL 隐式转换），
+			// 要么在 PostgreSQL 直接报「unable to encode int64 into text」。
 			`DELETE FROM referral_records WHERE referrer_id = ? OR referee_id = ?`,
 			`DELETE FROM referral_withdrawals WHERE client_id = ?`,
 			`DELETE FROM referral_codes WHERE client_id = ?`,

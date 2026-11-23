@@ -38,7 +38,7 @@ func TestPurgeClientScopedData(t *testing.T) {
 		`CREATE TABLE client_self_unban_logs (id INTEGER PRIMARY KEY, client_id INTEGER)`,
 		`CREATE TABLE ip_whitelist_entries (id INTEGER PRIMARY KEY, client_id INTEGER)`,
 		`CREATE TABLE shared_account_repair_logs (id INTEGER PRIMARY KEY, client_id INTEGER)`,
-		`CREATE TABLE warp_configs (id INTEGER PRIMARY KEY, client_id INTEGER)`,
+		`CREATE TABLE warp_configs (id INTEGER PRIMARY KEY, client_id TEXT)`,
 		`CREATE TABLE referral_records (id INTEGER PRIMARY KEY, referrer_id INTEGER, referee_id INTEGER)`,
 		`CREATE TABLE referral_withdrawals (id INTEGER PRIMARY KEY, client_id INTEGER)`,
 		`CREATE TABLE referral_codes (id INTEGER PRIMARY KEY, client_id INTEGER)`,
@@ -72,7 +72,7 @@ func TestPurgeClientScopedData(t *testing.T) {
 		`INSERT INTO client_self_unban_logs (id, client_id) VALUES (903, 7)`,
 		`INSERT INTO ip_whitelist_entries (id, client_id) VALUES (904, 7)`,
 		`INSERT INTO shared_account_repair_logs (id, client_id) VALUES (905, 7)`,
-		`INSERT INTO warp_configs (id, client_id) VALUES (906, 7)`,
+		`INSERT INTO warp_configs (id, client_id) VALUES (906, 'warp-uuid-7')`,
 		`INSERT INTO referral_records (id, referrer_id, referee_id) VALUES (907, 7, 8)`,
 		`INSERT INTO referral_withdrawals (id, client_id) VALUES (908, 7)`,
 		`INSERT INTO referral_codes (id, client_id) VALUES (909, 7)`,
@@ -115,10 +115,11 @@ func TestPurgeClientScopedData(t *testing.T) {
 		"client_self_unban_logs":     "client_id = 7",
 		"ip_whitelist_entries":       "client_id = 7",
 		"shared_account_repair_logs": "client_id = 7",
-		"warp_configs":               "client_id = 7",
-		"referral_withdrawals":       "client_id = 7",
-		"referral_codes":             "client_id = 7",
-		"referral_records":           "referrer_id = 7 OR referee_id = 7",
+		// warp_configs 的 client_id 是 WARP 注册返回的字符串 ID，不能按本地
+		// clients.id 删除（PG 会直接报类型错误），因此不在清理范围。
+		"referral_withdrawals": "client_id = 7",
+		"referral_codes":       "client_id = 7",
+		"referral_records":     "referrer_id = 7 OR referee_id = 7",
 	}
 	for table, cond := range checks {
 		var n int64

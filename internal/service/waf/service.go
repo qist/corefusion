@@ -912,8 +912,12 @@ type githubRuleDefault struct {
 // These include engine rules (regex/pattern) and the collected whiteua rule.
 // Only blackip, whiteip, whiteurl are NOT synced from GitHub —
 // they are created as empty rules for users to fill in.
+//
+// combo.jsonl 是上游三层组合规则引擎（engine.lua / caddyguard engine.go）的
+// L2 规则集，必须与引擎文件一起部署，否则 CVE 虚拟补丁与 SCORE 规则全部失效。
 var defaultRuleFiles = []githubRuleDefault{
 	{Name: "args.rule", MergeMode: "replace"},
+	{Name: "combo.jsonl", MergeMode: "replace"},
 	{Name: "cookie.rule", MergeMode: "replace"},
 	{Name: "fileext.rule", MergeMode: "replace"},
 	{Name: "header.rule", MergeMode: "replace"},
@@ -922,6 +926,31 @@ var defaultRuleFiles = []githubRuleDefault{
 	{Name: "url.rule", MergeMode: "replace"},
 	{Name: "useragent.rule", MergeMode: "replace"},
 	{Name: "whiteua.rule", MergeMode: "append"},
+}
+
+// isBuiltinGitHubSource reports whether sourceURL is the bundled nginxguard
+// rule-config source (as opposed to a user-configured mirror).
+func isBuiltinGitHubSource(sourceURL string) bool {
+	base := strings.TrimSuffix(githubRawBase, "/")
+	return strings.TrimSuffix(strings.TrimSpace(sourceURL), "/") == base
+}
+
+// missingDefaultRuleFiles returns the built-in rule files that are absent from
+// names. 历史保存的同步清单里没有后来新增的引擎文件（如 combo.jsonl），
+// 内置源补全后老安装才能拿到新规则；自定义镜像源不做补全，避免请求其不存在
+// 的文件。
+func missingDefaultRuleFiles(names []string) []githubRuleDefault {
+	present := make(map[string]bool, len(names))
+	for _, n := range names {
+		present[strings.TrimSpace(n)] = true
+	}
+	var missing []githubRuleDefault
+	for _, rd := range defaultRuleFiles {
+		if !present[rd.Name] {
+			missing = append(missing, rd)
+		}
+	}
+	return missing
 }
 
 // userDefinedRules are created as empty rules for users to fill in.
@@ -1600,6 +1629,18 @@ func (s *Service) SyncFromGitHubWithSource(ctx context.Context, sourceURL, files
 	} else {
 		// Use defaults
 		for _, rd := range defaultRuleFiles {
+			items = append(items, syncItem{name: rd.Name, url: "", mm: rd.MergeMode})
+		}
+	}
+
+	// 内置源会随版本新增引擎文件（combo.jsonl 等），而历史保存的清单只有旧文件。
+	// 只用内置源时补全缺失项，保证老安装升级后引擎规则也能下载。
+	if isBuiltinGitHubSource(sourceURL) {
+		names := make([]string, 0, len(items))
+		for _, it := range items {
+			names = append(names, it.name)
+		}
+		for _, rd := range missingDefaultRuleFiles(names) {
 			items = append(items, syncItem{name: rd.Name, url: "", mm: rd.MergeMode})
 		}
 	}

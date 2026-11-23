@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "O solicitar automáticamente con una cuenta de servicio de GCP",
     "summaryTitle": "Resumen de configuración",
     "downloadEnv": "Descargar .env",
+    "downloadEnvSecret": "Descargar .env.secret (clave maestra)",
+    "envSecretHint": "La clave maestra está en .env.secret. Guárdela junto con .env; sin ella no se pueden recuperar los datos cifrados.",
     "accessTitle": "Dirección de acceso",
     "accessPanel": "Panel",
     "accessSubscription": "Suscripción",

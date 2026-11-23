@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "或使用 GCP 服務帳號自動申請",
     "summaryTitle": "設定清單",
     "downloadEnv": "下載 .env",
+    "downloadEnvSecret": "下載 .env.secret（含主密鑰）",
+    "envSecretHint": "加密主密鑰保存在 .env.secret，必須與 .env 一起備份；遺失後資料庫內密文無法還原。",
     "accessTitle": "存取位址",
     "accessPanel": "面板",
     "accessSubscription": "訂閱",

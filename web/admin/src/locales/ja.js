@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "または GCP サービスアカウントで自動申請",
     "summaryTitle": "設定一覧",
     "downloadEnv": ".env をダウンロード",
+    "downloadEnvSecret": ".env.secret をダウンロード（マスターキー）",
+    "envSecretHint": "暗号化マスターキーは .env.secret にあります。.env と一緒にバックアップしてください。失うと暗号化データを復元できません。",
     "accessTitle": "アクセス URL",
     "accessPanel": "パネル",
     "accessSubscription": "サブスクリプション",

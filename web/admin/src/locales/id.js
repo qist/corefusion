@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "Atau ajukan otomatis dengan akun layanan GCP",
     "summaryTitle": "Daftar konfigurasi",
     "downloadEnv": "Unduh .env",
+    "downloadEnvSecret": "Unduh .env.secret (kunci master)",
+    "envSecretHint": "Kunci master enkripsi ada di .env.secret. Cadangkan bersama .env, jika tidak data terenkripsi tidak dapat dipulihkan.",
     "accessTitle": "Alamat akses",
     "accessPanel": "Panel",
     "accessSubscription": "Langganan",

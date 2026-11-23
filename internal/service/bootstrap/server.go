@@ -15,6 +15,7 @@ import (
 	"corefusion/internal/api/response"
 	"corefusion/internal/app/embed"
 	corecert "corefusion/internal/runtime/cert"
+	seccrypto "corefusion/internal/security/crypto"
 	certsvc "corefusion/internal/service/certificate"
 	"corefusion/internal/store/db"
 )
@@ -77,6 +78,7 @@ func (s *Server) Engine() *gin.Engine {
 		grp.GET("/public-ip", s.handlePublicIP)
 		grp.GET("/summary", s.handleSummary)
 		grp.GET("/env", s.handleEnvFile)
+		grp.GET("/env-secret", s.handleEnvSecretFile)
 		grp.POST("/complete", s.handleComplete)
 	}
 
@@ -351,10 +353,12 @@ func (s *Server) handleEnv(c *gin.Context) {
 			d.SecretEncryptionKey = strings.TrimSpace(*req.SecretEncryptionKey)
 			d.AutoGenerateSecrets = false
 		}
-		if d.AutoGenerateSecrets || d.JWTSecret == "" {
+		// 幂等：只有为空时才生成。向导可能多次保存本步（返回/刷新/自动保存），
+		// 每次重算会让用户手里的密钥与最终落盘的不一致。
+		if strings.TrimSpace(d.JWTSecret) == "" {
 			d.JWTSecret = RandomHex(32)
 		}
-		if d.AutoGenerateSecrets || d.SecretEncryptionKey == "" {
+		if strings.TrimSpace(d.SecretEncryptionKey) == "" {
 			d.SecretEncryptionKey = RandomHex(32)
 		}
 	})
@@ -758,6 +762,27 @@ func (s *Server) handleEnvFile(c *gin.Context) {
 	d := s.snapshot()
 	content := EnvContent(s.dataDir, &d)
 	c.Header("Content-Disposition", "attachment; filename=corefusion.env")
+	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(content))
+}
+
+// handleEnvSecretFile 下载 .env.secret（含加密主密钥）。
+//
+// 为什么必须单独提供：主密钥已从 .env 搬到 .env.secret，而「下载 .env」只导出
+// 非敏感配置。迁移/还原时若只带走 .env，库里所有 enc: 密文（CA 私钥、DB DSN、
+// 第三方密钥）都解不开，且无法恢复。两个文件必须成对备份。
+func (s *Server) handleEnvSecretFile(c *gin.Context) {
+	d := s.snapshot()
+	key := strings.TrimSpace(d.SecretEncryptionKey)
+	if key == "" {
+		key = seccrypto.ReadSecretEnvValue(seccrypto.SecretEncryptionKeyName)
+	}
+	if key == "" {
+		response.NotFound(c, "SECRET_KEY_MISSING", ".env.secret 尚未生成（完成初始化后才有）")
+		return
+	}
+	content := "# CoreFusion 加密主密钥（0600）。必须与 .env 一起备份；丢失后库内密文不可恢复。" + string(rune(10)) +
+		seccrypto.SecretEncryptionKeyName + "=" + key + string(rune(10))
+	c.Header("Content-Disposition", "attachment; filename=corefusion.env.secret")
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte(content))
 }
 

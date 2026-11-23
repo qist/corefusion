@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "أو اطلب تلقائيًا باستخدام حساب خدمة GCP",
     "summaryTitle": "قائمة الإعدادات",
     "downloadEnv": "تنزيل .env",
+    "downloadEnvSecret": "تنزيل .env.secret (المفتاح الرئيسي)",
+    "envSecretHint": "يوجد مفتاح التشفير الرئيسي في .env.secret. احتفظ بنسخة احتياطية مع .env وإلا تعذر استرداد البيانات المشفرة.",
     "accessTitle": "عنوان الوصول",
     "accessPanel": "لوحة التحكم",
     "accessSubscription": "الاشتراك",

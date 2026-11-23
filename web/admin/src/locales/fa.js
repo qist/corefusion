@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "یا درخواست خودکار با حساب سرویس GCP",
     "summaryTitle": "فهرست پیکربندی",
     "downloadEnv": "دانلود .env",
+    "downloadEnvSecret": "دانلود .env.secret (کلید اصلی)",
+    "envSecretHint": "کلید اصلی رمزنگاری در .env.secret است. آن را همراه .env پشتیبان‌گیری کنید؛ در غیر این صورت داده‌های رمزگذاری‌شده قابل بازیابی نیستند.",
     "accessTitle": "نشانی دسترسی",
     "accessPanel": "پنل",
     "accessSubscription": "اشتراک",

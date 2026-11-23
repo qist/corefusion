@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "또는 GCP 서비스 계정으로 자동 신청",
     "summaryTitle": "구성 목록",
     "downloadEnv": ".env 다운로드",
+    "downloadEnvSecret": ".env.secret 다운로드 (마스터 키)",
+    "envSecretHint": "암호화 마스터 키는 .env.secret에 있습니다. .env와 함께 백업하세요. 없으면 암호화된 데이터를 복구할 수 없습니다.",
     "accessTitle": "접속 주소",
     "accessPanel": "패널",
     "accessSubscription": "구독",

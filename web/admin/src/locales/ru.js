@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "Или автоматически запросить с помощью сервисного аккаунта GCP",
     "summaryTitle": "Сводка конфигурации",
     "downloadEnv": "Скачать .env",
+    "downloadEnvSecret": "Скачать .env.secret (мастер-ключ)",
+    "envSecretHint": "Мастер-ключ хранится в .env.secret. Сохраняйте его вместе с .env, иначе зашифрованные данные не восстановить.",
     "accessTitle": "Адрес доступа",
     "accessPanel": "Панель",
     "accessSubscription": "Подписка",

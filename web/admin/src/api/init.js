@@ -41,3 +41,5 @@ export const complete = (p = {}) => client.post('/complete', p)
 
 // .env 下载：浏览器直接打开链接下载，令牌走 query。
 export const envDownloadUrl = () => `/api/v1/init/env?init_token=${encodeURIComponent(initToken())}`
+// .env.secret 下载：含加密主密钥，必须与 .env 一起备份（否则库内密文不可恢复）。
+export const envSecretDownloadUrl = () => `/api/v1/init/env-secret?init_token=${encodeURIComponent(initToken())}`

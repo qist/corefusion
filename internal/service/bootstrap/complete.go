@@ -378,10 +378,15 @@ func Complete(ctx context.Context, dataDir string, d *Draft) error {
 	if strings.TrimSpace(d.DataDir) == "" {
 		d.DataDir = dataDir
 	}
-	if d.AutoGenerateSecrets || strings.TrimSpace(d.JWTSecret) == "" {
+	// ⚠ 只在**为空**时生成，不能因为 AutoGenerateSecrets=true 就重算：
+	// 向导第 3 步生成的密钥会展示/下载给用户，Complete 再换一把就会出现
+	// 「下载的 .env.secret 与落盘的不是同一个」——用户按下载文件备份，
+	// 还原后所有 enc: 密文都解不开。AutoGenerateSecrets 只表示「用 NewDraft
+	// 已生成的那把」，不是「每次调用都重新生成」。
+	if strings.TrimSpace(d.JWTSecret) == "" {
 		d.JWTSecret = RandomHex(32)
 	}
-	if d.AutoGenerateSecrets || strings.TrimSpace(d.SecretEncryptionKey) == "" {
+	if strings.TrimSpace(d.SecretEncryptionKey) == "" {
 		d.SecretEncryptionKey = RandomHex(32)
 	}
 	if strings.TrimSpace(d.DBType) == "" {

@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "Oder automatisch über ein GCP-Dienstkonto beantragen",
     "summaryTitle": "Konfigurationsübersicht",
     "downloadEnv": ".env herunterladen",
+    "downloadEnvSecret": ".env.secret herunterladen (Hauptschlüssel)",
+    "envSecretHint": "Der Verschlüsselungsschlüssel liegt in .env.secret. Zusammen mit .env sichern, sonst sind verschlüsselte Daten nicht wiederherstellbar.",
     "accessTitle": "Zugriffsadresse",
     "accessPanel": "Panel",
     "accessSubscription": "Abonnement",

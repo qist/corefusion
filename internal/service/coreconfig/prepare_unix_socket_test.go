@@ -50,3 +50,34 @@ func TestCleanInboundFieldsStripsListenType(t *testing.T) {
 		t.Fatalf("_listenType 应被剥离：%v", inbound)
 	}
 }
+
+// 面板把「前置代理承载」记成 sing-box 的 sockopt.acceptProxyProtocol；
+// xray 不认这个字段，必须在入站根部生成 proxySettings.acceptProxyProtocol，
+// 否则 nginx 发的 PROXY 头会被当成协议数据，节点全部连不上。
+func TestApplyXrayProxyProtocol(t *testing.T) {
+	inbound := map[string]interface{}{
+		"tag": "inbound-36712",
+		"streamSettings": map[string]interface{}{
+			"sockopt": map[string]interface{}{"acceptProxyProtocol": true, "tcpFastOpen": true},
+		},
+	}
+	applyXrayProxyProtocol(inbound)
+	ps, _ := inbound["proxySettings"].(map[string]interface{})
+	if ps == nil || ps["acceptProxyProtocol"] != true {
+		t.Fatalf("缺少 proxySettings.acceptProxyProtocol: %v", inbound)
+	}
+	// 已存在时不重复覆盖
+	inbound["proxySettings"] = map[string]interface{}{"acceptProxyProtocol": false}
+	applyXrayProxyProtocol(inbound)
+	if inbound["proxySettings"].(map[string]interface{})["acceptProxyProtocol"] != false {
+		t.Fatal("已有 proxySettings 不应被覆盖")
+	}
+	// 未开启时不能凭空加字段
+	plain := map[string]interface{}{
+		"streamSettings": map[string]interface{}{"sockopt": map[string]interface{}{"tcpFastOpen": true}},
+	}
+	applyXrayProxyProtocol(plain)
+	if _, ok := plain["proxySettings"]; ok {
+		t.Fatalf("未开启时不应生成 proxySettings: %v", plain)
+	}
+}

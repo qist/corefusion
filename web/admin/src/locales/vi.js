@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "Hoặc dùng tài khoản dịch vụ GCP để tự động yêu cầu",
     "summaryTitle": "Danh sách cấu hình",
     "downloadEnv": "Tải xuống .env",
+    "downloadEnvSecret": "Tải .env.secret (khóa chính)",
+    "envSecretHint": "Khóa chính mã hóa nằm trong .env.secret. Sao lưu cùng với .env, nếu không dữ liệu mã hóa không thể khôi phục.",
     "accessTitle": "Địa chỉ truy cập",
     "accessPanel": "Bảng điều khiển",
     "accessSubscription": "Gói đăng ký",

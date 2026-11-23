@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "หรือขอรับโดยอัตโนมัติด้วยบัญชีบริการ GCP",
     "summaryTitle": "รายการกำหนดค่า",
     "downloadEnv": "ดาวน์โหลด .env",
+    "downloadEnvSecret": "ดาวน์โหลด .env.secret (คีย์หลัก)",
+    "envSecretHint": "คีย์หลักการเข้ารหัสอยู่ใน .env.secret ต้องสำรองพร้อม .env มิฉะนั้นข้อมูลที่เข้ารหัสจะกู้คืนไม่ได้",
     "accessTitle": "ที่อยู่สำหรับเข้าถึง",
     "accessPanel": "แผงควบคุม",
     "accessSubscription": "การสมัครใช้งาน",

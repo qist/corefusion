@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1131,6 +1132,17 @@ func (s *Service) GenerateAgentInstallScript(ctx context.Context, serverID int64
 		WithUpdatePublicKey(s.updatePublicKeyPEM).
 		WithBootstrapToken(token).
 		WithServerID(serverID)
+
+	// gRPC 端口必须跟面板实际配置一致：默认 18443，但可在
+	// 「系统设置 → panel.agent_grpc_port」改成别的端口。写死默认值时，
+	// 改了端口的新节点会一直连不上（安装脚本看起来正常，agent 永远 offline）。
+	if s.settingRepo != nil {
+		if v, err := s.settingRepo.GetByKey(ctx, "panel.agent_grpc_port"); err == nil {
+			if p, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && p > 0 {
+				script = script.WithGRPCPort(p)
+			}
+		}
+	}
 
 	return script.Generate()
 }

@@ -7039,6 +7039,8 @@ export default {
     "orAutoEAB": "Ya da GCP hizmet hesabıyla otomatik talep et",
     "summaryTitle": "Yapılandırma listesi",
     "downloadEnv": ".env dosyasını indir",
+    "downloadEnvSecret": ".env.secret indir (ana anahtar)",
+    "envSecretHint": "Şifreleme ana anahtarı .env.secret içinde. .env ile birlikte yedekleyin; yoksa şifreli veriler kurtarılamaz.",
     "accessTitle": "Erişim adresi",
     "accessPanel": "Paneli",
     "accessSubscription": "Abonelik",

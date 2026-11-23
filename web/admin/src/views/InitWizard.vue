@@ -339,6 +339,8 @@
             <el-table-column prop="v" label="VALUE" />
           </el-table>
           <el-button style="margin-top:10px" @click="downloadEnv">{{ t('init.downloadEnv') }}</el-button>
+          <el-button style="margin-top:10px" type="warning" plain @click="downloadEnvSecret">{{ t('init.downloadEnvSecret') }}</el-button>
+          <div style="margin-top:6px;font-size:12px;color:#e6a23c">{{ t('init.envSecretHint') }}</div>
 
           <h4 style="margin:14px 0 8px">{{ t('init.accessTitle') }}</h4>
           <el-descriptions :column="1" border size="small">
@@ -384,7 +386,7 @@ import { CURRENCIES } from '../utils/currency'
 import { TIMEZONES } from '../utils/timezone'
 import {
   getInitStatus, randomPorts, saveDB, testDB, saveDataDir, saveEnv, saveCore, saveProxy,
-  saveSites, saveAdmin, saveHttps, getSummary, complete, initToken, envDownloadUrl, getDNSProviders, getPublicIP
+  saveSites, saveAdmin, saveHttps, getSummary, complete, initToken, envDownloadUrl, envSecretDownloadUrl, getDNSProviders, getPublicIP
 } from '../api/init'
 
 const { t } = useI18n()
@@ -691,6 +693,10 @@ async function loadSummary() {
 function downloadEnv() {
   envUrl.value = envDownloadUrl()
   window.location.href = envUrl.value
+}
+// 加密主密钥在 .env.secret 里，必须与 .env 成对备份，否则还原后密文解不开。
+function downloadEnvSecret() {
+  window.location.href = envSecretDownloadUrl()
 }
 
 async function finish() {

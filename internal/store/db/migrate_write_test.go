@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qist/sqlite"
 	"gorm.io/gorm"
@@ -194,5 +195,32 @@ func TestMigrateToFailsOnRowInsertError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "insert into migrate_probe_rows failed") {
 		t.Errorf("错误应指明是哪张表写失败：%v", err)
+	}
+}
+
+// 零值时间必须转 NULL：MySQL 严格模式拒绝 0000-00-00，PG 拒绝 year 0。
+func TestSanitizeZeroTimeValues(t *testing.T) {
+	rows := []map[string]interface{}{
+		{
+			"zero":     time.Time{},
+			"ok":       time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			"zero_str": "0000-00-00 00:00:00",
+			"ok_str":   "2026-01-01 00:00:00",
+			"zero_pg":  "0001-01-01T00:00:00Z",
+			"not_time": "hello",
+		},
+	}
+	if n := sanitizeZeroTimeValues(rows); n != 3 {
+		t.Fatalf("fixed = %d, want 3", n)
+	}
+	for _, k := range []string{"zero", "zero_str", "zero_pg"} {
+		if rows[0][k] != nil {
+			t.Fatalf("%s 应转 NULL，实际 %#v", k, rows[0][k])
+		}
+	}
+	for _, k := range []string{"ok", "ok_str", "not_time"} {
+		if rows[0][k] == nil {
+			t.Fatalf("%s 不应被改", k)
+		}
 	}
 }

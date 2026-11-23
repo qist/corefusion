@@ -17,10 +17,13 @@ type ShareDomainConfig struct {
 
 	// 探活状态（cf_domain / cf_ip 有效）：Enabled 是用户开关，Healthy 是探测结果。
 	// 连续失败才置 false，订阅渲染时跳过；direct 条目不参与探测。
-	Healthy   bool      `json:"healthy" gorm:"not null;default:true"`
-	LatencyMs int       `json:"latency_ms" gorm:"not null;default:0"`
-	FailCount int       `json:"fail_count" gorm:"not null;default:0"`
-	LastCheck time.Time `json:"last_check"`
+	Healthy   bool `json:"healthy" gorm:"not null;default:true"`
+	LatencyMs int  `json:"latency_ms" gorm:"not null;default:0"`
+	FailCount int  `json:"fail_count" gorm:"not null;default:0"`
+	// LastCheck 可空：种子数据/从未探测时是 NULL。
+	// ⚠ 不能用非指针 time.Time —— 零值会被写成 '0000-00-00'，MySQL 严格模式
+	// 直接拒绝（Error 1292），空库初始化时默认域名会全部 seed 失败。
+	LastCheck *time.Time `json:"last_check"`
 
 	// 多区域：0=全局共享域名（所有服务器通用），>0=仅该服务器使用
 	ServerID int64 `json:"server_id" gorm:"index;not null;default:0"`

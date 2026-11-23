@@ -440,6 +440,50 @@ func StartupConfig() (dbType, dsn string) {
 //
 // This supports migration between any combination of SQLite/MySQL/PostgreSQL.
 // Returns (tablesCopied, rowsCopied, error).
+// sanitizeZeroTimeValues 把「未发生」的零值时间转成 NULL。
+//
+// 存量 SQLite 数据里，last_check / last_run 这类可选时间列有大量零值
+// （'0000-00-00' 或 0001-01-01）。MySQL 严格模式直接拒绝（Error 1292），
+// PostgreSQL 也拒绝 year 0 —— 切库/备份还原会卡在第一条这类数据上。
+// 这些列都是可空业务字段，NULL 才是正确语义（页面显示空，而不是 0001 年）。
+func sanitizeZeroTimeValues(rows []map[string]interface{}) int {
+	fixed := 0
+	for i := range rows {
+		for k, v := range rows[i] {
+			switch tv := v.(type) {
+			case time.Time:
+				if tv.IsZero() {
+					rows[i][k] = nil
+					fixed++
+				}
+			case *time.Time:
+				if tv != nil && tv.IsZero() {
+					rows[i][k] = nil
+					fixed++
+				}
+			case string:
+				if isZeroTimeText(tv) {
+					rows[i][k] = nil
+					fixed++
+				}
+			case []byte:
+				if isZeroTimeText(string(tv)) {
+					rows[i][k] = nil
+					fixed++
+				}
+			}
+		}
+	}
+	return fixed
+}
+
+func isZeroTimeText(s string) bool {
+	s = strings.TrimSpace(s)
+	return strings.HasPrefix(s, "0000-00-00") ||
+		strings.HasPrefix(s, "0001-01-01 00:00:00") ||
+		s == "0001-01-01T00:00:00Z"
+}
+
 func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 	if DB == nil {
 		return 0, 0, fmt.Errorf("source database not initialized")
@@ -490,6 +534,9 @@ func MigrateTo(dstCfg Config) (tablesCopied int, rowsCopied int64, err error) {
 		if len(rows) == 0 {
 			log.Printf("migrate: skip table %s (empty)", table)
 			continue
+		}
+		if n := sanitizeZeroTimeValues(rows); n > 0 {
+			log.Printf("migrate: table %s: %d zero timestamps -> NULL", table, n)
 		}
 
 		// Only keep columns that actually exist in the target table.
@@ -754,6 +801,9 @@ func MigrateFromSQLite(sqlitePath string, dstCfg Config) (tablesCopied int, rows
 		if len(rows) == 0 {
 			log.Printf("migrate: skip table %s (empty)", table)
 			continue
+		}
+		if n := sanitizeZeroTimeValues(rows); n > 0 {
+			log.Printf("migrate: table %s: %d zero timestamps -> NULL", table, n)
 		}
 
 		var dstCols []string

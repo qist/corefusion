@@ -37,7 +37,9 @@ type ExternalNode struct {
 	// AccessDomainJSON 保存「访问域名」配置（与入站 _accessDomain 同构的 JSON 对象）。
 	// 用于 CDN 加速 / 优选 IP：订阅渲染时把 server/port 换成这里选择的域名/IP，
 	// SNI/Host 保持导入时的值。为空 = 未启用，直接使用导入的地址。
-	AccessDomainJSON string `json:"-" gorm:"type:longtext;not null;default:''"`
+	// ⚠ 不能带 default:''：MySQL 8 不允许 TEXT/BLOB 有默认值（Error 1101），
+	// 切库 AutoMigrate 会直接失败。保持可空，读取侧按空串处理。
+	AccessDomainJSON string `json:"-" gorm:"type:longtext"`
 	// AccessDomain 仅用于 API 序列化（不落库），由 AccessDomainJSON 解析而来。
 	AccessDomain map[string]interface{} `json:"access_domain,omitempty" gorm:"-"`
 	CreatedAt    time.Time              `json:"created_at"`

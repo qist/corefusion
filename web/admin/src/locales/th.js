@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "ยังไม่ได้กำหนดค่าขาออก",
       "deleteConfirm": "ยืนยันการลบขาออก \"{tag}\" หรือไม่",
       "savedRestarted": "บันทึกและรีสตาร์ท sing-box เพื่อให้มีผลแล้ว",
+      "defaultNoDisable": "ไม่สามารถปิดใช้งาน outbound สำรองที่มีมาให้ได้",
       "cancel": "ยกเลิก",
       "save": "บันทึก",
       "tagRequired": "ต้องระบุแท็ก",

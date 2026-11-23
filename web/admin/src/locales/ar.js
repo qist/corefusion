@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "لم يتم تكوين أي صادر بعد",
       "deleteConfirm": "هل تريد حذف الصادر \"{tag}\"؟",
       "savedRestarted": "تم الحفظ وإعادة تشغيل sing-box ليصبح ساريًا",
+      "defaultNoDisable": "لا يمكن تعطيل الـ outbound الاحتياطي المدمج",
       "cancel": "إلغاء",
       "save": "حفظ",
       "tagRequired": "الوسم مطلوب",

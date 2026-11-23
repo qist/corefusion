@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "아직 구성된 아웃바운드가 없습니다",
       "deleteConfirm": "{tag}\" 아웃바운드를 삭제하시겠습니까?",
       "savedRestarted": "저장하고 sing-box를 다시 시작해 적용했습니다",
+      "defaultNoDisable": "기본 제공 폴백 아웃바운드는 비활성화할 수 없습니다",
       "cancel": "취소",
       "save": "저장",
       "tagRequired": "태그 필수",

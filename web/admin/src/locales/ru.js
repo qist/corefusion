@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Исходящие пока не настроены",
       "deleteConfirm": "Удалить исходящее «{tag}»?",
       "savedRestarted": "Сохранено, sing-box перезапущен для применения изменений",
+      "defaultNoDisable": "Встроенный резервный outbound нельзя отключить",
       "cancel": "Отмена",
       "save": "Сохранить",
       "tagRequired": "Тег обязателен",

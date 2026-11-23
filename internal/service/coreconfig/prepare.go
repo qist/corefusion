@@ -350,6 +350,19 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 		log.Printf("[PrepareFullConfig] server %d: injected observatory for leastPing/leastLoad balancer(s)", opts.ServerID)
 	}
 
+	// 8f. sing-box：出站支持「禁用」开关。禁用的出站以 `_disabled: true` 存在
+	// 配置里（和 xray 的 enabled=false 等价），渲染运行配置时必须剔除，
+	// 并清理对它的引用，否则 sing-box 启动直接 FATAL：
+	//   - selection/urltest 的成员缺失 → "dependency[nodeA] not found for outbound[proxy]"
+	//   - route.final 指向缺失出站 → "default outbound not found: xxx"
+	// 必须放在 EnsureDefaultOutbounds 之前：direct/block 是保底出站，即使被
+	// 标记禁用也要被重新补回来（前端也不给这两个开关）。
+	if opts.CoreType == "singbox" {
+		if n := StripDisabledSingboxOutbounds(fullConfig); n > 0 {
+			log.Printf("[PrepareFullConfig] server %d: stripped %d disabled sing-box outbound(s)", opts.ServerID, n)
+		}
+	}
+
 	// 9. Ensure default outbounds exist — safety net so every
 	// node always has direct/block even if missing from DB.
 	EnsureDefaultOutbounds(fullConfig, opts.CoreType)
@@ -505,6 +518,155 @@ func EnsureBalancerObservatory(fullConfig map[string]interface{}) bool {
 	}
 	fullConfig["observatory"] = observatory
 	return true
+}
+
+// StripDisabledSingboxOutbounds 剔除被「禁用」的 sing-box 出站，并清理对它们的引用。
+//
+// 界面上的禁用开关只写一个内部标记 `_disabled: true`（不出现在运行配置里），
+// 这样恢复启用时原配置还在。但 sing-box 对引用是严格的：
+//   - selector/urltest 的成员缺失 → 启动 FATAL `dependency[x] not found for outbound[y]`
+//   - route.final 指向缺失出站 → 启动 FATAL `default outbound not found: x`
+//
+// 所以这里做一次级联清理：
+//  1. 剔除 `_disabled: true` 的出站；
+//  2. 从其它分组（带 `outbounds` 数组的 selector/urltest）里移除这些 tag，
+//     分组因此变空则连分组一起剔除（并继续向上清理引用）；
+//  3. 出站的 `detour`、dns.servers[].detour 指向被剔除 tag 时删掉该字段；
+//  4. route.rules[] 里 outbound 指向被剔除 tag 的规则整条移除；
+//  5. route.final 指向被剔除 tag 时回退到 direct（没有 direct 则删掉 final）。
+//
+// 返回被剔除的出站数量（含级联剔除的空分组），便于日志观察。
+func StripDisabledSingboxOutbounds(fullConfig map[string]interface{}) int {
+	raw, ok := fullConfig["outbounds"].([]interface{})
+	if !ok || len(raw) == 0 {
+		return 0
+	}
+
+	removed := map[string]bool{}
+	total := 0
+	for _, item := range raw {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if disabled, _ := m["_disabled"].(bool); disabled {
+			if tag, _ := m["tag"].(string); tag != "" {
+				removed[tag] = true
+				total++
+			}
+		}
+	}
+	if len(removed) == 0 {
+		// 没有禁用的也要把内部标记清掉（避免 strict decode FATAL）。
+		for _, item := range raw {
+			if m, ok := item.(map[string]interface{}); ok {
+				delete(m, "_disabled")
+			}
+		}
+		return 0
+	}
+
+	outbounds := raw
+	// 级联清理：分组被清空会新增 removed 项，最坏情况每轮剔除一个，循环上限按数量。
+	for pass := 0; pass <= len(raw); pass++ {
+		changed := false
+		kept := make([]interface{}, 0, len(outbounds))
+		for _, item := range outbounds {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				kept = append(kept, item)
+				continue
+			}
+			delete(m, "_disabled")
+			tag, _ := m["tag"].(string)
+			if removed[tag] {
+				changed = true
+				continue
+			}
+			// 分组（selector/urltest）成员：移除被禁用的 tag
+			if members, ok := m["outbounds"].([]interface{}); ok {
+				next := make([]interface{}, 0, len(members))
+				for _, mem := range members {
+					if s, ok := mem.(string); ok && removed[s] {
+						changed = true
+						continue
+					}
+					next = append(next, mem)
+				}
+				if len(next) == 0 && tag != "" {
+					// 空分组无法启动，整组剔除，交给下一轮清理引用它的地方。
+					removed[tag] = true
+					total++
+					changed = true
+					continue
+				}
+				m["outbounds"] = next
+			}
+			// 拨号链 detour 指向被禁用出站：删掉 detour（退回默认路由），
+			// 否则 sing-box 报 dependency not found。
+			if d, _ := m["detour"].(string); d != "" && removed[d] {
+				delete(m, "detour")
+			}
+			kept = append(kept, m)
+		}
+		outbounds = kept
+		if !changed {
+			break
+		}
+	}
+	fullConfig["outbounds"] = outbounds
+
+	// dns.servers[].detour
+	if dns, ok := fullConfig["dns"].(map[string]interface{}); ok {
+		if servers, ok := dns["servers"].([]interface{}); ok {
+			for _, item := range servers {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if d, _ := m["detour"].(string); d != "" && removed[d] {
+					delete(m, "detour")
+				}
+			}
+		}
+	}
+
+	// route.rules[] / route.final
+	route, _ := fullConfig["route"].(map[string]interface{})
+	if route == nil {
+		return total
+	}
+	if rules, ok := route["rules"].([]interface{}); ok {
+		kept := make([]interface{}, 0, len(rules))
+		for _, item := range rules {
+			if m, ok := item.(map[string]interface{}); ok {
+				if o, _ := m["outbound"].(string); o != "" && removed[o] {
+					continue
+				}
+			}
+			kept = append(kept, item)
+		}
+		route["rules"] = kept
+	}
+	if final, _ := route["final"].(string); final != "" && removed[final] {
+		if hasSingboxOutboundTag(outbounds, "direct") {
+			route["final"] = "direct"
+		} else {
+			delete(route, "final")
+		}
+	}
+	return total
+}
+
+func hasSingboxOutboundTag(outbounds []interface{}, tag string) bool {
+	for _, item := range outbounds {
+		if m, ok := item.(map[string]interface{}); ok {
+			if t, _ := m["tag"].(string); t == tag {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // EnsureDefaultOutbounds checks that the standard default outbounds exist in

@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "هنوز خروجی‌ای پیکربندی نشده است",
       "deleteConfirm": "خروجی \"{tag}\" حذف شود؟",
       "savedRestarted": "ذخیره شد و sing-box برای اعمال تغییرات راه‌اندازی مجدد شد",
+      "defaultNoDisable": "خروجی پشتیبان داخلی قابل غیرفعال‌سازی نیست",
       "cancel": "لغو",
       "save": "ذخیره",
       "tagRequired": "برچسب الزامی است",

@@ -37,6 +37,16 @@
           <span v-else style="color:#c0c4cc">-</span>
         </template>
       </el-table-column>
+      <el-table-column :label="t('common.enabled')" width="70" align="center">
+        <template #default="{row}">
+          <!-- direct/block 是保底出站（保证 direct/block 一定存在），不允许关 -->
+          <el-switch v-if="!isProtectedOutbound(row)" v-model="row._enabled" size="small"
+            :loading="togglingTag === row.tag" @change="toggleEnabled(row)" />
+          <el-tooltip v-else :content="t('singbox.outbound.defaultNoDisable')">
+            <el-switch :model-value="true" size="small" disabled />
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="TLS" width="60" align="center">
         <template #default="{row}">
           <el-tag v-if="row._tlsEnabled" size="small" type="warning">TLS</el-tag>
@@ -46,6 +56,8 @@
     </el-table>
     <MobileCards v-else :rows="obPaged" title-field="tag" :fields="sbOutboundCardFields">
       <template #actions="{ row }">
+        <el-switch v-if="!isProtectedOutbound(row)" v-model="row._enabled" size="small"
+          :loading="togglingTag === row.tag" @change="toggleEnabled(row)" style="margin-right:8px" />
         <!-- ↑↓ 沿用桌面逻辑：handleAction 内部用 form.indexOf(row) 定位，禁用态按全局序计算 -->
         <el-button size="small" text :disabled="form.indexOf(row) === 0"
           @click="handleAction('up', row)">↑</el-button>
@@ -228,6 +240,23 @@ const dlg = ref(false)
 const editIdx = ref(-1)
 const rf = reactive({})
 const activeTab = useQueryState('sbotab', 'basic')
+// 正在切换启用状态的出站 tag（只让那一行转圈）
+const togglingTag = ref('')
+
+// direct/block 是 sing-box 的保底出站：PrepareFullConfig 的
+// EnsureDefaultOutbounds 会在缺失时补回来，允许关闭只会出现「关了又回来」的假象。
+function isProtectedOutbound(row) {
+  const tag = row?.tag || ''
+  return tag === 'direct' || tag === 'block'
+}
+
+// 落库用：buildOutbound 只输出 sing-box 认识的字段（严格解码），
+// 禁用状态用内部标记 `_disabled` 附带保存，渲染运行配置时由后端剔除。
+function buildSectionItem(row) {
+  const cfg = buildOutbound(row)
+  if (row._enabled === false) cfg._disabled = true
+  return cfg
+}
 
 function noop() {}
 function showAdd() {
@@ -248,8 +277,14 @@ function onTypeChange() {
 function save() {
   const cfg = buildOutbound(rf)
   if (!cfg.tag) { ElMessage.warning(t('singbox.outbound.tagRequired')); return }
-  if (editIdx.value >= 0) form[editIdx.value] = cfg
-  else form.push(cfg)
+  if (editIdx.value >= 0) {
+    // 编辑不能把启用/禁用状态重置成默认值
+    cfg._enabled = form[editIdx.value]?._enabled !== false
+    form[editIdx.value] = cfg
+  } else {
+    cfg._enabled = true
+    form.push(cfg)
+  }
   emit()
   dlg.value = false
   ElMessage.success(t('singbox.outbound.saved'))
@@ -257,29 +292,55 @@ function save() {
 // 「保存」按钮：把当前出站列表（含 ↑↓ 排序、增删改的暂存结果）一次性落库。
 // 之前 ↑↓ 自动保存过一版，用户反馈不要动一下就触发同步 —— 改为显式手动保存。
 const savingOrder = ref(false)
+
+// 落库 + 同步 + 按需重启核心（sing-box 无热更）。失败时抛给调用方处理。
+async function persistSection() {
+  await client.put(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}/section/outbounds`, form.map(buildSectionItem))
+  // sing-box 没有 xray 那样的出站 gRPC 热更，配置落库+同步文件后必须重启核心才生效；
+  // 核心未运行时跳过（下次启动自然用新配置）
+  let restarted = false
+  try {
+    const st = await client.get(`/node-servers/${props.serverId}/status`)
+    const core = (st?.cores || []).find(x => x.core_type === (props.coreType || 'singbox'))
+    if (core?.state === 'running') {
+      await client.post(`/node-servers/${props.serverId}/control`, { core_type: props.coreType || 'singbox', action: 'restart' })
+      restarted = true
+    }
+  } catch {}
+  ElMessage.success(restarted ? t('singbox.outbound.savedRestarted') : t('singbox.outbound.saved'))
+}
+
 async function persistOrder() {
   if (savingOrder.value) return
   savingOrder.value = true
   try {
-    await client.put(`/node-servers/${props.serverId}/protocols/${props.coreType || 'singbox'}/section/outbounds`, form.map(buildOutbound))
-    // sing-box 没有 xray 那样的出站 gRPC 热更，配置落库+同步文件后必须重启核心才生效；
-    // 核心未运行时跳过（下次启动自然用新配置）
-    let restarted = false
-    try {
-      const st = await client.get(`/node-servers/${props.serverId}/status`)
-      const core = (st?.cores || []).find(x => x.core_type === (props.coreType || 'singbox'))
-      if (core?.state === 'running') {
-        await client.post(`/node-servers/${props.serverId}/control`, { core_type: props.coreType || 'singbox', action: 'restart' })
-        restarted = true
-      }
-    } catch {}
-    ElMessage.success(restarted ? t('singbox.outbound.savedRestarted') : t('singbox.outbound.saved'))
+    await persistSection()
   } catch (e) {
     // 透出真实错误（网络/权限/参数），不要笼统的"操作失败"——曾经 PUT 根本没到后端却只报失败
     console.error('[outbounds] persist failed:', e)
     ElMessage.error(e?.response?.data?.message || e?.message || t('common.failed'))
     sync() // 失败回滚 UI
   } finally { savingOrder.value = false }
+}
+
+// 出站启用开关（对齐 xray 出站）：disabled 只写内部标记 `_disabled`，
+// 后端渲染运行配置时剔除并清理引用；失败回滚开关状态。
+async function toggleEnabled(row) {
+  if (savingOrder.value) return
+  savingOrder.value = true
+  togglingTag.value = row.tag || ''
+  try {
+    await persistSection()
+    emit() // 同步父组件暂存，避免它用旧值覆盖
+  } catch (e) {
+    row._enabled = row._enabled !== true
+    console.error('[outbounds] toggle failed:', e)
+    ElMessage.error(e?.response?.data?.message || e?.message || t('common.failed'))
+    sync()
+  } finally {
+    savingOrder.value = false
+    togglingTag.value = ''
+  }
 }
 
 function handleAction(cmd, row) {
@@ -296,9 +357,14 @@ function handleAction(cmd, row) {
 function sync() {
   form.splice(0, form.length)
   if (!Array.isArray(props.data)) return
-  props.data.forEach(ob => form.push(parseOutbound(JSON.parse(JSON.stringify(ob)))))
+  props.data.forEach(ob => {
+    const row = parseOutbound(JSON.parse(JSON.stringify(ob)))
+    // 后端把禁用状态存成 `_disabled: true`（运行配置里会被剔除）
+    row._enabled = ob._disabled !== true
+    form.push(row)
+  })
 }
-function emit() { emitFn('update', form.map(buildOutbound)) }
+function emit() { emitFn('update', form.map(buildSectionItem)) }
 onMounted(() => { sync(); loadChainOutbounds() })
 
 // Chain proxy auto-injected outbounds (read-only, from final sing-box config).

@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "尚未設定出站",
       "deleteConfirm": "確定刪除出站 \"{tag}\"？",
       "savedRestarted": "已儲存，重新啟動 sing-box 後生效",
+      "defaultNoDisable": "保底出站，不允許停用",
       "cancel": "取消",
       "save": "儲存",
       "tagRequired": "標籤必填",

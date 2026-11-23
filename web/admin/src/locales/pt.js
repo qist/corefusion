@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Nenhuma saída configurada",
       "deleteConfirm": "Excluir a saída \"{tag}\"?",
       "savedRestarted": "Salvo e sing-box reiniciado para aplicar",
+      "defaultNoDisable": "O outbound de fallback integrado não pode ser desativado",
       "cancel": "Cancelar",
       "save": "Salvar",
       "tagRequired": "A etiqueta é obrigatória",

@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Belum ada outbound yang dikonfigurasi",
       "deleteConfirm": "Yakin ingin menghapus outbound \"{tag}\"?",
       "savedRestarted": "Tersimpan dan sing-box dimulai ulang agar berlaku",
+      "defaultNoDisable": "Outbound cadangan bawaan tidak dapat dinonaktifkan",
       "cancel": "Batal",
       "save": "Simpan",
       "tagRequired": "Tag wajib diisi",

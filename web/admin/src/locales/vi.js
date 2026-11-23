@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Chưa cấu hình outbound",
       "deleteConfirm": "Xóa outbound \"{tag}\"?",
       "savedRestarted": "Đã lưu và khởi động lại sing-box để áp dụng",
+      "defaultNoDisable": "Không thể tắt outbound dự phòng tích hợp",
       "cancel": "Hủy",
       "save": "Lưu",
       "tagRequired": "Bắt buộc nhập thẻ",

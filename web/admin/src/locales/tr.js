@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Henüz giden yapılandırılmadı",
       "deleteConfirm": "Giden \"{tag}\" silinsin mi?",
       "savedRestarted": "Kaydedildi ve sing-box yeniden başlatılarak etkinleştirildi",
+      "defaultNoDisable": "Yerleşik yedek outbound devre dışı bırakılamaz",
       "cancel": "İptal",
       "save": "Kaydet",
       "tagRequired": "Etiket zorunludur",

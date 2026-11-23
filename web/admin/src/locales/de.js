@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Noch keine Outbounds konfiguriert",
       "deleteConfirm": "Outbound „{tag}“ löschen?",
       "savedRestarted": "Gespeichert und sing-box neu gestartet, um die Änderungen anzuwenden.",
+      "defaultNoDisable": "Eingebauter Fallback-Outbound kann nicht deaktiviert werden",
       "cancel": "Abbrechen",
       "save": "Speichern",
       "tagRequired": "Tag erforderlich",

@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "アウトバウンドはまだ設定されていません",
       "deleteConfirm": "アウトバウンド \"{tag}\" を削除してもよろしいですか？",
       "savedRestarted": "保存しました。sing-box を再起動すると反映されます",
+      "defaultNoDisable": "組み込みのフォールバック outbound は無効化できません",
       "cancel": "キャンセル",
       "save": "保存",
       "tagRequired": "タグは必須",

@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Aucune sortie configurée",
       "deleteConfirm": "Voulez-vous vraiment supprimer la sortie « {tag} » ?",
       "savedRestarted": "Enregistré. sing-box a été redémarré pour appliquer les modifications.",
+      "defaultNoDisable": "L'outbound de secours intégré ne peut pas être désactivé",
       "cancel": "Annuler",
       "save": "Enregistrer",
       "tagRequired": "L'étiquette est requise",

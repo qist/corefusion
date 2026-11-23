@@ -5896,6 +5896,7 @@ export default {
       "noOutbounds": "Aún no hay salidas configuradas",
       "deleteConfirm": "¿Seguro que quieres eliminar la salida \"{tag}\"?",
       "savedRestarted": "Guardado. Reinicia sing-box para aplicar los cambios.",
+      "defaultNoDisable": "El outbound de respaldo integrado no se puede desactivar",
       "cancel": "Cancelar",
       "save": "Guardar",
       "tagRequired": "La etiqueta es obligatoria",

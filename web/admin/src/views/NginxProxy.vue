@@ -699,6 +699,10 @@
               <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafCcModeHint') }}</span>
             </el-form-item>
             <el-form-item :label="t('proxy.wafCcBlockTtl')"><el-input v-model="siteWAFConfig.cc_block_ttl" placeholder="600" style="width:120px" /></el-form-item>
+            <el-form-item :label="t('proxy.wafScoreThreshold')">
+              <el-input v-model="siteWAFConfig.score_block_threshold" placeholder="0" style="width:120px" />
+              <span style="font-size:11px;color:#909399;margin-left:8px">{{ t('proxy.wafScoreThresholdHint') }}</span>
+            </el-form-item>
             <el-divider content-position="left">{{ t('proxy.wafOutputGroup') }}</el-divider>
             <el-form-item :label="t('proxy.wafOutput')">
               <el-select v-model="siteWAFConfig.waf_output" style="width:120px">
@@ -2051,6 +2055,7 @@ white_url_check: merged.white_url_check || 'on',
       cc_rate: merged.cc_rate || '150/60',
       cc_mode: merged.cc_mode || 'ip',
       cc_block_ttl: merged.cc_block_ttl || '600',
+      score_block_threshold: String(merged.score_block_threshold ?? '0'),
       waf_output: merged.waf_output || 'html',
       waf_redirect_url: merged.waf_redirect_url || ''
     }
@@ -2062,7 +2067,7 @@ white_url_check: merged.white_url_check || 'on',
   siteWAFVisible.value = true
 }
 
-const domainRuleNames = ['args.rule', 'blackip.rule', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'header.rule', 'cdnip.rule']
+const domainRuleNames = ['args.rule', 'blackip.rule', 'combo.jsonl', 'cookie.rule', 'post.rule', 'url.rule', 'useragent.rule', 'whiteip.rule', 'whiteurl.rule', 'whiteua.rule', 'referer.rule', 'fileext.rule', 'header.rule', 'cdnip.rule']
 
 async function loadSiteWAFDomainRules(domain) {
   // Always show all rule files, even if empty — user can click Edit to create content
@@ -2118,8 +2123,17 @@ async function saveSiteWAFConfig() {
     const data = await client.get(`${apiBase.value}/waf/domain-config`)
     const obj = JSON.parse(data.content || '{}')
     const cfg = {}
+    // 数值键统一按 nginx 口径写成数字（domain.json 与 config.lua 一致；
+    // 两套引擎都接受数字与数字字符串，写出数字可避免来回编辑时类型漂移）。
+    const numericKeys = ['cc_block_ttl', 'upload_filename_scan_limit', 'post_body_scan_limit', 'score_block_threshold']
     for (const [k, v] of Object.entries(siteWAFConfig.value)) {
-      if (v !== '' && v !== undefined && v !== null) cfg[k] = v
+      if (v === '' || v === undefined || v === null) continue
+      if (numericKeys.includes(k)) {
+        const n = Number(v)
+        cfg[k] = Number.isFinite(n) ? n : v
+        continue
+      }
+      cfg[k] = v
     }
     if (siteWAFRuleMode.value === 'custom') {
       cfg.rule_dir = wafRuleDirFor(siteWAFDomain.value)

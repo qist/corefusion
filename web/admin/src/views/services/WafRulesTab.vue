@@ -213,6 +213,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { Refresh, Promotion } from '@element-plus/icons-vue'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { useAutoRefresh } from '../../composables/useAutoRefresh'
 import MobileCards from '../../components/MobileCards.vue'
 import {
   listWafRules, getWafRule, saveWafRule, deleteWafRule,
@@ -234,8 +235,11 @@ const fileMappings = ref([])
 const newFileName = ref('')
 
 // Rule files that ARE synced from GitHub (engine rules + whiteua)
+// combo.jsonl 是上游三层组合规则引擎的 L2 规则集，必须与引擎规则一起同步；
+// 早先这里漏了它，导致「全局规则里有 combo.jsonl、规则源列表里看不到」。
 const syncedRuleFiles = [
   { name: 'args.rule', merge_mode: 'replace' },
+  { name: 'combo.jsonl', merge_mode: 'replace' },
   { name: 'cookie.rule', merge_mode: 'replace' },
   { name: 'fileext.rule', merge_mode: 'replace' },
   { name: 'header.rule', merge_mode: 'replace' },
@@ -271,6 +275,7 @@ const mergeModeMap = computed(() => {
 
 const ruleDescriptions = {
   'args.rule': 'URL argument rules',
+  'combo.jsonl': 'Combo rules (L2 engine rule set)',
   'url.rule': 'URL path rules',
   'cookie.rule': 'Cookie rules',
   'post.rule': 'POST body rules',
@@ -467,6 +472,12 @@ async function pushToAllNodes() {
     pushing.value = false
   }
 }
+
+// 规则由后台 cron 定时同步：页面开着也要能看到更新后的内容/哈希。
+useAutoRefresh(loadRules, {
+  interval: 30000,
+  isBusy: () => ruleEditorVisible.value,
+})
 
 onMounted(() => {
   loadRules()

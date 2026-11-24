@@ -1652,6 +1652,19 @@ func (s *Service) GetGitHubSource(ctx context.Context) (*GitHubSourceConfig, err
 	if len(cfg.FileMappings) == 0 && cfg.Files == "" {
 		cfg.FileMappings = DefaultGitHubSource().FileMappings
 	}
+	// 内置源会随版本新增引擎文件（如 combo.jsonl），历史保存的清单里没有这些项。
+	// 同步时 SyncFromGitHubWithSource 会自动补全，但配置接口此前原样返回旧清单，
+	// 于是出现「WAF 全局规则里有 combo.jsonl、规则源同步文件里却没有」。
+	// 这里返回同一份补全后的集合，页面展示与实际同步保持一致。
+	if isBuiltinGitHubSource(cfg.URL) && len(cfg.FileMappings) > 0 {
+		names := make([]string, 0, len(cfg.FileMappings))
+		for _, fm := range cfg.FileMappings {
+			names = append(names, fm.Name)
+		}
+		for _, rd := range missingDefaultRuleFiles(names) {
+			cfg.FileMappings = append(cfg.FileMappings, SourceFileMapping{Name: rd.Name})
+		}
+	}
 	if cfg.SyncCron == "" && cfg.Enabled {
 		cfg.SyncCron = DefaultSyncCron
 	}

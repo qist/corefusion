@@ -2,7 +2,7 @@
   <el-container style="height:100vh">
     <el-aside v-if="!isMobile" width="220px" style="background:#304156">
       <h2 style="color:#fff;text-align:center;padding:20px 0;margin:0;font-size:18px">{{ t('common.appName') }}</h2>
-      <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router>
+      <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router @select="onMenuSelect">
         <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
           <el-icon><component :is="item.icon" /></el-icon><span>{{ t(item.title) }}</span>
         </el-menu-item>
@@ -12,7 +12,7 @@
     <el-drawer v-if="isMobile" v-model="drawerOpen" direction="ltr" size="230px" :with-header="false" class="mobile-menu-drawer">
       <div style="background:#304156;min-height:100%">
         <h2 style="color:#fff;text-align:center;padding:20px 0;margin:0;font-size:18px">{{ t('common.appName') }}</h2>
-        <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router @select="drawerOpen=false">
+        <el-menu :default-active="route.path" background-color="#304156" text-color="#bfcbd9" active-text-color="#409EFF" router @select="onMenuSelect($event); drawerOpen=false">
           <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
             <el-icon><component :is="item.icon" /></el-icon><span>{{ t(item.title) }}</span>
           </el-menu-item>
@@ -191,13 +191,21 @@ const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
+// 点击「当前所在」的菜单项时路由不变，Vue Router 不会重建页面，页面数据会一直
+// 停留在打开时的状态（要 F5 才能看到后台已更新的数据）。这里手动递增 epoch
+// 强制重建一次，等价于「刷新当前页面」。
+const pageEpoch = ref(0)
+function onMenuSelect(index) {
+  if (index === route.path) pageEpoch.value++
+}
+
 // 节点详情页的路由只改 :id 时，Vue Router 会复用同一个组件实例，而
 // NodeServerDetail 的 serverId 是 setup 时读取的常量 → 会继续用上一个节点的
 // ID 查询（远程节点页面串出本地面板的代理状态）。这里按 name+id 强制重建；
 // 仅 query 变化（tab 切换）不重建。
 const viewKey = computed(() => {
-  if (route.name === 'NodeServerDetail') return `${route.name}:${route.params.id}`
-  return String(route.name || route.path)
+  if (route.name === 'NodeServerDetail') return `${route.name}:${route.params.id}:${pageEpoch.value}`
+  return `${route.name || route.path}:${pageEpoch.value}`
 })
 
 const currentLocale = computed(() => availableLocales.find(l => l.code === locale.value) || null)

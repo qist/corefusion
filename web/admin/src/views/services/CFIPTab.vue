@@ -143,6 +143,7 @@ import client from '../../api/client'
 import { usePagination } from '../../composables/usePagination'
 import PaginationBar from '../../components/PaginationBar.vue'
 import CFProbeConfig from './CFProbeConfig.vue'
+import { useAutoRefresh, notifyCfipRefresh, CFIP_REFRESH_EVENT } from '../../composables/useAutoRefresh'
 
 const { t } = useI18n()
 const sources = ref([])
@@ -186,6 +187,7 @@ async function checkHealth() {
     await client.post('/cfip/check')
     ElMessage.success(t('common.success'))
     await fetchEntries()
+    notifyCfipRefresh()
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
@@ -298,6 +300,14 @@ function formatTime(ts) {
   if (!ts) return '-'
   return new Date(ts).toLocaleString()
 }
+
+// 定时/事件刷新：链路探测会在后台回写条目健康度，页面开着也要能自动看到。
+// 弹窗打开时跳过，避免覆盖正在填写的新条目。
+useAutoRefresh(fetchEntries, {
+  interval: 30000,
+  events: [CFIP_REFRESH_EVENT],
+  isBusy: () => sourceDlg.value || entryDlg.value,
+})
 
 onMounted(() => { fetchSources(); fetchEntries() })
 </script>

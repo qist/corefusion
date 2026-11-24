@@ -1191,9 +1191,11 @@ async function loadSpeedTestResults() {
 async function runSpeedTestAll() {
   speedTestLoading.value = true
   try {
+    // 后端是同步返回（全部节点测完才响应），拿到响应时结果已写入缓存，
+    // 直接拉一次即可；不要再靠猜 3 秒延时，否则测速慢时页面会停在旧结果。
     await testAllServersSpeed()
     ElMessage.success(t('nodeServer.speedTestStarted'))
-    setTimeout(() => loadSpeedTestResults(), 3000)
+    await loadSpeedTestResults()
   } finally {
     speedTestLoading.value = false
   }

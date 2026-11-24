@@ -29,7 +29,7 @@
     </el-card>
 
     <!-- Tabs -->
-    <el-tabs v-model="activeTab" type="border-card">
+    <el-tabs v-model="activeTab" type="border-card" @tab-change="onTabChange">
       <!-- Overview Tab -->
       <el-tab-pane :label="t('nodeServer.overview')" name="overview">
         <el-descriptions v-if="server" :column="isMobile ? 1 : 3" border>
@@ -619,6 +619,7 @@ import ShareDomainTab from './services/ShareDomainTab.vue'
 import RateLimitTab from './services/RateLimitTab.vue'
 import CoreTrafficTab from './node-server/CoreTrafficTab.vue'
 import { useQueryState } from '../composables/useQueryState'
+import { notifyCfipRefresh } from '../composables/useAutoRefresh'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -626,6 +627,11 @@ const router = useRouter()
 
 const serverId = parseInt(route.params.id) || 0
 const activeTab = useQueryState('tab', 'overview')
+
+// 标签页常驻挂载：切回「直连域名」时刷新探测结果/池健康，避免看到旧数据。
+function onTabChange(name) {
+  if (name === 'shareDomain') notifyCfipRefresh()
+}
 const server = ref(null)
 const certificates = ref([])
 

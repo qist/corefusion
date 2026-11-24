@@ -273,6 +273,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 import { useIsMobile } from '../../composables/useIsMobile'
+import { useAutoRefresh } from '../../composables/useAutoRefresh'
 import MobileCards from '../../components/MobileCards.vue'
 
 const { t } = useI18n()
@@ -596,12 +597,14 @@ async function handleSaveFile() {
 }
 
 // --- Files ---
-async function fetchFiles() {
-  filesLoading.value = true
+// silent=true 用于后台自动刷新：不闪 loading；文件在后台下载/推送完成时状态会自动更新。
+async function fetchFiles(opts = {}) {
+  const { silent = false } = opts
+  if (!silent) filesLoading.value = true
   try {
     const data = await client.get('/geo-rules/files')
     files.value = (data || []).map(f => ({ ...f, _loading: false }))
-  } finally { filesLoading.value = false }
+  } finally { if (!silent) filesLoading.value = false }
 }
 
 async function handleDownload(row) {
@@ -636,6 +639,12 @@ async function handlePushAll() {
   } catch (e) { ElMessage.error(t('common.failed')) } finally { pushAllLoading.value = false }
 }
 
+
+// 文件下载/推送是后台任务：定时静默刷新列表，状态（downloading→available）无需 F5。
+useAutoRefresh(() => fetchFiles({ silent: true }), {
+  interval: 30000,
+  isBusy: () => sourceDialogVisible.value || assetsDialogVisible.value || addFileDialogVisible.value,
+})
 
 onMounted(() => {
   fetchSources().then(() => fetchFiles())

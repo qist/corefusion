@@ -94,6 +94,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
 import CFProbeConfig from './CFProbeConfig.vue'
+import { useAutoRefresh, notifyCfipRefresh, CFIP_REFRESH_EVENT } from '../../composables/useAutoRefresh'
 
 const props = defineProps({
   serverId: { type: Number, default: 0 }
@@ -180,11 +181,14 @@ async function checkHealth() {
     await client.post('/cfip/check')
     ElMessage.success(t('common.success'))
     await fetchItems()
+    notifyCfipRefresh()
   } catch (e) { ElMessage.error(t('common.failed')) }
 }
 
-async function fetchItems() {
-  loading.value = true
+// silent=true 用于后台自动刷新：不显示 loading 遮罩，避免定时闪一下。
+async function fetchItems(opts = {}) {
+  const { silent = false } = opts
+  if (!silent) loading.value = true
   try {
     // limit=100（后端 MaxPageSize）：分享域名是配置项，必须一次拿全。
     // 旧后端默认分页 20 条，历史 cf_ip 行会把 cf_domain 挤到第二页导致列表为空；
@@ -201,7 +205,7 @@ async function fetchItems() {
   } catch {
     items.value = []
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -295,6 +299,12 @@ function formatTime(ts) {
 
 watch(() => props.serverId, () => {
   fetchItems()
+})
+
+// 定时/事件刷新：链路探测会在后台回写条目健康度，页面开着也要能自动看到。
+useAutoRefresh(() => fetchItems({ silent: true }), {
+  interval: 30000,
+  events: [CFIP_REFRESH_EVENT],
 })
 
 onMounted(() => {

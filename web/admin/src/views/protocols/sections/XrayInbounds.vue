@@ -81,8 +81,8 @@
       <el-table-column :label="t('protoCenter.inbounds.protocol')" min-width="180" align="left">
         <template #default="{row}">
           <div style="display:inline-flex;flex-wrap:wrap;gap:4px">
-            <el-tag size="small" color="purple" style="color:#fff">{{ row.protocol.toUpperCase() }}</el-tag>
-            <el-tag size="small" color="success">{{ row.streamSettings?.network || 'raw' }}</el-tag>
+            <el-tag size="small" color="purple" style="color:#fff">{{ (row.protocol || '').toUpperCase() || '-' }}</el-tag>
+            <el-tag v-if="xrayTransportLabel(row)" size="small" color="success">{{ xrayTransportLabel(row) }}</el-tag>
             <el-tag v-if="row.streamSettings?.security === 'tls'" size="small" color="primary">TLS</el-tag>
             <el-tag v-if="row.streamSettings?.security === 'reality'" size="small" color="primary">Reality</el-tag>
           </div>
@@ -2128,6 +2128,27 @@ function canEnableFlowForInbound(tag) {
   return network === 'raw' && (security === 'tls' || security === 'reality')
 }
 
+// xtls-rprx-vision 只能配裸 TCP/raw：vision 直接接管 TCP 字节流，gRPC/xhttp/ws 上
+// 客户端会硬失败或与服务端 flow 校验不一致（`flow mismatch`）。保存前按传输层收敛，
+// 避免把非法组合写进库（后端渲染时也会再兜一层，见 CleanInboundFields）。
+function isRawTransportName(t) {
+  const v = String(t || '').toLowerCase()
+  return v === '' || v === 'tcp' || v === 'raw'
+}
+function stripIncompatibleVisionFlow(ib) {
+  if (!ib || ib.protocol !== 'vless') return false
+  const ss = ib.streamSettings || {}
+  const net = ss.network || ss.method || ''
+  if (isRawTransportName(net)) return false
+  let changed = false
+  const clients = xrayUsersOf(ib)
+  for (const u of clients) {
+    if (u.flow) { u.flow = ''; changed = true }
+  }
+  if (ib.settings && ib.settings.flow) { delete ib.settings.flow; changed = true }
+  return changed
+}
+
 function getProtocolTagType(protocol) {
   const types = { vless: '', vmess: 'success', trojan: 'warning', shadowsocks: 'info', socks: 'danger', http: 'danger', wireguard: 'success', hysteria: 'warning' }
   return types[protocol] || ''
@@ -2171,14 +2192,26 @@ async function resetAllTraffic() {
   } catch {}
 }
 
+// xray 的用户容器因协议而异：vless/vmess/trojan 用 settings.clients，
+// 部分历史模板用 settings.users，http/socks 的单账号在 settings.accounts。
+// 统一入口，避免列表把「有账号」的 http/socks 显示成 0 用户 / undefined。
+function xrayUsersOf(ib) {
+  const st = ib && ib.settings
+  if (!st) return []
+  if (Array.isArray(st.clients)) return st.clients
+  if (Array.isArray(st.users)) return st.users
+  if (Array.isArray(st.accounts)) return st.accounts
+  return []
+}
+
 function getTotalTraffic(ib, direction) {
   // Only use database traffic (synced periodically from xray)
-  const users = ib.settings?.clients || ib.settings?.users || ib.settings?.accounts || []
+  const users = xrayUsersOf(ib)
   return users.reduce((sum, u) => sum + (direction === 'up' ? (u._usedUp || 0) : (u._usedDown || 0)), 0)
 }
 
 function getFirstUserExpiry(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   if (!users.length) return '-'
   const expiry = users[0]._expiry
   if (!expiry) return t('common.unlimited')
@@ -2188,7 +2221,7 @@ function getFirstUserExpiry(ib) {
 }
 
 function isExpired(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   if (!users.length) return false
   const expiry = users[0]._expiry
   if (!expiry) return false
@@ -2197,11 +2230,11 @@ function isExpired(ib) {
 }
 
 function getUserCount(ib) {
-  return (ib.settings?.clients || ib.settings?.users || []).length
+  return (xrayUsersOf(ib)).length
 }
 
 function getActiveUserCount(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   return users.filter(u => {
     if (!u._expiry) return true
     return new Date(u._expiry) > new Date()
@@ -2209,7 +2242,7 @@ function getActiveUserCount(ib) {
 }
 
 function getExpiredUserCount(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   return users.filter(u => {
     if (!u._expiry) return false
     return new Date(u._expiry) <= new Date()
@@ -2224,7 +2257,7 @@ function getTrafficColor(ib) {
 }
 
 function getExpiryColor(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   if (!users.length) return 'purple'
   const expiry = users[0]._expiry
   if (!expiry) return 'purple'
@@ -2237,7 +2270,7 @@ function getExpiryColor(ib) {
 }
 
 function getExpiryDisplay(ib) {
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   if (!users.length) return '∞'
   const expiry = users[0]._expiry
   if (!expiry) return '∞'
@@ -2253,8 +2286,7 @@ function getExpiryDisplay(ib) {
 }
 
 function hasUsers(ib) {
-  if (ib.settings?.users?.length > 0) return true
-  if (ib.settings?.clients?.length > 0) return true
+  if (xrayUsersOf(ib).length > 0) return true
   // Shadowsocks single-user methods have password in settings
   if (ib.protocol === 'shadowsocks' && ib.settings?.password) return true
   return false
@@ -2276,12 +2308,15 @@ function canAddUsers(ib) {
 
 // Has user list (clients/users array with items)
 function hasUserList(ib) {
-  return (ib.settings?.users?.length > 0) || (ib.settings?.clients?.length > 0)
+  return (ib.settings?.clients?.length > 0) || (ib.settings?.users?.length > 0)
 }
 
 function getUsers(ib) {
-  if (ib.settings?.clients?.length > 0) return ib.settings.clients
-  if (ib.settings?.users?.length > 0) return ib.settings.users
+  const list = xrayUsersOf(ib)
+  if (list.length > 0) {
+    // http/socks 的 accounts 用 user/pass 命名，这里映射成统一的 email/password 便于展示。
+    return list.map(u => (u.user && !u.email) ? { ...u, email: u.user, password: u.pass || u.password } : u)
+  }
   // Shadowsocks single-user: create virtual user from settings
   if (ib.protocol === 'shadowsocks' && ib.settings?.password) {
     return [{ email: 'default', password: ib.settings.password }]
@@ -2292,6 +2327,18 @@ function getUsers(ib) {
 // 手机端卡片标题用「节点名称」（备注），没有备注时退回入站标签
 function inboundCardTitle(row) {
   return row._remark || row.tag || ''
+}
+
+// 列表/卡片里的传输标签。
+// http / socks / shadowsocks 这类入站根本没有传输层（streamSettings 为空）→ 返回 ''，
+// 不再强行补 'raw'（以前会显示成 raw / undefined，看起来像配错了）。
+// 有 streamSettings 但 network 缺失、或是历史脏值（字面量 "undefined"/"null"）→ 按裸 TCP 展示 raw。
+function xrayTransportLabel(row) {
+  const ss = row && row.streamSettings
+  if (!ss) return ''
+  const v = String(ss.network || ss.method || '').trim().toLowerCase()
+  if (!v || v === 'undefined' || v === 'null') return 'raw'
+  return v
 }
 
 // 详情页「传输」：http / socks / shadowsocks 等没有传输层（streamSettings 为空），
@@ -2307,7 +2354,7 @@ function transportLabel(ib) {
 const xrayInboundCardFields = computed(() => [
   { label: t('protoCenter.inbounds.tag'), text: (row) => row.tag || '-', hide: (row) => !row.tag },
   { label: t('protoCenter.inbounds.port'), text: (row) => row.port ?? '-' },
-  { label: t('protoCenter.inbounds.protocol'), text: (row) => [(row.protocol || '').toUpperCase(), row.streamSettings?.network || 'raw', row.streamSettings?.security === 'tls' ? 'TLS' : '', row.streamSettings?.security === 'reality' ? 'Reality' : ''].filter(Boolean).join(', ') },
+  { label: t('protoCenter.inbounds.protocol'), text: (row) => [(row.protocol || '').toUpperCase(), xrayTransportLabel(row), row.streamSettings?.security === 'tls' ? 'TLS' : '', row.streamSettings?.security === 'reality' ? 'Reality' : ''].filter(Boolean).join(', ') },
   { label: t('protoCenter.inbounds.users'), text: (row) => {
     const parts = [String(getUserCount(row))]
     if (getActiveUserCount(row) > 0) parts.push(String(getActiveUserCount(row)))
@@ -2607,7 +2654,7 @@ function showResetTraffic(ib, index) {
 async function confirmResetTraffic() {
   if (currentResetIndex.value < 0) return
   const ib = form.value[currentResetIndex.value]
-  const users = ib.settings?.clients || ib.settings?.users || []
+  const users = xrayUsersOf(ib)
   const user = users.find(u => (u.email || u.id) === resetSelectedUser.value)
   if (user) {
     user._usedUp = 0
@@ -2689,7 +2736,7 @@ async function confirmAddUser() {
     // Also add to DB config
     const ib = form.value.find(i => i.tag === addUserTag.value)
     if (ib) {
-      const users = ib.settings?.clients || ib.settings?.users || []
+      const users = xrayUsersOf(ib)
       const userEntry = {
         email: newUser.email,
         level: 0,
@@ -2748,7 +2795,7 @@ async function confirmAddUser() {
 
 function showManageUsers(ib) {
   manageUsersTag.value = ib.tag
-  manageUsersList.value = ib.settings?.clients || ib.settings?.users || []
+  manageUsersList.value = xrayUsersOf(ib)
   manageUsersDlg.value = true
 }
 
@@ -2817,7 +2864,7 @@ async function removeUserFromXray(user) {
     // Remove from DB config
     const ib = form.value.find(i => i.tag === manageUsersTag.value)
     if (ib) {
-      const users = ib.settings?.clients || ib.settings?.users || []
+      const users = xrayUsersOf(ib)
       const idx = users.findIndex(u => u.email === user.email)
       if (idx >= 0) {
         users.splice(idx, 1)
@@ -5194,6 +5241,10 @@ async function saveInbound() {
   const ib = buildInbound(rf, false)
   // Build config for API call (with absolute paths)
   const apiConfig = buildInbound(rf, true)
+  // 传输不是 raw/tcp 时清掉 vision（非法组合会整条连不上）。
+  if (stripIncompatibleVisionFlow(ib) || stripIncompatibleVisionFlow(apiConfig)) {
+    ElMessage.warning(t('singbox.users.flowRawOnly'))
+  }
 
   // Store the full inbound object as config_json
   const configJson = { ...ib }
@@ -5426,7 +5477,7 @@ async function toggleEnabled(row) {
         } catch {}
         await client.post(`${nodeBase.value}/xray/control/inbound`, { inbound: apiConfig }, { suppressErrorMessage: true })
         // Safety net: remove any paused users from xray runtime
-        const allClients = ib.settings?.clients || ib.settings?.users || []
+        const allClients = xrayUsersOf(ib)
         for (const u of allClients) {
           if (u._paused && u.email) {
             try {

@@ -7,11 +7,14 @@
       </div>
     </el-form-item>
     <el-form-item :label="t('singbox.obProtocol.flow')">
-      <el-select v-model="model.flow" style="width:100%" clearable @change="emit">
+      <!-- vision 只能配裸 TCP/raw：gRPC/xhttp/ws 上客户端会硬失败或与服务端 flow 不一致。 -->
+      <el-select v-model="model.flow" style="width:100%" clearable :disabled="!flowAllowed"
+        :placeholder="flowAllowed ? '' : t('singbox.obProtocol.flowRawOnly')" @change="emit">
         <el-option label="" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
         <el-option label="xtls-rprx-vision-udp443" value="xtls-rprx-vision-udp443" />
       </el-select>
+      <div v-if="!flowAllowed" class="flow-hint">{{ t('singbox.obProtocol.flowRawOnly') }}</div>
     </el-form-item>
     <el-form-item :label="t('singbox.obProtocol.packetEncoding')">
       <el-select v-model="model.packet_encoding" style="width:100%" clearable @change="emit">
@@ -25,10 +28,27 @@
 <script setup>
 // VLESS 出站：UUID / Flow / PacketEncoding
 // 注意：VLESSOutboundOptions 没有 encryption 字段（写出去会 unknown field）
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { generateUuid } from '../utils/singboxDefaults'
 const { t } = useI18n()
-defineProps({ model: { type: Object, required: true } })
+const props = defineProps({ model: { type: Object, required: true } })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
+
+// 传输不是裸 TCP/raw 时禁用 flow 并清空（见 SingboxUsers 同名逻辑）。
+const flowAllowed = computed(() => {
+  const v = String(props.model?.transport?.type || '').toLowerCase()
+  return v === '' || v === 'tcp' || v === 'raw'
+})
+watch(flowAllowed, allowed => {
+  if (!allowed && props.model.flow) {
+    props.model.flow = ''
+    emit()
+  }
+}, { immediate: true })
 </script>
+
+<style scoped>
+.flow-hint { color: #e6a23c; font-size: 11px; line-height: 1.4; }
+</style>

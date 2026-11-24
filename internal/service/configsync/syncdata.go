@@ -726,7 +726,11 @@ func (b *DataSyncBuilder) BuildSyncDataRequest(ctx context.Context, serverID int
 
 		// Core guardian settings (开机启动/崩溃重启 per core type) — sync so the
 		// Agent's local Reconcile/Guardian honor the toggles set in the panel UI.
-		coreGuardians, err := b.rawProvider.ListCoreGuardians(ctx, settingsServerID)
+		//
+		// 必须用**目标节点自己的** serverID：守护是节点级设置（面板 process_guardians
+		// 按 server 的 service 行存），镜像节点上用户单独改的开关不能被主节点的值覆盖。
+		// 与上面 nginx/caddy 守护一致（都用 serverID，只有配置类设置才跟随 mirror 源）。
+		coreGuardians, err := b.rawProvider.ListCoreGuardians(ctx, serverID)
 		if err != nil {
 			log.Printf("[DataSyncBuilder] server %d: failed to list core guardians: %v", serverID, err)
 		} else {

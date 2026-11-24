@@ -5977,6 +5977,7 @@ export default {
       "userkey": "Kullanıcı anahtarı",
       "alterId": "AlterID",
       "flow": "Akış kontrolü",
+      flowRawOnly: "Vision yalnızca raw/TCP taşımada çalışır; mevcut taşımada devre dışı",
       "share": "Paylaş",
       "qrCode": "QR kod",
       "addUser": "Kullanıcı ekle",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "Taşıma",
       "transportPlaceholder": "Seçim yapılmazsa saf TCP kullanılır.",
+      tcpHint: "sing-box'ta \"tcp\" taşıma türü yok: boş bırakmak düz TCP demektir (vision yalnızca raw TCP ile çalışır)",
       "noneTcp": "hiçbiri (TCP)",
       "randomGen": "Rastgele oluştur",
       "path": "Yol",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "Akış kontrolü",
+      flowRawOnly: "Vision yalnızca raw/TCP gerektirir; mevcut taşımada flow temizlendi",
       "password": "Şifre",
       "alterId": "Kimliği değiştir",
       "packetEncoding": "Paket kodlaması",

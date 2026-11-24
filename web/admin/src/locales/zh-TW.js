@@ -5977,6 +5977,7 @@ export default {
       "userkey": "使用者金鑰",
       "alterId": "AlterID",
       "flow": "流量控制",
+      flowRawOnly: "僅裸 TCP/raw 支援 vision，目前傳輸已停用",
       "share": "分享",
       "qrCode": "QR 碼",
       "addUser": "新增使用者",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "傳輸",
       "transportPlaceholder": "未選擇則使用純 TCP",
+      tcpHint: "sing-box 沒有 tcp 傳輸類型：不選傳輸層就是裸 TCP（vision 只能配裸 TCP）",
       "noneTcp": "無 (TCP)",
       "randomGen": "隨機產生",
       "path": "路徑",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "流量控制",
+      flowRawOnly: "僅裸 TCP/raw 支援 vision，目前傳輸已清空流控",
       "password": "密碼",
       "alterId": "Alter ID",
       "packetEncoding": "封包編碼",

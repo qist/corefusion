@@ -23,10 +23,12 @@
         <el-button size="small" @click="u.userkey = generateKey(); emit()">{{ t('singbox.users.generate') }}</el-button>
       </template>
       <el-input-number v-if="model.type === 'vmess'" v-model="u.alterId" :min="0" :max="65535" :placeholder="t('singbox.users.alterId')" style="width:100px" @change="emit" />
-      <el-select v-if="model.type === 'vless'" v-model="u.flow" style="width:150px" clearable :placeholder="t('singbox.users.flow')" @change="emit">
+      <el-select v-if="model.type === 'vless'" v-model="u.flow" style="width:150px" clearable
+        :disabled="!flowAllowed" :placeholder="flowAllowed ? t('singbox.users.flow') : t('singbox.users.flowRawOnly')" @change="emit">
         <el-option label="" value="" />
         <el-option label="xtls-rprx-vision" value="xtls-rprx-vision" />
       </el-select>
+      <span v-if="model.type === 'vless' && !flowAllowed" class="flow-hint">{{ t('singbox.users.flowRawOnly') }}</span>
       <span class="user-traffic" :title="t('proto2.trafficUsed')">
         {{ t('proto2.trafficUsed') }}: ↑ {{ formatTraffic(u._usedUp) }} ↓ {{ formatTraffic(u._usedDown) }}
       </span>
@@ -38,6 +40,7 @@
 
 <script setup>
 import { useI18n } from 'vue-i18n'
+import { computed, watch } from 'vue'
 import { UUID_PROTOCOLS, PASSWORD_PROTOCOLS, PSK_PROTOCOLS, AUTH_USER_PROTOCOLS, USERKEY_PROTOCOLS, generateUuid, generatePassword, generateUsername, generateKey, generateEmail } from '../utils/singboxDefaults'
 import { formatTraffic } from '../../utils/traffic'
 
@@ -48,6 +51,24 @@ const props = defineProps({
 })
 const emitFn = defineEmits(['update'])
 function emit() { emitFn('update') }
+
+// xtls-rprx-vision 只能配裸 TCP/raw：vision 直接接管 TCP 字节流，gRPC/xhttp/ws 上
+// 客户端会硬失败（sing-box: `initialize vision: not a valid supported TLS connection`），
+// 或与服务端 flow 校验不一致（`flow mismatch`）。传输不是 raw/tcp 时禁用并清空 flow。
+const flowAllowed = computed(() => {
+  const tr = props.model?.transport?.type
+  const v = String(tr || '').toLowerCase()
+  return v === '' || v === 'tcp' || v === 'raw'
+})
+
+watch(flowAllowed, allowed => {
+  if (allowed) return
+  let changed = false
+  for (const u of props.model.users || []) {
+    if (u.flow) { u.flow = ''; changed = true }
+  }
+  if (changed) emit()
+}, { immediate: true })
 
 function addUser() {
   const u = { name: generateEmail() }
@@ -76,4 +97,5 @@ function addUser() {
 <style scoped>
 .user-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
 .user-traffic { color: #909399; font-size: 12px; white-space: nowrap; }
+.flow-hint { color: #e6a23c; font-size: 11px; white-space: nowrap; }
 </style>

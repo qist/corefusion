@@ -956,6 +956,74 @@ func CleanInboundFields(inbound map[string]interface{}, tag, listen, protocol st
 			}
 		}
 	}
+	// VLESS 的 xtls-rprx-vision 只适用于裸 TCP/raw：vision 直接接管 TCP 字节流，
+	// ws / grpc / xhttp / httpupgrade / kcp 上不成立。存量入站里确实存在
+	// 「REALITY + gRPC + vision」（历史默认值所致），下发后会变成：
+	//   - sing-box 客户端硬失败：`initialize vision: not a valid supported TLS connection`
+	//   - 服务端与客户端 flow 不一致：`flow mismatch: expected xtls-rprx-vision, but got none`
+	// 即整条入站不可用。这里统一按传输层收敛（与分享链接的 formatter.FlowForTransport
+	// 口径一致），保证运行配置里不会出现非法组合。
+	if strings.EqualFold(protocol, "vless") {
+		if transport := inboundTransportOf(inbound, coreType); !isRawTransport(transport) {
+			cleared := 0
+			for _, c := range containers {
+				for _, key := range []string{"clients", "users"} {
+					items, ok := c[key].([]interface{})
+					if !ok {
+						continue
+					}
+					for _, item := range items {
+						m, ok := item.(map[string]interface{})
+						if !ok {
+							continue
+						}
+						if flow, _ := m["flow"].(string); strings.TrimSpace(flow) != "" {
+							delete(m, "flow")
+							cleared++
+						}
+					}
+				}
+				// 部分模板把 flow 存在入站级 settings.flow（新增用户默认继承它）。
+				if flow, _ := c["flow"].(string); strings.TrimSpace(flow) != "" {
+					delete(c, "flow")
+				}
+			}
+			if cleared > 0 {
+				log.Printf("[CleanInboundFields] %s 入站 %s 的传输是 %q（非 raw/tcp），已清除 %d 个用户的 xtls-rprx-vision flow",
+					coreType, tag, transport, cleared)
+			}
+		}
+	}
+}
+
+// inboundTransportOf 取入站的传输层名称（统一小写）：xray 在 streamSettings.network
+// （老字段 method 同义），sing-box 在 transport.type；都没有 = 裸 TCP（返回空串）。
+func inboundTransportOf(inbound map[string]interface{}, coreType string) string {
+	if coreType == "singbox" {
+		if tr, ok := inbound["transport"].(map[string]interface{}); ok {
+			if t, _ := tr["type"].(string); strings.TrimSpace(t) != "" {
+				return strings.ToLower(strings.TrimSpace(t))
+			}
+		}
+		return ""
+	}
+	if ss, ok := inbound["streamSettings"].(map[string]interface{}); ok {
+		for _, k := range []string{"network", "method"} {
+			if v, _ := ss[k].(string); strings.TrimSpace(v) != "" {
+				return strings.ToLower(strings.TrimSpace(v))
+			}
+		}
+	}
+	return ""
+}
+
+// isRawTransport 判断传输层是否属于 vision 可用的裸 TCP（空 / tcp / raw）。
+func isRawTransport(transport string) bool {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "", "tcp", "raw":
+		return true
+	}
+	return false
 }
 
 // StripDisabledSections removes top-level sections that have "_disabled": true.

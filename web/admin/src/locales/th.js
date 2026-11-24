@@ -5977,6 +5977,7 @@ export default {
       "userkey": "คีย์ผู้ใช้",
       "alterId": "อัลเทอร์ไอดี",
       "flow": "การควบคุมการไหล",
+      flowRawOnly: "vision รองรับเฉพาะ raw/TCP จึงปิดใช้งานสำหรับการรับส่งปัจจุบัน",
       "share": "แชร์",
       "qrCode": "คิวอาร์โค้ด",
       "addUser": "เพิ่มผู้ใช้",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "การรับส่ง",
       "transportPlaceholder": "หากไม่เลือก จะใช้ TCP แบบธรรมดา",
+      tcpHint: "sing-box ไม่มีชนิดการรับส่ง \"tcp\": เว้นว่างหมายถึง TCP ล้วน (vision ใช้ได้เฉพาะ raw TCP)",
       "noneTcp": "ไม่มี (TCP)",
       "randomGen": "สร้างแบบสุ่ม",
       "path": "พาธ",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "การควบคุมการไหล",
+      flowRawOnly: "vision รองรับเฉพาะ raw/TCP จึงล้าง flow สำหรับการรับส่งปัจจุบัน",
       "password": "รหัสผ่าน",
       "alterId": "เปลี่ยนรหัส",
       "packetEncoding": "การเข้ารหัสแพ็กเก็ต",

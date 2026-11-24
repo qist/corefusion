@@ -1333,6 +1333,15 @@ func (s *Service) SyncServerData(ctx context.Context, serverID int64, applyAndSt
 	return s.nodeMgr.SyncDataToServer(ctx, serverID, applyAndStart)
 }
 
+// PushCoreGuardians 立即把核心守护设置下发给远端节点（面板改守护后调用）。
+// 本地节点无需下发（守护直接生效在面板自己的进程管理器）。
+func (s *Service) PushCoreGuardians(ctx context.Context, serverID int64) error {
+	if s.nodeMgr == nil {
+		return fmt.Errorf("node manager not initialized")
+	}
+	return s.nodeMgr.PushGuardiansToServer(ctx, serverID)
+}
+
 // IsLocalServer checks if a server is the local panel server.
 func (s *Service) IsLocalServer(ctx context.Context, serverID int64) bool {
 	if s.nodeMgr == nil {

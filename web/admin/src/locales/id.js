@@ -5977,6 +5977,7 @@ export default {
       "userkey": "Kunci pengguna",
       "alterId": "mengubahID",
       "flow": "Kontrol aliran",
+      flowRawOnly: "Vision hanya didukung pada transport raw/TCP; dinonaktifkan untuk transport saat ini",
       "share": "Bagikan",
       "qrCode": "Kode QR",
       "addUser": "Tambah pengguna",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "Mengangkut",
       "transportPlaceholder": "Jika tidak dipilih, gunakan TCP murni",
+      tcpHint: "sing-box tidak memiliki tipe transport \"tcp\": biarkan kosong berarti TCP mentah (vision hanya pada raw TCP)",
       "noneTcp": "tidak ada (TCP)",
       "randomGen": "Acak",
       "path": "Jalur",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "Kontrol aliran",
+      flowRawOnly: "Vision hanya mendukung raw/TCP; flow dikosongkan untuk transport saat ini",
       "password": "Kata sandi",
       "alterId": "Ubah ID",
       "packetEncoding": "Pengodean paket",

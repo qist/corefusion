@@ -3,6 +3,9 @@
     <el-form label-width="140px" label-position="left">
       <el-form-item :label="t('singbox.transport.transport')">
         <el-select v-model="model._transportType" style="width:100%" clearable @change="onChange" :placeholder="t('singbox.transport.transportPlaceholder')">
+          <!-- 显式的空选项：裸 TCP 就是"不指定传输层"（sing-box 的 transport 枚举里
+               没有 tcp，写 type:"tcp" 会被 strict decode 拒载）。 -->
+          <el-option :label="t('singbox.transport.transportPlaceholder')" value="" />
           <el-option label="http" value="http" />
           <el-option label="ws" value="ws" />
           <el-option label="quic" value="quic" />

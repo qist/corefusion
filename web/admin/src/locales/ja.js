@@ -5977,6 +5977,7 @@ export default {
       "userkey": "ユーザーキー",
       "alterId": "変更ID",
       "flow": "フロー制御",
+      flowRawOnly: "vision は生の TCP/raw のみ対応のため、現在のトランスポートでは無効化されています",
       "share": "共有",
       "qrCode": "QRコード",
       "addUser": "ユーザーを追加",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "トランスポート",
       "transportPlaceholder": "選択しない場合は純粋なTCPを使用",
+      tcpHint: "sing-box に tcp トランスポート種別はありません。未選択が生の TCP です（vision は生 TCP のみ対応）",
       "noneTcp": "なし (TCP)",
       "randomGen": "ランダム生成",
       "path": "パス",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "フロー制御",
+      flowRawOnly: "vision は生の TCP/raw のみ対応のため、現在のトランスポートでは flow を解除しました",
       "password": "パスワード",
       "alterId": "IDの変更",
       "packetEncoding": "パケットエンコード",

@@ -5977,6 +5977,7 @@ export default {
       "userkey": "مفتاح المستخدم",
       "alterId": "معرف التغيير",
       "flow": "التحكم في التدفق",
+      flowRawOnly: "يتطلب vision نقل raw/TCP؛ تم تعطيله للنقل الحالي",
       "share": "مشاركة",
       "qrCode": "رمز QR",
       "addUser": "إضافة مستخدم",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "النقل",
       "transportPlaceholder": "إذا لم يتم الاختيار، يُستخدم TCP فقط",
+      tcpHint: "لا يوجد نوع نقل \"tcp\" في sing-box: تركه فارغًا يعني TCP خام (vision يعمل فقط على raw TCP)",
       "noneTcp": "لا شيء (TCP)",
       "randomGen": "إنشاء عشوائي",
       "path": "المسار",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "التحكم في التدفق",
+      flowRawOnly: "يتطلب vision نقل raw/TCP؛ تم مسح flow للنقل الحالي",
       "password": "كلمة المرور",
       "alterId": "تغيير المعرف",
       "packetEncoding": "ترميز الحزم",

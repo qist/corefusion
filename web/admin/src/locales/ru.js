@@ -5977,6 +5977,7 @@ export default {
       "userkey": "Ключ пользователя",
       "alterId": "AlterID",
       "flow": "Управление потоком",
+      flowRawOnly: "Vision работает только на raw/TCP; для текущего транспорта отключено",
       "share": "Поделиться",
       "qrCode": "QR-код",
       "addUser": "Добавить пользователя",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "Транспорт",
       "transportPlaceholder": "Если не выбрано, используется чистый TCP",
+      tcpHint: "В sing-box нет типа транспорта \"tcp\": пусто = чистый TCP (vision работает только на raw TCP)",
       "noneTcp": "нет (TCP)",
       "randomGen": "Сгенерировать случайно",
       "path": "Путь",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "Управление потоком",
+      flowRawOnly: "Vision работает только на raw/TCP; flow очищен для текущего транспорта",
       "password": "Пароль",
       "alterId": "Изменить идентификатор",
       "packetEncoding": "Кодирование пакетов",

@@ -5977,6 +5977,7 @@ export default {
       "userkey": "사용자 키",
       "alterId": "AlterID",
       "flow": "흐름 제어",
+      flowRawOnly: "vision은 raw/TCP 전송에서만 지원되어 현재 전송에서는 비활성화됩니다",
       "share": "공유",
       "qrCode": "QR 코드",
       "addUser": "사용자 추가",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "전송",
       "transportPlaceholder": "선택하지 않으면 순수 TCP를 사용합니다",
+      tcpHint: "sing-box에는 tcp 전송 유형이 없습니다. 선택하지 않으면 순수 TCP입니다(vision은 raw TCP에서만 동작).",
       "noneTcp": "없음 (TCP)",
       "randomGen": "무작위 생성",
       "path": "경로",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "흐름 제어",
+      flowRawOnly: "vision은 raw/TCP에서만 지원되어 현재 전송의 flow를 비웠습니다",
       "password": "비밀번호",
       "alterId": "ID 변경",
       "packetEncoding": "패킷 인코딩",

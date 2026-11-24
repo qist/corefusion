@@ -25,6 +25,8 @@ func (f *fakeNodeOperator) GetRemoteState(context.Context, int64) (map[string]*C
 	return f.states, f.binaries, nil
 }
 
+func (f *fakeNodeOperator) PushCoreGuardians(context.Context, int64) error { return nil }
+
 // 异常核心明细：看板「异常 N」悬浮时要能看到是哪台节点、哪个核心。
 func TestCoreServiceAbnormalServices(t *testing.T) {
 	ctx := context.Background()

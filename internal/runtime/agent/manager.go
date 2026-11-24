@@ -2457,6 +2457,50 @@ func (m *NodeServerManager) ReadConfigFileOnServer(ctx context.Context, serverID
 	return resp.Content, resp.FilePath, nil
 }
 
+// PushGuardiansToServer 只把「核心守护设置」（auto_start / auto_restart /
+// max_restart_count）下发给远端节点，不写运行配置、不重启核心。
+//
+// 背景：面板改守护只写自己的 process_guardians 表，而 Agent 的守护值**只随
+// SyncData 下发**。以前必须等下一次完整同步（standby-sync / mirror sync /
+// Agent 重连）才生效，表现就是「面板显示 auto_restart=true，kill 之后却不拉起」。
+//
+// 这里复用 SyncData 载荷（保证 Agent 侧 prune 语义与完整同步一致，避免空载荷
+// 误删本地行），但强制 ApplyAndStart=false 并清空 config_content —— Agent 只落
+// 库 + 应用守护设置，不会写运行配置，也不会重启正在跑的核心。
+// 顺带：若守护从 auto_start=false 改成 true 且核心没在跑，Agent 会立即启动它。
+func (m *NodeServerManager) PushGuardiansToServer(ctx context.Context, serverID int64) error {
+	if m.isLocalServer(serverID) {
+		return nil // 本地节点的守护就是面板自己的库，不需要下发
+	}
+	if m.dataSyncProvider == nil {
+		return fmt.Errorf("data sync provider not configured")
+	}
+	req, err := m.dataSyncProvider.BuildSyncDataRequest(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("build sync data: %w", err)
+	}
+	req.ApplyAndStart = false
+	req.ConfigContent = nil
+	req.ConfigCoreType = ""
+
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_SyncData{
+			SyncData: req,
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 30*time.Second)
+	if err != nil {
+		return fmt.Errorf("push guardian settings to server %d: %w", serverID, err)
+	}
+	log.Printf("[NodeServerManager] core guardian settings pushed to server %d: %d entries, status=%v err=%q",
+		serverID, len(req.CoreGuardians), result.Status, result.Error)
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return fmt.Errorf("agent rejected guardian sync: %s", result.Error)
+	}
+	return nil
+}
+
 // FetchSingboxConnectionsOnServer 读取远端节点 sing-box clash_api 的
 // /connections 原始 JSON。clash_api 只监听节点回环，面板直连不到，
 // 必须由 Agent 在本机读取后回传（可用性判断由调用方负责）。

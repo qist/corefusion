@@ -5977,6 +5977,7 @@ export default {
       "userkey": "Khóa người dùng",
       "alterId": "ID thay đổi",
       "flow": "Kiểm soát luồng",
+      flowRawOnly: "Vision chỉ hỗ trợ raw/TCP; đã tắt cho transport hiện tại",
       "share": "Chia sẻ",
       "qrCode": "Mã QR",
       "addUser": "Thêm người dùng",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "Truyền tải",
       "transportPlaceholder": "Nếu không chọn, sẽ dùng TCP thuần",
+      tcpHint: "sing-box không có loại transport \"tcp\": để trống nghĩa là TCP thuần (vision chỉ hoạt động trên raw TCP)",
       "noneTcp": "không có (TCP)",
       "randomGen": "Tạo ngẫu nhiên",
       "path": "Đường dẫn",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "Điều khiển luồng",
+      flowRawOnly: "Vision chỉ hỗ trợ raw/TCP; đã xóa flow cho transport hiện tại",
       "password": "Mật khẩu",
       "alterId": "ID thay đổi",
       "packetEncoding": "Mã hóa gói tin",

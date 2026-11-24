@@ -5977,6 +5977,7 @@ export default {
       "userkey": "Clave de usuario",
       "alterId": "AlterID",
       "flow": "Control de flujo",
+      flowRawOnly: "Vision requiere transporte raw/TCP; deshabilitado para el transporte actual",
       "share": "Compartir",
       "qrCode": "Código QR",
       "addUser": "Añadir usuario",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "Transporte",
       "transportPlaceholder": "Si no se selecciona, se usa TCP puro",
+      tcpHint: "sing-box no tiene tipo de transporte \"tcp\": dejarlo vacío es TCP puro (vision solo funciona sobre raw TCP)",
       "noneTcp": "Ninguno (TCP)",
       "randomGen": "Generar aleatoriamente",
       "path": "Ruta",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "Control de flujo",
+      flowRawOnly: "Vision requiere raw/TCP; flujo vaciado para el transporte actual",
       "password": "Contraseña",
       "alterId": "Modificar ID",
       "packetEncoding": "Codificación de paquetes",

@@ -20,6 +20,8 @@ type NodeOperator interface {
 	IsLocalServer(ctx context.Context, serverID int64) bool
 	ControlCore(ctx context.Context, serverID int64, coreType, action string) error
 	GetRemoteState(ctx context.Context, serverID int64) (coreStates map[string]*CoreStateInfo, binaries []*BinaryInfoItem, err error)
+	// PushCoreGuardians 立即把面板上的守护设置下发给远端 Agent（见 UpdateGuardian）。
+	PushCoreGuardians(ctx context.Context, serverID int64) error
 }
 
 // CoreStateInfo represents a core's state on a remote node.
@@ -657,6 +659,23 @@ func (h *ProcessHandler) UpdateGuardian(c *gin.Context) {
 	if err := h.processMgr.UpdateGuardian(c.Request.Context(), serviceID, autoStart, autoRestart, maxRestarts); err != nil {
 		response.InternalError(c, "UPDATE_FAILED", err.Error())
 		return
+	}
+
+	// 守护设置只存在面板库，Agent 侧**只随 SyncData 更新**。远端节点必须立刻补推，
+	// 否则会出现「面板显示已开启、kill 掉却不拉起」，要等下一次完整同步（主备
+	// standby-sync / 镜像同步 / Agent 重连）才生效。
+	// 异步执行：完整载荷构建+下发较慢，不能拖住这个 UI 请求；本地节点无需下发。
+	if h.nodeOperator != nil {
+		if sid, perr := strconv.ParseInt(c.Param("id"), 10, 64); perr == nil &&
+			!h.nodeOperator.IsLocalServer(c.Request.Context(), sid) {
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+				defer cancel()
+				if err := h.nodeOperator.PushCoreGuardians(ctx, sid); err != nil {
+					log.Printf("[ProcessHandler] push core guardians to server %d failed: %v", sid, err)
+				}
+			}()
+		}
 	}
 
 	response.OK(c, gin.H{

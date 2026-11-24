@@ -5977,6 +5977,7 @@ export default {
       "userkey": "کلید کاربر",
       "alterId": "AlterID",
       "flow": "کنترل جریان",
+      flowRawOnly: "vision فقط روی raw/TCP کار می‌کند؛ برای انتقال فعلی غیرفعال شد",
       "share": "اشتراک‌گذاری",
       "qrCode": "کد QR",
       "addUser": "افزودن کاربر",
@@ -5986,6 +5987,7 @@ export default {
     "transport": {
       "transport": "انتقال",
       "transportPlaceholder": "در صورت عدم انتخاب، TCP خام استفاده می‌شود",
+      tcpHint: "sing-box نوع انتقال \"tcp\" ندارد: خالی گذاشتن یعنی TCP خام (vision فقط روی raw TCP کار می‌کند)",
       "noneTcp": "هیچ (TCP)",
       "randomGen": "تولید تصادفی",
       "path": "مسیر",
@@ -6189,6 +6191,7 @@ export default {
     "obProtocol": {
       "uuid": "UUID",
       "flow": "کنترل جریان",
+      flowRawOnly: "vision فقط روی raw/TCP کار می‌کند؛ flow برای انتقال فعلی پاک شد",
       "password": "رمز عبور",
       "alterId": "تغییر شناسه",
       "packetEncoding": "کدگذاری بسته",

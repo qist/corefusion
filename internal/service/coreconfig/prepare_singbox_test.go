@@ -725,3 +725,36 @@ func TestMigrateSingboxLegacyDNSKeepsNewFormat(t *testing.T) {
 		t.Error("servers 丢失")
 	}
 }
+
+// v2ray_api 的默认 10086 被业务入站占用时必须自动避让：否则 sing-box 启动
+// 直接 FATAL（192.168.2.175 真实事故：xray 的 inbound-vless-10086 占着 10086）。
+func TestEnsureSingboxV2RayAPIAvoidsInboundPortConflict(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{
+			map[string]interface{}{"type": "vless", "tag": "a", "listen_port": float64(10086)},
+			map[string]interface{}{"type": "vless", "tag": "b", "listen_port": float64(10087)},
+		},
+	}
+	EnsureSingboxV2RayAPI(full)
+	exp, _ := full["experimental"].(map[string]interface{})
+	v2api, _ := exp["v2ray_api"].(map[string]interface{})
+	got, _ := v2api["listen"].(string)
+	if got != "127.0.0.1:10088" {
+		t.Fatalf("v2ray_api.listen = %q, want 127.0.0.1:10088（跳过 10086/10087）", got)
+	}
+}
+
+// 没有冲突时保持默认值不动。
+func TestEnsureSingboxV2RayAPIKeepsDefaultWhenNoConflict(t *testing.T) {
+	full := map[string]interface{}{
+		"inbounds": []interface{}{
+			map[string]interface{}{"type": "vless", "tag": "a", "listen_port": float64(443)},
+		},
+	}
+	EnsureSingboxV2RayAPI(full)
+	exp, _ := full["experimental"].(map[string]interface{})
+	v2api, _ := exp["v2ray_api"].(map[string]interface{})
+	if v2api["listen"] != defaultSingboxV2RayAPIListen {
+		t.Fatalf("v2ray_api.listen = %v, want %s", v2api["listen"], defaultSingboxV2RayAPIListen)
+	}
+}

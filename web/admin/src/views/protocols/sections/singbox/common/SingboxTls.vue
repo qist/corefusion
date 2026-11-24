@@ -152,6 +152,16 @@
         </div>
         <div class="hint">{{ t('singbox.tls.xverLocalBound1') }}</div>
       </el-form-item>
+      <el-form-item :label="t('singbox.tls.autoSni')">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-switch v-model="model._autoSni" @change="emit" />
+          <span class="hint" style="margin:0">{{ t('singbox.tls.autoSniHint') }}</span>
+        </div>
+        <el-alert
+          v-if="model._autoSni !== false && nginxPPBlocked"
+          type="warning" :closable="false" show-icon
+          style="margin-top:8px" :title="t('singbox.tls.autoSniNginxBlocked')" />
+      </el-form-item>
       <el-form-item :label="t('singbox.tls.handshakePort')">
         <el-input-number v-model="model._realityHandshakePort" :min="1" :max="65535" style="width:100%" @change="emit" />
       </el-form-item>
@@ -573,12 +583,28 @@ watch(
 // 本地 Reality 自动 SNI 配置（面板 system_settings: reality.local_sni）
 const localSniCfg = ref(defaultLocalSniConfig())
 
+// 节点 443 分流方式：nginx 的 proxy_protocol 是 listen 组级别的，且 sing-box 1.6 起
+// 已移除入站 PROXY 协议支持 —— 同端口只要 nginx 发 PROXY 头，sing-box 的 REALITY
+// 就必然握手失败，后端会跳过它的 SNI 派生规则。这里只做提示，不改用户选择。
+const nginxPPBlocked = ref(false)
+async function loadSniSplitState() {
+  nginxPPBlocked.value = false
+  try {
+    const st = await client.get(`/node-servers/${props.serverId}/proxy/status`)
+    const active = String((st && (st.active_proxy || st.type)) || '').toLowerCase()
+    if (active !== 'nginx') return
+    const s = await client.get(`/node-servers/${props.serverId}/nginx/settings`)
+    nginxPPBlocked.value = !!(s && s.stream_proxy_protocol)
+  } catch { nginxPPBlocked.value = false }
+}
+
 // 组件挂载时加载证书和本地 Reality 服务器
 onMounted(() => {
   loadCertificates()
   loadLocalRealityServers()
   loadRealityTargets()
   loadLocalSniConfig().then(c => { localSniCfg.value = c })
+  loadSniSplitState()
   initRealityTarget()
 })
 

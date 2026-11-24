@@ -1042,10 +1042,12 @@ func ApplyAPIInboundRouting(fullConfig map[string]interface{}) {
 		}
 	}
 	if !hasAPIInbound {
+		// 10085 若已被业务入站占用，xray 会因 bind: address already in use 直接起不来。
+		// 内部 API 端口对用户不可见，自动避让到下一个空闲端口最安全。
 		apiInbound := map[string]interface{}{
 			"tag":      tag,
 			"listen":   "127.0.0.1",
-			"port":     10085,
+			"port":     pickInternalPort(fullConfig, 10085),
 			"protocol": "dokodemo-door",
 			"settings": map[string]interface{}{"address": "127.0.0.1"},
 		}
@@ -1862,8 +1864,13 @@ func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
 	listen, _ := v2api["listen"].(string)
 	if listen == "" {
 		listen = defaultSingboxV2RayAPIListen
-		v2api["listen"] = listen
 	}
+	// 端口被业务入站占用时自动避让：核心会以
+	// `start service: post-start v2ray server: listen tcp 127.0.0.1:10086: bind:
+	// address already in use` 直接 FATAL（192.168.2.175 真实事故：xray 的
+	// inbound-vless-10086 监听 0.0.0.0:10086）。
+	listen = avoidInboundPortCollision(fullConfig, listen)
+	v2api["listen"] = listen
 	stats, ok := v2api["stats"].(map[string]interface{})
 	if !ok || stats == nil {
 		stats = map[string]interface{}{}
@@ -1878,6 +1885,94 @@ func EnsureSingboxV2RayAPI(fullConfig map[string]interface{}) {
 			log.Printf("[PrepareFullConfig] clash_api 与 v2ray_api 端口冲突(%s)，已改为 %s", listen, defaultSingboxClashAPIListen)
 		}
 	}
+}
+
+// internalPortUsedByInbound 报告端口是否已被某个业务入站占用。
+// xray 入站用 "port"、sing-box 入站用 "listen_port"，两者都看。
+func internalPortUsedByInbound(fullConfig map[string]interface{}, port int) bool {
+	if port <= 0 {
+		return false
+	}
+	inbounds, _ := fullConfig["inbounds"].([]interface{})
+	for _, raw := range inbounds {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, key := range []string{"port", "listen_port"} {
+			if jsonPortValue(m[key]) == port {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// jsonPortValue 兼容配置里的数字形态（float64 / int / json.Number / 字符串）。
+func jsonPortValue(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return int(i)
+	case string:
+		if p, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+			return p
+		}
+	}
+	return 0
+}
+
+// pickInternalPort 选一个不与业务入站冲突的内部端口（stats API 用）。
+// 起点 preferred，被占用则依次 +1，最多尝试 50 个。
+func pickInternalPort(fullConfig map[string]interface{}, preferred int) int {
+	if !internalPortUsedByInbound(fullConfig, preferred) {
+		return preferred
+	}
+	for p := preferred + 1; p < preferred+50; p++ {
+		if !internalPortUsedByInbound(fullConfig, p) {
+			return p
+		}
+	}
+	return preferred
+}
+
+// avoidInboundPortCollision 对 "host:port" 形式的内部监听地址做端口避让，
+// 主机部分保持不变（127.0.0.1 / ::1 等）。端口没冲突或地址解析失败时原样返回。
+func avoidInboundPortCollision(fullConfig map[string]interface{}, listen string) string {
+	host, port := splitListenPort(listen)
+	if port <= 0 || !internalPortUsedByInbound(fullConfig, port) {
+		return listen
+	}
+	free := pickInternalPort(fullConfig, port)
+	if free == port {
+		return listen
+	}
+	newListen := host + ":" + strconv.Itoa(free)
+	log.Printf("[PrepareFullConfig] stats API 端口 %d 已被入站占用，已改为 %s", port, newListen)
+	return newListen
+}
+
+// splitListenPort 从 "host:port" 取出主机和端口；"[::1]:10086" 也支持。
+func splitListenPort(addr string) (string, int) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", 0
+	}
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return "", 0
+	}
+	p, err := strconv.Atoi(strings.TrimSpace(addr[i+1:]))
+	if err != nil || p <= 0 || p > 65535 {
+		return "", 0
+	}
+	return addr[:i], p
 }
 
 // EnsureSingboxClashAPI 已移除：clash_api 属于可选实验性配置，只在用户显式

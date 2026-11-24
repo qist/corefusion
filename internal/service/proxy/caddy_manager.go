@@ -602,6 +602,15 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			sb.WriteString("\ttls " + m.resolvePath(p.Cert) + " " + m.resolvePath(p.Key) + "\n")
 		}
 
+		// 隐藏服务器指纹：Caddy 2.11 会写 `Server: Caddy`，reverseproxy 还会在响应头
+		// 追加 `Via: 1.1 Caddy`（浏览器 DevTools / 抓包直接暴露"这是 Caddy"）。
+		// `header` 的响应头删除对本 site block 的所有响应生效（reverse_proxy /
+		// file_server / respond / redir 都走同一个 response writer）。
+		sb.WriteString("\theader {\n")
+		sb.WriteString("\t\t-Server\n")
+		sb.WriteString("\t\t-Via\n")
+		sb.WriteString("\t}\n")
+
 		// ACME HTTP-01 挑战只在**该 site block 真的监听 80** 时生成：
 		// CA 的 http-01 校验只访问 80，带证书的块（443）或显式非 80 端口的块里
 		// 写挑战处理是死代码，还会让人误以为“已经配好了”。

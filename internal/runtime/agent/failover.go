@@ -524,7 +524,7 @@ func (m *FailoverManager) GetFailoverStatus(ctx context.Context, serverID int64)
 	}
 
 	if server.LastHeartbeatAt != nil {
-		status.LastHeartbeatAge = time.Since(*server.LastHeartbeatAt)
+		status.LastHeartbeatAge = int64(time.Since(*server.LastHeartbeatAt).Seconds())
 	}
 
 	// Check core health (only if Agent is online)
@@ -540,7 +540,7 @@ func (m *FailoverManager) GetFailoverStatus(ctx context.Context, serverID int64)
 	// Include core-down duration if being tracked
 	m.coreDownMu.Lock()
 	if since, ok := m.coreDownSince[serverID]; ok {
-		status.CoreDownDuration = time.Since(since)
+		status.CoreDownDuration = int64(time.Since(since).Seconds())
 	}
 	m.coreDownMu.Unlock()
 
@@ -549,14 +549,15 @@ func (m *FailoverManager) GetFailoverStatus(ctx context.Context, serverID int64)
 
 // FailoverStatus represents the failover state of a server.
 type FailoverStatus struct {
-	ServerID         int64         `json:"server_id"`
-	NodeType         string        `json:"node_type"`
-	CurrentRole      string        `json:"current_role"`
-	Online           bool          `json:"online"`
-	AllCoresDown     bool          `json:"all_cores_down"`
-	CoreDownDuration time.Duration `json:"core_down_duration_seconds"`
-	PartnerID        int64         `json:"partner_id"`
-	LastHeartbeatAge time.Duration `json:"last_heartbeat_age_seconds"`
-	HasFailedOver    bool          `json:"has_failed_over"`
-	RecoverMode      string        `json:"recover_mode"`
+	ServerID     int64  `json:"server_id"`
+	NodeType     string `json:"node_type"`
+	CurrentRole  string `json:"current_role"`
+	Online       bool   `json:"online"`
+	AllCoresDown bool   `json:"all_cores_down"`
+	// 两个 *_seconds 字段都用秒：time.Duration 直接 JSON 化是纳秒，前端按秒显示会翻 1e9 倍。
+	CoreDownDuration int64  `json:"core_down_duration_seconds"`
+	PartnerID        int64  `json:"partner_id"`
+	LastHeartbeatAge int64  `json:"last_heartbeat_age_seconds"`
+	HasFailedOver    bool   `json:"has_failed_over"`
+	RecoverMode      string `json:"recover_mode"`
 }

@@ -162,7 +162,7 @@
           <el-descriptions-item :label="t('protoCenter.inbounds.tag')">{{ detailsInbound.tag }}</el-descriptions-item>
           <el-descriptions-item :label="t('protoCenter.inbounds.protocol')">{{ detailsInbound.protocol?.toUpperCase() }}</el-descriptions-item>
           <el-descriptions-item :label="t('protoCenter.inbounds.port')">{{ detailsInbound.port }}</el-descriptions-item>
-          <el-descriptions-item :label="t('protoCenter.inbounds.transport')">{{ detailsInbound.streamSettings?.network || 'raw' }} {{ detailsInbound.streamSettings?.security !== 'none' ? detailsInbound.streamSettings?.security : '' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('protoCenter.inbounds.transport')">{{ transportLabel(detailsInbound) }}</el-descriptions-item>
           <el-descriptions-item :label="t('protoCenter.inbounds.remark')">{{ detailsInbound._remark || '-' }}</el-descriptions-item>
           <el-descriptions-item :label="t('common.status')">
             <el-tag :type="detailsInbound._enabled ? 'success' : 'danger'" size="small">{{ detailsInbound._enabled ? t('common.enabled') : t('common.disabled') }}</el-tag>
@@ -703,6 +703,12 @@
                   <div class="hint">{{ t('protoCenter.reality.serverNamesHint') }}</div>
                   <div v-if="sniConflicts.length" class="hint" style="color:#e6a23c">
                     {{ t('protoHint.xrayIn.sniConflictList', { list: sniConflicts.map(c => t('protoHint.xrayIn.sniUsedBy', { sni: c.sni, by: c.by })).join(t('common.listSeparator')) }) }}
+                  </div>
+                </el-form-item>
+                <el-form-item :label="t('protoCenter.reality.autoSni')">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <el-switch v-model="rf.streamSettings.reality._autoSni" @change="onAutoSniChange" />
+                    <span class="hint" style="margin:0">{{ t('protoCenter.reality.autoSniHint') }}</span>
                   </div>
                 </el-form-item>
                 <el-form-item :label="t('protoCenter.reality.privateKey')">
@@ -1303,7 +1309,7 @@
               <el-switch v-model="rf.sockopt.tcpMptcp" @change="emit" />
             </el-form-item>
             <el-form-item :label="t('protoCenter.sockopt.acceptProxyProtocol')">
-              <el-switch v-model="rf.sockopt.acceptProxyProtocol" @change="emit" />
+              <el-switch v-model="rf.sockopt.acceptProxyProtocol" @change="onProxyProtocolManualChange" />
             </el-form-item>
             <el-form-item :label="t('protoCenter.sockopt.dialerProxy')">
               <el-input v-model="rf.sockopt.dialerProxy" @change="emit" />
@@ -2288,6 +2294,15 @@ function inboundCardTitle(row) {
   return row._remark || row.tag || ''
 }
 
+// 详情页「传输」：http / socks / shadowsocks 等没有传输层（streamSettings 为空），
+// 以前会拼出 "raw undefined" —— security 不存在时 `undefined !== 'none'` 为真。
+function transportLabel(ib) {
+  const ss = ib && ib.streamSettings
+  if (!ss || !ss.network) return '-'
+  const sec = ss.security && ss.security !== 'none' ? ss.security : ''
+  return sec ? `${ss.network} ${sec}` : ss.network
+}
+
 // 手机端卡片字段（与桌面表格列一一对应；启用开关在 actions 插槽里）
 const xrayInboundCardFields = computed(() => [
   { label: t('protoCenter.inbounds.tag'), text: (row) => row.tag || '-', hide: (row) => !row.tag },
@@ -3046,7 +3061,7 @@ function getDefaultInbound() {
     listen: '0.0.0.0', port: port, _enabled: true,
     _listenType: 'tcp', _socketPath: '', _socketPerm: '0666',
     settings: { clients: [{ id: genUUID(), email: genEmail(), flow: '', level: 0, _quota: 'unlimited', _expiry: null }], _encryptionType: '', encryption: 'none', decryption: 'none' },
-    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, useSystemCA: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 } }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, masque: { path: '/.well-known/masque/ip/{target}/{ipproto}/' }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
+    streamSettings: { network: 'raw', security: 'reality', tls: { serverName: '', _alpn: ['h2', 'http/1.1', 'h3'], minVersion: '1.2', maxVersion: '1.3', _cipherSuites: [], _curves: [], rejectUnknownSni: false, disableSystemRoot: false, useSystemCA: false, enableSessionResumption: false, masterKeyLog: '', fingerprint: 'chrome', _certMode: 'file', _certId: '', _certName: '', _certificateFile: '', _keyFile: '', _certificateContent: '', _keyContent: '', _certUsage: 'encipherment', _buildChain: false, _ocspStapling: 3600, _oneTimeLoading: false, echServerKeys: '', echConfigList: '', _echSockoptStr: '' }, reality: { target: 'www.amazon.com:443', serverNamesStr: '', privateKey: '', _password: '', shortIdsStr: '', _fingerprint: 'chrome', show: false, xver: 0, minClientVer: '', maxClientVer: '', maxTimeDiff: 0, mldsa65Seed: '', _mldsa65Verify: '', _showLimitUpload: false, limitFallbackUpload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _showLimitDownload: false, limitFallbackDownload: { afterBytes: 0, bytesPerSec: 0, burstBytesPerSec: 0 }, _autoSni: true, _autoSniProxy: false }, raw: { acceptProxyProtocol: false, headerType: 'none', request: { version: '1.1', method: 'GET', _pathsStr: '/', _headers: [] }, response: { version: '1.1', status: '200', reason: 'OK', _headers: [] } }, ws: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [], heartbeatPeriod: 0 }, kcp: { mtu: 1350, tti: 50, uplinkCapacity: 5, downlinkCapacity: 20, congestion: false, readBufferSize: 2, writeBufferSize: 2 }, grpc: { serviceName: genId(12), authority: '', settings: { multiMode: false, user_agent: '', idle_timeout: 0, health_check_timeout: 20, permit_without_stream: false, initial_windows_size: 0 } }, httpupgrade: { acceptProxyProtocol: false, path: '/?ed=2560', host: '', _headers: [] }, xhttp: { path: '/', host: '', mode: 'auto', extra: { _showMethod: false, uplinkHTTPMethod: '', noGRPCHeader: false, noSSEHeader: false, _showMaxHeader: false, serverMaxHeaderBytes: 0, _headers: [], xPaddingBytes: '100-1000', xPaddingObfsMode: false, scMaxEachPostBytes: 1000000, scMinPostsIntervalMs: 30, scMaxBufferedPosts: 30, scStreamUpServerSecs: '20-80', xmux: { maxConcurrency: '16-32', maxConnections: 0, cMaxReuseTimes: 0, hMaxRequestTimes: '600-900', hMaxReusableSecs: '1800-3000', hKeepAlivePeriod: 0 } } }, masque: { path: '/.well-known/masque/ip/{target}/{ipproto}/' }, hysteria: { version: 2, udpIdleTimeout: 60, masquerade: { type: '', dir: '', url: '', rewriteHost: false, insecure: false, content: '', _headers: [], statusCode: 0 } }, http: { _hostStr: '', path: '/' } },
     sniffing: { enabled: true, destOverride: ['http', 'tls', 'quic'], metadataOnly: false, _domainsExcludedStr: '', _ipsExcludedStr: '', routeOnly: false },
     _fallbackEnabled: false, fallbacks: [],
     sockopt: { _enabled: false, mark: 0, tcpFastOpen: false, tproxy: 'off', domainStrategy: '', interface: '', v6only: false, tcpKeepAliveIdle: 0, tcpKeepAliveInterval: 0, tcpUserTimeout: 10000, tcpcongestion: '', tcpMaxSeg: 1440, tcpWindowClamp: 600, tcpMptcp: false, acceptProxyProtocol: false, dialerProxy: '', addressPortStrategy: '', _trustedXffStr: '', _showHappyEyeballs: false, happyEyeballs: { tryDelayMs: 0, prioritizeIPv6: false, interleave: 1, maxConcurrentTry: 4 }, _showCustomSockopt: false, _customSockopt: [] },
@@ -3087,6 +3102,8 @@ function onProtocolChange() {
   } else {
     rf.streamSettings.security = 'none'
   }
+  // 离开 Reality 时撤销「自动加入 SNI」配套的 PROXY 头（手动开的保留），避免污染非 Reality 入站。
+  if (rf.streamSettings.security !== 'reality') disableAutoSniProxy()
   // Reset FinalMask when switching from hysteria
   if (p !== 'hysteria' && rf.finalmask._enabled) {
     rf.finalmask._enabled = false
@@ -3168,6 +3185,8 @@ function onNetworkChange() {
   // Reset incompatible security when network changes
   if (rf.streamSettings.security === 'reality' && !['raw', 'xhttp', 'grpc'].includes(rf.streamSettings.network)) {
     rf.streamSettings.security = 'none'
+    // 离开 Reality 时撤销「自动加入 SNI」配套的 PROXY 头（手动开的保留）。
+    disableAutoSniProxy()
   }
   emit()
 }
@@ -3232,6 +3251,14 @@ function updateUdpHopFromPortHop() {
 }
 
 function onSecurityChange() {
+  // 只有 Reality 才需要「自动加入 SNI」配套的 PROXY 头。切到别的 security 时
+  // 撤销自动加上的 acceptProxyProtocol（手动开的保留），避免非 Reality 入站被保存成必须带 PROXY 头。
+  if (rf.streamSettings.security === 'reality') {
+    if (rf.streamSettings.reality?._autoSni) enableSockoptProxyProtocol()
+    else disableAutoSniProxy()
+  } else {
+    disableAutoSniProxy()
+  }
   emit()
 }
 
@@ -3396,6 +3423,8 @@ function onTargetChange() {
     if (!domains.length) domains = randomDomains(count, used)
     rf.streamSettings.reality.serverNamesStr = domains.join('\n')
     rf.streamSettings.reality.xver = 1
+    // 本地 Reality 目标默认走 443 SNI 前置：自动加入 SNI 并开启 PROXY 头。
+    setAutoSniEnabled(true)
   } else {
     // Preset: use the SNI from the preset target, xver=0
     const tgt = allRealityTargets.value.find(rt => rt.target === target)
@@ -3403,9 +3432,53 @@ function onTargetChange() {
       rf.streamSettings.reality.serverNamesStr = tgt.sni
       rf.streamSettings.reality.xver = 0
     }
+    // 公共预设按直连处理，默认不抢 443 上同名 SNI。
+    setAutoSniEnabled(false)
   }
   emit()
 }
+
+// 自动加入 SNI 必须让 xray 接受前置代理补的 PROXY 头（xray 26.x 只认 sockopt）。
+//
+// 所有权（_autoSniProxy）：
+//   - 本来没开、由这里置上 → 标记 owned，关闭 auto SNI 时自动关回去；
+//   - 用户手动开的（owned=false）→ 只保证它是 true，关闭 auto SNI 时**不动**它。
+function enableSockoptProxyProtocol() {
+  const r = rf.streamSettings?.reality
+  if (!rf.sockopt) rf.sockopt = { _enabled: true, acceptProxyProtocol: false }
+  const manual = rf.sockopt.acceptProxyProtocol === true && !r?._autoSniProxy
+  rf.sockopt._enabled = true
+  rf.sockopt.acceptProxyProtocol = true
+  if (r && !manual) r._autoSniProxy = true
+}
+
+// 只撤销「自动置上」的 PROXY 头；手动开启的保留。
+function disableAutoSniProxy() {
+  const r = rf.streamSettings?.reality
+  if (!r || !r._autoSniProxy) return
+  r._autoSniProxy = false
+  rf.sockopt.acceptProxyProtocol = false
+}
+
+function setAutoSniEnabled(val) {
+  const r = rf.streamSettings?.reality
+  if (!r) return
+  r._autoSni = val
+  if (val) enableSockoptProxyProtocol()
+  else disableAutoSniProxy()
+}
+
+function onAutoSniChange(val) {
+  setAutoSniEnabled(val)
+  emit()
+}
+
+// 用户手动切 acceptProxyProtocol：所有权交还用户，之后关 auto SNI 不再连带关闭。
+function onProxyProtocolManualChange() {
+  if (rf.streamSettings?.reality) rf.streamSettings.reality._autoSniProxy = false
+  emit()
+}
+
 
 // Collect already-used SNIs from other inbounds on this node-server
 // 本节点「其它入站」占用的 SNI（Set），供随机/固定前缀域名生成避开。
@@ -3691,7 +3764,7 @@ function nameLines(v) {
   return lines
 }
 
-function parseRealitySettings(reality) {
+function parseRealitySettings(reality, autoSni = true, autoSniProxy = false) {
   const settingsArr = reality.settings || []
   const cs = settingsArr[0] || {}
   const lfu = reality.limitFallbackUpload || {}
@@ -3718,6 +3791,10 @@ function parseRealitySettings(reality) {
     limitFallbackUpload: { afterBytes: lfu.afterBytes || 0, bytesPerSec: lfu.bytesPerSec || 0, burstBytesPerSec: lfu.burstBytesPerSec || 0 },
     _showLimitDownload: !!reality.limitFallbackDownload,
     limitFallbackDownload: { afterBytes: lfd.afterBytes || 0, bytesPerSec: lfd.bytesPerSec || 0, burstBytesPerSec: lfd.burstBytesPerSec || 0 },
+    // 是否把 Server Names 自动写入 Caddy/Nginx 的 443 SNI 分流（后端 _autoSni）
+    _autoSni: autoSni !== false,
+    // acceptProxyProtocol 是否由「自动加入 SNI」置上（关闭时只撤销自己置上的）
+    _autoSniProxy: autoSniProxy === true,
   }
 }
 
@@ -4221,6 +4298,10 @@ function parseInbound(ib) {
   // "Unix Socket + 0.0.0.0"，一保存就把 @abstract/路径写坏。
   const listenType = inferListenType(rawListen)
   const [sockPath, sockPerm] = listenType === 'sock' ? splitSocketListen(rawListen) : ['', '']
+  // 「自动添加到 SNI」老数据没有 _autoSni：按旧口径推断（unix socket / 勾了 PROXY 头），
+  // 这样打开再保存不会把原来已派生的 SNI 弄丢。
+  const autoSni = ib._autoSni === true
+    || (ib._autoSni === undefined && (listenType === 'sock' || !!(ss.sockopt && ss.sockopt.acceptProxyProtocol)))
   return {
     _id: ib._id || null,
     _remark: ib._remark || ib.tag || '', tag: ib.tag || '', protocol: ib.protocol || 'vless',
@@ -4237,7 +4318,7 @@ function parseInbound(ib) {
     streamSettings: {
       network: normalizeNetwork(ss.network || ss.method), security: ss.security || 'none',
       tls: parseTlsSettings(tls),
-      reality: parseRealitySettings(ss.realitySettings || {}),
+      reality: parseRealitySettings(ss.realitySettings || {}, autoSni, ib._autoSniProxy === true),
       raw: parseRawSettings(ss.rawSettings || ss.tcpSettings || {}),
       ws: parseWsSettings(ss.wsSettings || {}),
       kcp: parseKcpSettings(ss.kcpSettings || {}),
@@ -4662,6 +4743,12 @@ function buildInbound(ib, isApiCall = false) {
       if (r.spiderX) settingsObj.spiderX = r.spiderX
       if (Object.keys(settingsObj).length) rs.settings = [settingsObj]
       result.streamSettings.realitySettings = rs
+      // 面板侧开关（顶层内部字段，渲染运行配置前由 coreconfig 剥离）：
+      // 控制后端是否把 serverNames 自动派生到 Caddy/Nginx 的 443 SNI 分流。
+      result._autoSni = r._autoSni !== false
+      // acceptProxyProtocol 的所有权：true 表示该值由「自动加入 SNI」置上，
+      // 关闭自动 SNI 时可安全撤销，不会误关用户手动开启的值。
+      result._autoSniProxy = r._autoSniProxy === true
     }
     // Add RAW settings if network is raw
     if (ib.streamSettings.network === 'raw' && ib.streamSettings.raw) {
@@ -4975,6 +5062,8 @@ function showAdd() {
     if (!domains.length) domains = randomDomains(count, used)
     rf.streamSettings.reality.serverNamesStr = domains.join('\n')
     rf.streamSettings.reality.xver = 1
+    // 本地 Reality 目标默认走 443 SNI 前置：自动加入 SNI 并开启 PROXY 头。
+    setAutoSniEnabled(true)
   } else {
     const available = realityTargets.value.filter(t => !isSniUsed(t.sni))
     const pool = available.length > 0 ? available : realityTargets.value
@@ -4982,6 +5071,8 @@ function showAdd() {
     rf.streamSettings.reality.target = rt.target
     rf.streamSettings.reality.serverNamesStr = rt.sni
     rf.streamSettings.reality.xver = 0
+    // 公共预设按直连处理，默认不抢 443 上同名 SNI。
+    setAutoSniEnabled(false)
   }
   genRealityKey(rf)
 }

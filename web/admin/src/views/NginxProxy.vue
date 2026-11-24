@@ -824,8 +824,12 @@
             <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.sniDefaultBackendHint') }}</div>
           </div>
           <div>
+            <!-- 独立设置（默认 8443）：公网 443 归 stream，本地 HTTPS 与 fallback 都落这里。
+                 之前改成跟随 https_listen → 默认 https_listen=443 时 fallback 变成
+                 127.0.0.1:443，与公网分流端口冲突。 -->
             <div style="font-size:12px;color:#909399;margin-bottom:4px">{{ t('proxy.localHttpsPort') }}</div>
-            <el-input :model-value="localHttpsTarget()" size="small" style="width:190px" disabled />
+            <el-input v-model="settings.sni_local_port" size="small" style="width:190px" placeholder="8443 / 127.0.0.1:8443" />
+            <div style="font-size:11px;color:#909399;margin-top:2px">{{ t('proxy.localHttpsPortHint') }}</div>
           </div>
           <el-button size="small" type="success" @click="saveSettings">{{ t('common.save') }}</el-button>
           <el-button size="small" type="warning" @click="batchMigrate">{{ t('proxy.batchMigrate') }}</el-button>
@@ -1676,14 +1680,19 @@ function globalHttpsListen() {
   return String(settings.value.https_listen || settings.value.default_https_port || '443').trim() || '443'
 }
 
-// 「本地 HTTPS 目标」跟随 https_listen（可填 443 / 127.0.0.1:443）。
+// 「本地 HTTPS 端口」是 SNI 本地 HTTPS 的独立设置（与 Caddy 的 proxy.sni_local_port 同义），
+// 默认 8443；**不能跟随 https_listen**：公网 443 归 stream 的 ssl_preread，
+// https_listen 通常是 443（或 127.0.0.1:443），拿它当本地目标会把 fallback 指到公网口。
+// 可填 "8443" 或 "127.0.0.1:8443"。
+function sniLocalPortValue() {
+  return String(settings.value.sni_local_port || '').trim() || '8443'
+}
 function localHttpsTarget() {
-  const v = globalHttpsListen()
-  if (!v) return '127.0.0.1:8443'
+  const v = sniLocalPortValue()
   return v.includes(':') ? v : `127.0.0.1:${v}`
 }
 function localHttpsPort() {
-  const v = globalHttpsListen()
+  const v = sniLocalPortValue()
   const m = v.match(/:(\d+)$/)
   if (m) return m[1]
   return /^\d+$/.test(v) ? v : '8443'

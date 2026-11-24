@@ -9,64 +9,31 @@
       </div>
     </div>
 
-    <el-table v-if="!isMobile" :data="obPaged" stripe style="width:100%" size="small">
-      <el-table-column label="#" width="50" align="right">
-        <template #default="{ $index }"><span style="font-size:11px;opacity:0.6">{{ (obPage - 1) * obSize + $index + 1 }}</span></template>
-      </el-table-column>
-      <el-table-column :label="t('singbox.outbound.actions')" width="210" align="center">
-        <template #default="{ row, $index }">
-          <!-- 对齐 xray 出站列表：↑↓ 独立文字按钮直接可见（顺序 = 配置文件顺序，
-               第一个出站是 route.final 留空时的兜底出口） -->
-          <el-button size="small" text :disabled="(obPage - 1) * obSize + $index === 0"
-            @click="handleAction('up', row)">↑</el-button>
-          <el-button size="small" text :disabled="(obPage - 1) * obSize + $index === form.length - 1"
-            @click="handleAction('down', row)">↓</el-button>
-          <el-button size="small" text type="primary" @click="handleAction('edit', row)">{{ t('common.edit') }}</el-button>
-          <el-button size="small" text type="danger" @click="handleAction('delete', row)">{{ t('common.delete') }}</el-button>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('singbox.outbound.tag')" min-width="120" show-overflow-tooltip>
-        <template #default="{row}"><span style="font-weight:600">{{ row.tag || '-' }}</span></template>
-      </el-table-column>
-      <el-table-column :label="t('singbox.outbound.type')" width="100" align="center">
-        <template #default="{row}"><el-tag size="small">{{ row.type }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="Server" min-width="160" show-overflow-tooltip>
-        <template #default="{row}">
-          <span v-if="row.server" style="font-size:12px">{{ row.server }}:{{ row.server_port }}</span>
-          <span v-else style="color:#c0c4cc">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('common.enabled')" width="70" align="center">
-        <template #default="{row}">
-          <!-- direct/block 是保底出站（保证 direct/block 一定存在），不允许关 -->
-          <el-switch v-if="!isProtectedOutbound(row)" v-model="row._enabled" size="small"
-            :loading="togglingTag === row.tag" @change="toggleEnabled(row)" />
-          <el-tooltip v-else :content="t('singbox.outbound.defaultNoDisable')">
-            <el-switch :model-value="true" size="small" disabled />
-          </el-tooltip>
-        </template>
-      </el-table-column>
-      <el-table-column label="TLS" width="60" align="center">
-        <template #default="{row}">
-          <el-tag v-if="row._tlsEnabled" size="small" type="warning">TLS</el-tag>
-          <span v-else style="color:#c0c4cc">-</span>
-        </template>
-      </el-table-column>
-    </el-table>
-    <MobileCards v-else :rows="obPaged" title-field="tag" :fields="sbOutboundCardFields">
-      <template #actions="{ row }">
-        <el-switch v-if="!isProtectedOutbound(row)" v-model="row._enabled" size="small"
-          :loading="togglingTag === row.tag" @change="toggleEnabled(row)" style="margin-right:8px" />
-        <!-- ↑↓ 沿用桌面逻辑：handleAction 内部用 form.indexOf(row) 定位，禁用态按全局序计算 -->
-        <el-button size="small" text :disabled="form.indexOf(row) === 0"
-          @click="handleAction('up', row)">↑</el-button>
-        <el-button size="small" text :disabled="form.indexOf(row) === form.length - 1"
-          @click="handleAction('down', row)">↓</el-button>
-        <el-button size="small" text type="primary" @click="handleAction('edit', row)">{{ t('common.edit') }}</el-button>
-        <el-button size="small" text type="danger" @click="handleAction('delete', row)">{{ t('common.delete') }}</el-button>
-      </template>
-    </MobileCards>
+    <!-- 列表样式与 xray 出站一致（浅色卡片行，不再用表格）。
+         direct/block 是保底出站：不显示启用开关 / 编辑 / 删除 —— 删了后端也会补回来，
+         留着按钮只会造成「删了又出现」。 -->
+    <div v-for="(ob, i) in obPaged" :key="ob.tag || i" class="outbound-item">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-switch v-if="!isProtectedOutbound(ob)" v-model="ob._enabled" size="small"
+            :loading="togglingTag === ob.tag" @change="toggleEnabled(ob)" />
+          <span style="font-weight:600">{{ ob.tag || 'outbound-' + ((obPage - 1) * obSize + i + 1) }}</span>
+          <el-tag size="small">{{ ob.type }}</el-tag>
+          <el-tag v-if="isProtectedOutbound(ob)" size="small" type="warning">{{ t('protoCenter.outbounds.default') }}</el-tag>
+          <el-tag v-if="ob._tlsEnabled" size="small" type="warning">TLS</el-tag>
+          <el-tag v-if="ob.server" size="small" type="info">{{ ob.server }}:{{ ob.server_port }}</el-tag>
+        </div>
+        <div style="white-space:nowrap">
+          <!-- ↑↓ 直接可见：顺序 = 配置文件顺序，第一个出站是 route.final 留空时的兜底出口 -->
+          <el-button size="small" text :disabled="(obPage - 1) * obSize + i === 0"
+            @click="handleAction('up', ob)">↑</el-button>
+          <el-button size="small" text :disabled="(obPage - 1) * obSize + i === form.length - 1"
+            @click="handleAction('down', ob)">↓</el-button>
+          <el-button v-if="!isProtectedOutbound(ob)" size="small" text @click="handleAction('edit', ob)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="!isProtectedOutbound(ob)" size="small" type="danger" text @click="handleAction('delete', ob)">{{ t('common.delete') }}</el-button>
+        </div>
+      </div>
+    </div>
     <PaginationBar v-model:page="obPage" v-model:page-size="obSize" :total="obTotal" />
     <div v-if="!form.length" style="text-align:center;color:#909399;padding:24px">{{ t('singbox.outbound.noOutbounds') }}</div>
 
@@ -150,8 +117,6 @@ import client from '../../../api/client'
 import { useClientPagination } from '../../../composables/useClientPagination'
 import { useQueryState } from '../../../composables/useQueryState'
 import PaginationBar from '../../../components/PaginationBar.vue'
-import MobileCards from '../../../components/MobileCards.vue'
-import { useIsMobile } from '../../../composables/useIsMobile'
 import { buildOutbound, parseOutbound, outboundDefaultsForType } from './singbox/utils/singboxBuildOutbound'
 import {
   OUTBOUND_TLS_PROTOCOLS, OUTBOUND_TRANSPORT_PROTOCOLS, OUTBOUND_MULTIPLEX_PROTOCOLS, OUTBOUND_SERVER_PROTOCOLS,
@@ -184,14 +149,6 @@ const props = defineProps({ data: Array, coreType: String, serverId: Number })
 const emitFn = defineEmits(['update'])
 const form = reactive([])
 const { paged: obPaged, page: obPage, pageSize: obSize, total: obTotal } = useClientPagination(computed(() => form), { pageKey: 'sbObPage', pageSizeKey: 'sbObSize' })
-const { isMobile } = useIsMobile()
-
-// 手机端卡片字段（与桌面表格列一一对应；↑↓/编辑/删除在 actions 插槽里）
-const sbOutboundCardFields = computed(() => [
-  { label: t('singbox.outbound.type'), text: (row) => row.type || '-' },
-  { label: 'Server', text: (row) => row.server ? `${row.server}:${row.server_port}` : '-' },
-  { label: 'TLS', text: (row) => row._tlsEnabled ? 'TLS' : '-' },
-])
 
 // 出站类型选项（value 用于存储/判断，label 用于显示）
 const OUTBOUND_TYPES = [
@@ -387,5 +344,7 @@ async function loadChainOutbounds() {
 }
 </script>
 <style scoped>
+/* 与 xray 出站列表同款卡片行 */
+.outbound-item { background: var(--el-fill-color-light); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
 .chain-item { background: var(--el-color-warning-light-9); border: 1px dashed var(--el-color-warning-light-5); border-radius: 6px; padding: 12px; margin-bottom: 8px; }
 </style>

@@ -234,6 +234,8 @@ export function inboundDefaultsForType(type, customPort) {
     _realityEnabled: false, _realityHandshakeServer: '', _realityHandshakePort: 443,
     _realityHandshakeDetour: '', _realityHandshakeBindInterface: '', _realityHandshakeConnectTimeout: '', _realityHandshakeTcpFastOpen: false,
     _realityPrivateKey: '', _realityPublicKey: '', _realityShortIds: '', _realityMaxTimeDiff: '',
+    // 是否把 REALITY 的 server_name 自动写入 Caddy/Nginx 的 443 SNI 分流（与 xray 同一开关名）
+    _autoSni: true,
     _utlsEnabled: false, _utlsFingerprint: 'chrome',
     _certId: '',
     // transport（参考 docs/configuration/shared/v2ray-transport.md）

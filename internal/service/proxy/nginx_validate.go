@@ -169,6 +169,7 @@ func ValidateNginxSettings(s *NginxSettings) error {
 		"limit_conn_zone":       s.LimitConnZone,
 		"limit_conn":            s.LimitConn,
 		"sni_listen_addr":       s.SNIListenAddr,
+		"sni_local_port":        s.SNILocalPort,
 		"stream_ipv6_listen":    s.StreamIPv6ListenAddr,
 		"stream_nontls_target":  s.StreamNonTLSTarget,
 		"stream_default_target": s.StreamDefaultTarget,

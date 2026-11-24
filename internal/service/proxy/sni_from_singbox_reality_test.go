@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"testing"
 
 	"corefusion/internal/model/entity"
@@ -133,5 +134,46 @@ func TestFilterDerivedSNIRulesByProxyProtocol(t *testing.T) {
 	out, skipped = filterDerivedSNIRules(rules, false)
 	if skipped != 0 || len(out) != 2 {
 		t.Fatalf("proxy_protocol off 时应全部保留: out=%+v skipped=%d", out, skipped)
+	}
+}
+
+// sing-box 侧也支持显式「自动添加到 SNI」开关：_autoSni=false 时不派生，
+// true / 缺失（老数据）时按原逻辑派生。
+func TestSNIRulesFromInboundSingboxAutoSniSwitch(t *testing.T) {
+	mk := func(autoSni *bool) entity.InboundConfig {
+		doc := map[string]interface{}{
+			"type":        "vless",
+			"listen":      "0.0.0.0",
+			"listen_port": 31161,
+			"tls": map[string]interface{}{
+				"enabled":     true,
+				"server_name": "www.apple.com",
+				"reality": map[string]interface{}{
+					"enabled":     true,
+					"handshake":   map[string]interface{}{"server": "www.apple.com", "server_port": 443},
+					"private_key": "k",
+					"short_id":    []string{"ab"},
+				},
+			},
+			"users": []interface{}{map[string]interface{}{"name": "a@b.c", "uuid": "11111111-1111-4111-8111-111111111111"}},
+		}
+		if autoSni != nil {
+			doc["_autoSni"] = *autoSni
+		}
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entity.InboundConfig{Enabled: true, CoreType: "singbox", Protocol: "vless", Listen: "0.0.0.0", Port: 31161, ConfigJSON: string(raw)}
+	}
+	yes, no := true, false
+	if rules := SNIRulesFromInbound(mk(nil)); len(rules) != 1 {
+		t.Fatalf("缺失 _autoSni 时应保持旧行为（派生）: %+v", rules)
+	}
+	if rules := SNIRulesFromInbound(mk(&no)); len(rules) != 0 {
+		t.Fatalf("_autoSni=false 时不应派生: %+v", rules)
+	}
+	if rules := SNIRulesFromInbound(mk(&yes)); len(rules) != 1 {
+		t.Fatalf("_autoSni=true 时应派生: %+v", rules)
 	}
 }

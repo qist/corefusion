@@ -170,9 +170,17 @@
                   <span class="uptime" v-if="node.metric.uptime_seconds"><el-icon class="nf-ico nf-time"><Timer /></el-icon>{{ formatUptime(node.metric.uptime_seconds) }}</span>
                 </div>
               </template>
+              <template v-else-if="node.online">
+                <!-- 在线但还没收到第一条指标上报（面板刚重启 / STATUS 报告 30s 一次）：
+                     以前这里落到离线分支，显示成"离线"，属于误报。 -->
+                <div class="offline-box">
+                  <div class="offline-text">{{ statusLabel(node.status) }}</div>
+                  <div class="offline-heart">—</div>
+                </div>
+              </template>
               <template v-else>
                 <div class="offline-box">
-                  <div class="offline-text">{{ t('dashboard.statusOffline') }}</div>
+                  <div class="offline-text">{{ statusLabel(node.status) }}</div>
                   <div class="offline-heart" v-if="node.last_heartbeat_age_seconds != null">{{ t('dashboard.lastHeartbeat') }} {{ node.last_heartbeat_age_seconds }}s {{ t('dashboard.heartbeatAgo') }}</div>
                   <div class="offline-heart" v-else>—</div>
                 </div>

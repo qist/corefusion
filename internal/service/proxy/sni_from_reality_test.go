@@ -123,3 +123,49 @@ func TestCaddyProxyTargetUnixSyntax(t *testing.T) {
 		}
 	}
 }
+
+// realityInboundWithAutoSni 同上，但带上面板侧「自动添加到 SNI」开关。
+func realityInboundWithAutoSni(t *testing.T, listen string, port int, serverNames []string, proxyProtocol, autoSni bool) entity.InboundConfig {
+	t.Helper()
+	cfg := realityInbound(t, listen, port, serverNames, proxyProtocol)
+	var doc map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["_autoSni"] = autoSni
+	raw, _ := json.Marshal(doc)
+	cfg.ConfigJSON = string(raw)
+	return cfg
+}
+
+// 显式开启自动 SNI：直连 TCP 入站也派生，但不带 PROXY 头（未勾 acceptProxyProtocol）。
+func TestSNIRulesFromInboundAutoSniOnDirectTCP(t *testing.T) {
+	cfg := realityInboundWithAutoSni(t, "0.0.0.0", 50017, []string{"speedtest.example.com"}, false, true)
+	rules := SNIRulesFromInbound(cfg)
+	if len(rules) != 1 {
+		t.Fatalf("rules = %#v", rules)
+	}
+	if rules[0].Target != "127.0.0.1:50017" {
+		t.Errorf("target = %q, want 127.0.0.1:50017", rules[0].Target)
+	}
+	if rules[0].ProxyProtocol {
+		t.Error("未勾 acceptProxyProtocol 时不应带 PROXY 头")
+	}
+}
+
+// 显式关闭自动 SNI：即使监听 unix socket、即使勾了 acceptProxyProtocol，也不派生。
+func TestSNIRulesFromInboundAutoSniOffSkips(t *testing.T) {
+	cfg := realityInboundWithAutoSni(t, "/dev/shm/x.sock,0666", 38877, []string{"a.com"}, true, false)
+	if rules := SNIRulesFromInbound(cfg); len(rules) != 0 {
+		t.Fatalf("显式关闭后不应派生: %#v", rules)
+	}
+}
+
+// 显式开启 + acceptProxyProtocol：前端 TCP 入站派生并带 PROXY 头。
+func TestSNIRulesFromInboundAutoSniOnWithProxyProtocol(t *testing.T) {
+	cfg := realityInboundWithAutoSni(t, "0.0.0.0", 51878, []string{"a.com"}, true, true)
+	rules := SNIRulesFromInbound(cfg)
+	if len(rules) != 1 || !rules[0].ProxyProtocol {
+		t.Fatalf("rules = %#v", rules)
+	}
+}

@@ -1526,7 +1526,14 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 							siteFallback = site.Upstream
 						}
 						if siteFallback == "" {
-							localPort := site.LocalPort
+							// 本地 HTTPS 端口：规则自身 local_port > 设置里的 sni_local_port > 8443。
+							// 不能跟随 https_listen —— 公网 443 归 stream，本地 HTTPS 是 8443。
+							localPort := strings.TrimSpace(site.LocalPort)
+							if localPort == "" {
+								if raw := strings.TrimSpace(s.SNILocalPort); raw != "" {
+									localPort = listenPortOnly(raw)
+								}
+							}
 							if localPort == "" {
 								localPort = "8443"
 							}

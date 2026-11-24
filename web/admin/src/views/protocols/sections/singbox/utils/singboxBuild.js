@@ -619,6 +619,9 @@ export function buildInbound(ib) {
   }
   // 使用入站端口 / 动态端口时自动创建防火墙放行规则（内部字段，核心忽略）
   out._fwAllow = !!ib._fwAllow
+  // 「自动添加到 SNI」开关（与 xray 同一口径）：控制后端是否把 REALITY 的
+  // server_name 自动派生到 Caddy/Nginx 的 443 SNI 分流。内部字段，运行前剥离。
+  out._autoSni = ib._autoSni !== false
   return out
 }
 
@@ -668,6 +671,8 @@ export function parseInbound(ib) {
   o._realityPublicKey = ib._realityPublicKey || ib.tls?.reality?.public_key || ''
   o._realityShortIds = (ib.tls?.reality?.short_id || []).join('\n')
   o._realityMaxTimeDiff = ib.tls?.reality?.max_time_difference || ''
+  // 「自动添加到 SNI」：老数据没有该字段时默认开启（保持原有派生行为）。
+  o._autoSni = ib._autoSni !== false
   o._transportType = ib.transport?.type || ''
   o._transportPath = ib.transport?.path || ''
   // HTTP transport: host is array[] → comma-separated string; httpupgrade: host is string

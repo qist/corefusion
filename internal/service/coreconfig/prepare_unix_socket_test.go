@@ -81,3 +81,25 @@ func TestInboundSockoptProxyProtocolPassThrough(t *testing.T) {
 		t.Fatalf("sockopt.acceptProxyProtocol 应原样保留: %v", so)
 	}
 }
+
+// xray API 入站的 10085 被业务入站占用时要避让，避免 core 启动 bind 失败。
+func TestApplyAPIInboundRoutingAvoidsInboundPortConflict(t *testing.T) {
+	full := map[string]interface{}{
+		"api": map[string]interface{}{},
+		"inbounds": []interface{}{
+			map[string]interface{}{"protocol": "vless", "port": float64(10085)},
+		},
+	}
+	ApplyAPIInboundRouting(full)
+	ins, _ := full["inbounds"].([]interface{})
+	var apiPort int
+	for _, raw := range ins {
+		m, _ := raw.(map[string]interface{})
+		if m["protocol"] == "dokodemo-door" {
+			apiPort = int(m["port"].(int))
+		}
+	}
+	if apiPort != 10086 {
+		t.Fatalf("api inbound port = %d, want 10086", apiPort)
+	}
+}

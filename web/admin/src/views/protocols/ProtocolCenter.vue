@@ -269,6 +269,23 @@ function fmtSize(b){if(!b)return'-';return b<1024?b+'B':b<1048576?(b/1024).toFix
 function fmtTime(ts){if(!ts||ts==='0001-01-01T00:00:00Z')return'-';return new Date(ts).toLocaleString()}
 function fmtUptime(s){if(!s)return'-';const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);let r='';if(d>0)r+=d+t('protoCenter.status.days')+' ';if(h>0)r+=h+t('protoCenter.status.hours')+' ';r+=m+t('protoCenter.status.minutes');return r.trim()}
 
+// 核心选择按节点独立记忆（与 nginx/caddy 的 active_proxy 一样是节点级状态）。
+// 以前用全局 key `active_core`，在面板节点选了 sing-box 后打开别的节点也变成
+// sing-box —— 每个节点的核心是各自独立的，不能互相污染。
+function coreKey(id){return `active_core.${id || 'local'}`}
+function rememberCore(id,t){localStorage.setItem(coreKey(id),t)}
+function forgetCore(id){localStorage.removeItem(coreKey(id))}
+function rememberedCore(id){
+  // 旧版本全局 key 迁移一次到当前节点，迁移后删除全局 key
+  const legacy=localStorage.getItem('active_core')
+  if(legacy){
+    if(!localStorage.getItem(coreKey(id))&&cores.some(c=>c.type===legacy))rememberCore(id,legacy)
+    localStorage.removeItem('active_core')
+  }
+  const v=localStorage.getItem(coreKey(id))
+  return v&&cores.some(c=>c.type===v)?v:''
+}
+
 async function selectCore(t){
   selectedCore.value=t
   activeSection.value=''
@@ -276,11 +293,11 @@ async function selectCore(t){
   // 否则切到 xray 还会残留 sing-box 的「校验通过（sing-box version …）」。
   validateResult.value=null
   sections.value=getSections()[t]||[]
-  localStorage.setItem('active_core',t)
+  rememberCore(props.serverId,t)
   await loadConfig(t)
   await fetchStatus()
 }
-function goBack(){selectedCore.value='';activeSection.value='';localStorage.removeItem('active_core')}
+function goBack(){selectedCore.value='';activeSection.value='';forgetCore(props.serverId)}
 
 function switchSection(k){
   activeSection.value=k
@@ -424,20 +441,23 @@ async function doDownload(r){
 // 或显示空对象让人误以为“没自动生成默认值”（2026-10-09）。
 watch(() => props.serverId, async (id, old) => {
   if (!id || id === old) return
-  const core = selectedCore.value
+  // 切换节点：核心选择是**节点级**状态（与代理 active_proxy 一致），
+  // 不能沿用上一个节点的选择 —— 恢复该节点自己记住的核心，没有就回到核心选择页。
   const sec = activeSection.value
   fullConfig.value = {}
   secData.value = null
   secOutput.value = undefined
   secJson.value = ''
+  selectedCore.value = ''
   activeSection.value = ''
-  if (core) {
-    await selectCore(core)          // 按新 serverId 重新 loadConfig + fetchStatus
+  const s = rememberedCore(id)
+  if (s) {
+    await selectCore(s)             // 按新 serverId 重新 loadConfig + fetchStatus
     if (sec && sections.value.some(x => x.key === sec)) switchSection(sec)
   }
 })
 onMounted(async ()=>{
-  const s=localStorage.getItem('active_core')
+  const s=rememberedCore(props.serverId)
   // 记住进入时 URL 里的 section（可能在 selectCore 重置前失效，先捕获）
   const sec=String(route.query.section??'')
   if(s&&cores.some(c=>c.type===s)){

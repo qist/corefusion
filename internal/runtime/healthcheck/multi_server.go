@@ -137,10 +137,21 @@ func (c *MultiServerHealthChecker) checkSingleServer(ctx context.Context, server
 	}
 }
 
+// agentOfflineGrace：面板重启/gRPC 流刚断开时，内存连接表是空的，但节点心跳可能
+// 就在十几秒前（Agent 每 15s 一次心跳）。在宽限期内沿用库里记录的状态，避免面板
+// 一重启所有节点先集体闪一次"离线"；超过宽限期才判离线（=3~4 次心跳丢失）。
+const agentOfflineGrace = 60 * time.Second
+
 // determineStatus checks the server's health and returns the appropriate status.
 func (c *MultiServerHealthChecker) determineStatus(ctx context.Context, server *entity.NodeServer) string {
 	// Check if Agent is online via heartbeat
 	if !c.serverMgr.IsOnline(server.ID) {
+		if server.LastHeartbeatAt != nil && time.Since(*server.LastHeartbeatAt) < agentOfflineGrace {
+			if server.AgentStatus == entity.AgentStatusOnline || server.AgentStatus == entity.AgentStatusDegraded {
+				return server.AgentStatus
+			}
+			return entity.AgentStatusDegraded
+		}
 		return entity.AgentStatusOffline
 	}
 
@@ -216,7 +227,9 @@ func (c *MultiServerHealthChecker) GetServerStatusSummary(ctx context.Context) (
 		}
 
 		if s.LastHeartbeatAt != nil {
-			info.LastHeartbeatAge = time.Since(*s.LastHeartbeatAt)
+			// 字段名带 _seconds：time.Duration 直接 JSON 化是**纳秒**，
+			// 前端按秒追加 's' 会显示成 "10892651586s"（面板重启后 10.9s 的心跳）。
+			info.LastHeartbeatAge = int64(time.Since(*s.LastHeartbeatAt).Seconds())
 		}
 
 		summary.Servers = append(summary.Servers, info)
@@ -243,14 +256,15 @@ type StatusSummary struct {
 
 // ServerHealthInfo represents the health info of a single server.
 type ServerHealthInfo struct {
-	ID               int64         `json:"id"`
-	Name             string        `json:"name"`
-	Hostname         string        `json:"hostname"`
-	Region           string        `json:"region"`
-	NodeType         string        `json:"node_type"`
-	Status           string        `json:"status"`
-	Online           bool          `json:"online"`
-	IsLocal          bool          `json:"is_local"`
-	BillingEnabled   bool          `json:"billing_enabled"`
-	LastHeartbeatAge time.Duration `json:"last_heartbeat_age_seconds"`
+	ID             int64  `json:"id"`
+	Name           string `json:"name"`
+	Hostname       string `json:"hostname"`
+	Region         string `json:"region"`
+	NodeType       string `json:"node_type"`
+	Status         string `json:"status"`
+	Online         bool   `json:"online"`
+	IsLocal        bool   `json:"is_local"`
+	BillingEnabled bool   `json:"billing_enabled"`
+	// 秒（不是 time.Duration，否则 JSON 出来是纳秒，前端会显示天文数字）
+	LastHeartbeatAge int64 `json:"last_heartbeat_age_seconds"`
 }

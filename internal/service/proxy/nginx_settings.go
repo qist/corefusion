@@ -175,7 +175,12 @@ type NginxSettings struct {
 	// SNIListenAddr 是 SNI 流监听的默认地址，支持纯端口 / IP:端口 / [::]:端口。
 	// 单个 SNI 规则可在站点 Path 里覆盖；为空时回退 443。
 	SNIListenAddr string `json:"sni_listen_addr"`
-	StreamIPv6    bool   `json:"stream_ipv6"`
+	// SNILocalPort 是启用 SNI 后**本地 HTTPS** 的端口/目标（默认 8443）。
+	// 它不是公网 https_listen：公网 443 归 stream 的 ssl_preread 分流，
+	// 本地 HTTPS（各站点 server）与 SNI fallback 都落在这里，语义与 Caddy 的
+	// 本地端口（proxy.sni_local_port）一致。可填 "8443" 或 "127.0.0.1:8443"。
+	SNILocalPort string `json:"sni_local_port"`
+	StreamIPv6   bool   `json:"stream_ipv6"`
 	// StreamIPv6ListenAddr 是 stream（SNI/L4）的 IPv6 监听地址（只填主机部分，默认 "::"）。
 	StreamIPv6ListenAddr string `json:"stream_ipv6_listen_addr"`
 	StreamProxyProtocol  bool   `json:"stream_proxy_protocol"`
@@ -223,30 +228,30 @@ func DefaultNginxSettings() *NginxSettings {
 		WorkerConnections:     "10240",
 		MultiAccept:           true,
 		// 模板默认开启 epoll（Linux 事件模型）；UI 可关闭 ✓。
-		UseEpoll:                    true,
-		ErrorLog:                    true,
-		ErrorLogPath:                "logs/error.log",
-		ErrorLogLevel:               "",
-		AccessLog:                   true,
-		AccessLogPath:               "logs/access.log",
-		ClientHeaderBufferSize:      "1024k",
-		LargeClientHeaderBuffers:    "4 128k",
-		ClientHeaderTimeout:         "90",
-		ClientBodyTimeout:           "90",
-		ClientMaxBodySize:           "2m",
-		ClientBodyBufferSize:        "128k",
-		ServerTokens:                false,
-		Sendfile:                    true,
-		LogNotFound:                 false,
-		SendfileMaxChunk:            "512k",
-		TcpNopush:                   true,
-		TcpNodelay:                  true,
-		ProxyStore:                  false,
-		Http2ChunkSize:              "64k",
-		Http2BodyPrereadSize:        "128k",
-		Http2MaxConcurrentStreams:   "512",
-		Http2RecvBufferSize:         "512k",
-		Http3:                       !isWindows,
+		UseEpoll:                  true,
+		ErrorLog:                  true,
+		ErrorLogPath:              "logs/error.log",
+		ErrorLogLevel:             "",
+		AccessLog:                 true,
+		AccessLogPath:             "logs/access.log",
+		ClientHeaderBufferSize:    "1024k",
+		LargeClientHeaderBuffers:  "4 128k",
+		ClientHeaderTimeout:       "90",
+		ClientBodyTimeout:         "90",
+		ClientMaxBodySize:         "2m",
+		ClientBodyBufferSize:      "128k",
+		ServerTokens:              false,
+		Sendfile:                  true,
+		LogNotFound:               false,
+		SendfileMaxChunk:          "512k",
+		TcpNopush:                 true,
+		TcpNodelay:                true,
+		ProxyStore:                false,
+		Http2ChunkSize:            "64k",
+		Http2BodyPrereadSize:      "128k",
+		Http2MaxConcurrentStreams: "512",
+		Http2RecvBufferSize:       "512k",
+		Http3:                     !isWindows,
 		// http3_hq 是 Google HQ 草案互操作调试模式，生产默认关闭（前端可开）。
 		Http3Hq:                     false,
 		Http3MaxConcurrentStreams:   "256",
@@ -310,6 +315,7 @@ func DefaultNginxSettings() *NginxSettings {
 		// Stream defaults
 		StreamSNIEnabled:     false,
 		SNIListenAddr:        "443",
+		SNILocalPort:         "8443",
 		StreamIPv6:           false,
 		StreamIPv6ListenAddr: "::",
 		StreamProxyProtocol:  false,
@@ -679,6 +685,10 @@ func mergeNginxSettings(dst *NginxSettings, src *NginxSettings) {
 	dst.WAFEnabled = src.WAFEnabled
 	dst.StreamSNIEnabled = src.StreamSNIEnabled
 	dst.SNIListenAddr = src.SNIListenAddr
+	// 空值保留默认 8443（旧库没有这个字段：不能让本地 HTTPS 目标掉到 https_listen 的 443）。
+	if src.SNILocalPort != "" {
+		dst.SNILocalPort = src.SNILocalPort
+	}
 	dst.StreamIPv6 = src.StreamIPv6
 	if src.StreamIPv6ListenAddr != "" {
 		dst.StreamIPv6ListenAddr = src.StreamIPv6ListenAddr

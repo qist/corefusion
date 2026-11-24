@@ -291,3 +291,24 @@ func TestNginxProdIPv6ListenRegression(t *testing.T) {
 		}
 	}
 }
+
+// SNI fallback 的本地 HTTPS 端口必须是独立的 sni_local_port（默认 8443），
+// 不能跟随 https_listen（默认 443 = 公网分流口，指过去会自己撞自己）。
+func TestNginxSNIFallbackUsesSNILocalPort(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", Enabled: true},
+	}
+
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true,"sni_local_port":"127.0.0.1:9543"}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:9543;") {
+		t.Fatalf("fallback 应使用 sni_local_port(127.0.0.1:9543)：\n%s", cfg)
+	}
+
+	cfg = generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:8443;") {
+		t.Fatalf("未配置 sni_local_port 时 fallback 应默认 127.0.0.1:8443：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "server 127.0.0.1:443;") {
+		t.Fatalf("fallback 不应落到公网 443：\n%s", cfg)
+	}
+}

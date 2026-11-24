@@ -30,16 +30,29 @@ type derivedSNIRule struct {
 //
 // 只对**需要前置代理**的入站派生：
 //   - listen 是 unix socket（`/…`）或抽象 socket（`@…`）：客户端根本连不到；
-//   - 或 `sockopt.acceptProxyProtocol=true`：必须由 nginx/caddy 补 PROXY 头。
+//   - 或 `sockopt.acceptProxyProtocol=true`：必须由 nginx/caddy 补 PROXY 头；
+//   - 或入站显式开启了「自动添加到 SNI」（顶层内部字段 `_autoSni=true`）。
 //
-// 直连监听 `0.0.0.0:port`（且不要求 PROXY 头）的入站客户端能直接连，
-// 不该被 nginx 抢走。
+// 直连监听 `0.0.0.0:port`（且不要求 PROXY 头、也没开自动 SNI）的入站客户端能直接连，
+// 不该被 nginx 抢走。`_autoSni=false` 是显式关闭：即使监听 unix socket 也不派生，
+// 由用户自己维护 SNI 站点。
 func SNIRulesFromInbound(cfg entity.InboundConfig) []derivedSNIRule {
 	if !cfg.Enabled {
 		return nil
 	}
 	var doc map[string]interface{}
 	if err := json.Unmarshal([]byte(cfg.ConfigJSON), &doc); err != nil {
+		return nil
+	}
+	// 「自动添加到 SNI」开关（前端 Reality 入口，随 config_json 落库，
+	// 运行配置渲染前由 coreconfig.CleanInboundFields 剥离）。
+	// 老数据没有这个字段时保持原行为（按 listen/sockopt 推断）。
+	autoSni, hasAutoSni := true, false
+	if raw, ok := doc["_autoSni"]; ok {
+		hasAutoSni = true
+		autoSni, _ = raw.(bool)
+	}
+	if hasAutoSni && !autoSni {
 		return nil
 	}
 	ss, _ := doc["streamSettings"].(map[string]interface{})
@@ -61,7 +74,9 @@ func SNIRulesFromInbound(cfg entity.InboundConfig) []derivedSNIRule {
 	if len(names) == 0 {
 		return nil
 	}
-	target, needsFront := inboundSNITarget(cfg, ss)
+	// 显式开启自动 SNI 时，即使没勾 acceptProxyProtocol 也把入站当作前置承载
+	// （Caddy/Nginx 只做 TCP 分流、不补 PROXY 头）。
+	target, needsFront := inboundSNITarget(cfg, ss, hasAutoSni && autoSni)
 	if !needsFront || target == "" {
 		return nil
 	}
@@ -168,7 +183,8 @@ func singboxListenTarget(cfg entity.InboundConfig) string {
 }
 
 // inboundSNITarget 返回该入站对 SNI 前置代理暴露的后端地址，以及是否真的需要前置代理。
-func inboundSNITarget(cfg entity.InboundConfig, ss map[string]interface{}) (string, bool) {
+// forceFront=true 表示用户显式选择「自动添加到 SNI」：直连 TCP 入站也要派生。
+func inboundSNITarget(cfg entity.InboundConfig, ss map[string]interface{}, forceFront bool) (string, bool) {
 	listen := strings.TrimSpace(cfg.Listen)
 	// unix socket：DB 里存 "/dev/shm/x.sock,0666"，nginx 写 "unix:/dev/shm/x.sock"。
 	if strings.HasPrefix(listen, "/") {
@@ -182,7 +198,7 @@ func inboundSNITarget(cfg entity.InboundConfig, ss map[string]interface{}) (stri
 	if strings.HasPrefix(listen, "@") {
 		return "unix:" + listen, true
 	}
-	if !inboundNeedsProxyProtocol(ss) {
+	if !forceFront && !inboundNeedsProxyProtocol(ss) {
 		return "", false
 	}
 	if cfg.Port <= 0 {

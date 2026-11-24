@@ -849,6 +849,24 @@ Isi **Jalur proxy terbalik** di bawah “Akses domain → Front TLS”:
 - gRPC tidak memiliki konsep awalan URL (jalur klien selalu `/{serviceName}/…`), sehingga jalur tersebut **digabung ke dalam ServiceName**
 (`/apps` + `svc` → `apps/svc`); proxy terbalik harus menghapus awalan itu di `grpc_pass`.
 
+### 6.3.2 Perutean berbasis SNI (nginx vs Caddy)
+
+Lapisan TLS depan membagi koneksi pada `:443` oleh ClientHello SNI: REALITY masuk di bawah pusat protokol mendapatkan aturan secara otomatis, dan aturan juga dapat ditulis dengan tangan di bawah “Manajemen proxy → SNI”. Kedua proxy dapat dipisahkan berdasarkan domain, namun **kemampuannya berbeda** karena cakupan PROXY protocol.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| Lingkup `proxy_protocol` | Seluruh grup pendengar (level `listen`): aktif atau nonaktif per port | Per rute (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box pada `:443` yang sama | Tidak didukung: hanya satu mode, jadi port melayani satu inti | Didukung: satu SNI menuju xray (PP v2), satu lagi ke sing-box (tanpa PP) |
+| Bagaimana sing-box tercapai | Port khusus sendiri, atau grup pendengar terpisah tanpa PP | Berbagi `:443` dengan xray, dipisahkan oleh SNI |
+
+Mengapa: di belakang proxy terbalik xray memerlukan PROXY protocol untuk melihat IP dan port klien sebenarnya (`sockopt.acceptProxyProtocol`), sedangkan jabat tangan sing-box REALITY hanya mendukung `host:port` dan **tidak** mengirim header PROXY. nginx menulis `proxy_protocol on` di dalam `server{}`, yang berlaku untuk seluruh grup `listen`: setelah diaktifkan, setiap target SNI menerima header PROXY, yang memutus jabat tangan saat dikirim ke sing-box. Oleh karena itu, panel **melewatkan aturan sing-box SNI yang diturunkan** saat stream PROXY protocol aktif untuk nginx dan mencatat `skipped N sing-box REALITY SNI rule(s)`. `proxy_protocol v2` Caddy termasuk dalam satu rute, jadi tidak memiliki batasan seperti itu.
+
+Rekomendasi:
+
+- nginx di depan: berikan `:443` ke xray (dengan PROXY protocol) dan jangkau sing-box REALITY di portnya sendiri, atau tambahkan grup pendengar terpisah tanpa PP;
+- Caddy di depan: xray dan sing-box dapat berbagi `:443`, dan Nama server masuk REALITY diturunkan secara otomatis;
+- `singbox_listen_port` di “Template Realitas” adalah **titik akhir TLS lokal** (tujuan xray / jabat tangan sing-box). Kedua proxy mendukungnya, dan tidak bergantung pada perutean SNI publik di atas.
+
 ### 6.4 Konfigurasi keluar
 
 1. Tambahkan keluar;

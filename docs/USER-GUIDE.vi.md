@@ -849,6 +849,24 @@ yêu cầu không bao giờ đến được vị trí đó — đăng ký vẫn 
 - gRPC không có khái niệm tiền tố URL (đường dẫn máy khách luôn là `/{serviceName}/…`), vì vậy đường dẫn được **sáp nhập vào serviceName**
 (`/apps` + `svc` → `apps/svc`); proxy ngược phải loại bỏ tiền tố đó trong `grpc_pass`.
 
+### 6.3.2 Định tuyến dựa trên SNI (nginx so với Caddy)
+
+Lớp TLS phía trước phân chia các kết nối trên `:443` bằng ClientHello SNI: REALITY tự động gửi đến các quy tắc rút ra từ trung tâm giao thức và các quy tắc cũng có thể được viết bằng tay trong phần “Quản lý proxy → SNI”. Cả hai proxy đều có thể phân chia theo miền, nhưng **khả năng của chúng khác nhau** do phạm vi của PROXY protocol.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| Phạm vi `proxy_protocol` | Toàn bộ nhóm nghe (cấp `listen`): bật hoặc tắt tất cả trên mỗi cổng | Mỗi tuyến đường (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box trên cùng một `:443` | Không được hỗ trợ: chỉ một chế độ, vì vậy một cổng phục vụ một lõi | Được hỗ trợ: một SNI chuyển sang xray (PP v2), một sing-box khác (không có PP) |
+| Làm thế nào để đạt được sing-box | Cổng chuyên dụng riêng hoặc nhóm nghe riêng không có PP | Chia sẻ `:443` với xray, cách nhau bởi SNI |
+
+Lý do: đằng sau proxy ngược xray cần PROXY protocol để xem IP và cổng thực của máy khách (`sockopt.acceptProxyProtocol`), trong khi bắt tay sing-box REALITY chỉ hỗ trợ `host:port` và **không** gửi tiêu đề PROXY. nginx ghi `proxy_protocol on` bên trong `server{}`, áp dụng cho toàn bộ nhóm `listen`: sau khi được bật, mọi mục tiêu SNI sẽ nhận được tiêu đề PROXY, điều này sẽ phá vỡ quá trình bắt tay khi được gửi tới sing-box. Do đó, bảng điều khiển **bỏ qua các quy tắc sing-box SNI dẫn xuất** khi stream PROXY protocol được bật cho nginx và ghi lại `skipped N sing-box REALITY SNI rule(s)`. `proxy_protocol v2` của Caddy thuộc một tuyến đường duy nhất nên không có giới hạn đó.
+
+Khuyến nghị:
+
+- nginx phía trước: nhường `:443` cho xray (có PROXY protocol) và đạt sing-box REALITY trên cổng riêng của nó, hoặc thêm nhóm nghe riêng không có PP;
+- Caddy ở phía trước: xray và sing-box có thể chia sẻ `:443` và tên máy chủ gửi đến REALITY được lấy tự động;
+- `singbox_listen_port` trong “Mẫu thực tế” là **điểm cuối TLS cục bộ** (bắt tay xray đích / sing-box). Cả hai proxy đều hỗ trợ nó và nó độc lập với định tuyến SNI công khai ở trên.
+
 ### 6.4 Cấu hình gửi đi
 
 1. Thêm một chuyến đi;

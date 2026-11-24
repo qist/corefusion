@@ -870,6 +870,30 @@ cd /opt/corefusion
 - gRPC 没有 URL 前缀概念，客户端路径恒为 `/{serviceName}/…`，填写的路径会**并入 serviceName**
   （`/apps` + `svc` → `apps/svc`），反代需在 `grpc_pass` 上把该前缀去掉。
 
+### 6.3.2 SNI 按域名分流（nginx / Caddy 差异）
+
+前置 TLS 在 `:443` 上按 ClientHello 的 SNI 把连接分给不同后端：协议中心里的 REALITY 入站会自动派生规则，
+也可以在「代理管理 → SNI」里手写。两家代理都能按域名分流，但**能力不同**，差别在 PROXY protocol 的作用域。
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| `proxy_protocol` 作用域 | 整个监听组（`listen` 级）：同端口要么全开、要么全关 | 每条路由（`proxy ... { proxy_protocol v2 }`） |
+| 同一 `:443` 同时承载 xray + sing-box | 不支持：只能选一种口径，实际只服务一个核心 | 支持：一条 SNI 走 xray（PP v2），另一条走 sing-box（不带 PP） |
+| sing-box 的接入方式 | 走自己的独立端口，或单独一个不开 PP 的监听组 | 与 xray 共用 `:443`，按 SNI 区分 |
+
+原因：xray 在反代后面需要 PROXY protocol 才能拿到真实客户端 IP 和端口（`sockopt.acceptProxyProtocol`）；
+而 sing-box 的 REALITY 握手只支持 `host:port`，且**不发** PROXY 头。nginx 的 `proxy_protocol on` 写在 `server{}` 里，
+对整组 `listen` 生效，打开后所有 SNI 目标都会收到 PROXY 头 —— 发给 sing-box 会直接破坏握手。
+因此面板在 nginx 开启 stream PROXY protocol 时，会**跳过 sing-box 的自动 SNI 派生规则**，并在日志里提示
+`skipped N sing-box REALITY SNI rule(s)`。Caddy 的 `proxy_protocol v2` 属于单条路由，所以没有这个限制。
+
+建议：
+
+- 用 nginx 做前置：`:443` 交给 xray（开启 PROXY protocol），sing-box 的 REALITY 用独立端口直连，或另建一个不开启 PP 的 SNI 监听组；
+- 用 Caddy 做前置：xray 与 sing-box 可以共存于 `:443`，REALITY 入站的 serverNames 会自动派生规则；
+- 「Reality 模板」里的 `singbox_listen_port` 是**本地 TLS 端点**（给 xray 做 dest / 给 sing-box 做 handshake），
+  两家都支持，与上面的对外 SNI 分流是两件事。
+
 ### 6.4 出站配置
 
 1. 添加出站

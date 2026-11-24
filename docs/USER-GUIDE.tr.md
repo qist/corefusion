@@ -849,6 +849,24 @@ istek asla bu konuma ulaşmaz; abonelik hâlâ indirilir ancak düğüm bağlanm
 - gRPC'de URL öneki kavramı yoktur (istemci yolu her zaman `/{serviceName}/…`'dir), dolayısıyla yol **serviceName ile birleştirilmiştir**
 (`/apps` + `svc` → `apps/svc`); ters proxy'nin `grpc_pass`'deki bu öneki çıkarması gerekir.
 
+### 6.3.2 SNI tabanlı yönlendirme (nginx ve Caddy)
+
+Ön TLS katmanı, `:443` üzerindeki bağlantıları ClientHello SNI tarafından böler: Protokol merkezi altındaki REALITY gelenleri, kuralları otomatik olarak türetir ve kurallar ayrıca "Proxy yönetimi → SNI" altında elle de yazılabilir. Her iki proxy de etki alanına göre bölünebilir, ancak PROXY protocol'in kapsamı nedeniyle **yetenekleri farklılık gösterir**.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| `proxy_protocol` kapsamı | Tüm dinleme grubu (`listen` düzeyi): bağlantı noktası başına tümü açık veya tümü kapalı | Rota başına (`proxy ... { proxy_protocol v2 }`) |
+| Aynı `:443` üzerinde xray + sing-box | Desteklenmiyor: yalnızca tek mod, dolayısıyla bağlantı noktası tek çekirdeğe hizmet eder | Desteklenir: bir SNI, xray'e (PP v2), diğeri sing-box'e gider (PP yok) |
+| sing-box'e nasıl ulaşılır? | Kendi özel bağlantı noktası veya PP'siz ayrı bir dinleme grubu | `:443`'i xray ile paylaşır, SNI ile ayrılır |
+
+Neden: ters proxy arkasında xray, gerçek istemci IP'sini ve bağlantı noktasını (`sockopt.acceptProxyProtocol`) görmek için PROXY protocol'e ihtiyaç duyarken, sing-box REALITY anlaşması yalnızca `host:port`'i destekler ve PROXY başlıklarını **göndermez**. nginx, `server{}`'in içine `proxy_protocol on` yazar; bu, tüm `listen` grubu için geçerlidir: etkinleştirildiğinde her SNI hedefi, PROXY başlıklarını alır ve bu, sing-box'e gönderildiğinde el sıkışmayı bozar. Bu nedenle panel, nginx için stream PROXY protocol açıkken **türetilmiş sing-box SNI kurallarını atlar** ve `skipped N sing-box REALITY SNI rule(s)`'i günlüğe kaydeder. Caddy’in `proxy_protocol v2`’i tek bir rotaya ait olduğundan böyle bir sınırı yoktur.
+
+Öneriler:
+
+- Önde nginx: `:443`'i xray'e (PROXY protocol ile) verin ve sing-box REALITY'e kendi bağlantı noktasından ulaşın veya PP olmadan ayrı bir dinleme grubu ekleyin;
+- Caddy önde: xray ve sing-box, `:443`'i paylaşabilir ve REALITY gelen sunucu Adları otomatik olarak türetilir;
+- "Gerçeklik şablonu"ndaki `singbox_listen_port` bir **yerel TLS uç noktasıdır** (xray hedef / sing-box anlaşması). Her iki proxy de bunu destekler ve yukarıdaki genel SNI yönlendirmesinden bağımsızdır.
+
 ### 6.4 Giden yapılandırma
 
 1. Giden ekleyin;

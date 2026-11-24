@@ -849,6 +849,24 @@ cd /opt/corefusion
 - gRPC에는 URL 접두사 개념이 없으므로(클라이언트 경로는 항상 `/{serviceName}/…`임) 경로가 **serviceName에 병합됩니다**
 (`/apps` + `svc` → `apps/svc`); 역방향 프록시는 `grpc_pass`에서 해당 접두사를 제거해야 합니다.
 
+### 6.3.2 SNI 기반 라우팅(nginx vs Caddy)
+
+전면 TLS 계층은 ClientHello SNI에 의해 `:443`의 연결을 분할합니다. 프로토콜 센터 아래의 REALITY 인바운드는 자동으로 규칙을 파생하며 "프록시 관리 → SNI"에서 규칙을 직접 작성할 수도 있습니다. 두 프록시 모두 도메인별로 분할할 수 있지만 PROXY protocol의 범위로 인해 **기능이 다릅니다**.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| `proxy_protocol` 범위 | 전체 청취 그룹(`listen` 레벨): 포트당 모두 켜짐 또는 모두 꺼짐 | 노선별(`proxy ... { proxy_protocol v2 }`) |
+| 동일한 `:443`의 xray + sing-box | 지원되지 않음: 하나의 모드만 지원되므로 포트는 단일 코어를 제공합니다. | 지원됨: 하나의 SNI는 xray(PP v2)로 이동하고 다른 하나는 sing-box(PP 없음)로 이동합니다. |
+| sing-box에 도달하는 방법 | 자체 전용 포트 또는 PP가 없는 별도의 청취 그룹 | SNI로 구분된 `:443`를 xray와 공유합니다. |
+
+이유: 역방향 프록시 뒤에서 xray는 실제 클라이언트 IP 및 포트(`sockopt.acceptProxyProtocol`)를 보려면 PROXY protocol가 필요한 반면, sing-box REALITY 핸드셰이크는 `host:port`만 지원하고 PROXY 헤더를 전송하지 **않습니다**. nginx는 `server{}` 내부에 `proxy_protocol on`를 작성하며 이는 전체 `listen` 그룹에 적용됩니다. 활성화되면 모든 SNI 대상이 PROXY 헤더를 수신하여 sing-box로 전송될 때 핸드셰이크가 중단됩니다. 따라서 패널은 stream PROXY protocol가 nginx에 대해 켜져 있고 `skipped N sing-box REALITY SNI rule(s)`를 기록할 때 **파생된 sing-box SNI 규칙을 건너뛰고**. Caddy의 `proxy_protocol v2`는 단일 경로에 속하기 때문에 이러한 제한이 없습니다.
+
+권장사항:
+
+- 앞의 nginx: `:443`를 xray(PROXY protocol 포함)에 제공하고 자체 포트에서 sing-box REALITY에 도달하거나 PP 없이 별도의 청취 그룹을 추가합니다.
+- 앞의 Caddy: xray와 sing-box는 `:443`를 공유할 수 있으며 REALITY 인바운드 서버 이름은 자동으로 파생됩니다.
+- "현실 템플릿"의 `singbox_listen_port`는 **로컬 TLS 엔드포인트**(xray 대상 / sing-box 핸드셰이크)입니다. 두 프록시 모두 이를 지원하며 위의 공개 SNI 라우팅과 독립적입니다.
+
 ### 6.4 아웃바운드 구성
 
 1. 아웃바운드를 추가하세요.

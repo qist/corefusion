@@ -849,6 +849,24 @@ Preencha **Caminho do proxy reverso** em “Domínio de acesso → Front TLS”:
 - `xtls-rprx-vision` funciona apenas em TCP bruto: com gRPC / XHTTP / WebSocket o cliente falha completamente (sing-box: `initialize vision: not a valid supported TLS connection`) ou discorda da verificação de fluxo do servidor (`flow mismatch`). O painel retira a visão de qualquer entrada não bruta/TCP ao salvar e ao gerar a configuração de tempo de execução;
 - Os transportes sing-box são apenas http / ws / quic / grpc / httpupgrade - **TCP bruto significa nenhum transporte **. A primeira entrada (vazia) da lista suspensa de transporte é TCP bruta; escrever `type: "tcp"` faz com que o núcleo recuse a configuração.
 
+### 6.3.2 Roteamento baseado em SNI (nginx vs Caddy)
+
+A camada TLS frontal divide as conexões em `:443` pelo ClientHello SNI: as entradas REALITY sob o centro de protocolo derivam regras automaticamente, e as regras também podem ser escritas manualmente em “Gerenciamento de proxy → SNI”. Ambos os proxies podem ser divididos por domínio, mas suas **capacidades diferem** devido ao escopo do PROXY protocol.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| Escopo `proxy_protocol` | Todo o grupo de escuta (nível `listen`): todos ativados ou desativados por porta | Por rota (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box no mesmo `:443` | Não suportado: apenas um modo, portanto uma porta atende a um único núcleo | Suportado: um SNI vai para xray (PP v2), outro para sing-box (sem PP) |
+| Como sing-box é alcançado | Sua própria porta dedicada ou um grupo de escuta separado sem PP | Compartilha `:443` com xray, separados por SNI |
+
+Por que: por trás de um proxy reverso, xray precisa de PROXY protocol para ver o IP e a porta reais do cliente (`sockopt.acceptProxyProtocol`), enquanto o handshake sing-box REALITY suporta apenas `host:port` e **não** envia cabeçalhos PROXY. nginx grava `proxy_protocol on` dentro de `server{}`, o que se aplica a todo o grupo `listen`: uma vez habilitado, cada alvo SNI recebe cabeçalhos PROXY, o que quebra o handshake quando enviado para sing-box. O painel, portanto, **ignora as regras sing-box SNI derivadas** quando stream PROXY protocol está ativado para nginx e registra `skipped N sing-box REALITY SNI rule(s)`. O `proxy_protocol v2` do Caddy pertence a uma única rota, portanto não tem esse limite.
+
+Recomendações:
+
+- nginx na frente: forneça `:443` para xray (com PROXY protocol) e alcance sing-box REALITY em sua própria porta, ou adicione um grupo de escuta separado sem PP;
+- Caddy na frente: xray e sing-box podem compartilhar `:443`, e os serverNames de entrada REALITY são derivados automaticamente;
+- `singbox_listen_port` no “modelo de realidade” é um **endpoint TLS local** (destino xray/handshake sing-box). Ambos os proxies suportam isso e são independentes do roteamento público SNI acima.
+
 ### 6.4 Configuração de saída
 
 1. Adicione uma saída;

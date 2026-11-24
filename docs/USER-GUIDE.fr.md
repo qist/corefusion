@@ -849,6 +849,24 @@ Remplissez **Chemin du proxy inverse** sous « Domaine d'accès → Front TLS »
 - gRPC n'a pas de concept de préfixe URL (le chemin client est toujours `/{serviceName}/…`), donc le chemin est **fusionné dans serviceName**
 (`/apps` + `svc` → `apps/svc`) ; le proxy inverse doit supprimer ce préfixe dans `grpc_pass`.
 
+### 6.3.2 Routage basé sur SNI (nginx vs Caddy)
+
+La couche TLS frontale divise les connexions sur `:443` par le ClientHello SNI : les entrées REALITY sous le centre de protocole dérivent automatiquement les règles, et les règles peuvent également être écrites à la main sous « Gestion du proxy → SNI ». Les deux proxys peuvent être divisés par domaine, mais leurs **capacités diffèrent** en raison de la portée de PROXY protocol.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| Portée `proxy_protocol` | Tout le groupe d'écoute (niveau `listen`) : tout activé ou tout désactivé par port | Par itinéraire (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box sur le même `:443` | Non pris en charge : un seul mode, donc un port ne dessert qu'un seul cœur | Pris en charge : un SNI va au xray (PP v2), un autre au sing-box (pas de PP) |
+| Comment sing-box est atteint | Son propre port dédié, ou un groupe d'écoute séparé sans PP | Partage `:443` avec xray, séparé par SNI |
+
+Pourquoi : derrière un proxy inverse, xray a besoin de PROXY protocol pour voir l'adresse IP et le port réels du client (`sockopt.acceptProxyProtocol`), tandis que la poignée de main sing-box REALITY ne prend en charge que `host:port` et n'envoie **pas** d'en-têtes PROXY. nginx écrit `proxy_protocol on` dans `server{}`, qui s'applique à l'ensemble du groupe `listen` : une fois activée, chaque cible SNI reçoit les en-têtes PROXY, ce qui rompt la prise de contact lorsqu'elle est envoyée à sing-box. Le panneau **ignore donc les règles dérivées sing-box SNI** lorsque stream PROXY protocol est activé pour nginx et enregistre `skipped N sing-box REALITY SNI rule(s)`. Le `proxy_protocol v2` du Caddy appartient à une seule route, il n'a donc pas de telle limite.
+
+Recommandations :
+
+- nginx devant : donnez `:443` à xray (avec PROXY protocol) et accédez à sing-box REALITY sur son propre port, ou ajoutez un groupe d'écoute séparé sans PP ;
+- Caddy devant : xray et sing-box peuvent partager `:443`, et les noms de serveur entrants REALITY sont dérivés automatiquement ;
+- `singbox_listen_port` dans le « Modèle de réalité » est un **point de terminaison TLS local** (prise de contact xray dest / sing-box). Les deux proxys le prennent en charge et il est indépendant du routage public SNI ci-dessus.
+
 ### 6.4 Configuration sortante
 
 1. Ajoutez un sortant ;

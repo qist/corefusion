@@ -881,6 +881,31 @@ Fill **Reverse proxy path** under “Access domain → Front TLS”:
 - gRPC has no URL-prefix concept (the client path is always `/{serviceName}/…`), so the path is **merged into serviceName**
   (`/apps` + `svc` → `apps/svc`); the reverse proxy must strip that prefix in `grpc_pass`.
 
+### 6.3.2 SNI-based routing (nginx vs Caddy)
+
+The front TLS layer splits connections on `:443` by the ClientHello SNI: REALITY inbounds under the protocol center derive rules
+automatically, and rules can also be written by hand under “Proxy management → SNI”. Both proxies can split by domain, but their
+**capabilities differ** because of the scope of PROXY protocol.
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| `proxy_protocol` scope | The whole listen group (`listen` level): all on or all off per port | Per route (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box on the same `:443` | Not supported: one mode only, so a port serves a single core | Supported: one SNI goes to xray (PP v2), another to sing-box (no PP) |
+| How sing-box is reached | Its own dedicated port, or a separate listen group without PP | Shares `:443` with xray, separated by SNI |
+
+Why: behind a reverse proxy xray needs PROXY protocol to see the real client IP and port (`sockopt.acceptProxyProtocol`),
+while the sing-box REALITY handshake only supports `host:port` and does **not** send PROXY headers. nginx writes `proxy_protocol on`
+inside `server{}`, which applies to the whole `listen` group: once enabled every SNI target receives PROXY headers, which breaks the
+handshake when sent to sing-box. The panel therefore **skips derived sing-box SNI rules** when stream PROXY protocol is on for nginx
+and logs `skipped N sing-box REALITY SNI rule(s)`. Caddy’s `proxy_protocol v2` belongs to a single route, so it has no such limit.
+
+Recommendations:
+
+- nginx in front: give `:443` to xray (with PROXY protocol) and reach sing-box REALITY on its own port, or add a separate listen group without PP;
+- Caddy in front: xray and sing-box can share `:443`, and REALITY inbound serverNames are derived automatically;
+- `singbox_listen_port` in the “Reality template” is a **local TLS endpoint** (xray dest / sing-box handshake). Both proxies support it,
+  and it is independent of the public SNI routing above.
+
 ### 6.4 Outbound configuration
 
 1. Add an outbound;

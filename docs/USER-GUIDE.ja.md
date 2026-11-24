@@ -849,6 +849,24 @@ cd /opt/corefusion
 - gRPC には URL プレフィックスの概念がない (クライアント パスは常に `/{serviceName}/…`) ため、パスは **serviceName にマージされます**
 (`/apps` + `svc` → `apps/svc`);リバース プロキシは、`grpc_pass` のプレフィックスを削除する必要があります。
 
+### 6.3.2 SNI ベースのルーティング (nginx と Caddy)
+
+フロント TLS 層は、ClientHello SNI によって `:443` 上の接続を分割します。プロトコル センターの下の REALITY インバウンドはルールを自動的に導出します。ルールは「プロキシ管理 → SNI」で手動で記述することもできます。どちらのプロキシもドメインごとに分割できますが、PROXY protocol の範囲により、**機能が異なります**。
+
+| | nginx (stream) | Caddy (layer4) |
+|---|---|---|
+| `proxy_protocol` スコープ | リッスン グループ全体 (`listen` レベル): ポートごとにすべてオンまたはすべてオフ | ルートごと (`proxy ... { proxy_protocol v2 }`) |
+| 同じ `:443` 上の xray + sing-box | サポートされません: 1 つのモードのみなので、ポートは単一のコアを提供します | サポートされている: 1 つの SNI は xray (PP v2) に送信され、もう 1 つは sing-box (PP なし) に送信されます。 |
+| sing-box に到達する方法 | 独自の専用ポート、または PP のない別のリッスン グループ | `:443` を xray と共有し、SNI で区切ります |
+
+理由: リバース プロキシの背後で xray は実際のクライアント IP とポート (`sockopt.acceptProxyProtocol`) を確認するために PROXY protocol を必要としますが、sing-box REALITY ハンドシェイクは `host:port` のみをサポートし、PROXY ヘッダーは**送信しません**。 nginx は `server{}` 内に `proxy_protocol on` を書き込みます。これは `listen` グループ全体に適用されます。有効にすると、すべての SNI ターゲットが PROXY ヘッダーを受信するため、sing-box に送信されるときにハンドシェイクが中断されます。したがって、stream PROXY protocol が nginx に対してオンになっている場合、パネルは **派生 sing-box SNI ルール**をスキップし、`skipped N sing-box REALITY SNI rule(s)` をログに記録します。 Caddyの`proxy_protocol v2`は単一路線に属しているため、そのような制限はありません。
+
+推奨事項:
+
+- nginx を前に: `:443` を xray (PROXY protocol を使用) に与え、独自のポートで sing-box REALITY に到達するか、PP を使用せずに別のリッスン グループを追加します。
+- Caddy を前に: xray と sing-box は `:443` を共有でき、REALITY 受信サーバー名は自動的に導出されます。
+- 「リアリティ テンプレート」の `singbox_listen_port` は **ローカル TLS エンドポイント** (xray 宛先 / sing-box ハンドシェイク) です。両方のプロキシがこれをサポートしており、上記のパブリック SNI ルーティングから独立しています。
+
 ### 6.4 アウトバウンド構成
 
 1. アウトバウンドを追加します。

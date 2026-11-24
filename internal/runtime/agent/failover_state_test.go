@@ -87,8 +87,8 @@ func TestForceFailoverSwapsRolesAndBilling(t *testing.T) {
 
 	p, _ := repo.GetByID(ctx, primaryID)
 	b, _ := repo.GetByID(ctx, backupID)
-	if p.FailoverRole != entity.FailoverRoleBackupRecovering {
-		t.Errorf("原主角色 = %q, want backup_recovering", p.FailoverRole)
+	if p.FailoverRole != entity.FailoverRoleBackup {
+		t.Errorf("手动切换后原主角色 = %q, want backup（不进恢复观察，避免自动切回）", p.FailoverRole)
 	}
 	if p.BillingEnabled {
 		t.Error("原主 billing_enabled 应为 false")
@@ -121,8 +121,9 @@ func TestRecoverRequiresContinuousHealthyWindow(t *testing.T) {
 	fm, repo, _, primaryID, backupID := newFailoverTestPair(t, string(RecoverModeAutoSwitchBack))
 	ctx := context.Background()
 
-	// 先做一次切换，让原主进入 backup_recovering。
-	if err := fm.ForceFailover(ctx, primaryID); err != nil {
+	// 先走一次「自动」切换（非 manual），让原主进入 backup_recovering。
+	primary, _ := repo.GetByID(ctx, primaryID)
+	if err := fm.promoteBackup(ctx, primary, "test offline"); err != nil {
 		t.Fatalf("准备切换失败：%v", err)
 	}
 	recovering, _ := repo.GetByID(ctx, primaryID)
@@ -153,7 +154,8 @@ func TestRecoverRequiresContinuousHealthyWindow(t *testing.T) {
 func TestRecoverTimerResetsWhenUnhealthy(t *testing.T) {
 	fm, repo, mgr, primaryID, _ := newFailoverTestPair(t, string(RecoverModeAutoSwitchBack))
 	ctx := context.Background()
-	if err := fm.ForceFailover(ctx, primaryID); err != nil {
+	primary, _ := repo.GetByID(ctx, primaryID)
+	if err := fm.promoteBackup(ctx, primary, "test offline"); err != nil {
 		t.Fatalf("准备切换失败：%v", err)
 	}
 	recovering, _ := repo.GetByID(ctx, primaryID)

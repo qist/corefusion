@@ -9,6 +9,8 @@ import (
 
 	"corefusion/internal/api/response"
 	"corefusion/internal/model/entity"
+	certservice "corefusion/internal/service/certificate"
+	"corefusion/internal/service/dnsrecord"
 	"corefusion/internal/service/sharedomainconfig"
 )
 
@@ -20,6 +22,18 @@ type Handler struct {
 // NewHandler creates a new share domain config handler.
 func NewHandler(svc *sharedomainconfig.Service) *Handler {
 	return &Handler{svc: svc}
+}
+
+// Providers 返回各 DNS 服务商的「自动解析写入」能力，前端据此决定下拉能否选。
+//
+// 说明：证书 DNS-01 支持 ≠ 这里支持 —— lego 只提供 TXT 的 Present/CleanUp，
+// 没有通用记录 CRUD，所以每家都要单独实现（见 dnsrecord 注册表）。
+func (h *Handler) Providers(c *gin.Context) {
+	known := make([]string, 0, 8)
+	for p := range certservice.SupportedDNSProviders() {
+		known = append(known, p)
+	}
+	response.OK(c, dnsrecord.Capabilities(known))
 }
 
 // List handles GET /api/v1/share-domains.
@@ -69,6 +83,10 @@ func (h *Handler) Create(c *gin.Context) {
 		SNI         *string `json:"sni"`
 		ALPN        *string `json:"alpn"`
 		Fingerprint *string `json:"fingerprint"`
+		// 主备入口漂移（P2）：A 记录指向当前 primary
+		DNSChannelID  *int64  `json:"dns_channel_id"`
+		DNSRecordName *string `json:"dns_record_name"`
+		DNSProxied    *bool   `json:"dns_proxied"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -102,6 +120,13 @@ func (h *Handler) Create(c *gin.Context) {
 			return
 		}
 	}
+	if applyDNSFields(config, req.DNSChannelID, req.DNSRecordName, req.DNSProxied) {
+		config.UpdatedAt = time.Now()
+		if err := h.svc.Save(c.Request.Context(), config); err != nil {
+			response.InternalError(c, "CREATE_FAILED", err.Error())
+			return
+		}
+	}
 	response.OK(c, config)
 }
 
@@ -128,6 +153,27 @@ func applyTLSFields(config *entity.ShareDomainConfig, mode, sni, alpn, fp *strin
 	}
 	if fp != nil && config.Fingerprint != *fp {
 		config.Fingerprint = *fp
+		changed = true
+	}
+	return changed
+}
+
+// applyDNSFields 保存主备入口漂移配置（仅 direct 域名有意义）。
+func applyDNSFields(config *entity.ShareDomainConfig, channelID *int64, recordName *string, proxied *bool) bool {
+	if config == nil {
+		return false
+	}
+	changed := false
+	if channelID != nil && config.DNSChannelID != *channelID {
+		config.DNSChannelID = *channelID
+		changed = true
+	}
+	if recordName != nil && config.DNSRecordName != *recordName {
+		config.DNSRecordName = *recordName
+		changed = true
+	}
+	if proxied != nil && config.DNSProxied != *proxied {
+		config.DNSProxied = *proxied
 		changed = true
 	}
 	return changed
@@ -173,6 +219,10 @@ func (h *Handler) Update(c *gin.Context) {
 		SNI         *string `json:"sni"`
 		ALPN        *string `json:"alpn"`
 		Fingerprint *string `json:"fingerprint"`
+		// 主备入口漂移（P2）：A 记录指向当前 primary
+		DNSChannelID  *int64  `json:"dns_channel_id"`
+		DNSRecordName *string `json:"dns_record_name"`
+		DNSProxied    *bool   `json:"dns_proxied"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -201,6 +251,11 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 	// 前置 TLS 终结配置（CF 优选 / nginx / caddy）
 	if applyTLSFields(config, req.TLSMode, req.SNI, req.ALPN, req.Fingerprint) {
+		config.UpdatedAt = time.Now()
+		_ = h.svc.Save(c.Request.Context(), config)
+	}
+	// 主备入口漂移配置（只有 direct 域名会用到）
+	if applyDNSFields(config, req.DNSChannelID, req.DNSRecordName, req.DNSProxied) {
 		config.UpdatedAt = time.Now()
 		_ = h.svc.Save(c.Request.Context(), config)
 	}

@@ -86,6 +86,12 @@ type NodeServerManager struct {
 	// Data sync provider: reads panel DB tables to build SyncDataRequest
 	dataSyncProvider DataSyncProvider
 
+	// coreConfigSyncer 按「节点 + 核心」生成并下发配置（configsync.Service 实现）。
+	// SyncData 的 config_content 只生成 xray（DataSyncBuilder 里 coreType 硬编码），
+	// sing-box 的入站/用户变更必须靠它补推 —— 否则主备/镜像节点的 sing-box
+	// 会一直跑旧配置（库里行同步了，进程不监听）。
+	coreConfigSyncer CoreConfigSyncer
+
 	// Proxy cert collector: collects TLS certs for proxy sites (Caddy/Nginx)
 	proxyCertCollector ProxyCertCollector
 
@@ -226,9 +232,39 @@ type ProxySettingsProvider interface {
 	GetCaddySNISettingsForServer(ctx context.Context, serverID int64) (string, error)
 }
 
+// CoreConfigSyncer 按「节点 + 核心」重新生成并下发该核心的运行配置。
+type CoreConfigSyncer interface {
+	SyncServerCore(ctx context.Context, serverID int64, coreType string) error
+}
+
 // SetDataSyncProvider sets the data sync provider for SyncData operations.
 func (m *NodeServerManager) SetDataSyncProvider(p DataSyncProvider) {
 	m.dataSyncProvider = p
+}
+
+// SetCoreConfigSyncer 注入按核心下发能力（见 SyncDataToServer 末尾的补推）。
+func (m *NodeServerManager) SetCoreConfigSyncer(s CoreConfigSyncer) {
+	m.coreConfigSyncer = s
+}
+
+// syncSecondaryCores 在 SyncData 之后补推「非主配置核心」的配置（目前是 sing-box）。
+// 异步执行：生成+推送较慢，不能拖住 SyncData 的响应。
+func (m *NodeServerManager) syncSecondaryCores(serverID int64, skipCore string) {
+	if m.coreConfigSyncer == nil || m.isLocalServer(serverID) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		for _, ct := range []string{"xray", "singbox"} {
+			if ct == skipCore {
+				continue
+			}
+			if err := m.coreConfigSyncer.SyncServerCore(ctx, serverID, ct); err != nil {
+				log.Printf("[NodeServerManager] sync %s config to server %d failed: %v", ct, serverID, err)
+			}
+		}
+	}()
 }
 
 // SetProxyCertCollector sets the proxy certificate collector for SyncProxyConfig operations.
@@ -2335,6 +2371,12 @@ func (m *NodeServerManager) SyncDataToServer(ctx context.Context, serverID int64
 	}
 
 	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 60*time.Second)
+
+	// config_content 只带了一个核心（通常 xray）；其余核心按核心补推，
+	// 否则 sing-box 的入站永远到不了节点（主备/镜像同步都会踩）。
+	// 必须放在 SyncData 之后：Agent 先落库，补推才能读到最新行。
+	m.syncSecondaryCores(serverID, req.ConfigCoreType)
+
 	if err != nil {
 		// Timeout doesn't mean failure — SyncData is async
 		log.Printf("[NodeServerManager] SyncData to server %d sent (async, no result yet)", serverID)

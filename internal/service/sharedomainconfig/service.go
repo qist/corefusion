@@ -2,20 +2,78 @@ package sharedomainconfig
 
 import (
 	"context"
+	"fmt"
+	"log"
+	"net"
+	"strings"
 	"time"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
 )
 
+// DNSUpdater 把域名的 A 记录指向指定 IP（由 dnsrecord.Service 实现）。
+// 抽成接口，避免本包依赖具体服务商 SDK。
+type DNSUpdater interface {
+	UpsertA(ctx context.Context, channelID int64, fqdn, target string, proxied bool) error
+}
+
 // Service handles share domain config business logic.
 type Service struct {
-	repo *repository.ShareDomainConfigRepository
+	repo       *repository.ShareDomainConfigRepository
+	dnsUpdater DNSUpdater
 }
 
 // NewService creates a new share domain config service.
 func NewService(repo *repository.ShareDomainConfigRepository) *Service {
 	return &Service{repo: repo}
+}
+
+// WithDNSUpdater 注入 DNS 记录更新器（主备入口漂移用）。
+func (s *Service) WithDNSUpdater(u DNSUpdater) *Service {
+	s.dnsUpdater = u
+	return s
+}
+
+// DriftForPrimary 把绑定到 primaryServerID 的 direct 入口域名 A 记录指向 targetIP。
+// 只处理显式配置了 DNSChannelID 的记录；单条失败不阻断其它记录（返回更新成功数）。
+func (s *Service) DriftForPrimary(ctx context.Context, primaryServerID int64, targetIP string) (int, error) {
+	if s == nil || s.dnsUpdater == nil {
+		return 0, nil
+	}
+	targetIP = strings.TrimSpace(targetIP)
+	if net.ParseIP(targetIP) == nil {
+		return 0, fmt.Errorf("入口漂移目标 IP 非法：%q", targetIP)
+	}
+	all, err := s.repo.List(ctx, "direct")
+	if err != nil {
+		return 0, fmt.Errorf("读取入口域名失败：%w", err)
+	}
+	updated := 0
+	var firstErr error
+	for _, cfg := range all {
+		if cfg.DNSChannelID <= 0 || !cfg.MatchServer(primaryServerID) {
+			continue
+		}
+		fqdn := strings.TrimSpace(cfg.DNSRecordName)
+		if fqdn == "" {
+			fqdn = strings.TrimSpace(cfg.Value)
+		}
+		if fqdn == "" || net.ParseIP(fqdn) != nil {
+			// 值是 IP 的条目不是域名，无法做 DNS 漂移。
+			continue
+		}
+		if err := s.dnsUpdater.UpsertA(ctx, cfg.DNSChannelID, fqdn, targetIP, cfg.DNSProxied); err != nil {
+			log.Printf("[EntryDrift] 入口 %s → %s 更新失败：%v", fqdn, targetIP, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		updated++
+		log.Printf("[EntryDrift] 入口 %s → %s 已更新（server=%d channel=%d）", fqdn, targetIP, primaryServerID, cfg.DNSChannelID)
+	}
+	return updated, firstErr
 }
 
 // List returns all share domain configs, optionally filtered by type.

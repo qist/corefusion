@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,6 +92,15 @@ type FailoverManager struct {
 	// active primary. Guarded by userSyncMu.
 	userSyncMu sync.Mutex
 	userSyncer UserSyncer
+
+	// entryDrift 把绑定在主备对上的入口域名 A 记录指向当前 primary（P2）。
+	// nil = 未接入，行为与之前一致。
+	entryDrift EntryDrift
+}
+
+// EntryDrift 是入口 DNS 漂移能力（sharedomainconfig.Service 实现）。
+type EntryDrift interface {
+	DriftForPrimary(ctx context.Context, primaryServerID int64, targetIP string) (int, error)
 }
 
 // NewFailoverManager creates a new FailoverManager.
@@ -141,6 +151,39 @@ func (m *FailoverManager) SetUserSync(s UserSyncer) {
 	m.userSyncMu.Lock()
 	m.userSyncer = s
 	m.userSyncMu.Unlock()
+}
+
+// WithEntryDrift 注入入口域名漂移能力：切换/回切成功后把绑定该主备对的入口
+// A 记录指向新 primary 的 public_ip（空则 internal_ip）。
+func (m *FailoverManager) WithEntryDrift(d EntryDrift) *FailoverManager {
+	m.entryDrift = d
+	return m
+}
+
+// syncEntryDrift 异步更新入口 DNS；失败只记日志，不影响角色切换结果。
+func (m *FailoverManager) syncEntryDrift(server *entity.NodeServer) {
+	if m.entryDrift == nil || server == nil {
+		return
+	}
+	target := strings.TrimSpace(server.PublicIP)
+	if target == "" {
+		target = strings.TrimSpace(server.InternalIP)
+	}
+	if target == "" {
+		log.Printf("[EntryDrift] 节点 %s (id=%d) 没有可用 IP，跳过入口漂移", server.Name, server.ID)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		n, err := m.entryDrift.DriftForPrimary(ctx, server.ID, target)
+		if err != nil {
+			log.Printf("[EntryDrift] 节点 %s (id=%d) → %s 部分失败：%v", server.Name, server.ID, target, err)
+		}
+		if n > 0 {
+			log.Printf("[EntryDrift] 节点 %s (id=%d) 的 %d 个入口已指向 %s", server.Name, server.ID, n, target)
+		}
+	}()
 }
 
 // RunLoop starts the failover check loop. Blocks until ctx is cancelled.
@@ -377,6 +420,16 @@ func (m *FailoverManager) clearRecoverTracking(serverID int64) {
 // 自动和手动切换都走这里：校验 → 换角色 → 重推用户 → 兜底同步配置。
 // 返回 error 便于手动切换接口把失败原因回给前端；自动路径调用方只记日志。
 func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.NodeServer, reason string) error {
+	return m.promoteBackupMode(ctx, primary, reason, false)
+}
+
+// promoteBackupManual 手动切换：允许把 backup_recovering 直接提升回来，且被
+// 降级的节点直接变 backup（人工已确认，不做恢复观察/自动回切，避免来回抖）。
+func (m *FailoverManager) promoteBackupManual(ctx context.Context, primary *entity.NodeServer) error {
+	return m.promoteBackupMode(ctx, primary, "manual", true)
+}
+
+func (m *FailoverManager) promoteBackupMode(ctx context.Context, primary *entity.NodeServer, reason string, manual bool) error {
 	if primary == nil {
 		return fmt.Errorf("primary 节点为空")
 	}
@@ -389,7 +442,9 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 		return fmt.Errorf("找不到伙伴节点 %d：%w", primary.PartnerServerID, err)
 	}
 
-	if backup.FailoverRole != entity.FailoverRoleBackup {
+	// 手动切换允许目标处于 backup_recovering（刚被降级的原主），自动路径仍只认 backup。
+	if backup.FailoverRole != entity.FailoverRoleBackup &&
+		!(manual && backup.FailoverRole == entity.FailoverRoleBackupRecovering) {
 		return fmt.Errorf("伙伴节点 %s 当前角色是 %q，不是 backup", backup.Name, backup.FailoverRole)
 	}
 
@@ -423,7 +478,12 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	}
 
 	// Demote primary based on recover mode
-	if mode == RecoverModeStayOnPromoted {
+	if manual {
+		// 手动切换：人工已确认，直接降为 backup，不进入恢复观察（否则 60s 后
+		// 会被 auto_switch_back 自动切回去，等于手动切换无效）。
+		primary.FailoverRole = entity.FailoverRoleBackup
+		log.Printf("[FailoverManager] manual: %s demoted to backup", primary.Name)
+	} else if mode == RecoverModeStayOnPromoted {
 		// Permanently demote to backup — no auto-recovery
 		primary.FailoverRole = entity.FailoverRoleBackup
 		log.Printf("[FailoverManager] stay_on_promoted: original primary %s demoted to backup permanently", primary.Name)
@@ -445,7 +505,10 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 
 	// Track failover (only for auto_switch_back recovery tracking)
 	m.mu.Lock()
-	if mode == RecoverModeAutoSwitchBack {
+	if manual {
+		// 手动切换不参与自动回切跟踪。
+		delete(m.failedOverPrimaries, primary.ID)
+	} else if mode == RecoverModeAutoSwitchBack {
 		m.failedOverPrimaries[primary.ID] = true
 	} else {
 		// stay_on_promoted: no recovery tracking needed
@@ -457,7 +520,10 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	m.clearCoreDownTracking(primary.ID)
 	m.clearRecoverTracking(primary.ID)
 
-	if mode == RecoverModeStayOnPromoted {
+	if manual {
+		log.Printf("[FailoverManager] failover complete (manual): %s is now primary, %s is backup",
+			backup.Name, primary.Name)
+	} else if mode == RecoverModeStayOnPromoted {
 		log.Printf("[FailoverManager] failover complete (stay_on_promoted): %s is now primary, %s is backup (permanent)",
 			backup.Name, primary.Name)
 	} else {
@@ -473,6 +539,9 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	// 兜底：给新主补一次全量 SyncData，确保它的运行配置/用户与面板一致
 	// （P1 配置常态同步上线前，备节点配置可能还没跟上）。
 	go m.syncPromotedPrimary(backup.ID)
+
+	// P2：把绑定该主备对的入口 A 记录指向新 primary（异步，失败不阻塞切换）。
+	m.syncEntryDrift(backup)
 
 	return nil
 }
@@ -535,6 +604,9 @@ func (m *FailoverManager) recoverPrimary(ctx context.Context, originalPrimary *e
 	// Phase-4: replay user credentials back to the restored primary and
 	// strip them from the demoted backup.
 	m.replayAfterSwitch(ctx, originalPrimary.ID, actingPrimary.ID)
+
+	// P2：回切后入口 A 记录重新指向恢复的原主。
+	m.syncEntryDrift(originalPrimary)
 }
 
 // replayAfterSwitch pushes all in-scope users to the now-active primary and
@@ -575,8 +647,8 @@ func (m *FailoverManager) ForceFailover(ctx context.Context, serverID int64) err
 	}
 	switch srv.FailoverRole {
 	case entity.FailoverRolePrimary:
-		return m.promoteBackup(ctx, srv, "manual")
-	case entity.FailoverRoleBackup:
+		return m.promoteBackupManual(ctx, srv)
+	case entity.FailoverRoleBackup, entity.FailoverRoleBackupRecovering:
 		if srv.PartnerServerID == 0 {
 			return fmt.Errorf("节点 %s 未配置主备伙伴", srv.Name)
 		}
@@ -587,9 +659,8 @@ func (m *FailoverManager) ForceFailover(ctx context.Context, serverID int64) err
 		if partner.FailoverRole != entity.FailoverRolePrimary {
 			return fmt.Errorf("伙伴节点 %s 当前不是 primary（%q）", partner.Name, partner.FailoverRole)
 		}
-		return m.promoteBackup(ctx, partner, "manual (requested from backup)")
-	case entity.FailoverRoleBackupRecovering:
-		return fmt.Errorf("节点 %s 正在恢复观察期，请等自动回切，或对它的伙伴执行切换", srv.Name)
+		// 把自己从伙伴手里切回来（伙伴是当前 primary，自己是它配对的 backup/recovering）。
+		return m.promoteBackupManual(ctx, partner)
 	default:
 		return fmt.Errorf("节点 %s 的故障切换角色未知：%q", srv.Name, srv.FailoverRole)
 	}

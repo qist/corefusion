@@ -29,6 +29,21 @@
           </el-tag>
           <el-button size="small" type="danger" text @click="deleteItem(item)">X</el-button>
         </div>
+        <!-- 主备入口漂移：切换/回切后自动把该域名的 A 记录指向当前 primary。
+             DNS 通道下拉列出全部服务商，但只有已实现解析写入的才可选（当前
+             Cloudflare 已验证、阿里云已实现未实测）。 -->
+        <div v-if="item.type === 'direct'" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-left:40px">
+          <span class="hint">{{ t('service.shareDomain.entryDrift') }}</span>
+          <el-select v-model="item.dns_channel_id" clearable :placeholder="t('service.shareDomain.dnsChannel')"
+            style="width:210px" @change="updateItem(item)">
+            <el-option v-for="ch in channels" :key="ch.id" :label="channelLabel(ch)" :value="ch.id"
+              :disabled="!channelCap(ch).implemented" />
+          </el-select>
+          <el-input v-model="item.dns_record_name" :placeholder="t('service.shareDomain.dnsRecordNameHint')"
+            style="width:210px" @change="updateItem(item)" />
+          <el-checkbox v-model="item.dns_proxied" @change="updateItem(item)">{{ t('service.shareDomain.dnsProxied') }}</el-checkbox>
+          <span v-if="itemChannelNote(item)" class="hint" style="color:#e6a23c">{{ itemChannelNote(item) }}</span>
+        </div>
       </div>
       <div v-if="!directItems.length" style="text-align:center;color:#909399;padding:16px">{{ t('common.noData') }}</div>
     </el-card>
@@ -96,6 +111,53 @@ const cfHttpsPorts = [443, 8443, 2053, 2083, 2087, 2096]
 
 const directItems = computed(() => items.value.filter(i => i.type === 'direct'))
 const cfDomainItems = computed(() => items.value.filter(i => i.type === 'cf_domain'))
+// DNS 通道 + 各服务商的「自动解析写入」能力表（后端 dnsrecord.Capabilities）。
+// 证书 DNS-01 能用的服务商不一定能改解析：只有实现了 Updater 的才可选。
+const channels = ref([])
+const caps = ref({})
+
+async function fetchChannels() {
+  try {
+    const data = await client.get('/cert-channels')
+    channels.value = Array.isArray(data) ? data : (data?.items || [])
+  } catch {
+    channels.value = []
+  }
+}
+
+async function fetchCapabilities() {
+  try {
+    const list = await client.get('/share-domains/dns-providers')
+    const m = {}
+    for (const c of list || []) m[(c.provider || '').toLowerCase()] = c
+    caps.value = m
+  } catch {
+    caps.value = {}
+  }
+}
+
+function channelCap(ch) {
+  const p = (ch?.provider || '').toLowerCase()
+  return caps.value[p] || { provider: p, implemented: false, verified: false, note: '' }
+}
+
+function channelLabel(ch) {
+  const cap = channelCap(ch)
+  if (!cap.implemented) return `${ch.name} (${ch.provider}) · ${t('service.shareDomain.dnsUnsupported')}`
+  if (!cap.verified) return `${ch.name} (${ch.provider}) · ${t('service.shareDomain.dnsUnverified')}`
+  return `${ch.name} (${ch.provider})`
+}
+
+// 当前条目选中的通道的能力提示（未实现/未实测时给用户看原因）。
+// 用前端 i18n 而不是后端 note（后端 note 是中文兜底，仅排障用）。
+function itemChannelNote(item) {
+  const ch = channels.value.find(c => c.id === item.dns_channel_id)
+  if (!ch) return ''
+  const cap = channelCap(ch)
+  if (!cap.implemented) return t('service.shareDomain.dnsUnsupportedHint')
+  if (!cap.verified) return t('service.shareDomain.dnsUnverifiedHint')
+  return ''
+}
 
 const apiBase = computed(() => {
   if (isNodeMode.value) {
@@ -177,7 +239,11 @@ async function updateItem(item) {
       ports: JSON.stringify(item.ports || []),
       enabled: item.enabled,
       server_id: item.server_id ?? 0,
-      server_ids: (item.server_ids_arr || []).filter(id => id > 0)
+      server_ids: (item.server_ids_arr || []).filter(id => id > 0),
+      // 主备入口漂移（只有 direct + Cloudflare 通道生效）
+      dns_channel_id: item.dns_channel_id || 0,
+      dns_record_name: item.dns_record_name || '',
+      dns_proxied: !!item.dns_proxied
     })
   } catch (e) {
     ElMessage.error(t('common.failed'))
@@ -233,6 +299,8 @@ watch(() => props.serverId, () => {
 
 onMounted(() => {
   fetchNodeServers()
+  fetchChannels()
+  fetchCapabilities()
   fetchItems()
 })
 </script>

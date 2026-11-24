@@ -88,6 +88,7 @@ import (
 	clientauthSvc "corefusion/internal/service/clientauth"
 	configsyncSvc "corefusion/internal/service/configsync"
 	coreconfigSvc "corefusion/internal/service/coreconfig"
+	dnsrecordSvc "corefusion/internal/service/dnsrecord"
 	endpointconfigSvc "corefusion/internal/service/endpointconfig"
 	geoRuleSvc "corefusion/internal/service/georule"
 	"corefusion/internal/service/healthprobe"
@@ -1957,11 +1958,13 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// nodeServerSvcInst is created (see below).
 
 			// Share Domain Configs
-			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo)
+			shareDomainSvc := sharedomainconfigSvc.NewService(shareDomainRepo).
+				WithDNSUpdater(dnsrecordSvc.NewService(repository.NewDNSChannelRepository(database)))
 			shareDomainH := sharedomainconfigHandler.NewHandler(shareDomainSvc)
 			shareDomainGroup := protected.Group("/share-domains")
 			{
 				shareDomainGroup.GET("", shareDomainH.List)
+				shareDomainGroup.GET("/dns-providers", shareDomainH.Providers)
 				// 分享域名是全局 CDN 入口，影响所有订阅：写操作仅 Admin（安全审计 v6 H-1）。
 				shareDomainWrite := protected.Group("/share-domains").Use(middleware.RequireRole(domainuser.RoleAdmin))
 				shareDomainWrite.POST("", shareDomainH.Create)
@@ -2329,6 +2332,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					repository.NewSystemSettingRepository(database),
 					dataDir,
 					func(ctx context.Context, id int64) error {
+						// SyncDataToServer 内部会在推完 xray 配置后，按核心补推
+						// sing-box（见 NodeServerManager.SetCoreSyncer）——这里只负责触发。
 						_, err := sharedNodeMgr.SyncDataToServer(ctx, id, true)
 						return err
 					},
@@ -2482,7 +2487,14 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nginxSiteRepoForMirror := repository.NewNginxSiteRepository(database)
 				nodeMgrForPhase3 := nodeMgrForCRL // reuse the same manager
 
-				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3)
+				// SyncData 的 config_content 只生成 xray（DataSyncBuilder 硬编码 coreType），
+				// sing-box 必须由 NodeServerManager 在 SyncData 后按核心补推 —— 否则
+				// 主备/镜像节点的 sing-box 入站永远不生效（库里同步了、进程不监听）。
+				nodeMgrForPhase3.SetCoreConfigSyncer(configSyncSvc)
+
+				failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgrForPhase3).
+					// P2：切换后把入口域名 A 记录指向新 primary（Cloudflare）。
+					WithEntryDrift(shareDomainSvc)
 				mirrorSyncMgr := agent.NewMirrorSyncManager(nodeServerRepo, inboundRepoForNodeServer, nodeMgrForPhase3).
 					SetCaddySiteRepository(caddySiteRepoForMirror).
 					SetNginxSiteRepository(nginxSiteRepoForMirror).

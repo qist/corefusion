@@ -45,6 +45,16 @@ type ShareDomainConfig struct {
 	ALPN        string `json:"alpn" gorm:"size:120"`
 	Fingerprint string `json:"fingerprint" gorm:"size:32"`
 
+	// ── 主备入口漂移（P2）──
+	// 启用后主备切换/回切会把这个入口域名的 A 记录自动指向当前 primary 的
+	// public_ip（为空则 internal_ip）。目前只有 Cloudflare 通道可用。
+	//   DNSChannelID:  dns_channels.id（与证书 DNS-01 共用凭据）
+	//   DNSRecordName: 要更新的记录名，空则用 Value
+	//   DNSProxied:    Cloudflare 橙云（入口是 TCP/REALITY 时必须 false）
+	DNSChannelID  int64  `json:"dns_channel_id" gorm:"not null;default:0"`
+	DNSRecordName string `json:"dns_record_name" gorm:"size:255"`
+	DNSProxied    bool   `json:"dns_proxied" gorm:"not null;default:false"`
+
 	CreatedAt time.Time `json:"created_at" gorm:"not null"`
 	UpdatedAt time.Time `json:"updated_at" gorm:"not null"`
 }

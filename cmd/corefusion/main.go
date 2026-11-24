@@ -32,9 +32,11 @@ import (
 	binariesSvc "corefusion/internal/service/binaries"
 	"corefusion/internal/service/bootstrap"
 	certService "corefusion/internal/service/certificate"
+	dnsrecordSvc "corefusion/internal/service/dnsrecord"
 	planSvc "corefusion/internal/service/plan"
 	proxySvc "corefusion/internal/service/proxy"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
+	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
 	sysService "corefusion/internal/service/system"
 	usersync "corefusion/internal/service/usersync"
 	"corefusion/internal/store/db"
@@ -493,7 +495,10 @@ func runServer(args []string) {
 
 	// Phase 3: Start FailoverManager, MirrorSync, and ChainHealth monitors
 	inboundRepoForPhase3 := repository.NewInboundConfigRepository(db.DB)
-	failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgr)
+	failoverMgr := agent.NewFailoverManager(nodeServerRepo, nodeMgr).
+		// P2：主备切换/回切后把入口域名 A 记录指向当前 primary（目前仅 Cloudflare）。
+		WithEntryDrift(sharedomainconfigSvc.NewService(repository.NewShareDomainConfigRepository(db.DB)).
+			WithDNSUpdater(dnsrecordSvc.NewService(repository.NewDNSChannelRepository(db.DB))))
 	go failoverMgr.RunLoop(context.Background())
 	log.Println("Failover manager started (primary_backup auto-switch, per-pair recover mode)")
 

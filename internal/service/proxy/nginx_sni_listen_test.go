@@ -312,3 +312,35 @@ func TestNginxSNIFallbackUsesSNILocalPort(t *testing.T) {
 		t.Fatalf("fallback 不应落到公网 443：\n%s", cfg)
 	}
 }
+
+// 历史脏数据：fallback 被写成 127.0.0.1:443（= 本组 SNI 监听端口）。必须纠正到
+// 本地 HTTPS 端口，否则 nginx 把未知 SNI 的流量转回自己，连接死循环。
+func TestNginxSNIFallbackSelfReferenceCorrected(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:443", LocalPort: "443", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:8443;") {
+		t.Fatalf("自指 fallback 应纠正为 127.0.0.1:8443：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "server 127.0.0.1:443;") {
+		t.Fatalf("不应再把流量转回本组监听端口：\n%s", cfg)
+	}
+
+	// 显式 sni_local_port 优先：纠正到该端口而不是固定 8443。
+	cfg = generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true,"sni_local_port":"9543"}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:9543;") {
+		t.Fatalf("应按 sni_local_port 纠正为 9543：\n%s", cfg)
+	}
+}
+
+// 非自指的显式 fallback 目标必须原样保留（不能把用户配置改掉）。
+func TestNginxSNIFallbackExplicitTargetKept(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "443", SNITarget: "127.0.0.1:9443", LocalPort: "8443", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites, `{"stream_sni_enabled":true}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:9443;") {
+		t.Fatalf("显式 fallback 目标不应被改写：\n%s", cfg)
+	}
+}

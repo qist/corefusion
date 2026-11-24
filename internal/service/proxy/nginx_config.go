@@ -1547,8 +1547,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if fallbackTarget == "" {
 					fallbackTarget = siteFallback
 				}
+				// 自指兜底：fallback 指向本组 SNI 监听端口（通常是 127.0.0.1:443）
+				// 会让 stream 把流量转回自己 —— 连接直接死循环。历史版本在监听拆分
+				// 时把 fallback 写成了 https_listen(443)，这里按本地 HTTPS 端口纠正。
+				fallbackTarget = avoidSelfSNIFallback(fallbackTarget, port, s.SNILocalPort)
 				if fallbackTarget == "" {
-					fallbackTarget = "127.0.0.1:8443"
+					fallbackTarget = sniLocalFallbackTarget(s.SNILocalPort)
 				}
 				if !streamUpstreamSeen[fallbackUpstream] {
 					streamUpstreamSeen[fallbackUpstream] = true
@@ -2005,4 +2009,68 @@ func listenPortOnly(listen string) string {
 		}
 	}
 	return listen
+}
+
+// sniLocalFallbackTarget 返回「本地 HTTPS」兜底目标：sni_local_port（默认 8443）。
+// 与公网 https_listen 无关 —— 启用 SNI 后公网端口归 stream 的 ssl_preread。
+func sniLocalFallbackTarget(sniLocalPort string) string {
+	v := strings.TrimSpace(sniLocalPort)
+	if v != "" {
+		if p := listenPortOnly(v); p != "" {
+			return "127.0.0.1:" + p
+		}
+	}
+	return "127.0.0.1:8443"
+}
+
+// avoidSelfSNIFallback 把「fallback 指向本组 SNI 监听端口」的自指目标换成
+// 本地 HTTPS 目标。多目标时逐项纠正并去重；全部为空时返回空串，由调用方兜底。
+//
+// 背景：SNI 分流把 443 上的 TLS 按域名转到后端，未知 SNI 走 default。若 default
+// 又指回 127.0.0.1:443，nginx 会把流量转给自己，形成连接死循环（表现为所有未知
+// SNI 请求挂住）。历史数据（监听拆分那次回归）确实被写成了 127.0.0.1:443。
+func avoidSelfSNIFallback(target, sniListen, sniLocalPort string) string {
+	t := strings.TrimSpace(target)
+	if t == "" {
+		return ""
+	}
+	sniPort := listenPortOnly(canonicalListenAddr(sniListen))
+	if sniPort == "" {
+		sniPort = "443"
+	}
+	local := sniLocalFallbackTarget(sniLocalPort)
+	seen := make(map[string]bool, 2)
+	out := make([]string, 0, 2)
+	for _, raw := range strings.Split(t, ",") {
+		up := strings.TrimSpace(raw)
+		if up == "" {
+			continue
+		}
+		if isLoopbackPort(up, sniPort) {
+			log.Printf("[NginxConfig] SNI fallback 目标 %s 指向本组监听端口 %s（自指），已改为 %s", up, sniPort, local)
+			up = local
+		}
+		if seen[up] {
+			continue
+		}
+		seen[up] = true
+		out = append(out, up)
+	}
+	return strings.Join(out, ",")
+}
+
+// isLoopbackPort 判断 addr 是否为回环地址且端口等于 port。
+func isLoopbackPort(addr, port string) bool {
+	host, p, err := net.SplitHostPort(canonicalListenAddr(addr))
+	if err != nil || p == "" {
+		return false
+	}
+	if p != port {
+		return false
+	}
+	switch strings.ToLower(host) {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
 }

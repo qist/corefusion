@@ -2038,7 +2038,7 @@ func sniLocalFallbackTarget(sniLocalPort, httpsListen string) string {
 //   - SNI 监听是通配（"443" / "0.0.0.0:443" / "[::]:443"）→ 127.0.0.1:443 连的
 //     就是它自己，必须纠正；
 //   - SNI 监听是回环（127.0.0.1:443）→ 同回环同端口才纠正；
-//   - SNI 监听是**具体公网 IP**（23.254.233.185:443）→ 127.0.0.1:443 是另一个
+//   - SNI 监听是**具体公网 IP**（203.0.113.10:443，示例用文档段地址）→ 127.0.0.1:443 是另一个
 //     socket（本地 HTTPS 站点），完全合法，不能改（生产就是这个形态）。
 func avoidSelfSNIFallback(target, sniListen, localTarget string) string {
 	t := strings.TrimSpace(target)

@@ -349,7 +349,7 @@ func TestNginxSNIFallbackExplicitTargetKept(t *testing.T) {
 // 127.0.0.1:443。此时 fallback=127.0.0.1:443 是**正确**的，不能被自指纠正改掉。
 func TestNginxSNIFallbackKeepsLoopbackWhenSNIBindsPublicIP(t *testing.T) {
 	sites := []entity.NginxSite{
-		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "23.254.233.185:443", SNITarget: "127.0.0.1:443", Enabled: true},
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "203.0.113.10:443", SNITarget: "127.0.0.1:443", Enabled: true},
 	}
 	cfg := generateFor(t, newNginxTestManager(t, sites,
 		`{"stream_sni_enabled":true,"https_listen":"127.0.0.1:443","stream_default_target":"127.0.0.1:443"}`))

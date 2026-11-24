@@ -469,6 +469,7 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | POST | `/api/v1/node-servers/:id/speed-test` | ผู้ดูแลระบบ | การทดสอบความเร็วของโหนด |
 | GET | `/api/v1/node-servers/:id/status` | ผู้ดูแลระบบ | สถานะของโหนด |
 | POST | `/api/v1/node-servers/:id/sync` | ผู้ดูแลระบบ | ซิงค์การกำหนดค่าโหนด (สร้างและพุช) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | ผู้ดูแลระบบ | กระทบยอดการกำหนดค่าหลักกับพันธมิตรที่สแตนด์บาย (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | ผู้ดูแลระบบขั้นสูง | พุชข้อมูลแผงไปยังโหนด (ซิงค์ผู้ใช้/การสมัครสมาชิก/แผนทั้งหมด) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | ผู้ดูแลระบบ | ซิงค์โหนดมิเรอร์ |
 | GET | `/api/v1/node-servers/:id/tags` | ผู้ดูแลระบบ | รายการแท็ก |
@@ -621,6 +622,9 @@ CRUD, ระงับ/ดำเนินการต่อ, อัปเกร�
 | PUT | `/api/v1/share-domains/:id` | ผู้ดูแลระบบ | อัปเดต |
 | DELETE | `/api/v1/share-domains/all` | ผู้ดูแลระบบ | เคลียร์ทั้งหมด |
 | POST | `/api/v1/share-domains/seed` | ผู้ดูแลระบบ | เริ่มต้นข้อมูลเริ่มต้น |
+| GET | `/api/v1/share-domains/dns-providers` | ลงชื่อเข้าใช้ | ตารางความสามารถในการเขียน DNS ต่อผู้ให้บริการ (ใช้งาน / ตรวจสอบแล้ว) |
+`PUT /api/v1/share-domains/:id` ยังยอมรับ `dns_channel_id`, `dns_record_name` และ `dns_proxied`: บนหลัก/สแตนด์บายล้มเหลว หรือสลับกลับ บันทึก A รายการจะชี้ไปที่หลักใหม่ เฉพาะผู้ให้บริการที่มีตัวเขียน DNS ที่นำไปใช้เท่านั้นที่ยอมรับช่องเหล่านี้ (ยืนยัน `cloudflare`; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud ใช้งานแต่ไม่ได้รับการยืนยัน) โปรดดู `GET /api/v1/share-domains/dns-providers` สำหรับตารางความสามารถ
+
 
 ### Cloudflare ไอพี
 

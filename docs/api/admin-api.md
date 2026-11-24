@@ -468,6 +468,7 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/speed-test` | 管理员 | 节点测速 |
 | GET | `/api/v1/node-servers/:id/status` | 管理员 | 节点状态 |
 | POST | `/api/v1/node-servers/:id/sync` | 管理员 | 同步节点配置（生成并下发） |
+| POST | `/api/v1/node-servers/:id/standby-sync` | 管理员 | 立即把主节点配置对齐到备节点（primary_backup） |
 | POST | `/api/v1/node-servers/:id/sync-data` | 超级管理员 | 向节点推送面板数据（用户/订阅/套餐等全量同步） |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | 管理员 | 同步镜像节点 |
 | GET | `/api/v1/node-servers/:id/tags` | 管理员 | 标签列表 |
@@ -620,6 +621,12 @@ curl https://<面板域名>/api/v1/clients?limit=1 \
 | PUT | `/api/v1/share-domains/:id` | 管理员 | 更新 |
 | DELETE | `/api/v1/share-domains/all` | 管理员 | 清空全部 |
 | POST | `/api/v1/share-domains/seed` | 管理员 | 初始化默认数据 |
+| GET | `/api/v1/share-domains/dns-providers` | 登录 | 各 DNS 服务商的解析写入能力表（implemented / verified） |
+`PUT /api/v1/share-domains/:id` 额外支持 `dns_channel_id`、`dns_record_name`、`dns_proxied`：主备切换/回切后，
+该条目的 A 记录会自动指向新的主节点。只有已实现解析写入的服务商接受这些字段（`cloudflare` 已验证；
+alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / 华为云已实现未实测），
+能力表见 `GET /api/v1/share-domains/dns-providers`。
+
 
 ### Cloudflare IP
 

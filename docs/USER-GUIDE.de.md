@@ -831,6 +831,11 @@ Sie können die Speicherung des Ports gemäß dem Überwachungsprotokoll (TCP/UD
 - Beim Ändern des Ports wird die alte Regel aufgehoben, bevor die neue zugelassen wird. Durch Löschen des eingehenden Ports, Deaktivieren des Port-Hoppings oder Wechseln zu Unix Socket/tun (kein Überwachungsport) wird alles bereinigt.
 - Wenn keine aktivierte Firewall erkannt wird, wird nur ein Hinweis angezeigt und keine Regel geschrieben.
 
+**Transport und Fluss**:
+
+- `xtls-rprx-vision` funktioniert nur über rohes TCP: Bei gRPC / XHTTP / WebSocket schlägt der Client komplett fehl (sing-box: `initialize vision: not a valid supported TLS connection`) oder ist mit der Serverflussprüfung nicht einverstanden (`flow mismatch`). Das Panel entfernt die Vision beim Speichern und beim Generieren der Laufzeitkonfiguration von allen nicht-raw/TCP eingehenden Daten;
+- sing-box-Transporte erfolgen nur über http / ws / quic / grpc / httpupgrade – **rohes TCP bedeutet überhaupt keinen Transport**. Der erste (leere) Eintrag der Transport-Dropdown-Liste ist raw TCP; Das Schreiben von `type: "tcp"` führt dazu, dass der Kern die Konfiguration ablehnt.
+
 ### 6.3.1 Reverse-Proxy-Pfad (Zugriffsdomäne → Vorderseite TLS → Reverse-Proxy-Pfad)
 
 Wenn der eigene Transportpfad des Inbounds `/` ist, ihn aber ein äußerer nginx/caddy unter einem Unterpfad einhängt
@@ -1019,6 +1024,8 @@ Routing-Ressourcen sammeln die gemeinsam genutzten Assets, die von Abonnements u
 - **CF-bevorzugte Domänen**: Cloudflare bevorzugte Domäne plus Port, mit Konnektivitätsprüfung;
 - Beide füttern die „Zugriffsdomänen“-Kandidaten, die von Abonnements und dem Umschreiben externer Knoten verwendet werden (siehe 16.3).
 
+- **Eintragsdrift (primär/Standby)**: Ein direkter Eintrag kann einen DNS-Kanal und einen Datensatznamen binden; Nach einem Failover oder Switchback verweist das Panel darauf, dass der A-Datensatz auf die öffentliche IP des aktuellen Primärservers verweist (interne IP, wenn leer). Es werden nur Anbieter mit implementiertem DNS-Writer akzeptiert (`cloudflare` verifiziert; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implementiert, aber nicht verifiziert). Die Ausbreitung von Cloudflare wurde bei etwa 2–2,5 Minuten gemessen, wobei TTL auf 60 festgelegt war; Halten Sie die orangefarbene Wolke für TCP/REALITY-Einträge ausgeschaltet.
+
 ### 8.2 CF-IP-Pool
 
 - Behalten Sie bevorzugte IP-Quellen (einschließlich Quellen im `bestproxy`-Stil), Abrufintervall und Ports bei;
@@ -1104,6 +1111,10 @@ Hinweise:
  Outbound-Kandidaten dynamisch aus „Proxy-Gruppen + benutzerdefinierte Outbounds“ und manuell eingegebene Tags
  noch validiert;
 - sing-box / Xray-Konfigurationen müssen separat erstellt werden; Wenn sie nicht vorhanden sind, erscheinen sie nicht in Kundenlinks (siehe 10.3).
+
+- Der strukturierte Regeleditor von Mihomo unterstützt logische Regeln `AND` / `OR` / `NOT` / `SUB-RULE`: Schreiben Sie die Bedingung als `((NETWORK,UDP),(DST-PORT,3478/19302))`; Für `SUB-RULE` ist die dritte Spalte der Name der Unterregelgruppe. Bedingungen müssen in Klammern eingeschlossen werden;
+- Regeltypen sind auf das neueste Mihomo abgestimmt: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` sind alle verfügbar;
+- `SUB-RULE` verweist auf den `sub-rules:`-Block der Mihomo-Konfiguration; Das Panel bearbeitet diesen Block noch nicht. Definieren Sie ihn daher zunächst über den YAML-Import oder den freigegebenen config_json.
 
 ### 9.2 Abonnementendpunkte
 

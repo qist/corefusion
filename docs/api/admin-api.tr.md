@@ -469,6 +469,7 @@ Düğümleri planların referans verdiği gruplar halinde düzenleyin.
 | POST | `/api/v1/node-servers/:id/speed-test` | Yönetici | Düğüm hızı testi |
 | GET | `/api/v1/node-servers/:id/status` | Yönetici | Düğüm durumu |
 | POST | `/api/v1/node-servers/:id/sync` | Yönetici | Düğüm yapılandırmasını senkronize et (oluştur ve gönder) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Yönetici | Birincil yapılandırmayı yedek ortağıyla uzlaştırın (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Süper yönetici | Panel verilerini düğümlere aktarma (kullanıcıların/aboneliklerin/planların tam senkronizasyonu) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Yönetici | Ayna düğümünü senkronize et |
 | GET | `/api/v1/node-servers/:id/tags` | Yönetici | Etiket listesi |
@@ -621,6 +622,9 @@ Abonelik kaydı yönetimi: iptal etme, jetonu döndürme, günlüklere erişim, 
 | PUT | `/api/v1/share-domains/:id` | Yönetici | Güncelleme |
 | DELETE | `/api/v1/share-domains/all` | Yönetici | Tümünü temizle |
 | POST | `/api/v1/share-domains/seed` | Yönetici | Varsayılan verileri başlat |
+| GET | `/api/v1/share-domains/dns-providers` | Oturum açıldı | Sağlayıcı başına DNS yazma yeteneği tablosu (uygulandı / doğrulandı) |
+`PUT /api/v1/share-domains/:id` ayrıca `dns_channel_id`, `dns_record_name` ve `dns_proxied`'i de kabul eder: birincil/yedek yük devretme veya geri geçişte A girişi kaydı yeni birincil noktaya yönlendirilir. Yalnızca uygulanan DNS yazıcısına sahip sağlayıcılar bu alanları kabul eder (`cloudflare` doğrulandı; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud uygulandı ancak doğrulanmadı). Yetenek tablosu için `GET /api/v1/share-domains/dns-providers`'e bakın.
+
 
 ### Cloudflare IP
 

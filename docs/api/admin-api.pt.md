@@ -469,6 +469,7 @@ Recursos principais: nó CRUD, entrega de configuração principal (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/speed-test` | Administrador | Teste de velocidade do nó |
 | GET | `/api/v1/node-servers/:id/status` | Administrador | Status do nó |
 | POST | `/api/v1/node-servers/:id/sync` | Administrador | Configuração do nó de sincronização (gerar e enviar por push) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Administrador | Reconcilie a configuração primária com seu parceiro em espera (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Superadministrador | Enviar dados do painel para nós (sincronização completa de usuários/assinaturas/planos) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Administrador | Sincronizar nó de espelho |
 | GET | `/api/v1/node-servers/:id/tags` | Administrador | Lista de tags |
@@ -621,6 +622,9 @@ Acesse o pool de domínio/IP usado em links de clientes.
 | PUT | `/api/v1/share-domains/:id` | Administrador | Atualizar |
 | DELETE | `/api/v1/share-domains/all` | Administrador | Limpar tudo |
 | POST | `/api/v1/share-domains/seed` | Administrador | Inicializar dados padrão |
+| GET | `/api/v1/share-domains/dns-providers` | Conectado | Tabela de capacidades de escrita DNS por fornecedor (implementada/verificada) |
+`PUT /api/v1/share-domains/:id` also accepts `dns_channel_id`, `dns_record_name` and `dns_proxied`: on a primary/standby failover or switch-back the entry A record is pointed at the new primary. Only providers with an implemented DNS writer accept these fields (`cloudflare` verified; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implemented but not verified). Consulte `GET /api/v1/share-domains/dns-providers` para obter a tabela de capacidade.
+
 
 ### IP Cloudflare
 

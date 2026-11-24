@@ -469,6 +469,7 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | POST | `/api/v1/node-servers/:id/speed-test` | المشرف | اختبار سرعة العقدة |
 | GET | `/api/v1/node-servers/:id/status` | المشرف | حالة العقدة |
 | POST | `/api/v1/node-servers/:id/sync` | المشرف | تكوين عقدة المزامنة (إنشاء ودفع) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | المشرف | قم بتسوية التكوين الأساسي مع شريكه الاحتياطي (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | المشرف الفائق | دفع بيانات اللوحة إلى العقد (مزامنة كاملة للمستخدمين/الاشتراكات/الخطط) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | المشرف | عقدة مرآة المزامنة |
 | GET | `/api/v1/node-servers/:id/tags` | المشرف | قائمة العلامات |
@@ -621,6 +622,9 @@ CRUD، تعليق/استئناف، ترقية/خفض مستوى، التجديد
 | PUT | `/api/v1/share-domains/:id` | المشرف | تحديث |
 | DELETE | `/api/v1/share-domains/all` | المشرف | مسح الكل |
 | POST | `/api/v1/share-domains/seed` | المشرف | تهيئة البيانات الافتراضية |
+| GET | `/api/v1/share-domains/dns-providers` | تم تسجيل الدخول | جدول إمكانية كتابة DNS لكل مزود (تم التنفيذ / التحقق) |
+يقبل `PUT /api/v1/share-domains/:id` أيضًا `dns_channel_id` و`dns_record_name` و`dns_proxied`: في حالة تجاوز الفشل الأساسي/الاستعداد أو التبديل إلى الخلف، تتم الإشارة إلى سجل A للإدخال في الملف الأساسي الجديد. فقط مقدمو الخدمة الذين لديهم كاتب DNS مطبق يقبلون هذه الحقول (تم التحقق من `cloudflare`؛ تم تنفيذ alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud ولكن لم يتم التحقق منه). راجع `GET /api/v1/share-domains/dns-providers` للاطلاع على جدول القدرات.
+
 
 ### Cloudflare IP
 

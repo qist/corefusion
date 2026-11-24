@@ -469,6 +469,7 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | POST | `/api/v1/node-servers/:id/speed-test` | مدیر | تست سرعت گره |
 | GET | `/api/v1/node-servers/:id/status` | مدیر | وضعیت گره |
 | POST | `/api/v1/node-servers/:id/sync` | مدیر | همگام سازی پیکربندی گره (تولید و فشار دادن) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | ادمین | پیکربندی اولیه را با شریک آماده به کار (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | فوق ادمین | فشار دادن داده‌های پانل به گره‌ها (همگام‌سازی کامل کاربران/اشتراک‌ها/طرح‌ها) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | مدیر | همگام سازی گره آینه ای |
 | GET | `/api/v1/node-servers/:id/tags` | مدیر | لیست برچسب |
@@ -621,6 +622,9 @@ CRUD، تعلیق/رزومه، ارتقا/کاهش، تمدید و بازنشا�
 | PUT | `/api/v1/share-domains/:id` | مدیر | به روز رسانی |
 | DELETE | `/api/v1/share-domains/all` | مدیر | پاک کردن همه |
 | POST | `/api/v1/share-domains/seed` | مدیر | داده های پیش فرض را راه اندازی کنید |
+| GET | `/api/v1/share-domains/dns-providers` | وارد شده | جدول قابلیت نوشتن DNS برای هر ارائه دهنده (اجرا شده / تأیید شده) |
+`PUT /api/v1/share-domains/:id` همچنین `dns_channel_id`، `dns_record_name` و `dns_proxied` را می پذیرد: در یک خطای اولیه/آماده به کار یا سوئیچ برگشتی، رکورد ورودی A به سمت اولیه جدید نشان داده می شود. فقط ارائه‌دهندگانی که دارای برنامه‌نویس DNS پیاده‌سازی شده باشند، این فیلدها را می‌پذیرند (`cloudflare` تأیید شده؛ alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud اجرا شده اما تأیید نشده است). برای جدول قابلیت `GET /api/v1/share-domains/dns-providers` را ببینید.
+
 
 ### IP Cloudflare
 

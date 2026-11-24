@@ -857,6 +857,11 @@ cd /opt/corefusion
 - 更改連接埠會在允許新規則之前撤銷舊規則；刪除入站、停用連接埠跳躍或切換到 Unix Socket/tun（無監聽連接埠）可將其清除；
 - 當未偵測到啟用的防火牆時，僅顯示提示且不寫入規則。
 
+**運輸與流動**：
+
+- `xtls-rprx-vision` 僅適用於原始 TCP：對於 gRPC / XHTTP / WebSocket，客戶端徹底失敗（sing-box：`initialize vision: not a valid supported TLS connection`）或不同意伺服器流量檢查（`flow mismatch`）。此面板在保存時和生成運行時配置時從任何非原始/TCP 入站中剝離視覺；
+- sing-box 傳輸僅限 http / ws / quic / grpc / httpupgrade — **原始 TCP 表示根本沒有傳輸**。傳輸下拉清單的第一個（空）條目是原始 TCP；寫入 `type: "tcp"` 會使核心拒絕配置。
+
 ### 6.3.1 反向代理路徑（訪問域→前置TLS→反向代理路徑）
 
 當入站自身傳輸路徑為 `/` 但外部 nginx / caddy 將其掛載在子路徑下時
@@ -1045,6 +1050,8 @@ cd /opt/corefusion
 - **CF首選域**：Cloudflare首選域加端口，帶連通性檢查；
 - 兩者都提供訂閱和外部節點重寫所使用的「存取域」候選者（請參閱 16.3）。
 
+- **條目漂移（主/備）**：直接條目可以綁定DNS通道和記錄名稱；故障轉移或切回後，面板將 A 記錄指向目前主節點的公共 IP（空時為內部 IP）。僅接受已實施 DNS 編寫器的提供者（`cloudflare` 已驗證；alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 已實施但未驗證）。 Cloudflare 傳播在大約 2–2.5 分鐘時測量，TTL 固定為 60；對於 TCP/REALITY 條目，請保持橙色雲關閉。
+
 ### 8.2 CF IP池
 
 - 維護首選IP來源（包括`bestproxy`樣式來源）、取得間隔和連接埠；
@@ -1155,6 +1162,10 @@ URL / 參數 / POST 內容檢查，IP、UA、Cookie、CC、檔案上傳仍照常
  從「代理群組+自訂出站」動態篩選出站候選項，並手動輸入標籤
  仍在驗證中；
 - sing-box / Xray 配置必須單獨建立；如果它們不存在，則不會出現在客戶連結中（請參閱 10.3）。
+
+- Mihomo的結構化規則編輯器支援邏輯規則`AND` / `OR` / `NOT` / `SUB-RULE`：將條件寫為`((NETWORK,UDP),(DST-PORT,3478/19302))`；對於 `SUB-RULE`，第三列是子規則組名稱。條件必須用括號括起來；
+- 規則類型與最新mihomo保持一致：`IP-SUFFIX`、`SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`、`IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`、`PROCESS-NAME-WILDCARD/REGEX`、`PROCESS-PATH-WILDCARD/REGEX`、`UID`、`DSCP`均可用；
+- `SUB-RULE` 引用 mihomo 配置的 `sub-rules:` 區塊；該面板尚未編輯該區塊，因此首先透過 YAML 匯入或共用的 config_json 定義它。
 
 ### 9.2 訂閱端點
 

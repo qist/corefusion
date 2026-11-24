@@ -469,6 +469,7 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | POST | `/api/v1/node-servers/:id/speed-test` | 管理者 | ノード速度テスト |
 | GET | `/api/v1/node-servers/:id/status` | 管理者 | ノードのステータス |
 | POST | `/api/v1/node-servers/:id/sync` | 管理者 | ノード構成の同期 (生成およびプッシュ) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | 管理者 | プライマリ設定をスタンバイ パートナーに調整します (primary_backup)。 |
 | POST | `/api/v1/node-servers/:id/sync-data` | スーパー管理者 | パネル データをノードにプッシュします (ユーザー/サブスクリプション/プランの完全同期) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | 管理者 | 同期ミラーノード |
 | GET | `/api/v1/node-servers/:id/tags` | 管理者 | タグ一覧 |
@@ -621,6 +622,9 @@ CRUD、一時停止/再開、アップグレード/ダウングレード、更�
 | PUT | `/api/v1/share-domains/:id` | 管理者 | アップデート |
 | DELETE | `/api/v1/share-domains/all` | 管理者 | すべてクリア |
 | POST | `/api/v1/share-domains/seed` | 管理者 | デフォルトデータの初期化 |
+| GET | `/api/v1/share-domains/dns-providers` | サインイン | プロバイダーごとの DNS 書き込み機能テーブル (実装/検証済み) |
+`PUT /api/v1/share-domains/:id` は、`dns_channel_id`、`dns_record_name`、および `dns_proxied` も受け入れます。プライマリ/スタンバイ フェイルオーバーまたはスイッチバックでは、エントリ A レコードは新しいプライマリを指します。 DNS ライターが実装されているプロバイダーのみがこれらのフィールドを受け入れます (`cloudflare` 検証済み、alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 実装されていますが検証されていません)。能力表は`GET /api/v1/share-domains/dns-providers`をご覧ください。
+
 
 ### Cloudflare IP
 

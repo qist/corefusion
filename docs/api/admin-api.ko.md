@@ -469,6 +469,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/speed-test` | 관리자 | 노드 속도 테스트 |
 | GET | `/api/v1/node-servers/:id/status` | 관리자 | 노드 상태 |
 | POST | `/api/v1/node-servers/:id/sync` | 관리자 | 동기화 노드 구성(생성 및 푸시) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | 관리자 | 기본 구성을 대기 파트너(primary_backup)로 조정 |
 | POST | `/api/v1/node-servers/:id/sync-data` | 최고 관리자 | 패널 데이터를 노드에 푸시(사용자/구독/계획의 전체 동기화) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | 관리자 | 동기화 미러 노드 |
 | GET | `/api/v1/node-servers/:id/tags` | 관리자 | 태그 목록 |
@@ -621,6 +622,9 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | PUT | `/api/v1/share-domains/:id` | 관리자 | 업데이트 |
 | DELETE | `/api/v1/share-domains/all` | 관리자 | 모두 지우기 |
 | POST | `/api/v1/share-domains/seed` | 관리자 | 기본 데이터 초기화 |
+| GET | `/api/v1/share-domains/dns-providers` | 로그인 | 공급자별 DNS 쓰기 기능 표(구현/검증) |
+`PUT /api/v1/share-domains/:id`는 `dns_channel_id`, `dns_record_name` 및 `dns_proxied`도 허용합니다. 기본/대기 장애 조치 또는 스위치백에서 항목 A 레코드는 새 기본을 가리킵니다. DNS 작성자가 구현된 공급자만 이러한 필드를 허용합니다(`cloudflare` 확인됨, alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 구현되었지만 확인되지 않음). 기능 표는 `GET /api/v1/share-domains/dns-providers`를 참조하세요.
+
 
 ### Cloudflare IP
 

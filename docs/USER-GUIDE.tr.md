@@ -831,6 +831,11 @@ dinleme protokolüne (TCP/UDP) göre bağlantı noktasının kaydedilmesine izin
 - Bağlantı noktasını değiştirmek, yenisine izin vermeden önce eski kuralı iptal eder; gelenleri silmek, bağlantı noktası atlamayı devre dışı bırakmak veya Unix Soket / tun'a (dinleme bağlantı noktası yok) geçiş yapmak onu temizler;
 - Etkinleştirilmiş bir güvenlik duvarı tespit edilmediğinde yalnızca bir ipucu gösterilir ve herhangi bir kural yazılmaz.
 
+**Taşıma ve akış**:
+
+- `xtls-rprx-vision` yalnızca ham TCP üzerinde çalışır: gRPC / XHTTP / WebSocket ile istemci doğrudan başarısız olur (sing-box: `initialize vision: not a valid supported TLS connection`) veya sunucu akış denetimiyle aynı fikirde değildir (`flow mismatch`). Panel, kaydetme sırasında ve çalışma zamanı yapılandırmasını oluştururken ham olmayan/TCP gelen tüm gelenlerden görüşü çıkarır;
+- sing-box aktarımları yalnızca http / ws / quic / grpc / httpupgrade'tir — **ham TCP, hiçbir aktarım olmadığı anlamına gelir**. Taşıma açılır menüsünün ilk (boş) girişi ham TCP'tir; `type: "tcp"` yazmak çekirdeğin yapılandırmayı reddetmesine neden olur.
+
 ### 6.3.1 Ters proxy yolu (Erişim etki alanı → Ön TLS → Ters proxy yolu)
 
 Gelenin kendi aktarım yolu `/` olduğunda ancak bir dış nginx / caddy onu bir alt yolun altına bağladığında
@@ -1019,6 +1024,8 @@ Yönlendirme kaynakları, abonelikler ve yönlendirme tarafından kullanılan pa
 - **CF tercih edilen etki alanları**: Cloudflare tercih edilen etki alanı artı bağlantı noktası, bağlantı kontrolü ile;
 - Her ikisi de abonelikler ve harici düğüm yeniden yazma tarafından kullanılan "Erişim etki alanı" adaylarını besler (bkz. 16.3).
 
+- **Giriş kayması (birincil/yedek)**: doğrudan giriş, bir DNS kanalına ve kayıt adına bağlanabilir; bir yük devretme veya geri dönüş sonrasında panel, A'in geçerli birincilin genel IP'sine (boş olduğunda dahili IP) kayıt yaptığını gösterir. Yalnızca uygulanan DNS yazıcısına sahip sağlayıcılar kabul edilir (`cloudflare` doğrulandı; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud uygulandı ancak doğrulanmadı). Cloudflare yayılımı, TTL 60'a sabitlenmiş olarak yaklaşık 2–2,5 dakikada ölçülmüştür; TCP/REALITY girişleri için turuncu bulutu uzak tutun.
+
 ### 8.2 CF IP havuzu
 
 - Tercih edilen IP kaynaklarını (`bestproxy` tarzı kaynaklar dahil), getirme aralığını ve bağlantı noktalarını koruyun;
@@ -1104,6 +1111,10 @@ Notlar:
  "Proxy gruplarından + özel gidenlerden" dinamik olarak giden adaylar ve manuel olarak girilen etiketler
  hala doğrulandı;
 - sing-box / Xray yapılandırmaları ayrı olarak oluşturulmalıdır; mevcut değilse müşteri bağlantılarında görünmezler (bkz. 10.3).
+
+- Mihomo'in yapılandırılmış kural düzenleyicisi mantıksal kuralları destekler `AND` / `OR` / `NOT` / `SUB-RULE`: koşulu `((NETWORK,UDP),(DST-PORT,3478/19302))` olarak yazın; `SUB-RULE` için üçüncü sütun alt kural grubu adıdır. Koşullar parantez içine alınmalıdır;
+- Kural türleri en son mihomo ile uyumludur: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP`'in tümü mevcuttur;
+- `SUB-RULE`, mihomo yapılandırmasının `sub-rules:` bloğuna başvurur; panel henüz bu bloğu düzenlemediğinden, önce onu YAML içe aktarma veya paylaşılan config_json aracılığıyla tanımlayın.
 
 ### 9.2 Abonelik uç noktaları
 

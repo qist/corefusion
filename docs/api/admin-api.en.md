@@ -469,6 +469,7 @@ Core resources: node CRUD, core (xray/sing-box) config delivery, inbound/outboun
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Node speed test |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Node status |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Sync node config (generate and push) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Admin | Reconcile the primary config to its standby partner (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Super admin | Push panel data to nodes (full sync of users/subscriptions/plans) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Admin | Sync mirror node |
 | GET | `/api/v1/node-servers/:id/tags` | Admin | Tag list |
@@ -621,6 +622,13 @@ Access domain/IP pool used in client links.
 | PUT | `/api/v1/share-domains/:id` | Admin | Update |
 | DELETE | `/api/v1/share-domains/all` | Admin | Clear all |
 | POST | `/api/v1/share-domains/seed` | Admin | Initialize default data |
+| GET | `/api/v1/share-domains/dns-providers` | Signed in | DNS write capability table per provider (implemented / verified) |
+`PUT /api/v1/share-domains/:id` also accepts `dns_channel_id`, `dns_record_name` and `dns_proxied`: on a
+primary/standby failover or switch-back the entry A record is pointed at the new primary. Only providers
+with an implemented DNS writer accept these fields (`cloudflare` verified; alidns / DNSPod / GoDaddy /
+Namecheap / Route53 / Google / Huawei Cloud implemented but not verified). See `GET
+/api/v1/share-domains/dns-providers` for the capability table.
+
 
 ### Cloudflare IP
 

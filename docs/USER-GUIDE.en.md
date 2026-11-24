@@ -858,6 +858,16 @@ you can allow the port on save according to the listening protocol (TCP/UDP).
 - Changing the port revokes the old rule before allowing the new one; deleting the inbound, disabling port hopping or switching to Unix Socket / tun (no listening port) cleans it up;
 - When no enabled firewall is detected, only a hint is shown and no rule is written.
 
+**Transport and flow**:
+
+- `xtls-rprx-vision` only works over raw TCP: with gRPC / XHTTP / WebSocket the client fails outright
+  (sing-box: `initialize vision: not a valid supported TLS connection`) or disagrees with the server
+  flow check (`flow mismatch`). The panel strips vision from any non raw/TCP inbound on save and when
+  generating the runtime config;
+- sing-box transports are http / ws / quic / grpc / httpupgrade only — **raw TCP means no transport at
+  all**. The first (empty) entry of the transport dropdown is raw TCP; writing `type: "tcp"` makes the
+  core refuse the config.
+
 ### 6.3.1 Reverse proxy path (Access domain → Front TLS → Reverse proxy path)
 
 When the inbound's own transport path is `/` but an outer nginx / caddy mounts it under a sub-path
@@ -1046,6 +1056,13 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 - **CF preferred domains**: Cloudflare preferred domain plus port, with a connectivity check;
 - Both feed the “Access domain” candidates used by subscriptions and external-node rewriting (see 16.3).
 
+- **Entry drift (primary/standby)**: a direct entry can bind a DNS channel and a record name; after a
+  failover or switch-back the panel points that A record at the current primary's public IP (internal
+  IP when empty). Only providers with an implemented DNS writer are accepted (`cloudflare` verified;
+  alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implemented but not verified).
+  Cloudflare propagation measured at about 2–2.5 minutes with TTL fixed to 60; keep the orange cloud off
+  for TCP/REALITY entries.
+
 ### 8.2 CF IP pool
 
 - Maintain preferred IP sources (including `bestproxy` style sources), fetch interval and ports;
@@ -1165,6 +1182,15 @@ Notes:
   outbound candidates dynamically from “proxy groups + custom outbounds”, and manually entered tags are
   still validated;
 - sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3).
+
+- Mihomo's structured rule editor supports logical rules `AND` / `OR` / `NOT` / `SUB-RULE`: write the
+  condition as `((NETWORK,UDP),(DST-PORT,3478/19302))`; for `SUB-RULE` the third column is the sub-rule
+  group name. Conditions must be wrapped in parentheses;
+- Rule types are aligned with the latest mihomo: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`,
+  `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`,
+  `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` are all available;
+- `SUB-RULE` references the `sub-rules:` block of the mihomo config; the panel does not edit that block
+  yet, so define it first through YAML import or the shared config_json.
 
 ### 9.2 Subscription endpoints
 

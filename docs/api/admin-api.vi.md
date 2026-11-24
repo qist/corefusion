@@ -469,6 +469,7 @@ Tài nguyên cốt lõi: nút CRUD, phân phối cấu hình lõi (xray/sing-box
 | POST | `/api/v1/node-servers/:id/speed-test` | Quản trị viên | Kiểm tra tốc độ nút |
 | GET | `/api/v1/node-servers/:id/status` | Quản trị viên | Trạng thái nút |
 | POST | `/api/v1/node-servers/:id/sync` | Quản trị viên | Cấu hình nút đồng bộ hóa (tạo và đẩy) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Quản trị viên | Đối chiếu cấu hình chính với đối tác dự phòng (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Siêu quản trị viên | Đẩy dữ liệu bảng đến các nút (đồng bộ hóa đầy đủ người dùng/đăng ký/gói) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Quản trị viên | Nút nhân bản đồng bộ hóa |
 | GET | `/api/v1/node-servers/:id/tags` | Quản trị viên | Danh sách thẻ |
@@ -621,6 +622,9 @@ Truy cập nhóm miền/IP được sử dụng trong các liên kết máy khá
 | PUT | `/api/v1/share-domains/:id` | Quản trị viên | cập nhật |
 | DELETE | `/api/v1/share-domains/all` | Quản trị viên | Xóa tất cả |
 | POST | `/api/v1/share-domains/seed` | Quản trị viên | Khởi tạo dữ liệu mặc định |
+| GET | `/api/v1/share-domains/dns-providers` | Đã đăng nhập | Bảng khả năng ghi DNS theo nhà cung cấp (đã triển khai/xác minh) |
+`PUT /api/v1/share-domains/:id` cũng chấp nhận `dns_channel_id`, `dns_record_name` và `dns_proxied`: khi chuyển đổi dự phòng chính/dự phòng hoặc chuyển đổi trở lại, bản ghi A mục nhập được trỏ vào bản ghi chính mới. Chỉ những nhà cung cấp có trình ghi DNS được triển khai mới chấp nhận các trường này (`cloudflare` đã được xác minh; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud đã triển khai nhưng chưa được xác minh). Xem `GET /api/v1/share-domains/dns-providers` để biết bảng khả năng.
+
 
 ### IP Cloudflare
 

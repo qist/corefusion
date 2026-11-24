@@ -831,6 +831,11 @@ cd /opt/corefusion
 - 포트를 변경하면 새 규칙을 허용하기 전에 이전 규칙이 취소됩니다. 인바운드 삭제, 포트 호핑 비활성화 또는 Unix 소켓/tun(수신 포트 없음)으로 전환하면 정리됩니다.
 - 활성화된 방화벽이 감지되지 않으면 힌트만 표시되고 규칙은 작성되지 않습니다.
 
+**운송 및 흐름**:
+
+- `xtls-rprx-vision`는 원시 TCP에서만 작동합니다. gRPC / XHTTP / WebSocket를 사용하면 클라이언트가 완전히 실패하거나(sing-box: `initialize vision: not a valid supported TLS connection`) 서버 흐름 검사에 동의하지 않습니다(`flow mismatch`). 패널은 저장 시 및 런타임 구성을 생성할 때 원시/TCP가 아닌 인바운드에서 비전을 제거합니다.
+- sing-box 전송은 http / ws / quic / grpc / httpupgrade 전용입니다. — **원시 TCP는 전송이 전혀 없음을 의미합니다**. 전송 드롭다운의 첫 번째(빈) 항목은 원시 TCP입니다. `type: "tcp"`를 작성하면 코어가 구성을 거부합니다.
+
 ### 6.3.1 역방향 프록시 경로(액세스 도메인 → 전면 TLS → 역방향 프록시 경로)
 
 인바운드의 자체 전송 경로가 `/`인데 외부 nginx / caddy가 하위 경로 아래에 마운트하는 경우
@@ -1019,6 +1024,8 @@ rule 파일과 **Rules**가 일치 조건과 아웃바운드를 결정합니다.
 - **CF 선호 도메인**: Cloudflare 선호 도메인과 포트, 연결 확인 포함;
 - 둘 다 구독 및 외부 노드 재작성에 사용되는 "액세스 도메인" 후보를 제공합니다(16.3 참조).
 
+- **항목 드리프트(기본/대기)**: 직접 항목은 DNS 채널과 레코드 이름을 바인딩할 수 있습니다. 장애 조치 또는 스위치백 후 패널은 A가 현재 기본 공용 IP(비어 있는 경우 내부 IP)에 기록하는 것을 가리킵니다. DNS 작성자가 구현된 공급자만 허용됩니다(`cloudflare` 확인됨, alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 구현되었지만 확인되지 않음). Cloudflare 전파는 TTL를 60으로 고정한 상태에서 약 2~2.5분에 측정되었습니다. TCP/REALITY 항목에 대해 주황색 구름을 꺼두세요.
+
 ### 8.2 CF IP 풀
 
 - 기본 IP 소스(`bestproxy` 스타일 소스 포함), 가져오기 간격 및 포트를 유지합니다.
@@ -1104,6 +1111,10 @@ rule 파일과 **Rules**가 일치 조건과 아웃바운드를 결정합니다.
  "프록시 그룹 + 사용자 정의 아웃바운드"에서 동적으로 아웃바운드 후보 및 수동으로 입력된 태그는
  아직 검증된 상태입니다.
 - sing-box / Xray 구성은 별도로 생성해야 합니다. 존재하지 않는 경우 고객 링크에 표시되지 않습니다(10.3 참조).
+
+- Mihomo의 구조화된 규칙 편집기는 논리 규칙 `AND` / `OR` / `NOT` / `SUB-RULE`를 지원합니다. 조건을 `((NETWORK,UDP),(DST-PORT,3478/19302))`로 작성합니다. `SUB-RULE`의 경우 세 번째 열은 하위 규칙 그룹 이름입니다. 조건은 괄호로 묶어야 합니다.
+- 규칙 유형은 최신 mihomo에 맞춰 조정됩니다. `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP`를 모두 사용할 수 있습니다.
+- `SUB-RULE`는 mihomo 구성의 `sub-rules:` 블록을 참조합니다. 패널은 아직 해당 블록을 편집하지 않으므로 먼저 YAML 가져오기 또는 공유 config_json을 통해 정의하세요.
 
 ### 9.2 구독 엔드포인트
 

@@ -831,6 +831,11 @@ bạn có thể cho phép lưu cổng theo giao thức nghe (TCP/UDP).
 - Việc thay đổi cổng sẽ thu hồi quy tắc cũ trước khi cho phép quy tắc mới; xóa thư đến, vô hiệu hóa cổng nhảy hoặc chuyển sang Unix Socket/tun (không có cổng nghe) sẽ dọn sạch nó;
 - Khi không phát hiện thấy tường lửa nào được kích hoạt, chỉ có một gợi ý được hiển thị và không có quy tắc nào được viết.
 
+**Vận chuyển và lưu chuyển**:
+
+- `xtls-rprx-vision` chỉ hoạt động trên TCP thô: với gRPC / XHTTP / WebSocket, máy khách bị lỗi hoàn toàn (sing-box: `initialize vision: not a valid supported TLS connection`) hoặc không đồng ý với kiểm tra luồng máy chủ (`flow mismatch`). Bảng điều khiển sẽ loại bỏ tầm nhìn khỏi mọi dữ liệu gửi đến không phải thô/TCP khi lưu và khi tạo cấu hình thời gian chạy;
+- Quá trình truyền sing-box chỉ là http / ws / quic / grpc / httpupgrade — **TCP thô có nghĩa là không có truyền tải nào**. Mục nhập đầu tiên (trống) của danh sách vận chuyển thả xuống là TCP thô; ghi `type: "tcp"` khiến lõi từ chối cấu hình.
+
 ### 6.3.1 Đường dẫn proxy ngược (Miền truy cập → TLS phía trước → Đường dẫn proxy ngược)
 
 Khi đường truyền tải riêng của đường vào là `/` nhưng nginx / caddy bên ngoài gắn nó dưới một đường dẫn phụ
@@ -1030,6 +1035,8 @@ Tài nguyên định tuyến thu thập tài sản được chia sẻ được s
 - Khi “Miền truy cập” sử dụng nhóm IP CF mà không có giá trị cụ thể, một mục nhập (với cổng của nó) sẽ được
  được chọn ngẫu nhiên.
 
+- **Sự trôi dạt mục nhập (chính/dự phòng)**: mục nhập trực tiếp có thể liên kết kênh DNS và tên bản ghi; sau khi chuyển đổi dự phòng hoặc chuyển đổi lại, bảng điều khiển sẽ chỉ ra rằng A ghi lại IP công cộng của chính hiện tại (IP nội bộ khi trống). Chỉ các nhà cung cấp có trình ghi DNS đã triển khai mới được chấp nhận (`cloudflare` đã được xác minh; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud đã triển khai nhưng chưa được xác minh). Quá trình lan truyền Cloudflare được đo trong khoảng 2–2,5 phút với TTL được cố định ở mức 60; tắt đám mây màu cam cho các mục TCP/REALITY.
+
 ### 8.3 Quy tắc chung WAF
 
 - Định cấu hình nguồn quy tắc WAF URL và các tệp quy tắc để đồng bộ hóa;
@@ -1104,6 +1111,10 @@ Ghi chú:
  các ứng viên gửi đi một cách linh hoạt từ “nhóm proxy + các lượt gửi đi tùy chỉnh” và các thẻ được nhập theo cách thủ công là
  vẫn được xác nhận;
 - Cấu hình sing-box / Xray phải được tạo riêng; nếu chúng không tồn tại thì chúng sẽ không xuất hiện trong liên kết khách hàng (xem 10.3).
+
+- Trình soạn thảo quy tắc có cấu trúc của Mihomo hỗ trợ các quy tắc logic `AND` / `OR` / `NOT` / `SUB-RULE`: viết điều kiện là `((NETWORK,UDP),(DST-PORT,3478/19302))`; đối với `SUB-RULE`, cột thứ ba là tên nhóm quy tắc phụ. Các điều kiện phải được đặt trong dấu ngoặc đơn;
+- Các loại quy tắc được căn chỉnh theo mihomo mới nhất: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` đều có sẵn;
+- `SUB-RULE` tham chiếu khối `sub-rules:` của cấu hình mihomo; bảng điều khiển chưa chỉnh sửa khối đó, vì vậy hãy xác định khối đó trước tiên thông qua nhập YAML hoặc config_json được chia sẻ.
 
 ### 9.2 Điểm cuối đăng ký
 

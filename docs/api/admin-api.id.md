@@ -469,6 +469,7 @@ Sumber daya inti: node CRUD, pengiriman konfigurasi inti (xray/sing-box), konfig
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Tes kecepatan simpul |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Status simpul |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Konfigurasi simpul sinkronisasi (hasilkan dan dorong) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Admin | Rekonsiliasi konfigurasi utama ke mitra siaganya (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Admin super | Dorong data panel ke node (sinkronisasi penuh pengguna/langganan/paket) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Admin | Sinkronkan simpul cermin |
 | GET | `/api/v1/node-servers/:id/tags` | Admin | Daftar tanda |
@@ -621,6 +622,9 @@ Akses domain/kumpulan IP yang digunakan dalam tautan klien.
 | PUT | `/api/v1/share-domains/:id` | Admin | Pembaruan |
 | DELETE | `/api/v1/share-domains/all` | Admin | Hapus semuanya |
 | POST | `/api/v1/share-domains/seed` | Admin | Inisialisasi data default |
+| GET | `/api/v1/share-domains/dns-providers` | Masuk | Tabel kemampuan tulis DNS per penyedia (diimplementasikan/diverifikasi) |
+`PUT /api/v1/share-domains/:id` juga menerima `dns_channel_id`, `dns_record_name` dan `dns_proxied`: pada failover primer/siaga atau peralihan kembali, rekaman A diarahkan ke primer baru. Hanya penyedia dengan penulis DNS yang diterapkan yang menerima bidang ini (`cloudflare` terverifikasi; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud diterapkan tetapi tidak diverifikasi). Lihat `GET /api/v1/share-domains/dns-providers` untuk tabel kemampuan.
+
 
 ### IP Cloudflare
 

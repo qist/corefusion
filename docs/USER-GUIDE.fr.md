@@ -831,6 +831,11 @@ vous pouvez autoriser le port lors de la sauvegarde selon le protocole d'écoute
 - Changer le port révoque l'ancienne règle avant d'autoriser la nouvelle ; la suppression du port entrant, la désactivation du saut de port ou le passage à Unix Socket / tun (pas de port d'écoute) le nettoie ;
 - Lorsqu'aucun pare-feu activé n'est détecté, seul un indice est affiché et aucune règle n'est écrite.
 
+**Transport et flux** :
+
+- `xtls-rprx-vision` ne fonctionne que sur TCP brut : avec gRPC / XHTTP / WebSocket le client échoue carrément (sing-box : `initialize vision: not a valid supported TLS connection`) ou n'est pas d'accord avec la vérification du flux du serveur (`flow mismatch`). Le panneau supprime la vision de tout entrant non brut/TCP lors de l'enregistrement et lors de la génération de la configuration d'exécution ;
+- Les transports sing-box sont uniquement http / ws / quic / grpc / httpupgrade — **TCP brut signifie aucun transport**. La première entrée (vide) de la liste déroulante de transport est TCP brut ; l'écriture de `type: "tcp"` oblige le noyau à refuser la configuration.
+
 ### 6.3.1 Chemin du proxy inverse (Domaine d'accès → Front TLS → Chemin du proxy inverse)
 
 Lorsque le propre chemin de transport du flux entrant est `/` mais qu'un nginx / caddy externe le monte sous un sous-chemin
@@ -1019,6 +1024,8 @@ Les ressources de routage collectent les ressources partagées utilisées par le
 - **Domaines préférés CF** : domaine préféré Cloudflare plus port, avec vérification de connectivité ;
 - Tous deux alimentent les candidats « Domaine d’accès » utilisés par les souscriptions et la réécriture de nœuds externes (voir 16.3).
 
+- **Dérive d'entrée (primaire/veille)** : une entrée directe peut lier un canal DNS et un nom d'enregistrement ; après un basculement ou un retour en arrière, le panneau pointe que A enregistre sur l'adresse IP publique du principal actuel (IP interne lorsqu'elle est vide). Seuls les fournisseurs avec un enregistreur DNS implémenté sont acceptés (`cloudflare` vérifié ; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implémenté mais non vérifié). Propagation de Cloudflare mesurée entre 2 et 2,5 minutes environ avec TTL fixé à 60 ; gardez le nuage orange désactivé pour les entrées TCP/REALITY.
+
 ### 8.2 Pool IP CF
 
 - Conserver les sources IP préférées (y compris les sources de style `bestproxy`), l'intervalle de récupération et les ports ;
@@ -1104,6 +1111,10 @@ Remarques :
  les candidats sortants de manière dynamique à partir de « groupes proxy + sortants personnalisés », et les balises saisies manuellement sont
  toujours validé ;
 - Les configurations sing-box / Xray doivent être créées séparément ; s'ils n'existent pas, ils n'apparaissent pas dans les liens clients (voir 10.3).
+
+- L'éditeur de règles structurées de Mihomo prend en charge les règles logiques `AND` / `OR` / `NOT` / `SUB-RULE` : écrivez la condition sous la forme `((NETWORK,UDP),(DST-PORT,3478/19302))` ; pour `SUB-RULE`, la troisième colonne est le nom du groupe de sous-règles. Les conditions doivent être placées entre parenthèses ;
+- Les types de règles sont alignés sur le dernier mihomo : `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` sont tous disponibles ;
+- `SUB-RULE` fait référence au bloc `sub-rules:` de la config mihomo ; le panneau ne modifie pas encore ce bloc, alors définissez-le d'abord via l'importation YAML ou le config_json partagé.
 
 ### 9.2 Points de terminaison d'abonnement
 

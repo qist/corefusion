@@ -469,6 +469,7 @@ Ressources de base : nœud CRUD, livraison de la configuration de base (xray/si
 | POST | `/api/v1/node-servers/:id/speed-test` | Administrateur | Test de vitesse des nœuds |
 | GET | `/api/v1/node-servers/:id/status` | Administrateur | Statut du nœud |
 | POST | `/api/v1/node-servers/:id/sync` | Administrateur | Synchroniser la configuration du nœud (générer et pousser) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Administrateur | Réconcilier la configuration principale avec son partenaire de secours (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Super administrateur | Transférer les données du panneau vers les nœuds (synchronisation complète des utilisateurs/abonnements/plans) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Administrateur | Nœud miroir de synchronisation |
 | GET | `/api/v1/node-servers/:id/tags` | Administrateur | Liste des balises |
@@ -621,6 +622,9 @@ Accédez au domaine/pool IP utilisé dans les liens clients.
 | PUT | `/api/v1/share-domains/:id` | Administrateur | Mise à jour |
 | DELETE | `/api/v1/share-domains/all` | Administrateur | Tout effacer |
 | POST | `/api/v1/share-domains/seed` | Administrateur | Initialiser les données par défaut |
+| GET | `/api/v1/share-domains/dns-providers` | Connecté | Tableau des capacités d'écriture DNS par fournisseur (implémenté/vérifié) |
+`PUT /api/v1/share-domains/:id` accepte également `dns_channel_id`, `dns_record_name` et `dns_proxied` : lors d'un basculement ou d'un basculement principal/de secours, l'enregistrement d'entrée A pointe vers le nouveau principal. Seuls les fournisseurs disposant d'un enregistreur DNS implémenté acceptent ces champs (`cloudflare` vérifié ; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implémenté mais non vérifié). Voir `GET /api/v1/share-domains/dns-providers` pour le tableau des capacités.
+
 
 ### CloudflareIP
 

@@ -469,6 +469,7 @@ Kernressourcen: Knoten-CRUD, Bereitstellung der Kernkonfiguration (xray/sing-box
 | POST | `/api/v1/node-servers/:id/speed-test` | Admin | Knotengeschwindigkeitstest |
 | GET | `/api/v1/node-servers/:id/status` | Admin | Knotenstatus |
 | POST | `/api/v1/node-servers/:id/sync` | Admin | Knotenkonfiguration synchronisieren (generieren und pushen) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Admin | Gleichen Sie die primäre Konfiguration mit ihrem Standby-Partner ab (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Super Admin | Panel-Daten an Knoten übertragen (vollständige Synchronisierung von Benutzern/Abonnements/Plänen) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Admin | Spiegelknoten synchronisieren |
 | GET | `/api/v1/node-servers/:id/tags` | Admin | Tag-Liste |
@@ -621,6 +622,9 @@ Zugriffsdomäne/IP-Pool, der in Client-Links verwendet wird.
 | PUT | `/api/v1/share-domains/:id` | Admin | Aktualisieren |
 | DELETE | `/api/v1/share-domains/all` | Admin | Alles löschen |
 | POST | `/api/v1/share-domains/seed` | Admin | Standarddaten initialisieren |
+| GET | `/api/v1/share-domains/dns-providers` | Angemeldet | DNS-Schreibfähigkeitstabelle pro Anbieter (implementiert/verifiziert) |
+`PUT /api/v1/share-domains/:id` akzeptiert auch `dns_channel_id`, `dns_record_name` und `dns_proxied`: Bei einem primären/Standby-Failover oder Switchback wird der Eintrag A auf den neuen primären Datensatz verwiesen. Nur Anbieter mit einem implementierten DNS-Writer akzeptieren diese Felder (`cloudflare` verifiziert; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implementiert, aber nicht verifiziert). Die Funktionstabelle finden Sie unter `GET /api/v1/share-domains/dns-providers`.
+
 
 ### Cloudflare IP
 

@@ -469,6 +469,7 @@ Recursos principales: nodo CRUD, entrega de configuración central (xray/sing-bo
 | POST | `/api/v1/node-servers/:id/speed-test` | administrador | Prueba de velocidad del nodo |
 | GET | `/api/v1/node-servers/:id/status` | administrador | Estado del nodo |
 | POST | `/api/v1/node-servers/:id/sync` | administrador | Configuración del nodo de sincronización (generar y enviar) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Administrador | Concilie la configuración principal con su socio en espera (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | superadministrador | Enviar datos del panel a los nodos (sincronización completa de usuarios/suscripciones/planes) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | administrador | Sincronizar nodo espejo |
 | GET | `/api/v1/node-servers/:id/tags` | administrador | Lista de etiquetas |
@@ -621,6 +622,9 @@ Acceda al dominio/grupo de IP utilizado en los enlaces del cliente.
 | PUT | `/api/v1/share-domains/:id` | administrador | Actualizar |
 | DELETE | `/api/v1/share-domains/all` | administrador | Borrar todo |
 | POST | `/api/v1/share-domains/seed` | administrador | Inicializar datos predeterminados |
+| GET | `/api/v1/share-domains/dns-providers` | Iniciado sesión | Tabla de capacidad de escritura DNS por proveedor (implementada/verificada) |
+`PUT /api/v1/share-domains/:id` también acepta `dns_channel_id`, `dns_record_name` y `dns_proxied`: en una conmutación por error primaria/en espera o en una conmutación inversa, el registro de entrada A apunta al nuevo primario. Solo los proveedores con un escritor de DNS implementado aceptan estos campos (`cloudflare` verificado; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implementado pero no verificado). Consulte `GET /api/v1/share-domains/dns-providers` para ver la tabla de capacidades.
+
 
 ### Cloudflare IP
 

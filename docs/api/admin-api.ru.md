@@ -469,6 +469,7 @@ CRUD, приостановка/возобновление, обновление/
 | POST | `/api/v1/node-servers/:id/speed-test` | Администратор | Тест скорости узла |
 | GET | `/api/v1/node-servers/:id/status` | Администратор | Статус узла |
 | POST | `/api/v1/node-servers/:id/sync` | Администратор | Конфигурация узла синхронизации (генерация и отправка) |
+| POST | `/api/v1/node-servers/:id/standby-sync` | Админ | Согласуйте основную конфигурацию с резервным партнером (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | Суперадминистратор | Передача данных панели на узлы (полная синхронизация пользователей/подписок/планов) |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | Администратор | Синхронизировать зеркальный узел |
 | GET | `/api/v1/node-servers/:id/tags` | Администратор | Список тегов |
@@ -621,6 +622,9 @@ CRUD, приостановка/возобновление, обновление/
 | PUT | `/api/v1/share-domains/:id` | Администратор | Обновить |
 | DELETE | `/api/v1/share-domains/all` | Администратор | Очистить все |
 | POST | `/api/v1/share-domains/seed` | Администратор | Инициализировать данные по умолчанию |
+| GET | `/api/v1/share-domains/dns-providers` | Вошёл | Таблица возможностей записи DNS для каждого провайдера (реализована/проверена) |
+`PUT /api/v1/share-domains/:id` также принимает `dns_channel_id`, `dns_record_name` и `dns_proxied`: при аварийном переключении основного/резервного или обратном переключении запись A указывает на новый основной. Эти поля принимают только провайдеры с реализованной функцией записи DNS (`cloudflare` проверено; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud реализовано, но не проверено). Таблицу возможностей см. в `GET /api/v1/share-domains/dns-providers`.
+
 
 ### Cloudflare ИП
 

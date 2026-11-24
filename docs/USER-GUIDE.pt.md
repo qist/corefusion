@@ -844,6 +844,11 @@ Preencha **Caminho do proxy reverso** em “Domínio de acesso → Front TLS”:
 - gRPC não tem conceito de prefixo URL (o caminho do cliente é sempre `/{serviceName}/…`), então o caminho é **mesclado em serviceName**
 (`/apps` + `svc` → `apps/svc`); o proxy reverso deve retirar esse prefixo em `grpc_pass`.
 
+**Transporte e fluxo**:
+
+- `xtls-rprx-vision` funciona apenas em TCP bruto: com gRPC / XHTTP / WebSocket o cliente falha completamente (sing-box: `initialize vision: not a valid supported TLS connection`) ou discorda da verificação de fluxo do servidor (`flow mismatch`). O painel retira a visão de qualquer entrada não bruta/TCP ao salvar e ao gerar a configuração de tempo de execução;
+- Os transportes sing-box são apenas http / ws / quic / grpc / httpupgrade - **TCP bruto significa nenhum transporte **. A primeira entrada (vazia) da lista suspensa de transporte é TCP bruta; escrever `type: "tcp"` faz com que o núcleo recuse a configuração.
+
 ### 6.4 Configuração de saída
 
 1. Adicione uma saída;
@@ -1019,6 +1024,10 @@ Os recursos de roteamento coletam os ativos compartilhados usados por assinatura
 - **Domínios preferenciais CF**: domínio preferencial Cloudflare mais porta, com verificação de conectividade;
 - Ambos alimentam os candidatos de “domínio de acesso” usados ​​por assinaturas e reescrita de nós externos (ver 16.3).
 
+- **Desvio de entrada (primário/standby)**: uma entrada direta pode vincular um canal DNS e um nome de registro; após um failover ou retorno, o painel aponta esse registro A no IP público do primário atual (IP interno quando vazio). Somente provedores com gravador DNS implementado são aceitos (`cloudflare` verificado; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implementado, mas não verificado). Propagação Cloudflare medida em cerca de 2–2,5 minutos com TTL fixado em 60; mantenha a nuvem laranja apagada para entradas TCP/REALITY.
+
+- **Desvio de entrada (primário/standby)**: uma entrada direta pode vincular um canal DNS e um nome de registro; após um failover ou retorno, o painel aponta esse registro A no IP público do primário atual (IP interno quando vazio). Somente provedores com gravador DNS implementado são aceitos (`cloudflare` verificado; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud implementado, mas não verificado). Propagação Cloudflare medida em cerca de 2–2,5 minutos com TTL fixado em 60; mantenha a nuvem laranja apagada para entradas TCP/REALITY.
+
 ### 8.2 Conjunto de IPs CF
 
 - Manter fontes de IP preferenciais (incluindo fontes de estilo `bestproxy`), intervalo de busca e portas;
@@ -1104,6 +1113,10 @@ Notas:
  candidatos de saída dinamicamente de “grupos proxy + saídas personalizadas”, e tags inseridas manualmente são
  ainda validado;
 - As configurações sing-box / Xray devem ser criadas separadamente; se não existirem, não aparecerão nos links dos clientes (ver 10.3).
+
+- O editor de regras estruturadas do Mihomo suporta regras lógicas `AND` / `OR` / `NOT` / `SUB-RULE`: escreva a condição como `((NETWORK,UDP),(DST-PORT,3478/19302))`; para `SUB-RULE`, a terceira coluna é o nome do grupo de sub-regra. As condições devem ser colocadas entre parênteses;
+- Os tipos de regras estão alinhados com o mihomo mais recente: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` estão todos disponíveis;
+- `SUB-RULE` faz referência ao bloco `sub-rules:` da configuração mihomo; o painel ainda não edita esse bloco, então defina-o primeiro por meio da importação YAML ou do config_json compartilhado.
 
 ### 9.2 Terminais de assinatura
 

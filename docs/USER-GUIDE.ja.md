@@ -831,6 +831,11 @@ cd /opt/corefusion
 - ポートを変更すると、新しいルールが許可される前に古いルールが取り消されます。インバウンドを削除し、ポートホッピングを無効にするか、Unix Socket / tun (リスニングポートなし) に切り替えるとクリーンアップされます。
 - 有効なファイアウォールが検出されない場合は、ヒントのみが表示され、ルールは書き込まれません。
 
+**輸送と流れ**:
+
+- `xtls-rprx-vision` は生の TCP 上でのみ機能します。gRPC / XHTTP / WebSocket では、クライアントは完全に失敗するか (sing-box: `initialize vision: not a valid supported TLS connection`)、サーバー フロー チェックに同意しません (`flow mismatch`)。パネルは、保存時および実行時設定の生成時に、非 raw/TCP 受信からビジョンを取り除きます。
+- sing-box トランスポートは http / ws / quic / grpc / httpupgrade のみです — **生の TCP はトランスポートがまったくないことを意味します**。トランスポート ドロップダウンの最初の (空の) エントリは生の TCP です。 `type: "tcp"` を書き込むと、コアが設定を拒否します。
+
 ### 6.3.1 リバースプロキシパス（アクセスドメイン→フロントTLS→リバースプロキシパス）
 
 インバウンド自身のトランスポート パスが `/` であるが、外側の nginx / caddy がそれをサブパスの下にマウントする場合
@@ -1019,6 +1024,8 @@ cd /opt/corefusion
 - **CF 優先ドメイン**: Cloudflare 優先ドメインとポート、接続チェックあり。
 - どちらも、サブスクリプションと外部ノードの書き換えで使用される「アクセス ドメイン」候補をフィードします (16.3 を参照)。
 
+- **エントリ ドリフト (プライマリ/スタンバイ)**: 直接エントリは DNS チャネルとレコード名をバインドできます。フェイルオーバーまたはスイッチバックの後、パネルは現在のプライマリのパブリック IP (空の場合は内部 IP) で A レコードをポイントします。 DNS ライターが実装されているプロバイダーのみが受け入れられます (`cloudflare` 検証済み、alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 実装されているが検証されていない)。 Cloudflare の伝播は、TTL を 60 に固定して約 2 ～ 2.5 分で測定されました。 TCP/REALITY エントリーではオレンジ色の雲をオフにしてください。
+
 ### 8.2 CF IP プール
 
 - 優先 IP ソース (`bestproxy` スタイルのソースを含む)、フェッチ間隔、およびポートを維持します。
@@ -1104,6 +1111,10 @@ cd /opt/corefusion
  送信候補は「プロキシ グループ + カスタム送信」から動的に抽出され、手動で入力されたタグは
  まだ検証済みです。
 - sing-box / Xray 構成は個別に作成する必要があります。存在しない場合、顧客リンクには表示されません (10.3 を参照)。
+
+- Mihomo の構造化ルール エディターは論理ルールをサポートします。 `AND` / `OR` / `NOT` / `SUB-RULE`: 条件を `((NETWORK,UDP),(DST-PORT,3478/19302))` として書き込みます。 `SUB-RULE` の場合、3 列目はサブルール グループ名です。条件は括弧で囲む必要があります。
+- ルール タイプは最新の mihomo に準拠しています: `IP-SUFFIX`、`SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`、`IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`、`PROCESS-NAME-WILDCARD/REGEX`、`PROCESS-PATH-WILDCARD/REGEX`、`UID`、`DSCP` はすべて利用可能です。
+- `SUB-RULE` は、mihomo 設定の `sub-rules:` ブロックを参照します。パネルはそのブロックをまだ編集していないため、最初に YAML インポートまたは共有 config_json を通じて定義します。
 
 ### 9.2 サブスクリプションエンドポイント
 

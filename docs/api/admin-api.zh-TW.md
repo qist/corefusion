@@ -469,6 +469,7 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | POST | `/api/v1/node-servers/:id/speed-test` | 管理員 | 節點速度測試 |
 | GET | `/api/v1/node-servers/:id/status` | 管理員 | 節點狀態 |
 | POST | `/api/v1/node-servers/:id/sync` | 管理員 | 同步節點配置（產生和推送） |
+| POST | `/api/v1/node-servers/:id/standby-sync` | 管理員 | 協調主設定與其備用夥伴 (primary_backup) |
 | POST | `/api/v1/node-servers/:id/sync-data` | 超管理員 | 將面板資料推送到節點（用戶/訂閱/計劃完全同步） |
 | POST | `/api/v1/node-servers/:id/sync-mirror` | 管理員 | 同步鏡像節點 |
 | GET | `/api/v1/node-servers/:id/tags` | 管理員 | 標籤列表 |
@@ -621,6 +622,9 @@ curl https://<panel-domain>/api/v1/clients?limit=1 \
 | PUT | `/api/v1/share-domains/:id` | 管理員 | 更新 |
 | DELETE | `/api/v1/share-domains/all` | 管理員 | 全部清除 |
 | POST | `/api/v1/share-domains/seed` | 管理員 | 初始化預設數據 |
+| GET | `/api/v1/share-domains/dns-providers` | 登入 | 每個提供者的 DNS 寫入能力表（已實施/已驗證） |
+`PUT /api/v1/share-domains/:id` 也接受 `dns_channel_id`、`dns_record_name` 和 `dns_proxied`：當主/備用故障轉移或切回時，條目 A 記錄指向新的主伺服器。只有已實施 DNS 編寫器的供應商才接受這些欄位（`cloudflare` 已驗證；alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud 已實施但未驗證）。能力表請參考`GET /api/v1/share-domains/dns-providers`。
+
 
 ### Cloudflare IP
 

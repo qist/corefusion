@@ -831,6 +831,11 @@ Anda dapat mengizinkan port untuk disimpan sesuai dengan protokol mendengarkan (
 - Mengubah port akan mencabut aturan lama sebelum mengizinkan aturan baru; menghapus port masuk, menonaktifkan port hopping atau beralih ke Unix Socket / tun (tidak ada port mendengarkan) membersihkannya;
 - Ketika tidak ada firewall aktif yang terdeteksi, hanya petunjuk yang ditampilkan dan tidak ada aturan yang ditulis.
 
+**Transportasi dan arus**:
+
+- `xtls-rprx-vision` hanya berfungsi pada TCP mentah: dengan gRPC / XHTTP / WebSocket klien langsung gagal (sing-box: `initialize vision: not a valid supported TLS connection`) atau tidak setuju dengan pemeriksaan aliran server (`flow mismatch`). Panel menghapus visi dari semua non mentah/TCP yang masuk saat penyimpanan dan saat membuat konfigurasi runtime;
+- Transportasi sing-box hanya http / ws / quic / grpc / httpupgrade — **TCP mentah berarti tidak ada transportasi sama sekali**. Entri pertama (kosong) dari dropdown transport adalah TCP mentah; menulis `type: "tcp"` membuat inti menolak konfigurasi.
+
 ### 6.3.1 Jalur proksi terbalik (Domain akses → TLS Depan → Jalur proksi terbalik)
 
 Ketika jalur transportasi masuknya sendiri adalah `/` tetapi nginx / caddy bagian luar memasangnya di bawah sub-jalur
@@ -1019,6 +1024,8 @@ Sumber daya perutean mengumpulkan aset bersama yang digunakan oleh langganan dan
 - **Domain pilihan CF**: Domain pilihan Cloudflare plus port, dengan pemeriksaan konektivitas;
 - Keduanya memberi makan kandidat “Domain akses” yang digunakan oleh langganan dan penulisan ulang node eksternal (lihat 16.3).
 
+- **Entri drift (utama/siaga)**: entri langsung dapat mengikat saluran DNS dan nama rekaman; setelah failover atau switch-back, panel menunjuk rekaman A pada IP publik primer saat ini (IP internal bila kosong). Hanya penyedia dengan penulis DNS yang diterapkan yang diterima (`cloudflare` terverifikasi; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud diterapkan tetapi tidak diverifikasi). Propagasi Cloudflare diukur sekitar 2–2,5 menit dengan TTL ditetapkan pada 60; matikan awan oranye untuk entri TCP/REALITY.
+
 ### 8.2 kumpulan IP CF
 
 - Pertahankan sumber IP pilihan (termasuk sumber gaya `bestproxy`), interval pengambilan dan port;
@@ -1104,6 +1111,10 @@ Catatan:
  kandidat keluar secara dinamis dari “grup proxy + keluar khusus”, dan tag yang dimasukkan secara manual
  masih tervalidasi;
 - Konfigurasi sing-box / Xray harus dibuat secara terpisah; jika tidak ada maka tidak muncul di tautan pelanggan (lihat 10.3).
+
+- Editor aturan terstruktur Mihomo mendukung aturan logis `AND` / `OR` / `NOT` / `SUB-RULE`: tulis kondisi sebagai `((NETWORK,UDP),(DST-PORT,3478/19302))`; untuk `SUB-RULE` kolom ketiga adalah nama grup sub-aturan. Ketentuan harus diapit tanda kurung;
+- Jenis aturan diselaraskan dengan mihomo terbaru: `IP-SUFFIX`, `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`, `IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`, `PROCESS-NAME-WILDCARD/REGEX`, `PROCESS-PATH-WILDCARD/REGEX`, `UID`, `DSCP` semuanya tersedia;
+- `SUB-RULE` mereferensikan blok `sub-rules:` dari konfigurasi mihomo; panel belum mengedit blok itu, jadi tentukan terlebih dahulu melalui impor YAML atau config_json yang dibagikan.
 
 ### 9.2 Titik akhir langganan
 

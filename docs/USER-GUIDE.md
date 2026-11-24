@@ -850,6 +850,14 @@ cd /opt/corefusion
 - 修改端口会先撤销旧规则再放行新端口；删除入站、关闭端口跳跃或切到 Unix Socket / tun（无监听端口）时自动清理；
 - 未检测到已启用的防火墙时只显示提示，不会写入任何规则。
 
+**传输与流控（flow）**：
+
+- `xtls-rprx-vision` 只适用于裸 TCP/raw：gRPC、XHTTP、WebSocket 下客户端会直接失败
+  （sing-box 报 `initialize vision: not a valid supported TLS connection`）或与服务端 flow 校验不一致
+  （`flow mismatch`）。保存入站与生成运行配置时，面板都会自动清除非 raw/TCP 入站上的 vision；
+- sing-box 的 transport 只有 http / ws / quic / grpc / httpupgrade，**裸 TCP 就是不指定传输层**；
+  传输下拉第一项（空）即裸 TCP，写 `type: "tcp"` 会被核心拒载。
+
 ### 6.3.1 反代路径（接入域名 → 前置 TLS → 反代路径）
 
 入站的传输路径是 `/`，而外层 nginx / caddy 把它挂在子路径上时（例如
@@ -1031,6 +1039,11 @@ cd /opt/corefusion
 - **CF 优选域名**：Cloudflare 优选域名 + 端口，可检测连通性；
 - 这两类值会作为「访问域名」候选，用于订阅下发与外部节点改写（见 16.3）。
 
+- **入口漂移（主备）**：直连条目可绑定 DNS 通道与记录名，主备切换/回切成功后自动把该域名的 A 记录
+  指向当前 primary 的公网 IP（为空则内网 IP）。只支持已实现解析写入的服务商（Cloudflare 已验证；
+  阿里云 / DNSPod / GoDaddy / Namecheap / Route53 / Google / 华为云已实现未实测）。Cloudflare 传播
+  实测约 2~2.5 分钟，TTL 固定 60；TCP/REALITY 入口必须关闭橙云。
+
 ### 8.2 CF IP 池
 
 - 维护优选 IP 源（含 `bestproxy` 类源）、抓取间隔与端口；
@@ -1135,6 +1148,14 @@ URL / 参数 / POST 内容检查，IP、UA、Cookie、CC、文件上传仍照常
   `outbound: proxy` 自动改写成对应的 `balancerTag`。规则编辑器的出站候选从「代理组 + 自定义出站」动态读取，
   手填的 tag 仍会校验；
 - sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）。
+
+- Mihomo 规则的结构化编辑器支持逻辑规则 `AND` / `OR` / `NOT` / `SUB-RULE`：条件写成
+  `((NETWORK,UDP),(DST-PORT,3478/19302))`；`SUB-RULE` 的第三列填子规则组名。条件必须用括号包裹；
+- 规则类型已对齐最新 mihomo：新增 `IP-SUFFIX`、
+  `SRC-IP-CIDR/SRC-IP-SUFFIX/SRC-IP-ASN/SRC-GEOIP`、`IN-PORT/IN-TYPE/IN-USER/IN-NAME/REMATCH-NAME`、
+  `PROCESS-NAME-WILDCARD/REGEX`、`PROCESS-PATH-WILDCARD/REGEX`、`UID`、`DSCP`；
+- `SUB-RULE` 引用的是 mihomo 配置里的 `sub-rules:` 段，面板暂未提供该段编辑，
+  需要先在 YAML 导入或共享 config_json 里定义。
 
 ### 9.2 订阅端点管理
 

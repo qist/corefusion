@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Режим возврата",
       failoverSwitch: "Переключить сейчас",
       failoverCheck: "Проверить сейчас",
+      failoverSyncConfig: "Синхронизировать конфиг",
+      failoverSyncDone: "Конфигурация синхронизирована с резервом",
       failoverSwitchConfirm: "Переключить роли primary/backup сейчас? Узел, обслуживающий трафик, будет понижен, а подписки перейдут на новый primary при следующем обновлении.",
       failoverSwitchDone: "Переключено",
       failoverCheckDone: "Проверка завершена",

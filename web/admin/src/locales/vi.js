@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Chế độ quay lại",
       failoverSwitch: "Chuyển ngay",
       failoverCheck: "Kiểm tra ngay",
+      failoverSyncConfig: "Đồng bộ cấu hình",
+      failoverSyncDone: "Đã đồng bộ cấu hình sang nút dự phòng",
       failoverSwitchConfirm: "Chuyển vai trò chính/dự phòng ngay? Nút đang phục vụ lưu lượng sẽ bị hạ cấp và gói đăng ký sẽ chuyển sang nút chính mới ở lần làm mới tiếp theo.",
       failoverSwitchDone: "Đã chuyển",
       failoverCheckDone: "Đã kiểm tra",

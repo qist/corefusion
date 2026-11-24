@@ -46,8 +46,9 @@ func (f *BillingFilter) ShouldSyncUsers(ctx context.Context, serverID int64) boo
 		return false
 
 	case entity.NodeTypePrimaryBackup:
-		return server.FailoverRole == entity.FailoverRolePrimary ||
-			server.FailoverRole == "backup_recovering"
+		// 热备：备节点也常驻用户凭据 —— 切换瞬间新主就能认证，不依赖切换后
+		// 那一次 replay（几秒空窗）。订阅仍只出 active primary（见订阅侧过滤）。
+		return true
 
 	default:
 		return server.BillingEnabled
@@ -69,8 +70,9 @@ func (f *BillingFilter) ShouldCollectTraffic(ctx context.Context, serverID int64
 
 	switch server.NodeType {
 	case entity.NodeTypePrimaryBackup:
-		return server.FailoverRole == entity.FailoverRolePrimary ||
-			server.FailoverRole == entity.FailoverRoleBackupRecovering
+		// 备节点同样采集：有人直连备节点时不能变成免计费流量（预热后凭据在备
+		// 节点上是可用的，必须计费兜底）。
+		return true
 
 	case entity.NodeTypeMirror:
 		return true

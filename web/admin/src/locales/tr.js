@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Geri dönüş modu",
       failoverSwitch: "Şimdi geçir",
       failoverCheck: "Şimdi kontrol et",
+      failoverSyncConfig: "Yapılandırmayı eşitle",
+      failoverSyncDone: "Yapılandırma yedeğe eşitlendi",
       failoverSwitchConfirm: "Birincil/yedek rolleri şimdi değiştirilsin mi? Trafiği sunan düğüm düşürülecek ve abonelikler bir sonraki yenilemede yeni birincile geçecek.",
       failoverSwitchDone: "Geçirildi",
       failoverCheckDone: "Kontrol tamamlandı",

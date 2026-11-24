@@ -214,6 +214,9 @@ func (h *CaddyHandler) CreateSite(c *gin.Context) {
 			h.wafProvisioner(c.Request.Context(), sid, site.Template, site.Domain)
 		}
 	}
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), sid)
+	}
 	response.Created(c, site)
 }
 func (h *CaddyHandler) UpdateSite(c *gin.Context) {
@@ -375,10 +378,13 @@ func (h *CaddyHandler) UpdateSite(c *gin.Context) {
 			h.wafProvisioner(c.Request.Context(), sid, existing.Template, existing.Domain)
 		}
 	}
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), sid)
+	}
 	response.OK(c, existing)
 }
 func (h *CaddyHandler) DeleteSite(c *gin.Context) {
-	h.applyServerID(c)
+	sid, _ := h.applyServerID(c)
 	id, err := strconv.ParseInt(c.Param("siteId"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "INVALID_ID", "invalid id")
@@ -387,6 +393,9 @@ func (h *CaddyHandler) DeleteSite(c *gin.Context) {
 	if err := h.caddyMgr.DeleteSite(c.Request.Context(), id); err != nil {
 		response.InternalError(c, "DELETE_FAILED", err.Error())
 		return
+	}
+	if h.nodeOp != nil {
+		h.nodeOp.SyncMirrorsData(c.Request.Context(), sid)
 	}
 	response.OK(c, gin.H{"message": "deleted"})
 }

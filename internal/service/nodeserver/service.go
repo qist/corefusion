@@ -48,6 +48,7 @@ type Service struct {
 	nodeCerts   *repository.NodeCertificateRepository // 节点↔证书 多对多 ✓
 	failoverMgr *agent.FailoverManager
 	mirrorSync  *agent.MirrorSyncManager
+	standbySync *StandbyReconciler
 	chainGen    *agent.ChainConfigGenerator
 	// updatePublicKeyPEM 是面板更新签名公钥，随安装脚本写入节点 config.yaml（v7 L-6）。
 	updatePublicKeyPEM []byte
@@ -924,6 +925,12 @@ func (s *Service) SyncMirrorNow(ctx context.Context, mirrorID int64) error {
 	return s.mirrorSync.SyncMirrorNow(ctx, mirrorID)
 }
 
+// WithStandbyReconciler 注入主备配置对齐器（primary_backup 热备）。
+func (s *Service) WithStandbyReconciler(r *StandbyReconciler) *Service {
+	s.standbySync = r
+	return s
+}
+
 // SyncMirrorsForPrimary syncs all mirror nodes bound to the given primary server.
 // After syncing DB data (inbound configs, Caddy/Nginx sites) from the primary to
 // each mirror, it pushes the updated config to each mirror's Agent and applies it
@@ -931,6 +938,13 @@ func (s *Service) SyncMirrorNow(ctx context.Context, mirrorID int64) error {
 // ensure mirrors take effect at the same time as the primary, without requiring
 // a manual restart.
 func (s *Service) SyncMirrorsForPrimary(ctx context.Context, primaryServerID int64) {
+	// 主备：把配置单向对齐到伙伴（role=backup）。放在 mirror 之前，两者互不影响
+	// （一个节点只会是 mirror 或 primary_backup 中的一种）。
+	if s.standbySync != nil {
+		if err := s.standbySync.ReconcileForPrimary(ctx, primaryServerID); err != nil {
+			log.Printf("[nodeserver] standby reconcile for primary %d failed: %v", primaryServerID, err)
+		}
+	}
 	if s.mirrorSync == nil {
 		return
 	}
@@ -948,6 +962,14 @@ func (s *Service) SyncMirrorsForPrimary(ctx context.Context, primaryServerID int
 				mirror.ID, primaryServerID, err)
 		}
 	}
+}
+
+// SyncStandbyNow 立即对齐一次主备配置（手动「同步配置」按钮）。
+func (s *Service) SyncStandbyNow(ctx context.Context, serverID int64) error {
+	if s.standbySync == nil {
+		return fmt.Errorf("standby sync not initialized")
+	}
+	return s.standbySync.ReconcileForPair(ctx, serverID)
 }
 
 // GetMirrorStatus returns the sync status of a mirror node.

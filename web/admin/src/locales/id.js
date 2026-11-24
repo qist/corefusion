@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Mode kembali",
       failoverSwitch: "Alihkan sekarang",
       failoverCheck: "Periksa sekarang",
+      failoverSyncConfig: "Sinkronkan konfigurasi",
+      failoverSyncDone: "Konfigurasi disinkronkan ke standby",
       failoverSwitchConfirm: "Alihkan peran primer/backup sekarang? Node yang melayani trafik akan diturunkan dan langganan akan pindah ke primer baru saat penyegaran berikutnya.",
       failoverSwitchDone: "Dialihkan",
       failoverCheckDone: "Pemeriksaan selesai",

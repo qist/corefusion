@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "حالت بازگشت",
       failoverSwitch: "همین حالا جابه‌جا کن",
       failoverCheck: "همین حالا بررسی کن",
+      failoverSyncConfig: "همگام‌سازی تنظیمات",
+      failoverSyncDone: "تنظیمات با گره پشتیبان همگام شد",
       failoverSwitchConfirm: "همین حالا نقش‌های اصلی/پشتیبان را جابه‌جا کنیم؟ گره‌ای که اکنون ترافیک را سرو می‌کند تنزل می‌یابد و اشتراک‌ها در به‌روزرسانی بعدی به اصلی جدید منتقل می‌شوند.",
       failoverSwitchDone: "جابه‌جا شد",
       failoverCheckDone: "بررسی کامل شد",

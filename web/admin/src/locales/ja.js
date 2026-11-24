@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "復帰モード",
       failoverSwitch: "今すぐ切替",
       failoverCheck: "今すぐ確認",
+      failoverSyncConfig: "設定を同期",
+      failoverSyncDone: "設定をスタンバイへ同期しました",
       failoverSwitchConfirm: "主備ロールを今すぐ切り替えますか？現在トラフィックを処理しているノードは降格され、購読は次回更新時に新しい主系へ切り替わります。",
       failoverSwitchDone: "切り替え完了",
       failoverCheckDone: "確認完了",

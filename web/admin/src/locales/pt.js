@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Modo de retorno",
       failoverSwitch: "Alternar agora",
       failoverCheck: "Verificar agora",
+      failoverSyncConfig: "Sincronizar configuração",
+      failoverSyncDone: "Configuração sincronizada para o standby",
       failoverSwitchConfirm: "Alternar agora os papéis primário/backup? O nó que atende tráfego será rebaixado e as assinaturas passarão ao novo primário na próxima atualização.",
       failoverSwitchDone: "Alternado",
       failoverCheckDone: "Verificação concluída",

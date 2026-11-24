@@ -695,6 +695,9 @@
             <el-button size="small" :loading="failoverActing" @click="doFailoverCheck">
               {{ t('nodeServer.failoverCheck') }}
             </el-button>
+            <el-button size="small" :loading="failoverActing" @click="doStandbySync">
+              {{ t('nodeServer.failoverSyncConfig') }}
+            </el-button>
           </div>
         </div>
         <div v-else style="color:#909399;font-size:13px">{{ t('nodeServer.failoverNotConfigured') }}</div>
@@ -1507,6 +1510,21 @@ async function doFailoverSwitch() {
     await triggerServerFailover(detailData.value.id)
     ElMessage.success(t('nodeServer.failoverSwitchDone'))
     failoverStatus.value = await getFailoverStatus(detailData.value.id).catch(() => failoverStatus.value)
+    await loadServers()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  } finally {
+    failoverActing.value = false
+  }
+}
+
+// 立即把主节点配置对齐到备节点（增/改/删），成功后刷新列表。
+async function doStandbySync() {
+  if (!detailData.value || failoverActing.value) return
+  failoverActing.value = true
+  try {
+    await client.post(`/node-servers/${detailData.value.id}/standby-sync`)
+    ElMessage.success(t('nodeServer.failoverSyncDone'))
     await loadServers()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))

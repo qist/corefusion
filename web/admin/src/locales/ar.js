@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "وضع العودة",
       failoverSwitch: "تبديل الآن",
       failoverCheck: "فحص الآن",
+      failoverSyncConfig: "مزامنة الإعدادات",
+      failoverSyncDone: "تمت مزامنة الإعدادات إلى العقدة الاحتياطية",
       failoverSwitchConfirm: "هل تريد تبديل أدوار الأساسي/الاحتياطي الآن؟ ستُخفض العقدة التي تخدم الحركة حاليًا، وستنتقل الاشتراكات إلى الأساسي الجديد عند التحديث التالي.",
       failoverSwitchDone: "تم التبديل",
       failoverCheckDone: "اكتمل الفحص",

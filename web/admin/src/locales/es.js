@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Modo de retorno",
       failoverSwitch: "Conmutar ahora",
       failoverCheck: "Comprobar ahora",
+      failoverSyncConfig: "Sincronizar configuración",
+      failoverSyncDone: "Configuración sincronizada al nodo de respaldo",
       failoverSwitchConfirm: "¿Conmutar ahora los roles primario/respaldo? El nodo que atiende tráfico será degradado y las suscripciones pasarán al nuevo primario en la próxima actualización.",
       failoverSwitchDone: "Conmutado",
       failoverCheckDone: "Comprobación completada",

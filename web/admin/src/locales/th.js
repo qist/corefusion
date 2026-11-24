@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "โหมดกลับ",
       failoverSwitch: "สลับทันที",
       failoverCheck: "ตรวจสอบทันที",
+      failoverSyncConfig: "ซิงค์การตั้งค่า",
+      failoverSyncDone: "ซิงค์การตั้งค่าไปยังโหนดสำรองแล้ว",
       failoverSwitchConfirm: "สลับบทบาทหลัก/สำรองทันทีหรือไม่? โหนดที่ให้บริการอยู่จะถูกลดระดับ และการสมัครจะย้ายไปโหนดหลักใหม่เมื่อรีเฟรชครั้งถัดไป",
       failoverSwitchDone: "สลับแล้ว",
       failoverCheckDone: "ตรวจสอบเสร็จ",

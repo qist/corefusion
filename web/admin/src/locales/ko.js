@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "복귀 모드",
       failoverSwitch: "지금 전환",
       failoverCheck: "지금 확인",
+      failoverSyncConfig: "설정 동기화",
+      failoverSyncDone: "설정을 대기 노드에 동기화했습니다",
       failoverSwitchConfirm: "지금 주/백업 역할을 전환할까요? 현재 트래픽을 처리하는 노드는 강등되며, 구독은 다음 갱신 시 새 주 노드로 이동합니다.",
       failoverSwitchDone: "전환 완료",
       failoverCheckDone: "확인 완료",

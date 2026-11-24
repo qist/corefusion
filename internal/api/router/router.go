@@ -2318,7 +2318,21 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 节点↔证书 多对多 ✓（与 main.go 同一个 DB ✓，多实例无妨 ✓）
 			nodeServerSvcInst := nodeServerSvc.NewService(nodeServerRepo, bootstrapTokenMgr, caService).
 				WithNodeCertificates(repository.NewNodeCertificateRepository(database)).
-				WithUpdatePublicKey(updateSigner.PublicKeyPEM())
+				WithUpdatePublicKey(updateSigner.PublicKeyPEM()).
+				// 主备热备：主节点配置变更后单向对齐到伙伴（role=backup）并推送。
+				WithStandbyReconciler(nodeServerSvc.NewStandbyReconciler(
+					nodeServerRepo,
+					repository.NewInboundConfigRepository(database),
+					repository.NewCoreConfigRepository(database),
+					repository.NewNginxSiteRepository(database),
+					repository.NewCaddySiteRepository(database),
+					repository.NewSystemSettingRepository(database),
+					dataDir,
+					func(ctx context.Context, id int64) error {
+						_, err := sharedNodeMgr.SyncDataToServer(ctx, id, true)
+						return err
+					},
+				))
 			// 延迟注入：SNI 重载钩子用 nodeSvc 判断本机/远程节点。
 			sniReloadAdapter.nodeSvc = nodeServerSvcInst
 
@@ -2986,6 +3000,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.GET("/:id/bootstrap-cmd", nodeServerH.GetBootstrapCommand)
 				nodeServersGroup.PUT("/:id/node-type", nodeServerH.UpdateNodeType)
 				nodeServersGroup.POST("/:id/failover", nodeServerH.TriggerServerFailover)
+				nodeServersGroup.POST("/:id/standby-sync", nodeServerH.SyncStandby)
 				nodeServersGroup.GET("/:id/certificates", nodeServerH.ListServerCertificates)
 				nodeServersGroup.POST("/:id/certificates/:cid", nodeServerH.AssociateCertificate)
 				nodeServersGroup.DELETE("/:id/certificates/:cid", nodeServerH.DissociateCertificate)

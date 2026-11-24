@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Mode de retour",
       failoverSwitch: "Basculer maintenant",
       failoverCheck: "Vérifier maintenant",
+      failoverSyncConfig: "Synchroniser la config",
+      failoverSyncDone: "Configuration synchronisée vers le standby",
       failoverSwitchConfirm: "Basculer maintenant les rôles primaire/sauvegarde ? Le nœud qui sert actuellement sera rétrogradé, et les abonnements passeront au nouveau primaire au prochain rafraîchissement.",
       failoverSwitchDone: "Bascule effectuée",
       failoverCheckDone: "Vérification terminée",

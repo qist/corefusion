@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "回切模式",
       failoverSwitch: "立即切換",
       failoverCheck: "立即檢查",
+      failoverSyncConfig: "同步設定",
+      failoverSyncDone: "設定已同步到備節點",
       failoverSwitchConfirm: "確定立即切換主備角色？目前承載流量的節點會被降級，訂閱會在下一次重新整理時切到新主。",
       failoverSwitchDone: "切換完成",
       failoverCheckDone: "檢查完成",

@@ -3869,6 +3869,8 @@ export default {
       failoverRecoverMode: "Rückkehr-Modus",
       failoverSwitch: "Jetzt umschalten",
       failoverCheck: "Jetzt prüfen",
+      failoverSyncConfig: "Konfiguration synchronisieren",
+      failoverSyncDone: "Konfiguration mit Standby synchronisiert",
       failoverSwitchConfirm: "Primär/Backup-Rollen jetzt tauschen? Der aktuell trafficführende Node wird herabgestuft, Abonnements wechseln beim nächsten Abruf zum neuen Primär.",
       failoverSwitchDone: "Umgeschaltet",
       failoverCheckDone: "Prüfung abgeschlossen",

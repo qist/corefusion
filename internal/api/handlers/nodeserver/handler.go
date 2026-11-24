@@ -1172,6 +1172,22 @@ func (h *Handler) TriggerServerFailover(c *gin.Context) {
 	response.OK(c, gin.H{"triggered": true, "server_id": id})
 }
 
+// SyncStandby 立即对齐一次主备配置（把主节点配置同步到备节点）。
+func (h *Handler) SyncStandby(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "INVALID_ID", "invalid server ID")
+		return
+	}
+	if err := h.svc.SyncStandbyNow(c.Request.Context(), id); err != nil {
+		h.auditLog(c, id, "standby_sync", "", false, err.Error())
+		response.InternalError(c, "STANDBY_SYNC_FAILED", err.Error())
+		return
+	}
+	h.auditLog(c, id, "standby_sync", "synced primary config to standby", true, "")
+	response.OK(c, gin.H{"synced": true, "server_id": id})
+}
+
 // ListServerCertificates returns certificates associated with a server.
 func (h *Handler) ListServerCertificates(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)

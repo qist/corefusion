@@ -908,23 +908,12 @@ func (s *Service) SetServerRecoverMode(ctx context.Context, serverID int64, mode
 }
 
 // TriggerFailoverCheck forces a failover check for all primary_backup pairs.
+// 与周期检查走同一套逻辑（不是空转），便于面板「立即检查」使用。
 func (s *Service) TriggerFailoverCheck(ctx context.Context) error {
 	if s.failoverMgr == nil {
 		return fmt.Errorf("failover manager not initialized")
 	}
-	// The RunLoop handles periodic checks; this method can trigger a manual check
-	// by calling the same logic. We expose a simplified interface.
-	servers, err := s.repo.ListByType(ctx, entity.NodeTypePrimaryBackup)
-	if err != nil {
-		return err
-	}
-	for _, server := range servers {
-		if server.FailoverRole == entity.FailoverRolePrimary {
-			// We rely on the manager's internal logic; just log here
-			_ = server
-		}
-	}
-	return nil
+	return s.failoverMgr.CheckOnce(ctx)
 }
 
 // SyncMirrorNow forces an immediate mirror sync for a specific mirror node.
@@ -1786,39 +1775,14 @@ func (s *Service) UpdateNodeType(ctx context.Context, serverID int64, nodeType s
 }
 
 // TriggerServerFailover triggers failover for a specific primary_backup server.
+// TriggerServerFailover 手动切换主备对中的任一节点。
+// 走与自动切换完全相同的 promoteBackup（含校验、用户重推、配置兜底同步），
+// 不再单独实现一套"只换角色"的简化逻辑。
 func (s *Service) TriggerServerFailover(ctx context.Context, serverID int64) error {
 	if s.failoverMgr == nil {
 		return fmt.Errorf("failover manager not initialized")
 	}
-	// The FailoverManager's checkAllPairs handles the logic.
-	// For a targeted trigger, we call the same check which will evaluate this server.
-	servers, err := s.repo.ListByType(ctx, entity.NodeTypePrimaryBackup)
-	if err != nil {
-		return err
-	}
-	for _, server := range servers {
-		if server.ID == serverID && server.FailoverRole == entity.FailoverRolePrimary {
-			// Force check on this primary by verifying its status
-			if !s.nodeMgr.IsOnlineForServer(serverID) {
-				// Look for backup
-				partners, _ := s.repo.ListByPartner(ctx, serverID)
-				for _, backup := range partners {
-					if s.nodeMgr.IsOnlineForServer(backup.ID) {
-						// Swap roles
-						server.FailoverRole = entity.FailoverRoleBackup
-						backup.FailoverRole = entity.FailoverRolePrimary
-						server.UpdatedAt = time.Now()
-						backup.UpdatedAt = time.Now()
-						s.repo.Update(ctx, &server)
-						s.repo.Update(ctx, &backup)
-						break
-					}
-				}
-			}
-			break
-		}
-	}
-	return nil
+	return s.failoverMgr.ForceFailover(ctx, serverID)
 }
 
 // ListServerCertificates returns all certificates in use by a server.

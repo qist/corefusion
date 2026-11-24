@@ -671,6 +671,35 @@
         <div v-if="realtimeStatus.cpu_usage !== undefined">{{ t('dashboard.systemInfo') }} CPU: {{ realtimeStatus.cpu_usage?.toFixed?.(1) || realtimeStatus.cpu_usage }}%</div>
       </div>
 
+      <!-- 主备：状态 + 手动切换（只有 primary_backup 显示） -->
+      <template v-if="detailData && detailData.node_type === 'primary_backup'">
+        <el-divider content-position="left">{{ t('nodeServer.failoverTitle') }}</el-divider>
+        <div v-if="failoverStatus" style="font-size:13px;line-height:2;color:#606266">
+          <div>
+            {{ t('nodeServer.failoverRole') }}:
+            <el-tag size="small" :type="failoverStatus.current_role === 'primary' ? 'danger' : 'info'">
+              {{ failoverStatus.current_role === 'primary' ? t('nodeServer.failoverPrimary') : t('nodeServer.failoverBackup') }}
+            </el-tag>
+            <span v-if="failoverStatus.has_failed_over" style="margin-left:8px;color:#e6a23c">
+              {{ t('nodeServer.failoverInProgress') }}
+            </span>
+          </div>
+          <div>{{ t('nodeServer.failoverPartner') }}: #{{ failoverStatus.partner_id || '-' }}</div>
+          <div>{{ t('nodeServer.failoverOnline') }}: {{ failoverStatus.online ? t('common.yes') : t('common.no') }}</div>
+          <div>{{ t('nodeServer.failoverHeartbeat') }}: {{ failoverStatus.last_heartbeat_age_seconds }}s</div>
+          <div>{{ t('nodeServer.failoverRecoverMode') }}: {{ failoverStatus.recover_mode }}</div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <el-button size="small" type="warning" :loading="failoverActing" @click="doFailoverSwitch">
+              {{ t('nodeServer.failoverSwitch') }}
+            </el-button>
+            <el-button size="small" :loading="failoverActing" @click="doFailoverCheck">
+              {{ t('nodeServer.failoverCheck') }}
+            </el-button>
+          </div>
+        </div>
+        <div v-else style="color:#909399;font-size:13px">{{ t('nodeServer.failoverNotConfigured') }}</div>
+      </template>
+
       <template #footer>
         <el-button @click="detailVisible = false">{{ t('common.close') }}</el-button>
       </template>
@@ -817,7 +846,8 @@ import {
   updateAllAgents, 
   getAgentVersion,
   getAgentReleases,
-  resumeTrafficSuspended, listInterfaces, 
+  resumeTrafficSuspended, listInterfaces,
+  getFailoverStatus, triggerServerFailover, triggerFailoverCheck,
 } from '../api/nodeServer'
 import { useQueryState } from '../composables/useQueryState'
 import { usePagination } from '../composables/usePagination'
@@ -1448,10 +1478,58 @@ function goToDetail(row) {
 async function showDetailDialog(row) {
   detailData.value = row
   realtimeStatus.value = null
+  failoverStatus.value = null
   detailVisible.value = true
   try {
     realtimeStatus.value = await getServerStatus(row.id)
   } catch (e) { /* noop */ }
+  if (row.node_type === 'primary_backup') {
+    try { failoverStatus.value = await getFailoverStatus(row.id) } catch (e) { /* noop */ }
+  }
+}
+
+// ════════════ 主备 ════════════
+
+const failoverStatus = ref(null)
+const failoverActing = ref(false)
+
+async function doFailoverSwitch() {
+  if (!detailData.value || failoverActing.value) return
+  try {
+    await ElMessageBox.confirm(
+      t('nodeServer.failoverSwitchConfirm'),
+      t('common.confirm'),
+      { type: 'warning' }
+    )
+  } catch { return }
+  failoverActing.value = true
+  try {
+    await triggerServerFailover(detailData.value.id)
+    ElMessage.success(t('nodeServer.failoverSwitchDone'))
+    failoverStatus.value = await getFailoverStatus(detailData.value.id).catch(() => failoverStatus.value)
+    await loadServers()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  } finally {
+    failoverActing.value = false
+  }
+}
+
+async function doFailoverCheck() {
+  if (failoverActing.value) return
+  failoverActing.value = true
+  try {
+    await triggerFailoverCheck()
+    ElMessage.success(t('nodeServer.failoverCheckDone'))
+    if (detailData.value) {
+      failoverStatus.value = await getFailoverStatus(detailData.value.id).catch(() => failoverStatus.value)
+    }
+    await loadServers()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  } finally {
+    failoverActing.value = false
+  }
 }
 
 // ════════════ Server Actions ════════════

@@ -2,13 +2,23 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"corefusion/internal/model/entity"
+	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/store/repository"
 )
+
+// FailoverNodeManager 是 FailoverManager 对 Agent 连接与状态的依赖。
+// 抽成接口便于单测（真机实现是 *NodeServerManager）。
+type FailoverNodeManager interface {
+	IsOnline(serverID int64) bool
+	GetServerStatus(ctx context.Context, serverID int64) (*agentpb.GetStatusResponse, error)
+	SyncDataToServer(ctx context.Context, serverID int64, applyAndStart bool) (*agentpb.SyncDataResponse, error)
+}
 
 // UserSyncer is the subset of UserSyncService used by the FailoverManager to
 // replay credentials after a role switch. Defined locally to avoid an import
@@ -56,7 +66,7 @@ func getServerRecoverMode(server *entity.NodeServer) RecoverMode {
 // on the server's RecoverMode setting (per-pair configuration).
 type FailoverManager struct {
 	serverRepo        *repository.NodeServerRepository
-	nodeMgr           *NodeServerManager
+	nodeMgr           FailoverNodeManager
 	checkInterval     time.Duration
 	offlineThreshold  time.Duration // how long before triggering failover
 	recoverGrace      time.Duration // how long the original primary must be stable before switching back
@@ -71,6 +81,12 @@ type FailoverManager struct {
 	coreDownMu    sync.Mutex
 	coreDownSince map[int64]time.Time // server_id → time when all cores first detected down
 
+	// Track since when a backup_recovering node has been continuously healthy.
+	// 原实现只看「心跳足够新」，等于原主一上线就切回，网络抖动会来回切；
+	// 现在要求连续健康 recoverGrace 才回切（见 checkRecovering）。
+	recoverMu    sync.Mutex
+	recoverSince map[int64]time.Time // server_id → 本轮连续健康的起点
+
 	// userSyncer replays user credentials after a failover switches the
 	// active primary. Guarded by userSyncMu.
 	userSyncMu sync.Mutex
@@ -78,7 +94,7 @@ type FailoverManager struct {
 }
 
 // NewFailoverManager creates a new FailoverManager.
-func NewFailoverManager(serverRepo *repository.NodeServerRepository, nodeMgr *NodeServerManager) *FailoverManager {
+func NewFailoverManager(serverRepo *repository.NodeServerRepository, nodeMgr FailoverNodeManager) *FailoverManager {
 	return &FailoverManager{
 		serverRepo:          serverRepo,
 		nodeMgr:             nodeMgr,
@@ -88,6 +104,7 @@ func NewFailoverManager(serverRepo *repository.NodeServerRepository, nodeMgr *No
 		coreDownThreshold:   3 * time.Minute,
 		failedOverPrimaries: make(map[int64]bool),
 		coreDownSince:       make(map[int64]time.Time),
+		recoverSince:        make(map[int64]time.Time),
 	}
 }
 
@@ -219,7 +236,9 @@ func (m *FailoverManager) checkActivePrimary(ctx context.Context, primary *entit
 
 		log.Printf("[FailoverManager] primary %s (id=%d) Agent offline for %v, triggering failover",
 			primary.Name, primary.ID, timeSinceHeartbeat)
-		m.promoteBackup(ctx, primary, "agent offline")
+		if err := m.promoteBackup(ctx, primary, "agent offline"); err != nil {
+			log.Printf("[FailoverManager] failover failed: %v", err)
+		}
 		return
 	}
 
@@ -263,7 +282,9 @@ func (m *FailoverManager) checkActivePrimary(ctx context.Context, primary *entit
 
 	log.Printf("[FailoverManager] primary %s (id=%d): all cores down for %v, triggering failover",
 		primary.Name, primary.ID, coreDownDuration)
-	m.promoteBackup(ctx, primary, "all cores down")
+	if err := m.promoteBackup(ctx, primary, "all cores down"); err != nil {
+		log.Printf("[FailoverManager] failover failed: %v", err)
+	}
 }
 
 // checkAllCoresDown returns true if the server has at least one configured core
@@ -297,78 +318,94 @@ func (m *FailoverManager) clearCoreDownTracking(serverID int64) {
 }
 
 // checkRecovering switches traffic back to the original primary after it has
-// been online with all cores running for the grace period.
-// Only called in RecoverModeAutoSwitchBack.
+// been **continuously** healthy (Agent online + at least one core running) for
+// recoverGrace. Only called in RecoverModeAutoSwitchBack.
 func (m *FailoverManager) checkRecovering(ctx context.Context, originalPrimary *entity.NodeServer) {
 	if originalPrimary.IsLocal {
 		return
 	}
 	if !m.nodeMgr.IsOnline(originalPrimary.ID) {
+		m.clearRecoverTracking(originalPrimary.ID)
 		return
 	}
 
-	// Require the recovered node to be stable for recoverGrace to avoid
-	// flapping right after a brief reconnect.
-	if originalPrimary.LastHeartbeatAt != nil &&
-		time.Since(*originalPrimary.LastHeartbeatAt) > m.recoverGrace {
-		return
-	}
-
-	// Also require all cores to be running before switching back.
-	// There's no point switching back to a primary whose cores are still
-	// crashed/restarting.
+	// 必须至少有一个核心在跑 —— 还没有核心起来的节点切回去也没用。
 	allCoresDown, err := m.checkAllCoresDown(ctx, originalPrimary.ID)
-	if err != nil {
-		// Can't determine core status — wait until we can
-		return
-	}
-	if allCoresDown {
-		log.Printf("[FailoverManager] recovering primary %s (id=%d): all cores still down, waiting",
-			originalPrimary.Name, originalPrimary.ID)
+	if err != nil || allCoresDown {
+		if allCoresDown {
+			log.Printf("[FailoverManager] recovering primary %s (id=%d): all cores still down, waiting",
+				originalPrimary.Name, originalPrimary.ID)
+		}
+		m.clearRecoverTracking(originalPrimary.ID)
 		return
 	}
 
+	// 连续健康计时：任何一次不健康都会清零，避免短暂重连就回切导致抖动。
+	m.recoverMu.Lock()
+	since, ok := m.recoverSince[originalPrimary.ID]
+	if !ok {
+		since = time.Now()
+		m.recoverSince[originalPrimary.ID] = since
+	}
+	m.recoverMu.Unlock()
+
+	stable := time.Since(since)
+	if stable < m.recoverGrace {
+		log.Printf("[FailoverManager] recovering primary %s (id=%d): healthy for %v, need %v before switch-back",
+			originalPrimary.Name, originalPrimary.ID, stable.Truncate(time.Second), m.recoverGrace)
+		return
+	}
+
+	log.Printf("[FailoverManager] recovering primary %s (id=%d): healthy for %v, switching back",
+		originalPrimary.Name, originalPrimary.ID, stable.Truncate(time.Second))
 	m.recoverPrimary(ctx, originalPrimary)
+	m.clearRecoverTracking(originalPrimary.ID)
+}
+
+// clearRecoverTracking 重置某节点的连续健康计时。
+func (m *FailoverManager) clearRecoverTracking(serverID int64) {
+	m.recoverMu.Lock()
+	delete(m.recoverSince, serverID)
+	m.recoverMu.Unlock()
 }
 
 // promoteBackup promotes the backup node to primary.
 // reason is a human-readable string describing why the failover was triggered
 // (e.g. "agent offline", "all cores down").
 // The recover mode is read from the primary server's configuration.
-func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.NodeServer, reason string) {
+//
+// 自动和手动切换都走这里：校验 → 换角色 → 重推用户 → 兜底同步配置。
+// 返回 error 便于手动切换接口把失败原因回给前端；自动路径调用方只记日志。
+func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.NodeServer, reason string) error {
+	if primary == nil {
+		return fmt.Errorf("primary 节点为空")
+	}
 	if primary.PartnerServerID == 0 {
-		log.Printf("[FailoverManager] primary %d (%s) needs failover (%s) but no partner configured",
-			primary.ID, primary.Name, reason)
-		return
+		return fmt.Errorf("节点 %s 未配置主备伙伴", primary.Name)
 	}
 
 	backup, err := m.serverRepo.GetByID(ctx, primary.PartnerServerID)
 	if err != nil {
-		log.Printf("[FailoverManager] primary %d needs failover (%s) but backup %d not found: %v",
-			primary.ID, reason, primary.PartnerServerID, err)
-		return
+		return fmt.Errorf("找不到伙伴节点 %d：%w", primary.PartnerServerID, err)
 	}
 
 	if backup.FailoverRole != entity.FailoverRoleBackup {
-		log.Printf("[FailoverManager] primary %d needs failover (%s) but partner %d is not a backup (role=%s)",
-			primary.ID, reason, backup.ID, backup.FailoverRole)
-		return
+		return fmt.Errorf("伙伴节点 %s 当前角色是 %q，不是 backup", backup.Name, backup.FailoverRole)
 	}
 
 	// Check if backup is online
 	if !m.nodeMgr.IsOnline(backup.ID) {
-		log.Printf("[FailoverManager] primary %d needs failover (%s) but backup %d is also offline — cannot failover",
-			primary.ID, reason, backup.ID)
-		return
+		return fmt.Errorf("伙伴节点 %s 离线，无法切换", backup.Name)
 	}
 
 	// Verify backup has at least one running core — don't promote a
 	// backup whose cores are also down.
 	backupCoresDown, err := m.checkAllCoresDown(ctx, backup.ID)
-	if err == nil && backupCoresDown {
-		log.Printf("[FailoverManager] primary %d needs failover (%s) but backup %d cores are also down — cannot failover",
-			primary.ID, reason, backup.ID)
-		return
+	if err != nil {
+		return fmt.Errorf("无法获取 %s 的核心状态：%w", backup.Name, err)
+	}
+	if backupCoresDown {
+		return fmt.Errorf("%s 的核心全部未运行，无法切换", backup.Name)
 	}
 
 	// Read recover mode from the primary server's configuration
@@ -382,8 +419,7 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	backup.BillingEnabled = true
 	backup.UpdatedAt = time.Now()
 	if err := m.serverRepo.Update(ctx, backup); err != nil {
-		log.Printf("[FailoverManager] failed to promote backup %d: %v", backup.ID, err)
-		return
+		return fmt.Errorf("提升 %s 失败：%w", backup.Name, err)
 	}
 
 	// Demote primary based on recover mode
@@ -399,7 +435,12 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	primary.BillingEnabled = false
 	primary.UpdatedAt = time.Now()
 	if err := m.serverRepo.Update(ctx, primary); err != nil {
-		log.Printf("[FailoverManager] failed to demote primary %d: %v", primary.ID, err)
+		// 回滚提升，避免出现两个 primary。
+		backup.FailoverRole = entity.FailoverRoleBackup
+		backup.BillingEnabled = false
+		backup.UpdatedAt = time.Now()
+		_ = m.serverRepo.Update(ctx, backup)
+		return fmt.Errorf("降级 %s 失败：%w（已回滚提升）", primary.Name, err)
 	}
 
 	// Track failover (only for auto_switch_back recovery tracking)
@@ -412,8 +453,9 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	}
 	m.mu.Unlock()
 
-	// Clear core-down tracking for the demoted primary
+	// Clear core-down / recover tracking for the demoted primary
 	m.clearCoreDownTracking(primary.ID)
+	m.clearRecoverTracking(primary.ID)
 
 	if mode == RecoverModeStayOnPromoted {
 		log.Printf("[FailoverManager] failover complete (stay_on_promoted): %s is now primary, %s is backup (permanent)",
@@ -427,6 +469,21 @@ func (m *FailoverManager) promoteBackup(ctx context.Context, primary *entity.Nod
 	// strip them from the demoted (recovering) node so only the active
 	// primary serves traffic.
 	m.replayAfterSwitch(ctx, backup.ID, primary.ID)
+
+	// 兜底：给新主补一次全量 SyncData，确保它的运行配置/用户与面板一致
+	// （P1 配置常态同步上线前，备节点配置可能还没跟上）。
+	go m.syncPromotedPrimary(backup.ID)
+
+	return nil
+}
+
+// syncPromotedPrimary 给刚提升的节点补一次全量 SyncData（异步、失败只记日志）。
+func (m *FailoverManager) syncPromotedPrimary(serverID int64) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if _, err := m.nodeMgr.SyncDataToServer(ctx, serverID, true); err != nil {
+		log.Printf("[FailoverManager] sync data to promoted primary %d failed: %v", serverID, err)
+	}
 }
 
 // recoverPrimary switches back to the original primary after it recovers.
@@ -498,6 +555,43 @@ func (m *FailoverManager) replayAfterSwitch(ctx context.Context, newPrimaryID, d
 	}
 	if err := syncer.RemoveServerUsers(ctx, demotedID); err != nil {
 		log.Printf("[FailoverManager] failed to remove users from demoted node %d: %v", demotedID, err)
+	}
+}
+
+// CheckOnce 立即执行一轮主备健康检查（面板「立即检查」按钮用）。
+func (m *FailoverManager) CheckOnce(ctx context.Context) error {
+	return m.checkAllPairs(ctx)
+}
+
+// ForceFailover 手动切换：跳过故障阈值，但仍校验目标在线且至少一个核心在跑。
+// serverID 可以是主备对中的任意一方：传 primary 表示切到伙伴；传 backup 表示把它提升。
+func (m *FailoverManager) ForceFailover(ctx context.Context, serverID int64) error {
+	srv, err := m.serverRepo.GetByID(ctx, serverID)
+	if err != nil {
+		return fmt.Errorf("节点 %d 不存在：%w", serverID, err)
+	}
+	if srv.NodeType != entity.NodeTypePrimaryBackup {
+		return fmt.Errorf("节点 %s 不是主备类型（当前 %s）", srv.Name, srv.NodeType)
+	}
+	switch srv.FailoverRole {
+	case entity.FailoverRolePrimary:
+		return m.promoteBackup(ctx, srv, "manual")
+	case entity.FailoverRoleBackup:
+		if srv.PartnerServerID == 0 {
+			return fmt.Errorf("节点 %s 未配置主备伙伴", srv.Name)
+		}
+		partner, err := m.serverRepo.GetByID(ctx, srv.PartnerServerID)
+		if err != nil {
+			return fmt.Errorf("找不到伙伴节点 %d：%w", srv.PartnerServerID, err)
+		}
+		if partner.FailoverRole != entity.FailoverRolePrimary {
+			return fmt.Errorf("伙伴节点 %s 当前不是 primary（%q）", partner.Name, partner.FailoverRole)
+		}
+		return m.promoteBackup(ctx, partner, "manual (requested from backup)")
+	case entity.FailoverRoleBackupRecovering:
+		return fmt.Errorf("节点 %s 正在恢复观察期，请等自动回切，或对它的伙伴执行切换", srv.Name)
+	default:
+		return fmt.Errorf("节点 %s 的故障切换角色未知：%q", srv.Name, srv.FailoverRole)
 	}
 }
 

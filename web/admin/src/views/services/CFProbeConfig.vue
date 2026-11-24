@@ -95,10 +95,18 @@
       <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainInbound') }}</div>
         <el-select v-model="chainCfg.inbound" size="small" style="width:300px" filterable clearable :placeholder="t('service.cfip.chainInboundPlaceholder')">
-          <el-option v-for="o in chainInbounds" :key="o.value" :label="o.label" :value="o.value">
-            <span>{{ o.label }}</span>
-            <span style="float:right;color:#909399;font-size:12px">{{ o.access_domain || o.access_type }}</span>
-          </el-option>
+          <el-option-group v-if="chainInboundExt.length" :label="t('service.cfip.probeEntryExternal')">
+            <el-option v-for="o in chainInboundExt" :key="o.value" :label="o.label" :value="o.value">
+              <span>{{ o.label }}</span>
+              <span style="float:right;color:#909399;font-size:12px">{{ o.access_domain || o.access_type }}</span>
+            </el-option>
+          </el-option-group>
+          <el-option-group v-if="chainInboundInb.length" :label="t('service.cfip.probeEntryInbound')">
+            <el-option v-for="o in chainInboundInb" :key="o.value" :label="o.label" :value="o.value">
+              <span>{{ o.label }}</span>
+              <span style="float:right;color:#909399;font-size:12px">{{ o.access_domain || o.access_type }}</span>
+            </el-option>
+          </el-option-group>
         </el-select>
       </div>
       <div>
@@ -227,6 +235,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import client from '../../api/client'
+import { useAutoRefresh, notifyCfipRefresh, CFIP_REFRESH_EVENT } from '../../composables/useAutoRefresh'
 
 const { t } = useI18n()
 
@@ -313,6 +322,9 @@ const chainSections = computed(() => [
 ])
 const externalExits = computed(() => chainExits.value.filter((o) => o.kind === 'external'))
 const inboundExits = computed(() => chainExits.value.filter((o) => o.kind === 'inbound'))
+// 探针入站支持两类入口：外部导入节点（ext:）与节点侧入站（inb:）。
+const chainInboundExt = computed(() => chainInbounds.value.filter((o) => String(o.value).startsWith('ext:')))
+const chainInboundInb = computed(() => chainInbounds.value.filter((o) => String(o.value).startsWith('inb:')))
 // 最近一轮实际使用的探针入站（没跑过时退回当前选择）。
 const chainProbeLabel = computed(() => {
   const probe = chainProbe.value.domain || chainProbe.value.ip
@@ -321,32 +333,38 @@ const chainProbeLabel = computed(() => {
   return picked ? picked.label : '-'
 })
 
-async function fetchProbeConfig() {
+// form=false 只刷新候选/结果，不回写表单：自动刷新不能覆盖用户正在改的配置。
+async function fetchProbeConfig(opts = {}) {
+  const { form = true } = opts
   try {
     const d = await client.get('/cfip/probe-config') || {}
-    probeCfg.value = {
-      enabled: !!d.enabled,
-      interval_minutes: d.interval_minutes ?? 5,
-      max_latency_ms: d.max_latency_ms ?? 0,
-      entry: d.entry || (d.entry_node_id ? `ext:${d.entry_node_id}` : ''),
-      entry_node_id: d.entry_node_id ?? 0,
-      dialer: d.dialer || '',
-      available_dialers: d.dialers || [],
-      dialer_versions: d.dialer_versions || {},
+    if (form) {
+      probeCfg.value = {
+        enabled: !!d.enabled,
+        interval_minutes: d.interval_minutes ?? 5,
+        max_latency_ms: d.max_latency_ms ?? 0,
+        entry: d.entry || (d.entry_node_id ? `ext:${d.entry_node_id}` : ''),
+        entry_node_id: d.entry_node_id ?? 0,
+        dialer: d.dialer || '',
+        available_dialers: d.dialers || [],
+        dialer_versions: d.dialer_versions || {},
+      }
+      // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
+      // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
+      const installed = probeCfg.value.available_dialers || []
+      previousDialer = installed.includes(probeCfg.value.dialer) ? probeCfg.value.dialer : ''
     }
     // 候选来自后端：外部节点 + 节点侧入站（如 VLESSGRPC），前端不再单独拼。
     probeNodes.value = Array.isArray(d.nodes) ? d.nodes : []
-    // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
-    // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
-    const installed = probeCfg.value.available_dialers || []
-    previousDialer = installed.includes(probeCfg.value.dialer) ? probeCfg.value.dialer : ''
   } catch { /* 未配置时用默认值（默认关闭探测） */ }
 }
 
-async function fetchChainConfig() {
+// form=false 只刷新结果/候选/依赖，不回写表单：自动刷新不能覆盖用户正在改的配置。
+async function fetchChainConfig(opts = {}) {
+  const { form = true } = opts
   try {
     const d = await client.get('/cfip/chain-probe-config') || {}
-    if (d.config) {
+    if (form && d.config) {
       const fallbackMax = d.config.max_targets ?? 20
       chainCfg.value = {
         enabled: !!d.config.enabled,
@@ -514,6 +532,7 @@ async function saveProbeConfig() {
     await client.put('/cfip/probe-config', probeCfg.value)
     ElMessage.success(t('common.success'))
     await fetchProbeConfig()
+    notifyCfipRefresh()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
   }
@@ -524,6 +543,7 @@ async function saveChainConfig() {
     await client.put('/cfip/chain-probe-config', chainCfg.value)
     ElMessage.success(t('common.success'))
     await fetchChainConfig()
+    notifyCfipRefresh()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
   }
@@ -560,6 +580,8 @@ async function checkChain(kind) {
       ElMessage.success(`${t('service.cfip.chainHealthy')} ${summary.healthy || 0}`)
     }
     await fetchChainConfig()
+    // 链路探测会回写池条目健康度：通知同页的其它探测实例与池列表一起刷新。
+    notifyCfipRefresh()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
   } finally {
@@ -585,8 +607,23 @@ function formatBytes(n) {
   return `${val.toFixed(i ? 1 : 0)} ${units[i]}`
 }
 
+// 自动刷新：定时探测/其它实例跑完检测后，本页结果无需 F5 即可更新。
+// form=false 保证自动刷新只更新结果与候选，不覆盖正在编辑的表单。
+useAutoRefresh(
+  async () => {
+    await Promise.all([
+      fetchProbeConfig({ form: false }),
+      fetchChainConfig({ form: false }),
+    ])
+  },
+  {
+    interval: 30000,
+    events: [CFIP_REFRESH_EVENT],
+    isBusy: () => dialerInstallVisible.value || chainChecking.value.domain || chainChecking.value.ip,
+  },
+)
+
 onMounted(() => {
-  fetchProbeConfig()
   fetchProbeConfig()
   fetchChainConfig()
 })

@@ -70,20 +70,11 @@ func (h *ProbeHandler) cdnProbeInboundValues(ctx context.Context) map[string]boo
 }
 
 // externalNodeIsCDN 判断外部节点是否配置了 CDN 接入（优选 IP/域名）。
-// 只看 access_domain 里的 cfDomain/cfIP：custom/direct 不是 CDN 入口。
+// 只看访问域名类型是否为 cf_*：custom/direct 不是 CDN 入口；cf_* 未指定具体
+// 域名/IP 时表示「从池里随机取」，同样算 CDN 入口。
 func externalNodeIsCDN(n *entity.ExternalNode) bool {
-	ad := n.LoadAccessDomain()
-	if len(ad) == 0 {
-		return false
-	}
-	return adFieldString(ad, "cfDomain") != "" || adFieldString(ad, "cfIP") != ""
-}
-
-func adFieldString(ad map[string]interface{}, key string) string {
-	if v, ok := ad[key].(string); ok {
-		return strings.TrimSpace(v)
-	}
-	return ""
+	_, ok := n.CDNAccessDomain()
+	return ok
 }
 
 // GetConfig 返回探活配置 + 可选入口节点 + 当前已安装的拨号核心。
@@ -103,7 +94,8 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 	}
 	nodes := make([]nodeItem, 0, 32)
 	// 优选探测的入口只列「配置了 CDN 接入（优选 IP/域名）」的项：
-	//   - 外部节点：access_domain 里选了 cfDomain/cfIP；
+	//   - 外部节点：access_domain 启用且 type 为 cf_domain/cf_ip（未指定具体值
+	//     = 从池里随机取，同样算 CDN 入口）；
 	//   - 节点侧入站：_accessDomain.type 为 cf_domain/cf_ip（链路探针入站同一集合）。
 	// 直连域名/自定义域名的入口当模板会把 server 换成 CDN 条目，语义不对。
 	cdnInbounds := h.cdnProbeInboundValues(ctx)

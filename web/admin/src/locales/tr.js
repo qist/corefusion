@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Alan adları ve IP’ler ayrı ayrı test edilip kaydedilir; birbirlerini etkilemez.",
       "chainInbound": "Sonda girişi",
       "chainInboundPlaceholder": "El sıkışma için kullanılan giriş",
-      "chainInboundHint": "Tüm CDN alan adları/IP'leri bu tek giriş üzerinden test edilir; CDN erişim alan adı olmayan girişler listelenmez.",
+      "chainInboundHint": "Tüm CDN alan adları/IP'leri bu tek giriş üzerinden test edilir; yalnızca içe aktarılan harici düğümler ve CDN erişim alan adı olan girişler listelenir.",
       "chainNeedInbound": "Önce bir sonda girişi seçin",
       "chainDependsProbe": "Yukarıdaki sonda ayarlarına bağlı",
       "chainProbeInterval": "Aralık",

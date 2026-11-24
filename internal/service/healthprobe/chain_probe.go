@@ -66,9 +66,10 @@ type ChainConfig struct {
 	//   "inb:<id>"  = 自建节点上的入站（inbound_configs）
 	//   ""          = 本机直连（不推荐：国内主机直连 CDN 不代表客户端线路）
 	Exit string `json:"exit"`
-	// Inbound 是「探针入站」标识（"inb:<id>"）：一轮探测只用它完成协议握手，
-	// 把全部启用的 CDN 域名/IP 逐个测一遍。必须显式选择，不再随机挑：
-	// 随机会导致同一批条目每轮用不同入站，结果无法横向比较。
+	// Inbound 是「探针入站」标识（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）：
+	// 一轮探测只用它完成协议握手，把全部启用的 CDN 域名/IP 逐个测一遍。
+	// 必须显式选择，不再随机挑：随机会导致同一批条目每轮用不同入口，
+	// 结果无法横向比较。
 	Inbound string `json:"inbound"`
 	// Concurrency 是同时探测的目标数（1-8）。临时核心只起一个，
 	// 并发太高只会让加密/握手抢占 CPU，默认 2。
@@ -157,9 +158,10 @@ type ChainSummary struct {
 	Results    []ChainResult `json:"results"`
 }
 
-// ChainProbeInbound 是「探针入站」候选（配了 CDN 接入域名的启用入站）。
+// ChainProbeInbound 是「探针入站」候选（配了 CDN 接入域名的启用入口：
+// 自建节点入站或外部导入节点）。
 type ChainProbeInbound struct {
-	Value        string `json:"value"`         // "inb:<id>"
+	Value        string `json:"value"`         // "inb:<id>" / "ext:<id>"
 	Label        string `json:"label"`         // 节点 / 协议:端口
 	Protocol     string `json:"protocol"`      //
 	Host         string `json:"host"`          // 节点名
@@ -171,7 +173,7 @@ type ChainProbeInbound struct {
 // 放在接口里是为了让探测服务不反向依赖 HTTP handler 包。
 type ChainTargetProvider interface {
 	// ChainProbeTargets 返回全部启用的 CDN 域名/IP 目标，并用 probeSpec 指定的
-	// 入站（"inb:<id>"）渲染成客户端出站参数。
+	// 入口（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）渲染成客户端出站参数。
 	ChainProbeTargets(ctx context.Context, probeSpec string) ([]ChainTarget, error)
 	// ChainProbeInbounds 返回可作为探针入站的候选。
 	ChainProbeInbounds(ctx context.Context) ([]ChainProbeInbound, error)

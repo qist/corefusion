@@ -38,6 +38,11 @@ type chainProbeEntry struct {
 }
 
 // chainProbeInbound 是「探针入站」：一轮只用它完成协议握手。
+//
+// 两个来源：
+//   - 自建节点入站：cfg/view 非空，按订阅渲染同款逻辑生成客户端出站；
+//   - 外部导入节点：ext/proxy 非空，proxy 是导入的完整客户端出站参数，
+//     每个目标只替换 server/port（与订阅渲染外部节点的语义一致）。
 type chainProbeInbound struct {
 	cfg         *entity.InboundConfig
 	view        map[string]interface{}
@@ -45,9 +50,35 @@ type chainProbeInbound struct {
 	adType      string
 	nodeName    string
 	displayName string
+	// 外部导入节点作为探针入站时使用。
+	ext   *entity.ExternalNode
+	proxy map[string]interface{}
+}
+
+func (p chainProbeInbound) protocol() string {
+	if p.cfg != nil {
+		return p.cfg.Protocol
+	}
+	if p.ext != nil {
+		return p.ext.Protocol
+	}
+	return ""
+}
+
+func (p chainProbeInbound) value() string {
+	if p.ext != nil {
+		return fmt.Sprintf("ext:%d", p.ext.ID)
+	}
+	if p.cfg != nil {
+		return fmt.Sprintf("inb:%d", p.cfg.ID)
+	}
+	return ""
 }
 
 func (p chainProbeInbound) label() string {
+	if p.cfg == nil {
+		return fmt.Sprintf("%s (%s)", p.displayName, p.protocol())
+	}
 	node := p.nodeName
 	if node == "" {
 		node = fmt.Sprintf("节点 %d", p.cfg.ServerID)
@@ -56,16 +87,16 @@ func (p chainProbeInbound) label() string {
 }
 
 // ChainProbeInbounds 返回可作为「探针入站」的候选：启用的、接入域名类型为
-// cf_domain / cf_ip 的入站。关闭 CDN（enabled=false）或直连（direct / custom）
-// 的入站不参与探测。
+// cf_domain / cf_ip 的入站，以及同样配了 CDN 接入的外部导入节点。
+// 关闭 CDN（enabled=false）或直连（direct / custom）的入口不参与探测。
 func (h *PublicHandler) ChainProbeInbounds(ctx context.Context) ([]healthprobe.ChainProbeInbound, error) {
 	probes := h.chainProbeInbounds(ctx)
 	out := make([]healthprobe.ChainProbeInbound, 0, len(probes))
 	for _, p := range probes {
 		out = append(out, healthprobe.ChainProbeInbound{
-			Value:        fmt.Sprintf("inb:%d", p.cfg.ID),
+			Value:        p.value(),
 			Label:        p.label(),
-			Protocol:     p.cfg.Protocol,
+			Protocol:     p.protocol(),
 			Host:         p.nodeName,
 			AccessType:   p.adType,
 			AccessDomain: chainProbeAccessDomainValue(p.ad, p.adType),
@@ -75,7 +106,7 @@ func (h *PublicHandler) ChainProbeInbounds(ctx context.Context) ([]healthprobe.C
 }
 
 // ChainProbeTargets 返回「全部启用的 CDN 域名/IP」条目，并用 probeSpec 指定的
-// 入站（"inb:<id>"）渲染成客户端出站参数。
+// 入口（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）渲染成客户端出站参数。
 //
 // 口径：一轮固定用这一个入站完成握手，把 CDN 池里的条目逐个测一遍（不限于
 // Cloudflare：池里 cf_domain 类型可以放任何 CDN 的域名；cf_ip 是优选 IP）。
@@ -108,22 +139,36 @@ func (h *PublicHandler) ChainProbeTargets(ctx context.Context, probeSpec string)
 
 	out := make([]healthprobe.ChainTarget, 0, len(entries))
 	for _, e := range entries {
-		view := chainProbeTargetView(probe.view, e, tlsEntries)
-		pm, err := chainProbeProxyMap(view, probe.cfg, e.Host, e.Port)
+		var (
+			pm  map[string]interface{}
+			err error
+		)
+		if probe.ext != nil {
+			// 外部导入节点：proxy 已是完整客户端出站，只替换 CDN 条目的地址/端口。
+			pm = chainProbeExternalTargetProxy(probe, e)
+		} else {
+			view := chainProbeTargetView(probe.view, e, tlsEntries)
+			pm, err = chainProbeProxyMap(view, probe.cfg, e.Host, e.Port)
+		}
 		if err != nil || pm == nil {
 			continue
+		}
+		var probeInboundID, serverID int64
+		if probe.cfg != nil {
+			probeInboundID = probe.cfg.ID
+			serverID = probe.cfg.ServerID
 		}
 		out = append(out, healthprobe.ChainTarget{
 			Kind:           e.Kind,
 			EntryID:        e.EntryID,
 			PrevFail:       e.PrevFail,
 			Healthy:        e.Healthy,
-			ProbeInboundID: probe.cfg.ID,
-			InboundID:      probe.cfg.ID,
-			ServerID:       probe.cfg.ServerID,
+			ProbeInboundID: probeInboundID,
+			InboundID:      probeInboundID,
+			ServerID:       serverID,
 			NodeName:       probe.nodeName,
 			Name:           probe.displayName,
-			Protocol:       probe.cfg.Protocol,
+			Protocol:       probe.protocol(),
 			Host:           e.Host,
 			Port:           e.Port,
 			Proxy:          pm,
@@ -174,6 +219,27 @@ func chainProbeTargetView(probeView map[string]interface{}, e chainProbeEntry, t
 	return view
 }
 
+// chainProbeExternalTargetProxy 用外部导入节点生成某个 CDN 目标的客户端出站。
+//
+// 与订阅渲染外部节点的语义一致：proxy_json 是用户导入的完整配置
+// （SNI / Host / 指纹 / path / early-data 都在里面），只替换 server/port，
+// 不改写任何 TLS 字段 —— 改写 SNI 会让 CDN 回源直接失败。
+func chainProbeExternalTargetProxy(probe *chainProbeInbound, e chainProbeEntry) map[string]interface{} {
+	if probe == nil || len(probe.proxy) == 0 {
+		return nil
+	}
+	pm := cloneProxyMap(probe.proxy)
+	if pm == nil {
+		return nil
+	}
+	pm["server"] = e.Host
+	pm["port"] = float64(e.Port)
+	if probe.displayName != "" {
+		pm["name"] = probe.displayName
+	}
+	return pm
+}
+
 // ensureTargetSNI 给「TLS 但 serverName 为空」的目标补上入站自己的接入 SNI。
 //
 // cf_ip 条目的 host 是 IP，入站又常是 nginx 前置的明文（security=none）：
@@ -207,26 +273,39 @@ func ensureTargetSNI(view map[string]interface{}) {
 	}
 }
 
-// pickChainProbeInbound 按 "inb:<id>" 选中探针入站。
+// pickChainProbeInbound 按 "inb:<id>"（自建入站）或 "ext:<id>"（外部导入节点）
+// 选中探针入站。
 func pickChainProbeInbound(probes []chainProbeInbound, spec string) (*chainProbeInbound, error) {
-	if !strings.HasPrefix(spec, "inb:") {
+	var (
+		id  int64
+		err error
+	)
+	switch {
+	case strings.HasPrefix(spec, "inb:"):
+		id, err = strconv.ParseInt(strings.TrimPrefix(spec, "inb:"), 10, 64)
+	case strings.HasPrefix(spec, "ext:"):
+		id, err = strconv.ParseInt(strings.TrimPrefix(spec, "ext:"), 10, 64)
+	default:
 		return nil, fmt.Errorf("invalid probe inbound spec: %s", spec)
 	}
-	id, err := strconv.ParseInt(strings.TrimPrefix(spec, "inb:"), 10, 64)
 	if err != nil || id <= 0 {
 		return nil, fmt.Errorf("invalid probe inbound spec: %s", spec)
 	}
 	for i := range probes {
-		if probes[i].cfg.ID == id {
+		if probes[i].cfg != nil && probes[i].cfg.ID == id && strings.HasPrefix(spec, "inb:") {
+			return &probes[i], nil
+		}
+		if probes[i].ext != nil && probes[i].ext.ID == id && strings.HasPrefix(spec, "ext:") {
 			return &probes[i], nil
 		}
 	}
 	return nil, fmt.Errorf("probe inbound %s not found or has no CDN domain enabled", spec)
 }
 
-// chainProbeInbounds 收集所有「启用 + 接入域名开启且走 CDN」的入站。
+// chainProbeInbounds 收集所有「启用 + 接入域名开启且走 CDN」的入口：
+// 自建节点入站，以及配了同样 CDN 接入的外部导入节点。
 // 只认 cf_domain / cf_ip：direct（直连域名）和 custom（各节点自己的域名）
-// 的入口和域名各不相同，不能拿一条入站的凭据代表它们，必须排除。
+// 的入口和域名各不相同，不能拿一条入口的凭据代表它们，必须排除。
 func (h *PublicHandler) chainProbeInbounds(ctx context.Context) []chainProbeInbound {
 	if h.inboundRepo == nil {
 		return nil
@@ -269,6 +348,37 @@ func (h *PublicHandler) chainProbeInbounds(ctx context.Context) []chainProbeInbo
 				cfg: cfg, view: view, ad: ad, adType: adType,
 				nodeName: nodeName, displayName: nodeDisplayName(cfg.Remark, cfg.Tag),
 			})
+		}
+	}
+
+	// 外部导入节点：访问域名启用且类型为 cf_* 时同样可以作为探针入站。
+	// 与订阅渲染外部节点的语义一致：proxy_json 已是完整客户端出站，
+	// 每个目标只替换 server/port，不改写 SNI/Host 等 TLS 字段。
+	if h.extNodeRepo != nil {
+		nodes, err := h.extNodeRepo.ListAll(ctx)
+		if err == nil {
+			for i := range nodes {
+				node := &nodes[i]
+				if !node.Enabled || strings.TrimSpace(node.ProxyJSON) == "" {
+					continue
+				}
+				adType, ok := node.CDNAccessDomain()
+				if !ok {
+					continue
+				}
+				var pm map[string]interface{}
+				if json.Unmarshal([]byte(node.ProxyJSON), &pm) != nil || len(pm) == 0 {
+					continue
+				}
+				name := strings.TrimSpace(node.Name)
+				if name == "" {
+					name = node.Host
+				}
+				out = append(out, chainProbeInbound{
+					ad: node.LoadAccessDomain(), adType: adType,
+					displayName: name, ext: node, proxy: pm,
+				})
+			}
 		}
 	}
 	return out

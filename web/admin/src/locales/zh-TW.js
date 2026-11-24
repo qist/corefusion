@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "網域與 IP 分開檢測、分別儲存結果，互不佔用名額、互不覆蓋資料。",
       "chainInbound": "探針入站",
       "chainInboundPlaceholder": "選擇用於握手的入站",
-      "chainInboundHint": "所有 CDN 網域/IP 都用這一個入站完成握手；沒配 CDN 接入網域的入站不會出現在這裡。",
+      "chainInboundHint": "所有 CDN 網域/IP 都用這一個入口完成握手；外部匯入節點與自建入站中，只有配了 CDN 接入網域的才會出現在這裡。",
       "chainNeedInbound": "請先選擇探針入站",
       "chainDependsProbe": "依賴上方「探測設定」",
       "chainProbeInterval": "探測間隔",

@@ -1927,7 +1927,7 @@ export default {
       chainSplitHint: 'Domains and IPs are probed and stored separately, so one never overwrites or crowds out the other.',
       'chainInbound': 'Probe inbound',
       'chainInboundPlaceholder': 'Inbound used for the handshake',
-      'chainInboundHint': 'All CDN domains/IPs are probed through this single inbound; inbounds without a CDN access domain are not listed.',
+      'chainInboundHint': 'All CDN domains/IPs are probed through this single entry; only imported external nodes and self-hosted inbounds with a CDN access domain are listed.',
       'chainNeedInbound': 'Select a probe inbound first',
       'chainDependsProbe': 'Follows the probe settings above',
       'chainProbeInterval': 'Interval',

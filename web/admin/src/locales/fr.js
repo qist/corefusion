@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Les domaines et les IP sont testés et enregistrés séparément, sans se chevaucher.",
       "chainInbound": "Entrée sonde",
       "chainInboundPlaceholder": "Entrée utilisée pour la poignée de main",
-      "chainInboundHint": "Tous les domaines/IP CDN sont testés via cette seule entrée ; les entrées sans domaine d'accès CDN ne sont pas listées.",
+      "chainInboundHint": "Tous les domaines/IP CDN sont testés via cette seule entrée ; seuls les nœuds externes importés et les entrées avec domaine d'accès CDN sont listés.",
       "chainNeedInbound": "Choisissez d'abord une entrée sonde",
       "chainDependsProbe": "Dépend des paramètres de sonde ci-dessus",
       "chainProbeInterval": "Intervalle",

@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "ドメインと IP は別々にテスト・保存されるため、互いに影響しません。",
       "chainInbound": "探針インバウンド",
       "chainInboundPlaceholder": "ハンドシェイクに使うインバウンド",
-      "chainInboundHint": "すべての CDN ドメイン/IP をこの 1 つのインバウンドで検査します。CDN 接続ドメインのないインバウンドは表示されません。",
+      "chainInboundHint": "すべての CDN ドメイン/IP をこの 1 つの入口で検査します。外部取り込みノードと CDN 接続ドメインのあるインバウンドのみ表示されます。",
       "chainNeedInbound": "先に探針インバウンドを選択してください",
       "chainDependsProbe": "上の「探針設定」に依存",
       "chainProbeInterval": "間隔",

@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Domains und IPs werden getrennt getestet und gespeichert, ohne sich gegenseitig zu beeinflussen.",
       "chainInbound": "Probe-Inbound",
       "chainInboundPlaceholder": "Inbound für den Handshake",
-      "chainInboundHint": "Alle CDN-Domains/-IPs werden über diesen einen Inbound geprüft; Inbounds ohne CDN-Zugriffsdomain erscheinen nicht.",
+      "chainInboundHint": "Alle CDN-Domains/-IPs werden über diesen einen Eingang geprüft; hier erscheinen nur importierte externe Knoten und Inbounds mit CDN-Zugriffsdomain.",
       "chainNeedInbound": "Zuerst einen Probe-Inbound wählen",
       "chainDependsProbe": "Abhängig von den Probe-Einstellungen oben",
       "chainProbeInterval": "Intervall",

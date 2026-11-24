@@ -1927,7 +1927,7 @@ export default {
       chainSplitHint: '域名与 IP 分开检测、分别保存结果，互不占用名额、互不覆盖数据。',
       'chainInbound': '探针入站',
       'chainInboundPlaceholder': '选择用于握手的入站',
-      'chainInboundHint': '所有 CDN 域名/IP 都用这一个入站完成握手；没配 CDN 接入域名的入站不会出现在这里。',
+      'chainInboundHint': '所有 CDN 域名/IP 都用这一个入口完成握手；外部导入节点与自建入站中，只有配了 CDN 接入域名的才会出现在这里。',
       'chainNeedInbound': '请先选择探针入站',
       'chainDependsProbe': '依赖上方「探测设置」',
       'chainProbeInterval': '探测间隔',

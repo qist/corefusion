@@ -93,17 +93,60 @@ func TestPickChainProbeInbound(t *testing.T) {
 	mk := func(id int64) chainProbeInbound {
 		return chainProbeInbound{cfg: &entity.InboundConfig{ID: id, Protocol: "vless", Port: 443}}
 	}
-	probes := []chainProbeInbound{mk(3), mk(7)}
+	mkExt := func(id int64) chainProbeInbound {
+		return chainProbeInbound{ext: &entity.ExternalNode{ID: id, Protocol: "trojan"}}
+	}
+	probes := []chainProbeInbound{mk(3), mk(7), mkExt(1)}
 
 	got, err := pickChainProbeInbound(probes, "inb:7")
 	if err != nil || got == nil || got.cfg.ID != 7 {
 		t.Fatalf("应按 id 命中入站: got=%#v err=%v", got, err)
 	}
+	got, err = pickChainProbeInbound(probes, "ext:1")
+	if err != nil || got == nil || got.ext.ID != 1 {
+		t.Fatalf("应按 id 命中外部导入节点: got=%#v err=%v", got, err)
+	}
 	if _, err := pickChainProbeInbound(probes, "inb:9"); err == nil {
 		t.Fatal("不存在的探针入站应报错")
 	}
-	if _, err := pickChainProbeInbound(probes, "ext:1"); err == nil {
-		t.Fatal("非 inb: 前缀应报错")
+	if _, err := pickChainProbeInbound(probes, "ext:9"); err == nil {
+		t.Fatal("不存在的外部探针入站应报错")
+	}
+	if _, err := pickChainProbeInbound(probes, "xxx:1"); err == nil {
+		t.Fatal("未知前缀应报错")
+	}
+}
+
+// 外部导入节点当探针入站时只替换 server/port：导入的 SNI/Host/指纹必须保持原样，
+// 改写会让 CDN 回源失败（与订阅渲染外部节点的语义一致）。
+func TestChainProbeExternalTargetProxy(t *testing.T) {
+	probe := &chainProbeInbound{
+		displayName: "ext-node",
+		proxy: map[string]interface{}{
+			"name":             "imported",
+			"type":             "trojan",
+			"server":           "origin.example.com",
+			"port":             float64(8443),
+			"sni":              "origin.example.com",
+			"skip-cert-verify": false,
+		},
+	}
+	got := chainProbeExternalTargetProxy(probe, chainProbeEntry{Kind: "cf_ip", Host: "104.16.1.1", Port: 2053})
+	if got == nil {
+		t.Fatal("应生成目标出站")
+	}
+	if got["server"] != "104.16.1.1" || got["port"] != float64(2053) {
+		t.Fatalf("server/port 未替换：%#v", got)
+	}
+	if got["sni"] != "origin.example.com" {
+		t.Fatalf("SNI 不应被改写：%#v", got)
+	}
+	if got["name"] != "ext-node" {
+		t.Fatalf("name = %v", got["name"])
+	}
+	// 原 proxy 不能被就地修改：同一轮里每个目标都从它复制。
+	if probe.proxy["server"] != "origin.example.com" {
+		t.Fatalf("原始 proxy 被改写：%#v", probe.proxy)
 	}
 }
 

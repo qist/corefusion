@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "도메인과 IP는 별도로 테스트·저장되어 서로 영향을 주지 않습니다.",
       "chainInbound": "프로브 인바운드",
       "chainInboundPlaceholder": "핸드셰이크에 사용할 인바운드",
-      "chainInboundHint": "모든 CDN 도메인/IP를 이 하나의 인바운드로 검사합니다. CDN 접속 도메인이 없는 인바운드는 표시되지 않습니다.",
+      "chainInboundHint": "모든 CDN 도메인/IP를 이 하나의 진입점으로 검사합니다. 가져온 외부 노드와 CDN 접속 도메인이 있는 인바운드만 표시됩니다.",
       "chainNeedInbound": "먼저 프로브 인바운드를 선택하세요",
       "chainDependsProbe": "위 \"프로브 설정\"을 따름",
       "chainProbeInterval": "간격",

@@ -2,6 +2,7 @@ package entity
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -58,6 +59,35 @@ func (n *ExternalNode) LoadAccessDomain() map[string]interface{} {
 		return nil
 	}
 	return ad
+}
+
+// CDNAccessDomain 返回外部节点「访问域名」里配置的 CDN 入口类型（cf_domain / cf_ip）。
+//
+// 判定口径：访问域名已启用且类型是 cf_* 即算 CDN 入口 —— cf 池是全局的，
+// 未指定具体域名/IP 时按设计从池里随机取，所以**不能**要求 cfDomain/cfIP 非空，
+// 否则「随机域名 / 随机 IP」的节点会被漏掉。
+// 兼容早期没有 type 字段的数据：有显式 cfDomain/cfIP 时按填写值判断。
+func (n *ExternalNode) CDNAccessDomain() (string, bool) {
+	ad := n.LoadAccessDomain()
+	if len(ad) == 0 {
+		return "", false
+	}
+	if enabled, _ := ad["enabled"].(bool); !enabled {
+		return "", false
+	}
+	adType, _ := ad["type"].(string)
+	switch strings.TrimSpace(adType) {
+	case "cf_domain", "cf_ip":
+		return strings.TrimSpace(adType), true
+	case "":
+		if v, _ := ad["cfIP"].(string); strings.TrimSpace(v) != "" {
+			return "cf_ip", true
+		}
+		if v, _ := ad["cfDomain"].(string); strings.TrimSpace(v) != "" {
+			return "cf_domain", true
+		}
+	}
+	return "", false
 }
 
 // SetAccessDomain 把访问域名对象序列化进 AccessDomainJSON；nil/空对象表示不启用。

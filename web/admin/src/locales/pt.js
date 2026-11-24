@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Domínios e IPs são testados e salvos separadamente, sem interferência entre eles.",
       "chainInbound": "Entrada sonda",
       "chainInboundPlaceholder": "Entrada usada para o handshake",
-      "chainInboundHint": "Todos os domínios/IP de CDN são testados por esta única entrada; entradas sem domínio de acesso CDN não aparecem.",
+      "chainInboundHint": "Todos os domínios/IP de CDN são testados por esta única entrada; apenas nós externos importados e entradas com domínio de acesso CDN aparecem.",
       "chainNeedInbound": "Escolha primeiro uma entrada sonda",
       "chainDependsProbe": "Depende das configurações de sonda acima",
       "chainProbeInterval": "Intervalo",

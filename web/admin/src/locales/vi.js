@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Tên miền và IP được kiểm tra, lưu riêng biệt nên không ảnh hưởng lẫn nhau.",
       "chainInbound": "Inbound thăm dò",
       "chainInboundPlaceholder": "Inbound dùng để bắt tay",
-      "chainInboundHint": "Mọi tên miền/IP CDN đều được kiểm tra qua inbound này; inbound không có tên miền truy cập CDN sẽ không hiển thị.",
+      "chainInboundHint": "Mọi tên miền/IP CDN đều được kiểm tra qua một đầu vào này; chỉ node bên ngoài đã nhập và inbound có tên miền truy cập CDN mới hiển thị.",
       "chainNeedInbound": "Hãy chọn inbound thăm dò trước",
       "chainDependsProbe": "Theo cài đặt thăm dò ở trên",
       "chainProbeInterval": "Khoảng thời gian",

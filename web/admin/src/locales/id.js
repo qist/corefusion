@@ -1910,7 +1910,7 @@ export default {
       "chainSplitHint": "Domain dan IP diuji serta disimpan terpisah, sehingga tidak saling memengaruhi.",
       "chainInbound": "Inbound probe",
       "chainInboundPlaceholder": "Inbound untuk handshake",
-      "chainInboundHint": "Semua domain/IP CDN diuji melalui satu inbound ini; inbound tanpa domain akses CDN tidak ditampilkan.",
+      "chainInboundHint": "Semua domain/IP CDN diuji melalui satu entri ini; hanya node eksternal yang diimpor dan inbound dengan domain akses CDN yang ditampilkan.",
       "chainNeedInbound": "Pilih inbound probe terlebih dahulu",
       "chainDependsProbe": "Mengikuti pengaturan probe di atas",
       "chainProbeInterval": "Interval",

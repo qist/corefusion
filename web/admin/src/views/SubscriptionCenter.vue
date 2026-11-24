@@ -311,7 +311,11 @@
           <el-option-group label="IP">
             <el-option label="IP-CIDR" value="IP-CIDR" /><el-option label="IP-CIDR6" value="IP-CIDR6" />
             <el-option label="IP-ASN" value="IP-ASN" /><el-option label="GEOIP" value="GEOIP" />
-            <el-option label="GEOSITE" value="GEOSITE" />
+            <el-option label="GEOSITE" value="GEOSITE" /><el-option label="IP-SUFFIX" value="IP-SUFFIX" />
+          </el-option-group>
+          <el-option-group :label="t('subfmt.groupSrcIP')">
+            <el-option label="SRC-IP-CIDR" value="SRC-IP-CIDR" /><el-option label="SRC-IP-SUFFIX" value="SRC-IP-SUFFIX" />
+            <el-option label="SRC-IP-ASN" value="SRC-IP-ASN" /><el-option label="SRC-GEOIP" value="SRC-GEOIP" />
           </el-option-group>
           <el-option-group :label="t('subfmt.groupRuleSet')">
             <el-option label="RULE-SET" value="RULE-SET" />
@@ -320,17 +324,32 @@
             <el-option label="DST-PORT" value="DST-PORT" /><el-option label="SRC-PORT" value="SRC-PORT" />
             <el-option label="NETWORK" value="NETWORK" />
           </el-option-group>
+          <el-option-group :label="t('subfmt.groupInbound')">
+            <el-option label="IN-PORT" value="IN-PORT" /><el-option label="IN-TYPE" value="IN-TYPE" />
+            <el-option label="IN-USER" value="IN-USER" /><el-option label="IN-NAME" value="IN-NAME" />
+            <el-option label="REMATCH-NAME" value="REMATCH-NAME" />
+          </el-option-group>
           <el-option-group :label="t('subfmt.groupProcess')">
             <el-option label="PROCESS-NAME" value="PROCESS-NAME" /><el-option label="PROCESS-PATH" value="PROCESS-PATH" />
+            <el-option label="PROCESS-NAME-WILDCARD" value="PROCESS-NAME-WILDCARD" /><el-option label="PROCESS-NAME-REGEX" value="PROCESS-NAME-REGEX" />
+            <el-option label="PROCESS-PATH-WILDCARD" value="PROCESS-PATH-WILDCARD" /><el-option label="PROCESS-PATH-REGEX" value="PROCESS-PATH-REGEX" />
+          </el-option-group>
+          <el-option-group :label="t('subfmt.groupUser')">
+            <el-option label="UID" value="UID" /><el-option label="DSCP" value="DSCP" />
           </el-option-group>
           <el-option-group :label="t('subfmt.groupLogic')">
+            <!-- mihomo 逻辑规则：AND/OR/NOT 的子条件要写成 ((TYPE,val),(TYPE,val))，
+                 SUB-RULE 的条件写 (NETWORK,tcp)，第三列填子规则组名。条件整体放在 match_value 里。 -->
+            <el-option label="AND" value="AND" /><el-option label="OR" value="OR" />
+            <el-option label="NOT" value="NOT" /><el-option label="SUB-RULE" value="SUB-RULE" />
             <el-option label="MATCH" value="MATCH" />
           </el-option-group>
         </el-select>
         <el-select v-if="newRuleType==='RULE-SET'" v-model="newRuleProvider" size="small" filterable style="width:150px" :placeholder="t('subfmt.selectRuleProvider')">
           <el-option v-for="(_, name) in ruleProviders" :key="name" :label="name" :value="name" />
         </el-select>
-        <el-input v-if="newRuleType!=='RULE-SET'" v-model="newRuleValue" size="small" placeholder="cn, private" style="width:130px" />
+        <el-input v-if="newRuleType!=='RULE-SET'" v-model="newRuleValue" size="small"
+          :placeholder="ruleValuePlaceholder(newRuleType)" style="width:130px" />
         <el-select v-model="newRuleOutbound" size="small" allow-create filterable style="width:140px">
           <el-option v-for="tag in outboundTagOptions" :key="tag" :label="tag" :value="tag" />
         </el-select>
@@ -373,7 +392,11 @@
             <el-option-group label="IP">
               <el-option label="IP-CIDR" value="IP-CIDR" /><el-option label="IP-CIDR6" value="IP-CIDR6" />
               <el-option label="IP-ASN" value="IP-ASN" /><el-option label="GEOIP" value="GEOIP" />
-              <el-option label="GEOSITE" value="GEOSITE" />
+              <el-option label="GEOSITE" value="GEOSITE" /><el-option label="IP-SUFFIX" value="IP-SUFFIX" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupSrcIP')">
+              <el-option label="SRC-IP-CIDR" value="SRC-IP-CIDR" /><el-option label="SRC-IP-SUFFIX" value="SRC-IP-SUFFIX" />
+              <el-option label="SRC-IP-ASN" value="SRC-IP-ASN" /><el-option label="SRC-GEOIP" value="SRC-GEOIP" />
             </el-option-group>
             <el-option-group :label="t('subfmt.groupRuleSet')">
               <el-option label="RULE-SET" value="RULE-SET" />
@@ -382,10 +405,24 @@
               <el-option label="DST-PORT" value="DST-PORT" /><el-option label="SRC-PORT" value="SRC-PORT" />
               <el-option label="NETWORK" value="NETWORK" />
             </el-option-group>
+            <el-option-group :label="t('subfmt.groupInbound')">
+              <el-option label="IN-PORT" value="IN-PORT" /><el-option label="IN-TYPE" value="IN-TYPE" />
+              <el-option label="IN-USER" value="IN-USER" /><el-option label="IN-NAME" value="IN-NAME" />
+              <el-option label="REMATCH-NAME" value="REMATCH-NAME" />
+            </el-option-group>
             <el-option-group :label="t('subfmt.groupProcess')">
               <el-option label="PROCESS-NAME" value="PROCESS-NAME" /><el-option label="PROCESS-PATH" value="PROCESS-PATH" />
+              <el-option label="PROCESS-NAME-WILDCARD" value="PROCESS-NAME-WILDCARD" /><el-option label="PROCESS-NAME-REGEX" value="PROCESS-NAME-REGEX" />
+              <el-option label="PROCESS-PATH-WILDCARD" value="PROCESS-PATH-WILDCARD" /><el-option label="PROCESS-PATH-REGEX" value="PROCESS-PATH-REGEX" />
+            </el-option-group>
+            <el-option-group :label="t('subfmt.groupUser')">
+              <el-option label="UID" value="UID" /><el-option label="DSCP" value="DSCP" />
             </el-option-group>
             <el-option-group :label="t('subfmt.groupLogic')">
+              <!-- mihomo 逻辑规则：AND/OR/NOT 的子条件要写成 ((TYPE,val),(TYPE,val))，
+                   SUB-RULE 的条件写 (NETWORK,tcp)，第三列填子规则组名。条件整体放在 match_value 里。 -->
+              <el-option label="AND" value="AND" /><el-option label="OR" value="OR" />
+              <el-option label="NOT" value="NOT" /><el-option label="SUB-RULE" value="SUB-RULE" />
               <el-option label="MATCH" value="MATCH" />
             </el-option-group>
           </el-select>
@@ -396,14 +433,17 @@
           </el-select>
         </el-form-item>
         <el-form-item v-else-if="ruleEditForm.rule_type !== 'MATCH'" :label="t('subfmt.matchValue')">
-          <el-input v-model="ruleEditForm.match_value" placeholder="cn, private" />
+          <el-input v-model="ruleEditForm.match_value" :placeholder="ruleValuePlaceholder(ruleEditForm.rule_type)" />
+          <div v-if="isLogicalRule(ruleEditForm.rule_type)" class="hint" style="margin-top:4px">
+            {{ t('subfmt.logicalRuleHint') }}
+          </div>
         </el-form-item>
         <el-form-item :label="t('subfmt.outboundTag')">
           <el-select v-model="ruleEditForm.outbound_tag" allow-create filterable style="width:100%">
             <el-option v-for="tag in outboundTagOptions" :key="tag" :label="tag" :value="tag" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ruleEditForm.rule_type !== 'MATCH'" :label="t('subfmt.ruleAction')">
+        <el-form-item v-if="ruleEditForm.rule_type !== 'MATCH' && !isLogicalRule(ruleEditForm.rule_type)" :label="t('subfmt.ruleAction')">
           <el-input v-model="ruleEditForm.rule_action" placeholder="no-resolve" />
         </el-form-item>
       </el-form>
@@ -733,6 +773,18 @@ function parseRuleString(rule, index) {
     enabled: true
   }
 }
+
+// mihomo 逻辑规则：AND/OR/NOT 的子条件是嵌套的 ((TYPE,val),(TYPE,val))，
+// SUB-RULE 引用另一个规则组。条件整体放在 match_value 里（buildRuleString 会原样拼接）。
+const LOGICAL_RULE_TYPES = ['AND', 'OR', 'NOT', 'SUB-RULE']
+function isLogicalRule(type) { return LOGICAL_RULE_TYPES.includes(type) }
+function ruleValuePlaceholder(type) {
+  if (type === 'SUB-RULE') return '(NETWORK,tcp)'
+  if (isLogicalRule(type)) return '((NETWORK,UDP),(DST-PORT,3478/19302))'
+  return 'cn, private'
+}
+// 逻辑规则的条件必须以括号包裹，否则 mihomo 整份配置解析失败。
+function validLogicalValue(v) { return /^\(.*\)$/.test(String(v || '').trim()) }
 
 function buildRuleString(rule) {
   // Build rule string from components
@@ -1718,6 +1770,10 @@ async function saveRuleEdit() {
     ElMessage.error(t('subfmt.matchValueRequired'))
     return
   }
+  if (isLogicalRule(form.rule_type) && !validLogicalValue(form.match_value)) {
+    ElMessage.error(t('subfmt.logicalRuleFormat'))
+    return
+  }
   savingRules.value = true
   try {
     const ruleString = buildRuleString({
@@ -1846,6 +1902,10 @@ async function addRule() {
     newRuleProvider.value = ''
   } else {
     if (!newRuleValue.value) return
+    if (isLogicalRule(newRuleType.value) && !validLogicalValue(newRuleValue.value)) {
+      ElMessage.error(t('subfmt.logicalRuleFormat'))
+      return
+    }
     const ruleString = `${newRuleType.value},${newRuleValue.value},${newRuleOutbound.value}`
     await client.post(`/mihomo/configs/${currentFormat.value.id}/rules`, { rule_string: ruleString })
     newRuleValue.value = ''

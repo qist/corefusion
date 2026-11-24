@@ -1516,7 +1516,8 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 
 				// Fallback upstream（SNI map 的 default：未知 SNI 的 TLS 流量）
-				// 优先级：设置里显式选择的「默认后端」> fallback 规则 > 127.0.0.1:8443。
+				// 优先级：设置里显式选择的「默认后端」> fallback 规则 > 本地 HTTPS 目标。
+				localFallback := sniLocalFallbackTarget(s.SNILocalPort, s.HTTPSListen)
 				var siteFallback string
 				var fallbackPP bool
 				for _, site := range portSites {
@@ -1526,18 +1527,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 							siteFallback = site.Upstream
 						}
 						if siteFallback == "" {
-							// 本地 HTTPS 端口：规则自身 local_port > 设置里的 sni_local_port > 8443。
-							// 不能跟随 https_listen —— 公网 443 归 stream，本地 HTTPS 是 8443。
-							localPort := strings.TrimSpace(site.LocalPort)
-							if localPort == "" {
-								if raw := strings.TrimSpace(s.SNILocalPort); raw != "" {
-									localPort = listenPortOnly(raw)
-								}
+							// 规则自身 local_port > 派生出的本地 HTTPS 目标。
+							if localPort := strings.TrimSpace(site.LocalPort); localPort != "" {
+								siteFallback = "127.0.0.1:" + listenPortOnly(localPort)
+							} else {
+								siteFallback = localFallback
 							}
-							if localPort == "" {
-								localPort = "8443"
-							}
-							siteFallback = fmt.Sprintf("127.0.0.1:%s", localPort)
 						}
 						fallbackPP = site.ProxyProtocol
 						break
@@ -1547,12 +1542,12 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				if fallbackTarget == "" {
 					fallbackTarget = siteFallback
 				}
-				// 自指兜底：fallback 指向本组 SNI 监听端口（通常是 127.0.0.1:443）
-				// 会让 stream 把流量转回自己 —— 连接直接死循环。历史版本在监听拆分
-				// 时把 fallback 写成了 https_listen(443)，这里按本地 HTTPS 端口纠正。
-				fallbackTarget = avoidSelfSNIFallback(fallbackTarget, port, s.SNILocalPort)
+				// 自指兜底：fallback 指到本组 SNI 监听 socket 自身会让 stream 把流量
+				// 转回自己（连接死循环）。这里只纠正「同一个 socket」；具体公网 IP
+				// 监听时，127.0.0.1:443 是本地 HTTPS，不受影响。
+				fallbackTarget = avoidSelfSNIFallback(fallbackTarget, port, localFallback)
 				if fallbackTarget == "" {
-					fallbackTarget = sniLocalFallbackTarget(s.SNILocalPort)
+					fallbackTarget = localFallback
 				}
 				if !streamUpstreamSeen[fallbackUpstream] {
 					streamUpstreamSeen[fallbackUpstream] = true
@@ -2011,34 +2006,48 @@ func listenPortOnly(listen string) string {
 	return listen
 }
 
-// sniLocalFallbackTarget 返回「本地 HTTPS」兜底目标：sni_local_port（默认 8443）。
-// 与公网 https_listen 无关 —— 启用 SNI 后公网端口归 stream 的 ssl_preread。
-func sniLocalFallbackTarget(sniLocalPort string) string {
-	v := strings.TrimSpace(sniLocalPort)
-	if v != "" {
+// sniLocalFallbackTarget 返回「本地 HTTPS」兜底目标（host:port）。三级优先级：
+//
+//  1. 显式配置的 sni_local_port（如 "8443" / "127.0.0.1:8443"）；
+//  2. https_listen 本身是回环地址时跟随它 —— 生产形态是「公网 443 归 stream，
+//     本地 HTTPS 站点监听 127.0.0.1:443」，此时 fallback 必须也是 127.0.0.1:443；
+//  3. 否则（https_listen 是 "443" / "0.0.0.0:443" 这类公网/通配）回退 127.0.0.1:8443。
+func sniLocalFallbackTarget(sniLocalPort, httpsListen string) string {
+	if v := strings.TrimSpace(sniLocalPort); v != "" {
 		if p := listenPortOnly(v); p != "" {
 			return "127.0.0.1:" + p
+		}
+	}
+	c := canonicalListenAddr(httpsListen)
+	if host, port, err := net.SplitHostPort(c); err == nil && port != "" {
+		h := strings.Trim(strings.ToLower(host), "[]")
+		switch h {
+		case "::1":
+			return "[::1]:" + port
+		case "127.0.0.1", "localhost":
+			return "127.0.0.1:" + port
 		}
 	}
 	return "127.0.0.1:8443"
 }
 
-// avoidSelfSNIFallback 把「fallback 指向本组 SNI 监听端口」的自指目标换成
+// avoidSelfSNIFallback 把「fallback 指向本组 SNI 监听 socket 本身」的目标换成
 // 本地 HTTPS 目标。多目标时逐项纠正并去重；全部为空时返回空串，由调用方兜底。
 //
-// 背景：SNI 分流把 443 上的 TLS 按域名转到后端，未知 SNI 走 default。若 default
-// 又指回 127.0.0.1:443，nginx 会把流量转给自己，形成连接死循环（表现为所有未知
-// SNI 请求挂住）。历史数据（监听拆分那次回归）确实被写成了 127.0.0.1:443。
-func avoidSelfSNIFallback(target, sniListen, sniLocalPort string) string {
+// 只有同一个 socket 才算自指：
+//   - SNI 监听是通配（"443" / "0.0.0.0:443" / "[::]:443"）→ 127.0.0.1:443 连的
+//     就是它自己，必须纠正；
+//   - SNI 监听是回环（127.0.0.1:443）→ 同回环同端口才纠正；
+//   - SNI 监听是**具体公网 IP**（23.254.233.185:443）→ 127.0.0.1:443 是另一个
+//     socket（本地 HTTPS 站点），完全合法，不能改（生产就是这个形态）。
+func avoidSelfSNIFallback(target, sniListen, localTarget string) string {
 	t := strings.TrimSpace(target)
 	if t == "" {
 		return ""
 	}
-	sniPort := listenPortOnly(canonicalListenAddr(sniListen))
-	if sniPort == "" {
-		sniPort = "443"
+	if strings.TrimSpace(localTarget) == "" {
+		localTarget = "127.0.0.1:8443"
 	}
-	local := sniLocalFallbackTarget(sniLocalPort)
 	seen := make(map[string]bool, 2)
 	out := make([]string, 0, 2)
 	for _, raw := range strings.Split(t, ",") {
@@ -2046,9 +2055,9 @@ func avoidSelfSNIFallback(target, sniListen, sniLocalPort string) string {
 		if up == "" {
 			continue
 		}
-		if isLoopbackPort(up, sniPort) {
-			log.Printf("[NginxConfig] SNI fallback 目标 %s 指向本组监听端口 %s（自指），已改为 %s", up, sniPort, local)
-			up = local
+		if isSelfSNITarget(up, sniListen) {
+			log.Printf("[NginxConfig] SNI fallback 目标 %s 指向本组监听 socket %s（自指），已改为 %s", up, sniListen, localTarget)
+			up = localTarget
 		}
 		if seen[up] {
 			continue
@@ -2059,16 +2068,44 @@ func avoidSelfSNIFallback(target, sniListen, sniLocalPort string) string {
 	return strings.Join(out, ",")
 }
 
-// isLoopbackPort 判断 addr 是否为回环地址且端口等于 port。
-func isLoopbackPort(addr, port string) bool {
-	host, p, err := net.SplitHostPort(canonicalListenAddr(addr))
+// isSelfSNITarget 判断 target 是否落在 SNI 监听 socket 自身上。
+func isSelfSNITarget(target, sniListen string) bool {
+	th, tp, ok := splitHostPortLoose(target)
+	if !ok {
+		return false
+	}
+	sh, sp, ok := splitHostPortLoose(sniListen)
+	if !ok || tp != sp {
+		return false
+	}
+	// 纯端口 / 0.0.0.0 / [::] 归一后 host 为空 = 通配，覆盖回环。
+	if sh == "" {
+		return th == "" || isLoopbackHost(th)
+	}
+	if isLoopbackHost(sh) {
+		return isLoopbackHost(th)
+	}
+	return th == sh
+}
+
+// splitHostPortLoose 解析 "host:port" / 纯端口（通配）。通配返回 host=""。
+func splitHostPortLoose(addr string) (host, port string, ok bool) {
+	c := canonicalListenAddr(addr)
+	if c == "" {
+		return "", "", false
+	}
+	if _, err := strconv.Atoi(c); err == nil {
+		return "", c, true
+	}
+	h, p, err := net.SplitHostPort(c)
 	if err != nil || p == "" {
-		return false
+		return "", "", false
 	}
-	if p != port {
-		return false
-	}
-	switch strings.ToLower(host) {
+	return strings.Trim(strings.ToLower(h), "[]"), p, true
+}
+
+func isLoopbackHost(h string) bool {
+	switch strings.ToLower(strings.Trim(h, "[]")) {
 	case "127.0.0.1", "localhost", "::1":
 		return true
 	}

@@ -344,3 +344,38 @@ func TestNginxSNIFallbackExplicitTargetKept(t *testing.T) {
 		t.Fatalf("显式 fallback 目标不应被改写：\n%s", cfg)
 	}
 }
+
+// 生产形态：公网 443 由 stream 占用（绑具体公网 IP），本地 HTTPS 站点监听
+// 127.0.0.1:443。此时 fallback=127.0.0.1:443 是**正确**的，不能被自指纠正改掉。
+func TestNginxSNIFallbackKeepsLoopbackWhenSNIBindsPublicIP(t *testing.T) {
+	sites := []entity.NginxSite{
+		{ServerID: 2, Domain: "fallback", Template: "sni", Path: "23.254.233.185:443", SNITarget: "127.0.0.1:443", Enabled: true},
+	}
+	cfg := generateFor(t, newNginxTestManager(t, sites,
+		`{"stream_sni_enabled":true,"https_listen":"127.0.0.1:443","stream_default_target":"127.0.0.1:443"}`))
+	if !strings.Contains(cfg, "server 127.0.0.1:443;") {
+		t.Fatalf("生产形态的 fallback 127.0.0.1:443 被误改：\n%s", cfg)
+	}
+	if strings.Contains(cfg, "server 127.0.0.1:8443;") {
+		t.Fatalf("不应把生产 fallback 改成 8443：\n%s", cfg)
+	}
+}
+
+// 本地 HTTPS 目标派生：显式 sni_local_port > https_listen 为回环时跟随 > 8443。
+func TestNginxSNILocalFallbackTargetDerivation(t *testing.T) {
+	cases := []struct {
+		local, https, want string
+	}{
+		{"", "443", "127.0.0.1:8443"},
+		{"", "0.0.0.0:443", "127.0.0.1:8443"},
+		{"", "127.0.0.1:443", "127.0.0.1:443"},
+		{"", "[::1]:443", "[::1]:443"},
+		{"9543", "127.0.0.1:443", "127.0.0.1:9543"},
+		{"127.0.0.1:9543", "443", "127.0.0.1:9543"},
+	}
+	for _, c := range cases {
+		if got := sniLocalFallbackTarget(c.local, c.https); got != c.want {
+			t.Errorf("sniLocalFallbackTarget(%q,%q)=%q, want %q", c.local, c.https, got, c.want)
+		}
+	}
+}

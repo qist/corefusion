@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "Tạo lại tên miền ngẫu nhiên",
       "sniInUse": "Đã sử dụng",
       "sniConflict": "SNI \"{sni}\" đã được inbound \"{tag}\" sử dụng, không thể dùng lại trên cùng một máy chủ",
-      "xverLocalBound1": "Reality cục bộ tự động gán Xver=1, bản cấu hình sẵn là Xver=0",
+      "serverNameSourceHint": "Máy chủ Reality cục bộ dùng endpoint TLS cục bộ của proxy bảng điều khiển; preset công khai kết nối trực tiếp đến đích công khai. sing-box không dùng Xver / PROXY protocol.",
       "autoSni": "Tự động thêm vào SNI (Caddy/Nginx)",
       "autoSniHint": "Khi bật, Server Name của REALITY này được tự động thêm vào định tuyến SNI 443 của Caddy/Nginx; khi tắt, bạn tự duy trì quy tắc SNI.",
       "autoSniNginxBlocked": "Node này dùng Nginx để chia 443 với proxy_protocol bật, nhưng bản nginx không có bản vá stream_pp_var (bản cũ/chính thức): sing-box không hỗ trợ PROXY protocol nên SNI của inbound này sẽ bị bỏ qua. Hãy nâng cấp lên nginx do panel đóng gói 1.31.9+ (tắt PP theo tên miền), dùng Caddy hoặc tắt proxy_protocol trong Nginx.",

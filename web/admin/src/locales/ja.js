@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "ランダムドメインを再生成",
       "sniInUse": "使用済み",
       "sniConflict": "SNI \"{sni}\" はインバウンド \"{tag}\" で使用されているため、同じサーバーで重複して使用できません",
-      "xverLocalBound1": "ローカルRealityは自動的にXver=1にバインドされ、プリセットはXver=0です",
+      "serverNameSourceHint": "ローカル Reality サーバーはパネルプロキシのローカル TLS エンドポイントを使用し、公開プリセットは公開先へ直接接続します。sing-box は Xver / PROXY protocol を使用しません。",
       "autoSni": "SNI に自動追加（Caddy/Nginx）",
       "autoSniHint": "有効にするとこの REALITY の Server Name を Caddy/Nginx の 443 SNI 振り分けに自動登録します。無効の場合はプロキシ側で手動管理してください。",
       "autoSniNginxBlocked": "このノードは Nginx の 443 振り分けで proxy_protocol を有効にしていますが、nginx に stream_pp_var パッチがありません（旧版/公式ビルド）。sing-box は PROXY protocol 非対応のため、このインバウンドの SNI はスキップされます。パネル同梱の nginx 1.31.9+（ドメイン単位で PP オフ）へ更新するか、Caddy を使うか、Nginx の proxy_protocol を無効にしてください。",

@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "Rastgele alan adını yeniden oluştur",
       "sniInUse": "Kullanımda",
       "sniConflict": "SNI \"{sni}\" zaten \"{tag}\" gelen bağlantısı tarafından kullanılıyor; aynı sunucuda tekrar kullanılamaz",
-      "xverLocalBound1": "Yerel Reality otomatik olarak Xver=1'e bağlanır, ön ayar Xver=0",
+      "serverNameSourceHint": "Yerel Reality sunucuları panel proxy'sinin yerel TLS uç noktasını kullanır; genel presetler doğrudan genel hedefe bağlanır. sing-box Xver / PROXY protocol kullanmaz.",
       "autoSni": "SNI’ye otomatik ekle (Caddy/Nginx)",
       "autoSniHint": "Etkinleştirildiğinde bu REALITY Server Name, Caddy/Nginx 443 SNI yönlendirmesine otomatik eklenir; kapatıldığında SNI kuralını kendiniz yönetirsiniz.",
       "autoSniNginxBlocked": "Bu düğüm 443 bölmeyi Nginx ile yapıyor ve proxy_protocol açık, ancak nginx derlemesinde stream_pp_var yaması yok (eski/resmî sürüm): sing-box PROXY protocol desteklemediği için bu girişin SNI'si atlanır. Panelin paketlediği nginx 1.31.9+ sürümüne (alan adı başına PP kapalı) yükseltin, Caddy kullanın veya Nginx'te proxy_protocol'u kapatın.",

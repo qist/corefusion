@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "重新產生隨機網域",
       "sniInUse": "已使用",
       "sniConflict": "SNI \"{sni}\" 已被入站 \"{tag}\" 使用，同一伺服器不能重複使用",
-      "xverLocalBound1": "本機 Reality 自動綁定 Xver=1，預設 Xver=0",
+      "serverNameSourceHint": "本地 Reality 伺服器由本機代理提供 TLS 入口；公共預設直連公網目標。sing-box 不使用 Xver / PROXY Protocol。",
       "autoSni": "自動加入 SNI（Caddy/Nginx）",
       "autoSniHint": "開啟後將此 REALITY 的 Server Name 自動寫入 Caddy/Nginx 的 443 SNI 分流；關閉則由你在代理裡手動維護。",
       "autoSniNginxBlocked": "目前節點用 Nginx 做 443 分流且已開啟 proxy_protocol，但該 nginx 不帶 stream_pp_var 補丁（舊版/官方建置）：sing-box 不支援 PROXY 協議，此入站的 SNI 會被跳過。請升級到面板打包的 nginx 1.31.9+（可依網域關閉 PP），或改用 Caddy，或關閉 Nginx 的 proxy_protocol。",

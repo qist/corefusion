@@ -150,7 +150,7 @@
           <el-input v-model="model._tlsServerName" :placeholder="t('singbox.tls.serverNamePlaceholder')" @change="onServerNameChange" style="flex:1" />
           <el-button size="small" :title="t('singbox.tls.serverNamesRandomTip')" @click="refreshRandomServerName">{{ t('singbox.tls.refresh') }}</el-button>
         </div>
-        <div class="hint">{{ t('singbox.tls.xverLocalBound1') }}</div>
+        <div class="hint">{{ t('singbox.tls.serverNameSourceHint') }}</div>
       </el-form-item>
       <el-form-item :label="t('singbox.tls.autoSni')">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -397,8 +397,7 @@ function onRealityTargetChange(target) {
     if (tgt.source === 'local') {
       // 本地 Reality 服务器：连接地址为 127.0.0.1，SNI 优先固定前缀域名（speedtest.<域名>），
       // 功能关闭或取不到基础域名时回退随机域名。
-      // 注意：sing-box 的 REALITY 服务端**不支持** PROXY Protocol（没有 xver），
-      // 本地 TCP 入口也特意不带 proxy_protocol，所以这里 xver 必须是 0。
+      // sing-box 的 REALITY 不支持 PROXY Protocol，本地入口也特意不带 proxy_protocol。
       props.model._realityHandshakeServer = '127.0.0.1'
       props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
       const used = collectUsedSnis()
@@ -410,13 +409,11 @@ function onRealityTargetChange(target) {
         while (used.has(d.toLowerCase()) && attempts < 50) { d = randomDomain(); attempts++ }
       }
       props.model._tlsServerName = d
-      props.model._realityXver = 0
     } else {
-      // 公共预设服务器：地址和 SNI 相同，xver=0
+      // 公共预设服务器：地址和 SNI 相同
       props.model._realityHandshakeServer = tgt.sni
       props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
       props.model._tlsServerName = tgt.sni
-      props.model._realityXver = 0
     }
   } else {
     // 自定义目标，尝试提取域名
@@ -424,7 +421,6 @@ function onRealityTargetChange(target) {
     props.model._realityHandshakeServer = parts[0]
     props.model._realityHandshakePort = parseInt(parts[1]) || 443
     props.model._tlsServerName = parts[0]
-    props.model._realityXver = 0
   }
   // 验证 SNI 唯一性
   validateSniUnique()
@@ -522,11 +518,10 @@ function autoSelectRealityTarget() {
   if (!presets.length) return
   const tgt = presets[Math.floor(Math.random() * presets.length)]
   _realityTarget.value = tgt.target
-  // 公共预设服务器：地址和 SNI 相同，xver=0
+  // 公共预设服务器：地址和 SNI 相同
   props.model._realityHandshakeServer = tgt.sni
   props.model._realityHandshakePort = parseInt(tgt.target.split(':')[1]) || 443
   props.model._tlsServerName = tgt.sni
-  props.model._realityXver = 0
 }
 
 function resetReality() {

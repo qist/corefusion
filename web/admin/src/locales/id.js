@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "Buat ulang domain acak",
       "sniInUse": "Sudah digunakan",
       "sniConflict": "SNI \"{sni}\" sudah digunakan oleh inbound \"{tag}\", tidak dapat digunakan ulang di server yang sama",
-      "xverLocalBound1": "Reality lokal otomatis terikat ke Xver=1, preset Xver=0",
+      "serverNameSourceHint": "Server Reality lokal memakai endpoint TLS lokal proxy panel; preset publik terhubung langsung ke target publik. sing-box tidak memakai Xver / PROXY protocol.",
       "autoSni": "Tambahkan otomatis ke SNI (Caddy/Nginx)",
       "autoSniHint": "Saat diaktifkan, Server Name REALITY ini otomatis ditambahkan ke perutean SNI 443 Caddy/Nginx; saat dimatikan, Anda mengelola aturan SNI sendiri.",
       "autoSniNginxBlocked": "Node ini memakai Nginx untuk pembagian 443 dengan proxy_protocol aktif, tetapi build nginx tidak memiliki patch stream_pp_var (versi lama/resmi): sing-box tidak mendukung PROXY protocol, jadi SNI inbound ini akan dilewati. Perbarui ke nginx bawaan panel 1.31.9+ (PP mati per domain), gunakan Caddy, atau matikan proxy_protocol di Nginx.",

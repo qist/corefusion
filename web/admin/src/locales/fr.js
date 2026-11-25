@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "Régénérer un nom de domaine aléatoire",
       "sniInUse": "Déjà utilisé",
       "sniConflict": "Le SNI « {sni} » est déjà utilisé par l'entrée « {tag} » ; il ne peut pas être réutilisé sur le même serveur.",
-      "xverLocalBound1": "Reality local lie automatiquement Xver=1, les préréglages utilisent Xver=0",
+      "serverNameSourceHint": "Les serveurs Reality locaux utilisent le point TLS local du proxy du panel ; les presets publics se connectent directement à la cible publique. sing-box n'utilise pas Xver / PROXY protocol.",
       "autoSni": "Ajouter automatiquement au SNI (Caddy/Nginx)",
       "autoSniHint": "Activé, ce Server Name REALITY est ajouté automatiquement au routage SNI 443 de Caddy/Nginx ; sinon, gérez la règle SNI vous-même.",
       "autoSniNginxBlocked": "Ce nœud utilise Nginx pour la répartition 443 avec proxy_protocol activé, mais le binaire nginx n'inclut pas le patch stream_pp_var (version ancienne/officielle) : sing-box ne prend pas en charge le protocole PROXY, donc le SNI de cet inbound sera ignoré. Mettez à jour vers le nginx fourni par le panel 1.31.9+ (PP désactivé par domaine), utilisez Caddy ou désactivez proxy_protocol dans Nginx.",

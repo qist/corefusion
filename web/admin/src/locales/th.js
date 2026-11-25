@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "สร้างโดเมนสุ่มใหม่",
       "sniInUse": "ใช้แล้ว",
       "sniConflict": "SNI \"{sni}\" ถูกใช้โดยอินบาวด์ \"{tag}\" แล้ว ไม่สามารถใช้ซ้ำบนเซิร์ฟเวอร์เดียวกันได้",
-      "xverLocalBound1": "Reality ภายในเครื่องผูก Xver=1 โดยอัตโนมัติ ส่วนพรีเซ็ตใช้ Xver=0",
+      "serverNameSourceHint": "เซิร์ฟเวอร์ Reality ภายในใช้ปลายทาง TLS ภายในของพร็อกซีแผงควบคุม ส่วน preset สาธารณะเชื่อมต่อตรงไปยังเป้าหมายสาธารณะ sing-box ไม่ใช้ Xver / PROXY protocol",
       "autoSni": "เพิ่มไปยัง SNI อัตโนมัติ (Caddy/Nginx)",
       "autoSniHint": "เมื่อเปิดใช้งาน Server Name ของ REALITY นี้จะถูกเพิ่มไปยังการแบ่งเส้นทาง SNI พอร์ต 443 ของ Caddy/Nginx โดยอัตโนมัติ เมื่อปิดคุณต้องดูแลกฎ SNI เอง",
       "autoSniNginxBlocked": "โหนดนี้ใช้ Nginx แยก 443 โดยเปิด proxy_protocol แต่ nginx ไม่มีแพตช์ stream_pp_var (เวอร์ชันเก่า/ทางการ): sing-box ไม่รองรับ PROXY protocol จึงข้าม SNI ของอินบาวน์นี้ อัปเกรดเป็น nginx ที่แพ็กโดยแผงควบคุม 1.31.9+ (ปิด PP ต่อโดเมน) ใช้ Caddy หรือปิด proxy_protocol ใน Nginx",

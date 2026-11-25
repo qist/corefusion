@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "무작위 도메인 재생성",
       "sniInUse": "사용됨",
       "sniConflict": "SNI \"{sni}\"은(는) 인바운드 \"{tag}\"에서 이미 사용 중이므로 같은 서버에서 중복 사용할 수 없습니다",
-      "xverLocalBound1": "로컬 Reality는 자동으로 Xver=1에 바인딩되며, 프리셋은 Xver=0입니다",
+      "serverNameSourceHint": "로컬 Reality 서버는 패널 프록시의 로컬 TLS 엔드포인트를 사용하고, 공용 프리셋은 공개 대상에 직접 연결합니다. sing-box는 Xver / PROXY protocol을 사용하지 않습니다.",
       "autoSni": "SNI에 자동 추가(Caddy/Nginx)",
       "autoSniHint": "활성화하면 이 REALITY의 Server Name을 Caddy/Nginx 443 SNI 라우팅에 자동 등록합니다. 끄면 프록시에서 직접 관리합니다.",
       "autoSniNginxBlocked": "이 노드는 Nginx로 443을 분할하면서 proxy_protocol이 켜져 있지만, nginx에 stream_pp_var 패치가 없습니다(구버전/공식 빌드). sing-box는 PROXY protocol을 지원하지 않으므로 이 인바운드의 SNI는 건너뜁니다. 패널에 포함된 nginx 1.31.9+(도메인별 PP 끔)로 업그레이드하거나 Caddy를 사용하거나 Nginx의 proxy_protocol을 끄세요.",

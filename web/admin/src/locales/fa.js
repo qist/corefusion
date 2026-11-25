@@ -6071,7 +6071,7 @@ export default {
       "serverNamesRandomTip": "تولید مجدد دامنه تصادفی",
       "sniInUse": "استفاده‌شده",
       "sniConflict": "SNI \"{sni}\" توسط ورودی \"{tag}\" استفاده شده است؛ استفاده مجدد در یک سرور ممکن نیست",
-      "xverLocalBound1": "Reality محلی به‌طور خودکار Xver=1 را اعمال می‌کند؛ پیش‌تنظیم‌ها Xver=0 هستند",
+      "serverNameSourceHint": "سرورهای Reality محلی از نقطهٔ پایانی TLS محلی پروکسی پنل استفاده می‌کنند؛ پیش‌تنظیم‌های عمومی مستقیماً به مقصد عمومی وصل می‌شوند. sing-box از Xver / PROXY protocol استفاده نمی‌کند.",
       "autoSni": "افزودن خودکار به SNI (Caddy/Nginx)",
       "autoSniHint": "با فعال‌سازی، Server Name این REALITY به‌طور خودکار به مسیریابی SNI پورت 443 در Caddy/Nginx اضافه می‌شود؛ با غیرفعال‌سازی خودتان قاعده SNI را نگه می‌دارید.",
       "autoSniNginxBlocked": "این گره برای تقسیم 443 از Nginx با proxy_protocol فعال استفاده می‌کند، اما باینری nginx پچ stream_pp_var را ندارد (نسخهٔ قدیمی/رسمی): sing-box از PROXY protocol پشتیبانی نمی‌کند، بنابراین SNI این ورودی نادیده گرفته می‌شود. به nginx بستهٔ پنل 1.31.9+ ارتقا دهید (PP برای هر دامنه خاموش)، از Caddy استفاده کنید یا proxy_protocol را در Nginx خاموش کنید.",

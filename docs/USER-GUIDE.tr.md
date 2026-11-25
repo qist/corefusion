@@ -851,21 +851,31 @@ istek asla bu konuma ulaşmaz; abonelik hâlâ indirilir ancak düğüm bağlanm
 
 ### 6.3.2 SNI tabanlı yönlendirme (nginx ve Caddy)
 
-Ön TLS katmanı, `:443` üzerindeki bağlantıları ClientHello SNI tarafından böler: Protokol merkezi altındaki REALITY gelenleri, kuralları otomatik olarak türetir ve kurallar ayrıca "Proxy yönetimi → SNI" altında elle de yazılabilir. Her iki proxy de etki alanına göre bölünebilir, ancak PROXY protocol'in kapsamı nedeniyle **yetenekleri farklılık gösterir**.
+Ön TLS katmanı `:443` üzerindeki bağlantıları ClientHello SNI'sına göre böler: protokol merkezindeki REALITY
+girişleri kuralları otomatik türetir, kurallar «Proxy yönetimi → SNI» altında elle de yazılabilir. İki proxy de alan adına göre
+böler; fark PROXY protocol kapsamındadır.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` kapsamı | Tüm dinleme grubu (`listen` düzeyi): bağlantı noktası başına tümü açık veya tümü kapalı | Rota başına (`proxy ... { proxy_protocol v2 }`) |
-| Aynı `:443` üzerinde xray + sing-box | Desteklenmiyor: yalnızca tek mod, dolayısıyla bağlantı noktası tek çekirdeğe hizmet eder | Desteklenir: bir SNI, xray'e (PP v2), diğeri sing-box'e gider (PP yok) |
-| sing-box'e nasıl ulaşılır? | Kendi özel bağlantı noktası veya PP'siz ayrı bir dinleme grubu | `:443`'i xray ile paylaşır, SNI ile ayrılır |
+| `proxy_protocol` kapsamı | Panelin paketlediği nginx (`stream_pp_var` yamalı): **SNI kuralı başına** v1 / v2 / kapalı. Resmî veya yamasız nginx: tüm listen grubu (`listen` düzeyi), port başına ya tümü açık ya tümü kapalı | Rota başına (`proxy ... { proxy_protocol v2 }`) |
+| Aynı `:443` üzerinde xray + sing-box | Yama sonrası desteklenir: xray REALITY v1/v2 alır, sing-box kuralı kapalıya ayarlanır | Desteklenir: bir SNI xray'e (PP v2), diğeri sing-box'a (PP yok) |
+| sing-box'a erişim | Yama sonrası xray ile `:443` paylaşılabilir (o alan adı için PP kapalı); aksi halde ayrı port veya PP'siz ayrı listen grubu | xray ile `:443` paylaşılır, SNI ile ayrılır |
 
-Neden: ters proxy arkasında xray, gerçek istemci IP'sini ve bağlantı noktasını (`sockopt.acceptProxyProtocol`) görmek için PROXY protocol'e ihtiyaç duyarken, sing-box REALITY anlaşması yalnızca `host:port`'i destekler ve PROXY başlıklarını **göndermez**. nginx, `server{}`'in içine `proxy_protocol on` yazar; bu, tüm `listen` grubu için geçerlidir: etkinleştirildiğinde her SNI hedefi, PROXY başlıklarını alır ve bu, sing-box'e gönderildiğinde el sıkışmayı bozar. Bu nedenle panel, nginx için stream PROXY protocol açıkken **türetilmiş sing-box SNI kurallarını atlar** ve `skipped N sing-box REALITY SNI rule(s)`'i günlüğe kaydeder. Caddy’in `proxy_protocol v2`’i tek bir rotaya ait olduğundan böyle bir sınırı yoktur.
+Notlar:
 
-Öneriler:
-
-- Önde nginx: `:443`'i xray'e (PROXY protocol ile) verin ve sing-box REALITY'e kendi bağlantı noktasından ulaşın veya PP olmadan ayrı bir dinleme grubu ekleyin;
-- Caddy önde: xray ve sing-box, `:443`'i paylaşabilir ve REALITY gelen sunucu Adları otomatik olarak türetilir;
-- "Gerçeklik şablonu"ndaki `singbox_listen_port` bir **yerel TLS uç noktasıdır** (xray hedef / sing-box anlaşması). Her iki proxy de bunu destekler ve yukarıdaki genel SNI yönlendirmesinden bağımsızdır.
+- Varsayılan `v1` olarak kalır (eski `proxy_protocol on`). Her SNI sitesi `v1`, `v2` veya kapalı yapılabilir. `v2` ikili bir
+  başlıktır (IPv4 için 28 bayt) ve v1 metin başlığından (~50–60 bayt) daha kısadır; fark bağlantı başına bir kez oluşur ve
+  pratikte hissedilmez.
+- Panel, Agent üzerinden `nginx -V` çalıştırıp `NGX_STREAM_PP_VAR` (yetenek bayrağı `stream_pp_var`) arar; sonuç 60 saniye
+  önbelleklenir. Yamasız nginx, başarısız sorgu veya eski Agent durumunda grup genelinde `proxy_protocol on` (v1) değerine
+  döner ve türetilmiş sing-box SNI kurallarını atlar (log `skipped N sing-box REALITY SNI rule(s)`); `nginx -t` testinden
+  geçmeyen yapılandırma asla üretilmez.
+- sing-box REALITY / anytls PROXY başlığı alamaz, bu nedenle türetilmiş kurallar her zaman kapalıdır. Böyle bir alan adı için
+  zorla v1/v2 seçmek el sıkışmayı bozar.
+- Ters proxy arkasındaki xray, gerçek istemci IP'si ve portu için PROXY protocol'e ihtiyaç duyar
+  (`sockopt.acceptProxyProtocol`); `realitySettings.xver` xray'in dest'e gönderdiğidir ve bununla ilgisizdir.
+- «Reality şablonu» içindeki `singbox_listen_port` **yerel TLS uç noktasıdır** (xray dest / sing-box handshake); iki proxy de
+  destekler ve yukarıdaki genel SNI yönlendirmesinden bağımsızdır.
 
 ### 6.4 Giden yapılandırma
 

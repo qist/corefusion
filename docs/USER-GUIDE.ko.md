@@ -851,21 +851,31 @@ cd /opt/corefusion
 
 ### 6.3.2 SNI 기반 라우팅(nginx vs Caddy)
 
-전면 TLS 계층은 ClientHello SNI에 의해 `:443`의 연결을 분할합니다. 프로토콜 센터 아래의 REALITY 인바운드는 자동으로 규칙을 파생하며 "프록시 관리 → SNI"에서 규칙을 직접 작성할 수도 있습니다. 두 프록시 모두 도메인별로 분할할 수 있지만 PROXY protocol의 범위로 인해 **기능이 다릅니다**.
+프런트 TLS는 `:443`에서 ClientHello의 SNI로 연결을 분배합니다. 프로토콜 센터의 REALITY 인바운드는 규칙을
+자동 생성하며, 「프록시 관리 → SNI」에서 직접 작성할 수도 있습니다. 두 프록시 모두 도메인 단위 분배가 가능하지만
+PROXY protocol의 적용 범위가 다릅니다.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` 범위 | 전체 청취 그룹(`listen` 레벨): 포트당 모두 켜짐 또는 모두 꺼짐 | 노선별(`proxy ... { proxy_protocol v2 }`) |
-| 동일한 `:443`의 xray + sing-box | 지원되지 않음: 하나의 모드만 지원되므로 포트는 단일 코어를 제공합니다. | 지원됨: 하나의 SNI는 xray(PP v2)로 이동하고 다른 하나는 sing-box(PP 없음)로 이동합니다. |
-| sing-box에 도달하는 방법 | 자체 전용 포트 또는 PP가 없는 별도의 청취 그룹 | SNI로 구분된 `:443`를 xray와 공유합니다. |
+| `proxy_protocol` 범위 | 패널에 포함된 nginx(`stream_pp_var` 패치): **SNI 규칙별** v1 / v2 / 끔. 공식 또는 패치되지 않은 nginx: listen 그룹 전체(`listen` 수준)로, 포트 단위로 모두 켜거나 모두 끔 | 라우트별(`proxy ... { proxy_protocol v2 }`) |
+| 같은 `:443`에서 xray + sing-box | 패치 후 지원: xray REALITY는 v1/v2, sing-box 규칙은 끔 | 지원: 한 SNI는 xray(PP v2), 다른 하나는 sing-box(PP 없음) |
+| sing-box 연결 방식 | 패치 후 xray와 `:443` 공유 가능(해당 도메인 PP 끔). 그렇지 않으면 전용 포트 또는 PP 없는 별도 listen 그룹 | xray와 `:443`을 공유하고 SNI로 구분 |
 
-이유: 역방향 프록시 뒤에서 xray는 실제 클라이언트 IP 및 포트(`sockopt.acceptProxyProtocol`)를 보려면 PROXY protocol가 필요한 반면, sing-box REALITY 핸드셰이크는 `host:port`만 지원하고 PROXY 헤더를 전송하지 **않습니다**. nginx는 `server{}` 내부에 `proxy_protocol on`를 작성하며 이는 전체 `listen` 그룹에 적용됩니다. 활성화되면 모든 SNI 대상이 PROXY 헤더를 수신하여 sing-box로 전송될 때 핸드셰이크가 중단됩니다. 따라서 패널은 stream PROXY protocol가 nginx에 대해 켜져 있고 `skipped N sing-box REALITY SNI rule(s)`를 기록할 때 **파생된 sing-box SNI 규칙을 건너뛰고**. Caddy의 `proxy_protocol v2`는 단일 경로에 속하기 때문에 이러한 제한이 없습니다.
+참고:
 
-권장사항:
-
-- 앞의 nginx: `:443`를 xray(PROXY protocol 포함)에 제공하고 자체 포트에서 sing-box REALITY에 도달하거나 PP 없이 별도의 청취 그룹을 추가합니다.
-- 앞의 Caddy: xray와 sing-box는 `:443`를 공유할 수 있으며 REALITY 인바운드 서버 이름은 자동으로 파생됩니다.
-- "현실 템플릿"의 `singbox_listen_port`는 **로컬 TLS 엔드포인트**(xray 대상 / sing-box 핸드셰이크)입니다. 두 프록시 모두 이를 지원하며 위의 공개 SNI 라우팅과 독립적입니다.
+- 기본값은 계속 `v1`(기존 `proxy_protocol on`)입니다. SNI 사이트별로 `v1`, `v2`, 끔을 선택할 수 있습니다. `v2`는
+  바이너리 헤더(IPv4 기준 28바이트)로 v1 텍스트 헤더(약 50~60바이트)보다 짧습니다. 차이는 연결 시 한 번뿐이라
+  실제로는 체감되지 않습니다.
+- 패널은 Agent를 통해 `nginx -V`를 실행해 `NGX_STREAM_PP_VAR`(기능 플래그 `stream_pp_var`)를 확인하며 결과는 60초
+  캐시됩니다. 패치되지 않았거나 탐지 실패, 구버전 Agent인 경우 그룹 전체 `proxy_protocol on`(v1)으로 되돌리고 sing-box
+  자동 SNI 파생 규칙을 건너뜁니다(로그 `skipped N sing-box REALITY SNI rule(s)`). `nginx -t`에 실패하는 설정은
+  생성하지 않습니다.
+- sing-box REALITY / anytls는 PROXY 헤더를 받을 수 없으므로 파생 규칙은 항상 꺼짐입니다. 해당 도메인을 강제로
+  v1/v2로 두면 핸드셰이크가 깨집니다.
+- 리버스 프록시 뒤의 xray는 실제 클라이언트 IP와 포트를 얻기 위해 PROXY protocol이 필요합니다
+  (`sockopt.acceptProxyProtocol`). `realitySettings.xver`는 xray가 dest로 보내는 값이며 여기와 무관합니다.
+- 「Reality 템플릿」의 `singbox_listen_port`는 **로컬 TLS 엔드포인트**(xray dest / sing-box handshake)로, 두 프록시
+  모두 지원하며 위의 공개 SNI 라우팅과는 별개입니다.
 
 ### 6.4 아웃바운드 구성
 

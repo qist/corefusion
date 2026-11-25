@@ -884,27 +884,30 @@ Fill **Reverse proxy path** under “Access domain → Front TLS”:
 ### 6.3.2 SNI-based routing (nginx vs Caddy)
 
 The front TLS layer splits connections on `:443` by the ClientHello SNI: REALITY inbounds under the protocol center derive rules
-automatically, and rules can also be written by hand under “Proxy management → SNI”. Both proxies can split by domain, but their
-**capabilities differ** because of the scope of PROXY protocol.
+automatically, and rules can also be written by hand under “Proxy management → SNI”. Both proxies can split by domain; the
+difference is the scope of PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` scope | The whole listen group (`listen` level): all on or all off per port | Per route (`proxy ... { proxy_protocol v2 }`) |
-| xray + sing-box on the same `:443` | Not supported: one mode only, so a port serves a single core | Supported: one SNI goes to xray (PP v2), another to sing-box (no PP) |
-| How sing-box is reached | Its own dedicated port, or a separate listen group without PP | Shares `:443` with xray, separated by SNI |
+| `proxy_protocol` scope | Panel-packaged nginx (with the `stream_pp_var` patch): **per SNI rule**, v1 / v2 / off. Stock or unpatched nginx: the whole listen group (`listen` level), all on or all off per port | Per route (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box on the same `:443` | Supported once patched: xray REALITY gets v1/v2, the sing-box rule is set to off | Supported: one SNI goes to xray (PP v2), another to sing-box (no PP) |
+| How sing-box is reached | After patching it can share `:443` with xray (PP off for that domain); otherwise use its own port or a separate listen group without PP | Shares `:443` with xray, separated by SNI |
 
-Why: behind a reverse proxy xray needs PROXY protocol to see the real client IP and port (`sockopt.acceptProxyProtocol`),
-while the sing-box REALITY handshake only supports `host:port` and does **not** send PROXY headers. nginx writes `proxy_protocol on`
-inside `server{}`, which applies to the whole `listen` group: once enabled every SNI target receives PROXY headers, which breaks the
-handshake when sent to sing-box. The panel therefore **skips derived sing-box SNI rules** when stream PROXY protocol is on for nginx
-and logs `skipped N sing-box REALITY SNI rule(s)`. Caddy’s `proxy_protocol v2` belongs to a single route, so it has no such limit.
+Notes:
 
-Recommendations:
-
-- nginx in front: give `:443` to xray (with PROXY protocol) and reach sing-box REALITY on its own port, or add a separate listen group without PP;
-- Caddy in front: xray and sing-box can share `:443`, and REALITY inbound serverNames are derived automatically;
-- `singbox_listen_port` in the “Reality template” is a **local TLS endpoint** (xray dest / sing-box handshake). Both proxies support it,
-  and it is independent of the public SNI routing above.
+- The default stays `v1` (the old `proxy_protocol on`). Each SNI site can be switched to `v1`, `v2` or off. `v2` is a binary
+  header (28 bytes for IPv4), shorter than the v1 text header (~50–60 bytes); the difference occurs once per connection and is
+  imperceptible in practice.
+- The panel runs `nginx -V` through the Agent and looks for `NGX_STREAM_PP_VAR` (capability flag `stream_pp_var`), cached for
+  60 seconds. On an unpatched nginx, a failed probe or an old Agent it falls back to a whole-group `proxy_protocol on` (v1) and
+  skips derived sing-box SNI rules (logging `skipped N sing-box REALITY SNI rule(s)`), so it never emits a config that fails
+  `nginx -t`.
+- sing-box REALITY / anytls cannot accept PROXY headers, so derived rules are always off. Forcing v1/v2 for such a domain
+  breaks the handshake.
+- Behind a reverse proxy xray needs PROXY protocol to see the real client IP and port (`sockopt.acceptProxyProtocol`);
+  `realitySettings.xver` is what xray sends to its dest and is unrelated.
+- `singbox_listen_port` in the “Reality template” is a **local TLS endpoint** (xray dest / sing-box handshake), supported by
+  both proxies and independent of the public SNI routing above.
 
 ### 6.4 Outbound configuration
 

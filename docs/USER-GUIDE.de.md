@@ -851,21 +851,31 @@ Füllen Sie **Reverse-Proxy-Pfad** unter „Zugriffsdomäne → Vorderseite TLS�
 
 ### 6.3.2 SNI-basiertes Routing (nginx vs. Caddy)
 
-Die vordere TLS-Schicht teilt Verbindungen auf `:443` durch den ClientHello SNI auf: REALITY-Eingänge unter dem Protokollzentrum leiten Regeln automatisch ab, und Regeln können auch manuell unter „Proxy-Verwaltung → SNI“ geschrieben werden. Beide Proxys können nach Domäne aufgeteilt werden, ihre **Fähigkeiten** unterscheiden sich jedoch aufgrund des Umfangs von PROXY protocol.
+Die vordere TLS-Schicht teilt Verbindungen auf `:443` anhand des ClientHello-SNI auf: REALITY-Eingänge im
+Protokollzentrum leiten Regeln automatisch ab, Regeln können auch manuell unter „Proxy-Verwaltung → SNI“ angelegt werden.
+Beide Proxys können nach Domäne aufteilen; der Unterschied liegt im Geltungsbereich des PROXY-Protokolls.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol`-Bereich | Die gesamte Listen-Gruppe (`listen`-Ebene): alle an oder alle aus pro Port | Pro Route (`proxy ... { proxy_protocol v2 }`) |
-| xray + sing-box auf demselben `:443` | Nicht unterstützt: nur ein Modus, sodass ein Port einen einzelnen Kern bedient | Unterstützt: ein SNI geht an xray (PP v2), ein anderer an sing-box (kein PP) |
-| Wie sing-box erreicht wird | Ein eigener dedizierter Port oder eine separate Listengruppe ohne PP | Teilt `:443` mit xray, getrennt durch SNI |
+| Geltungsbereich von `proxy_protocol` | Vom Panel gepacktes nginx (mit `stream_pp_var`-Patch): **pro SNI-Regel** v1 / v2 / aus. Offizielles oder ungepatchtes nginx: die gesamte Listen-Gruppe (`listen`-Ebene), pro Port alles an oder alles aus | Pro Route (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box auf demselben `:443` | Mit Patch unterstützt: xray-REALITY erhält v1/v2, die sing-box-Regel wird auf aus gesetzt | Unterstützt: ein SNI zu xray (PP v2), ein anderer zu sing-box (kein PP) |
+| Erreichbarkeit von sing-box | Mit Patch gemeinsam mit xray auf `:443` (PP für diese Domäne aus); sonst eigener Port oder separate Listen-Gruppe ohne PP | Teilt `:443` mit xray, getrennt nach SNI |
 
-Warum: Hinter einem Reverse-Proxy benötigt xray PROXY protocol, um die echte Client-IP und den echten Client-Port (`sockopt.acceptProxyProtocol`) zu sehen, während der sing-box REALITY-Handshake nur `host:port` unterstützt und **keine** PROXY-Header sendet. nginx schreibt `proxy_protocol on` in `server{}`, was für die gesamte `listen`-Gruppe gilt: Nach der Aktivierung empfängt jedes SNI-Ziel PROXY-Header, was den Handshake unterbricht, wenn es an sing-box gesendet wird. Das Panel **überspringt daher abgeleitete sing-box SNI-Regeln**, wenn stream PROXY protocol für nginx aktiviert ist und `skipped N sing-box REALITY SNI rule(s)` protokolliert. Der `proxy_protocol v2` von Caddy gehört zu einer einzelnen Route, daher gibt es keine solche Beschränkung.
+Hinweise:
 
-Empfehlungen:
-
-- nginx vorne: Geben Sie `:443` an xray (mit PROXY protocol) und erreichen Sie sing-box und REALITY über einen eigenen Port oder fügen Sie eine separate Listengruppe ohne PP hinzu.
-- Caddy vorne: xray und sing-box können `:443` gemeinsam nutzen, und REALITY eingehende Servernamen werden automatisch abgeleitet;
-- `singbox_listen_port` in der „Reality-Vorlage“ ist ein **lokaler TLS-Endpunkt** (xray dest / sing-box handshake). Beide Proxys unterstützen es und es ist unabhängig vom oben genannten öffentlichen SNI-Routing.
+- Standard bleibt `v1` (bisheriges `proxy_protocol on`). Jede SNI-Site kann auf `v1`, `v2` oder aus gestellt werden. `v2` ist
+  ein Binär-Header (28 Byte bei IPv4) und kürzer als der v1-Textheader (~50–60 Byte); der Unterschied tritt nur einmal pro
+  Verbindung auf und ist praktisch nicht messbar.
+- Das Panel führt über den Agent `nginx -V` aus und sucht `NGX_STREAM_PP_VAR` (Fähigkeitsflag `stream_pp_var`), Ergebnis
+  60 Sekunden gecacht. Bei ungepatchtem nginx, fehlgeschlagener Probe oder altem Agent wird auf gruppenweites
+  `proxy_protocol on` (v1) zurückgefallen und abgeleitete sing-box-SNI-Regeln werden übersprungen (Log
+  `skipped N sing-box REALITY SNI rule(s)`); eine Konfiguration, die `nginx -t` nicht besteht, wird nie erzeugt.
+- sing-box REALITY / anytls können keine PROXY-Header empfangen, abgeleitete Regeln sind daher immer aus. Erzwungenes v1/v2
+  für eine solche Domäne bricht den Handshake.
+- Hinter einem Reverse-Proxy benötigt xray PROXY protocol für echte Client-IP und Port (`sockopt.acceptProxyProtocol`);
+  `realitySettings.xver` ist das, was xray an sein Dest sendet, und hiermit nicht verwandt.
+- `singbox_listen_port` in der „Reality-Vorlage“ ist ein **lokaler TLS-Endpunkt** (xray-Dest / sing-box-Handshake), von beiden
+  Proxys unterstützt und unabhängig vom öffentlichen SNI-Routing oben.
 
 ### 6.4 Outbound-Konfiguration
 

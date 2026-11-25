@@ -851,21 +851,31 @@ Isi **Jalur proxy terbalik** di bawah “Akses domain → Front TLS”:
 
 ### 6.3.2 Perutean berbasis SNI (nginx vs Caddy)
 
-Lapisan TLS depan membagi koneksi pada `:443` oleh ClientHello SNI: REALITY masuk di bawah pusat protokol mendapatkan aturan secara otomatis, dan aturan juga dapat ditulis dengan tangan di bawah “Manajemen proxy → SNI”. Kedua proxy dapat dipisahkan berdasarkan domain, namun **kemampuannya berbeda** karena cakupan PROXY protocol.
+Lapisan TLS depan membagi koneksi pada `:443` berdasarkan SNI ClientHello: inbound REALITY di pusat protokol
+menurunkan aturan secara otomatis, dan aturan juga bisa ditulis manual di «Manajemen proxy → SNI». Kedua proxy dapat membagi
+berdasarkan domain; bedanya ada pada cakupan PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Lingkup `proxy_protocol` | Seluruh grup pendengar (level `listen`): aktif atau nonaktif per port | Per rute (`proxy ... { proxy_protocol v2 }`) |
-| xray + sing-box pada `:443` yang sama | Tidak didukung: hanya satu mode, jadi port melayani satu inti | Didukung: satu SNI menuju xray (PP v2), satu lagi ke sing-box (tanpa PP) |
-| Bagaimana sing-box tercapai | Port khusus sendiri, atau grup pendengar terpisah tanpa PP | Berbagi `:443` dengan xray, dipisahkan oleh SNI |
+| Cakupan `proxy_protocol` | nginx paket panel (dengan patch `stream_pp_var`): **per aturan SNI**, v1 / v2 / mati. nginx resmi atau tanpa patch: seluruh grup listen (level `listen`), per port semua nyala atau semua mati | Per rute (`proxy ... { proxy_protocol v2 }`) |
+| xray + sing-box pada `:443` yang sama | Didukung setelah patch: REALITY xray mendapat v1/v2, aturan sing-box diatur mati | Didukung: satu SNI ke xray (PP v2), lainnya ke sing-box (tanpa PP) |
+| Cara menjangkau sing-box | Setelah patch dapat berbagi `:443` dengan xray (PP mati untuk domain itu); jika tidak, port sendiri atau grup listen tanpa PP | Berbagi `:443` dengan xray, dipisah oleh SNI |
 
-Mengapa: di belakang proxy terbalik xray memerlukan PROXY protocol untuk melihat IP dan port klien sebenarnya (`sockopt.acceptProxyProtocol`), sedangkan jabat tangan sing-box REALITY hanya mendukung `host:port` dan **tidak** mengirim header PROXY. nginx menulis `proxy_protocol on` di dalam `server{}`, yang berlaku untuk seluruh grup `listen`: setelah diaktifkan, setiap target SNI menerima header PROXY, yang memutus jabat tangan saat dikirim ke sing-box. Oleh karena itu, panel **melewatkan aturan sing-box SNI yang diturunkan** saat stream PROXY protocol aktif untuk nginx dan mencatat `skipped N sing-box REALITY SNI rule(s)`. `proxy_protocol v2` Caddy termasuk dalam satu rute, jadi tidak memiliki batasan seperti itu.
+Catatan:
 
-Rekomendasi:
-
-- nginx di depan: berikan `:443` ke xray (dengan PROXY protocol) dan jangkau sing-box REALITY di portnya sendiri, atau tambahkan grup pendengar terpisah tanpa PP;
-- Caddy di depan: xray dan sing-box dapat berbagi `:443`, dan Nama server masuk REALITY diturunkan secara otomatis;
-- `singbox_listen_port` di “Template Realitas” adalah **titik akhir TLS lokal** (tujuan xray / jabat tangan sing-box). Kedua proxy mendukungnya, dan tidak bergantung pada perutean SNI publik di atas.
+- Default tetap `v1` (perilaku lama `proxy_protocol on`). Setiap situs SNI dapat diubah ke `v1`, `v2`, atau mati. `v2` adalah
+  header biner (28 byte untuk IPv4), lebih pendek dari header teks v1 (~50–60 byte); perbedaannya hanya sekali per koneksi dan
+  tidak terasa.
+- Panel menjalankan `nginx -V` lewat Agent dan mencari `NGX_STREAM_PP_VAR` (flag kemampuan `stream_pp_var`), di-cache 60
+  detik. Pada nginx tanpa patch, probe gagal, atau Agent lama, panel kembali ke `proxy_protocol on` seluruh grup (v1) dan
+  melewati aturan SNI turunan sing-box (log `skipped N sing-box REALITY SNI rule(s)`), sehingga tidak pernah menghasilkan
+  konfigurasi yang gagal `nginx -t`.
+- sing-box REALITY / anytls tidak dapat menerima header PROXY, jadi aturan turunannya selalu mati. Memaksa v1/v2 untuk domain
+  tersebut akan merusak handshake.
+- Di belakang reverse proxy, xray memerlukan PROXY protocol untuk melihat IP dan port klien sebenarnya
+  (`sockopt.acceptProxyProtocol`); `realitySettings.xver` adalah yang dikirim xray ke dest dan tidak terkait.
+- `singbox_listen_port` pada «Template Reality» adalah **endpoint TLS lokal** (dest xray / handshake sing-box), didukung kedua
+  proxy dan terpisah dari routing SNI publik di atas.
 
 ### 6.4 Konfigurasi keluar
 

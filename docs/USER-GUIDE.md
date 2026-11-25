@@ -873,24 +873,24 @@ cd /opt/corefusion
 ### 6.3.2 SNI 按域名分流（nginx / Caddy 差异）
 
 前置 TLS 在 `:443` 上按 ClientHello 的 SNI 把连接分给不同后端：协议中心里的 REALITY 入站会自动派生规则，
-也可以在「代理管理 → SNI」里手写。两家代理都能按域名分流，但**能力不同**，差别在 PROXY protocol 的作用域。
+也可以在「代理管理 → SNI」里手写。两家代理都能按域名分流，差别在 PROXY protocol 的作用域。
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` 作用域 | 整个监听组（`listen` 级）：同端口要么全开、要么全关 | 每条路由（`proxy ... { proxy_protocol v2 }`） |
-| 同一 `:443` 同时承载 xray + sing-box | 不支持：只能选一种口径，实际只服务一个核心 | 支持：一条 SNI 走 xray（PP v2），另一条走 sing-box（不带 PP） |
-| sing-box 的接入方式 | 走自己的独立端口，或单独一个不开 PP 的监听组 | 与 xray 共用 `:443`，按 SNI 区分 |
+| `proxy_protocol` 作用域 | 面板打包的 nginx（带 `stream_pp_var` 补丁）：**每条 SNI 规则**可选 v1 / v2 / 关闭；官方或未打补丁的 nginx：整个监听组（`listen` 级），同端口要么全开、要么全关 | 每条路由（`proxy ... { proxy_protocol v2 }`） |
+| 同一 `:443` 同时承载 xray + sing-box | 打补丁后支持：xray 的 REALITY 发 v1/v2，sing-box 的规则设为关闭 | 支持：一条 SNI 走 xray（PP v2），另一条走 sing-box（不带 PP） |
+| sing-box 的接入方式 | 打补丁后可与 xray 共用 `:443`（该域名关闭 PP）；否则走独立端口，或单独一个不开 PP 的监听组 | 与 xray 共用 `:443`，按 SNI 区分 |
 
-原因：xray 在反代后面需要 PROXY protocol 才能拿到真实客户端 IP 和端口（`sockopt.acceptProxyProtocol`）；
-而 sing-box 的 REALITY 握手只支持 `host:port`，且**不发** PROXY 头。nginx 的 `proxy_protocol on` 写在 `server{}` 里，
-对整组 `listen` 生效，打开后所有 SNI 目标都会收到 PROXY 头 —— 发给 sing-box 会直接破坏握手。
-因此面板在 nginx 开启 stream PROXY protocol 时，会**跳过 sing-box 的自动 SNI 派生规则**，并在日志里提示
-`skipped N sing-box REALITY SNI rule(s)`。Caddy 的 `proxy_protocol v2` 属于单条路由，所以没有这个限制。
+说明：
 
-建议：
-
-- 用 nginx 做前置：`:443` 交给 xray（开启 PROXY protocol），sing-box 的 REALITY 用独立端口直连，或另建一个不开启 PP 的 SNI 监听组；
-- 用 Caddy 做前置：xray 与 sing-box 可以共存于 `:443`，REALITY 入站的 serverNames 会自动派生规则；
+- 默认值仍是 `v1`（即旧的 `proxy_protocol on`）。站点可在「SNI 分流」里按域名改为 `v1`、`v2` 或关闭。`v2` 是二进制头
+  （IPv4 固定 28 字节），比 v1 文本头（约 50~60 字节）更短；差异只在建连时出现一次，业务无感。
+- 面板通过 Agent 执行 `nginx -V` 识别 `NGX_STREAM_PP_VAR`（能力标记 `stream_pp_var`），结果缓存 60 秒。未打补丁、探测
+  失败或旧 Agent 时自动回退：整组写 `proxy_protocol on`（v1），并跳过 sing-box 的自动 SNI 派生规则（日志提示
+  `skipped N sing-box REALITY SNI rule(s)`），不会生成 `nginx -t` 失败的配置。
+- sing-box 的 REALITY / anytls 不能接收 PROXY 头，派生规则固定为关闭；手工把这类域名设成 v1/v2 会直接破坏握手。
+- xray 在反代后面需要 PROXY protocol 才能拿到真实客户端 IP 和端口（`sockopt.acceptProxyProtocol`）；
+  `realitySettings.xver` 是 xray 发给 dest 的，与这里无关。
 - 「Reality 模板」里的 `singbox_listen_port` 是**本地 TLS 端点**（给 xray 做 dest / 给 sing-box 做 handshake），
   两家都支持，与上面的对外 SNI 分流是两件事。
 

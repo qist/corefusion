@@ -851,21 +851,31 @@ cd /opt/corefusion
 
 ### 6.3.2 SNI ベースのルーティング (nginx と Caddy)
 
-フロント TLS 層は、ClientHello SNI によって `:443` 上の接続を分割します。プロトコル センターの下の REALITY インバウンドはルールを自動的に導出します。ルールは「プロキシ管理 → SNI」で手動で記述することもできます。どちらのプロキシもドメインごとに分割できますが、PROXY protocol の範囲により、**機能が異なります**。
+前置 TLS は `:443` 上で ClientHello の SNI ごとに接続を振り分けます。プロトコルセンターの REALITY 入站は
+ルールを自動生成し、「プロキシ管理 → SNI」で手動追加もできます。どちらのプロキシもドメイン単位で振り分けられますが、
+PROXY protocol の適用範囲が異なります。
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` スコープ | リッスン グループ全体 (`listen` レベル): ポートごとにすべてオンまたはすべてオフ | ルートごと (`proxy ... { proxy_protocol v2 }`) |
-| 同じ `:443` 上の xray + sing-box | サポートされません: 1 つのモードのみなので、ポートは単一のコアを提供します | サポートされている: 1 つの SNI は xray (PP v2) に送信され、もう 1 つは sing-box (PP なし) に送信されます。 |
-| sing-box に到達する方法 | 独自の専用ポート、または PP のない別のリッスン グループ | `:443` を xray と共有し、SNI で区切ります |
+| `proxy_protocol` の範囲 | パネル同梱の nginx（`stream_pp_var` パッチ入り）：**SNI ルールごと**に v1 / v2 / オフ。公式または未パッチの nginx：listen グループ全体（`listen` レベル）で、ポート単位に全開か全閉 | ルートごと（`proxy ... { proxy_protocol v2 }`） |
+| 同じ `:443` で xray + sing-box | パッチ適用後は対応：xray の REALITY は v1/v2、sing-box のルールはオフ | 対応：一方の SNI を xray（PP v2）、他方を sing-box（PP なし）へ |
+| sing-box への到達方法 | パッチ後は xray と `:443` を共有可能（該当ドメインは PP オフ）。それ以外は専用ポート、または PP なしの別 listen グループ | xray と `:443` を共有し、SNI で分離 |
 
-理由: リバース プロキシの背後で xray は実際のクライアント IP とポート (`sockopt.acceptProxyProtocol`) を確認するために PROXY protocol を必要としますが、sing-box REALITY ハンドシェイクは `host:port` のみをサポートし、PROXY ヘッダーは**送信しません**。 nginx は `server{}` 内に `proxy_protocol on` を書き込みます。これは `listen` グループ全体に適用されます。有効にすると、すべての SNI ターゲットが PROXY ヘッダーを受信するため、sing-box に送信されるときにハンドシェイクが中断されます。したがって、stream PROXY protocol が nginx に対してオンになっている場合、パネルは **派生 sing-box SNI ルール**をスキップし、`skipped N sing-box REALITY SNI rule(s)` をログに記録します。 Caddyの`proxy_protocol v2`は単一路線に属しているため、そのような制限はありません。
+補足：
 
-推奨事項:
-
-- nginx を前に: `:443` を xray (PROXY protocol を使用) に与え、独自のポートで sing-box REALITY に到達するか、PP を使用せずに別のリッスン グループを追加します。
-- Caddy を前に: xray と sing-box は `:443` を共有でき、REALITY 受信サーバー名は自動的に導出されます。
-- 「リアリティ テンプレート」の `singbox_listen_port` は **ローカル TLS エンドポイント** (xray 宛先 / sing-box ハンドシェイク) です。両方のプロキシがこれをサポートしており、上記のパブリック SNI ルーティングから独立しています。
+- 既定値は従来どおり `v1`（旧 `proxy_protocol on`）。SNI サイトごとに `v1` / `v2` / オフを選択できます。`v2` はバイナリ
+  ヘッダー（IPv4 で 28 バイト）で、v1 のテキストヘッダー（約 50〜60 バイト）より短くなります。差は接続時1回だけで、
+  実用上は体感できません。
+- パネルは Agent 経由で `nginx -V` を実行し、`NGX_STREAM_PP_VAR`（能力フラグ `stream_pp_var`）を検出します。結果は
+  60 秒キャッシュされます。未パッチ、検出失敗、旧 Agent の場合はグループ全体の `proxy_protocol on`（v1）に戻し、
+  sing-box の自動 SNI 派生ルールをスキップします（ログ `skipped N sing-box REALITY SNI rule(s)`）。`nginx -t` に
+  失敗する設定は生成しません。
+- sing-box の REALITY / anytls は PROXY ヘッダーを受け取れないため、派生ルールは常にオフです。手動で v1/v2 にすると
+  ハンドシェイクが壊れます。
+- リバースプロキシ配下の xray は、実クライアント IP とポートを得るために PROXY protocol が必要です
+  （`sockopt.acceptProxyProtocol`）。`realitySettings.xver` は xray が dest へ送るもので、こことは無関係です。
+- 「Reality テンプレート」の `singbox_listen_port` は**ローカル TLS エンドポイント**（xray の dest / sing-box の
+  handshake）で、両プロキシが対応し、上記の公開 SNI 振り分けとは別物です。
 
 ### 6.4 アウトバウンド構成
 

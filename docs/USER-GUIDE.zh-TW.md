@@ -877,21 +877,27 @@ cd /opt/corefusion
 
 ### 6.3.2 基於 SNI 的路由（nginx 與 Caddy）
 
-前端TLS層透過ClientHello SNI拆分`:443`上的連線：REALITY入站在協定中心下自動匯出規則，也可以在「代理程式管理→SNI」下手動編寫規則。兩個代理都可以按域分割，但由於 PROXY protocol 的範圍，它們的**功能不同**。
+前端 TLS 在 `:443` 上依 ClientHello 的 SNI 將連線分給不同後端：協定中心裡的 REALITY 入站會自動衍生規則，
+也可以在「代理程式管理 → SNI」手動撰寫。兩個代理都能依網域分流，差別在 PROXY protocol 的作用範圍。
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol`範圍 | 整個監聽群組（`listen` 等級）：每個連接埠全部開啟或全部關閉 | 每條路線 (`proxy ... { proxy_protocol v2 }`) |
-| 同一 `:443` 上的 xray + sing-box | 不支援：僅一種模式，因此一個連接埠服務於單一核心 | 支援：一個 SNI 轉至 xray (PP v2)，另一個轉至 sing-box（無 PP） |
-| sing-box 如何到達 | 自己的專用端口，或沒有PP的單獨監聽組 | 與 xray 共享 `:443`，由 SNI 分隔 |
+| `proxy_protocol` 作用範圍 | 面板打包的 nginx（帶 `stream_pp_var` 補丁）：**每條 SNI 規則**可選 v1 / v2 / 關閉；官方或未打補丁的 nginx：整個監聽群組（`listen` 層級），同連接埠要麼全開、要麼全關 | 每條路由（`proxy ... { proxy_protocol v2 }`） |
+| 同一 `:443` 同時承載 xray + sing-box | 打補丁後支援：xray 的 REALITY 送 v1/v2，sing-box 的規則設為關閉 | 支援：一條 SNI 走 xray（PP v2），另一條走 sing-box（不帶 PP） |
+| sing-box 的接入方式 | 打補丁後可與 xray 共用 `:443`（該網域關閉 PP）；否則走獨立連接埠，或另建一個不開 PP 的監聽群組 | 與 xray 共用 `:443`，依 SNI 區分 |
 
-原因：在反向代理 xray 後面需要 PROXY protocol 才能看到真實的客戶端 IP 和連接埠（`sockopt.acceptProxyProtocol`），而 sing-box REALITY 握手僅支援 `host:port` 並且**不**發送 PROXY 標頭。 nginx 將 `proxy_protocol on` 寫入 `server{}` 內，這適用於整個 `listen` 群組：一旦啟用，每個 SNI 目標都會收到 PROXY 標頭，這會在傳送到 sing-box 時中斷握手。因此，當 stream PROXY protocol 針對 nginx 啟用並記錄 `skipped N sing-box REALITY SNI rule(s)` 時，面板**跳過派生的 sing-box SNI 規則**。 Caddy的`proxy_protocol v2`屬於單一路由，所以沒有這個限制。
+說明：
 
-建議：
-
-- nginx在前面：將`:443`給xray（帶有PROXY protocol）並在其自己的端口上到達sing-box REALITY，或者添加一個單獨的監聽組而不使用PP；
-- Caddy在前：xray和sing-box可以共用`:443`，且REALITY入站伺服器名稱是自動衍生的；
-- 「現實範本」中的 `singbox_listen_port` 是 **本地 TLS 端點**（xray dest / sing-box 握手）。兩個代理都支援它，並且它獨立於上面的公共 SNI 路由。
+- 預設值仍是 `v1`（即舊的 `proxy_protocol on`）。站點可在「SNI 分流」依網域改為 `v1`、`v2` 或關閉。`v2` 是二進位標頭
+  （IPv4 固定 28 位元組），比 v1 文字標頭（約 50~60 位元組）更短；差異只在建立連線時出現一次，業務無感。
+- 面板透過 Agent 執行 `nginx -V` 辨識 `NGX_STREAM_PP_VAR`（能力標記 `stream_pp_var`），結果快取 60 秒。未打補丁、探測
+  失敗或舊 Agent 時自動回退：整組寫 `proxy_protocol on`（v1），並跳過 sing-box 的自動 SNI 衍生規則（日誌提示
+  `skipped N sing-box REALITY SNI rule(s)`），不會產生 `nginx -t` 失敗的設定。
+- sing-box 的 REALITY / anytls 不能接收 PROXY 標頭，衍生規則固定為關閉；手動把這類網域設成 v1/v2 會直接破壞握手。
+- xray 在反向代理後面需要 PROXY protocol 才能取得真實用戶端 IP 與連接埠（`sockopt.acceptProxyProtocol`）；
+  `realitySettings.xver` 是 xray 送給 dest 的，與這裡無關。
+- 「Reality 範本」裡的 `singbox_listen_port` 是**本機 TLS 端點**（給 xray 做 dest / 給 sing-box 做 handshake），
+  兩者都支援，與上面的對外 SNI 分流是兩件事。
 
 ### 6.4 出站配置
 

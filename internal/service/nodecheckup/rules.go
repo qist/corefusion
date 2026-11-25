@@ -356,21 +356,57 @@ func unknownItem(id, category, key string) nodecheckup.Item {
 	}
 }
 
-// sysctlPersistScript 生成「写入 /etc/sysctl.d + 立即加载」的脚本。
+// sysctlPersistFile 是所有内核参数建议的统一落盘位置。
+// 不按 key 拆文件：一个 key 一个文件会把 /etc/sysctl.d 塞满，排查也不方便。
+const sysctlPersistFile = "/etc/sysctl.d/99-corefusion.conf"
+
+// sysctlKeyPattern 把 sysctl key 转成 sed 正则（点号是正则元字符，必须转义）。
+func sysctlKeyPattern(key string) string {
+	return strings.ReplaceAll(key, ".", `\.`)
+}
+
+// sysctlPersistScript 生成「写入统一 sysctl 文件 + 立即加载」的脚本。
 //
 // 只用 `sysctl -w` 是**临时**生效：/proc/sys 不是磁盘文件，重启后会被内核
 // 按默认值/发行版配置重置。要告诉用户写文件，否则"优化"在重启后就还原了。
-func sysctlPersistScript(key, value string) string {
-	file := "/etc/sysctl.d/99-corefusion-" + key + ".conf"
+//
+// 写入前先删掉同名 key 的旧行再追加，保证：
+//   - 重复执行幂等，不会出现重复行；
+//   - 只复制某一条建议也不会冲掉文件里其它参数。
+func sysctlPersistScript(pairs ...string) string {
+	var keys []string
+	var lines []string
+	for _, p := range pairs {
+		k, v, ok := strings.Cut(p, "=")
+		if !ok {
+			continue
+		}
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if k == "" {
+			continue
+		}
+		keys = append(keys, sysctlKeyPattern(k)+`[[:space:]]*=`)
+		lines = append(lines, "'"+k+" = "+v+"'")
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	del := make([]string, 0, len(keys))
+	for _, k := range keys {
+		del = append(del, "/^"+k+"/d")
+	}
 	return fmt.Sprintf(
-		"# 持久化：写入 %s，重启后仍生效\n"+
-			"printf '%%s\\n' '%s = %s' > %s\n"+
+		"# 持久化：写入 %s（统一文件，重启后仍生效）\n"+
+			"f=%s\n"+
+			"mkdir -p /etc/sysctl.d && touch \"$f\"\n"+
+			"sed -i '%s' \"$f\"\n"+
+			"printf '%%s\\n' %s >> \"$f\"\n"+
 			"sysctl --system",
-		file, key, value, file)
+		sysctlPersistFile, sysctlPersistFile, strings.Join(del, ";"), strings.Join(lines, " "))
 }
 
 func sysctlCommand(key, value, scope string) []nodecheckup.Command {
-	script := sysctlPersistScript(key, value)
+	script := sysctlPersistScript(key + "=" + value)
 	switch scope {
 	case "host", "container-writable":
 		return []nodecheckup.Command{{Shell: "sh", Text: script}}
@@ -400,16 +436,12 @@ func sshPersistScript(suffix string, lines ...string) string {
 
 // bbrCommand 启用 BBR 需要同时设置拥塞控制算法和 qdisc：
 // 只改 congestion_control、不设 default_qdisc=fq 时，部分内核上 BBR 效果打折。
+// 两个参数写进同一个统一文件，不额外新开 bbr 专用文件。
 func bbrCommand(scope string) []nodecheckup.Command {
-	file := "/etc/sysctl.d/99-corefusion-bbr.conf"
-	script := fmt.Sprintf(
-		"# 持久化：写入 %s，重启后仍生效\n"+
-			"cat > %s <<'EOF'\n"+
-			"net.core.default_qdisc = fq\n"+
-			"net.ipv4.tcp_congestion_control = bbr\n"+
-			"EOF\n"+
-			"sysctl --system",
-		file, file)
+	script := sysctlPersistScript(
+		"net.core.default_qdisc=fq",
+		"net.ipv4.tcp_congestion_control=bbr",
+	)
 	switch scope {
 	case "host", "container-writable":
 		return []nodecheckup.Command{{Shell: "sh", Text: script}}

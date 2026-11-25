@@ -2,7 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "Contrôle",
-    "persistHint": "Les commandes proposées écrivent dans des fichiers de configuration puis rechargent : paramètres noyau dans /etc/sysctl.d/, SSH dans /etc/ssh/sshd_config.d/ — ils survivent au redémarrage. Un simple `sysctl -w` est perdu au redémarrage.",
+    "persistHint": "Les commandes proposées écrivent dans des fichiers de configuration puis rechargent : paramètres noyau dans /etc/sysctl.d/99-corefusion.conf, SSH dans /etc/ssh/sshd_config.d/ — ils survivent au redémarrage. Un simple `sysctl -w` est perdu au redémarrage.",
     "settings": "Paramètres du contrôle",
     "enabled": "Contrôle planifié",
     "intervalHours": "Intervalle (heures)",

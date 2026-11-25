@@ -2,7 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "فحص",
-    "persistHint": "الأوامر المقترحة تكتب في ملفات الإعداد ثم تعيد التحميل: معلمات النواة في /etc/sysctl.d/ وSSH في /etc/ssh/sshd_config.d/، لذا تبقى بعد إعادة التشغيل. تنفيذ `sysctl -w` وحده يُلغى عند إعادة التشغيل.",
+    "persistHint": "الأوامر المقترحة تكتب في ملفات الإعداد ثم تعيد التحميل: معلمات النواة في /etc/sysctl.d/99-corefusion.conf وSSH في /etc/ssh/sshd_config.d/، لذا تبقى بعد إعادة التشغيل. تنفيذ `sysctl -w` وحده يُلغى عند إعادة التشغيل.",
     "settings": "إعدادات الفحص",
     "enabled": "فحص مجدول",
     "intervalHours": "الفاصل (ساعات)",

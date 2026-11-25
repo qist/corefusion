@@ -2,7 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "점검",
-    "persistHint": "제안 명령은 설정 파일에 기록한 뒤 다시 읽습니다: 커널 파라미터는 /etc/sysctl.d/, SSH는 /etc/ssh/sshd_config.d/에 저장되어 재부팅 후에도 유지됩니다. `sysctl -w`만 실행하면 재시작 시 원래대로 돌아갑니다.",
+    "persistHint": "제안 명령은 설정 파일에 기록한 뒤 다시 읽습니다: 커널 파라미터는 /etc/sysctl.d/99-corefusion.conf, SSH는 /etc/ssh/sshd_config.d/에 저장되어 재부팅 후에도 유지됩니다. `sysctl -w`만 실행하면 재시작 시 원래대로 돌아갑니다.",
     "settings": "점검 설정",
     "enabled": "예약 점검",
     "intervalHours": "주기(시간)",

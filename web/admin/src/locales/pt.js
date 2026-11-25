@@ -2,7 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "Verificação",
-    "persistHint": "Os comandos sugeridos gravam em arquivos de configuração e recarregam: parâmetros do kernel em /etc/sysctl.d/ e SSH em /etc/ssh/sshd_config.d/, sobrevivendo ao reboot. Um `sysctl -w` isolado é revertido ao reiniciar.",
+    "persistHint": "Os comandos sugeridos gravam em arquivos de configuração e recarregam: parâmetros do kernel em /etc/sysctl.d/99-corefusion.conf e SSH em /etc/ssh/sshd_config.d/, sobrevivendo ao reboot. Um `sysctl -w` isolado é revertido ao reiniciar.",
     "settings": "Configurações da verificação",
     "enabled": "Verificação agendada",
     "intervalHours": "Intervalo (horas)",

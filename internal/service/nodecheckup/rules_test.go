@@ -106,8 +106,15 @@ func TestSysctlCommandPersists(t *testing.T) {
 		t.Fatalf("应生成一条建议命令：%+v", cmds)
 	}
 	text := cmds[0].Text
-	if !strings.Contains(text, "/etc/sysctl.d/99-corefusion-net.core.somaxconn.conf") {
-		t.Fatalf("内核参数应写入 /etc/sysctl.d：%s", text)
+	// 所有内核参数集中一个文件，不按 key 拆文件。
+	if !strings.Contains(text, sysctlPersistFile) {
+		t.Fatalf("内核参数应写入 %s：%s", sysctlPersistFile, text)
+	}
+	if strings.Contains(text, "99-corefusion-net") || strings.Contains(text, "99-corefusion-bbr") {
+		t.Fatalf("不应再按 key 拆文件：%s", text)
+	}
+	if !strings.Contains(text, "sed -i") {
+		t.Fatalf("写入前应删除同名 key，保证幂等：%s", text)
 	}
 	if !strings.Contains(text, "sysctl --system") {
 		t.Fatalf("写文件后应 reload：%s", text)
@@ -123,11 +130,18 @@ func TestBBRCommandWritesBothParams(t *testing.T) {
 		t.Fatalf("应生成一条建议命令：%+v", cmds)
 	}
 	text := cmds[0].Text
-	if !strings.Contains(text, "/etc/sysctl.d/99-corefusion-bbr.conf") {
-		t.Fatalf("BBR 应写入 /etc/sysctl.d：%s", text)
+	if !strings.Contains(text, sysctlPersistFile) {
+		t.Fatalf("BBR 应写入统一文件 %s：%s", sysctlPersistFile, text)
 	}
+	if strings.Contains(text, "99-corefusion-bbr.conf") {
+		t.Fatalf("BBR 不应单独开文件：%s", text)
+	}
+	// 两个参数必须在同一条命令里写入同一个文件。
 	if !strings.Contains(text, "net.core.default_qdisc = fq") || !strings.Contains(text, "net.ipv4.tcp_congestion_control = bbr") {
 		t.Fatalf("BBR 应同时写 qdisc 与算法：%s", text)
+	}
+	if strings.Count(text, ">> \"$f\"") != 1 {
+		t.Fatalf("BBR 两个参数应一次性追加：%s", text)
 	}
 }
 

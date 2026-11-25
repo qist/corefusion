@@ -317,36 +317,167 @@ func collectListeners() []nodecheckup.Listener {
 
 func collectFirewall() *nodecheckup.Firewall {
 	fw := &nodecheckup.Firewall{DefaultInbound: "unknown"}
-	if out, err := runCommand(5*time.Second, "nft", "list", "ruleset"); err == nil && strings.TrimSpace(out) != "" {
+
+	// firewalld 必须最先判：它可能使用 nftables 或 iptables 作为后端，
+	// 直接看 `nft list ruleset` / `iptables -S` 会把 firewalld 自己生成的
+	// 表/链误判成 nftables/iptables（RHEL 9/10 上很常见）。
+	// `--state` 在未运行时返回非 0 且输出 "not running"，所以要求进程成功且文本就是 running。
+	if out, err := runCommand(5*time.Second, "firewall-cmd", "--state"); err == nil &&
+		strings.EqualFold(strings.TrimSpace(out), "running") {
+		fw.Type = "firewalld"
+		fw.Enabled = true
+		if all, lerr := runCommand(5*time.Second, "firewall-cmd", "--list-all"); lerr == nil {
+			fw.RulesRaw = truncate(all, 8192)
+			fw.DefaultInbound = parseFirewalldTarget(all)
+		}
+		return fw
+	}
+
+	// ufw 只有 active 才算启用；inactive 时继续看底层 nft/iptables。
+	if out, err := runCommand(5*time.Second, "ufw", "status"); err == nil &&
+		strings.Contains(out, "Status: active") {
+		fw.Type = "ufw"
+		fw.Enabled = true
+		fw.RulesRaw = truncate(out, 8192)
+		if strings.Contains(out, "Default: deny (incoming)") {
+			fw.DefaultInbound = "drop"
+		} else if strings.Contains(out, "Default: allow (incoming)") {
+			fw.DefaultInbound = "accept"
+		}
+		return fw
+	}
+
+	// nft：只有 input 链里存在真正的过滤规则才算"启用的防火墙"。
+	// 否则像 corefusion 的 ratelimit 记账表（无 hook input）、
+	// podman/netavark 的 `jump NETAVARK_INPUT` 也会被误判成 nftables。
+	if out, err := runCommand(5*time.Second, "nft", "list", "ruleset"); err == nil &&
+		strings.TrimSpace(out) != "" && nftInputHasEffectiveRules(out) {
 		fw.Type = "nftables"
 		fw.Enabled = true
 		fw.RulesRaw = truncate(out, 8192)
 		fw.DefaultInbound = parseNFTPolicy(out)
 		return fw
 	}
+
+	// iptables：`-S` 一定能看到 `-P INPUT`，不能据此判定"有防火墙"。
+	// 只有 INPUT 策略非 ACCEPT，或存在真正的 `-A INPUT` 规则时才算启用。
 	if out, err := runCommand(5*time.Second, "iptables", "-S"); err == nil && strings.TrimSpace(out) != "" {
 		fw.Type = "iptables"
-		fw.Enabled = strings.Contains(out, "-P INPUT")
 		fw.RulesRaw = truncate(out, 8192)
-		if strings.Contains(out, "-P INPUT ACCEPT") {
-			fw.DefaultInbound = "accept"
-		} else if strings.Contains(out, "-P INPUT DROP") {
+		switch {
+		case strings.Contains(out, "-P INPUT DROP"), strings.Contains(out, "-P INPUT REJECT"):
+			fw.Enabled = true
 			fw.DefaultInbound = "drop"
+		case hasIptablesInputRules(out):
+			fw.Enabled = true
+			fw.DefaultInbound = "accept"
+		default:
+			// 全 ACCEPT 且无 INPUT 规则 = 没有实际入站过滤。
+			fw.Enabled = false
+			fw.DefaultInbound = "accept"
 		}
 		return fw
 	}
-	if out, err := runCommand(5*time.Second, "ufw", "status"); err == nil {
-		fw.Type = "ufw"
-		fw.Enabled = strings.Contains(out, "Status: active")
-		fw.RulesRaw = truncate(out, 8192)
-		return fw
-	}
-	if out, err := runCommand(5*time.Second, "firewall-cmd", "--state"); err == nil {
-		fw.Type = "firewalld"
-		fw.Enabled = strings.Contains(out, "running")
-		return fw
-	}
 	return fw
+}
+
+// nftInputHasEffectiveRules 判断 input hook 链里是否有主机防火墙规则。
+//
+// 容器运行时（podman/netavark、docker、k8s）也会建 input 链并 jump 到自己的链，
+// 那不是主机防火墙。只看 `hook input` 会把这类环境误判成 nftables 已启用，
+// 进而给出"默认 accept"的误导结论。
+func nftInputHasEffectiveRules(rules string) bool {
+	inInput := false
+	baseIndent := 0
+	for _, ln := range strings.Split(rules, "\n") {
+		trimmed := strings.TrimSpace(ln)
+		if !inInput {
+			if strings.Contains(strings.ToLower(trimmed), "hook input") {
+				inInput = true
+				baseIndent = leadingTabs(ln)
+			}
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		// 链块结束（与 chain 行同缩进的 `}`）
+		if strings.HasPrefix(trimmed, "}") && leadingTabs(ln) <= baseIndent {
+			inInput = false
+			continue
+		}
+		if strings.HasPrefix(trimmed, "type ") {
+			continue
+		}
+		if isContainerNetRule(trimmed) {
+			continue
+		}
+		if strings.Contains(trimmed, " accept") || strings.Contains(trimmed, " drop") ||
+			strings.Contains(trimmed, " reject") || strings.Contains(trimmed, " jump ") ||
+			strings.Contains(trimmed, " goto ") || strings.Contains(trimmed, " return") {
+			return true
+		}
+	}
+	return false
+}
+
+func leadingTabs(s string) int {
+	n := 0
+	for _, r := range s {
+		if r != '\t' {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// isContainerNetRule 判断规则是否只是容器网络运行时的转发（不算主机防火墙）。
+func isContainerNetRule(s string) bool {
+	l := strings.ToLower(s)
+	for _, p := range []string{"netavark", "docker", "podman", "kube", "cni-"} {
+		if strings.Contains(l, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasIptablesInputRules 判断是否有真正的主机 INPUT 链规则：
+// `-P`/`-N` 和容器运行时的跳转（netavark/docker/podman/k8s）都不算。
+func hasIptablesInputRules(rules string) bool {
+	for _, line := range strings.Split(rules, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "-A INPUT ") {
+			continue
+		}
+		if isContainerNetRule(line) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// parseFirewalldTarget 解析 `firewall-cmd --list-all` 的 target 行。
+// target=default 表示按 zone 规则处理，未放行的入站默认被拒绝，按 drop 计。
+func parseFirewalldTarget(rules string) string {
+	for _, line := range strings.Split(rules, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(strings.ToLower(line), "target:") {
+			continue
+		}
+		target := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.ToLower(line), "target:")))
+		switch {
+		case strings.Contains(target, "drop"), strings.Contains(target, "reject"):
+			return "drop"
+		case strings.Contains(target, "accept"):
+			return "accept"
+		default:
+			return "drop"
+		}
+	}
+	return "unknown"
 }
 
 func parseNFTPolicy(rules string) string {

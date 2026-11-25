@@ -33,3 +33,67 @@ func TestCollectSystemFactsReadOnly(t *testing.T) {
 		}
 	}
 }
+
+// firewalld 必须优先于 nft/iptables：它可能用任一后端，直接看底层会把
+// firewalld 自己的表/链误判成 nftables/iptables。
+func TestParseFirewalldTarget(t *testing.T) {
+	cases := map[string]string{
+		"public (active)\n  target: default\n  services: ssh": "drop",
+		"public (active)\n  target: ACCEPT":                   "accept",
+		"public (active)\n  target: %%REJECT%%":               "drop",
+		"public (active)\n  target: DROP":                     "drop",
+		"no target line":                                      "unknown",
+	}
+	for in, want := range cases {
+		if got := parseFirewalldTarget(in); got != want {
+			t.Fatalf("parseFirewalldTarget(%q)=%q, want %q", in, got, want)
+		}
+	}
+}
+
+// `iptables -S` 永远有 `-P INPUT`，不能据此判定"有防火墙"。
+func TestHasIptablesInputRules(t *testing.T) {
+	noRules := "-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n-N DOCKER\n"
+	if hasIptablesInputRules(noRules) {
+		t.Fatal("只有默认策略和一个空链时不应算 INPUT 规则")
+	}
+	withRules := noRules + "-A INPUT -p tcp --dport 22 -j ACCEPT\n"
+	if !hasIptablesInputRules(withRules) {
+		t.Fatal("存在 -A INPUT 规则时应判定为有入站规则")
+	}
+	// podman/netavark 的 INPUT 跳转不是主机防火墙。
+	netavark := noRules + "-A INPUT -m comment --comment \"netavark firewall rules\" -j NETAVARK_INPUT\n"
+	if hasIptablesInputRules(netavark) {
+		t.Fatal("netavark 的 INPUT 跳转不应算主机防火墙")
+	}
+}
+
+// 容器网络（podman/netavark）也会建 input 链，不能当成主机防火墙。
+func TestNftInputHasEffectiveRules(t *testing.T) {
+	netavark := `table inet netavark {
+	chain INPUT {
+		type filter hook input priority filter; policy accept;
+		counter packets 145792154 bytes 93838037985 jump NETAVARK_INPUT
+	}
+}
+`
+	if nftInputHasEffectiveRules(netavark) {
+		t.Fatal("只有 NETAVARK_INPUT 跳转时不应算主机防火墙")
+	}
+
+	realFilter := `table inet filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		tcp dport 22 accept
+		ct state established,related accept
+	}
+}
+`
+	if !nftInputHasEffectiveRules(realFilter) {
+		t.Fatal("存在 accept/drop 规则时应判定为有效防火墙")
+	}
+
+	if nftInputHasEffectiveRules("table inet corefusion_ratelimit {\n\tset x {\n\t}\n}\n") {
+		t.Fatal("没有 input hook 时不应算防火墙")
+	}
+}

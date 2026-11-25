@@ -168,7 +168,7 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 		add(nodecheckup.Item{
 			ID: "FW-01", Category: "firewall", Severity: SeverityHigh, Scope: facts.Env.Kind,
 			Params:   map[string]any{"type": facts.Firewall.Type},
-			Evidence: []string{"no active local firewall detected"},
+			Evidence: []string{"no active local firewall detected (check cloud security group rules separately)"},
 			Commands: []nodecheckup.Command{{Shell: "sh", Text: "nft list ruleset 2>/dev/null || iptables -S"}},
 		})
 	} else {

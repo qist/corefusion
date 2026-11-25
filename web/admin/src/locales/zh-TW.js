@@ -1,5 +1,53 @@
 // zh-TW
 export default {
+  nodeCheckup: {
+    "tab": "安全體檢",
+    "settings": "體檢設定",
+    "enabled": "定時體檢",
+    "intervalHours": "週期（小時）",
+    "thresholds": "判定閾值",
+    "diskWarnPct": "磁碟警告閾值 (%)",
+    "diskHighPct": "磁碟高風險閾值 (%)",
+    "memAvailableWarnPct": "可用記憶體警告閾值 (%)",
+    "conntrackMin": "conntrack 最小值",
+    "somaxconnMin": "somaxconn 最小值",
+    "saveFailed": "儲存失敗",
+    "title": "節點安全體檢",
+    "refresh": "立即體檢",
+    "lastCheck": "上次體檢",
+    "never": "從未體檢",
+    "container": "容器",
+    "host": "主機",
+    "noSystemd": "無 systemd",
+    "empty": "尚無體檢結果，點擊「立即體檢」",
+    "loadFailed": "體檢失敗",
+    "evidence": "證據",
+    "copy": "複製",
+    "copied": "已複製",
+    "severity": {
+      "high": "高風險",
+      "warn": "警告",
+      "info": "提示",
+      "ok": "正常",
+      "unknown": "無法檢查",
+    },
+    "category": {
+      "system": "系統",
+      "network": "網路",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "防火牆",
+    },
+    "scope": {
+      "host": "主機",
+      "container-writable": "容器內可改",
+      "container-readonly": "容器唯讀",
+      "host-global": "需在宿主機設定",
+      "na": "不適用",
+      "unknown": "未知",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "WireGuard 隧道內使用的 DNS 伺服器，逗號分隔（寫入 settings.remoteDNS；替代已廢棄的 dns 欄位）"

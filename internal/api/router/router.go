@@ -96,6 +96,7 @@ import (
 	logManageSvc "corefusion/internal/service/logmanage"
 	mihomoSvc "corefusion/internal/service/mihomo"
 	nodeService "corefusion/internal/service/node"
+	nodecheckupSvc "corefusion/internal/service/nodecheckup"
 	nodeServerSvc "corefusion/internal/service/nodeserver"
 	oauthService "corefusion/internal/service/oauth"
 	outboundconfigSvc "corefusion/internal/service/outboundconfig"
@@ -1494,6 +1495,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	proxyH := systemHandler.NewProxyHandler(proxyMgr, caddyMgr, nginxMgr)
 	caddyH := systemHandler.NewCaddyHandler(caddyMgr, proxyMgr)
 	nginxH := systemHandler.NewNginxHandler(nginxMgr, proxyMgr)
+	// 节点安全体检：Agent 只读 facts → 面板规则引擎 → 最新结果落库。
+	var checkupFetcher nodecheckupSvc.FactsFetcher
+	if sharedNodeMgr != nil {
+		checkupFetcher = sharedNodeMgr
+	}
+	nodeCheckupSvcInst := nodecheckupSvc.NewService(checkupFetcher, systemSettingSvc, repository.NewNodeCheckupRepository(database))
+	nodeCheckupSvcInst.SetServerIDLister(nodeServerRepoForSync.ListAllServerIDs)
+	nodeCheckupSvcInst.StartScheduler(context.Background())
+	nodeCheckupH := systemHandler.NewNodeCheckupHandler(nodeCheckupSvcInst)
 	geoRuleH := geoRuleHandler.NewHandler(geoRuleSvcInst, geoRuleScheduler)
 	wafH := wafHandler.NewHandler(wafSvcInst)
 	wafH.SetScheduler(wafScheduler)
@@ -3016,6 +3026,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				nodeServersGroup.POST("/:id/update-agent", nodeServerH.UpdateAgent)
 				nodeServersGroup.POST("/update-all-agents", nodeServerH.UpdateAllAgents)
 				nodeServersGroup.GET("/pending-agent-updates", nodeServerH.GetPendingAgentUpdates)
+				// 节点安全体检（只读）
+				nodeServersGroup.GET("/checkup/summary", nodeCheckupH.Summary)
+				nodeServersGroup.GET("/:id/checkup", nodeCheckupH.GetNodeReport)
 
 				// Supplementary: Server Management
 				nodeServersGroup.GET("/:id/status", nodeServerH.GetServerStatus)
@@ -3538,6 +3551,9 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			superAdminSystem := systemGroup.Group("").Use(middleware.RequireRole(domainuser.RoleSuperAdmin))
 			{
 				systemGroup.GET("/stats", systemH.GetSystemStats)
+				// 节点安全体检设置（定时默认关闭；阈值可配置）
+				systemGroup.GET("/node-checkup", nodeCheckupH.GetSettings)
+				systemGroup.PUT("/node-checkup", nodeCheckupH.SaveSettings)
 				systemGroup.GET("/bootstrap-state", systemH.GetBootstrapState)
 				systemGroup.PUT("/bootstrap-finish", systemH.FinishBootstrap)
 				systemGroup.GET("/releases", systemH.ListReleases)

@@ -1,5 +1,53 @@
 // id
 export default {
+  nodeCheckup: {
+    "tab": "Pemeriksaan",
+    "settings": "Pengaturan pemeriksaan",
+    "enabled": "Pemeriksaan terjadwal",
+    "intervalHours": "Interval (jam)",
+    "thresholds": "Ambang batas",
+    "diskWarnPct": "Peringatan disk (%)",
+    "diskHighPct": "Disk risiko tinggi (%)",
+    "memAvailableWarnPct": "Peringatan memori tersedia (%)",
+    "conntrackMin": "minimum conntrack",
+    "somaxconnMin": "minimum somaxconn",
+    "saveFailed": "Gagal menyimpan",
+    "title": "Pemeriksaan keamanan node",
+    "refresh": "Jalankan pemeriksaan",
+    "lastCheck": "Pemeriksaan terakhir",
+    "never": "Belum pernah",
+    "container": "Kontainer",
+    "host": "Host",
+    "noSystemd": "Tanpa systemd",
+    "empty": "Belum ada hasil. Klik \"Jalankan pemeriksaan\".",
+    "loadFailed": "Pemeriksaan gagal",
+    "evidence": "Bukti",
+    "copy": "Salin",
+    "copied": "Disalin",
+    "severity": {
+      "high": "Tinggi",
+      "warn": "Peringatan",
+      "info": "Info",
+      "ok": "OK",
+      "unknown": "Tidak dapat diperiksa",
+    },
+    "category": {
+      "system": "Sistem",
+      "network": "Jaringan",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Firewall",
+    },
+    "scope": {
+      "host": "Host",
+      "container-writable": "Dapat diubah di kontainer",
+      "container-readonly": "Hanya baca di kontainer",
+      "host-global": "Atur di host",
+      "na": "Tidak berlaku",
+      "unknown": "Tidak diketahui",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "Server DNS yang digunakan di dalam terowongan WireGuard, dipisahkan koma (ditulis ke settings.remoteDNS; menggantikan kolom dns yang tidak digunakan lagi)"

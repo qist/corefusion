@@ -1,5 +1,53 @@
 // fr
 export default {
+  nodeCheckup: {
+    "tab": "Contrôle",
+    "settings": "Paramètres du contrôle",
+    "enabled": "Contrôle planifié",
+    "intervalHours": "Intervalle (heures)",
+    "thresholds": "Seuils",
+    "diskWarnPct": "Avertissement disque (%)",
+    "diskHighPct": "Disque à haut risque (%)",
+    "memAvailableWarnPct": "Avertissement mémoire disponible (%)",
+    "conntrackMin": "minimum conntrack",
+    "somaxconnMin": "minimum somaxconn",
+    "saveFailed": "Échec de l'enregistrement",
+    "title": "Contrôle de sécurité du nœud",
+    "refresh": "Lancer le contrôle",
+    "lastCheck": "Dernier contrôle",
+    "never": "Jamais",
+    "container": "Conteneur",
+    "host": "Hôte",
+    "noSystemd": "Sans systemd",
+    "empty": "Aucun résultat. Cliquez sur « Lancer le contrôle ».",
+    "loadFailed": "Échec du contrôle",
+    "evidence": "Preuve",
+    "copy": "Copier",
+    "copied": "Copié",
+    "severity": {
+      "high": "Élevé",
+      "warn": "Avertissement",
+      "info": "Info",
+      "ok": "OK",
+      "unknown": "Impossible à vérifier",
+    },
+    "category": {
+      "system": "Système",
+      "network": "Réseau",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Pare-feu",
+    },
+    "scope": {
+      "host": "Hôte",
+      "container-writable": "Modifiable dans le conteneur",
+      "container-readonly": "Lecture seule dans le conteneur",
+      "host-global": "À définir sur l'hôte",
+      "na": "Non applicable",
+      "unknown": "Inconnu",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "Serveurs DNS utilisés à l'intérieur du tunnel WireGuard, séparés par des virgules (écrits dans settings.remoteDNS ; remplace le champ DNS obsolète)"

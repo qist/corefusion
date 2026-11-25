@@ -1,0 +1,478 @@
+package agent
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"corefusion/internal/model/nodecheckup"
+	agentpb "corefusion/internal/runtime/agent/proto"
+)
+
+// defaultSysctlKeys 是体检白名单。面板可以覆盖，但不允许任意 key 落到 Agent。
+var defaultSysctlKeys = []string{
+	"net.ipv4.ip_forward",
+	"net.ipv4.tcp_syncookies",
+	"net.ipv4.tcp_fastopen",
+	"net.ipv4.tcp_max_syn_backlog",
+	"net.ipv4.tcp_max_tw_buckets",
+	"net.ipv4.tcp_tw_reuse",
+	"net.ipv4.tcp_fin_timeout",
+	"net.ipv4.tcp_mtu_probing",
+	"net.ipv4.tcp_congestion_control",
+	"net.ipv4.tcp_available_congestion_control",
+	"net.ipv4.tcp_rmem",
+	"net.ipv4.tcp_wmem",
+	"net.ipv4.tcp_keepalive_time",
+	"net.ipv4.ip_local_port_range",
+	"net.ipv4.udp_mem",
+	"net.ipv4.udp_rmem_min",
+	"net.ipv4.udp_wmem_min",
+	"net.core.somaxconn",
+	"net.core.rmem_max",
+	"net.core.wmem_max",
+	"net.core.default_qdisc",
+	"net.netfilter.nf_conntrack_max",
+	"fs.file-max",
+	"fs.nr_open",
+	"vm.swappiness",
+	"kernel.pid_max",
+}
+
+// hostGlobalKeys 在容器内也由宿主内核统一决定，体检只给宿主命令，不判错。
+var hostGlobalKeys = map[string]bool{
+	"fs.file-max":    true,
+	"vm.swappiness":  true,
+	"kernel.pid_max": true,
+}
+
+// CollectSystemFacts 只读采集本机事实。禁止写文件、改 sysctl、加载模块或重启服务。
+func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFactsResponse {
+	if req == nil {
+		req = &agentpb.GetSystemFactsRequest{}
+	}
+	facts := nodecheckup.Facts{
+		Env:       collectEnv(),
+		Sysctl:    map[string]nodecheckup.Sysctl{},
+		Modules:   map[string]bool{},
+		Listeners: []nodecheckup.Listener{},
+	}
+	keys := req.GetSysctlKeys()
+	if len(keys) == 0 {
+		keys = defaultSysctlKeys
+	}
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, " /\\") {
+			continue
+		}
+		facts.Sysctl[key] = collectSysctl(key, facts.Env)
+	}
+	facts.Modules = collectModules()
+	if req.GetIncludeSsh() {
+		facts.SSHD = collectSSHD()
+	}
+	facts.Listeners = collectListeners()
+	if req.GetIncludeFirewallRules() {
+		facts.Firewall = collectFirewall()
+	}
+	facts.Resources = collectResources()
+	facts.TimeSync = collectTimeSync()
+
+	data, err := json.Marshal(facts)
+	if err != nil {
+		return &agentpb.GetSystemFactsResponse{Success: false, Error: err.Error()}
+	}
+	return &agentpb.GetSystemFactsResponse{Success: true, Facts: string(data)}
+}
+
+func collectEnv() nodecheckup.Env {
+	env := nodecheckup.Env{
+		Kind:    "host",
+		OS:      readOSName(),
+		Kernel:  strings.TrimSpace(readFileString("/proc/sys/kernel/osrelease")),
+		Systemd: dirExists("/run/systemd/system"),
+		Root:    os.Geteuid() == 0,
+	}
+	if runtime.GOOS != "linux" {
+		env.Kind = "unknown"
+		return env
+	}
+	container, runtimeName := detectContainer()
+	if container {
+		env.Kind = "container"
+		env.Runtime = runtimeName
+	}
+	env.CapNetAdmin = hasCapNetAdmin()
+	return env
+}
+
+func detectContainer() (bool, string) {
+	if fileExists("/.dockerenv") {
+		return true, "docker"
+	}
+	if fileExists("/run/.containerenv") {
+		return true, "podman"
+	}
+	cg := readFileString("/proc/1/cgroup")
+	switch {
+	case strings.Contains(cg, "docker"):
+		return true, "docker"
+	case strings.Contains(cg, "kubepods"):
+		return true, "k8s"
+	case strings.Contains(cg, "lxc"):
+		return true, "lxc"
+	case strings.Contains(cg, "containerd"):
+		return true, "containerd"
+	}
+	if out, err := runCommand(2*time.Second, "systemd-detect-virt", "--container"); err == nil {
+		name := strings.TrimSpace(out)
+		if name != "" && name != "none" {
+			return true, name
+		}
+	}
+	return false, ""
+}
+
+func hasCapNetAdmin() bool {
+	status := readFileString("/proc/self/status")
+	for _, line := range strings.Split(status, "\n") {
+		if !strings.HasPrefix(line, "CapEff:") {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
+		v, err := strconv.ParseUint(raw, 16, 64)
+		if err != nil {
+			return false
+		}
+		// CAP_NET_ADMIN = 12
+		return v&(1<<12) != 0
+	}
+	return false
+}
+
+func collectSysctl(key string, env nodecheckup.Env) nodecheckup.Sysctl {
+	path := "/proc/sys/" + strings.ReplaceAll(key, ".", "/")
+	value, err := os.ReadFile(path)
+	if err != nil {
+		return nodecheckup.Sysctl{Scope: "na"}
+	}
+	fact := nodecheckup.Sysctl{Value: strings.TrimSpace(string(value)), Scope: "host"}
+	if env.Kind == "container" {
+		fact.Scope = "container-writable"
+		if hostGlobalKeys[key] {
+			fact.Scope = "host-global"
+		}
+	}
+	if procSysReadOnly() {
+		fact.Writable = false
+		if fact.Scope == "container-writable" {
+			fact.Scope = "container-readonly"
+		}
+		return fact
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err == nil {
+		_ = f.Close()
+		fact.Writable = true
+		return fact
+	}
+	fact.Writable = false
+	if fact.Scope == "container-writable" {
+		fact.Scope = "container-readonly"
+	}
+	return fact
+}
+
+func procSysReadOnly() bool {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) >= 4 && fields[1] == "/proc/sys" {
+			return strings.Contains(","+fields[3]+",", ",ro,")
+		}
+	}
+	return false
+}
+
+func collectModules() map[string]bool {
+	out := map[string]bool{"tcp_bbr": false, "nf_conntrack": false}
+	f, err := os.Open("/proc/modules")
+	if err != nil {
+		// 模块可能编译进内核，/proc/modules 为空；从 config 再判断一次。
+		if cfg := readFileString("/boot/config-" + strings.TrimSpace(readFileString("/proc/sys/kernel/osrelease"))); cfg != "" {
+			for k := range out {
+				if strings.Contains(cfg, "CONFIG_"+strings.ToUpper(k)+"=y") {
+					out[k] = true
+				}
+			}
+		}
+		return out
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		name := strings.Fields(sc.Text())
+		if len(name) == 0 {
+			continue
+		}
+		if _, ok := out[name[0]]; ok {
+			out[name[0]] = true
+		}
+	}
+	return out
+}
+
+func collectSSHD() *nodecheckup.SSHD {
+	res := &nodecheckup.SSHD{Present: false, Effective: map[string]string{}, Users: map[string]map[string]string{}, Keys: map[string]nodecheckup.SSHKey{}}
+	path, err := exec.LookPath("sshd")
+	if err != nil {
+		return res
+	}
+	res.Present = true
+	out, err := runCommand(5*time.Second, path, "-T")
+	if err != nil {
+		res.Error = truncate(err.Error(), 300)
+		return res
+	}
+	res.Effective = parseSSHDTest(out)
+	res.Port = atoiSafe(res.Effective["port"])
+	for _, user := range []string{"root"} {
+		if uo, uerr := runCommand(5*time.Second, path, "-T", "-C", "user="+user); uerr == nil {
+			res.Users[user] = parseSSHDTest(uo)
+		}
+	}
+	for _, user := range []string{"root"} {
+		home := "/root"
+		if user != "root" {
+			home = filepath.Join("/home", user)
+		}
+		key := nodecheckup.SSHKey{Owner: user}
+		sshDir := filepath.Join(home, ".ssh")
+		authKeys := filepath.Join(sshDir, "authorized_keys")
+		key.SSHDirMode = fileModeString(sshDir)
+		key.AuthorizedKeysMode = fileModeString(authKeys)
+		key.HasKey = fileExists(authKeys)
+		key.OwnerOK = ownerMatches(sshDir, user)
+		res.Keys[user] = key
+	}
+	return res
+}
+
+func parseSSHDTest(out string) map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		m[strings.ToLower(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return m
+}
+
+func collectListeners() []nodecheckup.Listener {
+	out, err := runCommand(5*time.Second, "ss", "-lntu")
+	if err != nil {
+		return nil
+	}
+	var res []nodecheckup.Listener
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[0] == "Netid" {
+			continue
+		}
+		local := fields[4]
+		idx := strings.LastIndex(local, ":")
+		if idx < 0 {
+			continue
+		}
+		addr := strings.Trim(local[:idx], "[]")
+		port := atoiSafe(local[idx+1:])
+		if port <= 0 {
+			continue
+		}
+		res = append(res, nodecheckup.Listener{Proto: fields[0], Addr: addr, Port: port})
+	}
+	return res
+}
+
+func collectFirewall() *nodecheckup.Firewall {
+	fw := &nodecheckup.Firewall{DefaultInbound: "unknown"}
+	if out, err := runCommand(5*time.Second, "nft", "list", "ruleset"); err == nil && strings.TrimSpace(out) != "" {
+		fw.Type = "nftables"
+		fw.Enabled = true
+		fw.RulesRaw = truncate(out, 8192)
+		fw.DefaultInbound = parseNFTPolicy(out)
+		return fw
+	}
+	if out, err := runCommand(5*time.Second, "iptables", "-S"); err == nil && strings.TrimSpace(out) != "" {
+		fw.Type = "iptables"
+		fw.Enabled = strings.Contains(out, "-P INPUT")
+		fw.RulesRaw = truncate(out, 8192)
+		if strings.Contains(out, "-P INPUT ACCEPT") {
+			fw.DefaultInbound = "accept"
+		} else if strings.Contains(out, "-P INPUT DROP") {
+			fw.DefaultInbound = "drop"
+		}
+		return fw
+	}
+	if out, err := runCommand(5*time.Second, "ufw", "status"); err == nil {
+		fw.Type = "ufw"
+		fw.Enabled = strings.Contains(out, "Status: active")
+		fw.RulesRaw = truncate(out, 8192)
+		return fw
+	}
+	if out, err := runCommand(5*time.Second, "firewall-cmd", "--state"); err == nil {
+		fw.Type = "firewalld"
+		fw.Enabled = strings.Contains(out, "running")
+		return fw
+	}
+	return fw
+}
+
+func parseNFTPolicy(rules string) string {
+	lower := strings.ToLower(rules)
+	if !strings.Contains(lower, "hook input") {
+		return "unknown"
+	}
+	if strings.Contains(lower, "policy drop") {
+		return "drop"
+	}
+	if strings.Contains(lower, "policy accept") {
+		return "accept"
+	}
+	return "unknown"
+}
+
+func collectResources() *nodecheckup.Resources {
+	r := &nodecheckup.Resources{DiskPath: "/"}
+	mem := readFileString("/proc/meminfo")
+	for _, line := range strings.Split(mem, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		switch strings.TrimSuffix(fields[0], ":") {
+		case "MemTotal":
+			r.MemTotalKB = int64(atoiSafe(fields[1]))
+		case "MemAvailable":
+			r.MemAvailableKB = int64(atoiSafe(fields[1]))
+		}
+	}
+	var st syscall.Statfs_t
+	if err := syscall.Statfs("/", &st); err == nil {
+		r.DiskTotalKB = int64(st.Blocks) * int64(st.Bsize) / 1024
+		r.DiskFreeKB = int64(st.Bavail) * int64(st.Bsize) / 1024
+	}
+	if load := strings.Fields(readFileString("/proc/loadavg")); len(load) > 0 {
+		if v, err := strconv.ParseFloat(load[0], 64); err == nil {
+			r.Load1 = v
+		}
+	}
+	var rl syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rl); err == nil {
+		r.NoFileSoft = uint64(rl.Cur)
+		r.NoFileHard = uint64(rl.Max)
+	}
+	return r
+}
+
+func collectTimeSync() *nodecheckup.TimeSync {
+	out, err := runCommand(2*time.Second, "timedatectl", "show", "-p", "NTPSynchronized", "--value")
+	if err != nil {
+		return nil
+	}
+	return &nodecheckup.TimeSync{Service: "timedatectl", Synchronized: strings.TrimSpace(out) == "yes"}
+}
+
+// ---- helpers ----
+
+func runCommand(timeout time.Duration, name string, args ...string) (string, error) {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, args...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func readOSName() string {
+	data := readFileString("/etc/os-release")
+	for _, line := range strings.Split(data, "\n") {
+		if strings.HasPrefix(line, "PRETTY_NAME=") {
+			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), `"`)
+		}
+	}
+	return runtime.GOOS
+}
+
+func readFileString(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
+
+func fileModeString(path string) string {
+	st, err := os.Stat(path)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%04o", st.Mode().Perm())
+}
+
+func ownerMatches(path, user string) bool {
+	st, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	stat, ok := st.Sys().(*syscall.Stat_t)
+	if !ok {
+		return true
+	}
+	uid := os.Getuid()
+	if user == "root" {
+		return stat.Uid == 0
+	}
+	return int(stat.Uid) == uid
+}
+
+func atoiSafe(s string) int {
+	v, _ := strconv.Atoi(strings.TrimSpace(s))
+	return v
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}

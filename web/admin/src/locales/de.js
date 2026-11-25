@@ -1,5 +1,53 @@
 // de
 export default {
+  nodeCheckup: {
+    "tab": "Prüfung",
+    "settings": "Prüfungseinstellungen",
+    "enabled": "Geplante Prüfung",
+    "intervalHours": "Intervall (Stunden)",
+    "thresholds": "Schwellenwerte",
+    "diskWarnPct": "Festplattenwarnung (%)",
+    "diskHighPct": "Festplatte hohes Risiko (%)",
+    "memAvailableWarnPct": "Warnung verfügbarer Speicher (%)",
+    "conntrackMin": "conntrack-Minimum",
+    "somaxconnMin": "somaxconn-Minimum",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "title": "Sicherheitsprüfung des Knotens",
+    "refresh": "Prüfung starten",
+    "lastCheck": "Letzte Prüfung",
+    "never": "Nie",
+    "container": "Container",
+    "host": "Host",
+    "noSystemd": "Kein systemd",
+    "empty": "Noch kein Ergebnis. Auf \"Prüfung starten\" klicken.",
+    "loadFailed": "Prüfung fehlgeschlagen",
+    "evidence": "Nachweis",
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "severity": {
+      "high": "Hoch",
+      "warn": "Warnung",
+      "info": "Hinweis",
+      "ok": "OK",
+      "unknown": "Nicht prüfbar",
+    },
+    "category": {
+      "system": "System",
+      "network": "Netzwerk",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Firewall",
+    },
+    "scope": {
+      "host": "Host",
+      "container-writable": "Im Container änderbar",
+      "container-readonly": "Im Container schreibgeschützt",
+      "host-global": "Auf Host setzen",
+      "na": "Nicht zutreffend",
+      "unknown": "Unbekannt",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "DNS-Server, die im WireGuard-Tunnel verwendet werden, durch Kommas getrennt (in „settings.remoteDNS“ geschrieben; ersetzt das veraltete DNS-Feld)"

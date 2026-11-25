@@ -1,5 +1,53 @@
 // pt
 export default {
+  nodeCheckup: {
+    "tab": "Verificação",
+    "settings": "Configurações da verificação",
+    "enabled": "Verificação agendada",
+    "intervalHours": "Intervalo (horas)",
+    "thresholds": "Limites",
+    "diskWarnPct": "Aviso de disco (%)",
+    "diskHighPct": "Disco de alto risco (%)",
+    "memAvailableWarnPct": "Aviso de memória disponível (%)",
+    "conntrackMin": "mínimo de conntrack",
+    "somaxconnMin": "mínimo de somaxconn",
+    "saveFailed": "Falha ao salvar",
+    "title": "Verificação de segurança do nó",
+    "refresh": "Executar verificação",
+    "lastCheck": "Última verificação",
+    "never": "Nunca",
+    "container": "Contêiner",
+    "host": "Host",
+    "noSystemd": "Sem systemd",
+    "empty": "Ainda sem resultado. Clique em \"Executar verificação\".",
+    "loadFailed": "Falha na verificação",
+    "evidence": "Evidência",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "severity": {
+      "high": "Alto",
+      "warn": "Aviso",
+      "info": "Info",
+      "ok": "OK",
+      "unknown": "Não foi possível verificar",
+    },
+    "category": {
+      "system": "Sistema",
+      "network": "Rede",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Firewall",
+    },
+    "scope": {
+      "host": "Host",
+      "container-writable": "Editável no contêiner",
+      "container-readonly": "Somente leitura no contêiner",
+      "host-global": "Definir no host",
+      "na": "Não aplicável",
+      "unknown": "Desconhecido",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "Servidores DNS usados ​​dentro do túnel WireGuard, separados por vírgula (gravados em settings.remoteDNS; substitui o campo DNS obsoleto)"

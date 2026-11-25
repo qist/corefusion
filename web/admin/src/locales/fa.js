@@ -1,5 +1,53 @@
 // fa
 export default {
+  nodeCheckup: {
+    "tab": "بررسی",
+    "settings": "تنظیمات بررسی",
+    "enabled": "بررسی زمان‌بندی‌شده",
+    "intervalHours": "فاصله (ساعت)",
+    "thresholds": "آستانه‌ها",
+    "diskWarnPct": "هشدار دیسک (%)",
+    "diskHighPct": "دیسک پرخطر (%)",
+    "memAvailableWarnPct": "هشدار حافظهٔ آزاد (%)",
+    "conntrackMin": "حداقل conntrack",
+    "somaxconnMin": "حداقل somaxconn",
+    "saveFailed": "ذخیره ناموفق",
+    "title": "بررسی امنیت گره",
+    "refresh": "اجرای بررسی",
+    "lastCheck": "آخرین بررسی",
+    "never": "هرگز",
+    "container": "کانتینر",
+    "host": "میزبان",
+    "noSystemd": "بدون systemd",
+    "empty": "هنوز نتیجه‌ای نیست. «اجرای بررسی» را بزنید.",
+    "loadFailed": "بررسی ناموفق",
+    "evidence": "شواهد",
+    "copy": "کپی",
+    "copied": "کپی شد",
+    "severity": {
+      "high": "بالا",
+      "warn": "هشدار",
+      "info": "اطلاع",
+      "ok": "سالم",
+      "unknown": "قابل بررسی نیست",
+    },
+    "category": {
+      "system": "سیستم",
+      "network": "شبکه",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "فایروال",
+    },
+    "scope": {
+      "host": "میزبان",
+      "container-writable": "قابل تغییر در کانتینر",
+      "container-readonly": "فقط خواندنی در کانتینر",
+      "host-global": "روی میزبان تنظیم کنید",
+      "na": "نامرتبط",
+      "unknown": "ناشناخته",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "DNS سرورهای مورد استفاده در داخل تونل WireGuard، جدا شده با کاما (نوشته شده در settings.remoteDNS؛ جایگزین فیلد dns منسوخ شده)"

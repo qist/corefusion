@@ -543,6 +543,11 @@ func (a *LocalAgent) GetProxyStatus(proxyType string) *ProxyInfo {
 	}
 }
 
+// GetSystemFacts 只读采集本机事实（节点安全体检）。本机面板节点与远程 Agent 共用同一采集器。
+func (a *LocalAgent) GetSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFactsResponse {
+	return CollectSystemFacts(req)
+}
+
 // GetProxyStatuses 获取所有代理的安装和运行状态。
 func (a *LocalAgent) GetProxyStatuses() *agentpb.GetProxyStatusResponse {
 	resp := &agentpb.GetProxyStatusResponse{

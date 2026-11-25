@@ -1065,6 +1065,40 @@ func (m *NodeServerManager) GetProxyStatus(ctx context.Context, serverID int64) 
 	return &resp, nil
 }
 
+// GetSystemFacts 获取节点只读系统事实（安全体检）。事实不落库，仅用于本次判定。
+func (m *NodeServerManager) GetSystemFacts(ctx context.Context, serverID int64, req *agentpb.GetSystemFactsRequest) (*agentpb.GetSystemFactsResponse, error) {
+	if serverID <= 0 {
+		return nil, fmt.Errorf("invalid server id %d", serverID)
+	}
+	if req == nil {
+		req = &agentpb.GetSystemFactsRequest{}
+	}
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		return m.localAgent.GetSystemFacts(req), nil
+	}
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_GetSystemFacts{
+			GetSystemFacts: req,
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 25*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.GetSystemFactsResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal get_system_facts response: %w", err)
+	}
+	return &resp, nil
+}
+
 // ListBinaries lists installed core binaries on a server.
 // For local servers, delegates to LocalAgent.
 // For remote servers, queries via heartbeat stream.

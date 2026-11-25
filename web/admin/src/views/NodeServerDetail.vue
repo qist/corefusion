@@ -223,6 +223,11 @@
         </el-card>
       </el-tab-pane>
 
+      <!-- 节点安全体检（只读） -->
+      <el-tab-pane :label="t('nodeCheckup.tab')" name="checkup">
+        <NodeCheckupTab :server-id="serverId" />
+      </el-tab-pane>
+
       <!-- Protocol Config Tab -->
       <el-tab-pane :label="t('menu.protoCenter')" name="protocols">
         <ProtocolCenter :server-id="serverId" />
@@ -618,6 +623,7 @@ import WarpTab from './services/WarpTab.vue'
 import ShareDomainTab from './services/ShareDomainTab.vue'
 import RateLimitTab from './services/RateLimitTab.vue'
 import CoreTrafficTab from './node-server/CoreTrafficTab.vue'
+import NodeCheckupTab from './node-server/NodeCheckupTab.vue'
 import { useQueryState } from '../composables/useQueryState'
 import { notifyCfipRefresh } from '../composables/useAutoRefresh'
 

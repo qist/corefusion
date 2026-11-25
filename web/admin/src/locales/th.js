@@ -1,5 +1,53 @@
 // th
 export default {
+  nodeCheckup: {
+    "tab": "ตรวจสอบ",
+    "settings": "ตั้งค่าการตรวจสอบ",
+    "enabled": "ตรวจสอบตามกำหนด",
+    "intervalHours": "รอบ (ชั่วโมง)",
+    "thresholds": "เกณฑ์",
+    "diskWarnPct": "คำเตือนดิสก์ (%)",
+    "diskHighPct": "ดิสก์ความเสี่ยงสูง (%)",
+    "memAvailableWarnPct": "คำเตือนหน่วยความจำว่าง (%)",
+    "conntrackMin": "conntrack ขั้นต่ำ",
+    "somaxconnMin": "somaxconn ขั้นต่ำ",
+    "saveFailed": "บันทึกไม่สำเร็จ",
+    "title": "ตรวจสอบความปลอดภัยของโหนด",
+    "refresh": "เรียกใช้การตรวจสอบ",
+    "lastCheck": "ตรวจสอบล่าสุด",
+    "never": "ไม่เคย",
+    "container": "คอนเทนเนอร์",
+    "host": "โฮสต์",
+    "noSystemd": "ไม่มี systemd",
+    "empty": "ยังไม่มีผลลัพธ์ คลิก \"เรียกใช้การตรวจสอบ\"",
+    "loadFailed": "การตรวจสอบล้มเหลว",
+    "evidence": "หลักฐาน",
+    "copy": "คัดลอก",
+    "copied": "คัดลอกแล้ว",
+    "severity": {
+      "high": "สูง",
+      "warn": "คำเตือน",
+      "info": "ข้อมูล",
+      "ok": "ปกติ",
+      "unknown": "ตรวจสอบไม่ได้",
+    },
+    "category": {
+      "system": "ระบบ",
+      "network": "เครือข่าย",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "ไฟร์วอลล์",
+    },
+    "scope": {
+      "host": "โฮสต์",
+      "container-writable": "แก้ไขได้ในคอนเทนเนอร์",
+      "container-readonly": "อ่านอย่างเดียวในคอนเทนเนอร์",
+      "host-global": "ตั้งค่าบนโฮสต์",
+      "na": "ไม่เกี่ยวข้อง",
+      "unknown": "ไม่ทราบ",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "เซิร์ฟเวอร์ DNS ที่ใช้ภายในอุโมงค์ WireGuard คั่นด้วยเครื่องหมายจุลภาค (เขียนไปยัง settings.remoteDNS; แทนที่ฟิลด์ DNS ที่เลิกใช้แล้ว)"

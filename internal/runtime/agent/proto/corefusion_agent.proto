@@ -411,6 +411,20 @@ message ProxyInfo {
   repeated string capabilities = 8;
 }
 
+// ---- 节点安全体检（只读 facts）----
+
+message GetSystemFactsRequest {
+  repeated string sysctl_keys = 1;          // 空 = Agent 内置白名单
+  bool include_firewall_rules = 2;          // 是否包含防火墙规则快照
+  bool include_ssh = 3;                     // 是否检查 sshd / SSH 密钥权限
+}
+
+message GetSystemFactsResponse {
+  bool   success = 1;
+  string error = 2;                         // 仅整体失败；单项失败写进 facts.errors
+  string facts = 3;                         // JSON（nodecheckup.Facts），上限 256KB
+}
+
 message ListBinariesRequest {}
 
 message ListBinariesResponse {
@@ -667,6 +681,10 @@ message PanelCommand {
     // --- sing-box 实时连接（clash_api /connections）---
     // clash_api 只监听节点回环，面板够不到；由 Agent 在本机读取后回传原始 JSON。
     FetchSingboxConnectionsRequest fetch_singbox_connections = 42;
+
+    // --- 节点安全体检 facts（只读）---
+    // Agent 只采集本机事实，判定/文案全部在面板侧完成。
+    GetSystemFactsRequest get_system_facts = 43;
   }
 }
 

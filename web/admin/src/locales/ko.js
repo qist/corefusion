@@ -1,5 +1,53 @@
 // ko
 export default {
+  nodeCheckup: {
+    "tab": "점검",
+    "settings": "점검 설정",
+    "enabled": "예약 점검",
+    "intervalHours": "주기(시간)",
+    "thresholds": "임계값",
+    "diskWarnPct": "디스크 경고 (%)",
+    "diskHighPct": "디스크 고위험 (%)",
+    "memAvailableWarnPct": "가용 메모리 경고 (%)",
+    "conntrackMin": "conntrack 최소값",
+    "somaxconnMin": "somaxconn 최소값",
+    "saveFailed": "저장 실패",
+    "title": "노드 보안 점검",
+    "refresh": "점검 실행",
+    "lastCheck": "마지막 점검",
+    "never": "없음",
+    "container": "컨테이너",
+    "host": "호스트",
+    "noSystemd": "systemd 없음",
+    "empty": "결과가 없습니다. \"점검 실행\"을 클릭하세요.",
+    "loadFailed": "점검 실패",
+    "evidence": "근거",
+    "copy": "복사",
+    "copied": "복사됨",
+    "severity": {
+      "high": "높음",
+      "warn": "경고",
+      "info": "정보",
+      "ok": "정상",
+      "unknown": "확인 불가",
+    },
+    "category": {
+      "system": "시스템",
+      "network": "네트워크",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "방화벽",
+    },
+    "scope": {
+      "host": "호스트",
+      "container-writable": "컨테이너에서 수정 가능",
+      "container-readonly": "컨테이너에서 읽기 전용",
+      "host-global": "호스트에서 설정",
+      "na": "해당 없음",
+      "unknown": "알 수 없음",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "DNS 터널 내부에서 사용되는 서버, 쉼표로 구분됨(settings.remoteDNS에 기록됨, 더 이상 사용되지 않는 dns 필드 대체)"

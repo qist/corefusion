@@ -1,5 +1,53 @@
 // ja
 export default {
+  nodeCheckup: {
+    "tab": "診断",
+    "settings": "診断設定",
+    "enabled": "定期診断",
+    "intervalHours": "間隔（時間）",
+    "thresholds": "しきい値",
+    "diskWarnPct": "ディスク警告 (%)",
+    "diskHighPct": "ディスク高リスク (%)",
+    "memAvailableWarnPct": "空きメモリ警告 (%)",
+    "conntrackMin": "conntrack 最小値",
+    "somaxconnMin": "somaxconn 最小値",
+    "saveFailed": "保存に失敗しました",
+    "title": "ノードセキュリティ診断",
+    "refresh": "診断を実行",
+    "lastCheck": "前回の診断",
+    "never": "未実施",
+    "container": "コンテナ",
+    "host": "ホスト",
+    "noSystemd": "systemd なし",
+    "empty": "結果がありません。「診断を実行」をクリックしてください。",
+    "loadFailed": "診断に失敗しました",
+    "evidence": "根拠",
+    "copy": "コピー",
+    "copied": "コピーしました",
+    "severity": {
+      "high": "高",
+      "warn": "警告",
+      "info": "情報",
+      "ok": "正常",
+      "unknown": "確認不可",
+    },
+    "category": {
+      "system": "システム",
+      "network": "ネットワーク",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "ファイアウォール",
+    },
+    "scope": {
+      "host": "ホスト",
+      "container-writable": "コンテナ内で変更可能",
+      "container-readonly": "コンテナ内で読み取り専用",
+      "host-global": "ホスト側で設定",
+      "na": "該当なし",
+      "unknown": "不明",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "WireGuard トンネル内で使用される DNS サーバー、カンマ区切り (settings.remoteDNS に書き込まれます。非推奨の DNS フィールドを置き換えます)"

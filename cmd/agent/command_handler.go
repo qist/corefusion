@@ -472,6 +472,10 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		resp := a.localAgent.GetProxyStatuses()
 		sendSyncResult("get_proxy_status", resp, nil)
 
+	case *agentpb.PanelCommand_GetSystemFacts:
+		resp := a.localAgent.GetSystemFacts(c.GetSystemFacts)
+		sendSyncResult("get_system_facts", resp, nil)
+
 	case *agentpb.PanelCommand_SpeedTest:
 		req := c.SpeedTest
 		resp := a.handleSpeedTest(ctx, req)

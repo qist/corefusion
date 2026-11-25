@@ -1,5 +1,53 @@
 // tr
 export default {
+  nodeCheckup: {
+    "tab": "Denetim",
+    "settings": "Denetim ayarları",
+    "enabled": "Zamanlanmış denetim",
+    "intervalHours": "Aralık (saat)",
+    "thresholds": "Eşikler",
+    "diskWarnPct": "Disk uyarısı (%)",
+    "diskHighPct": "Disk yüksek risk (%)",
+    "memAvailableWarnPct": "Kullanılabilir bellek uyarısı (%)",
+    "conntrackMin": "conntrack minimum",
+    "somaxconnMin": "somaxconn minimum",
+    "saveFailed": "Kaydetme başarısız",
+    "title": "Düğüm güvenlik denetimi",
+    "refresh": "Denetimi çalıştır",
+    "lastCheck": "Son denetim",
+    "never": "Hiç",
+    "container": "Konteyner",
+    "host": "Ana makine",
+    "noSystemd": "systemd yok",
+    "empty": "Henüz sonuç yok. \"Denetimi çalıştır\"a tıklayın.",
+    "loadFailed": "Denetim başarısız",
+    "evidence": "Kanıt",
+    "copy": "Kopyala",
+    "copied": "Kopyalandı",
+    "severity": {
+      "high": "Yüksek",
+      "warn": "Uyarı",
+      "info": "Bilgi",
+      "ok": "Tamam",
+      "unknown": "Denetlenemiyor",
+    },
+    "category": {
+      "system": "Sistem",
+      "network": "Ağ",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Güvenlik duvarı",
+    },
+    "scope": {
+      "host": "Ana makine",
+      "container-writable": "Konteynerde değiştirilebilir",
+      "container-readonly": "Konteynerde salt okunur",
+      "host-global": "Ana makinede ayarla",
+      "na": "Uygulanamaz",
+      "unknown": "Bilinmiyor",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "DNS tüneli içinde kullanılan WireGuard sunucular, virgülle ayrılmış (settings.remoteDNS'ye yazılır; kullanımdan kaldırılan dns alanının yerine geçer)"

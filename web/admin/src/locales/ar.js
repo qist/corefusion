@@ -1,5 +1,53 @@
 // ar
 export default {
+  nodeCheckup: {
+    "tab": "فحص",
+    "settings": "إعدادات الفحص",
+    "enabled": "فحص مجدول",
+    "intervalHours": "الفاصل (ساعات)",
+    "thresholds": "العتبات",
+    "diskWarnPct": "تحذير القرص (%)",
+    "diskHighPct": "قرص عالي الخطورة (%)",
+    "memAvailableWarnPct": "تحذير الذاكرة المتاحة (%)",
+    "conntrackMin": "الحد الأدنى لـ conntrack",
+    "somaxconnMin": "الحد الأدنى لـ somaxconn",
+    "saveFailed": "فشل الحفظ",
+    "title": "فحص أمن العقدة",
+    "refresh": "تشغيل الفحص",
+    "lastCheck": "آخر فحص",
+    "never": "أبدًا",
+    "container": "حاوية",
+    "host": "مضيف",
+    "noSystemd": "بدون systemd",
+    "empty": "لا توجد نتيجة بعد. اضغط «تشغيل الفحص».",
+    "loadFailed": "فشل الفحص",
+    "evidence": "الدليل",
+    "copy": "نسخ",
+    "copied": "تم النسخ",
+    "severity": {
+      "high": "مرتفع",
+      "warn": "تحذير",
+      "info": "معلومات",
+      "ok": "سليم",
+      "unknown": "تعذر الفحص",
+    },
+    "category": {
+      "system": "النظام",
+      "network": "الشبكة",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "الجدار الناري",
+    },
+    "scope": {
+      "host": "المضيف",
+      "container-writable": "قابل للتعديل داخل الحاوية",
+      "container-readonly": "للقراءة فقط داخل الحاوية",
+      "host-global": "يُضبط على المضيف",
+      "na": "غير منطبق",
+      "unknown": "غير معروف",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "خوادم DNS المستخدمة داخل نفق WireGuard، مفصولة بفواصل (مكتوبة في settings.remoteDNS؛ لتحل محل حقل نظام أسماء النطاقات المهمل)"

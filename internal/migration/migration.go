@@ -96,6 +96,9 @@ func Models() []interface{} {
 		&entity.CaddySite{},
 		&entity.NginxSite{},
 
+		// 节点安全体检（最新判定结果）
+		&entity.NodeCheckupResult{},
+
 		// Certificate Management
 		&entity.DNSChannel{},
 		&entity.EABConfig{},

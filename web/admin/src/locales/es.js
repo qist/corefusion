@@ -1,5 +1,53 @@
 // es
 export default {
+  nodeCheckup: {
+    "tab": "Comprobación",
+    "settings": "Ajustes de comprobación",
+    "enabled": "Comprobación programada",
+    "intervalHours": "Intervalo (horas)",
+    "thresholds": "Umbrales",
+    "diskWarnPct": "Aviso de disco (%)",
+    "diskHighPct": "Disco de alto riesgo (%)",
+    "memAvailableWarnPct": "Aviso de memoria disponible (%)",
+    "conntrackMin": "mínimo de conntrack",
+    "somaxconnMin": "mínimo de somaxconn",
+    "saveFailed": "Error al guardar",
+    "title": "Comprobación de seguridad del nodo",
+    "refresh": "Ejecutar comprobación",
+    "lastCheck": "Última comprobación",
+    "never": "Nunca",
+    "container": "Contenedor",
+    "host": "Host",
+    "noSystemd": "Sin systemd",
+    "empty": "Aún no hay resultado. Pulsa \"Ejecutar comprobación\".",
+    "loadFailed": "Error en la comprobación",
+    "evidence": "Evidencia",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "severity": {
+      "high": "Alto",
+      "warn": "Advertencia",
+      "info": "Info",
+      "ok": "OK",
+      "unknown": "No se puede comprobar",
+    },
+    "category": {
+      "system": "Sistema",
+      "network": "Red",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Cortafuegos",
+    },
+    "scope": {
+      "host": "Host",
+      "container-writable": "Modificable en contenedor",
+      "container-readonly": "Solo lectura en contenedor",
+      "host-global": "Configurar en el host",
+      "na": "No aplicable",
+      "unknown": "Desconocido",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "Servidores DNS utilizados dentro del túnel WireGuard, separados por comas (escritos en settings.remoteDNS; reemplaza el campo dns obsoleto)"

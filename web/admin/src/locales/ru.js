@@ -1,5 +1,53 @@
 // ru
 export default {
+  nodeCheckup: {
+    "tab": "Проверка",
+    "settings": "Настройки проверки",
+    "enabled": "Плановая проверка",
+    "intervalHours": "Интервал (часы)",
+    "thresholds": "Пороги",
+    "diskWarnPct": "Предупреждение диска (%)",
+    "diskHighPct": "Высокий риск диска (%)",
+    "memAvailableWarnPct": "Предупреждение доступной памяти (%)",
+    "conntrackMin": "минимум conntrack",
+    "somaxconnMin": "минимум somaxconn",
+    "saveFailed": "Ошибка сохранения",
+    "title": "Проверка безопасности узла",
+    "refresh": "Запустить проверку",
+    "lastCheck": "Последняя проверка",
+    "never": "Никогда",
+    "container": "Контейнер",
+    "host": "Хост",
+    "noSystemd": "Без systemd",
+    "empty": "Результатов пока нет. Нажмите «Запустить проверку».",
+    "loadFailed": "Ошибка проверки",
+    "evidence": "Доказательство",
+    "copy": "Копировать",
+    "copied": "Скопировано",
+    "severity": {
+      "high": "Высокий",
+      "warn": "Предупреждение",
+      "info": "Инфо",
+      "ok": "OK",
+      "unknown": "Невозможно проверить",
+    },
+    "category": {
+      "system": "Система",
+      "network": "Сеть",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Файрвол",
+    },
+    "scope": {
+      "host": "Хост",
+      "container-writable": "Можно изменить в контейнере",
+      "container-readonly": "Только чтение в контейнере",
+      "host-global": "Задать на хосте",
+      "na": "Не применимо",
+      "unknown": "Неизвестно",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "DNS серверы, используемые внутри туннеля WireGuard, разделенные запятыми (записываются в settings.remoteDNS; заменяет устаревшее поле DNS)"

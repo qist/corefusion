@@ -1,5 +1,53 @@
 // vi
 export default {
+  nodeCheckup: {
+    "tab": "Kiểm tra",
+    "settings": "Cài đặt kiểm tra",
+    "enabled": "Kiểm tra định kỳ",
+    "intervalHours": "Chu kỳ (giờ)",
+    "thresholds": "Ngưỡng",
+    "diskWarnPct": "Cảnh báo ổ đĩa (%)",
+    "diskHighPct": "Ổ đĩa rủi ro cao (%)",
+    "memAvailableWarnPct": "Cảnh báo bộ nhớ khả dụng (%)",
+    "conntrackMin": "conntrack tối thiểu",
+    "somaxconnMin": "somaxconn tối thiểu",
+    "saveFailed": "Lưu thất bại",
+    "title": "Kiểm tra bảo mật nút",
+    "refresh": "Chạy kiểm tra",
+    "lastCheck": "Lần kiểm tra trước",
+    "never": "Chưa bao giờ",
+    "container": "Container",
+    "host": "Máy chủ",
+    "noSystemd": "Không có systemd",
+    "empty": "Chưa có kết quả. Nhấn \"Chạy kiểm tra\".",
+    "loadFailed": "Kiểm tra thất bại",
+    "evidence": "Bằng chứng",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "severity": {
+      "high": "Cao",
+      "warn": "Cảnh báo",
+      "info": "Thông tin",
+      "ok": "OK",
+      "unknown": "Không thể kiểm tra",
+    },
+    "category": {
+      "system": "Hệ thống",
+      "network": "Mạng",
+      "tcp": "TCP",
+      "ssh": "SSH",
+      "firewall": "Tường lửa",
+    },
+    "scope": {
+      "host": "Máy chủ",
+      "container-writable": "Có thể sửa trong container",
+      "container-readonly": "Chỉ đọc trong container",
+      "host-global": "Đặt trên máy chủ",
+      "na": "Không áp dụng",
+      "unknown": "Không rõ",
+    },
+  },
+
   "protoHint": {
     "xrayOutboundProtocol": {
       "wgDns": "Máy chủ DNS được sử dụng bên trong đường hầm WireGuard, được phân tách bằng dấu phẩy (được ghi vào settings.remoteDNS; thay thế trường dns không được dùng nữa)"

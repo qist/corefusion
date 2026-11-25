@@ -914,6 +914,24 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	// 改 serverNames 后不必再去「代理」页手工补齐每条 SNI 映射。
 	caddyMgr.SetInboundConfigRepo(inboundConfigRepo)
 	nginxMgr.SetInboundConfigRepo(inboundConfigRepo)
+	// nginx 能力探测：Agent 上报 ProxyInfo.capabilities（解析 `nginx -V`）。
+	// 带 stream_pp_var 补丁的 nginx 才能按 SNI 分别发送 PROXY Protocol，
+	// 从而让 sing-box 的 REALITY 入站也能映射到同一个 443。
+	nginxMgr.SetNginxCapabilityFunc(func(ctx context.Context, serverID int64) ([]string, error) {
+		if sharedNodeMgr == nil {
+			return nil, fmt.Errorf("node manager not configured")
+		}
+		resp, err := sharedNodeMgr.GetProxyStatus(ctx, serverID)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range resp.Proxies {
+			if p.Type == "nginx" && p.Installed {
+				return p.Capabilities, nil
+			}
+		}
+		return nil, nil
+	})
 
 	// 节点归属由 handler 按请求把 serverID 传给 manager（manager 不再保存共享状态），
 	// 避免并发访问不同节点时状态互相覆盖。

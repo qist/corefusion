@@ -869,7 +869,7 @@
             <template #default="{row}">{{ row.sni_target || row.upstream }}</template>
           </el-table-column>
           <el-table-column label="PP" width="60">
-            <template #default="{row}"><el-tag v-if="row.proxy_protocol" size="small">v2</el-tag><span v-else>-</span></template>
+            <template #default="{row}"><el-tag v-if="ppVersionLabel(row) !== '-'" size="small">{{ ppVersionLabel(row) }}</el-tag><span v-else>-</span></template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="160">
             <template #default="{row}">
@@ -1083,7 +1083,12 @@
   </div>
 </el-form-item>
 <el-form-item :label="t('proxy.proxyProtocol')">
-<el-switch v-model="sniForm.proxy_protocol" />
+<el-select v-model="sniForm.proxy_protocol_version" style="width:220px">
+  <el-option :label="t('common.close')" value="off" />
+  <el-option label="v1" value="v1" />
+  <el-option label="v2" value="v2" />
+</el-select>
+<div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.proxyProtocolVersionHint') }}</div>
 </el-form-item>
 </el-form>
       <template #footer>
@@ -1255,7 +1260,15 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('proxy.proxyProtocol')">
-          <el-switch v-model="siteForm.proxy_protocol" :disabled="siteForm.template==='reality'" />
+          <!-- SNI 转发：按域名选择 PROXY Protocol 版本（v1 文本 / v2 二进制 / 关闭）。
+               老 nginx 无 stream_pp_var 补丁时，面板会自动回退整组 v1。 -->
+          <el-select v-if="siteForm.template==='sni'" v-model="siteForm.proxy_protocol_version" style="width:220px">
+            <el-option :label="t('common.close')" value="off" />
+            <el-option label="v1" value="v1" />
+            <el-option label="v2" value="v2" />
+          </el-select>
+          <el-switch v-else v-model="siteForm.proxy_protocol" :disabled="siteForm.template==='reality'" />
+          <div v-if="siteForm.template==='sni'" style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.proxyProtocolVersionHint') }}</div>
           <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
         </el-form-item>
         <el-form-item label="IPv6">
@@ -1437,10 +1450,24 @@ const { paged: l4PagedList, page: l4Page, pageSize: l4Size, total: l4Total } = u
 const { paged: httpPagedList, page: httpPage, pageSize: httpSize, total: httpTotal } = useClientPagination(httpSites, { pageKey: 'httpPage', pageSizeKey: 'httpSize' })
 
 const { isMobile } = useIsMobile()
+// SNI 站点的 PROXY Protocol 版本展示：优先显式版本；未指定时按生成器语义回退
+// （站点旧布尔值或全局 Stream 开关为 on 时实际发 v1）。
+function ppVersionLabel(row) {
+  const v = row && row.proxy_protocol_version
+  if (v === 'v2') return 'v2'
+  if (v === 'v1') return 'v1'
+  if (v === 'off') return '-'
+  if (row && row.proxy_protocol) return 'v1'
+  return settings.value.stream_proxy_protocol ? 'v1' : '-'
+}
+// 新建 SNI 规则/站点时的默认版本：跟随全局开关，避免默认 off 把全局 on 覆盖掉。
+function defaultPPVersion() {
+  return settings.value.stream_proxy_protocol ? 'v1' : 'off'
+}
 // 手机端卡片字段（与桌面表格列对应）
 const sniCardFields = computed(() => [
   { label: 'Target', text: (row) => row.sni_target || row.upstream || '-' },
-  { label: 'PP', text: (row) => row.proxy_protocol ? 'v2' : '-' },
+  { label: 'PP', text: (row) => ppVersionLabel(row) },
 ])
 const l4CardFields = computed(() => [
   { label: 'Upstream', text: (row) => row.upstream || '-' },
@@ -2205,7 +2232,7 @@ const siteForm = ref({
   use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
   custom_config: '', server_config: '', location_config: '',
   l4_protocol: 'tcp', sni_target: '', local_port: '8443',
-  proxy_protocol: false, is_panel: false,
+  proxy_protocol: false, proxy_protocol_version: '', is_panel: false,
   enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
   enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
@@ -2270,7 +2297,8 @@ const configViewContent = ref('')
 
 // SNI
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link', ipv6_listen_addr: '' })
+const sniForm = ref({ domain: '', sni_target: '', proxy_protocol: false, proxy_protocol_version: 'off', inbound_id: null, inbound_mode: 'link', ipv6_listen_addr: '' })
+
 
 // SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
@@ -2602,7 +2630,7 @@ siteForm.value = {
     use_cert: isReality, cert_id: null, cert_path: '', key_path: '',
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
-    proxy_protocol: isReality, is_panel: false,
+    proxy_protocol: isReality, proxy_protocol_version: template === 'sni' ? defaultPPVersion() : '', is_panel: false,
     enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: isReality ? 'TLSv1.2 TLSv1.3' : '', ssl_ciphers: '', ssl_ecdh_curve: '',
@@ -2629,6 +2657,10 @@ function onTemplateChange(newTemplate) {
       siteForm.value.use_cert = false
     }
     siteForm.value.proxy_protocol = false
+    // 切入 SNI 时给一个有效默认值，避免下拉空白；非 SNI 模板忽略该字段。
+    if (newTemplate === 'sni' && !siteForm.value.proxy_protocol_version) {
+      siteForm.value.proxy_protocol_version = defaultPPVersion()
+    }
     siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
     // 从 Reality 切走时，把占位域名一起还原 ✓（避免留下莫名的 127.0.0.1 ✓）
     if (siteForm.value.domain === '127.0.0.1') siteForm.value.domain = ''
@@ -2654,7 +2686,7 @@ function showPanelProxy() {
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
-    proxy_protocol: false, is_panel: true,
+    proxy_protocol: false, proxy_protocol_version: '', is_panel: true,
     enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
   ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
@@ -2676,7 +2708,7 @@ function showForwardProxy(template) {
     use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true,
     custom_config: '', server_config: '', location_config: '',
     l4_protocol: 'tcp', sni_target: '', local_port: '8443',
-    proxy_protocol: false, is_panel: false,
+    proxy_protocol: false, proxy_protocol_version: '', is_panel: false,
     enable_http2: true, enable_ipv6: false, ipv6_listen_addr: '', enable_quic: false,
     enable_early_data: false, enable_stapling: false,
     ssl_protocols: '', ssl_ciphers: '', ssl_ecdh_curve: '',
@@ -2731,7 +2763,12 @@ function editSite(row) {
     location_config: row.location_config,
     l4_protocol: row.l4_protocol,
     sni_target: row.sni_target, local_port: row.local_port,
-    proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false), is_panel: row.is_panel,
+    proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false),
+    // 旧数据没有版本字段：按生成器语义显示实际生效值（站点旧布尔值/全局开关 → v1）。
+    proxy_protocol_version: row.template === 'sni'
+      ? (row.proxy_protocol_version || ((row.proxy_protocol || settings.value.stream_proxy_protocol) ? 'v1' : 'off'))
+      : '',
+    is_panel: row.is_panel,
     upstream_tls: row.upstream_tls === true,
     upstream_sni: row.upstream_sni || '',
     enable_http2: row.enable_http2 !== false,
@@ -2789,7 +2826,12 @@ function buildSitePayload() {
     l4_protocol: siteForm.value.l4_protocol,
     sni_target: siteForm.value.sni_target,
     local_port: siteForm.value.local_port,
-    proxy_protocol: siteForm.value.proxy_protocol || false,
+    proxy_protocol: siteForm.value.template === 'sni'
+      ? (!!siteForm.value.proxy_protocol_version && siteForm.value.proxy_protocol_version !== 'off')
+      : (siteForm.value.proxy_protocol || false),
+    proxy_protocol_version: siteForm.value.template === 'sni'
+      ? (siteForm.value.proxy_protocol_version || '')
+      : '',
     upstream_tls: siteForm.value.upstream_tls === true,
     upstream_sni: String(siteForm.value.upstream_sni || '').trim(),
     is_panel: siteForm.value.is_panel,
@@ -2949,7 +2991,7 @@ function copyConfig() {
 
 function showAddSNI() {
 sniForm.value = {
-  domain: '', sni_target: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link',
+  domain: '', sni_target: '', proxy_protocol: false, proxy_protocol_version: defaultPPVersion(), inbound_id: null, inbound_mode: 'link',
   listen_addr: sniListenAddr(), enable_ipv6: !!settings.value.stream_ipv6, ipv6_listen_addr: '',
 }
 sniDialogVisible.value = true
@@ -2969,7 +3011,8 @@ async function saveSNIRule() {
         template: 'sni',
         sni_target: sniForm.value.sni_target,
         local_port: localHttpsPort(),
-        proxy_protocol: sniForm.value.proxy_protocol,
+        proxy_protocol: !!sniForm.value.proxy_protocol_version && sniForm.value.proxy_protocol_version !== 'off',
+        proxy_protocol_version: sniForm.value.proxy_protocol_version || 'off',
         is_panel: false,
         priority: 50,
         path: sniForm.value.listen_addr || sniListenAddr(),

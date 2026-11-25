@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "TLS 転送テンプレート。HTTP/2、PROXY Protocol、TLS 1.2+ を強制的に有効にします。127.0.0.1 の専用ポートにバインドするため、ドメインを設定する必要はありません。証明書の設定が必須です。",
     "proxyProtocol": "プロキシプロトコル",
     "proxyProtocolHint": "実際のクライアント IP を伝達",
+    "proxyProtocolVersionHint": "ドメイン単位で適用：v1 はテキスト / v2 はバイナリ（ヘッダーが小さい）。オフは PROXY ヘッダーを送信しません（sing-box では必須）。nginx に stream_pp_var パッチが必要で、無い場合はリスニンググループ全体が v1 にフォールバックします。",
     "sniTarget": "SNI ターゲット",
     "logPathHint": "ログファイルパス",
     "logPathPlaceholder": "空欄 = グローバルログを使用 (logs/caddy_access.log)",

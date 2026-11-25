@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"corefusion/internal/model/entity"
 	"corefusion/internal/store/repository"
@@ -28,6 +29,12 @@ type NginxManager struct {
 	// inboundRepo 用于把「被 SNI 前置代理承载的 REALITY 入站」的 serverNames
 	// 自动派生为 SNI 转发规则（见 sni_from_reality.go）。可为 nil。
 	inboundRepo *repository.InboundConfigRepository
+	// capabilityFunc 探测节点 nginx 二进制的可选能力（见 nginx_capability.go）。
+	// 由上层注入（面板用 NodeServerManager 查询 Agent 上报的 capabilities），
+	// proxy 包不直接依赖 agent 管理器；未注入时按「不支持按 SNI 发 PP」处理。
+	capabilityFunc NginxCapabilityFunc
+	capMu          sync.Mutex
+	capCache       map[int64]nginxCapabilityEntry
 }
 
 // SetInboundConfigRepo 注入入站仓储（REALITY serverNames → SNI 规则自动派生）。

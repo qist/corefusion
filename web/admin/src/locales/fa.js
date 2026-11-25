@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "قالب فوروارد TLS که HTTP/2، PROXY Protocol و TLS 1.2+ را اجباری فعال می‌کند. به یک پورت مستقل روی 127.0.0.1 متصل می‌شود و نیازی به پیکربندی دامنه ندارد. پیکربندی گواهی‌نامه الزامی است.",
     "proxyProtocol": "پروتکل پروکسی",
     "proxyProtocolHint": "انتقال IP واقعی کلاینت",
+    "proxyProtocolVersionHint": "به‌صورت per-domain اعمال می‌شود: v1 متنی / v2 دودویی (هدر کوچک‌تر)؛ خاموش هیچ هدر PROXY ارسال نمی‌کند (برای sing-box الزامی است). نیازمند nginx با پچ stream_pp_var است، در غیر این صورت کل گروه listen به v1 برمی‌گردد.",
     "sniTarget": "هدف SNI",
     "logPathHint": "مسیر فایل لاگ",
     "logPathPlaceholder": "خالی = استفاده از لاگ سراسری (logs/caddy_access.log)",

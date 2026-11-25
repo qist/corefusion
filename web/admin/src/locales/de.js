@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "TLS-Weiterleitungsvorlage; erzwingt HTTP/2, PROXY Protocol und TLS 1.2+. Bindet einen eigenen Port an 127.0.0.1; eine Domain ist nicht erforderlich. Ein Zertifikat ist erforderlich.",
     "proxyProtocol": "PROXY-Protokoll",
     "proxyProtocolHint": "Echte Client-IP übermitteln",
+    "proxyProtocolVersionHint": "Gilt pro Domäne: v1 Text / v2 binär (kleinerer Header); Aus sendet keinen PROXY-Header (für sing-box erforderlich). Erfordert ein nginx mit stream_pp_var-Patch, sonst fällt die gesamte Listen-Gruppe auf v1 zurück.",
     "sniTarget": "SNI-Ziel",
     "logPathHint": "Logdateipfad",
     "logPathPlaceholder": "Leer = globales Log verwenden (logs/caddy_access.log)",

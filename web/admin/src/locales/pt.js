@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Modelo de encaminhamento TLS que ativa obrigatoriamente HTTP/2, PROXY Protocol e TLS 1.2+. Vinculado a uma porta independente em 127.0.0.1, sem necessidade de configurar um domínio. O certificado é obrigatório.",
     "proxyProtocol": "Protocolo PROXY",
     "proxyProtocolHint": "Passar o IP real do cliente",
+    "proxyProtocolVersionHint": "Aplicado por domínio: v1 texto / v2 binário (cabeçalho menor); Desligado não envia cabeçalho PROXY (obrigatório para sing-box). Requer nginx compilado com o patch stream_pp_var, caso contrário todo o grupo de escuta volta para v1.",
     "sniTarget": "Destino SNI",
     "logPathHint": "Caminho do arquivo de log",
     "logPathPlaceholder": "Vazio = usar o log global (logs/caddy_access.log)",

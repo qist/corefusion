@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "TLS 轉發範本，強制啟用 HTTP/2、PROXY Protocol 和 TLS 1.2+。綁定 127.0.0.1 獨立連接埠，無需設定網域。必須設定憑證。",
     "proxyProtocol": "PROXY Protocol",
     "proxyProtocolHint": "傳遞真實用戶端 IP",
+    "proxyProtocolVersionHint": "按域名生效：v1 文字 / v2 二進位（標頭更小）；關閉則不送 PROXY 標頭（sing-box 必須關閉）。需 nginx 帶 stream_pp_var 補丁，否則整組回退 v1。",
     "sniTarget": "SNI 目標",
     "logPathHint": "日誌檔案路徑",
     "logPathPlaceholder": "留空則使用全域統一日誌 (logs/caddy_access.log)",

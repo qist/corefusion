@@ -163,8 +163,54 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 	if err != nil {
 		return "", err
 	}
-	sites = m.withDerivedSNISites(ctx, sourceServerID, sites)
+	sites = m.withDerivedSNISites(ctx, serverID, sourceServerID, sites)
 	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, sites)
+}
+
+// NormalizeProxyProtocolVersion 归一化站点 PROXY Protocol 版本。
+// 只允许 ""（不指定，沿用旧行为）、"off"、"v1"、"v2"，其余一律视为不指定。
+func NormalizeProxyProtocolVersion(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "off":
+		return "off"
+	case "v1", "on", "1":
+		// on 是 nginx 对 v1 的写法；1 兼容数字输入。
+		return "v1"
+	case "v2", "2":
+		return "v2"
+	}
+	return ""
+}
+
+// IsValidProxyProtocolVersion 判断版本输入是否为空或合法值。
+// 空表示「不指定」，沿用旧行为。
+func IsValidProxyProtocolVersion(v string) bool {
+	t := strings.TrimSpace(v)
+	return t == "" || NormalizeProxyProtocolVersion(t) != ""
+}
+
+// nginxSiteProxyProtocolValue 决定某个 SNI 域名要发送的 PROXY protocol 版本。
+//
+// 优先级：
+//  1. sing-box 派生规则（NoProxyProtocol）：永远 off —— 核心不支持 PP；
+//  2. 站点显式版本：off / v1(on) / v2；
+//  3. 未指定版本：沿用旧行为（站点勾选或全局开启 → v1），保证升级不改既有语义。
+func nginxSiteProxyProtocolValue(noProxyProtocol bool, version string, siteProxyProtocol, globalProxyProtocol bool) string {
+	if noProxyProtocol {
+		return "off"
+	}
+	switch NormalizeProxyProtocolVersion(version) {
+	case "off":
+		return "off"
+	case "v1":
+		return "on"
+	case "v2":
+		return "v2"
+	}
+	if siteProxyProtocol || globalProxyProtocol {
+		return "on"
+	}
+	return "off"
 }
 
 // withDerivedSNISites 把 REALITY 入站的 serverNames 补进 SNI 转发规则。
@@ -172,21 +218,23 @@ func (m *NginxManager) GenerateConfigForServer(ctx context.Context, serverID int
 // 不落库：入站改了 serverNames，下次生成配置就自动跟上；显式站点（用户在
 // 「Nginx 代理」里配过的同域名规则）保持优先，不会被覆盖。
 //
-// sing-box 的规则（ProxyProtocol=false）只在该节点 SNI 分流**不加 PROXY 头**时
-// 才派生：nginx stream 的 proxy_protocol 是**按 listen 组**写死的，同端口上无法
-// 让部分域名带、部分域名不带。若全局开了 proxy_protocol，把 sing-box REALITY 的
-// 域名映射到它的端口只会让握手必然失败（比落到 fallback 更糟），这里直接跳过。
-func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID int64, sites []entity.NginxSite) []entity.NginxSite {
+// PROXY Protocol 的口径分两种：
+//   - nginx 带 stream_pp_var 补丁（面板打包 1.31.9+）：每个域名可以独立决定
+//     发不发 PP，sing-box 的规则照常派生（离线/探测失败时回退下一种）；
+//   - 老 nginx：`proxy_protocol` 是**按 listen 组**写死的，同端口无法让部分
+//     域名带、部分不带。若整组开了 PP，把 sing-box REALITY 域名映射过去只会
+//     让握手必然失败，这里跳过这些规则并在日志里说明。
+func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID, sourceServerID int64, sites []entity.NginxSite) []entity.NginxSite {
 	if m.inboundRepo == nil {
 		return sites
 	}
-	cfgs, err := m.inboundRepo.ListByServerID(ctx, serverID)
+	cfgs, err := m.inboundRepo.ListByServerID(ctx, sourceServerID)
 	if err != nil {
 		log.Printf("[NginxManager] list inbounds for SNI derivation failed: %v", err)
 		return sites
 	}
 	proxyProtocolOn := false
-	if s, serr := m.GetNginxSettingsForServer(ctx, serverID); serr == nil && s != nil {
+	if s, serr := m.GetNginxSettingsForServer(ctx, sourceServerID); serr == nil && s != nil {
 		proxyProtocolOn = s.StreamProxyProtocol
 	}
 	// fallback 站点的 ProxyProtocol 同样会让整组 listen 写出 `proxy_protocol on`
@@ -199,25 +247,29 @@ func (m *NginxManager) withDerivedSNISites(ctx context.Context, serverID int64, 
 			}
 		}
 	}
+	ppVarSupported := m.SupportsStreamProxyProtocolVar(ctx, serverID)
 	var rules []derivedSNIRule
 	for _, cfg := range cfgs {
 		rules = append(rules, SNIRulesFromInbound(cfg)...)
 	}
-	rules, skippedSingbox := filterDerivedSNIRules(rules, proxyProtocolOn)
+	rules, skippedSingbox := filterDerivedSNIRules(rules, proxyProtocolOn, ppVarSupported)
 	if skippedSingbox > 0 {
 		log.Printf("[NginxManager] node %d: skipped %d sing-box REALITY SNI rule(s) — "+
-			"stream proxy_protocol is on, sing-box does not support the PROXY protocol "+
-			"(turn it off for that listen if those inbounds must be reachable on 443)",
+			"stream proxy_protocol is on and this nginx lacks the stream_pp_var patch "+
+			"(sing-box does not support the PROXY protocol; upgrade nginx to the panel "+
+			"build 1.31.9+ to serve both protocols on 443)",
 			serverID, skippedSingbox)
 	}
 	return mergeDerivedNginxSNISites(serverID, sites, rules)
 }
 
 // filterDerivedSNIRules 在 SNI 分流带 PROXY 头时剔除 sing-box 的派生规则。
-// 拆成纯函数便于单测（nginx 的 proxy_protocol 是按 listen 组写死的，
-// 同端口无法做到「部分域名带、部分不带」）。
-func filterDerivedSNIRules(rules []derivedSNIRule, proxyProtocolOn bool) ([]derivedSNIRule, int) {
-	if !proxyProtocolOn {
+//
+// ppVarSupported=true（nginx 支持 proxy_protocol 取变量）时**不剔除**：
+// 生成器会给每个域名单独决定 off/v2，sing-box 的域名就是 off。
+// 拆成纯函数便于单测。
+func filterDerivedSNIRules(rules []derivedSNIRule, proxyProtocolOn, ppVarSupported bool) ([]derivedSNIRule, int) {
+	if !proxyProtocolOn || ppVarSupported {
 		return rules, 0
 	}
 	out := make([]derivedSNIRule, 0, len(rules))
@@ -1365,6 +1417,10 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 
 	// Stream block — SNI has toggle, L4 auto-enabled when rules exist
 	needStream := (s.StreamSNIEnabled && len(sniSites) > 0) || len(l4Sites) > 0
+	// 节点 nginx 是否带 stream_pp_var 补丁（proxy_protocol 可取值变量）。
+	// 探测失败或老版本 → false，生成器回退「整组 proxy_protocol on」的旧行为。
+	// 每个节点各算一次（镜像节点用主节点的站点，但二进制在目标节点上）。
+	ppVarSupported := m.SupportsStreamProxyProtocolVar(ctx, serverID)
 	if needStream {
 		sb.WriteString("\nstream {\n")
 		// Lua module paths in stream context too — needed so resty.core can be
@@ -1567,6 +1623,10 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				// 合并监听组后可能出现同一域名两条规则：map 里重复 key 会让
 				// nginx -t 直接报 duplicate parameter，这里只保留第一条。
 				mapSeen := make(map[string]bool, len(portSites))
+				// 每个域名对 PROXY protocol 的需求（v2 / off），用于按 SNI 分别发送。
+				// 顺序跟 SNI map 一致，避免生成内容抖动。
+				type ppEntry struct{ domain, value string }
+				ppEntries := make([]ppEntry, 0, len(portSites))
 				for _, site := range portSites {
 					domain := site.Domain
 					if domain == "fallback" || domain == "" || mapSeen[domain] {
@@ -1574,6 +1634,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 					}
 					mapSeen[domain] = true
 					sb.WriteString(fmt.Sprintf("    %s %s;\n", domain, sniUpstreamName(domain)))
+					// PROXY 头需求：
+					//   - sing-box 派生规则（NoProxyProtocol）：永远 off；
+					//   - 站点显式勾选：v2；
+					//   - 其余沿用全局/fallback 的旧行为（v1=on），保证升级不改既有语义。
+					ppVal := nginxSiteProxyProtocolValue(site.NoProxyProtocol, site.ProxyProtocolVersion,
+						site.ProxyProtocol, s.StreamProxyProtocol || fallbackPP)
+					ppEntries = append(ppEntries, ppEntry{domain: domain, value: ppVal})
 				}
 				sb.WriteString(fmt.Sprintf("    default %s;\n", fallbackUpstream))
 				sb.WriteString("}\n\n")
@@ -1629,6 +1696,35 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 						siteV6Listens = append(siteV6Listens, v)
 					}
 				}
+				// PROXY Protocol 发送策略：
+				//   - 支持变量（面板打包的 nginx 带 stream_pp_var 补丁）：按 SNI 分别发，
+				//     xray 的 REALITY 入站收 v2，sing-box 的收 off —— 同一个 443 可以
+				//     同时承载两类后端；
+				//   - 老 nginx：只能整组 on（v1），sing-box 的派生规则已在
+				//     withDerivedSNISites 里被跳过，避免必然失败的映射。
+				//
+				// map 的上下文是 stream（不能写在 server{} 里），所以先算好、写在
+				// server 块之前；server 内只引用变量。
+				defaultPP := "off"
+				if s.StreamProxyProtocol || fallbackPP {
+					defaultPP = "on"
+				}
+				needPP := defaultPP != "off"
+				for _, e := range ppEntries {
+					if e.value != "off" {
+						needPP = true
+						break
+					}
+				}
+				ppVar := "$sni_pp" + suffix
+				if needPP && ppVarSupported {
+					sb.WriteString(fmt.Sprintf("map $ssl_preread_server_name %s {\n", ppVar))
+					for _, e := range ppEntries {
+						sb.WriteString(fmt.Sprintf("    %s %s;\n", e.domain, e.value))
+					}
+					sb.WriteString(fmt.Sprintf("    default %s;\n", defaultPP))
+					sb.WriteString("}\n\n")
+				}
 				sb.WriteString("server {\n")
 				sb.WriteString(fmt.Sprintf("    listen %s reuseport fastopen=4096 so_keepalive=on backlog=4096;\n", port))
 				if groupIPv6 && !listenHostIsIPv6(port) {
@@ -1653,8 +1749,13 @@ func (m *NginxManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 				sb.WriteString("    ssl_preread on;\n")
 				sb.WriteString("    proxy_half_close on;\n")
-				if s.StreamProxyProtocol || fallbackPP {
-					sb.WriteString("    proxy_protocol on;\n")
+				// map 已在 server 块之前生成（map 的上下文是 stream）。
+				if needPP {
+					if ppVarSupported {
+						sb.WriteString(fmt.Sprintf("    proxy_protocol %s;\n", ppVar))
+					} else if s.StreamProxyProtocol || fallbackPP {
+						sb.WriteString("    proxy_protocol on;\n")
+					}
 				}
 				sb.WriteString("    tcp_nodelay on;\n")
 				sb.WriteString("    preread_buffer_size 128k;\n")

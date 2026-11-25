@@ -218,5 +218,8 @@ func ValidateNginxSite(site *entity.NginxSite) error {
 	if err := validateNginxSnippet("server_config", site.ServerConfig); err != nil {
 		return err
 	}
+	if !IsValidProxyProtocolVersion(site.ProxyProtocolVersion) {
+		return fmt.Errorf("proxy_protocol_version 只支持 off / v1 / v2")
+	}
 	return validateNginxSnippet("location_config", site.LocationConfig)
 }

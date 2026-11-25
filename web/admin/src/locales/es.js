@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Plantilla de reenvío TLS que fuerza HTTP/2, PROXY Protocol y TLS 1.2+. Se vincula a un puerto independiente en 127.0.0.1 y no requiere configurar un dominio. Es obligatorio configurar un certificado.",
     "proxyProtocol": "Protocolo PROXY",
     "proxyProtocolHint": "Transmitir la IP real del cliente",
+    "proxyProtocolVersionHint": "Se aplica por dominio: v1 texto / v2 binario (cabecera más pequeña); Desactivado no envía cabecera PROXY (obligatorio para sing-box). Requiere nginx compilado con el parche stream_pp_var; de lo contrario, todo el grupo de escucha vuelve a v1.",
     "sniTarget": "Destino SNI",
     "logPathHint": "Ruta del archivo de registro",
     "logPathPlaceholder": "Vacío = usar el log global (logs/caddy_access.log)",

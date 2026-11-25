@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Mẫu chuyển tiếp TLS, bắt buộc bật HTTP/2, PROXY Protocol và TLS 1.2+. Liên kết cổng riêng 127.0.0.1, không cần cấu hình tên miền. Bắt buộc phải cấu hình chứng chỉ.",
     "proxyProtocol": "Giao thức PROXY",
     "proxyProtocolHint": "Truyền IP máy khách thực",
+    "proxyProtocolVersionHint": "Áp dụng theo tên miền: v1 dạng văn bản / v2 dạng nhị phân (header nhỏ hơn); Tắt sẽ không gửi header PROXY (bắt buộc với sing-box). Cần nginx được build với bản vá stream_pp_var, nếu không toàn bộ nhóm listen sẽ quay về v1.",
     "sniTarget": "Mục tiêu SNI",
     "logPathHint": "Đường dẫn tệp nhật ký",
     "logPathPlaceholder": "Trống = dùng log toàn cục (logs/caddy_access.log)",

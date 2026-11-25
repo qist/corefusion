@@ -122,18 +122,25 @@ func TestMergeDerivedNginxSNISitesKeepsExplicit(t *testing.T) {
 // nginx 的 proxy_protocol 是按 listen 组写死的：开了 PROXY 头时，
 // sing-box 的派生规则必须整组丢弃（否则把流量导到必然握手失败的后端），
 // xray 的规则不受影响。
+//
+// 但如果节点 nginx 带 stream_pp_var 补丁（ppVarSupported=true），PROXY 头
+// 可以按 SNI 分别发送，sing-box 的规则要保留（生成器会给它发 off）。
 func TestFilterDerivedSNIRulesByProxyProtocol(t *testing.T) {
 	rules := []derivedSNIRule{
 		{Domain: "x.example.com", Target: "unix:/dev/shm/X.sock", ProxyProtocol: true},
 		{Domain: "sb.example.com", Target: "127.0.0.1:31161", FromSingbox: true},
 	}
-	out, skipped := filterDerivedSNIRules(rules, true)
+	out, skipped := filterDerivedSNIRules(rules, true, false)
 	if skipped != 1 || len(out) != 1 || out[0].Domain != "x.example.com" {
 		t.Fatalf("proxy_protocol on 时应只丢 sing-box 规则: out=%+v skipped=%d", out, skipped)
 	}
-	out, skipped = filterDerivedSNIRules(rules, false)
+	out, skipped = filterDerivedSNIRules(rules, false, false)
 	if skipped != 0 || len(out) != 2 {
 		t.Fatalf("proxy_protocol off 时应全部保留: out=%+v skipped=%d", out, skipped)
+	}
+	out, skipped = filterDerivedSNIRules(rules, true, true)
+	if skipped != 0 || len(out) != 2 {
+		t.Fatalf("支持按 SNI 发 PP 时应保留 sing-box 规则: out=%+v skipped=%d", out, skipped)
 	}
 }
 

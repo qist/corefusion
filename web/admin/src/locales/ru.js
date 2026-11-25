@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Шаблон переадресации TLS с принудительным включением HTTP/2, PROXY Protocol и TLS 1.2+. Привязывается к отдельному порту 127.0.0.1, домен настраивать не нужно. Сертификат обязателен.",
     "proxyProtocol": "ПРОКСИ-протокол",
     "proxyProtocolHint": "Передавать реальный IP клиента",
+    "proxyProtocolVersionHint": "Применяется по домену: v1 текстовый / v2 бинарный (заголовок меньше); Выкл. не отправляет заголовок PROXY (обязательно для sing-box). Требуется nginx с патчем stream_pp_var, иначе вся группа listen откатывается на v1.",
     "sniTarget": "Цель SNI",
     "logPathHint": "Путь к файлу журнала",
     "logPathPlaceholder": "Пусто = общий журнал (logs/caddy_access.log)",

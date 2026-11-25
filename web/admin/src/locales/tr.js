@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "TLS yönlendirme şablonu; HTTP/2, PROXY Protocol ve TLS 1.2+ zorunlu olarak etkinleştirilir. 127.0.0.1 üzerinde bağımsız bir port bağlanır, alan adı yapılandırması gerekmez. Sertifika yapılandırılması zorunludur.",
     "proxyProtocol": "PROXY Protokolü",
     "proxyProtocolHint": "Gerçek istemci IP'sini ilet",
+    "proxyProtocolVersionHint": "Alan adı bazında uygulanır: v1 metin / v2 ikili (daha küçük başlık); Kapalı PROXY başlığı göndermez (sing-box için zorunlu). stream_pp_var yamalı nginx gerekir, aksi halde tüm listen grubu v1'e döner.",
     "sniTarget": "SNI hedefi",
     "logPathHint": "Günlük dosyası yolu",
     "logPathPlaceholder": "Boş = genel günlüğü kullan (logs/caddy_access.log)",

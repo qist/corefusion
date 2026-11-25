@@ -404,6 +404,11 @@ message ProxyInfo {
   string path = 5;
   string status = 6;               // running/stopped
   bool   managed = 7;
+  // capabilities 是代理二进制的可选能力标记（探针读 `nginx -V` 等得到）。
+  // 目前用到：
+  //   "stream_pp_var"        — 支持 proxy_protocol 取变量（按 SNI 分别发 v1/v2/off）
+  //   "stream_ssl_preread"   — 编译了 stream_ssl_preread_module
+  repeated string capabilities = 8;
 }
 
 message ListBinariesRequest {}

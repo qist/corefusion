@@ -42,9 +42,20 @@ type NginxSite struct {
 	UpstreamTLS   bool   `json:"upstream_tls" gorm:"not null;default:false"`
 	LocalPort     string `json:"local_port" gorm:"size:16"`
 	ProxyProtocol bool   `json:"proxy_protocol" gorm:"not null;default:false"`
-	EnableHttp2   bool   `json:"enable_http2" gorm:"not null;default:true"`
-	EnableQuic    bool   `json:"enable_quic" gorm:"not null;default:false"`
-	EnableIpv6    bool   `json:"enable_ipv6" gorm:"not null;default:false"`
+	// ProxyProtocolVersion 是 SNI 转发时发往该后端的 PROXY Protocol 版本：
+	//   ""   = 未设置，沿用旧行为（ProxyProtocol=true 或全局开启 → v1）
+	//   "off"= 不发
+	//   "v1" = 文本头（生成 `on`，兼容没有 stream_pp_var 补丁的老 nginx）
+	//   "v2" = 二进制头（需要 nginx 1.31.4+ / 面板打包版）
+	// 只影响 stream SNI 转发；http 站点仍用 ProxyProtocol 布尔控制 listen 是否接收 PP。
+	ProxyProtocolVersion string `json:"proxy_protocol_version" gorm:"size:8;not null;default:''"`
+	// NoProxyProtocol 标记「该域名绝不能收到 PROXY 头」（不落库、不输出 JSON）：
+	// 目前用于 sing-box 的 REALITY 派生规则 —— sing-box 核心不支持 PROXY protocol，
+	// 即使全局开了 stream_proxy_protocol 也必须对这一条发 off。
+	NoProxyProtocol bool `json:"-" gorm:"-"`
+	EnableHttp2     bool `json:"enable_http2" gorm:"not null;default:true"`
+	EnableQuic      bool `json:"enable_quic" gorm:"not null;default:false"`
+	EnableIpv6      bool `json:"enable_ipv6" gorm:"not null;default:false"`
 	// IPv6ListenAddr：站点级 IPv6 监听地址（可含端口），如 "::" / "::1" / "[2001:db8::1]:8443"。
 	// 空=使用全局 ipv6_listen_addr；仅在 IPv6 开启时生效。
 	IPv6ListenAddr  string `json:"ipv6_listen_addr" gorm:"size:64"`

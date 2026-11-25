@@ -532,13 +532,14 @@ func (a *LocalAgent) GetProxyStatus(proxyType string) *ProxyInfo {
 	}
 	info := a.proxyMgr.DetectProxy(proxyType)
 	return &ProxyInfo{
-		Type:      info.Type,
-		Name:      info.Name,
-		Installed: info.Installed,
-		Version:   info.Version,
-		Path:      info.Path,
-		Status:    info.Status,
-		Managed:   info.Managed,
+		Type:         info.Type,
+		Name:         info.Name,
+		Installed:    info.Installed,
+		Version:      info.Version,
+		Path:         info.Path,
+		Status:       info.Status,
+		Managed:      info.Managed,
+		Capabilities: proxyCapabilities(proxyType, info.Path, a.dataDir),
 	}
 }
 
@@ -553,13 +554,14 @@ func (a *LocalAgent) GetProxyStatuses() *agentpb.GetProxyStatusResponse {
 	for _, pt := range []string{"caddy", "nginx"} {
 		info := a.proxyMgr.DetectProxy(pt)
 		resp.Proxies = append(resp.Proxies, &agentpb.ProxyInfo{
-			Type:      info.Type,
-			Name:      info.Name,
-			Installed: info.Installed,
-			Version:   info.Version,
-			Path:      info.Path,
-			Status:    info.Status,
-			Managed:   info.Managed,
+			Type:         info.Type,
+			Name:         info.Name,
+			Installed:    info.Installed,
+			Version:      info.Version,
+			Path:         info.Path,
+			Status:       info.Status,
+			Managed:      info.Managed,
+			Capabilities: proxyCapabilities(pt, info.Path, a.dataDir),
 		})
 		// Get guardian status and serialize to JSON
 		guardianStatus := a.proxyMgr.GetGuardianStatus(pt)

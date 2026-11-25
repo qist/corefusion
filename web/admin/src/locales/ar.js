@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "قالب إعادة توجيه TLS، يفرض تفعيل HTTP/2 وPROXY Protocol وTLS 1.2+. يرتبط بمنفذ مستقل على 127.0.0.1، دون حاجة إلى إعداد نطاق. يجب إعداد شهادة.",
     "proxyProtocol": "بروتوكول الوكيل",
     "proxyProtocolHint": "تمرير عنوان IP الحقيقي للعميل",
+    "proxyProtocolVersionHint": "يُطبَّق حسب النطاق: v1 نصي / v2 ثنائي (ترويسة أصغر)؛ إيقاف لا يرسل ترويسة PROXY (مطلوب لـ sing-box). يتطلب nginx مبنيًا مع patch ‏stream_pp_var، وإلا فستُستخدم v1 للمجموعة بأكملها.",
     "sniTarget": "هدف SNI",
     "logPathHint": "مسار ملف السجل",
     "logPathPlaceholder": "فارغ = استخدام السجل العام (logs/caddy_access.log)",

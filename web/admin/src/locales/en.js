@@ -3324,6 +3324,7 @@ wafAutoSyncDesc: 'Automatically sync from source on schedule, then push to all n
     realityCertRequired: "The Reality template requires a certificate",
     proxyProtocol: 'PROXY Protocol',
     proxyProtocolHint: 'Pass real client IP',
+    proxyProtocolVersionHint: 'Applied per domain: v1 text / v2 binary (smaller header); Off sends no PROXY header (required for sing-box). Requires an nginx built with the stream_pp_var patch, otherwise the whole listen group falls back to v1.',
     l4Routing: 'L4 Routing',
     l4Desc: 'L4 forwarding and SNI routing',
     formEdit: 'Form Edit',

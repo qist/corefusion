@@ -2501,14 +2501,20 @@ func (x *GetProxyStatusResponse) GetGuardianStatus() map[string]string {
 }
 
 type ProxyInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Installed     bool                   `protobuf:"varint,3,opt,name=installed,proto3" json:"installed,omitempty"`
-	Version       string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
-	Path          string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // running/stopped
-	Managed       bool                   `protobuf:"varint,7,opt,name=managed,proto3" json:"managed,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Type      string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Installed bool                   `protobuf:"varint,3,opt,name=installed,proto3" json:"installed,omitempty"`
+	Version   string                 `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
+	Path      string                 `protobuf:"bytes,5,opt,name=path,proto3" json:"path,omitempty"`
+	Status    string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"` // running/stopped
+	Managed   bool                   `protobuf:"varint,7,opt,name=managed,proto3" json:"managed,omitempty"`
+	// capabilities 是代理二进制的可选能力标记（探针读 `nginx -V` 等得到）。
+	// 目前用到：
+	//
+	//	"stream_pp_var"        — 支持 proxy_protocol 取变量（按 SNI 分别发 v1/v2/off）
+	//	"stream_ssl_preread"   — 编译了 stream_ssl_preread_module
+	Capabilities  []string `protobuf:"bytes,8,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2590,6 +2596,13 @@ func (x *ProxyInfo) GetManaged() bool {
 		return x.Managed
 	}
 	return false
+}
+
+func (x *ProxyInfo) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
 }
 
 type ListBinariesRequest struct {
@@ -9000,7 +9013,7 @@ type PublicCertIssuedReport struct {
 	Ca           string                 `protobuf:"bytes,9,opt,name=ca,proto3" json:"ca,omitempty"`
 	// ── 挑战方式与 DNS 通道（2026-09-23 补 ✓）──
 	// ⚠ 为什么必须回传 ✗：面板此前只按"有没有 dnsProvider"猜挑战方式 ✗
-	//（见 certificates.challenge_type 的注释 ✓）→
+	// （见 certificates.challenge_type 的注释 ✓）→
 	// 节点本机签出来的证书**落库时不知道自己是 dns-01 还是 http-01** ✗
 	// → 之后每次续期都只能靠"含通配符"兜底 ✗（真机现象：dns-01 的证书续期被跳过 ✓）。
 	// 现在节点把**自己实际用的**挑战方式原样带回来 ✓ → 面板落库即"创建时的选择" ✓。
@@ -9516,7 +9529,7 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\x0fguardian_status\x18\x02 \x03(\v2?.corefusion.agent.v1.GetProxyStatusResponse.GuardianStatusEntryR\x0eguardianStatus\x1aA\n" +
 	"\x13GuardianStatusEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xb1\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd5\x01\n" +
 	"\tProxyInfo\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -9524,7 +9537,8 @@ const file_internal_runtime_agent_proto_corefusion_agent_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
 	"\x04path\x18\x05 \x01(\tR\x04path\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x18\n" +
-	"\amanaged\x18\a \x01(\bR\amanaged\"\x15\n" +
+	"\amanaged\x18\a \x01(\bR\amanaged\x12\"\n" +
+	"\fcapabilities\x18\b \x03(\tR\fcapabilities\"\x15\n" +
 	"\x13ListBinariesRequest\"\x91\x01\n" +
 	"\x14ListBinariesResponse\x12;\n" +
 	"\bbinaries\x18\x01 \x03(\v2\x1f.corefusion.agent.v1.BinaryInfoR\bbinaries\x12<\n" +

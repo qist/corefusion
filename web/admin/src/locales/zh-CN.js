@@ -3249,6 +3249,7 @@ wafAutoSyncDesc: '按计划自动从规则源同步规则，然后推送到所�
     realityCertRequired: "Reality 模板必须选择证书",
     proxyProtocol: 'PROXY Protocol',
     proxyProtocolHint: '传递真实客户端 IP',
+    proxyProtocolVersionHint: '按域名生效：v1 文本 / v2 二进制（头更小）；关闭则不发 PROXY 头（sing-box 必须关闭）。需 nginx 带 stream_pp_var 补丁，否则整组回退 v1。',
     l4Routing: 'L4 路由',
     l4Desc: 'L4 层转发和 SNI 分流',
     templatePanelForward: '面板转发',

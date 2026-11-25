@@ -113,4 +113,6 @@ type ProxyInfo struct {
 	Path      string `json:"path"`
 	Status    string `json:"status"`
 	Managed   bool   `json:"managed"`
+	// Capabilities 是代理二进制的可选编译能力（见 proxy_capabilities.go）。
+	Capabilities []string `json:"capabilities,omitempty"`
 }

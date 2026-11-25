@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "เทมเพลตการส่งต่อ TLS บังคับเปิด HTTP/2, PROXY Protocol และ TLS 1.2+ ผูกกับพอร์ตแยกบน 127.0.0.1 ไม่ต้องกำหนดค่าโดเมน ต้องกำหนดค่าใบรับรอง",
     "proxyProtocol": "โปรโตคอลพร็อกซี",
     "proxyProtocolHint": "ส่ง IP จริงของไคลเอนต์",
+    "proxyProtocolVersionHint": "มีผลตามโดเมน: v1 แบบข้อความ / v2 แบบไบนารี (เฮดเดอร์เล็กกว่า) ปิดจะไม่ส่งเฮดเดอร์ PROXY (จำเป็นสำหรับ sing-box) ต้องใช้ nginx ที่คอมไพล์ด้วยแพตช์ stream_pp_var มิฉะนั้นทั้งกลุ่ม listen จะถอยกลับเป็น v1",
     "sniTarget": "เป้าหมาย SNI",
     "logPathHint": "พาธไฟล์บันทึก",
     "logPathPlaceholder": "ว่าง = ใช้บันทึกส่วนกลาง (logs/caddy_access.log)",

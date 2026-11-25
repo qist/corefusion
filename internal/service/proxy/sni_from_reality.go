@@ -260,14 +260,15 @@ func mergeDerivedNginxSNISites(serverID int64, existing []entity.NginxSite, rule
 		}
 		seen[key] = true
 		out = append(out, entity.NginxSite{
-			ServerID:      serverID,
-			Domain:        r.Domain,
-			Template:      "sni",
-			SNITarget:     r.Target,
-			ProxyProtocol: r.ProxyProtocol,
-			L4Protocol:    "tcp",
-			Priority:      100,
-			Enabled:       true,
+			ServerID:        serverID,
+			Domain:          r.Domain,
+			Template:        "sni",
+			SNITarget:       r.Target,
+			ProxyProtocol:   r.ProxyProtocol,
+			NoProxyProtocol: r.FromSingbox,
+			L4Protocol:      "tcp",
+			Priority:        100,
+			Enabled:         true,
 		})
 	}
 	return out

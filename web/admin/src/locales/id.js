@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Templat penerusan TLS dengan HTTP/2, PROXY Protocol, dan TLS 1.2+ yang selalu diaktifkan. Terikat ke port 127.0.0.1 terpisah, tanpa perlu mengonfigurasi domain. Sertifikat wajib dikonfigurasi.",
     "proxyProtocol": "Protokol PROKSI",
     "proxyProtocolHint": "Meneruskan IP klien asli",
+    "proxyProtocolVersionHint": "Berlaku per domain: v1 teks / v2 biner (header lebih kecil); Nonaktif tidak mengirim header PROXY (wajib untuk sing-box). Membutuhkan nginx yang dibangun dengan patch stream_pp_var, jika tidak seluruh grup listen kembali ke v1.",
     "sniTarget": "Target SNI",
     "logPathHint": "Jalur file log",
     "logPathPlaceholder": "Kosong = gunakan log global (logs/caddy_access.log)",

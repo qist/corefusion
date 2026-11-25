@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "Modèle de transfert TLS, forçant l'activation de HTTP/2, PROXY Protocol et TLS 1.2+. Se lie à un port dédié sur 127.0.0.1, sans nom de domaine requis. Un certificat est obligatoire.",
     "proxyProtocol": "Protocole PROXY",
     "proxyProtocolHint": "Transmettre l'IP réelle du client",
+    "proxyProtocolVersionHint": "Appliqué par domaine : v1 texte / v2 binaire (en-tête plus petit) ; Désactivé n’envoie aucun en-tête PROXY (obligatoire pour sing-box). Nécessite un nginx compilé avec le patch stream_pp_var, sinon tout le groupe d’écoute revient à v1.",
     "sniTarget": "Cible SNI",
     "logPathHint": "Chemin du fichier journal",
     "logPathPlaceholder": "Vide = utiliser le journal global (logs/caddy_access.log)",

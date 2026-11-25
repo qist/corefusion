@@ -2847,6 +2847,7 @@ export default {
     "realityDesc": "TLS 포워딩 템플릿으로, HTTP/2, PROXY Protocol, TLS 1.2+를 강제로 활성화합니다. 127.0.0.1의 독립 포트에 바인딩되며 도메인 구성이 필요하지 않습니다. 인증서를 반드시 구성해야 합니다.",
     "proxyProtocol": "프록시 프로토콜",
     "proxyProtocolHint": "실제 클라이언트 IP 전달",
+    "proxyProtocolVersionHint": "도메인별 적용: v1 텍스트 / v2 바이너리(헤더가 더 작음). 끄면 PROXY 헤더를 보내지 않습니다(sing-box 필수). nginx에 stream_pp_var 패치가 필요하며, 없으면 리스닝 그룹 전체가 v1로 폴백됩니다.",
     "sniTarget": "SNI 대상",
     "logPathHint": "로그 파일 경로",
     "logPathPlaceholder": "비우면 전역 로그 사용 (logs/caddy_access.log)",

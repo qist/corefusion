@@ -889,12 +889,13 @@ difference is the scope of PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` scope | Panel-packaged nginx (with the `stream_pp_var` patch): **per SNI rule**, v1 / v2 / off. Stock or unpatched nginx: the whole listen group (`listen` level), all on or all off per port | Per route (`proxy ... { proxy_protocol v2 }`) |
+| `proxy_protocol` scope | Panel-packaged nginx (with the `stream_pp_var` patch): **per SNI rule**, v1 / v2 / off. Stock or unpatched nginx: the whole listen group (`listen` level), all on or all off per port | Per route (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box on the same `:443` | Supported once patched: xray REALITY gets v1/v2, the sing-box rule is set to off | Supported: one SNI goes to xray (PP v2), another to sing-box (no PP) |
 | How sing-box is reached | After patching it can share `:443` with xray (PP off for that domain); otherwise use its own port or a separate listen group without PP | Shares `:443` with xray, separated by SNI |
 
 Notes:
 
+- Caddy chooses the PROXY protocol version per site (route): v1 / v2 / off, defaulting to the old behaviour v2; when off, that site sends no PROXY header.
 - The default stays `v1` (the old `proxy_protocol on`). Each SNI site can be switched to `v1`, `v2` or off. `v2` is a binary
   header (28 bytes for IPv4), shorter than the v1 text header (~50–60 bytes); the difference occurs once per connection and is
   imperceptible in practice.

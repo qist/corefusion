@@ -857,12 +857,13 @@ berdasarkan domain; bedanya ada pada cakupan PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Cakupan `proxy_protocol` | nginx paket panel (dengan patch `stream_pp_var`): **per aturan SNI**, v1 / v2 / mati. nginx resmi atau tanpa patch: seluruh grup listen (level `listen`), per port semua nyala atau semua mati | Per rute (`proxy ... { proxy_protocol v2 }`) |
+| Cakupan `proxy_protocol` | nginx paket panel (dengan patch `stream_pp_var`): **per aturan SNI**, v1 / v2 / mati. nginx resmi atau tanpa patch: seluruh grup listen (level `listen`), per port semua nyala atau semua mati | Per rute (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box pada `:443` yang sama | Didukung setelah patch: REALITY xray mendapat v1/v2, aturan sing-box diatur mati | Didukung: satu SNI ke xray (PP v2), lainnya ke sing-box (tanpa PP) |
 | Cara menjangkau sing-box | Setelah patch dapat berbagi `:443` dengan xray (PP mati untuk domain itu); jika tidak, port sendiri atau grup listen tanpa PP | Berbagi `:443` dengan xray, dipisah oleh SNI |
 
 Catatan:
 
+- Caddy memilih versi PROXY protocol per situs (rute): v1 / v2 / mati, default tetap v2; jika mati, situs tersebut tidak mengirim header PROXY.
 - Default tetap `v1` (perilaku lama `proxy_protocol on`). Setiap situs SNI dapat diubah ke `v1`, `v2`, atau mati. `v2` adalah
   header biner (28 byte untuk IPv4), lebih pendek dari header teks v1 (~50–60 byte); perbedaannya hanya sekali per koneksi dan
   tidak terasa.

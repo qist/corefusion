@@ -857,12 +857,13 @@ proxies dividem por domínio; a diferença está no escopo do PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Escopo de `proxy_protocol` | nginx empacotado pelo painel (com o patch `stream_pp_var`): **por regra SNI**, v1 / v2 / desligado. nginx oficial ou sem patch: todo o grupo de escuta (nível `listen`), tudo ligado ou desligado por porta | Por rota (`proxy ... { proxy_protocol v2 }`) |
+| Escopo de `proxy_protocol` | nginx empacotado pelo painel (com o patch `stream_pp_var`): **por regra SNI**, v1 / v2 / desligado. nginx oficial ou sem patch: todo o grupo de escuta (nível `listen`), tudo ligado ou desligado por porta | Por rota (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box no mesmo `:443` | Suportado após o patch: REALITY do xray recebe v1/v2 e a regra do sing-box fica desligada | Suportado: um SNI vai para xray (PP v2), outro para sing-box (sem PP) |
 | Como o sing-box é alcançado | Com o patch pode compartilhar `:443` com xray (PP desligado para esse domínio); caso contrário, porta própria ou grupo de escuta sem PP | Compartilha `:443` com xray, separado por SNI |
 
 Notas:
 
+- O Caddy escolhe a versão do PROXY protocol por site (rota): v1 / v2 / desligado, com v2 como padrão; desligado significa que o site não envia cabeçalho PROXY.
 - O padrão continua `v1` (o antigo `proxy_protocol on`). Cada site SNI pode ser alterado para `v1`, `v2` ou desligado. `v2` é
   um cabeçalho binário (28 bytes em IPv4), menor que o cabeçalho texto v1 (~50–60 bytes); a diferença ocorre uma vez por
   conexão e é imperceptível.

@@ -857,12 +857,13 @@ SNI ». Les deux proxys savent répartir par domaine ; la différence tient à l
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Portée de `proxy_protocol` | nginx fourni par le panel (avec le patch `stream_pp_var`) : **par règle SNI**, v1 / v2 / désactivé. nginx officiel ou non patché : tout le groupe d’écoute (niveau `listen`), tout activé ou tout désactivé par port | Par route (`proxy ... { proxy_protocol v2 }`) |
+| Portée de `proxy_protocol` | nginx fourni par le panel (avec le patch `stream_pp_var`) : **par règle SNI**, v1 / v2 / désactivé. nginx officiel ou non patché : tout le groupe d’écoute (niveau `listen`), tout activé ou tout désactivé par port | Par route (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box sur le même `:443` | Pris en charge après patch : REALITY de xray reçoit v1/v2, la règle sing-box est désactivée | Pris en charge : un SNI vers xray (PP v2), un autre vers sing-box (sans PP) |
 | Accès à sing-box | Après patch, partage `:443` avec xray (PP désactivé pour ce domaine) ; sinon port dédié ou groupe d’écoute sans PP | Partage `:443` avec xray, séparé par SNI |
 
 Remarques :
 
+- Caddy choisit la version de PROXY protocol par site (route) : v1 / v2 / désactivé, v2 restant la valeur par défaut ; désactivé signifie que ce site n’envoie aucun en-tête PROXY.
 - La valeur par défaut reste `v1` (l’ancien `proxy_protocol on`). Chaque site SNI peut passer à `v1`, `v2` ou désactivé. `v2`
   est un en-tête binaire (28 octets en IPv4), plus court que l’en-tête texte v1 (~50–60 octets) ; la différence n’intervient
   qu’une fois par connexion et est imperceptible.

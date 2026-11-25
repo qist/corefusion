@@ -857,12 +857,13 @@ biệt nằm ở phạm vi của PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Phạm vi `proxy_protocol` | nginx do bảng điều khiển đóng gói (có bản vá `stream_pp_var`): **theo từng quy tắc SNI**, v1 / v2 / tắt. nginx chính thức hoặc chưa vá: toàn bộ nhóm listen (mức `listen`), mỗi cổng bật hoặc tắt toàn bộ | Theo từng route (`proxy ... { proxy_protocol v2 }`) |
+| Phạm vi `proxy_protocol` | nginx do bảng điều khiển đóng gói (có bản vá `stream_pp_var`): **theo từng quy tắc SNI**, v1 / v2 / tắt. nginx chính thức hoặc chưa vá: toàn bộ nhóm listen (mức `listen`), mỗi cổng bật hoặc tắt toàn bộ | Theo từng route (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box trên cùng `:443` | Hỗ trợ sau khi vá: REALITY của xray nhận v1/v2, quy tắc sing-box đặt tắt | Hỗ trợ: một SNI đến xray (PP v2), SNI khác đến sing-box (không PP) |
 | Cách đến sing-box | Sau khi vá có thể dùng chung `:443` với xray (tắt PP cho tên miền đó); nếu không, dùng cổng riêng hoặc nhóm listen không bật PP | Dùng chung `:443` với xray, phân tách bằng SNI |
 
 Ghi chú:
 
+- Caddy chọn phiên bản PROXY protocol theo từng site (route): v1 / v2 / tắt, mặc định giữ hành vi cũ là v2; khi tắt, site đó không gửi header PROXY.
 - Mặc định vẫn là `v1` (hành vi cũ `proxy_protocol on`). Mỗi site SNI có thể chuyển sang `v1`, `v2` hoặc tắt. `v2` là
   header nhị phân (28 byte với IPv4), ngắn hơn header văn bản v1 (~50–60 byte); khác biệt chỉ xảy ra một lần mỗi kết nối và
   không đáng kể.

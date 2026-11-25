@@ -857,12 +857,13 @@ PROXY protocol의 적용 범위가 다릅니다.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` 범위 | 패널에 포함된 nginx(`stream_pp_var` 패치): **SNI 규칙별** v1 / v2 / 끔. 공식 또는 패치되지 않은 nginx: listen 그룹 전체(`listen` 수준)로, 포트 단위로 모두 켜거나 모두 끔 | 라우트별(`proxy ... { proxy_protocol v2 }`) |
+| `proxy_protocol` 범위 | 패널에 포함된 nginx(`stream_pp_var` 패치): **SNI 규칙별** v1 / v2 / 끔. 공식 또는 패치되지 않은 nginx: listen 그룹 전체(`listen` 수준)로, 포트 단위로 모두 켜거나 모두 끔 | 라우트별(`proxy ... { proxy_protocol v1|v2 }`) |
 | 같은 `:443`에서 xray + sing-box | 패치 후 지원: xray REALITY는 v1/v2, sing-box 규칙은 끔 | 지원: 한 SNI는 xray(PP v2), 다른 하나는 sing-box(PP 없음) |
 | sing-box 연결 방식 | 패치 후 xray와 `:443` 공유 가능(해당 도메인 PP 끔). 그렇지 않으면 전용 포트 또는 PP 없는 별도 listen 그룹 | xray와 `:443`을 공유하고 SNI로 구분 |
 
 참고:
 
+- Caddy는 사이트(라우트)별로 PROXY protocol 버전을 선택합니다: v1 / v2 / 끔. 기본값은 기존 동작인 v2이며, 끔이면 해당 사이트는 PROXY 헤더를 보내지 않습니다.
 - 기본값은 계속 `v1`(기존 `proxy_protocol on`)입니다. SNI 사이트별로 `v1`, `v2`, 끔을 선택할 수 있습니다. `v2`는
   바이너리 헤더(IPv4 기준 28바이트)로 v1 텍스트 헤더(약 50~60바이트)보다 짧습니다. 차이는 연결 시 한 번뿐이라
   실제로는 체감되지 않습니다.

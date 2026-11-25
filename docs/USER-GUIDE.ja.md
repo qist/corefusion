@@ -857,12 +857,13 @@ PROXY protocol の適用範囲が異なります。
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` の範囲 | パネル同梱の nginx（`stream_pp_var` パッチ入り）：**SNI ルールごと**に v1 / v2 / オフ。公式または未パッチの nginx：listen グループ全体（`listen` レベル）で、ポート単位に全開か全閉 | ルートごと（`proxy ... { proxy_protocol v2 }`） |
+| `proxy_protocol` の範囲 | パネル同梱の nginx（`stream_pp_var` パッチ入り）：**SNI ルールごと**に v1 / v2 / オフ。公式または未パッチの nginx：listen グループ全体（`listen` レベル）で、ポート単位に全開か全閉 | ルートごと（`proxy ... { proxy_protocol v1|v2 }`） |
 | 同じ `:443` で xray + sing-box | パッチ適用後は対応：xray の REALITY は v1/v2、sing-box のルールはオフ | 対応：一方の SNI を xray（PP v2）、他方を sing-box（PP なし）へ |
 | sing-box への到達方法 | パッチ後は xray と `:443` を共有可能（該当ドメインは PP オフ）。それ以外は専用ポート、または PP なしの別 listen グループ | xray と `:443` を共有し、SNI で分離 |
 
 補足：
 
+- Caddy はサイト（ルート）ごとに PROXY protocol のバージョンを選択できます：v1 / v2 / オフ。既定は従来どおり v2 で、オフの場合はそのサイトで PROXY ヘッダーを送信しません。
 - 既定値は従来どおり `v1`（旧 `proxy_protocol on`）。SNI サイトごとに `v1` / `v2` / オフを選択できます。`v2` はバイナリ
   ヘッダー（IPv4 で 28 バイト）で、v1 のテキストヘッダー（約 50〜60 バイト）より短くなります。差は接続時1回だけで、
   実用上は体感できません。

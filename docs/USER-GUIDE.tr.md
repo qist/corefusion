@@ -857,12 +857,13 @@ böler; fark PROXY protocol kapsamındadır.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` kapsamı | Panelin paketlediği nginx (`stream_pp_var` yamalı): **SNI kuralı başına** v1 / v2 / kapalı. Resmî veya yamasız nginx: tüm listen grubu (`listen` düzeyi), port başına ya tümü açık ya tümü kapalı | Rota başına (`proxy ... { proxy_protocol v2 }`) |
+| `proxy_protocol` kapsamı | Panelin paketlediği nginx (`stream_pp_var` yamalı): **SNI kuralı başına** v1 / v2 / kapalı. Resmî veya yamasız nginx: tüm listen grubu (`listen` düzeyi), port başına ya tümü açık ya tümü kapalı | Rota başına (`proxy ... { proxy_protocol v1|v2 }`) |
 | Aynı `:443` üzerinde xray + sing-box | Yama sonrası desteklenir: xray REALITY v1/v2 alır, sing-box kuralı kapalıya ayarlanır | Desteklenir: bir SNI xray'e (PP v2), diğeri sing-box'a (PP yok) |
 | sing-box'a erişim | Yama sonrası xray ile `:443` paylaşılabilir (o alan adı için PP kapalı); aksi halde ayrı port veya PP'siz ayrı listen grubu | xray ile `:443` paylaşılır, SNI ile ayrılır |
 
 Notlar:
 
+- Caddy, PROXY protocol sürümünü site (rota) başına seçer: v1 / v2 / kapalı; varsayılan eski davranış olan v2'dir, kapalıyken o site PROXY başlığı göndermez.
 - Varsayılan `v1` olarak kalır (eski `proxy_protocol on`). Her SNI sitesi `v1`, `v2` veya kapalı yapılabilir. `v2` ikili bir
   başlıktır (IPv4 için 28 bayt) ve v1 metin başlığından (~50–60 bayt) daha kısadır; fark bağlantı başına bir kez oluşur ve
   pratikte hissedilmez.

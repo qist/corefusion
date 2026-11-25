@@ -857,12 +857,13 @@ Beide Proxys können nach Domäne aufteilen; der Unterschied liegt im Geltungsbe
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Geltungsbereich von `proxy_protocol` | Vom Panel gepacktes nginx (mit `stream_pp_var`-Patch): **pro SNI-Regel** v1 / v2 / aus. Offizielles oder ungepatchtes nginx: die gesamte Listen-Gruppe (`listen`-Ebene), pro Port alles an oder alles aus | Pro Route (`proxy ... { proxy_protocol v2 }`) |
+| Geltungsbereich von `proxy_protocol` | Vom Panel gepacktes nginx (mit `stream_pp_var`-Patch): **pro SNI-Regel** v1 / v2 / aus. Offizielles oder ungepatchtes nginx: die gesamte Listen-Gruppe (`listen`-Ebene), pro Port alles an oder alles aus | Pro Route (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box auf demselben `:443` | Mit Patch unterstützt: xray-REALITY erhält v1/v2, die sing-box-Regel wird auf aus gesetzt | Unterstützt: ein SNI zu xray (PP v2), ein anderer zu sing-box (kein PP) |
 | Erreichbarkeit von sing-box | Mit Patch gemeinsam mit xray auf `:443` (PP für diese Domäne aus); sonst eigener Port oder separate Listen-Gruppe ohne PP | Teilt `:443` mit xray, getrennt nach SNI |
 
 Hinweise:
 
+- Caddy wählt die PROXY-Protocol-Version pro Site (Route): v1 / v2 / aus, Standard ist das alte Verhalten v2; bei „aus“ sendet die Site keinen PROXY-Header.
 - Standard bleibt `v1` (bisheriges `proxy_protocol on`). Jede SNI-Site kann auf `v1`, `v2` oder aus gestellt werden. `v2` ist
   ein Binär-Header (28 Byte bei IPv4) und kürzer als der v1-Textheader (~50–60 Byte); der Unterschied tritt nur einmal pro
   Verbindung auf und ist praktisch nicht messbar.

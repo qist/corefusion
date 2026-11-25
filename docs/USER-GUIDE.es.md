@@ -857,12 +857,13 @@ dividir por dominio; la diferencia está en el alcance de PROXY protocol.
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| Alcance de `proxy_protocol` | nginx empaquetado por el panel (con el parche `stream_pp_var`): **por regla SNI**, v1 / v2 / desactivado. nginx oficial o sin parche: todo el grupo de escucha (nivel `listen`), todo activado o desactivado por puerto | Por ruta (`proxy ... { proxy_protocol v2 }`) |
+| Alcance de `proxy_protocol` | nginx empaquetado por el panel (con el parche `stream_pp_var`): **por regla SNI**, v1 / v2 / desactivado. nginx oficial o sin parche: todo el grupo de escucha (nivel `listen`), todo activado o desactivado por puerto | Por ruta (`proxy ... { proxy_protocol v1|v2 }`) |
 | xray + sing-box en el mismo `:443` | Compatible con el parche: REALITY de xray recibe v1/v2 y la regla de sing-box se pone en desactivado | Compatible: un SNI va a xray (PP v2) y otro a sing-box (sin PP) |
 | Cómo se alcanza sing-box | Con el parche puede compartir `:443` con xray (PP desactivado para ese dominio); si no, puerto propio o grupo de escucha sin PP | Comparte `:443` con xray, separado por SNI |
 
 Notas:
 
+- Caddy elige la versión de PROXY protocol por sitio (ruta): v1 / v2 / desactivado, con v2 como valor predeterminado; desactivado significa que ese sitio no envía cabecera PROXY.
 - El valor predeterminado sigue siendo `v1` (el antiguo `proxy_protocol on`). Cada sitio SNI puede cambiarse a `v1`, `v2` o
   desactivado. `v2` es una cabecera binaria (28 bytes en IPv4), más corta que la de texto v1 (~50–60 bytes); la diferencia se
   produce una vez por conexión y es imperceptible.

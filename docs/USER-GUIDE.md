@@ -877,12 +877,13 @@ cd /opt/corefusion
 
 | | nginx (stream) | Caddy (layer4) |
 |---|---|---|
-| `proxy_protocol` 作用域 | 面板打包的 nginx（带 `stream_pp_var` 补丁）：**每条 SNI 规则**可选 v1 / v2 / 关闭；官方或未打补丁的 nginx：整个监听组（`listen` 级），同端口要么全开、要么全关 | 每条路由（`proxy ... { proxy_protocol v2 }`） |
+| `proxy_protocol` 作用域 | 面板打包的 nginx（带 `stream_pp_var` 补丁）：**每条 SNI 规则**可选 v1 / v2 / 关闭；官方或未打补丁的 nginx：整个监听组（`listen` 级），同端口要么全开、要么全关 | 每条路由（`proxy ... { proxy_protocol v1|v2 }`） |
 | 同一 `:443` 同时承载 xray + sing-box | 打补丁后支持：xray 的 REALITY 发 v1/v2，sing-box 的规则设为关闭 | 支持：一条 SNI 走 xray（PP v2），另一条走 sing-box（不带 PP） |
 | sing-box 的接入方式 | 打补丁后可与 xray 共用 `:443`（该域名关闭 PP）；否则走独立端口，或单独一个不开 PP 的监听组 | 与 xray 共用 `:443`，按 SNI 区分 |
 
 说明：
 
+- Caddy 的 PROXY Protocol 按站点（路由）独立选择：v1 / v2 / 关闭，默认沿用旧行为 v2；关闭后该站点不发 PROXY 头。
 - 默认值仍是 `v1`（即旧的 `proxy_protocol on`）。站点可在「SNI 分流」里按域名改为 `v1`、`v2` 或关闭。`v2` 是二进制头
   （IPv4 固定 28 字节），比 v1 文本头（约 50~60 字节）更短；差异只在建连时出现一次，业务无感。
 - 面板通过 Agent 执行 `nginx -V` 识别 `NGX_STREAM_PP_VAR`（能力标记 `stream_pp_var`），结果缓存 60 秒。未打补丁、探测

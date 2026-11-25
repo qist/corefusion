@@ -224,8 +224,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
-github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.223 h1:u+yK6aTTSXEkd0GMpjv8mq1INlohyvf46dtty5W9eCM=
-github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.223/go.mod h1:qBahEQ0OPyvifR8C0mI87Kh1mhJHzmo/TRfBtQMA0gE=
+github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.224 h1:FmB+soLuj646cM0hoCvDRFt1edp3OjhhokT6wKNBkd4=
+github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.224/go.mod h1:qBahEQ0OPyvifR8C0mI87Kh1mhJHzmo/TRfBtQMA0gE=
 github.com/huin/goupnp v1.2.0 h1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=
 github.com/huin/goupnp v1.2.0/go.mod h1:gnGPsThkYa7bFi/KWmEysQRf48l2dvR5bxr2OFckNX8=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

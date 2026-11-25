@@ -2,6 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "Prüfung",
+    "persistHint": "Die vorgeschlagenen Befehle schreiben in Konfigurationsdateien und laden neu: Kernelparameter nach /etc/sysctl.d/, SSH nach /etc/ssh/sshd_config.d/ — sie überleben einen Neustart. Ein reines `sysctl -w` wird beim Neustart zurückgesetzt.",
     "settings": "Prüfungseinstellungen",
     "enabled": "Geplante Prüfung",
     "intervalHours": "Intervall (Stunden)",

@@ -1,6 +1,7 @@
 package nodecheckup
 
 import (
+	"strings"
 	"testing"
 
 	"corefusion/internal/model/nodecheckup"
@@ -94,5 +95,51 @@ func TestSaveSettingsValidation(t *testing.T) {
 	ok.IntervalHours = 12
 	if got, err := s.SaveSettings(nil, ok); err != nil || got.IntervalHours != 12 {
 		t.Fatalf("合法设置保存失败：%v %+v", err, got)
+	}
+}
+
+// 建议命令必须写配置文件再重载：只给 sysctl -w 会在重启后还原，
+// 是用户明确指出的问题（内核优化/SSH 静态配置要落盘）。
+func TestSysctlCommandPersists(t *testing.T) {
+	cmds := sysctlCommand("net.core.somaxconn", "32768", "host")
+	if len(cmds) != 1 {
+		t.Fatalf("应生成一条建议命令：%+v", cmds)
+	}
+	text := cmds[0].Text
+	if !strings.Contains(text, "/etc/sysctl.d/99-corefusion-net.core.somaxconn.conf") {
+		t.Fatalf("内核参数应写入 /etc/sysctl.d：%s", text)
+	}
+	if !strings.Contains(text, "sysctl --system") {
+		t.Fatalf("写文件后应 reload：%s", text)
+	}
+	if strings.Contains(text, "sysctl -w net.core.somaxconn") {
+		t.Fatalf("不应只给临时 sysctl -w：%s", text)
+	}
+}
+
+func TestBBRCommandWritesBothParams(t *testing.T) {
+	cmds := bbrCommand("host")
+	if len(cmds) != 1 {
+		t.Fatalf("应生成一条建议命令：%+v", cmds)
+	}
+	text := cmds[0].Text
+	if !strings.Contains(text, "/etc/sysctl.d/99-corefusion-bbr.conf") {
+		t.Fatalf("BBR 应写入 /etc/sysctl.d：%s", text)
+	}
+	if !strings.Contains(text, "net.core.default_qdisc = fq") || !strings.Contains(text, "net.ipv4.tcp_congestion_control = bbr") {
+		t.Fatalf("BBR 应同时写 qdisc 与算法：%s", text)
+	}
+}
+
+func TestSSHPersistScriptWritesDropIn(t *testing.T) {
+	text := sshPersistScript("ssh-password", "PasswordAuthentication no", "KbdInteractiveAuthentication no")
+	for _, want := range []string{
+		"/etc/ssh/sshd_config.d/99-corefusion-ssh-password.conf",
+		"PasswordAuthentication no",
+		"sshd -t && systemctl reload sshd",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("SSH 建议缺少 %q：%s", want, text)
+		}
 	}
 }

@@ -2,6 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "Comprobación",
+    "persistHint": "Los comandos sugeridos escriben en archivos de configuración y recargan: los parámetros del kernel en /etc/sysctl.d/ y SSH en /etc/ssh/sshd_config.d/, por lo que sobreviven al reinicio. Un `sysctl -w` suelto se revierte al reiniciar.",
     "settings": "Ajustes de comprobación",
     "enabled": "Comprobación programada",
     "intervalHours": "Intervalo (horas)",

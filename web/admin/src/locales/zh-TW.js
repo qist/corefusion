@@ -2,6 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "安全體檢",
+    "persistHint": "建議命令均已寫成「寫入設定檔 + 重載」：核心參數落到 /etc/sysctl.d/，SSH 落到 /etc/ssh/sshd_config.d/，重開機後仍生效。只執行 sysctl -w 會在重開機後還原。",
     "settings": "體檢設定",
     "enabled": "定時體檢",
     "intervalHours": "週期（小時）",

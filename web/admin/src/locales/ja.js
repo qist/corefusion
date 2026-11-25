@@ -2,6 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "診断",
+    "persistHint": "提案コマンドは設定ファイルへ書き込んで再読み込みします：カーネルパラメータは /etc/sysctl.d/、SSH は /etc/ssh/sshd_config.d/ に保存されるため再起動後も維持されます。`sysctl -w` だけでは再起動時に元に戻ります。",
     "settings": "診断設定",
     "enabled": "定期診断",
     "intervalHours": "間隔（時間）",

@@ -1,6 +1,7 @@
 export default {
   nodeCheckup: {
     "tab": "Checkup",
+    "persistHint": "Suggested commands write to config files and reload: kernel parameters go to /etc/sysctl.d/, SSH to /etc/ssh/sshd_config.d/, so they survive a reboot. A bare `sysctl -w` is reverted on restart.",
     "settings": "Checkup settings",
     "enabled": "Scheduled checkup",
     "intervalHours": "Interval (hours)",

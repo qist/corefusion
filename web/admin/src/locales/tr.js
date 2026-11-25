@@ -2,6 +2,7 @@
 export default {
   nodeCheckup: {
     "tab": "Denetim",
+    "persistHint": "Önerilen komutlar yapılandırma dosyalarına yazıp yeniden yükler: çekirdek parametreleri /etc/sysctl.d/, SSH /etc/ssh/sshd_config.d/ altına yazılır ve yeniden başlatmada korunur. Yalnızca `sysctl -w` çalıştırmak yeniden başlatmada geri alınır.",
     "settings": "Denetim ayarları",
     "enabled": "Zamanlanmış denetim",
     "intervalHours": "Aralık (saat)",

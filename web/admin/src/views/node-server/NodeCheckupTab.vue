@@ -14,6 +14,11 @@
 
     <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon style="margin-bottom:12px" />
 
+    <el-alert
+      type="info" :closable="false" show-icon
+      style="margin-bottom:12px"
+      :title="t('nodeCheckup.persistHint')" />
+
     <div v-if="report" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       <el-tag v-for="s in summaryTags" :key="s.key" :type="s.type" size="small">{{ s.label }}: {{ s.count }}</el-tag>
     </div>

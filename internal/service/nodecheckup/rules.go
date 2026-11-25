@@ -117,7 +117,7 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 				ID: "SYS-05", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
 				Params:   map[string]any{"current": f.Value, "expected": "bbr"},
 				Evidence: []string{"tcp_congestion_control = " + f.Value},
-				Commands: sysctlCommand("net.ipv4.tcp_congestion_control", "bbr", f.Scope),
+				Commands: bbrCommand(f.Scope),
 			})
 		} else {
 			add(nodecheckup.Item{
@@ -225,7 +225,9 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 			ID: "TIME-01", Category: "system", Severity: SeverityInfo, Scope: facts.Env.Kind,
 			Params:   map[string]any{"service": facts.TimeSync.Service},
 			Evidence: []string{"system time not synchronized"},
-			Commands: []nodecheckup.Command{{Shell: "sh", Text: "timedatectl set-ntp true"}},
+			Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 持久：启用时间同步服务（enable 写入 systemd 开机自启，重启后仍同步）\n" +
+				"systemctl enable --now systemd-timesyncd 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || timedatectl set-ntp true\n" +
+				"timedatectl status"}},
 		})
 	}
 
@@ -261,7 +263,10 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 			ID: "SSH-01", Category: "ssh", Severity: SeverityHigh, Scope: facts.Env.Kind,
 			Params:   map[string]any{"users": passwordUsers, "current": "yes", "expected": "no"},
 			Evidence: []string{"sshd -T: PasswordAuthentication yes"},
-			Commands: []nodecheckup.Command{{Shell: "sh", Text: "# /etc/ssh/sshd_config\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n# systemctl reload sshd"}},
+			Commands: []nodecheckup.Command{{Shell: "sh", Text: sshPersistScript(
+				"ssh-password",
+				"PasswordAuthentication no",
+				"KbdInteractiveAuthentication no")}},
 		})
 	} else {
 		add(okItem("SSH-01", "ssh", facts.Env.Kind, "PasswordAuthentication", "no"))
@@ -273,6 +278,10 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 			ID: "SSH-02", Category: "ssh", Severity: SeverityHigh, Scope: facts.Env.Kind,
 			Params:   map[string]any{"users": kbdUsers, "current": "yes", "expected": "no"},
 			Evidence: []string{"sshd -T: KbdInteractiveAuthentication yes"},
+			Commands: []nodecheckup.Command{{Shell: "sh", Text: sshPersistScript(
+				"ssh-password",
+				"PasswordAuthentication no",
+				"KbdInteractiveAuthentication no")}},
 		})
 	} else {
 		add(okItem("SSH-02", "ssh", facts.Env.Kind, "KbdInteractiveAuthentication", "no"))
@@ -298,7 +307,7 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 				ID: "SSH-04", Category: "ssh", Severity: SeverityWarn, Scope: facts.Env.Kind,
 				Params:   map[string]any{"ssh_dir_mode": key.SSHDirMode, "authorized_keys_mode": key.AuthorizedKeysMode, "owner_ok": key.OwnerOK},
 				Evidence: []string{fmt.Sprintf("~/.ssh mode=%s authorized_keys mode=%s owner_ok=%v", key.SSHDirMode, key.AuthorizedKeysMode, key.OwnerOK)},
-				Commands: []nodecheckup.Command{{Shell: "sh", Text: "chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && chown -R root:root ~/.ssh"}},
+				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 文件权限持久生效：chmod/chown 落在磁盘 inode 上，重启不会还原\nchmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && chown -R root:root ~/.ssh"}},
 			})
 		} else {
 			add(okItem("SSH-04", "ssh", facts.Env.Kind, "ssh_key_permissions", "600"))
@@ -310,6 +319,9 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 			ID: "SSH-07", Category: "ssh", Severity: SeverityInfo, Scope: facts.Env.Kind,
 			Params:   map[string]any{"current": maxTries, "threshold": th.SSHMaxAuthTries},
 			Evidence: []string{fmt.Sprintf("MaxAuthTries %d", maxTries)},
+			Commands: []nodecheckup.Command{{Shell: "sh", Text: sshPersistScript(
+				"ssh-authtries",
+				fmt.Sprintf("MaxAuthTries %d", th.SSHMaxAuthTries))}},
 		})
 	}
 }
@@ -344,12 +356,65 @@ func unknownItem(id, category, key string) nodecheckup.Item {
 	}
 }
 
+// sysctlPersistScript 生成「写入 /etc/sysctl.d + 立即加载」的脚本。
+//
+// 只用 `sysctl -w` 是**临时**生效：/proc/sys 不是磁盘文件，重启后会被内核
+// 按默认值/发行版配置重置。要告诉用户写文件，否则"优化"在重启后就还原了。
+func sysctlPersistScript(key, value string) string {
+	file := "/etc/sysctl.d/99-corefusion-" + key + ".conf"
+	return fmt.Sprintf(
+		"# 持久化：写入 %s，重启后仍生效\n"+
+			"printf '%%s\\n' '%s = %s' > %s\n"+
+			"sysctl --system",
+		file, key, value, file)
+}
+
 func sysctlCommand(key, value, scope string) []nodecheckup.Command {
+	script := sysctlPersistScript(key, value)
 	switch scope {
 	case "host", "container-writable":
-		return []nodecheckup.Command{{Shell: "sh", Text: fmt.Sprintf("sysctl -w %s=%s", key, value)}}
+		return []nodecheckup.Command{{Shell: "sh", Text: script}}
 	case "host-global":
-		return []nodecheckup.Command{{Shell: "sh", Text: fmt.Sprintf("# run on host: sysctl -w %s=%s", key, value)}}
+		return []nodecheckup.Command{{Shell: "sh", Text: "# 需在宿主机执行（容器内该参数只读）\n" + script}}
+	default:
+		return nil
+	}
+}
+
+// sshPersistScript 生成「写入 sshd drop-in 文件 + 校验 + reload」的脚本。
+//
+// sshd_config 是磁盘文件，改完 reload 后重启不会还原；这里统一写
+// /etc/ssh/sshd_config.d/99-corefusion-*.conf（不同检查项用不同文件名，
+// 避免互相覆盖），并在最后回读实际生效值。
+func sshPersistScript(suffix string, lines ...string) string {
+	file := "/etc/ssh/sshd_config.d/99-corefusion-" + suffix + ".conf"
+	return fmt.Sprintf(
+		"# 持久化：写入 %s，重启后仍生效\n"+
+			"mkdir -p /etc/ssh/sshd_config.d\n"+
+			"cat > %s <<'EOF'\n%s\nEOF\n"+
+			"sshd -t && systemctl reload sshd\n"+
+			"# 若 sshd_config 未 Include sshd_config.d/*.conf，请改为编辑 /etc/ssh/sshd_config 对应行\n"+
+			"sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|maxauthtries) '",
+		file, file, strings.Join(lines, "\n"))
+}
+
+// bbrCommand 启用 BBR 需要同时设置拥塞控制算法和 qdisc：
+// 只改 congestion_control、不设 default_qdisc=fq 时，部分内核上 BBR 效果打折。
+func bbrCommand(scope string) []nodecheckup.Command {
+	file := "/etc/sysctl.d/99-corefusion-bbr.conf"
+	script := fmt.Sprintf(
+		"# 持久化：写入 %s，重启后仍生效\n"+
+			"cat > %s <<'EOF'\n"+
+			"net.core.default_qdisc = fq\n"+
+			"net.ipv4.tcp_congestion_control = bbr\n"+
+			"EOF\n"+
+			"sysctl --system",
+		file, file)
+	switch scope {
+	case "host", "container-writable":
+		return []nodecheckup.Command{{Shell: "sh", Text: script}}
+	case "host-global":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# 需在宿主机执行（容器内该参数只读）\n" + script}}
 	default:
 		return nil
 	}

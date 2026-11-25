@@ -42,14 +42,17 @@ type CaddySite struct {
 	// UpstreamTLS 表示"**回源这一段**（nginx/caddy → 本地内核）要不要走 TLS" ✓。
 	// grpc 原来写死 `grpc_pass grpc://`（h2c 明文）✗；入站自带 TLS 时必须 `grpcs://` ✗。
 	// 「从入站一键导入」按入站 security 自动置位 ✓，表单可手改 ✓。
-	UpstreamTLS   bool      `json:"upstream_tls" gorm:"not null;default:false"`
-	LocalPort     string    `json:"local_port" gorm:"size:16"`
-	ProxyProtocol bool      `json:"proxy_protocol" gorm:"not null;default:false"`
-	Enabled       bool      `json:"enabled" gorm:"not null;default:true"`
-	IsPanel       bool      `json:"is_panel" gorm:"not null;default:false"`
-	Priority      int       `json:"priority" gorm:"not null;default:100"`
-	CreatedAt     time.Time `json:"created_at" gorm:"not null"`
-	UpdatedAt     time.Time `json:"updated_at" gorm:"not null"`
+	UpstreamTLS   bool   `json:"upstream_tls" gorm:"not null;default:false"`
+	LocalPort     string `json:"local_port" gorm:"size:16"`
+	ProxyProtocol bool   `json:"proxy_protocol" gorm:"not null;default:false"`
+	// ProxyProtocolVersion：按路由选择 PROXY Protocol 版本（off / v1 / v2）。
+	// 空 = 沿用旧行为（ProxyProtocol=true → v2）；显式值优先于布尔开关。
+	ProxyProtocolVersion string    `json:"proxy_protocol_version" gorm:"size:8;not null;default:''"`
+	Enabled              bool      `json:"enabled" gorm:"not null;default:true"`
+	IsPanel              bool      `json:"is_panel" gorm:"not null;default:false"`
+	Priority             int       `json:"priority" gorm:"not null;default:100"`
+	CreatedAt            time.Time `json:"created_at" gorm:"not null"`
+	UpdatedAt            time.Time `json:"updated_at" gorm:"not null"`
 }
 
 func (CaddySite) TableName() string { return "caddy_sites" }

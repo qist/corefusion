@@ -176,7 +176,7 @@
             <template #default="{row}">{{ row.sni_target || row.upstream }}</template>
           </el-table-column>
           <el-table-column label="PP" width="60">
-            <template #default="{row}"><el-tag v-if="row.proxy_protocol" size="small">v2</el-tag><span v-else>-</span></template>
+            <template #default="{row}"><el-tag v-if="ppVersionLabel(row) !== '-'" size="small">{{ ppVersionLabel(row) }}</el-tag><span v-else>-</span></template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="160">
             <template #default="{row}">
@@ -633,7 +633,12 @@
 <el-input v-model="sniForm.listen_port" placeholder="443" />
 </el-form-item>
 <el-form-item :label="t('proxy.proxyProtocol')">
-<el-switch v-model="sniForm.proxy_protocol" />
+<el-select v-model="sniForm.proxy_protocol_version" style="width:220px">
+  <el-option :label="t('common.close')" value="off" />
+  <el-option label="v1" value="v1" />
+  <el-option label="v2" value="v2" />
+</el-select>
+<div style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.proxyProtocolVersionHint') }}</div>
 </el-form-item>
 </el-form>
       <template #footer>
@@ -791,8 +796,15 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('proxy.proxyProtocol')">
-          <el-switch v-model="siteForm.proxy_protocol" :disabled="siteForm.template==='reality'" />
+          <!-- SNI / L4：Caddy 的 PP 属于单条 layer4 路由，可按站点选 v1 / v2 / 关闭。 -->
+          <el-select v-if="isTcpForward" v-model="siteForm.proxy_protocol_version" style="width:220px">
+            <el-option :label="t('common.close')" value="off" />
+            <el-option label="v1" value="v1" />
+            <el-option label="v2" value="v2" />
+          </el-select>
+          <el-switch v-else v-model="siteForm.proxy_protocol" :disabled="siteForm.template==='reality'" />
           <span v-if="siteForm.template==='reality'" style="font-size:12px;color:#909399;margin-left:8px">{{ t('common.required') }}</span>
+          <div v-if="isTcpForward" style="font-size:12px;color:#909399;margin-top:4px">{{ t('proxy.proxyProtocolVersionHint') }}</div>
         </el-form-item>
         <!-- SNI / L4 为 TCP 层（layer4）转发，不终止 TLS、不做 HTTP 路由：证书/日志/跳转/WAF 对其无效，隐藏之 -->
         <template v-if="!isTcpForward">
@@ -944,10 +956,18 @@ const { paged: l4PagedList, page: l4Page, pageSize: l4Size, total: l4Total } = u
 const { paged: httpPagedList, page: httpPage, pageSize: httpSize, total: httpTotal } = useClientPagination(httpSites, { pageKey: 'httpPage', pageSizeKey: 'httpSize' })
 
 const { isMobile } = useIsMobile()
+// SNI/L4 站点的 PROXY Protocol 版本展示：显式版本优先；旧数据 true = v2。
+function ppVersionLabel(row) {
+  const v = row && row.proxy_protocol_version
+  if (v === 'v2') return 'v2'
+  if (v === 'v1') return 'v1'
+  if (v === 'off') return '-'
+  return row && row.proxy_protocol ? 'v2' : '-'
+}
 // 手机端卡片字段（与桌面表格列对应）
 const sniCardFields = computed(() => [
   { label: 'Target', text: (row) => row.sni_target || row.upstream || '-' },
-  { label: 'PP', text: (row) => row.proxy_protocol ? 'v2' : '-' },
+  { label: 'PP', text: (row) => ppVersionLabel(row) },
 ])
 const l4CardFields = computed(() => [
   { label: 'Upstream', text: (row) => row.upstream || '-' },
@@ -1222,7 +1242,7 @@ async function runImport(dryRun) {
 }
 
 const siteSaving = ref(false)
-const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, redirect_keep_port: false, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, is_panel: false, editMode: 'form',
+const siteForm = ref({ domain: '', upstream: '', path: '', backend_path: '', template: 'http', use_cert: false, cert_id: null, cert_path: '', key_path: '', dual_cert: true, custom_config: '', waf_enabled: true, redirect_https: true, redirect_keep_port: false, l4_protocol: 'tcp', sni_target: '', proxy_protocol: false, proxy_protocol_version: '', is_panel: false, editMode: 'form',
   upstream_tls: false, // 回源（→ 本地内核）是否走 TLS：grpcs:// / https:// ✓
   upstream_sni: '', // 回源 TLS 的 SNI / Server Name（tls_server_name）
 })
@@ -1331,13 +1351,13 @@ async function ensureSniFallback(existing, port) {
     domain: 'fallback', upstream: '', template: 'sni',
     sni_target: defTarget || `127.0.0.1:${port}`,
     local_port: port,
-    proxy_protocol: true, is_panel: false, priority: 999,
+    proxy_protocol: true, proxy_protocol_version: 'v2', is_panel: false, priority: 999,
     path: sniSettings.value.listen_port
   })
 }
 
 const sniDialogVisible = ref(false)
-const sniForm = ref({ domain: '', sni_target: '', listen_port: '', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' })
+const sniForm = ref({ domain: '', sni_target: '', listen_port: '', proxy_protocol: false, proxy_protocol_version: 'off', inbound_id: null, inbound_mode: 'link' })
 
 // SNI inbounds: only TLS and Reality, exclude UDP-based protocols (hysteria, mkcp)
 const sniInbounds = computed(() => {
@@ -1642,7 +1662,7 @@ domain: isReality ? ':9443' : '', singbox_listen_port: '', upstreams: isReality 
 proxy_config: '', custom_config: '', waf_enabled: !wafDisabledTemplates.includes(template), lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
 l4_protocol: 'tcp', sni_target: '',
-proxy_protocol: isReality, is_panel: false, editMode: 'form',
+proxy_protocol: isReality, proxy_protocol_version: ['sni', 'l4'].includes(template) ? 'off' : '', is_panel: false, editMode: 'form',
 inbound_id: null, inbound_mode: 'link'
 }
   siteDialogVisible.value = true
@@ -1664,6 +1684,10 @@ function onTemplateChange(newTemplate) {
       siteForm.value.use_cert = false
     }
     siteForm.value.proxy_protocol = false
+    // 切入 SNI/L4 时给下拉一个有效默认值（旧行为 = 关闭），避免空白。
+    if (['sni', 'l4'].includes(newTemplate) && !siteForm.value.proxy_protocol_version) {
+      siteForm.value.proxy_protocol_version = 'off'
+    }
     // WAF defaults off for non-HTTP templates (WS, gRPC, XHTTP, etc.)
     siteForm.value.waf_enabled = !wafDisabledTemplates.includes(newTemplate)
     if (siteForm.value.domain === ':9443') {
@@ -1680,7 +1704,7 @@ function showPanelProxy() {
 proxy_config: '', custom_config: '', waf_enabled: true, lb_policy: '',
 log_enabled: false, log_path: '', log_format: 'json',
 l4_protocol: 'tcp', sni_target: '',
-proxy_protocol: false, is_panel: true, editMode: 'form',
+proxy_protocol: false, proxy_protocol_version: '', is_panel: true, editMode: 'form',
 inbound_id: null, inbound_mode: 'manual'
 }
   siteDialogVisible.value = true
@@ -1697,7 +1721,7 @@ function showForwardProxy(template) {
     proxy_config: '', custom_config: '', waf_enabled: true, lb_policy: '',
     log_enabled: false, log_path: '', log_format: 'json',
     l4_protocol: 'tcp', sni_target: '',
-    proxy_protocol: false, is_panel: false, editMode: 'form',
+    proxy_protocol: false, proxy_protocol_version: '', is_panel: false, editMode: 'form',
     inbound_id: null, inbound_mode: 'manual'
   }
   siteDialogVisible.value = true
@@ -1767,6 +1791,10 @@ waf_enabled: row.waf_enabled !== false,
     upstream_tls: row.upstream_tls === true,
     upstream_sni: row.upstream_sni || '',
     proxy_protocol: row.template === 'reality' ? true : (row.proxy_protocol || false),
+    // 旧数据没有版本字段：显式 v1/v2/off 优先，否则按旧布尔值显示实际生效值（v2/关闭）。
+    proxy_protocol_version: ['sni', 'l4'].includes(row.template)
+      ? (row.proxy_protocol_version || (row.proxy_protocol ? 'v2' : 'off'))
+      : '',
     is_panel: row.is_panel, editMode: 'form',
     inbound_id: null,
     inbound_mode: matchInboundId(row.template === 'sni' ? row.sni_target : upstreams[0]) ? 'link' : 'manual'
@@ -1815,7 +1843,12 @@ function buildSitePayload() {
     upstream_tls: siteForm.value.upstream_tls === true,
     upstream_sni: String(siteForm.value.upstream_sni || '').trim(),
     local_port: siteForm.value.local_port,
-    proxy_protocol: siteForm.value.proxy_protocol || false,
+    proxy_protocol: ['sni', 'l4'].includes(siteForm.value.template)
+      ? (!!siteForm.value.proxy_protocol_version && siteForm.value.proxy_protocol_version !== 'off')
+      : (siteForm.value.proxy_protocol || false),
+    proxy_protocol_version: ['sni', 'l4'].includes(siteForm.value.template)
+      ? (siteForm.value.proxy_protocol_version || 'off')
+      : '',
     is_panel: siteForm.value.is_panel,
     priority: siteForm.value.is_panel ? 0 : 100
   }
@@ -1944,7 +1977,7 @@ function copyConfig() {
 }
 
 function showAddSNI() {
-sniForm.value = { domain: '', sni_target: '', listen_port: sniSettings.value.listen_port || '443', proxy_protocol: false, inbound_id: null, inbound_mode: 'link' }
+sniForm.value = { domain: '', sni_target: '', listen_port: sniSettings.value.listen_port || '443', proxy_protocol: false, proxy_protocol_version: 'off', inbound_id: null, inbound_mode: 'link' }
 sniDialogVisible.value = true
 }
 
@@ -1962,7 +1995,8 @@ async function saveSNIRule() {
         template: 'sni',
         sni_target: sniForm.value.sni_target,
         local_port: sniSettings.value.local_port,
-        proxy_protocol: sniForm.value.proxy_protocol,
+        proxy_protocol: !!sniForm.value.proxy_protocol_version && sniForm.value.proxy_protocol_version !== 'off',
+        proxy_protocol_version: sniForm.value.proxy_protocol_version || 'off',
         is_panel: false,
         priority: 50,
         path: sniForm.value.listen_port || sniSettings.value.listen_port || '443'

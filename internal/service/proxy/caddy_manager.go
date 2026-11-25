@@ -215,6 +215,26 @@ func (m *CaddyManager) PreviewSiteConfig(ctx context.Context, serverID int64, dr
 	return m.GenerateConfigForSites(ctx, serverID, sourceServerID, merged)
 }
 
+// caddySiteProxyProtocolVersion 返回该站点实际要发送的 PROXY Protocol 版本：
+// "off" / "v1" / "v2"。
+//
+// 优先级：显式版本（off/v1/v2）> 旧布尔开关（true = v2，保持升级前行为）。
+// Caddy 的 PP 属于单条 layer4 路由，因此每个 SNI/L4 站点可以独立选择。
+func caddySiteProxyProtocolVersion(site entity.CaddySite) string {
+	switch NormalizeProxyProtocolVersion(site.ProxyProtocolVersion) {
+	case "off":
+		return "off"
+	case "v1":
+		return "v1"
+	case "v2":
+		return "v2"
+	}
+	if site.ProxyProtocol {
+		return "v2"
+	}
+	return "off"
+}
+
 // GenerateConfigForSites 是 Caddyfile 生成主体：预览与正式生成共用。
 func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sourceServerID int64, sites []entity.CaddySite) (string, error) {
 	// Read SNI settings for proxy_protocol rules from the primary
@@ -263,7 +283,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	// Check proxy_protocol for SNI/L4
 	needPP := false
 	for _, site := range l4Sites {
-		if site.ProxyProtocol {
+		if caddySiteProxyProtocolVersion(site) != "off" {
 			needPP = true
 			break
 		}
@@ -271,7 +291,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 	if !needPP {
 		for _, sites := range sniByPort {
 			for _, site := range sites {
-				if site.ProxyProtocol {
+				if caddySiteProxyProtocolVersion(site) != "off" {
 					needPP = true
 					break
 				}
@@ -345,7 +365,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 			}
 			sb.WriteString(fmt.Sprintf("\t\t:%s {\n", port))
 			var ruleFallback []string
-			var fallbackPP bool
+			fallbackPP := "off"
 			for _, site := range sniSites {
 				domain := site.Domain
 				raw := site.SNITarget
@@ -361,7 +381,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				}
 				if domain == "fallback" || domain == "" {
 					ruleFallback = targets
-					fallbackPP = site.ProxyProtocol
+					fallbackPP = caddySiteProxyProtocolVersion(site)
 					continue
 				}
 				matcher := strings.ReplaceAll(domain, ".", "_")
@@ -369,7 +389,7 @@ func (m *CaddyManager) GenerateConfigForSites(ctx context.Context, serverID, sou
 				sb.WriteString(fmt.Sprintf("\t\t\t# SNI: %s -> %s\n", domain, strings.Join(targets, ", ")))
 				sb.WriteString(fmt.Sprintf("\t\t\t@%s tls sni %s\n", matcher, domain))
 				sb.WriteString(fmt.Sprintf("\t\t\troute @%s {\n", matcher))
-				writeCaddyProxyBlock(&sb, "\t\t\t\t", targets, site.ProxyProtocol, site.LbPolicy)
+				writeCaddyProxyBlock(&sb, "\t\t\t\t", targets, caddySiteProxyProtocolVersion(site), site.LbPolicy)
 				sb.WriteString("\t\t\t}\n")
 			}
 			// 优先级与 nginx 一致：设置里的默认后端 > fallback 规则 > 本地 HTTPS 端口。
@@ -1033,9 +1053,9 @@ func (m *CaddyManager) generateL4Block(site *entity.CaddySite) string {
 	sb.WriteString(fmt.Sprintf("# L4 %s forward on :%s\n", proto, port))
 	sb.WriteString(fmt.Sprintf(":%s {\n", port))
 	sb.WriteString("\troute {\n")
-	if site.ProxyProtocol {
+	if ppVersion := caddySiteProxyProtocolVersion(*site); ppVersion != "off" {
 		sb.WriteString(fmt.Sprintf("\t\tproxy %s {\n", upstream))
-		sb.WriteString("\t\t\tproxy_protocol v2\n")
+		sb.WriteString(fmt.Sprintf("\t\t\tproxy_protocol %s\n", ppVersion))
 		sb.WriteString("\t\t}\n")
 	} else {
 		sb.WriteString(fmt.Sprintf("\t\tproxy %s\n", upstream))
@@ -1381,17 +1401,21 @@ func splitCaddyTargets(raw string) []string {
 
 // writeCaddyProxyBlock 生成 proxy 指令：单目标且不需要 proxy_protocol 时保持单行；
 // 多目标时展开成块，按需写 lb_policy（空 = caddy 默认随机）。
-func writeCaddyProxyBlock(sb *strings.Builder, indent string, targets []string, pp bool, lb string) {
+// ppVersion 为 "off"（或空）时不发 PROXY 头；否则写 v1/v2。
+func writeCaddyProxyBlock(sb *strings.Builder, indent string, targets []string, ppVersion, lb string) {
 	if len(targets) == 0 {
 		return
 	}
-	if len(targets) == 1 && !pp {
+	if ppVersion == "" {
+		ppVersion = "off"
+	}
+	if len(targets) == 1 && ppVersion == "off" {
 		sb.WriteString(fmt.Sprintf("%sproxy %s\n", indent, targets[0]))
 		return
 	}
 	sb.WriteString(fmt.Sprintf("%sproxy %s {\n", indent, strings.Join(targets, " ")))
-	if pp {
-		sb.WriteString(indent + "\tproxy_protocol v2\n")
+	if ppVersion != "off" {
+		sb.WriteString(fmt.Sprintf("%s\tproxy_protocol %s\n", indent, ppVersion))
 	}
 	if len(targets) > 1 && lb != "" {
 		sb.WriteString(fmt.Sprintf("%s\tlb_policy %s\n", indent, lb))

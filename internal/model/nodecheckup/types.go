@@ -47,6 +47,9 @@ type SSHKey struct {
 	AuthorizedKeysMode string `json:"authorized_keys_mode"`
 	Owner              string `json:"owner"`
 	OwnerOK            bool   `json:"owner_ok"`
+	// Immutable：authorized_keys 带 chattr +i。此时 root 也无法 chmod/chown，
+	// 建议命令必须先 chattr -i，否则会报 Operation not permitted。
+	Immutable bool `json:"immutable,omitempty"`
 }
 
 type Listener struct {

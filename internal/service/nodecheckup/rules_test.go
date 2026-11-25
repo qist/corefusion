@@ -157,3 +157,41 @@ func TestSSHPersistScriptWritesDropIn(t *testing.T) {
 		}
 	}
 }
+
+// authorized_keys 被 chattr +i 时，chmod 会报 Operation not permitted；
+// 建议命令必须先 chattr -i，不能只给 chmod。
+func TestSSH04ImmutableHintAndCommand(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host"},
+		SSHD: &nodecheckup.SSHD{
+			Present: true,
+			Effective: map[string]string{
+				"passwordauthentication":       "no",
+				"kbdinteractiveauthentication": "no",
+				"permitrootlogin":              "prohibit-password",
+				"maxauthtries":                 "3",
+			},
+			Users: map[string]map[string]string{},
+			Keys: map[string]nodecheckup.SSHKey{
+				"root": {HasKey: true, SSHDirMode: "0700", AuthorizedKeysMode: "0400", OwnerOK: true, Immutable: true},
+			},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "SSH-04")
+	if it == nil {
+		t.Fatal("缺少 SSH-04")
+	}
+	if len(it.Commands) == 0 || !strings.Contains(it.Commands[0].Text, "chattr -i ~/.ssh/authorized_keys") {
+		t.Fatalf("建议命令应先解除 immutable：%+v", it.Commands)
+	}
+	found := false
+	for _, e := range it.Evidence {
+		if strings.Contains(e, "immutable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("证据应提示 immutable：%v", it.Evidence)
+	}
+}

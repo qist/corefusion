@@ -268,9 +268,26 @@ func collectSSHD() *nodecheckup.SSHD {
 		key.AuthorizedKeysMode = fileModeString(authKeys)
 		key.HasKey = fileExists(authKeys)
 		key.OwnerOK = ownerMatches(sshDir, user)
+		// chattr +i 会让 root 也无法 chmod/chown（Operation not permitted），
+		// 体检建议里必须先解锁，否则用户照抄命令会失败。
+		key.Immutable = fileImmutable(authKeys)
 		res.Keys[user] = key
 	}
 	return res
+}
+
+// fileImmutable 用 lsattr 判断文件是否带 immutable 属性（i）。
+// 非 ext4 / 没有 lsattr 时返回 false，不影响其它判定。
+func fileImmutable(path string) bool {
+	out, err := runCommand(3*time.Second, "lsattr", "-d", path)
+	if err != nil {
+		return false
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.Contains(fields[0], "i")
 }
 
 func parseSSHDTest(out string) map[string]string {

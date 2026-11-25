@@ -303,11 +303,17 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 
 	if key, ok := sshd.Keys["root"]; ok && key.HasKey {
 		if key.SSHDirMode != "0700" || key.AuthorizedKeysMode != "0600" || !key.OwnerOK {
+			evidence := []string{fmt.Sprintf("~/.ssh mode=%s authorized_keys mode=%s owner_ok=%v", key.SSHDirMode, key.AuthorizedKeysMode, key.OwnerOK)}
+			if key.Immutable {
+				evidence = append(evidence, "authorized_keys is immutable (chattr +i); chmod will fail until it is cleared")
+			}
 			add(nodecheckup.Item{
 				ID: "SSH-04", Category: "ssh", Severity: SeverityWarn, Scope: facts.Env.Kind,
-				Params:   map[string]any{"ssh_dir_mode": key.SSHDirMode, "authorized_keys_mode": key.AuthorizedKeysMode, "owner_ok": key.OwnerOK},
-				Evidence: []string{fmt.Sprintf("~/.ssh mode=%s authorized_keys mode=%s owner_ok=%v", key.SSHDirMode, key.AuthorizedKeysMode, key.OwnerOK)},
-				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 文件权限持久生效：chmod/chown 落在磁盘 inode 上，重启不会还原\nchmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && chown -R root:root ~/.ssh"}},
+				Params:   map[string]any{"ssh_dir_mode": key.SSHDirMode, "authorized_keys_mode": key.AuthorizedKeysMode, "owner_ok": key.OwnerOK, "immutable": key.Immutable},
+				Evidence: evidence,
+				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 文件权限持久生效；若被 chattr +i 锁定，先解锁（否则 chmod 报 Operation not permitted）\n" +
+					"chattr -i ~/.ssh/authorized_keys 2>/dev/null || true\n" +
+					"chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && chown -R root:root ~/.ssh"}},
 			})
 		} else {
 			add(okItem("SSH-04", "ssh", facts.Env.Kind, "ssh_key_permissions", "600"))

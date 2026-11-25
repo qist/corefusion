@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Reality محلی به‌طور خودکار Xver=1 را اعمال می‌کند؛ پیش‌تنظیم‌ها Xver=0 هستند",
       "autoSni": "افزودن خودکار به SNI (Caddy/Nginx)",
       "autoSniHint": "با فعال‌سازی، Server Name این REALITY به‌طور خودکار به مسیریابی SNI پورت 443 در Caddy/Nginx اضافه می‌شود؛ با غیرفعال‌سازی خودتان قاعده SNI را نگه می‌دارید.",
-      "autoSniNginxBlocked": "این نود برای تقسیم پورت 443 از Nginx با proxy_protocol فعال استفاده می‌کند: sing-box از پروتکل PROXY پشتیبانی نمی‌کند (از 1.6 حذف شده)، بنابراین SNI این inbound به مسیریابی 443 اضافه نمی‌شود. از Caddy استفاده کنید یا proxy_protocol در Nginx را خاموش کنید.",
+      "autoSniNginxBlocked": "این گره برای تقسیم 443 از Nginx با proxy_protocol فعال استفاده می‌کند، اما باینری nginx پچ stream_pp_var را ندارد (نسخهٔ قدیمی/رسمی): sing-box از PROXY protocol پشتیبانی نمی‌کند، بنابراین SNI این ورودی نادیده گرفته می‌شود. به nginx بستهٔ پنل 1.31.9+ ارتقا دهید (PP برای هر دامنه خاموش)، از Caddy استفاده کنید یا proxy_protocol را در Nginx خاموش کنید.",
       "maxVersion": "حداکثر نسخه",
       "cipherSuites": "مجموعه‌های رمز",
       "cipherSuitesPlaceholder": "در هر خط یکی، مثلاً TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

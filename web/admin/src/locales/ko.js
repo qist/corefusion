@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "로컬 Reality는 자동으로 Xver=1에 바인딩되며, 프리셋은 Xver=0입니다",
       "autoSni": "SNI에 자동 추가(Caddy/Nginx)",
       "autoSniHint": "활성화하면 이 REALITY의 Server Name을 Caddy/Nginx 443 SNI 라우팅에 자동 등록합니다. 끄면 프록시에서 직접 관리합니다.",
-      "autoSniNginxBlocked": "이 노드는 Nginx 443 분할에서 proxy_protocol이 켜져 있습니다. sing-box는 PROXY 프로토콜을 지원하지 않으므로(1.6부터 제거) 이 인바운드의 SNI는 443 라우팅에 추가되지 않습니다. Caddy로 바꾸거나 Nginx proxy_protocol을 끄세요.",
+      "autoSniNginxBlocked": "이 노드는 Nginx로 443을 분할하면서 proxy_protocol이 켜져 있지만, nginx에 stream_pp_var 패치가 없습니다(구버전/공식 빌드). sing-box는 PROXY protocol을 지원하지 않으므로 이 인바운드의 SNI는 건너뜁니다. 패널에 포함된 nginx 1.31.9+(도메인별 PP 끔)로 업그레이드하거나 Caddy를 사용하거나 Nginx의 proxy_protocol을 끄세요.",
       "maxVersion": "최대 버전",
       "cipherSuites": "암호화 스위트",
       "cipherSuitesPlaceholder": "한 줄에 하나 (예: TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)",

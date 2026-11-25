@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Reality lokal otomatis terikat ke Xver=1, preset Xver=0",
       "autoSni": "Tambahkan otomatis ke SNI (Caddy/Nginx)",
       "autoSniHint": "Saat diaktifkan, Server Name REALITY ini otomatis ditambahkan ke perutean SNI 443 Caddy/Nginx; saat dimatikan, Anda mengelola aturan SNI sendiri.",
-      "autoSniNginxBlocked": "Node ini memakai Nginx untuk pembagian 443 dengan proxy_protocol aktif: sing-box tidak mendukung protokol PROXY (dihapus sejak 1.6), jadi SNI inbound ini tidak akan ditambahkan ke perutean 443. Gunakan Caddy atau matikan proxy_protocol Nginx.",
+      "autoSniNginxBlocked": "Node ini memakai Nginx untuk pembagian 443 dengan proxy_protocol aktif, tetapi build nginx tidak memiliki patch stream_pp_var (versi lama/resmi): sing-box tidak mendukung PROXY protocol, jadi SNI inbound ini akan dilewati. Perbarui ke nginx bawaan panel 1.31.9+ (PP mati per domain), gunakan Caddy, atau matikan proxy_protocol di Nginx.",
       "maxVersion": "Versi maksimum",
       "cipherSuites": "Suite Cipher",
       "cipherSuitesPlaceholder": "Satu per baris, mis. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

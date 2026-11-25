@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "本機 Reality 自動綁定 Xver=1，預設 Xver=0",
       "autoSni": "自動加入 SNI（Caddy/Nginx）",
       "autoSniHint": "開啟後將此 REALITY 的 Server Name 自動寫入 Caddy/Nginx 的 443 SNI 分流；關閉則由你在代理裡手動維護。",
-      "autoSniNginxBlocked": "目前節點用 Nginx 做 443 分流且已開啟 proxy_protocol：sing-box 不支援 PROXY 協議（1.6 起移除），此入站的 SNI 不會被加入 443 分流。請改用 Caddy，或關閉 Nginx 的 proxy_protocol。",
+      "autoSniNginxBlocked": "目前節點用 Nginx 做 443 分流且已開啟 proxy_protocol，但該 nginx 不帶 stream_pp_var 補丁（舊版/官方建置）：sing-box 不支援 PROXY 協議，此入站的 SNI 會被跳過。請升級到面板打包的 nginx 1.31.9+（可依網域關閉 PP），或改用 Caddy，或關閉 Nginx 的 proxy_protocol。",
       "maxVersion": "最高版本",
       "cipherSuites": "加密套件",
       "cipherSuitesPlaceholder": "每行一個，如 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

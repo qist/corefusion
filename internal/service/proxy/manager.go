@@ -68,6 +68,9 @@ type ProxyInfo struct {
 	ConfigPath string    `json:"config_path"`
 	Status     string    `json:"status"`
 	Managed    bool      `json:"managed"`
+	// Capabilities 是代理二进制的可选编译能力（nginx: stream_pp_var 等），
+	// 前端据此判断能否在同一个 443 上按域名分别发/不发 PROXY Protocol。
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // SettingStore provides access to system settings.

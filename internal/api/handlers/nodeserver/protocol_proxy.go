@@ -624,13 +624,14 @@ func transformProxyStatus(raw interface{}, svc proxyGuardianReader, serverID int
 		active := ""
 		for _, p := range pb.Proxies {
 			entry := gin.H{
-				"type":      p.Type,
-				"name":      p.Name,
-				"installed": p.Installed,
-				"status":    p.Status,
-				"version":   p.Version,
-				"path":      p.Path,
-				"managed":   p.Managed,
+				"type":         p.Type,
+				"name":         p.Name,
+				"installed":    p.Installed,
+				"status":       p.Status,
+				"version":      p.Version,
+				"path":         p.Path,
+				"managed":      p.Managed,
+				"capabilities": p.Capabilities,
 			}
 			switch p.Type {
 			case "caddy":

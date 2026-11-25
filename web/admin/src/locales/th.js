@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Reality ภายในเครื่องผูก Xver=1 โดยอัตโนมัติ ส่วนพรีเซ็ตใช้ Xver=0",
       "autoSni": "เพิ่มไปยัง SNI อัตโนมัติ (Caddy/Nginx)",
       "autoSniHint": "เมื่อเปิดใช้งาน Server Name ของ REALITY นี้จะถูกเพิ่มไปยังการแบ่งเส้นทาง SNI พอร์ต 443 ของ Caddy/Nginx โดยอัตโนมัติ เมื่อปิดคุณต้องดูแลกฎ SNI เอง",
-      "autoSniNginxBlocked": "โหนดนี้ใช้ Nginx แบ่งพอร์ต 443 และเปิด proxy_protocol อยู่: sing-box ไม่รองรับโปรโตคอล PROXY (ถูกถอดออกตั้งแต่ 1.6) ดังนั้น SNI ของ inbound นี้จะไม่ถูกเพิ่มไปยังเส้นทาง 443 โปรดใช้ Caddy หรือปิด proxy_protocol ของ Nginx",
+      "autoSniNginxBlocked": "โหนดนี้ใช้ Nginx แยก 443 โดยเปิด proxy_protocol แต่ nginx ไม่มีแพตช์ stream_pp_var (เวอร์ชันเก่า/ทางการ): sing-box ไม่รองรับ PROXY protocol จึงข้าม SNI ของอินบาวน์นี้ อัปเกรดเป็น nginx ที่แพ็กโดยแผงควบคุม 1.31.9+ (ปิด PP ต่อโดเมน) ใช้ Caddy หรือปิด proxy_protocol ใน Nginx",
       "maxVersion": "เวอร์ชันสูงสุด",
       "cipherSuites": "ชุดการเข้ารหัส",
       "cipherSuitesPlaceholder": "บรรทัดละหนึ่งรายการ เช่น TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

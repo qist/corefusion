@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Reality local lie automatiquement Xver=1, les préréglages utilisent Xver=0",
       "autoSni": "Ajouter automatiquement au SNI (Caddy/Nginx)",
       "autoSniHint": "Activé, ce Server Name REALITY est ajouté automatiquement au routage SNI 443 de Caddy/Nginx ; sinon, gérez la règle SNI vous-même.",
-      "autoSniNginxBlocked": "Ce nœud utilise Nginx pour la répartition 443 avec proxy_protocol activé : sing-box ne prend pas en charge le protocole PROXY (supprimé depuis 1.6), donc le SNI de cet inbound ne sera pas ajouté au routage 443. Utilisez Caddy ou désactivez proxy_protocol dans Nginx.",
+      "autoSniNginxBlocked": "Ce nœud utilise Nginx pour la répartition 443 avec proxy_protocol activé, mais le binaire nginx n'inclut pas le patch stream_pp_var (version ancienne/officielle) : sing-box ne prend pas en charge le protocole PROXY, donc le SNI de cet inbound sera ignoré. Mettez à jour vers le nginx fourni par le panel 1.31.9+ (PP désactivé par domaine), utilisez Caddy ou désactivez proxy_protocol dans Nginx.",
       "maxVersion": "Version maximale",
       "cipherSuites": "Suites de chiffrement",
       "cipherSuitesPlaceholder": "Un par ligne, par ex. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

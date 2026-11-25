@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Локальный Reality автоматически привязывает Xver=1, пресет — Xver=0",
       "autoSni": "Автоматически добавлять в SNI (Caddy/Nginx)",
       "autoSniHint": "При включении Server Name этого REALITY автоматически добавляется в SNI-маршрутизацию 443 в Caddy/Nginx; при выключении правило SNI поддерживаете вы сами.",
-      "autoSniNginxBlocked": "Этот узел использует Nginx для разделения 443 с включённым proxy_protocol: sing-box не поддерживает протокол PROXY (удалён с 1.6), поэтому SNI этого инбаунда не будет добавлен в маршрутизацию 443. Используйте Caddy или отключите proxy_protocol в Nginx.",
+      "autoSniNginxBlocked": "Этот узел использует Nginx для разделения 443 с включённым proxy_protocol, но сборка nginx без патча stream_pp_var (старая/официальная): sing-box не поддерживает PROXY protocol, поэтому SNI этого входа будет пропущен. Обновитесь до nginx из пакета панели 1.31.9+ (PP выключается для домена), используйте Caddy или отключите proxy_protocol в Nginx.",
       "maxVersion": "Максимальная версия",
       "cipherSuites": "Наборы шифров",
       "cipherSuitesPlaceholder": "По одному в строке, например TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

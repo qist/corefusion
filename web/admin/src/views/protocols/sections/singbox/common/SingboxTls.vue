@@ -583,9 +583,11 @@ watch(
 // 本地 Reality 自动 SNI 配置（面板 system_settings: reality.local_sni）
 const localSniCfg = ref(defaultLocalSniConfig())
 
-// 节点 443 分流方式：nginx 的 proxy_protocol 是 listen 组级别的，且 sing-box 1.6 起
-// 已移除入站 PROXY 协议支持 —— 同端口只要 nginx 发 PROXY 头，sing-box 的 REALITY
-// 就必然握手失败，后端会跳过它的 SNI 派生规则。这里只做提示，不改用户选择。
+// 节点 443 分流方式：sing-box 1.6 起已移除入站 PROXY 协议支持，不能收 PROXY 头。
+// - 面板打包的 nginx（带 stream_pp_var 补丁）可按域名把 sing-box 的规则设为 off，
+//   与 xray 共用 443；
+// - 旧版/官方 nginx 的 proxy_protocol 是 listen 组级别的，全局开启时后端会跳过
+//   sing-box 的 SNI 派生规则，这里提示用户升级或改用 Caddy。
 const nginxPPBlocked = ref(false)
 async function loadSniSplitState() {
   nginxPPBlocked.value = false
@@ -593,8 +595,9 @@ async function loadSniSplitState() {
     const st = await client.get(`/node-servers/${props.serverId}/proxy/status`)
     const active = String((st && (st.active_proxy || st.type)) || '').toLowerCase()
     if (active !== 'nginx') return
+    const caps = (st && st.nginx && st.nginx.capabilities) || []
     const s = await client.get(`/node-servers/${props.serverId}/nginx/settings`)
-    nginxPPBlocked.value = !!(s && s.stream_proxy_protocol)
+    nginxPPBlocked.value = !!(s && s.stream_proxy_protocol) && !caps.includes('stream_pp_var')
   } catch { nginxPPBlocked.value = false }
 }
 

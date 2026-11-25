@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "ローカルRealityは自動的にXver=1にバインドされ、プリセットはXver=0です",
       "autoSni": "SNI に自動追加（Caddy/Nginx）",
       "autoSniHint": "有効にするとこの REALITY の Server Name を Caddy/Nginx の 443 SNI 振り分けに自動登録します。無効の場合はプロキシ側で手動管理してください。",
-      "autoSniNginxBlocked": "このノードは Nginx の 443 振り分けで proxy_protocol を有効にしています。sing-box は PROXY プロトコル非対応（1.6 で削除）のため、このインバウンドの SNI は 443 振り分けに追加されません。Caddy に切り替えるか、Nginx の proxy_protocol を無効にしてください。",
+      "autoSniNginxBlocked": "このノードは Nginx の 443 振り分けで proxy_protocol を有効にしていますが、nginx に stream_pp_var パッチがありません（旧版/公式ビルド）。sing-box は PROXY protocol 非対応のため、このインバウンドの SNI はスキップされます。パネル同梱の nginx 1.31.9+（ドメイン単位で PP オフ）へ更新するか、Caddy を使うか、Nginx の proxy_protocol を無効にしてください。",
       "maxVersion": "最大バージョン",
       "cipherSuites": "暗号スイート",
       "cipherSuitesPlaceholder": "1行に1つ（例: TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256）",

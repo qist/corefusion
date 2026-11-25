@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Yerel Reality otomatik olarak Xver=1'e bağlanır, ön ayar Xver=0",
       "autoSni": "SNI’ye otomatik ekle (Caddy/Nginx)",
       "autoSniHint": "Etkinleştirildiğinde bu REALITY Server Name, Caddy/Nginx 443 SNI yönlendirmesine otomatik eklenir; kapatıldığında SNI kuralını kendiniz yönetirsiniz.",
-      "autoSniNginxBlocked": "Bu düğüm 443 bölünmesi için proxy_protocol açık Nginx kullanıyor: sing-box PROXY protokolünü desteklemez (1.6'dan beri kaldırıldı), bu yüzden bu inbound'un SNI'si 443 yönlendirmesine eklenmez. Caddy kullanın veya Nginx proxy_protocol'u kapatın.",
+      "autoSniNginxBlocked": "Bu düğüm 443 bölmeyi Nginx ile yapıyor ve proxy_protocol açık, ancak nginx derlemesinde stream_pp_var yaması yok (eski/resmî sürüm): sing-box PROXY protocol desteklemediği için bu girişin SNI'si atlanır. Panelin paketlediği nginx 1.31.9+ sürümüne (alan adı başına PP kapalı) yükseltin, Caddy kullanın veya Nginx'te proxy_protocol'u kapatın.",
       "maxVersion": "Maksimum sürüm",
       "cipherSuites": "Şifre Paketleri",
       "cipherSuitesPlaceholder": "Her satırda bir tane, örn. TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

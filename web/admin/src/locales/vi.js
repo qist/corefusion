@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "Reality cục bộ tự động gán Xver=1, bản cấu hình sẵn là Xver=0",
       "autoSni": "Tự động thêm vào SNI (Caddy/Nginx)",
       "autoSniHint": "Khi bật, Server Name của REALITY này được tự động thêm vào định tuyến SNI 443 của Caddy/Nginx; khi tắt, bạn tự duy trì quy tắc SNI.",
-      "autoSniNginxBlocked": "Nút này dùng Nginx để chia 443 với proxy_protocol đang bật: sing-box không hỗ trợ giao thức PROXY (đã bị loại bỏ từ 1.6), nên SNI của inbound này sẽ không được thêm vào định tuyến 443. Hãy dùng Caddy hoặc tắt proxy_protocol của Nginx.",
+      "autoSniNginxBlocked": "Node này dùng Nginx để chia 443 với proxy_protocol bật, nhưng bản nginx không có bản vá stream_pp_var (bản cũ/chính thức): sing-box không hỗ trợ PROXY protocol nên SNI của inbound này sẽ bị bỏ qua. Hãy nâng cấp lên nginx do panel đóng gói 1.31.9+ (tắt PP theo tên miền), dùng Caddy hoặc tắt proxy_protocol trong Nginx.",
       "maxVersion": "Phiên bản tối đa",
       "cipherSuites": "Bộ mã hóa",
       "cipherSuitesPlaceholder": "Mỗi dòng một giá trị, ví dụ TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

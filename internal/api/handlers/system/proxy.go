@@ -7,6 +7,7 @@ import (
 	"corefusion/internal/service/proxy"
 	"github.com/gin-gonic/gin"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -66,6 +67,17 @@ func (h *ProxyHandler) GetStatus(c *gin.Context) {
 	}
 	nginx := h.proxyMgr.DetectProxy(proxy.ProxyNginx)
 	caddy := h.proxyMgr.DetectProxy(proxy.ProxyCaddy)
+	// nginx 能力标记（stream_pp_var 等）：复用 NginxManager 的 60s 缓存探测，
+	// 前端据此判断能否在同一个 443 上按域名关闭 PROXY Protocol（sing-box）。
+	if nginx.Installed && h.nginxMgr != nil {
+		caps := h.nginxMgr.NginxCapabilities(c.Request.Context(), serverID)
+		list := make([]string, 0, len(caps))
+		for c := range caps {
+			list = append(list, c)
+		}
+		sort.Strings(list)
+		nginx.Capabilities = list
+	}
 	active := ""
 	if nginx.Status == "running" {
 		active = "nginx"

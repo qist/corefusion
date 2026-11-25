@@ -6074,7 +6074,7 @@ export default {
       "xverLocalBound1": "يربط Reality المحلي تلقائيًا Xver=1، بينما الإعداد المسبق Xver=0",
       "autoSni": "إضافة تلقائية إلى SNI (Caddy/Nginx)",
       "autoSniHint": "عند التفعيل يُضاف Server Name لهذا REALITY تلقائيًا إلى توجيه SNI على المنفذ 443 في Caddy/Nginx؛ وعند التعطيل تدير قاعدة SNI بنفسك.",
-      "autoSniNginxBlocked": "تستخدم هذه العقدة Nginx لتقسيم المنفذ 443 مع تفعيل proxy_protocol: لا يدعم sing-box بروتوكول PROXY (أُزيل منذ 1.6)، لذا لن يُضاف SNI لهذا الإدخال إلى توجيه 443. استخدم Caddy أو عطّل proxy_protocol في Nginx.",
+      "autoSniNginxBlocked": "تستخدم هذه العقدة Nginx لتقسيم المنفذ 443 مع تفعيل proxy_protocol، لكن بناء nginx لا يتضمن رقعة stream_pp_var (إصدار قديم/رسمي): لا يدعم sing-box بروتوكول PROXY، لذا سيتم تخطي SNI لهذا الإدخال. ارتقِ إلى nginx الذي تحزمه اللوحة 1.31.9+ (إيقاف PP لكل نطاق)، أو استخدم Caddy، أو عطّل proxy_protocol في Nginx.",
       "maxVersion": "الحد الأقصى للإصدار",
       "cipherSuites": "أجنحة التشفير",
       "cipherSuitesPlaceholder": "واحد في كل سطر، مثال TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",

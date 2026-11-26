@@ -87,8 +87,10 @@ func (r *Resolver) Version(coreType string) string {
 
 // ListInstalled returns all installed core binaries with their versions.
 // hysteria2/tuic 独立核心已下线（协议由 sing-box 承载），不再出现在安装列表。
+// mihomo 只能手工放进 binaries/active/mihomo，但探测/链路拨号支持它：
+// 这里必须一并枚举，否则节点装了 mihomo 也会被当成"没有可用核心"。
 func (r *Resolver) ListInstalled() []BinaryInfo {
-	coreTypes := []string{"xray", "singbox"}
+	coreTypes := []string{"xray", "singbox", "mihomo"}
 	var result []BinaryInfo
 
 	for _, ct := range coreTypes {

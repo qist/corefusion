@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "安全體檢",
     "persistHint": "建議命令均已寫成「寫入設定檔 + 重載」：核心參數落到 /etc/sysctl.d/99-corefusion.conf，SSH 落到 /etc/ssh/sshd_config.d/，重開機後仍生效。只執行 sysctl -w 會在重開機後還原。",
+    "guide": "完整調優文件",
+    "copyAll": "複製全部",
+    "download": "下載 .md",
+    "guideFailed": "產生失敗",
     "settings": "體檢設定",
     "enabled": "定時體檢",
     "intervalHours": "週期（小時）",

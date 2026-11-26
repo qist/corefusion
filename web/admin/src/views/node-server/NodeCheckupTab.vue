@@ -8,6 +8,7 @@
       </div>
       <div style="display:flex;gap:8px">
         <el-button size="small" :loading="loading" @click="load(true)">{{ t('nodeCheckup.refresh') }}</el-button>
+        <el-button size="small" type="primary" plain @click="openGuide">{{ t('nodeCheckup.guide') }}</el-button>
         <el-button size="small" @click="openSettings">{{ t('nodeCheckup.settings') }}</el-button>
       </div>
     </div>
@@ -45,6 +46,14 @@
         </el-collapse>
       </div>
     </div>
+
+    <el-dialog v-model="guideVisible" :title="t('nodeCheckup.guide')" width="860px" top="5vh">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <el-button size="small" type="primary" @click="copy(guideText)">{{ t('nodeCheckup.copyAll') }}</el-button>
+        <el-button size="small" @click="downloadGuide">{{ t('nodeCheckup.download') }}</el-button>
+      </div>
+      <pre style="max-height:62vh;overflow:auto;background:#f5f7fa;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;margin:0">{{ guideText }}</pre>
+    </el-dialog>
 
     <el-dialog v-model="settingsVisible" :title="t('nodeCheckup.settings')" width="520px">
       <el-form label-width="180px" size="small">
@@ -167,6 +176,30 @@ async function load(refresh = false) {
   } finally {
     loading.value = false
   }
+}
+
+const guideVisible = ref(false)
+const guideText = ref('')
+
+async function openGuide() {
+  guideVisible.value = true
+  guideText.value = t('common.loading')
+  try {
+    const data = await client.get(`/node-servers/${props.serverId}/checkup/guide`)
+    guideText.value = data?.markdown || ''
+  } catch (e) {
+    guideText.value = e?.response?.data?.message || e?.message || t('nodeCheckup.guideFailed')
+  }
+}
+
+function downloadGuide() {
+  const blob = new Blob([guideText.value], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `corefusion-node-${props.serverId}-tuning.md`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 const settingsVisible = ref(false)

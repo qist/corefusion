@@ -37,11 +37,31 @@ var defaultSysctlKeys = []string{
 	"net.ipv4.udp_mem",
 	"net.ipv4.udp_rmem_min",
 	"net.ipv4.udp_wmem_min",
+	"net.ipv4.tcp_notsent_lowat",
+	"net.ipv4.tcp_slow_start_after_idle",
+	"net.ipv4.tcp_keepalive_intvl",
+	"net.ipv4.tcp_keepalive_probes",
+	"net.ipv4.tcp_migrate_req",
+	"net.ipv4.conf.all.rp_filter",
+	"net.ipv4.conf.default.rp_filter",
+	"net.ipv4.conf.all.accept_redirects",
+	"net.ipv4.conf.all.send_redirects",
+	"net.ipv4.conf.all.accept_source_route",
+	"net.ipv6.conf.all.forwarding",
 	"net.core.somaxconn",
 	"net.core.rmem_max",
 	"net.core.wmem_max",
+	"net.core.rmem_default",
+	"net.core.wmem_default",
+	"net.core.netdev_max_backlog",
+	"net.core.netdev_budget",
+	"net.core.netdev_budget_usecs",
 	"net.core.default_qdisc",
 	"net.netfilter.nf_conntrack_max",
+	"net.netfilter.nf_conntrack_buckets",
+	"net.netfilter.nf_conntrack_tcp_timeout_established",
+	"net.netfilter.nf_conntrack_udp_timeout",
+	"net.mptcp.enabled",
 	"fs.file-max",
 	"fs.nr_open",
 	"vm.swappiness",
@@ -344,7 +364,12 @@ func collectFirewall() *nodecheckup.Firewall {
 		fw.Type = "firewalld"
 		fw.Enabled = true
 		if all, lerr := runCommand(5*time.Second, "firewall-cmd", "--list-all"); lerr == nil {
-			fw.RulesRaw = truncate(all, 8192)
+			raw := all
+			// rich rule 才带 source 限制；只取 --list-all 会看不到来源白名单。
+			if rich, rerr := runCommand(5*time.Second, "firewall-cmd", "--list-rich-rules"); rerr == nil && strings.TrimSpace(rich) != "" {
+				raw = all + "\n" + rich
+			}
+			fw.RulesRaw = truncate(raw, 8192)
 			fw.DefaultInbound = parseFirewalldTarget(all)
 		}
 		return fw

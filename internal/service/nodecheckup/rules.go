@@ -40,12 +40,16 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 		}
 	}
 
+	envParams := map[string]any{
+		"kind": env.Kind, "runtime": env.Runtime, "systemd": env.Systemd,
+		"host_network": env.HostNetwork, "root": env.Root,
+	}
+	if facts != nil && facts.SSHD != nil && facts.SSHD.Port > 0 {
+		envParams["ssh_port"] = facts.SSHD.Port
+	}
 	add(nodecheckup.Item{
 		ID: "ENV-01", Category: "system", Severity: SeverityInfo, Scope: env.Kind,
-		Params: map[string]any{
-			"kind": env.Kind, "runtime": env.Runtime, "systemd": env.Systemd,
-			"host_network": env.HostNetwork, "root": env.Root,
-		},
+		Params:   envParams,
 		Evidence: []string{"OS: " + env.OS, "Kernel: " + env.Kernel},
 	})
 
@@ -158,6 +162,9 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 		}
 	}
 
+	// ---- 其余内核调优项（只报未达标，避免几十条 ok 噪音）----
+	judgeTuning(facts, add)
+
 	// ---- SSH ----
 	judgeSSH(facts, th, add)
 
@@ -178,6 +185,20 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 				ID: "FW-02", Category: "firewall", Severity: SeverityHigh, Scope: facts.Env.Kind,
 				Params:   map[string]any{"current": "accept", "expected": "drop"},
 				Evidence: []string{"default inbound policy: accept"},
+			})
+		}
+		// FW-04：SSH 端口放行但没限制来源 IP。很多节点只靠云安全组兜底，
+		// 本机防火墙一旦放开就是全网可扫，必须提醒。
+		sshPort := 22
+		if facts.SSHD != nil && facts.SSHD.Port > 0 {
+			sshPort = facts.SSHD.Port
+		}
+		if exposed, known := sshExposed(facts.Firewall, sshPort); known && exposed {
+			add(nodecheckup.Item{
+				ID: "FW-04", Category: "firewall", Severity: SeverityWarn, Scope: facts.Env.Kind,
+				Params:   map[string]any{"port": sshPort, "type": facts.Firewall.Type},
+				Evidence: []string{fmt.Sprintf("SSH port %d is allowed from any source in %s rules", sshPort, facts.Firewall.Type)},
+				Commands: sshRestrictCommands(facts.Firewall.Type, sshPort),
 			})
 		}
 	}
@@ -225,7 +246,7 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 			ID: "TIME-01", Category: "system", Severity: SeverityInfo, Scope: facts.Env.Kind,
 			Params:   map[string]any{"service": facts.TimeSync.Service},
 			Evidence: []string{"system time not synchronized"},
-			Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 持久：启用时间同步服务（enable 写入 systemd 开机自启，重启后仍同步）\n" +
+			Commands: []nodecheckup.Command{{Shell: "sh", Text: "# Persist: enable the time sync service at boot\n" +
 				"systemctl enable --now systemd-timesyncd 2>/dev/null || systemctl enable --now chronyd 2>/dev/null || timedatectl set-ntp true\n" +
 				"timedatectl status"}},
 		})
@@ -311,7 +332,7 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 				ID: "SSH-04", Category: "ssh", Severity: SeverityWarn, Scope: facts.Env.Kind,
 				Params:   map[string]any{"ssh_dir_mode": key.SSHDirMode, "authorized_keys_mode": key.AuthorizedKeysMode, "owner_ok": key.OwnerOK, "immutable": key.Immutable},
 				Evidence: evidence,
-				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# 文件权限持久生效；若被 chattr +i 锁定，先解锁（否则 chmod 报 Operation not permitted）\n" +
+				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# File permissions persist; if chattr +i is set, clear it first (otherwise chmod fails with EPERM)\n" +
 					"chattr -i ~/.ssh/authorized_keys 2>/dev/null || true\n" +
 					"chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys && chown -R root:root ~/.ssh"}},
 			})
@@ -402,7 +423,7 @@ func sysctlPersistScript(pairs ...string) string {
 		del = append(del, "/^"+k+"/d")
 	}
 	return fmt.Sprintf(
-		"# 持久化：写入 %s（统一文件，重启后仍生效）\n"+
+		"# Persist to %s (one shared file; survives reboot)\n"+
 			"f=%s\n"+
 			"mkdir -p /etc/sysctl.d && touch \"$f\"\n"+
 			"sed -i '%s' \"$f\"\n"+
@@ -417,7 +438,7 @@ func sysctlCommand(key, value, scope string) []nodecheckup.Command {
 	case "host", "container-writable":
 		return []nodecheckup.Command{{Shell: "sh", Text: script}}
 	case "host-global":
-		return []nodecheckup.Command{{Shell: "sh", Text: "# 需在宿主机执行（容器内该参数只读）\n" + script}}
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Run on the host (read-only inside the container)\n" + script}}
 	default:
 		return nil
 	}
@@ -431,11 +452,11 @@ func sysctlCommand(key, value, scope string) []nodecheckup.Command {
 func sshPersistScript(suffix string, lines ...string) string {
 	file := "/etc/ssh/sshd_config.d/99-corefusion-" + suffix + ".conf"
 	return fmt.Sprintf(
-		"# 持久化：写入 %s，重启后仍生效\n"+
+		"# Persist to %s (survives reboot)\n"+
 			"mkdir -p /etc/ssh/sshd_config.d\n"+
 			"cat > %s <<'EOF'\n%s\nEOF\n"+
 			"sshd -t && systemctl reload sshd\n"+
-			"# 若 sshd_config 未 Include sshd_config.d/*.conf，请改为编辑 /etc/ssh/sshd_config 对应行\n"+
+			"# If sshd_config does not Include sshd_config.d/*.conf, edit /etc/ssh/sshd_config instead\n"+
 			"sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|maxauthtries) '",
 		file, file, strings.Join(lines, "\n"))
 }
@@ -452,7 +473,7 @@ func bbrCommand(scope string) []nodecheckup.Command {
 	case "host", "container-writable":
 		return []nodecheckup.Command{{Shell: "sh", Text: script}}
 	case "host-global":
-		return []nodecheckup.Command{{Shell: "sh", Text: "# 需在宿主机执行（容器内该参数只读）\n" + script}}
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Run on the host (read-only inside the container)\n" + script}}
 	default:
 		return nil
 	}
@@ -470,4 +491,344 @@ func hasWord(list, word string) bool {
 		}
 	}
 	return false
+}
+
+// judgeTuning 覆盖线上常用内核调优项。只报未达标项，避免几十条 ok 噪音；
+// 完整的推荐值见 RecommendedSysctl / 生成的 Markdown 配置。
+func judgeTuning(facts *nodecheckup.Facts, add func(nodecheckup.Item)) {
+	if facts == nil {
+		return
+	}
+	get := func(key string) (nodecheckup.Sysctl, bool) {
+		f, ok := facts.Sysctl[key]
+		if !ok || f.Scope == "na" || strings.TrimSpace(f.Value) == "" {
+			return f, false
+		}
+		return f, true
+	}
+	numCheck := func(id, cat, key string, sev string, ok func(int64) bool, recommended string) {
+		f, valid := get(key)
+		if !valid {
+			return
+		}
+		v, err := strconv.ParseInt(strings.TrimSpace(f.Value), 10, 64)
+		if err != nil {
+			return
+		}
+		if ok(v) {
+			return
+		}
+		add(tuneItem(id, cat, f.Scope, key, f.Value, recommended, sev))
+	}
+
+	const mb16 = int64(16 << 20)
+	numCheck("SYS-08", "tcp", "net.core.rmem_max", SeverityInfo, func(v int64) bool { return v >= mb16 }, "16777216")
+	numCheck("SYS-09", "tcp", "net.core.wmem_max", SeverityInfo, func(v int64) bool { return v >= mb16 }, "16777216")
+	// 判定阈值取「不痛不痒的起点」，推荐值更高；避免 8096 vs 8192 这类噪音。
+	numCheck("SYS-10", "tcp", "net.core.netdev_max_backlog", SeverityInfo, func(v int64) bool { return v >= 4096 }, "16384")
+	numCheck("SYS-11", "tcp", "net.ipv4.tcp_max_syn_backlog", SeverityInfo, func(v int64) bool { return v >= 4096 }, "8192")
+	numCheck("SYS-12", "tcp", "net.ipv4.tcp_tw_reuse", SeverityInfo, func(v int64) bool { return v == 1 }, "1")
+	numCheck("SYS-13", "tcp", "net.ipv4.tcp_fin_timeout", SeverityInfo, func(v int64) bool { return v > 0 && v <= 15 }, "15")
+	numCheck("SYS-15", "tcp", "net.ipv4.tcp_mtu_probing", SeverityInfo, func(v int64) bool { return v == 1 }, "1")
+	numCheck("SYS-16", "tcp", "net.ipv4.tcp_fastopen", SeverityInfo, func(v int64) bool { return v == 3 }, "3")
+	numCheck("SYS-17", "tcp", "net.ipv4.tcp_keepalive_time", SeverityInfo, func(v int64) bool { return v > 0 && v <= 600 }, "600")
+	// 4294967295 是内核默认「不通知」值，等于没开。
+	numCheck("SYS-18", "tcp", "net.ipv4.tcp_notsent_lowat", SeverityInfo, func(v int64) bool { return v > 0 && v != 4294967295 }, "16384")
+	numCheck("SYS-19", "tcp", "net.ipv4.tcp_slow_start_after_idle", SeverityInfo, func(v int64) bool { return v == 0 }, "0")
+	numCheck("SYS-20", "network", "net.netfilter.nf_conntrack_buckets", SeverityInfo, func(v int64) bool { return v >= 16384 }, "16384")
+	numCheck("SYS-21", "tcp", "net.core.netdev_budget", SeverityInfo, func(v int64) bool { return v >= 300 }, "600")
+
+	// ip_local_port_range：宽度（high-low）≥ 30000，代理出站端口不够会 TIME_WAIT 耗尽。
+	if f, ok := get("net.ipv4.ip_local_port_range"); ok {
+		if parts := strings.Fields(f.Value); len(parts) == 2 {
+			lo, _ := strconv.ParseInt(parts[0], 10, 64)
+			hi, _ := strconv.ParseInt(parts[1], 10, 64)
+			if hi-lo < 30000 {
+				add(tuneItem("SYS-14", "tcp", f.Scope, "net.ipv4.ip_local_port_range", f.Value, "1024 65535", SeverityInfo))
+			}
+		}
+	}
+
+	// tcp_rmem / tcp_wmem：第三个数是自动调优上限，太小会限制高 BDP 链路吞吐。
+	for _, tc := range []struct{ id, key, rec string }{
+		{"SYS-22", "net.ipv4.tcp_rmem", "4096 87380 16777216"},
+		{"SYS-23", "net.ipv4.tcp_wmem", "4096 65536 16777216"},
+	} {
+		f, ok := get(tc.key)
+		if !ok {
+			continue
+		}
+		parts := strings.Fields(f.Value)
+		if len(parts) != 3 {
+			continue
+		}
+		if max, _ := strconv.ParseInt(parts[2], 10, 64); max < mb16 {
+			add(tuneItem(tc.id, "tcp", f.Scope, tc.key, f.Value, tc.rec, SeverityInfo))
+		}
+	}
+
+	// 内存与文件句柄：容器内是宿主全局，只提示（scope=host-global）。
+	if f, ok := get("vm.swappiness"); ok {
+		if v, _ := strconv.ParseInt(strings.TrimSpace(f.Value), 10, 64); v > 10 {
+			add(tuneItem("SYS-24", "system", f.Scope, "vm.swappiness", f.Value, "10", SeverityInfo))
+		}
+	}
+	if f, ok := get("fs.file-max"); ok {
+		if v, _ := strconv.ParseInt(strings.TrimSpace(f.Value), 10, 64); v > 0 && v < 1000000 {
+			add(tuneItem("SYS-25", "system", f.Scope, "fs.file-max", f.Value, "1024000", SeverityInfo))
+		}
+	}
+
+	// 安全加固：ICMP 重定向 / 源路由。代理节点也应当关闭（防 MITM）。
+	numCheck("SEC-01", "system", "net.ipv4.conf.all.accept_redirects", SeverityWarn, func(v int64) bool { return v == 0 }, "0")
+	numCheck("SEC-02", "system", "net.ipv4.conf.all.send_redirects", SeverityInfo, func(v int64) bool { return v == 0 }, "0")
+	numCheck("SEC-03", "system", "net.ipv4.conf.all.accept_source_route", SeverityInfo, func(v int64) bool { return v == 0 }, "0")
+}
+
+func tuneItem(id, category, scope, key, current, recommended, severity string) nodecheckup.Item {
+	return nodecheckup.Item{
+		ID: id, Category: category, Severity: severity, Scope: scope,
+		Params:   map[string]any{"current": current, "recommended": recommended},
+		Evidence: []string{key + " = " + current + " (recommended: " + recommended + ")"},
+	}
+}
+
+// sshExposed 判断 SSH 端口是否在本机防火墙里对所有来源放行。
+// known=false 表示规则里没找到该端口的放行项（可能由云安全组/上游设备控制），
+// 此时不提示，避免误报。
+func sshExposed(fw *nodecheckup.Firewall, port int) (exposed bool, known bool) {
+	if fw == nil || !fw.Enabled {
+		return false, false
+	}
+	p := strconv.Itoa(port)
+	raw := fw.RulesRaw
+	lower := strings.ToLower(raw)
+
+	switch fw.Type {
+	case "ufw":
+		for _, line := range strings.Split(raw, "\n") {
+			l := strings.TrimSpace(line)
+			if !strings.HasPrefix(l, p+"/tcp") && !strings.HasPrefix(l, p+" ") {
+				continue
+			}
+			if strings.Contains(l, "ALLOW") || strings.Contains(l, "LIMIT") {
+				if strings.Contains(l, "Anywhere") {
+					return true, true
+				}
+				return false, true
+			}
+		}
+		return false, false
+
+	case "firewalld":
+		allowed := false
+		if i := strings.Index(lower, "services:"); i >= 0 {
+			line := lower[i:]
+			if end := strings.Index(line, "\n"); end >= 0 {
+				line = line[:end]
+			}
+			if hasWord(strings.TrimPrefix(line, "services:"), "ssh") {
+				allowed = true
+			}
+		}
+		if i := strings.Index(lower, "ports:"); i >= 0 {
+			line := lower[i:]
+			if end := strings.Index(line, "\n"); end >= 0 {
+				line = line[:end]
+			}
+			if strings.Contains(line, p+"/tcp") {
+				allowed = true
+			}
+		}
+		if !allowed {
+			return false, false
+		}
+		// rich rule 带 source 且端口匹配 → 已限制来源。
+		if strings.Contains(lower, "source address") && strings.Contains(lower, "port=\""+p+"\"") {
+			return false, true
+		}
+		return true, true
+
+	case "iptables":
+		for _, line := range strings.Split(raw, "\n") {
+			l := strings.TrimSpace(line)
+			if !strings.Contains(l, "--dport "+p) || !strings.Contains(l, "-j ACCEPT") {
+				continue
+			}
+			if strings.Contains(l, " -s ") || strings.Contains(l, "--source ") {
+				return false, true
+			}
+			return true, true
+		}
+		return false, false
+
+	case "nftables":
+		for _, line := range strings.Split(raw, "\n") {
+			l := strings.TrimSpace(line)
+			if !strings.Contains(l, "dport "+p) || !strings.Contains(l, "accept") {
+				continue
+			}
+			if strings.Contains(l, "saddr") {
+				return false, true
+			}
+			return true, true
+		}
+		return false, false
+	}
+	return false, false
+}
+
+// sshRestrictCommands 按节点实际使用的防火墙给出「限制 SSH 来源」示例。
+// 只作为提醒，不自动执行；<YOUR_IP> 由用户替换。
+func sshRestrictCommands(fwType string, port int) []nodecheckup.Command {
+	p := strconv.Itoa(port)
+	switch fwType {
+	case "ufw":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Restrict SSH to trusted sources (replace <YOUR_IP>)\n" +
+			"ufw delete allow " + p + "/tcp\n" +
+			"ufw allow from <YOUR_IP> to any port " + p + " proto tcp\n" +
+			"ufw reload"}}
+	case "firewalld":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Restrict SSH to trusted sources (replace <YOUR_IP>)\n" +
+			"firewall-cmd --permanent --remove-service=ssh\n" +
+			"firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" source address=\"<YOUR_IP>\" port port=\"" + p + "\" protocol=\"tcp\" accept'\n" +
+			"firewall-cmd --reload"}}
+	case "iptables":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Restrict SSH to trusted sources (replace <YOUR_IP>)\n" +
+			"iptables -I INPUT -p tcp --dport " + p + " -s <YOUR_IP> -j ACCEPT\n" +
+			"iptables -A INPUT -p tcp --dport " + p + " -j DROP\n" +
+			"# Persist: apt install iptables-persistent && netfilter-persistent save"}}
+	case "nftables":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Restrict SSH to trusted sources (replace <YOUR_IP> and table/chain names)\n" +
+			"nft insert rule inet filter input tcp dport " + p + " ip saddr <YOUR_IP> accept\n" +
+			"nft add rule inet filter input tcp dport " + p + " drop\n" +
+			"# Persist: nft list ruleset > /etc/nftables.conf && systemctl enable nftables"}}
+	}
+	return nil
+}
+
+// SysctlRecommendation 是一条内核推荐参数（用于生成完整配置文件）。
+type SysctlRecommendation struct {
+	Key     string `json:"key"`
+	Value   string `json:"value"`
+	Group   string `json:"group"`
+	Comment string `json:"comment,omitempty"`
+}
+
+// RecommendedSysctl 返回完整的内核调优推荐值（参考生产节点实际配置）。
+// 只做展示/生成文档，不会自动写入；scope 由当前节点实际环境决定。
+func RecommendedSysctl() []SysctlRecommendation {
+	return []SysctlRecommendation{
+		// core
+		{"net.core.somaxconn", "32768", "core", "listen backlog for high connection rate"},
+		{"net.core.rmem_max", "16777216", "core", "max socket receive buffer (16 MiB)"},
+		{"net.core.wmem_max", "16777216", "core", "max socket send buffer (16 MiB)"},
+		{"net.core.rmem_default", "262144", "core", "default socket receive buffer"},
+		{"net.core.wmem_default", "262144", "core", "default socket send buffer"},
+		{"net.core.netdev_max_backlog", "16384", "core", "packets queued when NIC is faster than the stack"},
+		{"net.core.netdev_budget", "600", "core", "NAPI poll budget per softirq round"},
+		{"net.core.netdev_budget_usecs", "8000", "core", "max time per softirq round (us)"},
+		{"net.core.default_qdisc", "fq", "core", "fair queue, required for BBR"},
+		// tcp
+		{"net.ipv4.tcp_congestion_control", "bbr", "tcp", "BBR congestion control"},
+		{"net.ipv4.tcp_rmem", "4096 87380 16777216", "tcp", "TCP receive buffer auto-tuning"},
+		{"net.ipv4.tcp_wmem", "4096 65536 16777216", "tcp", "TCP send buffer auto-tuning"},
+		{"net.ipv4.tcp_max_syn_backlog", "8192", "tcp", "SYN queue for burst connections"},
+		{"net.ipv4.tcp_max_tw_buckets", "5000", "tcp", "cap TIME_WAIT sockets"},
+		{"net.ipv4.tcp_tw_reuse", "1", "tcp", "reuse TIME_WAIT for outbound connections"},
+		{"net.ipv4.tcp_fin_timeout", "15", "tcp", "FIN_WAIT timeout (seconds)"},
+		{"net.ipv4.ip_local_port_range", "1024 65535", "tcp", "ephemeral port range for outbound"},
+		{"net.ipv4.tcp_mtu_probing", "1", "tcp", "enable PLPMTUD when ICMP is blocked"},
+		{"net.ipv4.tcp_fastopen", "3", "tcp", "TFO for client and server"},
+		{"net.ipv4.tcp_keepalive_time", "600", "tcp", "idle keepalive start (seconds)"},
+		{"net.ipv4.tcp_keepalive_intvl", "30", "tcp", "keepalive probe interval"},
+		{"net.ipv4.tcp_keepalive_probes", "10", "tcp", "keepalive probe count"},
+		{"net.ipv4.tcp_notsent_lowat", "16384", "tcp", "avoid bufferbloat on uploads"},
+		{"net.ipv4.tcp_slow_start_after_idle", "0", "tcp", "keep cwnd after idle"},
+		{"net.ipv4.tcp_syncookies", "1", "tcp", "SYN flood protection"},
+		{"net.ipv4.ip_forward", "1", "tcp", "required for forwarding/proxy nodes"},
+		// conntrack
+		{"net.netfilter.nf_conntrack_max", "262144", "conntrack", "max tracked connections"},
+		{"net.netfilter.nf_conntrack_buckets", "16384", "conntrack", "hash buckets (max/16 is a good start)"},
+		{"net.netfilter.nf_conntrack_tcp_timeout_established", "180", "conntrack", "established timeout (seconds)"},
+		{"net.netfilter.nf_conntrack_udp_timeout", "60", "conntrack", "UDP timeout (seconds)"},
+		// security
+		{"net.ipv4.conf.all.accept_redirects", "0", "security", "ignore ICMP redirects"},
+		{"net.ipv4.conf.all.send_redirects", "0", "security", "do not send ICMP redirects"},
+		{"net.ipv4.conf.all.accept_source_route", "0", "security", "drop source-routed packets"},
+		{"net.ipv4.conf.all.rp_filter", "0", "security", "0 = loose (proxy/asymmetric), 1 = strict"},
+		// system
+		{"fs.file-max", "1024000", "system", "host-wide file handle limit"},
+		{"fs.nr_open", "1048576", "system", "per-process file handle limit"},
+		{"vm.swappiness", "10", "system", "prefer RAM over swap for proxy workloads"},
+		{"kernel.pid_max", "4194304", "system", "enough PIDs for many connections/processes"},
+	}
+}
+
+// BuildGuide 生成一份可直接整段复制的 Markdown 运维文档：
+// 内核参数 + SSH 加固 + SSH 来源限制（按实际防火墙类型）+ 回滚。
+func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
+	if sshPort <= 0 {
+		sshPort = 22
+	}
+	if fwType == "" {
+		fwType = "nftables"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# CoreFusion node tuning & hardening guide\n\n")
+	fmt.Fprintf(&b, "- Host: %s (%s)\n", env.OS, env.Kind)
+	fmt.Fprintf(&b, "- Kernel: %s\n", env.Kernel)
+	fmt.Fprintf(&b, "- SSH port: %d\n", sshPort)
+	fmt.Fprintf(&b, "- Firewall: %s\n\n", fwType)
+	b.WriteString("> Review before applying. Run in a maintenance window; keep an existing SSH session open while testing.\n\n")
+
+	b.WriteString("## 1. Kernel parameters (persistent)\n\n")
+	b.WriteString("Write the whole block to `/etc/sysctl.d/99-corefusion.conf`:\n\n```ini\n")
+	group := ""
+	for _, r := range RecommendedSysctl() {
+		if r.Group != group {
+			if group != "" {
+				b.WriteString("\n")
+			}
+			fmt.Fprintf(&b, "# %s\n", r.Group)
+			group = r.Group
+		}
+		if r.Comment != "" {
+			fmt.Fprintf(&b, "# %s\n", r.Comment)
+		}
+		fmt.Fprintf(&b, "%s = %s\n", r.Key, r.Value)
+	}
+	b.WriteString("```\n\nApply and verify:\n\n```sh\nsysctl --system\nsysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max\n```\n\n")
+
+	b.WriteString("## 2. SSH hardening\n\n```sh\nmkdir -p /etc/ssh/sshd_config.d\ncat > /etc/ssh/sshd_config.d/99-corefusion-hardening.conf <<'EOF'\n")
+	b.WriteString("PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nMaxAuthTries 4\n")
+	b.WriteString("EOF\nsshd -t && systemctl reload sshd\n```\n\n")
+	b.WriteString("Keep at least one working key-based session before closing the current one.\n\n")
+
+	b.WriteString("## 3. Restrict SSH to trusted sources\n\n")
+	b.WriteString("Replace `<YOUR_IP>` with your office/VPN address (CIDR allowed).\n\n```sh\n")
+	switch fwType {
+	case "firewalld":
+		fmt.Fprintf(&b, "firewall-cmd --permanent --remove-service=ssh\n")
+		fmt.Fprintf(&b, "firewall-cmd --permanent --add-rich-rule='rule family=\"ipv4\" source address=\"<YOUR_IP>\" port port=\"%d\" protocol=\"tcp\" accept'\n", sshPort)
+		b.WriteString("firewall-cmd --reload\nfirewall-cmd --list-rich-rules\n")
+	case "ufw":
+		fmt.Fprintf(&b, "ufw delete allow %d/tcp\n", sshPort)
+		fmt.Fprintf(&b, "ufw allow from <YOUR_IP> to any port %d proto tcp\n", sshPort)
+		b.WriteString("ufw reload\nufw status numbered\n")
+	case "iptables":
+		fmt.Fprintf(&b, "iptables -I INPUT -p tcp --dport %d -s <YOUR_IP> -j ACCEPT\n", sshPort)
+		fmt.Fprintf(&b, "iptables -A INPUT -p tcp --dport %d -j DROP\n", sshPort)
+		b.WriteString("# Persist: apt install iptables-persistent && netfilter-persistent save\n")
+	default:
+		fmt.Fprintf(&b, "nft insert rule inet filter input tcp dport %d ip saddr <YOUR_IP> accept\n", sshPort)
+		fmt.Fprintf(&b, "nft add rule inet filter input tcp dport %d drop\n", sshPort)
+		b.WriteString("# Adjust table/chain names to your ruleset (nft list ruleset)\n")
+		b.WriteString("# Persist: nft list ruleset > /etc/nftables.conf && systemctl enable nftables\n")
+	}
+	b.WriteString("```\n\n")
+
+	b.WriteString("## 4. Rollback\n\n```sh\nrm -f /etc/sysctl.d/99-corefusion.conf\nsysctl --system\nrm -f /etc/ssh/sshd_config.d/99-corefusion-hardening.conf\nsshd -t && systemctl reload sshd\n```\n\n")
+	b.WriteString("Firewall rules must be removed with the matching `-D` / `--remove-rich-rule` / `ufw delete` command.\n")
+	return b.String()
 }

@@ -195,3 +195,67 @@ func TestSSH04ImmutableHintAndCommand(t *testing.T) {
 		t.Fatalf("证据应提示 immutable：%v", it.Evidence)
 	}
 }
+
+func TestJudgeTuningReportsMissing(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host"},
+		Sysctl: map[string]nodecheckup.Sysctl{
+			"net.core.rmem_max":                  {Value: "212992", Scope: "host"},
+			"net.ipv4.tcp_rmem":                  {Value: "4096 87380 6291456", Scope: "host"},
+			"net.ipv4.tcp_notsent_lowat":         {Value: "4294967295", Scope: "host"},
+			"net.ipv4.conf.all.accept_redirects": {Value: "1", Scope: "host"},
+			"vm.swappiness":                      {Value: "60", Scope: "host"},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	for _, id := range []string{"SYS-08", "SYS-22", "SEC-01", "SYS-24"} {
+		if itemByID(items, id) == nil {
+			t.Fatalf("缺少调优项 %s", id)
+		}
+	}
+	// notsent_lowat=2^32-1 等价于关闭，应提示。
+	if itemByID(items, "SYS-18") == nil {
+		t.Fatal("tcp_notsent_lowat 未设置时应提示")
+	}
+}
+
+func TestSSHExposedByFirewall(t *testing.T) {
+	cases := []struct {
+		name    string
+		fw      *nodecheckup.Firewall
+		exposed bool
+		known   bool
+	}{
+		{"ufw-any", &nodecheckup.Firewall{Enabled: true, Type: "ufw", RulesRaw: "22/tcp ALLOW Anywhere\n"}, true, true},
+		{"ufw-src", &nodecheckup.Firewall{Enabled: true, Type: "ufw", RulesRaw: "22/tcp ALLOW 203.0.113.0/24\n"}, false, true},
+		{"ipt-any", &nodecheckup.Firewall{Enabled: true, Type: "iptables", RulesRaw: "-A INPUT -p tcp --dport 22 -j ACCEPT\n"}, true, true},
+		{"ipt-src", &nodecheckup.Firewall{Enabled: true, Type: "iptables", RulesRaw: "-A INPUT -p tcp --dport 22 -s 203.0.113.10 -j ACCEPT\n"}, false, true},
+		{"nft-any", &nodecheckup.Firewall{Enabled: true, Type: "nftables", RulesRaw: "tcp dport 22 accept\n"}, true, true},
+		{"nft-src", &nodecheckup.Firewall{Enabled: true, Type: "nftables", RulesRaw: "ip saddr 203.0.113.0/24 tcp dport 22 accept\n"}, false, true},
+		{"fw-svc", &nodecheckup.Firewall{Enabled: true, Type: "firewalld", RulesRaw: "public (active)\n  services: ssh dhcpv6-client\n  ports: \n"}, true, true},
+	}
+	for _, c := range cases {
+		e, k := sshExposed(c.fw, 22)
+		if e != c.exposed || k != c.known {
+			t.Fatalf("%s: got exposed=%v known=%v, want %v/%v", c.name, e, k, c.exposed, c.known)
+		}
+	}
+}
+
+func TestBuildGuideContainsFullConfig(t *testing.T) {
+	md := BuildGuide(nodecheckup.Env{OS: "Debian 12", Kernel: "6.8", Kind: "host"}, 2222, "firewalld")
+	for _, want := range []string{
+		"# CoreFusion node tuning & hardening guide",
+		"net.core.somaxconn = 32768",
+		"net.ipv4.tcp_congestion_control = bbr",
+		"sysctl --system",
+		"/etc/ssh/sshd_config.d/99-corefusion-hardening.conf",
+		"firewall-cmd --permanent --remove-service=ssh",
+		"port=\"2222\"",
+		"## 4. Rollback",
+	} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("guide 缺少 %q", want)
+		}
+	}
+}

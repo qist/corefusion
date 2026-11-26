@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "Kiểm tra",
     "persistHint": "Các lệnh gợi ý đều ghi vào tệp cấu hình rồi nạp lại: tham số kernel vào /etc/sysctl.d/99-corefusion.conf, SSH vào /etc/ssh/sshd_config.d/, nên vẫn giữ sau khi khởi động lại. Chỉ chạy `sysctl -w` sẽ bị khôi phục khi restart.",
+    "guide": "Hướng dẫn tinh chỉnh đầy đủ",
+    "copyAll": "Sao chép tất cả",
+    "download": "Tải .md",
+    "guideFailed": "Tạo thất bại",
     "settings": "Cài đặt kiểm tra",
     "enabled": "Kiểm tra định kỳ",
     "intervalHours": "Chu kỳ (giờ)",

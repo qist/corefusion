@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "ตรวจสอบ",
     "persistHint": "คำสั่งที่แนะนำจะเขียนลงไฟล์คอนฟิกแล้วโหลดใหม่: พารามิเตอร์เคอร์เนลไปที่ /etc/sysctl.d/99-corefusion.conf และ SSH ไปที่ /etc/ssh/sshd_config.d/ จึงคงอยู่หลังรีบูต หากรันเฉพาะ `sysctl -w` จะกลับค่าเมื่อรีสตาร์ต",
+    "guide": "คู่มือปรับแต่งฉบับเต็ม",
+    "copyAll": "คัดลอกทั้งหมด",
+    "download": "ดาวน์โหลด .md",
+    "guideFailed": "สร้างไม่สำเร็จ",
     "settings": "ตั้งค่าการตรวจสอบ",
     "enabled": "ตรวจสอบตามกำหนด",
     "intervalHours": "รอบ (ชั่วโมง)",

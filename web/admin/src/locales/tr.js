@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "Denetim",
     "persistHint": "Önerilen komutlar yapılandırma dosyalarına yazıp yeniden yükler: çekirdek parametreleri /etc/sysctl.d/99-corefusion.conf, SSH /etc/ssh/sshd_config.d/ altına yazılır ve yeniden başlatmada korunur. Yalnızca `sysctl -w` çalıştırmak yeniden başlatmada geri alınır.",
+    "guide": "Tam ayar kılavuzu",
+    "copyAll": "Tümünü kopyala",
+    "download": ".md indir",
+    "guideFailed": "Oluşturma başarısız",
     "settings": "Denetim ayarları",
     "enabled": "Zamanlanmış denetim",
     "intervalHours": "Aralık (saat)",

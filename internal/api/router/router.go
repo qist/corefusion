@@ -3029,6 +3029,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				// 节点安全体检（只读）
 				nodeServersGroup.GET("/checkup/summary", nodeCheckupH.Summary)
 				nodeServersGroup.GET("/:id/checkup", nodeCheckupH.GetNodeReport)
+				// 完整调优/加固 Markdown（整段复制用）
+				nodeServersGroup.GET("/:id/checkup/guide", nodeCheckupH.GetGuide)
 
 				// Supplementary: Server Management
 				nodeServersGroup.GET("/:id/status", nodeServerH.GetServerStatus)

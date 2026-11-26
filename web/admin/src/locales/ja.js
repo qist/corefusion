@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "診断",
     "persistHint": "提案コマンドは設定ファイルへ書き込んで再読み込みします：カーネルパラメータは /etc/sysctl.d/99-corefusion.conf、SSH は /etc/ssh/sshd_config.d/ に保存されるため再起動後も維持されます。`sysctl -w` だけでは再起動時に元に戻ります。",
+    "guide": "チューニング完全ガイド",
+    "copyAll": "すべてコピー",
+    "download": ".md をダウンロード",
+    "guideFailed": "生成に失敗しました",
     "settings": "診断設定",
     "enabled": "定期診断",
     "intervalHours": "間隔（時間）",

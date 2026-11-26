@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "Pemeriksaan",
     "persistHint": "Perintah yang disarankan menulis ke file konfigurasi lalu memuat ulang: parameter kernel ke /etc/sysctl.d/99-corefusion.conf, SSH ke /etc/ssh/sshd_config.d/, sehingga bertahan setelah reboot. `sysctl -w` saja akan kembali saat restart.",
+    "guide": "Panduan penyetelan lengkap",
+    "copyAll": "Salin semua",
+    "download": "Unduh .md",
+    "guideFailed": "Gagal membuat",
     "settings": "Pengaturan pemeriksaan",
     "enabled": "Pemeriksaan terjadwal",
     "intervalHours": "Interval (jam)",

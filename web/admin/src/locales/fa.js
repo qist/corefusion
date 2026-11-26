@@ -3,6 +3,10 @@ export default {
   nodeCheckup: {
     "tab": "بررسی",
     "persistHint": "دستورهای پیشنهادی در فایل‌های پیکربندی نوشته و دوباره بارگذاری می‌شوند: پارامترهای هسته در /etc/sysctl.d/99-corefusion.conf و SSH در /etc/ssh/sshd_config.d/، بنابراین پس از راه‌اندازی مجدد باقی می‌مانند. اجرای تنها `sysctl -w` پس از ری‌استارت بازگردانده می‌شود.",
+    "guide": "راهنمای کامل تنظیم",
+    "copyAll": "کپی همه",
+    "download": "دانلود .md",
+    "guideFailed": "ایجاد ناموفق",
     "settings": "تنظیمات بررسی",
     "enabled": "بررسی زمان‌بندی‌شده",
     "intervalHours": "فاصله (ساعت)",

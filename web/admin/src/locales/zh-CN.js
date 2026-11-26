@@ -2,6 +2,10 @@ export default {
   nodeCheckup: {
     "tab": "安全体检",
     "persistHint": "建议命令均已写成「写入配置文件 + 重载」：内核参数落到 /etc/sysctl.d/99-corefusion.conf，SSH 落到 /etc/ssh/sshd_config.d/，重启后仍生效。只执行 sysctl -w 会在重启后还原。",
+    "guide": "完整调优文档",
+    "copyAll": "复制全部",
+    "download": "下载 .md",
+    "guideFailed": "生成失败",
     "settings": "体检设置",
     "enabled": "定时体检",
     "intervalHours": "周期（小时）",

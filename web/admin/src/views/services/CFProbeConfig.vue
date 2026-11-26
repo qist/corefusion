@@ -82,6 +82,26 @@
         <el-switch v-model="chainCfg.enabled" />
       </div>
       <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainInheritProbe') }}</div>
+        <el-switch v-model="chainCfg.inherit_probe" />
+      </div>
+      <div v-if="!chainCfg.inherit_probe">
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeInterval') }}</div>
+        <el-input-number v-model="chainCfg.interval_minutes" :min="1" :max="1440" size="small" style="width:130px" />
+      </div>
+      <div v-if="!chainCfg.inherit_probe">
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeDialer') }}</div>
+        <el-select v-model="chainCfg.dialer" size="small" style="width:200px" @change="onDialerChange">
+          <el-option :label="t('service.cfip.probeAuto')" value="" />
+          <el-option :label="dialerLabel('xray')" value="xray" />
+          <el-option :label="dialerLabel('singbox')" value="singbox" />
+          <el-option :label="dialerLabel('mihomo')" value="mihomo" />
+        </el-select>
+        <el-button v-if="chainCfg.dialer" size="small" style="margin-left:8px" @click="openDialerInstall(chainCfg.dialer)">
+          {{ isDialerInstalled(chainCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
+        </el-button>
+      </div>
+      <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainAgent') }}</div>
         <el-select v-model="chainCfg.agent_id" size="small" style="width:220px" @change="onAgentChange">
           <el-option :label="t('service.cfip.chainAgentPanel')" :value="0" />
@@ -135,10 +155,14 @@
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainExitInterfaceHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainAgentHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainInboundHint') }}</div>
-    <div style="font-size:11px;color:#909399;margin-top:4px">
+    <div v-if="chainCfg.inherit_probe" style="font-size:11px;color:#909399;margin-top:4px">
       {{ t('service.cfip.chainDependsProbe') }}：{{ t('service.cfip.chainProbeInterval') }} {{ chainDeps.interval_minutes }} min
       · {{ t('service.cfip.chainProbeDialer') }} {{ chainDeps.effective_dialer || '-' }}
       <span v-if="!chainDeps.dialer">（{{ t('service.cfip.chainDialerAuto') }}）</span>
+    </div>
+    <div v-else style="font-size:11px;color:#909399;margin-top:4px">
+      {{ t('service.cfip.chainIndependent') }}：{{ t('service.cfip.chainProbeInterval') }} {{ chainCfg.interval_minutes }} min
+      · {{ t('service.cfip.chainProbeDialer') }} {{ chainCfg.dialer || t('service.cfip.chainDialerAuto') }}
     </div>
     <div style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.chainAccountHint') }}</div>
     <div style="font-size:11px;color:#606266;margin-top:6px">{{ t('service.cfip.chainSplitHint') }}</div>
@@ -261,6 +285,9 @@ const inbNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'inbou
 
 const chainCfg = ref({
   enabled: false,
+  inherit_probe: true,
+  interval_minutes: 5,
+  dialer: '',
   agent_id: 0,
   exit: '',
   interface: '',
@@ -388,6 +415,9 @@ async function fetchChainConfig(opts = {}) {
       const fallbackMax = d.config.max_targets ?? 20
       chainCfg.value = {
         enabled: !!d.config.enabled,
+        inherit_probe: d.config.inherit_probe !== false,
+        interval_minutes: d.config.interval_minutes || 5,
+        dialer: d.config.dialer || '',
         agent_id: Number(d.config.agent_id || 0),
         exit: d.config.exit || '',
         interface: d.config.interface || '',

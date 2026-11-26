@@ -463,6 +463,8 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 		"interval_minutes":          probeCfg.IntervalMinutes,
 		"dialer":                    probeCfg.Dialer,
 		"effective_dialer":          h.prober.EffectiveDialer(probeCfg.Dialer),
+		"chain_effective_interval":  cfg.EffectiveInterval(probeCfg.IntervalMinutes),
+		"chain_effective_dialer":    h.prober.EffectiveDialer(chainDialerChoice(cfg, probeCfg.Dialer)),
 	})
 }
 
@@ -600,4 +602,12 @@ func (h *ProbeHandler) chainAgentOptions(ctx context.Context) []chainAgentOption
 		out = append(out, chainAgentOption{ID: n.ID, Name: n.Name, Local: false})
 	}
 	return out
+}
+
+// chainDialerChoice 返回链路探测实际使用的拨号核心选择（继承或独立）。
+func chainDialerChoice(cfg healthprobe.ChainConfig, probeDialer string) string {
+	if cfg.InheritProbe {
+		return probeDialer
+	}
+	return cfg.Dialer
 }

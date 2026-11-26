@@ -317,6 +317,7 @@ func (p *Prober) Wake() {
 // 两者都关时才完全不探测，只等配置变化或进程退出。
 func (p *Prober) StartScheduler(ctx context.Context) {
 	go func() {
+		var lastProbe, lastChain time.Time
 		for {
 			cfg := p.ReadConfig(ctx)
 			chainCfg := p.ReadChainConfig(ctx)
@@ -328,37 +329,61 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 				}
 				continue
 			}
-			// 接口延迟由 TCP/TLS 探测测量，订阅的「延迟阈值」按这个量级筛选。
-			// 链路探测启用时 CheckAll 只刷新延迟、不写健康（健康由链路探测独占），
-			// 但延迟仍必须测 —— 否则只开链路探测的部署会永远没有延迟数据。
+
+			probeEvery := time.Duration(cfg.IntervalMinutes) * time.Minute
+			if probeEvery < time.Minute {
+				probeEvery = time.Minute
+			}
+			// 链路探测默认继承「探测设置」；独立设置时用自己的间隔。
+			chainEvery := time.Duration(chainCfg.EffectiveInterval(cfg.IntervalMinutes)) * time.Minute
+			if chainEvery < time.Minute {
+				chainEvery = time.Minute
+			}
+
+			now := time.Now()
+			// 优选探测：即使只开链路探测也要跑，用来刷新延迟数据。
 			if cfg.Enabled || chainCfg.Enabled {
-				res, err := p.CheckAll(ctx)
-				if err != nil {
-					log.Printf("[healthprobe] check failed: %v", err)
-				} else {
-					log.Printf("[healthprobe] checked=%d healthy=%d unhealthy=%d skipped=%d latency_only=%d entry=%s interval=%dm",
-						res.Checked, res.Healthy, res.Unhealthy, res.Skipped, res.LatencyOnly, res.Entry, res.Interval)
+				if lastProbe.IsZero() || now.Sub(lastProbe) >= probeEvery {
+					res, err := p.CheckAll(ctx)
+					if err != nil {
+						log.Printf("[healthprobe] check failed: %v", err)
+					} else {
+						log.Printf("[healthprobe] checked=%d healthy=%d unhealthy=%d skipped=%d latency_only=%d entry=%s interval=%dm",
+							res.Checked, res.Healthy, res.Unhealthy, res.Skipped, res.LatencyOnly, res.Entry, res.Interval)
+					}
+					lastProbe = time.Now()
 				}
 			}
 			// 链路探测串行在优选 IP 之后：两者都要起临时核心，同时跑会互相抢 CPU。
-			// 未开启时 CheckChain 立即返回，不产生任何开销。
-			if chainCfg.Enabled {
+			if chainCfg.Enabled && (lastChain.IsZero() || time.Since(lastChain) >= chainEvery) {
 				if chainRes, cerr := p.CheckChain(ctx, false); cerr != nil {
 					log.Printf("[healthprobe] chain check failed: %v", cerr)
 				} else if chainRes.Checked > 0 {
 					log.Printf("[healthprobe] chain checked=%d healthy=%d unhealthy=%d skipped=%d entry=%s duration=%dms",
 						chainRes.Checked, chainRes.Healthy, chainRes.Unhealthy, chainRes.Skipped, chainRes.Entry, chainRes.DurationMs)
 				}
+				lastChain = time.Now()
 			}
-			interval := time.Duration(cfg.IntervalMinutes) * time.Minute
-			if interval < time.Minute {
-				interval = time.Minute
+
+			wait := 24 * time.Hour
+			if cfg.Enabled || chainCfg.Enabled {
+				if d := time.Until(lastProbe.Add(probeEvery)); d < wait {
+					wait = d
+				}
+			}
+			if chainCfg.Enabled {
+				if d := time.Until(lastChain.Add(chainEvery)); d < wait {
+					wait = d
+				}
+			}
+			if wait < 5*time.Second {
+				wait = 5 * time.Second
 			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-p.wake:
-			case <-time.After(interval):
+			case <-time.After(wait):
 			}
 		}
 	}()

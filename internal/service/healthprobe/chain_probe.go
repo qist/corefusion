@@ -35,6 +35,9 @@ const (
 	SettingChainExit        = "cfip.chain_probe.exit"
 	SettingChainInterface   = "cfip.chain_probe.interface"
 	SettingChainAgent       = "cfip.chain_probe.agent_id"
+	SettingChainInherit     = "cfip.chain_probe.inherit_probe"
+	SettingChainInterval    = "cfip.chain_probe.interval_minutes"
+	SettingChainDialer      = "cfip.chain_probe.dialer"
 	SettingChainInbound     = "cfip.chain_probe.inbound"
 	SettingChainConcurrency = "cfip.chain_probe.concurrency"
 	SettingChainMaxTargets  = "cfip.chain_probe.max_targets"
@@ -74,6 +77,11 @@ type ChainConfig struct {
 	// AgentID 指定在哪台节点上执行探测（0 = 面板本机）。
 	// 选定后临时核心跑在该节点上，网卡也取该节点的。
 	AgentID int64 `json:"agent_id"`
+	// InheritProbe=true（默认）时沿用上方「探测设置」的间隔与拨号核心；
+	// false 时使用本卡片自己的 IntervalMinutes / Dialer。
+	InheritProbe    bool   `json:"inherit_probe"`
+	IntervalMinutes int    `json:"interval_minutes"`
+	Dialer          string `json:"dialer"`
 	// Inbound 是「探针入站」标识（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）：
 	// 一轮探测只用它完成协议握手，把全部启用的 CDN 域名/IP 逐个测一遍。
 	// 必须显式选择，不再随机挑：随机会导致同一批条目每轮用不同入口，
@@ -239,10 +247,11 @@ func (p *Prober) ResolveEntryTemplate(ctx context.Context, spec string) (map[str
 // ReadChainConfig 读取链路探测配置（缺失项回落默认值）。
 func (p *Prober) ReadChainConfig(ctx context.Context) ChainConfig {
 	cfg := ChainConfig{
-		Enabled:     false,
-		Concurrency: DefaultChainConcurrency,
-		MaxTargets:  DefaultChainMaxTargets,
-		ProbeURL:    DefaultChainProbeURL,
+		Enabled:      false,
+		InheritProbe: true,
+		Concurrency:  DefaultChainConcurrency,
+		MaxTargets:   DefaultChainMaxTargets,
+		ProbeURL:     DefaultChainProbeURL,
 	}
 	if p.setting == nil {
 		return cfg
@@ -255,6 +264,17 @@ func (p *Prober) ReadChainConfig(ctx context.Context) ChainConfig {
 	}
 	if v, err := p.setting.GetByKey(ctx, SettingChainInterface); err == nil {
 		cfg.Interface = strings.TrimSpace(v)
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainInherit); err == nil {
+		cfg.InheritProbe = parseBoolSetting(v, true)
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainInterval); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			cfg.IntervalMinutes = clampInt(n, 1, 1440)
+		}
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainDialer); err == nil {
+		cfg.Dialer = strings.TrimSpace(v)
 	}
 	if v, err := p.setting.GetByKey(ctx, SettingChainAgent); err == nil {
 		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
@@ -392,6 +412,15 @@ func (p *Prober) SaveChainConfig(ctx context.Context, cfg ChainConfig) error {
 		cfg.AgentID = 0
 	}
 	if err := set(SettingChainAgent, strconv.FormatInt(cfg.AgentID, 10)); err != nil {
+		return err
+	}
+	if err := set(SettingChainInherit, strconv.FormatBool(cfg.InheritProbe)); err != nil {
+		return err
+	}
+	if err := set(SettingChainInterval, strconv.Itoa(clampInt(cfg.IntervalMinutes, 1, 1440))); err != nil {
+		return err
+	}
+	if err := set(SettingChainDialer, strings.TrimSpace(cfg.Dialer)); err != nil {
 		return err
 	}
 	if err := set(SettingChainInbound, strings.TrimSpace(cfg.Inbound)); err != nil {
@@ -569,6 +598,18 @@ func (p *Prober) SetChainRemoteRunner(fn ChainRemoteRunner) {
 	p.chainRemote = fn
 }
 
+// EffectiveInterval 返回链路探测实际使用的间隔（分钟）。
+// 继承「探测设置」或未单独配置时用 probeInterval。
+func (c ChainConfig) EffectiveInterval(probeInterval int) int {
+	if c.InheritProbe || c.IntervalMinutes <= 0 {
+		if probeInterval <= 0 {
+			return DefaultIntervalMinutes
+		}
+		return probeInterval
+	}
+	return c.IntervalMinutes
+}
+
 // checkChainKind 只探测一类目标（调用方必须已持有 chainMu）。
 func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind string) (ChainSummary, error) {
 	sum := ChainSummary{}
@@ -595,7 +636,12 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 	}
 	// 拨号核心跟随「探测设置」：用户在探测设置里选了哪个就用哪个，
 	// 为空时按自动顺序（xray → sing-box → mihomo）选，与优选探测完全同一口径。
-	dialer, err := p.pickDialer(p.ReadConfig(ctx).Dialer)
+	probeCfg := p.ReadConfig(ctx)
+	dialerChoice := probeCfg.Dialer
+	if !cfg.InheritProbe {
+		dialerChoice = cfg.Dialer
+	}
+	dialer, err := p.pickDialer(dialerChoice)
 	if err != nil {
 		return sum, err
 	}

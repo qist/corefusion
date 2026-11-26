@@ -323,3 +323,22 @@ func TestSelectChainTargetsAdvancesHealthyCursors(t *testing.T) {
 		t.Fatalf("第二轮起点没有推进，仍为 %s", first[0].Host)
 	}
 }
+
+func TestChainConfigEffectiveInterval(t *testing.T) {
+	c := ChainConfig{InheritProbe: true, IntervalMinutes: 30}
+	if got := c.EffectiveInterval(10); got != 10 {
+		t.Fatalf("继承时应使用探测设置间隔 10，实际 %d", got)
+	}
+	c.InheritProbe = false
+	if got := c.EffectiveInterval(10); got != 30 {
+		t.Fatalf("独立时应使用自己的 30，实际 %d", got)
+	}
+	c.IntervalMinutes = 0
+	if got := c.EffectiveInterval(10); got != 10 {
+		t.Fatalf("未配置时应回退探测设置 10，实际 %d", got)
+	}
+	c.IntervalMinutes = 0
+	if got := c.EffectiveInterval(0); got != DefaultIntervalMinutes {
+		t.Fatalf("都为空时应回退默认 %d，实际 %d", DefaultIntervalMinutes, got)
+	}
+}

@@ -24,6 +24,19 @@
         <el-input-number v-model="probeCfg.max_latency_ms" :min="0" :max="60000" :step="50" size="small" style="width:150px" />
       </div>
       <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainAgent') }}</div>
+        <el-select v-model="probeCfg.agent_id" size="small" style="width:220px" @change="onProbeAgentChange">
+          <el-option :label="t('service.cfip.chainAgentPanel')" :value="0" />
+          <el-option v-for="a in probeAgents" :key="a.id" :label="a.name" :value="a.id" />
+        </el-select>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainExitInterface') }}</div>
+        <el-select v-model="probeCfg.interface" size="small" style="width:180px" clearable filterable allow-create default-first-option :placeholder="t('service.cfip.chainExitInterfacePlaceholder')">
+          <el-option v-for="i in probeInterfaces" :key="i.name" :label="i.label" :value="i.name" />
+        </el-select>
+      </div>
+      <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeEntryNode') }}</div>
         <el-select v-model="probeCfg.entry" size="small" style="width:240px" filterable :placeholder="t('service.cfip.probeEntryRequired')">
           <el-option-group v-if="extNodes.length" :label="t('service.cfip.probeEntryExternal')">
@@ -54,7 +67,7 @@
         </el-select>
         <!-- 已安装的核心也要能换版本/重装：不能只在「未安装」时才给入口 -->
         <el-button
-          v-if="probeCfg.dialer"
+          v-if="probeCfg.dialer && !probeCfg.agent_id"
           size="small"
           style="margin-left:8px"
           @click="openDialerInstall(probeCfg.dialer)"
@@ -63,6 +76,7 @@
         </el-button>
       </div>
     </div>
+    <div v-if="probeCfg.agent_id" style="font-size:11px;color:#e6a23c;margin-top:8px">{{ t('service.cfip.probeAgentDialerHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.probeMaxLatencyHint') }}</div>
     <div v-if="!probeCfg.enabled" style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.probeEnabledHint') }}</div>
@@ -278,8 +292,11 @@ import { useAutoRefresh, notifyCfipRefresh, CFIP_REFRESH_EVENT } from '../../com
 
 const { t } = useI18n()
 
-const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry: '', entry_node_id: 0, dialer: '', available_dialers: [], dialer_versions: {} })
+const probeCfg = ref({ enabled: false, interval_minutes: 5, max_latency_ms: 0, entry: '', entry_node_id: 0, dialer: '', agent_id: 0, interface: '', available_dialers: [], dialer_versions: {} })
 const probeNodes = ref([])
+const probeAgents = ref([])
+const probeInterfaces = ref([])
+let probeLocalInterfaces = []
 const extNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'external'))
 const inbNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'inbound'))
 
@@ -393,9 +410,17 @@ async function fetchProbeConfig(opts = {}) {
         entry: d.entry || (d.entry_node_id ? `ext:${d.entry_node_id}` : ''),
         entry_node_id: d.entry_node_id ?? 0,
         dialer: d.dialer || '',
+        agent_id: Number(d.agent_id || 0),
+        interface: d.interface || '',
         available_dialers: d.dialers || [],
         dialer_versions: d.dialer_versions || {},
       }
+      probeLocalInterfaces = (d.interfaces || []).map((i) => ({
+        name: i.name,
+        label: i.up ? i.name : `${i.name} (down)`,
+      }))
+      probeInterfaces.value = probeLocalInterfaces
+      probeAgents.value = d.agents || []
       // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
       // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
       const installed = probeCfg.value.available_dialers || []
@@ -582,7 +607,7 @@ async function saveProbeConfig() {
     ElMessage.warning(t('service.cfip.probeEntryRequired'))
     return
   }
-  if (dialerNeedsInstall()) {
+  if (!probeCfg.value.agent_id && dialerNeedsInstall()) {
     await onDialerChange(probeCfg.value.dialer)
     return
   }
@@ -612,6 +637,21 @@ async function onAgentChange(agentId) {
   }
 }
 
+// 探测设置的执行节点切换：网卡列表跟着换（远程复用节点网卡接口）。
+async function onProbeAgentChange(agentId) {
+  probeCfg.value.interface = ''
+  if (!agentId) {
+    probeInterfaces.value = probeLocalInterfaces
+    return
+  }
+  try {
+    const names = await client.get(`/node-servers/${agentId}/binaries/interfaces`)
+    probeInterfaces.value = (names || []).map((n) => ({ name: n, label: n }))
+  } catch {
+    probeInterfaces.value = []
+  }
+}
+
 async function saveChainConfig() {
   try {
     await client.put('/cfip/chain-probe-config', chainCfg.value)
@@ -624,7 +664,7 @@ async function saveChainConfig() {
 }
 
 async function checkChain(kind) {
-  if (dialerNeedsInstall()) {
+  if (!chainCfg.value.agent_id && dialerNeedsInstall()) {
     await onDialerChange(probeCfg.value.dialer)
     return
   }

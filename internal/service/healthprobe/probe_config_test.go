@@ -42,7 +42,7 @@ func TestSaveConfigTogglesProbe(t *testing.T) {
 	ctx := context.Background()
 
 	on := true
-	if err := p.SaveConfig(ctx, &on, nil, nil, nil, nil, nil); err != nil {
+	if err := p.SaveConfig(ctx, ConfigUpdate{Enabled: &on}); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
 	if cfg := p.ReadConfig(ctx); !cfg.Enabled {
@@ -50,7 +50,7 @@ func TestSaveConfigTogglesProbe(t *testing.T) {
 	}
 
 	off := false
-	if err := p.SaveConfig(ctx, &off, nil, nil, nil, nil, nil); err != nil {
+	if err := p.SaveConfig(ctx, ConfigUpdate{Enabled: &off}); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 	if cfg := p.ReadConfig(ctx); cfg.Enabled {
@@ -68,7 +68,7 @@ func TestSaveConfigKeepsOtherFields(t *testing.T) {
 	maxLatency := 800
 	entryNode := int64(7)
 	dialer := "xray"
-	if err := p.SaveConfig(ctx, &on, &interval, &maxLatency, nil, &entryNode, &dialer); err != nil {
+	if err := p.SaveConfig(ctx, ConfigUpdate{Enabled: &on, IntervalMinutes: &interval, MaxLatencyMs: &maxLatency, EntryNodeID: &entryNode, Dialer: &dialer}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	cfg := p.ReadConfig(ctx)
@@ -108,5 +108,35 @@ func TestCheckAllRequiresEntry(t *testing.T) {
 	p := newProbeTestService(t)
 	if _, err := p.CheckAll(context.Background()); err == nil {
 		t.Fatal("未选择入口时 CheckAll 必须返回错误")
+	}
+}
+
+// 执行节点与出口网卡要能持久化，并在非法网卡名时报错。
+func TestSaveConfigProbeExecution(t *testing.T) {
+	p := newProbeTestService(t)
+	ctx := context.Background()
+
+	agentID := int64(12)
+	iface := "eth1"
+	if err := p.SaveConfig(ctx, ConfigUpdate{AgentID: &agentID, Interface: &iface}); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	cfg := p.ReadConfig(ctx)
+	if cfg.AgentID != 12 || cfg.Interface != "eth1" {
+		t.Fatalf("读回不一致: agent=%d iface=%q", cfg.AgentID, cfg.Interface)
+	}
+
+	zero := int64(0)
+	empty := ""
+	if err := p.SaveConfig(ctx, ConfigUpdate{AgentID: &zero, Interface: &empty}); err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if cfg := p.ReadConfig(ctx); cfg.AgentID != 0 || cfg.Interface != "" {
+		t.Fatalf("重置失败: %+v", cfg)
+	}
+
+	bad := "bad/nic"
+	if err := p.SaveConfig(ctx, ConfigUpdate{Interface: &bad}); err == nil {
+		t.Fatal("非法网卡名应报错")
 	}
 }

@@ -180,10 +180,13 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 	// dialer_versions 用来在页面上显示当前版本，并提供「重装 / 换版本」入口。
 	response.OK(c, struct {
 		healthprobe.Config
-		Nodes          []nodeItem        `json:"nodes"`
-		Dialers        []string          `json:"dialers"`
-		DialerVersions map[string]string `json:"dialer_versions"`
-	}{Config: cfg, Nodes: nodes, Dialers: dialers, DialerVersions: versions})
+		Nodes          []nodeItem             `json:"nodes"`
+		Dialers        []string               `json:"dialers"`
+		DialerVersions map[string]string      `json:"dialer_versions"`
+		Agents         []chainAgentOption     `json:"agents"`
+		Interfaces     []chainInterfaceOption `json:"interfaces"`
+	}{Config: cfg, Nodes: nodes, Dialers: dialers, DialerVersions: versions,
+		Agents: h.chainAgentOptions(ctx), Interfaces: chainInterfaceOptions()})
 }
 
 // SaveConfig 更新探活配置（启用开关 / 间隔 / 延迟上限 / 入口节点 / 拨号核心）。
@@ -197,6 +200,9 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 		// EntryNodeID 兼容旧前端：只传该字段时按外部节点处理。
 		EntryNodeID *int64  `json:"entry_node_id"`
 		Dialer      *string `json:"dialer"`
+		// AgentID 指定执行探测的节点（0 = 面板本机）；Interface 是出口网卡。
+		AgentID   *int64  `json:"agent_id"`
+		Interface *string `json:"interface"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
@@ -256,7 +262,24 @@ func (h *ProbeHandler) SaveConfig(c *gin.Context) {
 		response.BadRequest(c, "INVALID_REQUEST", "probe enabled requires an entry node")
 		return
 	}
-	if err := h.prober.SaveConfig(c.Request.Context(), req.Enabled, req.IntervalMinutes, req.MaxLatencyMs, &entry, req.EntryNodeID, req.Dialer); err != nil {
+	if req.AgentID != nil && *req.AgentID > 0 && !h.probeAgentAvailable(c.Request.Context(), *req.AgentID) {
+		response.BadRequest(c, "INVALID_AGENT", "指定的 Agent 不存在或不可用")
+		return
+	}
+	if req.Interface != nil && !healthprobe.ValidEgressInterface(*req.Interface) {
+		response.BadRequest(c, "INVALID_INTERFACE", "网卡名只允许字母、数字、_ - . :，长度 1-32")
+		return
+	}
+	if err := h.prober.SaveConfig(c.Request.Context(), healthprobe.ConfigUpdate{
+		Enabled:         req.Enabled,
+		IntervalMinutes: req.IntervalMinutes,
+		MaxLatencyMs:    req.MaxLatencyMs,
+		Entry:           &entry,
+		EntryNodeID:     req.EntryNodeID,
+		Dialer:          req.Dialer,
+		AgentID:         req.AgentID,
+		Interface:       req.Interface,
+	}); err != nil {
 		response.InternalError(c, "SAVE_FAILED", err.Error())
 		return
 	}
@@ -610,4 +633,21 @@ func chainDialerChoice(cfg healthprobe.ChainConfig, probeDialer string) string {
 		return probeDialer
 	}
 	return cfg.Dialer
+}
+
+// probeAgentAvailable 判断指定的执行节点是否存在、启用且不是面板本机。
+func (h *ProbeHandler) probeAgentAvailable(ctx context.Context, id int64) bool {
+	if h.nodeSrvRepo == nil {
+		return false
+	}
+	list, err := h.nodeSrvRepo.ListAll(ctx)
+	if err != nil {
+		return false
+	}
+	for _, n := range list {
+		if n.ID == id && !n.IsLocal && n.Enabled {
+			return true
+		}
+	}
+	return false
 }

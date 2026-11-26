@@ -1916,6 +1916,7 @@ export default {
       probeTitle: 'Probe settings',
       probeEnabled: 'Auto probe',
       probeEnabledHint: 'Off by default. Keep it off when you don\'t use Cloudflare optimization — periodic probing then costs nothing. Manual "Check connectivity" still works.',
+      "probeAgentDialerHint": "The dialer core runs on the selected node; install/update it from that node\'s binary management (the panel-local install entry only applies when no node is selected).",
       probeInterval: 'Interval (minutes)',
       probeMaxLatency: 'Max latency (ms, 0 = no limit)',
       probeEntryNode: 'Probe entry node',

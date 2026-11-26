@@ -118,8 +118,29 @@ type ChainRemoteItem struct {
 	LatencyMs  int
 }
 
-// ChainRemoteRunner 在指定节点执行一轮链路探测（configJSON 内端口为 0，由 Agent 分配）。
-type ChainRemoteRunner func(ctx context.Context, serverID int64, dialer, configJSON, probeURL string, timeoutMs, concurrency int) ([]ChainRemoteItem, error)
+// ChainRemoteRawTarget 是「只做 TCP/TLS」的探测目标（优选 IP/域名）。
+type ChainRemoteRawTarget struct {
+	Host string
+	Port int
+	SNI  string
+	// Mode: tcp（只建连）/ tls（在 TCON 上完成 TLS 握手）。
+	Mode string
+}
+
+// ChainRemoteRequest 描述一轮在 Agent 上执行的探测。
+type ChainRemoteRequest struct {
+	ServerID    int64
+	Dialer      string
+	ConfigJSON  string
+	ProbeURL    string
+	TimeoutMs   int
+	Concurrency int
+	// RawTargets 非空时不做 HTTP，只按 Mode 做 TCP/TLS 探测。
+	RawTargets []ChainRemoteRawTarget
+}
+
+// ChainRemoteRunner 在指定节点执行一轮探测（configJSON 内端口为 0，由 Agent 分配）。
+type ChainRemoteRunner func(ctx context.Context, req ChainRemoteRequest) ([]ChainRemoteItem, error)
 
 // ChainTarget 是一个待探测的 CDN 条目（域名或 IP）。
 //
@@ -663,8 +684,14 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 		if merr != nil {
 			return sum, merr
 		}
-		items, rerr := p.chainRemote(ctx, cfg.AgentID, dialer, string(raw), cfg.ProbeURL,
-			int(chainProbeTimeout/time.Millisecond), clampInt(cfg.Concurrency, 1, 8))
+		items, rerr := p.chainRemote(ctx, ChainRemoteRequest{
+			ServerID:    cfg.AgentID,
+			Dialer:      dialer,
+			ConfigJSON:  string(raw),
+			ProbeURL:    cfg.ProbeURL,
+			TimeoutMs:   int(chainProbeTimeout / time.Millisecond),
+			Concurrency: clampInt(cfg.Concurrency, 1, 8),
+		})
 		if rerr != nil {
 			return sum, rerr
 		}

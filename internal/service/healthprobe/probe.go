@@ -55,6 +55,9 @@ const (
 	SettingEntry     = "cfip.probe.entry"
 	SettingEntryNode = "cfip.probe.entry_node_id"
 	SettingDialer    = "cfip.probe.dialer"
+	// SettingAgent 指定执行探测的节点（0 = 面板本机）；SettingInterface 是出口网卡。
+	SettingAgent     = "cfip.probe.agent_id"
+	SettingInterface = "cfip.probe.interface"
 
 	// 默认关闭：不是所有部署都用 Cloudflare 优选（CF IP 池 / 优选域名），
 	// 无人使用还每 5 分钟跑一轮探测纯属浪费（尤其选了入口节点时还要起临时
@@ -79,6 +82,12 @@ type Config struct {
 	// EntryNodeID 是旧字段（只支持外部节点），保留用于兼容老前端与老库。
 	EntryNodeID int64  `json:"entry_node_id"`
 	Dialer      string `json:"dialer"`
+	// AgentID 指定在哪台节点上执行探测（0 = 面板本机）。
+	// 选定后临时核心与拨号都在该节点上跑，网卡也取该节点的。
+	AgentID int64 `json:"agent_id"`
+	// Interface 是执行探测时绑定的本机网卡（仅对执行探测的那台机器有意义）。
+	// 留空 = 系统默认路由。
+	Interface string `json:"interface"`
 }
 
 // Result 是一次全量探测的汇总（供接口返回/日志）。
@@ -175,6 +184,14 @@ func (p *Prober) ReadConfig(ctx context.Context) Config {
 	if v, err := p.setting.GetByKey(ctx, SettingDialer); err == nil {
 		cfg.Dialer = strings.TrimSpace(v)
 	}
+	if v, err := p.setting.GetByKey(ctx, SettingAgent); err == nil {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
+			cfg.AgentID = n
+		}
+	}
+	if v, err := p.setting.GetByKey(ctx, SettingInterface); err == nil {
+		cfg.Interface = strings.TrimSpace(v)
+	}
 	return cfg
 }
 
@@ -234,10 +251,28 @@ func parseBoolSetting(v string, def bool) bool {
 }
 
 // SaveConfig 保存探测配置（nil 表示不改该项）。
-func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes, maxLatencyMs *int, entry *string, entryNodeID *int64, dialer *string) error {
+// ConfigUpdate 是「探测设置」的一次局部更新（nil 字段保持不变）。
+type ConfigUpdate struct {
+	Enabled         *bool
+	IntervalMinutes *int
+	MaxLatencyMs    *int
+	Entry           *string
+	EntryNodeID     *int64
+	Dialer          *string
+	AgentID         *int64
+	Interface       *string
+}
+
+func (p *Prober) SaveConfig(ctx context.Context, upd ConfigUpdate) error {
 	if p.setting == nil {
 		return fmt.Errorf("settings repository not available")
 	}
+	enabled := upd.Enabled
+	intervalMinutes := upd.IntervalMinutes
+	maxLatencyMs := upd.MaxLatencyMs
+	entry := upd.Entry
+	entryNodeID := upd.EntryNodeID
+	dialer := upd.Dialer
 	if enabled != nil {
 		val := "false"
 		if *enabled {
@@ -287,6 +322,24 @@ func (p *Prober) SaveConfig(ctx context.Context, enabled *bool, intervalMinutes,
 	}
 	if dialer != nil {
 		if err := p.setting.Set(ctx, SettingDialer, strings.TrimSpace(*dialer)); err != nil {
+			return err
+		}
+	}
+	if upd.AgentID != nil {
+		agentID := *upd.AgentID
+		if agentID < 0 {
+			agentID = 0
+		}
+		if err := p.setting.Set(ctx, SettingAgent, strconv.FormatInt(agentID, 10)); err != nil {
+			return err
+		}
+	}
+	if upd.Interface != nil {
+		iface := strings.TrimSpace(*upd.Interface)
+		if !ValidEgressInterface(iface) {
+			return fmt.Errorf("非法网卡名：%q", iface)
+		}
+		if err := p.setting.Set(ctx, SettingInterface, iface); err != nil {
 			return err
 		}
 	}
@@ -432,6 +485,21 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 		if isCDNTemplate(pm) {
 			tpl = pm
 			res.Entry = "tpl:" + label
+			if cfg.AgentID > 0 {
+				res.Entry = fmt.Sprintf("%s@agent:%d", res.Entry, cfg.AgentID)
+			}
+		} else if cfg.AgentID > 0 {
+			// 出口语义也支持在别的节点上执行：临时核心跑在 Agent 上，
+			// 面板只负责生成配置（端口写 0），TCP/TLS 探测由 Agent 完成。
+			if p.chainRemote == nil {
+				return res, errors.New("Agent 执行器未初始化，无法在指定节点上执行")
+			}
+			dialer, derr := p.pickDialer(cfg.Dialer)
+			if derr != nil {
+				return res, derr
+			}
+			res.Entry = fmt.Sprintf("%s/%s@agent:%d", label, dialer, cfg.AgentID)
+			return p.checkAllExitRemote(ctx, cfg, res, pm, chainAuthority)
 		} else {
 			d, fn, usedDialer, err := p.startEntryDialer(ctx, cfg, pm)
 			if err != nil {
@@ -677,7 +745,7 @@ func (p *Prober) EffectiveDialer(configured string) string {
 
 // startDialerWithProxy 用给定的 mihomo 出站 map 起一个临时核心做 SOCKS 拨号。
 // 供「优选探测」（外部节点）与「链路探测」（外部节点或自建节点入站）共用。
-func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy map[string]interface{}) (dialFunc, func(), string, error) {
+func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy map[string]interface{}, iface string) (dialFunc, func(), string, error) {
 	noop := func() {}
 	if len(proxy) == 0 {
 		return nil, noop, "", fmt.Errorf("出口节点配置为空，无法建立拨号")
@@ -715,6 +783,7 @@ func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy 
 			"log-level":  "silent",
 			"proxies":    []interface{}{proxy},
 		}
+		applyInterfaceToAllOutbounds(conf, dialer, iface)
 		if err := writeJSON(cfgPath, conf); err != nil {
 			cleanupDir()
 			return nil, noop, "", err
@@ -743,6 +812,7 @@ func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy 
 			}},
 			"outbounds": []interface{}{xob},
 		}
+		applyInterfaceToAllOutbounds(conf, dialer, iface)
 		if err := writeJSON(cfgPath, conf); err != nil {
 			cleanupDir()
 			return nil, noop, "", err
@@ -773,6 +843,7 @@ func (p *Prober) startDialerWithProxy(ctx context.Context, dialer string, proxy 
 			}},
 			"outbounds": outs,
 		}
+		applyInterfaceToAllOutbounds(conf, dialer, iface)
 		if err := writeJSON(cfgPath, conf); err != nil {
 			cleanupDir()
 			return nil, noop, "", err
@@ -858,7 +929,7 @@ func (p *Prober) startEntryDialer(ctx context.Context, cfg Config, pm map[string
 	if err != nil {
 		return nil, func() {}, "", err
 	}
-	return p.startDialerWithProxy(ctx, dialer, pm)
+	return p.startDialerWithProxy(ctx, dialer, pm, cfg.Interface)
 }
 
 // isCDNTemplate 判断入口配置能否当「客户端配置模板」用：
@@ -971,44 +1042,53 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 				Proxy: templateProxy(tpl, it.host, it.port),
 			}
 		}
-		dials, cleanup, _, err := p.startChainDialer(ctx, dialer, nil, targets, "")
-		if err != nil {
-			return res, err
-		}
-
-		sem := make(chan struct{}, 8)
-		var wg sync.WaitGroup
-		outs := make([]ChainResult, len(targets))
-		for i := range targets {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(idx int, t ChainTarget) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				cr := ChainResult{Kind: t.Kind, EntryID: t.EntryID, Host: t.Host, Port: t.Port,
-					Exit: res.Entry, CheckedAt: time.Now().Unix()}
-				if t.Proxy == nil {
-					cr.Error = "入口配置无法复制为客户端出站"
-					outs[idx] = cr
-					return
+		var outs []ChainResult
+		if cfg.AgentID > 0 {
+			// 在指定节点上执行：配置仍由面板生成，端口写 0 交给 Agent 分配。
+			if p.chainRemote == nil {
+				return res, errors.New("Agent 执行器未初始化，无法在指定节点上执行")
+			}
+			conf, cerr := buildChainProbeConfig(dialer, nil, targets, allIndices(len(targets)), make([]int, len(targets)), cfg.Interface)
+			if cerr != nil {
+				return res, cerr
+			}
+			rawConf, merr := json.Marshal(conf)
+			if merr != nil {
+				return res, merr
+			}
+			items, rerr := p.chainRemote(ctx, ChainRemoteRequest{
+				ServerID:    cfg.AgentID,
+				Dialer:      dialer,
+				ConfigJSON:  string(rawConf),
+				ProbeURL:    probeURL,
+				TimeoutMs:   int(chainProbeTimeout / time.Millisecond),
+				Concurrency: 8,
+			})
+			if rerr != nil {
+				return res, rerr
+			}
+			if len(items) != len(targets) {
+				return res, fmt.Errorf("Agent 返回结果数与目标数不一致（%d != %d）", len(items), len(targets))
+			}
+			outs = make([]ChainResult, len(targets))
+			now := time.Now().Unix()
+			for i, t := range targets {
+				it := items[i]
+				outs[i] = ChainResult{
+					Kind: t.Kind, EntryID: t.EntryID, Host: t.Host, Port: t.Port,
+					Exit: res.Entry, CheckedAt: now,
+					HTTPStatus: it.HTTPStatus, UpBytes: it.UpBytes, DownBytes: it.DownBytes,
+					LatencyMs: it.LatencyMs, Healthy: it.Success, Error: it.Error,
 				}
-				status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], probeURL)
-				cr.HTTPStatus, cr.UpBytes, cr.DownBytes, cr.LatencyMs = status, up, down, latency
-				switch {
-				case perr != nil:
-					cr.Error = truncateErr(perr.Error())
-				case status < 200 || status >= 400:
-					cr.Error = fmt.Sprintf("HTTP %d", status)
-				case up <= 0 || down <= 0:
-					cr.Error = "链路无实际流量"
-				default:
-					cr.Healthy = true
-				}
-				outs[idx] = cr
-			}(i, targets[i])
+			}
+		} else {
+			dials, cleanup, _, derr := p.startChainDialer(ctx, dialer, nil, targets, cfg.Interface)
+			if derr != nil {
+				return res, derr
+			}
+			outs = p.runTemplateProbeLocal(ctx, dials, targets, probeURL, res.Entry)
+			cleanup()
 		}
-		wg.Wait()
-		cleanup()
 
 		now := time.Now()
 		for i, t := range targets {
@@ -1042,6 +1122,177 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 		}
 	}
 	return res, nil
+}
+
+// allIndices 返回 [0,n) 的下标列表。
+func allIndices(n int) []int {
+	out := make([]int, n)
+	for i := range out {
+		out[i] = i
+	}
+	return out
+}
+
+// probeTarget 是一条优选探测目标（CF 优选 IP 或优选域名）。
+type probeTarget struct {
+	kind string
+	id   int64
+	prev int
+	host string
+	port int
+}
+
+// collectProbeTargets 读取当前启用的优选 IP / 域名。返回跳过数量。
+func (p *Prober) collectProbeTargets(ctx context.Context) ([]probeTarget, int, error) {
+	items := make([]probeTarget, 0, 256)
+	skipped := 0
+	if p.cfRepo != nil {
+		entries, err := p.cfRepo.List(ctx, 0)
+		if err != nil {
+			return nil, skipped, err
+		}
+		for _, e := range entries {
+			if !e.Enabled || strings.TrimSpace(e.IP) == "" {
+				skipped++
+				continue
+			}
+			items = append(items, probeTarget{kind: "cf_ip", id: e.ID, prev: e.FailCount,
+				host: strings.TrimSpace(e.IP), port: firstPort(e.Ports, 443)})
+		}
+	}
+	if p.shareRepo != nil {
+		domains, err := p.shareRepo.List(ctx, "cf_domain")
+		if err != nil {
+			return nil, skipped, err
+		}
+		for _, d := range domains {
+			if !d.Enabled || strings.TrimSpace(d.Value) == "" {
+				skipped++
+				continue
+			}
+			items = append(items, probeTarget{kind: "cf_domain", id: d.ID, prev: d.FailCount,
+				host: strings.TrimSpace(d.Value), port: firstPort(d.Ports, d.Port)})
+		}
+	}
+	return items, skipped, nil
+}
+
+// updateProbeTarget 把一条探测结论写回库；链路探测开启时只刷新延迟。
+func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarget, healthy bool, latency int, chainAuthority bool, now time.Time) {
+	if chainAuthority {
+		if t.kind == "cf_ip" && p.cfRepo != nil {
+			_ = p.cfRepo.UpdateLatency(ctx, t.id, latency, now)
+		} else if t.kind == "cf_domain" && p.shareRepo != nil {
+			_ = p.shareRepo.UpdateLatency(ctx, t.id, latency, now)
+		}
+		res.LatencyOnly++
+		return
+	}
+	next, fail := nextState(healthy, t.prev)
+	if t.kind == "cf_ip" && p.cfRepo != nil {
+		if err := p.cfRepo.UpdateHealth(ctx, t.id, next, latency, fail, now); err != nil {
+			log.Printf("[healthprobe] update cf ip %s failed: %v", t.host, err)
+		}
+	} else if t.kind == "cf_domain" && p.shareRepo != nil {
+		if err := p.shareRepo.UpdateHealth(ctx, t.id, next, latency, fail, now); err != nil {
+			log.Printf("[healthprobe] update share domain %s failed: %v", t.host, err)
+		}
+	}
+	res.Checked++
+	if next {
+		res.Healthy++
+	} else {
+		res.Unhealthy++
+	}
+}
+
+// checkAllExitRemote 在指定 Agent 上做「出口语义」探测：临时核心只有一条出口，
+// 优选 IP 做 TCP 建连、优选域名做 TLS 握手。
+func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}, chainAuthority bool) (Result, error) {
+	dialer, err := p.pickDialer(cfg.Dialer)
+	if err != nil {
+		return res, err
+	}
+	items, skipped, err := p.collectProbeTargets(ctx)
+	if err != nil {
+		return res, err
+	}
+	res.Skipped += skipped
+	if len(items) == 0 {
+		return res, nil
+	}
+	conf, err := buildDialerOnlyConfig(dialer, pm, cfg.Interface)
+	if err != nil {
+		return res, err
+	}
+	rawConf, err := json.Marshal(conf)
+	if err != nil {
+		return res, err
+	}
+	targets := make([]ChainRemoteRawTarget, len(items))
+	for i, it := range items {
+		targets[i] = ChainRemoteRawTarget{Host: it.host, Port: it.port, Mode: "tcp"}
+		if it.kind == "cf_domain" {
+			targets[i].Mode = "tls"
+			targets[i].SNI = it.host
+		}
+	}
+	results, err := p.chainRemote(ctx, ChainRemoteRequest{
+		ServerID:    cfg.AgentID,
+		Dialer:      dialer,
+		ConfigJSON:  string(rawConf),
+		TimeoutMs:   int(probeTimeout / time.Millisecond),
+		Concurrency: concurrency,
+		RawTargets:  targets,
+	})
+	if err != nil {
+		return res, err
+	}
+	if len(results) != len(items) {
+		return res, fmt.Errorf("Agent 返回结果数与目标数不一致（%d != %d）", len(results), len(items))
+	}
+	now := time.Now()
+	for i, it := range items {
+		p.updateProbeTarget(ctx, &res, it, results[i].Success, results[i].LatencyMs, chainAuthority, now)
+	}
+	return res, nil
+}
+
+// runTemplateProbeLocal 用本机临时核心逐个目标接口做 HTTP 探测。
+func (p *Prober) runTemplateProbeLocal(ctx context.Context, dials []dialFunc, targets []ChainTarget, probeURL, entry string) []ChainResult {
+	outs := make([]ChainResult, len(targets))
+	sem := make(chan struct{}, 8)
+	var wg sync.WaitGroup
+	for i := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, t ChainTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			cr := ChainResult{Kind: t.Kind, EntryID: t.EntryID, Host: t.Host, Port: t.Port,
+				Exit: entry, CheckedAt: time.Now().Unix()}
+			if t.Proxy == nil {
+				cr.Error = "入口配置无法复制为客户端出站"
+				outs[idx] = cr
+				return
+			}
+			status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], probeURL)
+			cr.HTTPStatus, cr.UpBytes, cr.DownBytes, cr.LatencyMs = status, up, down, latency
+			switch {
+			case perr != nil:
+				cr.Error = truncateErr(perr.Error())
+			case status < 200 || status >= 400:
+				cr.Error = fmt.Sprintf("HTTP %d", status)
+			case up <= 0 || down <= 0:
+				cr.Error = "链路无实际流量"
+			default:
+				cr.Healthy = true
+			}
+			outs[idx] = cr
+		}(i, targets[i])
+	}
+	wg.Wait()
+	return outs
 }
 
 // socks5Dial 走 SOCKS5（无认证）连到目标，返回已建立的连接。

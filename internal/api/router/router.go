@@ -2012,8 +2012,17 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 探测配置（间隔/延迟阈值/入口节点/拨号工具）从 system_settings 读，改完下一轮生效。
 			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo, systemSettingRepo, extNodeRepo, binaryResolver, dataDir)
 			if sharedNodeMgr != nil {
-				prober.SetChainRemoteRunner(func(ctx context.Context, serverID int64, dialer, cfgJSON, probeURL string, timeoutMs, concurrency int) ([]healthprobe.ChainRemoteItem, error) {
-					items, err := sharedNodeMgr.ChainProbe(ctx, serverID, dialer, cfgJSON, probeURL, timeoutMs, concurrency)
+				prober.SetChainRemoteRunner(func(ctx context.Context, req healthprobe.ChainRemoteRequest) ([]healthprobe.ChainRemoteItem, error) {
+					var rawTargets []*agentpb.ChainProbeRawTarget
+					if len(req.RawTargets) > 0 {
+						rawTargets = make([]*agentpb.ChainProbeRawTarget, len(req.RawTargets))
+						for i, t := range req.RawTargets {
+							rawTargets[i] = &agentpb.ChainProbeRawTarget{
+								Host: t.Host, Port: int32(t.Port), Sni: t.SNI, Mode: t.Mode,
+							}
+						}
+					}
+					items, err := sharedNodeMgr.ChainProbe(ctx, req.ServerID, req.Dialer, req.ConfigJSON, req.ProbeURL, req.TimeoutMs, req.Concurrency, rawTargets)
 					if err != nil {
 						return nil, err
 					}

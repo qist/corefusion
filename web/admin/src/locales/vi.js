@@ -1899,6 +1899,7 @@ export default {
       "probeTitle": "Cài đặt kiểm tra",
       "probeEnabled": "Tự động dò",
       "probeEnabledHint": "Mặc định tắt. Hãy để tắt nếu không dùng tối ưu Cloudflare; kiểm tra thủ công vẫn hoạt động.",
+      "probeAgentDialerHint": "Core quay số chạy trên nút đã chọn; cài/cập nhật trong quản lý binary của nút đó (cài trên bảng điều khiển chỉ áp dụng khi không chọn nút).",
       "probeInterval": "Khoảng thời gian (phút)",
       "probeMaxLatency": "Ngưỡng độ trễ (ms, 0 = không giới hạn)",
       "probeEntryNode": "Nút vào kiểm tra",

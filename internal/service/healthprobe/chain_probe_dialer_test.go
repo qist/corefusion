@@ -345,3 +345,42 @@ func TestValidEgressInterface(t *testing.T) {
 		}
 	}
 }
+
+// 探测设置的 Agent 模式：单出口配置必须只有一个本地 SOCKS 入口（端口 0），
+// 且网卡绑定要落到出口出站上。
+func TestBuildDialerOnlyConfig(t *testing.T) {
+	cases := []struct {
+		dialer string
+		key    string
+		field  string
+	}{
+		{"xray", "inbounds", "port"},
+		{"singbox", "inbounds", "listen_port"},
+		{"mihomo", "listeners", "port"},
+	}
+	for _, c := range cases {
+		conf, err := buildDialerOnlyConfig(c.dialer, chainTestExitProxy(), "eth0")
+		if err != nil {
+			t.Fatalf("%s build: %v", c.dialer, err)
+		}
+		list, _ := conf[c.key].([]interface{})
+		if len(list) != 1 {
+			t.Fatalf("%s 应有 1 个入口，实际 %d", c.dialer, len(list))
+		}
+		item, _ := list[0].(map[string]interface{})
+		if port, _ := item[c.field].(int); port != 0 {
+			t.Fatalf("%s 入口端口应为 0（交给 Agent 分配），实际 %v", c.dialer, item[c.field])
+		}
+		raw, _ := json.Marshal(conf)
+		if !strings.Contains(string(raw), "eth0") {
+			t.Fatalf("%s 配置未绑定网卡：%s", c.dialer, raw)
+		}
+	}
+
+	if _, err := buildDialerOnlyConfig("xray", nil, ""); err == nil {
+		t.Fatal("空出口应报错")
+	}
+	if _, err := buildDialerOnlyConfig("unknown", chainTestExitProxy(), ""); err == nil {
+		t.Fatal("未知核心应报错")
+	}
+}

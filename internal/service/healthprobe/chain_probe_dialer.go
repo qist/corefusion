@@ -208,6 +208,52 @@ func applyChainProbeInterface(conf map[string]interface{}, dialer, iface string)
 	}
 }
 
+// applyInterfaceToAllOutbounds 给「单跳出站」配置绑定网卡：
+// 探测设置只有一条出口（或模板目标），没有多跳，直接套到所有出站/代理上。
+func applyInterfaceToAllOutbounds(conf map[string]interface{}, dialer, iface string) {
+	if conf == nil || strings.TrimSpace(iface) == "" {
+		return
+	}
+	iface = strings.TrimSpace(iface)
+	switch dialer {
+	case "xray":
+		list, _ := conf["outbounds"].([]interface{})
+		for _, item := range list {
+			ob, _ := item.(map[string]interface{})
+			if ob == nil {
+				continue
+			}
+			ss, _ := ob["streamSettings"].(map[string]interface{})
+			if ss == nil {
+				ss = map[string]interface{}{}
+				ob["streamSettings"] = ss
+			}
+			so, _ := ss["sockopt"].(map[string]interface{})
+			if so == nil {
+				so = map[string]interface{}{}
+				ss["sockopt"] = so
+			}
+			so["interface"] = iface
+		}
+	case "singbox":
+		list, _ := conf["outbounds"].([]interface{})
+		for _, item := range list {
+			ob, _ := item.(map[string]interface{})
+			if ob != nil {
+				ob["bind_interface"] = iface
+			}
+		}
+	case "mihomo":
+		list, _ := conf["proxies"].([]interface{})
+		for _, item := range list {
+			pm, _ := item.(map[string]interface{})
+			if pm != nil {
+				pm["interface-name"] = iface
+			}
+		}
+	}
+}
+
 func hasChainTag(list []interface{}, want, field string) bool {
 	for _, item := range list {
 		m, _ := item.(map[string]interface{})
@@ -576,4 +622,63 @@ func waitPorts(addrs []string, timeout time.Duration) bool {
 		}
 	}
 	return true
+}
+
+// buildDialerOnlyConfig 生成「单一本地 SOCKS 入口 + 一个出口」的临时核心配置（端口 0）。
+// 供在 Agent 上做 TCP/TLS 探测：Agent 分配端口后起核心，探测完即退出。
+func buildDialerOnlyConfig(dialer string, proxy map[string]interface{}, iface string) (map[string]interface{}, error) {
+	if len(proxy) == 0 {
+		return nil, fmt.Errorf("出口节点配置为空，无法建立拨号")
+	}
+	var conf map[string]interface{}
+	switch dialer {
+	case "xray":
+		xob, err := agent.BuildXrayOutboundFromMihomoProxy(proxy)
+		if err != nil {
+			return nil, fmt.Errorf("convert proxy for xray: %w", err)
+		}
+		conf = map[string]interface{}{
+			"log": map[string]interface{}{"loglevel": "error"},
+			"inbounds": []interface{}{map[string]interface{}{
+				"tag":      "probe-in",
+				"listen":   "127.0.0.1",
+				"port":     0,
+				"protocol": "socks",
+				"settings": map[string]interface{}{"auth": "noauth", "udp": false},
+			}},
+			"outbounds": []interface{}{xob},
+		}
+	case "singbox":
+		xob, err := agent.BuildXrayOutboundFromMihomoProxy(proxy)
+		if err != nil {
+			return nil, fmt.Errorf("convert proxy for sing-box: %w", err)
+		}
+		outs := coreconfig.ConvertXrayOutboundsToSingbox([]interface{}{xob})
+		if len(outs) == 0 {
+			return nil, fmt.Errorf("convert proxy to sing-box outbound failed")
+		}
+		conf = map[string]interface{}{
+			"log": map[string]interface{}{"level": "error"},
+			"inbounds": []interface{}{map[string]interface{}{
+				"type": "socks", "tag": "probe-in", "listen": "127.0.0.1", "listen_port": 0,
+			}},
+			"outbounds": outs,
+		}
+	case "mihomo":
+		pm := normalizeProxyMap(proxy)
+		pm["name"] = "probe-exit"
+		conf = map[string]interface{}{
+			"log-level": "error",
+			"mode":      "global",
+			"proxies":   []interface{}{pm},
+			"listeners": []interface{}{map[string]interface{}{
+				"name": "probe-in", "type": "socks", "port": 0,
+				"listen": "127.0.0.1", "proxy": "probe-exit",
+			}},
+		}
+	default:
+		return nil, fmt.Errorf("拨号核心 %q 暂不支持探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
+	}
+	applyInterfaceToAllOutbounds(conf, dialer, iface)
+	return conf, nil
 }

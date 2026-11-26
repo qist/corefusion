@@ -1899,6 +1899,7 @@ export default {
       "probeTitle": "Ajustes de sondeo",
       "probeEnabled": "Sondeo automático",
       "probeEnabledHint": "Desactivado por defecto. Déjalo apagado si no usas la optimización de Cloudflare; la comprobación manual sigue disponible.",
+      "probeAgentDialerHint": "El núcleo de marcado se ejecuta en el nodo seleccionado; instálalo/actualízalo desde la gestión de binarios de ese nodo (la instalación local solo aplica sin nodo).",
       "probeInterval": "Intervalo (minutos)",
       "probeMaxLatency": "Latencia máx. (ms, 0 = sin límite)",
       "probeEntryNode": "Nodo de entrada de sondeo",

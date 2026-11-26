@@ -53,6 +53,10 @@ func (a *LocalAgent) RunChainProbe(ctx context.Context, req *agentpb.ChainProbeR
 	if count == 0 {
 		return nil, fmt.Errorf("config has no probe listener")
 	}
+	rawTargets := req.GetRawTargets()
+	if len(rawTargets) > 0 && count != 1 {
+		return nil, fmt.Errorf("raw probe requires exactly one listener, got %d", count)
+	}
 	ports, err := uniqueProbePorts(count)
 	if err != nil {
 		return nil, err
@@ -127,6 +131,11 @@ func (a *LocalAgent) RunChainProbe(ctx context.Context, req *agentpb.ChainProbeR
 	}
 	if concurrency > 8 {
 		concurrency = 8
+	}
+
+	// 优选 IP / 域名只需要 TCP 可达或 TLS 握手，不需要发 HTTP。
+	if len(rawTargets) > 0 {
+		return runRawChainProbe(ctx, addrs[0], rawTargets, timeout, concurrency), nil
 	}
 
 	results := make([]*agentpb.ChainProbeItemResult, len(ports))
@@ -385,4 +394,53 @@ func truncateProbeErr(s string) string {
 		return s[:300] + "..."
 	}
 	return s
+}
+
+// runRawChainProbe 通过本地 SOCKS 入口做 TCP 连接 / TLS 握手，用于优选探测。
+// 结果与 raw_targets 一一对应；不做 HTTP 请求，也不统计上下行字节。
+func runRawChainProbe(ctx context.Context, socksAddr string, targets []*agentpb.ChainProbeRawTarget, timeout time.Duration, concurrency int) *agentpb.ChainProbeResponse {
+	results := make([]*agentpb.ChainProbeItemResult, len(targets))
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	for i, target := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, t *agentpb.ChainProbeRawTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			item := &agentpb.ChainProbeItemResult{}
+			host := strings.TrimSpace(t.GetHost())
+			port := int(t.GetPort())
+			if host == "" || port <= 0 || port > 65535 {
+				item.Error = "invalid target"
+				results[idx] = item
+				return
+			}
+			start := time.Now()
+			conn, err := socks5DialContext(ctx, socksAddr, net.JoinHostPort(host, strconv.Itoa(port)), timeout)
+			if err == nil {
+				if strings.EqualFold(strings.TrimSpace(t.GetMode()), "tls") {
+					sni := strings.TrimSpace(t.GetSni())
+					if sni == "" {
+						sni = host
+					}
+					tc := tls.Client(conn, &tls.Config{ServerName: sni, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12})
+					_ = tc.SetDeadline(time.Now().Add(timeout))
+					err = tc.HandshakeContext(ctx)
+					_ = tc.Close()
+				} else {
+					_ = conn.Close()
+				}
+			}
+			item.LatencyMs = int32(time.Since(start) / time.Millisecond)
+			if err != nil {
+				item.Error = truncateProbeErr(err.Error())
+			} else {
+				item.Success = true
+			}
+			results[idx] = item
+		}(i, target)
+	}
+	wg.Wait()
+	return &agentpb.ChainProbeResponse{Success: true, Results: results}
 }

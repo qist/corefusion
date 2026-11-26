@@ -1899,6 +1899,7 @@ export default {
       "probeTitle": "プローブ設定",
       "probeEnabled": "自動プローブ",
       "probeEnabledHint": "既定では無効です。CF 最適化を使わない場合はオフのままで無駄な定期プローブを防げます。手動の「接続確認」は利用できます。",
+      "probeAgentDialerHint": "ダイヤラコアは選択したノードで動作します。そのノードのバイナリ管理からインストール/更新してください（パネル側のインストールはノード未選択時のみ）。",
       "probeInterval": "間隔（分）",
       "probeMaxLatency": "遅延しきい値（ms、0=無制限）",
       "probeEntryNode": "プローブ入口ノード",

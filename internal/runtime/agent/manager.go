@@ -2268,13 +2268,14 @@ func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) 
 
 // ChainProbe 在指定节点上跑一轮临时核心链路探测，返回与目标一一对应的结果。
 // 配置由面板生成（端口写 0），Agent 负责分配本机端口、起核心、发请求、清理。
-func (m *NodeServerManager) ChainProbe(ctx context.Context, serverID int64, dialer, configJSON, probeURL string, timeoutMs, concurrency int) ([]*agentpb.ChainProbeItemResult, error) {
+func (m *NodeServerManager) ChainProbe(ctx context.Context, serverID int64, dialer, configJSON, probeURL string, timeoutMs, concurrency int, rawTargets []*agentpb.ChainProbeRawTarget) ([]*agentpb.ChainProbeItemResult, error) {
 	req := &agentpb.ChainProbeRequest{
 		Dialer:      dialer,
 		ConfigJson:  configJSON,
 		ProbeUrl:    probeURL,
 		TimeoutMs:   int32(timeoutMs),
 		Concurrency: int32(concurrency),
+		RawTargets:  rawTargets,
 	}
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {

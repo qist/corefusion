@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	agentpb "corefusion/internal/runtime/agent/proto"
 )
@@ -77,5 +79,21 @@ func TestChainProbeListenerCount(t *testing.T) {
 	}
 	if !strings.Contains("mihomo", "mihomo") {
 		t.Fatal("sanity")
+	}
+}
+
+// raw 模式：非法目标直接返回错误项，不应该发起连接。
+func TestRunRawChainProbeInvalidTarget(t *testing.T) {
+	resp := runRawChainProbe(context.Background(), "127.0.0.1:1", []*agentpb.ChainProbeRawTarget{
+		{Host: "", Port: 443, Mode: "tcp"},
+		{Host: "example.com", Port: 0, Mode: "tcp"},
+	}, time.Second, 2)
+	if len(resp.GetResults()) != 2 {
+		t.Fatalf("结果数应为 2，实际 %d", len(resp.GetResults()))
+	}
+	for _, r := range resp.GetResults() {
+		if r.GetSuccess() || r.GetError() != "invalid target" {
+			t.Fatalf("非法目标应返回 invalid target：%+v", r)
+		}
 	}
 }

@@ -1114,12 +1114,22 @@ message ExecuteBinaryResponse {
 // 链路探测（在节点上起临时核心执行）
 // ============================================================
 
+message ChainProbeRawTarget {
+  string host = 1;  // 目标地址（IP 或域名）
+  int32  port = 2;  // 目标端口
+  string sni = 3;   // tls 模式的 SNI；空 = host
+  string mode = 4;  // tcp | tls
+}
+
 message ChainProbeRequest {
   string dialer = 1;       // xray/singbox/mihomo
   string config_json = 2;  // 临时核心配置（inbounds/listeners 的端口写 0，由 Agent 分配）
-  string probe_url = 3;    // 穿透代理访问的 URL
+  string probe_url = 3;    // 穿透代理访问的 URL（http 模式）
   int32  timeout_ms = 4;   // 单个目标超时（毫秒）
   int32  concurrency = 5;  // 并发数（1-8）
+  // raw_targets 非空时不发 HTTP：只做 TCP 连接 / TLS 握手（优选 IP/域名探测）。
+  // 此时 config_json 只需一个本地 SOCKS 入口。
+  repeated ChainProbeRawTarget raw_targets = 6;
 }
 
 message ChainProbeItemResult {

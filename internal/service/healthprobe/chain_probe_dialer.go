@@ -81,7 +81,7 @@ func buildChainProbeConfig(
 	if dialer != "mihomo" {
 		supported := chainProbeDialerProtocols[dialer]
 		if supported == nil {
-			return nil, fmt.Errorf("拨号核心 %q 暂不支持链路探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
+			return nil, fmt.Errorf("拨号核心 %q 暂不支持链式代理探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
 		}
 		for _, idx := range valid {
 			p := strings.ToLower(strings.TrimSpace(targets[idx].Protocol))
@@ -103,7 +103,7 @@ func buildChainProbeConfig(
 	case "mihomo":
 		conf, err = buildChainProbeMihomoConfig(exitProxy, targets, valid, ports)
 	default:
-		return nil, fmt.Errorf("拨号核心 %q 暂不支持链路探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
+		return nil, fmt.Errorf("拨号核心 %q 暂不支持链式代理探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
 	}
 	if err != nil {
 		return nil, err

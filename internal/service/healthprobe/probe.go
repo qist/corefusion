@@ -382,9 +382,9 @@ func (p *Prober) Wake() {
 //   - 间隔 = cfg.IntervalMinutes；
 //   - 核心 = cfg.Dialer（空 = 自动，xray → sing-box → mihomo）。
 //
-// 两个开关各自独立：优选探测看 cfg.Enabled，链路探测看 ChainConfig.Enabled。
-// 只开链路探测时也会按探测设置的间隔跑（不会因为优选探测关着就不跑）；
-// 两者都关时才完全不探测，只等配置变化或进程退出。
+// 两个开关互斥：链式代理探测（ChainConfig.Enabled）开启时，定时轮次只跑它，
+// 优选探测（cfg.Enabled）暂停；两者都关时才完全不探测，只等配置变化或退出。
+// 手动「检测连通性」不受此限制（显式操作，仍会执行并写健康）。
 func (p *Prober) StartScheduler(ctx context.Context) {
 	go func() {
 		var lastProbe, lastChain time.Time
@@ -411,8 +411,9 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 			}
 
 			now := time.Now()
-			// 优选探测：即使只开链路探测也要跑，用来刷新延迟数据。
-			if cfg.Enabled || chainCfg.Enabled {
+			// 链式代理探测开启时独占定时轮次：两套探测结论会互相覆盖，只跑后者。
+			probeActive := cfg.Enabled && !chainCfg.Enabled
+			if probeActive {
 				if lastProbe.IsZero() || now.Sub(lastProbe) >= probeEvery {
 					res, err := p.CheckAll(ctx)
 					if err != nil {
@@ -424,7 +425,6 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 					lastProbe = time.Now()
 				}
 			}
-			// 链路探测串行在优选 IP 之后：两者都要起临时核心，同时跑会互相抢 CPU。
 			if chainCfg.Enabled && (lastChain.IsZero() || time.Since(lastChain) >= chainEvery) {
 				if chainRes, cerr := p.CheckChain(ctx, false); cerr != nil {
 					log.Printf("[healthprobe] chain check failed: %v", cerr)
@@ -436,7 +436,7 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 			}
 
 			wait := 24 * time.Hour
-			if cfg.Enabled || chainCfg.Enabled {
+			if probeActive {
 				if d := time.Until(lastProbe.Add(probeEvery)); d < wait {
 					wait = d
 				}

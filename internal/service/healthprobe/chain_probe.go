@@ -584,7 +584,7 @@ func (p *Prober) CheckChain(ctx context.Context, force bool) (ChainSummary, erro
 func (p *Prober) CheckChainKind(ctx context.Context, kind string, force bool) (ChainSummary, error) {
 	norm, ok := normalizeChainKind(kind)
 	if !ok {
-		return ChainSummary{}, fmt.Errorf("未知的链路探测类型 %q（可选 ip / domain）", kind)
+		return ChainSummary{}, fmt.Errorf("未知的链式代理探测类型 %q（可选 ip / domain）", kind)
 	}
 	cfg := p.ReadChainConfig(ctx)
 	if !cfg.Enabled && !force {
@@ -600,16 +600,16 @@ func (p *Prober) CheckChainKind(ctx context.Context, kind string, force bool) (C
 
 func (p *Prober) validateChainRuntime(cfg ChainConfig) error {
 	if p.chainProv == nil {
-		return errors.New("链路探测目标解析器未初始化")
+		return errors.New("链式代理探测目标解析器未初始化")
 	}
 	if cfg.Exit == "" {
-		return errors.New("未选择出口节点：链路探测必须从一个真实出口发起，本机直连的结论没有参考意义")
+		return errors.New("未选择出口节点：链式代理探测必须从一个真实出口发起，本机直连的结论没有参考意义")
 	}
 	if !ValidEgressInterface(cfg.Interface) {
 		return fmt.Errorf("网卡名不合法：%q（只允许字母、数字、_ - . :，长度 1-32）", cfg.Interface)
 	}
 	if cfg.Inbound == "" {
-		return errors.New("未选择探针入站：链路探测固定用这一个入站完成协议握手，请先选择")
+		return errors.New("未选择探针入站：链式代理探测固定用这一个入站完成协议握手，请先选择")
 	}
 	return nil
 }

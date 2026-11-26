@@ -1090,7 +1090,7 @@ Os recursos de roteamento coletam os ativos compartilhados usados por assinatura
   execução (host do painel ou qualquer Agent), além de uma NIC de saída opcional; selecionar um nó de entrada
   disca através dessa linha, enquanto sem uma entrada somente a discagem direta local é possível (filtra
   apenas IPs claramente inacessíveis);
-- O núcleo do discador deve ser instalado no**nó de execução selecionado**: a página lista núcleos e versões
+- O núcleo do discador deve ser instalado no **nó de execução selecionado**: a página lista núcleos e versões
   relatados por esse nó, e Instalar/Reinstalar o instala diretamente (download de nós remotos por meio do
   Agent, não é necessário SSH);
 - O “discador” poderá ser automático (núcleos instalados), `singbox`, `xray` ou `mihomo`; núcleos que não
@@ -1101,7 +1101,7 @@ Os recursos de roteamento coletam os ativos compartilhados usados por assinatura
   um tipo, ele ainda verifica ambos (compatível com versões anteriores);
 - “Chain proxy probe” é um cartão separado: ele disca da saída selecionada através de um domínio/IP CDN de
   volta para a entrada da sonda e emite uma solicitação real (é necessário HTTP 200 com tráfego em ambas as
-  direções). É mutuamente exclusivo com a sonda de IP preferencial**no cronograma**— quando ativado, a
+  direções). É mutuamente exclusivo com a sonda de IP preferencial **no cronograma**— quando ativado, a
   sondagem agendada de IP preferencial é pausada e apenas a sonda proxy em cadeia é executada (a “verificação
   de conectividade” manual ainda funciona); ele pode herdar ou substituir o intervalo de teste e o discador e
   também oferece suporte a um nó de execução e NIC de saída;

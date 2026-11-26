@@ -761,7 +761,7 @@ Haga clic en un nodo para abrir su página de detalles:
 
 ### 5.6 Comprobación de seguridad del nodo
 
-Detalles del nodo → "Checkup": recolección de solo lectura, nunca cambia ninguna configuración.
+Detalles del nodo → "Checkup": rerecolección de solo lectura, nunca cambia ninguna configuración.
 
 - **Alcance**: información del sistema, SSH (contraseña/teclado interactivo/inicio de sesión raíz/MaxAuthTries/permisos de clave/
   si el puerto 22 tiene restricción de origen), detección de firewall (firewalld/ufw/nftables/iptables),
@@ -1089,7 +1089,7 @@ Los recursos de enrutamiento recopilan los activos compartidos utilizados por la
   y el nodo de ejecución (host del panel o cualquier Agent), además de una NIC de salida opcional; seleccionar
   un nodo de entrada marca a través de esa línea, mientras que sin una entrada solo es posible la marcación
   directa local (filtra solo IP claramente inalcanzables);
-- El núcleo del marcador debe instalarse en el**nodo de ejecución seleccionado**: la página enumera los
+- El núcleo del marcador debe instalarse en el **nodo de ejecución seleccionado**: la página enumera los
   núcleos y las versiones reportadas por ese nodo, e Instalar/Reinstalar lo instala allí directamente (los
   nodos remotos se descargan a través de Agent, no se necesita SSH);
 - El “marcador” puede ser automático (núcleos instalados), `singbox`, `xray` o `mihomo`; Los núcleos que no
@@ -1100,7 +1100,7 @@ Los recursos de enrutamiento recopilan los activos compartidos utilizados por la
   la otra; sin un tipo, todavía verifica ambos (compatible con versiones anteriores);
 - La “sonda proxy en cadena” es una tarjeta separada: marca desde la salida seleccionada a través de un
   dominio/IP CDN de regreso a la sonda entrante y emite una solicitud real (se requiere HTTP 200 con tráfico
-  en ambas direcciones). Es mutuamente excluyente con la sonda IP preferida.**en el horario**— cuando está
+  en ambas direcciones). Es mutuamente excluyente con la sonda IP preferida. **en el horario**— cuando está
   habilitado, el sondeo programado de IP preferida se detiene y solo se ejecuta el sondeo de proxy en cadena
   (el manual "Verificar conectividad" todavía funciona); puede heredar o anular el intervalo de sonda y el
   marcador, y también admite un nodo de ejecución y una NIC de salida;

@@ -1089,7 +1089,7 @@ Les ressources de routage collectent les ressources partagées utilisées par le
   nœud d'exécution (hôte du panneau ou n'importe quel Agent), ainsi qu'une carte réseau de sortie en option ;
   la sélection d'un nœud d'entrée compose via cette ligne, alors que sans entrée, seule la numérotation
   directe locale est possible (elle filtre uniquement les adresses IP clairement inaccessibles) ;
-- Le noyau du composeur doit être installé sur le**noeud d'exécution sélectionné**: la page répertorie les
+- Le noyau du composeur doit être installé sur le **noeud d'exécution sélectionné**: la page répertorie les
   cœurs et les versions signalées par ce nœud, et Install / Reinstall l'installe directement ici (les nœuds
   distants téléchargent via le Agent, aucun SSH n'est nécessaire) ;
 - Le « composeur » peut être automatique (cœurs installés), `singbox`, `xray` ou `mihomo` ; les cœurs qui ne
@@ -1100,7 +1100,7 @@ Les ressources de routage collectent les ressources partagées utilisées par le
   CF, et aucune des deux ne touche l'autre ; sans type, il vérifie toujours les deux (rétrocompatible) ;
 - La « sonde proxy de chaîne » est une carte distincte : elle compose un numéro depuis la sortie sélectionnée
   via un domaine/IP CDN vers la sonde entrante et émet une requête réelle (HTTP 200 avec un trafic dans les
-  deux sens est requis). Il est mutuellement exclusif avec la sonde IP préférée**au calendrier**— lorsqu'elle
+  deux sens est requis). Il est mutuellement exclusif avec la sonde IP préférée **au calendrier**— lorsqu'elle
   est activée, la vérification planifiée de l'adresse IP préférée s'arrête et seule la vérification du proxy
   en chaîne s'exécute (la « vérification manuelle de la connectivité » fonctionne toujours) ; il peut hériter
   ou remplacer l'intervalle de sonde et le numéroteur, et prend également en charge un nœud d'exécution et une

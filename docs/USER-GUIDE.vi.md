@@ -1078,7 +1078,7 @@ Tài nguyên định tuyến thu thập tài sản được chia sẻ được s
 - **Miền ưu tiên CF**: Miền ưu tiên Cloudflare cộng với cổng, có kiểm tra kết nối;
 - Cả hai đều cung cấp các ứng cử viên “Miền truy cập” được sử dụng bởi các đăng ký và viết lại nút bên ngoài (xem 16.3).
 
-### Nhóm IP 8.2 CF
+### 8.2 Nhóm IP CF
 
 - Duy trì các nguồn IP ưa thích (bao gồm các nguồn kiểu `bestproxy`), khoảng thời gian tìm nạp và cổng;
 - “Cài đặt đầu dò” kiểm soát khoảng thời gian thăm dò, ngưỡng độ trễ, nút đầu vào và nút thực thi (máy chủ
@@ -1096,7 +1096,7 @@ Tài nguyên định tuyến thu thập tài sản được chia sẻ được s
   thích ngược);
 - “Đầu dò proxy chuỗi” là một thẻ riêng biệt: nó quay số từ lối ra đã chọn thông qua miền/IP CDN quay trở lại
   đầu dò thăm dò và đưa ra yêu cầu thực (HTTP 200 với lưu lượng truy cập theo cả hai hướng là bắt buộc). Nó
-  loại trừ lẫn nhau với đầu dò IP ưa thích**theo lịch trình**— khi được bật, hoạt động thăm dò IP ưu tiên theo
+  loại trừ lẫn nhau với đầu dò IP ưa thích **theo lịch trình**— khi được bật, hoạt động thăm dò IP ưu tiên theo
   lịch trình sẽ tạm dừng và chỉ hoạt động thăm dò proxy chuỗi (kiểm tra kết nối thủ công vẫn hoạt động); nó có
   thể kế thừa hoặc ghi đè khoảng thời gian thăm dò và trình quay số, đồng thời hỗ trợ nút thực thi và NIC đầu
   ra;

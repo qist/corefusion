@@ -1089,7 +1089,7 @@ Yönlendirme kaynakları, abonelikler ve yönlendirme tarafından kullanılan pa
   veya herhangi bir Agent) artı isteğe bağlı bir çıkış NIC'sini kontrol eder; bir giriş düğümü seçildiğinde bu
   hat üzerinden arama yapılır, giriş olmadan yalnızca yerel doğrudan arama mümkündür (yalnızca erişilemeyen
   IP'leri açıkça filtreler);
-- Çevirici çekirdeğinin yüklü olması gerekir**seçilen yürütme düğümü**: sayfada o düğüm tarafından bildirilen
+- Çevirici çekirdeğinin yüklü olması gerekir **seçilen yürütme düğümü**: sayfada o düğüm tarafından bildirilen
   çekirdekler ve sürümler listelenir ve Kur / Yeniden Yükle onu doğrudan buraya yükler (uzak düğümlerin Agent
   aracılığıyla indirilmesi, SSH gerekmez);
 - "Çevirici" otomatik (kurulu çekirdekler), `singbox`, `xray` veya `mihomo` olabilir; Kurulu olmayan
@@ -1100,7 +1100,7 @@ Yönlendirme kaynakları, abonelikler ve yönlendirme tarafından kullanılan pa
   olmadan yine de her ikisini de kontrol eder (geriye dönük olarak uyumludur);
 - "Zincir proxy probu" ayrı bir karttır: seçilen çıkıştan bir CDN etki alanı/IP'si aracılığıyla gelen proba
   geri döner ve gerçek bir istek gönderir (her iki yönde de trafik gerektiren HTTP 200 gereklidir). Tercih
-  edilen IP probu ile birbirini dışlar**programda**— etkinleştirildiğinde, planlanmış tercih edilen IP
+  edilen IP probu ile birbirini dışlar **programda**— etkinleştirildiğinde, planlanmış tercih edilen IP
   incelemesi duraklatılır ve yalnızca zincir proxy incelemesi çalıştırılır (manuel "Bağlantıyı kontrol et"
   hala çalışır); araştırma aralığını ve çeviriciyi devralabilir veya geçersiz kılabilir ve ayrıca bir yürütme
   düğümünü ve çıkış NIC'sini destekler;

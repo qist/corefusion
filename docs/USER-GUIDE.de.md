@@ -1089,7 +1089,7 @@ Routing-Ressourcen sammeln die gemeinsam genutzten Assets, die von Abonnements u
   Ausführungsknoten (Panel-Host oder ein beliebiger Agent) sowie eine optionale Ausgangs-NIC; Durch Auswahl
   eines Eingangsknotens wird über diese Leitung gewählt, während ohne Eintrag nur lokale Direktwahl möglich
   ist (es werden nur eindeutig nicht erreichbare IPs gefiltert);
-- Der Dialer-Kern muss auf dem installiert sein**ausgewählten Ausführungsknoten**: Die Seite listet Kerne und
+- Der Dialer-Kern muss auf dem installiert sein **ausgewählten Ausführungsknoten**: Die Seite listet Kerne und
   Versionen auf, die von diesem Knoten gemeldet werden, und Install/Reinstall installiert sie direkt dort
   (Remote-Knoten laden über Agent herunter, kein SSH erforderlich);
 - Der „Dialer“ kann automatisch sein (installierte Kerne), `singbox`, `xray` oder `mihomo`; Nicht installierte

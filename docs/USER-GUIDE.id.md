@@ -1088,7 +1088,7 @@ Sumber daya perutean mengumpulkan aset bersama yang digunakan oleh langganan dan
   Agent), ditambah NIC jalan keluar opsional; memilih node entri akan melakukan panggilan melalui saluran
   tersebut, sedangkan tanpa entri, hanya panggilan langsung lokal yang dapat dilakukan (ini hanya memfilter IP
   yang jelas-jelas tidak dapat dijangkau);
-- Inti dialer harus dipasang di**node eksekusi yang dipilih**: halaman mencantumkan inti dan versi yang
+- Inti dialer harus dipasang di **node eksekusi yang dipilih**: halaman mencantumkan inti dan versi yang
   dilaporkan oleh node tersebut, dan Instal / Instal Ulang menginstalnya langsung di sana (unduh node jarak
   jauh melalui Agent, tidak diperlukan SSH);
 - “Dialer” mungkin otomatis (inti terpasang), `singbox`, `xray` atau `mihomo`; core yang tidak diinstal tidak
@@ -1099,7 +1099,7 @@ Sumber daya perutean mengumpulkan aset bersama yang digunakan oleh langganan dan
   sejenisnya ia masih memeriksa keduanya (kompatibel ke belakang);
 - "Pemeriksaan proksi rantai" adalah kartu terpisah: kartu ini melakukan panggilan dari pintu keluar yang
   dipilih melalui domain/IP CDN kembali ke pemeriksaan masuk dan mengeluarkan permintaan nyata (diperlukan
-  HTTP 200 dengan lalu lintas di kedua arah). Ini saling eksklusif dengan probe IP pilihan**pada jadwal**—
+  HTTP 200 dengan lalu lintas di kedua arah). Ini saling eksklusif dengan probe IP pilihan **pada jadwal**—
   bila diaktifkan, pemeriksaan IP pilihan terjadwal akan dijeda dan hanya pemeriksaan proksi rantai yang
   berjalan (manual “Periksa konektivitas” masih berfungsi); itu dapat mewarisi atau mengganti interval probe
   dan dialer, dan juga mendukung node eksekusi dan NIC jalan keluar;

@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "Tường lửa",
+      "config": "Thứ tự ưu tiên cấu hình",
     },
     "scope": {
       "host": "Máy chủ",

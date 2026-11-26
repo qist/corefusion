@@ -88,6 +88,56 @@ sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_connt
 
 If writing `tcp_congestion_control` returns `Protocol not available`, the kernel has no bbr module — upgrade the kernel.
 
+## Coexisting with existing tuning (who wins)
+
+Nodes often already have their own tuning files. Appending blindly leads to "I changed it but nothing happened".
+The two systems have **opposite** rules:
+
+**sysctl: the last file loaded wins**
+
+Load order is fixed:
+
+```
+/etc/sysctl.d/*.conf (lexical order)
+-> /run/sysctl.d/*.conf
+-> /usr/local/lib/sysctl.d/*.conf
+-> /usr/lib/sysctl.d/*.conf
+-> /lib/sysctl.d/*.conf
+-> /etc/sysctl.conf (always last)
+```
+
+So `/etc/sysctl.conf` always overrides `/etc/sysctl.d/99-corefusion.conf`, and so does
+`/etc/sysctl.d/99-sysctl.conf` (a common symlink to `../sysctl.conf`). Files such as `10-*` / `50-*`
+are overridden by ours.
+
+Check first and keep each key in **one** file:
+
+```sh
+grep -rn '^net\.\|^fs\.\|^vm\.\|^kernel\.' /etc/sysctl.d /run/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf 2>/dev/null
+sysctl net.core.somaxconn net.ipv4.tcp_congestion_control   # effective value
+```
+
+If `/etc/sysctl.conf` already sets a key, either comment those lines out and manage it from
+`/etc/sysctl.d/99-corefusion.conf`, or edit `/etc/sysctl.conf` and drop the duplicate here.
+
+**sshd: the first value wins (opposite of sysctl)**
+
+`sshd` takes the first value it reads. Drop-ins are expanded at the `Include` line and processed in
+lexical order. Therefore:
+
+- this guide writes `00-corefusion-*.conf` so it comes first among drop-ins;
+- `Include /etc/ssh/sshd_config.d/*.conf` must appear near the top of the main config (before
+  `PasswordAuthentication` etc.), otherwise the main file wins and the drop-in is ignored;
+- an existing `00-` / `01-` file with the same directive still takes precedence.
+
+```sh
+grep -n '^Include' /etc/ssh/sshd_config
+grep -rn -E '^(PasswordAuthentication|KbdInteractiveAuthentication|PermitRootLogin|MaxAuthTries)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null
+sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|maxauthtries) '
+```
+
+The checkup reports this as `CFG-01` / `CFG-02` and the generated guide repeats it in section 0.
+
 ## Kernel version differences (important)
 
 Not every parameter exists on 3.x. CentOS 7 ships 3.10, which has **no BBR and no fq**; copying the 4.x block
@@ -121,7 +171,7 @@ Notes:
 
 ```sh
 mkdir -p /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-corefusion-hardening.conf <<'EOF'
+cat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
@@ -183,7 +233,7 @@ Notes:
 rm -f /etc/sysctl.d/99-corefusion.conf
 sysctl --system
 
-rm -f /etc/ssh/sshd_config.d/99-corefusion-hardening.conf
+rm -f /etc/ssh/sshd_config.d/00-corefusion-hardening.conf
 sshd -t && systemctl reload sshd
 ```
 

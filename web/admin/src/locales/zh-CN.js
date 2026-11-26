@@ -41,6 +41,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "防火墙",
+      "config": "配置覆盖",
     },
     "scope": {
       "host": "主机",

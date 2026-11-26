@@ -102,6 +102,57 @@ sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_connt
 
 如果 `tcp_congestion_control` 写入后报 `Protocol not available`，说明内核没有 bbr 模块，需先升级内核。
 
+## 与已有优化共存（谁覆盖谁）
+
+节点上很可能已经有人写过优化文件，直接追加会出现「改了不生效」。两边的规则是相反的：
+
+**内核参数（sysctl）：后加载的覆盖先加载的**
+
+加载顺序固定为：
+
+```
+/etc/sysctl.d/*.conf（按文件名字典序）
+→ /run/sysctl.d/*.conf
+→ /usr/local/lib/sysctl.d/*.conf
+→ /usr/lib/sysctl.d/*.conf
+→ /lib/sysctl.d/*.conf
+→ /etc/sysctl.conf（永远最后）
+```
+
+所以：
+
+- `/etc/sysctl.conf` 里的同 key **一定覆盖** `/etc/sysctl.d/99-corefusion.conf`；
+- `/etc/sysctl.d/99-sysctl.conf`（常见软链，指向 `../sysctl.conf`）字典序在 `99-corefusion.conf` 之后，也会覆盖；
+- `10-*`、`50-*` 等更早的文件会被我们覆盖。
+
+做法：先查一遍再决定写哪里，**不要同一 key 在两个文件里各写一份**。
+
+```sh
+grep -rn '^net\.\|^fs\.\|^vm\.\|^kernel\.' /etc/sysctl.d /run/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf 2>/dev/null
+sysctl net.core.somaxconn net.ipv4.tcp_congestion_control   # 查当前生效值
+```
+
+如果 `/etc/sysctl.conf` 里已有同 key，二选一：
+
+1. 把那些行注释掉，统一由 `/etc/sysctl.d/99-corefusion.conf` 管理；
+2. 或直接改 `/etc/sysctl.conf`，不要再用本文件的同名项。
+
+**SSH：先匹配的生效（和 sysctl 相反）**
+
+`sshd` 读到第一条指令就定值，drop-in 在主配置 `Include` 的位置展开、按文件名字典序处理。所以：
+
+- 本文件用 `00-corefusion-*.conf` 前缀，保证在 drop-in 里最优先；
+- `Include /etc/ssh/sshd_config.d/*.conf` 必须在主配置靠前的位置（在 `PasswordAuthentication` 等指令之前），否则主配置里的行会先命中，drop-in 直接失效；
+- 若已有 `00-`、`01-` 等更靠前的文件写了同一指令，以那个为准。
+
+```sh
+grep -n '^Include' /etc/ssh/sshd_config
+grep -rn -E '^(PasswordAuthentication|KbdInteractiveAuthentication|PermitRootLogin|MaxAuthTries)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null
+sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|maxauthtries) '
+```
+
+体检里的 `CFG-01` / `CFG-02` 会自动列出检测到的文件和「谁生效」，并在「完整调优文档」第 0 节给出同样的提示。
+
 ## 内核版本差异（重要）
 
 不是所有参数都适用于 3.x。CentOS 7 自带 3.10，**没有 BBR 和 fq**，照抄 4.x 的配置会得到 `Invalid argument`：
@@ -133,7 +184,7 @@ sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_connt
 
 ```sh
 mkdir -p /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-corefusion-hardening.conf <<'EOF'
+cat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
@@ -195,7 +246,7 @@ nft add rule inet filter input tcp dport 22 drop
 rm -f /etc/sysctl.d/99-corefusion.conf
 sysctl --system
 
-rm -f /etc/ssh/sshd_config.d/99-corefusion-hardening.conf
+rm -f /etc/ssh/sshd_config.d/00-corefusion-hardening.conf
 sshd -t && systemctl reload sshd
 ```
 

@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"corefusion/internal/model/nodecheckup"
@@ -95,5 +97,37 @@ func TestNftInputHasEffectiveRules(t *testing.T) {
 
 	if nftInputHasEffectiveRules("table inet corefusion_ratelimit {\n\tset x {\n\t}\n}\n") {
 		t.Fatal("没有 input hook 时不应算防火墙")
+	}
+}
+
+// sysctl 配置文件解析：只保留白名单 key，跳过注释/空行，记录行号。
+func TestParseSysctlConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "99-test.conf")
+	content := "# comment\n\nnet.core.somaxconn = 32768\nvm.swappiness=10\nnet.ipv4.ip_forward=1 # not in whitelist\n- kernel.pid_max = 4194304\n"
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	wanted := map[string]bool{
+		"net.core.somaxconn": true,
+		"vm.swappiness":      true,
+		"kernel.pid_max":     true,
+	}
+	hits := parseSysctlConfigFile(p, wanted, 7)
+	if len(hits) != 3 {
+		t.Fatalf("应命中 3 条，实际 %d：%+v", len(hits), hits)
+	}
+	byKey := map[string]nodecheckup.ConfigHit{}
+	for _, h := range hits {
+		byKey[h.Key] = h
+	}
+	if h := byKey["net.core.somaxconn"]; h.Value != "32768" || h.Line != 3 || h.Order != 7 {
+		t.Fatalf("解析错误：%+v", h)
+	}
+	if h := byKey["kernel.pid_max"]; h.Value != "4194304" {
+		t.Fatalf("-key 形式应去掉前导 -：%+v", h)
+	}
+	if _, ok := byKey["net.ipv4.ip_forward"]; ok {
+		t.Fatal("不在白名单的 key 不应采集")
 	}
 }

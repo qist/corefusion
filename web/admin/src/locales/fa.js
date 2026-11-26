@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "فایروال",
+      "config": "اولویت پیکربندی",
     },
     "scope": {
       "host": "میزبان",

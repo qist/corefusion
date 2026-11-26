@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "الجدار الناري",
+      "config": "أولوية الإعداد",
     },
     "scope": {
       "host": "المضيف",

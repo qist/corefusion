@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "Файрвол",
+      "config": "Приоритет конфигурации",
     },
     "scope": {
       "host": "Хост",

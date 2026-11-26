@@ -100,13 +100,16 @@ func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFa
 	if len(keys) == 0 {
 		keys = defaultSysctlKeys
 	}
+	wanted := make(map[string]bool, len(keys))
 	for _, key := range keys {
 		key = strings.TrimSpace(key)
 		if key == "" || strings.ContainsAny(key, " /\\") {
 			continue
 		}
+		wanted[key] = true
 		facts.Sysctl[key] = collectSysctl(key, facts.Env)
 	}
+	facts.SysctlFiles = collectSysctlFiles(wanted)
 	facts.IPv6 = collectIPv6()
 	facts.Modules = collectModules()
 	if req.GetIncludeSsh() {
@@ -335,6 +338,7 @@ func collectSSHD() *nodecheckup.SSHD {
 		key.Immutable = fileImmutable(authKeys)
 		res.Keys[user] = key
 	}
+	res.IncludeLine, res.ConfigHits = collectSSHDConfigHits()
 	return res
 }
 
@@ -690,4 +694,197 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// sysctlConfigDirs 是 systemd-sysctl / sysctl --system 的加载目录（按顺序）。
+var sysctlConfigDirs = []string{
+	"/etc/sysctl.d",
+	"/run/sysctl.d",
+	"/usr/local/lib/sysctl.d",
+	"/usr/lib/sysctl.d",
+	"/lib/sysctl.d",
+}
+
+// sysctlConfFile 总是最后加载，会覆盖 /etc/sysctl.d 里的同名 key。
+const sysctlConfFile = "/etc/sysctl.conf"
+
+// collectSysctlFiles 采集各 sysctl 配置文件中命中白名单 key 的行。
+// 只读；顺序与 sysctl --system 一致，用于判断谁覆盖谁。
+func collectSysctlFiles(wanted map[string]bool) []nodecheckup.ConfigHit {
+	if len(wanted) == 0 {
+		return nil
+	}
+	type cfgFile struct {
+		path  string
+		real  string
+		order int
+	}
+	var files []cfgFile
+	order := 0
+	for _, dir := range sysctlConfigDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
+				continue
+			}
+			names = append(names, e.Name())
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			order++
+			p := filepath.Join(dir, name)
+			real := p
+			if r, err := filepath.EvalSymlinks(p); err == nil {
+				real = r
+			}
+			files = append(files, cfgFile{path: p, real: real, order: order})
+		}
+	}
+	order++
+	realConf := sysctlConfFile
+	if r, err := filepath.EvalSymlinks(sysctlConfFile); err == nil {
+		realConf = r
+	}
+	files = append(files, cfgFile{path: sysctlConfFile, real: realConf, order: order})
+
+	// /etc/sysctl.d/99-sysctl.conf 常常是 ../sysctl.conf 的软链：同一份内容
+	// 只保留最后加载的那次（/etc/sysctl.conf），避免证据里出现重复行。
+	lastIdx := make(map[string]int, len(files))
+	for i, f := range files {
+		lastIdx[f.real] = i
+	}
+	out := []nodecheckup.ConfigHit{}
+	for i, f := range files {
+		if lastIdx[f.real] != i {
+			continue
+		}
+		out = append(out, parseSysctlConfigFile(f.path, wanted, f.order)...)
+	}
+	return out
+}
+
+func parseSysctlConfigFile(path string, wanted map[string]bool, order int) []nodecheckup.ConfigHit {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []nodecheckup.ConfigHit
+	for i, raw := range strings.Split(string(data), "\n") {
+		s := strings.TrimSpace(raw)
+		if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(s, ";") {
+			continue
+		}
+		k, v, ok := strings.Cut(s, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		if strings.HasPrefix(k, "-") {
+			k = strings.TrimSpace(strings.TrimPrefix(k, "-"))
+		}
+		if !wanted[k] {
+			continue
+		}
+		out = append(out, nodecheckup.ConfigHit{File: path, Line: i + 1, Key: k, Value: strings.TrimSpace(v), Order: order})
+	}
+	return out
+}
+
+// sshdDirectiveKeys 是体检会修改的 sshd 指令（sshd 先匹配生效）。
+var sshdDirectiveKeys = map[string]bool{
+	"passwordauthentication":       true,
+	"kbdinteractiveauthentication": true,
+	"permitrootlogin":              true,
+	"maxauthtries":                 true,
+}
+
+// collectSSHDConfigHits 采集主配置与 drop-in 的关键指令。
+//
+// sshd 是「第一次出现的值生效」，处理顺序为：主配置 Include 之前的行 →
+// drop-in 目录按文件名字典序 → Include 之后的剩余行。Order 按这个顺序编号，
+// 数值越小优先级越高。
+func collectSSHDConfigHits() (int, []nodecheckup.ConfigHit) {
+	const mainPath = "/etc/ssh/sshd_config"
+	const dropDir = "/etc/ssh/sshd_config.d"
+
+	includeLine := 0
+	before := []nodecheckup.ConfigHit{}
+	after := []nodecheckup.ConfigHit{}
+	if data, err := os.ReadFile(mainPath); err == nil {
+		for i, raw := range strings.Split(string(data), "\n") {
+			ln := i + 1
+			s := strings.TrimSpace(raw)
+			if s == "" || strings.HasPrefix(s, "#") {
+				continue
+			}
+			fields := strings.Fields(s)
+			if len(fields) >= 2 && strings.EqualFold(fields[0], "Include") {
+				if includeLine == 0 && strings.Contains(strings.Join(fields[1:], " "), "sshd_config.d") {
+					includeLine = ln
+				}
+				continue
+			}
+			k := strings.ToLower(fields[0])
+			if !sshdDirectiveKeys[k] || len(fields) < 2 {
+				continue
+			}
+			hit := nodecheckup.ConfigHit{File: mainPath, Line: ln, Key: k, Value: strings.Join(fields[1:], " ")}
+			if includeLine == 0 || ln < includeLine {
+				hit.Order = ln
+				before = append(before, hit)
+			} else {
+				hit.Order = 100000 + ln
+				after = append(after, hit)
+			}
+		}
+	}
+
+	drops := []nodecheckup.ConfigHit{}
+	if entries, err := os.ReadDir(dropDir); err == nil {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".conf") {
+				continue
+			}
+			names = append(names, e.Name())
+		}
+		sort.Strings(names)
+		for idx, name := range names {
+			path := filepath.Join(dropDir, name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			for i, raw := range strings.Split(string(data), "\n") {
+				s := strings.TrimSpace(raw)
+				if s == "" || strings.HasPrefix(s, "#") {
+					continue
+				}
+				fields := strings.Fields(s)
+				k := strings.ToLower(fields[0])
+				if !sshdDirectiveKeys[k] || len(fields) < 2 {
+					continue
+				}
+				order := 10000 + idx
+				if includeLine == 0 {
+					// 没有 Include 时 drop-in 根本不生效，排到最后。
+					order = 200000 + idx
+				}
+				drops = append(drops, nodecheckup.ConfigHit{
+					File: path, Line: i + 1, Key: k,
+					Value: strings.Join(fields[1:], " "), Order: order,
+				})
+			}
+		}
+	}
+
+	out := make([]nodecheckup.ConfigHit, 0, len(before)+len(drops)+len(after))
+	out = append(out, before...)
+	out = append(out, drops...)
+	out = append(out, after...)
+	return includeLine, out
 }

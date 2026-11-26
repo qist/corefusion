@@ -2,12 +2,26 @@
 // Agent 只采集 Facts；规则判定与文案渲染在面板/前端完成。
 package nodecheckup
 
+// ConfigHit 是一条配置文件中的指令，用于检测多个文件之间的覆盖关系。
+type ConfigHit struct {
+	File  string `json:"file"`
+	Line  int    `json:"line"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
+	// Order 是加载顺序：数值越大越晚加载（sysctl 后者覆盖前者；
+	// sshd 相反，先匹配生效，Order 仍按处理顺序记录）。
+	Order int `json:"order,omitempty"`
+}
+
 // Facts 是 Agent 采集到的本机事实（不落库）。
 type Facts struct {
 	Env Env `json:"env"`
 	// IPv6 是全局 IPv6 地址（不含 link-local / 回环），用于判断节点是否在用 IPv6。
-	IPv6      []string          `json:"ipv6,omitempty"`
-	Sysctl    map[string]Sysctl `json:"sysctl,omitempty"`
+	IPv6 []string `json:"ipv6,omitempty"`
+	// SysctlFiles 是 sysctl 配置目录/文件里命中白名单 key 的行，
+	// 用来判断"我们的 99-corefusion.conf 会不会被别人覆盖"。
+	SysctlFiles []ConfigHit       `json:"sysctl_files,omitempty"`
+	Sysctl      map[string]Sysctl `json:"sysctl,omitempty"`
 	Modules   map[string]bool   `json:"modules,omitempty"`
 	SSHD      *SSHD             `json:"sshd,omitempty"`
 	Listeners []Listener        `json:"listeners,omitempty"`
@@ -40,7 +54,11 @@ type SSHD struct {
 	Effective map[string]string            `json:"effective,omitempty"` // 全局 sshd -T
 	Users     map[string]map[string]string `json:"users,omitempty"`     // root/admin → sshd -T -C user=
 	Keys      map[string]SSHKey            `json:"keys,omitempty"`
-	Error     string                       `json:"error,omitempty"`
+	// IncludeLine 是主配置里 `Include /etc/ssh/sshd_config.d/*.conf` 的行号（0 = 没有）。
+	IncludeLine int `json:"include_line,omitempty"`
+	// ConfigHits 是主配置与 drop-in 里命中关键指令的行（sshd 先匹配生效）。
+	ConfigHits []ConfigHit `json:"config_hits,omitempty"`
+	Error      string      `json:"error,omitempty"`
 }
 
 type SSHKey struct {

@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "Cortafuegos",
+      "config": "Precedencia de configuración",
     },
     "scope": {
       "host": "Host",

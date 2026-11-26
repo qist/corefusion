@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "Firewall",
+      "config": "Prioritas konfigurasi",
     },
     "scope": {
       "host": "Host",

@@ -2,6 +2,7 @@ package nodecheckup
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -193,6 +194,9 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 
 	// ---- IPv6（仅节点确实有全局 IPv6 时）----
 	judgeIPv6(facts, add)
+
+	// ---- 配置文件覆盖关系（sysctl / sshd）----
+	judgeConfigFiles(facts, add)
 
 	// ---- SSH ----
 	judgeSSH(facts, th, add)
@@ -479,7 +483,9 @@ func sysctlCommand(key, value, scope string) []nodecheckup.Command {
 // /etc/ssh/sshd_config.d/99-corefusion-*.conf（不同检查项用不同文件名，
 // 避免互相覆盖），并在最后回读实际生效值。
 func sshPersistScript(suffix string, lines ...string) string {
-	file := "/etc/ssh/sshd_config.d/99-corefusion-" + suffix + ".conf"
+	// sshd 采用「先匹配生效」，drop-in 目录按文件名字典序处理，所以用 00- 前缀
+	// 才能优先于 50-/99- 的既有文件；同时要求主配置的 Include 在指令之前。
+	file := sshManagedPrefix + suffix + ".conf"
 	return fmt.Sprintf(
 		"# Persist to %s (survives reboot)\n"+
 			"mkdir -p /etc/ssh/sshd_config.d\n"+
@@ -972,7 +978,14 @@ func RecommendedSysctlFor(kernel string) []SysctlRecommendation {
 
 // BuildGuide 生成一份可直接整段复制的 Markdown 运维文档：
 // 内核参数 + SSH 加固 + SSH 来源限制（按实际防火墙类型）+ 回滚。
+// BuildGuide 保留旧签名（无冲突信息）。
 func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
+	return BuildGuideWithConflicts(env, sshPort, fwType, nil)
+}
+
+// BuildGuideWithConflicts 生成整段 Markdown。items 用于把 CFG-01/CFG-02
+// 检测到的「配置覆盖关系」写进第 0 节，避免用户改了自己文件却不生效。
+func BuildGuideWithConflicts(env nodecheckup.Env, sshPort int, fwType string, items []nodecheckup.Item) string {
 	if sshPort <= 0 {
 		sshPort = 22
 	}
@@ -986,6 +999,8 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 	fmt.Fprintf(&b, "- SSH port: %d\n", sshPort)
 	fmt.Fprintf(&b, "- Firewall: %s\n\n", fwType)
 	b.WriteString("> Review before applying. Run in a maintenance window; keep an existing SSH session open while testing.\n\n")
+
+	writePrecedenceSection(&b, items)
 
 	if !kernelAtLeast(env.Kernel, 4, 9) {
 		fmt.Fprintf(&b, "> Kernel %s does not provide BBR (requires >= 4.9). BBR/fq entries are omitted and fq_codel is used instead.\n\n", env.Kernel)
@@ -1018,7 +1033,11 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 	}
 	b.WriteString("sysctl --system\nsysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max\n```\n\n")
 
-	b.WriteString("## 2. SSH hardening\n\n```sh\nmkdir -p /etc/ssh/sshd_config.d\ncat > /etc/ssh/sshd_config.d/99-corefusion-hardening.conf <<'EOF'\n")
+	b.WriteString("## 2. SSH hardening\n\n")
+	b.WriteString("`sshd` uses the **first** value it sees, and drop-ins are read where `Include` appears. Keep\n")
+	b.WriteString("`Include /etc/ssh/sshd_config.d/*.conf` near the top of `/etc/ssh/sshd_config` (before\n")
+	b.WriteString("`PasswordAuthentication` and friends), otherwise the main file wins and this drop-in is ignored.\n\n")
+	b.WriteString("```sh\nmkdir -p /etc/ssh/sshd_config.d\ncat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'\n")
 	b.WriteString("PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nMaxAuthTries 4\n")
 	b.WriteString("EOF\nsshd -t && systemctl reload sshd\n```\n\n")
 	b.WriteString("Keep at least one working key-based session before closing the current one.\n\n")
@@ -1046,7 +1065,7 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 	}
 	b.WriteString("```\n\n")
 
-	b.WriteString("## 4. Rollback\n\n```sh\nrm -f /etc/sysctl.d/99-corefusion.conf\nsysctl --system\nrm -f /etc/ssh/sshd_config.d/99-corefusion-hardening.conf\nsshd -t && systemctl reload sshd\n```\n\n")
+	b.WriteString("## 4. Rollback\n\n```sh\nrm -f /etc/sysctl.d/99-corefusion.conf\nsysctl --system\nrm -f /etc/ssh/sshd_config.d/00-corefusion-hardening.conf\nsshd -t && systemctl reload sshd\n```\n\n")
 	b.WriteString("Firewall rules must be removed with the matching `-D` / `--remove-rich-rule` / `ufw delete` command.\n")
 	return b.String()
 }
@@ -1083,4 +1102,209 @@ func kernelAtLeast(kernel string, maj, min int) bool {
 		return true
 	}
 	return km > maj || (km == maj && kn >= min)
+}
+
+const (
+	// managedSysctlFile 是体检建议写入的统一文件（允许用户自己改，但默认在这里）。
+	managedSysctlFile = "/etc/sysctl.d/99-corefusion.conf"
+	sysctlConfPath    = "/etc/sysctl.conf"
+	// sshManagedPrefix 是 SSH 建议的 drop-in 前缀。sshd 先匹配生效，
+	// 所以必须是 00- 才能优先于其它 50-/99- 文件。
+	sshManagedPrefix = "/etc/ssh/sshd_config.d/00-corefusion-"
+)
+
+// sysctlLoadsAfterManaged 判断某个定义位置是否会在 99-corefusion.conf 之后加载。
+// 顺序：/etc/sysctl.d（字典序）→ /run → /usr/local/lib → /usr/lib → /lib → /etc/sysctl.conf。
+func sysctlLoadsAfterManaged(file string) bool {
+	if file == managedSysctlFile {
+		return false
+	}
+	if file == sysctlConfPath {
+		return true
+	}
+	if strings.HasPrefix(file, "/etc/sysctl.d/") {
+		return filepathBase(file) > filepathBase(managedSysctlFile)
+	}
+	return true
+}
+
+func filepathBase(p string) string {
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+func sortedHitKeys(m map[string][]nodecheckup.ConfigHit) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// judgeConfigFiles 检查内核参数与 SSH 配置是否分散在多个文件里，
+// 明确告诉用户「谁覆盖谁」——避免用户在自己的优化文件里改了却不生效。
+func judgeConfigFiles(facts *nodecheckup.Facts, add func(nodecheckup.Item)) {
+	if facts == nil {
+		return
+	}
+
+	// ---- sysctl ----
+	if len(facts.SysctlFiles) > 0 {
+		byKey := map[string][]nodecheckup.ConfigHit{}
+		for _, h := range facts.SysctlFiles {
+			byKey[h.Key] = append(byKey[h.Key], h)
+		}
+		var details []string
+		overridden := 0
+		for _, k := range sortedHitKeys(byKey) {
+			hits := byKey[k]
+			sort.SliceStable(hits, func(i, j int) bool { return hits[i].Order < hits[j].Order })
+			winner := hits[len(hits)-1]
+			locs := make([]string, 0, len(hits))
+			ours := false
+			for _, h := range hits {
+				locs = append(locs, fmt.Sprintf("%s:%d=%s", h.File, h.Line, h.Value))
+				if h.File == managedSysctlFile {
+					ours = true
+				}
+			}
+			mark := ""
+			if winner.File != managedSysctlFile && sysctlLoadsAfterManaged(winner.File) {
+				mark = fmt.Sprintf(" -> overrides %s", managedSysctlFile)
+				// 只有我们自己已经写了这个 key，才说明「写了但被覆盖」；否则只是提醒。
+				if ours {
+					overridden++
+				}
+			}
+			details = append(details, fmt.Sprintf("%s | last wins: %s:%d = %s%s | all: %s",
+				k, winner.File, winner.Line, winner.Value, mark, strings.Join(locs, "; ")))
+		}
+		details = capEvidence(details, 30)
+		if len(details) > 0 {
+			sev := SeverityInfo
+			if overridden > 0 {
+				sev = SeverityWarn
+			}
+			add(nodecheckup.Item{
+				ID: "CFG-01", Category: "config", Severity: sev, Scope: facts.Env.Kind,
+				Params: map[string]any{
+					"managed_file": managedSysctlFile,
+					"overridden":   overridden,
+					"conflicts":    len(details),
+				},
+				Evidence: details,
+				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# sysctl.d loads in lexical order and /etc/sysctl.conf is last; the last file wins\n" +
+					"grep -rn '^net\\.\\|^fs\\.\\|^vm\\.\\|^kernel\\.' /etc/sysctl.d /run/sysctl.d /usr/lib/sysctl.d /etc/sysctl.conf 2>/dev/null\n" +
+					"sysctl net.core.somaxconn net.ipv4.tcp_congestion_control"}},
+			})
+		}
+	}
+
+	// ---- sshd ----
+	if facts.SSHD != nil && len(facts.SSHD.ConfigHits) > 0 {
+		byKey := map[string][]nodecheckup.ConfigHit{}
+		for _, h := range facts.SSHD.ConfigHits {
+			byKey[h.Key] = append(byKey[h.Key], h)
+		}
+		oursPresent := false
+		for _, h := range facts.SSHD.ConfigHits {
+			if strings.HasPrefix(h.File, sshManagedPrefix) {
+				oursPresent = true
+				break
+			}
+		}
+		var details []string
+		foreignWin := 0
+		for _, k := range sortedHitKeys(byKey) {
+			hits := byKey[k]
+			sort.SliceStable(hits, func(i, j int) bool { return hits[i].Order < hits[j].Order })
+			winner := hits[0]
+			locs := make([]string, 0, len(hits))
+			for _, h := range hits {
+				locs = append(locs, fmt.Sprintf("%s:%d=%s", h.File, h.Line, h.Value))
+			}
+			mark := ""
+			if !strings.HasPrefix(winner.File, sshManagedPrefix) {
+				mark = " -> takes precedence over " + sshManagedPrefix + "*"
+				if oursPresent {
+					foreignWin++
+				}
+			}
+			details = append(details, fmt.Sprintf("%s | first match wins: %s:%d = %s%s | all: %s",
+				k, winner.File, winner.Line, winner.Value, mark, strings.Join(locs, "; ")))
+		}
+		details = capEvidence(details, 30)
+		sev := SeverityInfo
+		if facts.SSHD.IncludeLine == 0 {
+			sev = SeverityWarn
+			details = append(details, "no `Include /etc/ssh/sshd_config.d/*.conf` found; drop-in files are ignored")
+		} else if foreignWin > 0 {
+			sev = SeverityWarn
+		}
+		if len(details) > 0 {
+			add(nodecheckup.Item{
+				ID: "CFG-02", Category: "config", Severity: sev, Scope: facts.Env.Kind,
+				Params: map[string]any{
+					"include_line":   facts.SSHD.IncludeLine,
+					"managed_prefix": sshManagedPrefix,
+					"foreign_winner": foreignWin,
+				},
+				Evidence: details,
+				Commands: []nodecheckup.Command{{Shell: "sh", Text: "# sshd uses the FIRST value it sees; drop-ins are read in lexical order at the Include line\n" +
+					"grep -rn -E '^(PasswordAuthentication|KbdInteractiveAuthentication|PermitRootLogin|MaxAuthTries)' /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null\n" +
+					"sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|maxauthtries) '"}},
+			})
+		}
+	}
+}
+
+// writePrecedenceSection 写出「第 0 节：已有配置的覆盖关系」。
+// 即使没有检测到冲突，也说明两边加载顺序，避免用户误以为写进去就一定生效。
+func writePrecedenceSection(b *strings.Builder, items []nodecheckup.Item) {
+	var sysctlDetails, sshDetails []string
+	for _, it := range items {
+		switch it.ID {
+		case "CFG-01":
+			sysctlDetails = it.Evidence
+		case "CFG-02":
+			sshDetails = it.Evidence
+		}
+	}
+
+	b.WriteString("## 0. Existing configuration & precedence\n\n")
+	b.WriteString("If this node already has its own tuning files, reading this section first avoids a silent override.\n\n")
+	b.WriteString("- **sysctl**: files in `/etc/sysctl.d` are applied in lexical order, then `/run/sysctl.d`,\n")
+	b.WriteString("  `/usr/local/lib/sysctl.d`, `/usr/lib/sysctl.d`, `/lib/sysctl.d`, and `/etc/sysctl.conf` **last**.\n")
+	b.WriteString("  The last definition of a key wins, so `/etc/sysctl.conf` always overrides `/etc/sysctl.d`.\n")
+	b.WriteString("  This guide writes `/etc/sysctl.d/99-corefusion.conf`.\n")
+	b.WriteString("- **sshd**: the **first** value seen wins. Drop-ins are processed at the `Include` line in\n")
+	b.WriteString("  `/etc/ssh/sshd_config`, in lexical order. This guide writes `00-corefusion-*.conf` so it comes first;\n")
+	b.WriteString("  if the main file defines the same directive above `Include`, the main file wins.\n\n")
+
+	if len(sysctlDetails) > 0 {
+		b.WriteString("Detected sysctl definitions (last one wins):\n\n")
+		for _, d := range sysctlDetails {
+			fmt.Fprintf(b, "- `%s`\n", d)
+		}
+		b.WriteString("\n")
+	}
+	if len(sshDetails) > 0 {
+		b.WriteString("Detected sshd directives (first one wins):\n\n")
+		for _, d := range sshDetails {
+			fmt.Fprintf(b, "- `%s`\n", d)
+		}
+		b.WriteString("\n")
+	}
+}
+
+// capEvidence 限制证据条数，避免几十个 key 把报告和接口响应撑得太大。
+func capEvidence(lines []string, max int) []string {
+	if max <= 0 || len(lines) <= max {
+		return lines
+	}
+	out := append([]string{}, lines[:max]...)
+	return append(out, fmt.Sprintf("... and %d more keys (see CFG commands)", len(lines)-max))
 }

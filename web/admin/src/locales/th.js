@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "ไฟร์วอลล์",
+      "config": "ลำดับความสำคัญของคอนฟิก",
     },
     "scope": {
       "host": "โฮสต์",

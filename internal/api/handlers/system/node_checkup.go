@@ -68,7 +68,7 @@ func (h *NodeCheckupHandler) GetGuide(c *gin.Context) {
 			}
 		}
 	}
-	markdown := nodecheckup.BuildGuide(report.Env, sshPort, fwType)
+	markdown := nodecheckup.BuildGuideWithConflicts(report.Env, sshPort, fwType, report.Items)
 	response.OK(c, gin.H{
 		"server_id":    id,
 		"generated_at": report.GeneratedAt,

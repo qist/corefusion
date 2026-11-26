@@ -42,6 +42,7 @@ export default {
       "tcp": "TCP",
       "ssh": "SSH",
       "firewall": "Güvenlik duvarı",
+      "config": "Yapılandırma önceliği",
     },
     "scope": {
       "host": "Ana makine",

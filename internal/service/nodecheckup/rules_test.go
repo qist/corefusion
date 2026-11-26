@@ -148,7 +148,7 @@ func TestBBRCommandWritesBothParams(t *testing.T) {
 func TestSSHPersistScriptWritesDropIn(t *testing.T) {
 	text := sshPersistScript("ssh-password", "PasswordAuthentication no", "KbdInteractiveAuthentication no")
 	for _, want := range []string{
-		"/etc/ssh/sshd_config.d/99-corefusion-ssh-password.conf",
+		"/etc/ssh/sshd_config.d/00-corefusion-ssh-password.conf",
 		"PasswordAuthentication no",
 		"sshd -t && systemctl reload sshd",
 	} {
@@ -249,7 +249,7 @@ func TestBuildGuideContainsFullConfig(t *testing.T) {
 		"net.core.somaxconn = 32768",
 		"net.ipv4.tcp_congestion_control = bbr",
 		"sysctl --system",
-		"/etc/ssh/sshd_config.d/99-corefusion-hardening.conf",
+		"/etc/ssh/sshd_config.d/00-corefusion-hardening.conf",
 		"firewall-cmd --permanent --remove-service=ssh",
 		"port=\"2222\"",
 		"## 4. Rollback",
@@ -443,5 +443,137 @@ func TestBuildGuideIPv6AndOldKernel(t *testing.T) {
 	}
 	if !strings.Contains(old, "net.ipv6.neigh.default.gc_thresh2 = 4096") {
 		t.Fatal("3.10 仍应包含邻居表参数")
+	}
+}
+
+// sysctl 后加载覆盖先加载：/etc/sysctl.conf 会让 99-corefusion.conf 失效，
+// 必须明确告警，否则用户改了自己的文件却不生效。
+func TestJudgeSysctlConfigPrecedence(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		SysctlFiles: []nodecheckup.ConfigHit{
+			{File: "/etc/sysctl.d/99-corefusion.conf", Line: 3, Key: "net.core.somaxconn", Value: "32768", Order: 5},
+			{File: "/etc/sysctl.conf", Line: 85, Key: "net.core.somaxconn", Value: "1024", Order: 99},
+		},
+	}
+	_, summary, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "CFG-01")
+	if it == nil {
+		t.Fatal("缺少 CFG-01")
+	}
+	if it.Severity != SeverityWarn {
+		t.Fatalf("被 /etc/sysctl.conf 覆盖应判 warn，实际 %s", it.Severity)
+	}
+	joined := strings.Join(it.Evidence, "\n")
+	if !strings.Contains(joined, "overrides /etc/sysctl.d/99-corefusion.conf") {
+		t.Fatalf("证据应说明谁覆盖谁：%s", joined)
+	}
+	if summary.Warn < 1 {
+		t.Fatalf("summary 应包含 warn：%+v", summary)
+	}
+}
+
+// 只有我们自己的文件时，不应误报 warn。
+func TestJudgeSysctlConfigOnlyManaged(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		SysctlFiles: []nodecheckup.ConfigHit{
+			{File: "/etc/sysctl.d/99-corefusion.conf", Line: 3, Key: "net.core.somaxconn", Value: "32768", Order: 5},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "CFG-01")
+	if it == nil {
+		t.Fatal("缺少 CFG-01")
+	}
+	if it.Severity != SeverityInfo {
+		t.Fatalf("只有自己的文件应为 info，实际 %s", it.Severity)
+	}
+}
+
+// sshd 先匹配生效：主配置在 Include 之前的行会压过 00-corefusion-*。
+func TestJudgeSSHDConfigPrecedence(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		SSHD: &nodecheckup.SSHD{
+			Present:     true,
+			IncludeLine: 12,
+			ConfigHits: []nodecheckup.ConfigHit{
+				{File: "/etc/ssh/sshd_config", Line: 5, Key: "passwordauthentication", Value: "yes", Order: 5},
+				{File: "/etc/ssh/sshd_config.d/00-corefusion-ssh-password.conf", Line: 1, Key: "passwordauthentication", Value: "no", Order: 10000},
+			},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "CFG-02")
+	if it == nil {
+		t.Fatal("缺少 CFG-02")
+	}
+	if it.Severity != SeverityWarn {
+		t.Fatalf("主配置先命中应判 warn，实际 %s", it.Severity)
+	}
+	joined := strings.Join(it.Evidence, "\n")
+	if !strings.Contains(joined, "first match wins: /etc/ssh/sshd_config:5") {
+		t.Fatalf("证据应指出先命中的文件：%s", joined)
+	}
+}
+
+// 没有 Include 时 drop-in 完全不生效。
+func TestJudgeSSHDConfigNoInclude(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		SSHD: &nodecheckup.SSHD{
+			Present:     true,
+			IncludeLine: 0,
+			ConfigHits: []nodecheckup.ConfigHit{
+				{File: "/etc/ssh/sshd_config.d/00-corefusion-ssh-password.conf", Line: 1, Key: "passwordauthentication", Value: "no", Order: 200000},
+			},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "CFG-02")
+	if it == nil || it.Severity != SeverityWarn {
+		t.Fatalf("缺 Include 应 warn：%+v", it)
+	}
+	if !strings.Contains(strings.Join(it.Evidence, "\n"), "no `Include") {
+		t.Fatalf("证据应说明 Include 缺失：%v", it.Evidence)
+	}
+}
+
+func TestBuildGuidePrecedenceSection(t *testing.T) {
+	items := []nodecheckup.Item{
+		{ID: "CFG-01", Severity: SeverityWarn, Evidence: []string{"net.core.somaxconn | last wins: /etc/sysctl.conf:85 = 1024"}},
+		{ID: "CFG-02", Severity: SeverityWarn, Evidence: []string{"passwordauthentication | first match wins: /etc/ssh/sshd_config:5 = yes"}},
+	}
+	md := BuildGuideWithConflicts(nodecheckup.Env{OS: "Rocky 9", Kernel: "5.14.0-1.el9", Kind: "host"}, 22, "firewalld", items)
+	for _, want := range []string{
+		"## 0. Existing configuration & precedence",
+		"The last definition of a key wins",
+		"the **first** value seen wins",
+		"/etc/sysctl.conf:85 = 1024",
+		"/etc/ssh/sshd_config:5 = yes",
+		"00-corefusion-hardening.conf",
+	} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("guide 缺少 %q", want)
+		}
+	}
+}
+
+func TestSysctlLoadsAfterManaged(t *testing.T) {
+	cases := map[string]bool{
+		managedSysctlFile:                   false,
+		"/etc/sysctl.conf":                  true,
+		"/etc/sysctl.d/99-sysctl.conf":      true,
+		"/etc/sysctl.d/99-zzz.conf":         true,
+		"/etc/sysctl.d/10-network.conf":     false,
+		"/etc/sysctl.d/50-default.conf":     false,
+		"/run/sysctl.d/50-user.conf":        true,
+		"/usr/lib/sysctl.d/50-default.conf": true,
+	}
+	for file, want := range cases {
+		if got := sysctlLoadsAfterManaged(file); got != want {
+			t.Fatalf("sysctlLoadsAfterManaged(%q)=%v, want %v", file, got, want)
+		}
 	}
 }

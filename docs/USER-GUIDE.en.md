@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-26 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1095,8 +1095,9 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 ### 8.2 CF IP pool
 
 - Maintain preferred IP sources (including `bestproxy` style sources), fetch interval and ports;
-- “Probe settings” control the probe interval, latency threshold and probe entry node; local probing
-  only filters clearly unreachable IPs, while selecting an entry node simulates that node's line;
+- “Probe settings” control the probe interval, latency threshold, entry node and execution node (panel
+  host or any Agent), plus an optional egress NIC; selecting an entry node dials through that line, while
+  without an entry only local direct dialing is possible (it filters clearly unreachable IPs only);
 - The “dialer” may be automatic (installed cores), `singbox`, `xray` or `mihomo`; cores that are not
   installed are not listed. Probing runs as a temporary process that exits when done and never reads or
   writes the core's own configuration;

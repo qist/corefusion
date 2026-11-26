@@ -1,4 +1,4 @@
-<!-- source: admin-api.md | locale: en | updated: 2026-10-23 -->
+<!-- source: admin-api.md | locale: en | updated: 2026-11-26 -->
 # Admin API
 
 > Languages: [简体中文](admin-api.md) · English · [繁體中文](admin-api.zh-TW.md) · [Русский](admin-api.ru.md) · [日本語](admin-api.ja.md) · [한국어](admin-api.ko.md) · [Deutsch](admin-api.de.md) · [Français](admin-api.fr.md) · [Español](admin-api.es.md) · [Português](admin-api.pt.md) · [Türkçe](admin-api.tr.md) · [Bahasa Indonesia](admin-api.id.md) · [ไทย](admin-api.th.md) · [Tiếng Việt](admin-api.vi.md) · [العربية](admin-api.ar.md) · [فارسی](admin-api.fa.md)
@@ -642,7 +642,7 @@ Cloudflare CDN IP pool and source management.
 | DELETE | `/api/v1/cfip/entries/:id` | Admin | Delete entry |
 | POST | `/api/v1/cfip/fetch-all` | Admin | Fetch all sources |
 | GET | `/api/v1/cfip/probe-config` | Signed in | CF preferred-IP probe config (entry nodes + installed dialers) |
-| PUT | `/api/v1/cfip/probe-config` | Admin | Save probe interval / latency limit / entry node / dialer |
+| PUT | `/api/v1/cfip/probe-config` | Admin | Save probe interval / latency limit / entry node / dialer / execution node / NIC |
 | POST | `/api/v1/cfip/check` | Admin | Probe all preferred domains/IPs now |
 | POST | `/api/v1/cfip/seed` | Admin | Initialize default data |
 | GET | `/api/v1/cfip/sources` | Signed in | Data source list |

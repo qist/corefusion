@@ -67,10 +67,10 @@
         </el-select>
         <!-- 已安装的核心也要能换版本/重装：不能只在「未安装」时才给入口 -->
         <el-button
-          v-if="probeCfg.dialer && !probeCfg.agent_id"
+          v-if="probeCfg.dialer"
           size="small"
           style="margin-left:8px"
-          @click="openDialerInstall(probeCfg.dialer)"
+          @click="openDialerInstall(probeCfg.dialer, 'probe')"
         >
           {{ isDialerInstalled(probeCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
         </el-button>
@@ -113,10 +113,10 @@
           <el-option :label="dialerLabel('mihomo', chainDialerAvailable, chainDialerVersions)" value="mihomo" />
         </el-select>
         <el-button
-          v-if="chainCfg.dialer && !chainCfg.agent_id"
+          v-if="chainCfg.dialer"
           size="small"
           style="margin-left:8px"
-          @click="openDialerInstall(chainCfg.dialer)"
+          @click="openDialerInstall(chainCfg.dialer, 'chain')"
         >
           {{ chainDialerAvailable.includes(chainCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
         </el-button>
@@ -249,16 +249,20 @@
     </div>
   </el-card>
 
-  <!-- 拨号核心未安装：选版本直接安装（面板本机，不需要 SSH 手动放二进制） -->
+  <!-- 拨号核心未安装：选版本直接安装（面板本机直接装；远程节点由 Agent 下载安装） -->
   <el-dialog
     v-model="dialerInstallVisible"
     :title="t('service.cfip.installCoreTitle', { core: dialerInstallCore })"
     width="620"
     :close-on-click-modal="false"
   >
+    <div style="margin-bottom:6px;font-size:12px;color:#606266">
+      {{ t('service.cfip.chainAgent') }}：
+      <span style="font-weight:500">{{ dialerInstallTargetName }}</span>
+    </div>
     <div style="margin-bottom:10px;font-size:12px;color:#606266">
       {{ t('service.cfip.dialerCurrentVersion') }}：
-      <span v-if="dialerVersionText(dialerInstallCore)" style="font-family:monospace">{{ dialerVersionText(dialerInstallCore) }}</span>
+      <span v-if="dialerVersionText(dialerInstallCore, dialerInstallVersions)" style="font-family:monospace">{{ dialerVersionText(dialerInstallCore, dialerInstallVersions) }}</span>
       <span v-else style="color:#e6a23c">{{ t('service.cfip.dialerNotInstalled') }}</span>
     </div>
     <div v-loading="dialerReleasesLoading || dialerInstalling" style="min-height:120px">
@@ -353,6 +357,18 @@ const dialerInstallCore = ref('')
 const dialerReleases = ref([])
 const dialerReleasesLoading = ref(false)
 const dialerInstalling = ref(false)
+// 安装弹窗作用于哪张卡片（probe / chain）与哪台执行节点：核心必须装到执行节点上。
+const dialerInstallScope = ref('probe')
+const dialerInstallAgentId = ref(0)
+const dialerInstallTargetName = computed(() => {
+  const id = dialerInstallAgentId.value
+  if (!id) return t('service.cfip.chainAgentPanel')
+  const a = chainAgents.value.find((x) => x.id === id)
+  return a ? a.name : `#${id}`
+})
+const dialerInstallVersions = computed(() =>
+  dialerInstallScope.value === 'chain' ? chainDialerVersions.value : probeCfg.value.dialer_versions,
+)
 // 记住已安装/上次选择，取消安装时回退，避免把"未安装核心"保存进配置。
 let previousDialer = ''
 
@@ -554,11 +570,6 @@ async function onDialerChange(name) {
   }
   // 先回退选择：只有安装成功后才真正切过去，避免把不可用核心保存进探测配置。
   probeCfg.value.dialer = previousDialer
-  // 执行节点不是面板本机时，面板的安装入口装不到节点上，只能提示。
-  if (probeCfg.value.agent_id) {
-    ElMessage.warning(t('service.cfip.probeAgentMissing', { core: name }))
-    return
-  }
   try {
     await ElMessageBox.confirm(
       t('service.cfip.installCorePrompt', { core: name }),
@@ -568,16 +579,23 @@ async function onDialerChange(name) {
   } catch {
     return
   }
-  await openDialerInstall(name)
+  await openDialerInstall(name, 'probe')
 }
 
-async function openDialerInstall(core) {
+async function openDialerInstall(core, scope = 'probe') {
+  dialerInstallScope.value = scope
+  dialerInstallAgentId.value = scope === 'chain' ? (chainCfg.value.agent_id || 0) : (probeCfg.value.agent_id || 0)
   dialerInstallCore.value = core
   dialerInstallVisible.value = true
   dialerReleasesLoading.value = true
   dialerReleases.value = []
   try {
-    const data = await client.get('/cfip/dialers/releases', { params: { core_type: core } })
+    // 远程节点：走节点自己的 release 列表（按该节点的平台筛选资产）；
+    // 面板本机：走面板的拨号核心列表。
+    const url = dialerInstallAgentId.value
+      ? `/node-servers/${dialerInstallAgentId.value}/binaries/releases`
+      : '/cfip/dialers/releases'
+    const data = await client.get(url, { params: { core_type: core } })
     const items = Array.isArray(data) ? data : (data?.items || [])
     dialerReleases.value = items.map((r) => ({
       ...r,
@@ -588,6 +606,30 @@ async function openDialerInstall(core) {
   } finally {
     dialerReleasesLoading.value = false
   }
+}
+
+// 远程安装是异步任务：轮询该节点的二进制列表，直到目标版本出现（最长约 120s）。
+function versionNumber(v) {
+  const m = String(v || '').match(/\d+\.\d+\.\d+/)
+  return m ? m[0] : ''
+}
+
+async function waitRemoteBinary(agentId, core, version) {
+  const want = versionNumber(version)
+  for (let i = 0; i < 60; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    try {
+      const d = await client.get(`/node-servers/${agentId}/binaries`)
+      const bins = (d && d.binaries) || []
+      const hit = bins.find((b) => b.core_type === core && b.installed)
+      if (hit && (!want || !versionNumber(hit.version) || versionNumber(hit.version) === want)) {
+        return true
+      }
+    } catch {
+      // 节点短暂不可用时继续等
+    }
+  }
+  return false
 }
 
 async function installDialerVersion(release) {
@@ -602,23 +644,60 @@ async function installDialerVersion(release) {
     return
   }
   dialerInstalling.value = true
+  const core = dialerInstallCore.value
+  const scope = dialerInstallScope.value
+  const agentId = dialerInstallAgentId.value
   try {
-    await client.post(
-      '/cfip/dialers/install',
-      { core_type: dialerInstallCore.value, version: release.version },
-      { timeout: 600000 },
-    )
-    ElMessage.success(t('service.cfip.installCoreSuccess', { core: dialerInstallCore.value }))
+    if (agentId) {
+      // 远程：下发给该节点 Agent 异步安装，再轮询节点状态确认装好。
+      await client.post(
+        `/node-servers/${agentId}/binaries/install`,
+        { core_type: core, version: release.version },
+        { timeout: 60000 },
+      )
+      const ok = await waitRemoteBinary(agentId, core, release.version)
+      if (!ok) {
+        ElMessage.warning(t('service.cfip.installCorePending', { core }))
+        await refreshDialersByScope(scope, agentId, core)
+        return
+      }
+    } else {
+      await client.post(
+        '/cfip/dialers/install',
+        { core_type: core, version: release.version },
+        { timeout: 600000 },
+      )
+    }
+    ElMessage.success(t('service.cfip.installCoreSuccess', { core }))
     dialerInstallVisible.value = false
-    await fetchProbeConfig()
+    const installed = await refreshDialersByScope(scope, agentId, core)
+    if (!installed) {
+      ElMessage.warning(t('service.cfip.probeAgentMissing', { core }))
+      return
+    }
     // 安装完成后自动选中并保存，用户不用再点一次。
-    probeCfg.value.dialer = dialerInstallCore.value
-    await saveProbeConfig()
+    if (scope === 'chain') {
+      chainCfg.value.dialer = core
+      await saveChainConfig()
+    } else {
+      probeCfg.value.dialer = core
+      await saveProbeConfig()
+    }
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('service.cfip.installCoreFailed'))
   } finally {
     dialerInstalling.value = false
   }
+}
+
+// 安装后刷新对应卡片的节点核心清单；返回该核心现在是否已可用。
+async function refreshDialersByScope(scope, agentId, core) {
+  if (scope === 'chain') {
+    await refreshChainDialers(agentId)
+    return chainDialerAvailable.value.includes(core)
+  }
+  await refreshProbeDialers(agentId)
+  return (probeCfg.value.available_dialers || []).includes(core)
 }
 
 // 当前选择的拨号核心没装 → 先弹安装，不保存/不检测。
@@ -634,10 +713,6 @@ async function saveProbeConfig() {
     return
   }
   if (dialerNeedsInstall()) {
-    if (probeCfg.value.agent_id) {
-      ElMessage.error(t('service.cfip.probeAgentMissing', { core: probeCfg.value.dialer }))
-      return
-    }
     await onDialerChange(probeCfg.value.dialer)
     return
   }
@@ -699,11 +774,16 @@ async function onChainDialerChange(name) {
     return
   }
   chainCfg.value.dialer = chainPreviousDialer
-  if (!chainCfg.value.agent_id) {
-    await openDialerInstall(name)
+  try {
+    await ElMessageBox.confirm(
+      t('service.cfip.installCorePrompt', { core: name }),
+      t('common.confirm'),
+      { type: 'warning' },
+    )
+  } catch {
     return
   }
-  ElMessage.warning(t('service.cfip.probeAgentMissing', { core: name }))
+  await openDialerInstall(name, 'chain')
 }
 
 // 探测设置的执行节点切换：网卡列表跟着换（远程复用节点网卡接口）。
@@ -761,11 +841,7 @@ async function checkChain(kind) {
   // 必须按链路的节点清单校验，不能拿面板/探测节点的清单判断。
   const effectiveDialer = chainCfg.value.inherit_probe ? probeCfg.value.dialer : chainCfg.value.dialer
   if (effectiveDialer && !chainDialerAvailable.value.includes(effectiveDialer)) {
-    if (!chainCfg.value.agent_id) {
-      await openDialerInstall(effectiveDialer)
-    } else {
-      ElMessage.error(t('service.cfip.probeAgentMissing', { core: effectiveDialer }))
-    }
+    await openDialerInstall(effectiveDialer, 'chain')
     return
   }
   if (!chainCfg.value.exit) {

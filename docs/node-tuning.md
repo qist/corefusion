@@ -187,13 +187,17 @@ mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-PermitRootLogin prohibit-password
 MaxAuthTries 4
 EOF
 sshd -t && systemctl reload sshd
 ```
 
-确认至少一把私钥可以登录后，再关闭当前会话。
+说明：
+
+- **不要为了"安全"关掉 root 登录**。`PermitRootLogin yes` 保持不动即可，真正要关的是密码入口；
+  `PasswordAuthentication no` + `KbdInteractiveAuthentication no` 之后，root 只能用密钥登录。
+- 如果原本就是 `PermitRootLogin prohibit-password` 也可以保留（效果同样是只允许密钥）。
+- 确认至少一把私钥可以登录后，再关闭当前会话。
 
 ## 3. 限制 SSH 来源 IP
 

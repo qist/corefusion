@@ -341,18 +341,29 @@ func judgeSSH(facts *nodecheckup.Facts, th Thresholds, add func(nodecheckup.Item
 		add(okItem("SSH-02", "ssh", facts.Env.Kind, "KbdInteractiveAuthentication", "no"))
 	}
 
-	// root 可用私钥登录是允许的；只要密码入口关闭就不算问题。
+	// root 用私钥登录是允许的（很多运维直接用 root），不需要为了"安全"关闭。
+	// 真正的门槛是密码入口：PasswordAuthentication / KbdInteractive 都为 no 时，
+	// PermitRootLogin yes 也只接受密钥；prohibit-password 本身就是只允许密钥。
 	rootLogin := sshd.Effective["permitrootlogin"]
-	if rootLogin == "" {
+	passwordAuth := strings.EqualFold(strings.TrimSpace(sshd.Effective["passwordauthentication"]), "yes")
+	kbdAuth := strings.EqualFold(strings.TrimSpace(sshd.Effective["kbdinteractiveauthentication"]), "yes")
+	passwordPossible := passwordAuth || kbdAuth
+	switch {
+	case rootLogin == "":
 		add(unknownItem("SSH-03", "ssh", "PermitRootLogin"))
-	} else if rootLogin == "no" {
+	case rootLogin == "no":
 		add(okItem("SSH-03", "ssh", facts.Env.Kind, "PermitRootLogin", rootLogin))
-	} else {
+	case !passwordPossible:
+		add(okItem("SSH-03", "ssh", facts.Env.Kind, "PermitRootLogin", rootLogin+" (key-only)"))
+	case rootLogin == "yes":
 		add(nodecheckup.Item{
 			ID: "SSH-03", Category: "ssh", Severity: SeverityInfo, Scope: facts.Env.Kind,
-			Params:   map[string]any{"current": rootLogin},
-			Evidence: []string{"PermitRootLogin " + rootLogin + " (password login is the gate)"},
+			Params:   map[string]any{"current": rootLogin, "password_auth": "enabled"},
+			Evidence: []string{"PermitRootLogin yes with password authentication enabled; disable password auth (keep root key login)"},
 		})
+	default:
+		// prohibit-password / forced-commands-only：只允许密钥。
+		add(okItem("SSH-03", "ssh", facts.Env.Kind, "PermitRootLogin", rootLogin))
 	}
 
 	if key, ok := sshd.Keys["root"]; ok && key.HasKey {
@@ -1038,7 +1049,9 @@ func BuildGuideWithConflicts(env nodecheckup.Env, sshPort int, fwType string, it
 	b.WriteString("`Include /etc/ssh/sshd_config.d/*.conf` near the top of `/etc/ssh/sshd_config` (before\n")
 	b.WriteString("`PasswordAuthentication` and friends), otherwise the main file wins and this drop-in is ignored.\n\n")
 	b.WriteString("```sh\nmkdir -p /etc/ssh/sshd_config.d\ncat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'\n")
-	b.WriteString("PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nMaxAuthTries 4\n")
+	b.WriteString("PasswordAuthentication no\nKbdInteractiveAuthentication no\nMaxAuthTries 4\n")
+	b.WriteString("# PermitRootLogin: leave your current value (yes or prohibit-password).\n")
+	b.WriteString("# Root key login is fine; never enable password authentication for root.\n")
 	b.WriteString("EOF\nsshd -t && systemctl reload sshd\n```\n\n")
 	b.WriteString("Keep at least one working key-based session before closing the current one.\n\n")
 

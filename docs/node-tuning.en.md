@@ -174,13 +174,18 @@ mkdir -p /etc/ssh/sshd_config.d
 cat > /etc/ssh/sshd_config.d/00-corefusion-hardening.conf <<'EOF'
 PasswordAuthentication no
 KbdInteractiveAuthentication no
-PermitRootLogin prohibit-password
 MaxAuthTries 4
 EOF
 sshd -t && systemctl reload sshd
 ```
 
-Verify a key-based login still works before closing the current session.
+Notes:
+
+- **Do not disable root login just for "security"**. Keeping `PermitRootLogin yes` is fine; the real gate is
+  password authentication. With `PasswordAuthentication no` + `KbdInteractiveAuthentication no`, root can only
+  log in with a key.
+- `PermitRootLogin prohibit-password` is also fine if that is what you already use (key-only either way).
+- Verify a key-based login still works before closing the current session.
 
 ## 3. Restrict SSH to trusted sources
 

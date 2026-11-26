@@ -577,3 +577,76 @@ func TestSysctlLoadsAfterManaged(t *testing.T) {
 		}
 	}
 }
+
+func sshFacts(effective map[string]string) *nodecheckup.Facts {
+	return &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		SSHD: &nodecheckup.SSHD{
+			Present:   true,
+			Effective: effective,
+			Users:     map[string]map[string]string{},
+			Keys:      map[string]nodecheckup.SSHKey{},
+		},
+	}
+}
+
+// 用户明确要用 root 登录：密码关闭时 PermitRootLogin yes 应判 ok，不该要求关闭 root。
+func TestSSH03RootYesWithPasswordDisabled(t *testing.T) {
+	facts := sshFacts(map[string]string{
+		"passwordauthentication":       "no",
+		"kbdinteractiveauthentication": "no",
+		"permitrootlogin":              "yes",
+		"maxauthtries":                 "4",
+	})
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "SSH-03")
+	if it == nil {
+		t.Fatal("缺少 SSH-03")
+	}
+	if it.Severity != SeverityOK {
+		t.Fatalf("密码关闭时 root 密钥登录应判 ok，实际 %s：%v", it.Severity, it.Evidence)
+	}
+}
+
+// 密码入口还开着时，root + 密码才是风险点。
+func TestSSH03RootYesWithPasswordEnabled(t *testing.T) {
+	facts := sshFacts(map[string]string{
+		"passwordauthentication":       "yes",
+		"kbdinteractiveauthentication": "no",
+		"permitrootlogin":              "yes",
+		"maxauthtries":                 "6",
+	})
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "SSH-03")
+	if it == nil || it.Severity != SeverityInfo {
+		t.Fatalf("密码开启时 SSH-03 应为 info：%+v", it)
+	}
+	if !strings.Contains(strings.Join(it.Evidence, " "), "disable password auth") {
+		t.Fatalf("证据应提示先关密码：%v", it.Evidence)
+	}
+}
+
+func TestSSH03ProhibitPasswordIsOK(t *testing.T) {
+	facts := sshFacts(map[string]string{
+		"passwordauthentication":       "yes",
+		"kbdinteractiveauthentication": "no",
+		"permitrootlogin":              "prohibit-password",
+		"maxauthtries":                 "4",
+	})
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "SSH-03")
+	if it == nil || it.Severity != SeverityOK {
+		t.Fatalf("prohibit-password 应判 ok：%+v", it)
+	}
+}
+
+// guide 不应把 PermitRootLogin 写死成 prohibit-password（用户可能要用 root 密钥登录）。
+func TestBuildGuideKeepsRootLogin(t *testing.T) {
+	md := BuildGuide(nodecheckup.Env{OS: "Ubuntu", Kernel: "7.0.0", Kind: "host"}, 22, "nftables")
+	if strings.Contains(md, "\nPermitRootLogin prohibit-password\n") {
+		t.Fatal("guide 不应把 PermitRootLogin 写死")
+	}
+	if !strings.Contains(md, "PermitRootLogin: leave your current value") {
+		t.Fatal("guide 应提示保留当前 root 登录方式")
+	}
+}

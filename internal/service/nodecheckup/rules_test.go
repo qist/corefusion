@@ -259,3 +259,123 @@ func TestBuildGuideContainsFullConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestKernelVersionParse(t *testing.T) {
+	cases := map[string][2]int{
+		"3.10.0-1160.el7.x86_64": {3, 10},
+		"4.9.0-1":                {4, 9},
+		"6.8.0-45-generic":       {6, 8},
+		"":                       {0, 0},
+	}
+	for in, want := range cases {
+		maj, min := parseKernelVersion(in)
+		if maj != want[0] || min != want[1] {
+			t.Fatalf("parseKernelVersion(%q)=%d.%d, want %d.%d", in, maj, min, want[0], want[1])
+		}
+	}
+	if kernelAtLeast("3.10.0-1160.el7", 4, 9) {
+		t.Fatal("3.10 不应判定为 >= 4.9")
+	}
+	if !kernelAtLeast("4.9.0", 4, 9) {
+		t.Fatal("4.9 应判定为 >= 4.9")
+	}
+}
+
+// CentOS 7 的 3.10 内核没有 BBR：只能提示，不能给 sysctl 命令。
+func TestJudgeBBROldKernel(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "3.10.0-1160.el7.x86_64"},
+		Sysctl: map[string]nodecheckup.Sysctl{
+			"net.ipv4.tcp_congestion_control":           {Value: "cubic", Scope: "host"},
+			"net.ipv4.tcp_available_congestion_control": {Value: "reno cubic", Scope: "host"},
+		},
+		Modules: map[string]bool{"tcp_bbr": false},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "SYS-05")
+	if it == nil {
+		t.Fatal("缺少 SYS-05")
+	}
+	if len(it.Commands) != 0 {
+		t.Fatalf("3.10 内核不应给 BBR 命令：%+v", it.Commands)
+	}
+	found := false
+	for _, e := range it.Evidence {
+		if strings.Contains(e, "requires >= 4.9") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("应说明内核不支持 BBR：%v", it.Evidence)
+	}
+}
+
+func TestBuildGuideOldKernelOmitsBBR(t *testing.T) {
+	md := BuildGuide(nodecheckup.Env{OS: "CentOS 7", Kernel: "3.10.0-1160.el7.x86_64", Kind: "host"}, 22, "firewalld")
+	if strings.Contains(md, "net.ipv4.tcp_congestion_control = bbr") {
+		t.Fatal("3.10 文档不应包含 BBR")
+	}
+	if strings.Contains(md, "net.core.default_qdisc = fq\n") {
+		t.Fatal("3.10 文档不应包含 fq")
+	}
+	if !strings.Contains(md, "fq_codel") {
+		t.Fatal("3.10 文档应改用 fq_codel")
+	}
+	if !strings.Contains(md, "does not provide BBR") {
+		t.Fatal("3.10 文档应说明内核不支持 BBR")
+	}
+}
+
+// 旧内核缺的参数不能写进配置文件，否则 sysctl --system 报 unknown key。
+func TestRecommendedSysctlForOldKernel(t *testing.T) {
+	old := RecommendedSysctlFor("3.10.0-1160.el7.x86_64")
+	for _, r := range old {
+		switch r.Key {
+		case "net.ipv4.tcp_congestion_control", "net.core.netdev_budget_usecs", "net.netfilter.nf_conntrack_buckets":
+			t.Fatalf("3.10 不应包含 %s", r.Key)
+		}
+	}
+	qdisc := ""
+	for _, r := range old {
+		if r.Key == "net.core.default_qdisc" {
+			qdisc = r.Value
+		}
+	}
+	if qdisc != "fq_codel" {
+		t.Fatalf("3.10 应使用 fq_codel，实际 %q", qdisc)
+	}
+
+	modern := RecommendedSysctlFor("6.8.0-45-generic")
+	has := map[string]bool{}
+	for _, r := range modern {
+		has[r.Key] = true
+	}
+	for _, k := range []string{"net.ipv4.tcp_congestion_control", "net.core.netdev_budget_usecs", "net.netfilter.nf_conntrack_buckets"} {
+		if !has[k] {
+			t.Fatalf("6.8 应包含 %s", k)
+		}
+	}
+}
+
+// 4.9+ 但 bbr 模块没加载：命令必须先 modprobe 并持久化。
+func TestBBRModuleScript(t *testing.T) {
+	cmds := bbrModuleScript("host")
+	if len(cmds) != 1 {
+		t.Fatalf("应生成一条命令：%+v", cmds)
+	}
+	for _, want := range []string{"modprobe tcp_bbr", "/etc/modules-load.d/99-corefusion-bbr.conf", sysctlPersistFile} {
+		if !strings.Contains(cmds[0].Text, want) {
+			t.Fatalf("缺少 %q：%s", want, cmds[0].Text)
+		}
+	}
+}
+
+func TestBuildGuideModernKernelLoadsModule(t *testing.T) {
+	md := BuildGuide(nodecheckup.Env{OS: "Rocky 9", Kernel: "5.14.0-1.el9", Kind: "host"}, 22, "firewalld")
+	if !strings.Contains(md, "modprobe tcp_bbr") {
+		t.Fatal("4.9+ 文档应包含 modprobe tcp_bbr")
+	}
+	if !strings.Contains(md, "net.ipv4.tcp_congestion_control = bbr") {
+		t.Fatal("4.9+ 文档应包含 BBR")
+	}
+}

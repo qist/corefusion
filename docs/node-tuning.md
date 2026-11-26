@@ -78,9 +78,31 @@ kernel.pid_max = 4194304
 应用并验证：
 
 ```sh
+# BBR 在多数发行版是模块，先加载并持久化
+modprobe tcp_bbr 2>/dev/null || true
+mkdir -p /etc/modules-load.d && echo tcp_bbr > /etc/modules-load.d/99-corefusion-bbr.conf
+
 sysctl --system
 sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max
 ```
+
+如果 `tcp_congestion_control` 写入后报 `Protocol not available`，说明内核没有 bbr 模块，需先升级内核。
+
+## 内核版本差异（重要）
+
+不是所有参数都适用于 3.x。CentOS 7 自带 3.10，**没有 BBR 和 fq**，照抄 4.x 的配置会得到 `Invalid argument`：
+
+| 参数 | 3.x（CentOS 7 / 3.10） | 4.9+ | 4.13+ / 5.6+ |
+|---|---|---|---|
+| `net.ipv4.tcp_congestion_control = bbr` | ✗ 不支持，保持 `cubic` | ✓ | ✓ |
+| `net.core.default_qdisc = fq` | ✗ 用 `fq_codel` | ✓ | ✓ |
+| `net.ipv4.tcp_migrate_req` | ✗（4.14+） | ✗ | ✓ |
+| `net.mptcp.enabled` | ✗ | ✗ | ✓（5.6+） |
+| `net.ipv4.tcp_notsent_lowat` | ✓（3.6+） | ✓ | ✓ |
+| `net.ipv4.tcp_fastopen` | ✓（3.7+） | ✓ | ✓ |
+
+体检会读取节点实际内核版本：3.10 上只提示「内核不支持 BBR」，不会生成 BBR 命令，
+生成的 Markdown 也会自动省略 BBR/fq 并改用 `fq_codel`。
 
 说明：
 

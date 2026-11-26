@@ -112,10 +112,19 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 		}
 	}
 
+	// BBR 需要内核 >= 4.9（fq 需要 >= 4.13）。CentOS 7 的 3.10 内核根本没有 BBR，
+	// 不能一律推荐——否则用户照着执行 sysctl 会得到 Invalid argument。
+	bbrKernelOK := kernelAtLeast(env.Kernel, 4, 9)
 	if f, ok := facts.Sysctl["net.ipv4.tcp_congestion_control"]; ok && f.Scope != "na" {
 		available := facts.Sysctl["net.ipv4.tcp_available_congestion_control"].Value
 		if strings.TrimSpace(f.Value) == "bbr" {
 			add(okItem("SYS-05", "tcp", f.Scope, "net.ipv4.tcp_congestion_control", f.Value))
+		} else if !bbrKernelOK {
+			add(nodecheckup.Item{
+				ID: "SYS-05", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "kernel": env.Kernel},
+				Evidence: []string{"kernel " + env.Kernel + " does not provide BBR (requires >= 4.9); keep the current algorithm or upgrade the kernel"},
+			})
 		} else if available == "" || hasWord(available, "bbr") {
 			add(nodecheckup.Item{
 				ID: "SYS-05", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
@@ -124,10 +133,12 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 				Commands: bbrCommand(f.Scope),
 			})
 		} else {
+			// 内核支持 BBR，但模块没加载（available 里不含 bbr）：先 modprobe 再切换。
 			add(nodecheckup.Item{
 				ID: "SYS-05", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
 				Params:   map[string]any{"current": f.Value, "available": available},
-				Evidence: []string{"tcp_congestion_control = " + f.Value, "available = " + available},
+				Evidence: []string{"tcp_congestion_control = " + f.Value, "available = " + available, "tcp_bbr module is not loaded; the kernel supports BBR (>= 4.9)"},
+				Commands: bbrModuleScript(f.Scope),
 			})
 		}
 	}
@@ -135,6 +146,12 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 	if f, ok := facts.Sysctl["net.ipv4.tcp_available_congestion_control"]; ok && f.Scope != "na" {
 		if hasWord(f.Value, "bbr") {
 			add(okItem("SYS-06", "tcp", f.Scope, "tcp_available_congestion_control", f.Value))
+		} else if !bbrKernelOK {
+			add(nodecheckup.Item{
+				ID: "SYS-06", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"available": f.Value, "kernel": env.Kernel},
+				Evidence: []string{"kernel " + env.Kernel + " does not provide BBR (requires >= 4.9)"},
+			})
 		} else {
 			add(nodecheckup.Item{
 				ID: "SYS-06", Category: "tcp", Severity: SeverityInfo, Scope: f.Scope,
@@ -143,10 +160,14 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 			})
 		}
 	} else if bbr, ok := facts.Modules["tcp_bbr"]; ok && !bbr {
+		evidence := "tcp_bbr module not found"
+		if !bbrKernelOK {
+			evidence = "kernel " + env.Kernel + " does not provide BBR (requires >= 4.9)"
+		}
 		add(nodecheckup.Item{
 			ID: "SYS-06", Category: "tcp", Severity: SeverityInfo, Scope: "na",
-			Params:   map[string]any{"module": "tcp_bbr"},
-			Evidence: []string{"tcp_bbr module not found"},
+			Params:   map[string]any{"module": "tcp_bbr", "kernel": env.Kernel},
+			Evidence: []string{evidence},
 		})
 	}
 
@@ -464,6 +485,25 @@ func sshPersistScript(suffix string, lines ...string) string {
 // bbrCommand 启用 BBR 需要同时设置拥塞控制算法和 qdisc：
 // 只改 congestion_control、不设 default_qdisc=fq 时，部分内核上 BBR 效果打折。
 // 两个参数写进同一个统一文件，不额外新开 bbr 专用文件。
+// bbrModuleScript 用于「内核支持 BBR 但模块未加载」：先 modprobe 并持久化，
+// 再切拥塞控制算法。内核 < 4.9 不走这里（压根没有 bbr 模块）。
+func bbrModuleScript(scope string) []nodecheckup.Command {
+	script := "# Load BBR and persist the module across reboots\n" +
+		"modprobe tcp_bbr 2>/dev/null || { echo 'tcp_bbr module is not available on this kernel'; exit 1; }\n" +
+		"mkdir -p /etc/modules-load.d && echo tcp_bbr > /etc/modules-load.d/99-corefusion-bbr.conf\n" +
+		sysctlPersistScript(
+			"net.core.default_qdisc=fq",
+			"net.ipv4.tcp_congestion_control=bbr",
+		)
+	switch scope {
+	case "host", "container-writable":
+		return []nodecheckup.Command{{Shell: "sh", Text: script}}
+	case "host-global":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Run on the host (read-only inside the container)\n" + script}}
+	}
+	return nil
+}
+
 func bbrCommand(scope string) []nodecheckup.Command {
 	script := sysctlPersistScript(
 		"net.core.default_qdisc=fq",
@@ -765,6 +805,41 @@ func RecommendedSysctl() []SysctlRecommendation {
 	}
 }
 
+// sysctlMinKernel 记录部分参数引入的内核版本，低于该版本写进配置文件会让
+// `sysctl --system` 报 "unknown key"。
+var sysctlMinKernel = map[string][2]int{
+	"net.core.netdev_budget_usecs":       {3, 11},
+	"net.netfilter.nf_conntrack_buckets": {4, 2},
+	"net.ipv4.tcp_migrate_req":           {4, 14},
+}
+
+// RecommendedSysctlFor 按内核版本过滤：BBR/fq 需要 4.9/4.13+，
+// CentOS 7（3.10）上必须省略，否则 sysctl 会报 Invalid argument；
+// 新内核才有、旧内核没有的参数也一并剔除。
+func RecommendedSysctlFor(kernel string) []SysctlRecommendation {
+	all := RecommendedSysctl()
+	bbrOK := kernelAtLeast(kernel, 4, 9)
+	out := make([]SysctlRecommendation, 0, len(all))
+	for _, r := range all {
+		if min, ok := sysctlMinKernel[r.Key]; ok && !kernelAtLeast(kernel, min[0], min[1]) {
+			continue
+		}
+		switch r.Key {
+		case "net.ipv4.tcp_congestion_control":
+			if !bbrOK {
+				continue
+			}
+		case "net.core.default_qdisc":
+			if !bbrOK {
+				r.Value = "fq_codel"
+				r.Comment = "kernel < 4.9: BBR/fq unavailable, fq_codel is the safe choice"
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // BuildGuide 生成一份可直接整段复制的 Markdown 运维文档：
 // 内核参数 + SSH 加固 + SSH 来源限制（按实际防火墙类型）+ 回滚。
 func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
@@ -782,10 +857,14 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 	fmt.Fprintf(&b, "- Firewall: %s\n\n", fwType)
 	b.WriteString("> Review before applying. Run in a maintenance window; keep an existing SSH session open while testing.\n\n")
 
+	if !kernelAtLeast(env.Kernel, 4, 9) {
+		fmt.Fprintf(&b, "> Kernel %s does not provide BBR (requires >= 4.9). BBR/fq entries are omitted and fq_codel is used instead.\n\n", env.Kernel)
+	}
+
 	b.WriteString("## 1. Kernel parameters (persistent)\n\n")
 	b.WriteString("Write the whole block to `/etc/sysctl.d/99-corefusion.conf`:\n\n```ini\n")
 	group := ""
-	for _, r := range RecommendedSysctl() {
+	for _, r := range RecommendedSysctlFor(env.Kernel) {
 		if r.Group != group {
 			if group != "" {
 				b.WriteString("\n")
@@ -798,7 +877,13 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 		}
 		fmt.Fprintf(&b, "%s = %s\n", r.Key, r.Value)
 	}
-	b.WriteString("```\n\nApply and verify:\n\n```sh\nsysctl --system\nsysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max\n```\n\n")
+	b.WriteString("```\n\nApply and verify:\n\n```sh\n")
+	if kernelAtLeast(env.Kernel, 4, 9) {
+		b.WriteString("# BBR ships as a module on most distros; load and persist it before applying\n")
+		b.WriteString("modprobe tcp_bbr 2>/dev/null || true\n")
+		b.WriteString("mkdir -p /etc/modules-load.d && echo tcp_bbr > /etc/modules-load.d/99-corefusion-bbr.conf\n")
+	}
+	b.WriteString("sysctl --system\nsysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max\n```\n\n")
 
 	b.WriteString("## 2. SSH hardening\n\n```sh\nmkdir -p /etc/ssh/sshd_config.d\ncat > /etc/ssh/sshd_config.d/99-corefusion-hardening.conf <<'EOF'\n")
 	b.WriteString("PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\nMaxAuthTries 4\n")
@@ -831,4 +916,38 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 	b.WriteString("## 4. Rollback\n\n```sh\nrm -f /etc/sysctl.d/99-corefusion.conf\nsysctl --system\nrm -f /etc/ssh/sshd_config.d/99-corefusion-hardening.conf\nsshd -t && systemctl reload sshd\n```\n\n")
 	b.WriteString("Firewall rules must be removed with the matching `-D` / `--remove-rich-rule` / `ufw delete` command.\n")
 	return b.String()
+}
+
+// parseKernelVersion 解析 `uname -r` 风格的主/次版本（3.10.0-1160.el7 → 3,10）。
+func parseKernelVersion(kernel string) (int, int) {
+	parts := strings.SplitN(strings.TrimSpace(kernel), ".", 3)
+	if len(parts) < 2 {
+		return 0, 0
+	}
+	maj, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0
+	}
+	minor := parts[1]
+	i := 0
+	for i < len(minor) && minor[i] >= '0' && minor[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return 0, 0
+	}
+	min, err := strconv.Atoi(minor[:i])
+	if err != nil {
+		return 0, 0
+	}
+	return maj, min
+}
+
+// kernelAtLeast 判断内核版本是否 >= maj.min。未知版本返回 true（不做过度限制）。
+func kernelAtLeast(kernel string, maj, min int) bool {
+	km, kn := parseKernelVersion(kernel)
+	if km == 0 {
+		return true
+	}
+	return km > maj || (km == maj && kn >= min)
 }

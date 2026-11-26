@@ -64,9 +64,32 @@ kernel.pid_max = 4194304
 Apply and verify:
 
 ```sh
+# BBR is a module on most distros; load and persist it first
+modprobe tcp_bbr 2>/dev/null || true
+mkdir -p /etc/modules-load.d && echo tcp_bbr > /etc/modules-load.d/99-corefusion-bbr.conf
+
 sysctl --system
 sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_conntrack_max
 ```
+
+If writing `tcp_congestion_control` returns `Protocol not available`, the kernel has no bbr module — upgrade the kernel.
+
+## Kernel version differences (important)
+
+Not every parameter exists on 3.x. CentOS 7 ships 3.10, which has **no BBR and no fq**; copying the 4.x block
+fails with `Invalid argument`:
+
+| Parameter | 3.x (CentOS 7 / 3.10) | 4.9+ | 4.13+ / 5.6+ |
+|---|---|---|---|
+| `net.ipv4.tcp_congestion_control = bbr` | ✗ not available, keep `cubic` | ✓ | ✓ |
+| `net.core.default_qdisc = fq` | ✗ use `fq_codel` | ✓ | ✓ |
+| `net.ipv4.tcp_migrate_req` | ✗ (4.14+) | ✗ | ✓ |
+| `net.mptcp.enabled` | ✗ | ✗ | ✓ (5.6+) |
+| `net.ipv4.tcp_notsent_lowat` | ✓ (3.6+) | ✓ | ✓ |
+| `net.ipv4.tcp_fastopen` | ✓ (3.7+) | ✓ | ✓ |
+
+The checkup reads the real kernel version: on 3.10 it only reports "kernel does not provide BBR" and never emits
+BBR commands; the generated Markdown drops BBR/fq and uses `fq_codel` instead.
 
 Notes:
 

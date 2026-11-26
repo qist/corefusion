@@ -1,12 +1,44 @@
 package ratelimit
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os/exec"
 	"strings"
 )
+
+var (
+	// ErrNftUnavailable 表示本机没有可用的 nft：命令没装，或内核不支持 nf_tables
+	// （典型是老旧内核 / 精简镜像）。面板收到该错误后会把节点标记为「不支持黑名单」，
+	// 不再每轮重复下发，避免刷日志。
+	ErrNftUnavailable = errors.New("NFT_UNAVAILABLE")
+	// ErrSkipped 是面板侧的决定：该节点已知不支持 nft，本次直接跳过。
+	ErrSkipped = errors.New("ip blacklist skipped: node has no nft support")
+)
+
+// nftKernelUnsupported 判断 nft 报错是否属于「内核/环境不支持」而非临时故障。
+// 老内核（nf_tables 缺失）常见文案：Operation not supported / Protocol not supported。
+func nftKernelUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, key := range []string{
+		"operation not supported",
+		"protocol not supported",
+		"nf_tables",
+		"not supported",
+		"invalid argument",
+		"permission denied",
+	} {
+		if strings.Contains(msg, key) {
+			return true
+		}
+	}
+	return false
+}
 
 // ============================================================
 // 面板级 IP 黑名单（节点核心入站阻断）
@@ -32,8 +64,15 @@ const (
 // ApplyIPBlacklist 将黑名单列表应用到本节点 nft（entries 为空 = 清空）。
 // entry 支持单 IP 与 CIDR；非法条目忽略（面板侧已校验，这里是最后防线）。
 func ApplyIPBlacklist(entries []string) error {
+	// ⓪ 没有 nft 命令（精简镜像）直接判定不支持，避免每次都跑到最后才失败。
+	if _, err := exec.LookPath("nft"); err != nil {
+		return fmt.Errorf("%w: nft command not found (%v)", ErrNftUnavailable, err)
+	}
 	// ① 幂等创建表 / blocked 链（限速后端可能从未初始化）
 	if err := runCmd("nft", "add", "table", "inet", nftTable); err != nil {
+		if nftKernelUnsupported(err) {
+			return fmt.Errorf("%w: nft table create failed (%v)", ErrNftUnavailable, err)
+		}
 		log.Printf("[IPBlacklist] nft table create note: %v (may already exist)", err)
 	}
 	blockChainDef := "{ type filter hook prerouting priority -160 ; policy accept ; }"
@@ -55,9 +94,14 @@ func ApplyIPBlacklist(entries []string) error {
 	}
 	// ③ 集合必须真实存在（"may already exist" 的 note 也可能是真失败 —— 校验兜底）
 	for _, set := range []string{nftBlacklistSet, nftBlacklistSet6} {
-		if out, err := exec.Command("nft", "list", "set", "inet", nftTable, set).Output(); err != nil || len(out) == 0 {
-			return fmt.Errorf("nft set %s unavailable (create failed?): %v", set, err)
+		out, err := exec.Command("nft", "list", "set", "inet", nftTable, set).Output()
+		if err == nil && len(out) > 0 {
+			continue
 		}
+		if nftKernelUnsupported(err) {
+			return fmt.Errorf("%w: nft set %s unavailable (%v)", ErrNftUnavailable, set, err)
+		}
+		return fmt.Errorf("nft set %s unavailable (create failed?): %v", set, err)
 	}
 	// ④ 幂等挂 drop 规则（先按匹配删旧再挂，防重复累积；drop 早于一切 mark/计数）
 	ensureBlacklistDropRule(nftBlacklistSet, "ip")

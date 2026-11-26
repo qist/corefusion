@@ -2,6 +2,7 @@ package ratelimitsvc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os/exec"
@@ -495,16 +496,22 @@ func (s *Service) SyncIPBlacklistToAll(ctx context.Context, lister NodeServerLis
 		log.Printf("[RateLimitService] list servers for blacklist sync failed: %v", err)
 		return 0, 0
 	}
+	skipped := 0
 	for _, server := range servers {
 		if err := s.nodeOp.SetIPBlacklist(ctx, server.ID, entries); err != nil {
+			// 节点没有 nft / 内核不支持 nf_tables：跳过即可，不算失败、也不刷日志。
+			if errors.Is(err, ratelimit.ErrSkipped) {
+				skipped++
+				continue
+			}
 			log.Printf("[RateLimitService] IP blacklist push to server %d (%s) failed: %v", server.ID, server.Name, err)
 			failed++
 			continue
 		}
 		pushed++
 	}
-	if pushed > 0 || failed > 0 {
-		log.Printf("[RateLimitService] IP blacklist synced to %d node(s), %d failed (%d entries)", pushed, failed, len(entries))
+	if pushed > 0 || failed > 0 || skipped > 0 {
+		log.Printf("[RateLimitService] IP blacklist synced to %d node(s), %d skipped(no nft), %d failed (%d entries)", pushed, skipped, failed, len(entries))
 	}
 	return pushed, failed
 }

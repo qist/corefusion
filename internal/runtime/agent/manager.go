@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -122,6 +123,10 @@ type NodeServerManager struct {
 	// IP 黑名单提供者：返回当前面板级黑名单条目（panel.ip_blacklist 解析后）。
 	// Agent 重连时经 SetIPBlacklist 重新下发（节点重装/重启后内核规则丢失 → 补推）。
 	ipBlacklistProvider func() []string
+	// nftUnsupported 记录已知不支持 nft 的节点（没有 nft 命令 / 内核无 nf_tables）。
+	// 命中后一段时间内不再下发，避免每次重连/同步都刷同一条错误。
+	nftUnsupportedMu sync.Mutex
+	nftUnsupported   map[int64]time.Time
 
 	// xrayPending 记录「控制面不可达导致没热更成功」的 xray 改动，
 	// Agent 重连后由 xrayPendingReplayer 按数据库期望状态补下发。
@@ -602,7 +607,81 @@ func (m *NodeServerManager) ApplyLimits(ctx context.Context, serverID int64, req
 
 // SetIPBlacklist 把面板级 IP 黑名单下发到节点（entries 为空 = 清空）。
 // 本地节点 in-process 直调；远程节点走 set_ip_blacklist 同步命令（等 Agent 回执）。
+// nftUnsupportedTTL 是「节点不支持 nft」的缓存时长：期间跳过下发，
+// 过期后自动重试一次（节点补装 nft / 换内核后能自行恢复）。
+const nftUnsupportedTTL = 6 * time.Hour
+
+// SetIPBlacklist 下发面板级 IP 黑名单。
+//
+// 节点没有 nft（精简镜像）或内核不支持 nf_tables（老内核）时，Agent 返回
+// ErrNftUnavailable；这里把该节点记下来并返回 ErrSkipped，调用方静默跳过，
+// 不再每轮重复推送同一份必然失败的黑名单。
 func (m *NodeServerManager) SetIPBlacklist(ctx context.Context, serverID int64, entries []string) error {
+	if m.nftUnsupportedRecently(serverID) {
+		return ratelimit.ErrSkipped
+	}
+	err := m.pushIPBlacklist(ctx, serverID, entries)
+	if err == nil {
+		m.clearNftUnsupported(serverID)
+		return nil
+	}
+	if errIsNftUnavailable(err) {
+		m.markNftUnsupported(serverID)
+		log.Printf("[NodeServerManager] IP blacklist: server %d has no nft support (%v); skipped for %s", serverID, err, nftUnsupportedTTL)
+		return ratelimit.ErrSkipped
+	}
+	return err
+}
+
+// errIsNftUnavailable 判断错误是否表示「本机没有可用 nft」。
+// 本地节点能 errors.Is 命中；远端 Agent 的失败原因经 gRPC 只透传字符串，
+// 因此同时按 ErrNftUnavailable 的错误标记匹配。
+func errIsNftUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if errors.Is(err, ratelimit.ErrNftUnavailable) || strings.Contains(msg, "NFT_UNAVAILABLE") {
+		return true
+	}
+	// 兼容未升级的旧 Agent：它们只回原始 exec 错误（没有标记）。
+	if strings.Contains(msg, "nft set ip_blacklist unavailable") {
+		return true
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "nft") && strings.Contains(lower, "executable file not found")
+}
+
+func (m *NodeServerManager) nftUnsupportedRecently(serverID int64) bool {
+	m.nftUnsupportedMu.Lock()
+	defer m.nftUnsupportedMu.Unlock()
+	at, ok := m.nftUnsupported[serverID]
+	if !ok {
+		return false
+	}
+	if time.Since(at) > nftUnsupportedTTL {
+		delete(m.nftUnsupported, serverID)
+		return false
+	}
+	return true
+}
+
+func (m *NodeServerManager) markNftUnsupported(serverID int64) {
+	m.nftUnsupportedMu.Lock()
+	defer m.nftUnsupportedMu.Unlock()
+	if m.nftUnsupported == nil {
+		m.nftUnsupported = make(map[int64]time.Time)
+	}
+	m.nftUnsupported[serverID] = time.Now()
+}
+
+func (m *NodeServerManager) clearNftUnsupported(serverID int64) {
+	m.nftUnsupportedMu.Lock()
+	defer m.nftUnsupportedMu.Unlock()
+	delete(m.nftUnsupported, serverID)
+}
+
+func (m *NodeServerManager) pushIPBlacklist(ctx context.Context, serverID int64, entries []string) error {
 	if m.isLocalServer(serverID) {
 		if m.localAgent == nil {
 			return fmt.Errorf("local agent not configured")
@@ -1968,9 +2047,13 @@ func (m *NodeServerManager) registerConnection(serverID int64, hostname string, 
 			entries := m.ipBlacklistProvider()
 			blCtx, blCancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer blCancel()
-			if err := m.SetIPBlacklist(blCtx, serverID, entries); err != nil {
+			err := m.SetIPBlacklist(blCtx, serverID, entries)
+			switch {
+			case errors.Is(err, ratelimit.ErrSkipped):
+				// 节点不支持 nft：标记时已记录一次，这里静默避免重复刷屏。
+			case err != nil:
 				log.Printf("[NodeServerManager] IP blacklist push to server %d on connect failed: %v", serverID, err)
-			} else {
+			default:
 				log.Printf("[NodeServerManager] IP blacklist push to server %d on connect: %d entries", serverID, len(entries))
 			}
 		}

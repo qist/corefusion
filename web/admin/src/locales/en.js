@@ -1928,7 +1928,7 @@ export default {
       probeLocal: 'Direct (local)',
       probeDialer: 'Dialer',
       "probeHint": "The probe dials through the selected entry node and dialer core: proxy/line dialing reflects real reachability, while without an entry only local direct dialing is possible (it filters obviously broken nodes only). Probes run in a temporary process that exits when done and never shares config with the production core.",
-      "probeChainOwnsHealth": "Chain probe is on: scheduled checks only refresh latency (health is decided by chain probe); clicking Check connectivity re-judges health with real dialing.",
+      "probeChainOwnsHealth": "Chain probe is on: preferred-IP probing still judges health every round; chain probe re-judges the entries it covered this round through the exit line (last write wins).",
       check: 'Check connectivity',
       sources: 'API Sources',
       entries: 'IP List',

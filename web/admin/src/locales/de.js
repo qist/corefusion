@@ -1911,7 +1911,7 @@ export default {
       "probeLocal": "Direkt (lokal)",
       "probeDialer": "Dialer",
       "probeHint": "Die Prüfung wählt über den gewählten Einstiegsknoten und das Dialer-Core: Proxy-/Leitungsdialing zeigt die echte Erreichbarkeit; ohne Einstieg ist nur lokales Direktdialing möglich (filtert nur offensichtlich kaputte Knoten). Prüfungen laufen in einem temporären Prozess, der danach beendet wird und keine Konfiguration mit dem Produktions-Core teilt.",
-      "probeChainOwnsHealth": "Kettenprüfung aktiv: geplante Prüfungen aktualisieren nur die Latenz (Gesundheit entscheidet die Kettenprüfung); „Konnektivität prüfen“ bewertet die Gesundheit per echtem Dialing neu.",
+      "probeChainOwnsHealth": "Kettenprüfung aktiv: die Preferred-IP-Prüfung bewertet weiterhin jede Runde die Gesundheit; die Kettenprüfung bewertet die in dieser Runde abgedeckten Einträge über die Ausgangslinie neu (letzter Schreibvorgang gewinnt).",
       "check": "Konnektivitaet pruefen",
       "sources": "API-Quelle",
       "entries": "IP-Liste",

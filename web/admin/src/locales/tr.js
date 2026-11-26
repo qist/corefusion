@@ -1911,7 +1911,7 @@ export default {
       "probeLocal": "Doğrudan (yerel)",
       "probeDialer": "Çevirici",
       "probeHint": "Denetim, seçilen giriş düğümü ve dialer çekirdeği üzerinden geçici bağlantı kurar: proxy/hat üzerinden dial gerçek erişilebilirliği yansıtır; giriş seçilmezse yalnızca yerel doğrudan dial yapılır (yalnızca açıkça bozuk düğümleri eler). Geçici süreçte çalışır, bitince kapanır ve üretim çekirdeğiyle yapılandırma paylaşmaz.",
-      "probeChainOwnsHealth": "Zincir denetimi açık: zamanlanmış denetimler yalnızca gecikmeyi yeniler (sağlığı zincir denetimi belirler); «Bağlantıyı denetle» gerçek dial ile yeniden değerlendirir.",
+      "probeChainOwnsHealth": "Zincir denetimi açık: tercih edilen IP denetimi her turda sağlığı değerlendirir; zincir denetimi bu turda kapsanan kayıtları çıkış hattıyla yeniden değerlendirir (son yazma kazanır).",
       "check": "Baglantiyi denetle",
       "sources": "API kaynağı",
       "entries": "IP listesi",

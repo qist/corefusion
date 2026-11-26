@@ -212,12 +212,6 @@ func (p *Prober) SetAgentDialerLister(fn AgentDialerLister) {
 	p.agentDialers = fn
 }
 
-// chainAuthoritative 决定本轮探测是否只刷延迟（不写健康）。
-// 定时轮次里链路探测开启时独占健康；手动检测（force）例外。
-func chainAuthoritative(chainEnabled, force bool) bool {
-	return chainEnabled && !force
-}
-
 // dialerCandidates 是自动模式下的优先顺序。
 //
 // xray 优先：链路探测会把入站渲染成客户端出站（vmess/vless + ws/grpc/reality
@@ -420,7 +414,7 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 			// 优选探测：即使只开链路探测也要跑，用来刷新延迟数据。
 			if cfg.Enabled || chainCfg.Enabled {
 				if lastProbe.IsZero() || now.Sub(lastProbe) >= probeEvery {
-					res, err := p.CheckAll(ctx, false)
+					res, err := p.CheckAll(ctx)
 					if err != nil {
 						log.Printf("[healthprobe] check failed: %v", err)
 					} else {
@@ -470,30 +464,27 @@ type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // CheckAll 探测全部优选 IP 与优选域名。
 //
-// force=true 表示「手动检测」（页面上的检测连通性）：无论链路探测是否开启，
-// 都按真实拨号结果判定并写健康 —— 优选探测本身已经是拨号（模板模式发真实
-// HTTP），手动点一次却只刷延迟会让人以为没执行。
-// force=false 是定时任务：链路探测开启时只刷延迟，健康留给链路探测判定，
-// 避免定时轮次里 TCP/TLS 把链路探测判死的条目复活。
-func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
+// 自动探测（定时）与手动「检测连通性」都按真实结果判定并写健康：优选探测
+// 本身已经是拨号探测（CDN 入口当模板发真实 HTTP），是很多部署（面板/节点在
+// 国内、没有独立国内出口）唯一可信的健康来源，不能因为链路探测开着就停用。
+// 链路探测在本轮之后执行，对它覆盖到的条目再以出口线路判定（后写覆盖）。
+func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	cfg := p.ReadConfig(ctx)
 	res := Result{Entry: "local", Interval: cfg.IntervalMinutes}
 
-	// 链路探测开启时，定时轮次的健康状态由链路探测独占判定：
-	// 定时探测只说明"端口能连"，会把链路探测判死的条目复活，
-	// 导致订阅又把坏节点分发出去。手动检测（force）例外，见函数注释。
-	chainAuthority := chainAuthoritative(p.ReadChainConfig(ctx).Enabled, force)
+	// 只开链路探测、没配优选入口的部署：没有入口就没有可信结论，
+	// 静默跳过（健康由链路探测负责）；入口配了就必须真实判定。
+	chainEnabled := p.ReadChainConfig(ctx).Enabled
 
 	// 入口必须显式选择（ext:<id> / inb:<id>），不再支持本机直连：
 	// 裸 TCP 探测只能证明「端口有人监听」，会把别人的源站、已失效的优选 IP
 	// 全判成健康；只有带接入域名（SNI）的真实拨号才有意义。
 	if cfg.Entry == "" {
-		if chainAuthority {
-			// 健康由链路探测独占；没入口时不产生任何结论（连延迟也不写，
-			// 避免给订阅的延迟阈值喂假数据）。
+		if chainEnabled {
+			// 没入口时不产生任何结论（连延迟也不写，避免给订阅的延迟阈值喂假数据）。
 			return res, nil
 		}
 		return res, errors.New("未选择探测入口：已禁用本机直连探测（只测 TCP 会把坏 IP 判成可用），请在「探测入口节点」里选择一个配了 CDN 接入的节点/入站")
@@ -528,7 +519,7 @@ func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 				return res, derr
 			}
 			res.Entry = fmt.Sprintf("%s/%s@agent:%d", label, dialer, cfg.AgentID)
-			return p.checkAllExitRemote(ctx, cfg, res, pm, chainAuthority)
+			return p.checkAllExitRemote(ctx, cfg, res, pm)
 		} else {
 			d, fn, usedDialer, err := p.startEntryDialer(ctx, cfg, pm)
 			if err != nil {
@@ -542,7 +533,7 @@ func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 
 	// 模板模式：真实拨号 + 双向流量判定，不再走 probeTCP/probeTLS。
 	if tpl != nil {
-		return p.checkAllWithTemplate(ctx, cfg, res, tpl, chainAuthority)
+		return p.checkAllWithTemplate(ctx, cfg, res, tpl)
 	}
 
 	var wg sync.WaitGroup
@@ -562,11 +553,6 @@ func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 	skip := func() {
 		resMu.Lock()
 		res.Skipped++
-		resMu.Unlock()
-	}
-	latencyOnly := func() {
-		resMu.Lock()
-		res.LatencyOnly++
 		resMu.Unlock()
 	}
 
@@ -598,15 +584,6 @@ func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 					defer wg.Done()
 					defer func() { <-sem }()
 					ok, latency := probeTCP(ctx, e.IP, port, dial)
-					if chainAuthority {
-						// 链路探测独占健康判定：这里只刷新延迟（订阅的延迟阈值
-						// 按 TCP 握手延迟筛），不写 healthy，避免把判死的条目复活。
-						if err := p.cfRepo.UpdateLatency(ctx, e.ID, latency, time.Now()); err != nil {
-							log.Printf("[healthprobe] update cf ip latency %s failed: %v", e.IP, err)
-						}
-						latencyOnly()
-						return
-					}
 					healthy, fail := nextState(ok, e.FailCount)
 					if err := p.cfRepo.UpdateHealth(ctx, e.ID, healthy, latency, fail, time.Now()); err != nil {
 						log.Printf("[healthprobe] update cf ip %s failed: %v", e.IP, err)
@@ -636,14 +613,6 @@ func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 					defer wg.Done()
 					defer func() { <-sem }()
 					ok, latency := probeTLS(ctx, d.Value, port, dial)
-					if chainAuthority {
-						// 同上：只刷新延迟，健康状态留给链路探测。
-						if err := p.shareRepo.UpdateLatency(ctx, d.ID, latency, time.Now()); err != nil {
-							log.Printf("[healthprobe] update share domain latency %s failed: %v", d.Value, err)
-						}
-						latencyOnly()
-						return
-					}
 					healthy, fail := nextState(ok, d.FailCount)
 					if err := p.shareRepo.UpdateHealth(ctx, d.ID, healthy, latency, fail, time.Now()); err != nil {
 						log.Printf("[healthprobe] update share domain %s failed: %v", d.Value, err)
@@ -1092,7 +1061,7 @@ const chainTemplateBatchSize = 40
 
 // checkAllWithTemplate 用入口配置当模板，逐条替换 server 后真实拨号。
 // 判定口径与链路探测一致：HTTP 2xx/3xx 且上下行都有字节才算健康。
-func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}, chainAuthority bool) (Result, error) {
+func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}) (Result, error) {
 	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
@@ -1206,16 +1175,6 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 		now := time.Now()
 		for i, t := range targets {
 			r := outs[i]
-			if chainAuthority {
-				// 链路探测开启时健康由链路探测独占，这里只刷新延迟。
-				if t.Kind == "cf_ip" && p.cfRepo != nil {
-					_ = p.cfRepo.UpdateLatency(ctx, t.EntryID, r.LatencyMs, now)
-				} else if t.Kind == "cf_domain" && p.shareRepo != nil {
-					_ = p.shareRepo.UpdateLatency(ctx, t.EntryID, r.LatencyMs, now)
-				}
-				res.LatencyOnly++
-				continue
-			}
 			healthy, fail := nextState(r.Healthy, t.PrevFail)
 			if t.Kind == "cf_ip" && p.cfRepo != nil {
 				if err := p.cfRepo.UpdateHealth(ctx, t.EntryID, healthy, r.LatencyMs, fail, now); err != nil {
@@ -1290,17 +1249,8 @@ func (p *Prober) collectProbeTargets(ctx context.Context) ([]probeTarget, int, e
 	return items, skipped, nil
 }
 
-// updateProbeTarget 把一条探测结论写回库；链路探测开启时只刷新延迟。
-func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarget, healthy bool, latency int, chainAuthority bool, now time.Time) {
-	if chainAuthority {
-		if t.kind == "cf_ip" && p.cfRepo != nil {
-			_ = p.cfRepo.UpdateLatency(ctx, t.id, latency, now)
-		} else if t.kind == "cf_domain" && p.shareRepo != nil {
-			_ = p.shareRepo.UpdateLatency(ctx, t.id, latency, now)
-		}
-		res.LatencyOnly++
-		return
-	}
+// updateProbeTarget 把一条探测结论写回库。
+func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarget, healthy bool, latency int, now time.Time) {
 	next, fail := nextState(healthy, t.prev)
 	if t.kind == "cf_ip" && p.cfRepo != nil {
 		if err := p.cfRepo.UpdateHealth(ctx, t.id, next, latency, fail, now); err != nil {
@@ -1321,7 +1271,7 @@ func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarg
 
 // checkAllExitRemote 在指定 Agent 上做「出口语义」探测：临时核心只有一条出口，
 // 优选 IP 做 TCP 建连、优选域名做 TLS 握手。
-func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}, chainAuthority bool) (Result, error) {
+func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}) (Result, error) {
 	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
@@ -1366,7 +1316,7 @@ func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result,
 	}
 	now := time.Now()
 	for i, it := range items {
-		p.updateProbeTarget(ctx, &res, it, results[i].Success, results[i].LatencyMs, chainAuthority, now)
+		p.updateProbeTarget(ctx, &res, it, results[i].Success, results[i].LatencyMs, now)
 	}
 	return res, nil
 }

@@ -107,7 +107,7 @@ func TestParseBoolSetting(t *testing.T) {
 // 未选择入口时禁止探测：本机直连只会做 TCP 判活，会把坏条目判成可用。
 func TestCheckAllRequiresEntry(t *testing.T) {
 	p := newProbeTestService(t)
-	if _, err := p.CheckAll(context.Background(), false); err == nil {
+	if _, err := p.CheckAll(context.Background()); err == nil {
 		t.Fatal("未选择入口时 CheckAll 必须返回错误")
 	}
 }
@@ -200,24 +200,5 @@ func TestAgentDialersLocal(t *testing.T) {
 	}
 	if len(info.Dialers) != 0 {
 		t.Fatalf("测试环境面板无核心，实际 %v", info.Dialers)
-	}
-}
-
-// 链路探测开启时：定时轮次独占健康（只刷延迟），手动检测仍可写健康。
-func TestChainAuthoritative(t *testing.T) {
-	cases := []struct {
-		chainEnabled bool
-		force        bool
-		want         bool
-	}{
-		{true, false, true},   // 定时 + 链路开启 → 只刷延迟
-		{true, true, false},   // 手动 + 链路开启 → 正常判定
-		{false, false, false}, // 链路关闭 → 正常判定
-		{false, true, false},
-	}
-	for _, c := range cases {
-		if got := chainAuthoritative(c.chainEnabled, c.force); got != c.want {
-			t.Fatalf("chainAuthoritative(%v, %v) = %v, want %v", c.chainEnabled, c.force, got, c.want)
-		}
 	}
 }

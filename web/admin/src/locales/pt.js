@@ -1911,7 +1911,7 @@ export default {
       "probeLocal": "Direto (local)",
       "probeDialer": "Discador",
       "probeHint": "A verificação disca pelo nó de entrada e núcleo de discagem escolhidos: a discagem via proxy/linha reflete a acessibilidade real; sem entrada, só há discagem direta local (filtra nós obviamente quebrados). Executa em processo temporário que encerra ao final e não compartilha configuração com o núcleo de produção.",
-      "probeChainOwnsHealth": "A verificação de cadeia está ativa: verificações agendadas só atualizam a latência (a saúde é decidida pela verificação de cadeia); «Verificar conectividade» reavalia com discagem real.",
+      "probeChainOwnsHealth": "A verificação de cadeia está ativa: a verificação de IPs preferidos continua avaliando a saúde a cada rodada; a verificação de cadeia reavalia pela linha de saída as entradas cobertas (última escrita vence).",
       "check": "Verificar conectividade",
       "sources": "Fonte da API",
       "entries": "Lista de IPs",

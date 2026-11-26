@@ -1911,6 +1911,7 @@ export default {
       "probeLocal": "Langsung (lokal)",
       "probeDialer": "Pemanggil",
       "probeHint": "Probe melakukan dial melalui node masuk dan core dialer yang dipilih: dial via proxy/jalur mencerminkan keterjangkauan nyata; tanpa entri hanya dial langsung lokal (hanya menyaring node yang jelas mati). Berjalan di proses sementara yang berhenti setelah selesai dan tidak berbagi konfigurasi dengan core produksi.",
+      "probeChainOwnsHealth": "Pemeriksaan rantai aktif: pemeriksaan terjadwal hanya memperbarui latensi (kesehatan ditentukan pemeriksaan rantai); «Periksa konektivitas» menilai ulang dengan dial sungguhan.",
       "check": "Periksa konektivitas",
       "sources": "Sumber API",
       "entries": "Daftar IP",

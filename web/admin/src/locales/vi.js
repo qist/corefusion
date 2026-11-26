@@ -1911,6 +1911,7 @@ export default {
       "probeLocal": "Trực tiếp (cục bộ)",
       "probeDialer": "Trình quay số",
       "probeHint": "Kiểm tra quay số qua nút vào và core quay số đã chọn: quay số qua proxy/đường truyền phản ánh khả năng thực; không chọn nút vào thì chỉ quay số trực tiếp cục bộ (chỉ lọc nút hỏng rõ ràng). Chạy trong tiến trình tạm, kết thúc là thoát, không dùng chung cấu hình với core production.",
+      "probeChainOwnsHealth": "Kiểm tra chuỗi đang bật: kiểm tra định kỳ chỉ cập nhật độ trễ (sức khỏe do kiểm tra chuỗi quyết định); «Kiểm tra kết nối» sẽ đánh giá lại bằng quay số thật.",
       "check": "Kiểm tra kết nối",
       "sources": "Nguồn API",
       "entries": "Danh sách IP",

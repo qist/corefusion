@@ -1911,6 +1911,7 @@ export default {
       "probeLocal": "Directo (local)",
       "probeDialer": "Marcador",
       "probeHint": "La prueba marca a través del nodo de entrada y el núcleo de marcado elegidos: el marcado por proxy/línea refleja la accesibilidad real; sin entrada solo hay marcado directo local (filtra nodos obviamente caídos). Se ejecuta en un proceso temporal que termina al acabar y no comparte configuración con el núcleo de producción.",
+      "probeChainOwnsHealth": "La prueba de cadena está activa: las comprobaciones programadas solo actualizan la latencia (la salud la decide la prueba de cadena); «Comprobar conectividad» vuelve a juzgar con marcado real.",
       "check": "Comprobar conectividad",
       "sources": "Origen de API",
       "entries": "Lista de IP",

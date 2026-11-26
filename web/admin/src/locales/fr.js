@@ -1911,6 +1911,7 @@ export default {
       "probeLocal": "Direct (local)",
       "probeDialer": "Numéroteur",
       "probeHint": "Le test compose via le nœud d\'entrée et le cœur de Dialer choisis : le dialing via proxy/ligne reflète la vraie accessibilité ; sans entrée, seul le dialing direct local est possible (filtre les nœuds manifestement morts). Le test tourne dans un processus temporaire qui s\'arrête à la fin et ne partage pas la configuration du cœur de production.",
+      "probeChainOwnsHealth": "Le test de chaîne est actif : les contrôles planifiés ne rafraîchissent que la latence (la santé est décidée par le test de chaîne) ; « Vérifier la connectivité » réévalue la santé par dialing réel.",
       "check": "Verifier la connectivite",
       "sources": "Source API",
       "entries": "Liste des IP",

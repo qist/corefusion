@@ -78,6 +78,7 @@
     </div>
     <div v-if="probeCfg.agent_id" style="font-size:11px;color:#e6a23c;margin-top:8px">{{ t('service.cfip.probeAgentDialerHint') }}</div>
     <div v-if="probeAgentDialerError" style="font-size:11px;color:#f56c6c;margin-top:4px">{{ probeAgentDialerError }}</div>
+    <div v-if="chainCfg.enabled" style="font-size:11px;color:#e6a23c;margin-top:8px">{{ t('service.cfip.probeChainOwnsHealth') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.probeMaxLatencyHint') }}</div>
     <div v-if="!probeCfg.enabled" style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.probeEnabledHint') }}</div>

@@ -48,7 +48,8 @@ func NewProbeHandler(
 
 // Check 立即探测全部优选域名/IP，返回本次探测汇总。
 func (h *ProbeHandler) Check(c *gin.Context) {
-	res, err := h.prober.CheckAll(c.Request.Context())
+	// 手动检测：强制按真实拨号结果判定并写健康（链路探测开启时也一样）。
+	res, err := h.prober.CheckAll(c.Request.Context(), true)
 	if err != nil {
 		response.InternalError(c, "PROBE_FAILED", err.Error())
 		return

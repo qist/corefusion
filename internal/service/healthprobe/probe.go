@@ -212,6 +212,12 @@ func (p *Prober) SetAgentDialerLister(fn AgentDialerLister) {
 	p.agentDialers = fn
 }
 
+// chainAuthoritative 决定本轮探测是否只刷延迟（不写健康）。
+// 定时轮次里链路探测开启时独占健康；手动检测（force）例外。
+func chainAuthoritative(chainEnabled, force bool) bool {
+	return chainEnabled && !force
+}
+
 // dialerCandidates 是自动模式下的优先顺序。
 //
 // xray 优先：链路探测会把入站渲染成客户端出站（vmess/vless + ws/grpc/reality
@@ -414,7 +420,7 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 			// 优选探测：即使只开链路探测也要跑，用来刷新延迟数据。
 			if cfg.Enabled || chainCfg.Enabled {
 				if lastProbe.IsZero() || now.Sub(lastProbe) >= probeEvery {
-					res, err := p.CheckAll(ctx)
+					res, err := p.CheckAll(ctx, false)
 					if err != nil {
 						log.Printf("[healthprobe] check failed: %v", err)
 					} else {
@@ -463,17 +469,23 @@ func (p *Prober) StartScheduler(ctx context.Context) {
 type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // CheckAll 探测全部优选 IP 与优选域名。
-func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
+//
+// force=true 表示「手动检测」（页面上的检测连通性）：无论链路探测是否开启，
+// 都按真实拨号结果判定并写健康 —— 优选探测本身已经是拨号（模板模式发真实
+// HTTP），手动点一次却只刷延迟会让人以为没执行。
+// force=false 是定时任务：链路探测开启时只刷延迟，健康留给链路探测判定，
+// 避免定时轮次里 TCP/TLS 把链路探测判死的条目复活。
+func (p *Prober) CheckAll(ctx context.Context, force bool) (Result, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	cfg := p.ReadConfig(ctx)
 	res := Result{Entry: "local", Interval: cfg.IntervalMinutes}
 
-	// 链路探测开启时，CF 条目（域名/IP）的健康状态由链路探测独占判定：
-	// 这里的 TCP/TLS 探测只说明"端口能连"，会把链路探测判死的条目复活，
-	// 导致订阅又把坏节点分发出去。因此这些条目交给 CheckChain 处理。
-	chainAuthority := p.ReadChainConfig(ctx).Enabled
+	// 链路探测开启时，定时轮次的健康状态由链路探测独占判定：
+	// 定时探测只说明"端口能连"，会把链路探测判死的条目复活，
+	// 导致订阅又把坏节点分发出去。手动检测（force）例外，见函数注释。
+	chainAuthority := chainAuthoritative(p.ReadChainConfig(ctx).Enabled, force)
 
 	// 入口必须显式选择（ext:<id> / inb:<id>），不再支持本机直连：
 	// 裸 TCP 探测只能证明「端口有人监听」，会把别人的源站、已失效的优选 IP

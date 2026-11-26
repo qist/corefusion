@@ -122,8 +122,11 @@ const envText = computed(() => {
   parts.push(env.kind === 'container' ? t('nodeCheckup.container') : t('nodeCheckup.host'))
   if (env.runtime) parts.push(env.runtime)
   if (env.kind === 'container' && !env.systemd) parts.push(t('nodeCheckup.noSystemd'))
-  const v6 = itemParams('ENV-01').ipv6 || []
+  const p = itemParams('ENV-01')
+  const v6 = p.ipv6 || []
+  const v6tun = p.ipv6_tun || []
   if (Array.isArray(v6) && v6.length) parts.push(`IPv6 ×${v6.length}`)
+  if (Array.isArray(v6tun) && v6tun.length) parts.push(`tun ×${v6tun.length}`)
   return parts.join(' · ')
 })
 

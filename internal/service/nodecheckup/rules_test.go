@@ -650,3 +650,31 @@ func TestBuildGuideKeepsRootLogin(t *testing.T) {
 		t.Fatal("guide 应提示保留当前 root 登录方式")
 	}
 }
+
+// ENV-01 要把「公网 IPv6」和「隧道 IPv6」分开，tun 地址只展示、不参与公网判断。
+func TestEnvSeparatesTunnelIPv6(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env:  nodecheckup.Env{Kind: "host", Kernel: "7.0.0-44-generic"},
+		IPv6: []string{"2001:db8:1aa::1"},
+		IPv6Addrs: []nodecheckup.IPv6Addr{
+			{Addr: "2001:db8:1aa::1", Iface: "eth0", Kind: "public"},
+			{Addr: "2001:db8:4700::1", Iface: "singbr0", Kind: "tun"},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	it := itemByID(items, "ENV-01")
+	if it == nil {
+		t.Fatal("缺少 ENV-01")
+	}
+	pub, _ := it.Params["ipv6"].([]string)
+	if len(pub) != 1 {
+		t.Fatalf("公网 IPv6 应只算 eth0：%+v", it.Params["ipv6"])
+	}
+	if _, ok := it.Params["ipv6_tun"]; !ok {
+		t.Fatal("ipv6_tun 应单独列出")
+	}
+	joined := strings.Join(it.Evidence, "\n")
+	if !strings.Contains(joined, "IPv6 tunnel") || !strings.Contains(joined, "do not edit") {
+		t.Fatalf("证据应说明 tun 地址由代理管理：%s", joined)
+	}
+}

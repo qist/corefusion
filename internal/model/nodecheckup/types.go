@@ -16,19 +16,30 @@ type ConfigHit struct {
 // Facts 是 Agent 采集到的本机事实（不落库）。
 type Facts struct {
 	Env Env `json:"env"`
-	// IPv6 是全局 IPv6 地址（不含 link-local / 回环），用于判断节点是否在用 IPv6。
+	// IPv6 是节点**自身服务网卡**上的全局 IPv6（不含 link-local / 回环 / tun）。
+	// tun/wg 这类隧道地址不会算成节点的公网 IPv6。
 	IPv6 []string `json:"ipv6,omitempty"`
+	// IPv6Addrs 是所有全局 IPv6 的明细（含接口与类型），用于展示与解释。
+	IPv6Addrs []IPv6Addr `json:"ipv6_addrs,omitempty"`
 	// SysctlFiles 是 sysctl 配置目录/文件里命中白名单 key 的行，
 	// 用来判断"我们的 99-corefusion.conf 会不会被别人覆盖"。
 	SysctlFiles []ConfigHit       `json:"sysctl_files,omitempty"`
 	Sysctl      map[string]Sysctl `json:"sysctl,omitempty"`
-	Modules   map[string]bool   `json:"modules,omitempty"`
-	SSHD      *SSHD             `json:"sshd,omitempty"`
-	Listeners []Listener        `json:"listeners,omitempty"`
-	Firewall  *Firewall         `json:"firewall,omitempty"`
-	Resources *Resources        `json:"resources,omitempty"`
-	TimeSync  *TimeSync         `json:"time_sync,omitempty"`
-	Errors    []string          `json:"errors,omitempty"`
+	Modules     map[string]bool   `json:"modules,omitempty"`
+	SSHD        *SSHD             `json:"sshd,omitempty"`
+	Listeners   []Listener        `json:"listeners,omitempty"`
+	Firewall    *Firewall         `json:"firewall,omitempty"`
+	Resources   *Resources        `json:"resources,omitempty"`
+	TimeSync    *TimeSync         `json:"time_sync,omitempty"`
+	Errors      []string          `json:"errors,omitempty"`
+}
+
+// IPv6Addr 是一条全局 IPv6 地址及其所属接口。
+type IPv6Addr struct {
+	Addr  string `json:"addr"`
+	Iface string `json:"iface"`
+	// Kind: public（物理/服务网卡）/ tun（隧道）/ container（容器网桥）。
+	Kind string `json:"kind"`
 }
 
 type Env struct {

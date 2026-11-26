@@ -49,9 +49,26 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 		envParams["ssh_port"] = facts.SSHD.Port
 	}
 	evidence := []string{"OS: " + env.OS, "Kernel: " + env.Kernel}
-	if facts != nil && len(facts.IPv6) > 0 {
-		envParams["ipv6"] = facts.IPv6
-		evidence = append(evidence, "IPv6: "+strings.Join(facts.IPv6, ", "))
+	if facts != nil {
+		var pub, tun []string
+		for _, a := range facts.IPv6Addrs {
+			switch a.Kind {
+			case "tun":
+				tun = append(tun, a.Addr+" ("+a.Iface+")")
+			case "public":
+				pub = append(pub, a.Addr+" ("+a.Iface+")")
+			}
+		}
+		if len(facts.IPv6) > 0 {
+			envParams["ipv6"] = facts.IPv6
+		}
+		if len(pub) > 0 {
+			evidence = append(evidence, "IPv6 public: "+strings.Join(pub, ", "))
+		}
+		if len(tun) > 0 {
+			envParams["ipv6_tun"] = tun
+			evidence = append(evidence, "IPv6 tunnel (managed by proxy/runtime, do not edit): "+strings.Join(tun, ", "))
+		}
 	}
 	add(nodecheckup.Item{
 		ID: "ENV-01", Category: "system", Severity: SeverityInfo, Scope: env.Kind,

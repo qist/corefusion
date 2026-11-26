@@ -110,7 +110,7 @@ func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFa
 		facts.Sysctl[key] = collectSysctl(key, facts.Env)
 	}
 	facts.SysctlFiles = collectSysctlFiles(wanted)
-	facts.IPv6 = collectIPv6()
+	facts.IPv6, facts.IPv6Addrs = collectIPv6()
 	facts.Modules = collectModules()
 	if req.GetIncludeSsh() {
 		facts.SSHD = collectSSHD()
@@ -129,14 +129,18 @@ func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFa
 	return &agentpb.GetSystemFactsResponse{Success: true, Facts: string(data)}
 }
 
-// collectIPv6 返回全局 IPv6 地址（排除回环与 link-local），只用于判断
-// 节点是否真的在用 IPv6，避免在没有 IPv6 的机器上推荐 IPv6 参数。
-func collectIPv6() []string {
+// collectIPv6 返回两类信息：
+//   - public：节点自身服务网卡上的全局 IPv6（用于判断"节点有没有公网 IPv6"）
+//   - all：全部全局 IPv6 明细（含 tun / container），用于展示与解释
+//
+// tun（sing-box/WARP/wg）与容器网桥上的地址不是节点的公网地址，不能混在一起。
+func collectIPv6() ([]string, []nodecheckup.IPv6Addr) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	var out []string
+	var public []string
+	all := []nodecheckup.IPv6Addr{}
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
@@ -151,13 +155,39 @@ func collectIPv6() []string {
 			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 				continue
 			}
-			if ip.IsGlobalUnicast() {
-				out = append(out, ip.String())
+			if !ip.IsGlobalUnicast() {
+				continue
+			}
+			kind := ipv6Kind(iface.Name, iface.Flags&net.FlagPointToPoint != 0)
+			all = append(all, nodecheckup.IPv6Addr{Addr: ip.String(), Iface: iface.Name, Kind: kind})
+			if kind == "public" {
+				public = append(public, ip.String())
 			}
 		}
 	}
-	sort.Strings(out)
-	return out
+	sort.Strings(public)
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Addr < all[j].Addr })
+	return public, all
+}
+
+// ipv6Kind 按接口名/类型区分地址用途。隧道与容器网桥由代理或运行时自动管理，
+// 手工改它们的地址没有意义（重启/重连会被覆盖）。
+func ipv6Kind(name string, pointToPoint bool) string {
+	n := strings.ToLower(name)
+	switch {
+	case strings.HasPrefix(n, "tun"), strings.HasPrefix(n, "tap"),
+		strings.HasPrefix(n, "wg"), strings.HasPrefix(n, "singbr"),
+		strings.HasPrefix(n, "warp"), strings.HasPrefix(n, "ppp"),
+		strings.HasPrefix(n, "tailscale"), strings.HasPrefix(n, "utun"):
+		return "tun"
+	case strings.HasPrefix(n, "nerdctl"), strings.HasPrefix(n, "docker"),
+		strings.HasPrefix(n, "br-"), strings.HasPrefix(n, "veth"),
+		strings.HasPrefix(n, "cni"), strings.HasPrefix(n, "podman"):
+		return "container"
+	case pointToPoint:
+		return "tun"
+	}
+	return "public"
 }
 
 func collectEnv() nodecheckup.Env {

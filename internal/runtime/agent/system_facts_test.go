@@ -131,3 +131,28 @@ func TestParseSysctlConfigFile(t *testing.T) {
 		t.Fatal("不在白名单的 key 不应采集")
 	}
 }
+
+// tun/wg/容器网桥上的 IPv6 不是节点自己的公网地址，不能混算。
+func TestIPv6Kind(t *testing.T) {
+	cases := map[string]string{
+		"eth0":       "public",
+		"ens33":      "public",
+		"singbr0":    "tun",
+		"tun0":       "tun",
+		"wg0":        "tun",
+		"warp0":      "tun",
+		"tailscale0": "tun",
+		"nerdctl0":   "container",
+		"docker0":    "container",
+		"veth1234":   "container",
+		"br-abc123":  "container",
+	}
+	for name, want := range cases {
+		if got := ipv6Kind(name, false); got != want {
+			t.Fatalf("ipv6Kind(%q)=%q, want %q", name, got, want)
+		}
+	}
+	if got := ipv6Kind("weird0", true); got != "tun" {
+		t.Fatalf("point-to-point 接口应归为 tun，实际 %q", got)
+	}
+}

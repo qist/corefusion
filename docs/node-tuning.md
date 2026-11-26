@@ -171,6 +171,8 @@ sshd -T | grep -Ei '^(passwordauthentication|kbdinteractiveauthentication|permit
 
 说明：
 
+- **隧道地址不要手工处理**：sing-box/WARP 的 `singbr0`、`wg0`、`tun0` 上的 IPv6 由代理自动分配，
+  重启/重连会变。不要手工改地址、也不要写进 sysctl；体检会把它们标成 `tun`，不计入节点公网 IPv6。
 - **IPv6**：只有节点确实有全局 IPv6 时才需要这一组。`forwarding=1` 用于容器网络 / 透明转发；
   纯用户态代理（xray/sing-box/nginx）不依赖它。静态地址不要配 `accept_ra=1`，SLAAC 环境保持默认 `2`。
   体检在检测到全局 IPv6 时会检查 `forwarding`、`accept_redirects`、`use_tempaddr`、邻居表和路由缓存上限

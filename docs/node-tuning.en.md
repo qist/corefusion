@@ -157,6 +157,9 @@ BBR commands; the generated Markdown drops BBR/fq and uses `fq_codel` instead.
 
 Notes:
 
+- **Do not touch tunnel addresses**: IPv6 on `singbr0` / `wg0` / `tun0` (sing-box, WARP) is assigned by the proxy
+  and changes on reconnect. Do not edit it or put it into sysctl; the checkup labels it `tun` and excludes it from
+  the node's public IPv6.
 - **IPv6**: only needed when the node actually has a global IPv6 address. `forwarding=1` is for container
   networks / transparent forwarding; userland proxies (xray/sing-box/nginx) do not depend on it. Do not set
   `accept_ra=1` with static addresses; keep the default `2` under SLAAC. When a global IPv6 address is found,

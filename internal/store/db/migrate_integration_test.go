@@ -28,7 +28,7 @@ func requireDisposableTestDB(t *testing.T, dsn string) {
 
 // TestMigrateFromSQLiteToRemote 覆盖“备份还原”走的跨库路径：
 // SQLite 文件 → MySQL / PostgreSQL，并回归两件事：
-//  1. 全新空库也能建全 118 张表（模型清单唯一）；
+//  1. 全新空库也能建全 119 张表（模型清单唯一）；
 //  2. 拷贝完成后自增序列可用（PG 必须 setval，否则第一条 INSERT 撞主键）。
 func TestMigrateFromSQLiteToRemote(t *testing.T) {
 	targets := []struct{ name, env string }{

@@ -9,6 +9,7 @@ Proxy hizmeti operasyon paneli (Panel + Temsilci + istemci portalı): Düğümle
 
 - [docs/README.tr.md](./docs/README.tr.md) — belge dizini
 - [docs/USER-GUIDE.tr.md](./docs/USER-GUIDE.tr.md) — kurulum ve çalıştırma kılavuzu
+- [docs/node-tuning.tr.md](./docs/node-tuning.tr.md) — çekirdek ayarı ve güvenlik sertleştirmesi
 - Geliştirme ve mimari belgeleri dahilidir ve bu depoyla dağıtılmaz
 
 ## Lisans

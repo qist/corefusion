@@ -9,6 +9,7 @@
 
 - [docs/README.ar.md](./docs/README.ar.md) — فهرس الوثائق
 - [docs/USER-GUIDE.ar.md](./docs/USER-GUIDE.ar.md) - دليل التثبيت والتشغيل
+- [docs/node-tuning.ar.md](./docs/node-tuning.ar.md) — ضبط النواة وتقوية الأمان
 - وثائق التطوير والهندسة المعمارية داخلية ولا يتم توزيعها مع هذا المستودع
 
 ## الترخيص

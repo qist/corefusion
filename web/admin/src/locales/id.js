@@ -7,6 +7,7 @@ export default {
     "copyAll": "Salin semua",
     "download": "Unduh .md",
     "guideFailed": "Gagal membuat",
+    "onlineDoc": "Lihat online (GitHub)",
     "settings": "Pengaturan pemeriksaan",
     "enabled": "Pemeriksaan terjadwal",
     "intervalHours": "Interval (jam)",

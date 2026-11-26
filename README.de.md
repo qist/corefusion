@@ -9,6 +9,7 @@ Proxy-Service-Betriebspanel (Panel + Agent + Kundenportal): Verwalten Sie Knoten
 
 - [docs/README.de.md](./docs/README.de.md) – Dokumentationsindex
 - [docs/USER-GUIDE.de.md](./docs/USER-GUIDE.de.md) – Installations- und Betriebshandbuch
+- [docs/node-tuning.de.md](./docs/node-tuning.de.md) — Kernel-Tuning und Härtung
 - Entwicklungs- und Architekturdokumente sind intern und werden nicht mit diesem Repository verteilt
 
 ## Lizenz

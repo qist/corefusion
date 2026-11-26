@@ -41,6 +41,7 @@
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.ar.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 راجع [I18N.md](./I18N.md) للتسمية والتنقل اللغوي وقواعد المراجعة *(الصينية)*.
+
+## ضبط النواة وتقوية الأمان
+
+- [node-tuning.ar.md](./node-tuning.ar.md) — ضبط النواة وتقوية الأمان

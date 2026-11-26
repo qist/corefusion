@@ -41,6 +41,7 @@ Tasarım belgeleri dahili materyallerdir (temel fikri mülkiyet) ve bu depoyla *
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.tr.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Tasarım belgeleri dahili materyallerdir (temel fikri mülkiyet) ve bu depoyla *
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 Adlandırma, dilde gezinme ve inceleme kuralları için [I18N.md](./I18N.md)'ye bakın *(Çince)*.
+
+## Çekirdek ayarı ve güvenlik sertleştirmesi
+
+- [node-tuning.tr.md](./node-tuning.tr.md) — çekirdek ayarı ve güvenlik sertleştirmesi

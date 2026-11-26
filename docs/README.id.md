@@ -41,6 +41,7 @@ Dokumen desain adalah materi internal (kekayaan intelektual inti) dan **tidak di
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.id.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Dokumen desain adalah materi internal (kekayaan intelektual inti) dan **tidak di
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 Lihat [I18N.md](./I18N.md) untuk aturan penamaan, navigasi bahasa, dan peninjauan *(Bahasa Mandarin)*.
+
+## Penyetelan kernel dan pengerasan
+
+- [node-tuning.id.md](./node-tuning.id.md) — penyetelan kernel dan pengerasan

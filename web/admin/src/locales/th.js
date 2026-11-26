@@ -7,6 +7,7 @@ export default {
     "copyAll": "คัดลอกทั้งหมด",
     "download": "ดาวน์โหลด .md",
     "guideFailed": "สร้างไม่สำเร็จ",
+    "onlineDoc": "ดูออนไลน์ (GitHub)",
     "settings": "ตั้งค่าการตรวจสอบ",
     "enabled": "ตรวจสอบตามกำหนด",
     "intervalHours": "รอบ (ชั่วโมง)",

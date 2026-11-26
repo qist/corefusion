@@ -41,6 +41,7 @@ Tài liệu thiết kế là tài liệu nội bộ (sở hữu trí tuệ cốt
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.vi.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Tài liệu thiết kế là tài liệu nội bộ (sở hữu trí tuệ cốt
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 Xem [I18N.md](./I18N.md) để biết các quy tắc đặt tên, điều hướng ngôn ngữ và đánh giá *(tiếng Trung)*.
+
+## Tinh chỉnh kernel và tăng cường bảo mật
+
+- [node-tuning.vi.md](./node-tuning.vi.md) — tinh chỉnh kernel và tăng cường bảo mật

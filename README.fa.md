@@ -9,6 +9,7 @@
 
 - [docs/README.fa.md](./docs/README.fa.md) — فهرست اسناد
 - [docs/USER-GUIDE.fa.md](./docs/USER-GUIDE.fa.md) — راهنمای نصب و عملیات
+- [docs/node-tuning.fa.md](./docs/node-tuning.fa.md) — تنظیم هسته و سخت‌سازی امنیتی
 - اسناد توسعه و معماری داخلی هستند و با این مخزن توزیع نمی شوند
 
 ## مجوز

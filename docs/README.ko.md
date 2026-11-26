@@ -41,6 +41,7 @@
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.ko.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 이름 지정, 언어 탐색 및 검토 규칙 *(중국어)*는 [I18N.md](./I18N.md)를 참조하세요.
+
+## 노드 커널 튜닝과 보안 강화
+
+- [node-tuning.ko.md](./node-tuning.ko.md) — 커널 튜닝과 보안 강화

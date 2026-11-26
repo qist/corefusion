@@ -48,9 +48,12 @@
     </div>
 
     <el-dialog v-model="guideVisible" :title="t('nodeCheckup.guide')" width="860px" top="5vh">
-      <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
         <el-button size="small" type="primary" @click="copy(guideText)">{{ t('nodeCheckup.copyAll') }}</el-button>
         <el-button size="small" @click="downloadGuide">{{ t('nodeCheckup.download') }}</el-button>
+        <el-link :href="docUrl" target="_blank" rel="noopener" type="primary" style="font-size:12px">
+          {{ t('nodeCheckup.onlineDoc') }}
+        </el-link>
       </div>
       <pre style="max-height:62vh;overflow:auto;background:#f5f7fa;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap;margin:0">{{ guideText }}</pre>
     </el-dialog>
@@ -95,7 +98,7 @@ import { ElMessage } from 'element-plus'
 import client from '../../api/client'
 
 const props = defineProps({ serverId: { type: Number, required: true } })
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const loading = ref(false)
 const error = ref('')
 const report = ref(null)
@@ -187,6 +190,28 @@ async function load(refresh = false) {
     loading.value = false
   }
 }
+
+// 仓库里的多语言运维文档（与 docs/node-tuning*.md 对应）。
+const DOC_BASE = 'https://github.com/qist/corefusion/blob/main/docs/'
+const DOC_FILES = {
+  'zh-CN': 'node-tuning.md',
+  en: 'node-tuning.en.md',
+  'zh-TW': 'node-tuning.zh-TW.md',
+  ru: 'node-tuning.ru.md',
+  ja: 'node-tuning.ja.md',
+  ko: 'node-tuning.ko.md',
+  de: 'node-tuning.de.md',
+  fr: 'node-tuning.fr.md',
+  es: 'node-tuning.es.md',
+  pt: 'node-tuning.pt.md',
+  tr: 'node-tuning.tr.md',
+  id: 'node-tuning.id.md',
+  th: 'node-tuning.th.md',
+  vi: 'node-tuning.vi.md',
+  ar: 'node-tuning.ar.md',
+  fa: 'node-tuning.fa.md',
+}
+const docUrl = computed(() => DOC_BASE + (DOC_FILES[locale.value] || DOC_FILES.en))
 
 const guideVisible = ref(false)
 const guideText = ref('')

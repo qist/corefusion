@@ -9,6 +9,7 @@
 
 - [docs/README.zh-TW.md](./docs/README.zh-TW.md) — 文件索引
 - [docs/USER-GUIDE.zh-TW.md](./docs/USER-GUIDE.zh-TW.md) — 安裝部署與操作手冊
+- [docs/node-tuning.zh-TW.md](./docs/node-tuning.zh-TW.md) — 核心調優與安全加固
 - 開發與架構文件為內部資料，不隨本儲存庫發佈
 
 ## 授權條款

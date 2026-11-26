@@ -9,6 +9,7 @@
 
 - [docs/README.ko.md](./docs/README.ko.md) — 문서 색인
 - [docs/USER-GUIDE.ko.md](./docs/USER-GUIDE.ko.md) — 설치 및 운영 가이드
+- [docs/node-tuning.ko.md](./docs/node-tuning.ko.md) — 커널 튜닝과 보안 강화
 - 개발 및 아키텍처 문서는 내부 문서이며 이 저장소와 함께 배포되지 않습니다.
 
 ## 라이센스

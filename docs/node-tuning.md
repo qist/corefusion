@@ -1,5 +1,7 @@
 # 节点内核调优与安全加固
 
+> 语言: [简体中文](node-tuning.md) · [English](node-tuning.en.md) · [繁體中文](node-tuning.zh-TW.md) · [Русский](node-tuning.ru.md) · [日本語](node-tuning.ja.md) · [한국어](node-tuning.ko.md) · [Deutsch](node-tuning.de.md) · [Français](node-tuning.fr.md) · [Español](node-tuning.es.md) · [Português](node-tuning.pt.md) · [Türkçe](node-tuning.tr.md) · [Bahasa Indonesia](node-tuning.id.md) · [ไทย](node-tuning.th.md) · [Tiếng Việt](node-tuning.vi.md) · [العربية](node-tuning.ar.md) · [فارسی](node-tuning.fa.md)
+
 本文档提供**整段可复制**的配置，不需要逐条执行。适用于代理 / 转发节点（xray、sing-box、nginx/caddy 前置）。
 
 > 执行前请保留一个已登录的 SSH 会话，避免规则写错后断连。生产环境建议在维护窗口操作。

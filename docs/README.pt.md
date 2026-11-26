@@ -41,6 +41,7 @@ Os documentos de design são materiais internos (propriedade intelectual princip
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.pt.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Os documentos de design são materiais internos (propriedade intelectual princip
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 Consulte [I18N.md](./I18N.md) para nomenclatura, navegação de idioma e regras de revisão *(chinês)*.
+
+## Ajuste de kernel e endurecimento
+
+- [node-tuning.pt.md](./node-tuning.pt.md) — ajuste de kernel e endurecimento

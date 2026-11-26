@@ -7,6 +7,7 @@ export default {
     "copyAll": "Sao chép tất cả",
     "download": "Tải .md",
     "guideFailed": "Tạo thất bại",
+    "onlineDoc": "Xem trực tuyến (GitHub)",
     "settings": "Cài đặt kiểm tra",
     "enabled": "Kiểm tra định kỳ",
     "intervalHours": "Chu kỳ (giờ)",

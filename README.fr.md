@@ -9,6 +9,7 @@ Panneau des opérations du service proxy (Panel + Agent + portail client) : gér
 
 - [docs/README.fr.md](./docs/README.fr.md) — index de la documentation
 - [docs/USER-GUIDE.fr.md](./docs/USER-GUIDE.fr.md) — guide d'installation et d'utilisation
+- [docs/node-tuning.fr.md](./docs/node-tuning.fr.md) — réglage du noyau et durcissement
 - Les documents de développement et d'architecture sont internes et ne sont pas distribués avec ce référentiel
 
 ## Licence

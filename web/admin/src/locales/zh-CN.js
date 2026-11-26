@@ -6,6 +6,7 @@ export default {
     "copyAll": "复制全部",
     "download": "下载 .md",
     "guideFailed": "生成失败",
+    "onlineDoc": "在线查看（GitHub）",
     "settings": "体检设置",
     "enabled": "定时体检",
     "intervalHours": "周期（小时）",

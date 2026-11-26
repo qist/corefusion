@@ -7,6 +7,7 @@ export default {
     "copyAll": "Копировать всё",
     "download": "Скачать .md",
     "guideFailed": "Не удалось создать",
+    "onlineDoc": "Открыть онлайн (GitHub)",
     "settings": "Настройки проверки",
     "enabled": "Плановая проверка",
     "intervalHours": "Интервал (часы)",

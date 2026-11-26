@@ -9,6 +9,7 @@ Panel operasi layanan proxy (Panel + Agen + portal klien): mengelola node dan Ag
 
 - [docs/README.id.md](./docs/README.id.md) — indeks dokumentasi
 - [docs/USER-GUIDE.id.md](./docs/USER-GUIDE.id.md) — panduan instalasi dan pengoperasian
+- [docs/node-tuning.id.md](./docs/node-tuning.id.md) — penyetelan kernel dan pengerasan
 - Dokumen pengembangan dan arsitektur bersifat internal dan tidak didistribusikan dengan repositori ini
 
 ## Lisensi

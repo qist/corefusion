@@ -41,6 +41,7 @@ Design documents are internal materials (core intellectual property) and are **n
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.en.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Design documents are internal materials (core intellectual property) and are **n
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 See [I18N.md](./I18N.md) for naming, language navigation and review rules *(Chinese)*.
+
+## Node tuning and hardening
+
+- [node-tuning.en.md](./node-tuning.en.md) — kernel tuning and hardening

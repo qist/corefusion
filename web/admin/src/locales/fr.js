@@ -7,6 +7,7 @@ export default {
     "copyAll": "Tout copier",
     "download": "Télécharger .md",
     "guideFailed": "Échec de la génération",
+    "onlineDoc": "Voir en ligne (GitHub)",
     "settings": "Paramètres du contrôle",
     "enabled": "Contrôle planifié",
     "intervalHours": "Intervalle (heures)",

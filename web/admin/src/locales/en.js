@@ -6,6 +6,7 @@ export default {
     "copyAll": "Copy all",
     "download": "Download .md",
     "guideFailed": "Failed to generate",
+    "onlineDoc": "View online (GitHub)",
     "settings": "Checkup settings",
     "enabled": "Scheduled checkup",
     "intervalHours": "Interval (hours)",

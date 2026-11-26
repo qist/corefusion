@@ -7,6 +7,7 @@ export default {
     "copyAll": "Alles kopieren",
     "download": ".md herunterladen",
     "guideFailed": "Erstellung fehlgeschlagen",
+    "onlineDoc": "Online ansehen (GitHub)",
     "settings": "Prüfungseinstellungen",
     "enabled": "Geplante Prüfung",
     "intervalHours": "Intervall (Stunden)",

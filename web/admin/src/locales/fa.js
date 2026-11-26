@@ -7,6 +7,7 @@ export default {
     "copyAll": "کپی همه",
     "download": "دانلود .md",
     "guideFailed": "ایجاد ناموفق",
+    "onlineDoc": "مشاهده برخط (GitHub)",
     "settings": "تنظیمات بررسی",
     "enabled": "بررسی زمان‌بندی‌شده",
     "intervalHours": "فاصله (ساعت)",

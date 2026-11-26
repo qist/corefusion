@@ -28,6 +28,7 @@
 
 - [docs/README.md](./docs/README.md) — 文档索引（[English](./docs/README.en.md) / [繁體中文](./docs/README.zh-TW.md)）
 - [docs/USER-GUIDE.md](./docs/USER-GUIDE.md) — 安装部署与操作手册（[English](./docs/USER-GUIDE.en.md)）
+- [docs/node-tuning.md](./docs/node-tuning.md) — 内核调优与安全加固
 - [docs/I18N.md](./docs/I18N.md) — 文档多语言规范
 - 文档提供 16 种语言（简体中文 / English / 繁體中文 等），入口见 `docs/README.md`
 - 开发与架构文档为内部资料，不随本仓库分发

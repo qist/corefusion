@@ -7,6 +7,7 @@ export default {
     "copyAll": "모두 복사",
     "download": ".md 다운로드",
     "guideFailed": "생성 실패",
+    "onlineDoc": "온라인에서 보기 (GitHub)",
     "settings": "점검 설정",
     "enabled": "예약 점검",
     "intervalHours": "주기(시간)",

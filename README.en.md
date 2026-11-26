@@ -29,6 +29,7 @@ Proxy service operations panel (Panel + Agent + client portal): manage nodes and
 
 - [docs/README.en.md](./docs/README.en.md) — documentation index
 - [docs/USER-GUIDE.en.md](./docs/USER-GUIDE.en.md) — installation and operations guide
+- [docs/node-tuning.en.md](./docs/node-tuning.en.md) — kernel tuning and hardening
 - Docs are available in 16 languages (简体中文, English, 繁體中文, …); start at `docs/README.md`
 - Development and architecture documents are internal and are not distributed with this repository
 

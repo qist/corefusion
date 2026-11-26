@@ -7,6 +7,7 @@ export default {
     "copyAll": "すべてコピー",
     "download": ".md をダウンロード",
     "guideFailed": "生成に失敗しました",
+    "onlineDoc": "オンラインで見る（GitHub）",
     "settings": "診断設定",
     "enabled": "定期診断",
     "intervalHours": "間隔（時間）",

@@ -41,6 +41,7 @@
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.fa.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 برای نام‌گذاری، ناوبری زبان و قوانین مرور *(چینی)* به [I18N.md](./I18N.md) مراجعه کنید.
+
+## تنظیم هسته و سخت‌سازی امنیتی
+
+- [node-tuning.fa.md](./node-tuning.fa.md) — تنظیم هسته و سخت‌سازی امنیتی

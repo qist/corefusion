@@ -7,6 +7,7 @@ export default {
     "copyAll": "Copiar tudo",
     "download": "Baixar .md",
     "guideFailed": "Falha ao gerar",
+    "onlineDoc": "Ver online (GitHub)",
     "settings": "Configurações da verificação",
     "enabled": "Verificação agendada",
     "intervalHours": "Intervalo (horas)",

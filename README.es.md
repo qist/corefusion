@@ -9,6 +9,7 @@ Panel de operaciones del servicio proxy (Panel + Agente + portal de clientes): a
 
 - [docs/README.es.md](./docs/README.es.md) — índice de documentación
 - [docs/USER-GUIDE.es.md](./docs/USER-GUIDE.es.md) — guía de instalación y funcionamiento
+- [docs/node-tuning.es.md](./docs/node-tuning.es.md) — ajuste del kernel y endurecimiento
 - Los documentos de desarrollo y arquitectura son internos y no se distribuyen con este repositorio.
 
 ## Licencia

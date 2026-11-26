@@ -7,6 +7,7 @@ export default {
     "copyAll": "複製全部",
     "download": "下載 .md",
     "guideFailed": "產生失敗",
+    "onlineDoc": "線上查看（GitHub）",
     "settings": "體檢設定",
     "enabled": "定時體檢",
     "intervalHours": "週期（小時）",

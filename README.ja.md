@@ -9,6 +9,7 @@
 
 - [docs/README.ja.md](./docs/README.ja.md) — ドキュメントのインデックス
 - [docs/USER-GUIDE.ja.md](./docs/USER-GUIDE.ja.md) — インストールおよび操作ガイド
+- [docs/node-tuning.ja.md](./docs/node-tuning.ja.md) — カーネルチューニングとセキュリティ強化
 - 開発およびアーキテクチャのドキュメントは内部にあり、このリポジトリでは配布されません
 
 ## ライセンス

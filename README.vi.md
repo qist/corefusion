@@ -9,6 +9,7 @@ Bảng điều khiển hoạt động dịch vụ proxy (Bảng điều khiển 
 
 - [docs/README.vi.md](./docs/README.vi.md) — chỉ mục tài liệu
 - [docs/USER-GUIDE.vi.md](./docs/USER-GUIDE.vi.md) — hướng dẫn cài đặt và vận hành
+- [docs/node-tuning.vi.md](./docs/node-tuning.vi.md) — tinh chỉnh kernel và tăng cường bảo mật
 - Các tài liệu kiến trúc và phát triển là tài liệu nội bộ và không được phân phối cùng với kho lưu trữ này
 
 ## Giấy phép

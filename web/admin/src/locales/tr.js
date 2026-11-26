@@ -7,6 +7,7 @@ export default {
     "copyAll": "Tümünü kopyala",
     "download": ".md indir",
     "guideFailed": "Oluşturma başarısız",
+    "onlineDoc": "Çevrimiçi görüntüle (GitHub)",
     "settings": "Denetim ayarları",
     "enabled": "Zamanlanmış denetim",
     "intervalHours": "Aralık (saat)",

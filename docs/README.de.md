@@ -41,6 +41,7 @@ Designdokumente sind interne Materialien (zentrales geistiges Eigentum) und werd
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.de.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@ Designdokumente sind interne Materialien (zentrales geistiges Eigentum) und werd
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 Siehe [I18N.md](./I18N.md) für Benennung, Sprachnavigation und Überprüfungsregeln *(Chinesisch)*.
+
+## Kernel-Tuning und Härtung
+
+- [node-tuning.de.md](./node-tuning.de.md) — Kernel-Tuning und Härtung

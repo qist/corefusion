@@ -7,6 +7,7 @@ export default {
     "copyAll": "نسخ الكل",
     "download": "تنزيل .md",
     "guideFailed": "فشل الإنشاء",
+    "onlineDoc": "عرض عبر الإنترنت (GitHub)",
     "settings": "إعدادات الفحص",
     "enabled": "فحص مجدول",
     "intervalHours": "الفاصل (ساعات)",

@@ -41,6 +41,7 @@
 | api/portal-api.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/charge-callback.md | ✅ | ✅ | ✅ | ru ✅ |
 | api/admin-api.md | ✅ | ✅ | ✅ | ru ✅ |
+| node-tuning.th.md | ✅ | ✅ | ✅ | ru, ja, ko, de, fr, es, pt, tr, id, th, vi, ar, fa ✅ |
 | cert-google-eab.md | ✅ | ✅ | ✅ | ru ✅ |
 | oauth-google-verification.md | ✅ | ✅ | ✅ | ru ✅ |
 | notification-templates.md | ✅ | ✅ | ✅ | ru ✅ |
@@ -48,3 +49,7 @@
 | THIRD_PARTY_LICENSES.md | ✅ | ✅ | ✅ | ru ✅ |
 
 ดู [I18N.md](./I18N.md) สำหรับการตั้งชื่อ การนำทางภาษา และกฎการทบทวน *(ภาษาจีน)*
+
+## การปรับแต่งเคอร์เนลและเสริมความปลอดภัย
+
+- [node-tuning.th.md](./node-tuning.th.md) — การปรับแต่งเคอร์เนลและเสริมความปลอดภัย

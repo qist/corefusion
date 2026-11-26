@@ -944,7 +944,7 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 				Proxy: templateProxy(tpl, it.host, it.port),
 			}
 		}
-		dials, cleanup, _, err := p.startChainDialer(ctx, dialer, nil, targets)
+		dials, cleanup, _, err := p.startChainDialer(ctx, dialer, nil, targets, "")
 		if err != nil {
 			return res, err
 		}

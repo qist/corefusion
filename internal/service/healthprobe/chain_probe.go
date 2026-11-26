@@ -33,6 +33,7 @@ import (
 const (
 	SettingChainEnabled     = "cfip.chain_probe.enabled"
 	SettingChainExit        = "cfip.chain_probe.exit"
+	SettingChainInterface   = "cfip.chain_probe.interface"
 	SettingChainInbound     = "cfip.chain_probe.inbound"
 	SettingChainConcurrency = "cfip.chain_probe.concurrency"
 	SettingChainMaxTargets  = "cfip.chain_probe.max_targets"
@@ -66,6 +67,9 @@ type ChainConfig struct {
 	//   "inb:<id>"  = 自建节点上的入站（inbound_configs）
 	//   ""          = 本机直连（不推荐：国内主机直连 CDN 不代表客户端线路）
 	Exit string `json:"exit"`
+	// Interface 是发起探测时绑定的本机网卡（如 eth0、ppp0）。
+	// 留空 = 使用系统默认路由；xray / sing-box / mihomo 都支持。
+	Interface string `json:"interface"`
 	// Inbound 是「探针入站」标识（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）：
 	// 一轮探测只用它完成协议握手，把全部启用的 CDN 域名/IP 逐个测一遍。
 	// 必须显式选择，不再随机挑：随机会导致同一批条目每轮用不同入口，
@@ -232,6 +236,9 @@ func (p *Prober) ReadChainConfig(ctx context.Context) ChainConfig {
 	if v, err := p.setting.GetByKey(ctx, SettingChainExit); err == nil {
 		cfg.Exit = strings.TrimSpace(v)
 	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainInterface); err == nil {
+		cfg.Interface = strings.TrimSpace(v)
+	}
 	if v, err := p.setting.GetByKey(ctx, SettingChainInbound); err == nil {
 		cfg.Inbound = strings.TrimSpace(v)
 	}
@@ -354,6 +361,9 @@ func (p *Prober) SaveChainConfig(ctx context.Context, cfg ChainConfig) error {
 		return err
 	}
 	if err := set(SettingChainExit, strings.TrimSpace(cfg.Exit)); err != nil {
+		return err
+	}
+	if err := set(SettingChainInterface, strings.TrimSpace(cfg.Interface)); err != nil {
 		return err
 	}
 	if err := set(SettingChainInbound, strings.TrimSpace(cfg.Inbound)); err != nil {
@@ -517,6 +527,9 @@ func (p *Prober) validateChainRuntime(cfg ChainConfig) error {
 	if cfg.Exit == "" {
 		return errors.New("未选择出口节点：链路探测必须从一个真实出口发起，本机直连的结论没有参考意义")
 	}
+	if !ValidEgressInterface(cfg.Interface) {
+		return fmt.Errorf("网卡名不合法：%q（只允许字母、数字、_ - . :，长度 1-32）", cfg.Interface)
+	}
 	if cfg.Inbound == "" {
 		return errors.New("未选择探针入站：链路探测固定用这一个入站完成协议握手，请先选择")
 	}
@@ -555,7 +568,7 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 	}
 	// 临时核心里每个目标一条链：出口 → 目标 CDN 域名/IP → 探针入站 → probe_url。
 	// 不能只从出口直连 probe_url —— 那样探针入站根本不会收到连接。
-	dials, cleanup, usedDialer, err := p.startChainDialer(ctx, dialer, proxy, picked)
+	dials, cleanup, usedDialer, err := p.startChainDialer(ctx, dialer, proxy, picked, cfg.Interface)
 	if err != nil {
 		return sum, err
 	}

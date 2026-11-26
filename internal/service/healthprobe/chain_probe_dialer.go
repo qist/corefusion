@@ -65,6 +65,7 @@ func buildChainProbeConfig(
 	targets []ChainTarget,
 	valid []int,
 	ports []int,
+	iface string,
 ) (map[string]interface{}, error) {
 	if len(valid) == 0 {
 		return nil, fmt.Errorf("没有任何目标具备可用的入站出站参数")
@@ -92,16 +93,132 @@ func buildChainProbeConfig(
 		}
 	}
 
+	var conf map[string]interface{}
+	var err error
 	switch dialer {
 	case "xray":
-		return buildChainProbeXrayConfig(exitProxy, targets, valid, ports)
+		conf, err = buildChainProbeXrayConfig(exitProxy, targets, valid, ports)
 	case "singbox":
-		return buildChainProbeSingboxConfig(exitProxy, targets, valid, ports)
+		conf, err = buildChainProbeSingboxConfig(exitProxy, targets, valid, ports)
 	case "mihomo":
-		return buildChainProbeMihomoConfig(exitProxy, targets, valid, ports)
+		conf, err = buildChainProbeMihomoConfig(exitProxy, targets, valid, ports)
 	default:
 		return nil, fmt.Errorf("拨号核心 %q 暂不支持链路探测（可选 xray / sing-box / mihomo）", dialerDisplayName(dialer))
 	}
+	if err != nil {
+		return nil, err
+	}
+	applyChainProbeInterface(conf, dialer, iface)
+	return conf, nil
+}
+
+// ValidEgressInterface 校验网卡名（空 = 使用默认路由）。
+func ValidEgressInterface(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	if len(name) > 32 {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.' || r == ':' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// applyChainProbeInterface 把网卡绑定写进临时核心配置：
+//   - xray:    outbound.streamSettings.sockopt.interface
+//   - sing-box: outbound.bind_interface
+//   - mihomo:  proxy.interface-name
+//
+// 有出口时只绑「出口出站」——探测的底层 TCP 先到出口节点，绑在这条链路上才有意义；
+// 模板模式（无出口）则绑到每个目标出站。
+func applyChainProbeInterface(conf map[string]interface{}, dialer, iface string) {
+	if conf == nil || strings.TrimSpace(iface) == "" {
+		return
+	}
+	iface = strings.TrimSpace(iface)
+	switch dialer {
+	case "xray":
+		list, _ := conf["outbounds"].([]interface{})
+		hasExit := hasChainTag(list, chainProbeExitTag, "tag")
+		for _, item := range list {
+			ob, _ := item.(map[string]interface{})
+			if ob == nil {
+				continue
+			}
+			tag, _ := ob["tag"].(string)
+			if hasExit && tag != chainProbeExitTag {
+				continue
+			}
+			if !hasExit && !strings.HasPrefix(tag, "probe-target-") {
+				continue
+			}
+			ss, _ := ob["streamSettings"].(map[string]interface{})
+			if ss == nil {
+				ss = map[string]interface{}{}
+				ob["streamSettings"] = ss
+			}
+			so, _ := ss["sockopt"].(map[string]interface{})
+			if so == nil {
+				so = map[string]interface{}{}
+				ss["sockopt"] = so
+			}
+			so["interface"] = iface
+		}
+	case "singbox":
+		list, _ := conf["outbounds"].([]interface{})
+		hasExit := hasChainTag(list, chainProbeExitTag, "tag")
+		for _, item := range list {
+			ob, _ := item.(map[string]interface{})
+			if ob == nil {
+				continue
+			}
+			tag, _ := ob["tag"].(string)
+			if hasExit && tag != chainProbeExitTag {
+				continue
+			}
+			if !hasExit && !strings.HasPrefix(tag, "probe-target-") {
+				continue
+			}
+			ob["bind_interface"] = iface
+		}
+	case "mihomo":
+		list, _ := conf["proxies"].([]interface{})
+		hasExit := hasChainTag(list, chainProbeExitTag, "name")
+		for _, item := range list {
+			pm, _ := item.(map[string]interface{})
+			if pm == nil {
+				continue
+			}
+			name, _ := pm["name"].(string)
+			if hasExit && name != chainProbeExitTag {
+				continue
+			}
+			if !hasExit && !strings.HasPrefix(name, "probe-target-") {
+				continue
+			}
+			pm["interface-name"] = iface
+		}
+	}
+}
+
+func hasChainTag(list []interface{}, want, field string) bool {
+	for _, item := range list {
+		m, _ := item.(map[string]interface{})
+		if m == nil {
+			continue
+		}
+		if v, _ := m[field].(string); v == want {
+			return true
+		}
+	}
+	return false
 }
 
 // buildChainProbeXrayConfig 生成 xray 形态的链式探测配置。
@@ -338,6 +455,7 @@ func (p *Prober) startChainDialer(
 	dialer string,
 	exitProxy map[string]interface{},
 	targets []ChainTarget,
+	iface string,
 ) ([]dialFunc, func(), string, error) {
 	noop := func() {}
 	// exitProxy 为空 = 模板模式：目标出站本身就是客户端配置，不需要跳板。
@@ -356,7 +474,7 @@ func (p *Prober) startChainDialer(
 	if err != nil {
 		return nil, noop, "", err
 	}
-	conf, err := buildChainProbeConfig(dialer, exitProxy, targets, valid, ports)
+	conf, err := buildChainProbeConfig(dialer, exitProxy, targets, valid, ports, iface)
 	if err != nil {
 		return nil, noop, "", err
 	}

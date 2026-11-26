@@ -43,7 +43,7 @@ func chainTestTargets() []ChainTarget {
 // 探针入站永远收不到连接，探测结果与"链路是否可用"无关。
 func TestBuildChainProbeXrayConfigWiresDialerProxy(t *testing.T) {
 	targets := chainTestTargets()
-	conf, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0, 1}, []int{20001, 20002})
+	conf, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0, 1}, []int{20001, 20002}, "")
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestBuildChainProbeXrayConfigWiresDialerProxy(t *testing.T) {
 
 // sing-box 走 detour：目标出站的底层连接经出口拨号。
 func TestBuildChainProbeSingboxConfigUsesDetour(t *testing.T) {
-	conf, err := buildChainProbeConfig("singbox", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, []int{20011, 20012})
+	conf, err := buildChainProbeConfig("singbox", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, []int{20011, 20012}, "")
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestBuildChainProbeXrayConfigKeepsALPN(t *testing.T) {
 			"grpc-opts": map[string]interface{}{"grpc-service-name": "svc"},
 		},
 	}}
-	conf, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0}, []int{20031})
+	conf, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0}, []int{20031}, "")
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -158,17 +158,17 @@ func TestBuildChainProbeConfigRejectsUnsupportedProtocol(t *testing.T) {
 		Host:     "hy2.example.com",
 		Proxy:    map[string]interface{}{"type": "hysteria2", "server": "hy2.example.com", "port": float64(443)},
 	}}
-	if _, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0}, []int{20021}); err == nil {
+	if _, err := buildChainProbeConfig("xray", chainTestExitProxy(), targets, []int{0}, []int{20021}, ""); err == nil {
 		t.Fatal("xray 不支持 hysteria2 出站，必须报错")
 	}
-	if _, err := buildChainProbeConfig("unknown-core", chainTestExitProxy(), chainTestTargets(), []int{0}, []int{20021}); err == nil {
+	if _, err := buildChainProbeConfig("unknown-core", chainTestExitProxy(), chainTestTargets(), []int{0}, []int{20021}, ""); err == nil {
 		t.Fatal("未知拨号核心必须报错")
 	}
 }
 
 // mihomo 用 listeners[].proxy + 目标 proxy 的 dialer-proxy 组成链。
 func TestBuildChainProbeMihomoConfigUsesDialerProxy(t *testing.T) {
-	conf, err := buildChainProbeConfig("mihomo", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, []int{20041, 20042})
+	conf, err := buildChainProbeConfig("mihomo", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, []int{20041, 20042}, "")
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestBuildChainProbeConfigTemplateMode(t *testing.T) {
 	valid := []int{0, 1}
 	ports := []int{19001, 19002}
 	for _, dialer := range []string{"xray", "singbox", "mihomo"} {
-		cfg, err := buildChainProbeConfig(dialer, nil, targets, valid, ports)
+		cfg, err := buildChainProbeConfig(dialer, nil, targets, valid, ports, "")
 		if err != nil {
 			t.Fatalf("%s build: %v", dialer, err)
 		}
@@ -228,6 +228,120 @@ func TestBuildChainProbeConfigTemplateMode(t *testing.T) {
 			if len(proxies) != 2 {
 				t.Fatalf("mihomo 模板模式 want 2 proxies, got %d", len(proxies))
 			}
+		}
+	}
+}
+
+func chainFindByField(list []interface{}, field, want string) map[string]interface{} {
+	for _, item := range list {
+		m, _ := item.(map[string]interface{})
+		if m == nil {
+			continue
+		}
+		if v, _ := m[field].(string); v == want {
+			return m
+		}
+	}
+	return nil
+}
+
+// 三个核心都要能把「出口网卡」写进临时配置；有出口时只绑出口出站。
+func TestChainProbeInterfaceBinding(t *testing.T) {
+	ports := func(n int) []int {
+		out := make([]int, n)
+		for i := range out {
+			out[i] = 21000 + i
+		}
+		return out
+	}
+
+	// xray: sockopt.interface
+	conf, err := buildChainProbeConfig("xray", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, ports(2), "eth0")
+	if err != nil {
+		t.Fatalf("xray build: %v", err)
+	}
+	outs, _ := conf["outbounds"].([]interface{})
+	exit := chainFindByField(outs, "tag", chainProbeExitTag)
+	if exit == nil {
+		t.Fatal("xray 缺少出口出站")
+	}
+	ss, _ := exit["streamSettings"].(map[string]interface{})
+	so, _ := ss["sockopt"].(map[string]interface{})
+	if so == nil || so["interface"] != "eth0" {
+		t.Fatalf("xray 出口未绑定网卡：%+v", exit)
+	}
+	if target := chainFindByField(outs, "tag", "probe-target-0"); target != nil {
+		tss, _ := target["streamSettings"].(map[string]interface{})
+		tso, _ := tss["sockopt"].(map[string]interface{})
+		if tso != nil && tso["interface"] != nil {
+			t.Fatalf("有出口时目标出站不应绑网卡：%+v", tso)
+		}
+	}
+
+	// sing-box: bind_interface
+	conf, err = buildChainProbeConfig("singbox", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, ports(2), "eth0")
+	if err != nil {
+		t.Fatalf("singbox build: %v", err)
+	}
+	outs, _ = conf["outbounds"].([]interface{})
+	if exit := chainFindByField(outs, "tag", chainProbeExitTag); exit == nil || exit["bind_interface"] != "eth0" {
+		t.Fatalf("sing-box 出口未绑定网卡：%+v", exit)
+	}
+
+	// mihomo: interface-name
+	conf, err = buildChainProbeConfig("mihomo", chainTestExitProxy(), chainTestTargets(), []int{0, 1}, ports(2), "eth0")
+	if err != nil {
+		t.Fatalf("mihomo build: %v", err)
+	}
+	proxies, _ := conf["proxies"].([]interface{})
+	if exit := chainFindByField(proxies, "name", chainProbeExitTag); exit == nil || exit["interface-name"] != "eth0" {
+		t.Fatalf("mihomo 出口未绑定网卡：%+v", exit)
+	}
+}
+
+// 留空 = 不绑定，走系统默认路由。
+func TestChainProbeInterfaceEmpty(t *testing.T) {
+	for _, dialer := range []string{"xray", "singbox", "mihomo"} {
+		conf, err := buildChainProbeConfig(dialer, chainTestExitProxy(), chainTestTargets(), []int{0}, []int{21100}, "")
+		if err != nil {
+			t.Fatalf("%s build: %v", dialer, err)
+		}
+		raw, _ := json.Marshal(conf)
+		for _, bad := range []string{`"interface"`, `"bind_interface"`, `"interface-name"`} {
+			if strings.Contains(string(raw), bad) {
+				t.Fatalf("%s 留空时不应出现 %s：%s", dialer, bad, raw)
+			}
+		}
+	}
+}
+
+// 模板模式（无出口）时网卡绑到目标出站上。
+func TestChainProbeInterfaceTemplateMode(t *testing.T) {
+	conf, err := buildChainProbeConfig("xray", nil, chainTestTargets(), []int{0}, []int{21200}, "eth1")
+	if err != nil {
+		t.Fatalf("xray template build: %v", err)
+	}
+	outs, _ := conf["outbounds"].([]interface{})
+	target := chainFindByField(outs, "tag", "probe-target-0")
+	if target == nil {
+		t.Fatal("缺少目标出站")
+	}
+	ss, _ := target["streamSettings"].(map[string]interface{})
+	so, _ := ss["sockopt"].(map[string]interface{})
+	if so == nil || so["interface"] != "eth1" {
+		t.Fatalf("模板模式目标出站未绑定网卡：%+v", target)
+	}
+}
+
+func TestValidEgressInterface(t *testing.T) {
+	for _, ok := range []string{"", "eth0", "ppp0", "br-lan", "wg0.1", "enp3s0f0"} {
+		if !ValidEgressInterface(ok) {
+			t.Fatalf("%q 应合法", ok)
+		}
+	}
+	for _, bad := range []string{"eth 0", "eth/0", "网卡", "a\nb", "this-name-is-way-too-long-for-a-nic"} {
+		if ValidEgressInterface(bad) {
+			t.Fatalf("%q 应非法", bad)
 		}
 	}
 }

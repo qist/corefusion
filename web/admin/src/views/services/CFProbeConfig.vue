@@ -93,6 +93,12 @@
         </el-select>
       </div>
       <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainExitInterface') }}</div>
+        <el-select v-model="chainCfg.interface" size="small" style="width:180px" clearable filterable allow-create default-first-option :placeholder="t('service.cfip.chainExitInterfacePlaceholder')">
+          <el-option v-for="i in chainInterfaces" :key="i.name" :label="i.label" :value="i.name" />
+        </el-select>
+      </div>
+      <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainInbound') }}</div>
         <el-select v-model="chainCfg.inbound" size="small" style="width:300px" filterable clearable :placeholder="t('service.cfip.chainInboundPlaceholder')">
           <el-option-group v-if="chainInboundExt.length" :label="t('service.cfip.probeEntryExternal')">
@@ -119,6 +125,7 @@
       </div>
     </div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.chainHint') }}</div>
+    <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainExitInterfaceHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainInboundHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">
       {{ t('service.cfip.chainDependsProbe') }}：{{ t('service.cfip.chainProbeInterval') }} {{ chainDeps.interval_minutes }} min
@@ -247,6 +254,7 @@ const inbNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'inbou
 const chainCfg = ref({
   enabled: false,
   exit: '',
+  interface: '',
   inbound: '',
   concurrency: 2,
   domain_enabled: true,
@@ -261,6 +269,7 @@ const chainCfg = ref({
 const chainResults = ref({ domain: [], ip: [] })
 const chainUpdatedAt = ref({ domain: 0, ip: 0 })
 const chainExits = ref([])
+const chainInterfaces = ref([])
 const chainInbounds = ref([])
 const chainTargets = ref([])
 const chainChecking = ref({ domain: false, ip: false })
@@ -369,6 +378,7 @@ async function fetchChainConfig(opts = {}) {
       chainCfg.value = {
         enabled: !!d.config.enabled,
         exit: d.config.exit || '',
+        interface: d.config.interface || '',
         inbound: d.config.inbound || '',
         concurrency: d.config.concurrency ?? 2,
         domain_enabled: d.config.domain_enabled !== false,
@@ -379,6 +389,10 @@ async function fetchChainConfig(opts = {}) {
         kinds_configured: true,
       }
     }
+    chainInterfaces.value = (d.interfaces || []).map((i) => ({
+      name: i.name,
+      label: i.up ? i.name : `${i.name} (down)`,
+    }))
     chainExits.value = d.exits || []
     chainInbounds.value = d.inbounds || []
     chainTargets.value = d.targets || []

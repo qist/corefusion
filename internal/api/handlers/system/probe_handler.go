@@ -3,6 +3,7 @@ package system
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 
@@ -456,6 +457,7 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 		"ip_target_count":           ipTargetCount,
 		"domain_target_count":       domainTargetCount,
 		"exits":                     h.chainExitOptions(ctx),
+		"interfaces":                chainInterfaceOptions(),
 		"inbounds":                  inbounds,
 		"interval_minutes":          probeCfg.IntervalMinutes,
 		"dialer":                    probeCfg.Dialer,
@@ -468,6 +470,10 @@ func (h *ProbeHandler) SaveChainConfig(c *gin.Context) {
 	var req healthprobe.ChainConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if !healthprobe.ValidEgressInterface(req.Interface) {
+		response.BadRequest(c, "INVALID_INTERFACE", "网卡名只允许字母、数字、_ - . :，长度 1-32")
 		return
 	}
 	// 探针入站：允许留空（= 未选择），但一旦填了就必须是当前可用的 CDN 入站。
@@ -523,4 +529,31 @@ func (h *ProbeHandler) CheckChain(c *gin.Context) {
 		return
 	}
 	response.OK(c, res)
+}
+
+// chainInterfaceOption 是本机可选出口网卡（临时核心运行在面板主机上）。
+type chainInterfaceOption struct {
+	Name  string   `json:"name"`
+	Up    bool     `json:"up"`
+	Addrs []string `json:"addrs,omitempty"`
+}
+
+// chainInterfaceOptions 列出面板主机的网卡，供「出口网卡」下拉使用。
+// 只做展示：探测核心绑定的就是本机网卡，留空则走系统默认路由。
+func chainInterfaceOptions() []chainInterfaceOption {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	out := make([]chainInterfaceOption, 0, len(ifaces))
+	for _, iface := range ifaces {
+		opt := chainInterfaceOption{Name: iface.Name, Up: iface.Flags&net.FlagUp != 0}
+		if addrs, err := iface.Addrs(); err == nil {
+			for _, a := range addrs {
+				opt.Addrs = append(opt.Addrs, a.String())
+			}
+		}
+		out = append(out, opt)
+	}
+	return out
 }

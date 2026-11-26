@@ -202,3 +202,96 @@ func TestAgentDialersLocal(t *testing.T) {
 		t.Fatalf("测试环境面板无核心，实际 %v", info.Dialers)
 	}
 }
+
+func TestNormalizeProbeKind(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"", ProbeKindAll, true},
+		{"all", ProbeKindAll, true},
+		{"IP", ProbeKindIP, true},
+		{"cf_ip", ProbeKindIP, true},
+		{"domain", ProbeKindDomain, true},
+		{" CF_DOMAIN ", ProbeKindDomain, true},
+		{"tcp", "", false},
+	}
+	for _, c := range cases {
+		got, ok := NormalizeProbeKind(c.in)
+		if got != c.want || ok != c.ok {
+			t.Fatalf("NormalizeProbeKind(%q) = (%q, %v), want (%q, %v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestProbeKindWanted(t *testing.T) {
+	cases := []struct {
+		want, target string
+		expect       bool
+	}{
+		{ProbeKindAll, "cf_ip", true},
+		{ProbeKindAll, "cf_domain", true},
+		{ProbeKindIP, "cf_ip", true},
+		{ProbeKindIP, "cf_domain", false},
+		{ProbeKindDomain, "cf_domain", true},
+		{ProbeKindDomain, "cf_ip", false},
+	}
+	for _, c := range cases {
+		if got := probeKindWanted(c.want, c.target); got != c.expect {
+			t.Fatalf("probeKindWanted(%q, %q) = %v, want %v", c.want, c.target, got, c.expect)
+		}
+	}
+}
+
+// 检测连通性按 kind 分开：IP 页只收 IP 目标，域名页只收域名目标。
+func TestCollectProbeTargetsByKind(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "targets.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.CFIPEntry{}, &entity.ShareDomainConfig{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := db.Create(&entity.CFIPEntry{IP: "192.0.2.10", Enabled: true}).Error; err != nil {
+		t.Fatalf("seed ip: %v", err)
+	}
+	if err := db.Create(&entity.ShareDomainConfig{Type: "cf_domain", Value: "example.com", Port: 443, Enabled: true}).Error; err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+
+	p := New(repository.NewCFIPEntryRepository(db), repository.NewShareDomainConfigRepository(db), nil, nil, nil, t.TempDir())
+	ctx := context.Background()
+
+	kinds := func(items []probeTarget) map[string]int {
+		out := map[string]int{}
+		for _, it := range items {
+			out[it.kind]++
+		}
+		return out
+	}
+
+	all, _, err := p.collectProbeTargets(ctx, ProbeKindAll)
+	if err != nil {
+		t.Fatalf("all: %v", err)
+	}
+	if k := kinds(all); k["cf_ip"] != 1 || k["cf_domain"] != 1 {
+		t.Fatalf("全部应各 1 条，实际 %v", k)
+	}
+
+	ips, _, err := p.collectProbeTargets(ctx, ProbeKindIP)
+	if err != nil {
+		t.Fatalf("ip: %v", err)
+	}
+	if k := kinds(ips); k["cf_ip"] != 1 || k["cf_domain"] != 0 {
+		t.Fatalf("ip 模式只应有 cf_ip，实际 %v", k)
+	}
+
+	domains, _, err := p.collectProbeTargets(ctx, ProbeKindDomain)
+	if err != nil {
+		t.Fatalf("domain: %v", err)
+	}
+	if k := kinds(domains); k["cf_domain"] != 1 || k["cf_ip"] != 0 {
+		t.Fatalf("domain 模式只应有 cf_domain，实际 %v", k)
+	}
+}

@@ -212,6 +212,37 @@ func (p *Prober) SetAgentDialerLister(fn AgentDialerLister) {
 	p.agentDialers = fn
 }
 
+// 检测类型：页面上的「检测连通性」按列表分开调用。
+const (
+	ProbeKindAll    = ""
+	ProbeKindIP     = "ip"
+	ProbeKindDomain = "domain"
+)
+
+// NormalizeProbeKind 归一检测类型；返回 ok=false 表示非法（handler 返回 400）。
+func NormalizeProbeKind(kind string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "", "all", "both":
+		return ProbeKindAll, true
+	case "ip", "cf_ip":
+		return ProbeKindIP, true
+	case "domain", "cf_domain":
+		return ProbeKindDomain, true
+	}
+	return "", false
+}
+
+// probeKindWanted 判断某个目标类型本轮是否要探测（target 取 cf_ip / cf_domain）。
+func probeKindWanted(want, target string) bool {
+	switch want {
+	case ProbeKindIP:
+		return target == "cf_ip"
+	case ProbeKindDomain:
+		return target == "cf_domain"
+	}
+	return true
+}
+
 // dialerCandidates 是自动模式下的优先顺序。
 //
 // xray 优先：链路探测会把入站渲染成客户端出站（vmess/vless + ws/grpc/reality
@@ -469,6 +500,14 @@ type dialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 // 国内、没有独立国内出口）唯一可信的健康来源，不能因为链路探测开着就停用。
 // 链路探测在本轮之后执行，对它覆盖到的条目再以出口线路判定（后写覆盖）。
 func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
+	return p.CheckAllKind(ctx, ProbeKindAll)
+}
+
+// CheckAllKind 只探测指定类型：ip = 优选 IP，domain = 优选域名，空 = 全部。
+// 两个列表在页面上是分开的（CF 优选 IP / 分享域名），各自点「检测连通性」
+// 只应更新自己那一类，否则一个按钮会顺带把另一类的结果也改掉。
+func (p *Prober) CheckAllKind(ctx context.Context, kind string) (Result, error) {
+	kind, _ = NormalizeProbeKind(kind)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -519,7 +558,7 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 				return res, derr
 			}
 			res.Entry = fmt.Sprintf("%s/%s@agent:%d", label, dialer, cfg.AgentID)
-			return p.checkAllExitRemote(ctx, cfg, res, pm)
+			return p.checkAllExitRemote(ctx, cfg, res, pm, kind)
 		} else {
 			d, fn, usedDialer, err := p.startEntryDialer(ctx, cfg, pm)
 			if err != nil {
@@ -533,7 +572,7 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 
 	// 模板模式：真实拨号 + 双向流量判定，不再走 probeTCP/probeTLS。
 	if tpl != nil {
-		return p.checkAllWithTemplate(ctx, cfg, res, tpl)
+		return p.checkAllWithTemplate(ctx, cfg, res, tpl, kind)
 	}
 
 	var wg sync.WaitGroup
@@ -566,7 +605,7 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 	}
 
 	// 1) 优选 IP（cf_ip_entries）
-	if p.cfRepo != nil {
+	if p.cfRepo != nil && probeKindWanted(kind, "cf_ip") {
 		entries, err := p.cfRepo.List(ctx, 0)
 		if err != nil {
 			setErr(err)
@@ -595,7 +634,7 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 	}
 
 	// 2) 优选域名（share_domain_configs 里 type=cf_domain）
-	if p.shareRepo != nil {
+	if p.shareRepo != nil && probeKindWanted(kind, "cf_domain") {
 		domains, err := p.shareRepo.List(ctx, "cf_domain")
 		if err != nil {
 			setErr(err)
@@ -1061,7 +1100,7 @@ const chainTemplateBatchSize = 40
 
 // checkAllWithTemplate 用入口配置当模板，逐条替换 server 后真实拨号。
 // 判定口径与链路探测一致：HTTP 2xx/3xx 且上下行都有字节才算健康。
-func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}) (Result, error) {
+func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}, kind string) (Result, error) {
 	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
@@ -1080,7 +1119,7 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 	}
 	items := make([]tplItem, 0, 256)
 
-	if p.cfRepo != nil {
+	if p.cfRepo != nil && probeKindWanted(kind, "cf_ip") {
 		entries, err := p.cfRepo.List(ctx, 0)
 		if err != nil {
 			return res, err
@@ -1094,7 +1133,7 @@ func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Resul
 				host: strings.TrimSpace(e.IP), port: firstPort(e.Ports, 443)})
 		}
 	}
-	if p.shareRepo != nil {
+	if p.shareRepo != nil && probeKindWanted(kind, "cf_domain") {
 		domains, err := p.shareRepo.List(ctx, "cf_domain")
 		if err != nil {
 			return res, err
@@ -1215,10 +1254,10 @@ type probeTarget struct {
 }
 
 // collectProbeTargets 读取当前启用的优选 IP / 域名。返回跳过数量。
-func (p *Prober) collectProbeTargets(ctx context.Context) ([]probeTarget, int, error) {
+func (p *Prober) collectProbeTargets(ctx context.Context, kind string) ([]probeTarget, int, error) {
 	items := make([]probeTarget, 0, 256)
 	skipped := 0
-	if p.cfRepo != nil {
+	if p.cfRepo != nil && probeKindWanted(kind, "cf_ip") {
 		entries, err := p.cfRepo.List(ctx, 0)
 		if err != nil {
 			return nil, skipped, err
@@ -1232,7 +1271,7 @@ func (p *Prober) collectProbeTargets(ctx context.Context) ([]probeTarget, int, e
 				host: strings.TrimSpace(e.IP), port: firstPort(e.Ports, 443)})
 		}
 	}
-	if p.shareRepo != nil {
+	if p.shareRepo != nil && probeKindWanted(kind, "cf_domain") {
 		domains, err := p.shareRepo.List(ctx, "cf_domain")
 		if err != nil {
 			return nil, skipped, err
@@ -1271,12 +1310,12 @@ func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarg
 
 // checkAllExitRemote 在指定 Agent 上做「出口语义」探测：临时核心只有一条出口，
 // 优选 IP 做 TCP 建连、优选域名做 TLS 握手。
-func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}) (Result, error) {
+func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}, kind string) (Result, error) {
 	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
 	}
-	items, skipped, err := p.collectProbeTargets(ctx)
+	items, skipped, err := p.collectProbeTargets(ctx, kind)
 	if err != nil {
 		return res, err
 	}

@@ -178,7 +178,8 @@ async function fetchNodeServers() {
 
 async function checkHealth() {
   try {
-    await client.post('/cfip/check')
+    // 只检测本页的类型：IP 页不碰优选域名，域名页不碰优选 IP。
+    await client.post('/cfip/check', { kind: 'domain' })
     ElMessage.success(t('common.success'))
     await fetchItems()
     notifyCfipRefresh()

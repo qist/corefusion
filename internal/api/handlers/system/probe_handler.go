@@ -48,7 +48,24 @@ func NewProbeHandler(
 
 // Check 立即探测全部优选域名/IP，返回本次探测汇总。
 func (h *ProbeHandler) Check(c *gin.Context) {
-	res, err := h.prober.CheckAll(c.Request.Context())
+	// kind=ip|domain 只测对应列表；留空 = 全部。页面上两个列表是分开的，
+	// 各自点「检测连通性」不应顺带改写另一类的健康状态。
+	kind := strings.ToLower(strings.TrimSpace(c.Query("kind")))
+	if kind == "" {
+		var req struct {
+			Kind string `json:"kind"`
+		}
+		// 允许空 body：旧前端 POST 无 body 时不报错。
+		if err := c.ShouldBindJSON(&req); err == nil {
+			kind = strings.ToLower(strings.TrimSpace(req.Kind))
+		}
+	}
+	norm, ok := healthprobe.NormalizeProbeKind(kind)
+	if !ok {
+		response.BadRequest(c, "INVALID_KIND", "检测类型只支持 ip / domain，留空为全部")
+		return
+	}
+	res, err := h.prober.CheckAllKind(c.Request.Context(), norm)
 	if err != nil {
 		response.InternalError(c, "PROBE_FAILED", err.Error())
 		return

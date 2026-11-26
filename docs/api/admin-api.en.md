@@ -643,6 +643,7 @@ Cloudflare CDN IP pool and source management.
 | POST | `/api/v1/cfip/fetch-all` | Admin | Fetch all sources |
 | GET | `/api/v1/cfip/probe-config` | Signed in | CF preferred-IP probe config (entry nodes + installed dialers) |
 | PUT | `/api/v1/cfip/probe-config` | Admin | Save probe interval / latency limit / entry node / dialer / execution node / NIC |
+| GET | `/api/v1/cfip/probe-capabilities?agent_id=N` | Signed in | Dialer cores and versions installed on the execution node (0 = panel host) |
 | POST | `/api/v1/cfip/check` | Admin | Probe all preferred domains/IPs now |
 | POST | `/api/v1/cfip/seed` | Admin | Initialize default data |
 | GET | `/api/v1/cfip/sources` | Signed in | Data source list |

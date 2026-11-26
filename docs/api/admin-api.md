@@ -641,6 +641,7 @@ CF CDN IP 池与来源管理。
 | POST | `/api/v1/cfip/fetch-all` | 管理员 | 拉取全部来源 |
 | GET | `/api/v1/cfip/probe-config` | 登录 | CF 优选探测配置（含入口节点与已装拨号核心） |
 | PUT | `/api/v1/cfip/probe-config` | 管理员 | 保存探测间隔/延迟阈值/入口节点/拨号核心/执行节点/网卡 |
+| GET | `/api/v1/cfip/probe-capabilities?agent_id=N` | 登录 | 该执行节点已安装的拨号核心与版本（0=面板本机） |
 | POST | `/api/v1/cfip/check` | 管理员 | 立即探测全部优选域名/IP |
 | POST | `/api/v1/cfip/seed` | 管理员 | 初始化默认数据 |
 | GET | `/api/v1/cfip/sources` | 登录 | 数据源列表 |

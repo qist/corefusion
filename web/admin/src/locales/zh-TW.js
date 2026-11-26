@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "自動探測",
       "probeEnabledHint": "預設關閉；不使用 CF 優選時保持關閉可避免定時探測白白佔用資源。手動「檢測連通性」不受影響。",
       "probeAgentDialerHint": "撥號核心執行在所選節點上：請在該節點的二進位管理中安裝/更新（面板本機的安裝入口僅在未選節點時可用）。",
+      "probeAgentMissing": "執行節點未安裝 {core} 撥號核心：請先在該節點的「核心 / 二進位」中安裝，再執行探測。",
       "probeInterval": "探測間隔（分鐘）",
       "probeMaxLatency": "延遲閾值（ms，0=不限）",
       "probeEntryNode": "探測入口節點",

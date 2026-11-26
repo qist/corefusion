@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "Sonde automatique",
       "probeEnabledHint": "Désactivée par défaut. Laissez-la désactivée si vous n'utilisez pas l'optimisation Cloudflare ; la vérification manuelle reste disponible.",
       "probeAgentDialerHint": "Le cœur de Dialer s\'exécute sur le nœud choisi ; installez-le/mettez-le à jour via la gestion des binaires de ce nœud (l\'installation locale ne s\'applique que sans nœud).",
+      "probeAgentMissing": "Le nœud choisi n\'a pas le cœur de Dialer {core} installé : installez-le dans ses cœurs/binaires puis relancez le test.",
       "probeInterval": "Intervalle (minutes)",
       "probeMaxLatency": "Latence max (ms, 0 = illimité)",
       "probeEntryNode": "Nœud d'entrée de sonde",

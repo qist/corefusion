@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "자동 탐지",
       "probeEnabledHint": "기본값은 꺼짐입니다. Cloudflare 최적화를 쓰지 않으면 꺼 두어 불필요한 주기 탐지를 피하세요. 수동 검사는 그대로 동작합니다.",
       "probeAgentDialerHint": "다이얼러 코어는 선택한 노드에서 실행됩니다. 해당 노드의 바이너리 관리에서 설치/업데이트하세요(패널 설치 항목은 노드 미선택 시에만).",
+      "probeAgentMissing": "선택한 노드에 {core} 다이얼러 코어가 없습니다. 해당 노드의 코어/바이너리에서 설치한 뒤 다시 검사하세요.",
       "probeInterval": "간격(분)",
       "probeMaxLatency": "지연 임계값(ms, 0=무제한)",
       "probeEntryNode": "탐지 진입 노드",

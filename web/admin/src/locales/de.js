@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "Automatische Prüfung",
       "probeEnabledHint": "Standardmäßig aus. Aus lassen, wenn keine Cloudflare-Optimierung genutzt wird — manuelles Prüfen bleibt möglich.",
       "probeAgentDialerHint": "Das Dialer-Core läuft auf dem gewählten Knoten; installiere/aktualisiere es in dessen Binärverwaltung (der lokale Installations-Eintrag gilt nur ohne Knoten).",
+      "probeAgentMissing": "Auf dem gewählten Knoten ist der Dialer {core} nicht installiert: bitte in dessen Kerne/Binärdateien installieren und erneut prüfen.",
       "probeInterval": "Intervall (Minuten)",
       "probeMaxLatency": "Max. Latenz (ms, 0 = unbegrenzt)",
       "probeEntryNode": "Prüf-Eingangsknoten",

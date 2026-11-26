@@ -1917,6 +1917,7 @@ export default {
       probeEnabled: '自动探测',
       probeEnabledHint: '默认关闭；不使用 CF 优选时保持关闭可避免定时探测白白占用资源。手动「检测连通性」不受影响。',
       "probeAgentDialerHint": "拨号核心运行在执行节点上：请在该节点的二进制管理里安装/更新（面板本机的安装入口只在未选节点时可用）。",
+      "probeAgentMissing": "执行节点未安装 {core} 拨号核心：请先在该节点的「核心 / 二进制」里安装，再执行探测。",
       probeInterval: '探测间隔（分钟）',
       probeMaxLatency: '延迟阈值（ms，0=不限）',
       probeEntryNode: '探测入口节点',

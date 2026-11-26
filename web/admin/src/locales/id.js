@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "Probe otomatis",
       "probeEnabledHint": "Nonaktif secara default. Biarkan mati jika tidak memakai optimasi Cloudflare; pemeriksaan manual tetap bisa.",
       "probeAgentDialerHint": "Core dialer berjalan di node terpilih; pasang/perbarui lewat manajemen biner node tersebut (instalasi panel hanya berlaku tanpa node).",
+      "probeAgentMissing": "Node terpilih belum memiliki core dialer {core}: pasang di core/biner node tersebut lalu periksa lagi.",
       "probeInterval": "Interval (menit)",
       "probeMaxLatency": "Ambang latensi (ms, 0 = tanpa batas)",
       "probeEntryNode": "Node masuk pemeriksaan",

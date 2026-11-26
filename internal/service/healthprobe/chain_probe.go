@@ -662,7 +662,7 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 	if !cfg.InheritProbe {
 		dialerChoice = cfg.Dialer
 	}
-	dialer, err := p.pickDialer(dialerChoice)
+	dialer, err := p.pickDialerOn(ctx, dialerChoice, cfg.AgentID)
 	if err != nil {
 		return sum, err
 	}

@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "Sondagem automática",
       "probeEnabledHint": "Desativada por padrão. Deixe desligada se não usar a otimização da Cloudflare; a verificação manual continua disponível.",
       "probeAgentDialerHint": "O núcleo de discagem roda no nó selecionado; instale/atualize pela gestão de binários desse nó (a instalação local só vale sem nó).",
+      "probeAgentMissing": "O nó selecionado não tem o núcleo de discagem {core} instalado: instale em núcleos/binários desse nó e teste novamente.",
       "probeInterval": "Intervalo (minutos)",
       "probeMaxLatency": "Latência máx. (ms, 0 = sem limite)",
       "probeEntryNode": "Nó de entrada da sondagem",

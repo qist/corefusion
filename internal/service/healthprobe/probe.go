@@ -121,6 +121,9 @@ type Prober struct {
 	chainProv ChainTargetProvider
 	// chainRemote 由 router 注入，在选定的 Agent 上执行链路探测。
 	chainRemote ChainRemoteRunner
+	// agentDialers 由 router 注入，查询执行节点上已安装的拨号核心。
+	// 探测核心装在哪台机器上必须问那台机器，不能用面板的清单顶替。
+	agentDialers AgentDialerLister
 	// wake 唤醒调度器重新读配置（开关/间隔改动后立即生效）。
 	wake chan struct{}
 }
@@ -193,6 +196,20 @@ func (p *Prober) ReadConfig(ctx context.Context) Config {
 		cfg.Interface = strings.TrimSpace(v)
 	}
 	return cfg
+}
+
+// AgentDialerInfo 是执行节点上报的已安装拨号核心。
+type AgentDialerInfo struct {
+	Dialers  []string          `json:"dialers"`
+	Versions map[string]string `json:"dialer_versions"`
+}
+
+// AgentDialerLister 查询某个节点上已安装的拨号核心（serverID=0 表示面板本机）。
+type AgentDialerLister func(ctx context.Context, serverID int64) (AgentDialerInfo, error)
+
+// SetAgentDialerLister 注入「查询执行节点拨号核心」的实现。
+func (p *Prober) SetAgentDialerLister(fn AgentDialerLister) {
+	p.agentDialers = fn
 }
 
 // dialerCandidates 是自动模式下的优先顺序。
@@ -494,7 +511,7 @@ func (p *Prober) CheckAll(ctx context.Context) (Result, error) {
 			if p.chainRemote == nil {
 				return res, errors.New("Agent 执行器未初始化，无法在指定节点上执行")
 			}
-			dialer, derr := p.pickDialer(cfg.Dialer)
+			dialer, derr := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 			if derr != nil {
 				return res, derr
 			}
@@ -731,6 +748,90 @@ func (p *Prober) pickDialer(configured string) (string, error) {
 	default:
 		return "", fmt.Errorf("不支持的拨号核心 %q（可选 sing-box / mihomo / xray）", configured)
 	}
+}
+
+// AgentDialers 返回执行节点上真正已安装的拨号核心。
+// agentID=0 时返回面板本机的清单（与 EffectiveDialer 口径一致）。
+func (p *Prober) AgentDialers(ctx context.Context, agentID int64) (AgentDialerInfo, error) {
+	if agentID <= 0 {
+		installed := p.installedDialers()
+		info := AgentDialerInfo{Dialers: installed, Versions: map[string]string{}}
+		for _, name := range installed {
+			if p.resolver != nil {
+				if v := p.resolver.Version(name); v != "" {
+					info.Versions[name] = v
+				}
+			}
+		}
+		return info, nil
+	}
+	if p.agentDialers == nil {
+		return AgentDialerInfo{}, fmt.Errorf("执行节点能力查询未初始化")
+	}
+	return p.agentDialers(ctx, agentID)
+}
+
+// pickDialerOn 在「指定执行节点」上挑选拨号核心。
+//
+// 选中 Agent 时核心必须装在该节点上：面板的已安装清单只代表面板本机，
+// 用它挑出来的核心到节点上会直接 `binary not installed`。
+func (p *Prober) pickDialerOn(ctx context.Context, configured string, agentID int64) (string, error) {
+	if agentID <= 0 {
+		return p.pickDialer(configured)
+	}
+	info, err := p.AgentDialers(ctx, agentID)
+	if err != nil {
+		return "", fmt.Errorf("无法查询执行节点（agent:%d）的拨号核心：%w", agentID, err)
+	}
+	installed := make(map[string]bool, len(info.Dialers))
+	for _, name := range info.Dialers {
+		installed[name] = true
+	}
+	want := normalizeDialerName(configured)
+	if want != "" {
+		if !installed[want] {
+			return "", fmt.Errorf("执行节点（agent:%d）未安装 %s 拨号核心：请在「节点 → 核心/二进制」里安装，或改用该节点已安装的核心（%s）",
+				agentID, dialerDisplayName(want), joinDialerNames(info.Dialers))
+		}
+		return want, nil
+	}
+	for _, name := range dialerCandidates {
+		if installed[name] {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("执行节点（agent:%d）没有可用的拨号核心（xray / sing-box / mihomo 均未安装）", agentID)
+}
+
+// EffectiveDialerOn 返回指定执行节点上实际会用的拨号核心（空配置按该节点
+// 已安装情况自动挑选）。查询失败时返回空串，由页面提示。
+func (p *Prober) EffectiveDialerOn(ctx context.Context, configured string, agentID int64) string {
+	if d, err := p.pickDialerOn(ctx, configured, agentID); err == nil {
+		return d
+	}
+	return ""
+}
+
+// normalizeDialerName 归一核心名（v2ray→xray，clash→mihomo）。
+func normalizeDialerName(name string) string {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "clash":
+		return "mihomo"
+	case "v2ray":
+		return "xray"
+	}
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func joinDialerNames(names []string) string {
+	if len(names) == 0 {
+		return "无"
+	}
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = dialerDisplayName(n)
+	}
+	return strings.Join(out, " / ")
 }
 
 // EffectiveDialer 返回实际会用的拨号核心（配置为空时按自动顺序解析）。
@@ -980,7 +1081,7 @@ const chainTemplateBatchSize = 40
 // checkAllWithTemplate 用入口配置当模板，逐条替换 server 后真实拨号。
 // 判定口径与链路探测一致：HTTP 2xx/3xx 且上下行都有字节才算健康。
 func (p *Prober) checkAllWithTemplate(ctx context.Context, cfg Config, res Result, tpl map[string]interface{}, chainAuthority bool) (Result, error) {
-	dialer, err := p.pickDialer(cfg.Dialer)
+	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
 	}
@@ -1209,7 +1310,7 @@ func (p *Prober) updateProbeTarget(ctx context.Context, res *Result, t probeTarg
 // checkAllExitRemote 在指定 Agent 上做「出口语义」探测：临时核心只有一条出口，
 // 优选 IP 做 TCP 建连、优选域名做 TLS 握手。
 func (p *Prober) checkAllExitRemote(ctx context.Context, cfg Config, res Result, pm map[string]interface{}, chainAuthority bool) (Result, error) {
-	dialer, err := p.pickDialer(cfg.Dialer)
+	dialer, err := p.pickDialerOn(ctx, cfg.Dialer, cfg.AgentID)
 	if err != nil {
 		return res, err
 	}

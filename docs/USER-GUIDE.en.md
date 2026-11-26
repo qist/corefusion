@@ -1098,6 +1098,8 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 - “Probe settings” control the probe interval, latency threshold, entry node and execution node (panel
   host or any Agent), plus an optional egress NIC; selecting an entry node dials through that line, while
   without an entry only local direct dialing is possible (it filters clearly unreachable IPs only);
+- The dialer core must be installed on the **selected execution node**: the page lists cores and versions
+  reported by that node, and probing fails with a clear error when the core is missing;
 - The “dialer” may be automatic (installed cores), `singbox`, `xray` or `mihomo`; cores that are not
   installed are not listed. Probing runs as a temporary process that exits when done and never reads or
   writes the core's own configuration;

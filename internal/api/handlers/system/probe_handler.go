@@ -176,6 +176,26 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 		}
 	}
 
+	// 执行节点不在面板本机时，「已安装核心」必须问那台节点：面板装了什么
+	// 与探测能否跑起来无关（节点缺核心会直接 binary not installed）。
+	dialerSource := "panel"
+	dialerErr := ""
+	if cfg.AgentID > 0 {
+		dialerSource = "agent"
+		info, err := h.prober.AgentDialers(ctx, cfg.AgentID)
+		if err != nil {
+			dialers = nil
+			versions = map[string]string{}
+			dialerErr = err.Error()
+		} else {
+			dialers = info.Dialers
+			versions = info.Versions
+			if versions == nil {
+				versions = map[string]string{}
+			}
+		}
+	}
+
 	// 配置字段平铺，附带入可选入口节点与已安装核心；前端不再单独拼。
 	// dialer_versions 用来在页面上显示当前版本，并提供「重装 / 换版本」入口。
 	response.OK(c, struct {
@@ -183,9 +203,12 @@ func (h *ProbeHandler) GetConfig(c *gin.Context) {
 		Nodes          []nodeItem             `json:"nodes"`
 		Dialers        []string               `json:"dialers"`
 		DialerVersions map[string]string      `json:"dialer_versions"`
+		DialerSource   string                 `json:"dialer_source"`
+		DialerError    string                 `json:"dialer_error,omitempty"`
 		Agents         []chainAgentOption     `json:"agents"`
 		Interfaces     []chainInterfaceOption `json:"interfaces"`
 	}{Config: cfg, Nodes: nodes, Dialers: dialers, DialerVersions: versions,
+		DialerSource: dialerSource, DialerError: dialerErr,
 		Agents: h.chainAgentOptions(ctx), Interfaces: chainInterfaceOptions()})
 }
 
@@ -467,6 +490,11 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 	// 链路探测不单独配间隔/拨号核心：两者都跟随「探测设置」。
 	// 这里把当前生效值一起返回，页面直接把依赖关系显示出来。
 	probeCfg := h.prober.ReadConfig(ctx)
+	// 链路探测的拨号核心随执行节点走：同样要问节点，而不是面板。
+	chainDialers, chainDialerErr := h.prober.AgentDialers(ctx, cfg.AgentID)
+	if chainDialers.Versions == nil {
+		chainDialers.Versions = map[string]string{}
+	}
 	response.OK(c, gin.H{
 		"config":                    cfg,
 		"ip_results":                ipResults,
@@ -487,7 +515,10 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 		"dialer":                    probeCfg.Dialer,
 		"effective_dialer":          h.prober.EffectiveDialer(probeCfg.Dialer),
 		"chain_effective_interval":  cfg.EffectiveInterval(probeCfg.IntervalMinutes),
-		"chain_effective_dialer":    h.prober.EffectiveDialer(chainDialerChoice(cfg, probeCfg.Dialer)),
+		"chain_effective_dialer":    h.prober.EffectiveDialerOn(ctx, chainDialerChoice(cfg, probeCfg.Dialer), cfg.AgentID),
+		"chain_dialers":             chainDialers.Dialers,
+		"chain_dialer_versions":     chainDialers.Versions,
+		"chain_dialer_error":        chainDialerErr,
 	})
 }
 
@@ -650,4 +681,33 @@ func (h *ProbeHandler) probeAgentAvailable(ctx context.Context, id int64) bool {
 		}
 	}
 	return false
+}
+
+// GetProbeCapabilities 返回某个执行节点上已安装的拨号核心，供页面切换节点时刷新。
+// agent_id=0 表示面板本机。
+func (h *ProbeHandler) GetProbeCapabilities(c *gin.Context) {
+	ctx := c.Request.Context()
+	agentID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("agent_id")), 10, 64)
+	if agentID > 0 && !h.probeAgentAvailable(ctx, agentID) {
+		response.BadRequest(c, "INVALID_AGENT", "指定的 Agent 不存在或不可用")
+		return
+	}
+	info, err := h.prober.AgentDialers(ctx, agentID)
+	if info.Versions == nil {
+		info.Versions = map[string]string{}
+	}
+	if err != nil {
+		response.OK(c, gin.H{
+			"agent_id":        agentID,
+			"dialers":         []string{},
+			"dialer_versions": map[string]string{},
+			"error":           err.Error(),
+		})
+		return
+	}
+	response.OK(c, gin.H{
+		"agent_id":        agentID,
+		"dialers":         info.Dialers,
+		"dialer_versions": info.Versions,
+	})
 }

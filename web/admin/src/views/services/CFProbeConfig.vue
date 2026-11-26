@@ -77,6 +77,7 @@
       </div>
     </div>
     <div v-if="probeCfg.agent_id" style="font-size:11px;color:#e6a23c;margin-top:8px">{{ t('service.cfip.probeAgentDialerHint') }}</div>
+    <div v-if="probeAgentDialerError" style="font-size:11px;color:#f56c6c;margin-top:4px">{{ probeAgentDialerError }}</div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.probeHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.probeMaxLatencyHint') }}</div>
     <div v-if="!probeCfg.enabled" style="font-size:11px;color:#e6a23c;margin-top:4px">{{ t('service.cfip.probeEnabledHint') }}</div>
@@ -105,14 +106,19 @@
       </div>
       <div v-if="!chainCfg.inherit_probe">
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.probeDialer') }}</div>
-        <el-select v-model="chainCfg.dialer" size="small" style="width:200px" @change="onDialerChange">
+        <el-select v-model="chainCfg.dialer" size="small" style="width:200px" @change="onChainDialerChange">
           <el-option :label="t('service.cfip.probeAuto')" value="" />
-          <el-option :label="dialerLabel('xray')" value="xray" />
-          <el-option :label="dialerLabel('singbox')" value="singbox" />
-          <el-option :label="dialerLabel('mihomo')" value="mihomo" />
+          <el-option :label="dialerLabel('xray', chainDialerAvailable, chainDialerVersions)" value="xray" />
+          <el-option :label="dialerLabel('singbox', chainDialerAvailable, chainDialerVersions)" value="singbox" />
+          <el-option :label="dialerLabel('mihomo', chainDialerAvailable, chainDialerVersions)" value="mihomo" />
         </el-select>
-        <el-button v-if="chainCfg.dialer" size="small" style="margin-left:8px" @click="openDialerInstall(chainCfg.dialer)">
-          {{ isDialerInstalled(chainCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
+        <el-button
+          v-if="chainCfg.dialer && !chainCfg.agent_id"
+          size="small"
+          style="margin-left:8px"
+          @click="openDialerInstall(chainCfg.dialer)"
+        >
+          {{ chainDialerAvailable.includes(chainCfg.dialer) ? t('service.cfip.dialerReinstallBtn') : t('service.cfip.dialerInstallBtn') }}
         </el-button>
       </div>
       <div>
@@ -169,6 +175,7 @@
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainExitInterfaceHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainAgentHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainInboundHint') }}</div>
+    <div v-if="chainDialerError" style="font-size:11px;color:#f56c6c;margin-top:4px">{{ chainDialerError }}</div>
     <div v-if="chainCfg.inherit_probe" style="font-size:11px;color:#909399;margin-top:4px">
       {{ t('service.cfip.chainDependsProbe') }}：{{ t('service.cfip.chainProbeInterval') }} {{ chainDeps.interval_minutes }} min
       · {{ t('service.cfip.chainProbeDialer') }} {{ chainDeps.effective_dialer || '-' }}
@@ -324,7 +331,14 @@ const chainUpdatedAt = ref({ domain: 0, ip: 0 })
 const chainExits = ref([])
 const chainInterfaces = ref([])
 const chainAgents = ref([])
+// 链路探测自己的执行节点上装了哪些核心（和探测设置互相独立）。
+const chainDialerAvailable = ref([])
+const chainDialerVersions = ref({})
+const chainDialerError = ref('')
+let chainPreviousDialer = ''
 let chainLocalInterfaces = []
+// 探测设置执行节点的核心查询失败原因（节点离线/未升级 Agent 等）。
+const probeAgentDialerError = ref('')
 const chainInbounds = ref([])
 const chainTargets = ref([])
 const chainChecking = ref({ domain: false, ip: false })
@@ -421,6 +435,9 @@ async function fetchProbeConfig(opts = {}) {
       }))
       probeInterfaces.value = probeLocalInterfaces
       probeAgents.value = d.agents || []
+      probeAgentDialerError.value = d.dialer_error || ''
+      probeCfg.value.available_dialers = d.dialers || []
+      probeCfg.value.dialer_versions = d.dialer_versions || {}
       // 已保存的核心可能已被人删掉：不能把它当成"可回退值"，否则取消安装后
       // 保存的仍是不可用核心。回退到自动（自动只会选已安装的）。
       const installed = probeCfg.value.available_dialers || []
@@ -462,6 +479,10 @@ async function fetchChainConfig(opts = {}) {
     }))
     chainInterfaces.value = chainLocalInterfaces
     chainAgents.value = d.agents || []
+    chainDialerAvailable.value = d.chain_dialers || []
+    chainDialerVersions.value = d.chain_dialer_versions || {}
+    chainDialerError.value = d.chain_dialer_error || ''
+    chainPreviousDialer = chainDialerAvailable.value.includes(chainCfg.value.dialer) ? chainCfg.value.dialer : ''
     chainExits.value = d.exits || []
     chainInbounds.value = d.inbounds || []
     chainTargets.value = d.targets || []
@@ -501,17 +522,17 @@ function isDialerInstalled(name) {
 
 // 版本探测返回的是整行输出（如 "Mihomo Meta v1.19.34 linux amd64 ..."），
 // 下拉和弹窗里只显示版本号本身，避免撑爆宽度。
-function dialerVersionText(name) {
-  const raw = ((probeCfg.value.dialer_versions || {})[name] || '').trim()
+function dialerVersionText(name, versions = probeCfg.value.dialer_versions) {
+  const raw = ((versions || {})[name] || '').trim()
   if (!raw) return ''
   const m = raw.match(/(?:v\d+\.\d+\.\d+[\w.-]*|alpha-[0-9a-f]+)/i)
   return m ? m[0] : raw
 }
 
 // 已安装显示版本，未安装标注；选中未安装核心会自动弹安装框。
-function dialerLabel(name) {
-  if (!isDialerInstalled(name)) return `${name} ${t('service.cfip.probeMissing')}`
-  const v = dialerVersionText(name)
+function dialerLabel(name, list = probeCfg.value.available_dialers, versions = probeCfg.value.dialer_versions) {
+  if (!(list || []).includes(name)) return `${name} ${t('service.cfip.probeMissing')}`
+  const v = dialerVersionText(name, versions)
   return v ? `${name} (${v})` : name
 }
 
@@ -533,6 +554,11 @@ async function onDialerChange(name) {
   }
   // 先回退选择：只有安装成功后才真正切过去，避免把不可用核心保存进探测配置。
   probeCfg.value.dialer = previousDialer
+  // 执行节点不是面板本机时，面板的安装入口装不到节点上，只能提示。
+  if (probeCfg.value.agent_id) {
+    ElMessage.warning(t('service.cfip.probeAgentMissing', { core: name }))
+    return
+  }
   try {
     await ElMessageBox.confirm(
       t('service.cfip.installCorePrompt', { core: name }),
@@ -607,7 +633,11 @@ async function saveProbeConfig() {
     ElMessage.warning(t('service.cfip.probeEntryRequired'))
     return
   }
-  if (!probeCfg.value.agent_id && dialerNeedsInstall()) {
+  if (dialerNeedsInstall()) {
+    if (probeCfg.value.agent_id) {
+      ElMessage.error(t('service.cfip.probeAgentMissing', { core: probeCfg.value.dialer }))
+      return
+    }
     await onDialerChange(probeCfg.value.dialer)
     return
   }
@@ -625,6 +655,10 @@ async function saveProbeConfig() {
 // 远程节点复用现有的 /node-servers/:id/binaries/interfaces）。
 async function onAgentChange(agentId) {
   chainCfg.value.interface = ''
+  await Promise.all([refreshChainInterfaces(agentId), refreshChainDialers(agentId)])
+}
+
+async function refreshChainInterfaces(agentId) {
   if (!agentId) {
     chainInterfaces.value = chainLocalInterfaces
     return
@@ -637,9 +671,48 @@ async function onAgentChange(agentId) {
   }
 }
 
+// 链路探测的拨号核心同样装在自己的执行节点上。
+async function refreshChainDialers(agentId) {
+  chainDialerError.value = ''
+  try {
+    const d = await client.get('/cfip/probe-capabilities', { params: { agent_id: agentId || 0 } })
+    chainDialerAvailable.value = (d && d.dialers) || []
+    chainDialerVersions.value = (d && d.dialer_versions) || {}
+    chainDialerError.value = (d && d.error) || ''
+    const list = chainDialerAvailable.value
+    chainPreviousDialer = list.includes(chainCfg.value.dialer) ? chainCfg.value.dialer : ''
+  } catch (e) {
+    chainDialerAvailable.value = []
+    chainDialerVersions.value = {}
+    chainDialerError.value = e?.response?.data?.message || t('common.failed')
+  }
+}
+
+// 链路拨号核心切换：本机可直接装，远程节点只能提示缺核心。
+async function onChainDialerChange(name) {
+  if (!name) {
+    chainPreviousDialer = ''
+    return
+  }
+  if (chainDialerAvailable.value.includes(name)) {
+    chainPreviousDialer = name
+    return
+  }
+  chainCfg.value.dialer = chainPreviousDialer
+  if (!chainCfg.value.agent_id) {
+    await openDialerInstall(name)
+    return
+  }
+  ElMessage.warning(t('service.cfip.probeAgentMissing', { core: name }))
+}
+
 // 探测设置的执行节点切换：网卡列表跟着换（远程复用节点网卡接口）。
 async function onProbeAgentChange(agentId) {
   probeCfg.value.interface = ''
+  await Promise.all([refreshProbeInterfaces(agentId), refreshProbeDialers(agentId)])
+}
+
+async function refreshProbeInterfaces(agentId) {
   if (!agentId) {
     probeInterfaces.value = probeLocalInterfaces
     return
@@ -649,6 +722,26 @@ async function onProbeAgentChange(agentId) {
     probeInterfaces.value = (names || []).map((n) => ({ name: n, label: n }))
   } catch {
     probeInterfaces.value = []
+  }
+}
+
+// 探测核心装在执行节点上：切节点必须重新问该节点，不能沿用面板的清单。
+async function refreshProbeDialers(agentId) {
+  probeAgentDialerError.value = ''
+  try {
+    const d = await client.get('/cfip/probe-capabilities', { params: { agent_id: agentId || 0 } })
+    probeCfg.value.available_dialers = (d && d.dialers) || []
+    probeCfg.value.dialer_versions = (d && d.dialer_versions) || {}
+    probeAgentDialerError.value = (d && d.error) || ''
+    const list = probeCfg.value.available_dialers
+    previousDialer = list.includes(probeCfg.value.dialer) ? probeCfg.value.dialer : ''
+    if (probeCfg.value.dialer && !list.includes(probeCfg.value.dialer)) {
+      probeAgentDialerError.value = t('service.cfip.probeAgentMissing', { core: probeCfg.value.dialer })
+    }
+  } catch (e) {
+    probeCfg.value.available_dialers = []
+    probeCfg.value.dialer_versions = {}
+    probeAgentDialerError.value = e?.response?.data?.message || t('common.failed')
   }
 }
 
@@ -664,8 +757,15 @@ async function saveChainConfig() {
 }
 
 async function checkChain(kind) {
-  if (!chainCfg.value.agent_id && dialerNeedsInstall()) {
-    await onDialerChange(probeCfg.value.dialer)
+  // 继承模式用的是探测设置的核心，但实际跑在链路自己的执行节点上：
+  // 必须按链路的节点清单校验，不能拿面板/探测节点的清单判断。
+  const effectiveDialer = chainCfg.value.inherit_probe ? probeCfg.value.dialer : chainCfg.value.dialer
+  if (effectiveDialer && !chainDialerAvailable.value.includes(effectiveDialer)) {
+    if (!chainCfg.value.agent_id) {
+      await openDialerInstall(effectiveDialer)
+    } else {
+      ElMessage.error(t('service.cfip.probeAgentMissing', { core: effectiveDialer }))
+    }
     return
   }
   if (!chainCfg.value.exit) {

@@ -1900,6 +1900,7 @@ export default {
       "probeEnabled": "Otomatik yoklama",
       "probeEnabledHint": "Varsayılan olarak kapalı. Cloudflare optimizasyonu kullanmıyorsanız kapalı bırakın; elle kontrol çalışmaya devam eder.",
       "probeAgentDialerHint": "Dialer çekirdeği seçilen düğümde çalışır; kurulum/güncellemeyi o düğümün ikili yönetiminden yapın (panel kurulumu yalnızca düğüm seçilmediğinde geçerli).",
+      "probeAgentMissing": "Seçilen düğümde {core} dialer çekirdeği kurulu değil: o düğümün çekirdek/ikili bölümünden kurup tekrar deneyin.",
       "probeInterval": "Aralık (dakika)",
       "probeMaxLatency": "Maks. gecikme (ms, 0 = sınırsız)",
       "probeEntryNode": "Yoklama giriş düğümü",

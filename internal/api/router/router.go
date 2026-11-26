@@ -2040,6 +2040,30 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 					return out, nil
 				})
 			}
+			// 执行节点能力：拨号核心装在哪台机器上必须问那台机器。
+			prober.SetAgentDialerLister(func(ctx context.Context, serverID int64) (healthprobe.AgentDialerInfo, error) {
+				if sharedNodeMgr == nil {
+					return healthprobe.AgentDialerInfo{}, fmt.Errorf("node manager not initialized")
+				}
+				resp, err := sharedNodeMgr.ListBinaries(ctx, serverID)
+				if err != nil {
+					return healthprobe.AgentDialerInfo{}, err
+				}
+				info := healthprobe.AgentDialerInfo{Versions: map[string]string{}}
+				for _, b := range resp.GetBinaries() {
+					if !b.GetInstalled() {
+						continue
+					}
+					switch b.GetCoreType() {
+					case "xray", "singbox", "mihomo":
+						info.Dialers = append(info.Dialers, b.GetCoreType())
+						if v := b.GetVersion(); v != "" {
+							info.Versions[b.GetCoreType()] = v
+						}
+					}
+				}
+				return info, nil
+			})
 			// 链路探测：复用订阅渲染把入站渲染成客户端出站（含 CDN 地址）。
 			prober.SetChainTargetProvider(publicSubH)
 			prober.StartScheduler(context.Background())
@@ -2053,6 +2077,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				cfipGroup.GET("/sources", cfipH.ListSources)
 				cfipGroup.GET("/entries", cfipH.ListEntries)
 				cfipGroup.GET("/probe-config", probeH.GetConfig)
+				cfipGroup.GET("/probe-capabilities", probeH.GetProbeCapabilities)
 				cfipGroup.GET("/chain-probe-config", probeH.GetChainConfig)
 				// CF IP 池是全局出站资源，且 fetch 会发起服务端请求：
 				// 写操作仅 Admin（安全审计 v6 H-1/H-2）。

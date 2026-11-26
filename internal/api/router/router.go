@@ -2011,6 +2011,26 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 			// 连续失败才标记不健康（不改 Enabled），订阅渲染自动跳过不健康/超时延阈值条目。
 			// 探测配置（间隔/延迟阈值/入口节点/拨号工具）从 system_settings 读，改完下一轮生效。
 			prober := healthprobe.New(cfipEntryRepo, shareDomainRepo, systemSettingRepo, extNodeRepo, binaryResolver, dataDir)
+			if sharedNodeMgr != nil {
+				prober.SetChainRemoteRunner(func(ctx context.Context, serverID int64, dialer, cfgJSON, probeURL string, timeoutMs, concurrency int) ([]healthprobe.ChainRemoteItem, error) {
+					items, err := sharedNodeMgr.ChainProbe(ctx, serverID, dialer, cfgJSON, probeURL, timeoutMs, concurrency)
+					if err != nil {
+						return nil, err
+					}
+					out := make([]healthprobe.ChainRemoteItem, len(items))
+					for i, it := range items {
+						out[i] = healthprobe.ChainRemoteItem{
+							Success:    it.GetSuccess(),
+							Error:      it.GetError(),
+							HTTPStatus: int(it.GetHttpStatus()),
+							UpBytes:    it.GetUpBytes(),
+							DownBytes:  it.GetDownBytes(),
+							LatencyMs:  int(it.GetLatencyMs()),
+						}
+					}
+					return out, nil
+				})
+			}
 			// 链路探测：复用订阅渲染把入站渲染成客户端出站（含 CDN 地址）。
 			prober.SetChainTargetProvider(publicSubH)
 			prober.StartScheduler(context.Background())

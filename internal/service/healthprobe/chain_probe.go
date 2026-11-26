@@ -34,6 +34,7 @@ const (
 	SettingChainEnabled     = "cfip.chain_probe.enabled"
 	SettingChainExit        = "cfip.chain_probe.exit"
 	SettingChainInterface   = "cfip.chain_probe.interface"
+	SettingChainAgent       = "cfip.chain_probe.agent_id"
 	SettingChainInbound     = "cfip.chain_probe.inbound"
 	SettingChainConcurrency = "cfip.chain_probe.concurrency"
 	SettingChainMaxTargets  = "cfip.chain_probe.max_targets"
@@ -70,6 +71,9 @@ type ChainConfig struct {
 	// Interface 是发起探测时绑定的本机网卡（如 eth0、ppp0）。
 	// 留空 = 使用系统默认路由；xray / sing-box / mihomo 都支持。
 	Interface string `json:"interface"`
+	// AgentID 指定在哪台节点上执行探测（0 = 面板本机）。
+	// 选定后临时核心跑在该节点上，网卡也取该节点的。
+	AgentID int64 `json:"agent_id"`
 	// Inbound 是「探针入站」标识（自建入站 "inb:<id>" / 外部导入节点 "ext:<id>"）：
 	// 一轮探测只用它完成协议握手，把全部启用的 CDN 域名/IP 逐个测一遍。
 	// 必须显式选择，不再随机挑：随机会导致同一批条目每轮用不同入口，
@@ -95,6 +99,19 @@ type ChainConfig struct {
 	// 旧前端/直接调用不传时，按总开关与旧总名额回退，避免把两类名额误写成 1。
 	KindsConfigured bool `json:"kinds_configured"`
 }
+
+// ChainRemoteItem 是 Agent 端返回的单目标探测结果。
+type ChainRemoteItem struct {
+	Success    bool
+	Error      string
+	HTTPStatus int
+	UpBytes    int64
+	DownBytes  int64
+	LatencyMs  int
+}
+
+// ChainRemoteRunner 在指定节点执行一轮链路探测（configJSON 内端口为 0，由 Agent 分配）。
+type ChainRemoteRunner func(ctx context.Context, serverID int64, dialer, configJSON, probeURL string, timeoutMs, concurrency int) ([]ChainRemoteItem, error)
 
 // ChainTarget 是一个待探测的 CDN 条目（域名或 IP）。
 //
@@ -239,6 +256,11 @@ func (p *Prober) ReadChainConfig(ctx context.Context) ChainConfig {
 	if v, err := p.setting.GetByKey(ctx, SettingChainInterface); err == nil {
 		cfg.Interface = strings.TrimSpace(v)
 	}
+	if v, err := p.setting.GetByKey(ctx, SettingChainAgent); err == nil {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 {
+			cfg.AgentID = n
+		}
+	}
 	if v, err := p.setting.GetByKey(ctx, SettingChainInbound); err == nil {
 		cfg.Inbound = strings.TrimSpace(v)
 	}
@@ -364,6 +386,12 @@ func (p *Prober) SaveChainConfig(ctx context.Context, cfg ChainConfig) error {
 		return err
 	}
 	if err := set(SettingChainInterface, strings.TrimSpace(cfg.Interface)); err != nil {
+		return err
+	}
+	if cfg.AgentID < 0 {
+		cfg.AgentID = 0
+	}
+	if err := set(SettingChainAgent, strconv.FormatInt(cfg.AgentID, 10)); err != nil {
 		return err
 	}
 	if err := set(SettingChainInbound, strings.TrimSpace(cfg.Inbound)); err != nil {
@@ -536,6 +564,11 @@ func (p *Prober) validateChainRuntime(cfg ChainConfig) error {
 	return nil
 }
 
+// SetChainRemoteRunner 注入「在指定 Agent 上执行链路探测」的实现。
+func (p *Prober) SetChainRemoteRunner(fn ChainRemoteRunner) {
+	p.chainRemote = fn
+}
+
 // checkChainKind 只探测一类目标（调用方必须已持有 chainMu）。
 func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind string) (ChainSummary, error) {
 	sum := ChainSummary{}
@@ -568,24 +601,35 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 	}
 	// 临时核心里每个目标一条链：出口 → 目标 CDN 域名/IP → 探针入站 → probe_url。
 	// 不能只从出口直连 probe_url —— 那样探针入站根本不会收到连接。
-	dials, cleanup, usedDialer, err := p.startChainDialer(ctx, dialer, proxy, picked, cfg.Interface)
-	if err != nil {
-		return sum, err
-	}
-	defer cleanup()
-	sum.Entry = fmt.Sprintf("%s/%s", label, usedDialer)
-
 	started := time.Now()
 	results := make([]ChainResult, len(picked))
-	sem := make(chan struct{}, clampInt(cfg.Concurrency, 1, 8))
-	var wg sync.WaitGroup
-	for i := range picked {
-		t := picked[i]
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(idx int, target ChainTarget) {
-			defer wg.Done()
-			defer func() { <-sem }()
+	if cfg.AgentID > 0 && p.chainRemote != nil {
+		// 在指定节点上执行：配置仍由面板生成，端口写 0 交给 Agent 分配。
+		valid := make([]int, 0, len(picked))
+		for i := range picked {
+			valid = append(valid, i)
+		}
+		conf, cerr := buildChainProbeConfig(dialer, proxy, picked, valid, make([]int, len(picked)), cfg.Interface)
+		if cerr != nil {
+			return sum, cerr
+		}
+		raw, merr := json.Marshal(conf)
+		if merr != nil {
+			return sum, merr
+		}
+		items, rerr := p.chainRemote(ctx, cfg.AgentID, dialer, string(raw), cfg.ProbeURL,
+			int(chainProbeTimeout/time.Millisecond), clampInt(cfg.Concurrency, 1, 8))
+		if rerr != nil {
+			return sum, rerr
+		}
+		if len(items) != len(picked) {
+			return sum, fmt.Errorf("Agent 返回结果数与目标数不一致（%d != %d）", len(items), len(picked))
+		}
+		sum.Entry = fmt.Sprintf("%s/%s@agent:%d", label, dialer, cfg.AgentID)
+		now := time.Now().Unix()
+		for i := range picked {
+			target := picked[i]
+			it := items[i]
 			res := ChainResult{
 				Kind:           target.Kind,
 				EntryID:        target.EntryID,
@@ -598,31 +642,76 @@ func (p *Prober) checkChainKind(ctx context.Context, cfg ChainConfig, kind strin
 				Host:           target.Host,
 				Port:           target.Port,
 				Exit:           sum.Entry,
-				CheckedAt:      time.Now().Unix(),
+				CheckedAt:      now,
+				HTTPStatus:     it.HTTPStatus,
+				LatencyMs:      it.LatencyMs,
+				UpBytes:        it.UpBytes,
+				DownBytes:      it.DownBytes,
 			}
 			if target.Proxy == nil {
 				res.Error = "入站参数无法渲染为客户端出站"
-				results[idx] = res
-				return
-			}
-			status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], cfg.ProbeURL)
-			res.HTTPStatus = status
-			res.LatencyMs = latency
-			res.UpBytes = up
-			res.DownBytes = down
-			if perr != nil {
-				res.Error = truncateErr(perr.Error())
-			} else if status < 200 || status >= 400 {
-				res.Error = fmt.Sprintf("HTTP %d", status)
-			} else if up <= 0 || down <= 0 {
-				res.Error = "链路无实际流量"
+			} else if !it.Success {
+				res.Error = truncateErr(it.Error)
 			} else {
 				res.Healthy = true
 			}
-			results[idx] = res
-		}(i, t)
+			results[i] = res
+		}
+	} else {
+		dials, cleanup, usedDialer, err := p.startChainDialer(ctx, dialer, proxy, picked, cfg.Interface)
+		if err != nil {
+			return sum, err
+		}
+		defer cleanup()
+		sum.Entry = fmt.Sprintf("%s/%s", label, usedDialer)
+
+		sem := make(chan struct{}, clampInt(cfg.Concurrency, 1, 8))
+		var wg sync.WaitGroup
+		for i := range picked {
+			t := picked[i]
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(idx int, target ChainTarget) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				res := ChainResult{
+					Kind:           target.Kind,
+					EntryID:        target.EntryID,
+					ProbeInboundID: target.ProbeInboundID,
+					InboundID:      target.InboundID,
+					ServerID:       target.ServerID,
+					NodeName:       target.NodeName,
+					Name:           target.Name,
+					Protocol:       target.Protocol,
+					Host:           target.Host,
+					Port:           target.Port,
+					Exit:           sum.Entry,
+					CheckedAt:      time.Now().Unix(),
+				}
+				if target.Proxy == nil {
+					res.Error = "入站参数无法渲染为客户端出站"
+					results[idx] = res
+					return
+				}
+				status, up, down, latency, perr := probeChainHTTP(ctx, dials[idx], cfg.ProbeURL)
+				res.HTTPStatus = status
+				res.LatencyMs = latency
+				res.UpBytes = up
+				res.DownBytes = down
+				if perr != nil {
+					res.Error = truncateErr(perr.Error())
+				} else if status < 200 || status >= 400 {
+					res.Error = fmt.Sprintf("HTTP %d", status)
+				} else if up <= 0 || down <= 0 {
+					res.Error = "链路无实际流量"
+				} else {
+					res.Healthy = true
+				}
+				results[idx] = res
+			}(i, t)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 	sum.DurationMs = int(time.Since(started) / time.Millisecond)
 
 	// 结果写回条目健康状态：订阅渲染读的就是 Healthy，

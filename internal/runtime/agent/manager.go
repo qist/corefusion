@@ -2266,6 +2266,49 @@ func (m *NodeServerManager) ListInterfaces(ctx context.Context, serverID int64) 
 	return resp.GetInterfaces(), nil
 }
 
+// ChainProbe 在指定节点上跑一轮临时核心链路探测，返回与目标一一对应的结果。
+// 配置由面板生成（端口写 0），Agent 负责分配本机端口、起核心、发请求、清理。
+func (m *NodeServerManager) ChainProbe(ctx context.Context, serverID int64, dialer, configJSON, probeURL string, timeoutMs, concurrency int) ([]*agentpb.ChainProbeItemResult, error) {
+	req := &agentpb.ChainProbeRequest{
+		Dialer:      dialer,
+		ConfigJson:  configJSON,
+		ProbeUrl:    probeURL,
+		TimeoutMs:   int32(timeoutMs),
+		Concurrency: int32(concurrency),
+	}
+	if m.isLocalServer(serverID) {
+		if m.localAgent == nil {
+			return nil, fmt.Errorf("local agent not configured")
+		}
+		resp, err := m.localAgent.RunChainProbe(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return resp.GetResults(), nil
+	}
+	cmd := &agentpb.PanelCommand{
+		CommandId: generateCommandID(),
+		Command: &agentpb.PanelCommand_ChainProbe{
+			ChainProbe: req,
+		},
+	}
+	result, err := m.SendCommandAndWait(ctx, serverID, cmd, 2*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	if result.Status == agentpb.TaskStatus_TASK_FAILED {
+		return nil, fmt.Errorf("%s", result.Error)
+	}
+	var resp agentpb.ChainProbeResponse
+	if err := json.Unmarshal([]byte(result.DetailJson), &resp); err != nil {
+		return nil, fmt.Errorf("unmarshal chain_probe response: %w", err)
+	}
+	if !resp.GetSuccess() {
+		return nil, fmt.Errorf("%s", resp.GetError())
+	}
+	return resp.GetResults(), nil
+}
+
 // DetectPublicIPOnServer 让指定节点在**本机直连**探测自己的公网 IP ✓。
 //
 // ⚠ 面板不能代节点探测 ✗：面板自己（尤其在配了出网代理时）出网看到的是**面板/代理的出口 IP** ✗，

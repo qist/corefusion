@@ -458,6 +458,7 @@ func (h *ProbeHandler) GetChainConfig(c *gin.Context) {
 		"domain_target_count":       domainTargetCount,
 		"exits":                     h.chainExitOptions(ctx),
 		"interfaces":                chainInterfaceOptions(),
+		"agents":                    h.chainAgentOptions(ctx),
 		"inbounds":                  inbounds,
 		"interval_minutes":          probeCfg.IntervalMinutes,
 		"dialer":                    probeCfg.Dialer,
@@ -471,6 +472,23 @@ func (h *ProbeHandler) SaveChainConfig(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "INVALID_REQUEST", err.Error())
 		return
+	}
+	if req.AgentID > 0 {
+		ok := false
+		if h.nodeSrvRepo != nil {
+			if list, err := h.nodeSrvRepo.ListAll(c.Request.Context()); err == nil {
+				for _, n := range list {
+					if n.ID == req.AgentID && !n.IsLocal && n.Enabled {
+						ok = true
+						break
+					}
+				}
+			}
+		}
+		if !ok {
+			response.BadRequest(c, "INVALID_AGENT", "指定的 Agent 不存在或不可用")
+			return
+		}
 	}
 	if !healthprobe.ValidEgressInterface(req.Interface) {
 		response.BadRequest(c, "INVALID_INTERFACE", "网卡名只允许字母、数字、_ - . :，长度 1-32")
@@ -554,6 +572,32 @@ func chainInterfaceOptions() []chainInterfaceOption {
 			}
 		}
 		out = append(out, opt)
+	}
+	return out
+}
+
+// chainAgentOption 是可执行探测的节点（Agent）。
+type chainAgentOption struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Local bool   `json:"local"`
+}
+
+// chainAgentOptions 列出可执行探测的节点；面板本机用 agent_id=0 表示，不在列表里重复。
+func (h *ProbeHandler) chainAgentOptions(ctx context.Context) []chainAgentOption {
+	if h.nodeSrvRepo == nil {
+		return nil
+	}
+	list, err := h.nodeSrvRepo.ListAll(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make([]chainAgentOption, 0, len(list))
+	for _, n := range list {
+		if n.IsLocal || !n.Enabled {
+			continue
+		}
+		out = append(out, chainAgentOption{ID: n.ID, Name: n.Name, Local: false})
 	}
 	return out
 }

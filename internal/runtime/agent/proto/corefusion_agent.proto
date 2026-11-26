@@ -656,6 +656,7 @@ message PanelCommand {
     StartWriterRequest start_writer = 32;            // 启动/恢复 LogWriter
     StopWriterRequest stop_writer = 33;              // 停止 LogWriter
     UpdateWriterConfigRequest update_writer_config = 34; // 更新 LogWriter 配置
+    ChainProbeRequest chain_probe = 37;              // 在节点上执行链路探测（临时核心）
 
     // --- WAF 文件同步 ---
     SyncWAFFilesRequest sync_waf_files = 35;                  // 同步 WAF 文件到远程节点
@@ -1107,6 +1108,33 @@ message ExecuteBinaryResponse {
   string error = 2;
   string stdout = 3;             // 原始 stdout（raw_output=true 时使用）
   map<string, string> parsed = 4; // 解析后的 key:value（raw_output=false 时使用）
+}
+
+// ============================================================
+// 链路探测（在节点上起临时核心执行）
+// ============================================================
+
+message ChainProbeRequest {
+  string dialer = 1;       // xray/singbox/mihomo
+  string config_json = 2;  // 临时核心配置（inbounds/listeners 的端口写 0，由 Agent 分配）
+  string probe_url = 3;    // 穿透代理访问的 URL
+  int32  timeout_ms = 4;   // 单个目标超时（毫秒）
+  int32  concurrency = 5;  // 并发数（1-8）
+}
+
+message ChainProbeItemResult {
+  bool   success = 1;
+  string error = 2;
+  int32  http_status = 3;
+  int64  up_bytes = 4;
+  int64  down_bytes = 5;
+  int32  latency_ms = 6;
+}
+
+message ChainProbeResponse {
+  bool   success = 1;
+  string error = 2;
+  repeated ChainProbeItemResult results = 3;
 }
 
 // ============================================================

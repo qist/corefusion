@@ -495,6 +495,10 @@ func (a *AgentApp) handlePanelCommand(cmd *agentpb.PanelCommand, stream agentpb.
 		names, err := a.localAgent.ListInterfaces()
 		sendSyncResult("list_interfaces", &agentpb.ListInterfacesResponse{Interfaces: names}, err)
 
+	case *agentpb.PanelCommand_ChainProbe:
+		resp, err := a.localAgent.RunChainProbe(ctx, c.ChainProbe)
+		sendSyncResult("chain_probe", resp, err)
+
 	case *agentpb.PanelCommand_SetEgressInterface:
 		req := c.SetEgressInterface
 		SetEgressInterface(req.InterfaceName)

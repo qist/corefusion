@@ -82,6 +82,13 @@
         <el-switch v-model="chainCfg.enabled" />
       </div>
       <div>
+        <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainAgent') }}</div>
+        <el-select v-model="chainCfg.agent_id" size="small" style="width:220px" @change="onAgentChange">
+          <el-option :label="t('service.cfip.chainAgentPanel')" :value="0" />
+          <el-option v-for="a in chainAgents" :key="a.id" :label="a.name" :value="a.id" />
+        </el-select>
+      </div>
+      <div>
         <div style="font-size:12px;color:#909399">{{ t('service.cfip.chainExit') }}</div>
         <el-select v-model="chainCfg.exit" size="small" style="width:300px" filterable clearable :placeholder="t('service.cfip.chainExitPlaceholder')">
           <el-option-group :label="t('service.cfip.chainExitExternal')">
@@ -126,6 +133,7 @@
     </div>
     <div style="font-size:11px;color:#909399;margin-top:8px">{{ t('service.cfip.chainHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainExitInterfaceHint') }}</div>
+    <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainAgentHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">{{ t('service.cfip.chainInboundHint') }}</div>
     <div style="font-size:11px;color:#909399;margin-top:4px">
       {{ t('service.cfip.chainDependsProbe') }}：{{ t('service.cfip.chainProbeInterval') }} {{ chainDeps.interval_minutes }} min
@@ -253,6 +261,7 @@ const inbNodes = computed(() => probeNodes.value.filter((n) => n.kind === 'inbou
 
 const chainCfg = ref({
   enabled: false,
+  agent_id: 0,
   exit: '',
   interface: '',
   inbound: '',
@@ -270,6 +279,8 @@ const chainResults = ref({ domain: [], ip: [] })
 const chainUpdatedAt = ref({ domain: 0, ip: 0 })
 const chainExits = ref([])
 const chainInterfaces = ref([])
+const chainAgents = ref([])
+let chainLocalInterfaces = []
 const chainInbounds = ref([])
 const chainTargets = ref([])
 const chainChecking = ref({ domain: false, ip: false })
@@ -377,6 +388,7 @@ async function fetchChainConfig(opts = {}) {
       const fallbackMax = d.config.max_targets ?? 20
       chainCfg.value = {
         enabled: !!d.config.enabled,
+        agent_id: Number(d.config.agent_id || 0),
         exit: d.config.exit || '',
         interface: d.config.interface || '',
         inbound: d.config.inbound || '',
@@ -389,10 +401,12 @@ async function fetchChainConfig(opts = {}) {
         kinds_configured: true,
       }
     }
-    chainInterfaces.value = (d.interfaces || []).map((i) => ({
+    chainLocalInterfaces = (d.interfaces || []).map((i) => ({
       name: i.name,
       label: i.up ? i.name : `${i.name} (down)`,
     }))
+    chainInterfaces.value = chainLocalInterfaces
+    chainAgents.value = d.agents || []
     chainExits.value = d.exits || []
     chainInbounds.value = d.inbounds || []
     chainTargets.value = d.targets || []
@@ -549,6 +563,22 @@ async function saveProbeConfig() {
     notifyCfipRefresh()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || t('common.failed'))
+  }
+}
+
+// 切换执行节点时重新取该节点的网卡（面板本机用接口返回的列表；
+// 远程节点复用现有的 /node-servers/:id/binaries/interfaces）。
+async function onAgentChange(agentId) {
+  chainCfg.value.interface = ''
+  if (!agentId) {
+    chainInterfaces.value = chainLocalInterfaces
+    return
+  }
+  try {
+    const names = await client.get(`/node-servers/${agentId}/binaries/interfaces`)
+    chainInterfaces.value = (names || []).map((n) => ({ name: n, label: n }))
+  } catch {
+    chainInterfaces.value = []
   }
 }
 

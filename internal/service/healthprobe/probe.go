@@ -110,6 +110,8 @@ type Prober struct {
 	chainMu sync.Mutex
 	// chainProv 由订阅 handler 注入，把入站渲染成客户端出站参数。
 	chainProv ChainTargetProvider
+	// chainRemote 由 router 注入，在选定的 Agent 上执行链路探测。
+	chainRemote ChainRemoteRunner
 	// wake 唤醒调度器重新读配置（开关/间隔改动后立即生效）。
 	wake chan struct{}
 }

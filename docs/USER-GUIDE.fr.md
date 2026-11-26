@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-26 -->
 # Guide d'utilisation CoreFusion
 
 > Langues : [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · Français · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Cliquez sur un nœud pour ouvrir sa page de détails :
 
 ---
 
+### 5.6 Vérification de la sécurité du nœud
+
+Détails du nœud → "Checkup" : collecte en lecture seule, elle ne modifie jamais aucune configuration.
+
+- **Portée** : informations système, SSH (mot de passe / clavier interactif / connexion root / MaxAuthTries / autorisations des touches /
+  si le port 22 est restreint à la source), détection de pare-feu (firewalld / ufw / nftables / iptables),
+  paramètres du noyau (backlogs, tampons, contrôle de congestion, conntrack, IPv6) et priorité entre les fichiers de configuration.
+- **Gravité** : élevée / avertir / info / ok. Seuls les éléments non satisfaits donnent des conseils pour éviter le bruit.
+- **Les commandes suggérées sont écrites sur disque** : les paramètres du noyau vont à `/etc/sysctl.d/99-corefusion.conf`
+  (dédupliqué par clé, puis `sysctl --system`) ; SSH va à `/etc/ssh/sshd_config.d/00-corefusion-*.conf` ;
+  le module BBR va à `/etc/modules-load.d/`. Tous survivent à un redémarrage.
+- **Priorité des configurations** : `CFG-01` répertorie, par clé sysctl, le fichier et la ligne qui prennent effet en dernier —
+  `/etc/sysctl.conf` est toujours chargé en dernier et remplace `99-corefusion.conf` ; `CFG-02` répertorie le premier
+  directive sshd correspondante — sshd utilise la première valeur qu'il voit, les drop-ins ont besoin du préfixe `00-` et
+  `Include /etc/ssh/sshd_config.d/*.conf` doit apparaître avant ces directives, sinon les drop-ins sont
+  entièrement ignoré (signalé comme avertir).
+- **IPv6** : coché uniquement lorsque le nœud possède réellement une adresse IPv6 globale. Adresses de tunnel telles que
+  Les `singbr0` / `wg0` / `tun0` sont étiquetés `tun`, sont attribués par le proxy et **ne doivent pas être modifiés à la main** ;
+  ils sont exclus de l'IPv6 public du nœud.
+- **Connexion root** : `PermitRootLogin yes` est jugé correct lorsque `PasswordAuthentication` et
+  Les `KbdInteractiveAuthentication` sont des `no` (clé uniquement) ; la vérification ne vous demande jamais de désactiver root.
+- **Document de réglage complet** : la boîte de dialogue peut copier/télécharger l'intégralité du Markdown et "Afficher en ligne" s'ouvre
+  `docs/node-tuning.<lang>.md` dans le référentiel pour la langue actuelle de l'interface utilisateur (16 langues).
+- **Cache** : les résultats sont mis en cache pendant 10 minutes, `refresh=1` force une nouvelle collection ; les contrôles programmés sont
+  désactivé par défaut.
+
 ## 6. Centre de protocole
 
 Le centre de protocole configure les paramètres de protocole pour les processus principaux.
@@ -1057,14 +1083,30 @@ Les ressources de routage collectent les ressources partagées utilisées par le
 
 ### 8.2 Pool IP CF
 
-- Conserver les sources IP préférées (y compris les sources de style `bestproxy`), l'intervalle de récupération et les ports ;
-- Les « Paramètres de la sonde » contrôlent l'intervalle de la sonde, le seuil de latence et le nœud d'entrée de la sonde ; sondage local
- filtre uniquement les adresses IP clairement inaccessibles, tandis que la sélection d'un nœud d'entrée simule la ligne de ce nœud ;
-- Le « composeur » peut être automatique (cœurs installés), `singbox`, `xray` ou `mihomo` ; noyaux qui ne sont pas
- installés ne sont pas répertoriés. Le sondage s'exécute comme un processus temporaire qui se termine une fois terminé et ne lit jamais ou
- écrit la propre configuration du noyau ;
-- Lorsque « Domaine d'accès » utilise le pool IP CF sans valeur concrète, une entrée (avec son port) est
- choisi au hasard.
+- Maintenir les sources IP préférées (y compris les sources de style `bestproxy`), l'intervalle de
+  récupération et les ports ;
+- Les « paramètres de sonde » contrôlent l'intervalle de sonde, le seuil de latence, le nœud d'entrée et le
+  nœud d'exécution (hôte du panneau ou n'importe quel Agent), ainsi qu'une carte réseau de sortie en option ;
+  la sélection d'un nœud d'entrée compose via cette ligne, alors que sans entrée, seule la numérotation
+  directe locale est possible (elle filtre uniquement les adresses IP clairement inaccessibles) ;
+- Le noyau du composeur doit être installé sur le**noeud d'exécution sélectionné**: la page répertorie les
+  cœurs et les versions signalées par ce nœud, et Install / Reinstall l'installe directement ici (les nœuds
+  distants téléchargent via le Agent, aucun SSH n'est nécessaire) ;
+- Le « composeur » peut être automatique (cœurs installés), `singbox`, `xray` ou `mihomo` ; les cœurs qui ne
+  sont pas installés ne sont pas répertoriés. Le sondage s'exécute comme un processus temporaire qui se
+  termine une fois terminé et ne lit ni n'écrit jamais la propre configuration du cœur ;
+- « Vérifier la connectivité » ne couvre que la page sur laquelle vous vous trouvez : la page du pool
+  d'adresses IP CF met à jour les adresses IP préférées, la page du domaine partagé met à jour les domaines
+  CF, et aucune des deux ne touche l'autre ; sans type, il vérifie toujours les deux (rétrocompatible) ;
+- La « sonde proxy de chaîne » est une carte distincte : elle compose un numéro depuis la sortie sélectionnée
+  via un domaine/IP CDN vers la sonde entrante et émet une requête réelle (HTTP 200 avec un trafic dans les
+  deux sens est requis). Il est mutuellement exclusif avec la sonde IP préférée**au calendrier**— lorsqu'elle
+  est activée, la vérification planifiée de l'adresse IP préférée s'arrête et seule la vérification du proxy
+  en chaîne s'exécute (la « vérification manuelle de la connectivité » fonctionne toujours) ; il peut hériter
+  ou remplacer l'intervalle de sonde et le numéroteur, et prend également en charge un nœud d'exécution et une
+  carte réseau de sortie ;
+- Lorsque « Domaine d'accès » utilise le pool IP CF sans valeur concrète, une entrée (avec son port) est
+  sélectionnée au hasard.
 
 ### 8.3 Règles globales WAF
 

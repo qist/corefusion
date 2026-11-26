@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-26 -->
 # Hướng dẫn vận hành CoreFusion
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Nhấp vào một nút để mở trang chi tiết của nó:
 
 ---
 
+### 5.6 Kiểm tra bảo mật nút
+
+Chi tiết nút → "Kiểm tra": thu thập chỉ đọc, nó không bao giờ thay đổi bất kỳ cấu hình nào.
+
+- **Phạm vi**: thông tin hệ thống, SSH (mật khẩu / tương tác bàn phím / đăng nhập root / MaxAuthTries / quyền khóa /
+  cổng 22 có bị giới hạn nguồn hay không), phát hiện tường lửa (firewalld / ufw / nftables / iptables),
+  các tham số kernel (tồn đọng, bộ đệm, kiểm soát tắc nghẽn, conntrack, IPv6) và quyền ưu tiên giữa các tệp cấu hình.
+- **Mức độ nghiêm trọng**: cao / cảnh báo / thông tin / ok. Chỉ những mục không đạt mới đưa ra lời khuyên, tránh gây ồn ào.
+- **Các lệnh được đề xuất được ghi xuống đĩa**: tham số kernel chuyển đến `/etc/sysctl.d/99-corefusion.conf`
+  (khử trùng lặp trên mỗi khóa, sau đó là `sysctl --system`); SSH chuyển sang `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  mô-đun BBR chuyển tới `/etc/modules-load.d/`. Tất cả vẫn có hiệu lực sau khi khởi động lại.
+- **Thứ tự ưu tiên cấu hình**: Danh sách `CFG-01`, trên mỗi khóa sysctl, tệp và dòng có hiệu lực cuối cùng —
+  `/etc/sysctl.conf` luôn được tải cuối cùng và ghi đè `99-corefusion.conf`; `CFG-02` liệt kê đầu tiên
+  chỉ thị sshd phù hợp - sshd sử dụng giá trị đầu tiên mà nó nhìn thấy, các phần bổ sung cần có tiền tố `00-` và
+  `Include /etc/ssh/sshd_config.d/*.conf` phải xuất hiện trước các chỉ thị đó, nếu không các phần thả vào sẽ
+  bị bỏ qua hoàn toàn (được báo cáo là cảnh báo).
+- **IPv6**: chỉ được kiểm tra khi nút thực sự có địa chỉ IPv6 toàn cầu. Địa chỉ đường hầm như
+  `singbr0` / `wg0` / `tun0` được gắn nhãn `tun`, được chỉ định bởi proxy và **không được chỉnh sửa bằng tay**;
+  chúng bị loại khỏi IPv6 công cộng của nút.
+- **Đăng nhập root**: `PermitRootLogin yes` được đánh giá là ổn khi cả `PasswordAuthentication` và
+  `KbdInteractiveAuthentication` là `no` (chỉ có khóa); việc kiểm tra không bao giờ yêu cầu bạn tắt root.
+- **Tài liệu điều chỉnh đầy đủ**: hộp thoại có thể sao chép / tải xuống toàn bộ Markdown và "Xem trực tuyến" sẽ mở ra
+  `docs/node-tuning.<lang>.md` trong kho lưu trữ ngôn ngữ giao diện người dùng hiện tại (16 ngôn ngữ).
+- **Bộ nhớ đệm**: kết quả được lưu vào bộ nhớ đệm trong 10 phút, `refresh=1` buộc một bộ sưu tập mới; kiểm tra theo lịch trình là
+  tắt theo mặc định.
+
 ## 6. Trung tâm giao thức
 
 Trung tâm giao thức cấu hình các tham số giao thức cho các quy trình cốt lõi.
@@ -1055,15 +1081,27 @@ Tài nguyên định tuyến thu thập tài sản được chia sẻ được s
 ### Nhóm IP 8.2 CF
 
 - Duy trì các nguồn IP ưa thích (bao gồm các nguồn kiểu `bestproxy`), khoảng thời gian tìm nạp và cổng;
-- “Cài đặt đầu dò” kiểm soát khoảng thời gian thăm dò, ngưỡng độ trễ và nút đầu vào thăm dò; thăm dò địa phương
- chỉ lọc các IP rõ ràng là không thể truy cập được, trong khi việc chọn một nút đầu vào sẽ mô phỏng đường dây của nút đó;
-- “Trình quay số” có thể tự động (lõi đã cài đặt), `singbox`, `xray` hoặc `mihomo`; lõi không phải
- cài đặt không được liệt kê. Việc thăm dò chạy như một quá trình tạm thời và sẽ thoát khi hoàn tất và không bao giờ đọc hoặc
- ghi cấu hình riêng của lõi;
-- Khi “Miền truy cập” sử dụng nhóm IP CF mà không có giá trị cụ thể, một mục nhập (với cổng của nó) sẽ được
- được chọn ngẫu nhiên.
-
-- **Sự trôi dạt mục nhập (chính/dự phòng)**: mục nhập trực tiếp có thể liên kết kênh DNS và tên bản ghi; sau khi chuyển đổi dự phòng hoặc chuyển đổi lại, bảng điều khiển sẽ chỉ ra rằng A ghi lại IP công cộng của chính hiện tại (IP nội bộ khi trống). Chỉ các nhà cung cấp có trình ghi DNS đã triển khai mới được chấp nhận (`cloudflare` đã được xác minh; alidns / DNSPod / GoDaddy / Namecheap / Route53 / Google / Huawei Cloud đã triển khai nhưng chưa được xác minh). Quá trình lan truyền Cloudflare được đo trong khoảng 2–2,5 phút với TTL được cố định ở mức 60; tắt đám mây màu cam cho các mục TCP/REALITY.
+- “Cài đặt đầu dò” kiểm soát khoảng thời gian thăm dò, ngưỡng độ trễ, nút đầu vào và nút thực thi (máy chủ
+  bảng điều khiển hoặc bất kỳ Agent nào), cùng với một NIC đầu ra tùy chọn; chọn một nút mục nhập quay số qua
+  đường dây đó, trong khi không có mục nhập thì chỉ có thể quay số trực tiếp cục bộ (nó chỉ lọc các IP rõ ràng
+  là không thể truy cập được);
+- Lõi quay số phải được cài đặt trên**nút thực thi đã chọn**: trang liệt kê các lõi và phiên bản được nút đó
+  báo cáo và Cài đặt / Cài đặt lại cài đặt nó trực tiếp tại đó (các nút từ xa tải xuống qua Agent, không cần
+  SSH);
+- “Trình quay số” có thể tự động (lõi đã cài đặt), `singbox`, `xray` hoặc `mihomo`; lõi chưa được cài đặt sẽ
+  không được liệt kê. Việc thăm dò chạy như một quy trình tạm thời, quy trình này sẽ thoát khi hoàn tất và
+  không bao giờ đọc hoặc ghi cấu hình của chính lõi;
+- “Kiểm tra kết nối” chỉ bao gồm trang bạn đang truy cập: trang nhóm CF IP cập nhật các IP ưa thích, trang
+  miền chia sẻ cập nhật các miền CF và không chạm vào trang kia; không có loại nó vẫn kiểm tra cả hai (tương
+  thích ngược);
+- “Đầu dò proxy chuỗi” là một thẻ riêng biệt: nó quay số từ lối ra đã chọn thông qua miền/IP CDN quay trở lại
+  đầu dò thăm dò và đưa ra yêu cầu thực (HTTP 200 với lưu lượng truy cập theo cả hai hướng là bắt buộc). Nó
+  loại trừ lẫn nhau với đầu dò IP ưa thích**theo lịch trình**— khi được bật, hoạt động thăm dò IP ưu tiên theo
+  lịch trình sẽ tạm dừng và chỉ hoạt động thăm dò proxy chuỗi (kiểm tra kết nối thủ công vẫn hoạt động); nó có
+  thể kế thừa hoặc ghi đè khoảng thời gian thăm dò và trình quay số, đồng thời hỗ trợ nút thực thi và NIC đầu
+  ra;
+- Khi “Miền truy cập” sử dụng nhóm IP CF mà không có giá trị cụ thể, một mục nhập (cùng với cổng của nó) sẽ
+  được chọn ngẫu nhiên.
 
 ### 8.3 Quy tắc chung WAF
 

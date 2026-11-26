@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-26 -->
 # CoreFusion Operasyon Kılavuzu
 
 > Diller: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · Türkçe · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Ayrıntı sayfasını açmak için bir düğüme tıklayın:
 
 ---
 
+### 5.6 Düğüm güvenliği kontrolü
+
+Düğüm ayrıntıları → "Kontrol": salt okunur toplama, hiçbir yapılandırmayı değiştirmez.
+
+- **Kapsam**: sistem bilgisi, SSH (şifre / klavye etkileşimli / root girişi / MaxAuthTries / anahtar izinleri /
+  port 22'nin kaynak kısıtlı olup olmadığı), güvenlik duvarı tespiti (firewalld / ufw / nftables / iptables),
+  çekirdek parametreleri (biriktirme kayıtları, arabellekler, tıkanıklık kontrolü, bağlantı, IPv6) ve yapılandırma dosyaları arasındaki öncelik.
+- **Önem derecesi**: yüksek / uyarı / bilgi / tamam. Gürültüyü önlemek için yalnızca karşılanmayan maddeler tavsiye niteliğindedir.
+- **Önerilen komutlar diske yazılır**: çekirdek parametreleri `/etc/sysctl.d/99-corefusion.conf`'ye gider
+  (anahtar başına çoğaltılmamış, ardından `sysctl --system`); SSH, `/etc/ssh/sshd_config.d/00-corefusion-*.conf`'ye gider;
+  BBR modülü `/etc/modules-load.d/`'ye gider. Hepsi yeniden başlatmadan sağ kurtulur.
+- **Yapılandırma önceliği**: `CFG-01`, sysctl anahtarı başına en son etkili olan dosyayı ve satırı listeler —
+  `/etc/sysctl.conf` her zaman en son yüklenir ve `99-corefusion.conf`'yi geçersiz kılar; `CFG-02` ilkini listeliyor
+  eşleşen sshd direktifi — sshd gördüğü ilk değeri kullanır, açılanlar `00-` önekine ihtiyaç duyar ve
+  `Include /etc/ssh/sshd_config.d/*.conf` bu yönergelerden önce görünmelidir, aksi takdirde drop-in'ler
+  tamamen göz ardı edildi (uyarı olarak rapor edildi).
+- **IPv6**: yalnızca düğümün gerçekten genel bir IPv6 adresine sahip olması durumunda kontrol edilir. Tünel adresleri gibi
+  `singbr0` / `wg0` / `tun0`, `tun` olarak etiketlenir, proxy tarafından atanır ve **elle düzenlenmemelidir**;
+  düğümün genel IPv6'sından hariç tutulurlar.
+- **Root oturumu**: `PermitRootLogin yes`, hem `PasswordAuthentication` hem de `PasswordAuthentication` olduğunda iyi olarak değerlendirilir.
+  `KbdInteractiveAuthentication`, `no`'dir (yalnızca anahtar); kontrol hiçbir zaman root'u devre dışı bırakmanızı istemez.
+- **Tam ayarlama belgesi**: iletişim kutusu Markdown'un tamamını kopyalayabilir/indirebilir ve "Çevrimiçi görüntüle" açılır
+  Geçerli kullanıcı arayüzü dili (16 dil) deposunda `docs/node-tuning.<lang>.md`.
+- **Önbellek**: sonuçlar 10 dakika süreyle önbelleğe alınır, `refresh=1` yeni bir koleksiyonu zorunlu kılar; planlanmış kontroller
+  varsayılan olarak kapalıdır.
+
 ## 6. Protokol merkezi
 
 Protokol merkezi, çekirdek işlemler için protokol parametrelerini yapılandırır.
@@ -1057,14 +1083,29 @@ Yönlendirme kaynakları, abonelikler ve yönlendirme tarafından kullanılan pa
 
 ### 8.2 CF IP havuzu
 
-- Tercih edilen IP kaynaklarını (`bestproxy` tarzı kaynaklar dahil), getirme aralığını ve bağlantı noktalarını koruyun;
-- “Prob ayarları” prob aralığını, gecikme eşiğini ve prob giriş düğümünü kontrol eder; yerel araştırma
- yalnızca açıkça erişilemeyen IP'leri filtreler, bir giriş düğümü seçerken o düğümün hattını simüle eder;
-- "Çevirici" otomatik (kurulu çekirdekler), `singbox`, `xray` veya `mihomo` olabilir; olmayan çekirdekler
- yüklü olanlar listelenmez. Araştırma, tamamlandığında çıkan ve hiçbir zaman okumayan veya okumayan geçici bir süreç olarak çalışır.
- çekirdeğin kendi konfigürasyonunu yazar;
-- “Erişim alanı” CF IP havuzunu somut bir değer olmadan kullandığında, bir giriş (bağlantı noktasıyla birlikte)
- rastgele seçildi.
+- Tercih edilen IP kaynaklarını (`bestproxy` tarzı kaynaklar dahil), getirme aralığını ve bağlantı noktalarını
+  koruyun;
+- "Prob ayarları", prob aralığını, gecikme eşiğini, giriş düğümünü ve yürütme düğümünü (panel ana bilgisayarı
+  veya herhangi bir Agent) artı isteğe bağlı bir çıkış NIC'sini kontrol eder; bir giriş düğümü seçildiğinde bu
+  hat üzerinden arama yapılır, giriş olmadan yalnızca yerel doğrudan arama mümkündür (yalnızca erişilemeyen
+  IP'leri açıkça filtreler);
+- Çevirici çekirdeğinin yüklü olması gerekir**seçilen yürütme düğümü**: sayfada o düğüm tarafından bildirilen
+  çekirdekler ve sürümler listelenir ve Kur / Yeniden Yükle onu doğrudan buraya yükler (uzak düğümlerin Agent
+  aracılığıyla indirilmesi, SSH gerekmez);
+- "Çevirici" otomatik (kurulu çekirdekler), `singbox`, `xray` veya `mihomo` olabilir; Kurulu olmayan
+  çekirdekler listelenmez. Araştırma, tamamlandığında çıkan ve çekirdeğin kendi yapılandırmasını hiçbir zaman
+  okumayan veya yazmayan geçici bir süreç olarak çalışır;
+- "Bağlantıyı kontrol et" yalnızca bulunduğunuz sayfayı kapsar: CF IP havuzu sayfası tercih edilen IP'leri
+  günceller, paylaşılan etki alanı sayfası CF etki alanlarını günceller ve ikisi de diğerine dokunmaz; bir tür
+  olmadan yine de her ikisini de kontrol eder (geriye dönük olarak uyumludur);
+- "Zincir proxy probu" ayrı bir karttır: seçilen çıkıştan bir CDN etki alanı/IP'si aracılığıyla gelen proba
+  geri döner ve gerçek bir istek gönderir (her iki yönde de trafik gerektiren HTTP 200 gereklidir). Tercih
+  edilen IP probu ile birbirini dışlar**programda**— etkinleştirildiğinde, planlanmış tercih edilen IP
+  incelemesi duraklatılır ve yalnızca zincir proxy incelemesi çalıştırılır (manuel "Bağlantıyı kontrol et"
+  hala çalışır); araştırma aralığını ve çeviriciyi devralabilir veya geçersiz kılabilir ve ayrıca bir yürütme
+  düğümünü ve çıkış NIC'sini destekler;
+- “Erişim alanı” CF IP havuzunu somut bir değer olmadan kullandığında, bir giriş (bağlantı noktasıyla
+  birlikte) rastgele seçilir.
 
 ### 8.3 WAF genel kuralları
 

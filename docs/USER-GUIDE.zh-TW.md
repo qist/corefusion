@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-11-26 -->
 # CoreFusion操作指南
 
 > 語言： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · 繁體中文 · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -785,6 +785,31 @@ cd /opt/corefusion
 
 ---
 
+### 5.6 節點安全檢查
+
+節點詳細資訊→「Checkup」：只讀採集，它不會更改任何配置。
+
+- **範圍**：系統訊息，SSH（密碼/鍵盤互動/root登入/MaxAuthTries/金鑰權限/
+  連接埠 22 是否受來源限制）、防火牆偵測（firewalld / ufw / nftables / iptables）、
+  核心參數（積壓、緩衝區、擁塞控制、conntrack、IPv6）以及設定檔之間的優先權。
+- **嚴重性**：高/警告/訊息/正常。只有不滿足的項目才會產生建議，以避免噪音。
+- **建議命令會寫入檔案**：核心參數轉到 `/etc/sysctl.d/99-corefusion.conf`
+  （對每個按鍵進行重複資料刪除，然後是 `sysctl --system`）；SSH 轉到 `/etc/ssh/sshd_config.d/00-corefusion-*.conf`；
+  BBR 模組轉到 `/etc/modules-load.d/`。一切都在重新啟動後倖存下來。
+- **覆蓋優先順序**：`CFG-01` 列出了每個 sysctl 鍵最後生效的檔案和行 —
+  `/etc/sysctl.conf` 始終最後載入並覆蓋 `99-corefusion.conf`； `CFG-02` 列出第一
+  符合 sshd 指令 — sshd 使用它看到的第一個值，drop-ins 需要 `00-` 前綴，並且
+  `Include /etc/ssh/sshd_config.d/*.conf` 必須出現在這些指令之前，否則直接插入
+  完全忽略（報告為警告）。
+- **IPv6**：僅當節點確實具有全域 IPv6 位址時才檢查。隧道位址例如
+  `singbr0` / `wg0` / `tun0` 標記為 `tun`，由代理程式分配，**不得手動編輯**；
+  它們被排除在節點的公共 IPv6 之外。
+- **root 登入**：當 `PasswordAuthentication` 與 `KbdInteractiveAuthentication` 都為 `no` 時，`PermitRootLogin yes` 判為正常（只能金鑰登入），不會要求你停用 root。
+- **完整調校文件**：對話方塊可以複製/下載整個 Markdown，並開啟“線上檢視”
+  目前 UI 語言（16 種語言）的儲存庫中的 `docs/node-tuning.<lang>.md`。
+- **快取**：結果快取10分鐘，`refresh=1`強制新集合；預定的檢查是
+  預設關閉。
+
 ## 6. 禮賓中心
 
 協定中心為核心進程配置協定參數。
@@ -1079,14 +1104,13 @@ cd /opt/corefusion
 
 ### 8.2 CF IP池
 
-- 維護首選IP來源（包括`bestproxy`樣式來源）、取得間隔和連接埠；
-- 「探測設定」控制探測間隔、延遲閾值和探測入口節點；本地探測
- 只過濾明顯不可達的IP，同時選擇入口節點模擬該節點的線路；
-- 「撥號器」可以是自動的（已安裝核心）、`singbox`、`xray` 或 `mihomo`；不屬於的核心
- 已安裝的未列出。探測作為臨時進程運行，完成後退出並且從不讀取或
- 編寫核心自己的配置；
-- 當「存取域」使用CF IP池而沒有特定值時，一個條目（及其連接埠）是
- 隨機挑選的。
+- 維護首選 IP 來源（包括 `bestproxy` 樣式來源）、取得間隔和連接埠；
+- 「探測設定」控制探測間隔、延遲閾值、入口節點與執行節點（面板主機或任一 Agent），以及可選的出口網卡；選擇入口節點時會經該線路撥號，未選入口則只能本機直連（僅能過濾明顯不通的 IP）；
+- 撥號核心必須安裝在**所選的執行節點**上：頁面會列出該節點回報的核心與版本，按「安裝 / 重裝」會直接裝到該節點（遠端節點由 Agent 下載，無需 SSH）；
+- 「撥號核心」可為自動（已安裝的核心）、`singbox`、`xray` 或 `mihomo`；未安裝的核心不會列出。探測以臨時進程執行，結束即退出，不會讀寫核心自身的設定；
+- 「檢測連通性」只涵蓋目前頁面：CF IP 池頁面只更新首選 IP，共享網域頁面只更新 CF 網域，兩者互不影響；不帶類型時仍檢測全部（相容舊呼叫）；
+- 「鏈式代理探測」是獨立的卡片：從所選出口經 CDN 網域/IP 撥回探針入站並發出真實請求（需 HTTP 200 且雙向都有流量）。它與首選 IP 探測**僅在定時排程上互斥**——開啟後定時首選 IP 探測暫停，只執行鏈式代理探測（手動「檢測連通性」仍會執行）；可繼承或獨立設定探測間隔與撥號核心，也支援指定執行節點與出口網卡；
+- 當「存取網域」使用 CF IP 池但未指定具體值時，會隨機選取一條（含其連接埠）。
 
 ### 8.3 WAF 全域規則
 

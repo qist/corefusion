@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-26 -->
 # Guia de operações CoreFusion
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · Português · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Clique em um nó para abrir sua página de detalhes:
 
 ---
 
+### 5.6 Verificação de segurança do nó
+
+Detalhes do nó → "Checkup": coleta somente leitura, nunca altera nenhuma configuração.
+
+- **Escopo**: informações do sistema, SSH (senha / teclado interativo / login root / MaxAuthTries / permissões de chave /
+  se a porta 22 é restrita à origem), detecção de firewall (firewalld / ufw / nftables / iptables),
+  parâmetros do kernel (backlogs, buffers, controle de congestionamento, conntrack, IPv6) e precedência entre arquivos de configuração.
+- **Gravidade**: alta / avisar / info / ok. Somente os itens que não forem atendidos produzem aconselhamento, para evitar ruídos.
+- **Os comandos sugeridos são gravados em disco**: os parâmetros do kernel vão para `/etc/sysctl.d/99-corefusion.conf`
+  (desduplicado por chave, então `sysctl --system`); SSH vai para `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  o módulo BBR vai para `/etc/modules-load.d/`. Todos sobrevivem a uma reinicialização.
+- **Prioridade das configurações**: `CFG-01` lista, por chave sysctl, o arquivo e a linha que entra em vigor por último —
+  `/etc/sysctl.conf` é sempre carregado por último e substitui `99-corefusion.conf`; `CFG-02` lista o primeiro
+  diretiva sshd correspondente - sshd usa o primeiro valor que vê, os drop-ins precisam do prefixo `00-` e
+  `Include /etc/ssh/sshd_config.d/*.conf` deve aparecer antes dessas diretivas, caso contrário, os drop-ins serão
+  totalmente ignorado (relatado como aviso).
+- **IPv6**: verificado apenas quando o nó realmente possui um endereço IPv6 global. Endereços de túnel como
+  `singbr0` / `wg0` / `tun0` são rotulados como `tun`, são atribuídos pelo proxy e **não devem ser editados manualmente**;
+  eles são excluídos do IPv6 público do nó.
+- **Login root**: `PermitRootLogin yes` é considerado ok quando `PasswordAuthentication` e
+  `KbdInteractiveAuthentication` são `no` (somente chave); o checkup nunca pede para você desabilitar o root.
+- **Documento de ajuste completo**: a caixa de diálogo pode copiar/baixar todo o Markdown e "Visualizar online" é aberto
+  `docs/node-tuning.<lang>.md` no repositório para o idioma da UI atual (16 idiomas).
+- **Cache**: os resultados são armazenados em cache por 10 minutos, `refresh=1` força uma nova coleta; exames agendados são
+  desativado por padrão.
+
 ## 6. Centro de protocolo
 
 O centro de protocolo configura parâmetros de protocolo para os processos principais.
@@ -1060,13 +1086,27 @@ Os recursos de roteamento coletam os ativos compartilhados usados por assinatura
 ### 8.2 Conjunto de IPs CF
 
 - Manter fontes de IP preferenciais (incluindo fontes de estilo `bestproxy`), intervalo de busca e portas;
-- “Configurações da sonda” controlam o intervalo da sonda, o limite de latência e o nó de entrada da sonda; sondagem local
- filtra apenas IPs claramente inacessíveis, enquanto a seleção de um nó de entrada simula a linha desse nó;
-- O “discador” poderá ser automático (núcleos instalados), `singbox`, `xray` ou `mihomo`; núcleos que não são
- instalados não estão listados. A sondagem é executada como um processo temporário que termina quando concluído e nunca lê ou
- escreve a própria configuração do núcleo;
-- Quando “Domínio de acesso” utiliza o pool de IP do CF sem um valor concreto, uma entrada (com sua porta) é
- escolhido aleatoriamente.
+- “Configurações de sonda” controlam o intervalo de sondagem, limite de latência, nó de entrada e nó de
+  execução (host do painel ou qualquer Agent), além de uma NIC de saída opcional; selecionar um nó de entrada
+  disca através dessa linha, enquanto sem uma entrada somente a discagem direta local é possível (filtra
+  apenas IPs claramente inacessíveis);
+- O núcleo do discador deve ser instalado no**nó de execução selecionado**: a página lista núcleos e versões
+  relatados por esse nó, e Instalar/Reinstalar o instala diretamente (download de nós remotos por meio do
+  Agent, não é necessário SSH);
+- O “discador” poderá ser automático (núcleos instalados), `singbox`, `xray` ou `mihomo`; núcleos que não
+  estão instalados não são listados. A sondagem é executada como um processo temporário que termina quando
+  concluído e nunca lê ou grava a própria configuração do núcleo;
+- “Verificar conectividade” cobre apenas a página em que você está: a página do pool de IPs CF atualiza os IPs
+  preferenciais, a página de domínio compartilhado atualiza os domínios CF e nenhuma delas toca a outra; sem
+  um tipo, ele ainda verifica ambos (compatível com versões anteriores);
+- “Chain proxy probe” é um cartão separado: ele disca da saída selecionada através de um domínio/IP CDN de
+  volta para a entrada da sonda e emite uma solicitação real (é necessário HTTP 200 com tráfego em ambas as
+  direções). É mutuamente exclusivo com a sonda de IP preferencial**no cronograma**— quando ativado, a
+  sondagem agendada de IP preferencial é pausada e apenas a sonda proxy em cadeia é executada (a “verificação
+  de conectividade” manual ainda funciona); ele pode herdar ou substituir o intervalo de teste e o discador e
+  também oferece suporte a um nó de execução e NIC de saída;
+- Quando o “domínio de acesso” utiliza o pool de IP do CF sem um valor concreto, uma entrada (com sua porta) é
+  escolhida aleatoriamente.
 
 ### 8.3 Regras globais WAF
 

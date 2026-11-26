@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-26 -->
 # Panduan Pengoperasian CoreFusion
 
 > Bahasa: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · Bahasa Indonesia · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Klik sebuah node untuk membuka halaman detailnya:
 
 ---
 
+### 5.6 Pemeriksaan keamanan node
+
+Detail node → "Pemeriksaan": pengumpulan hanya-baca, tidak pernah mengubah konfigurasi apa pun.
+
+- **Cakupan**: info sistem, SSH (kata sandi / keyboard-interaktif / login root / MaxAuthTries / izin kunci /
+  apakah port 22 dibatasi sumbernya), deteksi firewall (firewalld / ufw / nftables / iptables),
+  parameter kernel (backlog, buffer, kontrol kemacetan, conntrack, IPv6) dan prioritas antara file konfigurasi.
+- **Keparahan**: tinggi / peringatan / info / oke. Hanya item yang tidak terpenuhi yang menghasilkan saran, untuk menghindari kebisingan.
+- **Perintah yang disarankan ditulis ke disk**: parameter kernel beralih ke `/etc/sysctl.d/99-corefusion.conf`
+  (hapus duplikat per kunci, lalu `sysctl --system`); SSH menjadi `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  modul BBR menuju ke `/etc/modules-load.d/`. Semua selamat dari reboot.
+- **Prioritas konfigurasi**: Daftar `CFG-01`, per kunci sysctl, file dan baris yang berlaku terakhir —
+  `/etc/sysctl.conf` selalu dimuat terakhir dan menggantikan `99-corefusion.conf`; `CFG-02` mencantumkan yang pertama
+  cocok dengan arahan sshd — sshd menggunakan nilai pertama yang dilihatnya, drop-in memerlukan awalan `00-`, dan
+  `Include /etc/ssh/sshd_config.d/*.conf` harus muncul sebelum arahan tersebut, jika tidak, drop-in akan muncul
+  diabaikan seluruhnya (dilaporkan sebagai peringatan).
+- **IPv6**: hanya diperiksa ketika node benar-benar memiliki alamat IPv6 global. Alamat terowongan seperti
+  `singbr0` / `wg0` / `tun0` diberi label `tun`, ditetapkan oleh proxy dan **tidak boleh diedit dengan tangan**;
+  mereka dikecualikan dari IPv6 publik node.
+- **Login root**: `PermitRootLogin yes` dinilai oke ketika `PasswordAuthentication` dan
+  `KbdInteractiveAuthentication` adalah `no` (hanya kunci); pemeriksaan tidak pernah meminta Anda untuk menonaktifkan root.
+- **Dokumen penyetelan lengkap**: dialog dapat menyalin/mengunduh seluruh Penurunan Harga, dan "Lihat online" terbuka
+  `docs/node-tuning.<lang>.md` dalam repositori untuk bahasa UI saat ini (16 bahasa).
+- **Cache**: hasil di-cache selama 10 menit, `refresh=1` memaksa koleksi baru; pemeriksaan terjadwal adalah
+  mati secara default.
+
 ## 6. Pusat protokol
 
 Pusat protokol mengonfigurasi parameter protokol untuk proses inti.
@@ -1058,13 +1084,27 @@ Sumber daya perutean mengumpulkan aset bersama yang digunakan oleh langganan dan
 ### 8.2 kumpulan IP CF
 
 - Pertahankan sumber IP pilihan (termasuk sumber gaya `bestproxy`), interval pengambilan dan port;
-- "Pengaturan probe" mengontrol interval probe, ambang latensi, dan node entri probe; penyelidikan lokal
- hanya memfilter IP yang jelas-jelas tidak dapat dijangkau, sementara memilih node masuk akan menyimulasikan jalur node tersebut;
-- “Dialer” mungkin otomatis (inti terpasang), `singbox`, `xray` atau `mihomo`; inti yang tidak
- diinstal tidak terdaftar. Probing berjalan sebagai proses sementara yang keluar ketika selesai dan tidak pernah membaca atau
- menulis konfigurasi inti sendiri;
-- Ketika "Access domain" menggunakan kumpulan CF IP tanpa nilai konkret, satu entri (dengan portnya) adalah
- dipilih secara acak.
+- “Pengaturan probe” mengontrol interval probe, ambang latensi, node masuk dan node eksekusi (host panel atau
+  Agent), ditambah NIC jalan keluar opsional; memilih node entri akan melakukan panggilan melalui saluran
+  tersebut, sedangkan tanpa entri, hanya panggilan langsung lokal yang dapat dilakukan (ini hanya memfilter IP
+  yang jelas-jelas tidak dapat dijangkau);
+- Inti dialer harus dipasang di**node eksekusi yang dipilih**: halaman mencantumkan inti dan versi yang
+  dilaporkan oleh node tersebut, dan Instal / Instal Ulang menginstalnya langsung di sana (unduh node jarak
+  jauh melalui Agent, tidak diperlukan SSH);
+- “Dialer” mungkin otomatis (inti terpasang), `singbox`, `xray` atau `mihomo`; core yang tidak diinstal tidak
+  terdaftar. Probing berjalan sebagai proses sementara yang keluar setelah selesai dan tidak pernah membaca
+  atau menulis konfigurasi inti itu sendiri;
+- “Periksa konektivitas” hanya mencakup halaman yang Anda buka: halaman kumpulan IP CF memperbarui IP pilihan,
+  halaman domain bersama memperbarui domain CF, dan tidak ada yang bersentuhan satu sama lain; tanpa
+  sejenisnya ia masih memeriksa keduanya (kompatibel ke belakang);
+- "Pemeriksaan proksi rantai" adalah kartu terpisah: kartu ini melakukan panggilan dari pintu keluar yang
+  dipilih melalui domain/IP CDN kembali ke pemeriksaan masuk dan mengeluarkan permintaan nyata (diperlukan
+  HTTP 200 dengan lalu lintas di kedua arah). Ini saling eksklusif dengan probe IP pilihan**pada jadwal**—
+  bila diaktifkan, pemeriksaan IP pilihan terjadwal akan dijeda dan hanya pemeriksaan proksi rantai yang
+  berjalan (manual “Periksa konektivitas” masih berfungsi); itu dapat mewarisi atau mengganti interval probe
+  dan dialer, dan juga mendukung node eksekusi dan NIC jalan keluar;
+- Ketika “Access domain” menggunakan kumpulan CF IP tanpa nilai konkret, satu entri (dengan portnya) dipilih
+  secara acak.
 
 ### 8.3 Aturan global WAF
 

@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: es | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: es | updated: 2026-11-26 -->
 # Guía de operaciones CoreFusion
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · Español · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Haga clic en un nodo para abrir su página de detalles:
 
 ---
 
+### 5.6 Comprobación de seguridad del nodo
+
+Detalles del nodo → "Checkup": recolección de solo lectura, nunca cambia ninguna configuración.
+
+- **Alcance**: información del sistema, SSH (contraseña/teclado interactivo/inicio de sesión raíz/MaxAuthTries/permisos de clave/
+  si el puerto 22 tiene restricción de origen), detección de firewall (firewalld/ufw/nftables/iptables),
+  Parámetros del kernel (atrasos, buffers, control de congestión, conntrack, IPv6) y precedencia entre archivos de configuración.
+- **Severidad**: alta / advertir / información / ok. Sólo se emiten consejos en los puntos que no se cumplen, para evitar ruidos.
+- **Los comandos sugeridos se guardan en disco**: los parámetros del kernel van a `/etc/sysctl.d/99-corefusion.conf`
+  (desduplicado por clave, luego `sysctl --system`); SSH pasa a `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  el módulo BBR va a `/etc/modules-load.d/`. Todos sobreviven a un reinicio.
+- **Prioridad de la configuración**: `CFG-01` enumera, por clave sysctl, el archivo y la línea que entran en vigor en último lugar.
+  `/etc/sysctl.conf` siempre se carga al final y anula `99-corefusion.conf`; `CFG-02` enumera el primero
+  directiva sshd coincidente: sshd usa el primer valor que ve, los complementos necesitan el prefijo `00-` y
+  `Include /etc/ssh/sshd_config.d/*.conf` debe aparecer antes de esas directivas; de lo contrario, las visitas sin cita previa
+  ignorado por completo (reportado como advertencia).
+- **IPv6**: sólo se marca cuando el nodo realmente tiene una dirección IPv6 global. Direcciones de túneles como
+  `singbr0` / `wg0` / `tun0` están etiquetados como `tun`, son asignados por el proxy y **no deben editarse a mano**;
+  están excluidos del IPv6 público del nodo.
+- **Inicio de sesión root**: `PermitRootLogin yes` se considera correcto cuando tanto `PasswordAuthentication` como
+  `KbdInteractiveAuthentication` son `no` (solo clave); el chequeo nunca le pide que desactive la raíz.
+- **Documento de ajuste completo**: el cuadro de diálogo puede copiar/descargar todo el Markdown y se abre "Ver en línea"
+  `docs/node-tuning.<lang>.md` en el repositorio del idioma de interfaz de usuario actual (16 idiomas).
+- **Caché**: los resultados se almacenan en caché durante 10 minutos, `refresh=1` fuerza una nueva colección; Los controles programados son
+  desactivado de forma predeterminada.
+
 ## 6. centro de protocolo
 
 El centro de protocolo configura los parámetros de protocolo para los procesos centrales.
@@ -1057,14 +1083,29 @@ Los recursos de enrutamiento recopilan los activos compartidos utilizados por la
 
 ### 8.2 Grupo de IP de CF
 
-- Mantenga las fuentes de IP preferidas (incluidas las fuentes de estilo `bestproxy`), el intervalo de recuperación y los puertos;
-- La “configuración de la sonda” controla el intervalo de la sonda, el umbral de latencia y el nodo de entrada de la sonda; sondeo local
- solo filtra IP claramente inalcanzables, mientras que seleccionar un nodo de entrada simula la línea de ese nodo;
-- El “marcador” podrá ser automático (núcleos instalados), `singbox`, `xray` o `mihomo`; núcleos que no son
- instalados no aparecen en la lista. El sondeo se ejecuta como un proceso temporal que finaliza cuando finaliza y nunca lee ni
- escribe la propia configuración del núcleo;
-- Cuando el “dominio de acceso” utiliza el grupo de IP de CF sin un valor concreto, se elimina una entrada (con su puerto).
- elegido al azar.
+- Mantenga las fuentes de IP preferidas (incluidas las fuentes de estilo `bestproxy`), el intervalo de
+  recuperación y los puertos;
+- La “configuración de la sonda” controla el intervalo de la sonda, el umbral de latencia, el nodo de entrada
+  y el nodo de ejecución (host del panel o cualquier Agent), además de una NIC de salida opcional; seleccionar
+  un nodo de entrada marca a través de esa línea, mientras que sin una entrada solo es posible la marcación
+  directa local (filtra solo IP claramente inalcanzables);
+- El núcleo del marcador debe instalarse en el**nodo de ejecución seleccionado**: la página enumera los
+  núcleos y las versiones reportadas por ese nodo, e Instalar/Reinstalar lo instala allí directamente (los
+  nodos remotos se descargan a través de Agent, no se necesita SSH);
+- El “marcador” puede ser automático (núcleos instalados), `singbox`, `xray` o `mihomo`; Los núcleos que no
+  están instalados no aparecen en la lista. El sondeo se ejecuta como un proceso temporal que sale cuando
+  finaliza y nunca lee ni escribe la configuración propia del núcleo;
+- “Verificar conectividad” solo cubre la página en la que se encuentra: la página del grupo de IP de CF
+  actualiza las IP preferidas, la página de dominio compartido actualiza los dominios de CF y ninguna toca a
+  la otra; sin un tipo, todavía verifica ambos (compatible con versiones anteriores);
+- La “sonda proxy en cadena” es una tarjeta separada: marca desde la salida seleccionada a través de un
+  dominio/IP CDN de regreso a la sonda entrante y emite una solicitud real (se requiere HTTP 200 con tráfico
+  en ambas direcciones). Es mutuamente excluyente con la sonda IP preferida.**en el horario**— cuando está
+  habilitado, el sondeo programado de IP preferida se detiene y solo se ejecuta el sondeo de proxy en cadena
+  (el manual "Verificar conectividad" todavía funciona); puede heredar o anular el intervalo de sonda y el
+  marcador, y también admite un nodo de ejecución y una NIC de salida;
+- Cuando el "dominio de acceso" utiliza el grupo de IP de CF sin un valor concreto, se selecciona una entrada
+  (con su puerto) al azar.
 
 ### 8.3 Reglas globales WAF
 

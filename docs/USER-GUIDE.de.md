@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: de | updated: 2026-11-23 -->
+<!-- source: USER-GUIDE.md | locale: de | updated: 2026-11-26 -->
 # CoreFusion Betriebshandbuch
 
 > Sprachen: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · Deutsch · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -759,6 +759,32 @@ Klicken Sie auf einen Knoten, um dessen Detailseite zu öffnen:
 
 ---
 
+### 5.6 Überprüfung der Knotensicherheit
+
+Knotendetails → „Überprüfung“: schreibgeschützte Erfassung, es ändert sich nie die Konfiguration.
+
+- **Geltungsbereich**: Systeminformationen, SSH (Passwort / tastaturinteraktiv / Root-Login / MaxAuthTries / Schlüsselberechtigungen /
+  ob Port 22 quellenbeschränkt ist), Firewall-Erkennung (firewalld / ufw / nftables / iptables),
+  Kernel-Parameter (Backlogs, Puffer, Überlastungskontrolle, Conntrack, IPv6) und Priorität zwischen Konfigurationsdateien.
+- **Schweregrad**: hoch / Warnung / Info / ok. Nur Punkte, die nicht erfüllt sind, werden empfohlen, um Lärm zu vermeiden.
+- **Empfohlene Befehle werden dauerhaft gespeichert**: Kernel-Parameter gehen zu `/etc/sysctl.d/99-corefusion.conf`
+  (dedupliziert pro Schlüssel, dann `sysctl --system`); SSH geht zu `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  Das BBR-Modul geht an `/etc/modules-load.d/`. Alle überleben einen Neustart.
+- **Vorrang der Konfiguration**: `CFG-01` listet pro Sysctl-Schlüssel die Datei und Zeile auf, die zuletzt wirksam wird –
+  `/etc/sysctl.conf` wird immer zuletzt geladen und überschreibt `99-corefusion.conf`; `CFG-02` listet den ersten auf
+  passende sshd-Direktive – sshd verwendet den ersten Wert, den es sieht, Drop-Ins benötigen das Präfix `00-` und
+  `Include /etc/ssh/sshd_config.d/*.conf` muss vor diesen Anweisungen stehen, andernfalls sind es Drop-Ins
+  vollständig ignoriert (als Warnung gemeldet).
+- **IPv6**: wird nur geprüft, wenn der Knoten wirklich eine globale IPv6-Adresse hat. Tunneladressen wie z
+  `singbr0` / `wg0` / `tun0` tragen die Bezeichnung `tun`, werden vom Proxy zugewiesen und dürfen **nicht manuell bearbeitet werden**;
+  Sie sind vom öffentlichen IPv6 des Knotens ausgeschlossen.
+- **Root-Anmeldung**: `PermitRootLogin yes` wird als in Ordnung beurteilt, wenn sowohl `PasswordAuthentication` als auch
+  `KbdInteractiveAuthentication` sind `no` (nur Schlüssel); Bei der Überprüfung werden Sie nie aufgefordert, Root zu deaktivieren.
+- **Vollständiges Tuning-Dokument**: Der Dialog kann den gesamten Markdown kopieren/herunterladen und „Online anzeigen“ öffnet sich
+  `docs/node-tuning.<lang>.md` im Repository für die aktuelle UI-Sprache (16 Sprachen).
+- **Cache**: Ergebnisse werden 10 Minuten lang zwischengespeichert, `refresh=1` erzwingt eine neue Sammlung; geplante Kontrolluntersuchungen sind
+  standardmäßig deaktiviert.
+
 ## 6. Protokollzentrum
 
 Das Protokollzentrum konfiguriert Protokollparameter für die Kernprozesse.
@@ -1057,14 +1083,30 @@ Routing-Ressourcen sammeln die gemeinsam genutzten Assets, die von Abonnements u
 
 ### 8.2 CF-IP-Pool
 
-- Behalten Sie bevorzugte IP-Quellen (einschließlich Quellen im `bestproxy`-Stil), Abrufintervall und Ports bei;
-- „Probe-Einstellungen“ steuern das Probe-Intervall, den Latenzschwellenwert und den Probe-Eintrittsknoten; lokale Sondierung
- Filtert nur eindeutig nicht erreichbare IPs, während die Auswahl eines Eingangsknotens die Leitung dieses Knotens simuliert.
-- Der „Dialer“ kann automatisch sein (installierte Kerne), `singbox`, `xray` oder `mihomo`; Kerne, die es nicht sind
- installiert sind, werden nicht aufgeführt. Die Prüfung wird als temporärer Prozess ausgeführt, der nach Abschluss beendet wird und niemals liest oder
- schreibt die eigene Konfiguration des Kerns;
-- Wenn „Zugriffsdomäne“ den CF-IP-Pool ohne konkreten Wert verwendet, ist ein Eintrag (mit seinem Port) erforderlich
- zufällig ausgewählt.
+- Behalten Sie bevorzugte IP-Quellen (einschließlich Quellen im `bestproxy`-Stil), Abrufintervall und Ports
+  bei;
+- „Probe-Einstellungen“ steuern das Probe-Intervall, den Latenzschwellenwert, den Eingangsknoten und den
+  Ausführungsknoten (Panel-Host oder ein beliebiger Agent) sowie eine optionale Ausgangs-NIC; Durch Auswahl
+  eines Eingangsknotens wird über diese Leitung gewählt, während ohne Eintrag nur lokale Direktwahl möglich
+  ist (es werden nur eindeutig nicht erreichbare IPs gefiltert);
+- Der Dialer-Kern muss auf dem installiert sein**ausgewählten Ausführungsknoten**: Die Seite listet Kerne und
+  Versionen auf, die von diesem Knoten gemeldet werden, und Install/Reinstall installiert sie direkt dort
+  (Remote-Knoten laden über Agent herunter, kein SSH erforderlich);
+- Der „Dialer“ kann automatisch sein (installierte Kerne), `singbox`, `xray` oder `mihomo`; Nicht installierte
+  Kerne werden nicht aufgeführt. Die Prüfung wird als temporärer Prozess ausgeführt, der nach Abschluss
+  beendet wird und niemals die eigene Konfiguration des Kerns liest oder schreibt.
+- „Konnektivität prüfen“ deckt nur die Seite ab, auf der Sie sich befinden: Die CF-IP-Pool-Seite aktualisiert
+  bevorzugte IPs, die Shared-Domain-Seite aktualisiert CF-Domänen und keine berührt die andere; ohne eine Art
+  prüft es trotzdem beide (abwärtskompatibel);
+- „Chain Proxy Probe“ ist eine separate Karte: Sie wählt vom ausgewählten Ausgang über eine CDN-Domäne/IP
+  zurück zum eingehenden Probe und stellt eine echte Anfrage aus (HTTP 200 mit Datenverkehr in beide
+  Richtungen ist erforderlich). Es schließt sich gegenseitig mit dem Preferred-IP-Probe aus**auf dem
+  Zeitplan**– Wenn diese Option aktiviert ist, wird die geplante Prüfung der bevorzugten IP angehalten und nur
+  die Ketten-Proxy-Prüfung ausgeführt (die manuelle „Konnektivität prüfen“ funktioniert weiterhin); Es kann
+  das Prüfintervall und den Dialer erben oder überschreiben und unterstützt außerdem einen Ausführungsknoten
+  und eine Ausgangs-NIC.
+- Wenn „Zugriffsdomäne“ den CF-IP-Pool ohne konkreten Wert verwendet, wird ein Eintrag (mit seinem Port)
+  zufällig ausgewählt.
 
 ### 8.3 WAF globale Regeln
 

@@ -379,3 +379,69 @@ func TestBuildGuideModernKernelLoadsModule(t *testing.T) {
 		t.Fatal("4.9+ 文档应包含 BBR")
 	}
 }
+
+func TestJudgeIPv6(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env:  nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		IPv6: []string{"2001:db8::10"},
+		Sysctl: map[string]nodecheckup.Sysctl{
+			"net.ipv6.conf.all.forwarding":          {Value: "0", Scope: "host"},
+			"net.ipv6.conf.all.accept_redirects":    {Value: "1", Scope: "host"},
+			"net.ipv6.conf.all.accept_source_route": {Value: "0", Scope: "host"},
+			"net.ipv6.conf.all.use_tempaddr":        {Value: "2", Scope: "host"},
+			"net.ipv6.neigh.default.gc_thresh2":     {Value: "512", Scope: "host"},
+			"net.ipv6.route.max_size":               {Value: "4096", Scope: "host"},
+		},
+	}
+	_, summary, items := Judge(facts, DefaultThresholds())
+	for _, id := range []string{"IPV6-01", "IPV6-02", "IPV6-04", "IPV6-05", "IPV6-06"} {
+		it := itemByID(items, id)
+		if it == nil {
+			t.Fatalf("缺少 %s", id)
+		}
+		if len(it.Commands) == 0 {
+			t.Fatalf("%s 应给出命令", id)
+		}
+		if !strings.Contains(it.Commands[0].Text, sysctlPersistFile) {
+			t.Fatalf("%s 命令应写统一文件：%s", id, it.Commands[0].Text)
+		}
+	}
+	if itemByID(items, "IPV6-03") != nil {
+		t.Fatal("accept_source_route=0 不应报")
+	}
+	if summary.High != 0 || summary.Warn < 1 {
+		t.Fatalf("accept_redirects 应至少 warn：%+v", summary)
+	}
+}
+
+// 没有全局 IPv6 的节点不应出现任何 IPV6 项。
+func TestJudgeIPv6SkippedWithoutAddress(t *testing.T) {
+	facts := &nodecheckup.Facts{
+		Env: nodecheckup.Env{Kind: "host", Kernel: "5.14.0-1.el9"},
+		Sysctl: map[string]nodecheckup.Sysctl{
+			"net.ipv6.conf.all.accept_redirects": {Value: "1", Scope: "host"},
+		},
+	}
+	_, _, items := Judge(facts, DefaultThresholds())
+	for _, it := range items {
+		if strings.HasPrefix(it.ID, "IPV6-") {
+			t.Fatalf("无 IPv6 地址不应产生 %s", it.ID)
+		}
+	}
+}
+
+func TestBuildGuideIPv6AndOldKernel(t *testing.T) {
+	modern := BuildGuide(nodecheckup.Env{OS: "Rocky 9", Kernel: "5.14.0-1.el9", Kind: "host"}, 22, "firewalld")
+	for _, want := range []string{"# ipv6", "net.ipv6.conf.all.forwarding = 1", "net.ipv6.route.max_size = 262144", "skip this block if the node has no IPv6"} {
+		if !strings.Contains(modern, want) {
+			t.Fatalf("guide 缺少 %q", want)
+		}
+	}
+	old := BuildGuide(nodecheckup.Env{OS: "CentOS 7", Kernel: "3.10.0-1160.el7.x86_64", Kind: "host"}, 22, "firewalld")
+	if strings.Contains(old, "net.ipv6.route.max_size") {
+		t.Fatal("3.10 不应包含 route.max_size（4.2+）")
+	}
+	if !strings.Contains(old, "net.ipv6.neigh.default.gc_thresh2 = 4096") {
+		t.Fatal("3.10 仍应包含邻居表参数")
+	}
+}

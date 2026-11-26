@@ -122,8 +122,15 @@ const envText = computed(() => {
   parts.push(env.kind === 'container' ? t('nodeCheckup.container') : t('nodeCheckup.host'))
   if (env.runtime) parts.push(env.runtime)
   if (env.kind === 'container' && !env.systemd) parts.push(t('nodeCheckup.noSystemd'))
+  const v6 = itemParams('ENV-01').ipv6 || []
+  if (Array.isArray(v6) && v6.length) parts.push(`IPv6 ×${v6.length}`)
   return parts.join(' · ')
 })
+
+function itemParams(id) {
+  const it = (report.value?.items || []).find((x) => x.id === id)
+  return (it && it.params) || {}
+}
 
 const groups = computed(() => {
   const map = new Map()

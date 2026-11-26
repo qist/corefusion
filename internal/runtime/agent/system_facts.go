@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -48,6 +50,14 @@ var defaultSysctlKeys = []string{
 	"net.ipv4.conf.all.send_redirects",
 	"net.ipv4.conf.all.accept_source_route",
 	"net.ipv6.conf.all.forwarding",
+	"net.ipv6.conf.all.accept_redirects",
+	"net.ipv6.conf.all.accept_source_route",
+	"net.ipv6.conf.all.accept_ra",
+	"net.ipv6.conf.all.use_tempaddr",
+	"net.ipv6.neigh.default.gc_thresh1",
+	"net.ipv6.neigh.default.gc_thresh2",
+	"net.ipv6.neigh.default.gc_thresh3",
+	"net.ipv6.route.max_size",
 	"net.core.somaxconn",
 	"net.core.rmem_max",
 	"net.core.wmem_max",
@@ -97,6 +107,7 @@ func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFa
 		}
 		facts.Sysctl[key] = collectSysctl(key, facts.Env)
 	}
+	facts.IPv6 = collectIPv6()
 	facts.Modules = collectModules()
 	if req.GetIncludeSsh() {
 		facts.SSHD = collectSSHD()
@@ -113,6 +124,37 @@ func CollectSystemFacts(req *agentpb.GetSystemFactsRequest) *agentpb.GetSystemFa
 		return &agentpb.GetSystemFactsResponse{Success: false, Error: err.Error()}
 	}
 	return &agentpb.GetSystemFactsResponse{Success: true, Facts: string(data)}
+}
+
+// collectIPv6 返回全局 IPv6 地址（排除回环与 link-local），只用于判断
+// 节点是否真的在用 IPv6，避免在没有 IPv6 的机器上推荐 IPv6 参数。
+func collectIPv6() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP.To4() != nil {
+				continue
+			}
+			ip := ipnet.IP
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+				continue
+			}
+			if ip.IsGlobalUnicast() {
+				out = append(out, ip.String())
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func collectEnv() nodecheckup.Env {

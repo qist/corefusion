@@ -59,6 +59,20 @@ net.netfilter.nf_conntrack_buckets = 16384
 net.netfilter.nf_conntrack_tcp_timeout_established = 180
 net.netfilter.nf_conntrack_udp_timeout = 60
 
+# ---- ipv6 ----
+# 节点没有 IPv6 时整段忽略（检查：ip -6 addr show scope global）
+net.ipv6.conf.all.forwarding = 1
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.all.accept_source_route = 0
+# 服务器使用稳定地址，关闭隐私扩展
+net.ipv6.conf.all.use_tempaddr = 0
+# 邻居表（高并发下避免 neighbor table overflow）
+net.ipv6.neigh.default.gc_thresh1 = 1024
+net.ipv6.neigh.default.gc_thresh2 = 4096
+net.ipv6.neigh.default.gc_thresh3 = 8192
+# 路由缓存上限（4.2+；3.10 没有该参数，写了会报 unknown key）
+net.ipv6.route.max_size = 262144
+
 # ---- security ----
 # 关闭 ICMP 重定向与源路由（防 MITM）
 net.ipv4.conf.all.accept_redirects = 0
@@ -106,6 +120,10 @@ sysctl net.core.somaxconn net.ipv4.tcp_congestion_control net.netfilter.nf_connt
 
 说明：
 
+- **IPv6**：只有节点确实有全局 IPv6 时才需要这一组。`forwarding=1` 用于容器网络 / 透明转发；
+  纯用户态代理（xray/sing-box/nginx）不依赖它。静态地址不要配 `accept_ra=1`，SLAAC 环境保持默认 `2`。
+  体检在检测到全局 IPv6 时会检查 `forwarding`、`accept_redirects`、`use_tempaddr`、邻居表和路由缓存上限
+  （`IPV6-01` ~ `IPV6-06`）；没有 IPv6 的节点不会产生这些项。
 - `fs.file-max`、`fs.nr_open`、`vm.swappiness`、`kernel.pid_max` 在容器内可能只读，需在宿主机设置。
 - `net.ipv4.conf.all.rp_filter` 线上代理节点一般用 `0`；纯单网卡且不需要非对称路由时可改 `1`。
 - 如果节点只跑 TCP，可忽略 `nf_conntrack_udp_timeout`。

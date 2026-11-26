@@ -47,6 +47,20 @@ net.netfilter.nf_conntrack_buckets = 16384
 net.netfilter.nf_conntrack_tcp_timeout_established = 180
 net.netfilter.nf_conntrack_udp_timeout = 60
 
+# ---- ipv6 ----
+# skip this block if the node has no IPv6 (check: ip -6 addr show scope global)
+net.ipv6.conf.all.forwarding = 1
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.all.accept_source_route = 0
+# servers should keep stable addresses
+net.ipv6.conf.all.use_tempaddr = 0
+# neighbour table (avoid overflow under high concurrency)
+net.ipv6.neigh.default.gc_thresh1 = 1024
+net.ipv6.neigh.default.gc_thresh2 = 4096
+net.ipv6.neigh.default.gc_thresh3 = 8192
+# route cache size (4.2+; not present on 3.10 - would fail with unknown key)
+net.ipv6.route.max_size = 262144
+
 # ---- security ----
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.all.send_redirects = 0
@@ -93,6 +107,11 @@ BBR commands; the generated Markdown drops BBR/fq and uses `fq_codel` instead.
 
 Notes:
 
+- **IPv6**: only needed when the node actually has a global IPv6 address. `forwarding=1` is for container
+  networks / transparent forwarding; userland proxies (xray/sing-box/nginx) do not depend on it. Do not set
+  `accept_ra=1` with static addresses; keep the default `2` under SLAAC. When a global IPv6 address is found,
+  the checkup inspects `forwarding`, `accept_redirects`, `use_tempaddr`, the neighbour table and the route cache
+  limit (`IPV6-01` ~ `IPV6-06`). Nodes without IPv6 produce none of these items.
 - `fs.file-max`, `fs.nr_open`, `vm.swappiness`, `kernel.pid_max` are host-wide; set them on the host, not inside a container.
 - `rp_filter=0` is the safe default for proxy nodes; use `1` on single-NIC hosts without asymmetric routing.
 - Skip `nf_conntrack_udp_timeout` on TCP-only nodes.

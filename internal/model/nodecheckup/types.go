@@ -4,7 +4,9 @@ package nodecheckup
 
 // Facts 是 Agent 采集到的本机事实（不落库）。
 type Facts struct {
-	Env       Env               `json:"env"`
+	Env Env `json:"env"`
+	// IPv6 是全局 IPv6 地址（不含 link-local / 回环），用于判断节点是否在用 IPv6。
+	IPv6      []string          `json:"ipv6,omitempty"`
 	Sysctl    map[string]Sysctl `json:"sysctl,omitempty"`
 	Modules   map[string]bool   `json:"modules,omitempty"`
 	SSHD      *SSHD             `json:"sshd,omitempty"`

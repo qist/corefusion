@@ -47,10 +47,15 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 	if facts != nil && facts.SSHD != nil && facts.SSHD.Port > 0 {
 		envParams["ssh_port"] = facts.SSHD.Port
 	}
+	evidence := []string{"OS: " + env.OS, "Kernel: " + env.Kernel}
+	if facts != nil && len(facts.IPv6) > 0 {
+		envParams["ipv6"] = facts.IPv6
+		evidence = append(evidence, "IPv6: "+strings.Join(facts.IPv6, ", "))
+	}
 	add(nodecheckup.Item{
 		ID: "ENV-01", Category: "system", Severity: SeverityInfo, Scope: env.Kind,
 		Params:   envParams,
-		Evidence: []string{"OS: " + env.OS, "Kernel: " + env.Kernel},
+		Evidence: evidence,
 	})
 
 	if facts == nil {
@@ -185,6 +190,9 @@ func Judge(facts *nodecheckup.Facts, th Thresholds) (nodecheckup.Env, nodechecku
 
 	// ---- 其余内核调优项（只报未达标，避免几十条 ok 噪音）----
 	judgeTuning(facts, add)
+
+	// ---- IPv6（仅节点确实有全局 IPv6 时）----
+	judgeIPv6(facts, add)
 
 	// ---- SSH ----
 	judgeSSH(facts, th, add)
@@ -625,6 +633,118 @@ func judgeTuning(facts *nodecheckup.Facts, add func(nodecheckup.Item)) {
 	numCheck("SEC-03", "system", "net.ipv4.conf.all.accept_source_route", SeverityInfo, func(v int64) bool { return v == 0 }, "0")
 }
 
+// judgeIPv6 只在节点有全局 IPv6 地址时给出 IPv6 建议。
+// 没有 IPv6 的节点不产生任何 IPv6 项，避免噪音。
+func judgeIPv6(facts *nodecheckup.Facts, add func(nodecheckup.Item)) {
+	if facts == nil || len(facts.IPv6) == 0 {
+		return
+	}
+	get := func(key string) (nodecheckup.Sysctl, bool) {
+		f, ok := facts.Sysctl[key]
+		if !ok || f.Scope == "na" || strings.TrimSpace(f.Value) == "" {
+			return f, false
+		}
+		return f, true
+	}
+	addr := strings.Join(facts.IPv6, ", ")
+
+	// IPV6-01：有公网 IPv6 但未开启 forwarding。用户态代理不依赖它，
+	// 但容器网络 / 透明转发 / 路由场景需要，给 info 提示。
+	if f, ok := get("net.ipv6.conf.all.forwarding"); ok {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v == 0 {
+			add(nodecheckup.Item{
+				ID: "IPV6-01", Category: "network", Severity: SeverityInfo, Scope: f.Scope,
+				Params: map[string]any{"current": f.Value, "expected": "1", "addresses": facts.IPv6},
+				Evidence: []string{
+					"global IPv6: " + addr,
+					"net.ipv6.conf.all.forwarding = 0 (needed for IPv6 forwarding / containers)",
+				},
+				Commands: sysctlCommand("net.ipv6.conf.all.forwarding", "1", f.Scope),
+			})
+		}
+	}
+
+	// IPV6-02：ICMPv6 重定向可被用于 MITM。
+	if f, ok := get("net.ipv6.conf.all.accept_redirects"); ok {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v != 0 {
+			add(nodecheckup.Item{
+				ID: "IPV6-02", Category: "security", Severity: SeverityWarn, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "expected": "0"},
+				Evidence: []string{"net.ipv6.conf.all.accept_redirects = " + f.Value},
+				Commands: sysctlCommand("net.ipv6.conf.all.accept_redirects", "0", f.Scope),
+			})
+		}
+	}
+
+	// IPV6-03：源路由。
+	if f, ok := get("net.ipv6.conf.all.accept_source_route"); ok {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v != 0 {
+			add(nodecheckup.Item{
+				ID: "IPV6-03", Category: "security", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "expected": "0"},
+				Evidence: []string{"net.ipv6.conf.all.accept_source_route = " + f.Value},
+				Commands: sysctlCommand("net.ipv6.conf.all.accept_source_route", "0", f.Scope),
+			})
+		}
+	}
+
+	// IPV6-04：服务器应使用稳定地址，隐私扩展会让源地址漂移。
+	if f, ok := get("net.ipv6.conf.all.use_tempaddr"); ok {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v != 0 {
+			add(nodecheckup.Item{
+				ID: "IPV6-04", Category: "network", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "expected": "0"},
+				Evidence: []string{"net.ipv6.conf.all.use_tempaddr = " + f.Value + " (server addresses should be stable)"},
+				Commands: sysctlCommand("net.ipv6.conf.all.use_tempaddr", "0", f.Scope),
+			})
+		}
+	}
+
+	// IPV6-05：邻居表过小，连接数高时会出现 neighbor table overflow。
+	if f, ok := get("net.ipv6.neigh.default.gc_thresh2"); ok {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v < 2048 {
+			add(nodecheckup.Item{
+				ID: "IPV6-05", Category: "network", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "expected": "4096"},
+				Evidence: []string{"net.ipv6.neigh.default.gc_thresh2 = " + f.Value + " (recommended: 4096)"},
+				Commands: sysctlPersistCommands(f.Scope,
+					"net.ipv6.neigh.default.gc_thresh1=1024",
+					"net.ipv6.neigh.default.gc_thresh2=4096",
+					"net.ipv6.neigh.default.gc_thresh3=8192",
+				),
+			})
+		}
+	}
+
+	// IPV6-06：路由缓存上限（4.2+），默认 4096 在高并发下会 No buffer space available。
+	if f, ok := get("net.ipv6.route.max_size"); ok && kernelAtLeast(facts.Env.Kernel, 4, 2) {
+		if v, err := strconv.Atoi(strings.TrimSpace(f.Value)); err == nil && v > 0 && v < 65536 {
+			add(nodecheckup.Item{
+				ID: "IPV6-06", Category: "network", Severity: SeverityInfo, Scope: f.Scope,
+				Params:   map[string]any{"current": f.Value, "expected": "262144"},
+				Evidence: []string{"net.ipv6.route.max_size = " + f.Value + " (recommended: 262144)"},
+				Commands: sysctlPersistCommands(f.Scope, "net.ipv6.route.max_size=262144"),
+			})
+		}
+	}
+}
+
+// sysctlPersistCommands 把多条 sysctl 写进同一脚本，并按 scope 加执行位置说明。
+func sysctlPersistCommands(scope string, pairs ...string) []nodecheckup.Command {
+	script := sysctlPersistScript(pairs...)
+	if script == "" {
+		return nil
+	}
+	switch scope {
+	case "host", "container-writable":
+		return []nodecheckup.Command{{Shell: "sh", Text: script}}
+	case "host-global":
+		return []nodecheckup.Command{{Shell: "sh", Text: "# Run on the host (read-only inside the container)\n" + script}}
+	default:
+		return nil
+	}
+}
+
 func tuneItem(id, category, scope, key, current, recommended, severity string) nodecheckup.Item {
 	return nodecheckup.Item{
 		ID: id, Category: category, Severity: severity, Scope: scope,
@@ -792,6 +912,15 @@ func RecommendedSysctl() []SysctlRecommendation {
 		{"net.netfilter.nf_conntrack_buckets", "16384", "conntrack", "hash buckets (max/16 is a good start)"},
 		{"net.netfilter.nf_conntrack_tcp_timeout_established", "180", "conntrack", "established timeout (seconds)"},
 		{"net.netfilter.nf_conntrack_udp_timeout", "60", "conntrack", "UDP timeout (seconds)"},
+		// ipv6（只有节点确实有 IPv6 时才需要；没有 IPv6 可整段忽略）
+		{"net.ipv6.conf.all.forwarding", "1", "ipv6", "forwarding / container networks (0 if no IPv6 routing)"},
+		{"net.ipv6.conf.all.accept_redirects", "0", "ipv6", "ignore ICMPv6 redirects"},
+		{"net.ipv6.conf.all.accept_source_route", "0", "ipv6", "drop source-routed packets"},
+		{"net.ipv6.conf.all.use_tempaddr", "0", "ipv6", "servers should keep stable addresses"},
+		{"net.ipv6.neigh.default.gc_thresh1", "1024", "ipv6", "neighbour table low watermark"},
+		{"net.ipv6.neigh.default.gc_thresh2", "4096", "ipv6", "neighbour table soft limit"},
+		{"net.ipv6.neigh.default.gc_thresh3", "8192", "ipv6", "neighbour table hard limit"},
+		{"net.ipv6.route.max_size", "262144", "ipv6", "route cache size (4.2+)"},
 		// security
 		{"net.ipv4.conf.all.accept_redirects", "0", "security", "ignore ICMP redirects"},
 		{"net.ipv4.conf.all.send_redirects", "0", "security", "do not send ICMP redirects"},
@@ -811,6 +940,7 @@ var sysctlMinKernel = map[string][2]int{
 	"net.core.netdev_budget_usecs":       {3, 11},
 	"net.netfilter.nf_conntrack_buckets": {4, 2},
 	"net.ipv4.tcp_migrate_req":           {4, 14},
+	"net.ipv6.route.max_size":            {4, 2},
 }
 
 // RecommendedSysctlFor 按内核版本过滤：BBR/fq 需要 4.9/4.13+，
@@ -870,6 +1000,9 @@ func BuildGuide(env nodecheckup.Env, sshPort int, fwType string) string {
 				b.WriteString("\n")
 			}
 			fmt.Fprintf(&b, "# %s\n", r.Group)
+			if r.Group == "ipv6" {
+				b.WriteString("# skip this block if the node has no IPv6 (check: ip -6 addr show scope global)\n")
+			}
 			group = r.Group
 		}
 		if r.Comment != "" {

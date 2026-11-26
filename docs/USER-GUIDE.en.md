@@ -786,6 +786,32 @@ Click a node to open its detail page:
 
 ---
 
+### 5.6 Node security checkup
+
+Node details → "Checkup": read-only collection, it never changes any configuration.
+
+- **Scope**: system info, SSH (password / keyboard-interactive / root login / MaxAuthTries / key permissions /
+  whether port 22 is source-restricted), firewall detection (firewalld / ufw / nftables / iptables),
+  kernel parameters (backlogs, buffers, congestion control, conntrack, IPv6) and precedence between config files.
+- **Severity**: high / warn / info / ok. Only items that are not met produce advice, to avoid noise.
+- **Suggested commands persist**: kernel parameters go to `/etc/sysctl.d/99-corefusion.conf`
+  (de-duplicated per key, then `sysctl --system`); SSH goes to `/etc/ssh/sshd_config.d/00-corefusion-*.conf`;
+  the BBR module goes to `/etc/modules-load.d/`. All survive a reboot.
+- **Who wins**: `CFG-01` lists, per sysctl key, the file and line that takes effect last —
+  `/etc/sysctl.conf` is always loaded last and overrides `99-corefusion.conf`; `CFG-02` lists the first
+  matching sshd directive — sshd uses the first value it sees, drop-ins need the `00-` prefix, and
+  `Include /etc/ssh/sshd_config.d/*.conf` must appear before those directives, otherwise drop-ins are
+  ignored entirely (reported as warn).
+- **IPv6**: only checked when the node really has a global IPv6 address. Tunnel addresses such as
+  `singbr0` / `wg0` / `tun0` are labelled `tun`, are assigned by the proxy and **must not be edited by hand**;
+  they are excluded from the node's public IPv6.
+- **root login**: `PermitRootLogin yes` is judged ok when both `PasswordAuthentication` and
+  `KbdInteractiveAuthentication` are `no` (key-only); the checkup never asks you to disable root.
+- **Full tuning document**: the dialog can copy / download the whole Markdown, and "View online" opens
+  `docs/node-tuning.<lang>.md` in the repository for the current UI language (16 languages).
+- **Cache**: results are cached for 10 minutes, `refresh=1` forces a new collection; scheduled checkups are
+  off by default.
+
 ## 6. Protocol center
 
 The protocol center configures protocol parameters for the core processes.
@@ -1104,6 +1130,14 @@ Routing resources collect the shared assets used by subscriptions and routing. T
 - The “dialer” may be automatic (installed cores), `singbox`, `xray` or `mihomo`; cores that are not
   installed are not listed. Probing runs as a temporary process that exits when done and never reads or
   writes the core's own configuration;
+- “Check connectivity” only covers the page you are on: the CF IP pool page updates preferred IPs, the
+  shared-domain page updates CF domains, and neither touches the other; without a kind it still checks both
+  (backwards compatible);
+- “Chain proxy probe” is a separate card: it dials from the selected exit through a CDN domain/IP back to
+  the probe inbound and issues a real request (HTTP 200 with traffic in both directions is required). It is
+  mutually exclusive with the preferred-IP probe **on the schedule** — when enabled, scheduled
+  preferred-IP probing pauses and only the chain proxy probe runs (manual “Check connectivity” still works);
+  it can inherit or override the probe interval and dialer, and also supports an execution node and egress NIC;
 - When “Access domain” uses the CF IP pool without a concrete value, one entry (with its port) is
   picked at random.
 

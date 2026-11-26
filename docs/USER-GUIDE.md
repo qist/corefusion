@@ -780,6 +780,27 @@ cd /opt/corefusion
 
 ---
 
+### 5.6 节点安全体检
+
+节点详情 →「体检」：只读采集，不改动任何配置。
+
+- **体检范围**：系统信息、SSH（密码 / 键盘交互 / root 登录 / MaxAuthTries / 密钥权限 / 22 端口是否限源）、
+  防火墙识别（firewalld / ufw / nftables / iptables）、内核参数（连接队列、缓冲区、拥塞控制、conntrack、IPv6）、
+  以及配置文件之间的覆盖关系。
+- **结论分级**：high / warn / info / ok。只对未达标项给建议，避免刷屏。
+- **建议命令会落盘**：内核参数统一写 `/etc/sysctl.d/99-corefusion.conf`（先按 key 去重再追加，最后 `sysctl --system`）；
+  SSH 写 `/etc/ssh/sshd_config.d/00-corefusion-*.conf`；BBR 模块写 `/etc/modules-load.d/`。重启后仍然生效。
+- **谁覆盖谁**：`CFG-01` 逐个 sysctl key 列出最后生效的文件与行号 —— `/etc/sysctl.conf` 永远最后加载，
+  会压过 `99-corefusion.conf`；`CFG-02` 列出 sshd 的首个命中位置 —— sshd 先匹配生效，drop-in 需要 `00-` 前缀，
+  且主配置的 `Include /etc/ssh/sshd_config.d/*.conf` 必须在相关指令之前，否则 drop-in 完全不生效（会直接 warn）。
+- **IPv6**：只有节点确实存在全局 IPv6 时才检查。`singbr0`、`wg0`、`tun0` 这类隧道地址单独标记为 `tun`，
+  由代理自动分配，**不要手工修改**，也不计入节点公网 IPv6。
+- **root 登录**：`PermitRootLogin yes` 在 `PasswordAuthentication` / `KbdInteractiveAuthentication` 都为 no 时判 ok
+  （只能密钥登录），不会要求你关掉 root。
+- **完整调优文档**：弹窗里可一键复制 / 下载整段 Markdown；「在线查看」按当前界面语言跳转到仓库
+  `docs/node-tuning.<lang>.md`（16 语言）。
+- **缓存与定时**：结果缓存 10 分钟，可用 `refresh=1` 强制重采；定时体检默认关闭。
+
 ## 6. 协议中心
 
 协议中心用于配置核心进程的协议参数。
@@ -1077,6 +1098,12 @@ cd /opt/corefusion
 - 拨号核心必须装在**所选执行节点**上：页面按该节点实际安装情况列出可选核心与版本，「安装 / 重装」会直接装到该节点（远程节点由 Agent 下载，无需 SSH）；
 - 「拨号工具」可选自动（使用已安装的核心）、`singbox`、`xray` 或 `mihomo`；未安装的核心不会出现在下拉里。
   探测以临时进程运行，结束即退出，不读写核心自己的配置；
+- 「检测连通性」按当前页面只检测一类：CF IP 池页只更新优选 IP，分享域名页只更新优选域名，互不影响；
+  不带类型时仍检测全部（兼容旧调用）；
+- 「链式代理探测」是独立卡片：从指定出口经 CDN 域名/IP 回源到探针入站并发起真实请求，
+  要求 HTTP 200 且上下行都有流量才算可用。它与优选探测**定时互斥** —— 开启后定时优选探测暂停，
+  只跑链式代理探测（手动「检测连通性」不受影响）；可继承探测设置的间隔与拨号核心，也可独立设置；
+  同样支持指定执行节点与出口网卡；
 - 「访问域名」选 CF IP 池但未指定具体值时，会从池中随机取一条（含该条目端口）。
 
 ### 8.3 WAF 全局规则

@@ -53,3 +53,18 @@
 ## Тюнинг ядра и усиление безопасности
 
 - [node-tuning.ru.md](./node-tuning.ru.md) — тюнинг ядра и усиление безопасности
+
+## Шаблоны клиентских конфигураций
+
+### [mihomo-templates/](./mihomo-templates/README.md) — Windows / Android / OpenClash
+
+Языки: [简体中文](./mihomo-templates/README.md) · [English](./mihomo-templates/README.en.md) · [Русский](./mihomo-templates/README.ru.md) · [فارسی](./mihomo-templates/README.fa.md)
+
+### [singbox-templates/](./singbox-templates/README.md) — формат подписки sing-box
+
+Языки: [简体中文](./singbox-templates/README.md) · [English](./singbox-templates/README.en.md) · [Русский](./singbox-templates/README.ru.md) · [فارسی](./singbox-templates/README.fa.md)
+
+### [xray-templates/](./xray-templates/README.md) — формат подписки Xray
+
+Языки: [简体中文](./xray-templates/README.md) · [English](./xray-templates/README.en.md) · [Русский](./xray-templates/README.ru.md) · [فارسی](./xray-templates/README.fa.md)
+

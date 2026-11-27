@@ -1,4 +1,5 @@
 # mihomo 订阅格式模板
+<sub>简体中文 · [English](README.en.md) · [Русский](README.ru.md) · [فارسی](README.fa.md)</sub>
 
 三份模板：**Windows / Android / OpenClash（路由器）**。
 
@@ -296,3 +297,18 @@ mihomo -t -d <临时目录> -f mihomo-windows.yaml
 - 静态 `proxy-providers`（会绕过面板的套餐级 provider，导致串套餐）。
 
 节点由面板按套餐动态生成；需要完整可用配置时，直接复制客户的订阅地址即可。
+
+## 外部链接
+
+- [仓库目录](https://github.com/qist/corefusion/tree/main/docs/mihomo-templates)
+- 原始文件（可直接下载）：
+  - [mihomo-windows.yaml](https://raw.githubusercontent.com/qist/corefusion/main/docs/mihomo-templates/mihomo-windows.yaml)
+  - [mihomo-android.yaml](https://raw.githubusercontent.com/qist/corefusion/main/docs/mihomo-templates/mihomo-android.yaml)
+  - [mihomo-openclash.yaml](https://raw.githubusercontent.com/qist/corefusion/main/docs/mihomo-templates/mihomo-openclash.yaml)
+- 规则库 / geodata 的公共替代源：
+  - Loyalsoldier/clash-rules：<https://github.com/Loyalsoldier/clash-rules>
+  - ispip（国内 IP）：<https://ispip.clang.cn/>
+  - MetaCubeX meta-rules-dat：<https://github.com/MetaCubeX/meta-rules-dat>
+
+- 项目仓库：<https://github.com/qist/corefusion>
+- 规则仓库（本模板配套的 clash 规则库）：<https://github.com/qist/xray>

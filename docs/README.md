@@ -24,6 +24,8 @@
 
 ## [mihomo-templates/](./mihomo-templates/README.md) — 客户端配置模板
 
+语言：[简体中文](./mihomo-templates/README.md) · [English](./mihomo-templates/README.en.md) · [Русский](./mihomo-templates/README.ru.md) · [فارسی](./mihomo-templates/README.fa.md)
+
 覆盖 **OpenClash（路由器）/ Android / Windows** 的「订阅格式」模板：
 可直接粘贴到面板的订阅格式里，节点由面板按套餐动态生成（`_hasExternalNodes`）；
 地址一律用 `example.com` 与公共 DNS 占位，不含任何私有 DNS / 内网 IP / WG。
@@ -31,6 +33,20 @@
 - [mihomo-openclash.yaml](./mihomo-templates/mihomo-openclash.yaml)
 - [mihomo-android.yaml](./mihomo-templates/mihomo-android.yaml)
 - [mihomo-windows.yaml](./mihomo-templates/mihomo-windows.yaml)
+
+## [singbox-templates/](./singbox-templates/README.md) — sing-box 订阅格式模板
+
+语言：[简体中文](./singbox-templates/README.md) · [English](./singbox-templates/README.en.md) · [Русский](./singbox-templates/README.ru.md) · [فارسی](./singbox-templates/README.fa.md)
+
+面板「订阅格式」里 sing-box 那一份的 `config_json`（服务端模板），外加可直接运行的
+`standalone.json`（客户端完整示例）。outbounds 与 `proxy` selector 由面板或示例提供。
+
+## [xray-templates/](./xray-templates/README.md) — Xray 订阅格式模板
+
+语言：[简体中文](./xray-templates/README.md) · [English](./xray-templates/README.en.md) · [Русский](./xray-templates/README.ru.md) · [فارسی](./xray-templates/README.fa.md)
+
+面板「订阅格式」里 xray_json 那一份的 `config_json`（服务端模板），外加可直接运行的
+`standalone.json`（客户端完整示例）。outbounds 与 `proxy` balancer 由面板或示例提供。
 
 ## 其他（运维手册）
 

@@ -53,3 +53,18 @@
 ## تنظیم هسته و سخت‌سازی امنیتی
 
 - [node-tuning.fa.md](./node-tuning.fa.md) — تنظیم هسته و سخت‌سازی امنیتی
+
+## قالب‌های پیکربندی کلاینت
+
+### [mihomo-templates/](./mihomo-templates/README.md) — Windows / Android / OpenClash
+
+زبان‌ها: [简体中文](./mihomo-templates/README.md) · [English](./mihomo-templates/README.en.md) · [Русский](./mihomo-templates/README.ru.md) · [فارسی](./mihomo-templates/README.fa.md)
+
+### [singbox-templates/](./singbox-templates/README.md) — قالب فرمت اشتراک sing-box
+
+زبان‌ها: [简体中文](./singbox-templates/README.md) · [English](./singbox-templates/README.en.md) · [Русский](./singbox-templates/README.ru.md) · [فارسی](./singbox-templates/README.fa.md)
+
+### [xray-templates/](./xray-templates/README.md) — قالب فرمت اشتراک Xray
+
+زبان‌ها: [简体中文](./xray-templates/README.md) · [English](./xray-templates/README.en.md) · [Русский](./xray-templates/README.ru.md) · [فارسی](./xray-templates/README.fa.md)
+

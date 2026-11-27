@@ -747,7 +747,7 @@ func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Su
 		// 把 config_json 里编辑好的 sing-box 配置段（log/dns/route/experimental）
 		// 原样合并进订阅输出（与 Mihomo 的 generateMihomoYAML 同一口径）：
 		// 节点（outbounds）由格式化器按套餐动态生成，其余客户端配置段以 config_json 为准。
-		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "route", "experimental")
+		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "inbounds", "route", "experimental")
 		// 路由规则按格式各存各的原文：这里只把 sing-box 自己的 route 规则
 		// 原样注入，不做任何跨格式转换（Mihomo 规则进不了这里，见 config 格式过滤）。
 		data = injectJSONRules(data, mihomoRules, "route")
@@ -772,7 +772,7 @@ func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Su
 		data, _ = f.Format(nodes)
 		// 同 sing-box：config_json 里编辑好的 xray 配置段（log/dns/routing/policy）
 		// 原样合并进订阅输出。
-		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "routing", "policy")
+		data = mergeFormatSections(data, mihomoConfig, "log", "dns", "inbounds", "routing", "policy")
 		// xray 自己的 routing 规则原文注入，不转换。
 		data = injectJSONRules(data, mihomoRules, "routing")
 		// xray 没有 selector 出站：用 random 策略的 balancer 承载 proxy 组，
@@ -989,6 +989,9 @@ func isXrayRealityConfig(cfg *entity.InboundConfig, config map[string]interface{
 
 func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains []shareDomainEntry, members []entity.NodeGroupMember, clientEmail string, templates billingTemplateConfig) []renderedSubscriptionNode {
 	var items []renderedSubscriptionNode
+	// 节点名/tag 去重表：重名会让 sing-box/xray 整份拒载，mihomo 报 duplicate。
+	// 预占 proxy/direct/block，保证注入的 proxy 组不被节点名占用。
+	usedNames := newNodeNameRegistry()
 
 	// Preload node servers to filter out non-primary primary_backup nodes.
 	// Only the active primary should appear in subscription output.
@@ -1137,7 +1140,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 
 			// 节点名不能回退到入站 tag：tag 形如 inbound-<协议>-<端口>，
 			// 会把内网监听端口暴露给订阅用户（详见 nodeDisplayName 注释）。
-			nodeName := nodeDisplayName(cfg.Remark, cfg.Tag)
+			nodeName := uniqueNodeName(usedNames, nodeDisplayName(cfg.Remark, cfg.Tag))
 			shareNode := sharelink.Node{
 				Tag:            nodeName,
 				Protocol:       cfg.Protocol,
@@ -1214,7 +1217,7 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					}
 					applyFrontTLS(mirrorConfig, mirrorHostResolved, accessDomainType(mirrorConfig), shareDomains)
 
-					mirrorNodeName := fmt.Sprintf("%s (镜像 %s)", nodeName, mirror.Name)
+					mirrorNodeName := uniqueNodeName(usedNames, fmt.Sprintf("%s (镜像 %s)", nodeName, mirror.Name))
 					if mirror.Name == "" {
 						mirrorNodeName = fmt.Sprintf("%s (镜像 %d)", nodeName, mirror.ID)
 					}
@@ -1294,12 +1297,16 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 		// sni/servername/指纹/path/early-data），这里不做任何前置 TLS 改写，只在
 		// 访问域名里替换 server/port（CDN 优选）。改写 SNI 会让 CDN 回源直接 403。
 		node := mihomoProxyMapToNode(pm)
-		if node != nil && extNode.Name != "" {
-			node.Name = extNode.Name
+		extName := extNode.Name
+		if extName != "" {
+			extName = uniqueNodeName(usedNames, extName)
+		}
+		if node != nil && extName != "" {
+			node.Name = extName
 		}
 		link := formatter.MihomoToURI(pm)
 		if link != "" {
-			link = renameShareLink(link, extNode.Name)
+			link = renameShareLink(link, extName)
 		}
 		for _, memberID := range memberIDs {
 			item := renderedSubscriptionNode{
@@ -1313,8 +1320,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				item.Node = &nodeCopy
 			}
 			item.ProxyMap = cloneProxyMap(pm)
-			if item.ProxyMap != nil && extNode.Name != "" {
-				item.ProxyMap["name"] = extNode.Name
+			if item.ProxyMap != nil && extName != "" {
+				item.ProxyMap["name"] = extName
 			}
 			if item.Link == "" && item.Node == nil {
 				continue
@@ -1354,12 +1361,16 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 				applyExternalNodeAccessDomain(pm, extNode, shareDomains)
 
 				node := mihomoProxyMapToNode(pm)
-				if node != nil && es.Name != "" {
-					node.Name = es.Name
+				esName := es.Name
+				if esName != "" {
+					esName = uniqueNodeName(usedNames, esName)
+				}
+				if node != nil && esName != "" {
+					node.Name = esName
 				}
 				link := formatter.MihomoToURI(pm)
 				if link != "" {
-					link = renameShareLink(link, es.Name)
+					link = renameShareLink(link, esName)
 				}
 
 				item := renderedSubscriptionNode{
@@ -1371,8 +1382,8 @@ func (h *PublicHandler) collectRenderedNodes(ctx context.Context, shareDomains [
 					item.Node = &nodeCopy
 				}
 				item.ProxyMap = cloneProxyMap(pm)
-				if item.ProxyMap != nil && es.Name != "" {
-					item.ProxyMap["name"] = es.Name
+				if item.ProxyMap != nil && esName != "" {
+					item.ProxyMap["name"] = esName
 				}
 				if item.Link == "" && item.Node == nil {
 					continue

@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**Depuis la v0.14.4, les identifiants d'abonnement sont chiffrés au repos** : au premier démarrage, les tokens d'abonnement, codes courts, historiques de rotation et URL d'abonnement amont sont chiffrés, et la table de révocation des liens courts est créée. Sauvegardez la base avant la mise à niveau ; un retour arrière doit aussi restaurer la base d'avant la mise à niveau, car un ancien binaire ne peut pas lire la nouvelle base et tous les abonnements renverront 404.
+
 ### 2.9 Fichier d'environnement (.env)
 
 Le `.env` complet est **généré par l'assistant d'installation** lors de l'enregistrement de la configuration (DSN de la base de données, répertoire de données, secrets, ports, domaines).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Variable | Descriptif |
 |----------|-------------|
 | `JWT_SECRET` | Clé de signature pour les jetons de connexion ; généré au premier démarrage en cas d'absence |
-| `CF_SECRET_ENCRYPTION_KEY` | Clé de cryptage des paramètres sensibles (AES-256-GCM) ; généré en cas d'absence |
+| `CF_SECRET_ENCRYPTION_KEY` | Clé de chiffrement des paramètres sensibles et des identifiants d'abonnement (AES-256-GCM) ; générée si absente |
 | `CF_INITIAL_ADMIN_PASSWORD` | Mot de passe administrateur initial (facultatif ; aléatoire et imprimé une fois par défaut) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Définissez sur `0` pour désactiver la comptabilité du trafic basée sur iptables (activée par défaut) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Table iptables utilisée pour la comptabilité du trafic, par défaut `corefusion` |
 
 > **La clé de cryptage se trouve dans `.env.secret`** : au premier démarrage, `CF_SECRET_ENCRYPTION_KEY` est écrit dans `.env.secret` (0600, même répertoire que `.env`) au lieu de `.env` ; une clé héritée dans `.env` est migrée automatiquement. Sauvegardez ce fichier séparément : sa perte rend chaque valeur `enc:` indéchiffrable.
+>
+> Depuis la v0.14.4, `subscriptions.token`, les codes courts et l'historique de rotation, ainsi que `external_node_sources.source_url` utilisent aussi cette clé : les tokens/URL sont affichés depuis le chiffré AES-256-GCM et la recherche des liens courts utilise une empreinte HMAC-SHA256. En cas de perte de la clé, ces identifiants ne pourront plus être déchiffrés ni mis en correspondance.
 
 > Les proxys inverses de confiance pour résoudre les adresses IP des clients réels ne sont plus configurés via des variables d'environnement ;
 > ils sont stockés sous le nom `panel.trusted_proxies` dans **Paramètres → Réseau**.
@@ -497,7 +501,7 @@ ne trouvera pas la base de données et les certificats existants.
 #### Étape 3 : Clés de chiffrement
 
 - `JWT_SECRET` : signe les jetons de connexion.
-- `CF_SECRET_ENCRYPTION_KEY` : crypte les paramètres sensibles (mot de passe de la base de données, identifiants DNS, cartes de recharge, etc.).
+- `CF_SECRET_ENCRYPTION_KEY` : chiffre les paramètres sensibles (mot de passe de base de données, identifiants DNS de certificat, cartes de recharge, etc.) ainsi que les tokens d'abonnement / codes courts / historiques de rotation / URL d'abonnement amont.
 - Les deux sont générés aléatoirement par défaut ; utilisez « Régénérer » pour obtenir de nouvelles valeurs. **La modification du `CF_SECRET_ENCRYPTION_KEY` rend les données précédemment chiffrées illisibles** — sauvegardez-les.
 
 #### Étape 4 : Cœurs
@@ -1198,7 +1202,7 @@ Remarques :
 | Activé | Les points de terminaison désactivés sont ignorés lors de la création de liens |
 | Descriptif | Note en texte libre |
 
-- **Plusieurs lignes (multi-domaines)** sont prises en charge ; lorsque plusieurs sont activés, le domaine du fournisseur suit le domaine utilisé par la requête en cours (voir 9.4) ;
+- **Plusieurs lignes (multi-domaines)** sont prises en charge ; lorsque plusieurs sont activés, le domaine du fournisseur suit le domaine utilisé par la requête en cours (voir 9.5) ;
 - Un port d'abonnement dédié sert à la racine (`/<token>`, pas de `/sub`) ; lors du partage du port du panneau, il s'agit de `/sub/<token>` ;
 - Les proxys inverses doivent transmettre `X-Forwarded-Proto` / `X-Forwarded-Host`, sinon le premier point de terminaison activé est utilisé. Les modèles de site Caddy / Nginx générés par le panneau incluent les deux en-têtes ; les configurations de proxy gérées manuellement nécessitent leur ajout manuel.
 
@@ -1228,7 +1232,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Mode multi-domaine et fournisseur
+### 9.4 Liens courts d'abonnement (facultatif)
+
+Le bouton « Lien court » de chaque ligne d'abonnement génère un code aléatoire de 20 caractères :
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Les liens courts renvoient directement le contenu de l'abonnement (pas de 302) et partagent la même autorisation que les liens longs : abonnement révoqué/suspendu/expiré, client banni, rotation du token, lien désactivé/expiré échouent immédiatement.
+- Le lien fixe le format / la configuration / la plateforme / les providers, le client n'ajoute donc plus `?format=&config=` ; à la création, désactivez « verrouiller les paramètres » pour autoriser une surcharge ponctuelle par `?format=`.
+- Le portail et les détails client privilégient les liens courts. L'interrupteur global se trouve dans Paramètres → Panneau → Liens courts d'abonnement ; désactivé, tous les liens courts renvoient 404 sans affecter les liens longs. Les journaux d'accès enregistrent `access_type=short_link` et `short_link_id`.
+- Les liens du portail/des détails client sont générés automatiquement pour chaque combinaison visible « format × configuration (× providers) », sans jamais produire de lien court avec paramètres.
+- Les liens courts `mihomo_yaml` doivent être liés à une configuration : comme pour sing-box / Xray, seules les configurations réelles de « Formats d'abonnement » génèrent des liens ; les liens Mihomo sans configuration ne sont plus créés, l'ouverture de la boîte « Liens courts » supprime les liens existants sans configuration, et la création/mise à jour manuelle sans configuration est refusée.
+- Les codes courts ne sont jamais stockés en clair : la base ne conserve qu'un chiffré AES-256-GCM aléatoire (pour afficher l'URL complète) et une empreinte HMAC-SHA256 (pour la recherche par égalité) ; les anciens codes tournés/supprimés sont inscrits dans une table de révocation et ne peuvent plus être résolus.
+
+### 9.5 Mode multi-domaine et fournisseur
 
 Avec `providers=1`, chaque entrée `proxy-providers` renvoie au point de terminaison de l'abonnement. Sélection de domaine :
 

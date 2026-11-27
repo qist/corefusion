@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**Từ v0.14.4 thông tin xác thực đăng ký được mã hóa khi lưu**: lần khởi động đầu tiên sẽ mã hóa token đăng ký, mã ngắn, lịch sử xoay và URL đăng ký thượng nguồn, đồng thời tạo bảng thu hồi liên kết ngắn. Sao lưu cơ sở dữ liệu trước khi nâng cấp; khi khôi phục phải khôi phục cả cơ sở dữ liệu trước nâng cấp, vì bản cũ không đọc được cơ sở dữ liệu mới và mọi đăng ký sẽ trả 404.
+
 ### 2.9 Tệp môi trường (.env)
 
 `.env` hoàn chỉnh được **tạo bởi trình hướng dẫn thiết lập** khi cấu hình được lưu (DSN cơ sở dữ liệu, thư mục dữ liệu, bí mật, cổng, miền).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Biến | Mô tả |
 |----------|-------------|
 | `JWT_SECRET` | Khóa ký cho mã thông báo đăng nhập; được tạo trong lần khởi động đầu tiên khi bị thiếu |
-| `CF_SECRET_ENCRYPTION_KEY` | Khóa mã hóa cài đặt nhạy cảm (AES-256-GCM); được tạo ra khi thiếu |
+| `CF_SECRET_ENCRYPTION_KEY` | Khóa mã hóa cài đặt nhạy cảm và thông tin xác thực đăng ký (AES-256-GCM); tự tạo nếu thiếu |
 | `CF_INITIAL_ADMIN_PASSWORD` | Mật khẩu quản trị viên ban đầu (tùy chọn; ngẫu nhiên và được in một lần theo mặc định) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Đặt thành `0` để tắt tính năng tính toán lưu lượng truy cập dựa trên iptables (được bật theo mặc định) |
 | `CF_NETWORK_TRAFFIC_TABLE` | bảng iptables được sử dụng để tính toán lưu lượng, `corefusion` mặc định |
 
 > **Khóa mã hóa tồn tại trong `.env.secret`**: khi khởi động lần đầu, `CF_SECRET_ENCRYPTION_KEY` được ghi vào `.env.secret` (0600, cùng thư mục với `.env`) thay vì `.env`; khóa kế thừa trong `.env` được di chuyển tự động. Sao lưu tệp này một cách riêng biệt — việc mất nó sẽ khiến mọi giá trị `enc:` không thể giải mã được.
+>
+> Từ v0.14.4, `subscriptions.token`, mã ngắn và lịch sử xoay, cùng `external_node_sources.source_url` cũng dùng khóa này: token/URL được hiển thị từ bản mã AES-256-GCM và tra cứu liên kết ngắn dùng dấu vân tay HMAC-SHA256. Nếu mất khóa, các thông tin xác thực này cũng không thể giải mã hoặc đối chiếu.
 
 > Proxy ngược đáng tin cậy để phân giải IP máy khách thực không còn được định cấu hình thông qua các biến môi trường;
 > chúng được lưu trữ dưới dạng `panel.trusted_proxies` trong **Cài đặt → Mạng**.
@@ -497,7 +501,7 @@ sẽ không tìm thấy cơ sở dữ liệu và chứng chỉ hiện có.
 #### Bước 3: Khóa mã hóa
 
 - `JWT_SECRET`: ký mã thông báo đăng nhập.
-- `CF_SECRET_ENCRYPTION_KEY`: mã hóa các cài đặt nhạy cảm (mật khẩu cơ sở dữ liệu, thông tin xác thực DNS, thẻ nạp tiền, v.v.).
+- `CF_SECRET_ENCRYPTION_KEY`: mã hóa cài đặt nhạy cảm (mật khẩu cơ sở dữ liệu, thông tin DNS của chứng chỉ, thẻ nạp tiền, v.v.) cùng token đăng ký / mã ngắn / lịch sử xoay / URL đăng ký thượng nguồn.
 - Cả hai đều được tạo ngẫu nhiên theo mặc định; sử dụng “Tái tạo” để nhận các giá trị mới. **Thay đổi `CF_SECRET_ENCRYPTION_KEY` khiến dữ liệu được mã hóa trước đó không thể đọc được** — hãy sao lưu dữ liệu đó.
 
 #### Bước 4: Lõi
@@ -1193,7 +1197,7 @@ Ghi chú:
 | Đã bật | Điểm cuối bị vô hiệu hóa sẽ bị bỏ qua khi xây dựng liên kết |
 | Mô tả | Ghi chú văn bản tự do |
 
-- **Nhiều hàng (đa miền)** được hỗ trợ; khi một số miền được bật, miền của nhà cung cấp sẽ tuân theo miền được yêu cầu hiện tại sử dụng (xem 9.4);
+- **Nhiều hàng (đa miền)** được hỗ trợ; khi một số miền được bật, miền của nhà cung cấp sẽ tuân theo miền được yêu cầu hiện tại sử dụng (xem 9.5);
 - Cổng đăng ký chuyên dụng phục vụ ở thư mục gốc (`/<token>`, không có `/sub`); khi chia sẻ cổng bảng điều khiển thì đó là `/sub/<token>`;
 - Proxy ngược phải chuyển tiếp `X-Forwarded-Proto` / `X-Forwarded-Host`, nếu không thì điểm cuối được kích hoạt đầu tiên sẽ được sử dụng. Các mẫu trang web Caddy / Nginx do bảng điều khiển tạo ra bao gồm cả hai tiêu đề; cấu hình proxy được duy trì bằng tay cần được thêm chúng theo cách thủ công.
 
@@ -1223,7 +1227,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Chế độ đa miền và nhà cung cấp
+### 9.4 Liên kết ngắn đăng ký (tùy chọn)
+
+Nút "Liên kết ngắn" trên mỗi dòng đăng ký tạo mã ngẫu nhiên 20 ký tự:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Liên kết ngắn trả trực tiếp nội dung đăng ký (không 302) và dùng cùng cơ chế ủy quyền với liên kết dài: đăng ký bị thu hồi/tạm dừng/hết hạn, khách hàng bị chặn, xoay token, liên kết bị tắt/hết hạn đều thất bại ngay lập tức.
+- Liên kết đã cố định định dạng / cấu hình / nền tảng / providers, nên máy khách không cần thêm `?format=&config=`; khi tạo có thể tắt "khóa tham số" để cho phép ghi đè tạm thời bằng `?format=`.
+- Cổng thông tin và chi tiết khách hàng ưu tiên liên kết ngắn. Công tắc toàn cục ở Cài đặt → Bảng điều khiển → Liên kết ngắn đăng ký; khi tắt, mọi liên kết ngắn trả 404 và liên kết dài không bị ảnh hưởng. Nhật ký truy cập ghi `access_type=short_link` và `short_link_id`.
+- Liên kết trong cổng thông tin/chi tiết khách hàng được tạo tự động theo từng tổ hợp "định dạng × cấu hình (× providers)" hiển thị, nên không bao giờ xuất hiện "liên kết ngắn + tham số".
+- Liên kết ngắn `mihomo_yaml` phải gắn với cấu hình: giống sing-box / Xray, liên kết chỉ được tạo từ cấu hình thực tế trong "Định dạng đăng ký"; liên kết Mihomo không có cấu hình không còn được tạo, mở hộp thoại "Liên kết ngắn" sẽ dọn các liên kết cũ không có cấu hình, và tạo/cập nhật thủ công không có cấu hình sẽ bị từ chối.
+- Mã ngắn không bao giờ được lưu dạng văn bản rõ: cơ sở dữ liệu chỉ giữ bản mã AES-256-GCM ngẫu nhiên (để hiển thị URL đầy đủ) và dấu vân tay HMAC-SHA256 (để tra cứu bằng nhau); mã đã xoay/xóa được ghi vào bảng thu hồi và không thể giải mã lại.
+
+### 9.5 Chế độ đa miền và nhà cung cấp
 
 Với `providers=1`, mọi mục nhập `proxy-providers` đều quay trở lại điểm cuối đăng ký. Lựa chọn tên miền:
 

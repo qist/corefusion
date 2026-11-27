@@ -340,6 +340,8 @@ sudo bash install.sh --uninstall --purge
   「系統設定 → 備份還原」做一次備份；
 - 預發布版本（tag 帶 `-rc`）用於灰度驗證，建議先在單台面板觀察再全量。
 
+**自 v0.14.4 起，訂閱憑證加密入庫**：首次啟動會加密訂閱 token、短鏈 code、輪換歷史與上游訂閱 URL，並建立短鏈撤銷表；升級前請備份資料庫，回滾時必須連同升級前的資料庫備份一起還原，舊版本直接讀新庫會讓訂閱全部 404。
+
 ### 2.9 環境文件（.env）
 
 儲存設定時，完整的 `.env` 由設定精靈產生（資料庫 DSN、資料目錄、機密、連接埠、網域）。
@@ -413,12 +415,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | 變數 | 描述 |
 |----------|-------------|
 | `JWT_SECRET` | 登入令牌的簽名金鑰；遺失時首次啟動時生成 |
-| `CF_SECRET_ENCRYPTION_KEY` | 用於加密敏感設定的金鑰 (AES-256-GCM)；缺失時產生 |
+| `CF_SECRET_ENCRYPTION_KEY` | 敏感設定與訂閱憑證加密金鑰（AES-256-GCM）；缺少時自動產生 |
 | `CF_INITIAL_ADMIN_PASSWORD` | 初始管理員密碼（可選；隨機且預設列印一次） |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | 設定為 `0` 以停用基於 iptables 的流量計費（預設為啟用） |
 | `CF_NETWORK_TRAFFIC_TABLE` | 用於流量統計的iptables表，預設`corefusion` |
 
 > **加密金鑰位於 `.env.secret`**：首次啟動時，`CF_SECRET_ENCRYPTION_KEY` 被寫入 `.env.secret`（0600，與 `.env` 相同的目錄）而不是 `.env`；`.env` 中的舊金鑰會自動遷移。單獨備份此檔案 - 遺失它會使每個 `enc:` 值無法解密。
+>
+> 自 v0.14.4 起，`subscriptions.token`、短鏈 code 與輪換歷史、`external_node_sources.source_url` 也使用這把金鑰：token/URL 以 AES-256-GCM 密文回顯，短鏈查詢走 HMAC-SHA256 指紋；金鑰遺失後這些憑證同樣無法解密或比對。
 
 > 用於解析真實客戶端 IP 的可信任反向代理程式不再透過環境變數進行設定；
 > 它們在**設定 → 網路**中儲存為 `panel.trusted_proxies`。
@@ -517,7 +521,7 @@ CoreFusion first start - setup wizard
 #### 第 3 步：加密金鑰
 
 - `JWT_SECRET`：簽署登入令牌。
-- `CF_SECRET_ENCRYPTION_KEY`：加密敏感設定（資料庫密碼、DNS憑證、儲值卡等）。
+- `CF_SECRET_ENCRYPTION_KEY`：敏感設定（資料庫密碼、憑證 DNS 憑據、儲值卡等）以及訂閱 token / 短鏈 code / 輪換歷史 / 上游訂閱 URL 的加密金鑰。
 - 兩者預設都是隨機產生的；使用“重新生成”來獲取新值。 **更改 `CF_SECRET_ENCRYPTION_KEY` 會使先前加密的資料無法讀取** - 備份它。
 
 #### 第 4 步：核心
@@ -1227,7 +1231,7 @@ URL / 參數 / POST 內容檢查，IP、UA、Cookie、CC、檔案上傳仍照常
 | 啟用 | 建立連結時會忽略停用的端點 |
 | 描述 | 自由文本註釋 |
 
-- **支援多行（多域）**；啟用多個時，提供者網域遵循目前請求使用的網域（請參閱 9.4）；
+- **支援多行（多域）**；啟用多個時，提供者網域遵循目前請求使用的網域（請參閱 9.5）；
 - 專用訂閱埠在根服務（`/<token>`，無`/sub`）；共用面板口時為`/sub/<token>`；
 - 反向代理必須轉送 `X-Forwarded-Proto` / `X-Forwarded-Host`，否則將使用第一個啟用的端點。此面板產生的 Caddy / Nginx 站點範本包括兩個標題；手動維護的代理配置需要手動新增。
 
@@ -1257,7 +1261,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 多域和Provider模式
+### 9.4 訂閱短鏈（選用）
+
+訂閱中心每列的「短鏈」按鈕可為該訂閱產生 20 位隨機短碼：
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- 短鏈直接回傳訂閱內容（不做 302），與長連結共用同一套授權：訂閱撤銷/暫停/到期、客戶封禁、token 輪換、短鏈停用/過期都會立即失效。
+- 短鏈已固定格式 / 設定 / 平台 / providers，客戶不需要再附加 `?format=&config=`；建立時可關閉「鎖定參數」，允許用 `?format=` 等參數臨時覆蓋。
+- 入口網站與客戶詳情會優先使用短鏈。全域開關在「設定 → 面板 → 訂閱短鏈」；關閉後所有短鏈立即 404，長連結不受影響。存取日誌會記錄 `access_type=short_link` 與 `short_link_id`。
+- 入口網站/客戶詳情裡的連結會依「方案可見的格式 × 設定（× providers）」自動補齊，不會出現「短鏈 + 參數」的混合形式。
+- `mihomo_yaml` 短鏈必須綁定設定：與 sing-box / Xray 一樣，只有「訂閱格式管理」裡真實存在的設定才會產生短鏈；無設定的 mihomo 連結不再產生，開啟「短鏈」視窗時會自動清理該訂閱下無設定的既有連結，手動建立/更新無設定的連結會被拒絕。
+- 短碼不以明文入庫：資料庫只保存隨機 AES-256-GCM 密文（用於回顯完整 URL）與 HMAC-SHA256 指紋（用於等值查詢）；輪換或刪除後舊短碼會寫入撤銷表，無法再次解析。
+
+### 9.5 多域和Provider模式
 
 對於 `providers=1`，每個 `proxy-providers` 條目都指向訂閱端點。域名選擇：
 

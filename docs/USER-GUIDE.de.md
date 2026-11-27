@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**Seit v0.14.4 werden Abonnement-Anmeldedaten verschlüsselt gespeichert**: Beim ersten Start werden Abonnement-Token, Kurzcodes, Rotationsverlauf und Upstream-Abonnement-URLs verschlüsselt und die Widerrufstabelle für Kurzlinks angelegt. Sichern Sie die Datenbank vor dem Upgrade; ein Rollback muss auch die Datenbank vor dem Upgrade wiederherstellen, da eine ältere Binärdatei die neue Datenbank nicht lesen kann und alle Abonnements 404 liefern.
+
 ### 2.9 Umgebungsdatei (.env)
 
 Der vollständige `.env` wird beim Speichern der Konfiguration **vom Setup-Assistenten generiert** (Datenbank-DSN, Datenverzeichnis, Geheimnisse, Ports, Domänen).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Variabel | Beschreibung |
 |----------|-------------|
 | `JWT_SECRET` | Signaturschlüssel für Login-Tokens; wird beim ersten Start generiert, wenn es fehlt |
-| `CF_SECRET_ENCRYPTION_KEY` | Schlüssel zur Verschlüsselung sensibler Einstellungen (AES-256-GCM); generiert, wenn es fehlt |
+| `CF_SECRET_ENCRYPTION_KEY` | Schlüssel zur Verschlüsselung sensibler Einstellungen und Abonnement-Anmeldedaten (AES-256-GCM); wird bei Fehlen automatisch erzeugt |
 | `CF_INITIAL_ADMIN_PASSWORD` | Anfängliches Administratorkennwort (optional; zufällig und standardmäßig einmal gedruckt) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Auf `0` einstellen, um die iptables-basierte Datenverkehrsabrechnung zu deaktivieren (standardmäßig aktiviert). |
 | `CF_NETWORK_TRAFFIC_TABLE` | iptables-Tabelle, die für die Verkehrsabrechnung verwendet wird, Standard `corefusion` |
 
 > **Der Verschlüsselungsschlüssel befindet sich in `.env.secret`**: Beim ersten Start wird `CF_SECRET_ENCRYPTION_KEY` in `.env.secret` (0600, dasselbe Verzeichnis wie `.env`) statt in `.env` geschrieben; Ein Legacy-Schlüssel in `.env` wird automatisch migriert. Sichern Sie diese Datei separat – wenn Sie sie verlieren, ist jeder `enc:`-Wert nicht mehr entschlüsselbar.
+>
+> Seit v0.14.4 verwenden auch `subscriptions.token`, Kurzcodes und Rotationsverlauf sowie `external_node_sources.source_url` diesen Schlüssel: Token/URLs werden aus AES-256-GCM-Chiffretext angezeigt, die Kurzlink-Suche nutzt einen HMAC-SHA256-Fingerabdruck. Bei Schlüsselverlust sind auch diese Anmeldedaten nicht mehr entschlüsselbar bzw. zuordenbar.
 
 > Vertrauenswürdige Reverse-Proxys zum Auflösen realer Client-IPs werden nicht mehr über Umgebungsvariablen konfiguriert;
 > Sie werden als `panel.trusted_proxies` unter **Einstellungen → Netzwerk** gespeichert.
@@ -497,7 +501,7 @@ Die vorhandene Datenbank und die vorhandenen Zertifikate werden nicht gefunden.
 #### Schritt 3: Verschlüsselungsschlüssel
 
 - `JWT_SECRET`: Signiert Anmeldetoken.
-- `CF_SECRET_ENCRYPTION_KEY`: Verschlüsselt vertrauliche Einstellungen (Datenbankpasswort, DNS-Zugangsdaten, Aufladekarten usw.).
+- `CF_SECRET_ENCRYPTION_KEY`: verschlüsselt sensible Einstellungen (Datenbankpasswort, DNS-Zertifikatsanmeldedaten, Guthabenkarten usw.) sowie Abonnement-Token / Kurscodes / Rotationsverlauf / Upstream-Abonnement-URLs.
 - Beide werden standardmäßig zufällig generiert; Verwenden Sie „Regenerieren“, um neue Werte zu erhalten. **Durch die Änderung von `CF_SECRET_ENCRYPTION_KEY` werden zuvor verschlüsselte Daten unlesbar** – sichern Sie sie.
 
 #### Schritt 4: Kerne
@@ -1198,7 +1202,7 @@ Hinweise:
 | Aktiviert | Deaktivierte Endpunkte werden beim Erstellen von Links ignoriert |
 | Beschreibung | Freitextnotiz |
 
-- **Mehrere Zeilen (Multi-Domain)** werden unterstützt; wenn mehrere aktiviert sind, folgt die Anbieterdomäne der Domäne, die von der aktuellen Anfrage verwendet wird (siehe 9.4);
+- **Mehrere Zeilen (Multi-Domain)** werden unterstützt; wenn mehrere aktiviert sind, folgt die Anbieterdomäne der Domäne, die von der aktuellen Anfrage verwendet wird (siehe 9.5);
 - Ein dedizierter Abonnement-Port dient im Stammverzeichnis (`/<token>`, kein `/sub`); bei gemeinsamer Nutzung des Panel-Ports ist es `/sub/<token>`;
 - Reverse-Proxys müssen `X-Forwarded-Proto` / `X-Forwarded-Host` weiterleiten, andernfalls wird der erste aktivierte Endpunkt verwendet. Die vom Panel generierten Caddy/Nginx-Site-Vorlagen enthalten beide Header; Bei manuell verwalteten Proxy-Konfigurationen müssen diese manuell hinzugefügt werden.
 
@@ -1228,7 +1232,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Multi-Domain- und Provider-Modus
+### 9.4 Abonnement-Kurzlinks (optional)
+
+Die Schaltfläche „Kurzlink“ in jeder Abonnementzeile erzeugt einen 20-stelligen Zufallscode:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Kurzlinks liefern den Abonnementinhalt direkt (kein 302) und nutzen dieselbe Autorisierung wie lange Links: widerrufene/gesperrte/abgelaufene Abonnements, gesperrte Clients, Token-Rotation sowie deaktivierte/abgelaufene Links schlagen sofort fehl.
+- Der Link fixiert Format / Konfiguration / Plattform / Provider, sodass Clients kein `?format=&config=` mehr anhängen müssen; beim Erstellen kann „Parameter sperren“ deaktiviert werden, um `?format=`-Überschreibungen zu erlauben.
+- Portal und Client-Details bevorzugen Kurzlinks. Der globale Schalter liegt unter Einstellungen → Panel → Abonnement-Kurzlinks; ausgeschaltet liefern alle Kurzlinks 404, lange Links bleiben unberührt. Zugriffsprotokolle erfassen `access_type=short_link` und `short_link_id`.
+- Links in Portal/Client-Details werden pro sichtbarer Kombination „Format × Konfiguration (× Provider)“ automatisch erzeugt, sodass nie ein „Kurzlink + Query“-Hybrid entsteht.
+- `mihomo_yaml`-Kurzlinks benötigen eine Konfiguration: Wie bei sing-box / Xray werden Links nur aus realen Konfigurationen unter „Abonnementformate“ erzeugt; Mihomo-Links ohne Konfiguration werden nicht mehr erzeugt, beim Öffnen des Kurzlink-Dialogs werden vorhandene entfernt, und manuelles Erstellen/Aktualisieren ohne Konfiguration wird abgelehnt.
+- Kurscodes werden nie im Klartext gespeichert: Die Datenbank enthält nur einen zufälligen AES-256-GCM-Chiffretext (zur Anzeige der vollständigen URL) und einen HMAC-SHA256-Fingerabdruck (für Gleichheitssuche); rotierte/gelöschte Codes landen in einer Widerrufstabelle und lassen sich nicht mehr auflösen.
+
+### 9.5 Multi-Domain- und Provider-Modus
 
 Bei `providers=1` verweist jeder `proxy-providers`-Eintrag zurück auf den Abonnementendpunkt. Domainauswahl:
 

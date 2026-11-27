@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**Desde v0.14.4 las credenciales de suscripción se cifran en reposo**: en el primer arranque se cifran los tokens de suscripción, códigos cortos, historial de rotación y URL de suscripción upstream, y se crea la tabla de revocación de enlaces cortos. Haz una copia de la base antes de actualizar; una reversión debe restaurar también la base anterior, porque un binario antiguo no puede leer la nueva y todas las suscripciones devolverán 404.
+
 ### 2.9 Archivo de entorno (.env)
 
 El `.env` completo es **generado por el asistente de configuración** cuando se guarda la configuración (DSN de base de datos, directorio de datos, secretos, puertos, dominios).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | variable | Descripción |
 |----------|-------------|
 | `JWT_SECRET` | Clave de firma para tokens de inicio de sesión; generado en el primer inicio cuando falta |
-| `CF_SECRET_ENCRYPTION_KEY` | Clave para cifrar configuraciones confidenciales (AES-256-GCM); generado cuando falta |
+| `CF_SECRET_ENCRYPTION_KEY` | Clave para cifrar ajustes sensibles y credenciales de suscripción (AES-256-GCM); se genera si falta |
 | `CF_INITIAL_ADMIN_PASSWORD` | Contraseña de administrador inicial (opcional; aleatoria e impresa una vez de forma predeterminada) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Establezca en `0` para deshabilitar la contabilidad de tráfico basada en iptables (habilitada de forma predeterminada) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Tabla de iptables utilizada para la contabilidad del tráfico, predeterminada `corefusion` |
 
 > **La clave de cifrado reside en `.env.secret`**: en el primer inicio, `CF_SECRET_ENCRYPTION_KEY` se escribe en `.env.secret` (0600, el mismo directorio que `.env`) en lugar de `.env`; una clave heredada en `.env` se migra automáticamente. Haga una copia de seguridad de este archivo por separado; perderlo hace que todos los valores de `enc:` no se puedan descifrar.
+>
+> Desde v0.14.4, `subscriptions.token`, los códigos cortos y el historial de rotación, y `external_node_sources.source_url` también usan esta clave: los tokens/URL se muestran desde el cifrado AES-256-GCM y la búsqueda de enlaces cortos usa una huella HMAC-SHA256. Si se pierde la clave, estas credenciales tampoco se podrán descifrar ni emparejar.
 
 > Los servidores proxy inversos confiables para resolver IP de clientes reales ya no se configuran mediante variables de entorno;
 > se almacenan como `panel.trusted_proxies` en **Configuración → Red**.
@@ -497,7 +501,7 @@ no encontrará la base de datos ni los certificados existentes.
 #### Paso 3: claves de cifrado
 
 - `JWT_SECRET`: firma tokens de inicio de sesión.
-- `CF_SECRET_ENCRYPTION_KEY`: cifra configuraciones sensibles (contraseña de base de datos, credenciales de DNS, tarjetas de recarga, etc.).
+- `CF_SECRET_ENCRYPTION_KEY`: cifra ajustes sensibles (contraseña de base de datos, credenciales DNS de certificados, tarjetas de recarga, etc.) y tokens de suscripción / códigos cortos / historial de rotación / URL de suscripción upstream.
 - Ambos se generan aleatoriamente de forma predeterminada; utilice "Regenerar" para obtener nuevos valores. **Cambiar `CF_SECRET_ENCRYPTION_KEY` hace que los datos previamente cifrados sean ilegibles**: haga una copia de seguridad.
 
 #### Paso 4: Núcleos
@@ -1197,7 +1201,7 @@ Notas:
 | Habilitado | Los puntos finales deshabilitados se ignoran al crear enlaces |
 | Descripción | Nota de texto libre |
 
-- **Se admiten varias filas (multidominio)**; cuando se habilitan varios, el dominio del proveedor sigue al dominio utilizado por la solicitud actual (ver 9.4);
+- **Se admiten varias filas (multidominio)**; cuando se habilitan varios, el dominio del proveedor sigue al dominio utilizado por la solicitud actual (ver 9.5);
 - Un puerto de suscripción dedicado sirve en la raíz (`/<token>`, no `/sub`); al compartir el puerto del panel es `/sub/<token>`;
 - Los servidores proxy inversos deben reenviar `X-Forwarded-Proto` / `X-Forwarded-Host`; de lo contrario, se utiliza el primer punto final habilitado. Las plantillas de sitio Caddy / Nginx generadas por el panel incluyen ambos encabezados; las configuraciones de proxy mantenidas manualmente necesitan agregarse manualmente.
 
@@ -1227,7 +1231,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Modo multidominio y proveedor
+### 9.4 Enlaces cortos de suscripción (opcional)
+
+El botón «Enlace corto» de cada fila de suscripción genera un código aleatorio de 20 caracteres:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Los enlaces cortos devuelven directamente el contenido de la suscripción (sin 302) y comparten la misma autorización que los enlaces largos: suscripción revocada/suspendida/caducada, cliente bloqueado, rotación de token o enlace deshabilitado/caducado fallan de inmediato.
+- El enlace fija formato / configuración / plataforma / providers, por lo que el cliente ya no añade `?format=&config=`; al crearlo, desactiva «bloquear parámetros» si quieres permitir sobrescrituras con `?format=`.
+- El portal y los detalles del cliente prefieren los enlaces cortos. El interruptor global está en Ajustes → Panel → Enlaces cortos de suscripción; al desactivarlo, todos los enlaces cortos devuelven 404 y los largos siguen funcionando. Los registros de acceso guardan `access_type=short_link` y `short_link_id`.
+- Los enlaces del portal/detalles del cliente se generan por cada combinación visible «formato × configuración (× providers)», sin que aparezca nunca un «enlace corto + parámetros».
+- Los enlaces cortos `mihomo_yaml` requieren una configuración: igual que sing-box / Xray, solo se generan desde configuraciones reales de «Formatos de suscripción»; los enlaces Mihomo sin configuración ya no se generan, al abrir el diálogo «Enlaces cortos» se limpian los existentes, y la creación/actualización manual sin configuración se rechaza.
+- Los códigos cortos nunca se guardan en claro: la base solo conserva un cifrado AES-256-GCM aleatorio (para mostrar la URL completa) y una huella HMAC-SHA256 (para búsquedas por igualdad); los códigos rotados/eliminados se escriben en una tabla de revocación y ya no se pueden resolver.
+
+### 9.5 Modo multidominio y proveedor
 
 Con `providers=1`, cada entrada de `proxy-providers` apunta al punto final de la suscripción. Selección de dominio:
 

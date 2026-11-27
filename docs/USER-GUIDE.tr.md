@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**v0.14.4'ten itibaren abonelik kimlik bilgileri diskte şifrelenir**: ilk başlatmada abonelik token'ları, kısa kodlar, rotasyon geçmişi ve üst kaynak abonelik URL'leri şifrelenir ve kısa bağlantı iptal tablosu oluşturulur. Yükseltmeden önce veritabanını yedekleyin; geri alma işlemi yükseltme öncesi veritabanını da geri yüklemelidir, çünkü eski ikili yeni veritabanını okuyamaz ve tüm abonelikler 404 döner.
+
 ### 2.9 Ortam dosyası (.env)
 
 Yapılandırma kaydedildiğinde `.env`'nin tamamı **kurulum sihirbazı tarafından oluşturulur** (veritabanı DSN'si, veri dizini, sırlar, bağlantı noktaları, etki alanları).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Değişken | Açıklama |
 |----------|-------------|
 | `JWT_SECRET` | Oturum açma belirteçleri için imzalama anahtarı; eksik olduğunda ilk çalıştırmada oluşturulur |
-| `CF_SECRET_ENCRYPTION_KEY` | Hassas ayarları şifrelemek için anahtar (AES-256-GCM); eksik olduğunda oluşturulan |
+| `CF_SECRET_ENCRYPTION_KEY` | Hassas ayarları ve abonelik kimlik bilgilerini şifreleme anahtarı (AES-256-GCM); yoksa otomatik oluşturulur |
 | `CF_INITIAL_ADMIN_PASSWORD` | İlk yönetici şifresi (isteğe bağlı; rastgele ve varsayılan olarak bir kez yazdırılır) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | İptables tabanlı trafik hesaplamasını devre dışı bırakmak için `0` olarak ayarlayın (varsayılan olarak etkindir) |
 | `CF_NETWORK_TRAFFIC_TABLE` | Trafik muhasebesi için kullanılan iptables tablosu, varsayılan `corefusion` |
 
 > **Şifreleme anahtarı `.env.secret`'de bulunur**: ilk başlangıçta `CF_SECRET_ENCRYPTION_KEY`, `.env` yerine `.env.secret`'ye (0600, `.env` ile aynı dizin) yazılır; `.env`'deki eski bir anahtar otomatik olarak taşınır. Bu dosyayı ayrı olarak yedekleyin; onu kaybederseniz, tüm `enc:` değerlerinin şifresi çözülemez hale gelir.
+>
+> v0.14.4'ten itibaren `subscriptions.token`, kısa kodlar ve rotasyon geçmişi ile `external_node_sources.source_url` de bu anahtarı kullanır: token/URL'ler AES-256-GCM şifreli metninden gösterilir ve kısa bağlantı araması HMAC-SHA256 parmak iziyle yapılır. Anahtar kaybolursa bu kimlik bilgileri de çözülemez veya eşleştirilemez.
 
 > Gerçek istemci IP'lerini çözümlemeye yönelik güvenilir ters proxy'ler artık ortam değişkenleri aracılığıyla yapılandırılmamaktadır;
 > **Ayarlar → Ağ**'da `panel.trusted_proxies` olarak depolanırlar.
@@ -497,7 +501,7 @@ mevcut veritabanını ve sertifikaları bulamayacaktır.
 #### 3. Adım: Şifreleme anahtarları
 
 - `JWT_SECRET`: oturum açma belirteçlerini imzalar.
-- `CF_SECRET_ENCRYPTION_KEY`: hassas ayarları (veritabanı şifresi, DNS kimlik bilgileri, şarj kartları vb.) şifreler.
+- `CF_SECRET_ENCRYPTION_KEY`: hassas ayarları (veritabanı parolası, sertifika DNS kimlik bilgileri, kredi kartları vb.) ve abonelik token'larını / kısa kodları / rotasyon geçmişini / üst kaynak abonelik URL'lerini şifreler.
 - Her ikisi de varsayılan olarak rastgele oluşturulur; yeni değerler elde etmek için “Yeniden Oluştur”u kullanın. **`CF_SECRET_ENCRYPTION_KEY`'yi değiştirmek, önceden şifrelenmiş verileri okunamaz hale getirir** — yedekleyin.
 
 #### Adım 4: Çekirdekler
@@ -1197,7 +1201,7 @@ Notlar:
 | Etkin | Bağlantılar oluşturulurken devre dışı bırakılan uç noktalar göz ardı edilir |
 | Açıklama | Serbest metin notu |
 
-- **Birden çok satır (çoklu alan adı)** desteklenir; birkaçı etkinleştirildiğinde, sağlayıcı etki alanı mevcut istek tarafından kullanılan etki alanını takip eder (bkz. 9.4);
+- **Birden çok satır (çoklu alan adı)** desteklenir; birkaçı etkinleştirildiğinde, sağlayıcı etki alanı mevcut istek tarafından kullanılan etki alanını takip eder (bkz. 9.5);
 - Kökte özel bir abonelik bağlantı noktası hizmet verir (`/<token>`, `/sub` yok); panel bağlantı noktasını paylaşırken `/sub/<token>`'dir;
 - Ters proxy'ler `X-Forwarded-Proto` / `X-Forwarded-Host`'yi iletmelidir, aksi takdirde ilk etkin uç nokta kullanılır. Panelin oluşturulan Caddy / Nginx site şablonları her iki başlığı da içerir; elle tutulan proxy yapılandırmalarının manuel olarak eklenmesi gerekir.
 
@@ -1227,7 +1231,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Çoklu etki alanı ve Sağlayıcı modu
+### 9.4 Abonelik kısa bağlantıları (isteğe bağlı)
+
+Her abonelik satırındaki "Kısa bağlantı" düğmesi 20 karakterlik rastgele bir kod oluşturur:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Kısa bağlantılar abonelik gövdesini doğrudan döndürür (302 yok) ve uzun bağlantılarla aynı yetkilendirmeyi kullanır: iptal edilmiş/askıya alınmış/süresi dolmuş abonelik, yasaklı istemci, token rotasyonu, devre dışı/süresi dolmuş bağlantı anında başarısız olur.
+- Bağlantı format / yapılandırma / platform / providers değerlerini sabitler; istemci artık `?format=&config=` eklemez. Oluştururken `?format=` ile geçici geçersiz kılmaya izin vermek için "parametreleri kilitle"yi kapatın.
+- Portal ve istemci ayrıntıları kısa bağlantıları tercih eder. Genel anahtar Ayarlar → Panel → Abonelik kısa bağlantıları altındadır; kapatıldığında tüm kısa bağlantılar 404 döner, uzun bağlantılar etkilenmez. Erişim günlükleri `access_type=short_link` ve `short_link_id` kaydeder.
+- Portal/istemci ayrıntılarındaki bağlantılar görünen her "format × yapılandırma (× providers)" kombinasyonu için otomatik oluşturulur; "kısa bağlantı + parametre" karışımı hiç oluşmaz.
+- `mihomo_yaml` kısa bağlantıları bir yapılandırmaya bağlı olmalıdır: sing-box / Xray gibi, bağlantılar yalnızca "Abonelik formatları" altındaki gerçek yapılandırmalardan üretilir; yapılandırmasız Mihomo bağlantıları artık üretilmez, "Kısa bağlantılar" penceresi açıldığında mevcut yapılandırmasız bağlantılar temizlenir ve yapılandırmasız manuel oluşturma/güncelleme reddedilir.
+- Kısa kodlar asla düz metin olarak saklanmaz: veritabanı yalnızca rastgele AES-256-GCM şifreli metni (tam URL'yi göstermek için) ve HMAC-SHA256 parmak izini (eşitlik araması için) tutar; döndürülen/silinen kodlar bir iptal tablosuna yazılır ve artık çözülemez.
+
+### 9.5 Çoklu etki alanı ve Sağlayıcı modu
 
 `providers=1` ile her `proxy-providers` girişi, abonelik uç noktasına geri döner. Alan adı seçimi:
 

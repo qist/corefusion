@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**Sejak v0.14.4 kredensial langganan dienkripsi saat disimpan**: pada start pertama, token langganan, kode pendek, riwayat rotasi, dan URL langganan upstream dienkripsi, dan tabel pencabutan tautan pendek dibuat. Cadangkan database sebelum meningkatkan; rollback juga harus memulihkan database sebelum peningkatan, karena biner lama tidak dapat membaca database baru dan semua langganan akan 404.
+
 ### 2.9 File lingkungan (.env)
 
 `.env` yang lengkap **dihasilkan oleh wizard pengaturan** saat konfigurasi disimpan (database DSN, direktori data, rahasia, port, domain).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Variabel | Deskripsi |
 |----------|-------------|
 | `JWT_SECRET` | Menandatangani kunci untuk token login; dihasilkan pada permulaan pertama ketika hilang |
-| `CF_SECRET_ENCRYPTION_KEY` | Kunci untuk mengenkripsi pengaturan sensitif (AES-256-GCM); dihasilkan ketika hilang |
+| `CF_SECRET_ENCRYPTION_KEY` | Kunci enkripsi pengaturan sensitif dan kredensial langganan (AES-256-GCM); dibuat otomatis jika tidak ada |
 | `CF_INITIAL_ADMIN_PASSWORD` | Kata sandi admin awal (opsional; acak dan dicetak sekali secara default) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Atur ke `0` untuk menonaktifkan penghitungan lalu lintas berbasis iptables (diaktifkan secara default) |
 | `CF_NETWORK_TRAFFIC_TABLE` | tabel iptables digunakan untuk penghitungan lalu lintas, default `corefusion` |
 
 > **Kunci enkripsi berada di `.env.secret`**: pada permulaan pertama `CF_SECRET_ENCRYPTION_KEY` ditulis ke `.env.secret` (0600, direktori yang sama dengan `.env`) dan bukan `.env`; kunci lama di `.env` dimigrasikan secara otomatis. Cadangkan file ini secara terpisah — kehilangannya membuat setiap nilai `enc:` tidak dapat didekripsi.
+>
+> Sejak v0.14.4, `subscriptions.token`, kode pendek dan riwayat rotasi, serta `external_node_sources.source_url` juga memakai kunci ini: token/URL ditampilkan dari ciphertext AES-256-GCM dan pencarian tautan pendek memakai sidik jari HMAC-SHA256. Jika kunci hilang, kredensial ini juga tidak dapat didekripsi atau dicocokkan.
 
 > Proksi terbalik tepercaya untuk menyelesaikan IP klien sebenarnya tidak lagi dikonfigurasi melalui variabel lingkungan;
 > mereka disimpan sebagai `panel.trusted_proxies` di **Pengaturan → Jaringan**.
@@ -497,7 +501,7 @@ tidak akan menemukan database dan sertifikat yang ada.
 #### Langkah 3: Kunci enkripsi
 
 - `JWT_SECRET`: menandatangani token login.
-- `CF_SECRET_ENCRYPTION_KEY`: mengenkripsi pengaturan sensitif (kata sandi database, kredensial DNS, kartu isi ulang, dll.).
+- `CF_SECRET_ENCRYPTION_KEY`: mengenkripsi pengaturan sensitif (kata sandi database, kredensial DNS sertifikat, kartu isi ulang, dll.) serta token langganan / kode pendek / riwayat rotasi / URL langganan upstream.
 - Keduanya dihasilkan secara acak secara default; gunakan "Regenerasi" untuk mendapatkan nilai baru. **Mengubah `CF_SECRET_ENCRYPTION_KEY` membuat data yang dienkripsi sebelumnya tidak dapat dibaca** — buat cadangannya.
 
 #### Langkah 4: Inti
@@ -1196,7 +1200,7 @@ Catatan:
 | Diaktifkan | Titik akhir yang dinonaktifkan diabaikan saat membuat tautan |
 | Deskripsi | Catatan teks bebas |
 
-- **Beberapa baris (multi-domain)** didukung; ketika beberapa diaktifkan, domain penyedia mengikuti domain yang digunakan oleh permintaan saat ini (lihat 9.4);
+- **Beberapa baris (multi-domain)** didukung; ketika beberapa diaktifkan, domain penyedia mengikuti domain yang digunakan oleh permintaan saat ini (lihat 9.5);
 - Port berlangganan khusus berfungsi di root (`/<token>`, tanpa `/sub`); saat berbagi port panel adalah `/sub/<token>`;
 - Proksi terbalik harus meneruskan `X-Forwarded-Proto` / `X-Forwarded-Host`, jika tidak, titik akhir pertama yang diaktifkan akan digunakan. Templat situs Caddy / Nginx yang dihasilkan panel mencakup kedua header; konfigurasi proxy yang dikelola sendiri perlu ditambahkan secara manual.
 
@@ -1226,7 +1230,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Mode multi-domain dan Penyedia
+### 9.4 Tautan pendek langganan (opsional)
+
+Tombol "Tautan pendek" di setiap baris langganan membuat kode acak 20 karakter:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Tautan pendek mengembalikan isi langganan secara langsung (tanpa 302) dan memakai otorisasi yang sama dengan tautan panjang: langganan dicabut/ditangguhkan/kedaluwarsa, klien diblokir, rotasi token, tautan dinonaktifkan/kedaluwarsa semuanya langsung gagal.
+- Tautan sudah mengunci format / konfigurasi / platform / providers, jadi klien tidak perlu menambahkan `?format=&config=`; saat membuat, matikan "kunci parameter" jika ingin mengizinkan penimpaan `?format=`.
+- Portal dan detail klien mengutamakan tautan pendek. Sakelar global ada di Pengaturan → Panel → Tautan pendek langganan; jika dimatikan semua tautan pendek mengembalikan 404 dan tautan panjang tetap berfungsi. Log akses mencatat `access_type=short_link` dan `short_link_id`.
+- Tautan di portal/detail klien dibuat otomatis untuk setiap kombinasi "format × konfigurasi (× providers)" yang terlihat, sehingga tidak pernah muncul "tautan pendek + parameter".
+- Tautan pendek `mihomo_yaml` wajib terhubung ke konfigurasi: seperti sing-box / Xray, tautan hanya dibuat dari konfigurasi nyata di "Format langganan"; tautan Mihomo tanpa konfigurasi tidak lagi dibuat, membuka dialog "Tautan pendek" membersihkan tautan lama tanpa konfigurasi, dan pembuatan/pembaruan manual tanpa konfigurasi ditolak.
+- Kode pendek tidak pernah disimpan dalam teks biasa: database hanya menyimpan ciphertext AES-256-GCM acak (untuk menampilkan URL lengkap) dan sidik jari HMAC-SHA256 (untuk pencarian kesamaan); kode yang dirotasi/dihapus ditulis ke tabel pencabutan dan tidak dapat diselesaikan lagi.
+
+### 9.5 Mode multi-domain dan Penyedia
 
 Dengan `providers=1`, setiap titik masuk `proxy-providers` kembali ke titik akhir langganan. Pemilihan domain:
 

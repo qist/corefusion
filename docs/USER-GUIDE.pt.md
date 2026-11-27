@@ -320,6 +320,8 @@ sudo bash install.sh --uninstall
 sudo bash install.sh --uninstall --purge
 ```
 
+**A partir da v0.14.4 as credenciais de assinatura são cifradas em repouso**: no primeiro arranque, tokens de assinatura, códigos curtos, histórico de rotação e URLs de assinatura upstream são cifrados, e a tabela de revogação de links curtos é criada. Faça backup do banco antes de atualizar; um rollback também deve restaurar o banco anterior, pois um binário antigo não consegue ler o novo e todas as assinaturas retornarão 404.
+
 ### 2.9 Arquivo de ambiente (.env)
 
 O `.env` completo é **gerado pelo assistente de configuração** quando a configuração é salva (DSN do banco de dados, diretório de dados, segredos, portas, domínios).
@@ -393,12 +395,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Variável | Descrição |
 |----------|-------------|
 | `JWT_SECRET` | Chave de assinatura para tokens de login; gerado na primeira partida quando falta |
-| `CF_SECRET_ENCRYPTION_KEY` | Chave para criptografar configurações confidenciais (AES-256-GCM); gerado quando falta |
+| `CF_SECRET_ENCRYPTION_KEY` | Chave para cifrar configurações sensíveis e credenciais de assinatura (AES-256-GCM); gerada se ausente |
 | `CF_INITIAL_ADMIN_PASSWORD` | Senha de administrador inicial (opcional; aleatória e impressa uma vez por padrão) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Defina como `0` para desabilitar a contabilidade de tráfego baseada em iptables (habilitada por padrão) |
 | `CF_NETWORK_TRAFFIC_TABLE` | tabela iptables usada para contabilidade de tráfego, padrão `corefusion` |
 
 > **A chave de criptografia reside em `.env.secret`**: na primeira inicialização, `CF_SECRET_ENCRYPTION_KEY` é gravado em `.env.secret` (0600, mesmo diretório de `.env`) em vez de `.env`; uma chave legada em `.env` é migrada automaticamente. Faça backup deste arquivo separadamente – perdê-lo torna cada valor `enc:` indescriptografável.
+>
+> A partir da v0.14.4, `subscriptions.token`, códigos curtos e histórico de rotação, e `external_node_sources.source_url` também usam esta chave: tokens/URLs são exibidos a partir do cifrado AES-256-GCM e a busca de links curtos usa uma impressão HMAC-SHA256. Se a chave for perdida, essas credenciais também não poderão ser decifradas nem correspondidas.
 
 > Proxies reversos confiáveis ​​para resolver IPs de clientes reais não são mais configurados por meio de variáveis ​​de ambiente;
 > eles são armazenados como `panel.trusted_proxies` em **Configurações → Rede**.
@@ -497,7 +501,7 @@ não encontrará o banco de dados e os certificados existentes.
 #### Etapa 3: chaves de criptografia
 
 - `JWT_SECRET`: assina tokens de login.
-- `CF_SECRET_ENCRYPTION_KEY`: criptografa configurações confidenciais (senha do banco de dados, credenciais DNS, cartões de recarga, etc.).
+- `CF_SECRET_ENCRYPTION_KEY`: cifra configurações sensíveis (senha do banco, credenciais DNS de certificados, cartões de recarga etc.) e tokens de assinatura / códigos curtos / histórico de rotação / URLs de assinatura upstream.
 - Ambos são gerados aleatoriamente por padrão; use “Regenerar” para obter novos valores. **Alterar `CF_SECRET_ENCRYPTION_KEY` torna os dados criptografados anteriormente ilegíveis** — faça backup deles.
 
 #### Etapa 4: núcleos
@@ -1198,7 +1202,7 @@ Notas:
 | Habilitado | Endpoints desabilitados são ignorados ao criar links |
 | Descrição | Nota de texto livre |
 
-- **Várias linhas (vários domínios)** são suportadas; quando vários estão habilitados, o domínio do provedor segue o domínio usado pela solicitação atual (ver 9.4);
+- **Várias linhas (vários domínios)** são suportadas; quando vários estão habilitados, o domínio do provedor segue o domínio usado pela solicitação atual (ver 9.5);
 - Uma porta de assinatura dedicada atende na raiz (`/<token>`, sem `/sub`); ao compartilhar a porta do painel é `/sub/<token>`;
 - Os proxies reversos devem encaminhar `X-Forwarded-Proto`/`X-Forwarded-Host`, caso contrário, o primeiro endpoint habilitado será usado. Os modelos de site Caddy/Nginx gerados pelo painel incluem ambos os cabeçalhos; configurações de proxy mantidas manualmente precisam ser adicionadas manualmente.
 
@@ -1228,7 +1232,23 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Modo Multidomínio e Provedor
+### 9.4 Links curtos de assinatura (opcional)
+
+O botão «Link curto» de cada linha de assinatura gera um código aleatório de 20 caracteres:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Links curtos retornam o conteúdo da assinatura diretamente (sem 302) e usam a mesma autorização dos links longos: assinatura revogada/suspensa/expirada, cliente banido, rotação de token ou link desativado/expirado falham imediatamente.
+- O link fixa formato / configuração / plataforma / providers, então o cliente não precisa mais acrescentar `?format=&config=`; ao criar, desative «bloquear parâmetros» para permitir substituições por `?format=`.
+- O portal e os detalhes do cliente priorizam links curtos. A chave global fica em Configurações → Painel → Links curtos de assinatura; desligada, todos os links curtos retornam 404 e os longos continuam funcionando. Os logs de acesso registram `access_type=short_link` e `short_link_id`.
+- Os links exibidos no portal/detalhes do cliente são gerados por cada combinação visível «formato × configuração (× providers)», sem nunca surgir um «link curto + parâmetros».
+- Links curtos `mihomo_yaml` exigem uma configuração: como no sing-box / Xray, os links só são gerados a partir de configurações reais em «Formatos de assinatura»; links Mihomo sem configuração não são mais gerados, abrir a janela «Links curtos» limpa os existentes, e criar/atualizar manualmente sem configuração é recusado.
+- Códigos curtos nunca são armazenados em texto claro: o banco mantém apenas um cifrado AES-256-GCM aleatório (para exibir a URL completa) e uma impressão HMAC-SHA256 (para busca por igualdade); códigos rotacionados/excluídos vão para uma tabela de revogação e não podem mais ser resolvidos.
+
+### 9.5 Modo Multidomínio e Provedor
 
 Com `providers=1`, cada entrada `proxy-providers` aponta de volta para o terminal da assinatura. Seleção de domínio:
 

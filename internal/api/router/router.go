@@ -1384,6 +1384,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 		subEndpointRepo,
 		systemSettingRepo,
 	)
+	shortLinkSvcInst.SetRevocationRepository(repository.NewSubscriptionShortLinkRevocationRepository(database))
 	publicSubH.SetShortLinkService(shortLinkSvcInst)
 	subSvc.SetShortLinkHook(shortLinkSvcInst)
 	clientauthSvcInst.SetShortLinkService(shortLinkSvcInst)

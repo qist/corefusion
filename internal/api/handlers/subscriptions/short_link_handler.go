@@ -98,6 +98,8 @@ func (h *ShortLinkHandler) ListBySubscription(c *gin.Context) {
 		response.NotFound(c, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
 		return
 	}
+	// 无配置的 mihomo_yaml 短链打开只有 proxies（没有规则），先清理掉。
+	h.shortSvc.PurgeUnconfiguredMihomo(c.Request.Context(), subID)
 	// expand=1：按「格式 × 配置」幂等补齐并返回完整组合，
 	// 客户端详情直接用 url，不再自己拼 ?format=&config=。
 	var links []entity.SubscriptionShortLink
@@ -242,6 +244,10 @@ func (h *ShortLinkHandler) Update(c *gin.Context) {
 		link.ExpiresAt = nil
 	} else if req.ExpiresAt != nil {
 		link.ExpiresAt = req.ExpiresAt
+	}
+	if err := shortlinkSvc.ValidateConfigTarget(link.Format, link.MihomoConfigID, link.ConfigName, link.Platform); err != nil {
+		response.BadRequest(c, "INVALID_CONFIG_TARGET", err.Error())
+		return
 	}
 	if err := h.shortSvc.Update(c.Request.Context(), link); err != nil {
 		response.InternalError(c, "UPDATE_SHORT_LINK_FAILED", err.Error())

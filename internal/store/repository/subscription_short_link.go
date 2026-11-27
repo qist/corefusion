@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 )
 
 // SubscriptionShortLinkRepository handles subscription short link persistence.
@@ -30,18 +32,45 @@ func (r *SubscriptionShortLinkRepository) GetByID(ctx context.Context, id int64)
 	return &link, nil
 }
 
+// GetByCode 按短码查；查询走 code_hmac 指纹，不按密文/明文等值匹配。
+// 查不到时回退旧格式（确定性密文/明文），命中后回填指纹并升级为随机密文。
 func (r *SubscriptionShortLinkRepository) GetByCode(ctx context.Context, code string) (*entity.SubscriptionShortLink, error) {
 	var link entity.SubscriptionShortLink
-	if err := r.db.WithContext(ctx).Where("code = ?", code).First(&link).Error; err != nil {
+	fp, err := crypto.FingerprintSecret(code)
+	if err != nil {
 		return nil, err
 	}
+	err = r.db.WithContext(ctx).Where("code_hmac = ?", fp).First(&link).Error
+	if err == nil {
+		return &link, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	legacy, err := crypto.EncryptSecretDeterministic(code)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Where("code = ? OR code = ?", legacy, code).First(&link).Error; err != nil {
+		return nil, err
+	}
+	link.Code = code
+	_ = r.Update(ctx, &link)
 	return &link, nil
 }
 
 func (r *SubscriptionShortLinkRepository) CodeExists(ctx context.Context, code string) (bool, error) {
+	fp, err := crypto.FingerprintSecret(code)
+	if err != nil {
+		return false, err
+	}
+	legacy, err := crypto.EncryptSecretDeterministic(code)
+	if err != nil {
+		return false, err
+	}
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&entity.SubscriptionShortLink{}).
-		Where("code = ?", code).Count(&count).Error; err != nil {
+		Where("code_hmac = ? OR code = ? OR code = ?", fp, legacy, code).Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -68,6 +97,18 @@ func (r *SubscriptionShortLinkRepository) DeleteBySubscriptionID(ctx context.Con
 	return r.db.WithContext(ctx).
 		Where("subscription_id = ?", subID).
 		Delete(&entity.SubscriptionShortLink{}).Error
+}
+
+// DeleteUnconfigured 删除某订阅下没有绑定任何配置目标的短链（配置 ID / 名称 / 平台全空）。
+// 目前只用于 mihomo_yaml：无配置时输出只有 proxies，没有 proxy-groups/rules。
+func (r *SubscriptionShortLinkRepository) DeleteUnconfigured(ctx context.Context, subID int64, format string) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("subscription_id = ? AND format = ?", subID, format).
+		Where("(mihomo_config_id IS NULL OR mihomo_config_id = 0)").
+		Where("(config_name IS NULL OR TRIM(config_name) = '')").
+		Where("(platform IS NULL OR TRIM(platform) = '')").
+		Delete(&entity.SubscriptionShortLink{})
+	return res.RowsAffected, res.Error
 }
 
 // SyncTokenVersion 用于 FollowTokenRotation=true 的短链：轮换后同步快照版本。

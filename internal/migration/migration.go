@@ -52,6 +52,7 @@ func Models() []interface{} {
 		&entity.SubscriptionAccessLog{},
 		&entity.SubscriptionRotation{},
 		&entity.SubscriptionShortLink{},
+		&entity.SubscriptionShortLinkRevocation{},
 
 		// Certificates
 		&entity.Certificate{},
@@ -300,6 +301,18 @@ func RunDataMigrations(db *gorm.DB) error {
 	// 存量配置密文化：把 6 张配置表里的明文 config_json / proxy_json 与 WARP 敏感列
 	// 加密为 "enc:" 形式（幂等，只处理不带前缀的存量明文）
 	migrateConfigJSONEncryption(db)
+
+	// 存量订阅凭证密文化：subscriptions.token 与 subscription_rotations 的
+	// old_token/new_token（幂等，只处理不带前缀的存量明文）；短链 code 走
+	// migrateShortLinkCodeFingerprint 的 HMAC 指纹方案。
+	migrateSubscriptionCredentialEncryption(db)
+
+	// 短链 code 改成「HMAC 指纹查询 + 随机密文回显」：给存量行补 code_hmac，
+	// 并把旧的确定性密文/明文重加密成随机 nonce（幂等，code_hmac 已存在的跳过）
+	migrateShortLinkCodeFingerprint(db)
+
+	// 外部订阅源 URL 可能带上游 token：按「原始订阅 URL」策略加密落库（按 ID 查）
+	migrateExternalNodeSourceURLEncryption(db)
 
 	// 把 sing-box 历史端点（存在 core_configs.endpoints 段）迁到 endpoint_configs 表，
 	// 让端点编辑器与运行时配置使用同一份数据（幂等）
@@ -1341,6 +1354,148 @@ func panelMetaInt64(v interface{}) int64 {
 //   - warp_configs 的 token / private_key / license_key / config_json
 //
 // 不覆盖 inbound_services.config_json（另一套「服务」特性，未纳入本次范围）。
+// migrateSubscriptionCredentialEncryption 把存量明文的订阅 token 与轮换历史 token 密文化：
+// subscriptions.token、subscription_rotations 的 old_token/new_token。
+// 幂等：只处理不带 enc: 前缀的行。
+//
+// token 保留在订阅表里（需要回显/拼 URL），落库统一用 EncryptSecretDeterministic：
+// 与配置密文同一把密钥、同一种 enc: 格式，但 nonce 由明文派生，保证同一值密文固定，
+// 订阅请求仍能 WHERE token = ? 精确命中。短链 code 不再走这里（见 fingerprint 迁移）。
+func migrateSubscriptionCredentialEncryption(db *gorm.DB) {
+	type row struct {
+		ID  int64
+		Val string
+	}
+	targets := []struct {
+		table string
+		cols  []string
+	}{
+		{"subscriptions", []string{"token"}},
+		{"subscription_rotations", []string{"old_token", "new_token"}},
+	}
+	for _, t := range targets {
+		for _, col := range t.cols {
+			var rows []row
+			if err := db.Table(t.table).
+				Select("id, " + col + " AS val").
+				Where(col + " IS NOT NULL AND " + col + " != ''").
+				Scan(&rows).Error; err != nil {
+				log.Printf("[migration] credential encryption scan %s.%s failed: %v", t.table, col, err)
+				continue
+			}
+			encrypted := 0
+			for _, r := range rows {
+				if crypto.IsEncrypted(r.Val) {
+					continue
+				}
+				enc, err := crypto.EncryptSecretDeterministic(r.Val)
+				if err != nil {
+					log.Printf("[migration] credential encryption %s.%s#%d failed: %v", t.table, col, r.ID, err)
+					continue
+				}
+				if err := db.Table(t.table).Where("id = ?", r.ID).Update(col, enc).Error; err != nil {
+					log.Printf("[migration] credential encryption write %s.%s#%d failed: %v", t.table, col, r.ID, err)
+					continue
+				}
+				encrypted++
+			}
+			if encrypted > 0 {
+				log.Printf("[migration] encrypted %d plaintext %s.%s values", encrypted, t.table, col)
+			}
+		}
+	}
+}
+
+// migrateShortLinkCodeFingerprint 给存量短链补 code_hmac，并把 code 重加密成随机 nonce。
+// 幂等：code_hmac 已有值的行直接跳过（迁移期间 code 已是随机密文）。
+func migrateShortLinkCodeFingerprint(db *gorm.DB) {
+	type row struct {
+		ID       int64
+		Code     string
+		CodeHMAC string
+	}
+	var rows []row
+	if err := db.Table("subscription_short_links").
+		Select("id, code, code_hmac").
+		Where("code IS NOT NULL AND code != ''").
+		Scan(&rows).Error; err != nil {
+		log.Printf("[migration] short link code fingerprint scan failed: %v", err)
+		return
+	}
+	updated := 0
+	for _, r := range rows {
+		if r.CodeHMAC != "" {
+			continue
+		}
+		plain := r.Code
+		if crypto.IsEncrypted(plain) {
+			p, err := crypto.DecryptSecret(plain)
+			if err != nil {
+				log.Printf("[migration] short link code#%d decrypt failed: %v", r.ID, err)
+				continue
+			}
+			plain = p
+		}
+		fp, err := crypto.FingerprintSecret(plain)
+		if err != nil {
+			log.Printf("[migration] short link code#%d fingerprint failed: %v", r.ID, err)
+			continue
+		}
+		enc, err := crypto.EncryptSecret(plain)
+		if err != nil {
+			log.Printf("[migration] short link code#%d encrypt failed: %v", r.ID, err)
+			continue
+		}
+		if err := db.Table("subscription_short_links").Where("id = ?", r.ID).
+			Updates(map[string]interface{}{"code": enc, "code_hmac": fp}).Error; err != nil {
+			log.Printf("[migration] short link code#%d write failed: %v", r.ID, err)
+			continue
+		}
+		updated++
+	}
+	if updated > 0 {
+		log.Printf("[migration] encrypted+fingerprinted %d short link code values", updated)
+	}
+}
+
+// migrateExternalNodeSourceURLEncryption 把 external_node_sources.source_url
+// （上游原始订阅 URL，可能带 token）从明文改成随机 AES-256-GCM 密文。
+// 按 ID 读取，查询方式不变；幂等，只处理不带 enc: 前缀的行。
+func migrateExternalNodeSourceURLEncryption(db *gorm.DB) {
+	type row struct {
+		ID  int64
+		Val string
+	}
+	var rows []row
+	if err := db.Table("external_node_sources").
+		Select("id, source_url AS val").
+		Where("source_url IS NOT NULL AND source_url != ''").
+		Scan(&rows).Error; err != nil {
+		log.Printf("[migration] external source url scan failed: %v", err)
+		return
+	}
+	updated := 0
+	for _, r := range rows {
+		if crypto.IsEncrypted(r.Val) {
+			continue
+		}
+		enc, err := crypto.EncryptSecret(r.Val)
+		if err != nil {
+			log.Printf("[migration] external source#%d url encrypt failed: %v", r.ID, err)
+			continue
+		}
+		if err := db.Table("external_node_sources").Where("id = ?", r.ID).
+			Update("source_url", enc).Error; err != nil {
+			log.Printf("[migration] external source#%d url write failed: %v", r.ID, err)
+			continue
+		}
+		updated++
+	}
+	if updated > 0 {
+		log.Printf("[migration] encrypted %d external node source urls", updated)
+	}
+}
+
 func migrateConfigJSONEncryption(db *gorm.DB) {
 	type row struct {
 		ID  int64

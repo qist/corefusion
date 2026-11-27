@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -112,6 +113,77 @@ func EncryptSecret(plaintext string) (string, error) {
 		base64.StdEncoding.EncodeToString(nonce),
 		base64.StdEncoding.EncodeToString(ciphertext),
 	), nil
+}
+
+// EncryptSecretDeterministic 与 EncryptSecret 使用同一把密钥、同一种 enc: 格式，
+// 区别只在 nonce 的来源：EncryptSecret 用随机 nonce（同一明文每次密文都不同，
+// 无法做等值查询）；本函数用 HMAC-SHA256(key, "cf-credential-nonce-v1:"+plaintext)
+// 派生 nonce，保证**同一明文得到同一密文**，可以直接 `WHERE token = ?`。
+//
+// 适用场景：本身是唯一随机凭证、又必须按原值精确查询的列（订阅 token、短链 code）。
+// 代价是会泄漏"两条记录的值是否相同"；这些值本身就是唯一的，可接受。
+// 解密仍走 DecryptSecret（格式完全一致）。
+func EncryptSecretDeterministic(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	// 已经是密文时不要二次加密。
+	if IsEncrypted(plaintext) {
+		return plaintext, nil
+	}
+
+	key, err := getKey()
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("failed to create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	// 用主密钥派生一个独立的 nonce 子密钥，避免 AES 与 HMAC 直接复用同一把密钥。
+	subkeyMAC := hmac.New(sha256.New, key)
+	subkeyMAC.Write([]byte("cf-credential-nonce-key-v1"))
+	nonceKey := subkeyMAC.Sum(nil)
+
+	mac := hmac.New(sha256.New, nonceKey)
+	mac.Write([]byte("cf-credential-nonce-v1:"))
+	mac.Write([]byte(plaintext))
+	nonce := mac.Sum(nil)[:gcm.NonceSize()]
+
+	ciphertext := gcm.Seal(nil, nonce, []byte(plaintext), nil)
+	return fmt.Sprintf("%s%s:%s", secretPrefix,
+		base64.StdEncoding.EncodeToString(nonce),
+		base64.StdEncoding.EncodeToString(ciphertext),
+	), nil
+}
+
+// FingerprintSecret 返回凭证的 HMAC-SHA256 指纹（64 位小写 hex）。
+//
+// 用于"只需要等值查询、不需要还原明文"的列（短链 code）：库里只存指纹，
+// 拿到明文时现算指纹再查。密钥由主密钥派生子密钥，不落库、不硬编码。
+// 与随机 nonce 的 EncryptSecret 互补：指纹不可逆，密文可回显。
+func FingerprintSecret(plaintext string) (string, error) {
+	if plaintext == "" {
+		return "", nil
+	}
+	key, err := getKey()
+	if err != nil {
+		return "", err
+	}
+	// 派生独立的指纹子密钥，避免与 AES / 其它 HMAC 用途复用同一把密钥。
+	subkeyMAC := hmac.New(sha256.New, key)
+	subkeyMAC.Write([]byte("cf-credential-fingerprint-key-v1"))
+	subkey := subkeyMAC.Sum(nil)
+
+	mac := hmac.New(sha256.New, subkey)
+	mac.Write([]byte("cf-credential-fingerprint-v1:"))
+	mac.Write([]byte(plaintext))
+	return hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 // CanDecryptWithPrimary 判断一个 `enc:` 密文能否被**当前主密钥**解开

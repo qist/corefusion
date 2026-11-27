@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
 )
@@ -49,6 +50,8 @@ type Service struct {
 	clientRepo   *repository.ClientRepository
 	endpointRepo *repository.SubscriptionEndpointRepository
 	settingRepo  *repository.SystemSettingRepository
+	// revocationRepo 记录已撤销短码的 HMAC 指纹；未接线时为 nil（测试/只读场景）。
+	revocationRepo *repository.SubscriptionShortLinkRevocationRepository
 }
 
 func NewService(
@@ -69,6 +72,11 @@ func NewService(
 		endpointRepo: endpointRepo,
 		settingRepo:  settingRepo,
 	}
+}
+
+// SetRevocationRepository 接线撤销记录仓储（短码删除/轮换时写指纹）。
+func (s *Service) SetRevocationRepository(repo *repository.SubscriptionShortLinkRevocationRepository) {
+	s.revocationRepo = repo
 }
 
 // GetSettings 读取全局开关；未配置时返回默认值。
@@ -176,15 +184,28 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*entity.Subscript
 	}
 
 	configName := strings.TrimSpace(in.ConfigName)
-	if in.MihomoConfigID != nil && *in.MihomoConfigID > 0 {
+	configID := in.MihomoConfigID
+	if configID != nil && *configID > 0 {
 		if s.configRepo == nil {
 			return nil, errors.New("mihomo config repository not configured")
 		}
-		cfg, cerr := s.configRepo.GetByID(ctx, *in.MihomoConfigID)
+		cfg, cerr := s.configRepo.GetByID(ctx, *configID)
 		if cerr != nil || cfg == nil {
-			return nil, fmt.Errorf("mihomo config %d not found", *in.MihomoConfigID)
+			return nil, fmt.Errorf("mihomo config %d not found", *configID)
 		}
 		configName = cfg.Name
+	} else if format == string(formatter.FormatMihomoYAML) && configName != "" {
+		// 手填配置名时按名字定位到 ID：避免改名后链接打开变成「只有 proxies、没有规则」。
+		cfg := s.findConfigByName(ctx, configName, format)
+		if cfg == nil {
+			return nil, fmt.Errorf("mihomo config %q not found", configName)
+		}
+		id := cfg.ID
+		configID = &id
+		configName = cfg.Name
+	}
+	if err := ValidateConfigTarget(format, configID, configName, in.Platform); err != nil {
+		return nil, err
 	}
 
 	code, err := s.generateUniqueCode(ctx)
@@ -196,7 +217,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*entity.Subscript
 		SubscriptionID:      in.SubscriptionID,
 		Code:                code,
 		Format:              format,
-		MihomoConfigID:      in.MihomoConfigID,
+		MihomoConfigID:      configID,
 		ConfigName:          configName,
 		Platform:            strings.TrimSpace(in.Platform),
 		Providers:           in.Providers,
@@ -211,6 +232,60 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*entity.Subscript
 		return nil, err
 	}
 	return link, nil
+}
+
+// ValidateConfigTarget 校验格式所需的配置目标：mihomo_yaml 必须能定位到一份配置
+// （配置 ID / 配置名 / 平台三选一）。没有配置时只能输出 proxies，没有
+// proxy-groups/rules，客户端拿到的不是一份可用的 Clash/Mihomo 配置。
+func ValidateConfigTarget(format string, configID *int64, configName, platform string) error {
+	f, err := NormalizeFormat(format)
+	if err != nil {
+		return err
+	}
+	if f != string(formatter.FormatMihomoYAML) {
+		return nil
+	}
+	if (configID != nil && *configID > 0) ||
+		strings.TrimSpace(configName) != "" ||
+		strings.TrimSpace(platform) != "" {
+		return nil
+	}
+	return errors.New("mihomo_yaml short link requires a config")
+}
+
+func (s *Service) findConfigByName(ctx context.Context, name, format string) *entity.MihomoConfig {
+	if s.configRepo == nil {
+		return nil
+	}
+	configs, err := s.configRepo.ListBrief(ctx)
+	if err != nil {
+		return nil
+	}
+	for i := range configs {
+		cfg := &configs[i]
+		if !cfg.Enabled || cfg.Name != name {
+			continue
+		}
+		cfgFormat, ferr := NormalizeFormat(cfg.Format)
+		if ferr != nil || cfgFormat == "" {
+			cfgFormat = string(formatter.FormatMihomoYAML)
+		}
+		if cfgFormat == format {
+			return cfg
+		}
+	}
+	return nil
+}
+
+// PurgeUnconfiguredMihomo 清理没有绑定配置的 mihomo_yaml 短链。
+// 这类链接打开后只有 proxies（无 proxy-groups/rules），不是可用的客户端配置。
+func (s *Service) PurgeUnconfiguredMihomo(ctx context.Context, subID int64) int64 {
+	removed, err := s.repo.DeleteUnconfigured(ctx, subID, string(formatter.FormatMihomoYAML))
+	if err != nil {
+		log.Printf("[shortlink] purge unconfigured mihomo sub=%d failed: %v", subID, err)
+		return 0
+	}
+	return removed
 }
 
 // AutoCreateForSubscription 在新建订阅后按后台开关补齐全部「格式 × 配置」短链。
@@ -234,8 +309,27 @@ func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionSh
 }
 
 // GetByCode 只按 code 查；是否可用由调用方结合订阅状态判断。
+// 已撤销的短码即使行还在（例如轮换回写失败）也直接拒绝。
 func (s *Service) GetByCode(ctx context.Context, code string) (*entity.SubscriptionShortLink, error) {
-	return s.repo.GetByCode(ctx, strings.ToLower(strings.TrimSpace(code)))
+	code = strings.ToLower(strings.TrimSpace(code))
+	link, err := s.repo.GetByCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if s.revocationRepo != nil {
+		fp, ferr := crypto.FingerprintSecret(code)
+		if ferr != nil {
+			return nil, ferr
+		}
+		revoked, rerr := s.revocationRepo.Exists(ctx, fp)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if revoked {
+			return nil, errors.New("short link code revoked")
+		}
+	}
+	return link, nil
 }
 
 func (s *Service) ListBySubscription(ctx context.Context, subID int64) ([]entity.SubscriptionShortLink, error) {
@@ -247,10 +341,22 @@ func (s *Service) Update(ctx context.Context, link *entity.SubscriptionShortLink
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {
+	// 删除前把短码指纹写进撤销表，防止同码在删除后被重新签发。
+	if link, err := s.repo.GetByID(ctx, id); err == nil {
+		s.revokeCode(ctx, link, "delete", 0)
+	}
 	return s.repo.Delete(ctx, id)
 }
 
 func (s *Service) DeleteBySubscription(ctx context.Context, subID int64) error {
+	// 订阅删除时短链一起删；顺手把每条短码指纹写入撤销表。
+	if s.revocationRepo != nil {
+		if links, err := s.repo.ListBySubscription(ctx, subID); err == nil {
+			for i := range links {
+				s.revokeCode(ctx, &links[i], "subscription_deleted", 0)
+			}
+		}
+	}
 	return s.repo.DeleteBySubscriptionID(ctx, subID)
 }
 
@@ -268,6 +374,8 @@ func (s *Service) RotateCode(ctx context.Context, id int64) (*entity.Subscriptio
 	if err != nil {
 		return nil, err
 	}
+	// 旧 code 进入撤销表：轮换后即使有人拿到旧地址也不能再解析。
+	s.revokeCode(ctx, link, "rotate", 0)
 	code, err := s.generateUniqueCode(ctx)
 	if err != nil {
 		return nil, err
@@ -277,6 +385,26 @@ func (s *Service) RotateCode(ctx context.Context, id int64) (*entity.Subscriptio
 		return nil, err
 	}
 	return link, nil
+}
+
+// revokeCode 记录短码指纹；没有接线撤销仓储时静默跳过。
+func (s *Service) revokeCode(ctx context.Context, link *entity.SubscriptionShortLink, reason string, by int64) {
+	if s.revocationRepo == nil || link == nil || link.Code == "" {
+		return
+	}
+	fp, err := crypto.FingerprintSecret(link.Code)
+	if err != nil {
+		log.Printf("[shortlink] fingerprint code id=%d failed: %v", link.ID, err)
+		return
+	}
+	if err := s.revocationRepo.Create(ctx, &entity.SubscriptionShortLinkRevocation{
+		CodeHMAC:  fp,
+		Reason:    reason,
+		RevokedBy: by,
+		RevokedAt: time.Now(),
+	}); err != nil {
+		log.Printf("[shortlink] record revocation id=%d failed: %v", link.ID, err)
+	}
 }
 
 // Backfill 为存量 active 订阅补建默认短链（幂等）。
@@ -436,7 +564,7 @@ func (s *Service) combosForSubscription(ctx context.Context, sub *entity.Subscri
 	add(Combo{Format: string(formatter.FormatRawURI)})
 
 	// 与门户 / 客户详情的展示口径保持一致：有 Mihomo 配置的格式只出「配置链接」，
-	// 和同名订阅格式去重；没有配置的 sing-box / xray 不再凭空多出一条无配置链接。
+	// 和同名订阅格式去重；没有配置的 sing-box / xray / mihomo_yaml 不再凭空多出一条空链接。
 	configNames := map[string]bool{}
 	if s.configRepo != nil {
 		configs, err := s.configRepo.ListBrief(ctx)
@@ -482,11 +610,13 @@ func (s *Service) combosForSubscription(ctx context.Context, sub *entity.Subscri
 				if configNames[format+"|"+strings.TrimSpace(f.Name)] {
 					continue
 				}
-				// sing-box / Xray 的链接必须绑定一份该格式的配置（订阅格式里的
-				// "Sing-Box/V2Ray JSON" 只是分类元数据，不能单独生成链接）。
+				// sing-box / Xray / mihomo_yaml 的链接必须绑定一份该格式的配置
+				// （订阅格式里的 "Sing-Box/V2Ray JSON" 只是分类元数据；mihomo_yaml
+				// 无配置只能输出 proxies，没有 proxy-groups/rules）。
 				// 配置链接已在上面的 mihomo_configs 循环里生成，这里一律跳过。
 				if format == string(formatter.FormatSingBoxJSON) ||
-					format == string(formatter.FormatXrayJSON) {
+					format == string(formatter.FormatXrayJSON) ||
+					format == string(formatter.FormatMihomoYAML) {
 					continue
 				}
 				add(Combo{Format: format})
@@ -494,7 +624,8 @@ func (s *Service) combosForSubscription(ctx context.Context, sub *entity.Subscri
 		}
 	}
 
-	// 订阅默认格式：确保 DefaultURL 仍能选中它（配置可能已被删，退化为无配置）。
+	// 订阅默认格式：确保 DefaultURL 仍能选中它。
+	// mihomo_yaml 没有配置时不再退化出一条「只有 proxies、没有规则」的链接。
 	defaultCombo := Combo{Format: sub.Format}
 	if sub.MihomoConfigID != nil {
 		id := *sub.MihomoConfigID
@@ -506,7 +637,9 @@ func (s *Service) combosForSubscription(ctx context.Context, sub *entity.Subscri
 			}
 		}
 	}
-	add(defaultCombo)
+	if f, _ := NormalizeFormat(defaultCombo.Format); f != string(formatter.FormatMihomoYAML) || defaultCombo.ConfigID != nil {
+		add(defaultCombo)
+	}
 
 	return combos
 }
@@ -607,9 +740,23 @@ func (s *Service) generateUniqueCode(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if !exists {
-			return code, nil
+		if exists {
+			continue
 		}
+		if s.revocationRepo != nil {
+			fp, ferr := crypto.FingerprintSecret(code)
+			if ferr != nil {
+				return "", ferr
+			}
+			revoked, rerr := s.revocationRepo.Exists(ctx, fp)
+			if rerr != nil {
+				return "", rerr
+			}
+			if revoked {
+				continue
+			}
+		}
+		return code, nil
 	}
 	return "", errors.New("failed to allocate unique short link code")
 }

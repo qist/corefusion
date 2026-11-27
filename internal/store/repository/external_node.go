@@ -21,6 +21,11 @@ func NewExternalNodeSourceRepository(db *gorm.DB) *ExternalNodeSourceRepository 
 func (r *ExternalNodeSourceRepository) List(ctx context.Context) ([]entity.ExternalNodeSource, error) {
 	var sources []entity.ExternalNodeSource
 	err := r.db.WithContext(ctx).Order("sort_order, id").Find(&sources).Error
+	if err == nil {
+		for i := range sources {
+			sources[i].SourceURL = DecryptConfigJSON(sources[i].SourceURL)
+		}
+	}
 	return sources, err
 }
 
@@ -30,18 +35,33 @@ func (r *ExternalNodeSourceRepository) GetByID(ctx context.Context, id int64) (*
 	if err != nil {
 		return nil, err
 	}
+	source.SourceURL = DecryptConfigJSON(source.SourceURL)
 	return &source, nil
 }
 
 func (r *ExternalNodeSourceRepository) Create(ctx context.Context, source *entity.ExternalNodeSource) error {
-	source.CreatedAt = time.Now()
-	source.UpdatedAt = time.Now()
-	return r.db.WithContext(ctx).Create(source).Error
+	stored := *source
+	stored.SourceURL = EncryptConfigField(stored.SourceURL)
+	stored.CreatedAt = time.Now()
+	stored.UpdatedAt = stored.CreatedAt
+	if err := r.db.WithContext(ctx).Create(&stored).Error; err != nil {
+		return err
+	}
+	source.ID = stored.ID
+	source.CreatedAt = stored.CreatedAt
+	source.UpdatedAt = stored.UpdatedAt
+	return nil
 }
 
 func (r *ExternalNodeSourceRepository) Update(ctx context.Context, source *entity.ExternalNodeSource) error {
-	source.UpdatedAt = time.Now()
-	return r.db.WithContext(ctx).Save(source).Error
+	stored := *source
+	stored.SourceURL = EncryptConfigField(stored.SourceURL)
+	stored.UpdatedAt = time.Now()
+	if err := r.db.WithContext(ctx).Save(&stored).Error; err != nil {
+		return err
+	}
+	source.UpdatedAt = stored.UpdatedAt
+	return nil
 }
 
 func (r *ExternalNodeSourceRepository) Delete(ctx context.Context, id int64) error {

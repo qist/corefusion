@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 )
 
 // SubscriptionRepository handles subscription database operations.
@@ -53,12 +54,27 @@ func (r *SubscriptionRepository) FindByIDs(ctx context.Context, ids []int64) (ma
 }
 
 // GetByToken retrieves a subscription by token.
+//
+// token 落库是确定性密文（EncryptSecretDeterministic），这里先把入参转成同样的
+// 密文再查；查不到时回退明文匹配，命中后顺手加密回写（存量懒迁移）。
 func (r *SubscriptionRepository) GetByToken(ctx context.Context, token string) (*entity.Subscription, error) {
 	var sub entity.Subscription
-	err := r.db.WithContext(ctx).Where("token = ?", token).First(&sub).Error
+	stored, err := crypto.EncryptSecretDeterministic(token)
 	if err != nil {
 		return nil, err
 	}
+	err = r.db.WithContext(ctx).Where("token = ?", stored).First(&sub).Error
+	if err == nil {
+		return &sub, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	// 存量明文行：本次按明文命中，随后加密回写（失败不影响本次请求）。
+	if err := r.db.WithContext(ctx).Where("token = ?", token).First(&sub).Error; err != nil {
+		return nil, err
+	}
+	_ = r.Update(ctx, &sub)
 	return &sub, nil
 }
 

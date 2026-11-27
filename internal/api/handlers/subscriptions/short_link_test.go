@@ -237,7 +237,8 @@ func TestShortLinkDisabledLinkReturns404(t *testing.T) {
 // Provider 回源地址必须继续用短码，不能把真实 token 写进订阅响应。
 func TestShortLinkProviderURLDoesNotLeakToken(t *testing.T) {
 	env := newShortLinkTestEnv(t)
-	link := env.createLink(t, "mihomo_yaml")
+	// provider 回源地址只依赖短码，与短链格式无关；mihomo_yaml 现在必须绑配置。
+	link := env.createLink(t, "base64_uri")
 	env.enable(t, true)
 
 	w := httptest.NewRecorder()

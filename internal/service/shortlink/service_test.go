@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 
 	"corefusion/internal/model/entity"
+	"corefusion/internal/security/crypto"
 	"corefusion/internal/store/repository"
 )
 
@@ -259,6 +260,7 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.Subscription{},
 		&entity.SubscriptionShortLink{},
+		&entity.SubscriptionShortLinkRevocation{},
 		&entity.SubscriptionEndpoint{},
 		&entity.SystemSetting{},
 		&entity.MihomoConfig{},
@@ -310,5 +312,148 @@ func TestBackfillCreatesAllCombos(t *testing.T) {
 	links, _ := svc.ListBySubscription(context.Background(), sub.ID)
 	if len(links) != 2 {
 		t.Fatalf("backfill 后应有 base64+raw 两条，得到 %d", len(links))
+	}
+}
+
+// mihomo_yaml 没有配置时不生成短链：这类链接只有 proxies，没有 proxy-groups/rules。
+func TestEnsureLinksSkipsUnconfiguredMihomo(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	configRepo := repository.NewMihomoConfigRepository(db)
+	fmtRepo := repository.NewSubscriptionFormatRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+
+	if err := fmtRepo.Create(context.Background(), &entity.SubscriptionFormat{
+		Name: "Mihomo", ClientType: "clash", Format: "mihomo_yaml", Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sub := &entity.Subscription{
+		ClientID: 0, Format: "mihomo_yaml",
+		Token: "tok-nocfg", TokenVersion: 1, Status: "active",
+		SecurityMode: "token_only", BindMode: "none", QuotaState: "normal",
+	}
+	if err := subRepo.Create(context.Background(), sub); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(linkRepo, subRepo, configRepo, fmtRepo, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	if err := svc.SaveSettings(context.Background(), Settings{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	links, err := svc.EnsureLinks(context.Background(), sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range links {
+		if l.Format == "mihomo_yaml" {
+			t.Fatalf("无配置的 mihomo_yaml 不应生成短链：%+v", l)
+		}
+	}
+	if _, err := svc.Create(context.Background(), CreateInput{
+		SubscriptionID: sub.ID, Format: "mihomo_yaml",
+	}); err == nil {
+		t.Fatal("无配置的 mihomo_yaml 应拒绝创建")
+	}
+}
+
+// 存量无配置 mihomo_yaml 链接要清理；带平台/配置名或其它格式的保留。
+func TestPurgeUnconfiguredMihomo(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+
+	sub := &entity.Subscription{
+		ClientID: 0, Format: "base64_uri",
+		Token: "tok-purge", TokenVersion: 1, Status: "active",
+		SecurityMode: "token_only", BindMode: "none", QuotaState: "normal",
+	}
+	if err := subRepo.Create(context.Background(), sub); err != nil {
+		t.Fatal(err)
+	}
+	rows := []*entity.SubscriptionShortLink{
+		{SubscriptionID: sub.ID, Code: "empty-mihomo", Format: "mihomo_yaml", Enabled: true},
+		{SubscriptionID: sub.ID, Code: "platform-mihomo", Format: "mihomo_yaml", Platform: "win", Enabled: true},
+		{SubscriptionID: sub.ID, Code: "named-mihomo", Format: "mihomo_yaml", ConfigName: "out", Enabled: true},
+		{SubscriptionID: sub.ID, Code: "proxies-only", Format: "mihomo_proxies", Enabled: true},
+		{SubscriptionID: sub.ID, Code: "base64-only", Format: "base64_uri", Enabled: true},
+	}
+	for _, row := range rows {
+		if err := linkRepo.Create(context.Background(), row); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	svc := NewService(linkRepo, subRepo, nil, nil, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	if removed := svc.PurgeUnconfiguredMihomo(context.Background(), sub.ID); removed != 1 {
+		t.Fatalf("应只清理 1 条无配置 mihomo_yaml，实际 %d", removed)
+	}
+	left, err := linkRepo.ListBySubscription(context.Background(), sub.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != len(rows)-1 {
+		t.Fatalf("清理后应剩 %d 条，实际 %d", len(rows)-1, len(left))
+	}
+	for _, l := range left {
+		if l.Code == "empty-mihomo" {
+			t.Fatal("无配置 mihomo_yaml 未被清理")
+		}
+	}
+}
+
+// 轮换/删除都要把旧短码的 HMAC 指纹写进撤销表（删除后不得复用）。
+func TestRevocationOnRotateAndDelete(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	revRepo := repository.NewSubscriptionShortLinkRevocationRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+	svc := NewService(linkRepo, subRepo, nil, nil, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	svc.SetRevocationRepository(revRepo)
+	ctx := context.Background()
+
+	sub := &entity.Subscription{
+		ClientID: 0, Format: "base64_uri", Token: "tok-revoke",
+		TokenVersion: 1, Status: "active",
+		SecurityMode: "token_only", BindMode: "none", QuotaState: "normal",
+	}
+	if err := subRepo.Create(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	link, err := svc.Create(ctx, CreateInput{SubscriptionID: sub.ID, Format: "base64_uri"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldFP, err := crypto.FingerprintSecret(link.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rotated, err := svc.RotateCode(ctx, link.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.Code == link.Code {
+		t.Fatal("轮换后 code 未变化")
+	}
+	if revoked, err := revRepo.Exists(ctx, oldFP); err != nil || !revoked {
+		t.Fatalf("轮换后旧 code 未撤销：revoked=%v err=%v", revoked, err)
+	}
+
+	newFP, err := crypto.FingerprintSecret(rotated.Code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Delete(ctx, rotated.ID); err != nil {
+		t.Fatal(err)
+	}
+	if revoked, err := revRepo.Exists(ctx, newFP); err != nil || !revoked {
+		t.Fatalf("删除后 code 未撤销：revoked=%v err=%v", revoked, err)
 	}
 }

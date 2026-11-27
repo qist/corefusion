@@ -1,6 +1,13 @@
 package entity
 
-import "time"
+import (
+	"log"
+	"time"
+
+	"gorm.io/gorm"
+
+	"corefusion/internal/security/crypto"
+)
 
 // Subscription is the GORM model for the subscriptions table.
 type Subscription struct {
@@ -8,7 +15,7 @@ type Subscription struct {
 	ClientID                int64      `json:"client_id" gorm:"index;not null"`
 	MihomoConfigID          *int64     `json:"mihomo_config_id" gorm:"index"` // Associated mihomo config
 	Format                  string     `json:"format" gorm:"size:32;not null"`
-	Token                   string     `json:"token" gorm:"size:128;uniqueIndex;not null"`
+	Token                   string     `json:"token" gorm:"size:255;uniqueIndex;not null"`
 	TokenVersion            int        `json:"token_version" gorm:"not null;default:1"`
 	Status                  string     `json:"status" gorm:"size:32;not null;default:active"`
 	SecurityMode            string     `json:"security_mode" gorm:"size:32;not null;default:token_only"`
@@ -41,9 +48,50 @@ type Subscription struct {
 	NodeSelectionAt  *time.Time `json:"node_selection_at"`
 	CreatedAt        time.Time  `json:"created_at" gorm:"not null"`
 	UpdatedAt        time.Time  `json:"updated_at" gorm:"not null"`
+
+	// tokenPlain 仅在 BeforeSave → AfterSave 之间暂存明文，
+	// 保证落库时是密文、返回给调用方的仍是明文 token。
+	tokenPlain string `gorm:"-" json:"-"`
 }
 
 func (Subscription) TableName() string { return "subscriptions" }
+
+// BeforeSave 把 token 以确定性密文落库（同一 token 密文固定，支持 WHERE token = ?）。
+func (s *Subscription) BeforeSave(*gorm.DB) error {
+	if s.Token == "" || crypto.IsEncrypted(s.Token) {
+		return nil
+	}
+	enc, err := crypto.EncryptSecretDeterministic(s.Token)
+	if err != nil {
+		return err
+	}
+	s.tokenPlain = s.Token
+	s.Token = enc
+	return nil
+}
+
+// AfterSave 把内存里的 token 还原成明文（Create/Save 的调用方还要用它拼订阅地址）。
+func (s *Subscription) AfterSave(*gorm.DB) error {
+	if s.tokenPlain != "" {
+		s.Token = s.tokenPlain
+		s.tokenPlain = ""
+	}
+	return nil
+}
+
+// AfterFind 把库里的密文 token 解回明文；存量明文原样返回。
+func (s *Subscription) AfterFind(*gorm.DB) error {
+	if !crypto.IsEncrypted(s.Token) {
+		return nil
+	}
+	plain, err := crypto.DecryptSecret(s.Token)
+	if err != nil {
+		log.Printf("[entity] decrypt subscription token failed: %v", err)
+		return nil
+	}
+	s.Token = plain
+	return nil
+}
 
 // SubscriptionAccessLog is the GORM model for subscription access logs.
 type SubscriptionAccessLog struct {
@@ -68,14 +116,68 @@ func (SubscriptionAccessLog) TableName() string { return "subscription_access_lo
 type SubscriptionRotation struct {
 	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	SubscriptionID int64     `json:"subscription_id" gorm:"index:idx_sub_rotations_sub_time,priority:1;not null"`
-	OldToken       string    `json:"old_token" gorm:"size:128;not null"`
-	NewToken       string    `json:"new_token" gorm:"size:128;not null"`
+	OldToken       string    `json:"old_token" gorm:"size:255;not null"`
+	NewToken       string    `json:"new_token" gorm:"size:255;not null"`
 	RotatedBy      int64     `json:"rotated_by" gorm:"not null"`
 	Reason         string    `json:"reason" gorm:"size:255"`
 	CreatedAt      time.Time `json:"created_at" gorm:"index:idx_sub_rotations_sub_time,priority:2;not null"`
+
+	oldTokenPlain string `gorm:"-" json:"-"`
+	newTokenPlain string `gorm:"-" json:"-"`
 }
 
 func (SubscriptionRotation) TableName() string { return "subscription_rotations" }
+
+// BeforeSave 加密轮换前后的 token（历史记录同样不能明文落库）。
+func (r *SubscriptionRotation) BeforeSave(*gorm.DB) error {
+	if r.OldToken != "" && !crypto.IsEncrypted(r.OldToken) {
+		enc, err := crypto.EncryptSecretDeterministic(r.OldToken)
+		if err != nil {
+			return err
+		}
+		r.oldTokenPlain = r.OldToken
+		r.OldToken = enc
+	}
+	if r.NewToken != "" && !crypto.IsEncrypted(r.NewToken) {
+		enc, err := crypto.EncryptSecretDeterministic(r.NewToken)
+		if err != nil {
+			return err
+		}
+		r.newTokenPlain = r.NewToken
+		r.NewToken = enc
+	}
+	return nil
+}
+
+func (r *SubscriptionRotation) AfterSave(*gorm.DB) error {
+	if r.oldTokenPlain != "" {
+		r.OldToken = r.oldTokenPlain
+		r.oldTokenPlain = ""
+	}
+	if r.newTokenPlain != "" {
+		r.NewToken = r.newTokenPlain
+		r.newTokenPlain = ""
+	}
+	return nil
+}
+
+func (r *SubscriptionRotation) AfterFind(*gorm.DB) error {
+	if crypto.IsEncrypted(r.OldToken) {
+		if plain, err := crypto.DecryptSecret(r.OldToken); err == nil {
+			r.OldToken = plain
+		} else {
+			log.Printf("[entity] decrypt rotation old_token failed: %v", err)
+		}
+	}
+	if crypto.IsEncrypted(r.NewToken) {
+		if plain, err := crypto.DecryptSecret(r.NewToken); err == nil {
+			r.NewToken = plain
+		} else {
+			log.Printf("[entity] decrypt rotation new_token failed: %v", err)
+		}
+	}
+	return nil
+}
 
 // ⚠ 保留但**未接线**（2026-09-23 完成度体检）：
 // 全仓只有 AutoMigrate 登记过它，没有任何仓储 / 服务 / handler 读写（实测表内 0 行）。

@@ -149,7 +149,7 @@
     </el-tabs>
 
     <!-- Format Dialog -->
-    <el-dialog v-model="fmtDialog" :title="editingFormat?t('subfmt.edit'):t('subfmt.create')" width="700">
+    <el-dialog v-model="fmtDialog" :title="editingFormat?t('subfmt.edit'):t('subfmt.create')" width="700" destroy-on-close>
       <el-tabs v-model="fmtTab">
         <el-tab-pane :label="t('subfmt.basic')" name="basic">
           <el-form :model="fmtForm" label-width="100px">

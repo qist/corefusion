@@ -724,7 +724,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQueryState } from '../../../composables/useQueryState'
 
@@ -750,17 +750,27 @@ function emitModel() {
 }
 
 const tab = useQueryState('mtab', 'basic')
-const ruleProvidersList = ref(Object.entries(props.ruleProviders || {}).map(([name, rp]) => ({
-  name,
-  type: rp.type || 'http',
-  behavior: rp.behavior || 'domain',
-  format: rp.format || 'yaml',
-  url: rp.url || '',
-  path: rp.path || '',
-  proxy: rp.proxy || 'DIRECT',
-  pathInBundle: rp['path-in-bundle'] || '',
-  interval: rp.interval || 86400
-})))
+// 组件可能在同一个弹窗里被复用（编辑另一份配置），props 变了必须重建本地列表，
+// 否则会一直显示上一次打开的那份配置（要刷新页面才恢复）。
+function mapRuleProviders(src) {
+  return Object.entries(src || {}).map(([name, rp]) => ({
+    name,
+    type: rp.type || 'http',
+    behavior: rp.behavior || 'domain',
+    format: rp.format || 'yaml',
+    url: rp.url || '',
+    path: rp.path || '',
+    proxy: rp.proxy || 'DIRECT',
+    pathInBundle: rp['path-in-bundle'] || '',
+    interval: rp.interval || 86400
+  }))
+}
+const ruleProvidersList = ref(mapRuleProviders(props.ruleProviders))
+watch(() => props.ruleProviders, (val) => {
+  const next = mapRuleProviders(val)
+  if (JSON.stringify(next) === JSON.stringify(ruleProvidersList.value)) return
+  ruleProvidersList.value = next
+}, { deep: true })
 
 // Sync ruleProvidersList to ruleProviders object
 function syncRuleProviders() {

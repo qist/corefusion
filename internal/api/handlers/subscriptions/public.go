@@ -2911,7 +2911,10 @@ func formatYAMLString(s string) string {
 	if s == "" {
 		return "\"\""
 	}
-	if s == "true" || s == "false" || s == "null" || s == "~" {
+	// YAML 1.1 把这些字符串当布尔/空值：find-process-mode: off 会被解析成 false，
+	// mihomo 直接报 invalid find process mode。统一加引号。
+	switch strings.ToLower(s) {
+	case "true", "false", "null", "~", "y", "n", "yes", "no", "on", "off", ".inf", "-.inf", ".nan":
 		return "\"" + s + "\""
 	}
 	// Quote if contains special YAML characters or could be ambiguous

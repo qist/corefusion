@@ -1552,3 +1552,17 @@ func TestFindClientByEmailRealWorldHkTestTagRename(t *testing.T) {
 		t.Fatalf("凭据错误: %v", got)
 	}
 }
+
+// YAML 1.1 的布尔字面量必须加引号，否则 find-process-mode: off 会变成 false。
+func TestFormatYAMLStringQuotesYAMLBools(t *testing.T) {
+	for _, v := range []string{"off", "on", "yes", "no", "y", "n", "Off", "TRUE", "null", "~"} {
+		if got := formatYAMLString(v); got != `"`+v+`"` {
+			t.Errorf("formatYAMLString(%q) = %q, want quoted", v, got)
+		}
+	}
+	for _, v := range []string{"strict", "always", "rule", "info"} {
+		if got := formatYAMLString(v); got != v {
+			t.Errorf("formatYAMLString(%q) = %q, want unquoted", v, got)
+		}
+	}
+}

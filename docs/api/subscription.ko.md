@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: ko | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: ko | updated: 2026-11-27 -->
 # 구독 API(공개)
 
 > 언어: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · 한국어 · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | 메인 패널 | `GET https://<panel-domain>/sub/<token>` |
 | 전용 구독 포트 | `GET https://<sub-domain>:<port>/<token>`(`/sub` 접두사 없음) |
+| 단축 링크 | `GET https://<sub-domain>/<20-char code>` (형식/구성이 고정되며 `format=&config=`가 있는 긴 URL과 동일) |
 
 `<token>`는 관리자 측에서 생성된 구독의 고유 액세스 토큰입니다(포털의 "내 구독" 아래에 표시됨).
+
+단축 링크(선택)는 관리자가 구독별로 생성합니다. 20자리 임의 코드를 경로 세그먼트로 사용하며 긴 URL과 완전히 동일한 본문을 반환하고 형식/구성/플랫폼/providers가 고정됩니다. 비활성화되었거나 만료된 단축 링크는 404를 반환하며 긴 URL에는 영향을 주지 않습니다. `mihomo_yaml` 단축 링크는 구성을 반드시 바인딩해야 하며, 구성 없는 Mihomo 링크는 생성되지 않습니다(관리자가 "단축 링크"를 열면 기존 링크가 정리됨). 데이터베이스에는 임의 AES-256-GCM 암호문과 HMAC-SHA256 지문만 저장되며, 회전/삭제된 이전 코드는 폐기 테이블에 기록되어 재사용할 수 없습니다.
 
 ## 2. 쿼리 매개변수
 

@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: en | updated: 2026-11-12 -->
+<!-- source: subscription.md | locale: en | updated: 2026-11-27 -->
 # Subscription API (public)
 
 > Languages: [简体中文](subscription.md) · English · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)

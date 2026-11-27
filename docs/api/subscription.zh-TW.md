@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: zh-TW | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: zh-TW | updated: 2026-11-27 -->
 # 訂閱API（公開）
 
 > 語言： [简体中文](subscription.md) · [English](subscription.en.md) · 繁體中文 · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | 主面板 | `GET https://<panel-domain>/sub/<token>` |
 | 專用訂閱端口 | `GET https://<sub-domain>:<port>/<token>`（無 `/sub` 字首） |
+| 訂閱短鏈 | `GET https://<訂閱域名>/<20位短碼>`（格式/設定已固定，等價於帶 `format=&config=` 的長連結） |
 
 `<token>` 是訂閱的唯一存取令牌，由管理端產生（在入口網站中的「我的訂閱」下可見）。
+
+短鏈（選用）由管理端為某條訂閱產生：20 位隨機碼直接作為路徑段，回傳內容與長連結一致，且已鎖定格式/設定/平台/providers；短鏈被停用或過期時回傳 404，不影響長連結。`mihomo_yaml` 短鏈必須綁定設定；無設定的 mihomo 連結不會產生（舊連結在管理端開啟「短鏈」時自動清理）。短碼在庫中只保存隨機 AES-256-GCM 密文與 HMAC-SHA256 指紋，輪換/刪除後舊碼寫入撤銷表，不可重複使用。
 
 ## 2. 查詢參數
 
@@ -35,7 +38,7 @@
 | `singbox_json` | sing-box JSON 完整配置 | sing-box/SFI/FLClash（sing-box核心） |
 | `xray_json` | Xray JSON 完整配置 | Xray-核心 |
 
-> 協定/格式相容性適用：例如，`anytls` 僅出現在 sing-box/Mihomo 格式中； **xray 服務的 REALITY 節點不包含在 sing-box 訂閱中**（ZXQQ00320Z 不支援sing-box#4520），但仍出現在 Xray 訂閱中，而 **REALITY 節點提供服務sing-box 的作品適用於 Xray 和 sing-box 訂閱**。客戶端無法辨識的節點會自動刪除，而不是讓整個訂閱失敗。
+> 協定/格式相容性適用：例如，`anytls` 僅出現在 sing-box/Mihomo 格式中； **xray 服務的 REALITY 節點不包含在 sing-box 訂閱中**（sing-box 不支援 xray 的 REALITY 實作，見 sing-box#4520），但仍出現在 Xray 訂閱中，而 **由 sing-box 服務的 REALITY 節點在 Xray / sing-box 兩種訂閱中都能用**。客戶端無法辨識的節點會自動刪除，而不是讓整個訂閱失敗。
 
 ## 3. 響應標頭
 

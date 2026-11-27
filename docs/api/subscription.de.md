@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: de | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: de | updated: 2026-11-27 -->
 # Abonnement API (öffentlich)
 
 > Sprachen: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · Deutsch · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Ruft die Abonnementknotenliste eines Benutzers ab. **Dies ist der am häufigsten
 |---|---|
 | Hauptpanel | `GET https://<panel-domain>/sub/<token>` |
 | Dedizierter Abonnement-Port | `GET https://<sub-domain>:<port>/<token>` (kein `/sub`-Präfix) |
+| Kurzlink | `GET https://<sub-domain>/<20-char code>` (Format/Konfiguration fixiert, entspricht einer langen URL mit `format=&config=`) |
 
 `<token>` ist das eindeutige Zugriffstoken eines Abonnements, das von der Administratorseite generiert wird (sichtbar unter „Meine Abonnements“ im Portal).
+
+Kurzlinks (optional) werden vom Administrator pro Abonnement erstellt: Ein 20-stelliger Zufallscode dient als Pfadsegment und liefert genau denselben Inhalt wie die lange URL; Format/Konfiguration/Plattform/Provider sind fixiert. Ein deaktivierter oder abgelaufener Kurzlink liefert 404 und beeinflusst die lange URL nicht. `mihomo_yaml`-Kurzlinks benötigen eine Konfiguration; Mihomo-Links ohne Konfiguration werden nicht erzeugt (beim Öffnen des Kurzlink-Dialogs werden vorhandene entfernt). Die Datenbank speichert nur einen zufälligen AES-256-GCM-Chiffretext und einen HMAC-SHA256-Fingerabdruck; rotierte/gelöschte Codes landen in einer Widerrufstabelle und können nicht wiederverwendet werden.
 
 ## 2. Abfrageparameter
 

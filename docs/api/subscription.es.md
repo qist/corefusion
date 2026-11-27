@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: es | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: es | updated: 2026-11-27 -->
 # Suscripción API (pública)
 
 > Idiomas: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · Español · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Obtiene la lista de nodos de suscripción de un usuario. **Este es el punto fina
 |---|---|
 | Panel principal | `GET https://<panel-domain>/sub/<token>` |
 | Puerto de suscripción dedicado | `GET https://<sub-domain>:<port>/<token>` (sin prefijo `/sub`) |
+| Enlace corto | `GET https://<sub-domain>/<20-char code>` (formato/configuración fijados, equivale a una URL larga con `format=&config=`) |
 
 `<token>` es el token de acceso único de una suscripción, generado por el lado del administrador (visible en "Mis suscripciones" en el portal).
+
+Los enlaces cortos (opcionales) los crea el administrador para cada suscripción: un código aleatorio de 20 caracteres se usa como segmento de ruta y devuelve exactamente el mismo contenido que la URL larga, con formato/configuración/plataforma/providers fijados. Un enlace corto deshabilitado o caducado devuelve 404 y no afecta a la URL larga. Los enlaces cortos `mihomo_yaml` requieren una configuración; los enlaces Mihomo sin configuración no se generan (los existentes se limpian al abrir el diálogo «Enlaces cortos»). La base solo guarda un cifrado AES-256-GCM aleatorio y una huella HMAC-SHA256; los códigos rotados/eliminados se escriben en una tabla de revocación y no se pueden reutilizar.
 
 ## 2. Parámetros de consulta
 

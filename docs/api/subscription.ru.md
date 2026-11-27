@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: ru | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: ru | updated: 2026-11-27 -->
 # Подписка API (общедоступная)
 
 > Языки: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · Русский · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | Основная панель | `GET https://<panel-domain>/sub/<token>` |
 | Выделенный порт подписки | `GET https://<sub-domain>:<port>/<token>` (без префикса `/sub`) |
+| Короткая ссылка | `GET https://<sub-domain>/<20-char code>` (формат/конфигурация зафиксированы, эквивалент длинного URL с `format=&config=`) |
 
 `<token>` — это уникальный токен доступа к подписке, созданный администратором (его можно увидеть в разделе «Мои подписки» на портале).
+
+Короткие ссылки (необязательно) создаёт администратор для каждой подписки: 20-символьный случайный код используется как сегмент пути и возвращает ровно то же содержимое, что и длинный URL; формат/конфигурация/платформа/providers фиксируются. Отключённая или истёкшая короткая ссылка возвращает 404 и не влияет на длинный URL. Короткие ссылки `mihomo_yaml` требуют конфигурацию; ссылки Mihomo без конфигурации не создаются (существующие удаляются при открытии диалога «Короткие ссылки»). В базе хранятся только случайный шифротекст AES-256-GCM и отпечаток HMAC-SHA256; ротированные/удалённые коды попадают в таблицу отзыва и не могут быть использованы повторно.
 
 ## 2. Параметры запроса
 

@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: tr | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: tr | updated: 2026-11-27 -->
 # Abonelik API (genel)
 
 > Diller: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · Türkçe · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Bir kullanıcının abonelik düğümü listesini getirir. **Bu, son kullanıcı
 |---|---|
 | Ana panel | `GET https://<panel-domain>/sub/<token>` |
 | Özel abonelik bağlantı noktası | `GET https://<sub-domain>:<port>/<token>` (`/sub` öneki yok) |
+| Kısa bağlantı | `GET https://<sub-domain>/<20-char code>` (format/yapılandırma sabit, `format=&config=` içeren uzun URL'ye eşdeğer) |
 
 `<token>`, yönetici tarafı tarafından oluşturulan bir aboneliğin benzersiz erişim belirtecidir (portalda "Aboneliklerim" altında görünür).
+
+Kısa bağlantılar (isteğe bağlı) yönetici tarafından her abonelik için oluşturulur: 20 karakterlik rastgele kod yol segmenti olarak kullanılır ve uzun URL ile tamamen aynı içeriği döndürür; format/yapılandırma/platform/providers sabittir. Devre dışı veya süresi dolmuş kısa bağlantı 404 döndürür ve uzun URL'yi etkilemez. `mihomo_yaml` kısa bağlantıları bir yapılandırmaya bağlı olmalıdır; yapılandırmasız Mihomo bağlantıları oluşturulmaz (mevcut olanlar "Kısa bağlantılar" penceresi açıldığında temizlenir). Veritabanı yalnızca rastgele AES-256-GCM şifreli metni ve HMAC-SHA256 parmak izini saklar; döndürülen/silinen kodlar iptal tablosuna yazılır ve yeniden kullanılamaz.
 
 ## 2. Sorgu parametreleri
 

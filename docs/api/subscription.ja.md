@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: ja | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: ja | updated: 2026-11-27 -->
 # サブスクリプション API (パブリック)
 
 > 言語： [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · 日本語 · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | メインパネル | `GET https://<panel-domain>/sub/<token>` |
 | 専用のサブスクリプション ポート | `GET https://<sub-domain>:<port>/<token>` (`/sub` プレフィックスなし) |
+| 短縮リンク | `GET https://<sub-domain>/<20-char code>` (形式/設定は固定、`format=&config=` 付きの長い URL と同等) |
 
 `<token>` は、管理者側によって生成されるサブスクリプションの一意のアクセス トークンです (ポータルの [マイ サブスクリプション] の下に表示されます)。
+
+短縮リンク（任意）は管理側がサブスクリプションごとに作成します。20 文字のランダムコードをパスセグメントとして使用し、長い URL とまったく同じ本文を返します。形式/設定/プラットフォーム/providers は固定です。無効化または期限切れの短縮リンクは 404 を返し、長い URL には影響しません。`mihomo_yaml` の短縮リンクには設定が必要です。設定のない Mihomo リンクは作成されません（管理側で「短縮リンク」を開くと既存のものが削除されます）。データベースにはランダムな AES-256-GCM 暗号文と HMAC-SHA256 フィンガープリントのみが保存され、ローテーション/削除後の古いコードは失効テーブルに書き込まれ、再利用できません。
 
 ## 2. クエリパラメータ
 

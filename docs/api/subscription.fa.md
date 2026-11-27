@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: fa | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: fa | updated: 2026-11-27 -->
 # اشتراک API (عمومی)
 
 > زبان‌ها: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · فارسی
@@ -11,8 +11,11 @@
 |---|---|
 | پنل اصلی | `GET https://<panel-domain>/sub/<token>` |
 | پورت اشتراک اختصاصی | `GET https://<sub-domain>:<port>/<token>` (بدون پیشوند `/sub`) |
+| لینک کوتاه | `GET https://<sub-domain>/<20-char code>` (قالب/پیکربندی ثابت است، معادل URL بلند با `format=&config=`) |
 
 `<token>` نشانه دسترسی منحصربه‌فرد یک اشتراک است که توسط طرف مدیریت ایجاد می‌شود (در قسمت «اشتراک‌های من» در پورتال قابل مشاهده است).
+
+لینک‌های کوتاه (اختیاری) توسط مدیر برای هر اشتراک ساخته می‌شوند: یک کد تصادفی ۲۰ کاراکتری به‌عنوان بخش مسیر استفاده می‌شود و دقیقاً همان محتوای URL بلند را برمی‌گرداند؛ قالب/پیکربندی/پلتفرم/providers ثابت هستند. لینک کوتاه غیرفعال یا منقضی 404 برمی‌گرداند و بر URL بلند تأثیری ندارد. لینک‌های کوتاه `mihomo_yaml` باید به پیکربندی متصل باشند؛ لینک‌های Mihomo بدون پیکربندی ساخته نمی‌شوند (لینک‌های موجود با باز کردن پنجره «لینک کوتاه» پاک می‌شوند). پایگاه داده فقط متن رمزشده تصادفی AES-256-GCM و اثرانگشت HMAC-SHA256 را ذخیره می‌کند؛ کدهای چرخش‌یافته/حذف‌شده در جدول لغو ثبت می‌شوند و قابل استفاده مجدد نیستند.
 
 ## 2. پارامترهای پرس و جو
 

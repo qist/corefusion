@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: fr | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: fr | updated: 2026-11-27 -->
 # Abonnement API (public)
 
 > Langues : [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · Français · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Récupère la liste des nœuds d'abonnement d'un utilisateur. **Il s'agit du poi
 |---|---|
 | Panneau principal | `GET https://<panel-domain>/sub/<token>` |
 | Port d'abonnement dédié | `GET https://<sub-domain>:<port>/<token>` (pas de préfixe `/sub`) |
+| Lien court | `GET https://<sub-domain>/<20-char code>` (format/configuration fixés, équivalent à une URL longue avec `format=&config=`) |
 
 `<token>` est le jeton d'accès unique d'un abonnement, généré par le côté administrateur (visible sous « Mes abonnements » dans le portail).
+
+Les liens courts (facultatifs) sont créés par l'administrateur pour chaque abonnement : un code aléatoire de 20 caractères sert de segment de chemin et renvoie exactement le même contenu que l'URL longue, avec format/configuration/plateforme/providers fixés. Un lien court désactivé ou expiré renvoie 404 sans affecter l'URL longue. Les liens courts `mihomo_yaml` doivent être liés à une configuration ; les liens Mihomo sans configuration ne sont pas créés (les liens existants sont supprimés à l'ouverture de la boîte « Liens courts »). La base ne stocke qu'un chiffré AES-256-GCM aléatoire et une empreinte HMAC-SHA256 ; les anciens codes tournés/supprimés sont inscrits dans une table de révocation et ne peuvent plus être réutilisés.
 
 ## 2. Paramètres de requête
 

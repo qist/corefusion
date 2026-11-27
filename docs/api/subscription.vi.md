@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: vi | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: vi | updated: 2026-11-27 -->
 # Đăng ký API (công khai)
 
 > Ngôn ngữ: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · Tiếng Việt · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Tìm nạp danh sách nút đăng ký của người dùng. **Đây là điểm 
 |---|---|
 | Bảng điều khiển chính | `GET https://<panel-domain>/sub/<token>` |
 | Cổng thuê bao chuyên dụng | `GET https://<sub-domain>:<port>/<token>` (không có tiền tố `/sub`) |
+| Liên kết ngắn | `GET https://<sub-domain>/<20-char code>` (định dạng/cấu hình cố định, tương đương URL dài với `format=&config=`) |
 
 `<token>` là mã thông báo truy cập duy nhất của một gói đăng ký, do phía quản trị viên tạo ra (hiển thị trong phần “Đăng ký của tôi” trong cổng thông tin).
+
+Liên kết ngắn (tùy chọn) do quản trị viên tạo cho từng đăng ký: mã ngẫu nhiên 20 ký tự được dùng làm đoạn đường dẫn và trả về nội dung giống hệt URL dài, với định dạng/cấu hình/nền tảng/providers được cố định. Liên kết ngắn bị tắt hoặc hết hạn trả 404 và không ảnh hưởng đến URL dài. Liên kết ngắn `mihomo_yaml` phải gắn với cấu hình; liên kết Mihomo không có cấu hình không được tạo (các liên kết cũ được dọn khi mở hộp thoại "Liên kết ngắn"). Cơ sở dữ liệu chỉ lưu bản mã AES-256-GCM ngẫu nhiên và dấu vân tay HMAC-SHA256; mã đã xoay/xóa được ghi vào bảng thu hồi và không thể dùng lại.
 
 ## 2. Tham số truy vấn
 

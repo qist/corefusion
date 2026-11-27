@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: th | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: th | updated: 2026-11-27 -->
 # การสมัครสมาชิก API (สาธารณะ)
 
 > ภาษา: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · ไทย · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | แผงหลัก | `GET https://<panel-domain>/sub/<token>` |
 | พอร์ตการสมัครสมาชิกเฉพาะ | `GET https://<sub-domain>:<port>/<token>` (ไม่มีคำนำหน้า `/sub`) |
+| ลิงก์สั้น | `GET https://<sub-domain>/<20-char code>` (รูปแบบ/การตั้งค่าถูกกำหนดไว้ เทียบเท่า URL ยาวที่มี `format=&config=`) |
 
 `<token>` เป็นโทเค็นการเข้าถึงเฉพาะของการสมัครสมาชิก สร้างขึ้นโดยฝ่ายผู้ดูแลระบบ (มองเห็นได้ภายใต้ "การสมัครสมาชิกของฉัน" ในพอร์ทัล)
+
+ลิงก์สั้น (ไม่บังคับ) ถูกสร้างโดยผู้ดูแลสำหรับแต่ละการสมัครสมาชิก: ใช้รหัสสุ่ม 20 ตัวอักษรเป็นส่วนของเส้นทาง และส่งเนื้อหาเหมือน URL ยาวทุกประการ โดยกำหนดรูปแบบ/การตั้งค่า/แพลตฟอร์ม/providers ไว้ ลิงก์สั้นที่ปิดใช้งานหรือหมดอายุจะคืน 404 และไม่กระทบ URL ยาว ลิงก์สั้น `mihomo_yaml` ต้องผูกกับการตั้งค่า; ลิงก์ Mihomo ที่ไม่มีการตั้งค่าจะไม่ถูกสร้าง (ลิงก์เดิมจะถูกล้างเมื่อเปิดหน้าต่าง «ลิงก์สั้น») ฐานข้อมูลเก็บเฉพาะข้อความเข้ารหัส AES-256-GCM แบบสุ่มและลายนิ้วมือ HMAC-SHA256; รหัสที่หมุน/ลบแล้วจะถูกบันทึกในตารางเพิกถอนและไม่สามารถใช้ซ้ำได้
 
 ## 2. พารามิเตอร์แบบสอบถาม
 

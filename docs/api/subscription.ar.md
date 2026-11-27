@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: ar | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: ar | updated: 2026-11-27 -->
 # اشتراك API (عام)
 
 > اللغات: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · العربية · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@
 |---|---|
 | اللوحة الرئيسية | `GET https://<panel-domain>/sub/<token>` |
 | منفذ اشتراك مخصص | `GET https://<sub-domain>:<port>/<token>` (بدون بادئة `/sub`) |
+| رابط قصير | `GET https://<sub-domain>/<20-char code>` (التنسيق/الإعداد مثبت، يعادل رابطاً طويلاً مع `format=&config=`) |
 
 `<token>` هو رمز الوصول الفريد للاشتراك، الذي تم إنشاؤه بواسطة جانب المسؤول (مرئي ضمن "اشتراكاتي" في البوابة).
+
+تُنشأ الروابط القصيرة (اختياري) من قبل المسؤول لكل اشتراك: يُستخدم رمز عشوائي من 20 حرفًا كجزء من المسار ويعيد نفس محتوى الرابط الطويل تمامًا، مع تثبيت التنسيق/الإعداد/المنصة/providers. الرابط القصير المعطل أو المنتهي يعيد 404 ولا يؤثر على الرابط الطويل. تتطلب روابط `mihomo_yaml` القصيرة ربط إعداد؛ لا تُنشأ روابط Mihomo بدون إعداد (تُنظّف الروابط الموجودة عند فتح نافذة «الروابط القصيرة»). تخزّن قاعدة البيانات فقط نصاً مشفّراً عشوائياً AES-256-GCM وبصمة HMAC-SHA256؛ الرموز المدوّرة/المحذوفة تُسجَّل في جدول إلغاء ولا يمكن إعادة استخدامها.
 
 ## 2. معلمات الاستعلام
 

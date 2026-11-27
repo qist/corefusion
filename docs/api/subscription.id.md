@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: id | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: id | updated: 2026-11-27 -->
 # Berlangganan API (publik)
 
 > Bahasa: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · [Português](subscription.pt.md) · [Türkçe](subscription.tr.md) · Bahasa Indonesia · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Mengambil daftar simpul langganan pengguna. **Ini adalah titik akhir yang paling
 |---|---|
 | Panel utama | `GET https://<panel-domain>/sub/<token>` |
 | Port berlangganan khusus | `GET https://<sub-domain>:<port>/<token>` (tanpa awalan `/sub`) |
+| Tautan pendek | `GET https://<sub-domain>/<20-char code>` (format/konfigurasi dikunci, setara URL panjang dengan `format=&config=`) |
 
 `<token>` adalah token akses unik langganan, yang dihasilkan oleh sisi admin (terlihat di bawah “Langganan saya” di portal).
+
+Tautan pendek (opsional) dibuat oleh admin untuk setiap langganan: kode acak 20 karakter dipakai sebagai segmen path dan mengembalikan isi yang sama persis dengan URL panjang, dengan format/konfigurasi/platform/providers dikunci. Tautan pendek yang dinonaktifkan atau kedaluwarsa mengembalikan 404 dan tidak memengaruhi URL panjang. Tautan pendek `mihomo_yaml` wajib terhubung ke konfigurasi; tautan Mihomo tanpa konfigurasi tidak dibuat (tautan lama dibersihkan saat membuka dialog "Tautan pendek"). Database hanya menyimpan ciphertext AES-256-GCM acak dan sidik jari HMAC-SHA256; kode yang dirotasi/dihapus ditulis ke tabel pencabutan dan tidak dapat digunakan ulang.
 
 ## 2. Parameter kueri
 

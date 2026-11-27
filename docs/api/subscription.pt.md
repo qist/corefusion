@@ -1,4 +1,4 @@
-<!-- source: subscription.md | locale: pt | updated: 2026-11-16 -->
+<!-- source: subscription.md | locale: pt | updated: 2026-11-27 -->
 # Assinatura API (pública)
 
 > Idiomas: [简体中文](subscription.md) · [English](subscription.en.md) · [繁體中文](subscription.zh-TW.md) · [Русский](subscription.ru.md) · [日本語](subscription.ja.md) · [한국어](subscription.ko.md) · [Deutsch](subscription.de.md) · [Français](subscription.fr.md) · [Español](subscription.es.md) · Português · [Türkçe](subscription.tr.md) · [Bahasa Indonesia](subscription.id.md) · [ไทย](subscription.th.md) · [Tiếng Việt](subscription.vi.md) · [العربية](subscription.ar.md) · [فارسی](subscription.fa.md)
@@ -11,8 +11,11 @@ Busca a lista de nós de assinatura de um usuário. **Este é o endpoint mais us
 |---|---|
 | Painel principal | `GET https://<panel-domain>/sub/<token>` |
 | Porta de assinatura dedicada | `GET https://<sub-domain>:<port>/<token>` (sem prefixo `/sub`) |
+| Link curto | `GET https://<sub-domain>/<20-char code>` (formato/configuração fixos, equivalente a uma URL longa com `format=&config=`) |
 
 `<token>` é o token de acesso exclusivo de uma assinatura, gerado pelo lado administrativo (visível em “Minhas assinaturas” no portal).
+
+Links curtos (opcionais) são criados pelo administrador para cada assinatura: um código aleatório de 20 caracteres é usado como segmento de caminho e retorna exatamente o mesmo conteúdo da URL longa, com formato/configuração/plataforma/providers fixos. Um link curto desativado ou expirado retorna 404 e não afeta a URL longa. Links curtos `mihomo_yaml` exigem uma configuração; links Mihomo sem configuração não são gerados (os existentes são limpos ao abrir a janela «Links curtos»). O banco armazena apenas um cifrado AES-256-GCM aleatório e uma impressão HMAC-SHA256; códigos rotacionados/excluídos vão para uma tabela de revogação e não podem ser reutilizados.
 
 ## 2. Parâmetros de consulta
 

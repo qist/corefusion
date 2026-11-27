@@ -1248,7 +1248,9 @@ Notes:
   Xray, and `outbound: proxy` in rules is rewritten to the matching `balancerTag`. The rule editor loads
   outbound candidates dynamically from “proxy groups + custom outbounds”, and manually entered tags are
   still validated;
-- sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3).
+- sing-box / Xray configs must be created separately; if they don't exist they don't appear in customer links (see 10.3);
+- sing-box / Xray templates now merge `inbounds` (previously only `log/dns/route/experimental`, or `log/dns/routing/policy` for Xray), so generated subscriptions include listeners and load as-is;
+- node names are derived as "remark → sanitize auto names → append `-2/-3` on duplicates": `inbound-<proto>-<port>` keeps only the protocol, remarks in any language stay verbatim, and `proxy` / `direct` / `block` are reserved tags that node names never take.
 
 - Mihomo's structured rule editor supports logical rules `AND` / `OR` / `NOT` / `SUB-RULE`: write the
   condition as `((NETWORK,UDP),(DST-PORT,3478/19302))`; for `SUB-RULE` the third column is the sub-rule
@@ -1270,7 +1272,7 @@ Notes:
 | Enabled | Disabled endpoints are ignored when building links |
 | Description | Free-text note |
 
-- **Multiple rows (multi-domain)** are supported; when several are enabled the provider domain follows the domain used by the current request (see 9.4);
+- **Multiple rows (multi-domain)** are supported; when several are enabled the provider domain follows the domain used by the current request (see 9.5);
 - A dedicated subscription port serves at the root (`/<token>`, no `/sub`); when sharing the panel port it is `/sub/<token>`;
 - Reverse proxies must forward `X-Forwarded-Proto` / `X-Forwarded-Host`, otherwise the first enabled endpoint is used. The panel's generated Caddy / Nginx site templates include both headers; hand-maintained proxy configs need them added manually.
 
@@ -1300,7 +1302,24 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 Multi-domain and Provider mode
+Subscription **short links** (see 9.4) are also supported: `https://sub.example.com/<20-char code>` — format/config are pinned in the link, no query needed.
+
+### 9.4 Subscription short links (optional)
+
+The "Short link" button on each subscription row creates a 20-character code:
+
+```text
+https://<sub-domain>/<20-char code>     # dedicated subscription port
+https://<panel-domain>/<code>           # shared panel port (prefix follows the endpoint path)
+```
+
+- Short links return the body **directly** (no 302) and share the same authorization as long links: revoked/suspended/expired subscriptions, banned clients, token rotation, disabled/expired links all fail immediately;
+- The link already pins format / config / platform / providers, so clients no longer append `?format=&config=`; disable "lock parameters" when creating a link if you want `?format=` overrides;
+- Portal and client details prefer short links. The global switch lives in Settings → Panel → Subscription short links; turning it off makes every short link return 404 while long links keep working;
+- Access logs record `access_type=short_link` and `short_link_id`, so hits can be counted per link;
+- Links shown in the portal/client details are generated per visible "format × config (× providers)" combination, so a "short link + query" hybrid never appears.
+
+### 9.5 Multi-domain and Provider mode
 
 With `providers=1` every `proxy-providers` entry points back to the subscription endpoint. Domain selection:
 

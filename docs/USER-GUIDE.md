@@ -1200,7 +1200,11 @@ URL / 参数 / POST 内容检查，IP、UA、Cookie、CC、文件上传仍照常
 - 固定生成 `tag = proxy` 的组：sing-box 用 `selector`，Xray 用 `random` balancer，并把规则里的
   `outbound: proxy` 自动改写成对应的 `balancerTag`。规则编辑器的出站候选从「代理组 + 自定义出站」动态读取，
   手填的 tag 仍会校验；
-- sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）。
+- sing-box / Xray 的配置必须单独创建，没创建就不会出现在客户链接里（见 10.3）；
+- sing-box / Xray 模板会合并 `inbounds`（此前只合并 `log/dns/route/experimental`，Xray 为 `log/dns/routing/policy`），
+  生成的订阅自带监听端口，客户端可直接加载；
+- 节点名按「remark → 自动名脱敏 → 重名追加 `-2/-3`」生成：`inbound-<协议>-<端口>` 只保留协议，
+  其它语言的 remark 原样保留；`proxy` / `direct` / `block` 是保留 tag，节点不会占用。
 
 - Mihomo 规则的结构化编辑器支持逻辑规则 `AND` / `OR` / `NOT` / `SUB-RULE`：条件写成
   `((NETWORK,UDP),(DST-PORT,3478/19302))`；`SUB-RULE` 的第三列填子规则组名。条件必须用括号包裹；
@@ -1221,7 +1225,7 @@ URL / 参数 / POST 内容检查，IP、UA、Cookie、CC、文件上传仍照常
 | 启用 | 关闭后不参与链接生成 |
 | 说明 | 备注 |
 
-- 可以配置**多条**（多域名）；全部启用时，provider 里的域名按「本次请求实际使用的域名」优先（见 9.4）；
+- 可以配置**多条**（多域名）；全部启用时，provider 里的域名按「本次请求实际使用的域名」优先（见 9.5）；
 - 独立订阅端口在根路径服务（`/<token>`，无 `/sub` 前缀）；与面板共用端口时是 `/sub/<token>`；
 - 反向代理必须透传 `X-Forwarded-Proto` / `X-Forwarded-Host`，否则只能回落到第一个启用端点。面板生成的 Caddy / Nginx 站点模板已自动写入这两个头；手工维护的反代配置需自行补齐。
 
@@ -1251,7 +1255,29 @@ https://sub.example.com/<token>?format=base64_uri
 https://sub.example.com/<token>?format=raw_uri
 ```
 
-### 9.4 多域名与 Provider 模式
+也可以使用**订阅短链**（见 9.4）：`https://sub.example.com/<20位短码>`，
+格式/配置已固定在短链里，无需再带参数。
+
+### 9.4 订阅短链（可选）
+
+订阅中心每行的「短链」按钮可以为该订阅生成 20 位随机短码：
+
+```text
+https://<订阅域名>/<20位短码>          # 独立订阅端口
+https://<面板域名>/<短码>              # 共用面板端口时（前缀按端点 path）
+```
+
+- 短链**直接返回订阅正文**（不 302），与长链接走同一套授权：订阅吊销/暂停/到期、
+  客户封禁、token 轮换、短链禁用/过期都会立即失效；
+- 短链里已经写死「格式 / 配置 / 平台 / providers」，客户不需要再拼 `?format=&config=`；
+  创建时可以关闭「锁定参数」，允许 `?format=` 等参数临时覆盖；
+- 门户和客户详情会优先使用短链；面板「设置 → 面板 → 订阅短链」控制全局开关，
+  关闭后所有短链立即 404，长链接不受影响；
+- 订阅访问日志会记录 `access_type=short_link` 与 `short_link_id`，可统计每条短链的命中次数；
+- 门户/客户端详情里的链接按「套餐可见的格式 × 配置（× providers）」自动补齐，
+  不会出现「短链 + 参数」的混合形式。
+
+### 9.5 多域名与 Provider 模式
 
 `providers=1` 时，生成的 `proxy-providers` 里每个 provider 的 `url` 会指回订阅端点，域名选择规则：
 

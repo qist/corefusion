@@ -193,6 +193,14 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*entity.Subscript
 		if cerr != nil || cfg == nil {
 			return nil, fmt.Errorf("mihomo config %d not found", *configID)
 		}
+		// 停用或格式不匹配的配置会让链接退化成「只有 proxies、没有规则」，
+		// 与「无配置」是同一个后果，必须在创建时就拒绝。
+		if !cfg.Enabled {
+			return nil, fmt.Errorf("mihomo config %d is disabled", *configID)
+		}
+		if format != "" && !configUsableForFormat(cfg.Format, format) {
+			return nil, fmt.Errorf("mihomo config %d format %q does not match %s", *configID, cfg.Format, format)
+		}
 		configName = cfg.Name
 	} else if format == string(formatter.FormatMihomoYAML) && configName != "" {
 		// 手填配置名时按名字定位到 ID：避免改名后链接打开变成「只有 proxies、没有规则」。
@@ -277,13 +285,77 @@ func (s *Service) findConfigByName(ctx context.Context, name, format string) *en
 	return nil
 }
 
+// configUsableForFormat 判断某份共享配置能否作为该格式短链的数据源。
+// mihomo_proxies_yaml（provider 数据源）复用 mihomo_yaml 配置，与渲染侧
+// mihomoConfigFormatMatches 的口径保持一致。
+func configUsableForFormat(configFormat, linkFormat string) bool {
+	cf, err := NormalizeFormat(configFormat)
+	if err != nil || cf == "" {
+		cf = string(formatter.FormatMihomoYAML)
+	}
+	lf, err := NormalizeFormat(linkFormat)
+	if err != nil || lf == "" {
+		return false
+	}
+	if cf == lf {
+		return true
+	}
+	return lf == string(formatter.FormatMihomoProxies) && cf == string(formatter.FormatMihomoYAML)
+}
+
+// ValidateLinkConfig 校验一条短链的配置绑定与格式是否匹配（更新路径用）。
+//
+// 只校验格式匹配、不校验配置是否启用：配置被停用属于运营状态，历史链接仍可
+// 切换 enabled/过期时间；但绑定到别的格式的配置会让链接打开后退化成
+// 「只有 proxies、没有规则」，必须拒绝。
+func (s *Service) ValidateLinkConfig(ctx context.Context, link *entity.SubscriptionShortLink) error {
+	if link == nil {
+		return errors.New("short link is required")
+	}
+	if err := ValidateConfigTarget(link.Format, link.MihomoConfigID, link.ConfigName, link.Platform); err != nil {
+		return err
+	}
+	if link.MihomoConfigID == nil || *link.MihomoConfigID <= 0 || s.configRepo == nil {
+		return nil
+	}
+	cfg, err := s.configRepo.GetByID(ctx, *link.MihomoConfigID)
+	if err != nil || cfg == nil {
+		return fmt.Errorf("mihomo config %d not found", *link.MihomoConfigID)
+	}
+	if link.Format != "" && !configUsableForFormat(cfg.Format, link.Format) {
+		return fmt.Errorf("mihomo config %d format %q does not match %s", cfg.ID, cfg.Format, link.Format)
+	}
+	return nil
+}
+
 // PurgeUnconfiguredMihomo 清理没有绑定配置的 mihomo_yaml 短链。
 // 这类链接打开后只有 proxies（无 proxy-groups/rules），不是可用的客户端配置。
+//
+// 删除前把短码指纹写进撤销表：短码一旦回收，绝不能再被重新签发，
+// 否则客户手里的旧地址会静默指向另一条订阅。
 func (s *Service) PurgeUnconfiguredMihomo(ctx context.Context, subID int64) int64 {
-	removed, err := s.repo.DeleteUnconfigured(ctx, subID, string(formatter.FormatMihomoYAML))
+	links, err := s.repo.ListBySubscription(ctx, subID)
 	if err != nil {
-		log.Printf("[shortlink] purge unconfigured mihomo sub=%d failed: %v", subID, err)
+		log.Printf("[shortlink] purge unconfigured mihomo sub=%d list failed: %v", subID, err)
 		return 0
+	}
+	var removed int64
+	for i := range links {
+		l := &links[i]
+		if l.Format != string(formatter.FormatMihomoYAML) {
+			continue
+		}
+		if (l.MihomoConfigID != nil && *l.MihomoConfigID > 0) ||
+			strings.TrimSpace(l.ConfigName) != "" ||
+			strings.TrimSpace(l.Platform) != "" {
+			continue
+		}
+		s.revokeCode(ctx, l, "purge_unconfigured", 0)
+		if err := s.repo.Delete(ctx, l.ID); err != nil {
+			log.Printf("[shortlink] purge unconfigured mihomo id=%d failed: %v", l.ID, err)
+			continue
+		}
+		removed++
 	}
 	return removed
 }

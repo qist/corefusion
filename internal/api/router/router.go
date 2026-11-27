@@ -4509,7 +4509,9 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	middleware.SetSubscribeDeniedRecorder(publicSubH.RecordDeniedAccess)
 	subEndpointRepo2 := repository.NewSubscriptionEndpointRepository(database)
 	publicSubH.SetSubEndpointRepo(subEndpointRepo2)
-	publicSubH.SetShortLinkService(shortlinkSvc.NewService(
+	// 独立订阅端口（8081）也要接撤销表：否则轮换/删除写进撤销表的短码
+	// 在这个引擎上仍会走「查得到就放行」的旧逻辑。
+	subShortLinkSvc := shortlinkSvc.NewService(
 		repository.NewSubscriptionShortLinkRepository(database),
 		subRepo,
 		mihomoConfigRepo2,
@@ -4517,7 +4519,9 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 		clientRepo,
 		subEndpointRepo2,
 		systemSettingRepo,
-	))
+	)
+	subShortLinkSvc.SetRevocationRepository(repository.NewSubscriptionShortLinkRevocationRepository(database))
+	publicSubH.SetShortLinkService(subShortLinkSvc)
 	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 
 	// 订阅拉取触发的 IP 关联推送：8081 引擎的 PublicHandler 也必须接 RateLimitPusher。
@@ -4738,6 +4742,7 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 		subEndpointRepo2,
 		systemSettingRepo,
 	)
+	portalShortLinkSvc.SetRevocationRepository(repository.NewSubscriptionShortLinkRevocationRepository(database))
 	clientauthSvcInst.SetShortLinkService(portalShortLinkSvc)
 
 	// Set balance repo on clientauth service for /me extension

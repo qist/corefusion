@@ -147,6 +147,8 @@ func (r *ClientRepository) PurgeClientScopedData(ctx context.Context, clientID i
 			`DELETE FROM traffic_usage_ledger WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
 			`DELETE FROM rate_limit_ip_entries WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
 			`DELETE FROM service_access_policies WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
+			// 订阅短链也是订阅的从属记录：不删会留下孤儿行，且短码永远不进撤销表。
+			`DELETE FROM subscription_short_links WHERE subscription_id IN (SELECT id FROM subscriptions WHERE client_id = ?)`,
 			// 订阅本体
 			`DELETE FROM subscriptions WHERE client_id = ?`,
 			// 订单与账务

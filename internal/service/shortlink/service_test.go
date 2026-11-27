@@ -457,3 +457,90 @@ func TestRevocationOnRotateAndDelete(t *testing.T) {
 		t.Fatalf("删除后 code 未撤销：revoked=%v err=%v", revoked, err)
 	}
 }
+
+// 绑定停用配置 / 跨格式配置必须在创建时拒绝：否则链接打开会退化成「只有 proxies」。
+func TestCreateRejectsUnusableConfig(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	configRepo := repository.NewMihomoConfigRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+	svc := NewService(linkRepo, subRepo, configRepo, nil, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	ctx := context.Background()
+
+	sub := &entity.Subscription{
+		ClientID: 0, Format: "mihomo_yaml", Token: "tok-cfg-check",
+		TokenVersion: 1, Status: "active",
+		SecurityMode: "token_only", BindMode: "none", QuotaState: "normal",
+	}
+	if err := subRepo.Create(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+
+	// Enabled 带 default:true，直接用结构体 Create(false) 会被 GORM 忽略，
+	// 这里先建再显式停用，模拟后台停用配置后的真实库状态。
+	disabled := &entity.MihomoConfig{Name: "off", Format: "mihomo_yaml", Enabled: true}
+	if err := configRepo.Create(ctx, disabled); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&entity.MihomoConfig{}).Where("id = ?", disabled.ID).Update("enabled", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, CreateInput{
+		SubscriptionID: sub.ID, Format: "mihomo_yaml", MihomoConfigID: &disabled.ID,
+	}); err == nil {
+		t.Fatal("停用的 mihomo 配置应拒绝创建短链")
+	}
+
+	singbox := &entity.MihomoConfig{Name: "sb", Format: "singbox_json", Enabled: true}
+	if err := configRepo.Create(ctx, singbox); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, CreateInput{
+		SubscriptionID: sub.ID, Format: "mihomo_yaml", MihomoConfigID: &singbox.ID,
+	}); err == nil {
+		t.Fatal("跨格式的配置应拒绝创建短链")
+	}
+
+	ok := &entity.MihomoConfig{Name: "ok", Format: "mihomo_yaml", Enabled: true}
+	if err := configRepo.Create(ctx, ok); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Create(ctx, CreateInput{
+		SubscriptionID: sub.ID, Format: "mihomo_yaml", MihomoConfigID: &ok.ID,
+	}); err != nil {
+		t.Fatalf("正常配置应允许：%v", err)
+	}
+}
+
+// 清理无配置 mihomo 短链时要写撤销指纹，避免短码被重新签发后旧地址指向别的订阅。
+func TestPurgeUnconfiguredMihomoRevokesCode(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	revRepo := repository.NewSubscriptionShortLinkRevocationRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+	svc := NewService(linkRepo, subRepo, nil, nil, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	svc.SetRevocationRepository(revRepo)
+	ctx := context.Background()
+
+	const code = "abcdefghjk0123456789"
+	link := &entity.SubscriptionShortLink{
+		SubscriptionID: 1, Code: code, Format: "mihomo_yaml", Enabled: true,
+	}
+	if err := linkRepo.Create(ctx, link); err != nil {
+		t.Fatal(err)
+	}
+	if n := svc.PurgeUnconfiguredMihomo(ctx, 1); n != 1 {
+		t.Fatalf("应删除 1 条无配置 mihomo 短链，实际 %d", n)
+	}
+	fp, err := crypto.FingerprintSecret(code)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revoked, err := revRepo.Exists(ctx, fp); err != nil || !revoked {
+		t.Fatalf("短码未写入撤销表：revoked=%v err=%v", revoked, err)
+	}
+}

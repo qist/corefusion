@@ -99,18 +99,6 @@ func (r *SubscriptionShortLinkRepository) DeleteBySubscriptionID(ctx context.Con
 		Delete(&entity.SubscriptionShortLink{}).Error
 }
 
-// DeleteUnconfigured 删除某订阅下没有绑定任何配置目标的短链（配置 ID / 名称 / 平台全空）。
-// 目前只用于 mihomo_yaml：无配置时输出只有 proxies，没有 proxy-groups/rules。
-func (r *SubscriptionShortLinkRepository) DeleteUnconfigured(ctx context.Context, subID int64, format string) (int64, error) {
-	res := r.db.WithContext(ctx).
-		Where("subscription_id = ? AND format = ?", subID, format).
-		Where("(mihomo_config_id IS NULL OR mihomo_config_id = 0)").
-		Where("(config_name IS NULL OR TRIM(config_name) = '')").
-		Where("(platform IS NULL OR TRIM(platform) = '')").
-		Delete(&entity.SubscriptionShortLink{})
-	return res.RowsAffected, res.Error
-}
-
 // SyncTokenVersion 用于 FollowTokenRotation=true 的短链：轮换后同步快照版本。
 func (r *SubscriptionShortLinkRepository) SyncTokenVersion(ctx context.Context, subID int64, version int) error {
 	return r.db.WithContext(ctx).

@@ -245,7 +245,7 @@ func (h *ShortLinkHandler) Update(c *gin.Context) {
 	} else if req.ExpiresAt != nil {
 		link.ExpiresAt = req.ExpiresAt
 	}
-	if err := shortlinkSvc.ValidateConfigTarget(link.Format, link.MihomoConfigID, link.ConfigName, link.Platform); err != nil {
+	if err := h.shortSvc.ValidateLinkConfig(c.Request.Context(), link); err != nil {
 		response.BadRequest(c, "INVALID_CONFIG_TARGET", err.Error())
 		return
 	}

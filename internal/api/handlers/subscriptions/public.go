@@ -261,6 +261,30 @@ func mihomoConfigFormatMatches(configFormat, requestFormat string) bool {
 		configFormat == string(formatter.FormatMihomoYAML)
 }
 
+// mihomoConfigAllowedForSubscription 判断一份共享配置是否对本订阅的套餐可见。
+// PlanIDs 为空 = 通用；否则必须包含客户当前套餐 ID。
+// 与 shortlink.combosForSubscription 的可见性口径保持一致：短链生成时按套餐过滤，
+// 渲染时也必须同样过滤，否则 ?config=/ ?platform= 可以拿到别的套餐的规则模板
+// （安全审计 v8 H-3）。
+func (h *PublicHandler) mihomoConfigAllowedForSubscription(ctx context.Context, cfg *entity.MihomoConfig, sub *entity.Subscription) bool {
+	if cfg == nil || len(cfg.PlanIDs) == 0 {
+		return true
+	}
+	if h.clientRepo == nil || sub == nil || sub.ClientID <= 0 {
+		return false
+	}
+	cl, err := h.clientRepo.GetByID(ctx, sub.ClientID)
+	if err != nil || cl == nil {
+		return false
+	}
+	for _, id := range cfg.PlanIDs {
+		if id == cl.PlanID {
+			return true
+		}
+	}
+	return false
+}
+
 // shareableProtocols are protocols that generate share links.
 // shareableProtocols 是「可渲染成订阅节点」的协议全集。
 // 注意：这里只判断「有没有能力渲染」，具体某订阅格式是否支持该协议由
@@ -643,7 +667,8 @@ func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Su
 	if configName != "" && h.mihomoRepo != nil {
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
-			if cfg.Name == configName && cfg.Enabled && mihomoConfigFormatMatches(cfg.Format, formatStr) {
+			if cfg.Name == configName && cfg.Enabled && mihomoConfigFormatMatches(cfg.Format, formatStr) &&
+				h.mihomoConfigAllowedForSubscription(ctx, &cfg, sub) {
 				mihomoConfig = &cfg
 				break
 			}
@@ -652,7 +677,8 @@ func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Su
 		// Try to find a config matching the requested platform
 		configs, _ := h.mihomoRepo.List(ctx)
 		for _, cfg := range configs {
-			if cfg.Enabled && cfg.Platform == platformName && mihomoConfigFormatMatches(cfg.Format, formatStr) {
+			if cfg.Enabled && cfg.Platform == platformName && mihomoConfigFormatMatches(cfg.Format, formatStr) &&
+				h.mihomoConfigAllowedForSubscription(ctx, &cfg, sub) {
 				mihomoConfig = &cfg
 				break
 			}
@@ -660,7 +686,8 @@ func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Su
 		// Fallback: if no exact platform match, try universal (empty platform)
 		if mihomoConfig == nil {
 			for _, cfg := range configs {
-				if cfg.Enabled && cfg.Platform == "" && mihomoConfigFormatMatches(cfg.Format, formatStr) {
+				if cfg.Enabled && cfg.Platform == "" && mihomoConfigFormatMatches(cfg.Format, formatStr) &&
+					h.mihomoConfigAllowedForSubscription(ctx, &cfg, sub) {
 					mihomoConfig = &cfg
 					break
 				}

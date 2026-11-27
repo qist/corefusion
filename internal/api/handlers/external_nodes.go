@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -63,6 +64,26 @@ func (h *ExternalNodeHandler) RegisterRoutes(rg *gin.RouterGroup) {
 	write.DELETE("/:id", h.DeleteNode)
 }
 
+// canSeeExternalCredential 判断当前角色能否看到外部源/节点的凭据。
+// 上游订阅 URL 往往内嵌 token，proxy_json 里是节点 uuid/密码：只读角色
+// 不应拿到可直接使用的凭证（安全审计 v8 H-2）。
+func canSeeExternalCredential(c *gin.Context) bool {
+	return middleware.RankOf(c.GetString("role")) >= middleware.RankOf(domainuser.RoleOperator)
+}
+
+// maskExternalURL 只保留 scheme + host，避免把 token/query 暴露给只读角色。
+func maskExternalURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "***"
+	}
+	return u.Scheme + "://" + u.Host + "/***"
+}
+
 // --- Source CRUD ---
 
 func (h *ExternalNodeHandler) ListSources(c *gin.Context) {
@@ -71,6 +92,13 @@ func (h *ExternalNodeHandler) ListSources(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if !canSeeExternalCredential(c) {
+		for i := range sources {
+			sources[i].SourceURL = maskExternalURL(sources[i].SourceURL)
+			// 手工粘贴的节点列表同样含 uuid/密码，只读角色不返回原文。
+			sources[i].SourceData = ""
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": sources})
 }
@@ -222,8 +250,13 @@ func (h *ExternalNodeHandler) ListNodes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	full := canSeeExternalCredential(c)
 	for i := range nodes {
 		nodes[i].AccessDomain = nodes[i].LoadAccessDomain()
+		if !full {
+			// proxy_json 内含 uuid/password/psk 等节点凭据，只读角色不返回。
+			nodes[i].ProxyJSON = ""
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": nodes})
 }
@@ -241,6 +274,9 @@ func (h *ExternalNodeHandler) GetNode(c *gin.Context) {
 		return
 	}
 	node.AccessDomain = node.LoadAccessDomain()
+	if !canSeeExternalCredential(c) {
+		node.ProxyJSON = ""
+	}
 	c.JSON(http.StatusOK, gin.H{"data": node})
 }
 

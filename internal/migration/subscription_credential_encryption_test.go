@@ -11,6 +11,27 @@ import (
 	"corefusion/internal/security/crypto"
 )
 
+// 迁移「历史密钥重加密」必须对 token 列用确定性 nonce：GetByToken 依赖
+// 「入参确定性加密后等值查」，随机 nonce 会让所有长链接永久 404。
+func TestNeedsDeterministicReencrypt(t *testing.T) {
+	cases := []struct {
+		table, column string
+		want          bool
+	}{
+		{"subscriptions", "token", true},
+		{"subscription_rotations", "old_token", true},
+		{"subscription_rotations", "new_token", true},
+		// 短链 code 走 code_hmac 查询，随机 nonce 无碍。
+		{"subscription_short_links", "code", false},
+		{"mihomo_configs", "config_json", false},
+	}
+	for _, c := range cases {
+		if got := needsDeterministicReencrypt(c.table, c.column); got != c.want {
+			t.Fatalf("needsDeterministicReencrypt(%s,%s) = %v, want %v", c.table, c.column, got, c.want)
+		}
+	}
+}
+
 func rawCredential(t *testing.T, db *gorm.DB, table, column string, id int64) string {
 	t.Helper()
 	var val string

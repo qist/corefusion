@@ -98,13 +98,18 @@ func (h *ShortLinkHandler) ListBySubscription(c *gin.Context) {
 		response.NotFound(c, "SUBSCRIPTION_NOT_FOUND", "subscription not found")
 		return
 	}
-	// 无配置的 mihomo_yaml 短链打开只有 proxies（没有规则），先清理掉。
-	h.shortSvc.PurgeUnconfiguredMihomo(c.Request.Context(), subID)
+	full := canSeeCredential(c)
+	// GET 不应成为只读角色的写入口：清理无配置 mihomo 链接会删除/撤销凭证，
+	// ?expand=1 会新建凭证，两者都只对 operator 及以上生效（安全审计 v8 M-1）。
+	if full {
+		// 无配置的 mihomo_yaml 短链打开只有 proxies（没有规则），先清理掉。
+		h.shortSvc.PurgeUnconfiguredMihomo(c.Request.Context(), subID)
+	}
 	// expand=1：按「格式 × 配置」幂等补齐并返回完整组合，
 	// 客户端详情直接用 url，不再自己拼 ?format=&config=。
 	var links []entity.SubscriptionShortLink
 	var listErr error
-	if c.Query("expand") == "1" {
+	if full && c.Query("expand") == "1" {
 		links, listErr = h.shortSvc.EnsureLinks(c.Request.Context(), subID)
 	} else {
 		links, listErr = h.shortSvc.ListBySubscription(c.Request.Context(), subID)
@@ -113,7 +118,6 @@ func (h *ShortLinkHandler) ListBySubscription(c *gin.Context) {
 		response.InternalError(c, "LIST_SHORT_LINKS_FAILED", listErr.Error())
 		return
 	}
-	full := canSeeCredential(c)
 	items := make([]shortLinkItem, 0, len(links))
 	for i := range links {
 		items = append(items, h.item(c, &links[i], full))

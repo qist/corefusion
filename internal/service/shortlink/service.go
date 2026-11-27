@@ -916,7 +916,9 @@ func (s *Service) panelFallbackURL(ctx context.Context, credential, requestHost 
 	if host == "" {
 		host = stripHostPort(requestHost)
 		if host == "" {
-			host = "127.0.0.1"
+			// 门户 /me 没有请求域名（requestHost 为空）：宁可不给短链、
+			// 让前端回退长链接，也不要下发 https://127.0.0.1/... 的死链。
+			return ""
 		}
 	}
 	if scheme == "" {
@@ -995,6 +997,11 @@ func (s *Service) EnsureViews(ctx context.Context, subID int64) []LinkView {
 	if !s.Enabled(ctx) {
 		return nil
 	}
+	// 门户 /me 是高频只读接口：后台关掉「自动创建」后不应再按组合插入新行，
+	// 只返回已有链接（缺的由管理端显式补齐）。同时避免每次刷新 /me 都写库。
+	if cfg := s.GetSettings(ctx); !cfg.AutoCreate {
+		return s.ListViews(ctx, subID)
+	}
 	links, err := s.EnsureLinks(ctx, subID)
 	if err != nil {
 		return nil
@@ -1017,9 +1024,15 @@ func (s *Service) viewsFromLinks(ctx context.Context, sub *entity.Subscription, 
 		if !l.FollowTokenRotation && l.TokenVersion != sub.TokenVersion {
 			continue
 		}
+		url := s.ManualLinkURL(ctx, l, "")
+		if url == "" {
+			// 拿不到对外域名（未配置 external_url/订阅端点）：不返回半成品，
+			// 前端按「无短链」回退长链接。
+			continue
+		}
 		out = append(out, LinkView{
 			ID:         l.ID,
-			URL:        s.ManualLinkURL(ctx, l, ""),
+			URL:        url,
 			Format:     l.Format,
 			ConfigName: l.ConfigName,
 			Platform:   l.Platform,

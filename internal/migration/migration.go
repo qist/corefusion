@@ -432,6 +432,7 @@ func reencryptLegacySecrets(db *gorm.DB) {
 				continue // 该列可能是非文本类型或不支持 LIKE，跳过
 			}
 			rewritten := 0
+			deterministic := needsDeterministicReencrypt(table, name)
 			for _, r := range rows {
 				if r.Val == "" || crypto.CanDecryptWithPrimary(r.Val) {
 					continue // 已是当前密钥加密（或不是密文）
@@ -441,7 +442,16 @@ func reencryptLegacySecrets(db *gorm.DB) {
 					log.Printf("[migration] re-encrypt: %s.%s#%d cannot be decrypted with legacy key either, left as-is", table, name, r.ID)
 					continue
 				}
-				enc, eerr := crypto.EncryptSecret(plain)
+				// ⚠ 订阅 token / 轮换历史必须用确定性 nonce 重写：GetByToken 是
+				// 「把入参确定性加密后等值查 token 列」。若这里用随机 nonce，
+				// AfterFind 仍能解密，但查询永远不命中 → 所有长链接 404。
+				var enc string
+				var eerr error
+				if deterministic {
+					enc, eerr = crypto.EncryptSecretDeterministic(plain)
+				} else {
+					enc, eerr = crypto.EncryptSecret(plain)
+				}
 				if eerr != nil || enc == "" {
 					continue
 				}
@@ -460,6 +470,23 @@ func reencryptLegacySecrets(db *gorm.DB) {
 	if totalRewritten > 0 {
 		log.Printf("[migration] re-encrypt: done, %d value(s) migrated to the current encryption key", totalRewritten)
 	}
+}
+
+// deterministicReencryptColumns 是「必须用确定性 nonce 重写」的列。
+// 这些列既要能解密，又要能按明文等值查询（GetByToken / 轮换历史对账），
+// 随机 nonce 会让查询永久落空。
+// 短链 code 故意用随机 nonce（查询走 code_hmac，与密文无关），不在此列。
+var deterministicReencryptColumns = map[string]map[string]bool{
+	"subscriptions":          {"token": true},
+	"subscription_rotations": {"old_token": true, "new_token": true},
+}
+
+func needsDeterministicReencrypt(table, column string) bool {
+	cols, ok := deterministicReencryptColumns[strings.ToLower(table)]
+	if !ok {
+		return false
+	}
+	return cols[strings.ToLower(column)]
 }
 
 // isStringColumn 判断列是否可能是文本（只对这些列做 `LIKE 'enc:%'` 扫描）。

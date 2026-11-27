@@ -925,6 +925,10 @@ func readSettings(repo *repository.SystemSettingRepository) map[string]string {
 func runMigrate(args []string) {
 	enterConfigDir()
 	env := loadEnv()
+	// 与 server 路径一致：迁移里会写入/重写 enc: 凭证。没有主密钥时 getKey()
+	// 会静默回退到「主机名派生」弱密钥，迁移出的数据之后换机就解不开；
+	// 必须在 db.Init / 数据迁移之前确保随机主密钥就绪。
+	ensureEncryptionKey()
 	dataDir := env["SAFE_PATHS"]
 	if dataDir == "" {
 		dataDir = "data"

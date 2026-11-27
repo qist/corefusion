@@ -9,7 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"corefusion/internal/api/middleware"
 	"corefusion/internal/api/response"
+	domainuser "corefusion/internal/domain/user"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/runtime/agent"
 	"corefusion/internal/store/repository"
@@ -179,17 +181,23 @@ func (h *Handler) exitTagConflicts(ctx context.Context, entryServerID int64, tag
 // RegisterRoutes registers all chain proxy routes under the given group.
 func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 	g := rg.Group("/chain")
+	// 链式代理会改写客户流量的实际走向，并把外部节点渲染进**所有**订阅：
+	// 读也至少 Operator；写（创建/修改/删除/注册虚拟入口）仅 Admin，
+	// 与 /external-nodes 写操作、/node-servers 同级别（安全审计 v8 H-1）。
+	g.Use(middleware.RequireRole(domainuser.RoleOperator))
+	admin := middleware.RequireRole(domainuser.RoleAdmin)
+
 	// Chain links CRUD
 	g.GET("/links", h.ListLinks)
 	g.GET("/links/:id", h.GetLink)
-	g.POST("/links", h.CreateLink)
-	g.PUT("/links/:id", h.UpdateLink)
-	g.DELETE("/links/:id", h.DeleteLink)
+	g.POST("/links", admin, h.CreateLink)
+	g.PUT("/links/:id", admin, h.UpdateLink)
+	g.DELETE("/links/:id", admin, h.DeleteLink)
 
 	// External node server registrations
 	g.GET("/external-servers", h.ListExternalServers)
-	g.POST("/external-servers", h.CreateExternalServer)
-	g.DELETE("/external-servers/:id", h.DeleteExternalServer)
+	g.POST("/external-servers", admin, h.CreateExternalServer)
+	g.DELETE("/external-servers/:id", admin, h.DeleteExternalServer)
 
 	// Topology view
 	g.GET("/topology", h.GetTopology)
@@ -199,7 +207,7 @@ func (h *Handler) RegisterRoutes(rg *gin.RouterGroup) {
 
 	// 创建链式代理：选择入口 → 选择出口（单/多，多选自动判定为负载均衡）→ 自动关联
 	// 见设计文档 §5.5 创建链式代理向导（端到端操作与后端自动行为）
-	g.POST("/proxy", h.CreateChainProxy)
+	g.POST("/proxy", admin, h.CreateChainProxy)
 }
 
 // ── Chain Links ──

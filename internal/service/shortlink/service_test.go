@@ -133,7 +133,8 @@ func TestAutoCreateAndBackfill(t *testing.T) {
 		t.Fatal(err)
 	}
 	links, err := svc.ListBySubscription(context.Background(), sub.ID)
-	if err != nil || len(links) != 1 {
+	// base64_uri + raw_uri（默认格式 base64 与第一条去重）
+	if err != nil || len(links) != 2 {
 		t.Fatalf("auto create links = %d, err=%v", len(links), err)
 	}
 
@@ -162,6 +163,12 @@ func TestEnsureLinksCoversCombosWithoutQuery(t *testing.T) {
 	}
 	if err := fmtRepo.Create(context.Background(), &entity.SubscriptionFormat{
 		Name: "V2RayN", ClientType: "v2ray", Format: "base64_uri", Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 没有任何 xray 配置时，xray_json 订阅格式不应生成短链。
+	if err := fmtRepo.Create(context.Background(), &entity.SubscriptionFormat{
+		Name: "Xray-NoCfg", ClientType: "v2ray", Format: "xray_json", Enabled: true,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -215,6 +222,9 @@ func TestEnsureLinksCoversCombosWithoutQuery(t *testing.T) {
 		if l.Format == "singbox_json" && l.ConfigName == "" {
 			t.Fatalf("sing-box 不应出现无配置短链：%+v", l)
 		}
+		if l.Format == "xray_json" {
+			t.Fatalf("没有 xray 配置时不应生成 xray 短链：%+v", l)
+		}
 	}
 	if !has("singbox_json", "Sing-Box", false) {
 		t.Fatalf("缺少 sing-box 配置组合：%+v", links)
@@ -263,4 +273,42 @@ func openTestDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	return db
+}
+
+// Backfill 要补齐全部组合，而不是只建默认那条。
+func TestBackfillCreatesAllCombos(t *testing.T) {
+	db := openTestDB(t)
+	subRepo := repository.NewSubscriptionRepository(db)
+	linkRepo := repository.NewSubscriptionShortLinkRepository(db)
+	setRepo := repository.NewSystemSettingRepository(db)
+	svc := NewService(linkRepo, subRepo, nil, nil, nil,
+		repository.NewSubscriptionEndpointRepository(db), setRepo)
+	if err := svc.SaveSettings(context.Background(), Settings{Enabled: true, AutoCreate: false}); err != nil {
+		t.Fatal(err)
+	}
+	sub := &entity.Subscription{
+		ClientID: 0, Format: "base64_uri", Token: "tok-backfill", TokenVersion: 1,
+		Status: "active", SecurityMode: "token_only", BindMode: "none", QuotaState: "normal",
+	}
+	if err := subRepo.Create(context.Background(), sub); err != nil {
+		t.Fatal(err)
+	}
+	// 只有默认一条（模拟旧行为）
+	if _, err := svc.Create(context.Background(), CreateInput{
+		SubscriptionID: sub.ID, Format: "base64_uri",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	created, skipped, failed, err := svc.Backfill(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created != 1 || skipped != 0 || failed != 0 {
+		t.Fatalf("backfill created=%d skipped=%d failed=%d, want 1/0/0", created, skipped, failed)
+	}
+	links, _ := svc.ListBySubscription(context.Background(), sub.ID)
+	if len(links) != 2 {
+		t.Fatalf("backfill 后应有 base64+raw 两条，得到 %d", len(links))
+	}
 }

@@ -213,7 +213,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (*entity.Subscript
 	return link, nil
 }
 
-// AutoCreateForSubscription 在新建订阅后按后台开关自动补一条默认短链。
+// AutoCreateForSubscription 在新建订阅后按后台开关补齐全部「格式 × 配置」短链。
 func (s *Service) AutoCreateForSubscription(ctx context.Context, sub *entity.Subscription) error {
 	if sub == nil {
 		return nil
@@ -222,16 +222,11 @@ func (s *Service) AutoCreateForSubscription(ctx context.Context, sub *entity.Sub
 	if !cfg.Enabled || !cfg.AutoCreate {
 		return nil
 	}
-	_, err := s.Create(ctx, CreateInput{
-		SubscriptionID:      sub.ID,
-		Format:              sub.Format,
-		MihomoConfigID:      sub.MihomoConfigID,
-		FollowTokenRotation: cfg.FollowTokenRotation,
-	})
-	if err != nil {
+	if _, err := s.EnsureLinks(ctx, sub.ID); err != nil {
 		log.Printf("[shortlink] auto create for sub=%d failed: %v", sub.ID, err)
+		return err
 	}
-	return err
+	return nil
 }
 
 func (s *Service) GetByID(ctx context.Context, id int64) (*entity.SubscriptionShortLink, error) {
@@ -286,7 +281,6 @@ func (s *Service) RotateCode(ctx context.Context, id int64) (*entity.Subscriptio
 
 // Backfill 为存量 active 订阅补建默认短链（幂等）。
 func (s *Service) Backfill(ctx context.Context, dryRun bool) (created, skipped, failed int, err error) {
-	cfg := s.GetSettings(ctx)
 	const pageSize = 500
 	for offset := 0; ; offset += pageSize {
 		subs, _, listErr := s.subRepo.List(ctx, "active", pageSize, offset)
@@ -303,17 +297,35 @@ func (s *Service) Backfill(ctx context.Context, dryRun bool) (created, skipped, 
 				failed++
 				continue
 			}
-			if hasDefaultLink(existing, sub) {
-				skipped++
-				continue
-			}
-			created++
 			if dryRun {
+				now := time.Now()
+				missing := 0
+				for _, combo := range s.combosForSubscription(ctx, sub) {
+					if matchUsableLink(existing, combo, sub, now) == nil {
+						missing++
+					}
+				}
+				if missing == 0 {
+					skipped++
+				} else {
+					created += missing
+				}
 				continue
 			}
-			if _, createErr := s.CreateForSubscription(ctx, sub, cfg.FollowTokenRotation); createErr != nil {
-				created--
+			// 补齐全部组合（不是只补默认那条）。
+			if _, ensureErr := s.EnsureLinks(ctx, sub.ID); ensureErr != nil {
 				failed++
+				continue
+			}
+			after, listErr := s.repo.ListBySubscription(ctx, sub.ID)
+			if listErr != nil {
+				failed++
+				continue
+			}
+			if delta := len(after) - len(existing); delta > 0 {
+				created += delta
+			} else {
+				skipped++
 			}
 		}
 		if len(subs) < pageSize {
@@ -468,6 +480,13 @@ func (s *Service) combosForSubscription(ctx context.Context, sub *entity.Subscri
 				}
 				// 同名配置已由上面的 Mihomo 配置覆盖（门户也做同名去重）。
 				if configNames[format+"|"+strings.TrimSpace(f.Name)] {
+					continue
+				}
+				// sing-box / Xray 的链接必须绑定一份该格式的配置（订阅格式里的
+				// "Sing-Box/V2Ray JSON" 只是分类元数据，不能单独生成链接）。
+				// 配置链接已在上面的 mihomo_configs 循环里生成，这里一律跳过。
+				if format == string(formatter.FormatSingBoxJSON) ||
+					format == string(formatter.FormatXrayJSON) {
 					continue
 				}
 				add(Combo{Format: format})

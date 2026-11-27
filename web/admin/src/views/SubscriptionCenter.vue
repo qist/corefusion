@@ -14,8 +14,9 @@
             <el-table-column :label="t('common.status')" width="80"><template #default="{row}"><el-tag :type="{active:'success',revoked:'danger',expired:'warning'}[row.status]" size="small">{{ row.status }}</el-tag></template></el-table-column>
             <el-table-column :label="t('subscription.quotaState')" width="100"><template #default="{row}"><el-tag :type="quotaType(row.quota_state)" size="small">{{ row.quota_state }}</el-tag></template></el-table-column>
             <el-table-column :label="`${t('subscription.usedBytes')}/${t('subscription.quotaBytes')}`" min-width="140"><template #default="{row}">{{ fmtBytes(row.used_bytes_cache) }} / {{ row.quota_bytes ? fmtBytes(row.quota_bytes) : t('common.unlimited') }}</template></el-table-column>
-            <el-table-column :label="t('common.actions')" width="240">
+            <el-table-column :label="t('common.actions')" width="320">
               <template #default="{row}">
+                <el-button size="small" @click="openShortLinks(row)" :disabled="row.status==='revoked'">{{ t('shortLink.manage') }}</el-button>
                 <el-button size="small" @click="handleRotate(row)" :disabled="row.status==='revoked'">{{ t('subscription.rotate') }}</el-button>
                 <el-button size="small" type="danger" @click="handleRevoke(row)" :disabled="row.status==='revoked'">{{ t('subscription.revoke') }}</el-button>
                 <el-button v-if="row.status==='revoked'" size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
@@ -29,6 +30,7 @@
             :fields="subscriptionCardFields"
           >
             <template #actions="{ row }">
+              <el-button size="small" @click="openShortLinks(row)" :disabled="row.status==='revoked'">{{ t('shortLink.manage') }}</el-button>
               <el-button size="small" @click="handleRotate(row)" :disabled="row.status==='revoked'">{{ t('subscription.rotate') }}</el-button>
               <el-button size="small" type="danger" @click="handleRevoke(row)" :disabled="row.status==='revoked'">{{ t('subscription.revoke') }}</el-button>
               <el-button v-if="row.status==='revoked'" size="small" type="danger" @click="handleDelete(row)">{{ t('common.delete') }}</el-button>
@@ -477,6 +479,66 @@
       </el-form>
       <template #footer><el-button @click="epDialog=false">{{ t('common.cancel') }}</el-button><el-button type="primary" @click="saveEndpoint">{{ t('common.save') }}</el-button></template>
     </el-dialog>
+
+    <!-- Subscription short links -->
+    <el-dialog v-model="shortDialog" :title="t('shortLink.manage')" width="820">
+      <div style="margin-bottom:8px;color:#909399;font-size:12px">{{ t('shortLink.dialogHint') }}</div>
+      <el-table :data="shortLinks" v-loading="shortLoading" size="small" stripe>
+        <el-table-column :label="t('shortLink.url')" min-width="300">
+          <template #default="{ row }">
+            <span style="font-family:monospace;font-size:12px;word-break:break-all">{{ row.url || row.code_masked }}</span>
+            <el-button v-if="row.url" size="small" text @click="copyShortLink(row)">{{ t('shortLink.copy') }}</el-button>
+          </template>
+        </el-table-column>
+        <el-table-column prop="format" :label="t('shortLink.format')" width="120" />
+        <el-table-column prop="config_name" :label="t('shortLink.config')" width="120" />
+        <el-table-column :label="t('shortLink.enabled')" width="90">
+          <template #default="{ row }">
+            <el-switch v-model="row.enabled" size="small" @change="toggleShortLink(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="150">
+          <template #default="{ row }">
+            <el-button size="small" @click="rotateShortLink(row)">{{ t('shortLink.rotate') }}</el-button>
+            <el-button size="small" type="danger" @click="deleteShortLink(row)">{{ t('common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!shortLoading && shortLinks.length === 0" :description="t('shortLink.noLinks')" :image-size="60" />
+
+      <el-divider />
+      <el-form :model="shortForm" label-width="130px" size="small">
+        <el-form-item :label="t('shortLink.format')">
+          <el-select v-model="shortForm.format" clearable style="width:240px" :placeholder="t('shortLink.followDefault')">
+            <el-option label="Base64" value="base64_uri" />
+            <el-option label="Raw URI" value="raw_uri" />
+            <el-option label="Mihomo YAML" value="mihomo_yaml" />
+            <el-option label="Sing-Box JSON" value="singbox_json" />
+            <el-option label="Xray JSON" value="xray_json" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('shortLink.config')">
+          <el-input v-model="shortForm.config_name" clearable :placeholder="t('shortLink.configPlaceholder')" style="width:280px" />
+        </el-form-item>
+        <el-form-item :label="t('shortLink.platform')">
+          <el-input v-model="shortForm.platform" clearable placeholder="clash / singbox / ..." style="width:220px" />
+        </el-form-item>
+        <el-form-item :label="t('shortLink.providers')">
+          <el-switch v-model="shortForm.providers" />
+        </el-form-item>
+        <el-form-item :label="t('shortLink.lockParams')">
+          <el-switch v-model="shortForm.lock_params" />
+          <div class="hint">{{ t('shortLink.lockParamsHint') }}</div>
+        </el-form-item>
+        <el-form-item :label="t('shortLink.followRotation')">
+          <el-switch v-model="shortForm.follow_token_rotation" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="shortDialog = false">{{ t('common.close') }}</el-button>
+        <el-button type="primary" :loading="shortCreating" @click="createShortLink">{{ t('shortLink.create') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -687,6 +749,69 @@ async function fetchEndpoints() { epLoading.value = true; try { const r = await 
 // Subscription actions
 async function handleRotate(row) { await ElMessageBox.confirm(t('subscription.rotateConfirm'), t('common.confirm')); const r = await client.post(`/subscriptions/${row.id}/rotate`, { reason: 'manual' }); ElMessage.success(`${t('subscription.newToken')}: ${r.token}`); fetchSubscriptions() }
 async function handleRevoke(row) { await ElMessageBox.confirm(t('subscription.revokeConfirm'), t('common.confirm')); await client.post(`/subscriptions/${row.id}/revoke`); ElMessage.success(t('common.success')); fetchSubscriptions() }
+
+// --- Subscription short links ---
+const shortDialog = ref(false)
+const shortSub = ref(null)
+const shortLinks = ref([])
+const shortLoading = ref(false)
+const shortCreating = ref(false)
+const shortForm = ref({ format: '', config_name: '', platform: '', providers: false, lock_params: false, follow_token_rotation: false })
+
+async function openShortLinks(row) {
+  shortSub.value = row
+  shortDialog.value = true
+  shortForm.value = { format: row.format || '', config_name: '', platform: '', providers: false, lock_params: false, follow_token_rotation: false }
+  await fetchShortLinks()
+}
+async function fetchShortLinks() {
+  if (!shortSub.value) return
+  shortLoading.value = true
+  try {
+    const r = await client.get(`/subscriptions/${shortSub.value.id}/short-links`)
+    shortLinks.value = Array.isArray(r) ? r : (r?.items || [])
+  } catch (e) { shortLinks.value = [] } finally { shortLoading.value = false }
+}
+async function createShortLink() {
+  if (!shortSub.value) return
+  shortCreating.value = true
+  try {
+    await client.post(`/subscriptions/${shortSub.value.id}/short-links`, shortForm.value)
+    ElMessage.success(t('common.success'))
+    shortForm.value.config_name = ''
+    shortForm.value.platform = ''
+    shortForm.value.providers = false
+    await fetchShortLinks()
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { shortCreating.value = false }
+}
+async function toggleShortLink(row) {
+  try {
+    await client.put(`/subscription-short-links/${row.id}`, { enabled: row.enabled })
+  } catch (e) { row.enabled = !row.enabled; ElMessage.error(t('common.failed')) }
+}
+async function rotateShortLink(row) {
+  try { await ElMessageBox.confirm(t('shortLink.rotateConfirm'), t('common.confirm')) } catch { return }
+  try {
+    await client.post(`/subscription-short-links/${row.id}/rotate`)
+    ElMessage.success(t('common.success'))
+    await fetchShortLinks()
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+async function deleteShortLink(row) {
+  try { await ElMessageBox.confirm(t('shortLink.deleteConfirm'), t('common.confirm'), { type: 'warning' }) } catch { return }
+  try {
+    await client.delete(`/subscription-short-links/${row.id}`)
+    ElMessage.success(t('common.success'))
+    await fetchShortLinks()
+  } catch (e) { ElMessage.error(t('common.failed')) }
+}
+async function copyShortLink(row) {
+  if (!row.url) return
+  try {
+    await navigator.clipboard.writeText(row.url)
+    ElMessage.success(t('shortLink.copied'))
+  } catch { ElMessage.error(t('common.failed')) }
+}
 async function handleDelete(row) { await ElMessageBox.confirm(t('subscription.deleteConfirm'), t('common.confirm')); await client.delete(`/subscriptions/${row.id}`); ElMessage.success(t('common.success')); fetchSubscriptions() }
 
 // Format CRUD

@@ -4213,7 +4213,8 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
       }
       return false
     }
-    var subUrl = computed(function() {
+    // 长链接（token）基址：短链未命中时兜底，避免出现「短链 + ?format=」。
+    var longSubUrl = computed(function() {
       if (!client.value.sub_token) return ''
       var t = client.value.sub_token
       var ep = endpoints.value.find(function(e) { return e.enabled }) || endpoints.value[0]
@@ -4228,6 +4229,12 @@ var subStatusText = computed(function() { return { active: t('account.normal'), 
         return ''
       }
       return window.location.origin + '/sub/' + t
+    })
+    var subUrl = computed(function() {
+      if (!client.value.sub_token) return ''
+      // 后台启用订阅短链时优先展示短链（服务端已拼好）。
+      if (client.value.sub_short_url) return client.value.sub_short_url
+      return longSubUrl.value
     })
     var subInsecureHidden = computed(function() {
       return !!client.value.sub_token && !subUrl.value
@@ -4265,8 +4272,30 @@ var fetchClientConfigs = function() {
   }).catch(function() { clientConfigs.value = [] })
 }
 
+// 严格匹配：格式 / 配置名 / 平台 / providers 必须完全一致。
+// 宽松匹配会把「无配置的 mihomo_yaml」顶到「config=win」的请求上。
+var findShortLink = function(formatKey, configName, platform, providers) {
+  var list = client.value.sub_short_links || []
+  var wantFormat = formatKey || ''
+  var wantConfig = configName || ''
+  var wantPlatform = platform || ''
+  for (var i = 0; i < list.length; i++) {
+    var l = list[i]
+    if (!l || !l.url) continue
+    if ((l.format || '') !== wantFormat) continue
+    if ((l.config_name || '') !== wantConfig) continue
+    if ((l.platform || '') !== wantPlatform) continue
+    if (!!providers !== !!l.providers) continue
+    return l.url
+  }
+  return ''
+}
+
 var buildSubLink = function(formatKey, configName, platform, providers) {
-  var base = subUrl.value
+  var short = findShortLink(formatKey, configName, platform, providers)
+  if (short) return short
+  // 兜底必须用长链接：用短链再拼参数就是「短链 + ?format=」，等于没达到目的。
+  var base = longSubUrl.value
   if (!base) return ''
   var sep = base.indexOf('?') >= 0 ? '&' : '?'
   var link = base + sep + 'format=' + encodeURIComponent(formatKey)

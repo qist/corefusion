@@ -304,6 +304,7 @@ const clients = ref([])
 const { page: clientPage, pageSize: clientPageSize } = usePagination({ pageKey: 'cliPage', pageSizeKey: 'cliSize' })
 const clientTotal = ref(0)
 const subscriptions = ref([])
+const shortUrlBySub = ref({})
 const endpoints = ref([])
 const clientLoading = ref(false)
 const clientDialog = ref(false)
@@ -364,8 +365,8 @@ const isPrivateHost = (h) => {
   }
   return host === '::1' || host === 'localhost' || /^f[cd]/i.test(host) || /^fe80/i.test(host)
 }
-// 订阅链接基址：独立端点域名走 HTTPS；否则按当前访问 scheme，非 HTTPS + 公网地址（外网）不显示。
-const subUrl = (row) => {
+// 长链接基址（token）：只在短链未启用/接口不可用时兜底。
+const longSubUrl = (row) => {
   const token = getClientToken(row)
   if (!token) return ''
   const ep = endpoints.value.find(e => e.enabled) || endpoints.value[0]
@@ -381,6 +382,15 @@ const subUrl = (row) => {
   const isDedicatedPort = subPort && subPort !== '0' && subPort !== panelSettings.value.listen_port
   if (isDedicatedPort) return scheme + '://' + host + ':' + subPort + '/' + token
   return scheme + '://' + host + '/sub/' + token
+}
+
+// 订阅链接基址：启用短链时优先展示短链（服务端已按订阅端点域名拼好）。
+const subUrl = (row) => {
+  const token = getClientToken(row)
+  if (!token) return ''
+  const short = shortUrlBySub.value[row.subscription_id]
+  if (short) return short
+  return longSubUrl(row)
 }
 
 // 「订阅格式」列表：mihomo configs（含 format/platform/plan_ids/enabled）。
@@ -420,10 +430,56 @@ const listConfigsForFormat = (format, row) => {
     })
 }
 
-// 详情里的链接：base64/raw 始终有；Clash 每个可用配置给「内联 + providers」两条；
-// sing-box / xray 每个可用配置一条（没配置就不显示该行）。
-function buildSubLinks(row) {
-  const base = subUrl(row)
+const SUB_LINK_FORMAT_LABELS = {
+  mihomo_yaml: 'Clash / Mihomo',
+  singbox_json: 'Sing-box',
+  xray_json: 'Xray / V2Ray',
+  base64_uri: 'Base64 URI',
+  raw_uri: 'Raw URI',
+}
+const SUB_LINK_FORMAT_ORDER = { mihomo_yaml: 1, singbox_json: 2, xray_json: 3, base64_uri: 4, raw_uri: 5 }
+
+const shortLinkLabel = (l) => {
+  let label = SUB_LINK_FORMAT_LABELS[l.format] || l.format
+  if (l.config_name) label += ' · ' + l.config_name
+  if (l.providers) label += ' · providers'
+  return label
+}
+
+// 详情里的链接：优先用后端按「格式 × 配置」展开的短链，URL 本身不带任何 query。
+// 短链未启用或接口不可用时，才退回长链接（仍然是干净的 token 地址 + 参数）。
+async function buildSubLinks(row) {
+  if (row.subscription_id) {
+    try {
+      const r = await client.get(`/subscriptions/${row.subscription_id}/short-links`, { params: { expand: 1 } })
+      const items = Array.isArray(r) ? r : (r?.items || [])
+      // 与长链接逻辑保持一致：sing-box / xray 只展示「配置」条目；
+      // 后端为保证默认订阅地址会额外返回一条无配置的同格式短链，这里不展示。
+      const usable = items.filter(i => {
+        if (!i || !i.url) return false
+        if (i.config_name || i.providers) return true
+        if (i.format === 'base64_uri' || i.format === 'raw_uri') return true
+        return !items.some(x => x && x.url && x.format === i.format && x.config_name)
+      })
+      if (usable.length) {
+        usable.sort((a, b) =>
+          (SUB_LINK_FORMAT_ORDER[a.format] || 9) - (SUB_LINK_FORMAT_ORDER[b.format] || 9) ||
+          String(a.config_name || '').localeCompare(String(b.config_name || '')) ||
+          (a.providers ? 1 : 0) - (b.providers ? 1 : 0))
+        return usable.map(i => ({
+          format: i.providers ? `${i.format}_providers` : i.format,
+          label: shortLinkLabel(i),
+          url: i.url,
+        }))
+      }
+    } catch {}
+  }
+  return buildSubLinksLegacy(row)
+}
+
+// 无短链时的旧逻辑：用长链接 + query 参数。
+function buildSubLinksLegacy(row) {
+  const base = longSubUrl(row)
   if (!base) return []
   const sep = base.indexOf('?') >= 0 ? '&' : '?'
   const withQuery = (format, extra) => base + sep + 'format=' + format + (extra || '')
@@ -576,8 +632,23 @@ async function fetchClients() {
     endpoints.value = Array.isArray(epRes) ? epRes : (epRes?.items || [])
     // Fetch full token for each client's subscription
     const subIds = clients.value.filter(c => c.subscription_id).map(c => c.subscription_id)
-    const subs = await Promise.all(subIds.map(id => client.get(`/subscriptions/${id}`).catch(() => null)))
+    const [subs, shortLists] = await Promise.all([
+      Promise.all(subIds.map(id => client.get(`/subscriptions/${id}`).catch(() => null))),
+      Promise.all(subIds.map(id => client.get(`/subscriptions/${id}/short-links`).catch(() => null)))
+    ])
     subscriptions.value = subs.filter(Boolean)
+    const map = {}
+    subIds.forEach((id, i) => {
+      const r = shortLists[i]
+      const items = Array.isArray(r) ? r : (r?.items || [])
+      const usable = items.filter(l => l && l.url)
+      const sub = subs[i]
+      // 优先订阅自身默认格式（无配置、非 providers），避免列表显示成 base64。
+      const want = usable.find(l =>
+        l.format === (sub?.format || '') && !l.config_name && !l.providers) || usable[0]
+      if (want) map[id] = want.url
+    })
+    shortUrlBySub.value = map
   } catch {} finally { clientLoading.value = false }
 }
 
@@ -610,7 +681,7 @@ async function resetPwd() {
 async function showSubDetail(row) {
   subDetailEmail.value = row.email
   await fetchMihomoConfigs()
-  const links = buildSubLinks(row)
+  const links = await buildSubLinks(row)
   subDetailLinks.value = links
   subDetailSelected.value = 0
   if (!links.length) ElMessage.warning(t('client.subInsecureHidden'))

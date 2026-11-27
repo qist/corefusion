@@ -260,11 +260,11 @@ func (h *PublicHandler) resolveSubscriptionProviderPlan(ctx context.Context, tmp
 // buildProviderDefinitions 生成 Provider 模式的 proxy-providers 列表。
 // 内部 provider 的 URL 指向面板数据源（继承 config/platform，追加 provider=key）；
 // 外部 provider 原样透传，不经过面板。
-func (h *PublicHandler) buildProviderDefinitions(c *gin.Context, token string, plan *subscriptionProviderPlan) []mihomoProviderDefinition {
+func (h *PublicHandler) buildProviderDefinitions(c *gin.Context, credential string, plan *subscriptionProviderPlan, opts serveOptions) []mihomoProviderDefinition {
 	defs := make([]mihomoProviderDefinition, 0, len(plan.Keys)+1)
 	for _, key := range plan.Keys {
 		if def, ok := plan.Internal[key]; ok {
-			url := h.buildProviderURL(c, token, key)
+			url := h.buildProviderURL(c, credential, key, opts)
 			defs = append(defs, mihomoProviderDefinition{
 				Key:    key,
 				Fields: buildInternalProviderFields(key, def, url),

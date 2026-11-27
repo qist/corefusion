@@ -49,6 +49,7 @@ func (Subscription) TableName() string { return "subscriptions" }
 type SubscriptionAccessLog struct {
 	ID             int64     `json:"id" gorm:"primaryKey;autoIncrement"`
 	SubscriptionID int64     `json:"subscription_id" gorm:"index:idx_sub_access_logs_sub_time,priority:1;not null"`
+	ShortLinkID    int64     `json:"short_link_id" gorm:"index"`
 	IP             string    `json:"ip" gorm:"size:64"`
 	RealIP         string    `json:"real_ip" gorm:"size:64"`
 	CDNIP          string    `json:"cdn_ip" gorm:"size:64"`

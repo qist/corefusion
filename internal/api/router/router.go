@@ -108,6 +108,7 @@ import (
 	runtimeapplySvc "corefusion/internal/service/runtimeapply"
 	svcService "corefusion/internal/service/service"
 	sharedomainconfigSvc "corefusion/internal/service/sharedomainconfig"
+	shortlinkSvc "corefusion/internal/service/shortlink"
 	subendSvc "corefusion/internal/service/subendpoint"
 	subfmtSvc "corefusion/internal/service/subformat"
 	subService "corefusion/internal/service/subscription"
@@ -1374,6 +1375,19 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo := repository.NewSubscriptionEndpointRepository(database)
 	publicSubH.SetSubEndpointRepo(subEndpointRepo)
+	shortLinkSvcInst := shortlinkSvc.NewService(
+		repository.NewSubscriptionShortLinkRepository(database),
+		subRepo,
+		mihomoConfigRepo,
+		repository.NewSubscriptionFormatRepository(database),
+		clientRepo,
+		subEndpointRepo,
+		systemSettingRepo,
+	)
+	publicSubH.SetShortLinkService(shortLinkSvcInst)
+	subSvc.SetShortLinkHook(shortLinkSvcInst)
+	clientauthSvcInst.SetShortLinkService(shortLinkSvcInst)
+	shortLinkH := subsHandler.NewShortLinkHandler(subSvc, shortLinkSvcInst)
 	clientExtH := clientextHandler.NewHandler(
 		referralSvcInst, ticketSvcInst, giftSvcInst, articleSvcInst,
 		sharedAcctSvcInst, ipWhitelistSvcInst, selfUnbanSvcInst, subResetSvcInst,
@@ -2110,6 +2124,7 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subsGroup.GET("/:id", subH.GetByID)
 				subsGroup.GET("/:id/access-logs", subH.ListAccessLogs)
 				subsGroup.GET("/:id/rotations", subH.ListRotations)
+				subsGroup.GET("/:id/short-links", shortLinkH.ListBySubscription)
 				// 订阅写操作（含 rotate/revoke，会直接影响客户可用性）：
 				// 至少 operator；viewer 只读（安全审计 v6 H-1）。
 				subsWrite := protected.Group("/subscriptions").Use(middleware.RequireRole(domainuser.RoleOperator))
@@ -2121,6 +2136,15 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				subsWrite.POST("/:id/restore", subH.Restore)
 				subsWrite.POST("/:id/enable", subH.Enable)
 				subsWrite.POST("/:id/reset-usage", subH.ResetUsage)
+				subsWrite.POST("/:id/short-links", shortLinkH.Create)
+			}
+
+			// 短链本身的管理（轮换/禁用/删除）。短链等同订阅凭证，写操作至少 Operator。
+			shortLinkWrite := protected.Group("/subscription-short-links").Use(middleware.RequireRole(domainuser.RoleOperator))
+			{
+				shortLinkWrite.PUT("/:id", shortLinkH.Update)
+				shortLinkWrite.DELETE("/:id", shortLinkH.Delete)
+				shortLinkWrite.POST("/:id/rotate", shortLinkH.Rotate)
 			}
 
 			// 管理端 /subscription-formats CRUD 已于 2026-10-20 下线：
@@ -3633,6 +3657,10 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 				systemGroup.GET("/db-pool-stats", systemH.GetDBPoolStats)
 				systemGroup.GET("/subscription-billing-templates", systemH.GetSubscriptionBillingTemplates)
 				systemGroup.PUT("/subscription-billing-templates", systemH.UpdateSubscriptionBillingTemplates)
+				// 订阅短链全局开关 + 存量收拢
+				systemGroup.GET("/subscription-short-link", shortLinkH.GetSettings)
+				systemGroup.PUT("/subscription-short-link", shortLinkH.UpdateSettings)
+				systemGroup.POST("/subscription-short-link/backfill", shortLinkH.Backfill)
 				systemGroup.GET("/notification-templates", systemH.ListTemplates)
 				systemGroup.POST("/notification-templates", systemH.CreateTemplate)
 				systemGroup.POST("/notification-templates/:id/send", systemH.SendTemplateTest)
@@ -4478,7 +4506,17 @@ func NewSubscriptionEngine(database *gorm.DB) *gin.Engine {
 	// 订阅被限流（429）也落一条访问日志：429 在 handler 之前返回，
 	// 不带这个钩子的话管理端「订阅访问日志」看不到限流记录。
 	middleware.SetSubscribeDeniedRecorder(publicSubH.RecordDeniedAccess)
-	publicSubH.SetSubEndpointRepo(repository.NewSubscriptionEndpointRepository(database))
+	subEndpointRepo2 := repository.NewSubscriptionEndpointRepository(database)
+	publicSubH.SetSubEndpointRepo(subEndpointRepo2)
+	publicSubH.SetShortLinkService(shortlinkSvc.NewService(
+		repository.NewSubscriptionShortLinkRepository(database),
+		subRepo,
+		mihomoConfigRepo2,
+		repository.NewSubscriptionFormatRepository(database),
+		clientRepo,
+		subEndpointRepo2,
+		systemSettingRepo,
+	))
 	publicSubH.SetServerMetricRepo(repository.NewServerMetricRepository(database))
 
 	// 订阅拉取触发的 IP 关联推送：8081 引擎的 PublicHandler 也必须接 RateLimitPusher。
@@ -4690,6 +4728,16 @@ func NewPortalEngine(database *gorm.DB) *gin.Engine {
 	clientauthSvcInst.SetSelfUnbanChecker(selfUnbanSvcInst.CanSelfUnban)
 	subResetSvcInst := clientauthSvc.NewSubscriptionResetService(subRepo, clientRepo)
 	subEndpointRepo2 := repository.NewSubscriptionEndpointRepository(database)
+	portalShortLinkSvc := shortlinkSvc.NewService(
+		repository.NewSubscriptionShortLinkRepository(database),
+		subRepo,
+		repository.NewMihomoConfigRepository(database),
+		repository.NewSubscriptionFormatRepository(database),
+		clientRepo,
+		subEndpointRepo2,
+		systemSettingRepo,
+	)
+	clientauthSvcInst.SetShortLinkService(portalShortLinkSvc)
 
 	// Set balance repo on clientauth service for /me extension
 	clientauthSvcInst.SetBalanceRepo(repository.NewClientBalanceRepository(database))

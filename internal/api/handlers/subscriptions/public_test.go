@@ -556,7 +556,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	// 未注入 repo → 回退本请求 host（X-Forwarded-Proto 判定 https）
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
 	c.Request.Header.Set("X-Forwarded-Host", "panel.example.com")
-	got := h.buildProviderURL(c, "test-token", "")
+	got := h.buildProviderURL(c, "test-token", "", serveOptions{})
 	want0 := "https://panel.example.com/sub/test-token?format=mihomo_proxies_yaml"
 	want := want0
 	if got != want {
@@ -568,7 +568,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	h2.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
 		{ID: 1, Domain: "sub.example.com", Path: "/", Enabled: true},
 	}})
-	got = h2.buildProviderURL(c, "test-token", "")
+	got = h2.buildProviderURL(c, "test-token", "", serveOptions{})
 	want = "https://sub.example.com/test-token?format=mihomo_proxies_yaml"
 	if got != want {
 		t.Fatalf("endpoint url = %q, want %q", got, want)
@@ -579,7 +579,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	h3.SetSubEndpointRepo(fakeSubEndpointSource{endpoints: []entity.SubscriptionEndpoint{
 		{ID: 2, Domain: "", Path: "/", Enabled: true},
 	}})
-	got = h3.buildProviderURL(c, "test-token", "")
+	got = h3.buildProviderURL(c, "test-token", "", serveOptions{})
 	if got != want0 {
 		t.Fatalf("empty-domain url = %q, want fallback %q", got, want0)
 	}
@@ -590,7 +590,7 @@ func TestBuildProviderURLUsesSubscriptionEndpointDomain(t *testing.T) {
 	c4.Request = httptest.NewRequest("GET", "/test-token", nil)
 	c4.Request.Header.Set("X-Forwarded-Proto", "https")
 	c4.Request.Header.Set("X-Forwarded-Host", "sub.example.com")
-	got = h4.buildProviderURL(c4, "test-token", "")
+	got = h4.buildProviderURL(c4, "test-token", "", serveOptions{})
 	want = "https://sub.example.com/test-token?format=mihomo_proxies_yaml"
 	if got != want {
 		t.Fatalf("independent port url = %q, want %q", got, want)
@@ -608,13 +608,13 @@ func TestBuildProviderURLInheritsSubscriptionParams(t *testing.T) {
 	c.Request.Header.Set("X-Forwarded-Proto", "https")
 	c.Request.Header.Set("X-Forwarded-Host", "panel.example.com")
 
-	got := h.buildProviderURL(c, "tok", "office")
+	got := h.buildProviderURL(c, "tok", "office", serveOptions{configName: "win", platform: "android"})
 	want := "https://panel.example.com/sub/tok?format=mihomo_proxies_yaml&config=win&platform=android&foo=bar&provider=office"
 	if got != want {
 		t.Fatalf("provider url = %q, want %q", got, want)
 	}
 
-	got = h.buildProviderURL(c, "tok", "subscription-nodes")
+	got = h.buildProviderURL(c, "tok", "subscription-nodes", serveOptions{configName: "win", platform: "android"})
 	want = "https://panel.example.com/sub/tok?format=mihomo_proxies_yaml&config=win&platform=android&foo=bar"
 	if got != want {
 		t.Fatalf("all-nodes provider url = %q, want %q", got, want)
@@ -639,14 +639,14 @@ func TestBuildProviderURLPrefersRequestDomain(t *testing.T) {
 		return c
 	}
 
-	got := h.buildProviderURL(newCtx("new.example.com"), "tok", "office")
+	got := h.buildProviderURL(newCtx("new.example.com"), "tok", "office", serveOptions{})
 	want := "https://new.example.com/tok?format=mihomo_proxies_yaml&provider=office"
 	if got != want {
 		t.Fatalf("provider url 应使用请求域名：got %q, want %q", got, want)
 	}
 
 	// 请求域名不在端点列表里 → 仍按 ID 回落第一个启用端点
-	got = h.buildProviderURL(newCtx("panel.example.com"), "tok", "office")
+	got = h.buildProviderURL(newCtx("panel.example.com"), "tok", "office", serveOptions{})
 	want = "https://old.example.com/tok?format=mihomo_proxies_yaml&provider=office"
 	if got != want {
 		t.Fatalf("未知域名应回落到第一个端点：got %q, want %q", got, want)

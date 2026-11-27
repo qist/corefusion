@@ -108,6 +108,32 @@
           </el-form>
         </el-card>
 
+        <!-- Subscription short links -->
+        <el-card v-if="$can('admin')" shadow="never" style="margin-top:16px">
+          <template #header>
+            <span style="font-weight:600">{{ t('shortLink.title') }}</span>
+          </template>
+          <el-form :model="shortLinkForm" label-width="200px" style="max-width:680px">
+            <el-form-item :label="t('shortLink.enabled')">
+              <el-switch v-model="shortLinkForm.enabled" />
+              <div class="hint">{{ t('shortLink.enabledHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('shortLink.autoCreate')">
+              <el-switch v-model="shortLinkForm.auto_create" :disabled="!shortLinkForm.enabled" />
+              <div class="hint">{{ t('shortLink.autoCreateHint') }}</div>
+            </el-form-item>
+            <el-form-item :label="t('shortLink.followRotation')">
+              <el-switch v-model="shortLinkForm.follow_token_rotation" :disabled="!shortLinkForm.enabled" />
+              <div class="hint">{{ t('shortLink.followRotationHint') }}</div>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="shortLinkSaving" @click="saveShortLinkSettings">{{ t('common.save') }}</el-button>
+              <el-button :loading="shortLinkBackfilling" @click="backfillShortLinks">{{ t('shortLink.backfill') }}</el-button>
+              <div class="hint">{{ t('shortLink.backfillHint') }}</div>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
         <!-- Panel self-update -->
         <el-card v-if="$can('super_admin')" shadow="never" style="margin-top:16px">
           <template #header>
@@ -1182,6 +1208,33 @@ const currencySaving = ref(false)
 // Panel config
 const panelForm = ref({ listen_addr: '0.0.0.0', listen_port: '8080', subscription_port: '0', portal_enabled: true, tls_enabled: false, tls_cert_id: '', tls_cert_path: '', tls_key_path: '', mtls_enabled: false, mtls_ca_path: '', agent_grpc_port: '18443', web_path: '/', timezone: 'Asia/Shanghai', data_dir: 'data', trusted_proxies: '', profile_web_page_url: '', mode: 'full', export_max_rows: 50000, passkey_rp_ids: '' })
 const envForm = ref({ safe_paths: 'data' })
+
+// Subscription short links (separate system settings key)
+const shortLinkForm = ref({ enabled: false, auto_create: true, follow_token_rotation: false })
+const shortLinkSaving = ref(false)
+const shortLinkBackfilling = ref(false)
+async function fetchShortLinkSettings() {
+  try {
+    const data = await client.get('/system/subscription-short-link')
+    if (data) Object.assign(shortLinkForm.value, data)
+  } catch { /* 非 Admin 或未初始化时静默 */ }
+}
+async function saveShortLinkSettings() {
+  shortLinkSaving.value = true
+  try {
+    const data = await client.put('/system/subscription-short-link', shortLinkForm.value)
+    if (data) Object.assign(shortLinkForm.value, data)
+    ElMessage.success(t('common.success'))
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { shortLinkSaving.value = false }
+}
+async function backfillShortLinks() {
+  try { await ElMessageBox.confirm(t('shortLink.backfillConfirm'), t('common.confirm')) } catch { return }
+  shortLinkBackfilling.value = true
+  try {
+    const r = await client.post('/system/subscription-short-link/backfill', { dry_run: false })
+    ElMessage.success(`${t('shortLink.created')}: ${r.created ?? 0}, ${t('shortLink.skipped')}: ${r.skipped ?? 0}, ${t('shortLink.failed')}: ${r.failed ?? 0}`)
+  } catch (e) { ElMessage.error(t('common.failed')) } finally { shortLinkBackfilling.value = false }
+}
 const envSaving = ref(false)
 const panelPort = computed({ get: () => parseInt(panelForm.value.listen_port) || 8080, set: (v) => { panelForm.value.listen_port = String(v) } })
 const subPort = computed({ get: () => parseInt(panelForm.value.subscription_port) || 0, set: (v) => { panelForm.value.subscription_port = String(v) } })
@@ -2156,7 +2209,7 @@ const remoteRestoreCardFields = computed(() => [
   { label: 'Size', text: row => formatSize(row.size) },
 ])
 
-onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchIPBlacklist(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus(); loadPanelUpdates() })
+onMounted(() => { fetchPanelConfig(); fetchEnvConfig(); fetchNotifyConfig(); fetchMonitorConfig(); fetchCertificates(); fetchTemplates(); fetchEmails(); fetchBackups(); fetchSchedules(); fetchStorages(); fetchGitHubConfig(); fetchSelfUnbanConfig(); fetchEncryptionKeyStatus(); fetchJWTSecretStatus(); fetchIPBlacklist(); fetchOAuthConfig(); fetchCurrencyConfig(); fetchDBConfig(); fetchMaintenanceStatus(); fetchShortLinkSettings(); loadPanelUpdates() })
 onUnmounted(stopPanelUpdatePolling)
 </script>
 

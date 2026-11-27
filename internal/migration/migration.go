@@ -51,6 +51,7 @@ func Models() []interface{} {
 		&entity.Subscription{},
 		&entity.SubscriptionAccessLog{},
 		&entity.SubscriptionRotation{},
+		&entity.SubscriptionShortLink{},
 
 		// Certificates
 		&entity.Certificate{},

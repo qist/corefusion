@@ -21,6 +21,7 @@ import (
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/plan"
 	ratelimitsvc "corefusion/internal/service/ratelimit"
+	"corefusion/internal/service/shortlink"
 	"corefusion/internal/service/traffic"
 	"corefusion/internal/store/repository"
 	"corefusion/internal/subscription/formatter"
@@ -57,6 +58,8 @@ type PublicHandler struct {
 	extServerRepo *repository.ExternalNodeServerRepository
 	// 订阅端点仓库：动态 proxy-provider 的回源 URL 优先使用启用的独立域名
 	subEndpointRepo SubEndpointSource
+	// 短链服务：解析 code、全局开关、访问统计、URL 基址。
+	shortSvc *shortlink.Service
 }
 
 // SetNetworkTracker injects the nftables IP tracker so subscription access records can
@@ -127,6 +130,11 @@ func (h *PublicHandler) SetSubEndpointRepo(repo SubEndpointSource) {
 	h.subEndpointRepo = repo
 }
 
+// SetShortLinkService 注入短链服务。
+func (h *PublicHandler) SetShortLinkService(svc *shortlink.Service) {
+	h.shortSvc = svc
+}
+
 // requestDomain 取本次订阅请求的域名（去掉端口与多级代理的逗号列表）。
 func requestDomain(c *gin.Context) string {
 	host := c.GetHeader("X-Forwarded-Host")
@@ -153,11 +161,14 @@ func requestDomain(c *gin.Context) string {
 //
 // 只把 format 换成 mihomo_proxies_yaml；config / platform 等主订阅参数必须继承，
 // 再追加 provider=<key>（subscription-nodes 为保留 key，不带 provider 参数）。
-func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey string) string {
+func (h *PublicHandler) buildProviderURL(c *gin.Context, credential, providerKey string, opts serveOptions) string {
 	base := ""
-	if h.subEndpointRepo != nil {
-		endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context())
-		if err == nil {
+	if h.shortSvc != nil {
+		base = h.shortSvc.CredentialURL(c.Request.Context(), credential, requestDomain(c))
+	}
+	// 兼容未注入短链服务的旧路径/单测：仍优先用启用的独立订阅域名。
+	if base == "" && h.subEndpointRepo != nil {
+		if endpoints, err := h.subEndpointRepo.GetEnabled(c.Request.Context()); err == nil {
 			domain := requestDomain(c)
 			var chosen *entity.SubscriptionEndpoint
 			for i := range endpoints {
@@ -175,7 +186,11 @@ func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey stri
 			}
 			if chosen != nil {
 				path := strings.TrimRight(chosen.Path, "/")
-				base = fmt.Sprintf("https://%s%s/%s", chosen.Domain, path, token)
+				if path == "" || path == "/" {
+					base = fmt.Sprintf("https://%s/%s", chosen.Domain, credential)
+				} else {
+					base = fmt.Sprintf("https://%s%s/%s", chosen.Domain, path, credential)
+				}
 			}
 		}
 	}
@@ -193,26 +208,29 @@ func (h *PublicHandler) buildProviderURL(c *gin.Context, token, providerKey stri
 		// 直接沿用当前请求路径，避免把 /sub 硬编码进独立端口部署。
 		path := c.Request.URL.Path
 		if path == "" {
-			path = "/sub/" + token
+			path = "/sub/" + credential
 		}
 		base = fmt.Sprintf("%s://%s%s", scheme, host, path)
 	}
-	return base + buildProviderQuery(c, providerKey)
+	return base + buildProviderQuery(c, providerKey, opts)
 }
 
 // buildProviderQuery 继承主订阅请求的查询参数，仅替换 format 并追加 provider。
-func buildProviderQuery(c *gin.Context, providerKey string) string {
+// opts 是本次请求**生效后**的参数（短链的预设参数也要带进 provider 回源地址）。
+func buildProviderQuery(c *gin.Context, providerKey string, opts serveOptions) string {
 	parts := []string{"format=mihomo_proxies_yaml"}
 	added := map[string]bool{
 		"format":    true,
 		"provider":  true,
 		"providers": true,
 	}
-	for _, key := range []string{"config", "platform"} {
-		if value := c.Query(key); value != "" {
-			parts = append(parts, url.QueryEscape(key)+"="+url.QueryEscape(value))
-			added[key] = true
-		}
+	if value := opts.configName; value != "" {
+		parts = append(parts, url.QueryEscape("config")+"="+url.QueryEscape(value))
+		added["config"] = true
+	}
+	if value := opts.platform; value != "" {
+		parts = append(parts, url.QueryEscape("platform")+"="+url.QueryEscape(value))
+		added["platform"] = true
 	}
 	extra := make([]string, 0)
 	for key := range c.Request.URL.Query() {
@@ -308,7 +326,27 @@ type billingTemplateConfig struct {
 	BillingNodeIDs    []int64 // NodeGroupMember IDs from subscription
 }
 
-// ServeSubscription handles GET /sub/:token.
+// serveOptions 是本次订阅请求生效后的渲染参数。
+//
+// 长链接从 query 解析，短链从 DB 预设解析；两条入口最终都走
+// serveResolvedSubscription，授权/渲染/日志只有一套。
+type serveOptions struct {
+	format      string
+	configName  string
+	platform    string
+	providers   *bool
+	lockParams  bool
+	shortLinkID int64
+	via         string // token / short_link
+	// credential 是本次请求实际使用的凭证段（token 或短码）。
+	// Provider 回源地址必须沿用它，短链请求绝不能回退成 token。
+	credential string
+}
+
+// ServeSubscription handles GET /sub/:token（独立订阅端口为 GET /:token）。
+//
+// 短链复用同一个路由：路径段是 20 位 base32 短码时转短链处理，否则按 token 查。
+// token 固定 64 位 hex，短码固定 20 位，按长度即可区分。
 func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
@@ -317,8 +355,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
+	// 20 位 base32 才可能是短码；未命中时继续按 token 查，
+	// 避免历史/手工导入的 20 位 token 被误判成短链。
+	if shortlink.IsCode(token) && h.serveShortLink(c, token) {
+		return
+	}
 
+	ctx := c.Request.Context()
 	sub, err := h.subRepo.GetByToken(ctx, token)
 	if err != nil {
 		// 未知 token 也记一条（subID=0）：扫描/爆破订阅 token 的行为要能看见。
@@ -327,12 +370,115 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		return
 	}
 
+	opts := serveOptions{
+		format:     c.Query("format"),
+		configName: c.Query("config"),
+		platform:   c.Query("platform"),
+		via:        "token",
+		credential: token,
+	}
+	if raw := c.Query(subscriptionProvidersParam); raw != "" {
+		v := providersEnabled(raw)
+		opts.providers = &v
+	}
+	h.serveResolvedSubscription(c, sub, opts)
+}
+
+// serveShortLink 解析短码并复用完整授权/渲染链路。
+//
+// 返回 false 表示“不是一条已知短链”（开关未启用 / 短码不存在）：
+// 调用方继续按 token 查，兼容历史 20 位 base32 token。
+// 返回 true 表示已经处理完响应（成功或已按短链语义拒绝）。
+func (h *PublicHandler) serveShortLink(c *gin.Context, code string) bool {
+	ctx := c.Request.Context()
+	deny := func(subID, linkID int64, status int, reason string) bool {
+		h.logDeniedAccessMeta(c, subID, linkID, status, reason)
+		c.JSON(status, gin.H{"code": "SUBSCRIPTION_NOT_FOUND", "message": "subscription not found"})
+		return true
+	}
+
+	if h.shortSvc == nil || !shortSvcEnabled(ctx, h.shortSvc) {
+		return false
+	}
+
+	link, err := h.shortSvc.GetByCode(ctx, code)
+	if err != nil || link == nil {
+		return false
+	}
+	if !link.Enabled || link.RevokedAt != nil ||
+		(link.ExpiresAt != nil && !link.ExpiresAt.After(time.Now())) {
+		return deny(0, link.ID, http.StatusNotFound, "short_inactive")
+	}
+
+	sub, err := h.subRepo.GetByID(ctx, link.SubscriptionID)
+	if err != nil || sub == nil {
+		return deny(0, link.ID, http.StatusNotFound, "short_subscription_missing")
+	}
+	// 默认：token 轮换后旧短链一起失效。FollowTokenRotation=true 时不受影响。
+	if !link.FollowTokenRotation && link.TokenVersion != sub.TokenVersion {
+		return deny(sub.ID, link.ID, http.StatusNotFound, "short_token_rotated")
+	}
+
+	opts := serveOptions{
+		format:      link.Format,
+		configName:  link.ConfigName,
+		platform:    link.Platform,
+		lockParams:  link.LockParams,
+		shortLinkID: link.ID,
+		via:         "short_link",
+		credential:  link.Code,
+	}
+	providers := link.Providers
+	opts.providers = &providers
+
+	if !link.LockParams {
+		if v := c.Query("format"); v != "" {
+			opts.format = v
+		}
+		if v := c.Query("config"); v != "" {
+			opts.configName = v
+		}
+		if v := c.Query("platform"); v != "" {
+			opts.platform = v
+		}
+		if raw := c.Query(subscriptionProvidersParam); raw != "" {
+			v := providersEnabled(raw)
+			opts.providers = &v
+		}
+	}
+
+	// Provider 数据源请求（?provider=<key>）是服务端内部回源：必须允许覆盖
+	// format=mihomo_proxies_yaml，即使短链锁定了参数，否则 Clash 拉不到节点子集。
+	if strings.TrimSpace(c.Query(subscriptionProviderParam)) != "" {
+		opts.format = string(formatter.FormatMihomoProxies)
+	}
+
+	// 短链按配置 ID 定位，配置改名不影响链接。
+	if opts.configName == "" && link.MihomoConfigID != nil && h.mihomoRepo != nil {
+		if cfg, cerr := h.mihomoRepo.GetByID(ctx, *link.MihomoConfigID); cerr == nil && cfg != nil {
+			opts.configName = cfg.Name
+		}
+	}
+
+	h.serveResolvedSubscription(c, sub, opts)
+	return true
+}
+
+func shortSvcEnabled(ctx context.Context, svc *shortlink.Service) bool {
+	return svc != nil && svc.Enabled(ctx)
+}
+
+// serveResolvedSubscription 是订阅下发的唯一渲染入口（token / 短链共用）。
+func (h *PublicHandler) serveResolvedSubscription(c *gin.Context, sub *entity.Subscription, opts serveOptions) {
+	ctx := c.Request.Context()
+
 	// 订阅必须每次实时生成：节点/链接生成逻辑更新后，CDN 或反向代理缓存旧响应会让
 	// 客户端长期拿到过期链接（实测：面板已修好 TLS 输出，经 CDN 的订阅仍返回旧的
 	// security=none 链接）。这里显式禁止缓存。
 	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+	c.Header("X-Robots-Tag", "noindex")
 
 	// Set Subscription-Userinfo header immediately so it's available
 	// even on error responses (suspended/expired/inactive).
@@ -387,13 +533,13 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			case cl.Status == "suspended":
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
-				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "suspended")
+				h.logDeniedAccessMeta(c, sub.ID, opts.shortLinkID, http.StatusForbidden, "suspended")
 				c.String(http.StatusForbidden, t(lang, "suspended"))
 				return
 			case cl.Status == "expired" && !permanentPlan:
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
-				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "expired")
+				h.logDeniedAccessMeta(c, sub.ID, opts.shortLinkID, http.StatusForbidden, "expired")
 				c.String(http.StatusForbidden, t(lang, "expired"))
 				return
 			}
@@ -403,7 +549,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			if !netutil.IPWhitelistAllows(cl.IPWhitelist, netutil.GetRealIP(c.Request)) {
 				c.Header("Profile-Title", profileTitle)
 				c.Header("Content-Type", "text/plain; charset=utf-8")
-				h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "ip_not_allowed")
+				h.logDeniedAccessMeta(c, sub.ID, opts.shortLinkID, http.StatusForbidden, "ip_not_allowed")
 				c.String(http.StatusForbidden, t(lang, "ip_not_allowed"))
 				return
 			}
@@ -432,15 +578,15 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 
 	if sub.Status != "active" && !permanentPlan {
 		c.Header("Content-Type", "text/plain; charset=utf-8")
-		h.logDeniedAccess(c, sub.ID, http.StatusForbidden, "inactive")
+		h.logDeniedAccessMeta(c, sub.ID, opts.shortLinkID, http.StatusForbidden, "inactive")
 		c.String(http.StatusForbidden, t(lang, "inactive"))
 		return
 	}
 
 	shareDomains := h.loadShareDomains(ctx)
 
-	// Format output - query param ?format= overrides subscription default
-	formatStr := c.Query("format")
+	// Format output：短链预设 / query 覆盖已由入口解析进 opts，这里只做兜底。
+	formatStr := opts.format
 	if formatStr == "" {
 		formatStr = sub.Format
 	}
@@ -490,8 +636,8 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 	var mihomoConfig *entity.MihomoConfig
 	var mihomoRules []entity.MihomoRule
 
-	configName := c.Query("config")
-	platformName := c.Query("platform")
+	configName := opts.configName
+	platformName := opts.platform
 	// 各格式的 config/规则互不互通：config 必须与本次请求的输出格式一致，
 	// 否则会把 Mihomo 行格式的规则塞进 sing-box/Xray 的 JSON 数组（反之亦然）。
 	if configName != "" && h.mihomoRepo != nil {
@@ -566,16 +712,16 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 			plan := h.resolveSubscriptionProviderPlan(ctx, tmpl, members, renderedNodes)
 			// 原始模式组内 proxies 引用的节点名必须真实存在于顶层 proxies。
 			pruneProviderNodeNames(plan.NodeNames, proxyMaps)
-			opts := &mihomoRenderOptions{
-				ProviderMode:         providersEnabled(c.Query(subscriptionProvidersParam)),
+			mOpts := &mihomoRenderOptions{
+				ProviderMode:         opts.providers != nil && *opts.providers,
 				ProviderNodeNames:    plan.NodeNames,
 				GroupUse:             plan.GroupUse,
 				SpecificProviderKeys: plan.Keys,
 			}
-			if opts.ProviderMode {
-				opts.ProviderDefinitions = h.buildProviderDefinitions(c, sub.Token, plan)
+			if mOpts.ProviderMode {
+				mOpts.ProviderDefinitions = h.buildProviderDefinitions(c, opts.credential, plan, opts)
 			}
-			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, proxyMaps, opts)
+			data = h.generateMihomoYAML(mihomoConfig, mihomoRules, proxyMaps, mOpts)
 		} else {
 			data = generatePlainMihomoYAML(proxyMaps)
 		}
@@ -647,7 +793,7 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		ua := c.Request.UserAgent()
 		cdnProvider := detectCDNProvider(c)
 		go func() {
-			h.recordAccess(sub.ID, http.StatusOK, "hit", ip, ua, realIP, cdnIP, cdnProvider)
+			h.recordAccessMeta(sub.ID, opts.shortLinkID, opts.via, http.StatusOK, "hit", ip, ua, realIP, cdnIP, cdnProvider)
 		}()
 
 		// Feed the network-layer (nftables) accounting bridge: record this
@@ -667,8 +813,22 @@ func (h *PublicHandler) ServeSubscription(c *gin.Context) {
 		}
 	}
 
+	if opts.shortLinkID > 0 && h.shortSvc != nil {
+		id := opts.shortLinkID
+		go func() {
+			if err := h.shortSvc.RecordAccess(context.Background(), id, time.Now()); err != nil {
+				log.Printf("[shortlink] record access failed: link=%d err=%v", id, err)
+			}
+		}()
+	}
+
+	filename := "subscription.txt"
+	if opts.via == "short_link" {
+		filename = "subscription" + shortlink.FormatExtension(formatStr)
+	}
 	c.Header("Content-Type", contentType+"; charset=utf-8")
-	c.Header("Content-Disposition", "attachment; filename=\"subscription.txt\"")
+	c.Header("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	c.Header("X-Robots-Tag", "noindex")
 	c.Data(http.StatusOK, contentType+"; charset=utf-8", data)
 }
 
@@ -4668,14 +4828,20 @@ func subscriptionAccessRisk(statusCode int, hitResult, ua string) string {
 	return "low"
 }
 
-// recordAccess 写一条订阅访问日志。
-// statusCode / hitResult 由调用方给出：成功下发是 200/hit，失败路径各有自己的值。
+// recordAccess 写一条订阅访问日志（保持旧签名，供既有调用/测试使用）。
 func (h *PublicHandler) recordAccess(subID int64, statusCode int, hitResult, ip, ua, realIP, cdnIP, cdnProvider string) {
+	h.recordAccessMeta(subID, 0, "", statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
+}
+
+// recordAccessMeta 在旧日志字段基础上补短链 ID 与入口类型。
+func (h *PublicHandler) recordAccessMeta(subID, shortLinkID int64, accessType string, statusCode int, hitResult, ip, ua, realIP, cdnIP, cdnProvider string) {
 	if h.accessLog == nil {
 		return
 	}
 	logEntry := &entity.SubscriptionAccessLog{
 		SubscriptionID: subID,
+		ShortLinkID:    shortLinkID,
+		AccessType:     accessType,
 		IP:             ip,
 		UserAgent:      ua,
 		RealIP:         realIP,
@@ -4695,13 +4861,21 @@ func (h *PublicHandler) recordAccess(subID int64, statusCode int, hitResult, ip,
 // 以前只有成功下发才写库，token 过期/暂停/被限流的请求在管理端完全看不到 ——
 // 「curl 拉了一次但日志里没记录」正是这个原因。
 func (h *PublicHandler) logDeniedAccess(c *gin.Context, subID int64, statusCode int, hitResult string) {
+	h.logDeniedAccessMeta(c, subID, 0, statusCode, hitResult)
+}
+
+func (h *PublicHandler) logDeniedAccessMeta(c *gin.Context, subID, shortLinkID int64, statusCode int, hitResult string) {
 	if h.accessLog == nil {
 		return
 	}
 	ip, realIP, cdnIP := accessLogIPFields(c.Request)
 	ua := c.Request.UserAgent()
 	cdnProvider := detectCDNProvider(c)
-	go h.recordAccess(subID, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
+	accessType := ""
+	if shortLinkID > 0 {
+		accessType = "short_link"
+	}
+	go h.recordAccessMeta(subID, shortLinkID, accessType, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
 }
 
 // RecordDeniedAccess 供订阅限流中间件调用：429 在 handler 之前就返回了，
@@ -4717,13 +4891,20 @@ func (h *PublicHandler) RecordDeniedAccess(c *gin.Context, statusCode int, hitRe
 	ua := c.Request.UserAgent()
 	cdnProvider := detectCDNProvider(c)
 	go func() {
-		var subID int64
-		if token != "" && h.subRepo != nil {
-			if sub, err := h.subRepo.GetByToken(context.Background(), token); err == nil && sub != nil {
-				subID = sub.ID
+		var subID, linkID int64
+		accessType := ""
+		if token != "" {
+			if shortlink.IsCode(token) && h.shortSvc != nil {
+				if link, err := h.shortSvc.GetByCode(context.Background(), token); err == nil && link != nil {
+					subID, linkID, accessType = link.SubscriptionID, link.ID, "short_link"
+				}
+			} else if h.subRepo != nil {
+				if sub, err := h.subRepo.GetByToken(context.Background(), token); err == nil && sub != nil {
+					subID = sub.ID
+				}
 			}
 		}
-		h.recordAccess(subID, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
+		h.recordAccessMeta(subID, linkID, accessType, statusCode, hitResult, ip, ua, realIP, cdnIP, cdnProvider)
 	}()
 }
 

@@ -22,6 +22,14 @@ type TrafficResetHook interface {
 	SyncServerConfig(ctx context.Context, serverID int64, coreType string)
 }
 
+// ShortLinkHook 是订阅生命周期与短链的联动面。
+// 由 shortlink.Service 实现；放在接口里避免 service 之间硬依赖。
+type ShortLinkHook interface {
+	AutoCreateForSubscription(ctx context.Context, sub *entity.Subscription) error
+	DeleteBySubscription(ctx context.Context, subID int64) error
+	SyncTokenVersion(ctx context.Context, subID int64, version int) error
+}
+
 // Service handles subscription business logic.
 type Service struct {
 	repo         *repository.SubscriptionRepository
@@ -31,6 +39,7 @@ type Service struct {
 	planSvc      *plan.Service
 	trafficHook  TrafficResetHook
 	userSyncer   UserSyncer
+	shortLinks   ShortLinkHook
 	enforcerOnce sync.Once
 }
 
@@ -65,6 +74,11 @@ type UserSyncer interface {
 // SetUserSyncer injects the user sync client used to enforce quota/expiry on nodes.
 func (s *Service) SetUserSyncer(syncer UserSyncer) {
 	s.userSyncer = syncer
+}
+
+// SetShortLinkHook injects short-link lifecycle hooks (auto create / cleanup / rotation).
+func (s *Service) SetShortLinkHook(hook ShortLinkHook) {
+	s.shortLinks = hook
 }
 
 // EnforceQuotaAndExpiry scans active subscriptions and enforces quota exhaustion and
@@ -379,6 +393,11 @@ func (s *Service) Create(ctx context.Context, input CreateSubscriptionInput) (*e
 		return nil, err
 	}
 
+	// 短链自动生成失败不能影响订阅创建（只是少一条便捷链接）。
+	if s.shortLinks != nil {
+		_ = s.shortLinks.AutoCreateForSubscription(ctx, sub)
+	}
+
 	return sub, nil
 }
 
@@ -461,9 +480,15 @@ func (s *Service) Update(ctx context.Context, id int64, input UpdateSubscription
 	return sub, nil
 }
 
-// Delete deletes a subscription by ID.
+// Delete deletes a subscription by ID（连同短链一起清理，避免 code 长期占用）。
 func (s *Service) Delete(ctx context.Context, id int64) error {
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	if s.shortLinks != nil {
+		_ = s.shortLinks.DeleteBySubscription(ctx, id)
+	}
+	return nil
 }
 
 // Rotate generates a new token for a subscription.
@@ -494,6 +519,11 @@ func (s *Service) Rotate(ctx context.Context, id int64, rotatedBy int64, reason 
 	sub.TokenVersion++
 	if err := s.repo.Update(ctx, sub); err != nil {
 		return nil, err
+	}
+	// 短链默认靠“快照版本不匹配”自动失效；只有 FollowTokenRotation=true 的
+	// 短链需要同步到新版本，才能继续可用。
+	if s.shortLinks != nil {
+		_ = s.shortLinks.SyncTokenVersion(ctx, sub.ID, sub.TokenVersion)
 	}
 
 	return sub, nil

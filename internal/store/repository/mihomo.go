@@ -47,6 +47,28 @@ func (r *MihomoConfigRepository) ListPaged(ctx context.Context, limit, offset in
 	return configs, nil
 }
 
+// ListBrief 只取短链组合所需的轻量字段，不解密 config_json。
+// 门户每次 /me 都会用它枚举可见配置，整表解密太重。
+func (r *MihomoConfigRepository) ListBrief(ctx context.Context) ([]entity.MihomoConfig, error) {
+	var configs []entity.MihomoConfig
+	err := r.db.WithContext(ctx).
+		Select("id", "name", "format", "platform", "enabled", "sort_order").
+		Order("sort_order ASC, id ASC").
+		Find(&configs).Error
+	if err != nil {
+		return nil, err
+	}
+	// plan_ids 仍单独读：SQLite/MySQL 的 longtext 序列化行为不一致。
+	for i := range configs {
+		var planIDsJSON *string
+		r.db.WithContext(ctx).Raw("SELECT plan_ids FROM mihomo_configs WHERE id = ?", configs[i].ID).Scan(&planIDsJSON)
+		if planIDsJSON != nil && *planIDsJSON != "" && *planIDsJSON != "null" {
+			json.Unmarshal([]byte(*planIDsJSON), &configs[i].PlanIDs)
+		}
+	}
+	return configs, nil
+}
+
 // Count returns the total number of mihomo configs.
 func (r *MihomoConfigRepository) Count(ctx context.Context) (int64, error) {
 	var count int64

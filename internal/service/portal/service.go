@@ -63,13 +63,126 @@ func (s *Service) RenderPage(ctx context.Context) string {
 	}
 
 	cfg := MergeConfig(tmpl, registrationEnabled)
-	html := renderPortalHTML(tmpl.HTMLContent, tmpl.CSSContent, tmpl.JSContent, tmpl.Config, cfg)
+	html := renderPortalHTML(tmpl.HTMLContent, tmpl.CSSContent, patchPortalJSShortLinks(tmpl.JSContent), tmpl.Config, cfg)
 
 	// script-src 与渲染产物一起算好并缓存（安全审计 v6 L-6）：每个请求都重扫
 	// 整页 HTML 是浪费；模板更新会让缓存失效、随之重算。
 	s.cache.Set(html, ScriptSrcCSP(html))
 
 	return html
+}
+
+// patchPortalJSShortLinks 为存量门户模板补上“优先使用订阅短链”的逻辑。
+//
+// 门户模板是**存库**的（首次初始化时复制内置默认），所以只改 constants 里的
+// defaultPortalJS 不会影响已部署实例。这里在渲染时做一次幂等的文本补丁：
+//   - 模板已包含 sub_short_url → 不动；
+//   - 只替换默认模板里那两段固定写法，用户自定义的其它部分保持原样。
+//
+// 开关关闭时后端不下发 sub_short_url，前端自然回退长链接，行为不变。
+func patchPortalJSShortLinks(js string) string {
+	if js == "" {
+		return js
+	}
+
+	const longSubDef = "    // 长链接（token）基址：短链未命中时兜底，避免出现「短链 + ?format=」。\n" +
+		"    var longSubUrl = computed(function() {\n" +
+		"      if (!client.value.sub_token) return ''\n" +
+		"      var t = client.value.sub_token\n" +
+		"      var ep = endpoints.value.find(function(e) { return e.enabled }) || endpoints.value[0]\n" +
+		"      if (ep && ep.domain) {\n" +
+		"        var host = ep.domain\n" +
+		"        var path = ep.path || '/'\n" +
+		"        var basePath = path.endsWith('/') ? path : path + '/'\n" +
+		"        return 'https://' + host + basePath + t\n" +
+		"      }\n" +
+		"      if (window.location.protocol !== 'https:' && hostIsPublicIP(window.location.hostname)) {\n" +
+		"        return ''\n" +
+		"      }\n" +
+		"      return window.location.origin + '/sub/' + t\n" +
+		"    })\n"
+
+	const subUrlAnchor = "    var subUrl = computed(function() {"
+	if !strings.Contains(js, "var longSubUrl = computed") && strings.Contains(js, subUrlAnchor) {
+		js = strings.Replace(js, subUrlAnchor, longSubDef+subUrlAnchor, 1)
+	}
+
+	// 存量模板的 subUrl 仍直接拼 token：在其后覆盖成「优先短链、否则长链接」。
+	if !strings.Contains(js, "return longSubUrl.value") {
+		const override = "    subUrl = computed(function() {\n" +
+			"      if (!client.value.sub_token) return ''\n" +
+			"      if (client.value.sub_short_url) return client.value.sub_short_url\n" +
+			"      return longSubUrl.value\n" +
+			"    })\n"
+		const anchor = "    var subInsecureHidden = computed(function() {"
+		if strings.Contains(js, anchor) {
+			js = strings.Replace(js, anchor, override+anchor, 1)
+		}
+	}
+
+	const strictFind = "// 严格匹配：格式 / 配置名 / 平台 / providers 必须完全一致。\n" +
+		"// 宽松匹配会把「无配置的 mihomo_yaml」顶到「config=win」的请求上。\n" +
+		"var findShortLink = function(formatKey, configName, platform, providers) {\n" +
+		"  var list = client.value.sub_short_links || []\n" +
+		"  var wantFormat = formatKey || ''\n" +
+		"  var wantConfig = configName || ''\n" +
+		"  var wantPlatform = platform || ''\n" +
+		"  for (var i = 0; i < list.length; i++) {\n" +
+		"    var l = list[i]\n" +
+		"    if (!l || !l.url) continue\n" +
+		"    if ((l.format || '') !== wantFormat) continue\n" +
+		"    if ((l.config_name || '') !== wantConfig) continue\n" +
+		"    if ((l.platform || '') !== wantPlatform) continue\n" +
+		"    if (!!providers !== !!l.providers) continue\n" +
+		"    return l.url\n" +
+		"  }\n" +
+		"  return ''\n" +
+		"}\n\n"
+
+	// 旧补丁（宽松匹配）就地替换；从未打过补丁的模板则在 buildSubLink 前插入。
+	const looseFind = "var findShortLink = function(formatKey, configName, platform, providers) {\n" +
+		"  var list = client.value.sub_short_links || []\n" +
+		"  for (var i = 0; i < list.length; i++) {\n" +
+		"    var l = list[i]\n" +
+		"    if (!l || !l.url) continue\n" +
+		"    if (formatKey && l.format && l.format !== formatKey) continue\n" +
+		"    if (configName && l.config_name && l.config_name !== configName) continue\n" +
+		"    if (platform && l.platform && l.platform !== platform) continue\n" +
+		"    if (!!providers !== !!l.providers) continue\n" +
+		"    return l.url\n" +
+		"  }\n" +
+		"  return ''\n" +
+		"}\n\n"
+	switch {
+	case strings.Contains(js, "var wantConfig = configName || ''"):
+		// 已是最新
+	case strings.Contains(js, looseFind):
+		js = strings.Replace(js, looseFind, strictFind, 1)
+	default:
+		const buildAnchor = "var buildSubLink = function(formatKey, configName, platform, providers) {"
+		if strings.Contains(js, buildAnchor) {
+			js = strings.Replace(js, buildAnchor, strictFind+buildAnchor, 1)
+		}
+	}
+
+	// 兜底 base 用长链接，不能拿短链再拼 query。
+	js = strings.Replace(js, "  var base = subUrl.value\n  if (!base) return ''", "  var base = longSubUrl.value\n  if (!base) return ''", 1)
+
+	// 关键：存库模板原本的 buildSubLink 不调用 findShortLink（旧补丁只在渲染期生效、
+	// 没有写回 DB）。这里补上调用，否则定义插进去了也永远走不到。
+	if !strings.Contains(js, "var short = findShortLink(") {
+		const buildHeader = "var buildSubLink = function(formatKey, configName, platform, providers) {\n" +
+			"  var base = longSubUrl.value"
+		const buildHeaderShort = "var buildSubLink = function(formatKey, configName, platform, providers) {\n" +
+			"  var short = findShortLink(formatKey, configName, platform, providers)\n" +
+			"  if (short) return short\n" +
+			"  var base = longSubUrl.value"
+		if strings.Contains(js, buildHeader) {
+			js = strings.Replace(js, buildHeader, buildHeaderShort, 1)
+		}
+	}
+
+	return js
 }
 
 // InvalidateCache clears the render cache, forcing a rebuild on next request.

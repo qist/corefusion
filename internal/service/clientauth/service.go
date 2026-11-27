@@ -14,6 +14,7 @@ import (
 	"corefusion/internal/auth/password"
 	"corefusion/internal/model/entity"
 	"corefusion/internal/service/nodeserver"
+	"corefusion/internal/service/shortlink"
 	"corefusion/internal/store/repository"
 	"corefusion/pkg/netutil"
 )
@@ -33,6 +34,7 @@ type Service struct {
 	settingSvc      SettingStore
 	jwt             *jwt.JWT
 	trafficQuotaSvc *nodeserver.NodeTrafficQuotaService
+	shortLinks      *shortlink.Service
 	// selfUnbanCheck 由 SelfUnbanService.CanSelfUnban 注入（避免 Service↔SelfUnbanService 循环依赖）。
 	// 登录时判定"被封账号能否走自助解封分支"。
 	selfUnbanCheck func(ctx context.Context, client *entity.Client) (bool, string)
@@ -65,6 +67,11 @@ func (s *Service) SetBalanceRepo(repo *repository.ClientBalanceRepository) {
 // P1: 邀请码注册绑定 — 注册时自动建立邀请关系
 func (s *Service) SetReferralService(svc *ReferralService) {
 	s.referralSvc = svc
+}
+
+// SetShortLinkService 注入短链服务；未启用时 GetMe 不返回短链字段。
+func (s *Service) SetShortLinkService(svc *shortlink.Service) {
+	s.shortLinks = svc
 }
 
 // SetTrafficQuotaSvc injects the node traffic quota service, used to aggregate a
@@ -169,23 +176,26 @@ type TokenResponse struct {
 
 // ClientInfo is the public client info.
 type ClientInfo struct {
-	ID              int64      `json:"id"`
-	Email           string     `json:"email"`
-	PlanID          int64      `json:"plan_id"`
-	PlanName        string     `json:"plan_name"`
-	Status          string     `json:"status"`
-	QuotaBytes      int64      `json:"quota_bytes"`
-	UsedBytes       int64      `json:"used_bytes"`
-	UploadBytes     int64      `json:"upload_bytes"`
-	DownloadBytes   int64      `json:"download_bytes"`
-	ExpiresAt       *time.Time `json:"expires_at"`
-	IPWhitelist     string     `json:"ip_whitelist"`
-	DeviceLimit     int        `json:"device_limit"`
-	SubToken        string     `json:"sub_token"`
-	SubStatus       string     `json:"sub_status"`
-	SubUpdatedAt    *time.Time `json:"sub_updated_at"`
-	LastNodeUsageAt *time.Time `json:"last_node_usage_at"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID            int64      `json:"id"`
+	Email         string     `json:"email"`
+	PlanID        int64      `json:"plan_id"`
+	PlanName      string     `json:"plan_name"`
+	Status        string     `json:"status"`
+	QuotaBytes    int64      `json:"quota_bytes"`
+	UsedBytes     int64      `json:"used_bytes"`
+	UploadBytes   int64      `json:"upload_bytes"`
+	DownloadBytes int64      `json:"download_bytes"`
+	ExpiresAt     *time.Time `json:"expires_at"`
+	IPWhitelist   string     `json:"ip_whitelist"`
+	DeviceLimit   int        `json:"device_limit"`
+	SubToken      string     `json:"sub_token"`
+	// SubShortURL / SubShortLinks：订阅短链（未启用时为空，门户回退 sub_token 拼长链接）。
+	SubShortURL     string               `json:"sub_short_url,omitempty"`
+	SubShortLinks   []shortlink.LinkView `json:"sub_short_links,omitempty"`
+	SubStatus       string               `json:"sub_status"`
+	SubUpdatedAt    *time.Time           `json:"sub_updated_at"`
+	LastNodeUsageAt *time.Time           `json:"last_node_usage_at"`
+	CreatedAt       time.Time            `json:"created_at"`
 
 	// P0-5: Extended fields
 	Balance         int64      `json:"balance"`           // 余额（分）
@@ -351,6 +361,11 @@ func (s *Service) GetMe(ctx context.Context, clientID int64) (*ClientInfo, error
 		if sub, err := s.subRepo.GetByID(ctx, *client.SubscriptionID); err == nil {
 			info.SubToken = sub.Token
 			info.SubStatus = sub.Status
+			if s.shortLinks != nil {
+				// 按「格式 × 配置」幂等补齐，门户拿到的每条链接都不再需要拼 query。
+				info.SubShortLinks = s.shortLinks.EnsureViews(ctx, sub.ID)
+				info.SubShortURL = shortlink.PickDefaultURL(info.SubShortLinks, sub.Format)
+			}
 			// Use real-time traffic data from subscription record
 			info.UsedBytes = sub.UsedBytesCache
 			info.UploadBytes = sub.UploadBytesCache

@@ -42,7 +42,7 @@ func TestProviderDefaultsApplyToInternalProviders(t *testing.T) {
 	}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
-	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan, serveOptions{})
 
 	// 自动生成的组 provider：默认参数生效，{key} 被替换
 	groupDef := findProviderDef(defs, "group-1")
@@ -78,7 +78,7 @@ func TestInternalProviderOverridesDefaults(t *testing.T) {
 	}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
-	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan, serveOptions{})
 
 	jp := findProviderDef(defs, "jp")
 	if jp == nil {
@@ -102,7 +102,7 @@ func TestProviderDefaultsFallbackUnchanged(t *testing.T) {
 	tmpl := &entity.PlanTemplate{NodeGroupIDs: []int64{1}}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
-	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan, serveOptions{})
 
 	groupDef := findProviderDef(defs, "group-1")
 	if groupDef["interval"] != 3600 || groupDef["path"] != "./providers/group-1.yaml" {
@@ -133,7 +133,7 @@ func TestExternalProviderPathFollowsInternalTemplate(t *testing.T) {
 	}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
-	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan, serveOptions{})
 
 	ext := findProviderDef(defs, "singbox")
 	if ext == nil {
@@ -164,7 +164,7 @@ func TestExternalProviderPathFallback(t *testing.T) {
 	}
 	h := &PublicHandler{}
 	plan := h.resolveSubscriptionProviderPlan(context.Background(), tmpl, nil, nil)
-	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan)
+	defs := h.buildProviderDefinitions(providerTestContext(), "tok", plan, serveOptions{})
 
 	ext := findProviderDef(defs, "singbox")
 	if ext == nil {

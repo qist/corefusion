@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: id | updated: 2026-11-27 -->
 # Panduan Pengoperasian CoreFusion
 
 > Bahasa: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · Bahasa Indonesia · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1919,6 +1919,6 @@ Biner panel mendukung subperintah ini (tidak ada argumen yang memulai server):
 
 ---
 
-> **Versi dokumen**: v1.2
-> **Terakhir diperbarui**: 20-11-2026
-> **Berlaku untuk**: CoreFusion v0.13.1
+> **Versi dokumen**: v1.4
+> **Terakhir diperbarui**: 2026-11-27
+> **Berlaku untuk**: CoreFusion v0.14.5

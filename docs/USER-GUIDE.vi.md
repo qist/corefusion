@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: vi | updated: 2026-11-27 -->
 # Hướng dẫn vận hành CoreFusion
 
 > Ngôn ngữ: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · Tiếng Việt · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1915,6 +1915,6 @@ Bảng nhị phân hỗ trợ các lệnh con này (không có đối số nào 
 
 ---
 
-> **Phiên bản tài liệu**: v1.2
-> **Cập nhật lần cuối**: 2026-11-20
-> **Áp dụng cho**: CoreFusion v0.13.1
+> **Phiên bản tài liệu**: v1.4
+> **Cập nhật lần cuối**: 2026-11-27
+> **Áp dụng cho**: CoreFusion v0.14.5

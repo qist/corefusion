@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: tr | updated: 2026-11-27 -->
 # CoreFusion Operasyon Kılavuzu
 
 > Diller: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · Türkçe · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1918,6 +1918,6 @@ Panel ikili programı şu alt komutları destekler (sunucuyu hiçbir argüman ba
 
 ---
 
-> **Belge sürümü**: v1.2
-> **Son güncelleme**: 2026-11-20
-> **Şunlar için geçerlidir**: CoreFusion v0.13.0-rc.1
+> **Belge sürümü**: v1.4
+> **Son güncelleme**: 2026-11-27
+> **Şunlar için geçerlidir**: CoreFusion v0.14.5

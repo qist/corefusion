@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: ar | updated: 2026-11-27 -->
 # دليل عمليات CoreFusion
 
 > اللغات: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · العربية · [فارسی](USER-GUIDE.fa.md)
@@ -1901,6 +1901,6 @@ https://<panel-domain>/<code>           # shared panel port (prefix follows the 
 
 ---
 
-> **نسخة الوثيقة**: v1.2
-> **آخر تحديث**: 20-11-2026
-> **ينطبق على**: CoreFusion v0.13.1
+> **نسخة الوثيقة**: v1.4
+> **آخر تحديث**: 2026-11-27
+> **ينطبق على**: CoreFusion v0.14.5

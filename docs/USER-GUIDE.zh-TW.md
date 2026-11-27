@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: zh-TW | updated: 2026-11-27 -->
 # CoreFusion操作指南
 
 > 語言： [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · 繁體中文 · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1953,6 +1953,6 @@ https://<panel-domain>/<code>           # shared panel port (prefix follows the 
 
 ---
 
-> **文檔版本**：v1.2
-> **最後更新**：2026-11-20
-> **適用於**：CoreFusion v0.13.1
+> **文檔版本**: v1.4
+> **最後更新**: 2026-11-27
+> **適用於**: CoreFusion v0.14.5

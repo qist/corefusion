@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: fr | updated: 2026-11-27 -->
 # Guide d'utilisation CoreFusion
 
 > Langues : [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · Français · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1923,6 +1923,6 @@ Le binaire du panneau prend en charge ces sous-commandes (aucun argument ne dém
 
 ---
 
-> **Version du document** : v1.2
-> **Dernière mise à jour** : 2026-11-20
-> **S'applique à** : CoreFusion v0.13.0-rc.1
+> **Version du document** : v1.4
+> **Dernière mise à jour**: 2026-11-27
+> **S'applique à** : CoreFusion v0.14.5

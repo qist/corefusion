@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: ko | updated: 2026-11-27 -->
 # CoreFusion 운영 가이드
 
 > 언어: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · 한국어 · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1902,6 +1902,6 @@ https://<panel-domain>/<code>           # shared panel port (prefix follows the 
 
 ---
 
-> **문서 버전**: v1.2
-> **최종 업데이트**: 2026-11-20
-> **적용 대상**: CoreFusion v0.13.0-rc.1
+> **문서 버전**: v1.4
+> **최종 업데이트**: 2026-11-27
+> **적용 대상**: CoreFusion v0.14.5

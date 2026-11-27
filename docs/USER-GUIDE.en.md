@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: en | updated: 2026-11-27 -->
 # CoreFusion Operations Guide
 
 > Languages: [简体中文](USER-GUIDE.md) · English · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -2003,6 +2003,6 @@ The panel binary supports these subcommands (no arguments starts the server):
 
 ---
 
-> **Document version**: v1.3
-> **Last updated**: 2026-11-23
-> **Applies to**: CoreFusion v0.13.1
+> **Document version**: v1.4
+> **Last updated**: 2026-11-27
+> **Applies to**: CoreFusion v0.14.5

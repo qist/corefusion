@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: pt | updated: 2026-11-27 -->
 # Guia de operações CoreFusion
 
 > Idiomas: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · Português · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · [فارسی](USER-GUIDE.fa.md)
@@ -1920,6 +1920,6 @@ O binário do painel suporta estes subcomandos (nenhum argumento inicia o servid
 
 ---
 
-> **Versão do documento**: v1.2
-> **Última atualização**: 20/11/2026
-> **Aplica-se a**: CoreFusion v0.13.0-rc.1
+> **Versão do documento**: v1.4
+> **Última atualização**: 27/11/2026
+> **Aplica-se a**: CoreFusion v0.14.5

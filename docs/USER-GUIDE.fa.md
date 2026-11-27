@@ -1,4 +1,4 @@
-<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-11-26 -->
+<!-- source: USER-GUIDE.md | locale: fa | updated: 2026-11-27 -->
 # راهنمای عملیات CoreFusion
 
 > زبان‌ها: [简体中文](USER-GUIDE.md) · [English](USER-GUIDE.en.md) · [繁體中文](USER-GUIDE.zh-TW.md) · [Русский](USER-GUIDE.ru.md) · [日本語](USER-GUIDE.ja.md) · [한국어](USER-GUIDE.ko.md) · [Deutsch](USER-GUIDE.de.md) · [Français](USER-GUIDE.fr.md) · [Español](USER-GUIDE.es.md) · [Português](USER-GUIDE.pt.md) · [Türkçe](USER-GUIDE.tr.md) · [Bahasa Indonesia](USER-GUIDE.id.md) · [ไทย](USER-GUIDE.th.md) · [Tiếng Việt](USER-GUIDE.vi.md) · [العربية](USER-GUIDE.ar.md) · فارسی
@@ -1901,6 +1901,6 @@ https://<panel-domain>/<code>           # shared panel port (prefix follows the 
 
 ---
 
-> **نسخه سند**: v1.2
-> **آخرین به روز رسانی **: 2026-11-20
-> **قابل استفاده برای**: CoreFusion نسخه 0.13.0-rc.1
+> **نسخه سند**: v1.4
+> **آخرین به روز رسانی**: 2026-11-27
+> **قابل استفاده برای**: CoreFusion v0.14.5

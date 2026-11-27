@@ -173,7 +173,7 @@ experimental:
   quic-go-disable-ecn: false
   quic-go-disable-gso: false
 external-controller: 0.0.0.0:9090
-find-process-mode: 'off'
+find-process-mode: strict
 geo-auto-update: true
 geo-update-interval: 24
 geox-url:

@@ -21,7 +21,7 @@ bind-address: '*'
 dns:
   enable: true
   ipv6: true
-  listen: 0.0.0.0:53
+  listen: 0.0.0.0:7874
   enhanced-mode: redir-host
   cache-algorithm: arc
   fake-ip-range: 198.19.0.1/16

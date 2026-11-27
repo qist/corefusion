@@ -131,11 +131,11 @@ dns:
   default-nameserver:
   - 223.5.5.5
   - 119.29.29.29
-  - 1.2.4.8
+  - 1.1.1.1
   proxy-server-nameserver:
   - 223.5.5.5
   - 119.29.29.29
-  - 1.2.4.8
+  - 1.1.1.1
   nameserver:
   - https://dns.alidns.com/dns-query
   - https://doh.pub/dns-query
@@ -180,11 +180,10 @@ geox-url:
   geosite: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
   mmdb: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb
 hosts:
-  dns.alidns.com: 223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1
-  dns.cloudflare.com: 172.64.41.8, 162.159.61.8
-  dns.google: 8.8.8.8, 8.8.4.4
-  doh.360.cn: 36.99.170.86, 180.163.249.75
-  doh.pub: 120.53.53.53, 1.12.12.12
+  dns.alidns.com: 223.5.5.5
+  doh.pub: 119.29.29.29
+  dns.google: 8.8.8.8
+  dns.cloudflare.com: 1.1.1.1
 ipv6: true
 keep-alive-idle: 15
 log-level: info

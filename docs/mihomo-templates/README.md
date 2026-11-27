@@ -141,7 +141,7 @@ geox-url:
 default-nameserver:            # bootstrap，必须是 IP
   - 223.5.5.5
   - 119.29.29.29
-  - 1.2.4.8
+  - 1.1.1.1
 
 nameserver:                    # 国内
   - https://dns.alidns.com/dns-query

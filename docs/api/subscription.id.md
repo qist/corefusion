@@ -38,7 +38,7 @@ Tautan pendek (opsional) dibuat oleh admin untuk setiap langganan: kode acak 20 
 | `singbox_json` | Konfigurasi penuh sing-box JSON | sing-box / SFI / FLClash (inti sing-box) |
 | `xray_json` | Konfigurasi penuh Xray JSON | Xray-inti |
 
-> Kompatibilitas protokol/format berlaku: misalnya, `anytls` hanya muncul dalam format sing-box/Mihomo; **REALITY node yang dilayani oleh xray dikecualikan dari langganan sing-box** (sing-box tidak mendukung implementasi REALITY xray, lihat sing-box#4520) namun masih muncul di langganan Xray, sementara **REALITY node dilayani oleh sing-box berfungsi di langganan Xray dan sing-box**. Node yang tidak dapat dikenali klien akan dihapus secara otomatis alih-alih menggagalkan seluruh langganan.
+> Kompatibilitas protokol/format: misalnya, `anytls` hanya muncul di format sing-box/Mihomo. **Node REALITY dari sisi xray tidak disertakan dalam langganan sing-box** (sing-box tidak mendukung implementasi REALITY xray, lihat sing-box#4520), tetapi tetap muncul normal di langganan Xray. **Node REALITY dari sisi sing-box berfungsi di kedua langganan (Xray dan sing-box)**. Node yang tidak dikenali klien akan dibuang otomatis, bukan menggagalkan seluruh langganan.
 
 ## 3. Header respons
 

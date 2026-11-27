@@ -38,7 +38,7 @@ Kısa bağlantılar (isteğe bağlı) yönetici tarafından her abonelik için o
 | `singbox_json` | Tam sing-box JSON konfigürasyonu | sing-box / SFI / FLClash (sing-box çekirdeği) |
 | `xray_json` | Tam Xray JSON yapılandırması | Xray-çekirdek |
 
-> Protokol/format uyumluluğu geçerlidir: örneğin, `anytls` yalnızca sing-box/Mihomo formatlarında görünür; **xray tarafından sunulan REALITY düğümleri, sing-box aboneliklerinden hariç tutulur** (sing-box, xray'nin REALITY uygulamasını desteklemez, bkz. sing-box#4520) ancak yine de Xray aboneliklerinde görünürken **REALITY düğümleri hizmet verir sing-box tarafından hem Xray hem de sing-box aboneliklerinde çalışır**. İstemcinin tanıyamadığı düğümler, tüm aboneliğin başarısız olması yerine otomatik olarak bırakılır.
+> Protokol/format uyumluluğu: örneğin `anytls` yalnızca sing-box/Mihomo formatlarında görünür. **xray tarafındaki REALITY düğümleri sing-box aboneliklerine dahil edilmez** (sing-box, xray'in REALITY uygulamasını desteklemez; bkz. sing-box#4520), ancak Xray aboneliklerinde normal şekilde görünmeye devam eder. **sing-box tarafındaki REALITY düğümleri hem Xray hem de sing-box aboneliklerinde çalışır**. İstemcinin tanıyamadığı düğümler otomatik olarak çıkarılır ve tüm abonelik başarısız olmaz.
 
 ## 3. Yanıt başlıkları
 

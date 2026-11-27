@@ -38,7 +38,7 @@
 | `singbox_json` | sing-box JSON 完整配置 | sing-box/SFI/FLClash（sing-box核心） |
 | `xray_json` | Xray JSON 完整配置 | Xray-核心 |
 
-> 協定/格式相容性適用：例如，`anytls` 僅出現在 sing-box/Mihomo 格式中； **xray 服務的 REALITY 節點不包含在 sing-box 訂閱中**（sing-box 不支援 xray 的 REALITY 實作，見 sing-box#4520），但仍出現在 Xray 訂閱中，而 **由 sing-box 服務的 REALITY 節點在 Xray / sing-box 兩種訂閱中都能用**。客戶端無法辨識的節點會自動刪除，而不是讓整個訂閱失敗。
+> 協定/格式相容性：例如 `anytls` 只會出現在 sing-box/Mihomo 格式；**xray 服務端的 REALITY 節點不會出現在 sing-box 訂閱中**（sing-box 不支援 xray 的 REALITY 實作，見 sing-box#4520），但仍會正常出現在 Xray 訂閱中；**sing-box 服務端的 REALITY 節點在 Xray / sing-box 兩種訂閱中都能使用**。客戶端不認識的節點會被自動剔除，不會讓整份訂閱失敗。
 
 ## 3. 響應標頭
 

@@ -38,7 +38,7 @@
 | `singbox_json` | 完全な sing-box JSON 構成 | sing-box / SFI / FLClash (sing-box コア) |
 | `xray_json` | 完全な Xray JSON 構成 | Xray-コア |
 
-> プロトコル/形式の互換性が適用されます。たとえば、`anytls` は sing-box/Mihomo 形式でのみ表示されます。 **xray によってサービスされる REALITY ノードは、sing-box サブスクリプションから除外されます** (sing-box は、xray の REALITY 実装をサポートしません。sing-box#4520 を参照) が、依然として Xray サブスクリプションに表示されますが、**REALITY ノードはサービスされますsing-box によるものは、Xray と sing-box の両方のサブスクリプションで動作します**。クライアントが認識できないノードは、サブスクリプション全体が失敗するのではなく、自動的に削除されます。
+> プロトコル/形式の互換性: たとえば `anytls` は sing-box/Mihomo 形式にのみ出力されます。**xray 側の REALITY ノードは sing-box 購読には出力されません**（sing-box は xray の REALITY 実装をサポートしていません。sing-box#4520 参照）が、Xray 購読には通常どおり出力されます。**sing-box 側の REALITY ノードは Xray / sing-box の両方の購読で使用できます**。クライアントが認識できないノードは自動的に除外され、購読全体が失敗することはありません。
 
 ## 3. 応答ヘッダー
 

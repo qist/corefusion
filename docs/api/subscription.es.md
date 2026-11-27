@@ -38,7 +38,7 @@ Los enlaces cortos (opcionales) los crea el administrador para cada suscripción
 | `singbox_json` | Configuración completa sing-box JSON | sing-box / SFI / FLClash (núcleo sing-box) |
 | `xray_json` | Configuración completa Xray JSON | Xray-núcleo |
 
-> Se aplica la compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en los formatos sing-box/Mihomo; **Los nodos REALITY atendidos por xray están excluidos de las suscripciones sing-box** (sing-box no admite la implementación REALITY de xray, consulte sing-box#4520) pero aún aparecen en las suscripciones Xray, mientras que **los nodos REALITY atendidos por sing-box funciona con las suscripciones Xray y sing-box**. Los nodos que el cliente no puede reconocer se eliminan automáticamente en lugar de fallar en toda la suscripción.
+> Compatibilidad de protocolo/formato: por ejemplo, `anytls` solo aparece en formatos sing-box/Mihomo. **Los nodos REALITY del lado xray no se incluyen en las suscripciones sing-box** (sing-box no admite la implementación REALITY de xray, ver sing-box#4520), pero siguen apareciendo normalmente en las suscripciones Xray. **Los nodos REALITY del lado sing-box funcionan en ambas suscripciones (Xray y sing-box)**. Los nodos que el cliente no reconoce se eliminan automáticamente, sin que falle toda la suscripción.
 
 ## 3. Encabezados de respuesta
 

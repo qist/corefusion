@@ -38,7 +38,7 @@
 | `singbox_json` | 전체 sing-box JSON 구성 | sing-box / SFI / FLClash (sing-box 코어) |
 | `xray_json` | 전체 Xray JSON 구성 | Xray 코어 |
 
-> 프로토콜/형식 호환성이 적용됩니다. 예를 들어 `anytls`는 sing-box/Mihomo 형식에만 나타납니다. **xray가 제공하는 REALITY 노드는 sing-box 구독에서 제외됩니다**(sing-box는 xray의 REALITY 구현을 지원하지 않습니다. sing-box#4520 참조). 그러나 **REALITY 노드가 제공되는 동안 여전히 Xray 구독에는 나타납니다. by sing-box는 Xray 및 sing-box 구독**에서 모두 작동합니다. 클라이언트가 인식할 수 없는 노드는 전체 구독이 실패하는 대신 자동으로 삭제됩니다.
+> 프로토콜/형식 호환성: 예를 들어 `anytls`는 sing-box/Mihomo 형식에만 출력됩니다. **xray 측 REALITY 노드는 sing-box 구독에 출력되지 않습니다**(sing-box는 xray의 REALITY 구현을 지원하지 않습니다. sing-box#4520 참조). 하지만 Xray 구독에는 정상적으로 출력됩니다. **sing-box 측 REALITY 노드는 Xray / sing-box 두 구독 모두에서 사용할 수 있습니다**. 클라이언트가 인식하지 못하는 노드는 자동으로 제외되며 구독 전체가 실패하지 않습니다.
 
 ## 3. 응답 헤더
 

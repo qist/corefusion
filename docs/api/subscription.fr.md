@@ -38,7 +38,7 @@ Les liens courts (facultatifs) sont créés par l'administrateur pour chaque abo
 | `singbox_json` | Configuration complète sing-box JSON | sing-box/SFI/FLClash (noyau sing-box) |
 | `xray_json` | Configuration complète Xray JSON | Xray-noyau |
 
-> La compatibilité protocole/format s'applique : par exemple, `anytls` n'apparaît qu'aux formats sing-box/Mihomo ; **Les nœuds REALITY servis par xray sont exclus des abonnements sing-box** (sing-box ne prend pas en charge l'implémentation REALITY de xray, voir sing-box#4520) mais apparaissent toujours dans les abonnements Xray, tandis que **les nœuds REALITY servis par Le sing-box fonctionne avec les abonnements Xray et sing-box**. Les nœuds que le client ne peut pas reconnaître sont automatiquement supprimés au lieu de faire échouer l'ensemble de l'abonnement.
+> Compatibilité protocole/format : par exemple, `anytls` n'apparaît que dans les formats sing-box/Mihomo. **Les nœuds REALITY côté xray ne sont pas inclus dans les abonnements sing-box** (sing-box ne prend pas en charge l'implémentation REALITY de xray, voir sing-box#4520), mais restent normalement présents dans les abonnements Xray. **Les nœuds REALITY côté sing-box fonctionnent dans les deux abonnements (Xray et sing-box)**. Les nœuds non reconnus par le client sont automatiquement supprimés, sans faire échouer tout l'abonnement.
 
 ## 3. En-têtes de réponse
 

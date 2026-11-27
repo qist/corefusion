@@ -38,7 +38,7 @@ Links curtos (opcionais) são criados pelo administrador para cada assinatura: u
 | `singbox_json` | Configuração completa do sing-box JSON | sing-box/SFI/FLClash (núcleo sing-box) |
 | `xray_json` | Configuração completa Xray JSON | Núcleo Xray |
 
-> A compatibilidade de protocolo/formato se aplica: por exemplo, `anytls` aparece apenas nos formatos sing-box/Mihomo; **Nós REALITY atendidos por xray são excluídos das assinaturas sing-box** (sing-box não suporta a implementação xray de REALITY, consulte sing-box#4520), mas ainda aparecem em assinaturas Xray, enquanto **nós REALITY atendidos por sing-box funcionam em assinaturas Xray e sing-box**. Os nós que o cliente não consegue reconhecer são descartados automaticamente em vez de causar falha em toda a assinatura.
+> Compatibilidade de protocolo/formato: por exemplo, `anytls` só aparece nos formatos sing-box/Mihomo. **Nós REALITY do lado xray não são incluídos nas assinaturas sing-box** (sing-box não suporta a implementação REALITY do xray, consulte sing-box#4520), mas continuam aparecendo normalmente nas assinaturas Xray. **Nós REALITY do lado sing-box funcionam nas duas assinaturas (Xray e sing-box)**. Nós que o cliente não reconhece são descartados automaticamente, sem falhar a assinatura inteira.
 
 ## 3. Cabeçalhos de resposta
 

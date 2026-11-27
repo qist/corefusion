@@ -38,7 +38,7 @@ Kurzlinks (optional) werden vom Administrator pro Abonnement erstellt: Ein 20-st
 | `singbox_json` | Vollständige sing-box JSON-Konfiguration | sing-box / SFI / FLClash (sing-box-Kern) |
 | `xray_json` | Vollständige Xray JSON-Konfiguration | Xray-Kern |
 
-> Es gilt Protokoll-/Formatkompatibilität: Beispielsweise erscheint `anytls` nur in den Formaten sing-box/Mihomo; **REALITY-Knoten, die von xray bedient werden, sind von sing-box-Abonnements ausgeschlossen** (sing-box unterstützt die REALITY-Implementierung von xray nicht, siehe sing-box#4520), werden aber weiterhin in Xray-Abonnements angezeigt, während **REALITY-Knoten von bedient werden sing-box funktioniert sowohl in Xray- als auch in sing-box-Abonnements**. Knoten, die der Client nicht erkennen kann, werden automatisch gelöscht, anstatt dass das gesamte Abonnement fehlschlägt.
+> Protokoll-/Formatkompatibilität: `anytls` erscheint beispielsweise nur in sing-box/Mihomo-Formaten. **REALITY-Knoten von xray werden nicht in sing-box-Abonnements ausgegeben** (sing-box unterstützt die REALITY-Implementierung von xray nicht, siehe sing-box#4520), erscheinen aber weiterhin normal in Xray-Abonnements. **REALITY-Knoten von sing-box funktionieren in beiden Abonnements (Xray und sing-box)**. Knoten, die der Client nicht erkennt, werden automatisch entfernt, ohne dass das gesamte Abonnement fehlschlägt.
 
 ## 3. Antwortheader
 

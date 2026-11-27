@@ -38,7 +38,7 @@ Liên kết ngắn (tùy chọn) do quản trị viên tạo cho từng đăng k
 | `singbox_json` | Cấu hình sing-box JSON đầy đủ | sing-box / SFI / FLClash (lõi sing-box) |
 | `xray_json` | Cấu hình Xray JSON đầy đủ | Lõi Xray |
 
-> Áp dụng khả năng tương thích giao thức/định dạng: ví dụ: `anytls` chỉ xuất hiện ở định dạng sing-box/Mihomo; **Các nút REALITY do xray phân phối được loại trừ khỏi đăng ký sing-box** (sing-box không hỗ trợ triển khai REALITY của xray, xem sing-box#4520) nhưng vẫn xuất hiện trong đăng ký Xray, trong khi các nút **REALITY được phân phối của sing-box hoạt động ở cả đăng ký Xray và sing-box**. Các nút mà khách hàng không thể nhận ra sẽ tự động bị loại bỏ thay vì toàn bộ đăng ký bị lỗi.
+> Tương thích giao thức/định dạng: ví dụ, `anytls` chỉ xuất hiện ở định dạng sing-box/Mihomo. **Các nút REALITY phía xray không xuất hiện trong đăng ký sing-box** (sing-box không hỗ trợ triển khai REALITY của xray, xem sing-box#4520) nhưng vẫn xuất hiện bình thường trong đăng ký Xray. **Các nút REALITY phía sing-box hoạt động ở cả hai loại đăng ký (Xray và sing-box)**. Các nút mà máy khách không nhận diện được sẽ tự động bị loại bỏ, không làm hỏng toàn bộ đăng ký.
 
 ## 3. Tiêu đề phản hồi
 

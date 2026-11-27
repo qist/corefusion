@@ -22,6 +22,16 @@
 
 > **范围说明**：客户端 App（本机运行界面、TUN 接管、托盘、多订阅合并等）为独立产品，不在本仓库文档范围，需另行设计。本仓库文档只描述服务端（面板 / 节点 / 订阅下发）。
 
+## [mihomo-templates/](./mihomo-templates/README.md) — 客户端配置模板
+
+覆盖 **OpenClash（路由器）/ Android / Windows** 的「订阅格式」模板：
+可直接粘贴到面板的订阅格式里，节点由面板按套餐动态生成（`_hasExternalNodes`）；
+地址一律用 `example.com` 与公共 DNS 占位，不含任何私有 DNS / 内网 IP / WG。
+
+- [mihomo-openclash.yaml](./mihomo-templates/mihomo-openclash.yaml)
+- [mihomo-android.yaml](./mihomo-templates/mihomo-android.yaml)
+- [mihomo-windows.yaml](./mihomo-templates/mihomo-windows.yaml)
+
 ## 其他（运维手册）
 
 - `cert-google-eab.md` — Google EAB 证书签发操作手册

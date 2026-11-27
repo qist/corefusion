@@ -1,0 +1,499 @@
+# ============================================================
+# mihomo 订阅格式模板 · Android（Clash Meta for Android / FlClash）
+# ------------------------------------------------------------
+# 用法 A（推荐，配合面板）：
+#   面板 → 订阅格式 → 粘贴本文件 → 保存。
+#   节点由面板按套餐动态生成，?providers=1 时自动输出 proxy-providers；
+#   标了 _hasExternalNodes: true 的组就是节点注入的位置。
+#
+# 用法 B（脱离面板单独用）：自己补 proxies / proxy-providers，见 README。
+#
+# 说明：
+#   - 安卓由客户端接管 TUN，所以本文件没有 tun: 段；
+#   - DNS 用公共 DoH，国内外按规则集分开解析；
+#   - 不含 WireGuard / 内网网段 / 私有 DNS，需要时自行添加。
+# ============================================================
+
+allow-lan: false
+bind-address: '*'
+dns:
+  enable: true
+  ipv6: true
+  listen: 0.0.0.0:53
+  enhanced-mode: redir-host
+  cache-algorithm: arc
+  fake-ip-range: 172.19.0.1/16
+  fake-ip-filter-mode: blacklist
+  fake-ip-filter:
+  - '*.lan'
+  - '*.localdomain'
+  - '*.example'
+  - '*.invalid'
+  - '*.localhost'
+  - '*.test'
+  - '*.local'
+  - '*.home.arpa'
+  - time.*.com
+  - time.*.gov
+  - time.*.edu.cn
+  - time.*.apple.com
+  - time1.*.com
+  - time2.*.com
+  - time3.*.com
+  - time4.*.com
+  - time5.*.com
+  - time6.*.com
+  - time7.*.com
+  - ntp.*.com
+  - ntp1.*.com
+  - ntp2.*.com
+  - ntp3.*.com
+  - ntp4.*.com
+  - ntp5.*.com
+  - ntp6.*.com
+  - ntp7.*.com
+  - '*.time.edu.cn'
+  - '*.ntp.org.cn'
+  - +.pool.ntp.org
+  - time1.cloud.tencent.com
+  - music.163.com
+  - '*.music.163.com'
+  - '*.126.net'
+  - musicapi.taihe.com
+  - music.taihe.com
+  - songsearch.kugou.com
+  - trackercdn.kugou.com
+  - '*.kuwo.cn'
+  - api-jooxtt.sanook.com
+  - api.joox.com
+  - joox.com
+  - y.qq.com
+  - '*.y.qq.com'
+  - +.jd.com
+  - +.qhimg.com
+  - +.360buyimg.com
+  - +.3.cn
+  - +.300hu.com
+  - streamoc.music.tc.qq.com
+  - mobileoc.music.tc.qq.com
+  - isure.stream.qqmusic.qq.com
+  - dl.stream.qqmusic.qq.com
+  - aqqmusic.tc.qq.com
+  - amobile.music.tc.qq.com
+  - '*.xiami.com'
+  - '*.music.migu.cn'
+  - music.migu.cn
+  - '*.msftconnecttest.com'
+  - '*.msftncsi.com'
+  - msftconnecttest.com
+  - msftncsi.com
+  - localhost.ptlogin2.qq.com
+  - localhost.sec.qq.com
+  - +.srv.nintendo.net
+  - +.stun.playstation.net
+  - xbox.*.microsoft.com
+  - xnotify.xboxlive.com
+  - +.battlenet.com.cn
+  - +.wotgame.cn
+  - +.wggames.cn
+  - +.wowsgame.cn
+  - +.wargaming.net
+  - proxy.golang.org
+  - stun.*.*
+  - stun.*.*.*
+  - +.stun.*.*
+  - +.stun.*.*.*
+  - +.stun.*.*.*.*
+  - heartbeat.belkin.com
+  - '*.linksys.com'
+  - '*.linksyssmartwifi.com'
+  - '*.router.asus.com'
+  - mesu.apple.com
+  - swscan.apple.com
+  - swquery.apple.com
+  - swdownload.apple.com
+  - swcdn.apple.com
+  - swdist.apple.com
+  - lens.l.google.com
+  - stun.l.google.com
+  - +.nflxvideo.net
+  - '*.square-enix.com'
+  - '*.finalfantasyxiv.com'
+  - '*.ffxiv.com'
+  - '*.mcdn.bilivideo.cn'
+  - +.baidu.com
+  - +.taobao.com
+  - +.tmall.com
+  - miwifi.com
+  use-hosts: true
+  prefer-h3: false
+  respect-rules: false
+  default-nameserver:
+  - 223.5.5.5
+  - 119.29.29.29
+  - 1.2.4.8
+  proxy-server-nameserver:
+  - 223.5.5.5
+  - 119.29.29.29
+  - 1.2.4.8
+  nameserver:
+  - https://dns.alidns.com/dns-query
+  - https://doh.pub/dns-query
+  fallback:
+  - https://dns.google/dns-query
+  - https://cloudflare-dns.com/dns-query
+  fallback-filter:
+    geoip: true
+    geoip-code: CN
+    ipcidr:
+    - 240.0.0.0/4
+  nameserver-policy:
+    +.google.cn,+.cn:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+    geosite:category-ads-all:
+    - rcode://success
+    geosite:cn,private,apple,geolocation-cn,win-spy,win-update,win-extra:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+    geosite:geolocation-!cn,!cn,gfw:
+    - https://dns.google/dns-query
+    - https://cloudflare-dns.com/dns-query
+    rule-set:Foreignmedia,Netflix,domain-proxy-cidr,proxy,gfw,tld-not-cn:
+    - https://dns.google/dns-query
+    - https://cloudflare-dns.com/dns-query
+    rule-set:direct,privatecn,icloud,apple,win-spy,win-update,win-extra,googlel:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+    rule-set:reject:
+    - rcode://success
+experimental:
+  dialer-ip4p-convert: false
+  quic-go-disable-ecn: false
+  quic-go-disable-gso: false
+external-controller: 127.0.0.1:9090
+find-process-mode: strict
+geo-auto-update: true
+geo-update-interval: 24
+geox-url:
+  geoip: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat
+  geosite: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat
+  mmdb: https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb
+hosts:
+  dns.alidns.com: 223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1
+  dns.cloudflare.com: 172.64.41.8, 162.159.61.8
+  dns.google: 8.8.8.8, 8.8.4.4
+  doh.360.cn: 36.99.170.86, 180.163.249.75
+  doh.pub: 120.53.53.53, 1.12.12.12
+ipv6: true
+keep-alive-idle: 15
+log-level: info
+mixed-port: 7890
+mode: rule
+port: 0
+profile:
+  store-fake-ip: false
+  store-selected: true
+proxy-groups:
+- name: ✈️ 墙外网站
+  type: select
+  proxies:
+  - DIRECT
+  - ♻️ 自动选择
+  _hasExternalNodes: true
+- name: 🐟 其他网站
+  type: select
+  proxies:
+  - DIRECT
+  - ✈️ 墙外网站
+- name: 🎥 NETFLIX
+  type: select
+  proxies:
+  - ✈️ 墙外网站
+  - DIRECT
+- name: 🖥️ SSH
+  type: select
+  proxies:
+  - DIRECT
+- name: 🚫 以下不用动
+  type: select
+  proxies:
+  - DIRECT
+- name: 🛑 广告拦截
+  type: select
+  proxies:
+  - REJECT
+  - DIRECT
+- name: 🍏 苹果
+  type: select
+  proxies:
+  - DIRECT
+  - ✈️ 墙外网站
+- name: Ⓜ️ 微软
+  type: select
+  proxies:
+  - DIRECT
+  - ✈️ 墙外网站
+- name: 🐓 谷歌
+  type: select
+  proxies:
+  - DIRECT
+  - ✈️ 墙外网站
+- name: 🌍 国外媒体
+  type: select
+  proxies:
+  - ✈️ 墙外网站
+  - DIRECT
+- name: ♻️ 自动选择
+  type: url-test
+  url: https://www.gstatic.com/generate_204
+  interval: 300
+  tolerance: 50
+  lazy: true
+  _hasExternalNodes: true
+redir-port: 0
+rule-providers:
+  Foreignmedia:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/Foreignmedia.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/Foreignmedia.txt
+  Netflix:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/Netflix.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/Netflix.txt
+  allcidr:
+    behavior: ipcidr
+    format: text
+    interval: 8600
+    path: ./profiles/rules/all_cn_cidr.txt
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/all_cn_cidr.txt
+  allipv6cidr:
+    behavior: ipcidr
+    format: text
+    interval: 8600
+    path: ./profiles/rules/all_cn_ipv6.txt
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/all_cn_ipv6.txt
+  apple:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/applecn.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/applecn.txt
+  applications:
+    behavior: classical
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/applications.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/applications.txt
+  cncidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/cncidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/cncidr.txt
+  direct:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/direct.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/direct.txt
+  domain-proxy-cidr:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/domain-proxy-cidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/domain-proxy-cidr.txt
+  gfw:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/gfw.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/gfw.txt
+  googlel:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/google.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/google.txt
+  icloud:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/icloudcn.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/icloudcn.txt
+  ip-proxy-cidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/ip-proxy-cidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/ip-proxy-cidr.txt
+  lancidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/lancidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/lancidr.txt
+  private:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/private.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/private.txt
+  privatecn:
+    behavior: domain
+    format: yaml
+    interval: 86400
+    path: ./profiles/rules/privatecn.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/privatecn.txt
+  proxy:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/proxy.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/proxy.txt
+  proxy-ip-cidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/proxy-ip-cidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/proxy-ip-cidr.txt
+  reject:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/reject.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/reject.txt
+  rejectcidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/rejectcidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/rejectcidr.txt
+  telegramcidr:
+    behavior: ipcidr
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/telegramcidr.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/telegramcidr.txt
+  tld-not-cn:
+    behavior: domain
+    format: yaml
+    interval: 8600
+    path: ./profiles/rules/tld-not-cn.yaml
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/tld-not-cn.txt
+  win-extra:
+    behavior: domain
+    format: text
+    interval: 8600
+    path: ./profiles/rules/win-extra.txt
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/win-extra.txt
+  win-spy:
+    behavior: domain
+    format: text
+    interval: 8600
+    path: ./profiles/rules/win-spy.txt
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/win-spy.txt
+  win-update:
+    behavior: domain
+    format: text
+    interval: 8600
+    path: ./profiles/rules/win-update.txt
+    proxy: DIRECT
+    type: http
+    url: https://rules.example.com/clash/Ruleset/win-update.txt
+socks-port: 0
+tcp-concurrent: true
+tproxy-port: 0
+unified-delay: true
+rules:
+- RULE-SET,private,DIRECT
+- RULE-SET,privatecn,DIRECT
+- RULE-SET,reject,🛑 广告拦截
+- RULE-SET,applications,DIRECT
+- GEOSITE,category-ads-all,🛑 广告拦截
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((GEOSITE,cn))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((GEOIP,CN))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((RULE-SET,allcidr))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((RULE-SET,allipv6cidr))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((RULE-SET,cncidr))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((RULE-SET,direct))),REJECT
+- AND,(AND,(DST-PORT,443),(NETWORK,UDP)),(NOT,((RULE-SET,lancidr))),REJECT
+- AND,((NETWORK,UDP),(DST-PORT,3478/19302)),REJECT
+- DST-PORT,22,🖥️ SSH,no-resolve
+- RULE-SET,lancidr,DIRECT,no-resolve
+- RULE-SET,allcidr,DIRECT,no-resolve
+- RULE-SET,allipv6cidr,DIRECT,no-resolve
+- RULE-SET,cncidr,DIRECT,no-resolve
+- RULE-SET,direct,DIRECT
+- GEOSITE,cn,DIRECT
+- GEOIP,private,DIRECT
+- GEOIP,CN,DIRECT
+- RULE-SET,icloud,🍏 苹果
+- RULE-SET,apple,🍏 苹果
+- RULE-SET,win-spy,Ⓜ️ 微软
+- RULE-SET,win-update,Ⓜ️ 微软
+- RULE-SET,win-extra,Ⓜ️ 微软
+- RULE-SET,googlel,🐓 谷歌
+- RULE-SET,Foreignmedia,🌍 国外媒体
+- RULE-SET,Netflix,🎥 NETFLIX
+- RULE-SET,proxy,✈️ 墙外网站
+- RULE-SET,gfw,✈️ 墙外网站
+- RULE-SET,tld-not-cn,✈️ 墙外网站
+- RULE-SET,telegramcidr,✈️ 墙外网站
+- GEOSITE,geolocation-!cn,✈️ 墙外网站
+- RULE-SET,domain-proxy-cidr,✈️ 墙外网站
+- RULE-SET,ip-proxy-cidr,✈️ 墙外网站,no-resolve
+- RULE-SET,proxy-ip-cidr,✈️ 墙外网站,no-resolve
+- MATCH,🐟 其他网站

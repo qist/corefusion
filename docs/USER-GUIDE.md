@@ -338,6 +338,9 @@ sudo bash install.sh --uninstall --purge
   `install.sh --version <版本>` 离线升级；
 - 只替换程序，`data/`、`.env`、数据库不会改动，但升级前仍建议在
   「系统设置 → 备份还原」做一次备份；
+- **从 v0.14.4 起订阅凭证加密落库**：首次启动会把订阅 token、短链 code、轮换历史
+  和上游订阅 URL 加密，并新建短链撤销表；升级前务必备份数据库，回滚时必须连同
+  升级前的数据库备份一起恢复，旧版本直接读新库会让订阅全部 404；
 - 预发布版本（tag 带 `-rc`）用于灰度验证，建议先在单台面板观察再全量。
 
 ### 2.9 环境配置（.env）
@@ -413,12 +416,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | 变量 | 说明 |
 |------|------|
 | `JWT_SECRET` | 登录令牌签名密钥；缺失时首次启动自动生成 |
-| `CF_SECRET_ENCRYPTION_KEY` | 敏感配置加密密钥（AES-256-GCM）；缺失时自动生成 |
+| `CF_SECRET_ENCRYPTION_KEY` | 敏感配置与订阅凭证加密密钥（AES-256-GCM）；缺失时自动生成 |
 | `CF_INITIAL_ADMIN_PASSWORD` | 首次初始化时的管理员口令（可不设，默认随机生成并只打印一次） |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | 设为 `0` 关闭基于 iptables 的流量统计（默认开启） |
 | `CF_NETWORK_TRAFFIC_TABLE` | 流量统计使用的 iptables 表名，默认 `corefusion` |
 
 > **加密密钥存放在 `.env.secret`**：首次启动会把 `CF_SECRET_ENCRYPTION_KEY` 写入与 `.env` 同目录的 `.env.secret`（0600），不再写进 `.env`；`.env` 里的旧密钥会自动迁移过去。备份/迁移部署时务必单独保存该文件，丢失后所有 `enc:` 密文都无法解密。
+>
+> v0.14.4 起，`subscriptions.token`、短链 code 与轮换历史、`external_node_sources.source_url` 也使用这把密钥：token/URL 用随机或确定性 AES-256-GCM 密文回显，短链查询走 HMAC-SHA256 指纹；密钥丢失后这些凭证同样无法解密或匹配。
 
 > 可信反向代理地址（用于取真实客户端 IP）不再通过环境变量配置，而是在
 > 「系统设置 → 网络」中以 `panel.trusted_proxies` 保存。
@@ -516,7 +521,7 @@ CoreFusion 首次启动 - 初始化向导
 #### 步骤 3：加密密钥
 
 - `JWT_SECRET`：登录令牌签名密钥。
-- `CF_SECRET_ENCRYPTION_KEY`：敏感配置（数据库口令、证书 DNS 凭据、充值卡等）的加密密钥。
+- `CF_SECRET_ENCRYPTION_KEY`：敏感配置（数据库口令、证书 DNS 凭据、充值卡等）以及订阅 token / 短链 code / 轮换历史 / 上游订阅 URL 的加密密钥。
 - 两者默认随机生成，可用「随机生成」重新取值。**更换 `CF_SECRET_ENCRYPTION_KEY` 会导致已加密数据无法解密**，务必备份。
 
 #### 步骤 4：核心安装
@@ -1276,6 +1281,12 @@ https://<面板域名>/<短码>              # 共用面板端口时（前缀按
 - 订阅访问日志会记录 `access_type=short_link` 与 `short_link_id`，可统计每条短链的命中次数；
 - 门户/客户端详情里的链接按「套餐可见的格式 × 配置（× providers）」自动补齐，
   不会出现「短链 + 参数」的混合形式。
+- **`mihomo_yaml` 短链必须绑定配置**：和 sing-box / Xray 一样，只有「订阅格式管理」里
+  真实存在的配置才会生成短链；无配置的 mihomo 链接不再生成，打开「短链」弹窗时会
+  自动清理该订阅下无配置的存量链接，手动创建/更新无配置的链接会被拒绝。
+- **短码不以明文入库**：数据库只保存随机 AES-256-GCM 密文（用于回显完整 URL）
+  和 HMAC-SHA256 指纹（用于等值查询）；轮换或删除后旧短码写入撤销表，不能再次解析，
+  即使拿到数据库/备份也无法反推短码。
 
 ### 9.5 多域名与 Provider 模式
 

@@ -339,6 +339,7 @@ Notes:
   environments should use `install.sh --version <version>` instead;
 - Only the program is replaced — `data/`, `.env` and the database stay untouched — but take a
   backup under “System settings → Backup & restore” beforehand;
+- **Since v0.14.4 subscription credentials are encrypted at rest**: the first start encrypts subscription tokens, short-link codes, rotation history and upstream subscription URLs, and creates the short-link revocation table. Back up the database before upgrading; a rollback must restore the pre-upgrade database too, because an older binary cannot read the new database and all subscriptions will 404;
 - Pre-release tags (`-rc`) are for canary validation; observe one panel before rolling out.
 
 ### 2.9 Environment file (.env)
@@ -414,12 +415,14 @@ CF_DB_MAX_IDLE_CONNS=10
 | Variable | Description |
 |----------|-------------|
 | `JWT_SECRET` | Signing key for login tokens; generated on first start when missing |
-| `CF_SECRET_ENCRYPTION_KEY` | Key for encrypting sensitive settings (AES-256-GCM); generated when missing |
+| `CF_SECRET_ENCRYPTION_KEY` | Key for encrypting sensitive settings and subscription credentials (AES-256-GCM); generated when missing |
 | `CF_INITIAL_ADMIN_PASSWORD` | Initial admin password (optional; random and printed once by default) |
 | `CF_NETWORK_TRAFFIC_ACCOUNTING` | Set to `0` to disable iptables-based traffic accounting (enabled by default) |
 | `CF_NETWORK_TRAFFIC_TABLE` | iptables table used for traffic accounting, default `corefusion` |
 
 > **The encryption key lives in `.env.secret`**: on first start `CF_SECRET_ENCRYPTION_KEY` is written to `.env.secret` (0600, same directory as `.env`) instead of `.env`; a legacy key in `.env` is migrated automatically. Back this file up separately — losing it makes every `enc:` value undecryptable.
+>
+> Since v0.14.4 `subscriptions.token`, short-link codes and rotation history, and `external_node_sources.source_url` also use this key: tokens/URLs are shown from AES-256-GCM ciphertext and short-link lookups use an HMAC-SHA256 fingerprint; losing the key makes these credentials undecryptable or unmatchable too.
 
 > Trusted reverse proxies for resolving real client IPs are no longer configured via environment variables;
 > they are stored as `panel.trusted_proxies` in **Settings → Network**.
@@ -518,7 +521,7 @@ will not find the existing database and certificates.
 #### Step 3: Encryption keys
 
 - `JWT_SECRET`: signs login tokens.
-- `CF_SECRET_ENCRYPTION_KEY`: encrypts sensitive settings (database password, DNS credentials, recharge cards, etc.).
+- `CF_SECRET_ENCRYPTION_KEY`: encrypts sensitive settings (database password, DNS credentials, recharge cards, etc.) plus subscription tokens, short-link codes, rotation history and upstream subscription URLs.
 - Both are generated randomly by default; use “Regenerate” to get new values. **Changing `CF_SECRET_ENCRYPTION_KEY` makes previously encrypted data unreadable** — back it up.
 
 #### Step 4: Cores
@@ -1318,6 +1321,8 @@ https://<panel-domain>/<code>           # shared panel port (prefix follows the 
 - Portal and client details prefer short links. The global switch lives in Settings → Panel → Subscription short links; turning it off makes every short link return 404 while long links keep working;
 - Access logs record `access_type=short_link` and `short_link_id`, so hits can be counted per link;
 - Links shown in the portal/client details are generated per visible "format × config (× providers)" combination, so a "short link + query" hybrid never appears.
+- **`mihomo_yaml` short links require a config**: as with sing-box / Xray, links are generated only from real configs under Subscription Formats; unconfigured Mihomo links are no longer generated, opening the short-link dialog purges existing ones, and manual create/update without a config is rejected.
+- **Short codes are never stored in plaintext**: the database keeps a random AES-256-GCM ciphertext (for displaying the full URL) and an HMAC-SHA256 fingerprint (for equality lookup); rotated or deleted codes are written to a revocation table and can no longer resolve — a database/backup leak cannot recover the code.
 
 ### 9.5 Multi-domain and Provider mode
 

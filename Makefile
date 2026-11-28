@@ -30,7 +30,7 @@ UNIT_DST     := /etc/systemd/system/$(SERVICE).service
 
 .PHONY: help all build panel panel-all panel-linux-amd64 panel-linux-arm64 backend frontend deps \
         agent agent-linux-amd64 agent-linux-arm64 \
-        test vet fmt version run start stop restart status logs \
+        test vet fmt version bump-version run start stop restart status logs \
         service-install service-uninstall clean distclean
 
 # panel 的 frontend 必须先于 backend（go:embed 依赖前端产物），禁止并行
@@ -58,6 +58,7 @@ help:
 	@echo "    make start / stop / restart / status / logs"
 	@echo ""
 	@echo "  其他："
+	@echo "    make bump-version VERSION=vX.Y.Z  发版时一处改版本，自动同步脚本示例/多语言/手册"
 	@echo "    make run                前台启动面板（调试用）"
 	@echo ""
 	@echo "  清理："
@@ -129,6 +130,12 @@ fmt:
 
 version:
 	@echo $(VERSION)
+
+# 发版时一处改版本：同步 constants/version、install.sh 示例与多语言文案、
+# USER-GUIDE 各语言的安装示例与「适用版本」。用法：make bump-version VERSION=v0.14.7
+bump-version:
+	@test -n "$(VERSION)" || { echo "请指定 VERSION，例如 make bump-version VERSION=v0.14.7" >&2; exit 1; }
+	python3 scripts/bump-version.py $(VERSION)
 
 run:
 	@test -x $(BINARY) || { echo "二进制不存在，请先 make panel" >&2; exit 1; }

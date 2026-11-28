@@ -165,7 +165,7 @@ Valores admitidos: `zh` / `en` / `fa` / `ru`; También se acepta `--lang=ru`. Un
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.14.5
+sudo bash install.sh --version v0.14.6
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Construyendo desde la fuente
 
 ```bash
-sudo bash install.sh --source --version v0.14.5
+sudo bash install.sh --source --version v0.14.6
 ```
 
 `--source` clona el repositorio (o usa el checkout existente cuando el script está dentro de él) y ejecuta `make panel`. Las versiones de la cadena de herramientas se eligen por entorno:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Bandera | Descripción |
 |------|-------------|
 | `-d, --dir <PATH>` | Directorio de instalación, predeterminado `/opt/corefusion` |
-| `-v, --version <TAG>` | Versión de panel, p. `v0.14.5`; predeterminado `latest` |
+| `-v, --version <TAG>` | Versión de panel, p. `v0.14.6`; predeterminado `latest` |
 | `--binary` | Utilice el binario de versión GitHub (predeterminado) |
 | `--source` | Compile desde el código fuente y prepare la coincidencia Go/Node |
 | `--local <FILE>` | Utilice un binario local (instalación sin conexión) |
@@ -1933,4 +1933,4 @@ El binario del panel admite estos subcomandos (sin argumentos se inicia el servi
 
 > **Versión del documento**: v1.4
 > **Última actualización**: 2026-11-27
-> **Se aplica a**: CoreFusion v0.14.5
+> **Se aplica a**: CoreFusion v0.14.6

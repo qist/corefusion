@@ -165,7 +165,7 @@ Supported values: `zh` / `en` / `fa` / `ru`; `--lang=ru` is also accepted. An un
 
 ```bash
 # Pin a version
-sudo bash install.sh --version v0.14.5
+sudo bash install.sh --version v0.14.6
 
 # GitHub download mirror (used as a URL prefix)
 sudo bash install.sh --mirror https://ghproxy.net --version latest
@@ -185,7 +185,7 @@ sudo bash install.sh --arch arm64 --local ./corefusion-linux-arm64
 ### 2.4 Building from source
 
 ```bash
-sudo bash install.sh --source --version v0.14.5
+sudo bash install.sh --source --version v0.14.6
 ```
 
 `--source` clones the repository (or uses the existing checkout when the script is inside it) and runs `make panel`. Toolchain versions are chosen per environment:
@@ -229,7 +229,7 @@ make panel-linux-arm64
 | Flag | Description |
 |------|-------------|
 | `-d, --dir <PATH>` | Install directory, default `/opt/corefusion` |
-| `-v, --version <TAG>` | Panel version, e.g. `v0.14.5`; default `latest` |
+| `-v, --version <TAG>` | Panel version, e.g. `v0.14.6`; default `latest` |
 | `--binary` | Use the GitHub Release binary (default) |
 | `--source` | Build from source and prepare matching Go / Node |
 | `--local <FILE>` | Use a local binary (offline install) |
@@ -2016,4 +2016,4 @@ The panel binary supports these subcommands (no arguments starts the server):
 
 > **Document version**: v1.4
 > **Last updated**: 2026-11-27
-> **Applies to**: CoreFusion v0.14.5
+> **Applies to**: CoreFusion v0.14.6

@@ -104,7 +104,7 @@ type PrepareFullConfigOptions struct {
 // Steps applied (in order):
 //  1. Clean empty/nil fields recursively
 //  2. Strip _disabled sections (for all core types)
-//  3. For xray: filter disabled routing rules and strip "enabled" fields
+//  3. Filter disabled routing rules (xray routing / sing-box route) and strip "enabled" fields
 //  4. For xray: remove outbounds from core_configs (replaced by outbound_configs table)
 //  5. Ensure stats section exists
 //  6. For xray: apply API inbound/routing auto-add logic
@@ -120,10 +120,9 @@ func PrepareFullConfig(opts PrepareFullConfigOptions) ([]byte, error) {
 	// 2. Strip _disabled sections (applies to all core types)
 	StripDisabledSections(fullConfig)
 
-	// 3. For xray: filter disabled routing rules and strip "enabled" fields
-	if opts.CoreType == "xray" {
-		FilterDisabledRoutingRules(fullConfig)
-	}
+	// 3. Filter disabled routing rules (xray routing / sing-box route)
+	//    and strip the panel-only "enabled" field.
+	FilterDisabledRoutingRules(fullConfig)
 
 	// 4. For xray: remove outbounds from core_configs (replaced by outbound_configs table)
 	if opts.CoreType == "xray" {
@@ -1042,17 +1041,27 @@ func StripDisabledSections(fullConfig map[string]interface{}) {
 }
 
 // FilterDisabledRoutingRules removes disabled routing rules and strips
-// the "enabled" field from all rules. Only applies to xray configs.
+// the panel-only "enabled" field from all rules. Handles both xray's
+// top-level "routing" section and sing-box's "route" section, so the
+// 启用/停用 switch works the same for both cores.
 func FilterDisabledRoutingRules(fullConfig map[string]interface{}) {
-	routing, ok := fullConfig["routing"].(map[string]interface{})
+	for _, key := range []string{"routing", "route"} {
+		section, ok := fullConfig[key].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		FilterDisabledRuleList(section)
+	}
+}
+
+// FilterDisabledRuleList removes disabled rules and the panel-only "enabled"
+// field from a single routing/route section (in place).
+func FilterDisabledRuleList(section map[string]interface{}) {
+	rules, ok := section["rules"].([]interface{})
 	if !ok {
 		return
 	}
-	rules, ok := routing["rules"].([]interface{})
-	if !ok {
-		return
-	}
-	var filtered []interface{}
+	filtered := make([]interface{}, 0, len(rules))
 	for _, r := range rules {
 		rm, ok := r.(map[string]interface{})
 		if !ok {
@@ -1067,7 +1076,19 @@ func FilterDisabledRoutingRules(fullConfig map[string]interface{}) {
 		delete(rm, "enabled")
 		filtered = append(filtered, rm)
 	}
-	routing["rules"] = filtered
+	section["rules"] = filtered
+}
+
+// SanitizeRoutingSection turns a routing/route section into runtime-ready
+// JSON: disabled rules are dropped and the panel-only "enabled" marker is
+// stripped. Used by the xray hot-apply path, which bypasses PrepareFullConfig.
+func SanitizeRoutingSection(raw []byte) ([]byte, error) {
+	var section map[string]interface{}
+	if err := json.Unmarshal(raw, &section); err != nil {
+		return nil, err
+	}
+	FilterDisabledRuleList(section)
+	return json.Marshal(section)
 }
 
 // ApplyAPIInboundRouting adds API inbound (dokodemo-door) and routing rule

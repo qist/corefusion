@@ -585,6 +585,14 @@ func (h *Handler) applyRoutingSection(c *gin.Context, serverID int64, coreType s
 	if h.routingApplier == nil || !domain.CoreType(coreType).SupportsHotApply() || len(routingJSON) == 0 {
 		return
 	}
+	// 运行态不认面板内部字段：先剔除 enabled:false 的规则并剥离 enabled，
+	// 否则停用的规则会被热下发（xray 只做普通 JSON 反序列化，不会替我们过滤）。
+	cleaned, err := coreconfigSvc.SanitizeRoutingSection(routingJSON)
+	if err != nil {
+		log.Printf("[nodeserver] sanitize routing before hot apply (server=%d, core=%s) failed: %v", serverID, coreType, err)
+		return
+	}
+	routingJSON = cleaned
 	actx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 	if err := h.routingApplier.ApplyRouting(actx, serverID, routingJSON); err != nil {

@@ -96,6 +96,11 @@ func TestEnsureBaselineRoutingSingboxAddsRuleSet(t *testing.T) {
 
 	route := sectionMap(t, svc, "singbox", "route")
 	rules, _ := route["rules"].([]interface{})
+	// Google 连通性探测直连必须排在最前面。
+	first, _ := rules[0].(map[string]interface{})
+	if first == nil || !ruleListContains(rules[:1], "domain_suffix", "gstatic.com") {
+		t.Fatalf("第一条规则应为 Google 直连基线，实际: %v", rules[0])
+	}
 	if !singboxBaselineRuleExists(rules, map[string]interface{}{"ip_is_private": true}) {
 		t.Errorf("缺少 ip_is_private 直连规则")
 	}
@@ -164,5 +169,58 @@ func TestEnsureBaselineRoutingDoesNotTouchExistingEquivalent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("geoip:private 规则重复: %d 条", count)
+	}
+}
+
+// 存量节点：Google 直连规则已存在但不在最前面时，一次性迁移把它移到最前面。
+// 只重排，不新增、不恢复用户删除的规则；重复执行应为 no-op。
+func TestBaselineGoogleFirstMovesExistingRule(t *testing.T) {
+	svc := newPresetTestService(t)
+	ctx := context.Background()
+
+	// xray：google 在中间
+	raw, _ := json.Marshal(map[string]interface{}{
+		"rules": []interface{}{
+			map[string]interface{}{"type": "field", "ruleTag": baselineTagPrivate, "ip": []interface{}{"geoip:private"}, "outboundTag": "direct"},
+			map[string]interface{}{"type": "field", "ruleTag": baselineTagGoogle, "domain": []interface{}{"domain:gstatic.com", "domain:googleapis.com"}, "outboundTag": "direct"},
+			map[string]interface{}{"type": "field", "ruleTag": baselineTagAds, "domain": []interface{}{"geosite:category-ads-all"}, "outboundTag": "blocked"},
+		},
+	})
+	if err := svc.SaveSection(ctx, 1, "xray", "routing", raw); err != nil {
+		t.Fatalf("save xray routing: %v", err)
+	}
+	moved, err := svc.BaselineGoogleFirst(ctx, 1, "xray")
+	if err != nil || !moved {
+		t.Fatalf("xray reorder: moved=%v err=%v", moved, err)
+	}
+	xrayRules, _ := sectionMap(t, svc, "xray", "routing")["rules"].([]interface{})
+	if first, _ := xrayRules[0].(map[string]interface{}); first == nil || first["ruleTag"] != baselineTagGoogle {
+		t.Fatalf("xray 第一条应为 Google 直连，实际: %v", xrayRules[0])
+	}
+	if moved, err := svc.BaselineGoogleFirst(ctx, 1, "xray"); err != nil || moved {
+		t.Fatalf("xray 重复迁移应为 no-op: moved=%v err=%v", moved, err)
+	}
+
+	// sing-box：google 在中间
+	raw, _ = json.Marshal(map[string]interface{}{
+		"rules": []interface{}{
+			map[string]interface{}{"ip_is_private": true, "outbound": "direct"},
+			map[string]interface{}{"domain_suffix": []interface{}{"gstatic.com", "googleapis.com"}, "outbound": "direct"},
+			map[string]interface{}{"rule_set": []interface{}{singboxAdsRuleSetTag}, "outbound": "block"},
+		},
+	})
+	if err := svc.SaveSection(ctx, 1, "singbox", "route", raw); err != nil {
+		t.Fatalf("save singbox route: %v", err)
+	}
+	moved, err = svc.BaselineGoogleFirst(ctx, 1, "singbox")
+	if err != nil || !moved {
+		t.Fatalf("singbox reorder: moved=%v err=%v", moved, err)
+	}
+	sbRules, _ := sectionMap(t, svc, "singbox", "route")["rules"].([]interface{})
+	if !ruleListContains(sbRules[:1], "domain_suffix", "gstatic.com") {
+		t.Fatalf("singbox 第一条应为 Google 直连，实际: %v", sbRules[0])
+	}
+	if moved, err := svc.BaselineGoogleFirst(ctx, 1, "singbox"); err != nil || moved {
+		t.Fatalf("singbox 重复迁移应为 no-op: moved=%v err=%v", moved, err)
 	}
 }

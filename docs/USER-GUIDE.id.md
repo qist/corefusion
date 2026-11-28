@@ -1032,6 +1032,17 @@ Catatan:
  `rule-set not found`.
 - Tempatkan aturan langsung/daftar yang diizinkan terlebih dahulu; setelah suatu aturan cocok, aturan selanjutnya tidak berlaku lagi.
 
+### 6.7 Urutan aturan rute dan sakelar aktif/nonaktif (xray / sing-box)
+
+Aturan rute dicocokkan dari atas ke bawah dan berhenti pada kecocokan pertama, sehingga **urutan adalah prioritas**. Halaman rute kedua core mendukung:
+
+- **↑ / ↓ untuk mengurutkan**: sama seperti halaman Outbound. Xray langsung menyimpan dan menerapkan ke core yang berjalan; pada sing-box klik «Simpan» di kanan atas (tidak ada hot-reload untuk rute; core dimulai ulang bila perlu). Item pertama tidak bisa naik dan item terakhir tidak bisa turun.
+- **Sakelar aktif/nonaktif**: sakelar di sisi kiri setiap aturan. Aturan yang dinonaktifkan tetap ada dalam daftar (terlihat setelah muat ulang dan bisa diaktifkan lagi) tetapi tidak ditulis ke konfigurasi runtime. Mengedit aturan yang dinonaktifkan tidak mengaktifkannya kembali secara otomatis.
+- **Templat format langganan**: aturan nonaktif difilter dan kolom internal panel tidak pernah dikirim ke klien.
+- **Urutan dasar default**: pada node baru dan setelah migrasi sekali jalan untuk node yang ada, direct `gstatic.com` / `googleapis.com` (pemeriksaan konektivitas) berada di urutan pertama, diikuti direct jaringan privat dan pemblokiran iklan. Migrasi hanya mengurutkan ulang aturan yang ada dan tidak menambahkan atau memulihkan aturan yang dihapus.
+
+> Letakkan aturan direct / daftar putih sebelum pemblokiran iklan atau aturan proxy agar tidak tertutup oleh aturan berikutnya.
+
 ---
 
 ## 7. Manajemen proksi

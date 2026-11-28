@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Réponse Extra"
   },
   "singboxRoute": {
+    globalSettings: "Paramètres globaux",
+    hintDomainResolver: "Tag du serveur DNS par défaut pour la résolution de noms",
+    ruleSets: "Jeux de règles",
+    addRuleSet: "Ajouter un jeu de règles",
+    routeRules: "Règles de routage",
+    addRule: "Ajouter une règle",
+    noRules: "Aucune règle",
+    addRuleTitle: "Ajouter une règle de routage",
+    editRuleTitle: "Modifier la règle de routage",
+    ruleType: "Type de règle",
+    matchConditions: "Conditions de correspondance",
+    action: "Action",
+    hintOutbound: "Tag de sortie pour le trafic correspondant",
+    members: "Membres",
+
     "hint": {
       "finalOutbound": "Le trafic qui ne correspond à aucune règle est dirigé vers ce trafic sortant. **Vide = le premier sortant de la liste** (identique au sortant par défaut de Xray). Pour revenir à une sortie proxy, sélectionnez la balise du nœud de sortie ou effacez-la et déplacez une sortie non directe en haut de la liste des sorties.",
       "networkStrategy": "Stratégie de sélection d'interface pour les hôtes multi-NIC/multi-réseau. Seuls les **hybrides / secours** sont acceptés (tout le reste rend le noyau FATAL avec `unknown network strategy`) ; L’interface de détection automatique doit également être activée ci-dessus.",

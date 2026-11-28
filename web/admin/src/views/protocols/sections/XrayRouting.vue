@@ -54,6 +54,8 @@
           <span v-if="r.webhook" style="font-size:12px;color:#909399">{{ t('protoCenter.routing.webhook') }}</span>
         </div>
         <div>
+          <el-button size="small" text :disabled="ruleStart + i === 0" @click="moveRule(r, -1)">↑</el-button>
+          <el-button size="small" text :disabled="ruleStart + i === form.rules.length - 1" @click="moveRule(r, 1)">↓</el-button>
           <el-button size="small" @click="editRule(r)">{{ t('common.edit') }}</el-button>
           <el-button size="small" type="danger" text @click="rmRule(r)">X</el-button>
         </div>
@@ -312,6 +314,7 @@ const nodeBase = computed(() => `/node-servers/${props.serverId}`)
 const form = reactive({ domainStrategy: 'IPIfNonMatch', rules: [], balancers: [] })
 
 const { paged: rulesPaged, page: rulePage, pageSize: ruleSize, total: ruleTotal } = useClientPagination(computed(() => form.rules), { pageKey: 'xbRulePage', pageSizeKey: 'xbRuleSize' })
+const ruleStart = computed(() => (rulePage.value - 1) * ruleSize.value)
 const { paged: balPaged, page: balPage, pageSize: balSize, total: balTotal } = useClientPagination(computed(() => form.balancers), { pageKey: 'xbBalPage', pageSizeKey: 'xbBalSize' })
 const outboundTags = ref(['direct', 'blocked'])
 const inboundTags = ref([])
@@ -380,7 +383,9 @@ function editRule(r) {
 }
 
 function saveRule() {
-  const rule = { type: 'field', enabled: true, ruleTag: rf.ruleTag }
+  // 编辑已停用的规则时保留停用状态，不要因为保存而悄悄重新启用。
+  const prev = editIdx.value >= 0 ? form.rules[editIdx.value] : null
+  const rule = { type: 'field', enabled: prev ? prev.enabled !== false : true, ruleTag: rf.ruleTag }
   if (rf.outboundTag) rule.outboundTag = rf.outboundTag
   if (rf.balancerTag) rule.balancerTag = rf.balancerTag
   if (rf._domain.length) rule.domain = [...rf._domain]
@@ -466,7 +471,17 @@ function sync() {
 function build() {
   return {
     domainStrategy: form.domainStrategy,
-    rules: form.rules.filter(r => r.enabled !== false).map(r => { const rule = { ...r }; delete rule.enabled; return rule }),
+    // 节点侧保留 enabled:false 标记（运行配置生成时由后端剔除并剥离该字段），
+    // 这样刷新后停用规则仍在列表里，可以再次打开；订阅格式没有节点侧渲染，
+    // 直接过滤掉停用规则，避免 enabled 字段进客户端配置。
+    rules: form.rules
+      .filter(r => props.serverId || r.enabled !== false)
+      .map(r => {
+        const rule = { ...r }
+        if (props.serverId && rule.enabled === false) rule.enabled = false
+        else delete rule.enabled
+        return rule
+      }),
     balancers: form.balancers.filter(b => b.enabled !== false && b.tag).map(b => { const bal = { tag: b.tag, selector: b.selectorArr || [], strategy: { type: b.strategyType } }; if (b.fallbackTag) bal.fallbackTag = b.fallbackTag; if (b.settings) bal.strategy.settings = b.settings; return bal }),
   }
 }
@@ -484,6 +499,18 @@ async function emit() {
   await saveAndApply(data)
 }
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
+
+// 路由规则按数组顺序匹配，顺序即优先级：↑↓ 交换后立即保存并热下发（与出站排序一致）。
+function moveRule(r, dir) {
+  const i = form.rules.indexOf(r)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= form.rules.length) return
+  const arr = form.rules
+  const tmp = arr[i]
+  arr[i] = arr[j]
+  arr[j] = tmp
+  emit()
+}
 
 // ── 地区路由导入（CN / 俄罗斯 / 伊朗）────────────────────────────────
 // 默认不创建这三组规则；用户点地区按钮 → 选择出口（直连/WARP/MASQUE）→

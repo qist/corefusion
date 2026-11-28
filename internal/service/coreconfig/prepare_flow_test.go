@@ -1,6 +1,9 @@
 package coreconfig
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 // vision 只能配裸 TCP/raw：gRPC 上的 vision 会让客户端硬失败
 // （sing-box: `initialize vision: not a valid supported TLS connection`），
@@ -57,6 +60,62 @@ func TestCleanInboundFieldsKeepsVisionOnRaw(t *testing.T) {
 				t.Fatalf("%s 传输应保留 vision，实际 flow=%q", tc.name, flow)
 			}
 		})
+	}
+}
+
+// 路由规则的启用/停用开关对 xray 与 sing-box 同口径：
+// 停用的规则从运行配置中剔除，面板内部字段 enabled 不能下发给核心
+// （sing-box 严格解码，未知字段会整份拒载）。
+func TestFilterDisabledRoutingRulesBothCores(t *testing.T) {
+	full := map[string]interface{}{
+		"routing": map[string]interface{}{
+			"rules": []interface{}{
+				map[string]interface{}{"domain": []interface{}{"keep.com"}, "outboundTag": "direct", "enabled": true},
+				map[string]interface{}{"domain": []interface{}{"drop.com"}, "outboundTag": "blocked", "enabled": false},
+			},
+		},
+		"route": map[string]interface{}{
+			"rules": []interface{}{
+				map[string]interface{}{"domain_suffix": []interface{}{".keep.com"}, "outbound": "direct", "enabled": true},
+				map[string]interface{}{"domain_suffix": []interface{}{".drop.com"}, "outbound": "block", "enabled": false},
+			},
+		},
+	}
+	FilterDisabledRoutingRules(full)
+
+	for _, key := range []string{"routing", "route"} {
+		section := full[key].(map[string]interface{})
+		rules := section["rules"].([]interface{})
+		if len(rules) != 1 {
+			t.Fatalf("%s: 停用规则应被剔除，剩余 %d 条", key, len(rules))
+		}
+		if _, has := rules[0].(map[string]interface{})["enabled"]; has {
+			t.Fatalf("%s: enabled 字段必须从输出剥离", key)
+		}
+	}
+}
+
+// 热下发路径绕过 PrepareFullConfig：单独下发的 routing 段也必须先清洗，
+// 否则停用规则仍会被应用到运行中的 xray。
+func TestSanitizeRoutingSection(t *testing.T) {
+	raw := []byte(`{"rules":[
+		{"domain":["keep.com"],"outboundTag":"direct","enabled":true},
+		{"domain":["drop.com"],"outboundTag":"blocked","enabled":false}
+	]}`)
+	out, err := SanitizeRoutingSection(raw)
+	if err != nil {
+		t.Fatalf("SanitizeRoutingSection: %v", err)
+	}
+	var section map[string]interface{}
+	if err := json.Unmarshal(out, &section); err != nil {
+		t.Fatalf("unmarshal sanitized: %v", err)
+	}
+	rules := section["rules"].([]interface{})
+	if len(rules) != 1 {
+		t.Fatalf("停用规则应被剔除，剩余 %d 条", len(rules))
+	}
+	if _, has := rules[0].(map[string]interface{})["enabled"]; has {
+		t.Fatal("enabled 字段必须从热下发 payload 剥离")
 	}
 }
 

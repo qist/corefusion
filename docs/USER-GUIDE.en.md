@@ -1063,6 +1063,17 @@ Notes:
   `rule-set not found`.
 - Put direct / allow-list rules first; once a rule matches, later rules no longer apply.
 
+### 6.7 Rule order and on/off switch (xray / sing-box)
+
+Routing rules are matched top to bottom and stop at the first hit, so **order is priority**. Both the Xray and sing-box routing pages support:
+
+- **↑ / ↓ reorder**: same as the Outbounds page. Xray saves and hot-applies immediately; for sing-box, click Save at the top right (there is no route hot-reload; the core restarts when needed). The first item cannot move up and the last cannot move down.
+- **On/off switch**: the switch on the left of each rule. Disabled rules stay in the list (visible after refresh and can be re-enabled) but are excluded from the runtime config; editing a disabled rule does not re-enable it.
+- **Subscription format templates**: disabled rules are filtered out and panel-only fields never reach clients.
+- **Default baseline order**: on new nodes and via a one-time migration of existing nodes, `gstatic.com` / `googleapis.com` direct (connectivity check) comes first, followed by private-network direct and ad blocking. The migration only reorders existing rules; it never adds back deleted ones.
+
+> Put direct / allow-list rules before ad-blocking or proxy rules so they are not shadowed.
+
 ---
 
 ## 7. Proxy management

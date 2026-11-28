@@ -1031,6 +1031,17 @@ Ghi chú:
  `rule-set not found`.
 - Đặt quy tắc trực tiếp/danh sách cho phép lên hàng đầu; khi một quy tắc phù hợp, các quy tắc sau này sẽ không còn áp dụng nữa.
 
+### 6.7 Sắp xếp quy tắc định tuyến và công tắc bật/tắt (xray / sing-box)
+
+Quy tắc định tuyến được khớp từ trên xuống và dừng ở kết quả khớp đầu tiên, nên **thứ tự chính là độ ưu tiên**. Trang định tuyến của cả hai core đều hỗ trợ:
+
+- **↑ / ↓ để sắp xếp**: giống như trang Đầu ra. Xray lưu và áp dụng ngay lập tức; với sing-box, bấm «Lưu» ở góc trên bên phải (không có tải lại nóng cho route; core sẽ khởi động lại khi cần). Mục đầu tiên không thể đi lên và mục cuối không thể đi xuống.
+- **Công tắc bật/tắt**: công tắc bên trái mỗi quy tắc. Quy tắc bị tắt vẫn nằm trong danh sách (vẫn thấy sau khi làm mới và có thể bật lại) nhưng không được ghi vào cấu hình chạy. Sửa một quy tắc đang tắt sẽ không tự động bật lại.
+- **Mẫu định dạng đăng ký**: quy tắc bị tắt bị lọc bỏ và các trường nội bộ của bảng điều khiển không bao giờ gửi tới client.
+- **Thứ tự cơ sở mặc định**: với nút mới và sau lần di chuyển một lần của nút cũ, direct `gstatic.com` / `googleapis.com` (kiểm tra kết nối) đứng đầu, tiếp theo là direct mạng riêng và chặn quảng cáo. Việc di chuyển chỉ sắp xếp lại quy tắc hiện có, không thêm hoặc khôi phục quy tắc đã xóa.
+
+> Đặt quy tắc direct / danh sách cho phép trước chặn quảng cáo hoặc quy tắc proxy để không bị các quy tắc phía sau che phủ.
+
 ---
 
 ## 7. Quản lý proxy

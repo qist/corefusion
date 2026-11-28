@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Resposta Extra"
   },
   "singboxRoute": {
+    globalSettings: "Configurações globais",
+    hintDomainResolver: "Tag do servidor DNS padrão para resolução de domínios",
+    ruleSets: "Conjuntos de regras",
+    addRuleSet: "Adicionar conjunto de regras",
+    routeRules: "Regras de rota",
+    addRule: "Adicionar regra",
+    noRules: "Nenhuma regra",
+    addRuleTitle: "Adicionar regra de rota",
+    editRuleTitle: "Editar regra de rota",
+    ruleType: "Tipo de regra",
+    matchConditions: "Condições de correspondência",
+    action: "Ação",
+    hintOutbound: "Tag de saída para o tráfico correspondente",
+    members: "Membros",
+
     "hint": {
       "finalOutbound": "O tráfego que não corresponde a nenhuma regra vai para esta saída. **Vazio = a primeira saída da lista** (igual à saída padrão de Xray). Para retornar a uma saída de proxy, escolha a tag do nó de saída ou desmarque-a e mova uma saída não direta para o topo da lista Saídas.",
       "networkStrategy": "Estratégia de seleção de interface para hosts multi-NIC/multi-rede. Apenas **híbrido/fallback** são aceitos (qualquer outra coisa torna o núcleo FATAL com `unknown network strategy`); A interface de detecção automática também deve estar habilitada acima.",

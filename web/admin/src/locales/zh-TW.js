@@ -356,6 +356,21 @@ export default {
     "responseExtra": "回應 Extra"
   },
   "singboxRoute": {
+    globalSettings: "全域設定",
+    hintDomainResolver: "用於網域名稱解析的預設 DNS 伺服器 tag",
+    ruleSets: "規則集",
+    addRuleSet: "新增規則集",
+    routeRules: "路由規則",
+    addRule: "新增規則",
+    noRules: "暫無規則",
+    addRuleTitle: "新增路由規則",
+    editRuleTitle: "編輯路由規則",
+    ruleType: "規則類型",
+    matchConditions: "比對條件",
+    action: "動作",
+    hintOutbound: "符合流量所使用的出站 tag",
+    members: "成員",
+
     "hint": {
       "finalOutbound": "未命中任何規則的流量走該出站。 **留空 = 使用出站清單第一個**（與 xray 的預設出站語意一致）；想讓代理出口兜底：選出口節點 tag，或清空後把非直連出站在「出站」清單裡移到第一位。",
       "networkStrategy": "多網卡/多網路時的選路策略。實測合法值**只有 hybrid / fallback**（寫別的核心會 FATAL `unknown network strategy`）；且必須同時開啟上面的 Auto Detect Interface。",

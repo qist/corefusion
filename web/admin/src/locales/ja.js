@@ -356,6 +356,21 @@ export default {
     "responseExtra": "応答 Extra"
   },
   "singboxRoute": {
+    globalSettings: "グローバル設定",
+    hintDomainResolver: "ドメイン解決に使用する既定の DNS サーバー tag",
+    ruleSets: "ルールセット",
+    addRuleSet: "ルールセットを追加",
+    routeRules: "ルートルール",
+    addRule: "ルールを追加",
+    noRules: "ルールがありません",
+    addRuleTitle: "ルートルールを追加",
+    editRuleTitle: "ルートルールを編集",
+    ruleType: "ルールタイプ",
+    matchConditions: "一致条件",
+    action: "アクション",
+    hintOutbound: "一致したトラフィックの出站 tag",
+    members: "メンバー",
+
     "hint": {
       "finalOutbound": "どのルールにも一致しないトラフィックは、このアウトバウンドに送られます。 **空 = リスト内の最初のアウトバウンド** (Xray のデフォルトのアウトバウンドと同じ)。プロキシ出口にフォールバックするには、出口ノード タグを選択するか、それをクリアして非直接アウトバウンドをアウトバウンド リストの先頭に移動します。",
       "networkStrategy": "マルチ NIC/マルチネットワーク ホストのインターフェイス選択戦略。 **ハイブリッド / フォールバック** のみが受け入れられます (それ以外の場合、`unknown network strategy` でコアが FATAL になります)。自動検出インターフェイスも上記で有効にする必要があります。",

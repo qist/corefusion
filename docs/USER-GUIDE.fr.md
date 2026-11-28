@@ -1032,6 +1032,17 @@ Remarques :
  `rule-set not found`.
 - Mettez les règles de liste directe/autorisée en premier ; une fois qu'une règle correspond, les règles ultérieures ne s'appliquent plus.
 
+### 6.7 Ordre des règles de routage et interrupteur (xray / sing-box)
+
+Les règles de routage sont évaluées de haut en bas et s'arrêtent à la première correspondance : **l'ordre est la priorité**. Les pages de routage des deux noyaux prennent en charge :
+
+- **↑ / ↓ pour réordonner** : comme pour les sorties. Xray enregistre et applique à chaud immédiatement ; pour sing-box, cliquez sur « Enregistrer » en haut à droite (pas de rechargement à chaud des routes, le noyau redémarre si nécessaire). Le premier élément ne peut pas monter ni le dernier descendre.
+- **Interrupteur activer/désactiver** : l'interrupteur à gauche de chaque règle. Une règle désactivée reste dans la liste (visible après actualisation et réactivable) mais n'est pas écrite dans la configuration d'exécution. Modifier une règle désactivée ne la réactive pas automatiquement.
+- **Modèles de format d'abonnement** : les règles désactivées sont filtrées et les champs internes du panneau ne sont jamais envoyés au client.
+- **Ordre de base par défaut** : sur les nouveaux nœuds et après la migration unique des nœuds existants, le direct `gstatic.com` / `googleapis.com` (test de connectivité) arrive en premier, suivi du direct réseau privé et du blocage des publicités. La migration ne réordonne que les règles existantes et ne restaure pas les règles supprimées.
+
+> Placez les règles direct / liste blanche avant le blocage publicitaire ou les règles proxy afin qu'elles ne soient pas masquées.
+
 ---
 
 ## 7. Gestion des procurations

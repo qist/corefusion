@@ -19,6 +19,7 @@ import (
 	"corefusion/internal/coredata"
 	agentpb "corefusion/internal/runtime/agent/proto"
 	"corefusion/internal/service/audit"
+	"corefusion/internal/service/coreconfig"
 )
 
 // SettingStore provides access to system settings.
@@ -418,9 +419,16 @@ func (h *Handler) ApplyRouting(c *gin.Context) {
 		return
 	}
 
+	// 剔除停用规则并剥离面板内部 enabled 字段（运行态不认，停用规则更不能下发）。
+	routingJSON, err := coreconfig.SanitizeRoutingSection(req.Routing)
+	if err != nil {
+		response.BadRequest(c, "INVALID_PARAMS", err.Error())
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
-	if err := h.control.ApplyRouting(ctx, sid, req.Routing); err != nil {
+	if err := h.control.ApplyRouting(ctx, sid, routingJSON); err != nil {
 		audit.RecordNodeFromCtx(c, sid, "xray_apply_routing", "", false, err.Error())
 		response.InternalError(c, "APPLY_ROUTING_FAILED", err.Error())
 		return

@@ -1032,6 +1032,17 @@ Hinweise:
  `rule-set not found`.
 - Setzen Sie Direkt-/Zulassungslistenregeln an die erste Stelle; Sobald eine Regel zutrifft, gelten spätere Regeln nicht mehr.
 
+### 6.7 Reihenfolge und Ein/Aus-Schalter für Routing-Regeln (xray / sing-box)
+
+Routing-Regeln werden von oben nach unten geprüft; bei der ersten Übereinstimmung wird gestoppt. Die **Reihenfolge ist also die Priorität**. Beide Routing-Seiten unterstützen:
+
+- **↑ / ↓ Verschieben**: wie bei den Outbounds. Xray speichert und wendet sofort hot an; bei sing-box "Speichern" oben rechts klicken (kein Hot-Reload für Routen, der Kern wird bei Bedarf neu gestartet). Der erste Eintrag kann nicht nach oben, der letzte nicht nach unten verschoben werden.
+- **Ein/Aus-Schalter**: der Schalter links jeder Regel. Deaktivierte Regeln bleiben in der Liste (nach dem Aktualisieren sichtbar und wieder aktivierbar), werden aber nicht in die Laufzeitkonfiguration geschrieben. Das Bearbeiten einer deaktivierten Regel aktiviert sie nicht automatisch.
+- **Abonnementformat-Vorlagen**: deaktivierte Regeln werden herausgefiltert; panelinterne Felder erreichen den Client nicht.
+- **Standard-Basisreihenfolge**: bei neuen Knoten und durch die einmalige Migration bestehender Knoten steht `gstatic.com` / `googleapis.com` Direct (Verbindungstest) an erster Stelle, danach privates Netzwerk-Direct und Werbeblocking. Die Migration sortiert nur vorhandene Regeln neu und stellt gelöschte nicht wieder her.
+
+> Direkt-/Allowlist-Regeln vor Werbeblocking- oder Proxy-Regeln setzen, damit sie nicht von späteren Regeln verdeckt werden.
+
 ---
 
 ## 7. Proxy-Verwaltung

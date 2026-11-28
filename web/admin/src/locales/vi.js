@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Phản hồi Extra"
   },
   "singboxRoute": {
+    globalSettings: "Cài đặt chung",
+    hintDomainResolver: "Tag máy chủ DNS mặc định để phân giải tên miền",
+    ruleSets: "Các bộ quy tắc",
+    addRuleSet: "Thêm bộ quy tắc",
+    routeRules: "Quy tắc định tuyến",
+    addRule: "Thêm quy tắc",
+    noRules: "Không có quy tắc",
+    addRuleTitle: "Thêm quy tắc định tuyến",
+    editRuleTitle: "Sửa quy tắc định tuyến",
+    ruleType: "Loại quy tắc",
+    matchConditions: "Điều kiện khớp",
+    action: "Hành động",
+    hintOutbound: "Tag đầu ra cho lưu lượng khớp",
+    members: "Thành viên",
+
     "hint": {
       "finalOutbound": "Lưu lượng truy cập không phù hợp với quy tắc nào sẽ đi đến hướng đi này. **Trống = chuyến đi đầu tiên trong danh sách** (giống như chuyến đi mặc định của Xray). Để quay trở lại lối ra proxy, hãy chọn thẻ nút thoát hoặc xóa thẻ đó và di chuyển một chuyến đi không trực tiếp lên đầu danh sách Đi.",
       "networkStrategy": "Chiến lược lựa chọn giao diện cho máy chủ đa NIC/đa mạng. Chỉ **kết hợp / dự phòng** mới được chấp nhận (bất kỳ điều gì khác làm cho lõi LỚN với `unknown network strategy`); Giao diện Tự động Phát hiện cũng phải được bật ở trên.",

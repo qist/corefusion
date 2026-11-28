@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // 默认路由基线（2026-11-18）：
@@ -30,16 +31,19 @@ const (
 
 func baselineXrayRules() []interface{} {
 	return []interface{}{
-		map[string]interface{}{
-			"type":        "field",
-			"ruleTag":     baselineTagPrivate,
-			"ip":          []interface{}{"geoip:private"},
-			"outboundTag": "direct",
-		},
+		// Google 连通性探测（gstatic / googleapis）必须排在最前面：
+		// 客户端常用 gstatic.com/generate_204 测延迟，被后面的用户规则/广告规则
+		// 截走会误判节点不可用。
 		map[string]interface{}{
 			"type":        "field",
 			"ruleTag":     baselineTagGoogle,
 			"domain":      []interface{}{"domain:gstatic.com", "domain:googleapis.com"},
+			"outboundTag": "direct",
+		},
+		map[string]interface{}{
+			"type":        "field",
+			"ruleTag":     baselineTagPrivate,
+			"ip":          []interface{}{"geoip:private"},
 			"outboundTag": "direct",
 		},
 		map[string]interface{}{
@@ -54,11 +58,11 @@ func baselineXrayRules() []interface{} {
 func baselineSingboxRules() []interface{} {
 	return []interface{}{
 		map[string]interface{}{
-			"ip_is_private": true,
+			"domain_suffix": []interface{}{"gstatic.com", "googleapis.com"},
 			"outbound":      "direct",
 		},
 		map[string]interface{}{
-			"domain_suffix": []interface{}{"gstatic.com", "googleapis.com"},
+			"ip_is_private": true,
 			"outbound":      "direct",
 		},
 		map[string]interface{}{
@@ -79,6 +83,85 @@ func (s *Service) EnsureBaselineRouting(ctx context.Context, serverID int64, cor
 	default:
 		return 0, fmt.Errorf("unsupported core type: %s", coreType)
 	}
+}
+
+// BaselineGoogleFirst 把已存在的 Google 直连基线规则移到规则列表最前面。
+// 只重排，不新增/恢复规则 —— 供存量节点一次性迁移使用。
+func (s *Service) BaselineGoogleFirst(ctx context.Context, serverID int64, coreType string) (bool, error) {
+	var sectionKey string
+	var target map[string]interface{}
+	switch coreType {
+	case "xray":
+		sectionKey = "routing"
+		target = baselineXrayRules()[0].(map[string]interface{})
+	case "singbox":
+		sectionKey = "route"
+		target = baselineSingboxRules()[0].(map[string]interface{})
+	default:
+		return false, fmt.Errorf("unsupported core type: %s", coreType)
+	}
+
+	raw, err := s.GetSection(ctx, serverID, coreType, sectionKey)
+	if err != nil {
+		return false, err
+	}
+	section, ok := raw.(map[string]interface{})
+	if !ok || section == nil {
+		return false, nil
+	}
+	rules, _ := section["rules"].([]interface{})
+	idx := ruleIndexMatching(rules, target)
+	if idx <= 0 {
+		return false, nil
+	}
+	rule := rules[idx]
+	copy(rules[1:idx+1], rules[:idx])
+	rules[0] = rule
+	section["rules"] = rules
+	data, err := json.Marshal(section)
+	if err != nil {
+		return false, err
+	}
+	if err := s.SaveSection(ctx, serverID, coreType, sectionKey, data); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// ruleIndexMatching 按 ruleTag 或首个匹配字段查找基线规则在列表中的位置。
+func ruleIndexMatching(rules []interface{}, target map[string]interface{}) int {
+	tag, _ := target["ruleTag"].(string)
+	field, value, hasValue := firstRuleValue(target)
+	value = strings.TrimSpace(value)
+	for i, item := range rules {
+		rule, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if tag != "" {
+			if v, _ := rule["ruleTag"].(string); v == tag {
+				return i
+			}
+		}
+		if !hasValue {
+			continue
+		}
+		values, ok := rule[field].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, v := range values {
+			if s, ok := v.(string); ok && strings.EqualFold(strings.TrimSpace(s), value) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func isBaselineGoogleRule(rule map[string]interface{}) bool {
+	field, value, ok := firstRuleValue(rule)
+	return ok && field == "domain_suffix" && value == "gstatic.com"
 }
 
 func (s *Service) ensureBaselineXray(ctx context.Context, serverID int64) (int, error) {
@@ -103,7 +186,12 @@ func (s *Service) ensureBaselineXray(ctx context.Context, serverID int64) (int, 
 		if field, value, ok := firstRuleValue(rule); ok && ruleListContains(rules, field, value) {
 			continue
 		}
-		rules = append(rules, rule)
+		// Google 直连必须最前；其它基线仍追加到末尾，避免广告拦截抢在用户规则前面。
+		if tag == baselineTagGoogle {
+			rules = append([]interface{}{rule}, rules...)
+		} else {
+			rules = append(rules, rule)
+		}
 		added++
 	}
 	if added == 0 {
@@ -141,7 +229,11 @@ func (s *Service) ensureBaselineSingbox(ctx context.Context, serverID int64) (in
 		if singboxBaselineRuleExists(rules, rule) {
 			continue
 		}
-		rules = append(rules, rule)
+		if isBaselineGoogleRule(rule) {
+			rules = append([]interface{}{rule}, rules...)
+		} else {
+			rules = append(rules, rule)
+		}
 		added++
 	}
 

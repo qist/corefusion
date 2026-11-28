@@ -41,14 +41,14 @@ var DefaultSectionJSON = map[string]map[string]string{
   "rules": [
     {
       "type": "field",
-      "ruleTag": "preset-private-direct",
-      "ip": ["geoip:private"],
+      "ruleTag": "preset-google-direct",
+      "domain": ["domain:gstatic.com", "domain:googleapis.com"],
       "outboundTag": "direct"
     },
     {
       "type": "field",
-      "ruleTag": "preset-google-direct",
-      "domain": ["domain:gstatic.com", "domain:googleapis.com"],
+      "ruleTag": "preset-private-direct",
+      "ip": ["geoip:private"],
       "outboundTag": "direct"
     },
     {
@@ -105,8 +105,8 @@ var DefaultSectionJSON = map[string]map[string]string{
 		// 广告规则用本地 srs（面板启动时由 georule 播种并推送到节点）。
 		"route": `{
   "rules": [
-    {"ip_is_private": true, "outbound": "direct"},
     {"domain_suffix": ["gstatic.com", "googleapis.com"], "outbound": "direct"},
+    {"ip_is_private": true, "outbound": "direct"},
     {"rule_set": ["geosite-category-ads-all"], "outbound": "block"}
   ],
   "rule_set": [

@@ -1032,6 +1032,17 @@ Notas:
  `rule-set not found`.
 - Ponga primero las reglas directas/de lista permitida; una vez que una regla coincide, las reglas posteriores ya no se aplican.
 
+### 6.7 Orden de las reglas de enrutamiento e interruptor (xray / sing-box)
+
+Las reglas de enrutamiento se evalúan de arriba abajo y se detienen en la primera coincidencia, por lo que **el orden es la prioridad**. Las páginas de enrutamiento de ambos núcleos admiten:
+
+- **↑ / ↓ para reordenar**: igual que en Salidas. Xray guarda y aplica en caliente de inmediato; en sing-box, pulse «Guardar» arriba a la derecha (no hay recarga en caliente de rutas; el núcleo se reinicia si es necesario). El primer elemento no puede subir ni el último bajar.
+- **Interruptor activar/desactivar**: el interruptor a la izquierda de cada regla. Una regla desactivada permanece en la lista (visible tras actualizar y se puede volver a activar), pero no se escribe en la configuración de ejecución. Editar una regla desactivada no la reactiva automáticamente.
+- **Plantillas de formato de suscripción**: las reglas desactivadas se filtran y los campos internos del panel nunca llegan al cliente.
+- **Orden base predeterminado**: en nodos nuevos y mediante la migración única de nodos existentes, el directo de `gstatic.com` / `googleapis.com` (comprobación de conectividad) va primero, seguido del directo a redes privadas y del bloqueo de anuncios. La migración solo reordena reglas existentes y no restaura las eliminadas.
+
+> Coloque las reglas de directo / lista blanca antes que el bloqueo de anuncios o las reglas proxy para que no queden ocultas.
+
 ---
 
 ## 7. Gestión de proxy

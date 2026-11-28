@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Yanıt Extra"
   },
   "singboxRoute": {
+    globalSettings: "Genel Ayarlar",
+    hintDomainResolver: "Alan adı çözümlemesi için varsayılan DNS sunucu etiketi",
+    ruleSets: "Kural kümeleri",
+    addRuleSet: "Kural kümesi ekle",
+    routeRules: "Yönlendirme kuralları",
+    addRule: "Kural ekle",
+    noRules: "Kural yok",
+    addRuleTitle: "Yönlendirme kuralı ekle",
+    editRuleTitle: "Yönlendirme kuralını düzenle",
+    ruleType: "Kural türü",
+    matchConditions: "Eşleşme koşulları",
+    action: "Eylem",
+    hintOutbound: "Eşleşen trafik için çıkış etiketi",
+    members: "Üyeler",
+
     "hint": {
       "finalOutbound": "Hiçbir kuralla eşleşmeyen trafik bu giden yola gider. **Boş = listedeki ilk giden** (Xray'ın varsayılan gideniyle aynı). Proxy çıkışına geri dönmek için çıkış düğümü etiketini seçin veya etiketi temizleyin ve doğrudan olmayan bir giden bağlantıyı Giden listesinin en üstüne taşıyın.",
       "networkStrategy": "Çoklu NIC/çok ağlı ana bilgisayarlar için arayüz seçim stratejisi. Yalnızca **karma / geri dönüş** kabul edilir (diğer her şey `unknown network strategy` ile çekirdeği ÖLÜMCÜL yapar); Otomatik Algılama Arayüzü de yukarıda etkinleştirilmelidir.",

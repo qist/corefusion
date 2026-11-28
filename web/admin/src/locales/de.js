@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Antwort Extra"
   },
   "singboxRoute": {
+    globalSettings: "Globale Einstellungen",
+    hintDomainResolver: "Standard-DNS-Server-Tag für die Domain-Auflösung",
+    ruleSets: "Regelsätze",
+    addRuleSet: "Regelset hinzufügen",
+    routeRules: "Routenregeln",
+    addRule: "Regel hinzufügen",
+    noRules: "Keine Regeln",
+    addRuleTitle: "Routenregel hinzufügen",
+    editRuleTitle: "Routenregel bearbeiten",
+    ruleType: "Regeltyp",
+    matchConditions: "Übereinstimmungsbedingungen",
+    action: "Aktion",
+    hintOutbound: "Outbound-Tag für übereinstimmenden Traffic",
+    members: "Mitglieder",
+
     "hint": {
       "finalOutbound": "Datenverkehr, der keiner Regel entspricht, wird an diese ausgehende Adresse weitergeleitet. **Leer = der erste Outbound in der Liste** (identisch mit dem Standard-Outbound von Xray). Um auf einen Proxy-Exit zurückzugreifen, wählen Sie das Exit-Knoten-Tag aus oder löschen Sie es und verschieben Sie einen nicht direkten Outbound an den Anfang der Outbounds-Liste.",
       "networkStrategy": "Schnittstellenauswahlstrategie für Multi-NIC-/Multi-Netzwerk-Hosts. Es werden nur **Hybrid/Fallback** akzeptiert (alles andere macht den Kern FATAL mit `unknown network strategy`); Oben muss auch die Funktion „Auto Detect Interface“ aktiviert sein.",

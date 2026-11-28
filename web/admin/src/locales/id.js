@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Respons Extra"
   },
   "singboxRoute": {
+    globalSettings: "Pengaturan global",
+    hintDomainResolver: "Tag server DNS default untuk resolusi domain",
+    ruleSets: "Kumpulan aturan",
+    addRuleSet: "Tambah kumpulan aturan",
+    routeRules: "Aturan rute",
+    addRule: "Tambah aturan",
+    noRules: "Tidak ada aturan",
+    addRuleTitle: "Tambah aturan rute",
+    editRuleTitle: "Edit aturan rute",
+    ruleType: "Jenis aturan",
+    matchConditions: "Kondisi pencocokan",
+    action: "Aksi",
+    hintOutbound: "Tag outbound untuk lalu lintas yang cocok",
+    members: "Anggota",
+
     "hint": {
       "finalOutbound": "Lalu lintas yang tidak sesuai dengan aturan akan menuju keluar ini. **Kosong = keluar pertama dalam daftar** (sama dengan keluar default Xray). Untuk kembali ke pintu keluar proksi, pilih tag simpul keluar, atau hapus tag tersebut dan pindahkan keluar tidak langsung ke bagian atas daftar Keluar.",
       "networkStrategy": "Strategi pemilihan antarmuka untuk host multi-NIC/multi-jaringan. Hanya **hybrid / fallback** yang diterima (yang lainnya menjadikan inti FATAL dengan `unknown network strategy`); Antarmuka Deteksi Otomatis juga harus diaktifkan di atas.",

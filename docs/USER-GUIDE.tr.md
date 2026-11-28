@@ -1032,6 +1032,17 @@ Notlar:
  `rule-set not found`.
 - Doğrudan / izin verilenler listesi kurallarını ilk sıraya koyun; Bir kural eşleştiğinde daha sonraki kurallar artık geçerli olmaz.
 
+### 6.7 Yönlendirme kuralları sıralaması ve aç/kapat anahtarı (xray / sing-box)
+
+Yönlendirme kuralları yukarıdan aşağıya doğru eşleştirilir ve ilk eşleşmede durur; bu nedenle **sıra önceliktir**. İki çekirdeğin de yönlendirme sayfası şunları destekler:
+
+- **↑ / ↓ ile sıralama**: Çıkışlar sayfasındakiyle aynı. Xray değişikliği hemen kaydeder ve çalışan çekirdeğe uygular; sing-box için sağ üstteki «Kaydet» düğmesine basın (yollar için sıcak yeniden yükleme yoktur, gerektiğinde çekirdek yeniden başlatılır). İlk öğe yukarı, son öğe aşağı taşınamaz.
+- **Aç/kapat anahtarı**: her kuralın solundaki anahtar. Devre dışı kurallar listede kalır (yenilemeden sonra görünür ve yeniden açılabilir) ancak çalışma yapılandırmasına yazılmaz. Devre dışı bir kuralı düzenlemek onu otomatik olarak etkinleştirmez.
+- **Abonelik biçimi şablonları**: devre dışı kurallar filtrelenir ve panel içi alanlar istemciye gönderilmez.
+- **Varsayılan taban sırası**: yeni düğümlerde ve mevcut düğümlerin tek seferlik taşınmasında `gstatic.com` / `googleapis.com` doğrudan bağlantısı (bağlantı kontrolü) en önce gelir, ardından özel ağ doğrudan bağlantısı ve reklam engelleme gelir. Taşıma yalnızca mevcut kuralları yeniden sıralar, silinenleri geri getirmez.
+
+> Doğrudan / beyaz liste kurallarını reklam engelleme veya proxy kurallarından önce koyun; aksi hâlde sonraki kuralların gölgesinde kalırlar.
+
 ---
 
 ## 7. Proxy yönetimi

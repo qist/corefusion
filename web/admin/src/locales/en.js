@@ -355,6 +355,21 @@ export default {
     "responseExtra": "Response Extra"
   },
   singboxRoute: {
+    globalSettings: "Global Settings",
+    hintDomainResolver: "Default DNS server tag for domain resolution",
+    ruleSets: "Rule Sets",
+    addRuleSet: "Add Rule Set",
+    routeRules: "Route Rules",
+    addRule: "Add Rule",
+    noRules: "No rules",
+    addRuleTitle: "Add Route Rule",
+    editRuleTitle: "Edit Route Rule",
+    ruleType: "Rule Type",
+    matchConditions: "Match Conditions",
+    action: "Action",
+    hintOutbound: "Outbound tag for matched traffic",
+    members: "Members",
+
     hint: {
       "finalOutbound": "Traffic that matches no rule goes to this outbound. **Empty = the first outbound in the list** (same as Xray's default outbound). To fall back to a proxy exit, pick the exit node tag, or clear it and move a non-direct outbound to the top of the Outbounds list.",
       "networkStrategy": "Interface selection strategy for multi-NIC/multi-network hosts. Only **hybrid / fallback** are accepted (anything else makes the core FATAL with `unknown network strategy`); Auto Detect Interface must also be enabled above.",

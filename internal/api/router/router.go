@@ -680,6 +680,8 @@ func NewWithFullConfig(database *gorm.DB, jwtSecret string, webPath string, data
 	seedBaselineRoutingOnce(context.Background(), coreConfigSvc, database, systemSettingRepo)
 	// 给存量 xray 路由里缺 ruleTag 的规则补名字（地区一键导入的历史数据没有名字）。
 	backfillXrayRuleTagsOnce(context.Background(), coreConfigSvc, database, systemSettingRepo)
+	// Google 连通性探测直连（gstatic/googleapis）移到规则最前面（只重排，不新增）。
+	reorderBaselineGoogleFirstOnce(context.Background(), coreConfigSvc, database, systemSettingRepo)
 
 	// Inbound config service (separate table for inbound configurations)
 	inboundConfigRepo := repository.NewInboundConfigRepository(database)
@@ -5660,6 +5662,38 @@ func backfillXrayRuleTagsOnce(ctx context.Context, svc *coreconfigSvc.Service, d
 		return
 	}
 	log.Printf("rule tag backfill: added %d tags across %d servers", total, len(ids))
+}
+
+// reorderBaselineGoogleFirstOnce 给存量节点把 Google 直连基线移到最前面。
+// 只调整已存在规则的位置，不新增/恢复用户删除的规则（system_settings 标记，只跑一次）。
+func reorderBaselineGoogleFirstOnce(ctx context.Context, svc *coreconfigSvc.Service, database *gorm.DB, settings *repository.SystemSettingRepository) {
+	const markerKey = "migration.baseline_google_first.v1"
+	if v, err := settings.GetByKey(ctx, markerKey); err == nil && strings.TrimSpace(v) != "" {
+		return
+	}
+	ids, err := repository.NewNodeServerRepository(database).ListAllServerIDs(ctx)
+	if err != nil {
+		log.Printf("WARNING: baseline google first: list servers failed: %v", err)
+		return
+	}
+	total := 0
+	for _, id := range ids {
+		for _, coreType := range []string{"xray", "singbox"} {
+			moved, err := svc.BaselineGoogleFirst(ctx, id, coreType)
+			if err != nil {
+				log.Printf("WARNING: baseline google first: server %d %s: %v", id, coreType, err)
+				continue
+			}
+			if moved {
+				total++
+			}
+		}
+	}
+	if err := settings.Set(ctx, markerKey, "done"); err != nil {
+		log.Printf("WARNING: baseline google first: mark done failed: %v", err)
+		return
+	}
+	log.Printf("baseline google first: moved %d routing section(s) across %d servers", total, len(ids))
 }
 
 // publicSubscriptionEndpointItem 是公开订阅端点列表的脱敏字段集。

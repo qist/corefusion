@@ -356,6 +356,21 @@ export default {
     "responseExtra": "응답 Extra"
   },
   "singboxRoute": {
+    globalSettings: "전역 설정",
+    hintDomainResolver: "도메인 해석에 사용할 기본 DNS 서버 tag",
+    ruleSets: "규칙 세트",
+    addRuleSet: "규칙 세트 추가",
+    routeRules: "라우트 규칙",
+    addRule: "규칙 추가",
+    noRules: "규칙 없음",
+    addRuleTitle: "라우트 규칙 추가",
+    editRuleTitle: "라우트 규칙 편집",
+    ruleType: "규칙 유형",
+    matchConditions: "일치 조건",
+    action: "동작",
+    hintOutbound: "일치하는 트래픽의 아웃바운드 tag",
+    members: "구성원",
+
     "hint": {
       "finalOutbound": "규칙과 일치하지 않는 트래픽은 이 아웃바운드로 이동합니다. **비어 있음 = 목록의 첫 번째 아웃바운드**(Xray의 기본 아웃바운드와 동일) 프록시 종료로 돌아가려면 종료 노드 태그를 선택하거나 태그를 지우고 간접 아웃바운드를 아웃바운드 목록의 맨 위로 이동합니다.",
       "networkStrategy": "다중 NIC/다중 네트워크 호스트에 대한 인터페이스 선택 전략. **하이브리드/대체**만 허용됩니다(다른 항목은 `unknown network strategy`을 사용하여 핵심을 치명적으로 만듭니다). 위에서 자동 감지 인터페이스도 활성화해야 합니다.",

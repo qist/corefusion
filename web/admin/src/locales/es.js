@@ -356,6 +356,21 @@ export default {
     "responseExtra": "Respuesta Extra"
   },
   "singboxRoute": {
+    globalSettings: "Configuración global",
+    hintDomainResolver: "Tag del servidor DNS predeterminado para la resolución de dominios",
+    ruleSets: "Conjuntos de reglas",
+    addRuleSet: "Añadir conjunto de reglas",
+    routeRules: "Reglas de enrutamiento",
+    addRule: "Añadir regla",
+    noRules: "Sin reglas",
+    addRuleTitle: "Añadir regla de enrutamiento",
+    editRuleTitle: "Editar regla de enrutamiento",
+    ruleType: "Tipo de regla",
+    matchConditions: "Condiciones de coincidencia",
+    action: "Acción",
+    hintOutbound: "Tag de salida para el tráfico coincidente",
+    members: "Miembros",
+
     "hint": {
       "finalOutbound": "El tráfico que no coincide con ninguna regla se dirige a esta salida. **Vacío = el primer saliente de la lista** (igual que el saliente predeterminado de Xray). Para recurrir a una salida proxy, seleccione la etiqueta del nodo de salida o bórrela y mueva una salida no directa a la parte superior de la lista de Salidas.",
       "networkStrategy": "Estrategia de selección de interfaz para hosts multi-NIC/multi-red. Solo se aceptan **híbridos/de reserva** (cualquier otra cosa hace que el núcleo sea FATAL con `unknown network strategy`); La interfaz de detección automática también debe estar habilitada arriba.",

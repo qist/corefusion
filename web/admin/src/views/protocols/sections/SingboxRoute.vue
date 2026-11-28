@@ -1,7 +1,7 @@
 <template>
   <div>
     <!-- Global Settings -->
-    <el-divider content-position="left">Global Settings</el-divider>
+    <el-divider content-position="left">{{ t('singboxRoute.globalSettings') }}</el-divider>
     <el-form label-width="160px" label-position="left">
       <el-form-item :label="t('singboxRoute.finalOutbound')">
         <el-select v-model="form.final" style="width:100%" filterable allow-create clearable @change="emit">
@@ -14,7 +14,7 @@
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultDomainResolver')">
         <el-input v-model="form.default_domain_resolver" placeholder="dns-remote" @change="emit" />
-        <div class="hint">Default DNS server tag for domain resolution</div>
+        <div class="hint">{{ t('singboxRoute.hintDomainResolver') }}</div>
       </el-form-item>
       <el-form-item :label="t('singboxRoute.defaultNetworkStrategy')">
         <el-select v-model="form.default_network_strategy" style="width:100%" clearable @change="onNetStrategyChange">
@@ -67,8 +67,8 @@
 
     <!-- Rule Sets（route.rule_set 定义；此前面板只能靠 API 手写） -->
     <el-divider content-position="left">
-      Rule Sets
-      <el-button size="small" type="primary" @click="addRuleSet" style="margin-left:12px">Add Rule Set</el-button>
+      {{ t('singboxRoute.ruleSets') }}
+      <el-button size="small" type="primary" @click="addRuleSet" style="margin-left:12px">{{ t('singboxRoute.addRuleSet') }}</el-button>
     </el-divider>
     <div v-if="!form.ruleSets.length" class="hint" style="margin-bottom:8px">{{ t('singboxRoute.hint.noRuleSet') }}</div>
     <div v-for="(rs, ri) in form.ruleSets" :key="'rs' + ri"
@@ -113,16 +113,17 @@
 
     <!-- Route Rules -->
     <el-divider content-position="left">
-      Route Rules
-      <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">Add Rule</el-button>
+      {{ t('singboxRoute.routeRules') }}
+      <el-button size="small" type="primary" @click="showAddRule" style="margin-left:12px">{{ t('singboxRoute.addRule') }}</el-button>
     </el-divider>
 
     <div v-for="(r, i) in rulesPaged" :key="'rr'+i" class="rule-item">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <el-switch v-model="r.enabled" size="small" style="margin-right:4px" @change="emit" />
           <el-tag v-if="r.type === 'logical'" size="small" type="warning">logical/{{ r.mode }}</el-tag>
           <el-tag v-if="r.type === 'logical' && r.rules" size="small">{{ (r.rules || []).length }} sub-rules</el-tag>
-          <el-tag v-if="r.invert" size="small" type="danger">invert</el-tag>
+          <el-tag v-if="r.invert" size="small" type="danger">{{ t('singboxRoute.invert') }}</el-tag>
           <el-tag v-if="r.action" size="small" :type="actionTagType(r.action)">{{ r.action }}</el-tag>
           <el-tag v-if="r.outbound" size="small" :type="r.outbound==='block'?'danger':r.outbound==='direct'?'success':'info'">{{ r.outbound }}</el-tag>
           <span v-if="r._domain" style="font-size:12px;color:#909399">domains: {{ r._domain }}</span>
@@ -136,18 +137,20 @@
           <span v-if="r._authUser" style="font-size:12px;color:#909399">auth_user: {{ r._authUser }}</span>
         </div>
         <div>
-          <el-button size="small" @click="editRule(r)">Edit</el-button>
+          <el-button size="small" text :disabled="ruleStart + i === 0" @click="moveRule(r, -1)">↑</el-button>
+          <el-button size="small" text :disabled="ruleStart + i === form.rules.length - 1" @click="moveRule(r, 1)">↓</el-button>
+          <el-button size="small" @click="editRule(r)">{{ t('common.edit') }}</el-button>
           <el-button size="small" type="danger" text @click="rmRule(r)">X</el-button>
         </div>
       </div>
     </div>
     <PaginationBar v-model:page="rulePage" v-model:page-size="ruleSize" :total="ruleTotal" />
-    <div v-if="!form.rules.length" style="text-align:center;color:#909399;padding:24px">No rules</div>
+    <div v-if="!form.rules.length" style="text-align:center;color:#909399;padding:24px">{{ t('singboxRoute.noRules') }}</div>
 
     <!-- Rule Dialog -->
-    <el-dialog v-model="dlg" :title="editIdx >= 0 ? 'Edit Route Rule' : 'Add Route Rule'" width="760" top="5vh">
+    <el-dialog v-model="dlg" :title="editIdx >= 0 ? t('singboxRoute.editRuleTitle') : t('singboxRoute.addRuleTitle')" width="760" top="5vh">
       <el-form label-width="150px" label-position="left">
-        <el-divider content-position="left">Rule Type</el-divider>
+        <el-divider content-position="left">{{ t('singboxRoute.ruleType') }}</el-divider>
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item :label="t('protoCenter.inbounds.accessDomainType')">
@@ -182,7 +185,7 @@
 
         <!-- Default rule: match conditions -->
         <template v-else>
-          <el-divider content-position="left">Match Conditions</el-divider>
+          <el-divider content-position="left">{{ t('singboxRoute.matchConditions') }}</el-divider>
           <el-form-item :label="t('protoCenter.routing.domain')">
             <el-input v-model="rf._domain" type="textarea" :rows="2" :placeholder="t('singboxRoute.oneDomainPerLine')" />
           </el-form-item>
@@ -338,7 +341,7 @@
           </el-collapse>
         </template>
 
-        <el-divider content-position="left">Action</el-divider>
+        <el-divider content-position="left">{{ t('singboxRoute.action') }}</el-divider>
         <el-form-item :label="t('protoCenter.routing.action')">
           <el-select v-model="rf.action" style="width:100%" clearable>
             <el-option :label="t('singboxRoute.routeDefault')" value="" />
@@ -367,7 +370,7 @@
           <el-select v-model="rf.outbound" style="width:100%" clearable filterable allow-create>
             <el-option v-for="t in outboundTags" :key="t" :label="t" :value="t" />
           </el-select>
-          <div class="hint">Outbound tag for matched traffic</div>
+          <div class="hint">{{ t('singboxRoute.hintOutbound') }}</div>
         </el-form-item>
         <!-- route-options 动作用的字段（与 action 同级写在 rule 顶层） -->
         <template v-if="rf.action === 'route-options'">
@@ -442,8 +445,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dlg=false">Cancel</el-button>
-        <el-button type="primary" @click="saveRule">Save</el-button>
+        <el-button @click="dlg=false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="saveRule">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -487,7 +490,7 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <el-tag size="small" type="warning">{{ b.tag }}</el-tag>
             <el-tag size="small" type="info">{{ b.type || 'urltest' }}</el-tag>
-            <span v-if="b.outbounds && b.outbounds.length" style="font-size:12px;color:#909399">members: {{ b.outbounds.join(', ') }}</span>
+            <span v-if="b.outbounds && b.outbounds.length" style="font-size:12px;color:#909399">{{ t('singboxRoute.members') }}: {{ b.outbounds.join(', ') }}</span>
           </div>
         </div>
       </template>
@@ -533,6 +536,7 @@ const form = reactive({
 })
 
 const { paged: rulesPaged, page: rulePage, pageSize: ruleSize, total: ruleTotal } = useClientPagination(computed(() => form.rules), { pageKey: 'sbRoutePage', pageSizeKey: 'sbRouteSize' })
+const ruleStart = computed(() => (rulePage.value - 1) * ruleSize.value)
 const outboundTags = ref(['direct', 'block'])
 const inboundTags = ref([])
 
@@ -865,6 +869,8 @@ function saveRule() {
   rule._geosite = geo.geosite.join('\n')
   rule._geoip = geo.geoip.join('\n')
   rule._sourceGeoip = geo.sourceGeoip.join('\n')
+  // 编辑已停用的规则时保留停用状态；新增规则默认启用。
+  rule.enabled = editIdx.value >= 0 ? form.rules[editIdx.value]?.enabled !== false : true
 
   if (editIdx.value >= 0) form.rules[editIdx.value] = rule
   else form.rules.push(rule)
@@ -983,6 +989,18 @@ function onRemoteUrlChange(rs) { autoFillTag(rs); emit() }
 
 function rmRule(r) { const i = form.rules.indexOf(r); form.rules.splice(i, 1); emit() }
 
+// route.rules 顺序即匹配优先级：↑↓ 只改暂存顺序，点「保存」后落库并同步（sing-box 无热更）。
+function moveRule(r, dir) {
+  const i = form.rules.indexOf(r)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= form.rules.length) return
+  const arr = form.rules
+  const tmp = arr[i]
+  arr[i] = arr[j]
+  arr[j] = tmp
+  emit()
+}
+
 async function loadTags() {
   let obTags = []
   // 出站/端点 tag 首选**同一份配置文档**里的 outbounds / endpoints 段 ——
@@ -1035,6 +1053,7 @@ function applyRouteData(data) {
   form.default_http_client = data.default_http_client || ''
   form.rules = (data.rules || []).map(r => ({
     ...r,
+    enabled: r.enabled !== false,
     _domain: (r.domain || []).join('\n'),
     _domainSuffix: (r.domain_suffix || []).join('\n'),
     _domainKeyword: (r.domain_keyword || []).join('\n'),
@@ -1106,7 +1125,9 @@ function build() {
     })
   }
 
-  out.rules = form.rules.map(r => {
+  // 节点侧保留 enabled:false 标记（运行配置生成时由后端剔除并剥离该字段），
+  // 刷新后停用规则仍在列表里可再次打开；订阅格式直接过滤，避免内部字段下发客户端。
+  out.rules = form.rules.filter(r => props.serverId || r.enabled !== false).map(r => {
     const rule = {}
     if (r.type) rule.type = r.type
     if (r.type === 'logical') {
@@ -1154,6 +1175,7 @@ function build() {
     applyExtraMatchersRaw(r, rule)
     if (r.action === 'reject') applyRejectOptions(r, rule)
     if (r.action === 'route-options') applyRouteOptions(r, rule)
+    if (props.serverId && r.enabled === false) rule.enabled = false
     return rule
   })
   return out

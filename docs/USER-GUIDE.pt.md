@@ -1032,6 +1032,17 @@ Notas:
  `rule-set not found`.
 - Coloque as regras diretas/da lista de permissões em primeiro lugar; uma vez que uma regra corresponda, as regras posteriores não se aplicam mais.
 
+### 6.7 Ordem das regras de roteamento e botão liga/desliga (xray / sing-box)
+
+As regras de roteamento são avaliadas de cima para baixo e param na primeira correspondência, portanto **a ordem é a prioridade**. As páginas de roteamento dos dois núcleos oferecem:
+
+- **↑ / ↓ para reordenar**: igual à página de Saídas. O Xray salva e aplica imediatamente; no sing-box, clique em «Salvar» no canto superior direito (não há recarga a quente de rotas; o núcleo reinicia quando necessário). O primeiro item não sobe e o último não desce.
+- **Botão liga/desliga**: o interruptor à esquerda de cada regra. Regras desativadas permanecem na lista (visíveis após atualizar e podem ser reativadas), mas não entram na configuração de execução. Editar uma regra desativada não a reativa automaticamente.
+- **Modelos de formato de assinatura**: regras desativadas são filtradas e campos internos do painel nunca chegam ao cliente.
+- **Ordem padrão**: em nós novos e pela migração única de nós existentes, o direct de `gstatic.com` / `googleapis.com` (teste de conectividade) vem primeiro, seguido do direct para redes privadas e do bloqueio de anúncios. A migração apenas reordena regras existentes e não restaura as excluídas.
+
+> Coloque regras de direct / lista de permissões antes do bloqueio de anúncios ou das regras proxy para não serem ofuscadas.
+
 ---
 
 ## 7. Gerenciamento de proxy

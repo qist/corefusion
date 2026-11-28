@@ -95,8 +95,8 @@ As pulsações do nó são verificadas continuamente; **as notificações são e
 
 ## 9. Lembretes de expiração de certificado (automático)
 
-- **Acionador**: diariamente às 09h05, verifica certificados `active` prestes a expirar (**certificados IP com 3 dias restantes**, **certificados de domínio com 7 dias restantes**) e envia o modelo de administração “**Lembrete de expiração de certificado**” por certificado
-- **Desduplicação**: no máximo um lembrete por certificado por dia; após a renovação, a expiração sai da janela (IP 3 dias / domínio 7 dias) e os lembretes param
+- **Acionador**: diariamente às 09h05, verifica certificados `active` prestes a expirar (**certificados IP com a mesma regra do «alerta de anomalia» do painel: um terço da validade (cerca de 2 dias)**, **certificados de domínio com 7 dias restantes**) e envia o modelo de administração “**Lembrete de expiração de certificado**” por certificado
+- **Desduplicação**: no máximo um lembrete por certificado por dia; após a renovação, a expiração sai da janela (IP um terço da validade / domínio 7 dias) e os lembretes param
 - Variáveis disponíveis: `{domain}` (domínio do certificado), `{expire_date}` (data de validade), `{days}` (dias restantes), `{time}`
 
 ## 10. Alertas de falha do processo principal (automático)

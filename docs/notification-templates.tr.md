@@ -95,8 +95,8 @@ Düğümün kalp atışları sürekli olarak kontrol edilir; **bildirimler yaln�
 
 ## 9. Sertifika geçerlilik sonu hatırlatıcıları (otomatik)
 
-- **Tetikleyici**: her gün saat 09:05'te, süresi dolmak üzere olan `active` sertifikalarını tarar (**3 gün kalan IP sertifikaları**, **7 gün kalan alan adı sertifikaları**) ve sertifika başına "**Sertifika süre sonu hatırlatıcısı**" yönetici şablonunu gönderir
-- **Tekilleştirme**: Sertifika başına günde en fazla bir hatırlatma; yenilemeden sonra süre sonu pencerenin dışına çıkar (IP 3 gün / alan adı 7 gün) ve hatırlatmalar durur
+- **Tetikleyici**: her gün saat 09:05'te, süresi dolmak üzere olan `active` sertifikalarını tarar (**IP sertifikaları panelin "anormallik uyarısı" ile aynı kuralda: geçerlilik süresinin 1/3'ü (yaklaşık 2 gün)**, **7 gün kalan alan adı sertifikaları**) ve sertifika başına "**Sertifika süre sonu hatırlatıcısı**" yönetici şablonunu gönderir
+- **Tekilleştirme**: Sertifika başına günde en fazla bir hatırlatma; yenilemeden sonra süre sonu pencerenin dışına çıkar (IP geçerliliğin 1/3'ü / alan adı 7 gün) ve hatırlatmalar durur
 - Mevcut değişkenler: `{domain}` (sertifika alanı), `{expire_date}` (son kullanma tarihi), `{days}` (kalan gün sayısı), `{time}`
 
 ## 10. Temel süreç kilitlenme uyarıları (otomatik)

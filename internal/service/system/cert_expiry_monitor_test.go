@@ -2,37 +2,60 @@ package system
 
 import (
 	"testing"
+	"time"
 
 	"corefusion/internal/model/entity"
 )
 
-// TestCertExpiryDaysFor IP 证书按 3 天提醒、域名证书按 7 天提醒。
-// 背景：ACME 的 IP 证书是短时证书（约 6 天寿命），用统一的 7 天窗口会从
-// "还剩 6 天"就天天提醒 —— 用户要求 IP 改到剩 3 天才提示，与自动续期同口径。
-func TestCertExpiryDaysFor(t *testing.T) {
+// TestCertExpiryWindowFor IP 证书与面板「异常告警」同口径（有效期 1/3），
+// 域名证书仍按 7 天提醒。
+// 背景：IP 证书约 6 天寿命、自动续期阈值 3 天；邮件若用固定 3 天窗口，
+// 正常续期期间每天都会命中并发邮件 —— 面板按有效期比例计算，不会这样。
+func TestCertExpiryWindowFor(t *testing.T) {
+	now := time.Now()
 	cases := []struct {
 		name   string
 		cert   entity.Certificate
-		expect int
+		expect time.Duration
 	}{
-		{"单项 IP", entity.Certificate{Domain: "203.0.113.48"}, certExpiryIPAheadDays},
-		{"domains 数组含 IP", entity.Certificate{Domain: "x", Domains: `["203.0.113.48"]`}, certExpiryIPAheadDays},
-		{"域名 + IP 混合 → 按短时证书", entity.Certificate{Domain: "a.com", Domains: `["a.com","203.0.113.48"]`}, certExpiryIPAheadDays},
-		{"纯域名", entity.Certificate{Domain: "a.com"}, certExpiryAheadDays},
-		{"通配符域名", entity.Certificate{Domain: "*.example.com"}, certExpiryAheadDays},
+		{
+			name:   "单项 IP（7 天寿命）→ 有效期 1/3",
+			cert:   entity.Certificate{Domain: "203.0.113.48", CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour)},
+			expect: 7 * 24 * time.Hour / 3,
+		},
+		{
+			name:   "domains 数组含 IP（6 天寿命）→ 2 天",
+			cert:   entity.Certificate{Domain: "x", Domains: `["203.0.113.48"]`, CreatedAt: now, ExpiresAt: now.Add(6 * 24 * time.Hour)},
+			expect: 2 * 24 * time.Hour,
+		},
+		{
+			name:   "域名 + IP 混合 → 按 IP 比例",
+			cert:   entity.Certificate{Domain: "a.com", Domains: `["a.com","203.0.113.48"]`, CreatedAt: now, ExpiresAt: now.Add(7 * 24 * time.Hour)},
+			expect: 7 * 24 * time.Hour / 3,
+		},
+		{
+			name:   "纯域名 → 7 天",
+			cert:   entity.Certificate{Domain: "a.com", CreatedAt: now, ExpiresAt: now.Add(90 * 24 * time.Hour)},
+			expect: 7 * 24 * time.Hour,
+		},
+		{
+			name:   "通配符域名 → 7 天",
+			cert:   entity.Certificate{Domain: "*.example.com", CreatedAt: now, ExpiresAt: now.Add(90 * 24 * time.Hour)},
+			expect: 7 * 24 * time.Hour,
+		},
 	}
 	for _, c := range cases {
-		if got := certExpiryDaysFor(c.cert); got != c.expect {
-			t.Errorf("%s: certExpiryDaysFor=%d, want %d", c.name, got, c.expect)
+		if got := certExpiryWindowFor(c.cert); got != c.expect {
+			t.Errorf("%s: certExpiryWindowFor=%v, want %v", c.name, got, c.expect)
 		}
 	}
 }
 
-// TestCertExpiryScanWindowDays 数据库扫描窗口必须取两类阈值的较大值（7 天），
-// 否则只按 IP 的 3 天窗口查会漏掉 7 天内的域名证书。
+// TestCertExpiryScanWindowDays 数据库扫描窗口必须覆盖面板告警上限（30 天），
+// 再由每张证书的实际窗口过滤。
 func TestCertExpiryScanWindowDays(t *testing.T) {
-	if got := certExpiryScanWindowDays(); got != certExpiryAheadDays {
-		t.Fatalf("scan window=%d, want %d (max of IP/domain)", got, certExpiryAheadDays)
+	if got := certExpiryScanWindowDays(); got != certExpiryMaxAheadDays {
+		t.Fatalf("scan window=%d, want %d (panel max)", got, certExpiryMaxAheadDays)
 	}
 }
 

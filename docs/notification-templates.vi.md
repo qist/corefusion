@@ -95,8 +95,8 @@ Nhịp tim của nút được kiểm tra liên tục; **thông báo chỉ đư�
 
 ## 9. Lời nhắc hết hạn chứng chỉ (tự động)
 
-- **Kích hoạt**: hàng ngày lúc 09:05, quét các chứng chỉ `active` sắp hết hạn (**Chứng chỉ IP còn 3 ngày**, **chứng chỉ miền còn 7 ngày**) và gửi mẫu quản trị viên “**Lời nhắc hết hạn chứng chỉ**” cho mỗi chứng chỉ
-- **Loại bỏ trùng lặp**: tối đa một lời nhắc cho mỗi chứng chỉ mỗi ngày; sau khi gia hạn, thời hạn sử dụng sẽ di chuyển ra ngoài cửa sổ (IP 3 ngày / tên miền 7 ngày) và dừng nhắc nhở
+- **Kích hoạt**: hàng ngày lúc 09:05, quét các chứng chỉ `active` sắp hết hạn (**Chứng chỉ IP theo cùng quy tắc với "cảnh báo bất thường" của bảng điều khiển: một phần ba thời hạn hiệu lực (khoảng 2 ngày)**, **chứng chỉ miền còn 7 ngày**) và gửi mẫu quản trị viên “**Lời nhắc hết hạn chứng chỉ**” cho mỗi chứng chỉ
+- **Loại bỏ trùng lặp**: tối đa một lời nhắc cho mỗi chứng chỉ mỗi ngày; sau khi gia hạn, thời hạn sử dụng sẽ di chuyển ra ngoài cửa sổ (IP một phần ba thời hạn / tên miền 7 ngày) và dừng nhắc nhở
 - Các biến có sẵn: `{domain}` (miền chứng chỉ), `{expire_date}` (ngày hết hạn), `{days}` (số ngày còn lại), `{time}`
 
 ## 10. Cảnh báo sự cố quy trình cốt lõi (tự động)

@@ -95,8 +95,8 @@ Knoten-Heartbeats werden kontinuierlich überprüft; **Benachrichtigungen werden
 
 ## 9. Erinnerungen zum Ablauf des Zertifikats (automatisch)
 
-- **Auslöser**: Täglich um 09:05 Uhr, scannt `active`-Zertifikate, die kurz vor dem Ablauf stehen (**IP-Zertifikate mit noch 3 Tagen**, **Domänenzertifikate mit 7 Tagen Rest**) und sendet die Admin-Vorlage „**Erinnerung an den Ablauf des Zertifikats**“ pro Zertifikat
-- **Deduplizierung**: höchstens eine Erinnerung pro Zertifikat und Tag; Nach der Verlängerung verschiebt sich der Ablauf aus dem Zeitfenster (IP 3 Tage / Domain 7 Tage) und die Erinnerungen werden eingestellt
+- **Auslöser**: Täglich um 09:05 Uhr, scannt `active`-Zertifikate, die kurz vor dem Ablauf stehen (**IP-Zertifikate nach derselben Regel wie die „Anomaliewarnung“ des Panels: ein Drittel der Gültigkeitsdauer (ca. 2 Tage)**, **Domänenzertifikate mit 7 Tagen Rest**) und sendet die Admin-Vorlage „**Erinnerung an den Ablauf des Zertifikats**“ pro Zertifikat
+- **Deduplizierung**: höchstens eine Erinnerung pro Zertifikat und Tag; Nach der Verlängerung verschiebt sich der Ablauf aus dem Zeitfenster (IP ein Drittel der Gültigkeit / Domain 7 Tage) und die Erinnerungen werden eingestellt
 - Verfügbare Variablen: `{domain}` (Zertifikatdomäne), `{expire_date}` (Ablaufdatum), `{days}` (verbleibende Tage), `{time}`
 
 ## 10. Absturzwarnungen für Kernprozesse (automatisch)

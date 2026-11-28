@@ -175,29 +175,7 @@ func (h *Handler) CertMetrics(c *gin.Context) {
 }
 
 // certExpiryWarnWindow 返回某张证书的「即将过期」告警窗口。
-//
-// 不能固定 30 天：Let's Encrypt 的 IP 证书必须走 shortlived profile
-// （约 6 天有效），固定阈值会让证书**刚签发就进异常告警**，天天提示。
-// 规则：取有效期的 1/3，上限 30 天、下限 1 天；续期后窗口随有效期重置。
-// 生命周期起点优先用 LastRenewedAt（续期会更新），否则用 CreatedAt。
+// 规则见 entity.Certificate.ExpiryWarnWindow（与邮件「证书到期提醒」共用）。
 func certExpiryWarnWindow(c entity.Certificate) time.Duration {
-	const (
-		maxWindow = 30 * 24 * time.Hour
-		minWindow = 24 * time.Hour
-	)
-	base := c.CreatedAt
-	if c.LastRenewedAt != nil && !c.LastRenewedAt.IsZero() {
-		base = *c.LastRenewedAt
-	}
-	if base.IsZero() || !c.ExpiresAt.After(base) {
-		return maxWindow
-	}
-	window := c.ExpiresAt.Sub(base) / 3
-	if window > maxWindow {
-		window = maxWindow
-	}
-	if window < minWindow {
-		window = minWindow
-	}
-	return window
+	return c.ExpiryWarnWindow()
 }

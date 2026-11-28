@@ -95,8 +95,8 @@ Node heartbeats are checked continuously; **notifications are sent only when the
 
 ## 9. Certificate expiry reminders (automatic)
 
-- **Trigger**: daily at 09:05, scans `active` certificates nearing expiry (**IP certificates with 3 days left**, **domain certificates with 7 days left**) and sends the admin template “**Certificate expiry reminder**” per certificate
-- **Deduplication**: at most one reminder per certificate per day; after renewal the expiry moves outside the window (IP 3 days / domain 7 days) and reminders stop
+- **Trigger**: daily at 09:05, scans `active` certificates nearing expiry (**IP certificates follow the panel’s “abnormal alert” rule: one third of the validity period (about 2 days)**, **domain certificates with 7 days left**) and sends the admin template “**Certificate expiry reminder**” per certificate
+- **Deduplication**: at most one reminder per certificate per day; after renewal the expiry moves outside the window (IP one third of validity / domain 7 days) and reminders stop
 - Available variables: `{domain}` (certificate domain), `{expire_date}` (expiry date), `{days}` (days remaining), `{time}`
 
 ## 10. Core process crash alerts (automatic)

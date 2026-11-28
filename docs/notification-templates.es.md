@@ -95,8 +95,8 @@ Los latidos del corazón de los nodos se controlan continuamente; **las notifica
 
 ## 9. Recordatorios de vencimiento de certificados (automáticos)
 
-- **Activador**: diariamente a las 09:05, escanea los certificados `active` que están a punto de caducar (**certificados IP con 3 días restantes**, **certificados de dominio con 7 días restantes**) y envía la plantilla de administración “**Recordatorio de vencimiento del certificado**” por certificado
-- **Deduplicación**: como máximo un recordatorio por certificado por día; después de la renovación, el vencimiento sale de la ventana (IP 3 días / dominio 7 días) y los recordatorios se detienen
+- **Activador**: diariamente a las 09:05, escanea los certificados `active` que están a punto de caducar (**certificados IP con la misma regla que la «alerta de anomalía» del panel: un tercio de la validez (unos 2 días)**, **certificados de dominio con 7 días restantes**) y envía la plantilla de administración “**Recordatorio de vencimiento del certificado**” por certificado
+- **Deduplicación**: como máximo un recordatorio por certificado por día; después de la renovación, el vencimiento sale de la ventana (IP un tercio de la validez / dominio 7 días) y los recordatorios se detienen
 - Variables disponibles: `{domain}` (dominio del certificado), `{expire_date}` (fecha de vencimiento), `{days}` (días restantes), `{time}`
 
 ## 10. Alertas de fallas del proceso central (automáticas)

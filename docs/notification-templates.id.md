@@ -95,8 +95,8 @@ Detak jantung node diperiksa terus menerus; **pemberitahuan dikirim hanya ketika
 
 ## 9. Pengingat masa berlaku sertifikat (otomatis)
 
-- **Pemicu**: setiap hari pukul 09:05, memindai sertifikat `active` yang hampir habis masa berlakunya (**Sertifikat IP dengan sisa 3 hari**, **sertifikat domain dengan sisa 7 hari**) dan mengirimkan templat admin “**Pengingat masa berlaku sertifikat**” per sertifikat
-- **Deduplikasi**: maksimal satu pengingat per sertifikat per hari; setelah perpanjangan masa berlakunya berpindah ke luar jendela (IP 3 hari / domain 7 hari) dan pengingat berhenti
+- **Pemicu**: setiap hari pukul 09:05, memindai sertifikat `active` yang hampir habis masa berlakunya (**Sertifikat IP mengikuti aturan yang sama dengan «peringatan anomali» panel: sepertiga masa berlaku (sekitar 2 hari)**, **sertifikat domain dengan sisa 7 hari**) dan mengirimkan templat admin “**Pengingat masa berlaku sertifikat**” per sertifikat
+- **Deduplikasi**: maksimal satu pengingat per sertifikat per hari; setelah perpanjangan masa berlakunya berpindah ke luar jendela (IP sepertiga masa berlaku / domain 7 hari) dan pengingat berhenti
 - Variabel yang tersedia: `{domain}` (domain sertifikat), `{expire_date}` (tanggal kedaluwarsa), `{days}` (sisa hari), `{time}`
 
 ## 10. Peringatan kerusakan proses inti (otomatis)

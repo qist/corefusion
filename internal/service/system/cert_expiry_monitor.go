@@ -18,7 +18,8 @@ import (
 // 证书到期监控 —— 每日扫描「N 天内到期的 active 证书」，逐张发 admin 模板
 // 「证书到期提醒」（未启用时 NotifyTemplate 静默 no-op）。
 //   扫描窗口：按证书类型区分 ——
-//     · IP 证书（ACME shortlived，约 6 天寿命）：剩 3 天起提醒；
+//     · IP 证书（ACME shortlived，约 6 天寿命）：与面板「异常告警」同口径，
+//       取有效期的 1/3（约 2 天）；
 //     · 域名证书（默认）：剩 7 天起提醒（与订阅到期提醒一致）。
 //   去重：notification_send_logs 按（事件 cert_expire, 证书域名, 天）去重，
 //         即到期前每天最多提醒一次，续期后（到期日推迟出窗口）自动停止。
@@ -28,31 +29,33 @@ const (
 	certExpiryEventKey = "cert_expire"
 	// 域名证书（默认）提前 7 天提醒。
 	certExpiryAheadDays = 7
-	// IP 证书是 ACME 短时证书（约 6 天寿命）→ 只剩 3 天时才开始提醒，
-	// 与面板自动续期阈值（PublicCertIPRenewBefore=3 天）同口径，避免 7 天窗口下
-	// 长期刷屏「还有 6 天到期」这类噪声。
-	certExpiryIPAheadDays = 3
-	tmplNameCertExpiry    = "证书到期提醒"
+	// 面板告警窗口上限（有效期的 1/3，封顶 30 天）——数据库扫描窗口必须覆盖它，
+	// 否则长有效期且含 IP 的证书会漏提醒。
+	certExpiryMaxAheadDays = 30
+	tmplNameCertExpiry     = "证书到期提醒"
 )
 
-// certExpiryScanWindowDays 是数据库扫描窗口：取两类阈值中较大的那个，
-// 否则只按 IP 的 3 天窗口查会漏掉域名证书（7 天）。
+// certExpiryScanWindowDays 是数据库扫描窗口：取域名窗口与面板上限的较大值，
+// 再在循环里按每张证书的实际窗口过滤。
 func certExpiryScanWindowDays() int {
-	if certExpiryAheadDays > certExpiryIPAheadDays {
+	if certExpiryAheadDays > certExpiryMaxAheadDays {
 		return certExpiryAheadDays
 	}
-	return certExpiryIPAheadDays
+	return certExpiryMaxAheadDays
 }
 
-// certExpiryDaysFor 返回该证书的到期提醒窗口（天）：
-// 含 IP 标识符 → 按 IP 短时证书 3 天；否则按域名证书 7 天。
-func certExpiryDaysFor(cert entity.Certificate) int {
+// certExpiryWindowFor 返回该证书的到期提醒窗口：
+//   - 含 IP 标识符 → 与面板「异常告警」完全同口径（有效期的 1/3，约 2 天），
+//     不再用固定的 3 天 —— 3 天窗口与 IP 自动续期阈值（PublicCertIPRenewBefore）
+//     重合，正常续期期间每天都会命中并发邮件。
+//   - 域名证书 → 固定提前 7 天。
+func certExpiryWindowFor(cert entity.Certificate) time.Duration {
 	for _, id := range certIdentifierList(cert.Domains, cert.Domain) {
 		if net.ParseIP(strings.TrimSpace(id)) != nil {
-			return certExpiryIPAheadDays
+			return cert.ExpiryWarnWindow()
 		}
 	}
-	return certExpiryAheadDays
+	return time.Duration(certExpiryAheadDays) * 24 * time.Hour
 }
 
 // certIdentifierList 取证书的标识符：优先 domains（JSON 数组），退化为 domain。
@@ -127,10 +130,10 @@ func ScanCertExpiry(ctx context.Context, db *gorm.DB) int {
 		if days < 0 {
 			days = 0
 		}
-		// 按证书类型决定提醒窗口：IP 短时证书 3 天、域名证书 7 天。
-		// 数据库扫描窗口取的是两者较大的 7 天，所以还需在这里把"IP 证书但只剩 >3 天"
-		// 的提前剔除 —— 否则 7 天窗口下 IP 证书会从"还剩 6 天"就开始天天提醒。
-		if days > certExpiryDaysFor(cert) {
+		// 按证书类型决定提醒窗口：IP 短时证书与面板告警同口径（有效期 1/3），
+		// 域名证书 7 天。数据库扫描窗口取的是 30 天，所以还需在这里把尚未进入
+		// 各自窗口的证书提前剔除。
+		if time.Until(cert.ExpiresAt) > certExpiryWindowFor(cert) {
 			continue
 		}
 		if alreadyNotifiedToday(db, certExpiryEventKey, cert.Domain, day) {

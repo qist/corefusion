@@ -95,8 +95,8 @@ Les battements de cœur des nœuds sont vérifiés en permanence ; **les notifi
 
 ## 9. Rappels d'expiration du certificat (automatique)
 
-- **Déclencheur** : tous les jours à 09h05, analyse les certificats `active` en voie d'expiration (**certificats IP avec 3 jours restants**, **certificats de domaine avec 7 jours restants**) et envoie le modèle d'administrateur « **Rappel d'expiration du certificat** » par certificat
-- **Déduplication** : au maximum un rappel par certificat et par jour ; après le renouvellement, l'expiration se déplace en dehors de la fenêtre (IP 3 jours / domaine 7 jours) et les rappels s'arrêtent
+- **Déclencheur** : tous les jours à 09h05, analyse les certificats `active` en voie d'expiration (**certificats IP selon la même règle que l'« alerte d'anomalie » du panneau : un tiers de la durée de validité (environ 2 jours)**, **certificats de domaine avec 7 jours restants**) et envoie le modèle d'administrateur « **Rappel d'expiration du certificat** » par certificat
+- **Déduplication** : au maximum un rappel par certificat et par jour ; après le renouvellement, l'expiration se déplace en dehors de la fenêtre (IP un tiers de la validité / domaine 7 jours) et les rappels s'arrêtent
 - Variables disponibles : `{domain}` (domaine du certificat), `{expire_date}` (date d'expiration), `{days}` (jours restants), `{time}`
 
 ## 10. Alertes de crash des processus principaux (automatiques)
